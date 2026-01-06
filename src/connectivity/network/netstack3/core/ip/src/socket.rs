@@ -426,13 +426,16 @@ impl<I: IpExt, D> IpSock<I, D> {
 
 /// The bindings execution context for IP sockets.
 pub trait IpSocketBindingsContext<D>:
-    InstantContext + FilterBindingsContext + TxMetadataBindingsTypes + SocketOpsFilterBindingContext<D>
+    InstantContext
+    + FilterBindingsContext<D>
+    + TxMetadataBindingsTypes
+    + SocketOpsFilterBindingContext<D>
 {
 }
 impl<
     D,
     BC: InstantContext
-        + FilterBindingsContext
+        + FilterBindingsContext<D>
         + TxMetadataBindingsTypes
         + SocketOpsFilterBindingContext<D>,
 > IpSocketBindingsContext<D> for BC

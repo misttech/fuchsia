@@ -18,7 +18,7 @@ use net_types::ip::{GenericOverIp, Ip, IpVersionMarker};
 use netstack3_hashmap::HashMap;
 use packet_formats::ip::{IpExt, IpProto, Ipv4Proto, Ipv6Proto};
 
-use crate::context::{FilterBindingsContext, FilterBindingsTypes};
+use crate::context::FilterBindingsTypes;
 use crate::logic::FilterTimerId;
 use crate::packets::TransportPacketData;
 use netstack3_base::sync::Mutex;
@@ -135,8 +135,15 @@ where
     let _ = bindings_ctx.schedule_timer(GC_INTERVAL, timer);
 }
 
-impl<I: IpExt, E, BC: FilterBindingsContext> Table<I, E, BC> {
-    pub(crate) fn new<CC: CoreTimerContext<FilterTimerId<I>, BC>>(bindings_ctx: &mut BC) -> Self {
+impl<I, E, BC> Table<I, E, BC>
+where
+    I: IpExt,
+    BC: FilterBindingsTypes + TimerContext,
+{
+    pub(crate) fn new<CC>(bindings_ctx: &mut BC) -> Self
+    where
+        CC: CoreTimerContext<FilterTimerId<I>, BC>,
+    {
         Self {
             inner: Mutex::new(TableInner {
                 table: HashMap::new(),
@@ -151,11 +158,11 @@ impl<I: IpExt, E, BC: FilterBindingsContext> Table<I, E, BC> {
     }
 }
 
-impl<
+impl<I, E, BC> Table<I, E, BC>
+where
     I: IpExt,
     E: Default + Send + Sync + PartialEq + CompatibleWith + 'static,
-    BC: FilterBindingsContext,
-> Table<I, E, BC>
+    BC: FilterBindingsTypes + TimerContext,
 {
     /// Attempts to insert the `Connection` into the table.
     ///
@@ -325,7 +332,12 @@ impl<
     }
 }
 
-impl<I: IpExt, E: Default, BC: FilterBindingsContext> Table<I, E, BC> {
+impl<I, E, BC> Table<I, E, BC>
+where
+    I: IpExt,
+    E: Default,
+    BC: FilterBindingsTypes + TimerContext,
+{
     /// Returns a [`Connection`] for the packet's flow. If a connection does not
     /// currently exist, a new one is created.
     ///
@@ -420,7 +432,12 @@ impl<I: IpExt, E: Default, BC: FilterBindingsContext> Table<I, E, BC> {
     }
 }
 
-impl<I: IpExt, E: Inspectable, BT: FilterBindingsTypes> Inspectable for Table<I, E, BT> {
+impl<I, E, BT> Inspectable for Table<I, E, BT>
+where
+    I: IpExt,
+    E: Inspectable,
+    BT: FilterBindingsTypes,
+{
     fn record<Inspector: netstack3_base::Inspector>(&self, inspector: &mut Inspector) {
         let guard = self.inner.lock();
 
@@ -679,7 +696,11 @@ impl<I: IpExt, E, BT: FilterBindingsTypes> Connection<I, E, BT> {
     }
 }
 
-impl<I: IpExt, E, BC: FilterBindingsContext> Connection<I, E, BC> {
+impl<I, E, BC> Connection<I, E, BC>
+where
+    I: IpExt,
+    BC: FilterBindingsTypes + TimerContext,
+{
     fn update(
         &mut self,
         bindings_ctx: &BC,
@@ -929,7 +950,12 @@ impl<I: IpExt, E, BT: FilterBindingsTypes> ConnectionExclusive<I, E, BT> {
     }
 }
 
-impl<I: IpExt, E: Default, BC: FilterBindingsContext> ConnectionExclusive<I, E, BC> {
+impl<I, E, BC> ConnectionExclusive<I, E, BC>
+where
+    I: IpExt,
+    E: Default,
+    BC: FilterBindingsTypes + TimerContext,
+{
     pub(crate) fn from_deconstructed_packet(
         bindings_ctx: &BC,
         packet_metadata: &PacketMetadata<I>,
@@ -1877,7 +1903,7 @@ mod tests {
     ) where
         I: IpExt + TestIpExt,
         E: Debug + Default + Send + Sync + PartialEq + CompatibleWith + 'static,
-        BC: FilterBindingsContext,
+        BC: FilterBindingsTypes + TimerContext,
     {
         for i in entries {
             let (packet, reply_packet) = make_test_udp_packets(i);

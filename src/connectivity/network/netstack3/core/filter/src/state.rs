@@ -17,13 +17,13 @@ use derivative::Derivative;
 use net_types::ip::{GenericOverIp, Ip};
 use netstack3_base::{
     CoreTimerContext, Inspectable, InspectableValue, Inspector as _, MarkDomain,
-    MatcherBindingsTypes,
+    MatcherBindingsTypes, TimerContext,
 };
 use packet_formats::ip::IpExt;
 
 use crate::actions::MarkAction;
 use crate::conntrack::{self, ConnectionDirection};
-use crate::context::{FilterBindingsContext, FilterBindingsTypes};
+use crate::context::FilterBindingsTypes;
 use crate::logic::FilterTimerId;
 use crate::logic::nat::NatConfig;
 use crate::matchers::PacketMatcher;
@@ -471,7 +471,11 @@ pub struct State<I: IpExt, A, BT: FilterBindingsTypes> {
     pub nat_installed: OneWayBoolean,
 }
 
-impl<I: IpExt, A, BC: FilterBindingsContext> State<I, A, BC> {
+impl<I, A, BC> State<I, A, BC>
+where
+    I: IpExt,
+    BC: FilterBindingsTypes + TimerContext,
+{
     /// Create a new State.
     pub fn new<CC: CoreTimerContext<FilterTimerId<I>, BC>>(bindings_ctx: &mut BC) -> Self {
         Self {

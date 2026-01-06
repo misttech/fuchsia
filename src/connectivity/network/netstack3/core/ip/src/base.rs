@@ -572,7 +572,7 @@ where
 
 impl<
     I: IpLayerIpExt,
-    BC: FilterBindingsContext + TxMetadataBindingsTypes + IpRoutingBindingsTypes,
+    BC: FilterBindingsContext<CC::DeviceId> + TxMetadataBindingsTypes + IpRoutingBindingsTypes,
     CC: IpDeviceContext<I>
         + IpSocketHandler<I, BC>
         + IpStateContext<I, BC>
@@ -1101,7 +1101,7 @@ impl<DeviceId, BC: EventContext<RouterAdvertisementEvent<DeviceId>>> NdpBindings
 pub trait IpLayerBindingsContext<I: IpLayerIpExt, DeviceId>:
     InstantContext
     + EventContext<IpLayerEvent<DeviceId, I>>
-    + FilterBindingsContext
+    + FilterBindingsContext<DeviceId>
     + TxMetadataBindingsTypes
     + IpRoutingBindingsTypes
 {
@@ -1111,7 +1111,7 @@ impl<
     DeviceId,
     BC: InstantContext
         + EventContext<IpLayerEvent<DeviceId, I>>
-        + FilterBindingsContext
+        + FilterBindingsContext<DeviceId>
         + TxMetadataBindingsTypes
         + IpRoutingBindingsTypes,
 > IpLayerBindingsContext<I, DeviceId> for BC
@@ -1749,14 +1749,14 @@ pub trait IpLayerEgressContext<I, BC>:
     + ResourceCounterContext<Self::DeviceId, IpCounters<I>>
 where
     I: IpLayerIpExt,
-    BC: FilterBindingsContext + TxMetadataBindingsTypes,
+    BC: FilterBindingsContext<Self::DeviceId> + TxMetadataBindingsTypes,
 {
 }
 
 impl<I, BC, CC> IpLayerEgressContext<I, BC> for CC
 where
     I: IpLayerIpExt,
-    BC: FilterBindingsContext + TxMetadataBindingsTypes,
+    BC: FilterBindingsContext<CC::DeviceId> + TxMetadataBindingsTypes,
     CC: IpDeviceSendContext<I, BC, DeviceId: netstack3_base::InterfaceProperties<BC::DeviceClass>>
         + FilterHandlerProvider<I, BC>
         + ResourceCounterContext<Self::DeviceId, IpCounters<I>>,
@@ -2910,7 +2910,7 @@ pub(crate) fn send_ip_frame<I, CC, BC, S>(
 ) -> Result<(), IpSendFrameError<S>>
 where
     I: IpLayerIpExt,
-    BC: FilterBindingsContext + TxMetadataBindingsTypes,
+    BC: FilterBindingsContext<CC::DeviceId> + TxMetadataBindingsTypes,
     CC: IpLayerEgressContext<I, BC> + IpDeviceMtuContext<I> + IpDeviceAddressIdContext<I>,
     S: FragmentableIpSerializer<I, Buffer: BufferMut> + FilterIpPacket<I>,
 {
@@ -4675,7 +4675,7 @@ pub(crate) fn send_ip_packet_from_device<I, BC, CC, S>(
 ) -> Result<(), IpSendFrameError<S>>
 where
     I: IpLayerIpExt,
-    BC: FilterBindingsContext + TxMetadataBindingsTypes,
+    BC: FilterBindingsContext<CC::DeviceId> + TxMetadataBindingsTypes,
     CC: IpLayerEgressContext<I, BC> + IpDeviceEgressStateContext<I> + IpDeviceMtuContext<I>,
     S: TransportPacketSerializer<I>,
     S::Buffer: BufferMut,
@@ -4815,7 +4815,7 @@ pub(crate) mod testutil {
     impl<I, BC, S, Meta, DeviceId> FilterHandlerProvider<I, BC> for FakeCoreCtx<S, Meta, DeviceId>
     where
         I: AssignedAddrIpExt + FilterIpExt,
-        BC: FilterBindingsContext,
+        BC: FilterBindingsContext<DeviceId>,
         DeviceId: FakeStrongDeviceId + netstack3_base::InterfaceProperties<BC::DeviceClass>,
     {
         type Handler<'a>

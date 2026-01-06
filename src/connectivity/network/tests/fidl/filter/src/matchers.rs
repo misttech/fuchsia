@@ -9,6 +9,7 @@ use std::sync::Arc;
 
 use fidl_fuchsia_net_filter_ext::Matchers;
 use net_types::ip::{Ip, IpVersion};
+use netemul::TestInterface;
 use {
     fidl_fuchsia_ebpf as febpf, fidl_fuchsia_net_ext as fnet_ext,
     fidl_fuchsia_net_matchers as fnet_matchers, fidl_fuchsia_net_matchers_ext as fnet_matchers_ext,
@@ -21,7 +22,7 @@ use crate::ip_hooks::{
 pub(crate) trait MatcherState {
     /// If possible, verifies that the matcher was executed with the specified
     /// parameters.
-    fn verify_matched(&self, ip_version: IpVersion);
+    fn verify_matched(&self, interface: &TestInterface<'_>, ip_version: IpVersion);
 
     // If possible, verifies that the matcher was not executed.
     fn verify_not_matched(&self);
@@ -32,7 +33,7 @@ pub(crate) trait MatcherState {
 pub(crate) struct NoState;
 
 impl MatcherState for NoState {
-    fn verify_matched(&self, _ip_version: IpVersion) {}
+    fn verify_matched(&self, _interface: &TestInterface<'_>, _ip_version: IpVersion) {}
     fn verify_not_matched(&self) {}
 }
 
@@ -568,7 +569,7 @@ pub(crate) struct EbpfMatcherState {
 }
 
 impl MatcherState for EbpfMatcherState {
-    fn verify_matched(&self, ip_version: IpVersion) {
+    fn verify_matched(&self, interface: &TestInterface<'_>, ip_version: IpVersion) {
         let result = self.program.read_test_result();
         assert_eq!(
             result.ether_type,
@@ -577,6 +578,8 @@ impl MatcherState for EbpfMatcherState {
 
         // This may be either UDP or ICMP packet. Just make sure that the field was set.
         assert_ne!(result.ip_proto, 0);
+
+        assert_eq!(result.ifindex, u32::try_from(interface.id()).unwrap());
     }
 
     fn verify_not_matched(&self) {

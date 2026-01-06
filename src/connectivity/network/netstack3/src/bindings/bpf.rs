@@ -19,7 +19,7 @@ use log::{error, warn};
 use net_types::ip::IpVersion;
 use netstack3_core::device::DeviceId;
 use netstack3_core::filter::{
-    BindingsPacketMatcher, FilterIpExt, FilterIpPacket, SocketEgressFilterResult,
+    BindingsPacketMatcher, FilterIpExt, FilterIpPacket, Interfaces, SocketEgressFilterResult,
     SocketIngressFilterResult, SocketOpsFilter,
 };
 use netstack3_core::ip::{Mark, MarkDomain, Marks};
@@ -380,13 +380,27 @@ impl diagnostics_traits::InspectableValue for SocketFilterProgram {
     }
 }
 
-impl BindingsPacketMatcher for SocketFilterProgram {
-    fn matches<I: FilterIpExt, P: FilterIpPacket<I>>(&self, packet: &P) -> bool {
+impl<D> BindingsPacketMatcher<D> for SocketFilterProgram
+where
+    D: DeviceIfIndex,
+{
+    fn matches<I: FilterIpExt, P: FilterIpPacket<I>>(
+        &self,
+        packet: &P,
+        interfaces: Interfaces<'_, D>,
+    ) -> bool {
         trace_duration!(c"ebpf::packet_matcher");
 
         // TODO(https://fxbug.dev/455585276): Use actual socket info and ifindex.
         let socket_info = SocketInfo { socket_cookie: 0, socket_uid: None };
-        let ifindex = 0;
+
+        // `ifindex` field is set to either ingress or ingress interface index
+        // depending on the context. When executing forwarding hooks we have
+        // both ingress and egress interface. In this case `ifindex` is set to
+        // the ingress interface index.
+        let ifindex =
+            interfaces.ingress.or(interfaces.egress).map(|d| d.get_ifindex()).unwrap_or(0);
+
         let mut data_buffer = [0u8; SERIALIZED_HEAD_SIZE];
         let sk_buff =
             SkBuff::<'_, SocketFilterProgram>::from_ip_packet(packet, ifindex, &mut data_buffer);

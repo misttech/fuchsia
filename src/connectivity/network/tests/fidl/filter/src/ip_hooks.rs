@@ -1308,8 +1308,8 @@ where
         .await
     };
 
-    client_matcher.verify_matched(I::VERSION);
-    server_matcher.verify_matched(I::VERSION);
+    client_matcher.verify_matched(&net.client.interface, I::VERSION);
+    server_matcher.verify_matched(&net.server.interface, I::VERSION);
 
     // Prepend a rule that *drops* traffic of the same type to the incoming hook on
     // the client. This should still allow traffic to go from the client to the
@@ -1366,7 +1366,7 @@ where
     };
 
     // Packets should be dropped on the server side.
-    server_matcher.verify_matched(I::VERSION);
+    server_matcher.verify_matched(&net.server.interface, I::VERSION);
     client_matcher.verify_not_matched();
 
     // Remove all filtering rules; two-way connectivity should now be possible
@@ -1488,7 +1488,7 @@ async fn drop_outgoing<I: TestIpExt, M: MatcherDefinition>(
     };
 
     // The packets should be dropped on the client side.
-    client_matcher.verify_matched(I::VERSION);
+    client_matcher.verify_matched(&net.client.interface, I::VERSION);
     server_matcher.verify_not_matched();
 
     // Remove all filtering rules; two-way connectivity should now be possible
@@ -2180,7 +2180,7 @@ async fn drop_forwarded<I: RouterTestIpExt, M: MatcherDefinition>(name: &str, ma
         )
         .await
     };
-    matcher_state.verify_matched(I::VERSION);
+    matcher_state.verify_matched(&net.router_server_interface, I::VERSION);
 
     // Install a similar rule on the same hook, but which drops traffic from the
     // client to the server. This should result in neither host being able to
@@ -2192,7 +2192,7 @@ async fn drop_forwarded<I: RouterTestIpExt, M: MatcherDefinition>(name: &str, ma
             )
         })
         .await;
-    matcher_state.verify_matched(I::VERSION);
+    matcher_state.verify_matched(&net.router_client_interface, I::VERSION);
 
     // Remove all filtering rules; two-way connectivity should now be possible
     // again.

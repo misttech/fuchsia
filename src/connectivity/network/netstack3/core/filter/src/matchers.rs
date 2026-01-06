@@ -59,20 +59,32 @@ impl<P: PartialEq, T: MaybeTransportPacket> Matcher<(Option<P>, T)>
 }
 
 /// A trait for external matchers supplied by bindings.
-pub trait BindingsPacketMatcher {
+pub trait BindingsPacketMatcher<D> {
     /// Returns `true` if the packet matches.
-    fn matches<I: FilterIpExt, P: FilterIpPacket<I>>(&self, packet: &P) -> bool;
+    fn matches<I: FilterIpExt, P: FilterIpPacket<I>>(
+        &self,
+        packet: &P,
+        interfaces: Interfaces<'_, D>,
+    ) -> bool;
 }
 
-impl BindingsPacketMatcher for Never {
-    fn matches<I: FilterIpExt, P: FilterIpPacket<I>>(&self, _packet: &P) -> bool {
+impl<D> BindingsPacketMatcher<D> for Never {
+    fn matches<I: FilterIpExt, P: FilterIpPacket<I>>(
+        &self,
+        _packet: &P,
+        _interfaces: Interfaces<'_, D>,
+    ) -> bool {
         match *self {}
     }
 }
 
-impl<M: BindingsPacketMatcher> BindingsPacketMatcher for Arc<M> {
-    fn matches<I: FilterIpExt, P: FilterIpPacket<I>>(&self, packet: &P) -> bool {
-        self.as_ref().matches(packet)
+impl<D, M: BindingsPacketMatcher<D>> BindingsPacketMatcher<D> for Arc<M> {
+    fn matches<I: FilterIpExt, P: FilterIpPacket<I>>(
+        &self,
+        packet: &P,
+        interfaces: Interfaces<'_, D>,
+    ) -> bool {
+        self.as_ref().matches(packet, interfaces)
     }
 }
 
@@ -98,12 +110,17 @@ pub struct PacketMatcher<I: IpExt, BT: MatcherBindingsTypes> {
     pub external_matcher: Option<BT::BindingsPacketMatcher>,
 }
 
-impl<I: FilterIpExt, BT: FilterBindingsTypes> PacketMatcher<I, BT> {
-    pub(crate) fn matches<P: FilterIpPacket<I>, D: InterfaceProperties<BT::DeviceClass>>(
-        &self,
-        packet: &P,
-        interfaces: &Interfaces<'_, D>,
-    ) -> bool {
+impl<I, BT> PacketMatcher<I, BT>
+where
+    I: FilterIpExt,
+    BT: FilterBindingsTypes,
+{
+    pub(crate) fn matches<P, D>(&self, packet: &P, interfaces: Interfaces<'_, D>) -> bool
+    where
+        P: FilterIpPacket<I>,
+        D: InterfaceProperties<BT::DeviceClass>,
+        BT: FilterBindingsTypes<BindingsPacketMatcher: BindingsPacketMatcher<D>>,
+    {
         let Self {
             in_interface,
             out_interface,
@@ -115,12 +132,12 @@ impl<I: FilterIpExt, BT: FilterBindingsTypes> PacketMatcher<I, BT> {
         let Interfaces { ingress: in_if, egress: out_if } = interfaces;
 
         // If no fields are specified, match all traffic by default.
-        in_interface.required_matches(*in_if)
-            && out_interface.required_matches(*out_if)
+        in_interface.required_matches(in_if)
+            && out_interface.required_matches(out_if)
             && src_address.matches(&packet.src_addr())
             && dst_address.matches(&packet.dst_addr())
             && transport_protocol.matches(&(packet.protocol(), packet.maybe_transport_packet()))
-            && external_matcher.as_ref().map_or(true, |m| m.matches(packet))
+            && external_matcher.as_ref().map_or(true, |m| m.matches(packet, interfaces))
     }
 }
 
@@ -154,7 +171,7 @@ mod tests {
         assert_eq!(
             matcher.matches(
                 &FakeIpPacket::<Ipv4, FakeTcpSegment>::arbitrary_value(),
-                &Interfaces {
+                Interfaces {
                     ingress: Some(&FakeMatcherDeviceId::wlan_interface()),
                     egress: Some(&FakeMatcherDeviceId::wlan_interface())
                 },
@@ -164,7 +181,7 @@ mod tests {
         assert_eq!(
             matcher.matches(
                 &FakeIpPacket::<Ipv4, FakeTcpSegment>::arbitrary_value(),
-                &Interfaces {
+                Interfaces {
                     ingress: Some(&FakeMatcherDeviceId::ethernet_interface()),
                     egress: Some(&FakeMatcherDeviceId::ethernet_interface())
                 },
@@ -188,21 +205,21 @@ mod tests {
         assert_eq!(
             matcher.matches(
                 &FakeIpPacket::<Ipv4, FakeTcpSegment>::arbitrary_value(),
-                &Interfaces { ingress: None, egress: Some(&FakeMatcherDeviceId::wlan_interface()) },
+                Interfaces { ingress: None, egress: Some(&FakeMatcherDeviceId::wlan_interface()) },
             ),
             false
         );
         assert_eq!(
             matcher.matches(
                 &FakeIpPacket::<Ipv4, FakeTcpSegment>::arbitrary_value(),
-                &Interfaces { ingress: Some(&FakeMatcherDeviceId::wlan_interface()), egress: None },
+                Interfaces { ingress: Some(&FakeMatcherDeviceId::wlan_interface()), egress: None },
             ),
             false
         );
         assert_eq!(
             matcher.matches(
                 &FakeIpPacket::<Ipv4, FakeTcpSegment>::arbitrary_value(),
-                &Interfaces {
+                Interfaces {
                     ingress: Some(&FakeMatcherDeviceId::wlan_interface()),
                     egress: Some(&FakeMatcherDeviceId::wlan_interface())
                 },
@@ -265,7 +282,7 @@ mod tests {
             assert_ne!(
                 matcher.matches::<_, FakeMatcherDeviceId>(
                     &FakeIpPacket::<I, FakeTcpSegment>::arbitrary_value(),
-                    &Interfaces { ingress: None, egress: None },
+                    Interfaces { ingress: None, egress: None },
                 ),
                 invert
             );
@@ -276,7 +293,7 @@ mod tests {
                         dst_ip: I::IP_OUTSIDE_SUBNET,
                         body: FakeTcpSegment::arbitrary_value(),
                     },
-                    &Interfaces { ingress: None, egress: None },
+                    Interfaces { ingress: None, egress: None },
                 ),
                 invert
             );
@@ -343,7 +360,7 @@ mod tests {
         };
 
         matcher
-            .matches::<_, FakeMatcherDeviceId>(&packet, &Interfaces { ingress: None, egress: None })
+            .matches::<_, FakeMatcherDeviceId>(&packet, Interfaces { ingress: None, egress: None })
     }
 
     #[test_case(
@@ -397,7 +414,7 @@ mod tests {
                     },
                     ..ArbitraryValue::arbitrary_value()
                 },
-                &Interfaces { ingress: None, egress: None },
+                Interfaces { ingress: None, egress: None },
             ),
             expect_match
         );
@@ -418,7 +435,7 @@ mod tests {
                     body: FakeUdpPacket { src_port: src, dst_port: dst },
                     ..ArbitraryValue::arbitrary_value()
                 },
-                &Interfaces { ingress: None, egress: None },
+                Interfaces { ingress: None, egress: None },
             ),
             expect_match
         );
@@ -444,7 +461,7 @@ mod tests {
                     src_ip: I::IP_OUTSIDE_SUBNET,
                     ..ArbitraryValue::arbitrary_value()
                 },
-                &Interfaces { ingress: None, egress: None },
+                Interfaces { ingress: None, egress: None },
             ),
             false
         );
@@ -454,14 +471,14 @@ mod tests {
                     dst_ip: I::IP_OUTSIDE_SUBNET,
                     ..ArbitraryValue::arbitrary_value()
                 },
-                &Interfaces { ingress: None, egress: None },
+                Interfaces { ingress: None, egress: None },
             ),
             false
         );
         assert_eq!(
             matcher.matches::<_, FakeMatcherDeviceId>(
                 &FakeIpPacket::<_, FakeTcpSegment>::arbitrary_value(),
-                &Interfaces { ingress: None, egress: None },
+                Interfaces { ingress: None, egress: None },
             ),
             true
         );
@@ -473,7 +490,7 @@ mod tests {
             PacketMatcher::<Ipv4, FakeBindingsCtx<Ipv4>>::default()
                 .matches::<_, FakeMatcherDeviceId>(
                     &FakeIpPacket::<Ipv4, FakeTcpSegment>::arbitrary_value(),
-                    &Interfaces { ingress: None, egress: None },
+                    Interfaces { ingress: None, egress: None },
                 ),
             true
         );
@@ -490,7 +507,10 @@ mod tests {
             }
             .matches::<_, FakeMatcherDeviceId>(
                 &FakeIpPacket::<Ipv4, FakeTcpSegment>::arbitrary_value(),
-                &Interfaces { ingress: None, egress: None },
+                Interfaces {
+                    ingress: Some(&FakeMatcherDeviceId::ethernet_interface()),
+                    egress: None
+                },
             ),
             result
         );

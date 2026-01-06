@@ -169,7 +169,7 @@ pub trait IpBindingsContext<I: IpExt>:
     + RngContext
     + UdpBindingsContext<I, DeviceId<Self>>
     + TcpBindingsContext<DeviceId<Self>>
-    + FilterBindingsContext
+    + FilterBindingsContext<DeviceId<Self>>
     + SocketOpsFilterBindingContext<DeviceId<Self>>
     + IcmpBindingsContext
     + IcmpEchoBindingsContext<I, DeviceId<Self>>
@@ -192,7 +192,7 @@ where
         + RngContext
         + UdpBindingsContext<I, DeviceId<Self>>
         + TcpBindingsContext<DeviceId<Self>>
-        + FilterBindingsContext
+        + FilterBindingsContext<DeviceId<Self>>
         + SocketOpsFilterBindingContext<DeviceId<Self>>
         + IcmpBindingsContext
         + IcmpEchoBindingsContext<I, DeviceId<Self>>

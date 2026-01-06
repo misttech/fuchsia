@@ -21,12 +21,13 @@ use once_cell::sync::OnceCell;
 use packet_formats::ip::IpExt;
 use rand::Rng as _;
 
+use crate::FilterBindingsContext;
 use crate::actions::MarkAction;
 use crate::conntrack::{
     CompatibleWith, Connection, ConnectionDirection, ConnectionExclusive, Table, TransportProtocol,
     Tuple,
 };
-use crate::context::{FilterBindingsContext, FilterBindingsTypes, NatContext};
+use crate::context::{FilterBindingsTypes, NatContext};
 use crate::logic::{IngressVerdict, Interfaces, RoutineResult, Verdict};
 use crate::packets::{
     FilterIpExt, FilterIpPacket, IcmpErrorMut, IpPacket, MaybeIcmpErrorMut as _,
@@ -148,7 +149,7 @@ impl<I: IpExt, A: WeakIpAddressId<I::Addr>> CachedAddr<I, A> {
     ) -> Verdict
     where
         CC: NatContext<I, BT, WeakAddressId = A>,
-        BT: FilterBindingsContext,
+        BT: FilterBindingsTypes,
     {
         let Self { id, _marker } = self;
 
@@ -216,7 +217,7 @@ pub(crate) trait NatHook<I: FilterIpExt> {
     where
         P: FilterIpPacket<I>,
         CC: NatContext<I, BC>,
-        BC: FilterBindingsContext;
+        BC: FilterBindingsContext<CC::DeviceId>;
 
     /// Return the IP address that should be used for Redirect NAT in this NAT hook
     /// and, if applicable, a weakly-held reference to the address if it is assigned
@@ -296,7 +297,7 @@ impl<I: FilterIpExt> NatHook<I> for IngressHook {
     where
         P: FilterIpPacket<I>,
         CC: NatContext<I, BC>,
-        BC: FilterBindingsContext,
+        BC: FilterBindingsContext<CC::DeviceId>,
     {
         match result {
             RoutineResult::Accept | RoutineResult::Return => ControlFlow::Continue(()),
@@ -397,7 +398,7 @@ impl<I: FilterIpExt> NatHook<I> for LocalEgressHook {
     where
         P: FilterIpPacket<I>,
         CC: NatContext<I, BC>,
-        BC: FilterBindingsContext,
+        BC: FilterBindingsContext<CC::DeviceId>,
     {
         match result {
             RoutineResult::Accept | RoutineResult::Return => ControlFlow::Continue(()),
@@ -466,7 +467,7 @@ impl<I: FilterIpExt> NatHook<I> for LocalIngressHook {
     where
         P: IpPacket<I>,
         CC: NatContext<I, BC>,
-        BC: FilterBindingsContext,
+        BC: FilterBindingsContext<CC::DeviceId>,
     {
         match result {
             RoutineResult::Accept | RoutineResult::Return => ControlFlow::Continue(()),
@@ -527,7 +528,7 @@ impl<I: FilterIpExt> NatHook<I> for EgressHook {
     where
         P: FilterIpPacket<I>,
         CC: NatContext<I, BC>,
-        BC: FilterBindingsContext,
+        BC: FilterBindingsContext<CC::DeviceId>,
     {
         match result {
             RoutineResult::Accept | RoutineResult::Return => ControlFlow::Continue(()),
@@ -659,7 +660,7 @@ where
     I: FilterIpExt,
     P: FilterIpPacket<I>,
     CC: NatContext<I, BC>,
-    BC: FilterBindingsContext,
+    BC: FilterBindingsContext<CC::DeviceId>,
 {
     if !nat_installed {
         return Verdict::Accept(()).into();
@@ -818,11 +819,11 @@ where
     I: FilterIpExt,
     P: FilterIpPacket<I>,
     CC: NatContext<I, BC>,
-    BC: FilterBindingsContext,
+    BC: FilterBindingsContext<CC::DeviceId>,
 {
     let Hook { routines } = hook;
     for routine in routines {
-        let result = super::check_routine(&routine, packet, &interfaces, &mut NatMetadata {});
+        let result = super::check_routine(&routine, packet, interfaces, &mut NatMetadata {});
         match N::evaluate_result(core_ctx, bindings_ctx, table, conn, packet, &interfaces, result) {
             ControlFlow::Break(result) => return result,
             ControlFlow::Continue(()) => {}
@@ -847,7 +848,7 @@ where
     I: FilterIpExt,
     P: FilterIpPacket<I>,
     CC: NatContext<I, BC>,
-    BC: FilterBindingsContext,
+    BC: FilterBindingsContext<CC::DeviceId>,
 {
     match N::NAT_TYPE {
         NatType::Source => panic!("DNAT action called from SNAT-only hook"),
@@ -907,7 +908,7 @@ where
     I: FilterIpExt,
     P: FilterIpPacket<I>,
     CC: NatContext<I, BC>,
-    BC: FilterBindingsContext,
+    BC: FilterBindingsContext<CC::DeviceId>,
 {
     // Choose an appropriate new source address and, optionally, port. Then rewrite
     // the destination address/port of the reply tuple for the connection to use as
@@ -951,7 +952,7 @@ where
     }
 }
 
-fn configure_snat_port<I, A, BC>(
+fn configure_snat_port<I, A, BC, D>(
     bindings_ctx: &mut BC,
     table: &Table<I, NatConfig<I, A>, BC>,
     conn: &mut ConnectionExclusive<I, NatConfig<I, A>, BC>,
@@ -960,7 +961,7 @@ fn configure_snat_port<I, A, BC>(
 ) -> Verdict<NatConfigurationResult<I, A, BC>>
 where
     I: IpExt,
-    BC: FilterBindingsContext,
+    BC: FilterBindingsContext<D>,
     A: PartialEq,
 {
     // Rewrite the source port if necessary to avoid conflicting with existing
@@ -1030,7 +1031,7 @@ enum ConflictStrategy {
 /// Attempt to rewrite the indicated port of the reply tuple of the provided
 /// connection such that it results in a unique tuple, and, if
 /// `ensure_port_in_range` is `true`, also that it fits in the specified range.
-fn rewrite_reply_tuple_port<I: IpExt, BC: FilterBindingsContext, A: PartialEq>(
+fn rewrite_reply_tuple_port<I, A, BC, D>(
     bindings_ctx: &mut BC,
     table: &Table<I, NatConfig<I, A>, BC>,
     conn: &mut ConnectionExclusive<I, NatConfig<I, A>, BC>,
@@ -1038,7 +1039,12 @@ fn rewrite_reply_tuple_port<I: IpExt, BC: FilterBindingsContext, A: PartialEq>(
     port_range: RangeInclusive<NonZeroU16>,
     ensure_port_in_range: bool,
     conflict_strategy: ConflictStrategy,
-) -> Verdict<NatConfigurationResult<I, A, BC>> {
+) -> Verdict<NatConfigurationResult<I, A, BC>>
+where
+    I: IpExt,
+    A: PartialEq,
+    BC: FilterBindingsContext<D>,
+{
     // We only need to rewrite the port if the reply tuple of the connection
     // conflicts with another connection in the table, or if the port must be
     // rewritten to fall in the specified range.
@@ -1314,8 +1320,8 @@ mod tests {
     use assert_matches::assert_matches;
     use ip_test_macro::ip_test;
     use net_types::ip::{AddrSubnet, Ipv4};
-    use netstack3_base::IntoCoreTimerCtx;
     use netstack3_base::testutil::FakeMatcherDeviceId;
+    use netstack3_base::{IntoCoreTimerCtx, TimerContext};
     use packet::{EmptyBuf, PacketBuilder, Serializer};
     use packet_formats::ip::{IpPacketBuilder, IpProto};
     use packet_formats::udp::UdpPacketBuilder;
@@ -1348,7 +1354,11 @@ mod tests {
         }
     }
 
-    impl<I: FilterIpExt, A, BC: FilterBindingsContext> ConnectionExclusive<I, NatConfig<I, A>, BC> {
+    impl<I, A, BC> ConnectionExclusive<I, NatConfig<I, A>, BC>
+    where
+        BC: FilterBindingsTypes + TimerContext,
+        I: FilterIpExt,
+    {
         fn from_packet<P: IpPacket<I>>(bindings_ctx: &BC, packet: &P) -> Self {
             ConnectionExclusive::from_deconstructed_packet(
                 bindings_ctx,
@@ -1358,7 +1368,10 @@ mod tests {
         }
     }
 
-    impl<A, BC: FilterBindingsContext> ConnectionExclusive<Ipv4, NatConfig<Ipv4, A>, BC> {
+    impl<A, BC> ConnectionExclusive<Ipv4, NatConfig<Ipv4, A>, BC>
+    where
+        BC: FilterBindingsTypes + TimerContext,
+    {
         fn with_reply_tuple(bindings_ctx: &BC, which: ReplyTuplePort, port: u16) -> Self {
             Self::from_packet(bindings_ctx, &packet_with_port(which, port).reply())
         }

@@ -21,25 +21,26 @@ use crate::state::State;
 
 /// Trait defining required types for filtering provided by bindings.
 pub trait FilterBindingsTypes:
-    InstantBindingsTypes
-    + MatcherBindingsTypes<BindingsPacketMatcher: BindingsPacketMatcher>
-    + TimerBindingsTypes
-    + 'static
+    InstantBindingsTypes + MatcherBindingsTypes + TimerBindingsTypes + 'static
 {
 }
 
-impl<
-    BT: InstantBindingsTypes
-        + MatcherBindingsTypes<BindingsPacketMatcher: BindingsPacketMatcher>
-        + TimerBindingsTypes
-        + 'static,
-> FilterBindingsTypes for BT
+impl<BT: InstantBindingsTypes + MatcherBindingsTypes + TimerBindingsTypes + 'static>
+    FilterBindingsTypes for BT
 {
 }
 
 /// Trait aggregating functionality required from bindings.
-pub trait FilterBindingsContext: TimerContext + RngContext + FilterBindingsTypes {}
-impl<BC: TimerContext + RngContext + FilterBindingsTypes> FilterBindingsContext for BC {}
+pub trait FilterBindingsContext<D>:
+    TimerContext + RngContext + FilterBindingsTypes<BindingsPacketMatcher: BindingsPacketMatcher<D>>
+{
+}
+impl<D, BC> FilterBindingsContext<D> for BC
+where
+    BC: TimerContext + RngContext + FilterBindingsTypes,
+    BC::BindingsPacketMatcher: BindingsPacketMatcher<D>,
+{
+}
 
 /// The IP version-specific execution context for packet filtering.
 ///
@@ -209,7 +210,7 @@ pub(crate) mod testutil {
     use crate::logic::nat::NatConfig;
     use crate::state::validation::ValidRoutines;
     use crate::state::{IpRoutines, NatRoutines, OneWayBoolean, Routines};
-    use crate::{IpPacket, conntrack};
+    use crate::{Interfaces, conntrack};
 
     pub trait TestIpExt: FilterIpExt + AssignedAddrIpExt {}
 
@@ -487,8 +488,12 @@ pub(crate) mod testutil {
         }
     }
 
-    impl BindingsPacketMatcher for FakeBindingsPacketMatcher {
-        fn matches<I: FilterIpExt, P: IpPacket<I>>(&self, _packet: &P) -> bool {
+    impl BindingsPacketMatcher<FakeMatcherDeviceId> for FakeBindingsPacketMatcher {
+        fn matches<I: FilterIpExt, P: FilterIpPacket<I>>(
+            &self,
+            _packet: &P,
+            _interfaces: Interfaces<'_, FakeMatcherDeviceId>,
+        ) -> bool {
             let _: usize = self.num_calls.fetch_add(1, core::sync::atomic::Ordering::SeqCst);
             self.result
         }

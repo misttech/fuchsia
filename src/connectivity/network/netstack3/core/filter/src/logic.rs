@@ -7,6 +7,7 @@ pub(crate) mod nat;
 use core::num::NonZeroU16;
 use core::ops::RangeInclusive;
 
+use derivative::Derivative;
 use log::error;
 use net_types::ip::{GenericOverIp, Ip, IpVersionMarker};
 use netstack3_base::{
@@ -67,9 +68,15 @@ impl ProofOfEgressCheck {
     }
 }
 
-#[derive(Clone)]
-pub(crate) struct Interfaces<'a, D> {
+#[derive(Debug, Derivative)]
+#[derivative(Clone(bound = ""), Copy(bound = ""))]
+/// References to the ingress and egress interfaces for a packet.
+pub struct Interfaces<'a, D> {
+    /// The ingress interface if any. Not set if the packet was produced
+    /// locally.
     pub ingress: Option<&'a D>,
+    /// The egress interface if known. Not set if the the packet is being
+    /// delivered locally or has't been routed yet.
     pub egress: Option<&'a D>,
 }
 
@@ -152,20 +159,21 @@ fn apply_transparent_proxy<I: IpExt, P: MaybeTransportPacket>(
     RoutineResult::TransparentLocalDelivery { addr, port }
 }
 
-fn check_routine<I, P, D, BT: FilterBindingsTypes, M>(
-    Routine { rules }: &Routine<I, BT, ()>,
+fn check_routine<I, P, D, BC, M>(
+    Routine { rules }: &Routine<I, BC, ()>,
     packet: &P,
-    interfaces: &Interfaces<'_, D>,
+    interfaces: Interfaces<'_, D>,
     metadata: &mut M,
 ) -> RoutineResult<I>
 where
     I: FilterIpExt,
     P: FilterIpPacket<I>,
-    D: InterfaceProperties<BT::DeviceClass>,
+    D: InterfaceProperties<BC::DeviceClass>,
+    BC: FilterBindingsContext<D>,
     M: FilterMarkMetadata,
 {
     for Rule { matcher, action, validation_info: () } in rules {
-        if matcher.matches(packet, &interfaces) {
+        if matcher.matches(packet, interfaces) {
             match action {
                 Action::Accept => return RoutineResult::Accept,
                 Action::Return => return RoutineResult::Return,
@@ -206,8 +214,8 @@ where
     RoutineResult::Return
 }
 
-fn check_routines_for_hook<I, P, D, BT: FilterBindingsTypes, M>(
-    hook: &Hook<I, BT, ()>,
+fn check_routines_for_hook<I, P, D, BC, M>(
+    hook: &Hook<I, BC, ()>,
     packet: &P,
     interfaces: Interfaces<'_, D>,
     metadata: &mut M,
@@ -215,12 +223,13 @@ fn check_routines_for_hook<I, P, D, BT: FilterBindingsTypes, M>(
 where
     I: FilterIpExt,
     P: FilterIpPacket<I>,
-    D: InterfaceProperties<BT::DeviceClass>,
+    D: InterfaceProperties<BC::DeviceClass>,
+    BC: FilterBindingsContext<D>,
     M: FilterMarkMetadata,
 {
     let Hook { routines } = hook;
     for routine in routines {
-        match check_routine(&routine, packet, &interfaces, metadata) {
+        match check_routine(&routine, packet, interfaces, metadata) {
             RoutineResult::Accept | RoutineResult::Return => {}
             RoutineResult::Drop => return Verdict::Drop,
             result @ RoutineResult::TransparentLocalDelivery { .. } => {
@@ -236,8 +245,8 @@ where
     Verdict::Accept(())
 }
 
-fn check_routines_for_ingress<I, P, D, BT: FilterBindingsTypes, M>(
-    hook: &Hook<I, BT, ()>,
+fn check_routines_for_ingress<I, P, D, BC, M>(
+    hook: &Hook<I, BC, ()>,
     packet: &P,
     interfaces: Interfaces<'_, D>,
     metadata: &mut M,
@@ -245,12 +254,13 @@ fn check_routines_for_ingress<I, P, D, BT: FilterBindingsTypes, M>(
 where
     I: FilterIpExt,
     P: FilterIpPacket<I>,
-    D: InterfaceProperties<BT::DeviceClass>,
+    D: InterfaceProperties<BC::DeviceClass>,
+    BC: FilterBindingsContext<D>,
     M: FilterMarkMetadata,
 {
     let Hook { routines } = hook;
     for routine in routines {
-        match check_routine(&routine, packet, &interfaces, metadata) {
+        match check_routine(&routine, packet, interfaces, metadata) {
             RoutineResult::Accept | RoutineResult::Return => {}
             RoutineResult::Drop => return Verdict::Drop.into(),
             RoutineResult::TransparentLocalDelivery { addr, port } => {
@@ -358,7 +368,7 @@ where
 impl<I, BC, CC> FilterHandler<I, BC> for FilterImpl<'_, CC>
 where
     I: FilterIpExt,
-    BC: FilterBindingsContext,
+    BC: FilterBindingsContext<CC::DeviceId>,
     CC: FilterIpContext<I, BC>,
 {
     fn ingress_hook<P, M>(
@@ -686,8 +696,11 @@ pub enum FilterTimerId<I: Ip> {
     ConntrackGc(IpVersionMarker<I>),
 }
 
-impl<I: FilterIpExt, BC: FilterBindingsContext, CC: FilterIpContext<I, BC>> HandleableTimer<CC, BC>
-    for FilterTimerId<I>
+impl<I, BC, CC> HandleableTimer<CC, BC> for FilterTimerId<I>
+where
+    I: FilterIpExt,
+    BC: FilterBindingsContext<CC::DeviceId>,
+    CC: FilterIpContext<I, BC>,
 {
     fn handle(self, core_ctx: &mut CC, bindings_ctx: &mut BC, _: BC::UniqueTimerId) {
         match self {
@@ -737,7 +750,7 @@ pub mod testutil {
     impl<I, BC, DeviceId> FilterHandler<I, BC> for NoopImpl<DeviceId>
     where
         I: FilterIpExt + AssignedAddrIpExt,
-        BC: FilterBindingsContext,
+        BC: FilterBindingsTypes,
         DeviceId: FakeStrongDeviceId + InterfaceProperties<BC::DeviceClass>,
     {
         fn ingress_hook<P, M>(
@@ -865,7 +878,7 @@ mod tests {
             check_routine::<Ipv4, _, FakeMatcherDeviceId, FakeBindingsCtx<Ipv4>, _>(
                 &Routine { rules: Vec::new() },
                 &FakeIpPacket::<_, FakeTcpSegment>::arbitrary_value(),
-                &Interfaces { ingress: None, egress: None },
+                Interfaces { ingress: None, egress: None },
                 &mut NullMetadata {},
             ),
             RoutineResult::Return
@@ -886,7 +899,7 @@ mod tests {
             check_routine::<Ipv4, _, FakeMatcherDeviceId, FakeBindingsCtx<Ipv4>, _>(
                 &routine,
                 &FakeIpPacket::<_, FakeTcpSegment>::arbitrary_value(),
-                &Interfaces { ingress: None, egress: None },
+                Interfaces { ingress: None, egress: None },
                 &mut NullMetadata {},
             ),
             RoutineResult::Drop
@@ -994,7 +1007,7 @@ mod tests {
             check_routine::<Ipv4, _, FakeMatcherDeviceId, FakeBindingsCtx<Ipv4>, _>(
                 &routine,
                 &FakeIpPacket::<_, FakeTcpSegment>::arbitrary_value(),
-                &Interfaces { ingress: None, egress: None },
+                Interfaces { ingress: None, egress: None },
                 &mut NullMetadata {},
             ),
             RoutineResult::Accept
@@ -1019,7 +1032,7 @@ mod tests {
             check_routine::<Ipv4, _, FakeMatcherDeviceId, FakeBindingsCtx<Ipv4>, _>(
                 &routine,
                 &FakeIpPacket::<_, FakeTcpSegment>::arbitrary_value(),
-                &Interfaces { ingress: None, egress: None },
+                Interfaces { ingress: None, egress: None },
                 &mut NullMetadata {},
             ),
             RoutineResult::Accept
@@ -1134,7 +1147,7 @@ mod tests {
             check_routine::<Ipv4, _, FakeMatcherDeviceId, FakeBindingsCtx<Ipv4>, _>(
                 &routine,
                 &FakeIpPacket::<_, FakeTcpSegment>::arbitrary_value(),
-                &Interfaces { ingress: None, egress: None },
+                Interfaces { ingress: None, egress: None },
                 &mut NullMetadata {},
             ),
             RoutineResult::Drop
@@ -1158,7 +1171,7 @@ mod tests {
             check_routine::<Ipv4, _, FakeMatcherDeviceId, FakeBindingsCtx<Ipv4>, _>(
                 &routine,
                 &FakeIpPacket::<_, FakeTcpSegment>::arbitrary_value(),
-                &Interfaces { ingress: None, egress: None },
+                Interfaces { ingress: None, egress: None },
                 &mut NullMetadata {},
             ),
             RoutineResult::Accept
@@ -1182,7 +1195,7 @@ mod tests {
             check_routine::<Ipv4, _, FakeMatcherDeviceId, FakeBindingsCtx<Ipv4>, _>(
                 &routine,
                 &FakeIpPacket::<_, FakeTcpSegment>::arbitrary_value(),
-                &Interfaces { ingress: None, egress: None },
+                Interfaces { ingress: None, egress: None },
                 &mut NullMetadata {},
             ),
             RoutineResult::Drop
@@ -1203,7 +1216,7 @@ mod tests {
             check_routine::<Ipv4, _, FakeMatcherDeviceId, FakeBindingsCtx<Ipv4>, _>(
                 &routine,
                 &FakeIpPacket::<_, FakeTcpSegment>::arbitrary_value(),
-                &Interfaces { ingress: None, egress: None },
+                Interfaces { ingress: None, egress: None },
                 &mut NullMetadata {},
             ),
             RoutineResult::Return
