@@ -3627,3 +3627,21 @@
   ]
   submitted: '2025-09-26'
   reviewed: '2025-10-24'
+
+- name: 'RFC-0277'
+  title: 'Merging services and dictionaries'
+  short_description: 'Add aggregation features to dictionaries to make services redundant'
+  authors: ['cgonyeo@google.com']
+  file: '0277_merging_services_and_dictionaries.md'
+  area: ['Component Framework']
+  issue: ['465715632']
+  gerrit_change_id: ['1440168']
+  status: 'Accepted'
+  reviewers: [
+    'abarth@google.com',
+    'ecstone@google.com',
+    'ianloic@google.com',
+    'surajmalhotra@google.com',
+  ]
+  submitted: '2025-12-03'
+  reviewed: '2026-01-05'
