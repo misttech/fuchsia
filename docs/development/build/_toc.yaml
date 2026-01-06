@@ -17,10 +17,11 @@ toc:
 - title: "Build system"
   section:
   - include: /docs/development/build/build_system/_toc.yaml
+- title: "Software assembly"
+  section:
+  - include: /docs/development/build/software_assembly/_toc.yaml
 - title: "Advanced"
   section:
-  - title: "Use developer overrides for assembly of a Fuchsia product"
-    path: /docs/development/build/assembly_developer_overrides.md
   - title: "Bazel migration guidelines"
     path: /docs/development/build/bazel_migration_guidelines.md
   - title: "Build Clang toolchain"

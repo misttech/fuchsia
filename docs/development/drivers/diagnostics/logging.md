@@ -59,4 +59,4 @@ to view driver logs, see
 [viewing logs](/docs/development/diagnostics/logs/viewing.md).
 
 [diagnosticsConfig-ref]: /reference/assembly/DiagnosticsConfig
-[dev-overrides-docs]: /docs/development/build/assembly_developer_overrides.md
+[dev-overrides-docs]: /docs/development/build/software_assembly/developer_overrides.md

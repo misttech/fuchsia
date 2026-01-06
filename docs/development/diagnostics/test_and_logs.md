@@ -108,7 +108,7 @@ See also: [choosing severity for log records][choose-severity].
 
 [choose-severity]: /docs/development/diagnostics/logs/severity.md
 [syslog]: /docs/development/diagnostics/logs/README.md
-[assembly-overrides-doc]: /docs/development/build/assembly_developer_overrides.md
+[assembly-overrides-doc]: /docs/development/build/software_assembly/developer_overrides.md
 [component moniker]: /docs/reference/components/moniker.md
 [product-config-ref]: /reference/assembly/index.md
 [log-severity-docs]: /docs/development/diagnostics/logs/severity.md

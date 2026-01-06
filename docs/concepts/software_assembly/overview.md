@@ -53,6 +53,8 @@ or GN build rules to construct and use these inputs.
     compiled platform code that any Fuchsia product may want to use. The Fuchsia
     team releases the platform to
     [https://chrome-infra-packages.appspot.com/p/fuchsia/assembly/platform][cipd-platform].
+    To learn how to add to the platform, see the
+    [Codelab: Implementing a platform feature](/docs/development/build/software_assembly/implementing_platform_feature.md).
 
 *   The **product config** is produced by a developer defining the end-user
     experience. It may contain flags indicating which features of the platform to
@@ -60,6 +62,8 @@ or GN build rules to construct and use these inputs.
     resulting in assembly including the relevant fonts support from the platform.
     See [this reference][platform-flags] for all the available flags. The product
     config can additionally include custom code for building the user experience.
+    To learn more, see the
+    [Codelab: Defining and building a product bundle](/docs/development/build/software_assembly/product_bundle_codelab.md).
 
 *   The **board config** is produced by a developer supporting a particular
     hardware target. It includes all the necessary drivers to boot on that hardware.
@@ -71,6 +75,8 @@ or GN build rules to construct and use these inputs.
     hardware. The Fuchsia team maintains a small set of board configs and releases
     them to
     [https://chrome-infra-packages.appspot.com/p/fuchsia/assembly/boards][cipd-boards].
+    To learn more, see the
+    [Codelab: Defining a new board configuration](/docs/development/build/software_assembly/board_configuration_codelab.md).
 
 ## How Software Assembly is invoked {:#how-software-assembly-is-invoked}
 
@@ -203,4 +209,4 @@ polluting the git-tree using [developer overrides][developer-overrides].
 [ffx-product-bundle-create]: https://fuchsia.dev/reference/tools/sdk/ffx#ffx_product-bundle_create
 [size-check]: https://fuchsia.dev/reference/bazel_sdk/fuchsia_product_size_check
 [scrutiny]: https://fuchsia.dev/reference/bazel_sdk/fuchsia_scrutiny_config
-[developer-overrides]: /docs/development/build/assembly_developer_overrides.md
+[developer-overrides]: /docs/development/build/software_assembly/developer_overrides.md

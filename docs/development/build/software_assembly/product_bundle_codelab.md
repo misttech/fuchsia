@@ -365,7 +365,7 @@ To continue learning, you can:
 
 [assembly-concepts]: /docs/concepts/software_assembly/overview.md
 [bazel-concepts]: /docs/development/build/bazel_concepts/project_layout.md
-[board-config]: /docs/concepts/software_assembly/board_configuration_codelab.md
+[board-config]: /docs/development/build/software_assembly/board_configuration_codelab.md
 [products-dir]: https://cs.opensource.google/fuchsia/fuchsia/+/main:products
 [session-docs]: /docs/development/sessions/roles-and-responsibilities.md
 [platform-settings-docs]: https://fuchsia.dev/reference/assembly/PlatformSettings
