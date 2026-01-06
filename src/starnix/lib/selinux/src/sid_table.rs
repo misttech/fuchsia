@@ -3,7 +3,7 @@
 // found in the LICENSE file.
 
 use crate::policy::{Policy, SecurityContext, SecurityContextError};
-use crate::{FIRST_UNUSED_SID, InitialSid, SecurityId};
+use crate::{InitialSid, ReferenceInitialSid, SecurityId};
 
 use std::num::NonZeroU32;
 use std::sync::Arc;
@@ -37,34 +37,42 @@ impl SidTable {
     pub fn new(policy: Arc<Policy>) -> Self {
         Self::new_from(
             policy,
-            vec![Entry::Invalid { context_string: Vec::new() }; FIRST_UNUSED_SID as usize],
+            vec![
+                Entry::Invalid { context_string: Vec::new() };
+                ReferenceInitialSid::FirstUnused as usize
+            ],
         )
     }
 
     pub fn new_from_previous(policy: Arc<Policy>, previous: &Self) -> Self {
-        let mut new_entries =
-            vec![Entry::Invalid { context_string: Vec::new() }; FIRST_UNUSED_SID as usize];
+        let mut new_entries = vec![
+            Entry::Invalid { context_string: Vec::new() };
+            ReferenceInitialSid::FirstUnused as usize
+        ];
         new_entries.reserve(previous.entries.len());
 
         // Remap any existing Security Contexts to use Ids defined by the new policy.
         // TODO: https://fxbug.dev/330677360 - replace serialize/parse with an
         // efficient implementation.
-        new_entries.extend(previous.entries[FIRST_UNUSED_SID as usize..].iter().map(
-            |previous_entry| {
-                let serialized_context = match previous_entry {
-                    Entry::Valid { security_context } => {
-                        previous.policy.serialize_security_context(&security_context)
+        new_entries.extend(
+            previous.entries[ReferenceInitialSid::FirstUnused as usize..].iter().map(
+                |previous_entry| {
+                    let serialized_context = match previous_entry {
+                        Entry::Valid { security_context } => {
+                            previous.policy.serialize_security_context(&security_context)
+                        }
+                        Entry::Invalid { context_string } => context_string.clone(),
+                    };
+                    let context =
+                        policy.parse_security_context(serialized_context.as_slice().into());
+                    if let Ok(context) = context {
+                        Entry::Valid { security_context: context }
+                    } else {
+                        Entry::Invalid { context_string: serialized_context }
                     }
-                    Entry::Invalid { context_string } => context_string.clone(),
-                };
-                let context = policy.parse_security_context(serialized_context.as_slice().into());
-                if let Ok(context) = context {
-                    Entry::Valid { security_context: context }
-                } else {
-                    Entry::Invalid { context_string: serialized_context }
-                }
-            },
-        ));
+                },
+            ),
+        );
 
         Self::new_from(policy, new_entries)
     }
@@ -78,7 +86,7 @@ impl SidTable {
         &mut self,
         security_context: &SecurityContext,
     ) -> Result<SecurityId, SecurityContextError> {
-        let existing = &self.entries[FIRST_UNUSED_SID as usize..]
+        let existing = &self.entries[ReferenceInitialSid::FirstUnused as usize..]
             .iter()
             .position(|entry| match entry {
                 Entry::Valid { security_context: entry_security_context } => {
@@ -86,7 +94,9 @@ impl SidTable {
                 }
                 Entry::Invalid { .. } => false,
             })
-            .map(|slice_relative_index| slice_relative_index + (FIRST_UNUSED_SID as usize));
+            .map(|slice_relative_index| {
+                slice_relative_index + (ReferenceInitialSid::FirstUnused as usize)
+            });
         let index = if let Some(index) = existing {
             *index
         } else {
@@ -191,7 +201,7 @@ mod tests {
         let sid_count_before = sid_table.entries.len();
         let sid = sid_table.security_context_to_sid(&security_context).unwrap();
         assert_eq!(sid_table.entries.len(), sid_count_before + 1);
-        assert!(sid.0.get() >= FIRST_UNUSED_SID);
+        assert!(sid.0.get() >= ReferenceInitialSid::FirstUnused as u32);
     }
 
     #[test]
@@ -203,6 +213,6 @@ mod tests {
         let file_dynamic_sid =
             sid_table.security_context_to_sid(&file_initial_security_context.clone()).unwrap();
         assert_ne!(file_initial_sid.0.get(), file_dynamic_sid.0.get());
-        assert!(file_dynamic_sid.0.get() >= FIRST_UNUSED_SID);
+        assert!(file_dynamic_sid.0.get() >= ReferenceInitialSid::FirstUnused as u32);
     }
 }
