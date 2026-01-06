@@ -26,6 +26,7 @@ We'll use a `LeaseToken` because we've already talked about them and because
 they are easier to work with than `LeaseControl`.
 
 When X receives an interrupt it:
+
 * Calls `ActivityGovernor.AcquireWakeLease`
 * ACKs the interrupt
 * Does any processing on the event, maybe converting it to a new type
@@ -59,6 +60,7 @@ The protocol interlock is implemented by Y calling
 the event.
 
 The steps for this approach are:
+
 * X calls `ActivityGovernor.AcquireWakeLease`
 * ACKs the interrupt
 * X does any necessary processing on the event, maybe converting it to a new
