@@ -6,10 +6,10 @@ use crate::cli::format::{
     format_create_error, format_destroy_error, format_resolve_error, format_start_error,
 };
 use crate::lifecycle::{
-    create_instance_in_collection, destroy_instance_in_collection, resolve_instance,
-    start_instance, start_instance_with_args, ActionError, CreateError, DestroyError, StartError,
+    ActionError, CreateError, DestroyError, StartError, create_instance_in_collection,
+    destroy_instance_in_collection, resolve_instance, start_instance, start_instance_with_args,
 };
-use anyhow::{bail, format_err, Result};
+use anyhow::{Result, bail, format_err};
 #[allow(unused)]
 use flex_client::ProxyHasDomain;
 use flex_client::{HandleBased, Socket};
@@ -32,6 +32,8 @@ const TRANSFER_CHUNK_SIZE: usize = 8192;
 async fn copy<W: std::io::Write>(source: Socket, mut sink: W) -> Result<()> {
     #[cfg(not(feature = "fdomain"))]
     let mut source = fuchsia_async::Socket::from_socket(source);
+    #[cfg(feature = "fdomain")]
+    let mut source = source;
     let mut buf = [0u8; TRANSFER_CHUNK_SIZE];
     loop {
         let bytes_read = source.read(&mut buf).await?;
@@ -198,7 +200,10 @@ pub async fn run_cmd<W: std::io::Write>(
 
     match create_result {
         Err(CreateError::InstanceAlreadyExists) => {
-            bail!("\nError: {} already exists.\nUse --recreate to destroy and create a new instance, or provide a different moniker.\n", moniker)
+            bail!(
+                "\nError: {} already exists.\nUse --recreate to destroy and create a new instance, or provide a different moniker.\n",
+                moniker
+            )
         }
         Err(e) => {
             return Err(format_create_error(&moniker, &parent, collection, e));

@@ -109,7 +109,7 @@ async fn socket() {
     let mut buf = [0u8; TEST_STR.len()];
 
     while got.len() < TEST_STR.len() {
-        let new_bytes = b.read(&mut buf).await.unwrap();
+        let new_bytes = b.fdomain_read(&mut buf).await.unwrap();
         got.extend_from_slice(&buf[..new_bytes]);
     }
 
@@ -129,11 +129,11 @@ async fn datagram_socket() {
 
     let mut buf = [0u8; 2];
 
-    let new_bytes = b.read(&mut buf).await.unwrap();
+    let new_bytes = b.fdomain_read(&mut buf).await.unwrap();
     assert_eq!(new_bytes, 2);
     assert_eq!(&TEST_STR_1[..2], &buf);
 
-    let new_bytes = b.read(&mut buf).await.unwrap();
+    let new_bytes = b.fdomain_read(&mut buf).await.unwrap();
     assert_eq!(new_bytes, 2);
     assert_eq!(&TEST_STR_2[..2], &buf);
 }
@@ -153,11 +153,11 @@ async fn datagram_socket_underflow() {
         if TEST_STR_1.len() > TEST_STR_2.len() { TEST_STR_1.len() } else { TEST_STR_2.len() };
     let mut buf = [0u8; MAX_LEN * 2];
 
-    let new_bytes = b.read(&mut buf).await.unwrap();
+    let new_bytes = b.fdomain_read(&mut buf).await.unwrap();
     assert_eq!(new_bytes, TEST_STR_1.len());
     assert_eq!(TEST_STR_1, &buf[..TEST_STR_1.len()]);
 
-    let new_bytes = b.read(&mut buf).await.unwrap();
+    let new_bytes = b.fdomain_read(&mut buf).await.unwrap();
     assert_eq!(new_bytes, TEST_STR_2.len());
     assert_eq!(TEST_STR_2, &buf[..TEST_STR_2.len()]);
 }
@@ -200,7 +200,7 @@ async fn channel() {
     let mut buf = [0u8; TEST_STR_2.len()];
 
     while got.len() < TEST_STR_2.len() {
-        let new_bytes = e.read(&mut buf).await.unwrap();
+        let new_bytes = e.fdomain_read(&mut buf).await.unwrap();
         got.extend_from_slice(&buf[..new_bytes]);
     }
 
@@ -223,7 +223,7 @@ async fn socket_async() {
         let mut buf = [0u8; TEST_STR_A.len()];
 
         while got.len() < TEST_STR_A.len() {
-            let new_bytes = a.read(&mut buf).await.unwrap();
+            let new_bytes = a.fdomain_read(&mut buf).await.unwrap();
             got.extend_from_slice(&buf[..new_bytes]);
         }
 
@@ -251,12 +251,12 @@ async fn socket_async() {
 
         for mut buf in buf.chunks_mut(20) {
             while !buf.is_empty() {
-                let len = b_reader.read(buf).await.unwrap();
+                let len = b_reader.fdomain_read(buf).await.unwrap();
                 buf = &mut buf[len..];
             }
         }
 
-        let err = b_reader.read(&mut [0]).await.unwrap_err();
+        let err = b_reader.fdomain_read(&mut [0]).await.unwrap_err();
         let Error::Transport(Some(err)) = err else { panic!("Wrong error type!") };
 
         let TestError(err) = err.get_ref().unwrap().downcast_ref().unwrap();
@@ -286,9 +286,9 @@ async fn socket_drop_read_fut() {
     let mut buf3 = [0u8; 2];
 
     let (a, b) = client.create_stream_socket();
-    let mut fut1 = b.read(&mut buf1);
-    let mut fut2 = b.read(&mut buf2);
-    let mut fut3 = b.read(&mut buf3);
+    let mut fut1 = b.fdomain_read(&mut buf1);
+    let mut fut2 = b.fdomain_read(&mut buf2);
+    let mut fut3 = b.fdomain_read(&mut buf3);
 
     let mut null_cx = std::task::Context::from_waker(futures::task::noop_waker_ref());
     assert!(fut1.poll_unpin(&mut null_cx).is_pending());
@@ -556,7 +556,7 @@ async fn client_drop_socket_read() {
     let weak_client = Arc::downgrade(&client);
     let task = fuchsia_async::Task::spawn(async move {
         let mut buf = [0u8; 2];
-        let mut fut = b.read(&mut buf);
+        let mut fut = b.fdomain_read(&mut buf);
         futures::future::poll_fn(move |cx| {
             let res = fut.poll_unpin(cx);
 

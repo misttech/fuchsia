@@ -37,7 +37,10 @@ impl SocketDisposition {
 
 impl Socket {
     /// Read up to the given buffer's length from the socket.
-    pub fn read<'a>(&self, buf: &'a mut [u8]) -> impl Future<Output = Result<usize, Error>> + 'a {
+    pub fn fdomain_read<'a>(
+        &self,
+        buf: &'a mut [u8],
+    ) -> impl Future<Output = Result<usize, Error>> + 'a {
         let client = Arc::downgrade(&self.0.client());
         let handle = self.0.proto();
 
@@ -124,8 +127,28 @@ pub struct SocketReadStream(Arc<Socket>);
 
 impl SocketReadStream {
     /// Read from the socket into the supplied buffer. Returns the number of bytes read.
-    pub async fn read(&mut self, buf: &mut [u8]) -> Result<usize, Error> {
-        self.0.read(buf).await
+    pub async fn fdomain_read(&mut self, buf: &mut [u8]) -> Result<usize, Error> {
+        self.0.fdomain_read(buf).await
+    }
+}
+
+impl futures::AsyncRead for SocketReadStream {
+    fn poll_read(
+        self: Pin<&mut Self>,
+        cx: &mut Context<'_>,
+        buf: &mut [u8],
+    ) -> Poll<std::io::Result<usize>> {
+        convert_poll_res_to_async_read(self.0.poll_socket(cx, buf))
+    }
+}
+
+impl futures::AsyncRead for &SocketReadStream {
+    fn poll_read(
+        self: Pin<&mut Self>,
+        cx: &mut Context<'_>,
+        buf: &mut [u8],
+    ) -> Poll<std::io::Result<usize>> {
+        convert_poll_res_to_async_read(self.0.poll_socket(cx, buf))
     }
 }
 
