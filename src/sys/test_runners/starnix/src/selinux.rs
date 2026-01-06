@@ -118,7 +118,7 @@ fn report_result(
 ) -> Result<(), Error> {
     let (_, std_handles) = helpers::create_numbered_handles();
 
-    test.name = test.name.map(|name| format!("{name}/{index}"));
+    test.name = test.name.map(|name| format!("{name}/{:03}", index));
 
     let (case_listener_proxy, case_listener) = create_proxy::<ftest::CaseListenerMarker>();
 
