@@ -213,7 +213,7 @@ impl std::ops::Rem for [< $t:upper Range>] {
             return self;
         }
         let min = 0;
-        let max = std::cmp::min(self.max, rhs.max - 1);
+        let max = if rhs.min == 0 { self.max } else { std::cmp::min(self.max, rhs.max - 1) };
         Self { min, max }
     }
 }

@@ -1154,6 +1154,9 @@ impl Stack {
     }
 
     fn load(&self, offset: StackOffset, width: DataWidth) -> Result<Type, String> {
+        if !offset.is_valid() {
+            return Err("out of bounds load".to_string());
+        }
         if offset.array_index() >= STACK_MAX_INDEX {
             return Err("out of bounds load".to_string());
         }
