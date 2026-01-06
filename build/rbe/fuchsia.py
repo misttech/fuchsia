@@ -403,7 +403,7 @@ def _force_target_runtime_libdirs_b354016617(
         clangrt_lib = "clang_rt.builtins.lib"
         cxx_lib = "libc++.lib"
     else:
-        clangrt_lib = "clang_rt.builtins.a"
+        clangrt_lib = "libclang_rt.builtins.a"
         cxx_lib = "libc++.a"
 
     yield libclang_target_dir / clangrt_lib

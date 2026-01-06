@@ -170,7 +170,7 @@ class RemoteClangCompilerToolchainInputsTests(unittest.TestCase):
                 self._fake_clangdir
                 / "lib"
                 / self._fake_target
-                / "clang_rt.builtins.a",
+                / "libclang_rt.builtins.a",
             ],
         )
         mock_clangdir.assert_called_with(self._fake_path)
