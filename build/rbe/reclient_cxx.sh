@@ -211,8 +211,11 @@ fi
 for opt in "${local_compile_cmd[@]}"
 do
   case "$opt" in
+    # use Python wrapper to wrangle such forwarding flags
+    --remote-inputs | --remote-inputs=* | \
+    --remote-outputs | --remote-outputs=* | \
+    --remote-output-dirs | --remote-output-dirs=* | \
     --remote-flag | --remote-flag=* )
-      # use Python wrapper to wrangle such forwarding flags
       use_py_wrapper=1
       ;;
   esac
