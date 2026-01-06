@@ -32,6 +32,7 @@ class TestSymtab {
 
   TestSymtab& AddSymbol(std::string_view name, Addr value, Addr size, elfldltl::ElfSymBind bind,
                         elfldltl::ElfSymType type, Half shndx) {
+    assert(!symtab_.empty());
     Sym sym{};
     sym.name = AddString(name);
     sym.value = value;
@@ -52,7 +53,7 @@ class TestSymtab {
   std::string_view strtab() const { return strtab_; }
 
  private:
-  std::vector<Sym> symtab_{{}};
+  std::vector<Sym> symtab_{1};  // symtab_.front() is always the all-zero entry.
   std::string strtab_{'\0', 1};
 };
 
@@ -64,14 +65,22 @@ inline constexpr elfldltl::SymbolName kFooSymbol("foo"sv);
 inline constexpr elfldltl::SymbolName kBarSymbol("bar"sv);
 inline constexpr elfldltl::SymbolName kNotFoundSymbol("NotFound"sv);
 
+inline constexpr uint32_t kQuuxAddress = 0x100, kQuuxSize = 0x20;
+inline constexpr uint32_t kFooAddress = 0x200, kFooSize = 0x100;
+inline constexpr uint32_t kBarAddress = 0x400, kBarSize = 0x200;
+inline constexpr uint32_t kFoobarAddress = 0x500, kFoobarSize = 0;
+
 template <class Elf>
 inline const auto kTestSymbols =
     TestSymtab<Elf>()
-        .AddSymbol(kQuuxSymbol, 0, 0, elfldltl::ElfSymBind::kGlobal, elfldltl::ElfSymType::kFunc, 0)
-        .AddSymbol(kFooSymbol, 1, 1, elfldltl::ElfSymBind::kGlobal, elfldltl::ElfSymType::kFunc, 1)
-        .AddSymbol(kBarSymbol, 2, 1, elfldltl::ElfSymBind::kGlobal, elfldltl::ElfSymType::kFunc, 1)
-        .AddSymbol(kFoobarSymbol, 3, 1, elfldltl::ElfSymBind::kGlobal, elfldltl::ElfSymType::kFunc,
-                   1);
+        .AddSymbol(kQuuxSymbol, kQuuxAddress, kQuuxSize, elfldltl::ElfSymBind::kGlobal,
+                   elfldltl::ElfSymType::kFunc, 0)  // SHN_UNDEF a la PLT entry
+        .AddSymbol(kFooSymbol, kFooAddress, kFooSize, elfldltl::ElfSymBind::kGlobal,
+                   elfldltl::ElfSymType::kFunc, 1)
+        .AddSymbol(kBarSymbol, kBarAddress, kBarSize, elfldltl::ElfSymBind::kWeak,
+                   elfldltl::ElfSymType::kFunc, 1)
+        .AddSymbol(kFoobarSymbol, kFoobarAddress, kFoobarSize, elfldltl::ElfSymBind::kGlobal,
+                   elfldltl::ElfSymType::kNoType, 1);
 
 // There is always a null entry at index 0, which is counted in the size.
 constexpr size_t kTestSymbolCount = 5;

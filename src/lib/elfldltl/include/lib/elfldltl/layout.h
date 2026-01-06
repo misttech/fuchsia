@@ -164,6 +164,34 @@ struct SymBase {
   constexpr bool runtime_local() const {
     return bind() == ElfSymBind::kLocal || visibility() > ElfSymVisibility::kDefault;
   }
+
+  // True if the symbol is visible outside the module for dynamic linking.
+  constexpr bool is_public() const {
+    if (bind() == ElfSymBind::kLocal) {
+      return false;
+    }
+    switch (visibility()) {
+      case ElfSymVisibility::kDefault:
+      case ElfSymVisibility::kProtected:
+        break;
+
+        // These are supposed to cause the static linker to convert the symbol
+        // to STB_LOCAL, but historically there have been linker bugs.
+      case ElfSymVisibility::kInternal:
+      case ElfSymVisibility::kHidden:
+        return false;
+    }
+    return true;
+  }
+
+  // True if the symbol's value field is a vaddr (after load bias).
+  constexpr bool has_vaddr() const {
+    const Sym& sym = *static_cast<const Sym*>(this);
+    // TLS symbols don't have a vaddr; their value is a PT_TLS segment offset.
+    // Most undefined symbols don't have a vaddr; their value is just zero.
+    // But PLT entries are undefined symbols with their own vaddr.
+    return sym.type() != ElfSymType::kTls && (sym.shndx != 0 || sym.value != 0);
+  }
 };
 
 // Some header layouts vary by ElfClass, i.e. address size used in ELF

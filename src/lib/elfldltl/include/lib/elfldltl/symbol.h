@@ -287,6 +287,34 @@ class SymbolInfo {
     return nullptr;
   }
 
+  // Find the "best" public symbol to describe the given address in the module.
+  // Returns nullptr if no suitable symbol was found, or else a pointer into
+  // symtab() to an element whose value..size range contains vaddr.
+  constexpr const Sym* LookupVaddr(size_type vaddr) const {
+    // The symbols are not ordered by st_value, so this must do an exhaustive
+    // search of every symbol to find the best one.
+    const Sym* best = nullptr;
+    OnSymbols([vaddr, &best](const Sym& sym) {
+      if (sym.has_vaddr() && sym.is_public() && vaddr >= sym.value &&
+          // It's a public symbol and its vaddr is not below the target.
+          ((sym.shndx == 0 || sym.size == 0)
+               // PLT entries (SHN_UNDEF) and sizeless symbols (assembly
+               // labels) must match the vaddr exactly.
+               ? (vaddr == sym.value)
+               // Other symbols match if the vaddr fits within the size.
+               : (vaddr - sym.value < sym.size)) &&
+          // It's a match, so it's the best so far either if it's the first
+          // match or if it's better than the best so far.  It's a better match
+          // than another symbol whose vaddr is lower.  So an exact match for a
+          // sizeless label inside a larger function wins.
+          (!best || best->value < sym.value)) {
+        best = &sym;
+      }
+      return true;
+    });
+    return best;
+  }
+
   // This returns a std::forward_range of const Sym& elements enumerating all
   // the symbols referenced by the hash table.
   template <class HashTable>

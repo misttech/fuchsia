@@ -75,15 +75,15 @@ TYPED_TEST(ElfldltlSymbolTests, LookupCompatHash) {
 
   const auto* foo = kFooSymbol.Lookup(si);
   ASSERT_NE(foo, nullptr);
-  EXPECT_EQ(foo->value(), 1u);
+  EXPECT_EQ(foo->value(), kFooAddress);
 
   const auto* bar = kBarSymbol.Lookup(si);
   ASSERT_NE(bar, nullptr);
-  EXPECT_EQ(bar->value(), 2u);
+  EXPECT_EQ(bar->value(), kBarAddress);
 
   const auto* foobar = kFoobarSymbol.Lookup(si);
   ASSERT_NE(foobar, nullptr);
-  EXPECT_EQ(foobar->value(), 3u);
+  EXPECT_EQ(foobar->value(), kFoobarAddress);
 }
 
 TYPED_TEST(ElfldltlSymbolTests, LookupGnuHash) {
@@ -99,15 +99,15 @@ TYPED_TEST(ElfldltlSymbolTests, LookupGnuHash) {
 
   const auto* foo = kFooSymbol.Lookup(si);
   ASSERT_NE(foo, nullptr);
-  EXPECT_EQ(foo->value(), 1u);
+  EXPECT_EQ(foo->value(), kFooAddress);
 
   const auto* bar = kBarSymbol.Lookup(si);
   ASSERT_NE(bar, nullptr);
-  EXPECT_EQ(bar->value(), 2u);
+  EXPECT_EQ(bar->value(), kBarAddress);
 
   const auto* foobar = kFoobarSymbol.Lookup(si);
   ASSERT_NE(foobar, nullptr);
-  EXPECT_EQ(foobar->value(), 3u);
+  EXPECT_EQ(foobar->value(), kFoobarAddress);
 }
 
 // The enumeration tests use the same symbol table with both flavors of hash
@@ -116,7 +116,10 @@ TYPED_TEST(ElfldltlSymbolTests, LookupGnuHash) {
 template <class Elf>
 struct CompatHash {
   using Table = typename elfldltl::CompatHash<Elf>;
-  static Table Get(const elfldltl::SymbolInfo<Elf>& si) { return *si.compat_hash(); }
+  static constexpr void SetInfo(elfldltl::SymbolInfo<Elf>& si) {
+    si.set_compat_hash(kTestCompatHash<typename Elf::Word>);
+  }
+  static constexpr Table Get(const elfldltl::SymbolInfo<Elf>& si) { return *si.compat_hash(); }
   static constexpr std::string_view kNames[] = {
       "bar",
       "foo",
@@ -128,7 +131,10 @@ struct CompatHash {
 template <class Elf>
 struct GnuHash {
   using Table = typename elfldltl::GnuHash<Elf>;
-  static Table Get(const elfldltl::SymbolInfo<Elf>& si) { return *si.gnu_hash(); }
+  static constexpr void SetInfo(elfldltl::SymbolInfo<Elf>& si) {
+    si.set_gnu_hash(kTestGnuHash<typename Elf::Addr>);
+  }
+  static constexpr Table Get(const elfldltl::SymbolInfo<Elf>& si) { return *si.gnu_hash(); }
   static constexpr std::string_view kNames[] = {
       // The DT_GNU_HASH table omits the undefined symbols.
       "bar",
@@ -143,8 +149,7 @@ void EnumerateHashTable() {
 
   elfldltl::SymbolInfo<Elf> si;
   kTestSymbols<Elf>.SetInfo(si);
-  si.set_compat_hash(kTestCompatHash<typename Elf::Word>);
-  si.set_gnu_hash(kTestGnuHash<typename Elf::Addr>);
+  HashTable<Elf>::SetInfo(si);
   const auto hash_table = HashTable<Elf>::Get(si);
 
   // Collect all the symbols in a set that doesn't remove duplicates.
@@ -201,6 +206,57 @@ TYPED_TEST(ElfldltlSymbolTests, OnSymbols) {
         << "symbols from DT_GNU_HASH";
     ;
   }
+}
+
+template <class Elf, template <class ElfLayout> class HashTable>
+void LookupVaddrTest() {
+  using SymbolInfo = elfldltl::SymbolInfo<Elf>;
+  using Sym = Elf::Sym;
+
+  SymbolInfo si;
+  kTestSymbols<Elf>.SetInfo(si);
+  HashTable<Elf>::SetInfo(si);
+
+  auto sym_name = [&si](const Sym* sym) -> std::string_view {
+    if (!sym) {
+      return "<no symbol found>"sv;
+    };
+    std::string_view name = si.string(sym->name);
+    if (name.empty()) {
+      return "<invalid st_name>"sv;
+    }
+    return name;
+  };
+
+  // This is below the lowest symbol address.
+  EXPECT_EQ(sym_name(si.LookupVaddr(0x050)), "<no symbol found>"sv);
+
+  // This is exactly the quux symbol, and not in the range of any other symbol.
+  // Even though it's an SHN_UNDEF symbol, it's got a nonzero value/size and so
+  // could be a PLT entry and thus will be considered--but only in DT_HASH!  In
+  // DT_GNU_HASH, _all_ SHN_UNDEF symbols are omitted.  Since the hash table is
+  // the only (safe and efficient) means of enumerating the whole symbol table,
+  // the PLT entries won't be seen.
+  if constexpr (std::same_as<HashTable<Elf>, GnuHash<Elf>>) {
+    EXPECT_EQ(sym_name(si.LookupVaddr(kQuuxAddress)), "<no symbol found>"sv);
+  } else {
+    EXPECT_EQ(sym_name(si.LookupVaddr(kQuuxAddress)), "quux"sv);
+  }
+
+  // Somewhere in the middle of the foo symbol's size range.
+  EXPECT_EQ(sym_name(si.LookupVaddr(kFooAddress + 0x10)), "foo"sv);
+
+  // The foobar symbol size range is wholly inside the bar symbol's size range,
+  // but an exact match will prefer it.
+  EXPECT_EQ(sym_name(si.LookupVaddr(kFoobarAddress)), "foobar"sv);
+}
+
+TYPED_TEST(ElfldltlSymbolTests, LookupVaddrCompatHash) {
+  LookupVaddrTest<typename TestFixture::Elf, CompatHash>();
+}
+
+TYPED_TEST(ElfldltlSymbolTests, LookupVaddrGnuHash) {
+  LookupVaddrTest<typename TestFixture::Elf, GnuHash>();
 }
 
 TYPED_TEST(ElfldltlSymbolTests, SymbolInfoForSingleLookup) {
