@@ -52,7 +52,6 @@ if (use_bringup_assembly) {
     # this pulls in all the image dependencies we need.
     deps = input_partition_labels + [
              ":$input_images_json",
-             "//build/images/archive:paver-script",
              "//tools/vboot_reference:cgpt_host",
            ]
 
