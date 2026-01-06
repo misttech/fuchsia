@@ -9,9 +9,17 @@ if (is_host) {
     tests = [ "discover_migration_candidates_test.py" ]
     inputs = [ "discover_migration_candidates.py" ]
   }
+
+  python_build_time_tests("shell_utils_test") {
+    tests = [ "shell_utils_test.py" ]
+    inputs = [ "shell_utils.py" ]
+  }
 }
 
 group("tests") {
   testonly = true
-  deps = [ ":discover_migration_candidates_test($host_toolchain)" ]
+  deps = [
+    ":discover_migration_candidates_test($host_toolchain)",
+    ":shell_utils_test($host_toolchain)",
+  ]
 }
