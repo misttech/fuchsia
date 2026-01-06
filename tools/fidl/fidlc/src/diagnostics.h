@@ -289,8 +289,9 @@ constexpr WarningDef<145, std::string_view, std::string_view> WarnAttributeTypo(
 constexpr ErrorDef<146> ErrInvalidGeneratedName("generated name must be a valid identifier");
 constexpr ErrorDef<147> ErrAvailableMissingArguments(
     "at least one argument is required: 'added', 'deprecated', or 'removed'");
-constexpr ErrorDef<148> ErrNoteWithoutDeprecation(
-    "the @available  argument 'note' cannot be used without 'deprecated'");
+constexpr ErrorDef<148> ErrNoteWithoutDeprecationOrRemoval(
+    "the @available argument 'note' cannot be used without 'deprecated', 'removed', or "
+    "'replaced'");
 constexpr ErrorDef<149> ErrPlatformNotOnLibrary(
     "the @available argument 'platform' can only be used on the library's @available attribute");
 constexpr ErrorDef<150> ErrLibraryAvailabilityMissingAdded(
@@ -609,7 +610,7 @@ static constexpr const DiagnosticDef *kAllDiagnosticDefs[] = {
     /* fi-0145 */ &WarnAttributeTypo,
     /* fi-0146 */ &ErrInvalidGeneratedName,
     /* fi-0147 */ &ErrAvailableMissingArguments,
-    /* fi-0148 */ &ErrNoteWithoutDeprecation,
+    /* fi-0148 */ &ErrNoteWithoutDeprecationOrRemoval,
     /* fi-0149 */ &ErrPlatformNotOnLibrary,
     /* fi-0150 */ &ErrLibraryAvailabilityMissingAdded,
     /* fi-0151 */ &ErrMissingLibraryAvailability,

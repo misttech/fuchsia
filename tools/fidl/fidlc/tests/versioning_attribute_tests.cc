@@ -418,11 +418,38 @@ protocol Foo {
   ASSERT_COMPILER_DIAGNOSTICS(library);
 }
 
-TEST(VersioningAttributeTests, BadNoteWithoutDeprecation) {
+TEST(VersioningAttributeTests, GoodNoteWithRemoved) {
+  TestLibrary library(R"FIDL(
+@available(added=1)
+library example;
+
+@available(added=1, removed=2, note="use xyz instead")
+type Foo = struct {};
+)FIDL");
+  library.SelectVersion("example", "1");
+  ASSERT_COMPILED(library);
+}
+
+TEST(VersioningAttributeTests, GoodNoteWithReplaced) {
+  TestLibrary library(R"FIDL(
+@available(added=1)
+library example;
+
+@available(added=1, replaced=2, note="use xyz instead")
+type Foo = struct {};
+
+@available(added=2)
+type Foo = struct {};
+)FIDL");
+  library.SelectVersion("example", "1");
+  ASSERT_COMPILED(library);
+}
+
+TEST(VersioningAttributeTests, BadNoteWithoutDeprecationRemovedOrReplaced) {
   TestLibrary library;
   library.AddFile("bad/fi-0148.test.fidl");
   library.SelectVersion("test", "HEAD");
-  library.ExpectFail(ErrNoteWithoutDeprecation);
+  library.ExpectFail(ErrNoteWithoutDeprecationOrRemoval);
   ASSERT_COMPILER_DIAGNOSTICS(library);
 }
 

@@ -168,8 +168,8 @@ void AvailabilityStep::CompileAvailabilityFromAttribute(Element* element, Attrib
   if (!is_library && attribute->args.empty()) {
     reporter()->Fail(ErrAvailableMissingArguments, attribute->span);
   }
-  if (note && !deprecated) {
-    reporter()->Fail(ErrNoteWithoutDeprecation, attribute->span);
+  if (note && !deprecated && !removed && !replaced) {
+    reporter()->Fail(ErrNoteWithoutDeprecationOrRemoval, attribute->span);
   }
 
   // These errors block further analysis because we don't know what's intended,
