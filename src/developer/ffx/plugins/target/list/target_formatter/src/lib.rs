@@ -110,6 +110,7 @@ impl TryFrom<(Format, AddressTypes, Vec<TargetInfo>)> for Box<dyn TargetFormatte
             Format::Tabular => Box::new(TabularTargetFormatter::try_from(targets)?),
             Format::Simple => Box::new(SimpleTargetFormatter::try_from(targets)?),
             Format::Addresses => Box::new(AddressesTargetFormatter::try_from(targets)?),
+            Format::Serials => Box::new(SerialsTargetFormatter::try_from(targets)?),
             Format::NameOnly => Box::new(NameOnlyTargetFormatter::try_from(targets)?),
             Format::Json => Box::new(JsonTargetFormatter::try_from(targets)?),
         })
@@ -153,6 +154,38 @@ impl TryFrom<Vec<TargetInfo>> for AddressesTargetFormatter {
 impl TargetFormatter for AddressesTargetFormatter {
     fn lines(&self) -> Vec<String> {
         self.targets.iter().map(|t| port_str(t.0)).collect()
+    }
+}
+
+pub struct SerialsTarget(String);
+
+impl TryFrom<TargetInfo> for SerialsTarget {
+    type Error = Error;
+
+    fn try_from(t: TargetInfo) -> Result<Self> {
+        let Some(serial) = t.serial_number else {
+            bail!("must contain a serial number");
+        };
+        Ok(Self(serial))
+    }
+}
+
+pub struct SerialsTargetFormatter {
+    targets: Vec<SerialsTarget>,
+}
+
+impl TryFrom<Vec<TargetInfo>> for SerialsTargetFormatter {
+    type Error = Error;
+
+    fn try_from(targets: Vec<TargetInfo>) -> Result<Self> {
+        let targets = targets.into_iter().flat_map(SerialsTarget::try_from).collect::<Vec<_>>();
+        Ok(Self { targets })
+    }
+}
+
+impl TargetFormatter for SerialsTargetFormatter {
+    fn lines(&self) -> Vec<String> {
+        self.targets.iter().map(|t| t.0.clone()).collect()
     }
 }
 

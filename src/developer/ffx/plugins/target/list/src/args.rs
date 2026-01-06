@@ -42,9 +42,9 @@ in early boot state such as fastboot, the NAME column may be `<unknown>` with
 a STATE being `fastboot` and a SERIAL attribute.
 
 By default, the `list` command outputs in a tabular format. To override
-the format, pass `--format` and can take the following options: 'simple'
-, 'tabular|table|tab', 'addresses|addrs|addr', 'name-only', 'json|JSON' or
-in short form 's', 't', 'a', 'n', 'j'.
+the format, pass `--format` and can take the following options: 'simple|s'
+, 'tabular|table|tab|t', 'addresses|addrs|addr|a', 'name-only|n', 'json|JSON|j' or
+'serials'.
 
 By default, Zedboot discovery is disabled.  To enable discovery of Zedboot
 targets run:
@@ -183,6 +183,7 @@ pub enum Format {
     Tabular,
     Simple,
     Addresses,
+    Serials,
     NameOnly,
     Json,
 }
@@ -195,9 +196,10 @@ impl std::str::FromStr for Format {
             "tabular" | "table" | "tab" | "t" => Ok(Format::Tabular),
             "simple" | "s" => Ok(Format::Simple),
             "addresses" | "a" | "addr" | "addrs" => Ok(Format::Addresses),
+            "serials" => Ok(Format::Serials),
             "name-only" | "n" => Ok(Format::NameOnly),
             "json" | "JSON" | "j" => Ok(Format::Json),
-            _ => Err(anyhow!("expected 'tabular', 'simple', 'addresses', or 'json'")),
+            _ => Err(anyhow!("expected 'tabular', 'simple', 'addresses', 'serials', or 'json'")),
         }
     }
 }
