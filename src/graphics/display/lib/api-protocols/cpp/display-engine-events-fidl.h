@@ -10,6 +10,8 @@
 #include <lib/zx/time.h>
 #include <zircon/compiler.h>
 
+#include <mutex>
+
 #include "src/graphics/display/lib/api-protocols/cpp/display-engine-events-interface.h"
 #include "src/graphics/display/lib/api-types/cpp/display-id.h"
 #include "src/graphics/display/lib/api-types/cpp/driver-config-stamp.h"
@@ -57,7 +59,12 @@ class DisplayEngineEventsFidl final : public DisplayEngineEventsInterface {
   void OnCaptureComplete() override;
 
  private:
-  fdf::WireSyncClient<fuchsia_hardware_display_engine::EngineListener> fidl_client_;
+  // TODO(fxbug.dev/473698115): This is a temporary workaround to suppress
+  // races on some display engines. Instead of introducing a mutex, we should
+  // revise the contract for SetListener() and all its users.
+  std::mutex fidl_client_mutex_;
+  fdf::WireSyncClient<fuchsia_hardware_display_engine::EngineListener> fidl_client_
+      __TA_GUARDED(fidl_client_mutex_);
 };
 
 }  // namespace display

@@ -11,9 +11,8 @@
 #include <zircon/assert.h>
 #include <zircon/time.h>
 
-#include <algorithm>
 #include <array>
-#include <cstdint>
+#include <mutex>
 
 #include <sdk/lib/driver/logging/cpp/logger.h>
 
@@ -29,6 +28,12 @@ DisplayEngineEventsFidl::~DisplayEngineEventsFidl() = default;
 
 void DisplayEngineEventsFidl::SetListener(
     fdf::ClientEnd<fuchsia_hardware_display_engine::EngineListener> client_end) {
+  // TODO(fxbug.dev/473698115): The current FIDL API contract allows a potential
+  // deadlock here. The Coordinator is allowed to call
+  // [`fuchsia.hardware.display.engine/Engine.UnsetListener()`] in an event
+  // handler, such as [`fuchsia.hardware.display.engine/EngineListener.
+  // OnDisplayRemoved()`].
+  std::lock_guard lock_guard(fidl_client_mutex_);
   if (client_end.is_valid()) {
     fidl_client_ =
         fdf::WireSyncClient<fuchsia_hardware_display_engine::EngineListener>(std::move(client_end));
@@ -47,6 +52,8 @@ constexpr fdf_arena_tag_t kArenaTag = 'DISP';
 void DisplayEngineEventsFidl::OnDisplayAdded(
     display::DisplayId display_id, cpp20::span<const display::ModeAndId> preferred_modes,
     cpp20::span<const display::PixelFormat> pixel_formats) {
+  std::lock_guard lock_guard(fidl_client_mutex_);
+
   ZX_DEBUG_ASSERT(preferred_modes.size() <= kMaxPreferredModes);
   ZX_DEBUG_ASSERT(pixel_formats.size() <= kMaxPixelFormats);
 
@@ -87,6 +94,8 @@ void DisplayEngineEventsFidl::OnDisplayAdded(
 }
 
 void DisplayEngineEventsFidl::OnDisplayRemoved(display::DisplayId display_id) {
+  std::lock_guard lock_guard(fidl_client_mutex_);
+
   if (!fidl_client_.is_valid()) {
     FDF_LOG(WARNING, "OnDisplayRemoved() emitted with invalid event listener; event dropped");
     return;
@@ -106,6 +115,8 @@ void DisplayEngineEventsFidl::OnDisplayRemoved(display::DisplayId display_id) {
 void DisplayEngineEventsFidl::OnDisplayVsync(display::DisplayId display_id,
                                              zx::time_monotonic timestamp,
                                              display::DriverConfigStamp config_stamp) {
+  std::lock_guard lock_guard(fidl_client_mutex_);
+
   if (!fidl_client_.is_valid()) {
     FDF_LOG(WARNING, "OnDisplayVsync() emitted with invalid event listener; event dropped");
     return;
@@ -123,6 +134,8 @@ void DisplayEngineEventsFidl::OnDisplayVsync(display::DisplayId display_id,
 }
 
 void DisplayEngineEventsFidl::OnCaptureComplete() {
+  std::lock_guard lock_guard(fidl_client_mutex_);
+
   if (!fidl_client_.is_valid()) {
     FDF_LOG(WARNING, "OnCaptureComplete() emitted with invalid event listener; event dropped");
     return;
