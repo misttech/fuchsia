@@ -101,14 +101,6 @@ foreach(funcs,
     # Avoid self-referential libcalls.
     configs = [ ":no-builtin-${funcs[0]}" ]
 
-    # TODO(https://fxbug.dev/471248163): This is working around an RBE wrapper
-    # bug.  This file (from $llvm_libc/src/string, i.e. $dir) is needed via
-    # (hairy, conditionalized) transitive `#include`s by some of these targets,
-    # but RBE fails to make the file available to the compiler.  The explicit
-    # extra input here should get it explicitly supplied as a remoting input
-    # even if the preprocessing scan fails to deduce it's needed.
-    sources = [ "memory_utils/generic/inline_strlen.h" ]
-
     # These also need to stick to the basic machine ABI so that dynlink.c can
     # use them early.  This requires hermetic_source_set() to contain any
     # COMDAT code, so the exported symbols must be named here.

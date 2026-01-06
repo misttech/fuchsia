@@ -178,16 +178,13 @@ config("llvm-libc-function-attr.config") {
 group("libc_source_set.deps") {
   visibility = [ "./*" ]
   public_deps = [ "include:headers" ]
-
-  # include-preempt/src/__support/CPP/new.h uses <fbl/alloc_checker.h>.
-  public_deps += [ "//zircon/system/ulib/fbl" ]
 }
 
 # Every libc_test() implicitly depends on this.
 group("libc_test.deps") {
   visibility = [ "./*" ]
   testonly = true
-  public_deps = [ ":libc_source_set.deps" ]
+  public_deps = [ "include:headers" ]
 }
 
 # Every libc_test() implicitly depends on one of these two.
