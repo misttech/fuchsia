@@ -240,7 +240,7 @@ mod tests {
         let mut context = crate::policy::PolicyValidationContext { data: data.clone() };
         let (magic, tail) =
             PolicyCursor::parse::<Magic>(PolicyCursor::new(data.clone())).expect("magic");
-        assert_eq!(0, tail.len());
+        assert_eq!(data.len(), tail.offset() as usize);
         assert_eq!(
             Err(ValidateError::InvalidMagic { found_magic: expected_invalid_magic }),
             magic.validate(&mut context)
@@ -302,7 +302,7 @@ mod tests {
         let mut context = crate::policy::PolicyValidationContext { data: data.clone() };
         let (policy_version, tail) =
             PolicyCursor::parse::<PolicyVersion>(PolicyCursor::new(data.clone())).expect("magic");
-        assert_eq!(0, tail.len());
+        assert_eq!(data.len(), tail.offset() as usize);
         assert_eq!(
             Err(ValidateError::InvalidPolicyVersion {
                 found_policy_version: POLICYDB_VERSION_MIN - 1
@@ -315,7 +315,7 @@ mod tests {
         let mut context = crate::policy::PolicyValidationContext { data: data.clone() };
         let (policy_version, tail) =
             PolicyCursor::parse::<PolicyVersion>(PolicyCursor::new(data.clone())).expect("magic");
-        assert_eq!(0, tail.len());
+        assert_eq!(data.len(), tail.offset() as usize);
         assert_eq!(
             Err(ValidateError::InvalidPolicyVersion {
                 found_policy_version: POLICYDB_VERSION_MAX + 1

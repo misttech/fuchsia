@@ -356,7 +356,7 @@ mod tests {
             _policy_data,
             {
                 let (extensible_bitmap, tail) = result.expect("parse");
-                assert_eq!(0, tail.len());
+                assert_eq!(24, tail.offset());
                 let mut count: u32 = 0;
                 for (i, bit) in extensible_bitmap.iter().enumerate() {
                     assert!((i == 0 && bit) || (i > 0 && !bit));
@@ -386,7 +386,7 @@ mod tests {
             _policy_data,
             {
                 let (extensible_bitmap, tail) = result.expect("parse");
-                assert_eq!(0, tail.len());
+                assert_eq!(36, tail.offset());
                 for i in 0..(MAP_NODE_BITS * 10) {
                     let expected = i == ((MAP_NODE_BITS * 2) + 2) || i == ((MAP_NODE_BITS * 7) + 7);
                     assert_eq!(expected, extensible_bitmap.is_set(i));
@@ -423,7 +423,7 @@ mod tests {
             policy_data,
             {
                 let (parsed, tail) = result.expect("parsed");
-                assert_eq!(0, tail.len());
+                assert_eq!(36, tail.offset());
                 let mut context =
                     crate::policy::PolicyValidationContext { data: policy_data.clone() };
                 assert_eq!(
@@ -452,7 +452,7 @@ mod tests {
             policy_data,
             {
                 let (parsed, tail) = result.expect("parsed");
-                assert_eq!(0, tail.len());
+                assert_eq!(36, tail.offset());
                 let mut context =
                     crate::policy::PolicyValidationContext { data: policy_data.clone() };
                 assert_eq!(
@@ -519,7 +519,7 @@ mod tests {
             policy_data,
             {
                 let (parsed, tail) = result.expect("parsed");
-                assert_eq!(0, tail.len());
+                assert_eq!(36, tail.offset());
                 let mut context =
                     crate::policy::PolicyValidationContext { data: policy_data.clone() };
                 match parsed.validate(&mut context).map_err(as_validate_error) {
@@ -557,7 +557,7 @@ mod tests {
             policy_data,
             {
                 let (parsed, tail) = result.expect("parsed");
-                assert_eq!(0, tail.len());
+                assert_eq!(36, tail.offset());
                 let mut context =
                     crate::policy::PolicyValidationContext { data: policy_data.clone() };
                 assert_eq!(
@@ -631,7 +631,7 @@ mod tests {
             _policy_data,
             {
                 let (extensible_bitmap, tail) = result.expect("parse");
-                assert_eq!(0, tail.len());
+                assert_eq!(36, tail.offset());
 
                 let mut iterator = extensible_bitmap.spans();
                 assert_eq!(
@@ -665,7 +665,7 @@ mod tests {
             _policy_data,
             {
                 let (extensible_bitmap, tail) = result.expect("parse");
-                assert_eq!(0, tail.len());
+                assert_eq!(36, tail.offset());
 
                 let mut iterator = extensible_bitmap.spans();
                 assert_eq!(
@@ -696,7 +696,7 @@ mod tests {
             _policy_data,
             {
                 let (extensible_bitmap, tail) = result.expect("parse");
-                assert_eq!(0, tail.len());
+                assert_eq!(36, tail.offset());
 
                 let mut iterator = extensible_bitmap.spans();
                 assert_eq!(
@@ -728,7 +728,7 @@ mod tests {
             _policy_data,
             {
                 let (extensible_bitmap, tail) = result.expect("parse");
-                assert_eq!(0, tail.len());
+                assert_eq!(24, tail.offset());
 
                 let mut iterator = extensible_bitmap.spans();
                 assert_eq!(

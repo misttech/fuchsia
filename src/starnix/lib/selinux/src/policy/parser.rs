@@ -47,10 +47,6 @@ impl PolicyCursor {
         self.offset
     }
 
-    pub fn len(&self) -> usize {
-        self.data.len() - self.offset as usize
-    }
-
     pub fn data(&self) -> &PolicyData {
         &self.data
     }
@@ -83,7 +79,6 @@ mod tests {
         assert_eq!((5 << 0) + (6 << 8), some_numbers.c.get());
         assert_eq!(7, some_numbers.d);
         assert_eq!(8, tail.offset());
-        assert_eq!(0, tail.len());
         assert_eq!(8, tail.data().len());
     }
 
@@ -110,7 +105,6 @@ mod tests {
         assert_eq!((29 << 0) + (30 << 8), third_some_numbers.c.get());
         assert_eq!(31, third_some_numbers.d);
         assert_eq!(32, tail.offset());
-        assert_eq!(8, tail.len());
         assert_eq!(40, tail.data().len());
     }
 }

@@ -542,10 +542,11 @@ impl ParsedPolicy {
     /// bytes after policy parsing completes.
     pub(super) fn parse(data: PolicyData) -> Result<Self, anyhow::Error> {
         let cursor = PolicyCursor::new(data.clone());
+        let policy_size = data.len();
         let (policy, tail) = parse_policy_internal(cursor, data)?;
-        let num_bytes = tail.len();
-        if num_bytes > 0 {
-            return Err(ParseError::TrailingBytes { num_bytes }.into());
+        let excess_bytes = policy_size - tail.offset() as usize;
+        if excess_bytes > 0 {
+            return Err(anyhow::Error::from(ParseError::TrailingBytes { num_bytes: excess_bytes }));
         }
         Ok(policy)
     }
