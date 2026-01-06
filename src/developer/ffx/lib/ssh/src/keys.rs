@@ -56,14 +56,20 @@ async fn query_device_authorized_keys(
     mut addr: std::net::SocketAddr,
     port: u16,
 ) -> fho::Result<HashSet<SshKey>> {
+    let context_string = "While querying device for SSH authorized_keys,";
     addr.set_port(port);
-    let stream = TcpStream::connect_timeout(&addr, Duration::from_secs(5))
-        .with_user_message(|| format!("Unable to connect to {addr:?}"))?;
+    let stream =
+        TcpStream::connect_timeout(&addr, Duration::from_secs(5)).with_user_message(|| {
+            format!("{context_string} we were unable to connect a TCP stream to {addr:?}")
+        })?;
     stream.set_nonblocking(true).bug()?;
     let stream = AsyncTcpStream::from_std(stream).bug()?;
-    let (mut request_sender, connection) = hyper::client::conn::handshake(stream)
-        .await
-        .map_err(|e| fho::user_error!("Failed to initiate http handshake with device: {e:?}"))?;
+    let (mut request_sender, connection) =
+        hyper::client::conn::handshake(stream).await.map_err(|e| {
+            fho::user_error!(
+                "{context_string} failed to initiate http handshake with device at {addr}: {e:?}"
+            )
+        })?;
     let _conn_task = Task::local(connection);
     let mut response = request_sender
         .send_request(
@@ -74,9 +80,13 @@ async fn query_device_authorized_keys(
                 .bug()?,
         )
         .await
-        .map_err(|e| fho::user_error!("Failed to send HTTP request to device at {addr}: {e:?}"))?;
+        .map_err(|e| {
+            fho::user_error!("{context_string} failed to send HTTP request to {addr}: {e:?}")
+        })?;
     if response.status() != hyper::StatusCode::OK {
-        fho::return_user_error!("Received an HTTP error from the device: {response:?}");
+        fho::return_user_error!(
+            "{context_string} received an HTTP error from the {addr}: {response:?}"
+        );
     }
     let body_bytes = hyper::body::to_bytes(response.body_mut())
         .await
@@ -84,7 +94,7 @@ async fn query_device_authorized_keys(
     let body_str = String::from_utf8_lossy(body_bytes.chunk());
     if body_str.is_empty() {
         fho::return_user_error!(
-            "Received empty string for authorized_keys file. You may need to reflash the device."
+            "Received empty authorized_keys file from {addr}. You may need to reflash this device."
         );
     }
     Ok(body_str
@@ -1704,7 +1714,7 @@ mod test {
         let result = query_device_authorized_keys(server_addr, server_addr.port()).await;
         assert!(result.is_err());
         let err = result.unwrap_err();
-        assert!(err.to_string().contains("Received empty string for authorized_keys file."));
+        assert!(err.to_string().contains("Received empty authorized_keys file"));
     }
 
     #[fuchsia::test]
