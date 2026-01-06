@@ -41,6 +41,10 @@ exports_files(
     [
         "third_party/android/platform/external/avb/test/data/testkey_atx_psk.pem",
         "third_party/android/platform/external/avb/test/data/atx_metadata.bin",
+
+        # This test key is used for Verified Booting in the context of Android
+        # protected VMs, which do not support the ATX format.
+        "third_party/android/platform/external/avb/test/data/testkey_rsa4096.pem",
     ] +
     # Bootloader images used in partition configs for product bundles.
     glob(

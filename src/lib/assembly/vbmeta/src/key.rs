@@ -63,10 +63,16 @@ impl From<ring::error::Unspecified> for SignFailure {
 
 impl Key {
     /// Construct a new Key using the provided PEM string and metadata bytes.
-    /// This method can fail if the PEM or contained DER cannot be parsed.
+    /// The PEM must be in either the PKCS8 or DER format. This method can fail
+    /// if the PEM or contained DER cannot be parsed.
     pub fn try_new<M: Into<Vec<u8>>>(pem_str: &str, metadata: M) -> Result<Key, KeyError> {
         let pem = pem::parse(pem_str)?;
-        let rsa_result = ring::signature::RsaKeyPair::from_pkcs8(&pem.contents);
+        // Different AVB implementations can accept keys in both the PKCS8 and
+        // DER format. Since the formats are interchangeable, we flexibly
+        // accept either and leave it to the assembly user to choose the
+        // appropriate one for their AVB context.
+        let rsa_result = ring::signature::RsaKeyPair::from_pkcs8(&pem.contents)
+            .or_else(|_| ring::signature::RsaKeyPair::from_der(&pem.contents));
         if rsa_result.is_err() {
             return Err(KeyError::ParseDer);
         }
