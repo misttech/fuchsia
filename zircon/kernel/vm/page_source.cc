@@ -5,6 +5,7 @@
 // https://opensource.org/licenses/MIT
 
 #include <lib/console.h>
+#include <lib/counters.h>
 #include <lib/dump/depth_printer.h>
 #include <lib/page/size.h>
 #include <trace.h>
@@ -16,6 +17,18 @@
 #include <ktl/enforce.h>
 
 #define LOCAL_TRACE 0
+
+namespace {
+
+KCOUNTER(pgreq_overlap_0, "vm.page_request.overlap_0")
+KCOUNTER(pgreq_overlap_1, "vm.page_request.overlap_1")
+KCOUNTER(pgreq_overlap_2, "vm.page_request.overlap_2")
+KCOUNTER(pgreq_overlap_3, "vm.page_request.overlap_3")
+KCOUNTER(pgreq_overlap_4, "vm.page_request.overlap_4")
+KCOUNTER(pgreq_overlap_5_to_10, "vm.page_request.overlap_5_to_10")
+KCOUNTER(pgreq_overlap_more_than_10, "vm.page_request.overlap_more_than_10")
+
+}  // namespace
 
 PageSource::PageSource(fbl::RefPtr<PageProvider>&& page_provider)
     : page_provider_properties_(page_provider->properties()),
@@ -410,6 +423,36 @@ void PageSource::CompleteRequestLocked(PageRequest* request) {
   // request has been taken back we are also free to modify offset_.
   page_provider_->ClearAsyncRequest(request);
   request->provider_owned_ = false;
+
+  if (likely(request->overlap_.is_empty())) {
+    pgreq_overlap_0.Add(1);
+  } else {
+    // Even though we're doing size_slow(), this is okay because the vast majority of page requests
+    // have no overlap and won't end up in this else-block in the first place.
+    size_t overlap_count = request->overlap_.size_slow();
+    DEBUG_ASSERT(overlap_count > 0);
+    switch (overlap_count) {
+      case 1:
+        pgreq_overlap_1.Add(1);
+        break;
+      case 2:
+        pgreq_overlap_2.Add(1);
+        break;
+      case 3:
+        pgreq_overlap_3.Add(1);
+        break;
+      case 4:
+        pgreq_overlap_4.Add(1);
+        break;
+      default:
+        if (overlap_count <= 10) {
+          pgreq_overlap_5_to_10.Add(1);
+        } else {
+          pgreq_overlap_more_than_10.Add(1);
+        }
+        break;
+    }
+  }
 
   while (!request->overlap_.is_empty()) {
     auto waiter = request->overlap_.pop_front();
