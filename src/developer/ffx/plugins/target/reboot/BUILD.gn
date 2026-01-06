@@ -26,7 +26,11 @@ ffx_plugin("ffx_reboot") {
     "//third_party/rust_crates:log",
     "//third_party/rust_crates:tokio",
   ]
-  test_deps = [ "//src/lib/fuchsia" ]
+  test_deps = [
+    "//src/lib/fuchsia",
+    "//third_party/rust_crates:anyhow",
+    "//third_party/rust_crates:serde_json",
+  ]
 
   args_sources = [ "src/args.rs" ]
   args_deps = [

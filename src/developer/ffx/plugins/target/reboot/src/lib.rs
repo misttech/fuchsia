@@ -7,7 +7,7 @@ use discovery::{FastbootTargetState, TargetHandle, TargetState};
 use errors::{ffx_bail, ffx_error};
 use ffx_config::EnvironmentContext;
 use ffx_reboot_args::RebootCommand;
-use ffx_writer::SimpleWriter;
+use ffx_writer::MachineWriter;
 use fho::{Deferred, FfxContext, FfxMain, FfxTool};
 use fidl_fuchsia_developer_ffx::{TargetRebootError, TargetRebootState};
 use fidl_fuchsia_hardware_power_statecontrol::{
@@ -41,13 +41,20 @@ fho::embedded_plugin!(RebootTool);
 
 #[async_trait(?Send)]
 impl FfxMain for RebootTool {
-    type Writer = SimpleWriter;
-    async fn main(mut self, _writer: Self::Writer) -> fho::Result<()> {
-        if self.context.get_direct_connection_mode() {
+    type Writer = MachineWriter<()>;
+    async fn main(mut self, mut writer: Self::Writer) -> fho::Result<()> {
+        // We have to check is_strict() explicitly because at this point
+        // the connection mode (direct vs daemon) has not yet been
+        // established, since all of our proxies are deferred.
+        let res = if self.context.is_strict() || self.context.get_direct_connection_mode() {
             reboot_direct(&mut self.admin_proxy, self.cmd, &self.context).await
         } else {
             reboot_daemon(&self.target_proxy.await?, self.cmd).await
+        };
+        if res.is_ok() {
+            writer.machine(&())?;
         }
+        res
     }
 }
 
@@ -292,5 +299,63 @@ mod test {
                 .to_string()
                 .contains("Rebooting a target in state Zedboot is not supported")
         );
+    }
+
+    #[fuchsia::test]
+    async fn test_strict_mode_uses_direct_reboot() {
+        let context = EnvironmentContext::strict(
+            ffx_config::environment::ExecutableKind::Test,
+            ffx_config::ConfigMap::new(),
+        )
+        .expect("strict context");
+
+        let cmd = RebootCommand { bootloader: false, recovery: false };
+
+        // target_proxy should NOT be used.
+        let target_proxy =
+            Deferred::from_output(Ok(TargetProxyHolder::from(fake_proxy::<TargetProxy>(|_req| {
+                panic!("target proxy should not be used in strict mode");
+            }))));
+
+        // admin_proxy MIGHT be used if discovery succeeds, but even if it doesn't,
+        // we just want to ensure target_proxy isn't used.
+        let admin_proxy = Deferred::from_output(Ok(fake_proxy::<AdminProxy>(|_req| {
+            // If we get here, great! But we might fail discovery first.
+        })));
+
+        let tool = RebootTool { context, cmd, target_proxy, admin_proxy };
+
+        let test_buffers = ffx_writer::TestBuffers::default();
+        let writer = MachineWriter::new_test(None, &test_buffers);
+        let _res = tool.main(writer).await;
+
+        // If we didn't panic, the test passed.
+    }
+
+    #[fuchsia::test]
+    async fn test_machine_output_is_valid_json() {
+        let env = ffx_config::test_init().unwrap();
+        // Setup a tool that will succeed in daemon mode (the easiest to mock for this)
+        let cmd = RebootCommand { bootloader: false, recovery: false };
+        let target_proxy = setup_fake_target_server(cmd);
+        let tool = RebootTool {
+            context: env.context.clone(),
+            cmd,
+            target_proxy: Deferred::from_output(Ok(target_proxy)),
+            admin_proxy: Deferred::from_output(Err(fho::Error::Unexpected(anyhow::anyhow!(
+                "should not be used"
+            )))),
+        };
+
+        let test_buffers = ffx_writer::TestBuffers::default();
+        let writer = MachineWriter::new_test(Some(ffx_writer::Format::Json), &test_buffers);
+        let res = tool.main(writer).await;
+
+        assert!(res.is_ok());
+        let output = test_buffers.into_stdout_str();
+        assert_eq!(output, "null\n");
+        // Verify it's valid JSON
+        let _v: serde_json::Value =
+            serde_json::from_str(&output).expect("Output should be valid JSON");
     }
 }
