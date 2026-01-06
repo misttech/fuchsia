@@ -7,7 +7,7 @@ use anyhow::Error;
 use assert_matches::assert_matches;
 use async_trait::async_trait;
 use fidl_fuchsia_hardware_power_statecontrol::{
-    AdminRequest, AdminRequestStream, RebootOptions, RebootReason2,
+    AdminRequest, AdminRequestStream, ShutdownAction, ShutdownOptions, ShutdownReason,
 };
 use fuchsia_async as fasync;
 use fuchsia_component::server::{ServiceFs, ServiceFsDir};
@@ -37,12 +37,13 @@ impl Mocks for SetupTest {
                         log::info!("Get a request.");
                         // Support future expansion of FIDL.
                         #[allow(unreachable_patterns)]
-                        if let AdminRequest::PerformReboot {
-                            options: RebootOptions { reasons: Some(reasons), .. },
+                        if let AdminRequest::Shutdown {
+                            options: ShutdownOptions { action: Some(action), reasons: Some(reasons), .. },
                             responder,
                         } = req
                         {
-                            assert_matches!(&reasons[..], [RebootReason2::UserRequest]);
+                            assert_eq!(action, ShutdownAction::Reboot);
+                            assert_matches!(&reasons[..], [ShutdownReason::UserRequest]);
                             log::info!("Request has user reboot request.");
                             recorded_actions_clone.lock().await.push(Action::Reboot);
                             log::info!("recorded_actions added Action::Reboot.");

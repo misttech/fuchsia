@@ -5,7 +5,7 @@
 use crate::setup_fidl_handler::InfoPublisher;
 use crate::types::{ConfigurationInterfaceFlags, SetupInfo};
 use anyhow::Error;
-use fidl_fuchsia_hardware_power_statecontrol::{RebootOptions, RebootReason2};
+use fidl_fuchsia_hardware_power_statecontrol::{ShutdownAction, ShutdownOptions, ShutdownReason};
 use fuchsia_async as fasync;
 use futures::StreamExt;
 use futures::channel::mpsc::UnboundedReceiver;
@@ -66,8 +66,9 @@ async fn reboot(
         )
     };
 
-    call_async!(hardware_power_statecontrol_admin => perform_reboot(&RebootOptions{
-        reasons: Some(vec![RebootReason2::UserRequest]), ..Default::default()
+    call_async!(hardware_power_statecontrol_admin => shutdown(&ShutdownOptions{
+        action: Some(ShutdownAction::Reboot),
+        reasons: Some(vec![ShutdownReason::UserRequest]), ..Default::default()
     }))
     .await
     .map_err(|e| reboot_err(format!("{e:?}")))
