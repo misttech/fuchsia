@@ -59,7 +59,7 @@ fn wait_signaled_sync(event: &zx::Event) -> zx::WaitResult {
         if let zx::WaitResult::Ok(_) = result {
             if logged {
                 log_error!(
-                    "wait_signaled_sync: signal resolved. See HrTimer bug: b/428223204: result={result:?}",
+                    "wait_signaled_sync: signal resolved. See HrTimer bug: b/454085350: result={result:?}",
                 );
             }
             return result;
@@ -73,7 +73,7 @@ fn wait_signaled_sync(event: &zx::Event) -> zx::WaitResult {
         // fixed. There is no good way to proceed if these signals are not being signaled properly.
         log_error!(
             // LINT.IfChange(hrtimer_wait_signaled_sync_tefmo)
-            "wait_signaled_sync: not signaled yet. See HrTimer bug: b/428223204: result={result:?}",
+            "wait_signaled_sync: not signaled yet. See HrTimer bug: b/454085350: result={result:?}",
             // LINT.ThenChange(//tools/testing/tefmocheck/string_in_log_check.go:hrtimer_wait_signaled_sync_tefmo)
         );
         if !logged {
