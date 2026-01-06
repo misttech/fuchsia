@@ -30,6 +30,10 @@ When updating, please add the value in alphabetical order.
     |                                         | to `true`, but does not apply in   |
     |                                         | strict mode, isolates, or when USB |
     |                                         | connections are disabled.          |
+    | `connectivity.usb_socket_path`          | Path to the socket that will be    |
+    |                                         | used to communicate with the USB   |
+    |                                         | driver. Defaults to                |
+    |                                         | `$XDG_RUNTIME_DIR/ffx_usb.sock`.   |
     | `daemon.autostart`                      | Determines if the daemon should    |
     |                                         | start automatically when a subtool |
     |                                         | that requires the daemon is        |
