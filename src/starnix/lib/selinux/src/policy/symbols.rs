@@ -3,7 +3,7 @@
 // found in the LICENSE file.
 
 use super::constraints::{ConstraintError, evaluate_constraint};
-use super::error::{ParseError, ValidateError};
+use super::error::ValidateError;
 use super::extensible_bitmap::{
     ExtensibleBitmap, ExtensibleBitmapSpan, ExtensibleBitmapSpansIterator,
 };
@@ -435,14 +435,7 @@ impl Parse for Constraint {
     fn parse(bytes: PolicyCursor) -> Result<(Self, PolicyCursor), Self::Error> {
         let tail = bytes;
 
-        let num_bytes = tail.len();
-        let (access_vector, tail) = PolicyCursor::parse::<le::U32>(tail).ok_or_else(|| {
-            Into::<anyhow::Error>::into(ParseError::MissingData {
-                type_name: "AccessVector",
-                type_size: std::mem::size_of::<le::U32>(),
-                num_bytes,
-            })
-        })?;
+        let (access_vector, tail) = PolicyCursor::parse::<le::U32>(tail)?;
         let (constraint_expr, tail) = ConstraintExpr::parse(tail)
             .map_err(|error| anyhow!(error))
             .context("parsing constraint expression")?;
@@ -640,14 +633,7 @@ impl Parse for TypeSet {
             .map_err(Into::<anyhow::Error>::into)
             .context("parsing type set negative set")?;
 
-        let num_bytes = tail.len();
-        let (flags, tail) = PolicyCursor::parse::<le::U32>(tail).ok_or_else(|| {
-            Into::<anyhow::Error>::into(ParseError::MissingData {
-                type_name: "TypeSetFlags",
-                type_size: std::mem::size_of::<le::U32>(),
-                num_bytes,
-            })
-        })?;
+        let (flags, tail) = PolicyCursor::parse::<le::U32>(tail)?;
 
         Ok((Self { types, negative_set, flags }, tail))
     }
@@ -1380,13 +1366,7 @@ impl Parse for MlsLevel {
     fn parse(bytes: PolicyCursor) -> Result<(Self, PolicyCursor), Self::Error> {
         let tail = bytes;
 
-        let num_bytes = tail.len();
-        let (sensitivity, tail) =
-            PolicyCursor::parse::<le::U32>(tail).ok_or(ParseError::MissingData {
-                type_name: "MlsLevelSensitivity",
-                type_size: std::mem::size_of::<le::U32>(),
-                num_bytes,
-            })?;
+        let (sensitivity, tail) = PolicyCursor::parse::<le::U32>(tail)?;
 
         let (categories, tail) = ExtensibleBitmap::parse(tail)
             .map_err(Into::<anyhow::Error>::into)
@@ -1431,33 +1411,15 @@ impl Parse for MlsRange {
     fn parse(bytes: PolicyCursor) -> Result<(Self, PolicyCursor), Self::Error> {
         let tail = bytes;
 
-        let num_bytes = tail.len();
-        let (count, tail) =
-            PolicyCursor::parse::<le::U32>(tail).ok_or(ParseError::MissingData {
-                type_name: "MlsLevelCount",
-                type_size: std::mem::size_of::<le::U32>(),
-                num_bytes,
-            })?;
+        let (count, tail) = PolicyCursor::parse::<le::U32>(tail)?;
 
         // `MlsRange::parse()` cannot be implemented in terms of `MlsLevel::parse()` for the
         // low and optional high level, because of the order in which the sensitivity and
         // category bitmap fields appear.
-        let num_bytes = tail.len();
-        let (sensitivity_low, tail) =
-            PolicyCursor::parse::<le::U32>(tail).ok_or(ParseError::MissingData {
-                type_name: "MlsLevelSensitivityLow",
-                type_size: std::mem::size_of::<le::U32>(),
-                num_bytes,
-            })?;
+        let (sensitivity_low, tail) = PolicyCursor::parse::<le::U32>(tail)?;
 
         let (low_categories, high_level, tail) = if count.get() > 1 {
-            let num_bytes = tail.len();
-            let (sensitivity_high, tail) =
-                PolicyCursor::parse::<le::U32>(tail).ok_or(ParseError::MissingData {
-                    type_name: "MlsLevelSensitivityHigh",
-                    type_size: std::mem::size_of::<le::U32>(),
-                    num_bytes,
-                })?;
+            let (sensitivity_high, tail) = PolicyCursor::parse::<le::U32>(tail)?;
             let (low_categories, tail) = ExtensibleBitmap::parse(tail)
                 .map_err(Into::<anyhow::Error>::into)
                 .context("parsing mls range low categories")?;

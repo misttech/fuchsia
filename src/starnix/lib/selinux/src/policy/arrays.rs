@@ -9,7 +9,7 @@ use super::{
     Validate, ValidateArray, array_type, array_type_validate_deref_both,
 };
 use crate::policy::UserId;
-use crate::policy::error::{ParseError, ValidateError};
+use crate::policy::error::ValidateError;
 use crate::policy::extensible_bitmap::ExtensibleBitmap;
 use crate::policy::symbols::{MlsLevel, MlsRange};
 use anyhow::Context as _;
@@ -316,17 +316,8 @@ impl Parse for AccessVectorRule {
     fn parse(bytes: PolicyCursor) -> Result<(Self, PolicyCursor), Self::Error> {
         let tail = bytes;
 
-        let num_bytes = tail.len();
-        let (metadata, tail) =
-            PolicyCursor::parse::<AccessVectorRuleMetadata>(tail).ok_or_else(|| {
-                ParseError::MissingData {
-                    type_name: std::any::type_name::<AccessVectorRuleMetadata>(),
-                    type_size: std::mem::size_of::<AccessVectorRuleMetadata>(),
-                    num_bytes,
-                }
-            })?;
+        let (metadata, tail) = PolicyCursor::parse::<AccessVectorRuleMetadata>(tail)?;
         let access_vector_rule_type = metadata.access_vector_rule_type;
-        let num_bytes = tail.len();
         let (permission_data, tail) =
             if (access_vector_rule_type & ACCESS_VECTOR_RULE_DATA_IS_XPERM_MASK) != 0 {
                 let (xperms, tail) = ExtendedPermissions::parse(tail)
@@ -334,20 +325,10 @@ impl Parse for AccessVectorRule {
                     .context("parsing extended permissions")?;
                 (PermissionData::ExtendedPermissions(xperms), tail)
             } else if (access_vector_rule_type & ACCESS_VECTOR_RULE_DATA_IS_TYPE_ID_MASK) != 0 {
-                let (new_type, tail) =
-                    PolicyCursor::parse::<le::U32>(tail).ok_or(ParseError::MissingData {
-                        type_name: "PermissionData::NewType",
-                        type_size: std::mem::size_of::<le::U32>(),
-                        num_bytes,
-                    })?;
+                let (new_type, tail) = PolicyCursor::parse::<le::U32>(tail)?;
                 (PermissionData::NewType(new_type), tail)
             } else {
-                let (access_vector, tail) =
-                    PolicyCursor::parse::<le::U32>(tail).ok_or(ParseError::MissingData {
-                        type_name: "PermissionData::AccessVector",
-                        type_size: std::mem::size_of::<le::U32>(),
-                        num_bytes,
-                    })?;
+                let (access_vector, tail) = PolicyCursor::parse::<le::U32>(tail)?;
                 (PermissionData::AccessVector(access_vector), tail)
             };
         Ok((Self { metadata, permission_data }, tail))
@@ -670,21 +651,9 @@ where
             .map_err(Into::<anyhow::Error>::into)
             .context("parsing filename for filename transition")?;
 
-        let num_bytes = tail.len();
-        let (transition_type, tail) =
-            PolicyCursor::parse::<le::U32>(tail).ok_or(ParseError::MissingData {
-                type_name: "FilenameTransition::transition_type",
-                type_size: std::mem::size_of::<le::U32>(),
-                num_bytes,
-            })?;
+        let (transition_type, tail) = PolicyCursor::parse::<le::U32>(tail)?;
 
-        let num_bytes = tail.len();
-        let (transition_class, tail) =
-            PolicyCursor::parse::<le::U32>(tail).ok_or(ParseError::MissingData {
-                type_name: "FilenameTransition::transition_class",
-                type_size: std::mem::size_of::<le::U32>(),
-                num_bytes,
-            })?;
+        let (transition_class, tail) = PolicyCursor::parse::<le::U32>(tail)?;
 
         let (items, tail) = SimpleArray::<FilenameTransitionItems>::parse(tail)
             .map_err(Into::<anyhow::Error>::into)
@@ -725,13 +694,7 @@ where
             .map_err(Into::<anyhow::Error>::into)
             .context("parsing stypes extensible bitmap for file transition")?;
 
-        let num_bytes = tail.len();
-        let (out_type, tail) =
-            PolicyCursor::parse::<le::U32>(tail).ok_or(ParseError::MissingData {
-                type_name: "FilenameTransitionItem::out_type",
-                type_size: std::mem::size_of::<le::U32>(),
-                num_bytes,
-            })?;
+        let (out_type, tail) = PolicyCursor::parse::<le::U32>(tail)?;
 
         Ok((Self { stypes, out_type }, tail))
     }
@@ -789,15 +752,7 @@ where
             .map_err(Into::<anyhow::Error>::into)
             .context("parsing filename for deprecated filename transition")?;
 
-        let num_bytes = tail.len();
-        let (metadata, tail) = PolicyCursor::parse::<DeprecatedFilenameTransitionMetadata>(tail)
-            .ok_or({
-                ParseError::MissingData {
-                    type_name: "DeprecatedFilenameTransition::metadata",
-                    type_size: std::mem::size_of::<le::U32>(),
-                    num_bytes,
-                }
-            })?;
+        let (metadata, tail) = PolicyCursor::parse::<DeprecatedFilenameTransitionMetadata>(tail)?;
 
         Ok((Self { filename, metadata }, tail))
     }
@@ -853,12 +808,7 @@ where
     fn parse(bytes: PolicyCursor) -> Result<(Self, PolicyCursor), Self::Error> {
         let tail = bytes;
 
-        let num_bytes = tail.len();
-        let (id, tail) = PolicyCursor::parse::<le::U32>(tail).ok_or(ParseError::MissingData {
-            type_name: "InitialSid::sid",
-            type_size: std::mem::size_of::<le::U32>(),
-            num_bytes,
-        })?;
+        let (id, tail) = PolicyCursor::parse::<le::U32>(tail)?;
 
         let (context, tail) = Context::parse(tail)
             .map_err(Into::<anyhow::Error>::into)
@@ -1039,20 +989,9 @@ where
     fn parse(bytes: PolicyCursor) -> Result<(Self, PolicyCursor), Self::Error> {
         let tail = bytes;
 
-        let num_bytes = tail.len();
-        let (address, tail) =
-            PolicyCursor::parse::<le::U32>(tail).ok_or(ParseError::MissingData {
-                type_name: "Node::address",
-                type_size: std::mem::size_of::<le::U32>(),
-                num_bytes,
-            })?;
+        let (address, tail) = PolicyCursor::parse::<le::U32>(tail)?;
 
-        let num_bytes = tail.len();
-        let (mask, tail) = PolicyCursor::parse::<le::U32>(tail).ok_or(ParseError::MissingData {
-            type_name: "Node::mask",
-            type_size: std::mem::size_of::<le::U32>(),
-            num_bytes,
-        })?;
+        let (mask, tail) = PolicyCursor::parse::<le::U32>(tail)?;
 
         let (context, tail) = Context::parse(tail)
             .map_err(Into::<anyhow::Error>::into)
@@ -1200,21 +1139,9 @@ where
     fn parse(bytes: PolicyCursor) -> Result<(Self, PolicyCursor), Self::Error> {
         let tail = bytes;
 
-        let num_bytes = tail.len();
-        let (address, tail) =
-            PolicyCursor::parse::<[le::U32; 4]>(tail).ok_or(ParseError::MissingData {
-                type_name: "IPv6Node::address",
-                type_size: std::mem::size_of::<le::U32>(),
-                num_bytes,
-            })?;
+        let (address, tail) = PolicyCursor::parse::<[le::U32; 4]>(tail)?;
 
-        let num_bytes = tail.len();
-        let (mask, tail) =
-            PolicyCursor::parse::<[le::U32; 4]>(tail).ok_or(ParseError::MissingData {
-                type_name: "IPv6Node::mask",
-                type_size: std::mem::size_of::<le::U32>(),
-                num_bytes,
-            })?;
+        let (mask, tail) = PolicyCursor::parse::<[le::U32; 4]>(tail)?;
 
         let (context, tail) = Context::parse(tail)
             .map_err(Into::<anyhow::Error>::into)
@@ -1251,19 +1178,9 @@ where
     fn parse(bytes: PolicyCursor) -> Result<(Self, PolicyCursor), Self::Error> {
         let tail = bytes;
 
-        let num_bytes = tail.len();
-        let (low, tail) = PolicyCursor::parse::<le::U32>(tail).ok_or(ParseError::MissingData {
-            type_name: "InfinitiBandPartitionKey::low",
-            type_size: std::mem::size_of::<le::U32>(),
-            num_bytes,
-        })?;
+        let (low, tail) = PolicyCursor::parse::<le::U32>(tail)?;
 
-        let num_bytes = tail.len();
-        let (high, tail) = PolicyCursor::parse::<le::U32>(tail).ok_or(ParseError::MissingData {
-            type_name: "InfinitiBandPartitionKey::high",
-            type_size: std::mem::size_of::<le::U32>(),
-            num_bytes,
-        })?;
+        let (high, tail) = PolicyCursor::parse::<le::U32>(tail)?;
 
         let (context, tail) = Context::parse(tail)
             .map_err(Into::<anyhow::Error>::into)
@@ -1430,13 +1347,7 @@ where
             .map_err(Into::<anyhow::Error>::into)
             .context("parsing filesystem context partial path")?;
 
-        let num_bytes = tail.len();
-        let (class, tail) =
-            PolicyCursor::parse::<le::U32>(tail).ok_or(ParseError::MissingData {
-                type_name: "FsContext::class",
-                type_size: std::mem::size_of::<le::U32>(),
-                num_bytes,
-            })?;
+        let (class, tail) = PolicyCursor::parse::<le::U32>(tail)?;
 
         let (context, tail) = Context::parse(tail)
             .map_err(Into::<anyhow::Error>::into)

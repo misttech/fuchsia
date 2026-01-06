@@ -2,6 +2,8 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+use super::error::ParseError;
+
 use std::fmt::Debug;
 use std::sync::Arc;
 use zerocopy::{FromBytes, Immutable, KnownLayout, Unaligned};
@@ -29,11 +31,16 @@ impl PolicyCursor {
     /// Returns an `P` as the parsed output of the next bytes in the underlying [`Cursor`] data.
     pub fn parse<P: Clone + Debug + FromBytes + KnownLayout + Immutable + PartialEq + Unaligned>(
         mut self,
-    ) -> Option<(P, Self)> {
+    ) -> Result<(P, Self), ParseError> {
         let remaining_slice = &(self.data.as_ref()[self.offset as usize..]);
-        let (output, _) = P::read_from_prefix(remaining_slice).ok()?;
-        self.offset += std::mem::size_of_val(&output) as PolicyOffset;
-        Some((output, self))
+        let (output, _) =
+            P::read_from_prefix(remaining_slice).map_err(|_| ParseError::MissingData {
+                type_name: std::any::type_name::<P>(),
+                type_size: std::mem::size_of::<P>(),
+                num_bytes: self.data.len() - self.offset as usize,
+            })?;
+        self.offset += std::mem::size_of::<P>() as PolicyOffset;
+        Ok((output, self))
     }
 
     pub fn offset(&self) -> PolicyOffset {

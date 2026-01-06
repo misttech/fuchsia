@@ -129,13 +129,7 @@ impl Parse for Config {
     type Error = ParseError;
 
     fn parse(bytes: PolicyCursor) -> Result<(Self, PolicyCursor), Self::Error> {
-        let num_bytes = bytes.len();
-        let (config, tail) =
-            PolicyCursor::parse::<le::U32>(bytes).ok_or(ParseError::MissingData {
-                type_name: "Config",
-                type_size: std::mem::size_of::<le::U32>(),
-                num_bytes,
-            })?;
+        let (config, tail) = PolicyCursor::parse::<le::U32>(bytes)?;
 
         let found_config = config.get();
         if found_config & CONFIG_MLS_FLAG == 0 {
@@ -223,7 +217,14 @@ mod tests {
         // One byte short of magic.
         bytes.pop();
         let data = Arc::new(bytes);
-        assert_eq!(None, PolicyCursor::parse::<Magic>(PolicyCursor::new(data)),);
+        assert_eq!(
+            Err(ParseError::MissingData {
+                type_name: "selinux_lib_test::policy::metadata::Magic",
+                type_size: 4,
+                num_bytes: 3
+            }),
+            PolicyCursor::parse::<Magic>(PolicyCursor::new(data)),
+        );
     }
 
     #[test]

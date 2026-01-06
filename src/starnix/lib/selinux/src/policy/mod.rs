@@ -22,7 +22,6 @@ pub use security_context::{SecurityContext, SecurityContextError};
 
 use crate::{self as sc, PolicyCap};
 use anyhow::Context as _;
-use error::ParseError;
 use index::PolicyIndex;
 use metadata::HandleUnknown;
 use parsed_policy::ParsedPolicy;
@@ -695,15 +694,7 @@ impl<T: Clone + Debug + FromBytes + KnownLayout + Immutable + PartialEq + Unalig
     type Error = anyhow::Error;
 
     fn parse(bytes: PolicyCursor) -> Result<(Self, PolicyCursor), Self::Error> {
-        let num_bytes = bytes.len();
-        let (data, tail) =
-            PolicyCursor::parse::<T>(bytes).ok_or_else(|| ParseError::MissingData {
-                type_name: std::any::type_name::<T>(),
-                type_size: std::mem::size_of::<T>(),
-                num_bytes,
-            })?;
-
-        Ok((data, tail))
+        bytes.parse::<T>().map_err(anyhow::Error::from)
     }
 }
 
@@ -856,8 +847,8 @@ impl<T: Parse> ParseSlice for Vec<T> {
 
 #[cfg(test)]
 pub(super) mod testing {
-    use crate::policy::error::ValidateError;
-    use crate::policy::{AccessVector, ParseError};
+    use super::AccessVector;
+    use super::error::{ParseError, ValidateError};
 
     pub const ACCESS_VECTOR_0001: AccessVector = AccessVector(0b0001u32);
     pub const ACCESS_VECTOR_0010: AccessVector = AccessVector(0b0010u32);
