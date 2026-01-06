@@ -294,10 +294,13 @@ pub struct VBMeta {
     #[walk_paths]
     pub key: FileRelativePathBuf,
 
-    /// Path on host to the key metadata to add to the VBMeta.
+    /// Optional path on host to the key metadata to add to the VBMeta, when
+    /// applicable.
+    #[serde(default)]
+    #[serde(skip_serializing_if = "Option::is_none")]
     #[file_relative_paths]
     #[walk_paths]
-    pub key_metadata: FileRelativePathBuf,
+    pub key_metadata: Option<FileRelativePathBuf>,
 
     /// Optional descriptors to add to the VBMeta image.
     #[serde(default)]

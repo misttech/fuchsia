@@ -78,7 +78,9 @@ pub struct VBMeta {
     pub key: Utf8PathBuf,
 
     /// Path on host to the key metadata to add to the VBMeta.
-    pub key_metadata: Utf8PathBuf,
+    #[serde(default)]
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub key_metadata: Option<Utf8PathBuf>,
 
     /// Optional descriptors to add to the VBMeta image.
     #[serde(default)]
@@ -383,7 +385,7 @@ impl ImagesConfig {
                 name: product.image_name.0.clone(),
                 style,
                 key: key.into(),
-                key_metadata: key_metadata.into(),
+                key_metadata: key_metadata.map(Into::into),
                 additional_descriptors,
             }));
         }
@@ -508,7 +510,7 @@ mod tests {
             vbmeta: Some(bfc::VBMeta {
                 style: bfc::VBMetaStyle::Fuchsia,
                 key: "path/to/key".into(),
-                key_metadata: "path/to/metadata".into(),
+                key_metadata: Some("path/to/metadata".into()),
                 additional_descriptors: vec![],
             }),
             fxfs: bfc::Fxfs {
@@ -556,7 +558,7 @@ mod tests {
             vbmeta: Some(bfc::VBMeta {
                 style: bfc::VBMetaStyle::Fuchsia,
                 key: "path/to/key".into(),
-                key_metadata: "path/to/metadata".into(),
+                key_metadata: Some("path/to/metadata".into()),
                 additional_descriptors: vec![],
             }),
             fxfs: bfc::Fxfs {
@@ -626,7 +628,7 @@ mod tests {
                         name: "a-product".into(),
                         style: bfc::VBMetaStyle::Fuchsia,
                         key: "path/to/key".into(),
-                        key_metadata: "path/to/metadata".into(),
+                        key_metadata: Some("path/to/metadata".into()),
                         additional_descriptors: vec![],
                     }),
                 ],
@@ -666,7 +668,7 @@ mod tests {
                         name: "a-product".into(),
                         style: bfc::VBMetaStyle::Fuchsia,
                         key: "path/to/key".into(),
-                        key_metadata: "path/to/metadata".into(),
+                        key_metadata: Some("path/to/metadata".into()),
                         additional_descriptors: vec![],
                     }),
                     Image::Fxfs(Fxfs {
@@ -718,7 +720,7 @@ mod tests {
                         name: "a-product".into(),
                         style: bfc::VBMetaStyle::Fuchsia,
                         key: "path/to/key".into(),
-                        key_metadata: "path/to/metadata".into(),
+                        key_metadata: Some("path/to/metadata".into()),
                         additional_descriptors: vec![],
                     }),
                     Image::Fvm(Fvm {
@@ -816,7 +818,7 @@ mod tests {
                         name: "a-product".into(),
                         style: bfc::VBMetaStyle::Fuchsia,
                         key: "path/to/key".into(),
-                        key_metadata: "path/to/metadata".into(),
+                        key_metadata: Some("path/to/metadata".into()),
                         additional_descriptors: vec![],
                     }),
                     Image::Fvm(Fvm {

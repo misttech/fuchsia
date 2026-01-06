@@ -89,7 +89,7 @@ fn descriptors_for_fuchsia<FSP: FilesystemProvider>(
 fn sign<FSP: FilesystemProvider>(
     descriptors: Vec<Descriptor>,
     key: impl AsRef<Path>,
-    key_metadata: impl AsRef<Path>,
+    key_metadata: &Option<impl AsRef<Path>>,
     salt: Salt,
     fs: &FSP,
 ) -> Result<(VBMetaImage, Salt)> {
@@ -97,9 +97,12 @@ fn sign<FSP: FilesystemProvider>(
     let key_pem = fs
         .read_to_string(&key)
         .with_context(|| format!("reading key: {}", key.as_ref().display()))?;
-    let key_metadata = fs
-        .read(&key_metadata)
-        .with_context(|| format!("reading key metadata: {}", key_metadata.as_ref().display()))?;
+    let key_metadata = match key_metadata {
+        Some(metadata_path) => fs.read(metadata_path.as_ref()).with_context(|| {
+            format!("reading key metadata: {}", metadata_path.as_ref().display())
+        })?,
+        None => Vec::new(),
+    };
     // And then create the signing key from those.
     let key = Key::try_new(&key_pem, key_metadata).unwrap();
 
@@ -135,7 +138,7 @@ mod tests {
             style: VBMetaStyle::Fuchsia,
             name: "fuchsia".into(),
             key: key_path,
-            key_metadata: metadata_path,
+            key_metadata: Some(metadata_path),
             additional_descriptors: vec![],
         };
 
@@ -202,7 +205,7 @@ mod tests {
             Descriptor::Hash(HashDescriptor::new("image_name", &[0xBB; 32], salt.clone()));
 
         let (vbmeta, salt) =
-            sign(vec![descriptor.clone()], "key", "key_metadata", salt, &vfs).unwrap();
+            sign(vec![descriptor.clone()], "key", &Some("key_metadata"), salt, &vfs).unwrap();
 
         // Validate that the key in the arguments was the key that was passed to
         // the vbmeta library for the signing operation.
