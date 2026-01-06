@@ -47,6 +47,7 @@ group("vulkan-tests") {
     "libvulkan",
     "mali_vulkan_test",
     "vk_timer_query",
+    "vkconnect",
     "vkext",
     "vkloop",
     "vkpriority",
