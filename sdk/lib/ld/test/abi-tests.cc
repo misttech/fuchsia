@@ -9,12 +9,15 @@
 #include <lib/symbolizer-markup/writer.h>
 
 #include <array>
+#include <string_view>
 #include <type_traits>
 
 #include <gmock/gmock.h>
 #include <gtest/gtest.h>
 
 namespace {
+
+using namespace std::literals;
 
 constexpr uint32_t kPageSize = 0x1000;
 
@@ -136,9 +139,9 @@ template <class Elf>
 constexpr ld::abi::Abi<Elf>::Module kModules[3] = {
     MakeModule<ld::abi::Abi<Elf>>(0, kName1, kBuildId1, 0x1000, kPhdrs1<Elf>, true,
                                   &kModules<Elf>[1], nullptr),
-    MakeModule<ld::abi::Abi<Elf>>(1, kName2, kBuildId2, 0x2000, kPhdrs2<Elf>, false,
+    MakeModule<ld::abi::Abi<Elf>>(1, kName2, kBuildId2, 0x5000, kPhdrs2<Elf>, false,
                                   &kModules<Elf>[2], &kModules<Elf>[0]),
-    MakeModule<ld::abi::Abi<Elf>>(2, kName3, kBuildId3, 0x3000, kPhdrs3<Elf>, true, nullptr,
+    MakeModule<ld::abi::Abi<Elf>>(2, kName3, kBuildId3, 0xf000, kPhdrs3<Elf>, true, nullptr,
                                   &kModules<Elf>[1]),
 };
 
@@ -195,13 +198,59 @@ TYPED_TEST(LdTests, ModuleSymbolizerContext) {
             "{{{mmap:0x2000:0x3000:load:0:rx:0x1000}}}\n");
   EXPECT_EQ(module_context(kModules<Elf>[1]),
             "{{{module:1:second:elf:5678}}}\n"
-            "{{{mmap:0x2000:0x2000:load:1:rx:0x0}}}\n"
-            "{{{mmap:0x4000:0x3000:load:1:rw:0x2000}}}\n");
+            "{{{mmap:0x5000:0x2000:load:1:rx:0x0}}}\n"
+            "{{{mmap:0x7000:0x3000:load:1:rw:0x2000}}}\n");
   EXPECT_EQ(module_context(kModules<Elf>[2]),
             "{{{module:2:third:elf:aabbcc}}}\n"
-            "{{{mmap:0x3000:0x3000:load:2:r:0x0}}}\n"
-            "{{{mmap:0x6000:0x7000:load:2:x:0x3000}}}\n"
-            "{{{mmap:0xa000:0xf000:load:2:rw:0x7000}}}\n");
+            "{{{mmap:0xf000:0x3000:load:2:r:0x0}}}\n"
+            "{{{mmap:0x12000:0x7000:load:2:x:0x3000}}}\n"
+            "{{{mmap:0x16000:0xf000:load:2:rw:0x7000}}}\n");
+}
+
+TYPED_TEST(LdTests, ModuleContainsVaddr) {
+  using Elf = typename TestFixture::Elf;
+
+  EXPECT_FALSE(ld::ModuleContainsVaddr(kModules<Elf>[0], 0x0100));
+  EXPECT_TRUE(ld::ModuleContainsVaddr(kModules<Elf>[0], 0x1000));
+  EXPECT_FALSE(ld::ModuleContainsVaddr(kModules<Elf>[0], 0x4000));
+  EXPECT_TRUE(ld::ModuleContainsVaddr(kModules<Elf>[0], 0x2345));
+}
+
+TYPED_TEST(LdTests, FindModuleByVaddr) {
+  using Abi = typename TestFixture::Abi;
+  using Elf = typename TestFixture::Elf;
+
+  constexpr Abi abi{.loaded_modules{&kModules<Elf>[0]}};
+  const auto modules = ld::AbiLoadedModules(abi);
+
+  decltype(modules.begin()) it;
+  auto it_name = [&it, &modules]() -> std::string_view {
+    if (it == modules.end()) {
+      return "<not found>"sv;
+    }
+    return it->link_map.name.get();
+  };
+
+  it = ld::FindModuleByVaddr(modules, 0x0100);  // Below any module.
+  EXPECT_EQ(it, modules.end()) << it_name();
+
+  it = ld::FindModuleByVaddr(modules, 0x123000);  // Above any module.
+  EXPECT_EQ(it, modules.end()) << it_name();
+
+  it = ld::FindModuleByVaddr(modules, 0x2000);  // Inside first.
+  EXPECT_EQ(it, modules.begin()) << it_name();
+
+  it = ld::FindModuleByVaddr(modules, 0x5000);  // At start of second.
+  EXPECT_EQ(it_name(), "second"sv);
+
+  it = ld::FindModuleByVaddr(modules, 0xa000);  // Just past end of second.
+  EXPECT_EQ(it, modules.end()) << it_name();
+
+  it = ld::FindModuleByVaddr(modules, 0xbad1);  // In the large gap before third.
+  EXPECT_EQ(it, modules.end()) << it_name();
+
+  it = ld::FindModuleByVaddr(modules, 0x10000);  // Inside third.
+  EXPECT_EQ(it_name(), "third"sv);
 }
 
 }  // namespace

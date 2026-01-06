@@ -11,10 +11,12 @@
 #include <lib/elfldltl/svr4-abi.h>
 #include <lib/elfldltl/symbol.h>
 
+#include <algorithm>
 #include <array>
 #include <concepts>
 #include <cstddef>
 #include <cstdint>
+#include <iterator>
 #include <ranges>
 #include <span>
 #include <type_traits>
@@ -235,6 +237,20 @@ template <class Module>
 constexpr bool ModuleUsesStaticTls(const Module& module) {
   return (module.symbols.flags() & elfldltl::ElfDynFlags::kStaticTls) ||
          (module.symbols.flags1() & elfldltl::ElfDynFlags1::kPie);
+}
+
+constexpr bool ModuleContainsVaddr(const auto& module, decltype(module.vaddr_start()) vaddr) {
+  return module.vaddr_start <= vaddr && vaddr < module.vaddr_end;
+}
+
+// This returns the iterator in the range where the module containing vaddr was
+// found, or modules.end() if no module contains vaddr.
+constexpr std::input_iterator auto FindModuleByVaddr(
+    std::ranges::input_range auto&& modules,
+    decltype(std::ranges::begin(modules)->vaddr_start()) vaddr) {
+  return std::ranges::find_if(
+      std::forward<decltype(modules)>(modules),
+      [vaddr](const auto& module) { return ModuleContainsVaddr(module, vaddr); });
 }
 
 // Given a module, call the callback as `bool(std::span<std::byte>)` to cover
