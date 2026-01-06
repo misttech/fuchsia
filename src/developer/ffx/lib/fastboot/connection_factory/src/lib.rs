@@ -2,7 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use anyhow::{Context, Result};
+use anyhow::{Context, Result, bail};
 use async_trait::async_trait;
 use ffx_config::EnvironmentContext;
 use ffx_fastboot_interface::fastboot_interface::FastbootInterface;
@@ -207,6 +207,44 @@ pub async fn udp_proxy(
     Ok(FastbootProxy::<UdpNetworkInterface>::new(addr.to_string(), interface, factory))
 }
 
+/// Creates a FastbootInterface based on the provided target state
+pub async fn get_fastboot_interface(
+    fastboot_state: &discovery::FastbootTargetState,
+    node_name: Option<String>,
+    context: &EnvironmentContext,
+) -> Result<Box<dyn FastbootInterface>> {
+    let connection_kind = get_connection_kind(fastboot_state, node_name)?;
+    let factory = ConnectionFactory::new(context);
+    factory.build_interface(connection_kind).await
+}
+
+pub fn get_connection_kind(
+    fastboot_state: &discovery::FastbootTargetState,
+    node_name: Option<String>,
+) -> Result<FastbootConnectionKind> {
+    let node_name = node_name.unwrap_or_default();
+    let connection_kind = match fastboot_state.connection_state {
+        discovery::FastbootConnectionState::Usb => {
+            FastbootConnectionKind::Usb(fastboot_state.serial_number.clone())
+        }
+        // This assumes the first address in the array will a.) exist, and b.) be the _most
+        // correct_ address from which we're selecting.
+        discovery::FastbootConnectionState::Tcp(ref v) => {
+            let Some(addr) = v.first() else {
+                bail!("Could not get a valid TCP address for target");
+            };
+            FastbootConnectionKind::Tcp(node_name, addr.into())
+        }
+        discovery::FastbootConnectionState::Udp(ref v) => {
+            let Some(addr) = v.first() else {
+                bail!("Could not get a valid UDP address for target");
+            };
+            FastbootConnectionKind::Udp(node_name, addr.into())
+        }
+    };
+    Ok(connection_kind)
+}
+
 pub mod test {
     use super::*;
     use ffx_fastboot_interface::test::{FakeServiceCommands, TestFastbootInterface};
@@ -230,5 +268,78 @@ pub mod test {
     -> (Arc<Mutex<FakeServiceCommands>>, impl FastbootConnectionFactory) {
         let state = Arc::new(Mutex::new(FakeServiceCommands::default()));
         (state.clone(), TestConnectionFactory { state: state })
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use discovery::{FastbootConnectionState, FastbootTargetState};
+    use std::net::{IpAddr, Ipv4Addr};
+
+    #[test]
+    fn test_get_connection_kind_usb() {
+        let serial = "serial123".to_string();
+        let state = FastbootTargetState {
+            serial_number: serial.clone(),
+            connection_state: FastbootConnectionState::Usb,
+        };
+        let kind = get_connection_kind(&state, None).unwrap();
+        match kind {
+            FastbootConnectionKind::Usb(s) => assert_eq!(s, serial),
+            _ => panic!("Expected Usb connection kind"),
+        }
+    }
+
+    #[test]
+    fn test_get_connection_kind_tcp() {
+        let addr = SocketAddr::new(IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1)), 8080);
+        let state = FastbootTargetState {
+            serial_number: "serial".to_string(),
+            connection_state: FastbootConnectionState::Tcp(vec![addr.into()]),
+        };
+        let kind = get_connection_kind(&state, Some("node".to_string())).unwrap();
+        match kind {
+            FastbootConnectionKind::Tcp(n, a) => {
+                assert_eq!(n, "node");
+                assert_eq!(a, addr);
+            }
+            _ => panic!("Expected Tcp connection kind"),
+        }
+    }
+
+    #[test]
+    fn test_get_connection_kind_udp() {
+        let addr = SocketAddr::new(IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1)), 8080);
+        let state = FastbootTargetState {
+            serial_number: "serial".to_string(),
+            connection_state: FastbootConnectionState::Udp(vec![addr.into()]),
+        };
+        let kind = get_connection_kind(&state, None).unwrap();
+        match kind {
+            FastbootConnectionKind::Udp(n, a) => {
+                assert_eq!(n, "");
+                assert_eq!(a, addr);
+            }
+            _ => panic!("Expected Udp connection kind"),
+        }
+    }
+
+    #[test]
+    fn test_get_connection_kind_empty_tcp() {
+        let state = FastbootTargetState {
+            serial_number: "serial".to_string(),
+            connection_state: FastbootConnectionState::Tcp(vec![]),
+        };
+        assert!(get_connection_kind(&state, None).is_err());
+    }
+
+    #[test]
+    fn test_get_connection_kind_empty_udp() {
+        let state = FastbootTargetState {
+            serial_number: "serial".to_string(),
+            connection_state: FastbootConnectionState::Udp(vec![]),
+        };
+        assert!(get_connection_kind(&state, None).is_err());
     }
 }
