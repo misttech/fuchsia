@@ -119,25 +119,25 @@ pub struct Fifo<R, W = R> {
     handle: RWHandle<zx::Fifo<R, W>>,
 }
 
-impl<R, W> AsRef<zx::Fifo<R, W>> for Fifo<R, W> {
+impl<R: FromBytes + IntoBytes, W: FromBytes + IntoBytes> AsRef<zx::Fifo<R, W>> for Fifo<R, W> {
     fn as_ref(&self) -> &zx::Fifo<R, W> {
         self.handle.get_ref()
     }
 }
 
-impl<R, W> AsHandleRef for Fifo<R, W> {
+impl<R: FromBytes + IntoBytes, W: FromBytes + IntoBytes> AsHandleRef for Fifo<R, W> {
     fn as_handle_ref(&self) -> zx::HandleRef<'_> {
         self.handle.get_ref().as_handle_ref()
     }
 }
 
-impl<R, W> From<Fifo<R, W>> for zx::Fifo<R, W> {
+impl<R: FromBytes + IntoBytes, W: FromBytes + IntoBytes> From<Fifo<R, W>> for zx::Fifo<R, W> {
     fn from(fifo: Fifo<R, W>) -> zx::Fifo<R, W> {
         fifo.handle.into_inner()
     }
 }
 
-impl<R: FifoEntry, W: FifoEntry> Fifo<R, W> {
+impl<R: FromBytes + IntoBytes, W: FromBytes + IntoBytes> Fifo<R, W> {
     /// Creates a new `Fifo` from a previously-created `zx::Fifo`.
     ///
     /// # Panics
@@ -264,7 +264,7 @@ impl<R: FifoEntry, W: FifoEntry> FifoReader<'_, R, W> {
     }
 }
 
-impl<R, W> fmt::Debug for Fifo<R, W> {
+impl<R: FromBytes + IntoBytes, W: FromBytes + IntoBytes> fmt::Debug for Fifo<R, W> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         self.handle.get_ref().fmt(f)
     }

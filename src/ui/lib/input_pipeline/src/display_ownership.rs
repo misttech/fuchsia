@@ -144,7 +144,8 @@ impl DisplayOwnership {
         let initial_state = display_ownership_event
             // scenic guarantees that ANY_DISPLAY_EVENT is asserted. If it is
             // not, this will fail with a timeout error.
-            .wait_handle(*ANY_DISPLAY_EVENT, MonotonicInstant::INFINITE_PAST)
+            .as_handle_ref()
+            .wait_one(*ANY_DISPLAY_EVENT, MonotonicInstant::INFINITE_PAST)
             .expect("unable to set the initial display state");
         log::debug!("setting initial display ownership to: {:?}", &initial_state);
         let initial_ownership: Ownership = initial_state.into();

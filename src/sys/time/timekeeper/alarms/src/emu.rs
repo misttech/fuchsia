@@ -2,11 +2,11 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 //
-use crate::{signal, SawResponseFut, TimerConfig, TimerOps, TimerOpsError};
+use crate::{SawResponseFut, TimerConfig, TimerOps, TimerOpsError, signal};
 use async_trait::async_trait;
 use futures::channel::mpsc;
 use futures::sink::SinkExt;
-use futures::{select, Future, StreamExt};
+use futures::{Future, StreamExt, select};
 use log::debug;
 use scopeguard::defer;
 use std::cell::RefCell;
@@ -130,7 +130,7 @@ mod tests {
         // Event is not signaled at the beginning.
         let maybe_signaled = setup_event
             .as_handle_ref()
-            .wait_handle(zx::Signals::EVENT_SIGNALED, zx::MonotonicInstant::INFINITE_PAST);
+            .wait_one(zx::Signals::EVENT_SIGNALED, zx::MonotonicInstant::INFINITE_PAST);
         assert_matches!(maybe_signaled, zx::WaitResult::TimedOut(zx::Signals::NONE));
 
         let mut start_fut = ops.start_and_wait(
@@ -148,7 +148,7 @@ mod tests {
         // Check that we signaled setup_event, so that callers can unblock.
         let maybe_signaled = setup_event
             .as_handle_ref()
-            .wait_handle(zx::Signals::EVENT_SIGNALED, zx::MonotonicInstant::INFINITE_PAST);
+            .wait_one(zx::Signals::EVENT_SIGNALED, zx::MonotonicInstant::INFINITE_PAST);
         assert_matches!(maybe_signaled, zx::WaitResult::Ok(zx::Signals::EVENT_SIGNALED));
 
         // Poll after 5us - future isn't ready yet.

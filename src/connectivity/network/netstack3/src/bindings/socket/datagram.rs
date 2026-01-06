@@ -2835,7 +2835,6 @@ mod tests {
     use futures::StreamExt;
     use packet::{PacketBuilder as _, Serializer as _};
     use packet_formats::icmp::IcmpIpExt;
-    use zx::{self as zx, AsHandleRef};
 
     use crate::bindings::integration_tests::{
         StackSetupBuilder, TestSetup, TestSetupBuilder, TestStack, test_ep_name,
@@ -3254,7 +3253,7 @@ mod tests {
         );
         assert_eq!(
             alice_events
-                .wait_handle(ZXSIO_SIGNAL_INCOMING, zx::MonotonicInstant::from_nanos(0))
+                .wait_one(ZXSIO_SIGNAL_INCOMING, zx::MonotonicInstant::from_nanos(0))
                 .expect_err("Alice incoming event should not be signaled"),
             zx::Status::TIMED_OUT
         );
@@ -3306,7 +3305,7 @@ mod tests {
         // We don't care which signals are on, only that SIGNAL_OUTGOING is, we
         // can ignore the return value.
         let _signals = bob_events
-            .wait_handle(ZXSIO_SIGNAL_OUTGOING, zx::MonotonicInstant::from_nanos(0))
+            .wait_one(ZXSIO_SIGNAL_OUTGOING, zx::MonotonicInstant::from_nanos(0))
             .expect("Bob outgoing event should be signaled");
 
         // Send datagram from Bob's socket.
@@ -4124,7 +4123,7 @@ mod tests {
         );
 
         let _signals = event
-            .wait_handle(ZXSIO_SIGNAL_INCOMING, zx::MonotonicInstant::INFINITE)
+            .wait_one(ZXSIO_SIGNAL_INCOMING, zx::MonotonicInstant::INFINITE)
             .expect("socket should receive");
 
         let (_addr, data, _control, truncated) = proxy

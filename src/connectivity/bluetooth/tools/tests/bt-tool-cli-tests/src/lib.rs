@@ -9,7 +9,7 @@ use std::fs::File;
 use std::io::{Error as IOError, Read, Write};
 use std::os::fd::AsFd as _;
 use std::sync::Arc;
-use zx::{self as zx, AsHandleRef, MonotonicInstant, Signals, Socket, Status};
+use zx::{MonotonicInstant, Signals, Socket, Status};
 
 pub struct BlockingSocket {
     // Holding a reference to File so it lives as long as the associated socket. If the FD is closed
@@ -24,7 +24,7 @@ impl Read for BlockingSocket {
         if self.socket.outstanding_read_bytes()? == 0 {
             let wait_sigs = Signals::SOCKET_READABLE | Signals::SOCKET_PEER_CLOSED;
             let signals =
-                self.socket.wait_handle(wait_sigs, MonotonicInstant::INFINITE).to_result()?;
+                self.socket.wait_one(wait_sigs, MonotonicInstant::INFINITE).to_result()?;
             if signals.contains(Signals::SOCKET_PEER_CLOSED) {
                 return Err(Status::PEER_CLOSED.into());
             }

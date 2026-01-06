@@ -373,7 +373,7 @@ mod tests {
         );
 
         job.kill().expect("Failed to kill job");
-        job.wait_handle(Signals::TASK_TERMINATED, Instant::INFINITE).unwrap();
+        job.wait_one(Signals::TASK_TERMINATED, Instant::INFINITE).unwrap();
 
         let info = job.info().unwrap();
         assert_eq!(

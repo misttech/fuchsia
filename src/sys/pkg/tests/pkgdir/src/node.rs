@@ -4,7 +4,6 @@
 
 use crate::{PackageSource, dirs_to_test};
 use anyhow::{Context as _, Error, anyhow};
-use fidl::AsHandleRef as _;
 use fidl::endpoints::{DiscoverableProtocolMarker as _, Proxy as _};
 use fidl_fuchsia_io as fio;
 
@@ -290,7 +289,7 @@ async fn verify_describe_file(node: fio::NodeProxy, flag: fio::Flags) -> Result<
         // should be immediately readable here.
         if let Some(observer) = observer {
             let _: zx::Signals = observer
-                .wait_handle(zx::Signals::USER_0, zx::MonotonicInstant::INFINITE_PAST)
+                .wait_one(zx::Signals::USER_0, zx::MonotonicInstant::INFINITE_PAST)
                 .to_result()
                 .context("FILE_SIGNAL_READABLE not set")?;
         }

@@ -16,7 +16,6 @@ use starnix_uapi::error;
 use starnix_uapi::errors::Errno;
 use starnix_uapi::open_flags::OpenFlags;
 use starnix_uapi::vfs::FdEvents;
-use zx::{self as zx, AsHandleRef};
 
 pub struct PidFdFileObject {
     /// The key of the task represented by this file.
@@ -116,7 +115,7 @@ impl FileOps for PidFdFileObject {
     ) -> Result<FdEvents, Errno> {
         match self
             .terminated_event
-            .wait_handle(zx::Signals::EVENTPAIR_PEER_CLOSED, zx::MonotonicInstant::ZERO)
+            .wait_one(zx::Signals::EVENTPAIR_PEER_CLOSED, zx::MonotonicInstant::ZERO)
             .to_result()
         {
             Err(zx::Status::TIMED_OUT) => Ok(FdEvents::empty()),

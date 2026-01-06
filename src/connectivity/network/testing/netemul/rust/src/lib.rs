@@ -17,6 +17,7 @@ use std::ops::DerefMut as _;
 use std::path::Path;
 use std::pin::pin;
 use std::sync::Arc;
+use zx::AsHandleRef;
 
 use fidl::endpoints::{ProtocolMarker, Proxy as _};
 use fidl_fuchsia_net_dhcp_ext::{self as fnet_dhcp_ext, ClientProviderExt};
@@ -24,7 +25,7 @@ use fidl_fuchsia_net_ext::{self as fnet_ext};
 use fidl_fuchsia_net_interfaces_ext::admin::Control;
 use fidl_fuchsia_net_interfaces_ext::{self as fnet_interfaces_ext};
 use fnet_ext::{FromExt as _, IntoExt as _};
-use zx::AsHandleRef;
+
 use {
     fidl_fuchsia_hardware_network as fnetwork, fidl_fuchsia_io as fio, fidl_fuchsia_net as fnet,
     fidl_fuchsia_net_dhcp as fnet_dhcp, fidl_fuchsia_net_interfaces as fnet_interfaces,
@@ -338,7 +339,8 @@ impl TestRealmInner<'_> {
         let _: zx::Signals = self
             .realm
             .as_channel()
-            .wait_handle(zx::Signals::CHANNEL_PEER_CLOSED, zx::MonotonicInstant::INFINITE)
+            .as_handle_ref()
+            .wait_one(zx::Signals::CHANNEL_PEER_CLOSED, zx::MonotonicInstant::INFINITE)
             .to_result()
             .expect("wait channel closed");
         // Drive the listener to get the monikers of any components that did not

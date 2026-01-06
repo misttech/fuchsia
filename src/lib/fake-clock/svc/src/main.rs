@@ -490,7 +490,7 @@ impl<T: FakeClockObserver> FakeClock<T> {
             hash_map::Entry::Occupied(mut occupied) => {
                 match occupied
                     .get()
-                    .wait_handle(zx::Signals::EVENTPAIR_PEER_CLOSED, zx::MonotonicInstant::ZERO)
+                    .wait_one(zx::Signals::EVENTPAIR_PEER_CLOSED, zx::MonotonicInstant::ZERO)
                     .to_result()
                 {
                     Ok(_) => {
@@ -925,7 +925,7 @@ mod tests {
     }
 
     fn check_signaled(e: &zx::EventPair) -> bool {
-        e.wait_handle(zx::Signals::EVENTPAIR_SIGNALED, zx::MonotonicInstant::from_nanos(0))
+        e.wait_one(zx::Signals::EVENTPAIR_SIGNALED, zx::MonotonicInstant::from_nanos(0))
             .map(|s| s & zx::Signals::EVENTPAIR_SIGNALED != zx::Signals::NONE)
             .unwrap_or(false)
     }

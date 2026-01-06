@@ -157,7 +157,7 @@ mod tests {
     use mock_paver::{MockPaverServiceBuilder, PaverEvent, hooks as mphooks};
     use std::sync::Arc;
     use std::sync::atomic::{AtomicU32, Ordering};
-    use zx::{AsHandleRef, Status};
+    use zx::Status;
 
     fn health_verification_and_call_count(
         status: zx::Status,
@@ -202,7 +202,7 @@ mod tests {
         assert_eq!(paver.take_events(), vec![]);
         assert_eq!(
             p_external
-                .wait_handle(zx::Signals::USER_0, zx::MonotonicInstant::INFINITE_PAST)
+                .wait_one(zx::Signals::USER_0, zx::MonotonicInstant::INFINITE_PAST)
                 .to_result(),
             Ok(zx::Signals::USER_0)
         );
@@ -238,7 +238,7 @@ mod tests {
         assert_eq!(paver.take_events(), vec![PaverEvent::QueryCurrentConfiguration]);
         assert_eq!(
             p_external
-                .wait_handle(zx::Signals::USER_0, zx::MonotonicInstant::INFINITE_PAST)
+                .wait_one(zx::Signals::USER_0, zx::MonotonicInstant::INFINITE_PAST)
                 .to_result(),
             Ok(zx::Signals::USER_0)
         );
@@ -285,7 +285,7 @@ mod tests {
         );
         assert_eq!(
             p_external
-                .wait_handle(zx::Signals::USER_0, zx::MonotonicInstant::INFINITE_PAST)
+                .wait_one(zx::Signals::USER_0, zx::MonotonicInstant::INFINITE_PAST)
                 .to_result(),
             Ok(zx::Signals::USER_0)
         );
@@ -437,7 +437,7 @@ mod tests {
         );
         assert_eq!(
             p_external
-                .wait_handle(zx::Signals::USER_0, zx::MonotonicInstant::INFINITE_PAST)
+                .wait_one(zx::Signals::USER_0, zx::MonotonicInstant::INFINITE_PAST)
                 .to_result(),
             Err(zx::Status::TIMED_OUT)
         );

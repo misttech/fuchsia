@@ -474,7 +474,7 @@ mod tests {
         .expect("Failed to spawn process");
 
         process
-            .wait_handle(Signals::PROCESS_TERMINATED, Instant::INFINITE)
+            .wait_one(Signals::PROCESS_TERMINATED, Instant::INFINITE)
             .expect("Wait for process termination failed");
         let info = process.info().unwrap();
         assert_matches!(
@@ -514,7 +514,7 @@ mod tests {
 
         process.kill().expect("Failed to kill process");
         process
-            .wait_handle(Signals::PROCESS_TERMINATED, Instant::INFINITE)
+            .wait_one(Signals::PROCESS_TERMINATED, Instant::INFINITE)
             .expect("Wait for process termination failed");
 
         let info = process.info().unwrap();
@@ -746,7 +746,7 @@ mod tests {
         );
 
         process.kill().unwrap();
-        process.wait_handle(Signals::TASK_TERMINATED, Instant::INFINITE).unwrap();
+        process.wait_one(Signals::TASK_TERMINATED, Instant::INFINITE).unwrap();
 
         drop(thread1_suspended);
         drop(thread2_suspended);

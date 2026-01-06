@@ -48,27 +48,27 @@ mod tests {
 
         // Waiting on it without setting any signal should time out.
         assert_eq!(
-            event.wait_handle(Signals::USER_0, MonotonicInstant::after(ten_ms)),
+            event.wait_one(Signals::USER_0, MonotonicInstant::after(ten_ms)),
             WaitResult::TimedOut(Signals::empty())
         );
 
         // If we set a signal, we should be able to wait for it.
         assert!(event.signal(Signals::NONE, Signals::USER_0).is_ok());
         assert_eq!(
-            event.wait_handle(Signals::USER_0, MonotonicInstant::after(ten_ms)).unwrap(),
+            event.wait_one(Signals::USER_0, MonotonicInstant::after(ten_ms)).unwrap(),
             Signals::USER_0
         );
 
         // Should still work, signals aren't automatically cleared.
         assert_eq!(
-            event.wait_handle(Signals::USER_0, MonotonicInstant::after(ten_ms)).unwrap(),
+            event.wait_one(Signals::USER_0, MonotonicInstant::after(ten_ms)).unwrap(),
             Signals::USER_0
         );
 
         // Now clear it, and waiting should time out again.
         assert!(event.signal(Signals::USER_0, Signals::NONE).is_ok());
         assert_eq!(
-            event.wait_handle(Signals::USER_0, MonotonicInstant::after(ten_ms)),
+            event.wait_one(Signals::USER_0, MonotonicInstant::after(ten_ms)),
             WaitResult::TimedOut(Signals::empty())
         );
     }

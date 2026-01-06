@@ -4,7 +4,6 @@
 
 use crate::{PackageSource, dirs_to_test, repeat_by_n};
 use anyhow::{Context as _, Error, anyhow};
-use fidl::AsHandleRef as _;
 use fidl::endpoints::{DiscoverableProtocolMarker as _, Proxy as _, create_proxy};
 use fidl_fuchsia_io as fio;
 use fuchsia_fs::directory::{DirEntry, DirentKind, open_directory};
@@ -572,7 +571,7 @@ async fn verify_content_file_opened(node: fio::NodeProxy, flag: fio::Flags) -> R
         // should be immediately readable here.
         if let Some(observer) = observer {
             let _: zx::Signals = observer
-                .wait_handle(zx::Signals::USER_0, zx::MonotonicInstant::INFINITE_PAST)
+                .wait_one(zx::Signals::USER_0, zx::MonotonicInstant::INFINITE_PAST)
                 .to_result()
                 .context("FILE_SIGNAL_READABLE not set")?;
         }
@@ -588,7 +587,7 @@ async fn verify_content_file_opened(node: fio::NodeProxy, flag: fio::Flags) -> R
                 // The blobs should be immediately readable here.
                 if let Some(event) = file_info.observer {
                     let _: zx::Signals = event
-                        .wait_handle(zx::Signals::USER_0, zx::MonotonicInstant::INFINITE_PAST)
+                        .wait_one(zx::Signals::USER_0, zx::MonotonicInstant::INFINITE_PAST)
                         .to_result()
                         .context("FILE_SIGNAL_READABLE not set")?;
                 }

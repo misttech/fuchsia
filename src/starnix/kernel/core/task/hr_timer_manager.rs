@@ -50,12 +50,12 @@ const TIMEOUT_SECONDS: i64 = 40;
 /// Waits forever synchronously for EVENT_SIGNALED.
 ///
 /// For us there is no useful scenario where this wait times out and we can continue operating.
-fn wait_signaled_sync<H: HandleBased>(handle: &H) -> zx::WaitResult {
+fn wait_signaled_sync(event: &zx::Event) -> zx::WaitResult {
     let mut logged = false;
     loop {
         let timeout =
             zx::MonotonicInstant::after(zx::MonotonicDuration::from_seconds(TIMEOUT_SECONDS));
-        let result = handle.wait_handle(zx::Signals::EVENT_SIGNALED, timeout);
+        let result = event.wait_one(zx::Signals::EVENT_SIGNALED, timeout);
         if let zx::WaitResult::Ok(_) = result {
             if logged {
                 log_error!(
@@ -1295,8 +1295,7 @@ mod tests {
             wait_signaled_sync(&timer3.event()).to_result().unwrap();
 
             assert_eq!(
-                counter
-                    .wait_handle(zx::Signals::COUNTER_NON_POSITIVE, zx::MonotonicInstant::INFINITE),
+                counter.wait_one(zx::Signals::COUNTER_NON_POSITIVE, zx::MonotonicInstant::INFINITE),
                 zx::WaitResult::Ok(zx::Signals::COUNTER_NON_POSITIVE)
             );
         })
@@ -1322,8 +1321,7 @@ mod tests {
             wait_signaled_sync(&timer3.event()).to_result().unwrap();
 
             assert_eq!(
-                counter
-                    .wait_handle(zx::Signals::COUNTER_NON_POSITIVE, zx::MonotonicInstant::INFINITE),
+                counter.wait_one(zx::Signals::COUNTER_NON_POSITIVE, zx::MonotonicInstant::INFINITE),
                 zx::WaitResult::Ok(zx::Signals::COUNTER_NON_POSITIVE)
             );
         })
@@ -1340,8 +1338,7 @@ mod tests {
             manager.add_timer(None, &timer, zx::BootInstant::from_nanos(1).into()).unwrap();
 
             assert_eq!(
-                counter
-                    .wait_handle(zx::Signals::COUNTER_NON_POSITIVE, zx::MonotonicInstant::INFINITE),
+                counter.wait_one(zx::Signals::COUNTER_NON_POSITIVE, zx::MonotonicInstant::INFINITE),
                 zx::WaitResult::Ok(zx::Signals::COUNTER_NON_POSITIVE)
             );
         })
@@ -1356,8 +1353,7 @@ mod tests {
             let timer = HrTimer::new();
             manager.add_timer(None, &timer, zx::BootInstant::from_nanos(1).into()).unwrap();
             assert_eq!(
-                counter
-                    .wait_handle(zx::Signals::COUNTER_NON_POSITIVE, zx::MonotonicInstant::INFINITE),
+                counter.wait_one(zx::Signals::COUNTER_NON_POSITIVE, zx::MonotonicInstant::INFINITE),
                 zx::WaitResult::Ok(zx::Signals::COUNTER_NON_POSITIVE)
             );
         })
@@ -1381,8 +1377,7 @@ mod tests {
             wait_signaled_sync(&timer.event()).to_result().unwrap();
 
             assert_eq!(
-                counter
-                    .wait_handle(zx::Signals::COUNTER_NON_POSITIVE, zx::MonotonicInstant::INFINITE),
+                counter.wait_one(zx::Signals::COUNTER_NON_POSITIVE, zx::MonotonicInstant::INFINITE),
                 zx::WaitResult::Ok(zx::Signals::COUNTER_NON_POSITIVE)
             );
         })
@@ -1414,7 +1409,7 @@ mod tests {
             // rescheduled, then suspend should be disallowed (counter > 0) to allow `timer1` to
             // be scheduled eventually.
             assert_eq!(
-                counter.wait_handle(zx::Signals::COUNTER_POSITIVE, zx::MonotonicInstant::INFINITE),
+                counter.wait_one(zx::Signals::COUNTER_POSITIVE, zx::MonotonicInstant::INFINITE),
                 zx::WaitResult::Ok(zx::Signals::COUNTER_POSITIVE)
             );
         })
@@ -1435,7 +1430,7 @@ mod tests {
 
             // When an interval timer expires, we should not be allowed to suspend.
             assert_eq!(
-                counter.wait_handle(zx::Signals::COUNTER_POSITIVE, zx::MonotonicInstant::INFINITE),
+                counter.wait_one(zx::Signals::COUNTER_POSITIVE, zx::MonotonicInstant::INFINITE),
                 zx::WaitResult::Ok(zx::Signals::COUNTER_POSITIVE)
             );
 
@@ -1449,8 +1444,7 @@ mod tests {
 
             // When we cancel an interval timer, we should be allowed to suspend.
             assert_eq!(
-                counter
-                    .wait_handle(zx::Signals::COUNTER_NON_POSITIVE, zx::MonotonicInstant::INFINITE),
+                counter.wait_one(zx::Signals::COUNTER_NON_POSITIVE, zx::MonotonicInstant::INFINITE),
                 zx::WaitResult::Ok(zx::Signals::COUNTER_NON_POSITIVE)
             );
         })
@@ -1470,7 +1464,7 @@ mod tests {
             wait_signaled_sync(&timer1.event()).to_result().unwrap();
 
             assert_eq!(
-                counter.wait_handle(zx::Signals::COUNTER_POSITIVE, zx::MonotonicInstant::INFINITE),
+                counter.wait_one(zx::Signals::COUNTER_POSITIVE, zx::MonotonicInstant::INFINITE),
                 zx::WaitResult::Ok(zx::Signals::COUNTER_POSITIVE)
             );
             const DURATION_100S: zx::BootDuration = zx::BootDuration::from_seconds(100);
@@ -1480,8 +1474,7 @@ mod tests {
             hrtimer_manager.remove_timer(&timer1).unwrap();
 
             assert_eq!(
-                counter
-                    .wait_handle(zx::Signals::COUNTER_NON_POSITIVE, zx::MonotonicInstant::INFINITE),
+                counter.wait_one(zx::Signals::COUNTER_NON_POSITIVE, zx::MonotonicInstant::INFINITE),
                 zx::WaitResult::Ok(zx::Signals::COUNTER_NON_POSITIVE)
             );
         })

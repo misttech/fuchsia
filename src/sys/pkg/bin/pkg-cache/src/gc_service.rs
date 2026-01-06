@@ -15,7 +15,6 @@ use futures::prelude::*;
 use log::{error, info};
 use std::collections::HashSet;
 use std::sync::Arc;
-use zx::{self as zx, AsHandleRef};
 
 pub async fn serve(
     blobfs: blobfs::Client,
@@ -63,22 +62,20 @@ async fn gc(
 ) -> Result<(), SpaceErrorCode> {
     info!("performing gc");
 
-    event_pair.wait_handle(zx::Signals::USER_0, zx::MonotonicInstant::INFINITE_PAST).map_err(
-        |e| {
-            match e {
-                zx::Status::TIMED_OUT => {
-                    info!("GC is blocked pending update.");
-                }
-                zx::Status::CANCELED => {
-                    info!("Commit handle is closed, likely because we are rebooting.");
-                }
-                other => {
-                    error!("Got unexpected status {:?} while waiting on handle.", other);
-                }
+    event_pair.wait_one(zx::Signals::USER_0, zx::MonotonicInstant::INFINITE_PAST).map_err(|e| {
+        match e {
+            zx::Status::TIMED_OUT => {
+                info!("GC is blocked pending update.");
             }
-            SpaceErrorCode::PendingCommit
-        },
-    )?;
+            zx::Status::CANCELED => {
+                info!("Commit handle is closed, likely because we are rebooting.");
+            }
+            other => {
+                error!("Got unexpected status {:?} while waiting on handle.", other);
+            }
+        }
+        SpaceErrorCode::PendingCommit
+    })?;
 
     // The primary purpose of GC is to free space to enable an OTA, so we continue if possible
     // through any errors and delete as many blobs as we can (because OTA'ing may be the only way

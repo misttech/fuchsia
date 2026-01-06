@@ -11,7 +11,7 @@ use std::{fmt, mem};
 
 use crate::runtime::{EHandle, PacketReceiver, RawReceiverRegistration};
 use futures::task::{AtomicWaker, Context};
-use zx::{self as zx, AsHandleRef};
+use zx::AsHandleRef;
 
 struct OnSignalsReceiver {
     maybe_signals: AtomicUsize,
@@ -151,7 +151,8 @@ impl<H: AsHandleRef> Future for OnSignalsFuture<'_, H> {
         if !self.registration.is_registered() {
             match self
                 .handle
-                .wait_handle(self.signals, zx::MonotonicInstant::INFINITE_PAST)
+                .as_handle_ref()
+                .wait_one(self.signals, zx::MonotonicInstant::INFINITE_PAST)
                 .to_result()
             {
                 Ok(signals) => Poll::Ready(Ok(signals)),
@@ -182,7 +183,8 @@ impl<H: AsHandleRef> Future for OnSignalsFuture<'_, H> {
                     // with some futures combinators).
                     match self
                         .handle
-                        .wait_handle(self.signals, zx::MonotonicInstant::INFINITE_PAST)
+                        .as_handle_ref()
+                        .wait_one(self.signals, zx::MonotonicInstant::INFINITE_PAST)
                         .to_result()
                     {
                         Ok(signals) => Poll::Ready(Ok(signals)),

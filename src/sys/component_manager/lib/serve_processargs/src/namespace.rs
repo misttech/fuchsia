@@ -285,7 +285,7 @@ mod tests {
     use vfs::directory::entry::{DirectoryEntry, EntryInfo, GetEntryInfo, OpenRequest};
     use vfs::remote::RemoteLike;
     use vfs::{ObjectRequestRef, path, pseudo_directory};
-    use zx::AsHandleRef;
+
     use {fidl_fuchsia_io as fio, fuchsia_async as fasync};
 
     fn multishot() -> (Connector, Receiver) {
@@ -454,7 +454,7 @@ mod tests {
         // Make sure the server_end is received, and test connectivity.
         let server_end: zx::Channel = receiver.receive().await.unwrap().channel.into();
         client_end.signal_peer(zx::Signals::empty(), zx::Signals::USER_0).unwrap();
-        server_end.wait_handle(zx::Signals::USER_0, zx::MonotonicInstant::INFINITE_PAST).unwrap();
+        server_end.wait_one(zx::Signals::USER_0, zx::MonotonicInstant::INFINITE_PAST).unwrap();
     }
 
     #[fuchsia::test]

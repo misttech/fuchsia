@@ -14,7 +14,6 @@ use futures::prelude::*;
 use http_client_config::Config;
 use log::{debug, error, info, trace};
 use std::str::FromStr as _;
-use zx::{self as zx, AsHandleRef};
 use {
     fidl_fuchsia_io as fio, fidl_fuchsia_net_http as net_http, fidl_fuchsia_pkg_http as fpkg_http,
     fidl_fuchsia_process_lifecycle as flifecycle, fuchsia_hyper as fhyper,
@@ -120,7 +119,7 @@ async fn to_success_response(
             if let Ok(chunk) = chunk {
                 let mut offset: usize = 0;
                 while offset < chunk.len() {
-                    let pending = match tx.wait_handle(
+                    let pending = match tx.wait_one(
                         zx::Signals::SOCKET_PEER_CLOSED | zx::Signals::SOCKET_WRITABLE,
                         zx::MonotonicInstant::INFINITE,
                     ).to_result() {

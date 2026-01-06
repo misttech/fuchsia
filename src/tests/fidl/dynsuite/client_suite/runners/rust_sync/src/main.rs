@@ -2,21 +2,21 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+use fidl::AsHandleRef;
 use fidl_fidl_clientsuite::{
     AjarTargetEvent, AjarTargetEventReport, AjarTargetEventReporterSynchronousProxy,
-    AjarTargetSynchronousProxy, BindingsProperties, ClosedTargetEvent, ClosedTargetEventReport,
-    ClosedTargetEventReporterSynchronousProxy, ClosedTargetSynchronousProxy, Empty,
-    EmptyResultClassification, EmptyResultWithErrorClassification, IoStyle, NonEmptyPayload,
-    NonEmptyResultClassification, NonEmptyResultWithErrorClassification, OpenTargetEvent,
-    OpenTargetEventReport, OpenTargetEventReporterSynchronousProxy, OpenTargetSynchronousProxy,
-    RunnerRequest, RunnerRequestStream, TableResultClassification, Test, UnionResultClassification,
-    UnknownEvent, CLIENT_SUITE_VERSION,
+    AjarTargetSynchronousProxy, BindingsProperties, CLIENT_SUITE_VERSION, ClosedTargetEvent,
+    ClosedTargetEventReport, ClosedTargetEventReporterSynchronousProxy,
+    ClosedTargetSynchronousProxy, Empty, EmptyResultClassification,
+    EmptyResultWithErrorClassification, IoStyle, NonEmptyPayload, NonEmptyResultClassification,
+    NonEmptyResultWithErrorClassification, OpenTargetEvent, OpenTargetEventReport,
+    OpenTargetEventReporterSynchronousProxy, OpenTargetSynchronousProxy, RunnerRequest,
+    RunnerRequestStream, TableResultClassification, Test, UnionResultClassification, UnknownEvent,
 };
 use fuchsia_component::server::ServiceFs;
 
 use futures::prelude::*;
 use rust_util::{classify_error, method_name};
-use zx::AsHandleRef;
 
 const DISABLED_TESTS: &[Test] = &[
     // No disabled tests!
@@ -344,7 +344,8 @@ async fn handle_runner_request(request: RunnerRequest) {
                 println!("Waiting for Reporter server to close channel");
                 reporter
                     .into_channel()
-                    .wait_handle(zx::Signals::CHANNEL_PEER_CLOSED, zx::MonotonicInstant::INFINITE)
+                    .as_handle_ref()
+                    .wait_one(zx::Signals::CHANNEL_PEER_CLOSED, zx::MonotonicInstant::INFINITE)
                     .unwrap();
             });
             responder.send().unwrap();
@@ -385,7 +386,8 @@ async fn handle_runner_request(request: RunnerRequest) {
                 println!("Waiting for Reporter server to close channel");
                 reporter
                     .into_channel()
-                    .wait_handle(zx::Signals::CHANNEL_PEER_CLOSED, zx::MonotonicInstant::INFINITE)
+                    .as_handle_ref()
+                    .wait_one(zx::Signals::CHANNEL_PEER_CLOSED, zx::MonotonicInstant::INFINITE)
                     .unwrap();
             });
             responder.send().unwrap();
@@ -432,7 +434,8 @@ async fn handle_runner_request(request: RunnerRequest) {
                 println!("Waiting for Reporter server to close channel");
                 reporter
                     .into_channel()
-                    .wait_handle(zx::Signals::CHANNEL_PEER_CLOSED, zx::MonotonicInstant::INFINITE)
+                    .as_handle_ref()
+                    .wait_one(zx::Signals::CHANNEL_PEER_CLOSED, zx::MonotonicInstant::INFINITE)
                     .unwrap();
             });
             responder.send().unwrap();

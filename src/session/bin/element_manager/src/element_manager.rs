@@ -831,7 +831,6 @@ mod tests {
     use super::{CollectionConfig, ElementManager, ElementManagerError};
     use assert_matches::assert_matches;
     use fidl::endpoints::create_proxy_and_stream;
-    use fidl::prelude::*;
     use fidl_test_util::spawn_stream_handler;
     use futures::FutureExt;
     use maplit::hashmap;
@@ -1103,7 +1102,7 @@ mod tests {
         assert_eq!(element.use_view_provider(), false);
         let exposed_dir = element.directory_channel();
         exposed_dir
-            .wait_handle(zx::Signals::CHANNEL_PEER_CLOSED, zx::MonotonicInstant::INFINITE_PAST)
+            .wait_one(zx::Signals::CHANNEL_PEER_CLOSED, zx::MonotonicInstant::INFINITE_PAST)
             .expect("exposed_dir should be closed");
     }
 

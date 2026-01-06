@@ -59,9 +59,9 @@ pub use runtime::instrument;
 #[cfg(not(target_os = "fuchsia"))]
 pub mod emulated_handle {
     pub use super::handle::{
-        shut_down_handles, AsHandleRef, Channel, EmulatedHandleRef, Event, EventPair, Handle,
-        HandleBased, HandleDisposition, HandleInfo, HandleOp, HandleRef, Koid, MessageBuf,
-        MessageBufEtc, ObjectType, Peered, Rights, Signals, Socket, SocketOpts,
+        AsHandleRef, Channel, EmulatedHandleRef, Event, EventPair, Handle, HandleBased,
+        HandleDisposition, HandleInfo, HandleOp, HandleRef, Koid, MessageBuf, MessageBufEtc,
+        ObjectType, Peered, Rights, Signals, Socket, SocketOpts, shut_down_handles,
     };
 
     /// Type of raw Zircon handles.

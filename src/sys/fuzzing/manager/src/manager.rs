@@ -4,9 +4,9 @@
 
 use crate::fuzzer::{Fuzzer, FuzzerState};
 use anyhow::{Context as _, Error, Result};
-use fidl::endpoints::{create_proxy, DiscoverableProtocolMarker, ServerEnd};
-use futures::channel::mpsc;
+use fidl::endpoints::{DiscoverableProtocolMarker, ServerEnd, create_proxy};
 use futures::StreamExt;
+use futures::channel::mpsc;
 use fuzz::RegistryProxy;
 use log::warn;
 use std::cell::RefCell;
@@ -221,13 +221,12 @@ fn warn_internal<T>(e: Error) -> zx::Status {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::test_support::{connect_to_manager, read_async, serve_test_realm, TestRealm};
-    use fidl::endpoints::{create_endpoints, Proxy};
+    use crate::test_support::{TestRealm, connect_to_manager, read_async, serve_test_realm};
+    use fidl::endpoints::{Proxy, create_endpoints};
     use fidl_fuchsia_fuzzer as fuzz;
     use futures::join;
     use std::rc::Rc;
     use test_manager::LaunchError;
-    use zx::AsHandleRef;
 
     static FOO_URL: &str = "fuchsia-pkg://fuchsia.com/fuzz-manager-unittests#meta/foo.cm";
     static BAR_URL: &str = "fuchsia-pkg://fuchsia.com/fuzz-manager-unittests#meta/bar.cm";
@@ -473,19 +472,25 @@ mod tests {
                 .context("failed to stop suite")?;
             let msg = read_async(&stdout).await.context("failed to read stdout")?;
             assert_eq!(msg, "");
-            assert!(stdout
-                .wait_handle(zx::Signals::SOCKET_PEER_CLOSED, zx::MonotonicInstant::INFINITE_PAST)
-                .is_ok());
+            assert!(
+                stdout
+                    .wait_one(zx::Signals::SOCKET_PEER_CLOSED, zx::MonotonicInstant::INFINITE_PAST)
+                    .is_ok()
+            );
             let msg = read_async(&stderr).await.context("failed to read stderr")?;
             assert_eq!(msg, "");
-            assert!(stderr
-                .wait_handle(zx::Signals::SOCKET_PEER_CLOSED, zx::MonotonicInstant::INFINITE_PAST)
-                .is_ok());
+            assert!(
+                stderr
+                    .wait_one(zx::Signals::SOCKET_PEER_CLOSED, zx::MonotonicInstant::INFINITE_PAST)
+                    .is_ok()
+            );
             let msg = read_async(&syslog).await.context("failed to read syslog")?;
             assert_eq!(msg, "");
-            assert!(syslog
-                .wait_handle(zx::Signals::SOCKET_PEER_CLOSED, zx::MonotonicInstant::INFINITE_PAST)
-                .is_ok());
+            assert!(
+                syslog
+                    .wait_one(zx::Signals::SOCKET_PEER_CLOSED, zx::MonotonicInstant::INFINITE_PAST)
+                    .is_ok()
+            );
             Ok::<(), Error>(())
         };
         let results = join!(test_fut(), serve_test_realm(test_realm));

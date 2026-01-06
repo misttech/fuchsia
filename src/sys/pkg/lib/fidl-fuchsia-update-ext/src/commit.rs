@@ -4,7 +4,6 @@
 
 use anyhow::anyhow;
 use fidl_fuchsia_update::CommitStatusProviderProxy;
-use zx::{self as zx, AsHandleRef};
 
 /// Whether the current system version is pending commit.
 #[derive(Copy, Clone, Debug, PartialEq)]
@@ -20,9 +19,7 @@ pub async fn query_commit_status(
     provider: &CommitStatusProviderProxy,
 ) -> Result<CommitStatus, anyhow::Error> {
     let event_pair = provider.is_current_system_committed().await?;
-    match event_pair
-        .wait_handle(zx::Signals::USER_0, zx::MonotonicInstant::INFINITE_PAST)
-        .to_result()
+    match event_pair.wait_one(zx::Signals::USER_0, zx::MonotonicInstant::INFINITE_PAST).to_result()
     {
         Ok(_) => Ok(CommitStatus::Committed),
         Err(zx::Status::TIMED_OUT) => Ok(CommitStatus::Pending),

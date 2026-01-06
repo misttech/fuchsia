@@ -11,7 +11,7 @@ use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, AtomicU32, AtomicUsize, Ordering};
 use test_case::test_case;
 use vmo_backed_block_server::{InitialContents, Observer, VmoBackedServerOptions};
-use zx::{AsHandleRef, HandleBased as _};
+use zx::HandleBased as _;
 use {
     fidl_fuchsia_hardware_block as fblock, fidl_fuchsia_hardware_block_volume as fvolume,
     fidl_fuchsia_hardware_ramdisk as framdisk, fidl_fuchsia_io as fio, fuchsia_async as fasync,
@@ -541,7 +541,7 @@ async fn test_gpt_passthrough_is_enabled() {
                     break;
                 }
                 Err(zx::Status::SHOULD_WAIT) => {
-                    fifo.wait_handle(zx::Signals::FIFO_READABLE, zx::MonotonicInstant::INFINITE)
+                    fifo.wait_one(zx::Signals::FIFO_READABLE, zx::MonotonicInstant::INFINITE)
                         .unwrap();
                 }
                 err => {

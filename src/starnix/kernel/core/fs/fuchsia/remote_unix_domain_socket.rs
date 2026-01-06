@@ -268,7 +268,7 @@ impl SocketOps for RemoteUnixDomainSocket {
         let signals = self
             .event
             .as_handle_ref()
-            .wait(zx::Signals::NONE, zx::MonotonicInstant::INFINITE_PAST)
+            .wait_one(zx::Signals::NONE, zx::MonotonicInstant::INFINITE_PAST)
             .map_err(|e| from_status_like_fdio!(e))?;
         Ok(Self::get_events_from_signals(signals))
     }

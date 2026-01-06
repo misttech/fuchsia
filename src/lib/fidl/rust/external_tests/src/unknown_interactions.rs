@@ -20,7 +20,7 @@ use fidl_test_unknown_interactions::{
 use fuchsia_async as fasync;
 use futures::stream::StreamExt;
 use std::future::Future;
-use zx::{self as zx, AsHandleRef, MessageBuf, MonotonicInstant, Signals};
+use zx::{MessageBuf, MonotonicInstant, Signals};
 
 trait ExpectResumeUnwind {
     type Result;
@@ -117,7 +117,7 @@ where
     let mut buf = MessageBuf::new();
 
     server_end
-        .wait_handle(
+        .wait_one(
             Signals::CHANNEL_READABLE | Signals::CHANNEL_PEER_CLOSED,
             MonotonicInstant::after(zx::MonotonicDuration::from_seconds(5)),
         )
@@ -627,7 +627,7 @@ where
         let mut buf = MessageBuf::new();
 
         server_end
-            .wait_handle(
+            .wait_one(
                 Signals::CHANNEL_READABLE | Signals::CHANNEL_PEER_CLOSED,
                 MonotonicInstant::after(zx::MonotonicDuration::from_seconds(5)),
             )
@@ -1092,7 +1092,7 @@ where
     let mut buf = MessageBuf::new();
 
     client_end
-        .wait_handle(
+        .wait_one(
             Signals::CHANNEL_READABLE | Signals::CHANNEL_PEER_CLOSED,
             MonotonicInstant::after(zx::MonotonicDuration::from_seconds(5)),
         )
@@ -1150,7 +1150,7 @@ async fn run_two_way_response<S, F>(
         let mut buf = MessageBuf::new();
 
         client_end
-            .wait_handle(
+            .wait_one(
                 Signals::CHANNEL_READABLE | Signals::CHANNEL_PEER_CLOSED,
                 MonotonicInstant::after(zx::MonotonicDuration::from_seconds(5)),
             )

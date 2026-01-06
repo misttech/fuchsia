@@ -346,9 +346,7 @@ mod tests {
         Unconstrained, Wire, munge,
     };
     use fuchsia_async as fasync;
-    use zx::{
-        AsHandleRef, Channel, HandleBased as _, Instant, NullableHandle, Signals, WaitResult,
-    };
+    use zx::{Channel, HandleBased as _, Instant, NullableHandle, Signals, WaitResult};
 
     use crate::fuchsia::channel::{Buffer, RecvBuffer};
     use crate::testing::*;
@@ -454,7 +452,7 @@ mod tests {
 
         // Decoding failed, so the handle should still be in the buffer.
         assert_eq!(
-            check_end.wait_handle(Signals::CHANNEL_PEER_CLOSED, Instant::INFINITE_PAST),
+            check_end.wait_one(Signals::CHANNEL_PEER_CLOSED, Instant::INFINITE_PAST),
             WaitResult::TimedOut(Signals::CHANNEL_WRITABLE),
         );
 
@@ -462,7 +460,7 @@ mod tests {
 
         // The handle should have been dropped with the buffer.
         assert_eq!(
-            check_end.wait_handle(Signals::CHANNEL_PEER_CLOSED, Instant::INFINITE_PAST),
+            check_end.wait_one(Signals::CHANNEL_PEER_CLOSED, Instant::INFINITE_PAST),
             WaitResult::Ok(Signals::CHANNEL_PEER_CLOSED),
         );
     }
@@ -482,7 +480,7 @@ mod tests {
 
         // The handle should remain un-signaled after successful decoding.
         assert_eq!(
-            check_end.wait_handle(Signals::CHANNEL_PEER_CLOSED, Instant::INFINITE_PAST),
+            check_end.wait_one(Signals::CHANNEL_PEER_CLOSED, Instant::INFINITE_PAST),
             WaitResult::TimedOut(Signals::CHANNEL_WRITABLE),
         );
 
@@ -490,7 +488,7 @@ mod tests {
 
         // Now the handle should be signaled.
         assert_eq!(
-            check_end.wait_handle(Signals::CHANNEL_PEER_CLOSED, Instant::INFINITE_PAST),
+            check_end.wait_one(Signals::CHANNEL_PEER_CLOSED, Instant::INFINITE_PAST),
             WaitResult::Ok(Signals::CHANNEL_PEER_CLOSED),
         );
     }

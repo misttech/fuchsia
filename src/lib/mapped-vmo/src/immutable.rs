@@ -173,21 +173,23 @@ mod tests {
     #[test_case(true; "immediately-page")]
     #[test_case(false; "do-not-immediately-page")]
     fn drop_cleans_up(immediately_page: bool) {
-        use zx::AsHandleRef as _;
         let vmo = zx::Vmo::create(7).unwrap();
-        assert!(vmo
-            .wait_handle(zx::Signals::VMO_ZERO_CHILDREN, zx::MonotonicInstant::INFINITE_PAST)
-            .is_ok());
+        assert!(
+            vmo.wait_one(zx::Signals::VMO_ZERO_CHILDREN, zx::MonotonicInstant::INFINITE_PAST)
+                .is_ok()
+        );
 
         let mapping = ImmutableMapping::create_from_vmo(&vmo, immediately_page).unwrap();
-        assert!(vmo
-            .wait_handle(zx::Signals::VMO_ZERO_CHILDREN, zx::MonotonicInstant::INFINITE_PAST)
-            .is_err());
+        assert!(
+            vmo.wait_one(zx::Signals::VMO_ZERO_CHILDREN, zx::MonotonicInstant::INFINITE_PAST)
+                .is_err()
+        );
 
         drop(mapping);
-        assert!(vmo
-            .wait_handle(zx::Signals::VMO_ZERO_CHILDREN, zx::MonotonicInstant::INFINITE_PAST)
-            .is_ok());
+        assert!(
+            vmo.wait_one(zx::Signals::VMO_ZERO_CHILDREN, zx::MonotonicInstant::INFINITE_PAST)
+                .is_ok()
+        );
     }
 
     #[test_case(true; "immediately-page")]

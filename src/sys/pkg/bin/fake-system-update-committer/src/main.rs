@@ -56,7 +56,6 @@ async fn main() -> Result<(), Error> {
 mod tests {
     use super::*;
     use fidl_fuchsia_update::CommitStatusProviderMarker;
-    use zx::AsHandleRef;
 
     #[fasync::run_singlethreaded(test)]
     async fn fake_system_update_committer() {
@@ -75,9 +74,7 @@ mod tests {
 
         let result = proxy.is_current_system_committed().await.unwrap();
         assert_eq!(
-            result
-                .wait_handle(zx::Signals::USER_0, zx::MonotonicInstant::INFINITE_PAST)
-                .to_result(),
+            result.wait_one(zx::Signals::USER_0, zx::MonotonicInstant::INFINITE_PAST).to_result(),
             Ok(zx::Signals::USER_0)
         );
     }

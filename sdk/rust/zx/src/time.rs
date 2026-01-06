@@ -661,7 +661,7 @@ mod tests {
 
         // Should not signal yet.
         assert_eq!(
-            timer.wait_handle(Signals::TIMER_SIGNALED, MonotonicInstant::after(ten_ms)),
+            timer.wait_one(Signals::TIMER_SIGNALED, MonotonicInstant::after(ten_ms)),
             WaitResult::TimedOut(Signals::empty()),
         );
 
@@ -669,7 +669,7 @@ mod tests {
         let instant = MonotonicInstant::after(five_secs);
         assert_eq!(timer.set(instant, slack), Ok(()));
         assert_eq!(
-            timer.wait_handle(Signals::TIMER_SIGNALED, Instant::INFINITE),
+            timer.wait_one(Signals::TIMER_SIGNALED, Instant::INFINITE),
             WaitResult::Ok(Signals::TIMER_SIGNALED)
         );
         // Once the timer has fired, its deadline is reset to zero.
@@ -678,7 +678,7 @@ mod tests {
         // Cancel it, and it should stop signalling.
         assert_eq!(timer.cancel(), Ok(()));
         assert_eq!(
-            timer.wait_handle(Signals::TIMER_SIGNALED, MonotonicInstant::after(ten_ms)),
+            timer.wait_one(Signals::TIMER_SIGNALED, MonotonicInstant::after(ten_ms)),
             WaitResult::TimedOut(Signals::empty()),
         );
         assert_eq!(timer.info().expect("info() failed").deadline, Instant::ZERO);
@@ -703,7 +703,7 @@ mod tests {
 
         // Should not signal yet.
         assert_eq!(
-            timer.wait_handle(Signals::TIMER_SIGNALED, MonotonicInstant::after(ten_ms)),
+            timer.wait_one(Signals::TIMER_SIGNALED, MonotonicInstant::after(ten_ms)),
             WaitResult::TimedOut(Signals::empty())
         );
 
@@ -711,7 +711,7 @@ mod tests {
         let instant = BootInstant::after(five_secs);
         assert_eq!(timer.set(instant, slack), Ok(()));
         assert_eq!(
-            timer.wait_handle(Signals::TIMER_SIGNALED, Instant::INFINITE),
+            timer.wait_one(Signals::TIMER_SIGNALED, Instant::INFINITE),
             WaitResult::Ok(Signals::TIMER_SIGNALED)
         );
         // Once the timer has fired, its deadline is reset to zero.
@@ -720,7 +720,7 @@ mod tests {
         // Cancel it, and it should stop signalling.
         assert_eq!(timer.cancel(), Ok(()));
         assert_eq!(
-            timer.wait_handle(Signals::TIMER_SIGNALED, MonotonicInstant::after(ten_ms)),
+            timer.wait_one(Signals::TIMER_SIGNALED, MonotonicInstant::after(ten_ms)),
             WaitResult::TimedOut(Signals::empty())
         );
         assert_eq!(timer.info().expect("info() failed").deadline, Instant::ZERO);

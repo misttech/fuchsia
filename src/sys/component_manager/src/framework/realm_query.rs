@@ -636,7 +636,8 @@ mod tests {
 
     fn is_closed(handle: impl fidl::AsHandleRef) -> bool {
         handle
-            .wait_handle(zx::Signals::OBJECT_PEER_CLOSED, zx::MonotonicInstant::from_nanos(0))
+            .as_handle_ref()
+            .wait_one(zx::Signals::OBJECT_PEER_CLOSED, zx::MonotonicInstant::from_nanos(0))
             .is_ok()
     }
 

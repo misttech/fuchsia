@@ -260,10 +260,9 @@ impl SharedBuffer {
 
                 // Wait so that we're not constantly waking up for every log message that is queued.
                 // Ignore errors here.
-                let _ = self.event.wait_handle(
-                    zx::Signals::USER_0,
-                    zx::MonotonicInstant::after(sleep_time.into()),
-                );
+                let _ = self
+                    .event
+                    .wait_one(zx::Signals::USER_0, zx::MonotonicInstant::after(sleep_time.into()));
                 zx::MonotonicInstant::INFINITE
             };
 

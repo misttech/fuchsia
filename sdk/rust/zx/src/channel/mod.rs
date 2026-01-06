@@ -2168,7 +2168,7 @@ mod tests {
             let mut buf = MessageBuf::new();
             // if either the read or the write fail, this thread will panic,
             // resulting in tx being dropped, which will be noticed by the rx.
-            p2.wait_handle(
+            p2.wait_one(
                 Signals::CHANNEL_READABLE,
                 MonotonicInstant::after(Duration::from_seconds(1)),
             )
@@ -2222,7 +2222,7 @@ mod tests {
             let mut buf = MessageBuf::new();
             // if either the read or the write fail, this thread will panic,
             // resulting in tx being dropped, which will be noticed by the rx.
-            p2.wait_handle(
+            p2.wait_one(
                 Signals::CHANNEL_READABLE,
                 MonotonicInstant::after(Duration::from_seconds(1)),
             )
@@ -2276,7 +2276,7 @@ mod tests {
             let mut buf = MessageBuf::new();
             // if either the read or the write fail, this thread will panic,
             // resulting in tx being dropped, which will be noticed by the rx.
-            p2.wait_handle(
+            p2.wait_one(
                 Signals::CHANNEL_READABLE,
                 MonotonicInstant::after(Duration::from_seconds(1)),
             )
@@ -2340,7 +2340,7 @@ mod tests {
             let mut buf = MessageBuf::new();
             // if either the read or the write fail, this thread will panic,
             // resulting in tx being dropped, which will be noticed by the rx.
-            p2.wait_handle(
+            p2.wait_one(
                 Signals::CHANNEL_READABLE,
                 MonotonicInstant::after(Duration::from_seconds(1)),
             )

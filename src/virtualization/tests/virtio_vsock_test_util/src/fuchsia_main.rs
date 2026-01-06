@@ -2,7 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use anyhow::{format_err, Context as _, Error};
+use anyhow::{Context as _, Error, format_err};
 use fidl::endpoints;
 use fidl_fuchsia_vsock::{
     AcceptorMarker, AcceptorRequest, ConnectionMarker, ConnectionProxy, ConnectionTransport,
@@ -10,8 +10,8 @@ use fidl_fuchsia_vsock::{
 };
 use fuchsia_async as fasync;
 use fuchsia_component::client::connect_to_protocol;
-use futures::io::{AsyncReadExt, AsyncWriteExt};
 use futures::StreamExt;
+use futures::io::{AsyncReadExt, AsyncWriteExt};
 use zx::{self as zx, AsHandleRef};
 
 const TEST_DATA_LEN: u64 = 60000;
@@ -27,7 +27,7 @@ fn make_socket_pair() -> Result<(fasync::Socket, zx::Socket), Error> {
 fn wait_socket_empty(socket: &fasync::Socket) {
     socket
         .as_handle_ref()
-        .wait(zx::Signals::SOCKET_WRITE_THRESHOLD, zx::MonotonicInstant::INFINITE)
+        .wait_one(zx::Signals::SOCKET_WRITE_THRESHOLD, zx::MonotonicInstant::INFINITE)
         .unwrap();
 }
 
@@ -79,7 +79,7 @@ async fn main() -> Result<(), Error> {
     client_end.shutdown()?;
     data_stream
         .as_handle_ref()
-        .wait(zx::Signals::SOCKET_PEER_CLOSED, zx::MonotonicInstant::INFINITE)
+        .wait_one(zx::Signals::SOCKET_PEER_CLOSED, zx::MonotonicInstant::INFINITE)
         .to_result()?;
 
     // Wait for a connection
@@ -92,7 +92,7 @@ async fn main() -> Result<(), Error> {
     test_read_write(&mut data_stream, &client_end).await?;
     data_stream
         .as_handle_ref()
-        .wait(zx::Signals::SOCKET_PEER_CLOSED, zx::MonotonicInstant::INFINITE)
+        .wait_one(zx::Signals::SOCKET_PEER_CLOSED, zx::MonotonicInstant::INFINITE)
         .to_result()?;
 
     // Get next connection

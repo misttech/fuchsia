@@ -211,7 +211,7 @@ impl FileOps for DataChannelFile {
         _file: &FileObject,
         _current_task: &CurrentTask,
     ) -> Result<FdEvents, Errno> {
-        let current_events = self.event.wait_handle(
+        let current_events = self.event.wait_one(
             zx::Signals::from_bits_truncate(fnanohub::SIGNAL_READABLE | fnanohub::SIGNAL_WRITABLE)
                 | zx::Signals::CHANNEL_PEER_CLOSED,
             zx::MonotonicInstant::INFINITE_PAST,

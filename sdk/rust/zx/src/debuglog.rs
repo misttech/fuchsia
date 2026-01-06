@@ -186,7 +186,7 @@ mod tests {
                 }
                 Err(status) if status == Status::SHOULD_WAIT => {
                     debuglog
-                        .wait_handle(Signals::LOG_READABLE, Instant::INFINITE)
+                        .wait_one(Signals::LOG_READABLE, Instant::INFINITE)
                         .expect("Failed to wait for log readable");
                     continue;
                 }

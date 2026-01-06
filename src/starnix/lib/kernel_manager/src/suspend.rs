@@ -89,7 +89,7 @@ pub async fn suspend_container(
         // Take locks in a scope that will be closed before awaiting to ensure no deadlock.
         if let Some(wake_locks) = payload.wake_locks {
             match wake_locks
-                .wait_handle(zx::Signals::EVENT_SIGNALED, zx::MonotonicInstant::ZERO)
+                .wait_one(zx::Signals::EVENT_SIGNALED, zx::MonotonicInstant::ZERO)
                 .to_result()
             {
                 Ok(_) => {
@@ -230,7 +230,7 @@ async fn suspend_job(kernel_job: &zx::Job) -> Result<Vec<zx::NullableHandle>, Er
                 fuchsia_trace::duration!("power", "starnix-runner:suspend_kernel", "thread_koid" => *thread_koid);
                 if let Ok(thread) = process.get_child(&thread_koid, zx::Rights::SAME_RIGHTS) {
                     match thread
-                        .wait_handle(
+                        .wait_one(
                             zx::Signals::THREAD_SUSPENDED,
                             zx::MonotonicInstant::after(zx::MonotonicDuration::INFINITE),
                         )

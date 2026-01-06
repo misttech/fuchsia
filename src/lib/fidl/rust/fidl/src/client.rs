@@ -865,7 +865,7 @@ pub mod sync {
 
     use super::*;
     use std::mem::MaybeUninit;
-    use zx::{self as zx, AsHandleRef, MessageBufEtc};
+    use zx::MessageBufEtc;
 
     /// A synchronous client for making FIDL calls.
     #[derive(Debug)]
@@ -993,7 +993,7 @@ pub mod sync {
 
             loop {
                 self.channel
-                    .wait_handle(
+                    .wait_one(
                         zx::Signals::CHANNEL_READABLE | zx::Signals::CHANNEL_PEER_CLOSED,
                         deadline,
                     )
@@ -1137,7 +1137,7 @@ mod tests {
             // Server
             let mut received = MessageBufEtc::new();
             server_end
-                .wait_handle(
+                .wait_one(
                     zx::Signals::CHANNEL_READABLE,
                     zx::MonotonicInstant::after(zx::MonotonicDuration::from_seconds(5)),
                 )
@@ -1171,7 +1171,8 @@ mod tests {
             // Server
             let mut received = MessageBufEtc::new();
             server_end
-                .wait_handle(
+                .as_handle_ref()
+                .wait_one(
                     zx::Signals::CHANNEL_READABLE,
                     zx::MonotonicInstant::after(zx::MonotonicDuration::from_seconds(5)),
                 )

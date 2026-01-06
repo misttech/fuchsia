@@ -280,7 +280,7 @@ impl Session {
                         signals |= zx::Signals::OBJECT_WRITABLE;
                     }
                     let Ok(signals) =
-                        self.fifo.wait_handle(signals, zx::MonotonicInstant::INFINITE).to_result()
+                        self.fifo.wait_one(signals, zx::MonotonicInstant::INFINITE).to_result()
                     else {
                         return;
                     };

@@ -63,6 +63,17 @@ macro_rules! delegated_concrete_handle_based_impls {
         ) -> Result<(), $crate::Status> {
             self.0.signal(clear_mask, set_mask)
         }
+
+        /// Wraps the
+        /// [`zx_object_wait_one`](https://fuchsia.dev/fuchsia-src/reference/syscalls/object_wait_one)
+        /// syscall.
+        pub fn wait_one(
+            &self,
+            signals: $crate::Signals,
+            deadline: $crate::MonotonicInstant,
+        ) -> $crate::WaitResult {
+            self.0.wait_one(signals, deadline)
+        }
     };
 }
 

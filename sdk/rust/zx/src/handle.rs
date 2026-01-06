@@ -122,7 +122,7 @@ impl Handle {
 
     /// Wraps the [`zx_object_wait_one`](https://fuchsia.dev/reference/syscalls/object_wait_one)
     /// syscall.
-    pub fn wait(&self, signals: Signals, deadline: MonotonicInstant) -> WaitResult {
+    pub fn wait_one(&self, signals: Signals, deadline: MonotonicInstant) -> WaitResult {
         let mut pending = Signals::empty().bits();
         // SAFETY: basic FFI call.
         let status = unsafe {
@@ -414,10 +414,10 @@ impl NullableHandle {
         self.0.as_ref().map(|h| h.signal(clear_mask, set_mask)).unwrap_or(Err(Status::BAD_HANDLE))
     }
 
-    pub fn wait(&self, signals: Signals, deadline: MonotonicInstant) -> WaitResult {
+    pub fn wait_one(&self, signals: Signals, deadline: MonotonicInstant) -> WaitResult {
         self.0
             .as_ref()
-            .map(|h| h.wait(signals, deadline))
+            .map(|h| h.wait_one(signals, deadline))
             .unwrap_or(WaitResult::Err(Status::BAD_HANDLE))
     }
 
@@ -685,13 +685,6 @@ pub trait AsHandleRef {
         NullableHandle::raw_handle(&self.as_handle_ref())
     }
 
-    /// Waits on a handle. Wraps the
-    /// [zx_object_wait_one](https://fuchsia.dev/fuchsia-src/reference/syscalls/object_wait_one.md)
-    /// syscall.
-    fn wait_handle(&self, signals: Signals, deadline: MonotonicInstant) -> WaitResult {
-        NullableHandle::wait(&self.as_handle_ref(), signals, deadline)
-    }
-
     /// Causes packet delivery on the given port when the object changes state and matches signals.
     /// [zx_object_wait_async](https://fuchsia.dev/fuchsia-src/reference/syscalls/object_wait_async.md)
     /// syscall.
@@ -834,7 +827,10 @@ pub trait Peered: HandleBased {
     /// errors. Note that `Status::TIMED_OUT` errors are converted to `Ok(false)` and all other
     /// errors are propagated.
     fn is_closed(&self) -> Result<bool, Status> {
-        match self.wait_handle(Signals::OBJECT_PEER_CLOSED, MonotonicInstant::INFINITE_PAST) {
+        match self
+            .as_handle_ref()
+            .wait_one(Signals::OBJECT_PEER_CLOSED, MonotonicInstant::INFINITE_PAST)
+        {
             WaitResult::Ok(signals) => Ok(signals.contains(Signals::OBJECT_PEER_CLOSED)),
             WaitResult::TimedOut(_) => Ok(false),
             WaitResult::Canceled(_) => Err(Status::CANCELED),

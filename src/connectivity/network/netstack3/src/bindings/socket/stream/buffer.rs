@@ -17,7 +17,6 @@ use async_ringbuf::traits::{
 use fuchsia_async::{self as fasync, ReadableHandle as _, WritableHandle as _};
 use log::{debug, warn};
 use pin_project::pin_project;
-use zx::AsHandleRef;
 
 use futures::channel::{mpsc, oneshot};
 use futures::{FutureExt as _, StreamExt as _};
@@ -1139,7 +1138,7 @@ async fn wait_and_alloc_send_buffer<O: SendTaskOps>(
             );
             // Check if we're actually readable. Pay a syscall here
             // to avoid the buffer allocation.
-            match handle.get_ref().wait_handle(
+            match handle.get_ref().wait_one(
                 zx::Signals::SOCKET_READABLE | zx::Signals::SOCKET_PEER_CLOSED,
                 zx::MonotonicInstant::INFINITE_PAST,
             ) {

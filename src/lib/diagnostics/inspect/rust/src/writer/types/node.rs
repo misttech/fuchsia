@@ -1092,7 +1092,7 @@ mod fuchsia_tests {
     use crate::{NumericProperty, reader};
     use diagnostics_assertions::assert_json_diff;
     use std::sync::Arc;
-    use zx::{self as zx, AsHandleRef, Peered};
+    use zx::Peered;
 
     #[fuchsia::test]
     fn atomic_update_reader() {
@@ -1105,14 +1105,14 @@ mod fuchsia_tests {
         macro_rules! notify_and_wait_reader {
             () => {
                 p1.signal_peer(zx::Signals::NONE, zx::Signals::USER_0).unwrap();
-                p1.wait_handle(zx::Signals::USER_0, zx::MonotonicInstant::INFINITE).unwrap();
+                p1.wait_one(zx::Signals::USER_0, zx::MonotonicInstant::INFINITE).unwrap();
                 p1.signal(zx::Signals::USER_0, zx::Signals::NONE).unwrap();
             };
         }
 
         macro_rules! wait_and_notify_writer {
             ($code:block) => {
-              p2.wait_handle(zx::Signals::USER_0, zx::MonotonicInstant::INFINITE).unwrap();
+              p2.wait_one(zx::Signals::USER_0, zx::MonotonicInstant::INFINITE).unwrap();
               p2.signal(zx::Signals::USER_0, zx::Signals::NONE).unwrap();
               $code
               p2.signal_peer(zx::Signals::NONE, zx::Signals::USER_0).unwrap();

@@ -493,7 +493,7 @@ impl ReadWrite {
                     && self
                         .socket
                         .as_handle_ref()
-                        .wait_handle(
+                        .wait_one(
                             zx::Signals::OBJECT_PEER_CLOSED,
                             zx::MonotonicInstant::INFINITE_PAST,
                         )

@@ -7,7 +7,7 @@ use crate::runtime::{EHandle, PacketReceiver, ReceiverRegistration};
 use fuchsia_sync::Mutex;
 use std::marker::PhantomData;
 use std::task::{Context, Poll, Waker, ready};
-use zx::{self as zx, AsHandleRef};
+use zx::AsHandleRef;
 
 const OBJECT_PEER_CLOSED: zx::Signals = zx::Signals::OBJECT_PEER_CLOSED;
 const OBJECT_READABLE: zx::Signals = zx::Signals::OBJECT_READABLE;
@@ -260,7 +260,8 @@ where
         // it when it gets around to it.
         match self
             .handle
-            .wait_handle(OBJECT_PEER_CLOSED, zx::MonotonicInstant::INFINITE_PAST)
+            .as_handle_ref()
+            .wait_one(OBJECT_PEER_CLOSED, zx::MonotonicInstant::INFINITE_PAST)
             .to_result()
         {
             Ok(_) => true,

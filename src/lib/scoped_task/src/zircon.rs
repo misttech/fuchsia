@@ -175,7 +175,8 @@ fn kill<T: zx::Task>(process: &T, what: &'static str) {
     let result: Result<(), zx::Status> = (|| {
         process.kill()?;
         process
-            .wait_handle(zx::Signals::TASK_TERMINATED, zx::MonotonicInstant::INFINITE)
+            .as_handle_ref()
+            .wait_one(zx::Signals::TASK_TERMINATED, zx::MonotonicInstant::INFINITE)
             .to_result()?;
         Ok(())
     })();

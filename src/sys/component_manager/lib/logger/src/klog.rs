@@ -129,7 +129,7 @@ mod tests {
     use log::{error, info, warn};
     use rand::Rng;
     use std::panic;
-    use zx::{AsHandleRef, HandleBased};
+    use zx::HandleBased;
 
     const MAX_INFO_LINE_LEN: usize =
         zx::sys::ZX_LOG_RECORD_DATA_MAX - "[component_manager] INFO: ".len();
@@ -158,7 +158,7 @@ mod tests {
                 }
                 Err(status) if status == zx::Status::SHOULD_WAIT => {
                     debuglog
-                        .wait_handle(zx::Signals::LOG_READABLE, zx::MonotonicInstant::INFINITE)
+                        .wait_one(zx::Signals::LOG_READABLE, zx::MonotonicInstant::INFINITE)
                         .expect("Failed to wait for log readable");
                     continue;
                 }

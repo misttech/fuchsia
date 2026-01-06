@@ -114,7 +114,7 @@ impl OrdinalTransformChannel {
     ) {
         let signals = in_end
             .as_handle_ref()
-            .wait(
+            .wait_one(
                 Signals::CHANNEL_READABLE | Signals::CHANNEL_PEER_CLOSED,
                 MonotonicInstant::INFINITE,
             )

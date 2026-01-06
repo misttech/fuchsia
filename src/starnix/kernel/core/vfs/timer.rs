@@ -23,7 +23,7 @@ use starnix_uapi::vfs::FdEvents;
 use starnix_uapi::{TFD_TIMER_ABSTIME, TFD_TIMER_CANCEL_ON_SET, error, itimerspec};
 use std::sync::{Arc, Weak};
 use zerocopy::IntoBytes;
-use zx::{self as zx, AsHandleRef, HandleRef};
+use zx::HandleRef;
 
 pub trait TimerOps: Send + Sync + 'static {
     /// Starts the timer with the specified `deadline`.
@@ -548,7 +548,7 @@ impl FileOps for TimerFile {
             .map(|observer| {
                 observer
                     .get_timeline_change_counter_ref()
-                    .wait_handle(zx::Signals::COUNTER_POSITIVE, zx::Instant::ZERO)
+                    .wait_one(zx::Signals::COUNTER_POSITIVE, zx::Instant::ZERO)
                     .to_result()
             })
             // It seems that translating errors into empty signal sets is OK.
@@ -559,7 +559,7 @@ impl FileOps for TimerFile {
         let timer_signals = match self
             .timer
             .as_handle_ref()
-            .wait(zx::Signals::TIMER_SIGNALED, zx::Instant::ZERO)
+            .wait_one(zx::Signals::TIMER_SIGNALED, zx::MonotonicInstant::ZERO)
             .to_result()
         {
             Err(zx::Status::TIMED_OUT) => zx::Signals::empty(),

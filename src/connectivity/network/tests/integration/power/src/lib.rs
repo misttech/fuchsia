@@ -10,8 +10,8 @@ use std::marker::PhantomData;
 use std::pin::pin;
 
 use assert_matches::assert_matches;
+use fidl::HandleBased as _;
 use fidl::endpoints::{DiscoverableProtocolMarker as _, Proxy as _, ServiceMarker as _};
-use fidl::{AsHandleRef, HandleBased as _};
 use fuchsia_async::TimeoutExt as _;
 use futures::stream::FusedStream;
 use futures::{AsyncReadExt as _, AsyncWriteExt as _, FutureExt as _, Stream, StreamExt as _};
@@ -466,7 +466,7 @@ async fn rx_lease_drops(name: &str, netstack_suspend_enabled: bool) {
         // when netstack is not subscribed to it.
         assert_eq!(
             lease
-                .wait_handle(zx::Signals::CHANNEL_PEER_CLOSED, zx::MonotonicInstant::INFINITE)
+                .wait_one(zx::Signals::CHANNEL_PEER_CLOSED, zx::MonotonicInstant::INFINITE)
                 .expect("wait closed"),
             zx::Signals::CHANNEL_PEER_CLOSED
         );

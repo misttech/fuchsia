@@ -175,7 +175,6 @@ mod tests {
     use fuchsia_async as fasync;
     use futures::io::AsyncWriteExt as _;
     use std::os::unix::io::AsRawFd as _;
-    use zx::AsHandleRef as _;
 
     #[fasync::run_singlethreaded(test)]
     async fn can_create_pty() -> Result<(), Error> {
@@ -240,7 +239,7 @@ mod tests {
         // specify a deadline and cannot simply rely on fasync::OnSignals.
         process
             .process
-            .wait_handle(
+            .wait_one(
                 zx::Signals::PROCESS_TERMINATED,
                 zx::MonotonicInstant::after(zx::MonotonicDuration::from_seconds(60)),
             )
@@ -280,7 +279,7 @@ mod tests {
         // specify a deadline and cannot simply rely on fasync::OnSignals.
         process
             .process
-            .wait_handle(
+            .wait_one(
                 zx::Signals::PROCESS_TERMINATED,
                 zx::MonotonicInstant::after(zx::MonotonicDuration::from_seconds(60)),
             )
