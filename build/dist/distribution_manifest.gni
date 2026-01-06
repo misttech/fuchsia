@@ -184,8 +184,11 @@ template("distribution_entries_from_fini") {
                            ])
 
     script = "//build/dist/convert_fini_to_manifest.py"
+    inputs = [
+      "//build/python/modules/distribution_manifest/distribution_manifest.py",
+    ]
 
-    inputs = [ invoker.file ]
+    sources = [ invoker.file ]
     outputs = [ _output ]
 
     args = [
