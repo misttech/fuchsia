@@ -14,6 +14,7 @@ from pathlib import Path
 sys.path.insert(0, os.path.dirname(__file__))
 import build_utils
 import stdio_redirection
+from build_utils import FilePath
 
 
 @dataclasses.dataclass
@@ -186,7 +187,9 @@ class BazelBuildActionQuery(object):
         self._bazel_target = bazel_target
         self._actions_map = actions_map
 
-    def make_query_command(self, bazel_pre_cmd_args: list[str]) -> list[str]:
+    def make_query_command(
+        self, bazel_pre_cmd_args: list[FilePath]
+    ) -> list[FilePath]:
         """Return the query command to be performed.
 
         Note that this forces @gn_targets to be empty, which will generate errors
@@ -402,7 +405,7 @@ def find_prefix_in_input(
     prefix_first_char = prefix[0]
     from_pos = 0
     while True:
-        pos = input.find(prefix_first_char, from_pos)
+        pos = input.find(prefix_first_char, from_pos)  # type: ignore
         if pos < 0:
             return (0, input_len)  # No match
 
@@ -527,7 +530,7 @@ class BazelStderrDebugLineFilter(stdio_redirection.OutputSink):
             if self._prefix_start:
                 assert data.startswith(
                     self._prefix_start
-                ), f"Unexpected data (expected initial {self._prefix_start}): {data}"
+                ), f"Unexpected data (expected initial {self._prefix_start!r}): {data!r}"
                 next_newline = data.find(10, len(self._prefix_start))
                 if next_newline < 0:
                     # Not enough data yet, just store in buffer then wait.

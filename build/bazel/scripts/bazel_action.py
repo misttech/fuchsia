@@ -1071,9 +1071,9 @@ def list_to_pairs(l: T.Iterable[T.Any]) -> T.Iterable[tuple[T.Any, T.Any]]:
             is_first = False
         else:
             yield (
-                last_val,
+                last_val,  # pyright: ignore[reportPossiblyUnboundVariable]
                 val,
-            )  # pyright: ignore[reportPossiblyUnboundVariable]
+            )
             is_first = True
 
 
@@ -1248,7 +1248,7 @@ def main() -> int:
         "--bazel-targets",
         default=[],
         nargs="*",
-        help="list of bazel target patterns.",
+        help="list of bazel targets.",
     )
     parser.add_argument(
         "--stamp-files",
@@ -1615,9 +1615,15 @@ def main() -> int:
     with stdio_redirection.PipeOutputSink(
         debug_symbol_manifest_filtering_sink, use_pty=is_stderr_pty
     ) as pty_stderr:
+        # This makes mypy happy, as it can't detect the type correctly in the 'with' statement
+        assert isinstance(pty_stderr, stdio_redirection.PipeOutputSink)
+
         with stdio_redirection.PipeOutputSink(
             stdout_sink, use_pty=is_stdout_pty
         ) as pty_stdout:
+            # This makes mypy happy, as it can't detect the type correctly in the 'with' statement
+            assert isinstance(pty_stdout, stdio_redirection.PipeOutputSink)
+
             ret = bazel_launcher.run_bazel_command(
                 cmd_args,
                 stdout=pty_stdout.get_write_fd(),
@@ -1628,6 +1634,10 @@ def main() -> int:
 
     if ret.returncode != 0:
         if quiet:
+            # Assert that the output sinks are the expected types for quiet mode.
+            assert isinstance(stdout_sink, stdio_redirection.BytesOutputSink)
+            assert isinstance(stderr_sink, stdio_redirection.BytesOutputSink)
+
             # Print the captured outputs in quiet mode to help debugging build errors.
             if stdout_sink.data:
                 sys.stdout.buffer.write(stdout_sink.data)
@@ -1662,6 +1672,9 @@ def main() -> int:
                 file=sys.stderr,
             )
         return 1
+
+    build_files = []
+    source_files = []
 
     if args.command == "build":
         time_profile.start(

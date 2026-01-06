@@ -420,7 +420,7 @@ class LastBazelBuildInvocations(object):
 
     @staticmethod
     def new_from_json(
-        json: list[dict[str, T.Any]]
+        json: list[dict[str, T.Any]],
     ) -> "LastBazelBuildInvocations":
         """Create new instance from JSON array
 
@@ -1019,7 +1019,11 @@ class BazelQueryCache(object):
         if log:
             log(
                 "Query took %.1f seconds for query %s"
-                % (time.time() - query_start_time, cache_key_args)
+                % (
+                    time.time()
+                    - query_start_time,  # pyright: ignore[reportPossiblyUnboundVariable]
+                    cache_key_args,
+                )
             )
             log(f"Writing query values to cache for query {cache_key}\n")
 

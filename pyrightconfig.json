@@ -24,6 +24,7 @@
     // extended configs.
     "fuchsiaExtraPaths": [
         // keep-sorted start
+        "build/api",
         "build/python/modules",
         "build/python/tests",
         "scripts/lib",
@@ -48,6 +49,7 @@
     "exclude": [
         "prebuilt",
         "**/prebuilt_symlink",
-        "**/__pycache__"
+        "**/__pycache__",
+        "out"
     ]
 }
