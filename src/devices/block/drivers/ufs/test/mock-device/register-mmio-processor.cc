@@ -66,6 +66,12 @@ void RegisterMmioProcessor::DefaultUTRLDBRHandler(UfsMockDevice& mock_device, ui
   ZX_ASSERT_MSG(UtrListRunStopReg::Get().ReadFrom(mock_device.GetRegisters()).value() == true,
                 "UtrListRunStopReg value is not true");
 
+  // To clear the door bell manually.
+  if (value == 0) {
+    UtrListDoorBellReg::Get().FromValue(value).WriteTo(mock_device.GetRegisters());
+    return;
+  }
+
   zx_paddr_t transfer_request_list_base_paddr =
       (static_cast<zx_paddr_t>(
            UtrListBaseAddressUpperReg::Get().ReadFrom(mock_device.GetRegisters()).address_upper())
@@ -91,7 +97,13 @@ void RegisterMmioProcessor::DefaultUTRLDBRHandler(UfsMockDevice& mock_device, ui
         transfer_request_descriptors[slot]);
     // If ZX_ERR_TIMED_OUT is returned, we emulate the timeout by not setting the completion
     // notification.
-    if (status != ZX_ERR_TIMED_OUT) {
+    if (status == ZX_ERR_TIMED_OUT) {
+      // If timeout has occurred, doorbell should be kept at 1.
+      uint32_t prev_doorbell =
+          UtrListDoorBellReg::Get().ReadFrom(mock_device.GetRegisters()).door_bell();
+      prev_doorbell |= 1 << slot;
+      UtrListDoorBellReg::Get().FromValue(prev_doorbell).WriteTo(mock_device.GetRegisters());
+    } else {
       pending_slots.reset(slot);
       completed_slots.set(slot);
     }

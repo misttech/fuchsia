@@ -272,7 +272,8 @@ zx::result<void *> TransferRequestProcessor::SendRequestUsingSlot(
   if (is_sync) {
     // Wait for completion.
     TRACE_DURATION("ufs", "SendRequestUsingSlot::sync_completion_wait", "slot", slot);
-    zx_status_t status = sync_completion_wait(&request_slot.complete, GetTimeout().get());
+    zx_status_t status =
+        sync_completion_wait_deadline(&request_slot.complete, request_slot.deadline);
     zx_status_t request_result = request_slot.result;
     if (zx::result<> result = ClearSlot(request_slot); result.is_error()) {
       return result.take_error();
@@ -302,22 +303,33 @@ template zx::result<void *> TransferRequestProcessor::SendRequestUsingSlot<NopOu
     NopOutUpiu &request, uint8_t lun, uint8_t slot, std::optional<zx::unowned_vmo> data_vmo,
     IoCommand *io_cmd, bool is_sync);
 
-zx_status_t TransferRequestProcessor::UpiuCompletion(uint8_t slot_num, RequestSlot &request_slot) {
+zx_status_t TransferRequestProcessor::UpiuCompletion(uint8_t slot_num, RequestSlot &request_slot,
+                                                     bool is_timeout) {
   TRACE_DURATION("ufs", "UpiuCompletion", "slot", slot_num);
+
+  scsi::StatusMessage status_message;
+  std::optional<std::reference_wrapper<scsi::FixedFormatSenseDataHeader>> sense_data = std::nullopt;
 
   ResponseUpiu response(
       request_list_.GetDescriptorBuffer<ResponseUpiu>(slot_num, request_slot.response_upiu_offset));
 
-  zx::result request_result = CheckResponse(slot_num, response);
+  zx::result<> request_result = zx::ok();
+  if (is_timeout) {
+    status_message.host_status_code = scsi::HostStatusCode::kTimeout;
+    status_message.scsi_status_code = scsi::StatusCode::GOOD;
+  } else {
+    request_result = CheckResponse(slot_num, response);
 
-  if (request_result.is_ok() && request_slot.is_scsi_command) {
-    scsi::StatusMessage status_message = CheckScsiAndGetStatusMessage(slot_num, response);
-    auto *sense_data =
-        reinterpret_cast<scsi::FixedFormatSenseDataHeader *>(response.GetSenseData());
+    if (request_slot.is_scsi_command) {
+      status_message = CheckScsiAndGetStatusMessage(slot_num, response);
+      sense_data = *reinterpret_cast<scsi::FixedFormatSenseDataHeader *>(response.GetSenseData());
+    }
+  }
 
+  if (request_slot.is_scsi_command && request_result.is_ok()) {
     // Until native UFS IO commands are defined by the UFS specification, we assume that only SCSI
     // commands can be IO commands.
-    request_result = controller_.ScsiComplete(status_message, *sense_data);
+    request_result = controller_.ScsiComplete(status_message, sense_data);
 
     IoCommand *io_cmd = request_slot.io_cmd;
     if (io_cmd) {
@@ -337,16 +349,19 @@ zx_status_t TransferRequestProcessor::UpiuCompletion(uint8_t slot_num, RequestSl
   return request_result.status_value();
 }
 
-void TransferRequestProcessor::RequestCompletion(uint8_t slot_num, RequestSlot &request_slot) {
+void TransferRequestProcessor::RequestCompletion(uint8_t slot_num, RequestSlot &request_slot,
+                                                 bool is_timeout) {
   // Check request response.
-  zx_status_t status = UpiuCompletion(slot_num, request_slot);
+  zx_status_t status = UpiuCompletion(slot_num, request_slot, is_timeout);
   if (status != ZX_OK) {
     FDF_LOG(ERROR, "Failed to complete request, slot[%u]: %s", slot_num,
             zx_status_get_string(status));
   }
   request_slot.result = status;
 
-  if (request_slot.is_sync) {
+  if (is_timeout) {
+    request_slot.state = SlotState::kTimeout;
+  } else if (request_slot.is_sync) {
     sync_completion_signal(&request_slot.complete);
   } else {
     UtrListCompletionNotificationReg::Get()
@@ -358,6 +373,8 @@ void TransferRequestProcessor::RequestCompletion(uint8_t slot_num, RequestSlot &
       FDF_LOG(ERROR, "Failed to clear slot[%u]: %s", slot_num, result.status_string());
     }
   }
+
+  --inflight_io_count_;
 }
 
 bool TransferRequestProcessor::ProcessSlotCompletion(uint8_t slot_num) {
@@ -366,7 +383,10 @@ bool TransferRequestProcessor::ProcessSlotCompletion(uint8_t slot_num) {
   RequestSlot &request_slot = request_list_.GetSlot(slot_num);
   if (request_slot.state == SlotState::kScheduled) {
     if (!(UtrListDoorBellReg::Get().ReadFrom(&register_).door_bell() & (1 << slot_num))) {
-      RequestCompletion(slot_num, request_slot);
+      RequestCompletion(slot_num, request_slot, /*timeout*/ false);
+      is_completed = true;
+    } else if (request_slot.deadline < zx_clock_get_monotonic()) {
+      RequestCompletion(slot_num, request_slot, /*timeout*/ true);
       is_completed = true;
     }
   }
@@ -400,6 +420,16 @@ uint32_t TransferRequestProcessor::ProcessCompletionOfIoRequests() {
   return completion_count;
 }
 
+zx_time_t TransferRequestProcessor::GetEarliestTimeoutDeadline() {
+  zx_time_t deadline = ZX_TIME_INFINITE;
+  request_list_.ForEachSlot([&](uint8_t slot_num, RequestSlot &request_slot) {
+    if (request_slot.state == SlotState::kScheduled) {
+      deadline = std::min(deadline, request_slot.deadline);
+    }
+  });
+  return deadline;
+}
+
 zx::result<> TransferRequestProcessor::FillDescriptorAndSendRequest(
     uint8_t slot, const DataDirection data_dir, const uint16_t response_offset,
     const uint16_t response_length, const uint16_t prdt_offset, const uint32_t prdt_entry_count) {
@@ -431,6 +461,8 @@ zx::result<> TransferRequestProcessor::FillDescriptorAndSendRequest(
     FDF_LOG(ERROR, "Failed to send cmd %s", result.status_string());
     return result.take_error();
   }
+  ++inflight_io_count_;
+
   return zx::ok();
 }
 

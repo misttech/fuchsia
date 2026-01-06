@@ -560,7 +560,8 @@ TEST_F(BlockDeviceTest, ScsiComplete) {
 
   // Error handling
   status_message.host_status_code = HostStatusCode::kTimeout;
-  EXPECT_OK(driver_test().driver()->ScsiComplete(status_message, sense_data));
+  EXPECT_EQ(driver_test().driver()->ScsiComplete(status_message, sense_data).status_value(),
+            ZX_ERR_TIMED_OUT);
 
   // Retry
   status_message.host_status_code = HostStatusCode::kRequeue;

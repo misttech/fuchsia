@@ -67,6 +67,7 @@ zx::result<> RequestProcessor::ClearSlot(RequestSlot &request_slot) {
   request_slot.is_scsi_command = false;
   request_slot.is_sync = false;
   request_slot.result = ZX_OK;
+  request_slot.deadline = ZX_TIME_INFINITE;
 
   return zx::ok();
 }
@@ -76,6 +77,7 @@ zx::result<> RequestProcessor::RingRequestDoorbell(uint8_t slot_num) {
   sync_completion_t *complete = &request_slot.complete;
   sync_completion_reset(complete);
   ZX_DEBUG_ASSERT(request_slot.state == SlotState::kReserved);
+  request_slot.deadline = zx_deadline_after(GetTimeout().get());
   request_slot.state = SlotState::kScheduled;
 
   // TODO(https://fxbug.dev/42075643): Set the UtrInterruptAggregationControlReg.

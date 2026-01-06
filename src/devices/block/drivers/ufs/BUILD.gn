@@ -146,6 +146,7 @@ test("ufs-unit-tests-bin") {
     "test/scsi-command-test.cc",
     "test/server-test.cc",
     "test/task-management-request-processor-test.cc",
+    "test/timeout-test.cc",
     "test/uic-test.cc",
     "test/unit-lib.cc",
     "transfer_request_processor.cc",

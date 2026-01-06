@@ -183,7 +183,7 @@ zx::result<std::vector<uint8_t>> ScsiCommandProcessor::DefaultRequestSenseHandle
   sense_data->set_valid(0);
   sense_data->set_sense_key(scsi::SenseKey::NO_SENSE);
 
-  ZX_DEBUG_ASSERT(command_upiu.header_flags_r());
+  ZX_ASSERT(command_upiu.header_flags_r());
   if (auto status = CopyBufferToPhysicalRegion(mock_device, prdt_upius, data_buffer);
       status != ZX_OK) {
     FDF_LOG(ERROR, "UFS MOCK: scsi command, Failed to CopyBufferToPhysicalRegion");
@@ -221,7 +221,7 @@ zx::result<std::vector<uint8_t>> ScsiCommandProcessor::DefaultRead10Handler(
     return zx::error(status);
   }
 
-  ZX_DEBUG_ASSERT(command_upiu.header_flags_r());
+  ZX_ASSERT(command_upiu.header_flags_r());
   if (auto status = CopyBufferToPhysicalRegion(mock_device, prdt_upius, data_buffer);
       status != ZX_OK) {
     return zx::error(status);
@@ -251,7 +251,7 @@ zx::result<std::vector<uint8_t>> ScsiCommandProcessor::DefaultWrite10Handler(
 
   std::vector<uint8_t> data_buffer(block_count * kMockBlockSize);
 
-  ZX_DEBUG_ASSERT(command_upiu.header_flags_w());
+  ZX_ASSERT(command_upiu.header_flags_w());
   if (auto status = CopyPhysicalRegionToBuffer(mock_device, data_buffer, prdt_upius);
       status != ZX_OK) {
     return zx::error(status);
@@ -277,7 +277,7 @@ zx::result<std::vector<uint8_t>> ScsiCommandProcessor::DefaultReadCapacity10Hand
       htobe32((kMockTotalDeviceCapacity / kMockBlockSize) - 1);
   read_capacity_data->block_length_in_bytes = htobe32(kMockBlockSize);
 
-  ZX_DEBUG_ASSERT(command_upiu.header_flags_r());
+  ZX_ASSERT(command_upiu.header_flags_r());
   if (auto status = CopyBufferToPhysicalRegion(mock_device, prdt_upius, data_buffer);
       status != ZX_OK) {
     FDF_LOG(ERROR, "UFS MOCK: scsi command, Failed to CopyBufferToPhysicalRegion");
@@ -352,7 +352,7 @@ zx::result<std::vector<uint8_t>> ScsiCommandProcessor::DefaultInquiryHandler(
       return zx::error(ZX_ERR_NOT_SUPPORTED);
     }
   }
-  ZX_DEBUG_ASSERT(command_upiu.header_flags_r());
+  ZX_ASSERT(command_upiu.header_flags_r());
 
   return zx::ok(std::move(data_buffer));
 }
@@ -379,7 +379,7 @@ zx::result<std::vector<uint8_t>> ScsiCommandProcessor::DefaultModeSense10Handler
     return zx::error(ZX_ERR_NOT_SUPPORTED);
   }
 
-  ZX_DEBUG_ASSERT(command_upiu.header_flags_r());
+  ZX_ASSERT(command_upiu.header_flags_r());
 
   return zx::ok(std::move(data_buffer));
 }
@@ -395,10 +395,10 @@ zx::result<std::vector<uint8_t>> ScsiCommandProcessor::DefaultUnmapHandler(
 
   scsi::UnmapCDB *scsi_cdb =
       reinterpret_cast<scsi::UnmapCDB *>(unmap_command.GetData<CommandUpiuData>()->cdb);
-  ZX_DEBUG_ASSERT(betoh16(scsi_cdb->parameter_list_length) == parameter_list_length);
+  ZX_ASSERT(betoh16(scsi_cdb->parameter_list_length) == parameter_list_length);
 
   std::vector<uint8_t> data_buffer(parameter_list_length);
-  ZX_DEBUG_ASSERT(command_upiu.header_flags_w());
+  ZX_ASSERT(command_upiu.header_flags_w());
   if (auto status = CopyPhysicalRegionToBuffer(mock_device, data_buffer, prdt_upius);
       status != ZX_OK) {
     return zx::error(status);
@@ -435,7 +435,7 @@ zx::result<std::vector<uint8_t>> ScsiCommandProcessor::DefaultReportLunsHandler(
     return zx::error(ZX_ERR_NOT_SUPPORTED);
   }
 
-  ZX_DEBUG_ASSERT(command_upiu.header_flags_r());
+  ZX_ASSERT(command_upiu.header_flags_r());
   return zx::ok(std::move(data_buffer));
 }
 

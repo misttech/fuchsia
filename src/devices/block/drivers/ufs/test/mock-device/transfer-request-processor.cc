@@ -82,7 +82,7 @@ zx_status_t TransferRequestProcessor::DefaultNopOutHandler(
       reinterpret_cast<NopInUpiuData *>(command_descriptor_data.response_upiu_base_addr);
   nop_in_upiu->header.data_segment_length = 0;
   nop_in_upiu->header.flags = 0;
-  nop_in_upiu->header.response = 0;
+  nop_in_upiu->header.response = UpiuHeaderResponseCode::kTargetSuccess;
   return ZX_OK;
 }
 

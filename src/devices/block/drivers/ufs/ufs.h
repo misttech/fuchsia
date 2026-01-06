@@ -211,6 +211,8 @@ class Ufs : public fdf::DriverBase, public scsi::Controller {
   void ProcessAdminCompletions();
   // Find the completed IO commands in the Request List and handle their completion.
   void ProcessIoCompletions();
+  // Recover errors in the request list.
+  void ProcessErrors();
 
   // Used to register a platform-specific NotifyEventCallback, which handles variants and quirks for
   // each host interface platform.

@@ -15,7 +15,7 @@
 
 namespace ufs {
 
-constexpr zx::duration kCommandTimeout = zx::sec(10);
+constexpr zx::duration kCommandTimeout = zx::msec(1500);
 
 class Ufs;
 

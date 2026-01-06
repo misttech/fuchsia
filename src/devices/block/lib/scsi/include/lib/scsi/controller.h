@@ -1059,8 +1059,9 @@ class Controller {
   // The sequence to check for errors is as follows
   // - Check HostStatusCode -> Check ScsiStatusCode -> Check SenseData
   // Currently, the ScsiComplete() does not support retry.
-  zx::result<> ScsiComplete(StatusMessage status_message,
-                            const FixedFormatSenseDataHeader& sense_data);
+  zx::result<> ScsiComplete(
+      StatusMessage status_message,
+      std::optional<std::reference_wrapper<FixedFormatSenseDataHeader>> sense_data);
 
   void SetExpectCheckConditionOrUnitAttention(bool value) {
     expect_check_condition_or_unit_attention_ = value;

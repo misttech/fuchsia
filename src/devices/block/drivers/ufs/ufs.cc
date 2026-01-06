@@ -268,6 +268,14 @@ void Ufs::ProcessAdminCompletions() {
 
 void Ufs::ProcessIoCompletions() { transfer_request_processor_->ProcessCompletionOfIoRequests(); }
 
+void Ufs::ProcessErrors() {
+  // Wait for all commands in the request list to complete before recovering if an error occurs in
+  // the request.(The LUN may be reset during the recovery process)
+  if (transfer_request_processor_->GetInflightIoCount() == 0) {
+    // TODO: Implement ErrorHandler.
+  }
+}
+
 zx::result<> Ufs::Isr() {
   const fdf::MmioBuffer& mmio = mmio_.value();
   auto interrupt_status = InterruptStatusReg::Get().ReadFrom(&mmio);
@@ -413,10 +421,9 @@ int Ufs::AdminLoop() {
 
 int Ufs::IoLoop() {
   while (true) {
-    if (zx_status_t status = sync_completion_wait(&io_signal_, ZX_TIME_INFINITE); status != ZX_OK) {
-      FDF_LOG(ERROR, "Failed to wait for sync completion: %s", zx_status_get_string(status));
-      break;
-    }
+    // Wait until the earliest timeout deadline.
+    zx_time_t deadline = transfer_request_processor_->GetEarliestTimeoutDeadline();
+    sync_completion_wait_deadline(&io_signal_, deadline);
     sync_completion_reset(&io_signal_);
 
     {
@@ -443,6 +450,8 @@ int Ufs::IoLoop() {
     if (device_manager_->IsResumed()) {
       ProcessIoSubmissions();
     }
+
+    ProcessErrors();
   }
   return thrd_success;
 }

@@ -27,6 +27,8 @@ enum class SlotState {
   kFree = 0,
   kReserved,
   kScheduled,
+  kTimeout,
+  kNeedErrorHandling,
 };
 
 struct RequestSlot {
@@ -39,6 +41,7 @@ struct RequestSlot {
   bool is_sync = false;
   uint16_t response_upiu_offset;
   zx_status_t result = ZX_OK;
+  zx_time_t deadline;
 };
 
 using RequestSlotCallback = fit::function<void(uint8_t slot_num, RequestSlot &request_slot)>;

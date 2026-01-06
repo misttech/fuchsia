@@ -51,6 +51,9 @@ class TransferRequestProcessor : public RequestProcessor {
   uint32_t ProcessCompletionOfAdminRequests();
   uint32_t ProcessCompletionOfIoRequests() override;
 
+  // Find the earliest timeout deadline of the in-flight I/O.
+  zx_time_t GetEarliestTimeoutDeadline();
+
   zx::result<std::unique_ptr<ResponseUpiu>> SendScsiUpiuUsingSlot(
       ScsiCommandUpiu &request, uint8_t lun, uint8_t slot, std::optional<zx::unowned_vmo> data_vmo,
       IoCommand *io_cmd, bool is_sync);
@@ -103,6 +106,8 @@ class TransferRequestProcessor : public RequestProcessor {
                                           std::optional<zx::unowned_vmo> data_vmo,
                                           IoCommand *io_cmd, bool is_sync);
 
+  uint32_t GetInflightIoCount() const { return inflight_io_count_; }
+
  private:
   friend class UfsTest;
 
@@ -119,8 +124,8 @@ class TransferRequestProcessor : public RequestProcessor {
                                                 scsi::StatusCode response_status);
   scsi::HostStatusCode ScsiStatusToHostStatus(scsi::StatusCode command_status);
 
-  void RequestCompletion(uint8_t slot_num, RequestSlot &request_slot);
-  zx_status_t UpiuCompletion(uint8_t slot_num, RequestSlot &request_slot);
+  void RequestCompletion(uint8_t slot_num, RequestSlot &request_slot, bool is_timeout);
+  zx_status_t UpiuCompletion(uint8_t slot_num, RequestSlot &request_slot, bool is_timeout);
 
   zx::result<uint8_t> GetAdminCommandSlotNumber() override {
     return zx::ok(kAdminCommandSlotNumber);
@@ -135,6 +140,8 @@ class TransferRequestProcessor : public RequestProcessor {
   // commands running on the main thread. To fix this, per-slot locking is required, but I added
   // admin_slot_lock_ as a temporary solution.
   std::mutex admin_slot_lock_;
+
+  uint32_t inflight_io_count_ = 0;
 };
 
 }  // namespace ufs

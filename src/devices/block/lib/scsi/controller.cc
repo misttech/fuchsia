@@ -509,13 +509,17 @@ zx::result<PostProcess> Controller::CheckScsiStatus(StatusCode status_code,
   return zx::ok(post_process);
 }
 
-zx::result<> Controller::ScsiComplete(StatusMessage status_message,
-                                      const FixedFormatSenseDataHeader& sense_data) {
+zx::result<> Controller::ScsiComplete(
+    StatusMessage status_message,
+    std::optional<std::reference_wrapper<FixedFormatSenseDataHeader>> sense_data) {
   zx::result<PostProcess> post_process = zx::ok(PostProcess::kNone);
 
   switch (status_message.host_status_code) {
     case HostStatusCode::kOk: {
-      post_process = CheckScsiStatus(status_message.scsi_status_code, sense_data);
+      if (!sense_data.has_value()) {
+        return zx::error(ZX_ERR_INVALID_ARGS);
+      }
+      post_process = CheckScsiStatus(status_message.scsi_status_code, sense_data.value());
       break;
     }
     case HostStatusCode::kTimeout:
@@ -536,13 +540,13 @@ zx::result<> Controller::ScsiComplete(StatusMessage status_message,
   }
 
   if (post_process.is_ok() && post_process == PostProcess::kNeedsErrorHandling) {
-    // Always returns PostProcess::kNone until we implement an error handler.
-    post_process = zx::ok(PostProcess::kNone);
+    // Always returns ZX_ERR_TIMED_OUT until we implement an error handler.
+    post_process = zx::error(ZX_ERR_TIMED_OUT);
   }
 
   if (post_process.is_ok() && post_process == PostProcess::kNeedsRetry) {
     // Before retry is implemented, UNIT_ATTENTION is ignored by returning ZX_ERR_UNAVAILABLE.
-    if (sense_data.sense_key() == SenseKey::UNIT_ATTENTION) {
+    if (sense_data.has_value() && (sense_data->get().sense_key() == SenseKey::UNIT_ATTENTION)) {
       return zx::error(ZX_ERR_UNAVAILABLE);
     }
 
