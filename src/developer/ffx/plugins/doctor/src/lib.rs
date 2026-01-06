@@ -2000,11 +2000,7 @@ async fn check_usb_driver<W: Write, D: UsbDriverFinder>(
         LedgerMode::Verbose
     };
 
-    let expected_socket_path: PathBuf =
-        match env_context.get(usb_driver_api::CONFIG_USB_SOCKET_PATH) {
-            Ok(val) => val,
-            Err(_) => usb_driver_api::default_usb_socket_path()?,
-        };
+    let expected_socket_path: PathBuf = env_context.get(usb_driver_api::CONFIG_USB_SOCKET_PATH)?;
 
     for usb_driver_status in usb_driver_statuses {
         let UsbDriverStatus { pid, socket_path } = usb_driver_status;

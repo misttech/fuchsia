@@ -369,10 +369,7 @@ pub(crate) fn build_discovery_builder(
         .with_timeout_msecs(ctx.get(ffx_config::keys::LOCAL_DISCOVERY_TIMEOUT).ok());
 
     if sources.contains(DiscoverySources::USB_VSOCK) {
-        let usb_driver_socket = ctx
-            .get(usb_driver_api::CONFIG_USB_SOCKET_PATH)
-            .ok()
-            .or_else(|| usb_driver_api::default_usb_socket_path().ok());
+        let usb_driver_socket = ctx.get(usb_driver_api::CONFIG_USB_SOCKET_PATH).ok();
         if let Some(path) = &usb_driver_socket {
             try_daemon_autostart(path, ctx);
         }

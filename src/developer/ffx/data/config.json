@@ -1,4 +1,7 @@
 {
+    "connectivity": {
+        "usb_socket_path": "$XDG_RUNTIME_DIR/ffx_usb.sock"
+    },
     "ffx": {
         "subtool-search-paths": "$BUILD_DIR/host-tools",
         "daemon_timeout": 15000,

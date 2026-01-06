@@ -366,18 +366,13 @@ impl Target {
     pub async fn init_usb_driver(context: &EnvironmentContext) {
         if context.get(keys::USB_ENABLED).unwrap_or(false) {
             let socket_path =
-                context.get::<PathBuf, _>(usb_driver_api::CONFIG_USB_SOCKET_PATH).ok();
-            let socket_path = if let Some(socket_path) = socket_path {
-                socket_path
-            } else {
-                match usb_driver_api::default_usb_socket_path() {
+                match context.get::<PathBuf, _>(usb_driver_api::CONFIG_USB_SOCKET_PATH) {
                     Ok(x) => x,
                     Err(e) => {
                         log::warn!("Could not get default USB socket path: {e}");
                         return;
                     }
-                }
-            };
+                };
 
             ffx_target::usb_connector::try_daemon_autostart(&socket_path, context);
 

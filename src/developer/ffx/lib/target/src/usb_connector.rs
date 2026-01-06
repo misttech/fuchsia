@@ -34,14 +34,7 @@ impl Debug for UsbConnector {
 
 impl UsbConnector {
     pub async fn new(cid: u32, env_context: &EnvironmentContext) -> Result<Self> {
-        let socket_path: Option<PathBuf> =
-            env_context.get(usb_driver_api::CONFIG_USB_SOCKET_PATH)?;
-
-        let socket_path = if let Some(socket_path) = socket_path {
-            socket_path
-        } else {
-            usb_driver_api::default_usb_socket_path()?
-        };
+        let socket_path: PathBuf = env_context.get(usb_driver_api::CONFIG_USB_SOCKET_PATH)?;
 
         try_daemon_autostart(&socket_path, env_context);
 
