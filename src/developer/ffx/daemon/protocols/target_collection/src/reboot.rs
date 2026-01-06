@@ -116,6 +116,8 @@ impl RebootController {
         state: TargetRebootState,
         responder: TargetRebootResponder,
     ) -> Result<()> {
+        // TODO(473553526): refactor this and the equivalent code in
+        // plugins/target/reboot/src/lib.rs
         match self.target.get_connection_state() {
             TargetConnectionState::Fastboot(_) => match state {
                 TargetRebootState::Product => {
