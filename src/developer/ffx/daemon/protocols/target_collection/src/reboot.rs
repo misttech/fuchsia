@@ -20,7 +20,7 @@ use fidl::endpoints::DiscoverableProtocolMarker as _;
 use fidl_fuchsia_developer_ffx::{TargetRebootError, TargetRebootResponder, TargetRebootState};
 use fidl_fuchsia_developer_remotecontrol::RemoteControlProxy;
 use fidl_fuchsia_hardware_power_statecontrol::{
-    AdminMarker, AdminProxy, RebootOptions, RebootReason2,
+    AdminMarker, AdminProxy, ShutdownAction, ShutdownOptions, ShutdownReason,
 };
 use fidl_fuchsia_sys2 as fsys;
 use fuchsia_async::TimeoutExt;
@@ -287,34 +287,21 @@ impl RebootController {
                             return Err(anyhow!("failed to get admin proxy"));
                         }
                     };
-                    match state {
-                        TargetRebootState::Product => {
-                            match admin_proxy
-                                .perform_reboot(&RebootOptions {
-                                    reasons: Some(vec![RebootReason2::DeveloperRequest]),
-                                    ..Default::default()
-                                })
-                                .await
-                            {
-                                Ok(_) => responder.send(Ok(())).map_err(Into::into),
-                                Err(e) => {
-                                    handle_fidl_connection_err(e, responder).map_err(Into::into)
-                                }
-                            }
-                        }
-                        TargetRebootState::Bootloader => {
-                            match admin_proxy.reboot_to_bootloader().await {
-                                Ok(_) => responder.send(Ok(())).map_err(Into::into),
-                                Err(e) => {
-                                    handle_fidl_connection_err(e, responder).map_err(Into::into)
-                                }
-                            }
-                        }
-                        TargetRebootState::Recovery => match admin_proxy.reboot_to_recovery().await
-                        {
-                            Ok(_) => responder.send(Ok(())).map_err(Into::into),
-                            Err(e) => handle_fidl_connection_err(e, responder).map_err(Into::into),
-                        },
+                    let action = match state {
+                        TargetRebootState::Product => ShutdownAction::Reboot,
+                        TargetRebootState::Bootloader => ShutdownAction::RebootToBootloader,
+                        TargetRebootState::Recovery => ShutdownAction::RebootToRecovery,
+                    };
+                    match admin_proxy
+                        .shutdown(&ShutdownOptions {
+                            action: Some(action),
+                            reasons: Some(vec![ShutdownReason::DeveloperRequest]),
+                            ..Default::default()
+                        })
+                        .await
+                    {
+                        Ok(_) => responder.send(Ok(())).map_err(Into::into),
+                        Err(e) => handle_fidl_connection_err(e, responder).map_err(Into::into),
                     }
                 }
             }
@@ -419,17 +406,18 @@ mod tests {
         fuchsia_async::Task::local(async move {
             while let Ok(Some(req)) = stream.try_next().await {
                 match req {
-                    AdminRequest::PerformReboot {
-                        options: RebootOptions { reasons: Some(reasons), .. },
+                    AdminRequest::Shutdown {
+                        options:
+                            ShutdownOptions { reasons: Some(reasons), action: Some(action), .. },
                         responder,
                     } => {
-                        assert_matches!(&reasons[..], [RebootReason2::DeveloperRequest]);
-                        responder.send(Ok(())).unwrap();
-                    }
-                    AdminRequest::RebootToBootloader { responder } => {
-                        responder.send(Ok(())).unwrap();
-                    }
-                    AdminRequest::RebootToRecovery { responder } => {
+                        assert_matches!(
+                            action,
+                            ShutdownAction::Reboot
+                                | ShutdownAction::RebootToBootloader
+                                | ShutdownAction::RebootToRecovery
+                        );
+                        assert_matches!(&reasons[..], [ShutdownReason::DeveloperRequest]);
                         responder.send(Ok(())).unwrap();
                     }
                     _ => assert!(false),
