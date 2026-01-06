@@ -9,6 +9,8 @@
 #include <lib/elfldltl/testing/fuzzer.h>
 #include <zircon/assert.h>
 
+#include <algorithm>
+
 namespace {
 
 constexpr size_t kMaxBuckets = 1024;
@@ -22,6 +24,7 @@ void HashFuzzer(Hasher&& hasher, uint32_t no, FuzzedDataProvider& provider) {
 
 template <class Elf>
 struct SymbolFuzzer {
+  using Sym = Elf::Sym;
   using SymbolInfo = elfldltl::SymbolInfo<Elf>;
 
   using FuzzerInputs = elfldltl::testing::FuzzerInput<
@@ -34,19 +37,6 @@ struct SymbolFuzzer {
       typename SymbolInfo::Word,  // 3. DT_HASH
       char,                       // 4. DT_STRTAB
       uint8_t>;                   // 5. Provider for further fuzzing.
-
-  // This just exhaustively traverses the hash table and calls fuzz(symndx).
-  template <class HashTable, typename T>
-  static void HashBucketFuzzer(std::optional<HashTable> table, T&& fuzz) {
-    using HashBucket = typename SymbolInfo::template HashBucket<HashTable>;
-    if (table) {
-      for (auto bucket : *table) {
-        for (uint32_t symndx : HashBucket(*table, bucket)) {
-          fuzz(symndx);
-        }
-      }
-    }
-  }
 
   int operator()(FuzzedDataProvider& provider) const {
     FuzzerInputs inputs(provider);
@@ -69,20 +59,23 @@ struct SymbolFuzzer {
       return -1;
     }
 
-    auto fuzz_hash_table_entry =  // Do some exhaustive iteration tests.
-        [safe_symtab = info.safe_symtab(), &info](uint32_t symndx) {
-          if (symndx < safe_symtab.size()) {
-            std::string_view name = info.string(safe_symtab[symndx].name);
-            for (char c : name) {
-              // This doesn't do anything but ensures the compiler has to
-              // generate a dereference of each character in case the pointer
-              // or size is bad.
-              __asm__ volatile("" : : "r"(c));
-            }
+    // Do some exhaustive iteration tests.
+    auto fuzz_hash_table = [&info](const auto& table) {
+      if (table) {
+        auto fuzz_hash_table_entry = [&info](const Sym& sym) {
+          std::string_view name = info.string(sym.name);
+          for (char c : name) {
+            // This doesn't do anything but ensures the compiler has to
+            // generate a dereference of each character in case the pointer
+            // or size is bad.
+            __asm__ volatile("" : : "r"(c));
           }
         };
-    HashBucketFuzzer(info.compat_hash(), fuzz_hash_table_entry);
-    HashBucketFuzzer(info.gnu_hash(), fuzz_hash_table_entry);
+        std::ranges::for_each(info.HashedSymbols(*table), fuzz_hash_table_entry);
+      }
+    };
+    fuzz_hash_table(info.compat_hash());
+    fuzz_hash_table(info.gnu_hash());
 
     // The last input drives the rest of the operation of the fuzzer.
     // Do random lookups until the provider is out of data.

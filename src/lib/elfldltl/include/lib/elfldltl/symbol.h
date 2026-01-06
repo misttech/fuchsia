@@ -5,8 +5,10 @@
 #ifndef SRC_LIB_ELFLDLTL_INCLUDE_LIB_ELFLDLTL_SYMBOL_H_
 #define SRC_LIB_ELFLDLTL_INCLUDE_LIB_ELFLDLTL_SYMBOL_H_
 
+#include <concepts>
 #include <cstdint>
 #include <optional>
+#include <ranges>
 #include <span>
 #include <string_view>
 #include <type_traits>
@@ -155,11 +157,55 @@ class SymbolName : public std::string_view {
 struct LinkerZeroInitialized {};
 inline constexpr LinkerZeroInitialized kLinkerZeroInitialized{};
 
+// The elfldltl::GnuHash (<lib/elfldltl/gnu-hash.h>) and elfldltl::CompatHash
+// (<lib/elfldltl/compat-hash.h>) classes are used by elfldltl::SymbolInfo,
+// below.  They both conform to the same template API.  A hash table yields a
+// std::forward_range of hash buckets for enumeration: each bucket holds a set
+// of symbols with equivalent hash values.  Each hash bucket is itself a
+// std::forward_range of uint32_t indices into the symbol table.
+template <typename T>
+concept SymbolHashBucketApi =         //
+    std::ranges::forward_range<T> &&  //
+    std::same_as<uint32_t, std::ranges::range_value_t<T>>;
+
+template <typename T>
+concept SymbolHashAllBucketsApi =     //
+    std::ranges::forward_range<T> &&  //
+    SymbolHashBucketApi<std::ranges::range_value_t<T>>;
+
+template <typename T, typename RawElement>
+concept SymbolHashTableApi =
+    // The hash table object is constructed from validated raw file data: a
+    // span<Word> for DT_HASH; a span<Addr> for DT_GNU_HASH.
+    std::constructible_from<std::span<const RawElement>> &&  //
+    requires(const T& table) {
+      // Valid() returns true if the raw table is usable: it's safe to pass it
+      // to the constructor.
+      { T::Valid(std::span<const RawElement>{}) } -> std::same_as<bool>;
+
+      // symtab_size() computes the maximum size of the symbol table.  This is
+      // not normally needed for plain lookups; it may be costly.
+      { table.symtab_size() } -> std::same_as<uint32_t>;
+
+      // Bucket(hash) returns a hash bucket object (a range of symtab indices).
+      // It returns an empty range if no buckets contain that hash value.  This
+      // is used for looking up symbols by elfldltl::SymbolName (hashed name).
+      { table.Bucket(uint32_t{}) } -> SymbolHashBucketApi;
+
+      // AllBuckets() returns a range of hash bucket objects.
+      // This is used only for enumeration, not lookup.
+      { table.AllBuckets() } -> SymbolHashAllBucketsApi;
+    };
+
+// A few SymbolInfo methods take a bool(const Sym&) callable.
+template <typename T, class Sym>
+concept SymbolFilterApi = std::invocable<T, const Sym&> &&  //
+                          std::same_as<bool, std::invoke_result_t<T, const Sym&>>;
+
 // This represents all the dynamic symbol table information for one ELF file.
 // It's primarily used for hash table lookup via SymbolName::Lookup, but can
 // also be used to enumerate the symbol table or the hash tables.  It holds
 // non-owning pointers into target data normally found in the RODATA segment.
-//
 template <class ElfLayout, class AbiTraits = LocalAbiTraits>
 class SymbolInfo {
  public:
@@ -168,6 +214,16 @@ class SymbolInfo {
   using Addr = typename Elf::Addr;
   using size_type = typename Elf::size_type;
   using Sym = typename Elf::Sym;
+
+  using CompatHash = ::elfldltl::CompatHash<Elf>;  // compat-hash.h
+  using GnuHash = ::elfldltl::GnuHash<Elf>;        // gnu-hash.h
+  static_assert(SymbolHashTableApi<CompatHash, Word>);
+  static_assert(SymbolHashTableApi<GnuHash, Addr>);
+
+  template <typename T>
+  static constexpr bool kIsHashTable = std::same_as<T, CompatHash> || std::same_as<T, GnuHash>;
+
+  static constexpr bool kLocal = AbiPtr<Addr, Elf, AbiTraits>::kLocal;
 
   constexpr SymbolInfo() = default;
 
@@ -178,57 +234,6 @@ class SymbolInfo {
   constexpr explicit SymbolInfo(LinkerZeroInitialized) : strtab_{} {}
 
   constexpr void InitLinkerZeroInitialized() { strtab_ = EmptyStrtab(); }
-
-  // Each flavor of hash table has a support class with a compatible API,
-  // except for the argument to the constructor and Valid, which is a
-  // span<Word> for DT_HASH and a span<Addr> for DT_GNU_HASH.
-  //
-  // * `static bool Valid(span table);` returns true if the table is usable.
-  //   If this returns true, it's safe to pass `table` to the constructor.
-  //
-  // * `uint32_t symtab_size() const;` computes the maximum size of the symbol
-  //   table.  This is not normally needed for plain lookups; it may be costly.
-  //
-  // * `uint32_t Bucket(uint32_t hash) const;` returns the hash bucket for
-  //   symbol names with the given hash value.  Bucket number zero is invalid.
-  //   This can be returned if no buckets contain this hash value.
-  //
-  // * `BucketIterator` is a forward-iterator type that has a three-argument
-  //   constructor `(const Table&, uint32_t bucket, uint32_t hash)` that yields
-  //   a "begin" iterator for the hash bucket and a two-argument constructor
-  //   that yields an "end" iterator for the hash bucket.  The iterator yields
-  //   a nonzero uint32_t symbol table index.
-  //
-  // * `<some type> begin(); const` and `<some type> end(); const` return
-  //   iterators over the set of buckets, whose operator*() returns a
-  //   BucketIterator, such that iterating through from begin() to end() with
-  //   an inner iteration through each BucketIterator to its end state from
-  //   there exhaustively visits every symbol in the whole hash table exactly
-  //   once.  This is only used for diagnostic purposes.
-  //
-  using CompatHash = ::elfldltl::CompatHash<Elf, AbiTraits>;  // compat-hash.h
-  using GnuHash = ::elfldltl::GnuHash<Elf, AbiTraits>;        // gnu-hash.h
-
-  // This is a forward-iterable container view of a symbol table hash bucket.
-  // Each uint32_t element is a symbol table index.
-  template <class HashTable>
-  class HashBucket {
-   public:
-    using iterator = typename HashTable::BucketIterator;
-    using const_iterator = iterator;
-
-    constexpr explicit HashBucket(const HashTable& table, iterator first)
-        : begin_(first), end_(table) {}
-
-    constexpr explicit HashBucket(const HashTable& table, uint32_t bucket, uint32_t hash)
-        : HashBucket(table, iterator(table, bucket, hash)) {}
-
-    constexpr iterator begin() const { return begin_; }
-    constexpr iterator end() const { return end_; }
-
-   private:
-    iterator begin_, end_;
-  };
 
   // This is the degenerate (always true) filter predicate for Lookup.
   static constexpr bool AnySymbol(const Sym& sym) { return true; }
@@ -252,22 +257,27 @@ class SymbolInfo {
   }
 
   // Look up a symbol in one of the hash tables.  The filter is a predicate to
-  // accept or reject symbols before name matching.
-  // This takes a SymbolName to enforce the invariant that there are no embedded NUL characters.
-  // It's hash fields are not used.
-  template <class HashTable, typename Filter>
+  // accept or reject symbols before name matching.  This takes a SymbolName to
+  // enforce the invariant that there are no embedded NUL characters.  Its hash
+  // fields are not used.
+  template <class HashTable>
+    requires(kIsHashTable<HashTable>)
   constexpr const Sym* Lookup(const HashTable& table, const SymbolName& name, uint32_t hash,
-                              Filter&& filter = DefinedSymbol) const {
-    static_assert(std::is_invocable_r_v<bool, Filter, const Sym&>);
-    const uint32_t bucket = table.Bucket(hash);
-    if (bucket != 0 && name.size() && name.size() < strtab().size()) {
-      for (uint32_t i : HashBucket<HashTable>(table, bucket, hash)) {
-        if (i >= symtab_.size()) [[unlikely]] {
-          break;
+                              SymbolFilterApi<Sym> auto&& filter = DefinedSymbol) const {
+    if (name.empty() || name.size() >= strtab().size()) [[unlikely]] {
+      return nullptr;
+    }
+    for (uint32_t symndx : table.Bucket(hash)) {
+      if (symndx >= symtab_.size()) [[unlikely]] {
+        // TODO(mcgrathr): diag for bad hash table
+        break;
+      }
+      if (const Sym& sym = symtab_[symndx]; std::invoke(filter, sym)) {
+        if (sym.name >= strtab_.size()) [[unlikely]] {
+          // TODO(mcgrathr): diag for bad st_name
+          continue;
         }
-        const Sym& sym = symtab_[i];
-        // TODO(mcgrathr): diag for bad st_name
-        if (filter(sym) && sym.name < strtab().size() && strtab().size() - name.size() > sym.name &&
+        if (strtab().size() - name.size() > sym.name &&  //
             strtab()[sym.name + name.size()] == '\0' &&
             strtab().substr(sym.name, name.size()) == name) {
           return &sym;
@@ -277,13 +287,44 @@ class SymbolInfo {
     return nullptr;
   }
 
+  // This returns a std::forward_range of const Sym& elements enumerating all
+  // the symbols referenced by the hash table.
+  template <class HashTable>
+    requires(kIsHashTable<HashTable>)
+  constexpr auto HashedSymbols(const HashTable& table) const {
+    return std::views::transform(
+        std::views::join(table.AllBuckets()),    // Flatten buckets together.
+        [this](uint32_t symndx) -> const Sym& {  // Map index to const Sym&.
+          if (symndx >= symtab_.size()) [[unlikely]] {
+            // If the hash table yields an invalid index, just replace it
+            // with 0, which is always a valid index in any valid symtab.
+            symndx = 0;
+          }
+          return symtab_[symndx];
+        });
+  }
+
+  // This enumerates all the symbols referenced by the hash table (if present).
+  // It returns false as soon as the callback returns false, otherwise true.
+  template <SymbolFilterApi<Sym> F>
+    requires(kLocal)
+  constexpr bool OnSymbols(F&& f) const {
+    if (auto hash = gnu_hash()) {
+      return std::ranges::all_of(HashedSymbols(*hash), std::forward<F>(f));
+    }
+    if (auto hash = compat_hash()) {
+      return std::ranges::all_of(HashedSymbols(*hash), std::forward<F>(f));
+    }
+    return true;
+  }
+
   // Fetch the raw string table.
   constexpr std::string_view strtab() const { return strtab_; }
 
   // Fetch a NUL-terminated string from the string table by offset,
   // e.g. as stored in st_name or DT_SONAME.
   constexpr const char* string(size_t offset) const {
-    if (strtab().size() && offset < strtab().size() - 1) [[likely]] {
+    if (strtab().size() > 0 && offset < strtab().size() - 1) [[likely]] {
       return strtab().data() + offset;
     }
     return "";
@@ -302,15 +343,20 @@ class SymbolInfo {
   // This is better for blind enumeration.
   std::span<const Sym> safe_symtab() const { return symtab_.subspan(0, safe_symtab_size()); }
 
-  // Return the CompatHash object (see compat-hash.h) if DT_HASH is present.
-  constexpr std::optional<CompatHash> compat_hash() const {
+  // Return the CompatHash object (see compat-hash.h) if DT_HASH is valid.
+  constexpr std::optional<CompatHash> compat_hash() const
+    requires(kLocal)
+  {
     if (CompatHash::Valid(compat_hash_)) {
       return CompatHash(compat_hash_);
     }
     return {};
   }
 
-  constexpr std::optional<GnuHash> gnu_hash() const {
+  // Return the GnuHash object (see gnu-hash.h) if DT_GNU_HASH is valid.
+  constexpr std::optional<GnuHash> gnu_hash() const
+    requires(kLocal)
+  {
     if (GnuHash::Valid(gnu_hash_)) {
       return GnuHash(gnu_hash_);
     }

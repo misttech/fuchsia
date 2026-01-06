@@ -8,12 +8,12 @@
 #include <algorithm>
 #include <bit>
 #include <cstdint>
+#include <iterator>
 #include <optional>
+#include <ranges>
 #include <span>
 #include <string_view>
-#include <utility>
 
-#include "abi-span.h"
 #include "layout.h"
 
 namespace elfldltl {
@@ -22,7 +22,7 @@ namespace elfldltl {
 // This interface matches CompatHash (compat-hash.h).
 // See SymbolInfo (symbol.h) for details.
 
-inline constexpr uint32_t GnuHashString(std::string_view name) {
+constexpr uint32_t GnuHashString(std::string_view name) {
   uint_fast32_t hash = 5381;
   for (char c : name) {
     hash *= 33;
@@ -91,16 +91,12 @@ constexpr uint32_t kGnuNoHash = uint32_t{};
 //  * Otherwise (i.e. the low bit is one), the lookup has failed.
 //
 
-template <class Elf, class AbiTraits = elfldltl::LocalAbiTraits>
+template <class Elf>
 class GnuHash {
  public:
   using Addr = typename Elf::Addr;
   using Word = typename Elf::Word;
   using size_type = typename Elf::size_type;
-
-  class iterator;
-
-  class BucketIterator;
 
   constexpr explicit GnuHash(std::span<const Addr> table) : GnuHash(table, *GetSizes(table)) {}
 
@@ -111,17 +107,15 @@ class GnuHash {
     uint32_t max_symndx = 0;
 
     if constexpr (sizeof(Addr) == sizeof(uint32_t)) {
-      auto buckets = tables_.subspan(filter_index_mask_ + 1, bucket_count_);
-      for (uint32_t symndx : buckets) {
-        max_symndx = std::max(symndx, max_symndx);
-      }
+      std::span buckets = tables_.subspan(filter_index_mask_ + 1, bucket_count_);
+      max_symndx = std::ranges::max(buckets);
     } else {
       size_t word_count = bucket_count_ / kBucketsPerAddr;
       auto words = tables_.subspan(filter_index_mask_ + 1, word_count);
       for (uint64_t word : words) {
         uint32_t first = static_cast<uint32_t>(word >> Shift(0));
         uint32_t second = static_cast<uint32_t>(word >> Shift(1));
-        max_symndx = std::max(std::max(first, second), max_symndx);
+        max_symndx = std::max({first, second, max_symndx});
       }
       if (bucket_count_ & 1) {
         // The last bucket shares a word with the start of the chain table.
@@ -131,7 +125,7 @@ class GnuHash {
       }
     }
 
-    if (max_symndx == 0) {
+    if (max_symndx == 0) [[unlikely]] {
       return 0;
     }
 
@@ -189,32 +183,27 @@ class GnuHash {
       }
     }
 
-    return 0;  // Table didn't end with an end marker.
+    [[unlikely]] return 0;  // Table didn't end with an end marker.
   }
-
-  constexpr uint32_t Bucket(uint32_t hash) const {
-    size_type filter = tables_[(hash / kAddrBits) & filter_index_mask_];
-    uint32_t bit1 = hash % kAddrBits;
-    uint32_t bit2 = (hash >> filter_hash_shift_) % kAddrBits;
-    if ((filter >> bit1) & (filter >> bit2) & 1) {
-      uint32_t bucket = hash % bucket_count_;
-      if constexpr (sizeof(Addr) == sizeof(uint32_t)) {
-        return tables_[filter_index_mask_ + 1 + bucket];
-      } else {
-        uint64_t word = tables_[filter_index_mask_ + 1 + (bucket >> 1)];
-        return static_cast<uint32_t>(word >> Shift(bucket));
-      }
-    }
-    return 0;
-  }
-
-  constexpr iterator begin() const;
-  constexpr iterator end() const;
 
   // This is roughly the size of the hash table, though not exactly equivalent to
-  // std::distance(begin(), end()).
+  // std::distance(begin(), end()) of the AllBuckets() range.
   constexpr size_t size() const {
-    return tables_.size() * kBucketsPerAddr - AbsoluteBucketChainStart(chain_index_bias_);
+    uint32_t chain_start = AbsoluteBucketChainStart(chain_index_bias_);
+    return (tables_.size() * kBucketsPerAddr) - chain_start;
+  }
+
+  constexpr std::ranges::forward_range auto AllBuckets() const {
+    static_assert(std::forward_iterator<TableIterator>);
+    TableIterator begin, end;
+    begin.table_ = end.table_ = this;
+    begin.i_ = AbsoluteBucketChainStart(chain_index_bias_);
+    end.i_ = static_cast<uint32_t>(tables_.size() * kBucketsPerAddr);
+    return std::ranges::subrange(begin, end);
+  }
+
+  constexpr std::ranges::forward_range auto Bucket(uint32_t hash) const {
+    return BucketIterator::MakeRange(*this, BucketStart(hash), hash);
   }
 
  private:
@@ -256,6 +245,246 @@ class GnuHash {
       return 0;
     }
     return 32 * (kLittle ? (idx & 1) : (~idx & 1));
+  }
+
+  class BucketIterator {
+   public:
+    using difference_type = ptrdiff_t;  // Required by std::weakly_incrementable.
+    using value_type = uint32_t;        // Required by std::indirectly_readable.
+
+    constexpr BucketIterator() = default;
+    constexpr BucketIterator(const BucketIterator&) = default;
+    constexpr BucketIterator& operator=(const BucketIterator&) = default;
+
+    constexpr bool operator==(const BucketIterator& other) const { return i_ == other.i_; }
+
+    constexpr BucketIterator& operator++() {  // prefix
+      // The current chain word was the previous match for hash_.
+      size_type current = table_->tables_[i_ / kBucketsPerAddr];
+
+      // Check the current entry for the end marker.
+      if ((current >> Shift(i_)) & 1) {
+        GoToEnd();
+      } else {
+        // Look at the rest of the bucket.
+        ++i_;
+        AdvanceToNextHashMatch(current);
+      }
+
+      return *this;
+    }
+
+    constexpr BucketIterator operator++(int) {  // postfix
+      auto old = *this;
+      ++*this;
+      return old;
+    }
+
+    constexpr uint32_t operator*() const { return i_ - table_->AbsoluteBucketChainStart(0); }
+
+   private:
+    friend GnuHash;
+
+    static constexpr auto MakeRange(const GnuHash& table, uint32_t bucket_start, uint32_t hash) {
+      static_assert(std::forward_iterator<BucketIterator>);
+      using Range = std::ranges::subrange<BucketIterator>;
+      static_assert(std::ranges::forward_range<Range>);
+
+      BucketIterator begin, end;
+      begin.table_ = end.table_ = &table;
+      end.GoToEnd();
+
+      if (bucket_start == 0) {
+        // No such bucket, so begin() == end().
+        begin.i_ = end.i_;
+      } else {
+        begin.i_ = table.AbsoluteBucketChainStart(bucket_start);
+
+        // Check for a bogus index coming from the bucket table.
+        const uint32_t tables_index = begin.i_ / kBucketsPerAddr;
+        if (bucket_start < table.chain_index_bias_ ||  //
+            tables_index >= table.tables_.size()) [[unlikely]] {
+          begin.i_ = end.i_;
+        } else {
+          // Store with the low bit set for quick comparisons to the chain table.
+          begin.hash_ = hash | 1;
+
+          // We're now pointing to the start of the bucket.
+          // Advance to the first symbol matching the hash value.
+          begin.AdvanceToNextHashMatch(table.tables_[tables_index]);
+        }
+      }
+
+      return Range{begin, end};
+    }
+
+    constexpr void GoToEnd() {
+      i_ = static_cast<uint32_t>(table_->tables_.size() * kBucketsPerAddr);
+    }
+
+    constexpr void AdvanceToNextHashMatch(size_type current) {
+      if constexpr (sizeof(Addr) == sizeof(uint32_t)) {
+        for (uint32_t chain : table_->tables_.subspan(i_)) {
+          if ((chain | 1) == hash_) {
+            // Found a matching entry.
+            return;
+          }
+
+          if (chain & 1) {
+            // Hit the end marker with no matches.
+            GoToEnd();
+            return;
+          }
+
+          // Advance to the next entry.
+          ++i_;
+        }
+      } else {
+        if (i_ & 1) {
+          // Check the second half of the current word.
+          uint32_t chain = static_cast<uint32_t>(current >> Shift(1));
+          if ((chain | 1) == hash_) {
+            // Found a matching entry.
+            return;
+          }
+
+          if (chain & 1) {
+            // Hit the end marker with no matches.
+            GoToEnd();
+            return;
+          }
+
+          // Advance to the next (aligned) entry.
+          ++i_;
+        }
+
+        // Now check two words at a time.
+        for (uint64_t word : table_->tables_.subspan(i_ >> 1)) {
+          uint32_t chain = static_cast<uint32_t>(word >> Shift(0));
+          if ((chain | 1) == hash_) {
+            // Found a matching entry.
+            return;
+          }
+
+          if (chain & 1) {
+            // Hit the end marker with no matches.
+            GoToEnd();
+            return;
+          }
+
+          // Advance to the second entry of the pair.
+          ++i_;
+          chain = static_cast<uint32_t>(word >> Shift(1));
+
+          if ((chain | 1) == hash_) {
+            // Found a matching entry.
+            return;
+          }
+
+          if (chain & 1) {
+            // Hit the end marker with no matches.
+            GoToEnd();
+            return;
+          }
+
+          // Advance to the next pair of entries.
+          ++i_;
+        }
+      }
+    }
+
+    const GnuHash* table_ = nullptr;
+    uint32_t i_ = -1;
+    uint32_t hash_ = 0;
+  };
+  using BucketRange = std::ranges::subrange<BucketIterator>;
+
+  // Iterate over the hash buckets to yield a BucketIerator for each bucket.
+  // Together this allows for exhaustive iteration over the whole table.
+  // Here each "bucket" is not actually a hash bucket in the DT_GNU_HASH
+  // primary hash table used for lookup, but is instead a run within a bucket
+  // of entries with the same full hash value (ignoring the low bit), since
+  // that's what a BucketIterator covers.  So this is useful for exhaustive
+  // iteration over the hash table, and for detecting actual hash collisions,
+  // but is not useful for counting bucket depth and the like.
+  class TableIterator {
+   public:
+    using difference_type = ptrdiff_t;  // Required by std::weakly_incrementable.
+    using value_type = BucketRange;     // Required by std::indirectly_readable.
+
+    static_assert(std::ranges::forward_range<value_type>);
+
+    constexpr TableIterator() = default;
+    constexpr TableIterator(const TableIterator&) = default;
+    constexpr TableIterator& operator=(const TableIterator&) = default;
+
+    constexpr bool operator==(const TableIterator& other) const { return i_ == other.i_; }
+
+    constexpr TableIterator& operator++() {  // prefix
+      const uint32_t hash = CurrentHash();
+      if constexpr (sizeof(Addr) == sizeof(uint32_t)) {
+        // Advance past each word that matches the current hash value.
+        do {
+          ++i_;
+        } while (i_ < table_->tables_.size() && table_->tables_[i_] == hash);
+      } else {
+        // If the current entry is in the second half of its word-pair, skip
+        // it first.  Then check two words at a time.  If the current entry
+        // is in the first half, then it's harmless to check it again.
+        if (i_ & 1) {
+          ++i_;
+        }
+
+        const uint64_t hash_twice = (static_cast<uint64_t>(hash) << 32) | hash;
+        for (uint64_t word : table_->tables_.subspan(i_ >> 1)) {
+          word |= (uint64_t{1} << 32) | 1;
+          if (word != hash_twice) {
+            if (static_cast<uint32_t>(word >> Shift(0)) == hash) {
+              // The first word matched though the second didn't.  Skip just one.
+              ++i_;
+            }
+            break;
+          }
+
+          // Both words matched.  Advance to the next pair of entries.
+          i_ += 2;
+        }
+      }
+      return *this;
+    }
+
+    constexpr TableIterator operator++(int) {  // postfix
+      TableIterator old = *this;
+      ++*this;
+      return old;
+    }
+
+    constexpr value_type operator*() const {
+      return BucketIterator::MakeRange(*table_, CurrentBucket(), CurrentHash());
+    }
+
+   private:
+    friend GnuHash;
+
+    constexpr uint32_t CurrentBucket() const { return i_ - table_->AbsoluteBucketChainStart(0); }
+
+    constexpr uint32_t CurrentHash() const {
+      return static_cast<uint32_t>(table_->tables_[i_ / kBucketsPerAddr] >> Shift(i_)) | 1;
+    }
+
+    const GnuHash* table_ = nullptr;
+    uint32_t i_ = -1;
+  };
+
+  // Return Word index for the start of the bucket's chain table, relative to
+  // the start of the bucket table.
+  constexpr uint32_t BucketChainStart(uint32_t symndx) const {
+    return symndx - chain_index_bias_ + bucket_count_;
+  }
+
+  // Return Word index into tables_ for the start of the bucket's chain table.
+  constexpr uint32_t AbsoluteBucketChainStart(uint32_t symndx) const {
+    return ((filter_index_mask_ + 1) * kBucketsPerAddr) + BucketChainStart(symndx);
   }
 
   constexpr GnuHash(std::span<const Addr> table, const Sizes& sizes)
@@ -311,264 +540,31 @@ class GnuHash {
     return std::nullopt;
   }
 
-  // Return Word index for the start of the bucket's chain table, relative to
-  // the start of the bucket table.
-  constexpr uint32_t BucketChainStart(uint32_t symndx) const {
-    return symndx - chain_index_bias_ + bucket_count_;
+  // Return the Word index in the symbol table of the first symbol with this
+  // hash value.  This first entry is never a real symbol; a return value of
+  // zero means that no symbols have this hash value.
+  constexpr uint32_t BucketStart(uint32_t hash) const {
+    size_type filter = tables_[(hash / kAddrBits) & filter_index_mask_];
+    uint32_t bit1 = hash % kAddrBits;
+    uint32_t bit2 = (hash >> filter_hash_shift_) % kAddrBits;
+    if ((filter >> bit1) & (filter >> bit2) & 1) {
+      uint32_t bucket = hash % bucket_count_;
+      if constexpr (sizeof(Addr) == sizeof(uint32_t)) {
+        return tables_[filter_index_mask_ + 1 + bucket];
+      } else {
+        uint64_t word = tables_[filter_index_mask_ + 1 + (bucket >> 1)];
+        return static_cast<uint32_t>(word >> Shift(bucket));
+      }
+    }
+    return 0;
   }
 
-  // Return Word index into tables_ for the start of the bucket's chain table.
-  constexpr uint32_t AbsoluteBucketChainStart(uint32_t symndx) const {
-    return ((filter_index_mask_ + 1) * kBucketsPerAddr) + BucketChainStart(symndx);
-  }
-
-  AbiSpan<const Addr, std::dynamic_extent, Elf, AbiTraits> tables_;
-  Word bucket_count_ = 0;
-  Word chain_index_bias_ = 0;
-  Word filter_index_mask_ = 0;
-  Word filter_hash_shift_ = 0;
-
- public:
-  // <lib/ld/remote-abi-transcriber.h> introspection API.  These aliases must
-  // be public, but can't be defined lexically before the private: section that
-  // declares the members; so this special public: section is at the end.
-
-  using AbiLocal = GnuHash<Elf, LocalAbiTraits>;
-
-  template <template <class...> class Template>
-  using AbiBases = Template<>;
-
-  template <template <auto...> class Template>
-  using AbiMembers =
-      Template<&GnuHash::tables_, &GnuHash::bucket_count_, &GnuHash::chain_index_bias_,
-               &GnuHash::filter_index_mask_, &GnuHash::filter_hash_shift_>;
+  std::span<const Addr> tables_;
+  uint32_t bucket_count_ = 0;
+  uint32_t chain_index_bias_ = 0;
+  uint32_t filter_index_mask_ = 0;
+  uint32_t filter_hash_shift_ = 0;
 };
-
-template <class Elf, class AbiTraits>
-class GnuHash<Elf, AbiTraits>::BucketIterator {
- public:
-  constexpr BucketIterator() = default;
-  constexpr BucketIterator(const BucketIterator&) = default;
-  constexpr BucketIterator& operator=(const BucketIterator&) = default;
-
-  // This creates a begin() iterator for the bucket and hash value.
-  constexpr explicit BucketIterator(const GnuHash& table, uint32_t bucket, uint32_t hash)
-      : table_(&table),
-        i_(table.AbsoluteBucketChainStart(bucket)),
-        // Store with the low bit set for quick comparisons to the chain table.
-        hash_(hash | 1) {
-    // Check for a bogus index coming from the bucket table.
-    const uint32_t idx = i_ / kBucketsPerAddr;  // Word index -> tables_ index.
-    if (bucket < table_->chain_index_bias_ || idx >= table_->tables_.size()) [[unlikely]] {
-      GoToEnd();
-    } else {
-      // We're now pointing to the start of the bucket.
-      // Advance to the first symbol matching the hash value.
-      AdvanceToNextHashMatch(table_->tables_[idx]);
-    }
-  }
-
-  // This creates an end() iterator.
-  constexpr explicit BucketIterator(const GnuHash& table)
-      : table_(&table), i_(static_cast<uint32_t>(table.tables_.size() * kBucketsPerAddr)) {}
-
-  constexpr bool operator==(const BucketIterator& other) const { return i_ == other.i_; }
-
-  constexpr bool operator!=(const BucketIterator& other) const { return !(*this == other); }
-
-  constexpr BucketIterator& operator++() {  // prefix
-    // The current chain word was the previous match for hash_.
-    size_type current = table_->tables_[i_ / kBucketsPerAddr];
-
-    // Check the current entry for the end marker.
-    if ((current >> Shift(i_)) & 1) {
-      GoToEnd();
-    } else {
-      // Look at the rest of the bucket.
-      ++i_;
-      AdvanceToNextHashMatch(current);
-    }
-
-    return *this;
-  }
-
-  constexpr BucketIterator& operator++(int) {  // postfix
-    auto old = *this;
-    ++*this;
-    return old;
-  }
-
-  constexpr uint32_t operator*() const { return i_ - table_->AbsoluteBucketChainStart(0); }
-
- private:
-  constexpr void GoToEnd() { i_ = static_cast<uint32_t>(table_->tables_.size() * kBucketsPerAddr); }
-
-  constexpr void AdvanceToNextHashMatch(size_type current) {
-    if constexpr (sizeof(Addr) == sizeof(uint32_t)) {
-      for (uint32_t chain : table_->tables_.subspan(i_)) {
-        if ((chain | 1) == hash_) {
-          // Found a matching entry.
-          return;
-        }
-
-        if (chain & 1) {
-          // Hit the end marker with no matches.
-          GoToEnd();
-          return;
-        }
-
-        // Advance to the next entry.
-        ++i_;
-      }
-    } else {
-      if (i_ & 1) {
-        // Check the second half of the current word.
-        uint32_t chain = static_cast<uint32_t>(current >> Shift(1));
-        if ((chain | 1) == hash_) {
-          // Found a matching entry.
-          return;
-        }
-
-        if (chain & 1) {
-          // Hit the end marker with no matches.
-          GoToEnd();
-          return;
-        }
-
-        // Advance to the next (aligned) entry.
-        ++i_;
-      }
-
-      // Now check two words at a time.
-      for (uint64_t word : table_->tables_.subspan(i_ >> 1)) {
-        uint32_t chain = static_cast<uint32_t>(word >> Shift(0));
-        if ((chain | 1) == hash_) {
-          // Found a matching entry.
-          return;
-        }
-
-        if (chain & 1) {
-          // Hit the end marker with no matches.
-          GoToEnd();
-          return;
-        }
-
-        // Advance to the second entry of the pair.
-        ++i_;
-        chain = static_cast<uint32_t>(word >> Shift(1));
-
-        if ((chain | 1) == hash_) {
-          // Found a matching entry.
-          return;
-        }
-
-        if (chain & 1) {
-          // Hit the end marker with no matches.
-          GoToEnd();
-          return;
-        }
-
-        // Advance to the next pair of entries.
-        ++i_;
-      }
-    }
-  }
-
-  const GnuHash* table_ = nullptr;
-  uint32_t i_ = -1;
-  uint32_t hash_ = 0;
-};
-
-// Iterate over the hash buckets to yield a BucketIerator for each bucket.
-// Together this allows for exhaustive iteration over the whole table.
-// Here each "bucket" is not actually a hash bucket in the DT_GNU_HASH
-// primary hash table used for lookup, but is instead a run within a bucket
-// of entries with the same full hash value (ignoring the low bit), since
-// that's what a BucketIterator covers.  So this is useful for exhaustive
-// iteration over the hash table, and for detecting actual hash collisions,
-// but is not useful for counting bucket depth and the like.
-template <class Elf, class AbiTraits>
-class GnuHash<Elf, AbiTraits>::iterator {
- public:
-  constexpr iterator() = default;
-  constexpr iterator(const iterator&) = default;
-  constexpr iterator& operator=(const iterator&) = default;
-
-  constexpr bool operator==(const iterator& other) const { return i_ == other.i_; }
-
-  constexpr bool operator!=(const iterator& other) const { return !(*this == other); }
-
-  constexpr iterator& operator++() {  // prefix
-    const uint32_t hash = CurrentHash();
-    if constexpr (sizeof(Addr) == sizeof(uint32_t)) {
-      // Advance past each word that matches the current hash value.
-      do {
-        ++i_;
-      } while (i_ < table_->tables_.size() && table_->tables_[i_] == hash);
-    } else {
-      // If the current entry is in the second half of its word-pair, skip
-      // it first.  Then check two words at a time.  If the current entry
-      // is in the first half, then it's harmless to check it again.
-      if (i_ & 1) {
-        ++i_;
-      }
-
-      const uint64_t hash_twice = (static_cast<uint64_t>(hash) << 32) | hash;
-      for (uint64_t word : table_->tables_.subspan(i_ >> 1)) {
-        word |= (uint64_t{1} << 32) | 1;
-        if (word != hash_twice) {
-          if (static_cast<uint32_t>(word >> Shift(0)) == hash) {
-            // The first word matched though the second didn't.  Skip just one.
-            ++i_;
-          }
-          break;
-        }
-
-        // Both words matched.  Advance to the next pair of entries.
-        i_ += 2;
-      }
-    }
-    return *this;
-  }
-
-  constexpr iterator operator++(int) {  // postfix
-    iterator old = *this;
-    ++*this;
-    return old;
-  }
-
-  constexpr BucketIterator operator*() const {
-    return BucketIterator(*table_, CurrentBucket(), CurrentHash());
-  }
-
- private:
-  friend GnuHash;
-
-  constexpr uint32_t CurrentBucket() const { return i_ - table_->AbsoluteBucketChainStart(0); }
-
-  constexpr uint32_t CurrentHash() const {
-    return static_cast<uint32_t>(table_->tables_[i_ / kBucketsPerAddr] >> Shift(i_)) | 1;
-  }
-
-  const GnuHash* table_ = nullptr;
-  uint32_t i_ = -1;
-};
-
-template <class Elf, class AbiTraits>
-constexpr auto GnuHash<Elf, AbiTraits>::begin() const -> iterator {
-  iterator it;
-  it.table_ = this;
-  it.i_ = AbsoluteBucketChainStart(chain_index_bias_);
-  return it;
-}
-
-template <class Elf, class AbiTraits>
-constexpr auto GnuHash<Elf, AbiTraits>::end() const -> iterator {
-  iterator it;
-  it.table_ = this;
-  it.i_ = static_cast<uint32_t>(tables_.size() * kBucketsPerAddr);
-  return it;
-}
 
 }  // namespace elfldltl
 

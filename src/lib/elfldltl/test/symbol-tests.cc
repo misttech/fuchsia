@@ -6,11 +6,15 @@
 
 #include <lib/elfldltl/testing/typed-test.h>
 
-#include <array>
 #include <set>
-#include <vector>
+
+#include <gmock/gmock.h>
 
 namespace {
+
+using namespace std::literals;
+
+using ::testing::UnorderedElementsAreArray;
 
 constexpr std::string_view kEmpty{};
 constexpr elfldltl::SymbolName kEmptySymbol(kEmpty);
@@ -135,8 +139,7 @@ struct GnuHash {
 
 template <class Elf, template <class ElfLayout> class HashTable>
 void EnumerateHashTable() {
-  using HashBucket =
-      typename elfldltl::SymbolInfo<Elf>::template HashBucket<typename HashTable<Elf>::Table>;
+  using Sym = Elf::Sym;
 
   elfldltl::SymbolInfo<Elf> si;
   kTestSymbols<Elf>.SetInfo(si);
@@ -144,22 +147,15 @@ void EnumerateHashTable() {
   si.set_gnu_hash(kTestGnuHash<typename Elf::Addr>);
   const auto hash_table = HashTable<Elf>::Get(si);
 
-  // Collect all the symbols in a sorted set that doesn't remove duplicates.
+  // Collect all the symbols in a set that doesn't remove duplicates.
   std::multiset<std::string_view> symbol_names;
-  for (auto bucket : hash_table) {
-    for (uint32_t symndx : HashBucket(hash_table, bucket)) {
-      const auto& sym = si.symtab()[symndx];
-      std::string_view name = si.string(sym.name);
-      ASSERT_FALSE(name.empty());
-      symbol_names.insert(name);
-    }
+  for (const Sym& sym : si.HashedSymbols(hash_table)) {
+    std::string_view name = si.string(sym.name);
+    ASSERT_FALSE(name.empty());
+    symbol_names.insert(name);
   }
 
-  std::vector<std::string_view> sorted_names(symbol_names.begin(), symbol_names.end());
-  ASSERT_EQ(sorted_names.size(), std::size(HashTable<Elf>::kNames));
-  for (size_t i = 0; i < sorted_names.size(); ++i) {
-    EXPECT_EQ(sorted_names[i], HashTable<Elf>::kNames[i]);
-  }
+  EXPECT_THAT(symbol_names, UnorderedElementsAreArray(HashTable<Elf>::kNames));
 }
 
 TYPED_TEST(ElfldltlSymbolTests, EnumerateCompatHash) {
@@ -168,6 +164,43 @@ TYPED_TEST(ElfldltlSymbolTests, EnumerateCompatHash) {
 
 TYPED_TEST(ElfldltlSymbolTests, EnumerateGnuHash) {
   EnumerateHashTable<typename TestFixture::Elf, GnuHash>();
+}
+
+TYPED_TEST(ElfldltlSymbolTests, OnSymbols) {
+  using Elf = TestFixture::Elf;
+  using SymbolInfo = elfldltl::SymbolInfo<Elf>;
+  using Sym = Elf::Sym;
+
+  {
+    SymbolInfo si;
+    kTestSymbols<Elf>.SetInfo(si);
+    si.set_compat_hash(kTestCompatHash<typename Elf::Word>);
+    std::multiset<std::string_view> symbol_names;
+    EXPECT_TRUE(si.OnSymbols([&si, &symbol_names](const Sym& sym) {
+      std::string_view name = si.string(sym.name);
+      EXPECT_FALSE(name.empty());
+      symbol_names.insert(name);
+      return true;
+    }));
+    EXPECT_THAT(symbol_names, UnorderedElementsAreArray(CompatHash<Elf>::kNames))
+        << "symbols from DT_HASH";
+  }
+
+  {
+    SymbolInfo si;
+    kTestSymbols<Elf>.SetInfo(si);
+    si.set_gnu_hash(kTestGnuHash<typename Elf::Addr>);
+    std::multiset<std::string_view> symbol_names;
+    EXPECT_TRUE(si.OnSymbols([&si, &symbol_names](const Sym& sym) {
+      std::string_view name = si.string(sym.name);
+      EXPECT_FALSE(name.empty());
+      symbol_names.insert(name);
+      return true;
+    }));
+    EXPECT_THAT(symbol_names, UnorderedElementsAreArray(GnuHash<Elf>::kNames))
+        << "symbols from DT_GNU_HASH";
+    ;
+  }
 }
 
 TYPED_TEST(ElfldltlSymbolTests, SymbolInfoForSingleLookup) {
@@ -202,7 +235,7 @@ TYPED_TEST(ElfldltlSymbolTests, ZeroInitialized) {
       elfldltl::kLinkerZeroInitialized};
   foo.InitLinkerZeroInitialized();
 
-  EXPECT_EQ(foo.strtab(), std::string_view("", 1));
+  EXPECT_EQ(foo.strtab(), "\0"sv);
 }
 
 }  // namespace
