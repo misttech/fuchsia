@@ -4,8 +4,9 @@
 
 #include <fidl/fuchsia.driver.transport.test/cpp/wire.h>
 #include <fuchsia/driver/test/cpp/fidl.h>
+#include <lib/async-loop/cpp/loop.h>
 #include <lib/device-watcher/cpp/device-watcher.h>
-#include <lib/driver_test_realm/realm_builder/cpp/lib.h>
+#include <lib/driver_test_realm/realm_builder/cpp/builder.h>
 #include <lib/fdio/fd.h>
 #include <lib/fdio/fdio.h>
 #include <lib/fidl/cpp/synchronous_interface_ptr.h>
@@ -22,18 +23,23 @@ using fuchsia_driver_transport_test::TestDeviceChild;
 class RuntimeTest : public gtest::TestLoopFixture {
  protected:
   void SetUp() override {
+    loop_.StartThread();
     // Create and build the realm.
     auto realm_builder = component_testing::RealmBuilder::Create();
-    driver_test_realm::Setup(realm_builder);
-    realm_ = std::make_unique<component_testing::RealmRoot>(realm_builder.Build(dispatcher()));
+    driver_test_realm::Setup(realm_builder, loop_.dispatcher(), {}, {});
+    realm_ =
+        std::make_unique<component_testing::RealmRoot>(realm_builder.Build(loop_.dispatcher()));
 
     // Start DriverTestRealm.
-    fidl::SynchronousInterfacePtr<fuchsia::driver::test::Realm> driver_test_realm;
-    ASSERT_EQ(ZX_OK, realm_->component().Connect(driver_test_realm.NewRequest()));
-    fuchsia::driver::test::Realm_Start_Result realm_result;
-    ASSERT_EQ(ZX_OK, driver_test_realm->Start(fuchsia::driver::test::RealmArgs(), &realm_result));
-    ASSERT_FALSE(realm_result.is_err());
+    zx::result<> boot_result = driver_test_realm::WaitForBootup(*realm_);
+    ASSERT_EQ(ZX_OK, boot_result.status_value());
 
+    auto node = driver_test_realm::WaitForNode(*realm_, "dev.sys.test.parent");
+    ASSERT_TRUE(node.is_ok());
+    node = driver_test_realm::WaitForNode(*realm_, "dev.sys.test.parent.child");
+    ASSERT_TRUE(node.is_ok());
+
+    // TODO(https://fxbug.dev/377735979): Connect using a different mechanism.
     fbl::unique_fd fd;
     auto exposed = realm_->component().CloneExposedDir();
     ASSERT_EQ(fdio_fd_create(exposed.TakeChannel().release(), fd.reset_and_get_address()), ZX_OK);
@@ -51,6 +57,8 @@ class RuntimeTest : public gtest::TestLoopFixture {
     ASSERT_TRUE(child_client.is_valid());
   }
 
+  void TearDown() override { driver_test_realm::ShutdownRealm(*realm_); }
+
   // Sets test data in the parent device that can be retrieved by the child device.
   void ParentSetTestData(uint8_t* data_to_send, size_t size);
   // Sends a FIDL request to the child device to retrieve data from the parent device
@@ -62,6 +70,7 @@ class RuntimeTest : public gtest::TestLoopFixture {
   fidl::ClientEnd<TestDevice> parent_client;
 
  private:
+  async::Loop loop_{&kAsyncLoopConfigNeverAttachToThread};
   std::unique_ptr<component_testing::RealmRoot> realm_;
 };
 

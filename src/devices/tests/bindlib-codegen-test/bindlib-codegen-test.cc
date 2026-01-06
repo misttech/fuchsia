@@ -9,7 +9,7 @@
 #include <lib/async-loop/cpp/loop.h>
 #include <lib/ddk/driver.h>
 #include <lib/device-watcher/cpp/device-watcher.h>
-#include <lib/driver_test_realm/realm_builder/cpp/lib.h>
+#include <lib/driver_test_realm/realm_builder/cpp/builder.h>
 #include <lib/fdio/directory.h>
 #include <lib/sys/cpp/component_context.h>
 
@@ -27,20 +27,15 @@ const std::string kChildDevicePath = "dev.sys.test.parent";
 class BindLibToFidlCodeGenTest : public testing::Test {
  protected:
   void SetUp() override {
+    loop_.StartThread();
     // Create and build the realm.
     realm_builder_ = component_testing::RealmBuilder::Create();
-    driver_test_realm::Setup(*realm_builder_);
+    driver_test_realm::Setup(*realm_builder_, loop_.dispatcher(), {}, {});
     realm_ = realm_builder_->Build(loop_.dispatcher());
 
     // Start DriverTestRealm.
-    fidl::SynchronousInterfacePtr<fuchsia::driver::test::Realm> driver_test_realm;
-    ASSERT_EQ(ZX_OK, realm_->component().Connect(driver_test_realm.NewRequest()));
-
-    auto args = fuchsia::driver::test::RealmArgs();
-
-    fuchsia::driver::test::Realm_Start_Result realm_result;
-    ASSERT_EQ(ZX_OK, driver_test_realm->Start(std::move(args), &realm_result));
-    ASSERT_FALSE(realm_result.is_err());
+    zx::result<> boot_result = driver_test_realm::WaitForBootup(*realm_);
+    ASSERT_EQ(ZX_OK, boot_result.status_value());
 
     fbl::unique_fd fd;
     auto exposed = realm_->component().CloneExposedDir();
@@ -48,14 +43,15 @@ class BindLibToFidlCodeGenTest : public testing::Test {
 
     // Wait for the child device to bind and appear. The child device should bind with its string
     // properties.
-    zx::result channel =
-        device_watcher::RecursiveWaitForFile(fd.get(), "dev-topological/sys/test/parent/child");
-    ASSERT_EQ(channel.status_value(), ZX_OK);
+    auto node = driver_test_realm::WaitForNode(*realm_, "dev.sys.test.parent.child");
+    ASSERT_TRUE(node.is_ok());
 
     // Connect to the DriverDevelopment service.
     zx_status_t status = realm_->component().Connect(driver_dev_.NewRequest());
     ASSERT_EQ(status, ZX_OK);
   }
+
+  void TearDown() override { driver_test_realm::ShutdownRealm(*realm_); }
 
   async::Loop loop_{&kAsyncLoopConfigNeverAttachToThread};
   std::optional<component_testing::RealmBuilder> realm_builder_;

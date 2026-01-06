@@ -4,8 +4,9 @@
 
 #include <fidl/fuchsia.driver.test/cpp/fidl.h>
 #include <fidl/fuchsia.hardware.test/cpp/fidl.h>
+#include <lib/async-loop/cpp/loop.h>
 #include <lib/device-watcher/cpp/device-watcher.h>
-#include <lib/driver_test_realm/realm_builder/cpp/lib.h>
+#include <lib/driver_test_realm/realm_builder/cpp/builder.h>
 #include <lib/fdio/fd.h>
 
 #include "src/lib/testing/loop_fixture/test_loop_fixture.h"
@@ -15,26 +16,30 @@ namespace ddk::test {
 class MetadataServerTest : public gtest::TestLoopFixture {
  public:
   void SetUp() override {
+    loop_.StartThread();
+
     // Create and build the realm.
     auto realm_builder = component_testing::RealmBuilder::Create();
-    driver_test_realm::Setup(realm_builder);
-    realm_.emplace(realm_builder.Build(dispatcher()));
+    driver_test_realm::Setup(
+        realm_builder, loop_.dispatcher(), {},
+        fuchsia_driver_test::RealmArgs{
+            {.root_driver = "fuchsia-boot:///dtr#meta/metadata_sender_test_driver.cm"}});
+    realm_.emplace(realm_builder.Build(loop_.dispatcher()));
 
     // Start DriverTestRealm.
-    zx::result result = realm_->component().Connect<fuchsia_driver_test::Realm>();
-    ASSERT_EQ(result.status_value(), ZX_OK);
-    fidl::SyncClient<fuchsia_driver_test::Realm> driver_test_realm{std::move(result.value())};
-    fidl::Result start_result = driver_test_realm->Start(fuchsia_driver_test::RealmArgs{
-        {.root_driver = "fuchsia-boot:///dtr#meta/metadata_sender_test_driver.cm"}});
-    ASSERT_TRUE(start_result.is_ok()) << start_result.error_value();
+    zx::result<> boot_result = driver_test_realm::WaitForBootup(*realm_);
+    ASSERT_EQ(ZX_OK, boot_result.status_value());
 
     // Connect to devfs directory.
+    // TODO(https://fxbug.dev/377735979): Connect using a different mechanism.
     auto [client, server] = fidl::Endpoints<fuchsia_io::Directory>::Create();
     ASSERT_EQ(realm_->component().exposed()->Open("dev-topological", fuchsia::io::PERM_READABLE, {},
                                                   server.TakeChannel()),
               ZX_OK);
     ASSERT_EQ(fdio_fd_create(client.TakeChannel().release(), &dev_fd_), ZX_OK);
   }
+
+  void TearDown() override { driver_test_realm::ShutdownRealm(*realm_); }
 
  protected:
   // Make the metadata_sender driver create a child device that the metadata_retriever driver can
@@ -112,6 +117,7 @@ class MetadataServerTest : public gtest::TestLoopFixture {
     return fidl::SyncClient{fidl::ClientEnd<FidlProtocol>{std::move(channel.value())}};
   }
 
+  async::Loop loop_{&kAsyncLoopConfigNeverAttachToThread};
   std::optional<component_testing::RealmRoot> realm_;
   int dev_fd_;
 };

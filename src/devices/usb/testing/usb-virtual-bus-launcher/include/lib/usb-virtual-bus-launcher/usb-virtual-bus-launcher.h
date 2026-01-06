@@ -7,7 +7,8 @@
 
 #include <fidl/fuchsia.hardware.usb.peripheral/cpp/wire.h>
 #include <fidl/fuchsia.hardware.usb.virtual.bus/cpp/wire.h>
-#include <lib/driver_test_realm/realm_builder/cpp/lib.h>
+#include <lib/async-loop/cpp/loop.h>
+#include <lib/driver_test_realm/realm_builder/cpp/builder.h>
 #include <lib/sys/component/cpp/testing/realm_builder.h>
 #include <lib/zx/result.h>
 
@@ -29,6 +30,8 @@ class BusLauncher {
 
   BusLauncher(const BusLauncher&) = delete;
   BusLauncher& operator=(const BusLauncher&) = delete;
+
+  virtual ~BusLauncher();
 
   // Create the driver_test_realm, wait for it to start, then enable the virtual USB bus.
   static zx::result<BusLauncher> Create(
@@ -59,6 +62,7 @@ class BusLauncher {
   BusLauncher(component_testing::RealmRoot realm, fbl::unique_fd devfs_root)
       : realm_(std::move(realm)), devfs_root_(std::move(devfs_root)) {}
 
+  std::unique_ptr<async::Loop> loop_;
   component_testing::RealmRoot realm_;
   fbl::unique_fd devfs_root_;
   fidl::WireSyncClient<fuchsia_hardware_usb_peripheral::Device> peripheral_;

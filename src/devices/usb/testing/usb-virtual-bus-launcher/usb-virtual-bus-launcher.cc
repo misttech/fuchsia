@@ -5,7 +5,6 @@
 #include "lib/usb-virtual-bus-launcher/usb-virtual-bus-launcher.h"
 
 #include <fidl/fuchsia.driver.test/cpp/fidl.h>
-#include <lib/async-loop/cpp/loop.h>
 #include <lib/async-loop/loop.h>
 #include <lib/component/incoming/cpp/directory.h>
 #include <lib/component/incoming/cpp/protocol.h>
@@ -27,35 +26,26 @@ namespace usb_virtual {
 
 zx::result<BusLauncher> BusLauncher::Create(
     std::vector<fuchsia_component_test::Capability> exposes) {
-  auto realm_builder = component_testing::RealmBuilder::Create();
-  driver_test_realm::Setup(realm_builder);
-  async::Loop loop(&kAsyncLoopConfigNeverAttachToThread);
-  exposes.emplace_back(fuchsia_component_test::Capability::WithService(
-      fuchsia_component_test::Service{{.name = fuchsia_hardware_usb_peripheral::Service::Name}}));
-  driver_test_realm::AddDtrExposes(realm_builder, exposes);
-  auto realm = realm_builder.Build(loop.dispatcher());
-
-  auto client = realm.component().Connect<fuchsia_driver_test::Realm>();
-  if (client.is_error()) {
-    std::cerr << "Failed to connect to fuchsia.driver.test/Realm: " << client.status_string()
-              << '\n';
-    return client.take_error();
-  }
+  auto loop = std::make_unique<async::Loop>(&kAsyncLoopConfigNeverAttachToThread);
+  loop->StartThread();
 
   auto realm_args = fuchsia_driver_test::RealmArgs();
   realm_args.root_driver("fuchsia-boot:///dtr#meta/usb-virtual-bus.cm");
-  realm_args.dtr_exposes(exposes);
-  fidl::Result result = fidl::Call(*client)->Start(std::move(realm_args));
-  if (result.is_error()) {
-    std::cerr << "Failed to connect to start driver test realm: " << result.error_value() << '\n';
-    if (result.error_value().is_domain_error()) {
-      return zx::error(result.error_value().domain_error());
-    }
-    if (result.error_value().is_framework_error()) {
-      return zx::error(result.error_value().framework_error().status());
-    }
+  exposes.emplace_back(fuchsia_component_test::Capability::WithService(
+      fuchsia_component_test::Service{{.name = fuchsia_hardware_usb_peripheral::Service::Name}}));
+
+  auto realm_builder = component_testing::RealmBuilder::Create();
+  driver_test_realm::Setup(realm_builder, loop->dispatcher(),
+                           driver_test_realm::OptionsBuilder().driver_exposes(exposes).Build(),
+                           std::move(realm_args));
+  auto realm = realm_builder.Build(loop->dispatcher());
+
+  zx::result<> boot_result = driver_test_realm::WaitForBootup(realm);
+  if (boot_result.is_error()) {
+    return boot_result.take_error();
   }
 
+  // TODO(https://fxbug.dev/377735979): Connect using a different mechanism.
   // Open dev.
   auto [dev_client, dev_server] = fidl::Endpoints<fuchsia_io::Directory>::Create();
   zx_status_t status = realm.component().exposed()->Open(
@@ -72,6 +62,7 @@ zx::result<BusLauncher> BusLauncher::Create(
   }
 
   BusLauncher launcher(std::move(realm), std::move(dev_fd));
+  launcher.loop_ = std::move(loop);
 
   status = fdio_watch_directory(
       launcher.GetRootFd(),
@@ -126,6 +117,13 @@ zx::result<BusLauncher> BusLauncher::Create(
   }
 
   return zx::ok(std::move(launcher));
+}
+
+BusLauncher::~BusLauncher() {
+  driver_test_realm::ShutdownRealm(realm_);
+  if (loop_) {
+    loop_->Shutdown();
+  }
 }
 
 zx_status_t BusLauncher::SetupPeripheralDevice(DeviceDescriptor&& device_desc,

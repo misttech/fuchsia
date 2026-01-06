@@ -12,7 +12,7 @@
 #include <lib/component/incoming/cpp/protocol.h>
 #include <lib/ddk/platform-defs.h>
 #include <lib/device-watcher/cpp/device-watcher.h>
-#include <lib/driver_test_realm/realm_builder/cpp/lib.h>
+#include <lib/driver_test_realm/realm_builder/cpp/builder.h>
 #include <lib/fdio/cpp/caller.h>
 #include <lib/fdio/directory.h>
 #include <lib/fdio/fd.h>
@@ -34,23 +34,25 @@ namespace {
 class HidDriverTest : public zxtest::Test {
  protected:
   void SetUp() override {
+    loop_.StartThread();
+
     // Create and build the realm.
     auto realm_builder = component_testing::RealmBuilder::Create();
-    driver_test_realm::Setup(realm_builder);
+    driver_test_realm::Setup(realm_builder, loop_.dispatcher(), {}, {});
     realm_ =
         std::make_unique<component_testing::RealmRoot>(realm_builder.Build(loop_.dispatcher()));
 
     // Start DriverTestRealm.
-    auto res = realm_->component().Connect<fuchsia_driver_test::Realm>();
-    ZX_ASSERT_OK(res);
-    driver_test_realm_ = fidl::SyncClient(std::move(res.value()));
+    zx::result<> boot_result = driver_test_realm::WaitForBootup(*realm_);
+    ASSERT_EQ(ZX_OK, boot_result.status_value());
 
-    auto realm_start_res = driver_test_realm_->Start({});
-    ZX_ASSERT_OK(realm_start_res);
+    auto node = driver_test_realm::WaitForNode(*realm_, "dev.sys.test.hidctl");
+    ASSERT_TRUE(node.is_ok());
 
     auto exposed = realm_->component().CloneExposedDir();
     ASSERT_OK(fdio_fd_create(exposed.TakeChannel().release(), exposed_fd_.reset_and_get_address()));
 
+    // TODO(https://fxbug.dev/377735979): Connect using a different mechanism.
     // Wait for HidCtl to be created.
     zx::result hidctl_channel =
         device_watcher::RecursiveWaitForFile(exposed_fd_.get(), "dev-topological/sys/test/hidctl");
@@ -59,6 +61,8 @@ class HidDriverTest : public zxtest::Test {
     fidl::ClientEnd<fuchsia_hardware_hidctl::Device> client_end(std::move(hidctl_channel.value()));
     hidctl_client_.Bind(std::move(client_end));
   }
+
+  void TearDown() override { driver_test_realm::ShutdownRealm(*realm_); }
 
   template <typename Protocol>
   zx::result<fidl::ClientEnd<Protocol>> WaitForFirstDevice(const std::string& path) {

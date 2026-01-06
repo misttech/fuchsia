@@ -8,7 +8,7 @@
 #include <lib/async-loop/cpp/loop.h>
 #include <lib/component/incoming/cpp/protocol.h>
 #include <lib/device-watcher/cpp/device-watcher.h>
-#include <lib/driver_test_realm/realm_builder/cpp/lib.h>
+#include <lib/driver_test_realm/realm_builder/cpp/builder.h>
 #include <lib/fdio/cpp/caller.h>
 #include <lib/fdio/directory.h>
 #include <lib/fdio/fd.h>
@@ -21,19 +21,19 @@
 class DeviceControllerFidl : public gtest::TestLoopFixture {};
 
 TEST_F(DeviceControllerFidl, ControllerTest) {
+  async::Loop loop(&kAsyncLoopConfigNeverAttachToThread);
+  loop.StartThread();
+
   // Create and build the realm.
   auto realm_builder = component_testing::RealmBuilder::Create();
-  driver_test_realm::Setup(realm_builder);
-  auto realm = realm_builder.Build(dispatcher());
+  driver_test_realm::Setup(realm_builder, loop.dispatcher(), {}, {});
+  auto realm = realm_builder.Build(loop.dispatcher());
 
   // Start DriverTestRealm.
-  fidl::SynchronousInterfacePtr<fuchsia::driver::test::Realm> driver_test_realm;
-  ASSERT_EQ(ZX_OK, realm.component().Connect(driver_test_realm.NewRequest()));
-  fuchsia::driver::test::Realm_Start_Result realm_result;
-  auto args = fuchsia::driver::test::RealmArgs();
-  ASSERT_EQ(ZX_OK, driver_test_realm->Start(std::move(args), &realm_result));
-  ASSERT_FALSE(realm_result.is_err());
+  zx::result<> boot_result = driver_test_realm::WaitForBootup(realm);
+  ASSERT_EQ(ZX_OK, boot_result.status_value());
 
+  // TODO(https://fxbug.dev/377735979): Connect using a different mechanism.
   fbl::unique_fd dev_topo_fd;
   {
     zx::channel dev_client, dev_server;
@@ -45,9 +45,8 @@ TEST_F(DeviceControllerFidl, ControllerTest) {
   }
 
   // Wait for driver.
-  zx::result dev_channel =
-      device_watcher::RecursiveWaitForFile(dev_topo_fd.get(), "sys/test/sample_driver");
-  ASSERT_EQ(dev_channel.status_value(), ZX_OK);
+  auto node = driver_test_realm::WaitForNode(realm, "dev.sys.test.sample_driver");
+  ASSERT_TRUE(node.is_ok());
 
   fdio_cpp::UnownedFdioCaller dev_topo(dev_topo_fd);
   zx::result channel = component::ConnectAt<fuchsia_device::Controller>(
@@ -93,4 +92,6 @@ TEST_F(DeviceControllerFidl, ControllerTest) {
     auto result = fidl::WireCall(endpoints->client)->GetTopologicalPath();
     ASSERT_EQ(result->value()->path.get(), "/dev/sys/test/sample_driver");
   }
+
+  driver_test_realm::ShutdownRealm(realm);
 }
