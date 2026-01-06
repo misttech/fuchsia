@@ -65,7 +65,6 @@
                 capability: "protocol",
                 target_monikers: [
                     "/toolbox",
-                    "/core/sshd-host/shell:**",
                     "/core/testing/vfs-compliance-tests:**",
                 ],
             },
@@ -76,7 +75,6 @@
                 capability: "protocol",
                 target_monikers: [
                     "/toolbox",
-                    "/core/sshd-host/shell:**",
                     "/core/testing/vfs-compliance-tests:**",
                 ],
             },
@@ -97,7 +95,6 @@
                 capability: "protocol",
                 target_monikers: [
                     "/toolbox",
-                    "/core/sshd-host/shell:**",
                     "/core/testing/vfs-compliance-tests:**",
                 ],
             },
@@ -109,7 +106,6 @@
                 target_monikers: [
                     "/bootstrap/base-drivers:**",
                     "/toolbox",
-                    "/core/sshd-host/shell:**",
                     "/core/testing/vfs-compliance-tests:**",
                 ],
             },
@@ -120,7 +116,6 @@
                 capability: "protocol",
                 target_monikers: [
                     "/toolbox",
-                    "/core/sshd-host/shell:**",
                 ],
             },
             {
@@ -130,7 +125,6 @@
                 capability: "protocol",
                 target_monikers: [
                     "/toolbox",
-                    "/core/sshd-host/shell:**",
                     "/core/testing/vfs-compliance-tests:**",
                 ],
             },
@@ -151,7 +145,6 @@
                 capability: "protocol",
                 target_monikers: [
                     "/toolbox",
-                    "/core/sshd-host/shell:**",
                     "/core/testing/vfs-compliance-tests:**",
                 ],
             },
@@ -162,7 +155,6 @@
                 capability: "protocol",
                 target_monikers: [
                     "/toolbox",
-                    "/core/sshd-host/shell:**",
                     "/core/testing/system-tests:**",
                     "/bootstrap/role_manager",
                     "/bootstrap/console-launcher",
@@ -175,7 +167,6 @@
                 capability: "protocol",
                 target_monikers: [
                     "/toolbox",
-                    "/core/sshd-host/shell:**",
                     "/core/testing/vfs-compliance-tests:**",
                 ],
             },
@@ -189,7 +180,6 @@
                     "/core/process_explorer",
                     "/core/debugger/agents:**",
                     "/toolbox",
-                    "/core/sshd-host/shell:**",
                     "/core/testing/vfs-compliance-tests:**",
                     "/core/testing/starnix-tests:**",
                 ],
@@ -201,7 +191,6 @@
                 capability: "protocol",
                 target_monikers: [
                     "/toolbox",
-                    "/core/sshd-host/shell:**",
                     "/core/testing/vfs-compliance-tests:**",
                 ],
             },
@@ -212,7 +201,6 @@
                 capability: "protocol",
                 target_monikers: [
                     "/toolbox",
-                    "/core/sshd-host/shell:**",
                 ],
             },
             {
@@ -222,7 +210,6 @@
                 capability: "protocol",
                 target_monikers: [
                     "/toolbox",
-                    "/core/sshd-host/shell:**",
                     "/core/trace_manager/ktrace_provider",
                 ],
             },
@@ -243,7 +230,6 @@
                 capability: "protocol",
                 target_monikers: [
                     "/toolbox",
-                    "/core/sshd-host/shell:**",
                     "/core/testing/vfs-compliance-tests:**",
                     "/core/testing/component-framework-tests:**",
                     "/core/testing/storage-tests:**",
@@ -288,7 +274,6 @@
                 capability: "directory",
                 target_monikers: [
                     "/toolbox",
-                    "/core/sshd-host/shell:**",
                 ],
             },
             {
@@ -298,7 +283,6 @@
                 capability: "directory",
                 target_monikers: [
                     "/toolbox",
-                    "/core/sshd-host/shell:**",
                 ],
             },
             {
@@ -311,7 +295,6 @@
                     "/bootstrap/base_resolver",
                     "/core/sshd-host",
                     "/toolbox",
-                    "/core/sshd-host/shell:**",
 
                     // TODO(https://fxbug.dev/42181129): Remove once fixed.
                     "/core/sl4f",
@@ -324,7 +307,6 @@
                 capability: "directory",
                 target_monikers: [
                     "/toolbox",
-                    "/core/sshd-host/shell:**",
 
                     // TODO(https://fxbug.dev/42181123): Remove once https://fxbug.dev/42167600 is fixed.
                     "/core/sl4f",
@@ -337,7 +319,6 @@
                 capability: "directory",
                 target_monikers: [
                     "/toolbox",
-                    "/core/sshd-host/shell:**",
                 ],
             },
             {
@@ -354,7 +335,6 @@
                     "/core/debug-dash-launcher",
                     "/core/process_resolver",
                     "/toolbox",
-                    "/core/sshd-host/shell:**",
                     "/core/system-update-checker",
                     "/core/test_manager",
                     "/core/testing/component-framework-tests:**",
@@ -407,7 +387,6 @@
                 capability: "protocol",
                 target_monikers: [
                     "/toolbox",
-                    "/core/sshd-host/shell:**",
                 ],
             },
             {
@@ -418,7 +397,6 @@
                 target_monikers: [
                     "/core/sl4f",
                     "/toolbox",
-                    "/core/sshd-host/shell:**",
                 ],
             },
             {
@@ -428,7 +406,6 @@
                 capability: "protocol",
                 target_monikers: [
                     "/toolbox",
-                    "/core/sshd-host/shell:**",
                 ],
             },
             {

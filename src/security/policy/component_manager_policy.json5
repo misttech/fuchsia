@@ -30,7 +30,6 @@
                 capability: "protocol",
                 target_monikers: [
                     "/toolbox",
-                    "/core/sshd-host/shell:**",
                     "/core/testing/system-tests:**",
                     "/core/test_manager/system-tests:**",
                 ],
@@ -42,7 +41,6 @@
                 capability: "protocol",
                 target_monikers: [
                     "/toolbox",
-                    "/core/sshd-host/shell:**",
                     "/core/testing/system-tests:**",
                     "/core/test_manager/system-tests:**",
                 ],
@@ -68,7 +66,6 @@
                     "/core/termina-guest-manager/vmm",
                     "/core/testing/system-tests:**",
                     "/toolbox",
-                    "/core/sshd-host/shell:**",
                     "/core/test_manager/system-tests:**",
                     "/core/testing/starnix_test_runners/starnix_test_runner/interactive-debian-guest/guest-manager/vmm",
                 ],
@@ -83,7 +80,6 @@
                     "/bootstrap/base-drivers:**",
                     "/bootstrap/full-drivers:**",
                     "/toolbox",
-                    "/core/sshd-host/shell:**",
                     "/core/testing/system-tests:**",
                     "/core/test_manager/system-tests:**",
                 ],
@@ -96,7 +92,6 @@
                 target_monikers: [
                     "/bootstrap/boot-drivers:dev",
                     "/toolbox",
-                    "/core/sshd-host/shell:**",
                     "/core/testing/system-tests:**",
                     "/core/test_manager/system-tests:**",
                 ],
@@ -109,7 +104,6 @@
                 target_monikers: [
                     "/bootstrap/boot-drivers:dev",
                     "/toolbox",
-                    "/core/sshd-host/shell:**",
                     "/core/testing/system-tests:**",
                     "/core/test_manager/system-tests:**",
                 ],
@@ -122,7 +116,6 @@
                 target_monikers: [
                     "/bootstrap/boot-drivers:dev",
                     "/toolbox",
-                    "/core/sshd-host/shell:**",
                     "/core/testing/system-tests:**",
                     "/core/test_manager/system-tests:**",
                 ],
@@ -137,7 +130,6 @@
                     "/core/profiler",
                     "/core/debugger/agents:**",
                     "/toolbox",
-                    "/core/sshd-host/shell:**",
                     "/core/testing/system-tests:**",
                     "/core/test_manager/system-tests:**",
                 ],
@@ -149,7 +141,6 @@
                 capability: "protocol",
                 target_monikers: [
                     "/toolbox",
-                    "/core/sshd-host/shell:**",
                     "/core/testing/system-tests:**",
                     "/core/test_manager/system-tests:**",
                 ],
@@ -172,7 +163,6 @@
                 target_monikers: [
                     "/bootstrap/boot-drivers:dev",
                     "/toolbox",
-                    "/core/sshd-host/shell:**",
                     "/core/test_manager/system-tests:**",
                     "/core/zircon-guest-manager/vmm",
                     "/core/debian-guest-manager/vmm",
@@ -188,7 +178,6 @@
                 target_monikers: [
                     "/bootstrap/boot-drivers:dev",
                     "/toolbox",
-                    "/core/sshd-host/shell:**",
                     "/core/testing/system-tests:**",
                     "/core/test_manager/system-tests:**",
                 ],
@@ -200,7 +189,6 @@
                 capability: "protocol",
                 target_monikers: [
                     "/toolbox",
-                    "/core/sshd-host/shell:**",
                     "/core/testing/system-tests:**",
                     "/core/test_manager/system-tests:**",
                 ],
@@ -223,7 +211,6 @@
                 target_monikers: [
                     "/bootstrap/boot-drivers:dev",
                     "/toolbox",
-                    "/core/sshd-host/shell:**",
                     "/core/testing/system-tests:**",
                     "/core/test_manager/system-tests:**",
                 ],
@@ -235,7 +222,6 @@
                 capability: "protocol",
                 target_monikers: [
                     "/toolbox",
-                    "/core/sshd-host/shell:**",
                     "/core/testing/system-tests:**",
                     "/core/test_manager/system-tests:**",
                 ],
@@ -247,7 +233,6 @@
                 capability: "protocol",
                 target_monikers: [
                     "/toolbox",
-                    "/core/sshd-host/shell:**",
                     "/core/testing/starnix-tests:**",
                     "/core/testing/system-tests:**",
                     "/core/test_manager/system-tests:**",
@@ -293,7 +278,6 @@
                 capability: "directory",
                 target_monikers: [
                     "/toolbox",
-                    "/core/sshd-host/shell:**",
                 ],
             },
             {
@@ -314,7 +298,6 @@
                     "/core/remote-control",
                     "/core/sshd-host",
                     "/toolbox",
-                    "/core/sshd-host/shell:**",
 
                     // TODO(https://fxbug.dev/42181129): Remove once fixed.
                     "/core/sl4f",
@@ -329,7 +312,6 @@
                     "/bootstrap/netsvc",
                     "/core",
                     "/toolbox",
-                    "/core/sshd-host/shell:**",
 
                     // TODO(https://fxbug.dev/42181123): Remove once https://fxbug.dev/42167600 is fixed.
                     "/core/sl4f",
@@ -348,7 +330,6 @@
                     "/bootstrap/full_resolver",
                     "/bootstrap/netsvc",
                     "/toolbox",
-                    "/core/sshd-host/shell:**",
 
                     // debug-dash-launcher is used in engineering builds to launch
                     // dash shells. It uses PackageResolver to add tool package directories
@@ -366,7 +347,6 @@
                 capability: "protocol",
                 target_monikers: [
                     "/toolbox",
-                    "/core/sshd-host/shell:**",
 
                     // This protocol is available in the serial console
                     "/bootstrap/console-launcher",
@@ -433,7 +413,6 @@
                 target_monikers: [
                     "/core/pkg-resolver",
                     "/toolbox",
-                    "/core/sshd-host/shell:**",
                     "/core/system-update/system-updater",
                 ],
             },
@@ -459,7 +438,6 @@
                 target_monikers: [
                     "/bootstrap/console-launcher",
                     "/toolbox",
-                    "/core/sshd-host/shell:**",
                 ],
             },
             {
@@ -471,7 +449,6 @@
                     "/core/build-info",
                     "/core/feedback",
                     "/toolbox",
-                    "/core/sshd-host/shell:**",
                     "/core/system-update/omaha-client-service",
                     "/core/system-update/system-update-checker",
                     "/core/system-update/system-updater",
@@ -495,7 +472,6 @@
                 target_monikers: [
                     "/bootstrap/console-launcher",
                     "/toolbox",
-                    "/core/sshd-host/shell:**",
                 ],
             },
             {
@@ -519,7 +495,6 @@
                     "/bootstrap/console-launcher",
                     "/bootstrap/driver_manager",
                     "/toolbox",
-                    "/core/sshd-host/shell:**",
                     "/core/system-update/omaha-client-service",
                     "/core/system-update/system-update-checker",
                     "/core/system-update/system-updater",
@@ -546,7 +521,6 @@
                 capability: "protocol",
                 target_monikers: [
                     "/toolbox",
-                    "/core/sshd-host/shell:**",
                 ],
             },
             {
@@ -556,7 +530,6 @@
                 capability: "protocol",
                 target_monikers: [
                     "/toolbox",
-                    "/core/sshd-host/shell:**",
 
                     // TODO(https://fxbug.dev/42059298): Create explicit security policies for
                     // out-of-tree product variants.
@@ -570,7 +543,6 @@
                 capability: "protocol",
                 target_monikers: [
                     "/toolbox",
-                    "/core/sshd-host/shell:**",
                 ],
             },
             {
@@ -618,7 +590,6 @@
                     "/core/reverse-migration",
                     "/core/sl4f",
                     "/toolbox",
-                    "/core/sshd-host/shell:**",
                     "/core/termina-guest-manager",
                     "/core/test_manager/google-tests:**",
                     "/core/test_manager/system-tests:**",

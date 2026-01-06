@@ -45,8 +45,6 @@ class Service {
   void Launch(fbl::unique_fd conn);
   void LaunchConsole(fbl::unique_fd conn);
 
-  void OnStop(zx_status_t status, std::optional<int64_t> exit_code, Controller* controller);
-
   async_dispatcher_t* dispatcher_;
   fbl::unique_fd sock_;
   fsl::FDWaiter waiter_;
@@ -67,39 +65,6 @@ class Service {
     async::WaitMethod<LogRedirect, &LogRedirect::OnLog> waiter_;
     std::string buf_;
   };
-
-  struct Controller final : public fidl::AsyncEventHandler<fuchsia_component::ExecutionController> {
-    Controller(Service* service, uint64_t child_num, std::string child_name,
-               fidl::ClientEnd<fuchsia_component::ExecutionController> client_end,
-               async_dispatcher_t* dispatcher, fidl::SyncClient<fuchsia_component::Realm> realm,
-               zx::socket stderr_socket);
-    void OnStop(fidl::Event<fuchsia_component::ExecutionController::OnStop>& event) override {
-      service_->OnStop(event.stopped_payload().status().value_or(ZX_OK),
-                       event.stopped_payload().exit_code(), this);
-    }
-    void on_fidl_error(fidl::UnbindInfo error) override {
-      FX_LOGS(WARNING) << "encountered FIDL error " << error;
-      service_->OnStop(error.ToError().status(), std::nullopt, this);
-    }
-    void handle_unknown_event(
-        fidl::UnknownEventMetadata<fuchsia_component::ExecutionController> metadata) override {
-      FX_LOGS(WARNING) << "fuchsia.component/ExecutionController delivered unknown event "
-                       << metadata.event_ordinal;
-    }
-
-    void Wait();
-
-    fidl::Client<fuchsia_component::ExecutionController>& operator->() { return client_; }
-
-    Service* service_;
-    uint64_t child_num_;
-    std::string child_name_;
-    fidl::Client<fuchsia_component::ExecutionController> client_;
-    fidl::SyncClient<fuchsia_component::Realm> realm_;
-    LogRedirect stderr_redirect_;
-  };
-
-  std::map<uint64_t, Controller> controllers_;
 };
 
 }  // namespace sshd_host

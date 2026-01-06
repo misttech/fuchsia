@@ -34,14 +34,6 @@
 
 #include <fbl/unique_fd.h>
 
-#include "src/lib/fxl/strings/string_printf.h"
-
-// Transition toggle to use developer console instead of shell collection.
-//
-// TODO(https://fxbug.dev/416063207): Delete this and clean up the old path once
-// the new path is proven stable.
-static constexpr bool kDeveloperConsole = true;
-
 namespace sshd_host {
 
 Service::Service(async_dispatcher_t* dispatcher, uint16_t port)
@@ -111,7 +103,7 @@ void Service::Wait() {
                 getnameinfo(reinterpret_cast<struct sockaddr*>(&peer_addr), peer_addr_len, host,
                             sizeof(host), port, sizeof(port), NI_NUMERICHOST | NI_NUMERICSERV);
             res == 0) {
-          peer_name = fxl::StringPrintf("[%s]:%s", host, port);
+          peer_name = std::format("[{}]:{}", host, port);
         } else {
           FX_LOGS(WARNING)
               << "Error from getnameinfo(.., NI_NUMERICHOST | NI_NUMERICSERV) for peer address: "
@@ -119,122 +111,11 @@ void Service::Wait() {
         }
         FX_LOG_KV(DEBUG, "Accepted connection", FX_KV("remote", peer_name.c_str()));
 
-        if (kDeveloperConsole) {
-          LaunchConsole(std::move(conn));
-        } else {
-          Launch(std::move(conn));
-        }
-
+        LaunchConsole(std::move(conn));
         Wait();
       },
       sock_.get(), POLLIN);
 }
-
-void Service::Launch(fbl::unique_fd conn) {
-  uint64_t child_num = next_child_num_++;
-  std::string child_name = fxl::StringPrintf("sshd-%lu", child_num);
-
-  auto realm_client_end = component::Connect<fuchsia_component::Realm>();
-  if (realm_client_end.is_error()) {
-    FX_PLOGS(ERROR, realm_client_end.status_value()) << "Failed to connect to realm service";
-    return;
-  }
-
-  fidl::SyncClient<fuchsia_component::Realm> realm{std::move(*realm_client_end)};
-
-  auto controller_endpoints = fidl::CreateEndpoints<fuchsia_component::Controller>();
-  if (controller_endpoints.is_error()) {
-    FX_PLOGS(ERROR, controller_endpoints.status_value())
-        << "Failed to connect to create controller endpoints";
-    return;
-  }
-
-  fidl::SyncClient<fuchsia_component::Controller> controller{
-      std::move(controller_endpoints->client)};
-  {
-    fuchsia_component_decl::CollectionRef collection{{
-        .name = std::string(kShellCollection),
-    }};
-    fuchsia_component_decl::Child decl{{.name = child_name,
-                                        .url = "#meta/sshd.cm",
-                                        .startup = fuchsia_component_decl::StartupMode::kLazy}};
-
-    fuchsia_component::CreateChildArgs args{
-        {.controller = std::move(controller_endpoints->server)}};
-
-    auto result = realm->CreateChild(
-        {{.collection = collection, .decl = std::move(decl), .args = std::move(args)}});
-    if (result.is_error()) {
-      FX_LOGS(ERROR) << "Failed to create sshd child: " << result.error_value().FormatDescription();
-      return;
-    }
-  }
-
-  auto execution_controller_endpoints =
-      fidl::CreateEndpoints<fuchsia_component::ExecutionController>();
-  if (execution_controller_endpoints.is_error()) {
-    FX_LOGS(ERROR) << "Failed to create execution controller endpoints: "
-                   << execution_controller_endpoints.status_string();
-    return;
-  }
-
-  // Create a socket and pass it to the child as stderr. We read the stderr output and
-  // print it to the logs for debugging purposes.
-  zx::socket stderr_socket, child_stderr;
-  if (zx_status_t status = zx::socket::create(0, &stderr_socket, &child_stderr); status != ZX_OK) {
-    FX_PLOGS(ERROR, status) << "Failed to create stderr socket";
-    return;
-  }
-
-  controllers_.emplace(
-      std::piecewise_construct, std::forward_as_tuple(child_num),
-      std::forward_as_tuple(this, child_num, std::move(child_name),
-                            std::move(execution_controller_endpoints->client), dispatcher_,
-                            std::move(realm), std::move(stderr_socket)));
-  auto remove_controller_on_error =
-      fit::defer([this, child_num]() { controllers_.erase(child_num); });
-
-  // Pass the connection fd as stdin and stdout handles to the sshd component.
-  std::vector<fuchsia_process::HandleInfo> numbered_handles;
-  for (int fd : {STDIN_FILENO, STDOUT_FILENO}) {
-    zx::handle conn_handle;
-    if (zx_status_t status = fdio_fd_clone(conn.get(), conn_handle.reset_and_get_address());
-        status != ZX_OK) {
-      FX_PLOGS(ERROR, status) << "Failed to clone connection file descriptor " << conn.get();
-      return;
-    }
-    numbered_handles.push_back(
-        fuchsia_process::HandleInfo{{.handle = std::move(conn_handle), .id = PA_HND(PA_FD, fd)}});
-  }
-  numbered_handles.push_back(fuchsia_process::HandleInfo{
-      {.handle = std::move(child_stderr), .id = PA_HND(PA_FD, STDERR_FILENO)}});
-
-  auto result = controller->Start(
-      {{.args = {{
-            .numbered_handles = std::move(numbered_handles),
-            .namespace_entries = {},
-        }},
-        .execution_controller = std::move(execution_controller_endpoints->server)}});
-
-  if (result.is_error()) {
-    FX_LOGS(ERROR) << "Failed to start sshd child: " << result.error_value().FormatDescription();
-    return;
-  }
-
-  remove_controller_on_error.cancel();
-}
-
-Service::Controller::Controller(Service* service, uint64_t child_num, std::string child_name,
-                                fidl::ClientEnd<fuchsia_component::ExecutionController> client_end,
-                                async_dispatcher_t* dispatcher,
-                                fidl::SyncClient<fuchsia_component::Realm> realm,
-                                zx::socket stderr_socket)
-    : service_(service),
-      child_num_(child_num),
-      child_name_(std::move(child_name)),
-      client_(std::move(client_end), dispatcher, this),
-      realm_(std::move(realm)),
-      stderr_redirect_(service->dispatcher_, std::move(stderr_socket), child_num) {}
 
 Service::LogRedirect::LogRedirect(async_dispatcher_t* dispatcher, zx::socket socket,
                                   uint64_t child_tag)
@@ -319,52 +200,6 @@ void Service::LogRedirect::OnLog(async_dispatcher_t* dispatcher, async::WaitBase
     return;
   }
   Wait();
-}
-
-void Service::OnStop(zx_status_t status, std::optional<int64_t> exit_code, Controller* ptr) {
-  if (status == 11 && exit_code.has_value() && exit_code.value() == 255) {
-    // Exit status of 11 indicates that the component terminated with a non-standard
-    // exit code, and the sshd process returning 255 indicates that the
-    // sshd instance was terminated by the client.
-    FX_LOGS(TRACE) << "sshd component stopped with client termination. Code: " << exit_code.value();
-  } else if (status != ZX_OK) {
-    std::string exit_code_message;
-    if (exit_code.has_value()) {
-      exit_code_message = std::to_string(exit_code.value());
-    } else {
-      exit_code_message = "(none)";
-    }
-    FX_PLOGS(INFO, status) << "sshd component stopped with status " << status << "and exit code "
-                           << exit_code_message;
-  }
-
-  // The controller is currently executing on the dispatcher thread. We can't
-  // destroy it here, because that would be a use-after-free. Instead, we
-  // schedule its destruction for the next turn of the event loop.
-  async::PostTask(dispatcher_, [this, child_num = ptr->child_num_]() {
-    auto it = controllers_.find(child_num);
-    if (it == controllers_.end()) {
-      return;
-    }
-    auto& controller = it->second;
-
-    // Take ownership of the realm client to ensure it outlives the DestroyChild call.
-    auto realm = std::move(controller.realm_);
-
-    // Destroy the component.
-    auto result = realm->DestroyChild({{.child = {{
-                                            .name = controller.child_name_,
-                                            .collection = std::string(kShellCollection),
-
-                                        }}}});
-    if (result.is_error()) {
-      FX_LOGS(ERROR) << "Failed to destroy sshd child: "
-                     << result.error_value().FormatDescription();
-    }
-
-    // Remove the controller.
-    controllers_.erase(it);
-  });
 }
 
 void Service::LaunchConsole(fbl::unique_fd conn) {

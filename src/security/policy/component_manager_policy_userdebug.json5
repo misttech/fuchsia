@@ -11,7 +11,6 @@
                     // TODO(https://fxbug.dev/42080863): Remove once the shell tools that use this
                     // capability no longer run in the sshd realm.
                     "/toolbox",
-                    "/core/sshd-host/shell:**",
                 ],
             },
             {
@@ -26,7 +25,6 @@
                     // TODO(https://fxbug.dev/42080863): Remove once the shell tools that use this
                     // capability no longer run in the sshd realm.
                     "/toolbox",
-                    "/core/sshd-host/shell:**",
                 ],
             },
             {
@@ -57,7 +55,6 @@
                     // TODO(https://fxbug.dev/42080863): Remove once the shell tools that use this
                     // capability no longer run in the sshd realm.
                     "/toolbox",
-                    "/core/sshd-host/shell:**",
                 ],
             },
             {
@@ -71,7 +68,6 @@
                     // TODO(https://fxbug.dev/42080863): Remove once the shell tools that use this
                     // capability no longer run in the sshd realm.
                     "/toolbox",
-                    "/core/sshd-host/shell:**",
                 ],
             },
             {
@@ -83,7 +79,6 @@
                     // TODO(https://fxbug.dev/42080863): Remove once the shell tools that use this
                     // capability no longer run in the sshd realm.
                     "/toolbox",
-                    "/core/sshd-host/shell:**",
                 ],
             },
             {
@@ -95,7 +90,6 @@
                     // TODO(https://fxbug.dev/42080863): Remove once the shell tools that use this
                     // capability no longer run in the sshd realm.
                     "/toolbox",
-                    "/core/sshd-host/shell:**",
                 ],
             },
             {
@@ -107,7 +101,6 @@
                     // TODO(https://fxbug.dev/42080863): Remove once the shell tools that use this
                     // capability no longer run in the sshd realm.
                     "/toolbox",
-                    "/core/sshd-host/shell:**",
                 ],
             },
             {
@@ -119,7 +112,6 @@
                     // TODO(https://fxbug.dev/42080863): Remove once the shell tools that use this
                     // capability no longer run in the sshd realm.
                     "/toolbox",
-                    "/core/sshd-host/shell:**",
                 ],
             },
             {
@@ -131,7 +123,6 @@
                     // TODO(https://fxbug.dev/42080863): Remove once the shell tools that use this
                     // capability no longer run in the sshd realm.
                     "/toolbox",
-                    "/core/sshd-host/shell:**",
                 ],
             },
             {
@@ -143,7 +134,6 @@
                     // TODO(https://fxbug.dev/42080863): Remove once the shell tools that use this
                     // capability no longer run in the sshd realm.
                     "/toolbox",
-                    "/core/sshd-host/shell:**",
                 ],
             },
             {
@@ -155,7 +145,6 @@
                     // TODO(https://fxbug.dev/42080863): Remove once the shell tools that use this
                     // capability no longer run in the sshd realm.
                     "/toolbox",
-                    "/core/sshd-host/shell:**",
                     "/core/debugger/agents:**",
                 ],
             },
@@ -168,7 +157,6 @@
                     // TODO(https://fxbug.dev/42080863): Remove once the shell tools that use this
                     // capability no longer run in the sshd realm.
                     "/toolbox",
-                    "/core/sshd-host/shell:**",
                 ],
             },
             {
@@ -180,7 +168,6 @@
                     // TODO(https://fxbug.dev/42080863): Remove once the shell tools that use this
                     // capability no longer run in the sshd realm.
                     "/toolbox",
-                    "/core/sshd-host/shell:**",
                 ],
             },
             {
@@ -192,7 +179,6 @@
                     // TODO(https://fxbug.dev/42080863): Remove once the shell tools that use this
                     // capability no longer run in the sshd realm.
                     "/toolbox",
-                    "/core/sshd-host/shell:**",
                 ],
             },
             {
@@ -225,7 +211,6 @@
                     // TODO(https://fxbug.dev/42080863): Remove once the shell tools that use this
                     // capability no longer run in the sshd realm.
                     "/toolbox",
-                    "/core/sshd-host/shell:**",
                 ],
             },
             {
@@ -237,7 +222,6 @@
                     // TODO(https://fxbug.dev/42080863): Remove once the shell tools that use this
                     // capability no longer run in the sshd realm.
                     "/toolbox",
-                    "/core/sshd-host/shell:**",
                 ],
             },
             {
@@ -252,7 +236,6 @@
                     // TODO(https://fxbug.dev/42080863): Remove once the shell tools that use this
                     // capability no longer run in the sshd realm.
                     "/toolbox",
-                    "/core/sshd-host/shell:**",
                 ],
             },
             {
@@ -264,7 +247,6 @@
                     // TODO(https://fxbug.dev/42080863): Remove once the shell tools that use this
                     // capability no longer run in the sshd realm.
                     "/toolbox",
-                    "/core/sshd-host/shell:**",
                 ],
             },
             {
@@ -280,7 +262,6 @@
                     // TODO(https://fxbug.dev/42080863): Remove once the shell tools that use this
                     // capability no longer run in the sshd realm.
                     "/toolbox",
-                    "/core/sshd-host/shell:**",
                 ],
             },
             {
@@ -296,7 +277,6 @@
                     // TODO(https://fxbug.dev/42080863): Remove once the shell tools that use this
                     // capability no longer run in the sshd realm.
                     "/toolbox",
-                    "/core/sshd-host/shell:**",
                 ],
             },
             {
@@ -347,7 +327,6 @@
                     // TODO(https://fxbug.dev/42080863): Remove once the shell tools that use this
                     // capability no longer run in the sshd realm.
                     "/toolbox",
-                    "/core/sshd-host/shell:**",
                 ],
             },
             {
@@ -359,7 +338,6 @@
                     // TODO(https://fxbug.dev/42080863): Remove once the shell tools that use this
                     // capability no longer run in the sshd realm.
                     "/toolbox",
-                    "/core/sshd-host/shell:**",
                 ],
             },
             {
@@ -371,7 +349,6 @@
                     // TODO(https://fxbug.dev/42080863): Remove once the shell tools that use this
                     // capability no longer run in the sshd realm.
                     "/toolbox",
-                    "/core/sshd-host/shell:**",
                 ],
             },
         ],

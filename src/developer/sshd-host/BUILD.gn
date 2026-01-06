@@ -39,7 +39,6 @@ source_set("lib") {
     "//sdk/fidl/fuchsia.process:fuchsia.process_cpp",
     "//sdk/lib/fdio",
     "//sdk/lib/fit",
-    "//src/lib/fxl",
     "//zircon/system/ulib/zx",
   ]
   public_deps = [
@@ -67,19 +66,6 @@ executable("bin") {
   ]
 }
 
-fuchsia_component("sshd-component") {
-  component_name = "sshd"
-  manifest = "meta/sshd.cml"
-
-  deps = [
-    # Ensure this isn't included in production
-    "//build/validate:non_production_tag",
-    "//third_party/openssh-portable:scp",
-    "//third_party/openssh-portable:sftp-server",
-    "//third_party/openssh-portable:sshd",
-  ]
-}
-
 fuchsia_component("sshd-host-component") {
   component_name = "sshd-host"
   manifest = "meta/sshd-host.cml"
@@ -90,14 +76,14 @@ fuchsia_component("sshd-host-component") {
     # Ensure this isn't included in production
     "//build/validate:non_production_tag",
     "//third_party/openssh-portable:hostkeygen",
+    "//third_party/openssh-portable:scp",
+    "//third_party/openssh-portable:sftp-server",
+    "//third_party/openssh-portable:sshd",
   ]
 }
 
 fuchsia_package("sshd-host") {
-  deps = [
-    ":sshd-component",
-    ":sshd-host-component",
-  ]
+  deps = [ ":sshd-host-component" ]
 }
 
 config_data_for_assembly("config") {
