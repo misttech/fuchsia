@@ -4,7 +4,6 @@
 
 #![recursion_limit = "256"]
 
-mod event;
 mod fs;
 mod tracing_directory;
 

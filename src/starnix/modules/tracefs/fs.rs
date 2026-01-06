@@ -2,8 +2,8 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use super::event::TraceEventQueue;
 use super::tracing_directory::TraceMarkerFile;
+use starnix_core::perf::TraceEventQueue;
 use starnix_core::task::CurrentTask;
 use starnix_core::vfs::pseudo::dynamic_file::ConstFile;
 use starnix_core::vfs::pseudo::simple_directory::SimpleDirectory;
@@ -66,7 +66,8 @@ impl TraceFs {
         L: LockEqualOrBefore<FileOpsCore>,
     {
         let kernel = current_task.kernel();
-        let trace_event_queue = Arc::new(TraceEventQueue::new(&kernel.inspect_node)?);
+        // Only use a single queue until b/357665908 is addressed.
+        let trace_event_queue = TraceEventQueue::from(kernel);
         let fs = FileSystem::new(locked, kernel, CacheMode::Uncached, TraceFs, options)?;
         let dir = SimpleDirectory::new();
         dir.edit(&fs, |dir| {

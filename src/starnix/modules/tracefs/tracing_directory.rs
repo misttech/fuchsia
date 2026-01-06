@@ -2,8 +2,8 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use super::event::{TraceEvent, TraceEventQueue};
 use starnix_core::fileops_impl_nonseekable;
+use starnix_core::perf::{TraceEvent, TraceEventQueue};
 use starnix_core::task::CurrentTask;
 use starnix_core::vfs::buffers::InputBuffer;
 use starnix_core::vfs::pseudo::simple_file::SimpleFileNode;

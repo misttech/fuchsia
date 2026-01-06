@@ -2,12 +2,14 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
 
+use crate::mm::memory::MemoryObject;
+use crate::task::Kernel;
+use crate::vfs::OutputBuffer;
 use fuchsia_runtime::vmar_root_self;
 use shared_buffer::SharedBuffer;
-use starnix_core::mm::memory::MemoryObject;
-use starnix_core::vfs::OutputBuffer;
 use starnix_sync::Mutex;
 use starnix_types::PAGE_SIZE;
 use starnix_uapi::errors::Errno;
@@ -335,6 +337,16 @@ impl<'a> TraceEventQueue {
         })
     }
 
+    /**
+     * Uses the TraceEventQueue from the kernel or initializes a new one if not present.
+     */
+    pub fn from(kernel: &Kernel) -> Arc<Self> {
+        kernel.expando.get_or_init(|| {
+            TraceEventQueue::new(&kernel.inspect_node)
+                .expect("TraceEventQueue constructed with valid options")
+        })
+    }
+
     pub fn is_enabled(&self) -> bool {
         self.tracing_enabled.load(Ordering::Relaxed)
     }
@@ -497,8 +509,8 @@ mod tests {
         DEFAULT_RING_BUFFER_SIZE_BYTES, PAGE_HEADER_SIZE, TraceEvent, TraceEventQueue,
         TraceEventQueueMetadata,
     };
-    use starnix_core::vfs::OutputBuffer;
-    use starnix_core::vfs::buffers::VecOutputBuffer;
+    use crate::vfs::OutputBuffer;
+    use crate::vfs::buffers::VecOutputBuffer;
     use starnix_types::PAGE_SIZE;
     use starnix_uapi::error;
 
