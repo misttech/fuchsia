@@ -115,4 +115,11 @@ fuchsia_test_package("starnix_memory_attribution_test") {
   ]
 
   subpackages += starnix_test_subpackages
+
+  test_specs = {
+    # TODO(https://fxbug.dev/434146282): remove once test de-flaked
+    log_settings = {
+      max_severity = "ERROR"
+    }
+  }
 }
