@@ -78,7 +78,7 @@ config("allow_unused_crate_dependencies") {
 
 config("allow_default") {
   # LINT.IfChange(rustc_allow_default)
-  rustflags = [ "-Aunknown-lints" ]
+  rustflags = [ "-Aunknown_lints" ]
   # LINT.ThenChange(//build/config/rust/lints/BUILD.bazel:rustc_allow_default)
 }
 
