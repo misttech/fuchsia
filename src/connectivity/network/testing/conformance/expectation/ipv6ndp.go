@@ -290,12 +290,13 @@ var ipv6ndpExpectationsNS3 map[AnvlCaseNumber]outcome.Outcome = map[AnvlCaseNumb
 	{7, 1}:  AnvlSkip, // Router test but this is the host suite.
 	// TODO(https://fxbug.dev/42078196): Test has a script problem this should
 	// be pass once that's resolved.
-	{7, 2}:   Flaky,
-	{7, 3}:   AnvlSkip, // Router test but this is the host suite.
-	{7, 4}:   AnvlSkip, // Router test but this is the host suite.
-	{7, 5}:   Pass,
-	{7, 6}:   AnvlSkip, // Router test but this is the host suite.
-	{8, 1}:   AnvlSkip, // Router test but this is the host suite.
+	{7, 2}: Flaky,
+	{7, 3}: AnvlSkip, // Router test but this is the host suite.
+	{7, 4}: AnvlSkip, // Router test but this is the host suite.
+	{7, 5}: Pass,
+	{7, 6}: AnvlSkip, // Router test but this is the host suite.
+	{8, 1}: AnvlSkip, // Router test but this is the host suite.
+	// TODO(https://fxbug.dev/42095002): Support NDP Redirect Messages.
 	{8, 2}:   Inconclusive,
 	{9, 1}:   AnvlSkip, // Router test but this is the host suite.
 	{9, 2}:   AnvlSkip, // Router test but this is the host suite.
