@@ -4,7 +4,9 @@
 
 //! See https://www.kernel.org/doc/html/latest/admin-guide/sysrq.html.
 
-use fidl_fuchsia_hardware_power_statecontrol::{AdminMarker, RebootOptions, RebootReason2};
+use fidl_fuchsia_hardware_power_statecontrol::{
+    AdminMarker, ShutdownAction, ShutdownOptions, ShutdownReason,
+};
 use fuchsia_component::client::connect_to_protocol_sync;
 use starnix_core::task::CurrentTask;
 use starnix_core::vfs::{
@@ -138,14 +140,14 @@ impl FileOps for SysRqFile {
                     // When this call succeeds with a production implementation it should never
                     // return. If it returns at all it is a sign the kernel either doesn't have the
                     // capability or there was a problem with the shutdown request.
-                    let reboot_res =
-                        connect_to_protocol_sync::<AdminMarker>().unwrap().perform_reboot(
-                            &RebootOptions {
-                                reasons: Some(vec![RebootReason2::CriticalComponentFailure]),
-                                ..Default::default()
-                            },
-                            zx::MonotonicInstant::INFINITE,
-                        );
+                    let reboot_res = connect_to_protocol_sync::<AdminMarker>().unwrap().shutdown(
+                        &ShutdownOptions {
+                            action: Some(ShutdownAction::Reboot),
+                            reasons: Some(vec![ShutdownReason::CriticalComponentFailure]),
+                            ..Default::default()
+                        },
+                        zx::MonotonicInstant::INFINITE,
+                    );
 
                     panic!(
                         "reboot call returned unexpectedly ({:?}), crashing from SysRq",

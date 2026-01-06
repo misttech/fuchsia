@@ -7,7 +7,7 @@ use component_events::events::{Event, EventStream, ExitStatus, Stopped};
 use component_events::matcher::EventMatcher;
 use diagnostics_reader::{ArchiveReader, Severity};
 use fidl_fuchsia_hardware_power_statecontrol::{
-    AdminMarker, AdminRequest, AdminRequestStream, RebootOptions, RebootReason2,
+    AdminMarker, AdminRequest, AdminRequestStream, ShutdownAction, ShutdownOptions, ShutdownReason,
 };
 use fidl_fuchsia_io::FileProxy;
 use fuchsia_async::Task;
@@ -141,11 +141,12 @@ async fn b_reboot() {
     let mut admin_client = admin_requests.next().await.unwrap();
     let reasons = assert_matches!(
         admin_client.next().await.unwrap().unwrap(),
-        AdminRequest::PerformReboot { options: RebootOptions {
+        AdminRequest::Shutdown { options: ShutdownOptions {
+            action: Some(ShutdownAction::Reboot),
             reasons: Some(reasons), ..
         }, .. } => reasons
     );
-    assert_eq!(&reasons[..], [RebootReason2::CriticalComponentFailure]);
+    assert_eq!(&reasons[..], [ShutdownReason::CriticalComponentFailure]);
 }
 
 #[fuchsia::test]
