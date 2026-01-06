@@ -4,10 +4,10 @@
 
 #include <fidl/fuchsia.driver.test/cpp/fidl.h>
 #include <fidl/fuchsia.examples.metadata/cpp/fidl.h>
+#include <lib/async-loop/cpp/loop.h>
 #include <lib/component/incoming/cpp/service_member_watcher.h>
 #include <lib/device-watcher/cpp/device-watcher.h>
-#include <lib/driver_test_realm/realm_builder/cpp/lib.h>
-#include <lib/fdio/fd.h>
+#include <lib/driver_test_realm/realm_builder/cpp/builder.h>
 
 #include "src/lib/testing/loop_fixture/test_loop_fixture.h"
 #include "src/lib/testing/predicates/status.h"
@@ -17,9 +17,8 @@ namespace metadata_test {
 class MetadataTest : public gtest::TestLoopFixture {
  public:
   void SetUp() override {
-    // Create and build the realm.
-    auto realm_builder = component_testing::RealmBuilder::Create();
-    driver_test_realm::Setup(realm_builder);
+    loop_.StartThread();
+
     const std::vector<fuchsia_component_test::Capability> exposes = {
         {
             fuchsia_component_test::Capability::WithService(fuchsia_component_test::Service(
@@ -29,16 +28,18 @@ class MetadataTest : public gtest::TestLoopFixture {
             fuchsia_component_test::Capability::WithService(fuchsia_component_test::Service(
                 {.name = fuchsia_examples_metadata::SenderService::Name})),
         }};
-    driver_test_realm::AddDtrExposes(realm_builder, exposes);
-    realm_.emplace(realm_builder.Build(dispatcher()));
 
-    // Start DriverTestRealm.
-    zx::result result = realm_->component().Connect<fuchsia_driver_test::Realm>();
-    ASSERT_OK(result);
-    fidl::SyncClient<fuchsia_driver_test::Realm> driver_test_realm(std::move(result.value()));
-    fidl::Result start_result = driver_test_realm->Start(fuchsia_driver_test::RealmArgs(
-        {.root_driver = "fuchsia-boot:///dtr#meta/sender.cm", .dtr_exposes = exposes}));
-    ASSERT_OK(start_result);
+    // Create and build the realm.
+    auto realm_builder = component_testing::RealmBuilder::Create();
+    driver_test_realm::Setup(realm_builder, loop_.dispatcher(),
+                             driver_test_realm::OptionsBuilder().driver_exposes(exposes).Build(),
+                             fuchsia_driver_test::RealmArgs({
+                                 .root_driver = "#meta/sender.cm",
+                             }));
+
+    realm_.emplace(realm_builder.Build(loop_.dispatcher()));
+    auto boot_result = driver_test_realm::WaitForBootup(*realm_);
+    ASSERT_EQ(ZX_OK, boot_result.status_value());
 
     // Connect to sender driver.
     component::SyncServiceMemberWatcher<fuchsia_examples_metadata::SenderService::Device> watcher(
@@ -47,6 +48,8 @@ class MetadataTest : public gtest::TestLoopFixture {
     ASSERT_OK(sender);
     sender_.Bind(std::move(sender.value()));
   }
+
+  void TearDown() override { driver_test_realm::ShutdownRealm(*realm_); }
 
  protected:
   fidl::SyncClient<fuchsia_examples_metadata::Sender>& sender() { return sender_; }
@@ -57,6 +60,7 @@ class MetadataTest : public gtest::TestLoopFixture {
   }
 
  private:
+  async::Loop loop_{&kAsyncLoopConfigNeverAttachToThread};
   std::optional<component_testing::RealmRoot> realm_;
   fidl::SyncClient<fuchsia_examples_metadata::Sender> sender_;
 };
