@@ -84,6 +84,19 @@ class TraceImportingTest(unittest.TestCase):
 
         test_utils.assertModelsEqual(self, expected_model, model_from_split)
 
+    def test_convert_trace_file_to_json_rusage_max_rss(self) -> None:
+        # Temporarily refer directly to these dependencies until we align behavior
+        # across packages.
+        trace2json_data_path = (
+            pathlib.Path("host_x64").absolute() / "test_data" / "trace2json"
+        )
+        trace_file = trace2json_data_path / "simple_trace.fxt"
+
+        _, _, output = trace_importing.convert_trace_file_to_json_rusage(
+            trace_file, split=False
+        )
+        self.assertIn("Maximum resident set size (kbytes):", output)
+
     def test_dangling_begin_event(self) -> None:
         model: trace_model.Model = trace_importing.create_model_from_string(
             """

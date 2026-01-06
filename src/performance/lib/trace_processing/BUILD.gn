@@ -5,6 +5,7 @@
 import("//build/host.gni")
 import("//build/python/python_binary.gni")
 import("//build/python/python_library.gni")
+import("//build/testing/host_test_data.gni")
 
 assert(is_host)
 
@@ -34,11 +35,21 @@ python_library("trace_processing") {
   ]
   library_deps = [
     "//src/performance/lib/reporting",
+    "//src/performance/lib/trace_processing:process_monitor",
     "//src/performance/trace2json:bin",
   ]
 
   data_package_name = "data"
-  data_sources = [ "${root_out_dir}/trace2json" ]
+  data_sources = [
+    "${root_out_dir}/process_monitor",
+    "${root_out_dir}/trace2json",
+  ]
+}
+
+executable("process_monitor") {
+  testonly = true
+  output_name = "process_monitor"
+  sources = [ "process_monitor.cc" ]
 }
 
 python_binary("run_cpu_breakdown_bin") {

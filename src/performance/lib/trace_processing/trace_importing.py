@@ -214,10 +214,10 @@ def convert_trace_file_to_json(
     Returns:
       The path to the converted trace file.
     """
-    converted_path, _, _ = time_convert_trace_file_to_json(
+    converted_path, _, _ = convert_trace_file_to_json_rusage(
         trace_path, trace2json_path, patterns, categories
     )
-    return converted_path
+    return str(converted_path)
 
 
 def time_convert_trace_file_to_json(
@@ -253,18 +253,73 @@ def time_convert_trace_file_to_json(
       The path to the split-out jsonlines file, if requested, or the emoty string.
       Output of the conversion process.
     """
+    (
+        output_path,
+        jsonlines_path,
+        conversion_output,
+    ) = convert_trace_file_to_json_rusage(
+        trace_path, trace2json_path, patterns, categories, split
+    )
+    return (
+        str(output_path),
+        str(jsonlines_path) if jsonlines_path else "",
+        conversion_output,
+    )
+
+
+def convert_trace_file_to_json_rusage(
+    trace_path: str | os.PathLike[str],
+    trace2json_path: str | os.PathLike[str] | None = None,
+    patterns: set[str] | None = None,
+    categories: set[str] | None = None,
+    split: bool = False,
+) -> tuple[os.PathLike[str], os.PathLike[str] | None, str]:
+    """Converts the specified trace file to JSON.
+
+    Args:
+      trace_path: The path to the trace file to convert.
+      trace2json_path: The path to the trace2json executable. When unset, find
+          at a runtime_deps/trace2json location in a parent directory.
+      patterns: Regexps to match against event names. Only events that match one or more of these
+                patterns will be included in the converted trace file.
+                Pass None to include all events.
+                Pass the empty set to discard all events.
+      categories: The names of categories to include. An event will be included if it either
+                  matches one of the elements of `patterns`, OR it is in one of the categories
+                  listed here.
+                  Pass None or the empty set to defer entirely to `patterns`.
+      split: Whether to split `systemTraceEvents` out into a separate, jsonlines-formatted, file.
+
+    Raises:
+      subprocess.CalledProcessError: The trace2json process returned an error.
+
+    Returns:
+      The path to the converted trace file.
+      The path to the split-out jsonlines file, if requested, or the empty string.
+      Usage stats of the conversion process.
+    """
     _LOGGER.info(f"Converting {trace_path} to json")
 
     output_path = pathlib.Path(trace_path).with_suffix(".json")
-    jsonlines_path = output_path.with_suffix(_JSONLINES_SUFFIX) if split else ""
-    with as_file(files(data).joinpath("trace2json")) as f:
-        if trace2json_path is None:
-            f.chmod(f.stat().st_mode | stat.S_IEXEC)
-            trace2json_path = f
+    jsonlines_path = (
+        output_path.with_suffix(_JSONLINES_SUFFIX) if split else None
+    )
 
-        args: list[str] = timer_cmd.copy() if timer_cmd else []
-        args += [
-            str(trace2json_path),
+    with (
+        as_file(files(data).joinpath("trace2json")) as trace2json_res,
+        as_file(files(data).joinpath("process_monitor")) as process_monitor_res,
+    ):
+        if trace2json_path is None:
+            trace2json_res.chmod(trace2json_res.stat().st_mode | stat.S_IEXEC)
+            trace2json_path = trace2json_res
+
+        process_monitor_res.chmod(
+            process_monitor_res.stat().st_mode | stat.S_IEXEC
+        )
+
+        args: list[str | os.PathLike[str]] = [
+            process_monitor_res,
+            trace2json_path,
             f"--input-file={trace_path}",
             f"--output-file={output_path}",
         ]
@@ -291,12 +346,13 @@ def time_convert_trace_file_to_json(
             conversion_output = subprocess.check_output(
                 args, text=True, stderr=subprocess.STDOUT
             )
+
         except subprocess.CalledProcessError as cpe:
             _LOGGER.error("trace2json failed: %s", cpe.stdout)
             raise
         _LOGGER.debug("Output of running %s: %s", args, conversion_output)
 
-    return (str(output_path), str(jsonlines_path), conversion_output)
+    return (output_path, jsonlines_path, conversion_output)
 
 
 def create_model_from_trace_file_path(
