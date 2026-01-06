@@ -42,11 +42,6 @@ pub enum PointOfFailure<'a> {
         handle: TargetHandle,
     },
 
-    /// We weren't able to create a fastboot interface for querying the fastboot device.
-    CreatingFastbootInterface {
-        handle: TargetHandle,
-    },
-
     /// When querying the device for a serial number, we encountered an error.
     FastbootQueryingSerialNo {
         handle: TargetHandle,
@@ -198,13 +193,6 @@ impl From<PointOfFailure<'_>> for CustomEvent {
                     .collect(),
                 ..Default::default()
             },
-            CreatingFastbootInterface { handle } => CustomEvent {
-                category: "create_fastboot_iface",
-                custom_dimensions: [("target_state", format_target_state(&handle.state).into())]
-                    .into_iter()
-                    .collect(),
-                ..Default::default()
-            },
             FastbootQueryingSerialNo { handle } => CustomEvent {
                 category: "query_serialno",
                 custom_dimensions: [("target_state", format_target_state(&handle.state).into())]
@@ -350,16 +338,6 @@ mod tests {
         let pof = PointOfFailure::NonFastbootTargetHandle { handle };
         let event: CustomEvent = pof.into();
         assert_eq!(event.category, "non_fastboot_target_hdl");
-        assert_eq!(event.action, None);
-        assert_eq!(event.custom_dimensions.get("target_state"), Some(&"unknown".to_owned().into()));
-    }
-
-    #[test]
-    fn test_creating_fastboot_interface_conversion() {
-        let handle = TargetHandle { node_name: None, state: TargetState::Unknown, manual: false };
-        let pof = PointOfFailure::CreatingFastbootInterface { handle };
-        let event: CustomEvent = pof.into();
-        assert_eq!(event.category, "create_fastboot_iface");
         assert_eq!(event.action, None);
         assert_eq!(event.custom_dimensions.get("target_state"), Some(&"unknown".to_owned().into()));
     }

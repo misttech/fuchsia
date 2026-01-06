@@ -2,11 +2,13 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+use crate::analytics::PointOfFailure;
 use crate::helpers::rediscover_helper;
 use anyhow::{Context as _, Result};
 use async_trait::async_trait;
 use discovery::{FastbootConnectionState, TargetHandle, TargetState};
 use ffx_config::EnvironmentContext;
+use ffx_diagnostics_analytics::{ResultExt, mark_point_of_failure};
 use ffx_fastboot_interface::interface_factory::{
     InterfaceFactory, InterfaceFactoryBase, InterfaceFactoryError,
 };
@@ -76,7 +78,10 @@ impl InterfaceFactoryBase<UdpNetworkInterface> for UdpFactory {
                 }
             }
         }
-        Err(InterfaceFactoryError::ConnectionError("UDP".to_string(), self.addr, self.open_retries))
+        let err =
+            InterfaceFactoryError::ConnectionError("UDP".to_string(), self.addr, self.open_retries);
+        mark_point_of_failure(PointOfFailure::FactoryOpenError("udp".into(), &err)).await;
+        Err(err)
     }
 
     async fn close(&self) {
@@ -105,6 +110,9 @@ impl InterfaceFactoryBase<UdpNetworkInterface> for UdpFactory {
                 Ok(())
             },
         )
+        .await
+        .map_err(|e| InterfaceFactoryError::from(e))
+        .or_else_analytics(|e| PointOfFailure::FactoryRediscoveryError("udp".into(), e).into())
         .await
     }
 }

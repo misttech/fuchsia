@@ -805,12 +805,8 @@ where
                     v[0].into(),
                 ),
             };
-            let mut interface = self
-                .factory
-                .build_interface(connection_kind)
-                .await
-                .or_analytics(PointOfFailure::CreatingFastbootInterface { handle: input.clone() })
-                .await?;
+            // This error is covered within the fastboot library itself, so has no analytics.
+            let mut interface = self.factory.build_interface(connection_kind).await?;
             interface
                 .get_var("serialno")
                 .await

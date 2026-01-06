@@ -22,6 +22,7 @@ rustc_library("lib") {
   deps = [
     "//src/developer/fastboot:lib",
     "//src/developer/ffx/config:lib",
+    "//src/developer/ffx/lib/diagnostics/analytics:lib",
     "//src/developer/ffx/lib/discovery:lib",
     "//src/developer/ffx/lib/fastboot/interface:lib",
     "//src/developer/ffx/lib/fastboot/transport/interface:lib",
@@ -35,9 +36,13 @@ rustc_library("lib") {
     "//third_party/rust_crates:tokio",
   ]
 
-  test_deps = [ "//src/lib/fuchsia" ]
+  test_deps = [
+    "//src/lib/analytics/rust:lib",
+    "//src/lib/fuchsia",
+  ]
 
   sources = [
+    "src/analytics.rs",
     "src/helpers.rs",
     "src/lib.rs",
     "src/tcp.rs",

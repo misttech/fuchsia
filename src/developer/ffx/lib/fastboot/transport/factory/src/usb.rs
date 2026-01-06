@@ -2,11 +2,13 @@
 // Use of this source code is governed by a BSD-style licence that can be
 // found in the LICENSE file.
 
+use crate::analytics::PointOfFailure;
 use anyhow::{Context, Result};
 use async_trait::async_trait;
 use fastboot::command::{ClientVariable, Command};
 use fastboot::reply::Reply;
 use fastboot::{FastbootContext, send};
+use ffx_diagnostics_analytics::ResultExt;
 use ffx_fastboot_interface::interface_factory::{
     InterfaceFactory, InterfaceFactoryBase, InterfaceFactoryError,
 };
@@ -112,9 +114,18 @@ impl FastbootUsbLiveTester for StrictGetVarFastbootUsbLiveTester {
 #[async_trait(?Send)]
 impl InterfaceFactoryBase<AsyncInterface> for UsbFactory {
     async fn open(&mut self) -> Result<AsyncInterface, InterfaceFactoryError> {
-        let interface = open_interface_with_serial(&self.serial).await.with_context(|| {
-            format!("USB Factory: Failed to open target usb interface by serial {}", self.serial)
-        })?;
+        let interface = open_interface_with_serial(&self.serial)
+            .await
+            .or_else_analytics(|e| {
+                PointOfFailure::FactoryOpenErrorGeneral("usb".to_owned(), e).into()
+            })
+            .await
+            .with_context(|| {
+                format!(
+                    "USB Factory: Failed to open target usb interface by serial {}",
+                    self.serial
+                )
+            })?;
         log::debug!("serial now in use: {}", self.serial);
         Ok(interface)
     }
@@ -143,9 +154,15 @@ impl InterfaceFactoryBase<AsyncInterface> for UsbFactory {
             MonotonicDuration::from_secs(1),
         );
 
-        rx.await.map_err(|e| {
-            anyhow::anyhow!("error awaiting oneshot channel rediscovering target: {}", e)
-        })?;
+        rx.await
+            .map_err(|e| {
+                InterfaceFactoryError::from(anyhow::anyhow!(
+                    "error awaiting oneshot channel rediscovering target: {}",
+                    e
+                ))
+            })
+            .or_else_analytics(|e| PointOfFailure::FactoryRediscoveryError("usb".into(), e).into())
+            .await?;
 
         drop(watcher);
 

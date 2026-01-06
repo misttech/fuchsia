@@ -22,6 +22,7 @@ rustc_library("lib") {
     ":*",
     "//src/developer/ffx/lib/diagnostics:*",
     "//src/developer/ffx/lib/diagnostics/checks:*",
+    "//src/developer/ffx/lib/fastboot/transport/factory:*",
     "//src/developer/ffx/lib/fho:*",
     "//src/developer/ffx/lib/target:*",
   ]

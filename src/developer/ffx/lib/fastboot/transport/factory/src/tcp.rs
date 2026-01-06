@@ -2,11 +2,13 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+use crate::analytics::PointOfFailure;
 use crate::helpers::rediscover_helper;
 use anyhow::{Context as _, Result};
 use async_trait::async_trait;
 use discovery::{FastbootConnectionState, TargetHandle, TargetState};
 use ffx_config::EnvironmentContext;
+use ffx_diagnostics_analytics::{ResultExt, mark_point_of_failure};
 use ffx_fastboot_interface::interface_factory::{
     InterfaceFactory, InterfaceFactoryBase, InterfaceFactoryError,
 };
@@ -72,11 +74,13 @@ impl InterfaceFactoryBase<TcpNetworkInterface<TokioAsyncWrapper<TcpStream>>> for
         let mut try_count = 1;
         loop {
             if !self.retry_forever && try_count > self.open_retries {
-                break Err(InterfaceFactoryError::ConnectionError(
+                let err = InterfaceFactoryError::ConnectionError(
                     "TCP".to_string(),
                     self.addr,
                     self.open_retries,
-                ));
+                );
+                mark_point_of_failure(PointOfFailure::FactoryOpenError("tcp".into(), &err)).await;
+                break Err(err);
             }
             try_count += 1;
             match open_once(&self.addr, Duration::from_secs(1)).await.with_context(|| {
@@ -112,16 +116,20 @@ impl InterfaceFactoryBase<TcpNetworkInterface<TokioAsyncWrapper<TcpStream>>> for
                         self.addr = addrs.iter().find_map(|x| x.try_into().ok()).unwrap();
                     }
                     s @ _ => {
-                        return Err(InterfaceFactoryError::RediscoverTargetNotInCorrectTransport(
+                        let err = InterfaceFactoryError::RediscoverTargetNotInCorrectTransport(
                             self.target_name.clone(),
                             "TCP".to_string(),
                             s.to_string(),
-                        ));
+                        );
+                        return Err(err);
                     }
                 }
                 Ok(())
             },
         )
+        .await
+        .map_err(Into::into)
+        .or_else_analytics(|e| PointOfFailure::FactoryRediscoveryError("tcp".into(), e).into())
         .await
     }
 }
