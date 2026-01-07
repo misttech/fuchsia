@@ -410,7 +410,8 @@ class ReproxyLogEntry(object):
 
     @property
     def remote_metadata(self) -> Dict[str, Any]:
-        return self._raw["remote_metadata"][0]
+        # remote_metadata does not always exist in the action log
+        return self._raw.get("remote_metadata", [dict()])[0]
 
     @property
     def action_digest(self) -> str:
@@ -1684,6 +1685,7 @@ exec "${{cmd[@]}}"
         return ReproxyLogEntry.parse_action_log(self._action_log)
 
     def _write_output_file_hash_xattrs(self, output_file: Path) -> None:
+        # Use the digest from the action remote_metadata, if available.
         xattr_value = self.action_log_record.output_file_digests.get(
             output_file
         )
