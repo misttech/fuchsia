@@ -184,6 +184,7 @@ pem = "0.8.3"
 percent-encoding = "2.1"
 pest = "2.8.3"
 pest_derive = "2.8.3"
+phf = { version = "0.13.1", default-features = false, features = ["macros"] }
 pin-project = "1.1"
 pin-project-lite = "0.2.16"
 pin-weak = "1.1.0"

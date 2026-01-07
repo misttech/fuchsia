@@ -1771,6 +1771,18 @@ alias(
 )
 
 alias(
+    name = "phf-0.13.1",
+    actual = "//third_party/rust_crates/vendor/phf-0.13.1:phf",
+    tags = ["manual"],
+)
+
+alias(
+    name = "phf",
+    actual = "//third_party/rust_crates/vendor/phf-0.13.1:phf",
+    tags = ["manual"],
+)
+
+alias(
     name = "pin-project-1.1.10",
     actual = "//third_party/rust_crates/vendor/pin-project-1.1.10:pin_project",
     tags = ["manual"],
