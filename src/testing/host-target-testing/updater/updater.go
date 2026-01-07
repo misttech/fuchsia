@@ -50,9 +50,14 @@ type client interface {
 		ctx context.Context,
 		ffxTool *ffx.FFXTool,
 		repo *packages.Repository,
-		name string,
+		name string) (*packages.Server, error)
+	RegisterPackageRepository(
+		ctx context.Context,
+		ffxTool *ffx.FFXTool,
+		repo *packages.Server,
+		repoName string,
 		createRewriteRule bool,
-		rewritePackages []string) (*packages.Server, error)
+		rewritePackages []string) error
 	Run(ctx context.Context, command []string, stdout io.Writer, stderr io.Writer) error
 	SetUpdateChannel(ctx context.Context, ffxTool *ffx.FFXTool, target string, channel string) error
 	MonitorUpdate(ctx context.Context, ffxTool *ffx.FFXTool, target string) (string, error)
@@ -226,11 +231,15 @@ func updateCheckNow(
 
 		// We pass createRewriteRule=true for versions of system-update-checker prior to
 		// fxrev.dev/504000. Newer versions need to have `update channel set` called below.
-		server, err := c.ServePackageRepository(ctx, ffxTool, repo, "trigger-ota", createRewriteRule, nil)
+		repoName := "trigger-ota"
+		server, err := c.ServePackageRepository(ctx, ffxTool, repo, repoName)
 		if err != nil {
 			return fmt.Errorf("error setting up server: %w", err)
 		}
 		defer server.Shutdown(ctx)
+		if err := c.RegisterPackageRepository(ctx, ffxTool, server, repoName, createRewriteRule, nil); err != nil {
+			return fmt.Errorf("error registering repository with target: %w", err)
+		}
 
 		ch := c.DisconnectionListener()
 
@@ -350,11 +359,14 @@ func (u *SystemUpdater) Update(
 		return fmt.Errorf("error rehosting the update package: %w", err)
 	}
 
-	server, err := c.ServePackageRepository(ctx, ffxTool, dstUpdate.Repository(), repoName, true, nil)
+	server, err := c.ServePackageRepository(ctx, ffxTool, dstUpdate.Repository(), repoName)
 	if err != nil {
 		return fmt.Errorf("error setting up server: %w", err)
 	}
 	defer server.Shutdown(ctx)
+	if err := c.RegisterPackageRepository(ctx, ffxTool, server, repoName, true, nil); err != nil {
+		return fmt.Errorf("error registering repository with target: %w", err)
+	}
 
 	updatePackageUrl := fmt.Sprintf("fuchsia-pkg://%s/%s", repoName, dstUpdate.Path())
 	logger.Infof(ctx, "Downloading OTA %q", updatePackageUrl)

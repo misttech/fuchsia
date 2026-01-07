@@ -596,8 +596,6 @@ func (c *Client) ServePackageRepository(
 	ffxTool *ffx.FFXTool,
 	repo *packages.Repository,
 	repoName string,
-	createRewriteRule bool,
-	rewritePackages []string,
 ) (*packages.Server, error) {
 	// Make sure the device doesn't have any broken static packages.
 	if err := c.ValidateStaticPackages(ctx); err != nil {
@@ -616,11 +614,6 @@ func (c *Client) ServePackageRepository(
 		return nil, err
 	}
 
-	if err := c.RegisterPackageRepository(ctx, ffxTool, server, repoName, createRewriteRule, rewritePackages); err != nil {
-		server.Shutdown(ctx)
-		return nil, err
-	}
-
 	return server, nil
 }
 
@@ -630,11 +623,14 @@ func (c *Client) StartRpcSession(ctx context.Context, ffxTool *ffx.FFXTool, repo
 
 	// Configure the target to use this repository as "fuchsia-pkg://host_target_testing_sl4f".
 	repoName := "host-target-testing-sl4f"
-	repoServer, err := c.ServePackageRepository(ctx, ffxTool, repo, repoName, true, []string{"sl4f", "start_sl4f"})
+	repoServer, err := c.ServePackageRepository(ctx, ffxTool, repo, repoName)
 	if err != nil {
 		return nil, fmt.Errorf("error serving repo to device: %w", err)
 	}
 	defer repoServer.Shutdown(ctx)
+	if err := c.RegisterPackageRepository(ctx, ffxTool, repoServer, repoName, true, []string{"sl4f", "start_sl4f"}); err != nil {
+		return nil, fmt.Errorf("error registering repository with target: %w", err)
+	}
 
 	sshAddr, err := c.deviceResolver.ResolveSshAddress(ctx)
 	if err != nil {
