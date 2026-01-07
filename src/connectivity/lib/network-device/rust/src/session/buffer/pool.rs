@@ -11,18 +11,19 @@ use std::collections::VecDeque;
 use std::convert::TryInto as _;
 use std::fmt::Debug;
 use std::io::{Read, Seek, SeekFrom, Write};
-use std::mem::{ManuallyDrop, MaybeUninit};
+use std::mem::MaybeUninit;
 use std::num::TryFromIntError;
 use std::ops::{Deref, DerefMut};
 use std::ptr::NonNull;
-use std::sync::atomic::{self, AtomicBool, AtomicU64};
 use std::sync::Arc;
+use std::sync::atomic::{self, AtomicBool, AtomicU64};
 use std::task::Poll;
 
+use arrayvec::ArrayVec;
 use explicit::ResultExt as _;
 use fidl_fuchsia_hardware_network as netdev;
 use fuchsia_runtime::vmar_root_self;
-use futures::channel::oneshot::{channel, Receiver, Sender};
+use futures::channel::oneshot::{Receiver, Sender, channel};
 use zx::AsHandleRef as _;
 
 use super::{ChainLength, DescId, DescRef, DescRefMut, Descriptors};
@@ -247,64 +248,69 @@ impl Pool {
     ///
     /// Panics if given an empty chain.
     fn free_tx(self: &Arc<Self>, chain: Chained<DescId<Tx>>) {
-        let free_impl = |free_list: &mut TxFreeList, chain: Chained<DescId<Tx>>| {
+        // We store any pending request that need to be fulfilled in the stack
+        // here, to fulfill them only once we drop the lock, guaranteeing an
+        // AllocGuard can't be dropped while the lock is held.
+        let mut to_fulfill = ArrayVec::<
+            (TxAllocReq, AllocGuard<Tx>),
+            { netdev::MAX_DESCRIPTOR_CHAIN as usize },
+        >::new();
+
+        let mut state = self.tx_alloc_state.lock();
+
+        {
             let mut descs = chain.into_iter();
             // The following can't overflow because we can have at most u16::MAX
             // descriptors: free_len + #(to_free) + #(descs in use) <= u16::MAX,
             // Thus free_len + #(to_free) <= u16::MAX.
-            free_list.len += u16::try_from(descs.len()).unwrap();
+            state.free_list.len += u16::try_from(descs.len()).unwrap();
             let head = descs.next();
-            let old_head = std::mem::replace(&mut free_list.head, head);
+            let old_head = std::mem::replace(&mut state.free_list.head, head);
             let mut tail = descs.last();
-            let mut tail_ref = self
-                .descriptors
-                .borrow_mut(tail.as_mut().unwrap_or_else(|| free_list.head.as_mut().unwrap()));
+            let mut tail_ref = self.descriptors.borrow_mut(
+                tail.as_mut().unwrap_or_else(|| state.free_list.head.as_mut().unwrap()),
+            );
             tail_ref.set_nxt(old_head);
-        };
-
-        let mut state = self.tx_alloc_state.lock();
-        let TxAllocState { requests, free_list } = &mut *state;
-        let () = free_impl(free_list, chain);
+        }
 
         // After putting the chain back into the free list, we try to fulfill
         // any pending tx allocation requests.
-        while let Some(req) = requests.front() {
-            match free_list.try_alloc(req.size, &self.descriptors) {
+        while let Some(req) = state.requests.front() {
+            // Skip a request that we know is canceled.
+            //
+            // This is an optimization for long-ago dropped requests, since the
+            // receiver side can be dropped between here and fulfillment later.
+            if req.sender.is_canceled() {
+                let _cancelled: Option<TxAllocReq> = state.requests.pop_front();
+                continue;
+            }
+            let size = req.size;
+            match state.free_list.try_alloc(size, &self.descriptors) {
                 Some(descs) => {
                     // The unwrap is safe because we know requests is not empty.
-                    match requests
-                        .pop_front()
-                        .unwrap()
-                        .sender
-                        .send(AllocGuard::new(descs, self.clone()))
-                        .map_err(ManuallyDrop::new)
-                    {
-                        Ok(()) => {}
-                        Err(mut alloc) => {
-                            let AllocGuard { descs, pool } = alloc.deref_mut();
-                            // We can't run the Drop code for AllocGuard here to
-                            // return the descriptors though, because we are holding
-                            // the lock on the alloc state and the lock is not
-                            // reentrant, so we manually free the descriptors.
-                            let () =
-                                free_impl(free_list, std::mem::replace(descs, Chained::empty()));
-                            // Safety: alloc is wrapped in ManuallyDrop, so alloc.pool
-                            // will not be dropped twice.
-                            let () = unsafe {
-                                std::ptr::drop_in_place(pool);
-                            };
+                    let req = state.requests.pop_front().unwrap();
+                    to_fulfill.push((req, AllocGuard::new(descs, self.clone())));
+
+                    // If we're full temporarily release the lock to go again
+                    // later. Fulfilling a request must _always_ be done without
+                    // holding the lock.
+                    if to_fulfill.is_full() {
+                        drop(state);
+                        for (req, alloc) in to_fulfill.drain(..) {
+                            req.fulfill(alloc)
                         }
+                        state = self.tx_alloc_state.lock();
                     }
                 }
-                None => {
-                    if req.sender.is_canceled() {
-                        let _cancelled: Option<TxAllocReq> = requests.pop_front();
-                        continue;
-                    } else {
-                        break;
-                    }
-                }
+                None => break,
             }
+        }
+
+        // Make sure we're not holding the state lock when fulfilling requests.
+        drop(state);
+        // Fulfill any ready requests.
+        for (req, alloc) in to_fulfill {
+            req.fulfill(alloc)
         }
     }
 
@@ -1012,6 +1018,25 @@ impl TxAllocReq {
     fn new(size: ChainLength) -> (Self, Receiver<AllocGuard<Tx>>) {
         let (sender, receiver) = channel();
         (TxAllocReq { sender, size }, receiver)
+    }
+
+    /// Fulfills the pending request with an `AllocGuard`.
+    ///
+    /// If the request is already closed, the guard is simply dropped and
+    /// returned to the queue.
+    ///
+    /// `fulfill` must *not* be called when the `guard`'s pool is holding the tx
+    /// lock, since we may deadlock/panic upon the double tx lock acquisition.
+    fn fulfill(self, guard: AllocGuard<Tx>) {
+        let Self { sender, size: _ } = self;
+        match sender.send(guard) {
+            Ok(()) => (),
+            Err(guard) => {
+                // It's ok to just drop the guard here, it'll be returned to the
+                // pool.
+                drop(guard);
+            }
+        }
     }
 }
 
