@@ -39,13 +39,53 @@ pub struct ProductAssembly {
 impl ProductAssembly {
     pub fn new(
         platform_artifacts: PlatformArtifacts,
-        product_config: ProductConfig,
-        board_config: BoardConfig,
+        mut product_config: ProductConfig,
+        mut board_config: BoardConfig,
         include_example_aib_for_tests: bool,
         mode: AssemblyMode,
+        developer_overrides: Option<DeveloperOverrides>,
     ) -> Result<Self> {
+        // Apply developer overrides first to ensure builder is constructed with all overrides
+        let (developer_only_options, builder_overrides) =
+            if let Some(overrides) = developer_overrides {
+                // Apply the platform and product overrides.
+                let product_config_overrides = serde_json::json!({
+                    "platform": overrides.platform,
+                    "product": overrides.product,
+                });
+                product_config = product_config
+                    .apply_overrides(product_config_overrides)
+                    .context("Merging developer overrides into product configuration")?;
+
+                // Apply the board overrides.
+                board_config = board_config
+                    .apply_overrides(overrides.board)
+                    .context("Merging developer overrides into board configuration")?;
+
+                // Reconstitute the developer overrides struct, but with a null platform and product
+                // configs, since they've been used to modify the main platform and product
+                // configurations.
+                let builder_overrides = DeveloperOverrides {
+                    platform: serde_json::Value::Null,
+                    product: serde_json::Value::Null,
+                    board: serde_json::Value::Null,
+                    ..overrides
+                };
+
+                // If the developer overrides specifies `netboot_mode`, then we override
+                // the image mode to 'ramdisk'.
+                if builder_overrides.developer_only_options.netboot_mode {
+                    product_config.platform.storage.filesystems.image_mode =
+                        FilesystemImageMode::Ramdisk;
+                }
+
+                (Some(builder_overrides.developer_only_options.clone()), Some(builder_overrides))
+            } else {
+                (None, None)
+            };
+
         let image_mode = product_config.platform.storage.filesystems.image_mode;
-        let builder = ImageAssemblyConfigBuilder::new(
+        let mut builder = ImageAssemblyConfigBuilder::new(
             product_config.platform.build_type,
             board_config.name.clone(),
             board_config.partitions_config.as_ref().map(|p| p.as_utf8_path_buf().clone()),
@@ -57,6 +97,13 @@ impl ProductAssembly {
                 board: board_config.release_info.clone(),
             },
         );
+
+        // Add remaining overrides to constructed builder
+        if let Some(builder_overrides) = builder_overrides {
+            builder
+                .add_developer_overrides(builder_overrides)
+                .context("Setting developer overrides")?;
+        }
 
         let kernel_aib = platform_artifacts.get_bundle("zircon");
         // The emulator support bundle is always added, even to an empty build.
@@ -71,7 +118,7 @@ impl ProductAssembly {
             platform_artifacts,
             product_config,
             board_config,
-            developer_only_options: None,
+            developer_only_options,
             kernel_aib,
             boot_shim_aib,
             validation_mode: ValidationMode::On,
@@ -79,53 +126,6 @@ impl ProductAssembly {
             board_forensics_file_path: None,
             include_example_aib_for_tests,
             mode,
-        })
-    }
-
-    pub fn add_developer_overrides(self, developer_overrides: DeveloperOverrides) -> Result<Self> {
-        let Self { mut builder, platform_artifacts, product_config, board_config, .. } = self;
-
-        // Apply the platform and product overrides.
-        let product_config_overrides = serde_json::json!({
-            "platform": developer_overrides.platform,
-            "product": developer_overrides.product,
-        });
-        let mut product_config = product_config
-            .apply_overrides(product_config_overrides)
-            .context("Merging developer overrides into product configuration")?;
-
-        // Apply the board overrides.
-        let board_config = board_config
-            .apply_overrides(developer_overrides.board)
-            .context("Merging developer overrides into board configuration")?;
-
-        // Reconstitute the developer overrides struct, but with a null platform and product
-        // configs, since they've been used to modify the main platform and product configurations.
-        let developer_overrides = DeveloperOverrides {
-            platform: serde_json::Value::Null,
-            product: serde_json::Value::Null,
-            board: serde_json::Value::Null,
-            ..developer_overrides
-        };
-
-        // If the developer overrides specifies `netboot_mode`, then we override
-        // the image mode to 'ramdisk'.
-        if developer_overrides.developer_only_options.netboot_mode {
-            product_config.platform.storage.filesystems.image_mode = FilesystemImageMode::Ramdisk;
-        }
-
-        let developer_only_options = Some(developer_overrides.developer_only_options.clone());
-        builder
-            .add_developer_overrides(developer_overrides)
-            .context("Setting developer overrides")?;
-
-        Ok(Self {
-            builder,
-            platform_artifacts,
-            product_config,
-            board_config,
-            developer_only_options,
-            ..self
         })
     }
 

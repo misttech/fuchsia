@@ -80,10 +80,8 @@ Resulting product is not supported and may misbehave!
         board_config,
         include_example_aib_for_tests.unwrap_or(false),
         mode,
+        developer_overrides,
     )?;
-    if let Some(developer_overrides) = developer_overrides {
-        pa = pa.add_developer_overrides(developer_overrides)?;
-    }
     if let Some(path) = custom_kernel_aib {
         pa.set_kernel_aib(path);
     }
