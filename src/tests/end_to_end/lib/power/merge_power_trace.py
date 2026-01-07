@@ -10,13 +10,13 @@ import pathlib
 import shutil
 import sys
 
-from power import gonk, powerserver
+from power import powerserver
 from trace_processing import trace_importing, trace_model
 
 
 class PowerFileFormat(enum.Enum):
     # Use lowercase names here to avoid confusion in the command line flag.
-    gonk = "gonk"
+
     monsoon = "monsoon"
 
 
@@ -38,16 +38,8 @@ def merge_trace(
     )
 
     shutil.copy(trace, output)
-    if power_format == PowerFileFormat.gonk:
-        rail_names = gonk.read_gonk_header(power)
-        gonk_samples = gonk.read_gonk_samples(power)
-        if gpio:
-            gonk.merge_gonk_data(model, gonk_samples, output, rail_names)
-        else:
-            gonk.merge_gonk_data_without_gpio(gonk_samples, output, rail_names)
-    else:
-        samples = powerserver.read_power_samples(power)
-        powerserver.merge_power_data(model, samples, output)
+    samples = powerserver.read_power_samples(power)
+    powerserver.merge_power_data(model, samples, output)
 
 
 def main() -> None:

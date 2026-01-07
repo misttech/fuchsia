@@ -11,7 +11,6 @@ python_library("power") {
   library_name = "power"
   sources = [
     "__init__.py",
-    "gonk.py",
     "powerserver.py",
     "sampler.py",
   ]
