@@ -387,10 +387,15 @@ def main() -> int:
         ninja_status = status_prefix + ninja_status
         ninja_env = {"NINJA_STATUS": ninja_status}
 
+        ninja_edge_weights_path = os.path.relpath(
+            "ninja_edge_weights.csv", build_dir
+        )
+
         ninja_cmd = [
             *ninja_cmd_prefix,
             "--chrome_trace",
             "ninja_build_trace.json.gz",
+            f"--edge_weights_list={ninja_edge_weights_path}",
             "-C",
             str(build_dir),
         ]
