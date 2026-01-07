@@ -4,7 +4,7 @@ Memory profiling tool that can capture snapshots of live allocations at any
 point in time and export them in a
 [pprof](https://github.com/google/pprof)-compatible protobuf format.
 
-## How to use
+## Profiling individual components
 
 * Add `heapdump_instrumentation/collector.shard.cml` to the `include` list in
   your component's manifest.
@@ -46,7 +46,7 @@ hierarchy that has access to the resolver (the URL to be instantiated will be
 With this approach, the `fuchsia.memory.heapdump.process.Registry` capability
 must then be manually routed to the component being profiled.
 
-## Quickstart: Running the example
+### Quickstart: Running the example
 
 ```
 # Include heapdump's example component in the build.
@@ -60,7 +60,7 @@ ffx profile heapdump snapshot --output-file my_snapshot.pb
 fx pprof -http=":" my_snapshot.pb
 ```
 
-## Advanced: dealing with multiple instrumented processes at the same time
+### Advanced: dealing with multiple instrumented processes at the same time
 
 By default, the `snapshot` command operates in single-process mode. A snapshot
 will only be emitted if exactly one running process has been instrumented.
@@ -77,6 +77,57 @@ When `--multi-process` is used, the allocations are tagged with the name and the
 koid of the owning process. The `-tag` family of pprof options can be used to
 separate them in the UI (e.g. `-tagroot process_name`, `-tagroot process_koid`
 or both `-tagroot process_name,process_koid`).
+
+## Profiling several components at the same time
+
+As an alternative to manually modifying each component, it is also possible to
+enable heapdump in bulk at build time for all programs.
+
+Add these lines to the `local/BUILD.gn` file (after creating it, if it does not
+exist yet, see
+[docs/development/build/assembly_developer_overrides.md](../../../../docs/development/build/assembly_developer_overrides.md)):
+```
+import("//build/assembly/developer_overrides.gni")
+
+assembly_developer_overrides("heapdump_everywhere") {
+  platform = {
+    development_support = {
+      heapdump = {
+        component_manager = true
+        monikers = ["/**"]
+      }
+    }
+  }
+}
+```
+
+Then:
+```
+# Select the "heapdump" variant at build time, which will automatically
+# instrument every built program.
+fx set ... \
+  --variant heapdump \
+  --assembly-override //local:heapdump_everywhere \
+  --include-clippy=false  # workaround for https://fxbug.dev/396658029
+
+# Build and run Fuchsia as usual, then take a live snapshot of all the processes
+# in one go.
+ffx profile heapdump snapshot --output-file my_snapshot.pb --multi-process
+fx pprof -http=":" my_snapshot.pb
+```
+
+It is possible to change the values in `local/BUILD.gn` to restrict the set of
+processes to be profiled:
+* `component_manager` controls whether Component Manager should be profiled or
+  not.
+* `monikers` contains a list of moniker patterns whose matching components will
+  be profiled. Examples:
+  * `monikers = ["/**"]` matches any component (i.e. profile the whole system).
+  * `monikers = ["/core/**"]` matches any descendant of `core`.
+  * `monikers = ["/core/*"]` matches only direct children of `core`.
+
+As already described in the previous section, the `-tagroot` mechanism can be
+used to separate stack traces belonging to different processes in the UI.
 
 ## Design
 
