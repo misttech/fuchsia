@@ -14,4 +14,5 @@ import("//build/fidl/fidl.gni")
 fidl("examples.keyvaluestore.baseline") {
   sources = [ "key_value_store.test.fidl" ]
   excluded_checks = [ "wrong-prefix-for-platform-source-library" ]
+  enable_rust_next = true
 }
