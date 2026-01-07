@@ -140,9 +140,20 @@ impl TestFixtureBuilder {
         builder
             .add_route(
                 Route::new()
+                    .capability(Capability::protocol::<fkeymint::SealingKeysMarker>())
+                    .capability(Capability::protocol::<fkeymint::AdminMarker>())
+                    .from(&mocks)
+                    .to(Ref::parent()),
+            )
+            .await
+            .unwrap();
+        builder
+            .add_route(
+                Route::new()
                     .capability(Capability::protocol::<ffeedback::CrashReporterMarker>())
                     .capability(Capability::protocol::<ffxfsprovisioner::FxfsProvisionerMarker>())
                     .capability(Capability::protocol::<fkeymint::SealingKeysMarker>())
+                    .capability(Capability::protocol::<fkeymint::AdminMarker>())
                     .from(&mocks)
                     .to(&fshost),
             )

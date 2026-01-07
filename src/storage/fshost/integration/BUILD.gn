@@ -66,6 +66,7 @@ rustc_library("fshost_test_fixture") {
     "//third_party/rust_crates:assert_matches",
     "//third_party/rust_crates:futures",
     "//third_party/rust_crates:log",
+    "//third_party/rust_crates:serde_json",
     "//third_party/rust_crates:uuid",
     "//third_party/rust_crates:zerocopy",
     "//third_party/rust_crates:zstd",
@@ -174,6 +175,9 @@ template("fshost_integration_test_component") {
 #   enable_corruption_tests (default: true)
 #     [bool] Include corruption tests in the integration test package.
 #
+#   enable_shred_keys_tests (default: false)
+#     [bool] Include key shredding tests in the integration test package.
+#
 #   enable_system_volume_manipulation_tests (default: true)
 #     [bool] Include tests for fuchsia.fshost/Recovery methods that manipulate volumes in the
 #            system container.
@@ -208,6 +212,9 @@ template("fshost_integration_test_package") {
   }
   if (!defined(invoker.enable_corruption_tests)) {
     invoker.enable_corruption_tests = true
+  }
+  if (!defined(invoker.enable_shred_keys_tests)) {
+    invoker.enable_shred_keys_tests = false
   }
   if (!defined(invoker.enable_system_volume_manipulation_tests)) {
     invoker.enable_system_volume_manipulation_tests = false
@@ -404,17 +411,50 @@ template("fshost_integration_test_package") {
       }
       test_components = [ ":$_corrupt_component_target" ]
 
-      deps = [
-        ":$_fshost_target",
+      deps = [ ":$_fshost_target" ]
+    }
+  }
 
-        # We need to make sure we have all the filesystems available in the package for various
-        # tests of the migration paths.
-        "//src/storage/blobfs/bin:component",
-        "//src/storage/crypt/fxfs",
-        "//src/storage/f2fs/bin:f2fs-component",
-        "//src/storage/fxfs:fxfs_component",
-        "//src/storage/minfs/bin:minfs-component",
+  #
+  # Key shredding Tests
+  #
+  if (invoker.enable_shred_keys_tests) {
+    _shred_keys_component_target = "${target_name}_shred_keys"
+    fshost_integration_test_component(_shred_keys_component_target) {
+      fshost_target = _fshost_target
+      data_filesystem_format = fshost_options.data_filesystem_format
+      data_filesystem_variant = invoker.data_filesystem_variant
+      extra_features = _extra_features
+      source_root = "tests/shred_keys.rs"
+      deps = [
+        "//sdk/fidl/fuchsia.fshost:fuchsia.fshost_rust",
+        "//sdk/fidl/fuchsia.hardware.block.volume:fuchsia.hardware.block.volume_rust",
+        "//sdk/fidl/fuchsia.io:fuchsia.io_rust",
+        "//sdk/rust/zx",
+        "//src/lib/fidl/rust/fidl",
+        "//src/lib/fuchsia-fs",
+        "//src/storage/crypt/policy",
+        "//src/storage/fidl/fuchsia.fs.startup:fuchsia.fs.startup_rust",
+        "//src/storage/lib/block_server:vmo_backed_block_server",
+        "//src/storage/lib/fs_management/rust:fs_management",
+        "//third_party/rust_crates:assert_matches",
       ]
+    }
+
+    # shred_keys tests get their own package so we can give them separate test specs
+    _shred_keys_test_package = "${target_name}_shred_keys_package"
+    _test_packages += [ ":$_shred_keys_test_package" ]
+    fuchsia_test_package(_shred_keys_test_package) {
+      package_name = "$_shred_keys_component_target"
+      test_specs = {
+        log_settings = {
+          max_severity = "ERROR"
+        }
+        parallel = 1
+      }
+      test_components = [ ":$_shred_keys_component_target" ]
+
+      deps = [ ":$_fshost_target" ]
     }
   }
 
@@ -492,6 +532,7 @@ fshost_integration_test_package("fshost_integration_tests_fxfs") {
   # configuration will no longer exist.
   enable_corruption_tests = false
   enable_migration_tests = false
+  enable_shred_keys_tests = true
   data_filesystem_variant = "fxblob"
   options = {
   }
@@ -504,6 +545,7 @@ fshost_integration_test_package("fshost_integration_tests_storage_host_fxfs") {
   data_filesystem_variant = "fxblob"
   enable_bad_provision_fxfs_tests = true
   enable_system_volume_manipulation_tests = true
+  enable_shred_keys_tests = true
   options = {
     use_disk_migration = false
     storage_host = true

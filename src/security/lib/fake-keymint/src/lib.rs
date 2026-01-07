@@ -10,7 +10,7 @@
 use aes_gcm_siv::aead::Aead as _;
 use aes_gcm_siv::{Aes128GcmSiv, Key, KeyInit as _, Nonce};
 use anyhow::{anyhow, bail};
-use fidl::endpoints::{create_request_stream, ClientEnd};
+use fidl::endpoints::{ClientEnd, create_request_stream};
 use fidl_fuchsia_security_keymint::{
     AdminMarker, AdminRequest, AdminRequestStream, SealError, SealingKeysMarker,
     SealingKeysRequest, SealingKeysRequestStream, UnsealError, UpgradeError,
@@ -18,10 +18,9 @@ use fidl_fuchsia_security_keymint::{
 use fuchsia_sync::Mutex;
 use futures::{FutureExt as _, TryStreamExt as _};
 use log::warn;
-use std::collections::btree_map::Entry;
 use std::collections::BTreeMap;
+use std::collections::btree_map::Entry;
 use std::future::Future;
-use std::hash::{DefaultHasher, Hash as _, Hasher as _};
 use std::pin::pin;
 
 type KeyInfo = Vec<u8>;
@@ -34,6 +33,9 @@ struct SealingKey {
 #[derive(Default)]
 struct Inner {
     sealing_keys: BTreeMap<KeyInfo, SealingKey>,
+    // Epoch is mixed into keys, and is incremented each time DeleteAllKeys is called.  This ensures
+    // that previously deleted keys cannot be reused.
+    epoch: u64,
 }
 
 impl Inner {
@@ -43,21 +45,26 @@ impl Inner {
     // called, and remember the keys that are created.  Since we don't have anywhere to persist
     // them, we just derive the sealing key from the key info directly, and then store the key info
     // as the sealed key blob.  Obviously, this is not secure.
-    fn derive_key(key_info: &KeyInfo) -> SealingKey {
-        let hash = {
-            let mut hasher = DefaultHasher::new();
-            key_info.hash(&mut hasher);
-            hasher.finish()
-        };
-        let mut derived_key: [u8; 16] = [0; 16];
-        derived_key[..std::mem::size_of::<u64>()].copy_from_slice(&hash.to_le_bytes());
-        let cipher = Aes128GcmSiv::new(Key::<Aes128GcmSiv>::from_slice(&derived_key));
+    fn derive_key(key_info: &KeyInfo, epoch: u64) -> SealingKey {
+        let mut key_bytes = [0u8; 16];
+        let len = key_info.len().min(16);
+        key_bytes[..len].copy_from_slice(&key_info[..len]);
+
+        // XOR epoch into the first 8 bytes to ensure keys change with epoch.
+        let epoch_bytes = epoch.to_le_bytes();
+        for i in 0..8 {
+            key_bytes[i] ^= epoch_bytes[i];
+        }
+
+        let cipher = Aes128GcmSiv::new(Key::<Aes128GcmSiv>::from_slice(&key_bytes));
         SealingKey { cipher, key_blob: key_info.clone() }
     }
 
     fn handle_create_request(&mut self, key_info: KeyInfo) -> Vec<u8> {
         match self.sealing_keys.entry(key_info.clone()) {
-            Entry::Vacant(vacant) => vacant.insert(Self::derive_key(&key_info)).key_blob.clone(),
+            Entry::Vacant(vacant) => {
+                vacant.insert(Self::derive_key(&key_info, self.epoch)).key_blob.clone()
+            }
             Entry::Occupied(occupied) => occupied.get().key_blob.clone(),
         }
     }
@@ -87,7 +94,7 @@ impl Inner {
         let sealing_key = self
             .sealing_keys
             .entry(key_info.clone())
-            .or_insert_with(|| Self::derive_key(&key_info));
+            .or_insert_with(|| Self::derive_key(&key_info, self.epoch));
         if key_blob != sealing_key.key_blob {
             bail!("Wrong key blob");
         }
@@ -98,6 +105,7 @@ impl Inner {
 
     fn handle_delete_all_keys_request(&mut self) {
         self.sealing_keys.clear();
+        self.epoch += 1;
     }
 
     fn handle_upgrade_request(

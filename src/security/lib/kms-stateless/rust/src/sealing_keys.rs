@@ -2,7 +2,9 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use fidl_fuchsia_security_keymint::{CreateError, SealError, UnsealError, UpgradeError};
+use fidl_fuchsia_security_keymint::{
+    CreateError, DeleteError, SealError, UnsealError, UpgradeError,
+};
 use fuchsia_component::client;
 
 #[derive(Debug, thiserror::Error)]
@@ -19,6 +21,8 @@ pub enum SealingKeysError {
     Unseal(UnsealError),
     #[error("Failed to upgrade {0:?}")]
     Upgrade(UpgradeError),
+    #[error("Failed to delete {0:?}")]
+    Delete(DeleteError),
 }
 
 impl From<CreateError> for SealingKeysError {
@@ -42,6 +46,12 @@ impl From<UnsealError> for SealingKeysError {
 impl From<UpgradeError> for SealingKeysError {
     fn from(e: UpgradeError) -> Self {
         Self::Upgrade(e)
+    }
+}
+
+impl From<DeleteError> for SealingKeysError {
+    fn from(e: DeleteError) -> Self {
+        Self::Delete(e)
     }
 }
 
@@ -100,6 +110,18 @@ pub async fn upgrade_sealing_key(
 ) -> Result<Vec<u8>, SealingKeysError> {
     client::connect_to_protocol::<fidl_fuchsia_security_keymint::SealingKeysMarker>()?
         .upgrade_sealing_key(key_info, key_blob)
+        .await?
+        .map_err(Into::into)
+}
+
+/// Convenience wrapper around fuchsia.security.keymint.Admin/DeleteAllKeys()
+///
+/// See //sdk/fidl/fuchsia.security.keymint/admin.fidl for more details.
+///
+/// Requires the caller to have the capability fuchsia.security.keymint.Admin
+pub async fn delete_all_keys() -> Result<(), SealingKeysError> {
+    client::connect_to_protocol::<fidl_fuchsia_security_keymint::AdminMarker>()?
+        .delete_all_keys()
         .await?
         .map_err(Into::into)
 }

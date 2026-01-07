@@ -146,6 +146,11 @@ impl KeymintSealedData {
     }
 }
 
+/// Deletes all keymint-managed keys.
+pub async fn delete_all_keymint_keys() -> Result<(), Error> {
+    Ok(kms_stateless::delete_all_keys().await?)
+}
+
 #[derive(Debug)]
 pub enum KeySource {
     /// An insecure static key is used.

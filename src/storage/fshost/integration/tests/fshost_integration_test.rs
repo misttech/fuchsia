@@ -9,7 +9,7 @@ use fidl::endpoints::DiscoverableProtocolMarker as _;
 use fidl_fuchsia_fs_startup::VolumeMarker as FsStartupVolumeMarker;
 use fidl_fuchsia_fshost::AdminProxy;
 use fidl_fuchsia_fxfs::{BlobCreatorProxy, BlobReaderProxy};
-use fidl_fuchsia_hardware_block_volume::{VolumeManagerMarker, VolumeMarker};
+use fidl_fuchsia_hardware_block_volume::VolumeMarker;
 use fidl_fuchsia_update_verify::HealthStatus;
 use fs_management::DATA_TYPE_GUID;
 use fs_management::format::constants::DATA_PARTITION_LABEL;
@@ -21,7 +21,11 @@ use fshost_test_fixture::{
     BlockDeviceConfig, BlockDeviceIdentifiers, BlockDeviceParent, TestFixture, VFS_TYPE_FXFS,
     VFS_TYPE_MEMFS, VFS_TYPE_MINFS, round_down,
 };
+
+use fidl_fuchsia_hardware_block_volume::VolumeManagerMarker;
+
 use fuchsia_component::client::connect_to_named_protocol_at_dir_root;
+
 use futures::FutureExt as _;
 use regex::Regex;
 use {fidl_fuchsia_io as fio, fuchsia_async as fasync};
@@ -1840,7 +1844,8 @@ async fn merge_super_and_userdata() {
 #[fuchsia::test]
 async fn blobfs_and_data_mounted_with_keymint() {
     let mut builder = new_builder().with_crypt_policy(crypt_policy::Policy::Keymint);
-    let data_spec = DataSpec { crypt_policy: crypt_policy::Policy::Keymint, ..data_fs_spec() };
+    let data_spec =
+        DataSpec { zxcrypt: false, crypt_policy: crypt_policy::Policy::Keymint, ..data_fs_spec() };
     builder.with_disk().format_volumes(volumes_spec()).format_data(data_spec);
     let fixture = builder.build().await;
 

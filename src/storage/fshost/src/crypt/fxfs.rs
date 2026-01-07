@@ -117,6 +117,13 @@ impl KeyManager {
     }
 
     async fn create_keymint_keys(&mut self) -> Result<Option<(Aes256Key, Aes256Key)>, Error> {
+        // We always defensively wipe keymint when we're creating new keys (which is either after
+        // factory reset, or a newly flashed device).  This is a best-effort mechanism to avoid
+        // leaking key slots.
+        if let Err(err) = delete_keymint_keys().await {
+            log::warn!(err:?; "Failed to delete keymint keys.  Proceeding anyways.");
+        }
+
         let (data, metadata) = {
             let mut keymint = KeymintSealedData::new().await?;
             let keys = (
@@ -421,18 +428,30 @@ impl Drop for CryptService {
     }
 }
 
+async fn delete_keymint_keys() -> Result<(), Error> {
+    let policy = crypt_policy::get_policy().await;
+    if matches!(policy, Ok(crypt_policy::Policy::Keymint)) {
+        log::info!("Deleting all keymint keys!");
+        crypt_policy::delete_all_keymint_keys().await
+    } else {
+        Ok(())
+    }
+}
+
 /// Attempts to shred the key bag stored in the unencrypted volume of `fs`, if it exists.
 /// If we fail to find the key bag, we log a warning and return success, since the keys may have
 /// already been shredded.
 pub async fn shred_key_bag(fs: &ServingMultiVolumeFilesystem) -> Result<(), Error> {
+    if let Err(err) = delete_keymint_keys().await {
+        log::warn!(err:?; "Failed to delete keymint keys.  Proceeding with best-effort FDR.");
+    }
+
     if !fs.has_volume(UNENCRYPTED_VOLUME_LABEL).await.context("checking for unencrypted volume")? {
         // If the unencrypted volume is missing, the keys are already gone.
         log::warn!("Unencrypted volume not present");
         return Ok(());
     }
 
-    // TODO(https://fxbug.dev/448661604): Also delete keys from keymint when the API to do so
-    // exists.
     with_unencrypted_volume(
         fs.open_volume(UNENCRYPTED_VOLUME_LABEL, MountOptions::default())
             .await

@@ -52,6 +52,9 @@ async fn run_mocks(
             fkeymint::SealingKeysMarker::PROTOCOL_NAME => vfs::service::host(move |stream| {
                 run_keymint(stream)
             }),
+            fkeymint::AdminMarker::PROTOCOL_NAME => vfs::service::host(move |stream| {
+                run_keymint_admin(stream)
+            }),
             fboot::ItemsMarker::PROTOCOL_NAME => vfs::service::host(move |stream| {
                 let vmo_clone = vmo.clone();
                 run_boot_items(stream, vmo_clone)
@@ -163,9 +166,14 @@ async fn run_fxfs_provisioner(
     }
 }
 
+static KEYMINT: LazyLock<FakeKeymint> = LazyLock::new(FakeKeymint::default);
+
 async fn run_keymint(stream: fkeymint::SealingKeysRequestStream) {
-    // We have to use a singleton because the Keymint service is stateful.
-    static KEYMINT: LazyLock<FakeKeymint> = LazyLock::new(FakeKeymint::default);
     let keymint = &*KEYMINT;
     keymint.run_sealing_keys_service(stream).await.unwrap();
+}
+
+async fn run_keymint_admin(stream: fkeymint::AdminRequestStream) {
+    let keymint = &*KEYMINT;
+    keymint.run_admin_service(stream).await.unwrap();
 }

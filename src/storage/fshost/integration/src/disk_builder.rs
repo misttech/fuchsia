@@ -5,6 +5,7 @@
 use blob_writer::BlobWriter;
 use block_client::{BlockClient as _, RemoteBlockClient};
 use delivery_blob::{CompressionMode, Type1Blob};
+use fake_keymint::with_keymint_service;
 use fidl_fuchsia_fs_startup::{CreateOptions, MountOptions};
 use fidl_fuchsia_fxfs::{
     BlobCreatorProxy, CryptManagementMarker, CryptManagementProxy, CryptMarker, KeyPurpose,
@@ -19,6 +20,7 @@ use fuchsia_component_test::{Capability, ChildOptions, RealmBuilder, RealmInstan
 use fuchsia_hash::Hash;
 use gpt_component::gpt::GptManager;
 use key_bag::Aes256Key;
+use serde_json::json;
 use std::collections::HashSet;
 use std::ops::Deref;
 use std::sync::Arc;
@@ -76,25 +78,31 @@ const KEY_BAG_CONTENTS: &'static str = r#"
     }
 }"#;
 
-// Same keys as KEY_BAG_CONTENTS, but sealed with FakeKeymint using the algorithm from
-// //src/storage/crypt/policy.
-const KEYMINT_FILE_CONTENTS: &'static str = r#"
-{
-    "sealing_key_info": [102,117,99,104,115,105,97],
-    "sealing_key_blob": [102,117,99,104,115,105,97],
-    "sealed_keys": {
-        "data.data": [
-            10, 246, 253, 5, 63, 210, 11, 149, 218, 43, 169, 227, 108, 200, 61, 98, 166, 187, 79,
-            216, 134, 67, 124, 246, 46, 114, 231, 201, 1, 114, 227, 190, 223, 74, 190, 76, 44, 86,
-            54, 169, 173, 158, 138, 205, 17, 61, 240, 118
-        ],
-        "data.metadata": [
-            43, 239, 206, 127, 204, 133, 152, 192, 124, 150, 99, 47, 92, 220, 172, 123, 175, 154,
-            133, 228, 170, 184, 50, 109, 213, 160, 25, 154, 158, 88, 90, 248, 134, 135, 163, 249,
-            14, 45, 136, 124, 241, 40, 93, 207, 48, 95, 74, 72
-        ]
-    }
-}"#;
+async fn generate_keymint_file_contents() -> Vec<u8> {
+    with_keymint_service(|keymint, _| async move {
+        let keymint = keymint.into_proxy();
+        let key_info = b"fuchsia";
+        let key_blob = keymint.create_sealing_key(&key_info[..]).await.unwrap().unwrap();
+
+        let data_key_sealed =
+            keymint.seal(&key_info[..], &key_blob, DATA_KEY.deref()).await.unwrap().unwrap();
+        let metadata_key_sealed =
+            keymint.seal(&key_info[..], &key_blob, METADATA_KEY.deref()).await.unwrap().unwrap();
+
+        let json = json!({
+            "sealing_key_info": key_info,
+            "sealing_key_blob": key_blob,
+            "sealed_keys": {
+                "data.data": data_key_sealed,
+                "data.metadata": metadata_key_sealed,
+            }
+        });
+
+        Ok(serde_json::to_vec_pretty(&json).unwrap())
+    })
+    .await
+    .unwrap()
+}
 
 pub const TEST_BLOB_CONTENTS: [u8; 1000] = [1; 1000];
 
@@ -658,11 +666,12 @@ impl DiskBuilder {
                 )
                 .await
                 .unwrap();
-                let mut contents = KEYMINT_FILE_CONTENTS.as_bytes();
+                let contents = generate_keymint_file_contents().await;
+                let mut contents_ref = contents.as_slice();
                 if self.corrupt_data && fxblob {
-                    contents = &TEST_BLOB_CONTENTS;
+                    contents_ref = &TEST_BLOB_CONTENTS;
                 }
-                fuchsia_fs::file::write(&keymint_file, contents).await.unwrap();
+                fuchsia_fs::file::write(&keymint_file, contents_ref).await.unwrap();
                 fuchsia_fs::file::close(keymint_file).await.unwrap();
             } else {
                 let keys_file = fuchsia_fs::directory::open_file(
