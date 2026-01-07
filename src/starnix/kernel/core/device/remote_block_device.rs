@@ -5,8 +5,7 @@
 use crate::device::DeviceMode;
 use crate::device::kobject::DeviceMetadata;
 use crate::fs::sysfs::{BlockDeviceInfo, build_block_device_directory};
-use crate::mm::memory::MemoryObject;
-use crate::mm::{MemoryAccessorExt, ProtectionFlags};
+use crate::mm::MemoryAccessorExt;
 use crate::task::CurrentTask;
 use crate::vfs::buffers::{InputBuffer, OutputBuffer};
 use crate::vfs::{
@@ -24,69 +23,19 @@ use starnix_uapi::open_flags::OpenFlags;
 use starnix_uapi::user_address::UserRef;
 use starnix_uapi::{BLKGETSIZE, BLKGETSIZE64, errno, from_status_like_fdio, off_t};
 use std::collections::btree_map::BTreeMap;
+use std::sync::Arc;
 use std::sync::atomic::{AtomicU32, Ordering};
-use std::sync::{Arc, OnceLock};
 
-pub struct RemoteBlockDeviceVmo {
-    backing_memory: MemoryObject,
-    backing_memory_size: usize,
-    block_size: u32,
+/// A block device, backed by a partition hosted by Fuchsia.
+pub struct RemoteBlockDevice {
+    block_client: Arc<RemoteBlockClientSync>,
 }
-
-/// A block device. This can be backed by a VMO or a Fuchsia block client depending on how it was
-/// configured.
-/// TODO(https://fxbug.dev/407091711): Remove VMO-backed block devices.
-pub enum RemoteBlockDevice {
-    Vmo(Arc<RemoteBlockDeviceVmo>),
-    Fuchsia(Arc<RemoteBlockClientSync>),
-}
-
-const BLOCK_SIZE: u32 = 512;
 
 impl RemoteBlockDevice {
     pub fn read(&self, offset: u64, buf: &mut [u8]) -> Result<(), Error> {
-        match self {
-            RemoteBlockDevice::Vmo(device) => Ok(device.backing_memory.read(buf, offset)?),
-            RemoteBlockDevice::Fuchsia(block_client) => block_client
-                .read_at(MutableBufferSlice::Memory(buf), offset as u64)
-                .context("read_at failed"),
-        }
-    }
-
-    fn new_from_vmo<L>(
-        locked: &mut Locked<L>,
-        current_task: &CurrentTask,
-        minor: u32,
-        name: &str,
-        backing_memory: MemoryObject,
-    ) -> Result<Arc<Self>, Errno>
-    where
-        L: LockEqualOrBefore<FileOpsCore>,
-    {
-        let kernel = current_task.kernel();
-        let registry = &kernel.device_registry;
-        let device_name = FsString::from(format!("remoteblk-{name}"));
-        let virtual_block_class = registry.objects.virtual_block_class();
-        let backing_memory_size = backing_memory.get_content_size() as usize;
-        let device = Arc::new(Self::Vmo(Arc::new(RemoteBlockDeviceVmo {
-            backing_memory,
-            backing_memory_size,
-            block_size: BLOCK_SIZE,
-        })));
-        let device_weak = Arc::<RemoteBlockDevice>::downgrade(&device);
-        registry.add_device(
-            locked,
-            current_task,
-            device_name.as_ref(),
-            DeviceMetadata::new(
-                device_name.clone(),
-                DeviceType::new(BLOCK_EXTENDED_MAJOR, minor),
-                DeviceMode::Block,
-            ),
-            virtual_block_class,
-            |device, dir| build_block_device_directory(device, device_weak, dir),
-        )?;
-        Ok(device)
+        self.block_client
+            .read_at(MutableBufferSlice::Memory(buf), offset as u64)
+            .context("read_at failed")
     }
 
     fn new<L>(
@@ -105,7 +54,7 @@ impl RemoteBlockDevice {
         let virtual_block_class = registry.objects.virtual_block_class();
         let block_client = RemoteBlockClientSync::new(block.into_channel().into())
             .map_err(|status| from_status_like_fdio!(status))?;
-        let device = Arc::new(Self::Fuchsia(Arc::new(block_client)));
+        let device = Arc::new(Self { block_client: Arc::new(block_client) });
         let device_weak = Arc::<RemoteBlockDevice>::downgrade(&device);
         registry.add_device(
             locked,
@@ -123,145 +72,15 @@ impl RemoteBlockDevice {
     }
 
     pub fn create_file_ops(&self) -> Box<dyn FileOps> {
-        match self {
-            RemoteBlockDevice::Vmo(device) => {
-                Box::new(VmoBlockDeviceFile { device: device.clone() })
-            }
-            RemoteBlockDevice::Fuchsia(block_client) => {
-                Box::new(RemoteBlockDeviceFile { block_client: block_client.clone() })
-            }
-        }
+        Box::new(RemoteBlockDeviceFile { block_client: self.block_client.clone() })
     }
 }
 
 impl BlockDeviceInfo for RemoteBlockDevice {
     fn size(&self) -> Result<usize, Errno> {
-        match self {
-            RemoteBlockDevice::Vmo(device) => Ok(device.backing_memory.get_size() as usize),
-            RemoteBlockDevice::Fuchsia(block_client) => (block_client.block_count() as usize)
-                .checked_mul(block_client.block_size() as usize)
-                .ok_or_else(|| errno!(EINVAL)),
-        }
-    }
-}
-
-struct VmoBlockDeviceFile {
-    device: Arc<RemoteBlockDeviceVmo>,
-}
-
-impl FileOps for VmoBlockDeviceFile {
-    fn has_persistent_offsets(&self) -> bool {
-        true
-    }
-
-    fn is_seekable(&self) -> bool {
-        true
-    }
-
-    // Manually implement seek, because default_eof_offset uses st_size (which is not used for block
-    // devices).
-    fn seek(
-        &self,
-        _locked: &mut Locked<FileOpsCore>,
-        _file: &FileObject,
-        _current_task: &CurrentTask,
-        current_offset: off_t,
-        target: SeekTarget,
-    ) -> Result<off_t, Errno> {
-        default_seek(current_offset, target, || {
-            self.device.backing_memory_size.try_into().map_err(|_| errno!(EINVAL))
-        })
-    }
-
-    fn read(
-        &self,
-        _locked: &mut Locked<FileOpsCore>,
-        _file: &FileObject,
-        _current_task: &CurrentTask,
-        mut offset: usize,
-        data: &mut dyn OutputBuffer,
-    ) -> Result<usize, Errno> {
-        data.write_each(&mut move |buf| {
-            let buflen = buf.len();
-            let buf = &mut buf
-                [..std::cmp::min(self.device.backing_memory_size.saturating_sub(offset), buflen)];
-            if !buf.is_empty() {
-                self.device
-                    .backing_memory
-                    .read_uninit(buf, offset as u64)
-                    .map_err(|status| from_status_like_fdio!(status))?;
-                offset = offset.checked_add(buf.len()).ok_or_else(|| errno!(EINVAL))?;
-            }
-            Ok(buf.len())
-        })
-    }
-
-    fn write(
-        &self,
-        _locked: &mut Locked<FileOpsCore>,
-        _file: &FileObject,
-        _current_task: &CurrentTask,
-        mut offset: usize,
-        data: &mut dyn InputBuffer,
-    ) -> Result<usize, Errno> {
-        data.read_each(&mut move |buf| {
-            let to_write =
-                std::cmp::min(self.device.backing_memory_size.saturating_sub(offset), buf.len());
-            self.device
-                .backing_memory
-                .write(&buf[..to_write], offset as u64)
-                .map_err(|status| from_status_like_fdio!(status))?;
-            offset = offset.checked_add(to_write).ok_or_else(|| errno!(EINVAL))?;
-            Ok(to_write)
-        })
-    }
-
-    fn sync(&self, _file: &FileObject, _current_task: &CurrentTask) -> Result<(), Errno> {
-        Ok(())
-    }
-
-    fn get_memory(
-        &self,
-        _locked: &mut Locked<FileOpsCore>,
-        _file: &FileObject,
-        _current_task: &CurrentTask,
-        requested_length: Option<usize>,
-        _prot: ProtectionFlags,
-    ) -> Result<Arc<MemoryObject>, Errno> {
-        let slice_len =
-            std::cmp::min(self.device.backing_memory_size, requested_length.unwrap_or(usize::MAX))
-                as u64;
-        self.device
-            .backing_memory
-            .create_child(zx::VmoChildOptions::SLICE, 0, slice_len)
-            .map(Arc::new)
-            .map_err(|status| from_status_like_fdio!(status))
-    }
-
-    fn ioctl(
-        &self,
-        locked: &mut Locked<Unlocked>,
-        file: &FileObject,
-        current_task: &CurrentTask,
-        request: u32,
-        arg: SyscallArg,
-    ) -> Result<SyscallResult, Errno> {
-        match request {
-            BLKGETSIZE => {
-                let user_size = UserRef::<u64>::from(arg);
-                let size =
-                    (self.device.backing_memory_size / self.device.block_size as usize) as u64;
-                current_task.write_object(user_size, &size)?;
-                Ok(SUCCESS)
-            }
-            BLKGETSIZE64 => {
-                let user_size = UserRef::<u64>::from(arg);
-                let size = self.device.backing_memory_size as u64;
-                current_task.write_object(user_size, &size)?;
-                Ok(SUCCESS)
-            }
-            _ => default_ioctl(file, locked, current_task, request, arg),
-        }
+        (self.block_client.block_count() as usize)
+            .checked_mul(self.block_client.block_size() as usize)
+            .ok_or_else(|| errno!(EINVAL))
     }
 }
 
@@ -488,43 +307,9 @@ pub fn remote_block_device_init(locked: &mut Locked<Unlocked>, current_task: &Cu
 pub struct RemoteBlockDeviceRegistry {
     devices: Mutex<BTreeMap<u32, Arc<RemoteBlockDevice>>>,
     next_minor: AtomicU32,
-    device_added_fn: OnceLock<RemoteBlockDeviceAddedFn>,
 }
 
-/// Arguments are (name, minor, device).
-pub type RemoteBlockDeviceAddedFn = Box<dyn Fn(&str, u32, &Arc<RemoteBlockDevice>) + Send + Sync>;
-
 impl RemoteBlockDeviceRegistry {
-    /// Registers a callback to be invoked for each new device.  Only one callback can be registered.
-    pub fn on_device_added(&self, callback: RemoteBlockDeviceAddedFn) {
-        self.device_added_fn.set(callback).map_err(|_| ()).expect("Callback already set");
-    }
-
-    /// Creates a new block device called `name` if absent.  Does nothing if the device already
-    /// exists.
-    pub fn create_vmo_block_device<L>(
-        &self,
-        locked: &mut Locked<L>,
-        current_task: &CurrentTask,
-        name: &str,
-        initial_size: u64,
-    ) -> Result<(), Error>
-    where
-        L: LockEqualOrBefore<FileOpsCore>,
-    {
-        let mut devices = self.devices.lock();
-        let backing_memory = MemoryObject::from(zx::Vmo::create(initial_size)?)
-            .with_zx_name(b"starnix:remote_block_device");
-        let minor = self.next_minor.fetch_add(1, Ordering::Relaxed);
-        let device =
-            RemoteBlockDevice::new_from_vmo(locked, current_task, minor, name, backing_memory)?;
-        if let Some(callback) = self.device_added_fn.get() {
-            callback(name, minor, &device);
-        }
-        devices.insert(minor, device);
-        Ok(())
-    }
-
     pub fn create_remote_block_device<L>(
         &self,
         locked: &mut Locked<L>,
@@ -556,73 +341,6 @@ mod tests {
     use starnix_uapi::{BLKGETSIZE, BLKGETSIZE64};
     use vmo_backed_block_server::{VmoBackedServer, VmoBackedServerTestingExt};
     use zerocopy::FromBytes as _;
-
-    #[::fuchsia::test]
-    async fn test_vmo_block_device_registry() {
-        spawn_kernel_and_run(async |locked, current_task| {
-            let kernel = current_task.kernel();
-            remote_block_device_init(locked, &current_task);
-            let registry = kernel.remote_block_device_registry.clone();
-
-            registry
-                .create_vmo_block_device(locked, &current_task, "test", 1024)
-                .expect("create_vmo_block_device failed.");
-
-            let device = registry.open(0).expect("open failed.");
-            let file =
-                anon_test_file(locked, &current_task, device.create_file_ops(), OpenFlags::RDWR);
-
-            let arg_addr = map_object_anywhere(locked, &current_task, &0u64);
-            let mut arg = [0u8; 8];
-
-            file.ioctl(locked, &current_task, BLKGETSIZE64, arg_addr.into()).expect("ioctl failed");
-            current_task.read_memory_to_slice(arg_addr, &mut arg).unwrap();
-            assert_eq!(u64::read_from_bytes(&arg).unwrap(), 1024);
-
-            file.ioctl(locked, &current_task, BLKGETSIZE, arg_addr.into()).expect("ioctl failed");
-            current_task.read_memory_to_slice(arg_addr, &mut arg).unwrap();
-            assert_eq!(u64::read_from_bytes(&arg).unwrap(), 2);
-
-            let mut buf = VecOutputBuffer::new(512);
-            file.read(locked, &current_task, &mut buf).expect("read failed.");
-            assert_eq!(buf.data(), &[0u8; 512]);
-
-            let mut buf = VecInputBuffer::from(vec![1u8; 512]);
-            file.seek(locked, &current_task, SeekTarget::Set(0)).expect("seek failed");
-            file.write(locked, &current_task, &mut buf).expect("write failed.");
-
-            let mut buf = VecOutputBuffer::new(512);
-            file.seek(locked, &current_task, SeekTarget::Set(0)).expect("seek failed");
-            file.read(locked, &current_task, &mut buf).expect("read failed.");
-            assert_eq!(buf.data(), &[1u8; 512]);
-        })
-        .await;
-    }
-
-    #[::fuchsia::test]
-    async fn test_vmo_read_write_past_eof() {
-        spawn_kernel_and_run(async |locked, current_task| {
-            let kernel = current_task.kernel();
-            remote_block_device_init(locked, &current_task);
-            let registry = kernel.remote_block_device_registry.clone();
-
-            registry
-                .create_vmo_block_device(locked, &current_task, "test", 1024)
-                .expect("create_vmo_block_device failed.");
-
-            let device = registry.open(0).expect("open failed.");
-            let file =
-                anon_test_file(locked, &current_task, device.create_file_ops(), OpenFlags::RDWR);
-
-            file.seek(locked, &current_task, SeekTarget::End(0)).expect("seek failed");
-            let mut buf = VecOutputBuffer::new(512);
-            assert_eq!(file.read(locked, &current_task, &mut buf).expect("read failed."), 0);
-
-            let mut buf = VecInputBuffer::from(vec![1u8; 512]);
-            assert_eq!(file.write(locked, &current_task, &mut buf).expect("write failed."), 0);
-        })
-        .await;
-    }
 
     #[::fuchsia::test]
     async fn test_remote_block_device_registry() {

@@ -12,7 +12,6 @@ use std::str::FromStr;
 #[derive(Debug, Clone, Copy, PartialEq, EnumString, strum_macros::Display)]
 #[strum(serialize_all = "snake_case")]
 pub enum Feature {
-    AndroidFdr,
     AndroidSerialno,
     AndroidBootreason,
     AspectRatio,
@@ -106,7 +105,6 @@ mod test {
     #[test]
     fn feature_serde() {
         for (feature, expected_str) in [
-            (Feature::AndroidFdr, "android_fdr"),
             (Feature::AndroidSerialno, "android_serialno"),
             (Feature::AndroidBootreason, "android_bootreason"),
             (Feature::AspectRatio, "aspect_ratio"),

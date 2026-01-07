@@ -266,10 +266,6 @@ pub struct ContainerProgram {
     #[serde(default)]
     startup_file_path: String,
 
-    /// The remote block devices to use for the container.
-    #[serde(default)]
-    remote_block_devices: Vec<String>,
-
     /// The default seclabel that is applied to components that are instantiated in this container.
     ///
     /// Components can override this by setting the `seclabel` field in their program block.
@@ -762,13 +758,8 @@ async fn create_container(
         )?;
     }
 
-    init_remote_block_devices(
-        kernel.kthreads.unlocked_for_async().deref_mut(),
-        &system_task,
-        start_info,
-        features.android_fdr,
-    )
-    .source_context("initalizing remote block devices")?;
+    init_remote_block_devices(kernel.kthreads.unlocked_for_async().deref_mut(), &system_task)
+        .source_context("initalizing remote block devices")?;
 
     // If there is an init binary path, run it, optionally waiting for the
     // startup_file_path to be created. The task struct is still used
@@ -990,19 +981,8 @@ fn mount_filesystems(
 fn init_remote_block_devices(
     locked: &mut Locked<Unlocked>,
     system_task: &CurrentTask,
-    start_info: &ContainerStartInfo,
-    android_fdr: bool,
 ) -> Result<(), Error> {
     remote_block_device_init(locked, system_task);
-    if android_fdr {
-        let devices_iter = start_info.program.remote_block_devices.iter();
-        for device_spec in devices_iter {
-            create_remote_block_device_from_spec(locked, system_task, device_spec)
-                .with_source_context(|| {
-                    format!("creating remoteblk from spec: {}", &device_spec)
-                })?;
-        }
-    }
     let entries = match std::fs::read_dir("/block") {
         Ok(entries) => entries,
         Err(e) => {
@@ -1033,45 +1013,6 @@ fn init_remote_block_devices(
         )?;
     }
     Ok(())
-}
-
-fn parse_block_size(block_size_str: &str) -> Result<u64, Error> {
-    if block_size_str.is_empty() {
-        return Err(anyhow!("Invalid empty block size"));
-    }
-    let (mut string, suffix) = block_size_str.split_at(block_size_str.len() - 1);
-    let multiplier: u64 = match suffix {
-        "K" => 1024,
-        "M" => 1024 * 1024,
-        "G" => 1024 * 1024 * 1024,
-        _ => {
-            string = block_size_str;
-            1
-        }
-    };
-    u64::from_str_radix(string, 10)
-        .map_err(|_| anyhow!("Invalid block size {string}"))
-        .and_then(|val| multiplier.checked_mul(val).ok_or_else(|| anyhow!("Block size overflow")))
-}
-
-fn create_remote_block_device_from_spec<'a>(
-    locked: &mut Locked<Unlocked>,
-    current_task: &CurrentTask,
-    spec: &'a str,
-) -> Result<(), Error> {
-    let mut iter = spec.splitn(2, ':');
-    let device_name =
-        iter.next().ok_or_else(|| anyhow!("remoteblk name is missing from {:?}", spec))?;
-    let device_size =
-        iter.next().ok_or_else(|| anyhow!("remoteblk size is missing from {:?}", spec))?;
-    let device_size = parse_block_size(device_size)?;
-
-    current_task.kernel().remote_block_device_registry.create_vmo_block_device(
-        locked,
-        current_task,
-        device_name,
-        device_size,
-    )
 }
 
 async fn wait_for_init_file(

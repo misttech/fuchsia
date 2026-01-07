@@ -3,6 +3,7 @@
 // found in the LICENSE file.
 
 use bstr::ByteSlice;
+use fidl_fuchsia_hardware_power_statecontrol as fpower;
 use fuchsia_component::client::connect_to_protocol_sync;
 use linux_uapi::{
     LINUX_REBOOT_CMD_CAD_OFF, LINUX_REBOOT_CMD_CAD_ON, LINUX_REBOOT_CMD_HALT,
@@ -18,11 +19,7 @@ use starnix_uapi::{
     LINUX_REBOOT_MAGIC1, LINUX_REBOOT_MAGIC2, LINUX_REBOOT_MAGIC2A, LINUX_REBOOT_MAGIC2B,
     LINUX_REBOOT_MAGIC2C, errno, error,
 };
-use {fidl_fuchsia_hardware_power_statecontrol as fpower, fidl_fuchsia_recovery as frecovery};
 
-use crate::device::android::bootloader_message_store::{
-    AndroidBootloaderMessageStore, BootloaderMessage,
-};
 use crate::mm::MemoryAccessorExt;
 use crate::security;
 use crate::task::{CurrentTask, Kernel};
@@ -116,41 +113,6 @@ pub fn sys_reboot(
                 };
                 proxy.shutdown(&options, zx::MonotonicInstant::INFINITE)
             } else if reboot_args.contains(&&b"recovery"[..]) {
-                // Read the bootloader message from the misc partition to determine whether the
-                // device is rebooting to perform an FDR.
-                if let Some(store) =
-                    current_task.kernel().expando.peek::<AndroidBootloaderMessageStore>()
-                {
-                    match store.read_bootloader_message() {
-                        Ok(BootloaderMessage::BootRecovery(args)) => {
-                            if args.iter().any(|arg| arg == "--wipe_data") {
-                                let factory_reset_proxy =
-                                    connect_to_protocol_sync::<frecovery::FactoryResetMarker>()
-                                        .or_else(|_| error!(EINVAL))?;
-                                // NB: This performs a reboot for us.
-                                log_info!("Initiating factory data reset...");
-                                match factory_reset_proxy.reset(zx::MonotonicInstant::INFINITE) {
-                                    Ok(_) => {
-                                        // System is rebooting... wait until runtime ends.
-                                        zx::MonotonicInstant::INFINITE.sleep();
-                                    }
-                                    Err(e) => {
-                                        return panic_or_error(
-                                            current_task.kernel(),
-                                            errno!(
-                                                EINVAL,
-                                                format!("Failed to reboot for FDR, status: {e}")
-                                            ),
-                                        );
-                                    }
-                                }
-                            }
-                        }
-                        // In all other cases, fall through to a regular reboot.
-                        Ok(_) => log_info!("Boot message not recognized!"),
-                        Err(e) => log_warn!("Failed to read boot message: {e}"),
-                    }
-                }
                 log_info!("Rebooting to recovery...");
                 let options = fpower::ShutdownOptions {
                     action: Some(fpower::ShutdownAction::RebootToRecovery),

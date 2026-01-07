@@ -6,7 +6,6 @@ mod registry;
 
 pub use registry::*;
 
-pub mod android;
 pub mod kobject;
 pub mod kobject_store;
 pub mod mem;
