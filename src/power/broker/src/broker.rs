@@ -148,13 +148,8 @@ impl Broker {
         &mut self,
         element_id: &ElementID,
         token: Token,
-        dependency_type: DependencyType,
     ) -> Result<(), RegisterDependencyTokenError> {
-        let permissions = match dependency_type {
-            DependencyType::Assertive => Permissions::MODIFY_ASSERTIVE_DEPENDENT,
-            DependencyType::Opportunistic => Permissions::MODIFY_OPPORTUNISTIC_DEPENDENT,
-            _ => todo!("Support other dependency types"),
-        };
+        let permissions = Permissions::MODIFY_ASSERTIVE_DEPENDENT;
         match self
             .credentials
             .register(element_id, CredentialToRegister { broker_token: token, permissions })
@@ -923,7 +918,6 @@ impl Broker {
                 .ok_or(AddElementError::Invalid)?;
             if let Err(err) = self.add_dependency(
                 &id,
-                dependency.dependency_type,
                 dependency.dependent_level,
                 requires_token,
                 requires_level.level,
@@ -985,12 +979,10 @@ impl Broker {
         self.catalog.topology.get_level_index(element_id, level)
     }
 
-    /// Checks authorization from requires_token, and if valid, adds an assertive
-    /// or opportunistic dependency to the Topology, according to dependency_type.
+    /// Checks authorization from requires_token, and if valid, adds a dependency to the Topology.
     pub fn add_dependency<I>(
         &mut self,
         element_id: &ElementID,
-        dependency_type: DependencyType,
         dependent_level: fpb::PowerLevel,
         requires_token: Token,
         requires_level: fpb::PowerLevel,
@@ -1019,21 +1011,10 @@ impl Broker {
                 level: *requires_level,
             },
         };
-        match dependency_type {
-            DependencyType::Assertive => {
-                if !requires_cred.contains(Permissions::MODIFY_ASSERTIVE_DEPENDENT) {
-                    return Err(ModifyDependencyError::NotAuthorized);
-                }
-                self.catalog.topology.add_assertive_dependency(&dependency, inspect_writer)
-            }
-            DependencyType::Opportunistic => {
-                if !requires_cred.contains(Permissions::MODIFY_OPPORTUNISTIC_DEPENDENT) {
-                    return Err(ModifyDependencyError::NotAuthorized);
-                }
-                self.catalog.topology.add_opportunistic_dependency(&dependency, inspect_writer)
-            }
-            _ => todo!("Support other dependency types"),
+        if !requires_cred.contains(Permissions::MODIFY_ASSERTIVE_DEPENDENT) {
+            return Err(ModifyDependencyError::NotAuthorized);
         }
+        self.catalog.topology.add_assertive_dependency(&dependency, inspect_writer)
     }
 }
 
@@ -2265,7 +2246,6 @@ mod tests {
             .register_dependency_token(
                 &mithril,
                 token_mithril.duplicate_handle(zx::Rights::SAME_RIGHTS).expect("dup failed").into(),
-                DependencyType::Assertive,
             )
             .expect("register_dependency_token failed");
         let v01: Vec<u64> = BINARY_POWER_LEVELS.iter().map(|&v| v as u64).collect();
@@ -2645,7 +2625,6 @@ mod tests {
             .register_dependency_token(
                 &parent1,
                 parent1_token.duplicate_handle(zx::Rights::SAME_RIGHTS).expect("dup failed").into(),
-                DependencyType::Assertive,
             )
             .expect("register_dependency_token failed");
         let parent2_token = DependencyToken::create();
@@ -2656,7 +2635,6 @@ mod tests {
             .register_dependency_token(
                 &parent2,
                 parent2_token.duplicate_handle(zx::Rights::SAME_RIGHTS).expect("dup failed").into(),
-                DependencyType::Assertive,
             )
             .expect("register_dependency_token failed");
         let child = broker
@@ -2963,7 +2941,6 @@ mod tests {
                     .duplicate_handle(zx::Rights::SAME_RIGHTS)
                     .expect("dup failed")
                     .into(),
-                DependencyType::Assertive,
             )
             .expect("register_dependency_token failed");
         let parent_token = DependencyToken::create();
@@ -2974,7 +2951,6 @@ mod tests {
             .register_dependency_token(
                 &parent,
                 parent_token.duplicate_handle(zx::Rights::SAME_RIGHTS).expect("dup failed").into(),
-                DependencyType::Assertive,
             )
             .expect("register_dependency_token failed");
         let child = broker
@@ -2995,7 +2971,6 @@ mod tests {
         broker
             .add_dependency(
                 &parent,
-                DependencyType::Assertive,
                 ON.level,
                 grandparent_token
                     .duplicate_handle(zx::Rights::SAME_RIGHTS)
@@ -3094,7 +3069,6 @@ mod tests {
                     .duplicate_handle(zx::Rights::SAME_RIGHTS)
                     .expect("dup failed")
                     .into(),
-                DependencyType::Assertive,
             )
             .expect("register_dependency_token failed");
         let parent_token = DependencyToken::create();
@@ -3127,7 +3101,6 @@ mod tests {
             .register_dependency_token(
                 &parent,
                 parent_token.duplicate_handle(zx::Rights::SAME_RIGHTS).expect("dup failed").into(),
-                DependencyType::Assertive,
             )
             .expect("register_dependency_token failed");
         let child1 = broker
@@ -3303,7 +3276,6 @@ mod tests {
                     .duplicate_handle(zx::Rights::SAME_RIGHTS)
                     .expect("dup failed")
                     .into(),
-                DependencyType::Assertive,
             )
             .expect("register_dependency_token failed");
         let parent_token = DependencyToken::create();
@@ -3326,7 +3298,6 @@ mod tests {
             .register_dependency_token(
                 &parent,
                 parent_token.duplicate_handle(zx::Rights::SAME_RIGHTS).expect("dup failed").into(),
-                DependencyType::Assertive,
             )
             .expect("register_dependency_token failed");
         let child1 = broker
@@ -3474,7 +3445,6 @@ mod tests {
                     .duplicate_handle(zx::Rights::SAME_RIGHTS)
                     .expect("dup failed")
                     .into(),
-                DependencyType::Assertive,
             )
             .expect("register_dependency_token failed");
         let element_b_token = DependencyToken::create();
@@ -3500,7 +3470,6 @@ mod tests {
                     .duplicate_handle(zx::Rights::SAME_RIGHTS)
                     .expect("dup failed")
                     .into(),
-                DependencyType::Assertive,
             )
             .expect("register_dependency_token failed");
         let element_a = broker
@@ -3541,7 +3510,6 @@ mod tests {
                     .duplicate_handle(zx::Rights::SAME_RIGHTS)
                     .expect("dup failed")
                     .into(),
-                DependencyType::Assertive,
             )
             .expect("register_dependency_token failed");
         let element_e = broker
@@ -3685,7 +3653,6 @@ mod tests {
                     .duplicate_handle(zx::Rights::SAME_RIGHTS)
                     .expect("dup failed")
                     .into(),
-                DependencyType::Assertive,
             )
             .expect("register_dependency_token failed");
         let parent1_token = DependencyToken::create();
@@ -3708,7 +3675,6 @@ mod tests {
             .register_dependency_token(
                 &parent1,
                 parent1_token.duplicate_handle(zx::Rights::SAME_RIGHTS).expect("dup failed").into(),
-                DependencyType::Assertive,
             )
             .expect("register_dependency_token failed");
         let parent2_token = DependencyToken::create();
@@ -3731,7 +3697,6 @@ mod tests {
             .register_dependency_token(
                 &parent2,
                 parent2_token.duplicate_handle(zx::Rights::SAME_RIGHTS).expect("dup failed").into(),
-                DependencyType::Assertive,
             )
             .expect("register_dependency_token failed");
         let child = broker
@@ -3858,7 +3823,6 @@ mod tests {
                     .duplicate_handle(zx::Rights::SAME_RIGHTS)
                     .expect("dup failed")
                     .into(),
-                DependencyType::Assertive,
             )
             .expect("register_dependency_token failed");
         let element_c =
@@ -3870,7 +3834,6 @@ mod tests {
                     .duplicate_handle(zx::Rights::SAME_RIGHTS)
                     .expect("dup failed")
                     .into(),
-                DependencyType::Assertive,
             )
             .expect("register_dependency_token failed");
         let element_a = broker
@@ -3993,7 +3956,6 @@ mod tests {
             .register_dependency_token(
                 &element_a,
                 token_a.duplicate_handle(zx::Rights::SAME_RIGHTS).expect("dup failed").into(),
-                DependencyType::Assertive,
             )
             .expect("register_dependency_token failed");
         let element_b = broker
@@ -4144,7 +4106,6 @@ mod tests {
             .register_dependency_token(
                 &mithril,
                 token_mithril.duplicate_handle(zx::Rights::SAME_RIGHTS).expect("dup failed").into(),
-                DependencyType::Assertive,
             )
             .expect("register_dependency_token failed");
         let v01: Vec<u64> = BINARY_POWER_LEVELS.iter().map(|&v| v as u64).collect();
@@ -4286,7 +4247,6 @@ mod tests {
             .register_dependency_token(
                 &element_gp1,
                 token_gp1.duplicate_handle(zx::Rights::SAME_RIGHTS).expect("dup failed").into(),
-                DependencyType::Assertive,
             )
             .expect("register_dependency_token failed");
         let element_gp2 = broker
@@ -4296,7 +4256,6 @@ mod tests {
             .register_dependency_token(
                 &element_gp2,
                 token_gp2.duplicate_handle(zx::Rights::SAME_RIGHTS).expect("dup failed").into(),
-                DependencyType::Assertive,
             )
             .expect("register_dependency_token failed");
         let element_x = broker
@@ -4330,7 +4289,6 @@ mod tests {
             .register_dependency_token(
                 &element_x,
                 token_x.duplicate_handle(zx::Rights::SAME_RIGHTS).expect("dup failed").into(),
-                DependencyType::Assertive,
             )
             .expect("register_dependency_token failed");
         let element_p1 = broker
@@ -4353,7 +4311,6 @@ mod tests {
             .register_dependency_token(
                 &element_p1,
                 token_p1.duplicate_handle(zx::Rights::SAME_RIGHTS).expect("dup failed").into(),
-                DependencyType::Assertive,
             )
             .expect("register_dependency_token failed");
         let element_p2 = broker
@@ -4376,7 +4333,6 @@ mod tests {
             .register_dependency_token(
                 &element_p2,
                 token_p2.duplicate_handle(zx::Rights::SAME_RIGHTS).expect("dup failed").into(),
-                DependencyType::Assertive,
             )
             .expect("register_dependency_token failed");
         let element_c1 = broker

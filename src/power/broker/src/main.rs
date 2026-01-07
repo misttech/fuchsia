@@ -223,15 +223,10 @@ impl BrokerSvc {
                 let svc = self.clone();
                 svc.create_status_channel_handler(element_id.clone(), status_channel).await
             }
-            ElementControlRequest::RegisterDependencyToken {
-                token,
-                dependency_type,
-                responder,
-            } => {
+            ElementControlRequest::RegisterDependencyToken { token, responder, .. } => {
                 log::debug!("{debug_info}: RegisterDependencyToken({token:?})");
                 let mut broker = self.broker.borrow_mut();
-                let res =
-                    broker.register_dependency_token(element_id, token.into(), dependency_type);
+                let res = broker.register_dependency_token(element_id, token.into());
                 log::debug!(
                     "{debug_info}: RegisterDependencyToken register_credentials = ({res:?})"
                 );
