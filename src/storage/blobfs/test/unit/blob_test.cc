@@ -206,8 +206,7 @@ TEST_P(BlobTest, WriteErrorsAreFused) {
   auto delivery_blob = TestDeliveryBlob::CreateUncompressed(
       static_cast<size_t>(kTestDeviceBlockSize) * kTestDeviceNumBlocks);
 
-  fbl::RefPtr blob =
-      fbl::MakeRefCounted<Blob>(*blobfs(), delivery_blob.digest(), /*is_delivery_blob=*/true);
+  fbl::RefPtr blob = fbl::MakeRefCounted<Blob>(*blobfs(), delivery_blob.digest());
   ASSERT_OK(blobfs()->GetCache().Add(blob));
   ASSERT_OK(blob->Truncate(delivery_blob.data().size()));
   size_t out_actual = 0;
@@ -218,8 +217,7 @@ TEST_P(BlobTest, WriteErrorsAreFused) {
   ASSERT_STATUS(blob->Write(delivery_blob.data().data(), 1, 0, &out_actual), ZX_ERR_NO_SPACE);
 
   // Whilst we have the failed file still open, we should be able to try again immediately.
-  fbl::RefPtr blob2 =
-      fbl::MakeRefCounted<Blob>(*blobfs(), delivery_blob.digest(), /*is_delivery_blob=*/true);
+  fbl::RefPtr blob2 = fbl::MakeRefCounted<Blob>(*blobfs(), delivery_blob.digest());
   ASSERT_OK(blobfs()->GetCache().Add(blob2));
   ASSERT_OK(blob2->Truncate(delivery_blob.data().size()));
   ASSERT_OK(blob2->Write(delivery_blob.data().data(), 1, 0, &out_actual));
@@ -357,8 +355,7 @@ TEST_P(BlobTest, WritesToArbitraryOffsetsFails) {
   auto blob_data = TestBlobData::Create(64);
   auto delivery_blob =
       TestDeliveryBlob::CreateWithCompressionAlgorithm(blob_data, GetCompressionAlgorithm());
-  fbl::RefPtr blob =
-      fbl::MakeRefCounted<Blob>(*blobfs(), delivery_blob.digest(), /*is_delivery_blob=*/true);
+  fbl::RefPtr blob = fbl::MakeRefCounted<Blob>(*blobfs(), delivery_blob.digest());
   ASSERT_OK(blobfs()->GetCache().Add(blob));
   ASSERT_OK(blob->Truncate(delivery_blob.data().size()));
 

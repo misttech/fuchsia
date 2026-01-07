@@ -172,12 +172,6 @@ zx::result<MetadataType1> MetadataType1::FromBuffer(std::span<const uint8_t> buf
   return zx::ok(metadata);
 }
 
-std::string GetDeliveryBlobPath(const std::string_view& path) {
-  std::filesystem::path fs_path(path);
-  const std::string new_filename = std::string(kDeliveryBlobPrefix) + fs_path.filename().string();
-  return fs_path.replace_filename(new_filename);
-}
-
 zx::result<fbl::Array<uint8_t>> GenerateDeliveryBlobType1(std::span<const uint8_t> data,
                                                           std::optional<bool> compress) {
   constexpr size_t kPayloadOffset = sizeof(DeliveryBlobHeader) + sizeof(MetadataType1);

@@ -5,11 +5,7 @@
 #include "src/storage/blobfs/blob.h"
 
 #include <fidl/fuchsia.io/cpp/common_types.h>
-#include <fidl/fuchsia.io/cpp/natural_types.h>
-#include <fidl/fuchsia.io/cpp/wire.h>
 #include <lib/syslog/cpp/macros.h>
-#include <lib/zx/event.h>
-#include <lib/zx/resource.h>
 #include <lib/zx/result.h>
 #include <lib/zx/vmo.h>
 #include <zircon/assert.h>
@@ -22,6 +18,7 @@
 #include <atomic>
 #include <cstddef>
 #include <cstdint>
+#include <functional>
 #include <memory>
 #include <mutex>
 #include <optional>
@@ -67,16 +64,15 @@ uint64_t Blob::FileSize() const {
   return 0;
 }
 
-Blob::Blob(Blobfs& blobfs, const Digest& digest, bool is_delivery_blob)
+Blob::Blob(Blobfs& blobfs, const Digest& digest)
     : CacheNode(*blobfs.vfs(), digest), blobfs_(blobfs) {
-  writer_ = std::make_unique<Blob::Writer>(*this, is_delivery_blob);
+  writer_ = std::make_unique<Blob::Writer>(*this, /*is_delivery_blob=*/true);
 }
 
 Blob::Blob(Blobfs& blobfs, uint32_t node_index, const Inode& inode)
     : CacheNode(*blobfs.vfs(), Digest(inode.merkle_root_hash)),
       blobfs_(blobfs),
       state_(BlobState::kReadable),
-      syncing_state_(SyncingState::kDone),
       map_index_(node_index),
       blob_size_(inode.blob_size),
       block_count_(inode.block_count) {}
@@ -87,136 +83,11 @@ bool Blob::IsDataLoaded() const {
 }
 
 zx_status_t Blob::MarkReadable(const WrittenBlob& written_blob) {
-  if (readable_event_.is_valid()) {
-    if (zx_status_t status = readable_event_.signal(0u, ZX_USER_SIGNAL_0); status != ZX_OK) {
-      return OnWriteError(zx::error(status));
-    }
-  }
   map_index_ = written_blob.map_index;
   blob_size_ = written_blob.layout->FileSize();
   block_count_ = written_blob.layout->TotalBlockCount();
   state_ = BlobState::kReadable;
-  syncing_state_ = SyncingState::kSyncing;
   writer_.reset();
-  return ZX_OK;
-}
-
-zx::result<zx::event> Blob::GetObserver() const {
-  TRACE_DURATION("blobfs", "Blobfs::GetObserver");
-  zx_status_t status;
-  std::lock_guard guard(mutex_);
-  // This is the first 'wait until read event' request received.
-  if (!readable_event_.is_valid()) {
-    status = zx::event::create(0, &readable_event_);
-    if (status != ZX_OK) {
-      return zx::error(status);
-    }
-    if (state_ == BlobState::kReadable) {
-      readable_event_.signal(0u, ZX_USER_SIGNAL_0);
-    }
-  }
-  zx::event out_event;
-  status = readable_event_.duplicate(ZX_RIGHTS_BASIC, &out_event);
-  if (status != ZX_OK) {
-    return zx::error(status);
-  }
-  return zx::ok(std::move(out_event));
-}
-
-zx_status_t Blob::CloneDataVmo(zx_rights_t rights, zx::vmo* out_vmo) {
-  TRACE_DURATION("blobfs", "Blobfs::CloneVmo", "rights", rights);
-
-  if (state_ != BlobState::kReadable) {
-    return ZX_ERR_BAD_STATE;
-  }
-
-  if (zx_status_t status = LoadVmosFromDisk(); status != ZX_OK) {
-    return status;
-  }
-
-  zx::vmo clone;
-  if (zx_status_t status =
-          paged_vmo().create_child(ZX_VMO_CHILD_SNAPSHOT_AT_LEAST_ON_WRITE, 0, blob_size_, &clone);
-      status != ZX_OK) {
-    FX_PLOGS(ERROR, status) << "Failed to create child VMO";
-    return status;
-  }
-  DidClonePagedVmo();
-
-  // Only add exec right to VMO if explicitly requested.  (Saves a syscall if we're just going to
-  // drop the right back again in replace() call below.)
-  if (rights & ZX_RIGHT_EXECUTE) {
-    // Check if the VMEX resource held by Blobfs is valid and fail if it isn't. We do this to make
-    // sure that we aren't implicitly relying on the ZX_POL_AMBIENT_MARK_VMO_EXEC job policy.
-    const zx::resource& vmex = blobfs_.vmex_resource();
-    if (!vmex.is_valid()) {
-      FX_LOGS(ERROR) << "No VMEX resource available, executable blobs unsupported";
-      return ZX_ERR_NOT_SUPPORTED;
-    }
-    if (zx_status_t status = clone.replace_as_executable(vmex, &clone); status != ZX_OK) {
-      return status;
-    }
-  }
-
-  // Narrow rights to those requested.
-  if (zx_status_t status = clone.replace(rights, &clone); status != ZX_OK) {
-    return status;
-  }
-  *out_vmo = std::move(clone);
-
-  return ZX_OK;
-}
-
-zx_status_t Blob::ReadInternal(void* data, size_t len, size_t off, size_t* actual) {
-  TRACE_DURATION("blobfs", "Blobfs::ReadInternal", "len", len, "off", off);
-
-  // The common case is that the blob is already loaded. To allow multiple readers, it's important
-  // to avoid taking an exclusive lock unless necessary.
-  fs::SharedLock lock(mutex_);
-
-  // Only expect this to be called when the blob is open. The fidl API guarantees this but tests
-  // can easily forget to open the blob before trying to read.
-  ZX_DEBUG_ASSERT(open_count() > 0);
-
-  if (state_ != BlobState::kReadable || is_corrupt_)
-    return ZX_ERR_BAD_STATE;
-
-  if (!IsDataLoaded()) {
-    // Release the shared lock and load the data from within an exclusive lock. LoadVmosFromDisk()
-    // can be called multiple times so the race condition caused by this unlocking will be benign.
-    lock.unlock();
-    {
-      // Load the VMO data from within the lock.
-      std::lock_guard exclusive_lock(mutex_);
-      if (zx_status_t status = LoadVmosFromDisk(); status != ZX_OK)
-        return status;
-    }
-    lock.lock();
-
-    // The readable state should never change (from the value we checked at the top of this
-    // function) by attempting to load from disk, that only happens when we try to write.
-    ZX_DEBUG_ASSERT(state_ == BlobState::kReadable);
-  }
-
-  if (blob_size_ == 0) {
-    *actual = 0;
-    return ZX_OK;
-  }
-  if (off >= blob_size_) {
-    *actual = 0;
-    return ZX_OK;
-  }
-  if (len > (blob_size_ - off)) {
-    len = blob_size_ - off;
-  }
-  ZX_DEBUG_ASSERT(IsDataLoaded());
-
-  // Send reads through the pager. This will potentially page-in the data by reentering us from the
-  // kernel on the pager thread.
-  ZX_DEBUG_ASSERT(paged_vmo().is_valid());
-  if (zx_status_t status = paged_vmo().read(data, off, len); status != ZX_OK)
-    return status;
-  *actual = len;
   return ZX_OK;
 }
 
@@ -269,7 +140,6 @@ zx_status_t Blob::LoadVmosFromDisk() {
   if (status == ZX_OK)
     SetPagedVmoName(true);
 
-  syncing_state_ = SyncingState::kDone;
   return status;
 }
 
@@ -381,27 +251,6 @@ fuchsia_io::NodeProtocolKinds Blob::GetProtocols() const {
   return fuchsia_io::NodeProtocolKinds::kFile;
 }
 
-fuchsia_io::Abilities Blob::GetAbilities() const {
-  using fuchsia_io::Abilities;
-  return Abilities::kGetAttributes | Abilities::kReadBytes | Abilities::kExecute;
-}
-
-bool Blob::ValidateRights(fuchsia_io::Rights rights) const {
-  // To acquire write access to a blob, it must be empty.
-  //
-  // TODO(https://fxbug.dev/42146597) If we run FIDL on multiple threads (we currently don't) there
-  // is a race condition here where another thread could start writing at the same time. Decide
-  // whether we support FIDL from multiple threads and if so, whether this condition is important.
-  std::lock_guard lock(mutex_);
-  return !(rights & fuchsia_io::Rights::kWriteBytes) || state_ == BlobState::kEmpty;
-}
-
-zx_status_t Blob::Read(void* data, size_t len, size_t off, size_t* out_actual) {
-  TRACE_DURATION("blobfs", "Blob::Read", "len", len, "off", off);
-  return blobfs_.node_operations().read.Track(
-      [&] { return ReadInternal(data, len, off, out_actual); });
-}
-
 zx_status_t Blob::Write(const void* data, size_t len, size_t offset, size_t* out_actual) {
   TRACE_DURATION("blobfs", "Blob::Write", "len", len, "off", offset);
   return blobfs_.node_operations().write.Track([&]() -> zx_status_t {
@@ -438,53 +287,6 @@ zx_status_t Blob::Write(const void* data, size_t len, size_t offset, size_t* out
   });
 }
 
-zx_status_t Blob::Append(const void* data, size_t len, size_t* out_end, size_t* out_actual) {
-  TRACE_DURATION("blobfs", "Blob::Append", "len", len);
-  return blobfs_.node_operations().append.Track([&]() -> zx_status_t {
-    std::lock_guard lock(mutex_);
-    *out_actual = 0;
-    if (state_ == BlobState::kError) {
-      ZX_DEBUG_ASSERT(writer_);
-      return writer_->status().error_value();
-    }
-    if (len == 0) {
-      return ZX_OK;
-    }
-    if (!writer_ || state_ != BlobState::kDataWrite) {
-      return ZX_ERR_BAD_STATE;
-    }
-
-    // Perform the actual write.
-    zx::result written_blob = writer_->Write(*this, data, len, out_actual);
-    if (written_blob.is_error()) {
-      return OnWriteError(written_blob.take_error());
-    }
-    *out_end = writer_->total_written();
-
-    if ((*written_blob).has_value()) {
-      return MarkReadable(*written_blob.value());
-    }
-
-    return ZX_OK;  // More data to write.
-  });
-}
-
-zx::result<fs::VnodeAttributes> Blob::GetAttributes() const {
-  TRACE_DURATION("blobfs", "Blob::GetAttributes");
-  return blobfs_.node_operations().get_attr.Track([&]() -> zx::result<fs::VnodeAttributes> {
-    // FileSize() expects to be called outside the lock.
-    auto content_size = FileSize();
-
-    std::lock_guard lock(mutex_);
-
-    return zx::ok(fs::VnodeAttributes{
-        .id = map_index_,
-        .content_size = content_size,
-        .storage_size = block_count_ * GetBlockSize(),
-    });
-  });
-}
-
 zx_status_t Blob::Truncate(size_t len) {
   TRACE_DURATION("blobfs", "Blob::Truncate", "len", len);
   return blobfs_.node_operations().truncate.Track([this, len]() -> zx_status_t {
@@ -512,75 +314,6 @@ zx_status_t Blob::Truncate(size_t len) {
     state_ = BlobState::kDataWrite;
     return ZX_OK;
   });
-}
-
-zx_status_t Blob::GetVmo(fuchsia_io::wire::VmoFlags flags, zx::vmo* out_vmo) {
-  static_assert(sizeof flags == sizeof(uint32_t),
-                "Underlying type of |flags| has changed, update conversion below.");
-  TRACE_DURATION("blobfs", "Blob::GetVmo", "flags", static_cast<uint32_t>(flags));
-
-  std::lock_guard lock(mutex_);
-
-  // Only expect this to be called when the blob is open. The fidl API guarantees this but tests
-  // can easily forget to open the blob before getting the VMO.
-  ZX_DEBUG_ASSERT(open_count() > 0);
-
-  if (flags & fuchsia_io::wire::VmoFlags::kWrite) {
-    return ZX_ERR_NOT_SUPPORTED;
-  }
-  if (flags & fuchsia_io::wire::VmoFlags::kSharedBuffer) {
-    return ZX_ERR_NOT_SUPPORTED;
-  }
-
-  // Let clients map and set the names of their VMOs.
-  zx_rights_t rights = ZX_RIGHTS_BASIC | ZX_RIGHT_MAP | ZX_RIGHTS_PROPERTY;
-  // We can ignore VmoFlags::PRIVATE_CLONE since private / shared access to the underlying VMO can
-  // both be satisfied with a clone due to the immutability of blobfs blobs.
-  rights |= (flags & fuchsia_io::wire::VmoFlags::kRead) ? ZX_RIGHT_READ : 0;
-  rights |= (flags & fuchsia_io::wire::VmoFlags::kExecute) ? ZX_RIGHT_EXECUTE : 0;
-  return CloneDataVmo(rights, out_vmo);
-}
-
-void Blob::Sync(SyncCallback on_complete) {
-  // This function will issue its callbacks on either the current thread or the journal thread.
-  // The vnode interface says this is OK.
-  TRACE_DURATION("blobfs", "Blob::Sync");
-  auto event = blobfs_.node_operations().sync.NewEvent();
-  // Wraps `on_complete` to record the result into `event` as well.
-  SyncCallback completion_callback = [on_complete = std::move(on_complete),
-                                      event = std::move(event)](zx_status_t status) mutable {
-    on_complete(status);
-    event.SetStatus(status);
-  };
-
-  SyncingState state;
-  {
-    std::scoped_lock guard(mutex_);
-    state = syncing_state_;
-  }
-
-  switch (state) {
-    case SyncingState::kDataIncomplete: {
-      // It doesn't make sense to sync a partial blob since it can't have its proper
-      // content-addressed name without all the data.
-      completion_callback(ZX_ERR_BAD_STATE);
-      break;
-    }
-    case SyncingState::kSyncing: {
-      // The blob data is complete. When this happens the Blob object will automatically write its
-      // metadata, but it may not get flushed for some time. This call both encourages the sync to
-      // happen "soon" and provides a way to get notified when it does.
-      auto trace_id = TRACE_NONCE();
-      TRACE_FLOW_BEGIN("blobfs", "Blob.sync", trace_id);
-      blobfs_.Sync(std::move(completion_callback));
-      break;
-    }
-    case SyncingState::kDone: {
-      // All metadata has already been synced. Calling Sync() is a no-op.
-      completion_callback(ZX_OK);
-      break;
-    }
-  }
 }
 
 // This function will get called on an arbitrary pager worker thread.
@@ -646,15 +379,7 @@ void Blob::VmoRead(uint64_t offset, uint64_t length) {
   }
 }
 
-bool Blob::HasReferences() const { return open_count() > 0 || has_clones(); }
-
-void Blob::CompleteSync() {
-  // Called on the journal thread when the syncing is complete.
-  {
-    std::scoped_lock guard(mutex_);
-    syncing_state_ = SyncingState::kDone;
-  }
-}
+bool Blob::HasReferences() const { return has_clones(); }
 
 void Blob::WillTeardownFilesystem() {
   // Be careful to release the pager reference outside the lock.
@@ -666,47 +391,9 @@ void Blob::WillTeardownFilesystem() {
   // When pager_reference goes out of scope here, it could cause |this| to be deleted.
 }
 
-zx_status_t Blob::OpenNode(fbl::RefPtr<Vnode>* out_redirect) {
-  std::lock_guard lock(mutex_);
-  if (IsDataLoaded() && open_count() == 1) {
-    // Just went from an unopened node that already had data to an opened node (the open_count()
-    // reflects the new state).
-    //
-    // This normally means that the node was closed but cached, and we're not re-opening it. This
-    // means we have to mark things as being open and register for the corresponding
-    // notifications.
-    //
-    // It's also possible to get in this state if there was a memory mapping for a file that
-    // was otherwise closed. In that case we don't need to do anything but the operations here
-    // can be performed multiple times with no bad effects. Avoiding these calls in the "mapped
-    // but opened" state would mean checking for no mappings which bundles this code more tightly
-    // to the HasReferences() implementation that is better avoided.
-    SetPagedVmoName(true);
-  }
-  return ZX_OK;
-}
+zx_status_t Blob::OpenNode(fbl::RefPtr<Vnode>* out_redirect) { return ZX_ERR_NOT_SUPPORTED; }
 
-zx_status_t Blob::CloseNode() {
-  TRACE_DURATION("blobfs", "Blob::CloseNode");
-  return blobfs_.node_operations().close.Track([&] {
-    std::lock_guard lock(mutex_);
-
-    if (paged_vmo() && !HasReferences()) {
-      // Mark the name to help identify the VMO is unused.
-      SetPagedVmoName(false);
-      // Hint that the VMO's pages are no longer needed, and can be evicted under memory pressure.
-      // If a page is accessed again, it will lose the hint.
-      zx_status_t status = paged_vmo().op_range(ZX_VMO_OP_DONT_NEED, 0, blob_size_, nullptr, 0);
-      if (status != ZX_OK) {
-        FX_LOGS(WARNING) << "Hinting DONT_NEED on blob " << digest()
-                         << " failed: " << zx_status_get_string(status);
-      }
-    }
-
-    // Attempt purge in case blob was unlinked prior to close.
-    return TryPurge();
-  });
-}
+zx_status_t Blob::CloseNode() { return ZX_ERR_NOT_SUPPORTED; }
 
 zx_status_t Blob::TryPurge() {
   if (Purgeable()) {

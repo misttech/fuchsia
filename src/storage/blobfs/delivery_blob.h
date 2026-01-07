@@ -23,8 +23,6 @@
 
 namespace blobfs {
 
-constexpr std::string_view kDeliveryBlobPrefix = "v1-";
-
 // Type of the delivery blob's metadata/payload. Corresponds to the `--type` argument used to
 // generate the blob with the `blobfs-compression` tool.
 //
@@ -61,9 +59,6 @@ struct DeliveryBlobHeader {
   // Parse and return a `DeliveryBlobHeader` from a byte `buffer`.
   static zx::result<DeliveryBlobHeader> FromBuffer(std::span<const uint8_t> buffer);
 };
-
-// Helper function to prepend the final component of `path` with the prefix specified in RFC 0207.
-std::string GetDeliveryBlobPath(const std::string_view& path);
 
 // Generate a Type 1 delivery blob payload from the given blob `data` using the default Blobfs
 // compression parameters.

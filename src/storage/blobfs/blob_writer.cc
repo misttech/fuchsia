@@ -121,8 +121,7 @@ zx::result<Blob::WrittenBlob> Blob::Writer::WriteNullBlob(Blob& blob) {
   }
   auto transaction_completion = [&transaction, &journal = *blobfs().GetJournal(),
                                  &blob]() -> zx::result<> {
-    transaction.Commit(journal, {}, [blob = fbl::RefPtr(&blob)]() { blob->CompleteSync(); });
-
+    transaction.Commit(journal, {}, [blob = fbl::RefPtr(&blob)]() {});
     return zx::ok();
   };
 

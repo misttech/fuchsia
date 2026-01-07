@@ -149,7 +149,7 @@ TEST_P(BlobfsIntegrationTest, ReadDirectory) {
   std::set<Digest> blobs;
   for (size_t i = 0; i < kMaxEntries; ++i) {
     auto blob = TestBlobData::CreatePrefixed(kBlobSize, i);
-    auto delivery_blob = TestDeliveryBlob::CreateUncompressed((blob));
+    auto delivery_blob = TestDeliveryBlob::CreateUncompressed(blob);
     ASSERT_OK(blob_creator().CreateAndWriteBlob(delivery_blob));
     blobs.insert(blob.digest());
   }
@@ -179,6 +179,38 @@ TEST_P(BlobfsIntegrationTest, ReadDirectory) {
   ASSERT_EQ(readdir(dir), nullptr) << "Directory should be empty";
   cleanup.cancel();
   ASSERT_EQ(0, closedir(dir));
+}
+
+TEST_P(BlobfsIntegrationTest, DirectoryCreateBlobIsNotSupported) {
+  auto delivery_blob = TestDeliveryBlob::CreateUncompressed(16);
+  fbl::unique_fd fd(openat(fs().GetRootFd().get(), delivery_blob.digest().ToString().c_str(),
+                           O_CREAT | O_EXCL | O_RDWR, S_IRUSR | S_IWUSR));
+  ASSERT_FALSE(fd.is_valid());
+  ASSERT_EQ(errno, ENOTSUP);
+}
+
+TEST_P(BlobfsIntegrationTest, DirectoryOpenBlobIsNotSupported) {
+  auto delivery_blob = TestDeliveryBlob::CreateUncompressed(16);
+  ASSERT_OK(blob_creator().CreateAndWriteBlob(delivery_blob));
+  fbl::unique_fd fd(
+      openat(fs().GetRootFd().get(), delivery_blob.digest().ToString().c_str(), O_RDONLY));
+  ASSERT_FALSE(fd.is_valid());
+  ASSERT_EQ(errno, ENOTSUP);
+}
+
+TEST_P(BlobfsIntegrationTest, DirectoryOpenDotIsSupported) {
+  auto delivery_blob = TestDeliveryBlob::CreateUncompressed(16);
+  ASSERT_OK(blob_creator().CreateAndWriteBlob(delivery_blob));
+
+  fbl::unique_fd fd(openat(fs().GetRootFd().get(), ".", O_RDONLY | O_DIRECTORY));
+  ASSERT_TRUE(fd.is_valid());
+  // List the directory entries to confirm that it's the blob directory.
+  DIR* dir = fdopendir(fd.get());
+  ASSERT_NE(dir, nullptr);
+  fd.release();
+  auto cleanup = fit::defer([dir]() { closedir(dir); });
+  struct dirent* de = readdir(dir);
+  ASSERT_EQ(de->d_name, delivery_blob.digest().ToString());
 }
 
 fs_test::TestFilesystemOptions MinimumDiskSizeOptions() {

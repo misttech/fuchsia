@@ -138,8 +138,7 @@ TEST_P(DeliveryBlobTest, WriteChunked) {
   auto blob_data = TestBlobData::CreateRandom(GetParam().blob_size);
   TestDeliveryBlob delivery_blob(blob_data, GetParam().compress);
 
-  fbl::RefPtr blob =
-      fbl::MakeRefCounted<Blob>(*blobfs(), blob_data.digest(), /*is_delivery_blob=*/true);
+  fbl::RefPtr blob = fbl::MakeRefCounted<Blob>(*blobfs(), blob_data.digest());
   ASSERT_OK(blobfs()->GetCache().Add(blob));
   ASSERT_OK(blob->Truncate(delivery_blob.data().size()));
 

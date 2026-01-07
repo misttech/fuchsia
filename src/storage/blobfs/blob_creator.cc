@@ -256,7 +256,7 @@ zx::result<fidl::ClientEnd<fuchsia_fxfs::BlobWriter>> BlobCreator::CreateImpl(co
     }
   }
 
-  fbl::RefPtr new_blob = fbl::AdoptRef(new Blob(blobfs_, digest, true));
+  fbl::RefPtr new_blob = fbl::MakeRefCounted<Blob>(blobfs_, digest);
   if (to_overwrite.has_value()) {
     // Don't put it in the cache if it is not the canonical version yet.
     if (zx_status_t status = to_overwrite.value()->SetOverwritingBy(new_blob.get());

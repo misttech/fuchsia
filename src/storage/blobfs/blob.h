@@ -12,9 +12,6 @@
 #endif
 
 #include <fidl/fuchsia.io/cpp/common_types.h>
-#include <fidl/fuchsia.io/cpp/natural_types.h>
-#include <fidl/fuchsia.io/cpp/wire.h>
-#include <lib/zx/event.h>
 #include <lib/zx/result.h>
 #include <lib/zx/vmo.h>
 #include <zircon/compiler.h>
@@ -24,6 +21,7 @@
 #include <atomic>
 #include <cstddef>
 #include <cstdint>
+#include <functional>
 #include <memory>
 #include <mutex>
 
@@ -58,12 +56,12 @@ class Blob final : public CacheNode, fbl::Recyclable<Blob> {
  public:
   // Creates a writable blob. Will become readable once all data has been written and verified.
   // `blobfs` must outlive this blob.
-  Blob(Blobfs& blobfs, const Digest& digest, bool is_delivery_blob);
+  Blob(Blobfs& blobfs, const Digest& digest);
 
   // Creates a readable blob from existing data. `blobfs` must outlive this blob.
   Blob(Blobfs& blobfs, uint32_t node_index, const Inode& inode);
 
-  ~Blob() override;
+  ~Blob() final;
 
   // Note this Blob's hash is stored on the CacheNode base class `digest()` method.
   //
@@ -71,22 +69,12 @@ class Blob final : public CacheNode, fbl::Recyclable<Blob> {
 
   // fs::Vnode implementation:
   fuchsia_io::NodeProtocolKinds GetProtocols() const final;
-  fuchsia_io::Abilities GetAbilities() const final;
-  bool ValidateRights(fuchsia_io::Rights rights) const final;
-  zx_status_t Read(void* data, size_t len, size_t off, size_t* out_actual) final
-      __TA_EXCLUDES(mutex_);
   zx_status_t Write(const void* data, size_t len, size_t offset, size_t* out_actual) final
       __TA_EXCLUDES(mutex_);
-  zx_status_t Append(const void* data, size_t len, size_t* out_end, size_t* out_actual) final
-      __TA_EXCLUDES(mutex_);
-  zx::result<fs::VnodeAttributes> GetAttributes() const final __TA_EXCLUDES(mutex_);
   zx_status_t Truncate(size_t len) final __TA_EXCLUDES(mutex_);
-  zx_status_t GetVmo(fuchsia_io::wire::VmoFlags flags, zx::vmo* out_vmo) final
-      __TA_EXCLUDES(mutex_);
-  void Sync(SyncCallback on_complete) final __TA_EXCLUDES(mutex_);
 
   // fs::PagedVnode implementation.
-  void VmoRead(uint64_t offset, uint64_t length) override __TA_EXCLUDES(mutex_);
+  void VmoRead(uint64_t offset, uint64_t length) final __TA_EXCLUDES(mutex_);
 
   // Required for memory management, see the class comment above Vnode for more.
   void fbl_recycle() { RecycleNode(); }
@@ -114,8 +102,6 @@ class Blob final : public CacheNode, fbl::Recyclable<Blob> {
 
   // Size of the blob data (i.e. total number of bytes that can be read).
   uint64_t FileSize() const __TA_EXCLUDES(mutex_);
-
-  void CompleteSync() __TA_EXCLUDES(mutex_);
 
   // Notification that the associated Blobfs is tearing down. This will clean up any extra
   // references such that the Blob can be deleted.
@@ -179,13 +165,11 @@ class Blob final : public CacheNode, fbl::Recyclable<Blob> {
   }
 
   // Vnode protected overrides:
-  zx_status_t OpenNode(fbl::RefPtr<Vnode>* out_redirect) override __TA_EXCLUDES(mutex_);
-  zx_status_t CloseNode() override __TA_EXCLUDES(mutex_);
-  // Returns a handle to an event which will be signalled when the blob is readable.
-  zx::result<zx::event> GetObserver() const override __TA_EXCLUDES(mutex_);
+  zx_status_t OpenNode(fbl::RefPtr<Vnode>* out_redirect) final __TA_EXCLUDES(mutex_);
+  zx_status_t CloseNode() final __TA_EXCLUDES(mutex_);
 
   // PagedVnode protected overrides:
-  void OnNoPagedVmoClones() override __TA_REQUIRES(mutex_);
+  void OnNoPagedVmoClones() final __TA_REQUIRES(mutex_);
 
   // blobfs::CacheNode implementation:
   BlobCache& GetCache() final;
@@ -204,10 +188,6 @@ class Blob final : public CacheNode, fbl::Recyclable<Blob> {
   // Removes all traces of the vnode from blobfs. The blob is not expected to be accessed again
   // after this is called.
   zx_status_t Purge() __TA_REQUIRES(mutex_);
-
-  // Reads from a blob. Requires: kBlobStateReadable
-  zx_status_t ReadInternal(void* data, size_t len, size_t off, size_t* actual)
-      __TA_EXCLUDES(mutex_);
 
   // Loads the blob's data and merkle from disk, and initializes the data/merkle VMOs. If paging is
   // enabled, the data VMO will be pager-backed and lazily loaded and verified as the client
@@ -269,27 +249,6 @@ class Blob final : public CacheNode, fbl::Recyclable<Blob> {
   std::atomic<bool> is_corrupt_ = false;  // Not __TA_GUARDED, see above.
 
   LoaderInfo loader_info_ __TA_GUARDED(mutex_);
-
-  bool tearing_down_ __TA_GUARDED(mutex_) = false;
-
-  enum class SyncingState : char {
-    // The Blob is being streamed and it is not possible to generate the merkle root and metadata at
-    // this point.
-    kDataIncomplete,
-
-    // The blob merkle root is complete but the metadata write has not yet submitted to the
-    // underlying media.
-    kSyncing,
-
-    // The blob exists on the underlying media.
-    kDone,
-  };
-  // This value is marked kDone on the journal's background thread but read on the main thread so
-  // is protected by the mutex.
-  SyncingState syncing_state_ __TA_GUARDED(mutex_) = SyncingState::kDataIncomplete;
-
-  // Lazily initialized when required.
-  mutable zx::event readable_event_ __TA_GUARDED(mutex_);
 
   uint32_t map_index_ __TA_GUARDED(mutex_) = 0;
   uint64_t blob_size_ __TA_GUARDED(mutex_) = 0;

@@ -9,7 +9,6 @@
 #include <fidl/fuchsia.io/cpp/common_types.h>
 #include <fidl/fuchsia.io/cpp/wire_types.h>
 #include <lib/async/dispatcher.h>
-#include <lib/fit/defer.h>
 #include <lib/fit/function.h>
 #include <lib/fpromise/result.h>
 #include <lib/fzl/resizeable-vmo-mapper.h>
@@ -24,6 +23,7 @@
 #include <string.h>
 #include <zircon/assert.h>
 #include <zircon/errors.h>
+#include <zircon/syscalls.h>
 #include <zircon/time.h>
 #include <zircon/types.h>
 
@@ -476,12 +476,7 @@ zx_status_t Blobfs::LoadAndVerifyBlob(uint32_t node_index) {
     return inode.status_value();
   }
 
-  // Create a blob and open it (required for verification).
   fbl::RefPtr<Blob> blob = fbl::MakeRefCounted<Blob>(*this, node_index, *inode.value());
-  if (zx_status_t status = blob->Open(nullptr); status != ZX_OK) {
-    return status;
-  }
-  auto blob_closer = fit::defer([&blob] { blob->Close(); });
   return blob->Verify();
 }
 

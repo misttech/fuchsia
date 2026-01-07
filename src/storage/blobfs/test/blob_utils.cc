@@ -380,8 +380,7 @@ zx::result<bool> BlobCreatorWrapper::NeedsOverwrite(const Digest& digest) const 
 }
 
 zx::result<fbl::RefPtr<Blob>> CreateBlob(Blobfs& blobfs, const TestDeliveryBlob& delivery_blob) {
-  fbl::RefPtr blob =
-      fbl::MakeRefCounted<Blob>(blobfs, delivery_blob.digest(), /*is_delivery_blob=*/true);
+  fbl::RefPtr blob = fbl::MakeRefCounted<Blob>(blobfs, delivery_blob.digest());
   if (zx_status_t status = blobfs.GetCache().Add(blob); status != ZX_OK) {
     return zx::error(status);
   }
