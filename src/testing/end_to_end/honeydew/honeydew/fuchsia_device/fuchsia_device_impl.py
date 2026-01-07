@@ -463,7 +463,9 @@ class FuchsiaDeviceImpl(
         """
         return (
             audio_using_fuchsia_controller.VirtualAudioUsingFuchsiaController(
+                device_name=self.device_name,
                 fuchsia_controller=self.fuchsia_controller,
+                ffx_transport=self.ffx,
             )
         )
 

@@ -443,14 +443,45 @@ class FuchsiaDeviceImplTests(unittest.TestCase):
             screenshot_using_ffx.ScreenshotUsingFfx,
         )
 
-    def test_audio(self) -> None:
+    @mock.patch.object(
+        ffx_impl.FfxImpl,
+        "run",
+        autospec=True,
+    )
+    def test_audio(self, mock_ffx_run: mock.Mock) -> None:
         """Test case to make sure fuchsia_device supports audio
         affordance implemented using Fuchsia controller"""
         self.fd_fc_obj.fuchsia_controller.ctx = mock.Mock()
+
+        mock_ffx_run.return_value = (
+            '{"instances": [{"moniker": "core/audio_recording"}]}'
+        )
+
         self.assertIsInstance(
             self.fd_fc_obj.virtual_audio,
             audio_using_fuchsia_controller.VirtualAudioUsingFuchsiaController,
         )
+
+    @mock.patch.object(
+        ffx_impl.FfxImpl,
+        "run",
+        autospec=True,
+    )
+    def test_audio_not_supported(self, mock_ffx_run: mock.Mock) -> None:
+        """Test case to make sure fuchsia_device raises NotSupportedError
+        when audio affordance is not supported"""
+        self.fd_fc_obj.fuchsia_controller.ctx = mock.Mock()
+
+        mock_ffx_run.return_value = (
+            '{"instances": [{"moniker": "core/some_other_component"}, '
+            '{"test": "test_value"}]}'
+        )
+
+        with self.assertRaisesRegex(
+            errors.NotSupportedError,
+            "core/audio_recording is not available in device fuchsia-emulator",
+        ):
+            self.fd_fc_obj.virtual_audio
 
     @mock.patch.object(
         ffx_impl.FfxImpl,

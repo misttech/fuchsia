@@ -3,6 +3,7 @@
 # found in the LICENSE file.
 """Audio recording affordance."""
 import asyncio
+import json
 import logging
 import os
 import time
@@ -12,7 +13,11 @@ import fidl_fuchsia_test_audio as fta
 from fidl import AsyncSocket
 from fuchsia_controller_py import Socket
 
-from honeydew.affordances.virtual_audio import audio, errors, types
+from honeydew import errors
+from honeydew.affordances.virtual_audio import audio
+from honeydew.affordances.virtual_audio import errors as virtual_audio_errors
+from honeydew.affordances.virtual_audio import types
+from honeydew.transports.ffx import ffx
 from honeydew.transports.fuchsia_controller import (
     fuchsia_controller as fc_transport,
 )
@@ -28,6 +33,8 @@ _CAPTURE_ENDPOINT = FidlEndpoint(
     "/core/audio_recording", "fuchsia.test.audio.Capture"
 )
 
+_AUDIO_RECORDING_COMPONENT: str = "core/audio_recording"
+
 
 class VirtualAudioUsingFuchsiaController(audio.VirtualAudio):
     """Audio affordance implementation using Fuchsia Controller.
@@ -42,24 +49,46 @@ class VirtualAudioUsingFuchsiaController(audio.VirtualAudio):
     behavior other than rebooting the device.
 
     Args:
-        fc: Fuchsia Controller transport.
+        device_name: Device name.
+        fuchsia_controller: Fuchsia Controller transport.
+        ffx_transport: FFX transport.
     """
 
     def __init__(
-        self, fuchsia_controller: fc_transport.FuchsiaController
+        self,
+        device_name: str,
+        fuchsia_controller: fc_transport.FuchsiaController,
+        ffx_transport: ffx.FFX,
     ) -> None:
+        self._device_name: str = device_name
         self.fuchsia_controller: fc_transport.FuchsiaController = (
             fuchsia_controller
         )
+        self._ffx_transport: ffx.FFX = ffx_transport
+
+        self.verify_supported()
         self._init_clients()
 
     def verify_supported(self) -> None:
-        """Verify that virtual audio is supported for this device."""
+        """Verify that virtual audio is supported for this device.
 
-        # TODO(https://fxbug.dev/418851327): Implement this function. For now just say it's supported.
-        _LOGGER.info(
-            "Saying virtual audio is supported, see https://fxbug.dev/418851327"
+        Raises:
+            NotSupportedError: Virtual audio is not supported by Fuchsia device.
+        """
+        # check if the device have component to support virtual audio.
+        output = self._ffx_transport.run(
+            ["--machine", "json", "component", "list"]
         )
+        component_list = json.loads(output)
+        instances = component_list.get("instances", [])
+
+        if not any(
+            instance.get("moniker") == _AUDIO_RECORDING_COMPONENT
+            for instance in instances
+        ):
+            raise errors.NotSupportedError(
+                f"{_AUDIO_RECORDING_COMPONENT} is not available in device {self._device_name}"
+            )
 
     def _init_clients(self) -> None:
         self._injection_client = fta.InjectionClient(
@@ -92,7 +121,7 @@ class VirtualAudioUsingFuchsiaController(audio.VirtualAudio):
         async def _inject() -> None:
             val = await self._injection_client.clear_input_audio(index=0)
             if val.err is not None:
-                raise errors.VirtualAudioError(
+                raise virtual_audio_errors.VirtualAudioError(
                     f"Failed to clear audio: {val.err}"
                 )
 
@@ -114,12 +143,12 @@ class VirtualAudioUsingFuchsiaController(audio.VirtualAudio):
 
             size = await self._injection_client.get_input_audio_size(index=0)
             if size.err is not None or size.response is None:
-                raise errors.VirtualAudioError(
+                raise virtual_audio_errors.VirtualAudioError(
                     f"Failed to get audio size: {size.err}"
                 )
 
             if size.response.byte_count != len(audio_to_inject):
-                raise errors.VirtualAudioError(
+                raise virtual_audio_errors.VirtualAudioError(
                     f"Expected to have written {size.response.byte_count} bytes, found {len(audio_to_inject)} at audio injection index 0"
                 )
 
@@ -129,7 +158,9 @@ class VirtualAudioUsingFuchsiaController(audio.VirtualAudio):
                     await self._injection_client.start_input_injection(index=0)
                 ).err
             ) is not None:
-                raise errors.VirtualAudioError(f"Failed to start audio {err}")
+                raise virtual_audio_errors.VirtualAudioError(
+                    f"Failed to start audio {err}"
+                )
 
         asyncio.run(_inject())
         return types.AudioInputWaiter(self._injection_client)
@@ -149,7 +180,7 @@ class VirtualAudioUsingFuchsiaController(audio.VirtualAudio):
             if (
                 err := (await self._capture_client.start_output_capture()).err
             ) is not None:
-                raise errors.VirtualAudioError(
+                raise virtual_audio_errors.VirtualAudioError(
                     f"Failed to start output capture audio {err}"
                 )
 
@@ -182,11 +213,13 @@ class VirtualAudioUsingFuchsiaController(audio.VirtualAudio):
                 maximum_wait_time_ms=maximum_wait_time_ms,
             )
             if res.err is not None:
-                raise errors.VirtualAudioError(
+                raise virtual_audio_errors.VirtualAudioError(
                     f"Failed to wait for quiet: {res.err}"
                 )
             if res.response is None:
-                raise errors.VirtualAudioError("Missing response value")
+                raise virtual_audio_errors.VirtualAudioError(
+                    "Missing response value"
+                )
 
             if res.response.result == fta.WaitForQuietResult.SUCCESS:
                 _LOGGER.info("Quiet observed, proceeding.")
@@ -198,7 +231,7 @@ class VirtualAudioUsingFuchsiaController(audio.VirtualAudio):
                 _LOGGER.info("Quiet period was not observed.")
                 return types.WaitForQuietResult.DID_NOT_OBSERVE_QUIET_PERIOD
             else:
-                raise errors.VirtualAudioError(
+                raise virtual_audio_errors.VirtualAudioError(
                     f"Unknown response value: {res.response}. Possible version mismatch between host and target."
                 )
 
@@ -232,7 +265,7 @@ class VirtualAudioUsingFuchsiaController(audio.VirtualAudio):
             )
 
             if capture_res.err is not None:
-                raise errors.VirtualAudioError(
+                raise virtual_audio_errors.VirtualAudioError(
                     f"Failed to queue triggered capture: {capture_res.err}"
                 )
 
@@ -246,7 +279,7 @@ class VirtualAudioUsingFuchsiaController(audio.VirtualAudio):
 
             if capture_res.err is not None:
                 if capture_res.err is not None:
-                    raise errors.VirtualAudioError(
+                    raise virtual_audio_errors.VirtualAudioError(
                         f"Failed to get the result of a triggered capture: {capture_res.err}"
                     )
 
@@ -254,7 +287,9 @@ class VirtualAudioUsingFuchsiaController(audio.VirtualAudio):
                 capture_res.response is None
                 or capture_res.response.result is None
             ):
-                raise errors.VirtualAudioError("Missing response value")
+                raise virtual_audio_errors.VirtualAudioError(
+                    "Missing response value"
+                )
 
             if (
                 capture_res.response.result
@@ -276,13 +311,13 @@ class VirtualAudioUsingFuchsiaController(audio.VirtualAudio):
                 _LOGGER.info("Successfully captured audio (to duration limit)")
                 status = types.TriggeredCaptureStatus.SUCCESS_RECORDED_TO_LIMIT
             else:
-                raise errors.VirtualAudioError(
+                raise virtual_audio_errors.VirtualAudioError(
                     f"Unexpected response value: {capture_res.response}. Possible version mismatch between host and target."
                 )
 
             receiver = await self._capture_client.get_output_audio()
             if receiver.err is not None or receiver.response is None:
-                raise errors.VirtualAudioError(
+                raise virtual_audio_errors.VirtualAudioError(
                     f"Failed to get captured audio from device: {receiver.err}"
                 )
 
