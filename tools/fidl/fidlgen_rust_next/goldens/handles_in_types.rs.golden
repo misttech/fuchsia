@@ -6,7 +6,7 @@ pub mod natural {
 
     pub use fidl_next_common_test_handlesintypes::natural::*;
 
-    #[derive(PartialEq, Debug)]
+    #[derive(Debug, Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
     #[repr(C)]
     pub struct EmptyResourceStruct {}
 
@@ -70,7 +70,7 @@ pub mod natural {
         }
     }
 
-    #[derive(PartialEq, Debug, Default)]
+    #[derive(Debug, Default, Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
     pub struct EmptyResourceTable {}
 
     impl EmptyResourceTable {
@@ -126,7 +126,7 @@ pub mod natural {
         }
     }
 
-    #[derive(PartialEq, Debug)]
+    #[derive(Debug, Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
     pub enum EmptyResourceUnion {
         UnknownOrdinal_(u64),
     }
@@ -233,7 +233,7 @@ pub mod natural {
         }
     }
 
-    #[derive(PartialEq, Debug, Default)]
+    #[derive(Debug, Default, PartialEq)]
     pub struct TableWithHandle {
         pub h: ::core::option::Option<::fidl_next::fuchsia::zx::Vmo>,
     }
@@ -316,7 +316,7 @@ pub mod natural {
         }
     }
 
-    #[derive(PartialEq, Debug)]
+    #[derive(Debug, PartialEq)]
     pub enum UnionWithHandle {
         H(::fidl_next::fuchsia::zx::Vmo),
 
@@ -434,7 +434,7 @@ pub mod natural {
         }
     }
 
-    #[derive(PartialEq, Debug)]
+    #[derive(Debug, PartialEq)]
     pub struct HandlesInTypes {
         pub normal_handle: ::fidl_next::fuchsia::zx::Vmo,
 

@@ -4,7 +4,7 @@
 
 pub mod natural {
 
-    #[derive(PartialEq, Clone, Debug)]
+    #[derive(Debug, Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
     #[repr(C)]
     pub struct Empty {}
 
@@ -115,7 +115,7 @@ pub mod natural {
         }
     }
 
-    #[derive(PartialEq, Clone, Debug)]
+    #[derive(Debug, Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
     pub enum EmptyFlexibleUnion {
         UnknownOrdinal_(u64),
     }
@@ -297,7 +297,7 @@ pub mod natural {
         }
     }
 
-    #[derive(PartialEq, Clone, Debug)]
+    #[derive(Debug, Copy, Clone, PartialEq, PartialOrd)]
     pub enum ExplicitFlexibleUnion {
         I(i64),
 
@@ -537,7 +537,7 @@ pub mod natural {
         }
     }
 
-    #[derive(PartialEq, Clone, Debug)]
+    #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
     pub enum ExplicitFoo {
         I(i32),
 
@@ -757,7 +757,7 @@ pub mod natural {
         }
     }
 
-    #[derive(PartialEq, Clone, Debug)]
+    #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
     pub struct Pizza {
         pub toppings: ::std::vec::Vec<::std::string::String>,
     }
@@ -887,7 +887,7 @@ pub mod natural {
         }
     }
 
-    #[derive(PartialEq, Clone, Debug)]
+    #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
     pub struct Pasta {
         pub sauce: ::std::string::String,
     }
@@ -1017,7 +1017,7 @@ pub mod natural {
         }
     }
 
-    #[derive(PartialEq, Clone, Debug)]
+    #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
     pub enum ExplicitPizzaOrPasta {
         Pizza(crate::natural::Pizza),
 
@@ -1222,7 +1222,7 @@ pub mod natural {
         }
     }
 
-    #[derive(PartialEq, Clone, Debug)]
+    #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
     pub enum ExplicitStrictFoo {
         I(i32),
 
@@ -1430,7 +1430,7 @@ pub mod natural {
         }
     }
 
-    #[derive(PartialEq, Clone, Debug)]
+    #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
     pub enum ExplicitUnion {
         Primitive(i32),
 
@@ -1632,7 +1632,7 @@ pub mod natural {
         }
     }
 
-    #[derive(PartialEq, Clone, Debug)]
+    #[derive(Debug, Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
     pub enum FieldCollision {
         FieldCollisionTag(i32),
     }
@@ -1806,7 +1806,7 @@ pub mod natural {
         }
     }
 
-    #[derive(PartialEq, Clone, Debug)]
+    #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
     pub enum FlexibleFoo {
         S(::std::string::String),
 
@@ -2026,7 +2026,7 @@ pub mod natural {
         }
     }
 
-    #[derive(PartialEq, Clone, Debug)]
+    #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
     pub enum FlexiblePizzaOrPasta {
         Pizza(crate::natural::Pizza),
 
@@ -2251,7 +2251,7 @@ pub mod natural {
         }
     }
 
-    #[derive(PartialEq, Clone, Debug)]
+    #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
     pub enum FlexibleUnion {
         Primitive(i32),
 
@@ -2501,7 +2501,7 @@ pub mod natural {
         }
     }
 
-    #[derive(PartialEq, Clone, Debug)]
+    #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
     pub enum NewerSimpleUnion {
         I(i64),
 
@@ -2752,7 +2752,7 @@ pub mod natural {
         }
     }
 
-    #[derive(PartialEq, Clone, Debug)]
+    #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
     pub struct NullableUnionStruct {
         pub the_union: ::core::option::Option<::std::boxed::Box<crate::natural::Union>>,
     }
@@ -2887,7 +2887,7 @@ pub mod natural {
         }
     }
 
-    #[derive(PartialEq, Clone, Debug)]
+    #[derive(Debug, Copy, Clone, PartialEq, PartialOrd)]
     pub enum OlderSimpleUnion {
         I(i64),
 
@@ -3119,7 +3119,7 @@ pub mod natural {
         }
     }
 
-    #[derive(PartialEq, Clone, Debug)]
+    #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
     pub enum PizzaOrPasta {
         Pizza(crate::natural::Pizza),
 
@@ -3316,7 +3316,7 @@ pub mod natural {
         }
     }
 
-    #[derive(PartialEq, Clone, Debug)]
+    #[derive(Debug, Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
     pub enum ReverseOrdinalUnion {
         First(u32),
 
@@ -3519,7 +3519,7 @@ pub mod natural {
         }
     }
 
-    #[derive(PartialEq, Clone, Debug)]
+    #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
     pub enum StrictBoundedUnion {
         V(::std::vec::Vec<u8>),
     }
@@ -3701,7 +3701,7 @@ pub mod natural {
         }
     }
 
-    #[derive(PartialEq, Clone, Debug)]
+    #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
     pub enum StrictFoo {
         S(::std::string::String),
 
@@ -3897,7 +3897,7 @@ pub mod natural {
         }
     }
 
-    #[derive(PartialEq, Clone, Debug)]
+    #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
     pub enum StrictPizzaOrPasta {
         Pizza(crate::natural::Pizza),
 
@@ -4099,7 +4099,7 @@ pub mod natural {
         }
     }
 
-    #[derive(PartialEq, Clone, Debug)]
+    #[derive(Debug, Clone, PartialEq, PartialOrd)]
     pub enum StrictSimpleUnion {
         I(i32),
 
@@ -4332,7 +4332,7 @@ pub mod natural {
         }
     }
 
-    #[derive(PartialEq, Clone, Debug)]
+    #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
     pub enum StrictUnion {
         Primitive(i32),
 
@@ -4559,7 +4559,7 @@ pub mod natural {
         }
     }
 
-    #[derive(PartialEq, Clone, Debug)]
+    #[derive(Debug, Clone, PartialEq, PartialOrd)]
     pub struct StructWithNullableUnion {
         pub x1: ::core::option::Option<::std::boxed::Box<crate::natural::OlderSimpleUnion>>,
     }
@@ -4699,7 +4699,7 @@ pub mod natural {
         }
     }
 
-    #[derive(PartialEq, Clone, Debug)]
+    #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
     pub struct TestProtocolStrictUnionHenceResponseMayBeStackAllocatedResponse {
         pub xu: crate::natural::StrictBoundedUnion,
     }
@@ -4891,7 +4891,7 @@ pub mod natural {
         }
     }
 
-    #[derive(PartialEq, Clone, Debug)]
+    #[derive(Debug, Copy, Clone, PartialEq, PartialOrd)]
     pub struct TestProtocolFlexibleUnionHenceResponseMustBeHeapAllocatedResponse {
         pub xu: crate::natural::OlderSimpleUnion,
     }
@@ -5085,7 +5085,7 @@ pub mod natural {
         }
     }
 
-    #[derive(PartialEq, Clone, Debug)]
+    #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
     pub enum Union {
         Primitive(i32),
 
@@ -5307,7 +5307,7 @@ pub mod natural {
         }
     }
 
-    #[derive(PartialEq, Clone, Debug)]
+    #[derive(Debug, Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
     pub enum UnionContainingEmptyStruct {
         Empty(crate::natural::Empty),
 
@@ -5522,7 +5522,7 @@ pub mod natural {
         }
     }
 
-    #[derive(PartialEq, Clone, Debug)]
+    #[derive(Debug, Copy, Clone, PartialEq, PartialOrd)]
     pub struct UnionSandwich {
         pub a: u32,
 
@@ -5691,7 +5691,7 @@ pub mod natural {
         }
     }
 
-    #[derive(PartialEq, Clone, Debug)]
+    #[derive(Debug, Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
     pub enum UnionWithAttributes {
         X(i64),
 

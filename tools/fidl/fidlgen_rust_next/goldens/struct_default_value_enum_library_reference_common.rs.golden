@@ -4,7 +4,7 @@
 
 pub mod natural {
 
-    #[derive(PartialEq, Clone, Debug)]
+    #[derive(Debug, Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
     #[repr(C)]
     pub struct Foo {
         pub field: ::fidl_next_common_test_dependent::natural::MyEnum,

@@ -5,7 +5,7 @@
 pub mod natural {
 
     #[doc = " flexible union comment #1\n\n flexible union comment #3\n"]
-    #[derive(PartialEq, Clone, Debug)]
+    #[derive(Debug, Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
     pub enum FlexibleUnion {
         Field(i32),
 
@@ -204,15 +204,7 @@ pub mod natural {
     }
 
     ::fidl_next::bitflags::bitflags! {
-        #[doc = " flexible bits comment #1\n\n flexible bits comment #2\n"]#[derive(
-            Clone,
-            Copy,
-            Debug,
-            PartialEq,
-            Eq,
-            Hash,
-        )]
-        pub struct MyFlexibleBits: u32 {
+        #[doc = " flexible bits comment #1\n\n flexible bits comment #2\n"]#[derive(Debug, Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, )]pub struct MyFlexibleBits: u32 {
             #[doc = " MY_FIRST_BIT member comment #1\n\n MY_FIRST_BIT member comment #3\n"]const MY_FIRST_BIT = 1;
             #[doc = " MY_OTHER_BIT member comment #1\n\n MY_OTHER_BIT member comment #3\n"]const MY_OTHER_BIT = 2;
             const _ = !0;
@@ -273,7 +265,7 @@ pub mod natural {
     }
 
     #[doc = " flexible enum comment #1.\n\n flexible enum comment #2.\n"]
-    #[derive(Clone, Copy, Debug, PartialEq, Eq)]
+    #[derive(Debug, Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
     #[repr(u32)]
     pub enum MyFlexibleEnum {
         Foo = 1,
@@ -357,15 +349,7 @@ pub mod natural {
     }
 
     ::fidl_next::bitflags::bitflags! {
-        #[doc = " strict bits comment #1\n\n strict bits comment #2\n"]#[derive(
-            Clone,
-            Copy,
-            Debug,
-            PartialEq,
-            Eq,
-            Hash,
-        )]
-        pub struct MyStrictBits: u32 {
+        #[doc = " strict bits comment #1\n\n strict bits comment #2\n"]#[derive(Debug, Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, )]pub struct MyStrictBits: u32 {
             #[doc = " MY_FIRST_BIT member comment #1\n\n MY_FIRST_BIT member comment #3\n"]const MY_FIRST_BIT = 1;
             #[doc = " MY_OTHER_BIT member comment #1\n\n MY_OTHER_BIT member comment #3\n"]const MY_OTHER_BIT = 2;
 
@@ -430,7 +414,7 @@ pub mod natural {
     }
 
     #[doc = " strict enum comment #1.\n\n strict enum comment #2.\n"]
-    #[derive(Clone, Copy, Debug, PartialEq, Eq)]
+    #[derive(Debug, Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
     #[repr(u32)]
     pub enum MyStrictEnum {
         Foo = 1,
@@ -514,7 +498,7 @@ pub mod natural {
     }
 
     #[doc = " strict union comment #1\n\n strict union comment #3\n"]
-    #[derive(PartialEq, Clone, Debug)]
+    #[derive(Debug, Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
     pub enum StrictUnion {
         Field(i32),
     }
@@ -683,7 +667,7 @@ pub mod natural {
     }
 
     #[doc = " struct comment #1\n\n struct comment #3\n"]
-    #[derive(PartialEq, Clone, Debug)]
+    #[derive(Debug, Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
     #[repr(C)]
     pub struct Struct {
         pub field: i32,
@@ -821,7 +805,7 @@ pub mod natural {
     }
 
     #[doc = " table comment #1\n\n table comment #3\n"]
-    #[derive(PartialEq, Clone, Debug, Default)]
+    #[derive(Debug, Default, Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
     pub struct Table {
         pub field: ::core::option::Option<i32>,
     }

@@ -4,7 +4,7 @@
 
 pub mod natural {
 
-    #[derive(PartialEq, Clone, Debug)]
+    #[derive(Debug, Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
     #[repr(C)]
     pub struct ChannelProtocolMethodARequest {
         pub a: i64,
@@ -187,7 +187,7 @@ pub mod natural {
         }
     }
 
-    #[derive(PartialEq, Clone, Debug)]
+    #[derive(Debug, Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
     #[repr(C)]
     pub struct ChannelProtocolEventARequest {
         pub a: i64,
@@ -370,7 +370,7 @@ pub mod natural {
         }
     }
 
-    #[derive(PartialEq, Clone, Debug)]
+    #[derive(Debug, Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
     #[repr(C)]
     pub struct ChannelProtocolMethodBRequest {
         pub a: i64,
@@ -553,7 +553,7 @@ pub mod natural {
         }
     }
 
-    #[derive(PartialEq, Clone, Debug)]
+    #[derive(Debug, Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
     #[repr(C)]
     pub struct ChannelProtocolMethodBResponse {
         pub result: i64,
@@ -712,7 +712,7 @@ pub mod natural {
         }
     }
 
-    #[derive(Clone, Copy, Debug, PartialEq, Eq)]
+    #[derive(Debug, Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
     #[repr(u32)]
     pub enum ErrorEnum {
         ErrFoo = 1,
@@ -795,7 +795,7 @@ pub mod natural {
         }
     }
 
-    #[derive(PartialEq, Clone, Debug)]
+    #[derive(Debug, Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
     #[repr(C)]
     pub struct ManyParametersFifteenRequest {
         pub p1: bool,
@@ -1208,7 +1208,7 @@ pub mod natural {
         }
     }
 
-    #[derive(PartialEq, Clone, Debug)]
+    #[derive(Debug, Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
     pub enum TheUnion {
         V(u32),
 
@@ -1404,7 +1404,7 @@ pub mod natural {
         }
     }
 
-    #[derive(PartialEq, Clone, Debug)]
+    #[derive(Debug, Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
     pub struct MethodWithUnionUnionMethodRequest {
         pub u: crate::natural::TheUnion,
     }
@@ -1556,7 +1556,7 @@ pub mod natural {
         }
     }
 
-    #[derive(PartialEq, Clone, Debug)]
+    #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
     pub struct MethodWithUnionUnionMethodResponse {
         pub u: ::core::option::Option<::std::boxed::Box<crate::natural::TheUnion>>,
     }
@@ -1708,7 +1708,7 @@ pub mod natural {
         }
     }
 
-    #[derive(PartialEq, Clone, Debug)]
+    #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
     pub struct WithAndWithoutRequestResponseNoRequestWithResponseResponse {
         pub ret: ::std::string::String,
     }
@@ -1888,7 +1888,7 @@ pub mod natural {
         }
     }
 
-    #[derive(PartialEq, Clone, Debug)]
+    #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
     pub struct WithAndWithoutRequestResponseWithRequestNoResponseRequest {
         pub arg: ::std::string::String,
     }
@@ -2064,7 +2064,7 @@ pub mod natural {
         }
     }
 
-    #[derive(PartialEq, Clone, Debug)]
+    #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
     pub struct WithAndWithoutRequestResponseWithRequestEmptyResponseRequest {
         pub arg: ::std::string::String,
     }
@@ -2244,7 +2244,7 @@ pub mod natural {
         }
     }
 
-    #[derive(PartialEq, Clone, Debug)]
+    #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
     pub struct WithAndWithoutRequestResponseWithRequestWithResponseRequest {
         pub arg: ::std::string::String,
     }
@@ -2424,7 +2424,7 @@ pub mod natural {
         }
     }
 
-    #[derive(PartialEq, Clone, Debug)]
+    #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
     pub struct WithAndWithoutRequestResponseWithRequestWithResponseResponse {
         pub ret: ::std::string::String,
     }
@@ -2604,7 +2604,7 @@ pub mod natural {
         }
     }
 
-    #[derive(PartialEq, Clone, Debug)]
+    #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
     pub struct WithAndWithoutRequestResponseOnWithResponseRequest {
         pub ret: ::std::string::String,
     }
@@ -2779,7 +2779,7 @@ pub mod natural {
         }
     }
 
-    #[derive(PartialEq, Clone, Debug)]
+    #[derive(Debug, Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
     #[repr(C)]
     pub struct WithErrorSyntaxResponseAsStructResponse {
         pub a: i64,
@@ -2988,7 +2988,7 @@ pub mod natural {
         }
     }
 
-    #[derive(PartialEq, Clone, Debug)]
+    #[derive(Debug, Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
     #[repr(C)]
     pub struct WithErrorSyntaxErrorAsPrimitiveResponse {}
 
@@ -3124,7 +3124,7 @@ pub mod natural {
         }
     }
 
-    #[derive(PartialEq, Clone, Debug)]
+    #[derive(Debug, Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
     #[repr(C)]
     pub struct WithErrorSyntaxErrorAsEnumResponse {}
 

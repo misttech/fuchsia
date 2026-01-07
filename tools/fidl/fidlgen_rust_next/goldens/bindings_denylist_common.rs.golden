@@ -4,7 +4,7 @@
 
 pub mod natural {
 
-    #[derive(PartialEq, Clone, Debug)]
+    #[derive(Debug, Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
     #[repr(C)]
     pub struct ShouldNeverAppearInAnyBinding4 {
         pub a: bool,
@@ -161,7 +161,7 @@ pub mod natural {
         }
     }
 
-    #[derive(PartialEq, Clone, Debug, Default)]
+    #[derive(Debug, Default, Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
     pub struct ShouldNeverAppearInAnyBinding5 {
         pub a: ::core::option::Option<bool>,
     }
@@ -314,7 +314,7 @@ pub mod natural {
         }
     }
 
-    #[derive(PartialEq, Clone, Debug)]
+    #[derive(Debug, Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
     pub enum ShouldNeverAppearInAnyBinding6 {
         A(bool),
 
@@ -535,7 +535,7 @@ pub mod natural {
         }
     }
 
-    #[derive(PartialEq, Clone, Debug)]
+    #[derive(Debug, Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
     pub struct AllowedDeniedResponse {
         pub should_never_appear_in_any_binding_4: crate::natural::ShouldNeverAppearInAnyBinding4,
 
@@ -763,7 +763,7 @@ pub mod natural {
         }
     }
 
-    #[derive(PartialEq, Clone, Debug)]
+    #[derive(Debug, Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
     #[repr(C)]
     pub struct ShouldNeverAppearInAnyBinding1 {
         pub a: bool,
@@ -920,7 +920,7 @@ pub mod natural {
         }
     }
 
-    #[derive(PartialEq, Clone, Debug, Default)]
+    #[derive(Debug, Default, Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
     pub struct ShouldNeverAppearInAnyBinding2 {
         pub a: ::core::option::Option<bool>,
     }
@@ -1073,7 +1073,7 @@ pub mod natural {
         }
     }
 
-    #[derive(PartialEq, Clone, Debug)]
+    #[derive(Debug, Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
     pub enum ShouldNeverAppearInAnyBinding3 {
         A(bool),
 
@@ -1294,7 +1294,7 @@ pub mod natural {
         }
     }
 
-    #[derive(PartialEq, Clone, Debug)]
+    #[derive(Debug, Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
     pub struct DeniedShouldNeverAppearInAnyBindingRequest {
         pub should_never_appear_in_any_binding_1: crate::natural::ShouldNeverAppearInAnyBinding1,
 
@@ -1548,7 +1548,7 @@ pub mod natural {
         }
     }
 
-    #[derive(PartialEq, Clone, Debug)]
+    #[derive(Debug, Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
     #[repr(C)]
     pub struct ShouldNeverAppearInAnyBinding7 {
         pub a: bool,
@@ -1705,7 +1705,7 @@ pub mod natural {
         }
     }
 
-    #[derive(PartialEq, Clone, Debug, Default)]
+    #[derive(Debug, Default, Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
     pub struct ShouldNeverAppearInAnyBinding8 {
         pub a: ::core::option::Option<bool>,
     }
@@ -1858,7 +1858,7 @@ pub mod natural {
         }
     }
 
-    #[derive(PartialEq, Clone, Debug)]
+    #[derive(Debug, Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
     pub enum ShouldNeverAppearInAnyBinding9 {
         A(bool),
 
@@ -2079,7 +2079,7 @@ pub mod natural {
         }
     }
 
-    #[derive(PartialEq, Clone, Debug)]
+    #[derive(Debug, Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
     pub struct DeniedAnonymous {
         pub should_never_appear_in_any_binding_7: crate::natural::ShouldNeverAppearInAnyBinding7,
 
@@ -2303,7 +2303,7 @@ pub mod natural {
         }
     }
 
-    #[derive(PartialEq, Clone, Debug)]
+    #[derive(Debug, Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
     #[repr(C)]
     pub struct DenyEachBindingOnlyDenyCppRequest {
         pub a: bool,
@@ -2460,7 +2460,7 @@ pub mod natural {
         }
     }
 
-    #[derive(PartialEq, Clone, Debug)]
+    #[derive(Debug, Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
     #[repr(C)]
     pub struct DenyEachBindingOnlyDenyCppResponse {
         pub b: i32,
@@ -2619,7 +2619,7 @@ pub mod natural {
         }
     }
 
-    #[derive(PartialEq, Clone, Debug)]
+    #[derive(Debug, Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
     #[repr(C)]
     pub struct DenyEachBindingOnlyDenyDartRequest {
         pub a: bool,
@@ -2776,7 +2776,7 @@ pub mod natural {
         }
     }
 
-    #[derive(PartialEq, Clone, Debug)]
+    #[derive(Debug, Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
     #[repr(C)]
     pub struct DenyEachBindingOnlyDenyDartResponse {
         pub b: i32,
@@ -2936,7 +2936,7 @@ pub mod natural {
         }
     }
 
-    #[derive(PartialEq, Clone, Debug)]
+    #[derive(Debug, Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
     #[repr(C)]
     pub struct DenyEachBindingOnlyDenyGoRequest {
         pub a: bool,
@@ -3093,7 +3093,7 @@ pub mod natural {
         }
     }
 
-    #[derive(PartialEq, Clone, Debug)]
+    #[derive(Debug, Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
     #[repr(C)]
     pub struct DenyEachBindingOnlyDenyGoResponse {
         pub b: i32,
@@ -3252,7 +3252,7 @@ pub mod natural {
         }
     }
 
-    #[derive(PartialEq, Clone, Debug)]
+    #[derive(Debug, Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
     #[repr(C)]
     pub struct DenyEachBindingOnlyDenyPythonRequest {
         pub a: bool,
@@ -3410,7 +3410,7 @@ pub mod natural {
         }
     }
 
-    #[derive(PartialEq, Clone, Debug)]
+    #[derive(Debug, Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
     #[repr(C)]
     pub struct DenyEachBindingOnlyDenyPythonResponse {
         pub b: i32,
@@ -3570,7 +3570,7 @@ pub mod natural {
         }
     }
 
-    #[derive(PartialEq, Clone, Debug)]
+    #[derive(Debug, Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
     #[repr(C)]
     pub struct DenyEachBindingOnlyDenyRustRequest {
         pub a: bool,
@@ -3727,7 +3727,7 @@ pub mod natural {
         }
     }
 
-    #[derive(PartialEq, Clone, Debug)]
+    #[derive(Debug, Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
     #[repr(C)]
     pub struct DenyEachBindingOnlyDenyRustResponse {
         pub b: i32,
@@ -3887,7 +3887,7 @@ pub mod natural {
         }
     }
 
-    #[derive(PartialEq, Clone, Debug)]
+    #[derive(Debug, Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
     #[repr(C)]
     pub struct DenyEachBindingOnlyDenySyzkallerRequest {
         pub a: bool,
@@ -4050,7 +4050,7 @@ pub mod natural {
         }
     }
 
-    #[derive(PartialEq, Clone, Debug)]
+    #[derive(Debug, Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
     #[repr(C)]
     pub struct DenyEachBindingOnlyDenySyzkallerResponse {
         pub b: i32,
@@ -4221,7 +4221,7 @@ pub mod natural {
         }
     }
 
-    #[derive(PartialEq, Clone, Debug)]
+    #[derive(Debug, Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
     #[repr(C)]
     pub struct MemberOnlyAppearsInImportingLibrary {
         pub a: bool,
@@ -4379,7 +4379,7 @@ pub mod natural {
         }
     }
 
-    #[derive(PartialEq, Clone, Debug)]
+    #[derive(Debug, Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
     #[repr(C)]
     pub struct OnlyAppearsInImportingLibrary {
         pub member_only_appears_in_importing_library:
@@ -4573,7 +4573,7 @@ pub mod natural {
         }
     }
 
-    #[derive(Clone, Copy, Debug, PartialEq, Eq)]
+    #[derive(Debug, Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
     #[repr(u32)]
     pub enum OnlyDart {
         A = 1,
@@ -4650,7 +4650,7 @@ pub mod natural {
         }
     }
 
-    #[derive(PartialEq, Clone, Debug)]
+    #[derive(Debug, Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
     #[repr(C)]
     pub struct OnlyGo {}
 
@@ -4762,7 +4762,7 @@ pub mod natural {
         }
     }
 
-    #[derive(PartialEq, Clone, Debug)]
+    #[derive(Debug, Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
     pub enum OnlyLlcpp {
         X(u32),
     }
@@ -4926,7 +4926,7 @@ pub mod natural {
         }
     }
 
-    #[derive(PartialEq, Clone, Debug, Default)]
+    #[derive(Debug, Default, Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
     pub struct OnlyPython {}
 
     impl OnlyPython {
@@ -5023,7 +5023,7 @@ pub mod natural {
         }
     }
 
-    #[derive(PartialEq, Clone, Debug, Default)]
+    #[derive(Debug, Default, Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
     pub struct OnlyRust {}
 
     impl OnlyRust {
@@ -5121,15 +5121,7 @@ pub mod natural {
     }
 
     ::fidl_next::bitflags::bitflags! {
-        #[derive(
-            Clone,
-            Copy,
-            Debug,
-            PartialEq,
-            Eq,
-            Hash,
-        )]
-        pub struct OnlySyzkaller: u32 {
+        #[derive(Debug, Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, )]pub struct OnlySyzkaller: u32 {
             const A = 1;
 
         }

@@ -4,7 +4,7 @@
 
 pub mod natural {
 
-    #[derive(PartialEq, Clone, Debug)]
+    #[derive(Debug, Clone, PartialEq, PartialOrd)]
     pub struct ArrayBasic {
         pub array_uint8: [u8; 5],
 
@@ -337,15 +337,7 @@ pub mod natural {
     }
 
     ::fidl_next::bitflags::bitflags! {
-        #[derive(
-            Clone,
-            Copy,
-            Debug,
-            PartialEq,
-            Eq,
-            Hash,
-        )]
-        pub struct Bits: u32 {
+        #[derive(Debug, Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, )]pub struct Bits: u32 {
             const VAL = 1;
             const _ = !0;
         }
@@ -404,7 +396,7 @@ pub mod natural {
         }
     }
 
-    #[derive(Clone, Copy, Debug, PartialEq, Eq)]
+    #[derive(Debug, Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
     #[repr(u32)]
     pub enum Enum {
         Val = 1,
@@ -481,7 +473,7 @@ pub mod natural {
         }
     }
 
-    #[derive(PartialEq, Clone, Debug)]
+    #[derive(Debug, Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
     #[repr(C)]
     pub struct Struct {}
 
@@ -593,7 +585,7 @@ pub mod natural {
         }
     }
 
-    #[derive(PartialEq, Clone, Debug, Default)]
+    #[derive(Debug, Default, Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
     pub struct Table {}
 
     impl Table {
@@ -690,7 +682,7 @@ pub mod natural {
         }
     }
 
-    #[derive(PartialEq, Clone, Debug)]
+    #[derive(Debug, Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
     pub enum Union {
         B(bool),
 
@@ -878,7 +870,7 @@ pub mod natural {
         }
     }
 
-    #[derive(PartialEq, Clone, Debug)]
+    #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
     pub struct ArrayCompound {
         pub array_bits: [crate::natural::Bits; 5],
 
@@ -1116,7 +1108,7 @@ pub mod natural {
         }
     }
 
-    #[derive(PartialEq, Clone, Debug)]
+    #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
     pub struct ArrayVectorNested {
         pub array_array_uint8: [[u8; 5]; 5],
 
@@ -1352,7 +1344,7 @@ pub mod natural {
         }
     }
 
-    #[derive(PartialEq, Clone, Debug)]
+    #[derive(Debug, Clone, PartialEq, PartialOrd)]
     pub struct Basic {
         pub uint8: u8,
 
@@ -1664,7 +1656,7 @@ pub mod natural {
         }
     }
 
-    #[derive(PartialEq, Clone, Debug)]
+    #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
     pub struct Compound {
         pub bits: crate::natural::Bits,
 
@@ -1896,7 +1888,7 @@ pub mod natural {
         }
     }
 
-    #[derive(PartialEq, Clone, Debug)]
+    #[derive(Debug, Clone, PartialEq, PartialOrd)]
     pub struct VectorBasic {
         pub vector_uint8: ::std::vec::Vec<u8>,
 
@@ -2362,7 +2354,7 @@ pub mod natural {
         }
     }
 
-    #[derive(PartialEq, Clone, Debug)]
+    #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
     pub struct VectorCompound {
         pub vector_bits: ::std::vec::Vec<crate::natural::Bits>,
 
@@ -2677,7 +2669,7 @@ pub mod natural {
         }
     }
 
-    #[derive(PartialEq, Clone, Debug)]
+    #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
     pub struct VectorOptional {
         pub opt_vector_uint8: ::core::option::Option<::std::vec::Vec<u8>>,
 

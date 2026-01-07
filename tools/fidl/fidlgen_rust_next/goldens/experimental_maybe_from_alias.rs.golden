@@ -10,7 +10,7 @@ pub mod natural {
         ::fidl_next::ServerEnd<crate::MyProtocol, ::fidl_next::fuchsia::zx::Channel>,
     >;
 
-    #[derive(PartialEq, Debug)]
+    #[derive(Debug, PartialEq)]
     pub struct Testing {
         pub u1: u64,
 

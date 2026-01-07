@@ -4,7 +4,7 @@
 
 pub mod natural {
 
-    #[derive(PartialEq, Clone, Debug)]
+    #[derive(Debug, Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
     #[repr(C)]
     pub struct LocalStructPayload {
         pub a: u32,
@@ -180,7 +180,7 @@ pub mod natural {
         }
     }
 
-    #[derive(PartialEq, Clone, Debug)]
+    #[derive(Debug, Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
     #[repr(C)]
     pub struct MainProtocolOneWayAnonRequest {
         pub a: u32,
@@ -363,7 +363,7 @@ pub mod natural {
         }
     }
 
-    #[derive(PartialEq, Clone, Debug)]
+    #[derive(Debug, Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
     #[repr(C)]
     pub struct MainProtocolTwoWayAnonRequest {
         pub a: u32,
@@ -546,7 +546,7 @@ pub mod natural {
         }
     }
 
-    #[derive(PartialEq, Clone, Debug)]
+    #[derive(Debug, Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
     #[repr(C)]
     pub struct MainProtocolTwoWayAnonResponse {
         pub a: u32,
@@ -729,7 +729,7 @@ pub mod natural {
         }
     }
 
-    #[derive(PartialEq, Clone, Debug)]
+    #[derive(Debug, Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
     #[repr(C)]
     pub struct MainProtocolTwoWayAnonWithErrorRequest {
         pub a: u32,
@@ -917,7 +917,7 @@ pub mod natural {
         }
     }
 
-    #[derive(PartialEq, Clone, Debug)]
+    #[derive(Debug, Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
     #[repr(C)]
     pub struct MainProtocolTwoWayAnonWithErrorResponse {
         pub a: u32,
@@ -1106,7 +1106,7 @@ pub mod natural {
         }
     }
 
-    #[derive(PartialEq, Clone, Debug)]
+    #[derive(Debug, Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
     #[repr(C)]
     pub struct MainProtocolOnAnonRequest {
         pub a: u32,

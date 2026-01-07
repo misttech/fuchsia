@@ -1,12 +1,5 @@
 {{ self.doc_string(union_.attributes) -}}
-#[derive(PartialEq,
-{% if !union_.is_resource %}
-    Clone,
-{% endif %}
-{% if self.emit_debug_impls() %}
-    Debug,
-{% endif %}
-)]
+{{ self.derive_annotation(&union_.name) -}}
 pub enum {{ name }} {
     {% for member in union_.members %}
         {{ member.name.camel() }}({{ self.natural_type(member.ty) }}),

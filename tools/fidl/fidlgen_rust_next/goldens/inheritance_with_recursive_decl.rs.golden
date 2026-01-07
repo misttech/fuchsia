@@ -6,7 +6,7 @@ pub mod natural {
 
     pub use fidl_next_common_test_inheritancewithrecursivedecl::natural::*;
 
-    #[derive(PartialEq, Debug)]
+    #[derive(Debug, PartialEq)]
     #[repr(C)]
     pub struct ParentFirstRequest {
         pub request: ::fidl_next::ServerEnd<crate::Parent, ::fidl_next::fuchsia::zx::Channel>,
@@ -103,7 +103,7 @@ pub mod natural {
         }
     }
 
-    #[derive(PartialEq, Debug)]
+    #[derive(Debug, PartialEq)]
     #[repr(C)]
     pub struct ChildSecondRequest {
         pub request: ::fidl_next::ServerEnd<crate::Parent, ::fidl_next::fuchsia::zx::Channel>,

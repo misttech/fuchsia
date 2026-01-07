@@ -7,15 +7,7 @@ pub mod natural {
     pub type Alias = u32;
 
     ::fidl_next::bitflags::bitflags! {
-        #[derive(
-            Clone,
-            Copy,
-            Debug,
-            PartialEq,
-            Eq,
-            Hash,
-        )]
-        pub struct ExampleBits: u32 {
+        #[derive(Debug, Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, )]pub struct ExampleBits: u32 {
             const MEMBER = 1;
 
         }
@@ -78,7 +70,7 @@ pub mod natural {
         }
     }
 
-    #[derive(Clone, Copy, Debug, PartialEq, Eq)]
+    #[derive(Debug, Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
     #[repr(u32)]
     pub enum ExampleEnum {
         Member = 1,
@@ -155,7 +147,7 @@ pub mod natural {
         }
     }
 
-    #[derive(PartialEq, Clone, Debug)]
+    #[derive(Debug, PartialEq)]
     #[repr(C)]
     pub struct ExampleProtocolMethodRequest {
         pub arg: ::fidl_next_common_test_exampleusing::natural::Empty,
@@ -322,7 +314,7 @@ pub mod natural {
         }
     }
 
-    #[derive(PartialEq, Clone, Debug)]
+    #[derive(Debug, Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
     #[repr(C)]
     pub struct ExampleStruct {
         pub member: u32,
@@ -463,7 +455,7 @@ pub mod natural {
         }
     }
 
-    #[derive(PartialEq, Clone, Debug, Default)]
+    #[derive(Debug, Default, Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
     pub struct ExampleTable {
         pub member: ::core::option::Option<u32>,
     }
@@ -607,7 +599,7 @@ pub mod natural {
         }
     }
 
-    #[derive(PartialEq, Clone, Debug)]
+    #[derive(Debug, Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
     pub enum ExampleUnion {
         Variant(u32),
     }

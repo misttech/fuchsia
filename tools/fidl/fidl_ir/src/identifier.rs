@@ -102,6 +102,14 @@ impl CompoundIdent {
     }
 }
 
+impl ToOwned for CompoundIdent {
+    type Owned = CompoundIdentifier;
+
+    fn to_owned(&self) -> Self::Owned {
+        CompoundIdentifier { string: self.str.to_owned() }
+    }
+}
+
 /// A compound FIDL identifier which may additionally reference a member.
 #[derive(Clone, Debug, Deserialize, Hash, PartialEq, Eq, PartialOrd, Ord)]
 #[serde(transparent)]

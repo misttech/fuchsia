@@ -4,7 +4,7 @@
 
 pub mod natural {
 
-    #[derive(PartialEq, Clone, Debug)]
+    #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
     pub enum FlexibleFoo {
         S(::std::string::String),
 
@@ -224,7 +224,7 @@ pub mod natural {
         }
     }
 
-    #[derive(PartialEq, Clone, Debug)]
+    #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
     pub enum StrictFoo {
         S(::std::string::String),
 
@@ -420,7 +420,7 @@ pub mod natural {
         }
     }
 
-    #[derive(PartialEq, Clone, Debug)]
+    #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
     pub struct ProtocolRequestStrictResponseFlexibleRequest {
         pub s: crate::natural::StrictFoo,
     }
@@ -589,7 +589,7 @@ pub mod natural {
         }
     }
 
-    #[derive(PartialEq, Clone, Debug)]
+    #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
     pub struct ProtocolRequestStrictResponseFlexibleResponse {
         pub f: crate::natural::FlexibleFoo,
     }
@@ -760,7 +760,7 @@ pub mod natural {
         }
     }
 
-    #[derive(PartialEq, Clone, Debug)]
+    #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
     pub struct ProtocolRequestFlexibleResponseStrictRequest {
         pub s: crate::natural::FlexibleFoo,
     }
@@ -929,7 +929,7 @@ pub mod natural {
         }
     }
 
-    #[derive(PartialEq, Clone, Debug)]
+    #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
     pub struct ProtocolRequestFlexibleResponseStrictResponse {
         pub f: crate::natural::StrictFoo,
     }

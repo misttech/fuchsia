@@ -6,7 +6,7 @@ pub mod natural {
 
     pub use fidl_next_common_test_protocolrequest::natural::*;
 
-    #[derive(PartialEq, Debug)]
+    #[derive(Debug, PartialEq)]
     #[repr(C)]
     pub struct ParentGetChildResponse {
         pub c: ::fidl_next::ClientEnd<crate::Child, ::fidl_next::fuchsia::zx::Channel>,
@@ -104,7 +104,7 @@ pub mod natural {
         }
     }
 
-    #[derive(PartialEq, Debug)]
+    #[derive(Debug, PartialEq)]
     #[repr(C)]
     pub struct ParentGetChildRequestResponse {
         pub r: ::fidl_next::ServerEnd<crate::Child, ::fidl_next::fuchsia::zx::Channel>,
@@ -205,7 +205,7 @@ pub mod natural {
         }
     }
 
-    #[derive(PartialEq, Debug)]
+    #[derive(Debug, PartialEq)]
     #[repr(C)]
     pub struct ParentTakeChildRequest {
         pub c: ::fidl_next::ClientEnd<crate::Child, ::fidl_next::fuchsia::zx::Channel>,
@@ -303,7 +303,7 @@ pub mod natural {
         }
     }
 
-    #[derive(PartialEq, Debug)]
+    #[derive(Debug, PartialEq)]
     #[repr(C)]
     pub struct ParentTakeChildRequestRequest {
         pub r: ::fidl_next::ServerEnd<crate::Child, ::fidl_next::fuchsia::zx::Channel>,

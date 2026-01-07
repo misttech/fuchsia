@@ -7,15 +7,7 @@ pub mod natural {
     pub type Alias = ::std::string::String;
 
     ::fidl_next::bitflags::bitflags! {
-        #[derive(
-            Clone,
-            Copy,
-            Debug,
-            PartialEq,
-            Eq,
-            Hash,
-        )]
-        pub struct Bits: u32 {
+        #[derive(Debug, Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, )]pub struct Bits: u32 {
             const A = 1;
             const _ = !0;
         }
@@ -74,7 +66,7 @@ pub mod natural {
         }
     }
 
-    #[derive(Clone, Copy, Debug, PartialEq, Eq)]
+    #[derive(Debug, Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
     #[repr(u32)]
     pub enum Enum {
         A = 1,

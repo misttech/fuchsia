@@ -1,12 +1,5 @@
 {{ self.doc_string(strct.attributes) -}}
-#[derive(PartialEq,
-    {% if !strct.is_resource %}
-        Clone,
-    {% endif %}
-    {% if self.emit_debug_impls() %}
-        Debug,
-    {% endif %}
-)]
+{{ self.derive_annotation(&strct.name) -}}
 {%- if is_static && !has_padding %}
     #[repr(C)]
 {% endif -%}

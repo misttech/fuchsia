@@ -6,7 +6,7 @@ pub mod natural {
 
     pub use fidl_next_common_test_handles::natural::*;
 
-    #[derive(PartialEq, Debug)]
+    #[derive(Debug, PartialEq)]
     #[repr(C)]
     pub struct FdfHandles {
         pub fdf_channel_handle: ::fdf_fidl::DriverChannel,
@@ -142,7 +142,7 @@ pub mod natural {
 
     pub type AliasedRightsHandle = ::fidl_next::fuchsia::zx::Vmo;
 
-    #[derive(PartialEq, Debug)]
+    #[derive(Debug, PartialEq)]
     #[repr(C)]
     pub struct Handles {
         pub plain_handle: ::fidl_next::fuchsia::zx::NullableHandle,

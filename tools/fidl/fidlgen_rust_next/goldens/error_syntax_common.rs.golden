@@ -4,7 +4,7 @@
 
 pub mod natural {
 
-    #[derive(PartialEq, Clone, Debug)]
+    #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
     pub struct ExampleUseOfErrorSyntaxCallWhichMayFailRequest {
         pub s: ::std::string::String,
     }
@@ -178,7 +178,7 @@ pub mod natural {
         }
     }
 
-    #[derive(PartialEq, Clone, Debug)]
+    #[derive(Debug, Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
     #[repr(C)]
     pub struct ExampleUseOfErrorSyntaxCallWhichMayFailResponse {
         pub value: i64,

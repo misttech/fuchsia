@@ -6,7 +6,7 @@ pub mod natural {
 
     pub use fidl_next_common_test_encapsulatedstructs::natural::*;
 
-    #[derive(PartialEq, Debug)]
+    #[derive(Debug, PartialEq)]
     pub struct NonInlineStructTestStruct {
         pub element: ::core::option::Option<::std::boxed::Box<crate::natural::Int16Int8>>,
 
@@ -90,7 +90,7 @@ pub mod natural {
         }
     }
 
-    #[derive(PartialEq, Debug)]
+    #[derive(Debug, PartialEq)]
     pub struct TopLevelStruct {
         pub a: crate::natural::StructPaddingTestStruct,
 

@@ -4,7 +4,7 @@
 
 pub mod natural {
 
-    #[derive(PartialEq, Clone, Debug)]
+    #[derive(Debug, Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
     #[repr(C)]
     pub struct Int32Wrapper {
         pub val: i32,
@@ -145,7 +145,7 @@ pub mod natural {
         }
     }
 
-    #[derive(PartialEq, Clone, Debug)]
+    #[derive(Debug, Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
     #[repr(C)]
     pub struct SimpleProtocolAddRequest {
         pub a: i32,
@@ -323,7 +323,7 @@ pub mod natural {
         }
     }
 
-    #[derive(PartialEq, Clone, Debug)]
+    #[derive(Debug, Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
     #[repr(C)]
     pub struct SimpleProtocolAddResponse {
         pub sum: i32,
@@ -480,7 +480,7 @@ pub mod natural {
         }
     }
 
-    #[derive(PartialEq, Clone, Debug)]
+    #[derive(Debug, Copy, Clone, PartialEq, PartialOrd)]
     pub enum SimpleUnion {
         A(i32),
 
@@ -668,7 +668,7 @@ pub mod natural {
         }
     }
 
-    #[derive(PartialEq, Clone, Debug)]
+    #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
     pub struct StructWithNullableString {
         pub val: ::core::option::Option<::std::string::String>,
     }
@@ -810,7 +810,7 @@ pub mod natural {
         }
     }
 
-    #[derive(PartialEq, Clone, Debug)]
+    #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
     pub struct StructWithNullableStruct {
         pub val: ::core::option::Option<::std::boxed::Box<crate::natural::Int32Wrapper>>,
     }
@@ -950,7 +950,7 @@ pub mod natural {
         }
     }
 
-    #[derive(PartialEq, Clone, Debug)]
+    #[derive(Debug, Clone, PartialEq, PartialOrd)]
     #[repr(C)]
     pub struct StructWithNullableUnion {
         pub val: ::core::option::Option<::std::boxed::Box<crate::natural::SimpleUnion>>,
@@ -1112,7 +1112,7 @@ pub mod natural {
         }
     }
 
-    #[derive(PartialEq, Clone, Debug)]
+    #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
     pub struct StructWithNullableVector {
         pub val: ::core::option::Option<::std::vec::Vec<i32>>,
     }

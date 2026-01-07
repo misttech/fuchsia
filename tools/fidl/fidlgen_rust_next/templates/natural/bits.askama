@@ -1,15 +1,6 @@
 ::fidl_next::bitflags::bitflags! {
     {{ self.doc_string(bits.attributes) -}}
-    #[derive(
-        Clone,
-        Copy,
-        {% if self.emit_debug_impls() -%}
-            Debug,
-        {%- endif %}
-        PartialEq,
-        Eq,
-        Hash,
-    )]
+    {{ self.derive_annotation(&bits.name) -}}
     pub struct {{ name }}: {{ natural_subtype }} {
         {% for member in bits.members -%}
             {{ self.doc_string(member.attributes) -}}

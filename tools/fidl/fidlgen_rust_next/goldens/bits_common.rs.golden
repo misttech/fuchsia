@@ -5,15 +5,7 @@
 pub mod natural {
 
     ::fidl_next::bitflags::bitflags! {
-        #[derive(
-            Clone,
-            Copy,
-            Debug,
-            PartialEq,
-            Eq,
-            Hash,
-        )]
-        pub struct EmptyBits: u32 {
+        #[derive(Debug, Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, )]pub struct EmptyBits: u32 {
             const _ = !0;
         }
     }
@@ -72,15 +64,7 @@ pub mod natural {
     }
 
     ::fidl_next::bitflags::bitflags! {
-        #[derive(
-            Clone,
-            Copy,
-            Debug,
-            PartialEq,
-            Eq,
-            Hash,
-        )]
-        pub struct FlexibleBits: u64 {
+        #[derive(Debug, Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, )]pub struct FlexibleBits: u64 {
             const SMALLEST = 1;
             const BIGGEST = 9223372036854775808;
             const _ = !0;
@@ -141,15 +125,7 @@ pub mod natural {
     }
 
     ::fidl_next::bitflags::bitflags! {
-        #[derive(
-            Clone,
-            Copy,
-            Debug,
-            PartialEq,
-            Eq,
-            Hash,
-        )]
-        pub struct MyBits: u32 {
+        #[derive(Debug, Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, )]pub struct MyBits: u32 {
             const MY_FIRST_BIT = 1;
             const MY_OTHER_BIT = 2;
             const MASK = 4;
@@ -215,15 +191,7 @@ pub mod natural {
     }
 
     ::fidl_next::bitflags::bitflags! {
-        #[derive(
-            Clone,
-            Copy,
-            Debug,
-            PartialEq,
-            Eq,
-            Hash,
-        )]
-        pub struct StrictBits: u64 {
+        #[derive(Debug, Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, )]pub struct StrictBits: u64 {
             const SMALLEST = 1;
             const BIGGEST = 9223372036854775808;
 

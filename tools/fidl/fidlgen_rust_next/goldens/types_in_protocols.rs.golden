@@ -6,7 +6,7 @@ pub mod natural {
 
     pub use fidl_next_common_test_typesinprotocols::natural::*;
 
-    #[derive(PartialEq, Debug)]
+    #[derive(Debug, Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
     #[repr(C)]
     pub struct ResourceStruct {}
 
@@ -65,7 +65,7 @@ pub mod natural {
         }
     }
 
-    #[derive(PartialEq, Debug, Default)]
+    #[derive(Debug, Default, Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
     pub struct ResourceTable {}
 
     impl ResourceTable {
@@ -120,7 +120,7 @@ pub mod natural {
         }
     }
 
-    #[derive(PartialEq, Debug)]
+    #[derive(Debug, Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
     pub enum ResourceUnion {
         B(bool),
 
@@ -233,7 +233,7 @@ pub mod natural {
         }
     }
 
-    #[derive(PartialEq, Debug)]
+    #[derive(Debug, PartialEq)]
     pub struct Resource {
         pub handle: ::fidl_next::fuchsia::zx::NullableHandle,
 

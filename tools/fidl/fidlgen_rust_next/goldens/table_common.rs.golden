@@ -4,7 +4,7 @@
 
 pub mod natural {
 
-    #[derive(PartialEq, Clone, Debug, Default)]
+    #[derive(Debug, Default, Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
     pub struct EmptyTable {}
 
     impl EmptyTable {
@@ -101,7 +101,7 @@ pub mod natural {
         }
     }
 
-    #[derive(PartialEq, Clone, Debug, Default)]
+    #[derive(Debug, Default, Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
     pub struct ExtensionTable {}
 
     impl ExtensionTable {
@@ -199,7 +199,7 @@ pub mod natural {
         }
     }
 
-    #[derive(PartialEq, Clone, Debug, Default)]
+    #[derive(Debug, Default, Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
     pub struct NewerSimpleTable {
         pub x: ::core::option::Option<i64>,
 
@@ -436,7 +436,7 @@ pub mod natural {
         }
     }
 
-    #[derive(PartialEq, Clone, Debug, Default)]
+    #[derive(Debug, Default, Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
     pub struct OlderSimpleTable {
         pub x: ::core::option::Option<i64>,
     }
@@ -581,7 +581,7 @@ pub mod natural {
         }
     }
 
-    #[derive(PartialEq, Clone, Debug, Default)]
+    #[derive(Debug, Default, Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
     pub struct ReverseOrdinalTable {
         pub z: ::core::option::Option<i64>,
 
@@ -818,7 +818,7 @@ pub mod natural {
         }
     }
 
-    #[derive(PartialEq, Clone, Debug, Default)]
+    #[derive(Debug, Default, Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
     pub struct SimpleTable {
         pub x: ::core::option::Option<i64>,
 
@@ -1008,7 +1008,7 @@ pub mod natural {
         }
     }
 
-    #[derive(PartialEq, Clone, Debug, Default)]
+    #[derive(Debug, Default, Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
     pub struct SixtyFourOrdinalTable {
         pub v1: ::core::option::Option<i64>,
 
@@ -4053,7 +4053,7 @@ pub mod natural {
         }
     }
 
-    #[derive(PartialEq, Clone, Debug, Default)]
+    #[derive(Debug, Default, Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
     pub struct TableWithAttributes {
         pub x: ::core::option::Option<i64>,
     }

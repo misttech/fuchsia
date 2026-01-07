@@ -5,7 +5,7 @@
 pub mod natural {
 
     #[doc = " \"pleaseescapethisdocommentproperly\"\n"]
-    #[derive(PartialEq, Clone, Debug)]
+    #[derive(Debug, Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
     #[repr(C)]
     pub struct DocCommentWithQuotes {}
 

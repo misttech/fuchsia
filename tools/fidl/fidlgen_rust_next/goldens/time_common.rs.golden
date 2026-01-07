@@ -4,7 +4,7 @@
 
 pub mod natural {
 
-    #[derive(PartialEq, Clone, Debug)]
+    #[derive(Debug, Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
     #[repr(C)]
     pub struct AllInstants {
         pub monotonic: i64,
@@ -211,7 +211,7 @@ pub mod natural {
         }
     }
 
-    #[derive(PartialEq, Clone, Debug, Default)]
+    #[derive(Debug, Default, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
     pub struct ComplexInstants {
         pub monotonic: ::core::option::Option<[i64; 10]>,
 

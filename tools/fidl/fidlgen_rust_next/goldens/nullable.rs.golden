@@ -6,7 +6,7 @@ pub mod natural {
 
     pub use fidl_next_common_test_nullable::natural::*;
 
-    #[derive(PartialEq, Debug)]
+    #[derive(Debug, PartialEq)]
     #[repr(C)]
     pub struct StructWithNullableHandle {
         pub val: ::core::option::Option<::fidl_next::fuchsia::zx::Vmo>,
@@ -104,7 +104,7 @@ pub mod natural {
         }
     }
 
-    #[derive(PartialEq, Debug)]
+    #[derive(Debug, PartialEq)]
     #[repr(C)]
     pub struct StructWithNullableProtocol {
         pub val: ::core::option::Option<
@@ -218,7 +218,7 @@ pub mod natural {
         }
     }
 
-    #[derive(PartialEq, Debug)]
+    #[derive(Debug, PartialEq)]
     #[repr(C)]
     pub struct StructWithNullableRequest {
         pub val: ::core::option::Option<

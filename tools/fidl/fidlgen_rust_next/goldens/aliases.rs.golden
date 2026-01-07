@@ -12,7 +12,7 @@ pub mod natural {
 
     pub type AliasOfChannel = ::fidl_next::fuchsia::zx::Channel;
 
-    #[derive(PartialEq, Debug)]
+    #[derive(Debug, PartialEq)]
     pub struct ExampleOfUseOfAliases {
         pub field_of_u32: u32,
 

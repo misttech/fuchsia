@@ -4,10 +4,11 @@
 
 use core::any::Any;
 use fidl_ir::{
-    Attributes, CompoundIdent, Constant, IntType, Library, PrimSubtype, Protocol, Service, Type,
-    TypeAlias,
+    Attributes, CompoundIdent, CompoundIdentifier, Constant, IntType, Library, PrimSubtype,
+    Protocol, Service, Struct, Table, Type, TypeAlias, Union,
 };
 use fidlgen::LibraryExt as _;
+use std::collections::{HashMap, hash_map};
 
 use crate::config::{Config, ResourceBindings};
 use crate::templates::{
@@ -16,14 +17,243 @@ use crate::templates::{
     constraint_for,
 };
 
+bitflags::bitflags! {
+    #[derive(Copy, Clone)]
+    struct Derives: u16 {
+        const DEBUG = 1;
+        const COPY = 2;
+        const CLONE = 4;
+        const PARTIAL_EQ = 8;
+        const EQ = 16;
+        const ORD = 32;
+        const PARTIAL_ORD = 64;
+        const HASH = 128;
+        const DEFAULT = 256;
+    }
+}
+
+impl core::fmt::Display for Derives {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        if self.is_empty() {
+            return Ok(());
+        }
+
+        write!(f, "#[derive(")?;
+
+        if self.contains(Derives::DEBUG) {
+            write!(f, "Debug, ")?;
+        }
+
+        if self.contains(Derives::DEFAULT) {
+            write!(f, "Default, ")?;
+        }
+
+        if self.contains(Derives::COPY) {
+            write!(f, "Copy, ")?;
+        }
+
+        if self.contains(Derives::CLONE) {
+            write!(f, "Clone, ")?;
+        }
+
+        if self.contains(Derives::PARTIAL_EQ) {
+            write!(f, "PartialEq, ")?;
+        }
+
+        if self.contains(Derives::EQ) {
+            write!(f, "Eq, ")?;
+        }
+
+        if self.contains(Derives::PARTIAL_ORD) {
+            write!(f, "PartialOrd, ")?;
+        }
+
+        if self.contains(Derives::ORD) {
+            write!(f, "Ord, ")?;
+        }
+
+        if self.contains(Derives::HASH) {
+            write!(f, "Hash, ")?;
+        }
+
+        write!(f, ")]")
+    }
+}
+
+/// Value representing a cached set of [`Derives`] for a given identifier.
+enum DeriveState {
+    /// Marks that we are trying to populate this entry in the cache, so that we
+    /// don't end up infinitely recurring if we try to populate a recursive
+    /// type.
+    Recursing,
+    /// This cache entry is populated.
+    Complete(Derives),
+}
+
+/// Cache of sets of [`Derives`] for given identifiers.
+struct DeriveCache {
+    cache: HashMap<CompoundIdentifier, DeriveState>,
+}
+
+/// Used to pass state down through recursive calls to [`get_derives`]
+struct DeriveRecursionState {
+    /// Indicates we saw some identifier twice during recursion and had to
+    /// supply a fake result to prevent recursing infinitely.
+    did_recursive_short_circuit: bool,
+}
+
+impl DeriveCache {
+    /// Get the [`Derives`] for a given identifier.
+    fn get_derives(
+        &mut self,
+        library: &Library,
+        ident: &CompoundIdent,
+        recursion_state: Option<&mut DeriveRecursionState>,
+    ) -> Derives {
+        let (toplevel, recursion_state) = if let Some(recursion_state) = recursion_state {
+            (false, recursion_state)
+        } else {
+            (true, &mut DeriveRecursionState { did_recursive_short_circuit: false })
+        };
+
+        let Some(decl) = library.get_local_decl(ident) else {
+            if library.get_decl_type(ident).is_none() {
+                return Derives::DEBUG | Derives::CLONE | Derives::PARTIAL_EQ;
+            }
+
+            return Derives::DEBUG | Derives::PARTIAL_EQ;
+        };
+
+        match self.cache.entry(ident.to_owned()) {
+            hash_map::Entry::Vacant(v) => v.insert(DeriveState::Recursing),
+            hash_map::Entry::Occupied(o) => match o.get() {
+                DeriveState::Recursing => {
+                    recursion_state.did_recursive_short_circuit = true;
+                    return Derives::all();
+                }
+                DeriveState::Complete(x) => return *x,
+            },
+        };
+
+        let ret = match decl.decl_type() {
+            fidl_ir::DeclType::Alias
+            | fidl_ir::DeclType::Const
+            | fidl_ir::DeclType::ExperimentalResource
+            | fidl_ir::DeclType::Service
+            | fidl_ir::DeclType::NewType
+            | fidl_ir::DeclType::Protocol => {
+                panic!("Derive compiling encountered unexpected DeclType")
+            }
+            fidl_ir::DeclType::Bits | fidl_ir::DeclType::Enum => Derives::DEFAULT.complement(),
+            fidl_ir::DeclType::Struct => {
+                let Some(st) = (decl as &dyn Any).downcast_ref::<Struct>() else {
+                    return Derives::empty();
+                };
+                let mut ret = Derives::DEFAULT.complement();
+
+                for item in &st.members {
+                    ret &= self.get_derives_for_type(library, &item.ty, recursion_state);
+                }
+
+                ret
+            }
+            fidl_ir::DeclType::Table => {
+                let Some(table) = (decl as &dyn Any).downcast_ref::<Table>() else {
+                    return Derives::empty();
+                };
+                let mut ret = Derives::all();
+
+                for item in &table.members {
+                    ret &= self.get_derives_for_type(library, &item.ty, recursion_state);
+                }
+
+                ret | Derives::DEFAULT
+            }
+            fidl_ir::DeclType::Union => {
+                let Some(un) = (decl as &dyn Any).downcast_ref::<Union>() else {
+                    return Derives::empty();
+                };
+                let mut ret = Derives::DEFAULT.complement();
+
+                for item in &un.members {
+                    ret &= self.get_derives_for_type(library, &item.ty, recursion_state);
+                }
+
+                ret
+            }
+        };
+        if toplevel || !recursion_state.did_recursive_short_circuit {
+            self.cache.insert(ident.to_owned(), DeriveState::Complete(ret));
+        } else {
+            let _ = self.cache.remove(ident);
+        }
+        ret
+    }
+
+    fn get_derives_for_type(
+        &mut self,
+        library: &Library,
+        ty: &Type,
+        recursion_state: &mut DeriveRecursionState,
+    ) -> Derives {
+        match &ty.kind {
+            fidl_ir::TypeKind::Array { element_type, .. } => {
+                self.get_derives_for_type(library, element_type, recursion_state)
+            }
+            fidl_ir::TypeKind::Vector { element_type, .. } => self
+                .get_derives_for_type(library, element_type, recursion_state)
+                .difference(Derives::COPY),
+            fidl_ir::TypeKind::String { .. } => Derives::COPY.complement(),
+            fidl_ir::TypeKind::Endpoint { .. } | fidl_ir::TypeKind::Handle { .. } => {
+                // TODO: Old bindings support everything but clone here.
+                Derives::DEBUG | Derives::PARTIAL_EQ
+            }
+            fidl_ir::TypeKind::Primitive {
+                subtype: PrimSubtype::Float32 | PrimSubtype::Float64,
+            } => (Derives::ORD | Derives::EQ | Derives::HASH).complement(),
+            fidl_ir::TypeKind::Primitive { .. } => Derives::all(),
+            fidl_ir::TypeKind::Identifier { identifier, nullable, .. } => {
+                let Some(decl_type) = library.get_decl_type(identifier) else {
+                    unreachable!("Identifier {identifier:?} matched no decl type");
+                };
+
+                match decl_type {
+                    fidl_ir::DeclType::Bits | fidl_ir::DeclType::Enum => {
+                        Derives::DEFAULT.complement()
+                    }
+                    fidl_ir::DeclType::Struct | fidl_ir::DeclType::Union => {
+                        let got = self.get_derives(library, identifier, Some(recursion_state));
+
+                        if *nullable {
+                            got.difference(Derives::COPY) | Derives::DEFAULT
+                        } else {
+                            got
+                        }
+                    }
+                    fidl_ir::DeclType::Table => {
+                        self.get_derives(library, identifier, Some(recursion_state))
+                    }
+                    other => panic!("Unexpected identifier type {other:?}"),
+                }
+            }
+            fidl_ir::TypeKind::Internal { .. } => Derives::empty(),
+        }
+    }
+}
+
 pub struct Context {
     library: Library,
     config: Config,
+    derive_cache: fuchsia_sync::Mutex<DeriveCache>,
 }
 
 impl Context {
     pub fn new(library: Library, config: Config) -> Self {
-        Self { library, config }
+        Self {
+            library,
+            config,
+            derive_cache: fuchsia_sync::Mutex::new(DeriveCache { cache: HashMap::new() }),
+        }
     }
 }
 
@@ -166,6 +396,16 @@ pub trait Contextual {
             has_resources(self.context().library(), ident)
         } else {
             true
+        }
+    }
+
+    fn derive_annotation(&self, ident: &CompoundIdent) -> String {
+        let got =
+            self.context().derive_cache.lock().get_derives(&self.context().library, ident, None);
+        if self.emit_debug_impls() {
+            got.to_string()
+        } else {
+            got.difference(Derives::DEBUG).to_string()
         }
     }
 }

@@ -1,13 +1,5 @@
 {{ self.doc_string(enm.attributes) -}}
-#[derive(
-    Clone,
-    Copy,
-    {% if self.emit_debug_impls() -%}
-        Debug,
-    {%- endif %}
-    PartialEq,
-    Eq,
-)]
+{{ self.derive_annotation(&enm.name) -}}
 #[repr({{ natural_int }})]
 pub enum {{ name }} {
     {% for member in enm.members -%}
@@ -111,4 +103,3 @@ impl ::fidl_next::FromWireRef<crate::wire::{{ name }}> for {{ name }} {
         Self::from(*wire)
     }
 }
-

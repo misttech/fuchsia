@@ -6,7 +6,7 @@ pub mod natural {
 
     pub use fidl_next_common_test_versions::natural::*;
 
-    #[derive(PartialEq, Debug)]
+    #[derive(Debug, Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
     #[repr(C)]
     pub struct Struct {
         pub x: u32,
@@ -85,7 +85,7 @@ pub mod natural {
         }
     }
 
-    #[derive(PartialEq, Debug, Default)]
+    #[derive(Debug, Default, Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
     pub struct Table {
         pub x: ::core::option::Option<u32>,
     }
@@ -167,7 +167,7 @@ pub mod natural {
         }
     }
 
-    #[derive(PartialEq, Debug)]
+    #[derive(Debug, Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
     pub enum Union {
         X(u32),
 

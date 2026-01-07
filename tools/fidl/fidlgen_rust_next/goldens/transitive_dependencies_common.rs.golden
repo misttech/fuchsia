@@ -4,7 +4,7 @@
 
 pub mod natural {
 
-    #[derive(PartialEq, Clone, Debug)]
+    #[derive(Debug, PartialEq)]
     #[repr(C)]
     pub struct Baz {
         pub g: ::fidl_next_common_test_middle::natural::Bar,

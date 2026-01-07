@@ -4,7 +4,7 @@
 
 pub mod natural {
 
-    #[derive(PartialEq, Clone, Debug, Default)]
+    #[derive(Debug, Default, Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
     pub struct ComposedProtocolOneWayAnonComposedRequest {
         pub a: ::core::option::Option<u16>,
     }
@@ -161,7 +161,7 @@ pub mod natural {
         }
     }
 
-    #[derive(PartialEq, Clone, Debug)]
+    #[derive(Debug, Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
     pub enum ComposedProtocolTwoWayAnonComposedRequest {
         B(bool),
     }
@@ -373,7 +373,7 @@ pub mod natural {
         }
     }
 
-    #[derive(PartialEq, Clone, Debug, Default)]
+    #[derive(Debug, Default, Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
     pub struct ComposedProtocolTwoWayAnonComposedResponse {
         pub a: ::core::option::Option<u16>,
     }
@@ -530,7 +530,7 @@ pub mod natural {
         }
     }
 
-    #[derive(PartialEq, Clone, Debug, Default)]
+    #[derive(Debug, Default, Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
     pub struct ComposedProtocolTwoWayAnonComposedWithErrorRequest {
         pub a: ::core::option::Option<u16>,
     }
@@ -696,7 +696,7 @@ pub mod natural {
         }
     }
 
-    #[derive(PartialEq, Clone, Debug)]
+    #[derive(Debug, Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
     pub enum ComposedProtocolTwoWayAnonComposedWithErrorResponse {
         B(bool),
     }
@@ -918,7 +918,7 @@ pub mod natural {
         }
     }
 
-    #[derive(PartialEq, Clone, Debug)]
+    #[derive(Debug, Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
     pub enum ComposedProtocolOnAnonComposedRequest {
         B(bool),
     }
@@ -1117,7 +1117,7 @@ pub mod natural {
         }
     }
 
-    #[derive(PartialEq, Clone, Debug, Default)]
+    #[derive(Debug, Default, Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
     pub struct TablePayload {
         pub a: ::core::option::Option<u16>,
     }
@@ -1261,7 +1261,7 @@ pub mod natural {
         }
     }
 
-    #[derive(PartialEq, Clone, Debug)]
+    #[derive(Debug, Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
     pub enum UnionPayload {
         B(bool),
     }
@@ -1438,7 +1438,7 @@ pub mod natural {
         }
     }
 
-    #[derive(PartialEq, Clone, Debug, Default)]
+    #[derive(Debug, Default, Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
     pub struct MainProtocolOneWayAnonRequest {
         pub a: ::core::option::Option<u16>,
     }
@@ -1588,7 +1588,7 @@ pub mod natural {
         }
     }
 
-    #[derive(PartialEq, Clone, Debug)]
+    #[derive(Debug, Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
     pub enum MainProtocolTwoWayAnonRequest {
         B(bool),
 
@@ -1804,7 +1804,7 @@ pub mod natural {
         }
     }
 
-    #[derive(PartialEq, Clone, Debug, Default)]
+    #[derive(Debug, Default, Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
     pub struct MainProtocolTwoWayAnonResponse {
         pub a: ::core::option::Option<u16>,
     }
@@ -1959,7 +1959,7 @@ pub mod natural {
         }
     }
 
-    #[derive(PartialEq, Clone, Debug, Default)]
+    #[derive(Debug, Default, Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
     pub struct MainProtocolTwoWayAnonWithErrorRequest {
         pub a: ::core::option::Option<u16>,
     }
@@ -2114,7 +2114,7 @@ pub mod natural {
         }
     }
 
-    #[derive(PartialEq, Clone, Debug)]
+    #[derive(Debug, Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
     pub enum MainProtocolTwoWayAnonWithErrorResponse {
         B(bool),
 
@@ -2338,7 +2338,7 @@ pub mod natural {
         }
     }
 
-    #[derive(PartialEq, Clone, Debug)]
+    #[derive(Debug, Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
     pub enum MainProtocolOnAnonRequest {
         B(bool),
 

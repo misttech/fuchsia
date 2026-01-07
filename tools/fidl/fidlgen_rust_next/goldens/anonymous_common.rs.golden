@@ -5,15 +5,7 @@
 pub mod natural {
 
     ::fidl_next::bitflags::bitflags! {
-        #[derive(
-            Clone,
-            Copy,
-            Debug,
-            PartialEq,
-            Eq,
-            Hash,
-        )]
-        pub struct BitsMember: u32 {
+        #[derive(Debug, Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, )]pub struct BitsMember: u32 {
             const BIT_ONE = 1;
             const BIT_TWO = 2;
             const _ = !0;
@@ -73,7 +65,7 @@ pub mod natural {
         }
     }
 
-    #[derive(Clone, Copy, Debug, PartialEq, Eq)]
+    #[derive(Debug, Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
     #[repr(u32)]
     pub enum Op {
         Add = 1,
@@ -162,7 +154,7 @@ pub mod natural {
         }
     }
 
-    #[derive(PartialEq, Clone, Debug)]
+    #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
     pub struct OverrideTest {
         pub op: crate::natural::Op,
 
@@ -332,15 +324,7 @@ pub mod natural {
     }
 
     ::fidl_next::bitflags::bitflags! {
-        #[derive(
-            Clone,
-            Copy,
-            Debug,
-            PartialEq,
-            Eq,
-            Hash,
-        )]
-        pub struct Flags: u16 {
+        #[derive(Debug, Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, )]pub struct Flags: u16 {
             const INLINE = 1;
             const _ = !0;
         }
@@ -399,7 +383,7 @@ pub mod natural {
         }
     }
 
-    #[derive(PartialEq, Clone, Debug, Default)]
+    #[derive(Debug, Default, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
     pub struct FunctionApplication {
         pub func: ::core::option::Option<::std::string::String>,
 
@@ -645,7 +629,7 @@ pub mod natural {
         }
     }
 
-    #[derive(PartialEq, Clone, Debug)]
+    #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
     pub enum Expression {
         Value(u64),
 
@@ -880,7 +864,7 @@ pub mod natural {
         }
     }
 
-    #[derive(PartialEq, Clone, Debug)]
+    #[derive(Debug, Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
     pub enum UnionMember {
         UnionData(u8),
 
@@ -1073,7 +1057,7 @@ pub mod natural {
         }
     }
 
-    #[derive(PartialEq, Clone, Debug)]
+    #[derive(Debug, Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
     #[repr(C)]
     pub struct TableData {
         pub data: u8,
@@ -1212,7 +1196,7 @@ pub mod natural {
         }
     }
 
-    #[derive(PartialEq, Clone, Debug, Default)]
+    #[derive(Debug, Default, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
     pub struct TableMember {
         pub table_data: ::core::option::Option<::std::vec::Vec<crate::natural::TableData>>,
     }
@@ -1360,7 +1344,7 @@ pub mod natural {
         }
     }
 
-    #[derive(PartialEq, Clone, Debug)]
+    #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
     pub struct SomeProtocolSomeMethodRequest {
         pub union_member: crate::natural::UnionMember,
 
@@ -1525,7 +1509,7 @@ pub mod natural {
         }
     }
 
-    #[derive(PartialEq, Clone, Debug)]
+    #[derive(Debug, Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
     #[repr(C)]
     pub struct SomeProtocolSomeMethodResponse {
         pub bits_member: crate::natural::BitsMember,
@@ -1689,7 +1673,7 @@ pub mod natural {
         }
     }
 
-    #[derive(Clone, Copy, Debug, PartialEq, Eq)]
+    #[derive(Debug, Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
     #[repr(u32)]
     pub enum SomeProtocolSomeMethodError {
         ErrorOne = 1,

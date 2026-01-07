@@ -5,15 +5,7 @@
 pub mod natural {
 
     ::fidl_next::bitflags::bitflags! {
-        #[derive(
-            Clone,
-            Copy,
-            Debug,
-            PartialEq,
-            Eq,
-            Hash,
-        )]
-        pub struct BitsType: u32 {
+        #[derive(Debug, Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, )]pub struct BitsType: u32 {
             const A = 1;
             const B = 128;
             const C = 2;
