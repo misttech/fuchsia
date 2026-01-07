@@ -87,6 +87,14 @@
             ],
             "bug": "fxbug.dev/42084613",
             "notes": []
+          },
+          {
+            "projects": [
+              "prebuilt/third_party/3pp/iptables/linux-arm64",
+              "prebuilt/third_party/3pp/iptables/linux-x64"
+            ],
+            "bug": "https://fxbug.dev/468431228",
+            "notes": []
           }
         ]
       }
