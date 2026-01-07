@@ -522,11 +522,11 @@ impl<S, I: FieldInterests> Update<S> for PropertiesAndState<S, I> {
                                 let previous_len = properties.addresses.len();
                                 // NB This is equivalent to Vec::try_extend, if such a method
                                 // existed.
-                                let () = properties.addresses.reserve(addresses.len());
+                                properties.addresses.reserve(addresses.len());
                                 for address in addresses.drain(..).map(Address::try_from) {
-                                    let () = properties.addresses.push(address?);
+                                    properties.addresses.push(address?);
                                 }
-                                let () = addresses.extend(
+                                addresses.extend(
                                     properties.addresses.drain(..previous_len).map(Into::into),
                                 );
                                 changed = true;
@@ -932,7 +932,7 @@ pub fn event_stream_from_state<I: FieldInterests>(
 > {
     let (watcher, server) = ::fidl::endpoints::create_proxy::<fnet_interfaces::WatcherMarker>();
     let WatchOptions { included_addresses, port_identity_koid_filter } = options;
-    let () = interface_state
+    interface_state
         .get_watcher(
             &fnet_interfaces::WatcherOptions {
                 address_properties_interest: Some(interest_from_params::<I>()),
@@ -1424,7 +1424,7 @@ mod tests {
         let event_stream = test_event_stream::<AllInterest>();
         let mut state = InterfaceState::Unknown(ID);
         for want in &[validated_properties(ID), validated_properties_after_change(ID)] {
-            let () = wait_interface_with_id(event_stream.clone(), &mut state, |got| {
+            wait_interface_with_id(event_stream.clone(), &mut state, |got| {
                 assert_eq!(got, want);
                 Some(())
             })
@@ -1441,7 +1441,7 @@ mod tests {
     {
         let event_stream = test_event_stream::<B::Interest>();
         for want in want_states.into_iter() {
-            let () = wait_interface(event_stream.clone(), state, |got| {
+            wait_interface(event_stream.clone(), state, |got| {
                 assert_eq!(got, want);
                 Some(())
             })

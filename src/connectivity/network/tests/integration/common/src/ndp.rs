@@ -263,7 +263,7 @@ pub async fn assert_dad_success(
 
 /// Wait for a router solicitation message.
 pub async fn wait_for_router_solicitation(fake_ep: &netemul::TestFakeEndpoint<'_>) {
-    let () = fake_ep
+    fake_ep
         .frame_stream()
         .try_filter_map(|(data, dropped)| {
             assert_eq!(dropped, 0);

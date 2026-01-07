@@ -26,7 +26,7 @@ async fn create_blackhole_interface() {
 
     let (control, control_server_end) =
         fnet_interfaces_ext::admin::Control::create_endpoints().expect("create proxy");
-    let () = installer
+    installer
         .install_blackhole_interface(
             control_server_end,
             fidl_fuchsia_net_interfaces_admin::Options {

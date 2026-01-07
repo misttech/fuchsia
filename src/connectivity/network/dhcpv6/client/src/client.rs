@@ -312,7 +312,7 @@ fn create_state_machine(
 /// Calculates a hash for the input.
 fn hash<H: Hash>(h: &H) -> u64 {
     let mut dh = DefaultHasher::new();
-    let () = h.hash(&mut dh);
+    h.hash(&mut dh);
     dh.finish()
 }
 
@@ -353,7 +353,7 @@ impl<S: for<'a> AsyncSocket<'a>> Client<S> {
             prefixes_responder: None,
             timers: Box::pin(Default::default()),
         };
-        let () = client.run_actions(actions).await?;
+        client.run_actions(actions).await?;
         Ok(client)
     }
 
@@ -367,7 +367,7 @@ impl<S: for<'a> AsyncSocket<'a>> Client<S> {
             .try_fold(self, |client, action| async move {
                 match action {
                     dhcpv6_core::client::Action::SendMessage(buf) => {
-                        let () = match client.socket.send_to(&buf, client.server_addr).await {
+                        match client.socket.send_to(&buf, client.server_addr).await {
                             Ok(size) => assert_eq!(size, buf.len()),
                             Err(e) => warn!(
                                 "failed to send message to {}: {}; will retransmit later",
@@ -382,7 +382,7 @@ impl<S: for<'a> AsyncSocket<'a>> Client<S> {
                         client.cancel_timer(timer_type)
                     }
                     dhcpv6_core::client::Action::UpdateDnsServers(servers) => {
-                        let () = client.maybe_send_dns_server_updates(servers)?;
+                        client.maybe_send_dns_server_updates(servers)?;
                     }
                     dhcpv6_core::client::Action::IaNaUpdates(_) => {
                         // TODO(https://fxbug.dev/42178828): add actions to
@@ -544,7 +544,7 @@ impl<S: for<'a> AsyncSocket<'a>> Client<S> {
                 }
             })
             .collect();
-        let () = responder
+        responder
             .send(&response)
             // The channel will be closed on error, so return an error to stop the client.
             .map_err(ClientError::Fidl)?;
@@ -691,7 +691,7 @@ impl<S: for<'a> AsyncSocket<'a>> Client<S> {
             },
             recv_from_res = self.socket.recv_from(buf).fuse() => {
                 let (size, _addr) = recv_from_res.map_err(ClientError::SocketRecv)?;
-                let () = self.handle_message_recv(&buf[..size]).await?;
+                self.handle_message_recv(&buf[..size]).await?;
                 return Ok(Some(()));
             },
             request = self.request_stream.try_next() => {
@@ -699,7 +699,7 @@ impl<S: for<'a> AsyncSocket<'a>> Client<S> {
                 return request.map(|request| self.handle_client_request(request)).transpose();
             }
         };
-        let () = self.handle_timeout(timer_type).await?;
+        self.handle_timeout(timer_type).await?;
         Ok(Some(()))
     }
 
@@ -720,8 +720,8 @@ fn create_socket(addr: SocketAddr) -> std::io::Result<fasync::net::UdpSocket> {
         Some(socket2::Protocol::UDP),
     )?;
     // It is possible to run multiple clients on the same address.
-    let () = socket.set_reuse_port(true)?;
-    let () = socket.bind(&addr.into())?;
+    socket.set_reuse_port(true)?;
+    socket.bind(&addr.into())?;
     fasync::net::UdpSocket::from_socket(socket.into())
 }
 
@@ -1303,7 +1303,7 @@ mod tests {
     ) -> Result<()> {
         let builder = v6::MessageBuilder::new(msg_type, transaction_id, options);
         let mut buf = vec![0u8; builder.bytes_len()];
-        let () = builder.serialize(&mut buf);
+        builder.serialize(&mut buf);
         let size = socket.send_to(&buf, to_addr).await?;
         assert_eq!(size, buf.len());
         Ok(())
@@ -1417,15 +1417,14 @@ mod tests {
             );
 
             // Send an empty list to the client, should not update watcher.
-            let () = exec
-                .run_singlethreaded(send_msg_with_options(
-                    &server_socket,
-                    client_addr,
-                    transaction_id,
-                    v6::MessageType::Reply,
-                    &[v6::DhcpOption::ServerId(&[1, 2, 3]), v6::DhcpOption::DnsServers(&[])],
-                ))
-                .expect("failed to send test reply");
+            exec.run_singlethreaded(send_msg_with_options(
+                &server_socket,
+                client_addr,
+                transaction_id,
+                v6::MessageType::Reply,
+                &[v6::DhcpOption::ServerId(&[1, 2, 3]), v6::DhcpOption::DnsServers(&[])],
+            ))
+            .expect("failed to send test reply");
             // Wait for the client to handle the next event (processing the reply we just
             // sent). Note that it is not enough to simply drive the client future until it
             // is stalled as we do elsewhere in the test, because we have no guarantee that
@@ -1437,18 +1436,14 @@ mod tests {
             // Send a list of DNS servers, the watcher should be updated accordingly.
             exec.run_singlethreaded(test.refresh_client());
             let dns_servers = [net_ip_v6!("fe80::1:2")];
-            let () = exec
-                .run_singlethreaded(send_msg_with_options(
-                    &server_socket,
-                    client_addr,
-                    transaction_id,
-                    v6::MessageType::Reply,
-                    &[
-                        v6::DhcpOption::ServerId(&[1, 2, 3]),
-                        v6::DhcpOption::DnsServers(&dns_servers),
-                    ],
-                ))
-                .expect("failed to send test reply");
+            exec.run_singlethreaded(send_msg_with_options(
+                &server_socket,
+                client_addr,
+                transaction_id,
+                v6::MessageType::Reply,
+                &[v6::DhcpOption::ServerId(&[1, 2, 3]), v6::DhcpOption::DnsServers(&dns_servers)],
+            ))
+            .expect("failed to send test reply");
             let want_servers = vec![create_test_dns_server(
                 fidl_ip_v6!("fe80::1:2"),
                 1, /* source interface */
@@ -1472,18 +1467,14 @@ mod tests {
             // Send the same list of DNS servers, should not update watcher.
             exec.run_singlethreaded(test.refresh_client());
             let dns_servers = [net_ip_v6!("fe80::1:2")];
-            let () = exec
-                .run_singlethreaded(send_msg_with_options(
-                    &server_socket,
-                    client_addr,
-                    transaction_id,
-                    v6::MessageType::Reply,
-                    &[
-                        v6::DhcpOption::ServerId(&[1, 2, 3]),
-                        v6::DhcpOption::DnsServers(&dns_servers),
-                    ],
-                ))
-                .expect("failed to send test reply");
+            exec.run_singlethreaded(send_msg_with_options(
+                &server_socket,
+                client_addr,
+                transaction_id,
+                v6::MessageType::Reply,
+                &[v6::DhcpOption::ServerId(&[1, 2, 3]), v6::DhcpOption::DnsServers(&dns_servers)],
+            ))
+            .expect("failed to send test reply");
             // Wait for the client to handle the next event (processing the reply we just
             // sent). Note that it is not enough to simply drive the client future until it
             // is stalled as we do elsewhere in the test, because we have no guarantee that
@@ -1495,18 +1486,14 @@ mod tests {
             // Send a different list of DNS servers, should update watcher.
             exec.run_singlethreaded(test.refresh_client());
             let dns_servers = [net_ip_v6!("fe80::1:2"), net_ip_v6!("1234::5:6")];
-            let () = exec
-                .run_singlethreaded(send_msg_with_options(
-                    &server_socket,
-                    client_addr,
-                    transaction_id,
-                    v6::MessageType::Reply,
-                    &[
-                        v6::DhcpOption::ServerId(&[1, 2, 3]),
-                        v6::DhcpOption::DnsServers(&dns_servers),
-                    ],
-                ))
-                .expect("failed to send test reply");
+            exec.run_singlethreaded(send_msg_with_options(
+                &server_socket,
+                client_addr,
+                transaction_id,
+                v6::MessageType::Reply,
+                &[v6::DhcpOption::ServerId(&[1, 2, 3]), v6::DhcpOption::DnsServers(&dns_servers)],
+            ))
+            .expect("failed to send test reply");
             let want_servers = vec![
                 create_test_dns_server(
                     fidl_ip_v6!("fe80::1:2"),
@@ -1531,15 +1518,14 @@ mod tests {
             let mut test = Test::new(&mut client, &client_proxy);
 
             exec.run_singlethreaded(test.refresh_client());
-            let () = exec
-                .run_singlethreaded(send_msg_with_options(
-                    &server_socket,
-                    client_addr,
-                    transaction_id,
-                    v6::MessageType::Reply,
-                    &[v6::DhcpOption::ServerId(&[1, 2, 3]), v6::DhcpOption::DnsServers(&[])],
-                ))
-                .expect("failed to send test reply");
+            exec.run_singlethreaded(send_msg_with_options(
+                &server_socket,
+                client_addr,
+                transaction_id,
+                v6::MessageType::Reply,
+                &[v6::DhcpOption::ServerId(&[1, 2, 3]), v6::DhcpOption::DnsServers(&[])],
+            ))
+            .expect("failed to send test reply");
             let want_servers = Vec::<fnet_name::DnsServer_>::new();
             assert_eq!(exec.run_singlethreaded(test.run()).expect("get servers"), want_servers);
         } // drop `test_fut` so `client_fut` is no longer mutably borrowed.
@@ -1566,7 +1552,7 @@ mod tests {
         .expect("failed to create test client");
 
         let dns_servers = [net_ip_v6!("fe80::1:2"), net_ip_v6!("1234::5:6")];
-        let () = send_msg_with_options(
+        send_msg_with_options(
             &server_socket,
             client_addr,
             transaction_id,
@@ -1680,7 +1666,7 @@ mod tests {
                     &[],
                 )),
             ];
-            let () = send_msg_with_options(
+            send_msg_with_options(
                 &server_socket,
                 client_addr,
                 transaction_id,
@@ -1710,7 +1696,7 @@ mod tests {
                 },
             };
 
-            let () = send_msg_with_options(
+            send_msg_with_options(
                 &server_socket,
                 client_addr,
                 transaction_id,
@@ -1832,7 +1818,7 @@ mod tests {
                 v6::DhcpOption::IaPrefix(v6::IaPrefixSerializer::new(0, 0, remove_prefix, &[])),
             ];
 
-            let () = send_msg_with_options(
+            send_msg_with_options(
                 &server_socket,
                 client_addr,
                 transaction_id,
@@ -1889,15 +1875,15 @@ mod tests {
         // Stateless DHCP client starts by scheduling a retransmission timer.
         client.assert_scheduled([dhcpv6_core::client::ClientTimerType::Retransmission]);
 
-        let () = client.cancel_timer(dhcpv6_core::client::ClientTimerType::Retransmission);
+        client.cancel_timer(dhcpv6_core::client::ClientTimerType::Retransmission);
         client.assert_scheduled([]);
 
         let now = MonotonicInstant::now();
-        let () = client.schedule_timer(
+        client.schedule_timer(
             dhcpv6_core::client::ClientTimerType::Refresh,
             now + Duration::from_nanos(1),
         );
-        let () = client.schedule_timer(
+        client.schedule_timer(
             dhcpv6_core::client::ClientTimerType::Retransmission,
             now + Duration::from_nanos(2),
         );
@@ -1917,13 +1903,13 @@ mod tests {
             now + Duration::from_nanos(2),
         );
 
-        let () = client.cancel_timer(dhcpv6_core::client::ClientTimerType::Refresh);
+        client.cancel_timer(dhcpv6_core::client::ClientTimerType::Refresh);
         client.assert_scheduled([dhcpv6_core::client::ClientTimerType::Retransmission]);
 
         // Ok to cancel a timer that is not scheduled.
         client.cancel_timer(dhcpv6_core::client::ClientTimerType::Refresh);
 
-        let () = client.cancel_timer(dhcpv6_core::client::ClientTimerType::Retransmission);
+        client.cancel_timer(dhcpv6_core::client::ClientTimerType::Retransmission);
         client.assert_scheduled([]);
 
         // Ok to cancel a timer that is not scheduled.
@@ -1971,15 +1957,9 @@ mod tests {
         client.assert_scheduled([dhcpv6_core::client::ClientTimerType::Retransmission]);
 
         // Message targeting another transaction ID should be ignored.
-        let () = send_msg_with_options(
-            &server_socket,
-            client_addr,
-            [5, 6, 7],
-            v6::MessageType::Reply,
-            &[],
-        )
-        .await
-        .expect("failed to send test message");
+        send_msg_with_options(&server_socket, client_addr, [5, 6, 7], v6::MessageType::Reply, &[])
+            .await
+            .expect("failed to send test message");
         assert_matches!(client.handle_next_event(&mut buf).await, Ok(Some(())));
         client.assert_scheduled([dhcpv6_core::client::ClientTimerType::Retransmission]);
 
@@ -1991,7 +1971,7 @@ mod tests {
         client.assert_scheduled([dhcpv6_core::client::ClientTimerType::Retransmission]);
 
         // Message targeting this client should cause the client to transition state.
-        let () = send_msg_with_options(
+        send_msg_with_options(
             &server_socket,
             client_addr,
             [1, 2, 3],
@@ -2117,7 +2097,7 @@ mod tests {
         let mut buf = vec![0u8; MAX_UDP_DATAGRAM_SIZE];
         // A retransmission timer is scheduled when starting the client in stateless mode. Cancel
         // it and create a new one with a longer timeout so the test is not flaky.
-        let () = client.schedule_timer(
+        client.schedule_timer(
             dhcpv6_core::client::ClientTimerType::Retransmission,
             MonotonicInstant::now() + Duration::from_secs(1_000_000),
         );
@@ -2125,15 +2105,9 @@ mod tests {
 
         // Trigger a message receive, the message is later discarded because transaction ID doesn't
         // match.
-        let () = send_msg_with_options(
-            &server_socket,
-            client_addr,
-            [5, 6, 7],
-            v6::MessageType::Reply,
-            &[],
-        )
-        .await
-        .expect("failed to send test message");
+        send_msg_with_options(&server_socket, client_addr, [5, 6, 7], v6::MessageType::Reply, &[])
+            .await
+            .expect("failed to send test message");
         // There are now two pending events, the message receive is handled first because the timer
         // is far into the future.
         assert_matches!(client.handle_next_event(&mut buf).await, Ok(Some(())));
@@ -2141,7 +2115,7 @@ mod tests {
         client.assert_scheduled([dhcpv6_core::client::ClientTimerType::Retransmission]);
 
         // Inserts a refresh timer that precedes the retransmission.
-        let () = client.schedule_timer(
+        client.schedule_timer(
             dhcpv6_core::client::ClientTimerType::Refresh,
             MonotonicInstant::now() + Duration::from_nanos(1),
         );

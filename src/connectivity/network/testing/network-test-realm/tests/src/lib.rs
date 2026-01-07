@@ -93,7 +93,7 @@ async fn wait_interface_online_status<'a>(
     let id = get_interface_id(interface_name, state_proxy).await.unwrap_or_else(|| {
         panic!("failed to find interface with name {}", interface_name);
     });
-    let () = fnet_interfaces_ext::wait_interface_with_id(
+    fnet_interfaces_ext::wait_interface_with_id(
         fnet_interfaces_ext::event_stream_from_state::<fnet_interfaces_ext::DefaultInterest>(
             state_proxy,
             Default::default(),

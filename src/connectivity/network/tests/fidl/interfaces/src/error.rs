@@ -31,7 +31,7 @@ async fn interfaces_watcher_after_invalid_state_request<N: Netstack>(name: &str)
 
     // Writes some garbage into the channel and verify an error on the State
     // doesn't cause trouble using an obtained Watcher.
-    let () = interfaces_state
+    interfaces_state
         .as_channel()
         .write(&[1, 2, 3, 4, 5, 6], &mut [])
         .expect("failed to write garbage to channel");

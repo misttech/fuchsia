@@ -110,7 +110,7 @@ mod tests {
         fn push_config(&mut self, config: Vec<DnsServer_>) {
             match self.pending_request.take() {
                 Some(req) => {
-                    let () = req.send(&config).expect("Failed to fulfill FIDL request");
+                    req.send(&config).expect("Failed to fulfill FIDL request");
                 }
                 None => self.configs.push_back(config),
             }

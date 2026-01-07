@@ -378,7 +378,7 @@ impl std::str::FromStr for Subnet {
             None => Ok(addr_len),
         };
 
-        let () = match pieces.next() {
+        match pieces.next() {
             Some(_) => Err(anyhow::format_err!(
                 "more than one '/' separator found while attempting to parse CIDR string {}",
                 s
@@ -472,7 +472,7 @@ macro_rules! generate_subnet_type {
                         None => Ok(addr_len),
                     };
 
-                    let () = match pieces.next() {
+                    match pieces.next() {
                         Some(_) => Err(anyhow::format_err!(
                             "more than one '/' separator found while attempting to parse CIDR string {}",
                             s

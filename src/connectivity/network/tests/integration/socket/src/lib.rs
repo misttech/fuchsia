@@ -143,7 +143,7 @@ async fn run_ip_endpoint_packet_socket_test(
     ) -> Result<fasync::net::DatagramSocket> {
         let socket = realm.packet_socket(kind).await.context("creating packet socket")?;
         let sockaddr = libc::sockaddr_ll::from(addr).into_sockaddr();
-        let () = socket.bind(&sockaddr).context("binding packet_socket")?;
+        socket.bind(&sockaddr).context("binding packet_socket")?;
         let socket = fasync::net::DatagramSocket::new_from_socket(socket)
             .context("wrapping packet socket in fuchsia-async DatagramSocket")?;
         Ok(socket)
@@ -644,7 +644,7 @@ async fn udp_send_msg_preflight_fidl<N: Netstack, I: UdpSendMsgPreflightTestIpEx
     match invalidation_reason {
         UdpCacheInvalidationReason::ConnectCalled => {
             let connected_addr = I::REACHABLE_ADDR2;
-            let () = socket
+            socket
                 .connect(&connected_addr)
                 .await
                 .expect("connect fidl error")
@@ -670,10 +670,7 @@ async fn udp_send_msg_preflight_fidl<N: Netstack, I: UdpSendMsgPreflightTestIpEx
             assert!(removed, "address was not removed from interface");
         }
         UdpCacheInvalidationReason::RouteRemoved => {
-            let () = iface
-                .del_subnet_route(I::INSTALLED_ADDR)
-                .await
-                .expect("failed to delete subnet route");
+            iface.del_subnet_route(I::INSTALLED_ADDR).await.expect("failed to delete subnet route");
         }
         UdpCacheInvalidationReason::RouteAdded => {
             let () =
@@ -713,7 +710,7 @@ async fn udp_send_msg_preflight_fidl_v4only<N: Netstack>(
 
     match invalidation_reason {
         UdpCacheInvalidationReasonV4::BroadcastCalled => {
-            let () = socket
+            socket
                 .set_broadcast(true)
                 .await
                 .expect("set_so_broadcast fidl error")
@@ -745,7 +742,7 @@ async fn udp_send_msg_preflight_fidl_v6only<N: Netstack>(
 
     match invalidation_reason {
         UdpCacheInvalidationReasonV6::Ipv6OnlyCalled => {
-            let () = socket
+            socket
                 .set_ipv6_only(true)
                 .await
                 .expect("set_ipv6_only fidl error")
@@ -1263,35 +1260,35 @@ async fn toggle_cmsg(
 ) {
     match cmsg_type {
         CmsgType::IpTos => {
-            let () = proxy
+            proxy
                 .set_ip_receive_type_of_service(requested)
                 .await
                 .expect("set_ip_receive_type_of_service fidl error")
                 .expect("set_ip_receive_type_of_service failed");
         }
         CmsgType::IpTtl => {
-            let () = proxy
+            proxy
                 .set_ip_receive_ttl(requested)
                 .await
                 .expect("set_ip_receive_ttl fidl error")
                 .expect("set_ip_receive_ttl failed");
         }
         CmsgType::Ipv6Tclass => {
-            let () = proxy
+            proxy
                 .set_ipv6_receive_traffic_class(requested)
                 .await
                 .expect("set_ipv6_receive_traffic_class fidl error")
                 .expect("set_ipv6_receive_traffic_class failed");
         }
         CmsgType::Ipv6Hoplimit => {
-            let () = proxy
+            proxy
                 .set_ipv6_receive_hop_limit(requested)
                 .await
                 .expect("set_ipv6_receive_hop_limit fidl error")
                 .expect("set_ipv6_receive_hop_limit failed");
         }
         CmsgType::Ipv6PktInfo => {
-            let () = proxy
+            proxy
                 .set_ipv6_receive_packet_info(requested)
                 .await
                 .expect("set_ipv6_receive_packet_info fidl error")
@@ -1303,7 +1300,7 @@ async fn toggle_cmsg(
             } else {
                 fposix_socket::TimestampOption::Disabled
             };
-            let () = proxy
+            proxy
                 .set_timestamp(option)
                 .await
                 .expect("set_timestamp fidl error")
@@ -1315,7 +1312,7 @@ async fn toggle_cmsg(
             } else {
                 fposix_socket::TimestampOption::Disabled
             };
-            let () = proxy
+            proxy
                 .set_timestamp(option)
                 .await
                 .expect("set_timestamp fidl error")
@@ -2006,19 +2003,19 @@ async fn install_ip_device(
     let device = {
         let (device, server_end) =
             fidl::endpoints::create_endpoints::<fhardware_network::DeviceMarker>();
-        let () = port.get_device(server_end).expect("get device");
+        port.get_device(server_end).expect("get device");
         device
     };
     let device_control = {
         let (control, server_end) =
             fidl::endpoints::create_proxy::<fnet_interfaces_admin::DeviceControlMarker>();
-        let () = installer.install_device(device, server_end).expect("install device");
+        installer.install_device(device, server_end).expect("install device");
         control
     };
     let control = {
         let (control, server_end) =
             fnet_interfaces_ext::admin::Control::create_endpoints().expect("create endpoints");
-        let () = device_control
+        device_control
             .create_interface(&port_id, server_end, fnet_interfaces_admin::Options::default())
             .expect("create interface");
         control
@@ -2027,7 +2024,7 @@ async fn install_ip_device(
 
     let id = control.get_id().await.expect("get id");
 
-    let () = futures::stream::iter(addrs.into_iter())
+    futures::stream::iter(addrs.into_iter())
         .for_each_concurrent(None, |subnet| {
             let (address_state_provider, server_end) = fidl::endpoints::create_proxy::<
                 fnet_interfaces_admin::AddressStateProviderMarker,
@@ -2035,8 +2032,8 @@ async fn install_ip_device(
 
             // We're not interested in maintaining the address' lifecycle through
             // the proxy.
-            let () = address_state_provider.detach().expect("detach");
-            let () = control
+            address_state_provider.detach().expect("detach");
+            control
                 .add_address(
                     &subnet,
                     &fnet_interfaces_admin::AddressParameters {
@@ -2221,16 +2218,15 @@ async fn ip_endpoint_packets<N: Netstack>(name: &str) {
         .expect("failed to connect to tun protocol");
 
     let (tun_dev, req) = fidl::endpoints::create_proxy::<fnet_tun::DeviceMarker>();
-    let () = tun
-        .create_device(
-            &fnet_tun::DeviceConfig { base: None, blocking: Some(true), ..Default::default() },
-            req,
-        )
-        .expect("failed to create tun pair");
+    tun.create_device(
+        &fnet_tun::DeviceConfig { base: None, blocking: Some(true), ..Default::default() },
+        req,
+    )
+    .expect("failed to create tun pair");
 
     let (_tun_port, port) = {
         let (tun_port, server_end) = fidl::endpoints::create_proxy::<fnet_tun::PortMarker>();
-        let () = tun_dev
+        tun_dev
             .add_port(
                 &fnet_tun::DevicePortConfig {
                     base: Some(base_ip_device_port_config()),
@@ -2244,7 +2240,7 @@ async fn ip_endpoint_packets<N: Netstack>(name: &str) {
             .expect("add_port failed");
 
         let (port, server_end) = fidl::endpoints::create_proxy::<fhardware_network::PortMarker>();
-        let () = tun_port.get_port(server_end).expect("get_port failed");
+        tun_port.get_port(server_end).expect("get_port failed");
         (tun_port, port)
     };
 
@@ -2303,7 +2299,7 @@ async fn ip_endpoint_packets<N: Netstack>(name: &str) {
     where
         S: futures::stream::TryStream<Error = anyhow::Error> + std::marker::Unpin,
     {
-        let () = tun_dev
+        tun_dev
             .write_frame(&frame)
             .await
             .context("write_frame failed")?
@@ -2343,7 +2339,7 @@ async fn ip_endpoint_packets<N: Netstack>(name: &str) {
         .to_vec();
 
     // Send v4 ping request.
-    let () = tun_dev
+    tun_dev
         .write_frame(&fnet_tun::Frame {
             port: Some(devices::TUN_DEFAULT_PORT_ID),
             frame_type: Some(fhardware_network::FrameType::Ipv4),
@@ -2418,7 +2414,7 @@ async fn ip_endpoint_packets<N: Netstack>(name: &str) {
         .to_vec();
 
     // Send v6 ping request.
-    let () = tun_dev
+    tun_dev
         .write_frame(&fnet_tun::Frame {
             port: Some(devices::TUN_DEFAULT_PORT_ID),
             frame_type: Some(fhardware_network::FrameType::Ipv6),

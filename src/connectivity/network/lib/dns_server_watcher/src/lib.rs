@@ -155,12 +155,12 @@ impl DnsServers {
         //
         // `sort_by` maintains the order of equal elements. This is required to maintain ordering
         // within a source of DNS servers. `sort_unstable_by` may not preserve this ordering.
-        let () = servers.sort_by(Self::ordering);
+        servers.sort_by(Self::ordering);
         // Default servers are considered to have the lowest priority so we append them to the end
         // of the list of sorted dynamically learned servers.
-        let () = servers.extend(default.clone());
+        servers.extend(default.clone());
         let mut addresses = HashSet::new();
-        let () = servers.retain(move |s| addresses.insert(s.address));
+        servers.retain(move |s| addresses.insert(s.address));
         servers.into_iter().filter_map(f).collect()
     }
 

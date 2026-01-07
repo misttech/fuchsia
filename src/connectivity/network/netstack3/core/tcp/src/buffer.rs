@@ -1074,13 +1074,13 @@ mod test {
         assert_eq!(rb.enqueue_data("Hello".as_bytes()), 5);
         assert_eq!(rb.limits().len, 5);
 
-        let () = rb.peek_with(3, |readable| {
+        rb.peek_with(3, |readable| {
             assert_eq!(readable.to_vec(), "lo".as_bytes());
         });
 
         rb.mark_read(2);
 
-        let () = rb.peek_with(0, |readable| {
+        rb.peek_with(0, |readable| {
             assert_eq!(readable.to_vec(), "llo".as_bytes());
         });
     }

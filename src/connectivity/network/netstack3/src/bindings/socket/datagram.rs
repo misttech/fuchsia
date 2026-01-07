@@ -2987,18 +2987,10 @@ mod tests {
     #[fixture::teardown(TestSetup::shutdown)]
     async fn connect<A: TestSockAddr, T>(proto: fposix_socket::DatagramSocketProtocol) {
         let (t, proxy, _event) = prepare_test::<A>(proto).await;
-        let () = proxy
-            .connect(&A::create(A::REMOTE_ADDR, 200))
-            .await
-            .unwrap()
-            .expect("connect succeeds");
+        proxy.connect(&A::create(A::REMOTE_ADDR, 200)).await.unwrap().expect("connect succeeds");
 
         // Can connect again to a different remote should succeed.
-        let () = proxy
-            .connect(&A::create(A::REMOTE_ADDR_2, 200))
-            .await
-            .unwrap()
-            .expect("connect suceeds");
+        proxy.connect(&A::create(A::REMOTE_ADDR_2, 200)).await.unwrap().expect("connect suceeds");
 
         t
     }
@@ -3008,7 +3000,7 @@ mod tests {
     #[fixture::teardown(TestSetup::shutdown)]
     async fn connect_loopback<A: TestSockAddr, T>(proto: fposix_socket::DatagramSocketProtocol) {
         let (t, proxy, _event) = prepare_test::<A>(proto).await;
-        let () = proxy
+        proxy
             .connect(&A::create(
                 <<A::AddrType as IpAddress>::Version as Ip>::LOOPBACK_ADDRESS.get(),
                 200,
@@ -3029,7 +3021,7 @@ mod tests {
         let (t, proxy, _event) = prepare_test::<A>(proto).await;
 
         const PORT: u16 = 1010;
-        let () = proxy
+        proxy
             .connect(&A::create(<A::AddrType as IpAddress>::Version::UNSPECIFIED_ADDRESS, PORT))
             .await
             .unwrap()
@@ -3050,7 +3042,7 @@ mod tests {
         let (mut t, socket, _event) = prepare_test::<A>(proto).await;
         let stack = t.get_mut(0);
         // Can bind to local address.
-        let () = socket.bind(&A::create(A::LOCAL_ADDR, 200)).await.unwrap().expect("bind succeeds");
+        socket.bind(&A::create(A::LOCAL_ADDR, 200)).await.unwrap().expect("bind succeeds");
 
         // Can't bind again (to another port).
         let res =
@@ -3059,11 +3051,11 @@ mod tests {
 
         // Can bind another socket to a different port.
         let socket = get_socket::<A>(stack, proto).await;
-        let () = socket.bind(&A::create(A::LOCAL_ADDR, 201)).await.unwrap().expect("bind succeeds");
+        socket.bind(&A::create(A::LOCAL_ADDR, 201)).await.unwrap().expect("bind succeeds");
 
         // Can bind to unspecified address in a different port.
         let socket = get_socket::<A>(stack, proto).await;
-        let () = socket
+        socket
             .bind(&A::create(<A::AddrType as IpAddress>::Version::UNSPECIFIED_ADDRESS, 202))
             .await
             .unwrap()
@@ -3078,13 +3070,9 @@ mod tests {
     async fn bind_then_connect<A: TestSockAddr, T>(proto: fposix_socket::DatagramSocketProtocol) {
         let (t, socket, _event) = prepare_test::<A>(proto).await;
         // Can bind to local address.
-        let () = socket.bind(&A::create(A::LOCAL_ADDR, 200)).await.unwrap().expect("bind suceeds");
+        socket.bind(&A::create(A::LOCAL_ADDR, 200)).await.unwrap().expect("bind suceeds");
 
-        let () = socket
-            .connect(&A::create(A::REMOTE_ADDR, 1010))
-            .await
-            .unwrap()
-            .expect("connect succeeds");
+        socket.connect(&A::create(A::REMOTE_ADDR, 1010)).await.unwrap().expect("connect succeeds");
 
         t
     }
@@ -3098,13 +3086,13 @@ mod tests {
         let (t, socket, _event) = prepare_test::<A>(proto).await;
 
         let remote_addr = A::create(A::REMOTE_ADDR, 1010);
-        let () = socket.connect(&remote_addr).await.unwrap().expect("connect succeeds");
+        socket.connect(&remote_addr).await.unwrap().expect("connect succeeds");
 
         assert_eq!(
             socket.get_peer_name().await.unwrap().expect("get_peer_name should suceed"),
             remote_addr
         );
-        let () = socket.disconnect().await.unwrap().expect("disconnect succeeds");
+        socket.disconnect().await.unwrap().expect("disconnect succeeds");
 
         assert_eq!(
             socket.get_peer_name().await.unwrap().expect_err("alice getpeername fails"),
@@ -3224,7 +3212,7 @@ mod tests {
 
         // Setup Alice as a server, bound to LOCAL_ADDR:200
         println!("Configuring alice...");
-        let () = alice_socket
+        alice_socket
             .bind(&A::create(A::LOCAL_ADDR, 200))
             .await
             .unwrap()
@@ -3262,11 +3250,7 @@ mod tests {
         println!("Configuring bob...");
         let bob = t.get_mut(1);
         let (bob_socket, bob_events) = get_socket_and_event::<A>(bob, proto).await;
-        let () = bob_socket
-            .bind(&A::create(A::REMOTE_ADDR, 300))
-            .await
-            .unwrap()
-            .expect("bob bind suceeds");
+        bob_socket.bind(&A::create(A::REMOTE_ADDR, 300)).await.unwrap().expect("bob bind suceeds");
 
         // Verify that Bob is listening on the local socket, but has no peer
         // socket
@@ -3285,7 +3269,7 @@ mod tests {
 
         // Connect Bob to Alice on LOCAL_ADDR:200
         println!("Connecting bob to alice...");
-        let () = bob_socket
+        bob_socket
             .connect(&A::create(A::LOCAL_ADDR, 200))
             .await
             .unwrap()
@@ -3446,7 +3430,7 @@ mod tests {
         let (client, server) =
             fidl::endpoints::create_proxy::<fposix_socket::SynchronousDatagramSocketMarker>();
         let server = ServerEnd::new(server.into_channel());
-        let () = socket.clone(server).expect("socket clone");
+        socket.clone(server).expect("socket clone");
         client
     }
 
@@ -3480,7 +3464,7 @@ mod tests {
             alice_cloned.describe().await.expect("Describe call succeeds");
         let _: zx::EventPair = alice_event.expect("Describe call returns event");
 
-        let () = alice_socket
+        alice_socket
             .bind(&A::create(A::LOCAL_ADDR, 200))
             .await
             .unwrap()
@@ -3493,7 +3477,7 @@ mod tests {
 
         let (bob_socket, bob_events) = get_socket_and_event::<A>(t.get_mut(1), proto).await;
         let bob_cloned = socket_clone(&bob_socket);
-        let () = bob_cloned
+        bob_cloned
             .bind(&A::create(A::REMOTE_ADDR, 200))
             .await
             .unwrap()
@@ -3563,7 +3547,7 @@ mod tests {
         match proto {
             fposix_socket::DatagramSocketProtocol::Udp => {
                 // Close the socket should not invalidate the cloned socket.
-                let () = bob_socket
+                bob_socket
                     .close()
                     .await
                     .expect("FIDL error")
@@ -3584,7 +3568,7 @@ mod tests {
                     body.len() as i64
                 );
 
-                let () = alice_cloned
+                alice_cloned
                     .close()
                     .await
                     .expect("FIDL error")
@@ -3614,13 +3598,13 @@ mod tests {
                     });
                 }
 
-                let () = alice_socket
+                alice_socket
                     .close()
                     .await
                     .expect("FIDL error")
                     .map_err(zx::Status::from_raw)
                     .expect("close failed");
-                let () = bob_cloned
+                bob_cloned
                     .close()
                     .await
                     .expect("FIDL error")
@@ -3665,7 +3649,7 @@ mod tests {
         let test_stack = t.get_mut(0);
         let socket = get_socket::<A>(test_stack, proto).await;
         let cloned = socket_clone(&socket);
-        let () = socket
+        socket
             .close()
             .await
             .expect("FIDL error")
@@ -3684,7 +3668,7 @@ mod tests {
                 [_]
             );
         });
-        let () = cloned
+        cloned
             .close()
             .await
             .expect("FIDL error")
@@ -3715,7 +3699,7 @@ mod tests {
             // socket goes out of scope indicating an implicit close.
         };
         // Using an explicit close here.
-        let () = cloned
+        cloned
             .close()
             .await
             .expect("FIDL error")
@@ -3741,7 +3725,7 @@ mod tests {
         let mut t = TestSetupBuilder::new().add_endpoint().add_empty_stack().build().await;
         let test_stack = t.get_mut(0);
         let socket = get_socket::<A>(test_stack, proto).await;
-        let () = socket
+        socket
             .close()
             .await
             .expect("FIDL error")
@@ -3780,7 +3764,7 @@ mod tests {
                 .expect_err("should not shutdown an unconnected socket"),
             fposix::Errno::Enotconn,
         );
-        let () = socket.bind(&local).await.unwrap().expect("failed to bind");
+        socket.bind(&local).await.unwrap().expect("failed to bind");
         assert_eq!(
             socket
                 .shutdown(fposix_socket::ShutdownMode::WRITE)
@@ -3789,7 +3773,7 @@ mod tests {
                 .expect_err("should not shutdown an unconnected socket"),
             fposix::Errno::Enotconn,
         );
-        let () = socket.connect(&remote).await.unwrap().expect("failed to connect");
+        socket.connect(&remote).await.unwrap().expect("failed to connect");
         assert_eq!(
             socket
                 .shutdown(fposix_socket::ShutdownMode::empty())
@@ -3801,7 +3785,7 @@ mod tests {
 
         // Cannot send
         let body = "Hello".as_bytes();
-        let () = socket
+        socket
             .shutdown(fposix_socket::ShutdownMode::WRITE)
             .await
             .unwrap()
@@ -3846,7 +3830,7 @@ mod tests {
         };
 
         let right = async {
-            let () = socket
+            socket
                 .shutdown(fposix_socket::ShutdownMode::READ)
                 .await
                 .unwrap()
@@ -3860,17 +3844,17 @@ mod tests {
         };
         let ((), ()) = futures::future::join(left, right).await;
 
-        let () = socket
+        socket
             .shutdown(fposix_socket::ShutdownMode::READ)
             .await
             .unwrap()
             .expect("failed to shutdown the socket twice");
-        let () = socket
+        socket
             .shutdown(fposix_socket::ShutdownMode::WRITE)
             .await
             .unwrap()
             .expect("failed to shutdown the socket twice");
-        let () = socket
+        socket
             .shutdown(fposix_socket::ShutdownMode::READ | fposix_socket::ShutdownMode::WRITE)
             .await
             .unwrap()
@@ -4000,8 +3984,8 @@ mod tests {
         let addr =
             A::create(<<A::AddrType as IpAddress>::Version as Ip>::LOOPBACK_ADDRESS.get(), 100);
 
-        let () = proxy.bind(&addr).await.unwrap().expect("bind succeeds");
-        let () = proxy.connect(&addr).await.unwrap().expect("connect succeeds");
+        proxy.bind(&addr).await.unwrap().expect("bind succeeds");
+        proxy.connect(&addr).await.unwrap().expect("connect succeeds");
 
         const DATA: &[u8] = &[1, 2, 3, 4, 5];
         let to_send = prepare_buffer_to_send::<A>(proto, DATA.to_vec());
@@ -4096,7 +4080,7 @@ mod tests {
         const PORT: u16 = 100;
         const DATA: &[u8] = &[1, 2, 3, 4, 5];
 
-        let () = proxy
+        proxy
             .bind(&A::create(
                 <<A::AddrType as IpAddress>::Version as Ip>::UNSPECIFIED_ADDRESS,
                 PORT,
@@ -4372,7 +4356,7 @@ mod tests {
 
         // Setup Alice as a server, bound to LOCAL_ADDR:200
         println!("Configuring alice...");
-        let () = alice_socket
+        alice_socket
             .bind(&A::create(A::LOCAL_ADDR, 200))
             .await
             .unwrap()
@@ -4382,15 +4366,11 @@ mod tests {
         println!("Configuring bob...");
         let bob = t.get_mut(1);
         let bob_socket = get_socket::<A>(bob, proto).await;
-        let () = bob_socket
-            .bind(&A::create(A::REMOTE_ADDR, 300))
-            .await
-            .unwrap()
-            .expect("bob bind suceeds");
+        bob_socket.bind(&A::create(A::REMOTE_ADDR, 300)).await.unwrap().expect("bob bind suceeds");
 
         // Connect Bob to Alice on LOCAL_ADDR:200
         println!("Connecting bob to alice...");
-        let () = bob_socket
+        bob_socket
             .connect(&A::create(A::LOCAL_ADDR, 200))
             .await
             .unwrap()

@@ -128,7 +128,7 @@ async fn run<DS: DataStore>(server: Server<DS>) -> Result<(), Error> {
         Ok(None) => unreachable!("server can't be enabled already"),
         Ok(Some(socket_collection)) => {
             // Sending here should never fail; we just created the stream above.
-            let () = socket_sink.try_send(socket_collection)?;
+            socket_sink.try_send(socket_collection)?;
         }
         Err(e @ zx::Status::INVALID_ARGS) => {
             info!("server not configured for serving leases: {:?}", e)
@@ -178,11 +178,11 @@ impl<DS: DataStore> SocketServerDispatcher for Server<DS> {
         // Since dhcpd may listen to multiple interfaces, we must enable
         // SO_REUSEPORT so that binding the same (address, port) pair to each
         // interface can still succeed.
-        let () = socket.set_reuse_port(true)?;
-        let () = socket.bind_device(Some(name.as_bytes()))?;
+        socket.set_reuse_port(true)?;
+        socket.bind_device(Some(name.as_bytes()))?;
         info!("socket bound to device {}", name);
-        let () = socket.set_broadcast(true)?;
-        let () = socket.bind(&SocketAddr::new(IpAddr::V4(src), SERVER_PORT.into()).into())?;
+        socket.set_broadcast(true)?;
+        socket.bind(&SocketAddr::new(IpAddr::V4(src), SERVER_PORT.into()).into())?;
         Ok(UdpSocket::from_socket(socket.into())?)
     }
 
@@ -244,7 +244,7 @@ impl<S: SocketServerDispatcher> ServerDispatcherRuntime<S> {
     /// If the server is already disabled, `disable` is a no-op.
     fn disable(&mut self) {
         if let Some(abort_handle) = self.abort_handle.take() {
-            let () = abort_handle.abort();
+            abort_handle.abort();
         }
     }
 
@@ -271,7 +271,7 @@ impl<S: SocketServerDispatcher> ServerDispatcherRuntime<S> {
         let (abort_handle, abort_registration) = futures::future::AbortHandle::new_pair();
 
         let sockets = S::create_sockets(params).map_err(|e| {
-            let () = match e.raw_os_error() {
+            match e.raw_os_error() {
                 // A short-lived SoftAP interface may be, and frequently is, torn down prior to the
                 // full instantiation of its associated dhcpd component. Consequently, binding to
                 // the SoftAP interface name will fail with ENODEV. However, such a failure is
@@ -542,7 +542,7 @@ where
                 // There was an error handling the server sockets. Disable the
                 // server.
                 error!("Server encountered an error: {:?}. Stopping server.", error);
-                let () = server.borrow_mut().disable();
+                server.borrow_mut().disable();
                 Ok(())
             }
             Err(futures::future::Aborted {}) => {
@@ -579,7 +579,7 @@ where
                                 socket_sink.send(socket_collection).await.map_err(|e| {
                                     error!("Failed to send sockets to sink: {:?}", e);
                                     // Disable the server again to keep a consistent state.
-                                    let () = server.borrow_mut().disable();
+                                    server.borrow_mut().disable();
                                     zx::Status::INTERNAL
                                 })
                             }
@@ -593,7 +593,7 @@ where
                     )
                 }
                 fidl_fuchsia_net_dhcp::Server_Request::StopServing { responder } => {
-                    let () = server.borrow_mut().disable();
+                    server.borrow_mut().disable();
                     responder.send()
                 }
                 fidl_fuchsia_net_dhcp::Server_Request::IsServing { responder } => {
@@ -931,7 +931,7 @@ mod tests {
                     "server should not be serving"
                 );
 
-                let () = proxy
+                proxy
                     .start_serving()
                     .await
                     .expect("start_serving failed")
@@ -965,7 +965,7 @@ mod tests {
                     "server should be serving"
                 );
 
-                let () = proxy.stop_serving().await.expect("stop_serving failed");
+                proxy.stop_serving().await.expect("stop_serving failed");
 
                 // Dummy future was aborted.
                 assert_eq!(dummy_fut.await, Err(futures::future::Aborted {}));
@@ -979,7 +979,7 @@ mod tests {
             }
         };
 
-        let () = futures::select! {
+        futures::select! {
             res = test_fut.fuse() => res,
             res = run_server(stream, &server, &defaults, socket_sink).fuse() => {
                 unreachable!("server finished before request: {:?}", res)
@@ -1046,7 +1046,7 @@ mod tests {
         let defaults = default_params();
 
         let test_fut = async {
-            let () = proxy
+            proxy
                 .start_serving()
                 .await
                 .expect("start_serving failed")
@@ -1080,7 +1080,7 @@ mod tests {
             );
         };
 
-        let () = futures::select! {
+        futures::select! {
             res = test_fut.fuse() => res,
             res = run_server(stream, &server, &defaults, drain()).fuse() => {
                 unreachable!("server finished before request: {:?}", res)

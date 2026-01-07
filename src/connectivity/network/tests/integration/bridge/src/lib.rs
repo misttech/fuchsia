@@ -135,7 +135,7 @@ async fn test<N: Netstack>(name: &str, sub_name: &str, steps: &[Step]) {
             ping_helper::Node::new_with_v4_and_v6_link_local(&switch_realm, &switch_if)
                 .await
                 .expect("failed to construct switch node");
-        let () = gateway_node
+        gateway_node
             .ping_pairwise(std::slice::from_ref(&switch_node))
             .await
             .expect("failed to ping between gateway and switch");
@@ -182,7 +182,7 @@ async fn test<N: Netstack>(name: &str, sub_name: &str, steps: &[Step]) {
                         )
                         .await
                         .expect("failed to construct switch node");
-                        let () = gateway_node
+                        gateway_node
                             .ping_pairwise(std::slice::from_ref(&switch_node))
                             .await
                             .expect("failed to ping between gateway and switch");
@@ -285,7 +285,7 @@ async fn test<N: Netstack>(name: &str, sub_name: &str, steps: &[Step]) {
                 )
                 .await
                 .expect("add IPv4 address to bridge failed");
-                let () = address_state_provider
+                address_state_provider
                     .detach()
                     .expect("failed to detach from bridge interface address state provider");
             }
@@ -302,11 +302,11 @@ async fn test<N: Netstack>(name: &str, sub_name: &str, steps: &[Step]) {
             Step::FlapLink(id) => {
                 let Host { switch_if, realm: _, _net, host_if: _ } =
                     ports.get(&id).expect("port to flap link doesn't exist");
-                let () = switch_if
+                switch_if
                     .set_link_up(false)
                     .await
                     .expect("failed to set link to down on bridged port");
-                let () = switch_if
+                switch_if
                     .set_link_up(true)
                     .await
                     .expect("failed to set link to up on bridged port");
@@ -336,7 +336,7 @@ async fn test<N: Netstack>(name: &str, sub_name: &str, steps: &[Step]) {
         .await;
 
         // Verify that the bridge is working
-        let () = gateway_node.ping_pairwise(nodes.as_slice()).await.expect("failed to ping hosts");
+        gateway_node.ping_pairwise(nodes.as_slice()).await.expect("failed to ping hosts");
     }
 }
 
@@ -388,7 +388,7 @@ async fn test_remove_bridge_interface_disabled<N: Netstack>(name: &str) {
         seq += 1;
         seq
     };
-    let () = gateway_node
+    gateway_node
         .ping_pairwise(std::slice::from_ref(&switch_node))
         .await
         .expect("failed to ping between switch and gateway");
@@ -417,7 +417,7 @@ async fn test_remove_bridge_interface_disabled<N: Netstack>(name: &str) {
         )
     );
     // Ensure that attempting to ping the switch results in a non-response.
-    let () = gateway_realm
+    gateway_realm
         .ping_once::<Ipv4>(std_socket_addr_v4!("192.168.254.1:0"), gen_seq())
         .and_then(|()| futures::future::err(anyhow!("ping succeeded unexpectedly")))
         .on_timeout(ASYNC_EVENT_NEGATIVE_CHECK_TIMEOUT.after_now(), || Ok(()))
@@ -453,7 +453,7 @@ async fn test_remove_bridge_interface_disabled<N: Netstack>(name: &str) {
     let switch_node = ping_helper::Node::new_with_v4_and_v6_link_local(&switch_realm, &switch_if)
         .await
         .expect("failed to construct switch node");
-    let () = gateway_node
+    gateway_node
         .ping_pairwise(std::slice::from_ref(&switch_node))
         .await
         .expect("failed to ping between switch and gateway");

@@ -218,8 +218,7 @@ async fn sends_igmp_reports<N: Netstack>(
     .await
     .expect("error creating socket");
 
-    let () = sock
-        .as_ref()
+    sock.as_ref()
         .join_multicast_v4(&MULTICAST_ADDR, &INTERFACE_ADDR)
         .expect("error joining multicast group");
 
@@ -273,7 +272,7 @@ async fn sends_igmp_reports<N: Netstack>(
         },
     );
     let mut stream = pin!(stream);
-    let () = stream
+    stream
         .next()
         .on_timeout(ASYNC_EVENT_POSITIVE_CHECK_TIMEOUT.after_now(), || {
             panic!("timed out waiting for the IGMP report");

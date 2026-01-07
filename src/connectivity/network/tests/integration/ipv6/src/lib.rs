@@ -473,7 +473,7 @@ async fn add_address_for_dad<
     // (limited to this scope) MUST execute within this one second window
     // for the test to pass.
     let (get_addrs_fut, get_addrs_poll) = {
-        let () = control
+        control
             .add_address(
                 &fnet::Subnet {
                     addr: fnet::IpAddress::Ipv6(fnet::Ipv6Address {
@@ -829,7 +829,7 @@ async fn on_and_off_link_route_discovery<N: Netstack>(
             RoutePreference::default(),
         )),
     ];
-    let () = send_ra_with_router_lifetime(&fake_ep, 1234, &options, ipv6_consts::LINK_LOCAL_ADDR)
+    send_ra_with_router_lifetime(&fake_ep, 1234, &options, ipv6_consts::LINK_LOCAL_ADDR)
         .await
         .expect("failed to send router advertisement");
 
@@ -1287,7 +1287,7 @@ async fn sends_mld_reports<N: Netstack>(
             }
         });
     let mut stream = pin!(stream);
-    let () = stream
+    stream
         .try_next()
         .on_timeout(ASYNC_EVENT_POSITIVE_CHECK_TIMEOUT.after_now(), || {
             return Err(anyhow::anyhow!("timed out waiting for the MLD report"));

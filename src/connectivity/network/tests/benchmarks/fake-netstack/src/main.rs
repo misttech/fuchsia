@@ -327,7 +327,7 @@ impl StreamSocket {
                     drop(borrowed);
                     let addr =
                         gen_available_loopback_addr(domain, |addr| !sockets.contains_key(addr));
-                    let () = Self::bind(cell, addr, sockets)?;
+                    Self::bind(cell, addr, sockets)?;
                     addr
                 }
                 state @ StreamSocketState::Listening { .. }

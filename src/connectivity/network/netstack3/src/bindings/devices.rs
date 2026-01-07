@@ -350,7 +350,7 @@ pub(crate) async fn rx_task(
     let mut yield_fut = futures::future::OptionFuture::default();
     loop {
         // Loop while we are woken up to handle enqueued Rx packets.
-        let () = futures::select! {
+        futures::select! {
             w = watcher.next().fuse() => w.expect("watcher closed with loopback task running"),
             y = yield_fut => y.expect("OptionFuture is only selected when non-empty"),
         };
@@ -460,7 +460,7 @@ pub(crate) async fn tx_task(
                 None => unreachable!("watcher closed unexpectedly"),
             },
             y = yield_fut => {
-                let () = y.expect("OptionFuture is only selected when non-empty");
+                y.expect("OptionFuture is only selected when non-empty");
                 Action::TxAvailable
             }
         };

@@ -126,8 +126,8 @@ async fn assert_client_acquires_addr<D: DhcpClient>(
         fidl_fuchsia_net_interfaces_ext::InterfaceState::<(), _>::Unknown(client_interface.id());
     for cycle in 0..cycles {
         // Enable the interface and assert that binding fails before the address is acquired.
-        let () = client_interface.stop_dhcp::<D>().await.expect("failed to stop DHCP");
-        let () = client_interface.set_link_up(true).await.expect("failed to bring link up");
+        client_interface.stop_dhcp::<D>().await.expect("failed to stop DHCP");
+        client_interface.set_link_up(true).await.expect("failed to bring link up");
         assert_matches::assert_matches!(
             bind(&client_realm, expected_acquired).await,
             Err(e @ anyhow::Error {..})
@@ -136,7 +136,7 @@ async fn assert_client_acquires_addr<D: DhcpClient>(
                     .raw_os_error() == Some(libc::EADDRNOTAVAIL)
         );
 
-        let () = client_interface.start_dhcp::<D>().await.expect("failed to start DHCP");
+        client_interface.start_dhcp::<D>().await.expect("failed to start DHCP");
 
         let valid_until = annotate(
             assert_interface_assigned_addr(
@@ -176,10 +176,10 @@ async fn assert_client_acquires_addr<D: DhcpClient>(
         }
 
         // Set interface online signal to down and wait for address to be removed.
-        let () = client_interface.set_link_up(false).await.expect("failed to bring link down");
-        let () = client_interface.stop_dhcp::<D>().await.expect("failed to stop DHCP");
+        client_interface.set_link_up(false).await.expect("failed to bring link down");
+        client_interface.stop_dhcp::<D>().await.expect("failed to stop DHCP");
 
-        let () = annotate(
+        annotate(
             fidl_fuchsia_net_interfaces_ext::wait_interface_with_id(
                 event_stream.by_ref(),
                 &mut properties,
@@ -907,7 +907,7 @@ fn test_dhcp<'a, D: DhcpClient>(
                                     )
                                         .await
                                         .expect("add subnet address and route");
-                                    let () = address_state_provider.detach()
+                                    address_state_provider.detach()
                                         .expect("detach address lifetime");
                                 }
                                 (iface, server_should_bind.then(|| if_name))
@@ -915,9 +915,9 @@ fn test_dhcp<'a, D: DhcpClient>(
                             .fold(
                                 (Vec::new(), Vec::new()),
                                 |(mut ifaces, mut names_to_bind), (iface, if_name)| async {
-                                    let () = ifaces.push(iface);
+                                    ifaces.push(iface);
                                     if let Some(if_name) = if_name {
-                                        let () = names_to_bind.push(if_name);
+                                        names_to_bind.push(if_name);
                                     }
                                     (ifaces, names_to_bind)
                                 },
@@ -934,7 +934,7 @@ fn test_dhcp<'a, D: DhcpClient>(
                             .chain(std::iter::once(
                                 fidl_fuchsia_net_dhcp::Parameter::BoundDeviceNames(names_to_bind)
                             ));
-                        let () = dhcpv4_helper::set_server_settings(
+                        dhcpv4_helper::set_server_settings(
                             &dhcp_server,
                             parameters,
                             options.iter().cloned(),
@@ -1266,13 +1266,13 @@ async fn acquire_dhcp_server_after_restart<SERVER: Netstack, CLIENT: NetstackAnd
         );
         let () =
             dhcpv4_helper::set_server_settings(&dhcp_server, parameters, std::iter::empty()).await;
-        let () = dhcp_server
+        dhcp_server
             .start_serving()
             .await
             .expect("failed to call dhcp/Server.StartServing")
             .map_err(zx::Status::from_raw)
             .expect("dhcp/Server.StartServing returned error");
-        let () = assert_client_acquires_addr::<CLIENT::DhcpClient>(
+        assert_client_acquires_addr::<CLIENT::DhcpClient>(
             &client_realm,
             &client_ep,
             dhcpv4_helper::DEFAULT_TEST_CONFIG.expected_acquired(),
@@ -1280,8 +1280,8 @@ async fn acquire_dhcp_server_after_restart<SERVER: Netstack, CLIENT: NetstackAnd
             false,
         )
         .await;
-        let () = dhcp_server.stop_serving().await.expect("failed to call dhcp/Server.StopServing");
-        let () = server_realm
+        dhcp_server.stop_serving().await.expect("failed to call dhcp/Server.StopServing");
+        server_realm
             .stop_child_component(constants::dhcp_server::COMPONENT_NAME)
             .await
             .expect("failed to stop dhcpd");
@@ -1295,9 +1295,9 @@ async fn acquire_dhcp_server_after_restart<SERVER: Netstack, CLIENT: NetstackAnd
         let dhcp_server = server_realm
             .connect_to_protocol::<fidl_fuchsia_net_dhcp::Server_Marker>()
             .expect("failed to connect to DHCP server");
-        let () = match mode {
+        match mode {
             PersistenceMode::Persistent => {
-                let () = dhcp_server
+                dhcp_server
                     .start_serving()
                     .await
                     .expect("failed to call dhcp/Server.StartServing")
@@ -1316,7 +1316,7 @@ async fn acquire_dhcp_server_after_restart<SERVER: Netstack, CLIENT: NetstackAnd
                 );
             }
         };
-        let () = server_realm
+        server_realm
             .stop_child_component(constants::dhcp_server::COMPONENT_NAME)
             .await
             .expect("failed to stop dhcpd");
@@ -1331,18 +1331,15 @@ async fn acquire_dhcp_server_after_restart<SERVER: Netstack, CLIENT: NetstackAnd
         let dhcp_server = server_realm
             .connect_to_protocol::<fidl_fuchsia_net_dhcp::Server_Marker>()
             .expect("failed to connect to DHCP server");
-        let () = match mode {
+        match mode {
             PersistenceMode::Persistent => {
-                let () = dhcp_server
+                dhcp_server
                     .start_serving()
                     .await
                     .expect("failed to call dhcp/Server.StartServing")
                     .map_err(zx::Status::from_raw)
                     .expect("dhcp/Server.StartServing returned error");
-                let () = dhcp_server
-                    .stop_serving()
-                    .await
-                    .expect("failed to call dhcp/Server.StopServing");
+                dhcp_server.stop_serving().await.expect("failed to call dhcp/Server.StopServing");
                 dhcp_server
                     .clear_leases()
                     .await
@@ -1361,7 +1358,7 @@ async fn acquire_dhcp_server_after_restart<SERVER: Netstack, CLIENT: NetstackAnd
                 );
             }
         };
-        let () = server_realm
+        server_realm
             .stop_child_component(constants::dhcp_server::COMPONENT_NAME)
             .await
             .expect("failed to stop dhcpd");
@@ -1425,13 +1422,13 @@ async fn test_dhcp_server_persistence_mode<N: Netstack>(name: &str, mode: Persis
         let dhcp_server = server_realm
             .connect_to_protocol::<fidl_fuchsia_net_dhcp::Server_Marker>()
             .expect("failed to connect to server");
-        let () = dhcpv4_helper::set_server_settings(
+        dhcpv4_helper::set_server_settings(
             &dhcp_server,
             test_dhcpd_parameters(if_name.to_string()),
             std::iter::empty(),
         )
         .await;
-        let () = server_realm
+        server_realm
             .stop_child_component(constants::dhcp_server::COMPONENT_NAME)
             .await
             .expect("failed to stop dhcpd");
@@ -1445,7 +1442,7 @@ async fn test_dhcp_server_persistence_mode<N: Netstack>(name: &str, mode: Persis
             .expect("failed to connect to server");
         let dhcp_server = &dhcp_server;
         let params = mode.dhcpd_params_after_restart(if_name.to_string());
-        let () = stream::iter(params.into_iter())
+        stream::iter(params.into_iter())
             .for_each_concurrent(None, |(name, parameter)| async move {
                 assert_eq!(
                     dhcp_server
@@ -1462,7 +1459,7 @@ async fn test_dhcp_server_persistence_mode<N: Netstack>(name: &str, mode: Persis
                 )
             })
             .await;
-        let () = server_realm
+        server_realm
             .stop_child_component(constants::dhcp_server::COMPONENT_NAME)
             .await
             .expect("failed to stop dhcpd");

@@ -28,7 +28,7 @@ async fn acquires_address(name: &str) {
         ("/pkg/data/dhcp_setup.sh", "/root/input/dhcp_setup.sh"),
         ("/pkg/data/dhcpd.conf", "/etc/dhcp/dhcpd.conf"),
     ] {
-        let () = guest_controller.put_file(local_path, remote_path).await.unwrap_or_else(|e| {
+        guest_controller.put_file(local_path, remote_path).await.unwrap_or_else(|e| {
             panic!("failed to transfer file at path {} to guest: {}", local_path, e)
         });
     }
@@ -38,7 +38,7 @@ async fn acquires_address(name: &str) {
         .await
         .expect("exec failed");
 
-    let () = iface.start_dhcp::<InStack>().await.expect("failed to start DHCP");
+    iface.start_dhcp::<InStack>().await.expect("failed to start DHCP");
 
     // The IPv4 address the client is expected to acquire is the only address
     // the DHCPv4 server assigns to clients as found in

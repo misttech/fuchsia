@@ -139,7 +139,7 @@ async fn setup<'a>(
         let device = {
             let (device, server_end) =
                 fidl::endpoints::create_endpoints::<fhardware_network::DeviceMarker>();
-            let () = port.get_device(server_end).expect("get device");
+            port.get_device(server_end).expect("get device");
             device
         };
         let device_control = devices::install_device(realm, device);
@@ -149,7 +149,7 @@ async fn setup<'a>(
                 port.get_info().await.expect("get port info").id.expect("port ID must be present");
             let (control, server_end) =
                 fnet_interfaces_ext::admin::Control::create_endpoints().expect("create endpoints");
-            let () = device_control
+            device_control
                 .create_interface(&port_id, server_end, fnet_interfaces_admin::Options::default())
                 .expect("create interface");
             control

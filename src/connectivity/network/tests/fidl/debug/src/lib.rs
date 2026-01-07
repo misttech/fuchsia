@@ -40,7 +40,7 @@ async fn get_admin_unknown<N: Netstack>(name: &str) {
     // Request unknown NIC ID, expect request channel to be closed.
     let (admin_control, server_end) =
         fidl::endpoints::create_proxy::<fnet_interfaces_admin::ControlMarker>();
-    let () = root_interfaces.get_admin(id + 1, server_end).expect("get admin failed");
+    root_interfaces.get_admin(id + 1, server_end).expect("get admin failed");
 
     let events = admin_control.take_event_stream().try_collect::<Vec<_>>().await;
     assert_matches!(

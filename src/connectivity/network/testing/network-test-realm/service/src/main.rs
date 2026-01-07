@@ -589,7 +589,7 @@ async fn bind_udp_socket(
         0,
     )
         .into();
-    let () = socket.bind(&address.into()).map_err(|e| {
+    socket.bind(&address.into()).map_err(|e| {
         error!("error binding socket to address {:?}: {:?}", address, e);
         fntr::Error::Internal
     })?;

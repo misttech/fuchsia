@@ -101,7 +101,7 @@ impl std::ops::Drop for AddressMatcher {
     fn drop(&mut self) {
         // Always check for left over addresses on drop. Prevents the caller
         // from forgetting to do so.
-        let () = self.check().expect("AddressMatcher was not emptied");
+        self.check().expect("AddressMatcher was not emptied");
     }
 }
 
@@ -212,7 +212,7 @@ async fn inspect_nic(name: &str) {
     // Populate the neighbor table so we can verify inspection of its entries.
     const BOB_IP: fidl_fuchsia_net::IpAddress = fidl_ip!("192.168.0.1");
     const BOB_MAC: fidl_fuchsia_net::MacAddress = fidl_mac!("02:0A:0B:0C:0D:0E");
-    let () = realm
+    realm
         .connect_to_protocol::<fidl_fuchsia_net_neighbor::ControllerMarker>()
         .expect("failed to connect to Controller")
         .add_entry(netdev.id(), &BOB_IP, &BOB_MAC)
@@ -348,8 +348,8 @@ async fn inspect_nic(name: &str) {
         }
     });
 
-    let () = loopback_addrs.check().expect("loopback addresses match failed");
-    let () = netdev_addrs.check().expect("netdev addresses match failed");
+    loopback_addrs.check().expect("loopback addresses match failed");
+    netdev_addrs.check().expect("netdev addresses match failed");
 }
 
 #[netstack_test]
@@ -392,7 +392,7 @@ async fn inspect_routing_table(name: &str) {
     }));
 
     let data = get_inspect_data(&diagnostics_dir, "Routes", "routes").await;
-    let () = routing_table_assertion
+    routing_table_assertion
         .run(&data)
         .unwrap_or_else(|e| panic!("tree assertion fails: {}, inspect data is: {:#?}", e, data));
 }
@@ -534,7 +534,7 @@ async fn inspect_dhcp(
             .serialize_vec_outer()
             .expect("failed to serialize UDP packet")
             .unwrap_b();
-        let () = fake_ep.write(ser.as_ref()).await.expect("failed to write to endpoint");
+        fake_ep.write(ser.as_ref()).await.expect("failed to write to endpoint");
     }
 
     const DISCARD_STATS_NAME: &str = "PacketDiscardStats";
@@ -561,44 +561,43 @@ async fn inspect_dhcp(
     let mut invalid_trans_proto_assertion = TreeAssertion::new(INVALID_TRANS_PROTO_STAT_NAME, true);
     let mut invalid_packet_type_assertion = TreeAssertion::new(INVALID_PACKET_TYPE_STAT_NAME, true);
     let mut total_packet_type_assertion = TreeAssertion::new(TOTAL_COUNTER_NAME, true);
-    let () = total_packet_type_assertion
+    total_packet_type_assertion
         .add_property_assertion(COUNTER_PROPERTY_NAME, Arc::new(0.to_string()));
-    let () = invalid_packet_type_assertion.add_child_assertion(total_packet_type_assertion);
+    invalid_packet_type_assertion.add_child_assertion(total_packet_type_assertion);
 
     let mut total_port = 0;
     for (port, count) in invalid_ports {
         let mut port_assertion = TreeAssertion::new(&port.to_string(), true);
-        let () = port_assertion
-            .add_property_assertion(COUNTER_PROPERTY_NAME, Arc::new(count.to_string()));
+        port_assertion.add_property_assertion(COUNTER_PROPERTY_NAME, Arc::new(count.to_string()));
         total_port += count;
-        let () = invalid_port_assertion.add_child_assertion(port_assertion);
+        invalid_port_assertion.add_child_assertion(port_assertion);
     }
     let mut total_port_assertion = TreeAssertion::new(TOTAL_COUNTER_NAME, true);
-    let () = total_port_assertion
+    total_port_assertion
         .add_property_assertion(COUNTER_PROPERTY_NAME, Arc::new(total_port.to_string()));
-    let () = invalid_port_assertion.add_child_assertion(total_port_assertion);
+    invalid_port_assertion.add_child_assertion(total_port_assertion);
 
     let mut total_trans_proto = 0;
     for (proto, count) in invalid_trans_protos {
         let mut trans_proto_assertion = TreeAssertion::new(&proto.to_string(), true);
-        let () = trans_proto_assertion
+        trans_proto_assertion
             .add_property_assertion(COUNTER_PROPERTY_NAME, Arc::new(count.to_string()));
         total_trans_proto += count;
-        let () = invalid_trans_proto_assertion.add_child_assertion(trans_proto_assertion);
+        invalid_trans_proto_assertion.add_child_assertion(trans_proto_assertion);
     }
     let mut total_trans_proto_assertion = TreeAssertion::new(TOTAL_COUNTER_NAME, true);
-    let () = total_trans_proto_assertion
+    total_trans_proto_assertion
         .add_property_assertion(COUNTER_PROPERTY_NAME, Arc::new(total_trans_proto.to_string()));
-    let () = invalid_trans_proto_assertion.add_child_assertion(total_trans_proto_assertion);
+    invalid_trans_proto_assertion.add_child_assertion(total_trans_proto_assertion);
 
     let mut discard_stats_assertion = TreeAssertion::new(DISCARD_STATS_NAME, true);
-    let () = discard_stats_assertion.add_child_assertion(invalid_port_assertion);
-    let () = discard_stats_assertion.add_child_assertion(invalid_trans_proto_assertion);
-    let () = discard_stats_assertion.add_child_assertion(invalid_packet_type_assertion);
+    discard_stats_assertion.add_child_assertion(invalid_port_assertion);
+    discard_stats_assertion.add_child_assertion(invalid_trans_proto_assertion);
+    discard_stats_assertion.add_child_assertion(invalid_packet_type_assertion);
 
     let tree_assertion = path.iter().fold(discard_stats_assertion, |acc, name| {
         let mut assertion = TreeAssertion::new(name, true);
-        let () = assertion.add_child_assertion(acc);
+        assertion.add_child_assertion(acc);
         assertion
     });
 
@@ -620,7 +619,7 @@ async fn inspect_dhcp(
                 println!("Got mismatched inspect data with err: {:?}", err);
             }
         }
-        let () = fasync::Timer::new(std::time::Duration::from_millis(100)).await;
+        fasync::Timer::new(std::time::Duration::from_millis(100)).await;
     }
 }
 

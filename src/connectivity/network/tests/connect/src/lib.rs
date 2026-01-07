@@ -18,7 +18,7 @@ use {
 
 async fn measure(fut: impl std::future::Future<Output = ()>) -> std::time::Duration {
     let start = std::time::Instant::now();
-    let () = fut.await;
+    fut.await;
     start.elapsed()
 }
 

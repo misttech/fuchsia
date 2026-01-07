@@ -166,7 +166,7 @@ async fn watcher_existing<N: Netstack>(name: &str) {
 
         // Interface must be online for us to observe the address in the
         // assigned state later.
-        let () = iface.set_link_up(true).await.expect("bring device up");
+        iface.set_link_up(true).await.expect("bring device up");
 
         let port_identity_koid = if N::VERSION.is_netstack3() {
             Some(iface.endpoint().get_port_identity_koid().await.expect("get id event"))
@@ -196,7 +196,7 @@ async fn watcher_existing<N: Netstack>(name: &str) {
         )
         .await
         .expect("add address");
-        let () = address_state_provider.detach().expect("detach address lifetime");
+        address_state_provider.detach().expect("detach address lifetime");
 
         if has_default_ipv4_route {
             iface
@@ -352,21 +352,17 @@ async fn test_add_remove_interface<N: Netstack>(name: &str) {
 
     let mut if_map =
         HashMap::<u64, fidl_fuchsia_net_interfaces_ext::PropertiesAndState<(), _>>::new();
-    let () = fidl_fuchsia_net_interfaces_ext::wait_interface(
-        event_stream.by_ref(),
-        &mut if_map,
-        |if_map| if_map.contains_key(&id).then_some(()),
-    )
+    fidl_fuchsia_net_interfaces_ext::wait_interface(event_stream.by_ref(), &mut if_map, |if_map| {
+        if_map.contains_key(&id).then_some(())
+    })
     .await
     .expect("observe interface addition");
 
     let (_endpoint, _device_control) = iface.remove().await.expect("failed to remove interface");
 
-    let () = fidl_fuchsia_net_interfaces_ext::wait_interface(
-        event_stream.by_ref(),
-        &mut if_map,
-        |if_map| (!if_map.contains_key(&id)).then_some(()),
-    )
+    fidl_fuchsia_net_interfaces_ext::wait_interface(event_stream.by_ref(), &mut if_map, |if_map| {
+        (!if_map.contains_key(&id)).then_some(())
+    })
     .await
     .expect("observe interface deletion");
 }
@@ -780,22 +776,18 @@ async fn test_close_interface<N: Netstack>(test_name: &str, sub_test_name: &str,
     let mut event_stream = pin!(event_stream);
     let mut if_map =
         HashMap::<u64, fidl_fuchsia_net_interfaces_ext::PropertiesAndState<(), _>>::new();
-    let () = fidl_fuchsia_net_interfaces_ext::wait_interface(
-        event_stream.by_ref(),
-        &mut if_map,
-        |if_map| if_map.contains_key(&id).then_some(()),
-    )
+    fidl_fuchsia_net_interfaces_ext::wait_interface(event_stream.by_ref(), &mut if_map, |if_map| {
+        if_map.contains_key(&id).then_some(())
+    })
     .await
     .expect("observe interface addition");
 
     let (_control, _device_control) = iface.remove_device();
 
     // Wait until we observe the removed interface is missing.
-    let () = fidl_fuchsia_net_interfaces_ext::wait_interface(
-        event_stream.by_ref(),
-        &mut if_map,
-        |if_map| (!if_map.contains_key(&id)).then_some(()),
-    )
+    fidl_fuchsia_net_interfaces_ext::wait_interface(event_stream.by_ref(), &mut if_map, |if_map| {
+        (!if_map.contains_key(&id)).then_some(())
+    })
     .await
     .expect("observe interface removal");
 }
@@ -828,11 +820,11 @@ async fn test_down_close_race<N: Netstack>(name: &str) {
 
         let did_enable = dev.control().enable().await.expect("send enable").expect("enable");
         assert!(did_enable);
-        let () = dev.set_link_up(true).await.expect("bring device up");
+        dev.set_link_up(true).await.expect("bring device up");
 
         let id = dev.id();
         // Wait until the interface is installed and the link state is up.
-        let () = fidl_fuchsia_net_interfaces_ext::wait_interface(
+        fidl_fuchsia_net_interfaces_ext::wait_interface(
             event_stream.by_ref(),
             &mut if_map,
             |if_map| if_map.get(&id)?.properties.online.then_some(()),
@@ -843,11 +835,11 @@ async fn test_down_close_race<N: Netstack>(name: &str) {
         // Here's where we cause the race. We bring the device's link down
         // and drop it right after; the two signals will race to reach
         // Netstack.
-        let () = dev.set_link_up(false).await.expect("bring link down");
+        dev.set_link_up(false).await.expect("bring link down");
         std::mem::drop(dev);
 
         // Wait until the interface is removed from Netstack cleanly.
-        let () = fidl_fuchsia_net_interfaces_ext::wait_interface(
+        fidl_fuchsia_net_interfaces_ext::wait_interface(
             event_stream.by_ref(),
             &mut if_map,
             |if_map| (!if_map.contains_key(&id)).then_some(()),
@@ -893,7 +885,7 @@ async fn test_close_data_race<N: Netstack>(name: &str) {
             .expect("add endpoint to Netstack");
 
         assert!(dev.control().enable().await.expect("send enable").expect("enable"));
-        let () = dev.set_link_up(true).await.expect("bring device up");
+        dev.set_link_up(true).await.expect("bring device up");
 
         let address_state_provider = interfaces::add_address_wait_assigned(
             dev.control(),
@@ -905,7 +897,7 @@ async fn test_close_data_race<N: Netstack>(name: &str) {
         )
         .await
         .expect("add subnet address and route");
-        let () = address_state_provider.detach().expect("detach address lifetime");
+        address_state_provider.detach().expect("detach address lifetime");
 
         // Create a socket and start sending data on it nonstop.
         let fidl_fuchsia_net_ext::IpAddress(bind_addr) = DEVICE_ADDRESS_IN_SUBNET.addr.into();
@@ -934,7 +926,7 @@ async fn test_close_data_race<N: Netstack>(name: &str) {
                 }
 
                 // Enqueue some data on the rx path.
-                let () = fake_ep
+                fake_ep
                     // We don't care that it's a valid frame, only that it excites
                     // the rx path.
                     .write(&[1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16])
@@ -944,7 +936,7 @@ async fn test_close_data_race<N: Netstack>(name: &str) {
                 // Wait on a short timer with an exponential backoff to reduce log noise
                 // when running the test (which can cause timeouts due to slowness in
                 // the logging framework).
-                let () = fuchsia_async::Timer::new(fuchsia_async::MonotonicInstant::after(
+                fuchsia_async::Timer::new(fuchsia_async::MonotonicInstant::after(
                     write_wait_interval,
                 ))
                 .await;
@@ -954,7 +946,7 @@ async fn test_close_data_race<N: Netstack>(name: &str) {
 
         let id = dev.id();
         let drop_fut = async move {
-            let () = fuchsia_async::Timer::new(fuchsia_async::MonotonicInstant::after(
+            fuchsia_async::Timer::new(fuchsia_async::MonotonicInstant::after(
                 zx::MonotonicDuration::from_millis(3),
             ))
             .await;
@@ -969,8 +961,8 @@ async fn test_close_data_race<N: Netstack>(name: &str) {
 
         let (io_result, iface_dropped, ()) =
             futures::future::join3(io_fut, iface_dropped, drop_fut).await;
-        let () = io_result.expect("unexpected error on io future");
-        let () = iface_dropped.expect("observe interface removal");
+        io_result.expect("unexpected error on io future");
+        iface_dropped.expect("observe interface removal");
     }
 }
 
@@ -1224,7 +1216,7 @@ async fn test_watcher_race<N: Netstack>(name: &str) {
     for _ in 0..100 {
         let (watcher, server) =
             fidl::endpoints::create_proxy::<fidl_fuchsia_net_interfaces::WatcherMarker>();
-        let () = interface_state
+        interface_state
             .get_watcher(&fidl_fuchsia_net_interfaces::WatcherOptions::default(), server)
             .expect("initialize interface watcher");
 
@@ -1264,7 +1256,7 @@ async fn test_watcher_race<N: Netstack>(name: &str) {
                 )
                 .await
                 .expect("add address");
-                let () = address_state_provider.detach().expect("detach address lifetime");
+                address_state_provider.detach().expect("detach address lifetime");
             },
             ep.add_subnet_route(fidl_subnet!("0.0.0.0/0")).map(|r| r.expect("add default route")),
         )
@@ -1588,7 +1580,7 @@ async fn watcher<N: Netstack>(name: &str) {
             .await
     }
     // Add an interface.
-    let () = assert_blocked(&mut blocking_stream).await;
+    assert_blocked(&mut blocking_stream).await;
     let dev = sandbox
         .create_endpoint("ep")
         .await
@@ -1596,7 +1588,7 @@ async fn watcher<N: Netstack>(name: &str) {
         .into_interface_in_realm(&realm)
         .await
         .expect("add endpoint to Netstack");
-    let () = dev.set_link_up(true).await.expect("bring device up");
+    dev.set_link_up(true).await.expect("bring device up");
 
     let id = dev.id();
     let port_identity_koid = if N::VERSION.is_netstack3() {
@@ -1624,7 +1616,7 @@ async fn watcher<N: Netstack>(name: &str) {
     assert_eq!(next(&mut stream).await, want);
 
     // Set the link to up.
-    let () = assert_blocked(&mut blocking_stream).await;
+    assert_blocked(&mut blocking_stream).await;
     let did_enable = dev.control().enable().await.expect("send enable").expect("enable");
     assert!(did_enable);
     // NB The following fold function is necessary because IPv6 link-local
@@ -1721,7 +1713,7 @@ async fn watcher<N: Netstack>(name: &str) {
     }
 
     // Add an address and subnet route.
-    let () = assert_blocked(&mut blocking_stream).await;
+    assert_blocked(&mut blocking_stream).await;
     let subnet = fidl_subnet!("192.168.0.1/16");
     let _address_state_provider = interfaces::add_address_wait_assigned(
         dev.control(),
@@ -1772,7 +1764,7 @@ async fn watcher<N: Netstack>(name: &str) {
     assert_eq!(addresses_changed(next(&mut stream).await), want);
 
     // Add a default route.
-    let () = assert_blocked(&mut blocking_stream).await;
+    assert_blocked(&mut blocking_stream).await;
 
     let default_gateway = fidl_ip!("192.168.255.254");
 
@@ -1788,7 +1780,7 @@ async fn watcher<N: Netstack>(name: &str) {
     assert_eq!(next(&mut stream).await, want);
 
     // Remove the default route.
-    let () = assert_blocked(&mut blocking_stream).await;
+    assert_blocked(&mut blocking_stream).await;
     dev.remove_default_route(default_gateway).await.expect("remove default route");
 
     let want =
@@ -1801,7 +1793,7 @@ async fn watcher<N: Netstack>(name: &str) {
     assert_eq!(next(&mut stream).await, want);
 
     // Remove the added address.
-    let () = assert_blocked(&mut blocking_stream).await;
+    assert_blocked(&mut blocking_stream).await;
     let was_removed = interfaces::remove_subnet_address_and_route(&dev, subnet)
         .await
         .expect("remove subnet address and route");
@@ -1811,8 +1803,8 @@ async fn watcher<N: Netstack>(name: &str) {
 
     // Set the link to down.
     {
-        let () = assert_blocked(&mut blocking_stream).await;
-        let () = dev.set_link_up(false).await.expect("bring device up");
+        assert_blocked(&mut blocking_stream).await;
+        dev.set_link_up(false).await.expect("bring device up");
         let fold_fn = |addresses_empty: bool, event| {
             let (online, addresses) = assert_matches::assert_matches!(
                 event,
@@ -1868,7 +1860,7 @@ async fn watcher<N: Netstack>(name: &str) {
     }
 
     // Remove the ethernet interface.
-    let () = assert_blocked(&mut blocking_stream).await;
+    assert_blocked(&mut blocking_stream).await;
     std::mem::drop(dev);
     let want = fidl_fuchsia_net_interfaces::Event::Removed(id);
     assert_eq!(next(&mut blocking_stream).await, want);
@@ -1984,7 +1976,7 @@ async fn test_lifetime_change_on_hidden_addr<N: Netstack>(
     let (address_state_provider, server) = fidl::endpoints::create_proxy::<
         fidl_fuchsia_net_interfaces_admin::AddressStateProviderMarker,
     >();
-    let () = interface
+    interface
         .control()
         .add_address(
             &ADDR,

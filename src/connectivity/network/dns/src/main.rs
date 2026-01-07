@@ -347,7 +347,7 @@ fn update_resolver<T: ResolverLookup>(resolver: &SharedResolver<T>, servers: Ser
 
     let new_resolver =
         T::new(ResolverConfig::from_parts(None, Vec::new(), name_servers), resolver_opts);
-    let () = resolver.write(Rc::new(new_resolver));
+    resolver.write(Rc::new(new_resolver));
 }
 
 enum IncomingRequest {
@@ -578,9 +578,9 @@ async fn sort_preferred_addresses(
         fname::LookupError::InternalError
     })?;
 
-    let () = addrs_info.sort_by(|(_laddr, left), (_raddr, right)| left.cmp(right));
+    addrs_info.sort_by(|(_laddr, left), (_raddr, right)| left.cmp(right));
     // Reinsert the addresses in order from addr_info.
-    let () = addrs.extend(addrs_info.into_iter().map(|(addr, _)| addr));
+    addrs.extend(addrs_info.into_iter().map(|(addr, _)| addr));
     Ok(addrs)
 }
 
@@ -811,7 +811,7 @@ async fn run_lookup<T: ResolverLookup>(
         .try_for_each_concurrent(None, |request| async {
             match request {
                 LookupRequest::LookupIp { hostname, options, responder } => {
-                    let () = sender
+                    sender
                         .clone()
                         .send(IpLookupRequest { hostname, options, responder })
                         .await
@@ -911,7 +911,7 @@ fn create_ip_lookup_fut<T: ResolverLookup>(
                         result.into_iter().filter_map(std::convert::identity).fold(
                             (Vec::new(), Vec::new(), LookupIpErrorsFromSource::default()),
                             |(mut addrs, mut cnames, mut error), result| {
-                                let () = match result {
+                                match result {
                                     Err((src, err)) => {
                                         error.accumulate(src, err);
                                     },
@@ -962,7 +962,7 @@ fn create_ip_lookup_fut<T: ResolverLookup>(
                             }
                         }
                     };
-                    let () = stats
+                    stats
                         .finish_query(
                             start_time,
                             count.as_ref().copied().map_err(|e| e.kind()),
@@ -1042,7 +1042,7 @@ async fn run_lookup_admin<T: ResolverLookup>(
                 LookupAdminRequest::SetDnsServers { servers, responder } => {
                     let response = match state.update_servers(servers) {
                         UpdateServersResult::Updated(servers) => {
-                            let () = update_resolver(resolver, servers);
+                            update_resolver(resolver, servers);
                             Ok(())
                         }
                         UpdateServersResult::NoChange => Ok(()),
@@ -1050,10 +1050,10 @@ async fn run_lookup_admin<T: ResolverLookup>(
                             Err(zx::Status::INVALID_ARGS.into_raw())
                         }
                     };
-                    let () = responder.send(response)?;
+                    responder.send(response)?;
                 }
                 LookupAdminRequest::GetDnsServers { responder } => {
-                    let () = responder.send(&state.servers())?;
+                    responder.send(&state.servers())?;
                 }
             }
             Ok(())
@@ -1075,8 +1075,8 @@ fn add_config_state_inspect(
             for (i, server) in server_list.into_iter().enumerate() {
                 let child = srv.root().create_child(format!("{}", i));
                 let net_ext::SocketAddress(addr) = server.into();
-                let () = child.record_string("address", format!("{}", addr));
-                let () = srv.root().record(child);
+                child.record_string("address", format!("{}", addr));
+                srv.root().record(child);
             }
             Ok(srv)
         }
@@ -1111,15 +1111,15 @@ fn add_query_stats_inspect(
 
                 match u64::try_from(start.into_nanos()) {
                     Ok(nanos) => {
-                        let () = child.record_uint("start_time_nanos", nanos);
+                        child.record_uint("start_time_nanos", nanos);
                     },
                     Err(e) => warn!(
                         "error computing `start_time_nanos`: {:?}.into_nanos() from i64 -> u64 failed: {}",
                         start, e
                     ),
                 }
-                let () = child.record_uint("successful_queries", *success_count);
-                let () = child.record_uint("failed_queries", *failure_count);
+                child.record_uint("successful_queries", *success_count);
+                child.record_uint("failed_queries", *failure_count);
                 let record_average = |name: &str, total: zx::MonotonicDuration, count: u64| {
                     // Don't record an average if there are no stats.
                     if count == 0 {
@@ -1133,12 +1133,12 @@ fn add_query_stats_inspect(
                         ),
                     }
                 };
-                let () = record_average(
+                record_average(
                     "average_success_duration_micros",
                     *success_elapsed_time,
                     *success_count,
                 );
-                let () = record_average(
+                record_average(
                     "average_failure_duration_micros",
                     *failure_elapsed_time,
                     *failure_count,
@@ -1157,30 +1157,30 @@ fn add_query_stats_inspect(
                     },
                 } = failure_stats;
                 let errors = child.create_child("errors");
-                let () = errors.record_uint("Message", *message);
-                let () = errors.record_uint("NoConnections", *no_connections);
-                let () = errors.record_uint("Io", *io);
-                let () = errors.record_uint("Proto", *proto);
-                let () = errors.record_uint("Timeout", *timeout);
+                errors.record_uint("Message", *message);
+                errors.record_uint("NoConnections", *no_connections);
+                errors.record_uint("Io", *io);
+                errors.record_uint("Proto", *proto);
+                errors.record_uint("Timeout", *timeout);
 
                 let no_records_found_response_codes =
                     errors.create_child("NoRecordsFoundResponseCodeCounts");
                 for (HashableResponseCode { response_code }, count) in response_code_counts {
-                    let () = no_records_found_response_codes.record_uint(
+                    no_records_found_response_codes.record_uint(
                         format!("{:?}", response_code),
                         *count,
                     );
                 }
-                let () = errors.record(no_records_found_response_codes);
+                errors.record(no_records_found_response_codes);
 
                 let unhandled_resolve_error_kinds =
                     errors.create_child("UnhandledResolveErrorKindCounts");
                 for (error_kind, count) in resolve_error_kind_counts {
-                    let () = unhandled_resolve_error_kinds.record_uint(error_kind, *count);
+                    unhandled_resolve_error_kinds.record_uint(error_kind, *count);
                 }
-                let () = errors.record(unhandled_resolve_error_kinds);
+                errors.record(unhandled_resolve_error_kinds);
 
-                let () = child.record(errors);
+                child.record(errors);
 
                 let address_counts_node = child.create_child("address_counts");
                 for (count, occurrences) in address_counts_histogram {
@@ -1188,7 +1188,7 @@ fn add_query_stats_inspect(
                 }
                 child.record(address_counts_node);
 
-                let () = node.root().record(child);
+                node.root().record(child);
             }
             Ok(node)
         }
@@ -1918,7 +1918,7 @@ mod tests {
 
         // Set servers.
         env.run_admin(|proxy| async move {
-            let () = proxy
+            proxy
                 .set_dns_servers(&[DHCP_SERVER, NDP_SERVER, DHCPV6_SERVER])
                 .await
                 .expect("Failed to call SetDnsServers")
@@ -1939,7 +1939,7 @@ mod tests {
 
         // Clear servers.
         env.run_admin(|proxy| async move {
-            let () = proxy
+            proxy
                 .set_dns_servers(&[])
                 .await
                 .expect("Failed to call SetDnsServers")
@@ -1992,11 +1992,7 @@ mod tests {
         let env = TestEnvironment::default();
         env.run_admin(|proxy| async move {
             let expect = &[NDP_SERVER, DHCP_SERVER, DHCPV6_SERVER, STATIC_SERVER];
-            let () = proxy
-                .set_dns_servers(expect)
-                .await
-                .expect("FIDL error")
-                .expect("set_servers failed");
+            proxy.set_dns_servers(expect).await.expect("FIDL error").expect("set_servers failed");
             assert_matches!(proxy.get_dns_servers().await, Ok(got) if got == expect);
         })
         .await;
@@ -2013,11 +2009,7 @@ mod tests {
         });
         env.run_admin(|proxy| async move {
             let servers = &[NDP_SERVER, DHCP_SERVER, DHCPV6_SERVER, STATIC_SERVER];
-            let () = proxy
-                .set_dns_servers(servers)
-                .await
-                .expect("FIDL error")
-                .expect("set_servers failed");
+            proxy.set_dns_servers(servers).await.expect("FIDL error").expect("set_servers failed");
         })
         .await;
         assert_data_tree!(inspector, root:{
@@ -2070,45 +2062,37 @@ mod tests {
             query_stats: {}
         });
 
-        let () = env
-            .run_lookup(|proxy| async move {
-                // IP Lookup IPv4 for REMOTE_IPV4_HOST.
-                assert_eq!(
-                    proxy
-                        .lookup_ip(
-                            REMOTE_IPV4_HOST,
-                            &fname::LookupIpOptions {
-                                ipv4_lookup: Some(true),
-                                ..Default::default()
-                            }
-                        )
-                        .await
-                        .expect("lookup_ip"),
-                    Ok(fname::LookupResult {
-                        addresses: Some(vec![map_ip(IPV4_HOST)]),
-                        ..Default::default()
-                    }),
-                );
-            })
-            .await;
-        let () = env
-            .run_lookup(|proxy| async move {
-                // IP Lookup IPv6 for REMOTE_IPV4_HOST.
-                assert_eq!(
-                    proxy
-                        .lookup_ip(
-                            REMOTE_IPV4_HOST,
-                            &fname::LookupIpOptions {
-                                ipv6_lookup: Some(true),
-                                ..Default::default()
-                            }
-                        )
-                        .await
-                        .expect("lookup_ip"),
-                    Err(fname::LookupError::NotFound),
-                );
-            })
-            .await;
+        env.run_lookup(|proxy| async move {
+            // IP Lookup IPv4 for REMOTE_IPV4_HOST.
+            assert_eq!(
+                proxy
+                    .lookup_ip(
+                        REMOTE_IPV4_HOST,
+                        &fname::LookupIpOptions { ipv4_lookup: Some(true), ..Default::default() }
+                    )
+                    .await
+                    .expect("lookup_ip"),
+                Ok(fname::LookupResult {
+                    addresses: Some(vec![map_ip(IPV4_HOST)]),
+                    ..Default::default()
+                }),
+            );
+        })
+        .await;
+        env.run_lookup(|proxy| async move {
+            // IP Lookup IPv6 for REMOTE_IPV4_HOST.
+            assert_eq!(
+                proxy
+                    .lookup_ip(
+                        REMOTE_IPV4_HOST,
+                        &fname::LookupIpOptions { ipv6_lookup: Some(true), ..Default::default() }
+                    )
+                    .await
+                    .expect("lookup_ip"),
+                Err(fname::LookupError::NotFound),
+            );
+        })
+        .await;
         assert_data_tree!(inspector, root:{
             query_stats: {
                 "window 1": {
@@ -2143,7 +2127,7 @@ mod tests {
         delay: zx::MonotonicDuration,
     ) {
         let start_time = fasync::MonotonicInstant::now();
-        let () = exec.set_fake_time(fasync::MonotonicInstant::after(delay));
+        exec.set_fake_time(fasync::MonotonicInstant::after(delay));
         let update_stats = stats.finish_query(start_time, result);
         let mut update_stats = pin!(update_stats);
         assert!(exec.run_until_stalled(&mut update_stats).is_ready());
@@ -2156,7 +2140,7 @@ mod tests {
     fn test_query_stats_inspect_average() {
         let mut exec = fasync::TestExecutor::new_with_fake_time();
         const START_NANOS: i64 = 1_234_567;
-        let () = exec.set_fake_time(fasync::MonotonicInstant::from_nanos(START_NANOS));
+        exec.set_fake_time(fasync::MonotonicInstant::from_nanos(START_NANOS));
 
         let stats = Arc::new(QueryStats::new());
         let inspector = fuchsia_inspect::Inspector::default();
@@ -2165,19 +2149,19 @@ mod tests {
         const SUCCESSFUL_QUERY_DURATION: zx::MonotonicDuration =
             zx::MonotonicDuration::from_seconds(30);
         for _ in 0..SUCCESSFUL_QUERY_COUNT / 2 {
-            let () = run_fake_lookup(
+            run_fake_lookup(
                 &mut exec,
                 stats.clone(),
                 Ok(/*addresses*/ NON_ZERO_USIZE_ONE),
                 zx::MonotonicDuration::from_nanos(0),
             );
-            let () = run_fake_lookup(
+            run_fake_lookup(
                 &mut exec,
                 stats.clone(),
                 Ok(/*addresses*/ NON_ZERO_USIZE_ONE),
                 SUCCESSFUL_QUERY_DURATION,
             );
-            let () = exec.set_fake_time(fasync::MonotonicInstant::after(
+            exec.set_fake_time(fasync::MonotonicInstant::after(
                 STAT_WINDOW_DURATION - SUCCESSFUL_QUERY_DURATION,
             ));
         }
@@ -2217,7 +2201,7 @@ mod tests {
     fn test_query_stats_inspect_error_counters() {
         let mut exec = fasync::TestExecutor::new_with_fake_time();
         const START_NANOS: i64 = 1_234_567;
-        let () = exec.set_fake_time(fasync::MonotonicInstant::from_nanos(START_NANOS));
+        exec.set_fake_time(fasync::MonotonicInstant::from_nanos(START_NANOS));
 
         let stats = Arc::new(QueryStats::new());
         let inspector = fuchsia_inspect::Inspector::default();
@@ -2226,7 +2210,7 @@ mod tests {
         const FAILED_QUERY_DURATION: zx::MonotonicDuration =
             zx::MonotonicDuration::from_millis(500);
         for _ in 0..FAILED_QUERY_COUNT {
-            let () = run_fake_lookup(
+            run_fake_lookup(
                 &mut exec,
                 stats.clone(),
                 Err(&ResolveErrorKind::Timeout),
@@ -2263,7 +2247,7 @@ mod tests {
     fn test_query_stats_inspect_no_records_found() {
         let mut exec = fasync::TestExecutor::new_with_fake_time();
         const START_NANOS: i64 = 1_234_567;
-        let () = exec.set_fake_time(fasync::MonotonicInstant::from_nanos(START_NANOS));
+        exec.set_fake_time(fasync::MonotonicInstant::from_nanos(START_NANOS));
 
         let stats = Arc::new(QueryStats::new());
         let inspector = fuchsia_inspect::Inspector::default();
@@ -2288,10 +2272,10 @@ mod tests {
         };
 
         for _ in 0..FAILED_QUERY_COUNT {
-            let () = run_fake_no_records_lookup(ResponseCode::NXDomain);
-            let () = run_fake_no_records_lookup(ResponseCode::Refused);
-            let () = run_fake_no_records_lookup(4096.into());
-            let () = run_fake_no_records_lookup(4097.into());
+            run_fake_no_records_lookup(ResponseCode::NXDomain);
+            run_fake_no_records_lookup(ResponseCode::Refused);
+            run_fake_no_records_lookup(4096.into());
+            run_fake_no_records_lookup(4097.into());
         }
 
         assert_data_tree!(@executor exec, inspector, root:{
@@ -2388,7 +2372,7 @@ mod tests {
     fn test_query_stats_inspect_oldest_stats_erased() {
         let mut exec = fasync::TestExecutor::new_with_fake_time();
         const START_NANOS: i64 = 1_234_567;
-        let () = exec.set_fake_time(fasync::MonotonicInstant::from_nanos(START_NANOS));
+        exec.set_fake_time(fasync::MonotonicInstant::from_nanos(START_NANOS));
 
         let stats = Arc::new(QueryStats::new());
         let inspector = fuchsia_inspect::Inspector::default();
@@ -2401,12 +2385,7 @@ mod tests {
                 exec.set_fake_time(fasync::MonotonicInstant::after(STAT_WINDOW_DURATION - DELAY));
         }
         for _ in 0..STAT_WINDOW_COUNT {
-            let () = run_fake_lookup(
-                &mut exec,
-                stats.clone(),
-                Ok(/*addresses*/ NON_ZERO_USIZE_ONE),
-                DELAY,
-            );
+            run_fake_lookup(&mut exec, stats.clone(), Ok(/*addresses*/ NON_ZERO_USIZE_ONE), DELAY);
             let () =
                 exec.set_fake_time(fasync::MonotonicInstant::after(STAT_WINDOW_DURATION - DELAY));
         }
@@ -2677,7 +2656,7 @@ mod tests {
             ),
         ][..]
         {
-            let () = stats.increment(error_kind);
+            stats.increment(error_kind);
             assert_eq!(&stats, expected, "invalid stats after incrementing with {:?}", error_kind);
         }
     }
@@ -2772,8 +2751,8 @@ mod tests {
         ]
         .iter()
         {
-            let () = test_das_helper(*dst, None, *dst, None, std::cmp::Ordering::Equal);
-            let () = test_das_helper(*dst, Some(*src), *dst, Some(*src), std::cmp::Ordering::Equal);
+            test_das_helper(*dst, None, *dst, None, std::cmp::Ordering::Equal);
+            test_das_helper(*dst, Some(*src), *dst, Some(*src), std::cmp::Ordering::Equal);
         }
     }
 
@@ -2786,7 +2765,7 @@ mod tests {
                 .expect("invalid subnet")
         );
         // Policy table must be sorted by prefix length.
-        let () = POLICY_TABLE.windows(2).for_each(|w| {
+        POLICY_TABLE.windows(2).for_each(|w| {
             let Policy { prefix: cur, precedence: _, label: _ } = w[0];
             let Policy { prefix: nxt, precedence: _, label: _ } = w[1];
             assert!(
@@ -2898,7 +2877,7 @@ mod tests {
             } else {
                 Err(zx::Status::ADDRESS_UNREACHABLE.into_raw())
             };
-            let () = responder.send(response).expect("failed to send Resolve FIDL response");
+            responder.send(response).expect("failed to send Resolve FIDL response");
         };
         TestEnvironment::default()
             .run_lookup_with_routes_handler(

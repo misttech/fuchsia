@@ -52,7 +52,7 @@ async fn log_packets<N: Netstack>(name: &str) {
             realm.connect_to_protocol::<fnet_stack::LogMarker>().expect("connect to netstack");
         (realm, netstack_proxy)
     };
-    let () = stack_log.set_log_packets(true).await.expect("enable packet logging");
+    stack_log.set_log_packets(true).await.expect("enable packet logging");
 
     let sock =
         fuchsia_async::net::UdpSocket::bind_in_realm(&realm, std_socket_addr!("127.0.0.1:0"))
@@ -76,9 +76,8 @@ async fn log_packets<N: Netstack>(name: &str) {
         .snapshot_then_subscribe()
         .expect("subscribe to snapshot");
 
-    let () = async_utils::fold::try_fold_while(stream, patterns, |mut patterns, data| {
-        let () = patterns
-            .retain(|pattern| !data.msg().map(|msg| msg.contains(pattern)).unwrap_or(false));
+    async_utils::fold::try_fold_while(stream, patterns, |mut patterns, data| {
+        patterns.retain(|pattern| !data.msg().map(|msg| msg.contains(pattern)).unwrap_or(false));
         futures::future::ok(if patterns.is_empty() {
             async_utils::fold::FoldWhile::Done(())
         } else {
@@ -125,7 +124,7 @@ async fn disable_interface_loopback<N: Netstack>(name: &str) {
         ))) => id
     );
 
-    let () = assert_matches::assert_matches!(
+    assert_matches::assert_matches!(
         stream.try_next().await,
         Ok(Some(fidl_fuchsia_net_interfaces::Event::Idle(
             fidl_fuchsia_net_interfaces::Empty {},
@@ -138,7 +137,7 @@ async fn disable_interface_loopback<N: Netstack>(name: &str) {
 
     let (control, server_end) =
         fidl_fuchsia_net_interfaces_ext::admin::Control::create_endpoints().expect("create proxy");
-    let () = root.get_admin(loopback_id, server_end).expect("get admin");
+    root.get_admin(loopback_id, server_end).expect("get admin");
 
     let did_disable = control.disable().await.expect("send disable").expect("disable");
     assert!(did_disable);
@@ -383,7 +382,7 @@ async fn test_forwarding<I: IpExt + IcmpIpExt, N: Netstack>(
         .connect_to_protocol::<fidl_fuchsia_net_neighbor::ControllerMarker>()
         .expect("connect to protocol");
     let dst_ip_fidl: <I::Addr as NetTypesIpAddressExt>::Fidl = dst_ip.into_ext();
-    let () = neighbor_controller
+    neighbor_controller
         .add_entry(iface2.id(), &dst_ip_fidl.into_ext(), &MAC)
         .await
         .expect("add_entry FIDL error")

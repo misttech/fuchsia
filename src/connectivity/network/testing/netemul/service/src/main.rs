@@ -291,7 +291,7 @@ async fn create_realm_instance(
             }
         }
         // TODO(https://fxbug.dev/324494668): delete when Netstack2 is gone.
-        let () = builder
+        builder
             .add_route(
                 Route::new()
                     .capability(
@@ -443,7 +443,7 @@ async fn create_realm_instance(
                                             source,
                                             name
                                         );
-                                        let () = child_dep_routes.push(
+                                        child_dep_routes.push(
                                             Route::new()
                                                 .capability({
                                                     let mut cap =
@@ -473,7 +473,7 @@ async fn create_realm_instance(
                                             "routing capability '{}' from component '{}' to '{}'",
                                             capability, source, name
                                         );
-                                        let () = child_dep_routes.push(
+                                        child_dep_routes.push(
                                             Route::new()
                                                 .capability(Capability::configuration(&capability))
                                                 .from(source)
@@ -496,7 +496,7 @@ async fn create_realm_instance(
                                             "routing capability '{}' from component '{}' to '{}'",
                                             capability, source, name
                                         );
-                                        let () = child_dep_routes.push(
+                                        child_dep_routes.push(
                                             Route::new()
                                                 .capability(Capability::service_by_name(
                                                     &capability,
@@ -598,7 +598,7 @@ async fn create_realm_instance(
                                 ));
                             }
                             Entry::Vacant(entry) => {
-                                let () = entry.insert(());
+                                let _: &mut () = entry.insert(());
                             }
                         }
                     }
@@ -607,7 +607,7 @@ async fn create_realm_instance(
         }
     }
     for route in child_dep_routes {
-        let () = builder.add_route(route).await?;
+        builder.add_route(route).await?;
     }
     // Override the program args section of the component declaration for components that specified
     // args.
@@ -634,14 +634,14 @@ async fn create_realm_instance(
         ) {
             Some(args) => *args = args_value,
             None => {
-                let () = entries
+                entries
                     .push(fdata::DictionaryEntry { key: ARGS_KEY.to_string(), value: args_value });
             }
         };
-        let () = builder.replace_component_decl(component.as_str(), decl).await?;
+        builder.replace_component_decl(component.as_str(), decl).await?;
     }
 
-    let () = builder
+    builder
         .add_route(
             Route::new()
                 .capability(Capability::protocol::<fsys2::LifecycleControllerMarker>())
@@ -765,7 +765,7 @@ impl ManagedRealm {
                             }
                         }
                     };
-                    let () = realm
+                    realm
                         .root
                         .connect_request_to_named_protocol_at_exposed_dir(&protocol_path, req)
                         .with_context(|| {
@@ -929,7 +929,7 @@ impl ManagedRealm {
                                 error!("failed to open proxy to lifecycle controller: {}", e);
                                 Err(zx::Status::INTERNAL)
                             })?;
-                        let () = lifecycle
+                        lifecycle
                             .stop_instance(&format!("./{}", child_name))
                             .await
                             .map_err(|e: fidl::Error| {
@@ -991,8 +991,8 @@ impl ManagedRealm {
                     .spawn();
                 }
                 ManagedRealmRequest::Shutdown { control_handle } => {
-                    let () = realm.destroy().await.context("destroy realm")?;
-                    let () = control_handle
+                    realm.destroy().await.context("destroy realm")?;
+                    control_handle
                         .send_on_shutdown()
                         .unwrap_or_else(|e| error!("failed to send OnShutdown event: {:?}", e));
                     break;
@@ -1195,8 +1195,7 @@ async fn open_or_create_dir(
                 Ok(entry) => entry,
                 Err(status) => match status {
                     zx::Status::NOT_FOUND => {
-                        let () = root
-                            .add_entry(entry, vfs::directory::immutable::simple::simple())
+                        root.add_entry(entry, vfs::directory::immutable::simple::simple())
                             .context("failed to add directory entry")?;
                         root.get_entry(entry).context("failed to get directory entry")?
                     }
@@ -1316,14 +1315,13 @@ async fn main() -> Result {
     let _: &mut ServiceFs<_> = fs.take_and_serve_directory_handle()?;
 
     let sandbox_index = AtomicU64::new(0);
-    let () = fs
-        .for_each_concurrent(None, |stream| async {
-            let index = sandbox_index.fetch_add(1, Ordering::SeqCst);
-            handle_sandbox(stream, index)
-                .await
-                .unwrap_or_else(|e| error!("error handling SandboxRequestStream: {:?}", e))
-        })
-        .await;
+    fs.for_each_concurrent(None, |stream| async {
+        let index = sandbox_index.fetch_add(1, Ordering::SeqCst);
+        handle_sandbox(stream, index)
+            .await
+            .unwrap_or_else(|e| error!("error handling SandboxRequestStream: {:?}", e))
+    })
+    .await;
     Ok(())
 }
 
@@ -1370,7 +1368,7 @@ mod tests {
     impl TestRealm {
         fn new(sandbox: &fnetemul::SandboxProxy, options: fnetemul::RealmOptions) -> TestRealm {
             let (realm, server) = fidl::endpoints::create_proxy::<fnetemul::ManagedRealmMarker>();
-            let () = sandbox
+            sandbox
                 .create_realm(server, options)
                 .expect("fuchsia.netemul/Sandbox.create_realm call failed");
             TestRealm { realm }
@@ -1392,8 +1390,7 @@ mod tests {
             child: Option<&str>,
         ) -> S::Proxy {
             let (proxy, server_end) = fidl::endpoints::create_proxy::<S>();
-            let () = self
-                .realm
+            self.realm
                 .connect_to_protocol(S::PROTOCOL_NAME, child, server_end.into_channel())
                 .with_context(|| format!("{} from child {child:?}", S::DEBUG_NAME))
                 .expect("failed to connect");
@@ -1680,7 +1677,7 @@ mod tests {
             1,
         );
         let TestRealm { realm } = realm;
-        let () = realm.shutdown().expect("failed to call shutdown");
+        realm.shutdown().expect("failed to call shutdown");
         let events = realm
             .take_event_stream()
             .try_collect::<Vec<_>>()
@@ -1722,7 +1719,7 @@ mod tests {
                     .expect("fuchsia.netemul.test/Counter.increment call failed"),
                 1,
             );
-            let () = counters.push(counter);
+            counters.push(counter);
         }
         drop(sandbox);
         for counter in counters {
@@ -1910,10 +1907,10 @@ mod tests {
     async fn network_context(sandbox: fnetemul::SandboxProxy) {
         let (network_ctx, server) =
             fidl::endpoints::create_proxy::<fnetemul_network::NetworkContextMarker>();
-        let () = sandbox.get_network_context(server).expect("calling get network context");
+        sandbox.get_network_context(server).expect("calling get network context");
         let (endpoint_mgr, server) =
             fidl::endpoints::create_proxy::<fnetemul_network::EndpointManagerMarker>();
-        let () = network_ctx.get_endpoint_manager(server).expect("calling get endpoint manager");
+        network_ctx.get_endpoint_manager(server).expect("calling get endpoint manager");
         let endpoints = endpoint_mgr.list_endpoints().await.expect("calling list endpoints");
         assert_eq!(endpoints, Vec::<String>::new());
 
@@ -1929,7 +1926,7 @@ mod tests {
             )
             .await
             .expect("calling create endpoint");
-        let () = zx::Status::ok(status).expect("endpoint creation");
+        zx::Status::ok(status).expect("endpoint creation");
         let endpoint = endpoint.expect("endpoint creation").into_proxy();
         assert_eq!(endpoint.get_name().await.expect("calling get name"), name);
         assert_eq!(
@@ -1947,10 +1944,10 @@ mod tests {
     ) -> fnetemul_network::NetworkManagerProxy {
         let (network_ctx, server) =
             fidl::endpoints::create_proxy::<fnetemul_network::NetworkContextMarker>();
-        let () = sandbox.get_network_context(server).expect("calling get network context");
+        sandbox.get_network_context(server).expect("calling get network context");
         let (network_mgr, server) =
             fidl::endpoints::create_proxy::<fnetemul_network::NetworkManagerMarker>();
-        let () = network_ctx.get_network_manager(server).expect("calling get network manager");
+        network_ctx.get_network_manager(server).expect("calling get network manager");
         network_mgr
     }
 
@@ -1966,7 +1963,7 @@ mod tests {
                 .create_network("network", &fnetemul_network::NetworkConfig::default())
                 .await
                 .expect("calling create network");
-            let () = zx::Status::ok(status).expect("network creation");
+            zx::Status::ok(status).expect("network creation");
             let (status, _network) = net_mgr1
                 .create_network("network", &fnetemul_network::NetworkConfig::default())
                 .await
@@ -1986,7 +1983,7 @@ mod tests {
                 .create_network("network", &fnetemul_network::NetworkConfig::default())
                 .await
                 .expect("calling create network");
-            let () = zx::Status::ok(status).expect("network creation");
+            zx::Status::ok(status).expect("network creation");
             drop(sandbox1);
             drop(sandbox2);
         };
@@ -2027,7 +2024,7 @@ mod tests {
         let counter = realm.connect_to_protocol::<CounterMarker>();
         let (network_context, server_end) =
             fidl::endpoints::create_proxy::<fnetemul_network::NetworkContextMarker>();
-        let () = counter
+        counter
             .connect_to_protocol(
                 fnetemul_network::NetworkContextMarker::PROTOCOL_NAME,
                 server_end.into_channel(),
@@ -2372,14 +2369,14 @@ mod tests {
         );
         let counter_a = {
             let (counter_a, server_end) = fidl::endpoints::create_proxy::<CounterMarker>();
-            let () = realm
+            realm
                 .connect_to_protocol(COUNTER_A_PROTOCOL_NAME, None, server_end.into_channel())
                 .expect("failed to connect to CounterA protocol");
             counter_a
         };
         // counter-a should have access to counter-b's exposed protocol.
         let (counter_b, server_end) = fidl::endpoints::create_proxy::<CounterMarker>();
-        let () = counter_a
+        counter_a
             .connect_to_protocol(COUNTER_B_PROTOCOL_NAME, server_end.into_channel())
             .expect("fuchsia.netemul.test/CounterA.connect_to_protocol call failed");
         assert_eq!(
@@ -2393,7 +2390,7 @@ mod tests {
         // through the test realm.
         let counter_b = {
             let (counter_b, server_end) = fidl::endpoints::create_proxy::<CounterMarker>();
-            let () = realm
+            realm
                 .connect_to_protocol(COUNTER_B_PROTOCOL_NAME, None, server_end.into_channel())
                 .expect("failed to connect to CounterB protocol");
             counter_b
@@ -2416,13 +2413,13 @@ mod tests {
     ) -> fnetemul_network::EndpointProxy {
         let (network_ctx, server) =
             fidl::endpoints::create_proxy::<fnetemul_network::NetworkContextMarker>();
-        let () = sandbox.get_network_context(server).expect("calling get network context");
+        sandbox.get_network_context(server).expect("calling get network context");
         let (endpoint_mgr, server) =
             fidl::endpoints::create_proxy::<fnetemul_network::EndpointManagerMarker>();
-        let () = network_ctx.get_endpoint_manager(server).expect("calling get endpoint manager");
+        network_ctx.get_endpoint_manager(server).expect("calling get endpoint manager");
         let (status, endpoint) =
             endpoint_mgr.create_endpoint(name, &config).await.expect("calling create endpoint");
-        let () = zx::Status::ok(status).expect("endpoint creation");
+        zx::Status::ok(status).expect("endpoint creation");
         endpoint.expect("endpoint creation").into_proxy()
     }
 
@@ -2431,15 +2428,13 @@ mod tests {
     ) -> fidl::endpoints::ClientEnd<fnetemul_network::DeviceProxy_Marker> {
         let (device_proxy, server) =
             fidl::endpoints::create_endpoints::<fnetemul_network::DeviceProxy_Marker>();
-        let () = endpoint
-            .get_proxy_(server)
-            .expect("failed to get device proxy from netdevice endpoint");
+        endpoint.get_proxy_(server).expect("failed to get device proxy from netdevice endpoint");
         device_proxy
     }
 
     async fn get_devfs_watcher(realm: &fnetemul::ManagedRealmProxy) -> fvfs_watcher::Watcher {
         let (devfs, server) = fidl::endpoints::create_proxy::<fio::DirectoryMarker>();
-        let () = realm.get_devfs(server).expect("calling get devfs");
+        realm.get_devfs(server).expect("calling get devfs");
         fvfs_watcher::Watcher::new(&devfs).await.expect("watcher creation")
     }
 
@@ -2448,7 +2443,7 @@ mod tests {
         event: fvfs_watcher::WatchEvent,
         path: &std::path::Path,
     ) {
-        let () = watcher
+        watcher
             .try_filter_map(|fvfs_watcher::WatchMessage { event: actual, filename }| {
                 futures::future::ok((actual == event && filename == path).then(|| ()))
             })
@@ -2484,13 +2479,13 @@ mod tests {
         )
         .await;
 
-        let () = realm
+        realm
             .add_device(TEST_DEVICE_NAME, get_device_proxy(&endpoint))
             .await
             .expect("calling add device")
             .map_err(zx::Status::from_raw)
             .expect("error adding device");
-        let () = wait_for_event_on_path(
+        wait_for_event_on_path(
             &mut watcher,
             fvfs_watcher::WatchEvent::ADD_FILE,
             &std::path::Path::new(TEST_DEVICE_NAME),
@@ -2508,7 +2503,7 @@ mod tests {
 
         // Check the device's `fuchsia.device/Controller.GetTopologicalPath`.
         let (controller, server_end) = fidl::endpoints::create_proxy::<fdevice::ControllerMarker>();
-        let () = get_device_proxy(&endpoint)
+        get_device_proxy(&endpoint)
             .into_proxy()
             .serve_controller(server_end)
             .expect("failed to serve device");
@@ -2520,13 +2515,13 @@ mod tests {
             .expect("failed to get topological path");
         assert!(path.contains(TEST_DEVICE_NAME));
 
-        let () = realm
+        realm
             .remove_device(TEST_DEVICE_NAME)
             .await
             .expect("calling remove device")
             .map_err(zx::Status::from_raw)
             .expect("error removing device");
-        let () = wait_for_event_on_path(
+        wait_for_event_on_path(
             &mut watcher,
             fvfs_watcher::WatchEvent::REMOVE_FILE,
             &std::path::Path::new(TEST_DEVICE_NAME),
@@ -2574,13 +2569,13 @@ mod tests {
             ),
         );
         let mut watcher_a = get_devfs_watcher(&realm_a).await;
-        let () = realm_a
+        realm_a
             .add_device(TEST_DEVICE_NAME, get_device_proxy(&endpoint))
             .await
             .expect("calling add device")
             .map_err(zx::Status::from_raw)
             .expect("error adding device");
-        let () = wait_for_event_on_path(
+        wait_for_event_on_path(
             &mut watcher_a,
             fvfs_watcher::WatchEvent::ADD_FILE,
             &std::path::Path::new(TEST_DEVICE_NAME),
@@ -2589,11 +2584,11 @@ mod tests {
         // Expect not to see a matching device in `realm_b`'s devfs.
         let devfs_b = {
             let (devfs, server) = fidl::endpoints::create_proxy::<fio::DirectoryMarker>();
-            let () = realm_b.get_devfs(server).expect("calling get devfs");
+            realm_b.get_devfs(server).expect("calling get devfs");
             devfs
         };
         let (status, buf) = devfs_b.read_dirents(fio::MAX_BUF).await.expect("calling read dirents");
-        let () = zx::Status::ok(status).expect("failed reading directory entries");
+        zx::Status::ok(status).expect("failed reading directory entries");
         assert_eq!(
             fuchsia_fs::directory::parse_dir_entries(&buf)
                 .into_iter()
@@ -2649,7 +2644,7 @@ mod tests {
             },
         )
         .await;
-        let () = realm
+        realm
             .realm
             .add_device(TEST_DEVICE_NAME, get_device_proxy(&endpoint))
             .await
@@ -2659,7 +2654,7 @@ mod tests {
 
         // Expect the device to implement `fuchsia.device/Controller.GetTopologicalPath`.
         let (controller, server_end) = fidl::endpoints::create_proxy::<fdevice::ControllerMarker>();
-        let () = counter
+        counter
             .open_in_namespace(
                 &format!("{}/{}/device_controller", DEVFS_PATH, TEST_DEVICE_NAME),
                 fio::PERM_READABLE,
@@ -2683,7 +2678,7 @@ mod tests {
             name: &str,
         ) -> fnetemul_test::CounterProxy {
             let (counter, server_end) = fidl::endpoints::create_proxy::<CounterMarker>();
-            let () = realm
+            realm
                 .connect_to_protocol(name, None, server_end.into_channel())
                 .expect("failed to connect to counter protocol");
             counter
@@ -2732,7 +2727,7 @@ mod tests {
         let counter_without_storage = connect_to_counter(&realm, COUNTER_B_PROTOCOL_NAME);
 
         for dir in [CACHE_PATH, DATA_PATH] {
-            let () = counter_storage
+            counter_storage
                 .try_open_directory(dir)
                 .await
                 .unwrap_or_else(|e| panic!("calling open {}: {:?}", dir, e))
@@ -2795,7 +2790,7 @@ mod tests {
         let counter = realm.connect_to_protocol::<CounterMarker>();
         assert_eq!(counter.increment().await.expect("failed to increment counter"), 1);
         let TestRealm { realm } = realm;
-        let () = realm
+        realm
             .stop_child_component(COUNTER_COMPONENT_NAME)
             .await
             .expect("calling stop child component")
@@ -2876,15 +2871,15 @@ mod tests {
         .await;
 
         let (devfs, server_end) = fidl::endpoints::create_proxy::<fio::DirectoryMarker>();
-        let () = realm.get_devfs(server_end).expect("calling get devfs");
+        realm.get_devfs(server_end).expect("calling get devfs");
         let mut dev_watcher = fvfs_watcher::Watcher::new(&devfs).await.expect("watcher creation");
-        let () = realm
+        realm
             .add_device(&test_device_path, get_device_proxy(&endpoint))
             .await
             .expect("calling add device")
             .map_err(zx::Status::from_raw)
             .expect("error adding device");
-        let () = wait_for_event_on_path(
+        wait_for_event_on_path(
             &mut dev_watcher,
             fvfs_watcher::WatchEvent::ADD_FILE,
             &std::path::Path::new(CLASS_DIR),
@@ -2892,7 +2887,7 @@ mod tests {
         .await;
 
         let (network, server_end) = fidl::endpoints::create_proxy::<fio::DirectoryMarker>();
-        let () = devfs
+        devfs
             .open(
                 &ethernet_path,
                 fio::PERM_READABLE | fio::Flags::PROTOCOL_DIRECTORY,
@@ -2901,19 +2896,19 @@ mod tests {
             )
             .expect("calling open");
         let mut watcher = fvfs_watcher::Watcher::new(&network).await.expect("watcher creation");
-        let () = wait_for_event_on_path(
+        wait_for_event_on_path(
             &mut watcher,
             fvfs_watcher::WatchEvent::EXISTING,
             &std::path::Path::new(TEST_DEVICE_NAME),
         )
         .await;
-        let () = realm
+        realm
             .remove_device(&test_device_path)
             .await
             .expect("calling remove device")
             .map_err(zx::Status::from_raw)
             .expect("error removing device");
-        let () = wait_for_event_on_path(
+        wait_for_event_on_path(
             &mut watcher,
             fvfs_watcher::WatchEvent::REMOVE_FILE,
             &std::path::Path::new(TEST_DEVICE_NAME),
@@ -2977,12 +2972,12 @@ mod tests {
         let path = format!("{}/{}", DEVFS_PATH, SUBDIR);
 
         let (ethernet, server_end) = fidl::endpoints::create_proxy::<fio::DirectoryMarker>();
-        let () = counter
+        counter
             .open_in_namespace(&path, fio::PERM_READABLE, server_end.into_channel())
             .unwrap_or_else(|e| panic!("failed to connect to {} through counter: {:?}", path, e));
         let (status, buf) =
             ethernet.read_dirents(fio::MAX_BUF).await.expect("calling read dirents");
-        let () = zx::Status::ok(status).expect("failed reading directory entries");
+        zx::Status::ok(status).expect("failed reading directory entries");
         assert_eq!(
             fuchsia_fs::directory::parse_dir_entries(&buf)
                 .into_iter()
@@ -3083,7 +3078,7 @@ mod tests {
         const RESPONSE_VALUE: u32 = 1234;
         match counter_request {
             fnetemul_test::CounterRequest::Increment { responder } => {
-                let () = responder.send(RESPONSE_VALUE).expect("failed to send response");
+                responder.send(RESPONSE_VALUE).expect("failed to send response");
             }
             r => panic!("unexpected request {:?}", r),
         }

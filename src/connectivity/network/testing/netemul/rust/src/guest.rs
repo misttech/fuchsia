@@ -157,8 +157,7 @@ impl Controller {
             }
             None => (None, None),
         };
-        let () = self
-            .proxy()
+        self.proxy()
             .execute_command(
                 command,
                 &env,
@@ -209,7 +208,7 @@ impl Controller {
                         })?;
                     match event {
                         fguest_interaction::CommandListenerEvent::OnStarted { status } => {
-                            let () = zx::Status::ok(status).with_context(|| {
+                            zx::Status::ok(status).with_context(|| {
                                 format!(
                                     "error starting exec for guest {} and command {}",
                                     self.name, command
@@ -227,7 +226,7 @@ impl Controller {
                             status,
                             return_code,
                         } => {
-                            let () = zx::Status::ok(status).with_context(|| {
+                            zx::Status::ok(status).with_context(|| {
                                 format!(
                                     "error returning from exec for guest {} and command {}",
                                     self.name, command
@@ -270,6 +269,6 @@ impl Drop for Controller {
                 .into_zx_channel(),
         );
 
-        let () = guest.shutdown(zx::MonotonicInstant::INFINITE).expect("shutdown FIDL error");
+        guest.shutdown(zx::MonotonicInstant::INFINITE).expect("shutdown FIDL error");
     }
 }

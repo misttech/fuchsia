@@ -97,10 +97,10 @@ impl Stash {
             fidl_fuchsia_stash::SecureStoreMarker,
         >()
         .map_err(StashError::StashConnect)?;
-        let () = store_client.identify(id)?;
+        store_client.identify(id)?;
         let (proxy, accessor_server) =
             fidl::endpoints::create_proxy::<fidl_fuchsia_stash::StoreAccessorMarker>();
-        let () = store_client.create_accessor(false, accessor_server)?;
+        store_client.create_accessor(false, accessor_server)?;
         let prefix = prefix.to_string();
         Ok(Stash { prefix, proxy })
     }
@@ -113,8 +113,8 @@ impl Stash {
             serde_json::to_string(v)
                 .map_err(|e| StashError::JsonSerialization(key.to_string(), e))?,
         );
-        let () = self.proxy.set_value(key, v)?;
-        let () = self.proxy.commit()?;
+        self.proxy.set_value(key, v)?;
+        self.proxy.commit()?;
         Ok(())
     }
 
@@ -129,7 +129,7 @@ impl Stash {
 
         let (iter, server) =
             fidl::endpoints::create_proxy::<fidl_fuchsia_stash::GetIteratorMarker>();
-        let () = self.proxy.get_prefix(&self.prefix, server)?;
+        self.proxy.get_prefix(&self.prefix, server)?;
         futures::stream::try_unfold(iter, |iter| async move {
             let kvs = iter.get_next().await?;
             let yielded = (!kvs.is_empty()).then_some((kvs, iter));
@@ -143,7 +143,7 @@ impl Stash {
                 None => {
                     // Invalid key-value pair: remove the invalid pair and try the next one.
                     warn!("failed to parse key string: {}", kv.key);
-                    let () = self.rm_key(&kv.key)?;
+                    self.rm_key(&kv.key)?;
                     return Ok(None);
                 }
             };
@@ -151,7 +151,7 @@ impl Stash {
                 Ok(v) => v,
                 Err(e) => {
                     warn!("client id from string conversion failed: {}", e);
-                    let () = self.rm_key(&kv.key)?;
+                    self.rm_key(&kv.key)?;
                     return Ok(None);
                 }
             };
@@ -159,7 +159,7 @@ impl Stash {
                 fidl_fuchsia_stash::Value::Stringval(v) => v,
                 v => {
                     warn!("invalid value variant stored in stash: {:?}", v);
-                    let () = self.rm_key(&kv.key)?;
+                    self.rm_key(&kv.key)?;
                     return Ok(None);
                 }
             };
@@ -167,7 +167,7 @@ impl Stash {
                 Ok(v) => v,
                 Err(e) => {
                     warn!("failed to parse JSON from string: {}", e);
-                    let () = self.rm_key(&kv.key)?;
+                    self.rm_key(&kv.key)?;
                     return Ok(None);
                 }
             };
@@ -217,8 +217,8 @@ impl Stash {
     }
 
     fn rm_key(&self, key: &str) -> Result<(), StashError> {
-        let () = self.proxy.delete_value(key)?;
-        let () = self.proxy.commit()?;
+        self.proxy.delete_value(key)?;
+        self.proxy.commit()?;
         Ok(())
     }
 
@@ -226,8 +226,8 @@ impl Stash {
     ///
     /// This function will delete all key-value pairs associated with the `Stash` value.
     pub fn clear(&self) -> Result<(), StashError> {
-        let () = self.proxy.delete_prefix(&self.prefix)?;
-        let () = self.proxy.commit()?;
+        self.proxy.delete_prefix(&self.prefix)?;
+        self.proxy.commit()?;
         Ok(())
     }
 
@@ -257,8 +257,8 @@ mod tests {
         let rand_id = rand::distr::Alphanumeric.sample_string(&mut rand::rng(), 8);
         let stash = Stash::new_with_prefix(&rand_id, test_prefix)?;
         // Clear the Stash of any data leftover from the previous test.
-        let () = stash.proxy.delete_prefix(&stash.prefix)?;
-        let () = stash.proxy.commit()?;
+        stash.proxy.delete_prefix(&stash.prefix)?;
+        stash.proxy.commit()?;
         Ok((stash, rand_id))
     }
 
@@ -280,7 +280,7 @@ mod tests {
             Stash::new_with_prefix("stash_new", ""),
             Err(StashError::EmptyPrefix)
         );
-        let () = match Stash::new_with_prefix("stash_new", "a-b-c-d") {
+        match Stash::new_with_prefix("stash_new", "a-b-c-d") {
             Err(StashError::InvalidPrefix { invalid_chars, prefix: _prefix }) => {
                 assert_eq!(invalid_chars, ['-'].iter().cloned().collect())
             }
@@ -288,7 +288,7 @@ mod tests {
                 panic!("new_with_prefix returned {:?}, expected StashError::InvalidPrefix{{..}}", v)
             }
         };
-        let () = match Stash::new_with_prefix("stash_new", "a-b-c:d-e") {
+        match Stash::new_with_prefix("stash_new", "a-b-c:d-e") {
             Err(StashError::InvalidPrefix { invalid_chars, prefix: _prefix }) => {
                 assert_eq!(invalid_chars, ['-', ':'].iter().cloned().collect())
             }
@@ -307,7 +307,7 @@ mod tests {
         // Store value in stash.
         let client_id = ClientIdentifier::from(crate::server::tests::random_mac_generator());
         let client_record = LeaseRecord::default();
-        let () = stash
+        stash
             .insert(&client_id, &client_record)
             .unwrap_or_else(|err| panic!("failed to store client in {}: {:?}", id, err));
 
@@ -334,7 +334,7 @@ mod tests {
             DhcpOption::SubnetMask(prefix_length_v4!(24)),
             DhcpOption::DomainNameServer([ip_v4!("1.2.3.4"), ip_v4!("4.3.2.1")].into()),
         ];
-        let () = stash.store_options(&opts).expect("failed to store options in stash");
+        stash.store_options(&opts).expect("failed to store options in stash");
         let value = accessor_client
             .get_value(&OPTIONS_KEY.to_string())
             .await
@@ -368,7 +368,7 @@ mod tests {
             arp_probe: false,
             bound_device_names: vec![],
         };
-        let () = stash.store_parameters(&params).expect("failed to store parameters");
+        stash.store_parameters(&params).expect("failed to store parameters");
         let value = accessor_client
             .get_value(&PARAMETERS_KEY.to_string())
             .await
@@ -395,10 +395,10 @@ mod tests {
             serde_json::to_string(&client_record).expect("serialization failed");
         let client_key = stash.client_key(&client_id);
         let client_val = fidl_fuchsia_stash::Value::Stringval(serialized_client);
-        let () = accessor
+        accessor
             .set_value(&client_key, client_val)
             .unwrap_or_else(|err| panic!("failed to set value in {}: {:?}", id, err));
-        let () = accessor.commit().unwrap_or_else(|err| {
+        accessor.commit().unwrap_or_else(|err| {
             panic!("failed to commit stash state change in {}: {:?}", id, err)
         });
 
@@ -423,7 +423,7 @@ mod tests {
         ];
         let serialized_opts = serde_json::to_string(&opts).expect("serialization failed");
         let opts = opts.into_iter().map(|o| (o.code(), o)).collect();
-        let () = accessor
+        accessor
             .set_value(
                 &OPTIONS_KEY.to_string(),
                 fidl_fuchsia_stash::Value::Stringval(serialized_opts),
@@ -431,7 +431,7 @@ mod tests {
             .unwrap_or_else(|err| {
                 panic!("failed to set value in stash for key={}: {:?}", OPTIONS_KEY, err)
             });
-        let () = accessor.commit().unwrap_or_else(|err| {
+        accessor.commit().unwrap_or_else(|err| {
             panic!("failed to commit stash state change in {}: {:?}", id, err)
         });
 
@@ -468,7 +468,7 @@ mod tests {
             bound_device_names: vec![],
         };
         let serialized_params = serde_json::to_string(&params).expect("serialization failed");
-        let () = accessor
+        accessor
             .set_value(
                 &PARAMETERS_KEY.to_string(),
                 fidl_fuchsia_stash::Value::Stringval(serialized_params),
@@ -476,7 +476,7 @@ mod tests {
             .unwrap_or_else(|err| {
                 panic!("failed to set value in stash for key={}: {:?}", OPTIONS_KEY, err)
             });
-        let () = accessor.commit().unwrap_or_else(|err| {
+        accessor.commit().unwrap_or_else(|err| {
             panic!("failed to commit stash state change in {}: {:?}", id, err)
         });
 
@@ -507,15 +507,15 @@ mod tests {
             serde_json::to_string(&client_record).expect("serialization failed");
         let invalid_key = "invalid_key";
         let client_stringval = fidl_fuchsia_stash::Value::Stringval(serialized_client);
-        let () = accessor.set_value(invalid_key, client_stringval).unwrap_or_else(|err| {
+        accessor.set_value(invalid_key, client_stringval).unwrap_or_else(|err| {
             panic!("failed to set value in stash for key={}: {:?}", OPTIONS_KEY, err)
         });
         let client_key = stash.client_key(&client_id);
         let client_intval = fidl_fuchsia_stash::Value::Intval(42);
-        let () = accessor.set_value(&client_key, client_intval).unwrap_or_else(|err| {
+        accessor.set_value(&client_key, client_intval).unwrap_or_else(|err| {
             panic!("failed to set value in stash for key={}: {:?}", OPTIONS_KEY, err)
         });
-        let () = accessor.commit().unwrap_or_else(|err| {
+        accessor.commit().unwrap_or_else(|err| {
             panic!("failed to commit stash state change in {}: {:?}", id, err)
         });
 
@@ -536,7 +536,7 @@ mod tests {
         // Store value in stash.
         let client_id = ClientIdentifier::from(crate::server::tests::random_mac_generator());
         let client_record = LeaseRecord::default();
-        let () = stash
+        stash
             .insert(&client_id, &client_record)
             .unwrap_or_else(|err| panic!("failed to store client in {}: {:?}", id, err));
 
@@ -549,7 +549,7 @@ mod tests {
         assert!(value.is_some());
 
         // Delete value and verify its absence.
-        let () = stash
+        stash
             .delete(&client_id)
             .unwrap_or_else(|err| panic!("failed to delete client in {}: {:?}", id, err));
         let value = accessor
@@ -572,22 +572,20 @@ mod tests {
             serde_json::to_string(&client_record).expect("serialization failed");
         let client_key = stash.client_key(&client_mac);
         let client_val = fidl_fuchsia_stash::Value::Stringval(serialized_client);
-        let () = accessor.set_value(&client_key, client_val).unwrap_or_else(|err| {
+        accessor.set_value(&client_key, client_val).unwrap_or_else(|err| {
             panic!("failed to set value in stash for key={}: {:?}", OPTIONS_KEY, err)
         });
-        let () = accessor.commit().unwrap_or_else(|err| {
+        accessor.commit().unwrap_or_else(|err| {
             panic!("failed to commit stash state change in {}: {:?}", id, err)
         });
 
         // Clear the stash.
-        let () = stash
-            .clear()
-            .unwrap_or_else(|err| panic!("failed to clear stash in {}: {:?}", id, err));
+        stash.clear().unwrap_or_else(|err| panic!("failed to clear stash in {}: {:?}", id, err));
 
         // Verify that the stash is actually empty.
         let (iter, server) =
             fidl::endpoints::create_proxy::<fidl_fuchsia_stash::GetIteratorMarker>();
-        let () = accessor.get_prefix(&stash.prefix, server).expect("failed to get prefix iterator");
+        accessor.get_prefix(&stash.prefix, server).expect("failed to get prefix iterator");
         let stash_contents = iter.get_next().await.expect("failed to get next item for iterator");
         assert_eq!(stash_contents.len(), 0);
     }

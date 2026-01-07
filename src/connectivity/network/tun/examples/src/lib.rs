@@ -111,11 +111,11 @@ async fn tap_like_over_network_tun() {
     // Request device creation.
     let (tun_device, server_end) =
         fidl::endpoints::create_proxy::<fidl_fuchsia_net_tun::DeviceMarker>();
-    let () = tun.create_device(&device_config, server_end).expect("failed to create device");
+    tun.create_device(&device_config, server_end).expect("failed to create device");
     // Add a port.
     let (tun_port, server_end) =
         fidl::endpoints::create_proxy::<fidl_fuchsia_net_tun::PortMarker>();
-    let () = tun_device.add_port(&port_config, server_end).expect("failed to add port");
+    tun_device.add_port(&port_config, server_end).expect("failed to add port");
 
     // Install the interface in the stack.
     //
@@ -133,11 +133,11 @@ async fn tap_like_over_network_tun() {
     // frames if they're sent before the online signal is observed. This is
     // necessary to prevent this test from flaking since we're only going to
     // send a single echo request.
-    let () = helpers::wait_interface_online(interface_id).await;
+    helpers::wait_interface_online(interface_id).await;
 
     // Now we can send frames. In this example we'll send an ICMP echo request
     // and wait for the Netstack to respond.
-    let () = tun_device
+    tun_device
         .write_frame(&fidl_fuchsia_net_tun::Frame {
             port: Some(PORT_ID),
             frame_type: Some(fidl_fuchsia_hardware_network::FrameType::Ethernet),
@@ -182,7 +182,7 @@ async fn tap_like_over_network_tun() {
                 if target_ip == CONFIG_FOR_TAP_LIKE.ip_layer.bob_ip {
                     assert_eq!(sender_mac, CONFIG_FOR_TAP_LIKE.alice_mac);
                     assert_eq!(sender_ip, CONFIG_FOR_TAP_LIKE.ip_layer.alice_subnet.addr);
-                    let () = tun_device
+                    tun_device
                         .write_frame(&fidl_fuchsia_net_tun::Frame {
                             port: Some(PORT_ID),
                             frame_type: Some(fidl_fuchsia_hardware_network::FrameType::Ethernet),
@@ -230,11 +230,11 @@ async fn tun_like_over_network_tun() {
     // Request device creation.
     let (tun_device, server_end) =
         fidl::endpoints::create_proxy::<fidl_fuchsia_net_tun::DeviceMarker>();
-    let () = tun.create_device(&device_config, server_end).expect("failed to create device");
+    tun.create_device(&device_config, server_end).expect("failed to create device");
     // Add a port.
     let (tun_port, server_end) =
         fidl::endpoints::create_proxy::<fidl_fuchsia_net_tun::PortMarker>();
-    let () = tun_device.add_port(&port_config, server_end).expect("failed to add port");
+    tun_device.add_port(&port_config, server_end).expect("failed to add port");
 
     // Install the interface in the stack.
     //
@@ -251,11 +251,11 @@ async fn tun_like_over_network_tun() {
     // frames if they're sent before the online signal is observed. This is
     // necessary to prevent this test from flaking since we're only going to
     // send a single echo request.
-    let () = helpers::wait_interface_online(interface_id).await;
+    helpers::wait_interface_online(interface_id).await;
 
     // Now we can send frames. In this example we'll send an ICMP echo request
     // and wait for the Netstack to respond.
-    let () = tun_device
+    tun_device
         .write_frame(&fidl_fuchsia_net_tun::Frame {
             port: Some(PORT_ID),
             frame_type: Some(fidl_fuchsia_hardware_network::FrameType::Ipv4),
@@ -534,8 +534,8 @@ mod helpers {
             let (port, port_server_end) =
                 fidl::endpoints::create_proxy::<fidl_fuchsia_hardware_network::PortMarker>();
 
-            let () = tun_device.get_device(netdevice_server_end).expect("get_device failed");
-            let () = tun_port.get_port(port_server_end).expect("get_port failed");
+            tun_device.get_device(netdevice_server_end).expect("get_device failed");
+            tun_port.get_port(port_server_end).expect("get_port failed");
             let port_id = port.get_info().await.expect("get_info failed").id.expect("missing id");
             let network_device: fidl::endpoints::ClientEnd<_> = network_device
                 .into_channel()
@@ -554,16 +554,14 @@ mod helpers {
             let (control, server_end) = fidl::endpoints::create_proxy::<
                 fidl_fuchsia_net_interfaces_admin::DeviceControlMarker,
             >();
-            let () = installer
-                .install_device(network_device, server_end)
-                .expect("install_device failed");
+            installer.install_device(network_device, server_end).expect("install_device failed");
             control
         };
         let control = {
             let (control, server_end) =
                 fidl_fuchsia_net_interfaces_ext::admin::Control::create_endpoints()
                     .expect("create endpoints");
-            let () = device_control
+            device_control
                 .create_interface(
                     &port_id,
                     server_end,
@@ -592,9 +590,9 @@ mod helpers {
         >();
         // AddressStateProvider allows us to tie the lifetime of the address to
         // this proxy, opt out by detaching.
-        let () = address_state_provider.detach().expect("detach failed");
+        address_state_provider.detach().expect("detach failed");
 
-        let () = control
+        control
             .add_address(
                 &subnet,
                 &fidl_fuchsia_net_interfaces_admin::AddressParameters {
@@ -605,7 +603,7 @@ mod helpers {
             )
             .expect("add_address failed");
         // Wait for the address to be assigned.
-        let () = fidl_fuchsia_net_interfaces_ext::admin::wait_assignment_state(
+        fidl_fuchsia_net_interfaces_ext::admin::wait_assignment_state(
             &mut fidl_fuchsia_net_interfaces_ext::admin::assignment_state_stream(
                 address_state_provider,
             ),

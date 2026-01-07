@@ -40,7 +40,7 @@ async fn gets_dns_servers(name: &str) {
         ("/pkg/data/dhcp_setup.sh", "/root/input/dhcp_setup.sh"),
         ("/pkg/data/dhcpd6.conf", "/etc/dhcp/dhcpd6.conf"),
     ] {
-        let () = guest_controller.put_file(local_path, remote_path).await.unwrap_or_else(|e| {
+        guest_controller.put_file(local_path, remote_path).await.unwrap_or_else(|e| {
             panic!("failed to transfer file at path {} to guest: {}", local_path, e)
         });
     }
@@ -61,7 +61,7 @@ async fn gets_dns_servers(name: &str) {
         .connect_to_protocol::<fnet_dhcpv6::ClientProviderMarker>()
         .expect("connect to fuchsia.net.dhcpv6/ClientProvider");
     let (dhcpv6_client, server_end) = fidl::endpoints::create_proxy::<fnet_dhcpv6::ClientMarker>();
-    let () = client_provider
+    client_provider
         .new_client(
             &fnet_dhcpv6_ext::NewClientParams {
                 interface_id: iface.id(),
@@ -243,7 +243,7 @@ fn start_stateful_dhcpv6_client(
     client_config: fnet_dhcpv6_ext::ClientConfig,
 ) -> fnet_dhcpv6::ClientProxy {
     let (dhcpv6_client, server_end) = fidl::endpoints::create_proxy::<fnet_dhcpv6::ClientMarker>();
-    let () = client_provider
+    client_provider
         .new_client(
             &fnet_dhcpv6_ext::NewClientParams {
                 interface_id: interface_id,
@@ -287,7 +287,7 @@ async fn test_setup<'a>(
         .await
         .expect("failed to create guest controller");
 
-    let () = guest_controller
+    guest_controller
         .put_file(SERVER_SCRIPT_LOCAL, SERVER_SCRIPT_REMOTE)
         .await
         .expect("failed to put server control script");

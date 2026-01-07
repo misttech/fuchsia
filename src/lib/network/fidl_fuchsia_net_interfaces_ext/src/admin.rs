@@ -564,13 +564,13 @@ mod test {
             });
             let handle_fut = request_stream.try_next().map(|r| match r.expect("request stream error").expect("request stream ended") {
                 fnet_interfaces_admin::AddressStateProviderRequest::WatchAddressAssignmentState { responder } => {
-                    let () = responder.send(ASSIGNMENT_STATE_ASSIGNED).expect("failed to send stubbed assignment state");
+                    responder.send(ASSIGNMENT_STATE_ASSIGNED).expect("failed to send stubbed assignment state");
                 }
                 req => panic!("unexpected method called: {:?}", req),
             });
             let ((), ()) = futures::join!(state_fut, handle_fut);
 
-            let () = control_handle
+            control_handle
                 .send_on_address_removed(REMOVAL_REASON_INVALID)
                 .expect("failed to send fake INVALID address removal reason event");
         }
@@ -589,7 +589,7 @@ mod test {
             fidl::endpoints::create_proxy::<fnet_interfaces_admin::AddressStateProviderMarker>();
         let state_stream = assignment_state_stream(address_state_provider);
 
-        let () = server_end
+        server_end
             .close_with_epitaph(fidl::Status::INTERNAL)
             .expect("failed to send INTERNAL epitaph");
 
@@ -625,7 +625,7 @@ mod test {
 
         let ((), ()) = futures::future::join(
             async move {
-                let () = request_stream
+                request_stream
                     .try_next()
                     .await
                     .expect("request stream error")
@@ -634,7 +634,7 @@ mod test {
                     .expect("unexpected request")
                     .send(ASSIGNMENT_STATE_ASSIGNED)
                     .expect("failed to send stubbed assignment state");
-                let () = request_stream
+                request_stream
                     .control_handle()
                     .send_on_address_removed(REMOVAL_REASON_INVALID)
                     .expect("failed to send fake INVALID address removal reason event");
@@ -681,8 +681,8 @@ mod test {
                     .expect("stream ended unexpectedly")
                     .into_get_id()
                     .expect("unexpected request");
-                let () = responder.send(ID).expect("failed to send response");
-                let () = request_stream
+                responder.send(ID).expect("failed to send response");
+                request_stream
                     .control_handle()
                     .send_on_interface_removed(EXPECTED_EVENT)
                     .expect("sending terminal event");
@@ -736,7 +736,7 @@ mod test {
         let control = super::Control::new(control);
         const CLOSE_REASON: fnet_interfaces_admin::InterfaceRemovedReason =
             fnet_interfaces_admin::InterfaceRemovedReason::BadPort;
-        let () = request_stream
+        request_stream
             .control_handle()
             .send_on_interface_removed(CLOSE_REASON)
             .expect("send terminal event");
@@ -768,7 +768,7 @@ mod test {
         let control = super::Control::new(control);
         const CLOSE_REASON: fnet_interfaces_admin::InterfaceRemovedReason =
             fnet_interfaces_admin::InterfaceRemovedReason::BadPort;
-        let () = request_stream
+        request_stream
             .control_handle()
             .send_on_interface_removed(CLOSE_REASON)
             .expect("send terminal event");
@@ -797,7 +797,7 @@ mod test {
                     .expect("stream ended unexpectedly")
                     .into_get_id()
                     .expect("unexpected request");
-                let () = responder.send(ID).expect("failed to send response");
+                responder.send(ID).expect("failed to send response");
             },
         )
         .await;

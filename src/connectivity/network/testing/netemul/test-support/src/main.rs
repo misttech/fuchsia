@@ -31,13 +31,13 @@ async fn handle_counter(
                     let mut d = data.lock();
                     d.value += 1;
                     info!("incrementing counter to {}", d.value);
-                    let () = responder
+                    responder
                         .send(d.value)
                         .unwrap_or_else(|e| error!("error sending response: {:?}", e));
                 }
                 CounterRequest::ConnectToProtocol { protocol_name, request, control_handle: _ } => {
                     info!("connecting to protocol '{}'", protocol_name);
-                    let () = client::connect_channel_to_protocol_at_path(
+                    client::connect_channel_to_protocol_at_path(
                         request,
                         &format!("{}/{}", SVC_DIR, protocol_name),
                     )
@@ -50,7 +50,7 @@ async fn handle_counter(
                 }
                 CounterRequest::OpenInNamespace { path, flags, request, control_handle: _ } => {
                     info!("connecting to node at '{}'", path);
-                    let () = fdio::open(&path, flags, request).unwrap_or_else(|e| {
+                    fdio::open(&path, flags, request).unwrap_or_else(|e| {
                         error!("error connecting request to node at path '{}': {}", path, e)
                     });
                 }
@@ -71,7 +71,7 @@ async fn handle_counter(
                                     zx::Status::IO
                                 }
                             };
-                            let () = responder
+                            responder
                                 .send(Err(status.into_raw()))
                                 .unwrap_or_else(|e| error!("error sending response: {:?}", e));
                         }
@@ -169,9 +169,9 @@ async fn main() -> Result<(), Error> {
         let data =
             Arc::new(Mutex::new(CounterData { value: starting_value, abort_on_shutdown: false }));
         let data_clone = data.clone();
-        let () = inspector.root().record_lazy_child("counter", move || {
+        inspector.root().record_lazy_child("counter", move || {
             let srv = fuchsia_inspect::Inspector::default();
-            let () = srv.root().record_uint("count", data.lock().value.into());
+            srv.root().record_uint("count", data.lock().value.into());
             futures::future::ok(srv).boxed()
         });
         data_clone

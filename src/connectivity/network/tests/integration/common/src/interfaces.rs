@@ -88,7 +88,7 @@ pub async fn add_address_wait_assigned(
     let (address_state_provider, server) = fidl::endpoints::create_proxy::<
         fidl_fuchsia_net_interfaces_admin::AddressStateProviderMarker,
     >();
-    let () = control
+    control
         .add_address(&address, &address_parameters, server)
         .expect("Control.AddAddress FIDL error");
 
@@ -102,7 +102,7 @@ pub async fn add_address_wait_assigned(
             pin!(fidl_fuchsia_net_interfaces_ext::admin::assignment_state_stream(
                 address_state_provider.clone(),
             ));
-        let () = fidl_fuchsia_net_interfaces_ext::admin::wait_assignment_state(
+        fidl_fuchsia_net_interfaces_ext::admin::wait_assignment_state(
             &mut state_stream,
             fidl_fuchsia_net_interfaces::AddressAssignmentState::Assigned,
         )

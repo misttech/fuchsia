@@ -119,11 +119,11 @@ mod tests {
 
     #[fasync::run_singlethreaded(test)]
     async fn test_client_provider_serve_client_success() {
-        let () = test_client_provider(serve_client).await;
+        test_client_provider(serve_client).await;
     }
 
     #[fasync::run_singlethreaded(test)]
     async fn test_client_provider_should_keep_running_on_client_err() {
-        let () = test_client_provider(start_err_client).await;
+        test_client_provider(start_err_client).await;
     }
 }

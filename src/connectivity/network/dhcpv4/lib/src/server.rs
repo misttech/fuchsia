@@ -232,13 +232,11 @@ impl<DS: DataStore, TS: SystemTimeSource> Server<DS, TS> {
         let mut pool = AddressPool::new(params.managed_addrs.pool_range());
         for client_addr in records.iter().filter_map(|(_id, LeaseRecord { current, .. })| *current)
         {
-            let () = pool
-                .allocate_addr(client_addr)
-                .map_err(ServerError::InconsistentInitialServerState)?;
+            pool.allocate_addr(client_addr).map_err(ServerError::InconsistentInitialServerState)?;
         }
         let mut server =
             Self { records, pool, params, store: Some(store), options_repo, time_source };
-        let () = server.release_expired_leases()?;
+        server.release_expired_leases()?;
         Ok(server)
     }
 
@@ -297,7 +295,7 @@ impl<DS: DataStore, TS: SystemTimeSource> Server<DS, TS> {
     }
 
     fn handle_discover(&mut self, disc: Message) -> Result<ServerAction, ServerError> {
-        let () = validate_discover(&disc)?;
+        validate_discover(&disc)?;
         let client_id = ClientIdentifier::from(&disc);
         let offered = self.get_offered(&disc)?;
         let dest = self.get_destination(&disc, offered);
@@ -355,7 +353,7 @@ impl<DS: DataStore, TS: SystemTimeSource> Server<DS, TS> {
         if let Some(addr) = self.pool.available().next() {
             return Ok(addr);
         }
-        let () = self.release_expired_leases()?;
+        self.release_expired_leases()?;
         if let Some(addr) = self.pool.available().next() {
             return Ok(addr);
         }
@@ -394,7 +392,7 @@ impl<DS: DataStore, TS: SystemTimeSource> Server<DS, TS> {
             }
             std::collections::hash_map::Entry::Vacant(_vacant) => None,
         };
-        let () = match current {
+        match current {
             Some(current) => {
                 // If there is a lease record with a currently leased address, and the offered address
                 // does not match that leased address, then the offered address was calculated contrary
@@ -418,7 +416,7 @@ impl<DS: DataStore, TS: SystemTimeSource> Server<DS, TS> {
                 store.insert(entry.key(), &record).context("failed to store client in stash")?;
         }
         // TODO(https://github.com/rust-lang/rust/issues/65225): use entry.insert.
-        let () = match entry {
+        match entry {
             std::collections::hash_map::Entry::Occupied(mut occupied) => {
                 let _: LeaseRecord = occupied.insert(record);
             }
@@ -570,7 +568,7 @@ impl<DS: DataStore, TS: SystemTimeSource> Server<DS, TS> {
         // client declines the address after an OFFER or an ACK, a declined address may already be
         // marked allocated. Attempt to allocate the declined address, but treat the address
         // already being allocated as success.
-        let () = pool.allocate_addr(declined_ip).or_else(|e| match e {
+        pool.allocate_addr(declined_ip).or_else(|e| match e {
             AddressPoolError::AllocatedIpv4AddrAllocation(ip) if ip == declined_ip => Ok(()),
             e @ AddressPoolError::Ipv4AddrExhaustion
             | e @ AddressPoolError::AllocatedIpv4AddrAllocation(Ipv4Addr { .. })
@@ -579,7 +577,7 @@ impl<DS: DataStore, TS: SystemTimeSource> Server<DS, TS> {
         })?;
         let (id, LeaseRecord { .. }) = entry.remove_entry();
         if let Some(store) = store {
-            let () = store
+            store
                 .delete(&id)
                 .map_err(|e| ServerError::DataStoreUpdateFailure(anyhow::Error::from(e).into()))?;
         }
@@ -762,7 +760,7 @@ impl<DS: DataStore, TS: SystemTimeSource> Server<DS, TS> {
             .iter_mut()
             .filter(|(_id, record)| record.current.is_some() && record.expired(now))
             .try_for_each(|(id, record)| {
-                let () = match release_leased_addr(id, record, pool, store) {
+                match release_leased_addr(id, record, pool, store) {
                     Ok(()) => (),
                     // Panic because server's state is irrecoverably inconsistent.
                     Err(ServerError::ServerAddressPoolFailure(e)) => {
@@ -921,9 +919,9 @@ fn release_leased_addr<DS: DataStore>(
 ) -> Result<(), ServerError> {
     if let Some(addr) = record.current.take() {
         record.previous = Some(addr);
-        let () = pool.release_addr(addr)?;
+        pool.release_addr(addr)?;
         if let Some(store) = store {
-            let () = store
+            store
                 .insert(id, record)
                 .map_err(|e| ServerError::DataStoreUpdateFailure(anyhow::Error::from(e).into()))?;
         }
@@ -1059,7 +1057,7 @@ impl<DS: DataStore, TS: SystemTimeSource> ServerDispatcher for Server<DS, TS> {
         let _old = self.options_repo.insert(option.code(), option);
         let opts: Vec<DhcpOption> = self.options_repo.values().cloned().collect();
         if let Some(store) = self.store.as_mut() {
-            let () = store.store_options(&opts).map_err(|e| {
+            store.store_options(&opts).map_err(|e| {
                 warn!("store_options({:?}) in stash failed: {}", opts, e);
                 zx::Status::INTERNAL
             })?;
@@ -1071,7 +1069,7 @@ impl<DS: DataStore, TS: SystemTimeSource> ServerDispatcher for Server<DS, TS> {
         &mut self,
         value: fidl_fuchsia_net_dhcp::Parameter,
     ) -> Result<(), Status> {
-        let () = match value {
+        match value {
             fidl_fuchsia_net_dhcp::Parameter::IpAddrs(ip_addrs) => {
                 self.params.server_ips = Vec::<Ipv4Addr>::from_fidl(ip_addrs)
             }
@@ -1135,7 +1133,7 @@ impl<DS: DataStore, TS: SystemTimeSource> ServerDispatcher for Server<DS, TS> {
             }
             fidl_fuchsia_net_dhcp::ParameterUnknown!() => return Err(Status::INVALID_ARGS),
         };
-        let () = self.save_params()?;
+        self.save_params()?;
         Ok(())
     }
 
@@ -1185,10 +1183,10 @@ impl<DS: DataStore, TS: SystemTimeSource> ServerDispatcher for Server<DS, TS> {
     }
 
     fn dispatch_reset_options(&mut self) -> Result<(), Status> {
-        let () = self.options_repo.clear();
+        self.options_repo.clear();
         let opts: Vec<DhcpOption> = self.options_repo.values().cloned().collect();
         if let Some(store) = self.store.as_mut() {
-            let () = store.store_options(&opts).map_err(|e| {
+            store.store_options(&opts).map_err(|e| {
                 warn!("store_options({:?}) in stash failed: {}", opts, e);
                 zx::Status::INTERNAL
             })?;
@@ -1198,7 +1196,7 @@ impl<DS: DataStore, TS: SystemTimeSource> ServerDispatcher for Server<DS, TS> {
 
     fn dispatch_reset_parameters(&mut self, defaults: &ServerParameters) -> Result<(), Status> {
         self.params = defaults.clone();
-        let () = self.save_params()?;
+        self.save_params()?;
         Ok(())
     }
 
@@ -1206,14 +1204,14 @@ impl<DS: DataStore, TS: SystemTimeSource> ServerDispatcher for Server<DS, TS> {
         let Self { records, pool, store, .. } = self;
         for (id, LeaseRecord { current, .. }) in records.drain() {
             if let Some(current) = current {
-                let () = match pool.release_addr(current) {
+                match pool.release_addr(current) {
                     Ok(()) => (),
                     // Panic on failure because server has irrecoverable inconsistent state.
                     Err(e) => panic!("fatal server release address failure: {}", e),
                 };
             }
             if let Some(store) = store {
-                let () = store.delete(&id).map_err(|e| {
+                store.delete(&id).map_err(|e| {
                     warn!("delete({}) failed: {:?}", id, e);
                     zx::Status::INTERNAL
                 })?;
@@ -1590,14 +1588,14 @@ pub mod tests {
             }
 
             pub fn load_client_records(&mut self) -> Result<ClientRecords, ActionRecordingError> {
-                let () = self.push_action(DataStoreAction::LoadClientRecords);
+                self.push_action(DataStoreAction::LoadClientRecords);
                 Ok(HashMap::new())
             }
 
             pub fn load_options(
                 &mut self,
             ) -> Result<HashMap<OptionCode, DhcpOption>, ActionRecordingError> {
-                let () = self.push_action(DataStoreAction::LoadOptions);
+                self.push_action(DataStoreAction::LoadOptions);
                 Ok(HashMap::new())
             }
         }
@@ -1872,7 +1870,7 @@ pub mod tests {
             DhcpOption::RenewalTimeValue(50),
             DhcpOption::RebindingTimeValue(75),
         ]);
-        let () = add_server_options(&mut msg, server);
+        add_server_options(&mut msg, server);
         msg
     }
 
@@ -1938,7 +1936,7 @@ pub mod tests {
 
     fn new_test_inform_ack<DS: DataStore>(req: &Message, server: &Server<DS>) -> Message {
         let mut msg = new_server_message(MessageType::DHCPACK, req, server);
-        let () = add_server_options(&mut msg, server);
+        add_server_options(&mut msg, server);
         msg
     }
 
@@ -3238,8 +3236,8 @@ pub mod tests {
             .store_client_record(client_3_ip, client_3_id.clone(), &client_opts)
             .expect("failed to store client record");
 
-        let () = time_source.move_forward(Duration::from_secs(1));
-        let () = server.release_expired_leases().expect("failed to release expired leases");
+        time_source.move_forward(Duration::from_secs(1));
+        server.release_expired_leases().expect("failed to release expired leases");
 
         let client_ips: BTreeSet<_> = [client_1_ip, client_2_ip, client_3_ip].into();
         assert_matches::assert_matches!(server.records.get(&client_1_id), Some(LeaseRecord {current: Some(ip), previous: None, ..}) if *ip == client_1_ip);
@@ -3267,7 +3265,7 @@ pub mod tests {
         let client_1_ip = random_ipv4_generator();
         assert!(server.pool.universe.insert(client_1_ip));
         let client_1_id = ClientIdentifier::from(random_mac_generator());
-        let () = server
+        server
             .store_client_record(
                 client_1_ip,
                 client_1_id.clone(),
@@ -3278,7 +3276,7 @@ pub mod tests {
         let client_2_ip = random_ipv4_generator();
         assert!(server.pool.universe.insert(client_2_ip));
         let client_2_id = ClientIdentifier::from(random_mac_generator());
-        let () = server
+        server
             .store_client_record(
                 client_2_ip,
                 client_2_id.clone(),
@@ -3289,7 +3287,7 @@ pub mod tests {
         let client_3_ip = random_ipv4_generator();
         assert!(server.pool.universe.insert(client_3_ip));
         let client_3_id = ClientIdentifier::from(random_mac_generator());
-        let () = server
+        server
             .store_client_record(
                 client_3_ip,
                 client_3_id.clone(),
@@ -3297,8 +3295,8 @@ pub mod tests {
             )
             .expect("failed to store client record");
 
-        let () = time_source.move_forward(Duration::from_secs(1));
-        let () = server.release_expired_leases().expect("failed to release expired leases");
+        time_source.move_forward(Duration::from_secs(1));
+        server.release_expired_leases().expect("failed to release expired leases");
 
         assert_eq!(server.records.len(), 3);
         assert_matches::assert_matches!(server.records.get(&client_1_id), Some(LeaseRecord {current: None, previous: Some(ip), ..}) if *ip == client_1_ip);
@@ -3339,7 +3337,7 @@ pub mod tests {
         let client_1_ip = random_ipv4_generator();
         assert!(server.pool.universe.insert(client_1_ip));
         let client_1_id = ClientIdentifier::from(random_mac_generator());
-        let () = server
+        server
             .store_client_record(
                 client_1_ip,
                 client_1_id.clone(),
@@ -3350,7 +3348,7 @@ pub mod tests {
         let client_2_ip = random_ipv4_generator();
         assert!(server.pool.universe.insert(client_2_ip));
         let client_2_id = ClientIdentifier::from(random_mac_generator());
-        let () = server
+        server
             .store_client_record(
                 client_2_ip,
                 client_2_id.clone(),
@@ -3361,7 +3359,7 @@ pub mod tests {
         let client_3_ip = random_ipv4_generator();
         assert!(server.pool.universe.insert(client_3_ip));
         let client_3_id = ClientIdentifier::from(random_mac_generator());
-        let () = server
+        server
             .store_client_record(
                 client_3_ip,
                 client_3_id.clone(),
@@ -3369,8 +3367,8 @@ pub mod tests {
             )
             .expect("failed to store client record");
 
-        let () = time_source.move_forward(Duration::from_secs(1));
-        let () = server.release_expired_leases().expect("failed to release expired leases");
+        time_source.move_forward(Duration::from_secs(1));
+        server.release_expired_leases().expect("failed to release expired leases");
 
         let client_ips: BTreeSet<_> = [client_1_ip, client_3_ip].into();
         assert_matches::assert_matches!(server.records.get(&client_1_id), Some(LeaseRecord {current: Some(ip), previous: None, ..}) if *ip == client_1_ip);
@@ -3906,7 +3904,7 @@ pub mod tests {
     fn server_dispatcher_set_option_returns_unit() {
         let mut server = new_test_minimal_server();
         let option = || fidl_fuchsia_net_dhcp::Option_::SubnetMask(fidl_ip_v4!("255.255.255.0"));
-        let () = server.dispatch_set_option(option()).expect("failed to set dhcp option");
+        server.dispatch_set_option(option()).expect("failed to set dhcp option");
         let stored_option: DhcpOption =
             DhcpOption::try_from_fidl(option()).expect("failed to convert dhcp option from fidl");
         let code = stored_option.code();
@@ -3934,7 +3932,7 @@ pub mod tests {
             options_repo: HashMap::new(),
             time_source: TestSystemTime::with_current_time(),
         };
-        let () = server.dispatch_set_option(fidl_mask).expect("failed to set dhcp option");
+        server.dispatch_set_option(fidl_mask).expect("failed to set dhcp option");
         assert_matches::assert_matches!(
             server.store.expect("missing store").actions().as_slice(),
             [
@@ -3953,7 +3951,7 @@ pub mod tests {
                 ..Default::default()
             });
         let mut server = new_test_minimal_server();
-        let () = server.dispatch_set_parameter(fidl_lease).expect("failed to set parameter");
+        server.dispatch_set_parameter(fidl_lease).expect("failed to set parameter");
         assert_matches::assert_matches!(
             server.store.expect("missing store").actions().next(),
             Some(DataStoreAction::StoreParameters {
@@ -4066,7 +4064,7 @@ pub mod tests {
         let mut server = new_test_minimal_server();
         let empty_map = HashMap::new();
         assert_ne!(empty_map, server.options_repo);
-        let () = server.dispatch_reset_options().expect("failed to reset options");
+        server.dispatch_reset_options().expect("failed to reset options");
         assert_eq!(empty_map, server.options_repo);
         let stored_opts = server
             .store
@@ -4108,7 +4106,7 @@ pub mod tests {
         server.params.managed_addrs.pool_range_stop = std_ip_v4!("192.168.0.4");
         server.pool = AddressPool::new(server.params.managed_addrs.pool_range());
         let client = std_ip_v4!("192.168.0.2");
-        let () = server
+        server
             .pool
             .allocate_addr(client)
             .unwrap_or_else(|err| panic!("allocate_addr({}) failed: {:?}", client, err));
@@ -4124,7 +4122,7 @@ pub mod tests {
             },
         )]
         .into();
-        let () = server.dispatch_clear_leases().expect("dispatch_clear_leases() failed");
+        server.dispatch_clear_leases().expect("dispatch_clear_leases() failed");
         let empty_map = HashMap::new();
         assert_eq!(empty_map, server.records);
         assert!(server.pool.addr_is_available(client));
@@ -4148,7 +4146,7 @@ pub mod tests {
     #[test]
     fn server_dispatcher_validate_params() {
         let mut server = new_test_minimal_server();
-        let () = server.pool.universe.clear();
+        server.pool.universe.clear();
         assert_eq!(server.try_validate_parameters(), Err(Status::INVALID_ARGS));
     }
 
@@ -4178,8 +4176,8 @@ pub mod tests {
     #[test]
     fn set_address_pool_updates_internal_pool() {
         let mut server = new_test_minimal_server();
-        let () = server.pool.universe.clear();
-        let () = server
+        server.pool.universe.clear();
+        server
             .dispatch_set_parameter(fidl_fuchsia_net_dhcp::Parameter::AddressPool(
                 fidl_fuchsia_net_dhcp::AddressPool {
                     prefix_length: Some(24),
@@ -4211,9 +4209,9 @@ pub mod tests {
             LEASE_EXPIRATION_SECONDS,
         )
         .expect("failed to create lease record");
-        let () = store.insert(&client_id, &client_record).expect("failed to insert client record");
+        store.insert(&client_id, &client_record).expect("failed to insert client record");
         // The record should become expired now.
-        let () = time_source.move_forward(Duration::from_secs(LEASE_EXPIRATION_SECONDS.into()));
+        time_source.move_forward(Duration::from_secs(LEASE_EXPIRATION_SECONDS.into()));
 
         // Only 192.168.0.1 is available.
         let params = ServerParameters {
@@ -4303,7 +4301,7 @@ pub mod tests {
         );
         disc = new_test_discover();
         let server = random_ipv4_generator();
-        let () = disc.options.push(DhcpOption::ServerIdentifier(server));
+        disc.options.push(DhcpOption::ServerIdentifier(server));
         assert_eq!(
             validate_discover(&disc),
             Err(ServerError::ClientMessageError(ProtocolError::InvalidField {

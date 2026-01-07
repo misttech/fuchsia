@@ -246,7 +246,7 @@ pub fn parse_str_to_rules(
         match filter_rule.as_rule() {
             Rule::rule => {
                 let rule = parse_rule(filter_rule, &routines, index)?;
-                let () = validate_rule(&rule)?;
+                validate_rule(&rule)?;
                 rules.push(rule);
             }
             Rule::EOI => (),

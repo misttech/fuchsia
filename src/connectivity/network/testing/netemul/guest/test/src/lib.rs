@@ -53,12 +53,8 @@ async fn put_then_get_file() {
     const LOCAL_SRC_PATH: &str = "/tmp/src.txt";
     const REMOTE_PATH: &str = "/root/input/data.txt";
 
-    let () = create_file_with_random_data(LOCAL_SRC_PATH)
-        .expect("failed to write test data to src file");
-    let () = guest
-        .put_file(LOCAL_SRC_PATH, REMOTE_PATH)
-        .await
-        .expect("failed to transfer file to guest");
+    create_file_with_random_data(LOCAL_SRC_PATH).expect("failed to write test data to src file");
+    guest.put_file(LOCAL_SRC_PATH, REMOTE_PATH).await.expect("failed to transfer file to guest");
 
     let () =
         guest.get_file(LOCAL_DST_PATH, REMOTE_PATH).await.expect("failed to get file from guest");
@@ -80,7 +76,7 @@ async fn exec_script() {
     const LOCAL_SRC_PATH: &str = "/pkg/data/test_script.sh";
     const REMOTE_DST_PATH: &str = "/root/input/test_script.sh";
 
-    let () = guest
+    guest
         .put_file(LOCAL_SRC_PATH, REMOTE_DST_PATH)
         .await
         .expect("failed to transfer file to guest");

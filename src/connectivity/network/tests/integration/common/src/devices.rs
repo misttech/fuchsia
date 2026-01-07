@@ -114,7 +114,7 @@ pub async fn add_pure_ip_interface(
     let (admin_control, server_end) =
         fidl::endpoints::create_proxy::<fnet_interfaces_admin::ControlMarker>();
 
-    let () = admin_device_control
+    admin_device_control
         .create_interface(
             &port_id,
             server_end,

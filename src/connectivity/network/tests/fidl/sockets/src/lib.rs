@@ -414,7 +414,7 @@ async fn control_disconnect_ip_tcp_listener<I: Ip>(name: &str) {
 
     let client =
         realm.stream_socket(domain, fposix_socket::StreamSocketProtocol::Tcp).await.unwrap();
-    let () = client.connect(&local_addr.into()).expect("connect");
+    client.connect(&local_addr.into()).expect("connect");
 
     let result = control
         .disconnect_ip(&fnet_sockets::ControlDisconnectIpRequest {
@@ -473,7 +473,7 @@ async fn control_disconnect_ip_tcp_listener_with_pending<I: Ip>(name: &str) {
     // Connect a client but DO NOT accept to leave it in the accept queue.
     let client =
         realm.stream_socket(domain, fposix_socket::StreamSocketProtocol::Tcp).await.unwrap();
-    let () = client.connect(&local_addr.into()).expect("connect");
+    client.connect(&local_addr.into()).expect("connect");
 
     let result = control
         .disconnect_ip(&fnet_sockets::ControlDisconnectIpRequest {
@@ -523,7 +523,7 @@ async fn control_disconnect_ip_tcp_connected<I: Ip>(name: &str) {
 
     let client =
         realm.stream_socket(domain, fposix_socket::StreamSocketProtocol::Tcp).await.unwrap();
-    let () = client.connect(&local_addr.into()).expect("connect");
+    client.connect(&local_addr.into()).expect("connect");
     let _server_socket = listener.accept().expect("accept");
 
     let result = control

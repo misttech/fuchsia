@@ -190,7 +190,7 @@ async fn create_power_realm<'a>(
     assert_eq!(sag_state.next().await, Some(fpower_system::ExecutionStateLevel::Active));
 
     // Kick SAG out of boot mode.
-    let () = sagctl.set_boot_complete().await.expect("SetBootComplete");
+    sagctl.set_boot_complete().await.expect("SetBootComplete");
 
     realm
 }

@@ -59,7 +59,7 @@ impl ServerConfigState {
         }
 
         let mut set = HashSet::new();
-        let () = servers.retain(|s| set.insert(*s));
+        servers.retain(|s| set.insert(*s));
         let mut inner = current.lock();
         if inner.servers == servers {
             return UpdateServersResult::NoChange;

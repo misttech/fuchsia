@@ -640,7 +640,7 @@ async fn add_address(interface: &netemul::TestInterface<'_>, addr: fnet::Subnet)
     )
     .await
     .expect("add_address_wait_assigned failed");
-    let () = address_state_provider.detach().expect("detach failed");
+    address_state_provider.detach().expect("detach failed");
 }
 
 /// Creates a `RouterConnectedDevice` from the provided `config` that is

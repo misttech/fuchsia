@@ -920,7 +920,7 @@ async fn root_route_apis_can_remove_loopback_route<
             let (interface_control, interface_control_server_end) =
                 fidl_fuchsia_net_interfaces_ext::admin::Control::create_endpoints()
                     .expect("create proxy");
-            let () = root_interfaces
+            root_interfaces
                 .get_admin(iface_id, interface_control_server_end)
                 .expect("create root interfaces connection");
 

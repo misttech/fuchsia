@@ -1159,7 +1159,7 @@ mod tests {
         let (worker, watcher_sink, interface_sink) = Worker::new();
         let (r, ()) = futures::future::join(worker.run(), f(watcher_sink, interface_sink)).await;
         let watchers = r.expect("worker failed");
-        let () = watchers.try_collect().await.expect("watchers error");
+        watchers.try_collect::<()>().await.expect("watchers error");
     }
 
     const IFACE1_ID: BindingId = NonZeroU64::new(111).unwrap();

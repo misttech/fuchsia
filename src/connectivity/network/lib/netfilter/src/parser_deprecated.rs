@@ -208,7 +208,7 @@ fn validate_port_range(range: &filter::PortRange) -> Result<(), Error> {
 }
 
 fn port_range_length(range: &filter::PortRange) -> Result<u16, Error> {
-    let () = validate_port_range(&range)?;
+    validate_port_range(&range)?;
     Ok(range.end - range.start)
 }
 
@@ -218,8 +218,8 @@ fn validate_rule(rule: &filter::Rule) -> Result<(), Error> {
             return Err(Error::Invalid(InvalidReason::MixedIPVersions));
         }
     }
-    let () = validate_port_range(&rule.src_port_range)?;
-    let () = validate_port_range(&rule.dst_port_range)?;
+    validate_port_range(&rule.src_port_range)?;
+    validate_port_range(&rule.dst_port_range)?;
 
     Ok(())
 }
@@ -243,7 +243,7 @@ pub fn parse_str_to_rules(line: &str) -> Result<Vec<filter::Rule>, Error> {
         match filter_rule.as_rule() {
             Rule::rule => {
                 let rule = parse_rule(filter_rule)?;
-                let () = validate_rule(&rule)?;
+                validate_rule(&rule)?;
                 rules.push(rule);
             }
             Rule::EOI => (),
@@ -278,7 +278,7 @@ pub fn parse_str_to_rdr_rules(line: &str) -> Result<Vec<filter::Rdr>, Error> {
         match filter_rule.as_rule() {
             Rule::rdr => {
                 let rdr = parse_rdr(filter_rule)?;
-                let () = validate_rdr(&rdr)?;
+                validate_rdr(&rdr)?;
                 rdr_rules.push(rdr);
             }
             Rule::EOI => (),

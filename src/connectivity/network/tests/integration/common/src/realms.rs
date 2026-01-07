@@ -1115,7 +1115,7 @@ impl TestRealmExt for netemul::TestRealm<'_> {
 
         let (control, server) = fnet_interfaces_ext::admin::Control::create_endpoints()
             .context("create Control proxy")?;
-        let () = root_control.get_admin(id, server).context("get admin")?;
+        root_control.get_admin(id, server).context("get admin")?;
         Ok(control)
     }
 }

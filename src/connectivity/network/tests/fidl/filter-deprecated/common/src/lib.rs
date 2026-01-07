@@ -312,7 +312,7 @@ pub async fn test_filter(name: &str, test: Test) {
     // Put client and server in each other's neighbor table. We've observed
     // flakes in CQ due to ARP timeouts and ARP resolution is immaterial to the
     // tests we run here.
-    let () = futures::stream::iter([
+    futures::stream::iter([
         (&server, &server_ep, CLIENT_IPV4_SUBNET.addr, CLIENT_MAC_ADDRESS),
         (&client, &client_ep, SERVER_IPV4_SUBNET.addr, SERVER_MAC_ADDRESS),
     ])
@@ -328,17 +328,17 @@ pub async fn test_filter(name: &str, test: Test) {
     let Test { proto, client_updates, server_updates, expected_traffic } = test;
 
     // Initial check (no filters set).
-    let () = client_filter
+    client_filter
         .enable_interface(client_ep.id())
         .await
         .transform_result()
         .expect("error enabling filter on client");
-    let () = server_filter
+    server_filter
         .enable_interface(server_ep.id())
         .await
         .transform_result()
         .expect("error enabling filter on server");
-    let () = run_socket_test(
+    run_socket_test(
         proto,
         &server,
         SERVER_IPV4_SUBNET.addr,
@@ -356,7 +356,7 @@ pub async fn test_filter(name: &str, test: Test) {
     let (_rules, mut client_generation) =
         client_filter.get_rules().await.expect("failed to get client's filter rules");
     if let Some(updates) = client_updates {
-        let () = client_filter
+        client_filter
             .update_rules(&updates, client_generation)
             .await
             .transform_result()
@@ -364,14 +364,14 @@ pub async fn test_filter(name: &str, test: Test) {
         client_generation += 1;
     }
     if let Some(updates) = server_updates {
-        let () = server_filter
+        server_filter
             .update_rules(&updates, server_generation)
             .await
             .transform_result()
             .expect("failed to update server's filter rules");
         server_generation += 1;
     }
-    let () = run_socket_test(
+    run_socket_test(
         proto,
         &server,
         SERVER_IPV4_SUBNET.addr,
@@ -384,17 +384,17 @@ pub async fn test_filter(name: &str, test: Test) {
     .await;
 
     // Disable the filters on the interface and expect full connectivity.
-    let () = client_filter
+    client_filter
         .disable_interface(client_ep.id())
         .await
         .transform_result()
         .expect("error disabling filter on client");
-    let () = server_filter
+    server_filter
         .disable_interface(server_ep.id())
         .await
         .transform_result()
         .expect("error disabling filter on server");
-    let () = run_socket_test(
+    run_socket_test(
         proto,
         &server,
         SERVER_IPV4_SUBNET.addr,
@@ -407,22 +407,22 @@ pub async fn test_filter(name: &str, test: Test) {
     .await;
 
     // Reset and enable filters and expect full connectivity.
-    let () = client_filter
+    client_filter
         .enable_interface(client_ep.id())
         .await
         .transform_result()
         .expect("error re-enabling filter on client");
-    let () = server_filter
+    server_filter
         .enable_interface(server_ep.id())
         .await
         .transform_result()
         .expect("error re-enabling filter on server");
-    let () = server_filter
+    server_filter
         .update_rules(&[], server_generation)
         .await
         .transform_result()
         .expect("failed to reset client's filter rules");
-    let () = client_filter
+    client_filter
         .update_rules(&[], client_generation)
         .await
         .transform_result()

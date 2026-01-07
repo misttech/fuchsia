@@ -125,7 +125,7 @@ async fn poll_lookup_admin<
     retry_count: u64,
 ) {
     for i in 0..retry_count {
-        let () = futures::select! {
+        futures::select! {
             () = fuchsia_async::Timer::new(poll_wait.after_now()).fuse() => (),
             stopped_event = wait_for_netmgr_fut => {
                 panic!(
@@ -162,7 +162,7 @@ async fn poll_dns_server_watcher<
     wait_duration: zx::MonotonicDuration,
 ) {
     loop {
-        let () = futures::select! {
+        futures::select! {
             servers = dns_server_watcher_proxy.watch_servers() => {
                 match servers {
                     Ok(servers) => {
@@ -391,7 +391,7 @@ async fn discovered_dhcpv4_dns<M: Manager, N: Netstack>(name: &str, check_type: 
                         fnet::Ipv4Address { addr: [a, b, c, d + 4] },
                     )
                 };
-                let () = stream::iter(
+                stream::iter(
                     [
                         fidl_fuchsia_net_dhcp::Parameter::IpAddrs(vec![server_addr_v4]),
                         fidl_fuchsia_net_dhcp::Parameter::AddressPool(
@@ -423,14 +423,14 @@ async fn discovered_dhcpv4_dns<M: Manager, N: Netstack>(name: &str, check_type: 
                 })
                 .await;
 
-                let () = dhcp_server
+                dhcp_server
                     .set_option(&net_dhcp::Option_::DomainNameServer(vec![DHCP_DNS_SERVER]))
                     .await
                     .expect("Failed to set DNS option")
                     .map_err(zx::Status::from_raw)
                     .expect("dhcp/Server.SetOption returned error");
 
-                let () = dhcp_server
+                dhcp_server
                     .start_serving()
                     .await
                     .expect("failed to call dhcp/Server.StartServing")
@@ -1100,7 +1100,7 @@ async fn successfully_retrieves_ipv6_record_despite_ipv4_timeout<N: Netstack>(na
         .fuse()
     );
 
-    let () = futures::select! {
+    futures::select! {
         () = lookup_fut => panic!("lookup_fut not expected to have completed"),
         () = response_fut => (),
     };
@@ -1112,7 +1112,7 @@ async fn successfully_retrieves_ipv6_record_despite_ipv4_timeout<N: Netstack>(na
         ))
         .take_until(lookup_fut)
         .for_each(|()| async {
-            let () = fake_clock
+            fake_clock
                 .advance(&ftesting::Increment::Determined(
                     // Advance the fake clock by a larger amount than the real time we are waiting
                     // in order to speed up the test run-time.
@@ -1183,7 +1183,7 @@ async fn fallback_on_error_response_code<N: Netstack>(name: &str) {
         let lookup_admin = realm
             .connect_to_protocol::<net_name::LookupAdminMarker>()
             .expect("failed to connect to LookupAdmin");
-        let () = lookup_admin
+        lookup_admin
             .set_dns_servers(dns_servers)
             .await
             .expect("FIDL error")
@@ -1322,7 +1322,7 @@ async fn setup_dns_server(
     let dns_servers = &[fnet_ext::SocketAddress(addr).into()];
     let lookup_admin =
         realm.connect_to_protocol::<net_name::LookupAdminMarker>().expect("connect to protocol");
-    let () = lookup_admin
+    lookup_admin
         .set_dns_servers(dns_servers)
         .await
         .expect("call set DNS servers")
@@ -1474,12 +1474,12 @@ async fn fallback_to_tcp_on_truncated_response<N: Netstack>(name: &str) {
                 // Read the two-octet length field, which tells us the length of the following DNS
                 // message, in network (big-endian) order.
                 let mut len_buf = [0_u8; 2];
-                let () = stream.read_exact(&mut len_buf).await.expect("read length field");
+                stream.read_exact(&mut len_buf).await.expect("read length field");
                 let len = u16::from_be_bytes(len_buf);
                 let len = usize::from(len);
 
                 let mut buf = vec![0_u8; len];
-                let () = stream.read_exact(&mut buf).await.expect("receive DNS query");
+                stream.read_exact(&mut buf).await.expect("receive DNS query");
                 let query = Message::from_vec(&buf).expect("deserialize DNS query");
                 let answer = answer_for_hostname(EXAMPLE_HOSTNAME, EXAMPLE_IPV4_ADDR);
                 let mut response = Message::new();

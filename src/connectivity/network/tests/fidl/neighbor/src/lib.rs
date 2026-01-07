@@ -142,7 +142,7 @@ fn get_entry_iterator(
         .expect("failed to connect to fuchsia.net.neighbor/View");
     let (proxy, server_end) =
         fidl::endpoints::create_proxy::<fidl_fuchsia_net_neighbor::EntryIteratorMarker>();
-    let () = view.open_entry_iterator(server_end, &options).expect("failed to open EntryIterator");
+    view.open_entry_iterator(server_end, &options).expect("failed to open EntryIterator");
     futures::stream::unfold(proxy, |proxy| {
         proxy.get_next().map(|r| {
             let it = r.expect("fuchsia.net.neighbor/EntryIterator.GetNext FIDL error");
@@ -405,7 +405,7 @@ async fn neigh_list_entries<N: Netstack>(name: &str) {
     // Check that bob is listed as a neighbor for alice.
     let mut alice_entries = list_existing_entries(&alice.realm).await;
     // IPv4 entry.
-    let () = assert_entry(
+    assert_entry(
         alice_entries.remove(&(alice.ep.id(), BOB_IP)).expect("missing IPv4 neighbor entry"),
         EntryMatch::new(
             alice.ep.id(),
@@ -415,7 +415,7 @@ async fn neigh_list_entries<N: Netstack>(name: &str) {
         ),
     );
     // IPv6 entry.
-    let () = assert_entry(
+    assert_entry(
         alice_entries.remove(&(alice.ep.id(), bob.ipv6)).expect("missing IPv6 neighbor entry"),
         EntryMatch::new(
             alice.ep.id(),
@@ -456,7 +456,7 @@ async fn neigh_list_entries<N: Netstack>(name: &str) {
     let mut bob_entries = list_existing_entries(&bob.realm).await;
 
     // IPv4 entry.
-    let () = assert_entry(
+    assert_entry(
         bob_entries.remove(&(bob.ep.id(), ALICE_IP)).expect("missing IPv4 neighbor entry"),
         EntryMatch::new(
             bob.ep.id(),
@@ -466,7 +466,7 @@ async fn neigh_list_entries<N: Netstack>(name: &str) {
         ),
     );
     // IPv6 entry.
-    let () = assert_entry(
+    assert_entry(
         bob_entries.remove(&(bob.ep.id(), alice.ipv6)).expect("missing IPv6 neighbor entry"),
         EntryMatch::new(
             bob.ep.id(),
@@ -627,7 +627,7 @@ async fn neigh_clear_entries<N: Netstack, I: Ip>(name: &str) {
 
     // Exchange some datagrams to add some entries to the list and check that we
     // observe the neighbor solicitations over the network.
-    let () = exchange_dgram(&alice, alice_ip, &bob, bob_ip).await;
+    exchange_dgram(&alice, alice_ip, &bob, bob_ip).await;
 
     assert_eq!(
         next_solicitation_resolution(&mut solicit_stream, bob_ip).await,
@@ -636,7 +636,7 @@ async fn neigh_clear_entries<N: Netstack, I: Ip>(name: &str) {
     assert_entries(&mut iter, incomplete_then_reachable(alice.ep.id(), bob_ip, BOB_MAC)).await;
 
     // Clear entries and verify they go away.
-    let () = alice_controller
+    alice_controller
         .clear_entries(alice.ep.id(), I::VERSION.into_ext())
         .await
         .expect("clear_entries FIDL error")
@@ -661,7 +661,7 @@ async fn neigh_clear_entries<N: Netstack, I: Ip>(name: &str) {
     // Add static entries on Bob so that it will never send out neighbor
     // solicitations that could cause confusion for the assertions at the
     // end of this test.
-    let () = bob_controller
+    bob_controller
         .add_entry(bob.ep.id(), &alice_ip, &ALICE_MAC)
         .await
         .expect("add_entry FIDL error")
@@ -673,7 +673,7 @@ async fn neigh_clear_entries<N: Netstack, I: Ip>(name: &str) {
     for _ in 0..MAX_RETRIES {
         // Exchange datagrams again and assert that new solicitation requests were
         // sent.
-        let () = exchange_dgram(&alice, alice_ip, &bob, bob_ip).await;
+        exchange_dgram(&alice, alice_ip, &bob, bob_ip).await;
         let solicitations = next_solicitation_resolution(&mut solicit_stream, bob_ip).await;
         if solicitations == HashSet::from_iter(std::iter::once(bob_ip)) {
             return;
@@ -911,7 +911,7 @@ async fn neigh_add_remove_entry<N: Netstack, I: Ip>(name: &str) {
     );
 
     // Add a static entry and verify that it is listable.
-    let () = controller
+    controller
         .add_entry(alice.ep.id(), &bob_ip, &BOB_MAC)
         .await
         .expect("add_entry FIDL error")
@@ -926,7 +926,7 @@ async fn neigh_add_remove_entry<N: Netstack, I: Ip>(name: &str) {
 
     assert_entries(&mut alice_iter, [ItemMatch::Added(static_entry.clone())]).await;
 
-    let () = exchange_dgram(&alice, alice_ip, &bob, bob_ip).await;
+    exchange_dgram(&alice, alice_ip, &bob, bob_ip).await;
     assert_eq!(
         meta_stream
             .try_next()
@@ -937,7 +937,7 @@ async fn neigh_add_remove_entry<N: Netstack, I: Ip>(name: &str) {
     );
 
     // Remove the entry and check that the list is empty afterwards.
-    let () = controller
+    controller
         .remove_entry(alice.ep.id(), &bob_ip)
         .await
         .expect("remove_entry FIDL error")
@@ -947,7 +947,7 @@ async fn neigh_add_remove_entry<N: Netstack, I: Ip>(name: &str) {
 
     // Exchange datagrams again and assert that new solicitation requests were
     // sent (ignoring any UDP metadata this time).
-    let () = exchange_dgram(&alice, alice_ip, &bob, bob_ip).await;
+    exchange_dgram(&alice, alice_ip, &bob, bob_ip).await;
     assert_eq!(
         next_solicitation_resolution(&mut meta_stream, bob_ip).await,
         HashSet::from_iter(std::iter::once(bob_ip))
@@ -1038,12 +1038,11 @@ async fn cant_hang_twice<N: Netstack>(name: &str) {
         .expect("failed to connect to fuchsia.net.neighbor/View");
     let (iter, server_end) =
         fidl::endpoints::create_proxy::<fidl_fuchsia_net_neighbor::EntryIteratorMarker>();
-    let () = view
-        .open_entry_iterator(
-            server_end,
-            &fidl_fuchsia_net_neighbor::EntryIteratorOptions::default(),
-        )
-        .expect("failed to open EntryIterator");
+    view.open_entry_iterator(
+        server_end,
+        &fidl_fuchsia_net_neighbor::EntryIteratorOptions::default(),
+    )
+    .expect("failed to open EntryIterator");
 
     assert_eq!(
         iter.get_next().await.expect("failed to fetch idle item"),
@@ -1082,12 +1081,11 @@ async fn channel_is_closed_if_not_polled<N: Netstack>(name: &str) {
         .expect("failed to connect to fuchsia.net.neighbor/View");
     let (iter, server_end) =
         fidl::endpoints::create_proxy::<fidl_fuchsia_net_neighbor::EntryIteratorMarker>();
-    let () = view
-        .open_entry_iterator(
-            server_end,
-            &fidl_fuchsia_net_neighbor::EntryIteratorOptions::default(),
-        )
-        .expect("failed to open EntryIterator");
+    view.open_entry_iterator(
+        server_end,
+        &fidl_fuchsia_net_neighbor::EntryIteratorOptions::default(),
+    )
+    .expect("failed to open EntryIterator");
     // Poll at least once for the idle event to ensure that EntryIterator is
     // actually implemented, otherwise this test passes against a netstack
     // that doesn't expose the capability of implementing View at all.

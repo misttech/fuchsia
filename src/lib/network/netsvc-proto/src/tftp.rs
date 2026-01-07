@@ -263,7 +263,7 @@ impl OptionCollection {
             .ok_or(ParseError::EmptyStringValue(StringField::OptionValue))?;
 
             let option = TftpOption::parse(name.as_ref(), value.as_ref())?;
-            let () = vec.try_push(option).map_err(|e| ParseError::TooManyOptions(e.element()))?;
+            vec.try_push(option).map_err(|e| ParseError::TooManyOptions(e.element()))?;
         }
         Ok(Self(vec))
     }

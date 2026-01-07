@@ -102,7 +102,7 @@ impl TestSandbox {
     {
         let (realm, server) = fidl::endpoints::create_proxy::<fnetemul::ManagedRealmMarker>();
         let name = name.into();
-        let () = self.sandbox.create_realm(
+        self.sandbox.create_realm(
             server,
             fnetemul::RealmOptions {
                 name: Some(name.clone().into_owned()),
@@ -133,7 +133,7 @@ impl TestSandbox {
     fn get_network_context(&self) -> Result<fnetemul_network::NetworkContextProxy> {
         let (ctx, server) =
             fidl::endpoints::create_proxy::<fnetemul_network::NetworkContextMarker>();
-        let () = self.sandbox.get_network_context(server)?;
+        self.sandbox.get_network_context(server)?;
         Ok(ctx)
     }
 
@@ -142,7 +142,7 @@ impl TestSandbox {
         let ctx = self.get_network_context()?;
         let (network_manager, server) =
             fidl::endpoints::create_proxy::<fnetemul_network::NetworkManagerMarker>();
-        let () = ctx.get_network_manager(server)?;
+        ctx.get_network_manager(server)?;
         Ok(network_manager)
     }
 
@@ -151,7 +151,7 @@ impl TestSandbox {
         let ctx = self.get_network_context()?;
         let (ep_manager, server) =
             fidl::endpoints::create_proxy::<fnetemul_network::EndpointManagerMarker>();
-        let () = ctx.get_endpoint_manager(server)?;
+        ctx.get_endpoint_manager(server)?;
         Ok(ep_manager)
     }
 
@@ -174,7 +174,7 @@ impl TestSandbox {
             )
             .await
             .context("create_network FIDL error")?;
-        let () = zx::Status::ok(status).context("create_network failed")?;
+        zx::Status::ok(status).context("create_network failed")?;
         let network = network
             .ok_or_else(|| anyhow::anyhow!("create_network didn't return a valid network"))?
             .into_proxy();
@@ -188,7 +188,7 @@ impl TestSandbox {
     ) -> Result<TestNetworkSetup<'a>> {
         let ctx = self.get_network_context()?;
         let (status, handle) = ctx.setup(&networks).await.context("setup FIDL error")?;
-        let () = zx::Status::ok(status).context("setup failed")?;
+        zx::Status::ok(status).context("setup failed")?;
         let handle = handle
             .ok_or_else(|| anyhow::anyhow!("setup didn't return a valid handle"))?
             .into_proxy();
@@ -217,7 +217,7 @@ impl TestSandbox {
         let epm = self.get_endpoint_manager()?;
         let (status, endpoint) =
             epm.create_endpoint(&name, &config).await.context("create_endpoint FIDL error")?;
-        let () = zx::Status::ok(status).context("create_endpoint failed")?;
+        zx::Status::ok(status).context("create_endpoint failed")?;
         let endpoint = endpoint
             .ok_or_else(|| anyhow::anyhow!("create_endpoint didn't return a valid endpoint"))?
             .into_proxy();
@@ -423,8 +423,7 @@ impl<'a> TestRealm<'a> {
     {
         (|| {
             let (proxy, server_end) = fidl::endpoints::create_proxy::<S>();
-            let () = self
-                .connect_to_protocol_with_server_end(server_end)
+            self.connect_to_protocol_with_server_end(server_end)
                 .context("connect to protocol name with server end")?;
             Result::Ok(proxy)
         })()
@@ -438,13 +437,12 @@ impl<'a> TestRealm<'a> {
     {
         (|| {
             let (proxy, server_end) = fidl::endpoints::create_proxy::<S>();
-            let () = self
-                .connect_to_protocol_from_child_at_path_with_server_end(
-                    S::PROTOCOL_NAME,
-                    child,
-                    server_end,
-                )
-                .context("connect to protocol name with server end")?;
+            self.connect_to_protocol_from_child_at_path_with_server_end(
+                S::PROTOCOL_NAME,
+                child,
+                server_end,
+            )
+            .context("connect to protocol name with server end")?;
             Result::Ok(proxy)
         })()
         .with_context(|| format!("{} from {child}", S::DEBUG_NAME))
@@ -453,8 +451,7 @@ impl<'a> TestRealm<'a> {
     /// Opens the diagnostics directory of a component.
     pub fn open_diagnostics_directory(&self, child_name: &str) -> Result<fio::DirectoryProxy> {
         let (proxy, server_end) = fidl::endpoints::create_proxy::<fio::DirectoryMarker>();
-        let () = self
-            .realm()
+        self.realm()
             .open_diagnostics_directory(child_name, server_end)
             .context("open diagnostics dir")?;
         Ok(proxy)
@@ -632,7 +629,7 @@ impl<'a> TestRealm<'a> {
         let (id, control, device_control) =
             endpoint.install(installer, if_config).await.context("failed to add endpoint")?;
 
-        let () = endpoint.set_link_up(true).await.context("failed to start endpoint")?;
+        endpoint.set_link_up(true).await.context("failed to start endpoint")?;
         let _did_enable: bool = control
             .enable()
             .await
@@ -646,7 +643,7 @@ impl<'a> TestRealm<'a> {
 
         // Wait for Netstack to observe interface up so callers can safely
         // assume the state of the world on return.
-        let () = fnet_interfaces_ext::wait_interface_with_id(
+        fnet_interfaces_ext::wait_interface_with_id(
             fnet_interfaces_ext::event_stream_from_state::<fnet_interfaces_ext::DefaultInterest>(
                 &interface_state,
                 Default::default(),
@@ -841,7 +838,7 @@ impl<'a> TestRealm<'a> {
     /// and get cleaned up, such as [`TestEndpoint`]s, which components in the
     /// realm might be interacting with.
     pub async fn shutdown(&self) -> Result {
-        let () = self.realm().shutdown().context("call shutdown")?;
+        self.realm().shutdown().context("call shutdown")?;
         // Turn off shutdown on drop from now on, we're already shutting down
         // here.
         self.set_checked_shutdown_on_drop(false);
@@ -1029,7 +1026,7 @@ impl<'a> TestNetwork<'a> {
     pub async fn attach_endpoint(&self, ep: &TestEndpoint<'a>) -> Result<()> {
         let status =
             self.network.attach_endpoint(&ep.name).await.context("attach_endpoint FIDL error")?;
-        let () = zx::Status::ok(status).context("attach_endpoint failed")?;
+        zx::Status::ok(status).context("attach_endpoint failed")?;
         Ok(())
     }
 
@@ -1045,7 +1042,7 @@ impl<'a> TestNetwork<'a> {
             .create_endpoint(name)
             .await
             .with_context(|| format!("failed to create endpoint for network {}", self.name))?;
-        let () = self.attach_endpoint(&ep).await.with_context(|| {
+        self.attach_endpoint(&ep).await.with_context(|| {
             format!("failed to attach endpoint {} to network {}", ep.name, self.name)
         })?;
         Ok(ep)
@@ -1064,7 +1061,7 @@ impl<'a> TestNetwork<'a> {
             .create_endpoint_with(name, config)
             .await
             .with_context(|| format!("failed to create endpoint for network {}", self.name))?;
-        let () = self.attach_endpoint(&ep).await.with_context(|| {
+        self.attach_endpoint(&ep).await.with_context(|| {
             format!("failed to attach endpoint {} to network {}", ep.name, self.name)
         })?;
         Ok(ep)
@@ -1074,7 +1071,7 @@ impl<'a> TestNetwork<'a> {
     pub fn create_fake_endpoint(&self) -> Result<TestFakeEndpoint<'a>> {
         let (endpoint, server) =
             fidl::endpoints::create_proxy::<fnetemul_network::FakeEndpointMarker>();
-        let () = self.network.create_fake_endpoint(server)?;
+        self.network.create_fake_endpoint(server)?;
         return Ok(TestFakeEndpoint { endpoint, _sandbox: self.sandbox });
     }
 
@@ -1178,7 +1175,7 @@ async fn to_netdevice_inner(
 ) -> Result<(fidl::endpoints::ClientEnd<fnetwork::DeviceMarker>, fnetwork::PortId)> {
     let port = port.into_proxy();
     let (device, server_end) = fidl::endpoints::create_endpoints::<fnetwork::DeviceMarker>();
-    let () = port.get_device(server_end)?;
+    port.get_device(server_end)?;
     let port_id = port
         .get_info()
         .await
@@ -1238,11 +1235,11 @@ impl<'a> TestEndpoint<'a> {
         let device_control = {
             let (control, server_end) =
                 fidl::endpoints::create_proxy::<fnet_interfaces_admin::DeviceControlMarker>();
-            let () = installer.install_device(device, server_end).context("install device")?;
+            installer.install_device(device, server_end).context("install device")?;
             control
         };
         let (control, server_end) = Control::create_endpoints().context("create endpoints")?;
-        let () = device_control
+        device_control
             .create_interface(
                 &port_id,
                 server_end,
@@ -1923,9 +1920,8 @@ impl<'a> TestInterface<'a> {
     ) -> Result<()> {
         let (address_state_provider, server) =
             fidl::endpoints::create_proxy::<fnet_interfaces_admin::AddressStateProviderMarker>();
-        let () = address_state_provider.detach().context("detach address lifetime")?;
-        let () = self
-            .control
+        address_state_provider.detach().context("detach address lifetime")?;
+        self.control
             .add_address(&subnet, &fnet_interfaces_admin::AddressParameters::default(), server)
             .context("FIDL error")?;
 
@@ -2293,7 +2289,7 @@ impl RealmUdpSocket for std::net::UdpSocket {
                 .await
                 .context("failed to create socket")?;
 
-            let () = sock.bind(&addr.into()).context("bind failed")?;
+            sock.bind(&addr.into()).context("bind failed")?;
 
             Result::Ok(sock.into())
         }
@@ -2347,11 +2343,11 @@ impl RealmTcpListener for std::net::TcpListener {
                 .stream_socket(get_socket2_domain(&addr), fposix_socket::StreamSocketProtocol::Tcp)
                 .await
                 .context("failed to create server socket")?;
-            let () = setup(&sock)?;
-            let () = sock.bind(&addr.into()).context("failed to bind server socket")?;
+            setup(&sock)?;
+            sock.bind(&addr.into()).context("failed to bind server socket")?;
             // Use 128 for the listen() backlog, same as the original implementation of TcpListener
             // in Rust std (see https://doc.rust-lang.org/src/std/sys_common/net.rs.html#386).
-            let () = sock.listen(128).context("failed to listen on server socket")?;
+            sock.listen(128).context("failed to listen on server socket")?;
 
             Result::Ok(sock.into())
         }

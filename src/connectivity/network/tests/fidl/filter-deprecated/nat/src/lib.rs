@@ -205,14 +205,14 @@ pub async fn setup_masquerade_nat_network<'a>(
         .connect_to_protocol::<fnetfilter::FilterMarker>()
         .expect("failed to connect to filter service");
 
-    let () = router_filter
+    router_filter
         .enable_interface(router_ep2.id())
         .await
         .transform_result()
         .expect("error enabling filter on router_ep2");
     let (rules, generation) = router_filter.get_nat_rules().await.expect("failed to get NAT rules");
     assert_eq!(&rules, &[]);
-    let () = router_filter
+    router_filter
         .update_nat_rules(updates, generation)
         .await
         .transform_result()
@@ -259,8 +259,8 @@ pub async fn setup_masquerade_nat_network<'a>(
             }
         };
 
-        let () = std::mem::drop(net2);
-        let () = fnet_interfaces_ext::wait_interface_with_id(
+        std::mem::drop(net2);
+        fnet_interfaces_ext::wait_interface_with_id(
             state_stream,
             &mut router_ep2_interface_state,
             |iface| {
@@ -885,7 +885,7 @@ async fn masquerade_nat_ping(test_name: &str, sub_test_name: &str, test_case: Na
 
     let host1_node = ping_node(&host1_realm, host1_ep.id(), host1_addr);
     let host2_node = ping_node(&host2_realm, host2_ep.id(), host2_addr);
-    let () = host1_node
+    host1_node
         .ping_pairwise(&[host2_node])
         .await
         .expect("expected to successfully ping between host1 and host2");

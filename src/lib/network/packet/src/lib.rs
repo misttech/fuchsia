@@ -2004,7 +2004,7 @@ mod tests {
             // Requires that |avoid_leaks| outlives this reference. In this case, we know
             // |test_parse_buffer| does not retain the reference beyond its run.
             let s = unsafe { std::slice::from_raw_parts(v.as_ptr(), v.len()) };
-            let () = avoid_leaks.push(v);
+            avoid_leaks.push(v);
             s
         });
         let buf = ascending(10);
@@ -2020,7 +2020,7 @@ mod tests {
             // Requires that |avoid_leaks| outlives this reference. In this case, we know
             // |test_parse_buffer| does not retain the reference beyond its run.
             let s = unsafe { std::slice::from_raw_parts_mut(v.as_mut_ptr(), v.len()) };
-            let () = avoid_leaks.push(v);
+            avoid_leaks.push(v);
             s
         });
         let mut buf = ascending(10);

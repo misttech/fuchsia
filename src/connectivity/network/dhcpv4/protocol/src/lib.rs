@@ -395,7 +395,7 @@ pub mod identifier {
             let id = id_parts
                 .next()
                 .ok_or_else(|| anyhow::anyhow!("no client id found in string: {}", s))?;
-            let () = match id_parts.next() {
+            match id_parts.next() {
                 None => (),
                 Some(v) => {
                     return Err(anyhow::anyhow!(
@@ -2523,7 +2523,7 @@ mod tests {
     fn serialize_with_valid_option_returns_correct_bytes() {
         let opt = DhcpOption::SubnetMask(DEFAULT_SUBNET_MASK);
         let mut bytes = Vec::with_capacity(6);
-        let () = opt.serialize_to(&mut bytes);
+        opt.serialize_to(&mut bytes);
         assert_eq!(bytes.len(), 6);
         assert_eq!(bytes[0], 1);
         assert_eq!(bytes[1], 4);
@@ -2537,7 +2537,7 @@ mod tests {
     fn serialize_with_fixed_len_option_returns_correct_bytes() {
         let opt = DhcpOption::End();
         let mut bytes = Vec::with_capacity(1);
-        let () = opt.serialize_to(&mut bytes);
+        opt.serialize_to(&mut bytes);
         assert_eq!(bytes.len(), 1);
         assert_eq!(bytes[0], 255);
     }
@@ -2779,12 +2779,12 @@ mod tests {
         let ip = random_ipv4_generator();
         let first_extra_opt = {
             let mut acc = Vec::new();
-            let () = DhcpOption::RequestedIpAddress(ip).serialize_to(&mut acc);
+            DhcpOption::RequestedIpAddress(ip).serialize_to(&mut acc);
             acc
         };
         let last_extra_opt = {
             let mut acc = Vec::new();
-            let () = DhcpOption::End().serialize_to(&mut acc);
+            DhcpOption::End().serialize_to(&mut acc);
             acc
         };
         let (extra_opts, start_idx) = match overload {

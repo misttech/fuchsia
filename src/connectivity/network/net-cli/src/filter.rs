@@ -1696,7 +1696,7 @@ mod tests {
                 fnet_filter_ext::Event::Idle.into(),
             ];
 
-            let () = watcher_request_stream
+            watcher_request_stream
                 .try_next()
                 .await
                 .expect("watcher watch FIDL error")
