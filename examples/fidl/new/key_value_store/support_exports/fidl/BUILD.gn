@@ -18,4 +18,5 @@ fidl("examples.keyvaluestore.supportexports") {
     "vector-bounds-not-specified",
     "wrong-prefix-for-platform-source-library",
   ]
+  enable_rust_next = true
 }
