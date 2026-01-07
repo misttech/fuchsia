@@ -669,6 +669,7 @@ async fn create_container(
         features.selinux.enabled,
         features.selinux.options.clone(),
         features.selinux.exceptions.clone(),
+        &kernel_node,
     );
 
     // `config.enable_utc_time_adjustment` is set through config capability

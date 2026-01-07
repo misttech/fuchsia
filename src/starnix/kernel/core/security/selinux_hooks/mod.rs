@@ -479,14 +479,42 @@ fn check_self_permission<P: ClassPermission + Into<KernelPermission> + Clone + '
     )
 }
 
+async fn create_inspect_values(
+    security_server: Arc<SecurityServer>,
+) -> Result<fuchsia_inspect::Inspector, anyhow::Error> {
+    let inspector = fuchsia_inspect::Inspector::default();
+
+    let policy_bytes = if let Some(policy_data) = security_server.get_binary_policy() {
+        policy_data.len().try_into()?
+    } else {
+        0
+    };
+    inspector.root().record_uint("policy_bytes", policy_bytes);
+
+    Ok(inspector)
+}
+
 /// Returns the security state structure for the kernel.
-pub(super) fn kernel_init_security(options: String, exceptions: Vec<String>) -> KernelState {
+pub(super) fn kernel_init_security(
+    options: String,
+    exceptions: Vec<String>,
+    inspect_node: &fuchsia_inspect::Node,
+) -> KernelState {
+    let server = SecurityServer::new(options, exceptions);
+    let inspect_node = inspect_node.create_child("selinux");
+
+    let server_for_inspect = server.clone();
+    inspect_node.record_lazy_values("server", move || {
+        Box::pin(create_inspect_values(server_for_inspect.clone()))
+    });
+
     KernelState {
-        server: SecurityServer::new(options, exceptions),
+        server,
         pending_file_systems: Mutex::default(),
         selinuxfs_null: OnceLock::default(),
         access_denial_count: AtomicU64::new(0u64),
         has_policy: false.into(),
+        _inspect_node: inspect_node,
     }
 }
 
@@ -510,6 +538,9 @@ pub(super) struct KernelState {
 
     /// Counts the number of times that an AVC denial is audit-logged.
     pub(super) access_denial_count: AtomicU64,
+
+    /// Inspect node through which SELinux status is exposed.
+    pub(super) _inspect_node: fuchsia_inspect::Node,
 }
 
 impl KernelState {

@@ -262,9 +262,13 @@ pub fn kernel_init_security(
     enabled: bool,
     options: String,
     exceptions: Vec<String>,
+    inspect_node: &fuchsia_inspect::Node,
 ) -> KernelState {
     track_hook_duration!("security.hooks.kernel_init_security");
-    KernelState { state: enabled.then(|| selinux_hooks::kernel_init_security(options, exceptions)) }
+    KernelState {
+        state: enabled
+            .then(|| selinux_hooks::kernel_init_security(options, exceptions, inspect_node)),
+    }
 }
 
 /// Checks whether the given `current_task` can become the binder context manager.
@@ -2122,15 +2126,15 @@ pub mod testing {
     /// Used by Starnix' `testing.rs` to create `KernelState` wrapping a test-
     /// supplied `SecurityServer`.
     pub fn kernel_state(security_server: Option<Arc<SecurityServer>>) -> KernelState {
-        KernelState {
-            state: security_server.map(|server| selinux_hooks::KernelState {
-                server,
-                pending_file_systems: Mutex::default(),
-                selinuxfs_null: OnceLock::default(),
-                access_denial_count: AtomicU64::new(0u64),
-                has_policy: false.into(),
-            }),
-        }
+        let state = security_server.map(|server| selinux_hooks::KernelState {
+            server,
+            pending_file_systems: Mutex::default(),
+            selinuxfs_null: OnceLock::default(),
+            access_denial_count: AtomicU64::new(0u64),
+            has_policy: false.into(),
+            _inspect_node: fuchsia_inspect::Node::default(),
+        });
+        KernelState { state }
     }
 }
 
