@@ -4,7 +4,7 @@
 
 use anyhow::{Context, anyhow};
 use fidl_fuchsia_hardware_power_statecontrol::{
-    AdminProxy as PowerStateControlProxy, RebootOptions, RebootReason2,
+    AdminProxy as PowerStateControlProxy, ShutdownAction, ShutdownOptions, ShutdownReason,
 };
 use fuchsia_async as fasync;
 use log::error;
@@ -15,8 +15,9 @@ pub(super) async fn wait_and_reboot(timer: fasync::Timer, proxy: &PowerStateCont
     let () = timer.await;
     if let Err(e) = async move {
         proxy
-            .perform_reboot(&RebootOptions {
-                reasons: Some(vec![RebootReason2::RetrySystemUpdate]),
+            .shutdown(&ShutdownOptions {
+                action: Some(ShutdownAction::Reboot),
+                reasons: Some(vec![ShutdownReason::RetrySystemUpdate]),
                 ..Default::default()
             })
             .await
