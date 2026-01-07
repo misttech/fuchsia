@@ -108,6 +108,8 @@ template("subbuild") {
       tools_dir,
       "--compress-debuginfo",
       compress_debuginfo,
+      "--compilation-mode",
+      compilation_mode,
     ]
 
     if (sdk_sub_build_parallelism != "") {

@@ -21,7 +21,7 @@ _ARGS_GN_TEMPLATE = r"""# Auto-generated - DO NOT EDIT
 target_cpu = "{cpu}"
 build_info_board = "{cpu}"
 build_info_product = "bringup"
-compilation_mode = "release"
+compilation_mode = "{compilation_mode}"
 
 cxx_rbe_enable = {cxx_rbe_enable}
 link_rbe_enable = {link_rbe_enable}
@@ -177,6 +177,10 @@ def main() -> int:
         help="Build dir for the subbuild",
     )
     parser.add_argument(
+        "--compilation-mode",
+        help="Compilation mode to use",
+    )
+    parser.add_argument(
         "--cxx-rbe-enable",
         action="store_true",
         help="Enable remote builds with RBE for C++ targets.",
@@ -314,6 +318,7 @@ def main() -> int:
 
     args_gn_content = _ARGS_GN_TEMPLATE.format(
         cpu=target_cpu,
+        compilation_mode=args.compilation_mode,
         cxx_rbe_enable="true" if args.cxx_rbe_enable else "false",
         link_rbe_enable="true" if args.link_rbe_enable else "false",
         rust_rbe_enable="true" if args.rust_rbe_enable else "false",
