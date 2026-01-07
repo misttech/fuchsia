@@ -584,14 +584,14 @@ where
     }
 }
 
-struct RemoteRouter<R: RemoteRoutable + Send + Sync> {
+pub struct RemoteRouter<R: RemoteRoutable + Send + Sync> {
     router_client_end: R,
     remote_capabilities: Arc<RemotedRuntimeCapabilities>,
     moniker: Moniker,
 }
 
 impl<R: RemoteRoutable + Send + Sync> RemoteRouter<R> {
-    fn new(
+    pub fn new(
         remote: R,
         remote_capabilities: Arc<RemotedRuntimeCapabilities>,
         moniker: Moniker,
@@ -649,7 +649,7 @@ where
 }
 
 #[async_trait]
-trait RemoteRoutable {
+pub trait RemoteRoutable {
     async fn route(
         &self,
         request: fruntime::RouteRequest,

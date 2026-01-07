@@ -104,6 +104,7 @@ open protocol DirConnectorRouter {
 };
 
 /// A factory for `Dictionary` capabilities.
+@discoverable(server="platform")
 @available(added=HEAD)
 open protocol DictionaryRouter {
     /// Attempts to produce a `Dictionary` capability from this

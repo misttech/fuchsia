@@ -2,6 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+use crate::framework::capabilities::RemoteRouter;
 use crate::framework::{controller, get_framework_router};
 use crate::model::actions::StopAction;
 use crate::model::component::{
@@ -58,7 +59,7 @@ use errors::{
     CreateNamespaceError, DynamicCapabilityError, OpenError, OpenOutgoingDirError,
     ResolveActionError, StopError,
 };
-use fidl::endpoints::{ServerEnd, create_proxy};
+use fidl::endpoints::{DiscoverableProtocolMarker, ServerEnd, create_proxy};
 use flyweights::FlyStr;
 use futures::channel::mpsc;
 use futures::future::BoxFuture;
@@ -80,8 +81,9 @@ use vfs::directory::immutable::simple as pfs;
 use vfs::execution_scope::ExecutionScope;
 use {
     fidl_fuchsia_component as fcomponent, fidl_fuchsia_component_decl as fdecl,
-    fidl_fuchsia_component_internal as finternal, fidl_fuchsia_component_sandbox as fsandbox,
-    fidl_fuchsia_io as fio, fuchsia_async as fasync, zx,
+    fidl_fuchsia_component_internal as finternal, fidl_fuchsia_component_runtime as fruntime,
+    fidl_fuchsia_component_sandbox as fsandbox, fidl_fuchsia_io as fio, fuchsia_async as fasync,
+    zx,
 };
 
 /// The mutable state of a component instance.
@@ -1606,20 +1608,36 @@ impl Routable<Dict> for ProgramDictionaryRouter {
             ))
         })?;
         let dir_entry = component.get_outgoing();
-
-        let (inner_router, server_end) = create_proxy::<fsandbox::DictionaryRouterMarker>();
         const FLAGS: fio::Flags = fio::Flags::PROTOCOL_SERVICE;
         let path = vfs::Path::validate_and_split(self.source_path.to_string())
             .expect("path must be valid");
+        if &self.source_path
+            == &Path::new(format!("/svc/{}", fsandbox::DictionaryRouterMarker::PROTOCOL_NAME))
+                .expect("this will always be valid")
+        {
+            let (inner_router, server_end) = create_proxy::<fsandbox::DictionaryRouterMarker>();
+            FLAGS.to_object_request(server_end.into_channel()).handle(|request| {
+                dir_entry.open_entry(OpenRequest::new(ExecutionScope::new(), FLAGS, path, request))
+            });
+
+            let resp = inner_router
+                .route(request.into_fsandbox_request(target))
+                .await
+                .map_err(|e| open_error(OpenOutgoingDirError::Fidl(e)))?
+                .map_err(RouterError::from)?;
+            return resp.try_into().map_err(|e| RouterError::NotFound(Arc::new(e)));
+        }
+
+        let (inner_router, server_end) = create_proxy::<fruntime::DictionaryRouterMarker>();
         FLAGS.to_object_request(server_end.into_channel()).handle(|request| {
             dir_entry.open_entry(OpenRequest::new(ExecutionScope::new(), FLAGS, path, request))
         });
 
-        let resp = inner_router
-            .route(request.into_fsandbox_request(target))
-            .await
-            .map_err(|e| open_error(OpenOutgoingDirError::Fidl(e)))?
-            .map_err(RouterError::from)?;
-        resp.try_into().map_err(|e| RouterError::NotFound(Arc::new(e)))
+        let router = RemoteRouter::new(
+            inner_router,
+            component.context.remote_capabilities().clone(),
+            component.moniker.clone(),
+        );
+        router.route(Some(request), debug, target).await
     }
 }

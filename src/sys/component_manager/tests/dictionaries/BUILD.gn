@@ -35,7 +35,7 @@ rustc_binary("dict_trigger_bin") {
   edition = "2024"
   deps = [
     "//examples/components/routing/fidl:echo_rust",
-    "//sdk/fidl/fuchsia.component.sandbox:fuchsia.component.sandbox_rust",
+    "//sdk/fidl/fuchsia.component.runtime:fuchsia.component.runtime_rust",
     "//src/lib/fidl/rust/fidl",
     "//src/lib/fuchsia-async",
     "//src/lib/fuchsia-component",
