@@ -2813,9 +2813,19 @@ void Scheduler::Preempt() {
 
 void Scheduler::PreemptLocked(Thread* current_thread) {
   ktrace::Scope trace = LOCAL_KTRACE_BEGIN_SCOPE(COMMON, "sched_preempt");
-  SchedulerState& current_state = current_thread->scheduler_state();
   const cpu_num_t current_cpu = arch_curr_cpu_num();
 
+  // If any spinlocks are held, we can't immediately reschedule.  Instead, send
+  // this CPU a reschedule IPI that will fire once the last spinlock has been
+  // released and interrupts have been re-enabled.
+  if (arch_num_spinlocks_held() > 0) {
+    PreemptionState& preemption_state = current_thread->preemption_state();
+    preemption_state.preempts_pending_add(cpu_num_to_mask(current_cpu));
+    mp_reschedule_self();
+    return;
+  }
+
+  SchedulerState& current_state = current_thread->scheduler_state();
   DEBUG_ASSERT(current_state.curr_cpu_ == current_cpu);
   DEBUG_ASSERT(current_state.last_cpu_ == current_state.curr_cpu_);
   DEBUG_ASSERT(current_thread->state() == THREAD_RUNNING);

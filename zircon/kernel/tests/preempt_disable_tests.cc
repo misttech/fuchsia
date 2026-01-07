@@ -668,6 +668,23 @@ static bool test_flush_race() {
   END_TEST;
 }
 
+// Verify that it's legal to call preempt while holding a spinlock.  This is a
+// regression test for https://fxbug.dev/473600952.
+static bool test_preempt_with_spinlock() {
+  BEGIN_TEST;
+
+  DECLARE_SINGLETON_SPINLOCK_WITH_TYPE(SpinlockForTest, MonitoredSpinLock);
+
+  {
+    Guard<MonitoredSpinLock, IrqSave> guard{SpinlockForTest::Get(), SOURCE_TAG};
+    Thread::Current::Preempt();
+    ASSERT_NE(0u, (Thread::Current::preemption_state().preempts_pending() &
+                   cpu_num_to_mask(arch_curr_cpu_num())));
+  }
+
+  END_TEST;
+}
+
 UNITTEST_START_TESTCASE(preempt_disable_tests)
 UNITTEST("test_in_timer_callback", test_in_timer_callback)
 UNITTEST("test_inc_dec_disable_counts", test_inc_dec_disable_counts)
@@ -680,4 +697,5 @@ UNITTEST("test_auto_timeslice_extension", test_auto_timeslice_extension)
 UNITTEST("test_local_preempt_pending", test_local_preempt_pending)
 UNITTEST("test_evaluate_timeslice_extension", test_evaluate_timeslice_extension)
 UNITTEST("test_flush_race", test_flush_race)
+UNITTEST("test_preempt_with_spinlock", test_preempt_with_spinlock)
 UNITTEST_END_TESTCASE(preempt_disable_tests, "preempt_disable_tests", "preempt_disable_tests")

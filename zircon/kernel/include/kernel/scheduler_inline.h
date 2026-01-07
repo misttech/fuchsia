@@ -131,15 +131,6 @@ inline void Scheduler::RescheduleMask(cpu_mask_t cpus_to_reschedule_mask) {
     return;
   }
 
-  // If any spinlocks are held, we can't immediately reschedule.  Instead, send
-  // this CPU a reschedule IPI that will fire once the last spinlock has been
-  // released and interrupts have been re-enabled.
-  if (arch_num_spinlocks_held() > 0) {
-    preemption_state.preempts_pending_add(local_cpu);
-    mp_reschedule_self();
-    return;
-  }
-
   // From a chain-lock requirement perspective, there are a few different
   // cases to consider.
   //

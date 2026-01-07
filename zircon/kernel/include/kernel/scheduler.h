@@ -233,8 +233,11 @@ class Scheduler {
   static void Yield(Thread* current_thread)
       TA_REQ(chainlock_transaction_token, current_thread->get_lock());
 
-  // Note; no locks should be held when calling preempt.  The thread's lock will be obtained
-  // unconditionally in the process.
+  // No chainlocks should be held when calling preempt.  The thread's lock will
+  // be obtained unconditionally in the process.
+  //
+  // If holding a spinlock, the preemption will be deferred via self-IPI until
+  // all spinlock are released and interrupts are re-enabled.
   static void Preempt() TA_EXCL(chainlock_transaction_token);
 
   static void Reschedule(Thread* current_thread)
