@@ -85,6 +85,7 @@ pub fn sys_reboot(
             log_info!("Powering off");
             let options = fpower::ShutdownOptions {
                 action: Some(fpower::ShutdownAction::Poweroff),
+                reasons: Some(vec![fpower::ShutdownReason::StarnixContainerNoReason]),
                 ..Default::default()
             };
 
@@ -110,6 +111,7 @@ pub fn sys_reboot(
                 log_info!("Rebooting to bootloader");
                 let options = fpower::ShutdownOptions {
                     action: Some(fpower::ShutdownAction::RebootToBootloader),
+                    reasons: Some(vec![fpower::ShutdownReason::StarnixContainerNoReason]),
                     ..Default::default()
                 };
                 proxy.shutdown(&options, zx::MonotonicInstant::INFINITE)
@@ -152,6 +154,7 @@ pub fn sys_reboot(
                 log_info!("Rebooting to recovery...");
                 let options = fpower::ShutdownOptions {
                     action: Some(fpower::ShutdownAction::RebootToRecovery),
+                    reasons: Some(vec![fpower::ShutdownReason::StarnixContainerNoReason]),
                     ..Default::default()
                 };
                 proxy.shutdown(&options, zx::MonotonicInstant::INFINITE)
