@@ -54,5 +54,6 @@ rustc_library("crypto") {
   if (!is_debug) {
     configs -= [ "//build/config:default_optimize" ]
     configs += [ "//build/config:optimize_speed" ]
+    configs += [ "//build/config/lto:lto-if-compatible" ]
   }
 }
