@@ -77,6 +77,8 @@ rustc_library("sandbox") {
 
   if (!is_host) {
     deps += [
+      "//sdk/fidl/fuchsia.component.decl:fuchsia.component.decl_rust",
+      "//sdk/fidl/fuchsia.io:fuchsia.io_rust",
       "//sdk/rust/zx",
       "//src/lib/fuchsia-async",
       "//src/storage/lib/vfs/rust:vfs",

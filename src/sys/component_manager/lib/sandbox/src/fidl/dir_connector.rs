@@ -4,8 +4,12 @@
 
 use crate::dir_connector::DirConnectable;
 use crate::fidl::registry;
-use crate::{ConversionError, DirConnector, DirReceiver, WeakInstanceToken};
+use crate::fidl::registry::try_from_handle_in_registry;
+use crate::{
+    Capability, ConversionError, DirConnector, DirReceiver, RemoteError, WeakInstanceToken,
+};
 use cm_types::{Name, RelativePath};
+use fidl::AsHandleRef;
 use fidl::endpoints::{ClientEnd, ServerEnd};
 use futures::channel::mpsc;
 use std::fmt;
@@ -124,6 +128,18 @@ impl crate::RemotableCapability for DirConnector {
         _token: WeakInstanceToken,
     ) -> Result<Arc<dyn DirectoryEntry>, ConversionError> {
         Ok(Arc::new(self))
+    }
+}
+
+impl TryFrom<fsandbox::DirConnector> for DirConnector {
+    type Error = RemoteError;
+
+    fn try_from(dir_connector: fsandbox::DirConnector) -> Result<Self, Self::Error> {
+        let any = try_from_handle_in_registry(dir_connector.token.as_handle_ref())?;
+        let Capability::DirConnector(dir_connector) = any else {
+            panic!("BUG: registry has a non-dir-connector capability under a dir-connector koid");
+        };
+        Ok(dir_connector)
     }
 }
 

@@ -5,6 +5,7 @@ library fuchsia.component.sandbox;
 
 using zx;
 using fuchsia.io;
+using fuchsia.component.decl;
 
 /// Maximum number of bytes in a [Data].
 @available(added=HEAD)
@@ -412,6 +413,14 @@ open protocol CapabilityStore {
         id CapabilityId;
         iterator server_end:<DictionaryDrainIterator, optional>;
     }) -> () error CapabilityStoreError;
+
+    /// Creates a new DirConnector that forwards open requests to a set of
+    /// sources.
+    flexible CreateServiceAggregate(resource struct {
+        sources vector<AggregateSource>:MAX;
+    }) -> (resource struct {
+        aggregate_dir_connector DirConnector;
+    }) error CapabilityStoreError;
 };
 
 /// Error returned from methods in [CapabilityStore].
@@ -446,6 +455,30 @@ type CapabilityStoreError = flexible enum {
 
     /// One or more arguments were invalid.
     INVALID_ARGS = 9;
+};
+
+@available(added=HEAD)
+type AggregateSource = resource table {
+    1: dir_connector DirConnector;
+
+    /// (Optional) The list of allowlisted instances to be offered. Instances
+    /// of the service not in this list will not be accessible by the target
+    /// component. If this is not set that means all instances from the source
+    /// service are offered.
+    2: source_instance_filter vector<string:MAX_NAME_LENGTH>:MAX;
+
+    /// (Optional) The list of allowlisted instances to be offered, with
+    /// renames.
+    ///
+    /// If this is set and nonempty, the set of instances in the target service
+    /// will be restricted to the instances in this list, renaming `source_name`
+    /// to `target_name`.
+    ///
+    /// If it is set and nonempty, `source_instance_filter` will further
+    /// restrict the set of instances to those whose `target_name` appears in
+    /// that list. There is generally no reason to set both, but we support it
+    /// for compatibility.
+    3: renamed_instances vector<fuchsia.component.decl.NameMapping>:MAX;
 };
 
 @available(added=HEAD)

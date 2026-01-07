@@ -3,7 +3,7 @@
 // found in the LICENSE file.
 
 use crate::dict::Key;
-use crate::fidl::{IntoFsandboxCapability, registry};
+use crate::fidl::{IntoFsandboxCapability, RemotableCapability, registry};
 use crate::{Capability, Connector, Dict, DirConnector, Message, WeakInstanceToken};
 use cm_types::RelativePath;
 use fidl::AsHandleRef;
@@ -13,7 +13,15 @@ use log::warn;
 use std::collections::HashMap;
 use std::collections::hash_map::Entry;
 use std::sync::{self, Arc, Weak};
-use {fidl_fuchsia_component_sandbox as fsandbox, fuchsia_async as fasync};
+use vfs::ExecutionScope;
+use vfs::directory::entry::SubNode;
+use vfs::directory::helper::DirectlyMutable;
+use vfs::directory::simple::Simple;
+use vfs::path::Path;
+use {
+    fidl_fuchsia_component_decl as fdecl, fidl_fuchsia_component_sandbox as fsandbox,
+    fidl_fuchsia_io as fio, fuchsia_async as fasync,
+};
 
 type Store = sync::Mutex<HashMap<u64, Capability>>;
 
@@ -267,6 +275,13 @@ pub async fn serve_capability_store(
                 })();
                 responder.send(result)?
             }
+            fsandbox::CapabilityStoreRequest::CreateServiceAggregate { sources, responder } => {
+                // Store does not use an async-compatible mutex, so we can't hold a MutexGuard for
+                // it across await boundaries. This means we must drop the store MutexGuard before
+                // calling await, or Rust yells at us that the futures are not Send.
+                drop(store);
+                responder.send(create_service_aggregate(token.clone(), sources).await)?;
+            }
             fsandbox::CapabilityStoreRequest::_UnknownMethod { ordinal, .. } => {
                 warn!("Received unknown CapabilityStore request with ordinal {ordinal}");
             }
@@ -483,12 +498,84 @@ fn insert_capability(
     }
 }
 
+async fn create_service_aggregate(
+    route_source: WeakInstanceToken,
+    sources: Vec<fsandbox::AggregateSource>,
+) -> Result<fsandbox::DirConnector, fsandbox::CapabilityStoreError> {
+    fn is_set<T>(val: &Option<Vec<T>>) -> bool {
+        val.as_ref().map(|v| !v.is_empty()).unwrap_or(false)
+    }
+    if sources.iter().any(|s| is_set(&s.source_instance_filter) || is_set(&s.renamed_instances)) {
+        // This is a renames aggregate
+        let dir_connectors_and_renames = sources
+            .into_iter()
+            .map(|s| {
+                let renames = process_renames(&s);
+                let sandbox_dir_connector =
+                    s.dir_connector.ok_or(fsandbox::CapabilityStoreError::InvalidArgs)?;
+                let dir_connector = DirConnector::try_from(sandbox_dir_connector)
+                    .map_err(|_| fsandbox::CapabilityStoreError::InvalidArgs)?;
+                Ok((dir_connector, renames))
+            })
+            .collect::<Result<Vec<_>, fsandbox::CapabilityStoreError>>()?;
+        let target_directory = Simple::new();
+        for (dir_connector, renames) in dir_connectors_and_renames.into_iter() {
+            for mapping in renames.into_iter() {
+                let source_path = Path::validate_and_split(mapping.source_name)
+                    .map_err(|_| fsandbox::CapabilityStoreError::InvalidArgs)?;
+                let target_path = Path::validate_and_split(mapping.target_name)
+                    .map_err(|_| fsandbox::CapabilityStoreError::InvalidArgs)?;
+                let dir_connector_as_dir_entry = dir_connector
+                    .clone()
+                    .try_into_directory_entry(ExecutionScope::new(), route_source.clone())
+                    .expect("this is infallible");
+                let sub_node = Arc::new(SubNode::new(
+                    dir_connector_as_dir_entry,
+                    source_path,
+                    fio::DirentType::Directory,
+                ));
+                let sub_dir_connector =
+                    DirConnector::from_directory_entry(sub_node, fio::PERM_READABLE);
+                let sub_dir_entry = sub_dir_connector
+                    .try_into_directory_entry(ExecutionScope::new(), route_source.clone())
+                    .expect("this is infallible");
+                target_directory
+                    .add_entry(target_path.as_str(), sub_dir_entry)
+                    .map_err(|_| fsandbox::CapabilityStoreError::InvalidArgs)?;
+            }
+        }
+        return Ok(DirConnector::from_directory_entry(target_directory, fio::PERM_READABLE).into());
+    }
+    // Anonymous aggregates are currently unsupported.
+    Err(fsandbox::CapabilityStoreError::InvalidArgs)
+}
+
+fn process_renames(source: &fsandbox::AggregateSource) -> Vec<fdecl::NameMapping> {
+    match (&source.source_instance_filter, &source.renamed_instances) {
+        (Some(filter), Some(renames)) if !renames.is_empty() && !filter.is_empty() => renames
+            .iter()
+            .filter(|mapping| filter.contains(&mapping.target_name))
+            .cloned()
+            .collect(),
+        (Some(filter), _) if !filter.is_empty() => filter
+            .iter()
+            .map(|name| fdecl::NameMapping { source_name: name.clone(), target_name: name.clone() })
+            .collect(),
+        (_, Some(renames)) if !renames.is_empty() => renames.clone(),
+        _ => vec![],
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::Data;
+    use crate::{Data, DirConnectable};
     use assert_matches::assert_matches;
+    use cm_types::RelativePath;
+    use fidl::endpoints::{ServerEnd, create_endpoints};
     use fidl::{HandleBased, endpoints};
+    use futures::channel::mpsc::{UnboundedReceiver, UnboundedSender, unbounded};
+    use zx::AsHandleRef;
 
     #[fuchsia::test]
     async fn import_export() {
@@ -733,5 +820,143 @@ mod tests {
             store.duplicate(3, 4).await.unwrap(),
             Err(fsandbox::CapabilityStoreError::NotDuplicatable)
         );
+    }
+
+    #[derive(Debug)]
+    struct TestDirConnector {
+        sender:
+            UnboundedSender<(ServerEnd<fio::DirectoryMarker>, RelativePath, Option<fio::Flags>)>,
+    }
+
+    impl DirConnectable for TestDirConnector {
+        fn maximum_flags(&self) -> fio::Flags {
+            fio::PERM_READABLE
+        }
+
+        fn send(
+            &self,
+            dir: ServerEnd<fio::DirectoryMarker>,
+            subdir: RelativePath,
+            flags: Option<fio::Flags>,
+        ) -> Result<(), ()> {
+            self.sender.unbounded_send((dir, subdir, flags)).unwrap();
+            Ok(())
+        }
+    }
+
+    impl TestDirConnector {
+        fn new() -> (
+            DirConnector,
+            UnboundedReceiver<(ServerEnd<fio::DirectoryMarker>, RelativePath, Option<fio::Flags>)>,
+        ) {
+            let (sender, receiver) = unbounded();
+            (DirConnector::new_sendable(Self { sender }), receiver)
+        }
+    }
+
+    #[fuchsia::test]
+    async fn rename_aggregate_with_one_source() {
+        let (source_dir_connector, mut source_dir_receiver) = TestDirConnector::new();
+        let sources = vec![fsandbox::AggregateSource {
+            dir_connector: Some(source_dir_connector.into()),
+            renamed_instances: Some(vec![fdecl::NameMapping {
+                source_name: "foo".to_string(),
+                target_name: "bar".to_string(),
+            }]),
+            ..Default::default()
+        }];
+        let fidl_aggregate = create_service_aggregate(WeakInstanceToken::new_invalid(), sources)
+            .await
+            .expect("failed to create service aggregate");
+        let aggregate = DirConnector::try_from(fidl_aggregate).expect("invalid dir connector");
+
+        let (client_end, server_end) = create_endpoints::<fio::DirectoryMarker>();
+        aggregate.send(server_end, RelativePath::new("bar").unwrap(), None).unwrap();
+        let (received_server_end, path, flags) = source_dir_receiver.try_next().unwrap().unwrap();
+        assert_eq!(
+            client_end.basic_info().unwrap().koid,
+            received_server_end.basic_info().unwrap().related_koid
+        );
+        assert_eq!(path, RelativePath::new("foo").unwrap());
+        assert_eq!(flags, Some(fio::PERM_READABLE));
+    }
+
+    #[fuchsia::test]
+    async fn rename_aggregate_with_two_sources() {
+        let (source_dir_connector_1, source_dir_receiver_1) = TestDirConnector::new();
+        let (source_dir_connector_2, source_dir_receiver_2) = TestDirConnector::new();
+        let sources = vec![
+            fsandbox::AggregateSource {
+                dir_connector: Some(source_dir_connector_1.into()),
+                renamed_instances: Some(vec![fdecl::NameMapping {
+                    source_name: "foo".to_string(),
+                    target_name: "bar".to_string(),
+                }]),
+                ..Default::default()
+            },
+            fsandbox::AggregateSource {
+                dir_connector: Some(source_dir_connector_2.into()),
+                renamed_instances: Some(vec![fdecl::NameMapping {
+                    source_name: "foo".to_string(),
+                    target_name: "baz".to_string(),
+                }]),
+                ..Default::default()
+            },
+        ];
+        let fidl_aggregate = create_service_aggregate(WeakInstanceToken::new_invalid(), sources)
+            .await
+            .expect("failed to create service aggregate");
+        let aggregate = DirConnector::try_from(fidl_aggregate).expect("invalid dir connector");
+
+        for (mut receiver, name) in [(source_dir_receiver_1, "bar"), (source_dir_receiver_2, "baz")]
+        {
+            let (client_end, server_end) = create_endpoints::<fio::DirectoryMarker>();
+            aggregate.send(server_end, RelativePath::new(name).unwrap(), None).unwrap();
+            let (received_server_end, path, flags) = receiver.try_next().unwrap().unwrap();
+            assert_eq!(
+                client_end.basic_info().unwrap().koid,
+                received_server_end.basic_info().unwrap().related_koid
+            );
+            assert_eq!(path, RelativePath::new("foo").unwrap());
+            assert_eq!(flags, Some(fio::PERM_READABLE));
+        }
+    }
+
+    #[fuchsia::test]
+    async fn rename_and_filtering_aggregate() {
+        let (source_dir_connector_1, source_dir_receiver_1) = TestDirConnector::new();
+        let (source_dir_connector_2, source_dir_receiver_2) = TestDirConnector::new();
+        let sources = vec![
+            fsandbox::AggregateSource {
+                dir_connector: Some(source_dir_connector_1.into()),
+                renamed_instances: Some(vec![fdecl::NameMapping {
+                    source_name: "foo".to_string(),
+                    target_name: "bar".to_string(),
+                }]),
+                ..Default::default()
+            },
+            fsandbox::AggregateSource {
+                dir_connector: Some(source_dir_connector_2.into()),
+                source_instance_filter: Some(vec!["foo".to_string()]),
+                ..Default::default()
+            },
+        ];
+        let fidl_aggregate = create_service_aggregate(WeakInstanceToken::new_invalid(), sources)
+            .await
+            .expect("failed to create service aggregate");
+        let aggregate = DirConnector::try_from(fidl_aggregate).expect("invalid dir connector");
+
+        for (mut receiver, name) in [(source_dir_receiver_1, "bar"), (source_dir_receiver_2, "foo")]
+        {
+            let (client_end, server_end) = create_endpoints::<fio::DirectoryMarker>();
+            aggregate.send(server_end, RelativePath::new(name).unwrap(), None).unwrap();
+            let (received_server_end, path, flags) = receiver.try_next().unwrap().unwrap();
+            assert_eq!(
+                client_end.basic_info().unwrap().koid,
+                received_server_end.basic_info().unwrap().related_koid
+            );
+            assert_eq!(path, RelativePath::new("foo").unwrap());
+            assert_eq!(flags, Some(fio::PERM_READABLE));
+        }
     }
 }
