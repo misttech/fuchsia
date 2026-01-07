@@ -13,4 +13,5 @@ import("//build/fidl/fidl.gni")
 #
 fidl("examples.keyvaluestore.addreaditem") {
   sources = [ "key_value_store.test.fidl" ]
+  enable_rust_next = true
 }
