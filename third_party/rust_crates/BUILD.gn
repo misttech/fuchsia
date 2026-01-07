@@ -80,7 +80,7 @@ if (!(current_os == "fuchsia")) {
 }
 
 group("async-lock") {
-  public_deps = [ ":async-lock-v2_6_0" ]
+  public_deps = [ ":async-lock-v3_4_2" ]
 }
 
 group("async-ringbuf") {
@@ -2241,6 +2241,43 @@ rustc_library("async-lock-v2_6_0") {
   visibility = [ ":*" ]
 
   applicable_licenses = [ ":async-lock-v2_6_0.license" ]
+}
+
+license("async-lock-v3_4_2.license") {
+  public_package_name = "async_lock"
+  license_files = [
+    "//third_party/rust_crates/vendor/async-lock-3.4.2/LICENSE-APACHE",
+    "//third_party/rust_crates/vendor/async-lock-3.4.2/LICENSE-MIT",
+  ]
+}
+
+rustc_library("async-lock-v3_4_2") {
+  crate_name = "async_lock"
+  source_root = "//third_party/rust_crates/vendor/async-lock-3.4.2/src/lib.rs"
+  output_name = "async_lock-a24cf3fb5555d399"
+  edition = "2021"
+  disable_clippy = true
+  enforce_source_listing = false
+  configs -= [ "//build/config/rust:2018_idioms" ]
+
+  deps = []
+  deps += [ ":event-listener-strategy-v0_5_4" ]
+  deps += [ ":event-listener-v5_4_1" ]
+  deps += [ ":pin-project-lite-v0_2_16" ]
+
+  rustenv = []
+
+  rustflags = [
+    "--cap-lints=allow",
+    "-Cmetadata=a24cf3fb5555d399",
+    "-Cextra-filename=-a24cf3fb5555d399",
+    "--cfg=feature=\"default\"",
+    "--cfg=feature=\"std\"",
+  ]
+
+  visibility = [ ":*" ]
+
+  applicable_licenses = [ ":async-lock-v3_4_2.license" ]
 }
 
 license("async-ringbuf-v0_3_4.license") {
@@ -6403,6 +6440,41 @@ rustc_library("event-listener-v5_4_1") {
   visibility = [ ":*" ]
 
   applicable_licenses = [ ":event-listener-v5_4_1.license" ]
+}
+
+license("event-listener-strategy-v0_5_4.license") {
+  public_package_name = "event_listener_strategy"
+  license_files = [
+    "//third_party/rust_crates/vendor/event-listener-strategy-0.5.4/LICENSE-APACHE",
+    "//third_party/rust_crates/vendor/event-listener-strategy-0.5.4/LICENSE-MIT",
+  ]
+}
+
+rustc_library("event-listener-strategy-v0_5_4") {
+  crate_name = "event_listener_strategy"
+  source_root = "//third_party/rust_crates/vendor/event-listener-strategy-0.5.4/src/lib.rs"
+  output_name = "event_listener_strategy-d648d5d809ae6903"
+  edition = "2021"
+  disable_clippy = true
+  enforce_source_listing = false
+  configs -= [ "//build/config/rust:2018_idioms" ]
+
+  deps = []
+  deps += [ ":event-listener-v5_4_1" ]
+  deps += [ ":pin-project-lite-v0_2_16" ]
+
+  rustenv = []
+
+  rustflags = [
+    "--cap-lints=allow",
+    "-Cmetadata=d648d5d809ae6903",
+    "-Cextra-filename=-d648d5d809ae6903",
+    "--cfg=feature=\"std\"",
+  ]
+
+  visibility = [ ":*" ]
+
+  applicable_licenses = [ ":event-listener-strategy-v0_5_4.license" ]
 }
 
 license("fancy-regex-v0_8_0.license") {

@@ -223,14 +223,14 @@ alias(
 )
 
 alias(
-    name = "async-lock-2.6.0",
-    actual = "//third_party/rust_crates/vendor/async-lock-2.6.0:async_lock",
+    name = "async-lock-3.4.2",
+    actual = "//third_party/rust_crates/vendor/async-lock-3.4.2:async_lock",
     tags = ["manual"],
 )
 
 alias(
     name = "async-lock",
-    actual = "//third_party/rust_crates/vendor/async-lock-2.6.0:async_lock",
+    actual = "//third_party/rust_crates/vendor/async-lock-3.4.2:async_lock",
     tags = ["manual"],
 )
 
