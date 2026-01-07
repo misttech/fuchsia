@@ -728,14 +728,7 @@ impl SystemActivityGovernor {
                             } else if previous_power_level.get()
                                 == ExecutionStateLevel::Inactive.into_primitive()
                             {
-                                // If leaving Inactive, we need to notify suspend blockers that we
-                                // exited suspend. This cannot block, as a suspend blocker may need to
-                                // raise Execution State.
-                                let this2 = this.clone();
-                                fasync::Task::local(async move {
-                                    this2.notify_on_resume().await;
-                                })
-                                .detach();
+                                this.notify_on_resume().await;
                             }
 
                             // If entering Active, SAG drops the resume control lease to re-enable
