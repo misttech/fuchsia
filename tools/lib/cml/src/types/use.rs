@@ -5,7 +5,7 @@
 use crate::types::common::*;
 use crate::{
     AnyRef, Canonicalize, CapabilityClause, ConfigNestedValueType, ConfigType, DictionaryRef,
-    Error, EventScope, FilterClause, FromClause, PathClause,
+    Error, EventScope, FilterClause, FromClause, FromClauseContext, PathClause,
 };
 
 use crate::one_or_many::{OneOrMany, always_one, option_one_or_many_as_ref};
@@ -456,27 +456,27 @@ pub struct ContextUse {
     pub config_default: Option<ContextSpanned<serde_json::Value>>,
 }
 
-impl ContextCapabilityClause for ContextUse {
+impl ContextCapabilityClause for ContextSpanned<ContextUse> {
     fn service(&self) -> Option<ContextSpanned<OneOrMany<&BorrowedName>>> {
-        option_one_or_many_as_ref_context(&self.service)
+        option_one_or_many_as_ref_context(&self.value.service)
     }
     fn protocol(&self) -> Option<ContextSpanned<OneOrMany<&BorrowedName>>> {
-        option_one_or_many_as_ref_context(&self.protocol)
+        option_one_or_many_as_ref_context(&self.value.protocol)
     }
     fn directory(&self) -> Option<ContextSpanned<OneOrMany<&BorrowedName>>> {
-        self.directory.as_ref().map(|s| ContextSpanned {
+        self.value.directory.as_ref().map(|s| ContextSpanned {
             value: OneOrMany::One((s.value).as_ref()),
             origin: s.origin.clone(),
         })
     }
     fn storage(&self) -> Option<ContextSpanned<OneOrMany<&BorrowedName>>> {
-        self.storage.as_ref().map(|s| ContextSpanned {
+        self.value.storage.as_ref().map(|s| ContextSpanned {
             value: OneOrMany::One((s.value).as_ref()),
             origin: s.origin.clone(),
         })
     }
     fn runner(&self) -> Option<ContextSpanned<OneOrMany<&BorrowedName>>> {
-        self.runner.as_ref().map(|s| ContextSpanned {
+        self.value.runner.as_ref().map(|s| ContextSpanned {
             value: OneOrMany::One((s.value).as_ref()),
             origin: s.origin.clone(),
         })
@@ -485,13 +485,13 @@ impl ContextCapabilityClause for ContextUse {
         None
     }
     fn event_stream(&self) -> Option<ContextSpanned<OneOrMany<&BorrowedName>>> {
-        option_one_or_many_as_ref_context(&self.event_stream)
+        option_one_or_many_as_ref_context(&self.value.event_stream)
     }
     fn dictionary(&self) -> Option<ContextSpanned<OneOrMany<&BorrowedName>>> {
-        option_one_or_many_as_ref_context(&self.dictionary)
+        option_one_or_many_as_ref_context(&self.value.dictionary)
     }
     fn config(&self) -> Option<ContextSpanned<OneOrMany<&BorrowedName>>> {
-        self.config.as_ref().map(|s| ContextSpanned {
+        self.value.config.as_ref().map(|s| ContextSpanned {
             value: OneOrMany::One((s.value).as_ref()),
             origin: s.origin.clone(),
         })
@@ -514,6 +514,28 @@ impl ContextCapabilityClause for ContextUse {
     }
     fn are_many_names_allowed(&self) -> bool {
         ["service", "protocol", "event_stream"].contains(&self.capability_type(None).unwrap())
+    }
+}
+
+impl FromClauseContext for ContextSpanned<ContextUse> {
+    fn from_(&self) -> ContextSpanned<OneOrMany<AnyRef<'_>>> {
+        let u = &self.value;
+
+        match &u.from {
+            Some(from) => {
+                return ContextSpanned {
+                    value: OneOrMany::One(AnyRef::from(&from.value)),
+                    origin: from.origin.clone(),
+                };
+            }
+            // Default for `use`.
+            None => {
+                return ContextSpanned {
+                    value: OneOrMany::One(AnyRef::Parent),
+                    origin: self.origin.clone(),
+                };
+            }
+        }
     }
 }
 

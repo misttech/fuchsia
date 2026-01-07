@@ -465,9 +465,17 @@ which is almost certainly a mistake: {}",
         use_wrapper: &'a ContextSpanned<ContextUse>,
         used_ids: &mut HashMap<String, (CapabilityId<'a>, Origin)>,
     ) -> Result<(), Error> {
-        let use_ = &use_wrapper.value;
+        use_wrapper.capability_type(Some(use_wrapper.origin.clone()))?;
+        for checker in [
+            self.service_from_self_checker(use_wrapper),
+            self.protocol_from_self_checker(use_wrapper),
+            self.directory_from_self_checker(use_wrapper),
+            self.config_from_self_checker(use_wrapper),
+        ] {
+            checker.validate("used")?;
+        }
 
-        use_.capability_type(Some(use_wrapper.origin.clone()))?;
+        let use_ = &use_wrapper.value;
 
         if val!(&use_.from) == Some(&UseFromRef::Debug) && val!(&use_.protocol).is_none() {
             return Err(Error::validate_context(
@@ -6114,6 +6122,164 @@ mod tests {
             }),
             Err(Error::Parse { err, .. }) if err.starts_with("invalid type: integer `55`, expected a map")
         ),
+
+        test_cml_use_from_self(
+            json!({
+                "use": [
+                    {
+                        "protocol": [ "bar_protocol", "baz_protocol" ],
+                        "from": "self",
+                    },
+                    {
+                        "directory": "foo_directory",
+                        "from": "self",
+                        "path": "/dir",
+                        "rights": [ "r*" ],
+                    },
+                    {
+                        "service": "foo_service",
+                        "from": "self",
+                    },
+                    {
+                        "config": "foo_config",
+                        "type": "bool",
+                        "key": "k",
+                        "from": "self",
+                    },
+                ],
+                "capabilities": [
+                    {
+                        "protocol": "bar_protocol",
+                    },
+                    {
+                        "protocol": "baz_protocol",
+                    },
+                    {
+                        "directory": "foo_directory",
+                        "path": "/dir",
+                        "rights": [ "r*" ],
+                    },
+                    {
+                        "service": "foo_service",
+                    },
+                    {
+                        "config": "foo_config",
+                        "type": "bool",
+                    },
+                ]
+            }),
+            Ok(())
+        ),
+        test_cml_use_protocol_from_self_missing(
+            json!({
+                "use": [
+                    {
+                        "protocol": "foo_protocol",
+                        "from": "self",
+                    },
+                ],
+            }),
+            Err(Error::ValidateContext { err, .. }) if &err == "protocol \"foo_protocol\" is used from self, so it must be declared as a \"protocol\" in \"capabilities\""
+        ),
+
+        test_cml_use_directory_from_self_missing(
+            json!({
+                "use": [
+                    {
+                        "directory": "foo_directory",
+                        "from": "self",
+                    },
+                ],
+            }),
+            Err(Error::ValidateContext { err, .. }) if &err == "directory \"foo_directory\" is used from self, so it must be declared as a \"directory\" in \"capabilities\""
+        ),
+        test_cml_use_service_from_self_missing(
+            json!({
+                "use": [
+                    {
+                        "service": "foo_service",
+                        "from": "self",
+                    },
+                ],
+            }),
+            Err(Error::ValidateContext { err, .. }) if &err == "service \"foo_service\" is used from self, so it must be declared as a \"service\" in \"capabilities\""
+        ),
+        test_cml_use_config_from_self_missing(
+            json!({
+                "use": [
+                    {
+                        "config": "foo_config",
+                        "from": "self",
+                    },
+                ],
+            }),
+            Err(Error::ValidateContext { err, .. }) if &err == "config \"foo_config\" is used from self, so it must be declared as a \"config\" in \"capabilities\""
+        ),
+        test_cml_use_from_self_missing_dictionary(
+            json!({
+                "use": [
+                    {
+                        "protocol": "foo_protocol",
+                        "from": "self/dict/inner",
+                    },
+                ],
+            }),
+            Err(Error::ValidateContext { err, .. }) if &err == "protocol \"foo_protocol\" is used from \"self/dict/inner\", so \"dict\" must be declared as a \"dictionary\" in \"capabilities\""
+        ),
+        test_cml_use_event_stream_duplicate(
+            json!({
+                "use": [
+                    { "event_stream": ["started", "started"], "from" : "parent" },
+                ]
+            }),
+            Err(Error::Parse { err, .. }) if err.starts_with("invalid value: array with duplicate element, expected a name or nonempty array of names, with unique elements")
+        ),
+        test_cml_use_event_stream_overlapping_path(
+            json!({
+                "use": [
+                    { "directory": "foobarbaz", "path": "/foo/bar/baz", "rights": [ "r*" ] },
+                    {
+                        "event_stream": ["started"],
+                        "path": "/foo/bar/baz/er",
+                        "from": "parent",
+                    },
+                ],
+            }),
+            Err(Error::ValidateContexts { err, .. }) if &err == "directory \"/foo/bar/baz\" is a prefix of \"use\" target event_stream \"/foo/bar/baz/er\""
+        ),
+        test_cml_use_event_stream_invalid_path(
+            json!({
+                "use": [
+                    {
+                        "event_stream": ["started"],
+                        "path": "my_stream",
+                        "from": "parent",
+                    },
+                ],
+            }),
+            Err(Error::Parse { err, .. }) if err.starts_with("invalid value: string \"my_stream\", expected a path with leading `/` and non-empty segments, where each segment is no more than fuchsia.io/MAX_NAME_LENGTH bytes in length, cannot be . or .., and cannot contain embedded NULs")
+        ),
+
+        test_cml_offer_bad_subdir(
+            json!({
+                "offer": [
+                    {
+                        "directory": "index",
+                        "subdir": "/",
+                        "from": "parent",
+                        "to": [ "#modular" ],
+                    },
+                ],
+                "children": [
+                    {
+                        "name": "modular",
+                        "url": "fuchsia-pkg://fuchsia.com/modular#meta/modular.cm"
+                    }
+                ]
+            }),
+            Err(Error::Parse { err, .. }) if err.starts_with("invalid value: string \"/\", expected a path with no leading `/` and non-empty segments")
+        ),
+
     }
 
     test_validate_cml! {
@@ -6338,7 +6504,7 @@ mod tests {
             Err(Error::Validate { err, .. }) if &err == "event_stream scope invalid_component did not match a component or collection in this .cml file."
         ),
 
-        test_cml_use_from_self(
+        test_cml_use_from_self_no_span(
             json!({
                 "use": [
                     {
@@ -6385,7 +6551,7 @@ mod tests {
             }),
             Ok(())
         ),
-        test_cml_use_protocol_from_self_missing(
+        test_cml_use_protocol_from_self_missing_no_span(
             json!({
                 "use": [
                     {
@@ -6419,7 +6585,7 @@ mod tests {
             }),
             Err(Error::Validate { err, .. }) if &err == "`path` and `numbered_handle` are incompatible"
         ),
-        test_cml_use_directory_from_self_missing(
+        test_cml_use_directory_from_self_missing_no_span(
             json!({
                 "use": [
                     {
@@ -6430,7 +6596,7 @@ mod tests {
             }),
             Err(Error::Validate { err, .. }) if &err == "directory \"foo_directory\" is used from self, so it must be declared as a \"directory\" in \"capabilities\""
         ),
-        test_cml_use_service_from_self_missing(
+        test_cml_use_service_from_self_missing_no_span(
             json!({
                 "use": [
                     {
@@ -6441,7 +6607,7 @@ mod tests {
             }),
             Err(Error::Validate { err, .. }) if &err == "service \"foo_service\" is used from self, so it must be declared as a \"service\" in \"capabilities\""
         ),
-        test_cml_use_config_from_self_missing(
+        test_cml_use_config_from_self_missing_no_span(
             json!({
                 "use": [
                     {
@@ -6452,7 +6618,7 @@ mod tests {
             }),
             Err(Error::Validate { err, .. }) if &err == "config \"foo_config\" is used from self, so it must be declared as a \"config\" in \"capabilities\""
         ),
-        test_cml_use_from_self_missing_dictionary(
+        test_cml_use_from_self_missing_dictionary_no_span(
             json!({
                 "use": [
                     {
@@ -6463,7 +6629,7 @@ mod tests {
             }),
             Err(Error::Validate { err, .. }) if &err == "protocol \"foo_protocol\" is used from \"self/dict/inner\", so \"dict\" must be declared as a \"dictionary\" in \"capabilities\""
         ),
-        test_cml_use_event_stream_duplicate(
+        test_cml_use_event_stream_duplicate_no_span(
             json!({
                 "use": [
                     { "event_stream": ["started", "started"], "from" : "parent" },
@@ -6471,7 +6637,7 @@ mod tests {
             }),
             Err(Error::Parse { err, .. }) if &err == "invalid value: array with duplicate element, expected a name or nonempty array of names, with unique elements"
         ),
-        test_cml_use_event_stream_overlapping_path(
+        test_cml_use_event_stream_overlapping_path_no_span(
             json!({
                 "use": [
                     { "directory": "foobarbaz", "path": "/foo/bar/baz", "rights": [ "r*" ] },
@@ -6484,7 +6650,7 @@ mod tests {
             }),
             Err(Error::Validate { err, .. }) if &err == "directory \"/foo/bar/baz\" is a prefix of \"use\" target event_stream \"/foo/bar/baz/er\""
         ),
-        test_cml_use_event_stream_invalid_path(
+        test_cml_use_event_stream_invalid_path_no_span(
             json!({
                 "use": [
                     {
@@ -7730,7 +7896,7 @@ mod tests {
             }),
             Err(Error::Validate { err, .. }) if &err == "\"as\" can only be specified when one `protocol` is supplied."
         ),
-        test_cml_offer_bad_subdir(
+        test_cml_offer_bad_subdir_no_span(
             json!({
                 "offer": [
                     {

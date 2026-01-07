@@ -677,13 +677,13 @@ impl<'a> CapabilityId<'a> {
             return Ok(Self::used_services_from_context(Self::get_one_or_many_svc_paths_context(
                 n,
                 alias,
-                use_.capability_type(Some(origin.clone())).unwrap(),
+                use_input.capability_type(Some(origin.clone())).unwrap(),
             )?));
         } else if let Some(n) = option_one_or_many_as_ref_context(&use_.protocol) {
             return Ok(Self::used_protocols_from_context(Self::get_one_or_many_svc_paths_context(
                 n,
                 alias,
-                use_.capability_type(Some(origin.clone())).unwrap(),
+                use_input.capability_type(Some(origin.clone())).unwrap(),
             )?));
         } else if let Some(_) = &use_.directory {
             if use_.path.is_none() {
@@ -735,13 +735,13 @@ impl<'a> CapabilityId<'a> {
                 Self::get_one_or_many_svc_paths_context(
                     n,
                     alias,
-                    use_.capability_type(Some(origin.clone())).unwrap(),
+                    use_input.capability_type(Some(origin.clone())).unwrap(),
                 )?,
             ));
         }
 
         // Unsupported capability type.
-        let supported_keywords = use_
+        let supported_keywords = use_input
             .supported()
             .into_iter()
             .map(|k| format!("\"{}\"", k))
@@ -751,7 +751,7 @@ impl<'a> CapabilityId<'a> {
         Err(Error::validate_context(
             format!(
                 "`{}` declaration is missing a capability keyword, one of: {}",
-                use_.decl_type(),
+                use_input.decl_type(),
                 supported_keywords,
             ),
             Some(origin.clone()),
