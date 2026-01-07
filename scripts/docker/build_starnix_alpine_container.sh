@@ -43,22 +43,26 @@ fi
 # Dockerfile is expected to be at src/starnix/containers/alpine/Dockerfile
 DOCKERFILE_DIR="${FUCHSIA_ROOT}/src/starnix/containers/alpine"
 
-echo "Building docker images for alpine..."
-for arch in ${ARCHITECTURES}; do
-  echo "Building for ${arch}..."
-  docker buildx build --platform "linux/${arch}" --load -t "alpine-${arch}" "${DOCKERFILE_DIR}"
-done
-
+# Register qemu handlers for multi-platform builds.
+docker run --rm --privileged multiarch/qemu-user-static --reset -p yes
 
 OUT_DIR="${FUCHSIA_ROOT}/out/alpine_cipd"
 rm -rf "${OUT_DIR}"
 mkdir -p "${OUT_DIR}"
 
-echo "Saving docker images..."
+echo "Building and saving docker images for alpine..."
 for arch in ${ARCHITECTURES}; do
+  echo "Building for ${arch}..."
+  DOCKER_DEFAULT_PLATFORM="linux/${arch}" docker build -t "alpine-${arch}" "${DOCKERFILE_DIR}"
+
+  echo "Saving docker image for ${arch}..."
   arch_dir="${OUT_DIR}/${arch}"
   mkdir -p "${arch_dir}"
   docker save -o "${arch_dir}/alpine.tar" "alpine-${arch}:latest"
+
+  echo "Cleaning up docker images for ${arch}..."
+  docker rmi "alpine-${arch}:latest"
+  docker image prune -f
 done
 
 GIT_REV=$(git -C "${FUCHSIA_ROOT}" rev-parse HEAD)
