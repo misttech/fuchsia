@@ -137,9 +137,6 @@ zx_status_t Blob::LoadVmosFromDisk() {
     status = LoadPagedVmosFromDisk();
   }
 
-  if (status == ZX_OK)
-    SetPagedVmoName(true);
-
   return status;
 }
 
@@ -455,6 +452,9 @@ zx::result<zx::vmo> Blob::GetVmoForBlobReader() {
   }
   if (zx_status_t status = LoadVmosFromDisk(); status != ZX_OK) {
     return zx::error(status);
+  }
+  if (!HasReferences()) {
+    SetPagedVmoName(true);
   }
 
   zx::vmo child_vmo;

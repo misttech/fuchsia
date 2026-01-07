@@ -9,7 +9,6 @@
 #include <lib/zx/time.h>
 #include <lib/zx/vmo.h>
 #include <limits.h>
-#include <zircon/assert.h>
 #include <zircon/compiler.h>
 #include <zircon/errors.h>
 #include <zircon/syscalls.h>
@@ -115,6 +114,20 @@ class BlobTest : public BlobfsTestSetup,
 
   zx::result<fbl::RefPtr<Blob>> GetBlob(const Digest& digest) {
     return blobfs::GetBlob(*blobfs(), digest);
+  }
+
+  zx::result<> WaitForZeroChildren(const Blob& blob) {
+    constexpr auto kMaxWait = std::chrono::seconds(60);
+    const auto start = std::chrono::steady_clock::now();
+    while (std::chrono::steady_clock::now() <= start + kMaxWait) {
+      loop().RunUntilIdle();
+      std::lock_guard lock(blob.mutex_);
+      if (!blob.HasReferences()) {
+        return zx::ok();
+      }
+      zx::nanosleep(zx::deadline_after(zx::msec(10)));
+    }
+    return zx::error(ZX_ERR_TIMED_OUT);
   }
 
  private:
@@ -327,28 +340,18 @@ TEST_P(BlobTest, VmoNameMatchesStateOfBlob) {
   auto blob_data = TestBlobData::Create(64);
   auto blob = CreateBlob(blob_data);
   ASSERT_OK(blob);
+  const auto active_blob_name = FormatBlobDataVmoName(blob_data.digest());
+  const auto inactive_blob_name = FormatInactiveBlobDataVmoName(blob_data.digest());
 
-  {
-    auto vmo = blob->GetVmoForBlobReader();
-    ASSERT_OK(vmo);
-    auto active_blob_name = FormatBlobDataVmoName(blob_data.digest());
-    ASSERT_EQ(GetVmoName(*vmo), std::string_view(active_blob_name));
-  }
-
-  // The ZX_VMO_ZERO_CHILDREN signal is asynchronous; unfortunately polling is the best we can do.
-  bool active = true;
-  auto inactive_blob_name = FormatInactiveBlobDataVmoName(blob_data.digest());
-  const auto start = std::chrono::steady_clock::now();
-  constexpr auto kMaxWait = std::chrono::seconds(60);
-  while (std::chrono::steady_clock::now() <= start + kMaxWait) {
-    loop().RunUntilIdle();
-    if (GetVmoName(GetPagedVmo(**blob)) == std::string_view(inactive_blob_name)) {
-      active = false;
-      break;
+  for (int i = 0; i < 2; ++i) {
+    {
+      auto vmo = blob->GetVmoForBlobReader();
+      ASSERT_OK(vmo);
+      ASSERT_EQ(GetVmoName(*vmo), std::string_view(active_blob_name));
     }
-    zx::nanosleep(zx::deadline_after(zx::msec(10)));
+    ASSERT_OK(WaitForZeroChildren(**blob));
+    ASSERT_EQ(GetVmoName(GetPagedVmo(**blob)), std::string_view(inactive_blob_name));
   }
-  EXPECT_FALSE(active) << "Name did not become inactive after deadline";
 }
 
 TEST_P(BlobTest, WritesToArbitraryOffsetsFails) {
