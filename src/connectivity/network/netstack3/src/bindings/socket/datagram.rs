@@ -2095,7 +2095,7 @@ where
         (Option<fnet::SocketAddress>, Vec<u8>, fposix_socket::DatagramSocketRecvControlData, u32),
         ErrnoError,
     > {
-        trace_duration!(c"datagram::recv_msg");
+        trace_duration!("datagram::recv_msg");
 
         let Self {
             ctx,
@@ -2250,7 +2250,7 @@ where
     }
 
     fn send_msg(self, addr: Option<fnet::SocketAddress>, data: Vec<u8>) -> Result<i64, ErrnoError> {
-        trace_duration!(c"datagram::send_msg");
+        trace_duration!("datagram::send_msg");
         let remote_addr = addr
             .map(|addr| {
                 I::SocketAddress::from_sock_addr(<T as Transport<I>>::maybe_map_sock_addr(addr))

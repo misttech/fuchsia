@@ -1801,7 +1801,7 @@ impl<I: Instant, S: SendBuffer, const FIN_QUEUED: bool> Send<I, S, FIN_QUEUED> {
             });
             Some(seg)
         })?;
-        trace_instant!(c"tcp::Send::poll_send/segment",
+        trace_instant!("tcp::Send::poll_send/segment",
             "id" => id.trace_id(),
             "seq" => u32::from(next_seg),
             "len" => seg.len(),
@@ -2069,7 +2069,7 @@ impl<I: Instant, S: SendBuffer, const FIN_QUEUED: bool> Send<I, S, FIN_QUEUED> {
 
         // Only generate traces for interesting things.
         if data_acked == DataAcked::Yes || is_dup_ack {
-            trace_instant!(c"tcp::Send::process_ack",
+            trace_instant!("tcp::Send::process_ack",
                 "id" => id.trace_id(),
                 "seg_ack" => u32::from(seg_ack),
                 "snd_nxt" => u32::from(*snd_nxt),

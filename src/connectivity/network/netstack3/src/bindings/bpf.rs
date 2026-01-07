@@ -389,7 +389,7 @@ where
         packet: &P,
         interfaces: Interfaces<'_, D>,
     ) -> bool {
-        trace_duration!(c"ebpf::packet_matcher");
+        trace_duration!("ebpf::packet_matcher");
 
         // TODO(https://fxbug.dev/455585276): Use actual socket info and ifindex.
         let socket_info = SocketInfo { socket_cookie: 0, socket_uid: None };
@@ -765,7 +765,7 @@ impl<D: DeviceIfIndex> SocketOpsFilter<D> for &EbpfManager {
             return SocketEgressFilterResult::Pass { congestion: false };
         };
 
-        trace_duration!(c"ebpf::egress");
+        trace_duration!("ebpf::egress");
 
         let socket_info = SocketInfo::new(socket_cookie, marks);
         let mut data_buffer = [0u8; SERIALIZED_HEAD_SIZE];
@@ -800,7 +800,7 @@ impl<D: DeviceIfIndex> SocketOpsFilter<D> for &EbpfManager {
             return SocketIngressFilterResult::Accept;
         };
 
-        trace_duration!(c"ebpf::ingress");
+        trace_duration!("ebpf::ingress");
 
         let socket_info = SocketInfo::new(socket_cookie, marks);
         let ethertype = EtherType::from_ip_version(ip_version);

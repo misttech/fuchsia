@@ -396,7 +396,7 @@ async fn main_loop_impl<T: MlmeImpl>(
                         }
                     }
                     DriverEvent::EthernetTxEvent(EthernetTxEvent { bytes, async_id, borrowed_operation }) => {
-                        wtrace::duration!(c"DriverEvent::EthernetTxEvent");
+                        wtrace::duration!("DriverEvent::EthernetTxEvent");
                         let bytes: &[u8] = unsafe { &*bytes.as_ptr() };
                         match mlme_impl.handle_eth_frame_tx(&bytes[..], async_id) {
                             Ok(()) => borrowed_operation.reply(Ok(())),
@@ -409,7 +409,7 @@ async fn main_loop_impl<T: MlmeImpl>(
                         }
                     }
                     DriverEvent::WlanRxEvent(WlanRxEvent { bytes, rx_info, async_id }) => {
-                        wtrace::duration!(c"DriverEvent::WlanRxEvent");
+                        wtrace::duration!("DriverEvent::WlanRxEvent");
                         mlme_impl.handle_mac_frame_rx(&bytes[..], rx_info, async_id).await;
                     }
 

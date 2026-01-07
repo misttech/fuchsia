@@ -217,7 +217,7 @@ impl NetdeviceWorker {
                 continue;
             };
 
-            trace_duration!(c"netdevice::recv");
+            trace_duration!("netdevice::recv");
 
             let Some(id) = id.upgrade() else {
                 // This is okay because we hold a weak reference; the device may
@@ -783,7 +783,7 @@ impl PortHandler {
         frame_type: fhardware_network::FrameType,
         mut tx: netdevice_client::TxBuffer,
     ) -> Result<(), netdevice_client::Error> {
-        trace_duration!(c"netdevice::send");
+        trace_duration!("netdevice::send");
         let Self { port_id, inner: Inner { session, .. }, .. } = self;
         tx.set_port(*port_id);
         tx.set_frame_type(frame_type);

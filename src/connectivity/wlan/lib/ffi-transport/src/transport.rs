@@ -54,7 +54,7 @@ impl EthernetRx {
         &mut self,
         request: &fidl_softmac::EthernetRxTransferRequest,
     ) -> Result<(), zx::Status> {
-        wtrace::duration!(c"EthernetRx transfer");
+        wtrace::duration!("EthernetRx transfer");
         let payload = fidl::persist(request);
         match payload {
             Err(e) => {
@@ -116,7 +116,7 @@ impl WlanTx {
         &mut self,
         request: &fidl_softmac::WlanTxTransferRequest,
     ) -> Result<(), zx::Status> {
-        wtrace::duration!(c"WlanTx transfer");
+        wtrace::duration!("WlanTx transfer");
         let payload = fidl::persist(request);
         match payload {
             Err(e) => {
@@ -221,7 +221,7 @@ impl EthernetTx {
         payload: *const u8,
         payload_len: usize,
     ) -> zx::sys::zx_status_t {
-        wtrace::duration!(c"EthernetTx transfer");
+        wtrace::duration!("EthernetTx transfer");
 
         // Safety: This call is safe because the caller promises `payload` points to a persisted
         // `fuchsia.wlan.softmac/EthernetTx.Transfer` request of length `payload_len` that is properly
@@ -400,7 +400,7 @@ impl WlanRx {
         payload: *const u8,
         payload_len: usize,
     ) {
-        wtrace::duration!(c"WlanRx transfer");
+        wtrace::duration!("WlanRx transfer");
 
         // Safety: This call is safe because the caller promises `payload` points to a persisted
         // `fuchsia.wlan.softmac/WlanRx.Transfer` request of length `payload_len` that is properly

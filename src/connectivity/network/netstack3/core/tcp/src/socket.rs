@@ -3828,7 +3828,7 @@ where
             core_ctx.with_socket_mut_transport_demux(&id, move |core_ctx, socket_state| {
                 let TcpSocketState { socket_state, ip_options: _, socket_options  } = socket_state;
                 let id = id_alias;
-                trace_duration!(c"tcp::handle_timer", "id" => id.trace_id());
+                trace_duration!("tcp::handle_timer", "id" => id.trace_id());
                 let bindings_ctx = bindings_ctx_alias;
                 let (conn, timer) = assert_matches!(
                     socket_state,

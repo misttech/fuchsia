@@ -516,7 +516,7 @@ where
         bindings_ctx: &mut BC,
         mut buffer: B,
     ) {
-        trace_duration!(c"device::ethernet::receive_frame");
+        trace_duration!("device::ethernet::receive_frame");
         let Self { device_id } = self;
         trace!("ethernet::receive_frame: device_id = {:?}", device_id);
         core_ctx.increment_both(&device_id, |counters: &DeviceCounters| &counters.recv_frame);

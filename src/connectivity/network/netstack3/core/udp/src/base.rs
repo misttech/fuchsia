@@ -1377,7 +1377,7 @@ fn receive_ip_packet<
     let LocalDeliveryPacketInfo { meta, header_info, marks: _ } = info;
     let ReceiveIpPacketMeta { broadcast, transparent_override } = meta;
 
-    trace_duration!(c"udp::receive_ip_packet");
+    trace_duration!("udp::receive_ip_packet");
     CounterContext::<UdpCountersWithoutSocket<I>>::counters(core_ctx).rx.increment();
     trace!("received UDP packet: {:x?}", buffer.as_mut());
     let src_ip: I::Addr = src_ip.into_addr();

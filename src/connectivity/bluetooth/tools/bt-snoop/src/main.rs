@@ -4,7 +4,7 @@
 
 #![recursion_limit = "256"]
 
-use anyhow::{format_err, Context as _, Error};
+use anyhow::{Context as _, Error, format_err};
 use argh::FromArgs;
 use fidl::Error as FidlError;
 use fidl_fuchsia_bluetooth_snoop::{
@@ -14,7 +14,7 @@ use fidl_fuchsia_bluetooth_snoop::{
 use fidl_fuchsia_io::DirectoryProxy;
 use fuchsia_component::server::ServiceFs;
 use fuchsia_fs::directory::{WatchEvent, WatchMessage, Watcher};
-use futures::future::{join, ready, Join, Ready};
+use futures::future::{Join, Ready, join, ready};
 use futures::select;
 use futures::stream::{FusedStream, FuturesUnordered, Stream, StreamExt, StreamFuture};
 use log::{debug, error, info, trace, warn};
@@ -392,7 +392,7 @@ async fn run(
 
             // A new snoop packet has been received from an hci device.
             (packet, snooper) = snoopers.select_next_some() => {
-                trace::duration!(c"bluetooth", c"Snoop::ProcessPacket");
+                trace::duration!("bluetooth", "Snoop::ProcessPacket");
                 handle_packet(packet, snooper, &mut snoopers, &mut subscribers,
                     &mut packet_logs, config.truncate_payload);
             },

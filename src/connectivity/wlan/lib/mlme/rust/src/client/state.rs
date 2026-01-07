@@ -173,7 +173,7 @@ impl Authenticating {
         sta: &mut BoundClient<'_, D>,
         auth_frame: mac::AuthFrame<B>,
     ) -> AuthProgress {
-        wtrace::duration!(c"Authenticating::on_auth_frame");
+        wtrace::duration!("Authenticating::on_auth_frame");
 
         let state = self.algorithm.handle_auth_frame(sta, auth_frame);
         self.akm_state_update_notify_sme(sta, state).await
@@ -210,7 +210,7 @@ impl Authenticating {
         sta: &mut BoundClient<'_, D>,
         deauth_hdr: &mac::DeauthHdr,
     ) {
-        wtrace::duration!(c"Authenticating::on_deauth_frame");
+        wtrace::duration!("Authenticating::on_deauth_frame");
 
         info!(
             "received spurious deauthentication frame while authenticating with BSS (unusual); \
@@ -289,7 +289,7 @@ impl Associating {
         sta: &mut BoundClient<'_, D>,
         assoc_resp_frame: mac::AssocRespFrame<B>,
     ) -> Result<Association, ()> {
-        wtrace::duration!(c"Associating::on_assoc_resp_frame");
+        wtrace::duration!("Associating::on_assoc_resp_frame");
 
         // TODO(https://fxbug.dev/42172907): All reserved values mapped to REFUSED_REASON_UNSPECIFIED.
         match Option::<fidl_ieee80211::StatusCode>::from(
@@ -417,7 +417,7 @@ impl Associating {
         sta: &mut BoundClient<'_, D>,
         _disassoc_hdr: &mac::DisassocHdr,
     ) {
-        wtrace::duration!(c"Associating::on_disassoc_frame");
+        wtrace::duration!("Associating::on_disassoc_frame");
         warn!("received unexpected disassociation frame while associating");
         sta.send_connect_conf_failure(fidl_ieee80211::StatusCode::SpuriousDeauthOrDisassoc);
     }
@@ -430,7 +430,7 @@ impl Associating {
         sta: &mut BoundClient<'_, D>,
         deauth_hdr: &mac::DeauthHdr,
     ) {
-        wtrace::duration!(c"Associating::on_deauth_frame");
+        wtrace::duration!("Associating::on_deauth_frame");
         info!(
             "received spurious deauthentication frame while associating with BSS (unusual); \
              association failed: {:?}",
@@ -558,7 +558,7 @@ impl Associated {
         sta: &mut BoundClient<'_, D>,
         disassoc_hdr: &mac::DisassocHdr,
     ) {
-        wtrace::duration!(c"Associated::on_disassoc_frame");
+        wtrace::duration!("Associated::on_disassoc_frame");
         self.pre_leaving_associated_state(sta).await;
         let reason_code = fidl_ieee80211::ReasonCode::from_primitive(disassoc_hdr.reason_code.0)
             .unwrap_or(fidl_ieee80211::ReasonCode::UnspecifiedReason);
@@ -571,7 +571,7 @@ impl Associated {
         sta: &mut BoundClient<'_, D>,
         deauth_hdr: &mac::DeauthHdr,
     ) {
-        wtrace::duration!(c"Associated::on_deauth_frame");
+        wtrace::duration!("Associated::on_deauth_frame");
         self.pre_leaving_associated_state(sta).await;
         let reason_code = fidl_ieee80211::ReasonCode::from_primitive(deauth_hdr.reason_code.0)
             .unwrap_or(fidl_ieee80211::ReasonCode::UnspecifiedReason);
@@ -620,7 +620,7 @@ impl Associated {
         header: &BeaconHdr,
         elements: B,
     ) {
-        wtrace::duration!(c"Associated::on_beacon_frame");
+        wtrace::duration!("Associated::on_beacon_frame");
         self.0.lost_bss_counter.reset();
         // TODO(b/253637931): Add metrics to track channel switch counts and success rates.
         if let Err(e) =
@@ -658,9 +658,9 @@ impl Associated {
         data_frame: mac::DataFrame<B>,
         async_id: TraceId,
     ) {
-        const MSDU_TRACE_NAME: &'static std::ffi::CStr = c"States::on_data_frame => MSDU";
+        const MSDU_TRACE_NAME: &'static str = "States::on_data_frame => MSDU";
 
-        wtrace::duration!(c"States::on_data_frame");
+        wtrace::duration!("States::on_data_frame");
 
         self.request_bu_if_available(
             sta,
@@ -731,7 +731,7 @@ impl Associated {
         frame: B,
         async_id: TraceId,
     ) -> Result<(), Error> {
-        wtrace::duration!(c"Associated::on_eth_frame");
+        wtrace::duration!("Associated::on_eth_frame");
         let mac::EthernetFrame { hdr, body } = match mac::EthernetFrame::parse(frame) {
             Some(eth_frame) => eth_frame,
             None => {
@@ -1002,7 +1002,7 @@ impl States {
         rx_info: fidl_softmac::WlanRxInfo,
         async_id: TraceId,
     ) -> States {
-        wtrace::duration!(c"States::on_mac_frame");
+        wtrace::duration!("States::on_mac_frame");
 
         let body_aligned = (rx_info.rx_flags & fidl_softmac::WlanRxInfoFlags::FRAME_BODY_PADDING_4)
             != fidl_softmac::WlanRxInfoFlags::empty();
@@ -1069,7 +1069,7 @@ impl States {
         mgmt_frame: mac::MgmtFrame<B>,
         rx_info: fidl_softmac::WlanRxInfo,
     ) -> States {
-        wtrace::duration!(c"States::on_mgmt_frame");
+        wtrace::duration!("States::on_mgmt_frame");
 
         // Parse management frame. Drop corrupted ones.
         let (mgmt_hdr, mgmt_body) = match mgmt_frame.try_into_mgmt_body() {
@@ -1174,7 +1174,7 @@ impl States {
         frame: B,
         async_id: TraceId,
     ) -> Result<(), Error> {
-        wtrace::duration!(c"States::on_eth_frame");
+        wtrace::duration!("States::on_eth_frame");
         match self {
             States::Associated(state) => state.on_eth_frame(sta, frame, async_id),
             _ => Err(Error::Status(
@@ -1347,7 +1347,7 @@ impl States {
 
     /// Returns |true| iff a given FrameClass is permitted to be processed in the current state.
     fn is_frame_class_permitted(&self, class: mac::FrameClass) -> bool {
-        wtrace::duration!(c"State::is_frame_class_permitted");
+        wtrace::duration!("State::is_frame_class_permitted");
         match self {
             States::Joined(_) | States::Authenticating(_) => class == mac::FrameClass::Class1,
             States::Authenticated(_) | States::Associating(_) => class <= mac::FrameClass::Class2,

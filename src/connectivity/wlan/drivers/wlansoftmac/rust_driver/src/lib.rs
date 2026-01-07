@@ -56,7 +56,7 @@ pub async fn start_and_serve<F, D: DeviceOps + 'static>(
 where
     F: FnOnce(zx::sys::zx_status_t) + 'static,
 {
-    wtrace::duration!(c"rust_driver::start_and_serve");
+    wtrace::duration!("rust_driver::start_and_serve");
     let (driver_event_sink, driver_event_stream) = DriverEventSink::new();
 
     let (mlme_init_sender, mlme_init_receiver) = oneshot::channel();
@@ -100,7 +100,7 @@ async fn start<D: DeviceOps + 'static>(
     >,
     zx::Status,
 > {
-    wtrace::duration!(c"rust_driver::start");
+    wtrace::duration!("rust_driver::start");
 
     let (softmac_ifc_bridge_proxy, softmac_ifc_bridge_request_stream) =
         fidl::endpoints::create_proxy_and_stream::<fidl_softmac::WlanSoftmacIfcBridgeMarker>();
@@ -228,7 +228,7 @@ async fn serve(
     mlme: Pin<Box<dyn Future<Output = Result<(), Error>>>>,
     sme: Pin<Box<impl Future<Output = Result<(), Error>>>>,
 ) -> Result<(), zx::Status> {
-    wtrace::duration!(c"rust_driver::serve");
+    wtrace::duration!("rust_driver::serve");
 
     // Create a oneshot::channel to signal to this executor when WlanSoftmacIfcBridge
     // server exits.
@@ -264,7 +264,7 @@ async fn serve(
     // future and initialization, in that order, and then polling the future returned by
     // serve() (i.e., this function).
     {
-        wtrace::duration!(c"initialize MLME");
+        wtrace::duration!("initialize MLME");
         futures::select! {
             mlme_result = mlme => {
                 match mlme_result {
@@ -312,7 +312,7 @@ async fn serve(
 
     // Run the SME and MLME servers.
     {
-        wtrace::duration!(c"run MLME and SME");
+        wtrace::duration!("run MLME and SME");
         // This loop-select has two phases.
         //
         // In the first phase, all three futures are running. The first phase will break
@@ -401,7 +401,7 @@ async fn bootstrap_generic_sme<D: DeviceOps>(
     driver_event_sink: DriverEventSink,
     softmac_ifc_bridge_proxy: fidl_softmac::WlanSoftmacIfcBridgeProxy,
 ) -> Result<BootstrappedGenericSme, zx::Status> {
-    wtrace::duration!(c"rust_driver::bootstrap_generic_sme");
+    wtrace::duration!("rust_driver::bootstrap_generic_sme");
     info!("Bootstrapping GenericSme...");
 
     let ifc_bridge = softmac_ifc_bridge_proxy.into_client_end().map_err(|_| {

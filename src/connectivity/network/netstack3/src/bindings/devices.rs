@@ -518,7 +518,7 @@ pub(crate) async fn tx_task(
             }
         };
 
-        trace_duration!(c"devices::tx_task",
+        trace_duration!("devices::tx_task",
             "iface" => device_id.bindings_id().id.get(),
             "batch" => usize::from(batch_size)
         );

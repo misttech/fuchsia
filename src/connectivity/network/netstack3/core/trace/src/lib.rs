@@ -20,7 +20,7 @@
 mod id;
 
 /// The trace category used by netstack3.
-pub const CATEGORY: &'static core::ffi::CStr = c"net";
+pub const CATEGORY: &'static str = "net";
 
 /// Internal implementation.
 #[cfg(target_os = "fuchsia")]

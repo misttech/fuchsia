@@ -348,7 +348,7 @@ impl DeviceOps for Device {
     }
 
     fn deliver_eth_frame(&mut self, packet: &[u8]) -> Result<(), zx::Status> {
-        wtrace::duration!(c"Device::deliver_eth_frame");
+        wtrace::duration!("Device::deliver_eth_frame");
         self.ethernet_rx.transfer(&fidl_softmac::EthernetRxTransferRequest {
             packet_address: Some(packet.as_ptr() as u64),
             packet_size: Some(packet.len() as u64),
@@ -368,7 +368,7 @@ impl DeviceOps for Device {
             wtrace::async_begin_wlansoftmac_tx(async_id, "mlme");
             async_id
         });
-        wtrace::duration!(c"Device::send_data_frame");
+        wtrace::duration!("Device::send_data_frame");
 
         let (arena, mut buffer) = ArenaStaticBox::into_raw(buffer);
 

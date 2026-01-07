@@ -239,7 +239,7 @@ fn handle_incoming_packet<WireI, BC, CC, H>(
     CC: TcpContext<WireI, BC> + TcpContext<WireI::OtherVersion, BC>,
     H: IpHeaderInfo<WireI>,
 {
-    trace_duration!(c"tcp::handle_incoming_packet");
+    trace_duration!("tcp::handle_incoming_packet");
     let mut tw_reuse = None;
 
     let mut addrs_to_search = AddrVecIter::<WireI, CC::WeakDeviceId, TcpPortSpec>::with_device(

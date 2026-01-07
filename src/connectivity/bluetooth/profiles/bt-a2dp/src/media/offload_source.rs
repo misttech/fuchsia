@@ -345,7 +345,7 @@ impl RunningTask {
         let (sender, receiver) = oneshot::channel();
         let stream_task_fut = Self::stream_task(codec_config, provider, peer_id);
         let wrapped_task = fasync::Task::local(async move {
-            trace::instant!(c"bt-a2dp", c"Media:Start", trace::Scope::Thread);
+            trace::instant!("bt-a2dp", "Media:Start", trace::Scope::Thread);
             let result = stream_task_fut
                 .await
                 .map_err(|e| MediaTaskError::Other(format!("Error in streaming audio: {}", e)));
@@ -365,7 +365,7 @@ impl MediaTask for RunningTask {
         // Send a stop, although dropping the offload controller (or this task) should also stop
         let _ = self.offload_controller.stop().now_or_never();
         if let Some(task) = self.stream_task.take() {
-            trace::instant!(c"bt-a2dp", c"Media:Stopped", trace::Scope::Thread);
+            trace::instant!("bt-a2dp", "Media:Stopped", trace::Scope::Thread);
             drop(task);
         }
         // Either a result already happened, or we will just have sent an Ok(()) by dropping the result

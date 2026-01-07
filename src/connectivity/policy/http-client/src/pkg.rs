@@ -104,7 +104,7 @@ async fn download_blob_impl(
 ) -> Result<u64, DownloadBlobError> {
     let trace_id = ftrace::Id::random();
     let _guard = ftrace::async_enter!(
-        trace_id, c"app", c"http-client-download-blob",
+        trace_id, "app", "http-client-download-blob",
         "url" => url
     );
     inspect.record_int("start_boot_ns", zx::BootInstant::get().into_nanos());
@@ -118,7 +118,7 @@ async fn download_blob_impl(
     };
 
     let (expected_len, content) = {
-        let _guard = ftrace::async_enter(trace_id, c"app", c"http_get_startup", &[]);
+        let _guard = ftrace::async_enter(trace_id, "app", "http_get_startup", &[]);
         crate::resuming_get::resuming_get(
             client,
             url.parse().map_err(DownloadBlobError::ParseUrl)?,
@@ -132,7 +132,7 @@ async fn download_blob_impl(
 
     set_inspect_state("create-writer");
     let mut writer = {
-        let _guard = ftrace::async_enter(trace_id, c"app", c"creating_writer", &[]);
+        let _guard = ftrace::async_enter(trace_id, "app", "creating_writer", &[]);
         blob_writer::BlobWriter::create(writer, expected_len)
             .await
             .map_err(DownloadBlobError::CreateBlobWriter)?
@@ -143,7 +143,7 @@ async fn download_blob_impl(
     while written < expected_len {
         set_inspect_state("read-http-body");
         let chunk = {
-            let _guard = ftrace::async_enter(trace_id, c"app", c"reading_from_network", &[]);
+            let _guard = ftrace::async_enter(trace_id, "app", "reading_from_network", &[]);
             content.try_next().await.map_err(DownloadBlobError::ReadBodyStream)?
         };
         let Some(chunk) = chunk else {
@@ -158,8 +158,8 @@ async fn download_blob_impl(
         let () = {
             let _guard = ftrace::async_enter(
                 trace_id,
-                c"app",
-                c"waiting_for_blob_write_ack",
+                "app",
+                "waiting_for_blob_write_ack",
                 &[ftrace::ArgValue::of("size", chunk.len() as u64)],
             );
             fut.await

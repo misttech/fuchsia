@@ -864,7 +864,7 @@ where
     CC::DeviceId: netstack3_base::InterfaceProperties<BC::DeviceClass>,
     O: SendOptions<I> + RouteResolutionOptions<I>,
 {
-    trace_duration!(c"ip::send_packet");
+    trace_duration!("ip::send_packet");
 
     // Extracted to a function without the serializer parameter to ease code
     // generation.

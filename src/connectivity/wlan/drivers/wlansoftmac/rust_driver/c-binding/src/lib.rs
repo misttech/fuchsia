@@ -103,7 +103,7 @@ pub unsafe extern "C" fn start_bridged_wlansoftmac(
         .name("bridged-wlansoftmac")
         .allow_thread_blocking()
         .shutdown_observer(|_dispatcher| {
-            wtrace::duration!(c"bridged-wlansoftmac dispatcher shutdown_handler");
+            wtrace::duration!("bridged-wlansoftmac dispatcher shutdown_handler");
             info!("Completed bridged-wlansoftmac dispatcher shutdown");
         })
         // Create a released dispatcher to defer destruction until driver
@@ -137,7 +137,7 @@ pub unsafe extern "C" fn start_bridged_wlansoftmac(
     };
 
     let task = dispatcher.post_task_sync(move |status| {
-        wtrace::duration!(c"Rust MLME dispatcher");
+        wtrace::duration!("Rust MLME dispatcher");
         if let Err(status) = Result::from(status) {
             error!("Rust MLME dispatcher failed to start: {status}");
             return;
