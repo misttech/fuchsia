@@ -63,7 +63,7 @@ template("ffx") {
         # using codegen_units=1)
         # Add thinlto config.
         configs += [
-          "//build/config/lto:thinlto-if-not-enabled",
+          "//build/config/lto:thinlto-if-compatible",
           "//build/config/lto:lto-rust-linker-plugin",
         ]
       }

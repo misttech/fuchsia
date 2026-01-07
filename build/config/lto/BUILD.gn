@@ -170,10 +170,12 @@ variant("lto") {
   ]
 }
 
-# Add the lto config only if no other LTO variant
-# or configuration is already active.
-config("lto-if-not-enabled") {
-  if (!is_lto_variant && optimize != "size_lto") {
+# This config is used to opt-in targets to LTO while automatically excluding
+# scenarios where LTO is incompatible or redundant.
+config("lto-if-compatible") {
+  # Do not enable LTO for the instrumented variants.
+  # Do not enable LTO (here) for the lto or thinlto variants.
+  if (!is_instrumented && !is_lto_variant) {
     configs = [ ":lto" ]
   }
 }
@@ -253,10 +255,12 @@ variant("thinlto") {
   ]
 }
 
-# Add the thinlto config only if no other LTO variant
-# or configuration is already active.
-config("thinlto-if-not-enabled") {
-  if (!is_lto_variant && optimize != "size_lto") {
+# This config is used to opt-in targets to ThinLTO while automatically excluding
+# scenarios where LTO is incompatible or redundant.
+config("thinlto-if-compatible") {
+  # Do not enable ThinLTO for the instrumented variants.
+  # Do not enable ThinLTO (here) for the lto or thinlto variants.
+  if (!is_instrumented && !is_lto_variant) {
     configs = [ ":thinlto" ]
   }
 }

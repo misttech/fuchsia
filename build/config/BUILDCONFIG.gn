@@ -1355,6 +1355,12 @@ is_host_fuzzer =
 # Deprecated alias for is_fuchsia_fuzzer
 is_fuzzer = is_fuchsia_fuzzer
 
+is_fuchsia_instrumented = fuchsia_toolchain_tags + [ "instrumented" ] -
+                          [ "instrumented" ] != fuchsia_toolchain_tags
+
+# Deprecated alias for is_fuchsia_instrumented
+is_instrumented = is_fuchsia_instrumented
+
 # Whether lto or thinlto variant is enabled for Fuchsia and host binaries.
 is_fuchsia_lto_variant =
     fuchsia_toolchain_tags + [ "lto" ] - [ "lto" ] != fuchsia_toolchain_tags
