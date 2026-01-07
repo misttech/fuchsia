@@ -157,6 +157,7 @@ class TracingUsingFc(AsyncAdapter, tracing.Tracing):
         buffer_size: int | None = None,
         start_timeout_milliseconds: int | None = None,
         buffering_mode: f_tracing.BufferingMode | None = None,
+        defer_transfer: bool | None = None,
     ) -> None:
         """Initializes a trace session.
 
@@ -172,6 +173,7 @@ class TracingUsingFc(AsyncAdapter, tracing.Tracing):
                 CIRCULAR - When the buffer fills, older records are discarded to make space
                 STREAMING - Data is streamed back to the trace_manager. Providers may still drop
                             records if events are produced faster than they can be streamed
+            defer_transfer: If true, the trace_manager will delay sending data until tracing has stopped
 
         Raises:
             TracingStateError: When trace session is already initialized.
@@ -217,6 +219,7 @@ class TracingUsingFc(AsyncAdapter, tracing.Tracing):
                     buffer_size_megabytes_hint=buffer_size,
                     start_timeout_milliseconds=start_timeout_milliseconds,
                     buffering_mode=buffering_mode,
+                    defer_transfer=defer_transfer,
                 ),
                 output=trace_socket_server.take(),
             )

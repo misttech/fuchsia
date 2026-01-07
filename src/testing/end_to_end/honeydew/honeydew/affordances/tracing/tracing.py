@@ -24,6 +24,7 @@ class Tracing(affordance.Affordance):
         buffer_size: int | None = None,
         start_timeout_milliseconds: int | None = None,
         buffering_mode: f_tracing.BufferingMode | None = None,
+        defer_transfer: bool | None = None,
     ) -> None:
         """Initializes a trace sessions.
 
@@ -39,6 +40,7 @@ class Tracing(affordance.Affordance):
                 CIRCULAR - When the buffer fills, older records are discarded to make space
                 STREAMING - Data is streamed back to the trace_manager. Providers may still drop
                             records if events are produced faster than they can be streamed
+            defer_transfer: If true, the trace_manager will delay sending data until tracing has stopped
 
         Raises:
             TracingStateError: When trace session is already initialized.
