@@ -162,7 +162,16 @@
             to: "#base-drivers",
         },
         {
-            service: [ "fuchsia.hardware.rtc.Service" ],
+            service: [
+                "fuchsia.hardware.backlight.Service",
+                "fuchsia.hardware.cpu.ctrl.Service",
+                "fuchsia.hardware.display.Service",
+                "fuchsia.hardware.nfc.Service",
+                "fuchsia.hardware.rtc.Service",
+                "fuchsia.hardware.spmi.DebugService",
+                "fuchsia.hardware.suspend.SuspendService",
+                "fuchsia.hardware.usb.peripheral.Service",
+            ],
             from: "#base-drivers",
             to: "self/toolbox",
             target_availability: "unknown",
