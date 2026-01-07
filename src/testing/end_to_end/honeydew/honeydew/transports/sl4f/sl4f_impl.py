@@ -16,8 +16,8 @@ from honeydew.transports.sl4f import sl4f as sl4f_interface
 from honeydew.typing import custom_types
 from honeydew.utils import http_utils, properties
 
-_FFX_CMDS: dict[str, list[str]] = {
-    "START_SL4F": ["target", "ssh", "start_sl4f"],
+_FFX_SSH_CMDS: dict[str, str] = {
+    "START_SL4F": "start_sl4f",
 }
 
 _SL4F_PORT: dict[str, int] = {
@@ -195,7 +195,7 @@ class Sl4fImpl(sl4f_interface.SL4F):
         _LOGGER.info("Starting SL4F server on %s...", self._name)
 
         try:
-            self._ffx_transport.run(cmd=_FFX_CMDS["START_SL4F"])
+            self._ffx_transport.run_ssh_cmd(cmd=_FFX_SSH_CMDS["START_SL4F"])
         except errors.HoneydewError as err:
             raise sl4f_errors.Sl4fError(err) from err
 
