@@ -126,39 +126,39 @@ zx::result<HandleOwner> get_handle_for_message_locked(ProcessDispatcher* process
   const zx_obj_type_t type = handle_disposition.type;
   const zx_handle_t handle_val = handle_disposition.handle;
 
-  auto source = process->handle_table().GetHandleLocked(*process, handle_val);
-  if (!source) {
-    return zx::error(ZX_ERR_BAD_HANDLE);
-  }
+  zx::result<HandleOwner> operation_result =
+      [&]() TA_REQ(process->handle_table().get_lock()) -> zx::result<HandleOwner> {
+    auto source = process->handle_table().GetHandleLocked(*process, handle_val);
+    if (!source) {
+      return zx::error(ZX_ERR_BAD_HANDLE);
+    }
 
-  zx::result<HandleOwner> operation_result;
+    // The documentation for zx_channel_write_etc says this about the operation performed on
+    // handles:
+    /// The operation applied to *handle* is one of:
+    ///
+    /// *   `ZX_HANDLE_OP_MOVE` This is equivalent to first issuing [`zx_handle_replace()`] then
+    ///      [`zx_channel_write()`]. The source handle is always closed.
+    ///
+    /// *   `ZX_HANDLE_OP_DUPLICATE` This is equivalent to first issuing [`zx_handle_duplicate()`]
+    ///     then [`zx_channel_write()`]. The source handle always remains open and accessible to
+    ///     the caller.
+    // So when duplicating a handle, we leave the source handle in the handle table. For all other
+    // operations (including invalid operations) we immediately remove the source handle from the
+    // handle table and then attempt to move it.
 
-  // The documentation for zx_channel_write_etc says this about the operation performed on
-  // handles:
-  /// The operation applied to *handle* is one of:
-  ///
-  /// *   `ZX_HANDLE_OP_MOVE` This is equivalent to first issuing [`zx_handle_replace()`] then
-  ///      [`zx_channel_write()`]. The source handle is always closed.
-  ///
-  /// *   `ZX_HANDLE_OP_DUPLICATE` This is equivalent to first issuing [`zx_handle_duplicate()`]
-  ///     then [`zx_channel_write()`]. The source handle always remains open and accessible to
-  ///     the caller.
-  // So when duplicating a handle, we leave the source handle in the handle table. For all other
-  // operations (including invalid operations) we immediately remove the source handle from the
-  // handle table and then attempt to move it.
+    if (operation == ZX_HANDLE_OP_DUPLICATE) {
+      return duplicate_handle_for_transfer(*source, channel, handle_val, type, desired_rights);
+    }
 
-  if (operation == ZX_HANDLE_OP_DUPLICATE) {
-    operation_result =
-        duplicate_handle_for_transfer(*source, channel, handle_val, type, desired_rights);
-  } else {
     HandleOwner source_owner = process->handle_table().RemoveHandleLocked(source);
     if (operation == ZX_HANDLE_OP_MOVE) {
-      operation_result = move_handle_for_transfer(ktl::move(source_owner), channel, handle_val,
-                                                  type, desired_rights);
-    } else {
-      operation_result = zx::error(ZX_ERR_INVALID_ARGS);
+      return move_handle_for_transfer(ktl::move(source_owner), channel, handle_val, type,
+                                      desired_rights);
     }
-  }
+    return zx::error(ZX_ERR_INVALID_ARGS);
+  }();
+
   if (operation_result.is_error()) {
     handle_disposition.result = operation_result.error_value();
   }

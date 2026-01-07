@@ -110,6 +110,23 @@ TEST(ChannelWriteEtcTest, MoveHandlesWithRightsCheckFailure) {
   EXPECT_EQ(ZX_OK, send_handle_list[1].result);
 }
 
+TEST(ChannelWriteEtcTest, InvalidHandleResult) {
+  zx::channel channel_local, channel_remote;
+
+  ASSERT_OK(zx::channel::create(0, &channel_local, &channel_remote));
+
+  constexpr zx_handle_t kInvalidHandleValue = 0b100;
+
+  zx_handle_disposition_t send_handle_list[] = {
+      {ZX_HANDLE_OP_MOVE, kInvalidHandleValue, ZX_OBJ_TYPE_CHANNEL, ZX_RIGHT_SAME_RIGHTS, ZX_OK}};
+
+  EXPECT_EQ(ZX_ERR_BAD_HANDLE,
+            channel_local.write_etc(0, &kChannelData, sizeof(kChannelData), send_handle_list,
+                                    std::size(send_handle_list)));
+
+  EXPECT_EQ(ZX_ERR_BAD_HANDLE, send_handle_list[0].result);
+}
+
 TEST(ChannelWriteEtcTest, ImproperlyInitalizedResultsArgReportedBackAsOriginallyInitalized) {
   zx::channel channel_local, channel_remote;
   zx::event event;
