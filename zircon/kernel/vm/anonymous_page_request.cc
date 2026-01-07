@@ -44,6 +44,9 @@ zx::result<> AnonymousPageRequest::Allocate() {
   constexpr zx_duration_mono_t kReportWaitTime = ZX_SEC(5);
   constexpr unsigned int kMaxWaits = ZX_SEC(30) / kReportWaitTime;
   static_assert(kMaxWaits >= 1);
+  // Trigger an informational dump 1 wait prior to triggering a panic. This gives the debug log a
+  // chance to get flushed out before the panic.
+  constexpr unsigned int kDumpInfoWaits = kMaxWaits - 1;
   uint32_t waited = 0;
 
   while (true) {
@@ -56,12 +59,16 @@ zx::result<> AnonymousPageRequest::Allocate() {
         dprintf(INFO, "WARNING: Waited %" PRIi64 " seconds to retry PMM allocations\n",
                 (kReportWaitTime * waited) / ZX_SEC(1));
 
-        // Once one thread reaches the maximum retries, it is time to panic, only let the first
-        // thread to reach this point trigger the panic. All other threads can block in the event.
-        // This allows the `scanner_debug_dump_state_before_panic` to finish and then panic.
-        if (waited == kMaxWaits && dump_info_before_panic_token.exchange(false)) {
+        // If we've reached the threshold to dump information *and* we're the first thread to do so,
+        // i.e. first to get the token, then ask the scanner to do a pre panic dump. The assumption
+        // here is that if we've been blocked this long then we are most likely going to hit
+        // kMaxWaits and so it's worth performing a slightly unsafe informational dump for the
+        // purposes of debugging.
+        if (waited == kDumpInfoWaits && dump_info_before_panic_token.exchange(false)) {
           scanner_debug_dump_state_before_panic();
+        }
 
+        if (waited == kMaxWaits) {
           // If we've been waiting for a while without being able to get more memory and
           // without declaring OOM, the memory watchdog is probably wedged and the system is in an
           // unrecoverable state. It would be nice to get some diagnostics here but we don't want to
