@@ -36,6 +36,7 @@ executable("blobfs") {
     # time when constructing blobfs images with a large number of blobs.
     configs -= [ "//build/config:default_optimize" ]
     configs += [ "//build/config:optimize_speed" ]
+    configs += [ "//build/config/lto:lto-if-compatible" ]
 
     exclude_toolchain_tags = [
       # TODO(https://fxbug.dev/42130760): blobfs performs poorly when built with asan
