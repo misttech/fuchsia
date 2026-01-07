@@ -26,8 +26,6 @@
     use: [
         {
             protocol: [
-                "fuchsia.net.dhcp.Server",
-                "fuchsia.net.dhcpv6.ClientProvider",
                 "fuchsia.net.interfaces.admin.Installer",
                 "fuchsia.net.interfaces.State",
                 "fuchsia.net.name.DnsServerWatcher",
@@ -40,6 +38,10 @@
             ],
         },
         {
+            protocol: "fuchsia.net.dhcp.Server",
+            availability: "optional",
+        },
+        {
             protocol: "fuchsia.net.ndp.RouterAdvertisementOptionWatcherProvider",
             availability: "optional",
         },
@@ -49,6 +51,10 @@
         },
         {
             protocol: "fuchsia.net.filter.Control",
+            availability: "optional",
+        },
+        {
+            protocol: "fuchsia.net.dhcpv6.ClientProvider",
             availability: "optional",
         },
         {

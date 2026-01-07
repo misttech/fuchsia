@@ -951,10 +951,11 @@ impl<'a> NetCfg<'a> {
             }
         };
         let dhcpv6_client_provider = if enable_dhcpv6 {
-            let dhcpv6_client_provider = svc_connect::<fnet_dhcpv6::ClientProviderMarker>(&svc_dir)
-                .await
-                .context("could not connect to DHCPv6 client provider")?;
-            Some(dhcpv6_client_provider)
+            let dhcpv6_client_provider =
+                optional_svc_connect::<fnet_dhcpv6::ClientProviderMarker>(&svc_dir)
+                    .await
+                    .context("could not connect to DHCPv6 client provider")?;
+            dhcpv6_client_provider
         } else {
             None
         };

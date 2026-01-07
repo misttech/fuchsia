@@ -377,6 +377,27 @@ where
     }
 }
 
+fn or_void_protocol_dep<P>(
+    component_name: &'static str,
+    is_child_present: bool,
+) -> fnetemul::ChildDep
+where
+    P: fidl::endpoints::DiscoverableProtocolMarker,
+{
+    if is_child_present { protocol_dep::<P>(component_name) } else { void_protocol_dep::<P>() }
+}
+
+fn void_protocol_dep<P>() -> fnetemul::ChildDep
+where
+    P: fidl::endpoints::DiscoverableProtocolMarker,
+{
+    fnetemul::ChildDep {
+        name: None,
+        capability: Some(fnetemul::ExposedCapability::Protocol(P::PROTOCOL_NAME.to_string())),
+        ..Default::default()
+    }
+}
+
 impl From<KnownServiceProvider> for fnetemul::ChildDef {
     fn from(s: KnownServiceProvider) -> Self {
         (&s).into()
@@ -464,141 +485,128 @@ impl<'a> From<&'a KnownServiceProvider> for fnetemul::ChildDef {
                         agent.get_services().iter().map(|service| service.to_string()).collect(),
                     ),
                     uses: Some(fnetemul::ChildUses::Capabilities(
-                        (*use_dhcp_server)
-                            .then(|| {
-                                fnetemul::Capability::ChildDep(protocol_dep::<
-                                    fnet_dhcp::Server_Marker,
-                                >(
-                                    constants::dhcp_server::COMPONENT_NAME,
-                                ))
-                            })
-                            .into_iter()
-                            .chain(
-                                enable_dhcpv6
-                                    .then(|| {
+                        std::iter::once(fnetemul::Capability::ChildDep(or_void_protocol_dep::<
+                            fnet_dhcp::Server_Marker,
+                        >(
+                            constants::dhcp_server::COMPONENT_NAME,
+                            *use_dhcp_server,
+                        )))
+                        .chain(std::iter::once(fnetemul::Capability::ChildDep(
+                            or_void_protocol_dep::<fnet_dhcpv6::ClientProviderMarker>(
+                                constants::dhcpv6_client::COMPONENT_NAME,
+                                enable_dhcpv6,
+                            ),
+                        )))
+                        .chain(std::iter::once(fnetemul::Capability::ChildDep(
+                            or_void_protocol_dep::<fnet_dhcp::ClientProviderMarker>(
+                                constants::dhcp_client::COMPONENT_NAME,
+                                *use_out_of_stack_dhcp_client,
+                            ),
+                        )))
+                        .chain(
+                            socket_proxy_type
+                                .component_name()
+                                .map(|component_name| {
+                                    [
                                         fnetemul::Capability::ChildDep(protocol_dep::<
-                                            fnet_dhcpv6::ClientProviderMarker,
+                                            fnp_socketproxy::FuchsiaNetworksMarker,
                                         >(
-                                            constants::dhcpv6_client::COMPONENT_NAME,
-                                        ))
-                                    })
-                                    .into_iter(),
-                            )
-                            .chain(use_out_of_stack_dhcp_client.then(|| {
+                                            component_name
+                                        )),
+                                        fnetemul::Capability::ChildDep(protocol_dep::<
+                                            fnp_socketproxy::DnsServerWatcherMarker,
+                                        >(
+                                            component_name
+                                        )),
+                                        fnetemul::Capability::ChildDep(protocol_dep::<
+                                            fnp_properties::DefaultNetworkWatcherMarker,
+                                        >(
+                                            component_name
+                                        )),
+                                    ]
+                                })
+                                .into_iter()
+                                .flatten(),
+                        )
+                        .chain(
+                            [
+                                fnetemul::Capability::LogSink(fnetemul::Empty {}),
+                                fnetemul::Capability::ChildDep(fnetemul::ChildDep {
+                                    dynamically_offer_from_void: Some(true),
+                                    ..protocol_dep::<fnet_filter::ControlMarker>(
+                                        constants::netstack::COMPONENT_NAME,
+                                    )
+                                }),
+                                fnetemul::Capability::ChildDep(fnetemul::ChildDep {
+                                    dynamically_offer_from_void: Some(true),
+                                    ..protocol_dep::<fnet_filter_deprecated::FilterMarker>(
+                                        constants::netstack::COMPONENT_NAME,
+                                    )
+                                }),
                                 fnetemul::Capability::ChildDep(protocol_dep::<
-                                    fnet_dhcp::ClientProviderMarker,
+                                    fnet_interfaces::StateMarker,
                                 >(
-                                    constants::dhcp_client::COMPONENT_NAME,
-                                ))
-                            }))
-                            .chain(
-                                socket_proxy_type
-                                    .component_name()
-                                    .map(|component_name| {
-                                        [
-                                            fnetemul::Capability::ChildDep(protocol_dep::<
-                                                fnp_socketproxy::FuchsiaNetworksMarker,
-                                            >(
-                                                component_name
-                                            )),
-                                            fnetemul::Capability::ChildDep(protocol_dep::<
-                                                fnp_socketproxy::DnsServerWatcherMarker,
-                                            >(
-                                                component_name
-                                            )),
-                                            fnetemul::Capability::ChildDep(protocol_dep::<
-                                                fnp_properties::DefaultNetworkWatcherMarker,
-                                            >(
-                                                component_name
-                                            )),
-                                        ]
-                                    })
-                                    .into_iter()
-                                    .flatten(),
-                            )
-                            .chain(
-                                [
-                                    fnetemul::Capability::LogSink(fnetemul::Empty {}),
-                                    fnetemul::Capability::ChildDep(fnetemul::ChildDep {
-                                        dynamically_offer_from_void: Some(true),
-                                        ..protocol_dep::<fnet_filter::ControlMarker>(
-                                            constants::netstack::COMPONENT_NAME,
-                                        )
-                                    }),
-                                    fnetemul::Capability::ChildDep(fnetemul::ChildDep {
-                                        dynamically_offer_from_void: Some(true),
-                                        ..protocol_dep::<fnet_filter_deprecated::FilterMarker>(
-                                            constants::netstack::COMPONENT_NAME,
-                                        )
-                                    }),
-                                    fnetemul::Capability::ChildDep(protocol_dep::<
-                                        fnet_interfaces::StateMarker,
-                                    >(
-                                        constants::netstack::COMPONENT_NAME,
-                                    )),
-                                    fnetemul::Capability::ChildDep(protocol_dep::<
-                                        fnet_interfaces_admin::InstallerMarker,
-                                    >(
-                                        constants::netstack::COMPONENT_NAME,
-                                    )),
-                                    fnetemul::Capability::ChildDep(protocol_dep::<
-                                        fnet_stack::StackMarker,
-                                    >(
-                                        constants::netstack::COMPONENT_NAME,
-                                    )),
-                                    fnetemul::Capability::ChildDep(protocol_dep::<
-                                        fnet_routes_admin::RouteTableV4Marker,
-                                    >(
-                                        constants::netstack::COMPONENT_NAME,
-                                    )),
-                                    fnetemul::Capability::ChildDep(protocol_dep::<
-                                        fnet_routes_admin::RouteTableV6Marker,
-                                    >(
-                                        constants::netstack::COMPONENT_NAME,
-                                    )),
-                                    fnetemul::Capability::ChildDep(protocol_dep::<
-                                        fnet_routes_admin::RuleTableV4Marker,
-                                    >(
-                                        constants::netstack::COMPONENT_NAME,
-                                    )),
-                                    fnetemul::Capability::ChildDep(protocol_dep::<
-                                        fnet_routes_admin::RuleTableV6Marker,
-                                    >(
-                                        constants::netstack::COMPONENT_NAME,
-                                    )),
-                                    fnetemul::Capability::ChildDep(protocol_dep::<
-                                        fnet_name::DnsServerWatcherMarker,
-                                    >(
-                                        constants::netstack::COMPONENT_NAME,
-                                    )),
-                                    fnetemul::Capability::ChildDep(protocol_dep::<
-                                        fnet_name::LookupAdminMarker,
-                                    >(
-                                        constants::dns_resolver::COMPONENT_NAME,
-                                    )),
-                                    fnetemul::Capability::ChildDep(protocol_dep::<
-                                        fnet_ndp::RouterAdvertisementOptionWatcherProviderMarker,
-                                    >(
-                                        constants::netstack::COMPONENT_NAME,
-                                    )),
-                                    fnetemul::Capability::NetemulDevfs(fnetemul::DevfsDep {
-                                        name: Some(
-                                            constants::netcfg::DEV_CLASS_NETWORK.to_string(),
-                                        ),
-                                        subdir: Some(
-                                            constants::netcfg::CLASS_NETWORK_PATH.to_string(),
-                                        ),
-                                        ..Default::default()
-                                    }),
-                                    fnetemul::Capability::StorageDep(fnetemul::StorageDep {
-                                        variant: Some(fnetemul::StorageVariant::Data),
-                                        path: Some("/data".to_string()),
-                                        ..Default::default()
-                                    }),
-                                ]
-                                .into_iter(),
-                            )
-                            .collect(),
+                                    constants::netstack::COMPONENT_NAME,
+                                )),
+                                fnetemul::Capability::ChildDep(protocol_dep::<
+                                    fnet_interfaces_admin::InstallerMarker,
+                                >(
+                                    constants::netstack::COMPONENT_NAME,
+                                )),
+                                fnetemul::Capability::ChildDep(protocol_dep::<
+                                    fnet_stack::StackMarker,
+                                >(
+                                    constants::netstack::COMPONENT_NAME,
+                                )),
+                                fnetemul::Capability::ChildDep(protocol_dep::<
+                                    fnet_routes_admin::RouteTableV4Marker,
+                                >(
+                                    constants::netstack::COMPONENT_NAME,
+                                )),
+                                fnetemul::Capability::ChildDep(protocol_dep::<
+                                    fnet_routes_admin::RouteTableV6Marker,
+                                >(
+                                    constants::netstack::COMPONENT_NAME,
+                                )),
+                                fnetemul::Capability::ChildDep(protocol_dep::<
+                                    fnet_routes_admin::RuleTableV4Marker,
+                                >(
+                                    constants::netstack::COMPONENT_NAME,
+                                )),
+                                fnetemul::Capability::ChildDep(protocol_dep::<
+                                    fnet_routes_admin::RuleTableV6Marker,
+                                >(
+                                    constants::netstack::COMPONENT_NAME,
+                                )),
+                                fnetemul::Capability::ChildDep(protocol_dep::<
+                                    fnet_name::DnsServerWatcherMarker,
+                                >(
+                                    constants::netstack::COMPONENT_NAME,
+                                )),
+                                fnetemul::Capability::ChildDep(protocol_dep::<
+                                    fnet_name::LookupAdminMarker,
+                                >(
+                                    constants::dns_resolver::COMPONENT_NAME,
+                                )),
+                                fnetemul::Capability::ChildDep(protocol_dep::<
+                                    fnet_ndp::RouterAdvertisementOptionWatcherProviderMarker,
+                                >(
+                                    constants::netstack::COMPONENT_NAME,
+                                )),
+                                fnetemul::Capability::NetemulDevfs(fnetemul::DevfsDep {
+                                    name: Some(constants::netcfg::DEV_CLASS_NETWORK.to_string()),
+                                    subdir: Some(constants::netcfg::CLASS_NETWORK_PATH.to_string()),
+                                    ..Default::default()
+                                }),
+                                fnetemul::Capability::StorageDep(fnetemul::StorageDep {
+                                    variant: Some(fnetemul::StorageVariant::Data),
+                                    path: Some("/data".to_string()),
+                                    ..Default::default()
+                                }),
+                            ]
+                            .into_iter(),
+                        )
+                        .collect(),
                     )),
                     eager: Some(true),
                     ..Default::default()
