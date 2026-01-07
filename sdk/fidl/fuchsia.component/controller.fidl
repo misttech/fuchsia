@@ -6,6 +6,7 @@ library fuchsia.component;
 using fuchsia.component.sandbox;
 using fuchsia.io;
 using fuchsia.process;
+using zx;
 
 @available(added=14)
 const MAX_NAMESPACE_COUNT uint32 = 32;
@@ -52,6 +53,13 @@ closed(removed=18) open(added=18) protocol Controller {
     @available(added=HEAD)
     flexible GetExposedDictionary() -> (resource struct {
         dictionary fuchsia.component.sandbox.DictionaryRef;
+    }) error Error;
+
+    /// Returns a reference to the component's output dictionary, which may be
+    /// interacted with by using the fuchsia.component.runtime.Capabilities API.
+    @available(added=HEAD)
+    flexible GetOutputDictionary() -> (resource struct {
+        dictionary zx.Handle:EVENTPAIR;
     }) error Error;
 
     /// Destroys this component. When this method returns, the component is

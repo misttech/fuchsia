@@ -27,7 +27,9 @@ use crate::builtin::runner::{BuiltinRunner, BuiltinRunnerFactory};
 use crate::builtin::svc_stash_provider::SvcStashCapability;
 use crate::builtin::system_controller::SystemController;
 use crate::builtin::time::{UtcInstantMaintainer, create_utc_clock};
-use crate::framework::{capability_store, config_override, lifecycle_controller, realm_query};
+use crate::framework::{
+    capabilities, capability_store, config_override, lifecycle_controller, realm_query,
+};
 use crate::model::component::WeakComponentInstance;
 use crate::model::component::manager::ComponentManagerInstance;
 use crate::model::event_logger::EventLogger;
@@ -93,10 +95,11 @@ use vfs::path::Path;
 use zx::{self, Resource};
 use {
     fidl_fuchsia_boot as fboot, fidl_fuchsia_component as fcomponent,
-    fidl_fuchsia_component_resolution as fresolution, fidl_fuchsia_component_sandbox as fsandbox,
-    fidl_fuchsia_io as fio, fidl_fuchsia_kernel as fkernel, fidl_fuchsia_pkg as fpkg,
-    fidl_fuchsia_process as fprocess, fidl_fuchsia_sys2 as fsys, fidl_fuchsia_time as ftime,
-    fidl_fuchsia_update_verify as fupdate, fuchsia_async as fasync,
+    fidl_fuchsia_component_resolution as fresolution, fidl_fuchsia_component_runtime as fruntime,
+    fidl_fuchsia_component_sandbox as fsandbox, fidl_fuchsia_io as fio,
+    fidl_fuchsia_kernel as fkernel, fidl_fuchsia_pkg as fpkg, fidl_fuchsia_process as fprocess,
+    fidl_fuchsia_sys2 as fsys, fidl_fuchsia_time as ftime, fidl_fuchsia_update_verify as fupdate,
+    fuchsia_async as fasync,
 };
 
 #[cfg(feature = "tracing")]
@@ -1210,6 +1213,10 @@ impl BuiltinEnvironment {
         self.add_exposed_protocol::<fsandbox::CapabilityStoreMarker>(
             &mut service_fs,
             capability_store::serve,
+        );
+        self.add_exposed_protocol::<fruntime::CapabilitiesMarker>(
+            &mut service_fs,
+            capabilities::serve,
         );
 
         let scope = self.model.top_instance().execution_scope();

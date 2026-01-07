@@ -106,7 +106,7 @@ impl RemotedRuntimeCapabilities {
         Self { remote_capabilities, event_pair_sender, _garbage_collector_task }
     }
 
-    fn store(
+    pub fn store(
         &self,
         event_pair: zx::EventPair,
         capability: impl Into<Capability>,
@@ -130,7 +130,7 @@ impl RemotedRuntimeCapabilities {
         Ok(())
     }
 
-    fn get<C>(&self, handle: zx::EventPair) -> Result<C, fruntime::CapabilitiesError>
+    pub fn get<C>(&self, handle: zx::EventPair) -> Result<C, fruntime::CapabilitiesError>
     where
         C: TryFrom<Capability>,
     {

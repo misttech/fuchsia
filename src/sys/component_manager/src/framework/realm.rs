@@ -86,6 +86,10 @@ async fn handle_request(
             let res = get_resolved_info(component).await;
             responder.send(res)?;
         }
+        fcomponent::RealmRequest::GetChildOutputDictionaryDeprecated { responder, child } => {
+            let res = get_child_output_dictionary_deprecated(component, child).await;
+            responder.send(res)?;
+        }
         fcomponent::RealmRequest::GetChildOutputDictionary { responder, child } => {
             let res = get_child_output_dictionary(component, child).await;
             responder.send(res)?;
@@ -287,7 +291,7 @@ async fn get_resolved_info(
     Ok((&resolved_state.resolved_component).into())
 }
 
-async fn get_child_output_dictionary(
+async fn get_child_output_dictionary_deprecated(
     component: &WeakComponentInstance,
     child: fdecl::ChildRef,
 ) -> Result<fsandbox::DictionaryRef, fcomponent::Error> {
@@ -301,10 +305,30 @@ async fn get_child_output_dictionary(
             .capabilities()
             .into()),
         None => {
-            debug!(child:?; "get_child_output_dictionary() failed: instance not found");
+            debug!(child:?; "get_child_output_dictionary_deprecated() failed: instance not found");
             Err(fcomponent::Error::InstanceNotFound)
         }
     }
+}
+
+async fn get_child_output_dictionary(
+    component: &WeakComponentInstance,
+    child: fdecl::ChildRef,
+) -> Result<zx::EventPair, fcomponent::Error> {
+    let Some(child) = get_child(component, child.clone()).await? else {
+        debug!(child:?; "get_child_output_dictionary() failed: instance not found");
+        return Err(fcomponent::Error::InstanceNotFound);
+    };
+    let output = child
+        .lock_resolved_state()
+        .await
+        .map_err(|_| fcomponent::Error::InstanceCannotResolve)?
+        .sandbox
+        .component_output
+        .capabilities();
+    let (e1, e2) = zx::EventPair::create();
+    child.context.remote_capabilities().store(e1, output).expect("we used a valid handle");
+    Ok(e2)
 }
 
 #[cfg(all(test, not(feature = "src_model_tests")))]
@@ -1380,7 +1404,7 @@ mod tests {
     }
 
     #[fuchsia::test]
-    async fn get_child_output() {
+    async fn get_child_output_deprecated() {
         let test = RealmCapabilityTest::new(
             vec![
                 ("root", ComponentDeclBuilder::new().child_default("system").build()),
@@ -1402,6 +1426,45 @@ mod tests {
 
         let child_output_dictionary_ref = test
             .realm_proxy
+            .get_child_output_dictionary_deprecated(&fdecl::ChildRef {
+                name: "system".to_string(),
+                collection: None,
+            })
+            .await
+            .expect("fidl call failed")
+            .expect("get_child_output_deprecated() failed");
+
+        let child_output_dictionary: sandbox::Dict =
+            child_output_dictionary_ref.try_into().unwrap();
+        assert_eq!(
+            vec!["fidl.examples.Echo".to_string()],
+            child_output_dictionary.keys().map(|k| k.to_string()).collect::<Vec<_>>(),
+        );
+    }
+
+    #[fuchsia::test]
+    async fn get_child_output() {
+        let test = RealmCapabilityTest::new(
+            vec![
+                ("root", ComponentDeclBuilder::new().child_default("system").build()),
+                (
+                    "system",
+                    ComponentDeclBuilder::new()
+                        .protocol_default("fidl.examples.Echo")
+                        .expose(
+                            ExposeBuilder::protocol()
+                                .name("fidl.examples.Echo")
+                                .source(ExposeSource::Self_),
+                        )
+                        .build(),
+                ),
+            ],
+            Moniker::root(),
+        )
+        .await;
+
+        let child_output_dictionary_handle = test
+            .realm_proxy
             .get_child_output_dictionary(&fdecl::ChildRef {
                 name: "system".to_string(),
                 collection: None,
@@ -1410,8 +1473,13 @@ mod tests {
             .expect("fidl call failed")
             .expect("get_child_output() failed");
 
-        let child_output_dictionary: sandbox::Dict =
-            child_output_dictionary_ref.try_into().unwrap();
+        let child_output_dictionary: sandbox::Dict = test
+            .component()
+            .context
+            .remote_capabilities()
+            .get(child_output_dictionary_handle)
+            .expect("child output dictionary handle doesn't reference anything");
+
         assert_eq!(
             vec!["fidl.examples.Echo".to_string()],
             child_output_dictionary.keys().map(|k| k.to_string()).collect::<Vec<_>>(),

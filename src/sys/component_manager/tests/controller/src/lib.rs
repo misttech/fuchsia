@@ -6,6 +6,7 @@ use assert_matches::assert_matches;
 use cm_rust::{ComponentDecl, FidlIntoNative, push_box};
 use fidl::endpoints::{ProtocolMarker, Proxy, ServerEnd, create_proxy, create_request_stream};
 use fuchsia_component::client::connect_to_protocol_at_dir_root;
+use fuchsia_component::runtime;
 use fuchsia_component_test::{
     Capability, ChildOptions, LocalComponentHandles, RealmBuilder, RealmInstance, Ref, Route,
 };
@@ -21,8 +22,9 @@ use vfs::pseudo_directory;
 use zx::{self as zx, AsHandleRef, HandleBased};
 use {
     fidl_fidl_examples_routing_echo as fecho, fidl_fuchsia_component as fcomponent,
-    fidl_fuchsia_component_decl as fcdecl, fidl_fuchsia_component_sandbox as fsandbox,
-    fidl_fuchsia_io as fio, fidl_fuchsia_process as fprocess, fuchsia_async as fasync,
+    fidl_fuchsia_component_decl as fcdecl, fidl_fuchsia_component_runtime as fruntime,
+    fidl_fuchsia_component_sandbox as fsandbox, fidl_fuchsia_io as fio,
+    fidl_fuchsia_process as fprocess, fuchsia_async as fasync,
 };
 
 const COLLECTION_NAME: &'static str = "col";
@@ -124,6 +126,16 @@ async fn launch_child_in_a_collection_in_nested_component_manager(
         .add_route(
             Route::new()
                 .capability(Capability::protocol::<fsandbox::CapabilityStoreMarker>())
+                .from(Ref::framework())
+                .to(&realm_user)
+                .to(Ref::parent()),
+        )
+        .await
+        .unwrap();
+    builder
+        .add_route(
+            Route::new()
+                .capability(Capability::protocol::<fruntime::CapabilitiesMarker>())
                 .from(Ref::framework())
                 .to(&realm_user)
                 .to(Ref::parent()),
@@ -654,6 +666,21 @@ async fn get_exposed_dictionary() {
     let echo_cap = store.export(dest_id).await.unwrap().unwrap();
 
     assert_matches!(echo_cap, fsandbox::Capability::ConnectorRouter(_));
+}
+
+#[fuchsia::test]
+async fn get_output_dictionary() {
+    let (controller_proxy, _child_ref, instance) =
+        spawn_child_with_url("#meta/echo_server.cm").await;
+
+    let exposed_dict = controller_proxy.get_output_dictionary().await.unwrap().unwrap();
+    let capabilities_proxy: fruntime::CapabilitiesProxy =
+        instance.root.connect_to_protocol_at_exposed_dir().unwrap();
+    let dictionary = runtime::Dictionary { handle: exposed_dict, capabilities_proxy };
+    assert_matches!(
+        dictionary.get(fecho::EchoMarker::DEBUG_NAME).await,
+        Some(runtime::Capability::ConnectorRouter(_))
+    );
 }
 
 #[fuchsia::test]

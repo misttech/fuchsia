@@ -8,6 +8,7 @@ using fuchsia.process;
 using fuchsia.component.decl;
 using fuchsia.component.sandbox;
 using fuchsia.component.resolution;
+using zx;
 
 /// The maximum number of handles that can be passed to a created component.
 const MAX_HANDLE_COUNT uint32 = 128;
@@ -131,10 +132,19 @@ closed protocol Realm {
     }) error Error;
 
     @available(added=HEAD)
-    strict GetChildOutputDictionary(resource struct {
+    strict GetChildOutputDictionaryDeprecated(resource struct {
         child fuchsia.component.decl.ChildRef;
     }) -> (resource struct {
         dictionary fuchsia.component.sandbox.DictionaryRef;
+    }) error Error;
+
+    /// Returns a reference to a child's output dictionary, which may be
+    /// interacted with by using the fuchsia.component.runtime.Capabilities API.
+    @available(added=HEAD)
+    strict GetChildOutputDictionary(resource struct {
+        child fuchsia.component.decl.ChildRef;
+    }) -> (resource struct {
+        dictionary zx.Handle:EVENTPAIR;
     }) error Error;
 };
 

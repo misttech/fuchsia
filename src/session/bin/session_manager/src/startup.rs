@@ -334,6 +334,9 @@ mod tests {
                             fcomponent::ControllerRequest::GetExposedDictionary { .. } => {
                                 unimplemented!()
                             }
+                            fcomponent::ControllerRequest::GetOutputDictionary { .. } => {
+                                unimplemented!()
+                            }
                             fcomponent::ControllerRequest::OpenExposedDir { .. } => {
                                 unimplemented!()
                             }
@@ -387,6 +390,9 @@ mod tests {
                             }
                             fcomponent::ControllerRequest::IsStarted { .. } => unimplemented!(),
                             fcomponent::ControllerRequest::GetExposedDictionary { .. } => {
+                                unimplemented!()
+                            }
+                            fcomponent::ControllerRequest::GetOutputDictionary { .. } => {
                                 unimplemented!()
                             }
                             fcomponent::ControllerRequest::OpenExposedDir { .. } => {

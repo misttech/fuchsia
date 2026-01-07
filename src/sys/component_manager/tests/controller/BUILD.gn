@@ -13,6 +13,7 @@ rustc_test("controller_integration_test_bin") {
     "//examples/components/routing/fidl:echo_rust",
     "//sdk/fidl/fuchsia.component:fuchsia.component_rust",
     "//sdk/fidl/fuchsia.component.decl:fuchsia.component.decl_rust",
+    "//sdk/fidl/fuchsia.component.runtime:fuchsia.component.runtime_rust",
     "//sdk/fidl/fuchsia.component.sandbox:fuchsia.component.sandbox_rust",
     "//sdk/fidl/fuchsia.io:fuchsia.io_rust",
     "//sdk/fidl/fuchsia.process:fuchsia.process_rust",

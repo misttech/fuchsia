@@ -283,7 +283,7 @@ impl Dispatcher {
         self.clone().spawn_wait_for_exit(controller_proxy).await;
         let child_output_dictionary: sandbox::Dict = self
             .realm_proxy
-            .get_child_output_dictionary(&fdecl::ChildRef {
+            .get_child_output_dictionary_deprecated(&fdecl::ChildRef {
                 name: child_name.clone(),
                 collection: Some("workers".to_string()),
             })

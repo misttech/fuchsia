@@ -144,6 +144,31 @@ pub async fn serve_controller(
                 .await;
                 responder.send(res)?;
             }
+            fcomponent::ControllerRequest::GetOutputDictionary { responder } => {
+                let Ok(component) = weak_component_instance.upgrade() else {
+                    // If the component doesn't exist anymore, then the execution scope we're
+                    // scheduled in is being torn down and our task will end momentarily. To not
+                    // race with that, let's preemptively wrap things up here and close the
+                    // channel.
+                    return Ok(());
+                };
+                let res = async {
+                    let resolved = component
+                        .lock_resolved_state()
+                        .await
+                        .map_err(|_| fcomponent::Error::InstanceCannotResolve)?;
+                    let exposed_dict = resolved.get_exposed_dict().await.clone();
+                    let (e1, e2) = zx::EventPair::create();
+                    component
+                        .context
+                        .remote_capabilities()
+                        .store(e1, exposed_dict)
+                        .expect("we used a valid handle");
+                    Ok(e2)
+                }
+                .await;
+                responder.send(res)?;
+            }
             fcomponent::ControllerRequest::Destroy { responder } => {
                 let res = (|| {
                     let Ok(component) = weak_component_instance.upgrade() else {
