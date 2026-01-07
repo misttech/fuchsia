@@ -2,9 +2,8 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use futures::prelude::*;
 use futures::StreamExt;
-use log::info;
+use futures::prelude::*;
 
 /// Convert iterator fidl method into stream of events.
 /// ie convert
@@ -22,14 +21,4 @@ where
     .try_take_while(|vec| futures::future::ready(Ok(!vec.is_empty())))
     .map_ok(|vec| futures::stream::iter(vec).map(Ok))
     .try_flatten()
-}
-
-#[allow(dead_code)] // TODO(https://fxbug.dev/421408765)
-/// A struct which logs a set string when it drops out of scope.
-pub struct LogOnDrop(pub &'static str);
-
-impl std::ops::Drop for LogOnDrop {
-    fn drop(&mut self) {
-        info!("{}", self.0);
-    }
 }
