@@ -10,7 +10,7 @@
 #include <lib/driver/metadata/cpp/tests/metadata_integration_test/metadata_retriever_test_driver/metadata_retriever_test_driver.h>
 #include <lib/driver/metadata/cpp/tests/metadata_integration_test/metadata_sender_test_driver/metadata_sender_test_driver.h>
 #include <lib/driver/metadata/cpp/tests/metadata_integration_test/test_root/test_root.h>
-#include <lib/driver_test_realm/realm_builder/cpp/lib.h>
+#include <lib/driver_test_realm/realm_builder/cpp/builder.h>
 #include <lib/fdio/fd.h>
 
 #include "src/lib/testing/loop_fixture/test_loop_fixture.h"
@@ -23,9 +23,7 @@ namespace fdf_metadata::test {
 class MetadataTest : public gtest::TestLoopFixture {
  public:
   void SetUp() override {
-    // Create and build the realm.
-    auto realm_builder = component_testing::RealmBuilder::Create();
-    driver_test_realm::Setup(realm_builder);
+    loop_.StartThread();
     const std::vector<fuchsia_component_test::Capability> exposes = {
         {
             fuchsia_component_test::Capability::WithService(fuchsia_component_test::Service(
@@ -39,16 +37,14 @@ class MetadataTest : public gtest::TestLoopFixture {
             fuchsia_component_test::Capability::WithService(fuchsia_component_test::Service(
                 {.name = fuchsia_hardware_test::MetadataSenderService::Name})),
         }};
-    driver_test_realm::AddDtrExposes(realm_builder, exposes);
-    realm_.emplace(realm_builder.Build(dispatcher()));
-
-    // Start DriverTestRealm.
-    zx::result result = realm_->component().Connect<fuchsia_driver_test::Realm>();
-    ASSERT_EQ(result.status_value(), ZX_OK);
-    fidl::SyncClient<fuchsia_driver_test::Realm> driver_test_realm(std::move(result.value()));
-    fidl::Result start_result = driver_test_realm->Start(fuchsia_driver_test::RealmArgs{
-        {.root_driver = "fuchsia-boot:///dtr#meta/test_root.cm", .dtr_exposes = exposes}});
-    ASSERT_TRUE(start_result.is_ok()) << start_result.error_value();
+    // Create and build the realm.
+    auto realm_builder = component_testing::RealmBuilder::Create();
+    driver_test_realm::Setup(realm_builder, loop_.dispatcher(),
+                             driver_test_realm::OptionsBuilder().driver_exposes(exposes).Build(),
+                             fuchsia_driver_test::RealmArgs{{.root_driver = "#meta/test_root.cm"}});
+    realm_.emplace(realm_builder.Build(loop_.dispatcher()));
+    auto boot_result = driver_test_realm::WaitForBootup(*realm_);
+    ASSERT_EQ(ZX_OK, boot_result.status_value());
 
     // Connect to root service.
     component::SyncServiceMemberWatcher<fuchsia_hardware_test::RootService::Device> watcher(
@@ -57,6 +53,8 @@ class MetadataTest : public gtest::TestLoopFixture {
     ASSERT_OK(sender);
     root_.Bind(std::move(sender.value()));
   }
+
+  void TearDown() override { driver_test_realm::ShutdownRealm(*realm_); }
 
  protected:
   // |expose| determines if the sender driver will expose the metadata
@@ -107,6 +105,7 @@ class MetadataTest : public gtest::TestLoopFixture {
         realm_->component().exposed().unowned_channel()->get());
   }
 
+  async::Loop loop_{&kAsyncLoopConfigNeverAttachToThread};
   std::optional<component_testing::RealmRoot> realm_;
   fidl::SyncClient<fuchsia_hardware_test::Root> root_;
 };
