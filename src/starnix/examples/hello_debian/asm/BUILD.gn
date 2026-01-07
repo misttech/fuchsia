@@ -11,7 +11,7 @@ starnix_linux_arch32_executable("bin32") {
   asmflags = [ "-fPIC" ]
   sources = [ "hello_debian32.S" ]
   ldflags = [
-    "-static",
+    "-static-pie",
     "-nostdlib",
   ]
 
@@ -27,7 +27,7 @@ starnix_linux_executable("bin") {
   asmflags = [ "-fPIC" ]
   sources = [ "hello_debian.S" ]
   ldflags = [
-    "-static",
+    "-static-pie",
     "-nostdlib",
   ]
 

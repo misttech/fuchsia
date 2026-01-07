@@ -382,7 +382,7 @@ if (is_linux) {
     ldflags = [
       "-nostdlib",
       "-nostartfiles",
-      "-static",
+      "-static-pie",
     ]
 
     configs -= [

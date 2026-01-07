@@ -305,11 +305,7 @@ fn load_elf(
             }
         }
         Ok(elf_parse::ElfType::Executable) => {
-            if get_arch_width(&headers).is_arch32() {
-                mm.base_addr.ptr()
-            } else {
-                elf_info.low
-            }
+            elf_info.low
         }
         _ => return error!(EINVAL),
     };
