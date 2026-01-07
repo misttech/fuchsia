@@ -79,7 +79,11 @@ template("idk_subbuilds") {
   all_subbuild_targets = [ invoker.sdk_collection_label ]
 
   # First, define subbuild targets for the default API level.
-  foreach(target_cpu, _target_cpus) {
+  # Do not define a subbuild for the current CPU because we can use the
+  # artifacts from the main build. The collection in the main build has been
+  # added to `all_subbuild_targets` above.
+  # The current CPU must be in `target_cpus`.
+  foreach(target_cpu, _target_cpus - [ current_cpu ]) {
     _subbuild_target = "${main_target_name}-${target_cpu}"
     _subbuild_dir_name = "${subbuild_prefix}-${target_cpu}"
 
