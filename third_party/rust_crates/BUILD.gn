@@ -6864,6 +6864,35 @@ rustc_library("foldhash-v0_1_5") {
   applicable_licenses = [ ":foldhash-v0_1_5.license" ]
 }
 
+license("foldhash-v0_2_0.license") {
+  public_package_name = "foldhash"
+  license_files = [ "//third_party/rust_crates/vendor/foldhash-0.2.0/LICENSE" ]
+}
+
+rustc_library("foldhash-v0_2_0") {
+  crate_name = "foldhash"
+  source_root = "//third_party/rust_crates/vendor/foldhash-0.2.0/src/lib.rs"
+  output_name = "foldhash-915037b079597dc"
+  edition = "2021"
+  disable_clippy = true
+  enforce_source_listing = false
+  configs -= [ "//build/config/rust:2018_idioms" ]
+
+  deps = []
+
+  rustenv = []
+
+  rustflags = [
+    "--cap-lints=allow",
+    "-Cmetadata=915037b079597dc",
+    "-Cextra-filename=-915037b079597dc",
+  ]
+
+  visibility = [ ":*" ]
+
+  applicable_licenses = [ ":foldhash-v0_2_0.license" ]
+}
+
 license("foreign-types-v0_3_2.license") {
   public_package_name = "foreign_types"
   license_files = [
@@ -8080,6 +8109,11 @@ rustc_library("hashbrown-v0_16_1") {
   configs -= [ "//build/config/rust:2018_idioms" ]
 
   deps = []
+  deps += [ ":foldhash-v0_2_0" ]
+  deps += [ ":serde_core-v1_0_228" ]
+  if (true) {
+    deps += [ ":serde-v1_0_228" ]
+  }
 
   rustenv = []
 
@@ -8087,6 +8121,8 @@ rustc_library("hashbrown-v0_16_1") {
     "--cap-lints=allow",
     "-Cmetadata=cd7a074e7a5f21d9",
     "-Cextra-filename=-cd7a074e7a5f21d9",
+    "--cfg=feature=\"default-hasher\"",
+    "--cfg=feature=\"serde\"",
   ]
 
   visibility = [ ":*" ]

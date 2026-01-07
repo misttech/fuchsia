@@ -130,7 +130,7 @@ glob = "0.3.2"
 gpt = "3.0.0"
 half = "2.6.0"
 handlebars = "4.3.5"
-hashbrown = { version = "0.16.1", default-features = false }
+hashbrown = { version = "0.16.1", default-features = false, features = ["serde", "default-hasher"] }
 hashlink = "0.10.0"
 heck-0_3 = { package = "heck", version = "0.3.1" }
 heck-0_5 = { package = "heck", version = "0.5" }
