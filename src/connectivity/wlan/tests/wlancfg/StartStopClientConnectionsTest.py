@@ -45,7 +45,7 @@ class StartStopClientConnectionsTest(
         access_points = self.register_controller(
             access_point, required=True, min_number=1
         )
-        if access_points is None or len(self.fuchsia_devices) < 1:
+        if not access_points:
             raise EnvironmentError("No access points found.")
         assert len(access_points) == 1
 
