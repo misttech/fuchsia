@@ -1,13 +1,12 @@
 // Copyright 2023 The Fuchsia Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
-@available(added=18)
+@available(added=HEAD)
 library fuchsia.hardware.trippoint;
 
 using fuchsia.hardware.temperature;
 using zx;
 
-@available(added=18)
 @serializable
 type TripDeviceMetadata = struct {
     /// Critical temperature in degrees Celsius.
@@ -15,7 +14,6 @@ type TripDeviceMetadata = struct {
 };
 
 /// Denotes the type of a particular trip point.
-@available(added=18)
 type TripPointType = flexible enum : uint16 {
     /// This type of trip point is denoted by a critical temperature at which
     /// the trip point triggers and a direction. Once the trip point fires it is
@@ -25,7 +23,6 @@ type TripPointType = flexible enum : uint16 {
 };
 
 /// A union that defines all the possible types of trip points.
-@available(added=18)
 type TripPointValue = flexible union {
     /// This is a special reserved type of trip point that can be used by
     /// clients to clear previously configured trip point.
@@ -35,7 +32,6 @@ type TripPointValue = flexible union {
     3: oneshot_temp_below_trip_point OneshotTempBelowTripPoint;
 };
 
-@available(added=18)
 type TripPointResult = struct {
     /// The temperature measured by the sensor. NaN if a measurement was not
     /// performed.
@@ -47,24 +43,20 @@ type TripPointResult = struct {
 
 
 // A special reserved type used to clear configured trip points.
-@available(added=18)
 type ClearedTripPoint = struct {};
 
 /// See the comment in TripPointType for more information.
-@available(added=18)
 type OneshotTempAboveTripPoint = struct {
     /// The temperature at which the trip point activates.
     critical_temperature_celsius float32;
 };
 
-@available(added=18)
 type OneshotTempBelowTripPoint = struct {
     /// The temperature at which the trip point activates.
     critical_temperature_celsius float32;
 };
 
 
-@available(added=18)
 type TripPointDescriptor = struct {
     /// The type of this trip point as defined by the hardware.
     type TripPointType;
@@ -87,7 +79,6 @@ type TripPointDescriptor = struct {
 /// that it is busy.
 /// The server _may_ allow multiple clients to access the
 //// fuchsia.hardware.temperature protocol.
-@available(added=18)
 open protocol TripPoint {
     /// Returns N descriptors. Each descriptor describes one trip point
     /// supported by the hardware.
