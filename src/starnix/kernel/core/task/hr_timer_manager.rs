@@ -11,6 +11,7 @@ use crate::task::{CurrentTask, Kernel, LockedAndTask, TargetTime};
 use crate::vfs::timer::{TimelineChangeObserver, TimerOps};
 use anyhow::{Context, Result};
 use fuchsia_inspect::ArrayProperty;
+use fuchsia_runtime::UtcClock;
 use futures::channel::mpsc::{self, UnboundedReceiver, UnboundedSender};
 use futures::{FutureExt, SinkExt, StreamExt, select};
 use scopeguard::defer;
@@ -368,9 +369,24 @@ enum Cmd {
 // has been signaled, so does not fulfill (1). Atomics don't generate a signal on increment, so
 // don't satisfy (2). Conversely, the `wait_async` machinery on timers can already deal with
 // HandleBased objects, so a Counter can be readily used there.
-async fn run_utc_timeline_monitor(counter: zx::Counter, mut recv: mpsc::UnboundedReceiver<bool>) {
+async fn run_utc_timeline_monitor(counter: zx::Counter, recv: mpsc::UnboundedReceiver<bool>) {
+    run_utc_timeline_monitor_internal(
+        counter,
+        recv,
+        crate::time::utc::duplicate_real_utc_clock_handle,
+    )
+    .await;
+}
+
+// See `run_utc_timeline_monitor`.
+// `utc_handle_fn` is useful for injecting in tests.
+async fn run_utc_timeline_monitor_internal(
+    counter: zx::Counter,
+    mut recv: mpsc::UnboundedReceiver<bool>,
+    utc_handle_fn: fn() -> Result<UtcClock, zx::Status>,
+) {
     log_debug!("run_utc_timeline_monitor: monitoring UTC clock timeline changes: enter");
-    let utc_handle = crate::time::utc::duplicate_real_utc_clock_handle().inspect_err(|err| {
+    let utc_handle = utc_handle_fn().inspect_err(|err| {
         log_error!("run_utc_timeline_monitor: could not monitor UTC timeline: {err:?}")
     });
     if let Ok(utc_handle) = utc_handle {
@@ -388,6 +404,9 @@ async fn run_utc_timeline_monitor(counter: zx::Counter, mut recv: mpsc::Unbounde
                 fasync::OnSignals::new(utc_handle.as_handle_ref(), zx::Signals::CLOCK_UPDATED)
                     .fuse();
             let mut interest_fut = recv.next();
+
+            // Note: all select! branches must allow for exit when their respective futures are
+            // used up.
             select! {
                 result = updated_fut => {
                     if result.is_err() {
@@ -409,9 +428,15 @@ async fn run_utc_timeline_monitor(counter: zx::Counter, mut recv: mpsc::Unbounde
                     }
                 },
                 result = interest_fut => {
-                    if let Some(interest) = result {
-                        log_debug!("interest change: {counter:?}, interest: {interest:?}");
-                        interested = interest;
+                    match result {
+                        Some(interest) => {
+                            log_debug!("interest change: {counter:?}, interest: {interest:?}");
+                            interested = interest;
+                        }
+                        None => {
+                            log_debug!("no longer needs counter monitoring: {counter:?}");
+                            break;
+                        }
                     }
                 },
             };
@@ -1219,9 +1244,19 @@ mod tests {
     use crate::task::HrTimer;
     use crate::testing::spawn_kernel_and_run;
     use fake_wake_alarms::{MAGIC_EXPIRE_DEADLINE, Response, serve_fake_wake_alarms};
-    use fuchsia_runtime::UtcInstant;
+    use fuchsia_runtime::{UtcClockUpdate, UtcInstant};
+    use std::sync::LazyLock;
     use std::thread;
     use {fidl_fuchsia_time_alarms as fta, fuchsia_async as fasync};
+
+    static CLOCK_OPTS: LazyLock<zx::ClockOpts> = LazyLock::new(zx::ClockOpts::empty);
+    const BACKSTOP_TIME: UtcInstant = UtcInstant::from_nanos(/*arbitrary*/ 222222);
+
+    fn create_utc_clock_for_test() -> UtcClock {
+        let clock = UtcClock::create(*CLOCK_OPTS, Some(BACKSTOP_TIME)).unwrap();
+        clock.update(UtcClockUpdate::builder().approximate_value(BACKSTOP_TIME)).unwrap();
+        clock
+    }
 
     impl HrTimerManagerState {
         fn new_for_test() -> Self {
@@ -1479,5 +1514,17 @@ mod tests {
             );
         })
         .await;
+    }
+
+    #[fuchsia::test]
+    async fn utc_timeline_monitor_exits_on_interest_drop() {
+        let counter = zx::Counter::create();
+        let utc_clock_fn = || Ok(create_utc_clock_for_test());
+        let (tx, rx) = mpsc::unbounded();
+
+        drop(tx);
+        // Expect that this call returns, when tx no longer exists. Incorrect
+        // handling of tx closure could cause it to hang otherwise.
+        run_utc_timeline_monitor_internal(counter, rx, utc_clock_fn).await;
     }
 }
