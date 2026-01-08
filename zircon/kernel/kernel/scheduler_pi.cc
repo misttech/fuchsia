@@ -386,10 +386,10 @@ class JoinNodeToPiGraphOp
 
     // Verify the start/finish times of the upstream node have the required
     // relationship.
-    // TODO(https://fxbug.dev/439598192): Start time == finish time when
-    // blocking.
+    // TODO(https://fxbug.dev/448121736): Start time == finish time.
     DEBUG_ASSERT_MSG(GetStartTime(upstream_) < GetFinishTime(upstream_),
-                     "start_time=%" PRId64 " finish_time=%" PRId64 " deadline_ns=%" PRId64,
+                     "upstream_ep: start_time=%" PRId64 " finish_time=%" PRId64
+                     " deadline_ns=%" PRId64,
                      GetStartTime(upstream_).raw_value(), GetFinishTime(upstream_).raw_value(),
                      upstream_ep().deadline().deadline_ns.raw_value());
 
@@ -416,10 +416,10 @@ class JoinNodeToPiGraphOp
 
       // Verify the start/finish times of the target node have the required
       // relationship.
-      // TODO(https://fxbug.dev/439598192): Start time == finish time when
-      // blocking.
+      // TODO(https://fxbug.dev/448121736): Start time == finish time.
       DEBUG_ASSERT_MSG(GetStartTime(target_) < GetFinishTime(target_),
-                       "start_time=%" PRId64 " finish_time=%" PRId64 " deadline_ns=%" PRId64,
+                       "target_new_ep: start_time=%" PRId64 " finish_time=%" PRId64
+                       " deadline_ns=%" PRId64,
                        GetStartTime(target_).raw_value(), GetFinishTime(target_).raw_value(),
                        target_new_ep.deadline().deadline_ns.raw_value());
 
@@ -520,6 +520,15 @@ class SplitNodeFromPiGraphOp
                        target_old_ep.deadline().deadline_ns.raw_value(),
                        upstream_ep().deadline().deadline_ns.raw_value());
 
+      // Verify the start/finish times of the target node have the required
+      // relationship.
+      // TODO(https://fxbug.dev/448121736): Start time == finish time.
+      DEBUG_ASSERT_MSG(GetStartTime(target_) < GetFinishTime(target_),
+                       "target_old_ep: start_time=%" PRId64 " finish_time=%" PRId64
+                       " deadline_ns=%" PRId64,
+                       GetStartTime(target_).raw_value(), GetFinishTime(target_).raw_value(),
+                       target_old_ep.deadline().deadline_ns.raw_value());
+
       // Give the dynamic deadline parameters over to the upstream_ node.
       GetStartTime(upstream_) = GetStartTime(target_);
       GetFinishTime(upstream_) = GetFinishTime(target_);
@@ -583,6 +592,15 @@ class SplitNodeFromPiGraphOp
         // absolute deadline and the start time is equal to the new relative
         // deadline of the target_.
         GetStartTime(target_) = GetFinishTime(target_) - target_new_ep.deadline().deadline_ns;
+
+        // Verify the start/finish times of the target node have the required
+        // relationship.
+        // TODO(https://fxbug.dev/448121736): Start time == finish time.
+        DEBUG_ASSERT_MSG(GetStartTime(target_) < GetFinishTime(target_),
+                         "target_new_ep: start_time=%" PRId64 " finish_time=%" PRId64
+                         " deadline_ns=%" PRId64,
+                         GetStartTime(target_).raw_value(), GetFinishTime(target_).raw_value(),
+                         target_new_ep.deadline().deadline_ns.raw_value());
 
         // The time till absolute deadline of the pre and post split target_
         // remains the same, so the ttad contributions to the timeslice
