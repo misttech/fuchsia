@@ -3,6 +3,7 @@
 // found in the LICENSE file.
 
 use netstack3_sync::rc::ResourceToken;
+use static_assertions::const_assert_eq;
 
 /// Socket cookie is a unique 64-bit value assigned to a socket.
 ///
@@ -12,6 +13,12 @@ use netstack3_sync::rc::ResourceToken;
 pub struct SocketCookie {
     token: ResourceToken<'static>,
 }
+
+const_assert_eq!(core::mem::size_of::<SocketCookie>(), 8);
+
+// `SocketCookie` is always non-zero, so `Option<SocketCookie>` should fit in
+// 8 bytes.
+const_assert_eq!(core::mem::size_of::<Option<SocketCookie>>(), 8);
 
 impl SocketCookie {
     /// Creates a new cookie from the socket's `ResourceToken`.

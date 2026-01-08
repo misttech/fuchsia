@@ -124,6 +124,7 @@ mod resource_token {
     use core::fmt::Debug;
     use core::sync::atomic::{AtomicU64, Ordering};
     use std::marker::PhantomData;
+    use std::num::NonZeroU64;
 
     /// An opaque token associated with a resource.
     ///
@@ -134,9 +135,13 @@ mod resource_token {
     /// By default the lifetime of a token is bound the resource that token
     /// belongs to, but it can be extended by calling
     /// [`ResourceToken::extend_lifetime`].
+    ///
+    /// Internally the value is stored as `NonZeroU64`. This is an optimization
+    /// to save memory when the value is wrapped in `Option` (it allows the
+    /// compiler to fit `Option<ResourceToken>` in 8 bytes).
     #[cfg_attr(any(test, feature = "testutils"), derive(PartialEq, Eq, PartialOrd, Ord))]
     pub struct ResourceToken<'a> {
-        value: u64,
+        value: NonZeroU64,
         _marker: PhantomData<&'a ()>,
     }
 
@@ -163,7 +168,7 @@ mod resource_token {
         ///
         /// Refrain from using the returned value within the netstack otherwise.
         pub fn export_value(self) -> u64 {
-            self.value
+            self.value.get()
         }
     }
 
@@ -177,7 +182,7 @@ mod resource_token {
     /// with the same value and the lifetime bound to the lifetime of the holder.
     ///
     /// The [`Default`] implementation generates a new unique value.
-    pub struct ResourceTokenValue(u64);
+    pub struct ResourceTokenValue(NonZeroU64);
 
     impl ResourceTokenValue {
         /// Creates a new token.
@@ -196,13 +201,13 @@ mod resource_token {
 
     impl Default for ResourceTokenValue {
         fn default() -> Self {
-            static NEXT_TOKEN: AtomicU64 = AtomicU64::new(0);
+            static NEXT_TOKEN: AtomicU64 = AtomicU64::new(1);
             // NB: Fetch add will cause the counter to rollback to 0 if we
             // happen to exceed `u64::MAX` instantiations. In practice, that's
             // an impossibility (at 1 billion instantiations per second, the
             // counter is valid for > 500 years). Spare the CPU cycles and don't
-            // bother attempting to detect/handle overflow.
-            Self(NEXT_TOKEN.fetch_add(1, Ordering::Relaxed))
+            // bother attempting to handle overflow.
+            Self(NonZeroU64::new(NEXT_TOKEN.fetch_add(1, Ordering::Relaxed)).unwrap())
         }
     }
 }
