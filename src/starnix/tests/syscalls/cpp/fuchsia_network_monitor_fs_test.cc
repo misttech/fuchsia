@@ -296,6 +296,32 @@ TEST_F(NmfsTest, NmfsCoreNetworkFileWriteFailure) {
                          "All fields must be provided in JSON, missing dnsv6");
 }
 
+TEST_F(NmfsTest, NmfsV2NetworkFileWriteFailure) {
+  ExpectFileWriteFailure("/tmp/fuchsia_network_monitor/1",
+                         R"({
+    "version": "V2",
+    "netid": 1,
+    "mark": 56,
+    "handle": 78,
+    "dnsv4": [],
+    "dnsv6": [],
+    "transports": 0
+})",
+                         "Transport list must be provided in an array");
+
+  // All fields must be provided.
+  ExpectFileWriteFailure("/tmp/fuchsia_network_monitor/1",
+                         R"({
+    "version": "V2",
+    "netid": 1,
+    "mark": 56,
+    "handle": 78,
+    "dnsv4": [],
+    "dnsv6": []
+})",
+                         "All fields must be provided in JSON, missing transports");
+}
+
 TEST_F(NmfsTest, NmfsCannotCreateDir) {
   EXPECT_FALSE(files::CreateDirectory("/tmp/fuchsia_network_monitor/2"));
 }
@@ -394,4 +420,24 @@ TEST_F(NmfsTest, NmfsDefaultNetworkFile) {
       << "The default network id must be removable";
   EXPECT_TRUE(files::DeletePath("/tmp/fuchsia_network_monitor/6", /*recursive=*/false))
       << "The default network id must be removable now that it is not the default";
+}
+
+TEST_F(NmfsTest, NmfsV2NetworkFileWriteSuccessTransportList) {
+  EXPECT_TRUE(files::WriteFile("/tmp/fuchsia_network_monitor/7",
+                               R"({
+    "version": "V2",
+    "netid": 7,
+    "mark": 56,
+    "handle": 78,
+    "dnsv4": [],
+    "dnsv6": [],
+    "transports": [0, 1, 2, 3]
+  })"))
+      << "All JSON fields must be provided with proper formatting";
+  // File output should be able to be rewritten to the file without formatting changes.
+  std::string network_info;
+  EXPECT_TRUE(files::ReadFileToString("/tmp/fuchsia_network_monitor/7", &network_info))
+      << "Network file should be readable";
+  EXPECT_TRUE(files::WriteFile("/tmp/fuchsia_network_monitor/7", network_info))
+      << "Contents from read should be writeable to the same file";
 }

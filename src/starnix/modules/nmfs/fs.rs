@@ -8,6 +8,7 @@
 
 use crate::NetworkManager;
 use serde::{Deserialize, Serialize};
+use serde_repr::{Deserialize_repr, Serialize_repr};
 use starnix_core::task::{CurrentTask, Kernel};
 use starnix_core::vfs::fs_args::parse;
 use starnix_core::vfs::pseudo::simple_file::{BytesFile, BytesFileOps};
@@ -15,6 +16,7 @@ use starnix_core::vfs::{
     CacheMode, FileOps, FileSystem, FileSystemHandle, FileSystemOps, FileSystemOptions, FsNode,
     FsNodeHandle, FsNodeInfo, FsNodeOps, FsStr, MemoryDirectoryFile,
 };
+use starnix_logging::log_error;
 use starnix_sync::{FileOpsCore, LockEqualOrBefore, Locked, Unlocked};
 use starnix_types::vfs::default_statfs;
 use starnix_uapi::auth::FsCred;
@@ -40,16 +42,31 @@ pub(crate) struct NetworkMessage {
     pub(crate) dnsv4: Vec<Ipv4Addr>,
     #[serde(with = "addr_list")]
     pub(crate) dnsv6: Vec<Ipv6Addr>,
-
     #[serde(flatten)]
     pub(crate) versioned_properties: VersionedProperties,
 }
 
-#[derive(Clone, Copy, Debug, Default, Deserialize, PartialEq, Serialize)]
+#[derive(Clone, Copy, Debug, Deserialize_repr, PartialEq, Serialize_repr)]
+#[repr(u8)]
+pub(crate) enum TransportType {
+    Cellular = 0,
+    Wifi = 1,
+    Bluetooth = 2,
+    Ethernet = 3,
+    Vpn = 4,
+    WifiAware = 5,
+    Lowpan = 6,
+}
+
+#[derive(Clone, Debug, Default, Deserialize, PartialEq, Serialize)]
 #[serde(tag = "version")]
 pub(crate) enum VersionedProperties {
     #[default]
     V1,
+    V2 {
+        #[serde(with = "transport_list")]
+        transports: Vec<TransportType>,
+    },
 }
 
 pub struct FuchsiaNetworkMonitorFs;
@@ -235,7 +252,10 @@ impl NetworkFile {
 
 impl BytesFileOps for NetworkFile {
     fn write(&self, current_task: &CurrentTask, data: Vec<u8>) -> Result<(), Errno> {
-        let network: NetworkMessage = serde_json::from_slice(&data).map_err(|_| errno!(EINVAL))?;
+        let network: NetworkMessage = serde_json::from_slice(&data).map_err(|e| {
+            log_error!("failed to deserialize network message: {}", e);
+            errno!(EINVAL)
+        })?;
 
         let new_netid = network.netid;
 
@@ -362,5 +382,114 @@ mod addr_list {
     {
         let s = Vec::<String>::deserialize(deserializer)?;
         s.into_iter().map(|s| s.parse().map_err(de::Error::custom)).collect()
+    }
+}
+
+mod transport_list {
+    use super::TransportType;
+    use serde::{Deserialize, Deserializer, Serialize, Serializer};
+    use starnix_logging::log_error;
+
+    pub fn serialize<S>(transports: &Vec<TransportType>, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        let nums = transports.iter().map(|transport| *transport as u8).collect::<Vec<_>>();
+        nums.serialize(serializer)
+    }
+
+    pub fn deserialize<'de, D>(deserializer: D) -> Result<Vec<TransportType>, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        let numbers = Vec::<serde_json::Value>::deserialize(deserializer)?;
+        let transports = numbers
+            .into_iter()
+            .filter_map(|v| match serde_json::from_value::<TransportType>(v.clone()) {
+                Ok(t) => Some(t),
+                Err(_) => {
+                    log_error!("unknown transport type value: {}", v);
+                    None
+                }
+            })
+            .collect();
+        Ok(transports)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use net_declare::{std_ip_v4, std_ip_v6};
+
+    #[::fuchsia::test]
+    fn network_message_serde() {
+        let network = NetworkMessage {
+            netid: 123,
+            mark: 456,
+            handle: 789,
+            dnsv4: vec![std_ip_v4!("192.168.0.1")],
+            dnsv6: vec![std_ip_v6!("2001:db8::1")],
+            versioned_properties: VersionedProperties::V1,
+        };
+        serde_helper(network);
+    }
+
+    #[::fuchsia::test]
+    fn network_message_serde_version2() {
+        let network = NetworkMessage {
+            netid: 123,
+            mark: 456,
+            handle: 789,
+            dnsv4: vec![std_ip_v4!("192.168.0.1")],
+            dnsv6: vec![std_ip_v6!("2001:db8::1")],
+            versioned_properties: VersionedProperties::V2 {
+                transports: vec![
+                    TransportType::Cellular,
+                    TransportType::Wifi,
+                    TransportType::Bluetooth,
+                    TransportType::Ethernet,
+                    TransportType::Vpn,
+                    TransportType::WifiAware,
+                    TransportType::Lowpan,
+                ],
+            },
+        };
+        serde_helper(network);
+    }
+
+    #[::fuchsia::test]
+    fn network_message_serde_unknown_transport() {
+        let json = r#"{
+            "netid": 123,
+            "mark": 456,
+            "handle": 789,
+            "dnsv4": ["192.168.0.1"],
+            "dnsv6": ["2001:db8::1"],
+            "version": "V2",
+            "transports": [1, 99, 3]
+        }"#;
+
+        let expected = NetworkMessage {
+            netid: 123,
+            mark: 456,
+            handle: 789,
+            dnsv4: vec![std_ip_v4!("192.168.0.1")],
+            dnsv6: vec![std_ip_v6!("2001:db8::1")],
+            versioned_properties: VersionedProperties::V2 {
+                transports: vec![TransportType::Wifi, TransportType::Ethernet],
+            },
+        };
+
+        let deserialized: NetworkMessage = serde_json::from_str(json).unwrap();
+        assert_eq!(expected, deserialized);
+    }
+
+    // Ensure that a provided NetworkMessage can be serialized and
+    // deserialized into the original form.
+    fn serde_helper(network: NetworkMessage) {
+        let serialized = serde_json::to_string(&network).unwrap_or_else(|_| "{}".to_string());
+        let deserialized = serde_json::from_str(&serialized).unwrap();
+        assert_eq!(network, deserialized);
     }
 }

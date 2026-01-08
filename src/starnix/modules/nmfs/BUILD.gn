@@ -49,10 +49,12 @@ rustc_library("nmfs") {
     "//third_party/rust_crates:bstr",
     "//third_party/rust_crates:serde",
     "//third_party/rust_crates:serde_json",
+    "//third_party/rust_crates:serde_repr",
     "//third_party/rust_crates:thiserror",
   ]
 
   test_deps = [
+    "//src/connectivity/lib/net-declare",
     "//src/lib/diagnostics/testing/diagnostics-assertions/rust:diagnostics-assertions",
     "//src/lib/fuchsia",
     "//src/lib/fuchsia-async",
