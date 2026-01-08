@@ -35,15 +35,15 @@ ResourceRenewer::~ResourceRenewer() { FX_DCHECK(entries_.size() == schedule_.siz
 void ResourceRenewer::Renew(const DnsResource& resource, Media media, IpVersions ip_versions) {
   FX_DCHECK(resource.time_to_live_ != 0);
 
-  Query(resource.type_, resource.name_.dotted_string_, media, ip_versions,
+  Query(resource.type_, resource.name_, media, ip_versions,
         now() + zx::msec(resource.time_to_live_ * kFirstQueryPerThousand),
         zx::msec(resource.time_to_live_ * kQueryIntervalPerThousand), 1, kQueriesToAttempt);
 }
 
-void ResourceRenewer::Query(DnsType type, const std::string& name, Media media,
-                            IpVersions ip_versions, zx::time initial_query_time,
-                            zx::duration interval, uint32_t interval_multiplier,
-                            uint32_t max_queries, bool request_unicast_response) {
+void ResourceRenewer::Query(DnsType type, const DnsName& name, Media media, IpVersions ip_versions,
+                            zx::time initial_query_time, zx::duration interval,
+                            uint32_t interval_multiplier, uint32_t max_queries,
+                            bool request_unicast_response) {
   auto entry = std::make_unique<Entry>(name, type, media, ip_versions, request_unicast_response);
   auto iter = entries_.find(entry);
 
@@ -70,7 +70,7 @@ void ResourceRenewer::ReceiveResource(const DnsResource& resource, MdnsResourceS
   FX_DCHECK(section != MdnsResourceSection::kExpired);
 
   // |key| is just used as a key, so media and ip_versions are irrelevant.
-  auto key = std::make_unique<Entry>(resource.name_.dotted_string_, resource.type_, Media::kBoth,
+  auto key = std::make_unique<Entry>(resource.name_, resource.type_, Media::kBoth,
                                      IpVersions::kBoth, false);
   auto iter = entries_.find(key);
   if (iter != entries_.end()) {

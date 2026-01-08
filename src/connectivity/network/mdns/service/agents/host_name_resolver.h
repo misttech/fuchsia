@@ -21,21 +21,21 @@ namespace mdns {
 class HostNameResolver : public MdnsAgent {
  public:
   // Creates a |HostNameResolver|.
-  HostNameResolver(MdnsAgent::Owner* owner, const std::string& host_name, Media media,
+  HostNameResolver(MdnsAgent::Owner* owner, const DnsName& host_name, Media media,
                    IpVersions ip_versions, bool include_local, bool include_local_proxies,
                    zx::duration timeout, Mdns::ResolveHostNameCallback callback);
 
   ~HostNameResolver() override;
 
   // MdnsAgent overrides.
-  void Start(const std::string& local_host_full_name) override;
+  void Start(const DnsName& local_host_full_name) override;
 
   void ReceiveResource(const DnsResource& resource, MdnsResourceSection section,
                        ReplyAddress sender_address) override;
 
   void EndOfMessage() override;
 
-  void OnAddProxyHost(const std::string& host_full_name,
+  void OnAddProxyHost(const DnsName& host_full_name,
                       const std::vector<HostAddress>& addresses) override;
 
   void Quit() override;
@@ -49,8 +49,8 @@ class HostNameResolver : public MdnsAgent {
 
   void InvokeCallbackAndRemoveSelf();
 
-  std::string host_name_;
-  std::string host_full_name_;
+  DnsName host_name_;
+  DnsName host_full_name_;
   Media media_;
   IpVersions ip_versions_;
   bool include_local_;

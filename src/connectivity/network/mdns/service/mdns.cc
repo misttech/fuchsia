@@ -11,7 +11,6 @@
 #include <lib/zx/time.h>
 
 #include <iostream>
-#include <limits>
 #include <unordered_set>
 
 #include "src/connectivity/network/mdns/service/agents/address_prober.h"
@@ -43,8 +42,8 @@ void Mdns::SetVerbose(bool verbose) {
 }
 
 void Mdns::Start(fuchsia::net::interfaces::WatcherPtr interfaces_watcher,
-                 const std::string& local_host_name, bool perform_address_probe,
-                 fit::closure ready_callback, std::vector<std::string> alt_services) {
+                 const DnsName& local_host_name, bool perform_address_probe,
+                 fit::closure ready_callback, std::vector<DnsName> alt_services) {
   FX_DCHECK(!local_host_name.empty());
   FX_DCHECK(ready_callback);
   FX_DCHECK(state_ == State::kNotStarted);
@@ -154,7 +153,7 @@ void Mdns::Stop() {
   inspector.NotifyStateChange(MdnsInspector::kNotStarted);
 }
 
-void Mdns::ResolveHostName(const std::string& host_name, zx::duration timeout, Media media,
+void Mdns::ResolveHostName(const DnsName& host_name, zx::duration timeout, Media media,
                            IpVersions ip_versions, bool include_local, bool include_local_proxies,
                            ResolveHostNameCallback callback) {
   FX_DCHECK(MdnsNames::IsValidHostName(host_name));
@@ -167,7 +166,7 @@ void Mdns::ResolveHostName(const std::string& host_name, zx::duration timeout, M
   AddAgent(agent);
 }
 
-void Mdns::SubscribeToHostName(const std::string& host_name, Media media, IpVersions ip_versions,
+void Mdns::SubscribeToHostName(const DnsName& host_name, Media media, IpVersions ip_versions,
                                bool include_local, bool include_local_proxies,
                                HostNameSubscriber* subscriber) {
   FX_DCHECK(MdnsNames::IsValidHostName(host_name));
@@ -197,7 +196,7 @@ void Mdns::SubscribeToHostName(const std::string& host_name, Media media, IpVers
   }
 }
 
-void Mdns::ResolveServiceInstance(const std::string& service, const std::string& instance,
+void Mdns::ResolveServiceInstance(const DnsName& service, const DnsLabel& instance,
                                   zx::time timeout, Media media, IpVersions ip_versions,
                                   bool include_local, bool include_local_proxies,
                                   ResolveServiceInstanceCallback callback) {
@@ -211,7 +210,7 @@ void Mdns::ResolveServiceInstance(const std::string& service, const std::string&
                                                      include_local_proxies, std::move(callback)));
 }
 
-void Mdns::SubscribeToService(const std::string& service_name, Media media, IpVersions ip_versions,
+void Mdns::SubscribeToService(const DnsName& service_name, Media media, IpVersions ip_versions,
                               bool include_local, bool include_local_proxies,
                               Subscriber* subscriber) {
   FX_DCHECK(MdnsNames::IsValidServiceName(service_name));
@@ -248,7 +247,7 @@ void Mdns::SubscribeToAllServices(Media media, IpVersions ip_versions, bool incl
   FX_DCHECK(state_ == State::kActive);
 
   std::shared_ptr<InstanceRequestor> agent;
-  RequestorKey key("", media, ip_versions);
+  RequestorKey key(DnsName(), media, ip_versions);
 
   auto iter = instance_requestors_by_key_.find(key);
   if (iter == instance_requestors_by_key_.end()) {
@@ -271,8 +270,8 @@ void Mdns::SubscribeToAllServices(Media media, IpVersions ip_versions, bool incl
   }
 }
 
-bool Mdns::PublishServiceInstance(std::string host_name, std::vector<inet::IpAddress> addresses,
-                                  std::string service_name, std::string instance_name, Media media,
+bool Mdns::PublishServiceInstance(DnsName host_name, std::vector<inet::IpAddress> addresses,
+                                  DnsName service_name, DnsLabel instance_name, Media media,
                                   IpVersions ip_versions, bool perform_probe,
                                   Publisher* publisher) {
   FX_DCHECK(host_name.empty() == addresses.empty());
@@ -282,7 +281,7 @@ bool Mdns::PublishServiceInstance(std::string host_name, std::vector<inet::IpAdd
   FX_DCHECK(publisher);
   FX_DCHECK(state_ == State::kActive);
 
-  std::string instance_full_name = MdnsNames::InstanceFullName(instance_name, service_name);
+  DnsName instance_full_name = MdnsNames::InstanceFullName(instance_name, service_name);
 
   if (instance_responders_by_instance_full_name_.find(instance_full_name) !=
       instance_responders_by_instance_full_name_.end()) {
@@ -348,14 +347,14 @@ bool Mdns::PublishServiceInstance(std::string host_name, std::vector<inet::IpAdd
   return true;
 }
 
-bool Mdns::PublishHost(std::string host_name, std::vector<inet::IpAddress> addresses, Media media,
+bool Mdns::PublishHost(DnsName host_name, std::vector<inet::IpAddress> addresses, Media media,
                        IpVersions ip_versions, bool perform_probe, HostPublisher* publisher) {
   FX_DCHECK(MdnsNames::IsValidHostName(host_name));
   FX_DCHECK(!addresses.empty());
   FX_DCHECK(publisher);
   FX_DCHECK(state_ == State::kActive);
 
-  std::string host_full_name = MdnsNames::HostFullName(std::move(host_name));
+  DnsName host_full_name = MdnsNames::HostFullName(std::move(host_name));
 
   if (host_full_name == local_host_full_name_) {
     // Publication of the local host doesn't use this method (for now), so we check separately
@@ -410,7 +409,7 @@ bool Mdns::PublishHost(std::string host_name, std::vector<inet::IpAddress> addre
 
 void Mdns::LogTraffic() { transceiver_.LogTraffic(); }
 
-void Mdns::OnInterfacesStarted(const std::string& local_host_name, bool perform_address_probe) {
+void Mdns::OnInterfacesStarted(const DnsName& local_host_name, bool perform_address_probe) {
   if (perform_address_probe) {
     StartAddressProbe(local_host_name);
     return;
@@ -420,7 +419,7 @@ void Mdns::OnInterfacesStarted(const std::string& local_host_name, bool perform_
   OnReady();
 }
 
-void Mdns::StartAddressProbe(const std::string& local_host_name) {
+void Mdns::StartAddressProbe(const DnsName& local_host_name) {
   state_ = State::kAddressProbeInProgress;
   auto& inspector = MdnsInspector::GetMdnsInspector();
   inspector.NotifyStateChange(MdnsInspector::kAddressProbeInProgress);
@@ -450,7 +449,7 @@ void Mdns::StartAddressProbe(const std::string& local_host_name) {
   SendMessages();
 }
 
-void Mdns::RegisterLocalHostName(const std::string& local_host_name) {
+void Mdns::RegisterLocalHostName(const DnsName& local_host_name) {
   local_host_name_ = local_host_name;
   local_host_full_name_ = MdnsNames::HostFullName(local_host_name);
   address_placeholder_ = std::make_shared<DnsResource>(local_host_full_name_, DnsType::kA);
@@ -480,14 +479,14 @@ void Mdns::OnReady() {
   ready_callback_ = nullptr;
 }
 
-void Mdns::OnAddProxyHost(const std::string& host_full_name,
+void Mdns::OnAddProxyHost(const DnsName& host_full_name,
                           const std::vector<HostAddress>& addresses) {
   for (const auto& agent : agents_) {
     agent->OnAddProxyHost(host_full_name, addresses);
   }
 }
 
-void Mdns::OnRemoveProxyHost(const std::string& host_full_name) {
+void Mdns::OnRemoveProxyHost(const DnsName& host_full_name) {
   for (const auto& agent : agents_) {
     agent->OnRemoveProxyHost(host_full_name);
   }
@@ -505,8 +504,8 @@ void Mdns::OnChangeLocalServiceInstance(const ServiceInstance& service_instance,
   }
 }
 
-void Mdns::OnRemoveLocalServiceInstance(const std::string& service_name,
-                                        const std::string& instance_name, bool from_proxy) {
+void Mdns::OnRemoveLocalServiceInstance(const DnsName& service_name, const DnsLabel& instance_name,
+                                        bool from_proxy) {
   for (const auto& agent : agents_) {
     agent->OnRemoveLocalServiceInstance(service_name, instance_name, from_proxy);
   }
@@ -518,7 +517,7 @@ void Mdns::OnHostNameConflict() {
   os << original_local_host_name_ << next_local_host_name_deduplicator_;
   ++next_local_host_name_deduplicator_;
 
-  StartAddressProbe(os.str());
+  StartAddressProbe(DnsName(os.str()));
 }
 
 zx::time Mdns::now() { return zx::clock::get_monotonic(); }
@@ -564,7 +563,7 @@ void Mdns::Renew(const DnsResource& resource, Media media, IpVersions ip_version
   resource_renewer_->Renew(resource, media, ip_versions);
 }
 
-void Mdns::Query(DnsType type, const std::string& name, Media media, IpVersions ip_versions,
+void Mdns::Query(DnsType type, const DnsName& name, Media media, IpVersions ip_versions,
                  zx::time initial_query_time, zx::duration interval, uint32_t interval_multiplier,
                  uint32_t max_queries, bool request_unicast_response) {
   resource_renewer_->Query(type, name, media, ip_versions, initial_query_time, interval,
@@ -811,7 +810,7 @@ void Mdns::Subscriber::Unsubscribe() {
 
 Mdns::Publisher::~Publisher() { Unpublish(); }
 
-void Mdns::Publisher::SetSubtypes(std::vector<std::string> subtypes) {
+void Mdns::Publisher::SetSubtypes(std::vector<DnsLabel> subtypes) {
   if (instance_responder_) {
     instance_responder_->SetSubtypes(std::move(subtypes));
   }

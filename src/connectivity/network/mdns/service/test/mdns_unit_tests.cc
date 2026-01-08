@@ -24,17 +24,17 @@ struct TypeConverter<fuchsia::net::IpAddress, inet::IpAddress> {
 
 namespace mdns::test {
 
-constexpr char kHostName[] = "fuchsia-1234-5678-9abc";
-constexpr char kLocalHostFullName[] = "fuchsia-1234-5678-9abc.local.";
-constexpr char kAltHostFullName[] = "123456789ABC.local.";
-constexpr char kServiceName[] = "_yardapult._tcp.";
-constexpr char kServiceFullName[] = "_yardapult._tcp.local.";
-constexpr char kInstanceName[] = "my";
-constexpr char kInstanceFullName[] = "my._yardapult._tcp.local.";
+const DnsName kHostName("fuchsia-1234-5678-9abc");
+const DnsName kLocalHostFullName("fuchsia-1234-5678-9abc.local.");
+const DnsName kAltHostFullName("123456789ABC.local.");
+const DnsName kServiceName("_yardapult._tcp.");
+const DnsName kServiceFullName("_yardapult._tcp.local.");
+const DnsLabel kInstanceName("my");
+const DnsName kInstanceFullName("my._yardapult._tcp.local.");
 static const ReplyAddress kReplyAddress({192, 168, 78, 9, inet::IpPort::From_uint16_t(5353)},
                                         {192, 168, 1, 1}, 1, Media::kWired, IpVersions::kBoth);
-constexpr char kProxyHostName[] = "test_proxy_host_name";
-constexpr char kProxyHostFullName[] = "test_proxy_host_name.local.";
+const DnsName kProxyHostName("test_proxy_host_name");
+const DnsName kProxyHostFullName("test_proxy_host_name.local.");
 const std::vector<inet::IpAddress> kAddresses{inet::IpAddress(192, 168, 1, 200),
                                               inet::IpAddress(192, 168, 1, 201)};
 const inet::IpPort kPort = inet::IpPort::From_uint16_t(5353);
@@ -102,7 +102,7 @@ class MdnsUnitTests : public gtest::RealLoopFixture, public Mdns::Transceiver {
   bool ready() const { return ready_; }
 
   // Starts the |Mdns| instance under test.
-  void Start(bool perform_address_probe, std::vector<std::string> alt_services = {}) {
+  void Start(bool perform_address_probe, std::vector<DnsName> alt_services = {}) {
     under_test_.Start(
         nullptr, kHostName, perform_address_probe, [this]() { ready_ = true; },
         std::move(alt_services));
@@ -120,7 +120,7 @@ class MdnsUnitTests : public gtest::RealLoopFixture, public Mdns::Transceiver {
   }
 
   // Makes an address resource.
-  std::shared_ptr<DnsResource> MakeAddressResource(const std::string& host_full_name,
+  std::shared_ptr<DnsResource> MakeAddressResource(const DnsName& host_full_name,
                                                    const inet::IpAddress& address) {
     std::shared_ptr<DnsResource> resource;
 
@@ -140,7 +140,7 @@ class MdnsUnitTests : public gtest::RealLoopFixture, public Mdns::Transceiver {
     auto message = std::make_unique<DnsMessage>();
     auto ptr_resource = std::make_shared<DnsResource>(kServiceFullName, DnsType::kPtr);
     ptr_resource->time_to_live_ = DnsResource::kShortTimeToLive;
-    ptr_resource->ptr_.pointer_domain_name_ = DnsName(kInstanceFullName);
+    ptr_resource->ptr_.pointer_domain_name_ = kInstanceFullName;
     message->answers_.push_back(ptr_resource);
 
     auto srv_resource = std::make_shared<DnsResource>(kInstanceFullName, DnsType::kSrv);
@@ -148,7 +148,7 @@ class MdnsUnitTests : public gtest::RealLoopFixture, public Mdns::Transceiver {
     srv_resource->srv_.priority_ = 0;
     srv_resource->srv_.weight_ = 0;
     srv_resource->srv_.port_ = inet::IpPort::From_uint16_t(5353);
-    srv_resource->srv_.target_ = DnsName(kLocalHostFullName);
+    srv_resource->srv_.target_ = kLocalHostFullName;
     message->additionals_.push_back(srv_resource);
 
     message->additionals_.push_back(
@@ -162,7 +162,7 @@ class MdnsUnitTests : public gtest::RealLoopFixture, public Mdns::Transceiver {
   }
 
   // Simulates the receipt of a query.
-  void ReceiveQuery(const std::string& name, DnsType type, ReplyAddress sender_address) {
+  void ReceiveQuery(const DnsName& name, DnsType type, ReplyAddress sender_address) {
     auto message = std::make_unique<DnsMessage>();
     auto ptr_question = std::make_shared<DnsQuestion>(name, type);
     message->questions_.push_back(ptr_question);
@@ -174,13 +174,13 @@ class MdnsUnitTests : public gtest::RealLoopFixture, public Mdns::Transceiver {
   // Expects that |message| contains a resource in |section| with the given parameters and returns
   // it.
   std::shared_ptr<DnsResource> ExpectResource(DnsMessage& message, MdnsResourceSection section,
-                                              const std::string& name, DnsType type,
+                                              const DnsName& name, DnsType type,
                                               DnsClass dns_class = DnsClass::kIn) {
     return ExpectResource(message, section, name, type, dns_class, DefaultCacheFlush(type));
   }
   std::shared_ptr<DnsResource> ExpectResource(DnsMessage& message, MdnsResourceSection section,
-                                              const std::string& name, DnsType type,
-                                              DnsClass dns_class, bool cache_flush) {
+                                              const DnsName& name, DnsType type, DnsClass dns_class,
+                                              bool cache_flush) {
     auto extracted = ExtractResources(1, message, section, name, type, dns_class, cache_flush);
 
     EXPECT_FALSE(extracted.empty()) << "No matching resource with name " << name << " and type "
@@ -192,7 +192,7 @@ class MdnsUnitTests : public gtest::RealLoopFixture, public Mdns::Transceiver {
   // and returns them.
   std::vector<std::shared_ptr<DnsResource>> ExpectResources(DnsMessage& message,
                                                             MdnsResourceSection section,
-                                                            const std::string& name, DnsType type,
+                                                            const DnsName& name, DnsType type,
                                                             DnsClass dns_class = DnsClass::kIn,
                                                             bool cache_flush = false) {
     auto extracted = ExtractResources(std::numeric_limits<size_t>::max(), message, section, name,
@@ -204,7 +204,7 @@ class MdnsUnitTests : public gtest::RealLoopFixture, public Mdns::Transceiver {
 
   // Expects that |message| contains resources for |addresses| in |section|.
   void ExpectAddresses(DnsMessage& message, MdnsResourceSection section,
-                       const std::string& host_full_name,
+                       const DnsName& host_full_name,
                        const std::vector<inet::IpAddress>& addresses) {
     bool expect_invalid = false;
     bool expect_v4 = false;
@@ -272,7 +272,7 @@ class MdnsUnitTests : public gtest::RealLoopFixture, public Mdns::Transceiver {
   // Removes and returns at most |max| resources in |section| with the given parameters.
   std::vector<std::shared_ptr<DnsResource>> ExtractResources(size_t max, DnsMessage& message,
                                                              MdnsResourceSection section,
-                                                             const std::string& name, DnsType type,
+                                                             const DnsName& name, DnsType type,
                                                              DnsClass dns_class = DnsClass::kIn,
                                                              bool cache_flush = true) {
     std::vector<std::shared_ptr<DnsResource>>* collection;
@@ -293,7 +293,7 @@ class MdnsUnitTests : public gtest::RealLoopFixture, public Mdns::Transceiver {
 
     std::vector<std::shared_ptr<DnsResource>> result;
     for (auto i = collection->begin(); i != collection->end();) {
-      if ((*i)->name_.dotted_string_ == name && (*i)->type_ == type && (*i)->class_ == dns_class &&
+      if ((*i)->name_ == name && (*i)->type_ == type && (*i)->class_ == dns_class &&
           (*i)->cache_flush_ == cache_flush) {
         result.push_back(std::move(*i));
         i = collection->erase(i);
@@ -325,19 +325,19 @@ class Subscriber : public Mdns::Subscriber {
   Subscriber() {}
 
   // Mdns::Subscriber implementation.
-  void InstanceDiscovered(const std::string& service, const std::string& instance,
+  void InstanceDiscovered(const DnsName& service, const DnsLabel& instance,
                           const std::vector<inet::SocketAddress>& addresses,
                           const std::vector<std::vector<uint8_t>>& text, uint16_t srv_priority,
-                          uint16_t srv_weight, const std::string& target) override {
+                          uint16_t srv_weight, const DnsName& target) override {
     instance_discovered_called_ = true;
   }
 
-  void InstanceChanged(const std::string& service, const std::string& instance,
+  void InstanceChanged(const DnsName& service, const DnsLabel& instance,
                        const std::vector<inet::SocketAddress>& addresses,
                        const std::vector<std::vector<uint8_t>>& text, uint16_t srv_priority,
-                       uint16_t srv_weight, const std::string& target) override {}
+                       uint16_t srv_weight, const DnsName& target) override {}
 
-  void InstanceLost(const std::string& service, const std::string& instance) override {}
+  void InstanceLost(const DnsName& service, const DnsLabel& instance) override {}
 
   void Query(DnsType type_queried) override {}
 
@@ -361,7 +361,7 @@ class Publisher : public Mdns::Publisher {
   // Mdns::Publisher implementation.
   void ReportSuccess(bool success) override {}
 
-  void GetPublication(PublicationCause publication_cause, const std::string& subtype,
+  void GetPublication(PublicationCause publication_cause, const DnsLabel& subtype,
                       const std::vector<inet::SocketAddress>& source_addresses,
                       fit::function<void(std::unique_ptr<Mdns::Publication>)> callback) override {
     callback(Mdns::Publication::Create(kPort, {}));
@@ -376,7 +376,7 @@ class NonPublisher : public Mdns::Publisher {
   // Mdns::Publisher implementation.
   void ReportSuccess(bool success) override {}
 
-  void GetPublication(PublicationCause publication_cause, const std::string& subtype,
+  void GetPublication(PublicationCause publication_cause, const DnsLabel& subtype,
                       const std::vector<inet::SocketAddress>& source_addresses,
                       fit::function<void(std::unique_ptr<Mdns::Publication>)> callback) override {
     callback(nullptr);
@@ -391,7 +391,7 @@ class AsyncPublisher : public Mdns::Publisher {
   // Mdns::Publisher implementation.
   void ReportSuccess(bool success) override {}
 
-  void GetPublication(PublicationCause publication_cause, const std::string& subtype,
+  void GetPublication(PublicationCause publication_cause, const DnsLabel& subtype,
                       const std::vector<inet::SocketAddress>& source_addresses,
                       fit::function<void(std::unique_ptr<Mdns::Publication>)> callback) override {
     get_publication_callback_ = std::move(callback);
@@ -670,14 +670,14 @@ TEST_F(MdnsUnitTests, PublishInstanceWithHostNameAndAddresses) {
 
   auto resource =
       ExpectResource(message, MdnsResourceSection::kAnswer, kServiceFullName, DnsType::kPtr);
-  EXPECT_EQ(kInstanceFullName, resource->ptr_.pointer_domain_name_.dotted_string_);
+  EXPECT_EQ(kInstanceFullName, resource->ptr_.pointer_domain_name_);
 
   resource =
       ExpectResource(message, MdnsResourceSection::kAdditional, kInstanceFullName, DnsType::kSrv);
   EXPECT_EQ(0, resource->srv_.priority_);
   EXPECT_EQ(0, resource->srv_.weight_);
   EXPECT_EQ(kPort, resource->srv_.port_);
-  EXPECT_EQ(kProxyHostFullName, resource->srv_.target_.dotted_string_);
+  EXPECT_EQ(kProxyHostFullName, resource->srv_.target_);
 
   resource =
       ExpectResource(message, MdnsResourceSection::kAdditional, kInstanceFullName, DnsType::kTxt);
@@ -910,7 +910,7 @@ TEST_F(MdnsUnitTests, PublishProxyHostAlreadyPublishedLocally) {
   fuchsia::net::mdns::ServiceInstancePublisherPtr publisher1_ptr;
   bool callback1_called = false;
   service_impl.PublishProxyHost(
-      kProxyHostName, fidl::To<std::vector<fuchsia::net::IpAddress>>(kAddresses), {},
+      kProxyHostName.to_string(), fidl::To<std::vector<fuchsia::net::IpAddress>>(kAddresses), {},
       publisher1_ptr.NewRequest(),
       [&callback1_called](fuchsia::net::mdns::ProxyHostPublisher_PublishProxyHost_Result result) {
         EXPECT_TRUE(result.is_response());
@@ -925,7 +925,7 @@ TEST_F(MdnsUnitTests, PublishProxyHostAlreadyPublishedLocally) {
   fuchsia::net::mdns::ServiceInstancePublisherPtr publisher2_ptr;
   bool callback2_called = false;
   service_impl.PublishProxyHost(
-      kProxyHostName, fidl::To<std::vector<fuchsia::net::IpAddress>>(kAddresses), {},
+      kProxyHostName.to_string(), fidl::To<std::vector<fuchsia::net::IpAddress>>(kAddresses), {},
       publisher2_ptr.NewRequest(),
       [&callback2_called](fuchsia::net::mdns::ProxyHostPublisher_PublishProxyHost_Result result) {
         EXPECT_TRUE(result.is_err());

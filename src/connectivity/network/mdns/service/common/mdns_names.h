@@ -7,62 +7,60 @@
 
 #include <string>
 
-#include "src/lib/inet/socket_address.h"
+#include "src/connectivity/network/mdns/service/encoding/dns_message.h"
 
 namespace mdns {
 
 struct MdnsNames {
   // Name used to query for any service on the subnet.
-  static const std::string kAnyServiceFullName;
+  static const DnsName kAnyServiceFullName;
 
   // Constructs a local host name from a simple host name. For example, produces
   // "host.local." from "host".
-  static std::string HostFullName(const std::string& host_name);
+  static DnsName HostFullName(const DnsName& host_name);
 
   // Constructs a simple host name from a local host name. For example, produces
   // "host" from "host.local.".
-  static std::string HostNameFromFullName(const std::string& host_full_name);
+  static DnsName HostNameFromFullName(const DnsName& host_full_name);
 
   // Constructs a local service name from a simple service name. For example,
   // produces "_foo._tcp.local." from "_foo._tcp.".
-  static std::string ServiceFullName(const std::string& service_name);
+  static DnsName ServiceFullName(const DnsName& service_name);
 
   // Constructs a local service name from a simple service name and subtype.
   // For example, produces "_bar._sub_.foo._tcp.local." from "_foo._tcp." and
   // subtype "_bar".
-  static std::string ServiceSubtypeFullName(const std::string& service_name,
-                                            const std::string& subtype);
+  static DnsName ServiceSubtypeFullName(const DnsName& service_name, const DnsLabel& subtype);
 
   // Constructs a local service instance name from a simple instance name and
   // a simple service name. For example, produces "myfoo._foo._tcp.local." from
-  // "myfoo" and "_foo._tcp.". The simple instance name must not end in a ".",
+  // "myfoo" and "_foo._tcp.". The simple instance name does not include the trailing ".",
   // and the simple service name must end in ".".
-  static std::string InstanceFullName(const std::string& instance_name,
-                                      const std::string& service_name);
+  static DnsName InstanceFullName(const DnsLabel& instance_name, const DnsName& service_name);
 
   // Parses an instance full name to extract the simple instance name and the simple service
   // name.
-  static bool SplitInstanceFullName(const std::string& instance_full_name,
-                                    std::string* instance_name_out, std::string* service_name_out);
+  static bool SplitInstanceFullName(const DnsName& instance_full_name, DnsLabel* instance_name_out,
+                                    DnsName* service_name_out);
 
   // Determines if |name| is a local service name matching |service_name| or
   // a subtype of |service_name|. If |name| does specify a subtype, the
   // subtype is returned via |subtype_out|. Otherwise |*subtype_out| is
   // cleared.
-  static bool MatchServiceName(const std::string& name, const std::string& service_name,
-                               std::string* subtype_out);
+  static bool MatchServiceName(const DnsName& name, const DnsName& service_name,
+                               DnsLabel* subtype_out);
 
   // Determines if |host_name| is a valid host name.
-  static bool IsValidHostName(const std::string& host_name);
+  static bool IsValidHostName(const DnsName& host_name);
 
   // Determines if |service_name| is a valid simple service name.
-  static bool IsValidServiceName(const std::string& service_name);
+  static bool IsValidServiceName(const DnsName& service_name);
 
   // Determines if |instance_name| is a valid simple instance name.
-  static bool IsValidInstanceName(const std::string& instance_name);
+  static bool IsValidInstanceName(const DnsLabel& instance_name);
 
   // Determines if |subtype_name| is a valid simple subtype name.
-  static bool IsValidSubtypeName(const std::string& subtype_name);
+  static bool IsValidSubtypeName(const DnsLabel& subtype_name);
 
   // Determines if |text_string| is a valid text string.
   static bool IsValidTextString(const std::string& text_string);
@@ -74,7 +72,7 @@ struct MdnsNames {
   // "fuchsia-1234-5678-9abc", this method returns "123456789ABC". If |host_name| isn't
   // the expected size (22 characters), this method returns the |host_name| argument.
   // TODO(https://fxbug.dev/42065146): Remove this when alt_services is no longer needed.
-  static std::string AltHostName(const std::string& host_name);
+  static DnsName AltHostName(const DnsName& host_name);
 };
 
 }  // namespace mdns

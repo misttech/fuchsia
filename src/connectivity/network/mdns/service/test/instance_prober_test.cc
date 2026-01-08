@@ -19,21 +19,21 @@ class InstanceProberTest : public AgentTest {
 
  protected:
   // Expects that a probe for the specified instance on the specified host has been sent.
-  void ExpectProbe(const std::string& instance_full_name, const std::string& host_full_name,
+  void ExpectProbe(const DnsName& instance_full_name, const DnsName& host_full_name,
                    inet::IpPort port, Media media, IpVersions ip_versions) {
     auto message = ExpectOutboundMessage(ReplyAddress::Multicast(media, ip_versions));
     ExpectQuestion(message.get(), instance_full_name, DnsType::kAny, DnsClass::kIn, true);
     auto resource = ExpectResource(message.get(), MdnsResourceSection::kAuthority,
                                    instance_full_name, DnsType::kSrv);
     EXPECT_EQ(port, resource->srv_.port_);
-    EXPECT_EQ(host_full_name, resource->srv_.target_.dotted_string_);
+    EXPECT_EQ(host_full_name, resource->srv_.target_);
     ExpectNoOtherQuestionOrResource(message.get());
   }
 };
 
-constexpr char kServiceName[] = "_testservice._tcp.";
-constexpr char kInstanceName[] = "testinstance";
-constexpr char kInstanceFullName[] = "testinstance._testservice._tcp.local.";
+const DnsName kServiceName("_testservice._tcp.");
+const DnsLabel kInstanceName("testinstance");
+const DnsName kInstanceFullName("testinstance._testservice._tcp.local.");
 const inet::IpPort kPort = inet::IpPort::From_uint16_t(1234);
 constexpr uint32_t kInterfaceId = 1;
 

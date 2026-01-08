@@ -8,6 +8,7 @@
 
 #include "src/connectivity/network/mdns/service/common/mdns_names.h"
 #include "src/connectivity/network/mdns/service/common/type_converters.h"
+#include "src/connectivity/network/mdns/service/encoding/dns_formatting.h"
 
 namespace mdns {
 
@@ -20,8 +21,10 @@ HostNameResolverServiceImpl::HostNameResolverServiceImpl(
 void HostNameResolverServiceImpl::ResolveHostName(
     std::string host, int64_t timeout_ns, fuchsia::net::mdns::HostNameResolutionOptions options,
     ResolveHostNameCallback callback) {
-  if (!MdnsNames::IsValidHostName(host)) {
-    FX_LOGS(ERROR) << "ResolveHostName called with invalid host name " << host
+  DnsName host_name(std::move(host));
+
+  if (!MdnsNames::IsValidHostName(host_name)) {
+    FX_LOGS(ERROR) << "ResolveHostName called with invalid host name " << host_name
                    << ", closing connection.";
     Quit();
     return;
@@ -36,9 +39,8 @@ void HostNameResolverServiceImpl::ResolveHostName(
       !options.has_exclude_local_proxies() || !options.exclude_local_proxies();
 
   mdns().ResolveHostName(
-      host, zx::nsec(timeout_ns), media, ip_versions, include_local, include_local_proxies,
-      [callback = std::move(callback)](const std::string& host,
-                                       std::vector<HostAddress> addresses) {
+      host_name, zx::nsec(timeout_ns), media, ip_versions, include_local, include_local_proxies,
+      [callback = std::move(callback)](const DnsName& host, std::vector<HostAddress> addresses) {
         callback(fidl::To<std::vector<fuchsia::net::mdns::HostAddress>>(addresses));
       });
 }

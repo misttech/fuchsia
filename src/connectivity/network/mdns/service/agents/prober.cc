@@ -25,7 +25,7 @@ Prober::Prober(MdnsAgent::Owner* owner, DnsType type, Media media, IpVersions ip
 
 Prober::~Prober() {}
 
-void Prober::Start(const std::string& local_host_full_name) {
+void Prober::Start(const DnsName& local_host_full_name) {
   FX_DCHECK(!local_host_full_name.empty());
 
   local_host_full_name_ = local_host_full_name;
@@ -41,7 +41,7 @@ void Prober::Start(const std::string& local_host_full_name) {
 void Prober::ReceiveResource(const DnsResource& resource, MdnsResourceSection section,
                              ReplyAddress sender_address) {
   if (!sender_address.Matches(media_) || !sender_address.Matches(ip_versions_) ||
-      strcasecmp(resource.name_.dotted_string_.c_str(), ResourceName().c_str()) != 0) {
+      resource.name_ != ResourceName()) {
     return;
   }
 

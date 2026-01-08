@@ -13,8 +13,8 @@
 
 namespace mdns {
 
-HostNameResolver::HostNameResolver(MdnsAgent::Owner* owner, const std::string& host_name,
-                                   Media media, IpVersions ip_versions, bool include_local,
+HostNameResolver::HostNameResolver(MdnsAgent::Owner* owner, const DnsName& host_name, Media media,
+                                   IpVersions ip_versions, bool include_local,
                                    bool include_local_proxies, zx::duration timeout,
                                    Mdns::ResolveHostNameCallback callback)
     : MdnsAgent(owner),
@@ -31,7 +31,7 @@ HostNameResolver::HostNameResolver(MdnsAgent::Owner* owner, const std::string& h
 
 HostNameResolver::~HostNameResolver() {}
 
-void HostNameResolver::Start(const std::string& local_host_full_name) {
+void HostNameResolver::Start(const DnsName& local_host_full_name) {
   // Note that |host_full_name_| is the name we're trying to resolve, not the
   // name of the local host, which is the parameter to this method.
 
@@ -61,7 +61,7 @@ void HostNameResolver::Start(const std::string& local_host_full_name) {
 void HostNameResolver::ReceiveResource(const DnsResource& resource, MdnsResourceSection section,
                                        ReplyAddress sender_address) {
   if (!sender_address.Matches(media_) || !sender_address.Matches(ip_versions_) ||
-      resource.name_.dotted_string_ != host_full_name_) {
+      resource.name_ != host_full_name_) {
     return;
   }
 
@@ -86,7 +86,7 @@ void HostNameResolver::EndOfMessage() {
   }
 }
 
-void HostNameResolver::OnAddProxyHost(const std::string& host_full_name,
+void HostNameResolver::OnAddProxyHost(const DnsName& host_full_name,
                                       const std::vector<HostAddress>& host_addresses) {
   if (!include_local_proxies_ || host_full_name != host_full_name_) {
     return;

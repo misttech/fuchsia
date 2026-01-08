@@ -25,30 +25,30 @@ class InstanceRequestorTest : public AgentTest {
   class Subscriber : public Mdns::Subscriber {
    public:
     struct InstanceId {
-      InstanceId(const std::string& service, const std::string& instance)
+      InstanceId(const DnsName& service, const DnsLabel& instance)
           : service_(service), instance_(instance) {}
 
-      std::string service_;
-      std::string instance_;
+      DnsName service_;
+      DnsLabel instance_;
     };
 
-    void InstanceDiscovered(const std::string& service, const std::string& instance,
+    void InstanceDiscovered(const DnsName& service, const DnsLabel& instance,
                             const std::vector<inet::SocketAddress>& addresses,
                             const std::vector<std::vector<uint8_t>>& text, uint16_t srv_priority,
-                            uint16_t srv_weight, const std::string& target) override {
+                            uint16_t srv_weight, const DnsName& target) override {
       instance_discovered_params_ = std::make_unique<ServiceInstance>(
           service, instance, target, addresses, text, srv_priority, srv_weight);
     }
 
-    void InstanceChanged(const std::string& service, const std::string& instance,
+    void InstanceChanged(const DnsName& service, const DnsLabel& instance,
                          const std::vector<inet::SocketAddress>& addresses,
                          const std::vector<std::vector<uint8_t>>& text, uint16_t srv_priority,
-                         uint16_t srv_weight, const std::string& target) override {
+                         uint16_t srv_weight, const DnsName& target) override {
       instance_changed_params_ = std::make_unique<ServiceInstance>(
           service, instance, target, addresses, text, srv_priority, srv_weight);
     }
 
-    void InstanceLost(const std::string& service, const std::string& instance) override {
+    void InstanceLost(const DnsName& service, const DnsLabel& instance) override {
       instance_lost_params_ = std::make_unique<InstanceId>(service, instance);
     }
 
@@ -89,8 +89,8 @@ class InstanceRequestorTest : public AgentTest {
     DnsType query_param_ = DnsType::kInvalid;
   };
 
-  void ReceivePublication(InstanceRequestor& under_test, const std::string& host_full_name,
-                          const std::string& service_name, const std::string& instance_name,
+  void ReceivePublication(InstanceRequestor& under_test, const DnsName& host_full_name,
+                          const DnsName& service_name, const DnsLabel& instance_name,
                           inet::IpPort port, const std::vector<std::vector<uint8_t>>& text,
                           ReplyAddress sender_address, bool include_txt = true,
                           bool include_address = true, bool address_cache_flush = false) {
@@ -123,8 +123,8 @@ class InstanceRequestorTest : public AgentTest {
     under_test.EndOfMessage();
   }
 
-  void ReceivePtr(InstanceRequestor& under_test, const std::string& service_name,
-                  const std::string& instance_name, ReplyAddress sender_address) {
+  void ReceivePtr(InstanceRequestor& under_test, const DnsName& service_name,
+                  const DnsLabel& instance_name, ReplyAddress sender_address) {
     auto service_full_name = MdnsNames::ServiceFullName(service_name);
     auto instance_full_name = MdnsNames::InstanceFullName(instance_name, service_name);
 
@@ -135,9 +135,9 @@ class InstanceRequestorTest : public AgentTest {
     under_test.EndOfMessage();
   }
 
-  void ReceiveSrv(InstanceRequestor& under_test, const std::string& host_full_name,
-                  const std::string& service_name, const std::string& instance_name,
-                  inet::IpPort port, ReplyAddress sender_address) {
+  void ReceiveSrv(InstanceRequestor& under_test, const DnsName& host_full_name,
+                  const DnsName& service_name, const DnsLabel& instance_name, inet::IpPort port,
+                  ReplyAddress sender_address) {
     auto instance_full_name = MdnsNames::InstanceFullName(instance_name, service_name);
 
     DnsResource srv_resource(instance_full_name, DnsType::kSrv);
@@ -148,8 +148,8 @@ class InstanceRequestorTest : public AgentTest {
     under_test.EndOfMessage();
   }
 
-  void ReceiveTxt(InstanceRequestor& under_test, const std::string& service_name,
-                  const std::string& instance_name, const std::vector<std::vector<uint8_t>>& text,
+  void ReceiveTxt(InstanceRequestor& under_test, const DnsName& service_name,
+                  const DnsLabel& instance_name, const std::vector<std::vector<uint8_t>>& text,
                   ReplyAddress sender_address) {
     auto instance_full_name = MdnsNames::InstanceFullName(instance_name, service_name);
 
@@ -160,7 +160,7 @@ class InstanceRequestorTest : public AgentTest {
     under_test.EndOfMessage();
   }
 
-  void ReceiveAddress(InstanceRequestor& under_test, const std::string& host_full_name,
+  void ReceiveAddress(InstanceRequestor& under_test, const DnsName& host_full_name,
                       ReplyAddress sender_address) {
     DnsResource a_resource(host_full_name, sender_address.socket_address().address());
     under_test.ReceiveResource(a_resource, MdnsResourceSection::kAnswer, sender_address);
@@ -171,13 +171,13 @@ class InstanceRequestorTest : public AgentTest {
 
 const zx::duration kMinDelay = zx::sec(1);
 const zx::duration kMaxDelay = zx::hour(1);
-constexpr char kHostFullName[] = "test2host.local.";
-constexpr char kHostName[] = "test2host";
-constexpr char kServiceName[] = "_testservice._tcp.";
-constexpr char kServiceFullName[] = "_testservice._tcp.local.";
-constexpr char kAnyServiceFullName[] = "_services._dns-sd._udp.local.";
-constexpr char kInstanceName[] = "testinstance";
-constexpr char kInstanceFullName[] = "testinstance._testservice._tcp.local.";
+const DnsName kHostFullName("test2host.local.");
+const DnsName kHostName("test2host");
+const DnsName kServiceName("_testservice._tcp.");
+const DnsName kServiceFullName("_testservice._tcp.local.");
+const DnsName kAnyServiceFullName("_services._dns-sd._udp.local.");
+const DnsLabel kInstanceName("testinstance");
+const DnsName kInstanceFullName("testinstance._testservice._tcp.local.");
 const inet::IpPort kPort = inet::IpPort::From_uint16_t(1234);
 const std::vector<std::vector<uint8_t>> kText = fidl::To<std::vector<std::vector<uint8_t>>>(
     std::vector<std::string>{"color=red", "shape=round"});
@@ -259,6 +259,9 @@ TEST_F(InstanceRequestorTest, Response) {
                      sender_address);
 
   auto params = subscriber.ExpectInstanceDiscoveredCalled();
+  if (!params) {
+    return;
+  }
   EXPECT_EQ(ServiceInstance(kServiceName, kInstanceName, kHostName,
                             {inet::SocketAddress(sender_address.socket_address().address(), kPort)},
                             kText, 0, 0),
@@ -296,6 +299,9 @@ TEST_F(InstanceRequestorTest, Change) {
                      sender_address);
 
   auto params = subscriber.ExpectInstanceDiscoveredCalled();
+  if (!params) {
+    return;
+  }
   EXPECT_EQ(ServiceInstance(kServiceName, kInstanceName, kHostName,
                             {inet::SocketAddress(sender_address.socket_address().address(), kPort)},
                             kText, 0, 0),
@@ -348,6 +354,9 @@ TEST_F(InstanceRequestorTest, AddressCacheFlush) {
 
   // Expect |sender_address_0|.
   auto params = subscriber.ExpectInstanceDiscoveredCalled();
+  if (!params) {
+    return;
+  }
   EXPECT_EQ(
       ServiceInstance(kServiceName, kInstanceName, kHostName,
                       {inet::SocketAddress(sender_address_0.socket_address().address(), kPort)},
@@ -449,6 +458,9 @@ TEST_F(InstanceRequestorTest, Removal) {
                      sender_address);
 
   auto params = subscriber.ExpectInstanceDiscoveredCalled();
+  if (!params) {
+    return;
+  }
   EXPECT_EQ(ServiceInstance(kServiceName, kInstanceName, kHostName,
                             {inet::SocketAddress(sender_address.socket_address().address(), kPort)},
                             kText, 0, 0),
@@ -519,6 +531,9 @@ TEST_F(InstanceRequestorTest, WirelessOnly) {
                      sender_address1);
 
   auto params = subscriber.ExpectInstanceDiscoveredCalled();
+  if (!params) {
+    return;
+  }
   EXPECT_EQ(
       ServiceInstance(kServiceName, kInstanceName, kHostName,
                       {inet::SocketAddress(sender_address1.socket_address().address(), kPort)},
@@ -563,6 +578,9 @@ TEST_F(InstanceRequestorTest, WiredOnly) {
                      sender_address1);
 
   auto params = subscriber.ExpectInstanceDiscoveredCalled();
+  if (!params) {
+    return;
+  }
   EXPECT_EQ(
       ServiceInstance(kServiceName, kInstanceName, kHostName,
                       {inet::SocketAddress(sender_address1.socket_address().address(), kPort)},
@@ -606,6 +624,9 @@ TEST_F(InstanceRequestorTest, V4Only) {
                      sender_address1);
 
   auto params = subscriber.ExpectInstanceDiscoveredCalled();
+  if (!params) {
+    return;
+  }
   EXPECT_EQ(
       ServiceInstance(kServiceName, kInstanceName, kHostName,
                       {inet::SocketAddress(sender_address1.socket_address().address(), kPort)},
@@ -649,6 +670,9 @@ TEST_F(InstanceRequestorTest, V6Only) {
                      sender_address1);
 
   auto params = subscriber.ExpectInstanceDiscoveredCalled();
+  if (!params) {
+    return;
+  }
   EXPECT_EQ(
       ServiceInstance(kServiceName, kInstanceName, kHostName,
                       {inet::SocketAddress(sender_address1.socket_address().address(), kPort, 1)},
@@ -686,6 +710,9 @@ TEST_F(InstanceRequestorTest, LocalInstance) {
       kFromLocalHost);
 
   auto params = subscriber.ExpectInstanceDiscoveredCalled();
+  if (!params) {
+    return;
+  }
   EXPECT_EQ(
       ServiceInstance(kServiceName, kInstanceName, kLocalHostName, kSocketAddressesReversed, kText),
       *params);
@@ -747,6 +774,9 @@ TEST_F(InstanceRequestorTest, LocalProxyInstance) {
       kFromLocalProxyHost);
 
   auto params = subscriber.ExpectInstanceDiscoveredCalled();
+  if (!params) {
+    return;
+  }
   EXPECT_EQ(
       ServiceInstance(kServiceName, kInstanceName, kHostName, kSocketAddressesReversed, kText),
       *params);
@@ -808,6 +838,9 @@ TEST_F(InstanceRequestorTest, AnyResponse) {
                      sender_address);
 
   auto params = subscriber.ExpectInstanceDiscoveredCalled();
+  if (!params) {
+    return;
+  }
   EXPECT_EQ(ServiceInstance(kServiceName, kInstanceName, kHostName,
                             {inet::SocketAddress(sender_address.socket_address().address(), kPort)},
                             kText, 0, 0),
@@ -857,6 +890,9 @@ TEST_F(InstanceRequestorTest, ResponseSansAddresses) {
 
   // Expect discovery of the instance to be reported to the client.
   auto params = subscriber.ExpectInstanceDiscoveredCalled();
+  if (!params) {
+    return;
+  }
   EXPECT_EQ(ServiceInstance(kServiceName, kInstanceName, kHostName,
                             {inet::SocketAddress(sender_address.socket_address().address(), kPort)},
                             kText, 0, 0),
@@ -895,6 +931,9 @@ TEST_F(InstanceRequestorTest, ResponseSansTxt) {
 
   // Expect the instance to be reported to the client with no text.
   auto params = subscriber.ExpectInstanceDiscoveredCalled();
+  if (!params) {
+    return;
+  }
   EXPECT_EQ(ServiceInstance(kServiceName, kInstanceName, kHostName,
                             {inet::SocketAddress(sender_address.socket_address().address(), kPort)},
                             {}, 0, 0),
@@ -971,6 +1010,9 @@ TEST_F(InstanceRequestorTest, ResponsePtrOnly) {
 
   // Expect the instance to be reported to the client with no text.
   auto params = subscriber.ExpectInstanceDiscoveredCalled();
+  if (!params) {
+    return;
+  }
   EXPECT_EQ(ServiceInstance(kServiceName, kInstanceName, kHostName,
                             {inet::SocketAddress(sender_address.socket_address().address(), kPort)},
                             {}, 0, 0),
@@ -1031,6 +1073,9 @@ TEST_F(InstanceRequestorTest, ResponseSansAddressesV6) {
 
   // Expect discovery of the instance to be reported to the client.
   auto params = subscriber.ExpectInstanceDiscoveredCalled();
+  if (!params) {
+    return;
+  }
   EXPECT_EQ(
       ServiceInstance(kServiceName, kInstanceName, kHostName,
                       {inet::SocketAddress(sender_address.socket_address().address(), kPort, 1)},

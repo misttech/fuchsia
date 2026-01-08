@@ -6,238 +6,208 @@
 
 #include <lib/syslog/cpp/macros.h>
 
+#include <algorithm>
+
 namespace mdns {
 
 namespace {
 
-static const std::string kLocalDomainName = "local.";
-static const std::string kSubtypeSeparator = "._sub.";
+static const DnsLabel kLocalDomainName = "local";
+static const std::string kSubtypeSeparatorLabel = "_sub";
 static const std::string kLabelSeparator = ".";
-static const std::string kTcpSuffix = "._tcp.";
-static const std::string kUdpSuffix = "._udp.";
+static const std::string kTcpSuffix = "_tcp";
+static const std::string kUdpSuffix = "_udp";
 
-static constexpr size_t kMaxHostNameLength = 253 - 6;  // 6 for local domain.
-static constexpr size_t kMaxServiceFirstLabelLength = 16;
+static constexpr size_t kMaxHostNameLength = 254 - 6;  // 6 for "local." domain.
 static constexpr size_t kMaxTextStringLength = 255;
 static constexpr size_t kMaxLabelLength = 63;
-
-// Concatenates |strings|.
-std::string Concatenate(const std::initializer_list<const std::string*>& strings) {
-  std::string result;
-  size_t result_size = 0;
-
-  for (auto string : strings) {
-    FX_DCHECK(string);
-    result_size += string->length();
-  }
-
-  result.reserve(result_size);
-
-  for (const auto& string : strings) {
-    FX_DCHECK(string);
-    result.append(*string);
-  }
-
-  return result;
-}
-
-// Parses a string. Match functions either return true and update the position
-// of the parser or return false and leave the position unchanged.
-class Parser {
- public:
-  Parser(const std::string& str) : str_(str), pos_(0) {}
-
-  // Matches end-of-string.
-  bool MatchEnd() { return pos_ == str_.length(); }
-
-  // Matches a specified string.
-  bool Match(const std::string& to_match) {
-    if (pos_ + to_match.length() > str_.length()) {
-      return false;
-    }
-
-    if (str_.compare(pos_, to_match.length(), to_match) != 0) {
-      return false;
-    }
-
-    pos_ += to_match.length();
-
-    return true;
-  }
-
-  // Matches a DNS label, which must be at the start of string or be preceded by
-  // a '.'.
-  bool MatchDnsLabel(std::string* label_out = nullptr) {
-    if (pos_ == str_.length()) {
-      return false;
-    }
-
-    size_t new_pos = str_.find(kLabelSeparator, pos_);
-    if (new_pos == pos_) {
-      // Zero length.
-      return false;
-    } else if (new_pos == std::string::npos) {
-      new_pos = str_.length();
-    }
-
-    if (new_pos - pos_ > kMaxLabelLength) {
-      // Too long.
-      return false;
-    }
-
-    if (label_out) {
-      *label_out = str_.substr(pos_, new_pos - pos_);
-    }
-
-    pos_ = new_pos;
-
-    return true;
-  }
-
-  // Matches a service name, including the trailing '_tcp.' or '_udp.'.
-  bool MatchServiceName(std::string* service_name_out = nullptr) {
-    size_t initial_pos = pos_;
-
-    if (MatchDnsLabel() && str_[initial_pos] == '_' &&
-        pos_ - initial_pos <= kMaxServiceFirstLabelLength &&
-        (Match(kTcpSuffix) || Match(kUdpSuffix))) {
-      if (service_name_out) {
-        *service_name_out = str_.substr(initial_pos, pos_ - initial_pos);
-      }
-
-      return true;
-    }
-
-    pos_ = initial_pos;
-    return false;
-  }
-
-  // Resets the position to the start of the string.
-  void Restart() { pos_ = 0; }
-
- private:
-  const std::string& str_;
-  size_t pos_;
-};
 
 }  // namespace
 
 // static
-const std::string MdnsNames::kAnyServiceFullName = "_services._dns-sd._udp.local.";
+const DnsName MdnsNames::kAnyServiceFullName = DnsName("_services._dns-sd._udp.local.");
 
 // static
-std::string MdnsNames::HostFullName(const std::string& host_name) {
+DnsName MdnsNames::HostFullName(const DnsName& host_name) {
   FX_DCHECK(IsValidHostName(host_name));
 
-  return Concatenate({&host_name, &kLabelSeparator, &kLocalDomainName});
+  return host_name.append(kLocalDomainName);
 }
 
 // static
-std::string MdnsNames::HostNameFromFullName(const std::string& host_full_name) {
-  FX_DCHECK(host_full_name.size() > kLocalDomainName.size());
+DnsName MdnsNames::HostNameFromFullName(const DnsName& host_full_name) {
+  // Copy all but the last label.
+  DnsName result;
+  std::string_view prev_label_view;
+  for (auto label_view = host_full_name.first_label_view(); !label_view.empty();
+       label_view = host_full_name.next_label_view(label_view)) {
+    if (!prev_label_view.empty()) {
+      result.push_back(DnsLabel(prev_label_view));
+    }
 
-  return host_full_name.substr(0, host_full_name.size() - kLocalDomainName.size() - 1);
+    prev_label_view = label_view;
+  }
+
+  FX_DCHECK(!result.empty()) << "`host_full_name` must be a valid host full name";
+
+  return result;
 }
 
 // static
-std::string MdnsNames::ServiceFullName(const std::string& service_name) {
+DnsName MdnsNames::ServiceFullName(const DnsName& service_name) {
   FX_DCHECK(IsValidServiceName(service_name));
 
-  return Concatenate({&service_name, &kLocalDomainName});
+  return service_name.append(kLocalDomainName);
 }
 
 // static
-std::string MdnsNames::ServiceSubtypeFullName(const std::string& service_name,
-                                              const std::string& subtype) {
+DnsName MdnsNames::ServiceSubtypeFullName(const DnsName& service_name, const DnsLabel& subtype) {
   FX_DCHECK(IsValidServiceName(service_name));
   FX_DCHECK(IsValidSubtypeName(subtype));
 
-  return Concatenate({&subtype, &kSubtypeSeparator, &service_name, &kLocalDomainName});
+  return DnsName(subtype)
+      .append(kSubtypeSeparatorLabel)
+      .append(service_name)
+      .append(kLocalDomainName);
 }
 
 // static
-std::string MdnsNames::InstanceFullName(const std::string& instance_name,
-                                        const std::string& service_name) {
+DnsName MdnsNames::InstanceFullName(const DnsLabel& instance_name, const DnsName& service_name) {
   FX_DCHECK(IsValidInstanceName(instance_name));
   FX_DCHECK(IsValidServiceName(service_name));
 
-  return Concatenate({&instance_name, &kLabelSeparator, &service_name, &kLocalDomainName});
+  return DnsName(instance_name, instance_name.size()).append(service_name).append(kLocalDomainName);
 }
 
 // static
-bool MdnsNames::SplitInstanceFullName(const std::string& instance_full_name,
-                                      std::string* instance_name_out,
-                                      std::string* service_name_out) {
+bool MdnsNames::SplitInstanceFullName(const DnsName& instance_full_name,
+                                      DnsLabel* instance_name_out, DnsName* service_name_out) {
   FX_DCHECK(instance_name_out);
   FX_DCHECK(service_name_out);
 
-  // instance_name "." service_name kLocalDomainName
+  // instance_name service_type service_protocol kLocalDomainName
 
-  Parser parser(instance_full_name);
-  return parser.MatchDnsLabel(instance_name_out) && parser.Match(kLabelSeparator) &&
-         parser.MatchServiceName(service_name_out) && parser.Match(kLocalDomainName) &&
-         parser.MatchEnd();
+  auto instance_name_view = instance_full_name.first_label_view();
+  auto service_type_view = instance_full_name.next_label_view(instance_name_view);
+  auto service_protocol_view = instance_full_name.next_label_view(service_type_view);
+  auto local_domain_view = instance_full_name.next_label_view(service_protocol_view);
+  if (local_domain_view != kLocalDomainName ||
+      !instance_full_name.next_label_view(local_domain_view).empty()) {
+    return false;
+  }
+
+  DnsLabel instance_name = DnsLabel(instance_name_view);
+  DnsName service_name((DnsLabel(service_type_view)));
+  service_name.push_back(DnsLabel(service_protocol_view));
+  if (!IsValidInstanceName(instance_name) || !IsValidServiceName(service_name)) {
+    return false;
+  }
+
+  *instance_name_out = std::move(instance_name);
+  *service_name_out = service_name;
+
+  return true;
 }
 
 // static
-bool MdnsNames::MatchServiceName(const std::string& name, const std::string& service_name,
-                                 std::string* subtype_out) {
+bool MdnsNames::MatchServiceName(const DnsName& name, const DnsName& service_name,
+                                 DnsLabel* subtype_out) {
   FX_DCHECK(IsValidServiceName(service_name));
   FX_DCHECK(subtype_out);
 
-  // [ subtype kSubtypeSeparator ] service_name kLocalDomainName
+  auto expected_service_type = service_name.first_label_view();
+  auto expected_service_protocol = service_name.next_label_view(expected_service_type);
 
-  Parser parser(name);
-  if (!parser.MatchDnsLabel(subtype_out) || !parser.Match(kSubtypeSeparator)) {
-    *subtype_out = "";
-    parser.Restart();
-  }
+  // [ subtype kSubtypeSeparatorLabel ] service_type service_protocol kLocalDomainName
 
-  return parser.Match(service_name) && parser.Match(kLocalDomainName) && parser.MatchEnd();
-}
-
-// static
-bool MdnsNames::IsValidHostName(const std::string& host_name) {
-  // A host name is one or more labels separated by '.'s. A label is 1..63
-  // characters long not including separators. A complete host name with
-  // separators must be at most 247 characters long (253 minus 6 to
-  // accommodate a ".local" suffix).
-  if (host_name.length() > kMaxHostNameLength) {
+  auto first_label_view = name.first_label_view();
+  if (first_label_view.empty()) {
     return false;
   }
 
-  Parser parser(host_name);
-  if (!parser.MatchDnsLabel()) {
+  auto second_label_view = name.next_label_view(first_label_view);
+  if (second_label_view.empty()) {
     return false;
   }
 
-  while (!parser.MatchEnd()) {
-    if (!parser.Match(kLabelSeparator) || !parser.MatchDnsLabel()) {
+  if (second_label_view == kSubtypeSeparatorLabel) {
+    // subtype kSubtypeSeparatorLabel service_type service_protocol kLocalDomainName
+    DnsLabel subtype(first_label_view);
+    if (!IsValidSubtypeName(subtype)) {
       return false;
     }
+
+    auto service_type_view = name.next_label_view(second_label_view);
+    auto service_protocol_view = name.next_label_view(service_type_view);
+    if (service_type_view != expected_service_type ||
+        service_protocol_view != expected_service_protocol) {
+      return false;
+    }
+
+    auto local_domain_view = name.next_label_view(service_protocol_view);
+    if (local_domain_view != kLocalDomainName || !name.next_label_view(local_domain_view).empty()) {
+      return false;
+    }
+
+    *subtype_out = subtype;
+  } else {
+    // service_type service_protocol kLocalDomainName
+    if (first_label_view != expected_service_type ||
+        second_label_view != expected_service_protocol) {
+      return false;
+    }
+
+    auto local_domain_view = name.next_label_view(second_label_view);
+    if (local_domain_view != kLocalDomainName || !name.next_label_view(local_domain_view).empty()) {
+      return false;
+    }
+
+    *subtype_out = DnsLabel();
   }
 
   return true;
 }
 
 // static
-bool MdnsNames::IsValidServiceName(const std::string& service_name) {
+bool MdnsNames::IsValidHostName(const DnsName& host_name) {
+  // A host name has one or more labels. A complete host name with separators must be at most
+  // 247 characters long (254 minus 6 to accommodate a "local." suffix).
+  return !host_name.empty() && host_name.length() <= kMaxHostNameLength;
+}
+
+// static
+bool MdnsNames::IsValidServiceName(const DnsName& service_name) {
   // A service name is two labels, both terminated with '.'. The first label
   // must be [1..16] characters, and the first character must be '_'. The
   // second label must be "_tcp" or "_udp".
-  Parser parser(service_name);
-  return parser.MatchServiceName() && parser.MatchEnd();
+
+  auto service_name_label_view = service_name.first_label_view();
+  if (service_name_label_view.empty()) {
+    return false;
+  }
+
+  auto protocol_label_view = service_name.next_label_view(service_name_label_view);
+  if (protocol_label_view.empty()) {
+    return false;
+  }
+
+  if (!service_name.next_label_view(protocol_label_view).empty()) {
+    return false;
+  }
+
+  return service_name_label_view.length() >= 1 && service_name_label_view.length() <= 16 &&
+         service_name_label_view[0] == '_' &&
+         (protocol_label_view == kTcpSuffix || protocol_label_view == kUdpSuffix);
 }
 
 // static
-bool MdnsNames::IsValidInstanceName(const std::string& instance_name) {
+bool MdnsNames::IsValidInstanceName(const DnsLabel& instance_name) {
   // Instance names consist of a single label.
-  return instance_name.length() > 0 && instance_name.length() <= kMaxLabelLength &&
-         instance_name.find(kLabelSeparator) == std::string::npos;
+  return instance_name.length() > 0 && instance_name.length() <= kMaxLabelLength;
 }
 
 // static
-bool MdnsNames::IsValidSubtypeName(const std::string& subtype_name) {
+bool MdnsNames::IsValidSubtypeName(const DnsLabel& subtype_name) {
   // Subtype names consist of a single label.
   return subtype_name.length() > 0 && subtype_name.length() <= kMaxLabelLength &&
          subtype_name.find(kLabelSeparator) == std::string::npos;
@@ -256,26 +226,35 @@ bool MdnsNames::IsValidTextString(const std::vector<uint8_t>& text_string) {
 }
 
 // static
-std::string MdnsNames::AltHostName(const std::string& host_name) {
+DnsName MdnsNames::AltHostName(const DnsName& host_name) {
   static constexpr size_t kExpectedUnmodifiedHostNameSize = 22;
   static constexpr size_t kBlock0Pos = 8;
   static constexpr size_t kBlock1Pos = 13;
   static constexpr size_t kBlock2Pos = 18;
   static constexpr size_t kBlockSize = 4;
 
-  if (host_name.size() != kExpectedUnmodifiedHostNameSize) {
+  // "fuchsia-1234-5678-9abc" becomes "12345678ABC".
+
+  // `host_name` should contain exactly one label.
+  auto label = host_name.first_label_view();
+  if (label.empty() || !host_name.next_label_view(label).empty()) {
     return host_name;
   }
 
-  // "fuchsia-1234-5678-9abc" becomes "12345678ABC".
-  std::string result;
+  // Make sure the label is in the right format.
+  if (label.size() != kExpectedUnmodifiedHostNameSize || !label.starts_with("fuchsia-") ||
+      label[kBlock1Pos - 1] != '-' || label[kBlock2Pos - 1] != '-') {
+    return host_name;
+  }
+
+  DnsLabel result;
   result.reserve(kBlockSize * 3);
-  result.append(host_name.substr(kBlock0Pos, kBlockSize));
-  result.append(host_name.substr(kBlock1Pos, kBlockSize));
-  result.append(host_name.substr(kBlock2Pos, kBlockSize));
+  result.append(label.substr(kBlock0Pos, kBlockSize));
+  result.append(label.substr(kBlock1Pos, kBlockSize));
+  result.append(label.substr(kBlock2Pos, kBlockSize));
   std::transform(result.begin(), result.end(), result.begin(), ::toupper);
 
-  return result;
+  return DnsName(result);
 }
 
 }  // namespace mdns

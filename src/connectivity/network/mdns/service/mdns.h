@@ -125,21 +125,21 @@ class Mdns : public MdnsAgent::Owner {
     void Unsubscribe();
 
     // Called when a new instance is discovered.
-    virtual void InstanceDiscovered(const std::string& service, const std::string& instance,
+    virtual void InstanceDiscovered(const DnsName& service, const DnsLabel& instance,
                                     const std::vector<inet::SocketAddress>& addresses,
                                     const std::vector<std::vector<uint8_t>>& text,
                                     uint16_t srv_priority, uint16_t srv_weight,
-                                    const std::string& target) = 0;
+                                    const DnsName& target) = 0;
 
     // Called when a previously discovered instance changes addresses or text.
-    virtual void InstanceChanged(const std::string& service, const std::string& instance,
+    virtual void InstanceChanged(const DnsName& service, const DnsLabel& instance,
                                  const std::vector<inet::SocketAddress>& addresses,
                                  const std::vector<std::vector<uint8_t>>& text,
                                  uint16_t srv_priority, uint16_t srv_weight,
-                                 const std::string& target) = 0;
+                                 const DnsName& target) = 0;
 
     // Called when an instance is lost.
-    virtual void InstanceLost(const std::string& service, const std::string& instance) = 0;
+    virtual void InstanceLost(const DnsName& service, const DnsLabel& instance) = 0;
 
     // Called when a query is sent.
     virtual void Query(DnsType type_queried) = 0;
@@ -164,7 +164,7 @@ class Mdns : public MdnsAgent::Owner {
 
     // Sets subtypes for the service instance.  If this |Publisher| is
     // unpublished, this method does nothing.
-    void SetSubtypes(std::vector<std::string> subtypes);
+    void SetSubtypes(std::vector<DnsLabel> subtypes);
 
     // Initiates announcement of the service instance.  If this |Publisher| is
     // unpublished, this method does nothing.
@@ -187,7 +187,7 @@ class Mdns : public MdnsAgent::Owner {
     // empty. |source_addresses| supplies the source addresses of the queries that
     // caused this publication. If the publication provided by the callback is null, no
     // announcement or response is transmitted.
-    virtual void GetPublication(PublicationCause pubication_type, const std::string& subtype,
+    virtual void GetPublication(PublicationCause pubication_type, const DnsLabel& subtype,
                                 const std::vector<inet::SocketAddress>& source_addresses,
                                 GetPublicationCallback callback) = 0;
 
@@ -238,7 +238,7 @@ class Mdns : public MdnsAgent::Owner {
   };
 
   using ResolveHostNameCallback =
-      fit::function<void(const std::string& host_name, std::vector<HostAddress> addresses)>;
+      fit::function<void(const DnsName& host_name, std::vector<HostAddress> addresses)>;
 
   using ResolveServiceInstanceCallback = fit::function<void(fuchsia::net::mdns::ServiceInstance)>;
 
@@ -253,20 +253,20 @@ class Mdns : public MdnsAgent::Owner {
   // Starts the transceiver. |ready_callback| is called once we're is ready for
   // calls to |ResolveHostName|, |SubscribeToService| and
   // |PublishServiceInstance|.
-  void Start(fuchsia::net::interfaces::WatcherPtr, const std::string& local_host_name,
+  void Start(fuchsia::net::interfaces::WatcherPtr, const DnsName& local_host_name,
              bool perform_address_probe, fit::closure ready_callback,
-             std::vector<std::string> alt_services);
+             std::vector<DnsName> alt_services);
 
   // Stops the transceiver.
   void Stop();
 
   // Returns the local host name currently in use. May be different than the host name
   // passed in to |Start| if address probing detected conflicts.
-  std::string local_host_name() { return local_host_name_; }
+  DnsName local_host_name() { return local_host_name_; }
 
   // Resolves |host_name| to |IpAddress|es. Must not be called before |Start|'s ready callback is
   // called.
-  void ResolveHostName(const std::string& host_name, zx::duration timeout, Media media,
+  void ResolveHostName(const DnsName& host_name, zx::duration timeout, Media media,
                        IpVersions ip_versions, bool include_local, bool include_local_proxies,
                        ResolveHostNameCallback callback);
 
@@ -274,22 +274,21 @@ class Mdns : public MdnsAgent::Owner {
   // |Start|'s ready callback is called. The subscription is cancelled when
   // the subscriber is deleted or its |Unsubscribe| method is called.
   // Multiple subscriptions may be created for a given host name.
-  void SubscribeToHostName(const std::string& host_name, Media media, IpVersions ip_versions,
+  void SubscribeToHostName(const DnsName& host_name, Media media, IpVersions ip_versions,
                            bool include_local, bool include_local_proxies,
                            HostNameSubscriber* subscriber);
 
   // Resolves |service+instance| to a node, i.e sends an SRV query and gets
   // a valid response if the service instance exists/is active.
-  void ResolveServiceInstance(const std::string& service, const std::string& instance,
-                              zx::time timeout, Media media, IpVersions ip_versions,
-                              bool include_local, bool include_local_proxies,
-                              ResolveServiceInstanceCallback callback);
+  void ResolveServiceInstance(const DnsName& service, const DnsLabel& instance, zx::time timeout,
+                              Media media, IpVersions ip_versions, bool include_local,
+                              bool include_local_proxies, ResolveServiceInstanceCallback callback);
 
   // Subscribes to the specified service. The subscription is cancelled when
   // the subscriber is deleted or its |Unsubscribe| method is called.
   // Multiple subscriptions may be created for a given service name. Must not be
   // called before |Start|'s ready callback is called.
-  void SubscribeToService(const std::string& service_name, Media media, IpVersions ip_versions,
+  void SubscribeToService(const DnsName& service_name, Media media, IpVersions ip_versions,
                           bool include_local, bool include_local_proxies, Subscriber* subscriber);
 
   // Subscribes to all services. The subscription is cancelled when the subscriber is deleted or its
@@ -302,24 +301,24 @@ class Mdns : public MdnsAgent::Owner {
   // already published locally. The instance is unpublished when the publisher
   // is deleted or its |Unpublish| method is called. Must not be called before
   // |Start|'s ready callback is called.
-  bool PublishServiceInstance(std::string service_name, std::string instance_name, Media media,
+  bool PublishServiceInstance(DnsName service_name, DnsLabel instance_name, Media media,
                               IpVersions ip_versions, bool perform_probe, Publisher* publisher) {
-    return PublishServiceInstance("", {}, std::move(service_name), std::move(instance_name), media,
-                                  ip_versions, perform_probe, publisher);
+    return PublishServiceInstance(DnsName(), {}, std::move(service_name), std::move(instance_name),
+                                  media, ip_versions, perform_probe, publisher);
   }
 
   // Publishes a service instance for a host identified by |host_name| and |addresses|. Returns
   // false if and only if the instance was already published locally. The instance is unpublished
   // when the publisher is deleted or its |Unpublish| method is called. Must not be called before
   // |Start|'s ready callback is called.
-  bool PublishServiceInstance(std::string host_name, std::vector<inet::IpAddress> addresses,
-                              std::string service_name, std::string instance_name, Media media,
+  bool PublishServiceInstance(DnsName host_name, std::vector<inet::IpAddress> addresses,
+                              DnsName service_name, DnsLabel instance_name, Media media,
                               IpVersions ip_versions, bool perform_probe, Publisher* publisher);
 
   // Publishes a host. Returns false if and only if the host was already published locally. The
   // host is unpublished when the publisher is deleted or its |Unpublish| method is called. Must
   // not be called for |Start|'s ready callback is called.
-  bool PublishHost(std::string host_name, std::vector<inet::IpAddress> addresses, Media media,
+  bool PublishHost(DnsName host_name, std::vector<inet::IpAddress> addresses, Media media,
                    IpVersions ip_versions, bool perform_probe, HostPublisher* publisher);
 
   // Writes log messages describing lifetime traffic.
@@ -372,21 +371,21 @@ class Mdns : public MdnsAgent::Owner {
   struct RequestorKey {
     RequestorKey() = default;
 
-    RequestorKey(std::string name, Media media, IpVersions ip_versions)
+    RequestorKey(DnsName name, Media media, IpVersions ip_versions)
         : name_(std::move(name)), media_(media), ip_versions_(ip_versions) {}
 
     bool operator==(const RequestorKey& other) const {
       return name_ == other.name_ && media_ == other.media_ && ip_versions_ == other.ip_versions_;
     }
 
-    std::string name_;
+    DnsName name_;
     Media media_;
     IpVersions ip_versions_;
   };
 
   struct RequestorKeyHash {
     std::size_t operator()(const RequestorKey& value) const noexcept {
-      return std::hash<std::string>{}(value.name_) ^ (std::hash<Media>{}(value.media_) << 1) ^
+      return std::hash<DnsName>{}(value.name_) ^ (std::hash<Media>{}(value.media_) << 1) ^
              (std::hash<IpVersions>{}(value.ip_versions_) << 2);
     }
   };
@@ -440,16 +439,16 @@ class Mdns : public MdnsAgent::Owner {
   // Starts the address probe or transitions to ready state, depending on
   // |perform_address_probe|. This method is called the first time a transceiver
   // becomes ready.
-  void OnInterfacesStarted(const std::string& local_host_name, bool perform_address_probe);
+  void OnInterfacesStarted(const DnsName& local_host_name, bool perform_address_probe);
 
   // Starts a probe for a conflicting host name. If a conflict is detected, a
   // new name is generated and this method is called again. If no conflict is
   // detected, |local_host_full_name_| gets set and the service is ready to start
   // other agents.
-  void StartAddressProbe(const std::string& local_host_name);
+  void StartAddressProbe(const DnsName& local_host_name);
 
   // Sets |local_host_name_|, |local_host_name_full_name_| and |address_placeholder_|.
-  void RegisterLocalHostName(const std::string& local_host_name);
+  void RegisterLocalHostName(const DnsName& local_host_name);
 
   // Starts agents and calls the ready callback. This method is called when
   // at least one transceiver is ready and a unique host name has been
@@ -457,10 +456,10 @@ class Mdns : public MdnsAgent::Owner {
   void OnReady();
 
   // Call |agent->OnAddProxyHost| for each agent in |agents_|.
-  void OnAddProxyHost(const std::string& host_full_name, const std::vector<HostAddress>& addresses);
+  void OnAddProxyHost(const DnsName& host_full_name, const std::vector<HostAddress>& addresses);
 
   // Call |agent->OnRemoveProxyHost| for each agent in |agents_|.
-  void OnRemoveProxyHost(const std::string& host_full_name);
+  void OnRemoveProxyHost(const DnsName& host_full_name);
 
   // Call |agent->OnAddLocalServiceInstance| for each agent in |agents_|.
   void OnAddLocalServiceInstance(const ServiceInstance& service_instance, bool from_proxy);
@@ -469,8 +468,8 @@ class Mdns : public MdnsAgent::Owner {
   void OnChangeLocalServiceInstance(const ServiceInstance& service_instance, bool from_proxy);
 
   // Call |agent->OnRemoveLocalServiceInstance| for each agent in |agents_|.
-  void OnRemoveLocalServiceInstance(const std::string& service_name,
-                                    const std::string& instance_name, bool from_proxy);
+  void OnRemoveLocalServiceInstance(const DnsName& service_name, const DnsLabel& instance_name,
+                                    bool from_proxy);
 
   // Determines what host name to try next after a conflict is detected and
   // calls |StartAddressProbe| with that name.
@@ -490,7 +489,7 @@ class Mdns : public MdnsAgent::Owner {
 
   void Renew(const DnsResource& resource, Media media, IpVersions ip_versions) override;
 
-  void Query(DnsType type, const std::string& name, Media media, IpVersions ip_versions,
+  void Query(DnsType type, const DnsName& name, Media media, IpVersions ip_versions,
              zx::time initial_query_time, zx::duration interval, uint32_t interval_multiplier,
              uint32_t max_queries, bool request_unicast_response) override;
 
@@ -525,12 +524,12 @@ class Mdns : public MdnsAgent::Owner {
 
   async_dispatcher_t* dispatcher_;
   Transceiver& transceiver_;
-  std::string original_local_host_name_;
+  DnsName original_local_host_name_;
   fit::closure ready_callback_;
-  std::vector<std::string> alt_services_;
+  std::vector<DnsName> alt_services_;
   uint32_t next_local_host_name_deduplicator_ = 2;
-  std::string local_host_name_;
-  std::string local_host_full_name_;
+  DnsName local_host_name_;
+  DnsName local_host_full_name_;
   State state_ = State::kNotStarted;
   std::priority_queue<TaskQueueEntry> task_queue_;
   zx::time posted_task_time_ = zx::time::infinite();
@@ -542,9 +541,9 @@ class Mdns : public MdnsAgent::Owner {
       host_name_requestors_by_key_;
   std::unordered_map<RequestorKey, std::shared_ptr<InstanceRequestor>, RequestorKeyHash>
       instance_requestors_by_key_;
-  std::unordered_map<std::string, std::shared_ptr<InstanceResponder>>
+  std::unordered_map<DnsName, std::shared_ptr<InstanceResponder>>
       instance_responders_by_instance_full_name_;
-  std::unordered_map<std::string, std::shared_ptr<AddressResponder>>
+  std::unordered_map<DnsName, std::shared_ptr<AddressResponder>>
       address_responders_by_host_full_name_;
   std::shared_ptr<DnsResource> address_placeholder_;
 #ifdef MDNS_TRACE

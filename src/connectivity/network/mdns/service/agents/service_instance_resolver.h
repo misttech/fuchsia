@@ -21,15 +21,15 @@ namespace mdns {
 class ServiceInstanceResolver : public MdnsAgent {
  public:
   // Creates a |ServiceInstanceResolver|.
-  ServiceInstanceResolver(MdnsAgent::Owner* owner, const std::string& service,
-                          const std::string& instance, zx::time timeout, Media media,
-                          IpVersions ip_versions, bool include_local, bool include_local_proxies,
+  ServiceInstanceResolver(MdnsAgent::Owner* owner, const DnsName& service, const DnsLabel& instance,
+                          zx::time timeout, Media media, IpVersions ip_versions, bool include_local,
+                          bool include_local_proxies,
                           Mdns::ResolveServiceInstanceCallback callback);
 
   ~ServiceInstanceResolver() override;
 
   // MdnsAgent overrides.
-  void Start(const std::string& service_instance) override;
+  void Start(const DnsName& service_instance) override;
 
   void ReceiveResource(const DnsResource& resource, MdnsResourceSection section,
                        ReplyAddress sender_address) override;
@@ -43,11 +43,11 @@ class ServiceInstanceResolver : public MdnsAgent {
   fuchsia::net::mdns::ServiceInstance GetInstance();
 
  private:
-  std::string service_;
-  std::string instance_name_;
-  std::string service_instance_;
+  DnsName service_;
+  DnsLabel instance_name_;
+  DnsName service_instance_;
   fuchsia::net::mdns::ServiceInstance instance_;
-  std::string target_full_name_;
+  DnsName target_full_name_;
   zx::time timeout_;
   Media media_;
   IpVersions ip_versions_;

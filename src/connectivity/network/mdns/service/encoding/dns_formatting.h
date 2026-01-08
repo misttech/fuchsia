@@ -15,6 +15,7 @@
 namespace mdns {
 
 std::ostream& operator<<(std::ostream& os, DnsType value);
+std::ostream& operator<<(std::ostream& os, const DnsName& value);
 
 #ifdef MDNS_TRACE
 
@@ -38,7 +39,6 @@ std::ostream& operator<<(std::ostream& os, const std::shared_ptr<T>& value) {
 }
 
 std::ostream& operator<<(std::ostream& os, DnsClass value);
-std::ostream& operator<<(std::ostream& os, const DnsName& value);
 std::ostream& operator<<(std::ostream& os, const DnsV4Address& value);
 std::ostream& operator<<(std::ostream& os, const DnsV6Address& value);
 std::ostream& operator<<(std::ostream& os, const DnsHeader& value);

@@ -26,9 +26,8 @@ class AddressResponderTest : public AgentTest {
   }
 
   // Expects that |addresses| for |host_full_name| are transmitted to the multicast address.
-  void ExpectAddresses(const std::string& host_full_name,
-                       const std::vector<inet::IpAddress>& addresses, Media media,
-                       IpVersions ip_versions) {
+  void ExpectAddresses(const DnsName& host_full_name, const std::vector<inet::IpAddress>& addresses,
+                       Media media, IpVersions ip_versions) {
     auto message = ExpectOutboundMessage(ReplyAddress::Multicast(media, ip_versions));
     AgentTest::ExpectAddresses(message.get(), MdnsResourceSection::kAnswer, host_full_name,
                                addresses);
@@ -36,7 +35,7 @@ class AddressResponderTest : public AgentTest {
   }
 };
 
-constexpr char kHostFullName[] = "test2host.local.";
+const DnsName kHostFullName("test2host.local.");
 const std::vector<inet::IpAddress> kAddresses{inet::IpAddress(192, 168, 1, 200),
                                               inet::IpAddress(192, 168, 1, 201)};
 constexpr uint32_t kInterfaceId = 1;

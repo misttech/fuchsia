@@ -8,7 +8,6 @@
 #include <optional>
 
 #include "rapidjson/document.h"
-#include "src/connectivity/network/mdns/service/common/mdns_addresses.h"
 #include "src/connectivity/network/mdns/service/mdns.h"
 #include "src/lib/json_parser/json_parser.h"
 
@@ -18,8 +17,8 @@ class Config {
  public:
   // Describes a publication from config files.
   struct Publication {
-    std::string service_;
-    std::string instance_;
+    DnsName service_;
+    DnsLabel instance_;
     std::unique_ptr<Mdns::Publication> publication_;
     bool perform_probe_;
     Media media_;
@@ -31,7 +30,7 @@ class Config {
   // Reads the config files from |config_dir|. |local_host_name| is the local host name as
   // defined by the operating system (e.g. the result of posix's |gethostname|).
   // The default value for |config_dir| is "/config/data".
-  void ReadConfigFiles(const std::string& local_host_name, const std::string& serial,
+  void ReadConfigFiles(const DnsName& local_host_name, const std::string& serial,
                        const std::string& boot_config_dir = kBootConfigDir,
                        const std::string& config_dir = kConfigDir);
 
@@ -51,7 +50,7 @@ class Config {
   const std::vector<Publication>& publications() const { return publications_; }
 
   // Gets the alternate services.
-  const std::vector<std::string>& alt_services() const { return alt_services_; }
+  const std::vector<DnsName>& alt_services() const { return alt_services_; }
 
  private:
   // Directory containing configuration that is included at image assembly.
@@ -63,12 +62,12 @@ class Config {
 
   // Integrates the config file represented by |document| into this
   // configuration.
-  void IntegrateDocument(const rapidjson::Document& document, const std::string& local_host_name,
+  void IntegrateDocument(const rapidjson::Document& document, const DnsName& local_host_name,
                          const std::string& serial);
 
   // Integrates the publication represented by |value| into this configuration.
   // |value| must be a JSON object.
-  void IntegratePublication(const rapidjson::Value& value, const std::string& local_host_name,
+  void IntegratePublication(const rapidjson::Value& value, const DnsName& local_host_name,
                             const std::string& serial);
 
   // Sets the value indicating whether a host name probe is required.
@@ -77,7 +76,7 @@ class Config {
   json::JSONParser parser_;
   std::optional<bool> perform_host_name_probe_;
   std::vector<Publication> publications_;
-  std::vector<std::string> alt_services_;
+  std::vector<DnsName> alt_services_;
 
  public:
   // Disallow copy, assign and move.

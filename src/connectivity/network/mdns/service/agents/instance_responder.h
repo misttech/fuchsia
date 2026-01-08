@@ -24,9 +24,9 @@ class InstanceResponder : public MdnsAgent {
   // Creates an |InstanceResponder|. The publisher is consulted to determine how queries are
   // handled. If |host_name| is empty the local host name will be used. If |addresses| is empty,
   // the local addresses will be used.
-  InstanceResponder(MdnsAgent::Owner* owner, std::string host_name,
-                    std::vector<inet::IpAddress> addresses, std::string service_name,
-                    std::string instance_name, Media media, IpVersions ip_versions,
+  InstanceResponder(MdnsAgent::Owner* owner, const DnsName& host_name,
+                    std::vector<inet::IpAddress> addresses, const DnsName& service_name,
+                    const DnsLabel& instance_name, Media media, IpVersions ip_versions,
                     Mdns::Publisher* publisher);
 
   ~InstanceResponder() override;
@@ -40,7 +40,7 @@ class InstanceResponder : public MdnsAgent {
   bool from_proxy() const { return !addresses_.empty(); }
 
   // MdnsAgent overrides.
-  void Start(const std::string& local_host_full_name) override;
+  void Start(const DnsName& local_host_full_name) override;
 
   void ReceiveQuestion(const DnsQuestion& question, const ReplyAddress& reply_address,
                        const ReplyAddress& sender_address) override;
@@ -50,7 +50,7 @@ class InstanceResponder : public MdnsAgent {
   void OnLocalHostAddressesChanged() override;
 
   // Sets the subtypes to publish.
-  void SetSubtypes(std::vector<std::string> subtypes);
+  void SetSubtypes(std::vector<DnsLabel> subtypes);
 
   // Reannounces the service instance.
   void Reannounce();
@@ -75,20 +75,20 @@ class InstanceResponder : public MdnsAgent {
 
   // Calls |GetAndSendPublication| with |query| set to true after first determining if the send
   // should be throttled.
-  void MaybeGetAndSendPublication(PublicationCause publication_cause, const std::string& subtype,
+  void MaybeGetAndSendPublication(PublicationCause publication_cause, const DnsLabel& subtype,
                                   const ReplyAddress& reply_address, DnsType question_type);
 
   // Gets an |Mdns::Publication| from |mdns_responder_| and, if not null, sends
   // it. An empty |subtype| indicates no subtype.
-  void GetAndSendPublication(PublicationCause publication_cause, const std::string& subtype,
+  void GetAndSendPublication(PublicationCause publication_cause, const DnsLabel& subtype,
                              const ReplyAddress& reply_address, DnsType question_type);
 
   // Sends a publication. An empty |subtype| indicates no subtype.
-  void SendPublication(const Mdns::Publication& publication, const std::string& subtype,
+  void SendPublication(const Mdns::Publication& publication, const DnsLabel& subtype,
                        const ReplyAddress& reply_address, DnsType question_type);
 
   // Sends a subtype PTR record for this instance.
-  void SendSubtypePtrRecord(const std::string& subtype, uint32_t ttl,
+  void SendSubtypePtrRecord(const DnsLabel& subtype, uint32_t ttl,
                             const ReplyAddress& reply_address) const;
 
   // Sends a publication with zero ttls, indicating the service instance is
@@ -96,7 +96,7 @@ class InstanceResponder : public MdnsAgent {
   void SendGoodbye();
 
   // Frees resources associated with |subtype| if they're no longer required.
-  void IdleCheck(const std::string& subtype);
+  void IdleCheck(const DnsLabel& subtype);
 
   // Returns the correct multicast reply address depending on |media_| and |ip_verions_|.
   ReplyAddress multicast_reply() const { return ReplyAddress::Multicast(media_, ip_versions_); }
@@ -113,18 +113,18 @@ class InstanceResponder : public MdnsAgent {
   // Updates |instance_.addresses_|.
   void UpdateInstanceAddresses();
 
-  std::string host_full_name_;
+  DnsName host_full_name_;
   const std::vector<inet::IpAddress> addresses_;
   Mdns::ServiceInstance instance_;
   inet::IpPort port_;
   bool instance_ready_ = false;
-  std::string instance_full_name_;
+  DnsName instance_full_name_;
   Media media_;
   IpVersions ip_versions_;
   Mdns::Publisher* publisher_;
-  std::vector<std::string> subtypes_;
+  std::vector<DnsLabel> subtypes_;
   zx::duration announcement_interval_ = kInitialAnnouncementInterval;
-  std::unordered_map<std::string, zx::time> throttle_state_by_subtype_;
+  std::unordered_map<DnsLabel, zx::time> throttle_state_by_subtype_;
   std::vector<inet::SocketAddress> sender_addresses_;
 
  public:

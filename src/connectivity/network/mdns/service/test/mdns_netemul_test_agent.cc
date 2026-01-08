@@ -22,7 +22,7 @@
 const std::string kLocalArgument = "--local";
 const std::string kRemoteArgument = "--remote";
 const std::string kServiceName = "_mdnstest._udp.";
-const std::string kInstanceName = "mdns_test_instance_name";
+const std::string kInstanceName = "mdns_test.instance_name";
 const uint16_t kPort = 1234;
 const std::vector<std::string> kText = {"chowder", "hammock", "beanstalk"};
 constexpr uint16_t kPriority = 4;

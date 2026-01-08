@@ -11,8 +11,7 @@
 #include "src/connectivity/network/mdns/service/test/agent_test.h"
 #include "src/connectivity/network/mdns/service/test/fake_clock.h"
 
-namespace mdns {
-namespace test {
+namespace mdns::test {
 
 class HostNameRequestorTest : public AgentTest {
  public:
@@ -78,8 +77,8 @@ bool VerifyAddresses(std::vector<HostAddress> expected, std::vector<HostAddress>
   return true;
 }
 
-constexpr char kHostName[] = "testhostname";
-constexpr char kHostFullName[] = "testhostname.local.";
+const DnsName kHostName("testhostname");
+const DnsName kHostFullName("testhostname.local.");
 const std::vector<inet::IpAddress> kAddresses{inet::IpAddress(192, 168, 1, 200),
                                               inet::IpAddress(0xfe80, 200)};
 const std::vector<inet::IpAddress> kOtherAddresses{inet::IpAddress(192, 168, 1, 201),
@@ -731,5 +730,4 @@ TEST_F(HostNameRequestorTest, NoLocalProxyHost) {
   EXPECT_FALSE(subscriber.addresses_changed_called());
 }
 
-}  // namespace test
-}  // namespace mdns
+}  // namespace mdns::test

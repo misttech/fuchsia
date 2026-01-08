@@ -8,6 +8,7 @@
 
 #include "src/connectivity/network/mdns/service/common/mdns_names.h"
 #include "src/connectivity/network/mdns/service/common/type_converters.h"
+#include "src/connectivity/network/mdns/service/encoding/dns_formatting.h"
 
 namespace mdns {
 
@@ -18,8 +19,9 @@ HostNameSubscriberServiceImpl::HostNameSubscriberServiceImpl(
                                                               std::move(deleter)) {}
 
 void HostNameSubscriberServiceImpl::SubscribeToHostName(
-    std::string host_name, fuchsia::net::mdns::HostNameSubscriptionOptions options,
+    std::string host, fuchsia::net::mdns::HostNameSubscriptionOptions options,
     fidl::InterfaceHandle<fuchsia::net::mdns::HostNameSubscriptionListener> listener_handle) {
+  DnsName host_name(std::move(host));
   if (!MdnsNames::IsValidHostName(host_name)) {
     FX_LOGS(ERROR) << "SubscribeToHostName called with invalid host name " << host_name
                    << ", closing connection.";

@@ -18,9 +18,14 @@ constexpr size_t kMaxAuthorities = 1024;
 constexpr size_t kMaxAdditionals = 1024;
 constexpr size_t kMaxDnsNameSize = 255;
 
-void ReadNameLabels(PacketReader& reader, std::vector<char>& chars) {
+}  // namespace
+
+PacketReader& operator>>(PacketReader& reader, DnsName& value) {
+  std::vector<char> chars;
+
   size_t start_position_of_current_run = reader.bytes_consumed();
   size_t end_position_of_original_run = 0;
+  size_t first_label_size = 0;
 
   while (reader.healthy()) {
     uint8_t label_size;
@@ -36,7 +41,7 @@ void ReadNameLabels(PacketReader& reader, std::vector<char>& chars) {
       if (offset >= start_position_of_current_run) {
         // This is an attempt to loop or point forward: bad in either case.
         reader.MarkUnhealthy();
-        return;
+        return reader;
       }
 
       if (end_position_of_original_run == 0) {
@@ -60,6 +65,10 @@ void ReadNameLabels(PacketReader& reader, std::vector<char>& chars) {
       break;
     }
 
+    if (first_label_size == 0) {
+      first_label_size = label_size;
+    }
+
     size_t old_size = chars.size();
     size_t new_size = old_size + label_size + 1;
 
@@ -80,17 +89,9 @@ void ReadNameLabels(PacketReader& reader, std::vector<char>& chars) {
   if (end_position_of_original_run != 0) {
     reader.SetBytesConsumed(end_position_of_original_run);
   }
-}
-
-}  // namespace
-
-PacketReader& operator>>(PacketReader& reader, DnsName& value) {
-  std::vector<char> chars;
-
-  ReadNameLabels(reader, chars);
 
   if (reader.healthy()) {
-    value.dotted_string_ = std::string(chars.data(), chars.size());
+    value = DnsName(std::string(chars.data(), chars.size()), first_label_size);
   }
 
   return reader;

@@ -16,7 +16,7 @@ PacketWriter::PacketWriter(std::vector<uint8_t> packet) : packet_(std::move(pack
 PacketWriter::~PacketWriter() {}
 
 std::vector<uint8_t> PacketWriter::GetResizedPacket() {
-  positions_by_label_.clear();
+  positions_by_name_.clear();
   packet_.resize(position_);
   position_ = 0;
   return std::move(packet_);
@@ -24,7 +24,7 @@ std::vector<uint8_t> PacketWriter::GetResizedPacket() {
 
 std::vector<uint8_t> PacketWriter::GetPacket() {
   position_ = 0;
-  positions_by_label_.clear();
+  positions_by_name_.clear();
   return std::move(packet_);
 }
 
@@ -44,13 +44,13 @@ void PacketWriter::PutBytes(size_t count, const void* source) {
   position_ += count;
 }
 
-void PacketWriter::CreateBookmark(const std::string& label) {
-  positions_by_label_.emplace(label, position_);
+void PacketWriter::CreateBookmark(const std::string& name) {
+  positions_by_name_.emplace(name, position_);
 }
 
-size_t PacketWriter::GetBookmarkPosition(const std::string& label) const {
-  auto iter = positions_by_label_.find(label);
-  if (iter == positions_by_label_.end()) {
+size_t PacketWriter::GetBookmarkPosition(const std::string& name) const {
+  auto iter = positions_by_name_.find(name);
+  if (iter == positions_by_name_.end()) {
     return npos;
   }
 

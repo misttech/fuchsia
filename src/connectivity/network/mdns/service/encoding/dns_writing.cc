@@ -11,10 +11,10 @@
 namespace mdns {
 
 PacketWriter& operator<<(PacketWriter& writer, const DnsName& value) {
-  std::string s = value.dotted_string_;
-
-  while (!s.empty()) {
-    size_t position = writer.GetBookmarkPosition(s);
+  std::string_view remainder(value.to_string());
+  for (auto label = value.first_label_view(); !label.empty();
+       label = value.next_label_view(label)) {
+    size_t position = writer.GetBookmarkPosition(std::string(remainder));
     if (position != PacketWriter::npos) {
       // Write a name offset.
       uint16_t offset = static_cast<uint16_t>(position) | 0xc000;
@@ -22,20 +22,11 @@ PacketWriter& operator<<(PacketWriter& writer, const DnsName& value) {
       return writer;
     }
 
-    writer.CreateBookmark(s);
+    writer.CreateBookmark(std::string(remainder));
+    writer << static_cast<uint8_t>(label.size());
+    writer.PutBytes(label.size(), label.data());
 
-    size_t dot_pos = s.find('.');
-
-    if (dot_pos == std::string::npos) {
-      // There really should be a dot at the end, but there is not.
-      writer << static_cast<uint8_t>(s.size());
-      writer.PutBytes(s.size(), s.data());
-      break;
-    }
-
-    writer << static_cast<uint8_t>(dot_pos);
-    writer.PutBytes(dot_pos, s.data());
-    s = s.substr(dot_pos + 1);
+    remainder.remove_prefix(label.size() + 1);
   }
 
   return writer << static_cast<uint8_t>(0);

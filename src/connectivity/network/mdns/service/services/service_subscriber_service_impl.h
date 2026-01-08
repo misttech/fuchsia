@@ -40,17 +40,17 @@ class ServiceSubscriberServiceImpl
     ~Subscriber() override;
 
     // Mdns::Subscriber implementation:
-    void InstanceDiscovered(const std::string& service, const std::string& instance,
+    void InstanceDiscovered(const DnsName& service, const DnsLabel& instance,
                             const std::vector<inet::SocketAddress>& addresses,
                             const std::vector<std::vector<uint8_t>>& text, uint16_t srv_priority,
-                            uint16_t srv_weight, const std::string& target) override;
+                            uint16_t srv_weight, const DnsName& target) override;
 
-    void InstanceChanged(const std::string& service, const std::string& instance,
+    void InstanceChanged(const DnsName& service, const DnsLabel& instance,
                          const std::vector<inet::SocketAddress>& addresses,
                          const std::vector<std::vector<uint8_t>>& text, uint16_t srv_priority,
-                         uint16_t srv_weight, const std::string& target) override;
+                         uint16_t srv_weight, const DnsName& target) override;
 
-    void InstanceLost(const std::string& service, const std::string& instance) override;
+    void InstanceLost(const DnsName& service, const DnsLabel& instance) override;
 
     void Query(DnsType type_queried) override;
 

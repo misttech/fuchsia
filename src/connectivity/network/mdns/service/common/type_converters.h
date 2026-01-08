@@ -83,7 +83,7 @@ struct TypeConverter<fuchsia::net::mdns::PublicationCause, mdns::PublicationCaus
 template <>
 struct TypeConverter<std::string, std::vector<uint8_t>> {
   static std::string Convert(const std::vector<uint8_t>& value) {
-    if(utfutils_is_valid_utf8(reinterpret_cast<const char *>(value.data()), value.size())) {
+    if (utfutils_is_valid_utf8(reinterpret_cast<const char*>(value.data()), value.size())) {
       return std::string(value.begin(), value.end());
     }
     return std::string();
@@ -247,11 +247,11 @@ template <>
 struct TypeConverter<fuchsia::net::mdns::ServiceInstance, mdns::ServiceInstance> {
   static fuchsia::net::mdns::ServiceInstance Convert(const mdns::ServiceInstance& value) {
     fuchsia::net::mdns::ServiceInstance result;
-    result.set_service(value.service_name_);
+    result.set_service(value.service_name_.to_string());
     result.set_instance(value.instance_name_);
     result.set_srv_priority(value.srv_priority_);
     result.set_srv_weight(value.srv_weight_);
-    result.set_target(value.target_name_);
+    result.set_target(value.target_name_.to_string());
     result.set_addresses(fidl::To<std::vector<fuchsia::net::SocketAddress>>(value.addresses_));
     result.set_text_strings(value.text_);
 

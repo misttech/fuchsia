@@ -8,6 +8,7 @@
 
 #include "src/connectivity/network/mdns/service/common/mdns_names.h"
 #include "src/connectivity/network/mdns/service/common/type_converters.h"
+#include "src/connectivity/network/mdns/service/encoding/dns_formatting.h"
 
 namespace mdns {
 
@@ -18,10 +19,11 @@ ProxyHostPublisherServiceImpl::ProxyHostPublisherServiceImpl(
                                                               std::move(deleter)) {}
 
 void ProxyHostPublisherServiceImpl::PublishProxyHost(
-    std::string host_name, std::vector<fuchsia::net::IpAddress> addresses,
+    std::string host, std::vector<fuchsia::net::IpAddress> addresses,
     fuchsia::net::mdns::ProxyHostPublicationOptions options,
     fidl::InterfaceRequest<fuchsia::net::mdns::ServiceInstancePublisher> request,
     PublishProxyHostCallback callback) {
+  DnsName host_name(std::move(host));
   if (!MdnsNames::IsValidHostName(host_name)) {
     FX_LOGS(ERROR) << "PublishProxyHost called with invalid host name " << host_name
                    << ", closing connection.";
@@ -60,7 +62,7 @@ void ProxyHostPublisherServiceImpl::PublishProxyHost(
 // ProxyHostPublisherServiceImpl::HostPublisher definitions
 
 ProxyHostPublisherServiceImpl::HostPublisher::HostPublisher(
-    PublishProxyHostCallback callback, Mdns& mdns, std::string host_name,
+    PublishProxyHostCallback callback, Mdns& mdns, DnsName host_name,
     std::vector<inet::IpAddress> addresses, Media media, IpVersions ip_versions,
     fidl::InterfaceRequest<fuchsia::net::mdns::ServiceInstancePublisher> request)
     : callback_(std::move(callback)),

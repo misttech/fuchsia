@@ -18,9 +18,8 @@ constexpr uint32_t kAdditionalIntervalMultiplier = 2;
 constexpr uint32_t kAdditionalMaxQueries = 3;
 }  // namespace
 
-ServiceInstanceResolver::ServiceInstanceResolver(MdnsAgent::Owner* owner,
-                                                 const std::string& service,
-                                                 const std::string& instance, zx::time timeout,
+ServiceInstanceResolver::ServiceInstanceResolver(MdnsAgent::Owner* owner, const DnsName& service,
+                                                 const DnsLabel& instance, zx::time timeout,
                                                  Media media, IpVersions ip_versions,
                                                  bool include_local, bool include_local_proxies,
                                                  Mdns::ResolveServiceInstanceCallback callback)
@@ -72,7 +71,7 @@ void ServiceInstanceResolver::EndOfMessage() {
   }
 }
 
-void ServiceInstanceResolver::Start(const std::string& service_instance) {
+void ServiceInstanceResolver::Start(const DnsName& service_instance) {
   MdnsAgent::Start(service_instance);
   service_instance_ = MdnsNames::InstanceFullName(instance_name_, service_);
   // Increase the chance of coalescing the queries together in one message.
@@ -102,18 +101,18 @@ void ServiceInstanceResolver::ReceiveResource(const DnsResource& resource,
 
   switch (resource.type_) {
     case DnsType::kSrv:
-      if (resource.name_.dotted_string_ == service_instance_) {
-        instance_.set_service(service_);
+      if (resource.name_ == service_instance_) {
+        instance_.set_service(service_.to_string());
         instance_.set_instance(instance_name_);
         instance_.set_srv_priority(resource.srv_.priority_);
         instance_.set_srv_weight(resource.srv_.weight_);
         port_ = resource.srv_.port_;
-        target_full_name_ = resource.srv_.target_.dotted_string_;
-        instance_.set_target(MdnsNames::HostNameFromFullName(target_full_name_));
+        target_full_name_ = resource.srv_.target_;
+        instance_.set_target(MdnsNames::HostNameFromFullName(target_full_name_).to_string());
       }
       break;
     case DnsType::kA:
-      if (resource.name_.dotted_string_ == target_full_name_) {
+      if (resource.name_ == target_full_name_) {
         auto socket_address = MdnsFidlUtil::CreateSocketAddressV4(
             inet::SocketAddress(resource.a_.address_.address_, port_));
         instance_.set_ipv4_endpoint(socket_address);
@@ -135,7 +134,7 @@ void ServiceInstanceResolver::ReceiveResource(const DnsResource& resource,
       }
       break;
     case DnsType::kAaaa:
-      if (resource.name_.dotted_string_ == target_full_name_) {
+      if (resource.name_ == target_full_name_) {
         // Add scope_id only to link local addresses.
         uint32_t scope_id = 0;
         if (resource.aaaa_.address_.address_.is_link_local()) {
@@ -162,7 +161,7 @@ void ServiceInstanceResolver::ReceiveResource(const DnsResource& resource,
       }
       break;
     case DnsType::kTxt:
-      if (resource.name_.dotted_string_ == target_full_name_) {
+      if (resource.name_ == target_full_name_) {
         instance_.set_text(fidl::To<std::vector<std::string>>(resource.txt_.strings_));
         instance_.set_text_strings(fidl::Clone(resource.txt_.strings_));
       }

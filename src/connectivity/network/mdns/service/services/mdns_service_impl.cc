@@ -18,6 +18,7 @@
 #include "src/connectivity/network/mdns/service/common/mdns_fidl_util.h"
 #include "src/connectivity/network/mdns/service/common/mdns_names.h"
 #include "src/connectivity/network/mdns/service/common/type_converters.h"
+#include "src/connectivity/network/mdns/service/encoding/dns_formatting.h"
 #include "src/connectivity/network/mdns/service/services/host_name_resolver_service_impl.h"
 #include "src/connectivity/network/mdns/service/services/host_name_subscriber_service_impl.h"
 #include "src/connectivity/network/mdns/service/services/proxy_host_publisher_service_impl.h"
@@ -130,7 +131,7 @@ void MdnsServiceImpl::Start() {
 
   std::string serial_number = GetSerialNumber(component_context_);
 
-  config_.ReadConfigFiles(local_host_name, serial_number);
+  config_.ReadConfigFiles(DnsName(local_host_name), serial_number);
   if (!config_.valid()) {
     FX_LOGS(FATAL) << "Invalid config file(s), terminating: " << config_.error();
     return;
@@ -139,7 +140,7 @@ void MdnsServiceImpl::Start() {
   auto interfaces_state = component_context_->svc()->Connect<fuchsia::net::interfaces::State>();
   fuchsia::net::interfaces::WatcherPtr watcher;
   interfaces_state->GetWatcher(fuchsia::net::interfaces::WatcherOptions(), watcher.NewRequest());
-  mdns_.Start(std::move(watcher), local_host_name, config_.perform_host_name_probe(),
+  mdns_.Start(std::move(watcher), DnsName(local_host_name), config_.perform_host_name_probe(),
               fit::bind_member<&MdnsServiceImpl::OnReady>(this), config_.alt_services());
 }
 
@@ -169,13 +170,13 @@ void MdnsServiceImpl::OnReady() {
 }
 
 bool MdnsServiceImpl::PublishServiceInstance(
-    std::string service_name, std::string instance_name,
-    std::unique_ptr<Mdns::Publication> publication, bool perform_probe, Media media,
+    DnsName service_name, DnsLabel instance_name, std::unique_ptr<Mdns::Publication> publication,
+    bool perform_probe, Media media,
     fit::function<void(fpromise::result<void, fuchsia::net::mdns::Error>)> callback) {
   auto publisher = std::make_unique<SimplePublisher>(std::move(publication), callback.share());
 
-  if (!mdns_.PublishServiceInstance(service_name, instance_name, media, IpVersions::kBoth,
-                                    perform_probe, publisher.get())) {
+  if (!mdns_.PublishServiceInstance(std::move(service_name), std::move(instance_name), media,
+                                    IpVersions::kBoth, perform_probe, publisher.get())) {
     return false;
   }
 

@@ -11,6 +11,7 @@
 
 #include "src/connectivity/network/mdns/service/common/mdns_names.h"
 #include "src/connectivity/network/mdns/service/common/types.h"
+#include "src/connectivity/network/mdns/service/encoding/dns_formatting.h"
 
 namespace mdns {
 namespace {
@@ -22,7 +23,7 @@ constexpr uint32_t kAdditionalMaxQueries = 3;
 
 }  // namespace
 
-InstanceRequestor::InstanceRequestor(MdnsAgent::Owner* owner, const std::string& service_name,
+InstanceRequestor::InstanceRequestor(MdnsAgent::Owner* owner, const DnsName& service_name,
                                      Media media, IpVersions ip_versions, bool include_local,
                                      bool include_local_proxies)
     : MdnsAgent(owner),
@@ -59,7 +60,7 @@ void InstanceRequestor::RemoveSubscriber(Mdns::Subscriber* subscriber) {
   }
 }
 
-void InstanceRequestor::Start(const std::string& local_host_full_name) {
+void InstanceRequestor::Start(const DnsName& local_host_full_name) {
   MdnsAgent::Start(local_host_full_name);
   SendQuery();
 }
@@ -72,31 +73,31 @@ void InstanceRequestor::ReceiveResource(const DnsResource& resource, MdnsResourc
 
   switch (resource.type_) {
     case DnsType::kPtr:
-      if (resource.name_.dotted_string_ == service_full_name_ ||
+      if (resource.name_ == service_full_name_ ||
           service_full_name_ == MdnsNames::kAnyServiceFullName) {
         ReceivePtrResource(resource, section);
       }
       break;
     case DnsType::kSrv: {
-      auto iter = instance_infos_by_full_name_.find(resource.name_.dotted_string_);
+      auto iter = instance_infos_by_full_name_.find(resource.name_);
       if (iter != instance_infos_by_full_name_.end()) {
         ReceiveSrvResource(resource, section, &iter->second);
       }
     } break;
     case DnsType::kTxt: {
-      auto iter = instance_infos_by_full_name_.find(resource.name_.dotted_string_);
+      auto iter = instance_infos_by_full_name_.find(resource.name_);
       if (iter != instance_infos_by_full_name_.end()) {
         ReceiveTxtResource(resource, section, &iter->second);
       }
     } break;
     case DnsType::kA: {
-      auto iter = target_infos_by_full_name_.find(resource.name_.dotted_string_);
+      auto iter = target_infos_by_full_name_.find(resource.name_);
       if (iter != target_infos_by_full_name_.end()) {
         ReceiveAResource(resource, section, &iter->second, sender_address.interface_id());
       }
     } break;
     case DnsType::kAaaa: {
-      auto iter = target_infos_by_full_name_.find(resource.name_.dotted_string_);
+      auto iter = target_infos_by_full_name_.find(resource.name_);
       if (iter != target_infos_by_full_name_.end()) {
         ReceiveAaaaResource(resource, section, &iter->second, sender_address.interface_id());
       }
@@ -131,7 +132,7 @@ void InstanceRequestor::EndOfMessage() {
       continue;
     }
 
-    const std::string& target_full_name = iter->first;
+    const DnsName& target_full_name = iter->first;
     TargetInfo& target_info = iter->second;
 
     // Keep this target info around.
@@ -250,10 +251,10 @@ void InstanceRequestor::SendQuery() {
 
 void InstanceRequestor::ReceivePtrResource(const DnsResource& resource,
                                            MdnsResourceSection section) {
-  const std::string& instance_full_name = resource.ptr_.pointer_domain_name_.dotted_string_;
+  const DnsName& instance_full_name = resource.ptr_.pointer_domain_name_;
 
-  std::string instance_name;
-  std::string service_name;
+  DnsLabel instance_name;
+  DnsName service_name;
   if (!MdnsNames::SplitInstanceFullName(instance_full_name, &instance_name, &service_name)) {
     return;
   }
@@ -277,14 +278,14 @@ void InstanceRequestor::ReceivePtrResource(const DnsResource& resource,
 void InstanceRequestor::ReceiveSrvResource(const DnsResource& resource, MdnsResourceSection section,
                                            InstanceInfo* instance_info) {
   if (resource.time_to_live_ == 0) {
-    RemoveInstance(resource.name_.dotted_string_);
+    RemoveInstance(resource.name_);
     return;
   }
 
   if (instance_info->target_.empty() ||
-      MdnsNames::HostFullName(instance_info->target_) != resource.srv_.target_.dotted_string_) {
-    instance_info->target_ = MdnsNames::HostNameFromFullName(resource.srv_.target_.dotted_string_);
-    instance_info->target_full_name_ = resource.srv_.target_.dotted_string_;
+      MdnsNames::HostFullName(instance_info->target_) != resource.srv_.target_) {
+    instance_info->target_ = MdnsNames::HostNameFromFullName(resource.srv_.target_);
+    instance_info->target_full_name_ = resource.srv_.target_;
     instance_info->dirty_ = true;
 
     if (target_infos_by_full_name_.find(instance_info->target_full_name_) ==
@@ -386,7 +387,7 @@ void InstanceRequestor::ReceiveAaaaResource(const DnsResource& resource,
   Renew(resource, media_, ip_versions_);
 }
 
-void InstanceRequestor::RemoveInstance(const std::string& instance_full_name) {
+void InstanceRequestor::RemoveInstance(const DnsName& instance_full_name) {
   auto iter = instance_infos_by_full_name_.find(instance_full_name);
   if (iter != instance_infos_by_full_name_.end()) {
     for (auto subscriber : subscribers_) {
@@ -501,8 +502,8 @@ void InstanceRequestor::OnChangeLocalServiceInstance(const Mdns::ServiceInstance
   }
 }
 
-void InstanceRequestor::OnRemoveLocalServiceInstance(const std::string& service_name,
-                                                     const std::string& instance_name,
+void InstanceRequestor::OnRemoveLocalServiceInstance(const DnsName& service_name,
+                                                     const DnsLabel& instance_name,
                                                      bool from_proxy) {
   if (from_proxy ? !include_local_proxies_ : !include_local_) {
     return;

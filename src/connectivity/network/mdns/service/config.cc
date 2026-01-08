@@ -10,6 +10,7 @@
 
 #include "src/connectivity/network/mdns/service/common/mdns_names.h"
 #include "src/connectivity/network/mdns/service/common/type_converters.h"
+#include "src/connectivity/network/mdns/service/encoding/dns_formatting.h"
 #include "src/lib/json_parser/rapidjson_validation.h"
 
 namespace mdns {
@@ -97,7 +98,7 @@ const char kAltServicesKey[] = "alt_services";
 const char Config::kConfigDir[] = "/config/data";
 const char Config::kBootConfigDir[] = "/boot/data/mdns";
 
-void Config::ReadConfigFiles(const std::string& local_host_name, const std::string& serial,
+void Config::ReadConfigFiles(const DnsName& local_host_name, const std::string& serial,
                              const std::string& boot_config_dir, const std::string& config_dir) {
   FX_DCHECK(MdnsNames::IsValidHostName(local_host_name));
 
@@ -136,8 +137,8 @@ void Config::ReadConfigFiles(const std::string& local_host_name, const std::stri
       });
 }
 
-void Config::IntegrateDocument(const rapidjson::Document& document,
-                               const std::string& local_host_name, const std::string& serial) {
+void Config::IntegrateDocument(const rapidjson::Document& document, const DnsName& local_host_name,
+                               const std::string& serial) {
   FX_DCHECK(document.IsObject());
 
   if (document.HasMember(kPerformHostNameProbeKey)) {
@@ -162,20 +163,20 @@ void Config::IntegrateDocument(const rapidjson::Document& document,
     FX_DCHECK(document[kAltServicesKey].IsArray());
     for (const auto& item : document[kAltServicesKey].GetArray()) {
       FX_DCHECK(item.IsString());
-      if (!MdnsNames::IsValidServiceName(item.GetString())) {
-        parser_.ReportError((std::stringstream()
-                             << kAltServicesKey << " item value " << item.GetString()
-                             << " is not a valid service type.")
+      DnsName item_as_name = DnsName(item.GetString());
+      if (!MdnsNames::IsValidServiceName(item_as_name)) {
+        parser_.ReportError((std::stringstream() << kAltServicesKey << " item value "
+                                                 << item_as_name << " is not a valid service type.")
                                 .str());
         return;
       }
 
-      alt_services_.push_back(item.GetString());
+      alt_services_.push_back(item_as_name);
     }
   }
 }
 
-void Config::IntegratePublication(const rapidjson::Value& value, const std::string& local_host_name,
+void Config::IntegratePublication(const rapidjson::Value& value, const DnsName& local_host_name,
                                   const std::string& serial) {
   FX_DCHECK(value.IsObject());
   FX_DCHECK(value.HasMember(kServiceKey));
@@ -186,7 +187,7 @@ void Config::IntegratePublication(const rapidjson::Value& value, const std::stri
   FX_DCHECK(port >= 1);
   FX_DCHECK(port <= std::numeric_limits<uint16_t>::max()) << port << " doesn't fit in a uint16";
 
-  auto service = value[kServiceKey].GetString();
+  auto service = DnsName(value[kServiceKey].GetString());
   if (!MdnsNames::IsValidServiceName(service)) {
     parser_.ReportError((std::stringstream()
                          << kServiceKey << " value " << service << " is not a valid service name.")
@@ -194,9 +195,9 @@ void Config::IntegratePublication(const rapidjson::Value& value, const std::stri
     return;
   }
 
-  std::string instance;
+  DnsLabel instance;
   if (value.HasMember(kInstanceKey)) {
-    instance = value[kInstanceKey].GetString();
+    instance = DnsLabel(value[kInstanceKey].GetString());
     if (!MdnsNames::IsValidInstanceName(instance)) {
       parser_.ReportError((std::stringstream() << kInstanceKey << " value " << instance
                                                << " is not a valid instance name.")
@@ -204,7 +205,7 @@ void Config::IntegratePublication(const rapidjson::Value& value, const std::stri
       return;
     }
   } else {
-    instance = local_host_name;
+    instance = local_host_name.first_label();
     if (!MdnsNames::IsValidInstanceName(instance)) {
       parser_.ReportError((std::stringstream()
                            << "Publication of service " << service

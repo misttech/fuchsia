@@ -130,14 +130,14 @@ void MdnsInterfaceTransceiver::SendMessage(const DnsMessage& message,
   }
 }
 
-void MdnsInterfaceTransceiver::SendAddress(const std::string& host_full_name) {
+void MdnsInterfaceTransceiver::SendAddress(const DnsName& host_full_name) {
   DnsMessage message;
   message.answers_.push_back(GetAddressResource(host_full_name));
 
   SendMessage(message, MdnsAddresses::v4_multicast());
 }
 
-void MdnsInterfaceTransceiver::SendAddressGoodbye(const std::string& host_full_name) {
+void MdnsInterfaceTransceiver::SendAddressGoodbye(const DnsName& host_full_name) {
   DnsMessage message;
   // Not using |GetAddressResource| here, because we want to modify the ttl.
   message.answers_.push_back(std::make_shared<DnsResource>(host_full_name, address_));
@@ -232,10 +232,10 @@ void MdnsInterfaceTransceiver::InboundReady(zx_status_t status, uint32_t events)
 }
 
 std::shared_ptr<DnsResource> MdnsInterfaceTransceiver::GetAddressResource(
-    const std::string& host_full_name) {
+    const DnsName& host_full_name) {
   FX_DCHECK(address_.is_valid());
 
-  if (!address_resource_ || address_resource_->name_.dotted_string_ != host_full_name) {
+  if (!address_resource_ || address_resource_->name_ != host_full_name) {
     address_resource_ = std::make_shared<DnsResource>(host_full_name, address_);
   }
 
@@ -243,12 +243,12 @@ std::shared_ptr<DnsResource> MdnsInterfaceTransceiver::GetAddressResource(
 }
 
 const std::vector<std::shared_ptr<DnsResource>>&
-MdnsInterfaceTransceiver::GetInterfaceAddressResources(const std::string& host_full_name) {
+MdnsInterfaceTransceiver::GetInterfaceAddressResources(const DnsName& host_full_name) {
   FX_DCHECK(!interface_addresses_.empty());
 
   // Generate new resources if there currently are none or if the host name has changed.
   if (interface_address_resources_.empty() ||
-      interface_address_resources_[0]->name_.dotted_string_ != host_full_name) {
+      interface_address_resources_[0]->name_ != host_full_name) {
     interface_address_resources_.clear();
 
     // We need to generate new address resources for this interface. An A/AAAA resource
@@ -280,7 +280,7 @@ MdnsInterfaceTransceiver::GetInterfaceAddressResources(const std::string& host_f
 
 std::vector<std::shared_ptr<DnsResource>> MdnsInterfaceTransceiver::FixUpAddresses(
     const std::vector<std::shared_ptr<DnsResource>>& resources) {
-  std::string name;
+  DnsName name;
   std::vector<std::shared_ptr<DnsResource>> result;
   std::copy_if(resources.begin(), resources.end(), std::back_inserter(result),
                [&name](std::shared_ptr<DnsResource> resource) {
@@ -303,7 +303,7 @@ std::vector<std::shared_ptr<DnsResource>> MdnsInterfaceTransceiver::FixUpAddress
                  }
 
                  if (name.empty()) {
-                   name = resource->name_.dotted_string_;
+                   name = resource->name_;
                  }
 
                  return false;

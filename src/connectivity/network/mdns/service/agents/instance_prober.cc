@@ -8,8 +8,8 @@
 
 namespace mdns {
 
-InstanceProber::InstanceProber(MdnsAgent::Owner* owner, const std::string& service_name,
-                               const std::string& instance_name, const std::string& host_full_name,
+InstanceProber::InstanceProber(MdnsAgent::Owner* owner, const DnsName& service_name,
+                               const DnsLabel& instance_name, const DnsName& host_full_name,
                                inet::IpPort port, Media media, IpVersions ip_versions,
                                CompletionCallback callback)
     : Prober(owner, DnsType::kSrv, media, ip_versions, std::move(callback)),
@@ -19,7 +19,7 @@ InstanceProber::InstanceProber(MdnsAgent::Owner* owner, const std::string& servi
 
 InstanceProber::~InstanceProber() {}
 
-const std::string& InstanceProber::ResourceName() { return instance_full_name_; }
+const DnsName& InstanceProber::ResourceName() { return instance_full_name_; }
 
 void InstanceProber::SendProposedResources(MdnsResourceSection section) {
   auto srv_resource = std::make_shared<DnsResource>(instance_full_name_, DnsType::kSrv);

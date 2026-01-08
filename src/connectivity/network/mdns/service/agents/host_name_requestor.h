@@ -21,7 +21,7 @@ namespace mdns {
 class HostNameRequestor : public MdnsAgent {
  public:
   // Creates a |HostNameRequestor|.
-  HostNameRequestor(MdnsAgent::Owner* owner, const std::string& host_name, Media media,
+  HostNameRequestor(MdnsAgent::Owner* owner, const DnsName& host_name, Media media,
                     IpVersions ip_versions, bool include_local, bool include_local_proxies);
 
   ~HostNameRequestor() override;
@@ -33,17 +33,17 @@ class HostNameRequestor : public MdnsAgent {
   void RemoveSubscriber(Mdns::HostNameSubscriber* subscriber);
 
   // MdnsAgent overrides.
-  void Start(const std::string& local_host_full_name) override;
+  void Start(const DnsName& local_host_full_name) override;
 
   void ReceiveResource(const DnsResource& resource, MdnsResourceSection section,
                        ReplyAddress sender_address) override;
 
   void EndOfMessage() override;
 
-  void OnAddProxyHost(const std::string& host_full_name,
+  void OnAddProxyHost(const DnsName& host_full_name,
                       const std::vector<HostAddress>& addresses) override;
 
-  void OnRemoveProxyHost(const std::string& host_full_name) override;
+  void OnRemoveProxyHost(const DnsName& host_full_name) override;
 
   void OnLocalHostAddressesChanged() override;
 
@@ -124,13 +124,13 @@ class HostNameRequestor : public MdnsAgent {
   // |addresses_dirty_| is set.
   void MaybeSendAddressesChanged();
 
-  std::string host_name_;
-  std::string host_full_name_;
+  DnsName host_name_;
+  DnsName host_full_name_;
   Media media_;
   IpVersions ip_versions_;
   bool include_local_;
   bool include_local_proxies_;
-  std::string local_host_full_name_;
+  DnsName local_host_full_name_;
   HostAddressSet addresses_;
   bool addresses_dirty_ = false;
   std::unordered_set<Mdns::HostNameSubscriber*> subscribers_;

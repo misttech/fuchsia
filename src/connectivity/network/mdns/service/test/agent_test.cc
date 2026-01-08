@@ -12,9 +12,9 @@
 namespace mdns {
 namespace test {
 
-const std::string AgentTest::kLocalHostName = "testhost";
-const std::string AgentTest::kLocalHostFullName = "testhost.local.";
-const std::string AgentTest::kAlternateCaseLocalHostFullName = "tEsThOsT.loCal.";
+const DnsName AgentTest::kLocalHostName = DnsName("testhost");
+const DnsName AgentTest::kLocalHostFullName = DnsName("testhost.local.");
+const DnsName AgentTest::kAlternateCaseLocalHostFullName = DnsName("tEsThOsT.loCal.");
 
 bool DefaultCacheFlush(DnsType type) {
   switch (type) {
@@ -80,7 +80,7 @@ void AgentTest::Renew(const DnsResource& resource, Media media, IpVersions ip_ve
   renew_calls_.push_back(RenewCall{.resource_ = resource});
 }
 
-void AgentTest::Query(DnsType type, const std::string& name, Media media, IpVersions ip_versions,
+void AgentTest::Query(DnsType type, const DnsName& name, Media media, IpVersions ip_versions,
                       zx::time initial_query_time, zx::duration interval,
                       uint32_t interval_multiplier, uint32_t max_queries,
                       bool request_unicast_response) {
@@ -99,19 +99,17 @@ void AgentTest::Query(DnsType type, const std::string& name, Media media, IpVers
 
 void AgentTest::ExpectRenewCall(DnsResource resource) {
   for (auto iter = renew_calls_.begin(); iter != renew_calls_.end(); ++iter) {
-    if (iter->resource_.type_ == resource.type_ &&
-        iter->resource_.name_.dotted_string_ == resource.name_.dotted_string_ &&
+    if (iter->resource_.type_ == resource.type_ && iter->resource_.name_ == resource.name_ &&
         iter->resource_.time_to_live_ == resource.time_to_live_) {
       renew_calls_.erase(iter);
       return;
     }
   }
 
-  EXPECT_TRUE(false) << "Renew not called for resource " << resource.type_ << " "
-                     << resource.name_.dotted_string_;
+  EXPECT_TRUE(false) << "Renew not called for resource " << resource.type_ << " " << resource.name_;
 }
 
-void AgentTest::ExpectQueryCall(DnsType type, const std::string& name, Media media,
+void AgentTest::ExpectQueryCall(DnsType type, const DnsName& name, Media media,
                                 IpVersions ip_versions, zx::time initial_query_time,
                                 zx::duration interval, uint32_t interval_multiplier,
                                 uint32_t max_queries, bool request_unicast_response) {
@@ -201,7 +199,7 @@ void AgentTest::ExpectNoOther() {
   ExpectNoRemoveAgentCall();
 }
 
-void AgentTest::ExpectQuestion(DnsMessage* message, const std::string& name, DnsType type,
+void AgentTest::ExpectQuestion(DnsMessage* message, const DnsName& name, DnsType type,
                                DnsClass dns_class, bool unicast_response) {
   EXPECT_NE(nullptr, message);
   if (!message) {
@@ -209,8 +207,8 @@ void AgentTest::ExpectQuestion(DnsMessage* message, const std::string& name, Dns
   }
 
   for (auto i = message->questions_.begin(); i != message->questions_.end(); ++i) {
-    if ((*i)->name_.dotted_string_.compare(name) == 0 && (*i)->type_ == type &&
-        (*i)->class_ == dns_class && (*i)->unicast_response_ == unicast_response) {
+    if ((*i)->name_ == name && (*i)->type_ == type && (*i)->class_ == dns_class &&
+        (*i)->unicast_response_ == unicast_response) {
       message->questions_.erase(i);
       return;
     }
@@ -222,14 +220,14 @@ void AgentTest::ExpectQuestion(DnsMessage* message, const std::string& name, Dns
 
 std::shared_ptr<DnsResource> AgentTest::ExpectResource(DnsMessage* message,
                                                        MdnsResourceSection section,
-                                                       const std::string& name, DnsType type,
+                                                       const DnsName& name, DnsType type,
                                                        DnsClass dns_class) {
   return ExpectResource(message, section, name, type, dns_class, DefaultCacheFlush(type));
 }
 
 std::shared_ptr<DnsResource> AgentTest::ExpectResource(DnsMessage* message,
                                                        MdnsResourceSection section,
-                                                       const std::string& name, DnsType type,
+                                                       const DnsName& name, DnsType type,
                                                        DnsClass dns_class, bool cache_flush) {
   EXPECT_NE(nullptr, message);
   if (!message) {
@@ -253,8 +251,8 @@ std::shared_ptr<DnsResource> AgentTest::ExpectResource(DnsMessage* message,
   }
 
   for (auto i = collection->begin(); i != collection->end(); ++i) {
-    if ((*i)->name_.dotted_string_.compare(name) == 0 && (*i)->type_ == type &&
-        (*i)->class_ == dns_class && (*i)->cache_flush_ == cache_flush) {
+    if ((*i)->name_ == name && (*i)->type_ == type && (*i)->class_ == dns_class &&
+        (*i)->cache_flush_ == cache_flush) {
       auto result = std::move(*i);
       collection->erase(i);
       return result;
@@ -268,14 +266,14 @@ std::shared_ptr<DnsResource> AgentTest::ExpectResource(DnsMessage* message,
 
 std::vector<std::shared_ptr<DnsResource>> AgentTest::ExpectResources(DnsMessage* message,
                                                                      MdnsResourceSection section,
-                                                                     const std::string& name,
+                                                                     const DnsName& name,
                                                                      DnsType type,
                                                                      DnsClass dns_class) {
   return ExpectResources(message, section, name, type, dns_class, DefaultCacheFlush(type));
 }
 
 std::vector<std::shared_ptr<DnsResource>> AgentTest::ExpectResources(
-    DnsMessage* message, MdnsResourceSection section, const std::string& name, DnsType type,
+    DnsMessage* message, MdnsResourceSection section, const DnsName& name, DnsType type,
     DnsClass dns_class, bool cache_flush) {
   EXPECT_NE(nullptr, message);
 
@@ -297,8 +295,8 @@ std::vector<std::shared_ptr<DnsResource>> AgentTest::ExpectResources(
 
   std::vector<std::shared_ptr<DnsResource>> result;
   for (auto i = collection->begin(); i != collection->end();) {
-    if ((*i)->name_.dotted_string_.compare(name) == 0 && (*i)->type_ == type &&
-        (*i)->class_ == dns_class && (*i)->cache_flush_ == cache_flush) {
+    if ((*i)->name_ == name && (*i)->type_ == type && (*i)->class_ == dns_class &&
+        (*i)->cache_flush_ == cache_flush) {
       result.push_back(std::move(*i));
       i = collection->erase(i);
     } else {
@@ -316,7 +314,7 @@ void AgentTest::ExpectAddressPlaceholder(DnsMessage* message, MdnsResourceSectio
 }
 
 void AgentTest::ExpectAddresses(DnsMessage* message, MdnsResourceSection section,
-                                const std::string& host_full_name,
+                                const DnsName& host_full_name,
                                 const std::vector<inet::IpAddress>& addresses) {
   bool expect_v4 = false;
   bool expect_v6 = false;

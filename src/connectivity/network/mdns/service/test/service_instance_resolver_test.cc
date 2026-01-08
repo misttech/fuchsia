@@ -38,20 +38,20 @@ class InstanceResolverTest : public AgentTest {
   InstanceResolverTest() = default;
 
  protected:
-  void ReceivePublication(ServiceInstanceResolver& under_test, const std::string& host_full_name,
-                          const std::string& service_name, const std::string& instance_name,
+  void ReceivePublication(ServiceInstanceResolver& under_test, const DnsName& host_full_name,
+                          const DnsName& service_name, const DnsLabel& instance_name,
                           inet::IpPort port, const std::vector<std::vector<uint8_t>>& text,
                           ReplyAddress sender_address, bool include_address) {
     auto service_full_name = MdnsNames::ServiceFullName(service_name);
     auto instance_full_name = MdnsNames::InstanceFullName(instance_name, service_name);
 
     DnsResource ptr_resource(service_full_name, DnsType::kPtr);
-    ptr_resource.ptr_.pointer_domain_name_ = DnsName(instance_full_name);
+    ptr_resource.ptr_.pointer_domain_name_ = instance_full_name;
     under_test.ReceiveResource(ptr_resource, MdnsResourceSection::kAnswer, sender_address);
 
     DnsResource srv_resource(instance_full_name, DnsType::kSrv);
     srv_resource.srv_.port_ = port;
-    srv_resource.srv_.target_ = DnsName(host_full_name);
+    srv_resource.srv_.target_ = host_full_name;
     under_test.ReceiveResource(srv_resource, MdnsResourceSection::kAnswer, sender_address);
 
     DnsResource txt_resource(instance_full_name, DnsType::kTxt);
@@ -66,7 +66,7 @@ class InstanceResolverTest : public AgentTest {
     under_test.EndOfMessage();
   }
 
-  void ReceiveAddress(ServiceInstanceResolver& under_test, const std::string& host_full_name,
+  void ReceiveAddress(ServiceInstanceResolver& under_test, const DnsName& host_full_name,
                       ReplyAddress sender_address) {
     DnsResource a_resource(host_full_name, sender_address.socket_address().address());
     under_test.ReceiveResource(a_resource, MdnsResourceSection::kAnswer, sender_address);
@@ -75,10 +75,10 @@ class InstanceResolverTest : public AgentTest {
   }
 };
 
-constexpr char kHostName[] = "test2host";
-constexpr char kHostFullName[] = "test2host.local.";
-constexpr char kServiceName[] = "_testservice._tcp.";
-constexpr char kInstanceName[] = "testinstance";
+const DnsName kHostName("test2host");
+const DnsName kHostFullName("test2host.local.");
+const DnsName kServiceName("_testservice._tcp.");
+const DnsLabel kInstanceName("testinstance");
 const inet::IpPort kPort = inet::IpPort::From_uint16_t(1234);
 const std::vector<std::vector<uint8_t>> kText = fidl::To<std::vector<std::vector<uint8_t>>>(
     std::vector<std::string>{"color=red", "shape=round"});
@@ -131,9 +131,9 @@ TEST_F(InstanceResolverTest, LocalInstance) {
       kFromLocalHost);
 
   EXPECT_TRUE(callback_called);
-  EXPECT_EQ(kServiceName, instance_from_callback.service());
+  EXPECT_EQ(kServiceName.to_string(), instance_from_callback.service());
   EXPECT_EQ(kInstanceName, instance_from_callback.instance());
-  EXPECT_EQ(kLocalHostName, instance_from_callback.target());
+  EXPECT_EQ(kLocalHostName.to_string(), instance_from_callback.target());
   EXPECT_EQ(0, instance_from_callback.srv_priority());
   EXPECT_EQ(0, instance_from_callback.srv_weight());
   EXPECT_EQ(fidl::To<std::vector<fuchsia::net::SocketAddress>>(kSocketAddresses),
@@ -173,9 +173,9 @@ TEST_F(InstanceResolverTest, LocalProxyInstance) {
       kFromLocalProxyHost);
 
   EXPECT_TRUE(callback_called);
-  EXPECT_EQ(kServiceName, instance_from_callback.service());
+  EXPECT_EQ(kServiceName.to_string(), instance_from_callback.service());
   EXPECT_EQ(kInstanceName, instance_from_callback.instance());
-  EXPECT_EQ(kHostName, instance_from_callback.target());
+  EXPECT_EQ(kHostName.to_string(), instance_from_callback.target());
   EXPECT_EQ(0, instance_from_callback.srv_priority());
   EXPECT_EQ(0, instance_from_callback.srv_weight());
   EXPECT_EQ(fidl::To<std::vector<fuchsia::net::SocketAddress>>(kSocketAddresses),
@@ -185,7 +185,7 @@ TEST_F(InstanceResolverTest, LocalProxyInstance) {
 
 // Regression test for b/274710801
 TEST_F(InstanceResolverTest, LocalProxyInstanceFail) {
-  constexpr char kAnotherInstanceName[] = "another-testinstance";
+  const DnsLabel kAnotherInstanceName("another-testinstance");
 
   fuchsia::net::mdns::ServiceInstance instance_from_callback;
   bool callback_called = false;

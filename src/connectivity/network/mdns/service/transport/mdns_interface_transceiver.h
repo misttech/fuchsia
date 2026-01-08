@@ -63,11 +63,11 @@ class MdnsInterfaceTransceiver {
   void SendMessage(const DnsMessage& message, const inet::SocketAddress& address);
 
   // Sends a message containing only an address resource for this interface.
-  void SendAddress(const std::string& host_full_name);
+  void SendAddress(const DnsName& host_full_name);
 
   // Sends a message containing only an address resource for this interface with
   // zero ttl, indicating that the address is no longer valid.
-  void SendAddressGoodbye(const std::string& host_full_name);
+  void SendAddressGoodbye(const DnsName& host_full_name);
 
   // Writes log messages describing lifetime traffic.
   void LogTraffic();
@@ -98,7 +98,7 @@ class MdnsInterfaceTransceiver {
   // addresses contained in |interface_addresses_|.
   // This method is protected so it can be accessed by subclasses used in tests.
   const std::vector<std::shared_ptr<DnsResource>>& GetInterfaceAddressResources(
-      const std::string& host_full_name);
+      const DnsName& host_full_name);
 
  private:
   int SetOptionSharePort();
@@ -110,7 +110,7 @@ class MdnsInterfaceTransceiver {
 
   // Returns an address resource (A/AAAA) record with the given name and the
   // address contained in |address_|, which must be valid.
-  std::shared_ptr<DnsResource> GetAddressResource(const std::string& host_full_name);
+  std::shared_ptr<DnsResource> GetAddressResource(const DnsName& host_full_name);
 
   // Returns a new vector with the same resources as |resources| except that any placeholder address
   // records have been replaced by address records for |interface_addresses_|.

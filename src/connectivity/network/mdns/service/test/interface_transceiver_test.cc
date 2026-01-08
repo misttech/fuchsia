@@ -15,8 +15,7 @@
 #include "src/connectivity/network/mdns/service/transport/mdns_interface_transceiver.h"
 #include "src/lib/fostr/hex_dump.h"
 
-namespace mdns {
-namespace test {
+namespace mdns::test {
 
 class MdnsInterfaceTransceiverTest : public MdnsInterfaceTransceiver {
  public:
@@ -105,7 +104,8 @@ TEST(InterfaceTransceiverTest, SendSimpleMessage) {
   MdnsInterfaceTransceiverTest under_test(nic_address, nic_name, nic_id, Media::kWired);
   under_test.SetInterfaceAddresses({nic_address});
 
-  auto ptr_resource = std::make_shared<DnsResource>("_test_name._whatever.", DnsType::kPtr);
+  auto ptr_resource =
+      std::make_shared<DnsResource>(DnsName("_test_name._whatever."), DnsType::kPtr);
   ptr_resource->time_to_live_ = 234;
   ptr_resource->ptr_.pointer_domain_name_ = DnsName("_test_ptr_name._whatever.");
 
@@ -146,9 +146,10 @@ TEST(InterfaceTransceiverTest, SendLeadingA) {
   MdnsInterfaceTransceiverTest under_test(nic_address, nic_name, nic_id, Media::kWired);
   under_test.SetInterfaceAddresses({nic_address});
 
-  auto a_resource = std::make_shared<DnsResource>("_test_a_name._whatever.", DnsType::kA);
+  auto a_resource = std::make_shared<DnsResource>(DnsName("_test_a_name._whatever."), DnsType::kA);
 
-  auto ptr_resource = std::make_shared<DnsResource>("_test_name._whatever.", DnsType::kPtr);
+  auto ptr_resource =
+      std::make_shared<DnsResource>(DnsName("_test_name._whatever."), DnsType::kPtr);
   ptr_resource->time_to_live_ = 234;
   ptr_resource->ptr_.pointer_domain_name_ = DnsName("_test_ptr_name._whatever.");
 
@@ -196,11 +197,13 @@ TEST(InterfaceTransceiverTest, SendLeadingAAndAAAA) {
   MdnsInterfaceTransceiverTest under_test(nic_address, nic_name, nic_id, Media::kWired);
   under_test.SetInterfaceAddresses({nic_address});
 
-  auto a_resource = std::make_shared<DnsResource>("_test_a_name._whatever.", DnsType::kA);
+  auto a_resource = std::make_shared<DnsResource>(DnsName("_test_a_name._whatever."), DnsType::kA);
 
-  auto aaaa_resource = std::make_shared<DnsResource>("_test_a_name._whatever.", DnsType::kAaaa);
+  auto aaaa_resource =
+      std::make_shared<DnsResource>(DnsName("_test_a_name._whatever."), DnsType::kAaaa);
 
-  auto ptr_resource = std::make_shared<DnsResource>("_test_name._whatever.", DnsType::kPtr);
+  auto ptr_resource =
+      std::make_shared<DnsResource>(DnsName("_test_name._whatever."), DnsType::kPtr);
   ptr_resource->time_to_live_ = 234;
   ptr_resource->ptr_.pointer_domain_name_ = DnsName("_test_ptr_name._whatever.");
 
@@ -249,11 +252,13 @@ TEST(InterfaceTransceiverTest, SendTrailingAAndAAAA) {
   MdnsInterfaceTransceiverTest under_test(nic_address, nic_name, nic_id, Media::kWired);
   under_test.SetInterfaceAddresses({nic_address});
 
-  auto a_resource = std::make_shared<DnsResource>("_test_a_name._whatever.", DnsType::kA);
+  auto a_resource = std::make_shared<DnsResource>(DnsName("_test_a_name._whatever."), DnsType::kA);
 
-  auto aaaa_resource = std::make_shared<DnsResource>("_test_a_name._whatever.", DnsType::kAaaa);
+  auto aaaa_resource =
+      std::make_shared<DnsResource>(DnsName("_test_a_name._whatever."), DnsType::kAaaa);
 
-  auto ptr_resource = std::make_shared<DnsResource>("_test_name._whatever.", DnsType::kPtr);
+  auto ptr_resource =
+      std::make_shared<DnsResource>(DnsName("_test_name._whatever."), DnsType::kPtr);
   ptr_resource->time_to_live_ = 234;
   ptr_resource->ptr_.pointer_domain_name_ = DnsName("_test_ptr_name._whatever.");
 
@@ -302,11 +307,13 @@ TEST(InterfaceTransceiverTest, SendBracketingAAndAAAA) {
   MdnsInterfaceTransceiverTest under_test(nic_address, nic_name, nic_id, Media::kWired);
   under_test.SetInterfaceAddresses({nic_address});
 
-  auto a_resource = std::make_shared<DnsResource>("_test_a_name._whatever.", DnsType::kA);
+  auto a_resource = std::make_shared<DnsResource>(DnsName("_test_a_name._whatever."), DnsType::kA);
 
-  auto aaaa_resource = std::make_shared<DnsResource>("_test_a_name._whatever.", DnsType::kAaaa);
+  auto aaaa_resource =
+      std::make_shared<DnsResource>(DnsName("_test_a_name._whatever."), DnsType::kAaaa);
 
-  auto ptr_resource = std::make_shared<DnsResource>("_test_name._whatever.", DnsType::kPtr);
+  auto ptr_resource =
+      std::make_shared<DnsResource>(DnsName("_test_name._whatever."), DnsType::kPtr);
   ptr_resource->time_to_live_ = 234;
   ptr_resource->ptr_.pointer_domain_name_ = DnsName("_test_ptr_name._whatever.");
 
@@ -356,9 +363,10 @@ TEST(InterfaceTransceiverTest, SendLeadingAWithAlternate) {
   MdnsInterfaceTransceiverTest under_test(nic_address, nic_name, nic_id, Media::kWired);
   under_test.SetInterfaceAddresses({nic_address, alternate_address});
 
-  auto a_resource = std::make_shared<DnsResource>("_test_a_name._whatever.", DnsType::kA);
+  auto a_resource = std::make_shared<DnsResource>(DnsName("_test_a_name._whatever."), DnsType::kA);
 
-  auto ptr_resource = std::make_shared<DnsResource>("_test_name._whatever.", DnsType::kPtr);
+  auto ptr_resource =
+      std::make_shared<DnsResource>(DnsName("_test_name._whatever."), DnsType::kPtr);
   ptr_resource->time_to_live_ = 234;
   ptr_resource->ptr_.pointer_domain_name_ = DnsName("_test_ptr_name._whatever.");
 
@@ -411,9 +419,10 @@ TEST(InterfaceTransceiverTest, SendLeadingAWithLateAlternate) {
   MdnsInterfaceTransceiverTest under_test(nic_address, nic_name, nic_id, Media::kWired);
   under_test.SetInterfaceAddresses({nic_address});
 
-  auto a_resource = std::make_shared<DnsResource>("_test_a_name._whatever.", DnsType::kA);
+  auto a_resource = std::make_shared<DnsResource>(DnsName("_test_a_name._whatever."), DnsType::kA);
 
-  auto ptr_resource = std::make_shared<DnsResource>("_test_name._whatever.", DnsType::kPtr);
+  auto ptr_resource =
+      std::make_shared<DnsResource>(DnsName("_test_name._whatever."), DnsType::kPtr);
   ptr_resource->time_to_live_ = 234;
   ptr_resource->ptr_.pointer_domain_name_ = DnsName("_test_ptr_name._whatever.");
 
@@ -482,5 +491,4 @@ TEST(InterfaceTransceiverTest, SendLeadingAWithLateAlternate) {
   EXPECT_EQ(to_address, under_test.send_to_address_);
 }
 
-}  // namespace test
-}  // namespace mdns
+}  // namespace mdns::test

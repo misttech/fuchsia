@@ -10,8 +10,6 @@
 #include <lib/sys/cpp/component_context.h>
 #include <lib/syslog/cpp/macros.h>
 
-#include <unordered_map>
-
 #include "src/connectivity/network/mdns/service/config.h"
 #include "src/connectivity/network/mdns/service/mdns.h"
 #include "src/connectivity/network/mdns/service/services/mdns_deprecated_service_impl.h"
@@ -41,7 +39,7 @@ class MdnsServiceImpl {
     // Mdns::Publisher implementation.
     void ReportSuccess(bool success) override;
 
-    void GetPublication(PublicationCause publication_cause, const std::string& subtype,
+    void GetPublication(PublicationCause publication_cause, const DnsLabel& subtype,
                         const std::vector<inet::SocketAddress>& source_addresses,
                         GetPublicationCallback callback) override;
 
@@ -63,8 +61,8 @@ class MdnsServiceImpl {
 
   // Publishes a service instance using |SimplePublisher|.
   bool PublishServiceInstance(
-      std::string service_name, std::string instance_name,
-      std::unique_ptr<Mdns::Publication> publication, bool perform_probe, Media media,
+      DnsName service_name, DnsLabel instance_name, std::unique_ptr<Mdns::Publication> publication,
+      bool perform_probe, Media media,
       fit::function<void(fpromise::result<void, fuchsia::net::mdns::Error>)> callback);
 
   sys::ComponentContext* component_context_;

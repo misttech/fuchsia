@@ -8,6 +8,7 @@
 #include "src/connectivity/network/mdns/service/common/mdns_names.h"
 #include "src/connectivity/network/mdns/service/common/reply_address.h"
 #include "src/connectivity/network/mdns/service/common/type_converters.h"
+#include "src/connectivity/network/mdns/service/encoding/dns_formatting.h"
 
 namespace mdns {
 
@@ -20,8 +21,10 @@ ServiceSubscriberServiceImpl::ServiceSubscriberServiceImpl(
 void ServiceSubscriberServiceImpl::SubscribeToService(
     std::string service, fuchsia::net::mdns::ServiceSubscriptionOptions options,
     fidl::InterfaceHandle<fuchsia::net::mdns::ServiceSubscriptionListener> listener_handle) {
-  if (!MdnsNames::IsValidServiceName(service)) {
-    FX_LOGS(ERROR) << "SubscribeToService called with invalid service name " << service
+  DnsName service_name(std::move(service));
+
+  if (!MdnsNames::IsValidServiceName(service_name)) {
+    FX_LOGS(ERROR) << "SubscribeToService called with invalid service name " << service_name
                    << ", closing connection";
     Quit();
     return;
@@ -39,7 +42,7 @@ void ServiceSubscriberServiceImpl::SubscribeToService(
   bool include_local_proxies =
       !options.has_exclude_local_proxies() || !options.exclude_local_proxies();
 
-  mdns().SubscribeToService(service, media, ip_versions, include_local, include_local_proxies,
+  mdns().SubscribeToService(service_name, media, ip_versions, include_local, include_local_proxies,
                             subscriber.get());
 
   service_instance_subscribers_by_id_.emplace(id, std::move(subscriber));
@@ -85,10 +88,10 @@ ServiceSubscriberServiceImpl::Subscriber::~Subscriber() {
 }
 
 void ServiceSubscriberServiceImpl::Subscriber::InstanceDiscovered(
-    const std::string& service, const std::string& instance,
+    const DnsName& service, const DnsLabel& instance,
     const std::vector<inet::SocketAddress>& addresses,
     const std::vector<std::vector<uint8_t>>& text, uint16_t srv_priority, uint16_t srv_weight,
-    const std::string& target) {
+    const DnsName& target) {
   Entry entry{.type = EntryType::kInstanceDiscovered};
   MdnsFidlUtil::FillServiceInstance(&entry.service_instance, service, instance, addresses, text,
                                     srv_priority, srv_weight, target);
@@ -97,10 +100,10 @@ void ServiceSubscriberServiceImpl::Subscriber::InstanceDiscovered(
 }
 
 void ServiceSubscriberServiceImpl::Subscriber::InstanceChanged(
-    const std::string& service, const std::string& instance,
+    const DnsName& service, const DnsLabel& instance,
     const std::vector<inet::SocketAddress>& addresses,
     const std::vector<std::vector<uint8_t>>& text, uint16_t srv_priority, uint16_t srv_weight,
-    const std::string& target) {
+    const DnsName& target) {
   Entry entry{.type = EntryType::kInstanceChanged};
   MdnsFidlUtil::FillServiceInstance(&entry.service_instance, service, instance, addresses, text,
                                     srv_priority, srv_weight, target);
@@ -109,10 +112,10 @@ void ServiceSubscriberServiceImpl::Subscriber::InstanceChanged(
   MaybeSendNextEntry();
 }
 
-void ServiceSubscriberServiceImpl::Subscriber::InstanceLost(const std::string& service,
-                                                            const std::string& instance) {
+void ServiceSubscriberServiceImpl::Subscriber::InstanceLost(const DnsName& service,
+                                                            const DnsLabel& instance) {
   Entry entry{.type = EntryType::kInstanceLost};
-  entry.service_instance.set_service(service);
+  entry.service_instance.set_service(service.to_string());
   entry.service_instance.set_instance(instance);
   entries_.push(std::move(entry));
 

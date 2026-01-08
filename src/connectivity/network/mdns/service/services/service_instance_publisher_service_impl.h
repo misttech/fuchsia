@@ -21,8 +21,8 @@ class ServiceInstancePublisherServiceImpl
       fit::closure deleter);
 
   ServiceInstancePublisherServiceImpl(
-      Mdns& mdns, std::string host_name, std::vector<inet::IpAddress> addresses,
-      Media default_media, IpVersions default_ip_versions,
+      Mdns& mdns, DnsName host_name, std::vector<inet::IpAddress> addresses, Media default_media,
+      IpVersions default_ip_versions,
       fidl::InterfaceRequest<fuchsia::net::mdns::ServiceInstancePublisher> request,
       fit::closure deleter);
 
@@ -94,7 +94,7 @@ class ServiceInstancePublisherServiceImpl
     uint32_t on_publication_calls_in_progress_ = 0;
   };
 
-  std::string host_name_;
+  DnsName host_name_;
   std::vector<inet::IpAddress> addresses_;
   Media default_media_;
   IpVersions default_ip_versions_;

@@ -54,17 +54,17 @@ class MdnsDeprecatedServiceImpl : public fuchsia::net::mdns::Resolver,
     ~Subscriber() override;
 
     // Mdns::Subscriber implementation:
-    void InstanceDiscovered(const std::string& service, const std::string& instance,
+    void InstanceDiscovered(const DnsName& service, const DnsLabel& instance,
                             const std::vector<inet::SocketAddress>& addresses,
                             const std::vector<std::vector<uint8_t>>& text, uint16_t srv_priority,
-                            uint16_t srv_weight, const std::string& target) override;
+                            uint16_t srv_weight, const DnsName& target) override;
 
-    void InstanceChanged(const std::string& service, const std::string& instance,
+    void InstanceChanged(const DnsName& service, const DnsLabel& instance,
                          const std::vector<inet::SocketAddress>& addresses,
                          const std::vector<std::vector<uint8_t>>& text, uint16_t srv_priority,
-                         uint16_t srv_weight, const std::string& target) override;
+                         uint16_t srv_weight, const DnsName& target) override;
 
-    void InstanceLost(const std::string& service, const std::string& instance) override;
+    void InstanceLost(const DnsName& service, const DnsLabel& instance) override;
 
     void Query(DnsType type_queried) override;
 
@@ -129,7 +129,7 @@ class MdnsDeprecatedServiceImpl : public fuchsia::net::mdns::Resolver,
     // Mdns::Publisher implementation.
     void ReportSuccess(bool success) override;
 
-    void GetPublication(PublicationCause publication_cause, const std::string& subtype,
+    void GetPublication(PublicationCause publication_cause, const DnsLabel& subtype,
                         const std::vector<inet::SocketAddress>& source_addresses,
                         GetPublicationCallback callback) override;
 
@@ -139,7 +139,7 @@ class MdnsDeprecatedServiceImpl : public fuchsia::net::mdns::Resolver,
     static constexpr uint32_t kMaxOnPublicationCallsInProgress = 2;
 
     struct Entry {
-      Entry(PublicationCause publication_cause, const std::string& subtype,
+      Entry(PublicationCause publication_cause, const DnsLabel& subtype,
             const std::vector<inet::SocketAddress>& source_addresses,
             GetPublicationCallback callback)
           : publication_cause_(publication_cause),
@@ -147,7 +147,7 @@ class MdnsDeprecatedServiceImpl : public fuchsia::net::mdns::Resolver,
             source_addresses_(source_addresses),
             callback_(std::move(callback)) {}
       PublicationCause publication_cause_;
-      std::string subtype_;
+      DnsLabel subtype_;
       std::vector<inet::SocketAddress> source_addresses_;
       GetPublicationCallback callback_;
     };
@@ -158,7 +158,7 @@ class MdnsDeprecatedServiceImpl : public fuchsia::net::mdns::Resolver,
     // Calls the responder's |OnPublication| method and, if all goes well, calls the callback and
     // |OnGetPublicationComplete|. If the response to |OnPublication| is malformed, this method
     // calls |Unpublish| instead.
-    void GetPublicationNow(PublicationCause publication_cause, const std::string& subtype,
+    void GetPublicationNow(PublicationCause publication_cause, const DnsLabel& subtype,
                            const std::vector<inet::SocketAddress>& source_addresses,
                            GetPublicationCallback callback);
 
@@ -209,8 +209,7 @@ class MdnsDeprecatedServiceImpl : public fuchsia::net::mdns::Resolver,
   Mdns& mdns_;
   size_t next_subscriber_id_ = 0;
   std::unordered_map<size_t, std::unique_ptr<Subscriber>> subscribers_by_id_;
-  std::unordered_map<std::string, std::unique_ptr<Mdns::Publisher>>
-      publishers_by_instance_full_name_;
+  std::unordered_map<DnsName, std::unique_ptr<Mdns::Publisher>> publishers_by_instance_full_name_;
 
  public:
   // Disallow copy, assign and move.

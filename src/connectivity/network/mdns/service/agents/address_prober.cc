@@ -10,7 +10,7 @@ AddressProber::AddressProber(MdnsAgent::Owner* owner, Media media, IpVersions ip
                              CompletionCallback callback)
     : Prober(owner, DnsType::kA, media, ip_versions, std::move(callback)) {}
 
-AddressProber::AddressProber(MdnsAgent::Owner* owner, std::string host_full_name,
+AddressProber::AddressProber(MdnsAgent::Owner* owner, DnsName host_full_name,
                              std::vector<inet::IpAddress> addresses, Media media,
                              IpVersions ip_versions, CompletionCallback callback)
     : Prober(owner, DnsType::kA, media, ip_versions, std::move(callback)),
@@ -22,7 +22,7 @@ AddressProber::AddressProber(MdnsAgent::Owner* owner, std::string host_full_name
 
 AddressProber::~AddressProber() {}
 
-const std::string& AddressProber::ResourceName() {
+const DnsName& AddressProber::ResourceName() {
   return host_full_name_.empty() ? local_host_full_name() : host_full_name_;
 }
 

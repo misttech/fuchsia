@@ -23,9 +23,9 @@ class AgentTest : public ::testing::Test, public MdnsAgent::Owner {
 
  protected:
   static constexpr zx::time kInitialTime = zx::time(1000);
-  static const std::string kLocalHostName;
-  static const std::string kLocalHostFullName;
-  static const std::string kAlternateCaseLocalHostFullName;
+  static const DnsName kLocalHostName;
+  static const DnsName kLocalHostFullName;
+  static const DnsName kAlternateCaseLocalHostFullName;
 
   // Sets the agent under test. This must be called before the test gets underway, and the agent
   // must survive until the end of the test.
@@ -67,7 +67,7 @@ class AgentTest : public ::testing::Test, public MdnsAgent::Owner {
   void ExpectNoQueryCalls() { EXPECT_TRUE(query_calls_.empty()); }
 
   // Expects that the agent has called |Query|.
-  void ExpectQueryCall(DnsType type, const std::string& name, Media media, IpVersions ip_versions,
+  void ExpectQueryCall(DnsType type, const DnsName& name, Media media, IpVersions ip_versions,
                        zx::time initial_query_time, zx::duration interval,
                        uint32_t interval_multiplier, uint32_t max_queries,
                        bool request_unicast_response);
@@ -129,27 +129,27 @@ class AgentTest : public ::testing::Test, public MdnsAgent::Owner {
   virtual void ExpectNoOther();
 
   // Expects that |message| contains a question with the given parameters.
-  void ExpectQuestion(DnsMessage* message, const std::string& name, DnsType type,
+  void ExpectQuestion(DnsMessage* message, const DnsName& name, DnsType type,
                       DnsClass dns_class = DnsClass::kIn, bool unicast_response = false);
 
   // Expects that |message| contains a resource in |section| with the given parameters and returns
   // it.
   std::shared_ptr<DnsResource> ExpectResource(DnsMessage* message, MdnsResourceSection section,
-                                              const std::string& name, DnsType type,
+                                              const DnsName& name, DnsType type,
                                               DnsClass dns_class = DnsClass::kIn);
   std::shared_ptr<DnsResource> ExpectResource(DnsMessage* message, MdnsResourceSection section,
-                                              const std::string& name, DnsType type,
-                                              DnsClass dns_class, bool cache_flush);
+                                              const DnsName& name, DnsType type, DnsClass dns_class,
+                                              bool cache_flush);
 
   // Expects that |message| contains one or more resources in |section| with the given parameters
   // and returns them.
   std::vector<std::shared_ptr<DnsResource>> ExpectResources(DnsMessage* message,
                                                             MdnsResourceSection section,
-                                                            const std::string& name, DnsType type,
+                                                            const DnsName& name, DnsType type,
                                                             DnsClass dns_class = DnsClass::kIn);
   std::vector<std::shared_ptr<DnsResource>> ExpectResources(DnsMessage* message,
                                                             MdnsResourceSection section,
-                                                            const std::string& name, DnsType type,
+                                                            const DnsName& name, DnsType type,
                                                             DnsClass dns_class, bool cache_flush);
 
   // Expects that |message| contains an address placeholder resource in |section|.
@@ -157,7 +157,7 @@ class AgentTest : public ::testing::Test, public MdnsAgent::Owner {
 
   // Expects that |message| contains resources for |addresses| in |section|.
   void ExpectAddresses(DnsMessage* message, MdnsResourceSection section,
-                       const std::string& host_full_name,
+                       const DnsName& host_full_name,
                        const std::vector<inet::IpAddress>& addresses);
 
   // Expect that |address| appears in |resources| and remove it.
@@ -178,7 +178,7 @@ class AgentTest : public ::testing::Test, public MdnsAgent::Owner {
 
   struct QueryCall {
     DnsType type_;
-    std::string name_;
+    DnsName name_;
     Media media_;
     IpVersions ip_versions_;
     zx::time initial_query_time_;
@@ -214,7 +214,7 @@ class AgentTest : public ::testing::Test, public MdnsAgent::Owner {
 
   void Renew(const DnsResource& resource, Media media, IpVersions ip_versions) override;
 
-  void Query(DnsType type, const std::string& name, Media media, IpVersions ip_versions,
+  void Query(DnsType type, const DnsName& name, Media media, IpVersions ip_versions,
              zx::time initial_query_time, zx::duration interval, uint32_t interval_multiplier,
              uint32_t max_queries, bool request_unicast_response) override;
 

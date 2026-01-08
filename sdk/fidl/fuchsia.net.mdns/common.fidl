@@ -21,8 +21,8 @@ alias host_name = string:255;
 alias service_name = string:22;
 
 /// Identifies a specific instance of a service being published. Instance names
-/// consist of a single label, which is at most 63 characters long and which
-/// contains no '.'s. Instance names are UTF-8-encoded.
+/// consist of a single label, which is at most 63 characters long. Instance names
+/// are UTF-8-encoded. An instance name may contain any number of '.'s.
 alias instance_name = string:63;
 
 /// Identifies a subtype of a service. Subtype names consist of a single label,

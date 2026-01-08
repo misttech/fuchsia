@@ -16,7 +16,7 @@ namespace test {
 
 const char kTestDir[] = "/tmp/mdns_config_test";
 const char kBootTestDir[] = "/tmp/mdns_config_boot_test";
-const char kHostName[] = "test-host-name";
+const DnsName kHostName("test-host-name");
 const char kSerialNumber[] = "0123456789";
 
 bool WriteFile(const std::string& file, const std::string& to_write,
@@ -86,8 +86,8 @@ TEST(ConfigTest, OneValidFile) {
   EXPECT_EQ(1u, under_test.publications().size());
   if (!under_test.publications().empty()) {
     EXPECT_TRUE((Config::Publication{
-                    .service_ = "_fuchsia._udp.",
-                    .instance_ = kHostName,
+                    .service_ = DnsName("_fuchsia._udp."),
+                    .instance_ = kHostName.first_label(),
                     .publication_ = std::make_unique<Mdns::Publication>(Mdns::Publication{
                         .port_ = inet::IpPort::From_uint16_t(5353),
                         .text_ = {fidl::To<std::vector<uint8_t>>(std::string("chins=2")),
@@ -96,8 +96,8 @@ TEST(ConfigTest, OneValidFile) {
                     .media_ = Media::kWireless}) == under_test.publications()[0]);
   }
   EXPECT_EQ(2u, under_test.alt_services().size());
-  EXPECT_EQ("_altsvc1._udp.", under_test.alt_services()[0]);
-  EXPECT_EQ("_altsvc2._tcp.", under_test.alt_services()[1]);
+  EXPECT_EQ(DnsName("_altsvc1._udp."), under_test.alt_services()[0]);
+  EXPECT_EQ(DnsName("_altsvc2._tcp."), under_test.alt_services()[1]);
 
   EXPECT_TRUE(files::DeletePath(kTestDir, true));
 }
@@ -160,18 +160,19 @@ TEST(ConfigTest, TwoValidFiles) {
   EXPECT_FALSE(under_test.perform_host_name_probe());
   EXPECT_EQ(2u, under_test.publications().size());
 
-  size_t fuchsia_index = (under_test.publications()[0].service_ == "_fuchsia._udp.") ? 0 : 1;
+  size_t fuchsia_index =
+      (under_test.publications()[0].service_ == DnsName("_fuchsia._udp.")) ? 0 : 1;
 
   EXPECT_TRUE(
-      (Config::Publication{.service_ = "_fuchsia._udp.",
-                           .instance_ = kHostName,
+      (Config::Publication{.service_ = DnsName("_fuchsia._udp."),
+                           .instance_ = kHostName.first_label(),
                            .publication_ = std::make_unique<Mdns::Publication>(
                                Mdns::Publication{.port_ = inet::IpPort::From_uint16_t(5353)}),
                            .perform_probe_ = false,
                            .media_ = Media::kWired}) == under_test.publications()[fuchsia_index]);
   EXPECT_TRUE((Config::Publication{
-                  .service_ = "_footstool._udp.",
-                  .instance_ = "puffy",
+                  .service_ = DnsName("_footstool._udp."),
+                  .instance_ = DnsLabel("puffy"),
                   .publication_ = std::make_unique<Mdns::Publication>(
                       Mdns::Publication{.port_ = inet::IpPort::From_uint16_t(1234)}),
                   .perform_probe_ = true,
@@ -251,8 +252,8 @@ TEST(ConfigTest, OverrideBootConfigDir) {
   EXPECT_EQ("", under_test.error());
 
   // Config from boot dir should always be first.
-  EXPECT_TRUE((Config::Publication{.service_ = "_fuchsia._udp.",
-                                   .instance_ = kHostName,
+  EXPECT_TRUE((Config::Publication{.service_ = DnsName("_fuchsia._udp."),
+                                   .instance_ = kHostName.first_label(),
                                    .publication_ = Mdns::Publication::Create(
                                        inet::IpPort::From_uint16_t(12345),
                                        {fidl::To<std::vector<uint8_t>>(std::string("one")),
@@ -260,8 +261,8 @@ TEST(ConfigTest, OverrideBootConfigDir) {
                                    .perform_probe_ = false,
                                    .media_ = Media::kWired}) == under_test.publications()[0]);
   EXPECT_TRUE(
-      (Config::Publication{.service_ = "_fuchsia._udp.",
-                           .instance_ = kHostName,
+      (Config::Publication{.service_ = DnsName("_fuchsia._udp."),
+                           .instance_ = kHostName.first_label(),
                            .publication_ = std::make_unique<Mdns::Publication>(
                                Mdns::Publication{.port_ = inet::IpPort::From_uint16_t(5353)}),
                            .perform_probe_ = false,
@@ -274,8 +275,8 @@ TEST(ConfigTest, OverrideBootConfigDir) {
 
   // Config from boot dir should always be first, in this case the parameters are reversed, so the
   // order should be too.
-  EXPECT_TRUE((Config::Publication{.service_ = "_fuchsia._udp.",
-                                   .instance_ = kHostName,
+  EXPECT_TRUE((Config::Publication{.service_ = DnsName("_fuchsia._udp."),
+                                   .instance_ = kHostName.first_label(),
                                    .publication_ = Mdns::Publication::Create(
                                        inet::IpPort::From_uint16_t(12345),
                                        {fidl::To<std::vector<uint8_t>>(std::string("one")),
@@ -284,8 +285,8 @@ TEST(ConfigTest, OverrideBootConfigDir) {
                                    .media_ = Media::kWired}) ==
               under_test_reversed.publications()[1]);
   EXPECT_TRUE(
-      (Config::Publication{.service_ = "_fuchsia._udp.",
-                           .instance_ = kHostName,
+      (Config::Publication{.service_ = DnsName("_fuchsia._udp."),
+                           .instance_ = kHostName.first_label(),
                            .publication_ = std::make_unique<Mdns::Publication>(
                                Mdns::Publication{.port_ = inet::IpPort::From_uint16_t(5353)}),
                            .perform_probe_ = false,
@@ -314,8 +315,8 @@ TEST(ConfigTest, IncludesSerialSuccess) {
   EXPECT_FALSE(under_test.perform_host_name_probe());
   EXPECT_EQ(1u, under_test.publications().size());
   EXPECT_TRUE((Config::Publication{
-                  .service_ = "_fuchsia._udp.",
-                  .instance_ = kHostName,
+                  .service_ = DnsName("_fuchsia._udp."),
+                  .instance_ = kHostName.first_label(),
                   .publication_ = std::make_unique<Mdns::Publication>(Mdns::Publication{
                       .port_ = inet::IpPort::From_uint16_t(5353),
                       .text_ = {fidl::To<std::vector<uint8_t>>(std::string("chins=2")),
@@ -324,8 +325,8 @@ TEST(ConfigTest, IncludesSerialSuccess) {
                   .perform_probe_ = false,
                   .media_ = Media::kWireless}) == under_test.publications()[0]);
   EXPECT_EQ(2u, under_test.alt_services().size());
-  EXPECT_EQ("_altsvc1._udp.", under_test.alt_services()[0]);
-  EXPECT_EQ("_altsvc2._tcp.", under_test.alt_services()[1]);
+  EXPECT_EQ(DnsName("_altsvc1._udp."), under_test.alt_services()[0]);
+  EXPECT_EQ(DnsName("_altsvc2._tcp."), under_test.alt_services()[1]);
 
   EXPECT_TRUE(files::DeletePath(kTestDir, true));
 }
@@ -349,8 +350,8 @@ TEST(ConfigTest, IncludesSerialWithNoSerial) {
   EXPECT_FALSE(under_test.perform_host_name_probe());
   EXPECT_EQ(1u, under_test.publications().size());
   EXPECT_TRUE(
-      (Config::Publication{.service_ = "_fuchsia._udp.",
-                           .instance_ = kHostName,
+      (Config::Publication{.service_ = DnsName("_fuchsia._udp."),
+                           .instance_ = kHostName.first_label(),
                            .publication_ = std::make_unique<Mdns::Publication>(Mdns::Publication{
                                .port_ = inet::IpPort::From_uint16_t(5353),
                                .text_ =
@@ -361,8 +362,8 @@ TEST(ConfigTest, IncludesSerialWithNoSerial) {
                            .perform_probe_ = false,
                            .media_ = Media::kWireless}) == under_test.publications()[0]);
   EXPECT_EQ(2u, under_test.alt_services().size());
-  EXPECT_EQ("_altsvc1._udp.", under_test.alt_services()[0]);
-  EXPECT_EQ("_altsvc2._tcp.", under_test.alt_services()[1]);
+  EXPECT_EQ(DnsName("_altsvc1._udp."), under_test.alt_services()[0]);
+  EXPECT_EQ(DnsName("_altsvc2._tcp."), under_test.alt_services()[1]);
 
   EXPECT_TRUE(files::DeletePath(kTestDir, true));
 }

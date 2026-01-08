@@ -17,23 +17,22 @@ class InstanceProber : public Prober {
   using CompletionCallback = fit::function<void(bool)>;
 
   // Creates a |InstanceProber|.
-  InstanceProber(MdnsAgent::Owner* owner, const std::string& service_name,
-                 const std::string& instance_name, const std::string& host_full_name,
-                 inet::IpPort port, Media media, IpVersions ip_verions,
-                 CompletionCallback callback);
+  InstanceProber(MdnsAgent::Owner* owner, const DnsName& service_name,
+                 const DnsLabel& instance_name, const DnsName& host_full_name, inet::IpPort port,
+                 Media media, IpVersions ip_verions, CompletionCallback callback);
 
   ~InstanceProber() override;
 
  protected:
   // Prober overrides.
-  const std::string& ResourceName() override;
+  const DnsName& ResourceName() override;
 
   void SendProposedResources(MdnsResourceSection section) override;
 
  private:
-  std::string instance_full_name_;
+  DnsName instance_full_name_;
   inet::IpPort port_;
-  std::string host_full_name_;
+  DnsName host_full_name_;
 
  public:
   // Disallow copy, assign and move.

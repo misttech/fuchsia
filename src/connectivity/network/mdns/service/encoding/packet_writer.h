@@ -63,11 +63,11 @@ class PacketWriter {
   void PutBytes(size_t count, const void* source);
 
   // Creates a bookmark for the current position.
-  void CreateBookmark(const std::string& label);
+  void CreateBookmark(const std::string& name);
 
   // Gets the position for a bookmark (established by calling |CreateBookmark|).
   // Returns |npos| if the bookmark isn't found.
-  size_t GetBookmarkPosition(const std::string& label) const;
+  size_t GetBookmarkPosition(const std::string& name) const;
 
   PacketWriter& operator<<(bool value);
   PacketWriter& operator<<(uint8_t value);
@@ -83,7 +83,7 @@ class PacketWriter {
  private:
   std::vector<uint8_t> packet_;
   size_t position_ = 0;
-  std::unordered_map<std::string, size_t> positions_by_label_;
+  std::unordered_map<std::string, size_t> positions_by_name_;
 
  public:
   // Disallow copy, assign and move.

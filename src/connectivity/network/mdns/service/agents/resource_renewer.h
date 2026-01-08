@@ -48,7 +48,7 @@ class ResourceRenewer : public MdnsAgent {
   void Renew(const DnsResource& resource, Media media, IpVersions ip_versions);
 
   // Queries for the indicated resource with the specified schedule.
-  void Query(DnsType type, const std::string& name, Media media, IpVersions ip_versions,
+  void Query(DnsType type, const DnsName& name, Media media, IpVersions ip_versions,
              zx::time initial_query_time, zx::duration interval, uint32_t interval_multiplier,
              uint32_t max_queries, bool request_unicast_response = false);
 
@@ -68,7 +68,7 @@ class ResourceRenewer : public MdnsAgent {
   // using raw pointers, so the destructor must delete all Entry objects
   // explicitly.
   struct Entry {
-    Entry(std::string name, DnsType type, Media media, IpVersions ip_versions,
+    Entry(DnsName name, DnsType type, Media media, IpVersions ip_versions,
           bool request_unicast_response)
         : name_(std::move(name)),
           type_(type),
@@ -76,7 +76,7 @@ class ResourceRenewer : public MdnsAgent {
           ip_versions_(ip_versions),
           request_unicast_response_(request_unicast_response) {}
 
-    std::string name_;
+    DnsName name_;
     DnsType type_;
     Media media_;
     IpVersions ip_versions_;
@@ -109,7 +109,7 @@ class ResourceRenewer : public MdnsAgent {
   struct Hash {
     size_t operator()(const std::unique_ptr<Entry>& m) const {
       FX_DCHECK(m);
-      return std::hash<std::string>{}(m->name_) ^ std::hash<DnsType>{}(m->type_);
+      return std::hash<DnsName>{}(m->name_) ^ std::hash<DnsType>{}(m->type_);
     }
   };
 

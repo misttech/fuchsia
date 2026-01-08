@@ -14,7 +14,6 @@
 #include "src/connectivity/network/mdns/service/common/reply_address.h"
 #include "src/connectivity/network/mdns/service/common/service_instance.h"
 #include "src/connectivity/network/mdns/service/encoding/dns_message.h"
-#include "src/lib/inet/socket_address.h"
 
 namespace mdns {
 
@@ -71,7 +70,7 @@ class MdnsAgent : public std::enable_shared_from_this<MdnsAgent> {
     virtual void Renew(const DnsResource& resource, Media media, IpVersions ip_versions) = 0;
 
     // Registers the resource for repeated queries. See |MdnsAgent::Request| below.
-    virtual void Query(DnsType type, const std::string& name, Media media, IpVersions ip_versions,
+    virtual void Query(DnsType type, const DnsName& name, Media media, IpVersions ip_versions,
                        zx::time initial_query_time, zx::duration interval,
                        uint32_t interval_multiplier, uint32_t max_queries,
                        bool request_unicast_response) = 0;
@@ -100,7 +99,7 @@ class MdnsAgent : public std::enable_shared_from_this<MdnsAgent> {
   // Starts the agent. This method is never called before a shared pointer to
   // the agent is created, so |shared_from_this| is safe to call.
   // Specializations should call this method first.
-  virtual void Start(const std::string& local_host_full_name) { started_ = true; }
+  virtual void Start(const DnsName& local_host_full_name) { started_ = true; }
 
   // Presents a received question. |sender_address| identifies the sender of the question. If
   // the question is not marked for unicast response, |reply_address| is the multicast placeholder
@@ -120,11 +119,11 @@ class MdnsAgent : public std::enable_shared_from_this<MdnsAgent> {
   virtual void EndOfMessage() {}
 
   // Notifies the agent of the addition of a proxy host.
-  virtual void OnAddProxyHost(const std::string& host_full_name,
+  virtual void OnAddProxyHost(const DnsName& host_full_name,
                               const std::vector<HostAddress>& addresses) {}
 
   // Notifies the agent of the removal of a proxy host.
-  virtual void OnRemoveProxyHost(const std::string& host_full_name) {}
+  virtual void OnRemoveProxyHost(const DnsName& host_full_name) {}
 
   // Notifies the agent of the addition of a local or local proxy service instance. |target|
   // and |addresses| are empty for local service instances and non-empty for local proxy service
@@ -141,8 +140,8 @@ class MdnsAgent : public std::enable_shared_from_this<MdnsAgent> {
   // Notifies the agent of the removal of local or local proxy service instance. |from_proxy|
   // indicates whether the instance is published by the local host (false) or a local proxy host
   // (true).
-  virtual void OnRemoveLocalServiceInstance(const std::string& service_name,
-                                            const std::string& instance_name, bool from_proxy) {}
+  virtual void OnRemoveLocalServiceInstance(const DnsName& service_name,
+                                            const DnsLabel& instance_name, bool from_proxy) {}
 
   // Notifies the agent that local host addresses have changed.
   virtual void OnLocalHostAddressesChanged() {}
@@ -237,7 +236,7 @@ class MdnsAgent : public std::enable_shared_from_this<MdnsAgent> {
   //
   // If all parameters but that last two are the same for two or more calls made consecutively
   // (without yielding the thread), the queries will be sent in the same message.
-  void Query(DnsType type, const std::string& name, Media media, IpVersions ip_versions,
+  void Query(DnsType type, const DnsName& name, Media media, IpVersions ip_versions,
              zx::time initial_query_time, zx::duration interval, uint32_t interval_multiplier,
              uint32_t max_queries, bool request_unicast_response = false) {
     owner_->Query(type, name, media, ip_versions, initial_query_time, interval, interval_multiplier,

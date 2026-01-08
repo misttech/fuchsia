@@ -33,7 +33,7 @@ constexpr uint8_t kIPv4PrefixLength = 24;
 constexpr uint8_t kIPv6PrefixLength = 64;
 constexpr uint8_t kID = 1;
 constexpr const char kName[] = "test01";
-constexpr const char kHostName[] = "testhostname";
+const DnsName kHostName("testhostname");
 
 namespace {
 
@@ -102,7 +102,7 @@ bool VerifyAddressResource(std::shared_ptr<DnsResource> resource, inet::IpAddres
     return false;
   }
 
-  EXPECT_EQ(kHostName, resource->name_.dotted_string_);
+  EXPECT_EQ(kHostName, resource->name_);
   EXPECT_EQ(expected_address.is_v4() ? DnsType::kA : DnsType::kAaaa, resource->type_);
   EXPECT_EQ(DnsClass::kIn, resource->class_);
   EXPECT_EQ(cache_flush, resource->cache_flush_);
@@ -120,7 +120,7 @@ bool VerifyAddressResource(std::shared_ptr<DnsResource> resource, inet::IpAddres
     }
   }
 
-  return (kHostName == resource->name_.dotted_string_) &&
+  return (kHostName == resource->name_) &&
          ((expected_address.is_v4() ? DnsType::kA : DnsType::kAaaa) == resource->type_) &&
          (DnsClass::kIn == resource->class_) && (cache_flush == resource->cache_flush_) &&
          (DnsResource::kShortTimeToLive == resource->time_to_live_);
@@ -167,7 +167,7 @@ class StubInterfaceTransceiver : public MdnsInterfaceTransceiver {
   }
 
   const std::vector<std::shared_ptr<DnsResource>>& GetInterfaceAddressResources(
-      const std::string& host_full_name) {
+      const DnsName& host_full_name) {
     return MdnsInterfaceTransceiver::GetInterfaceAddressResources(host_full_name);
   }
 

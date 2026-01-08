@@ -24,7 +24,7 @@ class AddressResponder : public MdnsAgent {
   // Creates an |AddressResponder| that responds to queries for the specified host name with the
   // specified addresses. If no addresses are supplied, the responder will respond to queries with
   // local addresses.
-  AddressResponder(MdnsAgent::Owner* owner, std::string host_full_name,
+  AddressResponder(MdnsAgent::Owner* owner, DnsName host_full_name,
                    std::vector<inet::IpAddress> addresses, Media media, IpVersions ip_versions);
 
   ~AddressResponder() override;
@@ -32,7 +32,7 @@ class AddressResponder : public MdnsAgent {
   std::vector<HostAddress> addresses() const;
 
   // MdnsAgent overrides.
-  void Start(const std::string& local_host_full_name) override;
+  void Start(const DnsName& local_host_full_name) override;
 
   void ReceiveQuestion(const DnsQuestion& question, const ReplyAddress& reply_address,
                        const ReplyAddress& sender_address) override;
@@ -46,7 +46,7 @@ class AddressResponder : public MdnsAgent {
 
   void SendAddressResources(ReplyAddress reply_address);
 
-  std::string host_full_name_;
+  DnsName host_full_name_;
   std::vector<inet::IpAddress> addresses_;
   Media media_;
   IpVersions ip_versions_;

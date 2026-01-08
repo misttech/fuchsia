@@ -21,7 +21,7 @@ class AddressProber : public Prober {
                 CompletionCallback callback);
 
   // Creates an |AddressProber| for a host identified by |host_full_name| and |addresses|.
-  AddressProber(MdnsAgent::Owner* owner, std::string host_full_name,
+  AddressProber(MdnsAgent::Owner* owner, DnsName host_full_name,
                 std::vector<inet::IpAddress> addresses, Media media, IpVersions ip_versions,
                 CompletionCallback callback);
 
@@ -29,12 +29,12 @@ class AddressProber : public Prober {
 
  protected:
   // Prober overrides.
-  const std::string& ResourceName() override;
+  const DnsName& ResourceName() override;
 
   void SendProposedResources(MdnsResourceSection section) override;
 
  private:
-  std::string host_full_name_;
+  DnsName host_full_name_;
   std::vector<inet::IpAddress> addresses_;
 
  public:

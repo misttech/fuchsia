@@ -21,8 +21,8 @@ class HostNameResolverTest : public AgentTest {
 bool VerifyAddresses(std::vector<inet::IpAddress> expected, std::vector<HostAddress> value);
 bool VerifyAddresses(std::vector<HostAddress> expected, std::vector<HostAddress> value);
 
-constexpr char kHostName[] = "testhostname";
-constexpr char kHostFullName[] = "testhostname.local.";
+const DnsName kHostName("testhostname");
+const DnsName kHostFullName("testhostname.local.");
 const std::vector<inet::IpAddress> kAddresses{inet::IpAddress(192, 168, 1, 200),
                                               inet::IpAddress(0xfe80, 200)};
 const std::vector<HostAddress> kHostAddresses{
@@ -37,9 +37,9 @@ constexpr bool kExcludeLocalProxies = false;
 
 // Tests nominal startup behavior of the resolver.
 TEST_F(HostNameResolverTest, Nominal) {
-  HostNameResolver under_test(
-      this, kHostName, Media::kBoth, IpVersions::kBoth, kExcludeLocal, kExcludeLocalProxies,
-      timeout, [](const std::string& host_name, std::vector<HostAddress> addresses) {});
+  HostNameResolver under_test(this, kHostName, Media::kBoth, IpVersions::kBoth, kExcludeLocal,
+                              kExcludeLocalProxies, timeout,
+                              [](const DnsName& host_name, std::vector<HostAddress> addresses) {});
   SetAgent(under_test);
 
   under_test.Start(kLocalHostFullName);
@@ -57,17 +57,16 @@ TEST_F(HostNameResolverTest, Nominal) {
 // Tests behavior of the resolver when a host responds to the initial questions.
 TEST_F(HostNameResolverTest, Response) {
   bool callback_called = false;
-  std::string callback_host_name;
+  DnsName callback_host_name;
   std::vector<HostAddress> callback_addresses;
-  HostNameResolver under_test(
-      this, kHostName, Media::kBoth, IpVersions::kBoth, kExcludeLocal, kExcludeLocalProxies,
-      timeout,
-      [&callback_called, &callback_host_name, &callback_addresses](
-          const std::string& host_name, std::vector<HostAddress> addresses) {
-        callback_called = true;
-        callback_host_name = host_name;
-        callback_addresses = std::move(addresses);
-      });
+  HostNameResolver under_test(this, kHostName, Media::kBoth, IpVersions::kBoth, kExcludeLocal,
+                              kExcludeLocalProxies, timeout,
+                              [&callback_called, &callback_host_name, &callback_addresses](
+                                  const DnsName& host_name, std::vector<HostAddress> addresses) {
+                                callback_called = true;
+                                callback_host_name = host_name;
+                                callback_addresses = std::move(addresses);
+                              });
   SetAgent(under_test);
 
   under_test.Start(kLocalHostFullName);
@@ -108,14 +107,14 @@ TEST_F(HostNameResolverTest, Response) {
 // Tests behavior of the resolver when no host responds and the resolver times out.
 TEST_F(HostNameResolverTest, Timeout) {
   bool callback_called = false;
-  std::string callback_host_name;
+  DnsName callback_host_name;
   std::vector<HostAddress> callback_addresses;
   // Need to |make_shared|, because |RemoveSelf| calls |shared_from_this|.
   auto under_test = std::make_shared<HostNameResolver>(
       this, kHostName, Media::kBoth, IpVersions::kBoth, kExcludeLocal, kExcludeLocalProxies,
       timeout,
       [&callback_called, &callback_host_name, &callback_addresses](
-          const std::string& host_name, std::vector<HostAddress> addresses) {
+          const DnsName& host_name, std::vector<HostAddress> addresses) {
         callback_called = true;
         callback_host_name = host_name;
         callback_addresses = std::move(addresses);
@@ -149,17 +148,16 @@ TEST_F(HostNameResolverTest, Timeout) {
 // Tests behavior of the resolver when configured for wireless only.
 TEST_F(HostNameResolverTest, WirelessOnly) {
   bool callback_called = false;
-  std::string callback_host_name;
+  DnsName callback_host_name;
   std::vector<HostAddress> callback_addresses;
-  HostNameResolver under_test(
-      this, kHostName, Media::kWireless, IpVersions::kBoth, kExcludeLocal, kExcludeLocalProxies,
-      timeout,
-      [&callback_called, &callback_host_name, &callback_addresses](
-          const std::string& host_name, std::vector<HostAddress> addresses) {
-        callback_called = true;
-        callback_host_name = host_name;
-        callback_addresses = std::move(addresses);
-      });
+  HostNameResolver under_test(this, kHostName, Media::kWireless, IpVersions::kBoth, kExcludeLocal,
+                              kExcludeLocalProxies, timeout,
+                              [&callback_called, &callback_host_name, &callback_addresses](
+                                  const DnsName& host_name, std::vector<HostAddress> addresses) {
+                                callback_called = true;
+                                callback_host_name = host_name;
+                                callback_addresses = std::move(addresses);
+                              });
   SetAgent(under_test);
 
   under_test.Start(kLocalHostFullName);
@@ -215,17 +213,16 @@ TEST_F(HostNameResolverTest, WirelessOnly) {
 // Tests behavior of the resolver when configured for wired only.
 TEST_F(HostNameResolverTest, WiredOnly) {
   bool callback_called = false;
-  std::string callback_host_name;
+  DnsName callback_host_name;
   std::vector<HostAddress> callback_addresses;
-  HostNameResolver under_test(
-      this, kHostName, Media::kWired, IpVersions::kBoth, kExcludeLocal, kExcludeLocalProxies,
-      timeout,
-      [&callback_called, &callback_host_name, &callback_addresses](
-          const std::string& host_name, std::vector<HostAddress> addresses) {
-        callback_called = true;
-        callback_host_name = host_name;
-        callback_addresses = std::move(addresses);
-      });
+  HostNameResolver under_test(this, kHostName, Media::kWired, IpVersions::kBoth, kExcludeLocal,
+                              kExcludeLocalProxies, timeout,
+                              [&callback_called, &callback_host_name, &callback_addresses](
+                                  const DnsName& host_name, std::vector<HostAddress> addresses) {
+                                callback_called = true;
+                                callback_host_name = host_name;
+                                callback_addresses = std::move(addresses);
+                              });
   SetAgent(under_test);
 
   under_test.Start(kLocalHostFullName);
@@ -280,16 +277,16 @@ TEST_F(HostNameResolverTest, WiredOnly) {
 // Tests behavior of the resolver when configured for IPv4 only.
 TEST_F(HostNameResolverTest, V4Only) {
   bool callback_called = false;
-  std::string callback_host_name;
+  DnsName callback_host_name;
   std::vector<HostAddress> callback_addresses;
-  HostNameResolver under_test(
-      this, kHostName, Media::kBoth, IpVersions::kV4, kExcludeLocal, kExcludeLocalProxies, timeout,
-      [&callback_called, &callback_host_name, &callback_addresses](
-          const std::string& host_name, std::vector<HostAddress> addresses) {
-        callback_called = true;
-        callback_host_name = host_name;
-        callback_addresses = std::move(addresses);
-      });
+  HostNameResolver under_test(this, kHostName, Media::kBoth, IpVersions::kV4, kExcludeLocal,
+                              kExcludeLocalProxies, timeout,
+                              [&callback_called, &callback_host_name, &callback_addresses](
+                                  const DnsName& host_name, std::vector<HostAddress> addresses) {
+                                callback_called = true;
+                                callback_host_name = host_name;
+                                callback_addresses = std::move(addresses);
+                              });
   SetAgent(under_test);
 
   under_test.Start(kLocalHostFullName);
@@ -344,16 +341,16 @@ TEST_F(HostNameResolverTest, V4Only) {
 // Tests behavior of the resolver when configured for IPv6 only.
 TEST_F(HostNameResolverTest, V6Only) {
   bool callback_called = false;
-  std::string callback_host_name;
+  DnsName callback_host_name;
   std::vector<HostAddress> callback_addresses;
-  HostNameResolver under_test(
-      this, kHostName, Media::kBoth, IpVersions::kV6, kExcludeLocal, kExcludeLocalProxies, timeout,
-      [&callback_called, &callback_host_name, &callback_addresses](
-          const std::string& host_name, std::vector<HostAddress> addresses) {
-        callback_called = true;
-        callback_host_name = host_name;
-        callback_addresses = std::move(addresses);
-      });
+  HostNameResolver under_test(this, kHostName, Media::kBoth, IpVersions::kV6, kExcludeLocal,
+                              kExcludeLocalProxies, timeout,
+                              [&callback_called, &callback_host_name, &callback_addresses](
+                                  const DnsName& host_name, std::vector<HostAddress> addresses) {
+                                callback_called = true;
+                                callback_host_name = host_name;
+                                callback_addresses = std::move(addresses);
+                              });
   SetAgent(under_test);
 
   under_test.Start(kLocalHostFullName);
@@ -408,17 +405,16 @@ TEST_F(HostNameResolverTest, V6Only) {
 // Tests resolution of the local host.
 TEST_F(HostNameResolverTest, LocalHost) {
   bool callback_called = false;
-  std::string callback_host_name;
+  DnsName callback_host_name;
   std::vector<HostAddress> callback_addresses;
-  HostNameResolver under_test(
-      this, kLocalHostName, Media::kBoth, IpVersions::kBoth, kIncludeLocal, kExcludeLocalProxies,
-      timeout,
-      [&callback_called, &callback_host_name, &callback_addresses](
-          const std::string& host_name, std::vector<HostAddress> addresses) {
-        callback_called = true;
-        callback_host_name = host_name;
-        callback_addresses = std::move(addresses);
-      });
+  HostNameResolver under_test(this, kLocalHostName, Media::kBoth, IpVersions::kBoth, kIncludeLocal,
+                              kExcludeLocalProxies, timeout,
+                              [&callback_called, &callback_host_name, &callback_addresses](
+                                  const DnsName& host_name, std::vector<HostAddress> addresses) {
+                                callback_called = true;
+                                callback_host_name = host_name;
+                                callback_addresses = std::move(addresses);
+                              });
   SetAgent(under_test);
   SetLocalHostAddresses(kHostAddresses);
 
@@ -438,17 +434,16 @@ TEST_F(HostNameResolverTest, LocalHost) {
 // Tests resolution of a local proxy host.
 TEST_F(HostNameResolverTest, LocalProxyHost) {
   bool callback_called = false;
-  std::string callback_host_name;
+  DnsName callback_host_name;
   std::vector<HostAddress> callback_addresses;
-  HostNameResolver under_test(
-      this, kHostName, Media::kBoth, IpVersions::kBoth, kExcludeLocal, kIncludeLocalProxies,
-      timeout,
-      [&callback_called, &callback_host_name, &callback_addresses](
-          const std::string& host_name, std::vector<HostAddress> addresses) {
-        callback_called = true;
-        callback_host_name = host_name;
-        callback_addresses = std::move(addresses);
-      });
+  HostNameResolver under_test(this, kHostName, Media::kBoth, IpVersions::kBoth, kExcludeLocal,
+                              kIncludeLocalProxies, timeout,
+                              [&callback_called, &callback_host_name, &callback_addresses](
+                                  const DnsName& host_name, std::vector<HostAddress> addresses) {
+                                callback_called = true;
+                                callback_host_name = host_name;
+                                callback_addresses = std::move(addresses);
+                              });
   SetAgent(under_test);
 
   under_test.Start(kLocalHostFullName);
@@ -481,17 +476,16 @@ TEST_F(HostNameResolverTest, LocalProxyHost) {
 // Tests that a local proxy host is not used if that feature is off.
 TEST_F(HostNameResolverTest, NoLocalProxyHost) {
   bool callback_called = false;
-  std::string callback_host_name;
+  DnsName callback_host_name;
   std::vector<HostAddress> callback_addresses;
-  HostNameResolver under_test(
-      this, kHostName, Media::kBoth, IpVersions::kBoth, kExcludeLocal, kExcludeLocalProxies,
-      timeout,
-      [&callback_called, &callback_host_name, &callback_addresses](
-          const std::string& host_name, std::vector<HostAddress> addresses) {
-        callback_called = true;
-        callback_host_name = host_name;
-        callback_addresses = std::move(addresses);
-      });
+  HostNameResolver under_test(this, kHostName, Media::kBoth, IpVersions::kBoth, kExcludeLocal,
+                              kExcludeLocalProxies, timeout,
+                              [&callback_called, &callback_host_name, &callback_addresses](
+                                  const DnsName& host_name, std::vector<HostAddress> addresses) {
+                                callback_called = true;
+                                callback_host_name = host_name;
+                                callback_addresses = std::move(addresses);
+                              });
   SetAgent(under_test);
 
   under_test.Start(kLocalHostFullName);

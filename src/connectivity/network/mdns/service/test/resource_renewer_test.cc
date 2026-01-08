@@ -21,7 +21,7 @@ class ResourceRenewerTest : public AgentTest {
 constexpr uint32_t kTimeToLiveSeconds = 120;
 constexpr uint32_t kInterfaceId = 1;
 constexpr DnsType kDnsType = DnsType::kTxt;
-static const std::string kName = "my._yardapult._udp.";
+static const DnsName kName("my._yardapult._udp.");
 constexpr zx::duration kInitialDelay = zx::sec(12);
 constexpr zx::duration kInterval = zx::sec(1);
 constexpr uint32_t kIntervalMultiplier = 2;

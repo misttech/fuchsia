@@ -39,6 +39,10 @@ std::ostream& operator<<(std::ostream& os, DnsType value) {
   }
 }
 
+std::ostream& operator<<(std::ostream& os, const DnsName& value) {
+  return os << value.to_string() << "(" << value.first_label_view().size() << ")";
+}
+
 #ifdef MDNS_TRACE
 
 std::ostream& operator<<(std::ostream& os, DnsClass value) {
@@ -58,10 +62,6 @@ std::ostream& operator<<(std::ostream& os, DnsClass value) {
     default:
       return os << "CLASS " << static_cast<uint16_t>(value);
   }
-}
-
-std::ostream& operator<<(std::ostream& os, const DnsName& value) {
-  return os << value.dotted_string_;
 }
 
 std::ostream& operator<<(std::ostream& os, const DnsV4Address& value) {

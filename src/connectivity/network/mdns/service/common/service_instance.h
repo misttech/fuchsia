@@ -7,6 +7,7 @@
 
 #include <memory>
 
+#include "src/connectivity/network/mdns/service/encoding/dns_message.h"
 #include "src/lib/inet/socket_address.h"
 
 namespace mdns {
@@ -24,15 +25,27 @@ struct ServiceInstance {
       const std::vector<std::vector<uint8_t>>& text = std::vector<std::vector<uint8_t>>(),
       uint16_t srv_priority = 0, uint16_t srv_weight = 0);
 
+  static std::unique_ptr<ServiceInstance> Create(
+      DnsName service_name, DnsLabel instance_name, DnsName target_name,
+      const std::vector<inet::SocketAddress>& addresses,
+      const std::vector<std::vector<uint8_t>>& text = std::vector<std::vector<uint8_t>>(),
+      uint16_t srv_priority = 0, uint16_t srv_weight = 0);
+
+  ServiceInstance(
+      DnsName service_name, DnsLabel instance_name, DnsName target_name,
+      const std::vector<inet::SocketAddress>& addresses,
+      const std::vector<std::vector<uint8_t>>& text = std::vector<std::vector<uint8_t>>(),
+      uint16_t srv_priority = 0, uint16_t srv_weight = 0);
+
   ServiceInstance() = default;
 
   std::unique_ptr<ServiceInstance> Clone() const;
 
   bool operator==(const ServiceInstance& other) const;
 
-  std::string service_name_;
-  std::string instance_name_;
-  std::string target_name_;
+  DnsName service_name_;
+  DnsLabel instance_name_;
+  DnsName target_name_;
   std::vector<inet::SocketAddress> addresses_;
   std::vector<std::vector<uint8_t>> text_;
   uint16_t srv_priority_ = 0;

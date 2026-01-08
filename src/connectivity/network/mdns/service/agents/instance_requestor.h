@@ -24,7 +24,7 @@ namespace mdns {
 class InstanceRequestor : public MdnsAgent {
  public:
   // Creates an |InstanceRequestor|.
-  InstanceRequestor(MdnsAgent::Owner* owner, const std::string& service_name, Media media,
+  InstanceRequestor(MdnsAgent::Owner* owner, const DnsName& service_name, Media media,
                     IpVersions ip_versions, bool include_local, bool include_local_proxies);
 
   // Creates an |InstanceRequestor| requesting all services.
@@ -41,7 +41,7 @@ class InstanceRequestor : public MdnsAgent {
   void RemoveSubscriber(Mdns::Subscriber* subscriber);
 
   // MdnsAgent overrides.
-  void Start(const std::string& local_host_full_name) override;
+  void Start(const DnsName& local_host_full_name) override;
 
   void ReceiveResource(const DnsResource& resource, MdnsResourceSection section,
                        ReplyAddress sender_address) override;
@@ -53,8 +53,8 @@ class InstanceRequestor : public MdnsAgent {
   void OnChangeLocalServiceInstance(const Mdns::ServiceInstance& instance,
                                     bool from_proxy) override;
 
-  void OnRemoveLocalServiceInstance(const std::string& service_name,
-                                    const std::string& instance_name, bool from_proxy) override;
+  void OnRemoveLocalServiceInstance(const DnsName& service_name, const DnsLabel& instance_name,
+                                    bool from_proxy) override;
 
  private:
   // Set of socket addresses associated with a target.
@@ -103,10 +103,10 @@ class InstanceRequestor : public MdnsAgent {
 
   // Describes a service instance.
   struct InstanceInfo {
-    std::string service_name_;
-    std::string instance_name_;
-    std::string target_;
-    std::string target_full_name_;
+    DnsName service_name_;
+    DnsLabel instance_name_;
+    DnsName target_;
+    DnsName target_full_name_;
     inet::IpPort port_;
     std::vector<std::vector<uint8_t>> text_;
     uint16_t srv_priority_ = 0;
@@ -147,17 +147,17 @@ class InstanceRequestor : public MdnsAgent {
   void ReceiveAaaaResource(const DnsResource& resource, MdnsResourceSection section,
                            TargetInfo* target_info, uint32_t scope_id);
 
-  void RemoveInstance(const std::string& instance_full_name);
+  void RemoveInstance(const DnsName& instance_full_name);
 
-  std::string service_name_;
-  std::string service_full_name_;
+  DnsName service_name_;
+  DnsName service_full_name_;
   Media media_;
   IpVersions ip_versions_;
   bool include_local_;
   bool include_local_proxies_;
   std::unordered_set<Mdns::Subscriber*> subscribers_;
-  std::unordered_map<std::string, InstanceInfo> instance_infos_by_full_name_;
-  std::unordered_map<std::string, TargetInfo> target_infos_by_full_name_;
+  std::unordered_map<DnsName, InstanceInfo> instance_infos_by_full_name_;
+  std::unordered_map<DnsName, TargetInfo> target_infos_by_full_name_;
   zx::duration query_delay_;
   std::shared_ptr<DnsQuestion> question_;
 

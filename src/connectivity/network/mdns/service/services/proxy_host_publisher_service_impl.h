@@ -34,7 +34,7 @@ class ProxyHostPublisherServiceImpl
   // Publisher for |PublishHost|.
   class HostPublisher : public Mdns::HostPublisher {
    public:
-    HostPublisher(PublishProxyHostCallback callback, Mdns& mdns, std::string host_name,
+    HostPublisher(PublishProxyHostCallback callback, Mdns& mdns, DnsName host_name,
                   std::vector<inet::IpAddress> addresses, Media media, IpVersions ip_versions,
                   fidl::InterfaceRequest<fuchsia::net::mdns::ServiceInstancePublisher> request);
 
@@ -52,7 +52,7 @@ class ProxyHostPublisherServiceImpl
    private:
     PublishProxyHostCallback callback_;
     Mdns& mdns_;
-    std::string host_name_;
+    DnsName host_name_;
     std::vector<inet::IpAddress> addresses_;
     Media media_;
     IpVersions ip_versions_;

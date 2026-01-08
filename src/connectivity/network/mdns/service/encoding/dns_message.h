@@ -9,6 +9,7 @@
 #include <string>
 #include <vector>
 
+#include "src/lib/fxl/strings/ascii.h"
 #include "src/lib/inet/ip_address.h"
 #include "src/lib/inet/ip_port.h"
 
@@ -102,12 +103,74 @@ struct DnsClassAndFlag {
   bool flag_;
 };
 
+using DnsLabel = std::string;
+
 // Domain name.
 struct DnsName {
+  // Constructs a DnsName with no labels.
   DnsName() = default;
-  explicit DnsName(std::string dotted_string) : dotted_string_(std::move(dotted_string)) {}
 
+  ~DnsName() = default;
+
+  // Constructs a DnsName given the complete dotted string, assuming that no labels contain '.'s.
+  explicit DnsName(std::string dotted_string);
+
+  // Constructs a DnsName given the complete dotted string and the length of the first label,
+  // assuming that no other labels contain '.'s.
+  DnsName(std::string dotted_string, size_t first_label_size);
+
+  // Checks for equality.
+  bool operator==(const DnsName& other) const {
+    if (first_label_size_ != other.first_label_size_) {
+      return false;
+    }
+    return fxl::EqualsCaseInsensitiveASCII(dotted_string_, other.dotted_string_);
+  }
+
+  // Checks for inequality.
+  bool operator!=(const DnsName& other) const { return !(*this == other); }
+
+  // Returns a copy of this DnsName with `label` appended to the end.
+  DnsName append(const DnsLabel& label) const;
+
+  // Returns a copy of this DnsName with `name` appended to the end.
+  DnsName append(const DnsName& name) const;
+
+  // Modifies this name by adding the specified label to the end.
+  void push_back(const DnsLabel& label);
+
+  // Determine if this DnsName is empty (contains no labels).
+  bool empty() const { return dotted_string_.empty(); }
+
+  // Returns an owned copy of the first label. Returns an empty label if this name is empty.
+  DnsLabel first_label() const { return DnsLabel(first_label_view()); }
+
+  // Returns a view of the first label. Returns an empty view if this name is empty.
+  std::string_view first_label_view() const {
+    return std::string_view(dotted_string_.data(), first_label_size_);
+  }
+
+  // Returns a view of the next label view after the given label view. Returns an empty view if
+  // there is no next label or if `current_label_view` is empty. If not empty,
+  // `current_label_view` must be a view returned by `first_label_view' or `next_label_view`
+  // for the current name.
+  std::string_view next_label_view(std::string_view current_label_view) const;
+
+  // Length of text representation of this DnsName.
+  size_t length() const { return dotted_string_.size(); }
+
+  // Returns a string representation of this DnsName. Note that a DnsName containing a label
+  // that contains a dot cannot be uniquely represented as a string.
+  const std::string& to_string() const { return dotted_string_; }
+
+  // Returns the hash of this DnsName.
+  size_t hash() const {
+    return std::hash<std::size_t>{}(first_label_size_) ^ std::hash<std::string>{}(dotted_string_);
+  }
+
+ private:
   std::string dotted_string_;
+  size_t first_label_size_ = 0;
 };
 
 // IPV4 address.
@@ -194,8 +257,8 @@ struct DnsHeader {
 // DNS question record.
 struct DnsQuestion {
   DnsQuestion();
-  DnsQuestion(const std::string& name, DnsType type);
-  DnsQuestion(const std::string& name, DnsType type, bool request_unicast_response);
+  DnsQuestion(DnsName name, DnsType type);
+  DnsQuestion(DnsName name, DnsType type, bool request_unicast_response);
 
   DnsName name_;
   DnsType type_;
@@ -217,7 +280,7 @@ struct DnsResourceDataNs {
   DnsName name_server_domain_name_;
 
   bool operator==(const DnsResourceDataNs& other) const {
-    return name_server_domain_name_.dotted_string_ == other.name_server_domain_name_.dotted_string_;
+    return name_server_domain_name_ == other.name_server_domain_name_;
   }
 };
 
@@ -226,7 +289,7 @@ struct DnsResourceDataCName {
   DnsName canonical_name_;
 
   bool operator==(const DnsResourceDataCName& other) const {
-    return canonical_name_.dotted_string_ == other.canonical_name_.dotted_string_;
+    return canonical_name_ == other.canonical_name_;
   }
 };
 
@@ -235,7 +298,7 @@ struct DnsResourceDataPtr {
   DnsName pointer_domain_name_;
 
   bool operator==(const DnsResourceDataPtr& other) const {
-    return pointer_domain_name_.dotted_string_ == other.pointer_domain_name_.dotted_string_;
+    return pointer_domain_name_ == other.pointer_domain_name_;
   }
 };
 
@@ -264,7 +327,7 @@ struct DnsResourceDataSrv {
 
   bool operator==(const DnsResourceDataSrv& other) const {
     return priority_ == other.priority_ && weight_ == other.weight_ && port_ == other.port_ &&
-           target_.dotted_string_ == other.target_.dotted_string_;
+           target_ == other.target_;
   }
 };
 
@@ -281,7 +344,7 @@ struct DnsResourceDataNSec {
   std::vector<uint8_t> bits_;
 
   bool operator==(const DnsResourceDataNSec& other) const {
-    return next_domain_.dotted_string_ == other.next_domain_.dotted_string_ && bits_ == other.bits_;
+    return next_domain_ == other.next_domain_ && bits_ == other.bits_;
   }
 };
 
@@ -291,17 +354,16 @@ struct DnsResource {
   static constexpr uint32_t kLongTimeToLive = 75 * 60;
 
   DnsResource();
-  DnsResource(const std::string& name, DnsType type);
-  DnsResource(const std::string& name, inet::IpAddress address, bool cache_flush = false);
+  DnsResource(DnsName name, DnsType type);
+  DnsResource(DnsName name, inet::IpAddress address, bool cache_flush = false);
   DnsResource(const DnsResource& other);
   ~DnsResource();
 
   DnsResource& operator=(const DnsResource& other);
 
   bool operator==(const DnsResource& other) const {
-    if (name_.dotted_string_ != other.name_.dotted_string_ || type_ != other.type_ ||
-        class_ != other.class_ || cache_flush_ != other.cache_flush_ ||
-        time_to_live_ != other.time_to_live_) {
+    if (name_ != other.name_ || type_ != other.type_ || class_ != other.class_ ||
+        cache_flush_ != other.cache_flush_ || time_to_live_ != other.time_to_live_) {
       return false;
     }
 
@@ -366,6 +428,11 @@ struct DnsMessage {
 }  // namespace mdns
 
 template <>
+struct std::hash<mdns::DnsName> {
+  std::size_t operator()(const mdns::DnsName& value) const noexcept { return value.hash(); }
+};
+
+template <>
 struct std::hash<mdns::DnsResourceDataA> {
   std::size_t operator()(const mdns::DnsResourceDataA& value) const noexcept {
     return std::hash<inet::IpAddress>{}(value.address_.address_);
@@ -375,21 +442,21 @@ struct std::hash<mdns::DnsResourceDataA> {
 template <>
 struct std::hash<mdns::DnsResourceDataNs> {
   std::size_t operator()(const mdns::DnsResourceDataNs& value) const noexcept {
-    return std::hash<std::string>{}(value.name_server_domain_name_.dotted_string_);
+    return std::hash<mdns::DnsName>{}(value.name_server_domain_name_);
   }
 };
 
 template <>
 struct std::hash<mdns::DnsResourceDataCName> {
   std::size_t operator()(const mdns::DnsResourceDataCName& value) const noexcept {
-    return std::hash<std::string>{}(value.canonical_name_.dotted_string_);
+    return std::hash<mdns::DnsName>{}(value.canonical_name_);
   }
 };
 
 template <>
 struct std::hash<mdns::DnsResourceDataPtr> {
   std::size_t operator()(const mdns::DnsResourceDataPtr& value) const noexcept {
-    return std::hash<std::string>{}(value.pointer_domain_name_.dotted_string_);
+    return std::hash<mdns::DnsName>{}(value.pointer_domain_name_);
   }
 };
 
@@ -430,7 +497,7 @@ struct std::hash<mdns::DnsResourceDataSrv> {
     size_t result = value.priority_;
     result = (result << 1) ^ value.weight_;
     result = (result << 1) ^ value.port_.as_uint16_t();
-    result = (result << 1) ^ std::hash<std::string>{}(value.target_.dotted_string_);
+    result = (result << 1) ^ std::hash<mdns::DnsName>{}(value.target_);
     return result;
   }
 };
@@ -450,7 +517,7 @@ struct std::hash<mdns::DnsResourceDataOpt> {
 template <>
 struct std::hash<mdns::DnsResourceDataNSec> {
   std::size_t operator()(const mdns::DnsResourceDataNSec& value) const noexcept {
-    size_t result = std::hash<std::string>{}(value.next_domain_.dotted_string_);
+    size_t result = std::hash<mdns::DnsName>{}(value.next_domain_);
     for (const auto& bit : value.bits_) {
       result = (result << 1) ^ bit;
     }
@@ -462,7 +529,7 @@ struct std::hash<mdns::DnsResourceDataNSec> {
 template <>
 struct std::hash<mdns::DnsResource> {
   std::size_t operator()(const mdns::DnsResource& resource) const noexcept {
-    size_t result = std::hash<std::string>{}(resource.name_.dotted_string_);
+    size_t result = std::hash<mdns::DnsName>{}(resource.name_);
     result = (result << 1) ^ static_cast<uint16_t>(resource.type_);
     result = (result << 1) ^ static_cast<uint16_t>(resource.class_);
     result = (result << 1) ^ std::hash<bool>{}(resource.cache_flush_);

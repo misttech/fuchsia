@@ -18,6 +18,7 @@
 #include "src/connectivity/network/mdns/service/common/mdns_fidl_util.h"
 #include "src/connectivity/network/mdns/service/common/mdns_names.h"
 #include "src/connectivity/network/mdns/service/common/type_converters.h"
+#include "src/connectivity/network/mdns/service/encoding/dns_formatting.h"
 
 namespace mdns {
 
@@ -48,16 +49,17 @@ void MdnsDeprecatedServiceImpl::OnReady() {
 
 void MdnsDeprecatedServiceImpl::ResolveHostName(std::string host, int64_t timeout_ns,
                                                 ResolveHostNameCallback callback) {
-  if (!MdnsNames::IsValidHostName(host)) {
-    FX_LOGS(ERROR) << "ResolveHostName called with invalid host name " << host;
+  DnsName host_name(host);
+  if (!MdnsNames::IsValidHostName(host_name)) {
+    FX_LOGS(ERROR) << "ResolveHostName called with invalid host name " << host_name;
     callback(nullptr, nullptr);
     return;
   }
 
-  mdns_.ResolveHostName(host, zx::nsec(timeout_ns), Media::kBoth, IpVersions::kBoth,
+  mdns_.ResolveHostName(host_name, zx::nsec(timeout_ns), Media::kBoth, IpVersions::kBoth,
                         false,  // include_local
                         true,   // include_local_proxies
-                        [callback = std::move(callback)](const std::string& host,
+                        [callback = std::move(callback)](const DnsName& host_name,
                                                          std::vector<HostAddress> addresses) {
                           inet::IpAddress v4_address;
                           inet::IpAddress v6_address;
@@ -81,8 +83,9 @@ void MdnsDeprecatedServiceImpl::ResolveHostName(std::string host, int64_t timeou
 void MdnsDeprecatedServiceImpl::SubscribeToService(
     std::string service,
     fidl::InterfaceHandle<fuchsia::net::mdns::ServiceSubscriber> subscriber_handle) {
-  if (!MdnsNames::IsValidServiceName(service)) {
-    FX_LOGS(ERROR) << "ResolveHostName called with invalid service name " << service;
+  DnsName service_name(std::move(service));
+  if (!MdnsNames::IsValidServiceName(service_name)) {
+    FX_LOGS(ERROR) << "ResolveHostName called with invalid service name " << service_name;
     return;
   }
 
@@ -90,7 +93,7 @@ void MdnsDeprecatedServiceImpl::SubscribeToService(
   auto subscriber = std::make_unique<Subscriber>(std::move(subscriber_handle),
                                                  [this, id]() { subscribers_by_id_.erase(id); });
 
-  mdns_.SubscribeToService(service, Media::kBoth, IpVersions::kBoth,
+  mdns_.SubscribeToService(service_name, Media::kBoth, IpVersions::kBoth,
                            false,  // include_local
                            true,   // include_local_proxies
                            subscriber.get());
@@ -104,8 +107,9 @@ void MdnsDeprecatedServiceImpl::PublishServiceInstance(
     PublishServiceInstanceCallback callback) {
   FX_DCHECK(responder_handle);
 
-  if (!MdnsNames::IsValidServiceName(service)) {
-    FX_LOGS(ERROR) << "PublishServiceInstance called with invalid service name " << service;
+  DnsName service_name(std::move(service));
+  if (!MdnsNames::IsValidServiceName(service_name)) {
+    FX_LOGS(ERROR) << "PublishServiceInstance called with invalid service name " << service_name;
     fuchsia::net::mdns::Publisher_PublishServiceInstance_Result result;
     result.set_err(fuchsia::net::mdns::Error::INVALID_SERVICE_NAME);
     callback(std::move(result));
@@ -131,7 +135,7 @@ void MdnsDeprecatedServiceImpl::PublishServiceInstance(
   }
 
   // TODO(https://fxbug.dev/42134330): Review this approach to conflicts.
-  std::string instance_full_name = MdnsNames::InstanceFullName(instance, service);
+  DnsName instance_full_name = MdnsNames::InstanceFullName(instance, service_name);
 
   // If there's an existing publisher for this full name, destroy it so the new publication
   // supercedes the old one.
@@ -145,7 +149,7 @@ void MdnsDeprecatedServiceImpl::PublishServiceInstance(
         publishers_by_instance_full_name_.erase(instance_full_name);
       });
 
-  bool result = mdns_.PublishServiceInstance(service, instance, fidl::To<Media>(media),
+  bool result = mdns_.PublishServiceInstance(service_name, instance, fidl::To<Media>(media),
                                              IpVersions::kBoth, perform_probe, publisher.get());
   // Because of the erase call above, |PublishServiceInstance| should always succeed.
   FX_DCHECK(result);
@@ -171,10 +175,10 @@ MdnsDeprecatedServiceImpl::Subscriber::~Subscriber() {
 }
 
 void MdnsDeprecatedServiceImpl::Subscriber::InstanceDiscovered(
-    const std::string& service, const std::string& instance,
+    const DnsName& service, const DnsLabel& instance,
     const std::vector<inet::SocketAddress>& addresses,
     const std::vector<std::vector<uint8_t>>& text, uint16_t srv_priority, uint16_t srv_weight,
-    const std::string& target) {
+    const DnsName& target) {
   Entry entry{.type = EntryType::kInstanceDiscovered};
   MdnsFidlUtil::FillServiceInstance(&entry.service_instance, service, instance, addresses, text,
                                     srv_priority, srv_weight, target);
@@ -183,10 +187,10 @@ void MdnsDeprecatedServiceImpl::Subscriber::InstanceDiscovered(
 }
 
 void MdnsDeprecatedServiceImpl::Subscriber::InstanceChanged(
-    const std::string& service, const std::string& instance,
+    const DnsName& service, const DnsLabel& instance,
     const std::vector<inet::SocketAddress>& addresses,
     const std::vector<std::vector<uint8_t>>& text, uint16_t srv_priority, uint16_t srv_weight,
-    const std::string& target) {
+    const DnsName& target) {
   Entry entry{.type = EntryType::kInstanceChanged};
   MdnsFidlUtil::FillServiceInstance(&entry.service_instance, service, instance, addresses, text,
                                     srv_priority, srv_weight, target);
@@ -195,10 +199,10 @@ void MdnsDeprecatedServiceImpl::Subscriber::InstanceChanged(
   MaybeSendNextEntry();
 }
 
-void MdnsDeprecatedServiceImpl::Subscriber::InstanceLost(const std::string& service,
-                                                         const std::string& instance) {
+void MdnsDeprecatedServiceImpl::Subscriber::InstanceLost(const DnsName& service,
+                                                         const DnsLabel& instance) {
   Entry entry{.type = EntryType::kInstanceLost};
-  entry.service_instance.set_service(service);
+  entry.service_instance.set_service(service.to_string());
   entry.service_instance.set_instance(instance);
   entries_.push(std::move(entry));
 
@@ -287,7 +291,8 @@ MdnsDeprecatedServiceImpl::ResponderPublisher::ResponderPublisher(
       if (!MdnsNames::IsValidSubtypeName(subtype)) {
         FX_LOGS(ERROR) << "Invalid subtype " << subtype
                        << " passed in SetSubtypes event, closing connection.";
-        // TODO(https://fxbug.dev/42150906): Should also call deleter here and at other Unpublish call sites.
+        // TODO(https://fxbug.dev/42150906): Should also call deleter here and at other Unpublish
+        // call sites.
         responder_ = nullptr;
         Unpublish();
         return;

@@ -6,6 +6,75 @@
 
 namespace mdns {
 
+DnsName::DnsName(std::string dotted_string) : dotted_string_(std::move(dotted_string)) {
+  if (dotted_string_.empty()) {
+    return;
+  }
+
+  if (!dotted_string_.ends_with(".")) {
+    dotted_string_ += ".";
+  }
+
+  first_label_size_ = dotted_string_.find('.');
+}
+
+DnsName::DnsName(std::string dotted_string, size_t first_label_size)
+    : dotted_string_(std::move(dotted_string)), first_label_size_(first_label_size) {
+  if (!dotted_string_.ends_with(".")) {
+    dotted_string_ += ".";
+  }
+  FX_DCHECK(first_label_size < dotted_string_.size());
+}
+
+DnsName DnsName::append(const DnsLabel& label) const {
+  DnsName result(*this);
+  result.push_back(label);
+  return result;
+}
+
+DnsName DnsName::append(const DnsName& name) const {
+  DnsName result(*this);
+  for (auto label = name.first_label_view(); !label.empty(); label = name.next_label_view(label)) {
+    result.push_back(DnsLabel(label));
+  }
+  return result;
+}
+
+void DnsName::push_back(const DnsLabel& label) {
+  if (dotted_string_.empty()) {
+    dotted_string_ = label + ".";
+    first_label_size_ = label.size();
+    return;
+  }
+
+  dotted_string_ += label + ".";
+}
+
+std::string_view DnsName::next_label_view(std::string_view current_label_view) const {
+  if (current_label_view.empty()) {
+    return std::string_view();
+  }
+
+  size_t pos = current_label_view.data() - dotted_string_.data();
+  FX_DCHECK(pos < dotted_string_.size());
+
+  pos += current_label_view.size();
+  if (pos >= dotted_string_.size()) {
+    return std::string_view();
+  }
+  pos += 1;
+  if (pos == dotted_string_.size()) {
+    return std::string_view();
+  }
+
+  auto data = dotted_string_.data() + pos;
+
+  auto end_pos = dotted_string_.find('.', pos);
+  FX_DCHECK(end_pos != std::string::npos);
+
+  return std::string_view(data, end_pos - pos);
+}
+
 void DnsHeader::SetResponse(bool value) {
   if (value) {
     flags_ |= kQueryResponseMask;
@@ -56,18 +125,16 @@ void DnsHeader::SetResponseCode(DnsResponseCode response_code) {
   flags_ |= static_cast<uint16_t>(response_code);
 }
 
-DnsQuestion::DnsQuestion() {}
+DnsQuestion::DnsQuestion() = default;
 
-DnsQuestion::DnsQuestion(const std::string& name, DnsType type)
-    : name_(DnsName(name)), type_(type) {}
+DnsQuestion::DnsQuestion(DnsName name, DnsType type) : name_(std::move(name)), type_(type) {}
 
-DnsQuestion::DnsQuestion(const std::string& name, DnsType type, bool request_unicast_response)
-    : name_(DnsName(name)), type_(type), unicast_response_(request_unicast_response) {}
+DnsQuestion::DnsQuestion(DnsName name, DnsType type, bool request_unicast_response)
+    : name_(std::move(name)), type_(type), unicast_response_(request_unicast_response) {}
 
 DnsResource::DnsResource() {}
 
-DnsResource::DnsResource(const std::string& name, DnsType type)
-    : name_(DnsName(name)), type_(type) {
+DnsResource::DnsResource(DnsName name, DnsType type) : name_(std::move(name)), type_(type) {
   switch (type_) {
     case DnsType::kA:
       new (&a_) DnsResourceDataA();
@@ -119,8 +186,8 @@ DnsResource::DnsResource(const std::string& name, DnsType type)
   }
 }
 
-DnsResource::DnsResource(const std::string& name, inet::IpAddress address, bool cache_flush)
-    : name_(DnsName(name)), cache_flush_(cache_flush) {
+DnsResource::DnsResource(DnsName name, inet::IpAddress address, bool cache_flush)
+    : name_(std::move(name)), cache_flush_(cache_flush) {
   if (address.is_v4()) {
     type_ = DnsType::kA;
     new (&a_) DnsResourceDataA();

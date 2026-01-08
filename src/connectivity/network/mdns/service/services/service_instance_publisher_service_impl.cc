@@ -7,6 +7,7 @@
 #include "src/connectivity/network/mdns/service/common/mdns_fidl_util.h"
 #include "src/connectivity/network/mdns/service/common/mdns_names.h"
 #include "src/connectivity/network/mdns/service/common/type_converters.h"
+#include "src/connectivity/network/mdns/service/encoding/dns_formatting.h"
 
 namespace mdns {
 
@@ -19,7 +20,7 @@ ServiceInstancePublisherServiceImpl::ServiceInstancePublisherServiceImpl(
       default_ip_versions_(IpVersions::kBoth) {}
 
 ServiceInstancePublisherServiceImpl::ServiceInstancePublisherServiceImpl(
-    Mdns& mdns, std::string host_name, std::vector<inet::IpAddress> addresses, Media default_media,
+    Mdns& mdns, DnsName host_name, std::vector<inet::IpAddress> addresses, Media default_media,
     IpVersions default_ip_versions,
     fidl::InterfaceRequest<fuchsia::net::mdns::ServiceInstancePublisher> request,
     fit::closure deleter)
@@ -38,8 +39,10 @@ void ServiceInstancePublisherServiceImpl::PublishServiceInstance(
     PublishServiceInstanceCallback callback) {
   FX_DCHECK(publication_responder);
 
-  if (!MdnsNames::IsValidServiceName(service)) {
-    FX_LOGS(ERROR) << "PublishServiceInstance called with invalid service name " << service
+  DnsName service_name(std::move(service));
+
+  if (!MdnsNames::IsValidServiceName(service_name)) {
+    FX_LOGS(ERROR) << "PublishServiceInstance called with invalid service name " << service_name
                    << ", closing connection.";
     Quit(ZX_ERR_INVALID_ARGS);
     return;
@@ -59,8 +62,8 @@ void ServiceInstancePublisherServiceImpl::PublishServiceInstance(
 
   auto publisher = new ResponderPublisher(publication_responder.Bind(), callback.share());
 
-  if (!mdns().PublishServiceInstance(host_name_, addresses_, service, instance, media, ip_versions,
-                                     perform_probe, publisher)) {
+  if (!mdns().PublishServiceInstance(host_name_, addresses_, service_name, instance, media,
+                                     ip_versions, perform_probe, publisher)) {
     delete publisher;
     callback(fpromise::error(
         fuchsia::net::mdns::PublishServiceInstanceError::ALREADY_PUBLISHED_LOCALLY));

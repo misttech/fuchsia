@@ -32,11 +32,11 @@ class MdnsFidlUtil {
   static inet::IpAddress IpAddressFrom(const fuchsia::net::IpAddress& addr);
 
   static void FillServiceInstance(fuchsia::net::mdns::ServiceInstance* service_instance,
-                                  const std::string& service, const std::string& instance,
+                                  const DnsName& service, const DnsLabel& instance,
                                   const std::vector<inet::SocketAddress>& addresses,
                                   const std::vector<std::vector<uint8_t>>& text,
                                   uint16_t srv_priority, uint16_t srv_weight,
-                                  const std::string& target);
+                                  const DnsName& target);
 };
 
 }  // namespace mdns

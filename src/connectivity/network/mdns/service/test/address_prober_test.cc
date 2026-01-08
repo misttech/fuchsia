@@ -27,7 +27,7 @@ class AddressProberTest : public AgentTest {
   }
 
   // Expects that a probe for the specified host name and addresses has been sent.
-  void ExpectProbe(const std::string& host_full_name, const std::vector<inet::IpAddress>& addresses,
+  void ExpectProbe(const DnsName& host_full_name, const std::vector<inet::IpAddress>& addresses,
                    Media media, IpVersions ip_versions) {
     auto message = ExpectOutboundMessage(ReplyAddress::Multicast(media, ip_versions));
     ExpectQuestion(message.get(), host_full_name, DnsType::kAny, DnsClass::kIn, true);
@@ -36,8 +36,8 @@ class AddressProberTest : public AgentTest {
   }
 };
 
-constexpr char kHostFullName[] = "test2host.local.";
-constexpr char kAlternateCaseHostFullName[] = "tEst2hOsT.lOcaL.";
+const DnsName kHostFullName("test2host.local.");
+const DnsName kAlternateCaseHostFullName("tEst2hOsT.lOcaL.");
 const std::vector<inet::IpAddress> kAddresses{inet::IpAddress(192, 168, 1, 200),
                                               inet::IpAddress(192, 168, 1, 201)};
 constexpr uint32_t kInterfaceId = 1;

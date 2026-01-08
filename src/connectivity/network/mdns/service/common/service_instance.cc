@@ -11,8 +11,8 @@ std::unique_ptr<ServiceInstance> ServiceInstance::Create(
     const std::string& service_name, const std::string& instance_name,
     const std::string& target_name, const std::vector<inet::SocketAddress>& addresses,
     const std::vector<std::vector<uint8_t>>& text, uint16_t srv_priority, uint16_t srv_weight) {
-  return std::make_unique<ServiceInstance>(service_name, instance_name, target_name, addresses,
-                                           text, srv_priority, srv_weight);
+  return Create(DnsName(service_name), DnsLabel(instance_name), DnsName(target_name), addresses,
+                text, srv_priority, srv_weight);
 }
 
 ServiceInstance::ServiceInstance(const std::string& service_name, const std::string& instance_name,
@@ -20,9 +20,26 @@ ServiceInstance::ServiceInstance(const std::string& service_name, const std::str
                                  const std::vector<inet::SocketAddress>& addresses,
                                  const std::vector<std::vector<uint8_t>>& text,
                                  uint16_t srv_priority, uint16_t srv_weight)
-    : service_name_(service_name),
-      instance_name_(instance_name),
-      target_name_(target_name),
+    : ServiceInstance(DnsName(service_name), DnsLabel(instance_name), DnsName(target_name),
+                      addresses, text, srv_priority, srv_weight) {}
+
+// static
+std::unique_ptr<ServiceInstance> ServiceInstance::Create(
+    DnsName service_name, DnsLabel instance_name, DnsName target_name,
+    const std::vector<inet::SocketAddress>& addresses,
+    const std::vector<std::vector<uint8_t>>& text, uint16_t srv_priority, uint16_t srv_weight) {
+  return std::make_unique<ServiceInstance>(std::move(service_name), std::move(instance_name),
+                                           std::move(target_name), addresses, text, srv_priority,
+                                           srv_weight);
+}
+
+ServiceInstance::ServiceInstance(DnsName service_name, DnsLabel instance_name, DnsName target_name,
+                                 const std::vector<inet::SocketAddress>& addresses,
+                                 const std::vector<std::vector<uint8_t>>& text,
+                                 uint16_t srv_priority, uint16_t srv_weight)
+    : service_name_(std::move(service_name)),
+      instance_name_(std::move(instance_name)),
+      target_name_(std::move(target_name)),
       addresses_(addresses),
       text_(text),
       srv_priority_(srv_priority),

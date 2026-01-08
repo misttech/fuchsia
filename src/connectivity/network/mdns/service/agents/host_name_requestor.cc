@@ -14,8 +14,8 @@
 
 namespace mdns {
 
-HostNameRequestor::HostNameRequestor(MdnsAgent::Owner* owner, const std::string& host_name,
-                                     Media media, IpVersions ip_versions, bool include_local,
+HostNameRequestor::HostNameRequestor(MdnsAgent::Owner* owner, const DnsName& host_name, Media media,
+                                     IpVersions ip_versions, bool include_local,
                                      bool include_local_proxies)
     : MdnsAgent(owner),
       host_name_(host_name),
@@ -41,7 +41,7 @@ void HostNameRequestor::RemoveSubscriber(Mdns::HostNameSubscriber* subscriber) {
   }
 }
 
-void HostNameRequestor::Start(const std::string& local_host_full_name) {
+void HostNameRequestor::Start(const DnsName& local_host_full_name) {
   // Note that |host_full_name_| is the name we're trying to resolve, not the
   // name of the local host, which is the parameter to this method.
 
@@ -64,7 +64,7 @@ void HostNameRequestor::Start(const std::string& local_host_full_name) {
 void HostNameRequestor::ReceiveResource(const DnsResource& resource, MdnsResourceSection section,
                                         ReplyAddress sender_address) {
   if (!sender_address.Matches(media_) || !sender_address.Matches(ip_versions_) ||
-      resource.name_.dotted_string_ != host_full_name_) {
+      resource.name_ != host_full_name_) {
     return;
   }
 
@@ -111,7 +111,7 @@ void HostNameRequestor::ReceiveResource(const DnsResource& resource, MdnsResourc
 
 void HostNameRequestor::EndOfMessage() { MaybeSendAddressesChanged(); }
 
-void HostNameRequestor::OnAddProxyHost(const std::string& host_full_name,
+void HostNameRequestor::OnAddProxyHost(const DnsName& host_full_name,
                                        const std::vector<HostAddress>& addresses) {
   if (!include_local_proxies_ || host_full_name != host_full_name_) {
     return;
@@ -123,7 +123,7 @@ void HostNameRequestor::OnAddProxyHost(const std::string& host_full_name,
   }
 }
 
-void HostNameRequestor::OnRemoveProxyHost(const std::string& host_full_name) {
+void HostNameRequestor::OnRemoveProxyHost(const DnsName& host_full_name) {
   if (!include_local_proxies_ || host_full_name != host_full_name_) {
     return;
   }

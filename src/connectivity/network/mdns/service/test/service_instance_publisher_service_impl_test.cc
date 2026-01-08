@@ -58,7 +58,7 @@ TEST_F(ServiceInstancePublisherServiceImplTests, PublicationLifetime) {
   TestTransceiver transceiver;
   Mdns mdns(transceiver);
   bool ready_callback_called = false;
-  mdns.Start(nullptr, "TestHostName", /* perform probe */ false,
+  mdns.Start(nullptr, DnsName("TestHostName"), /* perform probe */ false,
              [&ready_callback_called]() {
                // Ready callback.
                ready_callback_called = true;
@@ -121,7 +121,7 @@ TEST_F(ServiceInstancePublisherServiceImplTests, DoNotRespond) {
   TestTransceiver transceiver;
   Mdns mdns(transceiver);
   bool ready_callback_called = false;
-  mdns.Start(nullptr, "TestHostName", /* perform probe */ false,
+  mdns.Start(nullptr, DnsName("TestHostName"), /* perform probe */ false,
              [&ready_callback_called]() {
                // Ready callback.
                ready_callback_called = true;

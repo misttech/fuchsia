@@ -46,7 +46,7 @@ TEST_F(HostNameSubscriberServiceImplTests, SubscriptionLifetime) {
   TestTransceiver transceiver;
   Mdns mdns(transceiver);
   bool ready_callback_called = false;
-  mdns.Start(nullptr, "TestHostName", /* perform probe */ false,
+  mdns.Start(nullptr, DnsName("TestHostName"), /* perform probe */ false,
              [&ready_callback_called]() {
                // Ready callback.
                ready_callback_called = true;

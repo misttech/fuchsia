@@ -23,8 +23,8 @@
 
 const std::string kLocalArgument = "--local";
 const std::string kRemoteArgument = "--remote";
-const std::string kInstanceName = "mdns_test_instance_name";
-const std::string kHostName = "mdns_test_host_name";
+const mdns::DnsName kInstanceName("mdns_test_instance_name");
+const mdns::DnsName kHostName("mdns_test_host_name");
 
 const size_t kIterations = 100;
 const zx_duration_t kTimeout = ZX_SEC(120);

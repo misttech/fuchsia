@@ -43,7 +43,7 @@ class Prober : public MdnsAgent {
   ~Prober() override;
 
   // MdnsAgent overrides.
-  void Start(const std::string& local_host_full_name) final;
+  void Start(const DnsName& local_host_full_name) final;
 
   void ReceiveResource(const DnsResource& resource, MdnsResourceSection section,
                        ReplyAddress sender_address) final;
@@ -53,10 +53,10 @@ class Prober : public MdnsAgent {
 
   IpVersions ip_versions() const { return ip_versions_; }
 
-  const std::string& local_host_full_name() const { return local_host_full_name_; }
+  const DnsName& local_host_full_name() const { return local_host_full_name_; }
 
   // Returns the name of the resource for which we're probing.
-  virtual const std::string& ResourceName() = 0;
+  virtual const DnsName& ResourceName() = 0;
 
   // Sends the proposed resources.
   virtual void SendProposedResources(MdnsResourceSection section) = 0;
@@ -76,7 +76,7 @@ class Prober : public MdnsAgent {
   Media media_;
   IpVersions ip_versions_;
   CompletionCallback callback_;
-  std::string local_host_full_name_;
+  DnsName local_host_full_name_;
   std::shared_ptr<DnsQuestion> question_;
   uint32_t probe_attempt_count_ = 0;
 };

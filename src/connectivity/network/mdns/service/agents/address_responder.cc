@@ -14,7 +14,7 @@ namespace mdns {
 AddressResponder::AddressResponder(MdnsAgent::Owner* owner, Media media, IpVersions ip_versions)
     : MdnsAgent(owner), media_(media), ip_versions_(ip_versions) {}
 
-AddressResponder::AddressResponder(MdnsAgent::Owner* owner, std::string host_full_name,
+AddressResponder::AddressResponder(MdnsAgent::Owner* owner, DnsName host_full_name,
                                    std::vector<inet::IpAddress> addresses, Media media,
                                    IpVersions ip_versions)
     : MdnsAgent(owner),
@@ -33,7 +33,7 @@ std::vector<HostAddress> AddressResponder::addresses() const {
   return fidl::To<std::vector<HostAddress>>(addresses_);
 }
 
-void AddressResponder::Start(const std::string& local_host_full_name) {
+void AddressResponder::Start(const DnsName& local_host_full_name) {
   FX_DCHECK(!local_host_full_name.empty());
 
   MdnsAgent::Start(local_host_full_name);
@@ -49,7 +49,7 @@ void AddressResponder::ReceiveQuestion(const DnsQuestion& question,
   if (sender_address.Matches(media_) && sender_address.Matches(ip_versions_) &&
       (question.type_ == DnsType::kA || question.type_ == DnsType::kAaaa ||
        question.type_ == DnsType::kAny) &&
-      question.name_.dotted_string_ == host_full_name_) {
+      question.name_ == host_full_name_) {
     MaybeSendAddresses(reply_address);
   }
 }

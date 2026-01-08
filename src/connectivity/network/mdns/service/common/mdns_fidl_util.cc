@@ -86,17 +86,17 @@ inet::IpAddress MdnsFidlUtil::IpAddressFrom(const fuchsia::net::IpAddress& addr)
 }
 
 void MdnsFidlUtil::FillServiceInstance(fuchsia::net::mdns::ServiceInstance* service_instance,
-                                       const std::string& service, const std::string& instance,
+                                       const DnsName& service, const DnsLabel& instance,
                                        const std::vector<inet::SocketAddress>& addresses,
                                        const std::vector<std::vector<uint8_t>>& text,
                                        uint16_t srv_priority, uint16_t srv_weight,
-                                       const std::string& target) {
-  service_instance->set_service(service);
+                                       const DnsName& target) {
+  service_instance->set_service(service.to_string());
   service_instance->set_instance(instance);
   service_instance->set_text(fidl::To<std::vector<std::string>>(text));
   service_instance->set_srv_priority(srv_priority);
   service_instance->set_srv_weight(srv_weight);
-  service_instance->set_target(target);
+  service_instance->set_target(target.to_string());
 
   for (const auto& address : addresses) {
     if (address.is_v4()) {
