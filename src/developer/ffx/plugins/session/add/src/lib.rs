@@ -5,7 +5,7 @@
 use anyhow::{Result, format_err};
 use async_trait::async_trait;
 use ffx_session_add_args::SessionAddCommand;
-use ffx_writer::SimpleWriter;
+use ffx_writer::RawWriter;
 use fho::{FfxMain, FfxTool};
 use fidl_fuchsia_element::{
     self as felement, Annotation, AnnotationKey, AnnotationValue, ControllerMarker, ManagerProxy,
@@ -30,7 +30,8 @@ fho::embedded_plugin!(AddTool);
 
 #[async_trait(?Send)]
 impl FfxMain for AddTool {
-    type Writer = SimpleWriter;
+    // TODO(b/472310565) Support actual "json" output, not just "raw"
+    type Writer = RawWriter;
     async fn main(self, mut writer: Self::Writer) -> fho::Result<()> {
         add_impl(self.manager_proxy, self.cmd, spawn_ctrl_c_listener(), &mut writer).await?;
         Ok(())

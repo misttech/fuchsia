@@ -6,7 +6,7 @@ use anyhow::{Context, Result};
 use async_trait::async_trait;
 use component_debug::cli::show_cmd_print;
 use ffx_session_show_args::SessionShowCommand;
-use ffx_writer::SimpleWriter;
+use ffx_writer::RawWriter;
 use fho::{FfxMain, FfxTool};
 use target_holders::RemoteControlProxyHolder;
 
@@ -25,7 +25,8 @@ fho::embedded_plugin!(ShowTool);
 
 #[async_trait(?Send)]
 impl FfxMain for ShowTool {
-    type Writer = SimpleWriter;
+    // TODO(b/472310565) Support actual "json" output, not just "raw"
+    type Writer = RawWriter;
     async fn main(self, mut writer: Self::Writer) -> fho::Result<()> {
         show_impl(self.rcs, self.cmd, &mut writer).await?;
         Ok(())
