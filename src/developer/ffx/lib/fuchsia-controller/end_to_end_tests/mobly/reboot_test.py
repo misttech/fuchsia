@@ -35,9 +35,10 @@ class FuchsiaControllerTests(AsyncAdapter, base_test.BaseTestClass):
         admin = power_statecontrol.AdminClient(ch)
         # Makes a coroutine to ensure that a PEER_CLOSED isn't received from attempting
         # to write to the channel.
-        coro = admin.perform_reboot(
-            options=power_statecontrol.RebootOptions(
-                reasons=[power_statecontrol.RebootReason2.DEVELOPER_REQUEST],
+        coro = admin.shutdown(
+            options=power_statecontrol.ShutdownOptions(
+                action=power_statecontrol.ShutdownAction.REBOOT,
+                reasons=[power_statecontrol.ShutdownReason.DEVELOPER_REQUEST],
             ),
         )
         try:
