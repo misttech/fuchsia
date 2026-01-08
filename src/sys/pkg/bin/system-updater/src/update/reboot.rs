@@ -58,16 +58,19 @@ impl RebootController {
 /// Reboots the system, logging errors instead of failing.
 pub(super) async fn reboot(proxy: &PowerStateControlProxy) {
     if let Err(e) = async move {
-        use fidl_fuchsia_hardware_power_statecontrol::{RebootOptions, RebootReason2};
+        use fidl_fuchsia_hardware_power_statecontrol::{
+            ShutdownAction, ShutdownOptions, ShutdownReason,
+        };
         proxy
-            .perform_reboot(&RebootOptions {
-                reasons: Some(vec![RebootReason2::SystemUpdate]),
+            .shutdown(&ShutdownOptions {
+                action: Some(ShutdownAction::Reboot),
+                reasons: Some(vec![ShutdownReason::SystemUpdate]),
                 ..Default::default()
             })
             .await
-            .context("while performing reboot call")?
+            .context("while performing shutdown call")?
             .map_err(zx::Status::from_raw)
-            .context("reboot responded with")
+            .context("shutdown responded with")
     }
     .await
     {
@@ -78,7 +81,31 @@ pub(super) async fn reboot(proxy: &PowerStateControlProxy) {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use fidl::endpoints::create_proxy_and_stream;
+    use fidl_fuchsia_hardware_power_statecontrol::{
+        AdminMarker, AdminRequest, ShutdownAction, ShutdownReason,
+    };
     use futures::task::Poll;
+
+    #[fuchsia_async::run_singlethreaded(test)]
+    async fn reboot_calls_shutdown_with_correct_options() {
+        let (proxy, mut stream) = create_proxy_and_stream::<AdminMarker>();
+
+        let reboot_fut = reboot(&proxy);
+        let stream_fut = async move {
+            match stream.next().await {
+                Some(Ok(AdminRequest::Shutdown { options, responder })) => {
+                    assert_eq!(options.action, Some(ShutdownAction::Reboot));
+                    assert_eq!(options.reasons, Some(vec![ShutdownReason::SystemUpdate]));
+                    responder.send(Ok(())).unwrap();
+                }
+                request => panic!("Unexpected request: {:?}", request),
+            }
+        };
+
+        future::join(reboot_fut, stream_fut).await;
+    }
+
     #[allow(clippy::bool_assert_comparison)]
     #[test]
     fn wait_to_reboot_times_out() {
