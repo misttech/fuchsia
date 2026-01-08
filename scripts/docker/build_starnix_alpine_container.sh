@@ -72,10 +72,8 @@ CIPD_CLIENT="cipd"
 
 function create_cipd_yaml() {
   local arch=$1
-  local content_dir=$2
   local cipd_package_name="fuchsia/starnix/alpine-image-${arch}"
   local cipd_yaml_file="${OUT_DIR}/cipd-${arch}.yaml"
-  local generated_cipd_file="${OUT_DIR}/alpine-${arch}.cipd"
 
   echo "Creating ${arch} package..."
 
@@ -83,7 +81,7 @@ function create_cipd_yaml() {
 package: ${cipd_package_name}
 install_mode: copy
 data:
-  - file: alpine.tar
+  - file: ${arch}/alpine.tar
 EOF
 }
 
