@@ -23,7 +23,6 @@ use {
 
 pub mod binder;
 pub mod capabilities;
-pub mod capability_factory;
 pub mod capability_store;
 pub mod component_sandbox_retriever;
 pub mod config_override;
@@ -121,11 +120,6 @@ impl Routable<Dict> for FrameworkRouter {
             &component,
             &framework_dictionary,
             component_sandbox_retriever::serve,
-        );
-        add_protocol::<fruntime::CapabilityFactoryMarker>(
-            &component,
-            &framework_dictionary,
-            capability_factory::serve,
         );
         #[cfg(test)]
         {

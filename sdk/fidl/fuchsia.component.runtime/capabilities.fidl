@@ -21,6 +21,9 @@ type CapabilityType = flexible enum {
     INSTANCE_TOKEN = 9;
 };
 
+@available(added=HEAD)
+const MAX_DATA_LENGTH uint32 = 8192;
+
 /// Static data which may be put in a dictionary or returned by a router. This
 /// is useful for setting values in the metadata of a `RouteRequest`.
 @available(added=HEAD)
@@ -152,6 +155,16 @@ open protocol DataRouter {
     }) -> (struct {
         response RouterResponse;
     }) error zx.Status;
+};
+
+/// The error values returned when a route operation succeeds.
+@available(added=HEAD)
+type RouterResponse = flexible enum : uint32 {
+    /// The server end has been connected to a valid object.
+    SUCCESS = 1;
+
+    /// The capability was marked as unavailable.
+    UNAVAILABLE = 2;
 };
 
 /// The error values returned when a route operation fails.

@@ -2,7 +2,6 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use crate::framework::capability_factory::CapabilityOrWaiter;
 use crate::model::component::WeakComponentInstance;
 use crate::sandbox_util::take_handle_as_stream;
 use anyhow::{Error, format_err};
@@ -23,7 +22,6 @@ use sandbox::{
     Message, RemotableCapability, Request, Routable, Router, RouterResponse, WeakInstanceToken,
 };
 use std::collections::HashMap;
-use std::collections::hash_map::Entry;
 use std::sync::Arc;
 use vfs::WeakExecutionScope;
 use zx::AsHandleRef;
@@ -57,7 +55,7 @@ pub fn serve(
 /// Capabilities which have had event pair handles assigned to them, allowing normal components to
 /// reference and interact with them.
 pub struct RemotedRuntimeCapabilities {
-    pub(super) remote_capabilities: Arc<Mutex<HashMap<zx::Koid, CapabilityOrWaiter>>>,
+    pub(super) remote_capabilities: Arc<Mutex<HashMap<zx::Koid, Capability>>>,
     event_pair_sender: mpsc::UnboundedSender<zx::EventPair>,
     _garbage_collector_task: fasync::Task<()>,
 }
@@ -113,19 +111,11 @@ impl RemotedRuntimeCapabilities {
     ) -> Result<(), fruntime::CapabilitiesError> {
         let koid =
             event_pair.basic_info().map_err(|_| fruntime::CapabilitiesError::InvalidHandle)?.koid;
-        match self.remote_capabilities.lock().entry(koid) {
-            Entry::Occupied(occupied_entry) => match occupied_entry.remove() {
-                CapabilityOrWaiter::Capability(_prior_capability) => {
-                    return Err(fruntime::CapabilitiesError::HandleAlreadyRegistered);
-                }
-                CapabilityOrWaiter::Waiter(_sender) => {
-                    panic!("this code should never store a waiter value");
-                }
-            },
-            Entry::Vacant(vacant_entry) => {
-                let _ = vacant_entry.insert(CapabilityOrWaiter::Capability(capability.into()));
-            }
+        let mut guard = self.remote_capabilities.lock();
+        if guard.contains_key(&koid) {
+            return Err(fruntime::CapabilitiesError::HandleAlreadyRegistered);
         }
+        guard.insert(koid, capability.into());
         self.event_pair_sender.unbounded_send(event_pair).expect("the receiver should never be dropped as long as this RemoteRuntimeCapabilities is live");
         Ok(())
     }
@@ -138,17 +128,14 @@ impl RemotedRuntimeCapabilities {
             .basic_info()
             .map_err(|_| fruntime::CapabilitiesError::InvalidHandle)?
             .related_koid;
-        match self.remote_capabilities.lock().get(&koid) {
-            Some(CapabilityOrWaiter::Capability(capability)) => capability
-                .try_clone()
-                .expect("all of the supported capability types never fail to clone")
-                .try_into()
-                .map_err(|_| fruntime::CapabilitiesError::InvalidCapabilityType),
-            Some(CapabilityOrWaiter::Waiter(_sender)) => {
-                panic!("this code should never store a waiter value");
-            }
-            None => Err(fruntime::CapabilitiesError::HandleDoesNotReferenceCapability),
-        }
+        let guard = self.remote_capabilities.lock();
+        let capability = guard
+            .get(&koid)
+            .ok_or(fruntime::CapabilitiesError::HandleDoesNotReferenceCapability)?;
+        let capability = capability
+            .try_clone()
+            .expect("all of the supported capability types never fail to clone");
+        capability.try_into().map_err(|_| fruntime::CapabilitiesError::InvalidCapabilityType)
     }
 }
 

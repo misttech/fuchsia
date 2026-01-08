@@ -11,16 +11,12 @@ fidl("fuchsia.component.runtime") {
 
   public_deps = [
     "//sdk/fidl/fuchsia.component.decl",
-    "//sdk/fidl/fuchsia.component.sandbox",
     "//sdk/fidl/fuchsia.io",
     "//sdk/fidl/fuchsia.unknown",
     "//zircon/vdso/zx",
   ]
 
-  sources = [
-    "capabilities.fidl",
-    "factory.fidl",
-  ]
+  sources = [ "capabilities.fidl" ]
 
   enable_rust_next = true
 }
