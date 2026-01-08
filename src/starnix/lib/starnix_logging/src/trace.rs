@@ -45,6 +45,7 @@ pub const NAME_HANDLE_EXCEPTION: &'static str = "HandleException";
 // The names used to track durations for restricted state I/O.
 pub const NAME_READ_RESTRICTED_STATE: &'static str = "ReadRestrictedState";
 pub const NAME_WRITE_RESTRICTED_STATE: &'static str = "WriteRestrictedState";
+pub const NAME_MAP_RESTRICTED_STATE: &'static str = "MapRestrictedState";
 
 // The name used to track the duration of checking whether the task loop should exit.
 pub const NAME_CHECK_TASK_EXIT: &'static str = "CheckTaskExit";

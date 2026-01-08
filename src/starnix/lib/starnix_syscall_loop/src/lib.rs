@@ -13,58 +13,22 @@ use starnix_core::task::{
     ptrace_syscall_enter, ptrace_syscall_exit,
 };
 use starnix_logging::{
-    CATEGORY_STARNIX, NAME_HANDLE_EXCEPTION, NAME_READ_RESTRICTED_STATE, NAME_RESTRICTED_KICK,
-    NAME_RUN_TASK, NAME_WRITE_RESTRICTED_STATE, firehose_trace_duration, firehose_trace_instant,
-    log_error, log_trace, log_warn, set_current_task_info,
+    CATEGORY_STARNIX, NAME_HANDLE_EXCEPTION, NAME_RESTRICTED_KICK, NAME_RUN_TASK,
+    firehose_trace_duration, firehose_trace_instant, log_error, log_trace, log_warn,
+    set_current_task_info,
 };
+use starnix_registers::RestrictedState;
 use starnix_sync::{Locked, Unlocked};
 use starnix_syscalls::SyscallResult;
 use starnix_syscalls::decls::{Syscall, SyscallDecl};
 use starnix_uapi::errno;
 use starnix_uapi::errors::Errno;
 use starnix_uapi::signals::SIGKILL;
-use std::ptr::NonNull;
 
 mod table;
 
 pub fn enter(locked: &mut Locked<Unlocked>, current_task: &mut CurrentTask) -> ExitStatus {
-    // Allocate a VMO and bind it to this thread.
-    let mut out_vmo_handle = 0;
-    #[allow(
-        clippy::undocumented_unsafe_blocks,
-        reason = "Force documented unsafe blocks in Starnix"
-    )]
-    let status =
-        zx::Status::from_raw(unsafe { zx::sys::zx_restricted_bind_state(0, &mut out_vmo_handle) });
-    match { status } {
-        zx::Status::OK => {
-            // We've successfully attached the VMO to the current thread. This VMO will be
-            // mapped and used for the kernel to store restricted mode register state as it
-            // enters and exits restricted mode.
-        }
-        _ => panic!("zx_restricted_bind_state failed with {status}!"),
-    }
-    #[allow(
-        clippy::undocumented_unsafe_blocks,
-        reason = "Force documented unsafe blocks in Starnix"
-    )]
-    let state_vmo = unsafe { zx::Vmo::from(zx::NullableHandle::from_raw(out_vmo_handle)) };
-
-    // Unbind when we leave this scope to avoid unnecessarily retaining the VMO via this
-    // thread's binding.  Of course, we'll still have to remove any mappings and close any
-    // handles that refer to the VMO to ensure it will be destroyed.  See note about
-    // preventing resource leaks in this function's documentation.
-    scopeguard::defer! {
-            #[allow(
-                clippy::undocumented_unsafe_blocks,
-                reason = "Force documented unsafe blocks in Starnix"
-            )]
-        unsafe { zx::sys::zx_restricted_unbind_state(0); }
-    }
-
-    // Map the restricted state VMO and arrange for it to be unmapped later.
-    // SAFETY: `state_vmo` is a VMO produced by `zx_restricted_bind_state`.
-    match unsafe { RestrictedState::from_vmo(state_vmo) } {
+    match RestrictedState::bind_and_map(&mut current_task.thread_state.registers) {
         Ok(restricted_state) => match run_task(locked, current_task, restricted_state) {
             Ok(ok) => ok,
             Err(error) => {
@@ -92,87 +56,6 @@ unsafe extern "C" {
     ) -> zx::sys::zx_status_t;
 }
 
-/// `RestrictedState` manages accesses into the restricted state VMO.
-///
-/// See `zx_restricted_bind_state`.
-pub struct RestrictedState {
-    bound_state: NonNull<zx::sys::zx_restricted_exception_t>,
-    state_size: usize,
-}
-
-impl RestrictedState {
-    /// Wrap a restricted state VMO for use by the rest of Starnix.
-    ///
-    /// # Safety
-    ///
-    /// `state_vmo` must be produced from `zx_restricted_bind_state()`.
-    pub unsafe fn from_vmo(state_vmo: zx::Vmo) -> Result<Self, zx::Status> {
-        let state_size = state_vmo.get_size()? as usize;
-        if state_size < std::mem::size_of::<zx::sys::zx_restricted_exception_t>() {
-            return Err(zx::Status::INVALID_ARGS);
-        }
-
-        let state_address = fuchsia_runtime::vmar_root_self().map(
-            0,
-            &state_vmo,
-            0,
-            state_size,
-            zx::VmarFlags::PERM_READ | zx::VmarFlags::PERM_WRITE,
-        )?;
-
-        // This memory is not managed by Rust's stack, heap, etc. so treat it as "foreign" memory
-        // with no provenance.
-        let state_address: *mut zx::sys::zx_restricted_exception_t =
-            std::ptr::without_provenance_mut(state_address);
-        assert!(state_address.is_aligned(), "Zircon must map restricted-state-aligned memory");
-        let bound_state =
-            NonNull::new(state_address).expect("Zircon must map non-null restricted-state");
-
-        Ok(Self { state_size, bound_state })
-    }
-
-    pub fn write_state(&mut self, current_task: &mut CurrentTask) {
-        firehose_trace_duration!(CATEGORY_STARNIX, NAME_WRITE_RESTRICTED_STATE);
-
-        // SAFETY: `bound_state` is valid to write to as long as `RestrictedState` is live.
-        unsafe {
-            let state_ptr = std::ptr::addr_of_mut!((*self.bound_state.as_ptr()).state);
-            state_ptr.write(*current_task.thread_state.registers);
-        }
-    }
-
-    pub fn read_state(&self, current_task: &mut CurrentTask) {
-        firehose_trace_duration!(CATEGORY_STARNIX, NAME_READ_RESTRICTED_STATE);
-
-        // SAFETY: `bound_state` is valid to read from as long as `RestrictedState` is live.
-        unsafe {
-            let state_ptr = std::ptr::addr_of!((*self.bound_state.as_ptr()).state);
-            current_task.thread_state.registers = state_ptr.read().into();
-        }
-    }
-
-    pub fn read_exception(&self) -> zx::ExceptionReport {
-        // SAFETY: `bound_state` is valid to read from as long as `RestrictedState` is live.
-        let raw = unsafe { self.bound_state.read() };
-
-        // SAFETY: `raw` was written by Zircon during a restricted exit.
-        unsafe { zx::ExceptionReport::from_raw(raw.exception) }
-    }
-}
-
-impl std::ops::Drop for RestrictedState {
-    fn drop(&mut self) {
-        let mapping_addr = self.bound_state.as_ptr() as usize;
-        // Safety: We are un-mapping the state VMO. This is safe because we route all access
-        // into this memory region though this struct so it is safe to unmap on Drop.
-        unsafe {
-            fuchsia_runtime::vmar_root_self()
-                .unmap(mapping_addr, self.state_size)
-                .expect("Failed to unmap");
-        }
-    }
-}
-
 const RESTRICTED_ENTER_OPTIONS: u32 = 0;
 
 struct RestrictedEnterContext<'a> {
@@ -198,7 +81,7 @@ struct RestrictedEnterContext<'a> {
 fn run_task(
     locked: &mut Locked<Unlocked>,
     current_task: &mut CurrentTask,
-    mut restricted_state: RestrictedState,
+    restricted_state: RestrictedState,
 ) -> Result<ExitStatus, Error> {
     set_current_task_info(
         current_task.task.command(),
@@ -219,9 +102,6 @@ fn run_task(
     {
         return Ok(exit_status);
     }
-
-    // Copy the initial register state into the mapped VMO.
-    restricted_state.write_state(current_task);
 
     let restricted_state_ptr = restricted_state.bound_state.as_ptr();
     let extended_pstate_ptr = &current_task.thread_state.extended_pstate as *const _;
@@ -315,11 +195,7 @@ fn process_restricted_exit(
     )]
     let locked = unsafe { Unlocked::new() };
 
-    // Copy the register state out of the VMO.
-    restricted_state.read_state(current_task);
-
-    #[cfg(target_arch = "aarch64")]
-    current_task.thread_state.registers.assert_sync();
+    current_task.thread_state.registers.sync_stack_ptr();
 
     match reason_code {
         zx::sys::ZX_RESTRICTED_REASON_SYSCALL => {
@@ -357,14 +233,12 @@ fn process_restricted_exit(
             return Err(format_err!("Received unexpected restricted reason code: {}", reason_code));
         }
     }
+
     if let Some(exit_status) =
         process_completed_restricted_exit(locked, current_task, &error_context)?
     {
         return Ok(Some(exit_status));
     }
-
-    // Copy the updated register state into the mapped VMO.
-    restricted_state.write_state(current_task);
 
     Ok(None)
 }
@@ -378,33 +252,28 @@ fn process_completed_exception(
     match exception_result {
         ExceptionResult::Handled => {}
         ExceptionResult::Signal(signal) => {
-            // TODO: Verify that the rip is actually in restricted code.
-            let mut registers = current_task.thread_state.registers;
-            {
-                let mut task_state = current_task.task.write();
-                if task_state.ptrace_on_signal_consume() {
-                    task_state.set_stopped(
-                        StopState::SignalDeliveryStopping,
-                        Some(signal),
-                        Some(&current_task),
-                        None,
-                    );
-                    return;
-                }
-
-                if let Some(status) = deliver_signal(
-                    current_task,
-                    current_task.thread_state.arch_width,
-                    task_state,
-                    signal.into(),
-                    &mut registers,
-                    &current_task.thread_state.extended_pstate,
-                    Some(restricted_exception),
-                ) {
-                    current_task.thread_group_exit(locked, status);
-                }
+            let mut task_state = current_task.task.write();
+            if task_state.ptrace_on_signal_consume() {
+                task_state.set_stopped(
+                    StopState::SignalDeliveryStopping,
+                    Some(signal),
+                    Some(&current_task),
+                    None,
+                );
+                return;
             }
-            current_task.thread_state.registers = registers;
+
+            if let Some(status) = deliver_signal(
+                current_task.task.as_ref(),
+                current_task.thread_state.arch_width,
+                task_state,
+                signal.into(),
+                &mut current_task.thread_state.registers,
+                &current_task.thread_state.extended_pstate,
+                Some(restricted_exception),
+            ) {
+                current_task.thread_group_exit(locked, status);
+            }
         }
     }
 }

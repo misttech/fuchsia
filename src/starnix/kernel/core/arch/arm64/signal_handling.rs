@@ -6,7 +6,7 @@ use crate::signals::{SignalDetail, SignalInfo, SignalState};
 use crate::task::{CurrentTask, Task};
 use extended_pstate::ExtendedPstateState;
 use starnix_logging::{log_debug, track_stub};
-use starnix_registers::RegisterState;
+use starnix_registers::{RegisterState, RegisterStorageEnum};
 use starnix_types::arch::ArchWidth;
 use starnix_uapi::errors::Errno;
 use starnix_uapi::math::round_down_to_increment;
@@ -55,7 +55,7 @@ impl SignalStackFrame {
     pub fn new(
         task: &Task,
         arch_width: ArchWidth,
-        registers: &mut RegisterState,
+        registers: &mut RegisterState<RegisterStorageEnum>,
         extended_pstate: &ExtendedPstateState,
         signal_state: &SignalState,
         siginfo: &SignalInfo,
@@ -193,7 +193,7 @@ fn restore_registers_32(
     restored_regs.pc = registers[15];
     restored_regs.cpsr = regs[19].into();
     restored_regs.tpidr_el0 = current_task.thread_state.registers.tpidr_el0;
-    current_task.thread_state.registers = restored_regs.into();
+    current_task.thread_state.registers.load(restored_regs);
 
     parse_pstate_extended_data(
         &signal_stack_frame.get_ucontext32().extended_pstate,
@@ -217,7 +217,7 @@ fn restore_registers_64(
     restored_regs.pc = uctx.pc;
     restored_regs.cpsr = uctx.pstate as u32;
     restored_regs.tpidr_el0 = current_task.thread_state.registers.tpidr_el0;
-    current_task.thread_state.registers = restored_regs.into();
+    current_task.thread_state.registers.load(restored_regs);
 
     parse_pstate_extended_data(&uctx.__reserved, &mut current_task.thread_state.extended_pstate)
 }

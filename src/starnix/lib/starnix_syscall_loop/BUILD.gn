@@ -18,17 +18,16 @@ rustc_library("starnix_syscall_loop") {
     ":restricted_trampoline",
     "//sdk/rust/zx",
     "//src/lib/debug/rust",
-    "//src/lib/fuchsia-runtime",
     "//src/lib/trace/rust:trace",
     "//src/starnix/kernel/core",
     "//src/starnix/lib/extended_pstate:lib",
     "//src/starnix/lib/starnix_logging",
+    "//src/starnix/lib/starnix_registers",
     "//src/starnix/lib/starnix_sync",
     "//src/starnix/lib/starnix_syscalls",
     "//src/starnix/lib/starnix_uapi",
     "//third_party/rust_crates:anyhow",
     "//third_party/rust_crates:paste",
-    "//third_party/rust_crates:scopeguard",
   ]
 
   configs += [ "//src/starnix/build:kernel_library_config" ]

@@ -20,6 +20,7 @@ use bitflags::bitflags;
 use fuchsia_rcu::rcu_option_arc::RcuOptionArc;
 use macro_rules_attribute::apply;
 use starnix_logging::{log_warn, set_zx_name};
+use starnix_registers::{HeapRegs, RegisterStorageEnum};
 use starnix_sync::{
     LockBefore, Locked, Mutex, MutexGuard, RwLock, RwLockReadGuard, RwLockWriteGuard, TaskRelease,
     TerminalLock,
@@ -315,7 +316,7 @@ impl AtomicTaskFlags {
 pub struct CapturedThreadState {
     /// The thread state of the traced task.  This is copied out when the thread
     /// stops.
-    pub thread_state: ThreadState,
+    pub thread_state: ThreadState<HeapRegs>,
 
     /// Indicates that the last ptrace operation changed the thread state, so it
     /// should be written back to the original thread.
@@ -526,7 +527,7 @@ impl TaskMutableState {
 
     pub fn copy_state_from(&mut self, current_task: &CurrentTask) {
         self.captured_thread_state = Some(Box::new(CapturedThreadState {
-            thread_state: current_task.thread_state.extended_snapshot(),
+            thread_state: current_task.thread_state.extended_snapshot::<HeapRegs>(),
             dirty: false,
         }));
     }
@@ -1600,8 +1601,11 @@ impl Task {
 }
 
 impl Releasable for Task {
-    type Context<'a> =
-        (Box<ThreadState>, &'a mut Locked<TaskRelease>, RwLockWriteGuard<'a, PidTable>);
+    type Context<'a> = (
+        ThreadState<RegisterStorageEnum>,
+        &'a mut Locked<TaskRelease>,
+        RwLockWriteGuard<'a, PidTable>,
+    );
 
     fn release<'a>(mut self, context: Self::Context<'a>) {
         let (thread_state, locked, pids) = context;
@@ -1620,7 +1624,7 @@ impl Releasable for Task {
         self.mm.update(None);
 
         // Rebuild a temporary CurrentTask to run the release actions that requires a CurrentState.
-        let current_task = CurrentTask::new(OwnedRef::new(self), thread_state);
+        let current_task = CurrentTask::new(OwnedRef::new(self), thread_state.into());
 
         // Apply any delayed releasers left.
         current_task.trigger_delayed_releaser(locked);

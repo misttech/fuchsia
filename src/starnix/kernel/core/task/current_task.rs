@@ -21,7 +21,7 @@ use extended_pstate::ExtendedPstateState;
 use futures::FutureExt;
 use linux_uapi::CLONE_PIDFD;
 use starnix_logging::{log_error, log_warn, track_file_not_found, track_stub};
-use starnix_registers::RegisterState;
+use starnix_registers::{HeapRegs, RegisterState, RegisterStorage, RegisterStorageEnum};
 use starnix_stack::clean_stack;
 use starnix_sync::{
     EventWaitGuard, FileOpsCore, LockBefore, LockEqualOrBefore, Locked, MmDumpable,
@@ -70,7 +70,7 @@ pub struct TaskBuilder {
     /// The underlying task object.
     pub task: OwnedRef<Task>,
 
-    pub thread_state: Box<ThreadState>,
+    pub thread_state: ThreadState<HeapRegs>,
 }
 
 impl TaskBuilder {
@@ -90,7 +90,7 @@ impl TaskBuilder {
 
 impl From<TaskBuilder> for CurrentTask {
     fn from(builder: TaskBuilder) -> Self {
-        Self::new(builder.task, builder.thread_state)
+        Self::new(builder.task, builder.thread_state.into())
     }
 }
 
@@ -108,7 +108,7 @@ impl Releasable for TaskBuilder {
         // the thread group are always valid.
         self.task.thread_group().remove(locked, &mut pids, &self.task);
 
-        let context = (self.thread_state, locked, pids);
+        let context = (self.thread_state.into(), locked, pids);
         self.task.release(context);
     }
 }
@@ -150,7 +150,7 @@ pub struct CurrentTask {
     /// The underlying task object.
     pub task: OwnedRef<Task>,
 
-    pub thread_state: Box<ThreadState>,
+    pub thread_state: ThreadState<RegisterStorageEnum>,
 
     // TODO(https://fxbug.dev/433548348): Avoid interior mutability here by passing a
     // &mut CurrentTask around instead of &CurrentTask.
@@ -163,11 +163,11 @@ pub struct CurrentTask {
 /// The thread related information of a `CurrentTask`. The information should never be used  outside
 /// of the thread owning the `CurrentTask`.
 #[derive(Default)]
-pub struct ThreadState {
+pub struct ThreadState<T: RegisterStorage> {
     /// A copy of the registers associated with the Zircon thread. Up-to-date values can be read
     /// from `self.handle.read_state_general_regs()`. To write these values back to the thread, call
     /// `self.handle.write_state_general_regs(self.thread_state.registers.into())`.
-    pub registers: RegisterState,
+    pub registers: RegisterState<T>,
 
     /// Copy of the current extended processor state including floating point and vector registers.
     pub extended_pstate: ExtendedPstateState,
@@ -185,21 +185,27 @@ pub struct ThreadState {
     pub arch_width: ArchWidth,
 }
 
-impl ThreadState {
+impl<T: RegisterStorage> ThreadState<T> {
     /// Returns a new `ThreadState` with the same `registers` as this one.
-    fn snapshot(&self) -> Box<Self> {
-        Box::new(Self {
-            registers: self.registers,
+    fn snapshot<R: RegisterStorage>(&self) -> ThreadState<R>
+    where
+        RegisterState<R>: From<RegisterState<T>>,
+    {
+        ThreadState::<R> {
+            registers: self.registers.clone().into(),
             extended_pstate: Default::default(),
             restart_code: self.restart_code,
             syscall_restart_func: None,
             arch_width: self.arch_width,
-        })
+        }
     }
 
-    pub fn extended_snapshot(&self) -> Self {
-        Self {
-            registers: self.registers.clone(),
+    pub fn extended_snapshot<R: RegisterStorage>(&self) -> ThreadState<R>
+    where
+        RegisterState<R>: From<RegisterState<T>>,
+    {
+        ThreadState::<R> {
+            registers: self.registers.clone().into(),
             extended_pstate: self.extended_pstate.clone(),
             restart_code: self.restart_code,
             syscall_restart_func: None,
@@ -207,8 +213,8 @@ impl ThreadState {
         }
     }
 
-    pub fn replace_registers(&mut self, other: &ThreadState) {
-        self.registers = other.registers;
+    pub fn replace_registers<O: RegisterStorage>(&mut self, other: &ThreadState<O>) {
+        self.registers.load(*other.registers);
         self.extended_pstate = other.extended_pstate;
         self.arch_width = other.arch_width;
     }
@@ -224,7 +230,19 @@ impl ThreadState {
     }
 }
 
-impl ArchSpecific for ThreadState {
+impl From<ThreadState<HeapRegs>> for ThreadState<RegisterStorageEnum> {
+    fn from(value: ThreadState<HeapRegs>) -> Self {
+        ThreadState {
+            registers: value.registers.into(),
+            extended_pstate: value.extended_pstate,
+            restart_code: value.restart_code,
+            syscall_restart_func: value.syscall_restart_func,
+            arch_width: value.arch_width,
+        }
+    }
+}
+
+impl<T: RegisterStorage> ArchSpecific for ThreadState<T> {
     fn is_arch32(&self) -> bool {
         self.arch_width.is_arch32()
     }
@@ -270,7 +288,7 @@ impl fmt::Debug for CurrentTask {
 }
 
 impl CurrentTask {
-    pub fn new(task: OwnedRef<Task>, thread_state: Box<ThreadState>) -> Self {
+    pub fn new(task: OwnedRef<Task>, thread_state: ThreadState<RegisterStorageEnum>) -> Self {
         Self {
             task,
             thread_state,
@@ -1216,7 +1234,7 @@ impl CurrentTask {
         self.thread_state.arch_width = start_info.arch_width;
 
         let regs: zx_restricted_state_t = start_info.into();
-        self.thread_state.registers = regs.into();
+        self.thread_state.registers.load(regs);
         self.thread_state.extended_pstate.reset();
         self.thread_group().signal_actions.reset_for_exec();
 
@@ -1835,7 +1853,7 @@ impl CurrentTask {
                 self.mm()?.snapshot_to(locked, &child.mm()?)?;
             }
 
-            child.thread_state = self.thread_state.snapshot();
+            child.thread_state = self.thread_state.snapshot::<HeapRegs>();
             Ok(())
         });
 

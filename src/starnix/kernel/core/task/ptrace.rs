@@ -17,6 +17,7 @@ use crate::task::{
 };
 use bitflags::bitflags;
 use starnix_logging::track_stub;
+use starnix_registers::HeapRegs;
 use starnix_sync::{LockBefore, Locked, MmDumpable, ThreadGroupLimits, Unlocked};
 use starnix_syscalls::SyscallResult;
 use starnix_syscalls::decls::SyscallDecl;
@@ -371,7 +372,7 @@ impl PtraceState {
 
         match &state.captured_thread_state {
             Some(captured) => {
-                let registers = captured.thread_state.registers;
+                let registers = captured.thread_state.registers.clone();
                 info.instruction_pointer = registers.instruction_pointer_register();
                 info.stack_pointer = registers.stack_pointer_register();
                 #[cfg(target_arch = "aarch64")]
@@ -1222,7 +1223,10 @@ where
 /// Implementation of ptrace(PTRACE_PEEKUSER).  The user struct holds the
 /// registers and other information about the process.  See ptrace(2) and
 /// sys/user.h for full details.
-pub fn ptrace_peekuser(thread_state: &mut ThreadState, offset: usize) -> Result<usize, Errno> {
+pub fn ptrace_peekuser(
+    thread_state: &mut ThreadState<HeapRegs>,
+    offset: usize,
+) -> Result<usize, Errno> {
     #[cfg(any(target_arch = "x86_64"))]
     if offset >= std::mem::size_of::<user>() {
         return error!(EIO);
@@ -1255,7 +1259,7 @@ pub fn ptrace_pokeuser(
 
 pub fn ptrace_getregset(
     current_task: &CurrentTask,
-    thread_state: &mut ThreadState,
+    thread_state: &mut ThreadState<HeapRegs>,
     regset_type: ElfNoteType,
     base: u64,
     len: &mut usize,
@@ -1290,7 +1294,7 @@ pub fn ptrace_getregset(
 
 pub fn ptrace_setregset(
     current_task: &CurrentTask,
-    thread_state: &mut ThreadState,
+    thread_state: &mut ThreadState<HeapRegs>,
     regset_type: ElfNoteType,
     base: u64,
     mut len: usize,

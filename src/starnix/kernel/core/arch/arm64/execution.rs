@@ -3,10 +3,14 @@
 // found in the LICENSE file.
 
 use crate::task::{CurrentTask, ThreadState};
+use starnix_registers::RegisterStorage;
 use starnix_syscalls::SyscallArg;
 use starnix_syscalls::decls::{Syscall, SyscallDecl};
 
-pub fn new_syscall_from_state(syscall_decl: SyscallDecl, thread_state: &ThreadState) -> Syscall {
+pub fn new_syscall_from_state<T: RegisterStorage>(
+    syscall_decl: SyscallDecl,
+    thread_state: &ThreadState<T>,
+) -> Syscall {
     Syscall {
         decl: syscall_decl,
         arg0: SyscallArg::from_raw(thread_state.registers.r[0]),

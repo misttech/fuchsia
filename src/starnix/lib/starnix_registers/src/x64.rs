@@ -2,6 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+use crate::{HeapRegs, RegisterStorage, RegisterStorageEnum};
 use starnix_uapi::errors::Errno;
 use starnix_uapi::{__NR_restart_syscall, error, user_regs_struct};
 
@@ -13,9 +14,9 @@ const SYSCALL_INSTRUCTION_SIZE_BYTES: u64 = 2;
 ///
 /// Implements [`std::ops::Deref`] and [`std::ops::DerefMut`] as a way to get at the underlying
 /// [`zx::sys::zx_restricted_state_t`] that this type wraps.
-#[derive(Default, Clone, Copy, Eq, PartialEq)]
-pub struct RegisterState {
-    real_registers: zx::sys::zx_restricted_state_t,
+#[derive(Default, Clone, Eq, PartialEq)]
+pub struct RegisterState<T: RegisterStorage> {
+    pub real_registers: T,
 
     /// A copy of the x64 `rax` register at the time of the `syscall` instruction. This is important
     /// to store, as the return value of a syscall overwrites `rax`, making it impossible to recover
@@ -23,7 +24,7 @@ pub struct RegisterState {
     pub orig_rax: u64,
 }
 
-impl RegisterState {
+impl<T: RegisterStorage> RegisterState<T> {
     /// Saves any register state required to restart `syscall_number`.
     pub fn save_registers_for_restart(&mut self, syscall_number: u64) {
         // The `rax` register read from the thread's state is clobbered by
@@ -186,9 +187,18 @@ impl RegisterState {
         };
         Ok(())
     }
+
+    pub fn load(&mut self, regs: zx::sys::zx_restricted_state_t) {
+        *self.real_registers = regs;
+        self.sync_stack_ptr();
+    }
+
+    pub fn sync_stack_ptr(&mut self) {
+        self.orig_rax = self.rax;
+    }
 }
 
-impl std::fmt::Debug for RegisterState {
+impl<T: RegisterStorage> std::fmt::Debug for RegisterState<T> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("RegisterState")
             .field("real_registers", &self.real_registers)
@@ -197,22 +207,28 @@ impl std::fmt::Debug for RegisterState {
     }
 }
 
-impl From<zx::sys::zx_restricted_state_t> for RegisterState {
-    fn from(regs: zx::sys::zx_restricted_state_t) -> Self {
-        RegisterState { real_registers: regs, orig_rax: regs.rax }
-    }
-}
-
-impl std::ops::Deref for RegisterState {
+impl<T: RegisterStorage> std::ops::Deref for RegisterState<T> {
     type Target = zx::sys::zx_restricted_state_t;
 
     fn deref(&self) -> &Self::Target {
-        &self.real_registers
+        &*self.real_registers
     }
 }
 
-impl std::ops::DerefMut for RegisterState {
+impl<T: RegisterStorage> std::ops::DerefMut for RegisterState<T> {
     fn deref_mut(&mut self) -> &mut Self::Target {
-        &mut self.real_registers
+        &mut *self.real_registers
+    }
+}
+
+impl From<RegisterState<HeapRegs>> for RegisterState<RegisterStorageEnum> {
+    fn from(regs: RegisterState<HeapRegs>) -> Self {
+        Self { real_registers: regs.real_registers.into(), orig_rax: regs.orig_rax }
+    }
+}
+
+impl From<RegisterState<RegisterStorageEnum>> for RegisterState<HeapRegs> {
+    fn from(regs: RegisterState<RegisterStorageEnum>) -> Self {
+        Self { real_registers: regs.real_registers.into(), orig_rax: regs.orig_rax }
     }
 }

@@ -6,7 +6,7 @@ use crate::signals::{SignalInfo, SignalState};
 use crate::task::{CurrentTask, Task};
 use extended_pstate::ExtendedPstateState;
 use starnix_logging::log_debug;
-use starnix_registers::RegisterState;
+use starnix_registers::{RegisterState, RegisterStorageEnum};
 use starnix_types::arch::ArchWidth;
 use starnix_uapi::errors::Errno;
 use starnix_uapi::signals::SigSet;
@@ -78,7 +78,7 @@ impl SignalStackFrame {
     pub fn new(
         _task: &Task,
         arch_width: ArchWidth,
-        registers: &RegisterState,
+        registers: &RegisterState<RegisterStorageEnum>,
         extended_pstate: &ExtendedPstateState,
         signal_state: &SignalState,
         siginfo: &SignalInfo,
@@ -204,7 +204,7 @@ pub fn restore_registers(
 ) -> Result<(), Errno> {
     let uctx = &signal_stack_frame.context.uc_mcontext;
     // Restore the register state from before executing the signal handler.
-    current_task.thread_state.registers = zx::sys::zx_restricted_state_t {
+    let restored_regs = zx::sys::zx_restricted_state_t {
         r8: uctx.r8,
         r9: uctx.r9,
         r10: uctx.r10,
@@ -225,8 +225,8 @@ pub fn restore_registers(
         flags: uctx.eflags,
         fs_base: current_task.thread_state.registers.fs_base,
         gs_base: current_task.thread_state.registers.gs_base,
-    }
-    .into();
+    };
+    current_task.thread_state.registers.load(restored_regs);
 
     let xstate = &signal_stack_frame.xstate;
     #[allow(

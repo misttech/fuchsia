@@ -2,6 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+use crate::{HeapRegs, RegisterStorage, RegisterStorageEnum};
 use starnix_uapi::errors::Errno;
 use starnix_uapi::user_address::{ArchSpecific, LongPtr};
 use starnix_uapi::{error, uapi, user_regs_struct};
@@ -16,9 +17,9 @@ const SYSCALL_THUMBS_INSTRUCTION_SIZE_BYTES: u64 = 2;
 ///
 /// Implements [`std::ops::Deref`] and [`std::ops::DerefMut`] as a way to get at the underlying
 /// [`zx::sys::zx_restricted_state_t`] that this type wraps.
-#[derive(Default, Clone, Copy, Eq, PartialEq)]
-pub struct RegisterState {
-    real_registers: zx::sys::zx_restricted_state_t,
+#[derive(Default, Clone, Eq, PartialEq)]
+pub struct RegisterState<T: RegisterStorage> {
+    pub real_registers: T,
 
     /// A copy of the aarch64 `x0` register at the time of the `syscall` instruction. This is
     /// important to store, as the return value of a syscall overwrites `x0`, making it impossible
@@ -30,13 +31,13 @@ pub struct RegisterState {
     pub elr: u64,
 }
 
-impl ArchSpecific for RegisterState {
+impl<T: RegisterStorage> ArchSpecific for RegisterState<T> {
     fn is_arch32(&self) -> bool {
         (self.cpsr as u64) & zx::sys::ZX_REG_CPSR_ARCH_32_MASK == zx::sys::ZX_REG_CPSR_ARCH_32_MASK
     }
 }
 
-impl RegisterState {
+impl<T: RegisterStorage> RegisterState<T> {
     fn is_thumb(&self) -> bool {
         const IS_THUMB_MASK: u64 =
             zx::sys::ZX_REG_CPSR_ARCH_32_MASK | zx::sys::ZX_REG_CPSR_THUMB_MASK;
@@ -218,19 +219,27 @@ impl RegisterState {
         Ok(())
     }
 
-    /// Check that the special registers stayed synchronized.
-    ///
-    /// This is primarily called when returning from restricted mode.
-    pub fn assert_sync(&self) {
-        if self.is_arch32() {
-            assert_eq!(self.sp, self.r[13]);
-            assert_eq!(self.r[30], self.r[14]);
-            assert_eq!(self.pc, self.r[15]);
+    pub fn load(&mut self, regs: zx::sys::zx_restricted_state_t) {
+        *self.real_registers = regs;
+        self.sync_stack_ptr();
+    }
+
+    pub fn sync_stack_ptr(&mut self) {
+        // We should synchronize the stack pointer with the aarch32 registers.
+        if self.cpsr & zx::sys::ZX_REG_CPSR_ARCH_32_MASK as u32 != 0 {
+            self.sp = self.r[13];
+            self.r[30] = self.r[14];
+            // The PC appears to advance properly and _not_ prefer r[15]
+            // TODO(https://fxbug.dev/380402551): Make sure this isn't because of anything
+            // done in zircon.
+            self.r[15] = self.pc;
         }
+        self.orig_x0 = self.r[0];
+        self.elr = 0;
     }
 }
 
-impl std::fmt::Debug for RegisterState {
+impl<T: RegisterStorage> std::fmt::Debug for RegisterState<T> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("RegisterState")
             .field("real_registers", &self.real_registers)
@@ -240,31 +249,28 @@ impl std::fmt::Debug for RegisterState {
     }
 }
 
-impl From<zx::sys::zx_restricted_state_t> for RegisterState {
-    fn from(mut regs: zx::sys::zx_restricted_state_t) -> Self {
-        // We should synchronize the stack pointer with the aarch32 registers.
-        if regs.cpsr & zx::sys::ZX_REG_CPSR_ARCH_32_MASK as u32 != 0 {
-            regs.sp = regs.r[13];
-            regs.r[30] = regs.r[14];
-            // The PC appears to advance properly and _not_ prefer r[15]
-            // TODO(https://fxbug.dev/380402551): Make sure this isn't because of anything
-            // done in zircon.
-            regs.r[15] = regs.pc;
-        }
-        RegisterState { real_registers: regs, orig_x0: regs.r[0], elr: 0 }
-    }
-}
-
-impl std::ops::Deref for RegisterState {
+impl<T: RegisterStorage> std::ops::Deref for RegisterState<T> {
     type Target = zx::sys::zx_restricted_state_t;
 
     fn deref(&self) -> &Self::Target {
-        &self.real_registers
+        &*self.real_registers
     }
 }
 
-impl std::ops::DerefMut for RegisterState {
+impl<T: RegisterStorage> std::ops::DerefMut for RegisterState<T> {
     fn deref_mut(&mut self) -> &mut Self::Target {
-        &mut self.real_registers
+        &mut *self.real_registers
+    }
+}
+
+impl From<RegisterState<HeapRegs>> for RegisterState<RegisterStorageEnum> {
+    fn from(regs: RegisterState<HeapRegs>) -> Self {
+        Self { real_registers: regs.real_registers.into(), orig_x0: regs.orig_x0, elr: regs.elr }
+    }
+}
+
+impl From<RegisterState<RegisterStorageEnum>> for RegisterState<HeapRegs> {
+    fn from(regs: RegisterState<RegisterStorageEnum>) -> Self {
+        Self { real_registers: regs.real_registers.into(), orig_x0: regs.orig_x0, elr: regs.elr }
     }
 }

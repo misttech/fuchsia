@@ -12,7 +12,7 @@ use crate::task::{
 };
 use extended_pstate::ExtendedPstateState;
 use starnix_logging::{log_info, log_trace, log_warn};
-use starnix_registers::RegisterState;
+use starnix_registers::{RegisterState, RegisterStorageEnum};
 use starnix_sync::{LockBefore, Locked, ThreadGroupLimits, Unlocked};
 use starnix_syscalls::SyscallResult;
 use starnix_types::arch::ArchWidth;
@@ -311,7 +311,7 @@ pub fn deliver_signal(
     arch_width: ArchWidth,
     mut task_state: TaskWriteGuard<'_>,
     mut siginfo: SignalInfo,
-    registers: &mut RegisterState,
+    registers: &mut RegisterState<RegisterStorageEnum>,
     extended_pstate: &ExtendedPstateState,
     restricted_exception: Option<zx::ExceptionReport>,
 ) -> Option<ExitStatus> {
@@ -411,7 +411,7 @@ pub fn deliver_signal(
 fn dispatch_signal_handler(
     task: &Task,
     arch_width: ArchWidth,
-    registers: &mut RegisterState,
+    registers: &mut RegisterState<RegisterStorageEnum>,
     extended_pstate: &ExtendedPstateState,
     signal_state: &mut SignalState,
     siginfo: SignalInfo,
@@ -524,7 +524,10 @@ pub fn restore_from_signal_handler(current_task: &mut CurrentTask) -> Result<(),
 /// Maybe adjust a task's registers to restart a syscall once the task switches back to userspace,
 /// based on whether the task previously had a syscall return with an error code indicating that a
 /// restart was required.
-pub fn prepare_to_restart_syscall(thread_state: &mut ThreadState, sigaction: Option<sigaction_t>) {
+pub fn prepare_to_restart_syscall(
+    thread_state: &mut ThreadState<RegisterStorageEnum>,
+    sigaction: Option<sigaction_t>,
+) {
     // Taking the value ensures each syscall is only considered for restart once.
     let Some(err) = thread_state.restart_code.take() else {
         // Don't interact with register state at all unless other kernel code indicates that we may

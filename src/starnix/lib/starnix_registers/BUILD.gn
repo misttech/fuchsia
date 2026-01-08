@@ -14,6 +14,8 @@ rustc_library("starnix_registers") {
   ]
   deps = [
     "//sdk/rust/zx",
+    "//src/lib/fuchsia-runtime",
+    "//src/starnix/lib/starnix_logging",
     "//src/starnix/lib/starnix_uapi",
     "//third_party/rust_crates:memoffset",
   ]
