@@ -5,9 +5,9 @@
 #include "aml-power.h"
 
 #include <fidl/fuchsia.hardware.pwm/cpp/wire_test_base.h>
-#include <fidl/fuchsia.hardware.vreg/cpp/wire_test_base.h>
 #include <lib/ddk/platform-defs.h>
 #include <lib/driver/fake-platform-device/cpp/fake-pdev.h>
+#include <lib/driver/fake-vreg/cpp/fake-vreg.h>
 #include <lib/driver/testing/cpp/driver_test.h>
 
 #include <memory>
@@ -80,57 +80,6 @@ class FakePwmServer final : public fidl::testing::WireTestBase<fuchsia_hardware_
   fidl::ServerBindingGroup<fuchsia_hardware_pwm::Pwm> bindings_;
 };
 
-class FakeVregServer final : public fidl::testing::WireTestBase<fuchsia_hardware_vreg::Vreg> {
- public:
-  void SetRegulatorParams(uint32_t min_uv, uint32_t step_size_uv, uint32_t num_steps) {
-    min_uv_ = min_uv;
-    step_size_uv_ = step_size_uv;
-    num_steps_ = num_steps;
-  }
-
-  void GetRegulatorParams(GetRegulatorParamsCompleter::Sync& completer) override {
-    completer.ReplySuccess(min_uv_, step_size_uv_, num_steps_);
-  }
-
-  void SetVoltageStep(::fuchsia_hardware_vreg::wire::VregSetVoltageStepRequest* request,
-                      SetVoltageStepCompleter::Sync& completer) override {
-    voltage_step_ = request->step;
-    completer.Reply(fit::success());
-  }
-
-  void GetVoltageStep(GetVoltageStepCompleter::Sync& completer) override {
-    completer.ReplySuccess(voltage_step_);
-  }
-
-  void Enable(EnableCompleter::Sync& completer) override {
-    completer.ReplyError(ZX_ERR_NOT_SUPPORTED);
-  }
-
-  void Disable(DisableCompleter::Sync& completer) override {
-    completer.ReplyError(ZX_ERR_NOT_SUPPORTED);
-  }
-
-  void NotImplemented_(const std::string& name, ::fidl::CompleterBase& completer) override {
-    completer.Close(ZX_ERR_NOT_SUPPORTED);
-  }
-
-  uint32_t voltage_step() const { return voltage_step_; }
-
-  fuchsia_hardware_vreg::Service::InstanceHandler CreateInstanceHandler() {
-    return fuchsia_hardware_vreg::Service::InstanceHandler{{
-        .vreg = bindings_.CreateHandler(this, fdf::Dispatcher::GetCurrent()->async_dispatcher(),
-                                        fidl::kIgnoreBindingClosure),
-    }};
-  }
-
- private:
-  uint32_t min_uv_;
-  uint32_t step_size_uv_;
-  uint32_t num_steps_;
-  uint32_t voltage_step_;
-  fidl::ServerBindingGroup<fuchsia_hardware_vreg::Vreg> bindings_;
-};
-
 class AmlPowerTestEnvironment : public fdf_testing::Environment {
  public:
   enum class Mode : uint8_t {
@@ -174,8 +123,8 @@ class AmlPowerTestEnvironment : public fdf_testing::Environment {
   void Shutdown() { primary_cluster_pwm_.VerifyAndClear(); }
 
   FakePwmServer& primary_cluster_pwm() { return primary_cluster_pwm_; }
-  FakeVregServer& big_cluster_vreg() { return big_cluster_vreg_; }
-  FakeVregServer& little_cluster_vreg() { return little_cluster_vreg_; }
+  fdf_fake::FakeVreg& big_cluster_vreg() { return big_cluster_vreg_; }
+  fdf_fake::FakeVreg& little_cluster_vreg() { return little_cluster_vreg_; }
 
  private:
   zx::result<> ServeAstro(fdf::OutgoingDirectory& to_driver_vfs) {
@@ -208,8 +157,8 @@ class AmlPowerTestEnvironment : public fdf_testing::Environment {
 
   // Mmio Regs and Regions
   FakePwmServer primary_cluster_pwm_;
-  FakeVregServer big_cluster_vreg_;
-  FakeVregServer little_cluster_vreg_;
+  fdf_fake::FakeVreg big_cluster_vreg_;
+  fdf_fake::FakeVreg little_cluster_vreg_;
 
   compat::DeviceServer device_server_;
   fdf_fake::FakePDev pdev_;
@@ -251,7 +200,7 @@ class AmlPowerTest : public ::testing::Test {
   }
 
   template <typename T>
-  T WithBigClusterVregContext(fit::callback<T(FakeVregServer&)> callback) {
+  T WithBigClusterVregContext(fit::callback<T(fdf_fake::FakeVreg&)> callback) {
     return driver_test_.RunInEnvironmentTypeContext<T>(
         [callback = std::move(callback)](auto& env) mutable {
           return callback(env.big_cluster_vreg());
@@ -259,7 +208,7 @@ class AmlPowerTest : public ::testing::Test {
   }
 
   template <typename T>
-  T WithLittleClusterVregContext(fit::callback<T(FakeVregServer&)> callback) {
+  T WithLittleClusterVregContext(fit::callback<T(fdf_fake::FakeVreg&)> callback) {
     return driver_test_.RunInEnvironmentTypeContext<T>(
         [callback = std::move(callback)](auto& env) mutable {
           return callback(env.little_cluster_vreg());
@@ -676,14 +625,14 @@ TEST_F(AmlPowerTest, Vim3SetBigCluster) {
   StartDriverVim3();
 
   WithBigClusterVregContext<void>(
-      [](FakeVregServer& cluster_vreg) { cluster_vreg.SetRegulatorParams(100, 10, 10); });
+      [](fdf_fake::FakeVreg& cluster_vreg) { cluster_vreg.SetRegulatorParams(100, 10, 10); });
   const uint32_t kTestVoltage = 155;
   uint32_t actual;
   EXPECT_OK(driver().PowerImplRequestVoltage(
       bind_fuchsia_amlogic_platform::POWER_DOMAIN_ARM_CORE_BIG, kTestVoltage, &actual));
   EXPECT_EQ(actual, 150u);
   uint32_t voltage_step = WithBigClusterVregContext<uint32_t>(
-      [](FakeVregServer& cluster_vreg) { return cluster_vreg.voltage_step(); });
+      [](fdf_fake::FakeVreg& cluster_vreg) { return cluster_vreg.voltage_step(); });
   EXPECT_EQ(voltage_step, 5u);
 
   // Voltage is too low.
@@ -696,7 +645,7 @@ TEST_F(AmlPowerTest, Vim3SetBigCluster) {
       bind_fuchsia_amlogic_platform::POWER_DOMAIN_ARM_CORE_BIG, 200, &actual));
   EXPECT_EQ(actual, 200u);
   voltage_step = WithBigClusterVregContext<uint32_t>(
-      [](FakeVregServer& cluster_vreg) { return cluster_vreg.voltage_step(); });
+      [](fdf_fake::FakeVreg& cluster_vreg) { return cluster_vreg.voltage_step(); });
   EXPECT_EQ(voltage_step, 10u);
 
   // Set voltage beyond the threshold.
@@ -709,14 +658,14 @@ TEST_F(AmlPowerTest, Vim3SetLittleCluster) {
   StartDriverVim3();
 
   WithLittleClusterVregContext<void>(
-      [](FakeVregServer& cluster_vreg) { cluster_vreg.SetRegulatorParams(100, 10, 10); });
+      [](fdf_fake::FakeVreg& cluster_vreg) { cluster_vreg.SetRegulatorParams(100, 10, 10); });
   const uint32_t kTestVoltage = 155;
   uint32_t actual;
   EXPECT_OK(driver().PowerImplRequestVoltage(
       bind_fuchsia_amlogic_platform::POWER_DOMAIN_ARM_CORE_LITTLE, kTestVoltage, &actual));
   EXPECT_EQ(actual, 150u);
   uint32_t voltage_step = WithLittleClusterVregContext<uint32_t>(
-      [](FakeVregServer& cluster_vreg) { return cluster_vreg.voltage_step(); });
+      [](fdf_fake::FakeVreg& cluster_vreg) { return cluster_vreg.voltage_step(); });
   EXPECT_EQ(voltage_step, 5u);
 
   // Voltage is too low.
@@ -729,7 +678,7 @@ TEST_F(AmlPowerTest, Vim3SetLittleCluster) {
       bind_fuchsia_amlogic_platform::POWER_DOMAIN_ARM_CORE_LITTLE, 200, &actual));
   EXPECT_EQ(actual, 200u);
   voltage_step = WithLittleClusterVregContext<uint32_t>(
-      [](FakeVregServer& cluster_vreg) { return cluster_vreg.voltage_step(); });
+      [](fdf_fake::FakeVreg& cluster_vreg) { return cluster_vreg.voltage_step(); });
   EXPECT_EQ(voltage_step, 10u);
 
   // Set voltage beyond the threshold.
@@ -742,7 +691,7 @@ TEST_F(AmlPowerTest, Vim3GetSupportedVoltageRange) {
   StartDriverVim3();
 
   WithBigClusterVregContext<void>(
-      [](FakeVregServer& cluster_vreg) { cluster_vreg.SetRegulatorParams(100, 10, 10); });
+      [](fdf_fake::FakeVreg& cluster_vreg) { cluster_vreg.SetRegulatorParams(100, 10, 10); });
 
   uint32_t max, min;
   EXPECT_OK(driver().PowerImplGetSupportedVoltageRange(
@@ -751,7 +700,7 @@ TEST_F(AmlPowerTest, Vim3GetSupportedVoltageRange) {
   EXPECT_EQ(min, 100u);
 
   WithLittleClusterVregContext<void>(
-      [](FakeVregServer& cluster_vreg) { cluster_vreg.SetRegulatorParams(100, 20, 5); });
+      [](fdf_fake::FakeVreg& cluster_vreg) { cluster_vreg.SetRegulatorParams(100, 20, 5); });
 
   EXPECT_OK(driver().PowerImplGetSupportedVoltageRange(
       bind_fuchsia_amlogic_platform::POWER_DOMAIN_ARM_CORE_LITTLE, &min, &max));

@@ -79,6 +79,7 @@ test("aml-meson-power-test-bin") {
     "//sdk/fidl/fuchsia.hardware.pwm:fuchsia.hardware.pwm_cpp_testing",
     "//sdk/fidl/fuchsia.hardware.vreg:fuchsia.hardware.vreg_cpp_testing",
     "//sdk/lib/driver/fake-platform-device/cpp",
+    "//sdk/lib/driver/fake-vreg/cpp",
     "//sdk/lib/driver/testing/cpp",
     "//src/devices/bind/fuchsia.amlogic.platform:fuchsia.amlogic.platform_cpp",
     "//src/lib/fxl/test:gtest_main",

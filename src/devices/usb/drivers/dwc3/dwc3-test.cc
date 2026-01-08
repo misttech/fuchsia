@@ -9,7 +9,7 @@
 #include <fidl/fuchsia.hardware.platform.device/cpp/fidl.h>
 #include <fidl/fuchsia.hardware.reset/cpp/test_base.h>
 #include <fidl/fuchsia.hardware.usb.phy/cpp/fidl.h>
-#include <fidl/fuchsia.hardware.vreg/cpp/test_base.h>
+#include <lib/driver/fake-vreg/cpp/fake-vreg.h>
 
 #include <optional>
 
@@ -28,35 +28,6 @@ namespace fpdev = fuchsia_hardware_platform_device;
 namespace fphy = fuchsia_hardware_usb_phy;
 namespace freset = fuchsia_hardware_reset;
 namespace fvreg = fuchsia_hardware_vreg;
-
-class FakeVreg : public fidl::testing::TestBase<fuchsia_hardware_vreg::Vreg> {
- public:
-  fvreg::Service::InstanceHandler GetInstanceHandler(async_dispatcher_t* dispatcher) {
-    return fvreg::Service::InstanceHandler({
-        .vreg = bindings_.CreateHandler(this, dispatcher, fidl::kIgnoreBindingClosure),
-    });
-  }
-
-  bool enabled() const { return enabled_; }
-
- private:
-  void Enable(EnableCompleter::Sync& completer) override {
-    enabled_ = true;
-    completer.Reply(zx::ok());
-  }
-
-  void Disable(DisableCompleter::Sync& completer) override {
-    enabled_ = false;
-    completer.Reply(zx::ok());
-  }
-
-  void NotImplemented_(const std::string& name, fidl::CompleterBase& completer) override {
-    FAIL() << "Not implemented: " << name;
-  }
-
-  bool enabled_ = false;
-  fidl::ServerBindingGroup<fuchsia_hardware_vreg::Vreg> bindings_;
-};
 
 class FakeReset : public fidl::testing::TestBase<freset::Reset> {
  public:
@@ -269,8 +240,7 @@ class Environment : public fdf_testing::Environment {
     result = directory.AddService<freset::Service>(reset_.GetInstanceHandler(dispatcher), "reset");
     EXPECT_TRUE(result.is_ok());
 
-    result =
-        directory.AddService<fvreg::Service>(vreg_.GetInstanceHandler(dispatcher), "regulator");
+    result = directory.AddService<fvreg::Service>(vreg_.CreateInstanceHandler(), "regulator");
     EXPECT_TRUE(result.is_ok());
 
     return zx::ok();
@@ -280,7 +250,7 @@ class Environment : public fdf_testing::Environment {
 
   const FakeClock& clock() const { return clock_; }
   FakeReset& reset() { return reset_; }
-  const FakeVreg& vreg() const { return vreg_; }
+  const fdf_fake::FakeVreg& vreg() const { return vreg_; }
 
  private:
   static constexpr size_t kRegSize = sizeof(uint32_t);
@@ -293,7 +263,7 @@ class Environment : public fdf_testing::Environment {
   FakeUsbPhy usb_phy_;
   FakeClock clock_;
   FakeReset reset_;
-  FakeVreg vreg_;
+  fdf_fake::FakeVreg vreg_;
 };
 
 class Config final {
