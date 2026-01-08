@@ -104,7 +104,7 @@ if [[ -n "$CIPD_YAML_MANIFEST" ]]; then
     fi
     tee -a <<EOF >> "${CIPD_YAML_MANIFEST}"
     {
-        "path": "${OUT_DIR}/cipd-${arch}.yaml",
+        "path": "out/alpine_cipd/cipd-${arch}.yaml",
         "tags": {
             "git_repository": "${GIT_REPO}",
             "git_revision": "${GIT_REV}"
