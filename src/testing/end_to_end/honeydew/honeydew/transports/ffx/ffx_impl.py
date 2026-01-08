@@ -15,7 +15,11 @@ from honeydew import errors
 from honeydew.transports.ffx import config as ffx_config
 from honeydew.transports.ffx import errors as ffx_errors
 from honeydew.transports.ffx import ffx as ffx_interface
-from honeydew.transports.ffx.types import MonitorTargetInfo, TargetInfoData
+from honeydew.transports.ffx.types import (
+    MachineFormat,
+    MonitorTargetInfo,
+    TargetInfoData,
+)
 from honeydew.typing import custom_types
 from honeydew.utils import host_shell, properties
 
@@ -308,6 +312,7 @@ class FfxImpl(ffx_interface.FFX):
         capture_output: bool = True,
         log_output: bool = True,
         include_target: bool = True,
+        machine: MachineFormat | None = None,
     ) -> str:
         """Runs an FFX command.
 
@@ -324,6 +329,7 @@ class FfxImpl(ffx_interface.FFX):
                 or spammy output.
             include_target: If set to True, `ffx -t {target} {cmd}` will be run.
                 Otherwise, `ffx {cmd}` will be run.
+            machine: If set, `ffx --machine {machine} {cmd}` will be run.
 
         Returns:
             Output of FFX command when capture_output is set to True, otherwise
@@ -337,6 +343,7 @@ class FfxImpl(ffx_interface.FFX):
         ffx_cmd: list[str] = self.generate_ffx_cmd(
             cmd=cmd,
             include_target=include_target,
+            machine=machine,
         )
         try:
             return (
@@ -555,12 +562,14 @@ class FfxImpl(ffx_interface.FFX):
         self,
         cmd: list[str],
         include_target: bool = True,
+        machine: MachineFormat | None = None,
     ) -> list[str]:
         """Generates the FFX command that need to be run.
 
         Args:
             cmd: FFX command.
             include_target: True to include "-t <target_name>", False otherwise.
+            machine: If set, `--machine {machine} {cmd}` will be added.
 
         Returns:
             FFX command to be run as list of string.
@@ -572,5 +581,9 @@ class FfxImpl(ffx_interface.FFX):
 
         # To run FFX in isolation mode
         ffx_args.extend(["--isolate-dir", self.config.isolate_dir.directory()])
+        # Don't add "--machine" if the machine type is already specified
+        if "--machine" not in cmd:
+            if machine is not None:
+                ffx_args.extend(["--machine", str(machine)])
 
         return [self.config.binary_path] + ffx_args + cmd

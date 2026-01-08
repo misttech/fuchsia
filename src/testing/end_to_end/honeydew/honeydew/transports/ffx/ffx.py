@@ -256,12 +256,14 @@ class FFX(abc.ABC):
         self,
         cmd: list[str],
         include_target: bool = True,
+        machine: ffx_types.MachineFormat | None = None,
     ) -> list[str]:
         """Generates the FFX command that need to be run.
 
         Args:
             cmd: FFX command.
             include_target: True to include "-t <target_name>", False otherwise.
+            machine: If set, `--machine {machine} {cmd}` will be added.
 
         Returns:
             FFX command to be run as list of string.

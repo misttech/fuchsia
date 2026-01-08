@@ -99,12 +99,14 @@ pub async fn report_bug(env_context: Option<&EnvironmentContext>, err: &impl std
     }
 }
 
+// LINT.IfChange
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum MachineFormat {
     Json,
     JsonPretty,
     Raw,
 }
+// LINT.ThenChange(//src/testing/end_to_end/honeydew/honeydew/transports/ffx/types.py)
 
 impl From<MachineFormat> for Option<writer::Format> {
     fn from(value: MachineFormat) -> Self {

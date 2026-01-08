@@ -17,7 +17,11 @@ from honeydew import errors
 from honeydew.transports.ffx import config as ffx_config
 from honeydew.transports.ffx import errors as ffx_errors
 from honeydew.transports.ffx import ffx_impl
-from honeydew.transports.ffx.types import MonitorTargetInfo, TargetInfoData
+from honeydew.transports.ffx.types import (
+    MachineFormat,
+    MonitorTargetInfo,
+    TargetInfoData,
+)
 from honeydew.typing import custom_types
 from honeydew.utils import host_shell
 
@@ -111,6 +115,8 @@ _FFX_TARGET_INFO: dict[str, Any] = {
 
 _FFX_TARGET_LIST_JSON: list[dict[str, Any]] = [_FFX_TARGET_INFO]
 
+_FFX_TARGET_WAIT_MACHINE_RAW: str = ""
+
 _INPUT_ARGS: dict[str, Any] = {
     "target_name": _TARGET_NAME,
     "target_ip_port": _TARGET_SSH_ADDRESS,
@@ -125,6 +131,7 @@ _INPUT_ARGS: dict[str, Any] = {
         ssh_keepalive_timeout=_SSH_KEEPALIVE_TIMEOUT,
     ),
     "run_cmd": ffx_impl._FFX_CMDS["TARGET_SHOW"],
+    "run_machine_cmd": ffx_impl._FFX_CMDS["TARGET_WAIT"],
 }
 
 _MOCK_ARGS: dict[str, Any] = {
@@ -134,6 +141,7 @@ _MOCK_ARGS: dict[str, Any] = {
     "ffx_target_ssh_address_output": f"[{_SSH_ADDRESS}]:{_SSH_PORT}",
     "ffx_target_list_output": _FFX_TARGET_LIST_OUTPUT,
     "ffx_target_list_json": _FFX_TARGET_LIST_JSON,
+    "ffx_target_wait_machine": _FFX_TARGET_WAIT_MACHINE_RAW,
 }
 
 _EXPECTED_VALUES: dict[str, Any] = {
@@ -141,6 +149,7 @@ _EXPECTED_VALUES: dict[str, Any] = {
     "ffx_target_show_object": _FFX_TARGET_SHOW_INFO,
     "ffx_target_show_json": _FFX_TARGET_SHOW_JSON,
     "ffx_target_list_json": _FFX_TARGET_LIST_JSON,
+    "ffx_target_wait_machine": _FFX_TARGET_WAIT_MACHINE_RAW,
 }
 
 
@@ -371,6 +380,37 @@ class FfxImplTests(unittest.TestCase):
                 _ISOLATE_DIR,
             ]
             + ffx_impl._FFX_CMDS["TARGET_SHOW"],
+            capture_output=True,
+            log_output=True,
+            timeout=None,
+        )
+
+    @mock.patch.object(
+        host_shell,
+        "run",
+        return_value=_MOCK_ARGS["ffx_target_wait_machine"],
+        autospec=True,
+    )
+    def test_ffx_run_machine(self, mock_host_shell_run: mock.Mock) -> None:
+        """Test case for ffx_impl.run()"""
+        self.assertEqual(
+            self.ffx_obj_with_ip.run(
+                cmd=_INPUT_ARGS["run_machine_cmd"], machine=MachineFormat.RAW
+            ),
+            _EXPECTED_VALUES["ffx_target_wait_machine"],
+        )
+
+        mock_host_shell_run.assert_called_with(
+            [
+                _BINARY_PATH,
+                "-t",
+                str(_TARGET_SSH_ADDRESS),
+                "--isolate-dir",
+                _ISOLATE_DIR,
+                "--machine",
+                "raw",
+            ]
+            + ffx_impl._FFX_CMDS["TARGET_WAIT"],
             capture_output=True,
             log_output=True,
             timeout=None,

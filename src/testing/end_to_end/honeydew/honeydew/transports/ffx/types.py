@@ -2,6 +2,7 @@
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 """Data types that match the machine output of ffx."""
+import enum
 from dataclasses import dataclass
 from typing import Any
 
@@ -202,3 +203,11 @@ class MonitorTargetInfo:
 
 
 # LINT.ThenChange(//src/developer/ffx/lib/target/src/info.rs)
+
+
+class MachineFormat(enum.StrEnum):
+    """Supported machine formats"""
+
+    RAW = "raw"
+    JSON = "json"
+    JSON_PRETTY = "json-pretty"
