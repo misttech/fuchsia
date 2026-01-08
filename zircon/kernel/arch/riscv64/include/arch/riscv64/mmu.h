@@ -24,6 +24,7 @@
 #define MMU_GUEST_SIZE_SHIFT (kVirtualAddressSize + 2)
 
 #define RISCV64_MMU_PT_KERNEL_BASE_INDEX (kNumPageTableEntries / 2)
+#define RISCV64_MMU_PT_KERNEL_ENTRIES (kNumPageTableEntries / 2)
 #define RISCV64_MMU_PPN_BITS 56
 
 // page table bits
@@ -80,11 +81,6 @@ const uint16_t MMU_RISCV64_KERNEL_ASID = 1;
 const uint16_t MMU_RISCV64_FIRST_USER_ASID = 2;
 const uint16_t MMU_RISCV64_MAX_USER_ASID = (1u << MMU_RISCV64_ASID_BITS) - 1;
 
-// The physical address of an identity-mapping root page table covering the
-// kernel image, stored for loading from secondary CPUs.  The high half is the
-// usual full kernel virtual table.
-extern paddr_t riscv64_kernel_bootstrap_translation_table_phys;
-
 void riscv64_mmu_early_init();
 void riscv64_mmu_early_init_percpu();
 void riscv64_mmu_init();
@@ -132,5 +128,10 @@ inline void riscv64_tlb_flush_address_one_asid(vaddr_t va, uint16_t asid) {
 inline uint16_t riscv64_current_asid() {
   return (riscv64_csr_read(RISCV64_CSR_SATP) >> RISCV64_SATP_ASID_SHIFT) & RISCV64_SATP_ASID_MASK;
 }
+
+// The physical address of an identity-mapping root page table covering the
+// kernel image, stored for loading from secondary CPUs.  The high half is the
+// usual full kernel virtual table.
+paddr_t riscv64_get_bootstrap_translation_table();
 
 #endif  // ZIRCON_KERNEL_ARCH_RISCV64_INCLUDE_ARCH_RISCV64_MMU_H_

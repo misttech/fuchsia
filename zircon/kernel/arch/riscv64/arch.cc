@@ -64,7 +64,6 @@ void arch_early_init() {
   riscv64_sbi_early_init();
   riscv64_feature_early_init();
   riscv64_mmu_early_init();
-  riscv64_mmu_early_init_percpu();
 
   // mark the boot cpu online
   mp_set_curr_cpu_online(true);

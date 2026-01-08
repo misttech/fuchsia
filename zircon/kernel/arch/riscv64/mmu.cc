@@ -56,22 +56,15 @@
 #define LOCAL_KTRACE(string, args...)
 #endif
 
-// The main translation table for the kernel. Used by the one kernel address space
-// when kernel only threads are active.
-alignas(kPageSize) pte_t riscv64_kernel_translation_table[kNumPageTableEntries];
-
-// The physical address of a copy of the above table with memory identity
-// mapped at 0, stored for loading from secondary CPUs.
-paddr_t riscv64_kernel_bootstrap_translation_table_phys;
-
 namespace {
 
-// 256 top level page tables that are always mapped in the kernel half of all root
-// page tables. This allows for no need to explicitly maintain consistency between
-// the official kernel page table root and all of the user address spaces as they
-// come and go.
-alignas(kPageSize) pte_t
-    riscv64_kernel_top_level_page_tables[kNumPageTableEntries / 2][kNumPageTableEntries];
+// The main translation table for the kernel. Used by the one kernel address space
+// when kernel only threads are active.
+alignas(kPageSize) pte_t kernel_translation_table[kNumPageTableEntries];
+
+// A copy of the bootstrap translation table with user space identity mapped, used
+// when booting secondary cores.
+alignas(kPageSize) pte_t bootstrap_translation_table[kNumPageTableEntries];
 
 // Track the size and capability of the hardware ASID, and if its in use.
 uint64_t riscv_asid_mask;
@@ -1322,8 +1315,8 @@ zx_status_t Riscv64ArchVmAspace::Init() {
     DEBUG_ASSERT(base_ == KERNEL_ASPACE_BASE);
     DEBUG_ASSERT(size_ == KERNEL_ASPACE_SIZE);
 
-    tt_virt_ = riscv64_kernel_translation_table;
-    tt_phys_ = KernelPhysicalAddressOf<riscv64_kernel_translation_table>();
+    tt_virt_ = kernel_translation_table;
+    tt_phys_ = KernelPhysicalAddressOf<kernel_translation_table>();
     asid_ = kernel_asid();
   } else {
     if (type_ == Riscv64AspaceType::kUser) {
@@ -1363,7 +1356,7 @@ zx_status_t Riscv64ArchVmAspace::Init() {
     // zero the top level translation table and copy the kernel memory mapping.
     memset((void*)tt_virt_, 0, kPageSize / 2);
     memcpy((void*)(tt_virt_ + kNumPageTableEntries / 2),
-           (void*)(riscv64_kernel_translation_table + kNumPageTableEntries / 2), kPageSize / 2);
+           (void*)(kernel_translation_table + kNumPageTableEntries / 2), kPageSize / 2);
   }
   pt_pages_ = 1;
 
@@ -1615,7 +1608,7 @@ void Riscv64ArchVmAspace::ContextSwitch(Riscv64ArchVmAspace* old_aspace,
     // Switching to the null aspace, which means kernel address space only.
     satp = (RISCV64_SATP_MODE_SV39 << RISCV64_SATP_MODE_SHIFT) |
            (static_cast<uint64_t>(kernel_asid()) << RISCV64_SATP_ASID_SHIFT) |
-           (KernelPhysicalAddressOf<riscv64_kernel_translation_table>() >> kPageShift);
+           (KernelPhysicalAddressOf<kernel_translation_table>() >> kPageShift);
   }
   if (likely(old_aspace != nullptr)) {
     [[maybe_unused]] uint32_t prev =
@@ -1674,6 +1667,21 @@ void Riscv64ArchVmAspace::HandoffPageTablesFromPhysboot(list_node_t* mmu_pages) 
   }
 }
 
+namespace {
+
+// Load the kernel page tables and set the passed in asid.
+void riscv64_switch_kernel_asid(uint16_t asid) {
+  const uint64_t satp = (RISCV64_SATP_MODE_SV39 << RISCV64_SATP_MODE_SHIFT) |
+                        (static_cast<uint64_t>(asid) << RISCV64_SATP_ASID_SHIFT) |
+                        (KernelPhysicalAddressOf<kernel_translation_table>() >> kPageShift);
+  riscv64_csr_write(RISCV64_CSR_SATP, satp);
+
+  // Globally TLB flush.
+  riscv64_tlb_flush_all();
+}
+
+}  // anonymous namespace
+
 void riscv64_mmu_early_init() {
   // Figure out the number of supported ASID bits by writing all 1s to
   // the asid field in satp and seeing which ones 'stick'.
@@ -1683,56 +1691,33 @@ void riscv64_mmu_early_init() {
   riscv_asid_mask = (riscv64_csr_read(satp) >> RISCV64_SATP_ASID_SHIFT) & RISCV64_SATP_ASID_MASK;
   riscv64_csr_write(satp, satp_orig);
 
-  riscv64_kernel_bootstrap_translation_table_phys = (satp & RISCV64_SATP_PPN_MASK) << kPageShift;
-  pte_t* bootstrap_translation_table =
-      reinterpret_cast<pte_t*>(paddr_to_physmap(riscv64_kernel_bootstrap_translation_table_phys));
+  // Use asids if hardware has full 16 bit support and our command line switches allow.
+  riscv_use_asid = BootOptions::Get()->riscv64_enable_asid && riscv_asid_mask == 0xffff;
 
-  // Fill in all of the unused top level page table pointers for the kernel half of the kernel
-  // top level table. These entries will be copied to all new address spaces, thus ensuring the
-  // top level entries are synchronized.
-  for (size_t i = RISCV64_MMU_PT_KERNEL_BASE_INDEX; i < kNumPageTableEntries; i++) {
-    if (!riscv64_pte_is_valid(bootstrap_translation_table[i])) {
-      paddr_t pt_paddr = KernelPhysicalAddressOf<riscv64_kernel_top_level_page_tables>(
-          i - RISCV64_MMU_PT_KERNEL_BASE_INDEX);
+  // Save a copy of the bootstrap translation table as passed to us by physboot.
+  // This will later be used to bootstrap new secondary cpus.
+  auto boot_translation_table_phys = (satp & RISCV64_SATP_PPN_MASK) << kPageShift;
+  pte_t* boot_translation_table =
+      reinterpret_cast<pte_t*>(paddr_to_physmap(boot_translation_table_phys));
 
-      LTRACEF("RISCV: MMU allocating top level page table for slot %zu, pa %#lx\n", i, pt_paddr);
+  // Copy from the current boot page table to our bootstrap and kernel page table.
+  memcpy(bootstrap_translation_table, boot_translation_table, kPageSize);
 
-      pte_t pte = mmu_non_leaf_pte(pt_paddr, true);
-      update_pte(&bootstrap_translation_table[i], pte);
-    }
-  }
-
-  // Make a copy of our bootstrap table with the identity map present in the user part.
-  memcpy(riscv64_kernel_translation_table, bootstrap_translation_table, kPageSize);
-
-  // Zero the bottom of the kernel page table to remove any left over boot mappings.
-  memset(riscv64_kernel_translation_table, 0, kPageSize / 2);
+  // Only copy the kernel half of the boot table, leaving the user half zeroed out.
+  memcpy(kernel_translation_table + RISCV64_MMU_PT_KERNEL_BASE_INDEX,
+         boot_translation_table + RISCV64_MMU_PT_KERNEL_BASE_INDEX,
+         RISCV64_MMU_PT_KERNEL_ENTRIES * sizeof(pte_t));
 
   // Make sure it's visible to the cpu
   wmb();
+
+  // Run the per cpu mmu code on the bootstrap cpu, which will also switch to the
+  // new kernel translation table.
+  riscv64_mmu_early_init_percpu();
 }
-
-namespace {
-
-// Load the kernel page tables and set the passed in asid
-void riscv64_switch_kernel_asid(uint16_t asid) {
-  const uint64_t satp = (RISCV64_SATP_MODE_SV39 << RISCV64_SATP_MODE_SHIFT) |
-                        (static_cast<uint64_t>(asid) << RISCV64_SATP_ASID_SHIFT) |
-                        (KernelPhysicalAddressOf<riscv64_kernel_translation_table>() >> kPageShift);
-  riscv64_csr_write(RISCV64_CSR_SATP, satp);
-
-  // Globally TLB flush.
-  riscv64_tlb_flush_all();
-}
-
-}  // anonymous namespace
 
 void riscv64_mmu_early_init_percpu() {
   // Switch to the proper kernel translation table.
-  // Note: during early bringup on the boot cpu, we will have not decided to use asids yet, so
-  // kernel_asid() will return UNUSED_ASID. This is okay, we will decide later to
-  // use asids on the boot cpu in riscv64_mmu_prevm_init and reload the satp.
-  // Everything will be sorted out by the time secondary cpus are brought up.
   riscv64_switch_kernel_asid(kernel_asid());
 
   // Globally TLB flush.
@@ -1740,13 +1725,31 @@ void riscv64_mmu_early_init_percpu() {
 }
 
 void riscv64_mmu_prevm_init() {
-  // Use asids if hardware has full 16 bit support and our command line switches allow.
-  // We decide here because before now we have not been able to read gBootOptions.
-  riscv_use_asid = BootOptions::Get()->riscv64_enable_asid && riscv_asid_mask == 0xffff;
+  // Fill in all of the unused top level page table pointers for the kernel half of both the
+  // bootstrap and the kernel top level table. These entries will be copied to all new address
+  // spaces, thus ensuring the top level entries are synchronized.
+  for (size_t i = RISCV64_MMU_PT_KERNEL_BASE_INDEX; i < kNumPageTableEntries; i++) {
+    if (!riscv64_pte_is_valid(kernel_translation_table[i])) {
+      auto page_result = Pmm::Node().AllocPage(0);
+      if (page_result.is_error()) {
+        panic("error allocating page to back kernel page table");
+      }
+      vm_page_t* page = page_result.value();
+      page->set_state(vm_page_state::MMU);
 
-  // Now that we've decided to use asids, reload the kernel satp with the proper asid
-  // on the boot cpu.
-  riscv64_switch_kernel_asid(kernel_asid());
+      arch_zero_page(paddr_to_physmap(page->paddr()));
+
+      LTRACEF("RISCV: MMU allocating top level page table for slot %zu, pa %#lx\n", i,
+              page->paddr());
+
+      pte_t pte = mmu_non_leaf_pte(page->paddr(), true);
+      update_pte(&kernel_translation_table[i], pte);
+      update_pte(&bootstrap_translation_table[i], pte);
+    }
+  }
+
+  // Make sure any updates to the page tables are visible to the cpu.
+  wmb();
 }
 
 void riscv64_mmu_init() {
@@ -1814,4 +1817,8 @@ void arch_zero_page(void* _ptr) {
         : "r"(end_address)
         : "memory");
   }
+}
+
+paddr_t riscv64_get_bootstrap_translation_table() {
+  return KernelPhysicalAddressOf<bootstrap_translation_table>();
 }

@@ -172,7 +172,7 @@ class PhysicalBootstrap {
           .FromValue(0)
           .set_mode(Paging::kMode)
           .set_asid(0)
-          .set_root_address(riscv64_kernel_bootstrap_translation_table_phys)
+          .set_root_address(riscv64_get_bootstrap_translation_table())
           .reg_value();
   const uint64_t entry_ = reinterpret_cast<uintptr_t>(VirtualEntry);
   const uint64_t ra_ = reinterpret_cast<uintptr_t>(VirtualEntryFailure);
