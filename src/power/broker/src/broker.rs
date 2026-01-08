@@ -750,7 +750,7 @@ impl Broker {
                 );
                 return false;
             }
-            return true;
+            true
         })
     }
 
