@@ -122,6 +122,7 @@ _partner_idk_source_sets_list = [
 _partner_idk_unstable_source_sets_list = [
   # keep-sorted: begin
   "//sdk/lib/memory_barriers:memory_barriers",
+  "//sdk/lib/driver/fake-clock/cpp",
   "//sdk/lib/driver/fake-gpio/cpp",
   "//sdk/lib/driver/fake-interconnect/cpp",
   "//sdk/lib/driver/fake-platform-device/cpp",
