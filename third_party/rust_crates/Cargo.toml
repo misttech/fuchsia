@@ -132,8 +132,8 @@ half = "2.6.0"
 handlebars = "4.3.5"
 hashbrown = { version = "0.16.1", default-features = false, features = ["serde", "default-hasher"] }
 hashlink = "0.10.0"
+heck = { package = "heck", version = "0.5" }
 heck-0_3 = { package = "heck", version = "0.3.1" }
-heck-0_5 = { package = "heck", version = "0.5" }
 hex = { version = "0.4.3", features = ["serde"] }
 hkdf = "0.12.4"
 hmac = "0.12.1"

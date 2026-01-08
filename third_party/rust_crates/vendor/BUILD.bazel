@@ -1123,13 +1123,7 @@ alias(
 )
 
 alias(
-    name = "heck_0_5-0.5.0",
-    actual = "//third_party/rust_crates/vendor/heck-0.5.0:heck",
-    tags = ["manual"],
-)
-
-alias(
-    name = "heck_0_5",
+    name = "heck",
     actual = "//third_party/rust_crates/vendor/heck-0.5.0:heck",
     tags = ["manual"],
 )
