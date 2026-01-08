@@ -7,7 +7,6 @@ import ipaddress
 import json
 import unittest
 from collections.abc import Callable
-from pathlib import Path
 from typing import Any
 from unittest import mock
 
@@ -379,8 +378,6 @@ class FfxImplTests(unittest.TestCase):
                 str(_TARGET_SSH_ADDRESS),
                 "--isolate-dir",
                 _ISOLATE_DIR,
-                "-o",
-                str(Path(_LOGS_DIR) / "ffx.log"),
             ]
             + ffx_impl._FFX_CMDS["TARGET_SHOW"],
             capture_output=True,
@@ -543,8 +540,6 @@ class FfxImplTests(unittest.TestCase):
                 str(_TARGET_SSH_ADDRESS),
                 "--isolate-dir",
                 _ISOLATE_DIR,
-                "-o",
-                str(Path(_LOGS_DIR) / "ffx.log"),
             ]
             + ["a", "b", "c"],
             stdout="abc",
