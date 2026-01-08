@@ -5,7 +5,7 @@ use std::mem;
 use crate::zio;
 use crate::{Compress, Decompress};
 
-/// A DEFLATE encoder, or compressor.
+/// A ZLIB encoder, or compressor.
 ///
 /// This structure implements a [`Read`] interface. When read from, it reads
 /// uncompressed data from the underlying [`BufRead`] and provides the compressed data.
@@ -17,48 +17,53 @@ use crate::{Compress, Decompress};
 ///
 /// ```
 /// use std::io::prelude::*;
-/// use std::io;
 /// use flate2::Compression;
-/// use flate2::bufread::DeflateEncoder;
+/// use flate2::bufread::ZlibEncoder;
 /// use std::fs::File;
 /// use std::io::BufReader;
 ///
-/// # fn main() {
-/// #    println!("{:?}", open_hello_world().unwrap());
+/// // Use a buffered file to compress contents into a Vec<u8>
+///
+/// # fn open_hello_world() -> std::io::Result<Vec<u8>> {
+/// let f = File::open("examples/hello_world.txt")?;
+/// let b = BufReader::new(f);
+/// let mut z = ZlibEncoder::new(b, Compression::fast());
+/// let mut buffer = Vec::new();
+/// z.read_to_end(&mut buffer)?;
+/// # Ok(buffer)
 /// # }
-/// #
-/// // Opens sample file, compresses the contents and returns a Vector
-/// fn open_hello_world() -> io::Result<Vec<u8>> {
-///    let f = File::open("examples/hello_world.txt")?;
-///    let b = BufReader::new(f);
-///    let mut deflater = DeflateEncoder::new(b, Compression::fast());
-///    let mut buffer = Vec::new();
-///    deflater.read_to_end(&mut buffer)?;
-///    Ok(buffer)
-/// }
 /// ```
 #[derive(Debug)]
-pub struct DeflateEncoder<R> {
+pub struct ZlibEncoder<R> {
     obj: R,
     data: Compress,
 }
 
-impl<R: BufRead> DeflateEncoder<R> {
+impl<R: BufRead> ZlibEncoder<R> {
     /// Creates a new encoder which will read uncompressed data from the given
     /// stream and emit the compressed stream.
-    pub fn new(r: R, level: crate::Compression) -> DeflateEncoder<R> {
-        DeflateEncoder {
+    pub fn new(r: R, level: crate::Compression) -> ZlibEncoder<R> {
+        ZlibEncoder {
             obj: r,
-            data: Compress::new(level, false),
+            data: Compress::new(level, true),
+        }
+    }
+
+    /// Creates a new encoder with the given `compression` settings which will
+    /// read uncompressed data from the given stream `r` and emit the compressed stream.
+    pub fn new_with_compress(r: R, compression: Compress) -> ZlibEncoder<R> {
+        ZlibEncoder {
+            obj: r,
+            data: compression,
         }
     }
 }
 
-pub fn reset_encoder_data<R>(zlib: &mut DeflateEncoder<R>) {
-    zlib.data.reset();
+pub fn reset_encoder_data<R>(zlib: &mut ZlibEncoder<R>) {
+    zlib.data.reset()
 }
 
-impl<R> DeflateEncoder<R> {
+impl<R> ZlibEncoder<R> {
     /// Resets the state of this encoder entirely, swapping out the input
     /// stream for another.
     ///
@@ -106,13 +111,13 @@ impl<R> DeflateEncoder<R> {
     }
 }
 
-impl<R: BufRead> Read for DeflateEncoder<R> {
+impl<R: BufRead> Read for ZlibEncoder<R> {
     fn read(&mut self, buf: &mut [u8]) -> io::Result<usize> {
         zio::read(&mut self.obj, &mut self.data, buf)
     }
 }
 
-impl<W: BufRead + Write> Write for DeflateEncoder<W> {
+impl<R: BufRead + Write> Write for ZlibEncoder<R> {
     fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
         self.get_mut().write(buf)
     }
@@ -122,12 +127,12 @@ impl<W: BufRead + Write> Write for DeflateEncoder<W> {
     }
 }
 
-/// A DEFLATE decoder, or decompressor.
+/// A ZLIB decoder, or decompressor.
 ///
 /// This structure implements a [`Read`] interface. When read from, it reads
 /// compressed data from the underlying [`BufRead`] and provides the uncompressed data.
 ///
-/// After reading a single member of the DEFLATE data this reader will return
+/// After reading a single member of the ZLIB data this reader will return
 /// Ok(0) even if there are more bytes available in the underlying reader.
 /// If you need the following bytes, call `into_inner()` after Ok(0) to
 /// recover the underlying reader.
@@ -141,46 +146,57 @@ impl<W: BufRead + Write> Write for DeflateEncoder<W> {
 /// use std::io::prelude::*;
 /// use std::io;
 /// # use flate2::Compression;
-/// # use flate2::write::DeflateEncoder;
-/// use flate2::bufread::DeflateDecoder;
+/// # use flate2::write::ZlibEncoder;
+/// use flate2::bufread::ZlibDecoder;
 ///
 /// # fn main() {
-/// #    let mut e = DeflateEncoder::new(Vec::new(), Compression::default());
-/// #    e.write_all(b"Hello World").unwrap();
-/// #    let bytes = e.finish().unwrap();
-/// #    println!("{}", decode_reader(bytes).unwrap());
+/// # let mut e = ZlibEncoder::new(Vec::new(), Compression::default());
+/// # e.write_all(b"Hello World").unwrap();
+/// # let bytes = e.finish().unwrap();
+/// # println!("{}", decode_bufreader(bytes).unwrap());
 /// # }
-/// // Uncompresses a Deflate Encoded vector of bytes and returns a string or error
-/// // Here &[u8] implements Read
-/// fn decode_reader(bytes: Vec<u8>) -> io::Result<String> {
-///    let mut deflater = DeflateDecoder::new(&bytes[..]);
-///    let mut s = String::new();
-///    deflater.read_to_string(&mut s)?;
-///    Ok(s)
+/// #
+/// // Uncompresses a Zlib Encoded vector of bytes and returns a string or error
+/// // Here &[u8] implements BufRead
+///
+/// fn decode_bufreader(bytes: Vec<u8>) -> io::Result<String> {
+///     let mut z = ZlibDecoder::new(&bytes[..]);
+///     let mut s = String::new();
+///     z.read_to_string(&mut s)?;
+///     Ok(s)
 /// }
 /// ```
 #[derive(Debug)]
-pub struct DeflateDecoder<R> {
+pub struct ZlibDecoder<R> {
     obj: R,
     data: Decompress,
 }
 
-pub fn reset_decoder_data<R>(zlib: &mut DeflateDecoder<R>) {
-    zlib.data = Decompress::new(false);
-}
-
-impl<R: BufRead> DeflateDecoder<R> {
+impl<R: BufRead> ZlibDecoder<R> {
     /// Creates a new decoder which will decompress data read from the given
     /// stream.
-    pub fn new(r: R) -> DeflateDecoder<R> {
-        DeflateDecoder {
+    pub fn new(r: R) -> ZlibDecoder<R> {
+        ZlibDecoder {
             obj: r,
-            data: Decompress::new(false),
+            data: Decompress::new(true),
+        }
+    }
+
+    /// Creates a new decoder which will decompress data read from the given
+    /// stream, using the given `decompression` settings.
+    pub fn new_with_decompress(r: R, decompression: Decompress) -> ZlibDecoder<R> {
+        ZlibDecoder {
+            obj: r,
+            data: decompression,
         }
     }
 }
 
-impl<R> DeflateDecoder<R> {
+pub fn reset_decoder_data<R>(zlib: &mut ZlibDecoder<R>) {
+    zlib.data = Decompress::new(true);
+}
+
+impl<R> ZlibDecoder<R> {
     /// Resets the state of this decoder entirely, swapping out the input
     /// stream for another.
     ///
@@ -191,14 +207,6 @@ impl<R> DeflateDecoder<R> {
     pub fn reset(&mut self, r: R) -> R {
         reset_decoder_data(self);
         mem::replace(&mut self.obj, r)
-    }
-
-    /// Resets the state of this decoder's data
-    ///
-    /// This will reset the internal state of this decoder. It will continue
-    /// reading from the same stream.
-    pub fn reset_data(&mut self) {
-        reset_decoder_data(self);
     }
 
     /// Acquires a reference to the underlying stream
@@ -233,13 +241,13 @@ impl<R> DeflateDecoder<R> {
     }
 }
 
-impl<R: BufRead> Read for DeflateDecoder<R> {
+impl<R: BufRead> Read for ZlibDecoder<R> {
     fn read(&mut self, into: &mut [u8]) -> io::Result<usize> {
         zio::read(&mut self.obj, &mut self.data, into)
     }
 }
 
-impl<W: BufRead + Write> Write for DeflateDecoder<W> {
+impl<R: BufRead + Write> Write for ZlibDecoder<R> {
     fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
         self.get_mut().write(buf)
     }
@@ -251,27 +259,27 @@ impl<W: BufRead + Write> Write for DeflateDecoder<W> {
 
 #[cfg(test)]
 mod test {
-    use crate::bufread::DeflateDecoder;
-    use crate::deflate::write;
+    use crate::bufread::ZlibDecoder;
+    use crate::zlib::write;
     use crate::Compression;
     use std::io::{Read, Write};
 
-    // DeflateDecoder consumes one deflate archive and then returns 0 for subsequent reads, allowing any
+    // ZlibDecoder consumes one zlib archive and then returns 0 for subsequent reads, allowing any
     // additional data to be consumed by the caller.
     #[test]
     fn decode_extra_data() {
         let expected = "Hello World";
 
         let compressed = {
-            let mut e = write::DeflateEncoder::new(Vec::new(), Compression::default());
-            e.write(expected.as_ref()).unwrap();
+            let mut e = write::ZlibEncoder::new(Vec::new(), Compression::default());
+            e.write_all(expected.as_ref()).unwrap();
             let mut b = e.finish().unwrap();
             b.push(b'x');
             b
         };
 
         let mut output = Vec::new();
-        let mut decoder = DeflateDecoder::new(compressed.as_slice());
+        let mut decoder = ZlibDecoder::new(compressed.as_slice());
         let decoded_bytes = decoder.read_to_end(&mut output).unwrap();
         assert_eq!(decoded_bytes, output.len());
         let actual = std::str::from_utf8(&output).expect("String parsing error");
