@@ -32,5 +32,9 @@ group("isolated_test_spec_allowlist") {
     "//src/testing/end_to_end/honeydew/honeydew/affordances/rtc/tests/functional_tests:rtc_test",
     "//src/tests/end_to_end/rtc:rtc_conformance_test",
     "//src/tests/end_to_end/rtc:rtc_conformance_test.hermetic",
+
+    # TODO(https://fxbug.dev/467043348): Remove this. This is just a mitigation
+    # to prevent syslogs from being lost after the target reboots.
+    "//src/tests/end_to_end/reboot_reason:reboot_reason_test",
   ]
 }

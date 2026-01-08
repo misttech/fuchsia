@@ -16,4 +16,8 @@ python_mobly_test("reboot_reason_test") {
   ]
 
   environments = [ nelson_env ]
+
+  # TODO(https://fxbug.dev/467043348): Remove this. This is just a mitigation
+  # to prevent syslogs from being lost after the target reboots.
+  isolated = true
 }
