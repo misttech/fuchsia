@@ -15,7 +15,7 @@
     capabilities: [
         {
             dictionary: "output",
-            path: "/svc/fuchsia.component.sandbox.DictionaryRouter",
+            path: "/svc/fuchsia.component.runtime.DictionaryRouter",
         },
     ],
     use: [
@@ -23,7 +23,7 @@
             protocol: [
                 "fuchsia.component.internal.ComponentSandboxRetriever",
                 "fuchsia.component.Realm",
-                "fuchsia.component.sandbox.CapabilityStore",
+                "fuchsia.component.runtime.Capabilities",
             ],
             from: "framework",
         },

@@ -386,8 +386,9 @@ pub enum RoutingError {
     #[error("FIDL error encountered while talking to a router implemented by component {moniker}")]
     RemoteFIDLError { moniker: Moniker },
 
+    // We store the raw value of a zx::Status here because zx::Status does not implement Serialize
     #[error("error returned by a router implemented by component {moniker}")]
-    RemoteRouterError { moniker: Moniker },
+    RemoteRouterError { moniker: Moniker, error_code: i32 },
 }
 
 impl Explain for RoutingError {
@@ -451,7 +452,7 @@ impl Explain for RoutingError {
             | RoutingError::RouteUnexpectedUnavailable { .. }
             | RoutingError::MissingPorcelainType { .. } => zx::Status::INTERNAL,
             RoutingError::RemoteFIDLError { .. } => zx::Status::PEER_CLOSED,
-            RoutingError::RemoteRouterError { .. } => zx::Status::NOT_FOUND,
+            RoutingError::RemoteRouterError { error_code, .. } => zx::Status::from_raw(*error_code),
         }
     }
 }

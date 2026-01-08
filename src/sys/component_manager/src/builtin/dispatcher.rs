@@ -4,24 +4,22 @@
 
 use anyhow::{Context, Error, format_err};
 use cm_rust::CapabilityTypeName;
-use cm_types::{Name, NamespacePath};
+use cm_types::NamespacePath;
 use diagnostics_log::{Publisher, PublisherOptions};
 use dispatcher_config::Config;
 use fidl::endpoints::{DiscoverableProtocolMarker, ServerEnd};
 use fuchsia_component::client::connect::connect_to_protocol_at_dir_root;
 use fuchsia_component::directory::AsRefDirectory;
-use fuchsia_component::server;
+use fuchsia_component::{runtime, server};
 use futures::{FutureExt, StreamExt};
 use log::Log;
 use namespace::Namespace;
-use sandbox::{Dict, Router, WeakInstanceToken};
-use std::fmt::Debug;
 use std::str::FromStr;
 use std::sync::Arc;
 use vfs::ExecutionScope;
 use {
     fidl_fuchsia_component as fcomponent, fidl_fuchsia_component_decl as fdecl,
-    fidl_fuchsia_component_internal as finternal, fidl_fuchsia_component_sandbox as fsandbox,
+    fidl_fuchsia_component_internal as finternal, fidl_fuchsia_component_runtime as fruntime,
     fidl_fuchsia_io as fio,
 };
 
@@ -53,7 +51,7 @@ impl Logger {
 /// is offered to the dispatcher, and the dispatcher will destroy the child when it stops running.
 pub struct Dispatcher {
     realm_proxy: fcomponent::RealmProxy,
-    capability_store_proxy: fsandbox::CapabilityStoreProxy,
+    capabilities_proxy: fruntime::CapabilitiesProxy,
     sandbox_retriever_proxy: finternal::ComponentSandboxRetrieverProxy,
     config: Arc<Config>,
     scope: ExecutionScope,
@@ -100,14 +98,14 @@ impl Dispatcher {
                 realm_server_end.into_channel().into(),
             )
             .context("failed to open protocol")?;
-        let (capability_store_proxy, capability_store_server_end) =
-            fidl::endpoints::create_proxy::<fsandbox::CapabilityStoreMarker>();
+        let (capabilities_proxy, capabilities_server_end) =
+            fidl::endpoints::create_proxy::<fruntime::CapabilitiesMarker>();
         svc_dir_proxy
             .as_ref_directory()
             .open(
-                fsandbox::CapabilityStoreMarker::PROTOCOL_NAME,
+                fruntime::CapabilitiesMarker::PROTOCOL_NAME,
                 fio::Flags::PROTOCOL_SERVICE,
-                capability_store_server_end.into_channel().into(),
+                capabilities_server_end.into_channel().into(),
             )
             .context("failed to open protocol")?;
         let (sandbox_retriever_proxy, sandbox_retriever_server_end) =
@@ -128,16 +126,17 @@ impl Dispatcher {
 
         let self_ = Arc::new(Self {
             realm_proxy,
-            capability_store_proxy,
+            capabilities_proxy,
             sandbox_retriever_proxy,
             config,
             scope: ExecutionScope::new(),
         });
 
         let mut fs = server::ServiceFs::new();
-        fs.dir("svc").add_fidl_service(move |stream: fsandbox::DictionaryRouterRequestStream| {
+        fs.dir("svc").add_fidl_service(move |stream: fruntime::DictionaryRouterRequestStream| {
             let self_clone = self_.clone();
             let logger = logger.clone();
+            let stream = runtime::DictionaryRouterReceiver { stream };
             self_.scope.spawn(async move {
                 if let Err(err) = self_clone.handle_router_stream(stream).await {
                     logger.log(err);
@@ -151,114 +150,125 @@ impl Dispatcher {
 
     async fn handle_router_stream(
         self: Arc<Self>,
-        mut stream: fsandbox::DictionaryRouterRequestStream,
+        mut stream: runtime::DictionaryRouterReceiver,
     ) -> Result<(), anyhow::Error> {
-        while let Some(Ok(request)) = stream.next().await {
-            match request {
-                fsandbox::DictionaryRouterRequest::Route { payload: _, responder } => {
-                    let return_value = Dict::new();
-                    let self_clone = self.clone();
-                    let cap = match CapabilityTypeName::from_str(&self.config.type_to_dispatch) {
-                        Ok(CapabilityTypeName::EventStream)
-                        | Ok(CapabilityTypeName::Resolver)
-                        | Ok(CapabilityTypeName::Runner)
-                        | Ok(CapabilityTypeName::Protocol) => {
-                            Router::new(move |request, debug: bool, target| {
-                                assert!(!debug);
-                                self_clone
-                                    .clone()
-                                    .route::<sandbox::Connector>(request, target)
-                                    .boxed()
-                            })
-                            .into()
-                        }
-                        Ok(CapabilityTypeName::Directory) | Ok(CapabilityTypeName::Storage) => {
-                            Router::new(move |request, debug: bool, target| {
-                                assert!(!debug);
-                                self_clone
-                                    .clone()
-                                    .route::<sandbox::DirConnector>(request, target)
-                                    .boxed()
-                            })
-                            .into()
-                        }
-                        Ok(CapabilityTypeName::Service) => {
-                            Router::new(move |request, debug: bool, target| {
-                                assert!(!debug);
-                                self_clone
-                                    .clone()
-                                    .route::<sandbox::DirConnector>(request, target)
-                                    .boxed()
-                            })
-                            .into()
-                        }
-                        Ok(CapabilityTypeName::Dictionary) => {
-                            Router::new(move |request, debug: bool, target| {
-                                assert!(!debug);
-                                self_clone.clone().route::<sandbox::Dict>(request, target).boxed()
-                            })
-                            .into()
-                        }
-                        Ok(CapabilityTypeName::Config) => {
-                            Router::new(move |request, debug: bool, target| {
-                                assert!(!debug);
-                                self_clone.clone().route::<sandbox::Data>(request, target).boxed()
-                            })
-                            .into()
-                        }
-                        Err(_parse_err) => {
-                            return Err(format_err!(
-                                "unrecognized capability type {:?}",
-                                self.config.type_to_dispatch
-                            ));
-                        }
-                    };
-                    return_value
-                        .insert(
-                            Name::new(&self.config.what_to_dispatch).expect("invalid name"),
-                            cap,
-                        )
-                        .expect("failed to insert into dictionary");
-                    let _ = responder.send(Ok(
-                        fsandbox::DictionaryRouterRouteResponse::Dictionary(return_value.into()),
-                    ));
-                }
-                other_request => return Err(format_err!("unexpected request: {other_request:?}")),
-            }
+        let type_to_dispatch = CapabilityTypeName::from_str(&self.config.type_to_dispatch)
+            .map_err(|_| {
+                format_err!("unrecognized capability type {:?}", self.config.type_to_dispatch)
+            })?;
+
+        let dictionary = runtime::Dictionary::new_with_proxy(self.capabilities_proxy.clone()).await;
+        let router = self.clone().create_router(type_to_dispatch).await;
+        dictionary.insert(&self.config.what_to_dispatch, router).await;
+        while let Some((_request, _instance_token, event_pair, responder)) = stream.next().await {
+            dictionary.associate_with_handle(event_pair).await;
+            let _ = responder.send(Ok(fruntime::RouterResponse::Success));
         }
         Ok(())
     }
 
-    async fn route<T>(
+    async fn create_router(
         self: Arc<Self>,
-        request: Option<sandbox::Request>,
-        target: WeakInstanceToken,
-    ) -> Result<sandbox::RouterResponse<T>, router_error::RouterError>
-    where
-        T: sandbox::CapabilityBound + Debug,
-        Router<T>: TryFrom<sandbox::Capability> + Debug,
-        <sandbox::Router<T> as std::convert::TryFrom<sandbox::Capability>>::Error: Debug,
-    {
-        match self.get_target_router().await {
-            Ok(router_to_dispatch_to) => router_to_dispatch_to.route(request, false, target).await,
-            Err(err) => {
-                log::warn!("failed: {err:?}");
-                Err(router_error::RouterError::Internal)
+        type_to_dispatch: CapabilityTypeName,
+    ) -> runtime::Capability {
+        let self_clone = self.clone();
+        match type_to_dispatch {
+            CapabilityTypeName::EventStream
+            | CapabilityTypeName::Resolver
+            | CapabilityTypeName::Runner
+            | CapabilityTypeName::Protocol => {
+                let (router, receiver) =
+                    runtime::ConnectorRouter::new_with_proxy(self.capabilities_proxy.clone()).await;
+                self.scope.spawn(receiver.handle_with(move |request, instance_token| {
+                    let self_clone = self_clone.clone();
+                    async move {
+                        let child_output = self_clone
+                            .launch_child_and_get_output()
+                            .await
+                            .map_err(|_| zx::Status::NOT_FOUND)?;
+                        let Some(runtime::Capability::ConnectorRouter(router)) =
+                            child_output.get(&self_clone.config.what_to_dispatch).await
+                        else {
+                            return Err(zx::Status::NOT_FOUND);
+                        };
+                        router.route(request, &instance_token).await
+                    }
+                    .boxed()
+                }));
+                router.into()
+            }
+            CapabilityTypeName::Directory
+            | CapabilityTypeName::Storage
+            | CapabilityTypeName::Service => {
+                let (router, receiver) =
+                    runtime::DirConnectorRouter::new_with_proxy(self.capabilities_proxy.clone())
+                        .await;
+                self.scope.spawn(receiver.handle_with(move |request, instance_token| {
+                    let self_clone = self_clone.clone();
+                    async move {
+                        let child_output = self_clone
+                            .launch_child_and_get_output()
+                            .await
+                            .map_err(|_| zx::Status::NOT_FOUND)?;
+                        let Some(runtime::Capability::DirConnectorRouter(router)) =
+                            child_output.get(&self_clone.config.what_to_dispatch).await
+                        else {
+                            return Err(zx::Status::NOT_FOUND);
+                        };
+                        router.route(request, &instance_token).await
+                    }
+                    .boxed()
+                }));
+                router.into()
+            }
+            CapabilityTypeName::Dictionary => {
+                let (router, receiver) =
+                    runtime::DictionaryRouter::new_with_proxy(self.capabilities_proxy.clone())
+                        .await;
+                self.scope.spawn(receiver.handle_with(move |request, instance_token| {
+                    let self_clone = self_clone.clone();
+                    async move {
+                        let child_output = self_clone
+                            .launch_child_and_get_output()
+                            .await
+                            .map_err(|_| zx::Status::NOT_FOUND)?;
+                        let Some(runtime::Capability::DictionaryRouter(router)) =
+                            child_output.get(&self_clone.config.what_to_dispatch).await
+                        else {
+                            return Err(zx::Status::NOT_FOUND);
+                        };
+                        router.route(request, &instance_token).await
+                    }
+                    .boxed()
+                }));
+                router.into()
+            }
+            CapabilityTypeName::Config => {
+                let (router, receiver) =
+                    runtime::DataRouter::new_with_proxy(self.capabilities_proxy.clone()).await;
+                self.scope.spawn(receiver.handle_with(move |request, instance_token| {
+                    let self_clone = self_clone.clone();
+                    async move {
+                        let child_output = self_clone
+                            .launch_child_and_get_output()
+                            .await
+                            .map_err(|_| zx::Status::NOT_FOUND)?;
+                        let Some(runtime::Capability::DataRouter(router)) =
+                            child_output.get(&self_clone.config.what_to_dispatch).await
+                        else {
+                            return Err(zx::Status::NOT_FOUND);
+                        };
+                        router.route(request, &instance_token).await
+                    }
+                    .boxed()
+                }));
+                router.into()
             }
         }
     }
 
-    async fn get_target_router<T>(self: Arc<Self>) -> Result<sandbox::Router<T>, anyhow::Error>
-    where
-        T: sandbox::CapabilityBound + Debug,
-        Router<T>: TryFrom<sandbox::Capability> + Debug,
-        <sandbox::Router<T> as std::convert::TryFrom<sandbox::Capability>>::Error: Debug,
-    {
-        let component_input_capabilities = Self::get_component_input_capabilities(
-            &self.capability_store_proxy,
-            &self.sandbox_retriever_proxy,
-        )
-        .await?;
+    async fn launch_child_and_get_output(&self) -> Result<runtime::Dictionary, anyhow::Error> {
+        let component_input_capabilities = self.get_component_input_capabilities().await?;
         let child_name = format!("worker-{:x}", rand::random::<u64>());
         let (controller_proxy, controller_server_end) =
             fidl::endpoints::create_proxy::<fcomponent::ControllerMarker>();
@@ -273,74 +283,46 @@ impl Dispatcher {
                 },
                 fcomponent::CreateChildArgs {
                     controller: Some(controller_server_end),
-                    dictionary: Some(component_input_capabilities),
+                    additional_inputs: Some(component_input_capabilities),
                     ..Default::default()
                 },
             )
             .await
             .context("FIDL error talking to ourselves")?
             .map_err(|e| format_err!("failed to create child: {e:?}"))?;
-        self.clone().spawn_wait_for_exit(controller_proxy).await;
-        let child_output_dictionary: sandbox::Dict = self
+        self.spawn_wait_for_exit(controller_proxy).await;
+        let child_output_handle = self
             .realm_proxy
-            .get_child_output_dictionary_deprecated(&fdecl::ChildRef {
+            .get_child_output_dictionary(&fdecl::ChildRef {
                 name: child_name.clone(),
                 collection: Some("workers".to_string()),
             })
             .await
             .context("FIDL error talking to ourselves")?
-            .map_err(|e| format_err!("failed to get output dictionary: {e:?}"))?
-            .try_into()
-            .unwrap();
-        let capability_to_dispatch_to = child_output_dictionary
-            .get(&Name::new(&self.config.what_to_dispatch).expect("invalid name"))
-            .expect("child output dictionary holds un-cloneable item")
-            .context(format!("child doesn't expose {:?}", &self.config.what_to_dispatch))?;
-        let router_to_dispatch_to: sandbox::Router<T> =
-            sandbox::Router::try_from(capability_to_dispatch_to)
-                .map_err(|e| format_err!("child exposes incorrect router type: {e:?}"))?;
-        Ok(router_to_dispatch_to)
+            .map_err(|e| format_err!("failed to get output dictionary: {e:?}"))?;
+        Ok(runtime::Dictionary {
+            handle: child_output_handle,
+            capabilities_proxy: self.capabilities_proxy.clone(),
+        })
     }
 
-    async fn get_component_input_capabilities(
-        capability_store_proxy: &fsandbox::CapabilityStoreProxy,
-        sandbox_retriever_proxy: &finternal::ComponentSandboxRetrieverProxy,
-    ) -> Result<fsandbox::DictionaryRef, anyhow::Error> {
-        let sandbox = sandbox_retriever_proxy
+    async fn get_component_input_capabilities(&self) -> Result<zx::EventPair, anyhow::Error> {
+        let sandbox = self
+            .sandbox_retriever_proxy
             .get_my_sandbox()
             .await
             .context("failed to use framework protocol from built-in component")?;
-        let parent_id = rand::random::<u64>();
-        let child_id = rand::random::<u64>();
-        let child_clone_id = rand::random::<u64>();
-        capability_store_proxy
-            .import(parent_id, fsandbox::Capability::Dictionary(sandbox.component_input.unwrap()))
-            .await
-            .context("FIDL error talking to ourselves")?
-            .map_err(|e| format_err!("invalid dictionary reference: {e:?}"))?;
-        capability_store_proxy
-            .dictionary_get(parent_id, "parent", child_id)
-            .await
-            .context("FIDL error talking to ourselves")?
-            .map_err(|e| format_err!("component input missing capabilities directory: {e:?}"))?;
-        capability_store_proxy
-            .dictionary_copy(child_id, child_clone_id)
-            .await
-            .context("FIDL error talking to ourselves")?
-            .map_err(|e| format_err!("failed to copy dictionary: {e:?}"))?;
-        let _ = capability_store_proxy.dictionary_remove(child_clone_id, "diagnostics", None).await;
-        let fsandbox::Capability::Dictionary(capabilities_dictionary_ref) = capability_store_proxy
-            .export(child_clone_id)
-            .await
-            .context("FIDL error talking to ourselves")?
-            .map_err(|e| format_err!("failed to export capability: {e:?}"))?
-        else {
-            return Err(format_err!("wrong capability type returned by store"));
+        let component_input = runtime::Dictionary {
+            handle: sandbox.component_input.expect("missing component input"),
+            capabilities_proxy: self.capabilities_proxy.clone(),
         };
-        Ok(capabilities_dictionary_ref)
+        let child_cap = component_input.get("parent").await.unwrap();
+        let child = runtime::Dictionary::try_from(child_cap).unwrap();
+        child.remove("diagnostics").await;
+        Ok(child.handle)
     }
 
-    async fn spawn_wait_for_exit(self: Arc<Self>, controller_proxy: fcomponent::ControllerProxy) {
+    async fn spawn_wait_for_exit(&self, controller_proxy: fcomponent::ControllerProxy) {
         let (execution_controller_proxy, execution_controller_server_end) =
             fidl::endpoints::create_proxy::<fcomponent::ExecutionControllerMarker>();
         controller_proxy

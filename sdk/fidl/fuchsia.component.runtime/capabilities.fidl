@@ -75,7 +75,7 @@ open protocol ConnectorRouter {
         handle zx.Handle:EVENTPAIR;
     }) -> (struct {
         response RouterResponse;
-    }) error RouterError;
+    }) error zx.Status;
 };
 
 /// A factory for `DirConnector` capabilities.
@@ -100,7 +100,7 @@ open protocol DirConnectorRouter {
         handle zx.Handle:EVENTPAIR;
     }) -> (struct {
         response RouterResponse;
-    }) error RouterError;
+    }) error zx.Status;
 };
 
 /// A factory for `Dictionary` capabilities.
@@ -126,7 +126,7 @@ open protocol DictionaryRouter {
         handle zx.Handle:EVENTPAIR;
     }) -> (struct {
         response RouterResponse;
-    }) error RouterError;
+    }) error zx.Status;
 };
 
 /// A factory for `Data` capabilities.
@@ -151,7 +151,7 @@ open protocol DataRouter {
         handle zx.Handle:EVENTPAIR;
     }) -> (struct {
         response RouterResponse;
-    }) error RouterError;
+    }) error zx.Status;
 };
 
 /// The error values returned when a route operation fails.

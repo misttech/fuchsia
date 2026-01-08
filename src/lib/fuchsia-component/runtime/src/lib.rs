@@ -25,7 +25,8 @@ mod everything {
 mod everything {
     use fidl::endpoints::{ServerEnd, create_proxy, create_request_stream};
     use fuchsia_component_client::connect_to_protocol;
-    use futures::{Future, Stream};
+    use futures::future::BoxFuture;
+    use futures::{Future, Stream, StreamExt};
     use std::pin::{Pin, pin};
     use std::task::{Context, Poll};
     use zx::HandleBased;
@@ -946,6 +947,31 @@ mod everything {
         }
     }
 
+    impl ConnectorRouterReceiver {
+        pub async fn handle_with<F>(mut self, f: F)
+        where
+            F: Fn(
+                    fruntime::RouteRequest,
+                    InstanceToken,
+                ) -> BoxFuture<'static, Result<Option<Connector>, zx::Status>>
+                + Sync
+                + Send
+                + 'static,
+        {
+            while let Some((request, instance_token, event_pair, responder)) = self.next().await {
+                let res = match f(request, instance_token).await {
+                    Ok(Some(connector)) => {
+                        connector.associate_with_handle(event_pair).await;
+                        Ok(fruntime::RouterResponse::Success)
+                    }
+                    Ok(None) => Ok(fruntime::RouterResponse::Unavailable),
+                    Err(e) => Err(e.into_raw()),
+                };
+                let _ = responder.send(res);
+            }
+        }
+    }
+
     /// A dir connector router may be used to request it produce a [`DirConnector`] capability. The
     /// router may decide to do so, decline to do so, or return an error, and it may rely on the
     /// contents of the `metadata` provided when `route` is called to do so. Routers may also delegate
@@ -1072,6 +1098,31 @@ mod everything {
                     Poll::Ready(Some((request, instance_token, handle, responder)))
                 }
                 _ => Poll::Ready(None),
+            }
+        }
+    }
+
+    impl DirConnectorRouterReceiver {
+        pub async fn handle_with<F>(mut self, f: F)
+        where
+            F: Fn(
+                    fruntime::RouteRequest,
+                    InstanceToken,
+                ) -> BoxFuture<'static, Result<Option<DirConnector>, zx::Status>>
+                + Sync
+                + Send
+                + 'static,
+        {
+            while let Some((request, instance_token, event_pair, responder)) = self.next().await {
+                let res = match f(request, instance_token).await {
+                    Ok(Some(dictionary)) => {
+                        dictionary.associate_with_handle(event_pair).await;
+                        Ok(fruntime::RouterResponse::Success)
+                    }
+                    Ok(None) => Ok(fruntime::RouterResponse::Unavailable),
+                    Err(e) => Err(e.into_raw()),
+                };
+                let _ = responder.send(res);
             }
         }
     }
@@ -1205,6 +1256,31 @@ mod everything {
         }
     }
 
+    impl DictionaryRouterReceiver {
+        pub async fn handle_with<F>(mut self, f: F)
+        where
+            F: Fn(
+                    fruntime::RouteRequest,
+                    InstanceToken,
+                ) -> BoxFuture<'static, Result<Option<Dictionary>, zx::Status>>
+                + Sync
+                + Send
+                + 'static,
+        {
+            while let Some((request, instance_token, event_pair, responder)) = self.next().await {
+                let res = match f(request, instance_token).await {
+                    Ok(Some(dictionary)) => {
+                        dictionary.associate_with_handle(event_pair).await;
+                        Ok(fruntime::RouterResponse::Success)
+                    }
+                    Ok(None) => Ok(fruntime::RouterResponse::Unavailable),
+                    Err(e) => Err(e.into_raw()),
+                };
+                let _ = responder.send(res);
+            }
+        }
+    }
+
     /// A data router may be used to request it produce a [`Data`] capability. The router may decide to
     /// do so, decline to do so, or return an error, and it may rely on the contents of the `metadata`
     /// provided when `route` is called to do so. Routers may also delegate the request to other
@@ -1330,6 +1406,31 @@ mod everything {
                     Poll::Ready(Some((request, instance_token, handle, responder)))
                 }
                 _ => Poll::Ready(None),
+            }
+        }
+    }
+
+    impl DataRouterReceiver {
+        pub async fn handle_with<F>(mut self, f: F)
+        where
+            F: Fn(
+                    fruntime::RouteRequest,
+                    InstanceToken,
+                ) -> BoxFuture<'static, Result<Option<Data>, zx::Status>>
+                + Sync
+                + Send
+                + 'static,
+        {
+            while let Some((request, instance_token, event_pair, responder)) = self.next().await {
+                let res = match f(request, instance_token).await {
+                    Ok(Some(data)) => {
+                        data.associate_with_handle(event_pair).await;
+                        Ok(fruntime::RouterResponse::Success)
+                    }
+                    Ok(None) => Ok(fruntime::RouterResponse::Unavailable),
+                    Err(e) => Err(e.into_raw()),
+                };
+                let _ = responder.send(res);
             }
         }
     }

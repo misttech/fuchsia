@@ -6,13 +6,14 @@ use crate::model::component::WeakComponentInstance;
 use ::routing::bedrock::sandbox_construction::{ComponentSandbox, ProgramInput};
 use ::routing::bedrock::structured_dict::ComponentInput;
 use ::routing::capability_source::CapabilitySource;
+use ::routing::component_instance::ComponentInstanceInterface;
 use anyhow::{Error, format_err};
 use cm_types::Name;
 use fidl::endpoints::ServerEnd;
 use fidl_fuchsia_component_internal as finternal;
 use futures::future::BoxFuture;
 use futures::{FutureExt, StreamExt};
-use sandbox::{Dict, RouterResponse, WeakInstanceToken};
+use sandbox::{Capability, Dict, RouterResponse, WeakInstanceToken};
 
 pub fn serve(
     chan: zx::Channel,
@@ -25,6 +26,10 @@ pub fn serve(
         while let Some(Ok(request)) = stream.next().await {
             match request {
                 finternal::ComponentSandboxRetrieverRequest::GetMySandbox { responder } => {
+                    let source = source
+                        .upgrade()
+                        .map_err(|e| format_err!("failed to upgrade component: {:?}", e))?;
+                    let remote_capabilities = source.context.remote_capabilities().clone();
                     let ComponentSandbox {
                         component_input,
                         component_output,
@@ -36,34 +41,44 @@ pub fn serve(
                         collection_inputs,
                         ..
                     } = source
-                        .upgrade()
-                        .map_err(|e| format_err!("failed to upgrade component: {:?}", e))?
                         .lock_resolved_state()
                         .await
                         .map_err(|e| format_err!("failed to resolve component: {:?}", e))?
                         .sandbox
                         .clone();
-                    if !is_builtin_runner(&program_input, source.clone().into()).await {
+                    if !is_builtin_runner(&program_input, source.as_weak().into()).await {
                         // This API is explerimental and making it widely available has security
                         // implications. To allow us to get a bit of mileage on it to determine the
                         // correct shape for it, we currently only allow connections to this
                         // protocol if the client is a built-in component.
                         return Err(format_err!("only accessible from built-in components"));
                     }
-                    let to_fidl = |(name, input): (Name, ComponentInput)| finternal::ChildInput {
-                        child_name: name.to_string(),
-                        child_input: Dict::from(input).into(),
+                    let to_event_pair = |dictionary: Dict| {
+                        let (e1, e2) = zx::EventPair::create();
+                        remote_capabilities
+                            .store(e1, Capability::Dictionary(dictionary.into()))
+                            .expect("we used a valid handle");
+                        e2
                     };
+                    let child_input_to_fidl =
+                        |(name, input): (Name, ComponentInput)| finternal::ChildInput {
+                            child_name: name.to_string(),
+                            child_input: to_event_pair(input.into()),
+                        };
                     responder.send(finternal::ComponentSandbox {
-                        component_input: Some(Dict::from(component_input).into()),
-                        component_output: Some(Dict::from(component_output).into()),
-                        program_input: Some(Dict::from(program_input).into()),
-                        program_output: Some(program_output_dict.into()),
-                        capability_sourced: Some(capability_sourced_capabilities_dict.into()),
-                        declared_dictionaries: Some(declared_dictionaries.into()),
-                        child_inputs: Some(child_inputs.enumerate().map(to_fidl).collect()),
+                        component_input: Some(to_event_pair(component_input.into())),
+                        component_output: Some(to_event_pair(component_output.into())),
+                        program_input: Some(to_event_pair(program_input.into())),
+                        program_output: Some(to_event_pair(program_output_dict)),
+                        capability_sourced: Some(to_event_pair(
+                            capability_sourced_capabilities_dict,
+                        )),
+                        declared_dictionaries: Some(to_event_pair(declared_dictionaries)),
+                        child_inputs: Some(
+                            child_inputs.enumerate().map(child_input_to_fidl).collect(),
+                        ),
                         collection_inputs: Some(
-                            collection_inputs.enumerate().map(to_fidl).collect(),
+                            collection_inputs.enumerate().map(child_input_to_fidl).collect(),
                         ),
                         ..Default::default()
                     })?;

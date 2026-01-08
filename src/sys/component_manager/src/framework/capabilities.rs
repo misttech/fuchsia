@@ -640,9 +640,11 @@ where
             Ok(Ok(_)) => {
                 Err(RoutingError::RemoteFIDLError { moniker: self.moniker.clone() }.into())
             }
-            Ok(Err(_e)) => {
-                Err(RoutingError::RemoteRouterError { moniker: self.moniker.clone() }.into())
+            Ok(Err(e)) => Err(RoutingError::RemoteRouterError {
+                moniker: self.moniker.clone(),
+                error_code: e,
             }
+            .into()),
             Err(_e) => Err(RoutingError::RemoteFIDLError { moniker: self.moniker.clone() }.into()),
         }
     }
@@ -655,7 +657,7 @@ pub trait RemoteRoutable {
         request: fruntime::RouteRequest,
         instance_token: zx::EventPair,
         event_pair: zx::EventPair,
-    ) -> Result<Result<fruntime::RouterResponse, fruntime::RouterError>, fidl::Error>;
+    ) -> Result<Result<fruntime::RouterResponse, i32>, fidl::Error>;
 }
 
 #[async_trait]
@@ -665,7 +667,7 @@ impl RemoteRoutable for fruntime::ConnectorRouterProxy {
         request: fruntime::RouteRequest,
         instance_token: zx::EventPair,
         event_pair: zx::EventPair,
-    ) -> Result<Result<fruntime::RouterResponse, fruntime::RouterError>, fidl::Error> {
+    ) -> Result<Result<fruntime::RouterResponse, i32>, fidl::Error> {
         self.route(request, instance_token, event_pair).await
     }
 }
@@ -677,7 +679,7 @@ impl RemoteRoutable for fruntime::DirConnectorRouterProxy {
         request: fruntime::RouteRequest,
         instance_token: zx::EventPair,
         event_pair: zx::EventPair,
-    ) -> Result<Result<fruntime::RouterResponse, fruntime::RouterError>, fidl::Error> {
+    ) -> Result<Result<fruntime::RouterResponse, i32>, fidl::Error> {
         self.route(request, instance_token, event_pair).await
     }
 }
@@ -689,7 +691,7 @@ impl RemoteRoutable for fruntime::DictionaryRouterProxy {
         request: fruntime::RouteRequest,
         instance_token: zx::EventPair,
         event_pair: zx::EventPair,
-    ) -> Result<Result<fruntime::RouterResponse, fruntime::RouterError>, fidl::Error> {
+    ) -> Result<Result<fruntime::RouterResponse, i32>, fidl::Error> {
         self.route(request, instance_token, event_pair).await
     }
 }
@@ -701,7 +703,7 @@ impl RemoteRoutable for fruntime::DataRouterProxy {
         request: fruntime::RouteRequest,
         instance_token: zx::EventPair,
         event_pair: zx::EventPair,
-    ) -> Result<Result<fruntime::RouterResponse, fruntime::RouterError>, fidl::Error> {
+    ) -> Result<Result<fruntime::RouterResponse, i32>, fidl::Error> {
         self.route(request, instance_token, event_pair).await
     }
 }
