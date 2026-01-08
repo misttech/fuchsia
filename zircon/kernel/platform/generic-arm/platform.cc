@@ -232,13 +232,13 @@ zx_status_t platform_suspend_cpu(PlatformAllowDomainPowerDown allow_domain) {
   return result.status_value();
 }
 
-zx_status_t platform_start_cpu(cpu_num_t cpu_id, uint64_t mpid) {
+zx_status_t platform_start_cpu(cpu_num_t cpu_id, uint64_t mpid, uint64_t context) {
   // TODO(https://fxbug.dev/450973098): Considering modeling offline CPUs as already in the control
   // region.
   gControlRegion.Register();
 
   paddr_t kernel_secondary_entry_paddr = KernelPhysicalAddressOf<arm64_secondary_start>();
-  uint32_t ret = power_cpu_on(mpid, kernel_secondary_entry_paddr, 0);
+  uint32_t ret = power_cpu_on(mpid, kernel_secondary_entry_paddr, context);
   dprintf(INFO, "Trying to start cpu %u, mpid %#" PRIx64 " returned: %d\n", cpu_id, mpid, (int)ret);
   if (ret != 0) {
     return ZX_ERR_INTERNAL;
@@ -281,11 +281,11 @@ static void topology_cpu_init(void) {
         continue;
       }
 
-      status = arm64_create_secondary_stack(processor.logical_ids[i], mpid);
-      DEBUG_ASSERT(status == ZX_OK);
+      zx::result<uintptr_t> result = arm64_create_secondary_stack(processor.logical_ids[i]);
+      DEBUG_ASSERT(result.is_ok());
 
       // start the cpu
-      status = platform_start_cpu(processor.logical_ids[i], mpid);
+      status = platform_start_cpu(processor.logical_ids[i], mpid, result.value());
 
       if (status != ZX_OK) {
         // TODO(maniscalco): Is continuing really the right thing to do here?

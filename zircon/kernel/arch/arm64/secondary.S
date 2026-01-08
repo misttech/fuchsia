@@ -19,7 +19,6 @@
 //   x21-x28 Globals
 //
 tmp                     .req x9
-tmp2                    .req x10
 
 page_table0             .req x21
 page_table1             .req x22
@@ -28,13 +27,22 @@ resume_context          .req x24
 
 // This code is purely position-independent and generates no relocations
 // that need boot-time fixup.
-//
-// void arm64_secondary_start(void* resume_context);
-.function arm64_secondary_start, global
+
+// void arm64_secondary_resume_start(void* resume_context);
+.function arm64_secondary_resume_start, global
   // Save the resume_context arg so we can later check whether this is a boot up
   // or a resume.
   mov resume_context, x0
 
+  b .Lsecondary_start_common
+.end_function
+
+// void arm64_secondary_start(void* stack_pointer)
+.function arm64_secondary_start, global
+  // Make sure we dont take the resume path if we came in this way.
+  mov resume_context, xzr
+
+.Lsecondary_start_common:
   // If we entered at a higher EL than 1, drop to EL1.
   //
   // Make sure to clear the stack pointer first. The call will reuse in EL1
@@ -120,20 +128,20 @@ resume_context          .req x24
   // not SP_EL0.
   msr SPSel, #1
 
-
   // Now that we've set up the most basic architectural state, it's time to
   // determine if we're booting up or resuming from suspend and finish the job.
   cbnz resume_context,.Lresume
 
   // We're booting up rather than resuming from suspend.
-  bl arm64_get_secondary_sp
-  cbz x0, .Lunsupported_cpu_trap
-  mov sp, x0
-
-  msr tpidr_el1, x1
+  // x0 points to the arm64_sp_info struct for this CPU, passed through PSCI_CPU_ON.
 #if __has_feature(shadow_call_stack)
-  mov shadow_call_sp, x2
+  ldr shadow_call_sp, [x0] // arm64_sp_info.shadow_call_sp
 #endif
+  add x1, x0, #32 // compute the top of the structure for TPIDR (see arch.cc)
+  msr tpidr_el1, x1
+
+  // SP will start at the bottom of this structure growing down.
+  mov sp, x0
 
   bl arm64_secondary_entry
   b .Lunsupported_cpu_trap

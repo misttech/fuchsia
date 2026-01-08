@@ -258,7 +258,7 @@ PsciCpuSuspendResult psci_cpu_suspend(uint32_t power_state) {
     return zx::error(ZX_ERR_NOT_SUPPORTED);
   }
 
-  const paddr_t entry_pa = KernelPhysicalAddressOf<arm64_secondary_start>();
+  const paddr_t entry_pa = KernelPhysicalAddressOf<arm64_secondary_resume_start>();
   psci_cpu_resume_context context{};
   int64_t result;
 

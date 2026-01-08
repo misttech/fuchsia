@@ -32,11 +32,11 @@ constexpr uint64_t kMpidAffMask = ARM64_MPIDR_MASK;
 // We can leave this zero-initialized as MPID 0 can be a valid value for CPU 0.
 uint64_t arm64_cpu_list[SMP_MAX_CPUS];
 
-}  // namespace
-
 // Per cpu structures, each cpu will point to theirs using the fixed register.
 // Global scope because referenced in assembly.
 arm64_percpu arm64_percpu_array[SMP_MAX_CPUS];
+
+}  // namespace
 
 // total number of detected cpus
 uint arm_num_cpus = 1;
@@ -129,15 +129,16 @@ zx_status_t arch_mp_cpu_hotplug(cpu_num_t cpu_id) {
     return ZX_ERR_BAD_STATE;
   }
 
-  uint64_t mpid = arm64_cpu_list[cpu_id];
   // Create a stack for the thread running on the CPU.
-  zx_status_t status = arm64_create_secondary_stack(cpu_id, mpid);
-  if (status != ZX_OK) {
-    return status;
+  zx::result<uintptr_t> result = arm64_create_secondary_stack(cpu_id);
+  if (result.is_error()) {
+    return result.status_value();
   }
+  const uintptr_t stack = result.value();
 
   // Start the CPU.
-  status = platform_start_cpu(cpu_id, mpid);
+  uint64_t mpid = arm64_cpu_list[cpu_id];
+  zx_status_t status = platform_start_cpu(cpu_id, mpid, stack);
   if (status != ZX_OK) {
     // Start failed, so free the stack.
     [[maybe_unused]] zx_status_t free_stack_status = arm64_free_secondary_stack(cpu_id);

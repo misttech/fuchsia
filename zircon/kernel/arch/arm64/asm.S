@@ -65,34 +65,3 @@ FUNCTION(arm64_context_switch)
     // Prevent speculation through RET
     SPECULATION_POSTFENCE
 END_FUNCTION(arm64_context_switch)
-
-// Walk through an array of arm64_sp_info structs (defined in arch.cc), looking for one that
-// matches the current cpu's MPIDR. When found, return information from it.
-FUNCTION(arm64_get_secondary_sp)
-    mrs     x9, mpidr_el1
-    movlit  x10, 0xff00ffffff  // Mask for AFFx (cluster) IDs.
-    and     x9, x9, x10
-    mov     x10, #SMP_MAX_CPUS
-
-    adr_global x11, arm64_secondary_sp_list
-
-.Lsp_loop:
-    ldr     x12, [x11, #0] // arm64_sp_info.mpid
-    cmp     x12, x9
-    beq     .Lsp_found
-    add     x11, x11, #40
-    subs    x10, x10, #1
-    bne     .Lsp_loop
-    mov     x0, xzr
-    mov     x1, xzr
-    mov     x2, xzr
-    ret
-    SPECULATION_POSTFENCE
-
-.Lsp_found:
-    ldr     x0, [x11, #8]  // arm64_sp_info.sp
-    ldr     x2, [x11, #16] // arm64_sp_info.shadow_call_sp
-    add     x1, x11, #40
-    ret
-    SPECULATION_POSTFENCE
-END_FUNCTION(arm64_get_secondary_sp)

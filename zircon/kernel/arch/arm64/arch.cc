@@ -79,17 +79,17 @@ constexpr uint64_t PMUSERENR_EL0_ENABLE = 1 << 0;  // Enable EL0 access to cycle
 // be no real chance of a data race here.
 ktl::atomic<bool> allow_pct_in_el0{false};
 
-volatile uint32_t secondaries_to_init = 0;
-
 // one for each secondary CPU, indexed by (cpu_num - 1).
 Thread _init_thread[SMP_MAX_CPUS - 1];
 
 }  // anonymous namespace
 
+// Structure used to pass information to a newly booted secondary cpu.
+//
+// SP will be set to the bottom of this structure.
 struct arm64_sp_info {
-  uint64_t mpid;
-  void* sp;                   // Stack pointer points to arbitrary data.
   uintptr_t* shadow_call_sp;  // SCS pointer points to array of addresses.
+  uint64_t pad;               // Pad so that its size is a multiple of 16.
 
   // This part of the struct itself will serve temporarily as the
   // fake arch_thread in the thread pointer, so that safe-stack
@@ -99,32 +99,28 @@ struct arm64_sp_info {
   void* unsafe_sp = nullptr;  // Never actually used in the kernel.
 };
 
-static_assert(sizeof(arm64_sp_info) == 40, "check arm64_get_secondary_sp assembly");
-static_assert(offsetof(arm64_sp_info, mpid) == 0, "check arm64_get_secondary_sp assembly");
-static_assert(offsetof(arm64_sp_info, sp) == 8, "check arm64_get_secondary_sp assembly");
-static_assert(offsetof(arm64_sp_info, shadow_call_sp) == 16,
-              "check arm64_get_secondary_sp assembly");
+static_assert(sizeof(arm64_sp_info) == 32, "check arm64_secondary_start assembly");
+static_assert(offsetof(arm64_sp_info, shadow_call_sp) == 0, "check arm64_secondary_start assembly");
+static_assert(sizeof(arm64_sp_info) % 16 == 0);
 
 #define TP_OFFSET(field) ((int)offsetof(arm64_sp_info, field) - (int)sizeof(arm64_sp_info))
 static_assert(TP_OFFSET(stack_guard) == ZX_TLS_STACK_GUARD_OFFSET);
 static_assert(TP_OFFSET(unsafe_sp) == ZX_TLS_UNSAFE_SP_OFFSET);
 #undef TP_OFFSET
 
-// one for each secondary CPU, indexed by (cpu_num - 1).
-arm64_sp_info arm64_secondary_sp_list[SMP_MAX_CPUS - 1];
-
-zx_status_t arm64_create_secondary_stack(cpu_num_t cpu_num, uint64_t mpid) {
-  // Allocate a stack, indexed by CPU num so that |arm64_secondary_entry| can find it.
+zx::result<uintptr_t> arm64_create_secondary_stack(cpu_num_t cpu_num) {
+  // Allocate a stack for the init thread of this particular secondary cpu.
   DEBUG_ASSERT_MSG(cpu_num > 0 && cpu_num < SMP_MAX_CPUS, "cpu_num: %u", cpu_num);
   KernelStack* stack = &_init_thread[cpu_num - 1].stack();
   DEBUG_ASSERT(stack->base() == 0);
   zx_status_t status = stack->Init();
   if (status != ZX_OK) {
-    return status;
+    return zx::error(status);
   }
 
   // Get the stack pointers.
-  void* sp = reinterpret_cast<void*>(stack->top());
+  uintptr_t sp = static_cast<uintptr_t>(stack->top());
+  DEBUG_ASSERT(sp % 16 == 0);
   uintptr_t* shadow_call_sp = nullptr;
 #if __has_feature(shadow_call_stack)
   DEBUG_ASSERT(stack->shadow_call_base() != 0);
@@ -132,17 +128,15 @@ zx_status_t arm64_create_secondary_stack(cpu_num_t cpu_num, uint64_t mpid) {
   shadow_call_sp = reinterpret_cast<uintptr_t*>(stack->shadow_call_base());
 #endif
 
-  // Store it.
-  LTRACEF("set mpid 0x%lx sp to %p\n", mpid, sp);
-#if __has_feature(shadow_call_stack)
-  LTRACEF("set mpid 0x%lx shadow-call-sp to %p\n", mpid, shadow_call_sp);
-#endif
-  arm64_secondary_sp_list[cpu_num - 1].mpid = mpid;
-  arm64_secondary_sp_list[cpu_num - 1].sp = sp;
-  arm64_secondary_sp_list[cpu_num - 1].stack_guard = Thread::Current::Get()->arch().stack_guard;
-  arm64_secondary_sp_list[cpu_num - 1].shadow_call_sp = shadow_call_sp;
+  // Place the secondary bootstrap structure at the top of the stack.
+  arm64_sp_info* cpu = reinterpret_cast<arm64_sp_info*>(sp);
+  cpu--;
 
-  return ZX_OK;
+  // Store the necessary cpu boot info.
+  cpu->stack_guard = Thread::Current::Get()->arch().stack_guard;
+  cpu->shadow_call_sp = shadow_call_sp;
+
+  return zx::ok(reinterpret_cast<uintptr_t>(cpu));
 }
 
 zx_status_t arm64_free_secondary_stack(cpu_num_t cpu_num) {
@@ -393,9 +387,7 @@ void arch_init() TA_NO_THREAD_SAFETY_ANALYSIS {
     cmdline_max_cpus = max_cpus;
   }
 
-  secondaries_to_init = cmdline_max_cpus - 1;
-
-  lk_init_secondary_cpus(secondaries_to_init);
+  lk_init_secondary_cpus(cmdline_max_cpus - 1);
 }
 
 void arch_late_init_percpu(void) {

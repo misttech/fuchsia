@@ -12,6 +12,7 @@
 
 #include <lib/arch/asm.h>
 #include <lib/arch/intrin.h>
+#include <lib/zx/result.h>
 #include <stdbool.h>
 #include <sys/types.h>
 #include <zircon/compiler.h>
@@ -80,7 +81,7 @@ void platform_irq(iframe_t* frame);
 
 arm64_context_switch_frame* arm64_get_context_switch_frame(Thread* thread);
 
-/* fpu routines */
+// FPU routines
 void arm64_fpu_exception(iframe_t* iframe, uint exception_flags);
 void arm64_fpu_context_switch(Thread* oldthread, Thread* newthread);
 void arm64_fpu_save_state(Thread* t);
@@ -95,14 +96,13 @@ constexpr uint64_t arm64_get_boot_el() { return 1; }
 // have started.
 void arm64_allow_pct_in_el0();
 
-/*
- * Creates a stack and sets the stack pointer for the specified secondary CPU.
- */
-zx_status_t arm64_create_secondary_stack(cpu_num_t cpu_num, uint64_t mpid);
+// Allocates a stack for the secondary cpu with bootstrap data placed on it.
+// Ready to be passed to the cpu when starting it for the first time.
+// Returns a virtual address near the top of the stack just below the bootstrap
+// payload.
+zx::result<uintptr_t> arm64_create_secondary_stack(cpu_num_t cpu_num);
 
-/*
- * Frees a stack created by |arm64_create_secondary_stack|.
- */
+// Frees a stack created by |arm64_create_secondary_stack|.
 zx_status_t arm64_free_secondary_stack(cpu_num_t cpu_num);
 
 // Shortcuts for setting and clearing PSTATE.PAN.
@@ -111,10 +111,10 @@ inline void arm64_disable_pan() { __arm_wsr64("PAN", 0); }
 
 #endif  // __ASSEMBLER__
 
-/* used in above exception_flags arguments */
+// Used in above exception_flags arguments.
 #define ARM64_EXCEPTION_FLAG_LOWER_EL (1 << 0)
 
-/* used in the exceptions_c which argument */
+// Used in the exceptions_c which argument.
 #define ARM64_DISALLOWED_ARM32_SYSCALL (1 << 0)
 #define ARM64_DISALLOWED_ARM32_SYNC_EXCEPTION (1 << 1)
 #define ARM64_DISALLOWED_ARM32_ASYNC_EXCEPTION (1 << 2)
