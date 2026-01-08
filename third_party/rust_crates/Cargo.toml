@@ -268,7 +268,7 @@ vte = "0.15"
 walkdir = "2.5.0"
 which = "4.0.2"
 xml-rs = "0.8"
-zerocopy = { version = "0.8.31", features = ["derive", "simd"] }
+zerocopy = { version = "0.8.33", features = ["derive", "simd"] }
 zstd = "0.11.2"
 # keep-sorted end
 
@@ -1244,14 +1244,14 @@ env_vars = ["OUT_DIR=../../../../compat/valico"]
 [gn.package.valuable."0.1.1"]
 rustflags = []
 
-[gn.package.zerocopy."0.8.31"]
+[gn.package.zerocopy."0.8.33"]
 rustflags = []
 configs = [
   "//third_party/rust_crates/configs/release:optimize_speed",
   "//third_party/rust_crates/configs/balanced:optimize_moderate"
 ]
 
-[gn.package.zerocopy-derive."0.8.31"]
+[gn.package.zerocopy-derive."0.8.33"]
 # See https://github.com/google/zerocopy/issues/1792
 rustflags = [ "--cfg=zerocopy_derive_union_into_bytes" ]
 
