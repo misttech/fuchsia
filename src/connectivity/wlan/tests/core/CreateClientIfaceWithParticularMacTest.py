@@ -24,12 +24,11 @@ from mobly import asserts, test_runner
 class CreateClientIfaceWithParticularMacTest(base_test.CoreBaseTestClass):
     @asyncmethod
     async def test_create_client_iface_with_particular_mac(self) -> None:
-        random_sta_addr = None
-        while True:
-            random_six_bytes = [random.randint(0, 255) for _ in range(6)]
-            if random_six_bytes != [0, 0, 0, 0, 0, 0]:
-                random_sta_addr = MacAddress.from_bytes(bytes(random_six_bytes))
-                break
+        # Generate a valid randomized MAC to set in the driver
+        random_six_bytes = [random.randint(0, 255) for _ in range(6)]
+        random_six_bytes[0] &= 0xFE  # bit 0: 0 = unicast
+        random_six_bytes[0] |= 0x02  # bit 1: 1 = locally-administered
+        random_sta_addr = MacAddress.from_bytes(bytes(random_six_bytes))
 
         logger.info(f"Creating client iface with MAC {random_sta_addr}")
         create_iface_response = (

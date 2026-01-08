@@ -124,3 +124,13 @@ group("tests_for_general_cq_dut_only") {
   testonly = true
   public_deps = [ ":phy_existence_test" ]
 }
+
+group("tests_for_wlan_cq_dut_only") {
+  testonly = true
+  public_deps = core_tests_for_wlan_cq_dut_only
+}
+
+group("tests_for_wlan_cq_shielded_dut_only") {
+  testonly = true
+  public_deps = core_tests_for_wlan_cq_shielded_dut_only
+}
