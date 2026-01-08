@@ -10,7 +10,7 @@ block-core
 ?bt-transport-usb
 ?bus-kpci
 ?bus-pci
-buttons
+?buttons
 clock
 ?config
 ?console
@@ -36,8 +36,8 @@ driver_manager
 gpio
 ?gpt
 ?gpt2
-hid
-hid-input-report
+?hid
+?hid-input-report
 i2c
 kernel-args-forwarder
 ?kernel_debug_broker

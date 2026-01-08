@@ -509,7 +509,6 @@ eng_platform_aib_names =
     userdebug_platform_aib_names + eng_only_platform_aib_names
 
 required_user_aib_names = [
-  "input_drivers",
   "embeddable",
   "component_manager",
   "bootstrap",
