@@ -22,9 +22,19 @@ python_host_test("screenshot_test") {
   ]
 }
 
+python_host_test("control_flows_test") {
+  main_source = "control_flows_test.py"
+  libraries = [
+    "//third_party/mobly",
+    "//src/testing/end_to_end/honeydew",
+    "//third_party/parameterized",
+  ]
+}
+
 group("tests") {
   testonly = true
   public_deps = [
+    ":control_flows_test",
     ":inspect_test",
     ":screenshot_test",
   ]

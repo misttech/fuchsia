@@ -300,7 +300,6 @@ group("functional_tests") {
       "honeydew/transports/fastboot/tests/functional_tests:tests",
       "honeydew/transports/ffx/tests/functional_tests:tests",
       "honeydew/transports/serial/tests/functional_tests:tests",
-      "honeydew/utils/tests/functional_tests:tests",
     ]
   }
 }
