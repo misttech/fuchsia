@@ -23,6 +23,16 @@ async fn handle_device_requests(mut requests: DeviceRequestStream) -> anyhow::Re
             DeviceRequest::StopVibration { responder } => {
                 responder.send(Ok(())).context("Failed to send response")?;
             }
+            DeviceRequest::SetAmplitude { amplitude, responder } => {
+                if amplitude <= 0.0 || amplitude > 1.0 {
+                    responder
+                        .send(Err(zx::Status::INVALID_ARGS.into_raw()))
+                        .context("Failed to send response")?;
+                    continue;
+                }
+
+                responder.send(Ok(())).context("Failed to send response")?;
+            }
             DeviceRequest::_UnknownMethod { ordinal, .. } => {
                 error!("Received unknown method {}", ordinal);
             }

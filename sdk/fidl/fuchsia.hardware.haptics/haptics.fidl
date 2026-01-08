@@ -15,6 +15,14 @@ open protocol Device {
     /// Stops the vibration that is currently playing. Does nothing if there isn't a vibration
     /// currently playing. All pending `StartVibration()` requests are completed immediately.
     flexible StopVibration() -> () error zx.Status;
+
+    /// Alters the gain on vibrations played in the future.
+    flexible SetAmplitude(struct {
+        /// `amplitude` acts nearly like a percentage gain applied to vibrations pla\yed in the
+        /// future. Must be in the range (0, 1] where 0 means vibrations are muted and 1 means the
+        /// amplitude of vibrations are unaltered.
+        amplitude float32;
+    }) -> () error zx.Status;
 };
 
 service Service {
