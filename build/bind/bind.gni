@@ -615,7 +615,7 @@ template("_bind_library_rust") {
     output_dir = crate_output_directory
     sources = [ rust_file ]
     source_root = rust_file
-    configs -= [ "//build/config/rust/lints:allow_unused_results" ]
+    configs += [ "//build/config/rust/lints:deny_unused_results" ]
     if (defined(invoker.public_deps)) {
       deps = []
       foreach(pub_dep, invoker.public_deps) {

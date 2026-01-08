@@ -40,7 +40,7 @@ template("ta_manager_config_test") {
     if (defined(invoker.test_sources)) {
       sources += invoker.test_sources
     }
-    configs -= [ "//build/config/rust/lints:allow_unused_results" ]
+    configs += [ "//build/config/rust/lints:deny_unused_results" ]
     deps = [
       "//src/lib/fuchsia",
       "//src/lib/fuchsia-component",

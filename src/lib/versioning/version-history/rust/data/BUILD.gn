@@ -11,7 +11,7 @@ rustc_library("data") {
   edition = "2024"
   with_unit_tests = true
 
-  configs -= [ "//build/config/rust/lints:allow_unused_results" ]
+  configs += [ "//build/config/rust/lints:deny_unused_results" ]
 
   deps = [
     "//src/lib/versioning/version-history/rust",

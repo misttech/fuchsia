@@ -25,7 +25,7 @@ rustc_library("zbi-rs") {
 
   sources = zbi_lib_sources
 
-  configs -= [ "//build/config/rust/lints:allow_unused_results" ]
+  configs += [ "//build/config/rust/lints:deny_unused_results" ]
 }
 
 # This is just for unit tests to have different name
@@ -46,7 +46,7 @@ rustc_test("zbi-rs-test") {
 
   sources = zbi_lib_sources
 
-  configs -= [ "//build/config/rust/lints:allow_unused_results" ]
+  configs += [ "//build/config/rust/lints:deny_unused_results" ]
 }
 
 fuchsia_unittest_package("zbi-rs-lib-unit-tests") {

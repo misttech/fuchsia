@@ -27,7 +27,7 @@ rustc_staticlib("affordances-c") {
     "//third_party/rust_crates:futures",
   ]
 
-  configs -= [ "//build/config/rust/lints:allow_unused_results" ]
+  configs += [ "//build/config/rust/lints:deny_unused_results" ]
 
   public = [ "ffi_c/bindings.h" ]
 
@@ -48,7 +48,7 @@ rustc_binary("bin") {
     "//third_party/rust_crates:log",
   ]
 
-  configs -= [ "//build/config/rust/lints:allow_unused_results" ]
+  configs += [ "//build/config/rust/lints:deny_unused_results" ]
 
   sources = [ "src/main.rs" ]
 }

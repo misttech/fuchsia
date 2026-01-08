@@ -52,7 +52,7 @@ rustc_library("async-utils") {
     "src/traits.rs",
   ]
 
-  configs -= [ "//build/config/rust/lints:allow_unused_results" ]
+  configs += [ "//build/config/rust/lints:deny_unused_results" ]
 }
 
 fuchsia_unittest_package("async-utils-tests") {

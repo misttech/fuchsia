@@ -9,7 +9,7 @@ import(
 
 rustc_library_with_features("netstack3-ip") {
   edition = "2024"
-  configs -= [ "//build/config/rust/lints:allow_unused_results" ]
+  configs += [ "//build/config/rust/lints:deny_unused_results" ]
   check_cfgs = [ "test" ]
   sources = [
     "src/api.rs",

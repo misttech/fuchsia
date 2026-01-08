@@ -39,7 +39,7 @@ rustc_binary("runtime") {
   # implements. These are exported for the TA to resolve when loaded.
   inputs = [ "ta_runtime_exposed_symbols.sym" ]
   link_args = [ "--dynamic-list=" + rebase_path(inputs[0], root_build_dir) ]
-  configs -= [ "//build/config/rust/lints:allow_unused_results" ]
+  configs += [ "//build/config/rust/lints:deny_unused_results" ]
 }
 
 fuchsia_component("runtime-component") {

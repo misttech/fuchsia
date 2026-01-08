@@ -28,7 +28,7 @@ rustc_test("http_client_integration_test") {
     "src/pkg.rs",
   ]
 
-  configs -= [ "//build/config/rust/lints:allow_unused_results" ]
+  configs += [ "//build/config/rust/lints:deny_unused_results" ]
 }
 
 fuchsia_test_component("component") {

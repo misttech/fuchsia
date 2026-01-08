@@ -18,7 +18,7 @@ rustc_binary("bin") {
   edition = "2024"
   name = "sharder"
   with_unit_tests = true
-  configs -= [ "//build/config/rust/lints:allow_unused_results" ]
+  configs += [ "//build/config/rust/lints:deny_unused_results" ]
   deps = [
     "//sdk/fidl/fuchsia.test:fuchsia.test_rust",
     "//src/lib/fidl/rust/fidl",

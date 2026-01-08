@@ -41,7 +41,7 @@ rustc_library("speedtest") {
     "//src/lib/fdomain/client:flex_fidl",
   ]
 
-  configs -= [ "//build/config/rust/lints:allow_unused_results" ]
+  configs += [ "//build/config/rust/lints:deny_unused_results" ]
 }
 
 if (is_host) {
@@ -54,7 +54,7 @@ if (is_host) {
     test_deps += [ "//src/lib/fdomain/local" ]
     features = [ "fdomain" ]
 
-    configs -= [ "//build/config/rust/lints:allow_unused_results" ]
+    configs += [ "//build/config/rust/lints:deny_unused_results" ]
   }
 }
 

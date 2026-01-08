@@ -114,7 +114,7 @@ icu_rustc_library("lib") {
     "src/tests/service_configuration_tests.rs",
   ]
 
-  configs -= [ "//build/config/rust/lints:allow_unused_results" ]
+  configs += [ "//build/config/rust/lints:deny_unused_results" ]
   configs += [ "//build/config/rust/lints:clippy_warn_all" ]
 }
 
@@ -183,7 +183,7 @@ icu_rustc_binary("bin") {
 
   sources = [ "src/main.rs" ]
 
-  configs -= [ "//build/config/rust/lints:allow_unused_results" ]
+  configs += [ "//build/config/rust/lints:deny_unused_results" ]
   configs += [ "//build/config/rust/lints:clippy_warn_all" ]
 }
 
@@ -234,7 +234,7 @@ rustc_binary("setui-config-test") {
 
   sources = [ "src/setui_config_test.rs" ]
 
-  configs -= [ "//build/config/rust/lints:allow_unused_results" ]
+  configs += [ "//build/config/rust/lints:deny_unused_results" ]
 }
 
 resource("sample-setui-config-test-resources") {

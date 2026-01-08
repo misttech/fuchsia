@@ -33,7 +33,7 @@ rustc_binary("bin") {
     "//third_party/rust_crates:test-case",
   ]
   sources = [ "src/main.rs" ]
-  configs -= [ "//build/config/rust/lints:allow_unused_results" ]
+  configs += [ "//build/config/rust/lints:deny_unused_results" ]
 }
 
 rustc_test("example_tests") {
@@ -45,7 +45,7 @@ rustc_test("example_tests") {
   ]
   source_root = "src/tests.rs"
   sources = [ "src/tests.rs" ]
-  configs -= [ "//build/config/rust/lints:allow_unused_results" ]
+  configs += [ "//build/config/rust/lints:deny_unused_results" ]
 }
 
 fuchsia_component("expectation_comparer") {

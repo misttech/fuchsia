@@ -99,7 +99,7 @@ rustc_library("lib") {
     "src/virtualization.rs",
   ]
 
-  configs -= [ "//build/config/rust/lints:allow_unused_results" ]
+  configs += [ "//build/config/rust/lints:deny_unused_results" ]
 }
 
 network_unified_binary("bin-basic") {
@@ -127,7 +127,7 @@ rustc_binary("bin-advanced") {
 
   sources = [ "src/bin/advanced.rs" ]
 
-  configs -= [ "//build/config/rust/lints:allow_unused_results" ]
+  configs += [ "//build/config/rust/lints:deny_unused_results" ]
 }
 
 network_unified_binary_regular_and_gub_components("component-basic") {

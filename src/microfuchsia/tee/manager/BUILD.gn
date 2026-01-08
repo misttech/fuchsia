@@ -32,7 +32,7 @@ rustc_binary("manager") {
 
   test_deps = [ "//src/microfuchsia/tee/lib/tee_properties" ]
 
-  configs -= [ "//build/config/rust/lints:allow_unused_results" ]
+  configs += [ "//build/config/rust/lints:deny_unused_results" ]
 
   with_unit_tests = true
 }

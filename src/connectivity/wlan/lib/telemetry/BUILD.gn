@@ -75,7 +75,7 @@ rustc_library("wlan-telemetry") {
     "//third_party/rust_crates:test-case",
   ]
 
-  configs -= [ "//build/config/rust/lints:allow_unused_results" ]
+  configs += [ "//build/config/rust/lints:deny_unused_results" ]
   configs += [ "//build/config/rust/lints:clippy_warn_all" ]
 }
 

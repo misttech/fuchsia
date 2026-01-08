@@ -35,7 +35,7 @@ rustc_binary("bin") {
     "//src/lib/diagnostics/reader/rust",
     "//third_party/rust_crates:test-case",
   ]
-  configs -= [ "//build/config/rust/lints:allow_unused_results" ]
+  configs += [ "//build/config/rust/lints:deny_unused_results" ]
 }
 
 fuchsia_component("iperf-component") {

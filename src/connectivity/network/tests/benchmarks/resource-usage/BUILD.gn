@@ -40,7 +40,7 @@ rustc_binary("resource_usage_benchmark") {
     "//third_party/rust_crates:humansize",
     "//third_party/rust_crates:serde_json",
   ]
-  configs -= [ "//build/config/rust/lints:allow_unused_results" ]
+  configs += [ "//build/config/rust/lints:deny_unused_results" ]
 }
 
 shared_deps = [ "//src/sys/stash:stash_secure_v2" ]

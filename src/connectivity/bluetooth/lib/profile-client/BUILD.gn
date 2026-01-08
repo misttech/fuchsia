@@ -28,7 +28,7 @@ rustc_library("profile-client") {
     "src/lib.rs",
   ]
 
-  configs -= [ "//build/config/rust/lints:allow_unused_results" ]
+  configs += [ "//build/config/rust/lints:deny_unused_results" ]
 }
 
 rustc_library("test-profile-server") {
@@ -47,7 +47,7 @@ rustc_library("test-profile-server") {
   source_root = "src/test/lib.rs"
   sources = [ "src/test/lib.rs" ]
 
-  configs -= [ "//build/config/rust/lints:allow_unused_results" ]
+  configs += [ "//build/config/rust/lints:deny_unused_results" ]
 }
 
 fuchsia_unittest_package("profile-client-tests") {

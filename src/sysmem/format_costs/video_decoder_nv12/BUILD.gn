@@ -9,7 +9,7 @@ import("//build/rust/rustc_binary.gni")
 # the binary expects a single arg which is the path of the output file
 rustc_binary("generate_format_costs_video_decoder_nv12") {
   edition = "2024"
-  configs -= [ "//build/config/rust/lints:allow_unused_results" ]
+  configs += [ "//build/config/rust/lints:deny_unused_results" ]
   sources = [ "src/main.rs" ]
   deps = [
     "//sdk/fidl/fuchsia.images2:fuchsia.images2_rust",

@@ -44,7 +44,7 @@ rustc_library("fuchsia-audio-device") {
     "src/types.rs",
   ]
 
-  configs -= [ "//build/config/rust/lints:allow_unused_results" ]
+  configs += [ "//build/config/rust/lints:deny_unused_results" ]
 }
 
 fuchsia_unittest_package("fuchsia-audio-device-tests") {

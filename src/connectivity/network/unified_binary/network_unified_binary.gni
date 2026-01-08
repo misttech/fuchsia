@@ -46,7 +46,7 @@ template("network_unified_binary") {
                              "bin_remove_configs",
                              "build_job_vars",
                            ])
-    configs -= [ "//build/config/rust/lints:allow_unused_results" ]
+    configs += [ "//build/config/rust/lints:deny_unused_results" ]
     configs -= _bin_remove_configs
     configs += _bin_add_configs
     configs += _add_configs
@@ -91,7 +91,7 @@ template("network_unified_binary") {
     name = output_name
     source_root = _source_root
     configs += _add_configs
-    configs -= [ "//build/config/rust/lints:allow_unused_results" ]
+    configs += [ "//build/config/rust/lints:deny_unused_results" ]
 
     if (defined(invoker.build_job_vars)) {
       forward_variables_from(invoker.build_job_vars, "*")

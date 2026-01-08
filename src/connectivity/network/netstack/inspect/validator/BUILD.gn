@@ -21,7 +21,7 @@ rustc_binary("go-puppet-dispatcher-bin") {
     "//third_party/rust_crates:futures",
   ]
   sources = [ "src/main.rs" ]
-  configs -= [ "//build/config/rust/lints:allow_unused_results" ]
+  configs += [ "//build/config/rust/lints:deny_unused_results" ]
 }
 
 # This must be named puppet or have `component_name = "puppet"` so

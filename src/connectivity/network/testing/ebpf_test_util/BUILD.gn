@@ -26,5 +26,5 @@ rustc_library("ebpf_test_util") {
     "//third_party/rust_crates:zerocopy",
   ]
 
-  configs -= [ "//build/config/rust/lints:allow_unused_results" ]
+  configs += [ "//build/config/rust/lints:deny_unused_results" ]
 }

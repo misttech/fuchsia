@@ -27,7 +27,7 @@ if (is_fuchsia) {
       "//third_party/rust_crates:criterion",
       "//third_party/rust_crates:itertools",
     ]
-    configs -= [ "//build/config/rust/lints:allow_unused_results" ]
+    configs += [ "//build/config/rust/lints:deny_unused_results" ]
 
     # Use the same configs as netstack3, since this is how we mostly use this
     # crate in release mode.

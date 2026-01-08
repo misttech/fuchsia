@@ -84,7 +84,7 @@ rustc_library("netlink") {
     "src/util.rs",
   ]
 
-  configs -= [ "//build/config/rust/lints:allow_unused_results" ]
+  configs += [ "//build/config/rust/lints:deny_unused_results" ]
 }
 
 fuchsia_test_component("netlink-lib-test-component") {

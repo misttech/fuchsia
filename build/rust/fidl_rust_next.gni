@@ -240,7 +240,7 @@ template("fidl_rust_next") {
       source_root = "$file_stem.rs"
       sources = [ "$file_stem.rs" ]
 
-      configs -= [ "//build/config/rust/lints:allow_unused_results" ]
+      configs += [ "//build/config/rust/lints:deny_unused_results" ]
 
       features = []
       if (is_fuchsia) {

@@ -12,5 +12,5 @@ rustc_library("properties") {
     "//sdk/fidl/fuchsia.net.policy.properties:fuchsia.net.policy.properties_rust",
     "//sdk/rust/zx",
   ]
-  configs -= [ "//build/config/rust/lints:allow_unused_results" ]
+  configs += [ "//build/config/rust/lints:deny_unused_results" ]
 }

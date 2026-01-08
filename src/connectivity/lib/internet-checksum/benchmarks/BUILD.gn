@@ -15,7 +15,7 @@ rustc_binary("benchmarks-bin") {
     "//src/connectivity/lib/internet-checksum",
     "//src/developer/fuchsia-criterion",
   ]
-  configs -= [ "//build/config/rust/lints:allow_unused_results" ]
+  configs += [ "//build/config/rust/lints:deny_unused_results" ]
 }
 
 fuchsia_package_with_single_component("benchmarks-pkg") {

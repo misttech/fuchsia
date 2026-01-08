@@ -24,7 +24,7 @@ rustc_test("iptables_test") {
     "//third_party/rust_crates:log",
     "//third_party/rust_crates:test-case",
   ]
-  configs -= [ "//build/config/rust/lints:allow_unused_results" ]
+  configs += [ "//build/config/rust/lints:deny_unused_results" ]
 }
 
 fuchsia_test_component("iptables-restore") {

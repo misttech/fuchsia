@@ -60,7 +60,7 @@ rustc_library("packet-formats") {
 
   sources = _common_sources
 
-  configs -= [ "//build/config/rust/lints:allow_unused_results" ]
+  configs += [ "//build/config/rust/lints:deny_unused_results" ]
   configs += [ "//src/connectivity/network:performance_critical_rust_crate" ]
 }
 
@@ -76,7 +76,7 @@ rustc_test("packet-formats_test") {
 
   sources = _common_sources
 
-  configs -= [ "//build/config/rust/lints:allow_unused_results" ]
+  configs += [ "//build/config/rust/lints:deny_unused_results" ]
 }
 
 fuchsia_unittest_package("packet-formats-test-package") {
@@ -103,7 +103,7 @@ rustc_fuzzer("fuzz-parse-packet") {
     "//third_party/rust_crates:log",
     "//third_party/rust_crates:zerocopy",
   ]
-  configs -= [ "//build/config/rust/lints:allow_unused_results" ]
+  configs += [ "//build/config/rust/lints:deny_unused_results" ]
 }
 
 fuchsia_fuzzer_component("fuzz-parse-packet-component") {

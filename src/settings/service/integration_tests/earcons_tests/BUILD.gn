@@ -34,7 +34,7 @@ rustc_library("common") {
     "//third_party/rust_crates:futures",
   ]
 
-  configs -= [ "//build/config/rust/lints:allow_unused_results" ]
+  configs += [ "//build/config/rust/lints:deny_unused_results" ]
 }
 
 rustc_test("bin") {
@@ -50,7 +50,7 @@ rustc_test("bin") {
     "//third_party/rust_crates:futures",
   ]
 
-  configs -= [ "//build/config/rust/lints:allow_unused_results" ]
+  configs += [ "//build/config/rust/lints:deny_unused_results" ]
 }
 
 fuchsia_component("volume_change_earcons_integration_test") {
@@ -106,7 +106,7 @@ rustc_test("bin_with_input") {
     "//third_party/rust_crates:futures",
   ]
 
-  configs -= [ "//build/config/rust/lints:allow_unused_results" ]
+  configs += [ "//build/config/rust/lints:deny_unused_results" ]
 }
 
 fuchsia_component("earcons_with_input_integration_test") {
@@ -150,7 +150,7 @@ rustc_test("bluetooth_test_bin") {
     "//third_party/rust_crates:futures",
   ]
 
-  configs -= [ "//build/config/rust/lints:allow_unused_results" ]
+  configs += [ "//build/config/rust/lints:deny_unused_results" ]
 }
 
 fuchsia_component("bluetooth_earcons_integration_test") {

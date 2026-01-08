@@ -25,7 +25,7 @@ rustc_test("bin") {
     "//third_party/rust_crates:anyhow",
   ]
 
-  configs -= [ "//build/config/rust/lints:allow_unused_results" ]
+  configs += [ "//build/config/rust/lints:deny_unused_results" ]
 }
 
 fuchsia_component("intl_integration_test") {

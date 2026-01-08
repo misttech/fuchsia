@@ -90,7 +90,7 @@ rustc_binary("bin") {
 
   sources = shared_sources
 
-  configs -= [ "//build/config/rust/lints:allow_unused_results" ]
+  configs += [ "//build/config/rust/lints:deny_unused_results" ]
 }
 
 fuchsia_component_manifest("manifest") {
@@ -168,7 +168,7 @@ rustc_test("encoding_integration_bin") {
 
   sources = shared_sources
 
-  configs -= [ "//build/config/rust/lints:allow_unused_results" ]
+  configs += [ "//build/config/rust/lints:deny_unused_results" ]
 }
 
 fuchsia_unittest_package("bt-a2dp-encoding-tests") {

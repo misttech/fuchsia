@@ -19,7 +19,7 @@ rustc_library("lib") {
     "//third_party/rust_crates:anyhow",
   ]
   sources = [ "src/lib.rs" ]
-  configs -= [ "//build/config/rust/lints:allow_unused_results" ]
+  configs += [ "//build/config/rust/lints:deny_unused_results" ]
   disable_rustdoc = true
 }
 
@@ -38,7 +38,7 @@ rustc_test("netemul_runner_test") {
   ]
   source_root = "src/test.rs"
   sources = [ "src/test.rs" ]
-  configs -= [ "//build/config/rust/lints:allow_unused_results" ]
+  configs += [ "//build/config/rust/lints:deny_unused_results" ]
 }
 
 fuchsia_unittest_package("netemul-runner-tests") {
@@ -60,7 +60,7 @@ rustc_test("netemul_runner_errors_test") {
   ]
   source_root = "src/errors.rs"
   sources = [ "src/errors.rs" ]
-  configs -= [ "//build/config/rust/lints:allow_unused_results" ]
+  configs += [ "//build/config/rust/lints:deny_unused_results" ]
 }
 
 fuchsia_unittest_package("netemul-runner-errors-tests") {

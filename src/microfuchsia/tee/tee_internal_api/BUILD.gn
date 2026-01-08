@@ -45,7 +45,7 @@ rustc_library("tee_internal") {
     "//third_party/rust_crates:thiserror",
   ]
 
-  configs -= [ "//build/config/rust/lints:allow_unused_results" ]
+  configs += [ "//build/config/rust/lints:deny_unused_results" ]
 }
 
 # Trusted Applications link against an ifs specification that says that

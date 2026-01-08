@@ -24,7 +24,7 @@ rustc_library("common") {
     "//third_party/rust_crates:futures",
   ]
 
-  configs -= [ "//build/config/rust/lints:allow_unused_results" ]
+  configs += [ "//build/config/rust/lints:deny_unused_results" ]
 }
 
 # These tests mock out the fuchsia.ui.brightness dependency.
@@ -40,7 +40,7 @@ rustc_test("bin") {
     "//third_party/rust_crates:futures",
   ]
 
-  configs -= [ "//build/config/rust/lints:allow_unused_results" ]
+  configs += [ "//build/config/rust/lints:deny_unused_results" ]
 }
 
 fuchsia_component("display_integration_test") {
@@ -84,7 +84,7 @@ rustc_test("internal_tests_bin") {
     "//third_party/rust_crates:paste",
   ]
 
-  configs -= [ "//build/config/rust/lints:allow_unused_results" ]
+  configs += [ "//build/config/rust/lints:deny_unused_results" ]
 }
 
 fuchsia_component("internal_display_integration_test") {

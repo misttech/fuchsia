@@ -21,7 +21,7 @@ rustc_test("ta_lifecycle_test") {
 
   source_root = "src/ta_lifecycle.rs"
   sources = [ source_root ]
-  configs -= [ "//build/config/rust/lints:allow_unused_results" ]
+  configs += [ "//build/config/rust/lints:deny_unused_results" ]
   deps = [
     "//sdk/fidl/fuchsia.tee:fuchsia.tee_rust",
     "//src/lib/fuchsia",
@@ -59,7 +59,7 @@ rustc_test("tee_internal_api_entry_points_test") {
 
   source_root = "src/entry_points.rs"
   sources = [ source_root ]
-  configs -= [ "//build/config/rust/lints:allow_unused_results" ]
+  configs += [ "//build/config/rust/lints:deny_unused_results" ]
   deps = [
     "//sdk/fidl/fuchsia.tee:fuchsia.tee_rust",
     "//src/lib/fuchsia",

@@ -9,7 +9,7 @@ rustc_library("affordances") {
 
   name = "fuchsia_bt_test_affordances"
 
-  configs -= [ "//build/config/rust/lints:allow_unused_results" ]
+  configs += [ "//build/config/rust/lints:deny_unused_results" ]
 
   deps = [
     "//sdk/fidl/fuchsia.bluetooth:fuchsia.bluetooth_rust",

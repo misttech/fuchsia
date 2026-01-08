@@ -17,7 +17,7 @@ rustc_macro("netstack3-macros") {
 
   sources = [ "src/lib.rs" ]
 
-  configs -= [ "//build/config/rust/lints:allow_unused_results" ]
+  configs += [ "//build/config/rust/lints:deny_unused_results" ]
 }
 
 if (is_host) {
@@ -34,7 +34,7 @@ if (is_host) {
 
     sources = [ "src/test.rs" ]
 
-    configs -= [ "//build/config/rust/lints:allow_unused_results" ]
+    configs += [ "//build/config/rust/lints:deny_unused_results" ]
   }
 }
 

@@ -10,7 +10,7 @@ rustc_binary("bin") {
   output_name = "unreliable_echo"
   edition = "2024"
   sources = [ "src/main.rs" ]
-  configs -= [ "//build/config/rust/lints:allow_unused_results" ]
+  configs += [ "//build/config/rust/lints:deny_unused_results" ]
   deps = [
     ":lib",
     "//src/connectivity/network/testing/network-test-realm/fidl:fuchsia.net.test.realm_rust",
@@ -26,7 +26,7 @@ rustc_library("lib") {
   edition = "2024"
   name = "unreliable_echo"
   sources = [ "src/lib.rs" ]
-  configs -= [ "//build/config/rust/lints:allow_unused_results" ]
+  configs += [ "//build/config/rust/lints:deny_unused_results" ]
   disable_rustdoc = true
 }
 

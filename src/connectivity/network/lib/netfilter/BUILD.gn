@@ -24,7 +24,7 @@ rustc_library("netfilter") {
 
   test_deps = [ "//src/connectivity/lib/net-declare" ]
 
-  configs -= [ "//build/config/rust/lints:allow_unused_results" ]
+  configs += [ "//build/config/rust/lints:deny_unused_results" ]
 
   sources = [
     "src/error.rs",

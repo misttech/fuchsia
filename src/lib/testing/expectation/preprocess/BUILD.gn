@@ -16,7 +16,7 @@ if (is_host) {
       "//third_party/rust_crates:serde_json5",
     ]
     sources = [ "src/main.rs" ]
-    configs -= [ "//build/config/rust/lints:allow_unused_results" ]
+    configs += [ "//build/config/rust/lints:deny_unused_results" ]
     test_deps = [
       "//third_party/rust_crates:pathdiff",
       "//third_party/rust_crates:pretty_assertions",

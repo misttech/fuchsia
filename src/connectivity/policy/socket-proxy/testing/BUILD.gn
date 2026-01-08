@@ -9,7 +9,7 @@ rustc_library("testing") {
   testonly = true
   edition = "2024"
 
-  configs -= [ "//build/config/rust/lints:allow_unused_results" ]
+  configs += [ "//build/config/rust/lints:deny_unused_results" ]
   sources = [ "src/lib.rs" ]
 
   deps = [

@@ -343,7 +343,7 @@ template("_fidl_banjo_rust") {
 
     deps = []
 
-    configs -= [ "//build/config/rust/lints:allow_unused_results" ]
+    configs += [ "//build/config/rust/lints:deny_unused_results" ]
 
     if (defined(invoker.public_deps)) {
       foreach(dep, invoker.public_deps) {

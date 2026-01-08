@@ -585,7 +585,7 @@ template("fuchsia_structured_config_rust_lib") {
       "//src/lib/fuchsia-component/config",
     ]
 
-    configs -= [ "//build/config/rust/lints:allow_unused_results" ]
+    configs += [ "//build/config/rust/lints:deny_unused_results" ]
     non_rust_deps = [ ":${rust_source_target}($default_toolchain)" ]
   }
 }

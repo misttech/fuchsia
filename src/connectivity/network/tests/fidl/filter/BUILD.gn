@@ -51,5 +51,5 @@ rustc_test("filter") {
     "src/nat.rs",
     "src/root.rs",
   ]
-  configs -= [ "//build/config/rust/lints:allow_unused_results" ]
+  configs += [ "//build/config/rust/lints:deny_unused_results" ]
 }

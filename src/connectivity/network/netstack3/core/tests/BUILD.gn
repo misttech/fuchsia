@@ -33,7 +33,7 @@ rustc_test("netstack3_core_threading_test") {
     "//third_party/rust_crates:test-case",
   ]
 
-  configs -= [ "//build/config/rust/lints:allow_unused_results" ]
+  configs += [ "//build/config/rust/lints:deny_unused_results" ]
 
   # The loom crate documentation recommends compiling with optimizations since
   # the number of iterations can be large enough to make tests unreasonably

@@ -27,7 +27,7 @@ rustc_library("light_realm") {
     "//third_party/rust_crates:futures",
   ]
 
-  configs -= [ "//build/config/rust/lints:allow_unused_results" ]
+  configs += [ "//build/config/rust/lints:deny_unused_results" ]
 }
 
 rustc_test("hardware_only_bin") {
@@ -42,7 +42,7 @@ rustc_test("hardware_only_bin") {
     "//src/lib/fuchsia",
   ]
 
-  configs -= [ "//build/config/rust/lints:allow_unused_results" ]
+  configs += [ "//build/config/rust/lints:deny_unused_results" ]
 }
 
 rustc_test("single_config_bin") {
@@ -58,7 +58,7 @@ rustc_test("single_config_bin") {
     "//third_party/rust_crates:futures",
   ]
 
-  configs -= [ "//build/config/rust/lints:allow_unused_results" ]
+  configs += [ "//build/config/rust/lints:deny_unused_results" ]
 }
 
 rustc_test("multi_config_bin") {
@@ -77,7 +77,7 @@ rustc_test("multi_config_bin") {
     "//third_party/rust_crates:test-case",
   ]
 
-  configs -= [ "//build/config/rust/lints:allow_unused_results" ]
+  configs += [ "//build/config/rust/lints:deny_unused_results" ]
 }
 
 fuchsia_component("light_hardware_only_integration_test") {

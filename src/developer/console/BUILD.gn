@@ -40,7 +40,7 @@ rustc_binary("launcher_bin") {
     "//third_party/rust_crates:thiserror",
   ]
 
-  configs -= [ "//build/config/rust/lints:allow_unused_results" ]
+  configs += [ "//build/config/rust/lints:deny_unused_results" ]
   configs += [
     "//build/config/rust/lints:clippy_warn_all",
     "//build/config/rust:bootfs",

@@ -41,7 +41,7 @@ rustc_library("protocol") {
     "//third_party/rust_crates:test-case",
   ]
 
-  configs -= [ "//build/config/rust/lints:allow_unused_results" ]
+  configs += [ "//build/config/rust/lints:deny_unused_results" ]
 }
 
 fuchsia_unittest_package("dhcpv4_protocol_test") {

@@ -32,7 +32,7 @@ rustc_test("netstack3_device_integration_test") {
     "//third_party/rust_crates:rand",
     "//third_party/rust_crates:test-case",
   ]
-  configs -= [ "//build/config/rust/lints:allow_unused_results" ]
+  configs += [ "//build/config/rust/lints:deny_unused_results" ]
   configs += [ "//src/connectivity/network/netstack3:netstack3_configs" ]
 }
 

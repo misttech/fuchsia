@@ -71,7 +71,7 @@ rustc_library("lib") {
     "src/ser.rs",
   ]
 
-  configs -= [ "//build/config/rust/lints:allow_unused_results" ]
+  configs += [ "//build/config/rust/lints:deny_unused_results" ]
 }
 
 rustc_binary("bin") {
@@ -106,7 +106,7 @@ rustc_binary("bin") {
 
   sources = [ "src/main.rs" ]
 
-  configs -= [ "//build/config/rust/lints:allow_unused_results" ]
+  configs += [ "//build/config/rust/lints:deny_unused_results" ]
 }
 
 fuchsia_package("net-cli") {

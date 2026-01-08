@@ -75,7 +75,7 @@ rustc_library("settings_storage") {
     "src/storage_factory.rs",
   ]
 
-  configs -= [ "//build/config/rust/lints:allow_unused_results" ]
+  configs += [ "//build/config/rust/lints:deny_unused_results" ]
   configs += [ "//build/config/rust/lints:clippy_warn_all" ]
 }
 

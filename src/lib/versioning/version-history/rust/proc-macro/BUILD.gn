@@ -20,7 +20,7 @@ rustc_macro("proc-macro") {
 
   visibility = [ "//src/lib/versioning/version-history/rust/*" ]
 
-  configs -= [ "//build/config/rust/lints:allow_unused_results" ]
+  configs += [ "//build/config/rust/lints:deny_unused_results" ]
 }
 
 rustc_embed_files("version-history-data") {

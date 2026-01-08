@@ -40,7 +40,7 @@ rustc_binary("tun_socket_benchmarks") {
     "//third_party/rust_crates:socket2",
   ]
 
-  configs -= [ "//build/config/rust/lints:allow_unused_results" ]
+  configs += [ "//build/config/rust/lints:deny_unused_results" ]
 }
 
 common_deps = [

@@ -1603,11 +1603,8 @@ set_defaults("cc_test_executable") {
 }
 
 # Rustc wrapper defaults
-default_rust_configs = [
-  "//build/config/rust/lints:deny_unused_crate_dependencies",
-  "//build/config/rust/lints:deny_unused_results",
-  "//build/config/rust/lints:allow_unused_results",
-]
+default_rust_configs =
+    [ "//build/config/rust/lints:deny_unused_crate_dependencies" ]
 
 set_defaults("rustc_binary") {
   configs = default_executable_configs + default_rust_configs
