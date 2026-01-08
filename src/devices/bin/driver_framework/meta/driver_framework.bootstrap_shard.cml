@@ -466,6 +466,8 @@
                 "fuchsia.hardware.spmi.DebugService",
                 "fuchsia.hardware.suspend.SuspendService",
                 "fuchsia.hardware.usb.peripheral.Service",
+                "fuchsia.power.battery.ChargerService",
+                "fuchsia.power.battery.InfoService",
             ],
             from: "#boot-drivers",
             to: "self/toolbox",
