@@ -31,17 +31,15 @@
             type: "bool",
         },
         {
-            // Maximum number of bytes a blobfs partition can grow to. This
-            // applies only to non-ramdisk partitions unless
-            // "apply-limits-to-ramdisk" is set.
-            config: "fuchsia.fshost.BlobfsMaxBytes",
-            key: "blobfs_max_bytes",
+            // Maximum number of bytes the blob volume can grow to. This applies only to non-ramdisk
+            // partitions unless "apply-limits-to-ramdisk" is set.
+            config: "fuchsia.fshost.BlobMaxBytes",
+            key: "blob_max_bytes",
             type: "uint64",
         },
         {
-            // Maximum number of bytes the data partition can grow to. This
-            // applies only to non-ramdisk partitions unless
-            // "apply-limits-to-ramdisk" is set.
+            // Maximum number of bytes the data volume can grow to. This applies only to
+            // non-ramdisk partitions unless "apply-limits-to-ramdisk" is set.
             config: "fuchsia.fshost.DataMaxBytes",
             key: "data_max_bytes",
             type: "uint64",

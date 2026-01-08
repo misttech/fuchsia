@@ -81,7 +81,7 @@ zx_status_t IsolatedDevmgr::Create(Args* args, IsolatedDevmgr* out) {
   std::vector<Capability> config_routes = {
       Config{.name = "fuchsia.fshost.Blobfs"},
       Config{.name = "fuchsia.fshost.BlobfsInitialInodes"},
-      Config{.name = "fuchsia.fshost.BlobfsMaxBytes"},
+      Config{.name = "fuchsia.fshost.BlobMaxBytes"},
       Config{.name = "fuchsia.fshost.BlobfsUseDeprecatedPaddedFormat"},
       Config{.name = "fuchsia.fshost.BootPart"},
       Config{.name = "fuchsia.fshost.CheckFilesystems"},

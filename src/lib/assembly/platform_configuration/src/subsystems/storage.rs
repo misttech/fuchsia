@@ -115,11 +115,19 @@ impl DefineSubsystemConfiguration<(&StorageConfig, &StorageToolsConfig, &Recover
         }
 
         // Collect the arguments from the board.
-        let blobfs_max_bytes =
-            context.board_config.filesystems.fvm.blobfs.maximum_bytes.unwrap_or(0);
+        let (blob_max_bytes, data_max_bytes) = match &storage_config.filesystems.volume {
+            VolumeConfig::Fxfs => (
+                context.board_config.filesystems.fxfs.blob_maximum_bytes.unwrap_or(0),
+                context.board_config.filesystems.fxfs.data_maximum_bytes.unwrap_or(0),
+            ),
+            VolumeConfig::Fvm(_) => (
+                context.board_config.filesystems.fvm.blobfs.maximum_bytes.unwrap_or(0),
+                context.board_config.filesystems.fvm.minfs.maximum_bytes.unwrap_or(0),
+            ),
+        };
+
         let blobfs_initial_inodes =
             context.board_config.filesystems.fvm.blobfs.minimum_inodes.unwrap_or(0);
-        let data_max_bytes = context.board_config.filesystems.fvm.minfs.maximum_bytes.unwrap_or(0);
         let fvm_slice_size = context.board_config.filesystems.fvm.slice_size.0;
         let gpt = context.board_config.filesystems.gpt.enabled();
         let gpt_all = context.board_config.filesystems.gpt_all
@@ -267,7 +275,7 @@ impl DefineSubsystemConfiguration<(&StorageConfig, &StorageToolsConfig, &Recover
 
         let configs = [
             ("fuchsia.fshost.Blobfs", Config::new_bool(true)),
-            ("fuchsia.fshost.BlobfsMaxBytes", Config::new_uint64(blobfs_max_bytes)),
+            ("fuchsia.fshost.BlobMaxBytes", Config::new_uint64(blob_max_bytes)),
             ("fuchsia.fshost.BootPart", Config::new_bool(true)),
             ("fuchsia.fshost.CheckFilesystems", Config::new_bool(true)),
             ("fuchsia.fshost.Data", Config::new_bool(true)),

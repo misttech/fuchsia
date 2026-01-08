@@ -156,7 +156,7 @@ impl FshostBuilder {
             ("ramdisk_image", "fuchsia.fshost.RamdiskImage"),
             ("gpt_all", "fuchsia.fshost.GptAll"),
             ("check_filesystems", "fuchsia.fshost.CheckFilesystems"),
-            ("blobfs_max_bytes", "fuchsia.fshost.BlobfsMaxBytes"),
+            ("blob_max_bytes", "fuchsia.fshost.BlobMaxBytes"),
             ("data_max_bytes", "fuchsia.fshost.DataMaxBytes"),
             ("format_data_on_corruption", "fuchsia.fshost.FormatDataOnCorruption"),
             ("data_filesystem_format", "fuchsia.fshost.DataFilesystemFormat"),

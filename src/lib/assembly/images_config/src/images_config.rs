@@ -516,6 +516,8 @@ mod tests {
             fxfs: bfc::Fxfs {
                 size_bytes: Some(1234),
                 size_checker_maximum_bytes: Some(5678),
+                blob_maximum_bytes: None,
+                data_maximum_bytes: None,
                 compression_enabled: true,
             },
             fvm: bfc::Fvm {
@@ -564,6 +566,8 @@ mod tests {
             fxfs: bfc::Fxfs {
                 size_bytes: Some(1234),
                 size_checker_maximum_bytes: Some(5678),
+                blob_maximum_bytes: None,
+                data_maximum_bytes: None,
                 compression_enabled: false,
             },
             fvm: bfc::Fvm {

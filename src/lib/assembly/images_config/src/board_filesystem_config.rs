@@ -367,13 +367,25 @@ pub struct Fxfs {
     /// we can use in Fxfs.
     pub size_checker_maximum_bytes: Option<u64>,
 
+    /// Maximum number of bytes that the blob volume can consume at runtime.
+    pub blob_maximum_bytes: Option<u64>,
+
+    /// Maximum number of bytes that the data volume can consume at runtime.
+    pub data_maximum_bytes: Option<u64>,
+
     /// Whether blobs in fxblob should be compressed during assembly. Defaults to true.
     pub compression_enabled: bool,
 }
 
 impl Default for Fxfs {
     fn default() -> Self {
-        Self { size_bytes: None, size_checker_maximum_bytes: None, compression_enabled: true }
+        Self {
+            size_bytes: None,
+            size_checker_maximum_bytes: None,
+            blob_maximum_bytes: None,
+            data_maximum_bytes: None,
+            compression_enabled: true,
+        }
     }
 }
 

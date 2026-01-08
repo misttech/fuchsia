@@ -165,8 +165,8 @@
             config: [
                 "fuchsia.fshost.Blobfs",
                 "fuchsia.fshost.BlobfsInitialInodes",
-                "fuchsia.fshost.BlobfsMaxBytes",
                 "fuchsia.fshost.BlobfsUseDeprecatedPaddedFormat",
+                "fuchsia.fshost.BlobMaxBytes",
                 "fuchsia.fshost.BootPart",
                 "fuchsia.fshost.CheckFilesystems",
                 "fuchsia.fshost.Data",

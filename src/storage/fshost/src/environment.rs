@@ -879,7 +879,7 @@ impl Environment for FshostEnvironment {
             exposed_dir.clone(server.into_channel().into())?;
         }
         self.blobfs = Filesystem::ServingVolumeInMultiVolume(None, blobfs);
-        if let Err(e) = container.fs().set_byte_limit(label, self.config.blobfs_max_bytes).await {
+        if let Err(e) = container.fs().set_byte_limit(label, self.config.blob_max_bytes).await {
             log::warn!("Failed to set byte limit for the blob volume: {:?}", e);
         }
         Ok(())
@@ -1242,7 +1242,7 @@ impl FilesystemLauncher {
 
         // Setting max partition size for blobfs
         if !device.is_fshost_ramdisk() {
-            if let Err(e) = device.set_partition_max_bytes(self.config.blobfs_max_bytes).await {
+            if let Err(e) = device.set_partition_max_bytes(self.config.blob_max_bytes).await {
                 log::warn!("Failed to set max partition size for blobfs: {:?}", e);
             };
         }

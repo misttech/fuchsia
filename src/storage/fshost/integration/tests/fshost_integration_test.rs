@@ -263,7 +263,7 @@ async fn partition_max_size_set() {
     builder
         .fshost()
         .set_config_value("data_max_bytes", data_max_bytes())
-        .set_config_value("blobfs_max_bytes", BLOBFS_MAX_BYTES);
+        .set_config_value("blob_max_bytes", BLOBFS_MAX_BYTES);
     builder.with_disk().format_volumes(volumes_spec()).format_data(data_fs_spec());
     let fixture = builder.build().await;
 
@@ -339,7 +339,7 @@ async fn set_volume_limit() {
     builder
         .fshost()
         .set_config_value("data_max_bytes", data_max_bytes())
-        .set_config_value("blobfs_max_bytes", BLOBFS_MAX_BYTES);
+        .set_config_value("blob_max_bytes", BLOBFS_MAX_BYTES);
     builder.with_disk().format_volumes(volumes_spec()).format_data(data_fs_spec());
     let fixture = builder.build().await;
 
@@ -690,7 +690,7 @@ async fn set_volume_bytes_limit() {
     builder
         .fshost()
         .set_config_value("data_max_bytes", data_max_bytes())
-        .set_config_value("blobfs_max_bytes", BLOBFS_MAX_BYTES);
+        .set_config_value("blob_max_bytes", BLOBFS_MAX_BYTES);
     builder.with_disk().format_volumes(volumes_spec());
     let fixture = builder.build().await;
 
@@ -716,7 +716,7 @@ async fn set_volume_bytes_limit() {
 #[fuchsia::test]
 async fn set_data_and_blob_max_bytes_zero() {
     let mut builder = new_builder();
-    builder.fshost().set_config_value("data_max_bytes", 0).set_config_value("blobfs_max_bytes", 0);
+    builder.fshost().set_config_value("data_max_bytes", 0).set_config_value("blob_max_bytes", 0);
     builder.with_disk().format_volumes(volumes_spec());
     let fixture = builder.build().await;
 
@@ -1307,7 +1307,7 @@ async fn health_check_blobs() {
 #[fuchsia::test]
 async fn delivery_blob_support() {
     let mut builder = new_builder();
-    builder.fshost().set_config_value("blobfs_max_bytes", BLOBFS_MAX_BYTES);
+    builder.fshost().set_config_value("blob_max_bytes", BLOBFS_MAX_BYTES);
     builder.with_disk().format_volumes(volumes_spec());
     let fixture = builder.build().await;
 
