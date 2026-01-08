@@ -56,7 +56,7 @@ pub enum RuntimeError {
 pub struct Error {
     stack: Vec<Frame>,
     #[source]
-    pub source: RuntimeError,
+    pub source: Box<RuntimeError>,
 }
 
 impl Error {
@@ -107,7 +107,7 @@ impl Error {
             Err(err) => err,
         };
 
-        RuntimeError::User(Arc::new(err)).into()
+        Error { stack: Vec::new(), source: Box::new(RuntimeError::User(Arc::new(err))) }
     }
 }
 
@@ -116,7 +116,7 @@ where
     RuntimeError: From<T>,
 {
     fn from(other: T) -> Error {
-        Error { stack: Vec::new(), source: RuntimeError::from(other) }
+        Error { stack: Vec::new(), source: Box::new(RuntimeError::from(other)) }
     }
 }
 
@@ -218,7 +218,7 @@ mod test {
 
         let Error { stack, source } = test().map_err(Error::user_from_anyhow).unwrap_err();
         assert!(stack.is_empty());
-        assert!(matches!(source, RuntimeError::Exception(Exception::BadAdditionOperands)));
+        assert!(matches!(*source, RuntimeError::Exception(Exception::BadAdditionOperands)));
     }
 
     #[test]
@@ -229,7 +229,7 @@ mod test {
 
         let Error { stack, source } = test().map_err(Error::user_from_anyhow).unwrap_err();
         assert!(stack.is_empty());
-        assert!(matches!(source, RuntimeError::ValueError(ValueError::ChannelClosed)));
+        assert!(matches!(*source, RuntimeError::ValueError(ValueError::ChannelClosed)));
     }
 
     #[test]
@@ -240,7 +240,7 @@ mod test {
 
         let Error { stack, source } = test().map_err(Error::user_from_anyhow).unwrap_err();
         assert!(stack.is_empty());
-        assert!(matches!(source, RuntimeError::MessageError(MessageError::NoMessage)));
+        assert!(matches!(*source, RuntimeError::MessageError(MessageError::NoMessage)));
     }
 
     #[test]
@@ -257,7 +257,7 @@ mod test {
         assert!(stack.is_empty());
         let RuntimeError::IOError(IOError::ChannelRead(fdomain_client::Error::FDomain(
             fdomain_client::FDomainError::TargetError(status),
-        ))) = source
+        ))) = *source
         else {
             panic!()
         };
@@ -272,7 +272,7 @@ mod test {
 
         let Error { stack, source } = test().map_err(Error::user_from_anyhow).unwrap_err();
         assert!(stack.is_empty());
-        assert!(matches!(source, RuntimeError::FSError(FSError::FSRootNotHandle)));
+        assert!(matches!(*source, RuntimeError::FSError(FSError::FSRootNotHandle)));
     }
 
     #[test]
@@ -293,6 +293,6 @@ mod test {
         assert_eq!(23, line);
         assert!(col.is_none());
         assert!(stack.is_empty());
-        assert!(matches!(source, RuntimeError::InterpreterDied));
+        assert!(matches!(*source, RuntimeError::InterpreterDied));
     }
 }
