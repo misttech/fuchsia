@@ -241,6 +241,7 @@ _partner_idk_fidl_libraries_targets_list = [
   "//sdk/fidl/fuchsia.session:fuchsia.session",
   "//sdk/fidl/fuchsia.settings.policy:fuchsia.settings.policy",
   "//sdk/fidl/fuchsia.settings:fuchsia.settings",
+  "//sdk/fidl/fuchsia.storage.blobfs:fuchsia.storage.blobfs",
   "//sdk/fidl/fuchsia.storage.ftl:fuchsia.storage.ftl",
   "//sdk/fidl/fuchsia.sysinfo:fuchsia.sysinfo",
   "//sdk/fidl/fuchsia.sysmem2:fuchsia.sysmem2",
