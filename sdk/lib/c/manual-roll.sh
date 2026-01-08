@@ -55,10 +55,10 @@ for dir in "${!REPOS[@]}"; do
   project="${REPOS["$dir"]}"
   NEW_REV["$project"]="$(git -C "$dir" rev-parse "$REFSPEC")"
   OLD_REV["$project"]="$("$FX" jiri manifest -element="$project" \
-    -template='{{.Revision}}' <(git show origin/main:"$MANIFEST_FILE"))"
+    -template='{{.Revision}}' <(git show JIRI_HEAD:"$MANIFEST_FILE"))"
   REMOTE_REV["$project"]=$("$FX" jiri  project -list-remote-projects -template='{{.Revision}}' "$project")
   if [ "${OLD_REV["$project"]}" != "${REMOTE_REV["$project"]}" ]; then
-    echo >&2 "*** $dir local JIRI_HEAD $MANIFEST_FILE doesn't match ToT $REMOTE_REV"
+    echo >&2 "*** $dir local JIRI_HEAD $MANIFEST_FILE doesn't match ToT ${REMOTE_REV["$project"]}"
     if ! $DRY_RUN; then
       echo >&2 "*** punting to --dry-run; do jiri update before starting roll!"
       DRY_RUN=true
