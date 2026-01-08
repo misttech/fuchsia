@@ -474,10 +474,14 @@ void gic_shutdown() {
   const uint64_t mpidr = arch_cpu_num_to_mpidr(cpu_num);
   const uint64_t aff_mask = mpidr & ARM64_MPIDR_MASK;
 
-  // Check each SPI to see if it's routed to this CPU.
+  // Check each SPI to see if it's routed to this CPU and enabled.
   for (uint i = 32u; i < gic_max_int; ++i) {
-    if ((arm_gicv3_read64(GICD_IROUTER(i)) & aff_mask) != 0) {
-      return true;
+    if ((arm_gicv3_read64(GICD_IROUTER(i)) & ARM64_MPIDR_MASK) == aff_mask) {
+      uint32_t reg_n = i / 32;
+      uint32_t bit_n = 1U << (i % 32);
+      if (arm_gicv3_read32(GICD_ISENABLER(reg_n)) & bit_n) {
+        return true;
+      }
     }
   }
 
