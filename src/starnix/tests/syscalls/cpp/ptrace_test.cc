@@ -4,6 +4,7 @@
 
 #include <elf.h>
 #include <fcntl.h>
+#include <poll.h>
 #include <sched.h>
 #include <signal.h>
 #include <stdio.h>
@@ -1161,8 +1162,10 @@ class SoftwareBreakpointTest : public ::testing::Test {
     SAFE_SYSCALL(ptrace(PTRACE_DETACH, child_pid_, 0, 0));
     ASSERT_TRUE(helper_.WaitForChildren());
 
+    ResetSignalReceived();
     RestoreSignalMask();
     RestoreSignalAction();
+    ClosePipe();
   }
 
  protected:
@@ -1234,12 +1237,18 @@ class SoftwareBreakpointTest : public ::testing::Test {
     }
   }
 
-  void SetSignalAction(int signum) {
+  // Create a pipe and set a signal handler for `signum` that writes a byte to the pipe and
+  // records the signal code and status. The old signal handler is saved and restored by
+  // `RestoreSignalAction`.
+  void CreatePipeAndSetSignalAction(int signum) {
     ASSERT_TRUE(old_signum_and_sa_ == std::nullopt) << "Signal action already set";
+
+    SAFE_SYSCALL(pipe2(pipefds_, O_CLOEXEC));
+    pipe_write_fd_ = pipefds_[1];
 
     struct sigaction new_sa, old_sa;
     new_sa.sa_sigaction = [](int, siginfo_t *info, void *) {
-      signal_received_ = 1;
+      ASSERT_THAT(write(pipe_write_fd_, ".", 1), SyscallSucceedsWithValue(1));
       signal_code_ = info->si_code;
       signal_status_ = info->si_status;
     };
@@ -1257,14 +1266,27 @@ class SoftwareBreakpointTest : public ::testing::Test {
     }
   }
 
+  void ClosePipe() {
+    if (pipefds_[0] != -1) {
+      close(pipefds_[0]);
+      pipefds_[0] = -1;
+    }
+    if (pipefds_[1] != -1) {
+      close(pipefds_[1]);
+      pipefds_[1] = -1;
+      pipe_write_fd_ = -1;
+    }
+  }
+
+  int pipe_read_fd() const { return pipefds_[0]; }
+
   static void ResetSignalReceived() {
-    signal_received_ = 0;
     signal_code_ = 0;
     signal_status_ = 0;
   }
 
   // Static inline so that they can be used in signal handlers.
-  static inline volatile sig_atomic_t signal_received_ = 0;
+  static inline volatile sig_atomic_t pipe_write_fd_ = -1;
   static inline volatile sig_atomic_t signal_code_ = 0;
   static inline volatile sig_atomic_t signal_status_ = 0;
 
@@ -1274,6 +1296,7 @@ class SoftwareBreakpointTest : public ::testing::Test {
 
   std::optional<sigset_t> old_sigmask_;
   std::optional<std::pair<int, struct sigaction>> old_signum_and_sa_;
+  int pipefds_[2] = {-1, -1};
 };
 
 TEST_F(SoftwareBreakpointTest, Waitpid) {
@@ -1288,27 +1311,61 @@ TEST_F(SoftwareBreakpointTest, Waitpid) {
   WaitForChildStop(SIGTRAP);
 }
 
-TEST_F(SoftwareBreakpointTest, Sigaction) {
-  ResetSignalReceived();
-
-  SetSignalAction(SIGCHLD);
+TEST_F(SoftwareBreakpointTest, SignalHandlerWithPipe) {
+  CreatePipeAndSetSignalAction(SIGCHLD);
 
   RunChildInForkedProcess();
 
   // Wait for initial SIGSTOP.
-  WaitForChildStop(SIGSTOP);
+  char c;
+  ASSERT_THAT(read(pipe_read_fd(), &c, 1), SyscallSucceedsWithValue(1));
+  EXPECT_EQ(c, '.');
 
-  ASSERT_TRUE(signal_received_);
   EXPECT_EQ(signal_code_, CLD_TRAPPED);
   EXPECT_EQ(signal_status_, SIGSTOP);
+
   ResetSignalReceived();
 
   SetBreakpointAndContinue();
 
   // Wait for breakpoint.
-  WaitForChildStop(SIGTRAP);
+  ASSERT_THAT(read(pipe_read_fd(), &c, 1), SyscallSucceedsWithValue(1));
+  EXPECT_EQ(c, '.');
 
-  ASSERT_TRUE(signal_received_);
+  EXPECT_EQ(signal_code_, CLD_TRAPPED);
+  EXPECT_EQ(signal_status_, SIGTRAP);
+}
+
+// Similar to SignalHandlerWithPipe, but waits on a ppoll of the pipe, instead of a blocking read.
+// This emulates LLDB's main loop on Posix systems.
+TEST_F(SoftwareBreakpointTest, SignalHandlerWithPoll) {
+  CreatePipeAndSetSignalAction(SIGCHLD);
+
+  RunChildInForkedProcess();
+
+  // Wait for initial SIGSTOP.
+  struct pollfd pfds[] = {{.fd = pipe_read_fd(), .events = POLLIN}};
+  int ret = HANDLE_EINTR(ppoll(pfds, 1, nullptr, nullptr));
+  ASSERT_EQ(ret, 1);
+
+  char c;
+  ASSERT_THAT(read(pipe_read_fd(), &c, 1), SyscallSucceedsWithValue(1));
+  EXPECT_EQ(c, '.');
+
+  EXPECT_EQ(signal_code_, CLD_TRAPPED);
+  EXPECT_EQ(signal_status_, SIGSTOP);
+
+  ResetSignalReceived();
+
+  SetBreakpointAndContinue();
+
+  // Wait for breakpoint.
+  ret = HANDLE_EINTR(ppoll(pfds, 1, nullptr, nullptr));
+  ASSERT_EQ(ret, 1);
+
+  ASSERT_THAT(read(pipe_read_fd(), &c, 1), SyscallSucceedsWithValue(1));
+  EXPECT_EQ(c, '.');
+
   EXPECT_EQ(signal_code_, CLD_TRAPPED);
   EXPECT_EQ(signal_status_, SIGTRAP);
 }
