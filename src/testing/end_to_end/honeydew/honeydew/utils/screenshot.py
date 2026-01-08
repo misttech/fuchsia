@@ -1,6 +1,8 @@
 # Copyright 2024 The Fuchsia Authors. All rights reserved.
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
+"""Screenshot utilities - standardize screenshot,crop,resample."""
+
 
 import logging
 
@@ -58,12 +60,13 @@ def change_dimensions(
     assert new_size.width * new_size.height * _BYTES_PER_PIXEL == len(
         image.data
     )
-    _LOGGER.debug(f"change_dimensions: {image.size}->{new_size}")
+    _LOGGER.debug("change_dimensions: %s->%s", image.size, new_size)
     return ScreenshotImage(size=new_size, data=image.data)
 
 
 def crop(image: ScreenshotImage, new_size: Size) -> ScreenshotImage:
-    _LOGGER.debug(f"crop: {image.size}->{new_size}")
+    """Crops the image to a specified new size"""
+    _LOGGER.debug("crop: %s->%s", image.size, new_size)
     assert new_size.width <= image.size.width
     assert new_size.height <= image.size.height
     new_data = bytearray()
@@ -87,12 +90,13 @@ def crop_percent_of_height(
     new_size = Size(
         screenshot.size.width, int(screenshot.size.height * percent)
     )
-    _LOGGER.info(f"Using top %f percent screenshot", percent * 100)
+    _LOGGER.info("Using top %f percent screenshot", percent * 100)
     return crop(screenshot, new_size)
 
 
 def resample(image: ScreenshotImage, new_size: Size) -> ScreenshotImage:
-    _LOGGER.debug(f"resample: {image.size}->{new_size}")
+    """Resamples an image to a new size"""
+    _LOGGER.debug("resample: %s->%s", image.size, new_size)
     dx: float = image.size.width / new_size.width
     dy: float = image.size.height / new_size.height
 

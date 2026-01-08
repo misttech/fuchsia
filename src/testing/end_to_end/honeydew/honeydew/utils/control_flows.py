@@ -6,8 +6,9 @@
 
 import logging
 import time
+from collections.abc import Callable
 from datetime import datetime, timedelta
-from typing import Any, Callable
+from typing import Any
 
 from mobly import signals
 
@@ -131,7 +132,12 @@ def retry_until_deadline(
                 raise e
             else:
                 _LOGGER.info(
-                    f"{_pretty_func_name(task)} failed, will retry again in {retry_delay} ({deadline}) (error={e} type={type(e)})"
+                    "%s failed, will retry again in %s (%s) (error=%s type=%s)",
+                    _pretty_func_name(task),
+                    retry_delay,
+                    deadline,
+                    e,
+                    type(e),
                 )
 
         sleep_for_duration(retry_delay)
@@ -180,10 +186,18 @@ def retry(
             if max_tries is None:
                 limit = "<unbounded>"
             elif attempts == max_tries:
-                _LOGGER.info(f"{task_name} failed {attempts} times, aborting.")
+                _LOGGER.info(
+                    "%s failed %s times, aborting.", task_name, attempts
+                )
                 raise e
             _LOGGER.info(
-                f"{task_name} failed ({attempts} out of {limit}), will retry again in {retry_delay} (error={e} type={type(e)})"
+                "%s failed (%s out of %s), will retry again in %s (error=%s type=%s)",
+                task_name,
+                attempts,
+                limit,
+                retry_delay,
+                e,
+                type(e),
             )
 
         sleep_for_duration(retry_delay)
@@ -218,7 +232,7 @@ def repeat_until_deadline(
     while not deadline.is_due():
         count += 1
         _LOGGER.debug(
-            f"Repeating {_pretty_func_name(task)} for the {count} time"
+            "Repeating %s for the %s time", _pretty_func_name(task), count
         )
         task()
         if repeat_delay < deadline.remaining_duration():
@@ -242,13 +256,13 @@ def sleep_until_deadline(deadline: Deadline) -> None:
     This function generates logs at intervals to prevent swarming from thinking
     we're frozen and timing us out.
     """
-    _LOGGER.debug(f"Sleeping for {deadline.remaining_duration()}...")
+    _LOGGER.debug("Sleeping for %s...", deadline.remaining_duration())
 
     first_iteration = True
     while not deadline.is_due():
         if not first_iteration:
             _LOGGER.info(
-                f"Still sleeping... {deadline.remaining_duration()} remaining"
+                "Still sleeping... %s remaining", deadline.remaining_duration()
             )
 
         # Sleep for no longer than _IDLE_LOGGING_PERIOD, to ensure swarming
@@ -259,7 +273,7 @@ def sleep_until_deadline(deadline: Deadline) -> None:
             ).total_seconds()
         )
         first_iteration = False
-    _LOGGER.debug(f"Done sleeping!")
+    _LOGGER.debug("Done sleeping!")
 
 
 def sleep_for_duration(duration: timedelta) -> None:

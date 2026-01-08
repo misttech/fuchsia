@@ -311,7 +311,7 @@ class TracingUsingFc(AsyncAdapter, tracing.Tracing):
             self._drain_task = self.loop().create_task(
                 self._drain_socket_and_store_buffer()
             )
-            _LOGGER.debug(f"Spawned drain task: {self._drain_task}")
+            _LOGGER.debug("Spawned drain task: %s", self._drain_task)
         else:
             _LOGGER.debug("Skipping creation of drain task. Already running")
 
@@ -370,6 +370,7 @@ class TracingUsingFc(AsyncAdapter, tracing.Tracing):
          Raises:
             TracingStateError: When trace session is not initialized or
                 already started.
+            TracingError: When the method fails to collect trace data.
         """
         if not self._session_initialized:
             raise TracingStateError(

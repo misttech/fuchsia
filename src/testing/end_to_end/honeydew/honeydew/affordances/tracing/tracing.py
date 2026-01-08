@@ -109,6 +109,7 @@ class Tracing(affordance.Affordance):
          Raises:
             TracingStateError: When trace session is not initialized or
                 already started.
+            TracingError: When the method fails to collect trace data.
         """
 
     @contextmanager
