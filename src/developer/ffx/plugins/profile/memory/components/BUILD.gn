@@ -35,7 +35,6 @@ ffx_plugin("ffx_profile_memory_components") {
     "//third_party/rust_crates:regex",
     "//third_party/rust_crates:serde",
     "//third_party/rust_crates:serde_json",
-    "//third_party/rust_crates:zerocopy",
   ]
 
   test_deps = [ "//third_party/rust_crates:pretty_assertions" ]

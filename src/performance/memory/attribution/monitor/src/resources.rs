@@ -3,7 +3,7 @@
 // found in the LICENSE file.
 
 use crate::attribution_client::AttributionState;
-use attribution_processing::{PrincipalDescription, ResourcesVisitor, ZXName};
+use attribution_processing::{PrincipalDescription, ZXName};
 use fuchsia_trace::duration;
 use index_table_builder::IndexTableBuilder;
 use log::warn;
@@ -61,6 +61,71 @@ struct KernelResourcesBuilder {
 impl KernelResourcesBuilder {
     fn build(self) -> KernelResources {
         KernelResources { resources: self.resources, resource_names: self.resource_names.build() }
+    }
+
+    fn on_job(
+        &mut self,
+        job_koid: zx_types::zx_koid_t,
+        job_name: &ZXName,
+        job: fplugin::Job,
+    ) -> Result<(), zx::Status> {
+        let name_index = self.resource_names.intern(job_name)?;
+        self.resources.insert(
+            zx::Koid::from_raw(job_koid),
+            fplugin::Resource {
+                koid: Some(job_koid),
+                name_index: Some(name_index),
+                resource_type: Some(fplugin::ResourceType::Job(job)),
+                ..Default::default()
+            },
+        );
+        Ok(())
+    }
+
+    fn on_vmo(
+        &mut self,
+        vmo_koid: zx_types::zx_koid_t,
+        vmo_name: &ZXName,
+        vmo: fplugin::Vmo,
+    ) -> Result<(), zx::Status> {
+        let vmo_koid = zx::Koid::from_raw(vmo_koid);
+        // No need to copy the VMO info if we have already seen it.
+        if self.resources.contains_key(&vmo_koid) {
+            return Ok(());
+        }
+        let name_index = self.resource_names.intern(vmo_name)?;
+        self.resources.insert(
+            vmo_koid,
+            fplugin::Resource {
+                koid: Some(vmo_koid.raw_koid()),
+                name_index: Some(name_index),
+                // TODO(https://fxbug.dev/393078902): also take into account the fractional
+                // part.
+                resource_type: Some(fplugin::ResourceType::Vmo(vmo)),
+                ..Default::default()
+            },
+        );
+        Ok(())
+    }
+
+    fn on_process(
+        &mut self,
+        process_koid: zx_types::zx_koid_t,
+        process_name: &ZXName,
+        process: fplugin::Process,
+    ) -> Result<(), zx::Status> {
+        let process_koid = zx::Koid::from_raw(process_koid);
+        let process_name_index = self.resource_names.intern(process_name)?;
+        self.resources.insert(
+            process_koid,
+            fplugin::Resource {
+                koid: Some(process_koid.raw_koid()),
+                name_index: Some(process_name_index),
+                resource_type: Some(fplugin::ResourceType::Process(process)),
+                ..Default::default()
+            },
+        );
+        Ok(())
     }
 }
 
@@ -296,77 +361,10 @@ impl KernelResources {
     }
 }
 
-impl ResourcesVisitor for KernelResourcesBuilder {
-    fn on_job(
-        &mut self,
-        job_koid: zx_types::zx_koid_t,
-        job_name: &ZXName,
-        job: fplugin::Job,
-    ) -> Result<(), zx::Status> {
-        let name_index = self.resource_names.intern(job_name)?;
-        self.resources.insert(
-            zx::Koid::from_raw(job_koid),
-            fplugin::Resource {
-                koid: Some(job_koid),
-                name_index: Some(name_index),
-                resource_type: Some(fplugin::ResourceType::Job(job)),
-                ..Default::default()
-            },
-        );
-        Ok(())
-    }
-
-    fn on_vmo(
-        &mut self,
-        vmo_koid: zx_types::zx_koid_t,
-        vmo_name: &ZXName,
-        vmo: fplugin::Vmo,
-    ) -> Result<(), zx::Status> {
-        let vmo_koid = zx::Koid::from_raw(vmo_koid);
-        // No need to copy the VMO info if we have already seen it.
-        if self.resources.contains_key(&vmo_koid) {
-            return Ok(());
-        }
-        let name_index = self.resource_names.intern(vmo_name)?;
-        self.resources.insert(
-            vmo_koid,
-            fplugin::Resource {
-                koid: Some(vmo_koid.raw_koid()),
-                name_index: Some(name_index),
-                // TODO(https://fxbug.dev/393078902): also take into account the fractional
-                // part.
-                resource_type: Some(fplugin::ResourceType::Vmo(vmo)),
-                ..Default::default()
-            },
-        );
-        Ok(())
-    }
-
-    fn on_process(
-        &mut self,
-        process_koid: zx_types::zx_koid_t,
-        process_name: &ZXName,
-        process: fplugin::Process,
-    ) -> Result<(), zx::Status> {
-        let process_koid = zx::Koid::from_raw(process_koid);
-        let process_name_index = self.resource_names.intern(process_name)?;
-        self.resources.insert(
-            process_koid,
-            fplugin::Resource {
-                koid: Some(process_koid.raw_koid()),
-                name_index: Some(process_name_index),
-                resource_type: Some(fplugin::ResourceType::Process(process)),
-                ..Default::default()
-            },
-        );
-        Ok(())
-    }
-}
-
 impl KernelResourcesExplorer {
-    pub fn explore_root_job(
+    fn explore_root_job(
         &mut self,
-        visitor: &mut impl ResourcesVisitor,
+        builder: &mut KernelResourcesBuilder,
         root: &dyn Job,
         attribution_state: &AttributionState,
         muted_principal: &Option<PrincipalDescription>,
@@ -434,14 +432,14 @@ impl KernelResourcesExplorer {
                 }
             }
         }
-        self.explore_job(visitor, &root.get_koid()?, root, &process_collection_requests)?;
+        self.explore_job(builder, &root.get_koid()?, root, &process_collection_requests)?;
         Ok(())
     }
 
     /// Recursively gather memory information from a job.
     fn explore_job(
         &mut self,
-        visitor: &mut impl ResourcesVisitor,
+        builder: &mut KernelResourcesBuilder,
         job_koid: &zx::Koid,
         job: &dyn Job,
         process_collection_requests: &HashMap<zx::Koid, CollectionRequest>,
@@ -459,7 +457,7 @@ impl KernelResourcesExplorer {
                 Ok(child) => child,
             };
             match self.explore_job(
-                visitor,
+                builder,
                 child_job_koid,
                 child_job.as_ref(),
                 process_collection_requests,
@@ -480,7 +478,7 @@ impl KernelResourcesExplorer {
                     Ok(child) => child,
                 };
             match self.explore_process(
-                visitor,
+                builder,
                 child_process_koid,
                 child_process.as_ref(),
                 &process_collection_requests.get(child_process_koid).cloned().unwrap_or_default(),
@@ -492,7 +490,7 @@ impl KernelResourcesExplorer {
                 Ok(_) => continue,
             };
         }
-        visitor.on_job(
+        builder.on_job(
             job_koid.raw_koid(),
             into_zx_name(&job_name)?,
             fplugin::Job {
@@ -507,7 +505,7 @@ impl KernelResourcesExplorer {
     /// Gather the memory information of a process.
     fn explore_process(
         &mut self,
-        visitor: &mut impl ResourcesVisitor,
+        builder: &mut KernelResourcesBuilder,
         process_koid: &zx::Koid,
         process: &dyn Process,
         collection: &CollectionRequest,
@@ -538,7 +536,7 @@ impl KernelResourcesExplorer {
 
                 // TODO(https://fxbug.dev/393078902): also take into account the fractional
                 // part.
-                visitor.on_vmo(
+                builder.on_vmo(
                     vmo_info.koid.raw_koid(),
                     into_zx_name(&vmo_info.name)?,
                     fplugin::Vmo {
@@ -600,7 +598,7 @@ impl KernelResourcesExplorer {
         } else {
             None
         };
-        visitor.on_process(
+        builder.on_process(
             process_koid.raw_koid(),
             into_zx_name(&process_name)?,
             fplugin::Process { vmos: vmo_koids, mappings: process_maps, ..Default::default() },

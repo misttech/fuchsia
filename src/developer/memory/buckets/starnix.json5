@@ -1,0 +1,15 @@
+[
+    {
+        name: "StarnixKernel",
+        process: "starnix_kernel.cm",
+        vmo: "",
+        principal: "starnix_kernel",
+        event_code: 77,
+    },
+    {
+        name: "StarnixContainer",
+        process: "starnix_kernel.cm",
+        vmo: "",
+        event_code: 78,
+    },
+]

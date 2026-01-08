@@ -18,6 +18,11 @@ pub struct MemoryBucket {
     process: String,
     /// The regex to match VMO names against to be included in this bucket.
     vmo: String,
+    /// Regex to match VMOs or processes based on their principals' names.
+    /// Note: This field is only supported by memory_monitor2.
+    // Skip serializing when missing, for backwards compatibility.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    principal: Option<String>,
     /// The event code used by Cobalt to record the bucket measurement.
     event_code: u64,
     /// The order in which the bucket regex will be applied, in relation to all

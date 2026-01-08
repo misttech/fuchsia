@@ -12,14 +12,12 @@ extern crate prettytable;
 use anyhow::{Result, anyhow};
 use async_trait::async_trait;
 use attribution_processing::summary::{ComponentSummaryProfileResult, MemorySummary};
-use attribution_processing::{
-    AttributionData, Principal, Resource, ResourceEnumerator, ResourcesVisitor, ZXName, digest,
-};
+use attribution_processing::{AttributionData, Principal, Resource, ZXName, digest};
 use errors::ffx_error;
 use ffx_profile_memory_components_args::ComponentsCommand;
 use ffx_writer::{MachineWriter, ToolIO};
 use fho::{AvailabilityFlag, FfxMain, FfxTool};
-use fidl_fuchsia_memory_attribution_plugin::{self as fplugin, ResourceType};
+use fidl_fuchsia_memory_attribution_plugin::{self as fplugin};
 use futures::AsyncReadExt;
 use json::JsonConvertible;
 use regex::bytes::Regex;
@@ -28,7 +26,6 @@ use std::io::Write;
 use std::thread::sleep;
 use std::time::Duration;
 use target_holders::moniker;
-use zerocopy::transmute_ref;
 
 use crate::detailed::process_snapshot_detailed;
 use crate::statistics::CommandMemoryStatistics;
@@ -189,44 +186,6 @@ impl MemoryComponentsTool {
     }
 }
 
-pub struct SnapshotAttributionDataProvider<'a> {
-    resources: &'a Vec<Resource>,
-    resource_names: &'a Vec<fplugin::ResourceName>,
-}
-
-impl<'a> ResourceEnumerator for SnapshotAttributionDataProvider<'a> {
-    fn for_each_resource(&self, visitor: &mut impl ResourcesVisitor) -> Result<(), anyhow::Error> {
-        for resource in self.resources {
-            if let Resource { koid, name_index, resource_type: ResourceType::Vmo(vmo), .. } =
-                resource
-            {
-                visitor.on_vmo(
-                    *koid,
-                    transmute_ref!(&self.resource_names[*name_index]),
-                    vmo.clone(),
-                )?;
-            }
-        }
-        for resource in self.resources {
-            if let Resource {
-                koid,
-                name_index,
-                resource_type: ResourceType::Process(process),
-                ..
-            } = resource
-            {
-                visitor.on_process(
-                    *koid,
-                    transmute_ref!(&self.resource_names[*name_index]),
-                    process.clone(),
-                )?;
-            }
-        }
-
-        Ok(())
-    }
-}
-
 fn process_snapshot_summary(snapshot: fplugin::Snapshot) -> ComponentSummaryProfileResult {
     // Map from moniker token ID to Principal struct.
     let principals: Vec<Principal> =
@@ -247,32 +206,29 @@ fn process_snapshot_summary(snapshot: fplugin::Snapshot) -> ComponentSummaryProf
             name: bd.name.clone().unwrap_or_default(),
             process: bd.process.as_ref().map(|p| Regex::new(&p).unwrap()),
             vmo: bd.vmo.as_ref().map(|p| Regex::new(&p).unwrap()),
+            principal: bd.principal.as_ref().map(|a| Regex::new(&a).unwrap()),
             event_code: 0, // The information is unavailable client side.
         })
         .collect();
+    let attribution_data = attribution_processing::attribute_vmos(AttributionData {
+        principals_vec: principals,
+        resources_vec: resources,
+        resource_names: snapshot
+            .resource_names
+            .unwrap()
+            .iter()
+            .map(|n| ZXName::from_bytes_lossy(n))
+            .collect(),
+        attributions,
+    });
     let digest = digest::Digest::compute(
-        &SnapshotAttributionDataProvider {
-            resources: &resources,
-            resource_names: snapshot.resource_names.as_ref().unwrap(),
-        },
+        &attribution_data,
         &snapshot.kernel_statistics.as_ref().unwrap().memory_stats.as_ref().unwrap(),
         &snapshot.kernel_statistics.as_ref().unwrap().compression_stats.as_ref().unwrap(),
         &bucket_definitions,
     )
     .expect("Digest computation should succeed");
-    let MemorySummary { principals, unclaimed } =
-        attribution_processing::attribute_vmos(AttributionData {
-            principals_vec: principals,
-            resources_vec: resources,
-            resource_names: snapshot
-                .resource_names
-                .unwrap()
-                .iter()
-                .map(|n| ZXName::from_bytes_lossy(n))
-                .collect(),
-            attributions,
-        })
-        .summary();
+    let MemorySummary { principals, unclaimed } = attribution_data.summary();
     ComponentSummaryProfileResult {
         kernel: snapshot.kernel_statistics.unwrap().into(),
         principals,

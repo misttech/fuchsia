@@ -471,6 +471,8 @@ struct BucketDefinitionDef {
     pub name: Option<String>,
     pub process: Option<String>,
     pub vmo: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub principal: Option<String>,
     #[doc(hidden)]
     #[serde(skip)]
     pub __source_breaking: fidl::marker::SourceBreaking,

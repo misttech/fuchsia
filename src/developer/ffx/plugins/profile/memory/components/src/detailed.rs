@@ -11,8 +11,6 @@ use fidl_fuchsia_memory_attribution_plugin::{self as fplugin};
 use regex::bytes::Regex;
 use serde::Serialize;
 
-use crate::SnapshotAttributionDataProvider;
-
 #[derive(Serialize)]
 pub struct ComponentDetailedProfileResult {
     pub kernel: fplugin_serde::KernelStatistics,
@@ -45,19 +43,31 @@ pub fn process_snapshot_detailed(
         .map(|bd| {
             let process = bd.process.as_ref().map(|p| Regex::new(&p)).transpose()?;
             let vmo = bd.vmo.as_ref().map(|p| Regex::new(&p)).transpose()?;
+            let principal = bd.principal.as_ref().map(|a| Regex::new(&a)).transpose()?;
             Ok(digest::BucketDefinition {
                 name: bd.name.clone().unwrap_or_default(),
                 process,
                 vmo,
+                principal,
                 event_code: 0, // The information is unavailable client side.
             })
         })
         .collect::<Result<_>>()?;
+    let attribution_data = AttributionData {
+        principals_vec: principals,
+        resources_vec: resources,
+        resource_names: snapshot
+            .resource_names
+            .unwrap_or_default()
+            .iter()
+            .map(|n| ZXName::from_bytes_lossy(n))
+            .collect(),
+        attributions,
+    };
+
+    let processed_attribution_data = attribution_processing::attribute_vmos(attribution_data);
     let digest = digest::Digest::compute(
-        &SnapshotAttributionDataProvider {
-            resources: &resources,
-            resource_names: snapshot.resource_names.as_ref().unwrap_or(&Vec::new()),
-        },
+        &processed_attribution_data,
         snapshot
             .kernel_statistics
             .as_ref()
@@ -76,21 +86,11 @@ pub fn process_snapshot_detailed(
     )
     .expect("Digest computation should succeed");
     let ProcessedAttributionData { principals, resources, resource_names } =
-        attribution_processing::attribute_vmos(AttributionData {
-            principals_vec: principals,
-            resources_vec: resources,
-            resource_names: snapshot
-                .resource_names
-                .unwrap_or_default()
-                .iter()
-                .map(|n| ZXName::from_bytes_lossy(n))
-                .collect(),
-            attributions,
-        });
+        processed_attribution_data;
     Ok(ComponentDetailedProfileResult {
         kernel: snapshot.kernel_statistics.unwrap_or_default().into(),
-        principals: principals.into_values().map(|p| p.into_inner()).collect(),
-        resources: resources.into_values().map(|r| r.into_inner()).collect(),
+        principals: principals.into_values().collect(),
+        resources: resources.into_values().collect(),
         resource_names,
         digest,
         performance: snapshot.performance_metrics.unwrap_or_default(),

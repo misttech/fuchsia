@@ -4,7 +4,7 @@
 use anyhow::{Context, Result};
 use attribution_processing::digest::{BucketDefinition, Digest};
 use attribution_processing::summary::MemorySummary;
-use attribution_processing::{AttributionData, AttributionDataProvider, attribute_vmos};
+use attribution_processing::{AttributionDataProvider, ProcessedAttributionData, attribute_vmos};
 use fuchsia_async::WakeupTime;
 use fuchsia_inspect::{ArrayProperty, Node, StringProperty};
 use fuchsia_inspect_contrib::nodes::BoundedListNode;
@@ -45,7 +45,7 @@ pub async fn periodic_monitoring(
             )
             .with_context(|| "Failed to get kernel memory stats")?;
             // This is the very expensive operation.
-            let attribution_data = attribution_data_service.get_attribution_data()?;
+            let attribution_data = attribute_vmos(attribution_data_service.get_attribution_data()?);
             let digest = Digest::compute(
                 &attribution_data,
                 &kmem_stats,
@@ -89,13 +89,15 @@ pub async fn periodic_monitoring(
 }
 
 fn update_inspect_summary(
-    attribution_data: AttributionData,
+    attribution_data: ProcessedAttributionData,
     timestamp: zx::BootInstant,
     kmem_stats: &fkernel::MemoryStats,
     inspect_root: &Node,
 ) -> StringProperty {
-    let summary = attribute_vmos(attribution_data).summary();
-    inspect_root.create_string("current", record_summary(summary, timestamp, &kmem_stats))
+    inspect_root.create_string(
+        "current",
+        record_summary(attribution_data.summary(), timestamp, &kmem_stats),
+    )
 }
 
 /// Update inspect data with collected memory information.
@@ -207,8 +209,8 @@ fn record_summary(
 mod tests {
     use super::*;
     use attribution_processing::{
-        Attribution, GlobalPrincipalIdentifier, Principal, PrincipalDescription, PrincipalType,
-        Resource, ResourceReference, ZXName,
+        Attribution, AttributionData, GlobalPrincipalIdentifier, Principal, PrincipalDescription,
+        PrincipalType, Resource, ResourceReference, ZXName,
     };
     use diagnostics_assertions::{NonZeroIntProperty, assert_data_tree};
     use std::num::NonZero;
@@ -261,8 +263,8 @@ mod tests {
         )
     }
 
-    fn get_attribution_data() -> AttributionData {
-        AttributionData {
+    fn get_attribution_data() -> ProcessedAttributionData {
+        attribute_vmos(AttributionData {
             principals_vec: vec![Principal {
                 identifier: GlobalPrincipalIdentifier(NonZero::new(1).unwrap()),
                 description: Some(PrincipalDescription::Component("principal".to_owned())),
@@ -289,7 +291,7 @@ mod tests {
                 subject: GlobalPrincipalIdentifier(NonZero::new(1).unwrap()),
                 resources: vec![ResourceReference::KernelObject(10)],
             }],
-        }
+        })
     }
 
     #[derive(Clone)]

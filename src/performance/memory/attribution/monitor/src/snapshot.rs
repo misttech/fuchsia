@@ -48,6 +48,7 @@ impl AttributionSnapshot {
                         name: Some(b.name.clone()),
                         process: b.process.as_ref().map(|r| r.as_str().into()),
                         vmo: b.vmo.as_ref().map(|r| r.as_str().into()),
+                        principal: b.principal.as_ref().map(|r| r.as_str().into()),
                         ..Default::default()
                     })
                     .collect(),

@@ -1,7 +1,6 @@
 // Copyright 2025 The Fuchsia Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
-
 use core::cell::RefCell;
 use core::convert::Into;
 use fidl_fuchsia_memory_attribution_plugin as fplugin;
@@ -18,8 +17,12 @@ pub mod fkernel_serde;
 pub mod fplugin_serde;
 pub mod summary;
 
-/// Unique principal identifier across the whole system.
+#[cfg(target_os = "fuchsia")]
+use {fuchsia_trace::duration, std::ffi::CStr};
+#[cfg(target_os = "fuchsia")]
+const CATEGORY_MEMORY_CAPTURE: &CStr = c"memory:capture";
 
+/// Unique principal identifier across the whole system.
 #[derive(PartialEq, Eq, Hash, Clone, Copy, Debug, Serialize)]
 pub struct GlobalPrincipalIdentifier(pub std::num::NonZeroU64);
 
@@ -42,6 +45,7 @@ impl Into<fplugin::PrincipalIdentifier> for GlobalPrincipalIdentifier {
         fplugin::PrincipalIdentifier { id: self.0.get() }
     }
 }
+
 /// Factory for GlobalPrincipalIdentifier, ensuring their uniqueness.
 #[derive(Debug)]
 pub struct GlobalPrincipalIdentifierFactory {
@@ -449,35 +453,6 @@ impl Into<fplugin::ResourceReference> for ResourceReference {
     }
 }
 
-// TODO(b/411121120): Use zx::Koid when available on host code.
-/// The post-order traversal of the Jobs->Process->VMOs tree guarantees that when
-/// a visitor processes a Process, it has already seen its associated VMOs.
-pub trait ResourcesVisitor {
-    fn on_job(
-        &mut self,
-        job_koid: zx_types::zx_koid_t,
-        job_name: &ZXName,
-        job: fplugin::Job,
-    ) -> Result<(), zx_status::Status>;
-    fn on_process(
-        &mut self,
-        process_koid: zx_types::zx_koid_t,
-        process_name: &ZXName,
-        process: fplugin::Process,
-    ) -> Result<(), zx_status::Status>;
-    fn on_vmo(
-        &mut self,
-        vmo_koid: zx_types::zx_koid_t,
-        vmo_name: &ZXName,
-        vmo: fplugin::Vmo,
-    ) -> Result<(), zx_status::Status>;
-}
-
-pub trait ResourceEnumerator {
-    /// Enumerates Jobs, Processes and VMOs and call back the visitor.
-    fn for_each_resource(&self, visitor: &mut impl ResourcesVisitor) -> Result<(), anyhow::Error>;
-}
-
 /// Capture of the current memory usage of a device, as retrieved through the memory attribution
 /// protocol. In this object, memory attribution is not resolved.
 pub struct AttributionData {
@@ -487,46 +462,7 @@ pub struct AttributionData {
     pub attributions: Vec<Attribution>,
 }
 
-impl ResourceEnumerator for AttributionData {
-    fn for_each_resource(&self, visitor: &mut impl ResourcesVisitor) -> Result<(), anyhow::Error> {
-        for resource in &self.resources_vec {
-            if let Resource {
-                koid,
-                name_index,
-                resource_type: fplugin::ResourceType::Vmo(vmo),
-                ..
-            } = &resource
-            {
-                visitor.on_vmo(*koid, &self.resource_names[*name_index], vmo.clone())?;
-            }
-        }
-        for resource in &self.resources_vec {
-            if let Resource {
-                koid,
-                name_index,
-                resource_type: fplugin::ResourceType::Process(process),
-                ..
-            } = &resource
-            {
-                visitor.on_process(*koid, &self.resource_names[*name_index], process.clone())?;
-            }
-        }
-        for resource in &self.resources_vec {
-            if let Resource {
-                koid,
-                name_index,
-                resource_type: fplugin::ResourceType::Job(job),
-                ..
-            } = &resource
-            {
-                visitor.on_job(*koid, &self.resource_names[*name_index], job.clone())?;
-            }
-        }
-        Ok(())
-    }
-}
-
-pub trait AttributionDataProvider: ResourceEnumerator + Send + Sync {
+pub trait AttributionDataProvider: Send + Sync {
     /// Returns all the memory resources and attribution specifications.
     fn get_attribution_data(&self) -> Result<AttributionData, anyhow::Error>;
 }
@@ -534,15 +470,15 @@ pub trait AttributionDataProvider: ResourceEnumerator + Send + Sync {
 /// Processed snapshot of the memory usage of a device, with attribution of memory resources to
 /// Principals resolved.
 pub struct ProcessedAttributionData {
-    pub principals: HashMap<GlobalPrincipalIdentifier, RefCell<InflatedPrincipal>>,
-    pub resources: HashMap<u64, RefCell<InflatedResource>>,
+    pub principals: HashMap<GlobalPrincipalIdentifier, InflatedPrincipal>,
+    pub resources: HashMap<u64, InflatedResource>,
     pub resource_names: Vec<ZXName>,
 }
 
 impl ProcessedAttributionData {
     fn new(
-        principals: HashMap<GlobalPrincipalIdentifier, RefCell<InflatedPrincipal>>,
-        resources: HashMap<u64, RefCell<InflatedResource>>,
+        principals: HashMap<GlobalPrincipalIdentifier, InflatedPrincipal>,
+        resources: HashMap<u64, InflatedResource>,
         resource_names: Vec<ZXName>,
     ) -> Self {
         Self { principals, resources, resource_names }
@@ -550,12 +486,17 @@ impl ProcessedAttributionData {
 
     /// Create a summary view of the memory attribution_data. See [MemorySummary] for details.
     pub fn summary(&self) -> MemorySummary {
+        #[cfg(target_os = "fuchsia")]
+        duration!(CATEGORY_MEMORY_CAPTURE, c"ProcessedAttributionData::summary");
         MemorySummary::build(&self.principals, &self.resources, &self.resource_names)
     }
 }
 
 /// Process data from a [AttributionData] to resolve attribution claims.
 pub fn attribute_vmos(attribution_data: AttributionData) -> ProcessedAttributionData {
+    #[cfg(target_os = "fuchsia")]
+    duration!(CATEGORY_MEMORY_CAPTURE, c"attribute_vmos");
+
     // Map from moniker token ID to Principal struct.
     let principals: HashMap<GlobalPrincipalIdentifier, RefCell<InflatedPrincipal>> =
         attribution_data
@@ -755,7 +696,11 @@ pub fn attribute_vmos(attribution_data: AttributionData) -> ProcessedAttribution
         }
     }
 
-    ProcessedAttributionData::new(principals, resources, attribution_data.resource_names)
+    ProcessedAttributionData::new(
+        principals.into_iter().map(|(k, v)| (k, v.into_inner())).collect(),
+        resources.into_iter().map(|(k, v)| (k, v.into_inner())).collect(),
+        attribution_data.resource_names,
+    )
 }
 
 #[cfg(test)]

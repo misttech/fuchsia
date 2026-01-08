@@ -15,9 +15,9 @@
 
 namespace memory {
 
-BucketMatch::BucketMatch(const std::string& name, const std::string& process,
-                         const std::string& vmo, std::optional<int64_t> event_code)
-    : name_(name),
+BucketMatch::BucketMatch(std::string name, const std::string& process, const std::string& vmo,
+                         std::optional<int64_t> event_code)
+    : name_(std::move(name)),
       match_all_processes_(process.empty() || process == ".*"),
       process_(std::make_shared<re2::RE2>(process)),
       match_all_vmos_(vmo.empty() || vmo == ".*"),
@@ -67,6 +67,11 @@ std::optional<std::vector<BucketMatch>> BucketMatch::ReadBucketMatchesFromConfig
           v["process"].IsString() && v.HasMember("vmo") && v["vmo"].IsString())) {
       FX_LOGS(WARNING) << "Missing member";
       return std::nullopt;
+    }
+
+    if (v.HasMember("principal")) {
+      // Principal filtering is only supported in memory_monitor2; skip those.
+      continue;
     }
     std::string name(v["name"].GetString(), v["name"].GetStringLength());
     std::string process(v["process"].GetString(), v["process"].GetStringLength());

@@ -10,7 +10,7 @@ use fidl_fuchsia_metrics as fmetrics;
 mod buckets;
 mod stalls;
 
-pub use buckets::{collect_metrics_forever, prepare_bucket_codes, upload_metrics};
+pub use buckets::{prepare_bucket_codes, upload_metrics};
 pub use stalls::collect_stalls_forever;
 
 fn error_from_metrics_error(error: fmetrics::Error) -> anyhow::Error {

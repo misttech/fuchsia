@@ -25,7 +25,7 @@ extern const std::string kBucketConfigPath;
 
 class BucketMatch {
  public:
-  BucketMatch(const std::string& name, const std::string& process, const std::string& vmo,
+  BucketMatch(std::string name, const std::string& process, const std::string& vmo,
               std::optional<int64_t> event_code = std::nullopt);
   const std::string& name() const { return name_; }
   // Returns the Cobalt event code associated with this bucket. This is used for reporting bucket

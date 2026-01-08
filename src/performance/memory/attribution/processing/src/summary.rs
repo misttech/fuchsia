@@ -10,8 +10,9 @@ use crate::{
 use core::default::Default;
 use fidl_fuchsia_memory_attribution_plugin as fplugin;
 use fplugin::Vmo;
+#[cfg(target_os = "fuchsia")]
+use fuchsia_trace::duration;
 use serde::Serialize;
-use std::cell::RefCell;
 use std::collections::{HashMap, HashSet};
 use std::fmt::Display;
 /// Consider that two floats are equals if they differ less than [FLOAT_COMPARISON_EPSILON].
@@ -42,10 +43,12 @@ pub struct MemorySummary {
 
 impl MemorySummary {
     pub(crate) fn build(
-        principals: &HashMap<GlobalPrincipalIdentifier, RefCell<InflatedPrincipal>>,
-        resources: &HashMap<u64, RefCell<InflatedResource>>,
+        principals: &HashMap<GlobalPrincipalIdentifier, InflatedPrincipal>,
+        resources: &HashMap<u64, InflatedResource>,
         resource_names: &Vec<ZXName>,
     ) -> MemorySummary {
+        #[cfg(target_os = "fuchsia")]
+        duration!(crate::CATEGORY_MEMORY_CAPTURE, c"MemorySummary::build");
         let mut output = MemorySummary { principals: Default::default(), unclaimed: 0 };
         for principal in principals.values() {
             output.principals.push(MemorySummary::build_one_principal(
@@ -59,8 +62,7 @@ impl MemorySummary {
         output.principals.sort_unstable_by_key(|p| -(p.populated_total as i64));
 
         let mut unclaimed = 0;
-        for (_, resource_ref) in resources {
-            let resource = &resource_ref.borrow();
+        for (_, resource) in resources {
             if resource.claims.is_empty() {
                 match &resource.resource.resource_type {
                     fplugin::ResourceType::Job(_) | fplugin::ResourceType::Process(_) => {}
@@ -76,12 +78,11 @@ impl MemorySummary {
     }
 
     fn build_one_principal(
-        principal_cell: &RefCell<InflatedPrincipal>,
-        principals: &HashMap<GlobalPrincipalIdentifier, RefCell<InflatedPrincipal>>,
-        resources: &HashMap<u64, RefCell<InflatedResource>>,
+        principal: &InflatedPrincipal,
+        principals: &HashMap<GlobalPrincipalIdentifier, InflatedPrincipal>,
+        resources: &HashMap<u64, InflatedResource>,
         resource_names: &Vec<ZXName>,
     ) -> PrincipalSummary {
-        let principal = principal_cell.borrow();
         let mut output = PrincipalSummary {
             name: principal.name().to_owned(),
             id: principal.principal.identifier.0.into(),
@@ -100,9 +101,8 @@ impl MemorySummary {
                 .principal
                 .parent
                 .as_ref()
-                .map(|p| principals.get(p))
-                .flatten()
-                .map(|p| p.borrow().name().to_owned()),
+                .and_then(|p| principals.get(p))
+                .map(|p| p.name().to_owned()),
             processes: Vec::new(),
             vmos: HashMap::new(),
         };
@@ -112,7 +112,7 @@ impl MemorySummary {
                 continue;
             }
 
-            let resource = resources.get(resource_id).unwrap().borrow();
+            let resource = resources.get(resource_id).unwrap();
             let share_count = resource
                 .claims
                 .iter()
@@ -163,8 +163,7 @@ impl MemorySummary {
                     hint_skip_handle_table: _,
                 } = resource
                 {
-                    if let Some(process_ref) = resources.get(&process_mapped) {
-                        let process = process_ref.borrow();
+                    if let Some(process) = resources.get(&process_mapped) {
                         output.processes.push(format!(
                             "{} ({})",
                             resource_names.get(process.resource.name_index).unwrap().clone(),
@@ -210,7 +209,6 @@ pub struct PrincipalSummary {
     pub populated_scaled: f64,
     /// Total number of populated bytes of all the VMOs accessible to the Principal.
     pub populated_total: u64,
-
     /// Name of the Principal who gave attribution information for this Principal.
     pub attributor: Option<String>,
     /// List of Zircon processes attributed (even partially) to this Principal.

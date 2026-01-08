@@ -202,6 +202,10 @@ type PerformanceImpactMetrics = table {
 };
 
 /// Criteria for matching VMO within a bucket and for publishing aggregated metrics.
+/// For a VMO to be selected, it needs to match all the criteria in the definition:
+///   * It must belong to a process with a name matched by the process regex.
+///   * Its name must match the vmo regex.
+///   * It must be attributed to a principal with a name matched by the principal regex.
 type BucketDefinition = table {
     /// Human-readable name of the bucket.
     1: name string:MAX;
@@ -211,6 +215,9 @@ type BucketDefinition = table {
     /// Regex saying which VMOs to match. Will be interpreted as a regex.
     /// Missing or empty string means ".*".
     3: vmo string:MAX;
+    /// Regex to match against the principals to which a VMO is attributed.
+    /// Missing or empty string means ".*".
+    4: principal string:MAX;
 };
 
 /// Holds the time of the different system clocks of the device.

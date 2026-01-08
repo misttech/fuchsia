@@ -4,17 +4,11 @@
 
 use crate::error_from_metrics_error;
 use anyhow::Result;
-use attribution_processing::ResourceEnumerator;
 use attribution_processing::digest::{BucketDefinition, Digest};
 use cobalt_client::traits::{AsEventCode, AsEventCodes};
 use cobalt_registry::MemoryLeakMigratedMetricDimensionTimeSinceBoot as TimeSinceBoot;
-use fuchsia_trace::duration;
-use futures::stream::StreamExt;
-use futures::{TryFutureExt, try_join};
 use memory_metrics_registry::cobalt_registry;
 use std::collections::HashMap;
-use std::sync::Arc;
-use traces::CATEGORY_MEMORY_CAPTURE;
 use {fidl_fuchsia_kernel as fkernel, fidl_fuchsia_metrics as fmetrics};
 
 /// Sorted list mapping durations to the largest event that is lower.
@@ -176,57 +170,6 @@ pub fn prepare_bucket_codes(bucket_definitions: &[BucketDefinition]) -> HashMap<
     bucket_name_to_code
 }
 
-/// Periodically upload metrics related to memory usage.
-pub async fn collect_metrics_forever(
-    resource_enumerator: Arc<impl ResourceEnumerator + 'static>,
-    kernel_stats_proxy: fkernel::StatsProxy,
-    metric_event_logger: fmetrics::MetricEventLoggerProxy,
-    bucket_definitions: Arc<[BucketDefinition]>,
-) {
-    let bucket_name_to_code = prepare_bucket_codes(&bucket_definitions);
-    let mut timer = fuchsia_async::Interval::new(zx::Duration::from_minutes(5));
-    loop {
-        timer.next().await;
-
-        let result = collect_metrics_once(
-            &*resource_enumerator,
-            &kernel_stats_proxy,
-            &metric_event_logger,
-            &bucket_definitions,
-            &bucket_name_to_code,
-        )
-        .await;
-
-        if let Err(e) = result {
-            log::error!("Metrics collection failed: {e}");
-        }
-    }
-}
-
-async fn collect_metrics_once(
-    resource_enumerator: &impl ResourceEnumerator,
-    kernel_stats_proxy: &fkernel::StatsProxy,
-    metric_event_logger: &fmetrics::MetricEventLoggerProxy,
-    bucket_definitions: &[BucketDefinition],
-    bucket_name_to_code: &HashMap<String, u32>,
-) -> Result<()> {
-    duration!(CATEGORY_MEMORY_CAPTURE, "cobalt");
-    let timestamp = zx::BootInstant::get();
-    let (kmem_stats, kmem_stats_compression) = try_join!(
-        kernel_stats_proxy.get_memory_stats().map_err(anyhow::Error::from),
-        kernel_stats_proxy.get_memory_stats_compression().map_err(anyhow::Error::from)
-    )?;
-    let digest = Digest::compute(
-        &*resource_enumerator,
-        &kmem_stats,
-        &kmem_stats_compression,
-        bucket_definitions,
-    )?;
-    upload_metrics(timestamp, &kmem_stats, metric_event_logger, &digest, bucket_name_to_code)
-        .await?;
-    Ok(())
-}
-
 /// Upload cobalt data based on collected memory data.
 pub async fn upload_metrics(
     timestamp: zx::BootInstant,
@@ -251,15 +194,14 @@ mod tests {
     use anyhow::anyhow;
     use attribution_processing::{
         Attribution, AttributionData, GlobalPrincipalIdentifier, Principal, PrincipalDescription,
-        PrincipalType, Resource, ResourceEnumerator, ResourceReference, ZXName,
+        PrincipalType, ProcessedAttributionData, Resource, ResourceReference, ZXName,
+        attribute_vmos,
     };
-    use futures::TryStreamExt;
-    use futures::task::Poll;
+    use fidl_fuchsia_memory_attribution_plugin as fplugin;
+    use futures::{TryFutureExt, TryStreamExt, try_join};
     use regex::bytes::Regex;
-    use std::time::Duration;
-    use {fidl_fuchsia_memory_attribution_plugin as fplugin, fuchsia_async as fasync};
 
-    fn get_resource_enumerator() -> Arc<impl ResourceEnumerator + 'static> {
+    fn get_data() -> ProcessedAttributionData {
         let attribution_data = AttributionData {
             principals_vec: vec![Principal {
                 identifier: GlobalPrincipalIdentifier::new_for_test(1),
@@ -318,327 +260,273 @@ mod tests {
                 resources: vec![ResourceReference::KernelObject(10)],
             }],
         };
-        Arc::new(attribution_data)
+        attribute_vmos(attribution_data)
     }
 
-    async fn serve_kernel_stats(
-        mut request_stream: fkernel::StatsRequestStream,
-    ) -> Result<(), fidl::Error> {
-        while let Some(request) = request_stream.try_next().await? {
-            match request {
-                fkernel::StatsRequest::GetMemoryStats { responder } => {
-                    responder
-                        .send(&fkernel::MemoryStats {
-                            total_bytes: Some(1),
-                            free_bytes: Some(2),
-                            wired_bytes: Some(3),
-                            total_heap_bytes: Some(4),
-                            free_heap_bytes: Some(5),
-                            vmo_bytes: Some(6),
-                            mmu_overhead_bytes: Some(7),
-                            ipc_bytes: Some(8),
-                            other_bytes: Some(9),
-                            free_loaned_bytes: Some(10),
-                            cache_bytes: Some(11),
-                            slab_bytes: Some(12),
-                            zram_bytes: Some(13),
-                            vmo_reclaim_total_bytes: Some(14),
-                            vmo_reclaim_newest_bytes: Some(15),
-                            vmo_reclaim_oldest_bytes: Some(16),
-                            vmo_reclaim_disabled_bytes: Some(17),
-                            vmo_discardable_locked_bytes: Some(18),
-                            vmo_discardable_unlocked_bytes: Some(19),
-                            ..Default::default()
-                        })
-                        .unwrap();
-                }
-                fkernel::StatsRequest::GetMemoryStatsExtended { responder: _ } => {
-                    unimplemented!("Deprecated call, should not be used")
-                }
-                fkernel::StatsRequest::GetMemoryStatsCompression { responder } => {
-                    responder
-                        .send(&fkernel::MemoryStatsCompression {
-                            uncompressed_storage_bytes: Some(20),
-                            compressed_storage_bytes: Some(21),
-                            compressed_fragmentation_bytes: Some(22),
-                            compression_time: Some(23),
-                            decompression_time: Some(24),
-                            total_page_compression_attempts: Some(25),
-                            failed_page_compression_attempts: Some(26),
-                            total_page_decompressions: Some(27),
-                            compressed_page_evictions: Some(28),
-                            eager_page_compressions: Some(29),
-                            memory_pressure_page_compressions: Some(30),
-                            critical_memory_page_compressions: Some(31),
-                            pages_decompressed_unit_ns: Some(32),
-                            pages_decompressed_within_log_time: Some([
-                                40, 41, 42, 43, 44, 45, 46, 47,
-                            ]),
-                            ..Default::default()
-                        })
-                        .unwrap();
-                }
-                fkernel::StatsRequest::GetCpuStats { responder: _ } => unimplemented!(),
-                fkernel::StatsRequest::GetCpuLoad { duration: _, responder: _ } => unimplemented!(),
-            }
-        }
-        Ok(())
+    fn get_kernel_stats() -> (fkernel::MemoryStats, fkernel::MemoryStatsCompression) {
+        (
+            fkernel::MemoryStats {
+                total_bytes: Some(1),
+                free_bytes: Some(2),
+                wired_bytes: Some(3),
+                total_heap_bytes: Some(4),
+                free_heap_bytes: Some(5),
+                vmo_bytes: Some(6),
+                mmu_overhead_bytes: Some(7),
+                ipc_bytes: Some(8),
+                other_bytes: Some(9),
+                free_loaned_bytes: Some(10),
+                cache_bytes: Some(11),
+                slab_bytes: Some(12),
+                zram_bytes: Some(13),
+                vmo_reclaim_total_bytes: Some(14),
+                vmo_reclaim_newest_bytes: Some(15),
+                vmo_reclaim_oldest_bytes: Some(16),
+                vmo_reclaim_disabled_bytes: Some(17),
+                vmo_discardable_locked_bytes: Some(18),
+                vmo_discardable_unlocked_bytes: Some(19),
+                ..Default::default()
+            },
+            fkernel::MemoryStatsCompression {
+                uncompressed_storage_bytes: Some(20),
+                compressed_storage_bytes: Some(21),
+                compressed_fragmentation_bytes: Some(22),
+                compression_time: Some(23),
+                decompression_time: Some(24),
+                total_page_compression_attempts: Some(25),
+                failed_page_compression_attempts: Some(26),
+                total_page_decompressions: Some(27),
+                compressed_page_evictions: Some(28),
+                eager_page_compressions: Some(29),
+                memory_pressure_page_compressions: Some(30),
+                critical_memory_page_compressions: Some(31),
+                pages_decompressed_unit_ns: Some(32),
+                pages_decompressed_within_log_time: Some([40, 41, 42, 43, 44, 45, 46, 47]),
+                ..Default::default()
+            },
+        )
     }
 
-    #[test]
-    fn test_periodic_metrics_collection() -> anyhow::Result<()> {
-        // Setup executor.
-        let mut exec = fasync::TestExecutor::new_with_fake_time();
-
-        // Setup mock data providers.
-        let resource_enumerator = get_resource_enumerator();
-        let (stats_provider, stats_request_stream) =
-            fidl::endpoints::create_proxy_and_stream::<fkernel::StatsMarker>();
-        fasync::Task::spawn(async move {
-            serve_kernel_stats(stats_request_stream).await.unwrap();
-        })
-        .detach();
-        // Define a single bucket which matches a specific VMO.
-        let bucket_definitions = Arc::new([BucketDefinition {
+    #[fuchsia::test]
+    async fn test_upload_metrics() -> anyhow::Result<()> {
+        let bucket_definitions = [BucketDefinition {
             name: "bucket1".to_string(),
             vmo: Some(Regex::new("bucket1.*")?),
             event_code: 1,
             process: None,
-        }]);
+            principal: None,
+        }];
 
-        // Setup test proxy to observe emitted events from the service.
-        let (metric_event_logger, metric_event_request_stream) =
+        let (metric_event_logger, mut metric_event_request_stream) =
             fidl::endpoints::create_proxy_and_stream::<fmetrics::MetricEventLoggerMarker>();
 
-        // Service under test.
-        let mut metrics_collector = fuchsia_async::Task::spawn(collect_metrics_forever(
-            resource_enumerator,
-            stats_provider,
-            metric_event_logger,
-            bucket_definitions,
-        ));
-
-        // Give the service the opportunity to run.
-        assert!(
-            exec.run_until_stalled(&mut metrics_collector).is_pending(),
-            "Metrics collection service returned unexpectedly early"
-        );
-
-        // Ensure no metrics has been uploaded yet.
-        let mut metric_event_request_future = metric_event_request_stream.into_future();
-        assert!(
-            exec.run_until_stalled(&mut metric_event_request_future).is_pending(),
-            "Metrics collection service returned unexpectedly early"
-        );
-
-        // Fake the passage of time, so that collect_metrics may do a capture.
-        assert!(
-            exec.run_until_stalled(&mut std::pin::pin!(fasync::TestExecutor::advance_to(
-                exec.now() + Duration::from_secs(5 * 60).into()
-            )))
-            .is_ready(),
-            "Failed to advance time"
+        let (kmem_stats, kmem_stats_compression) = get_kernel_stats();
+        let digest = Digest::compute(
+            &get_data(),
+            &kmem_stats,
+            &kmem_stats_compression,
+            &bucket_definitions,
+        )?;
+        let bucket_codes = prepare_bucket_codes(&bucket_definitions);
+        let upload = upload_metrics(
+            zx::BootInstant::get(),
+            &kmem_stats,
+            &metric_event_logger,
+            &digest,
+            &bucket_codes,
         );
         let uptime = get_uptime_event_code(zx::BootInstant::get());
-
-        // Ensure we have one and only one event ready for consumption.
-        let Poll::Ready((event, metric_event_request_stream)) =
-            exec.run_until_stalled(&mut metric_event_request_future)
-        else {
-            panic!("Failed to receive metrics")
-        };
-        let event = event.ok_or_else(|| anyhow!("Metrics stream unexpectedly closed"))??;
-        match event {
-            fmetrics::MetricEventLoggerRequest::LogMetricEvents { events, .. } => {
-                // Kernel metrics
-                assert_eq!(
-                    &events[0..10],
-                    vec![
-                        fmetrics::MetricEvent {
-                            metric_id: cobalt_registry::MEMORY_GENERAL_BREAKDOWN_MIGRATED_METRIC_ID,
-                            event_codes: vec![cobalt_registry::MemoryGeneralBreakdownMigratedMetricDimensionGeneralBreakdown::TotalBytes.as_event_code()],
-                            payload: fmetrics::MetricEventPayload::IntegerValue(1)
-                        },
-                        fmetrics::MetricEvent {
-                            metric_id: cobalt_registry::MEMORY_GENERAL_BREAKDOWN_MIGRATED_METRIC_ID,
-                            event_codes: vec![cobalt_registry::MemoryGeneralBreakdownMigratedMetricDimensionGeneralBreakdown::UsedBytes.as_event_code()],
-                            payload: fmetrics::MetricEventPayload::IntegerValue(-1)
-                        },
-                        fmetrics::MetricEvent {
-                            metric_id: cobalt_registry::MEMORY_GENERAL_BREAKDOWN_MIGRATED_METRIC_ID,
-                            event_codes: vec![cobalt_registry::MemoryGeneralBreakdownMigratedMetricDimensionGeneralBreakdown::FreeBytes.as_event_code()],
-                            payload: fmetrics::MetricEventPayload::IntegerValue(2)
-                        },
-                        fmetrics::MetricEvent {
-                            metric_id: cobalt_registry::MEMORY_GENERAL_BREAKDOWN_MIGRATED_METRIC_ID,
-                            event_codes: vec![cobalt_registry::MemoryGeneralBreakdownMigratedMetricDimensionGeneralBreakdown::VmoBytes.as_event_code()],
-                            payload: fmetrics::MetricEventPayload::IntegerValue(6)
-                        },
-                        fmetrics::MetricEvent {
-                            metric_id: cobalt_registry::MEMORY_GENERAL_BREAKDOWN_MIGRATED_METRIC_ID,
-                            event_codes: vec![cobalt_registry::MemoryGeneralBreakdownMigratedMetricDimensionGeneralBreakdown::KernelFreeHeapBytes.as_event_code()],
-                            payload: fmetrics::MetricEventPayload::IntegerValue(5)
-                        },
-                        fmetrics::MetricEvent {
-                            metric_id: cobalt_registry::MEMORY_GENERAL_BREAKDOWN_MIGRATED_METRIC_ID,
-                            event_codes: vec![cobalt_registry::MemoryGeneralBreakdownMigratedMetricDimensionGeneralBreakdown::MmuBytes.as_event_code()],
-                            payload: fmetrics::MetricEventPayload::IntegerValue(7)
-                        },
-                        fmetrics::MetricEvent {
-                            metric_id: cobalt_registry::MEMORY_GENERAL_BREAKDOWN_MIGRATED_METRIC_ID,
-                            event_codes: vec![cobalt_registry::MemoryGeneralBreakdownMigratedMetricDimensionGeneralBreakdown::IpcBytes.as_event_code()],
-                            payload: fmetrics::MetricEventPayload::IntegerValue(8)
-                        },
-                        fmetrics::MetricEvent {
-                            metric_id: cobalt_registry::MEMORY_GENERAL_BREAKDOWN_MIGRATED_METRIC_ID,
-                            event_codes: vec![cobalt_registry::MemoryGeneralBreakdownMigratedMetricDimensionGeneralBreakdown::KernelTotalHeapBytes.as_event_code()],
-                            payload: fmetrics::MetricEventPayload::IntegerValue(4)
-                        },
-                        fmetrics::MetricEvent {
-                            metric_id: cobalt_registry::MEMORY_GENERAL_BREAKDOWN_MIGRATED_METRIC_ID,
-                            event_codes: vec![cobalt_registry::MemoryGeneralBreakdownMigratedMetricDimensionGeneralBreakdown::WiredBytes.as_event_code()],
-                            payload: fmetrics::MetricEventPayload::IntegerValue(3)
-                        },
-                        fmetrics::MetricEvent {
-                            metric_id: cobalt_registry::MEMORY_GENERAL_BREAKDOWN_MIGRATED_METRIC_ID,
-                            event_codes: vec![cobalt_registry::MemoryGeneralBreakdownMigratedMetricDimensionGeneralBreakdown::OtherBytes.as_event_code()],
-                            payload: fmetrics::MetricEventPayload::IntegerValue(9)
-                        },]);
-                // Kernel metrics with uptime
-                assert_eq!(
-                    &events[10..20],
-                    vec![
-                        fmetrics::MetricEvent {
-                            metric_id: cobalt_registry::MEMORY_LEAK_MIGRATED_METRIC_ID,
-                            event_codes: cobalt_registry::MemoryLeakMigratedEventCodes {
-                                general_breakdown: cobalt_registry::MemoryLeakMigratedMetricDimensionGeneralBreakdown::TotalBytes, time_since_boot: uptime}.as_event_codes(),
-                            payload: fmetrics::MetricEventPayload::IntegerValue(1)
-                        },
-                        fmetrics::MetricEvent {
-                            metric_id: cobalt_registry::MEMORY_LEAK_MIGRATED_METRIC_ID,
-                            event_codes: cobalt_registry::MemoryLeakMigratedEventCodes {
-                                general_breakdown: cobalt_registry::MemoryLeakMigratedMetricDimensionGeneralBreakdown::UsedBytes, time_since_boot:uptime}.as_event_codes(),
-                            payload: fmetrics::MetricEventPayload::IntegerValue(-1)
-                        },
-                        fmetrics::MetricEvent {
-                            metric_id: cobalt_registry::MEMORY_LEAK_MIGRATED_METRIC_ID,
-                            event_codes: cobalt_registry::MemoryLeakMigratedEventCodes {
-                                general_breakdown: cobalt_registry::MemoryLeakMigratedMetricDimensionGeneralBreakdown::FreeBytes, time_since_boot:uptime}.as_event_codes(),                            payload: fmetrics::MetricEventPayload::IntegerValue(2)
-                        },
-                        fmetrics::MetricEvent {
-                            metric_id: cobalt_registry::MEMORY_LEAK_MIGRATED_METRIC_ID,
-                            event_codes: cobalt_registry::MemoryLeakMigratedEventCodes {
-                                general_breakdown: cobalt_registry::MemoryLeakMigratedMetricDimensionGeneralBreakdown::VmoBytes, time_since_boot:uptime}.as_event_codes(),
-                            payload: fmetrics::MetricEventPayload::IntegerValue(6)
-                        },
-                        fmetrics::MetricEvent {
-                            metric_id: cobalt_registry::MEMORY_LEAK_MIGRATED_METRIC_ID,
-                            event_codes: cobalt_registry::MemoryLeakMigratedEventCodes {
-                                general_breakdown: cobalt_registry::MemoryLeakMigratedMetricDimensionGeneralBreakdown::KernelFreeHeapBytes, time_since_boot:uptime}.as_event_codes(),
-                            payload: fmetrics::MetricEventPayload::IntegerValue(5)
-                        },
-                        fmetrics::MetricEvent {
-                            metric_id: cobalt_registry::MEMORY_LEAK_MIGRATED_METRIC_ID,
-                            event_codes: cobalt_registry::MemoryLeakMigratedEventCodes {
-                                general_breakdown: cobalt_registry::MemoryLeakMigratedMetricDimensionGeneralBreakdown::MmuBytes, time_since_boot:uptime}.as_event_codes(),
-                            payload: fmetrics::MetricEventPayload::IntegerValue(7)
-                        },
-                        fmetrics::MetricEvent {
-                            metric_id: cobalt_registry::MEMORY_LEAK_MIGRATED_METRIC_ID,
-                            event_codes: cobalt_registry::MemoryLeakMigratedEventCodes {
-                                general_breakdown: cobalt_registry::MemoryLeakMigratedMetricDimensionGeneralBreakdown::IpcBytes, time_since_boot:uptime}.as_event_codes(),
-                            payload: fmetrics::MetricEventPayload::IntegerValue(8)
-                        },
-                        fmetrics::MetricEvent {
-                            metric_id: cobalt_registry::MEMORY_LEAK_MIGRATED_METRIC_ID,
-                            event_codes: cobalt_registry::MemoryLeakMigratedEventCodes {
-                                general_breakdown: cobalt_registry::MemoryLeakMigratedMetricDimensionGeneralBreakdown::KernelTotalHeapBytes, time_since_boot:uptime}.as_event_codes(),
-                            payload: fmetrics::MetricEventPayload::IntegerValue(4)
-                        },
-                        fmetrics::MetricEvent {
-                            metric_id: cobalt_registry::MEMORY_LEAK_MIGRATED_METRIC_ID,
-                            event_codes: cobalt_registry::MemoryLeakMigratedEventCodes {
-                                general_breakdown: cobalt_registry::MemoryLeakMigratedMetricDimensionGeneralBreakdown::WiredBytes, time_since_boot:uptime}.as_event_codes(),
-                            payload: fmetrics::MetricEventPayload::IntegerValue(3)
-                        },
-                        fmetrics::MetricEvent {
-                            metric_id: cobalt_registry::MEMORY_LEAK_MIGRATED_METRIC_ID,
-                            event_codes: cobalt_registry::MemoryLeakMigratedEventCodes {
-                                general_breakdown: cobalt_registry::MemoryLeakMigratedMetricDimensionGeneralBreakdown::OtherBytes, time_since_boot:uptime}.as_event_codes(),
-                            payload: fmetrics::MetricEventPayload::IntegerValue(9)
-                        },
-                    ]
-                );
-                // Digest metrics
-                assert_eq!(
-                    &events[20..],
-                    vec![
-                        // Buckets with custom definitions
-                        fmetrics::MetricEvent {
-                            metric_id: cobalt_registry::MEMORY_MIGRATED_METRIC_ID,
-                            event_codes: vec![1], // Corresponds to the "bucket1" bucket
-                            payload: fmetrics::MetricEventPayload::IntegerValue(1024)
-                        },
-                        // Default buckets
-                        fmetrics::MetricEvent {
-                            metric_id: cobalt_registry::MEMORY_MIGRATED_METRIC_ID,
-                            event_codes: vec![cobalt_registry::MemoryMigratedMetricDimensionBucket::Undigested.as_event_code()],
-                            payload: fmetrics::MetricEventPayload::IntegerValue(1024)
-                        },
-                        fmetrics::MetricEvent {
-                            metric_id: cobalt_registry::MEMORY_MIGRATED_METRIC_ID,
-                            event_codes: vec![cobalt_registry::MemoryMigratedMetricDimensionBucket::Orphaned.as_event_code()],
-                            payload: fmetrics::MetricEventPayload::IntegerValue(0)
-                        },
-                        fmetrics::MetricEvent {
-                            metric_id: cobalt_registry::MEMORY_MIGRATED_METRIC_ID,
-                            event_codes: vec![cobalt_registry::MemoryMigratedMetricDimensionBucket::Kernel.as_event_code()],
-                            payload: fmetrics::MetricEventPayload::IntegerValue(31)
-                        },
-                        fmetrics::MetricEvent {
-                            metric_id: cobalt_registry::MEMORY_MIGRATED_METRIC_ID,
-                            event_codes: vec![cobalt_registry::MemoryMigratedMetricDimensionBucket::Free.as_event_code()],
-                            payload: fmetrics::MetricEventPayload::IntegerValue(2)
-                        },
-                        fmetrics::MetricEvent {
-                            metric_id: cobalt_registry::MEMORY_MIGRATED_METRIC_ID,
-                            event_codes: vec![cobalt_registry::MemoryMigratedMetricDimensionBucket::__Addl_PagerTotal.as_event_code()],
-                            payload: fmetrics::MetricEventPayload::IntegerValue(14)
-                        },
-                        fmetrics::MetricEvent {
-                            metric_id: cobalt_registry::MEMORY_MIGRATED_METRIC_ID,
-                            event_codes: vec![cobalt_registry::MemoryMigratedMetricDimensionBucket::__Addl_PagerNewest.as_event_code()],
-                            payload: fmetrics::MetricEventPayload::IntegerValue(15)
-                        },
-                        fmetrics::MetricEvent {
-                            metric_id: cobalt_registry::MEMORY_MIGRATED_METRIC_ID,
-                            event_codes: vec![cobalt_registry::MemoryMigratedMetricDimensionBucket::__Addl_PagerOldest.as_event_code()],
-                            payload: fmetrics::MetricEventPayload::IntegerValue(16)
-                        },
-                        fmetrics::MetricEvent {
-                            metric_id: cobalt_registry::MEMORY_MIGRATED_METRIC_ID,
-                            event_codes: vec![cobalt_registry::MemoryMigratedMetricDimensionBucket::__Addl_DiscardableLocked.as_event_code()],
-                            payload: fmetrics::MetricEventPayload::IntegerValue(18)
-                        },
-                        fmetrics::MetricEvent {
-                            metric_id: cobalt_registry::MEMORY_MIGRATED_METRIC_ID,
-                            event_codes: vec![cobalt_registry::MemoryMigratedMetricDimensionBucket::__Addl_DiscardableUnlocked.as_event_code()],
-                            payload: fmetrics::MetricEventPayload::IntegerValue(19)
-                        },
-                        fmetrics::MetricEvent {
-                            metric_id: cobalt_registry::MEMORY_MIGRATED_METRIC_ID,
-                            event_codes: vec![cobalt_registry::MemoryMigratedMetricDimensionBucket::__Addl_ZramCompressedBytes.as_event_code()],
-                            payload: fmetrics::MetricEventPayload::IntegerValue(21)
-                        }
-                    ]
-                )
+        try_join!(metric_event_request_stream.try_next().and_then(|event| async {
+            match event.unwrap() {
+                fmetrics::MetricEventLoggerRequest::LogMetricEvents { events, responder } => {
+                    responder.send(Ok(()))?;
+                    // Kernel metrics
+                    assert_eq!(
+                        &events[0..10],
+                        vec![
+                            fmetrics::MetricEvent {
+                                metric_id: cobalt_registry::MEMORY_GENERAL_BREAKDOWN_MIGRATED_METRIC_ID,
+                                event_codes: vec![cobalt_registry::MemoryGeneralBreakdownMigratedMetricDimensionGeneralBreakdown::TotalBytes.as_event_code()],
+                                payload: fmetrics::MetricEventPayload::IntegerValue(1)
+                            },
+                            fmetrics::MetricEvent {
+                                metric_id: cobalt_registry::MEMORY_GENERAL_BREAKDOWN_MIGRATED_METRIC_ID,
+                                event_codes: vec![cobalt_registry::MemoryGeneralBreakdownMigratedMetricDimensionGeneralBreakdown::UsedBytes.as_event_code()],
+                                payload: fmetrics::MetricEventPayload::IntegerValue(-1)
+                            },
+                            fmetrics::MetricEvent {
+                                metric_id: cobalt_registry::MEMORY_GENERAL_BREAKDOWN_MIGRATED_METRIC_ID,
+                                event_codes: vec![cobalt_registry::MemoryGeneralBreakdownMigratedMetricDimensionGeneralBreakdown::FreeBytes.as_event_code()],
+                                payload: fmetrics::MetricEventPayload::IntegerValue(2)
+                            },
+                            fmetrics::MetricEvent {
+                                metric_id: cobalt_registry::MEMORY_GENERAL_BREAKDOWN_MIGRATED_METRIC_ID,
+                                event_codes: vec![cobalt_registry::MemoryGeneralBreakdownMigratedMetricDimensionGeneralBreakdown::VmoBytes.as_event_code()],
+                                payload: fmetrics::MetricEventPayload::IntegerValue(6)
+                            },
+                            fmetrics::MetricEvent {
+                                metric_id: cobalt_registry::MEMORY_GENERAL_BREAKDOWN_MIGRATED_METRIC_ID,
+                                event_codes: vec![cobalt_registry::MemoryGeneralBreakdownMigratedMetricDimensionGeneralBreakdown::KernelFreeHeapBytes.as_event_code()],
+                                payload: fmetrics::MetricEventPayload::IntegerValue(5)
+                            },
+                            fmetrics::MetricEvent {
+                                metric_id: cobalt_registry::MEMORY_GENERAL_BREAKDOWN_MIGRATED_METRIC_ID,
+                                event_codes: vec![cobalt_registry::MemoryGeneralBreakdownMigratedMetricDimensionGeneralBreakdown::MmuBytes.as_event_code()],
+                                payload: fmetrics::MetricEventPayload::IntegerValue(7)
+                            },
+                            fmetrics::MetricEvent {
+                                metric_id: cobalt_registry::MEMORY_GENERAL_BREAKDOWN_MIGRATED_METRIC_ID,
+                                event_codes: vec![cobalt_registry::MemoryGeneralBreakdownMigratedMetricDimensionGeneralBreakdown::IpcBytes.as_event_code()],
+                                payload: fmetrics::MetricEventPayload::IntegerValue(8)
+                            },
+                            fmetrics::MetricEvent {
+                                metric_id: cobalt_registry::MEMORY_GENERAL_BREAKDOWN_MIGRATED_METRIC_ID,
+                                event_codes: vec![cobalt_registry::MemoryGeneralBreakdownMigratedMetricDimensionGeneralBreakdown::KernelTotalHeapBytes.as_event_code()],
+                                payload: fmetrics::MetricEventPayload::IntegerValue(4)
+                            },
+                            fmetrics::MetricEvent {
+                                metric_id: cobalt_registry::MEMORY_GENERAL_BREAKDOWN_MIGRATED_METRIC_ID,
+                                event_codes: vec![cobalt_registry::MemoryGeneralBreakdownMigratedMetricDimensionGeneralBreakdown::WiredBytes.as_event_code()],
+                                payload: fmetrics::MetricEventPayload::IntegerValue(3)
+                            },
+                            fmetrics::MetricEvent {
+                                metric_id: cobalt_registry::MEMORY_GENERAL_BREAKDOWN_MIGRATED_METRIC_ID,
+                                event_codes: vec![cobalt_registry::MemoryGeneralBreakdownMigratedMetricDimensionGeneralBreakdown::OtherBytes.as_event_code()],
+                                payload: fmetrics::MetricEventPayload::IntegerValue(9)
+                            },]);
+                    // Kernel metrics with uptime
+                    assert_eq!(
+                        &events[10..20],
+                        vec![
+                            fmetrics::MetricEvent {
+                                metric_id: cobalt_registry::MEMORY_LEAK_MIGRATED_METRIC_ID,
+                                event_codes: cobalt_registry::MemoryLeakMigratedEventCodes {
+                                    general_breakdown: cobalt_registry::MemoryLeakMigratedMetricDimensionGeneralBreakdown::TotalBytes, time_since_boot: uptime}.as_event_codes(),
+                                payload: fmetrics::MetricEventPayload::IntegerValue(1)
+                            },
+                            fmetrics::MetricEvent {
+                                metric_id: cobalt_registry::MEMORY_LEAK_MIGRATED_METRIC_ID,
+                                event_codes: cobalt_registry::MemoryLeakMigratedEventCodes {
+                                    general_breakdown: cobalt_registry::MemoryLeakMigratedMetricDimensionGeneralBreakdown::UsedBytes, time_since_boot:uptime}.as_event_codes(),
+                                payload: fmetrics::MetricEventPayload::IntegerValue(-1)
+                            },
+                            fmetrics::MetricEvent {
+                                metric_id: cobalt_registry::MEMORY_LEAK_MIGRATED_METRIC_ID,
+                                event_codes: cobalt_registry::MemoryLeakMigratedEventCodes {
+                                    general_breakdown: cobalt_registry::MemoryLeakMigratedMetricDimensionGeneralBreakdown::FreeBytes, time_since_boot:uptime}.as_event_codes(),
+                                payload: fmetrics::MetricEventPayload::IntegerValue(2)
+                            },
+                            fmetrics::MetricEvent {
+                                metric_id: cobalt_registry::MEMORY_LEAK_MIGRATED_METRIC_ID,
+                                event_codes: cobalt_registry::MemoryLeakMigratedEventCodes {
+                                    general_breakdown: cobalt_registry::MemoryLeakMigratedMetricDimensionGeneralBreakdown::VmoBytes, time_since_boot:uptime}.as_event_codes(),
+                                payload: fmetrics::MetricEventPayload::IntegerValue(6)
+                            },
+                            fmetrics::MetricEvent {
+                                metric_id: cobalt_registry::MEMORY_LEAK_MIGRATED_METRIC_ID,
+                                event_codes: cobalt_registry::MemoryLeakMigratedEventCodes {
+                                    general_breakdown: cobalt_registry::MemoryLeakMigratedMetricDimensionGeneralBreakdown::KernelFreeHeapBytes, time_since_boot:uptime}.as_event_codes(),
+                                payload: fmetrics::MetricEventPayload::IntegerValue(5)
+                            },
+                            fmetrics::MetricEvent {
+                                metric_id: cobalt_registry::MEMORY_LEAK_MIGRATED_METRIC_ID,
+                                event_codes: cobalt_registry::MemoryLeakMigratedEventCodes {
+                                    general_breakdown: cobalt_registry::MemoryLeakMigratedMetricDimensionGeneralBreakdown::MmuBytes, time_since_boot:uptime}.as_event_codes(),
+                                payload: fmetrics::MetricEventPayload::IntegerValue(7)
+                            },
+                            fmetrics::MetricEvent {
+                                metric_id: cobalt_registry::MEMORY_LEAK_MIGRATED_METRIC_ID,
+                                event_codes: cobalt_registry::MemoryLeakMigratedEventCodes {
+                                    general_breakdown: cobalt_registry::MemoryLeakMigratedMetricDimensionGeneralBreakdown::IpcBytes, time_since_boot:uptime}.as_event_codes(),
+                                payload: fmetrics::MetricEventPayload::IntegerValue(8)
+                            },
+                            fmetrics::MetricEvent {
+                                metric_id: cobalt_registry::MEMORY_LEAK_MIGRATED_METRIC_ID,
+                                event_codes: cobalt_registry::MemoryLeakMigratedEventCodes {
+                                    general_breakdown: cobalt_registry::MemoryLeakMigratedMetricDimensionGeneralBreakdown::KernelTotalHeapBytes, time_since_boot:uptime}.as_event_codes(),
+                                payload: fmetrics::MetricEventPayload::IntegerValue(4)
+                            },
+                            fmetrics::MetricEvent {
+                                metric_id: cobalt_registry::MEMORY_LEAK_MIGRATED_METRIC_ID,
+                                event_codes: cobalt_registry::MemoryLeakMigratedEventCodes {
+                                    general_breakdown: cobalt_registry::MemoryLeakMigratedMetricDimensionGeneralBreakdown::WiredBytes, time_since_boot:uptime}.as_event_codes(),
+                                payload: fmetrics::MetricEventPayload::IntegerValue(3)
+                            },
+                            fmetrics::MetricEvent {
+                                metric_id: cobalt_registry::MEMORY_LEAK_MIGRATED_METRIC_ID,
+                                event_codes: cobalt_registry::MemoryLeakMigratedEventCodes {
+                                    general_breakdown: cobalt_registry::MemoryLeakMigratedMetricDimensionGeneralBreakdown::OtherBytes, time_since_boot:uptime}.as_event_codes(),
+                                payload: fmetrics::MetricEventPayload::IntegerValue(9)
+                            },
+                        ]
+                    );
+                    // Digest metrics
+                    assert_eq!(
+                        &events[20..],
+                        vec![
+                            // Buckets with custom definitions
+                            fmetrics::MetricEvent {
+                                metric_id: cobalt_registry::MEMORY_MIGRATED_METRIC_ID,
+                                event_codes: vec![1], // Corresponds to the "bucket1" bucket
+                                payload: fmetrics::MetricEventPayload::IntegerValue(1024)
+                            },
+                            // Default buckets
+                            fmetrics::MetricEvent {
+                                metric_id: cobalt_registry::MEMORY_MIGRATED_METRIC_ID,
+                                event_codes: vec![cobalt_registry::MemoryMigratedMetricDimensionBucket::Undigested.as_event_code()],
+                                payload: fmetrics::MetricEventPayload::IntegerValue(1024)
+                            },
+                            fmetrics::MetricEvent {
+                                metric_id: cobalt_registry::MEMORY_MIGRATED_METRIC_ID,
+                                event_codes: vec![cobalt_registry::MemoryMigratedMetricDimensionBucket::Orphaned.as_event_code()],
+                                payload: fmetrics::MetricEventPayload::IntegerValue(0)
+                            },
+                            fmetrics::MetricEvent {
+                                metric_id: cobalt_registry::MEMORY_MIGRATED_METRIC_ID,
+                                event_codes: vec![cobalt_registry::MemoryMigratedMetricDimensionBucket::Kernel.as_event_code()],
+                                payload: fmetrics::MetricEventPayload::IntegerValue(31)
+                            },
+                            fmetrics::MetricEvent {
+                                metric_id: cobalt_registry::MEMORY_MIGRATED_METRIC_ID,
+                                event_codes: vec![cobalt_registry::MemoryMigratedMetricDimensionBucket::Free.as_event_code()],
+                                payload: fmetrics::MetricEventPayload::IntegerValue(2)
+                            },
+                            fmetrics::MetricEvent {
+                                metric_id: cobalt_registry::MEMORY_MIGRATED_METRIC_ID,
+                                event_codes: vec![cobalt_registry::MemoryMigratedMetricDimensionBucket::__Addl_PagerTotal.as_event_code()],
+                                payload: fmetrics::MetricEventPayload::IntegerValue(14)
+                            },
+                            fmetrics::MetricEvent {
+                                metric_id: cobalt_registry::MEMORY_MIGRATED_METRIC_ID,
+                                event_codes: vec![cobalt_registry::MemoryMigratedMetricDimensionBucket::__Addl_PagerNewest.as_event_code()],
+                                payload: fmetrics::MetricEventPayload::IntegerValue(15)
+                            },
+                            fmetrics::MetricEvent {
+                                metric_id: cobalt_registry::MEMORY_MIGRATED_METRIC_ID,
+                                event_codes: vec![cobalt_registry::MemoryMigratedMetricDimensionBucket::__Addl_PagerOldest.as_event_code()],
+                                payload: fmetrics::MetricEventPayload::IntegerValue(16)
+                            },
+                            fmetrics::MetricEvent {
+                                metric_id: cobalt_registry::MEMORY_MIGRATED_METRIC_ID,
+                                event_codes: vec![cobalt_registry::MemoryMigratedMetricDimensionBucket::__Addl_DiscardableLocked.as_event_code()],
+                                payload: fmetrics::MetricEventPayload::IntegerValue(18)
+                            },
+                            fmetrics::MetricEvent {
+                                metric_id: cobalt_registry::MEMORY_MIGRATED_METRIC_ID,
+                                event_codes: vec![cobalt_registry::MemoryMigratedMetricDimensionBucket::__Addl_DiscardableUnlocked.as_event_code()],
+                                payload: fmetrics::MetricEventPayload::IntegerValue(19)
+                            },
+                            fmetrics::MetricEvent {
+                                metric_id: cobalt_registry::MEMORY_MIGRATED_METRIC_ID,
+                                event_codes: vec![cobalt_registry::MemoryMigratedMetricDimensionBucket::__Addl_ZramCompressedBytes.as_event_code()],
+                                payload: fmetrics::MetricEventPayload::IntegerValue(21)
+                            }
+                        ]
+                    )
+                }
+                _ => panic!("Unexpected metric event"),
             }
-            _ => panic!("Unexpected metric event"),
-        }
-
-        assert!(
-            exec.run_until_stalled(&mut metric_event_request_stream.into_future()).is_pending()
-        );
+            Ok(())}).map_err(|err| anyhow!(err)), upload)?;
         Ok(())
     }
 }

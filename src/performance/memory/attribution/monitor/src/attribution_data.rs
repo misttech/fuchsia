@@ -5,10 +5,9 @@
 use crate::attribution_client::AttributionClient;
 use crate::common::PrincipalIdMap;
 use crate::resources::{Job, KernelResources};
-use anyhow::Context;
 use attribution_processing::{
     Attribution, AttributionData, AttributionDataProvider, Principal, PrincipalDescription,
-    ResourceEnumerator, ResourceReference, ResourcesVisitor,
+    ResourceReference,
 };
 use fuchsia_sync::Mutex;
 use fuchsia_trace::duration;
@@ -120,21 +119,6 @@ impl AttributionDataProvider for AttributionDataProviderImpl {
             resource_names: kernel_resources.resource_names,
             attributions,
         })
-    }
-}
-
-impl ResourceEnumerator for AttributionDataProviderImpl {
-    fn for_each_resource(&self, visitor: &mut impl ResourcesVisitor) -> Result<(), anyhow::Error> {
-        let attribution_state = self.attribution_client.get_attributions();
-        crate::resources::KernelResourcesExplorer::default()
-            .explore_root_job(
-                visitor,
-                &*self.root_job.lock(),
-                &attribution_state,
-                &self.muted_principal,
-            )
-            .context("Failed to explore root job")?;
-        Ok(())
     }
 }
 
