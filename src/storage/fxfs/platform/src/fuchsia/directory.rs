@@ -11,8 +11,8 @@ use crate::fuchsia::volume::{FxVolume, RootDir, info_to_filesystem_info};
 use anyhow::{Error, bail};
 use either::{Left, Right};
 use fidl::endpoints::ServerEnd;
-use fidl_fuchsia_hardware_block_volume::VolumeMarker;
 use fidl_fuchsia_io as fio;
+use fidl_fuchsia_storage_block::BlockMarker;
 use fuchsia_sync::Mutex;
 use futures::future::BoxFuture;
 use fxfs::errors::FxfsError;
@@ -593,7 +593,7 @@ impl FxDirectory {
     pub(crate) async fn open_block_file(
         self: &Arc<Self>,
         name: &str,
-        server_end: ServerEnd<VolumeMarker>,
+        server_end: ServerEnd<BlockMarker>,
     ) {
         let request = ObjectRequest::new(
             fio::Flags::empty(),

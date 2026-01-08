@@ -35,7 +35,7 @@
 
 namespace abr {
 
-namespace partition = fuchsia_hardware_block_partition;
+namespace partition = fuchsia_storage_block;
 using fuchsia_paver::wire::Asset;
 using fuchsia_paver::wire::Configuration;
 
@@ -59,8 +59,7 @@ zx::result<Configuration> CurrentSlotToConfiguration(std::string_view slot) {
 bool FindPartitionLabelByGuid(const paver::BlockDevices& devices, const uint8_t* guid,
                               std::string& out) {
   auto partition = devices.OpenPartition([&](const zx::channel& channel) {
-    auto client =
-        fidl::UnownedClientEnd<fuchsia_hardware_block_partition::Partition>((channel.borrow()));
+    auto client = fidl::UnownedClientEnd<fuchsia_storage_block::Block>((channel.borrow()));
     auto result = fidl::WireCall(client)->GetInstanceGuid();
     if (!result.ok()) {
       return false;

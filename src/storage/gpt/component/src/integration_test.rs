@@ -13,8 +13,7 @@ use vmo_backed_block_server::{
     InitialContents, VmoBackedServerOptions, VmoBackedServerTestingExt as _,
 };
 use {
-    fidl_fuchsia_hardware_block_partition as fpartition,
-    fidl_fuchsia_hardware_block_volume as fvolume, fidl_fuchsia_io as fio,
+    fidl_fuchsia_io as fio, fidl_fuchsia_storage_block as fblock,
     fidl_fuchsia_storage_partitions as fpartitions,
 };
 
@@ -53,40 +52,40 @@ async fn test_overlay(overlay_enabled: bool) {
     let initial_partitions = vec![
         fpartitions::PartitionInfo {
             name: "other1".to_string(),
-            type_guid: fpartition::Guid { value: [1u8; 16] },
-            instance_guid: fpartition::Guid { value: [1u8; 16] },
+            type_guid: fblock::Guid { value: [1u8; 16] },
+            instance_guid: fblock::Guid { value: [1u8; 16] },
             start_block: 40,
             num_blocks: 10,
             flags: 0,
         },
         fpartitions::PartitionInfo {
             name: "super".to_string(),
-            type_guid: fpartition::Guid { value: [2u8; 16] },
-            instance_guid: fpartition::Guid { value: [2u8; 16] },
+            type_guid: fblock::Guid { value: [2u8; 16] },
+            instance_guid: fblock::Guid { value: [2u8; 16] },
             start_block: 50,
             num_blocks: 100,
             flags: 0,
         },
         fpartitions::PartitionInfo {
             name: "userdata".to_string(),
-            type_guid: fpartition::Guid { value: [3u8; 16] },
-            instance_guid: fpartition::Guid { value: [3u8; 16] },
+            type_guid: fblock::Guid { value: [3u8; 16] },
+            instance_guid: fblock::Guid { value: [3u8; 16] },
             start_block: 150,
             num_blocks: 50,
             flags: 0,
         },
         fpartitions::PartitionInfo {
             name: "other2".to_string(),
-            type_guid: fpartition::Guid { value: [4u8; 16] },
-            instance_guid: fpartition::Guid { value: [4u8; 16] },
+            type_guid: fblock::Guid { value: [4u8; 16] },
+            instance_guid: fblock::Guid { value: [4u8; 16] },
             start_block: 200,
             num_blocks: 25,
             flags: 0,
         },
         fpartitions::PartitionInfo {
             name: "other3".to_string(),
-            type_guid: fpartition::Guid { value: [5u8; 16] },
-            instance_guid: fpartition::Guid { value: [5u8; 16] },
+            type_guid: fblock::Guid { value: [5u8; 16] },
+            instance_guid: fblock::Guid { value: [5u8; 16] },
             start_block: 400,
             num_blocks: 100,
             flags: 0,
@@ -96,16 +95,16 @@ async fn test_overlay(overlay_enabled: bool) {
         // about the behaviour.
         fpartitions::PartitionInfo {
             name: "super".to_string(),
-            type_guid: fpartition::Guid { value: [6u8; 16] },
-            instance_guid: fpartition::Guid { value: [6u8; 16] },
+            type_guid: fblock::Guid { value: [6u8; 16] },
+            instance_guid: fblock::Guid { value: [6u8; 16] },
             start_block: 500,
             num_blocks: 1,
             flags: 0,
         },
         fpartitions::PartitionInfo {
             name: "userdata".to_string(),
-            type_guid: fpartition::Guid { value: [7u8; 16] },
-            instance_guid: fpartition::Guid { value: [7u8; 16] },
+            type_guid: fblock::Guid { value: [7u8; 16] },
+            instance_guid: fblock::Guid { value: [7u8; 16] },
             start_block: 501,
             num_blocks: 1,
             flags: 0,
@@ -139,7 +138,7 @@ async fn test_overlay(overlay_enabled: bool) {
     let mut found_partitions = vec![];
     for partition in partitions {
         let volume = fuchsia_component::client::connect_to_named_protocol_at_dir_root::<
-            fvolume::VolumeMarker,
+            fblock::BlockMarker,
         >(&partition_service_dir, &format!("{}/volume", partition))
         .unwrap();
 
@@ -182,16 +181,16 @@ async fn test_overlay(overlay_enabled: bool) {
                 vec![
                     fpartitions::PartitionInfo {
                         name: "super".to_string(),
-                        type_guid: fpartition::Guid { value: [2u8; 16] },
-                        instance_guid: fpartition::Guid { value: [2u8; 16] },
+                        type_guid: fblock::Guid { value: [2u8; 16] },
+                        instance_guid: fblock::Guid { value: [2u8; 16] },
                         start_block: 50,
                         num_blocks: 100,
                         flags: 0,
                     },
                     fpartitions::PartitionInfo {
                         name: "userdata".to_string(),
-                        type_guid: fpartition::Guid { value: [3u8; 16] },
-                        instance_guid: fpartition::Guid { value: [3u8; 16] },
+                        type_guid: fblock::Guid { value: [3u8; 16] },
+                        instance_guid: fblock::Guid { value: [3u8; 16] },
                         start_block: 150,
                         num_blocks: 50,
                         flags: 0,
@@ -225,48 +224,48 @@ async fn test_overlay(overlay_enabled: bool) {
         vec![
             fpartitions::PartitionInfo {
                 name: "other1".to_string(),
-                type_guid: fpartition::Guid { value: [1u8; 16] },
-                instance_guid: fpartition::Guid { value: [1u8; 16] },
+                type_guid: fblock::Guid { value: [1u8; 16] },
+                instance_guid: fblock::Guid { value: [1u8; 16] },
                 start_block: 40,
                 num_blocks: 10,
                 flags: 0,
             },
             fpartitions::PartitionInfo {
                 name: "super_and_userdata".to_string(),
-                type_guid: fpartition::Guid { value: [2u8; 16] },
-                instance_guid: fpartition::Guid { value: [2u8; 16] },
+                type_guid: fblock::Guid { value: [2u8; 16] },
+                instance_guid: fblock::Guid { value: [2u8; 16] },
                 start_block: 50,
                 num_blocks: 150,
                 flags: 0,
             },
             fpartitions::PartitionInfo {
                 name: "other2".to_string(),
-                type_guid: fpartition::Guid { value: [4u8; 16] },
-                instance_guid: fpartition::Guid { value: [4u8; 16] },
+                type_guid: fblock::Guid { value: [4u8; 16] },
+                instance_guid: fblock::Guid { value: [4u8; 16] },
                 start_block: 200,
                 num_blocks: 25,
                 flags: 0,
             },
             fpartitions::PartitionInfo {
                 name: "other3".to_string(),
-                type_guid: fpartition::Guid { value: [5u8; 16] },
-                instance_guid: fpartition::Guid { value: [5u8; 16] },
+                type_guid: fblock::Guid { value: [5u8; 16] },
+                instance_guid: fblock::Guid { value: [5u8; 16] },
                 start_block: 400,
                 num_blocks: 100,
                 flags: 0,
             },
             fpartitions::PartitionInfo {
                 name: "super".to_string(),
-                type_guid: fpartition::Guid { value: [6u8; 16] },
-                instance_guid: fpartition::Guid { value: [6u8; 16] },
+                type_guid: fblock::Guid { value: [6u8; 16] },
+                instance_guid: fblock::Guid { value: [6u8; 16] },
                 start_block: 500,
                 num_blocks: 1,
                 flags: 0,
             },
             fpartitions::PartitionInfo {
                 name: "userdata".to_string(),
-                type_guid: fpartition::Guid { value: [7u8; 16] },
-                instance_guid: fpartition::Guid { value: [7u8; 16] },
+                type_guid: fblock::Guid { value: [7u8; 16] },
+                instance_guid: fblock::Guid { value: [7u8; 16] },
                 start_block: 501,
                 num_blocks: 1,
                 flags: 0,
@@ -313,24 +312,24 @@ async fn test_commit_transaction_with_overlay(overlay_enabled: bool) {
     let initial_partitions = vec![
         fpartitions::PartitionInfo {
             name: "other1".to_string(),
-            type_guid: fpartition::Guid { value: [1u8; 16] },
-            instance_guid: fpartition::Guid { value: [1u8; 16] },
+            type_guid: fblock::Guid { value: [1u8; 16] },
+            instance_guid: fblock::Guid { value: [1u8; 16] },
             start_block: 40,
             num_blocks: 10,
             flags: 0,
         },
         fpartitions::PartitionInfo {
             name: "super".to_string(),
-            type_guid: fpartition::Guid { value: [2u8; 16] },
-            instance_guid: fpartition::Guid { value: [2u8; 16] },
+            type_guid: fblock::Guid { value: [2u8; 16] },
+            instance_guid: fblock::Guid { value: [2u8; 16] },
             start_block: 50,
             num_blocks: 100,
             flags: 0,
         },
         fpartitions::PartitionInfo {
             name: "userdata".to_string(),
-            type_guid: fpartition::Guid { value: [3u8; 16] },
-            instance_guid: fpartition::Guid { value: [3u8; 16] },
+            type_guid: fblock::Guid { value: [3u8; 16] },
+            instance_guid: fblock::Guid { value: [3u8; 16] },
             start_block: 150,
             num_blocks: 50,
             flags: 0,
@@ -365,7 +364,7 @@ async fn test_commit_transaction_with_overlay(overlay_enabled: bool) {
     // Find the "other1" partition and make a change to it.
     for partition in partitions {
         let volume = fuchsia_component::client::connect_to_named_protocol_at_dir_root::<
-            fvolume::VolumeMarker,
+            fblock::BlockMarker,
         >(&partition_service_dir, &format!("{}/volume", partition))
         .unwrap();
 
@@ -430,16 +429,16 @@ async fn test_commit_transaction_with_overlay(overlay_enabled: bool) {
         vec![
             fpartitions::PartitionInfo {
                 name: "other1".to_string(),
-                type_guid: fpartition::Guid { value: [1u8; 16] },
-                instance_guid: fpartition::Guid { value: [1u8; 16] },
+                type_guid: fblock::Guid { value: [1u8; 16] },
+                instance_guid: fblock::Guid { value: [1u8; 16] },
                 start_block: 40,
                 num_blocks: 10,
                 flags: 1234,
             },
             fpartitions::PartitionInfo {
                 name: "super_and_userdata".to_string(),
-                type_guid: fpartition::Guid { value: [2u8; 16] },
-                instance_guid: fpartition::Guid { value: [2u8; 16] },
+                type_guid: fblock::Guid { value: [2u8; 16] },
+                instance_guid: fblock::Guid { value: [2u8; 16] },
                 start_block: 50,
                 num_blocks: 150,
                 flags: 0,
@@ -449,24 +448,24 @@ async fn test_commit_transaction_with_overlay(overlay_enabled: bool) {
         vec![
             fpartitions::PartitionInfo {
                 name: "other1".to_string(),
-                type_guid: fpartition::Guid { value: [1u8; 16] },
-                instance_guid: fpartition::Guid { value: [1u8; 16] },
+                type_guid: fblock::Guid { value: [1u8; 16] },
+                instance_guid: fblock::Guid { value: [1u8; 16] },
                 start_block: 40,
                 num_blocks: 10,
                 flags: 1234,
             },
             fpartitions::PartitionInfo {
                 name: "super".to_string(),
-                type_guid: fpartition::Guid { value: [2u8; 16] },
-                instance_guid: fpartition::Guid { value: [2u8; 16] },
+                type_guid: fblock::Guid { value: [2u8; 16] },
+                instance_guid: fblock::Guid { value: [2u8; 16] },
                 start_block: 50,
                 num_blocks: 100,
                 flags: 0,
             },
             fpartitions::PartitionInfo {
                 name: "userdata".to_string(),
-                type_guid: fpartition::Guid { value: [3u8; 16] },
-                instance_guid: fpartition::Guid { value: [3u8; 16] },
+                type_guid: fblock::Guid { value: [3u8; 16] },
+                instance_guid: fblock::Guid { value: [3u8; 16] },
                 start_block: 150,
                 num_blocks: 50,
                 flags: 0,

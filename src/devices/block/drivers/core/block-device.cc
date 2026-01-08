@@ -5,8 +5,7 @@
 #include "src/devices/block/drivers/core/block-device.h"
 
 #include <fidl/fuchsia.boot.metadata/cpp/fidl.h>
-#include <fidl/fuchsia.hardware.block.partition/cpp/natural_types.h>
-#include <fuchsia/hardware/block/partition/cpp/banjo.h>
+#include <fidl/fuchsia.storage.block/cpp/wire.h>
 #include <lib/fidl/cpp/wire/string_view.h>
 #include <lib/operation/block.h>
 #include <lib/zbi-format/partition.h>
@@ -118,15 +117,15 @@ void BlockDevice::BlockQueue(block_op_t* op, block_impl_queue_callback completio
 }
 
 void BlockDevice::GetInfo(GetInfoCompleter::Sync& completer) {
-  fuchsia_hardware_block::wire::BlockInfo info;
+  fuchsia_storage_block::wire::BlockInfo info;
   static_assert(sizeof(info) == sizeof(block_info_t));
   size_t block_op_size;
   parent_protocol_.Query(reinterpret_cast<block_info_t*>(&info), &block_op_size);
-  // Set or clear fuchsia.hardware_block/Flag.BOOTPART appropriately.
+  // Set or clear fuchsia.storage.block/Flag.BOOTPART appropriately.
   if (has_bootpart_) {
-    info.flags |= fuchsia_hardware_block::wire::Flag::kBootpart;
+    info.flags |= fuchsia_storage_block::wire::DeviceFlag::kBootpart;
   } else {
-    info.flags -= fuchsia_hardware_block::wire::Flag::kBootpart;
+    info.flags &= ~fuchsia_storage_block::wire::DeviceFlag::kBootpart;
   }
   completer.ReplySuccess(info);
 }
@@ -142,8 +141,8 @@ void BlockDevice::OpenSessionWithOffsetMap(OpenSessionWithOffsetMapRequestView r
 }
 
 void BlockDevice::CreateSession(
-    fidl::ServerEnd<fuchsia_hardware_block::Session> session,
-    std::optional<fuchsia_hardware_block::wire::BlockOffsetMapping> mapping) {
+    fidl::ServerEnd<fuchsia_storage_block::Session> session,
+    std::optional<fuchsia_storage_block::wire::BlockOffsetMapping> mapping) {
   zx::result server = Server::Create(&self_protocol_, mapping);
   if (server.is_error()) {
     session.Close(server.error_value());
@@ -190,7 +189,7 @@ void BlockDevice::CreateSession(
   fidl::BindServer(
       fdf::Dispatcher::GetCurrent()->async_dispatcher(), std::move(session),
       std::move(server.value()),
-      [thread](Server* server, fidl::UnbindInfo, fidl::ServerEnd<fuchsia_hardware_block::Session>) {
+      [thread](Server* server, fidl::UnbindInfo, fidl::ServerEnd<fuchsia_storage_block::Session>) {
         server->Close();
         thrd_join(thread, nullptr);
       });
@@ -201,7 +200,7 @@ void BlockDevice::GetTypeGuid(GetTypeGuidCompleter::Sync& completer) {
     completer.Reply(ZX_ERR_NOT_SUPPORTED, {});
     return;
   }
-  fuchsia_hardware_block_partition::wire::Guid guid;
+  fuchsia_storage_block::wire::Guid guid;
   static_assert(sizeof(guid.value) == sizeof(guid_t));
   guid_t* guid_ptr = reinterpret_cast<guid_t*>(guid.value.data());
   zx_status_t status = parent_partition_protocol_.GetGuid(GUIDTYPE_TYPE, guid_ptr);
@@ -213,7 +212,7 @@ void BlockDevice::GetInstanceGuid(GetInstanceGuidCompleter::Sync& completer) {
     completer.Reply(ZX_ERR_NOT_SUPPORTED, {});
     return;
   }
-  fuchsia_hardware_block_partition::wire::Guid guid;
+  fuchsia_storage_block::wire::Guid guid;
   static_assert(sizeof(guid.value) == sizeof(guid_t));
   guid_t* guid_ptr = reinterpret_cast<guid_t*>(guid.value.data());
   zx_status_t status = parent_partition_protocol_.GetGuid(GUIDTYPE_INSTANCE, guid_ptr);
@@ -225,7 +224,7 @@ void BlockDevice::GetName(GetNameCompleter::Sync& completer) {
     completer.Reply(ZX_ERR_NOT_SUPPORTED, {});
     return;
   }
-  char name[fuchsia_hardware_block_partition::wire::kNameLength];
+  char name[fuchsia_storage_block::wire::kNameLength];
   zx_status_t status = parent_partition_protocol_.GetName(name, sizeof(name));
   completer.Reply(status,
                   status == ZX_OK ? fidl::StringView::FromExternal(name) : fidl::StringView{});
@@ -242,17 +241,16 @@ void BlockDevice::GetMetadata(GetMetadataCompleter::Sync& completer) {
     return;
   }
 
-  static_assert(sizeof(fuchsia_hardware_block_partition::wire::Guid) == sizeof(guid_t));
-  fuchsia_hardware_block_partition::wire::Guid type_guid, instance_guid;
+  static_assert(sizeof(fuchsia_storage_block::wire::Guid) == sizeof(guid_t));
+  fuchsia_storage_block::wire::Guid type_guid, instance_guid;
   memcpy(type_guid.value.data(), &metadata.type_guid, sizeof(guid_t));
   memcpy(instance_guid.value.data(), &metadata.instance_guid, sizeof(guid_t));
-  constexpr const fuchsia_hardware_block_partition::wire::Guid kNilGuid = {
+  constexpr const fuchsia_storage_block::wire::Guid kNilGuid = {
       .value = {0},
   };
 
   fidl::Arena arena;
-  auto response =
-      fuchsia_hardware_block_partition::wire::PartitionGetMetadataResponse::Builder(arena);
+  auto response = fuchsia_storage_block::wire::BlockGetMetadataResponse::Builder(arena);
   response.name(
       fidl::StringView::FromExternal(metadata.name, strnlen(metadata.name, sizeof(metadata.name))));
   if (type_guid.value != kNilGuid.value) {
@@ -277,8 +275,8 @@ void BlockDevice::QuerySlices(QuerySlicesRequestView request,
     completer.Reply(ZX_ERR_NOT_SUPPORTED, {}, {});
     return;
   }
-  fidl::Array<fuchsia_hardware_block_volume::wire::VsliceRange,
-              fuchsia_hardware_block_volume::wire::kMaxSliceRequests>
+  fidl::Array<fuchsia_storage_block::wire::VsliceRange,
+              fuchsia_storage_block::wire::kMaxSliceRequests>
       ranges;
   static_assert(sizeof(decltype(ranges)::value_type) == sizeof(slice_region_t));
   slice_region_t* ranges_ptr = reinterpret_cast<slice_region_t*>(ranges.data());
@@ -294,9 +292,9 @@ void BlockDevice::GetVolumeInfo(GetVolumeInfoCompleter::Sync& completer) {
     completer.Reply(ZX_ERR_NOT_SUPPORTED, {}, {});
     return;
   }
-  fuchsia_hardware_block_volume::wire::VolumeManagerInfo manager_info;
+  fuchsia_storage_block::wire::VolumeManagerInfo manager_info;
   static_assert(sizeof(manager_info) == sizeof(volume_manager_info_t));
-  fuchsia_hardware_block_volume::wire::VolumeInfo volume_info;
+  fuchsia_storage_block::wire::VolumeInfo volume_info;
   static_assert(sizeof(volume_info) == sizeof(volume_info_t));
   zx_status_t status =
       parent_volume_protocol_.GetInfo(reinterpret_cast<volume_manager_info_t*>(&manager_info),

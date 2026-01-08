@@ -22,7 +22,7 @@ rustc_library("ext4-read-only") {
 
   if (is_fuchsia) {
     deps += [
-      "//sdk/fidl/fuchsia.hardware.block:fuchsia.hardware.block_rust",
+      "//sdk/fidl/fuchsia.storage.block:fuchsia.storage.block_rust",
       "//sdk/rust/zx",
       "//src/lib/fidl/rust/fidl",
       "//src/storage/lib/block_client/rust",

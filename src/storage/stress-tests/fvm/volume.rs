@@ -3,8 +3,7 @@
 // found in the LICENSE file.
 
 use block_client::{BlockClient, BufferSlice, MutableBufferSlice, RemoteBlockClient};
-use fidl_fuchsia_hardware_block::BlockMarker;
-use fidl_fuchsia_hardware_block_volume::{VolumeMarker, VolumeProxy};
+use fidl_fuchsia_storage_block::{BlockMarker, BlockProxy};
 use fuchsia_component::client::connect_to_protocol_at_path;
 
 use storage_stress_test_utils::fvm::{Guid, get_volume_path};
@@ -25,7 +24,7 @@ fn fidl_to_status(result: Result<i32, fidl::Error>) -> Result<(), zx::Status> {
 /// Represents a connection to a particular FVM volume.
 /// Using this struct one can perform I/O, extend, shrink or destroy the volume.
 pub struct VolumeConnection {
-    volume_proxy: VolumeProxy,
+    volume_proxy: BlockProxy,
     block_device: RemoteBlockClient,
     slice_size: u64,
 }
@@ -35,7 +34,7 @@ impl VolumeConnection {
         let volume_path = get_volume_path(volume_guid).await;
         let volume_path = volume_path.to_str().unwrap();
 
-        let volume_proxy = connect_to_protocol_at_path::<VolumeMarker>(volume_path).unwrap();
+        let volume_proxy = connect_to_protocol_at_path::<BlockMarker>(volume_path).unwrap();
         let block_proxy = connect_to_protocol_at_path::<BlockMarker>(volume_path).unwrap();
         let block_device = RemoteBlockClient::new(block_proxy).await.unwrap();
 

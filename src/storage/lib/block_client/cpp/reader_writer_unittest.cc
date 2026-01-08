@@ -13,7 +13,7 @@ namespace {
 
 void CreateAndRegisterVmo(BlockDevice& device, size_t size, zx::vmo& vmo,
                           storage::OwnedVmoid& vmoid) {
-  fuchsia_hardware_block::wire::BlockInfo info = {};
+  fuchsia_storage_block::wire::BlockInfo info = {};
   ASSERT_EQ(device.BlockGetInfo(&info), ZX_OK);
   ASSERT_EQ(zx::vmo::create(size, 0, &vmo), ZX_OK);
   ASSERT_EQ(device.BlockAttachVmo(vmo, &vmoid.GetReference(&device)), ZX_OK);

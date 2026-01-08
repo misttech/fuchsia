@@ -3,8 +3,7 @@
 // found in the LICENSE file.
 use anyhow::{Error, anyhow};
 use block_protocol::{BlockFifoRequest, BlockFifoResponse, InlineCryptoOptions};
-use fidl_fuchsia_hardware_block::MAX_TRANSFER_UNBOUNDED;
-use fidl_fuchsia_hardware_block_driver::{BlockIoFlag, BlockOpcode};
+use fblock::{BlockIoFlag, BlockOpcode, MAX_TRANSFER_UNBOUNDED};
 use fuchsia_async::epoch::{Epoch, EpochGuard};
 use fuchsia_sync::{MappedMutexGuard, Mutex, MutexGuard};
 use futures::{Future, FutureExt as _, TryStreamExt as _};
@@ -17,10 +16,7 @@ use std::sync::Arc;
 use std::sync::atomic::AtomicU64;
 use storage_device::buffer::Buffer;
 use zx::HandleBased;
-use {
-    fidl_fuchsia_hardware_block as fblock, fidl_fuchsia_hardware_block_partition as fpartition,
-    fidl_fuchsia_hardware_block_volume as fvolume, fuchsia_async as fasync,
-};
+use {fidl_fuchsia_storage_block as fblock, fuchsia_async as fasync};
 
 pub mod async_interface;
 pub mod c_interface;
@@ -39,7 +35,7 @@ pub enum DeviceInfo {
 }
 
 impl DeviceInfo {
-    pub fn device_flags(&self) -> fblock::Flag {
+    pub fn device_flags(&self) -> fblock::DeviceFlag {
         match self {
             Self::Block(BlockInfo { device_flags, .. }) => *device_flags,
             Self::Partition(PartitionInfo { device_flags, .. }) => *device_flags,
@@ -76,7 +72,7 @@ impl DeviceInfo {
 /// Information associated with non-partition block devices.
 #[derive(Clone, Default)]
 pub struct BlockInfo {
-    pub device_flags: fblock::Flag,
+    pub device_flags: fblock::DeviceFlag,
     pub block_count: u64,
     pub max_transfer_blocks: Option<NonZero<u32>>,
 }
@@ -85,7 +81,7 @@ pub struct BlockInfo {
 #[derive(Clone, Default)]
 pub struct PartitionInfo {
     /// The device flags reported by the underlying device.
-    pub device_flags: fblock::Flag,
+    pub device_flags: fblock::DeviceFlag,
     pub max_transfer_blocks: Option<NonZero<u32>>,
     /// If `block_range` is None, the partition is a volume and may not be contiguous.
     /// In this case, the server will use the `get_volume_info` method to get the count of assigned
@@ -332,7 +328,7 @@ pub trait SessionManager: 'static {
     /// Called to handle the GetVolumeInfo FIDL call.
     fn get_volume_info(
         &self,
-    ) -> impl Future<Output = Result<(fvolume::VolumeManagerInfo, fvolume::VolumeInfo), zx::Status>> + Send
+    ) -> impl Future<Output = Result<(fblock::VolumeManagerInfo, fblock::VolumeInfo), zx::Status>> + Send
     {
         async { Err(zx::Status::NOT_SUPPORTED) }
     }
@@ -341,7 +337,7 @@ pub trait SessionManager: 'static {
     fn query_slices(
         &self,
         _start_slices: &[u64],
-    ) -> impl Future<Output = Result<Vec<fvolume::VsliceRange>, zx::Status>> + Send {
+    ) -> impl Future<Output = Result<Vec<fblock::VsliceRange>, zx::Status>> + Send {
         async { Err(zx::Status::NOT_SUPPORTED) }
     }
 
@@ -382,10 +378,10 @@ impl<SM: SessionManager> BlockServer<SM> {
         self.session_manager.as_ref()
     }
 
-    /// Called to process requests for fuchsia.hardware.block.volume/Volume.
+    /// Called to process requests for fuchsia.storage.block.Block.
     pub async fn handle_requests(
         &self,
-        mut requests: fvolume::VolumeRequestStream,
+        mut requests: fblock::BlockRequestStream,
     ) -> Result<(), Error> {
         let scope = fasync::Scope::new();
         loop {
@@ -403,14 +399,14 @@ impl<SM: SessionManager> BlockServer<SM> {
         Ok(())
     }
 
-    /// Processes a partition request.  If a new session task is created in response to the request,
+    /// Processes a Block request.  If a new session task is created in response to the request,
     /// it is returned.
     async fn handle_request(
         &self,
-        request: fvolume::VolumeRequest,
+        request: fblock::BlockRequest,
     ) -> Result<Option<impl Future<Output = Result<(), Error>> + Send + use<SM>>, Error> {
         match request {
-            fvolume::VolumeRequest::GetInfo { responder } => {
+            fblock::BlockRequest::GetInfo { responder } => {
                 let info = self.device_info();
                 let max_transfer_size = info.max_transfer_size(self.block_size);
                 let (block_count, mut flags) = match info.as_ref() {
@@ -429,7 +425,7 @@ impl<SM: SessionManager> BlockServer<SM> {
                     }
                 };
                 if SM::SUPPORTS_DECOMPRESSION {
-                    flags |= fblock::Flag::ZSTD_DECOMPRESSION_SUPPORT;
+                    flags |= fblock::DeviceFlag::ZSTD_DECOMPRESSION_SUPPORT;
                 }
                 responder.send(Ok(&fblock::BlockInfo {
                     block_count,
@@ -438,7 +434,7 @@ impl<SM: SessionManager> BlockServer<SM> {
                     flags,
                 }))?;
             }
-            fvolume::VolumeRequest::OpenSession { session, control_handle: _ } => {
+            fblock::BlockRequest::OpenSession { session, control_handle: _ } => {
                 let info = self.device_info();
                 return Ok(Some(self.session_manager.clone().open_session(
                     session.into_stream(),
@@ -446,7 +442,7 @@ impl<SM: SessionManager> BlockServer<SM> {
                     self.block_size,
                 )));
             }
-            fvolume::VolumeRequest::OpenSessionWithOffsetMap {
+            fblock::BlockRequest::OpenSessionWithOffsetMap {
                 session,
                 mapping,
                 control_handle: _,
@@ -472,29 +468,27 @@ impl<SM: SessionManager> BlockServer<SM> {
                     self.block_size,
                 )));
             }
-            fvolume::VolumeRequest::GetTypeGuid { responder } => {
+            fblock::BlockRequest::GetTypeGuid { responder } => {
                 let info = self.device_info();
                 if let DeviceInfo::Partition(partition_info) = info.as_ref() {
-                    let mut guid =
-                        fpartition::Guid { value: [0u8; fpartition::GUID_LENGTH as usize] };
+                    let mut guid = fblock::Guid { value: [0u8; fblock::GUID_LENGTH as usize] };
                     guid.value.copy_from_slice(&partition_info.type_guid);
                     responder.send(zx::sys::ZX_OK, Some(&guid))?;
                 } else {
                     responder.send(zx::sys::ZX_ERR_NOT_SUPPORTED, None)?;
                 }
             }
-            fvolume::VolumeRequest::GetInstanceGuid { responder } => {
+            fblock::BlockRequest::GetInstanceGuid { responder } => {
                 let info = self.device_info();
                 if let DeviceInfo::Partition(partition_info) = info.as_ref() {
-                    let mut guid =
-                        fpartition::Guid { value: [0u8; fpartition::GUID_LENGTH as usize] };
+                    let mut guid = fblock::Guid { value: [0u8; fblock::GUID_LENGTH as usize] };
                     guid.value.copy_from_slice(&partition_info.instance_guid);
                     responder.send(zx::sys::ZX_OK, Some(&guid))?;
                 } else {
                     responder.send(zx::sys::ZX_ERR_NOT_SUPPORTED, None)?;
                 }
             }
-            fvolume::VolumeRequest::GetName { responder } => {
+            fblock::BlockRequest::GetName { responder } => {
                 let info = self.device_info();
                 if let DeviceInfo::Partition(partition_info) = info.as_ref() {
                     responder.send(zx::sys::ZX_OK, Some(&partition_info.name))?;
@@ -502,16 +496,15 @@ impl<SM: SessionManager> BlockServer<SM> {
                     responder.send(zx::sys::ZX_ERR_NOT_SUPPORTED, None)?;
                 }
             }
-            fvolume::VolumeRequest::GetMetadata { responder } => {
+            fblock::BlockRequest::GetMetadata { responder } => {
                 let info = self.device_info();
                 if let DeviceInfo::Partition(info) = info.as_ref() {
-                    let mut type_guid =
-                        fpartition::Guid { value: [0u8; fpartition::GUID_LENGTH as usize] };
+                    let mut type_guid = fblock::Guid { value: [0u8; fblock::GUID_LENGTH as usize] };
                     type_guid.value.copy_from_slice(&info.type_guid);
                     let mut instance_guid =
-                        fpartition::Guid { value: [0u8; fpartition::GUID_LENGTH as usize] };
+                        fblock::Guid { value: [0u8; fblock::GUID_LENGTH as usize] };
                     instance_guid.value.copy_from_slice(&info.instance_guid);
-                    responder.send(Ok(&fpartition::PartitionGetMetadataResponse {
+                    responder.send(Ok(&fblock::BlockGetMetadataResponse {
                         name: Some(info.name.clone()),
                         type_guid: Some(type_guid),
                         instance_guid: Some(instance_guid),
@@ -524,12 +517,12 @@ impl<SM: SessionManager> BlockServer<SM> {
                     responder.send(Err(zx::sys::ZX_ERR_NOT_SUPPORTED))?;
                 }
             }
-            fvolume::VolumeRequest::QuerySlices { responder, start_slices } => {
+            fblock::BlockRequest::QuerySlices { responder, start_slices } => {
                 match self.session_manager.query_slices(&start_slices).await {
                     Ok(mut results) => {
                         let results_len = results.len();
                         assert!(results_len <= 16);
-                        results.resize(16, fvolume::VsliceRange { allocated: false, count: 0 });
+                        results.resize(16, fblock::VsliceRange { allocated: false, count: 0 });
                         responder.send(
                             zx::sys::ZX_OK,
                             &results.try_into().unwrap(),
@@ -539,13 +532,13 @@ impl<SM: SessionManager> BlockServer<SM> {
                     Err(s) => {
                         responder.send(
                             s.into_raw(),
-                            &[fvolume::VsliceRange { allocated: false, count: 0 }; 16],
+                            &[fblock::VsliceRange { allocated: false, count: 0 }; 16],
                             0,
                         )?;
                     }
                 }
             }
-            fvolume::VolumeRequest::GetVolumeInfo { responder, .. } => {
+            fblock::BlockRequest::GetVolumeInfo { responder, .. } => {
                 match self.session_manager.get_volume_info().await {
                     Ok((manager_info, volume_info)) => {
                         responder.send(zx::sys::ZX_OK, Some(&manager_info), Some(&volume_info))?
@@ -553,19 +546,19 @@ impl<SM: SessionManager> BlockServer<SM> {
                     Err(s) => responder.send(s.into_raw(), None, None)?,
                 }
             }
-            fvolume::VolumeRequest::Extend { responder, start_slice, slice_count } => {
+            fblock::BlockRequest::Extend { responder, start_slice, slice_count } => {
                 responder.send(
                     zx::Status::from(self.session_manager.extend(start_slice, slice_count).await)
                         .into_raw(),
                 )?;
             }
-            fvolume::VolumeRequest::Shrink { responder, start_slice, slice_count } => {
+            fblock::BlockRequest::Shrink { responder, start_slice, slice_count } => {
                 responder.send(
                     zx::Status::from(self.session_manager.shrink(start_slice, slice_count).await)
                         .into_raw(),
                 )?;
             }
-            fvolume::VolumeRequest::Destroy { responder, .. } => {
+            fblock::BlockRequest::Destroy { responder, .. } => {
                 responder.send(zx::sys::ZX_ERR_NOT_SUPPORTED)?;
             }
         }
@@ -1275,7 +1268,7 @@ mod tests {
         BlockFifoCommand, BlockFifoRequest, BlockFifoResponse, ReadOptions, WriteFlags,
         WriteOptions,
     };
-    use fidl_fuchsia_hardware_block_driver::{BlockIoFlag, BlockOpcode};
+    use fidl_fuchsia_storage_block::{BlockIoFlag, BlockOpcode};
     use fuchsia_sync::Mutex;
     use futures::FutureExt as _;
     use futures::channel::oneshot;
@@ -1288,10 +1281,7 @@ mod tests {
     use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
     use std::task::{Context, Poll};
     use zx::{AsHandleRef as _, HandleBased as _};
-    use {
-        fidl_fuchsia_hardware_block as fblock, fidl_fuchsia_hardware_block_volume as fvolume,
-        fuchsia_async as fasync,
-    };
+    use {fidl_fuchsia_storage_block as fblock, fuchsia_async as fasync};
 
     #[derive(Default)]
     struct MockInterface {
@@ -1368,7 +1358,7 @@ mod tests {
 
         async fn get_volume_info(
             &self,
-        ) -> Result<(fvolume::VolumeManagerInfo, fvolume::VolumeInfo), zx::Status> {
+        ) -> Result<(fblock::VolumeManagerInfo, fblock::VolumeInfo), zx::Status> {
             // Hang forever for the test_requests_dont_block_sessions test.
             let () = std::future::pending().await;
             unreachable!();
@@ -1380,9 +1370,9 @@ mod tests {
 
     fn test_device_info() -> DeviceInfo {
         DeviceInfo::Partition(PartitionInfo {
-            device_flags: fblock::Flag::READONLY
-                | fblock::Flag::BARRIER_SUPPORT
-                | fblock::Flag::FUA_SUPPORT,
+            device_flags: fblock::DeviceFlag::READONLY
+                | fblock::DeviceFlag::BARRIER_SUPPORT
+                | fblock::DeviceFlag::FUA_SUPPORT,
             max_transfer_blocks: NonZero::new(MAX_TRANSFER_BLOCKS),
             block_range: Some(0..100),
             type_guid: [1; 16],
@@ -1394,7 +1384,7 @@ mod tests {
 
     #[fuchsia::test]
     async fn test_barriers_ordering() {
-        let (proxy, stream) = fidl::endpoints::create_proxy_and_stream::<fvolume::VolumeMarker>();
+        let (proxy, stream) = fidl::endpoints::create_proxy_and_stream::<fblock::BlockMarker>();
         let vmo = zx::Vmo::create(zx::system_get_page_size() as u64).unwrap();
         let barrier_called = Arc::new(AtomicBool::new(false));
 
@@ -1488,7 +1478,7 @@ mod tests {
 
     #[fuchsia::test]
     async fn test_info() {
-        let (proxy, stream) = fidl::endpoints::create_proxy_and_stream::<fvolume::VolumeMarker>();
+        let (proxy, stream) = fidl::endpoints::create_proxy_and_stream::<fblock::BlockMarker>();
 
         futures::join!(
             async {
@@ -1511,10 +1501,10 @@ mod tests {
                 );
                 assert_eq!(
                     block_info.flags,
-                    fblock::Flag::READONLY
-                        | fblock::Flag::ZSTD_DECOMPRESSION_SUPPORT
-                        | fblock::Flag::BARRIER_SUPPORT
-                        | fblock::Flag::FUA_SUPPORT
+                    fblock::DeviceFlag::READONLY
+                        | fblock::DeviceFlag::ZSTD_DECOMPRESSION_SUPPORT
+                        | fblock::DeviceFlag::BARRIER_SUPPORT
+                        | fblock::DeviceFlag::FUA_SUPPORT
                 );
 
                 assert_eq!(block_info.max_transfer_size, MAX_TRANSFER_BLOCKS * BLOCK_SIZE);
@@ -1549,7 +1539,7 @@ mod tests {
 
     #[fuchsia::test]
     async fn test_attach_vmo() {
-        let (proxy, stream) = fidl::endpoints::create_proxy_and_stream::<fvolume::VolumeMarker>();
+        let (proxy, stream) = fidl::endpoints::create_proxy_and_stream::<fblock::BlockMarker>();
 
         let vmo = zx::Vmo::create(zx::system_get_page_size() as u64).unwrap();
         let koid = vmo.get_koid().unwrap();
@@ -1656,7 +1646,7 @@ mod tests {
 
     #[fuchsia::test]
     async fn test_close() {
-        let (proxy, stream) = fidl::endpoints::create_proxy_and_stream::<fvolume::VolumeMarker>();
+        let (proxy, stream) = fidl::endpoints::create_proxy_and_stream::<fblock::BlockMarker>();
 
         let mut server = std::pin::pin!(
             async {
@@ -1797,7 +1787,7 @@ mod tests {
 
     #[fuchsia::test]
     async fn test_io() {
-        let (proxy, stream) = fidl::endpoints::create_proxy_and_stream::<fvolume::VolumeMarker>();
+        let (proxy, stream) = fidl::endpoints::create_proxy_and_stream::<fblock::BlockMarker>();
 
         let expected_op = Arc::new(Mutex::new(None));
         let expected_op_clone = expected_op.clone();
@@ -1914,7 +1904,7 @@ mod tests {
 
     #[fuchsia::test]
     async fn test_io_errors() {
-        let (proxy, stream) = fidl::endpoints::create_proxy_and_stream::<fvolume::VolumeMarker>();
+        let (proxy, stream) = fidl::endpoints::create_proxy_and_stream::<fblock::BlockMarker>();
 
         futures::join!(
             async {
@@ -2021,7 +2011,7 @@ mod tests {
 
     #[fuchsia::test]
     async fn test_invalid_args() {
-        let (proxy, stream) = fidl::endpoints::create_proxy_and_stream::<fvolume::VolumeMarker>();
+        let (proxy, stream) = fidl::endpoints::create_proxy_and_stream::<fblock::BlockMarker>();
 
         futures::join!(
             async {
@@ -2162,7 +2152,7 @@ mod tests {
 
     #[fuchsia::test]
     async fn test_concurrent_requests() {
-        let (proxy, stream) = fidl::endpoints::create_proxy_and_stream::<fvolume::VolumeMarker>();
+        let (proxy, stream) = fidl::endpoints::create_proxy_and_stream::<fblock::BlockMarker>();
 
         let waiting_readers = Arc::new(Mutex::new(Vec::new()));
         let waiting_readers_clone = waiting_readers.clone();
@@ -2267,7 +2257,7 @@ mod tests {
 
     #[fuchsia::test]
     async fn test_groups() {
-        let (proxy, stream) = fidl::endpoints::create_proxy_and_stream::<fvolume::VolumeMarker>();
+        let (proxy, stream) = fidl::endpoints::create_proxy_and_stream::<fblock::BlockMarker>();
 
         futures::join!(
             async move {
@@ -2338,7 +2328,7 @@ mod tests {
 
     #[fuchsia::test]
     async fn test_group_error() {
-        let (proxy, stream) = fidl::endpoints::create_proxy_and_stream::<fvolume::VolumeMarker>();
+        let (proxy, stream) = fidl::endpoints::create_proxy_and_stream::<fblock::BlockMarker>();
 
         let counter = Arc::new(AtomicU64::new(0));
         let counter_clone = counter.clone();
@@ -2449,7 +2439,7 @@ mod tests {
 
     #[fuchsia::test]
     async fn test_group_with_two_lasts() {
-        let (proxy, stream) = fidl::endpoints::create_proxy_and_stream::<fvolume::VolumeMarker>();
+        let (proxy, stream) = fidl::endpoints::create_proxy_and_stream::<fblock::BlockMarker>();
 
         let (tx, rx) = oneshot::channel();
 
@@ -2555,7 +2545,7 @@ mod tests {
 
     #[fuchsia::test(allow_stalls = false)]
     async fn test_requests_dont_block_sessions() {
-        let (proxy, stream) = fidl::endpoints::create_proxy_and_stream::<fvolume::VolumeMarker>();
+        let (proxy, stream) = fidl::endpoints::create_proxy_and_stream::<fblock::BlockMarker>();
 
         let (tx, rx) = oneshot::channel();
 
@@ -2632,7 +2622,7 @@ mod tests {
 
     #[fuchsia::test]
     async fn test_request_flow_control() {
-        let (proxy, stream) = fidl::endpoints::create_proxy_and_stream::<fvolume::VolumeMarker>();
+        let (proxy, stream) = fidl::endpoints::create_proxy_and_stream::<fblock::BlockMarker>();
 
         // The client will ensure that MAX_REQUESTS are queued up before firing `event`, and the
         // server will block until that happens.
@@ -2750,7 +2740,7 @@ mod tests {
 
     #[fuchsia::test]
     async fn test_passthrough_io_with_fixed_map() {
-        let (proxy, stream) = fidl::endpoints::create_proxy_and_stream::<fvolume::VolumeMarker>();
+        let (proxy, stream) = fidl::endpoints::create_proxy_and_stream::<fblock::BlockMarker>();
 
         let expected_op = Arc::new(Mutex::new(None));
         let expected_op_clone = expected_op.clone();
@@ -3006,13 +2996,13 @@ mod tests {
     // Verifies that if the pre-flush (for a simulated barrier) fails, the write is not executed.
     #[fuchsia::test]
     async fn test_pre_barrier_flush_failure() {
-        let (proxy, stream) = fidl::endpoints::create_proxy_and_stream::<fvolume::VolumeMarker>();
+        let (proxy, stream) = fidl::endpoints::create_proxy_and_stream::<fblock::BlockMarker>();
 
         struct NoBarrierInterface;
         impl super::async_interface::Interface for NoBarrierInterface {
             fn get_info(&self) -> Cow<'_, DeviceInfo> {
                 Cow::Owned(DeviceInfo::Partition(PartitionInfo {
-                    device_flags: fblock::Flag::empty(), // No BARRIER_SUPPORT
+                    device_flags: fblock::DeviceFlag::empty(), // No BARRIER_SUPPORT
                     max_transfer_blocks: NonZero::new(100),
                     block_range: Some(0..100),
                     type_guid: [0; 16],
@@ -3098,13 +3088,13 @@ mod tests {
     // post-flush is not executed.
     #[fuchsia::test]
     async fn test_post_barrier_write_failure() {
-        let (proxy, stream) = fidl::endpoints::create_proxy_and_stream::<fvolume::VolumeMarker>();
+        let (proxy, stream) = fidl::endpoints::create_proxy_and_stream::<fblock::BlockMarker>();
 
         struct NoBarrierInterface;
         impl super::async_interface::Interface for NoBarrierInterface {
             fn get_info(&self) -> Cow<'_, DeviceInfo> {
                 Cow::Owned(DeviceInfo::Partition(PartitionInfo {
-                    device_flags: fblock::Flag::empty(), // No FUA_SUPPORT
+                    device_flags: fblock::DeviceFlag::empty(), // No FUA_SUPPORT
                     max_transfer_blocks: NonZero::new(100),
                     block_range: Some(0..100),
                     type_guid: [0; 16],

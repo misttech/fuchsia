@@ -29,7 +29,7 @@ class PassThroughReadOnlyBlockDevice : public BlockDevice {
     return device_.Rebind(url_suffix);
   }
 
-  zx_status_t BlockGetInfo(fuchsia_hardware_block::wire::BlockInfo* out_info) const override {
+  zx_status_t BlockGetInfo(fuchsia_storage_block::wire::BlockInfo* out_info) const override {
     return device_.BlockGetInfo(out_info);
   }
 
@@ -38,13 +38,13 @@ class PassThroughReadOnlyBlockDevice : public BlockDevice {
   }
 
   zx_status_t VolumeGetInfo(
-      fuchsia_hardware_block_volume::wire::VolumeManagerInfo* out_manager_info,
-      fuchsia_hardware_block_volume::wire::VolumeInfo* out_volume_info) const override {
+      fuchsia_storage_block::wire::VolumeManagerInfo* out_manager_info,
+      fuchsia_storage_block::wire::VolumeInfo* out_volume_info) const override {
     return device_.VolumeGetInfo(out_manager_info, out_volume_info);
   }
 
   zx_status_t VolumeQuerySlices(const uint64_t* slices, size_t slices_count,
-                                fuchsia_hardware_block_volume::wire::VsliceRange* out_ranges,
+                                fuchsia_storage_block::wire::VsliceRange* out_ranges,
                                 size_t* out_ranges_count) const override {
     return device_.VolumeQuerySlices(slices, slices_count, out_ranges, out_ranges_count);
   }

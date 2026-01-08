@@ -2,7 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#include <fidl/fuchsia.hardware.block.volume/cpp/wire_types.h>
+#include <fidl/fuchsia.storage.block/cpp/wire_types.h>
 #include <lib/zx/result.h>
 #include <zircon/errors.h>
 #include <zircon/types.h>
@@ -14,8 +14,8 @@
 #include "src/storage/lib/block_client/cpp/fake_block_device.h"
 #include "src/storage/lib/vfs/cpp/inspect/inspect_data.h"
 
-using VolumeManagerInfo = fuchsia_hardware_block_volume::wire::VolumeManagerInfo;
-using VolumeInfo = fuchsia_hardware_block_volume::wire::VolumeInfo;
+using VolumeManagerInfo = fuchsia_storage_block::wire::VolumeManagerInfo;
+using VolumeInfo = fuchsia_storage_block::wire::VolumeInfo;
 
 namespace fs_inspect {
 namespace {
@@ -26,9 +26,8 @@ class FakeBlockDevice final : public block_client::FakeBlockDevice {
   FakeBlockDevice() : block_client::FakeBlockDevice({}) {}
   ~FakeBlockDevice() override = default;
 
-  zx_status_t VolumeGetInfo(
-      fuchsia_hardware_block_volume::wire::VolumeManagerInfo* out_manager_info,
-      fuchsia_hardware_block_volume::wire::VolumeInfo* out_volume_info) const final {
+  zx_status_t VolumeGetInfo(fuchsia_storage_block::wire::VolumeManagerInfo* out_manager_info,
+                            fuchsia_storage_block::wire::VolumeInfo* out_volume_info) const final {
     *out_manager_info = volume_manager_info_;
     *out_volume_info = volume_info_;
     return ZX_OK;

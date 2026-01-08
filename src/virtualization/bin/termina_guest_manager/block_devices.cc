@@ -80,7 +80,7 @@ zx::result<fuchsia::io::FileHandle> GetPartition(const DiskImage& image) {
 }
 
 // Opens the given disk image.
-zx::result<fidl::InterfaceHandle<fuchsia::hardware::block::Block>> GetFxfsPartition(
+zx::result<fidl::InterfaceHandle<fuchsia::storage::block::Block>> GetFxfsPartition(
     const DiskImage& image, const size_t image_size_bytes) {
   TRACE_DURATION("linux_runner", "GetFxfsPartition");
 
@@ -127,8 +127,7 @@ zx::result<fidl::InterfaceHandle<fuchsia::hardware::block::Block>> GetFxfsPartit
   }
 
   /// Then, we can open the file in block mode.
-  auto [device_client, device_server] =
-      fidl::Endpoints<fuchsia_hardware_block_volume::Volume>::Create();
+  auto [device_client, device_server] = fidl::Endpoints<fuchsia_storage_block::Block>::Create();
   auto [provider_client, provider_server] =
       fidl::Endpoints<fuchsia_fxfs::FileBackedVolumeProvider>::Create();
   if (zx::result result = component::Connect(std::move(provider_server)); result.is_error()) {
@@ -150,7 +149,7 @@ zx::result<fidl::InterfaceHandle<fuchsia::hardware::block::Block>> GetFxfsPartit
     return zx::error(info->error_value());
   }
 
-  return zx::ok(fuchsia::hardware::block::BlockHandle(device_client.TakeChannel()));
+  return zx::ok(fuchsia::storage::block::BlockHandle(device_client.TakeChannel()));
 }
 
 }  // namespace

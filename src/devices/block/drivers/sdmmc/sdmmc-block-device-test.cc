@@ -5,12 +5,14 @@
 #include "sdmmc-block-device.h"
 
 #include <endian.h>
-#include <fidl/fuchsia.hardware.block/cpp/wire.h>
+#include <fidl/fuchsia.hardware.block.volume/cpp/fidl.h>
 #include <fidl/fuchsia.hardware.power/cpp/fidl.h>
 #include <fidl/fuchsia.hardware.sdmmc/cpp/fidl.h>
 #include <fidl/fuchsia.power.broker/cpp/fidl.h>
 #include <fidl/fuchsia.power.system/cpp/fidl.h>
 #include <fidl/fuchsia.power.system/cpp/test_base.h>
+#include <fidl/fuchsia.storage.block/cpp/fidl.h>
+#include <fidl/fuchsia.storage.block/cpp/wire.h>
 #include <lib/async-loop/cpp/loop.h>
 #include <lib/async-loop/default.h>
 #include <lib/ddk/metadata.h>
@@ -634,7 +636,7 @@ TEST_P(SdmmcBlockDeviceTest, BlockImplQuery) {
   EXPECT_EQ(info.block_count, FakeSdmmcDevice::kBlockCount);
   EXPECT_EQ(info.block_size, FakeSdmmcDevice::kBlockSize);
   EXPECT_EQ(block_op_size, kBlockOpSize);
-  EXPECT_FALSE(info.flags & FLAG_REMOVABLE);
+  EXPECT_FALSE(info.flags & DEVICE_FLAG_REMOVABLE);
 }
 
 TEST_P(SdmmcBlockDeviceTest, BlockImplQuerySdRemovable) {
@@ -646,7 +648,7 @@ TEST_P(SdmmcBlockDeviceTest, BlockImplQuerySdRemovable) {
 
   EXPECT_EQ(info.block_size, FakeSdmmcDevice::kBlockSize);
   EXPECT_EQ(block_op_size, kBlockOpSize);
-  EXPECT_TRUE(info.flags & FLAG_REMOVABLE);
+  EXPECT_TRUE(info.flags & DEVICE_FLAG_REMOVABLE);
 }
 
 TEST_P(SdmmcBlockDeviceTest, BlockImplQueue) {
@@ -2705,7 +2707,7 @@ TEST_P(SdmmcBlockDeviceTest, BlockServer) {
     auto client = GetRemoteBlockDeviceForBlockServer(instance_name);
     ASSERT_OK(client);
 
-    fuchsia_hardware_block::wire::BlockInfo info;
+    fuchsia_storage_block::wire::BlockInfo info;
     EXPECT_OK(client->BlockGetInfo(&info));
 
     const int len = 2 * info.block_size;
@@ -2823,7 +2825,7 @@ TEST_P(SdmmcBlockDeviceTest, BlockServerMaxTransferSize) {
     auto client = GetRemoteBlockDeviceForBlockServer("user");
     ASSERT_OK(client);
 
-    fuchsia_hardware_block::wire::BlockInfo info;
+    fuchsia_storage_block::wire::BlockInfo info;
     EXPECT_OK(client->BlockGetInfo(&info));
 
     ASSERT_EQ(kMaxTransferSize % info.block_size, 0);
@@ -2914,7 +2916,7 @@ TEST_P(SdmmcBlockDeviceTest, BlockServerSplitTransfer) {
     auto client = GetRemoteBlockDeviceForBlockServer("user");
     ASSERT_OK(client);
 
-    fuchsia_hardware_block::wire::BlockInfo info;
+    fuchsia_storage_block::wire::BlockInfo info;
     EXPECT_OK(client->BlockGetInfo(&info));
 
     ASSERT_EQ(kMaxTransferSize % info.block_size, 0);

@@ -5,7 +5,7 @@
 #ifndef SRC_STORAGE_LIB_BLOCK_CLIENT_CPP_CLIENT_H_
 #define SRC_STORAGE_LIB_BLOCK_CLIENT_CPP_CLIENT_H_
 
-#include <fidl/fuchsia.hardware.block/cpp/wire.h>
+#include <fidl/fuchsia.storage.block/cpp/wire.h>
 #include <fuchsia/hardware/block/driver/c/banjo.h>
 #include <lib/zx/fifo.h>
 #include <lib/zx/result.h>
@@ -32,7 +32,7 @@ namespace block_client {
 // When the Client is destroyed, its session will be synchronously closed.
 class Client : public storage::VmoidRegistry {
  public:
-  Client(fidl::ClientEnd<fuchsia_hardware_block::Session> session, zx::fifo fifo);
+  Client(fidl::ClientEnd<fuchsia_storage_block::Session> session, zx::fifo fifo);
   ~Client();
 
   zx_status_t BlockAttachVmo(const zx::vmo& vmo, storage::Vmoid* out) override;
@@ -53,7 +53,7 @@ class Client : public storage::VmoidRegistry {
   zx_status_t DoRead(block_fifo_response_t* response, size_t* count);
   zx_status_t DoWrite(block_fifo_request_t* request, size_t count);
 
-  const fidl::ClientEnd<fuchsia_hardware_block::Session> session_;
+  const fidl::ClientEnd<fuchsia_storage_block::Session> session_;
   const zx::fifo fifo_;
 
   std::mutex mutex_;

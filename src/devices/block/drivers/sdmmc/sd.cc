@@ -176,7 +176,7 @@ zx_status_t SdmmcBlockDevice::ProbeSdLocked() {
   }
 
   if (metadata_.removable().value()) {
-    block_info_.flags |= FLAG_REMOVABLE;
+    block_info_.flags |= DEVICE_FLAG_REMOVABLE;
   }
 
   is_sd_ = true;

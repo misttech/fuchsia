@@ -5,9 +5,7 @@
 #define SRC_FIRMWARE_PAVER_PARTITION_CLIENT_H_
 
 #include <fidl/fuchsia.device/cpp/wire.h>
-#include <fidl/fuchsia.hardware.block.partition/cpp/wire.h>
-#include <fidl/fuchsia.hardware.block/cpp/wire.h>
-#include <fidl/fuchsia.storage.partitions/cpp/markers.h>
+#include <fidl/fuchsia.storage.block/cpp/wire.h>
 #include <lib/zx/channel.h>
 #include <lib/zx/result.h>
 #include <lib/zx/vmo.h>
@@ -109,8 +107,8 @@ class BlockPartitionClient : public PartitionClient {
     return partition_connector_->Controller();
   }
 
-  fidl::UnownedClientEnd<fuchsia_hardware_block::Block> Block() const {
-    return fidl::UnownedClientEnd<fuchsia_hardware_block::Block>(
+  fidl::UnownedClientEnd<fuchsia_storage_block::Block> Block() const {
+    return fidl::UnownedClientEnd<fuchsia_storage_block::Block>(
         partition_.client_end().borrow().channel());
   }
 
@@ -126,16 +124,16 @@ class BlockPartitionClient : public PartitionClient {
 
  private:
   BlockPartitionClient(std::unique_ptr<VolumeConnector> connector,
-                       fidl::WireSyncClient<fuchsia_hardware_block_partition::Partition> partition)
+                       fidl::WireSyncClient<fuchsia_storage_block::Block> partition)
       : partition_connector_(std::move(connector)), partition_(std::move(partition)) {}
 
   zx::result<> RegisterFastBlockIo();
-  zx::result<std::reference_wrapper<fuchsia_hardware_block::wire::BlockInfo>> ReadBlockInfo();
+  zx::result<std::reference_wrapper<fuchsia_storage_block::wire::BlockInfo>> ReadBlockInfo();
 
   std::unique_ptr<VolumeConnector> partition_connector_;
-  fidl::WireSyncClient<fuchsia_hardware_block_partition::Partition> partition_;
+  fidl::WireSyncClient<fuchsia_storage_block::Block> partition_;
   std::unique_ptr<block_client::Client> client_;
-  std::optional<fuchsia_hardware_block::wire::BlockInfo> block_info_;
+  std::optional<fuchsia_storage_block::wire::BlockInfo> block_info_;
 };
 
 // A variant of BlockPartitionClient that reads/writes starting from a fixed offset in

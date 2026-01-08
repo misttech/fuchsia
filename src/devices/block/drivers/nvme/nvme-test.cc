@@ -131,7 +131,7 @@ TEST_F(NvmeTest, NamespaceBlockInfo) {
   ns->BlockImplQuery(&info, &op_size);
   EXPECT_EQ(512u, info.block_size);
   EXPECT_EQ(1024u, info.block_count);
-  EXPECT_TRUE(info.flags & FLAG_FUA_SUPPORT);
+  EXPECT_TRUE(info.flags & DEVICE_FLAG_FUA_SUPPORT);
 }
 
 TEST_F(NvmeTest, NamespaceReadTest) {

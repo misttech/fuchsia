@@ -86,7 +86,7 @@ void BlockDevice::Create(std::unique_ptr<BlockDevice>* device, const fbl::unique
   ASSERT_OK(ramdisk);
   zx::result block = ramdisk->ConnectBlock();
   ASSERT_OK(block);
-  fidl::ClientEnd<fuchsia_hardware_block_volume::Volume> volume(std::move(block)->TakeChannel());
+  fidl::ClientEnd<fuchsia_storage_block::Block> volume(std::move(block)->TakeChannel());
   device->reset(new BlockDevice(std::move(*ramdisk), std::move(volume), block_count, block_size));
 }
 
@@ -103,7 +103,7 @@ void BlockDevice::CreateLegacy(std::unique_ptr<BlockDevice>* device,
   ASSERT_OK(ramdisk);
   zx::result block = ramdisk->ConnectBlock();
   ASSERT_OK(block);
-  fidl::ClientEnd<fuchsia_hardware_block_volume::Volume> volume(std::move(block)->TakeChannel());
+  fidl::ClientEnd<fuchsia_storage_block::Block> volume(std::move(block)->TakeChannel());
   device->reset(new BlockDevice(std::move(*ramdisk), std::move(volume), block_count, block_size));
 }
 
@@ -123,7 +123,7 @@ void BlockDevice::CreateLegacyFromVmo(std::unique_ptr<BlockDevice>* device,
   ASSERT_OK(ramdisk);
   zx::result block = ramdisk->ConnectBlock();
   ASSERT_OK(block);
-  fidl::ClientEnd<fuchsia_hardware_block_volume::Volume> volume(std::move(block)->TakeChannel());
+  fidl::ClientEnd<fuchsia_storage_block::Block> volume(std::move(block)->TakeChannel());
   device->reset(new BlockDevice(std::move(*ramdisk), std::move(volume), block_count, block_size));
 }
 
@@ -143,7 +143,7 @@ void BlockDevice::CreateFromVmo(std::unique_ptr<BlockDevice>* device,
   ASSERT_OK(ramdisk);
   zx::result block = ramdisk->ConnectBlock();
   ASSERT_OK(block);
-  fidl::ClientEnd<fuchsia_hardware_block_volume::Volume> volume(std::move(block)->TakeChannel());
+  fidl::ClientEnd<fuchsia_storage_block::Block> volume(std::move(block)->TakeChannel());
   device->reset(new BlockDevice(std::move(*ramdisk), std::move(volume), block_count, block_size));
 }
 
@@ -200,7 +200,7 @@ void BlockDevice::CreateLegacyWithGpt(const fbl::unique_fd& devfs_root, uint64_t
 void BlockDevice::Read(const zx::vmo& vmo, size_t size, size_t dev_offset,
                        size_t vmo_offset) const {
   zx::result block_client = block_client::RemoteBlockDevice::Create(
-      fidl::ClientEnd<fuchsia_hardware_block_volume::Volume>(Connect().TakeChannel()));
+      fidl::ClientEnd<fuchsia_storage_block::Block>(Connect().TakeChannel()));
   ASSERT_OK(block_client);
   ASSERT_OK(block_client::ReaderWriter(**block_client)
                 .Read(dev_offset * block_size_, size, vmo, vmo_offset));
@@ -209,7 +209,7 @@ void BlockDevice::Read(const zx::vmo& vmo, size_t size, size_t dev_offset,
 void BlockDevice::Write(const zx::vmo& vmo, size_t size, size_t dev_offset,
                         size_t vmo_offset) const {
   zx::result block_client = block_client::RemoteBlockDevice::Create(
-      fidl::ClientEnd<fuchsia_hardware_block_volume::Volume>(Connect().TakeChannel()));
+      fidl::ClientEnd<fuchsia_storage_block::Block>(Connect().TakeChannel()));
   ASSERT_OK(block_client);
   ASSERT_OK(block_client::ReaderWriter(**block_client)
                 .Write(dev_offset * block_size_, size, vmo, vmo_offset));

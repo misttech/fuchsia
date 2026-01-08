@@ -5,8 +5,7 @@
 #include "src/storage/lib/block_client/cpp/remote_block_device.h"
 
 #include <fidl/fuchsia.device/cpp/wire.h>
-#include <fidl/fuchsia.hardware.block.volume/cpp/wire.h>
-#include <fidl/fuchsia.hardware.block/cpp/wire.h>
+#include <fidl/fuchsia.storage.block/cpp/wire.h>
 #include <lib/component/incoming/cpp/clone.h>
 #include <lib/fdio/cpp/caller.h>
 #include <lib/zx/vmo.h>
@@ -44,7 +43,7 @@ zx::result<> RemoteBlockDevice::Rebind(std::string_view url_suffix) const {
 }
 
 zx_status_t RemoteBlockDevice::BlockGetInfo(
-    fuchsia_hardware_block::wire::BlockInfo* out_info) const {
+    fuchsia_storage_block::wire::BlockInfo* out_info) const {
   const fidl::WireResult result = fidl::WireCall(device_)->GetInfo();
   if (!result.ok()) {
     return result.status();
@@ -67,8 +66,8 @@ zx_status_t RemoteBlockDevice::BlockAttachVmo(const zx::vmo& vmo, storage::Vmoid
 }
 
 zx_status_t RemoteBlockDevice::VolumeGetInfo(
-    fuchsia_hardware_block_volume::wire::VolumeManagerInfo* out_manager_info,
-    fuchsia_hardware_block_volume::wire::VolumeInfo* out_volume_info) const {
+    fuchsia_storage_block::wire::VolumeManagerInfo* out_manager_info,
+    fuchsia_storage_block::wire::VolumeInfo* out_volume_info) const {
   const fidl::WireResult result = fidl::WireCall(device_)->GetVolumeInfo();
   if (!result.ok()) {
     return result.status();
@@ -84,8 +83,8 @@ zx_status_t RemoteBlockDevice::VolumeGetInfo(
 
 zx_status_t RemoteBlockDevice::VolumeQuerySlices(
     const uint64_t* slices, size_t slices_count,
-    fuchsia_hardware_block_volume::wire::VsliceRange* out_ranges, size_t* out_ranges_count) const {
-  fidl::UnownedClientEnd<fuchsia_hardware_block_volume::Volume> volume(device_.channel().borrow());
+    fuchsia_storage_block::wire::VsliceRange* out_ranges, size_t* out_ranges_count) const {
+  fidl::UnownedClientEnd<fuchsia_storage_block::Block> volume(device_.channel().borrow());
   const fidl::WireResult result = fidl::WireCall(volume)->QuerySlices(
       fidl::VectorView<uint64_t>::FromExternal(const_cast<uint64_t*>(slices), slices_count));
   if (!result.ok()) {
@@ -101,7 +100,7 @@ zx_status_t RemoteBlockDevice::VolumeQuerySlices(
 }
 
 zx_status_t RemoteBlockDevice::VolumeExtend(uint64_t offset, uint64_t length) {
-  fidl::UnownedClientEnd<fuchsia_hardware_block_volume::Volume> volume(device_.channel().borrow());
+  fidl::UnownedClientEnd<fuchsia_storage_block::Block> volume(device_.channel().borrow());
   const fidl::WireResult result = fidl::WireCall(volume)->Extend(offset, length);
   if (!result.ok()) {
     return result.status();
@@ -111,7 +110,7 @@ zx_status_t RemoteBlockDevice::VolumeExtend(uint64_t offset, uint64_t length) {
 }
 
 zx_status_t RemoteBlockDevice::VolumeShrink(uint64_t offset, uint64_t length) {
-  fidl::UnownedClientEnd<fuchsia_hardware_block_volume::Volume> volume(device_.channel().borrow());
+  fidl::UnownedClientEnd<fuchsia_storage_block::Block> volume(device_.channel().borrow());
   const fidl::WireResult result = fidl::WireCall(volume)->Shrink(offset, length);
   if (!result.ok()) {
     return result.status();
@@ -121,9 +120,9 @@ zx_status_t RemoteBlockDevice::VolumeShrink(uint64_t offset, uint64_t length) {
 }
 
 zx::result<std::unique_ptr<RemoteBlockDevice>> RemoteBlockDevice::Create(
-    fidl::ClientEnd<fuchsia_hardware_block_volume::Volume> device,
+    fidl::ClientEnd<fuchsia_storage_block::Block> device,
     fidl::ClientEnd<fuchsia_device::Controller> controller) {
-  auto [session, server] = fidl::Endpoints<fuchsia_hardware_block::Session>::Create();
+  auto [session, server] = fidl::Endpoints<fuchsia_storage_block::Session>::Create();
   if (fidl::Status result = fidl::WireCall(device)->OpenSession(std::move(server)); !result.ok()) {
     return zx::error(result.status());
   }
@@ -139,15 +138,15 @@ zx::result<std::unique_ptr<RemoteBlockDevice>> RemoteBlockDevice::Create(
       std::move(device), std::move(controller), std::move(session), std::move(response->fifo))));
 }
 
-RemoteBlockDevice::RemoteBlockDevice(fidl::ClientEnd<fuchsia_hardware_block_volume::Volume> device,
+RemoteBlockDevice::RemoteBlockDevice(fidl::ClientEnd<fuchsia_storage_block::Block> device,
                                      fidl::ClientEnd<fuchsia_device::Controller> controller,
-                                     fidl::ClientEnd<fuchsia_hardware_block::Session> session,
+                                     fidl::ClientEnd<fuchsia_storage_block::Session> session,
                                      zx::fifo fifo)
     : device_(std::move(device)),
       controller_(std::move(controller)),
       fifo_client_(std::move(session), std::move(fifo)) {}
 
-zx_status_t ReadWriteBlocks(fidl::UnownedClientEnd<fuchsia_hardware_block::Block> device,
+zx_status_t ReadWriteBlocks(fidl::UnownedClientEnd<fuchsia_storage_block::Block> device,
                             void* buffer, size_t buffer_length, size_t offset, bool write) {
   // Get the Block info for block size calculations:
   const fidl::WireResult get_info_result = fidl::WireCall(device)->GetInfo();
@@ -174,7 +173,7 @@ zx_status_t ReadWriteBlocks(fidl::UnownedClientEnd<fuchsia_hardware_block::Block
     return status;
   }
 
-  auto [session, server] = fidl::Endpoints<fuchsia_hardware_block::Session>::Create();
+  auto [session, server] = fidl::Endpoints<fuchsia_storage_block::Session>::Create();
   const fidl::OneWayStatus status = fidl::WireCall(device)->OpenSession(std::move(server));
   if (!status.ok())
     return status.status();
@@ -245,16 +244,16 @@ zx_status_t ReadWriteBlocks(fidl::UnownedClientEnd<fuchsia_hardware_block::Block
   return ZX_OK;
 }
 
-fidl::ClientEnd<fuchsia_hardware_block_volume::Volume> RemoteBlockDevice::TakeDevice() {
+fidl::ClientEnd<fuchsia_storage_block::Block> RemoteBlockDevice::TakeDevice() {
   return std::move(device_);
 }
 
-zx_status_t SingleReadBytes(fidl::UnownedClientEnd<fuchsia_hardware_block::Block> device,
+zx_status_t SingleReadBytes(fidl::UnownedClientEnd<fuchsia_storage_block::Block> device,
                             void* buffer, size_t buffer_size, size_t offset) {
   return ReadWriteBlocks(device, buffer, buffer_size, offset, false);
 }
 
-zx_status_t SingleWriteBytes(fidl::UnownedClientEnd<fuchsia_hardware_block::Block> device,
+zx_status_t SingleWriteBytes(fidl::UnownedClientEnd<fuchsia_storage_block::Block> device,
                              void* buffer, size_t buffer_size, size_t offset) {
   return ReadWriteBlocks(device, buffer, buffer_size, offset, true);
 }

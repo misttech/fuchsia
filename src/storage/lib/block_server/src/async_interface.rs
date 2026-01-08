@@ -8,7 +8,7 @@ use super::{
 };
 use anyhow::Error;
 use block_protocol::{BlockFifoRequest, BlockFifoResponse, ReadOptions, WriteFlags, WriteOptions};
-use fidl_fuchsia_hardware_block::Flag;
+use fidl_fuchsia_storage_block::DeviceFlag;
 use futures::future::{Fuse, FusedFuture, join};
 use futures::stream::FuturesUnordered;
 use futures::{FutureExt, StreamExt, select_biased};
@@ -21,10 +21,7 @@ use std::sync::{Arc, OnceLock};
 use std::task::{Poll, ready};
 use storage_device::buffer::Buffer;
 use storage_device::buffer_allocator::{BufferAllocator, BufferSource};
-use {
-    fidl_fuchsia_hardware_block as fblock, fidl_fuchsia_hardware_block_volume as fvolume,
-    fuchsia_async as fasync,
-};
+use {fidl_fuchsia_storage_block as fblock, fuchsia_async as fasync};
 
 pub trait Interface: Send + Sync + Unpin + 'static {
     /// Runs `stream` to completion.
@@ -104,7 +101,7 @@ pub trait Interface: Send + Sync + Unpin + 'static {
     /// Called to handle the GetVolumeInfo FIDL call.
     fn get_volume_info(
         &self,
-    ) -> impl Future<Output = Result<(fvolume::VolumeManagerInfo, fvolume::VolumeInfo), zx::Status>> + Send
+    ) -> impl Future<Output = Result<(fblock::VolumeManagerInfo, fblock::VolumeInfo), zx::Status>> + Send
     {
         async { Err(zx::Status::NOT_SUPPORTED) }
     }
@@ -113,7 +110,7 @@ pub trait Interface: Send + Sync + Unpin + 'static {
     fn query_slices(
         &self,
         _start_slices: &[u64],
-    ) -> impl Future<Output = Result<Vec<fvolume::VsliceRange>, zx::Status>> + Send {
+    ) -> impl Future<Output = Result<Vec<fblock::VsliceRange>, zx::Status>> + Send {
         async { Err(zx::Status::NOT_SUPPORTED) }
     }
 
@@ -407,7 +404,7 @@ impl<I: Interface + ?Sized> Session<I> {
         let flags = self.interface.get_info().as_ref().device_flags();
         // Strip the PRE_BARRIER flag if we don't support it, and simulate the barrier with a
         // pre-flush.
-        if !flags.contains(Flag::BARRIER_SUPPORT)
+        if !flags.contains(DeviceFlag::BARRIER_SUPPORT)
             && request.operation.take_write_flag(WriteFlags::PRE_BARRIER)
         {
             if let Some(id) = request.trace_flow_id {
@@ -602,7 +599,7 @@ impl<I: Interface + ?Sized> Session<I> {
                 // post-flush.
                 if options.flags.contains(WriteFlags::FORCE_ACCESS) {
                     let flags = self.interface.get_info().as_ref().device_flags();
-                    if !flags.contains(Flag::FUA_SUPPORT) {
+                    if !flags.contains(DeviceFlag::FUA_SUPPORT) {
                         options.flags.remove(WriteFlags::FORCE_ACCESS);
                         needs_postflush = true;
                     }
@@ -681,14 +678,14 @@ impl<I: Interface + ?Sized> super::SessionManager for SessionManager<I> {
 
     async fn get_volume_info(
         &self,
-    ) -> Result<(fvolume::VolumeManagerInfo, fvolume::VolumeInfo), zx::Status> {
+    ) -> Result<(fblock::VolumeManagerInfo, fblock::VolumeInfo), zx::Status> {
         self.interface.get_volume_info().await
     }
 
     async fn query_slices(
         &self,
         start_slices: &[u64],
-    ) -> Result<Vec<fvolume::VsliceRange>, zx::Status> {
+    ) -> Result<Vec<fblock::VsliceRange>, zx::Status> {
         self.interface.query_slices(start_slices).await
     }
 

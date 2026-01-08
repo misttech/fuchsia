@@ -5,7 +5,7 @@
 #ifndef SRC_DEVICES_BLOCK_DRIVERS_CORE_SERVER_H_
 #define SRC_DEVICES_BLOCK_DRIVERS_CORE_SERVER_H_
 
-#include <fidl/fuchsia.hardware.block/cpp/wire.h>
+#include <fidl/fuchsia.storage.block/cpp/wire.h>
 #include <fuchsia/hardware/block/driver/cpp/banjo.h>
 #include <lib/fzl/fifo.h>
 #include <lib/sync/completion.h>
@@ -35,24 +35,24 @@
 class OffsetMap {
  public:
   static zx::result<std::unique_ptr<OffsetMap>> Create(
-      fuchsia_hardware_block::wire::BlockOffsetMapping mapping);
+      fuchsia_storage_block::wire::BlockOffsetMapping mapping);
 
   // Adjusts `request` by applying the map to dev_offset.
   // Returns false if the request would exceed the range known to OffsetMap.
   bool AdjustRequest(block_fifo_request_t& request) const;
 
  private:
-  explicit OffsetMap(fuchsia_hardware_block::wire::BlockOffsetMapping mapping);
+  explicit OffsetMap(fuchsia_storage_block::wire::BlockOffsetMapping mapping);
 
-  fuchsia_hardware_block::wire::BlockOffsetMapping mapping_;
+  fuchsia_storage_block::wire::BlockOffsetMapping mapping_;
 };
 
-class Server : public fidl::WireServer<fuchsia_hardware_block::Session> {
+class Server : public fidl::WireServer<fuchsia_storage_block::Session> {
  public:
   // Creates a new Server.
   static zx::result<std::unique_ptr<Server>> Create(
       ddk::BlockProtocolClient* bp,
-      std::optional<fuchsia_hardware_block::wire::BlockOffsetMapping> mapping = std::nullopt);
+      std::optional<fuchsia_storage_block::wire::BlockOffsetMapping> mapping = std::nullopt);
 
   // This will block until all outstanding messages have been processed.
   ~Server() override;

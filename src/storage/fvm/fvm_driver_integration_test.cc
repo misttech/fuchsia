@@ -11,7 +11,7 @@
 
 namespace {
 
-using VolumeManagerInfo = fuchsia_hardware_block_volume::wire::VolumeManagerInfo;
+using VolumeManagerInfo = fuchsia_storage_block::wire::VolumeManagerInfo;
 
 class FvmDriverTest : public zxtest::Test {
  protected:
@@ -26,7 +26,7 @@ class FvmDriverTest : public zxtest::Test {
     return instance_->GetRamdiskControllerInterface();
   }
 
-  fidl::ClientEnd<fuchsia_hardware_block::Block> ramdisk_block_interface() const {
+  fidl::ClientEnd<fuchsia_storage_block::Block> ramdisk_block_interface() const {
     return instance_->GetRamdiskPartition();
   }
 
@@ -70,9 +70,9 @@ void FvmDriverTest::Upgrade(const uuid::Uuid& old_guid, const uuid::Uuid& new_gu
                             zx_status_t status) const {
   zx::result fvm = instance_->GetVolumeManager();
   ASSERT_OK(fvm);
-  fuchsia_hardware_block_partition::wire::Guid old_guid_fidl;
+  fuchsia_storage_block::wire::Guid old_guid_fidl;
   std::copy(old_guid.cbegin(), old_guid.cend(), old_guid_fidl.value.begin());
-  fuchsia_hardware_block_partition::wire::Guid new_guid_fidl;
+  fuchsia_storage_block::wire::Guid new_guid_fidl;
   std::copy(new_guid.cbegin(), new_guid.cend(), new_guid_fidl.value.begin());
 
   const fidl::WireResult result = fidl::WireCall(*fvm)->Activate(old_guid_fidl, new_guid_fidl);
@@ -93,7 +93,7 @@ TEST_F(FvmDriverTest, TestVPartitionUpgrade) {
         .type = fvm::kTestPartDataGuid,
         .guid = fvm::kTestUniqueGuid1,
         .name = fvm::kTestPartDataName,
-        .flags = fuchsia_hardware_block_volume::wire::kAllocatePartitionFlagInactive,
+        .flags = fuchsia_storage_block::wire::kAllocatePartitionFlagInactive,
     });
     ASSERT_OK(vp_fd_or, "Couldn't open Volume");
   }
@@ -122,7 +122,7 @@ TEST_F(FvmDriverTest, TestVPartitionUpgrade) {
         .type = fvm::kTestPartDataGuid,
         .guid = fvm::kTestUniqueGuid1,
         .name = fvm::kTestPartDataName,
-        .flags = fuchsia_hardware_block_volume::wire::kAllocatePartitionFlagInactive,
+        .flags = fuchsia_storage_block::wire::kAllocatePartitionFlagInactive,
     });
     ASSERT_OK(vp_fd_or, "Couldn't open new volume");
   }
@@ -157,7 +157,7 @@ TEST_F(FvmDriverTest, TestVPartitionUpgrade) {
         .type = fvm::kTestPartDataGuid,
         .guid = fvm::kTestUniqueGuid2,
         .name = fvm::kTestPartBlobName,
-        .flags = fuchsia_hardware_block_volume::wire::kAllocatePartitionFlagInactive,
+        .flags = fuchsia_storage_block::wire::kAllocatePartitionFlagInactive,
     });
     ASSERT_OK(vp_fd_or, "Couldn't open volume");
   }
@@ -174,7 +174,7 @@ TEST_F(FvmDriverTest, TestVPartitionUpgrade) {
 
   // Destroy and reallocate the first partition as inactive.
   {
-    const fidl::WireResult result = fidl::WireCall(vp_or->as_volume())->Destroy();
+    const fidl::WireResult result = fidl::WireCall(vp_or->as_block())->Destroy();
     ASSERT_OK(result.status());
     const fidl::WireResponse response = result.value();
     ASSERT_OK(response.status);
@@ -184,7 +184,7 @@ TEST_F(FvmDriverTest, TestVPartitionUpgrade) {
         .type = fvm::kTestPartDataGuid,
         .guid = fvm::kTestUniqueGuid1,
         .name = fvm::kTestPartDataName,
-        .flags = fuchsia_hardware_block_volume::wire::kAllocatePartitionFlagInactive,
+        .flags = fuchsia_storage_block::wire::kAllocatePartitionFlagInactive,
     });
     ASSERT_OK(vp_or, "Couldn't open volume");
   }

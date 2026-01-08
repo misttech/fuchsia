@@ -23,7 +23,8 @@ use {
     fidl_fuchsia_feedback as ffeedback, fidl_fuchsia_fshost_fxfsprovisioner as ffxfsprovisioner,
     fidl_fuchsia_hardware_block_volume as fvolume, fidl_fuchsia_hardware_ramdisk as framdisk,
     fidl_fuchsia_io as fio, fidl_fuchsia_security_keymint as fkeymint,
-    fidl_fuchsia_storage_partitions as fpartitions, fuchsia_async as fasync,
+    fidl_fuchsia_storage_block as fblock, fidl_fuchsia_storage_partitions as fpartitions,
+    fuchsia_async as fasync,
 };
 
 pub mod disk_builder;
@@ -519,7 +520,7 @@ impl TestFixture {
         let mut found_partition_labels = Vec::new();
         for entry in entries {
             let endpoint_name = format!("{}/volume", entry.name);
-            let volume = connect_to_named_protocol_at_dir_root::<fvolume::VolumeMarker>(
+            let volume = connect_to_named_protocol_at_dir_root::<fblock::BlockMarker>(
                 &partitions,
                 &endpoint_name,
             )

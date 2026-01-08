@@ -106,6 +106,7 @@ static_library("minfs") {
       "//src/storage/lib/block_client/cpp",
 
       # Several headers include vfs headers
+      "//sdk/fidl/fuchsia.storage.block:fuchsia.storage.block_cpp",
       "//src/storage/lib/vfs/cpp",
 
       # Used by the MinfsInspectTree class

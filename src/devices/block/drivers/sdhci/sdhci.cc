@@ -9,8 +9,8 @@
 
 #include "sdhci.h"
 
-#include <fidl/fuchsia.hardware.block/cpp/wire.h>
 #include <fidl/fuchsia.hardware.power/cpp/fidl.h>
+#include <fidl/fuchsia.storage.block/cpp/wire.h>
 #include <fuchsia/hardware/block/driver/c/banjo.h>
 #include <lib/ddk/metadata.h>
 #include <lib/driver/component/cpp/driver_base.h>

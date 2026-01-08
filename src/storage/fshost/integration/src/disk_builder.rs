@@ -31,8 +31,8 @@ use vmo_backed_block_server::{VmoBackedServer, VmoBackedServerTestingExt as _};
 use zerocopy::{Immutable, IntoBytes};
 use zx::{self as zx, HandleBased};
 use {
-    fidl_fuchsia_hardware_block_volume as fvolume, fidl_fuchsia_io as fio,
-    fidl_fuchsia_logger as flogger, fuchsia_async as fasync,
+    fidl_fuchsia_io as fio, fidl_fuchsia_logger as flogger, fidl_fuchsia_storage_block as fblock,
+    fuchsia_async as fasync,
 };
 
 pub const TEST_DISK_BLOCK_SIZE: u32 = 512;
@@ -416,7 +416,7 @@ impl DiskBuilder {
         if self.gpt {
             // Format the disk with gpt, with a single empty partition named "fvm".
             let client = Arc::new(
-                RemoteBlockClient::new(server.connect::<fvolume::VolumeProxy>()).await.unwrap(),
+                RemoteBlockClient::new(server.connect::<fblock::BlockProxy>()).await.unwrap(),
             );
             assert!(self.extra_gpt_partitions.len() < 10);
             let fvm_num_blocks = self.size / TEST_DISK_BLOCK_SIZE as u64 - 138;
@@ -585,7 +585,7 @@ impl DiskBuilder {
 
             if self.corrupt_data {
                 let volume_proxy = connect_to_protocol_at_dir_svc::<
-                    fidl_fuchsia_hardware_block_volume::VolumeMarker,
+                    fidl_fuchsia_storage_block::BlockMarker,
                 >(data_volume.exposed_dir())
                 .unwrap();
                 match self.data_spec.format {
@@ -599,7 +599,7 @@ impl DiskBuilder {
                 self.init_data_fxfs(
                     FxfsType::Fxfs(Box::new(DirBasedBlockConnector::new(
                         dir,
-                        String::from("svc/fuchsia.hardware.block.volume.Volume"),
+                        String::from("svc/fuchsia.storage.block.Block"),
                     ))),
                     self.data_spec.crypt_policy,
                 )
@@ -764,7 +764,7 @@ impl DiskBuilder {
 
     async fn write_magic<const N: usize>(
         &self,
-        volume_proxy: fidl_fuchsia_hardware_block_volume::VolumeProxy,
+        volume_proxy: fblock::BlockProxy,
         value: [u8; N],
         offset: u64,
     ) {

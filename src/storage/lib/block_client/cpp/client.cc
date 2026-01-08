@@ -17,7 +17,7 @@
 
 namespace block_client {
 
-Client::Client(fidl::ClientEnd<fuchsia_hardware_block::Session> session, zx::fifo fifo)
+Client::Client(fidl::ClientEnd<fuchsia_storage_block::Session> session, zx::fifo fifo)
     : session_(std::move(session)), fifo_(std::move(fifo)) {}
 
 Client::~Client() { [[maybe_unused]] fidl::WireResult result = fidl::WireCall(session_)->Close(); }

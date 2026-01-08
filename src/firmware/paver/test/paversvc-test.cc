@@ -5,8 +5,8 @@
 #include <endian.h>
 #include <fidl/fuchsia.device/cpp/wire.h>
 #include <fidl/fuchsia.fshost/cpp/wire.h>
-#include <fidl/fuchsia.hardware.block.partition/cpp/wire.h>
 #include <fidl/fuchsia.paver/cpp/wire.h>
+#include <fidl/fuchsia.storage.block/cpp/wire.h>
 #include <fidl/fuchsia.sysinfo/cpp/wire_test_base.h>
 #include <lib/abr/data.h>
 #include <lib/abr/util.h>
@@ -60,7 +60,7 @@
 
 namespace {
 
-namespace partition = fuchsia_hardware_block_partition;
+namespace partition = fuchsia_storage_block;
 
 using device_watcher::RecursiveWaitForFile;
 using driver_integration_test::IsolatedDevmgr;
@@ -399,7 +399,7 @@ class PaverServiceSkipBlockTest : public PaverServiceTest {
     zx::result fvm_result = RecursiveWaitForFile(
         device_->devfs_root().get(), "sys/platform/ram-nand/nand-ctl/ram-nand-0/fvm/ftl/block");
     ASSERT_OK(fvm_result.status_value());
-    fvm_client_ = fidl::ClientEnd<fuchsia_hardware_block::Block>(std::move(fvm_result.value()));
+    fvm_client_ = fidl::ClientEnd<fuchsia_storage_block::Block>(std::move(fvm_result.value()));
   }
 
   void FindBootManager() {
@@ -532,7 +532,7 @@ class PaverServiceSkipBlockTest : public PaverServiceTest {
   fidl::WireSyncClient<fuchsia_paver::Sysconfig> sysconfig_;
 
   std::unique_ptr<SkipBlockDevice> device_;
-  fidl::ClientEnd<fuchsia_hardware_block::Block> fvm_client_;
+  fidl::ClientEnd<fuchsia_storage_block::Block> fvm_client_;
 };
 
 constexpr AbrData kAbrDataAUnbootableBSuccessful = {

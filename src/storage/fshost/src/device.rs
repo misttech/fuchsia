@@ -8,10 +8,8 @@ use anyhow::{Context, Error, anyhow};
 use async_trait::async_trait;
 use fidl::endpoints::create_proxy;
 use fidl_fuchsia_device::{ControllerMarker, ControllerProxy};
-use fidl_fuchsia_hardware_block::{BlockMarker, BlockProxy};
-use fidl_fuchsia_hardware_block_partition::{PartitionMarker, PartitionProxy};
-use fidl_fuchsia_hardware_block_volume::{VolumeMarker, VolumeProxy};
 use fidl_fuchsia_io::{self as fio};
+use fidl_fuchsia_storage_block::{BlockMarker, BlockProxy};
 use fs_management::filesystem::{BlockConnector, DirBasedBlockConnector};
 use fs_management::format::{DiskFormat, detect_disk_format};
 use fuchsia_async as fasync;
@@ -42,7 +40,7 @@ pub enum Parent {
 #[async_trait]
 pub trait Device: Send + Sync {
     /// Returns BlockInfo (the result of calling fuchsia.hardware.block/Block.Query).
-    async fn get_block_info(&self) -> Result<fidl_fuchsia_hardware_block::BlockInfo, Error>;
+    async fn get_block_info(&self) -> Result<fidl_fuchsia_storage_block::BlockInfo, Error>;
 
     /// True if this is a NAND device.
     fn is_nand(&self) -> bool;
@@ -107,9 +105,6 @@ pub trait Device: Send + Sync {
     /// Establish a new connection to the Block interface of the device.
     fn block_proxy(&self) -> Result<BlockProxy, Error>;
 
-    /// Establish a new connection to the Volume interface of the device.
-    fn volume_proxy(&self) -> Result<VolumeProxy, Error>;
-
     /// If device is backed by FVM, returns the topological path to FVM, otherwise None.
     fn fvm_path(&self) -> Option<String> {
         // The 4 is from the 4 characters in "/fvm"
@@ -152,7 +147,7 @@ impl Device for NandDevice {
         true
     }
 
-    async fn get_block_info(&self) -> Result<fidl_fuchsia_hardware_block::BlockInfo, Error> {
+    async fn get_block_info(&self) -> Result<fidl_fuchsia_storage_block::BlockInfo, Error> {
         Err(anyhow!("not supported by nand device"))
     }
 
@@ -230,10 +225,6 @@ impl Device for NandDevice {
         Err(anyhow!("not supported by nand device"))
     }
 
-    fn volume_proxy(&self) -> Result<VolumeProxy, Error> {
-        Err(anyhow!("not supported by nand device"))
-    }
-
     fn is_fshost_ramdisk(&self) -> bool {
         false
     }
@@ -259,10 +250,6 @@ pub struct BlockDevice {
     // accessed (see Controller.ConnectToDeviceFidl).
     controller_proxy: ControllerProxy,
 
-    // Cache a proxy to the device's Partition interface so we can use it internally.  (This assumes
-    // that devices speak Partition, which is currently always true).
-    partition_proxy: PartitionProxy,
-
     // Memoized fields.
     content_format: Option<DiskFormat>,
     partition_label: Option<String>,
@@ -287,13 +274,10 @@ impl BlockDevice {
     ) -> Result<Self, Error> {
         let topological_path =
             controller_proxy.get_topological_path().await?.map_err(zx::Status::from_raw)?;
-        let (partition_proxy, server) = create_proxy::<PartitionMarker>();
-        controller_proxy.connect_to_device_fidl(server.into_channel())?;
         Ok(Self {
             path: path.to_string(),
             topological_path: topological_path,
             controller_proxy,
-            partition_proxy,
             content_format: None,
             partition_label: None,
             partition_type: None,
@@ -314,7 +298,7 @@ impl BlockDevice {
 
 #[async_trait]
 impl Device for BlockDevice {
-    async fn get_block_info(&self) -> Result<fidl_fuchsia_hardware_block::BlockInfo, Error> {
+    async fn get_block_info(&self) -> Result<fidl_fuchsia_storage_block::BlockInfo, Error> {
         let block_proxy = self.block_proxy()?;
         let info = block_proxy.get_info().await?.map_err(zx::Status::from_raw)?;
         Ok(info)
@@ -350,7 +334,8 @@ impl Device for BlockDevice {
 
     async fn partition_label(&mut self) -> Result<&str, Error> {
         if self.partition_label.is_none() {
-            let (status, name) = self.partition_proxy.get_name().await?;
+            let block_proxy = self.block_proxy()?;
+            let (status, name) = block_proxy.get_name().await?;
             zx::Status::ok(status)?;
             self.partition_label = Some(name.ok_or_else(|| anyhow!("Expected name"))?);
         }
@@ -359,7 +344,8 @@ impl Device for BlockDevice {
 
     async fn partition_type(&mut self) -> Result<&[u8; 16], Error> {
         if self.partition_type.is_none() {
-            let (status, partition_type) = self.partition_proxy.get_type_guid().await?;
+            let block_proxy = self.block_proxy()?;
+            let (status, partition_type) = block_proxy.get_type_guid().await?;
             zx::Status::ok(status)?;
             self.partition_type =
                 Some(partition_type.ok_or_else(|| anyhow!("Expected type"))?.value);
@@ -369,11 +355,8 @@ impl Device for BlockDevice {
 
     async fn partition_instance(&mut self) -> Result<&[u8; 16], Error> {
         if self.partition_instance.is_none() {
-            let (status, instance_guid) = self
-                .partition_proxy
-                .get_instance_guid()
-                .await
-                .context("Transport error get_instance_guid")?;
+            let block_proxy = self.block_proxy()?;
+            let (status, instance_guid) = block_proxy.get_instance_guid().await?;
             zx::Status::ok(status).context("get_instance_guid failed")?;
             self.partition_instance =
                 Some(instance_guid.ok_or_else(|| anyhow!("Expected instance guid"))?.value);
@@ -382,8 +365,8 @@ impl Device for BlockDevice {
     }
 
     async fn resize(&mut self, target_size_bytes: u64) -> Result<u64, Error> {
-        let volume_proxy = self.volume_proxy()?;
-        crate::volume::resize_volume(&volume_proxy, target_size_bytes).await
+        let block_proxy = self.block_proxy()?;
+        crate::volume::resize_volume(&block_proxy, target_size_bytes).await
     }
 
     async fn set_partition_max_bytes(&mut self, max_bytes: u64) -> Result<(), Error> {
@@ -407,12 +390,6 @@ impl Device for BlockDevice {
 
     fn block_proxy(&self) -> Result<BlockProxy, Error> {
         let (proxy, server) = create_proxy::<BlockMarker>();
-        self.controller_proxy.connect_to_device_fidl(server.into_channel())?;
-        Ok(proxy)
-    }
-
-    fn volume_proxy(&self) -> Result<VolumeProxy, Error> {
-        let (proxy, server) = create_proxy::<VolumeMarker>();
         self.controller_proxy.connect_to_device_fidl(server.into_channel())?;
         Ok(proxy)
     }
@@ -451,9 +428,8 @@ pub struct VolumeProtocolDevice {
     connector: Box<DirBasedBlockConnector>,
     source: String,
 
-    // Cache a proxy to the device's Volume interface so we can use it internally.  (This assumes
-    // that devices speak Volume, which is currently always true).
-    volume_proxy: VolumeProxy,
+    // Cache a proxy to the device's Block interface so we can use it internally.
+    block_proxy: BlockProxy,
 
     // Memoized fields.
     content_format: Option<DiskFormat>,
@@ -473,11 +449,11 @@ impl VolumeProtocolDevice {
     ) -> Result<Self, Error> {
         let source = format!("{}/{}", source.to_string(), path.to_string());
         let connector = Box::new(DirBasedBlockConnector::new(dir, path.to_string() + "/volume"));
-        let volume_proxy = connector.connect_volume()?.into_proxy();
+        let block_proxy = connector.connect_block()?.into_proxy();
         Ok(Self {
             connector,
             source,
-            volume_proxy,
+            block_proxy,
             content_format: None,
             partition_label: None,
             partition_type: None,
@@ -489,7 +465,7 @@ impl VolumeProtocolDevice {
 
 #[async_trait]
 impl Device for VolumeProtocolDevice {
-    async fn get_block_info(&self) -> Result<fidl_fuchsia_hardware_block::BlockInfo, Error> {
+    async fn get_block_info(&self) -> Result<fidl_fuchsia_storage_block::BlockInfo, Error> {
         let block_proxy = self.block_proxy()?;
         let info = block_proxy.get_info().await?.map_err(zx::Status::from_raw)?;
         Ok(info)
@@ -525,7 +501,7 @@ impl Device for VolumeProtocolDevice {
 
     async fn partition_label(&mut self) -> Result<&str, Error> {
         if self.partition_label.is_none() {
-            let (status, name) = self.volume_proxy.get_name().await?;
+            let (status, name) = self.block_proxy.get_name().await?;
             zx::Status::ok(status)?;
             self.partition_label = Some(name.ok_or_else(|| anyhow!("Expected name"))?);
         }
@@ -534,7 +510,7 @@ impl Device for VolumeProtocolDevice {
 
     async fn partition_type(&mut self) -> Result<&[u8; 16], Error> {
         if self.partition_type.is_none() {
-            let (status, partition_type) = self.volume_proxy.get_type_guid().await?;
+            let (status, partition_type) = self.block_proxy.get_type_guid().await?;
             zx::Status::ok(status)?;
             self.partition_type =
                 Some(partition_type.ok_or_else(|| anyhow!("Expected type"))?.value);
@@ -544,11 +520,7 @@ impl Device for VolumeProtocolDevice {
 
     async fn partition_instance(&mut self) -> Result<&[u8; 16], Error> {
         if self.partition_instance.is_none() {
-            let (status, instance_guid) = self
-                .volume_proxy
-                .get_instance_guid()
-                .await
-                .context("Transport error get_instance_guid")?;
+            let (status, instance_guid) = self.block_proxy.get_instance_guid().await?;
             zx::Status::ok(status).context("get_instance_guid failed")?;
             self.partition_instance =
                 Some(instance_guid.ok_or_else(|| anyhow!("Expected instance guid"))?.value);
@@ -557,8 +529,8 @@ impl Device for VolumeProtocolDevice {
     }
 
     async fn resize(&mut self, target_size_bytes: u64) -> Result<u64, Error> {
-        let volume_proxy = self.volume_proxy()?;
-        crate::volume::resize_volume(&volume_proxy, target_size_bytes).await
+        let block_proxy = self.block_proxy()?;
+        crate::volume::resize_volume(&block_proxy, target_size_bytes).await
     }
 
     async fn set_partition_max_bytes(&mut self, max_bytes: u64) -> Result<(), Error> {
@@ -571,10 +543,6 @@ impl Device for VolumeProtocolDevice {
 
     fn block_proxy(&self) -> Result<BlockProxy, Error> {
         self.connector.connect_block().and_then(|c| Ok(c.into_proxy()))
-    }
-
-    fn volume_proxy(&self) -> Result<VolumeProxy, Error> {
-        self.connector.connect_volume().and_then(|c| Ok(c.into_proxy()))
     }
 
     async fn get_child(&self, _suffix: &str) -> Result<Box<dyn Device>, Error> {
@@ -597,9 +565,8 @@ pub struct LocalBlockDevice {
 
     connector: Arc<VmoBackedServerConnector>,
 
-    // Cache a proxy to the device's Volume interface so we can use it internally.  (This assumes
-    // that devices speak Volume, which is currently always true).
-    volume_proxy: VolumeProxy,
+    // Cache a proxy to the device's Block interface so we can use it internally.
+    block_proxy: BlockProxy,
 
     // Memoized fields.
     content_format: Option<DiskFormat>,
@@ -634,12 +601,12 @@ impl LocalBlockDevice {
         });
         let scope = scope_rx.await.unwrap();
         let connector = Arc::new(VmoBackedServerConnector::new(scope, server));
-        let volume_proxy = connector.connect_volume()?.into_proxy();
+        let block_proxy = connector.connect_block()?.into_proxy();
         Ok(Self {
             thread: Some(thread),
             abort_handle,
             connector,
-            volume_proxy,
+            block_proxy,
             content_format: None,
         })
     }
@@ -647,8 +614,8 @@ impl LocalBlockDevice {
 
 #[async_trait]
 impl Device for LocalBlockDevice {
-    async fn get_block_info(&self) -> Result<fidl_fuchsia_hardware_block::BlockInfo, Error> {
-        let info = self.volume_proxy.get_info().await?.map_err(zx::Status::from_raw)?;
+    async fn get_block_info(&self) -> Result<fidl_fuchsia_storage_block::BlockInfo, Error> {
+        let info = self.block_proxy.get_info().await?.map_err(zx::Status::from_raw)?;
         Ok(info)
     }
 
@@ -660,7 +627,7 @@ impl Device for LocalBlockDevice {
         if let Some(format) = self.content_format {
             return Ok(format);
         }
-        return Ok(detect_disk_format(&self.volume_proxy).await);
+        return Ok(detect_disk_format(&self.block_proxy).await);
     }
 
     fn path(&self) -> &str {
@@ -705,10 +672,6 @@ impl Device for LocalBlockDevice {
 
     fn block_proxy(&self) -> Result<BlockProxy, Error> {
         Ok(self.connector.connect_block()?.into_proxy())
-    }
-
-    fn volume_proxy(&self) -> Result<VolumeProxy, Error> {
-        Ok(self.connector.connect_volume()?.into_proxy())
     }
 
     async fn get_child(&self, _suffix: &str) -> Result<Box<dyn Device>, Error> {

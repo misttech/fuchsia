@@ -4,9 +4,8 @@
 
 #include <dirent.h>
 #include <fidl/fuchsia.device/cpp/wire.h>
-#include <fidl/fuchsia.hardware.block.volume/cpp/wire.h>
-#include <fidl/fuchsia.hardware.block/cpp/wire.h>
 #include <fidl/fuchsia.hardware.skipblock/cpp/wire.h>
+#include <fidl/fuchsia.storage.block/cpp/wire.h>
 #include <inttypes.h>
 #include <lib/component/incoming/cpp/protocol.h>
 #include <lib/fit/defer.h>
@@ -32,8 +31,7 @@
 #include "src/lib/files/file.h"
 #include "src/lib/fxl/strings/string_printf.h"
 
-namespace fuchsia_block = fuchsia_hardware_block;
-namespace fuchsia_volume = fuchsia_hardware_block_volume;
+namespace fuchsia_block = fuchsia_storage_block;
 namespace fuchsia_skipblock = fuchsia_hardware_skipblock;
 
 namespace {
@@ -81,13 +79,13 @@ int cmd_list_blk() {
       continue;
     }
     std::string device_path = fxl::StringPrintf("%s/%s", DEV_BLOCK, de->d_name);
-    std::string volume_path = device_path + "/fuchsia.hardware.block.volume.Volume";
+    std::string volume_path = device_path + "/fuchsia.storage.block.Block";
     std::string source_path = device_path + "/source";
 
     std::string source;
     files::ReadFileToString(source_path, &source);
 
-    zx::result device = component::Connect<fuchsia_volume::Volume>(volume_path);
+    zx::result device = component::Connect<fuchsia_block::Block>(volume_path);
     if (device.is_error()) {
       fprintf(stderr, "Error opening %s: %s\n", device_path.c_str(), device.status_string());
       continue;
@@ -121,13 +119,13 @@ int cmd_list_blk() {
     }
 
     char flags[20] = {0};
-    if (block_info.flags & fuchsia_block::wire::Flag::kReadonly) {
+    if (block_info.flags & fuchsia_block::wire::DeviceFlag::kReadonly) {
       strlcat(flags, "RO ", sizeof(flags));
     }
-    if (block_info.flags & fuchsia_block::wire::Flag::kRemovable) {
+    if (block_info.flags & fuchsia_block::wire::DeviceFlag::kRemovable) {
       strlcat(flags, "RE ", sizeof(flags));
     }
-    if (block_info.flags & fuchsia_block::wire::Flag::kBootpart) {
+    if (block_info.flags & fuchsia_block::wire::DeviceFlag::kBootpart) {
       strlcat(flags, "BP ", sizeof(flags));
     }
     printf("%-3s %4s %-16s %-20s %-6s %s\n", de->d_name, sizestr, type.c_str(), label.c_str(),

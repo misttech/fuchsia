@@ -9,13 +9,11 @@
 //!
 //! See the [`BlockClient`] trait.
 
-use fidl::endpoints::ServerEnd;
-use fidl_fuchsia_hardware_block::{BlockProxy, MAX_TRANSFER_UNBOUNDED};
-use fidl_fuchsia_hardware_block_partition::PartitionProxy;
-use fidl_fuchsia_hardware_block_volume::VolumeProxy;
+use fidl_fuchsia_storage_block::{MAX_TRANSFER_UNBOUNDED, VMOID_INVALID};
 use fuchsia_sync::Mutex;
 use futures::channel::oneshot;
 use futures::executor::block_on;
+use std::borrow::Borrow;
 use std::collections::HashMap;
 use std::future::Future;
 use std::hash::{Hash, Hasher};
@@ -28,14 +26,11 @@ use std::sync::{Arc, LazyLock};
 use std::task::{Context, Poll, Waker};
 use zx::sys::zx_handle_t;
 use zx::{self as zx, HandleBased as _};
-use {
-    fidl_fuchsia_hardware_block as block, fidl_fuchsia_hardware_block_driver as block_driver,
-    fuchsia_async as fasync, storage_trace as trace,
-};
+use {fidl_fuchsia_storage_block as block, fuchsia_async as fasync, storage_trace as trace};
 
 pub use cache::Cache;
 
-pub use block::Flag as BlockFlags;
+pub use block::DeviceFlag as BlockDeviceFlag;
 
 pub use block_protocol::*;
 
@@ -46,7 +41,7 @@ const TEMP_VMO_SIZE: usize = 65536;
 /// If a trace flow ID isn't specified for requests, one will be generated.
 pub const NO_TRACE_ID: u64 = 0;
 
-pub use block_driver::{BlockIoFlag, BlockOpcode};
+pub use fidl_fuchsia_storage_block::{BlockIoFlag, BlockOpcode};
 
 fn fidl_to_status(error: fidl::Error) -> zx::Status {
     match error {
@@ -226,17 +221,17 @@ impl VmoId {
 
     /// Invalidates self and returns a new VmoId with the same underlying ID.
     pub fn take(&self) -> Self {
-        Self(AtomicU16::new(self.0.swap(block_driver::BLOCK_VMOID_INVALID, Ordering::Relaxed)))
+        Self(AtomicU16::new(self.0.swap(VMOID_INVALID, Ordering::Relaxed)))
     }
 
     pub fn is_valid(&self) -> bool {
-        self.id() != block_driver::BLOCK_VMOID_INVALID
+        self.id() != VMOID_INVALID
     }
 
     /// Takes the ID.  The caller assumes responsibility for detaching.
     #[must_use]
     pub fn into_id(self) -> u16 {
-        self.0.swap(block_driver::BLOCK_VMOID_INVALID, Ordering::Relaxed)
+        self.0.swap(VMOID_INVALID, Ordering::Relaxed)
     }
 
     pub fn id(&self) -> u16 {
@@ -254,11 +249,7 @@ impl Eq for VmoId {}
 
 impl Drop for VmoId {
     fn drop(&mut self) {
-        assert_eq!(
-            self.0.load(Ordering::Relaxed),
-            block_driver::BLOCK_VMOID_INVALID,
-            "Did you forget to detach?"
-        );
+        assert_eq!(self.0.load(Ordering::Relaxed), VMOID_INVALID, "Did you forget to detach?");
     }
 }
 
@@ -378,7 +369,7 @@ pub trait BlockClient: Send + Sync {
     fn max_transfer_blocks(&self) -> Option<NonZero<u32>>;
 
     /// Returns the block flags reported by the device.
-    fn block_flags(&self) -> BlockFlags;
+    fn block_flags(&self) -> BlockDeviceFlag;
 
     /// Returns true if the remote fifo is still connected.
     fn is_connected(&self) -> bool;
@@ -388,7 +379,7 @@ struct Common {
     block_size: u32,
     block_count: u64,
     max_transfer_blocks: Option<NonZero<u32>>,
-    block_flags: BlockFlags,
+    block_flags: BlockDeviceFlag,
     fifo_state: FifoStateRef,
     temp_vmo: futures::lock::Mutex<zx::Vmo>,
     temp_vmo_id: VmoId,
@@ -632,7 +623,7 @@ impl Common {
                 flags: 0,
                 ..Default::default()
             },
-            vmoid: block_driver::BLOCK_VMOID_INVALID,
+            vmoid: VMOID_INVALID,
             length,
             dev_offset,
             trace_flow_id,
@@ -648,7 +639,7 @@ impl Common {
                 flags: 0,
                 ..Default::default()
             },
-            vmoid: block_driver::BLOCK_VMOID_INVALID,
+            vmoid: VMOID_INVALID,
             trace_flow_id,
             ..Default::default()
         })
@@ -671,7 +662,7 @@ impl Common {
         self.max_transfer_blocks.clone()
     }
 
-    fn block_flags(&self) -> BlockFlags {
+    fn block_flags(&self) -> BlockDeviceFlag {
         self.block_flags
     }
 
@@ -689,51 +680,16 @@ impl Drop for Common {
     }
 }
 
-/// RemoteBlockClient is a BlockClient that communicates with a real block device over FIDL.
+// RemoteBlockClient is a BlockClient that communicates with a real block device over FIDL.
 pub struct RemoteBlockClient {
     session: block::SessionProxy,
     common: Common,
 }
 
-pub trait AsBlockProxy {
-    fn get_info(&self) -> impl Future<Output = Result<block::BlockGetInfoResult, fidl::Error>>;
-
-    fn open_session(&self, session: ServerEnd<block::SessionMarker>) -> Result<(), fidl::Error>;
-}
-
-impl<T: AsBlockProxy> AsBlockProxy for &T {
-    fn get_info(&self) -> impl Future<Output = Result<block::BlockGetInfoResult, fidl::Error>> {
-        AsBlockProxy::get_info(*self)
-    }
-    fn open_session(&self, session: ServerEnd<block::SessionMarker>) -> Result<(), fidl::Error> {
-        AsBlockProxy::open_session(*self, session)
-    }
-}
-
-macro_rules! impl_as_block_proxy {
-    ($name:ident) => {
-        impl AsBlockProxy for $name {
-            async fn get_info(&self) -> Result<block::BlockGetInfoResult, fidl::Error> {
-                $name::get_info(self).await
-            }
-
-            fn open_session(
-                &self,
-                session: ServerEnd<block::SessionMarker>,
-            ) -> Result<(), fidl::Error> {
-                $name::open_session(self, session)
-            }
-        }
-    };
-}
-
-impl_as_block_proxy!(BlockProxy);
-impl_as_block_proxy!(PartitionProxy);
-impl_as_block_proxy!(VolumeProxy);
-
 impl RemoteBlockClient {
     /// Returns a connection to a remote block device via the given channel.
-    pub async fn new(remote: impl AsBlockProxy) -> Result<Self, zx::Status> {
+    pub async fn new(remote: impl Borrow<block::BlockProxy>) -> Result<Self, zx::Status> {
+        let remote = remote.borrow();
         let info =
             remote.get_info().await.map_err(fidl_to_status)?.map_err(zx::Status::from_raw)?;
         let (session, server) = fidl::endpoints::create_proxy();
@@ -823,7 +779,7 @@ impl BlockClient for RemoteBlockClient {
         self.common.max_transfer_blocks()
     }
 
-    fn block_flags(&self) -> BlockFlags {
+    fn block_flags(&self) -> BlockDeviceFlag {
         self.common.block_flags()
     }
 
@@ -1015,7 +971,7 @@ mod tests {
     use std::num::NonZero;
     use std::sync::Arc;
     use std::sync::atomic::{AtomicBool, Ordering};
-    use {fidl_fuchsia_hardware_block as block, fuchsia_async as fasync};
+    use {fidl_fuchsia_storage_block as block, fuchsia_async as fasync};
 
     const RAMDISK_BLOCK_SIZE: u64 = 1024;
     const RAMDISK_BLOCK_COUNT: u64 = 1024;
@@ -1253,7 +1209,7 @@ mod tests {
                                         block_count: 1024,
                                         block_size: 512,
                                         max_transfer_size: 1024 * 1024,
-                                        flags: block::Flag::empty(),
+                                        flags: block::DeviceFlag::empty(),
                                     }))
                                     .expect("send failed");
                             }
@@ -1337,7 +1293,7 @@ mod tests {
         impl block_server::async_interface::Interface for Interface {
             fn get_info(&self) -> Cow<'_, DeviceInfo> {
                 Cow::Owned(DeviceInfo::Partition(PartitionInfo {
-                    device_flags: fidl_fuchsia_hardware_block::Flag::empty(),
+                    device_flags: fidl_fuchsia_storage_block::DeviceFlag::empty(),
                     max_transfer_blocks: None,
                     block_range: Some(0..1000),
                     type_guid: [0; 16],

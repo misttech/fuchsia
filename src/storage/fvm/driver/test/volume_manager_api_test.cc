@@ -2,7 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#include <fidl/fuchsia.hardware.block.volume/cpp/wire.h>
+#include <fidl/fuchsia.storage.block/cpp/wire.h>
 #include <lib/component/incoming/cpp/protocol.h>
 #include <lib/driver-integration-test/fixture.h>
 #include <lib/fdio/cpp/caller.h>
@@ -26,9 +26,8 @@ constexpr uint64_t kSliceSize = 1 << 20;
 
 using driver_integration_test::IsolatedDevmgr;
 
-// using Partition = fuchsia_hardware_block_partition::Partition;
-using Volume = fuchsia_hardware_block_volume::Volume;
-using VolumeManager = fuchsia_hardware_block_volume::VolumeManager;
+using Block = fuchsia_storage_block::Block;
+using VolumeManager = fuchsia_storage_block::VolumeManager;
 
 class FvmVolumeManagerApiTest : public zxtest::Test {
  public:
@@ -135,11 +134,11 @@ TEST_F(FvmVolumeManagerApiTest, PartitionLimit) {
       fvm::kMaxUsablePartitions, kBlockSize * kBlockCount, kBlockSize * kMaxBlockCount, kSliceSize);
 
   // Type GUID for partition.
-  fuchsia_hardware_block_partition::wire::Guid type_guid;
+  fuchsia_storage_block::wire::Guid type_guid;
   std::fill(std::begin(type_guid.value), std::end(type_guid.value), 0x11);
 
   // Instance GUID for partition.
-  fuchsia_hardware_block_partition::wire::Guid guid;
+  fuchsia_storage_block::wire::Guid guid;
   std::fill(std::begin(guid.value), std::end(guid.value), 0x12);
 
   fdio_cpp::UnownedFdioCaller caller(fvm->device()->devfs_root_fd());
@@ -168,10 +167,10 @@ TEST_F(FvmVolumeManagerApiTest, PartitionLimit) {
   zx::result file_channel =
       device_watcher::RecursiveWaitForFile(devmgr_->devfs_root().get(), device_name.c_str());
   ASSERT_OK(file_channel.status_value());
-  fidl::ClientEnd<Volume> client_end(std::move(file_channel.value()));
+  fidl::ClientEnd<Block> client_end(std::move(file_channel.value()));
 
   // Query the volume to check its information.
-  fidl::WireResult<Volume::GetVolumeInfo> get_info = fidl::WireCall(client_end)->GetVolumeInfo();
+  fidl::WireResult<Block::GetVolumeInfo> get_info = fidl::WireCall(client_end)->GetVolumeInfo();
   ASSERT_OK(get_info.status(), "Transport error");
   ASSERT_OK(get_info.value().status, "Expected GetVolumeInfo() call to succeed.");
   EXPECT_EQ(kSliceSize, get_info.value().manager->slice_size);
@@ -201,12 +200,12 @@ TEST_F(FvmVolumeManagerApiTest, PartitionLimit) {
 
   // Try to expand it by one slice. Since the initial size was one slice and the limit is two, this
   // should succeed.
-  fidl::WireResult<Volume::Extend> good_extend = fidl::WireCall(client_end)->Extend(100, 1);
+  fidl::WireResult<Block::Extend> good_extend = fidl::WireCall(client_end)->Extend(100, 1);
   ASSERT_OK(good_extend.status(), "Transport error");
   ASSERT_OK(good_extend.value().status, "Expected Expand() call to succeed.");
 
   // Query the volume to check its information.
-  fidl::WireResult<Volume::GetVolumeInfo> get_info2 = fidl::WireCall(client_end)->GetVolumeInfo();
+  fidl::WireResult<Block::GetVolumeInfo> get_info2 = fidl::WireCall(client_end)->GetVolumeInfo();
   ASSERT_OK(get_info2.status(), "Transport error");
   ASSERT_OK(get_info2.value().status, "Expected GetVolumeInfo() call to succeed.");
   EXPECT_EQ(kSliceSize, get_info2.value().manager->slice_size);
@@ -216,12 +215,12 @@ TEST_F(FvmVolumeManagerApiTest, PartitionLimit) {
   EXPECT_EQ(2u, get_info2.value().volume->slice_limit);
 
   // Adding a third slice should fail since it's already at the max size.
-  fidl::WireResult<Volume::Extend> bad_extend = fidl::WireCall(client_end)->Extend(200, 1);
+  fidl::WireResult<Block::Extend> bad_extend = fidl::WireCall(client_end)->Extend(200, 1);
   ASSERT_OK(bad_extend.status(), "Transport error");
   ASSERT_EQ(bad_extend.value().status, ZX_ERR_NO_SPACE, "Expected Expand() call to fail.");
 
   // Delete and re-create the partition. It should have no limit.
-  fidl::WireResult<Volume::Destroy> destroy_result = fidl::WireCall(client_end)->Destroy();
+  fidl::WireResult<Block::Destroy> destroy_result = fidl::WireCall(client_end)->Destroy();
   ASSERT_OK(destroy_result.status(), "Transport layer error");
   ASSERT_OK(destroy_result.value().status, "Can't destroy partition.");
 
@@ -253,11 +252,11 @@ TEST_F(FvmVolumeManagerApiTest, SetPartitionName) {
   ASSERT_TRUE(fvm);
 
   // Type GUID for partition.
-  fuchsia_hardware_block_partition::wire::Guid type_guid;
+  fuchsia_storage_block::wire::Guid type_guid;
   std::fill(std::begin(type_guid.value), std::end(type_guid.value), 0x11);
 
   // Instance GUID for partition.
-  fuchsia_hardware_block_partition::wire::Guid guid;
+  fuchsia_storage_block::wire::Guid guid;
   std::fill(std::begin(guid.value), std::end(guid.value), 0x12);
 
   fdio_cpp::UnownedFdioCaller caller(fvm->device()->devfs_root_fd());
@@ -288,7 +287,7 @@ TEST_F(FvmVolumeManagerApiTest, SetPartitionName) {
   zx::result file_channel =
       device_watcher::RecursiveWaitForFile(devmgr_->devfs_root().get(), device_name.c_str());
   ASSERT_OK(file_channel.status_value());
-  fidl::ClientEnd<Volume> client_end(std::move(file_channel.value()));
+  fidl::ClientEnd<Block> client_end(std::move(file_channel.value()));
 
   {
     auto get_name_result = fidl::WireCall(client_end)->GetName();
@@ -309,7 +308,7 @@ TEST_F(FvmVolumeManagerApiTest, SetPartitionName) {
   file_channel =
       device_watcher::RecursiveWaitForFile(devmgr_->devfs_root().get(), device_name.c_str());
   ASSERT_OK(file_channel.status_value());
-  client_end = fidl::ClientEnd<Volume>(std::move(file_channel.value()));
+  client_end = fidl::ClientEnd<Block>(std::move(file_channel.value()));
 
   auto get_name_result = fidl::WireCall(client_end)->GetName();
   ASSERT_OK(get_name_result.status(), "Transport layer error");

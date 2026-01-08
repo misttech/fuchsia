@@ -4,16 +4,13 @@
 
 import("//build/fidl/fidl.gni")
 
+# TODO(https://fxbug.dev/470449582): Remove this FIDL library.
 fidl("fuchsia.hardware.block") {
   sources = [
-    "block.fidl",
     "ftl.fidl",
     "overview.fidl",
   ]
-  public_deps = [
-    "//sdk/fidl/fuchsia.unknown",
-    "//zircon/vdso/zx",
-  ]
+  public_deps = [ "//zircon/vdso/zx" ]
   enable_banjo = true
   enable_hlcpp = true
 }

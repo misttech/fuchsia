@@ -5,8 +5,8 @@
 use anyhow::{Error, anyhow, format_err};
 use fidl::endpoints::{ClientEnd, DiscoverableProtocolMarker, RequestStream, create_proxy};
 use fidl_fuchsia_device::ControllerMarker;
-use fidl_fuchsia_hardware_block::BlockMarker;
 use fidl_fuchsia_process_lifecycle::{LifecycleRequest, LifecycleRequestStream};
+use fidl_fuchsia_storage_block::BlockMarker;
 use fs_management::filesystem::{Filesystem, ServingSingleVolumeFilesystem};
 use fs_management::format::{DiskFormat, detect_disk_format};
 use fs_management::{Blobfs, F2fs, Fxfs, Minfs};

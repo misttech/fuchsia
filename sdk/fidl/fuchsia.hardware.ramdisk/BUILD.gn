@@ -7,8 +7,8 @@ import("//build/fidl/fidl.gni")
 fidl("fuchsia.hardware.ramdisk") {
   sources = [ "ramdisk.fidl" ]
   public_deps = [
-    "//sdk/fidl/fuchsia.hardware.block",
     "//sdk/fidl/fuchsia.io",
+    "//sdk/fidl/fuchsia.storage.block",
     "//zircon/vdso/zx",
   ]
 }

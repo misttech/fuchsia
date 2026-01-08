@@ -117,7 +117,7 @@ class Bcache : public fs::DeviceTransactionHandler, public storage::VmoidRegistr
   zx::result<> VerifyDeviceInfo();
 
   uint32_t max_blocks_;
-  fuchsia_hardware_block::wire::BlockInfo info_ = {};
+  fuchsia_storage_block::wire::BlockInfo info_ = {};
   std::unique_ptr<block_client::BlockDevice> owned_device_;  // The device, if owned.
   block_client::BlockDevice* device_;  // Pointer to the device, irrespective of ownership.
   // This buffer is used as internal scratch space for the "Readblk/Writeblk" methods.

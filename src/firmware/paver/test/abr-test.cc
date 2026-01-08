@@ -337,7 +337,7 @@ class MoonflowerAbrClientTest : public CurrentSlotUuidTest {
   }
 
   zx::result<std::unique_ptr<gpt::GptDevice>> OpenGptDevice() {
-    fidl::ClientEnd<fuchsia_hardware_block_volume::Volume> volume(disk_->Connect().TakeChannel());
+    fidl::ClientEnd<fuchsia_storage_block::Block> volume(disk_->Connect().TakeChannel());
     zx::result remote_device = block_client::RemoteBlockDevice::Create(std::move(volume));
     if (remote_device.is_error()) {
       return remote_device.take_error();

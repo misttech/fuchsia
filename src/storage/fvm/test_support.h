@@ -5,7 +5,7 @@
 #ifndef SRC_STORAGE_FVM_TEST_SUPPORT_H_
 #define SRC_STORAGE_FVM_TEST_SUPPORT_H_
 
-#include <fidl/fuchsia.hardware.block.volume/cpp/wire.h>
+#include <fidl/fuchsia.storage.block/cpp/wire.h>
 #include <lib/zx/channel.h>
 #include <limits.h>
 
@@ -27,7 +27,7 @@
 namespace fvm {
 
 // Alias for simplicity in testing.
-using VolumeManagerInfo = fuchsia_hardware_block_volume::wire::VolumeManagerInfo;
+using VolumeManagerInfo = fuchsia_storage_block::wire::VolumeManagerInfo;
 
 constexpr uint64_t kPathMax = PATH_MAX;
 
@@ -152,8 +152,12 @@ class RamdiskRef final : public BlockDeviceAdapter {
   // Clones this ramdisk into a new ram-disk with given `target_size`.
   zx::result<std::unique_ptr<RamdiskRef>> Clone(uint64_t target_size);
 
-  zx::result<fidl::ClientEnd<fuchsia_hardware_block::Block>> Connect() const {
-    return ramdisk_.ConnectBlock();
+  zx::result<fidl::ClientEnd<fuchsia_storage_block::Block>> Connect() const {
+    auto result = ramdisk_.ConnectBlock();
+    if (result.is_error()) {
+      return result.take_error();
+    }
+    return zx::ok(fidl::ClientEnd<fuchsia_storage_block::Block>(result.value().TakeChannel()));
   }
 
  private:

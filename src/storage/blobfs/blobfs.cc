@@ -5,9 +5,9 @@
 #include "src/storage/blobfs/blobfs.h"
 
 #include <fidl/fuchsia.fs/cpp/common_types.h>
-#include <fidl/fuchsia.hardware.block/cpp/wire.h>
 #include <fidl/fuchsia.io/cpp/common_types.h>
 #include <fidl/fuchsia.io/cpp/wire_types.h>
+#include <fidl/fuchsia.storage.block/cpp/wire.h>
 #include <lib/async/dispatcher.h>
 #include <lib/fit/function.h>
 #include <lib/fpromise/result.h>
@@ -109,7 +109,7 @@ const char* CachePolicyToString(CachePolicy policy) {
   }
 }
 
-zx_status_t LoadSuperblock(const fuchsia_hardware_block::wire::BlockInfo& block_info,
+zx_status_t LoadSuperblock(const fuchsia_storage_block::wire::BlockInfo& block_info,
                            int block_offset, BlockDevice& device, char block[kBlobfsBlockSize]) {
   block_client::ReaderWriter reader(device);
   zx_status_t status = reader.Read(block_offset * kBlobfsBlockSize, kBlobfsBlockSize, block);
@@ -150,13 +150,13 @@ zx::result<std::unique_ptr<Blobfs>> Blobfs::Create(async_dispatcher_t* dispatche
   ZX_ASSERT_MSG(kBlobfsBlockSize % page_size == 0,
                 "Blocks are not page-aligned when page size is %#zx", page_size);
 
-  fuchsia_hardware_block::wire::BlockInfo block_info;
+  fuchsia_storage_block::wire::BlockInfo block_info;
   if (zx_status_t status = device->BlockGetInfo(&block_info); status != ZX_OK) {
     FX_LOGS(ERROR) << "cannot acquire block info: " << status;
     return zx::error(status);
   }
 
-  if (block_info.flags & fuchsia_hardware_block::wire::Flag::kReadonly &&
+  if (block_info.flags & fuchsia_storage_block::wire::DeviceFlag::kReadonly &&
       (options.writability != blobfs::Writability::ReadOnlyDisk)) {
     return zx::error(ZX_ERR_ACCESS_DENIED);
   }
@@ -205,7 +205,7 @@ zx::result<std::unique_ptr<Blobfs>> Blobfs::Create(async_dispatcher_t* dispatche
   }
   auto page_loader_or = PageLoader::Create(
       std::move(worker_resources), fs_ptr->GetMetrics().get(),
-      block_info.flags & fuchsia_hardware_block::wire::Flag::kZstdDecompressionSupport
+      block_info.flags & fuchsia_storage_block::wire::DeviceFlag::kZstdDecompressionSupport
           ? nullptr
           : fs->decompression_connector());
   if (page_loader_or.is_error()) {
@@ -621,7 +621,7 @@ void Blobfs::WriteInfo(BlobTransaction& transaction, bool write_backup) {
 
 void Blobfs::DeleteExtent(uint64_t start_block, uint64_t num_blocks,
                           BlobTransaction& transaction) const {
-  if (block_info_.flags & fuchsia_hardware_block::wire::Flag::kTrimSupport) {
+  if (block_info_.flags & fuchsia_storage_block::wire::DeviceFlag::kTrimSupport) {
     TRACE_DURATION("blobfs", "Blobfs::DeleteExtent", "num_blocks", num_blocks, "start_block",
                    start_block);
     storage::BufferedOperation operation = {};

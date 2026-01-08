@@ -86,8 +86,8 @@ void FreeSlices(const Superblock* info, block_client::BlockDevice* device) {
 // Checks all slices against the block device. May shrink the partition.
 zx::result<> CheckSlices(const Superblock& info, size_t blocks_per_slice,
                          block_client::BlockDevice* device, bool repair_slices) {
-  fuchsia_hardware_block_volume::wire::VolumeManagerInfo manager_info;
-  fuchsia_hardware_block_volume::wire::VolumeInfo volume_info;
+  fuchsia_storage_block::wire::VolumeManagerInfo manager_info;
+  fuchsia_storage_block::wire::VolumeInfo volume_info;
   zx_status_t status = device->VolumeGetInfo(&manager_info, &volume_info);
   if (status != ZX_OK) {
     FX_LOGS(ERROR) << "unable to query FVM :" << status;
@@ -113,8 +113,7 @@ zx::result<> CheckSlices(const Superblock& info, size_t blocks_per_slice,
       kFVMBlockDataStart / blocks_per_slice,
   };
 
-  fuchsia_hardware_block_volume::wire::VsliceRange
-      ranges[fuchsia_hardware_block_volume::wire::kMaxSliceRequests];
+  fuchsia_storage_block::wire::VsliceRange ranges[fuchsia_storage_block::wire::kMaxSliceRequests];
   size_t ranges_count;
 
   status = device->VolumeQuerySlices(vslices, std::size(vslices), ranges, &ranges_count);
@@ -160,8 +159,8 @@ zx::result<> CheckSlices(const Superblock& info, size_t blocks_per_slice,
 // will do nothing.
 zx::result<> CreateFvmData(const MountOptions& options, Superblock* info,
                            block_client::BlockDevice* device) {
-  fuchsia_hardware_block_volume::wire::VolumeManagerInfo manager_info;
-  fuchsia_hardware_block_volume::wire::VolumeInfo volume_info;
+  fuchsia_storage_block::wire::VolumeManagerInfo manager_info;
+  fuchsia_storage_block::wire::VolumeInfo volume_info;
   if (device->VolumeGetInfo(&manager_info, &volume_info) != ZX_OK) {
     return zx::ok();
   }

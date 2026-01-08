@@ -146,7 +146,7 @@ class DevicePartitioner {
 };
 
 struct BlockAndController {
-  fidl::ClientEnd<fuchsia_hardware_block::Block> device;
+  fidl::ClientEnd<fuchsia_storage_block::Block> device;
   fidl::ClientEnd<fuchsia_device::Controller> controller;
 };
 

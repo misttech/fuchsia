@@ -5,8 +5,8 @@
 #include "src/storage/blobfs/blobfs.h"
 
 #include <fidl/fuchsia.fxfs/cpp/markers.h>
-#include <fidl/fuchsia.hardware.block/cpp/wire.h>
 #include <fidl/fuchsia.io/cpp/markers.h>
+#include <fidl/fuchsia.storage.block/cpp/wire.h>
 #include <fuchsia/hardware/block/driver/c/banjo.h>
 #include <lib/fidl/cpp/wire/channel.h>
 #include <lib/fidl/cpp/wire/connect_service.h>
@@ -76,7 +76,7 @@ class MockBlockDevice : public FakeBlockDevice {
   bool saw_trim() const { return saw_trim_; }
 
   zx_status_t FifoTransaction(block_fifo_request_t* requests, size_t count) final;
-  zx_status_t BlockGetInfo(fuchsia_hardware_block::wire::BlockInfo* info) const final;
+  zx_status_t BlockGetInfo(fuchsia_storage_block::wire::BlockInfo* info) const final;
 
  private:
   bool saw_trim_ = false;
@@ -92,10 +92,10 @@ zx_status_t MockBlockDevice::FifoTransaction(block_fifo_request_t* requests, siz
   return FakeBlockDevice::FifoTransaction(requests, count);
 }
 
-zx_status_t MockBlockDevice::BlockGetInfo(fuchsia_hardware_block::wire::BlockInfo* info) const {
+zx_status_t MockBlockDevice::BlockGetInfo(fuchsia_storage_block::wire::BlockInfo* info) const {
   zx_status_t status = FakeBlockDevice::BlockGetInfo(info);
   if (status == ZX_OK) {
-    info->flags |= fuchsia_hardware_block::wire::Flag::kTrimSupport;
+    info->flags |= fuchsia_storage_block::wire::DeviceFlag::kTrimSupport;
   }
   return status;
 }

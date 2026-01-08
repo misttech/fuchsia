@@ -4,7 +4,7 @@
 
 #include "src/storage/blobfs/page_loader.h"
 
-#include <fidl/fuchsia.hardware.block/cpp/wire.h>
+#include <fidl/fuchsia.storage.block/cpp/wire.h>
 #include <lib/fit/defer.h>
 #include <lib/fzl/vmo-mapper.h>
 #include <lib/scheduler/role.h>
@@ -412,7 +412,7 @@ PagerErrorStatus PageLoader::Worker::TransferDriverDecompressedPages(
   const uint64_t end = offset + total_length;
 
   const size_t max_chunk_size =
-      std::min(transfer_buffer_->GetSize(), fuchsia_hardware_block::wire::kMaxDecompressedBytes);
+      std::min(transfer_buffer_->GetSize(), fuchsia_storage_block::wire::kMaxDecompressedBytes);
 
   // Read in multiples of `max_chunk_size`. In practice we should only require one iteration for the
   // majority of cases.

@@ -4,8 +4,8 @@
 
 #include "src/storage/fvm/fvm_check.h"
 
-#include <fidl/fuchsia.hardware.block/cpp/wire.h>
 #include <fidl/fuchsia.io/cpp/wire.h>
+#include <fidl/fuchsia.storage.block/cpp/wire.h>
 #include <inttypes.h>
 #include <stdarg.h>
 #include <stdio.h>
@@ -27,8 +27,7 @@
 
 namespace fvm {
 
-Checker::Block::Block(fidl::UnownedClientEnd<fuchsia_hardware_block::Block> block)
-    : block_(block) {}
+Checker::Block::Block(fidl::UnownedClientEnd<fuchsia_storage_block::Block> block) : block_(block) {}
 
 Checker::Block::~Block() = default;
 
@@ -41,7 +40,7 @@ zx::result<size_t> Checker::Block::Size() const {
   if (response.is_error()) {
     return response.take_error();
   }
-  const fuchsia_hardware_block::wire::BlockInfo& info = response.value()->info;
+  const fuchsia_storage_block::wire::BlockInfo& info = response.value()->info;
   return zx::ok(info.block_count * info.block_size);
 }
 
@@ -89,7 +88,7 @@ zx::result<size_t> Checker::File::Read(void* buf, size_t count) const {
   return zx::ok(count);
 }
 
-Checker::Checker(fidl::UnownedClientEnd<fuchsia_hardware_block::Block> block, uint32_t block_size,
+Checker::Checker(fidl::UnownedClientEnd<fuchsia_storage_block::Block> block, uint32_t block_size,
                  bool silent)
     : Checker(std::make_unique<Block>(block), block_size, silent) {}
 

@@ -5,7 +5,7 @@
 #include <fidl/fuchsia.component/cpp/wire.h>
 #include <fidl/fuchsia.fs.startup/cpp/wire.h>
 #include <fidl/fuchsia.fs/cpp/wire.h>
-#include <fidl/fuchsia.hardware.block/cpp/wire.h>
+#include <fidl/fuchsia.storage.block/cpp/wire.h>
 #include <lib/async-loop/cpp/loop.h>
 #include <lib/async-loop/default.h>
 #include <lib/component/incoming/cpp/protocol.h>
@@ -76,9 +76,9 @@ class BlobfsComponentTest : public testing::Test {
     return exposed_dir_.borrow();
   }
 
-  fidl::ClientEnd<fuchsia_hardware_block::Block> block_client() const {
+  fidl::ClientEnd<fuchsia_storage_block::Block> block_client() const {
     zx::result block_client_end =
-        component::Connect<fuchsia_hardware_block::Block>(ramdisk_.path().c_str());
+        component::Connect<fuchsia_storage_block::Block>(ramdisk_.path().c_str());
     EXPECT_TRUE(block_client_end.is_ok()) << block_client_end.status_string();
     const fidl::WireResult result = fidl::WireCall(block_client_end.value())->GetInfo();
     EXPECT_TRUE(result.ok()) << result.FormatDescription();

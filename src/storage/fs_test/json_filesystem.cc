@@ -126,7 +126,7 @@ class JsonInstance : public FilesystemInstance {
     if (filesystem_.GetTraits().uses_crypt) {
       mount_options.crypt_client = InitializeCryptService;
     }
-    zx::result device = component::Connect<fuchsia_hardware_block::Block>(device_.path());
+    zx::result device = component::Connect<fuchsia_storage_block::Block>(device_.path());
     if (device.is_error()) {
       return device.take_error();
     }

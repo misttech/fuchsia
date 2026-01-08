@@ -55,7 +55,7 @@ zx_status_t parse(const OpenAt& open_at, const std::string& value,
       if (!out->format.has_invalid_tag()) {
         return ZX_ERR_INVALID_ARGS;
       }
-      fidl::InterfaceHandle<fuchsia::hardware::block::Block> block;
+      fidl::InterfaceHandle<fuchsia::storage::block::Block> block;
       if (zx_status_t status = open_at(
               path, fidl::InterfaceRequest<fuchsia::io::File>(block.NewRequest().TakeChannel()));
           status != ZX_OK) {

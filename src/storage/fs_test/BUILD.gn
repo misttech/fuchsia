@@ -27,6 +27,7 @@ static_library("fs_test") {
     ":crypt_service",
     "//sdk/fidl/fuchsia.fs:fuchsia.fs_cpp",
     "//sdk/fidl/fuchsia.hardware.ramdisk:fuchsia.hardware.ramdisk_cpp",
+    "//sdk/fidl/fuchsia.storage.block:fuchsia.storage.block_cpp",
     "//sdk/lib/async-loop",
     "//sdk/lib/async-loop:async-loop-cpp",
     "//sdk/lib/async-loop:async-loop-default",

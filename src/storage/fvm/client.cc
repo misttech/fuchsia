@@ -4,7 +4,7 @@
 
 #include "src/storage/fvm/client.h"
 
-#include <fidl/fuchsia.hardware.block.volume/cpp/wire.h>
+#include <fidl/fuchsia.storage.block/cpp/wire.h>
 #include <stdlib.h>
 #include <zircon/errors.h>
 #include <zircon/types.h>
@@ -21,8 +21,7 @@ zx_status_t ResetAllSlices(block_client::BlockDevice* device) {
   vslice_start[0] = 1;
 
   while (true) {
-    fuchsia_hardware_block_volume::wire::VsliceRange
-        ranges[fuchsia_hardware_block_volume::wire::kMaxSliceRequests];
+    fuchsia_storage_block::wire::VsliceRange ranges[fuchsia_storage_block::wire::kMaxSliceRequests];
     size_t actual_ranges_count;
     zx_status_t status = device->VolumeQuerySlices(vslice_start, std::size(vslice_start), ranges,
                                                    &actual_ranges_count);

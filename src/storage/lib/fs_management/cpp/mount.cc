@@ -8,8 +8,8 @@
 #include <fidl/fuchsia.component/cpp/wire.h>
 #include <fidl/fuchsia.fs.startup/cpp/wire.h>
 #include <fidl/fuchsia.fs/cpp/wire.h>
-#include <fidl/fuchsia.hardware.block/cpp/wire.h>
 #include <fidl/fuchsia.io/cpp/wire.h>
+#include <fidl/fuchsia.storage.block/cpp/wire.h>
 #include <fuchsia/hardware/block/driver/c/banjo.h>
 #include <lib/component/incoming/cpp/protocol.h>
 #include <lib/fdio/cpp/caller.h>
@@ -50,7 +50,7 @@ namespace {
 using Directory = fuchsia_io::Directory;
 
 zx::result<> StartFsComponent(fidl::UnownedClientEnd<Directory> exposed_dir,
-                              fidl::ClientEnd<fuchsia_hardware_block::Block> device,
+                              fidl::ClientEnd<fuchsia_storage_block::Block> device,
                               const MountOptions& options) {
   auto startup_client_end = component::ConnectAt<fuchsia_fs_startup::Startup>(exposed_dir);
   if (startup_client_end.is_error())
@@ -72,7 +72,7 @@ zx::result<> StartFsComponent(fidl::UnownedClientEnd<Directory> exposed_dir,
 }
 
 zx::result<fidl::ClientEnd<Directory>> InitFsComponent(
-    fidl::ClientEnd<fuchsia_hardware_block::Block> device, FsComponent& component,
+    fidl::ClientEnd<fuchsia_storage_block::Block> device, FsComponent& component,
     const MountOptions& options) {
   auto exposed_dir = component.Connect();
   if (exposed_dir.is_error())
@@ -258,7 +258,7 @@ __EXPORT SingleVolumeFilesystemInterface::~SingleVolumeFilesystemInterface() = d
 
 __EXPORT
 zx::result<StartedSingleVolumeFilesystem> Mount(
-    fidl::ClientEnd<fuchsia_hardware_block::Block> device, FsComponent& component,
+    fidl::ClientEnd<fuchsia_storage_block::Block> device, FsComponent& component,
     const MountOptions& options) {
   if (component.is_multi_volume()) {
     return zx::error(ZX_ERR_NOT_SUPPORTED);
@@ -279,7 +279,7 @@ zx::result<StartedSingleVolumeFilesystem> Mount(
 
 __EXPORT
 zx::result<StartedMultiVolumeFilesystem> MountMultiVolume(
-    fidl::ClientEnd<fuchsia_hardware_block::Block> device, FsComponent& component,
+    fidl::ClientEnd<fuchsia_storage_block::Block> device, FsComponent& component,
     const MountOptions& options) {
   if (!component.is_multi_volume()) {
     return zx::error(ZX_ERR_NOT_SUPPORTED);
@@ -300,7 +300,7 @@ zx::result<StartedMultiVolumeFilesystem> MountMultiVolume(
 
 __EXPORT
 zx::result<StartedSingleVolumeMultiVolumeFilesystem> MountMultiVolumeWithDefault(
-    fidl::ClientEnd<fuchsia_hardware_block::Block> device, FsComponent& component,
+    fidl::ClientEnd<fuchsia_storage_block::Block> device, FsComponent& component,
     const MountOptions& options, const char* volume_name) {
   if (!component.is_multi_volume()) {
     return zx::error(ZX_ERR_NOT_SUPPORTED);

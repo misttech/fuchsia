@@ -55,7 +55,7 @@ impl Test for FvmMinfsTest {
         {
             // Format FVM by flashing the golden image
             let client =
-                RemoteBlockClient::new(block_connector.connect_volume()?.into_proxy()).await?;
+                RemoteBlockClient::new(block_connector.connect_block()?.into_proxy()).await?;
             client
                 .write_at(BufferSlice::Memory(&contents[..]), 0)
                 .await

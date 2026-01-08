@@ -8,7 +8,7 @@ import("//build/rust/rustc_binary.gni")
 rustc_binary("run-with-logs") {
   edition = "2024"
   deps = [
-    "//sdk/fidl/fuchsia.hardware.block:fuchsia.hardware.block_rust",
+    "//sdk/fidl/fuchsia.storage.block:fuchsia.storage.block_rust",
     "//src/lib/fidl/rust/fidl",
     "//src/lib/fuchsia-component",
     "//src/storage/lib/block_client/rust",

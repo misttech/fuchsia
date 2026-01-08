@@ -115,7 +115,7 @@ impl WatchSource for PathSource {
 }
 
 /// An implementation of `WatchSource` based on a DirectoryProxy.  The source is expected to be
-/// a directory containing a "volume" node which implements fuchsia.hardware.block.volume.Volume.
+/// a directory containing a "volume" node which implements fuchsia.storage.block.Block.
 #[derive(Clone, Debug)]
 pub struct DirSource {
     dir: fio::DirectoryProxy,
@@ -211,14 +211,14 @@ mod tests {
     use crate::device::Parent;
     use fidl::endpoints::Proxy as _;
     use fidl_fuchsia_device::{ControllerRequest, ControllerRequestStream};
-    use fidl_fuchsia_hardware_block_volume::VolumeRequestStream;
+    use fidl_fuchsia_storage_block::BlockRequestStream;
     use futures::StreamExt;
     use std::sync::Arc;
     use vfs::directory::helper::DirectlyMutable;
     use vfs::service;
 
-    pub fn volume_service() -> Arc<service::Service> {
-        service::host(move |mut stream: VolumeRequestStream| async move {
+    pub fn block_protocol() -> Arc<service::Service> {
+        service::host(move |mut stream: BlockRequestStream| async move {
             if let Some(request) = stream.next().await {
                 // The service never actually gets used in the tests.
                 panic!("Unexpected request {request:?}");
@@ -280,10 +280,10 @@ mod tests {
 
         let partitions_dir = vfs::pseudo_directory! {
             "000" => vfs::pseudo_directory! {
-                "volume" => volume_service(),
+                "volume" => block_protocol(),
             },
             "001" => vfs::pseudo_directory! {
-                "volume" => volume_service(),
+                "volume" => block_protocol(),
             },
         };
 

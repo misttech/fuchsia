@@ -12,8 +12,8 @@ executable("biotime") {
   testonly = true
   sources = [ "biotime.cc" ]
   deps = [
-    "//sdk/fidl/fuchsia.hardware.block:fuchsia.hardware.block_cpp",
     "//sdk/fidl/fuchsia.hardware.block.driver:fuchsia.hardware.block.driver_banjo_cpp",
+    "//sdk/fidl/fuchsia.storage.block:fuchsia.storage.block_cpp",
     "//sdk/lib/component/incoming/cpp",
     "//sdk/lib/fit",
     "//zircon/system/ulib/perftest",

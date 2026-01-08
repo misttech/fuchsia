@@ -16,7 +16,7 @@
     ],
     use: [
         {
-            // A directory which must contain a "fuchsia.hardware.block.volume.Volume" service node.
+            // A directory which must contain a "fuchsia.storage.block.Block" service node.
             directory: "block",
             from: "parent",
             rights: [ "r*" ],

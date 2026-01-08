@@ -34,7 +34,7 @@ namespace fs_management {
 namespace {
 
 zx::result<> MkfsComponentFs(fidl::UnownedClientEnd<fuchsia_io::Directory> exposed_dir,
-                             fidl::ClientEnd<fuchsia_hardware_block::Block> device,
+                             fidl::ClientEnd<fuchsia_storage_block::Block> device,
                              const MkfsOptions& options) {
   auto startup_client_end = component::ConnectAt<fuchsia_fs_startup::Startup>(exposed_dir);
   if (startup_client_end.is_error())
@@ -56,7 +56,7 @@ zx::result<> MkfsComponentFs(fidl::UnownedClientEnd<fuchsia_io::Directory> expos
 }  // namespace
 
 __EXPORT
-zx_status_t Mkfs(fidl::ClientEnd<fuchsia_hardware_block::Block> device, FsComponent& component,
+zx_status_t Mkfs(fidl::ClientEnd<fuchsia_storage_block::Block> device, FsComponent& component,
                  const MkfsOptions& options) {
   auto exposed_dir = component.Connect();
   if (exposed_dir.is_error()) {
@@ -67,7 +67,7 @@ zx_status_t Mkfs(fidl::ClientEnd<fuchsia_hardware_block::Block> device, FsCompon
 
 __EXPORT
 zx_status_t Mkfs(const char* device_path, FsComponent& component, const MkfsOptions& options) {
-  zx::result device = component::Connect<fuchsia_hardware_block::Block>(device_path);
+  zx::result device = component::Connect<fuchsia_storage_block::Block>(device_path);
   if (device.is_error()) {
     return device.status_value();
   }

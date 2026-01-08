@@ -7,12 +7,10 @@ use anyhow::{Context, Error, anyhow};
 use async_trait::async_trait;
 use crypt_policy::{KeyConsumer, KeySource, format_sources, get_policy, unseal_sources};
 use device_watcher::recursive_wait_and_open;
-use fidl::endpoints::Proxy as _;
 use fidl_fuchsia_device::ControllerProxy;
-use fidl_fuchsia_hardware_block::BlockProxy;
 use fidl_fuchsia_hardware_block_encrypted::{DeviceManagerMarker, DeviceManagerProxy};
-use fidl_fuchsia_hardware_block_volume::VolumeProxy;
 use fidl_fuchsia_io as fio;
+use fidl_fuchsia_storage_block::BlockProxy;
 use fs_management::filesystem::BlockConnector;
 use fs_management::format::DiskFormat;
 
@@ -20,10 +18,9 @@ use fs_management::format::DiskFormat;
 async fn device_to_device_manager_proxy(device: &dyn Device) -> Result<DeviceManagerProxy, Error> {
     let controller =
         fuchsia_fs::directory::open_in_namespace(device.topological_path(), fio::Flags::empty())?;
-    let zxcrypt = recursive_wait_and_open::<DeviceManagerMarker>(&controller, "zxcrypt")
+    Ok(recursive_wait_and_open::<DeviceManagerMarker>(&controller, "zxcrypt")
         .await
-        .context("waiting for zxcrypt device")?;
-    Ok(DeviceManagerProxy::new(zxcrypt.into_channel().unwrap()))
+        .context("waiting for zxcrypt device")?)
 }
 
 /// Holds the outcome of an unseal attempt via ZxcryptDevice::unseal().
@@ -123,7 +120,7 @@ impl ZxcryptDevice {
 
 #[async_trait]
 impl Device for ZxcryptDevice {
-    async fn get_block_info(&self) -> Result<fidl_fuchsia_hardware_block::BlockInfo, Error> {
+    async fn get_block_info(&self) -> Result<fidl_fuchsia_storage_block::BlockInfo, Error> {
         self.inner_device.get_block_info().await
     }
 
@@ -167,19 +164,20 @@ impl Device for ZxcryptDevice {
         // Nb: The zxcrypt device proxies the BlockVolume protocol and
         // changes the extend/shrink offset to account for the
         // zxcrypt header (src/devices/block/drivers/zxcrypt/device.cc:193).
-        let volume_proxy = self.volume_proxy()?;
-        crate::volume::resize_volume(&volume_proxy, target_size_bytes).await
+        let block_proxy = self.block_proxy()?;
+        crate::volume::resize_volume(&block_proxy, target_size_bytes).await
     }
 
     async fn set_partition_max_bytes(&mut self, max_bytes: u64) -> Result<(), Error> {
         // Because partition limits are set on the volume manager (not the volume proxy)
         // we have to account fo the zxcrypt overheads ourselves.
         let extra_bytes = if max_bytes > 0 {
-            let volume_proxy = self.volume_proxy()?;
-            let (status, volume_manager_info, _volume_info) = volume_proxy
-                .get_volume_info()
-                .await
-                .context("Transport error on get_volume_info")?;
+            let block_proxy = self.block_proxy()?;
+            let (status, volume_manager_info, _volume_info) =
+                block_proxy
+                    .get_volume_info()
+                    .await
+                    .context("Transport error on get_volume_info")?;
             zx::Status::ok(status).context("get_volume_info failed")?;
             let manager =
                 volume_manager_info.ok_or_else(|| anyhow!("Expected volume manager info"))?;
@@ -201,10 +199,6 @@ impl Device for ZxcryptDevice {
 
     fn block_proxy(&self) -> Result<BlockProxy, Error> {
         self.inner_device.block_proxy()
-    }
-
-    fn volume_proxy(&self) -> Result<VolumeProxy, Error> {
-        self.inner_device.volume_proxy()
     }
 
     async fn get_child(&self, suffix: &str) -> Result<Box<dyn Device>, Error> {

@@ -23,8 +23,8 @@ use storage_device::block_device::BlockDevice;
 use vmo_backed_block_server::{VmoBackedServer, VmoBackedServerTestingExt};
 use zx::HandleBased as _;
 use {
-    fidl_fuchsia_fshost as ffshost, fidl_fuchsia_fxfs as ffxfs,
-    fidl_fuchsia_hardware_block as fblock, fidl_fuchsia_io as fio, fuchsia_async as fasync,
+    fidl_fuchsia_fshost as ffshost, fidl_fuchsia_fxfs as ffxfs, fidl_fuchsia_io as fio,
+    fidl_fuchsia_storage_block as fblock, fuchsia_async as fasync,
 };
 
 const TEST_BLOBS: [&[u8]; 3] =

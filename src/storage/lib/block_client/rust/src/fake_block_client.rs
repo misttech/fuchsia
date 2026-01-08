@@ -5,7 +5,7 @@
 use block_client::{
     BlockClient, BufferSlice, MutableBufferSlice, ReadOptions, VmoId, WriteOptions,
 };
-use fidl_fuchsia_hardware_block as block;
+use fidl_fuchsia_storage_block as block;
 use fuchsia_sync::Mutex;
 use std::collections::BTreeMap;
 use std::num::NonZero;
@@ -174,8 +174,8 @@ impl BlockClient for FakeBlockClient {
         None
     }
 
-    fn block_flags(&self) -> block::Flag {
-        block::Flag::TRIM_SUPPORT
+    fn block_flags(&self) -> block::DeviceFlag {
+        block::DeviceFlag::TRIM_SUPPORT
     }
 
     fn is_connected(&self) -> bool {

@@ -3,8 +3,8 @@
 // found in the LICENSE file.
 
 #include <assert.h>
-#include <fidl/fuchsia.hardware.block/cpp/wire.h>
 #include <fidl/fuchsia.hardware.skipblock/cpp/wire.h>
+#include <fidl/fuchsia.storage.block/cpp/wire.h>
 #include <fuchsia/hardware/block/driver/c/banjo.h>
 #include <lib/fdio/directory.h>
 #include <lib/fzl/owned-vmo-mapper.h>
@@ -107,8 +107,8 @@ class WorkContext {
     return fidl::UnownedClientEnd<fuchsia_hardware_skipblock::SkipBlock>{device_.borrow()};
   }
 
-  fidl::UnownedClientEnd<fuchsia_hardware_block::Block> BorrowBlock() const {
-    return fidl::UnownedClientEnd<fuchsia_hardware_block::Block>{device_.borrow()};
+  fidl::UnownedClientEnd<fuchsia_storage_block::Block> BorrowBlock() const {
+    return fidl::UnownedClientEnd<fuchsia_storage_block::Block>{device_.borrow()};
   }
 
   DISALLOW_COPY_ASSIGN_AND_MOVE(WorkContext);
@@ -116,7 +116,7 @@ class WorkContext {
   // Implementation specific information.
   struct {
     std::unique_ptr<block_client::Client> client;
-    fuchsia_hardware_block::wire::BlockInfo info = {};
+    fuchsia_storage_block::wire::BlockInfo info = {};
   } block;
   struct {
     fuchsia_hardware_skipblock::wire::PartitionInfo info = {};
@@ -197,7 +197,7 @@ class Checker {
 
 class BlockChecker : public Checker {
  public:
-  static zx_status_t Initialize(fuchsia_hardware_block::wire::BlockInfo info,
+  static zx_status_t Initialize(fuchsia_storage_block::wire::BlockInfo info,
                                 block_client::Client& client, std::unique_ptr<Checker>* checker) {
     fzl::OwnedVmoMapper mapping;
     if (zx_status_t status = mapping.CreateAndMap(block_size, ""); status != ZX_OK) {
@@ -276,7 +276,7 @@ class BlockChecker : public Checker {
   DISALLOW_COPY_AND_ASSIGN_ALLOW_MOVE(BlockChecker);
 
  private:
-  BlockChecker(fzl::OwnedVmoMapper mapper, fuchsia_hardware_block::wire::BlockInfo info,
+  BlockChecker(fzl::OwnedVmoMapper mapper, fuchsia_storage_block::wire::BlockInfo info,
                block_client::Client& client, storage::OwnedVmoid vmoid, groupid_t group)
       : Checker(mapper.start()),
         mapper_(std::move(mapper)),
@@ -289,7 +289,7 @@ class BlockChecker : public Checker {
   static std::atomic<uint16_t> next_txid_;
 
   fzl::OwnedVmoMapper mapper_;
-  fuchsia_hardware_block::wire::BlockInfo info_;
+  fuchsia_storage_block::wire::BlockInfo info_;
   block_client::Client& client_;
   storage::OwnedVmoid vmoid_;
   groupid_t group_;
@@ -640,7 +640,7 @@ int iochk(int argc, char** argv) {
       printf("unable to get block info: %s\n", zx_status_get_string(response.error_value()));
       return -1;
     }
-    const fuchsia_hardware_block::wire::BlockInfo& info = response.value()->info;
+    const fuchsia_storage_block::wire::BlockInfo& info = response.value()->info;
     printf("opened %s - block_size=%u, block_count=%lu\n", device, info.block_size,
            info.block_count);
 
@@ -674,7 +674,7 @@ int iochk(int argc, char** argv) {
       return -1;
     }
 
-    auto [client, server] = fidl::Endpoints<fuchsia_hardware_block::Session>::Create();
+    auto [client, server] = fidl::Endpoints<fuchsia_storage_block::Session>::Create();
     if (fidl::Status result = fidl::WireCall(ctx.BorrowBlock())->OpenSession(std::move(server));
         !result.ok()) {
       fprintf(stderr, "error: cannot open session for device: %s\n",

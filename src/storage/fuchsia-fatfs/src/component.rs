@@ -9,8 +9,8 @@ use fidl_fuchsia_fs::{AdminMarker, AdminRequest, AdminRequestStream};
 use fidl_fuchsia_fs_startup::{
     CheckOptions, FormatOptions, StartOptions, StartupMarker, StartupRequest, StartupRequestStream,
 };
-use fidl_fuchsia_hardware_block::BlockMarker;
 use fidl_fuchsia_process_lifecycle::{LifecycleRequest, LifecycleRequestStream};
+use fidl_fuchsia_storage_block::BlockMarker;
 use fuchsia_fatfs::{FatDirectory, FatFs, fatfs_error_to_status};
 use futures::TryStreamExt;
 use futures::lock::Mutex;

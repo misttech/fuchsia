@@ -3,7 +3,7 @@
 // found in the LICENSE file.
 
 #include <fcntl.h>
-#include <fidl/fuchsia.hardware.block/cpp/markers.h>
+#include <fidl/fuchsia.storage.block/cpp/markers.h>
 #include <lib/component/incoming/cpp/protocol.h>
 #include <lib/zx/result.h>
 #include <unistd.h>
@@ -35,7 +35,7 @@ void FsyncFilesystem(fs_test::TestFilesystem& fs) {
 }
 
 void ReadSuperblock(const std::string& device_path, Superblock& superblock) {
-  zx::result device = component::Connect<fuchsia_hardware_block::Block>(device_path);
+  zx::result device = component::Connect<fuchsia_storage_block::Block>(device_path);
   ASSERT_TRUE(device.is_ok()) << device.status_string();
   zx_status_t status =
       block_client::SingleReadBytes(device.value(), &superblock, sizeof(superblock), 0);

@@ -8,6 +8,8 @@
 #ifndef SRC_STORAGE_F2FS_BCACHE_H_
 #define SRC_STORAGE_F2FS_BCACHE_H_
 
+#include <fidl/fuchsia.storage.block/cpp/wire.h>
+
 #include <storage/buffer/vmo_buffer.h>
 #include <storage/buffer/vmoid_registry.h>
 
@@ -24,7 +26,7 @@ zx::result<std::unique_ptr<BcacheMapper>> CreateBcacheMapper(
     std::vector<std::unique_ptr<block_client::BlockDevice>> devices, bool allocate = false);
 // for the startup service
 zx::result<std::unique_ptr<BcacheMapper>> CreateBcacheMapper(
-    fidl::ClientEnd<fuchsia_hardware_block::Block> device, bool allocate = false);
+    fidl::ClientEnd<fuchsia_storage_block::Block> device, bool allocate = false);
 // for test
 zx::result<std::unique_ptr<BcacheMapper>> CreateBcacheMapper(
     std::unique_ptr<block_client::BlockDevice> device, bool allocate = false);
@@ -69,7 +71,7 @@ class Bcache : public fs::DeviceTransactionHandler, public storage::VmoidRegistr
   size_t max_slice_count_ = 0;
   const uint64_t max_blocks_;
   const block_t block_size_;
-  fuchsia_hardware_block::wire::BlockInfo info_ = {};
+  fuchsia_storage_block::wire::BlockInfo info_ = {};
   std::unique_ptr<block_client::BlockDevice> device_;  // The device, if owned.
 };
 
@@ -90,7 +92,7 @@ class BcacheMapper : public storage::VmoidRegistry {
   zx_status_t Trim(size_t start, size_t num);
   uint64_t Maxblk() const { return max_blocks_; }
   block_t BlockSize() const { return block_size_; }
-  zx_status_t BlockGetInfo(fuchsia_hardware_block::wire::BlockInfo* out_info) const;
+  zx_status_t BlockGetInfo(fuchsia_storage_block::wire::BlockInfo* out_info) const;
 
   zx_status_t RunRequests(const std::vector<storage::BufferedOperation>& operations);
   zx_status_t Flush();
@@ -137,7 +139,7 @@ class BcacheMapper : public storage::VmoidRegistry {
   // |buffer_| and |buffer_mutex_| are used in the "Readblk/Writeblk" methods.
   storage::VmoBuffer buffer_ __TA_GUARDED(buffer_mutex_);
 
-  fuchsia_hardware_block::wire::BlockInfo info_ = {};
+  fuchsia_storage_block::wire::BlockInfo info_ = {};
   const block_t block_size_;
   const uint64_t max_blocks_;
   bool read_only_ = false;

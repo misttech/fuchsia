@@ -2,7 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#include <fidl/fuchsia.hardware.block.volume/cpp/wire.h>
+#include <fidl/fuchsia.storage.block/cpp/wire.h>
 #include <lib/fdio/cpp/caller.h>
 #include <lib/fdio/fdio.h>
 #include <lib/fpromise/result.h>
@@ -224,16 +224,18 @@ void CheckPartitionsInRamdisk(const ramdevice_client::Ramdisk& ramdisk,
       ASSERT_TRUE(device.is_ok()) << device.status_string();
       std::unique_ptr<block_client::RemoteBlockDevice> block_device = std::move(device.value());
       std::array<uint64_t, 2> slice_start = {0, 2};
-      using VsliceRange = fuchsia_hardware_block_volume::wire::VsliceRange;
-      std::array<VsliceRange, fuchsia_hardware_block_volume::wire::kMaxSliceRequests>
+      using VsliceRange = fuchsia_storage_block::wire::VsliceRange;
+      std::array<VsliceRange, fuchsia_storage_block::wire::kMaxSliceRequests>
 
           ranges = {};
       uint64_t range_count;
 
-      ASSERT_EQ(block_device->VolumeQuerySlices(slice_start.data(), slice_start.size(),
-                                                reinterpret_cast<VsliceRange*>(ranges.data()),
-                                                &range_count),
+      ASSERT_EQ(block_device->VolumeQuerySlices(
+                    slice_start.data(), slice_start.size(),
+                    reinterpret_cast<fuchsia_storage_block::wire::VsliceRange*>(ranges.data()),
+                    &range_count),
                 ZX_OK);
+
       ASSERT_EQ(range_count, 2u);
       EXPECT_TRUE(ranges[0].allocated);
       EXPECT_EQ(ranges[0].count, 2u);
@@ -249,15 +251,16 @@ void CheckPartitionsInRamdisk(const ramdevice_client::Ramdisk& ramdisk,
       ASSERT_TRUE(device.is_ok()) << device.status_string();
       std::unique_ptr<block_client::RemoteBlockDevice> block_device = std::move(device.value());
       std::array<uint64_t, 2> slice_start = {0, 4};
-      using VsliceRange = fuchsia_hardware_block_volume::wire::VsliceRange;
-      std::array<VsliceRange, fuchsia_hardware_block_volume::wire::kMaxSliceRequests>
+      using VsliceRange = fuchsia_storage_block::wire::VsliceRange;
+      std::array<VsliceRange, fuchsia_storage_block::wire::kMaxSliceRequests>
 
           ranges = {};
       uint64_t range_count;
 
-      ASSERT_EQ(block_device->VolumeQuerySlices(slice_start.data(), slice_start.size(),
-                                                reinterpret_cast<VsliceRange*>(ranges.data()),
-                                                &range_count),
+      ASSERT_EQ(block_device->VolumeQuerySlices(
+                    slice_start.data(), slice_start.size(),
+                    reinterpret_cast<fuchsia_storage_block::wire::VsliceRange*>(ranges.data()),
+                    &range_count),
                 ZX_OK);
       ASSERT_EQ(range_count, 2u);
       EXPECT_TRUE(ranges[0].allocated);

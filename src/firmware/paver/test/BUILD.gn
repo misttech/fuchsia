@@ -10,7 +10,7 @@ source_set("test-utils") {
   testonly = true
   sources = [ "test-utils.cc" ]
   public_deps = [
-    "//sdk/fidl/fuchsia.hardware.block.volume:fuchsia.hardware.block.volume_cpp",
+    "//sdk/fidl/fuchsia.storage.block:fuchsia.storage.block_cpp",
     "//sdk/fidl/fuchsia.sysinfo:fuchsia.sysinfo_cpp",
     "//sdk/lib/component/incoming/cpp",
     "//sdk/lib/fdio",
@@ -72,10 +72,10 @@ executable("device_partitioner_test") {
     ":test-utils",
     "//sdk/fidl/fuchsia.device:fuchsia.device_cpp",
     "//sdk/fidl/fuchsia.fshost:fuchsia.fshost_cpp",
-    "//sdk/fidl/fuchsia.hardware.block:fuchsia.hardware.block_cpp",
     "//sdk/fidl/fuchsia.hardware.power.statecontrol:fuchsia.hardware.power.statecontrol_cpp_testing",
     "//sdk/fidl/fuchsia.kernel:fuchsia.kernel_cpp",
     "//sdk/fidl/fuchsia.scheduler:fuchsia.scheduler_cpp",
+    "//sdk/fidl/fuchsia.storage.block:fuchsia.storage.block_cpp",
     "//sdk/fidl/fuchsia.system.state:fuchsia.system.state_cpp",
     "//sdk/fidl/fuchsia.tracing.provider:fuchsia.tracing.provider_cpp",
     "//sdk/lib/async",
@@ -141,8 +141,8 @@ executable("paversvc_test") {
     ":test-utils",
     "//sdk/fidl/fuchsia.device:fuchsia.device_cpp",
     "//sdk/fidl/fuchsia.fshost:fuchsia.fshost_cpp",
-    "//sdk/fidl/fuchsia.hardware.block.partition:fuchsia.hardware.block.partition_cpp",
     "//sdk/fidl/fuchsia.paver:fuchsia.paver_cpp",
+    "//sdk/fidl/fuchsia.storage.block:fuchsia.storage.block_cpp",
     "//sdk/fidl/fuchsia.sysinfo:fuchsia.sysinfo_cpp_testing",
     "//sdk/lib/async",
     "//sdk/lib/async-default",
@@ -191,8 +191,8 @@ executable("misc_test") {
   ]
   deps = [
     ":test-utils",
-    "//sdk/fidl/fuchsia.hardware.block:fuchsia.hardware.block_cpp",
     "//sdk/fidl/fuchsia.paver:fuchsia.paver_cpp",
+    "//sdk/fidl/fuchsia.storage.block:fuchsia.storage.block_cpp",
     "//sdk/lib/async-loop:async-loop-cpp",
     "//sdk/lib/async-loop:async-loop-default",
     "//sdk/lib/fdio",
@@ -247,9 +247,9 @@ fuchsia_library_fuzzer("paver-validation-fuzzer") {
   deps = [
     "//sdk/fidl/fuchsia.device:fuchsia.device_cpp",
     "//sdk/fidl/fuchsia.fshost:fuchsia.fshost_cpp",
-    "//sdk/fidl/fuchsia.hardware.block:fuchsia.hardware.block_cpp",
     "//sdk/fidl/fuchsia.hardware.skipblock:fuchsia.hardware.skipblock_cpp",
     "//sdk/fidl/fuchsia.paver:fuchsia.paver_cpp",
+    "//sdk/fidl/fuchsia.storage.block:fuchsia.storage.block_cpp",
     "//src/firmware/paver:paver-core",
     "//src/storage/gpt",
     "//src/storage/lib/block_client/cpp",

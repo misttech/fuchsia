@@ -6,9 +6,7 @@
 #define SRC_DEVICES_BLOCK_DRIVERS_CORE_BLOCK_DEVICE_H_
 
 #include <assert.h>
-#include <fidl/fuchsia.hardware.block.partition/cpp/wire.h>
-#include <fidl/fuchsia.hardware.block.volume/cpp/wire.h>
-#include <fidl/fuchsia.hardware.block/cpp/wire.h>
+#include <fidl/fuchsia.storage.block/cpp/wire.h>
 #include <fuchsia/hardware/block/driver/cpp/banjo.h>
 #include <fuchsia/hardware/block/partition/cpp/banjo.h>
 #include <fuchsia/hardware/block/volume/cpp/banjo.h>
@@ -49,7 +47,7 @@ struct StatsCookie {
 
 class BlockDevice;
 using BlockDeviceType = ddk::Device<BlockDevice, ddk::GetProtocolable,
-                                    ddk::Messageable<fuchsia_hardware_block_volume::Volume>::Mixin>;
+                                    ddk::Messageable<fuchsia_storage_block::Block>::Mixin>;
 
 class BlockDevice : public BlockDeviceType,
                     public ddk::BlockProtocol<BlockDevice, ddk::base_protocol> {
@@ -74,7 +72,7 @@ class BlockDevice : public BlockDeviceType,
   void BlockQuery(block_info_t* block_info, size_t* op_size);
   void BlockQueue(block_op_t* op, block_impl_queue_callback completion_cb, void* cookie);
 
-  // fuchsia_hardware_block_volume::Volume
+  // fuchsia_storage_block::Block
   void GetInfo(GetInfoCompleter::Sync& completer) override;
   void OpenSession(OpenSessionRequestView request, OpenSessionCompleter::Sync& completer) override;
   void OpenSessionWithOffsetMap(OpenSessionWithOffsetMapRequestView request,
@@ -95,8 +93,8 @@ class BlockDevice : public BlockDeviceType,
   zx_status_t DoIo(zx::vmo& vmo, size_t buf_len, zx_off_t off, zx_off_t vmo_off, bool write);
 
   void CreateSession(
-      fidl::ServerEnd<fuchsia_hardware_block::Session> session,
-      std::optional<fuchsia_hardware_block::wire::BlockOffsetMapping> mapping = std::nullopt);
+      fidl::ServerEnd<fuchsia_storage_block::Session> session,
+      std::optional<fuchsia_storage_block::wire::BlockOffsetMapping> mapping = std::nullopt);
 
   // Completion callback that expects StatsCookie as |cookie| and calls upper
   // layer completion cookie.

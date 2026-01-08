@@ -5,7 +5,7 @@
 #ifndef SRC_SECURITY_LIB_ZXCRYPT_FDIO_VOLUME_H_
 #define SRC_SECURITY_LIB_ZXCRYPT_FDIO_VOLUME_H_
 
-#include <fidl/fuchsia.hardware.block.volume/cpp/wire.h>
+#include <fidl/fuchsia.storage.block/cpp/wire.h>
 #include <lib/fidl/cpp/wire/channel.h>
 #include <lib/zx/result.h>
 
@@ -20,24 +20,24 @@ namespace zxcrypt {
 // host to prepare zxcrypt images, and is often more convenient for testing.
 class __EXPORT FdioVolume final : public Volume {
  public:
-  explicit FdioVolume(fidl::ClientEnd<fuchsia_hardware_block_volume::Volume> channel);
+  explicit FdioVolume(fidl::ClientEnd<fuchsia_storage_block::Block> channel);
 
   // Creates a new zxcrypt volume associated with the given block volume, |channel|. This will
   // format the block device as zxcrypt using the given |key|, which will be associated with key
   // slot 0. Note that |key| is not strengthened and MUST have cryptographic key length of at least
   // 128 bits.
   static zx::result<std::unique_ptr<FdioVolume>> Create(
-      fidl::ClientEnd<fuchsia_hardware_block_volume::Volume> channel, const crypto::Secret& key);
+      fidl::ClientEnd<fuchsia_storage_block::Block> channel, const crypto::Secret& key);
 
   // This is a convenience method that calls |Init| and then |Unlock|.
   static zx::result<std::unique_ptr<FdioVolume>> Unlock(
-      fidl::ClientEnd<fuchsia_hardware_block_volume::Volume> channel, const crypto::Secret& key,
+      fidl::ClientEnd<fuchsia_storage_block::Block> channel, const crypto::Secret& key,
       key_slot_t slot);
 
   // Returns a new volume object corresponding to the block device given by
   // |channel| and populated with the block and FVM information.
   static zx::result<std::unique_ptr<FdioVolume>> Init(
-      fidl::ClientEnd<fuchsia_hardware_block_volume::Volume> channel);
+      fidl::ClientEnd<fuchsia_storage_block::Block> channel);
 
   // Opens a zxcrypt volume using the |key| corresponding to given key |slot|.
   zx_status_t Unlock(const crypto::Secret& key, key_slot_t slot);
@@ -72,7 +72,7 @@ class __EXPORT FdioVolume final : public Volume {
   zx_status_t Flush() override;
 
   // The underlying block device.
-  fidl::ClientEnd<fuchsia_hardware_block_volume::Volume> device_;
+  fidl::ClientEnd<fuchsia_storage_block::Block> device_;
 };
 
 }  // namespace zxcrypt

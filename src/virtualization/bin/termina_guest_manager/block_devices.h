@@ -5,7 +5,7 @@
 #ifndef SRC_VIRTUALIZATION_BIN_TERMINA_GUEST_MANAGER_BLOCK_DEVICES_H_
 #define SRC_VIRTUALIZATION_BIN_TERMINA_GUEST_MANAGER_BLOCK_DEVICES_H_
 
-#include <fuchsia/hardware/block/volume/cpp/fidl.h>
+#include <fuchsia/storage/block/cpp/fidl.h>
 #include <fuchsia/virtualization/cpp/fidl.h>
 #include <lib/fit/result.h>
 #include <lib/zx/result.h>
@@ -18,10 +18,8 @@
 constexpr size_t kMinStatefulImageSize = 2ull * 1024 * 1024 * 1024;
 constexpr const char kGuestPartitionName[] = "guest";
 
-constexpr std::array<uint8_t, fuchsia::hardware::block::partition::GUID_LENGTH>
-    kGuestPartitionGuid = {
-        0x9a, 0x17, 0x7d, 0x2d, 0x8b, 0x24, 0x4a, 0x4c,
-        0x87, 0x11, 0x1f, 0x99, 0x05, 0xb7, 0x6e, 0xd1,
+constexpr std::array<uint8_t, fuchsia::storage::block::GUID_LENGTH> kGuestPartitionGuid = {
+    0x9a, 0x17, 0x7d, 0x2d, 0x8b, 0x24, 0x4a, 0x4c, 0x87, 0x11, 0x1f, 0x99, 0x05, 0xb7, 0x6e, 0xd1,
 };
 
 fit::result<std::string, std::vector<fuchsia::virtualization::BlockSpec>> GetBlockDevices(

@@ -12,7 +12,7 @@
 #error Fuchsia-only Header
 #endif
 
-#include <fidl/fuchsia.hardware.block/cpp/wire.h>
+#include <fidl/fuchsia.storage.block/cpp/wire.h>
 #include <lib/async/dispatcher.h>
 #include <lib/fzl/resizeable-vmo-mapper.h>
 #include <lib/zx/event.h>
@@ -320,7 +320,7 @@ class Blobfs : public TransactionManager, public BlockIteratorProvider {
   async_dispatcher_t* dispatcher_ = nullptr;
 
   std::unique_ptr<BlockDevice> block_device_;
-  fuchsia_hardware_block::wire::BlockInfo block_info_ = {};
+  fuchsia_storage_block::wire::BlockInfo block_info_ = {};
   Writability writability_;
   const CompressionSettings write_compression_settings_;
   zx::resource vmex_resource_;  // Possibly null resource. See getter for more.

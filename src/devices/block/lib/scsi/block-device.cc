@@ -3,7 +3,7 @@
 // found in the LICENSE file.
 
 #include <endian.h>
-#include <fidl/fuchsia.hardware.block/cpp/wire.h>
+#include <fidl/fuchsia.storage.block/cpp/wire.h>
 #include <fuchsia/hardware/block/driver/c/banjo.h>
 #include <lib/ddk/binding_driver.h>
 #include <lib/scsi/block-device.h>
@@ -134,7 +134,7 @@ zx_status_t BlockDevice::AddDevice(uint32_t max_transfer_bytes) {
     max_transfer_bytes_ = max_transfer_bytes;
   }
 
-  if (max_transfer_bytes_ == fuchsia_hardware_block::wire::kMaxTransferUnbounded) {
+  if (max_transfer_bytes_ == fuchsia_storage_block::wire::kMaxTransferUnbounded) {
     max_transfer_blocks_ = UINT32_MAX;
   } else {
     if (max_transfer_bytes_ % block_size_bytes_ != 0) {
@@ -213,8 +213,9 @@ void BlockDevice::BlockImplQuery(block_info_t* info_out, size_t* block_op_size_o
   info_out->block_size = block_size_bytes_;
   info_out->block_count = block_count_;
   info_out->max_transfer_size = max_transfer_bytes_;
-  info_out->flags = (write_protected_ ? FLAG_READONLY : 0) | (removable_ ? FLAG_REMOVABLE : 0) |
-                    (dpo_fua_available_ ? FLAG_FUA_SUPPORT : 0);
+  info_out->flags = (write_protected_ ? DEVICE_FLAG_READONLY : 0) |
+                    (removable_ ? DEVICE_FLAG_REMOVABLE : 0) |
+                    (dpo_fua_available_ ? DEVICE_FLAG_FUA_SUPPORT : 0);
   *block_op_size_out = controller_->BlockOpSize();
 }
 

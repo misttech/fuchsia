@@ -49,8 +49,7 @@ TEST(FvmSparseImageReaderTest, PartitionsInImagePassFsck) {
   ASSERT_TRUE(ram_disk_or.is_ok()) << ram_disk_or.status_string();
 
   // Open the ram disk
-  zx::result channel =
-      component::Connect<fuchsia_hardware_block_volume::Volume>(ram_disk_or.value().path());
+  zx::result channel = component::Connect<fuchsia_storage_block::Block>(ram_disk_or.value().path());
   ASSERT_TRUE(channel.is_ok()) << channel.status_string();
 
   zx::result device = block_client::RemoteBlockDevice::Create(std::move(channel.value()));

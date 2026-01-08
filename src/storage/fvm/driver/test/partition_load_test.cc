@@ -3,8 +3,7 @@
 // found in the LICENSE file.
 
 #include <fidl/fuchsia.device/cpp/wire.h>
-#include <fidl/fuchsia.hardware.block.partition/cpp/wire.h>
-#include <fidl/fuchsia.hardware.block.volume/cpp/wire.h>
+#include <fidl/fuchsia.storage.block/cpp/wire.h>
 #include <lib/driver-integration-test/fixture.h>
 #include <lib/fdio/cpp/caller.h>
 #include <sys/types.h>
@@ -87,8 +86,7 @@ TEST_F(FvmVPartitionLoadTest, LoadPartitionWithPlaceHolderGuidIsUpdated) {
         device_watcher::RecursiveWaitForFile(devmgr_->devfs_root().get(), partition_path.c_str());
     ASSERT_OK(channel.status_value());
 
-    fidl::ClientEnd<fuchsia_hardware_block_partition::Partition> client_end(
-        std::move(channel.value()));
+    fidl::ClientEnd<fuchsia_storage_block::Block> client_end(std::move(channel.value()));
     auto result = fidl::WireCall(client_end)->GetInstanceGuid();
     ASSERT_OK(result.status());
     ASSERT_OK(result.value().status);
@@ -107,8 +105,7 @@ TEST_F(FvmVPartitionLoadTest, LoadPartitionWithPlaceHolderGuidIsUpdated) {
         device_watcher::RecursiveWaitForFile(devmgr_->devfs_root().get(), partition_path.c_str());
     ASSERT_OK(channel.status_value());
 
-    fidl::ClientEnd<fuchsia_hardware_block_partition::Partition> client_end(
-        std::move(channel.value()));
+    fidl::ClientEnd<fuchsia_storage_block::Block> client_end(std::move(channel.value()));
     auto result = fidl::WireCall(client_end)->GetInstanceGuid();
     ASSERT_OK(result.status());
     ASSERT_OK(result.value().status);

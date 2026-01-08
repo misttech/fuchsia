@@ -38,7 +38,7 @@ class FakeBlockDevice : public BlockDevice {
     uint64_t block_count = 0;
     uint32_t block_size = 0;
     bool supports_trim = false;
-    uint32_t max_transfer_size = fuchsia_hardware_block::wire::kMaxTransferUnbounded;
+    uint32_t max_transfer_size = fuchsia_storage_block::wire::kMaxTransferUnbounded;
   };
   explicit FakeBlockDevice(const Config&);
   FakeBlockDevice(uint64_t block_count, uint32_t block_size)
@@ -79,7 +79,7 @@ class FakeBlockDevice : public BlockDevice {
   uint64_t GetWriteBlockCount() const;
   void ResetBlockCounts();
 
-  void SetInfoFlags(fuchsia_hardware_block::wire::Flag flags);
+  void SetInfoFlags(fuchsia_storage_block::wire::DeviceFlag flags);
   void SetBlockCount(uint64_t block_count);
   void SetBlockSize(uint32_t block_size);
   bool IsRegistered(vmoid_t vmoid) const;
@@ -96,13 +96,13 @@ class FakeBlockDevice : public BlockDevice {
   }
 
   zx_status_t VolumeGetInfo(
-      fuchsia_hardware_block_volume::wire::VolumeManagerInfo* out_manager_info,
-      fuchsia_hardware_block_volume::wire::VolumeInfo* out_volume_info) const override {
+      fuchsia_storage_block::wire::VolumeManagerInfo* out_manager_info,
+      fuchsia_storage_block::wire::VolumeInfo* out_volume_info) const override {
     return ZX_ERR_NOT_SUPPORTED;
   }
 
   zx_status_t VolumeQuerySlices(const uint64_t* slices, size_t slices_count,
-                                fuchsia_hardware_block_volume::wire::VsliceRange* out_ranges,
+                                fuchsia_storage_block::wire::VsliceRange* out_ranges,
                                 size_t* out_ranges_count) const override {
     return ZX_ERR_NOT_SUPPORTED;
   }
@@ -116,7 +116,7 @@ class FakeBlockDevice : public BlockDevice {
   }
 
   zx_status_t FifoTransaction(block_fifo_request_t* requests, size_t count) override;
-  zx_status_t BlockGetInfo(fuchsia_hardware_block::wire::BlockInfo* out_info) const override;
+  zx_status_t BlockGetInfo(fuchsia_storage_block::wire::BlockInfo* out_info) const override;
   zx_status_t BlockAttachVmo(const zx::vmo& vmo, storage::Vmoid* out_vmoid) final;
 
  protected:
@@ -143,7 +143,7 @@ class FakeBlockDevice : public BlockDevice {
 
   uint64_t block_count_ __TA_GUARDED(lock_) = 0;
   uint32_t block_size_ __TA_GUARDED(lock_) = 0;
-  fuchsia_hardware_block::wire::Flag block_info_flags_ __TA_GUARDED(lock_) = {};
+  fuchsia_storage_block::wire::DeviceFlag block_info_flags_ __TA_GUARDED(lock_) = {};
   uint32_t max_transfer_size_ __TA_GUARDED(lock_) = 0;
   std::map<vmoid_t, zx::vmo> vmos_ __TA_GUARDED(lock_);
   zx::vmo block_device_ __TA_GUARDED(lock_);
@@ -160,11 +160,10 @@ class FakeFVMBlockDevice : public FakeBlockDevice {
                      uint64_t slice_capacity);
 
   zx_status_t FifoTransaction(block_fifo_request_t* requests, size_t count) final;
-  zx_status_t VolumeGetInfo(
-      fuchsia_hardware_block_volume::wire::VolumeManagerInfo* out_manager_info,
-      fuchsia_hardware_block_volume::wire::VolumeInfo* out_volume_info) const final;
+  zx_status_t VolumeGetInfo(fuchsia_storage_block::wire::VolumeManagerInfo* out_manager_info,
+                            fuchsia_storage_block::wire::VolumeInfo* out_volume_info) const final;
   zx_status_t VolumeQuerySlices(const uint64_t* slices, size_t slices_count,
-                                fuchsia_hardware_block_volume::wire::VsliceRange* out_ranges,
+                                fuchsia_storage_block::wire::VsliceRange* out_ranges,
                                 size_t* out_ranges_count) const final;
   zx_status_t VolumeExtend(uint64_t offset, uint64_t length) final;
   zx_status_t VolumeShrink(uint64_t offset, uint64_t length) final;
@@ -172,8 +171,8 @@ class FakeFVMBlockDevice : public FakeBlockDevice {
  private:
   mutable fbl::Mutex fvm_lock_ = {};
 
-  fuchsia_hardware_block_volume::wire::VolumeManagerInfo manager_info_ __TA_GUARDED(fvm_lock_) = {};
-  fuchsia_hardware_block_volume::wire::VolumeInfo volume_info_ __TA_GUARDED(fvm_lock_) = {};
+  fuchsia_storage_block::wire::VolumeManagerInfo manager_info_ __TA_GUARDED(fvm_lock_) = {};
+  fuchsia_storage_block::wire::VolumeInfo volume_info_ __TA_GUARDED(fvm_lock_) = {};
 
   // Start Slice -> Range.
   std::map<uint64_t, range::Range<uint64_t>> extents_ __TA_GUARDED(fvm_lock_);

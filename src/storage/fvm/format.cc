@@ -7,7 +7,7 @@
 #include <string>
 
 #ifdef __Fuchsia__
-#include <fidl/fuchsia.hardware.block.volume/cpp/wire.h>
+#include <fidl/fuchsia.storage.block/cpp/wire.h>
 #endif
 
 #include <zircon/assert.h>
@@ -29,7 +29,7 @@ constexpr uint32_t kVPartitionEntryFlagInactive = 0x00000001;
 #ifdef __Fuchsia__
 // Enforce target and host flags to match.
 static_assert(kVPartitionEntryFlagInactive ==
-                  fuchsia_hardware_block_volume::wire::kAllocatePartitionFlagInactive,
+                  fuchsia_storage_block::wire::kAllocatePartitionFlagInactive,
               "Inactive Flag must match FIDL definition.");
 #endif
 

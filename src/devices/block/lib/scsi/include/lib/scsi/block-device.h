@@ -54,7 +54,7 @@ class BlockDevice : public ddk::BlockImplProtocol<BlockDevice> {
   // |controller| is a pointer to the scsi::Controller this BlockDevice is attached to.
   // |controller| must outlast BlockDevice.
   // This BlockDevice does not take ownership of or any references on |controller|.
-  // A |max_transfer_bytes| value of fuchsia_hardware_block::wire::kMaxTransferUnbounded implies
+  // A |max_transfer_bytes| value of fuchsia_storage_block::wire::kMaxTransferUnbounded implies
   // there is no limit on the transfer size.
   // Returns a BlockDevice* to allow for removal of removable media disks.
   static zx::result<std::unique_ptr<BlockDevice>> Bind(Controller* controller, uint8_t target,

@@ -59,7 +59,7 @@ pub async fn set_up_insecure_zxcrypt(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use fidl_fuchsia_hardware_block::BlockMarker;
+    use fidl_fuchsia_storage_block::BlockMarker;
     use ramdevice_client::RamdiskClient;
     use test_util::assert_lt;
 

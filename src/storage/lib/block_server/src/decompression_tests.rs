@@ -5,8 +5,7 @@
 use crate::async_interface::Interface;
 use crate::{BlockServer, ReadOptions, TraceFlowId, WriteOptions};
 use block_protocol::{BlockFifoCommand, BlockFifoRequest, BlockFifoResponse};
-use fidl_fuchsia_hardware_block_driver::{BlockIoFlag, BlockOpcode};
-use fidl_fuchsia_hardware_block_volume::VolumeMarker;
+use fidl_fuchsia_storage_block::{BlockIoFlag, BlockMarker, BlockOpcode};
 use fuchsia_async::{self as fasync, TimeoutExt};
 use futures::StreamExt;
 use futures::channel::{mpsc, oneshot};
@@ -17,7 +16,7 @@ use std::num::NonZero;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicU32, Ordering};
 use zx::{self as zx, HandleBased};
-use {fidl_fuchsia_hardware_block as fblock, zstd};
+use {fidl_fuchsia_storage_block as fblock, zstd};
 
 const BLOCK_SIZE: u32 = 512;
 
@@ -49,7 +48,7 @@ impl Interface for MockInterface {
         } else {
             Cow::Owned(crate::DeviceInfo::Block(crate::BlockInfo {
                 block_count: 100,
-                device_flags: fblock::Flag::empty(),
+                device_flags: fblock::DeviceFlag::empty(),
                 max_transfer_blocks: NonZero::new(u32::MAX),
             }))
         }
@@ -114,7 +113,7 @@ impl TestFixture {
         mapping: Option<fblock::BlockOffsetMapping>,
         vmo_size: u64,
     ) -> Self {
-        let (proxy, stream) = fidl::endpoints::create_proxy_and_stream::<VolumeMarker>();
+        let (proxy, stream) = fidl::endpoints::create_proxy_and_stream::<BlockMarker>();
 
         fasync::Task::spawn(async move {
             let block_server = BlockServer::new(BLOCK_SIZE, Arc::new(mock_interface));
@@ -371,7 +370,7 @@ async fn test_fragmented_device_reads() {
             get_info_hook: Some(Box::new(move || {
                 Cow::Owned(crate::DeviceInfo::Block(crate::BlockInfo {
                     block_count: 100,
-                    device_flags: fblock::Flag::empty(),
+                    device_flags: fblock::DeviceFlag::empty(),
                     max_transfer_blocks: NonZero::new(len1),
                 }))
             })),

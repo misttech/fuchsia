@@ -5,7 +5,7 @@
 use anyhow::{Error, anyhow};
 use fidl::endpoints::ClientEnd;
 use fuchsia_runtime::HandleType;
-use {fidl_fuchsia_hardware_block as fhardware_block, fuchsia_async as fasync};
+use {fidl_fuchsia_storage_block as fstorage_block, fuchsia_async as fasync};
 
 #[fasync::run_singlethreaded]
 async fn main() -> Result<(), Error> {
@@ -14,7 +14,7 @@ async fn main() -> Result<(), Error> {
     let binary =
         args.next().ok_or_else(|| anyhow!("{} invoked without path to child binary", name))?;
     let return_code = block_adapter::run(
-        ClientEnd::<fhardware_block::BlockMarker>::from(zx::Channel::from(
+        ClientEnd::<fstorage_block::BlockMarker>::from(zx::Channel::from(
             fuchsia_runtime::take_startup_handle(fuchsia_runtime::HandleInfo::new(
                 HandleType::User0,
                 1,

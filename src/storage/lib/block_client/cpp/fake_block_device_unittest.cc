@@ -26,12 +26,12 @@ TEST(FakeBlockDeviceTest, EmptyDevice) {
   const uint64_t kBlockCount = 0;
   const uint32_t kBlockSize = 0;
   auto device = std::make_unique<FakeBlockDevice>(kBlockCount, kBlockSize);
-  fuchsia_hardware_block::wire::BlockInfo info = {};
+  fuchsia_storage_block::wire::BlockInfo info = {};
   ASSERT_EQ(device->BlockGetInfo(&info), ZX_OK);
   EXPECT_EQ(kBlockCount, info.block_count);
   EXPECT_EQ(kBlockSize, info.block_size);
-  EXPECT_EQ(info.flags, fuchsia_hardware_block::wire::Flag{});
-  EXPECT_EQ(fuchsia_hardware_block::wire::kMaxTransferUnbounded, info.max_transfer_size);
+  EXPECT_EQ(info.flags, fuchsia_storage_block::wire::DeviceFlag{});
+  EXPECT_EQ(fuchsia_storage_block::wire::kMaxTransferUnbounded, info.max_transfer_size);
 }
 
 TEST(FakeBlockDeviceTest, NonEmptyDevice) {
@@ -40,17 +40,17 @@ TEST(FakeBlockDeviceTest, NonEmptyDevice) {
                               .block_size = kBlockSizeDefault,
                               .supports_trim = true,
                               .max_transfer_size = kBlockCountDefault * 8});
-  fuchsia_hardware_block::wire::BlockInfo info = {};
+  fuchsia_storage_block::wire::BlockInfo info = {};
   ASSERT_EQ(device->BlockGetInfo(&info), ZX_OK);
   EXPECT_EQ(kBlockCountDefault, info.block_count);
   EXPECT_EQ(kBlockSizeDefault, info.block_size);
-  EXPECT_TRUE(info.flags & fuchsia_hardware_block::wire::Flag::kTrimSupport);
+  EXPECT_TRUE(info.flags & fuchsia_storage_block::wire::DeviceFlag::kTrimSupport);
   EXPECT_EQ(kBlockCountDefault * 8, info.max_transfer_size);
 }
 
 void CreateAndRegisterVmo(BlockDevice* device, size_t blocks, zx::vmo* vmo,
                           storage::OwnedVmoid* vmoid) {
-  fuchsia_hardware_block::wire::BlockInfo info = {};
+  fuchsia_storage_block::wire::BlockInfo info = {};
   ASSERT_EQ(device->BlockGetInfo(&info), ZX_OK);
   ASSERT_EQ(zx::vmo::create(blocks * info.block_size, 0, vmo), ZX_OK);
   ASSERT_EQ(device->BlockAttachVmo(*vmo, &vmoid->GetReference(device)), ZX_OK);
@@ -510,15 +510,15 @@ TEST(FakeFVMBlockDeviceTest, GetVolumeInfo) {
   auto device = std::make_unique<FakeFVMBlockDevice>(kBlockCountDefault, kBlockSizeDefault,
                                                      kSliceSizeDefault, kSliceCountDefault);
   {
-    fuchsia_hardware_block::wire::BlockInfo info = {};
+    fuchsia_storage_block::wire::BlockInfo info = {};
     ASSERT_EQ(device->BlockGetInfo(&info), ZX_OK);
     EXPECT_EQ(kBlockCountDefault, info.block_count);
     EXPECT_EQ(kBlockSizeDefault, info.block_size);
   }
 
   {
-    fuchsia_hardware_block_volume::wire::VolumeManagerInfo manager_info = {};
-    fuchsia_hardware_block_volume::wire::VolumeInfo volume_info = {};
+    fuchsia_storage_block::wire::VolumeManagerInfo manager_info = {};
+    fuchsia_storage_block::wire::VolumeInfo volume_info = {};
     ASSERT_EQ(device->VolumeGetInfo(&manager_info, &volume_info), ZX_OK);
     EXPECT_EQ(kSliceSizeDefault, manager_info.slice_size);
     EXPECT_EQ(manager_info.assigned_slice_count, 1u);
@@ -530,7 +530,7 @@ TEST(FakeFVMBlockDeviceTest, QuerySlices) {
                                                      kSliceSizeDefault, kSliceCountDefault);
   uint64_t slice_start = 0;
   size_t slice_count = 1;
-  fuchsia_hardware_block_volume::wire::VsliceRange ranges;
+  fuchsia_storage_block::wire::VsliceRange ranges;
   size_t actual_ranges = 0;
   ASSERT_EQ(ZX_OK, device->VolumeQuerySlices(&slice_start, slice_count, &ranges, &actual_ranges));
   ASSERT_EQ(actual_ranges, 1u);
@@ -553,7 +553,7 @@ TEST(FakeFVMBlockDeviceTest, QuerySlices) {
 
 void CheckAllocatedSlices(FakeFVMBlockDevice* device, const uint64_t* starts,
                           const uint64_t* lengths, size_t slices_count) {
-  auto ranges = std::make_unique<fuchsia_hardware_block_volume::wire::VsliceRange[]>(slices_count);
+  auto ranges = std::make_unique<fuchsia_storage_block::wire::VsliceRange[]>(slices_count);
   size_t actual_ranges = 0;
   ASSERT_EQ(ZX_OK, device->VolumeQuerySlices(starts, slices_count, ranges.get(), &actual_ranges));
   ASSERT_EQ(slices_count, actual_ranges);
@@ -567,8 +567,8 @@ TEST(FakeFVMBlockDeviceTest, ExtendNoOp) {
   auto device = std::make_unique<FakeFVMBlockDevice>(kBlockCountDefault, kBlockSizeDefault,
                                                      kSliceSizeDefault, kSliceCountDefault);
 
-  fuchsia_hardware_block_volume::wire::VolumeManagerInfo manager_info = {};
-  fuchsia_hardware_block_volume::wire::VolumeInfo volume_info = {};
+  fuchsia_storage_block::wire::VolumeManagerInfo manager_info = {};
+  fuchsia_storage_block::wire::VolumeInfo volume_info = {};
   ASSERT_EQ(device->VolumeGetInfo(&manager_info, &volume_info), ZX_OK);
   EXPECT_EQ(manager_info.assigned_slice_count, 1u);
 
@@ -585,8 +585,8 @@ TEST(FakeFVMBlockDeviceTest, ExtendOverlappingSameStart) {
   auto device = std::make_unique<FakeFVMBlockDevice>(kBlockCountDefault, kBlockSizeDefault,
                                                      kSliceSizeDefault, kSliceCountDefault);
 
-  fuchsia_hardware_block_volume::wire::VolumeManagerInfo manager_info = {};
-  fuchsia_hardware_block_volume::wire::VolumeInfo volume_info = {};
+  fuchsia_storage_block::wire::VolumeManagerInfo manager_info = {};
+  fuchsia_storage_block::wire::VolumeInfo volume_info = {};
   ASSERT_EQ(device->VolumeGetInfo(&manager_info, &volume_info), ZX_OK);
   EXPECT_EQ(manager_info.assigned_slice_count, 1u);
 
@@ -603,8 +603,8 @@ TEST(FakeFVMBlockDeviceTest, ExtendOverlappingDifferentStart) {
   auto device = std::make_unique<FakeFVMBlockDevice>(kBlockCountDefault, kBlockSizeDefault,
                                                      kSliceSizeDefault, kSliceCountDefault);
 
-  fuchsia_hardware_block_volume::wire::VolumeManagerInfo manager_info = {};
-  fuchsia_hardware_block_volume::wire::VolumeInfo volume_info = {};
+  fuchsia_storage_block::wire::VolumeManagerInfo manager_info = {};
+  fuchsia_storage_block::wire::VolumeInfo volume_info = {};
   ASSERT_EQ(device->VolumeGetInfo(&manager_info, &volume_info), ZX_OK);
   EXPECT_EQ(manager_info.assigned_slice_count, 1u);
 
@@ -621,8 +621,8 @@ TEST(FakeFVMBlockDeviceTest, ExtendNonOverlapping) {
   auto device = std::make_unique<FakeFVMBlockDevice>(kBlockCountDefault, kBlockSizeDefault,
                                                      kSliceSizeDefault, kSliceCountDefault);
 
-  fuchsia_hardware_block_volume::wire::VolumeManagerInfo manager_info = {};
-  fuchsia_hardware_block_volume::wire::VolumeInfo volume_info = {};
+  fuchsia_storage_block::wire::VolumeManagerInfo manager_info = {};
+  fuchsia_storage_block::wire::VolumeInfo volume_info = {};
   ASSERT_EQ(device->VolumeGetInfo(&manager_info, &volume_info), ZX_OK);
   EXPECT_EQ(manager_info.assigned_slice_count, 1u);
 
@@ -639,8 +639,8 @@ TEST(FakeFVMBlockDeviceTest, ShrinkNoOp) {
   auto device = std::make_unique<FakeFVMBlockDevice>(kBlockCountDefault, kBlockSizeDefault,
                                                      kSliceSizeDefault, kSliceCountDefault);
 
-  fuchsia_hardware_block_volume::wire::VolumeManagerInfo manager_info = {};
-  fuchsia_hardware_block_volume::wire::VolumeInfo volume_info = {};
+  fuchsia_storage_block::wire::VolumeManagerInfo manager_info = {};
+  fuchsia_storage_block::wire::VolumeInfo volume_info = {};
   ASSERT_EQ(device->VolumeGetInfo(&manager_info, &volume_info), ZX_OK);
   EXPECT_EQ(manager_info.assigned_slice_count, 1u);
 
@@ -653,8 +653,8 @@ TEST(FakeFVMBlockDeviceTest, ShrinkInvalid) {
   auto device = std::make_unique<FakeFVMBlockDevice>(kBlockCountDefault, kBlockSizeDefault,
                                                      kSliceSizeDefault, kSliceCountDefault);
 
-  fuchsia_hardware_block_volume::wire::VolumeManagerInfo manager_info = {};
-  fuchsia_hardware_block_volume::wire::VolumeInfo volume_info = {};
+  fuchsia_storage_block::wire::VolumeManagerInfo manager_info = {};
+  fuchsia_storage_block::wire::VolumeInfo volume_info = {};
   ASSERT_EQ(device->VolumeGetInfo(&manager_info, &volume_info), ZX_OK);
   EXPECT_EQ(manager_info.assigned_slice_count, 1u);
 
@@ -670,8 +670,8 @@ TEST(FakeFVMBlockDeviceTest, ExtendThenShrinkSubSection) {
   auto device = std::make_unique<FakeFVMBlockDevice>(kBlockCountDefault, kBlockSizeDefault,
                                                      kSliceSizeDefault, kSliceCountDefault);
 
-  fuchsia_hardware_block_volume::wire::VolumeManagerInfo manager_info = {};
-  fuchsia_hardware_block_volume::wire::VolumeInfo volume_info = {};
+  fuchsia_storage_block::wire::VolumeManagerInfo manager_info = {};
+  fuchsia_storage_block::wire::VolumeInfo volume_info = {};
   ASSERT_EQ(device->VolumeGetInfo(&manager_info, &volume_info), ZX_OK);
   EXPECT_EQ(manager_info.assigned_slice_count, 1u);
 
@@ -696,8 +696,8 @@ TEST(FakeFVMBlockDeviceTest, ExtendThenShrinkPartialOverlap) {
   auto device = std::make_unique<FakeFVMBlockDevice>(kBlockCountDefault, kBlockSizeDefault,
                                                      kSliceSizeDefault, kSliceCountDefault);
 
-  fuchsia_hardware_block_volume::wire::VolumeManagerInfo manager_info = {};
-  fuchsia_hardware_block_volume::wire::VolumeInfo volume_info = {};
+  fuchsia_storage_block::wire::VolumeManagerInfo manager_info = {};
+  fuchsia_storage_block::wire::VolumeInfo volume_info = {};
   ASSERT_EQ(device->VolumeGetInfo(&manager_info, &volume_info), ZX_OK);
   EXPECT_EQ(manager_info.assigned_slice_count, 1u);
 
@@ -727,8 +727,8 @@ TEST(FakeFVMBlockDeviceTest, ExtendThenShrinkTotal) {
   auto device = std::make_unique<FakeFVMBlockDevice>(kBlockCountDefault, kBlockSizeDefault,
                                                      kSliceSizeDefault, kSliceCountDefault);
 
-  fuchsia_hardware_block_volume::wire::VolumeManagerInfo manager_info = {};
-  fuchsia_hardware_block_volume::wire::VolumeInfo volume_info = {};
+  fuchsia_storage_block::wire::VolumeManagerInfo manager_info = {};
+  fuchsia_storage_block::wire::VolumeInfo volume_info = {};
   ASSERT_EQ(device->VolumeGetInfo(&manager_info, &volume_info), ZX_OK);
   EXPECT_EQ(manager_info.assigned_slice_count, 1u);
 
@@ -752,8 +752,8 @@ TEST(FakeFVMBlockDeviceTest, ExtendThenShrinkToSplit) {
   auto device = std::make_unique<FakeFVMBlockDevice>(kBlockCountDefault, kBlockSizeDefault,
                                                      kSliceSizeDefault, kSliceCountDefault);
 
-  fuchsia_hardware_block_volume::wire::VolumeManagerInfo manager_info = {};
-  fuchsia_hardware_block_volume::wire::VolumeInfo volume_info = {};
+  fuchsia_storage_block::wire::VolumeManagerInfo manager_info = {};
+  fuchsia_storage_block::wire::VolumeInfo volume_info = {};
   ASSERT_EQ(device->VolumeGetInfo(&manager_info, &volume_info), ZX_OK);
   EXPECT_EQ(manager_info.assigned_slice_count, 1u);
 
@@ -780,8 +780,8 @@ TEST(FakeFVMBlockDeviceTest, OverallocateSlices) {
   auto device = std::make_unique<FakeFVMBlockDevice>(kBlockCountDefault, kBlockSizeDefault,
                                                      kSliceSizeDefault, kSliceCapacity);
 
-  fuchsia_hardware_block_volume::wire::VolumeManagerInfo manager_info = {};
-  fuchsia_hardware_block_volume::wire::VolumeInfo volume_info = {};
+  fuchsia_storage_block::wire::VolumeManagerInfo manager_info = {};
+  fuchsia_storage_block::wire::VolumeInfo volume_info = {};
   ASSERT_EQ(device->VolumeGetInfo(&manager_info, &volume_info), ZX_OK);
   EXPECT_EQ(manager_info.assigned_slice_count, 1u);
   EXPECT_EQ(kSliceCapacity, manager_info.slice_count);
@@ -815,8 +815,8 @@ TEST(FakeFVMBlockDeviceTest, PartialOverallocateSlices) {
   auto device = std::make_unique<FakeFVMBlockDevice>(kBlockCountDefault, kBlockSizeDefault,
                                                      kSliceSizeDefault, kSliceCapacity);
 
-  fuchsia_hardware_block_volume::wire::VolumeManagerInfo manager_info = {};
-  fuchsia_hardware_block_volume::wire::VolumeInfo volume_info = {};
+  fuchsia_storage_block::wire::VolumeManagerInfo manager_info = {};
+  fuchsia_storage_block::wire::VolumeInfo volume_info = {};
   ASSERT_EQ(device->VolumeGetInfo(&manager_info, &volume_info), ZX_OK);
   EXPECT_EQ(manager_info.assigned_slice_count, 1u);
   EXPECT_EQ(kSliceCapacity, manager_info.slice_count);

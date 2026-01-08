@@ -6,8 +6,7 @@
 
 #include <errno.h>
 #include <fidl/fuchsia.hardware.block.encrypted/cpp/wire.h>
-#include <fidl/fuchsia.hardware.block.volume/cpp/wire.h>
-#include <fidl/fuchsia.hardware.block/cpp/wire.h>
+#include <fidl/fuchsia.storage.block/cpp/wire.h>
 #include <inttypes.h>
 #include <lib/component/incoming/cpp/clone.h>
 #include <lib/fdio/cpp/caller.h>
@@ -31,11 +30,11 @@
 
 namespace zxcrypt {
 
-FdioVolume::FdioVolume(fidl::ClientEnd<fuchsia_hardware_block_volume::Volume> channel)
+FdioVolume::FdioVolume(fidl::ClientEnd<fuchsia_storage_block::Block> channel)
     : device_(std::move(channel)) {}
 
 zx::result<std::unique_ptr<FdioVolume>> FdioVolume::Init(
-    fidl::ClientEnd<fuchsia_hardware_block_volume::Volume> channel) {
+    fidl::ClientEnd<fuchsia_storage_block::Block> channel) {
   if (!channel) {
     xprintf("bad parameter(s): block=%d\n", channel.channel().get());
     return zx::error(ZX_ERR_INVALID_ARGS);
@@ -55,7 +54,7 @@ zx::result<std::unique_ptr<FdioVolume>> FdioVolume::Init(
 }
 
 zx::result<std::unique_ptr<FdioVolume>> FdioVolume::Create(
-    fidl::ClientEnd<fuchsia_hardware_block_volume::Volume> channel, const crypto::Secret& key) {
+    fidl::ClientEnd<fuchsia_storage_block::Block> channel, const crypto::Secret& key) {
   zx::result volume = Init(std::move(channel));
   if (volume.is_error()) {
     xprintf("Init failed: %s\n", volume.status_string());
@@ -71,7 +70,7 @@ zx::result<std::unique_ptr<FdioVolume>> FdioVolume::Create(
 }
 
 zx::result<std::unique_ptr<FdioVolume>> FdioVolume::Unlock(
-    fidl::ClientEnd<fuchsia_hardware_block_volume::Volume> channel, const crypto::Secret& key,
+    fidl::ClientEnd<fuchsia_storage_block::Block> channel, const crypto::Secret& key,
     key_slot_t slot) {
   zx::result volume = Init(std::move(channel));
   if (volume.is_error()) {
@@ -160,7 +159,7 @@ zx_status_t FdioVolume::GetFvmSliceSize(uint64_t* out) {
 zx_status_t FdioVolume::DoBlockFvmVsliceQuery(uint64_t vslice_start,
                                               SliceRegion ranges[Volume::MAX_SLICE_REGIONS],
                                               uint64_t* slice_count) {
-  static_assert(fuchsia_hardware_block_volume::wire::kMaxSliceRequests == Volume::MAX_SLICE_REGIONS,
+  static_assert(fuchsia_storage_block::wire::kMaxSliceRequests == Volume::MAX_SLICE_REGIONS,
                 "block volume slice response count must match");
 
   const fidl::WireResult result = fidl::WireCall(device_)->QuerySlices(
@@ -203,14 +202,14 @@ zx_status_t FdioVolume::DoBlockFvmExtend(uint64_t start_slice, uint64_t slice_co
 zx_status_t FdioVolume::Read() {
   // TODO(https://fxbug.dev/42080299): Update this API to take a volume channel instead.
   return block_client::SingleReadBytes(
-      fidl::UnownedClientEnd<fuchsia_hardware_block::Block>(device_.channel().borrow()),
+      fidl::UnownedClientEnd<fuchsia_storage_block::Block>(device_.channel().borrow()),
       block_.get(), block_.len(), offset_);
 }
 
 zx_status_t FdioVolume::Write() {
   // TODO(https://fxbug.dev/42080299): Update this API to take a volume channel instead.
   return block_client::SingleWriteBytes(
-      fidl::UnownedClientEnd<fuchsia_hardware_block::Block>(device_.channel().borrow()),
+      fidl::UnownedClientEnd<fuchsia_storage_block::Block>(device_.channel().borrow()),
       block_.get(), block_.len(), offset_);
 }
 

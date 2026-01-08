@@ -107,7 +107,7 @@ zx::result<std::unique_ptr<VerifiedVolumeClient>> VerifiedVolumeClient::CreateFr
       std::move(devfs_root_fd)));
 }
 
-zx::result<fidl::ClientEnd<fuchsia_hardware_block::Block>> VerifiedVolumeClient::OpenForAuthoring(
+zx::result<fidl::ClientEnd<fuchsia_storage_block::Block>> VerifiedVolumeClient::OpenForAuthoring(
     const zx::duration& timeout) {
   // make FIDL call to open in authoring mode
   fidl::Arena allocator;
@@ -156,8 +156,7 @@ zx::result<fidl::ClientEnd<fuchsia_hardware_block::Block>> VerifiedVolumeClient:
 
   // Open child device and return
   fdio_cpp::UnownedFdioCaller caller(devfs_root_fd_.get());
-  return component::ConnectAt<fuchsia_hardware_block::Block>(caller.directory(),
-                                                             mutable_block_path);
+  return component::ConnectAt<fuchsia_storage_block::Block>(caller.directory(), mutable_block_path);
 }
 
 zx_status_t VerifiedVolumeClient::Close() {
@@ -192,9 +191,8 @@ zx_status_t VerifiedVolumeClient::CloseAndGenerateSeal(
   return ZX_OK;
 }
 
-zx::result<fidl::ClientEnd<fuchsia_hardware_block::Block>>
-VerifiedVolumeClient::OpenForVerifiedRead(const digest::Digest& expected_seal,
-                                          const zx::duration& timeout) {
+zx::result<fidl::ClientEnd<fuchsia_storage_block::Block>> VerifiedVolumeClient::OpenForVerifiedRead(
+    const digest::Digest& expected_seal, const zx::duration& timeout) {
   // make FIDL call to open in authoring mode
   fidl::Arena allocator;
 
@@ -248,8 +246,8 @@ VerifiedVolumeClient::OpenForVerifiedRead(const digest::Digest& expected_seal,
   }
 
   fdio_cpp::UnownedFdioCaller caller(devfs_root_fd_.get());
-  return component::ConnectAt<fuchsia_hardware_block::Block>(caller.directory(),
-                                                             verified_block_path);
+  return component::ConnectAt<fuchsia_storage_block::Block>(caller.directory(),
+                                                            verified_block_path);
 }
 
 }  // namespace block_verity

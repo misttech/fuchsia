@@ -4,7 +4,6 @@
 
 #include "src/storage/fvm/driver/vpartition_manager.h"
 
-#include <fidl/fuchsia.hardware.block.volume/cpp/wire.h>
 #include <fuchsia/hardware/block/driver/c/banjo.h>
 #include <inttypes.h>
 #include <lib/ddk/binding_driver.h>
@@ -157,7 +156,7 @@ zx_status_t VPartitionManager::DoIoLocked(zx_handle_t vmo, size_t off, size_t le
   size_t dev_offset = off / block_size;
 
   // The operation may need to be chuncked according to the block device's limits. We don't check
-  // explicitly for fuchsia_hardware_block::wire::kMaxTransferUnbounded because the transfers are
+  // explicitly for fuchsia_storage_block::wire::kMaxTransferUnbounded because the transfers are
   // still limited to 32-bits and that constant is the largest 32-bit value.
   const size_t max_transfer = info_.max_transfer_size / block_size;
   const size_t num_data_txns = fbl::round_up(len_remaining, max_transfer) / max_transfer;
@@ -419,7 +418,7 @@ zx_status_t VPartitionManager::Load() {
     for (auto& request : *get_info_requests) {
       ZX_DEBUG_ASSERT(request.is_reply_needed());
       fidl::Arena allocator;
-      fidl::ObjectView<fuchsia_hardware_block_volume::wire::VolumeManagerInfo> info(allocator);
+      fidl::ObjectView<fuchsia_storage_block::wire::VolumeManagerInfo> info(allocator);
       GetInfoInternal(info.get());
       request.Reply(ZX_OK, info);
     }
@@ -820,9 +819,8 @@ void VPartitionManager::LogPartitionInfoLocked() const {
 // Device protocol (FVM)
 
 zx::result<std::unique_ptr<VPartition>> VPartitionManager::AllocatePartition(
-    uint64_t slice_count, const fuchsia_hardware_block_partition::wire::Guid& type,
-    const fuchsia_hardware_block_partition::wire::Guid& instance, fidl::StringView name,
-    uint32_t flags) {
+    uint64_t slice_count, const fuchsia_storage_block::wire::Guid& type,
+    const fuchsia_storage_block::wire::Guid& instance, fidl::StringView name, uint32_t flags) {
   if (slice_count >= std::numeric_limits<uint32_t>::max()) {
     return zx::error(ZX_ERR_OUT_OF_RANGE);
   }
@@ -831,8 +829,8 @@ zx::result<std::unique_ptr<VPartition>> VPartitionManager::AllocatePartition(
   }
 
   // Validate the name. It should fit and not have any NULL terminators in it.
-  constexpr size_t kMaxNameLen = std::min<size_t>(
-      fuchsia_hardware_block_partition::wire::kNameLength, kMaxVPartitionNameLength);
+  constexpr size_t kMaxNameLen =
+      std::min<size_t>(fuchsia_storage_block::wire::kNameLength, kMaxVPartitionNameLength);
   if (name.size() > kMaxNameLen) {
     return zx::error(ZX_ERR_INVALID_ARGS);
   }
@@ -895,7 +893,7 @@ void VPartitionManager::GetInfo(GetInfoCompleter::Sync& completer) {
   }
 
   fidl::Arena allocator;
-  fidl::ObjectView<fuchsia_hardware_block_volume::wire::VolumeManagerInfo> info(allocator);
+  fidl::ObjectView<fuchsia_storage_block::wire::VolumeManagerInfo> info(allocator);
   GetInfoInternal(info.get());
   completer.Reply(ZX_OK, info);
 }

@@ -24,7 +24,7 @@ use fidl_fuchsia_fs_startup::{
 };
 use fidl_fuchsia_fvm::{ResetMarker, ResetRequest, ResetRequestStream};
 use fidl_fuchsia_fxfs::CryptMarker;
-use fidl_fuchsia_hardware_block::BlockMarker;
+use fidl_fuchsia_storage_block::BlockMarker;
 use fs_management::filesystem::{BlockConnector, Filesystem};
 use fs_management::format::{DiskFormat, detect_disk_format};
 use fs_management::{ComponentType, FSConfig, Options};
@@ -52,9 +52,7 @@ use uuid::Uuid;
 use vfs::directory::helper::DirectlyMutable;
 use vfs::execution_scope::ExecutionScope;
 use zerocopy::{FromBytes, Immutable, IntoBytes, KnownLayout};
-use {
-    fidl_fuchsia_hardware_block_volume as fvolume, fidl_fuchsia_io as fio, fuchsia_async as fasync,
-};
+use {fidl_fuchsia_io as fio, fidl_fuchsia_storage_block as fblock, fuchsia_async as fasync};
 
 // See //src/storage/fvm/format.h for a detailed description of the FVM format.
 
@@ -796,9 +794,9 @@ impl Fvm {
         Ok(())
     }
 
-    async fn get_info(&self) -> fvolume::VolumeManagerInfo {
+    async fn get_info(&self) -> fblock::VolumeManagerInfo {
         let inner = self.inner.read().await;
-        fvolume::VolumeManagerInfo {
+        fblock::VolumeManagerInfo {
             slice_size: inner.metadata.header.slice_size,
             slice_count: inner.metadata.header.pslice_count,
             assigned_slice_count: inner.assigned_slice_count,
@@ -1023,9 +1021,9 @@ impl MountedVolume {
 }
 
 impl BlockConnector for MountedVolume {
-    fn connect_channel_to_volume(
+    fn connect_channel_to_block(
         &self,
-        server_end: ServerEnd<fvolume::VolumeMarker>,
+        server_end: ServerEnd<fblock::BlockMarker>,
     ) -> Result<(), Error> {
         let this = self.clone();
         self.scope.spawn(async move {
@@ -1391,7 +1389,7 @@ impl Component {
             // and return the proper error without logging scary things if it is not.
             if let Some(expected_format) = expected_format {
                 let block_proxy = volume.connect_block()?.into_proxy();
-                let detected_format = detect_disk_format(block_proxy).await;
+                let detected_format = detect_disk_format(&block_proxy).await;
                 ensure!(detected_format == expected_format, zx::Status::WRONG_TYPE);
             }
         }
@@ -1481,7 +1479,7 @@ impl Component {
             outgoing_dir.add_entry("svc", svc_dir.clone())?;
             let weak = Arc::downgrade(self);
             svc_dir.add_entry(
-                fvolume::VolumeMarker::PROTOCOL_NAME,
+                fblock::BlockMarker::PROTOCOL_NAME,
                 vfs::service::host(move |requests| {
                     let weak = weak.clone();
                     async move {
@@ -1523,7 +1521,7 @@ impl Component {
     async fn handle_volume(
         self: Arc<Self>,
         partition_index: u16,
-        requests: fvolume::VolumeRequestStream,
+        requests: fblock::BlockRequestStream,
     ) -> Result<(), Error> {
         let partition = self.mounted.lock()[&partition_index].clone();
         partition.block_server.handle_requests(requests).await
@@ -1837,13 +1835,13 @@ impl Interface for PartitionInterface {
 
     async fn get_volume_info(
         &self,
-    ) -> Result<(fvolume::VolumeManagerInfo, fvolume::VolumeInfo), zx::Status> {
+    ) -> Result<(fblock::VolumeManagerInfo, fblock::VolumeInfo), zx::Status> {
         let volume_manager_info = self.fvm.get_info().await;
         let inner = self.fvm.inner.read().await;
         let reserved = if self.key.is_some() { 1 } else { 0 };
         Ok((
             volume_manager_info,
-            fvolume::VolumeInfo {
+            fblock::VolumeInfo {
                 partition_slice_count: (inner
                     .metadata
                     .partitions
@@ -1861,7 +1859,7 @@ impl Interface for PartitionInterface {
     async fn query_slices(
         &self,
         start_slices: &[u64],
-    ) -> Result<Vec<fvolume::VsliceRange>, zx::Status> {
+    ) -> Result<Vec<fblock::VsliceRange>, zx::Status> {
         let inner = self.fvm.inner.read().await;
         let mappings = &inner.partition_state[&self.partition_index].mappings;
         let mut results = Vec::new();
@@ -1876,7 +1874,7 @@ impl Interface for PartitionInterface {
                 Ok(index) => index,
                 Err(index) if index > 0 => index - 1,
                 _ => {
-                    results.push(fvolume::VsliceRange {
+                    results.push(fblock::VsliceRange {
                         allocated: false,
                         count: MAX_SLICE_COUNT - slice,
                     });
@@ -1887,12 +1885,12 @@ impl Interface for PartitionInterface {
             let mut end_slice = mapping.from.end;
             if slice >= end_slice {
                 if index + 1 < mappings.len() {
-                    results.push(fvolume::VsliceRange {
+                    results.push(fblock::VsliceRange {
                         allocated: false,
                         count: mappings[index + 1].from.start - slice,
                     });
                 } else {
-                    results.push(fvolume::VsliceRange {
+                    results.push(fblock::VsliceRange {
                         allocated: false,
                         count: MAX_SLICE_COUNT - slice,
                     });
@@ -1905,7 +1903,7 @@ impl Interface for PartitionInterface {
                     }
                     end_slice = mapping.from.end;
                 }
-                results.push(fvolume::VsliceRange { allocated: true, count: end_slice - slice });
+                results.push(fblock::VsliceRange { allocated: true, count: end_slice - slice });
             }
         }
         Ok(results)
@@ -2173,7 +2171,7 @@ mod tests {
         CheckOptions, CreateOptions, MountOptions, StartOptions, StartupMarker, VolumeMarker,
         VolumesMarker,
     };
-    use fidl_fuchsia_hardware_block::BlockMarker;
+    use fidl_fuchsia_storage_block::BlockMarker;
     use fs_management::DATA_TYPE_GUID;
     use fuchsia_component::client::{
         connect_to_named_protocol_at_dir_root, connect_to_protocol_at_dir_svc,
@@ -2185,10 +2183,7 @@ mod tests {
     use vmo_backed_block_server::{
         InitialContents, VmoBackedServer, VmoBackedServerOptions, VmoBackedServerTestingExt as _,
     };
-    use {
-        fidl_fuchsia_hardware_block as fblock, fidl_fuchsia_hardware_block_volume as fvolume,
-        fidl_fuchsia_io as fio, fuchsia_async as fasync,
-    };
+    use {fidl_fuchsia_io as fio, fidl_fuchsia_storage_block as fblock, fuchsia_async as fasync};
 
     struct Fixture {
         component: Arc<Component>,
@@ -2235,7 +2230,7 @@ mod tests {
             fixture
         }
 
-        async fn mount_volume(&self, volume_name: &str) -> fvolume::VolumeProxy {
+        async fn mount_volume(&self, volume_name: &str) -> fblock::BlockProxy {
             let volume_proxy = connect_to_named_protocol_at_dir_root::<VolumeMarker>(
                 &self.outgoing_dir,
                 &format!("volumes/{volume_name}"),
@@ -2250,7 +2245,7 @@ mod tests {
                 .expect("mount failed (FIDL)")
                 .expect("mount failed");
 
-            connect_to_protocol_at_dir_svc::<fvolume::VolumeMarker>(&dir_proxy).unwrap()
+            connect_to_protocol_at_dir_svc::<fblock::BlockMarker>(&dir_proxy).unwrap()
         }
 
         fn take_fake_server(self) -> Arc<VmoBackedServer> {
@@ -2259,7 +2254,7 @@ mod tests {
     }
 
     /// Returns the number of assigned slices for the individual volume and the whole FVM volume.
-    async fn get_counts(proxy: &fvolume::VolumeProxy) -> (u64, u64) {
+    async fn get_counts(proxy: &fblock::BlockProxy) -> (u64, u64) {
         let (status, manager_info, volume_info) = proxy.get_volume_info().await.unwrap();
         assert_eq!(status, zx::sys::ZX_OK);
         (manager_info.unwrap().assigned_slice_count, volume_info.unwrap().partition_slice_count)
@@ -2285,7 +2280,7 @@ mod tests {
 
         // Look for blobfs's magic:
         let block_proxy =
-            connect_to_protocol_at_dir_svc::<fvolume::VolumeMarker>(&dir_proxy).unwrap();
+            connect_to_protocol_at_dir_svc::<fblock::BlockMarker>(&dir_proxy).unwrap();
         let client = RemoteBlockClient::new(block_proxy).await.unwrap();
 
         // Make sure FVM passes through the right block size.
@@ -2335,7 +2330,7 @@ mod tests {
             .expect("mount failed");
 
         let block_proxy =
-            connect_to_protocol_at_dir_svc::<fvolume::VolumeMarker>(&dir_proxy).unwrap();
+            connect_to_protocol_at_dir_svc::<fblock::BlockMarker>(&dir_proxy).unwrap();
         let client = RemoteBlockClient::new(block_proxy).await.unwrap();
 
         // Check some writes.
@@ -2381,7 +2376,7 @@ mod tests {
 
             // Check we can read and write from the new partition.
             let block_proxy =
-                connect_to_protocol_at_dir_svc::<fvolume::VolumeMarker>(&dir_proxy).unwrap();
+                connect_to_protocol_at_dir_svc::<fblock::BlockMarker>(&dir_proxy).unwrap();
             let client = RemoteBlockClient::new(block_proxy).await.unwrap();
 
             // Check some writes.
@@ -2426,7 +2421,7 @@ mod tests {
             .expect("mount failed");
 
         let block_proxy =
-            connect_to_protocol_at_dir_svc::<fvolume::VolumeMarker>(&dir_proxy).unwrap();
+            connect_to_protocol_at_dir_svc::<fblock::BlockMarker>(&dir_proxy).unwrap();
         let client = RemoteBlockClient::new(block_proxy).await.unwrap();
 
         for offset in [0, 16384] {
@@ -2653,13 +2648,13 @@ mod tests {
             .expect("mount failed");
 
         let volume_proxy =
-            connect_to_protocol_at_dir_svc::<fvolume::VolumeMarker>(&dir_proxy).unwrap();
+            connect_to_protocol_at_dir_svc::<fblock::BlockMarker>(&dir_proxy).unwrap();
         let (status, manager_info, volume_info) = volume_proxy.get_volume_info().await.unwrap();
 
         assert_eq!(status, zx::sys::ZX_OK);
         assert_matches!(
             manager_info.as_deref(),
-            Some(fvolume::VolumeManagerInfo {
+            Some(fblock::VolumeManagerInfo {
                 slice_size: SLICE_SIZE,
                 max_virtual_slice: MAX_SLICE_COUNT,
                 assigned_slice_count,
@@ -2668,7 +2663,7 @@ mod tests {
         );
         assert_matches!(
             volume_info.as_deref(),
-            Some(fvolume::VolumeInfo { partition_slice_count: 257, .. })
+            Some(fblock::VolumeInfo { partition_slice_count: 257, .. })
         );
         // Make sure assigned_slice_count matches block_count from GetInfo.
         let info = volume_proxy.get_info().await.unwrap().expect("get_info failed");
@@ -2697,7 +2692,7 @@ mod tests {
             .expect("mount failed");
 
         let volume_proxy =
-            Arc::new(connect_to_protocol_at_dir_svc::<fvolume::VolumeMarker>(&dir_proxy).unwrap());
+            Arc::new(connect_to_protocol_at_dir_svc::<fblock::BlockMarker>(&dir_proxy).unwrap());
 
         let check = |start, allocated, count| {
             let volume_proxy = volume_proxy.clone();
@@ -2706,7 +2701,7 @@ mod tests {
                     volume_proxy.query_slices(&[start]).await.unwrap();
                 assert_eq!(status, zx::sys::ZX_OK);
                 assert_eq!(range_count, 1);
-                assert_eq!(ranges[0], fvolume::VsliceRange { allocated, count });
+                assert_eq!(ranges[0], fblock::VsliceRange { allocated, count });
                 range_count
             }
         };
@@ -2799,7 +2794,7 @@ mod tests {
         let (status, ranges, range_count) = volume_proxy.query_slices(&[0]).await.unwrap();
         assert_eq!(status, zx::sys::ZX_OK);
         assert_eq!(range_count, 1);
-        assert_eq!(ranges[0], fvolume::VsliceRange { allocated: true, count: 2 });
+        assert_eq!(ranges[0], fblock::VsliceRange { allocated: true, count: 2 });
 
         // Try again, and it should fail.
         assert_eq!(
@@ -2918,7 +2913,7 @@ mod tests {
                 .expect("mount failed");
 
             let blobfs_volume_proxy =
-                connect_to_protocol_at_dir_svc::<fvolume::VolumeMarker>(&dir_proxy).unwrap();
+                connect_to_protocol_at_dir_svc::<fblock::BlockMarker>(&dir_proxy).unwrap();
 
             // Record the initial assigned slice count via the blobfs_volume.
             let blobfs_initial_counts = get_counts(&blobfs_volume_proxy).await;
@@ -2943,7 +2938,7 @@ mod tests {
                 .expect("create failed");
 
             let volume_proxy =
-                connect_to_protocol_at_dir_svc::<fvolume::VolumeMarker>(&dir_proxy).unwrap();
+                connect_to_protocol_at_dir_svc::<fblock::BlockMarker>(&dir_proxy).unwrap();
 
             let get_counts = || get_counts(&volume_proxy);
             initial_counts = get_counts().await;
@@ -3009,9 +3004,9 @@ mod tests {
             assert_eq!(
                 &ranges[..3],
                 &[
-                    fvolume::VsliceRange { allocated: true, count: 4 },
-                    fvolume::VsliceRange { allocated: false, count: 7 },
-                    fvolume::VsliceRange { allocated: true, count: 9 }
+                    fblock::VsliceRange { allocated: true, count: 4 },
+                    fblock::VsliceRange { allocated: false, count: 7 },
+                    fblock::VsliceRange { allocated: true, count: 9 }
                 ]
             );
 
@@ -3030,10 +3025,10 @@ mod tests {
             assert_eq!(
                 &ranges[..4],
                 &[
-                    fvolume::VsliceRange { allocated: true, count: 4 },
-                    fvolume::VsliceRange { allocated: false, count: 7 },
-                    fvolume::VsliceRange { allocated: true, count: 4 },
-                    fvolume::VsliceRange { allocated: false, count: MAX_SLICE_COUNT - 15 }
+                    fblock::VsliceRange { allocated: true, count: 4 },
+                    fblock::VsliceRange { allocated: false, count: 7 },
+                    fblock::VsliceRange { allocated: true, count: 4 },
+                    fblock::VsliceRange { allocated: false, count: MAX_SLICE_COUNT - 15 }
                 ]
             );
 
@@ -3046,7 +3041,7 @@ mod tests {
             assert_eq!(get_counts().await, (initial_counts.0 + 4, 6));
 
             // Some checks that we also want to perform after reopening.
-            final_checks = |volume_proxy: fvolume::VolumeProxy| async move {
+            final_checks = |volume_proxy: fblock::BlockProxy| async move {
                 let (status, ranges, range_count) =
                     volume_proxy.query_slices(&[0, 1, 3, 4, 11, 15]).await.unwrap();
                 assert_eq!(status, zx::sys::ZX_OK);
@@ -3054,12 +3049,12 @@ mod tests {
                 assert_eq!(
                     &ranges[..6],
                     &[
-                        fvolume::VsliceRange { allocated: true, count: 1 },
-                        fvolume::VsliceRange { allocated: false, count: 2 },
-                        fvolume::VsliceRange { allocated: true, count: 1 },
-                        fvolume::VsliceRange { allocated: false, count: 7 },
-                        fvolume::VsliceRange { allocated: true, count: 4 },
-                        fvolume::VsliceRange { allocated: false, count: MAX_SLICE_COUNT - 15 }
+                        fblock::VsliceRange { allocated: true, count: 1 },
+                        fblock::VsliceRange { allocated: false, count: 2 },
+                        fblock::VsliceRange { allocated: true, count: 1 },
+                        fblock::VsliceRange { allocated: false, count: 7 },
+                        fblock::VsliceRange { allocated: true, count: 4 },
+                        fblock::VsliceRange { allocated: false, count: MAX_SLICE_COUNT - 15 }
                     ]
                 );
 
@@ -3096,7 +3091,7 @@ mod tests {
             .expect("mount failed");
 
         let volume_proxy =
-            connect_to_protocol_at_dir_svc::<fvolume::VolumeMarker>(&dir_proxy).unwrap();
+            connect_to_protocol_at_dir_svc::<fblock::BlockMarker>(&dir_proxy).unwrap();
 
         assert_eq!(get_counts(&volume_proxy).await, (initial_counts.0 + 4, 6));
 
@@ -3130,7 +3125,7 @@ mod tests {
             .expect("create failed");
 
         let volume_proxy =
-            connect_to_protocol_at_dir_svc::<fvolume::VolumeMarker>(&dir_proxy).unwrap();
+            connect_to_protocol_at_dir_svc::<fblock::BlockMarker>(&dir_proxy).unwrap();
 
         let get_counts = || get_counts(&volume_proxy);
         let initial_counts = get_counts().await;
@@ -3174,7 +3169,7 @@ mod tests {
             .expect("mount failed");
 
         let volume_proxy =
-            connect_to_protocol_at_dir_svc::<fvolume::VolumeMarker>(&dir_proxy).unwrap();
+            connect_to_protocol_at_dir_svc::<fblock::BlockMarker>(&dir_proxy).unwrap();
 
         let (status, manager_info, volume_info) = volume_proxy.get_volume_info().await.unwrap();
         assert_eq!(status, zx::sys::ZX_OK);
@@ -3243,7 +3238,7 @@ mod tests {
                 initial_contents: InitialContents::FromBuffer(&contents),
                 observer: Some(Box::new(Observer(expect_force_access.clone()))),
                 info: DeviceInfo::Block(BlockInfo {
-                    device_flags: fblock::Flag::FUA_SUPPORT,
+                    device_flags: fblock::DeviceFlag::FUA_SUPPORT,
                     ..Default::default()
                 }),
                 ..Default::default()
@@ -3268,7 +3263,7 @@ mod tests {
             .expect("mount failed");
 
         let client = RemoteBlockClient::new(
-            &connect_to_protocol_at_dir_svc::<fvolume::VolumeMarker>(&dir_proxy).unwrap(),
+            &connect_to_protocol_at_dir_svc::<fblock::BlockMarker>(&dir_proxy).unwrap(),
         )
         .await
         .unwrap();
@@ -3361,7 +3356,7 @@ mod tests {
             .expect("create failed");
 
         let volume_proxy =
-            connect_to_protocol_at_dir_svc::<fvolume::VolumeMarker>(&dir_proxy).unwrap();
+            connect_to_protocol_at_dir_svc::<fblock::BlockMarker>(&dir_proxy).unwrap();
         let (original_manager_slice_count, _) = get_counts(&volume_proxy).await;
 
         assert_eq!(volume_proxy.extend(3, 1).await.expect("extend failed (FIDL)"), zx::sys::ZX_OK);
@@ -3376,8 +3371,8 @@ mod tests {
         assert_eq!(
             &ranges[..2],
             &[
-                fvolume::VsliceRange { allocated: true, count: 5 },
-                fvolume::VsliceRange { allocated: false, count: MAX_SLICE_COUNT - 5 }
+                fblock::VsliceRange { allocated: true, count: 5 },
+                fblock::VsliceRange { allocated: false, count: MAX_SLICE_COUNT - 5 }
             ]
         );
 
@@ -3524,7 +3519,7 @@ mod tests {
             .expect("mount failed");
 
         let client = RemoteBlockClient::new(
-            &connect_to_protocol_at_dir_svc::<fvolume::VolumeMarker>(&dir_proxy).unwrap(),
+            &connect_to_protocol_at_dir_svc::<fblock::BlockMarker>(&dir_proxy).unwrap(),
         )
         .await
         .unwrap();
@@ -3540,7 +3535,7 @@ mod tests {
         let fake_server = Arc::new(
             VmoBackedServerOptions {
                 info: DeviceInfo::Block(BlockInfo {
-                    device_flags: fblock::Flag::READONLY,
+                    device_flags: fblock::DeviceFlag::READONLY,
                     ..Default::default()
                 }),
                 block_size: BLOCK_SIZE,
@@ -3566,11 +3561,14 @@ mod tests {
             .expect("mount failed (FIDL)")
             .expect("mount failed");
 
-        let proxy = connect_to_protocol_at_dir_svc::<fvolume::VolumeMarker>(&dir_proxy).unwrap();
+        let proxy = connect_to_protocol_at_dir_svc::<fblock::BlockMarker>(&dir_proxy).unwrap();
         let info = proxy.get_info().await.expect("FIDL error").expect("get_info failed");
         assert_eq!(info.block_count, 16448);
         assert_eq!(info.block_size, 512);
-        assert_eq!(info.flags, fblock::Flag::READONLY | fblock::Flag::ZSTD_DECOMPRESSION_SUPPORT);
+        assert_eq!(
+            info.flags,
+            fblock::DeviceFlag::READONLY | fblock::DeviceFlag::ZSTD_DECOMPRESSION_SUPPORT
+        );
 
         let partition_metadata =
             proxy.get_metadata().await.expect("FIDL error").expect("get_metadata failed");
@@ -3594,7 +3592,7 @@ mod tests {
         let fake_server = Arc::new(
             VmoBackedServerOptions {
                 info: DeviceInfo::Block(BlockInfo {
-                    device_flags: fblock::Flag::READONLY,
+                    device_flags: fblock::DeviceFlag::READONLY,
                     ..Default::default()
                 }),
                 block_size: BLOCK_SIZE,

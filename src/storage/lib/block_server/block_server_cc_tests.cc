@@ -2,13 +2,16 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#include <fidl/fuchsia.hardware.block.volume/cpp/wire.h>
+#include <fidl/fuchsia.storage.block/cpp/wire.h>
+#include <unistd.h>
 
 #include <span>
 #include <unordered_set>
+#include <vector>
 
 #include <gtest/gtest.h>
 
+#include "src/devices/lib/block/block.h"
 #include "src/storage/lib/block_client/cpp/remote_block_device.h"
 #include "src/storage/lib/block_server/block_server.h"
 #include "storage/buffer/owned_vmoid.h"
@@ -16,7 +19,7 @@
 namespace block_server {
 namespace {
 
-namespace fvolume = ::fuchsia_hardware_block_volume;
+namespace fblock = ::fuchsia_storage_block;
 
 constexpr uint64_t kBlocks = 1024;
 constexpr uint64_t kBlockSize = 512;
@@ -104,17 +107,20 @@ class TestInterface : public Interface {
 };
 
 TEST(BlockServer, Basic) {
-  fidl::ServerEnd<fvolume::Volume> server_end;
+  fidl::ServerEnd<fblock::Block> server_end;
   zx::result client_end = fidl::CreateEndpoints(&server_end);
   ASSERT_EQ(client_end.status_value(), ZX_OK);
 
   TestInterface test_interface(PartitionInfo{
+      .device_flags = 0,
       .start_block = 0,
       .block_count = kBlocks,
       .block_size = kBlockSize,
       .type_guid = {1, 2, 3, 4},
       .instance_guid = {5, 6, 7, 8},
       .name = "partition",
+      .flags = 0,
+      .max_transfer_size = 0,
   });
   test_interface.server().Serve(std::move(server_end));
 
@@ -152,17 +158,20 @@ TEST(BlockServer, Basic) {
 }
 
 TEST(BlockServer, Termination) {
-  fidl::ServerEnd<fvolume::Volume> server_end;
+  fidl::ServerEnd<fblock::Block> server_end;
   zx::result client_end = fidl::CreateEndpoints(&server_end);
   ASSERT_EQ(client_end.status_value(), ZX_OK);
 
   TestInterface test_interface(PartitionInfo{
+      .device_flags = 0,
       .start_block = 0,
       .block_count = kBlocks,
       .block_size = kBlockSize,
       .type_guid = {1, 2, 3, 4},
       .instance_guid = {5, 6, 7, 8},
       .name = "partition",
+      .flags = 0,
+      .max_transfer_size = 0,
   });
   test_interface.server().Serve(std::move(server_end));
 
@@ -179,19 +188,22 @@ TEST(BlockServer, Termination) {
 }
 
 TEST(BlockServer, AsyncTermination) {
-  fidl::ServerEnd<fvolume::Volume> server_end;
+  fidl::ServerEnd<fblock::Block> server_end;
   zx::result client_end = fidl::CreateEndpoints(&server_end);
   ASSERT_EQ(client_end.status_value(), ZX_OK);
 
   std::unique_ptr<block_client::RemoteBlockDevice> client;
 
   TestInterface test_interface(PartitionInfo{
+      .device_flags = 0,
       .start_block = 0,
       .block_count = kBlocks,
       .block_size = kBlockSize,
       .type_guid = {1, 2, 3, 4},
       .instance_guid = {5, 6, 7, 8},
       .name = "partition",
+      .flags = 0,
+      .max_transfer_size = 0,
   });
 
   test_interface.server().Serve(std::move(server_end));
@@ -219,17 +231,20 @@ TEST(BlockServer, FailedOnNewSession) {
     }
   };
 
-  fidl::ServerEnd<fvolume::Volume> server_end;
+  fidl::ServerEnd<fblock::Block> server_end;
   zx::result client_end = fidl::CreateEndpoints(&server_end);
   ASSERT_EQ(client_end.status_value(), ZX_OK);
 
   TestInterfaceWithFailedOnNewSession test_interface(PartitionInfo{
+      .device_flags = 0,
       .start_block = 0,
       .block_count = kBlocks,
       .block_size = kBlockSize,
       .type_guid = {1, 2, 3, 4},
       .instance_guid = {5, 6, 7, 8},
       .name = "partition",
+      .flags = 0,
+      .max_transfer_size = 0,
   });
 
   std::unique_ptr<block_client::RemoteBlockDevice> client;
@@ -244,22 +259,25 @@ TEST(BlockServer, FailedOnNewSession) {
 }
 
 TEST(BlockServer, FullFifo) {
-  fidl::ServerEnd<fvolume::Volume> server_end;
+  fidl::ServerEnd<fblock::Block> server_end;
   zx::result client_end = fidl::CreateEndpoints(&server_end);
   ASSERT_EQ(client_end.status_value(), ZX_OK);
 
   TestInterface test_interface(PartitionInfo{
+      .device_flags = 0,
       .start_block = 0,
       .block_count = kBlocks,
       .block_size = kBlockSize,
       .type_guid = {1, 2, 3, 4},
       .instance_guid = {5, 6, 7, 8},
       .name = "partition",
+      .flags = 0,
+      .max_transfer_size = 0,
   });
 
   test_interface.server().Serve(std::move(server_end));
 
-  auto [session, server] = fidl::Endpoints<fuchsia_hardware_block::Session>::Create();
+  auto [session, server] = fidl::Endpoints<fuchsia_storage_block::Session>::Create();
   ASSERT_TRUE(fidl::WireCall(*client_end)->OpenSession(std::move(server)).ok());
   const fidl::WireResult result = fidl::WireCall(session)->GetFifo();
   ASSERT_TRUE(result.ok());
@@ -309,22 +327,25 @@ TEST(BlockServer, FullFifo) {
 }
 
 TEST(BlockServer, Group) {
-  fidl::ServerEnd<fvolume::Volume> server_end;
+  fidl::ServerEnd<fblock::Block> server_end;
   zx::result client_end = fidl::CreateEndpoints(&server_end);
   ASSERT_EQ(client_end.status_value(), ZX_OK);
 
   TestInterface test_interface(PartitionInfo{
+      .device_flags = 0,
       .start_block = 0,
       .block_count = kBlocks,
       .block_size = kBlockSize,
       .type_guid = {1, 2, 3, 4},
       .instance_guid = {5, 6, 7, 8},
       .name = "partition",
+      .flags = 0,
+      .max_transfer_size = 0,
   });
 
   test_interface.server().Serve(std::move(server_end));
 
-  auto [session, server] = fidl::Endpoints<fuchsia_hardware_block::Session>::Create();
+  auto [session, server] = fidl::Endpoints<fuchsia_storage_block::Session>::Create();
   ASSERT_TRUE(fidl::WireCall(*client_end)->OpenSession(std::move(server)).ok());
 
   zx::fifo fifo;
@@ -413,17 +434,20 @@ TEST(BlockServer, SplitRequest) {
 }
 
 TEST(BlockServer, SimulatedBarrierFlushFailure) {
-  fidl::ServerEnd<fvolume::Volume> server_end;
+  fidl::ServerEnd<fblock::Block> server_end;
   zx::result client_end = fidl::CreateEndpoints(&server_end);
   ASSERT_EQ(client_end.status_value(), ZX_OK);
 
   TestInterface test_interface(PartitionInfo{
+      .device_flags = 0,
       .start_block = 0,
       .block_count = kBlocks,
       .block_size = kBlockSize,
       .type_guid = {1, 2, 3, 4},
       .instance_guid = {5, 6, 7, 8},
       .name = "partition",
+      .flags = 0,
+      .max_transfer_size = 0,
   });
   test_interface.SetHook([](const Request& request) -> zx::result<> {
     if (request.operation.tag == Operation::Tag::Flush) {
@@ -462,17 +486,20 @@ TEST(BlockServer, SimulatedBarrierFlushFailure) {
 }
 
 TEST(BlockServer, SimulatedBarrierWriteFailure) {
-  fidl::ServerEnd<fvolume::Volume> server_end;
+  fidl::ServerEnd<fblock::Block> server_end;
   zx::result client_end = fidl::CreateEndpoints(&server_end);
   ASSERT_EQ(client_end.status_value(), ZX_OK);
 
   TestInterface test_interface(PartitionInfo{
+      .device_flags = 0,
       .start_block = 0,
       .block_count = kBlocks,
       .block_size = kBlockSize,
       .type_guid = {1, 2, 3, 4},
       .instance_guid = {5, 6, 7, 8},
       .name = "partition",
+      .flags = 0,
+      .max_transfer_size = 0,
   });
   test_interface.SetHook([](const Request& request) -> zx::result<> {
     if (request.operation.tag == Operation::Tag::Write) {
@@ -511,17 +538,20 @@ TEST(BlockServer, SimulatedBarrierWriteFailure) {
 }
 
 TEST(BlockServer, SimulatedFuaFlushFailure) {
-  fidl::ServerEnd<fvolume::Volume> server_end;
+  fidl::ServerEnd<fblock::Block> server_end;
   zx::result client_end = fidl::CreateEndpoints(&server_end);
   ASSERT_EQ(client_end.status_value(), ZX_OK);
 
   TestInterface test_interface(PartitionInfo{
+      .device_flags = 0,
       .start_block = 0,
       .block_count = kBlocks,
       .block_size = kBlockSize,
       .type_guid = {1, 2, 3, 4},
       .instance_guid = {5, 6, 7, 8},
       .name = "partition",
+      .flags = 0,
+      .max_transfer_size = 0,
   });
   test_interface.SetHook([](const Request& request) -> zx::result<> {
     if (request.operation.tag == Operation::Tag::Flush) {
@@ -560,17 +590,20 @@ TEST(BlockServer, SimulatedFuaFlushFailure) {
 }
 
 TEST(BlockServer, SimulatedFuaWriteFailure) {
-  fidl::ServerEnd<fvolume::Volume> server_end;
+  fidl::ServerEnd<fblock::Block> server_end;
   zx::result client_end = fidl::CreateEndpoints(&server_end);
   ASSERT_EQ(client_end.status_value(), ZX_OK);
 
   TestInterface test_interface(PartitionInfo{
+      .device_flags = 0,
       .start_block = 0,
       .block_count = kBlocks,
       .block_size = kBlockSize,
       .type_guid = {1, 2, 3, 4},
       .instance_guid = {5, 6, 7, 8},
       .name = "partition",
+      .flags = 0,
+      .max_transfer_size = 0,
   });
   test_interface.SetHook([](const Request& request) -> zx::result<> {
     if (request.operation.tag == Operation::Tag::Write) {
@@ -609,17 +642,20 @@ TEST(BlockServer, SimulatedFuaWriteFailure) {
 }
 
 TEST(BlockServer, GroupWithSimulatedFua) {
-  fidl::ServerEnd<fvolume::Volume> server_end;
+  fidl::ServerEnd<fblock::Block> server_end;
   zx::result client_end = fidl::CreateEndpoints(&server_end);
   ASSERT_EQ(client_end.status_value(), ZX_OK);
 
   TestInterface test_interface(PartitionInfo{
+      .device_flags = 0,
       .start_block = 0,
       .block_count = kBlocks,
       .block_size = kBlockSize,
       .type_guid = {1, 2, 3, 4},
       .instance_guid = {5, 6, 7, 8},
       .name = "partition",
+      .flags = 0,
+      .max_transfer_size = 0,
   });
   std::optional<Request> last_write;
   bool flushed = false;
@@ -636,7 +672,7 @@ TEST(BlockServer, GroupWithSimulatedFua) {
   });
   test_interface.server().Serve(std::move(server_end));
 
-  auto [session, server] = fidl::Endpoints<fuchsia_hardware_block::Session>::Create();
+  auto [session, server] = fidl::Endpoints<fuchsia_storage_block::Session>::Create();
   ASSERT_TRUE(fidl::WireCall(*client_end)->OpenSession(std::move(server)).ok());
 
   zx::fifo fifo;
@@ -711,17 +747,20 @@ TEST(BlockServer, GroupWithSimulatedFua) {
   EXPECT_EQ(response.reqid, 2u);
 }
 TEST(BlockServer, GroupWithSimulatedBarrierAndFailedFlush) {
-  fidl::ServerEnd<fvolume::Volume> server_end;
+  fidl::ServerEnd<fblock::Block> server_end;
   zx::result client_end = fidl::CreateEndpoints(&server_end);
   ASSERT_EQ(client_end.status_value(), ZX_OK);
 
   TestInterface test_interface(PartitionInfo{
+      .device_flags = 0,
       .start_block = 0,
       .block_count = kBlocks,
       .block_size = kBlockSize,
       .type_guid = {1, 2, 3, 4},
       .instance_guid = {5, 6, 7, 8},
       .name = "partition",
+      .flags = 0,
+      .max_transfer_size = 0,
   });
   test_interface.SetHook([](const Request& request) -> zx::result<> {
     if (request.operation.tag == Operation::Tag::Flush) {
@@ -731,7 +770,7 @@ TEST(BlockServer, GroupWithSimulatedBarrierAndFailedFlush) {
   });
   test_interface.server().Serve(std::move(server_end));
 
-  auto [session, server] = fidl::Endpoints<fuchsia_hardware_block::Session>::Create();
+  auto [session, server] = fidl::Endpoints<fuchsia_storage_block::Session>::Create();
   ASSERT_TRUE(fidl::WireCall(*client_end)->OpenSession(std::move(server)).ok());
 
   zx::fifo fifo;
@@ -806,7 +845,7 @@ TEST(BlockServer, GroupWithSimulatedBarrierAndFailedFlush) {
 }
 
 TEST(BlockServer, GroupWithSimulatedFuaAndFailedFlush) {
-  fidl::ServerEnd<fvolume::Volume> server_end;
+  fidl::ServerEnd<fuchsia_storage_block::Block> server_end;
   zx::result client_end = fidl::CreateEndpoints(&server_end);
   ASSERT_EQ(client_end.status_value(), ZX_OK);
 
@@ -826,7 +865,7 @@ TEST(BlockServer, GroupWithSimulatedFuaAndFailedFlush) {
   });
   test_interface.server().Serve(std::move(server_end));
 
-  auto [session, server] = fidl::Endpoints<fuchsia_hardware_block::Session>::Create();
+  auto [session, server] = fidl::Endpoints<fuchsia_storage_block::Session>::Create();
   ASSERT_TRUE(fidl::WireCall(*client_end)->OpenSession(std::move(server)).ok());
 
   zx::fifo fifo;

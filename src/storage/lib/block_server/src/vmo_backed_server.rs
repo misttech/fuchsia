@@ -7,6 +7,7 @@ use block_server::async_interface::{Interface, SessionManager};
 use block_server::{BlockInfo, BlockServer, DeviceInfo, ReadOptions, WriteFlags, WriteOptions};
 use fidl::endpoints::{ClientEnd, FromClient, RequestStream, ServerEnd, create_endpoints};
 use fidl_fuchsia_hardware_inlineencryption::{DeviceMarker, DeviceRequest, DeviceRequestStream};
+use fidl_fuchsia_storage_block as fblock;
 use fs_management::filesystem::BlockConnector;
 use fuchsia_sync::Mutex;
 use futures::stream::StreamExt;
@@ -17,7 +18,6 @@ use std::collections::HashMap;
 use std::num::NonZero;
 use std::sync::Arc;
 use std::time::Duration;
-use {fidl_fuchsia_hardware_block as fblock, fidl_fuchsia_hardware_block_volume as fvolume};
 
 /// The Observer can silently discard writes, or fail them explicitly (zx::Status::IO is returned).
 pub enum WriteAction {
@@ -103,7 +103,7 @@ impl Default for VmoBackedServerOptions<'_> {
     fn default() -> Self {
         VmoBackedServerOptions {
             info: DeviceInfo::Block(BlockInfo {
-                device_flags: fblock::Flag::empty(),
+                device_flags: fblock::DeviceFlag::empty(),
                 block_count: 0,
                 max_transfer_blocks: None,
             }),
@@ -188,7 +188,7 @@ impl VmoBackedServerOptions<'_> {
 
 impl VmoBackedServer {
     /// Handles `requests`.  The future will resolve when the stream terminates.
-    pub async fn serve(&self, requests: fvolume::VolumeRequestStream) -> Result<(), Error> {
+    pub async fn serve(&self, requests: fblock::BlockRequestStream) -> Result<(), Error> {
         let res = self.server.handle_requests(requests).await;
         self.server.session_manager().interface().client_closed()?;
         res
@@ -248,9 +248,9 @@ impl VmoBackedServerConnector {
 }
 
 impl BlockConnector for VmoBackedServerConnector {
-    fn connect_channel_to_volume(
+    fn connect_channel_to_block(
         &self,
-        server_end: ServerEnd<fvolume::VolumeMarker>,
+        server_end: ServerEnd<fblock::BlockMarker>,
     ) -> Result<(), Error> {
         let server = self.server.clone();
         let _ = self.scope.spawn(async move {
@@ -369,7 +369,7 @@ impl WriteCache {
 pub trait VmoBackedServerTestingExt {
     fn new(block_count: u64, block_size: u32, initial_content: &[u8]) -> Self;
     fn from_vmo(block_size: u32, vmo: zx::Vmo) -> Self;
-    fn connect_server(self: &Arc<Self>, server: ServerEnd<fvolume::VolumeMarker>);
+    fn connect_server(self: &Arc<Self>, server: ServerEnd<fblock::BlockMarker>);
     fn connect<R: BlockClient>(self: &Arc<Self>) -> R;
     fn connect_insecure_inline_encryption_server(
         self: &Arc<Self>,
@@ -381,11 +381,8 @@ pub trait VmoBackedServerTestingExt {
 pub trait BlockClient: FromClient {}
 
 impl BlockClient for fblock::BlockProxy {}
-impl BlockClient for fvolume::VolumeProxy {}
 impl BlockClient for fblock::BlockSynchronousProxy {}
-impl BlockClient for fvolume::VolumeSynchronousProxy {}
 impl BlockClient for ClientEnd<fblock::BlockMarker> {}
-impl BlockClient for ClientEnd<fvolume::VolumeMarker> {}
 
 impl VmoBackedServerTestingExt for VmoBackedServer {
     fn new(block_count: u64, block_size: u32, initial_content: &[u8]) -> Self {
@@ -417,7 +414,7 @@ impl VmoBackedServerTestingExt for VmoBackedServer {
         R::from_client(client)
     }
 
-    fn connect_server(self: &Arc<Self>, server: ServerEnd<fvolume::VolumeMarker>) {
+    fn connect_server(self: &Arc<Self>, server: ServerEnd<fblock::BlockMarker>) {
         let this = self.clone();
         fuchsia_async::Task::spawn(async move {
             let _ = this.serve(server.into_stream()).await;

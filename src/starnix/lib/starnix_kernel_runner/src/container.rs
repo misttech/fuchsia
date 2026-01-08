@@ -997,7 +997,7 @@ fn init_remote_block_devices(
         let path = path_buf.to_str().ok_or_else(|| anyhow!("Invalid block device path"))?;
         let (client_end, server_end) = fidl::endpoints::create_endpoints();
         match fdio::service_connect(
-            &format!("{}/fuchsia.hardware.block.volume.Volume", path),
+            &format!("{}/fuchsia.storage.block.Block", path),
             server_end.into(),
         ) {
             Ok(()) => (),

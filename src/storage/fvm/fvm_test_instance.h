@@ -6,7 +6,7 @@
 #define SRC_STORAGE_FVM_FVM_TEST_INSTANCE_H_
 
 #include <fidl/fuchsia.device/cpp/wire.h>
-#include <fidl/fuchsia.hardware.block.volume/cpp/wire.h>
+#include <fidl/fuchsia.storage.block/cpp/wire.h>
 #include <lib/async-loop/cpp/loop.h>
 #include <lib/driver_test_realm/realm_builder/cpp/lib.h>
 #include <lib/zx/result.h>
@@ -48,11 +48,9 @@ class BlockConnector {
  public:
   virtual ~BlockConnector() = default;
 
-  virtual fidl::ClientEnd<fuchsia_hardware_block::Block> connect_block() const = 0;
+  virtual fidl::ClientEnd<fuchsia_storage_block::Block> connect_block() const = 0;
 
-  virtual fidl::UnownedClientEnd<fuchsia_hardware_block::Block> as_block() const = 0;
-
-  virtual fidl::UnownedClientEnd<fuchsia_hardware_block_volume::Volume> as_volume() const = 0;
+  virtual fidl::UnownedClientEnd<fuchsia_storage_block::Block> as_block() const = 0;
 };
 
 struct AllocatePartitionRequest {
@@ -86,7 +84,7 @@ class FvmInstance {
   virtual void RestartFvmWithNewDiskSize(uint64_t block_size, uint64_t block_count) = 0;
 
   // Get general info about fvm.
-  virtual fuchsia_hardware_block_volume::wire::VolumeManagerInfo GetFvmInfo() const = 0;
+  virtual fuchsia_storage_block::wire::VolumeManagerInfo GetFvmInfo() const = 0;
 
   // Allocates a new partition.
   virtual zx::result<std::unique_ptr<BlockConnector>> AllocatePartition(
@@ -100,7 +98,7 @@ class FvmInstance {
   virtual void DestroyPartition(std::string_view label) const = 0;
 
   // Returns the block interface of the underlying ramdisk.
-  virtual fidl::ClientEnd<fuchsia_hardware_block::Block> GetRamdiskPartition() const = 0;
+  virtual fidl::ClientEnd<fuchsia_storage_block::Block> GetRamdiskPartition() const = 0;
 };
 
 class DriverFvmInstance : public FvmInstance {
@@ -112,17 +110,16 @@ class DriverFvmInstance : public FvmInstance {
   void StartFvm() override;
   void RestartFvm() override;
   void RestartFvmWithNewDiskSize(uint64_t block_size, uint64_t block_count) override;
-  fuchsia_hardware_block_volume::wire::VolumeManagerInfo GetFvmInfo() const override;
+  fuchsia_storage_block::wire::VolumeManagerInfo GetFvmInfo() const override;
   zx::result<std::unique_ptr<BlockConnector>> AllocatePartition(
       const AllocatePartitionRequest& request) const override;
   zx::result<std::unique_ptr<BlockConnector>> OpenPartition(std::string_view label) const override;
   void DestroyPartition(std::string_view label) const override;
-  fidl::ClientEnd<fuchsia_hardware_block::Block> GetRamdiskPartition() const override;
+  fidl::ClientEnd<fuchsia_storage_block::Block> GetRamdiskPartition() const override;
 
   fidl::UnownedClientEnd<fuchsia_device::Controller> GetRamdiskControllerInterface() const;
   const fbl::unique_fd& devfs_root() const { return devfs_root_; }
-  zx::result<fidl::ClientEnd<fuchsia_hardware_block_volume::VolumeManager>> GetVolumeManager()
-      const;
+  zx::result<fidl::ClientEnd<fuchsia_storage_block::VolumeManager>> GetVolumeManager() const;
   zx::result<std::unique_ptr<BlockConnector>> OpenPartitionNoWait(std::string_view label) const;
   std::string GetFvmPath() const;
 

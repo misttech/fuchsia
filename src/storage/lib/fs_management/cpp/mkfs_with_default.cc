@@ -22,7 +22,7 @@ zx::result<> MkfsWithDefault(const char* device_path, FsComponent& component,
   auto status = zx::make_result(Mkfs(device_path, component, options));
   if (status.is_error())
     return status.take_error();
-  zx::result device = component::Connect<fuchsia_hardware_block::Block>(device_path);
+  zx::result device = component::Connect<fuchsia_storage_block::Block>(device_path);
   if (device.is_error()) {
     return device.take_error();
   }

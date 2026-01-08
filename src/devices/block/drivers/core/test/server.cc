@@ -181,21 +181,21 @@ TEST_F(ServerTestFixture, SplitRequestAfterFailedRequestReturnsFailure) {
 
 TEST(OffsetMap, InvalidMapping) {
   // Zero-length
-  ASSERT_NOT_OK(OffsetMap::Create(fuchsia_hardware_block::wire::BlockOffsetMapping{
+  ASSERT_NOT_OK(OffsetMap::Create(fuchsia_storage_block::wire::BlockOffsetMapping{
       .source_block_offset = 0,
       .target_block_offset = 1000,
       .length = 0,
   }));
 
   // Source overflow
-  ASSERT_NOT_OK(OffsetMap::Create(fuchsia_hardware_block::wire::BlockOffsetMapping{
+  ASSERT_NOT_OK(OffsetMap::Create(fuchsia_storage_block::wire::BlockOffsetMapping{
       .source_block_offset = std::numeric_limits<uint64_t>::max(),
       .target_block_offset = 0,
       .length = 100,
   }));
 
   // Target overflow
-  ASSERT_NOT_OK(OffsetMap::Create(fuchsia_hardware_block::wire::BlockOffsetMapping{
+  ASSERT_NOT_OK(OffsetMap::Create(fuchsia_storage_block::wire::BlockOffsetMapping{
       .source_block_offset = 0,
       .target_block_offset = std::numeric_limits<uint64_t>::max(),
       .length = 100,
@@ -203,7 +203,7 @@ TEST(OffsetMap, InvalidMapping) {
 }
 
 TEST(OffsetMap, RemapRequests) {
-  zx::result map = OffsetMap::Create(fuchsia_hardware_block::wire::BlockOffsetMapping{
+  zx::result map = OffsetMap::Create(fuchsia_storage_block::wire::BlockOffsetMapping{
       .source_block_offset = 10,
       .target_block_offset = 1000,
       .length = 100,
@@ -250,7 +250,7 @@ TEST(OffsetMap, RemapRequests) {
   AssertUnchangedExceptOffset(request);
 
   // Source beyond end of target is OK too
-  map = OffsetMap::Create(fuchsia_hardware_block::wire::BlockOffsetMapping{
+  map = OffsetMap::Create(fuchsia_storage_block::wire::BlockOffsetMapping{
       .source_block_offset = 1000,
       .target_block_offset = 0,
       .length = 100,

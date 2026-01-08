@@ -9,7 +9,7 @@ use ext4_read_only::parser::Parser;
 use ext4_read_only::readers::{BlockDeviceReader, Reader, VmoReader};
 use ext4_read_only::structs::{self, EntryType, MIN_EXT4_SIZE};
 use fidl::endpoints::ClientEnd;
-use fidl_fuchsia_hardware_block::BlockMarker;
+use fidl_fuchsia_storage_block::BlockMarker;
 use log::error;
 use std::sync::Arc;
 

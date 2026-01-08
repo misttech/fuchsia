@@ -451,7 +451,7 @@ class MoonflowerAbrClient : public abr::Client {
     if (flags) {
       request.flags(flags->flags);
     }
-    fuchsia_hardware_block_partition::wire::Guid type;
+    fuchsia_storage_block::wire::Guid type;
     if (type_guid) {
       ZX_DEBUG_ASSERT(uuid::kUuidSize == type.value.size());
       memcpy(type.value.data(), type_guid->bytes(), uuid::kUuidSize);

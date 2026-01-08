@@ -6,10 +6,9 @@ use crate::BootloaderType;
 use anyhow::{Context as _, Error};
 use block_client::{BlockClient, MutableBufferSlice, RemoteBlockClient};
 use fidl::endpoints::Proxy;
-use fidl_fuchsia_hardware_block::BlockMarker;
-use fidl_fuchsia_hardware_block_partition::PartitionProxy;
 use fidl_fuchsia_mem::Buffer;
 use fidl_fuchsia_paver::{Asset, Configuration, DynamicDataSinkProxy};
+use fidl_fuchsia_storage_block::{BlockMarker, BlockProxy};
 
 use fuchsia_sync::Mutex;
 use futures::TryFutureExt;
@@ -76,12 +75,12 @@ impl Partition {
     ///
     /// # Arguments
     /// * `src` - path to a block device that represents this partition.
-    /// * `part` - a |PartitionProxy| that is connected to this partition.
+    /// * `part` - a |BlockProxy| that is connected to this partition.
     /// * `bootloader` - the |BootloaderType| of this device.
     ///
     async fn new(
         src: String,
-        part: PartitionProxy,
+        part: BlockProxy,
         bootloader: BootloaderType,
     ) -> Result<Option<Self>, Error> {
         let (status, guid) = part.get_type_guid().await.context("Get type guid failed")?;
@@ -183,7 +182,7 @@ impl Partition {
             fdio::service_connect(&entry.class_path, remote).context("Connecting to partition")?;
             let local = fidl::AsyncChannel::from_channel(local);
 
-            let proxy = PartitionProxy::from_channel(local);
+            let proxy = BlockProxy::from_channel(local);
             if let Some(partition) = Partition::new(entry.class_path.clone(), proxy, bootloader)
                 .await
                 .context(format!(
@@ -370,9 +369,8 @@ impl fmt::Debug for Partition {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use fidl_fuchsia_hardware_block::{BlockInfo, Flag};
-    use fidl_fuchsia_hardware_block_partition::{
-        Guid, PartitionMarker, PartitionRequest, PartitionRequestStream,
+    use fidl_fuchsia_storage_block::{
+        BlockInfo, BlockMarker, BlockRequest, BlockRequestStream, DeviceFlag, Guid,
     };
     use fuchsia_async as fasync;
     use futures::TryStreamExt;
@@ -382,18 +380,18 @@ mod tests {
         block_size: u32,
         block_count: u64,
         guid: [u8; 16],
-        mut stream: PartitionRequestStream,
+        mut stream: BlockRequestStream,
     ) -> Result<(), Error> {
         while let Some(req) = stream.try_next().await? {
             match req {
-                PartitionRequest::GetName { responder } => responder.send(0, Some(label))?,
-                PartitionRequest::GetInfo { responder } => responder.send(Ok(&BlockInfo {
+                BlockRequest::GetName { responder } => responder.send(0, Some(label))?,
+                BlockRequest::GetInfo { responder } => responder.send(Ok(&BlockInfo {
                     block_count,
                     block_size,
                     max_transfer_size: 0,
-                    flags: Flag::empty(),
+                    flags: DeviceFlag::empty(),
                 }))?,
-                PartitionRequest::GetTypeGuid { responder } => {
+                BlockRequest::GetTypeGuid { responder } => {
                     responder.send(0, Some(&Guid { value: guid }))?
                 }
                 _ => panic!("Expected a GetInfo/GetName request, but did not get one."),
@@ -407,8 +405,8 @@ mod tests {
         block_size: usize,
         block_count: usize,
         guid: [u8; 16],
-    ) -> Result<PartitionProxy, Error> {
-        let (proxy, stream) = fidl::endpoints::create_proxy_and_stream::<PartitionMarker>();
+    ) -> Result<BlockProxy, Error> {
+        let (proxy, stream) = fidl::endpoints::create_proxy_and_stream::<BlockMarker>();
         fasync::Task::local(
             serve_partition(
                 label,

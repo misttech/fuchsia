@@ -8,6 +8,7 @@
 #include <fidl/fuchsia.fs/cpp/wire.h>
 #include <fidl/fuchsia.fxfs/cpp/wire.h>
 #include <fidl/fuchsia.io/cpp/wire.h>
+#include <fidl/fuchsia.storage.block/cpp/wire.h>
 #include <lib/fidl/cpp/wire/channel.h>
 #include <zircon/compiler.h>
 
@@ -285,7 +286,7 @@ class __EXPORT StartedSingleVolumeMultiVolumeFilesystem : public SingleVolumeFil
 //
 // See //src/storage/docs/launching.md for more information.
 zx::result<StartedSingleVolumeFilesystem> Mount(
-    fidl::ClientEnd<fuchsia_hardware_block::Block> device, FsComponent& component,
+    fidl::ClientEnd<fuchsia_storage_block::Block> device, FsComponent& component,
     const MountOptions& options);
 
 // Mounts a multi-volume filesystem.
@@ -296,7 +297,7 @@ zx::result<StartedSingleVolumeFilesystem> Mount(
 //
 // See //src/storage/docs/launching.md for more information.
 zx::result<StartedMultiVolumeFilesystem> MountMultiVolume(
-    fidl::ClientEnd<fuchsia_hardware_block::Block> device, FsComponent& component,
+    fidl::ClientEnd<fuchsia_storage_block::Block> device, FsComponent& component,
     const MountOptions& options);
 
 // Mounts a multi-volume filesystem using a default singular volume.  Generally this is used for
@@ -309,7 +310,7 @@ zx::result<StartedMultiVolumeFilesystem> MountMultiVolume(
 //
 // See //src/storage/docs/launching.md for more information.
 zx::result<StartedSingleVolumeMultiVolumeFilesystem> MountMultiVolumeWithDefault(
-    fidl::ClientEnd<fuchsia_hardware_block::Block> device, FsComponent& component,
+    fidl::ClientEnd<fuchsia_storage_block::Block> device, FsComponent& component,
     const MountOptions& options, const char* volume_name = "default");
 
 }  // namespace fs_management

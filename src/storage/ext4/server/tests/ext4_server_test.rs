@@ -4,8 +4,8 @@
 
 use anyhow::Error;
 use fidl::endpoints::DiscoverableProtocolMarker as _;
-use fidl_fuchsia_hardware_block_volume::VolumeMarker;
 use fidl_fuchsia_io as fio;
+use fidl_fuchsia_storage_block::BlockMarker;
 use fuchsia_component_test::{Capability, ChildOptions, RealmBuilder, Ref, Route};
 use futures::FutureExt as _;
 use maplit::hashmap;
@@ -65,7 +65,7 @@ async fn ext4_server_mounts_block_device_from_namespace(
                 let scope = vfs::ExecutionScope::new();
                 let outgoing = vfs::pseudo_directory! {
                     "block" => vfs::pseudo_directory! {
-                        VolumeMarker::PROTOCOL_NAME =>
+                        BlockMarker::PROTOCOL_NAME =>
                             vfs::service::host(move |requests| {
                                 let server_clone = server.clone();
                                 async move {

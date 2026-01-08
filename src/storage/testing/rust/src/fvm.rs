@@ -7,10 +7,10 @@ use anyhow::{Context, Result};
 use device_watcher::recursive_wait_and_open;
 use fidl::endpoints::Proxy as _;
 use fidl_fuchsia_device::ControllerProxy;
-use fidl_fuchsia_hardware_block::{BlockMarker, BlockProxy};
-use fidl_fuchsia_hardware_block_partition::Guid as FidlGuid;
-use fidl_fuchsia_hardware_block_volume::{VolumeManagerMarker, VolumeManagerProxy};
 use fidl_fuchsia_io as fio;
+use fidl_fuchsia_storage_block::{
+    BlockMarker, BlockProxy, Guid as FidlGuid, VolumeManagerMarker, VolumeManagerProxy,
+};
 use fuchsia_component::client::connect_to_named_protocol_at_dir_root;
 use zx::sys::{zx_handle_t, zx_status_t};
 use zx::{self as zx, AsHandleRef};
@@ -105,7 +105,7 @@ pub async fn create_fvm_volume(
 mod tests {
     use super::*;
     use crate::{BlockDeviceMatcher, wait_for_block_device_devfs};
-    use fidl_fuchsia_hardware_block_volume::{ALLOCATE_PARTITION_FLAG_INACTIVE, VolumeMarker};
+    use fidl_fuchsia_storage_block::{ALLOCATE_PARTITION_FLAG_INACTIVE, BlockMarker};
     use fuchsia_component::client::connect_to_protocol_at_path;
     use ramdevice_client::RamdiskClient;
 
@@ -170,7 +170,7 @@ mod tests {
         .expect("Failed to find block device");
 
         let volume =
-            connect_to_protocol_at_path::<VolumeMarker>(block_device_path.to_str().unwrap())
+            connect_to_protocol_at_path::<BlockMarker>(block_device_path.to_str().unwrap())
                 .unwrap();
         let volume_info = volume.get_volume_info().await.unwrap();
         zx::ok(volume_info.0).unwrap();
@@ -209,7 +209,7 @@ mod tests {
         .expect("Failed to find block device");
 
         let volume =
-            connect_to_protocol_at_path::<VolumeMarker>(block_device_path.to_str().unwrap())
+            connect_to_protocol_at_path::<BlockMarker>(block_device_path.to_str().unwrap())
                 .unwrap();
         let volume_info = volume.get_volume_info().await.unwrap();
         zx::ok(volume_info.0).unwrap();

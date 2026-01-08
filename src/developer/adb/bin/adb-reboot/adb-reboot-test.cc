@@ -4,7 +4,7 @@
 
 #include "adb-reboot.h"
 
-#include <fidl/fuchsia.hardware.block.volume/cpp/wire.h>
+#include <fidl/fuchsia.storage.block/cpp/wire.h>
 #include <fuchsia/hardware/adb/cpp/fidl.h>
 #include <fuchsia/hardware/power/statecontrol/cpp/fidl.h>
 #include <fuchsia/hardware/power/statecontrol/cpp/fidl_test_base.h>
@@ -46,9 +46,9 @@ class FakeBlockDeviceComponent : public component_testing::LocalComponentImpl {
 
   void OnStart() override {
     outgoing()->GetOrCreateDirectory("misc")->AddEntry(
-        fidl::DiscoverableProtocolName<fuchsia_hardware_block_volume::Volume>,
+        fidl::DiscoverableProtocolName<fuchsia_storage_block::Block>,
         std::make_unique<vfs::Service>(
-            [this](fidl::ServerEnd<fuchsia_hardware_block_volume::Volume> request) {
+            [this](fidl::ServerEnd<fuchsia_storage_block::Block> request) {
               server_->Serve(std::move(request));
             }));
   }

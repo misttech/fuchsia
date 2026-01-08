@@ -5,7 +5,7 @@
 #ifndef SRC_DEVICES_BLOCK_DRIVERS_GPT_GPT_H_
 #define SRC_DEVICES_BLOCK_DRIVERS_GPT_GPT_H_
 
-#include <fidl/fuchsia.hardware.block.volume/cpp/wire.h>
+#include <fidl/fuchsia.storage.block/cpp/wire.h>
 #include <fuchsia/hardware/block/driver/c/banjo.h>
 #include <fuchsia/hardware/block/driver/cpp/banjo.h>
 #include <fuchsia/hardware/block/partition/c/banjo.h>
@@ -67,8 +67,7 @@ class PartitionDevice : public DeviceType,
 
 class PartitionManager;
 using ManagerDeviceType =
-    ddk::Device<PartitionManager,
-                ddk::Messageable<fuchsia_hardware_block_volume::VolumeManager>::Mixin>;
+    ddk::Device<PartitionManager, ddk::Messageable<fuchsia_storage_block::VolumeManager>::Mixin>;
 
 class PartitionManager : public ManagerDeviceType {
  public:
@@ -111,14 +110,13 @@ class PartitionManager : public ManagerDeviceType {
   zx_status_t AddPartition(block_info_t block_info, size_t block_op_size, uint32_t partition_index)
       __TA_REQUIRES(lock_);
 
-  void GetInfoLocked(fuchsia_hardware_block_volume::wire::VolumeManagerInfo* info)
-      __TA_REQUIRES(lock_);
+  void GetInfoLocked(fuchsia_storage_block::wire::VolumeManagerInfo* info) __TA_REQUIRES(lock_);
 
   // Returns the newly created partition number.
-  zx::result<uint32_t> AllocatePartitionLocked(
-      uint64_t slice_count, const fuchsia_hardware_block_partition::wire::Guid& type,
-      const fuchsia_hardware_block_partition::wire::Guid& instance, fidl::StringView name)
-      __TA_REQUIRES(lock_);
+  zx::result<uint32_t> AllocatePartitionLocked(uint64_t slice_count,
+                                               const fuchsia_storage_block::wire::Guid& type,
+                                               const fuchsia_storage_block::wire::Guid& instance,
+                                               fidl::StringView name) __TA_REQUIRES(lock_);
 
   block_impl_protocol_t block_protocol_;
   std::mutex lock_;

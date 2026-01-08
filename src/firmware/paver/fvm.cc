@@ -7,9 +7,7 @@
 #include <dirent.h>
 #include <fcntl.h>
 #include <fidl/fuchsia.device/cpp/fidl.h>
-#include <fidl/fuchsia.hardware.block.partition/cpp/wire.h>
-#include <fidl/fuchsia.hardware.block.volume/cpp/wire.h>
-#include <fidl/fuchsia.hardware.block/cpp/wire.h>
+#include <fidl/fuchsia.storage.block/cpp/wire.h>
 #include <lib/component/incoming/cpp/protocol.h>
 #include <lib/device-watcher/cpp/device-watcher.h>
 #include <lib/fdio/cpp/caller.h>
@@ -45,12 +43,10 @@
 namespace paver {
 namespace {
 
-namespace block = fuchsia_hardware_block;
-namespace partition = fuchsia_hardware_block_partition;
-namespace volume = fuchsia_hardware_block_volume;
+namespace block = fuchsia_storage_block;
 namespace device = fuchsia_device;
 
-using fuchsia_hardware_block_volume::wire::VolumeManagerInfo;
+using fuchsia_storage_block::wire::VolumeManagerInfo;
 
 constexpr const char kDevPath[] = "/dev/";
 constexpr const char kFvmName[] = "fvm";
@@ -94,11 +90,11 @@ struct PartitionInfo {
   fvm::PartitionDescriptor* pd = nullptr;
   fvm::PartitionDescriptor aligned_pd = {};
   fidl::ClientEnd<fuchsia_device::Controller> controller;
-  fidl::ClientEnd<partition::Partition> partition;
+  fidl::ClientEnd<block::Block> partition;
   bool active = false;
 
   zx::result<> SetPartition(fidl::ClientEnd<fuchsia_device::Controller> controller) {
-    fidl::ClientEnd<partition::Partition> partition;
+    fidl::ClientEnd<block::Block> partition;
     zx::result server = fidl::CreateEndpoints(&partition);
     if (server.is_error()) {
       ERROR("Failed creating endpoints: %s", server.status_string());
@@ -308,7 +304,7 @@ zx::result<fidl::ClientEnd<fuchsia_device::Controller>> FvmPartitionFormat(
       zx::result fvm = TryBindToFvmDriver(devfs_root, block.Controller(), zx::sec(3));
       if (fvm.is_ok()) {
         LOG("Found already formatted FVM.\n");
-        auto [volume, volume_server] = fidl::Endpoints<volume::VolumeManager>::Create();
+        auto [volume, volume_server] = fidl::Endpoints<block::VolumeManager>::Create();
         if (fidl::OneWayError status =
                 fidl::WireCall(fvm.value())->ConnectToDeviceFidl(volume_server.TakeChannel());
             !status.ok()) {
@@ -358,7 +354,7 @@ zx::result<fidl::ClientEnd<fuchsia_device::Controller>> FvmPartitionFormat(
       ERROR("Failed to query block info: %s\n", zx_status_get_string(response.error_value()));
       return zx::error(response.error_value());
     }
-    const fuchsia_hardware_block::wire::BlockInfo& info = response.value()->info;
+    const fuchsia_storage_block::wire::BlockInfo& info = response.value()->info;
 
     uint64_t initial_disk_size = info.block_count * info.block_size;
     uint64_t max_disk_size =
@@ -557,7 +553,7 @@ struct BoundZxcryptDevice {
 // returned so the caller can unbind them when finished writing into them.
 zx::result<std::vector<BoundZxcryptDevice>> AllocatePartitions(
     const fbl::unique_fd& devfs_root,
-    fidl::UnownedClientEnd<fuchsia_hardware_block_volume::VolumeManager> fvm_device,
+    fidl::UnownedClientEnd<fuchsia_storage_block::VolumeManager> fvm_device,
     fbl::Array<PartitionInfo>* parts) {
   fdio_cpp::UnownedFdioCaller devfs_caller(devfs_root);
   fidl::UnownedClientEnd devfs_client_end = devfs_caller.directory();
@@ -567,7 +563,7 @@ zx::result<std::vector<BoundZxcryptDevice>> AllocatePartitions(
     fvm::ExtentDescriptor ext = GetExtent(part_info.pd, 0);
     // Allocate this partition as inactive so it gets deleted on the next
     // reboot if this stream fails.
-    uint32_t flags = part_info.active ? 0 : volume::wire::kAllocatePartitionFlagInactive;
+    uint32_t flags = part_info.active ? 0 : block::wire::kAllocatePartitionFlagInactive;
     uint64_t slice_count = ext.slice_count;
     uuid::Uuid type_guid(part_info.pd->type);
     uuid::Uuid instance_guid = uuid::Uuid::Generate();
@@ -608,7 +604,7 @@ zx::result<std::vector<BoundZxcryptDevice>> AllocatePartitions(
       uint64_t offset = ext.slice_start;
       uint64_t length = ext.slice_count;
 
-      fidl::UnownedClientEnd<volume::Volume> volume(part_info.partition.channel().borrow());
+      fidl::UnownedClientEnd<block::Block> volume(part_info.partition.channel().borrow());
       auto result = fidl::WireCall(volume)->Extend(offset, length);
       auto status = result.ok() ? result.value().status : result.status();
       if (status != ZX_OK) {
@@ -691,7 +687,7 @@ zx_status_t WipeAllFvmPartitionsWithGuid(fidl::UnownedClientEnd<fuchsia_device::
     // We're paving a partition that already exists within the FVM: let's
     // destroy it before we pave anew.
 
-    auto [volume, volume_server] = fidl::Endpoints<volume::Volume>::Create();
+    auto [volume, volume_server] = fidl::Endpoints<block::Block>::Create();
     if (fidl::OneWayError status =
             fidl::WireCall(*old_partition)->ConnectToDeviceFidl(volume_server.TakeChannel());
         !status.ok()) {
@@ -708,7 +704,7 @@ zx_status_t WipeAllFvmPartitionsWithGuid(fidl::UnownedClientEnd<fuchsia_device::
 
 zx::result<> AllocateEmptyPartitions(
     const fbl::unique_fd& devfs_root,
-    fidl::UnownedClientEnd<fuchsia_hardware_block_volume::VolumeManager> fvm_device) {
+    fidl::UnownedClientEnd<fuchsia_storage_block::VolumeManager> fvm_device) {
   FvmPartition fvm_partitions[] = {
       FvmPartition::Make(std::array<uint8_t, fvm::kGuidSize>(GUID_BLOB_VALUE),
                          paver::kBlobfsPartitionLabel),
@@ -769,7 +765,7 @@ zx::result<> FvmStreamPartitions(const fbl::unique_fd& devfs_root,
     return status.take_error();
   }
   // Get a connection to the fvm's volume manager.
-  fidl::ClientEnd<volume::VolumeManager> volume_manager;
+  fidl::ClientEnd<block::VolumeManager> volume_manager;
   {
     zx::result volume_server = fidl::CreateEndpoints(&volume_manager);
     if (volume_server.is_error()) {
@@ -849,7 +845,7 @@ zx::result<> FvmStreamPartitions(const fbl::unique_fd& devfs_root,
             zx_status_get_string(response.error_value()));
       return response.take_error();
     }
-    const fuchsia_hardware_block::wire::BlockInfo& info = response.value()->info;
+    const fuchsia_storage_block::wire::BlockInfo& info = response.value()->info;
 
     auto [session, server] = fidl::Endpoints<block::Session>::Create();
     if (fidl::Status result = fidl::WireCall(parts[p].partition)->OpenSession(std::move(server));

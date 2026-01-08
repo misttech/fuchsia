@@ -8,8 +8,8 @@
 #include <errno.h>
 #include <fcntl.h>
 #include <fidl/fuchsia.device/cpp/wire.h>
-#include <fidl/fuchsia.hardware.block.volume/cpp/wire.h>
 #include <fidl/fuchsia.io/cpp/wire.h>
+#include <fidl/fuchsia.storage.block/cpp/wire.h>
 #include <fuchsia/hardware/block/driver/c/banjo.h>
 #include <lib/component/incoming/cpp/directory.h>
 #include <lib/component/incoming/cpp/protocol.h>
@@ -105,8 +105,7 @@ zx::result<fidl::ClientEnd<fuchsia_device::Controller>> OpenPartitionImpl(
   return zx::error(ZX_ERR_NOT_FOUND);
 }
 
-zx::result<> DestroyPartitionImpl(
-    fidl::UnownedClientEnd<fuchsia_hardware_block_volume::Volume> volume) {
+zx::result<> DestroyPartitionImpl(fidl::UnownedClientEnd<fuchsia_storage_block::Block> volume) {
   const fidl::WireResult result = fidl::WireCall(volume)->Destroy();
   if (!result.ok()) {
     return zx::error(result.status());
@@ -124,7 +123,7 @@ zx::result<bool> PartitionMatches(fidl::UnownedClientEnd<fuchsia_device::Control
             !matcher.parent_device.empty());
 
   auto [partition_client_end, partition_server_end] =
-      fidl::Endpoints<fuchsia_hardware_block_partition::Partition>::Create();
+      fidl::Endpoints<fuchsia_storage_block::Block>::Create();
   if (const fidl::OneWayStatus result =
           fidl::WireCall(channel)->ConnectToDeviceFidl(partition_server_end.TakeChannel());
       !result.ok()) {
@@ -207,7 +206,7 @@ zx::result<bool> PartitionMatches(fidl::UnownedClientEnd<fuchsia_device::Control
   if (!matcher.detected_formats.empty()) {
     // TODO(https://fxbug.dev/42072982): avoid this cast
     const DiskFormat part_format =
-        DetectDiskFormat(fidl::UnownedClientEnd<fuchsia_hardware_block::Block>(
+        DetectDiskFormat(fidl::UnownedClientEnd<fuchsia_storage_block::Block>(
             partition_client_end.borrow().channel()));
     if (!std::any_of(
             matcher.detected_formats.cbegin(), matcher.detected_formats.cend(),
@@ -219,7 +218,7 @@ zx::result<bool> PartitionMatches(fidl::UnownedClientEnd<fuchsia_device::Control
 }
 
 __EXPORT
-zx_status_t FvmInitPreallocated(fidl::UnownedClientEnd<fuchsia_hardware_block::Block> device,
+zx_status_t FvmInitPreallocated(fidl::UnownedClientEnd<fuchsia_storage_block::Block> device,
                                 uint64_t initial_volume_size, uint64_t max_volume_size,
                                 size_t slice_size) {
   if (slice_size % fvm::kBlockSize != 0) {
@@ -274,13 +273,13 @@ zx_status_t FvmInitPreallocated(fidl::UnownedClientEnd<fuchsia_hardware_block::B
 }
 
 __EXPORT
-zx_status_t FvmInitWithSize(fidl::UnownedClientEnd<fuchsia_hardware_block::Block> device,
+zx_status_t FvmInitWithSize(fidl::UnownedClientEnd<fuchsia_storage_block::Block> device,
                             uint64_t volume_size, size_t slice_size) {
   return FvmInitPreallocated(device, volume_size, volume_size, slice_size);
 }
 
 __EXPORT
-zx_status_t FvmInit(fidl::UnownedClientEnd<fuchsia_hardware_block::Block> device,
+zx_status_t FvmInit(fidl::UnownedClientEnd<fuchsia_storage_block::Block> device,
                     size_t slice_size) {
   // The metadata layout of the FVM is dependent on the
   // size of the FVM's underlying partition.
@@ -292,7 +291,7 @@ zx_status_t FvmInit(fidl::UnownedClientEnd<fuchsia_hardware_block::Block> device
   if (response.is_error()) {
     return response.error_value();
   }
-  const fuchsia_hardware_block::wire::BlockInfo& block_info = response.value()->info;
+  const fuchsia_storage_block::wire::BlockInfo& block_info = response.value()->info;
   if (slice_size == 0 || slice_size % block_info.block_size) {
     return ZX_ERR_BAD_STATE;
   }
@@ -302,11 +301,11 @@ zx_status_t FvmInit(fidl::UnownedClientEnd<fuchsia_hardware_block::Block> device
 
 __EXPORT
 zx::result<fidl::ClientEnd<fuchsia_device::Controller>> FvmAllocatePartition(
-    fidl::UnownedClientEnd<fuchsia_hardware_block_volume::VolumeManager> fvm, uint64_t slice_count,
+    fidl::UnownedClientEnd<fuchsia_storage_block::VolumeManager> fvm, uint64_t slice_count,
     uuid::Uuid type_guid, uuid::Uuid instance_guid, std::string_view name, uint32_t flags) {
-  fuchsia_hardware_block_partition::wire::Guid type_fidl;
+  fuchsia_storage_block::wire::Guid type_fidl;
   memcpy(type_fidl.value.data(), type_guid.bytes(), BLOCK_GUID_LEN);
-  fuchsia_hardware_block_partition::wire::Guid instance_fidl;
+  fuchsia_storage_block::wire::Guid instance_fidl;
   memcpy(instance_fidl.value.data(), instance_guid.bytes(), BLOCK_GUID_LEN);
   fidl::StringView name_fidl = fidl::StringView::FromExternal(name);
 
@@ -328,11 +327,11 @@ zx::result<fidl::ClientEnd<fuchsia_device::Controller>> FvmAllocatePartition(
 __EXPORT
 zx::result<fidl::ClientEnd<fuchsia_device::Controller>> FvmAllocatePartitionWithDevfs(
     fidl::UnownedClientEnd<fuchsia_io::Directory> devfs_root,
-    fidl::UnownedClientEnd<fuchsia_hardware_block_volume::VolumeManager> fvm, uint64_t slice_count,
+    fidl::UnownedClientEnd<fuchsia_storage_block::VolumeManager> fvm, uint64_t slice_count,
     uuid::Uuid type_guid, uuid::Uuid instance_guid, std::string_view name, uint32_t flags) {
-  fuchsia_hardware_block_partition::wire::Guid type_fidl;
+  fuchsia_storage_block::wire::Guid type_fidl;
   memcpy(type_fidl.value.data(), type_guid.bytes(), BLOCK_GUID_LEN);
-  fuchsia_hardware_block_partition::wire::Guid instance_fidl;
+  fuchsia_storage_block::wire::Guid instance_fidl;
   memcpy(instance_fidl.value.data(), instance_guid.bytes(), BLOCK_GUID_LEN);
   fidl::StringView name_fidl = fidl::StringView::FromExternal(name);
 
@@ -352,8 +351,8 @@ zx::result<fidl::ClientEnd<fuchsia_device::Controller>> FvmAllocatePartitionWith
 }
 
 __EXPORT
-zx::result<fuchsia_hardware_block_volume::wire::VolumeManagerInfo> FvmQuery(
-    fidl::UnownedClientEnd<fuchsia_hardware_block_volume::VolumeManager> fvm) {
+zx::result<fuchsia_storage_block::wire::VolumeManagerInfo> FvmQuery(
+    fidl::UnownedClientEnd<fuchsia_storage_block::VolumeManager> fvm) {
   const fidl::WireResult result = fidl::WireCall(fvm)->GetInfo();
   if (!result.ok()) {
     return zx::error(result.status());
@@ -394,7 +393,7 @@ zx::result<> DestroyPartition(const PartitionMatcher& matcher, bool wait) {
   if (controller.is_error()) {
     return controller.take_error();
   }
-  fidl::ClientEnd<fuchsia_hardware_block_volume::Volume> volume;
+  fidl::ClientEnd<fuchsia_storage_block::Block> volume;
   zx::result server = fidl::CreateEndpoints(&volume);
   if (server.is_error()) {
     return server.take_error();
@@ -415,7 +414,7 @@ zx::result<> DestroyPartitionWithDevfs(int devfs_root_fd, const PartitionMatcher
   if (controller.is_error()) {
     return controller.take_error();
   }
-  fidl::ClientEnd<fuchsia_hardware_block_volume::Volume> volume;
+  fidl::ClientEnd<fuchsia_storage_block::Block> volume;
   zx::result server = fidl::CreateEndpoints(&volume);
   if (server.is_error()) {
     return server.take_error();
@@ -429,11 +428,10 @@ zx::result<> DestroyPartitionWithDevfs(int devfs_root_fd, const PartitionMatcher
 }
 
 __EXPORT
-zx_status_t FvmActivate(int fvm_fd, fuchsia_hardware_block_partition::wire::Guid deactivate,
-                        fuchsia_hardware_block_partition::wire::Guid activate) {
+zx_status_t FvmActivate(int fvm_fd, fuchsia_storage_block::wire::Guid deactivate,
+                        fuchsia_storage_block::wire::Guid activate) {
   fdio_cpp::UnownedFdioCaller caller(fvm_fd);
-  fidl::UnownedClientEnd<fuchsia_hardware_block_volume::VolumeManager> client(
-      caller.borrow_channel());
+  fidl::UnownedClientEnd<fuchsia_storage_block::VolumeManager> client(caller.borrow_channel());
   auto response = fidl::WireCall(client)->Activate(deactivate, activate);
   if (response.status() != ZX_OK) {
     return response.status();

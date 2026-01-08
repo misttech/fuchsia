@@ -7,8 +7,8 @@
 #include <dirent.h>
 #include <fcntl.h>
 #include <fidl/fuchsia.fs/cpp/wire.h>
-#include <fidl/fuchsia.hardware.block.volume/cpp/markers.h>
 #include <fidl/fuchsia.io/cpp/wire.h>
+#include <fidl/fuchsia.storage.block/cpp/wire.h>
 #include <fidl/fuchsia.unknown/cpp/markers.h>
 #include <lib/async-loop/cpp/loop.h>
 #include <lib/async-loop/default.h>
@@ -58,8 +58,7 @@ class MountTestTemplate : public testing::Test {
     ASSERT_EQ(fs_management::Mkfs(ramdisk_path_.c_str(), component, fs_management::MkfsOptions()),
               0);
 
-    zx::result device_channel =
-        component::Connect<fuchsia_hardware_block_volume::Volume>(ramdisk_path_);
+    zx::result device_channel = component::Connect<fuchsia_storage_block::Block>(ramdisk_path_);
     ASSERT_TRUE(device_channel.is_ok()) << device_channel.status_string();
     zx::result device = block_client::RemoteBlockDevice::Create(std::move(device_channel.value()));
     ASSERT_TRUE(device.is_ok()) << device.status_string();

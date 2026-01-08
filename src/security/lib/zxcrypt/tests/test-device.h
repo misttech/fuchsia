@@ -6,8 +6,7 @@
 #define SRC_SECURITY_LIB_ZXCRYPT_TESTS_TEST_DEVICE_H_
 
 #include <fidl/fuchsia.device/cpp/wire.h>
-#include <fidl/fuchsia.hardware.block.volume/cpp/wire.h>
-#include <fidl/fuchsia.hardware.block/cpp/wire.h>
+#include <fidl/fuchsia.storage.block/cpp/wire.h>
 #include <lib/component/incoming/cpp/clone.h>
 #include <lib/driver-integration-test/fixture.h>
 #include <lib/fdio/cpp/caller.h>
@@ -104,8 +103,8 @@ class TestDevice final {
     return std::move(client);
   }
 
-  fidl::ClientEnd<fuchsia_hardware_block_volume::Volume> new_parent() const {
-    auto [client, server] = fidl::Endpoints<fuchsia_hardware_block_volume::Volume>::Create();
+  fidl::ClientEnd<fuchsia_storage_block::Block> new_parent() const {
+    auto [client, server] = fidl::Endpoints<fuchsia_storage_block::Block>::Create();
 
     fidl::OneWayStatus status =
         fidl::WireCall(fvm_controller_)->ConnectToDeviceFidl(server.TakeChannel());
@@ -117,18 +116,17 @@ class TestDevice final {
   }
 
   // Returns a connection to the parent device.
-  fidl::UnownedClientEnd<fuchsia_hardware_block_volume::Volume> parent_volume() const {
+  fidl::UnownedClientEnd<fuchsia_storage_block::Block> parent_volume() const {
     return fvm_.borrow();
   }
 
   // Returns a connection to the zxcrypt device.
-  fidl::UnownedClientEnd<fuchsia_hardware_block::Block> zxcrypt_block() const {
-    return fidl::UnownedClientEnd<fuchsia_hardware_block::Block>(
-        zxcrypt_volume_.channel().borrow());
+  fidl::UnownedClientEnd<fuchsia_storage_block::Block> zxcrypt_block() const {
+    return fidl::UnownedClientEnd<fuchsia_storage_block::Block>(zxcrypt_volume_.channel().borrow());
   }
 
   // Returns a connection to the zxcrypt device.
-  fidl::UnownedClientEnd<fuchsia_hardware_block_volume::Volume> zxcrypt_volume() const {
+  fidl::UnownedClientEnd<fuchsia_storage_block::Block> zxcrypt_volume() const {
     return zxcrypt_volume_.borrow();
   }
 
@@ -275,11 +273,11 @@ class TestDevice final {
   // The underlying FVM partition's controller.
   fidl::ClientEnd<fuchsia_device::Controller> fvm_controller_;
   //  The underlying FVM partition.
-  fidl::ClientEnd<fuchsia_hardware_block_volume::Volume> fvm_;
+  fidl::ClientEnd<fuchsia_storage_block::Block> fvm_;
 
   // Channels for the zxcrypt volume.
   fidl::ClientEnd<fuchsia_device::Controller> zxcrypt_controller_;
-  fidl::ClientEnd<fuchsia_hardware_block_volume::Volume> zxcrypt_volume_;
+  fidl::ClientEnd<fuchsia_storage_block::Block> zxcrypt_volume_;
 
   // The zxcrypt volume
   std::optional<zxcrypt::VolumeManager> volume_manager_;

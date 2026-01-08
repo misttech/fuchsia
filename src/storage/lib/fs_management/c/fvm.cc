@@ -7,6 +7,6 @@
 #include "src/storage/lib/fs_management/cpp/fvm.h"
 
 zx_status_t fvm_init(zx_handle_t device, size_t slice_size) {
-  return fs_management::FvmInit(fidl::UnownedClientEnd<fuchsia_hardware_block::Block>(device),
+  return fs_management::FvmInit(fidl::UnownedClientEnd<fuchsia_storage_block::Block>(device),
                                 slice_size);
 }

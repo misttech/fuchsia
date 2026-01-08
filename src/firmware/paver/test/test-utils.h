@@ -5,7 +5,7 @@
 #ifndef SRC_FIRMWARE_PAVER_TEST_TEST_UTILS_H_
 #define SRC_FIRMWARE_PAVER_TEST_TEST_UTILS_H_
 
-#include <fidl/fuchsia.hardware.block.volume/cpp/wire.h>
+#include <fidl/fuchsia.storage.block/cpp/wire.h>
 #include <fidl/fuchsia.sysinfo/cpp/wire.h>
 #include <lib/component/incoming/cpp/protocol.h>
 #include <lib/fdio/directory.h>
@@ -101,15 +101,15 @@ class BlockDevice {
                                   const std::vector<PartitionDescription>& init_partitions,
                                   std::unique_ptr<BlockDevice>* device);
 
-  fidl::UnownedClientEnd<fuchsia_hardware_block::Block> block_interface() const {
-    return fidl::UnownedClientEnd<fuchsia_hardware_block::Block>(volume_.channel().get());
+  fidl::UnownedClientEnd<fuchsia_storage_block::Block> block_interface() const {
+    return fidl::UnownedClientEnd<fuchsia_storage_block::Block>(volume_.channel().get());
   }
 
-  fidl::UnownedClientEnd<fuchsia_hardware_block_volume::Volume> volume_interface() const {
+  fidl::UnownedClientEnd<fuchsia_storage_block::Block> volume_interface() const {
     return volume_.borrow();
   }
 
-  fidl::ClientEnd<fuchsia_hardware_block::Block> Connect() const {
+  fidl::ClientEnd<fuchsia_storage_block::Block> Connect() const {
     zx::result result = ramdisk_.ConnectBlock();
     ZX_ASSERT(result.status_value() == ZX_OK);
     return std::move(*result);
@@ -137,7 +137,7 @@ class BlockDevice {
 
  private:
   BlockDevice(ramdevice_client::Ramdisk ramdisk,
-              fidl::ClientEnd<fuchsia_hardware_block_volume::Volume> volume, uint64_t block_count,
+              fidl::ClientEnd<fuchsia_storage_block::Block> volume, uint64_t block_count,
               uint32_t block_size)
       : ramdisk_(std::move(ramdisk)),
         volume_(std::move(volume)),
@@ -145,7 +145,7 @@ class BlockDevice {
         block_size_(block_size) {}
 
   ramdevice_client::Ramdisk ramdisk_;
-  fidl::ClientEnd<fuchsia_hardware_block_volume::Volume> volume_;
+  fidl::ClientEnd<fuchsia_storage_block::Block> volume_;
   const uint64_t block_count_;
   const uint32_t block_size_;
 };

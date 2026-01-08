@@ -4,7 +4,7 @@
 
 #include <errno.h>
 #include <fcntl.h>
-#include <fidl/fuchsia.hardware.block/cpp/wire.h>
+#include <fidl/fuchsia.storage.block/cpp/wire.h>
 #include <fuchsia/hardware/block/driver/c/banjo.h>
 #include <lib/component/incoming/cpp/clone.h>
 #include <lib/fdio/cpp/caller.h>
@@ -81,7 +81,7 @@ static zx::duration iotime_posix(int is_read, fbl::unique_fd fd, size_t total_io
 }
 
 static zx::duration iotime_block(int is_read,
-                                 fidl::UnownedClientEnd<fuchsia_hardware_block::Block> block_client,
+                                 fidl::UnownedClientEnd<fuchsia_storage_block::Block> block_client,
                                  size_t total_io_size, size_t buffer_size) {
   if ((total_io_size % 4096) || (buffer_size % 4096)) {
     fprintf(stderr, "error: total_io_size and buffer_size must be multiples of 4K\n");
@@ -126,7 +126,7 @@ static zx::duration iotime_block(int is_read,
 static zx::duration iotime_fifo(const char* dev, int is_read, fbl::unique_fd fd,
                                 size_t total_io_size, size_t buffer_size) {
   fdio_cpp::FdioCaller disk_connection(std::move(fd));
-  zx::result channel = disk_connection.take_as<fuchsia_hardware_block_volume::Volume>();
+  zx::result channel = disk_connection.take_as<fuchsia_storage_block::Block>();
   if (channel.is_error()) {
     fprintf(stderr, "error: cannot take volume channel for '%s': %s\n", dev,
             channel.status_string());
@@ -139,7 +139,7 @@ static zx::duration iotime_fifo(const char* dev, int is_read, fbl::unique_fd fd,
     return zx::duration::infinite();
   }
 
-  fuchsia_hardware_block::wire::BlockInfo info;
+  fuchsia_storage_block::wire::BlockInfo info;
   if (zx_status_t status = block_device->BlockGetInfo(&info); status != ZX_OK) {
     fprintf(stderr, "error: failed BlockGetInfo() call for '%s':%s\n", dev,
             zx_status_get_string(status));
@@ -243,7 +243,7 @@ int main(int argc, char** argv) {
       io_duration = iotime_posix(is_read, std::move(fd), total_io_size, buffer_size);
     } else if (mode == "block") {
       fdio_cpp::UnownedFdioCaller disk_connection(fd);
-      fidl::UnownedClientEnd channel = disk_connection.borrow_as<fuchsia_hardware_block::Block>();
+      fidl::UnownedClientEnd channel = disk_connection.borrow_as<fuchsia_storage_block::Block>();
       io_duration = iotime_block(is_read, channel, total_io_size, buffer_size);
     } else if (mode == "fifo") {
       io_duration = iotime_fifo(device.c_str(), is_read, std::move(fd), total_io_size, buffer_size);

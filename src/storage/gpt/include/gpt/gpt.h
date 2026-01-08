@@ -6,7 +6,7 @@
 #define SRC_STORAGE_GPT_INCLUDE_GPT_GPT_H_
 
 #include <fidl/fuchsia.device/cpp/wire.h>
-#include <fidl/fuchsia.hardware.block/cpp/wire.h>
+#include <fidl/fuchsia.storage.block/cpp/wire.h>
 #include <lib/fpromise/result.h>
 #include <lib/zx/result.h>
 

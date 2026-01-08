@@ -28,8 +28,7 @@ use crypt_policy::{Policy, get_policy};
 use device_watcher::{recursive_wait, recursive_wait_and_open};
 use fidl::endpoints::{Proxy, ServerEnd, ServiceMarker as _, create_proxy};
 use fidl_fuchsia_fs_startup::{MountOptions, VolumesProxy};
-use fidl_fuchsia_hardware_block_partition::Guid;
-use fidl_fuchsia_hardware_block_volume::{VolumeManagerMarker, VolumeMarker, VolumeProxy};
+use fidl_fuchsia_storage_block::{BlockMarker, BlockProxy, Guid, VolumeManagerMarker};
 use fs_management::filesystem::{
     BlockConnector, ServingMultiVolumeFilesystem, ServingSingleVolumeFilesystem, ServingVolume,
 };
@@ -561,7 +560,7 @@ impl FshostEnvironment {
                 DATA_TYPE_GUID,
                 new_instance_guid,
                 DATA_PARTITION_LABEL,
-                fidl_fuchsia_hardware_block_volume::ALLOCATE_PARTITION_FLAG_INACTIVE,
+                fidl_fuchsia_storage_block::ALLOCATE_PARTITION_FLAG_INACTIVE,
                 slices,
             )
             .await
@@ -739,7 +738,7 @@ impl Environment for FshostEnvironment {
         let mut partitions = Vec::new();
         for entry in entries {
             let endpoint_name = format!("{}/volume", entry.name);
-            let proxy = connect_to_named_protocol_at_dir_root::<VolumeProxy>(
+            let proxy = connect_to_named_protocol_at_dir_root::<BlockProxy>(
                 &partitions_dir,
                 &endpoint_name,
             )?;
@@ -1379,7 +1378,7 @@ impl FilesystemLauncher {
         for entry in dir_entries {
             // Destroy all fvm partitions aside from blobfs
             if !entry.name.contains("blobfs") && !entry.name.contains("device") {
-                let entry_volume_proxy = recursive_wait_and_open::<VolumeMarker>(
+                let entry_volume_proxy = recursive_wait_and_open::<BlockMarker>(
                     &fvm_directory_proxy,
                     &format!("{}/block", entry.name),
                 )

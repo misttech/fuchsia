@@ -5,8 +5,8 @@
 #include "src/firmware/paver/utils.h"
 
 #include <dirent.h>
-#include <fidl/fuchsia.hardware.block.partition/cpp/wire.h>
 #include <fidl/fuchsia.hardware.skipblock/cpp/wire.h>
+#include <fidl/fuchsia.storage.block/cpp/wire.h>
 #include <fidl/fuchsia.sysinfo/cpp/wire.h>
 #include <lib/component/incoming/cpp/protocol.h>
 #include <lib/fdio/cpp/caller.h>
@@ -28,7 +28,7 @@ namespace {
 
 using uuid::Uuid;
 
-namespace partition = fuchsia_hardware_block_partition;
+namespace partition = fuchsia_storage_block;
 namespace skipblock = fuchsia_hardware_skipblock;
 
 }  // namespace
@@ -44,8 +44,8 @@ zx::result<std::unique_ptr<VolumeConnector>> OpenBlockPartition(const paver::Blo
 
   auto cb = [&](const zx::channel& chan) {
     if (type_guid) {
-      auto result = fidl::WireCall(fidl::UnownedClientEnd<partition::Partition>(chan.borrow()))
-                        ->GetTypeGuid();
+      auto result =
+          fidl::WireCall(fidl::UnownedClientEnd<partition::Block>(chan.borrow()))->GetTypeGuid();
       if (!result.ok()) {
         ERROR("Failed to GetTypeGuid: %s\n", result.status_string());
         return false;
@@ -59,7 +59,7 @@ zx::result<std::unique_ptr<VolumeConnector>> OpenBlockPartition(const paver::Blo
       }
     }
     if (unique_guid) {
-      auto result = fidl::WireCall(fidl::UnownedClientEnd<partition::Partition>(chan.borrow()))
+      auto result = fidl::WireCall(fidl::UnownedClientEnd<partition::Block>(chan.borrow()))
                         ->GetInstanceGuid();
       if (!result.ok()) {
         ERROR("Failed to GetInstanceGuid: %s\n", result.status_string());

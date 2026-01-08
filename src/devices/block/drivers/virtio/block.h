@@ -4,6 +4,7 @@
 #ifndef SRC_DEVICES_BLOCK_DRIVERS_VIRTIO_BLOCK_H_
 #define SRC_DEVICES_BLOCK_DRIVERS_VIRTIO_BLOCK_H_
 
+#include <fidl/fuchsia.storage.block/cpp/wire.h>
 #include <fuchsia/hardware/block/driver/c/banjo.h>
 #include <fuchsia/hardware/block/driver/cpp/banjo.h>
 #include <lib/dma-buffer/buffer.h>
@@ -16,6 +17,7 @@
 #include <lib/zircon-internal/thread_annotations.h>
 #include <lib/zx/time.h>
 #include <stdlib.h>
+#include <threads.h>
 #include <zircon/compiler.h>
 
 #include <atomic>
@@ -61,7 +63,7 @@ class BlockDevice : public virtio::Device, public block_server::Interface {
   uint32_t GetBlockSize() const { return config_.blk_size; }
   uint64_t GetBlockCount() const { return config_.capacity; }
   uint32_t GetMaxTransferSize() const;
-  flag_t GetFlags() const;
+  device_flag_t GetFlags() const;
   const char* tag() const override { return "virtio-blk"; }
 
   // ddk::BlockImplProtocol functions invoked by BlockDriver.
@@ -76,7 +78,7 @@ class BlockDevice : public virtio::Device, public block_server::Interface {
     FDF_LOGL(INFO, logger(), "%.*s", static_cast<int>(msg.size()), msg.data());
   }
 
-  void ServeRequests(fidl::ServerEnd<fuchsia_hardware_block_volume::Volume>);
+  void ServeRequests(fidl::ServerEnd<fuchsia_storage_block::Block>);
 
  private:
   static constexpr uint16_t kRingSize = 128;  // 128 matches legacy pci.
@@ -267,6 +269,7 @@ class BlockDevice : public virtio::Device, public block_server::Interface {
   // block_server_.
   // `worker_txn_list_` contains incoming requests (block_txn_t).  Entries are processed by
   // `worker_thread_`, submitted to virtio, and moved into `pending_transaction_list_`.
+
   list_node worker_txn_list_ TA_GUARDED(lock_) = LIST_INITIAL_VALUE(worker_txn_list_);
   sync_completion_t worker_signal_;
   std::atomic_bool worker_shutdown_ = false;

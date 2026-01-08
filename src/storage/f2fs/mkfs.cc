@@ -61,7 +61,7 @@ void MkfsWorker::InitGlobalParameters() {
 }
 
 zx_status_t MkfsWorker::GetDeviceInfo() {
-  fuchsia_hardware_block::wire::BlockInfo info;
+  fuchsia_storage_block::wire::BlockInfo info;
 
   bc_->BlockGetInfo(&info);
 

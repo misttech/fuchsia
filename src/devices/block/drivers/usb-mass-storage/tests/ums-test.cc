@@ -4,9 +4,9 @@
 
 #include <dirent.h>
 #include <endian.h>
-#include <fidl/fuchsia.hardware.block/cpp/wire.h>
 #include <fidl/fuchsia.hardware.usb.peripheral/cpp/wire.h>
 #include <fidl/fuchsia.hardware.usb.virtual.bus/cpp/wire.h>
+#include <fidl/fuchsia.storage.block/cpp/wire.h>
 #include <lib/component/incoming/cpp/protocol.h>
 #include <lib/ddk/platform-defs.h>
 #include <lib/fdio/cpp/caller.h>
@@ -33,12 +33,12 @@ namespace {
 
 using usb_virtual::BusLauncher;
 
-zx_status_t BRead(fidl::UnownedClientEnd<fuchsia_hardware_block::Block> device, void* buffer,
+zx_status_t BRead(fidl::UnownedClientEnd<fuchsia_storage_block::Block> device, void* buffer,
                   size_t buffer_size, size_t offset) {
   return block_client::SingleReadBytes(device, buffer, buffer_size, offset);
 }
 
-zx_status_t BWrite(fidl::UnownedClientEnd<fuchsia_hardware_block::Block> device, void* buffer,
+zx_status_t BWrite(fidl::UnownedClientEnd<fuchsia_storage_block::Block> device, void* buffer,
                    size_t buffer_size, size_t offset) {
   return block_client::SingleWriteBytes(device, buffer, buffer_size, offset);
 }
@@ -174,7 +174,7 @@ TEST_F(UmsTest, WriteShouldBePersistedToBlockDevice) {
   std::unique_ptr<uint8_t[]> write_buffer;
   {
     zx::result client_end =
-        component::ConnectAt<fuchsia_hardware_block::Block>(caller.directory(), GetTestdevPath());
+        component::ConnectAt<fuchsia_storage_block::Block>(caller.directory(), GetTestdevPath());
     ASSERT_OK(client_end);
     {
       const fidl::WireResult result = fidl::WireCall(client_end.value())->GetInfo();
@@ -198,7 +198,7 @@ TEST_F(UmsTest, WriteShouldBePersistedToBlockDevice) {
   ASSERT_NO_FATAL_FAILURE(Connect());
   {
     zx::result client_end =
-        component::ConnectAt<fuchsia_hardware_block::Block>(caller.directory(), GetTestdevPath());
+        component::ConnectAt<fuchsia_storage_block::Block>(caller.directory(), GetTestdevPath());
     ASSERT_OK(client_end);
     // Read back the pattern, which should match what was written
     // since writeback caching was disabled.

@@ -15,10 +15,7 @@ block_server_sources = [
 ]
 
 block_server_deps = [
-  "//sdk/fidl/fuchsia.hardware.block:fuchsia.hardware.block_rust",
-  "//sdk/fidl/fuchsia.hardware.block.driver:fuchsia.hardware.block.driver_rust",
-  "//sdk/fidl/fuchsia.hardware.block.partition:fuchsia.hardware.block.partition_rust",
-  "//sdk/fidl/fuchsia.hardware.block.volume:fuchsia.hardware.block.volume_rust",
+  "//sdk/fidl/fuchsia.storage.block:fuchsia.storage.block_rust",
   "//sdk/rust/zx",
   "//src/lib/fidl/rust/fidl",
   "//src/lib/fuchsia-async",
@@ -56,9 +53,8 @@ rustc_library("vmo_backed_block_server") {
   source_root = "src/vmo_backed_server.rs"
   deps = [
     ":block_server",
-    "//sdk/fidl/fuchsia.hardware.block:fuchsia.hardware.block_rust",
-    "//sdk/fidl/fuchsia.hardware.block.volume:fuchsia.hardware.block.volume_rust",
     "//sdk/fidl/fuchsia.hardware.inlineencryption:fuchsia.hardware.inlineencryption_rust",
+    "//sdk/fidl/fuchsia.storage.block:fuchsia.storage.block_rust",
     "//sdk/rust/zx",
     "//src/lib/fidl/rust/fidl",
     "//src/lib/fuchsia-async",
@@ -90,7 +86,7 @@ source_set("block_server_cc") {
   public = [ "block_server.h" ]
   public_deps = [
     ":block_server_c",
-    "//sdk/fidl/fuchsia.hardware.block.volume:fuchsia.hardware.block.volume_cpp",
+    "//sdk/fidl/fuchsia.storage.block:fuchsia.storage.block_cpp",
     "//zircon/system/ulib/zx",
   ]
 }
@@ -100,7 +96,7 @@ source_set("fake_block_server_cc") {
   public = [ "fake_server.h" ]
   public_deps = [
     ":block_server_cc",
-    "//sdk/fidl/fuchsia.hardware.block.volume:fuchsia.hardware.block.volume_cpp",
+    "//sdk/fidl/fuchsia.storage.block:fuchsia.storage.block_cpp",
     "//src/storage/lib/block_client/cpp",
     "//zircon/system/ulib/storage/buffer",
     "//zircon/system/ulib/zx",
@@ -111,6 +107,7 @@ test("block_server_cc_tests") {
   sources = [ "block_server_cc_tests.cc" ]
   deps = [
     ":block_server_cc",
+    "//src/devices/lib/block",
     "//src/lib/fxl/test:gtest_main",
     "//src/storage/lib/block_client/cpp",
     "//zircon/system/ulib/storage/buffer",

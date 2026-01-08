@@ -5,8 +5,8 @@
 use crate::device::Device;
 use anyhow::Error;
 use fidl::endpoints::{DiscoverableProtocolMarker as _, ServerEnd};
-use fidl_fuchsia_hardware_block_volume::VolumeMarker;
 use fidl_fuchsia_io as fio;
+use fidl_fuchsia_storage_block::BlockMarker;
 use fs_management::filesystem::BlockConnector;
 use pseudo_fs::{LazyPseudoDirectory, PseudoDirectory, PseudoFile, ToPseudoDirectory};
 use std::sync::Arc;
@@ -38,8 +38,8 @@ impl SinglePublisher for StagedPublisher {
     fn publish(self: Box<Self>, device: &dyn Device) -> Result<(), Error> {
         let volume = device.block_connector()?;
         let entry = vfs::pseudo_directory! {
-            VolumeMarker::PROTOCOL_NAME => endpoint(move |_scope, channel| {
-                volume.connect_channel_to_volume(channel.into_zx_channel().into())
+            BlockMarker::PROTOCOL_NAME => endpoint(move |_scope, channel| {
+                volume.connect_channel_to_block(channel.into_zx_channel().into())
                     .unwrap_or_else(|error| {
                         log::error!(error:%; "failed to open volume");
                     });
@@ -102,8 +102,8 @@ impl DevicePublisher {
         self.block_dir.add_entry(
             name,
             vfs::pseudo_directory! {
-                VolumeMarker::PROTOCOL_NAME => endpoint(move |_scope, channel| {
-                    volume.connect_channel_to_volume(channel.into_zx_channel().into())
+                BlockMarker::PROTOCOL_NAME => endpoint(move |_scope, channel| {
+                    volume.connect_channel_to_block(channel.into_zx_channel().into())
                         .unwrap_or_else(|error| {
                             log::error!(error:%; "failed to open volume");
                         });
@@ -122,8 +122,8 @@ struct BlockDirectoryInfo {
 impl ToPseudoDirectory for BlockDirectoryInfo {
     fn to_pseudo_directory(self) -> Arc<PseudoDirectory> {
         vfs::pseudo_directory! {
-            VolumeMarker::PROTOCOL_NAME => endpoint(move |_scope, channel| {
-                self.volume.connect_channel_to_volume(channel.into_zx_channel().into())
+            BlockMarker::PROTOCOL_NAME => endpoint(move |_scope, channel| {
+                self.volume.connect_channel_to_block(channel.into_zx_channel().into())
                     .unwrap_or_else(|error| {
                         log::error!(error:%; "failed to open volume");
                     });
@@ -139,8 +139,7 @@ mod tests {
     use crate::Parent;
     use async_trait::async_trait;
     use fidl::endpoints::Proxy;
-    use fidl_fuchsia_hardware_block::BlockProxy;
-    use fidl_fuchsia_hardware_block_volume::VolumeProxy;
+    use fidl_fuchsia_storage_block::BlockProxy;
     use fs_management::format::DiskFormat;
     use fuchsia_fs::directory::read_file_to_string;
     use futures::StreamExt;
@@ -149,12 +148,12 @@ mod tests {
 
     struct MockDevice {
         source: &'static str,
-        volume: mpsc::UnboundedSender<ServerEnd<VolumeMarker>>,
+        volume: mpsc::UnboundedSender<ServerEnd<BlockMarker>>,
     }
 
     #[async_trait]
     impl Device for MockDevice {
-        async fn get_block_info(&self) -> Result<fidl_fuchsia_hardware_block::BlockInfo, Error> {
+        async fn get_block_info(&self) -> Result<fidl_fuchsia_storage_block::BlockInfo, Error> {
             unimplemented!()
         }
         fn is_nand(&self) -> bool {
@@ -186,15 +185,12 @@ mod tests {
         }
         fn block_connector(&self) -> Result<Box<dyn BlockConnector>, Error> {
             let volume = self.volume.clone();
-            Ok(Box::new(move |server_end: ServerEnd<VolumeMarker>| {
+            Ok(Box::new(move |server_end: ServerEnd<BlockMarker>| {
                 volume.unbounded_send(server_end).unwrap();
                 Ok(())
             }))
         }
         fn block_proxy(&self) -> Result<BlockProxy, Error> {
-            unimplemented!()
-        }
-        fn volume_proxy(&self) -> Result<VolumeProxy, Error> {
             unimplemented!()
         }
         async fn get_child(&self, _suffix: &str) -> Result<Box<dyn Device>, Error> {
@@ -230,8 +226,8 @@ mod tests {
         );
 
         // Check that connecting to the volume works.
-        let path = "001/".to_string() + VolumeMarker::PROTOCOL_NAME;
-        let volume = fuchsia_fs::directory::open_async::<VolumeMarker>(
+        let path = "001/".to_string() + BlockMarker::PROTOCOL_NAME;
+        let volume = fuchsia_fs::directory::open_async::<BlockMarker>(
             &client,
             &path,
             fio::Flags::PROTOCOL_SERVICE,

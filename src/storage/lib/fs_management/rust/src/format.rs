@@ -5,7 +5,8 @@
 pub mod constants;
 
 use anyhow::{Context as _, Error, anyhow, ensure};
-use block_client::{AsBlockProxy, BlockClient, MutableBufferSlice, RemoteBlockClient};
+use block_client::{BlockClient, MutableBufferSlice, RemoteBlockClient};
+use fidl_fuchsia_storage_block::BlockProxy;
 
 #[derive(Debug, PartialEq, Clone, Copy)]
 pub enum DiskFormat {
@@ -75,7 +76,7 @@ pub fn round_up(val: u64, divisor: u64) -> Option<u64> {
     ((val.checked_add(divisor.checked_sub(1)?)?).checked_div(divisor)?).checked_mul(divisor)
 }
 
-pub async fn detect_disk_format(block_proxy: impl AsBlockProxy) -> DiskFormat {
+pub async fn detect_disk_format(block_proxy: &BlockProxy) -> DiskFormat {
     match detect_disk_format_res(block_proxy).await {
         Ok(format) => format,
         Err(e) => {
@@ -85,7 +86,7 @@ pub async fn detect_disk_format(block_proxy: impl AsBlockProxy) -> DiskFormat {
     }
 }
 
-async fn detect_disk_format_res(block_proxy: impl AsBlockProxy) -> Result<DiskFormat, Error> {
+async fn detect_disk_format_res(block_proxy: &BlockProxy) -> Result<DiskFormat, Error> {
     let block_info = block_proxy
         .get_info()
         .await
@@ -179,7 +180,7 @@ mod tests {
     use super::{DiskFormat, constants, detect_disk_format_res};
     use anyhow::Error;
     use fidl::endpoints::create_proxy_and_stream;
-    use fidl_fuchsia_hardware_block_volume::VolumeMarker;
+    use fidl_fuchsia_storage_block::BlockMarker;
     use futures::{FutureExt, select};
     use std::pin::pin;
     use vmo_backed_block_server::{VmoBackedServer, VmoBackedServerTestingExt as _};
@@ -189,7 +190,7 @@ mod tests {
         block_count: u64,
         block_size: u32,
     ) -> Result<DiskFormat, Error> {
-        let (proxy, stream) = create_proxy_and_stream::<VolumeMarker>();
+        let (proxy, stream) = create_proxy_and_stream::<BlockMarker>();
 
         let fake_server = VmoBackedServer::new(block_count, block_size, content);
         let mut request_handler = pin!(fake_server.serve(stream).fuse());

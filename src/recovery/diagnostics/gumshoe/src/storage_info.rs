@@ -2,13 +2,12 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use anyhow::{anyhow, Error};
+use anyhow::{Error, anyhow};
 
 use serde::{Deserialize, Serialize};
 use std::fs;
 
-type PartitionProxyProvider =
-    fn(&str) -> Result<fidl_fuchsia_hardware_block_partition::PartitionProxy, Error>;
+type BlockProxyProvider = fn(&str) -> Result<fidl_fuchsia_storage_block::BlockProxy, Error>;
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct Device {
@@ -59,7 +58,7 @@ pub struct StorageInfo {
 impl StorageInfo {
     /// Returns partition's name or Error.
     pub async fn get_name(
-        partition_proxy: &fidl_fuchsia_hardware_block_partition::PartitionProxy,
+        partition_proxy: &fidl_fuchsia_storage_block::BlockProxy,
     ) -> Result<String, Error> {
         match partition_proxy.get_name().await? {
             (status, name) => {
@@ -71,14 +70,14 @@ impl StorageInfo {
 
     /// Returns partition's block_size and block_count, or Error.
     pub async fn get_capacity(
-        partition_proxy: &fidl_fuchsia_hardware_block_partition::PartitionProxy,
+        partition_proxy: &fidl_fuchsia_storage_block::BlockProxy,
     ) -> Result<(u32, u64), Error> {
         let info = partition_proxy.get_info().await?.map_err(zx::Status::from_raw)?;
         Ok((info.block_size, info.block_count))
     }
 
     pub async fn discover_devices(
-        partition_provider: PartitionProxyProvider,
+        partition_provider: BlockProxyProvider,
     ) -> Result<Vec<Device>, Error> {
         let mut devices = Vec::new();
         for entry in fs::read_dir("/gumshoe-dev-class-block")? {
@@ -96,7 +95,7 @@ impl StorageInfo {
         Ok(devices)
     }
 
-    pub async fn new(partition_provider: PartitionProxyProvider) -> Result<Self, Error> {
+    pub async fn new(partition_provider: BlockProxyProvider) -> Result<Self, Error> {
         Ok(StorageInfo { devices: Some(Self::discover_devices(partition_provider).await?) })
     }
 }

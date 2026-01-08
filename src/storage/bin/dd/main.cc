@@ -5,8 +5,8 @@
 #include <dirent.h>
 #include <errno.h>
 #include <fcntl.h>
-#include <fidl/fuchsia.hardware.block/cpp/wire.h>
 #include <fidl/fuchsia.hardware.skipblock/cpp/wire.h>
+#include <fidl/fuchsia.storage.block/cpp/wire.h>
 #include <fuchsia/hardware/block/driver/c/banjo.h>
 #include <lib/component/incoming/cpp/service.h>
 #include <lib/fdio/directory.h>
@@ -173,10 +173,10 @@ bool IsBlockPath(std::string_view path) {
   // E.g.
   //   /dev/class/block/000
   //   /dev/sys/platform/00:2d/ramctl/ramdisk-0/block
-  //   /block/000/fuchsia.hardware.block.volume.Volume
+  //   /block/000/fuchsia.storage.block.Block
   return (path.starts_with("/dev") && path.ends_with("/block")) ||
          path.starts_with("/dev/class/block") ||
-         (path.starts_with("/block") && path.ends_with("fuchsia.hardware.block.volume.Volume"));
+         (path.starts_with("/block") && path.ends_with("fuchsia.storage.block.Block"));
 }
 
 bool IsSkipBlockPath(std::string_view path) {
@@ -205,7 +205,7 @@ zx::result<fidl::ClientEnd<fuchsia_hardware_skipblock::SkipBlock>> GetSkipBlockC
 
 zx::result<std::unique_ptr<block_client::Client>> GetBlockClient(const char* path,
                                                                  size_t* block_size) {
-  zx::result client = component::Connect<fuchsia_hardware_block::Block>(path);
+  zx::result client = component::Connect<fuchsia_storage_block::Block>(path);
   if (client.is_error()) {
     return client.take_error();
   }
@@ -213,7 +213,7 @@ zx::result<std::unique_ptr<block_client::Client>> GetBlockClient(const char* pat
   if (!info.ok()) {
     return zx::error(info.status());
   }
-  auto [session, server] = fidl::Endpoints<fuchsia_hardware_block::Session>::Create();
+  auto [session, server] = fidl::Endpoints<fuchsia_storage_block::Session>::Create();
   if (fidl::OneWayStatus result = fidl::WireCall(*client)->OpenSession(std::move(server));
       !result.ok()) {
     return zx::error(result.status());

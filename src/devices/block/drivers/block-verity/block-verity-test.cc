@@ -77,7 +77,7 @@ class BlockVerityTest : public zxtest::Test {
     return ramdisk_.LegacyController();
   }
 
-  fidl::ClientEnd<fuchsia_hardware_block::Block> ramdisk_block_interface() const {
+  fidl::ClientEnd<fuchsia_storage_block::Block> ramdisk_block_interface() const {
     zx::result result = ramdisk_.ConnectBlock();
     EXPECT_OK(result);
     return std::move(result).value();
@@ -94,7 +94,7 @@ class BlockVerityTest : public zxtest::Test {
     vvc_ = std::move(verity).value();
   }
 
-  zx::result<fidl::ClientEnd<fuchsia_hardware_block::Block>> OpenForAuthoring() {
+  zx::result<fidl::ClientEnd<fuchsia_storage_block::Block>> OpenForAuthoring() {
     return vvc_->OpenForAuthoring(zx::duration::infinite());
   }
 
@@ -103,7 +103,7 @@ class BlockVerityTest : public zxtest::Test {
     ASSERT_OK(vvc_->CloseAndGenerateSeal(seal_arena_, out));
   }
 
-  zx::result<fidl::ClientEnd<fuchsia_hardware_block::Block>> OpenForVerifiedRead(
+  zx::result<fidl::ClientEnd<fuchsia_storage_block::Block>> OpenForVerifiedRead(
       const fuchsia_hardware_block_verified::wire::Seal& expected_seal) {
     uint8_t buf[block_verity::kHashOutputSize];
     memcpy(buf, expected_seal.sha256().superblock_hash.begin(), block_verity::kHashOutputSize);
@@ -143,7 +143,7 @@ TEST_F(BlockVerityTest, BasicWrites) {
   BindAndOpenVerityDeviceManager();
 
   // Open for authoring
-  zx::result<fidl::ClientEnd<fuchsia_hardware_block::Block>> mutable_block = OpenForAuthoring();
+  zx::result<fidl::ClientEnd<fuchsia_storage_block::Block>> mutable_block = OpenForAuthoring();
   ASSERT_OK(mutable_block);
 
   // Zero out the underlying ramdisk.
@@ -155,7 +155,7 @@ TEST_F(BlockVerityTest, BasicWrites) {
   ASSERT_OK(result.status());
   const fit::result response = result.value();
   ASSERT_TRUE(response.is_ok(), "%s", zx_status_get_string(response.error_value()));
-  const fuchsia_hardware_block::wire::BlockInfo& info = response.value()->info;
+  const fuchsia_storage_block::wire::BlockInfo& info = response.value()->info;
   ASSERT_EQ(info.block_size, kBlockSize);
   ASSERT_EQ(info.block_count, 8126);
 
@@ -216,7 +216,7 @@ TEST_F(BlockVerityTest, BasicSeal) {
   BindAndOpenVerityDeviceManager();
 
   // Open for authoring
-  zx::result<fidl::ClientEnd<fuchsia_hardware_block::Block>> mutable_block = OpenForAuthoring();
+  zx::result<fidl::ClientEnd<fuchsia_storage_block::Block>> mutable_block = OpenForAuthoring();
   ASSERT_OK(mutable_block);
 
   // Close and generate a seal over the all-zeroes data section.
@@ -423,7 +423,7 @@ TEST_F(BlockVerityTest, SealAndVerifiedRead) {
   BindAndOpenVerityDeviceManager();
 
   // Open for authoring
-  zx::result<fidl::ClientEnd<fuchsia_hardware_block::Block>> mutable_block = OpenForAuthoring();
+  zx::result<fidl::ClientEnd<fuchsia_storage_block::Block>> mutable_block = OpenForAuthoring();
   ASSERT_OK(mutable_block);
 
   // Close and generate a seal over the all-zeroes data section.
@@ -448,7 +448,7 @@ TEST_F(BlockVerityTest, SealAndVerifiedRead) {
   ASSERT_OK(result.status());
   const fit::result response = result.value();
   ASSERT_TRUE(response.is_ok(), "%s", zx_status_get_string(response.error_value()));
-  const fuchsia_hardware_block::wire::BlockInfo& info = response.value()->info;
+  const fuchsia_storage_block::wire::BlockInfo& info = response.value()->info;
   ASSERT_EQ(info.block_size, kBlockSize);
   ASSERT_EQ(info.block_count, 8126);
 

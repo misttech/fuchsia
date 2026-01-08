@@ -70,7 +70,7 @@ class LargeFakeDevice : public FakeBlockDevice {
     return FakeBlockDevice::FifoTransaction(new_request_list.data(), new_request_list.size());
   }
 
-  zx_status_t BlockGetInfo(fuchsia_hardware_block::wire::BlockInfo* out_info) const override {
+  zx_status_t BlockGetInfo(fuchsia_storage_block::wire::BlockInfo* out_info) const override {
     if (auto err = FakeBlockDevice::BlockGetInfo(out_info); err != ZX_OK) {
       return err;
     }

@@ -5,6 +5,7 @@
 #include "src/storage/fvm/fvm_test_instance.h"
 
 #include <fidl/fuchsia.driver.test/cpp/wire.h>
+#include <fidl/fuchsia.storage.block/cpp/wire.h>
 #include <lib/async-loop/cpp/loop.h>
 #include <lib/async-loop/default.h>
 #include <lib/component/incoming/cpp/protocol.h>
@@ -32,31 +33,26 @@ class DriverBlockConnector : public BlockConnector {
   }
   ~DriverBlockConnector() override = default;
 
-  fidl::ClientEnd<fuchsia_hardware_block::Block> connect_block() const override {
-    zx::result endpoints = fidl::CreateEndpoints<fuchsia_hardware_block::Block>();
+  fidl::ClientEnd<fuchsia_storage_block::Block> connect_block() const override {
+    zx::result endpoints = fidl::CreateEndpoints<fuchsia_storage_block::Block>();
     EXPECT_OK(endpoints);
     auto [block_client, server] = std::move(endpoints.value());
     EXPECT_TRUE(fidl::WireCall(controller_)->ConnectToDeviceFidl(server.TakeChannel()).ok());
     return std::move(block_client);
   }
 
-  fidl::UnownedClientEnd<fuchsia_hardware_block::Block> as_block() const override {
-    return fidl::UnownedClientEnd<fuchsia_hardware_block::Block>(partition_.channel().borrow());
-  }
-
-  fidl::UnownedClientEnd<fuchsia_hardware_block_volume::Volume> as_volume() const override {
-    return fidl::UnownedClientEnd<fuchsia_hardware_block_volume::Volume>(
-        partition_.channel().borrow());
+  fidl::UnownedClientEnd<fuchsia_storage_block::Block> as_block() const override {
+    return fidl::UnownedClientEnd<fuchsia_storage_block::Block>(partition_.channel().borrow());
   }
 
   static zx::result<std::unique_ptr<BlockConnector>> Create(
       fidl::ClientEnd<fuchsia_device::Controller> controller) {
-    return zx::ok(std::make_unique<DriverBlockConnector>(std::move(controller)));
+    return zx::ok(std::unique_ptr<BlockConnector>(new DriverBlockConnector(std::move(controller))));
   }
 
  private:
   fidl::ClientEnd<fuchsia_device::Controller> controller_;
-  fidl::ClientEnd<fuchsia_hardware_block_partition::Partition> partition_;
+  fidl::ClientEnd<fuchsia_storage_block::Block> partition_;
 };
 
 void DriverFvmInstance::SetUp() {
@@ -86,7 +82,7 @@ void DriverFvmInstance::SetUp() {
   fidl::UnownedClientEnd<fuchsia_io::Directory> exposed(
       realm_->component().exposed().unowned_channel());
   ASSERT_OK(fidl::WireCall(exposed)
-                ->Open("dev-topological", fuchsia_io::kPermReadable, {}, server.TakeChannel())
+                ->Open("dev-topological", fuchsia_io::wire::kPermReadable, {}, server.TakeChannel())
                 .status());
   ASSERT_OK(
       fdio_fd_create(devfs_client.TakeChannel().release(), devfs_root_.reset_and_get_address()));
@@ -158,7 +154,7 @@ void DriverFvmInstance::RestartFvmWithNewDiskSize(uint64_t block_size, uint64_t 
   ASSERT_NO_FATAL_FAILURE(StartFvm());
 }
 
-fuchsia_hardware_block_volume::wire::VolumeManagerInfo DriverFvmInstance::GetFvmInfo() const {
+fuchsia_storage_block::wire::VolumeManagerInfo DriverFvmInstance::GetFvmInfo() const {
   zx::result fvm = GetVolumeManager();
   EXPECT_OK(fvm);
   zx::result info = fs_management::FvmQuery(fvm->borrow());
@@ -197,16 +193,16 @@ zx::result<std::unique_ptr<BlockConnector>> DriverFvmInstance::OpenPartition(
 void DriverFvmInstance::DestroyPartition(std::string_view label) const {
   zx::result partition = OpenPartition(label);
   ASSERT_OK(partition);
-  fidl::WireResult result = fidl::WireCall(partition->as_volume())->Destroy();
+  fidl::WireResult result = fidl::WireCall(partition->as_block())->Destroy();
   ASSERT_OK(result.status());
   ASSERT_OK(result->status);
 }
 
-fidl::ClientEnd<fuchsia_hardware_block::Block> DriverFvmInstance::GetRamdiskPartition() const {
+fidl::ClientEnd<fuchsia_storage_block::Block> DriverFvmInstance::GetRamdiskPartition() const {
   zx::result result = ramdisk_.ConnectBlock();
   ZX_ASSERT(result.status_value() == ZX_OK);
   EXPECT_OK(result);
-  return std::move(result).value();
+  return fidl::ClientEnd<fuchsia_storage_block::Block>(result.value().TakeChannel());
 }
 
 fidl::UnownedClientEnd<fuchsia_device::Controller>
@@ -214,11 +210,11 @@ DriverFvmInstance::GetRamdiskControllerInterface() const {
   return ramdisk_.LegacyController();
 }
 
-zx::result<fidl::ClientEnd<fuchsia_hardware_block_volume::VolumeManager>>
+zx::result<fidl::ClientEnd<fuchsia_storage_block::VolumeManager>>
 DriverFvmInstance::GetVolumeManager() const {
   fdio_cpp::UnownedFdioCaller caller(devfs_root());
-  return component::ConnectAt<fuchsia_hardware_block_volume::VolumeManager>(caller.directory(),
-                                                                            GetFvmPath());
+  return component::ConnectAt<fuchsia_storage_block::VolumeManager>(caller.directory(),
+                                                                    GetFvmPath());
 }
 
 zx::result<std::unique_ptr<BlockConnector>> DriverFvmInstance::OpenPartitionNoWait(
@@ -244,31 +240,27 @@ class ComponentBlockConnector : public BlockConnector {
     fidl::ServerEnd server_end =
         fidl::Endpoints<fuchsia_io::Directory>::Create(&connector->svc_dir_);
     EXPECT_TRUE(fidl::WireCall(connector->volume_->ExportRoot())
-                    ->Open("svc", fuchsia_io::kPermReadable, {}, server_end.TakeChannel())
+                    ->Open("svc", fuchsia_io::wire::kPermReadable, {}, server_end.TakeChannel())
                     .ok());
-    connector->partition_ = fidl::ClientEnd<fuchsia_hardware_block_volume::Volume>(
-        connector->connect_block().TakeChannel());
+    connector->partition_ =
+        fidl::ClientEnd<fuchsia_storage_block::Block>(connector->connect_block().TakeChannel());
     return std::move(connector);
   }
 
-  fidl::ClientEnd<fuchsia_hardware_block::Block> connect_block() const override {
-    zx::result volume = component::ConnectAt<fuchsia_hardware_block_volume::Volume>(svc_dir_);
+  fidl::ClientEnd<fuchsia_storage_block::Block> connect_block() const override {
+    zx::result volume = component::ConnectAt<fuchsia_storage_block::Block>(svc_dir_);
     EXPECT_OK(volume);
-    return fidl::ClientEnd<fuchsia_hardware_block::Block>(volume->TakeChannel());
+    return std::move(volume.value());
   }
 
-  fidl::UnownedClientEnd<fuchsia_hardware_block::Block> as_block() const override {
-    return fidl::UnownedClientEnd<fuchsia_hardware_block::Block>(partition_.channel().borrow());
-  }
-
-  fidl::UnownedClientEnd<fuchsia_hardware_block_volume::Volume> as_volume() const override {
-    return partition_.borrow();
+  fidl::UnownedClientEnd<fuchsia_storage_block::Block> as_block() const override {
+    return fidl::UnownedClientEnd<fuchsia_storage_block::Block>(partition_.channel().borrow());
   }
 
  private:
   const fs_management::MountedVolume* volume_;
   fidl::ClientEnd<fuchsia_io::Directory> svc_dir_;
-  fidl::ClientEnd<fuchsia_hardware_block_volume::Volume> partition_;
+  fidl::ClientEnd<fuchsia_storage_block::Block> partition_;
 };
 
 class ComponentFvmInstance : public FvmInstance {
@@ -291,9 +283,8 @@ class ComponentFvmInstance : public FvmInstance {
             .max_transfer_size = 524288,
         },
         std::move(duplicate_vmo));
-    auto [block_client, block_server] =
-        fidl::Endpoints<fuchsia_hardware_block_volume::Volume>::Create();
-    block_ = fidl::ClientEnd<fuchsia_hardware_block::Block>(block_client.TakeChannel());
+    auto [block_client, block_server] = fidl::Endpoints<fuchsia_storage_block::Block>::Create();
+    block_ = std::move(block_client);
     device_->Serve(std::move(block_server));
   }
 
@@ -306,11 +297,9 @@ class ComponentFvmInstance : public FvmInstance {
 
   void StartFvm() override {
     ASSERT_TRUE(device_);
-    auto [block_client, block_server] =
-        fidl::Endpoints<fuchsia_hardware_block_volume::Volume>::Create();
+    auto [block_client, block_server] = fidl::Endpoints<fuchsia_storage_block::Block>::Create();
     device_->Serve(std::move(block_server));
-    zx::result fs = fs_management::MountMultiVolume(
-        fidl::ClientEnd<fuchsia_hardware_block::Block>(block_client.TakeChannel()), component_, {});
+    zx::result fs = fs_management::MountMultiVolume(std::move(block_client), component_, {});
     ASSERT_OK(fs);
     fvm_ = std::make_unique<fs_management::StartedMultiVolumeFilesystem>(std::move(*fs));
     auto info = GetFvmInfo();
@@ -341,7 +330,7 @@ class ComponentFvmInstance : public FvmInstance {
     StartFvm();
   }
 
-  fuchsia_hardware_block_volume::wire::VolumeManagerInfo GetFvmInfo() const override {
+  fuchsia_storage_block::wire::VolumeManagerInfo GetFvmInfo() const override {
     EXPECT_TRUE(fvm_);
     zx::result volumes =
         component::ConnectAt<fuchsia_fs_startup::Volumes>(fvm_->ServiceDirectory());
@@ -388,17 +377,16 @@ class ComponentFvmInstance : public FvmInstance {
     ASSERT_OK(fvm_->RemoveVolume(label));
   }
 
-  fidl::ClientEnd<fuchsia_hardware_block::Block> GetRamdiskPartition() const override {
-    auto [block_client, block_server] =
-        fidl::Endpoints<fuchsia_hardware_block_volume::Volume>::Create();
+  fidl::ClientEnd<fuchsia_storage_block::Block> GetRamdiskPartition() const override {
+    auto [block_client, block_server] = fidl::Endpoints<fuchsia_storage_block::Block>::Create();
     device_->Serve(std::move(block_server));
-    return fidl::ClientEnd<fuchsia_hardware_block::Block>(block_client.TakeChannel());
+    return std::move(block_client);
   }
 
  private:
   zx::vmo vmo_;
   std::unique_ptr<block_server::FakeServer> device_;
-  fidl::ClientEnd<fuchsia_hardware_block::Block> block_;
+  fidl::ClientEnd<fuchsia_storage_block::Block> block_;
   fs_management::FsComponent component_ =
       fs_management::FsComponent::FromDiskFormat(fs_management::kDiskFormatFvm);
   std::unique_ptr<fs_management::StartedMultiVolumeFilesystem> fvm_;

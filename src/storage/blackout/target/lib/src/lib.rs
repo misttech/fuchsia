@@ -12,7 +12,7 @@ use fidl::HandleBased as _;
 use fidl::endpoints::create_proxy;
 use fidl_fuchsia_blackout_test::{ControllerRequest, ControllerRequestStream};
 use fidl_fuchsia_device::ControllerMarker;
-use fidl_fuchsia_hardware_block_volume::VolumeManagerMarker;
+use fidl_fuchsia_storage_block::VolumeManagerMarker;
 use fs_management::filesystem::BlockConnector;
 use fs_management::format::DiskFormat;
 use fuchsia_component::client::{Service, connect_to_protocol, connect_to_protocol_at_path};

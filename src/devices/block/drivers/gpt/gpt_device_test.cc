@@ -44,7 +44,7 @@ class FakeBlockDevice : public ddk::BlockProtocol<FakeBlockDevice> {
     std::copy(std::begin(test_partition_table), std::end(test_partition_table), header_.get());
     info_.block_count = kBlockCnt;
     info_.block_size = kBlockSz;
-    info_.max_transfer_size = fuchsia_hardware_block::wire::kMaxTransferUnbounded;
+    info_.max_transfer_size = fuchsia_storage_block::wire::kMaxTransferUnbounded;
   }
 
   block_protocol_t* proto() { return &proto_; }
@@ -159,7 +159,7 @@ class GptDeviceTest : public zxtest::Test {
     if (status == ZX_OK) {
       loop_.StartThread();
       auto [client_end, server_end] =
-          fidl::Endpoints<fuchsia_hardware_block_volume::VolumeManager>::Create();
+          fidl::Endpoints<fuchsia_storage_block::VolumeManager>::Create();
       fidl::BindServer(loop_.dispatcher(), std::move(server_end), GetPartitionManager());
       volume_manager_fidl_.Bind(std::move(client_end));
     }
@@ -179,7 +179,7 @@ class GptDeviceTest : public zxtest::Test {
 
   std::shared_ptr<MockDevice> fake_parent_ = MockDevice::FakeRootParent();
 
-  fidl::WireSyncClient<fuchsia_hardware_block_volume::VolumeManager>& volume_manager_fidl() {
+  fidl::WireSyncClient<fuchsia_storage_block::VolumeManager>& volume_manager_fidl() {
     return volume_manager_fidl_;
   }
 
@@ -210,13 +210,13 @@ class GptDeviceTest : public zxtest::Test {
     return fake_parent_->children().front()->GetDeviceContext<PartitionManager>();
   }
 
-  fidl::WireSyncClient<fuchsia_hardware_block_volume::VolumeManager> volume_manager_fidl_;
+  fidl::WireSyncClient<fuchsia_storage_block::VolumeManager> volume_manager_fidl_;
   FakeBlockDevice fake_block_device_;
   async::Loop loop_{&kAsyncLoopConfigNeverAttachToThread};
 };
 
 TEST_F(GptDeviceTest, DeviceTooSmall) {
-  const block_info_t info = {20, 512, fuchsia_hardware_block::wire::kMaxTransferUnbounded, 0};
+  const block_info_t info = {20, 512, fuchsia_storage_block::wire::kMaxTransferUnbounded, 0};
   SetInfo(&info);
 
   ASSERT_STATUS(ZX_ERR_NO_SPACE, PartitionManager::Bind(nullptr, fake_parent_.get()));
@@ -435,8 +435,8 @@ TEST_F(GptDeviceTest, GetInfo) {
 
 TEST_F(GptDeviceTest, AddPartition) {
   ASSERT_OK(Bind());
-  fuchsia_hardware_block_partition::wire::Guid type = GUID_LINUX_FILESYSTEM;
-  fuchsia_hardware_block_partition::wire::Guid instance;
+  fuchsia_storage_block::wire::Guid type = GUID_LINUX_FILESYSTEM;
+  fuchsia_storage_block::wire::Guid instance;
   instance.value[0] = 0xff;
   fidl::WireResult result = volume_manager_fidl()->AllocatePartition(1, type, instance, "new", 0);
   ASSERT_OK(result);
@@ -466,8 +466,8 @@ TEST_F(GptDeviceTest, AddPartition) {
 
 TEST_F(GptDeviceTest, AddPartitionWithInvalidGuid) {
   ASSERT_OK(Bind());
-  fuchsia_hardware_block_partition::wire::Guid type = {0};
-  fuchsia_hardware_block_partition::wire::Guid instance;
+  fuchsia_storage_block::wire::Guid type = {0};
+  fuchsia_storage_block::wire::Guid instance;
   instance.value[0] = 0xff;
   fidl::WireResult result = volume_manager_fidl()->AllocatePartition(1, type, instance, "new", 0);
   ASSERT_OK(result);

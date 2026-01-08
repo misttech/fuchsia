@@ -247,8 +247,8 @@ TEST(BlockDeviceTest, Query) {
 
   ASSERT_EQ(info.block_count, kNumPages);
   ASSERT_EQ(info.block_size, kPageSize);
-  ASSERT_EQ(info.max_transfer_size, fuchsia_hardware_block::wire::kMaxTransferUnbounded);
-  ASSERT_EQ(info.flags, FLAG_TRIM_SUPPORT);
+  ASSERT_EQ(info.max_transfer_size, fuchsia_storage_block::wire::kMaxTransferUnbounded);
+  ASSERT_EQ(info.flags, DEVICE_FLAG_TRIM_SUPPORT);
 
   ASSERT_GT(operation_size, sizeof(block_op_t));
 }

@@ -47,9 +47,11 @@ class MockTransactionHandler : public fs::DeviceTransactionHandler {
   block_client::BlockDevice* device_;
 };
 
+#include <fidl/fuchsia.storage.block/cpp/wire.h>
+
 void CreateAndRegisterVmo(block_client::BlockDevice* device, size_t blocks, zx::vmo* vmo,
                           storage::OwnedVmoid* vmoid) {
-  fuchsia_hardware_block::wire::BlockInfo info = {};
+  fuchsia_storage_block::wire::BlockInfo info = {};
   ASSERT_EQ(device->BlockGetInfo(&info), ZX_OK);
   ASSERT_EQ(zx::vmo::create(blocks * info.block_size, 0, vmo), ZX_OK);
   ASSERT_EQ(device->BlockAttachVmo(*vmo, &vmoid->GetReference(device)), ZX_OK);

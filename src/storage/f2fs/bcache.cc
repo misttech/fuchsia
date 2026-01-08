@@ -29,7 +29,7 @@ zx::result<std::unique_ptr<BcacheMapper>> CreateBcacheMapper(
 
   std::vector<std::unique_ptr<Bcache>> bcaches;
   for (auto& device : devices) {
-    fuchsia_hardware_block::wire::BlockInfo info;
+    fuchsia_storage_block::wire::BlockInfo info;
     if (zx_status_t status = device->BlockGetInfo(&info); status != ZX_OK) {
       FX_LOGS(ERROR) << "Could not access device info: " << status;
       return zx::error(status);
@@ -42,8 +42,8 @@ zx::result<std::unique_ptr<BcacheMapper>> CreateBcacheMapper(
     }
 
     uint64_t block_count = info.block_size * info.block_count / kBlockSize;
-    fuchsia_hardware_block_volume::wire::VolumeManagerInfo manager_info;
-    fuchsia_hardware_block_volume::wire::VolumeInfo volume_info;
+    fuchsia_storage_block::wire::VolumeManagerInfo manager_info;
+    fuchsia_storage_block::wire::VolumeInfo volume_info;
     bool use_fvm = device->VolumeGetInfo(&manager_info, &volume_info) == ZX_OK;
     if (use_fvm) {
       if (allocate) {
@@ -109,9 +109,9 @@ zx::result<std::unique_ptr<BcacheMapper>> CreateBcacheMapper(
 }
 
 zx::result<std::unique_ptr<BcacheMapper>> CreateBcacheMapper(
-    fidl::ClientEnd<fuchsia_hardware_block::Block> device_channel, bool allocate) {
+    fidl::ClientEnd<fuchsia_storage_block::Block> device_channel, bool allocate) {
   zx::result device = block_client::RemoteBlockDevice::Create(
-      fidl::ClientEnd<fuchsia_hardware_block_volume::Volume>{device_channel.TakeChannel()});
+      fidl::ClientEnd<fuchsia_storage_block::Block>{device_channel.TakeChannel()});
   if (device.is_error()) {
     FX_LOGS(ERROR) << "could not initialize block device";
     return device.take_error();
@@ -128,8 +128,8 @@ zx::result<std::unique_ptr<BcacheMapper>> CreateBcacheMapper(
 Bcache::Bcache(std::unique_ptr<block_client::BlockDevice> device, uint64_t max_blocks,
                block_t block_size)
     : max_blocks_(max_blocks), block_size_(block_size), device_(std::move(device)) {
-  fuchsia_hardware_block_volume::wire::VolumeManagerInfo manager_info;
-  fuchsia_hardware_block_volume::wire::VolumeInfo volume_info;
+  fuchsia_storage_block::wire::VolumeManagerInfo manager_info;
+  fuchsia_storage_block::wire::VolumeInfo volume_info;
   use_fvm_ = device_->VolumeGetInfo(&manager_info, &volume_info) == ZX_OK;
   if (use_fvm_) {
     size_t free = manager_info.slice_count - manager_info.assigned_slice_count;
@@ -246,7 +246,7 @@ zx_status_t BcacheMapper::Writeblk(block_t bno, const void* data) {
 }
 
 zx_status_t BcacheMapper::Trim(size_t start, size_t num) {
-  if (!(info_.flags & fuchsia_hardware_block::wire::Flag::kTrimSupport)) {
+  if (!(info_.flags & fuchsia_storage_block::wire::DeviceFlag::kTrimSupport)) {
     return ZX_ERR_NOT_SUPPORTED;
   }
 
@@ -408,13 +408,14 @@ zx_status_t BcacheMapper::BlockDetachVmo(storage::Vmoid vmoid) {
 BcacheMapper::BcacheMapper(std::vector<std::unique_ptr<Bcache>> bcaches, uint64_t max_blocks,
                            block_t block_size)
     : bcaches_(std::move(bcaches)), block_size_(block_size), max_blocks_(max_blocks) {
-  uint32_t transfer_size = MAX_TRANSFER_UNBOUNDED;
+  uint32_t transfer_size = fuchsia_storage_block::wire::kMaxTransferUnbounded;
   uint32_t max_block_size = 0;
-  fuchsia_hardware_block::wire::Flag flag = fuchsia_hardware_block::wire::Flag::kRemovable |
-                                            fuchsia_hardware_block::wire::Flag::kTrimSupport |
-                                            fuchsia_hardware_block::wire::Flag::kFuaSupport;
+  fuchsia_storage_block::wire::DeviceFlag flag =
+      fuchsia_storage_block::wire::DeviceFlag::kRemovable |
+      fuchsia_storage_block::wire::DeviceFlag::kTrimSupport |
+      fuchsia_storage_block::wire::DeviceFlag::kFuaSupport;
   for (auto& bcache : bcaches_) {
-    fuchsia_hardware_block::wire::BlockInfo info;
+    fuchsia_storage_block::wire::BlockInfo info;
     bcache->GetDevice()->BlockGetInfo(&info);
 
     if (max_block_size < info.block_size) {
@@ -425,18 +426,18 @@ BcacheMapper::BcacheMapper(std::vector<std::unique_ptr<Bcache>> bcaches, uint64_
       transfer_size = info.max_transfer_size;
     }
 
-    if (info.flags & fuchsia_hardware_block::wire::Flag::kReadonly) {
-      flag |= fuchsia_hardware_block::wire::Flag::kReadonly;
+    if (info.flags & fuchsia_storage_block::wire::DeviceFlag::kReadonly) {
+      flag |= fuchsia_storage_block::wire::DeviceFlag::kReadonly;
       read_only_ = true;
     }
-    if (!(info.flags & fuchsia_hardware_block::wire::Flag::kRemovable)) {
-      flag &= (~fuchsia_hardware_block::wire::Flag::kRemovable);
+    if (!(info.flags & fuchsia_storage_block::wire::DeviceFlag::kRemovable)) {
+      flag &= (~fuchsia_storage_block::wire::DeviceFlag::kRemovable);
     }
-    if (!(info.flags & fuchsia_hardware_block::wire::Flag::kTrimSupport)) {
-      flag &= (~fuchsia_hardware_block::wire::Flag::kTrimSupport);
+    if (!(info.flags & fuchsia_storage_block::wire::DeviceFlag::kTrimSupport)) {
+      flag &= (~fuchsia_storage_block::wire::DeviceFlag::kTrimSupport);
     }
-    if (!(info.flags & fuchsia_hardware_block::wire::Flag::kFuaSupport)) {
-      flag &= (~fuchsia_hardware_block::wire::Flag::kFuaSupport);
+    if (!(info.flags & fuchsia_storage_block::wire::DeviceFlag::kFuaSupport)) {
+      flag &= (~fuchsia_storage_block::wire::DeviceFlag::kFuaSupport);
     }
   }
   uint64_t device_block_count = max_blocks * block_size / max_block_size;
@@ -450,7 +451,7 @@ BcacheMapper::BcacheMapper(std::vector<std::unique_ptr<Bcache>> bcaches, uint64_
   buffer_.Initialize(this, 1, info_.block_size, "scratch-block");
 }
 
-zx_status_t BcacheMapper::BlockGetInfo(fuchsia_hardware_block::wire::BlockInfo* out_info) const {
+zx_status_t BcacheMapper::BlockGetInfo(fuchsia_storage_block::wire::BlockInfo* out_info) const {
   *out_info = info_;
   return ZX_OK;
 }

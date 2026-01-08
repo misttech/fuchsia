@@ -34,7 +34,7 @@ constexpr uuid::Uuid kPartitionTypeGuid = {0xAA, 0xFF, 0xBB, 0x00, 0x33, 0x44, 0
                                            0x10, 0x11, 0x12, 0x13, 0x14, 0x15, 0x16, 0x17};
 constexpr uint64_t kPartitionSliceCount = 1;
 
-void CheckWrite(fidl::UnownedClientEnd<fuchsia_hardware_block::Block> device, size_t off,
+void CheckWrite(fidl::UnownedClientEnd<fuchsia_storage_block::Block> device, size_t off,
                 std::span<uint8_t> buf) {
   for (unsigned char& i : buf) {
     i = static_cast<uint8_t>(rand());
@@ -42,20 +42,20 @@ void CheckWrite(fidl::UnownedClientEnd<fuchsia_hardware_block::Block> device, si
   ASSERT_OK(block_client::SingleWriteBytes(device, buf.data(), buf.size(), off));
 }
 
-void CheckRead(fidl::UnownedClientEnd<fuchsia_hardware_block::Block> device, size_t off,
+void CheckRead(fidl::UnownedClientEnd<fuchsia_storage_block::Block> device, size_t off,
                std::span<const uint8_t> in) {
   std::vector<uint8_t> out(in.size());
   ASSERT_OK(block_client::SingleReadBytes(device, out.data(), out.size(), off));
   ASSERT_EQ(memcmp(in.data(), out.data(), in.size()), 0);
 }
 
-void CheckWriteReadBlock(fidl::UnownedClientEnd<fuchsia_hardware_block::Block> device, size_t block,
+void CheckWriteReadBlock(fidl::UnownedClientEnd<fuchsia_storage_block::Block> device, size_t block,
                          size_t count) {
   const fidl::WireResult result = fidl::WireCall(device)->GetInfo();
   ASSERT_OK(result.status());
   const fit::result response = result.value();
   ASSERT_TRUE(response.is_ok(), "%s", zx_status_get_string(response.error_value()));
-  const fuchsia_hardware_block::wire::BlockInfo& block_info = response.value()->info;
+  const fuchsia_storage_block::wire::BlockInfo& block_info = response.value()->info;
   size_t len = block_info.block_size * count;
   size_t off = block_info.block_size * block;
   std::vector<uint8_t> in(len);
@@ -85,9 +85,7 @@ class FvmResizeTest : public zxtest::TestWithParam<FvmImplementation> {
     return instance_->OpenPartition(label);
   }
 
-  fuchsia_hardware_block_volume::wire::VolumeManagerInfo GetFvmInfo() {
-    return instance_->GetFvmInfo();
-  }
+  fuchsia_storage_block::wire::VolumeManagerInfo GetFvmInfo() { return instance_->GetFvmInfo(); }
 
   void CreateGrowableFvm(uint64_t initial_block_count, uint64_t max_block_count) {
     instance_->CreateRamdisk(kTestBlockSize, initial_block_count);
@@ -97,7 +95,7 @@ class FvmResizeTest : public zxtest::TestWithParam<FvmImplementation> {
     instance_->StartFvm();
   }
 
-  static void ExtendVolume(fidl::UnownedClientEnd<fuchsia_hardware_block_volume::Volume> volume,
+  static void ExtendVolume(fidl::UnownedClientEnd<fuchsia_storage_block::Block> volume,
                            uint64_t start_slice, uint64_t slice_count) {
     const fidl::WireResult result = fidl::WireCall(volume)->Extend(start_slice, slice_count);
     ASSERT_OK(result.status());
@@ -151,7 +149,7 @@ TEST_P(FvmResizeTest, PreallocatedMetadataGrowsCorrectly) {
   ASSERT_NO_FATAL_FAILURE(CheckRead(vp->as_block(), 0, buf));
 
   // Now we can extend to fill the rest of the available space, beyond our initial size.
-  ASSERT_NO_FATAL_FAILURE(ExtendVolume(vp->as_volume(), kPartitionSliceCount,
+  ASSERT_NO_FATAL_FAILURE(ExtendVolume(vp->as_block(), kPartitionSliceCount,
                                        expected.pslice_count - kPartitionSliceCount));
   size_t block_offset = (expected.pslice_count - 1) * kSliceSize / kBlockSize;
   ASSERT_NO_FATAL_FAILURE(CheckWriteReadBlock(vp->as_block(), block_offset, kDataSizeInBlocks));
@@ -209,7 +207,7 @@ TEST_P(FvmResizeTest, PreallocatedMetadataGrowsAsMuchAsPossible) {
   ASSERT_NO_FATAL_FAILURE(CheckRead(vp->as_block(), 0, buf));
 
   // Now we can extend to fill the rest of the available space, beyond our initial size.
-  ASSERT_NO_FATAL_FAILURE(ExtendVolume(vp->as_volume(), kPartitionSliceCount,
+  ASSERT_NO_FATAL_FAILURE(ExtendVolume(vp->as_block(), kPartitionSliceCount,
                                        expected.pslice_count - kPartitionSliceCount));
   size_t block_offset = (expected.pslice_count - 1) * kSliceSize / kBlockSize;
   ASSERT_NO_FATAL_FAILURE(CheckWriteReadBlock(vp->as_block(), block_offset, kDataSizeInBlocks));
@@ -278,7 +276,7 @@ TEST_P(FvmResizeTest, PreallocatedMetadataRemainsValidInPartialGrowths) {
   ASSERT_NO_FATAL_FAILURE(CheckRead(vp->as_block(), 0, buf));
 
   // Now we can extend to fill the rest of the available space, beyond our initial size.
-  ASSERT_NO_FATAL_FAILURE(ExtendVolume(vp->as_volume(), kPartitionSliceCount,
+  ASSERT_NO_FATAL_FAILURE(ExtendVolume(vp->as_block(), kPartitionSliceCount,
                                        expected_max.pslice_count - kPartitionSliceCount));
   size_t block_offset = (expected_max.pslice_count - 1) * kSliceSize / kBlockSize;
   ASSERT_NO_FATAL_FAILURE(CheckWriteReadBlock(vp->as_block(), block_offset, kDataSizeInBlocks));

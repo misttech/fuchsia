@@ -6,7 +6,7 @@ use anyhow::{Context as _, Error};
 use argh::FromArgs;
 use export_ffs::export_directory;
 use fidl::endpoints::{ClientEnd, Proxy as _};
-use fidl_fuchsia_hardware_block::{BlockMarker, BlockProxy};
+use fidl_fuchsia_storage_block::{BlockMarker, BlockProxy};
 use {fidl_fuchsia_io as fio, fuchsia_async as fasync};
 
 /// A command line tool for generating factoryfs partitions by flattening existing directory

@@ -4,8 +4,7 @@
 
 #include "src/storage/blobfs/mkfs.h"
 
-#include <fidl/fuchsia.hardware.block.volume/cpp/wire_types.h>
-#include <fidl/fuchsia.hardware.block/cpp/wire_types.h>
+#include <fidl/fuchsia.storage.block/cpp/wire_types.h>
 #include <fuchsia/hardware/block/driver/c/banjo.h>
 #include <lib/syslog/cpp/macros.h>
 #include <lib/zx/result.h>
@@ -38,10 +37,10 @@ namespace {
 
 using ::block_client::BlockDevice;
 
-std::optional<fuchsia_hardware_block_volume::wire::VolumeManagerInfo> TryGetVolumeManagerInfo(
+std::optional<fuchsia_storage_block::wire::VolumeManagerInfo> TryGetVolumeManagerInfo(
     const BlockDevice& device) {
-  fuchsia_hardware_block_volume::wire::VolumeManagerInfo fvm_manager_info = {};
-  fuchsia_hardware_block_volume::wire::VolumeInfo volume_info = {};
+  fuchsia_storage_block::wire::VolumeManagerInfo fvm_manager_info = {};
+  fuchsia_storage_block::wire::VolumeInfo volume_info = {};
   zx_status_t status = device.VolumeGetInfo(&fvm_manager_info, &volume_info);
   if (status != ZX_OK) {
     return std::nullopt;
@@ -50,7 +49,7 @@ std::optional<fuchsia_hardware_block_volume::wire::VolumeManagerInfo> TryGetVolu
 }
 
 // Generates a superblock that will cover the entire device described by |block_info|.
-zx::result<Superblock> FormatSuperblock(const fuchsia_hardware_block::wire::BlockInfo& block_info,
+zx::result<Superblock> FormatSuperblock(const fuchsia_storage_block::wire::BlockInfo& block_info,
                                         const FilesystemOptions& options) {
   uint64_t blocks = (block_info.block_size * block_info.block_count) / kBlobfsBlockSize;
   Superblock superblock;
@@ -69,7 +68,7 @@ zx::result<Superblock> FormatSuperblock(const fuchsia_hardware_block::wire::Bloc
 // Generates a FVM-aware superblock with the minimum number of slices reserved for each metadata
 // region.
 zx::result<Superblock> FormatSuperblockFVM(
-    BlockDevice* device, const fuchsia_hardware_block_volume::wire::VolumeManagerInfo& fvm_info,
+    BlockDevice* device, const fuchsia_storage_block::wire::VolumeManagerInfo& fvm_info,
     const FilesystemOptions& options) {
   Superblock superblock;
   InitializeSuperblockOptions(options, &superblock);
@@ -145,7 +144,7 @@ zx::result<Superblock> FormatSuperblockFVM(
 
   // Now that we've allocated some slices, re-query FVM for the number of blocks assigned to the
   // partition. We'll use this to validate the superblock.
-  fuchsia_hardware_block::wire::BlockInfo block_info = {};
+  fuchsia_storage_block::wire::BlockInfo block_info = {};
   status = device->BlockGetInfo(&block_info);
   if (status != ZX_OK) {
     FX_LOGS(ERROR) << "Cannot acquire block info: " << status;
@@ -290,14 +289,14 @@ zx_status_t WriteFilesystemToDisk(BlockDevice* device, const Superblock& superbl
 
 zx_status_t FormatFilesystem(BlockDevice* device, const FilesystemOptions& options) {
   zx_status_t status;
-  fuchsia_hardware_block::wire::BlockInfo block_info = {};
+  fuchsia_storage_block::wire::BlockInfo block_info = {};
   status = device->BlockGetInfo(&block_info);
   if (status != ZX_OK) {
     FX_LOGS(ERROR) << "Cannot acquire block info: " << status;
     return status;
   }
 
-  if (block_info.flags & fuchsia_hardware_block::wire::Flag::kReadonly) {
+  if (block_info.flags & fuchsia_storage_block::wire::DeviceFlag::kReadonly) {
     FX_LOGS(ERROR) << "Cannot format read-only device";
     return ZX_ERR_ACCESS_DENIED;
   }

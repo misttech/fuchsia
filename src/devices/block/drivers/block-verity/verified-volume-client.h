@@ -7,7 +7,7 @@
 
 #include <fidl/fuchsia.device/cpp/wire.h>
 #include <fidl/fuchsia.hardware.block.verified/cpp/wire.h>
-#include <fidl/fuchsia.hardware.block/cpp/wire.h>
+#include <fidl/fuchsia.storage.block/cpp/wire.h>
 #include <lib/component/incoming/cpp/protocol.h>
 #include <lib/zx/channel.h>
 
@@ -46,7 +46,7 @@ class VerifiedVolumeClient {
 
   // Requests that the volume be opened for authoring.  If successful,
   // a client connection to the mutable block device will be returned.
-  zx::result<fidl::ClientEnd<fuchsia_hardware_block::Block>> OpenForAuthoring(
+  zx::result<fidl::ClientEnd<fuchsia_storage_block::Block>> OpenForAuthoring(
       const zx::duration& timeout);
 
   // Requests that any child device (mutable or verified) created by
@@ -65,7 +65,7 @@ class VerifiedVolumeClient {
   // Requests that the volume be opened for verified reads, with the expectation
   // that the volume superblock matches the seal provided.  If successful,
   // `verified_block_fd_out` will contain a handle to the verified block device.
-  zx::result<fidl::ClientEnd<fuchsia_hardware_block::Block>> OpenForVerifiedRead(
+  zx::result<fidl::ClientEnd<fuchsia_storage_block::Block>> OpenForVerifiedRead(
       const digest::Digest& expected_seal, const zx::duration& timeout);
 
  private:

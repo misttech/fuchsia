@@ -26,7 +26,9 @@ TEST(FormatDetectionTest, TestInvalidGptIgnored) {
   ASSERT_EQ(ramdisk.status_value(), ZX_OK);
   zx::result block = ramdisk->ConnectBlock();
   ASSERT_TRUE(block.is_ok()) << block.status_string();
-  ASSERT_EQ(DetectDiskFormat(block.value()), kDiskFormatUnknown);
+  ASSERT_EQ(DetectDiskFormat(fidl::UnownedClientEnd<fuchsia_storage_block::Block>(
+                block.value().channel().get())),
+            kDiskFormatUnknown);
 }
 
 TEST(FormatDetectionTest, TestGptWithUnusualBlockSize) {
@@ -37,7 +39,9 @@ TEST(FormatDetectionTest, TestGptWithUnusualBlockSize) {
   ASSERT_EQ(ramdisk.status_value(), ZX_OK);
   zx::result block = ramdisk->ConnectBlock();
   ASSERT_TRUE(block.is_ok()) << block.status_string();
-  ASSERT_EQ(DetectDiskFormat(block.value()), kDiskFormatGpt);
+  ASSERT_EQ(DetectDiskFormat(fidl::UnownedClientEnd<fuchsia_storage_block::Block>(
+                block.value().channel().get())),
+            kDiskFormatGpt);
 }
 
 TEST(FormatDetectionTest, TestVbmetaRecognised) {
@@ -59,7 +63,9 @@ TEST(FormatDetectionTest, TestVbmetaRecognised) {
   ASSERT_EQ(ramdisk.status_value(), ZX_OK);
   zx::result block = ramdisk->ConnectBlock();
   ASSERT_TRUE(block.is_ok()) << block.status_string();
-  ASSERT_EQ(DetectDiskFormat(block.value()), kDiskFormatVbmeta);
+  ASSERT_EQ(DetectDiskFormat(fidl::UnownedClientEnd<fuchsia_storage_block::Block>(
+                block.value().channel().get())),
+            kDiskFormatVbmeta);
 }
 
 }  // namespace

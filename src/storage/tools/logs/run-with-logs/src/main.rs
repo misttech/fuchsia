@@ -5,7 +5,7 @@
 use argh::FromArgs;
 use block_client::{Cache, RemoteBlockClientSync};
 use byteorder::{LittleEndian, WriteBytesExt};
-use fidl_fuchsia_hardware_block::BlockMarker;
+use fidl_fuchsia_storage_block::BlockMarker;
 use fuchsia_component::client::connect_channel_to_protocol_at_path;
 use std::io::Write;
 use std::process::{Command, Output};

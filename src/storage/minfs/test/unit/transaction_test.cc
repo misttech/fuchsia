@@ -4,6 +4,8 @@
 
 // Tests Transaction behavior.
 
+#include <fidl/fuchsia.storage.block/cpp/wire.h>
+
 #include <memory>
 #include <vector>
 
@@ -76,17 +78,16 @@ class FakeBlockDevice : public block_client::BlockDevice {
   zx::result<> Rebind(std::string_view url_suffix) const override {
     return zx::error(ZX_ERR_NOT_SUPPORTED);
   }
-  zx_status_t BlockGetInfo(fuchsia_hardware_block::wire::BlockInfo* out_info) const final {
+  zx_status_t BlockGetInfo(fuchsia_storage_block::wire::BlockInfo* out_info) const final {
     return ZX_OK;
   }
   zx_status_t BlockAttachVmo(const zx::vmo& vmo, storage::Vmoid* out_vmoid) final { return ZX_OK; }
-  zx_status_t VolumeGetInfo(
-      fuchsia_hardware_block_volume::wire::VolumeManagerInfo* out_manager,
-      fuchsia_hardware_block_volume::wire::VolumeInfo* out_volume) const final {
+  zx_status_t VolumeGetInfo(fuchsia_storage_block::wire::VolumeManagerInfo* out_manager,
+                            fuchsia_storage_block::wire::VolumeInfo* out_volume) const final {
     return ZX_OK;
   }
   zx_status_t VolumeQuerySlices(const uint64_t* slices, size_t slices_count,
-                                fuchsia_hardware_block_volume::wire::VsliceRange* out_ranges,
+                                fuchsia_storage_block::wire::VsliceRange* out_ranges,
                                 size_t* out_ranges_count) const final {
     return ZX_OK;
   }

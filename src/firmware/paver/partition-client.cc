@@ -26,7 +26,7 @@
 
 namespace paver {
 
-namespace block = fuchsia_hardware_block;
+namespace block = fuchsia_storage_block;
 
 zx::result<std::unique_ptr<BlockPartitionClient>> BlockPartitionClient::Create(
     std::unique_ptr<VolumeConnector> connector) {
@@ -34,14 +34,13 @@ zx::result<std::unique_ptr<BlockPartitionClient>> BlockPartitionClient::Create(
   if (partition_client_end.is_error()) {
     return partition_client_end.take_error();
   }
-  fidl::WireSyncClient<fuchsia_hardware_block_partition::Partition> partition(
-      fidl::ClientEnd<fuchsia_hardware_block_partition::Partition>(
-          partition_client_end->TakeChannel()));
+  fidl::WireSyncClient<fuchsia_storage_block::Block> partition(
+      fidl::ClientEnd<fuchsia_storage_block::Block>(partition_client_end->TakeChannel()));
   return zx::ok(std::unique_ptr<BlockPartitionClient>(
       new BlockPartitionClient(std::move(connector), std::move(partition))));
 }
 
-zx::result<std::reference_wrapper<fuchsia_hardware_block::wire::BlockInfo>>
+zx::result<std::reference_wrapper<fuchsia_storage_block::wire::BlockInfo>>
 BlockPartitionClient::ReadBlockInfo() {
   if (block_info_.has_value()) {
     return zx::ok(std::reference_wrapper(block_info_.value()));
@@ -73,7 +72,7 @@ zx::result<size_t> BlockPartitionClient::GetPartitionSize() {
   if (block_info_result.is_error()) {
     return block_info_result.take_error();
   }
-  const fuchsia_hardware_block::wire::BlockInfo& block_info = block_info_result.value().get();
+  const fuchsia_storage_block::wire::BlockInfo& block_info = block_info_result.value().get();
   return zx::ok(block_info.block_size * block_info.block_count);
 }
 
@@ -264,9 +263,8 @@ FixedOffsetBlockPartitionClient::Create(std::unique_ptr<VolumeConnector> connect
   if (partition_client_end.is_error()) {
     return partition_client_end.take_error();
   }
-  fidl::WireSyncClient<fuchsia_hardware_block_partition::Partition> block(
-      fidl::ClientEnd<fuchsia_hardware_block_partition::Partition>(
-          partition_client_end->TakeChannel()));
+  fidl::WireSyncClient<fuchsia_storage_block::Block> block(
+      fidl::ClientEnd<fuchsia_storage_block::Block>(partition_client_end->TakeChannel()));
   return zx::ok(std::make_unique<FixedOffsetBlockPartitionClient>(
       BlockPartitionClient(std::move(connector), std::move(block)), offset_partition_in_blocks,
       offset_buffer_in_blocks));

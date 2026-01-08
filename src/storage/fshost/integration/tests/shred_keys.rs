@@ -10,8 +10,8 @@ pub mod config;
 use assert_matches::assert_matches;
 use config::{data_fs_spec, data_fs_type, new_builder, volumes_spec};
 use fidl_fuchsia_fshost::AdminProxy;
-use fidl_fuchsia_hardware_block_volume::VolumeMarker;
 use fidl_fuchsia_io as fio;
+use fidl_fuchsia_storage_block::BlockMarker;
 use fs_management::filesystem::Filesystem;
 use fshost_test_fixture::disk_builder::{DataSpec, Disk};
 use vmo_backed_block_server::{VmoBackedServer, VmoBackedServerTestingExt as _};
@@ -44,7 +44,7 @@ async fn shred_data_volume_when_mounted_keymint() {
             512,
             vmo.duplicate_handle(zx::Rights::SAME_RIGHTS).unwrap(),
         ));
-        let connector = Box::new(move |server_end: fidl::endpoints::ServerEnd<VolumeMarker>| {
+        let connector = Box::new(move |server_end: fidl::endpoints::ServerEnd<BlockMarker>| {
             server.connect_server(server_end.into_channel().into());
             Ok(())
         });
@@ -97,7 +97,7 @@ async fn shred_data_volume_when_mounted_keymint() {
             512,
             vmo.duplicate_handle(zx::Rights::SAME_RIGHTS).unwrap(),
         ));
-        let connector = Box::new(move |server_end: fidl::endpoints::ServerEnd<VolumeMarker>| {
+        let connector = Box::new(move |server_end: fidl::endpoints::ServerEnd<BlockMarker>| {
             server.connect_server(server_end.into_channel().into());
             Ok(())
         });

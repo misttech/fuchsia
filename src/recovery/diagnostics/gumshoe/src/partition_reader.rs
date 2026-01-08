@@ -2,7 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use anyhow::{anyhow, Error};
+use anyhow::{Error, anyhow};
 use block_client::BlockClient;
 
 use hyper::body::Sender;
@@ -11,7 +11,7 @@ use std::collections::HashMap;
 use std::fs;
 use std::future::Future;
 
-type BlockProxyProvider = fn(&str) -> Result<fidl_fuchsia_hardware_block::BlockProxy, Error>;
+type BlockProxyProvider = fn(&str) -> Result<fidl_fuchsia_storage_block::BlockProxy, Error>;
 
 #[derive(Default)]
 pub struct PartitionReader {

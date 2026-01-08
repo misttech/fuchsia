@@ -11,8 +11,8 @@ source_set("verified-volume-client") {
   sources = [ "verified-volume-client.cc" ]
   deps = [
     "//sdk/fidl/fuchsia.device:fuchsia.device_cpp",
-    "//sdk/fidl/fuchsia.hardware.block:fuchsia.hardware.block_cpp",
     "//sdk/fidl/fuchsia.hardware.block.verified:fuchsia.hardware.block.verified_cpp",
+    "//sdk/fidl/fuchsia.storage.block:fuchsia.storage.block_cpp",
     "//sdk/lib/device-watcher/cpp",
     "//src/lib/digest",
     "//src/storage/lib/ramdevice_client/cpp",

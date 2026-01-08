@@ -16,7 +16,7 @@ test("gpt-unit-test") {
     "main.cc",
   ]
   deps = [
-    "//sdk/fidl/fuchsia.hardware.block:fuchsia.hardware.block_cpp",
+    "//sdk/fidl/fuchsia.storage.block:fuchsia.storage.block_cpp",
     "//sdk/lib/component/incoming/cpp",
     "//sdk/lib/device-watcher/cpp",
     "//sdk/lib/fdio",

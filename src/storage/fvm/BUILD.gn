@@ -61,8 +61,8 @@ static_library("fvm") {
     ]
 
     deps += [
-      "//sdk/fidl/fuchsia.hardware.block.volume:fuchsia.hardware.block.volume_cpp",
       "//sdk/fidl/fuchsia.io:fuchsia.io_cpp",
+      "//sdk/fidl/fuchsia.storage.block:fuchsia.storage.block_cpp",
       "//src/storage/gpt",
       "//src/storage/lib/block_client/cpp",
       "//zircon/system/ulib/fzl",
@@ -79,7 +79,7 @@ source_set("client") {
   public = [ "client.h" ]
   sources = [ "client.cc" ]
   deps = [
-    "//sdk/fidl/fuchsia.hardware.block.volume:fuchsia.hardware.block.volume_cpp",
+    "//sdk/fidl/fuchsia.storage.block:fuchsia.storage.block_cpp",
     "//src/storage/lib/block_client/cpp:interface",
     "//zircon/system/public",
   ]
@@ -102,7 +102,7 @@ static_library("test_support") {
 
   public_deps = [
     "//sdk/fidl/fuchsia.device:fuchsia.device_cpp",
-    "//sdk/fidl/fuchsia.hardware.block.volume:fuchsia.hardware.block.volume_cpp",
+    "//sdk/fidl/fuchsia.storage.block:fuchsia.storage.block_cpp",
     "//sdk/lib/async-loop:async-loop-cpp",
     "//sdk/lib/async-loop:async-loop-default",
     "//sdk/lib/driver_test_realm/realm_builder/cpp",
@@ -114,9 +114,8 @@ static_library("test_support") {
 
   deps = [
     "//sdk/fidl/fuchsia.driver.test:fuchsia.driver.test_cpp",
-    "//sdk/fidl/fuchsia.hardware.block.partition:fuchsia.hardware.block.partition_cpp",
-    "//sdk/fidl/fuchsia.hardware.block.volume:fuchsia.hardware.block.volume_cpp",
     "//sdk/fidl/fuchsia.io:fuchsia.io_cpp",
+    "//sdk/fidl/fuchsia.storage.block:fuchsia.storage.block_cpp",
     "//sdk/lib/component/incoming/cpp",
     "//sdk/lib/device-watcher/cpp",
     "//sdk/lib/fdio",
@@ -179,9 +178,8 @@ test("fvm-integration") {
     ":test_support",
     "//sdk/fidl/fuchsia.device:fuchsia.device_cpp",
     "//sdk/fidl/fuchsia.driver.test:fuchsia.driver.test_cpp",
-    "//sdk/fidl/fuchsia.hardware.block.partition:fuchsia.hardware.block.partition_cpp",
-    "//sdk/fidl/fuchsia.hardware.block.volume:fuchsia.hardware.block.volume_cpp",
     "//sdk/fidl/fuchsia.io:fuchsia.io_cpp",
+    "//sdk/fidl/fuchsia.storage.block:fuchsia.storage.block_cpp",
     "//sdk/lib/async-loop:async-loop-cpp",
     "//sdk/lib/async-loop:async-loop-default",
     "//sdk/lib/device-watcher/cpp",
@@ -239,9 +237,8 @@ fvm_sources = [
 
 fvm_deps = [
   "//sdk/fidl/fuchsia.fs:fuchsia.fs_rust",
-  "//sdk/fidl/fuchsia.hardware.block:fuchsia.hardware.block_rust",
-  "//sdk/fidl/fuchsia.hardware.block.volume:fuchsia.hardware.block.volume_rust",
   "//sdk/fidl/fuchsia.io:fuchsia.io_rust",
+  "//sdk/fidl/fuchsia.storage.block:fuchsia.storage.block_rust",
   "//sdk/rust/zx",
   "//src/lib/diagnostics/inspect/runtime/rust",
   "//src/lib/diagnostics/inspect/rust",

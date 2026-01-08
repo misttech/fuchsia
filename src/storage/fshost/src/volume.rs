@@ -4,8 +4,7 @@
 
 use crate::device::Device;
 use anyhow::{Context, Error, anyhow};
-use fidl_fuchsia_hardware_block_partition::Guid;
-use fidl_fuchsia_hardware_block_volume::{VolumeManagerMarker, VolumeProxy};
+use fidl_fuchsia_storage_block::{BlockProxy, Guid, VolumeManagerMarker};
 use fuchsia_component::client::connect_to_protocol_at_path;
 
 use std::cmp;
@@ -17,7 +16,7 @@ const MAX_VSLICES: u64 = 1 << (SLICE_ENTRY_VSLICE_BITS - 1);
 const DEFAULT_VOLUME_PERCENTAGE: u64 = 10;
 const DEFAULT_VOLUME_SIZE: u64 = 24 * 1024 * 1024;
 
-pub async fn resize_volume(volume_proxy: &VolumeProxy, target_bytes: u64) -> Result<u64, Error> {
+pub async fn resize_volume(volume_proxy: &BlockProxy, target_bytes: u64) -> Result<u64, Error> {
     // Free existing slices (except the first).
     // Note while physical slices in FVM are 1-indexed, virtual slices (used here) are 0-indexed.
     // The reason we start at slice 1 here is because FVM requires that the first slice always be
@@ -121,9 +120,7 @@ mod tests {
     use crate::volume::{MAX_VSLICES, resize_volume};
     use anyhow::Error;
     use fidl::endpoints::create_proxy_and_stream;
-    use fidl_fuchsia_hardware_block_volume::{
-        VolumeManagerInfo, VolumeMarker, VolumeRequest, VsliceRange,
-    };
+    use fidl_fuchsia_storage_block::{BlockMarker, BlockRequest, VolumeManagerInfo, VsliceRange};
 
     use futures::{FutureExt, StreamExt, pin_mut, select};
 
@@ -137,22 +134,22 @@ mod tests {
         assigned_slice_count: u64,
         expected_extend_slice_count: u64,
     ) -> Result<u64, Error> {
-        let (proxy, mut stream) = create_proxy_and_stream::<VolumeMarker>();
+        let (proxy, mut stream) = create_proxy_and_stream::<BlockMarker>();
         let mock_device = async {
             while let Some(request) = stream.next().await {
                 match request {
-                    Ok(VolumeRequest::QuerySlices { responder, start_slices }) => {
+                    Ok(BlockRequest::QuerySlices { responder, start_slices }) => {
                         let mut slices = [VsliceRange { allocated: false, count: 0 }; 16];
                         slices[0] = VsliceRange { allocated: true, count: RANGE_ALLOCATED };
                         let count = if start_slices[0] == 1 { 1 } else { 0 };
                         responder.send(zx::sys::ZX_OK, &slices, count).unwrap();
                     }
-                    Ok(VolumeRequest::Shrink { responder, start_slice, slice_count }) => {
+                    Ok(BlockRequest::Shrink { responder, start_slice, slice_count }) => {
                         assert_eq!(start_slice, 1);
                         assert_eq!(slice_count, RANGE_ALLOCATED);
                         responder.send(zx::sys::ZX_OK).unwrap();
                     }
-                    Ok(VolumeRequest::GetVolumeInfo { responder }) => {
+                    Ok(BlockRequest::GetVolumeInfo { responder }) => {
                         responder
                             .send(
                                 zx::sys::ZX_OK,
@@ -167,7 +164,7 @@ mod tests {
                             )
                             .unwrap();
                     }
-                    Ok(VolumeRequest::Extend { responder, start_slice, slice_count }) => {
+                    Ok(BlockRequest::Extend { responder, start_slice, slice_count }) => {
                         assert_eq!(start_slice, 1);
                         assert_eq!(slice_count, expected_extend_slice_count);
                         responder.send(zx::sys::ZX_OK).unwrap();

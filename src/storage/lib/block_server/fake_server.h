@@ -5,7 +5,7 @@
 #ifndef SRC_STORAGE_LIB_BLOCK_SERVER_FAKE_SERVER_H_
 #define SRC_STORAGE_LIB_BLOCK_SERVER_FAKE_SERVER_H_
 
-#include <fidl/fuchsia.hardware.block.volume/cpp/wire.h>
+#include <fidl/fuchsia.storage.block/cpp/wire.h>
 #include <lib/zx/vmo.h>
 
 #include <memory>
@@ -27,7 +27,7 @@ class FakeServer {
   FakeServer& operator=(const FakeServer&) = delete;
 
   // Serves a new connection.  The FIDL handling is multiplexed onto a single per-server thread.
-  void Serve(fidl::ServerEnd<fuchsia_hardware_block_volume::Volume> request) {
+  void Serve(fidl::ServerEnd<fuchsia_storage_block::Block> request) {
     server_->Serve(std::move(request));
   }
 

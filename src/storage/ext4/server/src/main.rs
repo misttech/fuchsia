@@ -7,8 +7,8 @@
 use anyhow::{Context as _, Error, format_err};
 use ext4_parser::{FsSourceType, construct_fs};
 use fidl::endpoints::{DiscoverableProtocolMarker as _, ServerEnd};
-use fidl_fuchsia_hardware_block_volume::VolumeMarker;
 use fidl_fuchsia_io as fio;
+use fidl_fuchsia_storage_block::BlockMarker;
 use fuchsia_runtime::{HandleType, take_startup_handle};
 use log::info;
 use vfs::execution_scope::ExecutionScope;
@@ -20,7 +20,7 @@ async fn main() -> Result<(), Error> {
     let (block_device, server) = fidl::endpoints::create_endpoints();
     fuchsia_component::client::connect_channel_to_protocol_at_path(
         server.into_channel(),
-        &format!("/block/{}", VolumeMarker::PROTOCOL_NAME),
+        &format!("/block/{}", BlockMarker::PROTOCOL_NAME),
     )
     .context("Failed to connect to Volume")?;
 

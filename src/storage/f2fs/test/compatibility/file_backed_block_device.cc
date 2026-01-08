@@ -82,7 +82,7 @@ zx_status_t FileBackedBlockDevice::FifoTransaction(block_fifo_request_t* request
 }
 
 zx_status_t FileBackedBlockDevice::BlockGetInfo(
-    fuchsia_hardware_block::wire::BlockInfo* out_info) const {
+    fuchsia_storage_block::wire::BlockInfo* out_info) const {
   out_info->block_count = block_count_;
   out_info->block_size = block_size_;
   out_info->flags = block_info_flags_;

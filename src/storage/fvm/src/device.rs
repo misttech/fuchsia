@@ -2,9 +2,8 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use block_client::{BlockClient, RemoteBlockClient, VmoId};
+use block_client::{BlockClient, BlockDeviceFlag, RemoteBlockClient, VmoId};
 use event_listener::Event;
-use fidl_fuchsia_hardware_block::Flag;
 use fuchsia_async as fasync;
 use fuchsia_sync::Mutex;
 use std::collections::HashMap;
@@ -27,7 +26,7 @@ impl<C: BlockClient> DeviceImpl<C> {
         Ok(Self { client, vmo_ids: Mutex::default(), buffers })
     }
 
-    pub fn block_flags(&self) -> Flag {
+    pub fn block_flags(&self) -> BlockDeviceFlag {
         self.client.block_flags()
     }
 

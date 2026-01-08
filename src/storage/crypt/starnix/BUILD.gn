@@ -25,7 +25,7 @@ rustc_library("lib") {
     "//third_party/rust_crates:sha2",
   ]
   test_deps = [
-    "//sdk/fidl/fuchsia.hardware.block:fuchsia.hardware.block_rust",
+    "//sdk/fidl/fuchsia.storage.block:fuchsia.storage.block_rust",
     "//src/lib/fidl/rust/fidl",
     "//src/lib/fuchsia",
     "//src/lib/fuchsia-async",

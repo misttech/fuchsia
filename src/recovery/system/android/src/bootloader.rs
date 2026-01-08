@@ -8,7 +8,7 @@
 use anyhow::{Context as _, Error, anyhow};
 use block_client::{BlockClient as _, RemoteBlockClient};
 use bstr::ByteSlice as _;
-use fidl_fuchsia_hardware_block_volume::VolumeMarker;
+use fidl_fuchsia_storage_block::BlockMarker;
 use zerocopy::{FromBytes, Immutable, IntoBytes, KnownLayout};
 
 // See bootable/recovery/bootloader_message for the canonical format.
@@ -95,7 +95,7 @@ pub struct BootloaderMessageStore {
 impl BootloaderMessageStore {
     pub async fn new() -> Result<Self, Error> {
         let device =
-            fuchsia_component::client::connect_to_protocol_at::<VolumeMarker>("/block/misc")
+            fuchsia_component::client::connect_to_protocol_at::<BlockMarker>("/block/misc")
                 .context("unable to open /misc device")?;
         let client =
             RemoteBlockClient::new(device).await.context("unable to connect to /misc device")?;

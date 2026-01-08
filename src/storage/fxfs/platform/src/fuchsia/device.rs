@@ -7,7 +7,7 @@ use crate::fuchsia::node::OpenedNode;
 use anyhow::Error;
 use block_client::{BlockFifoRequest, BlockFifoResponse};
 use fidl::endpoints::ServerEnd;
-use fidl_fuchsia_hardware_block_volume::{self as volume, VolumeMarker, VolumeRequest};
+use fidl_fuchsia_storage_block::{self as block, BlockMarker, BlockRequest};
 use fuchsia_sync::Mutex;
 use futures::stream::TryStreamExt;
 use futures::try_join;
@@ -18,7 +18,7 @@ use std::collections::BTreeMap;
 use std::hash::{Hash, Hasher};
 use vfs::file::File;
 use vfs::node::Node;
-use {fidl_fuchsia_hardware_block as block, fidl_fuchsia_io as fio, fuchsia_async as fasync};
+use {fidl_fuchsia_io as fio, fuchsia_async as fasync};
 
 // Multiple Block I/O request may be sent as a group.
 // Notes:
@@ -265,9 +265,9 @@ impl BlockServer {
         maybe_reply
     }
 
-    async fn handle_request(&self, request: VolumeRequest) -> Result<(), Error> {
+    async fn handle_request(&self, request: BlockRequest) -> Result<(), Error> {
         match request {
-            VolumeRequest::GetInfo { responder } => {
+            BlockRequest::GetInfo { responder } => {
                 let block_size = self.file.get_block_size();
                 let block_count =
                     (self.file.get_size().await.unwrap() + block_size - 1) / block_size;
@@ -275,10 +275,10 @@ impl BlockServer {
                     block_count,
                     block_size: block_size as u32,
                     max_transfer_size: 1024 * 1024,
-                    flags: block::Flag::empty(),
+                    flags: block::DeviceFlag::empty(),
                 }))?;
             }
-            VolumeRequest::OpenSession { session, control_handle: _ } => {
+            BlockRequest::OpenSession { session, control_handle: _ } => {
                 let stream = session.into_stream();
                 let () = stream
                     .try_for_each(|request| async {
@@ -308,29 +308,29 @@ impl BlockServer {
                     })
                     .await?;
             }
-            VolumeRequest::OpenSessionWithOffsetMap { session, mapping: _, control_handle: _ } => {
+            BlockRequest::OpenSessionWithOffsetMap { session, mapping: _, control_handle: _ } => {
                 session.close_with_epitaph(zx::Status::NOT_SUPPORTED)?;
             }
             // TODO(https://fxbug.dev/293970391)
-            VolumeRequest::GetTypeGuid { responder } => {
+            BlockRequest::GetTypeGuid { responder } => {
                 responder.send(zx::sys::ZX_ERR_NOT_SUPPORTED, None)?;
             }
             // TODO(https://fxbug.dev/293970391)
-            VolumeRequest::GetInstanceGuid { responder } => {
+            BlockRequest::GetInstanceGuid { responder } => {
                 responder.send(zx::sys::ZX_ERR_NOT_SUPPORTED, None)?;
             }
             // TODO(https://fxbug.dev/293970391)
-            VolumeRequest::GetName { responder } => {
+            BlockRequest::GetName { responder } => {
                 responder.send(zx::sys::ZX_ERR_NOT_SUPPORTED, None)?;
             }
             // TODO(https://fxbug.dev/293970391)
-            VolumeRequest::GetMetadata { responder } => {
+            BlockRequest::GetMetadata { responder } => {
                 responder.send(Err(zx::sys::ZX_ERR_NOT_SUPPORTED))?;
             }
-            VolumeRequest::QuerySlices { start_slices, responder } => {
+            BlockRequest::QuerySlices { start_slices, responder } => {
                 // Initialise slices with default value.
-                let default = volume::VsliceRange { allocated: false, count: 0 };
-                let mut slices = [default; volume::MAX_SLICE_REQUESTS as usize];
+                let default = block::VsliceRange { allocated: false, count: 0 };
+                let mut slices = [default; block::MAX_SLICE_REQUESTS as usize];
 
                 let mut status = zx::sys::ZX_OK;
                 let mut response_count = 0;
@@ -350,7 +350,7 @@ impl BlockServer {
                 responder.send(status, &slices, response_count)?;
             }
             // TODO(https://fxbug.dev/293970391): Ensure this returns the correct information.
-            VolumeRequest::GetVolumeInfo { responder } => {
+            BlockRequest::GetVolumeInfo { responder } => {
                 match self.file.get_attributes(fio::NodeAttributesQuery::STORAGE_SIZE).await {
                     Ok(attr) => {
                         debug_assert!(attr.immutable_attributes.storage_size.is_some());
@@ -360,14 +360,14 @@ impl BlockServer {
                             round_up(allocated_bytes, DEVICE_VOLUME_SLICE_SIZE).unwrap();
                         let unallocated_bytes =
                             round_down(unallocated_bytes, DEVICE_VOLUME_SLICE_SIZE);
-                        let manager = volume::VolumeManagerInfo {
+                        let manager = block::VolumeManagerInfo {
                             slice_size: DEVICE_VOLUME_SLICE_SIZE,
                             slice_count: allocated_slices + unallocated_bytes,
                             assigned_slice_count: allocated_slices,
                             maximum_slice_count: allocated_slices + unallocated_bytes,
                             max_virtual_slice: allocated_slices + unallocated_bytes,
                         };
-                        let volume_info = volume::VolumeInfo {
+                        let volume_info = block::VolumeInfo {
                             partition_slice_count: allocated_slices,
                             slice_limit: 0,
                         };
@@ -378,7 +378,7 @@ impl BlockServer {
                     }
                 }
             }
-            VolumeRequest::Extend { start_slice, slice_count, responder } => {
+            BlockRequest::Extend { start_slice, slice_count, responder } => {
                 // TODO(https://fxbug.dev/293970391): This is a hack! When extend is called, the
                 // extent is expected to be set as allocated. The easiest way to do this is to
                 // just write an extent of zeroed data. Another issue the size: the memory
@@ -394,11 +394,11 @@ impl BlockServer {
                 };
             }
             // TODO(https://fxbug.dev/293970391)
-            VolumeRequest::Shrink { start_slice: _, slice_count: _, responder } => {
+            BlockRequest::Shrink { start_slice: _, slice_count: _, responder } => {
                 responder.send(zx::sys::ZX_OK)?;
             }
             // TODO(https://fxbug.dev/293970391)
-            VolumeRequest::Destroy { responder } => {
+            BlockRequest::Destroy { responder } => {
                 responder.send(zx::sys::ZX_OK)?;
             }
         }
@@ -407,7 +407,7 @@ impl BlockServer {
 
     async fn handle_requests(
         &self,
-        server: fidl::endpoints::ServerEnd<VolumeMarker>,
+        server: fidl::endpoints::ServerEnd<BlockMarker>,
     ) -> Result<(), Error> {
         server
             .into_stream()
@@ -418,7 +418,7 @@ impl BlockServer {
     }
 
     pub async fn run(mut self) {
-        let server = ServerEnd::<VolumeMarker>::new(self.server_channel.take().unwrap());
+        let server = ServerEnd::<BlockMarker>::new(self.server_channel.take().unwrap());
 
         // Create a fifo pair
         let (server_fifo, client_fifo) =
@@ -475,9 +475,8 @@ mod tests {
         BlobCreatorMarker, BlobReaderMarker, FileBackedVolumeProviderMarker,
         FileBackedVolumeProviderProxy,
     };
-    use fidl_fuchsia_hardware_block::{BlockMarker, SessionMarker};
-    use fidl_fuchsia_hardware_block_volume::VolumeMarker;
     use fidl_fuchsia_io::{self as fio, DirectoryProxy};
+    use fidl_fuchsia_storage_block::{BlockMarker, SessionMarker};
     use fs_management::Blobfs;
     use fs_management::filesystem::{BlockConnector as _, Filesystem};
     use fuchsia_async as fasync;
@@ -500,9 +499,9 @@ mod tests {
     }
 
     impl fs_management::filesystem::BlockConnector for BlockConnector {
-        fn connect_channel_to_volume(
+        fn connect_channel_to_block(
             &self,
-            server_end: ServerEnd<VolumeMarker>,
+            server_end: ServerEnd<BlockMarker>,
         ) -> Result<(), anyhow::Error> {
             self.0
                 .open(
@@ -722,7 +721,7 @@ mod tests {
         join!(
             async {
                 let original_block_device =
-                    ClientEnd::<VolumeMarker>::new(client_channel).into_proxy();
+                    ClientEnd::<BlockMarker>::new(client_channel).into_proxy();
                 let info = original_block_device
                     .get_info()
                     .await
@@ -839,7 +838,7 @@ mod tests {
     #[fuchsia::test]
     async fn test_groups() {
         let fixture = TestFixture::new().await;
-        let (volume, server) = fidl::endpoints::create_proxy::<VolumeMarker>();
+        let (volume, server) = fidl::endpoints::create_proxy::<BlockMarker>();
         {
             let root = fixture.root();
             let file = open_file_checked(
@@ -856,7 +855,7 @@ mod tests {
             file.close().await.expect("FIDL error").expect("close error");
             BlockConnector::new(&fixture, &root, "block_device")
                 .await
-                .connect_channel_to_volume(server)
+                .connect_channel_to_block(server)
                 .unwrap();
         };
 

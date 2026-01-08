@@ -62,7 +62,7 @@ class FvmTest : public PaverTest {
     ASSERT_TRUE(device_);
   }
 
-  fidl::UnownedClientEnd<fuchsia_hardware_block::Block> block_interface() {
+  fidl::UnownedClientEnd<fuchsia_storage_block::Block> block_interface() {
     return device_->block_interface();
   }
 
@@ -166,22 +166,21 @@ TEST_F(FvmTest, AllocateEmptyPartitions) {
                          paver::BindOption::Reformat);
   ASSERT_OK(fvm);
 
-  auto [volume, volume_server] =
-      fidl::Endpoints<fuchsia_hardware_block_volume::VolumeManager>::Create();
+  auto [volume, volume_server] = fidl::Endpoints<fuchsia_storage_block::VolumeManager>::Create();
   ASSERT_OK(fidl::WireCall(fvm.value())->ConnectToDeviceFidl(volume_server.TakeChannel()).status());
   ASSERT_OK(paver::AllocateEmptyPartitions(devfs_root(), volume));
 
   zx_handle_t devfs_root_handle;
   fdio_fd_clone(devfs_root().get(), &devfs_root_handle);
 
-  zx::result blob_endpoints = fidl::CreateEndpoints<fuchsia_hardware_block::Block>();
+  zx::result blob_endpoints = fidl::CreateEndpoints<fuchsia_storage_block::Block>();
   ASSERT_OK(blob_endpoints);
   auto& [blob, blob_server] = blob_endpoints.value();
   ASSERT_OK(fdio_service_connect_at(devfs_root_handle, kRamdisk0BlobPath,
                                     blob_server.TakeChannel().release()));
   ASSERT_OK(fidl::WireCall(blob)->GetInfo().status());
 
-  zx::result data_endpoints = fidl::CreateEndpoints<fuchsia_hardware_block::Block>();
+  zx::result data_endpoints = fidl::CreateEndpoints<fuchsia_storage_block::Block>();
   ASSERT_OK(data_endpoints);
   auto& [data, data_server] = data_endpoints.value();
   ASSERT_OK(fdio_service_connect_at(devfs_root_handle, kRamdisk0DataPath,
@@ -196,8 +195,7 @@ TEST_F(FvmTest, WipeWithMultipleFvm) {
                          paver::BindOption::Reformat);
   ASSERT_OK(fvm1);
 
-  auto [volume1, volume_server1] =
-      fidl::Endpoints<fuchsia_hardware_block_volume::VolumeManager>::Create();
+  auto [volume1, volume_server1] = fidl::Endpoints<fuchsia_storage_block::VolumeManager>::Create();
   ASSERT_OK(
       fidl::WireCall(fvm1.value())->ConnectToDeviceFidl(volume_server1.TakeChannel()).status());
   ASSERT_OK(paver::AllocateEmptyPartitions(devfs_root(), volume1));
@@ -205,14 +203,14 @@ TEST_F(FvmTest, WipeWithMultipleFvm) {
   zx_handle_t devfs_root_handle;
   fdio_fd_clone(devfs_root().get(), &devfs_root_handle);
   {
-    zx::result blob_endpoints = fidl::CreateEndpoints<fuchsia_hardware_block::Block>();
+    zx::result blob_endpoints = fidl::CreateEndpoints<fuchsia_storage_block::Block>();
     ASSERT_OK(blob_endpoints);
     auto& [blob, blob_server] = blob_endpoints.value();
     ASSERT_OK(fdio_service_connect_at(devfs_root_handle, kRamdisk0BlobPath,
                                       blob_server.TakeChannel().release()));
     ASSERT_OK(fidl::WireCall(blob)->GetInfo().status());
 
-    zx::result data_endpoints = fidl::CreateEndpoints<fuchsia_hardware_block::Block>();
+    zx::result data_endpoints = fidl::CreateEndpoints<fuchsia_storage_block::Block>();
     ASSERT_OK(data_endpoints);
     auto& [data, data_server] = data_endpoints.value();
     ASSERT_OK(fdio_service_connect_at(devfs_root_handle, kRamdisk0DataPath,
@@ -229,21 +227,20 @@ TEST_F(FvmTest, WipeWithMultipleFvm) {
                          paver::BindOption::Reformat);
   ASSERT_OK(fvm2);
 
-  auto [volume2, volume_server2] =
-      fidl::Endpoints<fuchsia_hardware_block_volume::VolumeManager>::Create();
+  auto [volume2, volume_server2] = fidl::Endpoints<fuchsia_storage_block::VolumeManager>::Create();
   ASSERT_OK(
       fidl::WireCall(fvm2.value())->ConnectToDeviceFidl(volume_server2.TakeChannel()).status());
   ASSERT_OK(paver::AllocateEmptyPartitions(devfs_root(), volume2));
 
   {
-    zx::result blob_endpoints = fidl::CreateEndpoints<fuchsia_hardware_block::Block>();
+    zx::result blob_endpoints = fidl::CreateEndpoints<fuchsia_storage_block::Block>();
     ASSERT_OK(blob_endpoints);
     auto& [blob, blob_server] = blob_endpoints.value();
     ASSERT_OK(fdio_service_connect_at(devfs_root_handle, kRamdisk1BlobPath,
                                       blob_server.TakeChannel().release()));
     ASSERT_OK(fidl::WireCall(blob)->GetInfo().status());
 
-    zx::result data_endpoints = fidl::CreateEndpoints<fuchsia_hardware_block::Block>();
+    zx::result data_endpoints = fidl::CreateEndpoints<fuchsia_storage_block::Block>();
     ASSERT_OK(data_endpoints);
     auto& [data, data_server] = data_endpoints.value();
     ASSERT_OK(fdio_service_connect_at(devfs_root_handle, kRamdisk1DataPath,
@@ -256,7 +253,7 @@ TEST_F(FvmTest, WipeWithMultipleFvm) {
 
   // Check we can still open the first ramdisk's blobfs:
   {
-    zx::result blob_endpoints = fidl::CreateEndpoints<fuchsia_hardware_block::Block>();
+    zx::result blob_endpoints = fidl::CreateEndpoints<fuchsia_storage_block::Block>();
     ASSERT_OK(blob_endpoints);
     auto& [blob, blob_server] = blob_endpoints.value();
     ASSERT_OK(fdio_service_connect_at(devfs_root_handle, kRamdisk0BlobPath,
@@ -266,7 +263,7 @@ TEST_F(FvmTest, WipeWithMultipleFvm) {
 
   // But not the second's.
   {
-    zx::result blob_endpoints = fidl::CreateEndpoints<fuchsia_hardware_block::Block>();
+    zx::result blob_endpoints = fidl::CreateEndpoints<fuchsia_storage_block::Block>();
     ASSERT_OK(blob_endpoints);
     auto& [blob, blob_server] = blob_endpoints.value();
     ASSERT_OK(fdio_service_connect_at(devfs_root_handle, kRamdisk1BlobPath,
@@ -282,22 +279,21 @@ TEST_F(FvmTest, Unbind) {
                          paver::BindOption::Reformat);
   ASSERT_OK(fvm);
 
-  auto [volume, volume_server] =
-      fidl::Endpoints<fuchsia_hardware_block_volume::VolumeManager>::Create();
+  auto [volume, volume_server] = fidl::Endpoints<fuchsia_storage_block::VolumeManager>::Create();
   ASSERT_OK(fidl::WireCall(fvm.value())->ConnectToDeviceFidl(volume_server.TakeChannel()).status());
   ASSERT_OK(paver::AllocateEmptyPartitions(devfs_root(), volume));
 
   zx_handle_t devfs_root_handle;
   fdio_fd_clone(devfs_root().get(), &devfs_root_handle);
 
-  zx::result blob_endpoints = fidl::CreateEndpoints<fuchsia_hardware_block::Block>();
+  zx::result blob_endpoints = fidl::CreateEndpoints<fuchsia_storage_block::Block>();
   ASSERT_OK(blob_endpoints);
   auto& [blob, blob_server] = blob_endpoints.value();
   ASSERT_OK(fdio_service_connect_at(devfs_root_handle, kRamdisk0BlobPath,
                                     blob_server.TakeChannel().release()));
   ASSERT_OK(fidl::WireCall(blob)->GetInfo().status());
 
-  zx::result data_endpoints = fidl::CreateEndpoints<fuchsia_hardware_block::Block>();
+  zx::result data_endpoints = fidl::CreateEndpoints<fuchsia_storage_block::Block>();
   ASSERT_OK(data_endpoints);
   auto& [data, data_server] = data_endpoints.value();
   ASSERT_OK(fdio_service_connect_at(devfs_root_handle, kRamdisk0DataPath,
@@ -314,8 +310,7 @@ TEST_F(FvmTest, UnbindInvalidPath) {
                          paver::BindOption::Reformat);
   ASSERT_OK(fvm);
 
-  auto [volume, volume_server] =
-      fidl::Endpoints<fuchsia_hardware_block_volume::VolumeManager>::Create();
+  auto [volume, volume_server] = fidl::Endpoints<fuchsia_storage_block::VolumeManager>::Create();
   ASSERT_OK(fidl::WireCall(fvm.value())->ConnectToDeviceFidl(volume_server.TakeChannel()).status());
 
   ASSERT_OK(paver::AllocateEmptyPartitions(devfs_root(), volume));
@@ -323,14 +318,14 @@ TEST_F(FvmTest, UnbindInvalidPath) {
   zx_handle_t devfs_root_handle;
   fdio_fd_clone(devfs_root().get(), &devfs_root_handle);
 
-  zx::result blob_endpoints = fidl::CreateEndpoints<fuchsia_hardware_block::Block>();
+  zx::result blob_endpoints = fidl::CreateEndpoints<fuchsia_storage_block::Block>();
   ASSERT_OK(blob_endpoints);
   auto& [blob, blob_server] = blob_endpoints.value();
   ASSERT_OK(fdio_service_connect_at(devfs_root_handle, kRamdisk0BlobPath,
                                     blob_server.TakeChannel().release()));
   ASSERT_OK(fidl::WireCall(blob)->GetInfo().status());
 
-  zx::result data_endpoints = fidl::CreateEndpoints<fuchsia_hardware_block::Block>();
+  zx::result data_endpoints = fidl::CreateEndpoints<fuchsia_storage_block::Block>();
   ASSERT_OK(data_endpoints);
   auto& [data, data_server] = data_endpoints.value();
   ASSERT_OK(fdio_service_connect_at(devfs_root_handle, kRamdisk0DataPath,

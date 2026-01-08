@@ -6,8 +6,8 @@
 #define SRC_FIRMWARE_PAVER_BLOCK_DEVICES_H_
 
 #include <fidl/fuchsia.device/cpp/wire.h>
-#include <fidl/fuchsia.hardware.block.volume/cpp/wire.h>
 #include <fidl/fuchsia.io/cpp/wire.h>
+#include <fidl/fuchsia.storage.block/cpp/wire.h>
 #include <fidl/fuchsia.storage.partitions/cpp/markers.h>
 #include <lib/fit/function.h>
 #include <lib/zx/channel.h>
@@ -17,10 +17,10 @@
 
 namespace paver {
 
-// Interface to establish new connections to fuchsia.hardware.block.volume.Volume.
+// Interface to establish new connections to fuchsia.storage.block.Block.
 class VolumeConnector {
  public:
-  virtual zx::result<fidl::ClientEnd<fuchsia_hardware_block_volume::Volume>> Connect() const = 0;
+  virtual zx::result<fidl::ClientEnd<fuchsia_storage_block::Block>> Connect() const = 0;
   // This method will assert if called on a non-PartitionServiceBasedVolumeConnector.
   virtual zx::result<fidl::ClientEnd<fuchsia_storage_partitions::Partition>> PartitionManagement()
       const = 0;
@@ -37,7 +37,7 @@ class DevfsVolumeConnector : public VolumeConnector {
  public:
   explicit DevfsVolumeConnector(fidl::ClientEnd<fuchsia_device::Controller>);
 
-  zx::result<fidl::ClientEnd<fuchsia_hardware_block_volume::Volume>> Connect() const override;
+  zx::result<fidl::ClientEnd<fuchsia_storage_block::Block>> Connect() const override;
   zx::result<fidl::ClientEnd<fuchsia_storage_partitions::Partition>> PartitionManagement()
       const override;
   fidl::UnownedClientEnd<fuchsia_device::Controller> Controller() const override;
@@ -48,12 +48,12 @@ class DevfsVolumeConnector : public VolumeConnector {
 };
 
 // A VolumeConnector backed by a directory which contains a node to vend connections to
-// fuchsia.hardware.block.volume.Volume.
+// fuchsia.storage.block.Block.
 class DirBasedVolumeConnector : public VolumeConnector {
  public:
   DirBasedVolumeConnector(fbl::unique_fd dir, std::string volume_connector_path);
 
-  zx::result<fidl::ClientEnd<fuchsia_hardware_block_volume::Volume>> Connect() const override;
+  zx::result<fidl::ClientEnd<fuchsia_storage_block::Block>> Connect() const override;
   zx::result<fidl::ClientEnd<fuchsia_storage_partitions::Partition>> PartitionManagement()
       const override;
   fidl::UnownedClientEnd<fuchsia_device::Controller> Controller() const override;

@@ -27,7 +27,7 @@ inline constexpr std::string_view kPathDevBlock = "/dev/class/block";
 
 // Format the provided device with a requested disk format.
 zx_status_t Mkfs(const char* device_path, FsComponent& component, const MkfsOptions& options);
-zx_status_t Mkfs(fidl::ClientEnd<fuchsia_hardware_block::Block>, FsComponent& component,
+zx_status_t Mkfs(fidl::ClientEnd<fuchsia_storage_block::Block>, FsComponent& component,
                  const MkfsOptions& options);
 
 // Check and repair a device with a requested disk format.

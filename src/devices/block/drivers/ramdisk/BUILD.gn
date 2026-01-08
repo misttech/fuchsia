@@ -30,6 +30,7 @@ fuchsia_cc_driver("ramdisk-driver") {
     "//sdk/fidl/fuchsia.hardware.block.driver:fuchsia.hardware.block.driver_banjo_cpp",
     "//sdk/fidl/fuchsia.hardware.block.volume:fuchsia.hardware.block.volume_cpp",
     "//sdk/fidl/fuchsia.hardware.ramdisk:fuchsia.hardware.ramdisk_cpp",
+    "//sdk/fidl/fuchsia.storage.block:fuchsia.storage.block_cpp",
     "//sdk/lib/zbi-format",
     "//src/devices/block/lib/common:common-dfv1",
     "//src/devices/lib/dev-operation",
@@ -74,8 +75,10 @@ fuchsia_cc_driver("ramdisk-driver-v2") {
   ]
   deps = [
     ":ramdisk_v2_bind",
+    "//sdk/fidl/fuchsia.hardware.block.volume:fuchsia.hardware.block.volume_cpp",
     "//sdk/fidl/fuchsia.hardware.ramdisk:fuchsia.hardware.ramdisk_cpp",
     "//sdk/fidl/fuchsia.io:fuchsia.io_cpp",
+    "//sdk/fidl/fuchsia.storage.block:fuchsia.storage.block_cpp",
     "//sdk/lib/driver/component/cpp",
     "//sdk/lib/zbi-format",
     "//src/devices/lib/driver:driver_runtime",

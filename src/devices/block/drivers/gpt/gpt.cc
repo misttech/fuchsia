@@ -5,6 +5,7 @@
 #include "gpt.h"
 
 #include <assert.h>
+#include <fidl/fuchsia.storage.block/cpp/wire.h>
 #include <inttypes.h>
 #include <lib/cksum.h>
 #include <lib/ddk/binding_driver.h>
@@ -209,13 +210,13 @@ class BlockClient : public block_client::BlockDevice {
   }
 
   zx_status_t VolumeGetInfo(
-      fuchsia_hardware_block_volume::wire::VolumeManagerInfo* out_manager_info,
-      fuchsia_hardware_block_volume::wire::VolumeInfo* out_volume_info) const override {
+      fuchsia_storage_block::wire::VolumeManagerInfo* out_manager_info,
+      fuchsia_storage_block::wire::VolumeInfo* out_volume_info) const override {
     return ZX_ERR_NOT_SUPPORTED;
   }
 
   zx_status_t VolumeQuerySlices(const uint64_t* slices, size_t slices_count,
-                                fuchsia_hardware_block_volume::wire::VsliceRange* out_ranges,
+                                fuchsia_storage_block::wire::VsliceRange* out_ranges,
                                 size_t* out_ranges_count) const override {
     return ZX_ERR_NOT_SUPPORTED;
   }
@@ -267,14 +268,14 @@ class BlockClient : public block_client::BlockDevice {
     return ZX_OK;
   }
 
-  zx_status_t BlockGetInfo(fuchsia_hardware_block::wire::BlockInfo* out_info) const override {
+  zx_status_t BlockGetInfo(fuchsia_storage_block::wire::BlockInfo* out_info) const override {
     block_info_t info;
     uint64_t block_op_size;
     protocol_.ops->query(protocol_.ctx, &info, &block_op_size);
     out_info->block_size = info.block_size;
     out_info->block_count = info.block_count;
     out_info->max_transfer_size = info.max_transfer_size;
-    auto flags = fuchsia_hardware_block::Flag::TryFrom(info.flags);
+    auto flags = fuchsia_storage_block::DeviceFlag::TryFrom(info.flags);
     if (!flags.has_value()) {
       zxlogf(ERROR, "Bad flags from underlying block device: %u", info.flags);
       return ZX_ERR_IO;
@@ -287,7 +288,7 @@ class BlockClient : public block_client::BlockDevice {
     std::lock_guard guard(lock_);
     vmoid_t vmoid = next_vmoid_;
     next_vmoid_ += 1;
-    if (next_vmoid_ == VMOID_INVALID) {
+    if (next_vmoid_ == fuchsia_storage_block::wire::kVmoidInvalid) {
       // Skip VMOID_INVALID, which occurs on wrap.
       ++next_vmoid_;
     }
@@ -457,7 +458,7 @@ zx_status_t PartitionManager::Bind(void* ctx, zx_device_t* parent) {
   return ZX_OK;
 }
 
-void PartitionManager::GetInfoLocked(fuchsia_hardware_block_volume::wire::VolumeManagerInfo* info) {
+void PartitionManager::GetInfoLocked(fuchsia_storage_block::wire::VolumeManagerInfo* info) {
   info->slice_count = gpt_->TotalBlockCount();
   info->slice_size = gpt_->BlockSize();
   info->assigned_slice_count = 0;
@@ -466,8 +467,8 @@ void PartitionManager::GetInfoLocked(fuchsia_hardware_block_volume::wire::Volume
 }
 
 zx::result<uint32_t> PartitionManager::AllocatePartitionLocked(
-    uint64_t slice_count, const fuchsia_hardware_block_partition::wire::Guid& type,
-    const fuchsia_hardware_block_partition::wire::Guid& instance, fidl::StringView name) {
+    uint64_t slice_count, const fuchsia_storage_block::wire::Guid& type,
+    const fuchsia_storage_block::wire::Guid& instance, fidl::StringView name) {
   uint64_t offset;
   zx_status_t status = gpt_->FindFreeRange(slice_count, &offset);
   if (status != ZX_OK) {
@@ -518,7 +519,7 @@ void PartitionManager::AllocatePartition(AllocatePartitionRequestView request,
 
 void PartitionManager::GetInfo(GetInfoCompleter::Sync& completer) {
   fidl::Arena allocator;
-  fidl::ObjectView<fuchsia_hardware_block_volume::wire::VolumeManagerInfo> info(allocator);
+  fidl::ObjectView<fuchsia_storage_block::wire::VolumeManagerInfo> info(allocator);
   {
     std::lock_guard guard(lock_);
     GetInfoLocked(info.get());

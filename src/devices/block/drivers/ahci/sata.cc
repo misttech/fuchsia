@@ -170,7 +170,7 @@ zx_status_t SataDevice::Init() {
   // READ_FPDMA_QUEUED and WRITE_FPDMA_QUEUED commands support FUA, whereas for non-NCQ, FUA read
   // commands do not exist (FUA writes do).
   if (use_command_queue_) {
-    info_.flags |= FLAG_FUA_SUPPORT;
+    info_.flags |= DEVICE_FLAG_FUA_SUPPORT;
   }
 
   uint32_t max_sg_size = SATA_MAX_BLOCK_COUNT * block_size;  // SATA cmd limit

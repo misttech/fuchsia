@@ -4,7 +4,7 @@
 
 #include "src/storage/lib/fs_management/cpp/format.h"
 
-#include <fidl/fuchsia.hardware.block/cpp/wire.h>
+#include <fidl/fuchsia.storage.block/cpp/wire.h>
 #include <lib/fdio/cpp/caller.h>
 #include <unistd.h>
 
@@ -20,7 +20,7 @@
 namespace fs_management {
 namespace {
 
-namespace fblock = fuchsia_hardware_block;
+namespace fblock = fuchsia_storage_block;
 
 class Registry {
  public:
@@ -71,7 +71,7 @@ DiskFormat DetectDiskFormatImpl(fidl::UnownedClientEnd<fblock::Block> device,
     return kDiskFormatUnknown;
   }
 
-  const fuchsia_hardware_block::wire::BlockInfo& info = response.value()->info;
+  const fuchsia_storage_block::wire::BlockInfo& info = response.value()->info;
   if (info.block_size == 0) {
     fprintf(stderr, "DetectDiskFormat: Expected a block size of > 0\n");
     return kDiskFormatUnknown;

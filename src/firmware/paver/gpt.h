@@ -129,7 +129,7 @@ class GptDevicePartitioner {
   // FIDL clients for a block device that could contain a GPT.
   struct GptClients {
     std::string topological_path;
-    fidl::ClientEnd<fuchsia_hardware_block::Block> block;
+    fidl::ClientEnd<fuchsia_storage_block::Block> block;
     fidl::ClientEnd<fuchsia_device::Controller> controller;
   };
 

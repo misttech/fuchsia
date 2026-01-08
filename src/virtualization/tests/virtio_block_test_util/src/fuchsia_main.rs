@@ -4,7 +4,7 @@
 
 use block_client::{BlockClient as _, BufferSlice, MutableBufferSlice, RemoteBlockClient};
 use clap::{Parser, Subcommand};
-use fidl_fuchsia_hardware_block::BlockMarker;
+use fidl_fuchsia_storage_block::BlockMarker;
 use fuchsia_component::client;
 use fuchsia_fs::{PERM_READABLE, directory};
 

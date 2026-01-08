@@ -5,9 +5,8 @@
 #include <dirent.h>
 #include <errno.h>
 #include <fcntl.h>
-#include <fidl/fuchsia.hardware.block.partition/cpp/wire.h>
-#include <fidl/fuchsia.hardware.block/cpp/wire.h>
 #include <fidl/fuchsia.hardware.ramdisk/cpp/wire.h>
+#include <fidl/fuchsia.storage.block/cpp/wire.h>
 #include <fuchsia/hardware/block/driver/c/banjo.h>
 #include <lib/component/incoming/cpp/protocol.h>
 #include <lib/device-watcher/cpp/device-watcher.h>
@@ -57,12 +56,12 @@
 namespace ramdisk {
 namespace {
 
-zx_status_t BRead(fidl::UnownedClientEnd<fuchsia_hardware_block::Block> device, void* buffer,
+zx_status_t BRead(fidl::UnownedClientEnd<fuchsia_storage_block::Block> device, void* buffer,
                   size_t buffer_size, size_t offset) {
   return block_client::SingleReadBytes(device, buffer, buffer_size, offset);
 }
 
-zx_status_t BWrite(fidl::UnownedClientEnd<fuchsia_hardware_block::Block> device, void* buffer,
+zx_status_t BWrite(fidl::UnownedClientEnd<fuchsia_storage_block::Block> device, void* buffer,
                    size_t buffer_size, size_t offset) {
   return block_client::SingleWriteBytes(device, buffer, buffer_size, offset);
 }
@@ -70,8 +69,7 @@ zx_status_t BWrite(fidl::UnownedClientEnd<fuchsia_hardware_block::Block> device,
 constexpr uint8_t kGuid[ZBI_PARTITION_GUID_LEN] = {0x0, 0x1, 0x2, 0x3, 0x4, 0x5, 0x6, 0x7,
                                                    0x8, 0x9, 0xA, 0xB, 0xC, 0xD, 0xE, 0xF};
 
-static_assert(sizeof(fuchsia_hardware_block_partition::wire::Guid) == sizeof kGuid,
-              "Mismatched GUID size");
+static_assert(sizeof(fuchsia_storage_block::wire::Guid) == sizeof kGuid, "Mismatched GUID size");
 // Make sure isolated_devmgr is ready to go before all tests.
 class Environment : public testing::Environment {
  public:
@@ -138,7 +136,7 @@ class RamdiskTest {
   zx::result<> Wake() { return ramdisk_.Wake(); }
   std::string path() const { return ramdisk_.path(); }
 
-  fidl::ClientEnd<fuchsia_hardware_block::Block> block_interface() const {
+  fidl::ClientEnd<fuchsia_storage_block::Block> block_interface() const {
     zx::result result = ramdisk_.ConnectBlock();
     EXPECT_EQ(result.status_value(), ZX_OK);
     return std::move(result).value();
@@ -178,8 +176,8 @@ TEST_P(RamdiskTests, RamdiskTestSimple) {
 }
 
 zx::result<std::unique_ptr<block_client::Client>> CreateSession(
-    fidl::UnownedClientEnd<fuchsia_hardware_block::Block> block) {
-  auto [session, server] = fidl::Endpoints<fuchsia_hardware_block::Session>::Create();
+    fidl::UnownedClientEnd<fuchsia_storage_block::Block> block) {
+  auto [session, server] = fidl::Endpoints<fuchsia_storage_block::Session>::Create();
 
   const fidl::Status result = fidl::WireCall(block)->OpenSession(std::move(server));
   if (!result.ok()) {
@@ -204,10 +202,9 @@ TEST_P(RamdiskTests, RamdiskTestGuid) {
   ASSERT_NO_FATAL_FAILURE(RamdiskTest::CreateWithGuid(GetParam(), zx_system_get_page_size() / 2,
                                                       512, kGuid, sizeof(kGuid), &ramdisk));
 
-  const fidl::WireResult result =
-      fidl::WireCall(fidl::ClientEnd<fuchsia_hardware_block_partition::Partition>(
-                         ramdisk->block_interface().TakeChannel()))
-          ->GetTypeGuid();
+  const fidl::WireResult result = fidl::WireCall(fidl::ClientEnd<fuchsia_storage_block::Block>(
+                                                     ramdisk->block_interface().TakeChannel()))
+                                      ->GetTypeGuid();
   ASSERT_TRUE(result.ok()) << result.FormatDescription();
   const fidl::WireResponse response = result.value();
   ASSERT_EQ(response.status, ZX_OK);
@@ -252,21 +249,21 @@ TEST_P(RamdiskTests, RamdiskTestVmoWithParams) {
   ASSERT_EQ(ramdisk.status_value(), ZX_OK);
   zx::result result = ramdisk->ConnectBlock();
   ASSERT_EQ(result.status_value(), ZX_OK);
-  fidl::ClientEnd<fuchsia_hardware_block::Block> block_interface = std::move(result).value();
+  fidl::ClientEnd<fuchsia_storage_block::Block> block_interface = std::move(result).value();
 
   {
     const fidl::WireResult result = fidl::WireCall(block_interface)->GetInfo();
     ASSERT_TRUE(result.ok()) << result.FormatDescription();
     const fit::result response = result.value();
     ASSERT_TRUE(response.is_ok()) << zx_status_get_string(response.error_value());
-    const fuchsia_hardware_block::wire::BlockInfo& info = response.value()->info;
+    const fuchsia_storage_block::wire::BlockInfo& info = response.value()->info;
     ASSERT_EQ(info.block_count, kBlockCount);
     ASSERT_EQ(info.block_size, kBlockSize);
   }
 
   {
     const fidl::WireResult result =
-        fidl::WireCall(fidl::UnownedClientEnd<fuchsia_hardware_block_partition::Partition>(
+        fidl::WireCall(fidl::UnownedClientEnd<fuchsia_storage_block::Block>(
                            block_interface.channel().borrow()))
             ->GetTypeGuid();
     ASSERT_TRUE(result.ok()) << result.FormatDescription();
@@ -295,8 +292,7 @@ TEST_P(RamdiskTests, RamdiskTestFilesystem) {
   if (GetParam())
     GTEST_SKIP() << "The DFv2 driver doesn't appear in /dev/class";
 
-  fuchsia_hardware_block_partition::wire::Guid guid = {1, 2,  3,  4,  5,  6,  7,  8,
-                                                       9, 10, 11, 12, 13, 14, 15, 16};
+  fuchsia_storage_block::wire::Guid guid = {1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16};
   // Make a ramdisk
   std::unique_ptr<RamdiskTest> ramdisk;
   ASSERT_NO_FATAL_FAILURE(RamdiskTest::CreateWithGuid(GetParam(), zx_system_get_page_size() / 2,
@@ -307,8 +303,7 @@ TEST_P(RamdiskTests, RamdiskTestFilesystem) {
   fidl::ClientEnd block_interface = ramdisk->block_interface();
 
   const fidl::WireResult result =
-      fidl::WireCall(fidl::ClientEnd<fuchsia_hardware_block_partition::Partition>(
-                         block_interface.TakeChannel()))
+      fidl::WireCall(fidl::ClientEnd<fuchsia_storage_block::Block>(block_interface.TakeChannel()))
           ->GetTypeGuid();
   ASSERT_TRUE(result.ok()) << result.FormatDescription();
   const fidl::WireResponse response = result.value();
@@ -346,8 +341,7 @@ TEST_P(RamdiskTests, RamdiskTestFilesystem) {
       return ZX_OK;
     }
     fdio_cpp::UnownedFdioCaller caller(dirfd);
-    zx::result channel =
-        component::ConnectAt<fuchsia_hardware_block_partition::Partition>(caller.directory(), fn);
+    zx::result channel = component::ConnectAt<fuchsia_storage_block::Block>(caller.directory(), fn);
     if (channel.is_error()) {
       return channel.status_value();
     }
@@ -440,7 +434,7 @@ TEST_P(RamdiskTests, RamdiskTestReleaseDuringAccess) {
   // the first few blocks.
   auto bg_thread = [](void* arg) {
     auto& block_interface =
-        *reinterpret_cast<fidl::UnownedClientEnd<fuchsia_hardware_block::Block>*>(arg);
+        *reinterpret_cast<fidl::UnownedClientEnd<fuchsia_storage_block::Block>*>(arg);
     while (true) {
       uint8_t in[8192];
       memset(in, 'a', sizeof(in));
@@ -508,7 +502,7 @@ TEST_P(RamdiskTests, RamdiskTestFifoNoOp) {
   fidl::ClientEnd block_interface = ramdisk->block_interface();
 
   auto open_and_close_fifo = [&block_interface]() {
-    auto [session, server] = fidl::Endpoints<fuchsia_hardware_block::Session>::Create();
+    auto [session, server] = fidl::Endpoints<fuchsia_storage_block::Session>::Create();
 
     {
       const fidl::Status result = fidl::WireCall(block_interface)->OpenSession(std::move(server));
@@ -605,7 +599,7 @@ TEST_P(RamdiskTests, RamdiskTestFifoNoGroup) {
 
   fidl::ClientEnd block_interface = ramdisk->block_interface();
 
-  auto [session, server] = fidl::Endpoints<fuchsia_hardware_block::Session>::Create();
+  auto [session, server] = fidl::Endpoints<fuchsia_storage_block::Session>::Create();
 
   const fidl::Status result = fidl::WireCall(block_interface)->OpenSession(std::move(server));
   ASSERT_TRUE(result.ok()) << result.FormatDescription();
@@ -696,7 +690,7 @@ TEST_P(RamdiskTests, RamdiskTestFifoNoGroup) {
 using TestVmoObject = struct {
   uint64_t vmo_size;
   zx::vmo vmo;
-  fuchsia_hardware_block::wire::VmoId vmoid;
+  fuchsia_storage_block::wire::VmoId vmoid;
   std::unique_ptr<uint8_t[]> buf;
 };
 
@@ -885,7 +879,7 @@ TEST_P(RamdiskTests, RamdiskTestFifoLargeOpsCountShutdown) {
   // Create a connection to the ramdisk
   fidl::ClientEnd block_interface = ramdisk->block_interface();
 
-  auto [session, server] = fidl::Endpoints<fuchsia_hardware_block::Session>::Create();
+  auto [session, server] = fidl::Endpoints<fuchsia_storage_block::Session>::Create();
 
   const fidl::Status result = fidl::WireCall(block_interface)->OpenSession(std::move(server));
   ASSERT_TRUE(result.ok()) << result.FormatDescription();
@@ -1387,7 +1381,7 @@ class RamdiskTestWithClient : public testing::TestWithParam<bool> {
   std::unique_ptr<uint8_t[]> buf_;
   zx::vmo vmo_;
   fzl::VmoMapper mapping_;
-  fuchsia_hardware_block::wire::VmoId vmoid_;
+  fuchsia_storage_block::wire::VmoId vmoid_;
   const uint64_t vmo_size_;
 };
 

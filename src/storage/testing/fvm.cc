@@ -6,6 +6,7 @@
 
 #include <fcntl.h>
 #include <fidl/fuchsia.device/cpp/wire.h>
+#include <fidl/fuchsia.storage.block/cpp/wire.h>
 #include <lib/component/incoming/cpp/protocol.h>
 #include <lib/device-watcher/cpp/device-watcher.h>
 #include <lib/fdio/cpp/caller.h>
@@ -25,7 +26,7 @@ namespace {
 // If `slice_size` is set, formats the device.
 zx::result<FvmInstance> CreateFvmInstance(const std::string& device_path,
                                           std::optional<size_t> slice_size) {
-  zx::result device = component::Connect<fuchsia_hardware_block::Block>(device_path);
+  zx::result device = component::Connect<fuchsia_storage_block::Block>(device_path);
   if (device.is_error()) {
     return device.take_error();
   }
@@ -80,7 +81,7 @@ zx::result<FvmPartition> OpenFvmPartition(const std::string& device_path,
   if (binding.is_error())
     return binding.take_error();
 
-  path += "/svc/fuchsia.hardware.block.volume.Volume";
+  path += "/svc/fuchsia.storage.block.Block";
 
   return zx::ok(FvmPartition(*std::move(fvm), *std::move(binding), partition_name, path));
 }
@@ -122,7 +123,7 @@ zx::result<FvmPartition> CreateFvmPartition(const std::string& device_path, size
   if (binding.is_error())
     return binding.take_error();
 
-  path += "/svc/fuchsia.hardware.block.volume.Volume";
+  path += "/svc/fuchsia.storage.block.Block";
 
   return zx::ok(FvmPartition(*std::move(fvm), *std::move(binding), options.name, path));
 }
@@ -144,8 +145,8 @@ zx::result<> FvmPartition::SetLimit(uint64_t limit) {
   return zx::ok();
 }
 
-zx::result<fidl::ClientEnd<fuchsia_hardware_block_volume::Volume>> FvmPartition::Connect() const {
-  auto [client, server] = fidl::Endpoints<fuchsia_hardware_block_volume::Volume>::Create();
+zx::result<fidl::ClientEnd<fuchsia_storage_block::Block>> FvmPartition::Connect() const {
+  auto [client, server] = fidl::Endpoints<fuchsia_storage_block::Block>::Create();
   if (zx_status_t status =
           fdio_service_connect(path_.c_str(), std::move(server).TakeHandle().release());
       status != ZX_OK) {

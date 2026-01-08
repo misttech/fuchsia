@@ -19,7 +19,7 @@
 #include "src/storage/blobfs/iterator/allocated_extent_iterator.h"
 
 #ifdef __Fuchsia__
-#include <fidl/fuchsia.hardware.block.volume/cpp/wire.h>
+#include <fidl/fuchsia.storage.block/cpp/wire.h>
 
 #include "src/storage/blobfs/blobfs.h"
 #else
@@ -204,8 +204,8 @@ zx_status_t CheckFvmConsistency(const Superblock* info, BlockDevice* device, boo
     return ZX_OK;
   }
 
-  fuchsia_hardware_block_volume::wire::VolumeManagerInfo manager_info;
-  fuchsia_hardware_block_volume::wire::VolumeInfo volume_info;
+  fuchsia_storage_block::wire::VolumeManagerInfo manager_info;
+  fuchsia_storage_block::wire::VolumeInfo volume_info;
   zx_status_t status = device->VolumeGetInfo(&manager_info, &volume_info);
   if (status != ZX_OK) {
     FX_PLOGS(ERROR, status) << "Unable to query FVM";
@@ -230,8 +230,7 @@ zx_status_t CheckFvmConsistency(const Superblock* info, BlockDevice* device, boo
   start_slices[2] = kFVMJournalStart / kBlocksPerSlice;
   start_slices[3] = kFVMDataStart / kBlocksPerSlice;
 
-  fuchsia_hardware_block_volume::wire::VsliceRange
-      ranges[fuchsia_hardware_block_volume::wire::kMaxSliceRequests];
+  fuchsia_storage_block::wire::VsliceRange ranges[fuchsia_storage_block::wire::kMaxSliceRequests];
   size_t actual_ranges_count;
   status = device->VolumeQuerySlices(start_slices, std::size(start_slices), ranges,
                                      &actual_ranges_count);

@@ -13,10 +13,9 @@ use std::sync::Arc;
 use vfs::directory::helper::DirectlyMutable as _;
 use vfs::execution_scope::ExecutionScope;
 use {
-    fidl_fuchsia_fs as ffs, fidl_fuchsia_fs_startup as fstartup,
-    fidl_fuchsia_hardware_block as fblock, fidl_fuchsia_io as fio,
-    fidl_fuchsia_process_lifecycle as flifecycle, fidl_fuchsia_storage_partitions as fpartitions,
-    fuchsia_async as fasync,
+    fidl_fuchsia_fs as ffs, fidl_fuchsia_fs_startup as fstartup, fidl_fuchsia_io as fio,
+    fidl_fuchsia_process_lifecycle as flifecycle, fidl_fuchsia_storage_block as fblock,
+    fidl_fuchsia_storage_partitions as fpartitions, fuchsia_async as fasync,
 };
 
 pub struct StorageHostService {
@@ -351,7 +350,7 @@ impl StorageHostService {
             State::Stopped => return Err(zx::Status::BAD_STATE),
             State::NeedsFormatting(config, block) => {
                 log::info!("reset_partition_table: Reformatting GPT.");
-                let client = Arc::new(RemoteBlockClient::new(&*block).await?);
+                let client = Arc::new(RemoteBlockClient::new(block.clone()).await?);
 
                 log::info!("reset_partition_table: Reformatting GPT...");
                 gpt::Gpt::format(client, partitions).await.map_err(|err| {
@@ -441,9 +440,8 @@ mod tests {
     use std::sync::Arc;
     use vmo_backed_block_server::{VmoBackedServer, VmoBackedServerTestingExt as _};
     use {
-        fidl_fuchsia_fs as ffs, fidl_fuchsia_fs_startup as fstartup,
-        fidl_fuchsia_hardware_block as fblock, fidl_fuchsia_hardware_block_volume as fvolume,
-        fidl_fuchsia_io as fio, fidl_fuchsia_storage_partitions as fpartitions,
+        fidl_fuchsia_fs as ffs, fidl_fuchsia_fs_startup as fstartup, fidl_fuchsia_io as fio,
+        fidl_fuchsia_storage_block as fblock, fidl_fuchsia_storage_partitions as fpartitions,
         fuchsia_async as fasync,
     };
 
@@ -457,7 +455,7 @@ mod tests {
         {
             let (block_client, block_server) =
                 fidl::endpoints::create_proxy::<fblock::BlockMarker>();
-            let volume_stream = fidl::endpoints::ServerEnd::<fvolume::VolumeMarker>::from(
+            let volume_stream = fidl::endpoints::ServerEnd::<fblock::BlockMarker>::from(
                 block_server.into_channel(),
             )
             .into_stream();
@@ -478,7 +476,7 @@ mod tests {
         let (block_client, block_server) =
             fidl::endpoints::create_endpoints::<fblock::BlockMarker>();
         let volume_stream =
-            fidl::endpoints::ServerEnd::<fvolume::VolumeMarker>::from(block_server.into_channel())
+            fidl::endpoints::ServerEnd::<fblock::BlockMarker>::from(block_server.into_channel())
                 .into_stream();
 
         futures::join!(
@@ -536,7 +534,7 @@ mod tests {
         let (block_client, block_server) =
             fidl::endpoints::create_endpoints::<fblock::BlockMarker>();
         let volume_stream =
-            fidl::endpoints::ServerEnd::<fvolume::VolumeMarker>::from(block_server.into_channel())
+            fidl::endpoints::ServerEnd::<fblock::BlockMarker>::from(block_server.into_channel())
                 .into_stream();
 
         futures::join!(
@@ -595,7 +593,7 @@ mod tests {
         let (block_client, block_server) =
             fidl::endpoints::create_endpoints::<fblock::BlockMarker>();
         let volume_stream =
-            fidl::endpoints::ServerEnd::<fvolume::VolumeMarker>::from(block_server.into_channel())
+            fidl::endpoints::ServerEnd::<fblock::BlockMarker>::from(block_server.into_channel())
                 .into_stream();
 
         futures::join!(

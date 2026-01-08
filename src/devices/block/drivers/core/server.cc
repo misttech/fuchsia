@@ -57,11 +57,10 @@ block_command_t OpcodeAndFlagsToCommand(block_fifo_command_t command) {
 
 }  // namespace
 
-OffsetMap::OffsetMap(fuchsia_hardware_block::wire::BlockOffsetMapping mapping)
-    : mapping_(mapping) {}
+OffsetMap::OffsetMap(fuchsia_storage_block::wire::BlockOffsetMapping mapping) : mapping_(mapping) {}
 
 zx::result<std::unique_ptr<OffsetMap>> OffsetMap::Create(
-    fuchsia_hardware_block::wire::BlockOffsetMapping initial_mapping) {
+    fuchsia_storage_block::wire::BlockOffsetMapping initial_mapping) {
   if (initial_mapping.length == 0) {
     return zx::error(ZX_ERR_INVALID_ARGS);
   }
@@ -217,7 +216,7 @@ void Server::TxnEnd() {
 
 zx::result<std::unique_ptr<Server>> Server::Create(
     ddk::BlockProtocolClient* bp,
-    std::optional<fuchsia_hardware_block::wire::BlockOffsetMapping> mapping) {
+    std::optional<fuchsia_storage_block::wire::BlockOffsetMapping> mapping) {
   std::unique_ptr<OffsetMap> map;
   if (mapping) {
     zx::result result = OffsetMap::Create(*mapping);
@@ -280,7 +279,8 @@ zx_status_t Server::ProcessReadWriteRequest(block_fifo_request_t* request) {
   bool do_postflush = false;
 
   // If the underlying device doesn't support FUA, we need to simulate it.
-  if ((request->command.flags & BLOCK_IO_FLAG_FORCE_ACCESS) && !(info_.flags & FLAG_FUA_SUPPORT)) {
+  if ((request->command.flags & BLOCK_IO_FLAG_FORCE_ACCESS) &&
+      !(info_.flags & DEVICE_FLAG_FUA_SUPPORT)) {
     // If the device does not support the FUA command, clear the BLOCK_IO_FLAG_FORCE_ACCESS flag and
     // send the (Post)Flush command. A completion for the request must be sent after the last
     // (Post)Flush is completed.

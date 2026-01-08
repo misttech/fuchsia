@@ -11,7 +11,8 @@ use super::{
 use anyhow::Error;
 use block_protocol::{BlockFifoRequest, BlockFifoResponse};
 use fidl::endpoints::RequestStream;
-use fidl_fuchsia_hardware_block::MAX_TRANSFER_UNBOUNDED;
+use fidl_fuchsia_storage_block as fblock;
+use fidl_fuchsia_storage_block::MAX_TRANSFER_UNBOUNDED;
 use fuchsia_async::{self as fasync, EHandle};
 use fuchsia_sync::{Condvar, Mutex};
 use futures::TryStreamExt;
@@ -24,7 +25,6 @@ use std::num::NonZero;
 use std::ops::{Deref, DerefMut};
 use std::sync::{Arc, Weak};
 use zx::{self as zx, AsHandleRef as _};
-use {fidl_fuchsia_hardware_block as fblock, fidl_fuchsia_hardware_block_volume as fvolume};
 
 pub struct SessionManager {
     callbacks: Callbacks,
@@ -367,7 +367,11 @@ impl Session {
                     let request_id = request.request_id;
                     // Strip the PRE_BARRIER flag if we don't support it, and simulate the barrier
                     // with a pre-flush.
-                    if !self.manager.info.device_flags().contains(fblock::Flag::BARRIER_SUPPORT)
+                    if !self
+                        .manager
+                        .info
+                        .device_flags()
+                        .contains(fblock::DeviceFlag::BARRIER_SUPPORT)
                         && request.operation.take_write_flag(WriteFlags::PRE_BARRIER)
                         && self.pre_flush(request_id).is_err()
                     {
@@ -376,7 +380,7 @@ impl Session {
                     // Strip the FORCE_ACCESS flag if we don't support it, and simulate the FUA with
                     // a post-flush.
                     let simulate_fua =
-                        !self.manager.info.device_flags().contains(fblock::Flag::FUA_SUPPORT)
+                        !self.manager.info.device_flags().contains(fblock::DeviceFlag::FUA_SUPPORT)
                             && request.operation.take_write_flag(WriteFlags::FORCE_ACCESS);
                     if simulate_fua {
                         // Account for the additional request we need at the end.
@@ -542,7 +546,7 @@ impl PartitionInfo {
     /// [`self.name`] must point to valid, null-terminated C-string, or be a nullptr.
     unsafe fn to_rust(&self) -> super::DeviceInfo {
         super::DeviceInfo::Partition(super::PartitionInfo {
-            device_flags: fblock::Flag::from_bits_truncate(self.device_flags),
+            device_flags: fblock::DeviceFlag::from_bits_truncate(self.device_flags),
             block_range: Some(self.start_block..self.start_block + self.block_count),
             type_guid: self.type_guid,
             instance_guid: self.instance_guid,
@@ -724,7 +728,7 @@ pub unsafe extern "C" fn block_server_serve(block_server: *const BlockServer, ha
     ehandle.global_scope().spawn(async move {
         let _ = block_server
             .server
-            .handle_requests(fvolume::VolumeRequestStream::from_channel(
+            .handle_requests(fblock::BlockRequestStream::from_channel(
                 fasync::Channel::from_channel(handle.into()),
             ))
             .await;

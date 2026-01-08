@@ -34,12 +34,10 @@ async fn get_product_info() -> Result<ProductInfo, Error> {
 }
 
 /// Connects to Partition FIDL at given path.
-fn partition_provider(
-    path: &str,
-) -> Result<fidl_fuchsia_hardware_block_partition::PartitionProxy, Error> {
-    fuchsia_component::client::connect_to_protocol_at_path::<
-        fidl_fuchsia_hardware_block_partition::PartitionMarker,
-    >(path)
+fn partition_provider(path: &str) -> Result<fidl_fuchsia_storage_block::BlockProxy, Error> {
+    fuchsia_component::client::connect_to_protocol_at_path::<fidl_fuchsia_storage_block::BlockMarker>(
+        path,
+    )
 }
 
 /// Retrieve BoardInfo from HWInfo FIDL.
@@ -111,7 +109,7 @@ async fn stakeout(
 
     let partition_reader = PartitionReader::new(
         fuchsia_component::client::connect_to_protocol_at_path::<
-            fidl_fuchsia_hardware_block::BlockMarker,
+            fidl_fuchsia_storage_block::BlockMarker,
         >,
     )
     .await?;
@@ -143,13 +141,13 @@ async fn main() {
 #[cfg(test)]
 mod tests {
     use crate::handlebars_utils::MockTemplateEngine;
-    use crate::{stakeout, TEMPLATE_GLOB_PATH};
+    use crate::{TEMPLATE_GLOB_PATH, stakeout};
 
     use crate::webserver::MockWebServer;
-    use anyhow::{anyhow, Error};
+    use anyhow::{Error, anyhow};
     use fuchsia_async as fasync;
-    use mockall::predicate::eq;
     use mockall::Sequence;
+    use mockall::predicate::eq;
 
     const NO_TEMPLATES: Option<&str> = None;
     const WEBSERVER_ERROR: &str = "WebServer Error!";

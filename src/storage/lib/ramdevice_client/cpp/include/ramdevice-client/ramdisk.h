@@ -6,7 +6,7 @@
 #define SRC_STORAGE_LIB_RAMDEVICE_CLIENT_CPP_INCLUDE_RAMDEVICE_CLIENT_RAMDISK_H_
 
 #include <fidl/fuchsia.device/cpp/wire.h>
-#include <fidl/fuchsia.hardware.block/cpp/wire.h>
+#include <fidl/fuchsia.storage.block/cpp/wire.h>
 #include <lib/zx/result.h>
 #include <lib/zx/vmo.h>
 #include <stdlib.h>
@@ -170,7 +170,7 @@ class Ramdisk {
   std::string path() const { return ramdisk_get_path(client_); }
 
   // Creates a new connection to the Block protocol served by the ramdisk.
-  zx::result<fidl::ClientEnd<fuchsia_hardware_block::Block>> ConnectBlock() const;
+  zx::result<fidl::ClientEnd<fuchsia_storage_block::Block>> ConnectBlock() const;
 
   // Gets the Controller proxy for the ramdisk (only valid with legacy ramdisks).
   fidl::UnownedClientEnd<fuchsia_device::Controller> LegacyController() const;

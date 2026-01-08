@@ -2,8 +2,8 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use fidl_fuchsia_hardware_block_volume::VolumeManagerProxy;
 use fidl_fuchsia_io as fio;
+use fidl_fuchsia_storage_block::VolumeManagerProxy;
 use ramdevice_client::{RamdiskClient, RamdiskClientBuilder};
 use std::path::PathBuf;
 use storage_isolated_driver_manager::{

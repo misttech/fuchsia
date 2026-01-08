@@ -5,8 +5,8 @@
 #ifndef SRC_STORAGE_FVM_FVM_CHECK_H_
 #define SRC_STORAGE_FVM_FVM_CHECK_H_
 
-#include <fidl/fuchsia.hardware.block/cpp/wire.h>
 #include <fidl/fuchsia.io/cpp/wire.h>
+#include <fidl/fuchsia.storage.block/cpp/wire.h>
 #include <stdarg.h>
 #include <stdlib.h>
 
@@ -23,7 +23,7 @@ namespace fvm {
 // (provided as either a regular file or a raw block device).
 class Checker {
  public:
-  Checker(fidl::UnownedClientEnd<fuchsia_hardware_block::Block> block, uint32_t block_size,
+  Checker(fidl::UnownedClientEnd<fuchsia_storage_block::Block> block, uint32_t block_size,
           bool silent);
   Checker(fidl::UnownedClientEnd<fuchsia_io::File> file, uint32_t block_size, bool silent);
 
@@ -69,14 +69,14 @@ class Checker {
 
   class Block : public Interface {
    public:
-    explicit Block(fidl::UnownedClientEnd<fuchsia_hardware_block::Block> block);
+    explicit Block(fidl::UnownedClientEnd<fuchsia_storage_block::Block> block);
     ~Block() override;
 
    private:
     zx::result<size_t> Size() const override;
     zx::result<size_t> Read(void* buf, size_t count) const override;
 
-    const fidl::UnownedClientEnd<fuchsia_hardware_block::Block> block_;
+    const fidl::UnownedClientEnd<fuchsia_storage_block::Block> block_;
   };
 
   class File : public Interface {

@@ -8,10 +8,10 @@
 #include <fcntl.h>
 #include <fidl/fuchsia.device/cpp/wire.h>
 #include <fidl/fuchsia.fshost/cpp/wire_test_base.h>
-#include <fidl/fuchsia.hardware.block/cpp/wire.h>
 #include <fidl/fuchsia.hardware.power.statecontrol/cpp/wire.h>
 #include <fidl/fuchsia.kernel/cpp/wire.h>
 #include <fidl/fuchsia.scheduler/cpp/wire.h>
+#include <fidl/fuchsia.storage.block/cpp/wire.h>
 #include <fidl/fuchsia.system.state/cpp/common_types.h>
 #include <fidl/fuchsia.system.state/cpp/fidl.h>
 #include <fidl/fuchsia.system.state/cpp/markers.h>
@@ -299,7 +299,7 @@ class GptDevicePartitionerTests : public PaverTest {
 
   // Ensure that the partitions published to fshost match the expected list.
   void EnsurePartitionsMatch(std::span<const PartitionDescription> expected) {
-    std::vector<fidl::ClientEnd<fuchsia_hardware_block_partition::Partition>> devices;
+    std::vector<fidl::ClientEnd<fuchsia_storage_block::Block>> devices;
     ASSERT_NO_FATAL_FAILURE(FindAllBlockDevices(&devices));
     std::vector<PartitionDescription> actual;
     for (auto& device : devices) {
@@ -321,7 +321,7 @@ class GptDevicePartitionerTests : public PaverTest {
   }
 
   static std::optional<PartitionDescription> GetPartitionDescription(
-      fidl::UnownedClientEnd<fuchsia_hardware_block_partition::Partition> client) {
+      fidl::UnownedClientEnd<fuchsia_storage_block::Block> client) {
     fidl::WireResult metadata = fidl::WireCall(client)->GetMetadata();
     if (!metadata.ok() || !metadata->value()->has_name() || !metadata->value()->has_type_guid()) {
       // Ignore non-Partition devices.
@@ -350,8 +350,7 @@ class GptDevicePartitionerTests : public PaverTest {
     ASSERT_OK(RecursiveWaitForFile(devmgr_.devfs_root().get(), path.c_str()).status_value());
   }
 
-  void FindAllBlockDevices(
-      std::vector<fidl::ClientEnd<fuchsia_hardware_block_partition::Partition>>* out) {
+  void FindAllBlockDevices(std::vector<fidl::ClientEnd<fuchsia_storage_block::Block>>* out) {
     if (BaseDevmgrArgs().enable_storage_host) {
       ASSERT_NO_FATAL_FAILURE(FindAllBlockDevicesStorageHost(out));
       return;
@@ -365,7 +364,7 @@ class GptDevicePartitionerTests : public PaverTest {
       zx::result controller =
           component::ConnectAt<fuchsia_device::Controller>(caller.directory(), path);
       ASSERT_OK(controller);
-      zx::result endpoints = fidl::CreateEndpoints<fuchsia_hardware_block_partition::Partition>();
+      zx::result endpoints = fidl::CreateEndpoints<fuchsia_storage_block::Block>();
       ASSERT_OK(endpoints);
       auto [client, server] = std::move(*endpoints);
       fidl::OneWayError response =
@@ -376,7 +375,7 @@ class GptDevicePartitionerTests : public PaverTest {
   }
 
   void FindAllBlockDevicesStorageHost(
-      std::vector<fidl::ClientEnd<fuchsia_hardware_block_partition::Partition>>* out) {
+      std::vector<fidl::ClientEnd<fuchsia_storage_block::Block>>* out) {
     fidl::ClientEnd svc_root = RealmExposedDir();
     fbl::unique_fd fd;
     ASSERT_OK(fdio_fd_create(svc_root.TakeHandle().release(), fd.reset_and_get_address()));
@@ -387,8 +386,8 @@ class GptDevicePartitionerTests : public PaverTest {
       std::string path =
           std::format("fuchsia.storage.partitions.PartitionService/{}/volume", entry);
       fdio_cpp::UnownedFdioCaller caller(fd.get());
-      zx::result partition = component::ConnectAt<fuchsia_hardware_block_partition::Partition>(
-          caller.directory(), path);
+      zx::result partition =
+          component::ConnectAt<fuchsia_storage_block::Block>(caller.directory(), path);
       ASSERT_OK(partition);
       out->push_back(std::move(*partition));
     }

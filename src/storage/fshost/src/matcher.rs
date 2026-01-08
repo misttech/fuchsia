@@ -10,7 +10,7 @@ use crate::device::{Device, DeviceTag, Parent};
 use crate::environment::Environment;
 use anyhow::{Context, Error, bail};
 use async_trait::async_trait;
-use fidl_fuchsia_hardware_block::Flag as BlockFlag;
+use fidl_fuchsia_storage_block::DeviceFlag as BlockDeviceFlag;
 use fs_management::FVM_TYPE_GUID;
 use fs_management::format::DiskFormat;
 use fs_management::format::constants::{
@@ -215,7 +215,10 @@ impl Matcher for BootpartMatcher {
     }
 
     async fn match_device(&self, device: &mut dyn Device) -> bool {
-        device.get_block_info().await.map_or(false, |info| info.flags.contains(BlockFlag::BOOTPART))
+        device
+            .get_block_info()
+            .await
+            .map_or(false, |info| info.flags.contains(BlockDeviceFlag::BOOTPART))
     }
 
     async fn process_device(
@@ -529,7 +532,7 @@ impl Matcher for SystemGptMatcher {
         let removable = device
             .get_block_info()
             .await
-            .map(|info| info.flags.contains(BlockFlag::REMOVABLE))
+            .map(|info| info.flags.contains(BlockDeviceFlag::REMOVABLE))
             .inspect_err(|err| {
                 log::warn!(err:?; "Failed to query block info; assuming non-removable device");
             })
@@ -743,8 +746,7 @@ mod tests {
     use anyhow::{Error, anyhow};
     use async_trait::async_trait;
     use fidl_fuchsia_device::ControllerProxy;
-    use fidl_fuchsia_hardware_block::{BlockInfo, BlockProxy, Flag};
-    use fidl_fuchsia_hardware_block_volume::VolumeProxy;
+    use fidl_fuchsia_storage_block::{BlockInfo, BlockProxy, DeviceFlag};
     use fs_management::FVM_TYPE_GUID;
     use fs_management::filesystem::{BlockConnector, ServingMultiVolumeFilesystem};
     use fs_management::format::constants::{
@@ -755,7 +757,7 @@ mod tests {
 
     #[derive(Clone)]
     struct MockDevice {
-        block_flags: Flag,
+        block_flags: DeviceFlag,
         content_format: DiskFormat,
         topological_path: String,
         partition_label: Option<String>,
@@ -767,7 +769,7 @@ mod tests {
     impl MockDevice {
         fn new() -> Self {
             MockDevice {
-                block_flags: Flag::empty(),
+                block_flags: DeviceFlag::empty(),
                 content_format: DiskFormat::Unknown,
                 topological_path: "mock_device".to_string(),
                 partition_label: None,
@@ -778,7 +780,7 @@ mod tests {
                 parent: Parent::SystemPartitionTable,
             }
         }
-        fn set_block_flags(mut self, flags: Flag) -> Self {
+        fn set_block_flags(mut self, flags: DeviceFlag) -> Self {
             self.block_flags = flags;
             self
         }
@@ -810,7 +812,7 @@ mod tests {
 
     #[async_trait]
     impl Device for MockDevice {
-        async fn get_block_info(&self) -> Result<fidl_fuchsia_hardware_block::BlockInfo, Error> {
+        async fn get_block_info(&self) -> Result<BlockInfo, Error> {
             Ok(BlockInfo {
                 block_count: 0,
                 block_size: 0,
@@ -855,9 +857,6 @@ mod tests {
             unreachable!()
         }
         fn block_proxy(&self) -> Result<BlockProxy, Error> {
-            unreachable!()
-        }
-        fn volume_proxy(&self) -> Result<VolumeProxy, Error> {
             unreachable!()
         }
         async fn get_child(&self, _suffix: &str) -> Result<Box<dyn Device>, Error> {
@@ -1172,7 +1171,7 @@ mod tests {
 
     #[fuchsia::test]
     async fn test_bootpart_matcher() {
-        let mock_device = MockDevice::new().set_block_flags(Flag::BOOTPART);
+        let mock_device = MockDevice::new().set_block_flags(DeviceFlag::BOOTPART);
 
         // Check no match when disabled in config.
         assert!(

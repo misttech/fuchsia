@@ -11,7 +11,7 @@ rustc_library("recovery-util-block") {
   edition = "2024"
   deps = [
     "//sdk/fidl/fuchsia.device:fuchsia.device_rust",
-    "//sdk/fidl/fuchsia.hardware.block:fuchsia.hardware.block_rust",
+    "//sdk/fidl/fuchsia.storage.block:fuchsia.storage.block_rust",
     "//sdk/rust/zx",
     "//src/lib/fuchsia-component",
     "//third_party/rust_crates:anyhow",

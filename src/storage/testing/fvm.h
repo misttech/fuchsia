@@ -6,6 +6,7 @@
 #define SRC_STORAGE_TESTING_FVM_H_
 
 #include <fidl/fuchsia.device/cpp/wire.h>
+#include <fidl/fuchsia.storage.block/cpp/wire.h>
 #include <lib/zx/result.h>
 
 #include <array>
@@ -51,7 +52,7 @@ class FvmPartition {
         partition_name_(partition_name),
         path_(path) {}
 
-  zx::result<fidl::ClientEnd<fuchsia_hardware_block_volume::Volume>> Connect() const;
+  zx::result<fidl::ClientEnd<fuchsia_storage_block::Block>> Connect() const;
 
   FvmInstance& fvm() { return fvm_; }
   const std::string& partition_name() const { return partition_name_; }

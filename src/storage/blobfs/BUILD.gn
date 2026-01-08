@@ -166,9 +166,9 @@ static_library("blobfs") {
     public_deps += [
       ":fuchsia.blobfs.internal_cpp",
       "//sdk/fidl/fuchsia.fs:fuchsia.fs_cpp",
-      "//sdk/fidl/fuchsia.hardware.block:fuchsia.hardware.block_cpp",
       "//sdk/fidl/fuchsia.io:fuchsia.io_cpp",
       "//sdk/fidl/fuchsia.process.lifecycle:fuchsia.process.lifecycle_cpp",
+      "//sdk/fidl/fuchsia.storage.block:fuchsia.storage.block_cpp",
       "//sdk/lib/async",
       "//sdk/lib/async-loop:async-loop-cpp",
       "//sdk/lib/fidl/cpp/wire",
@@ -188,11 +188,10 @@ static_library("blobfs") {
     ]
     deps += [
       "//sdk/fidl/fuchsia.fs:fuchsia.fs_cpp",
-      "//sdk/fidl/fuchsia.hardware.block:fuchsia.hardware.block_cpp",
       "//sdk/fidl/fuchsia.hardware.block.driver:fuchsia.hardware.block.driver_banjo_c",
-      "//sdk/fidl/fuchsia.hardware.block.volume:fuchsia.hardware.block.volume_cpp",
       "//sdk/fidl/fuchsia.io:fuchsia.io_cpp",
       "//sdk/fidl/fuchsia.process.lifecycle:fuchsia.process.lifecycle_cpp",
+      "//sdk/fidl/fuchsia.storage.block:fuchsia.storage.block_cpp",
       "//sdk/lib/async",
       "//sdk/lib/async:async-cpp",
       "//sdk/lib/async-loop:async-loop-cpp",

@@ -7,7 +7,7 @@
 #include <fcntl.h>
 #include <fidl/fuchsia.fs/cpp/common_types.h>
 #include <fidl/fuchsia.fxfs/cpp/markers.h>
-#include <fidl/fuchsia.hardware.block.volume/cpp/wire.h>
+#include <fidl/fuchsia.storage.block/cpp/wire.h>
 #include <fidl/fuchsia.update.verify/cpp/common_types.h>
 #include <fidl/fuchsia.update.verify/cpp/wire.h>
 #include <lib/component/incoming/cpp/protocol.h>
@@ -514,14 +514,14 @@ TEST_P(BlobfsIntegrationTest, ReadOnly) {
 
 void OpenBlockDevice(const std::string& path,
                      std::unique_ptr<block_client::RemoteBlockDevice>* block_device) {
-  zx::result channel = component::Connect<fuchsia_hardware_block_volume::Volume>(path);
+  zx::result channel = component::Connect<fuchsia_storage_block::Block>(path);
   ASSERT_TRUE(channel.is_ok()) << channel.status_string();
   zx::result device = block_client::RemoteBlockDevice::Create(std::move(channel.value()));
   ASSERT_TRUE(device.is_ok()) << device.status_string();
   *block_device = std::move(device.value());
 }
 
-using SliceRange = fuchsia_hardware_block_volume::wire::VsliceRange;
+using SliceRange = fuchsia_storage_block::wire::VsliceRange;
 
 uint64_t BlobfsBlockToFvmSlice(fs_test::TestFilesystem& fs, uint64_t block) {
   const size_t blocks_per_slice = fs.options().fvm_slice_size / kBlobfsBlockSize;
@@ -554,7 +554,7 @@ void GetSliceRange(const BlobfsWithFvmTest& test, const std::vector<uint64_t>& s
   ASSERT_NO_FATAL_FAILURE(OpenBlockDevice(test.fs().DevicePath().value(), &block_device));
 
   size_t ranges_count;
-  SliceRange range_array[fuchsia_hardware_block_volume::wire::kMaxSliceRequests];
+  SliceRange range_array[fuchsia_storage_block::wire::kMaxSliceRequests];
   ASSERT_OK(
       block_device->VolumeQuerySlices(slices.data(), slices.size(), range_array, &ranges_count));
   ranges->clear();

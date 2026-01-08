@@ -15,7 +15,7 @@ zx_library("gpt") {
   ]
   public_deps = [
     "//sdk/fidl/fuchsia.device:fuchsia.device_cpp",
-    "//sdk/fidl/fuchsia.hardware.block:fuchsia.hardware.block_cpp",
+    "//sdk/fidl/fuchsia.storage.block:fuchsia.storage.block_cpp",
     "//sdk/lib/fit-promise",
     "//src/lib/uuid",
     "//zircon/system/ulib/zx",

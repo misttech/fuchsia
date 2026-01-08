@@ -4,6 +4,7 @@
 
 #include "src/storage/minfs/mount.h"
 
+#include <fidl/fuchsia.storage.block/cpp/wire.h>
 #include <lib/async-loop/cpp/loop.h>
 #include <lib/async-loop/default.h>
 #include <lib/syslog/cpp/macros.h>
@@ -11,7 +12,6 @@
 
 #include <safemath/safe_math.h>
 
-#include "fidl/fuchsia.hardware.block/cpp/wire_types.h"
 #include "src/storage/minfs/component_runner.h"
 #include "src/storage/minfs/minfs_private.h"
 #include "src/storage/minfs/runner.h"
@@ -19,7 +19,7 @@
 namespace minfs {
 
 zx::result<CreateBcacheResult> CreateBcache(std::unique_ptr<block_client::BlockDevice> device) {
-  fuchsia_hardware_block::wire::BlockInfo info;
+  fuchsia_storage_block::wire::BlockInfo info;
   zx_status_t status = device->BlockGetInfo(&info);
   if (status != ZX_OK) {
     FX_LOGS(ERROR) << "Could not access device info: " << status;
@@ -51,7 +51,8 @@ zx::result<CreateBcacheResult> CreateBcache(std::unique_ptr<block_client::BlockD
 
   CreateBcacheResult result{
       .bcache = std::move(bcache_or.value()),
-      .is_read_only = static_cast<bool>(info.flags & fuchsia_hardware_block::wire::Flag::kReadonly),
+      .is_read_only =
+          static_cast<bool>(info.flags & fuchsia_storage_block::wire::DeviceFlag::kReadonly),
   };
   return zx::ok(std::move(result));
 }

@@ -8,9 +8,8 @@ use block_client::RemoteBlockClient;
 use f2fs_reader::F2fsReader;
 use fidl::endpoints::Proxy;
 use fidl_fuchsia_fxfs::CryptMarker;
-use fidl_fuchsia_hardware_block::BlockProxy;
-use fidl_fuchsia_hardware_block_volume::VolumeMarker;
 use fidl_fuchsia_hardware_inlineencryption::DeviceMarker;
+use fidl_fuchsia_storage_block::{BlockMarker, BlockProxy};
 use fuchsia_async::{LocalExecutor, LocalExecutorBuilder};
 
 use fxfs::filesystem::{FxFilesystemBuilder, OpenFxFilesystem};
@@ -87,7 +86,7 @@ fn create_device_with_image_at_offset(path: &str, offset: u64) -> Arc<VmoBackedS
 
 async fn test_fxfs_migration_at_offset(offset: u64) {
     let block_server = create_device_with_image_at_offset("/pkg/testdata/f2fs.img.zst", offset);
-    let (client, server_end) = fidl::endpoints::create_proxy::<VolumeMarker>();
+    let (client, server_end) = fidl::endpoints::create_proxy::<BlockMarker>();
     let block_server_clone = block_server.clone();
     std::thread::spawn(move || {
         let mut executor = LocalExecutorBuilder::new().build();
@@ -156,7 +155,7 @@ async fn test_fxfs_migration_at_offset(offset: u64) {
         .await
         .expect("migrate_device");
 
-    let (client, server_end) = fidl::endpoints::create_proxy::<VolumeMarker>();
+    let (client, server_end) = fidl::endpoints::create_proxy::<BlockMarker>();
     let block_server_clone = block_server.clone();
     std::thread::spawn(move || {
         let mut executor = LocalExecutorBuilder::new().build();
@@ -234,7 +233,7 @@ async fn recurse_resolve_f2fs(f2fs: &F2fsReader, ino: u32, path: &str) -> u32 {
 async fn test_fxfs_read_lblk32_ino_file() {
     let offset = 0;
     let block_server = create_device_with_image_at_offset("/pkg/testdata/f2fs.img.zst", offset);
-    let (client, server_end) = fidl::endpoints::create_proxy::<VolumeMarker>();
+    let (client, server_end) = fidl::endpoints::create_proxy::<BlockMarker>();
     let block_server_clone = block_server.clone();
     std::thread::spawn(move || {
         let mut executor = LocalExecutorBuilder::new().build();
@@ -311,7 +310,7 @@ async fn test_fxfs_read_lblk32_ino_file() {
         .await
         .expect("migrate_device");
 
-    let (client, server_end) = fidl::endpoints::create_proxy::<VolumeMarker>();
+    let (client, server_end) = fidl::endpoints::create_proxy::<BlockMarker>();
     let block_server_clone = block_server.clone();
     std::thread::spawn(move || {
         let mut executor = LocalExecutorBuilder::new().build();
@@ -383,7 +382,7 @@ async fn test_fxfs_read_lblk32_ino_file() {
 async fn test_fxfs_verify_encrypted_data() {
     let offset = 0;
     let block_server = create_device_with_image_at_offset("/pkg/testdata/f2fs.img.zst", offset);
-    let (client, server_end) = fidl::endpoints::create_proxy::<VolumeMarker>();
+    let (client, server_end) = fidl::endpoints::create_proxy::<BlockMarker>();
     let block_server_clone = block_server.clone();
     std::thread::spawn(move || {
         let mut executor = LocalExecutorBuilder::new().build();
@@ -452,7 +451,7 @@ async fn test_fxfs_verify_encrypted_data() {
         .await
         .expect("migrate_device");
 
-    let (client, server_end) = fidl::endpoints::create_proxy::<VolumeMarker>();
+    let (client, server_end) = fidl::endpoints::create_proxy::<BlockMarker>();
     let block_server_clone = block_server.clone();
     std::thread::spawn(move || {
         let mut executor = LocalExecutorBuilder::new().build();

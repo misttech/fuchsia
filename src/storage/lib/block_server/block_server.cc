@@ -67,7 +67,7 @@ BlockServer::~BlockServer() {
   }
 }
 
-void BlockServer::Serve(fidl::ServerEnd<fuchsia_hardware_block_volume::Volume> server_end) {
+void BlockServer::Serve(fidl::ServerEnd<fuchsia_storage_block::Block> server_end) {
   block_server_serve(server_, server_end.TakeChannel().release());
 }
 

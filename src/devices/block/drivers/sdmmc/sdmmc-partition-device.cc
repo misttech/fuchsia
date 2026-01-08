@@ -4,6 +4,8 @@
 
 #include "sdmmc-partition-device.h"
 
+#include <fidl/fuchsia.hardware.block.volume/cpp/wire.h>
+#include <fidl/fuchsia.storage.block/cpp/wire.h>
 #include <lib/ddk/binding_driver.h>
 #include <lib/ddk/metadata.h>
 #include <string.h>
@@ -110,8 +112,7 @@ zx_status_t PartitionDevice::AddDevice() {
               ->AddService<fuchsia_hardware_block_volume::Service>(
                   fuchsia_hardware_block_volume::Service::InstanceHandler({
                       .volume =
-                          [this](
-                              fidl::ServerEnd<fuchsia_hardware_block_volume::Volume> server_end) {
+                          [this](fidl::ServerEnd<fuchsia_storage_block::Block> server_end) {
                             fbl::AutoLock lock(&lock_);
                             if (block_server_)
                               block_server_->Serve(std::move(server_end));

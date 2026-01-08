@@ -5,6 +5,7 @@
 #include <errno.h>
 #include <fidl/fuchsia.fs.startup/cpp/wire.h>
 #include <fidl/fuchsia.io/cpp/wire.h>
+#include <fidl/fuchsia.storage.block/cpp/wire.h>
 #include <lib/component/incoming/cpp/protocol.h>
 #include <lib/fdio/directory.h>
 #include <lib/fdio/fd.h>
@@ -31,7 +32,7 @@ namespace {
 zx::result<> FsckComponentFs(fidl::UnownedClientEnd<fuchsia_io::Directory> exposed_dir,
                              std::string_view device_path, const FsckOptions& options) {
   std::string device_path_str(device_path);
-  auto device = component::Connect<fuchsia_hardware_block::Block>(device_path);
+  auto device = component::Connect<fuchsia_storage_block::Block>(device_path);
   if (device.is_error())
     return device.take_error();
 

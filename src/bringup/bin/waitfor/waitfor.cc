@@ -4,7 +4,7 @@
 
 #include <fcntl.h>
 #include <fidl/fuchsia.device/cpp/wire.h>
-#include <fidl/fuchsia.hardware.block.partition/cpp/wire.h>
+#include <fidl/fuchsia.storage.block/cpp/wire.h>
 #include <lib/component/incoming/cpp/protocol.h>
 #include <lib/fdio/cpp/caller.h>
 #include <lib/fdio/watcher.h>
@@ -142,8 +142,7 @@ zx_status_t expr_topo(const App& app, const char* arg,
 
 zx_status_t expr_part_guid(const App& app, const char* arg,
                            fidl::UnownedClientEnd<fuchsia_io::Directory> dir, const char* name) {
-  zx::result partition =
-      component::ConnectAt<fuchsia_hardware_block_partition::Partition>(dir, name);
+  zx::result partition = component::ConnectAt<fuchsia_storage_block::Block>(dir, name);
   if (partition.is_error()) {
     fprintf(stderr, "waitfor: warning: failed to open: '%s :%s \n", name,
             partition.status_string());
@@ -177,8 +176,7 @@ zx_status_t expr_part_guid(const App& app, const char* arg,
 zx_status_t expr_part_type_guid(const App& app, const char* arg,
                                 fidl::UnownedClientEnd<fuchsia_io::Directory> dir,
                                 const char* name) {
-  zx::result partition =
-      component::ConnectAt<fuchsia_hardware_block_partition::Partition>(dir, name);
+  zx::result partition = component::ConnectAt<fuchsia_storage_block::Block>(dir, name);
   if (partition.is_error()) {
     fprintf(stderr, "waitfor: warning: failed to open: '%s' :%s \n", name,
             partition.status_string());
@@ -210,8 +208,7 @@ zx_status_t expr_part_type_guid(const App& app, const char* arg,
 
 zx_status_t expr_part_name(const App& app, const char* arg,
                            fidl::UnownedClientEnd<fuchsia_io::Directory> dir, const char* name) {
-  zx::result partition =
-      component::ConnectAt<fuchsia_hardware_block_partition::Partition>(dir, name);
+  zx::result partition = component::ConnectAt<fuchsia_storage_block::Block>(dir, name);
   if (partition.is_error()) {
     fprintf(stderr, "waitfor: warning: failed to open: '%s' :%s \n", name,
             partition.status_string());

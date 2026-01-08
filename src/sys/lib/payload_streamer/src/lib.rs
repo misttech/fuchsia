@@ -5,8 +5,8 @@
 use anyhow::{Context as _, Error};
 use async_trait::async_trait;
 use block_client::{BlockClient, MutableBufferSlice, RemoteBlockClient, VmoId};
-use fidl_fuchsia_hardware_block::BlockProxy;
 use fidl_fuchsia_paver::{PayloadStreamRequest, PayloadStreamRequestStream, ReadInfo, ReadResult};
+use fidl_fuchsia_storage_block::BlockProxy;
 
 use futures::lock::Mutex;
 use futures::prelude::*;
@@ -328,8 +328,8 @@ mod tests {
 
     use super::*;
     use anyhow::{Context, anyhow};
-    use fidl_fuchsia_hardware_block::BlockMarker;
     use fidl_fuchsia_paver::{PayloadStreamMarker, PayloadStreamProxy};
+    use fidl_fuchsia_storage_block::BlockMarker;
     use fuchsia_async as fasync;
     use fuchsia_sync::Mutex;
     use futures::future::try_join;

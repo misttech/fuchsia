@@ -17,9 +17,7 @@ use vfs::execution_scope::ExecutionScope;
 use vfs::file::{FidlIoConnection, File, FileIo, FileLike, FileOptions, SyncMode};
 use vfs::node::Node;
 use vfs::{ObjectRequestRef, immutable_attributes, pseudo_directory};
-use {
-    fidl_fuchsia_hardware_block as fhardware_block, fidl_fuchsia_io as fio, fuchsia_async as fasync,
-};
+use {fidl_fuchsia_io as fio, fidl_fuchsia_storage_block as fblock, fuchsia_async as fasync};
 
 struct BlockFile {
     block_client: RemoteBlockClient,
@@ -124,7 +122,7 @@ impl FileLike for BlockFile {
 // child's namespace under /device/block.  At the time of writing, this is used to run the
 // fsck-msdosfs and mkfs-msdosfs tools which use POSIX I/O to interact with block devices.
 pub async fn run(
-    block_proxy: fhardware_block::BlockProxy,
+    block_proxy: fblock::BlockProxy,
     binary: &str,
     args: impl Iterator<Item = String>,
 ) -> Result<i64, Error> {

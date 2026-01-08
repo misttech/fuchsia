@@ -7,8 +7,6 @@
 #include <dlfcn.h>
 #include <fidl/fuchsia.device/cpp/wire.h>
 #include <fidl/fuchsia.fs.startup/cpp/wire_types.h>
-#include <fidl/fuchsia.hardware.block.volume/cpp/wire.h>
-#include <fidl/fuchsia.hardware.block/cpp/wire.h>
 #include <fidl/fuchsia.hardware.nand/cpp/wire.h>
 #include <fidl/fuchsia.hardware.ramdisk/cpp/wire.h>
 #include <fidl/fuchsia.io/cpp/wire.h>
@@ -312,7 +310,7 @@ zx::result<std::pair<std::unique_ptr<fs_management::SingleVolumeFilesystemInterf
                      fs_management::NamespaceBinding>>
 FsMount(const std::string& device_path, const std::string& mount_path,
         fs_management::FsComponent& component, const fs_management::MountOptions& options) {
-  zx::result device = component::Connect<fuchsia_hardware_block::Block>(device_path);
+  zx::result device = component::Connect<fuchsia_storage_block::Block>(device_path);
   if (device.is_error()) {
     std::cout << "Could not open device: " << device_path << ": " << device.status_string()
               << std::endl;

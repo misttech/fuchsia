@@ -739,7 +739,7 @@ zx_status_t SdmmcBlockDevice::Flush() {
 
 zx_status_t SdmmcBlockDevice::Barrier() {
   // If BARRIER_SUPPORT is unset, the block server library should never send PRE_BARRIER requests.
-  ZX_ASSERT(block_info_.flags & FLAG_BARRIER_SUPPORT);
+  ZX_ASSERT(block_info_.flags & DEVICE_FLAG_BARRIER_SUPPORT);
 
   if (!cache_enabled_) {
     return ZX_OK;
@@ -766,7 +766,7 @@ zx_status_t SdmmcBlockDevice::Trim(const block_trim_t& txn, const EmmcPartition 
     return ZX_ERR_NOT_SUPPORTED;
   }
 
-  if (!(block_info_.flags & FLAG_TRIM_SUPPORT)) {
+  if (!(block_info_.flags & DEVICE_FLAG_TRIM_SUPPORT)) {
     return ZX_ERR_NOT_SUPPORTED;
   }
 

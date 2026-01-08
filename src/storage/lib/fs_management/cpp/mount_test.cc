@@ -7,9 +7,8 @@
 #include <errno.h>
 #include <fcntl.h>
 #include <fidl/fuchsia.fs/cpp/wire.h>
-#include <fidl/fuchsia.hardware.block.volume/cpp/wire.h>
-#include <fidl/fuchsia.hardware.block/cpp/wire.h>
 #include <fidl/fuchsia.io/cpp/wire.h>
+#include <fidl/fuchsia.storage.block/cpp/wire.h>
 #include <fuchsia/hardware/block/driver/c/banjo.h>
 #include <lib/component/incoming/cpp/clone.h>
 #include <lib/component/incoming/cpp/protocol.h>
@@ -80,8 +79,8 @@ class RamdiskTestFixture : public testing::Test {
   zx::result<MountResult> MountMinfs(bool read_only) {
     MountOptions options{.readonly = read_only};
 
-    zx::result<fidl::ClientEnd<fuchsia_hardware_block::Block>> block_client =
-        component::Connect<fuchsia_hardware_block::Block>(ramdisk_path());
+    zx::result<fidl::ClientEnd<fuchsia_storage_block::Block>> block_client =
+        component::Connect<fuchsia_storage_block::Block>(ramdisk_path());
     if (block_client.is_error()) {
       return block_client.take_error();
     }
@@ -214,7 +213,7 @@ TEST_F(MountTest, StatvfsTest) {
   ASSERT_GT(stats.f_favail, 0u);
 }
 
-void GetPartitionSliceCount(fidl::UnownedClientEnd<fuchsia_hardware_block_volume::Volume> volume,
+void GetPartitionSliceCount(fidl::UnownedClientEnd<fuchsia_storage_block::Block> volume,
                             size_t* out_count) {
   auto res = fidl::WireCall(volume)->GetVolumeInfo();
   ASSERT_EQ(res.status(), ZX_OK);
@@ -273,7 +272,7 @@ TEST_F(PartitionOverFvmWithRamdiskCase, MkfsMinfsWithMinFvmSlices) {
   auto component = fs_management::FsComponent::FromDiskFormat(kDiskFormatMinfs);
   MkfsOptions options;
   ASSERT_EQ(Mkfs(partition_path(), component, options), ZX_OK);
-  zx::result volume = component::Connect<fuchsia_hardware_block_volume::Volume>(partition_path());
+  zx::result volume = component::Connect<fuchsia_storage_block::Block>(partition_path());
   ASSERT_TRUE(volume.is_ok()) << volume.status_string();
   GetPartitionSliceCount(volume.value(), &base_slices);
   options.fvm_data_slices += 10;
@@ -284,7 +283,7 @@ TEST_F(PartitionOverFvmWithRamdiskCase, MkfsMinfsWithMinFvmSlices) {
   EXPECT_GE(allocated_slices, base_slices + 10);
 
   DiskFormat actual_format = DetectDiskFormat(
-      fidl::UnownedClientEnd<fuchsia_hardware_block::Block>(volume.value().channel().borrow()));
+      fidl::UnownedClientEnd<fuchsia_storage_block::Block>(volume.value().channel().borrow()));
   ASSERT_EQ(actual_format, kDiskFormatMinfs);
 }
 
@@ -297,22 +296,21 @@ TEST(FvmTest, Basic) {
       .name = "block-device",
   });
 
-  auto endpoints = fidl::Endpoints<fuchsia_hardware_block_volume::Volume>::Create();
+  auto endpoints = fidl::Endpoints<fuchsia_storage_block::Block>::Create();
   fake_server.Serve(std::move(endpoints.server));
 
-  fidl::ClientEnd<fuchsia_hardware_block::Block> client(endpoints.client.TakeChannel());
+  fidl::ClientEnd<fuchsia_storage_block::Block> client(endpoints.client.TakeChannel());
 
   constexpr int kSliceSize = 32768;
   ASSERT_EQ(FvmInit(client, kSliceSize), ZX_OK);
 
   auto check_volume = [](MountedVolume* volume) {
-    auto volume_endpoints = fidl::Endpoints<fuchsia_hardware_block_volume::Volume>::Create();
-    ASSERT_EQ(fdio_service_connect_at(
-                  volume->ExportRoot().channel().get(),
-                  (std::string("svc/") +
-                   fidl::DiscoverableProtocolName<fuchsia_hardware_block_volume::Volume>)
-                      .c_str(),
-                  volume_endpoints.server.TakeChannel().get()),
+    auto volume_endpoints = fidl::Endpoints<fuchsia_storage_block::Block>::Create();
+    ASSERT_EQ(fdio_service_connect_at(volume->ExportRoot().channel().get(),
+                                      (std::string("svc/") +
+                                       fidl::DiscoverableProtocolName<fuchsia_storage_block::Block>)
+                                          .c_str(),
+                                      volume_endpoints.server.TakeChannel().get()),
               ZX_OK);
 
     const fidl::WireResult result = fidl::WireCall(volume_endpoints.client)->GetInfo();
@@ -342,13 +340,13 @@ TEST(FvmTest, Basic) {
   }
 
   // Bind again and check we can mount the volume we created.
-  endpoints = fidl::Endpoints<fuchsia_hardware_block_volume::Volume>::Create();
+  endpoints = fidl::Endpoints<fuchsia_storage_block::Block>::Create();
   fake_server.Serve(std::move(endpoints.server));
 
   auto component = FsComponent::FromDiskFormat(fs_management::kDiskFormatFvm);
 
   auto fs = MountMultiVolume(
-      fidl::ClientEnd<fuchsia_hardware_block::Block>(endpoints.client.TakeChannel()), component,
+      fidl::ClientEnd<fuchsia_storage_block::Block>(endpoints.client.TakeChannel()), component,
       fs_management::MountOptions());
   ASSERT_EQ(fs.status_value(), ZX_OK);
 

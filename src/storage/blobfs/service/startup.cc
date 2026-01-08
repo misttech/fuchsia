@@ -6,7 +6,7 @@
 
 #include <fidl/fuchsia.fs.startup/cpp/markers.h>
 #include <fidl/fuchsia.fs.startup/cpp/wire_types.h>
-#include <fidl/fuchsia.hardware.block.volume/cpp/markers.h>
+#include <fidl/fuchsia.storage.block/cpp/markers.h>
 #include <lib/async/dispatcher.h>
 #include <lib/fidl/cpp/wire/channel.h>
 #include <lib/syslog/cpp/macros.h>
@@ -117,7 +117,7 @@ void StartupService::Start(StartRequestView request, StartCompleter::Sync& compl
       return zx::error(ZX_ERR_BAD_STATE);
 
     zx::result device = block_client::RemoteBlockDevice::Create(
-        fidl::ClientEnd<fuchsia_hardware_block_volume::Volume>(request->device.TakeChannel()));
+        fidl::ClientEnd<fuchsia_storage_block::Block>(request->device.TakeChannel()));
     if (device.is_error()) {
       FX_PLOGS(ERROR, device.error_value()) << "Could not initialize block device";
       return device.take_error();
@@ -131,7 +131,7 @@ void StartupService::Start(StartRequestView request, StartCompleter::Sync& compl
 void StartupService::Format(FormatRequestView request, FormatCompleter::Sync& completer) {
   completer.Reply([&]() -> zx::result<> {
     zx::result device = block_client::RemoteBlockDevice::Create(
-        fidl::ClientEnd<fuchsia_hardware_block_volume::Volume>(request->device.TakeChannel()));
+        fidl::ClientEnd<fuchsia_storage_block::Block>(request->device.TakeChannel()));
     if (device.is_error()) {
       FX_PLOGS(ERROR, device.error_value()) << "Could not initialize block device";
       return device.take_error();
@@ -149,7 +149,7 @@ void StartupService::Format(FormatRequestView request, FormatCompleter::Sync& co
 void StartupService::Check(CheckRequestView request, CheckCompleter::Sync& completer) {
   completer.Reply([&]() -> zx::result<> {
     zx::result device = block_client::RemoteBlockDevice::Create(
-        fidl::ClientEnd<fuchsia_hardware_block_volume::Volume>(request->device.TakeChannel()));
+        fidl::ClientEnd<fuchsia_storage_block::Block>(request->device.TakeChannel()));
     if (device.is_error()) {
       FX_PLOGS(ERROR, device.error_value()) << "Could not initialize block device";
       return device.take_error();

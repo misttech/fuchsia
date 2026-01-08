@@ -6,8 +6,8 @@
 
 #include <fcntl.h>
 #include <fidl/fuchsia.fs/cpp/wire.h>
-#include <fidl/fuchsia.hardware.block.volume/cpp/wire.h>
 #include <fidl/fuchsia.io/cpp/wire.h>
+#include <fidl/fuchsia.storage.block/cpp/wire.h>
 #include <lib/component/incoming/cpp/protocol.h>
 #include <lib/fdio/cpp/caller.h>
 #include <lib/zx/vmo.h>
@@ -114,7 +114,7 @@ class MinfsFvmTest : public BaseFilesystemTest {
       : BaseFilesystemTest(options) {}
 
  protected:
-  zx::result<fidl::ClientEnd<fuchsia_hardware_block_volume::VolumeManager>> GetVolumeManager() {
+  zx::result<fidl::ClientEnd<fuchsia_storage_block::VolumeManager>> GetVolumeManager() {
     // This expects to be set up with a RamDisk. The filesystem has some variants and this could be
     // on a RamNand, but then this code would need updating.
     ramdevice_client::Ramdisk* ram_disk = fs().GetRamDisk();
@@ -124,17 +124,16 @@ class MinfsFvmTest : public BaseFilesystemTest {
 
     // Want something like "/dev/sys/platform/ram-disk/ramctl/ramdisk-0/block/fvm"
     std::string fvm_path = ram_disk->path() + "/fvm";
-    return component::Connect<fuchsia_hardware_block_volume::VolumeManager>(fvm_path);
+    return component::Connect<fuchsia_storage_block::VolumeManager>(fvm_path);
   }
 
   // Returns the GUID associated with the minfs partition inside FVM.
-  zx::result<fuchsia_hardware_block_partition::wire::Guid> GetMinfsPartitionGuid() {
+  zx::result<fuchsia_storage_block::wire::Guid> GetMinfsPartitionGuid() {
     zx::result<std::string> device_path = fs().DevicePath();
     if (device_path.is_error()) {
       return device_path.take_error();
     }
-    zx::result partition =
-        component::Connect<fuchsia_hardware_block_partition::Partition>(device_path.value());
+    zx::result partition = component::Connect<fuchsia_storage_block::Block>(device_path.value());
     if (partition.is_error()) {
       return partition.take_error();
     }
@@ -147,13 +146,12 @@ class MinfsFvmTest : public BaseFilesystemTest {
     return zx::ok(*response.value().guid);
   }
 
-  zx::result<fuchsia_hardware_block_volume::wire::VolumeManagerInfo> GetVolumeManagerInfo() {
+  zx::result<fuchsia_storage_block::wire::VolumeManagerInfo> GetVolumeManagerInfo() {
     zx::result<std::string> device_path = fs().DevicePath();
     if (device_path.is_error()) {
       return device_path.take_error();
     }
-    zx::result volume =
-        component::Connect<fuchsia_hardware_block_volume::Volume>(device_path.value());
+    zx::result volume = component::Connect<fuchsia_storage_block::Block>(device_path.value());
     if (volume.is_error()) {
       return volume.take_error();
     }
@@ -267,8 +265,7 @@ void FillDirectory(const TestFilesystem& fs, int dir_fd, uint32_t max_blocks) {
 TEST_F(MinfsFvmTestWith8MiBSliceSize, FreeSharedPoolBytes) {
   // Get the volume initial conditions for computing what minfs should be returning. There should be
   // at least two free slices for us to test the partition limit.
-  zx::result<fuchsia_hardware_block_volume::wire::VolumeManagerInfo> manager_info =
-      GetVolumeManagerInfo();
+  zx::result<fuchsia_storage_block::wire::VolumeManagerInfo> manager_info = GetVolumeManagerInfo();
   ASSERT_TRUE(manager_info.is_ok());
   ASSERT_LT(manager_info->assigned_slice_count, manager_info->slice_count);
   uint64_t free_slices = manager_info->slice_count - manager_info->assigned_slice_count;

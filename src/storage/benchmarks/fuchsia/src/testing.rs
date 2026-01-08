@@ -4,7 +4,7 @@
 
 use async_trait::async_trait;
 use fidl::endpoints::DiscoverableProtocolMarker as _;
-use fidl_fuchsia_hardware_block_volume::VolumeMarker;
+use fidl_fuchsia_storage_block::BlockMarker;
 use fs_management::Fvm;
 use fs_management::filesystem::{
     BlockConnector, DirBasedBlockConnector, ServingMultiVolumeFilesystem,
@@ -82,7 +82,7 @@ impl BlockDevice for Ramdisk {
         let volume_dir = fuchsia_fs::directory::clone(&self.volume_dir).unwrap();
         Box::new(DirBasedBlockConnector::new(
             volume_dir,
-            format!("svc/{}", VolumeMarker::PROTOCOL_NAME),
+            format!("svc/{}", BlockMarker::PROTOCOL_NAME),
         ))
     }
 }

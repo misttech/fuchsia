@@ -46,11 +46,11 @@ zx::result<> RebindGptDriver(fidl::UnownedClientEnd<fuchsia_io::Directory> svc_r
 }
 
 zx::result<GptPartitionMetadata> QueryGptPartitionMetadata(
-    fidl::UnownedClientEnd<fuchsia_hardware_block_partition::Partition> volume) {
-  using fuchsia_hardware_block_partition::Partition;
+    fidl::UnownedClientEnd<fuchsia_storage_block::Block> volume) {
+  using fuchsia_storage_block::Block;
   GptPartitionMetadata metadata;
 
-  fidl::WireResult result = fidl::WireCall<Partition>(volume)->GetMetadata();
+  fidl::WireResult result = fidl::WireCall<Block>(volume)->GetMetadata();
   if (!result.ok()) {
     return zx::error(result.status());
   }
@@ -80,7 +80,7 @@ zx::result<std::unique_ptr<GptDevice>> CreateGptConnection(
     return zx::error(response.status());
   }
 
-  auto [volume, volume_server] = fidl::Endpoints<fuchsia_hardware_block_volume::Volume>::Create();
+  auto [volume, volume_server] = fidl::Endpoints<fuchsia_storage_block::Block>::Create();
   if (fidl::OneWayError response =
           fidl::WireCall(controller)->ConnectToDeviceFidl(volume_server.TakeChannel());
       !response.ok()) {
@@ -100,7 +100,7 @@ zx::result<std::unique_ptr<GptDevice>> CreateGptConnection(
           zx_status_get_string(response.error_value()));
     return response.take_error();
   }
-  const fuchsia_hardware_block::wire::BlockInfo& info = response.value()->info;
+  const fuchsia_storage_block::wire::BlockInfo& info = response.value()->info;
 
   zx::result remote_device =
       block_client::RemoteBlockDevice::Create(std::move(volume), std::move(controller_clone));
@@ -178,7 +178,7 @@ zx::result<std::vector<GptDevicePartitioner::GptClients>> GptDevicePartitioner::
     if (std::string_view{de->d_name} == ".") {
       continue;
     }
-    zx::result block_endpoints = fidl::CreateEndpoints<fuchsia_hardware_block::Block>();
+    zx::result block_endpoints = fidl::CreateEndpoints<fuchsia_storage_block::Block>();
     if (block_endpoints.is_error()) {
       return zx::error(ZX_ERR_INTERNAL);
     }
@@ -202,7 +202,7 @@ zx::result<std::vector<GptDevicePartitioner::GptClients>> GptDevicePartitioner::
               zx_status_get_string(response.error_value()));
         continue;
       }
-      if (response.value()->info.flags & fuchsia_hardware_block::wire::Flag::kRemovable) {
+      if (response.value()->info.flags & fuchsia_storage_block::wire::DeviceFlag::kRemovable) {
         continue;
       }
     }
@@ -472,8 +472,7 @@ zx::result<std::unique_ptr<BlockPartitionClient>> GptDevicePartitioner::FindPart
     return zx::ok(std::move(result->partition));
   }
   zx::result result = devices_.OpenPartition([&](const zx::channel& chan) -> bool {
-    auto client =
-        fidl::UnownedClientEnd<fuchsia_hardware_block_partition::Partition>(chan.borrow());
+    auto client = fidl::UnownedClientEnd<fuchsia_storage_block::Block>(chan.borrow());
     zx::result metadata = QueryGptPartitionMetadata(client);
     if (metadata.is_error()) {
       if (metadata.status_value() != ZX_ERR_NOT_SUPPORTED) {
@@ -492,8 +491,7 @@ zx::result<std::unique_ptr<BlockPartitionClient>> GptDevicePartitioner::FindPart
 zx::result<std::vector<std::unique_ptr<BlockPartitionClient>>>
 GptDevicePartitioner::FindAllPartitions(GptDevicePartitioner::FilterCallback filter) const {
   zx::result result = devices_.OpenAllPartitions([&](const zx::channel& chan) -> bool {
-    auto client =
-        fidl::UnownedClientEnd<fuchsia_hardware_block_partition::Partition>((chan.borrow()));
+    auto client = fidl::UnownedClientEnd<fuchsia_storage_block::Block>((chan.borrow()));
     zx::result metadata = QueryGptPartitionMetadata(client);
     if (metadata.is_error()) {
       if (metadata.status_value() != ZX_ERR_NOT_SUPPORTED) {

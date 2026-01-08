@@ -5,6 +5,7 @@
 #include "ramdisk.h"
 
 #include <fidl/fuchsia.hardware.block.volume/cpp/fidl.h>
+#include <fidl/fuchsia.storage.block/cpp/fidl.h>
 #include <zircon/assert.h>
 #include <zircon/types.h>
 
@@ -47,12 +48,10 @@ zx::result<std::unique_ptr<Ramdisk>> Ramdisk::Create(
       result.is_error()) {
     return result.take_error();
   }
-  if (zx::result result =
-          ramdisk->outgoing_.AddUnmanagedProtocol<fuchsia_hardware_block_volume::Volume>(
-              [ramdisk = ramdisk.get()](
-                  fidl::ServerEnd<fuchsia_hardware_block_volume::Volume> server_end) {
-                ramdisk->block_server_.Serve(std::move(server_end));
-              });
+  if (zx::result result = ramdisk->outgoing_.AddUnmanagedProtocol<fuchsia_storage_block::Block>(
+          [ramdisk = ramdisk.get()](fidl::ServerEnd<fuchsia_storage_block::Block> server_end) {
+            ramdisk->block_server_.Serve(std::move(server_end));
+          });
       result.is_error()) {
     return result.take_error();
   }
@@ -61,8 +60,8 @@ zx::result<std::unique_ptr<Ramdisk>> Ramdisk::Create(
     if (auto result = controller->outgoing()->AddService<fuchsia_hardware_block_volume::Service>(
             fuchsia_hardware_block_volume::Service::InstanceHandler({
                 .volume =
-                    [ramdisk = ramdisk.get()](
-                        fidl::ServerEnd<fuchsia_hardware_block_volume::Volume> server_end) {
+                    [ramdisk =
+                         ramdisk.get()](fidl::ServerEnd<fuchsia_storage_block::Block> server_end) {
                       ramdisk->block_server_.Serve(std::move(server_end));
                     },
             }),

@@ -5,7 +5,7 @@
 #ifndef SRC_STORAGE_FVM_DRIVER_VPARTITION_MANAGER_H_
 #define SRC_STORAGE_FVM_DRIVER_VPARTITION_MANAGER_H_
 
-#include <fidl/fuchsia.hardware.block.volume/cpp/wire.h>
+#include <fidl/fuchsia.storage.block/cpp/wire.h>
 #include <fuchsia/hardware/block/driver/cpp/banjo.h>
 #include <fuchsia/hardware/block/partition/cpp/banjo.h>
 #include <lib/ddk/device.h>
@@ -39,14 +39,13 @@
 
 namespace fvm {
 
-using fuchsia_hardware_block_volume::wire::VolumeManagerInfo;
+using fuchsia_storage_block::wire::VolumeManagerInfo;
 
 // Forward declaration
 class VPartitionManager;
-using ManagerDeviceType =
-    ddk::Device<VPartitionManager, ddk::Initializable,
-                ddk::Messageable<fuchsia_hardware_block_volume::VolumeManager>::Mixin,
-                ddk::Unbindable, ddk::ChildPreReleaseable>;
+using ManagerDeviceType = ddk::Device<VPartitionManager, ddk::Initializable,
+                                      ddk::Messageable<fuchsia_storage_block::VolumeManager>::Mixin,
+                                      ddk::Unbindable, ddk::ChildPreReleaseable>;
 
 class VPartitionManager : public ManagerDeviceType {
  public:
@@ -107,9 +106,8 @@ class VPartitionManager : public ManagerDeviceType {
   // Allocates the partition, returning it without adding it to the device manager. Production code
   // will go through the FIDL API, this is exposed separately to allow testing without FIDL.
   zx::result<std::unique_ptr<VPartition>> AllocatePartition(
-      uint64_t slice_count, const fuchsia_hardware_block_partition::wire::Guid& type,
-      const fuchsia_hardware_block_partition::wire::Guid& instance, fidl::StringView name,
-      uint32_t flags);
+      uint64_t slice_count, const fuchsia_storage_block::wire::Guid& type,
+      const fuchsia_storage_block::wire::Guid& instance, fidl::StringView name, uint32_t flags);
 
   // Returns a reference to the Diagnostics that this instance publishes to.
   Diagnostics& diagnostics() { return diagnostics_; }

@@ -278,7 +278,7 @@ TEST_F(ServerTest, FuaWriteWithFua) {
   block_info_t block_info = {.block_count = kBlockCount,
                              .block_size = kBlockSize,
                              .max_transfer_size = kBlockSize,
-                             .flags = FLAG_FUA_SUPPORT};
+                             .flags = DEVICE_FLAG_FUA_SUPPORT};
   CreateServer(block_info);
   AttachVmo(/*do_fill=*/true);
 
@@ -383,7 +383,7 @@ TEST_F(ServerTest, FuaWriteWithLargeGroupedTransaction) {
   block_info_t block_info = {.block_count = kBlockCount,
                              .block_size = kBlockSize,
                              .max_transfer_size = kBlockSize,
-                             .flags = FLAG_FUA_SUPPORT};
+                             .flags = DEVICE_FLAG_FUA_SUPPORT};
   CreateServer(block_info);
   AttachVmo(/*do_fill=*/true);
 

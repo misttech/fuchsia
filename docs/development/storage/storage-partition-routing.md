@@ -135,16 +135,16 @@ directory.
 ```
 
 Your component can now access the partitions in its namespace at `/block` .  To
-connect to the `fuchsia.hardware.block.volume.Volume` protocol for a given
+connect to the `fuchsia.storage.block.Block` protocol for a given
 partition, you connect via this path:
 
 ```rust
-use fidl_fuchsia_hardware_block_volume::VolumeMarker;
+use fidl_fuchsia_storage_block::BlockMarker;
 use block_client::RemoteBlockClient;
 
 async fn connect_to_my_partition() -> Result<(), anyhow::Error> {
-    let proxy = fuchsia_component::client::connect_to_protocol_at::<VolumeMarker>(
-        "/block/my_partition/fuchsia.hardware.block.volume.Volume"
+    let proxy = fuchsia_component::client::connect_to_protocol_at::<BlockMarker>(
+        "/block/my_partition/fuchsia.storage.block.Block"
     )?;
     let block_client = RemoteBlockClient::new(proxy).await?;
     // ... use the block client

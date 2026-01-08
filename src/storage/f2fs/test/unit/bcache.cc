@@ -4,6 +4,8 @@
 
 #include "src/storage/f2fs/bcache.h"
 
+#include <fidl/fuchsia.storage.block/cpp/wire.h>
+
 #include <gtest/gtest.h>
 
 #include "src/storage/f2fs/common.h"
@@ -26,7 +28,7 @@ TEST(BCacheTest, Trim) {
     auto bc_or = CreateBcacheMapper(std::move(device), true);
     ASSERT_TRUE(bc_or.is_ok());
 
-    fuchsia_hardware_block::wire::BlockInfo info;
+    fuchsia_storage_block::wire::BlockInfo info;
     bc_or->BlockGetInfo(&info);
     block_t end_blk = static_cast<block_t>(bc_or->Maxblk() / (kBlockSize / info.block_size));
     ASSERT_EQ(bc_or->Trim(0, end_blk), ZX_ERR_NOT_SUPPORTED);
@@ -40,7 +42,7 @@ TEST(BCacheTest, Trim) {
     auto bc_or = CreateBcacheMapper(std::move(device), true);
     ASSERT_TRUE(bc_or.is_ok());
 
-    fuchsia_hardware_block::wire::BlockInfo info;
+    fuchsia_storage_block::wire::BlockInfo info;
     bc_or->BlockGetInfo(&info);
     block_t end_blk = static_cast<block_t>(bc_or->Maxblk() / (kBlockSize / info.block_size));
     ASSERT_EQ(bc_or->Trim(0, end_blk), ZX_OK);
@@ -109,17 +111,18 @@ TEST(BCacheTest, Flag) {
                                                                 .supports_trim = false});
   ASSERT_TRUE(device);
 
-  fuchsia_hardware_block::wire::Flag test_flag = fuchsia_hardware_block::wire::Flag::kReadonly |
-                                                 fuchsia_hardware_block::wire::Flag::kRemovable |
-                                                 fuchsia_hardware_block::wire::Flag::kTrimSupport |
-                                                 fuchsia_hardware_block::wire::Flag::kFuaSupport;
+  fuchsia_storage_block::wire::DeviceFlag test_flag =
+      fuchsia_storage_block::wire::DeviceFlag::kReadonly |
+      fuchsia_storage_block::wire::DeviceFlag::kRemovable |
+      fuchsia_storage_block::wire::DeviceFlag::kTrimSupport |
+      fuchsia_storage_block::wire::DeviceFlag::kFuaSupport;
 
   device->SetInfoFlags(test_flag);
 
   auto bc_or = CreateBcacheMapper(std::move(device));
   ASSERT_FALSE(bc_or.is_error());
 
-  fuchsia_hardware_block::wire::BlockInfo info;
+  fuchsia_storage_block::wire::BlockInfo info;
   bc_or->BlockGetInfo(&info);
   ASSERT_EQ(test_flag, info.flags);
 }
@@ -177,7 +180,7 @@ class BcacheMapperTest
 };
 
 TEST_P(BcacheMapperTest, BlockGetInfo) {
-  fuchsia_hardware_block::wire::BlockInfo info;
+  fuchsia_storage_block::wire::BlockInfo info;
   bcache_->BlockGetInfo(&info);
 
   // Check block size

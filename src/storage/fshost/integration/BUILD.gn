@@ -26,6 +26,7 @@ rustc_library("fshost_test_fixture") {
     "//sdk/fidl/fuchsia.io:fuchsia.io_rust",
     "//sdk/fidl/fuchsia.logger:fuchsia.logger_rust",
     "//sdk/fidl/fuchsia.security.keymint:fuchsia.security.keymint_rust",
+    "//sdk/fidl/fuchsia.storage.block:fuchsia.storage.block_rust",
     "//sdk/fidl/fuchsia.storage.partitions:fuchsia.storage.partitions_rust",
     "//sdk/lib/driver_test_realm/realm_builder/rust",
     "//sdk/rust/zx",
@@ -254,8 +255,8 @@ template("fshost_integration_test_package") {
     source_root = "tests/fshost_integration_test.rs"
     deps = [
       "//sdk/fidl/fuchsia.fshost:fuchsia.fshost_rust",
-      "//sdk/fidl/fuchsia.hardware.block.volume:fuchsia.hardware.block.volume_rust",
       "//sdk/fidl/fuchsia.io:fuchsia.io_rust",
+      "//sdk/fidl/fuchsia.storage.block:fuchsia.storage.block_rust",
       "//sdk/lib/device-watcher/rust",
       "//sdk/rust/zx",
       "//src/lib/fidl/rust/fidl",
@@ -287,7 +288,7 @@ template("fshost_integration_test_package") {
     }
     if (defined(fshost_options.storage_host) && fshost_options.storage_host) {
       deps += [
-        "//sdk/fidl/fuchsia.hardware.block.partition:fuchsia.hardware.block.partition_rust",
+        "//sdk/fidl/fuchsia.storage.block:fuchsia.storage.block_rust",
         "//sdk/fidl/fuchsia.storage.partitions:fuchsia.storage.partitions_rust",
       ]
     }
@@ -325,8 +326,8 @@ template("fshost_integration_test_package") {
       source_root = "tests/system_volume_manipulation.rs"
       deps = [
         "//sdk/fidl/fuchsia.fshost:fuchsia.fshost_rust",
-        "//sdk/fidl/fuchsia.hardware.block:fuchsia.hardware.block_rust",
         "//sdk/fidl/fuchsia.io:fuchsia.io_rust",
+        "//sdk/fidl/fuchsia.storage.block:fuchsia.storage.block_rust",
         "//sdk/fidl/fuchsia.storage.partitions:fuchsia.storage.partitions_rust",
         "//sdk/lib/device-watcher/rust",
         "//sdk/rust/zx",
@@ -428,8 +429,8 @@ template("fshost_integration_test_package") {
       source_root = "tests/shred_keys.rs"
       deps = [
         "//sdk/fidl/fuchsia.fshost:fuchsia.fshost_rust",
-        "//sdk/fidl/fuchsia.hardware.block.volume:fuchsia.hardware.block.volume_rust",
         "//sdk/fidl/fuchsia.io:fuchsia.io_rust",
+        "//sdk/fidl/fuchsia.storage.block:fuchsia.storage.block_rust",
         "//sdk/rust/zx",
         "//src/lib/fidl/rust/fidl",
         "//src/lib/fuchsia-fs",

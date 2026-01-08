@@ -84,17 +84,16 @@ class MockTransactionManager : public TransactionManager, public block_client::B
     return zx::error(ZX_ERR_NOT_SUPPORTED);
   }
 
-  zx_status_t BlockGetInfo(fuchsia_hardware_block::wire::BlockInfo* out_info) const final {
+  zx_status_t BlockGetInfo(fuchsia_storage_block::wire::BlockInfo* out_info) const final {
     return ZX_ERR_NOT_SUPPORTED;
   }
 
-  zx_status_t VolumeGetInfo(
-      fuchsia_hardware_block_volume::wire::VolumeManagerInfo* out_manager_info,
-      fuchsia_hardware_block_volume::wire::VolumeInfo* out_volume_info) const final {
+  zx_status_t VolumeGetInfo(fuchsia_storage_block::wire::VolumeManagerInfo* out_manager_info,
+                            fuchsia_storage_block::wire::VolumeInfo* out_volume_info) const final {
     return ZX_ERR_NOT_SUPPORTED;
   }
   zx_status_t VolumeQuerySlices(const uint64_t* slices, size_t slices_count,
-                                fuchsia_hardware_block_volume::wire::VsliceRange* out_ranges,
+                                fuchsia_storage_block::wire::VsliceRange* out_ranges,
                                 size_t* out_ranges_count) const final {
     return ZX_ERR_NOT_SUPPORTED;
   }

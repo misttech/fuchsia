@@ -7,7 +7,7 @@
 #include <dirent.h>
 #include <fcntl.h>
 #include <fidl/fuchsia.fshost/cpp/wire.h>
-#include <fidl/fuchsia.hardware.block/cpp/wire.h>
+#include <fidl/fuchsia.storage.block/cpp/wire.h>
 #include <lib/component/incoming/cpp/clone.h>
 #include <lib/component/incoming/cpp/protocol.h>
 #include <lib/fdio/cpp/caller.h>
@@ -119,7 +119,7 @@ void FactoryReset::Shred(fit::callback<void(zx_status_t)> callback) const {
           continue;
         }
         zx::result block =
-            component::ConnectAt<fuchsia_hardware_block::Block>(caller.directory(), de->d_name);
+            component::ConnectAt<fuchsia_storage_block::Block>(caller.directory(), de->d_name);
         if (block.is_error()) {
           FX_PLOGS(ERROR, block.status_value()) << "Error opening " << de->d_name;
           continue;

@@ -5,9 +5,8 @@
 use crate::format::{DiskFormat, detect_disk_format};
 use anyhow::{Context, Error, anyhow};
 use fidl_fuchsia_device::{ControllerMarker, ControllerProxy};
-use fidl_fuchsia_hardware_block_partition::{Guid, PartitionMarker};
-use fidl_fuchsia_hardware_block_volume::VolumeManagerProxy;
 use fidl_fuchsia_io as fio;
+use fidl_fuchsia_storage_block::{BlockMarker, Guid, VolumeManagerProxy};
 use fuchsia_async::TimeoutExt;
 use fuchsia_component_client::connect_to_named_protocol_at_dir_root;
 use fuchsia_fs::directory::{WatchEvent, Watcher};
@@ -112,8 +111,7 @@ pub async fn partition_matches_with_proxy(
             || matcher.labels.is_some()
     );
 
-    let (partition_proxy, partition_server_end) =
-        fidl::endpoints::create_proxy::<PartitionMarker>();
+    let (partition_proxy, partition_server_end) = fidl::endpoints::create_proxy::<BlockMarker>();
     controller_proxy
         .connect_to_device_fidl(partition_server_end.into_channel())
         .context("connecting to partition protocol")?;
@@ -228,7 +226,7 @@ mod tests {
     use block_server::{DeviceInfo, PartitionInfo};
     use fidl::endpoints::{RequestStream as _, create_proxy_and_stream};
     use fidl_fuchsia_device::{ControllerMarker, ControllerRequest};
-    use fidl_fuchsia_hardware_block_volume::VolumeRequestStream;
+    use fidl_fuchsia_storage_block::BlockRequestStream;
     use fuchsia_async as fasync;
     use futures::{FutureExt, StreamExt, pin_mut, select};
     use std::sync::Arc;
@@ -286,7 +284,7 @@ mod tests {
                         let fake_block_server = fake_block_server.clone();
                         fasync::Task::spawn(async move {
                             if let Err(e) = fake_block_server
-                                .serve(VolumeRequestStream::from_channel(
+                                .serve(BlockRequestStream::from_channel(
                                     fasync::Channel::from_channel(server),
                                 ))
                                 .await

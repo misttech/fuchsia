@@ -5,7 +5,7 @@
 #include "src/firmware/paver/block-devices.h"
 
 #include <fcntl.h>
-#include <fidl/fuchsia.hardware.block.partition/cpp/wire.h>
+#include <fidl/fuchsia.storage.block/cpp/wire.h>
 #include <lib/async-loop/cpp/loop.h>
 #include <lib/async-loop/default.h>
 #include <lib/driver-integration-test/fixture.h>
@@ -44,7 +44,7 @@ class FakeStorageHost {
       EXPECT_OK(service_dir->AddEntry("part-" + std::to_string(i), partition_dir));
       EXPECT_OK(partition_dir->AddEntry(
           "volume", fbl::MakeRefCounted<fs::Service>([this, i](zx::channel channel) {
-            fidl::ServerEnd<fuchsia_hardware_block_volume::Volume> request(std::move(channel));
+            fidl::ServerEnd<fuchsia_storage_block::Block> request(std::move(channel));
             this->servers_[i].Serve(std::move(request));
             return ZX_OK;
           })));
@@ -98,8 +98,7 @@ TEST(BlockDevicesTests, TestPartitionsDir) {
   {
     // Present partition
     zx::result connector = devices->OpenPartition([](const zx::channel& channel) {
-      auto client =
-          fidl::UnownedClientEnd<fuchsia_hardware_block_partition::Partition>((channel.borrow()));
+      auto client = fidl::UnownedClientEnd<fuchsia_storage_block::Block>((channel.borrow()));
       auto result = fidl::WireCall(client)->GetInstanceGuid();
       if (!result.ok()) {
         return false;
@@ -126,8 +125,7 @@ TEST(BlockDevicesTests, TestPartitionsDir) {
   {
     // Absent partition
     zx::result connector = devices->OpenPartition([](const zx::channel& channel) {
-      auto client =
-          fidl::UnownedClientEnd<fuchsia_hardware_block_partition::Partition>((channel.borrow()));
+      auto client = fidl::UnownedClientEnd<fuchsia_storage_block::Block>((channel.borrow()));
       auto result = fidl::WireCall(client)->GetInstanceGuid();
       if (!result.ok()) {
         return false;

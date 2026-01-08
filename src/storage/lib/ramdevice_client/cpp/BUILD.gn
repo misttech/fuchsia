@@ -21,8 +21,8 @@ source_set("ramdevice-client") {
     "ramnand.cc",
   ]
   public_deps = [
-    # <ramdevice-client/ramdisk.h> has #include <fidl/fuchsia.hardware.block/cpp/wire.h>
-    "//sdk/fidl/fuchsia.hardware.block:fuchsia.hardware.block_cpp",
+    # <ramdevice-client/ramdisk.h> has #include <fidl/fuchsia.storage.block/cpp/wire.h>
+    "//sdk/fidl/fuchsia.storage.block:fuchsia.storage.block_cpp",
 
     # <ramdevice-client/ramnand.h> has #include <fidl/fuchsia.device/cpp/wire.h>
     "//sdk/fidl/fuchsia.device:fuchsia.device_cpp",
@@ -35,9 +35,8 @@ source_set("ramdevice-client") {
   ]
   deps = [
     "//sdk/fidl/fuchsia.device:fuchsia.device_cpp",
-    "//sdk/fidl/fuchsia.hardware.block:fuchsia.hardware.block_cpp",
-    "//sdk/fidl/fuchsia.hardware.block.volume:fuchsia.hardware.block.volume_cpp",
     "//sdk/fidl/fuchsia.hardware.ramdisk:fuchsia.hardware.ramdisk_cpp",
+    "//sdk/fidl/fuchsia.storage.block:fuchsia.storage.block_cpp",
     "//sdk/lib/component/incoming/cpp",
     "//sdk/lib/device-watcher/cpp",
     "//sdk/lib/fdio",
@@ -70,9 +69,9 @@ source_set("ramdevice-client-test") {
   ]
   deps = [
     "//sdk/fidl/fuchsia.device:fuchsia.device_cpp",
-    "//sdk/fidl/fuchsia.hardware.block:fuchsia.hardware.block_cpp",
     "//sdk/fidl/fuchsia.hardware.nand:fuchsia.hardware.nand_cpp",
     "//sdk/fidl/fuchsia.hardware.ramdisk:fuchsia.hardware.ramdisk_cpp",
+    "//sdk/fidl/fuchsia.storage.block:fuchsia.storage.block_cpp",
     "//sdk/lib/device-watcher/cpp",
     "//sdk/lib/fdio",
     "//src/lib/ddk",

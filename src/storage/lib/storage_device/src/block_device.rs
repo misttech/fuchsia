@@ -8,7 +8,7 @@ use crate::buffer_allocator::{BufferAllocator, BufferSource};
 use anyhow::{Error, bail, ensure};
 use async_trait::async_trait;
 use block_client::{
-    BlockClient, BlockFlags, BufferSlice, MutableBufferSlice, ReadOptions, VmoId, WriteOptions,
+    BlockClient, BlockDeviceFlag, BufferSlice, MutableBufferSlice, ReadOptions, VmoId, WriteOptions,
 };
 use std::ops::Range;
 use zx::Status;
@@ -132,7 +132,7 @@ impl<T: BlockClient> Device for BlockDevice<T> {
     }
 
     fn supports_trim(&self) -> bool {
-        self.remote.block_flags().contains(BlockFlags::TRIM_SUPPORT)
+        self.remote.block_flags().contains(BlockDeviceFlag::TRIM_SUPPORT)
     }
 }
 

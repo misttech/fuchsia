@@ -26,9 +26,8 @@ rustc_binary("bin") {
   edition = "2024"
 
   deps = [
-    "//sdk/fidl/fuchsia.hardware.block:fuchsia.hardware.block_rust",
-    "//sdk/fidl/fuchsia.hardware.block.partition:fuchsia.hardware.block.partition_rust",
     "//sdk/fidl/fuchsia.hwinfo:fuchsia.hwinfo_rust",
+    "//sdk/fidl/fuchsia.storage.block:fuchsia.storage.block_rust",
     "//sdk/rust/zx",
     "//src/lib/fuchsia",
     "//src/lib/fuchsia-async",

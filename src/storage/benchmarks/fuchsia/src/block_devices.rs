@@ -9,12 +9,11 @@ use fidl::endpoints::{
 };
 use fidl_fuchsia_device::ControllerMarker;
 use fidl_fuchsia_fs_startup::{CreateOptions, MountOptions};
-use fidl_fuchsia_hardware_block::BlockMarker;
-use fidl_fuchsia_hardware_block_volume::{
-    ALLOCATE_PARTITION_FLAG_INACTIVE, VolumeManagerMarker, VolumeManagerProxy, VolumeMarker,
-    VolumeSynchronousProxy,
-};
 use fidl_fuchsia_io as fio;
+use fidl_fuchsia_storage_block::{
+    ALLOCATE_PARTITION_FLAG_INACTIVE, BlockMarker, BlockSynchronousProxy, VolumeManagerMarker,
+    VolumeManagerProxy,
+};
 use fs_management::filesystem::{
     BlockConnector, DirBasedBlockConnector, ServingMultiVolumeFilesystem,
 };
@@ -318,7 +317,7 @@ impl BenchmarkVolumeFactory {
             let request = fpartitions::PartitionsManagerAddPartitionRequest {
                 transaction: Some(transaction.duplicate_handle(zx::Rights::SAME_RIGHTS).unwrap()),
                 name: Some(BENCHMARK_FVM_VOLUME_NAME.to_string()),
-                type_guid: Some(fidl_fuchsia_hardware_block_partition::Guid {
+                type_guid: Some(fidl_fuchsia_storage_block::Guid {
                     value: BENCHMARK_FVM_TYPE_GUID.clone(),
                 }),
                 num_blocks: Some(BENCHMARK_FVM_SIZE_BYTES / info.1 as u64),
@@ -487,7 +486,7 @@ impl BenchmarkVolumeFactory {
         // Requires downstream work, i.e. set_up_fvm_volume() and set_up_insecure_zxcrypt should
         // return controllers.
         let block = connect_to_named_protocol_at_dir_root::<BlockMarker>(&volume_dir, ".").unwrap();
-        let volume = VolumeSynchronousProxy::new(block.into_channel().unwrap().into());
+        let volume = BlockSynchronousProxy::new(block.into_channel().unwrap().into());
         let volume_dir = if config.use_zxcrypt {
             zxcrypt::set_up_insecure_zxcrypt(&volume_dir).await.expect("Failed to set up zxcrypt")
         } else {
@@ -521,7 +520,7 @@ impl BenchmarkVolumeFactory {
             })),
             volume_dir: Some(volume_dir),
             fvm_instance: None,
-            block_path: format!("svc/{}", VolumeMarker::PROTOCOL_NAME),
+            block_path: format!("svc/{}", BlockMarker::PROTOCOL_NAME),
             crypt_task,
         }
     }
@@ -551,7 +550,7 @@ impl BenchmarkVolumeFactory {
             destroy_fn: None,
             volume_dir: Some(volume_dir),
             fvm_instance: Some(fvm_instance),
-            block_path: format!("svc/{}", VolumeMarker::PROTOCOL_NAME),
+            block_path: format!("svc/{}", BlockMarker::PROTOCOL_NAME),
             crypt_task,
         }
     }
@@ -667,7 +666,7 @@ mod tests {
             .await;
         let volume_info = ramdisk
             .connector()
-            .connect_volume()
+            .connect_block()
             .unwrap()
             .into_proxy()
             .get_volume_info()
@@ -690,7 +689,7 @@ mod tests {
             .await;
         let volume_info = ramdisk
             .connector()
-            .connect_volume()
+            .connect_block()
             .unwrap()
             .into_proxy()
             .get_volume_info()
@@ -708,7 +707,7 @@ mod tests {
             vmo.create_child(zx::VmoChildOptions::REFERENCE, 0, 0).unwrap(),
         ));
         let (client, server_end) =
-            fidl::endpoints::create_proxy::<fidl_fuchsia_hardware_block_volume::VolumeMarker>();
+            fidl::endpoints::create_proxy::<fidl_fuchsia_storage_block::BlockMarker>();
 
         let _task =
             fasync::Task::spawn(async move { server.serve(server_end.into_stream()).await });
@@ -848,10 +847,9 @@ mod tests {
                 let volume_manager = fvm::start_fvm_driver(&block_controller, &dir)
                     .await
                     .expect("Failed to start FVM");
-                let type_guid =
-                    fidl_fuchsia_hardware_block_partition::Guid { value: BLOBFS_TYPE_GUID };
+                let type_guid = fidl_fuchsia_storage_block::Guid { value: BLOBFS_TYPE_GUID };
                 let instance_guid =
-                    fidl_fuchsia_hardware_block_partition::Guid { value: create_random_guid() };
+                    fidl_fuchsia_storage_block::Guid { value: create_random_guid() };
                 zx::ok(
                     volume_manager
                         .allocate_partition(1, &type_guid, &instance_guid, BLOBFS_VOLUME_NAME, 0)

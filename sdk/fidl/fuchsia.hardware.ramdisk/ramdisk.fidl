@@ -5,7 +5,7 @@
 library fuchsia.hardware.ramdisk;
 
 using fuchsia.io;
-using fuchsia.hardware.block;
+using fuchsia.storage.block;
 using zx;
 
 /// The protocol for interacting with a instance of a ramdisk.
@@ -123,7 +123,7 @@ type Options = resource table {
     6: max_transfer_blocks uint32;
 
     /// If unspecified, a default set of flags is used.
-    7: device_flags fuchsia.hardware.block.Flag;
+    7: device_flags fuchsia.storage.block.DeviceFlag;
 };
 
 open protocol Controller {

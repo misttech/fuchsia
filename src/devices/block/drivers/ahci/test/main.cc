@@ -492,9 +492,9 @@ TEST_P(AhciTest, SataDeviceRead) {
   EXPECT_EQ(info.block_size, uint32_t{512});
   EXPECT_EQ(info.block_count, TestController::kTestLogicalBlockCount);
   if (TestController::support_native_command_queuing_) {
-    EXPECT_TRUE(info.flags & FLAG_FUA_SUPPORT);
+    EXPECT_TRUE(info.flags & DEVICE_FLAG_FUA_SUPPORT);
   } else {
-    EXPECT_FALSE(info.flags & FLAG_FUA_SUPPORT);
+    EXPECT_FALSE(info.flags & DEVICE_FLAG_FUA_SUPPORT);
   }
 
   sync_completion_t done;

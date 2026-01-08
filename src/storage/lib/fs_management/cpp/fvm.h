@@ -6,8 +6,8 @@
 #define SRC_STORAGE_LIB_FS_MANAGEMENT_CPP_FVM_H_
 
 #include <fidl/fuchsia.device/cpp/wire.h>
-#include <fidl/fuchsia.hardware.block.volume/cpp/wire.h>
 #include <fidl/fuchsia.io/cpp/wire.h>
+#include <fidl/fuchsia.storage.block/cpp/wire.h>
 #include <lib/zx/result.h>
 #include <stdint.h>
 #include <stdlib.h>
@@ -25,32 +25,31 @@
 namespace fs_management {
 
 // Format a block device to be an empty FVM.
-zx_status_t FvmInit(fidl::UnownedClientEnd<fuchsia_hardware_block::Block> device,
-                    size_t slice_size);
+zx_status_t FvmInit(fidl::UnownedClientEnd<fuchsia_storage_block::Block> device, size_t slice_size);
 
 // Format a block device to be an empty FVM of |disk_size| size.
-zx_status_t FvmInitWithSize(fidl::UnownedClientEnd<fuchsia_hardware_block::Block> device,
+zx_status_t FvmInitWithSize(fidl::UnownedClientEnd<fuchsia_storage_block::Block> device,
                             uint64_t disk_size, size_t slice_size);
 
 // Format a block device to be an empty FVM. The FVM will initially be formatted as if the block
 // device had |initial_volume_size| and leave gap for metadata extension up to |max_volume_size|.
 // Note: volume sizes are assumed to be multiples of the underlying block device block size.
-zx_status_t FvmInitPreallocated(fidl::UnownedClientEnd<fuchsia_hardware_block::Block> device,
+zx_status_t FvmInitPreallocated(fidl::UnownedClientEnd<fuchsia_storage_block::Block> device,
                                 uint64_t initial_volume_size, uint64_t max_volume_size,
                                 size_t slice_size);
 
 // Allocates a new vpartition in the fvm, and waits for it to become accessible.
 zx::result<fidl::ClientEnd<fuchsia_device::Controller>> FvmAllocatePartition(
-    fidl::UnownedClientEnd<fuchsia_hardware_block_volume::VolumeManager> fvm, uint64_t slice_count,
+    fidl::UnownedClientEnd<fuchsia_storage_block::VolumeManager> fvm, uint64_t slice_count,
     uuid::Uuid type_guid, uuid::Uuid instance_guid, std::string_view name, uint32_t flags);
 zx::result<fidl::ClientEnd<fuchsia_device::Controller>> FvmAllocatePartitionWithDevfs(
     fidl::UnownedClientEnd<fuchsia_io::Directory> devfs_root,
-    fidl::UnownedClientEnd<fuchsia_hardware_block_volume::VolumeManager> fvm, uint64_t slice_count,
+    fidl::UnownedClientEnd<fuchsia_storage_block::VolumeManager> fvm, uint64_t slice_count,
     uuid::Uuid type_guid, uuid::Uuid instance_guid, std::string_view name, uint32_t flags);
 
 // Query the volume manager for info.
-zx::result<fuchsia_hardware_block_volume::wire::VolumeManagerInfo> FvmQuery(
-    fidl::UnownedClientEnd<fuchsia_hardware_block_volume::VolumeManager> fvm);
+zx::result<fuchsia_storage_block::wire::VolumeManagerInfo> FvmQuery(
+    fidl::UnownedClientEnd<fuchsia_storage_block::VolumeManager> fvm);
 
 // Set of parameters to use for identifying the correct partition to open via |OpenPartition| or
 // to destroy via |DestroyPartition|.
@@ -90,8 +89,8 @@ zx::result<> DestroyPartitionWithDevfs(int devfs_root_fd, const PartitionMatcher
 // Marks one partition as active and optionally another as inactive in one atomic operation.
 // If both partition GUID are the same, the partition will be activated and
 // no partition will be marked inactive.
-zx_status_t FvmActivate(int fvm_fd, fuchsia_hardware_block_partition::wire::Guid deactivate,
-                        fuchsia_hardware_block_partition::wire::Guid activate);
+zx_status_t FvmActivate(int fvm_fd, fuchsia_storage_block::wire::Guid deactivate,
+                        fuchsia_storage_block::wire::Guid activate);
 
 }  // namespace fs_management
 

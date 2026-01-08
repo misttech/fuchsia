@@ -5,8 +5,7 @@
 #include "src/storage/lib/fs_management/cpp/fvm.h"
 
 #include <fidl/fuchsia.device/cpp/wire_test_base.h>
-#include <fidl/fuchsia.hardware.block.partition/cpp/wire.h>
-#include <fidl/fuchsia.hardware.block.partition/cpp/wire_test_base.h>
+#include <fidl/fuchsia.storage.block/cpp/wire_test_base.h>
 #include <lib/async-loop/cpp/loop.h>
 #include <lib/syslog/cpp/macros.h>
 
@@ -33,8 +32,7 @@ constexpr std::string_view kDefaultPath = "/fake/block/device/1/partition/001";
 constexpr std::string_view kParent = "/fake/block/device/1";
 constexpr std::string_view kNotParent = "/fake/block/device/2";
 
-class FakePartition
-    : public fidl::testing::WireTestBase<fuchsia_hardware_block_partition::Partition> {
+class FakePartition : public fidl::testing::WireTestBase<fuchsia_storage_block::Block> {
  public:
   FakePartition(const uuid::Uuid& type, const uuid::Uuid& instance, std::string_view label)
       : type_guid_(type), instance_guid_(instance), label_(label) {}
@@ -44,18 +42,16 @@ class FakePartition
   }
 
   void GetTypeGuid(GetTypeGuidCompleter::Sync& completer) override {
-    fuchsia_hardware_block_partition::wire::Guid guid;
+    fuchsia_storage_block::wire::Guid guid;
     std::copy(type_guid_.begin(), type_guid_.end(), guid.value.begin());
-    auto guid_object =
-        fidl::ObjectView<fuchsia_hardware_block_partition::wire::Guid>(allocator_, guid);
+    auto guid_object = fidl::ObjectView<fuchsia_storage_block::wire::Guid>(allocator_, guid);
     completer.Reply(ZX_OK, guid_object);
   }
 
   void GetInstanceGuid(GetInstanceGuidCompleter::Sync& completer) override {
-    fuchsia_hardware_block_partition::wire::Guid guid;
+    fuchsia_storage_block::wire::Guid guid;
     std::copy(instance_guid_.begin(), instance_guid_.end(), guid.value.begin());
-    auto guid_object =
-        fidl::ObjectView<fuchsia_hardware_block_partition::wire::Guid>(allocator_, guid);
+    auto guid_object = fidl::ObjectView<fuchsia_storage_block::wire::Guid>(allocator_, guid);
     completer.Reply(ZX_OK, guid_object);
   }
 
@@ -87,10 +83,9 @@ class FakePartitionDevice : public fidl::testing::WireTestBase<fuchsia_device::C
 
   void ConnectToDeviceFidl(ConnectToDeviceFidlRequestView request,
                            ConnectToDeviceFidlCompleter::Sync& completer) override {
-    fidl::BindServer(
-        dispatcher_,
-        fidl::ServerEnd<fuchsia_hardware_block_partition::Partition>(std::move(request->server)),
-        &partition_);
+    fidl::BindServer(dispatcher_,
+                     fidl::ServerEnd<fuchsia_storage_block::Block>(std::move(request->server)),
+                     &partition_);
   }
 
   zx::result<fidl::ClientEnd<fuchsia_device::Controller>> GetClient() {

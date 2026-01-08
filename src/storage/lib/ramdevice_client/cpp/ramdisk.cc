@@ -5,9 +5,8 @@
 #include <dirent.h>
 #include <fcntl.h>
 #include <fidl/fuchsia.device/cpp/wire.h>
-#include <fidl/fuchsia.hardware.block.volume/cpp/wire.h>
-#include <fidl/fuchsia.hardware.block/cpp/wire.h>
 #include <fidl/fuchsia.hardware.ramdisk/cpp/wire.h>
+#include <fidl/fuchsia.storage.block/cpp/wire.h>
 #include <lib/component/incoming/cpp/protocol.h>
 #include <lib/component/incoming/cpp/service.h>
 #include <lib/device-watcher/cpp/device-watcher.h>
@@ -110,7 +109,7 @@ struct ramdisk_client {
     *out = std::unique_ptr<ramdisk_client>(new ramdisk_client(
         std::move(dirfd), std::move(path), std::move(block_path), std::move(ramdisk_interface),
         std::move(ramdisk_controller_interface),
-        fidl::ClientEnd<fuchsia_hardware_block::Block>{std::move(channel.value())},
+        fidl::ClientEnd<fuchsia_storage_block::Block>{std::move(channel.value())},
         fidl::ClientEnd<fuchsia_device::Controller>(std::move(controller.value()))));
     return ZX_OK;
   }
@@ -128,11 +127,10 @@ struct ramdisk_client {
     if (ramdisk_interface.is_error())
       return ramdisk_interface.status_value();
 
-    zx::result volume_interface =
-        component::ConnectAt<fuchsia_hardware_block_volume::Volume>(svc_dir);
+    zx::result volume_interface = component::ConnectAt<fuchsia_storage_block::Block>(svc_dir);
     if (volume_interface.is_error())
       return volume_interface.status_value();
-    fidl::ClientEnd<fuchsia_hardware_block::Block> block_interface(volume_interface->TakeChannel());
+    fidl::ClientEnd<fuchsia_storage_block::Block> block_interface(volume_interface->TakeChannel());
 
     // Bind the outgoing directory to the namespace.
     static std::atomic<int> counter;
@@ -147,7 +145,7 @@ struct ramdisk_client {
             fdio_ns_bind(ns, bind_path.c_str(), outgoing_directory.TakeHandle().release());
         status != ZX_OK)
       return status;
-    fbl::String ram_disk_path = bind_path + "/svc/fuchsia.hardware.block.volume.Volume";
+    fbl::String ram_disk_path = bind_path + "/svc/fuchsia.storage.block.Block";
     *out = std::unique_ptr<ramdisk_client>(new ramdisk_client(
         std::move(bind_path), std::move(ram_disk_path), *std::move(ramdisk_interface),
         std::move(block_interface), std::move(lifeline)));
@@ -229,16 +227,16 @@ struct ramdisk_client {
     return ZX_OK;
   }
 
-  zx::result<fidl::ClientEnd<fuchsia_hardware_block::Block>> Connect() const {
+  zx::result<fidl::ClientEnd<fuchsia_storage_block::Block>> Connect() const {
     if (block_controller_) {
       auto channel = device_watcher::RecursiveWaitForFile(dev_root_fd_.get(),
                                                           relative_path_.c_str(), kDeviceWaitTime);
       if (channel.is_error()) {
         return channel.take_error();
       }
-      return zx::ok(fidl::ClientEnd<fuchsia_hardware_block::Block>(std::move(channel).value()));
+      return zx::ok(fidl::ClientEnd<fuchsia_storage_block::Block>(std::move(channel).value()));
     }
-    return component::Connect<fuchsia_hardware_block::Block>(path());
+    return component::Connect<fuchsia_storage_block::Block>(path());
   }
 
   fidl::UnownedClientEnd<fuchsia_device::Controller> controller_interface() const {
@@ -249,7 +247,7 @@ struct ramdisk_client {
     return ramdisk_interface_.borrow();
   }
 
-  fidl::UnownedClientEnd<fuchsia_hardware_block::Block> block_interface() const {
+  fidl::UnownedClientEnd<fuchsia_storage_block::Block> block_interface() const {
     return block_interface_.borrow();
   }
 
@@ -265,7 +263,7 @@ struct ramdisk_client {
   ramdisk_client(fbl::unique_fd dev_root_fd, fbl::String path, fbl::String relative_path,
                  fidl::ClientEnd<fuchsia_hardware_ramdisk::Ramdisk> ramdisk_interface,
                  fidl::ClientEnd<fuchsia_device::Controller> ramdisk_controller,
-                 fidl::ClientEnd<fuchsia_hardware_block::Block> block_interface,
+                 fidl::ClientEnd<fuchsia_storage_block::Block> block_interface,
                  fidl::ClientEnd<fuchsia_device::Controller> block_controller)
       : dev_root_fd_(std::move(dev_root_fd)),
         path_(std::move(path)),
@@ -277,7 +275,7 @@ struct ramdisk_client {
 
   ramdisk_client(std::string bind_path, fbl::String path,
                  fidl::ClientEnd<fuchsia_hardware_ramdisk::Ramdisk> ramdisk_interface,
-                 fidl::ClientEnd<fuchsia_hardware_block::Block> block_interface,
+                 fidl::ClientEnd<fuchsia_storage_block::Block> block_interface,
                  zx::eventpair lifeline)
       : path_(std::move(path)),
         ramdisk_interface_(std::move(ramdisk_interface)),
@@ -304,7 +302,7 @@ struct ramdisk_client {
   const fbl::String relative_path_;
   fidl::ClientEnd<fuchsia_hardware_ramdisk::Ramdisk> ramdisk_interface_;
   fidl::ClientEnd<fuchsia_device::Controller> ramdisk_controller_;
-  fidl::ClientEnd<fuchsia_hardware_block::Block> block_interface_;
+  fidl::ClientEnd<fuchsia_storage_block::Block> block_interface_;
   fidl::ClientEnd<fuchsia_device::Controller> block_controller_;
 
   // v2 only:
@@ -625,7 +623,7 @@ zx::result<Ramdisk> Ramdisk::CreateLegacyWithVmo(zx::vmo vmo, uint64_t block_siz
   return zx::ok(Ramdisk(client));
 }
 
-zx::result<fidl::ClientEnd<fuchsia_hardware_block::Block>> Ramdisk::ConnectBlock() const {
+zx::result<fidl::ClientEnd<fuchsia_storage_block::Block>> Ramdisk::ConnectBlock() const {
   return client_->Connect();
 }
 

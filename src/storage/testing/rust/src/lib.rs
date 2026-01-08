@@ -4,7 +4,7 @@
 
 use anyhow::{Context, Result, anyhow};
 use fidl_fuchsia_device::ControllerProxy;
-use fidl_fuchsia_hardware_block_partition::{PartitionMarker, PartitionProxy};
+use fidl_fuchsia_storage_block::{BlockMarker, BlockProxy};
 use fs_management::filesystem::BlockConnector;
 use fs_management::format::{DiskFormat, detect_disk_format};
 use fuchsia_component::client::{ServiceInstanceStream, connect_to_protocol_at_path};
@@ -18,8 +18,8 @@ pub mod zxcrypt;
 
 pub type Guid = [u8; 16];
 
-pub fn into_guid(guid: Guid) -> fidl_fuchsia_hardware_block_partition::Guid {
-    fidl_fuchsia_hardware_block_partition::Guid { value: guid }
+pub fn into_guid(guid: Guid) -> fidl_fuchsia_storage_block::Guid {
+    fidl_fuchsia_storage_block::Guid { value: guid }
 }
 
 pub fn create_random_guid() -> Guid {
@@ -30,7 +30,7 @@ pub async fn bind_fvm(proxy: &ControllerProxy) -> Result<()> {
     fvm::bind_fvm_driver(proxy).await
 }
 
-async fn partition_type_guid_matches(guid: &Guid, partition: &PartitionProxy) -> Result<bool> {
+async fn partition_type_guid_matches(guid: &Guid, partition: &BlockProxy) -> Result<bool> {
     let (status, type_guid) =
         partition.get_type_guid().await.context("Failed to get type guid (fidl error")?;
     zx::ok(status).context("Failed to get type guid")?;
@@ -40,7 +40,7 @@ async fn partition_type_guid_matches(guid: &Guid, partition: &PartitionProxy) ->
     Ok(matched)
 }
 
-async fn partition_instance_guid_matches(guid: &Guid, partition: &PartitionProxy) -> Result<bool> {
+async fn partition_instance_guid_matches(guid: &Guid, partition: &BlockProxy) -> Result<bool> {
     let (status, instance_guid) =
         partition.get_instance_guid().await.context("Failed to get instance guid (fidl error")?;
     zx::ok(status).context("Failed to get instance guid")?;
@@ -50,7 +50,7 @@ async fn partition_instance_guid_matches(guid: &Guid, partition: &PartitionProxy
     Ok(matched)
 }
 
-async fn partition_name_matches(name: &str, partition: &PartitionProxy) -> Result<bool> {
+async fn partition_name_matches(name: &str, partition: &BlockProxy) -> Result<bool> {
     let (status, partition_name) =
         partition.get_name().await.context("Failed to get partition name (fidl error")?;
     zx::ok(status).context("Failed to get partition name")?;
@@ -60,7 +60,7 @@ async fn partition_name_matches(name: &str, partition: &PartitionProxy) -> Resul
     Ok(matched)
 }
 
-async fn block_contents_match(format: DiskFormat, block: &PartitionProxy) -> Result<bool> {
+async fn block_contents_match(format: DiskFormat, block: &BlockProxy) -> Result<bool> {
     let content_format = detect_disk_format(block).await;
     Ok(format == content_format)
 }
@@ -82,7 +82,7 @@ pub enum BlockDeviceMatcher<'a> {
 }
 
 impl BlockDeviceMatcher<'_> {
-    async fn matches(&self, partition: &PartitionProxy) -> Result<bool> {
+    async fn matches(&self, partition: &BlockProxy) -> Result<bool> {
         match self {
             Self::TypeGuid(guid) => partition_type_guid_matches(guid, partition).await,
             Self::InstanceGuid(guid) => partition_instance_guid_matches(guid, partition).await,
@@ -92,7 +92,7 @@ impl BlockDeviceMatcher<'_> {
     }
 }
 
-async fn matches_all(partition: &PartitionProxy, matchers: &[BlockDeviceMatcher<'_>]) -> bool {
+async fn matches_all(partition: &BlockProxy, matchers: &[BlockDeviceMatcher<'_>]) -> bool {
     for matcher in matchers {
         if !matcher.matches(partition).await.unwrap_or(false) {
             return false;
@@ -119,7 +119,7 @@ pub async fn wait_for_block_device_devfs(matchers: &[BlockDeviceMatcher<'_>]) ->
             continue;
         }
         let path = Path::new(DEV_CLASS_BLOCK).join(msg.filename);
-        let partition = connect_to_protocol_at_path::<PartitionMarker>(path.to_str().unwrap())?;
+        let partition = connect_to_protocol_at_path::<BlockMarker>(path.to_str().unwrap())?;
         if matches_all(&partition, matchers).await {
             return Ok(path);
         }
@@ -136,7 +136,7 @@ pub async fn wait_for_block_device(
     mut stream: ServiceInstanceStream<fpartitions::PartitionServiceMarker>,
 ) -> Result<fpartitions::PartitionServiceProxy> {
     while let Some(proxy) = stream.try_next().await? {
-        let partition = proxy.connect_partition()?.into_proxy();
+        let partition = proxy.connect_block()?.into_proxy();
         if matches_all(&partition, matchers).await {
             return Ok(proxy);
         }
@@ -157,7 +157,7 @@ pub async fn find_block_device_devfs(matchers: &[BlockDeviceMatcher<'_>]) -> Res
         .context("Failed to readdir /dev/class/block")?;
     for entry in entries {
         let path = Path::new(DEV_CLASS_BLOCK).join(entry.name);
-        let partition = connect_to_protocol_at_path::<PartitionMarker>(path.to_str().unwrap())?;
+        let partition = connect_to_protocol_at_path::<BlockMarker>(path.to_str().unwrap())?;
         if matches_all(&partition, matchers).await {
             return Ok(path);
         }
@@ -176,7 +176,7 @@ where
     Iter: Iterator<Item = C>,
 {
     for connector in partitions {
-        let partition = connector.connect_partition()?.into_proxy();
+        let partition = connector.connect_block()?.into_proxy();
         if matches_all(&partition, matchers).await {
             return Ok(Some(connector));
         }
@@ -187,7 +187,7 @@ where
 #[cfg(test)]
 mod tests {
     use super::*;
-    use fidl_fuchsia_hardware_block_volume::ALLOCATE_PARTITION_FLAG_INACTIVE;
+    use fidl_fuchsia_storage_block::ALLOCATE_PARTITION_FLAG_INACTIVE;
     use ramdevice_client::RamdiskClient;
     const BLOCK_SIZE: u64 = 512;
     const BLOCK_COUNT: u64 = 64 * 1024 * 1024 / BLOCK_SIZE;

@@ -5,7 +5,7 @@
 #ifndef SRC_STORAGE_LIB_FS_MANAGEMENT_CPP_FORMAT_H_
 #define SRC_STORAGE_LIB_FS_MANAGEMENT_CPP_FORMAT_H_
 
-#include <fidl/fuchsia.hardware.block/cpp/wire.h>
+#include <fidl/fuchsia.storage.block/cpp/wire.h>
 #include <zircon/types.h>
 
 #include <memory>
@@ -88,8 +88,8 @@ inline constexpr uint8_t kF2fsMagic[4] = {
 
 inline constexpr uint8_t kFxfsMagic[8] = {'F', 'x', 'f', 's', 'S', 'u', 'p', 'r'};
 
-DiskFormat DetectDiskFormat(fidl::UnownedClientEnd<fuchsia_hardware_block::Block> device);
-DiskFormat DetectDiskFormatLogUnknown(fidl::UnownedClientEnd<fuchsia_hardware_block::Block> device);
+DiskFormat DetectDiskFormat(fidl::UnownedClientEnd<fuchsia_storage_block::Block> device);
+DiskFormat DetectDiskFormatLogUnknown(fidl::UnownedClientEnd<fuchsia_storage_block::Block> device);
 
 class __EXPORT CustomDiskFormat {
  public:

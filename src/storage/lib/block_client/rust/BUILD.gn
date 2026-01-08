@@ -14,10 +14,7 @@ rustc_library("block-client") {
   with_unit_tests = true
   edition = "2024"
   deps = [
-    "//sdk/fidl/fuchsia.hardware.block:fuchsia.hardware.block_rust",
-    "//sdk/fidl/fuchsia.hardware.block.driver:fuchsia.hardware.block.driver_rust",
-    "//sdk/fidl/fuchsia.hardware.block.partition:fuchsia.hardware.block.partition_rust",
-    "//sdk/fidl/fuchsia.hardware.block.volume:fuchsia.hardware.block.volume_rust",
+    "//sdk/fidl/fuchsia.storage.block:fuchsia.storage.block_rust",
     "//sdk/rust/zx",
     "//src/lib/fidl/rust/fidl",
     "//src/lib/fuchsia-async",
@@ -47,7 +44,7 @@ rustc_library("fake-block-client") {
   edition = "2024"
   deps = [
     ":block-client",
-    "//sdk/fidl/fuchsia.hardware.block:fuchsia.hardware.block_rust",
+    "//sdk/fidl/fuchsia.storage.block:fuchsia.storage.block_rust",
     "//sdk/rust/zx",
     "//src/lib/fuchsia-sync",
   ]

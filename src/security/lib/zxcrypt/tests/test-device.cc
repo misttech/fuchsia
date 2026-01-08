@@ -156,7 +156,7 @@ void TestDevice::Rebind() {
 
     zx::result owned = device_watcher::RecursiveWaitForFile(devfs_root().get(), fvm_part_path_);
     ASSERT_OK(owned);
-    fvm_ = fidl::ClientEnd<fuchsia_hardware_block_volume::Volume>(std::move(owned.value()));
+    fvm_ = fidl::ClientEnd<fuchsia_storage_block::Block>(std::move(owned.value()));
 
     std::string controller_path = std::string(fvm_part_path_) + "/device_controller";
     zx::result controller =
@@ -256,7 +256,7 @@ void TestDevice::Corrupt(uint64_t blkno, key_slot_t slot) {
 
   // TODO(https://fxbug.dev/42080299): Update this API to take a volume channel instead.
   ASSERT_OK(block_client::SingleReadBytes(
-      fidl::UnownedClientEnd<fuchsia_hardware_block::Block>(parent_volume().channel()), block,
+      fidl::UnownedClientEnd<fuchsia_storage_block::Block>(parent_volume().channel()), block,
       block_size_, blkno * block_size_));
 
   fidl::ClientEnd channel = new_parent();
@@ -271,7 +271,7 @@ void TestDevice::Corrupt(uint64_t blkno, key_slot_t slot) {
 
   // TODO(https://fxbug.dev/42080299): Update this API to take a volume channel instead.
   ASSERT_OK(block_client::SingleWriteBytes(
-      fidl::UnownedClientEnd<fuchsia_hardware_block::Block>(parent_volume().channel()), block,
+      fidl::UnownedClientEnd<fuchsia_storage_block::Block>(parent_volume().channel()), block,
       block_size_, blkno * block_size_));
 }
 
@@ -298,7 +298,7 @@ void TestDevice::CreateRamdisk(size_t device_size, size_t block_size) {
   zx::result owned =
       device_watcher::RecursiveWaitForFile(devfs_root().get(), ramdisk_.path().c_str());
   ASSERT_OK(owned);
-  fvm_ = fidl::ClientEnd<fuchsia_hardware_block_volume::Volume>(std::move(owned.value()));
+  fvm_ = fidl::ClientEnd<fuchsia_storage_block::Block>(std::move(owned.value()));
 
   std::string controller_path = ramdisk_.path() + "/device_controller";
   zx::result controller =
@@ -324,7 +324,7 @@ void TestDevice::CreateFvmPart(size_t device_size, size_t block_size) {
   // Format the ramdisk as FVM
   zx::result block = ramdisk_.ConnectBlock();
   ASSERT_OK(block);
-  const fidl::ClientEnd<fuchsia_hardware_block::Block> channel = std::move(block).value();
+  const fidl::ClientEnd<fuchsia_storage_block::Block> channel = std::move(block).value();
   ASSERT_OK(fs_management::FvmInit(channel, fvm::kBlockSize));
 
   // Bind the FVM driver to the now-formatted disk
@@ -335,8 +335,7 @@ void TestDevice::CreateFvmPart(size_t device_size, size_t block_size) {
   snprintf(path, sizeof(path), "%s/fvm", ramdisk_.path().c_str());
   zx::result fvm_channel = device_watcher::RecursiveWaitForFile(devfs_root().get(), path);
   ASSERT_OK(fvm_channel.status_value());
-  fidl::ClientEnd<fuchsia_hardware_block_volume::VolumeManager> fvm_manager(
-      std::move(*fvm_channel));
+  fidl::ClientEnd<fuchsia_storage_block::VolumeManager> fvm_manager(std::move(*fvm_channel));
 
   fdio_cpp::UnownedFdioCaller caller(devfs_root());
   zx::result devfs = component::Clone(caller.directory());
@@ -409,7 +408,7 @@ void TestDevice::Connect() {
     block_count_ = response.value()->info.block_count;
   }
 
-  auto [client, server] = fidl::Endpoints<fuchsia_hardware_block::Session>::Create();
+  auto [client, server] = fidl::Endpoints<fuchsia_storage_block::Session>::Create();
   ASSERT_OK(fidl::WireCall(zxcrypt_block())->OpenSession(std::move(server)));
 
   {

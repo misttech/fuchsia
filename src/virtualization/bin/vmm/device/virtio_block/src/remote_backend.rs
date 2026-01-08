@@ -6,7 +6,7 @@ use crate::backend::{BlockBackend, DeviceAttrs, Request, Sector};
 use anyhow::{Error, anyhow};
 use async_trait::async_trait;
 use block_client::{BlockClient, BufferSlice, MutableBufferSlice, RemoteBlockClient};
-use fidl_fuchsia_hardware_block::BlockMarker;
+use fidl_fuchsia_storage_block::BlockMarker;
 use fuchsia_trace as ftrace;
 use futures::future::try_join_all;
 use virtio_device::mem::DeviceRange;

@@ -9,7 +9,7 @@ executable("gpt") {
   sources = [ "gpt.cc" ]
   deps = [
     "//sdk/fidl/fuchsia.device:fuchsia.device_cpp",
-    "//sdk/fidl/fuchsia.hardware.block:fuchsia.hardware.block_cpp",
+    "//sdk/fidl/fuchsia.storage.block:fuchsia.storage.block_cpp",
     "//sdk/lib/component/incoming/cpp",
     "//src/storage/gpt",
     "//src/storage/lib/block_client/cpp",

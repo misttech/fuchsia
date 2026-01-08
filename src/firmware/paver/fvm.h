@@ -46,7 +46,7 @@ zx::result<fidl::ClientEnd<fuchsia_device::Controller>> FvmPartitionFormat(
 // is determined when formatting each volume.
 zx::result<> AllocateEmptyPartitions(
     const fbl::unique_fd& devfs_root,
-    fidl::UnownedClientEnd<fuchsia_hardware_block_volume::VolumeManager> fvm_device);
+    fidl::UnownedClientEnd<fuchsia_storage_block::VolumeManager> fvm_device);
 
 // Given an fd representing a "sparse FVM format", fill the FVM with the
 // provided partitions described by |partition_fd|.

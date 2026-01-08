@@ -2,7 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#include <fidl/fuchsia.hardware.block/cpp/wire.h>
+#include <fidl/fuchsia.storage.block/cpp/wire.h>
 #include <fuchsia/hardware/block/driver/c/banjo.h>
 #include <lib/component/incoming/cpp/protocol.h>
 #include <lib/fit/defer.h>
@@ -74,15 +74,15 @@ void PrintRate(uint64_t count, uint64_t nanos, const char* unit, bool use_kibi) 
 struct BlockDevice {
   zx::vmo vmo;
   zx::fifo fifo;
-  fidl::ClientEnd<fuchsia_hardware_block::Session> session;
+  fidl::ClientEnd<fuchsia_storage_block::Session> session;
   reqid_t reqid;
-  fuchsia_hardware_block::wire::VmoId vmoid;
+  fuchsia_storage_block::wire::VmoId vmoid;
   size_t buffer_size;
-  fuchsia_hardware_block::wire::BlockInfo info;
+  fuchsia_storage_block::wire::BlockInfo info;
 };
 
 zx::result<BlockDevice> OpenBlockDevice(const char* dev, size_t buffer_size) {
-  zx::result block = component::Connect<fuchsia_hardware_block::Block>(dev);
+  zx::result block = component::Connect<fuchsia_storage_block::Block>(dev);
   if (block.is_error()) {
     fprintf(stderr, "error: cannot open '%s': %s\n", dev, block.status_string());
     return block.take_error();

@@ -693,7 +693,9 @@ impl FxVolume {
                             dir.open_block_file(&name, server_end).await;
                         }
                         Err(status) => {
-                            let _ = server_end.close_with_epitaph(status)?;
+                            let _ = server_end.close_with_epitaph(status).unwrap_or_else(|e| {
+                                error!(error:? = e; "open failed to send epitaph");
+                            });
                         }
                     }
                 }

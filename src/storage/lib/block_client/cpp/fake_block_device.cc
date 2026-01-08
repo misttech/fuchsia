@@ -4,7 +4,7 @@
 
 #include "src/storage/lib/block_client/cpp/fake_block_device.h"
 
-#include <fidl/fuchsia.hardware.block/cpp/wire.h>
+#include <fidl/fuchsia.storage.block/cpp/wire.h>
 #include <zircon/assert.h>
 #include <zircon/errors.h>
 
@@ -22,10 +22,10 @@ FakeBlockDevice::FakeBlockDevice(const FakeBlockDevice::Config& config)
       block_size_(config.block_size),
       max_transfer_size_(config.max_transfer_size) {
   ZX_ASSERT(zx::vmo::create(block_count_ * block_size_, ZX_VMO_RESIZABLE, &block_device_) == ZX_OK);
-  ZX_ASSERT(max_transfer_size_ == fuchsia_hardware_block::wire::kMaxTransferUnbounded ||
+  ZX_ASSERT(max_transfer_size_ == fuchsia_storage_block::wire::kMaxTransferUnbounded ||
             max_transfer_size_ % block_size_ == 0);
   if (config.supports_trim) {
-    block_info_flags_ |= fuchsia_hardware_block::wire::Flag::kTrimSupport;
+    block_info_flags_ |= fuchsia_storage_block::wire::DeviceFlag::kTrimSupport;
   }
 }
 
@@ -70,7 +70,7 @@ void FakeBlockDevice::ResetBlockCounts() {
   write_block_count_ = 0;
 }
 
-void FakeBlockDevice::SetInfoFlags(fuchsia_hardware_block::wire::Flag flags) {
+void FakeBlockDevice::SetInfoFlags(fuchsia_storage_block::wire::DeviceFlag flags) {
   fbl::AutoLock lock(&lock_);
   block_info_flags_ = flags;
 }
@@ -181,7 +181,7 @@ zx_status_t FakeBlockDevice::FifoTransaction(block_fifo_request_t* requests, siz
         break;
       }
       case BLOCK_OPCODE_TRIM:
-        if (!(block_info_flags_ & fuchsia_hardware_block::wire::Flag::kTrimSupport)) {
+        if (!(block_info_flags_ & fuchsia_storage_block::wire::DeviceFlag::kTrimSupport)) {
           return ZX_ERR_NOT_SUPPORTED;
         }
         if (requests[i].vmoid != BLOCK_VMOID_INVALID) {
@@ -203,7 +203,7 @@ zx_status_t FakeBlockDevice::FifoTransaction(block_fifo_request_t* requests, siz
   return ZX_OK;
 }
 
-zx_status_t FakeBlockDevice::BlockGetInfo(fuchsia_hardware_block::wire::BlockInfo* out_info) const {
+zx_status_t FakeBlockDevice::BlockGetInfo(fuchsia_storage_block::wire::BlockInfo* out_info) const {
   fbl::AutoLock lock(&lock_);
   out_info->block_count = block_count_;
   out_info->block_size = block_size_;
@@ -262,7 +262,7 @@ zx_status_t FakeFVMBlockDevice::FifoTransaction(block_fifo_request_t* requests, 
   // requests will be excuted by the FakeBlockDevice::FifoTransaction() call at the bottom which
   // handles the pause requests.
 
-  fuchsia_hardware_block::wire::BlockInfo info = {};
+  fuchsia_storage_block::wire::BlockInfo info = {};
   ZX_ASSERT(BlockGetInfo(&info) == ZX_OK);
   ZX_ASSERT_MSG(manager_info_.slice_size >= info.block_size,
                 "Slice size must be larger than block size");
@@ -305,8 +305,8 @@ zx_status_t FakeFVMBlockDevice::FifoTransaction(block_fifo_request_t* requests, 
 }
 
 zx_status_t FakeFVMBlockDevice::VolumeGetInfo(
-    fuchsia_hardware_block_volume::wire::VolumeManagerInfo* out_manager_info,
-    fuchsia_hardware_block_volume::wire::VolumeInfo* out_volume_info) const {
+    fuchsia_storage_block::wire::VolumeManagerInfo* out_manager_info,
+    fuchsia_storage_block::wire::VolumeInfo* out_volume_info) const {
   fbl::AutoLock lock(&fvm_lock_);
   *out_manager_info = manager_info_;
   *out_volume_info = volume_info_;
@@ -315,7 +315,7 @@ zx_status_t FakeFVMBlockDevice::VolumeGetInfo(
 
 zx_status_t FakeFVMBlockDevice::VolumeQuerySlices(
     const uint64_t* slices, size_t slices_count,
-    fuchsia_hardware_block_volume::wire::VsliceRange* out_ranges, size_t* out_ranges_count) const {
+    fuchsia_storage_block::wire::VsliceRange* out_ranges, size_t* out_ranges_count) const {
   *out_ranges_count = 0;
   fbl::AutoLock lock(&fvm_lock_);
   for (size_t i = 0; i < slices_count; i++) {

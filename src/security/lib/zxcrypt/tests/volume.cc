@@ -4,8 +4,7 @@
 
 #include "src/security/lib/zxcrypt/volume.h"
 
-#include <fidl/fuchsia.hardware.block.volume/cpp/wire.h>
-#include <fidl/fuchsia.hardware.block/cpp/wire.h>
+#include <fidl/fuchsia.storage.block/cpp/wire.h>
 #include <inttypes.h>
 #include <lib/fdio/cpp/caller.h>
 #include <stddef.h>
@@ -30,16 +29,16 @@ namespace {
 // See test-device.h; the following macros allow reusing tests for each of the supported versions.
 #define EACH_PARAM(OP, TestSuite, Test) OP(TestSuite, Test, Volume, AES256_XTS_SHA256)
 
-// https://fxbug.dev/42106830: Dump extra information if encountering an unexpected error during volume
-// creation.
-void VolumeCreate(fidl::ClientEnd<fuchsia_hardware_block_volume::Volume> device,
+// https://fxbug.dev/42106830: Dump extra information if encountering an unexpected error during
+// volume creation.
+void VolumeCreate(fidl::ClientEnd<fuchsia_storage_block::Block> device,
                   const fbl::unique_fd& devfs_root, const crypto::Secret& key, bool fvm,
                   zx_status_t expected) {
   const fidl::WireResult result = fidl::WireCall(device)->GetInfo();
   ASSERT_OK(result.status());
   const fit::result response = result.value();
   ASSERT_TRUE(response.is_ok(), "%s", zx_status_get_string(response.error_value()));
-  const fuchsia_hardware_block::wire::BlockInfo& block_info = response.value()->info;
+  const fuchsia_storage_block::wire::BlockInfo& block_info = response.value()->info;
 
   char err[128];
   if (fvm) {
@@ -47,7 +46,7 @@ void VolumeCreate(fidl::ClientEnd<fuchsia_hardware_block_volume::Volume> device,
     ASSERT_OK(result.status());
     const fidl::WireResponse response = result.value();
     ASSERT_OK(response.status);
-    const fuchsia_hardware_block_volume::wire::VolumeManagerInfo& manager_info = *response.manager;
+    const fuchsia_storage_block::wire::VolumeManagerInfo& manager_info = *response.manager;
 
     snprintf(err, sizeof(err),
              "details: block size=%" PRIu32 ", block count=%" PRIu64

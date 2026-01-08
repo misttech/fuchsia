@@ -9,7 +9,7 @@ use fidl::endpoints::DiscoverableProtocolMarker as _;
 use fidl_fuchsia_fs_startup::VolumeMarker as FsStartupVolumeMarker;
 use fidl_fuchsia_fshost::AdminProxy;
 use fidl_fuchsia_fxfs::{BlobCreatorProxy, BlobReaderProxy};
-use fidl_fuchsia_hardware_block_volume::VolumeMarker;
+use fidl_fuchsia_storage_block::{BlockMarker, VolumeManagerMarker};
 use fidl_fuchsia_update_verify::HealthStatus;
 use fs_management::DATA_TYPE_GUID;
 use fs_management::format::constants::DATA_PARTITION_LABEL;
@@ -21,8 +21,6 @@ use fshost_test_fixture::{
     BlockDeviceConfig, BlockDeviceIdentifiers, BlockDeviceParent, TestFixture, VFS_TYPE_FXFS,
     VFS_TYPE_MEMFS, VFS_TYPE_MINFS, round_down,
 };
-
-use fidl_fuchsia_hardware_block_volume::VolumeManagerMarker;
 
 use fuchsia_component::client::connect_to_named_protocol_at_dir_root;
 
@@ -40,8 +38,7 @@ use {
 #[cfg(feature = "storage-host")]
 use {
     fidl::endpoints::ServiceMarker as _, fidl_fuchsia_fshost::RecoveryProxy,
-    fidl_fuchsia_hardware_block_partition as fpartition,
-    fidl_fuchsia_storage_partitions as fpartitions,
+    fidl_fuchsia_storage_block as fpartition, fidl_fuchsia_storage_partitions as fpartitions,
 };
 
 pub mod config;
@@ -275,14 +272,13 @@ async fn partition_max_size_set() {
 
     // Get the blobfs instance guid.
     // TODO(https://fxbug.dev/42072287): Remove hardcoded paths
-    let volume_proxy_data = connect_to_named_protocol_at_dir_root::<VolumeMarker>(
+    let volume_proxy = connect_to_named_protocol_at_dir_root::<BlockMarker>(
         &fixture.dir("dev-topological", fio::Flags::empty()),
         "sys/platform/ram-disk/ramctl/ramdisk-0/block/fvm/blobfs-p-1/block",
     )
     .unwrap();
-    let (status, data_instance_guid) = volume_proxy_data.get_instance_guid().await.unwrap();
+    let (status, blobfs_instance_guid) = volume_proxy.get_instance_guid().await.unwrap();
     zx::Status::ok(status).unwrap();
-    let mut blobfs_instance_guid = data_instance_guid.unwrap();
 
     let data_matcher = PartitionMatcher {
         type_guids: Some(vec![DATA_TYPE_GUID]),
@@ -298,12 +294,11 @@ async fn partition_max_size_set() {
             .expect("failed to find data partition");
 
     // Get the data instance guid.
-    let (volume_proxy, volume_server_end) = fidl::endpoints::create_proxy::<VolumeMarker>();
+    let (volume_proxy, volume_server_end) = fidl::endpoints::create_proxy::<BlockMarker>();
     data_partition_controller.connect_to_device_fidl(volume_server_end.into_channel()).unwrap();
 
     let (status, data_instance_guid) = volume_proxy.get_instance_guid().await.unwrap();
     zx::Status::ok(status).unwrap();
-    let mut data_instance_guid = data_instance_guid.unwrap();
 
     // TODO(https://fxbug.dev/42072287): Remove hardcoded paths
     let fvm_proxy = connect_to_named_protocol_at_dir_root::<VolumeManagerMarker>(
@@ -314,13 +309,13 @@ async fn partition_max_size_set() {
 
     // blobfs max size check
     let (status, blobfs_slice_count) =
-        fvm_proxy.get_partition_limit(blobfs_instance_guid.as_mut()).await.unwrap();
+        fvm_proxy.get_partition_limit(blobfs_instance_guid.as_ref().unwrap()).await.unwrap();
     zx::Status::ok(status).unwrap();
     assert_eq!(blobfs_slice_count, (BLOBFS_MAX_BYTES + fvm_slice_size() - 1) / fvm_slice_size());
 
     // data max size check
     let (status, data_slice_count) =
-        fvm_proxy.get_partition_limit(data_instance_guid.as_mut()).await.unwrap();
+        fvm_proxy.get_partition_limit(data_instance_guid.as_ref().unwrap()).await.unwrap();
     zx::Status::ok(status).unwrap();
     // The expected size depends on whether we are using zxcrypt or not.
     // When wrapping in zxcrypt the data partition size is the same, but the physical disk
@@ -1559,9 +1554,9 @@ async fn debug_block_directory() {
     // change detector.
     assert!(fuchsia_fs::file::read_to_string(&source).await.unwrap().len() > 0);
 
-    let volume = connect_to_named_protocol_at_dir_root::<VolumeMarker>(
+    let volume = connect_to_named_protocol_at_dir_root::<BlockMarker>(
         &block,
-        "000/fuchsia.hardware.block.volume.Volume",
+        "000/fuchsia.storage.block.Block",
     )
     .unwrap();
     assert_eq!(
@@ -1594,8 +1589,8 @@ async fn expose_unmanaged_block_devices() {
     let device_path = dirents.pop().unwrap().name;
     assert!(dirents.is_empty(), "Multiple devices published");
 
-    let path = format!("{}/{}", &device_path, VolumeMarker::PROTOCOL_NAME);
-    let volume = fuchsia_component::client::connect_to_named_protocol_at_dir_root::<VolumeMarker>(
+    let path = format!("{}/{}", &device_path, BlockMarker::PROTOCOL_NAME);
+    let volume = fuchsia_component::client::connect_to_named_protocol_at_dir_root::<BlockMarker>(
         &block_dir, &path,
     )
     .unwrap();
@@ -1668,7 +1663,7 @@ async fn device_config() {
     // will fail with PEER_CLOSED instead.
     let fts_dir = fixture.dir("block/fts", fio::PERM_READABLE);
     let volume =
-        fuchsia_component::client::connect_to_protocol_at_dir_root::<VolumeMarker>(&fts_dir)
+        fuchsia_component::client::connect_to_protocol_at_dir_root::<BlockMarker>(&fts_dir)
             .unwrap();
     let task =
         fasync::Task::spawn(
@@ -1690,14 +1685,14 @@ async fn device_config() {
 
     let boot_a_dir = fixture.dir("block/test-device", fio::PERM_READABLE);
     let volume =
-        fuchsia_component::client::connect_to_protocol_at_dir_root::<VolumeMarker>(&boot_a_dir)
+        fuchsia_component::client::connect_to_protocol_at_dir_root::<BlockMarker>(&boot_a_dir)
             .unwrap();
     let metadata = volume.get_metadata().await.unwrap().unwrap();
     assert_eq!(metadata.num_blocks, Some(1));
 
     let boot_b_dir = fixture.dir("block/boot_b", fio::PERM_READABLE);
     let volume =
-        fuchsia_component::client::connect_to_protocol_at_dir_root::<VolumeMarker>(&boot_b_dir)
+        fuchsia_component::client::connect_to_protocol_at_dir_root::<BlockMarker>(&boot_b_dir)
             .unwrap();
     let metadata = volume.get_metadata().await.unwrap().unwrap();
     assert_eq!(metadata.num_blocks, Some(1));
@@ -1729,7 +1724,7 @@ async fn gpt_all_binds_multiple_disks() {
     // Check that the extra partition is available.
     let test_part_dir = fixture.dir("block/test-part", fio::PERM_READABLE);
     let volume =
-        fuchsia_component::client::connect_to_protocol_at_dir_root::<VolumeMarker>(&test_part_dir)
+        fuchsia_component::client::connect_to_protocol_at_dir_root::<BlockMarker>(&test_part_dir)
             .unwrap();
     let metadata = volume.get_metadata().await.unwrap().unwrap();
     assert_eq!(metadata.num_blocks, Some(1));
@@ -1793,7 +1788,7 @@ async fn merge_super_and_userdata() {
         let dir = fuchsia_fs::directory::open_directory(&partitions, &instance, fio::PERM_READABLE)
             .await
             .expect("open dir failed");
-        let volume = connect_to_named_protocol_at_dir_root::<VolumeMarker>(&dir, "volume").unwrap();
+        let volume = connect_to_named_protocol_at_dir_root::<BlockMarker>(&dir, "volume").unwrap();
         let metadata =
             volume.get_metadata().await.expect("FIDL error").expect("Failed to get metadata");
         assert_ne!(metadata.name.as_ref().unwrap(), "super");

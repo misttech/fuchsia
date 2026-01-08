@@ -5,7 +5,7 @@
 #include "src/devices/block/drivers/virtio/block.h"
 
 #include <fidl/fuchsia.hardware.block.volume/cpp/fidl.h>
-#include <fuchsia/hardware/block/c/banjo.h>
+#include <fidl/fuchsia.storage.block/cpp/fidl.h>
 #include <fuchsia/hardware/block/driver/c/banjo.h>
 #include <inttypes.h>
 #include <lib/fit/defer.h>
@@ -120,10 +120,10 @@ uint32_t BlockDevice::GetMaxTransferSize() const {
   return std::min(max_transfer_size, kMaxMaxXfer);
 }
 
-flag_t BlockDevice::GetFlags() const {
-  flag_t flags = 0;
+device_flag_t BlockDevice::GetFlags() const {
+  device_flag_t flags = 0;
   if (supports_discard_) {
-    flags |= FLAG_TRIM_SUPPORT;
+    flags |= DEVICE_FLAG_TRIM_SUPPORT;
   }
   return flags;
 }
@@ -228,7 +228,7 @@ void BlockDevice::OnRequests(std::span<block_server::Request> requests) {
   }
 }
 
-void BlockDevice::ServeRequests(fidl::ServerEnd<fuchsia_hardware_block_volume::Volume> server_end) {
+void BlockDevice::ServeRequests(fidl::ServerEnd<fuchsia_storage_block::Block> server_end) {
   std::lock_guard lock(block_server_lock_);
   if (block_server_) {
     block_server_->Serve(std::move(server_end));
@@ -993,7 +993,7 @@ zx::result<> BlockDriver::Start() {
   if (zx::result result = outgoing()->AddService<fuchsia_hardware_block_volume::Service>(
           fuchsia_hardware_block_volume::Service::InstanceHandler({
               .volume =
-                  [this](fidl::ServerEnd<fuchsia_hardware_block_volume::Volume> server_end) {
+                  [this](fidl::ServerEnd<fuchsia_storage_block::Block> server_end) {
                     block_device_->ServeRequests(std::move(server_end));
                   },
           }));

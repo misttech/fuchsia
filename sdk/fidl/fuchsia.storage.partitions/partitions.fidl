@@ -4,8 +4,7 @@
 @available(added=HEAD)
 library fuchsia.storage.partitions;
 
-using fuchsia.hardware.block.partition;
-using fuchsia.hardware.block.volume;
+using fuchsia.storage.block;
 using zx;
 
 /// Exposes per-partition operations.
@@ -20,7 +19,7 @@ closed protocol Partition {
     /// is committed.
     strict UpdateMetadata(resource table {
         1: transaction zx.Handle:EVENTPAIR;
-        2: type_guid fuchsia.hardware.block.partition.Guid;
+        2: type_guid fuchsia.storage.block.Guid;
         3: flags uint64;
     }) -> () error zx.Status;
 };
@@ -69,22 +68,22 @@ closed protocol PartitionsManager {
         // Must be set to a non-zero value.
         2: num_blocks uint64;
         // Must be set to a non-empty value.
-        3: name string:fuchsia.hardware.block.partition.NAME_LENGTH;
+        3: name string:fuchsia.storage.block.NAME_LENGTH;
         // Must be set to a non-nil value.
-        4: type_guid fuchsia.hardware.block.partition.Guid;
+        4: type_guid fuchsia.storage.block.Guid;
         // If unset, a GUID is generated.
-        5: instance_guid fuchsia.hardware.block.partition.Guid;
+        5: instance_guid fuchsia.storage.block.Guid;
         6: flags uint64;
     }) -> () error zx.Status;
 };
 
 type PartitionInfo = struct {
     // Must be non-empty.
-    name string:fuchsia.hardware.block.partition.NAME_LENGTH;
+    name string:fuchsia.storage.block.NAME_LENGTH;
     // Must be non-zero.
-    type_guid fuchsia.hardware.block.partition.Guid;
+    type_guid fuchsia.storage.block.Guid;
     // Must be non-zero.
-    instance_guid fuchsia.hardware.block.partition.Guid;
+    instance_guid fuchsia.storage.block.Guid;
     // The target range must not overlap with any other partition or the GPT metadata.
     start_block uint64;
     num_blocks uint64;
@@ -113,7 +112,7 @@ closed protocol PartitionsAdmin {
 /// otherwise have no special meaning.  In practice they correspond to the index in the GPT.
 service PartitionService {
     /// Always present.
-    volume client_end:fuchsia.hardware.block.volume.Volume;
+    volume client_end:fuchsia.storage.block.Block;
     /// Present for partitions which are actual GPT partitions.
     partition client_end:Partition;
     /// Present for partitions which are overlays (i.e. a logical merge of several contiguous

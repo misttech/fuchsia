@@ -6,7 +6,7 @@ use anyhow::Error;
 use block_client::{ReadOptions, VmoId, WriteOptions};
 use block_server::async_interface::{PassthroughSession, SessionManager};
 use block_server::{DeviceInfo, OffsetMap};
-use fidl_fuchsia_hardware_block as fblock;
+use fidl_fuchsia_storage_block as fblock;
 
 use fuchsia_sync::Mutex;
 use std::borrow::Cow;

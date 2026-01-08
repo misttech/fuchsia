@@ -4,7 +4,7 @@
 
 #include <ctype.h>
 #include <fidl/fuchsia.device/cpp/wire.h>
-#include <fidl/fuchsia.hardware.block/cpp/wire.h>
+#include <fidl/fuchsia.storage.block/cpp/wire.h>
 #include <getopt.h>
 #include <inttypes.h>
 #include <lib/component/incoming/cpp/protocol.h>
@@ -116,7 +116,7 @@ char* FlagsToCString(char* dst, size_t dst_len, const uint8_t* guid, uint64_t fl
 }
 
 zx::result<std::unique_ptr<GptDevice>> Init(const char* dev) {
-  zx::result block = component::Connect<fuchsia_hardware_block_volume::Volume>(dev);
+  zx::result block = component::Connect<fuchsia_storage_block::Block>(dev);
   if (block.is_error()) {
     fprintf(stderr, "gpt: error opening %s: %s\n", dev, block.status_string());
     return block.take_error();
@@ -135,7 +135,7 @@ zx::result<std::unique_ptr<GptDevice>> Init(const char* dev) {
     return zx::error(response.error_value());
   }
 
-  fuchsia_hardware_block::wire::BlockInfo info = response.value()->info;
+  fuchsia_storage_block::wire::BlockInfo info = response.value()->info;
   printf("blocksize=0x%X blocks=%" PRIu64 "\n", info.block_size, info.block_count);
 
   std::string controller_dev = std::string(dev) + "/device_controller";

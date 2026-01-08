@@ -66,7 +66,7 @@ zx_status_t ReaderWriter::EnsureBufferInitialized() {
 zx_status_t ReaderWriter::DoIo(uint64_t offset, size_t count, vmoid_t vmoid, uint64_t vmo_offset,
                                bool write, std::optional<void*> buf) {
   if (block_size_ == 0) {
-    fuchsia_hardware_block::wire::BlockInfo info;
+    fuchsia_storage_block::wire::BlockInfo info;
     if (zx_status_t status = device_.BlockGetInfo(&info); status != ZX_OK)
       return status;
 

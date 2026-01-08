@@ -20,8 +20,8 @@ use fidl_fuchsia_fxfs::{
     DebugMarker, DebugRequestStream, VolumeInstallerMarker, VolumeInstallerRequest,
     VolumeInstallerRequestStream,
 };
-use fidl_fuchsia_hardware_block::BlockMarker;
 use fidl_fuchsia_process_lifecycle::{LifecycleRequest, LifecycleRequestStream};
+use fidl_fuchsia_storage_block::BlockMarker;
 use fs_inspect::{FsInspect, FsInspectTree, InfoData, UsageData};
 use fuchsia_component_client::connect_to_protocol;
 use futures::TryStreamExt;

@@ -92,7 +92,7 @@ mod fuchsia {
     use anyhow::Error;
     use block_client::{Cache, RemoteBlockClientSync};
     use fidl::endpoints::ClientEnd;
-    use fidl_fuchsia_hardware_block::BlockMarker;
+    use fidl_fuchsia_storage_block::BlockMarker;
     use fuchsia_sync::Mutex;
     use log::error;
     use std::sync::Arc;

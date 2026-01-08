@@ -5,7 +5,7 @@
 use block_client::{BlockClient as _, BufferSlice, MutableBufferSlice};
 use block_protocol::{BlockFifoCommand, BlockFifoRequest, BlockFifoResponse};
 use block_server::{BlockInfo, DeviceInfo};
-use fidl_fuchsia_hardware_block_driver::{BlockIoFlag, BlockOpcode};
+use fidl_fuchsia_storage_block::{BlockIoFlag, BlockOpcode};
 use std::num::NonZero;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, AtomicU32, AtomicUsize, Ordering};
@@ -13,8 +13,8 @@ use test_case::test_case;
 use vmo_backed_block_server::{InitialContents, Observer, VmoBackedServerOptions};
 use zx::HandleBased as _;
 use {
-    fidl_fuchsia_hardware_block as fblock, fidl_fuchsia_hardware_block_volume as fvolume,
-    fidl_fuchsia_hardware_ramdisk as framdisk, fidl_fuchsia_io as fio, fuchsia_async as fasync,
+    fidl_fuchsia_hardware_ramdisk as framdisk, fidl_fuchsia_io as fio,
+    fidl_fuchsia_storage_block as fblock, fuchsia_async as fasync,
 };
 
 // Make the block device big enough so that we can have a request which creates more than
@@ -28,7 +28,7 @@ const REQ_BLOCKS: usize = 65 * MAX_TRANSFER_BLOCKS as usize;
 const REQ_SIZE: u64 = REQ_BLOCKS as u64 * BLOCK_SIZE as u64;
 
 async fn test_request_splitting_client_fn(
-    proxy: fvolume::VolumeProxy,
+    proxy: fblock::BlockProxy,
     last_trim_length_fn: Option<Box<dyn Fn() -> u32>>,
 ) {
     let bs = BLOCK_SIZE as usize;
@@ -176,7 +176,7 @@ async fn test_request_splitting_client_fn(
 
 #[fuchsia::test]
 async fn test_request_splitting_rust_server() {
-    let (proxy, stream) = fidl::endpoints::create_proxy_and_stream::<fvolume::VolumeMarker>();
+    let (proxy, stream) = fidl::endpoints::create_proxy_and_stream::<fblock::BlockMarker>();
 
     // Records the length of the last trim command.
     struct TrimObserver(Arc<AtomicU32>);
@@ -215,7 +215,7 @@ async fn test_request_splitting_rust_server() {
 
 #[fuchsia::test]
 async fn test_request_splitting_cpp_server() {
-    let (proxy, server) = fidl::endpoints::create_proxy::<fvolume::VolumeMarker>();
+    let (proxy, server) = fidl::endpoints::create_proxy::<fblock::BlockMarker>();
 
     let ramdisk = ramdevice_client::RamdiskClientBuilder::new(BLOCK_SIZE as u64, NUM_BLOCKS)
         .use_v2()
@@ -239,7 +239,7 @@ enum Ramdisk {
 #[test_case(Ramdisk::V2; "v2")]
 #[fuchsia::test]
 async fn test_group_with_close(version: Ramdisk) {
-    let (proxy, server) = fidl::endpoints::create_proxy::<fvolume::VolumeMarker>();
+    let (proxy, server) = fidl::endpoints::create_proxy::<fblock::BlockMarker>();
 
     let builder = ramdevice_client::RamdiskClientBuilder::new(BLOCK_SIZE as u64, NUM_BLOCKS);
     let ramdisk = match version {
@@ -350,7 +350,7 @@ async fn test_gpt_on_ramdisk() {
     const PART2_INSTANCE_GUID: [u8; 16] = [3u8; 16];
     const PART2_NAME: &str = "part2";
     {
-        let (proxy, server) = fidl::endpoints::create_proxy::<fvolume::VolumeMarker>();
+        let (proxy, server) = fidl::endpoints::create_proxy::<fblock::BlockMarker>();
         ramdisk.connect(server.into_channel().into()).expect("Failed to connect to ramdisk");
         let client = Arc::new(block_client::RemoteBlockClient::new(proxy).await.unwrap());
         gpt::Gpt::format(
@@ -393,7 +393,7 @@ async fn test_gpt_on_ramdisk() {
         fio::PERM_READABLE,
     );
     let part1_block = fuchsia_component_client::connect_to_named_protocol_at_dir_root::<
-        fvolume::VolumeMarker,
+        fblock::BlockMarker,
     >(&part1_dir, "volume")
     .expect("Failed to open Volume service");
 
@@ -403,7 +403,7 @@ async fn test_gpt_on_ramdisk() {
         fio::PERM_READABLE,
     );
     let part2_block = fuchsia_component_client::connect_to_named_protocol_at_dir_root::<
-        fvolume::VolumeMarker,
+        fblock::BlockMarker,
     >(&part2_dir, "volume")
     .expect("Failed to open Volume service");
 
@@ -481,7 +481,7 @@ async fn test_gpt_passthrough_is_enabled() {
     const PART_INSTANCE_GUID: [u8; 16] = [2u8; 16];
     const PART_NAME: &str = "part";
     {
-        let (proxy, server) = fidl::endpoints::create_proxy::<fvolume::VolumeMarker>();
+        let (proxy, server) = fidl::endpoints::create_proxy::<fblock::BlockMarker>();
         ramdisk.connect(server.into_channel().into()).expect("Failed to connect to ramdisk");
         let client = Arc::new(block_client::RemoteBlockClient::new(proxy).await.unwrap());
         gpt::Gpt::format(
@@ -514,7 +514,7 @@ async fn test_gpt_passthrough_is_enabled() {
         fio::PERM_READABLE,
     );
     let part_block = fuchsia_component_client::connect_to_named_protocol_at_dir_root::<
-        fvolume::VolumeMarker,
+        fblock::BlockMarker,
     >(&part_dir, "volume")
     .expect("Failed to open Volume service");
 
@@ -569,7 +569,7 @@ enum BarrierFuaTestCase {
 #[test_case(BarrierFuaTestCase::Fua; "fua")]
 #[fuchsia::test]
 async fn test_barriers_and_fua_rust_server(case: BarrierFuaTestCase) {
-    let (proxy, stream) = fidl::endpoints::create_proxy_and_stream::<fvolume::VolumeMarker>();
+    let (proxy, stream) = fidl::endpoints::create_proxy_and_stream::<fblock::BlockMarker>();
 
     /// An Observer that shuffles writes and discards some of the tail since last flush/barrier.
     /// It also verifies the correct number of flushes occurred.
@@ -597,9 +597,9 @@ async fn test_barriers_and_fua_rust_server(case: BarrierFuaTestCase) {
     }
 
     let device_flags = match case {
-        BarrierFuaTestCase::Barrier => fblock::Flag::BARRIER_SUPPORT,
-        BarrierFuaTestCase::Fua => fblock::Flag::FUA_SUPPORT,
-        _ => fblock::Flag::empty(),
+        BarrierFuaTestCase::Barrier => fblock::DeviceFlag::BARRIER_SUPPORT,
+        BarrierFuaTestCase::Fua => fblock::DeviceFlag::FUA_SUPPORT,
+        _ => fblock::DeviceFlag::empty(),
     };
     let expected_flushes = match case {
         BarrierFuaTestCase::SimulatedBarrier | BarrierFuaTestCase::SimulatedFua => 1,
@@ -733,12 +733,12 @@ async fn test_barriers_and_fua_rust_server(case: BarrierFuaTestCase) {
 #[ignore]
 #[fuchsia::test]
 async fn test_barriers_and_fua_cpp_server(case: BarrierFuaTestCase) {
-    let (proxy, server) = fidl::endpoints::create_proxy::<fvolume::VolumeMarker>();
+    let (proxy, server) = fidl::endpoints::create_proxy::<fblock::BlockMarker>();
 
     let device_flags = match case {
-        BarrierFuaTestCase::Barrier => fblock::Flag::BARRIER_SUPPORT,
-        BarrierFuaTestCase::Fua => fblock::Flag::FUA_SUPPORT,
-        _ => fblock::Flag::empty(),
+        BarrierFuaTestCase::Barrier => fblock::DeviceFlag::BARRIER_SUPPORT,
+        BarrierFuaTestCase::Fua => fblock::DeviceFlag::FUA_SUPPORT,
+        _ => fblock::DeviceFlag::empty(),
     };
     let ramdisk = ramdevice_client::RamdiskClientBuilder::new(BLOCK_SIZE as u64, NUM_BLOCKS)
         .use_v2()

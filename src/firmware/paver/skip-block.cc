@@ -6,6 +6,7 @@
 
 #include <fidl/fuchsia.device/cpp/wire.h>
 #include <fidl/fuchsia.hardware.block/cpp/wire.h>
+#include <fidl/fuchsia.storage.block/cpp/wire.h>
 #include <lib/component/incoming/cpp/clone.h>
 #include <lib/component/incoming/cpp/protocol.h>
 #include <lib/fdio/cpp/caller.h>
@@ -26,7 +27,7 @@ namespace {
 
 using uuid::Uuid;
 
-namespace block = fuchsia_hardware_block;
+namespace block = fuchsia_storage_block;
 namespace device = fuchsia_device;
 namespace skipblock = fuchsia_hardware_skipblock;
 
@@ -103,13 +104,14 @@ zx::result<> SkipBlockDevicePartitioner::WipeFvm() const {
 
   // TODO(https://fxbug.dev/339491886): Support FVM in storage-host
   fdio_cpp::UnownedFdioCaller caller(devices_.devfs_root());
-  zx::result channel = component::ConnectAt<block::Ftl>(caller.directory(), parent);
+  zx::result channel =
+      component::ConnectAt<fuchsia_hardware_block::Ftl>(caller.directory(), parent);
   if (channel.is_error()) {
     ERROR("Warning: Unable to open block parent device: %s\n", channel.status_string());
     return channel.take_error();
   }
 
-  fidl::WireSyncClient<block::Ftl> client(std::move(channel.value()));
+  fidl::WireSyncClient<fuchsia_hardware_block::Ftl> client(std::move(channel.value()));
   auto result2 = client->Format();
 
   return zx::make_result(result2.ok() ? result2.value().status : result2.status());

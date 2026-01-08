@@ -6,8 +6,7 @@
 #define SRC_STORAGE_LIB_BLOCK_CLIENT_CPP_BLOCK_DEVICE_H_
 
 #include <fidl/fuchsia.device/cpp/wire.h>
-#include <fidl/fuchsia.hardware.block.volume/cpp/wire.h>
-#include <fidl/fuchsia.hardware.block/cpp/wire.h>
+#include <fidl/fuchsia.storage.block/cpp/wire.h>
 #include <lib/zx/result.h>
 #include <lib/zx/vmo.h>
 
@@ -35,8 +34,8 @@ class BlockDevice : public storage::VmoidRegistry {
   // will be bound based on its bind rules.
   virtual zx::result<> Rebind(std::string_view url_suffix) const = 0;
 
-  // fuchsia.device.block interface:
-  virtual zx_status_t BlockGetInfo(fuchsia_hardware_block::wire::BlockInfo* out_info) const = 0;
+  // fuchsia.storage.block interface:
+  virtual zx_status_t BlockGetInfo(fuchsia_storage_block::wire::BlockInfo* out_info) const = 0;
 
   // storage::VmoidRegistry implementation:
   //
@@ -45,22 +44,20 @@ class BlockDevice : public storage::VmoidRegistry {
   // cases.
   zx_status_t BlockDetachVmo(storage::Vmoid vmoid) override;
 
-  // fuchsia.hardware.block.volume interface:
+  // fuchsia.storage.block.Block volume interface:
   //
-  // Many block devices (like normal disk partitions) are volumes. This provides a convenience
-  // wrapper for speaking the fuchsia.hardware.block.Volume FIDL API to the device.
+  // Some block devices (like FVM partitions) are also volumes. This provides a convenience wrapper
+  // for speaking the volume-specific methods.
   //
-  // If the underlying device does not speak the Volume API, the connection used by this object
-  // will be closed. The exception is VolumeGetInfo() which is implemented such that the connection
-  // will still be usable. Clients should call VolumeGetInfo() to confirm that the device supports
-  // the Volume API before using any other Volume methods.
+  // If the underlying device does not speak the Volume API, these calls will fail with
+  // ZX_ERR_NOT_SUPPORTED.  Clients should call VolumeGetInfo() and check for ZX_OK to confirm that
+  // the device supports the Volume API before using any other Volume methods.
   virtual zx_status_t VolumeGetInfo(
-      fuchsia_hardware_block_volume::wire::VolumeManagerInfo* out_manager_info,
-      fuchsia_hardware_block_volume::wire::VolumeInfo* out_volume_info) const = 0;
-  virtual zx_status_t VolumeQuerySlices(
-      const uint64_t* slices, size_t slices_count,
-      fuchsia_hardware_block_volume::wire::VsliceRange* out_ranges,
-      size_t* out_ranges_count) const = 0;
+      fuchsia_storage_block::wire::VolumeManagerInfo* out_manager_info,
+      fuchsia_storage_block::wire::VolumeInfo* out_volume_info) const = 0;
+  virtual zx_status_t VolumeQuerySlices(const uint64_t* slices, size_t slices_count,
+                                        fuchsia_storage_block::wire::VsliceRange* out_ranges,
+                                        size_t* out_ranges_count) const = 0;
   virtual zx_status_t VolumeExtend(uint64_t offset, uint64_t length) = 0;
   virtual zx_status_t VolumeShrink(uint64_t offset, uint64_t length) = 0;
 };

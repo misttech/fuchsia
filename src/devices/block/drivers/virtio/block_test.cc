@@ -345,13 +345,12 @@ TEST_F(BlockDriverTest, Trim) {
 TEST_F(BlockDriverTest, BlockServer) {
   StartDriver();
 
-  auto [volume_client, volume_server] =
-      fidl::Endpoints<fuchsia_hardware_block_volume::Volume>::Create();
+  auto [volume_client, volume_server] = fidl::Endpoints<fuchsia_storage_block::Block>::Create();
   driver_test().driver()->block_device().ServeRequests(std::move(volume_server));
   zx::result client = block_client::RemoteBlockDevice::Create(std::move(volume_client));
   ASSERT_OK(client);
 
-  fuchsia_hardware_block::wire::BlockInfo info;
+  fuchsia_storage_block::wire::BlockInfo info;
   ASSERT_OK(client->BlockGetInfo(&info));
   const size_t kLen = info.max_transfer_size + kBlkSize;
   zx::vmo vmo;
@@ -407,13 +406,12 @@ TEST_F(BlockDriverTest, BlockServer) {
 TEST_F(BlockDriverTest, BarriersOk) {
   StartDriver();
 
-  auto [volume_client, volume_server] =
-      fidl::Endpoints<fuchsia_hardware_block_volume::Volume>::Create();
+  auto [volume_client, volume_server] = fidl::Endpoints<fuchsia_storage_block::Block>::Create();
   driver_test().driver()->block_device().ServeRequests(std::move(volume_server));
   zx::result client = block_client::RemoteBlockDevice::Create(std::move(volume_client));
   ASSERT_OK(client);
 
-  fuchsia_hardware_block::wire::BlockInfo info;
+  fuchsia_storage_block::wire::BlockInfo info;
   ASSERT_OK(client->BlockGetInfo(&info));
   const size_t kLen = info.max_transfer_size + kBlkSize;
   zx::vmo vmo;
@@ -443,13 +441,12 @@ TEST_F(BlockDriverTest, BarriersOk) {
 TEST_F(BlockDriverTest, BarriersError) {
   StartDriver(VIRTIO_BLK_S_IOERR);
 
-  auto [volume_client, volume_server] =
-      fidl::Endpoints<fuchsia_hardware_block_volume::Volume>::Create();
+  auto [volume_client, volume_server] = fidl::Endpoints<fuchsia_storage_block::Block>::Create();
   driver_test().driver()->block_device().ServeRequests(std::move(volume_server));
   zx::result client = block_client::RemoteBlockDevice::Create(std::move(volume_client));
   ASSERT_OK(client);
 
-  fuchsia_hardware_block::wire::BlockInfo info;
+  fuchsia_storage_block::wire::BlockInfo info;
   ASSERT_OK(client->BlockGetInfo(&info));
   const size_t kLen = info.max_transfer_size + kBlkSize;
   zx::vmo vmo;

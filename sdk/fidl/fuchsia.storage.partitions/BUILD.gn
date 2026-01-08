@@ -7,9 +7,7 @@ import("//build/fidl/fidl.gni")
 fidl("fuchsia.storage.partitions") {
   sources = [ "partitions.fidl" ]
   public_deps = [
-    "//sdk/fidl/fuchsia.hardware.block",
-    "//sdk/fidl/fuchsia.hardware.block.partition",
-    "//sdk/fidl/fuchsia.hardware.block.volume",
+    "//sdk/fidl/fuchsia.storage.block",
     "//zircon/vdso/zx",
   ]
 }

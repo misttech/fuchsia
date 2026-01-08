@@ -60,9 +60,8 @@ zx::result<std::unique_ptr<VolumeConnector>> CreateDevfsVolumeConnector(int dir_
 DevfsVolumeConnector::DevfsVolumeConnector(fidl::ClientEnd<fuchsia_device::Controller> controller)
     : controller_(std::move(controller)) {}
 
-zx::result<fidl::ClientEnd<fuchsia_hardware_block_volume::Volume>> DevfsVolumeConnector::Connect()
-    const {
-  zx::result endpoints = fidl::CreateEndpoints<fuchsia_hardware_block_volume::Volume>();
+zx::result<fidl::ClientEnd<fuchsia_storage_block::Block>> DevfsVolumeConnector::Connect() const {
+  zx::result endpoints = fidl::CreateEndpoints<fuchsia_storage_block::Block>();
   if (endpoints.is_error()) {
     return endpoints.take_error();
   }
@@ -91,10 +90,9 @@ DirBasedVolumeConnector::DirBasedVolumeConnector(fbl::unique_fd dir,
                                                  std::string volume_connector_path)
     : dir_(std::move(dir)), volume_connector_path_(std::move(volume_connector_path)) {}
 
-zx::result<fidl::ClientEnd<fuchsia_hardware_block_volume::Volume>>
-DirBasedVolumeConnector::Connect() const {
+zx::result<fidl::ClientEnd<fuchsia_storage_block::Block>> DirBasedVolumeConnector::Connect() const {
   fdio_cpp::UnownedFdioCaller caller(dir_);
-  zx::result endpoints = fidl::CreateEndpoints<fuchsia_hardware_block_volume::Volume>();
+  zx::result endpoints = fidl::CreateEndpoints<fuchsia_storage_block::Block>();
   if (endpoints.is_error()) {
     return endpoints.take_error();
   }
@@ -287,7 +285,7 @@ zx::result<std::vector<std::unique_ptr<VolumeConnector>>> BlockDevices::OpenAllP
           return fd.take_error();
         }
         connector = std::make_unique<DirBasedVolumeConnector>(
-            *std::move(fd), std::string("fuchsia.hardware.block.volume.Volume"));
+            *std::move(fd), std::string("fuchsia.storage.block.Block"));
         break;
       }
       case Variant::kPartitionService: {
@@ -361,7 +359,7 @@ zx::result<std::unique_ptr<VolumeConnector>> BlockDevices::WaitForPartition(
           return fd.status_value();
         }
         connector = std::make_unique<DirBasedVolumeConnector>(
-            *std::move(fd), std::string("fuchsia.hardware.block.volume.Volume"));
+            *std::move(fd), std::string("fuchsia.storage.block.Block"));
         break;
       }
       case Variant::kPartitionService: {

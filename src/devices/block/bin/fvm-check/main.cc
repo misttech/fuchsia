@@ -3,8 +3,8 @@
 // found in the LICENSE file.
 
 #include <fcntl.h>
-#include <fidl/fuchsia.hardware.block/cpp/wire.h>
 #include <fidl/fuchsia.io/cpp/wire.h>
+#include <fidl/fuchsia.storage.block/cpp/wire.h>
 #include <getopt.h>
 #include <inttypes.h>
 #include <lib/fdio/cpp/caller.h>
@@ -72,7 +72,7 @@ bool GetOptions(int argc, char** argv, fbl::unique_fd& fd, std::optional<fvm::Ch
       return false;
     }
     if ((st.st_mode & S_IFMT) == S_IFBLK) {
-      checker.emplace(caller.borrow_as<fuchsia_hardware_block::Block>(), block_size, silent);
+      checker.emplace(caller.borrow_as<fuchsia_storage_block::Block>(), block_size, silent);
     } else {
       checker.emplace(caller.borrow_as<fuchsia_io::File>(), block_size, silent);
     }

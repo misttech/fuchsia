@@ -4,6 +4,7 @@
 
 #include "src/storage/fvm/driver/vpartition_manager.h"
 
+#include <fidl/fuchsia.storage.block/cpp/wire.h>
 #include <lib/inspect/cpp/hierarchy.h>
 #include <lib/inspect/cpp/reader.h>
 
@@ -39,7 +40,7 @@ class FakeBlockDevice : public ddk::BlockImplProtocol<FakeBlockDevice> {
     *out_info = {};
     out_info->block_size = kBlockSize;
     out_info->block_count = kDiskSize / out_info->block_size;
-    out_info->max_transfer_size = fuchsia_hardware_block::wire::kMaxTransferUnbounded;
+    out_info->max_transfer_size = fuchsia_storage_block::wire::kMaxTransferUnbounded;
     *out_block_op_size = sizeof(block_op_t);
   }
 
@@ -153,11 +154,11 @@ class VPartitionManagerTestAtRevision : public zxtest::Test {
     static int next_id = 1;
 
     // Generates a test-unique id for the type and instance.
-    fuchsia_hardware_block_partition::wire::Guid type_guid{.value = {0}};
+    fuchsia_storage_block::wire::Guid type_guid{.value = {0}};
     memcpy(type_guid.value.data(), &next_id, sizeof(int));
     next_id++;
 
-    fuchsia_hardware_block_partition::wire::Guid instance_guid{.value = {0}};
+    fuchsia_storage_block::wire::Guid instance_guid{.value = {0}};
     memcpy(instance_guid.value.data(), &next_id, sizeof(int));
     next_id++;
 

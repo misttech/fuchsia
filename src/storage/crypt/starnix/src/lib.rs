@@ -406,8 +406,8 @@ mod tests {
     use assert_matches::assert_matches;
     use block_client::RemoteBlockClient;
     use fidl_fuchsia_fxfs::{FxfsKey, KeyPurpose, WrappedKey};
-    use fidl_fuchsia_hardware_block::BlockProxy;
     use fidl_fuchsia_hardware_inlineencryption::{DeviceMarker, DeviceRequest};
+    use fidl_fuchsia_storage_block::BlockProxy;
 
     use fuchsia_async::LocalExecutor;
     use starnix_uapi::errno;

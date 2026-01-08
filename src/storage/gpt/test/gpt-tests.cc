@@ -3,7 +3,7 @@
 // found in the LICENSE file.
 
 #include <ctype.h>
-#include <fidl/fuchsia.hardware.block/cpp/wire.h>
+#include <fidl/fuchsia.storage.block/cpp/wire.h>
 #include <lib/cksum.h>
 #include <lib/component/incoming/cpp/protocol.h>
 #include <lib/fdio/cpp/caller.h>
@@ -346,7 +346,7 @@ class LibGptTest {
 
   // Remove all partition from GPT and keep device in GPT initialized state.
   void Reset() {
-    zx::result device = component::Connect<fuchsia_hardware_block_volume::Volume>(disk_path_);
+    zx::result device = component::Connect<fuchsia_storage_block::Block>(disk_path_);
     ASSERT_OK(device);
     std::string controller_path = std::string(disk_path_).append("/device_controller");
     zx::result controller = component::Connect<fuchsia_device::Controller>(controller_path);
@@ -479,7 +479,7 @@ class LibGptTest {
   // Initialize a physical media.
   void InitDisk(const char* disk_path) {
     strlcpy(disk_path_, disk_path, sizeof(disk_path_));
-    zx::result device = component::Connect<fuchsia_hardware_block_volume::Volume>(disk_path_);
+    zx::result device = component::Connect<fuchsia_storage_block::Block>(disk_path_);
     ASSERT_OK(device);
     const fidl::WireResult result = fidl::WireCall(device.value())->GetInfo();
     ASSERT_OK(result.status());

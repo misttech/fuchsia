@@ -5,7 +5,7 @@
 #include "blktest.h"
 
 #include <errno.h>
-#include <fidl/fuchsia.hardware.block/cpp/wire.h>
+#include <fidl/fuchsia.storage.block/cpp/wire.h>
 #include <fuchsia/hardware/block/driver/c/banjo.h>
 #include <lib/component/incoming/cpp/protocol.h>
 #include <lib/fdio/cpp/caller.h>
@@ -39,22 +39,22 @@
 
 namespace tests {
 
-zx_status_t BRead(fidl::UnownedClientEnd<fuchsia_hardware_block::Block> device, void* buffer,
+zx_status_t BRead(fidl::UnownedClientEnd<fuchsia_storage_block::Block> device, void* buffer,
                   size_t buffer_size, size_t offset) {
   return block_client::SingleReadBytes(device, buffer, buffer_size, offset);
 }
 
-zx_status_t BWrite(fidl::UnownedClientEnd<fuchsia_hardware_block::Block> device, void* buffer,
+zx_status_t BWrite(fidl::UnownedClientEnd<fuchsia_storage_block::Block> device, void* buffer,
                    size_t buffer_size, size_t offset) {
   return block_client::SingleWriteBytes(device, buffer, buffer_size, offset);
 }
 
 static void get_testdev(uint64_t* blk_size, uint64_t* blk_count,
-                        fidl::ClientEnd<fuchsia_hardware_block::Block>* client) {
+                        fidl::ClientEnd<fuchsia_storage_block::Block>* client) {
   const char* blkdev_path = getenv(BLKTEST_BLK_DEV);
   ASSERT_NOT_NULL(blkdev_path, "No test device specified");
   // Open the block device
-  zx::result block = component::Connect<fuchsia_hardware_block::Block>(blkdev_path);
+  zx::result block = component::Connect<fuchsia_storage_block::Block>(blkdev_path);
   ASSERT_OK(block.status_value());
 
   const fidl::WireResult result = fidl::WireCall(block.value())->GetInfo();
@@ -69,7 +69,7 @@ static void get_testdev(uint64_t* blk_size, uint64_t* blk_count,
 
 TEST(BlkdevTests, blkdev_test_simple) {
   uint64_t blk_size, blk_count;
-  fidl::ClientEnd<fuchsia_hardware_block::Block> client;
+  fidl::ClientEnd<fuchsia_storage_block::Block> client;
   ASSERT_NO_FATAL_FAILURE(get_testdev(&blk_size, &blk_count, &client));
   int64_t buffer_size = blk_size * 2;
 
@@ -95,7 +95,7 @@ TEST(BlkdevTests, blkdev_test_simple) {
 
 TEST(BlkdevTests, blkdev_test_bad_requests) {
   uint64_t blk_size, blk_count;
-  fidl::ClientEnd<fuchsia_hardware_block::Block> client;
+  fidl::ClientEnd<fuchsia_storage_block::Block> client;
   ASSERT_NO_FATAL_FAILURE(get_testdev(&blk_size, &blk_count, &client));
 
   fbl::AllocChecker checker;
@@ -123,10 +123,10 @@ TEST(BlkdevTests, blkdev_test_bad_requests) {
 TEST(BlkdevTests, blkdev_test_fifo_no_op) {
   // Get a FIFO connection to a blkdev and immediately close it
   uint64_t blk_size, blk_count;
-  fidl::ClientEnd<fuchsia_hardware_block::Block> client;
+  fidl::ClientEnd<fuchsia_storage_block::Block> client;
   ASSERT_NO_FATAL_FAILURE(get_testdev(&blk_size, &blk_count, &client));
 
-  auto [session, server] = fidl::Endpoints<fuchsia_hardware_block::Session>::Create();
+  auto [session, server] = fidl::Endpoints<fuchsia_storage_block::Session>::Create();
 
   const fidl::Status result = fidl::WireCall(client)->OpenSession(std::move(server));
   ASSERT_OK(result.status());
@@ -138,9 +138,9 @@ static void fill_random(uint8_t* buf, uint64_t size) {
   }
 }
 
-zx::result<std::pair<fidl::ClientEnd<fuchsia_hardware_block::Session>, zx::fifo>> CreateRawSession(
-    fidl::UnownedClientEnd<fuchsia_hardware_block::Block> block) {
-  auto [session, server] = fidl::Endpoints<fuchsia_hardware_block::Session>::Create();
+zx::result<std::pair<fidl::ClientEnd<fuchsia_storage_block::Session>, zx::fifo>> CreateRawSession(
+    fidl::UnownedClientEnd<fuchsia_storage_block::Block> block) {
+  auto [session, server] = fidl::Endpoints<fuchsia_storage_block::Session>::Create();
 
   const fidl::Status result = fidl::WireCall(block)->OpenSession(std::move(server));
   if (!result.ok()) {
@@ -159,7 +159,7 @@ zx::result<std::pair<fidl::ClientEnd<fuchsia_hardware_block::Session>, zx::fifo>
 }
 
 zx::result<std::unique_ptr<block_client::Client>> CreateSession(
-    fidl::UnownedClientEnd<fuchsia_hardware_block::Block> block) {
+    fidl::UnownedClientEnd<fuchsia_storage_block::Block> block) {
   zx::result result = CreateRawSession(block);
   if (result.is_error()) {
     return result.take_error();
@@ -171,7 +171,7 @@ zx::result<std::unique_ptr<block_client::Client>> CreateSession(
 TEST(BlkdevTests, blkdev_test_fifo_basic) {
   uint64_t blk_size, blk_count;
   // Set up the initial handshake connection with the blkdev
-  fidl::ClientEnd<fuchsia_hardware_block::Block> client;
+  fidl::ClientEnd<fuchsia_storage_block::Block> client;
   ASSERT_NO_FATAL_FAILURE(get_testdev(&blk_size, &blk_count, &client));
 
   zx::result block_client_ptr = CreateSession(client);
@@ -238,7 +238,7 @@ TEST(BlkdevTests, blkdev_test_fifo_basic) {
 TEST(BlkdevTests, DISABLED_blkdev_test_fifo_whole_disk) {
   uint64_t blk_size, blk_count;
   // Set up the initial handshake connection with the blkdev
-  fidl::ClientEnd<fuchsia_hardware_block::Block> client;
+  fidl::ClientEnd<fuchsia_storage_block::Block> client;
   ASSERT_NO_FATAL_FAILURE(get_testdev(&blk_size, &blk_count, &client));
 
   zx::result block_client_ptr = CreateSession(client);
@@ -289,7 +289,7 @@ TEST(BlkdevTests, DISABLED_blkdev_test_fifo_whole_disk) {
 struct TestVmoObject {
   uint64_t vmo_size = 0;
   zx::vmo vmo;
-  fuchsia_hardware_block::wire::VmoId vmoid;
+  fuchsia_storage_block::wire::VmoId vmoid;
   std::unique_ptr<uint8_t[]> buf;
 
   void RandomizeVmo(size_t block_size) {
@@ -373,7 +373,7 @@ void CloseVmoHelper(block_client::Client& block_client, TestVmoObject& obj, grou
 TEST(BlkdevTests, blkdev_test_fifo_multiple_vmo) {
   // Set up the initial handshake connection with the blkdev
   uint64_t blk_size, blk_count;
-  fidl::ClientEnd<fuchsia_hardware_block::Block> client;
+  fidl::ClientEnd<fuchsia_storage_block::Block> client;
   ASSERT_NO_FATAL_FAILURE(get_testdev(&blk_size, &blk_count, &client));
 
   zx::result block_client_ptr = CreateSession(client);
@@ -406,7 +406,7 @@ TEST(BlkdevTests, blkdev_test_fifo_multiple_vmo) {
 TEST(BlkdevTests, blkdev_test_fifo_multiple_vmo_multithreaded) {
   // Set up the initial handshake connection with the blkdev
   uint64_t kBlockSize, blk_count;
-  fidl::ClientEnd<fuchsia_hardware_block::Block> client;
+  fidl::ClientEnd<fuchsia_storage_block::Block> client;
   ASSERT_NO_FATAL_FAILURE(get_testdev(&kBlockSize, &blk_count, &client));
 
   zx::result block_client_ptr = CreateSession(client);
@@ -439,7 +439,7 @@ TEST(BlkdevTests, blkdev_test_fifo_multiple_vmo_multithreaded) {
 TEST(BlkdevTests, blkdev_test_fifo_unclean_shutdown) {
   // Set up the blkdev
   uint64_t kBlockSize, blk_count;
-  fidl::ClientEnd<fuchsia_hardware_block::Block> client;
+  fidl::ClientEnd<fuchsia_storage_block::Block> client;
   ASSERT_NO_FATAL_FAILURE(get_testdev(&kBlockSize, &blk_count, &client));
 
   std::vector<TestVmoObject> objs(10);
@@ -491,7 +491,7 @@ TEST(BlkdevTests, blkdev_test_fifo_bad_client_vmoid) {
   // Try to flex the server's error handling by sending 'malicious' client requests.
   // Set up the blkdev
   uint64_t kBlockSize, blk_count;
-  fidl::ClientEnd<fuchsia_hardware_block::Block> client;
+  fidl::ClientEnd<fuchsia_storage_block::Block> client;
   ASSERT_NO_FATAL_FAILURE(get_testdev(&kBlockSize, &blk_count, &client));
 
   zx::result block_client_ptr = CreateSession(client);
@@ -519,7 +519,7 @@ TEST(BlkdevTests, blkdev_test_fifo_bad_client_unaligned_request) {
   // Try to flex the server's error handling by sending 'malicious' client requests.
   // Set up the blkdev
   uint64_t kBlockSize, blk_count;
-  fidl::ClientEnd<fuchsia_hardware_block::Block> client;
+  fidl::ClientEnd<fuchsia_storage_block::Block> client;
   ASSERT_NO_FATAL_FAILURE(get_testdev(&kBlockSize, &blk_count, &client));
 
   zx::result block_client_ptr = CreateSession(client);
@@ -549,7 +549,7 @@ TEST(BlkdevTests, blkdev_test_fifo_bad_client_unaligned_request) {
 TEST(BlkdevTests, blkdev_test_barriers) {
   uint64_t blk_size, blk_count;
   // Set up the initial handshake connection with the blkdev
-  fidl::ClientEnd<fuchsia_hardware_block::Block> client;
+  fidl::ClientEnd<fuchsia_storage_block::Block> client;
   ASSERT_NO_FATAL_FAILURE(get_testdev(&blk_size, &blk_count, &client));
 
   zx::result block_client_ptr = CreateSession(client);
@@ -604,7 +604,7 @@ TEST(BlkdevTests, blkdev_test_barriers) {
 TEST(BlkdevTests, blkdev_test_force_access) {
   uint64_t blk_size, blk_count;
   // Set up the initial handshake connection with the blkdev
-  fidl::ClientEnd<fuchsia_hardware_block::Block> client;
+  fidl::ClientEnd<fuchsia_storage_block::Block> client;
   ASSERT_NO_FATAL_FAILURE(get_testdev(&blk_size, &blk_count, &client));
 
   zx::result block_client_ptr = CreateSession(client);
@@ -660,7 +660,7 @@ TEST(BlkdevTests, blkdev_test_fifo_bad_client_overflow) {
   // Try to flex the server's error handling by sending 'malicious' client requests.
   // Set up the blkdev
   uint64_t kBlockSize, blk_count;
-  fidl::ClientEnd<fuchsia_hardware_block::Block> client;
+  fidl::ClientEnd<fuchsia_storage_block::Block> client;
   ASSERT_NO_FATAL_FAILURE(get_testdev(&kBlockSize, &blk_count, &client));
 
   zx::result block_client_ptr = CreateSession(client);
@@ -715,7 +715,7 @@ TEST(BlkdevTests, blkdev_test_fifo_bad_client_bad_vmo) {
   // Try to flex the server's error handling by sending 'malicious' client requests.
   // Set up the blkdev
   uint64_t kBlockSize, blk_count;
-  fidl::ClientEnd<fuchsia_hardware_block::Block> client;
+  fidl::ClientEnd<fuchsia_storage_block::Block> client;
   ASSERT_NO_FATAL_FAILURE(get_testdev(&kBlockSize, &blk_count, &client));
 
   zx::result block_client_ptr = CreateSession(client);
@@ -762,7 +762,7 @@ TEST(BlkdevTests, blkdev_test_fifo_bad_client_bad_vmo) {
 TEST(BlkdevTests, blkdev_test_fifo_trim) {
   uint64_t blk_size, blk_count;
   // Set up the initial handshake connection with the blkdev
-  fidl::ClientEnd<fuchsia_hardware_block::Block> client;
+  fidl::ClientEnd<fuchsia_storage_block::Block> client;
   ASSERT_NO_FATAL_FAILURE(get_testdev(&blk_size, &blk_count, &client));
 
   zx::result block_client_ptr = CreateSession(client);

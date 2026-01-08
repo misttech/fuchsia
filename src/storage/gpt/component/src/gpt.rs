@@ -7,8 +7,8 @@ use crate::partition::PartitionBackend;
 use crate::partitions_directory::PartitionsDirectory;
 use anyhow::{Context as _, Error, anyhow};
 use block_client::{
-    BlockClient as _, BufferSlice, MutableBufferSlice, ReadOptions, RemoteBlockClient, VmoId,
-    WriteOptions,
+    BlockClient as _, BlockDeviceFlag, BufferSlice, MutableBufferSlice, ReadOptions,
+    RemoteBlockClient, VmoId, WriteOptions,
 };
 use block_server::BlockServer;
 use block_server::async_interface::SessionManager;
@@ -22,7 +22,7 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Weak};
 use zx::AsHandleRef as _;
 use {
-    fidl_fuchsia_hardware_block as fblock, fidl_fuchsia_storage_partitions as fpartitions,
+    fidl_fuchsia_storage_block as fblock, fidl_fuchsia_storage_partitions as fpartitions,
     fuchsia_async as fasync,
 };
 
@@ -185,7 +185,7 @@ impl GptPartition {
 
 fn convert_partition_info(
     info: &gpt::PartitionInfo,
-    device_flags: fblock::Flag,
+    device_flags: BlockDeviceFlag,
     max_transfer_blocks: Option<NonZero<u32>>,
 ) -> block_server::DeviceInfo {
     block_server::DeviceInfo::Partition(block_server::PartitionInfo {
@@ -592,12 +592,8 @@ impl GptManager {
         fn convert_partition_info(info: &gpt::PartitionInfo) -> fpartitions::PartitionInfo {
             fpartitions::PartitionInfo {
                 name: info.label.to_string(),
-                type_guid: fidl_fuchsia_hardware_block_partition::Guid {
-                    value: info.type_guid.to_bytes(),
-                },
-                instance_guid: fidl_fuchsia_hardware_block_partition::Guid {
-                    value: info.instance_guid.to_bytes(),
-                },
+                type_guid: fblock::Guid { value: info.type_guid.to_bytes() },
+                instance_guid: fblock::Guid { value: info.instance_guid.to_bytes() },
                 start_block: info.start_block,
                 num_blocks: info.num_blocks,
                 flags: info.flags,
@@ -663,7 +659,8 @@ impl Drop for GptManager {
 mod tests {
     use super::GptManager;
     use block_client::{
-        BlockClient as _, BufferSlice, MutableBufferSlice, RemoteBlockClient, WriteFlags,
+        BlockClient as _, BlockDeviceFlag, BufferSlice, MutableBufferSlice, RemoteBlockClient,
+        WriteFlags,
     };
     use block_server::{BlockInfo, DeviceInfo, WriteOptions};
     use fidl::HandleBased as _;
@@ -676,9 +673,8 @@ mod tests {
         InitialContents, VmoBackedServer, VmoBackedServerOptions, VmoBackedServerTestingExt as _,
     };
     use {
-        fidl_fuchsia_hardware_block as fblock, fidl_fuchsia_hardware_block_volume as fvolume,
-        fidl_fuchsia_io as fio, fidl_fuchsia_storage_partitions as fpartitions,
-        fuchsia_async as fasync,
+        fidl_fuchsia_io as fio, fidl_fuchsia_storage_block as fblock,
+        fidl_fuchsia_storage_partitions as fpartitions, fuchsia_async as fasync,
     };
 
     async fn setup(
@@ -705,7 +701,7 @@ mod tests {
         {
             let (block_client, block_server) =
                 fidl::endpoints::create_proxy::<fblock::BlockMarker>();
-            let volume_stream = fidl::endpoints::ServerEnd::<fvolume::VolumeMarker>::from(
+            let volume_stream = fidl::endpoints::ServerEnd::<fblock::BlockMarker>::from(
                 block_server.into_channel(),
             )
             .into_stream();
@@ -838,9 +834,8 @@ mod tests {
             vfs::path::Path::validate_and_split("part-000").unwrap(),
             fio::PERM_READABLE,
         );
-        let block =
-            connect_to_named_protocol_at_dir_root::<fvolume::VolumeMarker>(&proxy, "volume")
-                .expect("Failed to open block service");
+        let block = connect_to_named_protocol_at_dir_root::<fblock::BlockMarker>(&proxy, "volume")
+            .expect("Failed to open block service");
         let client = RemoteBlockClient::new(block).await.expect("Failed to create block client");
 
         assert_eq!(client.block_count(), 2);
@@ -905,7 +900,7 @@ mod tests {
         .await;
         {
             let (client, stream) =
-                fidl::endpoints::create_proxy_and_stream::<fvolume::VolumeMarker>();
+                fidl::endpoints::create_proxy_and_stream::<fblock::BlockMarker>();
             let server = block_device.clone();
             let _task = fasync::Task::spawn(async move { server.serve(stream).await });
             let client = RemoteBlockClient::new(client).await.unwrap();
@@ -953,7 +948,7 @@ mod tests {
         .await;
         {
             let (client, stream) =
-                fidl::endpoints::create_proxy_and_stream::<fvolume::VolumeMarker>();
+                fidl::endpoints::create_proxy_and_stream::<fblock::BlockMarker>();
             let server = block_device.clone();
             let _task = fasync::Task::spawn(async move { server.serve(stream).await });
             let client = RemoteBlockClient::new(client).await.unwrap();
@@ -999,7 +994,7 @@ mod tests {
                 block_size: BLOCK_SIZE,
                 observer: Some(Box::new(Observer(expect_force_access.clone()))),
                 info: DeviceInfo::Block(BlockInfo {
-                    device_flags: fblock::Flag::FUA_SUPPORT,
+                    device_flags: fblock::DeviceFlag::FUA_SUPPORT,
                     ..Default::default()
                 }),
                 ..Default::default()
@@ -1022,9 +1017,8 @@ mod tests {
             vfs::path::Path::validate_and_split("part-000").unwrap(),
             fio::PERM_READABLE,
         );
-        let block =
-            connect_to_named_protocol_at_dir_root::<fvolume::VolumeMarker>(&proxy, "volume")
-                .expect("Failed to open block service");
+        let block = connect_to_named_protocol_at_dir_root::<fblock::BlockMarker>(&proxy, "volume")
+            .expect("Failed to open block service");
         let client = RemoteBlockClient::new(block).await.expect("Failed to create block client");
 
         let buffer = vec![0; BLOCK_SIZE as usize];
@@ -1075,7 +1069,7 @@ mod tests {
                 block_size: BLOCK_SIZE,
                 observer: Some(Box::new(Observer(expect_barrier.clone()))),
                 info: DeviceInfo::Block(BlockInfo {
-                    device_flags: fblock::Flag::BARRIER_SUPPORT,
+                    device_flags: fblock::DeviceFlag::BARRIER_SUPPORT,
                     ..Default::default()
                 }),
                 ..Default::default()
@@ -1098,9 +1092,8 @@ mod tests {
             vfs::path::Path::validate_and_split("part-000").unwrap(),
             fio::PERM_READABLE,
         );
-        let block =
-            connect_to_named_protocol_at_dir_root::<fvolume::VolumeMarker>(&proxy, "volume")
-                .expect("Failed to open block service");
+        let block = connect_to_named_protocol_at_dir_root::<fblock::BlockMarker>(&proxy, "volume")
+            .expect("Failed to open block service");
         let client = RemoteBlockClient::new(block).await.expect("Failed to create block client");
 
         let buffer = vec![0; BLOCK_SIZE as usize];
@@ -1173,9 +1166,7 @@ mod tests {
         part_0_proxy
             .update_metadata(fpartitions::PartitionUpdateMetadataRequest {
                 transaction: Some(transaction.duplicate_handle(zx::Rights::SAME_RIGHTS).unwrap()),
-                type_guid: Some(fidl_fuchsia_hardware_block_partition::Guid {
-                    value: [0xffu8; 16],
-                }),
+                type_guid: Some(fblock::Guid { value: [0xffu8; 16] }),
                 ..Default::default()
             })
             .await
@@ -1194,13 +1185,13 @@ mod tests {
 
         // Ensure the changes have propagated to the correct partitions.
         let part_0_block =
-            connect_to_named_protocol_at_dir_root::<fvolume::VolumeMarker>(&part_0_dir, "volume")
+            connect_to_named_protocol_at_dir_root::<fblock::BlockMarker>(&part_0_dir, "volume")
                 .expect("Failed to open Volume service");
         let (status, guid) = part_0_block.get_type_guid().await.expect("FIDL error");
         assert_eq!(zx::Status::from_raw(status), zx::Status::OK);
         assert_eq!(guid.unwrap().value, [0xffu8; 16]);
         let part_1_block =
-            connect_to_named_protocol_at_dir_root::<fvolume::VolumeMarker>(&part_1_dir, "volume")
+            connect_to_named_protocol_at_dir_root::<fblock::BlockMarker>(&part_1_dir, "volume")
                 .expect("Failed to open Volume service");
         let metadata =
             part_1_block.get_metadata().await.expect("FIDL error").expect("get_metadata failed");
@@ -1293,9 +1284,7 @@ mod tests {
         part_0_proxy
             .update_metadata(fpartitions::PartitionUpdateMetadataRequest {
                 transaction: Some(transaction.duplicate_handle(zx::Rights::SAME_RIGHTS).unwrap()),
-                type_guid: Some(fidl_fuchsia_hardware_block_partition::Guid {
-                    value: [0xffu8; 16],
-                }),
+                type_guid: Some(fblock::Guid { value: [0xffu8; 16] }),
                 ..Default::default()
             })
             .await
@@ -1316,13 +1305,13 @@ mod tests {
 
         // Ensure the changes did not get applied.
         let part_0_block =
-            connect_to_named_protocol_at_dir_root::<fvolume::VolumeMarker>(&part_0_dir, "volume")
+            connect_to_named_protocol_at_dir_root::<fblock::BlockMarker>(&part_0_dir, "volume")
                 .expect("Failed to open Volume service");
         let (status, guid) = part_0_block.get_type_guid().await.expect("FIDL error");
         assert_eq!(zx::Status::from_raw(status), zx::Status::OK);
-        assert_eq!(guid.unwrap().value, PART_TYPE_GUID);
+        assert_eq!(guid.unwrap().value, [2u8; 16]);
         let part_1_block =
-            connect_to_named_protocol_at_dir_root::<fvolume::VolumeMarker>(&part_1_dir, "volume")
+            connect_to_named_protocol_at_dir_root::<fblock::BlockMarker>(&part_1_dir, "volume")
                 .expect("Failed to open Volume service");
         let metadata =
             part_1_block.get_metadata().await.expect("FIDL error").expect("get_metadata failed");
@@ -1405,9 +1394,8 @@ mod tests {
             vfs::path::Path::validate_and_split("part-000").unwrap(),
             fio::PERM_READABLE,
         );
-        let block =
-            connect_to_named_protocol_at_dir_root::<fvolume::VolumeMarker>(&proxy, "volume")
-                .expect("Failed to open block service");
+        let block = connect_to_named_protocol_at_dir_root::<fblock::BlockMarker>(&proxy, "volume")
+            .expect("Failed to open block service");
         let (status, name) = block.get_name().await.expect("FIDL error");
         assert_eq!(zx::Status::from_raw(status), zx::Status::OK);
         assert_eq!(name.unwrap(), PART_3_NAME);
@@ -1535,7 +1523,7 @@ mod tests {
         let request = fpartitions::PartitionsManagerAddPartitionRequest {
             transaction: Some(transaction.duplicate_handle(zx::Rights::SAME_RIGHTS).unwrap()),
             name: Some("a".to_string()),
-            type_guid: Some(fidl_fuchsia_hardware_block_partition::Guid { value: [1u8; 16] }),
+            type_guid: Some(fblock::Guid { value: [1u8; 16] }),
             num_blocks: Some(2),
             ..Default::default()
         };
@@ -1547,10 +1535,10 @@ mod tests {
             vfs::path::Path::validate_and_split("part-000").unwrap(),
             fio::PERM_READABLE,
         );
-        let block =
-            connect_to_named_protocol_at_dir_root::<fvolume::VolumeMarker>(&proxy, "volume")
-                .expect("Failed to open block service");
-        let client = RemoteBlockClient::new(block).await.expect("Failed to create block client");
+        let block = connect_to_named_protocol_at_dir_root::<fblock::BlockMarker>(&proxy, "volume")
+            .expect("Failed to open block service");
+        let client: RemoteBlockClient =
+            RemoteBlockClient::new(block).await.expect("Failed to create block client");
 
         assert_eq!(client.block_count(), 2);
         assert_eq!(client.block_size(), 512);
@@ -1570,9 +1558,9 @@ mod tests {
                 block_size: 512,
                 info: DeviceInfo::Block(BlockInfo {
                     max_transfer_blocks: NonZero::new(2),
-                    device_flags: fblock::Flag::READONLY
-                        | fblock::Flag::REMOVABLE
-                        | fblock::Flag::ZSTD_DECOMPRESSION_SUPPORT,
+                    device_flags: BlockDeviceFlag::READONLY
+                        | BlockDeviceFlag::REMOVABLE
+                        | BlockDeviceFlag::ZSTD_DECOMPRESSION_SUPPORT,
                     ..Default::default()
                 }),
                 ..Default::default()
@@ -1599,20 +1587,21 @@ mod tests {
             fio::PERM_READABLE,
         );
         let part_block =
-            connect_to_named_protocol_at_dir_root::<fvolume::VolumeMarker>(&part_dir, "volume")
+            connect_to_named_protocol_at_dir_root::<fblock::BlockMarker>(&part_dir, "volume")
                 .expect("Failed to open Volume service");
-        let info = part_block.get_info().await.expect("FIDL error").expect("get_info failed");
+        let info: fblock::BlockInfo =
+            part_block.get_info().await.expect("FIDL error").expect("get_info failed");
         assert_eq!(info.block_count, 1);
         assert_eq!(info.block_size, 512);
         assert_eq!(
             info.flags,
-            fblock::Flag::READONLY
-                | fblock::Flag::REMOVABLE
-                | fblock::Flag::ZSTD_DECOMPRESSION_SUPPORT
+            BlockDeviceFlag::READONLY
+                | BlockDeviceFlag::REMOVABLE
+                | BlockDeviceFlag::ZSTD_DECOMPRESSION_SUPPORT
         );
         assert_eq!(info.max_transfer_size, 1024);
 
-        let metadata =
+        let metadata: fblock::BlockGetMetadataResponse =
             part_block.get_metadata().await.expect("FIDL error").expect("get_metadata failed");
         assert_eq!(metadata.name, Some(PART_NAME.to_string()));
         assert_eq!(metadata.type_guid.unwrap().value, PART_TYPE_GUID);
@@ -1637,7 +1626,7 @@ mod tests {
                 initial_contents: InitialContents::FromVmo(vmo_clone),
                 block_size: 512,
                 info: DeviceInfo::Block(BlockInfo {
-                    device_flags: fblock::Flag::READONLY | fblock::Flag::REMOVABLE,
+                    device_flags: BlockDeviceFlag::READONLY | BlockDeviceFlag::REMOVABLE,
                     ..Default::default()
                 }),
                 ..Default::default()
@@ -1728,7 +1717,7 @@ mod tests {
                 initial_contents: InitialContents::FromCapacity(16),
                 block_size: 512,
                 info: DeviceInfo::Block(BlockInfo {
-                    device_flags: fblock::Flag::READONLY | fblock::Flag::REMOVABLE,
+                    device_flags: fblock::DeviceFlag::READONLY | fblock::DeviceFlag::REMOVABLE,
                     ..Default::default()
                 }),
                 ..Default::default()

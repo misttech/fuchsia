@@ -5,7 +5,7 @@
 #include <dirent.h>
 #include <errno.h>
 #include <fcntl.h>
-#include <fidl/fuchsia.hardware.block.partition/cpp/wire.h>
+#include <fidl/fuchsia.storage.block/cpp/wire.h>
 #include <fuchsia/hardware/block/driver/c/banjo.h>
 #include <lib/async-loop/cpp/loop.h>
 #include <lib/async-loop/default.h>
@@ -31,7 +31,7 @@
 
 #include "src/lib/fsl/io/device_watcher.h"
 
-namespace fuchsia_partition = fuchsia_hardware_block_partition;
+namespace fuchsia_partition = fuchsia_storage_block;
 
 using device_watcher::RecursiveWaitForFile;
 

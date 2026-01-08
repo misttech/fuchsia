@@ -25,8 +25,7 @@ source_set("interface") {
 
     # For fidl/fuchsia.../wire.h
     "//sdk/fidl/fuchsia.device:fuchsia.device_cpp",
-    "//sdk/fidl/fuchsia.hardware.block:fuchsia.hardware.block_cpp",
-    "//sdk/fidl/fuchsia.hardware.block.volume:fuchsia.hardware.block.volume_cpp",
+    "//sdk/fidl/fuchsia.storage.block:fuchsia.storage.block_cpp",
 
     # For lib/zx/...
     "//zircon/system/ulib/zx",
@@ -64,8 +63,8 @@ static_library("cpp") {
   ]
   deps = [
     "//sdk/fidl/fuchsia.device:fuchsia.device_cpp",
-    "//sdk/fidl/fuchsia.hardware.block:fuchsia.hardware.block_cpp",
     "//sdk/fidl/fuchsia.io:fuchsia.io_cpp",
+    "//sdk/fidl/fuchsia.storage.block:fuchsia.storage.block_cpp",
     "//sdk/lib/component/incoming/cpp",
     "//sdk/lib/fdio",
     "//src/lib/ddk",
@@ -91,8 +90,7 @@ static_library("fake_device") {
   ]
   deps = [
     "//sdk/fidl/fuchsia.device:fuchsia.device_cpp",
-    "//sdk/fidl/fuchsia.hardware.block:fuchsia.hardware.block_cpp",
-    "//sdk/fidl/fuchsia.hardware.block.volume:fuchsia.hardware.block.volume_cpp",
+    "//sdk/fidl/fuchsia.storage.block:fuchsia.storage.block_cpp",
     "//sdk/lib/syslog/cpp",
     "//src/storage/fvm",
     "//zircon/system/ulib/range",
@@ -117,8 +115,8 @@ test("block_client_unit_test") {
   deps = [
     ":cpp",
     ":fake_device",
-    "//sdk/fidl/fuchsia.hardware.block.volume:fuchsia.hardware.block.volume_cpp_testing",
     "//sdk/fidl/fuchsia.io:fuchsia.io_cpp_testing",
+    "//sdk/fidl/fuchsia.storage.block:fuchsia.storage.block_cpp_testing",
     "//sdk/lib/async-loop",
     "//sdk/lib/async-loop:async-loop-cpp",
     "//sdk/lib/async-loop:async-loop-default",

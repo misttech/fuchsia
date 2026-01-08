@@ -5,8 +5,8 @@
 #include "adb-reboot.h"
 
 #include <fidl/fuchsia.hardware.adb/cpp/wire.h>
-#include <fidl/fuchsia.hardware.block.volume/cpp/markers.h>
 #include <fidl/fuchsia.hardware.power.statecontrol/cpp/wire.h>
+#include <fidl/fuchsia.storage.block/cpp/markers.h>
 #include <lib/async/cpp/task.h>
 #include <lib/component/incoming/cpp/protocol.h>
 #include <lib/syslog/cpp/macros.h>
@@ -43,9 +43,9 @@ bool update_bootloader_message_in_struct(bootloader_message* boot,
 
 zx_status_t WriteBootloaderMessage(std::string arg) {
   std::string path =
-      std::string("/misc/") + fidl::DiscoverableProtocolName<fuchsia_hardware_block_volume::Volume>;
-  zx::result<fidl::ClientEnd<fuchsia_hardware_block_volume::Volume>> client_end =
-      component::Connect<fuchsia_hardware_block_volume::Volume>(path);
+      std::string("/misc/") + fidl::DiscoverableProtocolName<fuchsia_storage_block::Block>;
+  zx::result<fidl::ClientEnd<fuchsia_storage_block::Block>> client_end =
+      component::Connect<fuchsia_storage_block::Block>(path);
   if (client_end.is_error()) {
     FX_LOGS(ERROR) << "Failed to connect to block volume: " << client_end.status_string();
     return client_end.status_value();

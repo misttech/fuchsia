@@ -14,7 +14,7 @@ use crate::vfs::{
 use anyhow::{Context as _, Error};
 use block_client::{BufferSlice, MutableBufferSlice, RemoteBlockClientSync};
 use fidl::endpoints::ClientEnd;
-use fidl_fuchsia_hardware_block_volume::VolumeMarker;
+use fidl_fuchsia_storage_block::BlockMarker;
 use starnix_sync::{FileOpsCore, LockEqualOrBefore, Locked, Mutex, Unlocked};
 use starnix_syscalls::{SUCCESS, SyscallArg, SyscallResult};
 use starnix_uapi::device_type::{BLOCK_EXTENDED_MAJOR, DeviceType};
@@ -43,7 +43,7 @@ impl RemoteBlockDevice {
         current_task: &CurrentTask,
         minor: u32,
         name: &str,
-        block: ClientEnd<VolumeMarker>,
+        block: ClientEnd<BlockMarker>,
     ) -> Result<Arc<Self>, Errno>
     where
         L: LockEqualOrBefore<FileOpsCore>,
@@ -315,7 +315,7 @@ impl RemoteBlockDeviceRegistry {
         locked: &mut Locked<L>,
         current_task: &CurrentTask,
         name: &str,
-        block: ClientEnd<VolumeMarker>,
+        block: ClientEnd<BlockMarker>,
     ) -> Result<(), Error>
     where
         L: LockEqualOrBefore<FileOpsCore>,
@@ -349,7 +349,7 @@ mod tests {
             remote_block_device_init(locked, &current_task);
             let registry = kernel.remote_block_device_registry.clone();
             let server = Arc::new(VmoBackedServer::new(2, 512, &[0u8; 1024]));
-            let (client, server_end) = fidl::endpoints::create_endpoints::<VolumeMarker>();
+            let (client, server_end) = fidl::endpoints::create_endpoints::<BlockMarker>();
             std::thread::spawn(move || {
                 let mut executor = fuchsia_async::LocalExecutor::default();
                 executor.run_singlethreaded(async move {
@@ -402,7 +402,7 @@ mod tests {
             remote_block_device_init(locked, &current_task);
             let registry = kernel.remote_block_device_registry.clone();
             let server = Arc::new(VmoBackedServer::new(2, 512, &[0u8; 1024]));
-            let (client, server_end) = fidl::endpoints::create_endpoints::<VolumeMarker>();
+            let (client, server_end) = fidl::endpoints::create_endpoints::<BlockMarker>();
             std::thread::spawn(move || {
                 let mut executor = fuchsia_async::LocalExecutor::default();
                 executor.run_singlethreaded(async move {
@@ -437,7 +437,7 @@ mod tests {
             let registry = kernel.remote_block_device_registry.clone();
             // 3 blocks of 512 bytes = 1536 bytes
             let server = Arc::new(VmoBackedServer::new(3, 512, &[0u8; 1536]));
-            let (client, server_end) = fidl::endpoints::create_endpoints::<VolumeMarker>();
+            let (client, server_end) = fidl::endpoints::create_endpoints::<BlockMarker>();
             std::thread::spawn(move || {
                 let mut executor = fuchsia_async::LocalExecutor::default();
                 executor.run_singlethreaded(async move {
@@ -489,7 +489,7 @@ mod tests {
             let registry = kernel.remote_block_device_registry.clone();
             // 2 blocks of 512 bytes = 1024 bytes
             let server = Arc::new(VmoBackedServer::new(2, 512, &[0u8; 1024]));
-            let (client, server_end) = fidl::endpoints::create_endpoints::<VolumeMarker>();
+            let (client, server_end) = fidl::endpoints::create_endpoints::<BlockMarker>();
             std::thread::spawn(move || {
                 let mut executor = fuchsia_async::LocalExecutor::default();
                 executor.run_singlethreaded(async move {
@@ -536,7 +536,7 @@ mod tests {
             // 3 blocks of 512 bytes = 1536 bytes
             // Initialize with a known pattern (0xFF)
             let server = Arc::new(VmoBackedServer::new(3, 512, &[0xFFu8; 1536]));
-            let (client, server_end) = fidl::endpoints::create_endpoints::<VolumeMarker>();
+            let (client, server_end) = fidl::endpoints::create_endpoints::<BlockMarker>();
             std::thread::spawn(move || {
                 let mut executor = fuchsia_async::LocalExecutor::default();
                 executor.run_singlethreaded(async move {

@@ -5,7 +5,7 @@
 #ifndef SRC_STORAGE_LIB_BLOCK_SERVER_BLOCK_SERVER_H_
 #define SRC_STORAGE_LIB_BLOCK_SERVER_BLOCK_SERVER_H_
 
-#include <fidl/fuchsia.hardware.block.volume/cpp/wire.h>
+#include <fidl/fuchsia.storage.block/cpp/wire.h>
 #include <lib/zx/result.h>
 
 #include <memory>
@@ -124,7 +124,7 @@ class BlockServer {
   }
 
   // Serves a new connection.  The FIDL handling is multiplexed onto a single per-server thread.
-  void Serve(fidl::ServerEnd<fuchsia_hardware_block_volume::Volume>);
+  void Serve(fidl::ServerEnd<fuchsia_storage_block::Block>);
 
   void SendReply(RequestId, zx::result<>) const;
 

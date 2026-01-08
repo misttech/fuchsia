@@ -45,6 +45,7 @@ source_set("sdmmc-driver-source") {
     "//sdk/fidl/fuchsia.hardware.block.volume:fuchsia.hardware.block.volume_cpp",
     "//sdk/fidl/fuchsia.io:fuchsia.io_cpp",
     "//sdk/fidl/fuchsia.power.system:fuchsia.power.system_cpp",
+    "//sdk/fidl/fuchsia.storage.block:fuchsia.storage.block_cpp",
     "//sdk/lib/driver/component/cpp",
     "//sdk/lib/driver/devfs/cpp",
     "//sdk/lib/driver/metadata/cpp",
@@ -169,7 +170,8 @@ test("sdmmc-block-test-bin") {
   deps = [
     ":fake-sdmmc-device",
     ":sdmmc-driver-source",
-    "//sdk/fidl/fuchsia.hardware.block:fuchsia.hardware.block_cpp",
+    "//sdk/fidl/fuchsia.hardware.block.volume:fuchsia.hardware.block.volume_cpp",
+    "//sdk/fidl/fuchsia.storage.block:fuchsia.storage.block_cpp",
     "//sdk/lib/driver/metadata/cpp",
     "//sdk/lib/driver/power/cpp/testing",
     "//sdk/lib/driver/testing/cpp",
@@ -199,7 +201,7 @@ test("sdio-controller-test-bin") {
   deps = [
     ":fake-sdmmc-device",
     ":sdmmc-driver-source",
-    "//sdk/fidl/fuchsia.hardware.block:fuchsia.hardware.block_cpp",
+    "//sdk/fidl/fuchsia.storage.block:fuchsia.storage.block_cpp",
     "//sdk/lib/driver/metadata/cpp",
     "//sdk/lib/driver/testing/cpp",
     "//src/lib/fxl/test:gtest_main",

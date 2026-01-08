@@ -6,8 +6,8 @@
 
 #include <fidl/fuchsia.device/cpp/wire.h>
 #include <fidl/fuchsia.fshost/cpp/wire_test_base.h>
-#include <fidl/fuchsia.hardware.block.volume/cpp/wire.h>
 #include <fidl/fuchsia.hardware.power.statecontrol/cpp/wire_test_base.h>
+#include <fidl/fuchsia.storage.block/cpp/wire.h>
 #include <lib/component/incoming/cpp/clone.h>
 #include <lib/component/incoming/cpp/protocol.h>
 #include <lib/driver-integration-test/fixture.h>
@@ -106,7 +106,7 @@ class FactoryResetTest : public gtest::RealLoopFixture {
   void WithPartitionHasFormat(void (*fn)(fs_management::DiskFormat)) {
     fdio_cpp::UnownedFdioCaller caller(devfs_root_fd());
     zx::result channel =
-        component::ConnectAt<fuchsia_hardware_block::Block>(caller.directory(), fvm_block_path_);
+        component::ConnectAt<fuchsia_storage_block::Block>(caller.directory(), fvm_block_path_);
     ASSERT_TRUE(channel.is_ok()) << channel.status_string();
     fn(fs_management::DetectDiskFormat(channel.value()));
   }
@@ -136,7 +136,7 @@ class FactoryResetTest : public gtest::RealLoopFixture {
   void CreateCorruptedZxcrypt() {
     zx::result channel = WaitForDevice(fvm_block_path_);
     ASSERT_EQ(channel.status_value(), ZX_OK);
-    fidl::ClientEnd<fuchsia_hardware_block::Block> client_end(std::move(channel.value()));
+    fidl::ClientEnd<fuchsia_storage_block::Block> client_end(std::move(channel.value()));
 
     // Write just the zxcrypt magic at the start of the volume.
     // It will not be possible to unseal this device, but we want to ensure that
@@ -160,7 +160,7 @@ class FactoryResetTest : public gtest::RealLoopFixture {
 
     zx::result channel = WaitForDevice(fvm_block_path_);
     ASSERT_EQ(channel.status_value(), ZX_OK);
-    fidl::ClientEnd<fuchsia_hardware_block::Block> client_end(std::move(channel.value()));
+    fidl::ClientEnd<fuchsia_storage_block::Block> client_end(std::move(channel.value()));
 
     // Prepare a buffer of the native block size that starts with blobfs_magic.
     // Block reads and writes via fds must match the block size.
@@ -223,7 +223,7 @@ class FactoryResetTest : public gtest::RealLoopFixture {
     ASSERT_EQ(WaitForDevice(data_block_path).status_value(), ZX_OK);
   }
 
-  static void GetBlockSize(const fidl::ClientEnd<fuchsia_hardware_block::Block>& client_end,
+  static void GetBlockSize(const fidl::ClientEnd<fuchsia_storage_block::Block>& client_end,
                            ssize_t* out_size) {
     const fidl::WireResult result = fidl::WireCall(client_end)->GetInfo();
     ASSERT_TRUE(result.ok()) << result.status_string();
@@ -231,7 +231,7 @@ class FactoryResetTest : public gtest::RealLoopFixture {
     *out_size = response.value()->info.block_size;
   }
 
-  static void WriteBlocks(const fidl::ClientEnd<fuchsia_hardware_block::Block>& client_end,
+  static void WriteBlocks(const fidl::ClientEnd<fuchsia_storage_block::Block>& client_end,
                           void* buffer, size_t buffer_size, size_t offset) {
     zx_status_t status = block_client::SingleWriteBytes(client_end, buffer, buffer_size, offset);
     ASSERT_EQ(status, ZX_OK) << zx_status_get_string(status);
@@ -270,8 +270,7 @@ class FactoryResetTest : public gtest::RealLoopFixture {
     // FvmAllocatePartitionWithDevfs waits for the device to be enumerated.
     zx::result devfs = devfs_root();
     ASSERT_TRUE(devfs.is_ok()) << devfs.status_string();
-    fidl::ClientEnd<fuchsia_hardware_block_volume::VolumeManager> client_end(
-        std::move(channel.value()));
+    fidl::ClientEnd<fuchsia_storage_block::VolumeManager> client_end(std::move(channel.value()));
     zx::result device = fs_management::FvmAllocatePartitionWithDevfs(
         devfs.value(), client_end, 1, GUID_DATA_VALUE, uuid::Uuid::Generate(), kDataName, 0);
     ASSERT_TRUE(device.is_ok()) << device.status_string();

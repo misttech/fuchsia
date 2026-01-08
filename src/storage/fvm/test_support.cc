@@ -6,8 +6,8 @@
 
 #include <errno.h>
 #include <fidl/fuchsia.device/cpp/wire.h>
-#include <fidl/fuchsia.hardware.block.volume/cpp/wire.h>
 #include <fidl/fuchsia.io/cpp/wire.h>
+#include <fidl/fuchsia.storage.block/cpp/wire.h>
 #include <lib/component/incoming/cpp/protocol.h>
 #include <lib/device-watcher/cpp/device-watcher.h>
 #include <lib/fdio/cpp/caller.h>
@@ -89,7 +89,7 @@ zx_status_t RebindBlockDevice(DeviceRef* device) {
   return ZX_OK;
 }
 
-using FidlGuid = fuchsia_hardware_block_partition::wire::Guid;
+using FidlGuid = fuchsia_storage_block::wire::Guid;
 
 }  // namespace
 
@@ -165,13 +165,13 @@ zx::result<std::unique_ptr<RamdiskRef>> RamdiskRef::Clone(uint64_t target_size) 
 }
 
 void BlockDeviceAdapter::WriteAt(const fbl::Array<uint8_t>& data, uint64_t offset) {
-  zx::result channel = GetChannel<fuchsia_hardware_block::Block>(device());
+  zx::result channel = GetChannel<fuchsia_storage_block::Block>(device());
   ASSERT_OK(channel.status_value());
   ASSERT_OK(block_client::SingleWriteBytes(channel.value(), data.data(), data.size(), offset));
 }
 
 void BlockDeviceAdapter::ReadAt(uint64_t offset, fbl::Array<uint8_t>* out_data) {
-  zx::result channel = GetChannel<fuchsia_hardware_block::Block>(device());
+  zx::result channel = GetChannel<fuchsia_storage_block::Block>(device());
   ASSERT_OK(channel.status_value());
   ASSERT_OK(
       block_client::SingleReadBytes(channel.value(), out_data->data(), out_data->size(), offset));
@@ -256,7 +256,7 @@ zx::result<> VPartitionAdapter::Destroy() {
 }
 
 zx_status_t VPartitionAdapter::Extend(uint64_t offset, uint64_t length) {
-  zx::result channel = GetChannel<fuchsia_hardware_block_volume::Volume>(device());
+  zx::result channel = GetChannel<fuchsia_storage_block::Block>(device());
   if (channel.is_error()) {
     return channel.error_value();
   }
@@ -341,7 +341,7 @@ zx_status_t FvmAdapter::AddPartition(const fbl::unique_fd& devfs_root, const std
   memcpy(fidl_guid.value.data(), guid.data(), guid.size());
   memcpy(fidl_type.value.data(), type.data(), type.size());
 
-  zx::result channel = GetChannel<fuchsia_hardware_block_volume::VolumeManager>(this);
+  zx::result channel = GetChannel<fuchsia_storage_block::VolumeManager>(this);
   if (channel.is_error()) {
     return channel.status_value();
   }
@@ -407,9 +407,8 @@ zx_status_t FvmAdapter::Rebind() {
 
 zx_status_t FvmAdapter::Query(VolumeManagerInfo* out_info) const {
   fdio_cpp::UnownedFdioCaller caller(devfs_root_.get());
-  zx::result<fidl::ClientEnd<fuchsia_hardware_block_volume::VolumeManager>> volume_manager =
-      component::ConnectAt<fuchsia_hardware_block_volume::VolumeManager>(caller.directory(),
-                                                                         path());
+  zx::result<fidl::ClientEnd<fuchsia_storage_block::VolumeManager>> volume_manager =
+      component::ConnectAt<fuchsia_storage_block::VolumeManager>(caller.directory(), path());
   if (volume_manager.is_error()) {
     ADD_FAILURE("Could not open FVM Volume Manager: %s\n",
                 zx_status_get_string(volume_manager.error_value()));

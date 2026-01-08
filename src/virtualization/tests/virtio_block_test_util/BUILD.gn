@@ -9,7 +9,7 @@ rustc_binary("virtio_block_test_util") {
   edition = "2024"
   if (is_fuchsia) {
     deps = [
-      "//sdk/fidl/fuchsia.hardware.block:fuchsia.hardware.block_rust",
+      "//sdk/fidl/fuchsia.storage.block:fuchsia.storage.block_rust",
       "//sdk/lib/device-watcher/rust",
       "//src/lib/fuchsia",
       "//src/lib/fuchsia-component",
