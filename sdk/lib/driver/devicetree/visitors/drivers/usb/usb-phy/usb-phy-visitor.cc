@@ -27,7 +27,9 @@ UsbPhyVisitor::UsbPhyVisitor() {
 }
 
 bool UsbPhyVisitor::is_match(const std::string& name) {
-  return name.find("usb-phy") != std::string::npos;
+  return name.find("usb-phy") != std::string::npos ||  //
+         name.find("usb2") != std::string::npos ||     //
+         name.find("usb3") != std::string::npos;
 }
 
 zx::result<> UsbPhyVisitor::Visit(fdf_devicetree::Node& node,
@@ -66,7 +68,7 @@ zx::result<> UsbPhyVisitor::Visit(fdf_devicetree::Node& node,
       }
 
       if (!is_match(reference.reference_node().name())) {
-        // This reference is not to a usb-phy.
+        // This reference is unlikely to be for a usb phy
         continue;
       }
 
