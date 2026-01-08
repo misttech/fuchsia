@@ -1151,10 +1151,11 @@ class FuchsiaDeviceImpl(
                 )
             )
             asyncio.run(
-                power_proxy.perform_reboot(
-                    options=fhp_statecontrol.RebootOptions(
+                power_proxy.shutdown(
+                    options=fhp_statecontrol.ShutdownOptions(
+                        action=fhp_statecontrol.ShutdownAction.REBOOT,
                         reasons=[
-                            fhp_statecontrol.RebootReason2.DEVELOPER_REQUEST
+                            fhp_statecontrol.ShutdownReason.DEVELOPER_REQUEST
                         ],
                     ),
                 )

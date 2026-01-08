@@ -1660,7 +1660,7 @@ class FuchsiaDeviceImplTests(unittest.TestCase):
 
     @mock.patch.object(
         fhp_statecontrol.AdminClient,
-        "perform_reboot",
+        "shutdown",
         new_callable=mock.AsyncMock,
     )
     @mock.patch.object(
@@ -1671,18 +1671,18 @@ class FuchsiaDeviceImplTests(unittest.TestCase):
     def test_send_reboot_command(
         self,
         mock_fc_connect_device_proxy: mock.Mock,
-        mock_admin_perform_reboot: mock.Mock,
+        mock_admin_shutdown: mock.Mock,
     ) -> None:
         """Testcase for FuchsiaDevice._send_reboot_command()"""
         # pylint: disable=protected-access
         self.fd_fc_obj._send_reboot_command()
 
         mock_fc_connect_device_proxy.assert_called()
-        mock_admin_perform_reboot.assert_called()
+        mock_admin_shutdown.assert_called()
 
     @mock.patch.object(
         fhp_statecontrol.AdminClient,
-        "perform_reboot",
+        "shutdown",
         new_callable=mock.AsyncMock,
     )
     @mock.patch.object(
@@ -1693,24 +1693,22 @@ class FuchsiaDeviceImplTests(unittest.TestCase):
     def test_send_reboot_command_error(
         self,
         mock_fc_connect_device_proxy: mock.Mock,
-        mock_admin_perform_reboot: mock.Mock,
+        mock_admin_shutdown: mock.Mock,
     ) -> None:
         """Testcase for FuchsiaDevice._send_reboot_command() when the reboot
         FIDL call raises a non-ZX_ERR_PEER_CLOSED error.
         ZX_ERR_INVALID_ARGS was chosen arbitrarily for this purpose."""
-        mock_admin_perform_reboot.side_effect = ZxStatus(
-            ZxStatus.ZX_ERR_INVALID_ARGS
-        )
+        mock_admin_shutdown.side_effect = ZxStatus(ZxStatus.ZX_ERR_INVALID_ARGS)
         with self.assertRaises(fc_errors.FuchsiaControllerError):
             # pylint: disable=protected-access
             self.fd_fc_obj._send_reboot_command()
 
         mock_fc_connect_device_proxy.assert_called()
-        mock_admin_perform_reboot.assert_called()
+        mock_admin_shutdown.assert_called()
 
     @mock.patch.object(
         fhp_statecontrol.AdminClient,
-        "perform_reboot",
+        "shutdown",
         new_callable=mock.AsyncMock,
     )
     @mock.patch.object(
@@ -1721,19 +1719,17 @@ class FuchsiaDeviceImplTests(unittest.TestCase):
     def test_send_reboot_command_error_is_peer_closed(
         self,
         mock_fc_connect_device_proxy: mock.Mock,
-        mock_admin_perform_reboot: mock.Mock,
+        mock_admin_shutdown: mock.Mock,
     ) -> None:
         """Testcase for FuchsiaDevice._send_reboot_command() when the reboot
         FIDL call raises a ZX_ERR_PEER_CLOSED error.  This error should not
         result in `FuchsiaControllerError` being raised."""
-        mock_admin_perform_reboot.side_effect = ZxStatus(
-            ZxStatus.ZX_ERR_PEER_CLOSED
-        )
+        mock_admin_shutdown.side_effect = ZxStatus(ZxStatus.ZX_ERR_PEER_CLOSED)
         # pylint: disable=protected-access
         self.fd_fc_obj._send_reboot_command()
 
         mock_fc_connect_device_proxy.assert_called()
-        mock_admin_perform_reboot.assert_called()
+        mock_admin_shutdown.assert_called()
 
     @mock.patch.object(
         f_feedback.DataProviderClient,
