@@ -365,8 +365,11 @@ class RemoteAbiHeap {
     assert(file_vmo);
 
     const size_type page_size = static_cast<size_type>(RemoteModule::Loader::page_size());
-    const size_type filesz = old_segment.filesz();
     const size_type memsz = (segment_size + page_size - 1) & -page_size;
+    // TODO(https://fxbug.dev/468047456): This should be const too, but in
+    // C++23 mode that makes it constexpr and the lambda capture of a local
+    // constexpr is superfluous and gets a warning.
+    size_type filesz = old_segment.filesz();
 
     StubConstantSegment new_segment{
         old_segment.offset(),
