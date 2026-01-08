@@ -151,6 +151,11 @@
     },
     {
         "kind": "enum/member",
+        "name": "fuchsia.sys2/CreateError.DICTIONARY_AND_ADDITIONAL_INPUTS_SET",
+        "value": "11"
+    },
+    {
+        "kind": "enum/member",
         "name": "fuchsia.sys2/CreateError.DYNAMIC_OFFERS_FORBIDDEN",
         "value": "8"
     },

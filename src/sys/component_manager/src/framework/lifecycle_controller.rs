@@ -143,8 +143,9 @@ async fn start_instance_with_args(
         join_monikers(&scope.moniker, &moniker).map_err(|_| fsys::StartError::BadMoniker)?;
     let instance =
         scope.find_absolute(&moniker).await.map_err(|_| fsys::StartError::InstanceNotFound)?;
-    let incoming: IncomingCapabilities =
-        args.try_into().map_err(|_| fsys::StartError::InvalidArguments)?;
+    let incoming =
+        IncomingCapabilities::from_start_child_args(scope.context.remote_capabilities(), args)
+            .map_err(|_| fsys::StartError::InvalidArguments)?;
     instance.start(&StartReason::Debug, None, incoming).await.map(|_| ()).map_err(|error| {
         warn!(moniker:%, error:%; "failed to start instance");
         error

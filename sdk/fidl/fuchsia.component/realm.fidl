@@ -186,8 +186,18 @@ type CreateChildArgs = resource table {
     3: controller server_end:Controller;
 
     /// A dictionary that contains extra capabilities for the component instance.
+    /// This field should be considered deprecated in favor of
+    /// `additional_inputs`. If both are set, an `INVALID_ARGUMENTS` error will
+    /// be returned.
+    // TODO(https://fxbug.dev/474049293): delete this
     @available(added=HEAD)
     4: dictionary fuchsia.component.sandbox.DictionaryRef;
+
+    /// A handle to a dictionary created using
+    /// fuchsia.component.runtime.Capabilities that contains additional
+    /// capabilities that should be added to the inputs of the created child.
+    @available(added=HEAD)
+    5: additional_inputs zx.Handle:EVENTPAIR;
 };
 
 /// A protocol to iterate over the list of children in a realm.

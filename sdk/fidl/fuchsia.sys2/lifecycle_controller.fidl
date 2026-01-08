@@ -109,6 +109,9 @@ type CreateError = flexible enum {
     EAGER_STARTUP_FORBIDDEN = 9;
     // The specified collection does not allow numbered handles.
     NUMBERED_HANDLES_FORBIDDEN = 10;
+    // Cannot set both `dictionary` and `additional_inputs`.
+    @available(added=NEXT)
+    DICTIONARY_AND_ADDITIONAL_INPUTS_SET = 11;
 };
 
 /// Mutates the component instance state in a realm.

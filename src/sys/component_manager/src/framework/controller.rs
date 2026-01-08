@@ -55,12 +55,10 @@ pub async fn serve_controller(
                         control_handle,
                         stop_payload: None,
                     };
-                    let incoming: IncomingCapabilities = match args.try_into() {
-                        Ok(incoming) => incoming,
-                        Err(e) => {
-                            return Err(e);
-                        }
-                    };
+                    let incoming = IncomingCapabilities::from_start_child_args(
+                        component.context.remote_capabilities(),
+                        args,
+                    )?;
 
                     if let Err(err) = component
                         .start(&StartReason::Controller, Some(execution_controller), incoming)

@@ -96,8 +96,18 @@ type StartChildArgs = resource table {
     2: namespace_entries vector<NamespaceEntry>:MAX_NAMESPACE_COUNT;
 
     /// A dictionary that contains extra capabilities for the component instance.
+    /// This field should be considered deprecated in favor of
+    /// `additional_inputs`. If both are set, an `INVALID_ARGUMENTS` error will
+    /// be returned.
+    // TODO(https://fxbug.dev/474049293): delete this
     @available(added=HEAD)
     3: dictionary fuchsia.component.sandbox.DictionaryRef;
+
+    /// A handle to a dictionary created using
+    /// fuchsia.component.runtime.Capabilities that contains additional
+    /// capabilities that should be added to the inputs of the started program.
+    @available(added=HEAD)
+    4: additional_inputs zx.Handle:EVENTPAIR;
 };
 
 @available(added=14)

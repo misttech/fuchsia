@@ -278,6 +278,8 @@ pub enum AddDynamicChildError {
         #[from]
         err: AddChildError,
     },
+    #[error("cannot set both `dictionary` and `additional_inputs`")]
+    DictionaryAndAdditionalInputsSet,
 }
 
 // This is implemented for fuchsia.component.Realm protocol
@@ -312,6 +314,9 @@ impl Into<fcomponent::Error> for AddDynamicChildError {
             AddDynamicChildError::AddChildError { err: AddChildError::ChildNameInvalid { .. } } => {
                 fcomponent::Error::InvalidArguments
             }
+            AddDynamicChildError::DictionaryAndAdditionalInputsSet => {
+                fcomponent::Error::InvalidArguments
+            }
         }
     }
 }
@@ -342,6 +347,9 @@ impl Into<fsys::CreateError> for AddDynamicChildError {
             }
             AddDynamicChildError::NumberedHandleNotInSingleRunCollection => {
                 fsys::CreateError::NumberedHandlesForbidden
+            }
+            AddDynamicChildError::DictionaryAndAdditionalInputsSet => {
+                fsys::CreateError::DictionaryAndAdditionalInputsSet
             }
         }
     }

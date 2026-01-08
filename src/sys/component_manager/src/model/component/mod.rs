@@ -5,6 +5,7 @@
 pub mod instance;
 pub mod manager;
 
+use crate::framework::capabilities::RemotedRuntimeCapabilities;
 use crate::framework::controller;
 use crate::model::actions::{
     ActionsManager, DestroyAction, ResolveAction, ShutdownAction, ShutdownType, StartAction,
@@ -261,10 +262,11 @@ impl Default for IncomingCapabilities {
     }
 }
 
-impl TryFrom<fcomponent::StartChildArgs> for IncomingCapabilities {
-    type Error = fcomponent::Error;
-
-    fn try_from(mut args: fcomponent::StartChildArgs) -> Result<Self, Self::Error> {
+impl IncomingCapabilities {
+    pub fn from_start_child_args(
+        remote_capabilities: &RemotedRuntimeCapabilities,
+        mut args: fcomponent::StartChildArgs,
+    ) -> Result<Self, fcomponent::Error> {
         let numbered_handles = args.numbered_handles.take().unwrap_or_default();
 
         let namespace: namespace::Namespace = args
@@ -274,7 +276,7 @@ impl TryFrom<fcomponent::StartChildArgs> for IncomingCapabilities {
             .try_into()
             .map_err(|_| fcomponent::Error::InvalidArguments)?;
 
-        let dict = if let Some(dict_ref) = args.dictionary {
+        let dict_1 = if let Some(dict_ref) = args.dictionary {
             let fidl_capability = fsandbox::Capability::Dictionary(dict_ref);
             let cap = Capability::try_from(fidl_capability)
                 .map_err(|_| fcomponent::Error::InvalidArguments)?;
@@ -286,7 +288,25 @@ impl TryFrom<fcomponent::StartChildArgs> for IncomingCapabilities {
             None
         };
 
-        Ok(Self { numbered_handles, additional_namespace_entries: namespace.into(), dict })
+        let dict_2 = if let Some(dictionary_handle) = args.additional_inputs {
+            Some(
+                remote_capabilities
+                    .get::<Dict>(dictionary_handle)
+                    .map_err(|_| fcomponent::Error::InvalidArguments)?,
+            )
+        } else {
+            None
+        };
+
+        if dict_1.is_some() && dict_2.is_some() {
+            return Err(fcomponent::Error::InvalidArguments);
+        }
+
+        Ok(Self {
+            numbered_handles,
+            additional_namespace_entries: namespace.into(),
+            dict: dict_1.xor(dict_2),
+        })
     }
 }
 
@@ -529,6 +549,10 @@ impl ComponentInstance {
             .shallow_copy()
             .map_err(|_| AddDynamicChildError::InvalidDictionary)?;
 
+        if child_args.dictionary.is_some() && child_args.additional_inputs.is_some() {
+            return Err(AddDynamicChildError::DictionaryAndAdditionalInputsSet);
+        }
+
         // Merge `ChildArgs.dictionary` entries into the child sandbox.
         if let Some(dictionary_ref) = child_args.dictionary {
             let fidl_capability = fsandbox::Capability::Dictionary(dictionary_ref);
@@ -540,6 +564,28 @@ impl ComponentInstance {
             };
             let child_dict_entries = child_input.capabilities();
             for (key, value) in dict.drain() {
+                let router: Capability = match value {
+                    Capability::Connector(s) => Router::<Connector>::new_ok(s).into(),
+                    Capability::DirConnector(s) => Router::<DirConnector>::new_ok(s).into(),
+                    Capability::Dictionary(s) => Router::<Dict>::new_ok(s).into(),
+                    Capability::Data(d) => Router::<Data>::new_ok(d).into(),
+                    c => c,
+                };
+
+                if let Err(_) = child_dict_entries.insert(key.clone(), router) {
+                    return Err(AddDynamicChildError::StaticRouteConflict { capability_name: key });
+                }
+            }
+        }
+
+        if let Some(dictionary_handle) = child_args.additional_inputs {
+            let dictionary: Dict = self
+                .context
+                .remote_capabilities()
+                .get(dictionary_handle)
+                .map_err(|_| AddDynamicChildError::InvalidDictionary)?;
+            let child_dict_entries = child_input.capabilities();
+            for (key, value) in dictionary.drain() {
                 let router: Capability = match value {
                     Capability::Connector(s) => Router::<Connector>::new_ok(s).into(),
                     Capability::DirConnector(s) => Router::<DirConnector>::new_ok(s).into(),
