@@ -29,7 +29,7 @@ use starnix_uapi::errors::Errno;
 use starnix_uapi::open_flags::OpenFlags;
 use starnix_uapi::user_address::UserRef;
 use starnix_uapi::{
-    __kernel_old_dev_t, BLKFLSBUF, BLKGETSIZE, BLKGETSIZE64, LO_FLAGS_AUTOCLEAR,
+    __kernel_old_dev_t, BLKFLSBUF, BLKGETSIZE, BLKGETSIZE64, BLKRASET, LO_FLAGS_AUTOCLEAR,
     LO_FLAGS_DIRECT_IO, LO_FLAGS_PARTSCAN, LO_FLAGS_READ_ONLY, LO_KEY_SIZE, LOOP_CHANGE_FD,
     LOOP_CLR_FD, LOOP_CONFIGURE, LOOP_CTL_ADD, LOOP_CTL_GET_FREE, LOOP_CTL_REMOVE, LOOP_GET_STATUS,
     LOOP_GET_STATUS64, LOOP_SET_BLOCK_SIZE, LOOP_SET_CAPACITY, LOOP_SET_DIRECT_IO, LOOP_SET_FD,
@@ -477,6 +477,10 @@ impl FileOps for LoopDeviceFile {
             }
             BLKFLSBUF => {
                 track_stub!(TODO("https://fxbug.dev/322873756"), "Loop device BLKFLSBUF");
+                Ok(SUCCESS)
+            }
+            BLKRASET => {
+                track_stub!(TODO("https://fxbug.dev/408500542"), "Loop device BLKRASET");
                 Ok(SUCCESS)
             }
             LOOP_SET_FD => {
