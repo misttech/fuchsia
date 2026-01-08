@@ -12,14 +12,12 @@ use futures::FutureExt;
 use mdns::protocol as dns;
 use netext::{IsLocalAddr, get_mcast_interfaces};
 use packet::{InnerPacketBuilder, ParseBuffer};
-use std::cell::RefCell;
 use std::collections::{HashMap, HashSet};
 use std::fmt::Write;
 use std::hash::{Hash, Hasher};
 use std::net::{IpAddr, Ipv4Addr, Ipv6Addr, SocketAddr};
 use std::os::unix::prelude::AsRawFd;
-use std::rc::{Rc, Weak};
-use std::sync::LazyLock;
+use std::sync::{Arc, LazyLock, Weak};
 use std::time::Duration;
 use timeout::timeout;
 use tokio::net::UdpSocket;
@@ -75,14 +73,14 @@ impl Eq for CachedTarget {}
 
 pub struct MdnsProtocol {
     pub events_out: async_channel::Sender<ffx::MdnsEventType>,
-    pub target_cache: RefCell<HashSet<CachedTarget>>,
+    pub target_cache: Mutex<HashSet<CachedTarget>>,
 }
 
 impl MdnsProtocol {
-    pub async fn handle_target(self: &Rc<Self>, t: ffx::TargetInfo, ttl: u32) {
-        let weak = Rc::downgrade(self);
+    pub async fn handle_target(self: &Arc<Self>, t: ffx::TargetInfo, ttl: u32) {
+        let weak = Arc::downgrade(self);
         let t_clone = t.clone();
-        let eviction_task = Task::local(async move {
+        let eviction_task = Task::spawn(async move {
             fuchsia_async::Timer::new(Duration::from_secs(ttl.into())).await;
             if let Some(this) = weak.upgrade() {
                 this.evict_target(t_clone).await;
@@ -91,7 +89,8 @@ impl MdnsProtocol {
 
         if self
             .target_cache
-            .borrow_mut()
+            .lock()
+            .await
             .replace(CachedTarget::new_with_task(t.clone(), eviction_task))
             .is_none()
         {
@@ -102,7 +101,7 @@ impl MdnsProtocol {
     }
 
     async fn evict_target(&self, t: ffx::TargetInfo) {
-        if self.target_cache.borrow_mut().remove(&CachedTarget::new(t.clone())) {
+        if self.target_cache.lock().await.remove(&CachedTarget::new(t.clone())) {
             self.publish_event(ffx::MdnsEventType::TargetExpired(t)).await
         }
     }
@@ -111,13 +110,13 @@ impl MdnsProtocol {
         let _ = self.events_out.send(event).await;
     }
 
-    pub fn target_cache(&self) -> Vec<ffx::TargetInfo> {
-        self.target_cache.borrow().iter().map(|c| c.target.clone()).collect()
+    pub async fn target_cache(&self) -> Vec<ffx::TargetInfo> {
+        self.target_cache.lock().await.iter().map(|c| c.target.clone()).collect()
     }
 }
 
 pub struct DiscoveryConfig {
-    pub socket_tasks: Rc<Mutex<HashMap<IpAddr, Task<()>>>>,
+    pub socket_tasks: Arc<Mutex<HashMap<IpAddr, Task<()>>>>,
     pub mdns_protocol: Weak<MdnsProtocol>,
     pub discovery_interval: Duration,
     pub query_interval: Duration,
@@ -140,14 +139,14 @@ async fn propagate_bind_event(sock: &UdpSocket, svc: &Weak<MdnsProtocol>) -> u16
     port
 }
 
-#[async_trait(?Send)]
-pub trait MdnsEnabledChecker {
+#[async_trait]
+pub trait MdnsEnabledChecker: Send + Sync {
     async fn enabled(&self) -> bool;
 }
 
 struct MdnsEnabled;
 
-#[async_trait(?Send)]
+#[async_trait]
 impl MdnsEnabledChecker for MdnsEnabled {
     async fn enabled(&self) -> bool {
         true
@@ -160,8 +159,10 @@ pub async fn discover_target(
     listen_duration: Duration,
     mdns_port: u16,
 ) -> Result<ffx::TargetInfo> {
-    discover_target_by(listen_duration, mdns_port, |t| t.nodename.as_ref() == Some(&target_name))
-        .await
+    discover_target_by(listen_duration, mdns_port, move |t| {
+        t.nodename.as_ref() == Some(&target_name)
+    })
+    .await
 }
 
 pub async fn discover_target_by<F>(
@@ -170,12 +171,12 @@ pub async fn discover_target_by<F>(
     filter: F,
 ) -> Result<ffx::TargetInfo>
 where
-    F: Fn(&ffx::TargetInfo) -> bool,
+    F: Fn(&ffx::TargetInfo) -> bool + Send + 'static,
 {
     let (sender, receiver) = async_channel::bounded::<ffx::MdnsEventType>(1);
-    let inner = Rc::new(MdnsProtocol { events_out: sender, target_cache: Default::default() });
+    let inner = Arc::new(MdnsProtocol { events_out: sender, target_cache: Default::default() });
 
-    let inner_mv = Rc::downgrade(&inner);
+    let inner_mv = Arc::downgrade(&inner);
 
     let discover_task = discovery_loop(
         DiscoveryConfig {
@@ -213,7 +214,7 @@ async fn loop_for_target<F>(
     filter: F,
 ) -> Result<ffx::TargetInfo>
 where
-    F: Fn(&ffx::TargetInfo) -> bool,
+    F: Fn(&ffx::TargetInfo) -> bool + Send + 'static,
 {
     loop {
         match receiver.recv().await {
@@ -241,9 +242,9 @@ pub async fn discover_targets(
     mdns_port: u16,
 ) -> Result<Vec<ffx::TargetInfo>> {
     let (sender, receiver) = async_channel::bounded::<ffx::MdnsEventType>(1);
-    let inner = Rc::new(MdnsProtocol { events_out: sender, target_cache: Default::default() });
+    let inner = Arc::new(MdnsProtocol { events_out: sender, target_cache: Default::default() });
 
-    let inner_mv = Rc::downgrade(&inner);
+    let inner_mv = Arc::downgrade(&inner);
 
     let discover_task = timeout(
         listen_duration,
@@ -262,13 +263,13 @@ pub async fn discover_targets(
     .fuse();
     let discover_task = Box::pin(discover_task);
 
-    let drain_task = Task::local(drain_reciever(receiver)).fuse();
+    let drain_task = Task::spawn(drain_reciever(receiver)).fuse();
     let drain_task = Box::pin(drain_task);
 
     // Wait on either the discovery or the timeout
     futures::future::select(discover_task, drain_task).await;
 
-    Ok(inner.as_ref().target_cache())
+    Ok(inner.as_ref().target_cache().await)
 }
 
 async fn drain_reciever(receiver: async_channel::Receiver<ffx::MdnsEventType>) -> Result<()> {
@@ -288,7 +289,7 @@ pub struct MdnsWatcher {
     // Task for the drain loop
     drain_task: Option<Task<()>>,
     // Inner
-    inner: Option<Rc<MdnsProtocol>>,
+    inner: Option<Arc<MdnsProtocol>>,
 }
 
 pub trait MdnsEventHandler: Send + 'static {
@@ -333,11 +334,11 @@ impl MdnsWatcher {
 
         let (sender, receiver) = async_channel::bounded::<ffx::MdnsEventType>(1);
 
-        let inner = Rc::new(MdnsProtocol { events_out: sender, target_cache: Default::default() });
+        let inner = Arc::new(MdnsProtocol { events_out: sender, target_cache: Default::default() });
         res.inner.replace(inner.clone());
 
-        let inner = Rc::downgrade(&inner);
-        res.discovery_task.replace(Task::local(discovery_loop(
+        let inner = Arc::downgrade(&inner);
+        res.discovery_task.replace(Task::spawn(discovery_loop(
             DiscoveryConfig {
                 socket_tasks: Default::default(),
                 mdns_protocol: inner,
@@ -349,7 +350,7 @@ impl MdnsWatcher {
             MdnsEnabled {},
         )));
 
-        res.drain_task.replace(Task::local(handle_events_loop(receiver, events_out)));
+        res.drain_task.replace(Task::spawn(handle_events_loop(receiver, events_out)));
 
         res
     }
@@ -396,8 +397,8 @@ pub async fn discovery_loop(config: DiscoveryConfig, checker: impl MdnsEnabledCh
     let mut v4_listen_socket: Weak<UdpSocket> = Weak::new();
     let mut v6_listen_socket: Weak<UdpSocket> = Weak::new();
 
-    let checker_strong = Rc::new(checker);
-    let checker = Rc::downgrade(&checker_strong);
+    let checker_strong = Arc::new(checker);
+    let checker = Arc::downgrade(&checker_strong);
 
     let mut recv_ipv4_task: Option<Task<()>> = None;
     let mut recv_ipv6_task: Option<Task<()>> = None;
@@ -422,10 +423,10 @@ pub async fn discovery_loop(config: DiscoveryConfig, checker: impl MdnsEnabledCh
                     // using IPv6. Only propagates the port binding event for
                     // IPv4.
                     let _ = propagate_bind_event(&sock, &mdns_protocol).await;
-                    let sock = Rc::new(sock);
-                    v4_listen_socket = Rc::downgrade(&sock);
+                    let sock = Arc::new(sock);
+                    v4_listen_socket = Arc::downgrade(&sock);
                     let rcv_task =
-                        Task::local(recv_loop(sock, mdns_protocol.clone(), checker.clone()));
+                        Task::spawn(recv_loop(sock, mdns_protocol.clone(), checker.clone()));
                     if recv_ipv4_task.is_some() {
                         log::warn!(
                             "the IpV4 listen socket was none but we had a task receiving data on it. Replacing the old task"
@@ -451,10 +452,10 @@ pub async fn discovery_loop(config: DiscoveryConfig, checker: impl MdnsEnabledCh
                 .context("make_listen_socket for IPv6")
             {
                 Ok(sock) => {
-                    let sock = Rc::new(sock);
-                    v6_listen_socket = Rc::downgrade(&sock);
+                    let sock = Arc::new(sock);
+                    v6_listen_socket = Arc::downgrade(&sock);
                     let rcv_task =
-                        Task::local(recv_loop(sock, mdns_protocol.clone(), checker.clone()));
+                        Task::spawn(recv_loop(sock, mdns_protocol.clone(), checker.clone()));
                     if recv_ipv6_task.is_some() {
                         log::warn!(
                             "the IpV6 listen socket was none but we had a task receiving data on it. Replacing the old task"
@@ -541,12 +542,12 @@ pub async fn discovery_loop(config: DiscoveryConfig, checker: impl MdnsEnabledCh
                 if sock.is_some() {
                     socket_tasks.lock().await.insert(
                         addr.ip(),
-                        Task::local(query_recv_loop(
-                            Rc::new(sock.unwrap()),
+                        Task::spawn(query_recv_loop(
+                            Arc::new(sock.unwrap()),
                             addr,
                             mdns_protocol.clone(),
                             query_interval,
-                            Rc::downgrade(&socket_tasks),
+                            Arc::downgrade(&socket_tasks),
                             checker.clone(),
                             mdns_port,
                         )),
@@ -695,7 +696,7 @@ fn decode_txt_rdata(data: &[u8]) -> Result<Vec<String>> {
 // corresponding mdns event is published to the queue. All other packets are
 // silently discarded.
 async fn recv_loop(
-    sock: Rc<UdpSocket>,
+    sock: Arc<UdpSocket>,
     mdns_protocol: Weak<MdnsProtocol>,
     checker: Weak<impl MdnsEnabledChecker>,
 ) {
@@ -797,7 +798,7 @@ static QUERY_BUF: LazyLock<[Box<[u8]>; 2]> = LazyLock::new(|| {
 });
 
 // query_loop broadcasts an mdns query on sock every interval.
-async fn query_loop(sock: Rc<UdpSocket>, interval: Duration, mdns_port: u16) {
+async fn query_loop(sock: Arc<UdpSocket>, interval: Duration, mdns_port: u16) {
     let to_addr: SocketAddr = match sock.local_addr() {
         Ok(SocketAddr::V4(_)) => (MDNS_MCAST_V4, mdns_port).into(),
         Ok(SocketAddr::V6(_)) => (MDNS_MCAST_V6, mdns_port).into(),
@@ -833,7 +834,7 @@ async fn query_loop(sock: Rc<UdpSocket>, interval: Duration, mdns_port: u16) {
 // sock is dispatched with a recv_loop, as well as broadcasting an
 // mdns query to discover Fuchsia devices every interval.
 async fn query_recv_loop(
-    sock: Rc<UdpSocket>,
+    sock: Arc<UdpSocket>,
     addr: SocketAddr,
     mdns_protocol: Weak<MdnsProtocol>,
     interval: Duration,
@@ -841,8 +842,8 @@ async fn query_recv_loop(
     checker: Weak<impl MdnsEnabledChecker>,
     mdns_port: u16,
 ) {
-    let mut recv = recv_loop(sock.clone(), mdns_protocol, checker).boxed_local().fuse();
-    let mut query = query_loop(sock.clone(), interval, mdns_port).boxed_local().fuse();
+    let mut recv = recv_loop(sock.clone(), mdns_protocol, checker).boxed().fuse();
+    let mut query = query_loop(sock.clone(), interval, mdns_port).boxed().fuse();
 
     log::debug!("mdns: started query socket {}", &addr);
 
@@ -1015,6 +1016,8 @@ mod tests {
     use fidl_fuchsia_net::IpAddress::Ipv4;
     use packet::{InnerPacketBuilder, ParseBuffer, Serializer};
     use std::io::Write;
+
+    static_assertions::assert_impl_all!(MdnsProtocol: Send, Sync);
 
     #[test]
     fn test_make_target() {

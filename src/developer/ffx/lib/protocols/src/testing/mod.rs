@@ -9,8 +9,11 @@ use crate::{Context, FidlProtocol};
 use fidl::AsyncChannel;
 use fidl::endpoints::{ProtocolMarker, Proxy, create_endpoints};
 use fuchsia_async::Task;
+use futures::TryStreamExt;
+use futures::lock::Mutex;
 use std::cell::RefCell;
 use std::rc::Rc;
+use std::sync::Arc;
 
 /// A simple proxy made from a FIDL protocol. This is necessary if your proxy
 /// has some specific state you would like to have control over. You can inspect
@@ -39,6 +42,24 @@ pub async fn create_proxy<F: FidlProtocol + 'static>(
         let stream = server.into_stream();
         svc.borrow().serve(&cx, stream).await.unwrap();
         svc.borrow_mut().stop(&cx).await.unwrap();
+    });
+    (client, task)
+}
+pub async fn create_proxy_arc<F: FidlProtocol + 'static>(
+    f: Arc<Mutex<F>>,
+    fake_daemon: &FakeDaemon,
+) -> (<F::Protocol as ProtocolMarker>::Proxy, Task<()>) {
+    let (client, server) = create_endpoints::<F::Protocol>();
+    let client = AsyncChannel::from_channel(client.into_channel());
+    let client = <F::Protocol as ProtocolMarker>::Proxy::from_channel(client);
+    let cx = Context::new(fake_daemon.clone(), fake_daemon.context.clone());
+    let task = Task::local(async move {
+        f.lock().await.start(&cx).await.unwrap();
+        let mut stream = server.into_stream();
+        while let Ok(Some(req)) = stream.try_next().await {
+            f.lock().await.handle(&cx, req).await.unwrap();
+        }
+        f.lock().await.stop(&cx).await.unwrap();
     });
     (client, task)
 }

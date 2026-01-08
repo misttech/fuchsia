@@ -15,7 +15,7 @@ use mdns_discovery::{
     MdnsEnabledChecker, MdnsProtocol, discovery_loop,
 };
 use protocols::prelude::*;
-use std::rc::Rc;
+use std::sync::Arc;
 
 // Default port to listen on for MDNS queries
 const MDNS_PORT: u16 = 5353;
@@ -25,7 +25,7 @@ const CONFIG_ENABLE_MDNS: &str = "discovery.mdns.enabled";
 #[derive(Default)]
 pub struct Mdns {
     mdns_task: Option<Task<()>>,
-    inner: Option<Rc<MdnsProtocol>>,
+    inner: Option<Arc<MdnsProtocol>>,
     receiver: Option<async_channel::Receiver<ffx::MdnsEventType>>,
     // If None defaults to MDNS_PORT
     mdns_port: Option<u16>,
@@ -35,7 +35,7 @@ struct ConfigLoader {
     context: EnvironmentContext,
 }
 
-#[async_trait(?Send)]
+#[async_trait]
 impl MdnsEnabledChecker for ConfigLoader {
     async fn enabled(&self) -> bool {
         if self.context.get(keys::NETWORK_ENABLED).unwrap_or(true) {
@@ -55,7 +55,12 @@ impl FidlProtocol for Mdns {
         match req {
             ffx::MdnsRequest::GetTargets { responder } => responder
                 .send(
-                    &self.inner.as_ref().expect("inner state should be initalized").target_cache(),
+                    &self
+                        .inner
+                        .as_ref()
+                        .expect("inner state should be initialized")
+                        .target_cache()
+                        .await,
                 )
                 .map_err(Into::into),
             ffx::MdnsRequest::GetNextEvent { responder } => responder
@@ -74,12 +79,12 @@ impl FidlProtocol for Mdns {
 
     async fn start(&mut self, cx: &Context) -> Result<()> {
         let (sender, receiver) = async_channel::bounded::<ffx::MdnsEventType>(1);
-        let inner = Rc::new(MdnsProtocol { events_out: sender, target_cache: Default::default() });
+        let inner = Arc::new(MdnsProtocol { events_out: sender, target_cache: Default::default() });
         self.inner.replace(inner.clone());
         self.receiver.replace(receiver);
-        let inner = Rc::downgrade(&inner);
+        let inner = Arc::downgrade(&inner);
         let mdns_port = self.mdns_port.unwrap_or(MDNS_PORT);
-        self.mdns_task.replace(Task::local(discovery_loop(
+        self.mdns_task.replace(Task::spawn(discovery_loop(
             DiscoveryConfig {
                 socket_tasks: Default::default(),
                 mdns_protocol: inner,
@@ -123,6 +128,8 @@ mod tests {
     use protocols::testing::FakeDaemonBuilder;
     use std::cell::RefCell;
     use std::net::{IpAddr, SocketAddr};
+    use std::rc::Rc;
+    use std::sync::Arc;
 
     async fn wait_for_port_binds(proxy: &ffx::MdnsProxy) -> u16 {
         if let Some(e) = proxy.get_next_event().await.unwrap() {
@@ -379,14 +386,14 @@ mod tests {
     async fn test_new_and_rediscovered_target() {
         let env = ffx_config::test_init().unwrap();
         let daemon = FakeDaemonBuilder::new(&env.context).build();
-        let protocol = Rc::new(RefCell::new(Mdns {
+        let protocol = Arc::new(futures::lock::Mutex::new(Mdns {
             inner: None,
             receiver: None,
             mdns_task: None,
             mdns_port: Some(0),
         }));
-        let (proxy, _task) = protocols::testing::create_proxy(protocol.clone(), &daemon).await;
-        let svc_inner = protocol.borrow().inner.as_ref().unwrap().clone();
+        let (proxy, _task) = protocols::testing::create_proxy_arc(protocol.clone(), &daemon).await;
+        let svc_inner = protocol.lock().await.inner.clone().unwrap();
         let nodename = "plop".to_owned();
         // Skip port binding.
         let _ = wait_for_port_binds(&proxy).await;

@@ -38,6 +38,8 @@ rustc_library("lib") {
     "//third_party/rust_crates:zerocopy",
   ]
 
+  test_deps = [ "//third_party/rust_crates:static_assertions" ]
+
   sources = [ "src/lib.rs" ]
 }
 
