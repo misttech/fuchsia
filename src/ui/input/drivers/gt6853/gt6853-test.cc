@@ -334,7 +334,7 @@ class Gt6853Test : public zxtest::Test {
 
     std::vector interrupt_gpio_states =
         interrupt_gpio().SyncCall(&fake_gpio::FakeGpio::GetStateLog);
-    ZX_ASSERT(interrupt_gpio_states.size() == 3);
+    ZX_ASSERT(interrupt_gpio_states.size() == 2);
     ZX_ASSERT(interrupt_gpio_states[0].sub_state == fake_gpio::ReadSubState{});
     ZX_ASSERT(interrupt_gpio_states[1].interrupt_mode ==
               fuchsia_hardware_gpio::InterruptMode::kEdgeLow);

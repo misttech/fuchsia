@@ -57,12 +57,12 @@ void FakeGpio::GetInterrupt(GetInterruptRequestView request,
     return;
   }
 
-  auto sub_state = state_log_.empty() ? ReadSubState{} : state_log_.back().sub_state;
-  state_log_.emplace_back(State{
-      .interrupt_options = request->options,
-      .sub_state = sub_state,
-  });
-
+  if (state_log_.empty()) {
+    state_log_.emplace_back(
+        State{.interrupt_options = request->options, .sub_state = ReadSubState{}});
+  } else {
+    state_log_.back().interrupt_options = request->options;
+  }
   zx::interrupt interrupt;
   ZX_ASSERT(interrupt_.value().duplicate(ZX_RIGHT_SAME_RIGHTS, &interrupt) == ZX_OK);
   completer.ReplySuccess(std::move(interrupt));
