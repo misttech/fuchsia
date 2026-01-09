@@ -7,7 +7,6 @@ use clap::Parser;
 use fidl_fuchsia_component_decl::Component;
 use fidl_fuchsia_data as fdata;
 use serde::{Deserialize, Serialize};
-use serde_json::{Map, Value};
 use std::collections::HashMap;
 use std::fs::File;
 use std::io::prelude::*;
@@ -49,9 +48,6 @@ struct TestConfig {
 
     #[serde(default, skip_serializing_if = "Option::is_none")]
     realm: Option<String>,
-
-    #[serde(default)]
-    output_directory: Value,
 
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     test_filters: Vec<String>,
@@ -168,12 +164,6 @@ fn create_config(args: &Args) -> Result<(), Error> {
     partial_test_config
         .tags
         .push(TestTag { key: HERMETIC_TAG.to_string(), value: hermetic.to_string() });
-
-    // We get the output directory from the environment variable FUCHSIA_OUTPUT_DIRECTORY.
-    let mut output_directory_map = Map::new();
-    output_directory_map
-        .insert(String::from("from_env"), Value::String(String::from("FUCHSIA_OUTPUT_DIRECTORY")));
-    partial_test_config.output_directory = Value::Object(output_directory_map);
 
     let test_config_json = serde_json::to_string_pretty(&partial_test_config)?;
     std::fs::write(&args.test_config_output_filename, test_config_json)?;

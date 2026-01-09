@@ -152,6 +152,11 @@ template("fuchsia_test_package") {
     host_executable = "$host_tool_dir/ffx"
     host_executable_rebased = rebase_path(host_executable, root_build_dir)
 
+    resummarize_target = "//tools/test_pilot/post_processing/resummarize:test_deps($host_toolchain)"
+    resummarize_executable = "$host_tool_dir/resummarize"
+    resummarize_executable_rebased =
+        rebase_path(resummarize_executable, root_build_dir)
+
     test_pilot_target = "//tools/test_pilot:test_deps($host_toolchain)"
     test_pilot_dir = get_label_info(test_pilot_target, "root_out_dir")
     test_pilot_executable = "$test_pilot_dir/test-pilot"
@@ -220,6 +225,34 @@ template("fuchsia_test_package") {
           "--pilot",
           "{test_config_file}",
           "--filter-ansi",
+        ]
+        output_directory = {
+          try_from_env = "FUCHSIA_TEST_OUTDIR"
+        }
+        resultdb_output_summary_file = {
+          try_from_env = "TEST_OUTPUT_SUMMARY_PATH"
+        }
+        target = {
+          try_from_env = "FUCHSIA_DEVICE_ADDR"
+        }
+        ssh_private_key_path = {
+          try_from_env = "FUCHSIA_SSH_KEY"
+        }
+        ffx_config = {
+          try_from_env = "FFX_CONFIG"
+        }
+        output_processors = [
+          {
+            binary = resummarize_executable_rebased
+            args = [
+              "{test_config_file}",
+              "{output_directory}/output_summary.json",
+              "{resultdb_output_summary_file}",
+            ]
+            use_on_success = true
+            use_on_failure = true
+            use_if_defined = [ "resultdb_output_summary_file" ]
+          },
         ]
         require = [
           "target",
@@ -315,6 +348,7 @@ template("fuchsia_test_package") {
         testonly = true
         data_deps = [
           ":${test_target}_script_gen",
+          resummarize_target,
           test_pilot_target,
         ]
         metadata = {

@@ -24,6 +24,7 @@ if (is_host) {
       "//third_party/rust_crates:thiserror",
       "//third_party/rust_crates:tokio",
       "//third_party/rust_crates:valico",
+      "//tools/test_pilot/post_processing/resummarize",
       "//tools/test_pilot/test_pilot_lib",
     ]
 
@@ -64,6 +65,7 @@ group("tests") {
   testonly = true
   deps = [
     ":test-pilot_test($host_toolchain)",
+    "//tools/test_pilot/post_processing/resummarize:tests",
     "//tools/test_pilot/test_pilot_lib:tests",
   ]
 }

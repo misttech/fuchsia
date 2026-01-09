@@ -128,13 +128,6 @@ class TestExecution:
 
             extra_args = []
 
-            if self._device_env is not None:
-                extra_args += [
-                    "--target=" + self._device_env.address,
-                    "--ssh_private_key_path="
-                    + self._device_env.private_key_path,
-                ]
-
             if execution.realm:
                 extra_args += ["--realm=" + execution.realm]
             if execution.max_severity_logs and self._flags.restrict_logs:
@@ -322,6 +315,13 @@ class TestExecution:
                 }
             )
         if self._use_test_pilot():
+            if self._device_env is not None:
+                env.update(
+                    {
+                        "FUCHSIA_DEVICE_ADDR": self._device_env.address,
+                        "FUCHSIA_SSH_KEY": self._device_env.private_key_path,
+                    }
+                )
             if self._flags.extra_args:
                 custom_args = " ".join(self._flags.extra_args)
                 env.update(
@@ -403,18 +403,11 @@ class TestExecution:
         if "CWD" in env and not os.path.isabs(outdir):
             outdir = os.path.relpath(outdir, env["CWD"])
 
-        if not self._use_test_pilot():
-            env.update(
-                {
-                    "FUCHSIA_TEST_OUTDIR": outdir,
-                }
-            )
-        else:
-            env.update(
-                {
-                    "FUCHSIA_OUTPUT_DIRECTORY": outdir,
-                }
-            )
+        env.update(
+            {
+                "FUCHSIA_TEST_OUTDIR": outdir,
+            }
+        )
 
         # We add a grace period when timing out in order to give the test itself time to time
         # out first. If it fails to terminate before the grace period expires, we terminate the

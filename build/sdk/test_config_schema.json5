@@ -81,6 +81,10 @@
                 additionalProperties: false,
             },
         },
+        resultdb_output_summary_file: {
+            description: "Path at which to deposit output summary file in resultdb format",
+            type: "string",
+        },
         ssh_private_key_path: {
             description: "Path to ssh private key file",
             type: "string",
