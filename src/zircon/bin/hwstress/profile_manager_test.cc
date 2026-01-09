@@ -11,6 +11,7 @@
 
 #include <future>
 #include <thread>
+#include <tuple>
 
 #include <gtest/gtest.h>
 
@@ -26,8 +27,8 @@ TEST(ProfileManager, ApplyProfiles) {
 
   // Create a child thread that just blocks on a future.
   std::promise<bool> should_wake;
-  auto worker =
-      std::make_unique<std::thread>([wake = should_wake.get_future()]() mutable { wake.get(); });
+  auto worker = std::make_unique<std::thread>(
+      [wake = should_wake.get_future()]() mutable { std::ignore = wake.get(); });
 
   // Set thread priority.
   EXPECT_OK(manager->SetThreadPriority(worker.get(), /*priority=*/1));
