@@ -133,6 +133,7 @@ group("tests") {
     ":lib_test",
     "tests:fuchsia_controller_encode_test",
     "tests:fuchsia_controller_ir_test",
+    "//src/developer/ffx/lib/fuchsia-controller/python/fidl/tests",
   ]
 
   # TODO(https://fxbug.dev/42078138): These tests fail on mac builders. This is most likely

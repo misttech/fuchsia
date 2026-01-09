@@ -79,10 +79,10 @@ class ServerBase(
         self.__del__()
 
     def serve(self):
-        self._channel_waker.register(self._channel)
+        self._channel_waker.register(self._channel, name=str(self))
 
         async def _serve():
-            self._channel_waker.register(self._channel)
+            self._channel_waker.register(self._channel, name=str(self))
             while await self.handle_next_request():
                 pass
 

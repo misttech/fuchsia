@@ -6,7 +6,6 @@ import unittest
 from unittest.mock import Mock
 
 import fidl_fuchsia_developer_ffx as ffx
-from fidl._ipc import _QueueWrapper
 from fidl_codec import encode_fidl_message, method_ordinal
 from fuchsia_controller_py import Channel, ZxStatus
 
@@ -124,75 +123,3 @@ class FidlClientTests(unittest.IsolatedAsyncioTestCase):
         # Verifies state is cleaned up.
         self.assertEqual(len(proxy.staged_messages), 0)
         self.assertEqual(len(proxy.pending_txids), 0)
-
-    def test_queue_wrapper_put_nowait(self) -> None:
-        loop = asyncio.new_event_loop()
-
-        async def return_queue() -> _QueueWrapper:
-            return _QueueWrapper()
-
-        queue = loop.run_until_complete(return_queue())
-        loop.close()
-        assert queue.loop is not None
-        self.assertTrue(queue.loop.is_closed())
-        inner = queue.queue
-        inner_loop = queue.loop
-
-        async def put_and_wait(queue: _QueueWrapper) -> None:
-            queue.put_nowait(2)
-            res = await queue.get()
-            queue.task_done()
-            self.assertEqual(res, 2)
-
-        new_loop = asyncio.new_event_loop()
-        new_loop.run_until_complete(put_and_wait(queue))
-        self.assertNotEqual(queue.loop, inner_loop)
-        self.assertNotEqual(queue.queue, inner)
-
-    def test_queue_wrapper_get(self) -> None:
-        loop = asyncio.new_event_loop()
-
-        async def return_queue() -> _QueueWrapper:
-            return _QueueWrapper()
-
-        queue = loop.run_until_complete(return_queue())
-        loop.close()
-        assert queue.loop is not None
-        self.assertTrue(queue.loop.is_closed())
-        inner = queue.queue
-        inner_loop = queue.loop
-        new_loop = asyncio.new_event_loop()
-
-        async def get_timeout(queue: _QueueWrapper) -> None:
-            try:
-                # Use a non-zero timeout to ensure queue.get()
-                # is polled at least once.
-                await asyncio.wait_for(queue.get(), 0.01)
-            except asyncio.exceptions.TimeoutError:
-                pass
-
-        new_loop.run_until_complete(get_timeout(queue))
-        self.assertNotEqual(queue.loop, inner_loop)
-        self.assertNotEqual(queue.queue, inner)
-
-    def test_queue_wrapper_task_done(self) -> None:
-        loop = asyncio.new_event_loop()
-
-        async def return_queue() -> _QueueWrapper:
-            return _QueueWrapper()
-
-        queue = loop.run_until_complete(return_queue())
-        loop.close()
-        assert queue.loop is not None
-        self.assertTrue(queue.loop.is_closed())
-        queue.queue
-        inner_loop = queue.loop
-        new_loop = asyncio.new_event_loop()
-
-        async def task_done(queue: _QueueWrapper) -> None:
-            with self.assertRaises(ValueError):
-                # It's impossible to call task_done() on a queue in a new loop.
-                queue.task_done()
-
-        new_loop.run_until_complete(task_done(queue))
-        self.assertNotEqual(queue.loop, inner_loop)

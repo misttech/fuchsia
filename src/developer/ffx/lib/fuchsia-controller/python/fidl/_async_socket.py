@@ -79,7 +79,7 @@ class AsyncSocket:
 
     async def _read(self) -> bytes:
         _LOGGER.debug("Doing read of socket: {self.socket}")
-        self.waker.register(self.socket)
+        self.waker.register(self.socket, name=f"AsyncSocket {self.socket}")
         while True:
             try:
                 result = self.socket.read()

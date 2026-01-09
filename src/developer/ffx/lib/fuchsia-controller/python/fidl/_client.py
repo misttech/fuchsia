@@ -120,7 +120,7 @@ class FidlClient(metaclass=FidlMeta):
         """
         # TODO(awdavies): Raise an exception if there are no events supported for this client.
         try:
-            self._channel_waker.register(self._channel)
+            self._channel_waker.register(self._channel, name=str(self))
             return await self._read_and_decode(0)
         except fc.ZxStatus as e:
             if e.args[0] != fc.ZxStatus.ZX_ERR_PEER_CLOSED:
@@ -271,14 +271,14 @@ class FidlClient(metaclass=FidlMeta):
         """
         global TXID
         TXID += 1
-        self._channel_waker.register(self._channel)
+        self._channel_waker.register(self._channel, name=str(self))
         self.pending_txids.add(TXID)
         self._send_one_way_fidl_request(TXID, ordinal, library, msg_obj)
 
         async def result(txid):
             # This is called a second time because the first attempt may have been in a sync context
             # and would not have added a reader.
-            self._channel_waker.register(self._channel)
+            self._channel_waker.register(self._channel, name=str(self))
             res = await self._read_and_decode(txid)
             return self.construct_response_object(response_ident, res)
 
@@ -325,7 +325,9 @@ class EventHandlerBase(
 
     def __init__(self, client: FidlClient):
         self.client = client
-        self.client._channel_waker.register(self.client._channel)
+        self.client._channel_waker.register(
+            self.client._channel, name=str(self)
+        )
 
     def __str__(self):
         return f"event:{type(self.client).__name__}:{self.client.id}"
