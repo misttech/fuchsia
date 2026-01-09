@@ -460,6 +460,11 @@ impl ElfRunner {
                 handle: escrowed_dictionary.token.into_handle().into(),
                 id: HandleInfo::new(HandleType::EscrowedDictionary, 0).as_raw(),
             });
+        } else if let Some(escrowed_dictionary_handle) = start_info.escrowed_dictionary_handle {
+            handle_infos.push(fproc::HandleInfo {
+                handle: escrowed_dictionary_handle.into(),
+                id: HandleInfo::new(HandleType::EscrowedDictionary, 0).as_raw(),
+            });
         }
 
         // Configure the process launcher.

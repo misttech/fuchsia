@@ -355,6 +355,12 @@ pub struct StartInfo {
     /// `fuchsia.component.runner/ComponentController.OnEscrow`.
     #[cfg(fuchsia_api_level_at_least = "HEAD")]
     pub escrowed_dictionary: Option<fsandbox::DictionaryRef>,
+
+    /// A dictionary containing data and handles that the component has escrowed
+    /// during its previous execution via
+    /// `fuchsia.component.runner/ComponentController.OnEscrow`.
+    #[cfg(fuchsia_api_level_at_least = "HEAD")]
+    pub escrowed_dictionary_handle: Option<zx::EventPair>,
 }
 
 impl TryFrom<fcrunner::ComponentStartInfo> for StartInfo {
@@ -375,6 +381,8 @@ impl TryFrom<fcrunner::ComponentStartInfo> for StartInfo {
             component_instance: start_info.component_instance,
             #[cfg(fuchsia_api_level_at_least = "HEAD")]
             escrowed_dictionary: start_info.escrowed_dictionary,
+            #[cfg(fuchsia_api_level_at_least = "HEAD")]
+            escrowed_dictionary_handle: start_info.escrowed_dictionary_handle,
         })
     }
 }

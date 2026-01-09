@@ -133,9 +133,17 @@ type ComponentStartInfo = resource table {
     9: component_instance zx.Handle:EVENT;
 
     /// A dictionary containing data and handles that the component has escrowed
-    /// during its previous execution via [`ComponentController.OnEscrow`].
+    /// during its previous execution via [`ComponentController.OnEscrow`]. Note
+    /// that this field is considered deprecated, please use
+    /// `escrowed_dictionary_handle` instead.
+    // TODO(https://fxbug.dev/474049293): delete this
     @available(added=HEAD)
     10: escrowed_dictionary fuchsia.component.sandbox.DictionaryRef;
+
+    /// A dictionary containing data and handles that the component has escrowed
+    /// during its previous execution via [`ComponentController.OnEscrow`].
+    @available(added=HEAD)
+    11: escrowed_dictionary_handle zx.Handle:EVENTPAIR;
 };
 
 /// A protocol for binding and controlling the lifetime of a component instance
@@ -283,7 +291,24 @@ closed(removed=24) open(added=24) protocol ComponentController {
         /// the result of some expensive calculation. It can create a
         /// dictionary, put the event pair inside with an appropriate key
         /// (e.g. `"my_event_pair"`), then check for that entry on startup.
+        /// Note that this is deprecated, please use
+        /// `escrowed_dictionary_handle` instead.
+        // TODO(https://fxbug.dev/474049293): delete this
         2: escrowed_dictionary fuchsia.component.sandbox.DictionaryRef;
+
+        /// Escrow some user defined state. Whenever the component is started,
+        /// the framework will return these handles via
+        /// [`ComponentStartInfo.escrowed_dictionary`].
+        ///
+        /// The framework will not wait for any signals on these objects.
+        ///
+        /// ## Example
+        ///
+        /// Let's say a component needs to escrow an event pair that represents
+        /// the result of some expensive calculation. It can create a
+        /// dictionary, put the event pair inside with an appropriate key
+        /// (e.g. `"my_event_pair"`), then check for that entry on startup.
+        3: escrowed_dictionary_handle zx.Handle:EVENTPAIR;
     });
 
     /// Report that the component has stopped, with data about its termination. This will

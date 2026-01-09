@@ -18,7 +18,6 @@ rustc_test("stop_with_escrow_integration_test_bin") {
   source_root = "stop_with_escrow_integration_test.rs"
   deps = [
     "//sdk/fidl/fuchsia.component:fuchsia.component_rust",
-    "//sdk/fidl/fuchsia.component.sandbox:fuchsia.component.sandbox_rust",
     "//sdk/fidl/fuchsia.process:fuchsia.process_rust",
     "//sdk/rust/zx",
     "//src/lib/fuchsia",
@@ -88,7 +87,7 @@ rustc_binary("stop_with_dynamic_dictionary_bin") {
   edition = "2024"
   source_root = "stop_with_dynamic_dictionary.rs"
   deps = [
-    "//sdk/fidl/fuchsia.component.sandbox:fuchsia.component.sandbox_rust",
+    "//sdk/fidl/fuchsia.component.runtime:fuchsia.component.runtime_rust",
     "//sdk/fidl/fuchsia.process.lifecycle:fuchsia.process.lifecycle_rust",
     "//sdk/rust/zx",
     "//src/lib/detect-stall",
@@ -97,7 +96,6 @@ rustc_binary("stop_with_dynamic_dictionary_bin") {
     "//src/lib/fuchsia-async",
     "//src/lib/fuchsia-component",
     "//src/lib/fuchsia-runtime",
-    "//src/lib/sandbox",
     "//src/sys/component_manager/tests/fidl:components_rust",
     "//third_party/rust_crates:futures",
     "//third_party/rust_crates:log",
@@ -121,7 +119,6 @@ rustc_binary("stop_with_escrowed_dictionary_bin") {
   edition = "2024"
   source_root = "stop_with_escrowed_dictionary.rs"
   deps = [
-    "//sdk/fidl/fuchsia.component.sandbox:fuchsia.component.sandbox_rust",
     "//sdk/fidl/fuchsia.process.lifecycle:fuchsia.process.lifecycle_rust",
     "//sdk/rust/zx",
     "//src/lib/detect-stall",
@@ -132,6 +129,7 @@ rustc_binary("stop_with_escrowed_dictionary_bin") {
     "//src/lib/fuchsia-runtime",
     "//src/sys/component_manager/tests/fidl:components_rust",
     "//third_party/rust_crates:futures",
+    "//third_party/rust_crates:log",
   ]
 
   sources = [ "stop_with_escrowed_dictionary.rs" ]

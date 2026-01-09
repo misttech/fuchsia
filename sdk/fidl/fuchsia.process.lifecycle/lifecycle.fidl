@@ -6,6 +6,7 @@ library fuchsia.process.lifecycle;
 
 using fuchsia.io;
 using fuchsia.component.sandbox;
+using zx;
 
 /// A component can implement the Lifecycle protocol to be notified of lifecycle
 /// events. It can also store some state in the framework, to be redelivered to
@@ -52,6 +53,23 @@ closed protocol Lifecycle {
         /// the result of some expensive calculation. It can create a
         /// dictionary, put the event pair inside with an appropriate key
         /// (e.g. `"my_event_pair"`), then check for that entry on startup.
+        /// Note that this is deprecated, please use
+        /// `escrowed_dictionary_handle` instead.
+        // TODO(https://fxbug.dev/474049293): delete this
         2: escrowed_dictionary fuchsia.component.sandbox.DictionaryRef;
+
+        /// Escrow some user defined state. Whenever the component is started
+        /// again, this will be returned as the `PA_ESCROWED_DICTIONARY`
+        /// processargs entry.
+        ///
+        /// The framework will not wait for any signals on these objects.
+        ///
+        /// ## Example
+        ///
+        /// Let's say a component needs to escrow an event pair that represents
+        /// the result of some expensive calculation. It can create a
+        /// dictionary, put the event pair inside with an appropriate key
+        /// (e.g. `"my_event_pair"`), then check for that entry on startup.
+        3: escrowed_dictionary_handle zx.Handle:EVENTPAIR;
     });
 };

@@ -95,6 +95,12 @@ mod everything {
         pub stream: fruntime::ReceiverRequestStream,
     }
 
+    impl From<fruntime::ReceiverRequestStream> for ConnectorReceiver {
+        fn from(stream: fruntime::ReceiverRequestStream) -> Self {
+            Self { stream }
+        }
+    }
+
     impl Stream for ConnectorReceiver {
         type Item = zx::Channel;
 
@@ -113,6 +119,12 @@ mod everything {
     /// Receives new fuchsia.io open requests sent over a [`DirConnector`]
     pub struct DirConnectorReceiver {
         pub stream: fruntime::DirReceiverRequestStream,
+    }
+
+    impl From<fruntime::DirReceiverRequestStream> for DirConnectorReceiver {
+        fn from(stream: fruntime::DirReceiverRequestStream) -> Self {
+            Self { stream }
+        }
     }
 
     pub struct DirConnectorRequest {
@@ -361,6 +373,16 @@ mod everything {
         pub capabilities_proxy: fruntime::CapabilitiesProxy,
     }
 
+    impl From<zx::EventPair> for Data {
+        fn from(handle: zx::EventPair) -> Self {
+            Self {
+                handle,
+                capabilities_proxy: connect_to_protocol::<fruntime::CapabilitiesMarker>()
+                    .expect("failed to connect to fuchsia.component.runtime.Capabilities"),
+            }
+        }
+    }
+
     impl Data {
         /// Creates a new [`Data`], connecting to `/svc/fuchsia.component.runtime.Capabilities` to do
         /// so.
@@ -434,6 +456,16 @@ mod everything {
         /// The proxy used to create this capability, and the proxy which will be used to perform
         /// operations on this capability.
         pub capabilities_proxy: fruntime::CapabilitiesProxy,
+    }
+
+    impl From<zx::EventPair> for Connector {
+        fn from(handle: zx::EventPair) -> Self {
+            Self {
+                handle,
+                capabilities_proxy: connect_to_protocol::<fruntime::CapabilitiesMarker>()
+                    .expect("failed to connect to fuchsia.component.runtime.Capabilities"),
+            }
+        }
     }
 
     impl Connector {
@@ -515,6 +547,16 @@ mod everything {
         /// The proxy used to create this capability, and the proxy which will be used to perform
         /// operations on this capability.
         pub capabilities_proxy: fruntime::CapabilitiesProxy,
+    }
+
+    impl From<zx::EventPair> for DirConnector {
+        fn from(handle: zx::EventPair) -> Self {
+            Self {
+                handle,
+                capabilities_proxy: connect_to_protocol::<fruntime::CapabilitiesMarker>()
+                    .expect("failed to connect to fuchsia.component.runtime.Capabilities"),
+            }
+        }
     }
 
     impl DirConnector {
@@ -601,6 +643,16 @@ mod everything {
         /// The proxy used to create this capability, and the proxy which will be used to perform
         /// operations on this capability.
         pub capabilities_proxy: fruntime::CapabilitiesProxy,
+    }
+
+    impl From<zx::EventPair> for Dictionary {
+        fn from(handle: zx::EventPair) -> Self {
+            Self {
+                handle,
+                capabilities_proxy: connect_to_protocol::<fruntime::CapabilitiesMarker>()
+                    .expect("failed to connect to fuchsia.component.runtime.Capabilities"),
+            }
+        }
     }
 
     impl Dictionary {
@@ -783,6 +835,12 @@ mod everything {
         pub handle: zx::EventPair,
     }
 
+    impl From<zx::EventPair> for InstanceToken {
+        fn from(handle: zx::EventPair) -> Self {
+            Self { handle }
+        }
+    }
+
     impl InstanceToken {
         /// Creates a new [`InstanceToken`], connecting to
         /// `/svc/fuchsia.component.runtime.Capabilities` to do so. This instance token will be tied to
@@ -830,6 +888,16 @@ mod everything {
         /// The proxy used to create this capability, and the proxy which will be used to perform
         /// operations on this capability.
         pub capabilities_proxy: fruntime::CapabilitiesProxy,
+    }
+
+    impl From<zx::EventPair> for ConnectorRouter {
+        fn from(handle: zx::EventPair) -> Self {
+            Self {
+                handle,
+                capabilities_proxy: connect_to_protocol::<fruntime::CapabilitiesMarker>()
+                    .expect("failed to connect to fuchsia.component.runtime.Capabilities"),
+            }
+        }
     }
 
     impl ConnectorRouter {
@@ -921,6 +989,12 @@ mod everything {
         pub stream: fruntime::ConnectorRouterRequestStream,
     }
 
+    impl From<fruntime::ConnectorRouterRequestStream> for ConnectorRouterReceiver {
+        fn from(stream: fruntime::ConnectorRouterRequestStream) -> Self {
+            Self { stream }
+        }
+    }
+
     impl Stream for ConnectorRouterReceiver {
         type Item = (
             fruntime::RouteRequest,
@@ -984,6 +1058,16 @@ mod everything {
         /// The proxy used to create this capability, and the proxy which will be used to perform
         /// operations on this capability.
         pub capabilities_proxy: fruntime::CapabilitiesProxy,
+    }
+
+    impl From<zx::EventPair> for DirConnectorRouter {
+        fn from(handle: zx::EventPair) -> Self {
+            Self {
+                handle,
+                capabilities_proxy: connect_to_protocol::<fruntime::CapabilitiesMarker>()
+                    .expect("failed to connect to fuchsia.component.runtime.Capabilities"),
+            }
+        }
     }
 
     impl DirConnectorRouter {
@@ -1076,6 +1160,12 @@ mod everything {
         pub stream: fruntime::DirConnectorRouterRequestStream,
     }
 
+    impl From<fruntime::DirConnectorRouterRequestStream> for DirConnectorRouterReceiver {
+        fn from(stream: fruntime::DirConnectorRouterRequestStream) -> Self {
+            Self { stream }
+        }
+    }
+
     impl Stream for DirConnectorRouterReceiver {
         type Item = (
             fruntime::RouteRequest,
@@ -1139,6 +1229,16 @@ mod everything {
         /// The proxy used to create this capability, and the proxy which will be used to perform
         /// operations on this capability.
         pub capabilities_proxy: fruntime::CapabilitiesProxy,
+    }
+
+    impl From<zx::EventPair> for DictionaryRouter {
+        fn from(handle: zx::EventPair) -> Self {
+            Self {
+                handle,
+                capabilities_proxy: connect_to_protocol::<fruntime::CapabilitiesMarker>()
+                    .expect("failed to connect to fuchsia.component.runtime.Capabilities"),
+            }
+        }
     }
 
     impl DictionaryRouter {
@@ -1230,6 +1330,12 @@ mod everything {
         pub stream: fruntime::DictionaryRouterRequestStream,
     }
 
+    impl From<fruntime::DictionaryRouterRequestStream> for DictionaryRouterReceiver {
+        fn from(stream: fruntime::DictionaryRouterRequestStream) -> Self {
+            Self { stream }
+        }
+    }
+
     impl Stream for DictionaryRouterReceiver {
         type Item = (
             fruntime::RouteRequest,
@@ -1293,6 +1399,16 @@ mod everything {
         /// The proxy used to create this capability, and the proxy which will be used to perform
         /// operations on this capability.
         pub capabilities_proxy: fruntime::CapabilitiesProxy,
+    }
+
+    impl From<zx::EventPair> for DataRouter {
+        fn from(handle: zx::EventPair) -> Self {
+            Self {
+                handle,
+                capabilities_proxy: connect_to_protocol::<fruntime::CapabilitiesMarker>()
+                    .expect("failed to connect to fuchsia.component.runtime.Capabilities"),
+            }
+        }
     }
 
     impl DataRouter {
@@ -1382,6 +1498,12 @@ mod everything {
     /// A data router receiver will receive requests for data capabilities.
     pub struct DataRouterReceiver {
         pub stream: fruntime::DataRouterRequestStream,
+    }
+
+    impl From<fruntime::DataRouterRequestStream> for DataRouterReceiver {
+        fn from(stream: fruntime::DataRouterRequestStream) -> Self {
+            Self { stream }
+        }
     }
 
     impl Stream for DataRouterReceiver {

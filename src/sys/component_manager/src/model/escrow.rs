@@ -35,6 +35,7 @@ const LIVENESS_CHECK_TIMEOUT_MS: usize = 3000;
 pub struct EscrowedState {
     pub outgoing_dir: ServerEnd<fio::DirectoryMarker>,
     pub escrowed_dictionary: Option<fsandbox::DictionaryRef>,
+    pub escrowed_dictionary_handle: Option<zx::EventPair>,
 }
 
 impl EscrowedState {
@@ -48,7 +49,7 @@ impl EscrowedState {
     #[cfg(all(test, not(feature = "src_model_tests")))]
     pub fn outgoing_dir_closed() -> Self {
         let (_, outgoing_dir) = fidl::endpoints::create_endpoints::<fio::DirectoryMarker>();
-        Self { outgoing_dir, escrowed_dictionary: None }
+        Self { outgoing_dir, escrowed_dictionary: None, escrowed_dictionary_handle: None }
     }
 }
 
@@ -59,6 +60,10 @@ impl Debug for EscrowedState {
             .field(
                 "escrowed_dictionary",
                 &self.escrowed_dictionary.as_ref().map(|v| v.token.basic_info().unwrap().koid),
+            )
+            .field(
+                "escrowed_dictionary_handle",
+                &self.escrowed_dictionary_handle.as_ref().map(|v| v.basic_info().unwrap().koid),
             )
             .finish()
     }
@@ -97,7 +102,11 @@ impl Actor {
     ) -> Actor {
         let (sender, receiver) = mpsc::unbounded();
         let (client, server) = create_proxy::<fio::DirectoryMarker>();
-        let escrow = EscrowedState { outgoing_dir: server, escrowed_dictionary: None };
+        let escrow = EscrowedState {
+            outgoing_dir: server,
+            escrowed_dictionary: None,
+            escrowed_dictionary_handle: None,
+        };
         let outgoing_dir = Arc::new(Mutex::new((0, client)));
         let actor = ActorImpl {
             starter: Arc::new(starter),
@@ -317,8 +326,11 @@ impl ActorImpl {
             *self.outgoing_dir.lock().await = (0, client);
             server
         };
-        let escrow =
-            EscrowedState { outgoing_dir, escrowed_dictionary: request.escrowed_dictionary };
+        let escrow = EscrowedState {
+            outgoing_dir,
+            escrowed_dictionary: request.escrowed_dictionary,
+            escrowed_dictionary_handle: request.escrowed_dictionary_handle,
+        };
         State::Stopped { escrow }
     }
 }
@@ -517,6 +529,7 @@ mod tests {
         actor.did_stop(Some(EscrowRequest {
             outgoing_dir: Some(escrow.unwrap().outgoing_dir),
             escrowed_dictionary: None,
+            escrowed_dictionary_handle: None,
         }));
         assert_matches!(TestExecutor::poll_until_stalled(start_rx.next()).await, Poll::Ready(_));
 
@@ -538,6 +551,7 @@ mod tests {
         actor.did_stop(Some(EscrowRequest {
             outgoing_dir: Some(escrow.unwrap().outgoing_dir),
             escrowed_dictionary: None,
+            escrowed_dictionary_handle: None,
         }));
         let (_, server_end) = zx::Channel::create();
         let execution_scope = ExecutionScope::new();

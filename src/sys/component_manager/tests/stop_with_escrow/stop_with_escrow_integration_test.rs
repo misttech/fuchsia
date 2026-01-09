@@ -14,8 +14,7 @@ use futures::StreamExt;
 use futures::future::{self, Either};
 use std::pin::pin;
 use {
-    fidl_fuchsia_component as fcomponent, fidl_fuchsia_component_sandbox as fsandbox,
-    fidl_fuchsia_process as fprocess, fuchsia_async as fasync,
+    fidl_fuchsia_component as fcomponent, fidl_fuchsia_process as fprocess, fuchsia_async as fasync,
 };
 
 /// Tests a component can stop with a request buffered in its outgoing dir,
@@ -198,16 +197,6 @@ async fn stop_with_dynamic_dictionary() {
         .await
         .unwrap();
 
-    builder
-        .add_route(
-            Route::new()
-                .capability(Capability::protocol::<fsandbox::CapabilityStoreMarker>())
-                .from(Ref::framework())
-                .to(&stop_with_dynamic_dictionary),
-        )
-        .await
-        .unwrap();
-
     // Route the capability exposed by the dynamic dictionary to the test.
     builder
         .add_route(
@@ -269,7 +258,7 @@ async fn stop_with_dynamic_dictionary() {
     // Calling fidl.test.components.Trigger will cause Component Manager to
     // start the component and reconnect the server-end channel to the
     // component, which has a `use` declaration for the escrowed version of both
-    // `fuchsia.component.sandbox.Receiver` and the Trigger protocols.
+    // `fuchsia.component.runtime.Receiver` and the Trigger protocols.
     assert_matches!(
         event_stream.next().await.unwrap().header,
         Some(EventHeader { event_type: Some(EventType::Started), .. })

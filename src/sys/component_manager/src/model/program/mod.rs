@@ -311,7 +311,8 @@ impl StartInfo {
         escrowed_state: EscrowedState,
         runtime_server_end: ServerEnd<fio::DirectoryMarker>,
     ) -> Result<fcrunner::ComponentStartInfo, StartError> {
-        let EscrowedState { outgoing_dir, escrowed_dictionary } = escrowed_state;
+        let EscrowedState { outgoing_dir, escrowed_dictionary, escrowed_dictionary_handle } =
+            escrowed_state;
         let ns = self.namespace.serve().map_err(StartError::ServeNamespace)?;
         Ok(fcrunner::ComponentStartInfo {
             resolved_url: Some(self.url),
@@ -324,6 +325,7 @@ impl StartInfo {
             break_on_start: self.break_on_start,
             component_instance: Some(self.component_instance.into()),
             escrowed_dictionary,
+            escrowed_dictionary_handle,
             ..Default::default()
         })
     }
@@ -342,11 +344,20 @@ pub struct EscrowRequest {
     /// the framework will return these handles via
     /// `ComponentStartInfo.escrowed_dictionary`.
     pub escrowed_dictionary: Option<fsandbox::DictionaryRef>,
+
+    /// Escrow some user defined state. Whenever the component is started,
+    /// the framework will return these handles via
+    /// `ComponentStartInfo.escrowed_dictionary`.
+    pub escrowed_dictionary_handle: Option<zx::EventPair>,
 }
 
 impl From<fcrunner::ComponentControllerOnEscrowRequest> for EscrowRequest {
     fn from(value: fcrunner::ComponentControllerOnEscrowRequest) -> Self {
-        Self { outgoing_dir: value.outgoing_dir, escrowed_dictionary: value.escrowed_dictionary }
+        Self {
+            outgoing_dir: value.outgoing_dir,
+            escrowed_dictionary: value.escrowed_dictionary,
+            escrowed_dictionary_handle: value.escrowed_dictionary_handle,
+        }
     }
 }
 

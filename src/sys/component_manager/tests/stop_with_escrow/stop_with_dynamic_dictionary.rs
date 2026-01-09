@@ -4,18 +4,15 @@
 
 use fidl::endpoints;
 use fidl_fidl_test_components::{TriggerMarker, TriggerRequestStream};
-use fidl_fuchsia_component_sandbox::DictionaryRef;
-use fuchsia_component::client;
+use fuchsia_component::runtime;
 use fuchsia_component::server::{Item, ServiceFs};
 use fuchsia_runtime::{HandleInfo, HandleType};
 use futures::{FutureExt, StreamExt, TryStreamExt, future, select};
 use log::*;
 use std::future::Future;
 use std::pin::pin;
-use std::rc::Rc;
-use zx::{HandleBased, Rights};
 use {
-    detect_stall, fidl_fuchsia_component_sandbox as fsandbox,
+    detect_stall, fidl_fuchsia_component_runtime as fruntime,
     fidl_fuchsia_process_lifecycle as flifecycle, fuchsia_async as fasync,
 };
 
@@ -35,11 +32,11 @@ const STATIC_TRIGGER_PROTOCOL: &str = "fidl.test.components.Trigger-static";
 
 /// Escrowable protocol used by Component Manager to connect the server-side
 /// channel to [`DYNAMIC_TRIGGER_PROTOCOL`] to this component.
-const STATIC_RECEIVER_PROTOCOL: &str = "fuchsia.component.sandbox.Receiver-static";
+const STATIC_RECEIVER_PROTOCOL: &str = "fuchsia.component.runtime.ConnectorReceiver-static";
 
 enum IncomingRequest {
-    Router(fsandbox::DictionaryRouterRequestStream),
-    Receiver(fsandbox::ReceiverRequestStream),
+    Router(fruntime::DictionaryRouterRequestStream),
+    Receiver(fruntime::ReceiverRequestStream),
     Static(TriggerRequestStream),
 }
 
@@ -47,43 +44,20 @@ enum IncomingRequest {
 /// dictionary. This dictionary contains the entries necessary for a dynamic
 /// dictionary to map [`DYNAMIC_TRIGGER_PROTOCOL`] to
 /// [`STATIC_TRIGGER_PROTOCOL`].
-pub async fn get_escrowed_dict() -> (DictionaryRef, Option<impl Future<Output = ()>>) {
-    if let Some(dictionary) =
+pub async fn get_escrowed_dict() -> (runtime::Dictionary, Option<impl Future<Output = ()>>) {
+    if let Some(handle) =
         fuchsia_runtime::take_startup_handle(HandleInfo::new(HandleType::EscrowedDictionary, 0))
     {
         info!("Reusing escrowed dictionary");
-        return (fsandbox::DictionaryRef { token: dictionary.into() }, None);
+        return (zx::EventPair::from(handle).into(), None);
     }
 
     info!("No escrowed dictionary available; generating one");
-    let store = client::connect_to_protocol::<fsandbox::CapabilityStoreMarker>().unwrap();
-    let id_gen = sandbox::CapabilityIdGenerator::new();
-    let dict_id = id_gen.next();
-    store.dictionary_create(dict_id).await.unwrap().unwrap();
-
-    let (client_end, server_end) = endpoints::create_endpoints::<fsandbox::ReceiverMarker>();
-    let receiver_task = handle_receiver(server_end.into_stream());
-
-    let connector_id = id_gen.next();
-    store.connector_create(connector_id, client_end).await.unwrap().unwrap();
-    store
-        .dictionary_insert(
-            dict_id,
-            &fsandbox::DictionaryItem {
-                key: DYNAMIC_TRIGGER_PROTOCOL.to_string(),
-                value: connector_id,
-            },
-        )
-        .await
-        .unwrap()
-        .unwrap();
-
-    match store.export(dict_id).await.unwrap().unwrap() {
-        fsandbox::Capability::Dictionary(dict) => (dict, Some(receiver_task)),
-        capability @ _ => {
-            panic!("unexpected {capability:?}");
-        }
-    }
+    let dictionary = runtime::Dictionary::new().await;
+    let (connector, receiver) = runtime::Connector::new().await;
+    dictionary.insert(DYNAMIC_TRIGGER_PROTOCOL, connector).await;
+    let receiver_task = handle_receiver(receiver.stream);
+    (dictionary, Some(receiver_task))
 }
 
 /// See the `stop_with_dynamic_dictionary` test case.
@@ -91,7 +65,7 @@ pub async fn get_escrowed_dict() -> (DictionaryRef, Option<impl Future<Output = 
 pub async fn main() {
     info!("Started");
 
-    let (dict, receiver_task) = get_escrowed_dict().await;
+    let (dictionary, receiver_task) = get_escrowed_dict().await;
 
     // Serve FIDL services for all static protocols.
     let mut fs = ServiceFs::new();
@@ -127,30 +101,22 @@ pub async fn main() {
     .boxed_local()
     .fuse();
 
-    // Reference-count the DictionaryRef since it's not clonable and duplicating
-    // it with `duplicate_handle` for every request in `for_each_concurrent`
-    // would be unnecessary for handling IncomingRequest::{Receiver, Static}.
-    let dict = Rc::new(dict);
-
     let outgoing_dir_task =
         fs.until_stalled(STALL_INTERVAL).for_each_concurrent(None, move |item| {
             let lifecycle_control_handle = lifecycle_control_handle.clone();
-            let dict = dict.clone();
+            let dictionary = dictionary.clone();
             async move {
                 match item {
                     Item::Request(services, _active_guard) => match services {
-                        IncomingRequest::Router(stream) => handle_router(stream, dict).await,
+                        IncomingRequest::Router(stream) => handle_router(stream, dictionary).await,
                         IncomingRequest::Receiver(stream) => handle_receiver(stream).await,
                         IncomingRequest::Static(stream) => handle_trigger(stream).await,
                     },
                     Item::Stalled(outgoing_directory) => {
-                        let dict = DictionaryRef {
-                            token: dict.token.duplicate_handle(Rights::SAME_RIGHTS).unwrap(),
-                        };
                         lifecycle_control_handle
                             .send_on_escrow(flifecycle::LifecycleOnEscrowRequest {
                                 outgoing_dir: Some(outgoing_directory.into()),
-                                escrowed_dictionary: Some(dict),
+                                escrowed_dictionary_handle: Some(dictionary.clone().handle),
                                 ..Default::default()
                             })
                             .unwrap();
@@ -172,25 +138,24 @@ pub async fn main() {
     }
 }
 
-/// Handle fuchsia.component.sandbox.DictionaryRouter requests with support for
+/// Handle fuchsia.component.runtime.DictionaryRouter requests with support for
 /// escrowing in case the client doesn't send a request right away.
-async fn handle_router(stream: fsandbox::DictionaryRouterRequestStream, dict: Rc<DictionaryRef>) {
+async fn handle_router(
+    stream: fruntime::DictionaryRouterRequestStream,
+    dictionary: runtime::Dictionary,
+) {
     let (stream, stalled) = detect_stall::until_stalled(stream, STALL_INTERVAL);
     let mut stream = pin!(stream);
     while let Ok(Some(request)) = stream.try_next().await {
-        info!("Received fuchsia.component.sandbox.DictionaryRouterRequest");
+        info!("Received fuchsia.component.runtime.DictionaryRouterRequest");
         match request {
-            fsandbox::DictionaryRouterRequest::Route { payload: _, responder } => {
-                let dict = DictionaryRef {
-                    token: dict.token.duplicate_handle(Rights::SAME_RIGHTS).unwrap(),
-                };
-                if let Err(e) =
-                    responder.send(Ok(fsandbox::DictionaryRouterRouteResponse::Dictionary(dict)))
-                {
+            fruntime::DictionaryRouterRequest::Route { handle, responder, .. } => {
+                dictionary.associate_with_handle(handle).await;
+                if let Err(e) = responder.send(Ok(fruntime::RouterResponse::Success)) {
                     warn!("Failed to send RouteResponse {e:?}")
                 }
             }
-            fsandbox::DictionaryRouterRequest::_UnknownMethod { ordinal, .. } => {
+            fruntime::DictionaryRouterRequest::_UnknownMethod { ordinal, .. } => {
                 warn!(ordinal:%; "Unknown DictionaryRouter request");
             }
         }
@@ -199,20 +164,17 @@ async fn handle_router(stream: fsandbox::DictionaryRouterRequestStream, dict: Rc
     // We don't need to escrow the Router protocol, we only escrow the dictionary.
 }
 
-/// Handle fuchsia.component.sandbox.Receiver requests with support for
+/// Handle fuchsia.component.runtime.Receiver requests with support for
 /// escrowing in case the client doesn't send a request right away.
-async fn handle_receiver(stream: fsandbox::ReceiverRequestStream) {
+async fn handle_receiver(stream: fruntime::ReceiverRequestStream) {
     let (stream, stalled) = detect_stall::until_stalled(stream, STALL_INTERVAL);
     let mut stream = pin!(stream);
     while let Ok(Some(request)) = stream.try_next().await {
-        info!("Received fuchsia.component.sandbox.ReceiverRequest");
+        info!("Received fuchsia.component.runtime.ReceiverRequest");
         match request {
-            fsandbox::ReceiverRequest::Receive { channel, control_handle: _ } => {
+            fruntime::ReceiverRequest::Receive { channel, control_handle: _ } => {
                 let server_end = endpoints::ServerEnd::<TriggerMarker>::new(channel);
                 handle_trigger(server_end.into_stream()).await;
-            }
-            fsandbox::ReceiverRequest::_UnknownMethod { ordinal, .. } => {
-                warn!(ordinal:%; "Unknown Receiver request");
             }
         }
     }

@@ -284,6 +284,7 @@ impl Controllable for ElfComponent {
                         Some(ComponentControllerOnEscrowRequest {
                             outgoing_dir: payload.outgoing_dir,
                             escrowed_dictionary: payload.escrowed_dictionary,
+                            escrowed_dictionary_handle: payload.escrowed_dictionary_handle,
                             ..Default::default()
                         })
                     }

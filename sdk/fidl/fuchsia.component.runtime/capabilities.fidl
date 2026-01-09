@@ -36,6 +36,7 @@ type Data = flexible union {
 
 /// A `Receiver` represents the receiving end of a `Connector`.
 @available(added=HEAD)
+@discoverable(server="platform")
 closed protocol Receiver {
     /// `Receive` will be called by component manager whenever an new handle has
     /// been given to any `Connector` associated with this `Receiver`.
@@ -46,6 +47,7 @@ closed protocol Receiver {
 
 /// A `DirReceiver` represents the receiving end of a `DirConnector`.
 @available(added=HEAD)
+@discoverable(server="platform")
 closed protocol DirReceiver {
     /// `Receive` will be called by component manager whenever a new handle has
     /// been given to any `DirConnector` associated with this `DirReceiver`.
