@@ -3,10 +3,8 @@
 // found in the LICENSE file.
 
 use crate::execution::loop_entry::enter_syscall_loop;
-use crate::task::{
-    CurrentTask, DelayedReleaser, ExitStatus, PtraceCoreState, TaskBuilder,
-    ptrace_attach_from_state,
-};
+use crate::ptrace::{PtraceCoreState, ptrace_attach_from_state};
+use crate::task::{CurrentTask, DelayedReleaser, ExitStatus, TaskBuilder};
 use anyhow::Error;
 use starnix_logging::{log_error, log_warn};
 use starnix_sync::{LockBefore, Locked, TaskRelease, Unlocked};

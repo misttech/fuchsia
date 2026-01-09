@@ -4,16 +4,16 @@
 
 use crate::mm::{MemoryAccessor, MemoryAccessorExt, MemoryManager, TaskMemoryAccessor};
 use crate::mutable_state::{state_accessor, state_implementation};
+use crate::ptrace::{PtraceEvent, PtraceEventData, PtraceState, PtraceStatus};
 use crate::security;
 use crate::signals::{KernelSignal, RunState, SignalDetail, SignalInfo, SignalState};
 use crate::task::memory_attribution::MemoryAttributionLifecycleEvent;
 use crate::task::tracing::KoidPair;
 use crate::task::{
     AbstractUnixSocketNamespace, AbstractVsockSocketNamespace, CurrentTask, EventHandler, Kernel,
-    NormalPriority, PidTable, ProcessEntryRef, ProcessExitInfo, PtraceEvent, PtraceEventData,
-    PtraceState, PtraceStatus, RealtimePriority, SchedulerState, SchedulingPolicy,
-    SeccompFilterContainer, SeccompState, SeccompStateValue, ThreadGroup, ThreadGroupKey,
-    ThreadState, UtsNamespaceHandle, WaitCanceler, Waiter, ZombieProcess,
+    NormalPriority, PidTable, ProcessEntryRef, ProcessExitInfo, RealtimePriority, SchedulerState,
+    SchedulingPolicy, SeccompFilterContainer, SeccompState, SeccompStateValue, ThreadGroup,
+    ThreadGroupKey, ThreadState, UtsNamespaceHandle, WaitCanceler, Waiter, ZombieProcess,
 };
 use crate::vfs::{FdTable, FsContext, FsNodeHandle, FsString};
 use bitflags::bitflags;

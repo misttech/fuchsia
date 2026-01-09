@@ -5,12 +5,12 @@
 use anyhow::{Error, format_err};
 use extended_pstate::ExtendedPstateState;
 use starnix_core::arch::execution::new_syscall;
+use starnix_core::ptrace::{PtraceStatus, ptrace_syscall_enter, ptrace_syscall_exit};
 use starnix_core::signals::{
     SignalInfo, deliver_signal, dequeue_signal, prepare_to_restart_syscall,
 };
 use starnix_core::task::{
     CurrentTask, ExceptionResult, ExitStatus, SeccompStateValue, StopState, TaskFlags,
-    ptrace_syscall_enter, ptrace_syscall_exit,
 };
 use starnix_logging::{
     CATEGORY_STARNIX, NAME_HANDLE_EXCEPTION, NAME_RESTRICTED_KICK, NAME_RUN_TASK,
@@ -397,9 +397,11 @@ pub fn process_completed_restricted_exit(
             // seems to match Linux behavior.
 
             let task_state = current_task.read();
-            if task_state.ptrace.as_ref().is_some_and(|ptrace| {
-                ptrace.stop_status == starnix_core::task::PtraceStatus::Continuing
-            }) && task_state.is_any_signal_pending()
+            if task_state
+                .ptrace
+                .as_ref()
+                .is_some_and(|ptrace| ptrace.stop_status == PtraceStatus::Continuing)
+                && task_state.is_any_signal_pending()
                 && !current_task.is_exitted()
             {
                 continue;

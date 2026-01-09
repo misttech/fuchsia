@@ -10,10 +10,9 @@ use crate::signals::{
     SI_HEADER_SIZE, SignalDetail, SignalInfo, SignalInfoHeader, SignalSource, send_signal_first,
     send_standard_signal,
 };
-use crate::task::waiter::WaitQueue;
 use crate::task::{
     CurrentTask, PidTable, ProcessSelector, StopState, Task, TaskMutableState, ThreadGroup,
-    ThreadState, ZombieProcess,
+    ThreadState, WaitQueue, ZombieProcess,
 };
 use bitflags::bitflags;
 use starnix_logging::track_stub;

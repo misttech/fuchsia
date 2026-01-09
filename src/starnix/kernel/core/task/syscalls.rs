@@ -4,13 +4,15 @@
 
 use crate::execution::execute_task;
 use crate::mm::{DumpPolicy, MemoryAccessor, MemoryAccessorExt, PAGE_SIZE};
+use crate::ptrace::{
+    PR_SET_PTRACER_ANY, PtraceAllowedPtracers, PtraceAttachType, PtraceOptions, ptrace_attach,
+    ptrace_dispatch, ptrace_traceme,
+};
 use crate::security;
 use crate::signals::syscalls::RUsagePtr;
 use crate::task::{
-    CurrentTask, ExitStatus, NormalPriority, PR_SET_PTRACER_ANY, PtraceAllowedPtracers,
-    PtraceAttachType, PtraceOptions, SchedulingPolicy, SeccompAction, SeccompStateValue,
+    CurrentTask, ExitStatus, NormalPriority, SchedulingPolicy, SeccompAction, SeccompStateValue,
     SyslogAccess, Task, ThreadGroup, max_priority_for_sched_policy, min_priority_for_sched_policy,
-    ptrace_attach, ptrace_dispatch, ptrace_traceme,
 };
 use crate::vfs::{
     FdNumber, FileHandle, MountNamespaceFile, PidFdFileObject, UserBuffersOutputBuffer,

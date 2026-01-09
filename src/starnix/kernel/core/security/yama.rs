@@ -7,8 +7,9 @@
 use std::borrow::Cow;
 use std::sync::atomic::Ordering;
 
+use crate::ptrace::PtraceAllowedPtracers;
 use crate::security;
-use crate::task::{CurrentTask, PtraceAllowedPtracers, Task};
+use crate::task::{CurrentTask, Task};
 use crate::vfs::FsNodeOps;
 use crate::vfs::pseudo::simple_file::{BytesFile, BytesFileOps, parse_unsigned_file};
 use starnix_uapi::auth::{CAP_SYS_ADMIN, CAP_SYS_PTRACE, PtraceAccessMode};
