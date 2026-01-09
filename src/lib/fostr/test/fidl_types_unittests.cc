@@ -8,6 +8,7 @@
 #include <lib/async-loop/default.h>
 
 #include <sstream>
+#include <tuple>
 
 #include <gtest/gtest.h>
 #include <src/lib/fostr/fidl/fuchsia/example/fostr/formatting.h>
@@ -37,7 +38,7 @@ std::istream& operator>>(std::istream& is, const std::string& value) {
   }
 
   // Required to set eofbit as appropriate.
-  is.peek();
+  std::ignore = is.peek();
 
   return is;
 }
