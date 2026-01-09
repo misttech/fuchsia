@@ -135,9 +135,8 @@ void ShutdownWatcherServer::OnShutdown(
     return;
   }
 
-  if (!options.has_action() ||
-      options.action() != fuchsia::hardware::power::statecontrol::ShutdownAction::REBOOT) {
-    // TODO(https://fxbug.dev/414413282): implement for other shutdown actions.
+  if (!options.has_action()) {
+    FX_LOGS(WARNING) << "Received shutdown signal without an action";
     callback(fpromise::ok());
     return;
   }

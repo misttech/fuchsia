@@ -220,6 +220,7 @@ TEST_F(WaitForRebootReasonTest, NoCompletionOnNoAction) {
 struct TestParam {
   std::string test_name;
   ShutdownAction action;
+  GracefulShutdownAction expected_action;
 };
 
 class WaitForRebootReasonParameterizedTest : public UnitTestFixture,
@@ -230,21 +231,29 @@ INSTANTIATE_TEST_SUITE_P(WithVariousShutdownActions, WaitForRebootReasonParamete
                              {
                                  "Poweroff",
                                  ShutdownAction::POWEROFF,
+                                 GracefulShutdownAction::kPoweroff,
+                             },
+                             {
+                                 "Reboot",
+                                 ShutdownAction::REBOOT,
+                                 GracefulShutdownAction::kReboot,
                              },
                              {
                                  "RebootToBootloader",
                                  ShutdownAction::REBOOT_TO_BOOTLOADER,
+                                 GracefulShutdownAction::kRebootToBootloader,
                              },
                              {
                                  "RebootToRecovery",
                                  ShutdownAction::REBOOT_TO_RECOVERY,
+                                 GracefulShutdownAction::kRebootToRecovery,
                              },
                          })),
                          [](const testing::TestParamInfo<TestParam>& info) {
                            return info.param.test_name;
                          });
 
-TEST_P(WaitForRebootReasonParameterizedTest, NoCompletion) {
+TEST_P(WaitForRebootReasonParameterizedTest, CompletionWithExpectedAction) {
   const auto& param = GetParam();
   async::Executor executor(dispatcher());
 
@@ -267,8 +276,9 @@ TEST_P(WaitForRebootReasonParameterizedTest, NoCompletion) {
                   [&called](const ShutdownWatcher_OnShutdown_Result& result) { called = true; });
 
   RunLoopUntilIdle();
-  EXPECT_EQ(signal, std::nullopt);
-  EXPECT_TRUE(called);
+  ASSERT_TRUE(signal.has_value());
+  EXPECT_EQ(signal->Action(), param.expected_action);
+  EXPECT_THAT(signal->Reasons(), testing::ElementsAre(GracefulShutdownReason::kUserRequest));
 }
 
 }  // namespace
