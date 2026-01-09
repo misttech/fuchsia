@@ -158,8 +158,27 @@ fn get_auto_included_bundles(
         (FeatureSetLevel::Embeddable, BuildType::User) => {
             vec!["embeddable", "driver_framework_common"]
         }
-        (FeatureSetLevel::Bootstrap, _) => {
+        (FeatureSetLevel::Bootstrap, BuildType::User) => {
             vec![
+                "embeddable",
+                "bootstrap",
+                "driver_framework_common",
+                "legacy_power_framework",
+            ]
+        }
+        (FeatureSetLevel::Bootstrap, BuildType::UserDebug) => {
+            vec![
+                "embeddable",
+                "embeddable_userdebug",
+                "bootstrap",
+                "bootstrap_userdebug",
+                "bootstrap_realm_development_access",
+                "driver_framework_common",
+                "legacy_power_framework",
+            ]
+        }
+        (FeatureSetLevel::Bootstrap, BuildType::Eng) => {
+          vec![
                 "embeddable",
                 "embeddable_userdebug",
                 "embeddable_eng",
