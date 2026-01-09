@@ -73,6 +73,7 @@ async def collect_network_config_iterator(
 
     Args:
         iterator: Iterator to collect elements from.
+        timeout: timeout value.
 
     Returns:
         All elements collected from iterator.
@@ -109,6 +110,7 @@ async def collect_scan_result_iterator(
 
     Args:
         iterator: Iterator to collect elements from.
+        timeout: timeout value.
 
     Returns:
         All elements collected from iterator.
@@ -322,14 +324,15 @@ class WlanPolicy(AsyncAdapter, wlan_policy.WlanPolicy):
             target_ssid: The network to connect to. Must have been previously
                 saved in order for a successful connection to happen.
             security_type: The security protocol of the network.
+            timeout: timeout value.
 
         Returns:
-            A RequestStatus response to the connect request
+            A RequestStatus response to the connect request.
 
         Raises:
             HoneydewWlanError: Error from WLAN stack.
             TypeError: Return value not a string.
-            RuntimeError: Client controller has not been initialized
+            RuntimeError: Client controller has not been initialized.
         """
         if self._client_controller is None:
             raise RuntimeError(
@@ -420,7 +423,7 @@ class WlanPolicy(AsyncAdapter, wlan_policy.WlanPolicy):
         Raises:
             HoneydewWlanError: Error from WLAN stack.
             TypeError: Return values not correct types.
-            RuntimeError: Client controller has not been initialized
+            RuntimeError: Client controller has not been initialized.
         """
         if self._client_controller is None:
             raise RuntimeError(
@@ -497,6 +500,15 @@ class WlanPolicy(AsyncAdapter, wlan_policy.WlanPolicy):
         timeout: float
         | None = wlan_policy.WlanPolicy.DEFAULT_WLAN_POLICY_OPERATION_TIMEOUT,
     ) -> None:
+        """Waits for update.
+
+        Args:
+            f: boolian value.
+            timeout: timeout value.
+
+        Raises:
+             HoneydewWlanError: Error from WLAN stack.
+        """
         client_state_summaries = []
         if self._client_controller is None:
             self.create_client_controller()
@@ -553,10 +565,13 @@ class WlanPolicy(AsyncAdapter, wlan_policy.WlanPolicy):
     ) -> None:
         """Deletes all saved networks on the device.
 
+        Args:
+            timeout: timeout value.
+
         Raises:
             HoneydewWlanError: Error from WLAN stack.
-            RuntimeError: A client controller has not been created yet
-            TimeoutError: Operation takes longer than DEFAULT_WLAN_POLICY_OPERATION_TIMEOUT
+            RuntimeError: A client controller has not been created yet.
+            TimeoutError: Operation takes longer than DEFAULT_WLAN_POLICY_OPERATION_TIMEOUT.
             per network.
         """
         if self._client_controller is None:
@@ -591,11 +606,12 @@ class WlanPolicy(AsyncAdapter, wlan_policy.WlanPolicy):
             security_type: The security protocol of the network.
             target_pwd: The credential being saved with the network. No password
                 is equivalent to an empty string.
+            timeout: timeout value.
 
         Raises:
             HoneydewWlanError: Error from WLAN stack.
-            RuntimeError: A client controller has not been created yet
-            TimeoutError: Operation takes longer than DEFAULT_WLAN_POLICY_OPERATION_TIMEOUT
+            RuntimeError: A client controller has not been created yet.
+            TimeoutError: Operation takes longer than DEFAULT_WLAN_POLICY_OPERATION_TIMEOUT.
         """
         if self._client_controller is None:
             raise RuntimeError(
@@ -653,10 +669,11 @@ class WlanPolicy(AsyncAdapter, wlan_policy.WlanPolicy):
             security_type: The security protocol of the network.
             target_pwd: The credential being saved with the network. No password
                 is equivalent to an empty string.
+            timeout: timeout value.
 
         Raises:
             HoneydewWlanError: Error from WLAN stack.
-            RuntimeError: A client controller has not been created yet
+            RuntimeError: A client controller has not been created yet.
         """
         if self._client_controller is None:
             raise RuntimeError(
@@ -713,7 +730,7 @@ class WlanPolicy(AsyncAdapter, wlan_policy.WlanPolicy):
         Raises:
             HoneydewWlanError: Error from WLAN stack.
             TypeError: Return value not a list.
-            RuntimeError: Client controller has not been initialized
+            RuntimeError: Client controller has not been initialized.
         """
         if self._client_controller is None:
             raise RuntimeError(
@@ -774,6 +791,7 @@ class WlanPolicy(AsyncAdapter, wlan_policy.WlanPolicy):
 
         Raises:
             HoneydewWlanError: Error from WLAN stack.
+            RuntimeError: Client controller has not been initialized.
         """
         if self._client_controller is None:
             # There is no running fuchsia.wlan.policy/ClientStateUpdates server.
@@ -848,8 +866,8 @@ class WlanPolicy(AsyncAdapter, wlan_policy.WlanPolicy):
 
         Raises:
             HoneydewWlanError: Error from WLAN stack.
-            RuntimeError: A client controller has not been created yet
-            TimeoutError: timeout
+            RuntimeError: A client controller has not been created yet.
+            TimeoutError: timeout.
         """
         if self._client_controller is None:
             raise RuntimeError(
@@ -894,7 +912,7 @@ class WlanPolicy(AsyncAdapter, wlan_policy.WlanPolicy):
 
         Raises:
             HoneydewWlanError: Error from WLAN stack.
-            RuntimeError: A client controller has not been created yet
+            RuntimeError: A client controller has not been created yet.
         """
         if self._client_controller is None:
             raise RuntimeError(
@@ -913,8 +931,7 @@ class WlanPolicy(AsyncAdapter, wlan_policy.WlanPolicy):
             status = f_wlan_policy.RequestStatus(resp.status)
             if status != f_wlan_policy.RequestStatus.ACKNOWLEDGED:
                 raise wlan_errors.HoneydewWlanError(
-                    "ClientController.StopClientConnections() returned "
-                    f"request status {status.name}"
+                    f"ClientController.StopClientConnections() returned request status {status.name}"
                 )
         except ZxStatus as status:
             raise wlan_errors.HoneydewWlanError(
@@ -930,7 +947,7 @@ class WlanPolicy(AsyncAdapter, wlan_policy.WlanPolicy):
         | None = wlan_policy.WlanPolicy.DEFAULT_WLAN_POLICY_OPERATION_TIMEOUT,
     ) -> None:
         await self._set_new_update_listener()
-        CONNECTION_STATES = {
+        connection_states = {
             ConnectionState.CONNECTING,
             ConnectionState.CONNECTED,
         }
@@ -938,14 +955,14 @@ class WlanPolicy(AsyncAdapter, wlan_policy.WlanPolicy):
         try:
             await self._wait_on_update(
                 lambda update: not any(
-                    n.connection_state in CONNECTION_STATES
+                    n.connection_state in connection_states
                     for n in update.networks
                 ),
                 timeout=timeout,
             )
         except TimeoutError as e:
             raise wlan_errors.HoneydewWlanError(
-                f"Networks still connected."
+                "Networks still connected."
             ) from e
 
     def clear_policy_state(
