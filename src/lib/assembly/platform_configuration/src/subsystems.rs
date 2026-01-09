@@ -159,12 +159,7 @@ fn get_auto_included_bundles(
             vec!["embeddable", "driver_framework_common"]
         }
         (FeatureSetLevel::Bootstrap, BuildType::User) => {
-            vec![
-                "embeddable",
-                "bootstrap",
-                "driver_framework_common",
-                "legacy_power_framework",
-            ]
+            vec!["embeddable", "bootstrap", "driver_framework_common", "legacy_power_framework"]
         }
         (FeatureSetLevel::Bootstrap, BuildType::UserDebug) => {
             vec![
@@ -178,7 +173,7 @@ fn get_auto_included_bundles(
             ]
         }
         (FeatureSetLevel::Bootstrap, BuildType::Eng) => {
-          vec![
+            vec![
                 "embeddable",
                 "embeddable_userdebug",
                 "embeddable_eng",
@@ -248,7 +243,6 @@ fn get_auto_included_bundles(
                 "standard_eng",
                 "standard_userdebug_and_eng",
                 "testing_support",
-                "tracing",
                 "mdns",
                 "driver_framework_common",
                 "legacy_power_framework",

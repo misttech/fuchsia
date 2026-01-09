@@ -47,12 +47,29 @@ impl DefineSubsystemConfiguration<DevelopmentSupportConfig> for DevelopmentConfi
             builder.kernel_arg(KernelArg::NetsvcNetboot(true));
         };
 
-        if config.include_tracing || matches!(config.tracing, TracingConfig::Enabled { .. }) {
-            if context.build_type == &BuildType::User {
-                anyhow::bail!("tracing can't be included in user builds");
+        let config_enabled_tracing =
+            config.include_tracing || matches!(config.tracing, TracingConfig::Enabled { .. });
+        match (context.feature_set_level, context.build_type) {
+            // Tracing is always enabled on standard eng.
+            (FeatureSetLevel::Standard, BuildType::Eng) => {
+                builder.platform_bundle("tracing");
             }
-            builder.platform_bundle("tracing");
-        };
+
+            // Tracing is enabled on userdebug or eng for other feature set levels
+            // if the user explicitly requests it.
+            (_, BuildType::UserDebug | BuildType::Eng) => {
+                if config_enabled_tracing {
+                    builder.platform_bundle("tracing");
+                }
+            }
+
+            // Tracing is never enabled on user.
+            (_, BuildType::User) => {
+                if config_enabled_tracing {
+                    anyhow::bail!("tracing can't be included in user builds");
+                }
+            }
+        }
 
         if matches!(context.build_type, BuildType::Eng | BuildType::UserDebug) {
             builder.platform_bundle("ptysvc");
