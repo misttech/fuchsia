@@ -8,8 +8,9 @@ use ffx_update_args::ForceInstall;
 use ffx_writer::SimpleWriter;
 use fho::{Deferred, FfxContext, FfxMain, FfxTool, Result, bug, deferred, return_user_error};
 use fidl::Signals;
+use fidl::endpoints::DiscoverableProtocolMarker;
 use fidl_fuchsia_update::{
-    CheckOptions, CommitStatusProviderProxy, Initiator, ManagerProxy, MonitorMarker,
+    CheckOptions, CommitStatusProviderProxy, Initiator, ManagerMarker, ManagerProxy, MonitorMarker,
     MonitorRequest, MonitorRequestStream,
 };
 use fidl_fuchsia_update_channelcontrol::ChannelControlProxy;
@@ -471,11 +472,10 @@ async fn monitor_state<W: std::io::Write>(
                 responder.send().map_err(|e| bug!(e))?;
 
                 let state = State::from(state);
+                // If this gets set to `Some(_)` then we must exit with a user error.
+                let mut critical_error: Option<String> = None;
                 match state.clone() {
                     State::CheckingForUpdates => write_progress("Checking for updates", writer)?,
-                    State::ErrorCheckingForUpdate => {
-                        write_progress("Error checking for updates", writer)?
-                    }
                     State::NoUpdateAvailable => write_progress("No update available", writer)?,
                     State::InstallationDeferredByPolicy(installation_deferred_data) => {
                         let reason =
@@ -509,12 +509,18 @@ async fn monitor_state<W: std::io::Write>(
                         } else {
                             "".into()
                         };
-                        write_progress(&format!("{pct} Installation error"), writer)?;
+                        critical_error
+                            .replace(format!("Internal error encountered at {pct} percent."));
+                    }
+                    State::ErrorCheckingForUpdate => {
+                        critical_error.replace(format!(
+                            "{} encountered an error while checking for an update.",
+                            ManagerMarker::PROTOCOL_NAME
+                        ));
                     }
                 };
-                // Exit if we encounter an error during an update.
-                if state.is_error() {
-                    return_user_error!("Update failed: {:?}", state)
+                if let Some(e) = critical_error {
+                    return_user_error!("Update failed: {}", e)
                 }
                 if state.is_terminal() {
                     writeln!(writer, "\n").map_err(|e| bug!(e))?;
