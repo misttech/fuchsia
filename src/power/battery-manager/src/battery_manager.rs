@@ -206,8 +206,8 @@ impl BatteryManager {
         let new_charge_status = info.charge_status;
         let new_charge_source = info.charge_source;
         let new_present_voltage = info.present_voltage_mv;
-        let new_present_current = info.present_current_ua;
-        let new_average_current = info.average_current_ua;
+        let new_present_current = info.present_charging_current_ua;
+        let new_average_current = info.average_charging_current_ua;
         let new_remaining_capacity = info.remaining_capacity_uah;
 
         self.determine_suspend_status(new_charge_source, sag).await;

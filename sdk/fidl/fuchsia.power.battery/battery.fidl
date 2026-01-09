@@ -129,10 +129,10 @@ type BatteryInfo = table {
     13: temperature_mc int32;
 
     /// Current in MicroAmps. Positive for charging.
-    14: present_current_ua int32;
+    14: present_charging_current_ua int32;
 
     /// Average Current in MicroAmps. Positive for charging.
-    15: average_current_ua int32;
+    15: average_charging_current_ua int32;
 };
 
 /// Provider interface used to obtain battery status details.
