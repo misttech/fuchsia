@@ -35,10 +35,8 @@ foreach(firmware, firmware_prebuilts) {
   if (firmware.type == "") {
     # Don't add a trailing delimiter if firmware.type is empty.
     name = "firmware"
-    bootserver_arg = "--firmware"
   } else {
     name = "firmware_${firmware.type}"
-    bootserver_arg = "--firmware-${firmware.type}"
   }
 
   copy(name) {
@@ -51,8 +49,6 @@ foreach(firmware, firmware_prebuilts) {
         {
           label = get_label_info(":$name", "label_with_toolchain")
           archive = true
-          bootserver_pave = [ bootserver_arg ]
-          bootserver_pave_zedboot = [ bootserver_arg ]
           name = name
           path = "$name.img"
           type = "img"

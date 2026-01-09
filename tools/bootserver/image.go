@@ -44,12 +44,8 @@ type Image struct {
 
 func getImageArgs(img build.Image, bootMode Mode) []string {
 	switch bootMode {
-	case ModePave:
-		return img.PaveArgs
 	case ModeNetboot:
 		return img.NetbootArgs
-	case ModePaveZedboot:
-		return img.PaveZedbootArgs
 	}
 	return nil
 }

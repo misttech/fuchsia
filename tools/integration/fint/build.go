@@ -825,10 +825,6 @@ func constructNinjaTargets(
 // what flags to pass to the bootserver when doing so.
 func isTestingImage(image build.Image, pave bool) bool {
 	switch {
-	case len(image.PaveZedbootArgs) != 0: // Used by catalyst.
-		return true
-	case pave && len(image.PaveArgs) != 0: // Used for paving.
-		return true
 	case !pave && len(image.NetbootArgs) != 0: // Used for netboot.
 		return true
 	case slices.Contains(qemuImageNames, image.Name): // Used for QEMU.

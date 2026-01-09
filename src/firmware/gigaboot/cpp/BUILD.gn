@@ -221,8 +221,6 @@ template("gigaboot_esp") {
           {
             label = get_label_info(":$target_name", "label_with_toolchain")
             archive = true
-            bootserver_pave = [ "--bootloader" ]
-            bootserver_pave_zedboot = [ "--bootloader" ]
             fastboot_flash = [ "fuchsia-esp" ]
             name = "${target_name}.esp"
             path = "${target_name}.esp.blk"

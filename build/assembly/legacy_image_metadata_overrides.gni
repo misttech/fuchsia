@@ -12,15 +12,7 @@ legacy_fuchsia_image_metadata_overrides = {
   zbi = {
     name = "zircon-a"
     archive = true
-    bootserver_pave = []
     if (!sign_zbi) {
-      bootserver_pave += [
-        "--zircona",
-        # TODO(https://fxbug.dev/42107564): `power reboot-recovery` boots from zircon-b instead of
-        # zircon-r, so for now zedboot is being paved to this slot.
-        # "--zirconb",
-      ]
-
       fastboot_flash = []
       if (zircon_a_partition != "") {
         fastboot_flash += [ zircon_a_partition ]
@@ -35,7 +27,6 @@ legacy_fuchsia_image_metadata_overrides = {
     zbi_signed = {
       name = "zircon-a.signed"
       archive = true
-      bootserver_pave = [ "--zircona" ]
       fastboot_flash = []
       if (zircon_a_partition != "") {
         fastboot_flash += [ zircon_a_partition ]
@@ -50,7 +41,6 @@ legacy_fuchsia_image_metadata_overrides = {
     vbmeta = {
       name = "zircon-a"
       archive = true
-      bootserver_pave = [ "--vbmetaa" ]
       fastboot_flash = []
       if (vbmeta_a_partition != "") {
         fastboot_flash += [ vbmeta_a_partition ]
@@ -75,7 +65,6 @@ legacy_fuchsia_image_metadata_overrides = {
       type = "blk"
       archive = true
       fastboot_flash = [ fxfs_partition ]
-      bootserver_pave = [ "--fxfs" ]
     }
   } else {
     fvm = {
@@ -86,7 +75,6 @@ legacy_fuchsia_image_metadata_overrides = {
     fvm_sparse = {
       name = "storage-sparse"
       archive = true
-      bootserver_pave = [ "--fvm" ]
     }
 
     if (assembly_generate_fvm_fastboot) {
@@ -105,25 +93,12 @@ legacy_bringup_image_metadata_overrides = {
     name = "zircon-a"
     archive = true
     bootserver_netboot = [ "--boot" ]
-
-    # Bringup builds always mexec from the paver
-    bootserver_pave = [ "--boot" ]
-
-    if (!sign_zbi) {
-      bootserver_pave += [
-        "--zircona",
-        # TODO(https://fxbug.dev/42107564): `power reboot-recovery` boots from zircon-b instead of
-        # zircon-r, so for now zedboot is being paved to this slot.
-        # "--zirconb",
-      ]
-    }
   }
 
   if (use_vbmeta) {
     vbmeta = {
       name = "zircon-a"
       archive = true
-      bootserver_pave = [ "--vbmetaa" ]
     }
   }
 }
@@ -140,12 +115,10 @@ legacy_zedboot_image_metadata_overrides = {
     if (!sign_zbi) {
       archive = true
       if (recovery_is_zedboot) {
-        bootserver_pave = [ "--zirconr" ]
         if (zircon_r_partition != "") {
           fastboot_flash = [ zircon_r_partition ]
         }
       }
-      bootserver_pave_zedboot = [ "--zircona" ]
     }
   }
 
@@ -155,12 +128,10 @@ legacy_zedboot_image_metadata_overrides = {
       archive = true
       if (recovery_is_zedboot) {
         mkzedboot_mode = [ "vboot" ]
-        bootserver_pave = [ "--zirconr" ]
         if (zircon_r_partition != "") {
           fastboot_flash = [ zircon_r_partition ]
         }
       }
-      bootserver_pave_zedboot = [ "--zircona" ]
     }
   }
 
@@ -169,12 +140,10 @@ legacy_zedboot_image_metadata_overrides = {
       name = _zedboot_metadata_slot
       archive = true
       if (recovery_is_zedboot) {
-        bootserver_pave = [ "--vbmetar" ]
         if (vbmeta_r_partition != "") {
           fastboot_flash = [ vbmeta_r_partition ]
         }
       }
-      bootserver_pave_zedboot = [ "--vbmetaa" ]
     }
   }
 }

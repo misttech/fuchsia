@@ -999,9 +999,9 @@ build_api_module("fuzzers") {
 #      * "blk": contents to be written to a storage device or partition
 #     Type: string
 #
-#   bootserver_pave, bootserver_pave_zedboot, bootserver_netboot
+#   bootserver_netboot
 #     Optional: flag names under which the associated image should be passed to
-#     the bootserver when paving, paving zedboot, or netbooting, respectively.
+#     the bootserver when netbooting.
 #     Type: list(string)
 #
 #   archive

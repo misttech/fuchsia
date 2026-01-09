@@ -7,17 +7,15 @@
 This program takes as input one or more JSON files that
 describe "image files" according to the //:images schema.
 
-Use --pave, --pave_zedboot, --netboot
-to generate a paving/flashing script, which will reference
-input image file paths extracted from the input manifest(s).
+Use --netboot to generate a netboot script, which will reference input image
+file paths extracted from the input manifest(s).
 
 Use --archive to generate a potentially-compressed tarball
 containing all image files whose input JSON description
 sets the "archive" attribute to "true".
 
-Note that the archive will also contain auto-generated
-pave.sh, pave_zedboot.sh and netboot.sh scripts, as well
-as an images.json file describing its content.
+Note that the archive will also contain auto-generated netboot.sh scripts, as
+well as an images.json file describing its content.
 """
 
 import argparse
@@ -179,27 +177,6 @@ def write_archive(outfile, images, board_name, additional_bootserver_arguments):
                 "bootserver",
                 [image for path, image in path_images],
                 board_name,
-                "bootserver_pave",
-                additional_bootserver_arguments,
-            ),
-            {"name": "pave", "type": "sh", "path": "pave.sh"},
-        ),
-        (
-            generate_script(
-                "bootserver",
-                [image for path, image in path_images],
-                board_name,
-                "bootserver_pave_zedboot",
-                additional_bootserver_arguments
-                + " --allow-zedboot-version-mismatch",
-            ),
-            {"name": "pave-zedboot", "type": "sh", "path": "pave-zedboot.sh"},
-        ),
-        (
-            generate_script(
-                "bootserver",
-                [image for path, image in path_images],
-                board_name,
                 "bootserver_netboot",
                 additional_bootserver_arguments,
             ),
@@ -250,14 +227,6 @@ def main():
         help="Read JSON image list from IMAGE_MANIFEST",
     )
     group = parser.add_mutually_exclusive_group(required=True)
-    group.add_argument(
-        "--pave", metavar="FILE", help="Write paving bootserver script to FILE"
-    )
-    group.add_argument(
-        "--pave_zedboot",
-        metavar="FILE",
-        help="Write zedboot paving bootserver script to FILE",
-    )
     group.add_argument(
         "--netboot",
         metavar="FILE",
@@ -310,13 +279,7 @@ def main():
             )
 
     # First write the local scripts that work relative to the build directory.
-    if args.pave:
-        outfile = args.pave
-        write_script_for(args.pave, "bootserver_pave")
-    elif args.pave_zedboot:
-        outfile = args.pave_zedboot
-        write_script_for(args.pave_zedboot, "bootserver_pave_zedboot")
-    elif args.netboot:
+    if args.netboot:
         outfile = args.netboot
         write_script_for(args.netboot, "bootserver_netboot")
     elif args.archive:

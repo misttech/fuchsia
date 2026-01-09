@@ -22,17 +22,11 @@ func assertEqual(t *testing.T, actual, expected []string) {
 func TestGetImages(t *testing.T) {
 	var mockManifest = `[
   {
-    "bootserver_pave": [
-      "--bootloader"
-    ],
     "name": "bootloader",
     "path": "bootloader",
     "type": "blk"
   },
   {
-    "bootserver_pave": [
-      "--zirconr"
-    ],
     "name": "zircon-r",
     "path": "zedboot.zbi",
     "type": "zbi"

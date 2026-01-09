@@ -567,9 +567,7 @@ template("bazel_product_bundle") {
           path = "${_system_a_root}/fuchsia.zbi"
 
           archive = true
-          bootserver_pave = []
           if (!sign_zbi) {
-            bootserver_pave += [ "--zircona" ]
             fastboot_flash = []
             if (zircon_a_partition != "") {
               fastboot_flash += [ zircon_a_partition ]
@@ -591,13 +589,9 @@ template("bazel_product_bundle") {
             path = "${_system_r_root}/${_recovery_name}.zbi"
 
             archive = true
-            bootserver_pave = [ "--zirconr" ]
             fastboot_flash = []
             if (zircon_r_partition != "") {
               fastboot_flash = [ zircon_r_partition ]
-            }
-            if (recovery_is_zedboot) {
-              bootserver_pave_zedboot = [ "--zircona" ]
             }
           },
         ]
@@ -612,7 +606,6 @@ template("bazel_product_bundle") {
             label = _full_label
             path = "${_system_a_root}/fxfs.sparse.blk"
             archive = true
-            bootserver_pave = [ "--fxfs" ]
           },
         ]
       } else if (_image_has_fvm) {
@@ -639,7 +632,6 @@ template("bazel_product_bundle") {
             label = _full_label
             path = "${_system_a_root}/fvm.sparse.blk"
             archive = true
-            bootserver_pave = [ "--fvm" ]
           },
         ]
 
@@ -673,7 +665,6 @@ template("bazel_product_bundle") {
             label = _full_label
             path = "${_system_a_root}/fuchsia.vbmeta"
             archive = true
-            bootserver_pave = [ "--vbmetaa" ]
             fastboot_flash = []
             if (vbmeta_a_partition != "") {
               fastboot_flash += [ vbmeta_a_partition ]
@@ -694,13 +685,9 @@ template("bazel_product_bundle") {
               path = "${_system_r_root}/${_recovery_name}.vbmeta"
 
               archive = true
-              bootserver_pave = [ "--vbmetar" ]
               fastboot_flash = []
               if (vbmeta_r_partition != "") {
                 fastboot_flash = [ vbmeta_r_partition ]
-              }
-              if (recovery_is_zedboot) {
-                bootserver_pave_zedboot = [ "--vbmetaa" ]
               }
             },
           ]
