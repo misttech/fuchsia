@@ -214,7 +214,8 @@ impl Repl {
         })?;
 
         // SAFETY: We just obtained this file from stdout(), which should guarantee its validity.
-        let file = unsafe { File::from_raw_fd(fd) };
+        let owned_fd = unsafe { std::os::unix::io::OwnedFd::from_raw_fd(fd) };
+        let file = File::from(owned_fd);
 
         Ok(Repl {
             inner: StrictMutex::new(ReplInner {

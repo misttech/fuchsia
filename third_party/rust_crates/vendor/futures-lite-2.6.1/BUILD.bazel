@@ -20,9 +20,9 @@ package(
 
 package_info(
     name = "package_info",
-    package_name = "fastrand",
-    package_url = "https://github.com/smol-rs/fastrand",
-    package_version = "2.3.0",
+    package_name = "futures-lite",
+    package_url = "https://github.com/smol-rs/futures-lite",
+    package_version = "2.6.1",
 )
 
 license(
@@ -35,7 +35,7 @@ license(
 )
 
 rust_library(
-    name = "fastrand",
+    name = "futures_lite",
     srcs = glob(
         include = ["**/*.rs"],
         allow_empty = False,
@@ -54,16 +54,21 @@ rust_library(
     ),
     crate_features = [
         "alloc",
+        "default",
+        "fastrand",
+        "futures-io",
+        "parking",
+        "race",
         "std",
     ],
     crate_root = "src/lib.rs",
-    edition = "2018",
+    edition = "2021",
     rustc_flags = [
         "--cap-lints=allow",
     ],
     tags = [
         "cargo-bazel",
-        "crate-name=fastrand",
+        "crate-name=futures-lite",
         "manual",
         "noclippy",
         "norustfmt",
@@ -76,5 +81,12 @@ rust_library(
         "@rules_rust//rust/platform:x86_64-unknown-linux-gnu": [],
         "//conditions:default": ["@platforms//:incompatible"],
     }),
-    version = "2.3.0",
+    version = "2.6.1",
+    deps = [
+        "//third_party/rust_crates/vendor/fastrand-2.3.0:fastrand",
+        "//third_party/rust_crates/vendor/futures-core-0.3.31:futures_core",
+        "//third_party/rust_crates/vendor/futures-io-0.3.31:futures_io",
+        "//third_party/rust_crates/vendor/parking-2.2.1:parking",
+        "//third_party/rust_crates/vendor/pin-project-lite-0.2.16:pin_project_lite",
+    ],
 )

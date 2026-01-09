@@ -228,14 +228,13 @@ dependencies = [
 
 [[package]]
 name = "async-fs"
-version = "1.6.0"
+version = "2.2.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "279cf904654eeebfa37ac9bb1598880884924aab82e290aa65c9e77a0e142e06"
+checksum = "8034a681df4aed8b8edbd7fbe472401ecf009251c8b40556b304567052e294c5"
 dependencies = [
- "async-lock 2.6.0",
- "autocfg 1.5.0",
+ "async-lock 3.4.2",
  "blocking",
- "futures-lite",
+ "futures-lite 2.6.1",
 ]
 
 [[package]]
@@ -245,7 +244,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "c8101efe8695a6c17e02911402145357e718ac92d3ff88ae8419e84b1707b685"
 dependencies = [
  "event-listener 2.5.1",
- "futures-lite",
+ "futures-lite 1.11.3",
 ]
 
 [[package]]
@@ -478,7 +477,7 @@ dependencies = [
  "async-task",
  "atomic-waker",
  "fastrand 1.9.0",
- "futures-lite",
+ "futures-lite 1.11.3",
 ]
 
 [[package]]
@@ -1638,7 +1637,7 @@ dependencies = [
  "futures",
  "futures-executor",
  "futures-io",
- "futures-lite",
+ "futures-lite 2.6.1",
  "futures-test",
  "futures-util",
  "getopts",
@@ -1916,6 +1915,19 @@ dependencies = [
  "parking",
  "pin-project-lite",
  "waker-fn",
+]
+
+[[package]]
+name = "futures-lite"
+version = "2.6.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "f78e10609fe0e0b3f4157ffab1876319b5b0db102a2c60dc4626306dc46b44ad"
+dependencies = [
+ "fastrand 2.3.0",
+ "futures-core",
+ "futures-io",
+ "parking",
+ "pin-project-lite",
 ]
 
 [[package]]

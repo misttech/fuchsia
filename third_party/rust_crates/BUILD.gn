@@ -75,7 +75,7 @@ group("async-channel") {
 
 if (!(current_os == "fuchsia")) {
   group("async-fs") {
-    public_deps = [ ":async-fs-v1_6_0" ]
+    public_deps = [ ":async-fs-v2_2_0" ]
   }
 }
 
@@ -392,7 +392,7 @@ group("futures-io") {
 }
 
 group("futures-lite") {
-  public_deps = [ ":futures-lite-v1_11_3" ]
+  public_deps = [ ":futures-lite-v2_6_1" ]
 }
 
 group("futures-test") {
@@ -2174,39 +2174,39 @@ rustc_library("async-channel-v1_8_0") {
   applicable_licenses = [ ":async-channel-v1_8_0.license" ]
 }
 
-license("async-fs-v1_6_0.license") {
+license("async-fs-v2_2_0.license") {
   public_package_name = "async_fs"
   license_files = [
-    "//third_party/rust_crates/vendor/async-fs-1.6.0/LICENSE-APACHE",
-    "//third_party/rust_crates/vendor/async-fs-1.6.0/LICENSE-MIT",
+    "//third_party/rust_crates/vendor/async-fs-2.2.0/LICENSE-APACHE",
+    "//third_party/rust_crates/vendor/async-fs-2.2.0/LICENSE-MIT",
   ]
 }
 
-rustc_library("async-fs-v1_6_0") {
+rustc_library("async-fs-v2_2_0") {
   crate_name = "async_fs"
-  source_root = "//third_party/rust_crates/vendor/async-fs-1.6.0/src/lib.rs"
-  output_name = "async_fs-d08414b37762da39"
-  edition = "2018"
+  source_root = "//third_party/rust_crates/vendor/async-fs-2.2.0/src/lib.rs"
+  output_name = "async_fs-10ebb92aef91a867"
+  edition = "2021"
   disable_clippy = true
   enforce_source_listing = false
   configs -= [ "//build/config/rust:2018_idioms" ]
 
   deps = []
-  deps += [ ":async-lock-v2_6_0" ]
+  deps += [ ":async-lock-v3_4_2" ]
   deps += [ ":blocking-v1_3_0" ]
-  deps += [ ":futures-lite-v1_11_3" ]
+  deps += [ ":futures-lite-v2_6_1" ]
 
   rustenv = []
 
   rustflags = [
     "--cap-lints=allow",
-    "-Cmetadata=d08414b37762da39",
-    "-Cextra-filename=-d08414b37762da39",
+    "-Cmetadata=10ebb92aef91a867",
+    "-Cextra-filename=-10ebb92aef91a867",
   ]
 
   visibility = [ ":*" ]
 
-  applicable_licenses = [ ":async-fs-v1_6_0.license" ]
+  applicable_licenses = [ ":async-fs-v2_2_0.license" ]
 }
 
 license("async-lock-v2_6_0.license") {
@@ -6573,6 +6573,8 @@ rustc_library("fastrand-v2_3_0") {
     "--cap-lints=allow",
     "-Cmetadata=7306759726945126",
     "-Cextra-filename=-7306759726945126",
+    "--cfg=feature=\"alloc\"",
+    "--cfg=feature=\"std\"",
   ]
 
   visibility = [ ":*" ]
@@ -7447,6 +7449,51 @@ rustc_library("futures-lite-v1_11_3") {
   visibility = [ ":*" ]
 
   applicable_licenses = [ ":futures-lite-v1_11_3.license" ]
+}
+
+license("futures-lite-v2_6_1.license") {
+  public_package_name = "futures_lite"
+  license_files = [
+    "//third_party/rust_crates/vendor/futures-lite-2.6.1/LICENSE-APACHE",
+    "//third_party/rust_crates/vendor/futures-lite-2.6.1/LICENSE-MIT",
+    "//third_party/rust_crates/vendor/futures-lite-2.6.1/LICENSE-THIRD-PARTY",
+  ]
+}
+
+rustc_library("futures-lite-v2_6_1") {
+  crate_name = "futures_lite"
+  source_root = "//third_party/rust_crates/vendor/futures-lite-2.6.1/src/lib.rs"
+  output_name = "futures_lite-a8bb20b64a87ff5d"
+  edition = "2021"
+  disable_clippy = true
+  enforce_source_listing = false
+  configs -= [ "//build/config/rust:2018_idioms" ]
+
+  deps = []
+  deps += [ ":fastrand-v2_3_0" ]
+  deps += [ ":futures-core-v0_3_31" ]
+  deps += [ ":futures-io-v0_3_31" ]
+  deps += [ ":parking-v2_2_1" ]
+  deps += [ ":pin-project-lite-v0_2_16" ]
+
+  rustenv = []
+
+  rustflags = [
+    "--cap-lints=allow",
+    "-Cmetadata=a8bb20b64a87ff5d",
+    "-Cextra-filename=-a8bb20b64a87ff5d",
+    "--cfg=feature=\"alloc\"",
+    "--cfg=feature=\"default\"",
+    "--cfg=feature=\"fastrand\"",
+    "--cfg=feature=\"futures-io\"",
+    "--cfg=feature=\"parking\"",
+    "--cfg=feature=\"race\"",
+    "--cfg=feature=\"std\"",
+  ]
+
+  visibility = [ ":*" ]
+
+  applicable_licenses = [ ":futures-lite-v2_6_1.license" ]
 }
 
 license("futures-macro-v0_3_31.license") {

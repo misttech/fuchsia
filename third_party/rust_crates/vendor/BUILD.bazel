@@ -211,14 +211,14 @@ alias(
 )
 
 alias(
-    name = "async-fs-1.6.0",
-    actual = "//third_party/rust_crates/vendor/async-fs-1.6.0:async_fs",
+    name = "async-fs-2.2.0",
+    actual = "//third_party/rust_crates/vendor/async-fs-2.2.0:async_fs",
     tags = ["manual"],
 )
 
 alias(
     name = "async-fs",
-    actual = "//third_party/rust_crates/vendor/async-fs-1.6.0:async_fs",
+    actual = "//third_party/rust_crates/vendor/async-fs-2.2.0:async_fs",
     tags = ["manual"],
 )
 
@@ -967,14 +967,14 @@ alias(
 )
 
 alias(
-    name = "futures-lite-1.11.3",
-    actual = "//third_party/rust_crates/vendor/futures-lite-1.11.3:futures_lite",
+    name = "futures-lite-2.6.1",
+    actual = "//third_party/rust_crates/vendor/futures-lite-2.6.1:futures_lite",
     tags = ["manual"],
 )
 
 alias(
     name = "futures-lite",
-    actual = "//third_party/rust_crates/vendor/futures-lite-1.11.3:futures_lite",
+    actual = "//third_party/rust_crates/vendor/futures-lite-2.6.1:futures_lite",
     tags = ["manual"],
 )
 
