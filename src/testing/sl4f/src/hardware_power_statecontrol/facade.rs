@@ -5,7 +5,7 @@
 use crate::common_utils::common::macros::{fx_err_and_bail, with_line};
 use anyhow::Error;
 use fidl_fuchsia_hardware_power_statecontrol::{
-    AdminMarker, AdminProxy, RebootOptions, RebootReason2,
+    AdminMarker, AdminProxy, ShutdownAction, ShutdownOptions, ShutdownReason,
 };
 use fuchsia_component as app;
 use log::info;
@@ -39,8 +39,9 @@ impl HardwarePowerStatecontrolFacade {
         info!("Executing Suspend: REBOOT");
         if let Err(err) = self
             .get_admin_proxy()?
-            .perform_reboot(&RebootOptions {
-                reasons: Some(vec![RebootReason2::UserRequest]),
+            .shutdown(&ShutdownOptions {
+                action: Some(ShutdownAction::Reboot),
+                reasons: Some(vec![ShutdownReason::UserRequest]),
                 ..Default::default()
             })
             .await?
@@ -58,7 +59,15 @@ impl HardwarePowerStatecontrolFacade {
         let tag = "HardwarePowerStatecontrolFacade::suspend_reboot_bootloader";
         info!("Executing Suspend: REBOOT_BOOTLOADER");
 
-        if let Err(err) = self.get_admin_proxy()?.reboot_to_bootloader().await? {
+        if let Err(err) = self
+            .get_admin_proxy()?
+            .shutdown(&ShutdownOptions {
+                action: Some(ShutdownAction::RebootToBootloader),
+                reasons: Some(vec![ShutdownReason::UserRequest]),
+                ..Default::default()
+            })
+            .await?
+        {
             fx_err_and_bail!(
                 &with_line!(tag),
                 format_err!("Failed to change power control state: {:?}", err)
@@ -71,7 +80,15 @@ impl HardwarePowerStatecontrolFacade {
     pub async fn suspend_reboot_recovery(&self) -> Result<(), Error> {
         let tag = "HardwarePowerStatecontrolFacade::suspend_reboot_recovery";
         info!("Executing Suspend: REBOOT_RECOVERY");
-        if let Err(err) = self.get_admin_proxy()?.reboot_to_recovery().await? {
+        if let Err(err) = self
+            .get_admin_proxy()?
+            .shutdown(&ShutdownOptions {
+                action: Some(ShutdownAction::RebootToRecovery),
+                reasons: Some(vec![ShutdownReason::UserRequest]),
+                ..Default::default()
+            })
+            .await?
+        {
             fx_err_and_bail!(
                 &with_line!(tag),
                 format_err!("Failed to change power control state: {:?}", err)
@@ -85,7 +102,15 @@ impl HardwarePowerStatecontrolFacade {
         let tag = "HardwarePowerStatecontrolFacade::suspend_poweroff";
         info!("Executing Suspend: POWEROFF");
 
-        if let Err(err) = self.get_admin_proxy()?.poweroff().await? {
+        if let Err(err) = self
+            .get_admin_proxy()?
+            .shutdown(&ShutdownOptions {
+                action: Some(ShutdownAction::Poweroff),
+                reasons: Some(vec![ShutdownReason::UserRequest]),
+                ..Default::default()
+            })
+            .await?
+        {
             fx_err_and_bail!(
                 &with_line!(tag),
                 format_err!("Failed to change power control state: {:?}", err)
