@@ -151,9 +151,7 @@ class Connection {
 
   virtual std::unique_ptr<Context> MsdCreateContext() { return {}; }
 
-  virtual std::unique_ptr<Context> MsdCreateContext2(uint64_t priority) {
-    return MsdCreateContext();
-  }
+  virtual std::unique_ptr<Context> MsdCreateContext2(uint64_t priority);
 
   virtual magma_status_t MsdEnablePerformanceCounters(cpp20::span<const uint64_t> counters) {
     return MAGMA_STATUS_UNIMPLEMENTED;
@@ -229,6 +227,14 @@ class Context {
     return MAGMA_STATUS_UNIMPLEMENTED;
   }
 };
+
+// This method body can't be folded into the virtual method declaration above
+// because `Context` is an incomplete type at that point.  In C++23,
+// std::unique_ptr<T> can't be used in a _definition_ while T is incomplete
+// (only in _non-defining declarations_).
+inline std::unique_ptr<Context> Connection::MsdCreateContext2(uint64_t priority) {
+  return MsdCreateContext();
+}
 
 class Buffer {
  public:
