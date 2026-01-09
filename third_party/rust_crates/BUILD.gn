@@ -1489,7 +1489,7 @@ rustc_library("aes-gcm-siv-v0_11_1") {
   deps += [ ":aes-v0_8_4" ]
   deps += [ ":cipher-v0_4_4" ]
   deps += [ ":ctr-v0_9_2" ]
-  deps += [ ":polyval-v0_6_0" ]
+  deps += [ ":polyval-v0_6_2" ]
   deps += [ ":subtle-v2_6_1" ]
 
   rustenv = []
@@ -7950,7 +7950,7 @@ rustc_library("ghash-v0_5_0") {
 
   deps = []
   deps += [ ":opaque-debug-v0_3_0" ]
-  deps += [ ":polyval-v0_6_0" ]
+  deps += [ ":polyval-v0_6_2" ]
 
   rustenv = []
 
@@ -13103,18 +13103,18 @@ rustc_library("podio-v0_1_6") {
   applicable_licenses = [ ":podio-v0_1_6.license" ]
 }
 
-license("polyval-v0_6_0.license") {
+license("polyval-v0_6_2.license") {
   public_package_name = "polyval"
   license_files = [
-    "//third_party/rust_crates/vendor/polyval-0.6.0/LICENSE-APACHE",
-    "//third_party/rust_crates/vendor/polyval-0.6.0/LICENSE-MIT",
+    "//third_party/rust_crates/vendor/polyval-0.6.2/LICENSE-APACHE",
+    "//third_party/rust_crates/vendor/polyval-0.6.2/LICENSE-MIT",
   ]
 }
 
-rustc_library("polyval-v0_6_0") {
+rustc_library("polyval-v0_6_2") {
   crate_name = "polyval"
-  source_root = "//third_party/rust_crates/vendor/polyval-0.6.0/src/lib.rs"
-  output_name = "polyval-95f88f1b4cf6f52"
+  source_root = "//third_party/rust_crates/vendor/polyval-0.6.2/src/lib.rs"
+  output_name = "polyval-949cb3e97a458b8a"
   edition = "2021"
   disable_clippy = true
   enforce_source_listing = false
@@ -13132,13 +13132,13 @@ rustc_library("polyval-v0_6_0") {
 
   rustflags = [
     "--cap-lints=allow",
-    "-Cmetadata=95f88f1b4cf6f52",
-    "-Cextra-filename=-95f88f1b4cf6f52",
+    "-Cmetadata=949cb3e97a458b8a",
+    "-Cextra-filename=-949cb3e97a458b8a",
   ]
 
   visibility = [ ":*" ]
 
-  applicable_licenses = [ ":polyval-v0_6_0.license" ]
+  applicable_licenses = [ ":polyval-v0_6_2.license" ]
 }
 
 rustc_library("portable-atomic-v1_0_0") {

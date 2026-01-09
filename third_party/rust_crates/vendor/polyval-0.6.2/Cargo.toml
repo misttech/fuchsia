@@ -13,7 +13,7 @@
 edition = "2021"
 rust-version = "1.56"
 name = "polyval"
-version = "0.6.0"
+version = "0.6.2"
 authors = ["RustCrypto Developers"]
 description = """
 POLYVAL is a GHASH-like universal hash over GF(2^128) useful for constructing
@@ -34,7 +34,6 @@ categories = [
 ]
 license = "Apache-2.0 OR MIT"
 repository = "https://github.com/RustCrypto/universal-hashes"
-resolver = "2"
 
 [package.metadata.docs.rs]
 all-features = true

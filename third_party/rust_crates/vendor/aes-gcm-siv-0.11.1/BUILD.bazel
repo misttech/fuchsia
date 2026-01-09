@@ -86,7 +86,7 @@ rust_library(
         "//third_party/rust_crates/vendor/aes-0.8.4:aes",
         "//third_party/rust_crates/vendor/cipher-0.4.4:cipher",
         "//third_party/rust_crates/vendor/ctr-0.9.2:ctr",
-        "//third_party/rust_crates/vendor/polyval-0.6.0:polyval",
+        "//third_party/rust_crates/vendor/polyval-0.6.2:polyval",
         "//third_party/rust_crates/vendor/subtle-2.6.1:subtle",
     ],
 )
