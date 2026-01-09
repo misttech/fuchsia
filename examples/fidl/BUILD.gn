@@ -11,6 +11,7 @@ if (is_fuchsia) {
       "cpp:all",
       "fuchsia.examples.docs:all",
       "rust:all",
+      "rust_next:all",
     ]
 
     if (current_cpu != "riscv64") {

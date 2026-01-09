@@ -23,6 +23,7 @@ rustc_library("fidl_next") {
     "//:developer_universe_packages",
     "//examples/*",
     "//examples/fidl/new/key_value_store/use_generic_values/rust_next/*",
+    "//examples/fidl/rust_next/*",
     "//sdk/fidl/*",
     "//sdk/lib/driver/*",
     "//src/devices/block/drivers/cqhci/*",
