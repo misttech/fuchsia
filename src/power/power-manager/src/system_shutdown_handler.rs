@@ -5,7 +5,7 @@
 use crate::error::PowerManagerError;
 use crate::message::{Message, MessageReturn};
 use crate::node::Node;
-use anyhow::{format_err, Error};
+use anyhow::{Error, format_err};
 use async_trait::async_trait;
 use fuchsia_inspect::{self as inspect, Property};
 use log::*;
@@ -140,12 +140,19 @@ impl SystemShutdownHandler {
 
         let result = if self.poweroff_for_shutdown {
             info!("System poweroff ({:?})", msg);
-            self.shutdown_shim_proxy.poweroff().await
+            self.shutdown_shim_proxy
+                .shutdown(&fpowercontrol::ShutdownOptions {
+                    action: Some(fpowercontrol::ShutdownAction::Poweroff),
+                    reasons: Some(vec![fpowercontrol::ShutdownReason::HighTemperature]),
+                    ..Default::default()
+                })
+                .await
         } else {
             info!("System reboot ({:?})", msg);
             self.shutdown_shim_proxy
-                .perform_reboot(&fpowercontrol::RebootOptions {
-                    reasons: Some(vec![fpowercontrol::RebootReason2::HighTemperature]),
+                .shutdown(&fpowercontrol::ShutdownOptions {
+                    action: Some(fpowercontrol::ShutdownAction::Reboot),
+                    reasons: Some(vec![fpowercontrol::ShutdownReason::HighTemperature]),
                     ..Default::default()
                 })
                 .await
@@ -228,23 +235,18 @@ pub mod tests {
     use futures::TryStreamExt;
     use std::cell::Cell;
 
-    /// Create a fake Admin service proxy that responds to PerformReboot requests by calling
+    /// Create a fake Admin service proxy that responds to Shutdown requests by calling
     /// the provided closure.
     fn setup_fake_admin_service(
-        mut reboot_function: impl FnMut(fpowercontrol::RebootOptions) + 'static,
-        mut poweroff_function: impl FnMut() + 'static,
+        mut shutdown_function: impl FnMut(fpowercontrol::ShutdownOptions) + 'static,
     ) -> fpowercontrol::AdminProxy {
         let (proxy, mut stream) =
             fidl::endpoints::create_proxy_and_stream::<fpowercontrol::AdminMarker>();
         fasync::Task::local(async move {
             while let Ok(req) = stream.try_next().await {
                 match req {
-                    Some(fpowercontrol::AdminRequest::PerformReboot { options, responder }) => {
-                        reboot_function(options);
-                        let _ = responder.send(Ok(()));
-                    }
-                    Some(fpowercontrol::AdminRequest::Poweroff { responder }) => {
-                        poweroff_function();
+                    Some(fpowercontrol::AdminRequest::Shutdown { options, responder }) => {
+                        shutdown_function(options);
                         let _ = responder.send(Ok(()));
                     }
                     e => panic!("Unexpected request: {:?}", e),
@@ -290,18 +292,19 @@ pub mod tests {
         let shutdown_count = Rc::new(Cell::new(0));
         let shutdown_count_clone = shutdown_count.clone();
 
-        let reboot_reason = Rc::new(Cell::new(vec![]));
-        let reboot_reason_clone = reboot_reason.clone();
+        let shutdown_action = Rc::new(Cell::new(None));
+        let shutdown_action_clone = shutdown_action.clone();
+
+        let shutdown_reasons = Rc::new(Cell::new(vec![]));
+        let shutdown_reasons_clone = shutdown_reasons.clone();
 
         // Create the node with a special Admin proxy
         let node = SystemShutdownHandlerBuilder::new()
-            .with_shutdown_shim_proxy(setup_fake_admin_service(
-                move |options| {
-                    shutdown_count_clone.set(shutdown_count_clone.get() + 1);
-                    reboot_reason_clone.set(options.reasons.unwrap());
-                },
-                move || {},
-            ))
+            .with_shutdown_shim_proxy(setup_fake_admin_service(move |options| {
+                shutdown_count_clone.set(shutdown_count_clone.get() + 1);
+                shutdown_action_clone.set(options.action);
+                shutdown_reasons_clone.set(options.reasons.unwrap());
+            }))
             .build()
             .unwrap();
 
@@ -310,24 +313,29 @@ pub mod tests {
 
         // Verify the shutdown was called with correct reason.
         assert_eq!(shutdown_count.get(), 1);
-        let final_reasons = reboot_reason.take();
-        assert_eq!(final_reasons, vec![fpowercontrol::RebootReason2::HighTemperature]);
+        assert_eq!(shutdown_action.get(), Some(fpowercontrol::ShutdownAction::Reboot));
+        assert_eq!(shutdown_reasons.take(), vec![fpowercontrol::ShutdownReason::HighTemperature]);
     }
 
     #[fasync::run_singlethreaded(test)]
     async fn test_high_temperature_poweroff() {
         // At the end of the test, verify the Admin server's received shutdown request
-        let poweroff_count = Rc::new(Cell::new(0));
-        let poweroff_count_clone = poweroff_count.clone();
+        let shutdown_count = Rc::new(Cell::new(0));
+        let shutdown_count_clone = shutdown_count.clone();
+
+        let shutdown_action = Rc::new(Cell::new(None));
+        let shutdown_action_clone = shutdown_action.clone();
+
+        let shutdown_reasons = Rc::new(Cell::new(vec![]));
+        let shutdown_reasons_clone = shutdown_reasons.clone();
 
         // Create the node with a special Admin proxy
         let node = SystemShutdownHandlerBuilder::new()
-            .with_shutdown_shim_proxy(setup_fake_admin_service(
-                move |_| {},
-                move || {
-                    poweroff_count_clone.set(poweroff_count_clone.get() + 1);
-                },
-            ))
+            .with_shutdown_shim_proxy(setup_fake_admin_service(move |options| {
+                shutdown_count_clone.set(shutdown_count_clone.get() + 1);
+                shutdown_action_clone.set(options.action);
+                shutdown_reasons_clone.set(options.reasons.unwrap());
+            }))
             .with_poweroff_for_shutdown(true)
             .build()
             .unwrap();
@@ -336,7 +344,9 @@ pub mod tests {
         let _ = node.handle_shutdown(&Message::HighTemperatureShutdown).await;
 
         // Verify the shutdown was called with correct reason.
-        assert_eq!(poweroff_count.get(), 1);
+        assert_eq!(shutdown_count.get(), 1);
+        assert_eq!(shutdown_action.get(), Some(fpowercontrol::ShutdownAction::Poweroff));
+        assert_eq!(shutdown_reasons.take(), vec![fpowercontrol::ShutdownReason::HighTemperature]);
     }
 
     /// Tests that if high temperature reboot request fails, the forced shutdown method is called.
