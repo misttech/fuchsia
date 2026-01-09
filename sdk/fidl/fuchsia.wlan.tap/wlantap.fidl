@@ -14,6 +14,7 @@ using zx;
 type WlantapPhyConfig = struct {
     // TODO(https://fxbug.dev/42143255): wlantap will configure all of its ifaces to use the same MAC address
     sta_addr ieee80211.MacAddr;
+    factory_addr ieee80211.MacAddr;
     mac_role fuchsia.wlan.common.WlanMacRole;
     supported_phys
             vector<fuchsia.wlan.common.WlanPhyType>:fuchsia.wlan.common.MAX_SUPPORTED_PHY_TYPES;

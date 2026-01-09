@@ -2558,6 +2558,7 @@ mod tests {
             receiver.await.unwrap(),
             fidl_mlme::DeviceInfo {
                 sta_addr: IFACE_MAC.to_array(),
+                factory_addr: IFACE_MAC.to_array(),
                 role: fidl_common::WlanMacRole::Client,
                 bands: test_utils::fake_mlme_band_caps(),
                 softmac_hardware_capability: 0,

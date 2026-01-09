@@ -2,7 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use anyhow::{bail, Context, Error, Result};
+use anyhow::{Context, Error, Result, bail};
 use log::warn;
 use {
     fidl_fuchsia_wlan_common as fidl_common, fidl_fuchsia_wlan_fullmac as fidl_fullmac,
@@ -22,6 +22,7 @@ pub fn convert_device_info(
         .context("could not convert band_cap")?;
     Ok(fidl_mlme::DeviceInfo {
         sta_addr: info.sta_addr.context("missing sta_addr")?,
+        factory_addr: info.factory_addr.context("missing factory_addr")?,
         role: info.role.context("missing role")?,
         bands,
         // TODO(https://fxbug.dev/42169534): This field will be replaced in the new driver features

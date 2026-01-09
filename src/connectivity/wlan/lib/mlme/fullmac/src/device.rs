@@ -361,6 +361,7 @@ pub mod test_utils {
                     start_fn_status_mock: None,
                     query_device_info_mock: Some(fidl_fullmac::WlanFullmacImplQueryResponse {
                         sta_addr: Some([0u8; 6]),
+                        factory_addr: Some([0u8; 6]),
                         role: Some(fidl_common::WlanMacRole::Client),
                         band_caps: Some(vec![]),
                         ..Default::default()

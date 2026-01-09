@@ -301,6 +301,7 @@ mod tests {
     fn test_get_device_band_cap() {
         let device_info = fidl_mlme::DeviceInfo {
             sta_addr: [0; 6],
+            factory_addr: [0; 6],
             role: fidl_common::WlanMacRole::Client,
             bands: vec![fake_5ghz_band_capability_ht(ie::ChanWidthSet::TWENTY_FORTY)],
             softmac_hardware_capability: 0,

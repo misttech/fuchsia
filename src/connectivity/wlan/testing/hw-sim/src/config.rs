@@ -19,6 +19,7 @@ pub(crate) fn create_wlantap_config(
     wlantap::WlantapPhyConfig {
         // TODO(https://fxbug.dev/42143255): wlantap will configure all of its ifaces to use the same MAC address
         sta_addr: sta_addr.to_array(),
+        factory_addr: sta_addr.to_array(),
         supported_phys: vec![
             fidl_common::WlanPhyType::Dsss,
             fidl_common::WlanPhyType::Hr,

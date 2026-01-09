@@ -51,6 +51,7 @@ impl FullmacDriverConfig {
 pub fn default_fullmac_query_info() -> fidl_fullmac::WlanFullmacImplQueryResponse {
     fidl_fullmac::WlanFullmacImplQueryResponse {
         sta_addr: Some(DEFAULT_CLIENT_STA_ADDR),
+        factory_addr: Some(DEFAULT_CLIENT_STA_ADDR),
         role: Some(fidl_common::WlanMacRole::Client),
         band_caps: Some(vec![default_fullmac_band_capability()]),
         ..Default::default()

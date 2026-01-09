@@ -50,7 +50,10 @@ type BandCapability = struct {
 };
 
 type DeviceInfo = struct {
+    // Current station MAC address.
     sta_addr ieee80211.MacAddr;
+    // MAC address as assigned in the factory.
+    factory_addr ieee80211.MacAddr;
     role fuchsia.wlan.common.WlanMacRole;
     bands vector<BandCapability>:fuchsia.wlan.common.MAX_BANDS;
 

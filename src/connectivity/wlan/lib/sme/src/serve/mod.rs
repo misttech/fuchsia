@@ -581,6 +581,7 @@ mod tests {
         query_responder.respond(fidl_mlme::DeviceInfo {
             role: mac_role,
             sta_addr: [2; 6],
+            factory_addr: [2; 6],
             bands: vec![],
             softmac_hardware_capability: 0,
             qos_capable: false,

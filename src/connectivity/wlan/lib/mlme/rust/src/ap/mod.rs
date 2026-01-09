@@ -1465,6 +1465,7 @@ mod tests {
             receiver.await.unwrap(),
             fidl_mlme::DeviceInfo {
                 sta_addr: BSSID.to_array(),
+                factory_addr: BSSID.to_array(),
                 role: fidl_common::WlanMacRole::Ap,
                 bands: test_utils::fake_mlme_band_caps(),
                 softmac_hardware_capability: 0,

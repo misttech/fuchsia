@@ -57,6 +57,7 @@ struct BaseWlanFullmacServerForStartup
         .operating_channels({{1}});
 
     response.sta_addr({std::array<uint8_t, 6>{8, 8, 8, 8, 8, 8}})
+        .factory_addr({std::array<uint8_t, 6>{8, 8, 8, 8, 8, 8}})
         .role({fuchsia_wlan_common::WlanMacRole::kClient})
         .band_caps({{band_capability}})
         .factory_addr({std::array<uint8_t, 6>{8, 8, 8, 8, 8, 8}});

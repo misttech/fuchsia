@@ -90,6 +90,8 @@ pub fn mlme_device_info_from_softmac(
         .transpose()?;
     Ok(fidl_mlme::DeviceInfo {
         sta_addr: required(query_response.sta_addr, "sta_addr")?,
+        //TODO(): Replace with factory_addr when it is added to the FIDL.
+        factory_addr: required(query_response.sta_addr, "sta_addr")?,
         role: required(query_response.mac_role, "mac_role")?,
         bands: required(band_caps, "band_caps")?,
         qos_capable: false,
