@@ -1522,7 +1522,10 @@ async fn handle_nl80211_message<I: IfaceManager>(
             match get_client_iface_and_id(&message.payload.attrs[..], &iface_manager).await {
                 Ok((client_iface, _)) => {
                     const INVALID_RSSI: i8 = -127;
-                    let rssi = client_iface.get_connected_network_rssi().unwrap_or(INVALID_RSSI);
+                    let rssi = client_iface
+                        .get_connected_network()
+                        .map(|network| network.rssi)
+                        .unwrap_or(INVALID_RSSI);
                     responder
                         .take()
                         .send(Ok(vec![build_nl80211_message(
@@ -1664,11 +1667,18 @@ async fn handle_nl80211_message<I: IfaceManager>(
                 Ok((client_iface, iface_id)) => {
                     let results = client_iface.get_last_scan_results();
                     info!("Processing {} scan results", results.len());
+                    let connected_bssid =
+                        client_iface.get_connected_network().map(|network| network.bssid);
                     let mut resp = vec![];
                     for result in results {
+                        let is_associated = connected_bssid
+                            .is_some_and(|bssid| *bssid.as_array() == result.bss_description.bssid);
                         resp.push(build_nl80211_message(
                             Nl80211Cmd::NewScanResults,
-                            vec![Nl80211Attr::IfaceIndex(iface_id), convert_scan_result(result)],
+                            vec![
+                                Nl80211Attr::IfaceIndex(iface_id),
+                                convert_scan_result(result, is_associated),
+                            ],
                         ));
                     }
                     resp.push(build_nl80211_done());
@@ -1744,10 +1754,22 @@ impl DefaultDrop for fidl_wlanix::Nl80211MessageV2Responder {
     }
 }
 
-fn convert_scan_result(result: fidl_sme::ScanResult) -> Nl80211Attr {
-    use crate::nl80211::{ChainSignalAttr, Nl80211BssAttr};
+// Convert the scan result to nl80211 attribute.
+//
+// If the device is associated to the BSS in this scan result, pass `is_associated = true`,
+// otherwise, pass `false`. The |is_associated| flag is used to compute the BSS status attribute
+// value within the nl80211 attribute returned by this function.
+fn convert_scan_result(result: fidl_sme::ScanResult, is_associated: bool) -> Nl80211Attr {
+    use crate::nl80211::{ChainSignalAttr, Nl80211BssAttr, Nl80211BssStatus};
     let channel = Channel::new(result.bss_description.channel.primary, Cbw::Cbw20);
     let center_freq = channel.get_center_freq().expect("Failed to get center freq").into();
+    // If the device is connected to this BSS, upstream expects the associated status to be
+    // indicated in the scan result. Otherwise it won't signal poll. See b/473850388#comment10
+    let bss_status = if is_associated {
+        Nl80211BssStatus::Associated
+    } else {
+        Nl80211BssStatus::NotAuthenticated
+    };
     Nl80211Attr::Bss(vec![
         Nl80211BssAttr::Bssid(result.bss_description.bssid),
         Nl80211BssAttr::Frequency(center_freq),
@@ -1755,7 +1777,7 @@ fn convert_scan_result(result: fidl_sme::ScanResult) -> Nl80211Attr {
         Nl80211BssAttr::LastSeenBoottime(fasync::BootInstant::now().into_nanos() as u64),
         Nl80211BssAttr::SignalMbm(result.bss_description.rssi_dbm as i32 * 100),
         Nl80211BssAttr::Capability(result.bss_description.capability_info),
-        Nl80211BssAttr::Status(0),
+        Nl80211BssAttr::Status(bss_status),
         // TODO(b/316038074): Determine whether we should provide real chain signals.
         Nl80211BssAttr::ChainSignal(vec![ChainSignalAttr {
             id: 0,

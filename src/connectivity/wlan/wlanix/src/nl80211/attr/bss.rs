@@ -2,9 +2,9 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+use netlink_packet_utils::Emitable;
 use netlink_packet_utils::byteorder::{ByteOrder, NativeEndian};
 use netlink_packet_utils::nla::Nla;
-use netlink_packet_utils::Emitable;
 use std::mem::size_of_val;
 
 use crate::nl80211::constants::*;
@@ -17,7 +17,7 @@ pub enum Nl80211BssAttr {
     LastSeenBoottime(u64),
     SignalMbm(i32),
     Capability(u16),
-    Status(u32),
+    Status(Nl80211BssStatus),
     ChainSignal(Vec<ChainSignalAttr>),
 }
 
@@ -31,7 +31,7 @@ impl Nla for Nl80211BssAttr {
             LastSeenBoottime(val) => size_of_val(val),
             SignalMbm(val) => size_of_val(val),
             Capability(val) => size_of_val(val),
-            Status(val) => size_of_val(val),
+            Status(_) => size_of::<u32>(),
             ChainSignal(val) => val.as_slice().buffer_len(),
         }
     }
@@ -59,8 +59,26 @@ impl Nla for Nl80211BssAttr {
             LastSeenBoottime(val) => NativeEndian::write_u64(buffer, *val),
             SignalMbm(val) => NativeEndian::write_i32(buffer, *val),
             Capability(val) => NativeEndian::write_u16(buffer, *val),
-            Status(val) => NativeEndian::write_u32(buffer, *val),
+            Status(val) => NativeEndian::write_u32(buffer, val.into()),
             ChainSignal(val) => val.as_slice().emit(buffer),
+        }
+    }
+}
+
+#[derive(Clone, Eq, PartialEq, Debug)]
+pub enum Nl80211BssStatus {
+    NotAuthenticated,
+    Authenticated,
+    Associated,
+}
+
+impl From<&Nl80211BssStatus> for u32 {
+    fn from(state: &Nl80211BssStatus) -> u32 {
+        use Nl80211BssStatus::*;
+        match state {
+            NotAuthenticated => 0,
+            Authenticated => NL80211_BSS_STATUS_AUTHENTICATED,
+            Associated => NL80211_BSS_STATUS_ASSOCIATED,
         }
     }
 }
@@ -98,7 +116,7 @@ mod tests {
             Nl80211BssAttr::LastSeenBoottime(0xccddeeff),
             Nl80211BssAttr::SignalMbm(0x0a0b),
             Nl80211BssAttr::Capability(0x1a1b),
-            Nl80211BssAttr::Status(0x2a2b2c),
+            Nl80211BssAttr::Status(Nl80211BssStatus::Associated),
             Nl80211BssAttr::ChainSignal(vec![
                 ChainSignalAttr { id: 99, rssi: -20 },
                 ChainSignalAttr { id: 111, rssi: -40 },
@@ -132,7 +150,7 @@ mod tests {
             0, 0, // padding
             8, 0, // length
             9, 0, // kind: status
-            0x2c, 0x2b, 0x2a, 0, // value
+            2, 0, 0, 0, // value
             20, 0, // length
             19, 0, // kind
             5, 0, 99, 0, 236, 0, 0, 0, // first chain

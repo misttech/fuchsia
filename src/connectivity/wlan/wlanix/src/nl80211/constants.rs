@@ -532,6 +532,11 @@ pub const NL80211_BSS_FREQUENCY_OFFSET: u16 = 20;
 pub const NL80211_BSS_MLO_LINK_ID: u16 = 21;
 pub const NL80211_BSS_MLD_ADDR: u16 = 22;
 
+// Nl80211 BSS Status values
+
+pub const NL80211_BSS_STATUS_AUTHENTICATED: u32 = 1;
+pub const NL80211_BSS_STATUS_ASSOCIATED: u32 = 2;
+
 // Frequency attributes
 
 pub const __NL80211_FREQUENCY_ATTR_INVALID: u16 = 0;

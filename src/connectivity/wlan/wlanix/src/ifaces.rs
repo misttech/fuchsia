@@ -318,6 +318,12 @@ pub(crate) struct PowerState {
     recorder: Option<power_observability_state_recorder::EnumStateRecorder<StaIfacePowerLevel>>,
 }
 
+#[derive(Debug, Clone)]
+pub(crate) struct ConnectedNetwork {
+    pub bssid: Bssid,
+    pub rssi: i8,
+}
+
 #[async_trait]
 pub(crate) trait ClientIface: Sync + Send {
     async fn query(&self) -> Result<fidl_device_service::QueryIfaceResponse, Error>;
@@ -331,7 +337,7 @@ pub(crate) trait ClientIface: Sync + Send {
         requested_bssid: Option<Bssid>,
     ) -> Result<ConnectResult, Error>;
     async fn disconnect(&self) -> Result<(), Error>;
-    fn get_connected_network_rssi(&self) -> Option<i8>;
+    fn get_connected_network(&self) -> Option<ConnectedNetwork>;
 
     fn on_disconnect(&self, info: &fidl_sme::DisconnectSource);
     fn on_signal_report(&self, ind: fidl_internal::SignalReportIndication);
@@ -365,7 +371,7 @@ pub(crate) struct SmeClientIface {
     sme_proxy: fidl_sme::ClientSmeProxy,
     last_scan_results: Arc<Mutex<Option<LastScanResults>>>,
     scan_abort_signal: Arc<Mutex<Option<oneshot::Sender<()>>>>,
-    connected_network_rssi: Arc<Mutex<Option<i8>>>,
+    connected_network: Arc<Mutex<Option<ConnectedNetwork>>>,
     // TODO(b/298030838): Remove unmanaged iface support when wlanix is the sole config path.
     wlanix_provisioned: bool,
     bss_scorer: BssScorer,
@@ -422,7 +428,7 @@ impl SmeClientIface {
             monitor_svc,
             last_scan_results: Arc::new(Mutex::new(None)),
             scan_abort_signal: Arc::new(Mutex::new(None)),
-            connected_network_rssi: Arc::new(Mutex::new(None)),
+            connected_network: Arc::new(Mutex::new(None)),
             wlanix_provisioned: true,
             bss_scorer: BssScorer::new(),
             power_state: Arc::new(MutexAsync::new(PowerState {
@@ -617,6 +623,10 @@ impl ClientIface for SmeClientIface {
 
         info!("Received connect result from SME: {:?}", sme_result);
         if sme_result.code == fidl_ieee80211::StatusCode::Success {
+            *self.connected_network.lock() = Some(ConnectedNetwork {
+                bssid: bss_description.bssid,
+                rssi: bss_description.rssi_dbm,
+            });
             Ok(ConnectResult::Success(ConnectSuccess {
                 bss: Box::new(bss_description),
                 transaction_stream: stream,
@@ -646,16 +656,18 @@ impl ClientIface for SmeClientIface {
         Ok(())
     }
 
-    fn get_connected_network_rssi(&self) -> Option<i8> {
-        *self.connected_network_rssi.lock()
+    fn get_connected_network(&self) -> Option<ConnectedNetwork> {
+        self.connected_network.lock().clone()
     }
 
     fn on_disconnect(&self, _info: &fidl_sme::DisconnectSource) {
-        self.connected_network_rssi.lock().take();
+        self.connected_network.lock().take();
     }
 
     fn on_signal_report(&self, ind: fidl_internal::SignalReportIndication) {
-        let _prev = self.connected_network_rssi.lock().replace(ind.rssi_dbm);
+        if let Some(connected_network) = self.connected_network.lock().as_mut() {
+            connected_network.rssi = ind.rssi_dbm;
+        }
     }
 
     async fn set_bt_coexistence_mode(
@@ -835,6 +847,10 @@ pub mod test_utils {
         }
     }
 
+    pub fn fake_connected_network() -> ConnectedNetwork {
+        ConnectedNetwork { bssid: Bssid::from([1, 2, 3, 4, 5, 6]), rssi: -35 }
+    }
+
     #[derive(Debug, Clone)]
     pub enum ClientIfaceCall {
         Query,
@@ -939,9 +955,9 @@ pub mod test_utils {
             Ok(())
         }
 
-        fn get_connected_network_rssi(&self) -> Option<i8> {
+        fn get_connected_network(&self) -> Option<ConnectedNetwork> {
             self.calls.lock().push(ClientIfaceCall::GetConnectedNetworkRssi);
-            Some(-30)
+            None
         }
 
         fn on_disconnect(&self, info: &fidl_sme::DisconnectSource) {
@@ -1341,7 +1357,7 @@ mod tests {
             monitor_svc,
             last_scan_results: Arc::new(Mutex::new(None)),
             scan_abort_signal: Arc::new(Mutex::new(None)),
-            connected_network_rssi: Arc::new(Mutex::new(None)),
+            connected_network: Arc::new(Mutex::new(None)),
             wlanix_provisioned: true,
             bss_scorer: BssScorer::new(),
             power_state: Arc::new(MutexAsync::new(PowerState {
@@ -1569,7 +1585,7 @@ mod tests {
             monitor_svc,
             last_scan_results: Arc::new(Mutex::new(None)),
             scan_abort_signal: Arc::new(Mutex::new(None)),
-            connected_network_rssi: Arc::new(Mutex::new(None)),
+            connected_network: Arc::new(Mutex::new(None)),
             wlanix_provisioned: false, // set to false for this test
             bss_scorer: BssScorer::new(),
             power_state: Arc::new(MutexAsync::new(PowerState {
@@ -1862,6 +1878,7 @@ mod tests {
         let bss_description = fake_fidl_bss_description!(protection => fake_protection_cfg,
             ssid: Ssid::try_from("foo").unwrap(),
             bssid: [1, 2, 3, 4, 5, 6],
+            rssi_dbm: -30,
         );
         *iface.last_scan_results.lock() = Some(LastScanResults::new(
             fasync::BootInstant::now(),
@@ -1873,6 +1890,8 @@ mod tests {
                 timestamp_nanos: 1,
             }],
         ));
+
+        assert_matches!(iface.get_connected_network(), None);
 
         let bssid = if bssid_specified { Some(Bssid::from([1, 2, 3, 4, 5, 6])) } else { None };
         let mut connect_fut = iface.connect_to_network(b"foo", credential, bssid);
@@ -1896,6 +1915,10 @@ mod tests {
         let connected_result = assert_matches!(connect_result, Ok(ConnectResult::Success(r)) => r);
         assert_eq!(connected_result.bss.ssid, Ssid::try_from("foo").unwrap());
         assert_eq!(connected_result.bss.bssid, Bssid::from([1, 2, 3, 4, 5, 6]));
+
+        let connected_network = assert_matches!(iface.get_connected_network(), Some(n) => n);
+        assert_eq!(connected_network.bssid, Bssid::from([1, 2, 3, 4, 5, 6]));
+        assert_eq!(connected_network.rssi, -30);
     }
 
     #[test]
@@ -2318,12 +2341,12 @@ mod tests {
         let (_exec, _monitor_stream, _sme_stream, _telemetry_stream, _manager, iface) =
             setup_test_manager_with_iface();
 
-        iface.on_signal_report(fidl_internal::SignalReportIndication { rssi_dbm: -40, snr_db: 20 });
-        assert_matches!(iface.get_connected_network_rssi(), Some(-40));
+        *iface.connected_network.lock() = Some(test_utils::fake_connected_network());
+        assert_matches!(iface.get_connected_network(), Some(_));
         iface.on_disconnect(&fidl_sme::DisconnectSource::User(
             fidl_sme::UserDisconnectReason::Unknown,
         ));
-        assert_matches!(iface.get_connected_network_rssi(), None);
+        assert_matches!(iface.get_connected_network(), None);
     }
 
     #[test]
@@ -2331,9 +2354,14 @@ mod tests {
         let (_exec, _monitor_stream, _sme_stream, _telemetry_stream, _manager, iface) =
             setup_test_manager_with_iface();
 
-        assert_matches!(iface.get_connected_network_rssi(), None);
+        assert_matches!(iface.get_connected_network(), None);
         iface.on_signal_report(fidl_internal::SignalReportIndication { rssi_dbm: -40, snr_db: 20 });
-        assert_matches!(iface.get_connected_network_rssi(), Some(-40));
+        assert_matches!(iface.get_connected_network(), None);
+
+        *iface.connected_network.lock() = Some(test_utils::fake_connected_network());
+        assert_matches!(iface.get_connected_network().map(|n| n.rssi), Some(-35));
+        iface.on_signal_report(fidl_internal::SignalReportIndication { rssi_dbm: -40, snr_db: 20 });
+        assert_matches!(iface.get_connected_network().map(|n| n.rssi), Some(-40));
     }
 
     #[test]
