@@ -15,6 +15,7 @@ cc_test_executable("amlogic-decoder-unittest-bin") {
     "//sdk/lib/async_patterns/testing/cpp",
     "//sdk/lib/component/outgoing/cpp",
     "//sdk/lib/driver/fake-bti/cpp",
+    "//sdk/lib/driver/fake-clock/cpp",
     "//sdk/lib/driver/fake-platform-device/cpp",
     "//sdk/lib/driver/mmio/testing/cpp",
     "//src/devices/testing/mock-ddk",

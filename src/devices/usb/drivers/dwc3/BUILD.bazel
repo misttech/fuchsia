@@ -143,6 +143,7 @@ fuchsia_cc_test(
         "@com_google_googletest//:gtest_main",
         "@fuchsia_sdk//fidl/fuchsia.hardware.interconnect:fuchsia.hardware.interconnect_cpp",
         "@fuchsia_sdk//pkg/component_outgoing_cpp",
+        "@fuchsia_sdk//pkg/driver_fake_clock_cpp",
         "@fuchsia_sdk//pkg/driver_fake_platform_device_cpp",
         "@fuchsia_sdk//pkg/driver_fake_vreg_cpp",
         "@fuchsia_sdk//pkg/driver_testing_cpp",

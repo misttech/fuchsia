@@ -8,6 +8,7 @@
 #include <lib/async_patterns/testing/cpp/dispatcher_bound.h>
 #include <lib/component/outgoing/cpp/outgoing_directory.h>
 #include <lib/ddk/metadata.h>
+#include <lib/driver/fake-clock/cpp/fake-clock.h>
 #include <lib/driver/fake-mmio-reg/cpp/fake-mmio-reg.h>
 #include <lib/driver/fake-platform-device/cpp/fake-pdev.h>
 #include <lib/fidl/cpp/wire/connect_service.h>
@@ -36,70 +37,15 @@ static constexpr float kTestDeltaGain = 1.f;
 static constexpr float kTestTurnOnNsecs = 12345;
 static constexpr float kTestTurnOffNsecs = 67890;
 
-// Fake clock for power management test.
-class FakeClock : public fidl::testing::WireTestBase<fuchsia_hardware_clock::Clock> {
- public:
-  FakeClock() = default;
-
-  bool IsFakeClockEnabled() { return enabled_; }
-  fidl::ClientEnd<fuchsia_hardware_clock::Clock> Connect() {
-    auto endpoints = fidl::Endpoints<fuchsia_hardware_clock::Clock>::Create();
-    bindings_.AddBinding(async_get_default_dispatcher(), std::move(endpoints.server), this,
-                         fidl::kIgnoreBindingClosure);
-    return std::move(endpoints.client);
-  }
-
- protected:
-  void Enable(EnableCompleter::Sync& completer) override {
-    enabled_ = true;
-    completer.Reply(zx::ok());
-  }
-  void Disable(DisableCompleter::Sync& completer) override {
-    enabled_ = false;
-    completer.Reply(zx::ok());
-  }
-  void IsEnabled(IsEnabledCompleter::Sync& completer) override {
-    completer.Reply(zx::error(ZX_ERR_NOT_SUPPORTED));
-  }
-
-  void SetRate(::fuchsia_hardware_clock::wire::ClockSetRateRequest* request,
-               SetRateCompleter::Sync& completer) override {
-    completer.Reply(zx::error(ZX_ERR_NOT_SUPPORTED));
-  }
-  void QuerySupportedRate(::fuchsia_hardware_clock::wire::ClockQuerySupportedRateRequest* request,
-                          QuerySupportedRateCompleter::Sync& completer) override {
-    completer.Reply(zx::error(ZX_ERR_NOT_SUPPORTED));
-  }
-
-  void GetRate(GetRateCompleter::Sync& completer) override {
-    completer.Reply(zx::error(ZX_ERR_NOT_SUPPORTED));
-  }
-  void SetInput(::fuchsia_hardware_clock::wire::ClockSetInputRequest* request,
-                SetInputCompleter::Sync& completer) override {
-    completer.Reply(zx::error(ZX_ERR_NOT_SUPPORTED));
-  }
-  void GetNumInputs(GetNumInputsCompleter::Sync& completer) override {
-    completer.Reply(zx::error(ZX_ERR_NOT_SUPPORTED));
-  }
-  void GetInput(GetInputCompleter::Sync& completer) override {
-    completer.Reply(zx::error(ZX_ERR_NOT_SUPPORTED));
-  }
-  void NotImplemented_(const std::string& name, fidl::CompleterBase& completer) override {
-    completer.Close(ZX_ERR_NOT_SUPPORTED);
-  }
-
- private:
-  bool enabled_ = false;
-  fidl::ServerBindingGroup<fuchsia_hardware_clock::Clock> bindings_;
-};
-
 class PowerManagementTest : public zxtest::Test {
  public:
   void SetUp() override {
     ASSERT_OK(loop_.StartThread("pm-test-loop"));
-    auto clock_gate = clock_gate_.SyncCall(&FakeClock::Connect);
+    auto clock_gate = clock_gate_.SyncCall(
+        [&](fdf_fake::FakeClock* clock) { return clock->Connect(async_get_default_dispatcher()); });
     clock_gate_client_ = fidl::WireSyncClient<fuchsia_hardware_clock::Clock>(std::move(clock_gate));
-    auto pll = pll_.SyncCall(&FakeClock::Connect);
+    auto pll = pll_.SyncCall(
+        [&](fdf_fake::FakeClock* clock) { return clock->Connect(async_get_default_dispatcher()); });
     pll_client_ = fidl::WireSyncClient<fuchsia_hardware_clock::Clock>(std::move(pll));
     enable_gpio_.SyncCall(&fake_gpio::FakeGpio::SetCurrentState,
                           fake_gpio::State{.sub_state = fake_gpio::WriteSubState{.value = 1}});
@@ -112,14 +58,16 @@ class PowerManagementTest : public zxtest::Test {
 
  protected:
   std::shared_ptr<zx_device> fake_parent() const { return fake_parent_; }
-  bool IsClockGateEnabled() { return clock_gate_.SyncCall(&FakeClock::IsFakeClockEnabled); }
-  bool IsPllEnabled() { return pll_.SyncCall(&FakeClock::IsFakeClockEnabled); }
+  bool IsClockGateEnabled() { return clock_gate_.SyncCall(&fdf_fake::FakeClock::enabled); }
+  bool IsPllEnabled() { return pll_.SyncCall(&fdf_fake::FakeClock::enabled); }
 
   async::Loop loop_{&kAsyncLoopConfigAttachToCurrentThread};
   async_patterns::TestDispatcherBound<fake_gpio::FakeGpio> enable_gpio_{loop_.dispatcher(),
                                                                         std::in_place};
-  async_patterns::TestDispatcherBound<FakeClock> clock_gate_{loop_.dispatcher(), std::in_place};
-  async_patterns::TestDispatcherBound<FakeClock> pll_{loop_.dispatcher(), std::in_place};
+  async_patterns::TestDispatcherBound<fdf_fake::FakeClock> clock_gate_{loop_.dispatcher(),
+                                                                       std::in_place, nullptr};
+  async_patterns::TestDispatcherBound<fdf_fake::FakeClock> pll_{loop_.dispatcher(), std::in_place,
+                                                                nullptr};
   fidl::WireSyncClient<fuchsia_hardware_clock::Clock> clock_gate_client_;
   fidl::WireSyncClient<fuchsia_hardware_clock::Clock> pll_client_;
   std::shared_ptr<zx_device> fake_parent_;

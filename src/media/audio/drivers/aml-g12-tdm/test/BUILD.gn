@@ -18,6 +18,7 @@ cc_test_executable("aml-g12-tdm-test-bin") {
     "//sdk/lib/async-loop:async-loop-default",
     "//sdk/lib/async_patterns/testing/cpp",
     "//sdk/lib/component/outgoing/cpp",
+    "//sdk/lib/driver/fake-clock/cpp",
     "//sdk/lib/driver/fake-mmio-reg/cpp",
     "//sdk/lib/driver/fake-platform-device/cpp",
     "//sdk/lib/inspect/testing/cpp:zxtest",

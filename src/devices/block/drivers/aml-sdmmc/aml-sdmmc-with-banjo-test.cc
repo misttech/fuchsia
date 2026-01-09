@@ -12,6 +12,7 @@
 #include <lib/async_patterns/testing/cpp/dispatcher_bound.h>
 #include <lib/driver/component/cpp/driver_export.h>
 #include <lib/driver/fake-bti/cpp/fake-bti.h>
+#include <lib/driver/fake-clock/cpp/fake-clock.h>
 #include <lib/driver/fake-platform-device/cpp/fake-pdev.h>
 #include <lib/driver/mmio/cpp/mmio-buffer.h>
 #include <lib/driver/mmio/testing/cpp/test-helper.h>
@@ -157,71 +158,6 @@ class TestAmlSdmmcWithBanjo : public AmlSdmmcWithBanjo {
   std::optional<fdf::MmioView> view_;
 };
 
-class FakeClock : public fidl::WireServer<fuchsia_hardware_clock::Clock> {
- public:
-  fuchsia_hardware_clock::Service::InstanceHandler GetInstanceHandler() {
-    return fuchsia_hardware_clock::Service::InstanceHandler({
-        .clock = bindings_.CreateHandler(this, fdf::Dispatcher::GetCurrent()->async_dispatcher(),
-                                         fidl::kIgnoreBindingClosure),
-    });
-  }
-
-  bool enabled() const { return enabled_; }
-
- private:
-  void Enable(EnableCompleter::Sync& completer) override {
-    enabled_ = true;
-    completer.ReplySuccess();
-  }
-
-  void Disable(DisableCompleter::Sync& completer) override {
-    enabled_ = false;
-    completer.ReplySuccess();
-  }
-
-  void IsEnabled(IsEnabledCompleter::Sync& completer) override {
-    completer.ReplyError(ZX_ERR_NOT_SUPPORTED);
-  }
-
-  void SetRate(SetRateRequestView request, SetRateCompleter::Sync& completer) override {
-    completer.ReplyError(ZX_ERR_NOT_SUPPORTED);
-  }
-
-  void QuerySupportedRate(QuerySupportedRateRequestView request,
-                          QuerySupportedRateCompleter::Sync& completer) override {
-    completer.ReplyError(ZX_ERR_NOT_SUPPORTED);
-  }
-
-  void GetRate(GetRateCompleter::Sync& completer) override {
-    completer.ReplyError(ZX_ERR_NOT_SUPPORTED);
-  }
-
-  void SetInput(SetInputRequestView request, SetInputCompleter::Sync& completer) override {
-    completer.ReplyError(ZX_ERR_NOT_SUPPORTED);
-  }
-
-  void GetNumInputs(GetNumInputsCompleter::Sync& completer) override {
-    completer.ReplyError(ZX_ERR_NOT_SUPPORTED);
-  }
-
-  void GetInput(GetInputCompleter::Sync& completer) override {
-    completer.ReplyError(ZX_ERR_NOT_SUPPORTED);
-  }
-
-  void GetProperties(GetPropertiesCompleter::Sync& completer) override {
-    completer.Reply(0, "test");
-  }
-
-  void handle_unknown_method(fidl::UnknownMethodMetadata<fuchsia_hardware_clock::Clock> metadata,
-                             fidl::UnknownMethodCompleter::Sync& completer) override {
-    ZX_ASSERT_MSG(0, "Unexpected FIDL Method Ordinal, ord = 0x%lx", metadata.method_ordinal);
-  }
-
-  fidl::ServerBindingGroup<fuchsia_hardware_clock::Clock> bindings_;
-
-  bool enabled_ = false;
-};
-
 class FakeLessor : public fidl::Server<fuchsia_power_broker::Lessor> {
  public:
   void AddSideEffect(fit::function<void()> side_effect) { side_effect_ = std::move(side_effect); }
@@ -312,7 +248,7 @@ struct IncomingNamespace {
   fdf_testing::TestNode node{"root"};
   fdf_testing::internal::TestEnvironment env{fdf::Dispatcher::GetCurrent()->get()};
   fdf_fake::FakePDev pdev_server;
-  FakeClock clock_server;
+  fdf_fake::FakeClock clock_server;
   FakePowerBroker power_broker;
 };
 
@@ -378,7 +314,9 @@ class AmlSdmmcWithBanjoTest : public zxtest::Test {
       {
         auto result =
             incoming->env.incoming_directory().AddService<fuchsia_hardware_clock::Service>(
-                std::move(incoming->clock_server.GetInstanceHandler()), "clock-gate");
+                incoming->clock_server.CreateInstanceHandler(
+                    fdf::Dispatcher::GetCurrent()->async_dispatcher()),
+                "clock-gate");
         ASSERT_TRUE(result.is_ok());
       }
 

@@ -123,6 +123,7 @@ test("aml-sdmmc-test-bin") {
     "//sdk/fidl/fuchsia.power.system:fuchsia.power.system_cpp",
     "//sdk/lib/async_patterns/testing/cpp",
     "//sdk/lib/driver/fake-bti/cpp",
+    "//sdk/lib/driver/fake-clock/cpp",
     "//sdk/lib/driver/fake-platform-device/cpp",
     "//sdk/lib/driver/mmio/testing/cpp",
     "//sdk/lib/driver/power/cpp/testing",

@@ -9,6 +9,7 @@
 #include <lib/async_patterns/testing/cpp/dispatcher_bound.h>
 #include <lib/component/outgoing/cpp/outgoing_directory.h>
 #include <lib/ddk/platform-defs.h>
+#include <lib/driver/fake-clock/cpp/fake-clock.h>
 #include <lib/driver/fake-platform-device/cpp/fake-pdev.h>
 #include <zircon/types.h>
 
@@ -38,13 +39,6 @@ class FakeCanvas : public fidl::testing::WireTestBase<fuchsia_hardware_amlogicca
   }
 };
 
-class FakeClock : public fidl::testing::WireTestBase<fuchsia_hardware_clock::Clock> {
- public:
-  void NotImplemented_(const std::string& name, ::fidl::CompleterBase& completer) final {
-    completer.Close(ZX_ERR_NOT_SUPPORTED);
-  }
-};
-
 struct IncomingNamespace {
   fdf_fake::FakePDev pdev_server;
   component::OutgoingDirectory outgoing{async_get_default_dispatcher()};
@@ -52,9 +46,9 @@ struct IncomingNamespace {
   component::OutgoingDirectory outgoing_sysmem{async_get_default_dispatcher()};
   FakeCanvas fake_canvas;
   component::OutgoingDirectory outgoing_canvas{async_get_default_dispatcher()};
-  FakeClock fake_gclk_vdec;
+  fdf_fake::FakeClock fake_gclk_vdec{async_get_default_dispatcher()};
   component::OutgoingDirectory outgoing_gclk_vdec{async_get_default_dispatcher()};
-  FakeClock fake_clk_dos;
+  fdf_fake::FakeClock fake_clk_dos{async_get_default_dispatcher()};
   component::OutgoingDirectory outgoing_clk_dos{async_get_default_dispatcher()};
 };
 
@@ -127,10 +121,8 @@ class BindingTest : public testing::Test {
     incoming_.SyncCall(
         [server = std::move(outgoing_endpoints.server)](IncomingNamespace* infra) mutable {
           ASSERT_EQ(ZX_OK, infra->outgoing_gclk_vdec
-                               .AddService<fuchsia_hardware_platform_device::Service>(
-                                   fuchsia_hardware_clock::Service::InstanceHandler(
-                                       {.clock = infra->fake_gclk_vdec.bind_handler(
-                                            async_get_default_dispatcher())}))
+                               .AddService<fuchsia_hardware_clock::Service>(
+                                   infra->fake_gclk_vdec.CreateInstanceHandler())
                                .status_value());
 
           ASSERT_EQ(ZX_OK, infra->outgoing_gclk_vdec.Serve(std::move(server)).status_value());
@@ -141,18 +133,15 @@ class BindingTest : public testing::Test {
 
   void InitClkDos() {
     auto outgoing_endpoints = fidl::Endpoints<fuchsia_io::Directory>::Create();
-    incoming_.SyncCall([server = std::move(outgoing_endpoints.server)](
-                           IncomingNamespace* infra) mutable {
-      ASSERT_EQ(
-          ZX_OK,
-          infra->outgoing_clk_dos
-              .AddService<fuchsia_hardware_platform_device::Service>(
-                  fuchsia_hardware_clock::Service::InstanceHandler(
-                      {.clock = infra->fake_clk_dos.bind_handler(async_get_default_dispatcher())}))
-              .status_value());
+    incoming_.SyncCall(
+        [server = std::move(outgoing_endpoints.server)](IncomingNamespace* infra) mutable {
+          ASSERT_EQ(ZX_OK, infra->outgoing_clk_dos
+                               .AddService<fuchsia_hardware_clock::Service>(
+                                   infra->fake_clk_dos.CreateInstanceHandler())
+                               .status_value());
 
-      ASSERT_EQ(ZX_OK, infra->outgoing_clk_dos.Serve(std::move(server)).status_value());
-    });
+          ASSERT_EQ(ZX_OK, infra->outgoing_clk_dos.Serve(std::move(server)).status_value());
+        });
     root_->AddFidlService(fuchsia_hardware_clock::Service::Name,
                           std::move(outgoing_endpoints.client), "clock-dos");
   }

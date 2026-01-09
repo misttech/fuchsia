@@ -9,6 +9,7 @@
 #include <fidl/fuchsia.hardware.platform.device/cpp/fidl.h>
 #include <fidl/fuchsia.hardware.reset/cpp/test_base.h>
 #include <fidl/fuchsia.hardware.usb.phy/cpp/fidl.h>
+#include <lib/driver/fake-clock/cpp/fake-clock.h>
 #include <lib/driver/fake-vreg/cpp/fake-vreg.h>
 
 #include <optional>
@@ -59,38 +60,6 @@ class FakeReset : public fidl::testing::TestBase<freset::Reset> {
 
   bool toggled_ = false;
   fidl::ServerBindingGroup<freset::Reset> bindings_;
-};
-
-class FakeClock : public fidl::testing::TestBase<fuchsia_hardware_clock::Clock> {
- public:
-  fclock::Service::InstanceHandler GetInstanceHandler(async_dispatcher_t* dispatcher) {
-    return fclock::Service::InstanceHandler({
-        .clock = bindings_.CreateHandler(this, dispatcher, fidl::kIgnoreBindingClosure),
-    });
-  }
-
-  bool enabled() const { return enabled_; }
-
- private:
-  void Enable(EnableCompleter::Sync& completer) override {
-    enabled_ = true;
-    completer.Reply(zx::ok());
-  }
-
-  void Disable(DisableCompleter::Sync& completer) override {
-    enabled_ = false;
-    completer.Reply(zx::ok());
-  }
-
-  void handle_unknown_method(fidl::UnknownMethodMetadata<fuchsia_hardware_clock::Clock> metadata,
-                             fidl::UnknownMethodCompleter::Sync& completer) override {
-    FAIL();
-  }
-
-  void NotImplemented_(const std::string& name, fidl::CompleterBase& completer) override { FAIL(); }
-
-  bool enabled_ = false;
-  fidl::ServerBindingGroup<fuchsia_hardware_clock::Clock> bindings_;
 };
 
 class FakeUsbPhy : public fidl::Server<fphy::UsbPhy>, public fidl::Server<fphy::ConnectionWatcher> {
@@ -214,26 +183,26 @@ class Environment : public fdf_testing::Environment {
         usb_phy_.GetConnectionWatcherInstanceHandler(dispatcher), "dwc3-phy");
     EXPECT_TRUE(result.is_ok());
 
-    result = directory.AddService<fclock::Service>(clock_.GetInstanceHandler(dispatcher), "xo");
+    result = directory.AddService<fclock::Service>(clock_.CreateInstanceHandler(dispatcher), "xo");
+    EXPECT_TRUE(result.is_ok());
+
+    result = directory.AddService<fclock::Service>(clock_.CreateInstanceHandler(dispatcher),
+                                                   "sleep-clk");
+    EXPECT_TRUE(result.is_ok());
+
+    result = directory.AddService<fclock::Service>(clock_.CreateInstanceHandler(dispatcher),
+                                                   "iface-clk");
     EXPECT_TRUE(result.is_ok());
 
     result =
-        directory.AddService<fclock::Service>(clock_.GetInstanceHandler(dispatcher), "sleep-clk");
+        directory.AddService<fclock::Service>(clock_.CreateInstanceHandler(dispatcher), "core-clk");
     EXPECT_TRUE(result.is_ok());
 
     result =
-        directory.AddService<fclock::Service>(clock_.GetInstanceHandler(dispatcher), "iface-clk");
+        directory.AddService<fclock::Service>(clock_.CreateInstanceHandler(dispatcher), "utmi-clk");
     EXPECT_TRUE(result.is_ok());
 
-    result =
-        directory.AddService<fclock::Service>(clock_.GetInstanceHandler(dispatcher), "core-clk");
-    EXPECT_TRUE(result.is_ok());
-
-    result =
-        directory.AddService<fclock::Service>(clock_.GetInstanceHandler(dispatcher), "utmi-clk");
-    EXPECT_TRUE(result.is_ok());
-
-    result = directory.AddService<fclock::Service>(clock_.GetInstanceHandler(dispatcher),
+    result = directory.AddService<fclock::Service>(clock_.CreateInstanceHandler(dispatcher),
                                                    "bus-aggr-clk");
     EXPECT_TRUE(result.is_ok());
 
@@ -248,7 +217,7 @@ class Environment : public fdf_testing::Environment {
 
   ddk_fake::FakeMmioRegRegion& reg_region() { return reg_region_; }
 
-  const FakeClock& clock() const { return clock_; }
+  const fdf_fake::FakeClock& clock() const { return clock_; }
   FakeReset& reset() { return reset_; }
   const fdf_fake::FakeVreg& vreg() const { return vreg_; }
 
@@ -261,7 +230,7 @@ class Environment : public fdf_testing::Environment {
   ddk_fake::FakeMmioRegRegion reg_region_{kRegSize, kRegCount};
   FakePath path_;
   FakeUsbPhy usb_phy_;
-  FakeClock clock_;
+  fdf_fake::FakeClock clock_;
   FakeReset reset_;
   fdf_fake::FakeVreg vreg_;
 };
