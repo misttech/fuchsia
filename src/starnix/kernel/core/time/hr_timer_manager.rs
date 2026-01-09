@@ -7,7 +7,8 @@ use crate::power::{
     create_proxy_for_wake_events_counter_zero,
 };
 use crate::task::dynamic_thread_spawner::SpawnRequestBuilder;
-use crate::task::{CurrentTask, Kernel, LockedAndTask, TargetTime};
+use crate::task::{CurrentTask, Kernel, LockedAndTask};
+use crate::time::TargetTime;
 use crate::vfs::timer::{TimelineChangeObserver, TimerOps};
 use anyhow::{Context, Result};
 use fuchsia_inspect::ArrayProperty;
@@ -1241,8 +1242,8 @@ impl HrTimerNode {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::task::HrTimer;
     use crate::testing::spawn_kernel_and_run;
+    use crate::time::HrTimer;
     use fake_wake_alarms::{MAGIC_EXPIRE_DEADLINE, Response, serve_fake_wake_alarms};
     use fuchsia_runtime::{UtcClockUpdate, UtcInstant};
     use std::sync::LazyLock;

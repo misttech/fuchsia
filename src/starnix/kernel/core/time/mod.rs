@@ -4,3 +4,13 @@
 
 ///! The time module is responsible for managing the UTC clock of the kernel.
 pub mod utc;
+
+mod hr_timer_manager;
+mod interval_timer;
+mod timeline;
+mod timers;
+
+pub use hr_timer_manager::*;
+pub use interval_timer::*;
+pub use timeline::*;
+pub use timers::*;

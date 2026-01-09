@@ -10,14 +10,13 @@ use crate::signals::{
     DeliveryAction, QueuedSignals, SignalActions, SignalDetail, SignalInfo, action_for_signal,
     send_standard_signal,
 };
-use crate::task::interval_timer::IntervalTimerHandle;
 use crate::task::memory_attribution::MemoryAttributionLifecycleEvent;
 use crate::task::{
     AtomicStopState, ControllingTerminal, CurrentTask, ExitStatus, Kernel, PidTable, ProcessGroup,
     PtraceAllowedPtracers, PtraceEvent, PtraceOptions, PtraceStatus, Session, StopState, Task,
-    TaskFlags, TaskMutableState, TaskPersistentInfo, TimerTable, TypedWaitQueue, ZombiePtracees,
-    ptrace_detach,
+    TaskFlags, TaskMutableState, TaskPersistentInfo, TypedWaitQueue, ZombiePtracees, ptrace_detach,
 };
+use crate::time::{IntervalTimerHandle, TimerTable};
 use itertools::Itertools;
 use macro_rules_attribute::apply;
 use starnix_lifecycle::{AtomicU64Counter, DropNotifier};

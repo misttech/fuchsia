@@ -4,11 +4,11 @@
 
 use crate::power::OnWakeOps;
 use crate::signals::{SignalDetail, SignalEvent, SignalEventNotify, SignalInfo, send_signal};
-use crate::task::{
-    CurrentTask, GenericDuration, HrTimer, HrTimerHandle, Kernel, TargetTime, ThreadGroup,
-    Timeline, TimerId, TimerWakeup,
-};
+use crate::task::{CurrentTask, Kernel, ThreadGroup};
 use crate::time::utc::{estimate_boot_deadline_from_utc, utc_now};
+use crate::time::{
+    GenericDuration, HrTimer, HrTimerHandle, TargetTime, Timeline, TimerId, TimerWakeup,
+};
 use crate::vfs::timer::TimerOps;
 use assert_matches::assert_matches;
 use fuchsia_runtime::UtcInstant;

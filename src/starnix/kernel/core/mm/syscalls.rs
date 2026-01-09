@@ -10,7 +10,8 @@ use crate::mm::{
 };
 use crate::security;
 use crate::syscalls::time::TimeSpecPtr;
-use crate::task::{CurrentTask, TargetTime, Task};
+use crate::task::{CurrentTask, Task};
+use crate::time::TargetTime;
 use crate::time::utc::estimate_boot_deadline_from_utc;
 use crate::vfs::buffers::{OutputBuffer, UserBuffersInputBuffer, UserBuffersOutputBuffer};
 use crate::vfs::{FdFlags, FdNumber, UserFaultFile};

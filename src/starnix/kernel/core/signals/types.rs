@@ -3,7 +3,8 @@
 // found in the LICENSE file.
 
 use crate::mm::MemoryAccessor;
-use crate::task::{IntervalTimerHandle, ThreadGroupReadGuard, WaitQueue, Waiter, WaiterRef};
+use crate::task::{ThreadGroupReadGuard, WaitQueue, Waiter, WaiterRef};
+use crate::time::IntervalTimerHandle;
 use starnix_sync::{InterruptibleEvent, RwLock};
 use starnix_types::arch::ArchWidth;
 use starnix_uapi::errors::Errno;

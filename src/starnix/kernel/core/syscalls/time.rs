@@ -5,11 +5,9 @@
 use crate::mm::MemoryAccessorExt;
 use crate::security;
 use crate::signals::SignalEvent;
-use crate::task::{
-    ClockId, CurrentTask, EventHandler, GenericDuration, SignalHandler, SignalHandlerInner,
-    Timeline, TimerId, TimerWakeup, Waiter,
-};
+use crate::task::{CurrentTask, EventHandler, SignalHandler, SignalHandlerInner, Waiter};
 use crate::time::utc::utc_now;
+use crate::time::{ClockId, GenericDuration, Timeline, TimerId, TimerWakeup};
 use fuchsia_runtime::UtcInstant;
 use starnix_logging::{log_debug, log_error, log_trace, track_stub};
 use starnix_sync::{Locked, Unlocked};
@@ -594,7 +592,8 @@ pub fn sys_times(
 // Syscalls for arch32 usage
 #[cfg(target_arch = "aarch64")]
 mod arch32 {
-    use crate::task::{CurrentTask, TimerId};
+    use crate::task::CurrentTask;
+    use crate::time::TimerId;
     use starnix_sync::{Locked, Unlocked};
     use starnix_uapi::errors::Errno;
     use starnix_uapi::uapi;

@@ -3,7 +3,8 @@
 // found in the LICENSE file.
 
 use crate::power::OnWakeOps;
-use crate::task::{CurrentTask, Kernel, TargetTime};
+use crate::task::{CurrentTask, Kernel};
+use crate::time::TargetTime;
 use crate::time::utc::estimate_boot_deadline_from_utc;
 use crate::vfs::timer::{TimelineChangeObserver, TimerOps};
 use starnix_uapi::errors::Errno;

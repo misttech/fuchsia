@@ -16,9 +16,10 @@ use crate::task::net::NetstackDevices;
 use crate::task::tracing::PidToKoidMap;
 use crate::task::{
     AbstractUnixSocketNamespace, AbstractVsockSocketNamespace, CurrentTask, DelayedReleaser,
-    HrTimerManager, HrTimerManagerHandle, IpTables, KernelCgroups, KernelStats, KernelThreads,
-    PidTable, SchedulerManager, StopState, Syslog, ThreadGroup, UtsNamespace, UtsNamespaceHandle,
+    IpTables, KernelCgroups, KernelStats, KernelThreads, PidTable, SchedulerManager, StopState,
+    Syslog, ThreadGroup, UtsNamespace, UtsNamespaceHandle,
 };
+use crate::time::{HrTimerManager, HrTimerManagerHandle};
 use crate::vdso::vdso_loader::Vdso;
 use crate::vfs::fs_args::MountParams;
 use crate::vfs::pseudo::simple_directory::SimpleDirectoryMutator;

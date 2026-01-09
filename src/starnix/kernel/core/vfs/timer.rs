@@ -5,9 +5,9 @@
 use crate::fs::fuchsia::{BootZxTimer, MonotonicZxTimer};
 use crate::power::OnWakeOps;
 use crate::task::{
-    CurrentTask, EventHandler, GenericDuration, HrTimer, Kernel, SignalHandler, SignalHandlerInner,
-    TargetTime, Timeline, TimerWakeup, WaitCanceler, Waiter,
+    CurrentTask, EventHandler, Kernel, SignalHandler, SignalHandlerInner, WaitCanceler, Waiter,
 };
+use crate::time::{GenericDuration, HrTimer, TargetTime, Timeline, TimerWakeup};
 use crate::vfs::buffers::{InputBuffer, OutputBuffer};
 use crate::vfs::{
     Anon, FileHandle, FileObject, FileObjectState, FileOps, fileops_impl_nonseekable,

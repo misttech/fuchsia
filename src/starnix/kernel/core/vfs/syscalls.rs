@@ -5,10 +5,8 @@
 use crate::mm::{IOVecPtr, MemoryAccessor, MemoryAccessorExt, PAGE_SIZE};
 use crate::security;
 use crate::syscalls::time::{ITimerSpecPtr, TimeSpecPtr, TimeValPtr};
-use crate::task::{
-    CurrentTask, EventHandler, ProcessEntryRef, ReadyItem, ReadyItemKey, Timeline, TimerWakeup,
-    Waiter,
-};
+use crate::task::{CurrentTask, EventHandler, ProcessEntryRef, ReadyItem, ReadyItemKey, Waiter};
+use crate::time::{Timeline, TimerWakeup};
 use crate::vfs::aio::AioContext;
 use crate::vfs::buffers::{UserBuffersInputBuffer, UserBuffersOutputBuffer};
 use crate::vfs::eventfd::{EventFdType, new_eventfd};
