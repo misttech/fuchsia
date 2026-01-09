@@ -202,11 +202,6 @@ class FakePowerBroker : public fidl::Server<fuchsia_power_broker::Topology>,
   // fuchsia.power.broker/ElementControl
   void RegisterDependencyToken(RegisterDependencyTokenRequest& request,
                                RegisterDependencyTokenCompleter::Sync& completer) override {
-    if (request.dependency_type() != fuchsia_power_broker::DependencyType::kAssertive) {
-      completer.Reply(fit::error(fuchsia_power_broker::RegisterDependencyTokenError::kInternal));
-      return;
-    }
-
     dependency_tokens_.push_back(std::move(request.token()));
     completer.Reply(fit::ok());
   }
@@ -311,10 +306,11 @@ class SdioControllerDeviceTest : public ::testing::Test {
 
     sdmmc_.Write(0x2000,
                  std::vector<uint8_t>{
-                     0x22,        // Function extensions tuple.
-                     0x04,        // Function extensions tuple size.
-                     0x00,        // Type of extended data.
-                     0x01, 0x00,  // Function 0 block size.
+                     0x22,  // Function extensions tuple.
+                     0x04,  // Function extensions tuple size.
+                     0x00,  // Type of extended data.
+                     0x01,
+                     0x00,  // Function 0 block size.
                  },
                  0);
 
@@ -1058,14 +1054,16 @@ TEST_F(SdioControllerDeviceTest, ProcessCis) {
 
   sdmmc_.Write(0x0000'c2a2,
                std::vector<uint8_t>{
-                   0x20,        // Manufacturer ID tuple.
-                   0x04,        // Manufacturer ID tuple size.
-                   0x01, 0xc0,  // Manufacturer code.
-                   0xce, 0xfa,  // Manufacturer information (part number/revision).
-                   0x00,        // Null tuple.
-                   0x22,        // Function extensions tuple.
-                   0x2a,        // Function extensions tuple size.
-                   0x01,        // Type of extended data.
+                   0x20,  // Manufacturer ID tuple.
+                   0x04,  // Manufacturer ID tuple size.
+                   0x01,
+                   0xc0,  // Manufacturer code.
+                   0xce,
+                   0xfa,  // Manufacturer information (part number/revision).
+                   0x00,  // Null tuple.
+                   0x22,  // Function extensions tuple.
+                   0x2a,  // Function extensions tuple size.
+                   0x01,  // Type of extended data.
                },
                0);
   sdmmc_.Write(0x0000'c2b7, std::vector<uint8_t>{0x00, 0x01}, 0);  // Function block size.
@@ -1103,17 +1101,20 @@ TEST_F(SdioControllerDeviceTest, ProcessCisFunction0) {
 
   sdmmc_.Write(0x0001'61f5,
                std::vector<uint8_t>{
-                   0x22,        // Function extensions tuple.
-                   0x04,        // Function extensions tuple size.
-                   0x00,        // Type of extended data.
-                   0x00, 0x02,  // Function 0 block size.
-                   0x32,        // Max transfer speed.
-                   0x00,        // Null tuple.
-                   0x20,        // Manufacturer ID tuple.
-                   0x04,        // Manufacturer ID tuple size.
-                   0xef, 0xbe,  // Manufacturer code.
-                   0xfe, 0xca,  // Manufacturer information (part number/revision).
-                   0xff,        // End-of-chain tuple.
+                   0x22,  // Function extensions tuple.
+                   0x04,  // Function extensions tuple size.
+                   0x00,  // Type of extended data.
+                   0x00,
+                   0x02,  // Function 0 block size.
+                   0x32,  // Max transfer speed.
+                   0x00,  // Null tuple.
+                   0x20,  // Manufacturer ID tuple.
+                   0x04,  // Manufacturer ID tuple size.
+                   0xef,
+                   0xbe,  // Manufacturer code.
+                   0xfe,
+                   0xca,  // Manufacturer information (part number/revision).
+                   0xff,  // End-of-chain tuple.
                },
                0);
 

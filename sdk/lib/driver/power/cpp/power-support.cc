@@ -130,7 +130,7 @@ std::optional<Error> GetTokensFromParents(ElementDependencyMap& dependencies, To
 
 fit::result<Error> RegisterDependencyToken(
     fidl::UnownedClientEnd<fuchsia_power_broker::ElementControl>& element_control_client,
-    const zx::unowned_event& token, const fuchsia_power_broker::DependencyType type) {
+    const zx::unowned_event& token) {
   if (!token->is_valid()) {
     return fit::error(Error::INVALID_ARGS);
   }
@@ -140,8 +140,7 @@ fit::result<Error> RegisterDependencyToken(
     return fit::error(Error::INVALID_ARGS);
   }
 
-  auto result =
-      fidl::WireCall(element_control_client)->RegisterDependencyToken(std::move(dupe), type);
+  auto result = fidl::WireCall(element_control_client)->RegisterDependencyToken(std::move(dupe));
   if (!result.ok()) {
     if (result.is_peer_closed()) {
       return fit::error(Error::IO);
@@ -602,8 +601,7 @@ fit::result<Error> AddElement(
   if (element_control_client.has_value()) {
     if (assertive_token->is_valid()) {
       fit::result<Error> assertive_result =
-          RegisterDependencyToken(element_control_client.value(), assertive_token,
-                                  fuchsia_power_broker::DependencyType::kAssertive);
+          RegisterDependencyToken(element_control_client.value(), assertive_token);
       if (assertive_result.is_error()) {
         return assertive_result;
       }

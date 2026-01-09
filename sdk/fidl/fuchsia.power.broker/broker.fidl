@@ -146,12 +146,10 @@ open protocol ElementControl {
         status_channel server_end:Status;
     });
 
-    /// Register a token which will permit the bearer to add either an
-    /// assertive or opportunistic dependency upon this element, depending on
-    /// the dependency_type specified.
+    /// Register a token which will permit the bearer to add either a
+    /// dependency upon this element.
     flexible RegisterDependencyToken(resource struct {
         token DependencyToken;
-        dependency_type DependencyType;
     }) -> () error RegisterDependencyTokenError;
 
     /// Unregister a token previously registered via RegisterDependencyToken.

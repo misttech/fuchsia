@@ -21,7 +21,6 @@ pub struct PowerElementContext {
     pub element_control: fbroker::ElementControlProxy,
     pub lessor: fbroker::LessorProxy,
     assertive_dependency_token: Option<fbroker::DependencyToken>,
-    opportunistic_dependency_token: Option<fbroker::DependencyToken>,
     name: String,
     initial_level: fbroker::PowerLevel,
 }
@@ -38,12 +37,6 @@ impl PowerElementContext {
 
     pub fn assertive_dependency_token(&self) -> Option<fbroker::DependencyToken> {
         self.assertive_dependency_token.as_ref().and_then(|token| {
-            Some(token.duplicate_handle(Rights::SAME_RIGHTS).expect("failed to duplicate token"))
-        })
-    }
-
-    pub fn opportunistic_dependency_token(&self) -> Option<fbroker::DependencyToken> {
-        self.opportunistic_dependency_token.as_ref().and_then(|token| {
             Some(token.duplicate_handle(Rights::SAME_RIGHTS).expect("failed to duplicate token"))
         })
     }
@@ -172,27 +165,9 @@ impl<'a> PowerElementContextBuilder<'a> {
                         token
                             .duplicate_handle(Rights::SAME_RIGHTS)
                             .expect("failed to duplicate token"),
-                        fbroker::DependencyType::Assertive,
                     )
                     .await?
                     .expect("register assertive dependency token");
-                Some(token)
-            }
-            false => None,
-        };
-
-        let opportunistic_dependency_token = match self.register_dependency_tokens {
-            true => {
-                let token = fbroker::DependencyToken::create();
-                let _ = element_control
-                    .register_dependency_token(
-                        token
-                            .duplicate_handle(Rights::SAME_RIGHTS)
-                            .expect("failed to duplicate token"),
-                        fbroker::DependencyType::Opportunistic,
-                    )
-                    .await?
-                    .expect("register opportunistic dependency token");
                 Some(token)
             }
             false => None,
@@ -202,7 +177,6 @@ impl<'a> PowerElementContextBuilder<'a> {
             element_control,
             lessor,
             assertive_dependency_token,
-            opportunistic_dependency_token,
             name: self.element_name.to_string(),
             initial_level: self.initial_current_level,
         })
@@ -343,12 +317,10 @@ mod tests {
         let (element_runner_client, element_runner) =
             create_endpoints::<fbroker::ElementRunnerMarker>();
         drive_element_runner(element_runner_client, vec![1, 2]);
-
         let power_element = PowerElementContext {
             element_control,
             lessor,
             assertive_dependency_token: Some(fbroker::DependencyToken::create()),
-            opportunistic_dependency_token: Some(fbroker::DependencyToken::create()),
             name: "test_element".to_string(),
             initial_level: 0,
         };
@@ -389,7 +361,6 @@ mod tests {
             element_control,
             lessor,
             assertive_dependency_token: Some(fbroker::DependencyToken::create()),
-            opportunistic_dependency_token: Some(fbroker::DependencyToken::create()),
             name: "test_element".to_string(),
             initial_level,
         };
@@ -433,7 +404,6 @@ mod tests {
             element_control,
             lessor,
             assertive_dependency_token: Some(fbroker::DependencyToken::create()),
-            opportunistic_dependency_token: Some(fbroker::DependencyToken::create()),
             name: "test_element".to_string(),
             initial_level: 0,
         };
@@ -504,15 +474,13 @@ mod tests {
                     return Err(anyhow!("Unexpected method called: {request:?}"));
                 }
             }
-            for _ in 0..2 {
-                let element_control_request = element_control.next().await.unwrap()?;
-                match element_control_request {
-                    fbroker::ElementControlRequest::RegisterDependencyToken {
-                        responder, ..
-                    } => responder.send(Ok(()))?,
-                    request => {
-                        return Err(anyhow!("Unexpected method called: {request:?}"));
-                    }
+            let element_control_request = element_control.next().await.unwrap()?;
+            match element_control_request {
+                fbroker::ElementControlRequest::RegisterDependencyToken { responder, .. } => {
+                    responder.send(Ok(()))?
+                }
+                request => {
+                    return Err(anyhow!("Unexpected method called: {request:?}"));
                 }
             }
             let (lease_control, lease_control_server) =

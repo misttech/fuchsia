@@ -142,7 +142,6 @@ mod tests {
                 parent_element_control
                     .register_dependency_token(
                         parent_token.duplicate_handle(zx::Rights::SAME_RIGHTS).expect("dup failed"),
-                        DependencyType::Assertive,
                     )
                     .await
                     .is_ok()
@@ -370,7 +369,6 @@ mod tests {
                         element_a_token
                             .duplicate_handle(zx::Rights::SAME_RIGHTS)
                             .expect("dup failed"),
-                        DependencyType::Assertive,
                     )
                     .await
                     .is_ok()
@@ -417,7 +415,6 @@ mod tests {
                         element_b_token
                             .duplicate_handle(zx::Rights::SAME_RIGHTS)
                             .expect("dup failed"),
-                        DependencyType::Assertive,
                     )
                     .await
                     .is_ok()
@@ -746,7 +743,6 @@ mod tests {
                         grandparent_token
                             .duplicate_handle(zx::Rights::SAME_RIGHTS)
                             .expect("dup failed"),
-                        DependencyType::Assertive,
                     )
                     .await
                     .is_ok()
@@ -799,7 +795,6 @@ mod tests {
                 parent_element_control
                     .register_dependency_token(
                         parent_token.duplicate_handle(zx::Rights::SAME_RIGHTS).expect("dup failed"),
-                        DependencyType::Assertive,
                     )
                     .await
                     .is_ok()
@@ -1213,7 +1208,6 @@ mod tests {
             element_control
                 .register_dependency_token(
                     earth_token.duplicate_handle(zx::Rights::SAME_RIGHTS).expect("dup failed"),
-                    DependencyType::Assertive,
                 )
                 .await
                 .is_ok()

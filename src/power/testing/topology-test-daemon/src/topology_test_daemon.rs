@@ -77,7 +77,6 @@ impl PowerElement {
         element_control_proxy
             .register_dependency_token(
                 assertive_dependency_token.duplicate_handle(Rights::SAME_RIGHTS)?,
-                fbroker::DependencyType::Assertive,
             )
             .await?
             .map_err(|e| anyhow!("register assertive dependency token failed: {e:?}"))?;
