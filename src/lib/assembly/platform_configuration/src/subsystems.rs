@@ -125,140 +125,150 @@ impl DefineSubsystemConfiguration<()> for CommonBundles {
         builder: &mut dyn ConfigurationBuilder,
     ) -> anyhow::Result<()> {
         // Set up the platform's common AIBs by feature_set_level and build_type.
-        for bundle_name in match (context.feature_set_level, context.build_type) {
-            (FeatureSetLevel::Embeddable, BuildType::Eng) => {
-                vec![
-                    "embeddable",
-                    "embeddable_userdebug",
-                    "embeddable_eng",
-                    "bootstrap_realm_development_access",
-                    "driver_framework_common",
-                ]
-            }
-            (FeatureSetLevel::Embeddable, BuildType::UserDebug) => {
-                vec![
-                    "embeddable",
-                    "embeddable_userdebug",
-                    "bootstrap_realm_development_access",
-                    "driver_framework_common",
-                ]
-            }
-            (FeatureSetLevel::Embeddable, BuildType::User) => {
-                vec!["embeddable", "driver_framework_common"]
-            }
-            (FeatureSetLevel::Bootstrap, _) => {
-                vec![
-                    "embeddable",
-                    "embeddable_userdebug",
-                    "embeddable_eng",
-                    "bootstrap",
-                    "bootstrap_userdebug",
-                    "bootstrap_eng",
-                    "bootstrap_realm_development_access",
-                    "driver_framework_common",
-                    "legacy_power_framework",
-                ]
-            }
-            (FeatureSetLevel::Utility, BuildType::Eng) => {
-                vec![
-                    "embeddable",
-                    "embeddable_userdebug",
-                    "embeddable_eng",
-                    "bootstrap",
-                    "bootstrap_userdebug",
-                    "bootstrap_eng",
-                    "core_realm",
-                    "core_realm_development_access",
-                    "core_realm_development_access_eng",
-                    "core_realm_eng",
-                    "mdns",
-                    "driver_framework_common",
-                    "legacy_power_framework",
-                ]
-            }
-            (FeatureSetLevel::Utility, BuildType::UserDebug) => {
-                vec![
-                    "embeddable",
-                    "embeddable_userdebug",
-                    "bootstrap",
-                    "bootstrap_userdebug",
-                    "core_realm",
-                    "core_realm_development_access",
-                    "core_realm_development_access_userdebug",
-                    "core_realm_user_and_userdebug",
-                    "mdns",
-                    "driver_framework_common",
-                    "legacy_power_framework",
-                ]
-            }
-            (FeatureSetLevel::Utility, BuildType::User) => {
-                vec![
-                    "embeddable",
-                    "bootstrap",
-                    "core_realm",
-                    "core_realm_user_and_userdebug",
-                    "driver_framework_common",
-                    "legacy_power_framework",
-                ]
-            }
-            (FeatureSetLevel::Standard, BuildType::Eng) => {
-                vec![
-                    "embeddable",
-                    "embeddable_userdebug",
-                    "embeddable_eng",
-                    "bootstrap",
-                    "bootstrap_userdebug",
-                    "bootstrap_eng",
-                    "core_realm",
-                    "core_realm_eng",
-                    "core_realm_development_access",
-                    "core_realm_development_access_eng",
-                    "common_standard",
-                    "standard_eng",
-                    "standard_userdebug_and_eng",
-                    "testing_support",
-                    "tracing",
-                    "mdns",
-                    "driver_framework_common",
-                    "legacy_power_framework",
-                ]
-            }
-            (FeatureSetLevel::Standard, BuildType::UserDebug) => {
-                vec![
-                    "embeddable",
-                    "embeddable_userdebug",
-                    "bootstrap",
-                    "bootstrap_userdebug",
-                    "core_realm",
-                    "core_realm_development_access",
-                    "core_realm_development_access_userdebug",
-                    "core_realm_user_and_userdebug",
-                    "common_standard",
-                    "standard_userdebug",
-                    "standard_userdebug_and_eng",
-                    "mdns",
-                    "driver_framework_common",
-                    "legacy_power_framework",
-                ]
-            }
-            (FeatureSetLevel::Standard, BuildType::User) => {
-                vec![
-                    "embeddable",
-                    "bootstrap",
-                    "core_realm",
-                    "core_realm_user_and_userdebug",
-                    "common_standard",
-                    "mdns",
-                    "driver_framework_common",
-                    "legacy_power_framework",
-                ]
-            }
-        } {
-            builder.platform_bundle(bundle_name);
+        let bundles = get_auto_included_bundles(context.feature_set_level, context.build_type);
+        for bundle_name in bundles {
+            builder.platform_bundle(&bundle_name);
         }
-
         Ok(())
     }
+}
+
+fn get_auto_included_bundles(
+    feature_set_level: &FeatureSetLevel,
+    build_type: &BuildType,
+) -> Vec<String> {
+    match (feature_set_level, build_type) {
+        (FeatureSetLevel::Embeddable, BuildType::Eng) => {
+            vec![
+                "embeddable",
+                "embeddable_userdebug",
+                "embeddable_eng",
+                "bootstrap_realm_development_access",
+                "driver_framework_common",
+            ]
+        }
+        (FeatureSetLevel::Embeddable, BuildType::UserDebug) => {
+            vec![
+                "embeddable",
+                "embeddable_userdebug",
+                "bootstrap_realm_development_access",
+                "driver_framework_common",
+            ]
+        }
+        (FeatureSetLevel::Embeddable, BuildType::User) => {
+            vec!["embeddable", "driver_framework_common"]
+        }
+        (FeatureSetLevel::Bootstrap, _) => {
+            vec![
+                "embeddable",
+                "embeddable_userdebug",
+                "embeddable_eng",
+                "bootstrap",
+                "bootstrap_userdebug",
+                "bootstrap_eng",
+                "bootstrap_realm_development_access",
+                "driver_framework_common",
+                "legacy_power_framework",
+            ]
+        }
+        (FeatureSetLevel::Utility, BuildType::Eng) => {
+            vec![
+                "embeddable",
+                "embeddable_userdebug",
+                "embeddable_eng",
+                "bootstrap",
+                "bootstrap_userdebug",
+                "bootstrap_eng",
+                "core_realm",
+                "core_realm_development_access",
+                "core_realm_development_access_eng",
+                "core_realm_eng",
+                "mdns",
+                "driver_framework_common",
+                "legacy_power_framework",
+            ]
+        }
+        (FeatureSetLevel::Utility, BuildType::UserDebug) => {
+            vec![
+                "embeddable",
+                "embeddable_userdebug",
+                "bootstrap",
+                "bootstrap_userdebug",
+                "core_realm",
+                "core_realm_development_access",
+                "core_realm_development_access_userdebug",
+                "core_realm_user_and_userdebug",
+                "mdns",
+                "driver_framework_common",
+                "legacy_power_framework",
+            ]
+        }
+        (FeatureSetLevel::Utility, BuildType::User) => {
+            vec![
+                "embeddable",
+                "bootstrap",
+                "core_realm",
+                "core_realm_user_and_userdebug",
+                "driver_framework_common",
+                "legacy_power_framework",
+            ]
+        }
+        (FeatureSetLevel::Standard, BuildType::Eng) => {
+            vec![
+                "embeddable",
+                "embeddable_userdebug",
+                "embeddable_eng",
+                "bootstrap",
+                "bootstrap_userdebug",
+                "bootstrap_eng",
+                "core_realm",
+                "core_realm_eng",
+                "core_realm_development_access",
+                "core_realm_development_access_eng",
+                "common_standard",
+                "standard_eng",
+                "standard_userdebug_and_eng",
+                "testing_support",
+                "tracing",
+                "mdns",
+                "driver_framework_common",
+                "legacy_power_framework",
+            ]
+        }
+        (FeatureSetLevel::Standard, BuildType::UserDebug) => {
+            vec![
+                "embeddable",
+                "embeddable_userdebug",
+                "bootstrap",
+                "bootstrap_userdebug",
+                "core_realm",
+                "core_realm_development_access",
+                "core_realm_development_access_userdebug",
+                "core_realm_user_and_userdebug",
+                "common_standard",
+                "standard_userdebug",
+                "standard_userdebug_and_eng",
+                "mdns",
+                "driver_framework_common",
+                "legacy_power_framework",
+            ]
+        }
+        (FeatureSetLevel::Standard, BuildType::User) => {
+            vec![
+                "embeddable",
+                "bootstrap",
+                "core_realm",
+                "core_realm_user_and_userdebug",
+                "common_standard",
+                "mdns",
+                "driver_framework_common",
+                "legacy_power_framework",
+            ]
+        }
+    }
+    .iter()
+    .map(|s| s.to_string())
+    .collect()
 }
 
 fn configure_subsystems(
