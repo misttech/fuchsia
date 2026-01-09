@@ -7,7 +7,7 @@ import("//build/rust/rustc_binary.gni")
 import("config.gni")  # icu_flavors, icu_fixup_deps
 
 set_defaults("icu_rustc_binary") {
-  configs = default_executable_configs + default_rust_configs
+  configs = default_executable_configs
 }
 
 template("_common") {

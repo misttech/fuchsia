@@ -83,6 +83,6 @@ fn main() {
     }
 
     if let Some(stamp_file) = args.stamp_file {
-        std::fs::File::create(&stamp_file).unwrap();
+        let _ = std::fs::File::create(&stamp_file).unwrap();
     }
 }

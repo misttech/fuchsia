@@ -43,20 +43,21 @@ _RUSTC_LINT_CONFIGS = {
     # LINT.ThenChange(//build/config/rust/lints/BUILD.gn:rustc_allow_default)
 
     # LINT.IfChange(rustc_warn_default)
-    "unsafe_attr_outside_unsafe": "warn",
     "missing_unsafe_on_extern": "warn",
+    "unsafe_attr_outside_unsafe": "warn",
+    "unused_crate_dependencies": "warn",
     # LINT.ThenChange(//build/config/rust/lints/BUILD.gn:rustc_warn_default)
 
     # LINT.IfChange(rustc_deny_default)
-    "deref-nullptr": "deny",
-    "invalid-value": "deny",
-    "unused-must-use": "deny",
+    "deref_nullptr": "deny",
+    "invalid_value": "deny",
+    "unused_must_use": "deny",
     # LINT.ThenChange(//build/config/rust/lints/BUILD.gn:rustc_deny_default)
 
     # LINT.IfChange(rustc_toolchain_roll_exceptions)
-    "renamed_and_removed_lints": "allow",
-    "non_local_definitions": "allow",
     "elided_named_lifetimes": "allow",
+    "non_local_definitions": "allow",
+    "renamed_and_removed_lints": "allow",
     # LINT.ThenChange(//build/config/rust/lints/BUILD.gn:rustc_toolchain_roll_exceptions)
 }
 

@@ -296,7 +296,7 @@ fn write_import_once<W: io::Write>(
 ) -> Result<()> {
     if !imported_files.contains(import) {
         gn::write_import(&mut output, import).with_context(|| "writing import")?;
-        imported_files.insert(import.clone());
+        let _ = imported_files.insert(import.clone());
     }
     Ok(())
 }
@@ -318,21 +318,21 @@ pub fn generate_from_manifest<W: io::Write>(mut output: &mut W, opt: &Opt) -> Re
     let parent_dir = manifest_path
         .parent()
         .with_context(|| format!("while parsing parent path: {}", manifest_path.display()))?;
-    cmd.current_dir(parent_dir);
-    cmd.manifest_path(manifest_path);
+    let _ = cmd.current_dir(parent_dir);
+    let _ = cmd.manifest_path(manifest_path);
     if let Some(ref cargo_path) = opt.cargo {
-        cmd.cargo_path(cargo_path);
+        let _ = cmd.cargo_path(cargo_path);
     }
     if opt.all_features {
-        cmd.features(CargoOpt::AllFeatures);
+        let _ = cmd.features(CargoOpt::AllFeatures);
     }
     if opt.no_default_features {
-        cmd.features(CargoOpt::NoDefaultFeatures);
+        let _ = cmd.features(CargoOpt::NoDefaultFeatures);
     }
     if !opt.features.is_empty() {
-        cmd.features(CargoOpt::SomeFeatures(opt.features.clone()));
+        let _ = cmd.features(CargoOpt::SomeFeatures(opt.features.clone()));
     }
-    cmd.other_options([String::from("--frozen")]);
+    let _ = cmd.other_options([String::from("--frozen")]);
     let metadata = cmd.exec().with_context(|| {
         format!("while running cargo metadata: supplied cargo binary: {:?}", &opt.cargo)
     })?;
@@ -341,7 +341,8 @@ pub fn generate_from_manifest<W: io::Write>(mut output: &mut W, opt: &Opt) -> Re
     let mut file = File::open(&manifest_path)
         .with_context(|| format!("opening {}", manifest_path.display()))?;
     let mut contents = String::new();
-    file.read_to_string(&mut contents)
+    let _ = file
+        .read_to_string(&mut contents)
         .with_context(|| format!("while reading manifest: {}", manifest_path.display()))?;
     let metadata_configs: BuildMetadata =
         toml::from_str(&contents).context("parsing manifest toml")?;
@@ -373,7 +374,7 @@ pub fn generate_from_manifest<W: io::Write>(mut output: &mut W, opt: &Opt) -> Re
                         if kinds.kind == DependencyKind::Normal {
                             let platform = kinds.target.as_ref().map(|t| format!("{}", t));
                             let package = &metadata[&dep.pkg];
-                            top_level_metadata.insert(package.name.to_owned());
+                            let _ = top_level_metadata.insert(package.name.to_owned());
                             let cfg = metadata_configs
                                 .gn
                                 .as_ref()
@@ -435,7 +436,7 @@ pub fn generate_from_manifest<W: io::Write>(mut output: &mut W, opt: &Opt) -> Re
                     .add_cargo_package(top_level_id.clone())
                     .with_context(|| "could not add cargo package")?;
                 let package = &metadata[&top_level_id];
-                top_level_metadata.insert(package.name.to_owned());
+                let _ = top_level_metadata.insert(package.name.to_owned());
                 let cfg = metadata_configs.gn.as_ref().and_then(|cfg| cfg.find_package(package));
 
                 let group_name = cfg.and_then(|cfg| cfg.group_name.as_deref());
@@ -525,15 +526,15 @@ pub fn generate_from_manifest<W: io::Write>(mut output: &mut W, opt: &Opt) -> Re
                         .and_then(|r| r.rule_name.as_ref())
                         .map(|x| x.as_str())
                     {
-                        renamed_rules.insert(target, renamed_rule);
+                        let _ = renamed_rules.insert(target, renamed_rule);
                     }
 
                     if pkg_cfg.testonly == Some(true) {
-                        testonly_targets.insert(target);
+                        let _ = testonly_targets.insert(target);
                     }
 
                     if pkg_cfg.tests {
-                        targets_with_tests.insert(target);
+                        let _ = targets_with_tests.insert(target);
                     }
 
                     // If there is an existing GN target, there shouldn't be any other fields set.
@@ -600,7 +601,7 @@ pub fn generate_from_manifest<W: io::Write>(mut output: &mut W, opt: &Opt) -> Re
                         );
 
                         if pkg_cfg.tests {
-                            targets_with_tests.insert(target);
+                            let _ = targets_with_tests.insert(target);
                         }
                     } else {
                         unused_configs.push_str(&format!(
@@ -698,7 +699,7 @@ pub fn generate_from_manifest<W: io::Write>(mut output: &mut W, opt: &Opt) -> Re
                 Some(Some(_)) => {}
                 _ => {
                     let mut features_map = std::collections::BTreeMap::new();
-                    features_map.insert("features", &target.features);
+                    let _ = features_map.insert("features", &target.features);
 
                     anyhow::bail!(
                         "{name} {version} requires feature review but reviewed features not found.\n\n\
@@ -747,7 +748,7 @@ pub fn generate_from_manifest<W: io::Write>(mut output: &mut W, opt: &Opt) -> Re
         }
 
         let package_root = target.package_root();
-        package_root.strip_prefix(&opt.project_root).unwrap_or_else(|e| {
+        let _ = package_root.strip_prefix(&opt.project_root).unwrap_or_else(|e| {
             panic!(
                 "{}: {} is not under the project_root ({})",
                 e,

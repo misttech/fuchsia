@@ -46,12 +46,6 @@ config("clippy_warn_production") {
   ]
 }
 
-config("deny_unused_crate_dependencies") {
-  # Use -W instead of -D to treat as a warning while iterating
-  # Unused crate dependencies will still be denied in CQ because of -Dwarnings
-  rustflags = [ "-Wunused_crate_dependencies" ]
-}
-
 # This is preferred over adding `#![warn(clippy::all)]` in source because
 # it's easier to override
 config("clippy_warn_all") {
@@ -87,6 +81,7 @@ config("warn_default") {
   rustflags = [
     "-Wmissing_unsafe_on_extern",
     "-Wunsafe_attr_outside_unsafe",
+    "-Wunused_crate_dependencies",
   ]
   # LINT.ThenChange(//build/config/rust/lints/BUILD.bazel:rustc_warn_default)
 }

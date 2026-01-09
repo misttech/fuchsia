@@ -136,7 +136,7 @@ impl<'a> GnBuildGraph<'a> {
                                 has_build_script,
                                 dependencies.clone(),
                             );
-                            self.targets.insert(gn_target);
+                            let _ = self.targets.insert(gn_target);
                         }
                         GnRustType::Binary => {
                             // If a crate contains both a library and binary targets,
@@ -168,7 +168,7 @@ impl<'a> GnBuildGraph<'a> {
                                 has_build_script,
                                 deps,
                             );
-                            self.targets.insert(gn_target);
+                            let _ = self.targets.insert(gn_target);
                         }
 
                         // FIXME(https://fxbug.dev/42173393): support staticlib, dylib, and

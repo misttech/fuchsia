@@ -6,7 +6,7 @@ import("//build/rust/rustc_library.gni")
 import("config.gni")  # icu_flavors, icu_fixup_deps
 
 set_defaults("icu_rustc_library") {
-  configs = default_common_binary_configs + default_rust_configs
+  configs = default_common_binary_configs
 }
 
 # An ICU-aware rustc_library.

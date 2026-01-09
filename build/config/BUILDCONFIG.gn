@@ -1602,47 +1602,43 @@ set_defaults("cc_test_executable") {
   configs = default_executable_configs
 }
 
-# Rustc wrapper defaults
-default_rust_configs =
-    [ "//build/config/rust/lints:deny_unused_crate_dependencies" ]
-
 set_defaults("rustc_binary") {
-  configs = default_executable_configs + default_rust_configs
+  configs = default_executable_configs
 }
 
 set_defaults("rustc_binary_sdk") {
-  configs = default_executable_configs + default_rust_configs
+  configs = default_executable_configs
 }
 
 set_defaults("rustc_test") {
-  configs = default_executable_configs + default_rust_configs
+  configs = default_executable_configs
 }
 
 set_defaults("rustc_library") {
-  configs = default_common_binary_configs + default_rust_configs
+  configs = default_common_binary_configs
 }
 
 set_defaults("rustc_library_with_features") {
-  configs = default_common_binary_configs + default_rust_configs
+  configs = default_common_binary_configs
 }
 
 set_defaults("rustc_wasm_library") {
-  configs = default_shared_library_configs + default_rust_configs
+  configs = default_shared_library_configs
 }
 
 set_defaults("rustc_cdylib") {
-  configs = default_shared_library_configs + default_rust_configs
+  configs = default_shared_library_configs
 }
 set_defaults("rustc_dylib") {
-  configs = default_shared_library_configs + default_rust_configs
+  configs = default_shared_library_configs
 }
 
 set_defaults("rustc_macro") {
-  configs = default_shared_library_configs + default_rust_configs
+  configs = default_shared_library_configs
 }
 
 set_defaults("rustc_staticlib") {
-  configs = default_common_binary_configs + default_rust_configs
+  configs = default_common_binary_configs
 }
 
 # For each built-in target type `foo`, create a wrapping template `_foo_interal_wrapper`.

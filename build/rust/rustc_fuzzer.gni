@@ -132,9 +132,9 @@ template("rustc_starnix_fuzzer") {
 }
 
 set_defaults("rustc_fuzzer") {
-  configs = default_common_binary_configs + default_rust_configs
+  configs = default_common_binary_configs
 }
 
 set_defaults("rustc_starnix_fuzzer") {
-  configs = default_common_binary_configs + default_rust_configs
+  configs = default_common_binary_configs
 }

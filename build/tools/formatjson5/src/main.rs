@@ -45,9 +45,9 @@ fn parse_documents(files: Vec<PathBuf>) -> Result<Vec<ParsedDocument>, anyhow::E
         let filename = file.clone().into_os_string().to_string_lossy().to_string();
         let mut buffer = String::new();
         if filename == "-" {
-            Opt::from_stdin(&mut buffer)?;
+            let _ = Opt::from_stdin(&mut buffer)?;
         } else {
-            fs::File::open(&file)?.read_to_string(&mut buffer)?;
+            let _ = fs::File::open(&file)?.read_to_string(&mut buffer)?;
         }
 
         parsed_documents.push(ParsedDocument::from_string(buffer, Some(filename))?);

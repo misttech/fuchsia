@@ -214,7 +214,7 @@ template("fuchsia_rust_driver") {
                            ])
   }
 
-  rustc_staticlib("$target_name-test-staticlib") {
+  rustc_staticlib("${target_name}-test-staticlib") {
     # This should only be used from unit tests.
     testonly = true
 
@@ -238,7 +238,11 @@ template("fuchsia_rust_driver") {
 set_defaults("fuchsia_rust_driver") {
   # Sets the default configs for fuchsia_rust_driver, which can be modified later
   # by the invoker. This overrides the rustc_cdylib default.
-  configs = default_shared_library_configs
+  configs = default_shared_library_configs + [
+              # TODO(https://fxbug.dev/42055130): Figure out why this is necessary. The build fails
+              # if unused crates are removed at call sites.
+              "//build/config/rust/lints:allow_unused_crate_dependencies",
+            ]
 
   # Drivers cannot dynamically link against the Rust standard library. This config
   # tells the linker to link against it statically. This is safe for drivers which
