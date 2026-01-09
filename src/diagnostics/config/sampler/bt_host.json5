@@ -115,6 +115,14 @@
             metric_type: "Occurrence",
             selector: "core/bluetooth-core/bt-host-collection\\:bt-host_*:root/adapter/low_energy_connection_manager:disconnect_remote_disconnection_count",
         },
+        {
+            event_codes: [
+                5, // GattDiscoveryFailure
+            ],
+            metric_id: 18,
+            metric_type: "Occurrence",
+            selector: "core/bluetooth-core/bt-host-collection\\:bt-host_*:root/adapter/gatt:profile_discovery_failure_count",
+        },
 
         // BR/EDR peer disconnection event (ID 19)
         {
