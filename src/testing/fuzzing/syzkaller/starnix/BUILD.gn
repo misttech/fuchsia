@@ -4,12 +4,12 @@
 
 import("//build/components.gni")
 
-if (target_cpu == "x64") {
-  fuchsia_component("start_sshd") {
-    testonly = true
-    manifest = "meta/start_sshd.cml"
-  }
+fuchsia_component("start_sshd") {
+  testonly = true
+  manifest = "meta/start_sshd.cml"
+}
 
+if (target_cpu == "x64" || target_cpu == "arm64") {
   fuchsia_package("syzkaller_starnix") {
     testonly = true
     deps = [
