@@ -482,19 +482,7 @@ impl EpollFileObject {
         _baton_lease: &zx::NullableHandle,
     ) -> Result<(), Errno> {
         let key = file.id.as_epoll_key();
-        // Only add a wake lock if the wake event is marked as EPOLLWAKEUP. We promise
-        // not to suspend the system after epoll results in a wake, and userspace
-        // promises a quick turnaround for an epoll reschedule.
-        let add_epoll = self
-            .state
-            .lock()
-            .wait_objects
-            .get(&key.into())
-            .map(|obj| obj.events.contains(FdEvents::EPOLLWAKEUP))
-            .unwrap_or(false);
-        if add_epoll {
-            current_task.kernel().suspend_resume_manager.add_epoll(current_task, key);
-        }
+        current_task.kernel().suspend_resume_manager.add_epoll(current_task, key);
         Ok(())
     }
 }
