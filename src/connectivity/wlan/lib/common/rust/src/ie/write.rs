@@ -139,6 +139,10 @@ pub fn write_vht_operation<B: Append>(
     write_ie!(buf, Id::VHT_OPERATION, vht_op.as_bytes())
 }
 
+pub fn write_rsnxe<B: Append>(buf: &mut B, octet_1: RsnxeOctet1) -> Result<(), FrameWriteError> {
+    write_ie!(buf, Id::RSNXE, &[octet_1.0])
+}
+
 /// Writes the entire WPA1 IE into the given buffer, including the vendor IE header.
 pub fn write_wpa1_ie<B: Append>(buf: &mut B, wpa_ie: &wpa::WpaIe) -> Result<(), BufferTooSmall> {
     let len = std::mem::size_of::<Oui>() + 1 + wpa_ie.len();

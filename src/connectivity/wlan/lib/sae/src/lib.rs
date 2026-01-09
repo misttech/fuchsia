@@ -30,7 +30,7 @@ pub struct Key {
 
 /// IEEE Std 802.11-2020 9.4.2.241
 /// Method used to generate the PWE from a password.
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Copy, Clone, PartialEq)]
 pub enum PweMethod {
     /// IEEE Std 802.11-2020, 12.4.4.2.2/12.4.4.3.2
     /// Generate the PWE using the looping hunt-and-peck method.
@@ -205,12 +205,20 @@ pub fn join_sae_handshake(
     peer_mac: MacAddr,
 ) -> Result<Box<dyn SaeHandshake>, Error> {
     let parsed_frame = frame::parse(first_frame)?;
+    // IEEE 802.11-2020 12.4.4.2.3
+    // The first frame of the exchange indicates the use of hash to element via
+    // a special status code.
+    let pwe_method = match first_frame.status_code {
+        fidl_ieee80211::StatusCode::Success => PweMethod::Loop,
+        fidl_ieee80211::StatusCode::SaeHashToElement => PweMethod::Direct,
+        other => bail!("Unexpected status code {:?} in first frame", other),
+    };
     match parsed_frame {
         frame::ParseSuccess::Commit(commit) => {
             let mut handshake = new_sae_handshake(
                 commit.group_id,
                 akm,
-                PweMethod::Loop,
+                pwe_method,
                 ssid,
                 password,
                 None,
@@ -303,6 +311,7 @@ mod tests {
     use assert_matches::assert_matches;
     use std::convert::TryFrom;
     use std::sync::LazyLock;
+    use test_case::test_case;
     use wlan_common::ie::rsn::akm::{AKM_PSK, AKM_SAE};
 
     // IEEE 802.11-2016 Annex J.10 SAE test vector
@@ -415,14 +424,28 @@ mod tests {
         assert_matches!(sink.remove(0), SaeUpdate::CancelTimeout(timeout));
     }
 
+    struct TestHandshakeConfig {
+        pwe_method: PweMethod,
+    }
+
+    impl TestHandshakeConfig {
+        fn direct() -> Self {
+            Self { pwe_method: PweMethod::Direct }
+        }
+
+        fn looping() -> Self {
+            Self { pwe_method: PweMethod::Loop }
+        }
+    }
+
     // Test helper to advance through successful steps of an SAE handshake.
     impl TestHandshake {
-        fn new() -> Self {
+        fn new(cfg: TestHandshakeConfig) -> Self {
             let akm = AKM_SAE;
             let sta1 = new_sae_handshake(
                 19,
                 akm.clone(),
-                PweMethod::Loop,
+                cfg.pwe_method,
                 Ssid::try_from(TEST_SSID).unwrap(),
                 Vec::from(TEST_PWD),
                 None, // Not required for PweMethod::Loop
@@ -433,7 +456,7 @@ mod tests {
             let sta2 = new_sae_handshake(
                 19,
                 akm,
-                PweMethod::Loop,
+                cfg.pwe_method,
                 Ssid::try_from(TEST_SSID).unwrap(),
                 Vec::from(TEST_PWD),
                 None, // Not required for PweMethod::Loop
@@ -493,9 +516,10 @@ mod tests {
         }
     }
 
-    #[test]
-    fn sae_handshake_success() {
-        let mut handshake = TestHandshake::new();
+    #[test_case(TestHandshakeConfig::looping(); "looping")]
+    #[test_case(TestHandshakeConfig::direct(); "direct")]
+    fn sae_handshake_success(cfg: TestHandshakeConfig) {
+        let mut handshake = TestHandshake::new(cfg);
         let commit1 = handshake.sta1_init();
         let (commit2, confirm2) = handshake.sta2_handle_commit(commit1.to_rx());
         let confirm1 = handshake.sta1_handle_commit(commit2.to_rx());
@@ -546,7 +570,7 @@ mod tests {
 
     #[test]
     fn retry_commit_on_unexpected_confirm() {
-        let mut handshake = TestHandshake::new();
+        let mut handshake = TestHandshake::new(TestHandshakeConfig::looping());
 
         let commit1 = handshake.sta1_init();
         let (commit2, confirm2) = handshake.sta2_handle_commit(commit1.clone().to_rx());
@@ -562,7 +586,7 @@ mod tests {
 
     #[test]
     fn retry_commit_on_anti_clogging_token() {
-        let mut handshake = TestHandshake::new();
+        let mut handshake = TestHandshake::new(TestHandshakeConfig::looping());
 
         let commit1 = handshake.sta1_init();
 
@@ -590,7 +614,7 @@ mod tests {
 
     #[test]
     fn ignore_wrong_confirm() {
-        let mut handshake = TestHandshake::new();
+        let mut handshake = TestHandshake::new(TestHandshakeConfig::looping());
 
         let commit1 = handshake.sta1_init();
         let (commit2, confirm2) = handshake.sta2_handle_commit(commit1.to_rx());
@@ -607,7 +631,7 @@ mod tests {
 
     #[test]
     fn handle_resent_commit() {
-        let mut handshake = TestHandshake::new();
+        let mut handshake = TestHandshake::new(TestHandshakeConfig::looping());
         let commit1 = handshake.sta1_init();
         let (commit2, confirm2) = handshake.sta2_handle_commit(commit1.clone().to_rx());
         let (commit2_retry, confirm2_retry) = handshake.sta2_handle_commit(commit1.to_rx());
@@ -628,7 +652,7 @@ mod tests {
 
     #[test]
     fn completed_handshake_handles_resent_confirm() {
-        let mut handshake = TestHandshake::new();
+        let mut handshake = TestHandshake::new(TestHandshakeConfig::looping());
         let commit1 = handshake.sta1_init();
         let (commit2, confirm2) = handshake.sta2_handle_commit(commit1.clone().to_rx());
         let (commit2_retry, confirm2_retry) = handshake.sta2_handle_commit(commit1.to_rx());
@@ -662,7 +686,7 @@ mod tests {
 
     #[test]
     fn completed_handshake_ignores_commit() {
-        let mut handshake = TestHandshake::new();
+        let mut handshake = TestHandshake::new(TestHandshakeConfig::looping());
         let commit1 = handshake.sta1_init();
         let (commit2, confirm2) = handshake.sta2_handle_commit(commit1.to_rx());
         handshake.sta1_handle_commit(commit2.to_rx());
@@ -676,7 +700,7 @@ mod tests {
 
     #[test]
     fn bad_first_commit_rejects_auth() {
-        let mut handshake = TestHandshake::new();
+        let mut handshake = TestHandshake::new(TestHandshakeConfig::looping());
         let commit1_wrong = CommitMsg {
             group_id: 19,
             scalar: &[0xab; 32][..],
@@ -692,7 +716,7 @@ mod tests {
 
     #[test]
     fn bad_second_commit_ignored() {
-        let mut handshake = TestHandshake::new();
+        let mut handshake = TestHandshake::new(TestHandshakeConfig::looping());
         let commit1 = handshake.sta1_init();
         let (_commit1, _confirm2) = handshake.sta2_handle_commit(commit1.to_rx());
         let commit2_wrong = CommitMsg {
@@ -708,7 +732,7 @@ mod tests {
 
     #[test]
     fn reflected_commit_discarded() {
-        let mut handshake = TestHandshake::new();
+        let mut handshake = TestHandshake::new(TestHandshakeConfig::looping());
         let commit1 = handshake.sta1_init();
 
         let mut sink = vec![];
@@ -719,7 +743,7 @@ mod tests {
 
     #[test]
     fn maximum_commit_retries() {
-        let mut handshake = TestHandshake::new();
+        let mut handshake = TestHandshake::new(TestHandshakeConfig::looping());
         let commit1 = handshake.sta1_init();
         let (commit2, confirm2) = handshake.sta2_handle_commit(commit1.clone().to_rx());
 
@@ -740,7 +764,7 @@ mod tests {
 
     #[test]
     fn completed_exchange_fails_after_retries() {
-        let mut handshake = TestHandshake::new();
+        let mut handshake = TestHandshake::new(TestHandshakeConfig::looping());
         let commit1 = handshake.sta1_init();
         let (commit2, confirm2) = handshake.sta2_handle_commit(commit1.clone().to_rx());
 
@@ -799,7 +823,7 @@ mod tests {
 
     #[test]
     fn resend_commit_after_retransmission_timeout() {
-        let mut handshake = TestHandshake::new();
+        let mut handshake = TestHandshake::new(TestHandshakeConfig::looping());
         let commit1 = handshake.sta1_init();
 
         let mut sink = vec![];
@@ -811,7 +835,7 @@ mod tests {
 
     #[test]
     fn resend_confirm_after_retransmission_timeout() {
-        let mut handshake = TestHandshake::new();
+        let mut handshake = TestHandshake::new(TestHandshakeConfig::looping());
         let commit1 = handshake.sta1_init();
         let (commit2, confirm2) = handshake.sta2_handle_commit(commit1.clone().to_rx());
 
@@ -828,7 +852,7 @@ mod tests {
 
     #[test]
     fn abort_commit_after_too_many_timeouts() {
-        let mut handshake = TestHandshake::new();
+        let mut handshake = TestHandshake::new(TestHandshakeConfig::looping());
         let commit1 = handshake.sta1_init();
 
         let mut sink = vec![];
@@ -847,7 +871,7 @@ mod tests {
 
     #[test]
     fn abort_confirm_after_too_many_timeouts() {
-        let mut handshake = TestHandshake::new();
+        let mut handshake = TestHandshake::new(TestHandshakeConfig::looping());
         let commit1 = handshake.sta1_init();
         let (commit2, confirm2) = handshake.sta2_handle_commit(commit1.clone().to_rx());
 
@@ -870,7 +894,7 @@ mod tests {
 
     #[test]
     fn ignore_unexpected_retransmit_timeout() {
-        let mut handshake = TestHandshake::new();
+        let mut handshake = TestHandshake::new(TestHandshakeConfig::looping());
         let mut sink = vec![];
         // Timeout::Retransmission is ignored while in New state.
         handshake.sta1.handle_timeout(&mut sink, Timeout::Retransmission);
@@ -888,7 +912,7 @@ mod tests {
 
     #[test]
     fn fail_on_early_key_expiration() {
-        let mut handshake = TestHandshake::new();
+        let mut handshake = TestHandshake::new(TestHandshakeConfig::looping());
         handshake.sta1_init();
 
         // Early key expiration indicates that something has gone very wrong, so we abort.
@@ -900,7 +924,7 @@ mod tests {
 
     #[test]
     fn key_expiration_timeout() {
-        let mut handshake = TestHandshake::new();
+        let mut handshake = TestHandshake::new(TestHandshakeConfig::looping());
         // Timeout::KeyExpiration is only expected once our handshake has completed.
         let commit1 = handshake.sta1_init();
         let (commit2, confirm2) = handshake.sta2_handle_commit(commit1.to_rx());

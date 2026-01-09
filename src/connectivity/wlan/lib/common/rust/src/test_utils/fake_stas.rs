@@ -4,7 +4,7 @@
 
 use crate::channel::{Cbw, Channel};
 use crate::ie::fake_ies::fake_wmm_param;
-use crate::ie::{self, write_wmm_param, IeType};
+use crate::ie::{self, IeType, write_rsnxe, write_wmm_param};
 use crate::mac;
 use crate::test_utils::fake_frames::{
     fake_eap_rsne, fake_wpa1_ie, fake_wpa2_enterprise_rsne, fake_wpa2_rsne,
@@ -15,8 +15,8 @@ use anyhow::Context;
 use ieee80211::Ssid;
 use num_derive::FromPrimitive;
 use num_traits::FromPrimitive;
-use rand::distr::{Distribution, StandardUniform};
 use rand::Rng;
+use rand::distr::{Distribution, StandardUniform};
 use {
     fidl_fuchsia_wlan_common as fidl_common, fidl_fuchsia_wlan_ieee80211 as fidl_ieee80211,
     fidl_fuchsia_wlan_sme as fidl_sme,
@@ -80,6 +80,7 @@ pub struct BssDescriptionCreator {
     pub ssid: Ssid,
     pub rates: Vec<u8>,
     pub wmm_param: Option<ie::WmmParam>,
+    pub sae_hash_to_element: bool,
 
     // *** Modifiable capability_info bits
     // The privacy, ess, and ibss bits are reserved for the
@@ -115,6 +116,13 @@ impl BssDescriptionCreator {
 
         if let Some(rsne) = derive_rsne(self.protection_cfg) {
             ies_updater.set_raw(&rsne[..]).context("set RSNE")?;
+        }
+        if self.sae_hash_to_element {
+            let mut octet_1 = ie::RsnxeOctet1(0);
+            octet_1.set_sae_hash_to_element(true);
+            let mut rsnxe = vec![];
+            write_rsnxe(&mut rsnxe, octet_1).context("Failed to write RSNXE to IE buffer")?;
+            ies_updater.set_raw(&rsnxe[..]).context("set RSNXE")?;
         }
         if let Some(wpa1_vendor_ie) = derive_wpa1_vendor_ies(self.protection_cfg) {
             ies_updater.set_raw(&wpa1_vendor_ie[..]).context("set WPA1 vendor IE")?;
@@ -273,6 +281,7 @@ pub fn build_fake_bss_description_creator__(
         ssid: Ssid::try_from("fake-ssid").unwrap(),
         rates: vec![0x82, 0x84, 0x8b, 0x96, 0x0c, 0x12, 0x18, 0x24, 0x30, 0x48, 0x60, 0x6c],
         wmm_param: Some(fake_wmm_param()),
+        sae_hash_to_element: false,
 
         cf_pollable: false,
         cf_poll_req: false,
@@ -373,6 +382,7 @@ pub fn build_random_bss_description_creator__(
         } else {
             None
         },
+        sae_hash_to_element: rng.random(),
 
         cf_pollable: rng.random(),
         cf_poll_req: rng.random(),

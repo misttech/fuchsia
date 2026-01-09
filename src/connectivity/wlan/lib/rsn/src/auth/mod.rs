@@ -41,8 +41,16 @@ pub struct SaeData {
 #[derive(Debug, PartialEq, Clone)]
 pub enum Config {
     ComputedPsk(psk::Psk),
-    Sae { ssid: Ssid, password: Vec<u8>, mac: MacAddr, peer_mac: MacAddr },
-    DriverSae { password: Vec<u8> },
+    Sae {
+        ssid: Ssid,
+        password: Vec<u8>,
+        mac: MacAddr,
+        peer_mac: MacAddr,
+        pwe_method: sae::PweMethod,
+    },
+    DriverSae {
+        password: Vec<u8>,
+    },
 }
 
 impl Config {
@@ -89,12 +97,12 @@ impl Method {
     pub fn from_config(cfg: Config) -> Result<Method, AuthError> {
         match cfg {
             Config::ComputedPsk(psk) => Ok(Method::Psk(psk)),
-            Config::Sae { ssid, password, mac, peer_mac } => {
+            Config::Sae { ssid, password, mac, peer_mac, pwe_method } => {
                 // TODO(https://fxbug.dev/42173568): Use PweMethod::Direct here for SAE Hash-to-Element.
                 let handshake = sae::new_sae_handshake(
                     DEFAULT_GROUP_ID,
                     AKM_SAE,
-                    wlan_sae::PweMethod::Loop,
+                    pwe_method,
                     ssid,
                     password,
                     None, // Not required for PweMethod::Loop

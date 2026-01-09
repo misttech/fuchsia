@@ -24,6 +24,7 @@ use wlan_common::ie::rsn::{
 };
 use wlan_common::ie::{fake_wpa_ie, write_wpa1_ie};
 use wlan_common::organization::Oui;
+use wlan_sae::PweMethod;
 
 static S_ADDR: LazyLock<MacAddr> =
     LazyLock::new(|| MacAddr::from([0x81, 0x76, 0x61, 0x14, 0xDF, 0xC9]));
@@ -82,6 +83,7 @@ pub fn get_wpa3_supplicant() -> Supplicant {
             password: "ThisIsAPassword".as_bytes().to_vec(),
             mac: *S_ADDR,
             peer_mac: *A_ADDR,
+            pwe_method: PweMethod::Loop,
         },
         *S_ADDR,
         ProtectionInfo::Rsne(fake_wpa3_s_rsne()),

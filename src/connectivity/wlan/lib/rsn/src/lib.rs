@@ -37,6 +37,7 @@ pub use crate::auth::psk;
 pub use crate::key::gtk::{self, GtkProvider};
 pub use crate::key::igtk::{self, IgtkProvider};
 pub use crate::rsna::NegotiatedProtection;
+pub use wlan_sae::PweMethod;
 
 #[derive(Debug)]
 pub struct Supplicant {
@@ -249,8 +250,13 @@ impl Authenticator {
         a_protection: ProtectionInfo,
     ) -> Result<Authenticator, anyhow::Error> {
         let negotiated_protection = NegotiatedProtection::from_protection(&s_protection)?;
-        let auth_cfg =
-            auth::Config::Sae { ssid, password, mac: a_addr.clone(), peer_mac: s_addr.clone() };
+        let auth_cfg = auth::Config::Sae {
+            ssid,
+            password,
+            mac: a_addr.clone(),
+            peer_mac: s_addr.clone(),
+            pwe_method: PweMethod::Loop,
+        };
         let auth_method = auth::Method::from_config(auth_cfg.clone())?;
 
         let esssa = EssSa::new(

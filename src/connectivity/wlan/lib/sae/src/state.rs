@@ -231,6 +231,7 @@ impl<E> SaeNew<E> {
             &commit.scalar[..],
             &commit.element[..],
             &[],
+            self.config.params.pwe_method,
         )));
         sink.push(SaeUpdate::ResetTimeout(Timeout::Retransmission));
         Ok((rand, commit))
@@ -264,6 +265,7 @@ impl<E> SaeNew<E> {
             &serialized_commit.scalar[..],
             &serialized_commit.element[..],
             &[],
+            self.config.params.pwe_method,
         )));
         sink.push(SaeUpdate::SendFrame(write_confirm(1, &confirm[..])));
         sink.push(SaeUpdate::ResetTimeout(Timeout::Retransmission));
@@ -314,6 +316,7 @@ impl<E> SaeCommitted<E> {
             &self.commit.scalar[..],
             &self.commit.element[..],
             &self.anti_clogging_token[..],
+            self.config.params.pwe_method,
         )));
         sink.push(SaeUpdate::ResetTimeout(Timeout::Retransmission));
         Ok(())
@@ -372,6 +375,7 @@ impl<E> SaeConfirmed<E> {
             &self.commit.scalar[..],
             &self.commit.element[..],
             &[],
+            self.config.params.pwe_method,
         )));
         sink.push(SaeUpdate::SendFrame(write_confirm(self.sc, &confirm[..])));
         sink.push(SaeUpdate::ResetTimeout(Timeout::Retransmission));

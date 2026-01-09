@@ -15,6 +15,7 @@ use wlan_common::channel;
 use wlan_common::ie::fake_ies::{fake_ht_cap_bytes, fake_vht_cap_bytes};
 use wlan_rsn::rsna::UpdateSink;
 use wlan_rsn::{Error, auth, format_rsn_err, psk};
+use wlan_sae::PweMethod;
 use {
     fidl_fuchsia_wlan_ieee80211 as fidl_ieee80211, fidl_fuchsia_wlan_internal as fidl_internal,
     fidl_fuchsia_wlan_mlme as fidl_mlme,
@@ -185,6 +186,7 @@ pub fn mock_sae_supplicant() -> (MockSupplicant, MockSupplicantController) {
         password: MOCK_PASS.as_bytes().to_vec(),
         mac: [0xaa; 6].into(),
         peer_mac: [0xbb; 6].into(),
+        pwe_method: PweMethod::Loop,
     };
     mock_supplicant(config)
 }

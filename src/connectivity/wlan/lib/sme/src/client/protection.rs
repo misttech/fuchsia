@@ -16,7 +16,7 @@ use wlan_common::security::{SecurityAuthenticator, wpa};
 use wlan_rsn::auth::psk::ToPsk;
 use wlan_rsn::auth::{self};
 use wlan_rsn::nonce::NonceReader;
-use wlan_rsn::{NegotiatedProtection, ProtectionInfo};
+use wlan_rsn::{NegotiatedProtection, ProtectionInfo, PweMethod};
 
 #[derive(Debug)]
 pub enum Protection {
@@ -161,11 +161,30 @@ impl SecurityContext<'_, wpa::Wpa3PersonalCredentials> {
                     .and_then(|sae| sae.sme_handler_supported)
                     .unwrap_or(false)
                 {
+                    let direct_hash_supported_by_peer = self
+                        .bss
+                        .rsnxe()
+                        .and_then(|rsnxe| rsnxe.rsnxe_octet_1)
+                        .map(|octet| octet.sae_hash_to_element())
+                        .unwrap_or(false);
+                    let direct_hash_supported_by_driver = self
+                        .security_support
+                        .sae
+                        .as_ref()
+                        .and_then(|sae| sae.hash_to_element_supported)
+                        .unwrap_or(false);
                     Ok(auth::Config::Sae {
                         ssid: self.bss.ssid.clone(),
                         password: passphrase.clone().into(),
                         mac: self.device.sta_addr.into(),
                         peer_mac: self.bss.bssid.into(),
+                        pwe_method: if direct_hash_supported_by_peer
+                            && direct_hash_supported_by_driver
+                        {
+                            PweMethod::Direct
+                        } else {
+                            PweMethod::Loop
+                        },
                     })
                 } else if self
                     .security_support
@@ -369,6 +388,7 @@ mod tests {
     use super::*;
     use crate::client::{self};
     use assert_matches::assert_matches;
+    use test_case::test_case;
     use wlan_common::fake_bss_description;
     use wlan_common::ie::fake_ies::fake_wpa_ie;
     use wlan_common::ie::rsn::fake_rsnes::{fake_wpa2_s_rsne, fake_wpa3_s_rsne};
@@ -666,6 +686,43 @@ mod tests {
         };
         assert!(context.authenticator_supplicant_rsne().is_ok());
         assert!(matches!(context.authentication_config(), Ok(auth::Config::Sae { .. })));
+
+        let protection = Protection::try_from(context).unwrap();
+        assert_matches!(protection, Protection::Rsna(rsna) => {
+            assert_eq!(rsna.supplicant.get_auth_method(), auth::MethodName::Sae);
+        });
+    }
+
+    #[test_case(false, fake_bss_description!(Wpa3), PweMethod::Loop; "looping")]
+    #[test_case(true, fake_bss_description!(Wpa3), PweMethod::Loop; "only driver supports direct")]
+    #[test_case(false, fake_bss_description!(Wpa3, sae_hash_to_element: true), PweMethod::Loop; "only peer supports direct")]
+    #[test_case(true, fake_bss_description!(Wpa3, sae_hash_to_element: true), PweMethod::Direct; "direct")]
+    fn wpa3_personal_passphrase_rsna_sme_auth_hash_to_element(
+        driver_supports_h2e: bool,
+        bss: BssDescription,
+        expected_pwe_method: PweMethod,
+    ) {
+        let device = crate::test_utils::fake_device_info([1u8; 6].into());
+        let mut security_support = fake_security_support();
+        if driver_supports_h2e {
+            security_support.sae.as_mut().unwrap().hash_to_element_supported = Some(true);
+        }
+        let config = ClientConfig { wpa3_supported: true, ..Default::default() };
+        let credentials =
+            wpa::Wpa3PersonalCredentials::Passphrase("password".as_bytes().try_into().unwrap());
+        let context = SecurityContext {
+            security: &credentials,
+            device: &device,
+            security_support: &security_support,
+            config: &config,
+            bss: &bss,
+        };
+        assert!(context.authenticator_supplicant_rsne().is_ok());
+        let pwe_method = assert_matches!(
+            context.authentication_config(),
+            Ok(auth::Config::Sae { pwe_method, .. }) => pwe_method
+        );
+        assert_eq!(pwe_method, expected_pwe_method);
 
         let protection = Protection::try_from(context).unwrap();
         assert_matches!(protection, Protection::Rsna(rsna) => {

@@ -2,8 +2,8 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use super::{AuthFrameRx, AuthFrameTx};
-use anyhow::{anyhow, bail, Error};
+use super::{AuthFrameRx, AuthFrameTx, PweMethod};
+use anyhow::{Error, anyhow, bail};
 use fidl_fuchsia_wlan_ieee80211::StatusCode;
 use wlan_common::append::Append;
 use wlan_common::buffer_reader::BufferReader;
@@ -52,6 +52,7 @@ pub fn parse<'a>(frame: &'a AuthFrameRx<'_>) -> Result<ParseSuccess<'a>, Error> 
     // IEEE 802.11 9.3.3.12 Table 9-36 specifies all SAE auth frame formats.
     match (frame.seq, frame.status_code) {
         (1, StatusCode::Success) => parse_commit(frame.body).map(ParseSuccess::Commit),
+        (1, StatusCode::SaeHashToElement) => parse_commit(frame.body).map(ParseSuccess::Commit),
         (1, StatusCode::AntiCloggingTokenRequired) => {
             parse_anti_clogging_token(frame.body).map(ParseSuccess::AntiCloggingToken)
         }
@@ -113,13 +114,18 @@ pub fn write_commit(
     scalar: &[u8],
     element: &[u8],
     anti_clogging_token: &[u8],
+    pwe_method: PweMethod,
 ) -> AuthFrameTx {
     let mut body = Vec::with_capacity(2 + scalar.len() + element.len() + anti_clogging_token.len());
     body.append_value(&group_id);
     body.append_bytes(anti_clogging_token);
     body.append_bytes(scalar);
     body.append_bytes(element);
-    AuthFrameTx { seq: 1, status_code: StatusCode::Success, body }
+    let status_code = match pwe_method {
+        PweMethod::Direct => StatusCode::SaeHashToElement,
+        _ => StatusCode::Success,
+    };
+    AuthFrameTx { seq: 1, status_code, body }
 }
 
 // Allow skipping checks on append_bytes() and append_value()
@@ -312,15 +318,23 @@ mod tests {
 
     #[test]
     fn test_write_commit() {
-        let auth_frame = write_commit(19, &[1u8; 32], &[2u8; 64], &[]);
+        let auth_frame = write_commit(19, &[1u8; 32], &[2u8; 64], &[], PweMethod::Loop);
         assert_eq!(auth_frame.seq, 1);
         assert_eq!(auth_frame.status_code, StatusCode::Success);
         assert_eq!(&auth_frame.body[..], ECC_COMMIT_BODY);
     }
 
     #[test]
+    fn test_write_commit_direct() {
+        let auth_frame = write_commit(19, &[1u8; 32], &[2u8; 64], &[], PweMethod::Direct);
+        assert_eq!(auth_frame.seq, 1);
+        assert_eq!(auth_frame.status_code, StatusCode::SaeHashToElement);
+        assert_eq!(&auth_frame.body[..], ECC_COMMIT_BODY);
+    }
+
+    #[test]
     fn test_write_commit_with_anti_clogging_token() {
-        let auth_frame = write_commit(19, &[1u8; 32], &[2u8; 64], &[4u8; 8]);
+        let auth_frame = write_commit(19, &[1u8; 32], &[2u8; 64], &[4u8; 8], PweMethod::Loop);
         assert_eq!(auth_frame.seq, 1);
         assert_eq!(auth_frame.status_code, StatusCode::Success);
         let mut expected_body = ECC_COMMIT_BODY.to_vec();
