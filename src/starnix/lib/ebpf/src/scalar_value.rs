@@ -234,6 +234,7 @@ impl std::ops::Sub for [< $t:upper Range>] {
 impl std::ops::Shl for [< $t:upper Range>] {
     type Output = Self;
     fn shl(self, rhs: Self) -> Self {
+        // If rhs is not guaranteed to be 32 bits, just return the max range.
         #[allow(irrefutable_let_patterns)]
         let Ok(rhs_max) = u32::try_from(rhs.max) else {
             return Self::max();
@@ -248,8 +249,8 @@ impl std::ops::Shl for [< $t:upper Range>] {
         if rhs_max > self.max.leading_zeros() {
             return Self::max();
         }
-        let min = self.min.overflowing_shl(rhs_min).0;
-        let max = self.max.overflowing_shl(rhs_max).0;
+        let min = self.min.unbounded_shl(rhs_min);
+        let max = self.max.unbounded_shl(rhs_max);
         Self { min, max }
     }
 }
@@ -265,8 +266,8 @@ impl std::ops::Shr for [< $t:upper Range>] {
         let Ok(rhs_min) = u32::try_from(rhs.min) else {
             return Self::max();
         };
-        let min = self.min.overflowing_shr(rhs_max).0;
-        let max = self.min.overflowing_shr(rhs_min).0;
+        let min = self.min.unbounded_shr(rhs_max);
+        let max = self.min.unbounded_shr(rhs_min);
         Self { min, max }
     }
 }
@@ -423,6 +424,8 @@ impl [< $t:upper ScalarValueData>] {
     pub fn ashr(self, rhs: Self) -> Self {
         fn ashr(x: [< $t >], y: [< $t >]) -> [< $t >] {
             let x = x.cast_signed();
+            // rust shift operation takes 32 bits rhs. If `y` doesn't fit,
+            // compute the result here.
             if y > u32::MAX.into() {
                 if x >= 0 {
                     0
@@ -430,14 +433,16 @@ impl [< $t:upper ScalarValueData>] {
                     [< $t >]::MAX
                 }
             } else {
-                x.overflowing_shr(y as u32).0.cast_unsigned()
+                x.unbounded_shr(y as u32).cast_unsigned()
             }
         }
         fn shr(x: [< $t >], y: [< $t >]) -> [< $t >] {
+            // rust shift operation takes 32 bits rhs. If `y` doesn't fit,
+            // compute the result here.
             if y > u32::MAX.into() {
                 0
             } else {
-                x.overflowing_shr(y as u32).0
+                x.unbounded_shr(y as u32)
             }
         }
         if !rhs.is_known() {
@@ -604,10 +609,12 @@ impl std::ops::Shl for [< $t:upper ScalarValueData>] {
         let urange = self.urange << rhs.urange;
         if rhs.is_known() {
             return self.shift_operation(rhs.value, urange, |x, y| {
+                // rust shift operation takes 32 bits rhs. If `y` doesn't fit,
+                // compute the result here.
                 if y > u32::MAX.into() {
                     0
                 } else {
-                    x.overflowing_shl(y as u32).0
+                    x.unbounded_shl(y as u32)
                 }
             });
         }
@@ -624,10 +631,12 @@ impl std::ops::Shr for [< $t:upper ScalarValueData>] {
         let urange = self.urange >> rhs.urange;
         if rhs.is_known() {
             return self.shift_operation(rhs.value, urange, |x, y| {
+                // rust shift operation takes 32 bits rhs. If `y` doesn't fit,
+                // compute the result here.
                 if y > u32::MAX.into() {
                     0
                 } else {
-                    x.overflowing_shr(y as u32).0
+                    x.unbounded_shr(y as u32)
                 }
             });
         }

@@ -1017,13 +1017,14 @@ pub mod test {
     #[test_case(local_test_data!("forget_release.data"))]
     #[test_case(local_test_data!("malloc_double_free.data"))]
     #[test_case(local_test_data!("malloc_use_free.data"))]
-    #[test_case(local_test_data!("null_checks_propagated.data"))]
     #[test_case(local_test_data!("null_checks_multiple.data"))]
+    #[test_case(local_test_data!("null_checks_propagated.data"))]
     #[test_case(local_test_data!("packet_access.data"))]
     #[test_case(local_test_data!("read_only_helper.data"))]
+    #[test_case(local_test_data!("repro_bpf_mod_mismatch.data"))]
+    #[test_case(local_test_data!("shifts.data"))]
     #[test_case(local_test_data!("stack_access.data"))]
     #[test_case(local_test_data!("write_only_helper.data"))]
-    #[test_case(local_test_data!("repro_bpf_mod_mismatch.data"))]
     fn test_ebpf_conformance(content: &str) {
         let Some(mut test_case) = TestCase::parse(content) else {
             // Special case that only test the test framework.
