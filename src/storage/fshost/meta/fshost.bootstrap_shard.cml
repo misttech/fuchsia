@@ -22,7 +22,6 @@
                 "fuchsia.boot.Items",
                 "fuchsia.boot.WriteOnlyLog",
                 "fuchsia.feedback.CrashReporter",
-                "fuchsia.kernel.VmexResource",
                 "fuchsia.metrics.MetricEventLoggerFactory",
                 "fuchsia.process.Launcher",
             ],

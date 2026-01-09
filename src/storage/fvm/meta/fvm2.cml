@@ -41,10 +41,7 @@
     ],
     offer: [
         {
-            protocol: [
-                "fuchsia.kernel.VmexResource",
-                "fuchsia.scheduler.RoleManager",
-            ],
+            protocol: [ "fuchsia.scheduler.RoleManager" ],
             from: "parent",
             to: "#blobfs-collection",
             availability: "optional",

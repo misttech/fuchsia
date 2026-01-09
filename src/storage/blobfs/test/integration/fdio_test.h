@@ -49,9 +49,6 @@ class FdioTest : public testing::Test {
 
   void set_mount_options(MountOptions options) { mount_options_ = options; }
 
-  // The vmex resource defaults to empty. It only needs to be set if a test requires it.
-  void set_vmex_resource(zx::resource resource) { vmex_resource_ = std::move(resource); }
-
   // Fetches a fresh Inspect snapshot from the running blobfs instance.
   void TakeSnapshot(inspect::Hierarchy* output);
 
@@ -72,7 +69,6 @@ class FdioTest : public testing::Test {
   block_client::FakeBlockDevice* block_device_ = nullptr;  // Owned by the runner_.
 
   MountOptions mount_options_;
-  zx::resource vmex_resource_;
   fbl::unique_fd outgoing_dir_fd_;
   fbl::unique_fd root_fd_;
   std::unique_ptr<ComponentRunner> runner_;

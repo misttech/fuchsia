@@ -16,7 +16,6 @@
 #include <lib/sync/completion.h>
 #include <lib/syslog/cpp/macros.h>
 #include <lib/zx/event.h>
-#include <lib/zx/resource.h>
 #include <lib/zx/result.h>
 #include <lib/zx/vmo.h>
 #include <stdlib.h>
@@ -141,8 +140,7 @@ std::shared_ptr<BlobfsMetrics> CreateBlobfsMetrics(inspect::Inspector inspector)
 
 zx::result<std::unique_ptr<Blobfs>> Blobfs::Create(async_dispatcher_t* dispatcher,
                                                    std::unique_ptr<BlockDevice> device,
-                                                   fs::PagedVfs* vfs, const MountOptions& options,
-                                                   zx::resource vmex_resource) {
+                                                   fs::PagedVfs* vfs, const MountOptions& options) {
   TRACE_DURATION("blobfs", "Blobfs::Create");
 
   // Make sure blocks are page-aligned.
@@ -184,10 +182,9 @@ zx::result<std::unique_ptr<Blobfs>> Blobfs::Create(async_dispatcher_t* dispatche
 
   // Construct the Blobfs object, without intensive validation, since it
   // may require upgrades / journal replays to become valid.
-  auto fs = std::unique_ptr<Blobfs>(
-      new Blobfs(dispatcher, std::move(device), vfs, superblock, options.writability,
-                 options.compression_settings, std::move(vmex_resource),
-                 options.pager_backed_cache_policy, decompression_connector));
+  auto fs = std::unique_ptr<Blobfs>(new Blobfs(
+      dispatcher, std::move(device), vfs, superblock, options.writability,
+      options.compression_settings, options.pager_backed_cache_policy, decompression_connector));
   fs->block_info_ = block_info;
 
   auto fs_ptr = fs.get();
@@ -874,7 +871,7 @@ void Blobfs::Sync(SyncCallback cb) {
 
 Blobfs::Blobfs(async_dispatcher_t* dispatcher, std::unique_ptr<BlockDevice> device,
                fs::PagedVfs* vfs, const Superblock* info, Writability writable,
-               CompressionSettings write_compression_settings, zx::resource vmex_resource,
+               CompressionSettings write_compression_settings,
                std::optional<CachePolicy> pager_backed_cache_policy,
                DecompressorCreatorConnector* decompression_connector)
     : vfs_(vfs),
@@ -883,7 +880,6 @@ Blobfs::Blobfs(async_dispatcher_t* dispatcher, std::unique_ptr<BlockDevice> devi
       block_device_(std::move(device)),
       writability_(writable),
       write_compression_settings_(write_compression_settings),
-      vmex_resource_(std::move(vmex_resource)),
       metrics_(CreateBlobfsMetrics(inspect_tree_.inspector())),
       pager_backed_cache_policy_(pager_backed_cache_policy),
       decompression_connector_(decompression_connector) {

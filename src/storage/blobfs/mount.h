@@ -63,15 +63,9 @@ struct ComponentOptions {
 // Also expects a lifecycle server end over which to serve fuchsia.process.lifecycle/Lifecycle for
 // shutting down the blobfs component.
 //
-// blobfs relies on the zx_vmo_replace_as_executable syscall to be able to serve executable blobs.
-// The caller must either pass a valid Resource handle of kind ZX_RSRC_KIND_SYSTEM with base
-// ZX_RSRC_SYSTEM_VMEX_BASE for |vmex_resource|, or else the mounted filesystem will not support
-// requesting VMOs for blobs with VmoFlags::EXECUTE.
-//
 // This function blocks until the filesystem terminates.
 zx::result<> StartComponent(ComponentOptions options, fidl::ServerEnd<fuchsia_io::Directory> root,
-                            fidl::ServerEnd<fuchsia_process_lifecycle::Lifecycle> lifecycle,
-                            zx::resource vmex_resource);
+                            fidl::ServerEnd<fuchsia_process_lifecycle::Lifecycle> lifecycle);
 
 }  // namespace blobfs
 

@@ -49,10 +49,6 @@
     use: [
         {
             protocol: [
-                // Without this, blobfs won't be able to mint executables, but it can still read
-                // and write blobs.
-                "fuchsia.kernel.VmexResource",
-
                 // Without this, blobfs won't be able to set the deadline profile for it's pager
                 // threads, which may degrade performance.
                 "fuchsia.scheduler.RoleManager",

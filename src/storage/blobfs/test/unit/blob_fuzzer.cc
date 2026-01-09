@@ -43,9 +43,8 @@ constexpr uint32_t kNumBlocks = kBlockDeviceSize / kBlockSize;
 
 fidl::ClientEnd<fuchsia_io::Directory> ServeOutgoingDirectory(ComponentRunner& runner) {
   auto root_endpoints = fidl::Endpoints<fuchsia_io::Directory>::Create();
-  auto status =
-      runner.ServeRoot(std::move(root_endpoints.server),
-                       fidl::ServerEnd<fuchsia_process_lifecycle::Lifecycle>(), zx::resource());
+  auto status = runner.ServeRoot(std::move(root_endpoints.server),
+                                 fidl::ServerEnd<fuchsia_process_lifecycle::Lifecycle>());
   ZX_ASSERT(status.is_ok());
   return std::move(root_endpoints.client);
 }

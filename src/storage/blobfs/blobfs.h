@@ -16,7 +16,6 @@
 #include <lib/async/dispatcher.h>
 #include <lib/fzl/resizeable-vmo-mapper.h>
 #include <lib/zx/event.h>
-#include <lib/zx/resource.h>
 #include <lib/zx/result.h>
 #include <lib/zx/vmo.h>
 #include <zircon/types.h>
@@ -80,13 +79,11 @@ class Blobfs : public TransactionManager, public BlockIteratorProvider {
   // Creates a blobfs object with the default compression algorithm.
   //
   // The dispatcher should be for the current thread that blobfs is running on. The vfs is required
-  // for paging but can be null in host configurations. The optional root VM resource is needed to
-  // create executable blobs. See vmex_resource() getter.
+  // for paging but can be null in host configurations.
   static zx::result<std::unique_ptr<Blobfs>> Create(async_dispatcher_t* dispatcher,
                                                     std::unique_ptr<BlockDevice> device,
                                                     fs::PagedVfs* vfs = nullptr,
-                                                    const MountOptions& options = MountOptions(),
-                                                    zx::resource vmex_resource = zx::resource());
+                                                    const MountOptions& options = MountOptions());
 
   static std::unique_ptr<BlockDevice> Destroy(std::unique_ptr<Blobfs> blobfs);
 
@@ -195,11 +192,6 @@ class Blobfs : public TransactionManager, public BlockIteratorProvider {
     return write_compression_settings_.compression_algorithm != CompressionAlgorithm::kUncompressed;
   }
 
-  // Optional root VM resource. This is necessary to allow executable blobs to be created. It will
-  // be a null resource if this blobfs instance does not have access (mostly happens in tests) in
-  // which case it will be impossible to create executable memory mappings.
-  const zx::resource& vmex_resource() const { return vmex_resource_; }
-
   BlobLoader& loader() { return *loader_; }
   PageLoader& page_loader() { return *page_loader_; }
 
@@ -238,7 +230,7 @@ class Blobfs : public TransactionManager, public BlockIteratorProvider {
 
   Blobfs(async_dispatcher_t* dispatcher, std::unique_ptr<BlockDevice> device, fs::PagedVfs* vfs,
          const Superblock* info, Writability writable,
-         CompressionSettings write_compression_settings, zx::resource vmex_resource,
+         CompressionSettings write_compression_settings,
          std::optional<CachePolicy> pager_backed_cache_policy,
          DecompressorCreatorConnector* decompression_connector);
 
@@ -323,7 +315,6 @@ class Blobfs : public TransactionManager, public BlockIteratorProvider {
   fuchsia_storage_block::wire::BlockInfo block_info_ = {};
   Writability writability_;
   const CompressionSettings write_compression_settings_;
-  zx::resource vmex_resource_;  // Possibly null resource. See getter for more.
 
   std::unique_ptr<Allocator> allocator_;
 

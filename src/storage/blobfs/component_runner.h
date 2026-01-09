@@ -48,15 +48,12 @@ class ComponentRunner final : public fs::PagedVfs {
   zx::result<fs::FilesystemInfo> GetFilesystemInfo() final;
 
   zx::result<> ServeRoot(fidl::ServerEnd<fuchsia_io::Directory> root,
-                         fidl::ServerEnd<fuchsia_process_lifecycle::Lifecycle> lifecycle,
-                         zx::resource vmex_resource);
+                         fidl::ServerEnd<fuchsia_process_lifecycle::Lifecycle> lifecycle);
   zx::result<> Configure(std::unique_ptr<BlockDevice> device, const MountOptions& options);
 
  private:
   async::Loop& loop_;
   ComponentOptions config_;
-
-  zx::resource vmex_resource_;
 
   // These are initialized when ServeRoot is called.
   fbl::RefPtr<fs::PseudoDir> outgoing_;

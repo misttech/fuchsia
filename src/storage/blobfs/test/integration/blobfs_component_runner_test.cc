@@ -54,9 +54,8 @@ class BlobfsComponentRunnerTest : public testing::Test {
 
   void StartServe() {
     runner_ = std::make_unique<ComponentRunner>(loop_, config_);
-    auto status =
-        runner_->ServeRoot(std::move(server_end_),
-                           fidl::ServerEnd<fuchsia_process_lifecycle::Lifecycle>(), zx::resource());
+    auto status = runner_->ServeRoot(std::move(server_end_),
+                                     fidl::ServerEnd<fuchsia_process_lifecycle::Lifecycle>());
     ASSERT_OK(status.status_value());
   }
 

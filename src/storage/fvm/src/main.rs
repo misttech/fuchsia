@@ -1363,10 +1363,8 @@ impl Component {
                     format_options: FormatOptions::default(),
                     start_options: self.1.clone(),
                     component_type: ComponentType::DynamicChild {
-                        // Use a separate collection for blobfs because it needs additional
-                        // capabilities routed to it (e.g. VmexResource) and we don't want
-                        // to route those capabilities to other filesystems.
                         collection_name: if self.0 == "blobfs" {
+                            // TODO(https://fxbug.dev/473793632): Move blobfs to fs-collection.
                             "blobfs-collection".to_string()
                         } else {
                             fs_management::FS_COLLECTION_NAME.to_string()

@@ -295,9 +295,6 @@ impl FshostBuilder {
                             .optional(),
                     )
                     .capability(
-                        Capability::protocol_by_name("fuchsia.kernel.VmexResource").optional(),
-                    )
-                    .capability(
                         Capability::protocol_by_name("fuchsia.memorypressure.Provider").optional(),
                     )
                     .from(Ref::void())

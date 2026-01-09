@@ -18,7 +18,6 @@
 #include <lib/inspect/component/cpp/component.h>
 #include <lib/inspect/component/cpp/tree_handler_settings.h>
 #include <lib/syslog/cpp/macros.h>
-#include <lib/zx/resource.h>
 #include <lib/zx/result.h>
 #include <zircon/errors.h>
 #include <zircon/types.h>
@@ -128,7 +127,7 @@ zx::result<fs::FilesystemInfo> ComponentRunner::GetFilesystemInfo() {
 
 zx::result<> ComponentRunner::ServeRoot(
     fidl::ServerEnd<fuchsia_io::Directory> root,
-    fidl::ServerEnd<fuchsia_process_lifecycle::Lifecycle> lifecycle, zx::resource vmex_resource) {
+    fidl::ServerEnd<fuchsia_process_lifecycle::Lifecycle> lifecycle) {
   LifecycleServer::Create(
       loop_.dispatcher(),
       [this](fs::FuchsiaVfs::ShutdownCallback cb) {
@@ -156,7 +155,6 @@ zx::result<> ComponentRunner::ServeRoot(
                       fbl::MakeRefCounted<fs::RemoteDir>(std::move(root_endpoints->client)));
   root_server_end_ = std::move(root_endpoints->server);
 
-  vmex_resource_ = std::move(vmex_resource);
   zx_status_t status = ServeDirectory(outgoing_, std::move(root));
   if (status != ZX_OK) {
     FX_LOGS(ERROR) << "mount failed; could not serve root directory";
@@ -176,8 +174,7 @@ zx::result<> ComponentRunner::Configure(std::unique_ptr<BlockDevice> device,
   // All of our pager threads get the deadline profile for scheduling.
   SetDeadlineProfile(GetPagerThreads());
 
-  auto blobfs_or = Blobfs::Create(loop_.dispatcher(), std::move(device), this, options,
-                                  std::move(vmex_resource_));
+  auto blobfs_or = Blobfs::Create(loop_.dispatcher(), std::move(device), this, options);
   if (blobfs_or.is_error()) {
     FX_LOGS(ERROR) << "configure failed; could not create blobfs: " << blobfs_or.status_string();
     return blobfs_or.take_error();

@@ -23,8 +23,7 @@
 namespace blobfs {
 
 zx::result<> StartComponent(ComponentOptions options, fidl::ServerEnd<fuchsia_io::Directory> root,
-                            fidl::ServerEnd<fuchsia_process_lifecycle::Lifecycle> lifecycle,
-                            zx::resource vmex_resource) {
+                            fidl::ServerEnd<fuchsia_process_lifecycle::Lifecycle> lifecycle) {
   // When the loop is destroyed, it can make calls into runner, so runner *must* be destroyed after
   // the loop.
   std::unique_ptr<ComponentRunner> runner;
@@ -32,7 +31,7 @@ zx::result<> StartComponent(ComponentOptions options, fidl::ServerEnd<fuchsia_io
   trace::TraceProviderWithFdio provider(loop.dispatcher());
 
   runner = std::make_unique<ComponentRunner>(loop, options);
-  auto status = runner->ServeRoot(std::move(root), std::move(lifecycle), std::move(vmex_resource));
+  auto status = runner->ServeRoot(std::move(root), std::move(lifecycle));
   if (status.is_error()) {
     return status;
   }
