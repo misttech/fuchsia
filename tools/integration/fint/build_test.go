@@ -32,7 +32,6 @@ import (
 )
 
 type fakeBuildModules struct {
-	archives         []build.Archive
 	clippyTargets    []build.ClippyTarget
 	generatedSources []string
 	images           []build.Image
@@ -41,7 +40,6 @@ type fakeBuildModules struct {
 	tools            build.Tools
 }
 
-func (m fakeBuildModules) Archives() []build.Archive                     { return m.archives }
 func (m fakeBuildModules) ClippyTargets() []build.ClippyTarget           { return m.clippyTargets }
 func (m fakeBuildModules) GeneratedSources() []string                    { return m.generatedSources }
 func (m fakeBuildModules) Images() []build.Image                         { return m.images }
@@ -477,32 +475,10 @@ func TestBuild(t *testing.T) {
 			},
 		},
 		{
-			name: "images and archives included",
-			staticSpec: &fintpb.Static{
-				IncludeImages:   true,
-				IncludeArchives: true,
-			},
-			modules: fakeBuildModules{
-				archives: []build.Archive{
-					{Name: "packages", Path: "p.tar.gz", Type: "tgz"},
-					{Name: "archive", Path: "b.tar", Type: "tar"},
-					{Name: "archive", Path: "b.tgz", Type: "tgz"},
-					{Name: "other", Path: "other.tgz", Type: "tgz"},
-				},
-			},
-			expectedTargets: append(extraTargetsForImages, "b.tgz"),
-			expectedArtifacts: &fintpb.BuildArtifacts{
-				BuiltArchives: []*structpb.Struct{
-					mustStructPB(t, build.Archive{Name: "archive", Path: "b.tgz", Type: "tgz"}),
-				},
-			},
-		},
-		{
 			name: "netboot images and scripts excluded when paving",
 			staticSpec: &fintpb.Static{
-				Pave:            true,
-				IncludeImages:   true,
-				IncludeArchives: true,
+				Pave:          true,
+				IncludeImages: true,
 			},
 			modules: fakeBuildModules{
 				images: []build.Image{
@@ -658,6 +634,13 @@ func TestBuild(t *testing.T) {
 				tools: makeTools(map[string][]string{
 					"tool1": {"mac"},
 				}),
+			},
+			expectErr: true,
+		},
+		{
+			name: "include_archives not supported",
+			staticSpec: &fintpb.Static{
+				IncludeArchives: true,
 			},
 			expectErr: true,
 		},

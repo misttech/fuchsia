@@ -120,7 +120,6 @@ var (
 )
 
 type buildModules interface {
-	Archives() []build.Archive
 	ClippyTargets() []build.ClippyTarget
 	GeneratedSources() []string
 	Images() []build.Image
@@ -737,6 +736,10 @@ func constructNinjaTargets(
 	var targets []string
 	var artifacts fintpb.BuildArtifacts
 
+	if staticSpec.IncludeArchives {
+		return nil, nil, fmt.Errorf("include_archives=true is no longer supported")
+	}
+
 	if staticSpec.IncludeDefaultNinjaTarget {
 		targets = append(targets, ":default")
 	} else {
@@ -768,24 +771,6 @@ func constructNinjaTargets(
 					return nil, nil, err
 				}
 				artifacts.BuiltImages = append(artifacts.BuiltImages, imageStruct)
-			}
-		}
-
-		// TODO(https://fxbug.dev/42119886): Remove once it is always false, and move
-		// "build/images/updates" into `extraTargetsForImages`.
-		if staticSpec.IncludeArchives {
-			archivesToBuild := []string{
-				"archive", // Images and scripts for paving/netbooting.
-			}
-			for _, archive := range modules.Archives() {
-				if slices.Contains(archivesToBuild, archive.Name) && archive.Type == "tgz" {
-					targets = append(targets, archive.Path)
-					archiveStruct, err := toStructPB(archive)
-					if err != nil {
-						return nil, nil, err
-					}
-					artifacts.BuiltArchives = append(artifacts.BuiltArchives, archiveStruct)
-				}
 			}
 		}
 	}

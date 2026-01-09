@@ -57,7 +57,6 @@ class BuildApiFilter(object):
             removed.
         """
         if api_module in (
-            "archives",
             "assembly_input_archives",
             "images",
             "package-repositories",

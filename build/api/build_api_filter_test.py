@@ -40,24 +40,6 @@ class BuildApiModulesFilterTest(unittest.TestCase):
 
         _TEST_CASES = [
             {
-                "archives": (
-                    [
-                        {
-                            "name": "archive",
-                            "path": "build-archive.tar",
-                            "type": "tar",
-                        },
-                        {"name": "archive", "path": "gen/bar", "type": "tgz"},
-                        {
-                            "name": "archive",
-                            "path": "build-archive.zip",
-                            "type": "zip",
-                        },
-                    ],
-                    [
-                        {"name": "archive", "path": "gen/bar", "type": "tgz"},
-                    ],
-                ),
                 "assembly_input_archives": (
                     [
                         {

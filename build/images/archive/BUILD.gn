@@ -1,9 +1,0 @@
-# Copyright 2022 The Fuchsia Authors. All rights reserved.
-# Use of this source code is governed by a BSD-style license that can be
-# found in the LICENSE file.
-
-# NOTE: Do NOT add any dependencies to this group. It is slated for removal.
-group("archive") {
-  testonly = true
-  deps = []
-}

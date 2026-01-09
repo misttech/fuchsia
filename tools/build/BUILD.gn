@@ -29,7 +29,6 @@ group("tests") {
 
 go_library("build") {
   sources = [
-    "archives.go",
     "args.go",
     "args_test.go",
     "assembly_input_archives.go",

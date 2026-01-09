@@ -24,7 +24,6 @@ type Modules struct {
 	buildDir string
 	// keep-sorted start
 	apis                     []string
-	archives                 []Archive
 	args                     Args
 	assemblyInputArchives    []AssemblyInputArchive
 	assemblyManifests        []AssemblyManifest
@@ -61,7 +60,6 @@ func NewModules(buildDir string) (*Modules, error) {
 	manifests := map[string]interface{}{
 		// keep-sorted start ignore_prefixes="
 		"api":                         &m.apis,
-		"archives":                    &m.archives,
 		"args":                        &m.args,
 		"assembly_input_archives":     &m.assemblyInputArchives,
 		"assembly_manifests":          &m.assemblyManifests,
@@ -118,10 +116,6 @@ func (m Modules) ModulePaths() ([]string, error) {
 		return nil, err
 	}
 	return buildApiClient.GetModulePaths()
-}
-
-func (m Modules) Archives() []Archive {
-	return m.archives
 }
 
 func (m Modules) Args() Args {
