@@ -95,7 +95,6 @@ impl AssembledSystem {
         if let Some(devicetree_overlay) = &image_assembly_config.devicetree_overlay {
             system.images.push(Image::Dtbo(devicetree_overlay.clone()));
         }
-        system.images.push(Image::QemuKernel(image_assembly_config.qemu_kernel.clone()));
 
         // Create the base package if needed.
         let base_package = if has_base_package(&image_assembly_config) {
@@ -197,12 +196,39 @@ impl AssembledSystem {
             _ => None,
         });
 
+        // We support two forms of VBMeta: as a normal, Fuchsia standalone
+        // image, and as a QEMU kernel footer for Android pVM support.
+        // Accordingly, we handle the recording of both the VBMeta and the QEMU
+        // kernel together.
         if let Some(vbmeta_config) = vbmeta_config {
             info!("Creating the VBMeta image");
-            vbmeta::construct_vbmeta(&mut system, gendir, vbmeta_config, &zbi_path)
-                .context("Creating the VBMeta image")?;
+            let vbmeta_img: vbmeta::ConstructedVBMeta = vbmeta::construct_vbmeta(
+                gendir,
+                vbmeta_config,
+                &zbi_path,
+                &image_assembly_config.qemu_kernel,
+                image_assembly_config.build_type,
+            )
+            .context("Creating the VBMeta image")?;
+
+            match vbmeta_img {
+                // Separate VBMeta and QEMU kernel images.
+                vbmeta::ConstructedVBMeta::Standalone(path) => {
+                    system.images.push(Image::VBMeta(path));
+                    system
+                        .images
+                        .push(Image::QemuKernel(image_assembly_config.qemu_kernel.clone()));
+                }
+                // Nominally only a QEMU kernel (but one with a VBMeta footer).
+                vbmeta::ConstructedVBMeta::QemuKernelWithFooter(path) => {
+                    system.images.push(Image::QemuKernel(path));
+                }
+            }
         } else {
             info!("Skipping vbmeta creation");
+
+            // No VBMeta so we record the QEMU kernel as normal.
+            system.images.push(Image::QemuKernel(image_assembly_config.qemu_kernel.clone()));
         }
 
         // If we're not in 'test ramdisk' mode (which forbids modifications)

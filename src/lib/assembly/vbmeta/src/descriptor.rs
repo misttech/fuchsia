@@ -40,8 +40,10 @@ impl Descriptor {
 /// A VBMeta property descriptor.
 #[derive(Clone, Debug, PartialEq)]
 pub struct PropertyDescriptor {
-    key: String,
-    value: String,
+    /// The property key.
+    pub key: String,
+    /// The property value.
+    pub value: String,
 }
 
 impl PropertyDescriptor {

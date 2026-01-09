@@ -58,8 +58,7 @@ fuchsia_board_configuration(
     board_name = "pkvm-arm64",
     filesystems = {
         "vbmeta": {
-            # TODO(https://fxbug.dev/449201661): "android-pvm-auto" when ready.
-            "style": "fuchsia",
+            "style": "android-pvm-auto",
             "key": "LABEL(//:third_party/android/platform/external/avb/test/data/testkey_rsa4096.pem)",
         },
     },

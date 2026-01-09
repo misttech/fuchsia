@@ -16,6 +16,7 @@ rustc_library("assembled_system") {
     "//src/lib/assembly/base_package",
     "//src/lib/assembly/blobfs",
     "//src/lib/assembly/cli_args",
+    "//src/lib/assembly/config_schema",
     "//src/lib/assembly/constants",
     "//src/lib/assembly/container",
     "//src/lib/assembly/fvm",
@@ -56,6 +57,7 @@ rustc_library("assembled_system") {
     "src/zbi.rs",
   ]
   test_deps = [
+    "//src/lib/assembly/config_schema",
     "//src/lib/assembly/file_relative_path",
     "//src/lib/assembly/release_info",
     "//src/lib/assembly/test_keys",
