@@ -18,6 +18,7 @@ group("tests") {
     "diagnostics:tests",
     "fp_stack_glue:tests",
     "gvisor:tests",
+    "iptables:tests",
     "memory_attribution:tests",
     "nanohub:tests",
     "psi:tests",

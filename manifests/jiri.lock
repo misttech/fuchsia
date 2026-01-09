@@ -315,6 +315,16 @@
         "instance_id": "SwROJtz994HXjZ5XCbZBVZeGbPFIrY1FhkZNEs8d4_YC"
     },
     {
+        "package": "fuchsia/third_party/3pp/iptables/linux-amd64",
+        "version": "version:2@1.8.11.3",
+        "instance_id": "GLxhc4g3K5Crp3KdIhXpHAfswlTBCqWCSsLjaLIvc1oC"
+    },
+    {
+        "package": "fuchsia/third_party/3pp/iptables/linux-arm64",
+        "version": "version:2@1.8.11.3",
+        "instance_id": "CA9P7IyTULvLffZ1tPsIWRwpMlNC_Oi6bb8r_LloI-8C"
+    },
+    {
         "package": "fuchsia/third_party/3pp/mcp-language-server/linux-amd64",
         "version": "version:2@0.1.1.cr0",
         "instance_id": "hFTgVo_2yEhQoxqQABn7kcd_3sV1ohWd7CSVxQWbIHwC"

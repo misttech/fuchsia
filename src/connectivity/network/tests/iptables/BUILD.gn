@@ -28,12 +28,14 @@ rustc_test("iptables_test") {
 }
 
 fuchsia_test_component("iptables-restore") {
-  manifest = "meta/iptables-restore.cml"
+  manifest = "meta/iptables_restore.cml"
+  component_name = "iptables_restore"
   test_type = "starnix"
 }
 
 fuchsia_test_component("ip6tables-restore") {
-  manifest = "meta/ip6tables-restore.cml"
+  manifest = "meta/ip6tables_restore.cml"
+  component_name = "ip6tables_restore"
   test_type = "starnix"
 }
 

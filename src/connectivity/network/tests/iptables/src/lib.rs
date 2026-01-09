@@ -24,8 +24,8 @@ use {
     fidl_fuchsia_net_matchers_ext as fnet_matchers_ext, fidl_fuchsia_process as fprocess,
 };
 
-const IPTABLES_RESTORE: &'static str = "iptables-restore";
-const IP6TABLES_RESTORE: &'static str = "ip6tables-restore";
+const IPTABLES_RESTORE: &'static str = "iptables_restore";
+const IP6TABLES_RESTORE: &'static str = "ip6tables_restore";
 
 const FILTER_TABLE_WITH_CUSTOM_CHAIN: &[&str] = &[
     "*filter",
