@@ -22,7 +22,7 @@ mod message_notification_service;
 mod messaging_client;
 mod profile;
 
-use messaging_client::MessagingClient;
+use messaging_client::{AccessorTasks, MessagingClient};
 use profile::MasConfig;
 
 /// The maximum number of FIDL service client connections that will be serviced concurrently.
@@ -75,7 +75,7 @@ async fn run_messaging_client(
 ) {
     // Tracks all the running Accessor and NotificationRelayer services.
     let mut accessor_service_futs = FuturesUnordered::new();
-    let mut notification_service_futs = FuturesUnordered::new();
+    let mut mns_signal_process_futs = FuturesUnordered::new();
 
     loop {
         futures::select! {
@@ -88,12 +88,9 @@ async fn run_messaging_client(
                 match maybe_peer {
                     Err(e) => warn!(e:?; "Failed to process profile event"),
                     Ok(Peer::MnsClient(id, protocol, channel)) => {
-                        match messaging_client.new_mns_connection(id, protocol, channel).await {
-                            Ok(service_fut) => {
-                                info!(peer_id:% = id; "Accepted connection from MNS client");
-                                notification_service_futs.push(service_fut);
-                            }
-                            Err(e) => warn!(peer_id:% = id, e:%; "Failed to establish MNS connection"),
+                        info!(peer_id:% = id; "Received connection from MNS client");
+                        if let Err(e) = messaging_client.new_mns_connection(id, protocol, channel).await {
+                            warn!(peer_id:% = id, e:%; "Failed to establish MNS connection");
                         }
                     }
                     Ok(Peer::MasServer(id, mas_config)) => {
@@ -110,24 +107,16 @@ async fn run_messaging_client(
                     warn!(e:?; "Failed to set client connection");
                 }
             }
-            accessor_fut = messaging_client.select_next_some() => {
+            tasks = messaging_client.select_next_some() => {
                 info!("Running a new Accessor FIDL server");
-                accessor_service_futs.push(accessor_fut);
+                let AccessorTasks{fidl_task, mns_signal_process_task} = tasks;
+                accessor_service_futs.push(fidl_task);
+                mns_signal_process_futs.push(mns_signal_process_task);
             }
             peer_id = accessor_service_futs.select_next_some() => {
                 info!(peer_id:%; "Accessor FIDL server terminated");
             }
-            result = notification_service_futs.select_next_some() => {
-                let (peer_id, fut_res) = result;
-                if let Err(e) = fut_res {
-                    warn!(peer_id:%, e:%; "RepositoryNotifier server terminated unexpectedly");
-                }
-                // We need to reset the MNS session if the notifier service is no longer running.
-                if let Err(e) = messaging_client.reset_notification_registration(peer_id).await {
-                    warn!(peer_id:%, e:%; "Failed to reset MNS session")
-                }
-                info!(peer_id:%; "Cleaned up MNS session");
-            }
+            _ = mns_signal_process_futs.select_next_some() => {},
             complete => break,
         }
     }

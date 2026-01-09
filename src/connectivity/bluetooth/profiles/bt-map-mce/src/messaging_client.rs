@@ -14,8 +14,9 @@ use fidl_fuchsia_bluetooth_map::{
 use fuchsia_bluetooth::profile::ProtocolDescriptor;
 use fuchsia_bluetooth::types::{Channel, PeerId};
 use fuchsia_sync::Mutex;
+use futures::StreamExt;
+use futures::channel::mpsc;
 use futures::stream::{FusedStream, Stream};
-use futures::{Future, StreamExt};
 use log::{info, warn};
 use std::collections::HashMap;
 use std::sync::Arc;
@@ -23,7 +24,7 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::task::{Poll, Waker};
 
 use crate::message_access_service::MasInstance;
-use crate::message_notification_service::Session;
+use crate::message_notification_service::{Session, SessionSignal};
 use crate::profile::MasConfig;
 
 /// Manages connected peers and their availability to serve the Accessor FIDL service.
@@ -60,12 +61,20 @@ pub struct MessagingClient {
     waker: Option<Waker>,
 }
 
+pub struct AccessorTasks {
+    // Task for running the Accessor FIDL server.
+    pub(crate) fidl_task: fuchsia_async::Task<PeerId>,
+    // Task for processing the signals from the established Message
+    // Notification Server for this Accessor.
+    pub(crate) mns_signal_process_task: fuchsia_async::Task<()>,
+}
+
 /// Returns the Accessor FIDL service futures that were started from client's `WatchAccessor` requests.
 /// Returns pending if there weren't any `WatchAccessor` requests or if the Accessor FIDL service
 /// was not started because none of the peers were available.
 impl Stream for MessagingClient {
     /// Future for the Accessor FIDL service that was started.
-    type Item = fuchsia_async::Task<PeerId>;
+    type Item = AccessorTasks;
 
     fn poll_next(
         mut self: std::pin::Pin<&mut Self>,
@@ -120,9 +129,15 @@ impl Stream for MessagingClient {
             ..Default::default()
         }));
 
-        let task =
-            fuchsia_async::Task::local(run_accessor_fidl_server(accessor, accessor_request_stream));
-        Poll::Ready(Some(task))
+        let (mns_signal_sender, mns_signal_receiver) = mpsc::channel(1);
+        let fidl_task = fuchsia_async::Task::local(run_accessor_fidl_server(
+            accessor.clone(),
+            accessor_request_stream,
+            mns_signal_sender,
+        ));
+        let mns_signal_process_task =
+            fuchsia_async::Task::local(process_mns_signals(accessor, mns_signal_receiver));
+        Poll::Ready(Some(AccessorTasks { fidl_task, mns_signal_process_task }))
     }
 }
 
@@ -215,7 +230,7 @@ impl MessagingClient {
         peer_id: PeerId,
         protocol: Vec<ProtocolDescriptor>,
         channel: Channel,
-    ) -> Result<impl Future<Output = (PeerId, Result<(), Error>)> + use<>, Error> {
+    ) -> Result<(), Error> {
         self.accessor_manager.remove_disconnected();
 
         let accessor = self
@@ -226,32 +241,15 @@ impl MessagingClient {
             .ok_or(Error::MasUnavailable)?
             .clone();
 
-        let res = accessor.set_mns_connection(protocol, channel).await;
-        if let Err(e) = res {
-            accessor.reset_mns_session().await;
+        if let Err(e) = accessor.set_mns_connection(protocol, channel).await {
+            // If MNS connection was not set successfully, we unregister all notifications.
+            let mas_instances = accessor.mns_session.mas_instances().keys().copied().collect();
+            if let Err(e) = accessor.register_notifications(mas_instances, false).await {
+                warn!(e:?, peer_id:%; "Failed to unregister notifications");
+            }
             return Err(e);
         }
 
-        let fidl_fut = res.unwrap();
-        let fut_with_peer_id = async move {
-            let res = fidl_fut.await;
-            (peer_id, res)
-        };
-        Ok(fut_with_peer_id)
-    }
-
-    pub async fn reset_notification_registration(&mut self, peer_id: PeerId) -> Result<(), Error> {
-        let accessor = self
-            .accessor_manager
-            .connected_peers
-            .lock()
-            .get(&peer_id)
-            .ok_or(Error::MasUnavailable)?
-            .clone();
-
-        accessor.reset_mns_session().await;
-
-        self.accessor_manager.remove_disconnected();
         Ok(())
     }
 }
@@ -260,13 +258,15 @@ impl MessagingClient {
 async fn run_accessor_fidl_server(
     accessor: Arc<Accessor>,
     mut accessor_request_stream: AccessorRequestStream,
+    mns_signal_sender: mpsc::Sender<SessionSignal>,
 ) -> PeerId {
     let peer_id = accessor.peer_id;
     accessor.is_fidl_running.store(true, Ordering::SeqCst);
+
     while let Some(item) = accessor_request_stream.next().await {
         match item {
             Ok(request) => {
-                accessor.handle_fidl_request(request).await;
+                accessor.handle_fidl_request(request, mns_signal_sender.clone()).await;
             }
             Err(e) => {
                 warn!(e:%, peer_id:%; "Accessor FIDL server for peer will terminate.");
@@ -276,6 +276,31 @@ async fn run_accessor_fidl_server(
     }
     accessor.is_fidl_running.store(false, Ordering::SeqCst);
     peer_id
+}
+
+/// Processes the incoming MNS signals.
+async fn process_mns_signals(
+    accessor: Arc<Accessor>,
+    mut mns_signal_receiver: mpsc::Receiver<SessionSignal>,
+) {
+    while let Some(signal) = mns_signal_receiver.next().await {
+        match signal {
+            SessionSignal::UnregisterNotifications => {
+                if let Err(instances) = accessor
+                    .register_notifications(
+                        accessor.mns_session.mas_instances().keys().copied().collect(),
+                        false,
+                    )
+                    .await
+                {
+                    warn!(instances:?; "Failed to unregister notifications");
+                }
+            }
+            SessionSignal::Terminate => {
+                accessor.mns_session.clean_up();
+            }
+        }
+    }
 }
 
 /// Represents the remote MSE peer device. Manages all of the Message Access Service
@@ -327,7 +352,7 @@ impl Accessor {
         &self,
         protocol: Vec<ProtocolDescriptor>,
         channel: Channel,
-    ) -> Result<impl Future<Output = Result<(), Error>> + use<>, Error> {
+    ) -> Result<(), Error> {
         // Clear out any disconnected MAS instances.
         if self.mas_instances.lock().is_empty() {
             // The establishment of a MNS connection requires the
@@ -336,47 +361,45 @@ impl Accessor {
             return Err(Error::MasUnavailable);
         }
 
-        let peer_id = self.peer_id;
-
         // Accept the connection to finish MNS session establishment.
-        let mns_server_fut = self.mns_session.complete_mns_connection(protocol, channel).await?;
+        self.mns_session.run(protocol, channel).await?;
 
         // Now that the MNS session is running, ensure that all
         // the configured MAS instances have their notifications turned on.
         // See MAP v1.4.2 Section 6.4.3 for details.
+        let mas_instance_ids = self.mns_session.mas_instances().keys().copied().collect();
+        if let Err(e) = self.register_notifications(mas_instance_ids, true).await {
+            warn!(e:?, peer_id:% = self.peer_id; "Failed to register notifications for all requested MAS instances");
+        }
+
+        Ok(())
+    }
+
+    async fn register_notifications(
+        &self,
+        mas_instance_ids: Vec<u8>,
+        notification_on: bool,
+    ) -> Result<(), Vec<u8>> {
         let mut need_registration = vec![];
         {
             let mas_instances = self.mas_instances.lock();
-            let should_register: Vec<_> =
-                self.mns_session.mas_instances().keys().copied().collect();
-            for instance_id in should_register {
+            for instance_id in mas_instance_ids {
                 if let Some(mas_instance) = mas_instances.get(&instance_id) {
-                    if !mas_instance.notification_registered() {
+                    if mas_instance.notification_registered() != notification_on {
                         need_registration.push(mas_instance.clone());
                     }
                 }
             }
         }
 
+        let mut failed = vec![];
         for instance in need_registration {
-            if let Err(e) = instance.set_register_notification(true).await {
-                warn!(e:%, peer_id:%; "Failed to register notifications for MAS instance {:?}", instance.id());
+            if let Err(_e) = instance.set_register_notification(notification_on).await {
+                failed.push(instance.id());
             }
         }
-        Ok(mns_server_fut)
-    }
 
-    async fn reset_mns_session(&self) {
-        let instances: Vec<_> =
-            self.mas_instances.lock().iter().map(|(_id, instance)| instance.clone()).collect();
-
-        // Turn off notification registrations for all MAS instances.
-        for instance in instances {
-            if let Err(e) = instance.set_register_notification(false).await {
-                warn!(e:%; "Failed to set notification registration to off for MAS {}", instance.id());
-            }
-        }
-        self.mns_session.terminate();
+        if failed.is_empty() { Ok(()) } else { Err(failed) }
     }
 
     /// Remove the MAS instances where the underlying transport is still connected.
@@ -387,7 +410,11 @@ impl Accessor {
         !lock.is_empty()
     }
 
-    async fn handle_fidl_request(&self, request: AccessorRequest) {
+    async fn handle_fidl_request(
+        &self,
+        request: AccessorRequest,
+        mns_session_signal_sender: mpsc::Sender<SessionSignal>,
+    ) {
         // Before every request, clear out any MAS instances where the underlying
         // transport is closed.
         let _ = self.purge_disconnected_mas();
@@ -431,7 +458,7 @@ impl Accessor {
                 }
 
                 let mut instance_ids = payload.mas_instance_ids.unwrap_or_default();
-                let mut registered_instances = HashMap::new();
+                let mut instance_info = HashMap::new();
                 {
                     let lock = self.mas_instances.lock();
                     if instance_ids.is_empty() {
@@ -442,12 +469,12 @@ impl Accessor {
 
                     for id in &instance_ids {
                         if let Some(instance) = lock.get(id) {
-                            let _ = registered_instances.insert(*id, instance.clone());
+                            let _ = instance_info.insert(*id, instance.features());
                         }
                     }
                 }
 
-                if registered_instances.len() != instance_ids.len() {
+                if instance_info.len() != instance_ids.len() {
                     let _ = responder
                         .send(Err(fidl_fuchsia_bluetooth_map::Error::NotFound))
                         .inspect_err(|e| warn!(e:%; "Failed to send FIDL response"));
@@ -457,24 +484,20 @@ impl Accessor {
                 // At this point, we're starting a process to establish a new MNS connection.
                 // Turn on notifications for the first MAS instance in the list to initiate
                 // the connection procedure as outlined in MAP v1.4.2 Section 4.5.
-                let mas_instance_id = instance_ids[0];
-                let mas_to_register = registered_instances.get(&mas_instance_id).unwrap();
-
-                if let Err(e) = mas_to_register.set_register_notification(true).await {
-                    warn!(e:%, peer_id:%; "Failed to register notifications for MAS {mas_instance_id}");
+                let first_instance_id = instance_ids[0];
+                if let Err(e) = self.register_notifications(vec![first_instance_id], true).await {
+                    warn!(e:?, peer_id:%; "Failed to register notifications for MAS {first_instance_id}");
                     let _ = responder
-                        .send(Err((&e).into()))
+                        .send(Err(fidl_fuchsia_bluetooth_map::Error::Unknown))
                         .inspect_err(|e| warn!(e:%; "Failed to send FIDL response"));
                     return;
                 }
 
                 if let Err(e) = self.mns_session.initialize(
-                    registered_instances
-                        .into_iter()
-                        .map(|(id, instance)| (id, instance.features()))
-                        .collect(),
+                    instance_info,
                     relayer,
                     responder,
+                    mns_session_signal_sender,
                 ) {
                     warn!(e:%, peer_id:%; "Failed to initialize MNS session");
                 }
@@ -612,7 +635,7 @@ mod tests {
     fn fake_remote_msn_connection(
         exec: &mut fasync::TestExecutor,
         messaging_client: &mut MessagingClient,
-    ) -> (Channel, impl Future<Output = (PeerId, Result<(), Error>)> + use<>) {
+    ) -> Channel {
         let (local, mut remote_mns) = Channel::create();
         let connect_fut = messaging_client.new_mns_connection(
             PeerId(TEST_PEER_ID),
@@ -638,11 +661,9 @@ mod tests {
         );
         send_packet(&mut remote_mns, connect_packet);
 
-        let notification_server_fut = exec
-            .run_until_stalled(&mut connect_fut)
-            .expect("should not be pending")
-            .expect("no error");
-        (remote_mns, notification_server_fut)
+        exec.run_until_stalled(&mut connect_fut).expect("should not be pending").expect("no error");
+
+        remote_mns
     }
 
     #[fuchsia::test]
@@ -689,13 +710,14 @@ mod tests {
         let watch_req_fut = messaging_client_proxy.watch_accessor();
         let mut watch_req_fut = pin!(watch_req_fut);
 
-        let accessor_fut = expect_stream_item(&mut exec, &mut messaging_client);
-        let mut accessor_fut = pin!(accessor_fut);
+        let AccessorTasks { fidl_task, .. } = expect_stream_item(&mut exec, &mut messaging_client);
+        let mut accessor_fut = pin!(fidl_task);
         let response = exec
             .run_until_stalled(&mut watch_req_fut)
             .expect("should have received response")
             .expect("should be ok")
             .expect("should have response");
+
         exec.run_until_stalled(&mut accessor_fut).expect_pending("should be running");
 
         let watch_req_fut2 = messaging_client_proxy.watch_accessor();
@@ -709,14 +731,15 @@ mod tests {
         drop(response.accessor);
         let _ = exec.run_until_stalled(&mut accessor_fut).expect("should have terminated");
 
-        let accessor_fut = expect_stream_item(&mut exec, &mut messaging_client);
+        let AccessorTasks { fidl_task, .. } = expect_stream_item(&mut exec, &mut messaging_client);
         let response = exec
             .run_until_stalled(&mut watch_req_fut2)
             .expect("should have received response")
             .expect("should be ok")
             .expect("should have response");
         assert_eq!(response.peer_id, Some(PeerId(TEST_PEER_ID).into()));
-        let mut accessor_fut = pin!(accessor_fut);
+
+        let mut accessor_fut = pin!(fidl_task);
         exec.run_until_stalled(&mut accessor_fut).expect_pending("should be running");
     }
 
@@ -730,7 +753,7 @@ mod tests {
         let watch_req_fut = messaging_client_proxy.watch_accessor();
         let mut watch_req_fut = pin!(watch_req_fut);
 
-        let accessor_fut = expect_stream_item(&mut exec, &mut messaging_client);
+        let AccessorTasks { fidl_task, .. } = expect_stream_item(&mut exec, &mut messaging_client);
         let response = exec
             .run_until_stalled(&mut watch_req_fut)
             .expect("should have received response")
@@ -738,7 +761,7 @@ mod tests {
             .expect("should have response");
 
         let accessor_proxy = response.accessor.expect("should exist").into_proxy();
-        let accessor_fut = pin!(accessor_fut);
+        let accessor_fut = pin!(fidl_task);
 
         // Incoming FIDL request for listing all MAS instances.
         let request_fut = accessor_proxy.list_all_mas_instances();
@@ -765,7 +788,7 @@ mod tests {
         let watch_req_fut = messaging_client_proxy.watch_accessor();
         let mut watch_req_fut = pin!(watch_req_fut);
 
-        let accessor_fut = expect_stream_item(&mut exec, &mut messaging_client);
+        let AccessorTasks { fidl_task, .. } = expect_stream_item(&mut exec, &mut messaging_client);
         let response = exec
             .run_until_stalled(&mut watch_req_fut)
             .expect("should have received response")
@@ -773,7 +796,7 @@ mod tests {
             .expect("should have response");
 
         let accessor_proxy = response.accessor.expect("should exist").into_proxy();
-        let accessor_fut = pin!(accessor_fut);
+        let accessor_fut = pin!(fidl_task);
 
         // Drop the connection to the MAS instance.
         drop(remote);
@@ -794,7 +817,8 @@ mod tests {
         let watch_req_fut = messaging_client_proxy.watch_accessor();
         let mut watch_req_fut = pin!(watch_req_fut);
 
-        let accessor_fut = expect_stream_item(&mut exec, &mut messaging_client);
+        let AccessorTasks { fidl_task, mut mns_signal_process_task } =
+            expect_stream_item(&mut exec, &mut messaging_client);
         let response = exec
             .run_until_stalled(&mut watch_req_fut)
             .expect("should have received response")
@@ -802,10 +826,10 @@ mod tests {
             .expect("should have response");
 
         let accessor_proxy = response.accessor.expect("should exist").into_proxy();
-        let mut accessor_fut = pin!(accessor_fut);
+        let mut accessor_fut = pin!(fidl_task);
 
         // Case 1: SetNotificationRegistration with mas_instance_ids.
-        let (relayer_client, _relayer_request_stream) =
+        let (relayer_client, relayer_request_stream) =
             create_request_stream::<NotificationRegistrationMarker>();
 
         let request_fut = accessor_proxy.set_notification_registration(
@@ -841,29 +865,22 @@ mod tests {
         exec.run_until_stalled(&mut request_fut).expect_pending("should not be ready");
 
         // Mimic an incoming MNS connection which should successfully set up a MNS server.
-        let (_remote_mns, notification_server_fut) =
-            fake_remote_msn_connection(&mut exec, &mut messaging_client);
+        let remote_mns = fake_remote_msn_connection(&mut exec, &mut messaging_client);
 
         exec.run_until_stalled(&mut accessor_fut).expect_pending("accessor server still running");
 
-        let _ = exec
-            .run_until_stalled(&mut request_fut)
+        exec.run_until_stalled(&mut request_fut)
             .expect("ready")
             .expect("fidl success")
             .expect("result success");
 
-        // Register notification request should have resolved to notifier client.
-        let mut notifier_server_fut = pin!(notification_server_fut);
-        exec.run_until_stalled(&mut notifier_server_fut)
-            .expect_pending("notification server running");
-
         // Reset the notification registration for second test case.
         {
-            drop(notifier_server_fut);
-            let mut reset_notification_fut =
-                pin!(messaging_client.reset_notification_registration(PeerId(TEST_PEER_ID)));
+            // Mimic the client terminating the FIDL for NotificationRegistration.
+            drop(relayer_request_stream);
 
-            exec.run_until_stalled(&mut reset_notification_fut).expect_pending("pending");
+            exec.run_until_stalled(&mut mns_signal_process_task)
+                .expect_pending("should be processing signal");
 
             // Should have sent OBEX PUT request for un-registering notification.
             let request_raw = expect_stream_item(&mut exec, &mut remote_mas).expect("request");
@@ -871,7 +888,14 @@ mod tests {
             assert_eq!(request.code(), &OpCode::PutFinal);
             let _ = send_ok_response(&mut remote_mas, vec![], vec![]);
 
-            exec.run_until_stalled(&mut reset_notification_fut).expect("ready").expect("success");
+            exec.run_until_stalled(&mut accessor_fut)
+                .expect_pending("accessor server still running");
+
+            // Mimic the remote MNS client disconnecting from the MNS server.
+            drop(remote_mns);
+
+            exec.run_until_stalled(&mut accessor_fut)
+                .expect_pending("accessor server still running");
         };
 
         // Case 2: SetNotificationRegistration without mas_instance_ids.
@@ -904,20 +928,14 @@ mod tests {
         exec.run_until_stalled(&mut request_fut).expect_pending("should not be ready");
 
         // Mimic an incoming MNS connection which should successfully set up a MNS server.
-        let (_remote_mns, notification_server_fut) =
-            fake_remote_msn_connection(&mut exec, &mut messaging_client);
+        let _remote_mns = fake_remote_msn_connection(&mut exec, &mut messaging_client);
 
         exec.run_until_stalled(&mut accessor_fut).expect_pending("accessor server still running");
 
-        let _ = exec
-            .run_until_stalled(&mut request_fut)
+        // Second Notification Registration should be successful.
+        exec.run_until_stalled(&mut request_fut)
             .expect("ready")
             .expect("fidl success")
             .expect("result success");
-
-        // Register notification request should have resolved to notifier client.
-        let mut notifier_server_fut = pin!(notification_server_fut);
-        exec.run_until_stalled(&mut notifier_server_fut)
-            .expect_pending("notification server running");
     }
 }

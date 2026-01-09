@@ -18,10 +18,10 @@ use fuchsia_bluetooth::profile::ProtocolDescriptor;
 use fuchsia_bluetooth::types::Channel;
 use fuchsia_sync::Mutex;
 use futures::StreamExt;
-use futures::channel::mpsc::{UnboundedReceiver, UnboundedSender};
+use futures::channel::mpsc::{Sender, UnboundedReceiver, UnboundedSender};
 use futures::channel::{mpsc, oneshot};
-use futures::future::{Future, FutureExt, TryFutureExt};
-use log::warn;
+use futures::future::{FutureExt, TryFutureExt};
+use log::{info, warn};
 use objects::Parser;
 use std::collections::HashMap;
 use std::io::Cursor;
@@ -42,6 +42,24 @@ pub struct Session {
     state: Mutex<State>,
 }
 
+/// Signal used to send to active Accessor to perform actions based on
+/// current Session status.
+pub enum SessionSignal {
+    // Client no longer wishes to to receive notifications from the
+    // current session. Unregister notifications from all relevant
+    // MAS instances.
+    UnregisterNotifications,
+    // Underlying OBEX server connection has been disconnected.
+    // Session should terminate.
+    Terminate,
+}
+
+pub struct SessionMaterial {
+    relayer_proxy: NotificationRegistrationProxy,
+    responder: AccessorSetNotificationRegistrationResponder,
+    signal_sender: Sender<SessionSignal>,
+}
+
 // UIDs of MAS instances (aka Repositories) that are not yet registered
 // for notifications.
 #[derive(Default)]
@@ -54,18 +72,22 @@ enum State {
         // Map of MAS instances for which we want to establish a MNS
         // session for.
         mas_instances: HashMap<MasInstanceId, MapSupportedFeatures>,
-        // When the [State] is set to [State::Requested], both `relayer_proxy` and
-        // `responder` should be `Some<T>`.
-        // During the connection process, they will be `None` since they will be taken to
-        // handle the MNS OBEX server setup.
-        relayer_proxy: Option<NotificationRegistrationProxy>,
-        responder: Option<AccessorSetNotificationRegistrationResponder>,
+        session_material: SessionMaterial,
+    },
+    // The MNS connection process has started and is awaiting the OBEX connection.
+    Connecting {
+        mas_instances: HashMap<MasInstanceId, MapSupportedFeatures>,
     },
     // OBEX connection to the remote MSE peer was established and
     // the session is serving event reports from the peer to the client
     // through the FIDL protocol.
     Running {
         mas_instances: HashMap<MasInstanceId, MapSupportedFeatures>,
+        // The background task that manages the MNS session. This task handles
+        // the OBEX connection, relays event reports to the FIDL client, and
+        // manages session termination. The task is dropped when the state
+        // changes, which cancels the task and cleans up the session.
+        _task: fasync::Task<()>,
     },
 }
 
@@ -80,26 +102,26 @@ impl Session {
         mas_instances: HashMap<MasInstanceId, MapSupportedFeatures>,
         relayer_client: ClientEnd<NotificationRegistrationMarker>,
         responder: AccessorSetNotificationRegistrationResponder,
+        signal_sender: Sender<SessionSignal>,
     ) -> Result<(), Error> {
         let mut lock = self.state.lock();
         let State::NotInitialized = *lock else {
             let _ = responder.send(Err(Error::InvalidMnsState.into()));
             return Err(Error::InvalidMnsState);
         };
-        if mas_instances.len() == 0 {
+        if mas_instances.is_empty() {
             return Err(Error::InvalidParameters);
         }
         let relayer_proxy = relayer_client.into_proxy();
         *lock = State::Requested {
             mas_instances,
-            relayer_proxy: Some(relayer_proxy),
-            responder: Some(responder),
+            session_material: SessionMaterial { relayer_proxy, responder, signal_sender },
         };
         Ok(())
     }
 
     /// Set the [Session] as not initialized.
-    pub fn terminate(&self) {
+    pub fn clean_up(&self) {
         let mut lock = self.state.lock();
         let _ = std::mem::replace(&mut *lock, State::NotInitialized);
     }
@@ -113,6 +135,7 @@ impl Session {
             State::NotInitialized => HashMap::default(),
             State::Requested { mas_instances, .. } => mas_instances.clone(),
             State::Running { mas_instances, .. } => mas_instances.clone(),
+            State::Connecting { mas_instances } => mas_instances.clone(),
         }
     }
 
@@ -121,21 +144,24 @@ impl Session {
     /// On success, [Session] should be in [State::Running] and should have started processing
     /// incoming OBEX requests and returns the future for the active MNS server future.
     /// On failure, the MNS session should be terminated.
-    pub async fn complete_mns_connection(
+    pub async fn run(
         &self,
         protocol: Vec<ProtocolDescriptor>,
         channel: Channel,
-    ) -> Result<impl Future<Output = Result<(), Error>> + use<>, Error> {
-        let (mas_instances, relayer_proxy, responder) = {
-            let State::Requested { mas_instances, relayer_proxy, responder } =
-                &mut *(self.state.lock())
-            else {
+    ) -> Result<(), Error> {
+        // Atomically transition from Requested -> Connecting.
+        let (mas_instances, session_material) = {
+            let mut lock = self.state.lock();
+            let prev_state = std::mem::replace(&mut *lock, State::NotInitialized);
+            let State::Requested { mas_instances, session_material } = prev_state else {
+                *lock = prev_state;
                 return Err(Error::InvalidMnsState);
             };
-            let relayer_proxy = relayer_proxy.take().ok_or(Error::InvalidMnsState)?;
-            let responder = responder.take().ok_or(Error::InvalidMnsState)?;
-            (mas_instances.clone(), relayer_proxy, responder)
+            *lock = State::Connecting { mas_instances: mas_instances.clone() };
+            (mas_instances, session_material)
         };
+
+        let SessionMaterial { responder, relayer_proxy, mut signal_sender } = session_material;
 
         let transport_type = transport_type_from_protocol(&protocol)?;
         let (handler, mut notification_receiver) = ServerHandler::new();
@@ -149,16 +175,15 @@ impl Session {
         };
 
         // Session should process the obex server task as well as notifications that we receive from the peer.
-        let session_fut = async move {
+        let session_task = fasync::Task::spawn(async move {
             let mut obex_server_fut = obex_server_task.fuse();
             let mut fidl_closed_fut = relayer_proxy.on_closed().fuse();
+            info!("MNS session task started");
             loop {
                 futures::select! {
                     res = obex_server_fut => {
-                        match res {
-                            Ok(_) => return Err(Error::other("Underlying OBEX connection terminated".to_string())),
-                            Err(e) => return Err(e),
-                        }
+                        info!(res:?; "Underlying OBEX connection terminated");
+                        break;
                     }
                     item = notification_receiver.select_next_some() => {
                         let _ = relayer_proxy.new_event_report(&NotificationRegistrationNewEventReportRequest {
@@ -170,24 +195,33 @@ impl Session {
                             .inspect_err(|err| warn!(err:%; "Failed to send new event report"));
                     }
                     // FIDL server end closed which means the client no longer needs the service.
-                    _ = fidl_closed_fut => return Ok(()),
+                    _ = fidl_closed_fut => {
+                        if let Err(e) = signal_sender.try_send(SessionSignal::UnregisterNotifications) {
+                            warn!(e:?; "Failed to send session signal");
+                        }
+                    }
                 }
             }
-        };
+            info!("MNS session task completed");
+            if let Err(e) = signal_sender.try_send(SessionSignal::Terminate) {
+                warn!(e:?; "Failed to send session signal");
+            }
+        });
 
         let _ = responder.send(Ok(()));
 
-        // Move to [State::Running] state.
         let mut lock = self.state.lock();
-        let prev_state = std::mem::replace(&mut *lock, State::Running { mas_instances });
+        let prev_state =
+            std::mem::replace(&mut *lock, State::Running { mas_instances, _task: session_task });
 
-        // If for some reason, state was mutated during the MNS connection establishment phase,
-        // MNS session is at an invalid state.
         match prev_state {
-            State::Requested { relayer_proxy: None, responder: None, .. } => {}
-            _ => return Err(Error::InvalidMnsState),
-        };
-        Ok(session_fut)
+            State::Connecting { .. } => {}
+            _ => {
+                *lock = prev_state;
+                return Err(Error::InvalidMnsState);
+            }
+        }
+        Ok(())
     }
 }
 
@@ -276,8 +310,8 @@ impl ObexServerHandler for ServerHandler {
     }
 
     async fn disconnect(&mut self, _headers: HeaderSet) -> HeaderSet {
-        // We don't do anything here since the future returned from `complete_mns_connection`
-        // handles disconnect.
+        // The session lifecycle, including disconnection, is managed by the `session_task` in
+        // `Session::run`. No explicit cleanup is needed here.
         HeaderSet::new()
     }
 
@@ -388,7 +422,7 @@ pub(crate) mod tests {
         NotificationRegistrationRequestStream,
     };
     use fuchsia_bluetooth::profile::DataElement;
-    use futures::Future;
+    use futures::channel::mpsc::Receiver;
     use objects::Builder;
     use packet_encoding::Encodable;
     use std::pin::pin;
@@ -417,12 +451,7 @@ pub(crate) mod tests {
     // The MNS is registered for two MASes (MAS with ID 1 and MAS with ID 2).
     fn run_mns_session(
         exec: &mut fasync::TestExecutor,
-    ) -> (
-        Channel,
-        NotificationRegistrationRequestStream,
-        Session,
-        impl Future<Output = Result<(), Error>> + use<>,
-    ) {
+    ) -> (Channel, NotificationRegistrationRequestStream, Session, Receiver<SessionSignal>) {
         // Set up fake client request for notifications.
         let (accessor_proxy, mut accessor_requests) = create_proxy_and_stream::<AccessorMarker>();
         let (relayer_client, relayer_request_stream) =
@@ -434,6 +463,8 @@ pub(crate) mod tests {
                 ..Default::default()
             },
         );
+        let (session_signal_sender, session_signal_receiver) = mpsc::channel(1);
+
         let mut register_fut = pin!(register_fut);
 
         let request = expect_stream_item(exec, &mut accessor_requests).unwrap();
@@ -455,25 +486,25 @@ pub(crate) mod tests {
         ]);
         let session = Session::default();
         let _ = session
-            .initialize(mas_instances, payload.server.unwrap(), responder)
+            .initialize(mas_instances, payload.server.unwrap(), responder, session_signal_sender)
             .expect("should initialize");
 
         let _ = exec.run_until_stalled(&mut register_fut).expect_pending("should be pending");
 
         // Test out Session start.
         let (local, mut remote) = Channel::create();
-        let session_fut = {
-            let conn_fut = session.complete_mns_connection(
+        {
+            let run_fut = session.run(
                 vec![ProtocolDescriptor {
                     protocol: bredr::ProtocolIdentifier::L2Cap,
                     params: vec![DataElement::Uint16(1234)],
                 }],
                 local,
             );
-            let mut conn_fut = pin!(conn_fut);
+            let mut run_fut = pin!(run_fut);
 
             // Should be pending since OBEX connection wasn't established yet.
-            let _ = exec.run_until_stalled(&mut conn_fut).expect_pending("should be pending");
+            let _ = exec.run_until_stalled(&mut run_fut).expect_pending("should be pending");
 
             // Fake an incoming OBEX connection from remote server.
             let connect_packet = RequestPacket::new(
@@ -484,8 +515,7 @@ pub(crate) mod tests {
             );
             send_packet(&mut remote, connect_packet);
 
-            let session_fut =
-                exec.run_until_stalled(&mut conn_fut).expect("should be ready").expect("no error");
+            exec.run_until_stalled(&mut run_fut).expect("should be ready").expect("no error");
 
             let response_raw = expect_stream_item(exec, &mut remote).expect("response");
             let response = ResponsePacket::decode(&response_raw[..], OpCode::Connect)
@@ -495,7 +525,6 @@ pub(crate) mod tests {
                 Some(&Header::Who(MNS_TARGET_UUID.as_bytes().to_vec()))
             );
             assert_eq!(response.code(), &OperationResponseCode::Ok);
-            session_fut
         };
 
         // Register notification future isn't resolved until we actually run the server.
@@ -505,7 +534,7 @@ pub(crate) mod tests {
             .expect("no fidl error")
             .expect("success");
 
-        (remote, relayer_request_stream, session, session_fut)
+        (remote, relayer_request_stream, session, session_signal_receiver)
     }
 
     #[track_caller]
@@ -538,12 +567,12 @@ pub(crate) mod tests {
     #[fuchsia::test]
     fn new_event_report() {
         let mut exec = fasync::TestExecutor::new();
-        let (mut remote, mut relayer_stream, _session, session_fut) = run_mns_session(&mut exec);
-        let mut session_fut = pin!(session_fut);
+        let (mut remote, mut relayer_stream, _session, mut signal_receiver) =
+            run_mns_session(&mut exec);
 
         // Mimic incoming event report from remote MNS client.
         send_packet(&mut remote, new_msg_event_report_packet(TEST_MAS_ID_1, 1234));
-        let _ = exec.run_until_stalled(&mut session_fut).expect_pending("should be running");
+        let _ = exec.run_until_stalled(&mut futures::future::pending::<()>());
 
         // Should have sent notifications.
         let relayer_request =
@@ -568,10 +597,10 @@ pub(crate) mod tests {
 
         // 2 more messages from remote peer.
         send_packet(&mut remote, new_msg_event_report_packet(TEST_MAS_ID_1, 2345));
-        let _ = exec.run_until_stalled(&mut session_fut).expect_pending("should be running");
+        let _ = exec.run_until_stalled(&mut futures::future::pending::<()>());
 
         send_packet(&mut remote, new_msg_event_report_packet(TEST_MAS_ID_2, 1234));
-        let _ = exec.run_until_stalled(&mut session_fut).expect_pending("should be running");
+        let _ = exec.run_until_stalled(&mut futures::future::pending::<()>());
 
         // Server end should have received 2 requests for new event report.
         let relayer_request =
@@ -582,7 +611,6 @@ pub(crate) mod tests {
             panic!("expected new event report request");
         };
         assert!(responder.send().is_ok());
-        let _ = exec.run_until_stalled(&mut session_fut).expect_pending("should be running");
 
         let relayer_request =
             expect_stream_item(&mut exec, &mut relayer_stream).expect("should be ready");
@@ -593,37 +621,64 @@ pub(crate) mod tests {
         };
         assert!(responder.send().is_ok());
 
-        // No more event reports.
-        let _ = exec.run_until_stalled(&mut session_fut).expect_pending("should be running");
-        let mut next = relayer_stream.next();
-        let _ = exec.run_until_stalled(&mut next).expect_pending("should be pending");
+        // No more messages.
+        let mut next_message = relayer_stream.next();
+        let _ = exec.run_until_stalled(&mut next_message).expect_pending("should be pending");
+
+        // We shouldn't have received any signals.
+        let _ = exec.run_until_stalled(&mut futures::future::pending::<()>());
+        let mut signal_fut = signal_receiver.next();
+        let _ = exec.run_until_stalled(&mut signal_fut).expect_pending("no outstanding signals");
     }
 
     #[fuchsia::test]
-    fn session_run() {
-        let mut exec = fasync::TestExecutor::new();
+    fn notification_registration_client_close() {
+        let mut exec: fuchsia_async::TestExecutor = fasync::TestExecutor::new();
 
-        let (remote, _notifier_stream, _session, session_fut) = run_mns_session(&mut exec);
-        let mut session_fut = pin!(session_fut);
-        exec.run_until_stalled(&mut session_fut).expect_pending("should be pending");
+        let (_remote, notifier_stream, _session, mut signal_receiver) = run_mns_session(&mut exec);
 
-        // If the underlying OBEX server terminates, running session
-        // should terminate with an error.
-        drop(remote);
-        let res = exec.run_until_stalled(&mut session_fut).expect("should have terminated");
-        let _ = res.expect_err("should contain an error");
-
-        let (_remote, notifier_stream, _session, session_fut) = run_mns_session(&mut exec);
-        let mut session_fut = pin!(session_fut);
-        exec.run_until_stalled(&mut session_fut).expect_pending("should be pending");
-
-        // If the FIDL client is dropped, running session should terminate.
+        // Mimic client dropping the NotificationRegistration stream.
         drop(notifier_stream);
+        let _ = exec.run_until_stalled(&mut futures::future::pending::<()>());
 
-        let res = exec.run_until_stalled(&mut session_fut).expect("should have terminated");
+        // Should have received signal to unregister from notifications.
+        let mut signal_fut = signal_receiver.next();
+        let Some(SessionSignal::UnregisterNotifications) =
+            exec.run_until_stalled(&mut signal_fut).expect("should have received signal")
+        else {
+            panic!("unexpected signal received");
+        };
 
-        // Should count as "graceful" termination since the client is dropped
-        // and we simply don't need the FIDL server anymore.
-        let _ = res.expect("should not contain an error");
+        // No more signals.
+        let _ = exec.run_until_stalled(&mut futures::future::pending::<()>());
+        let mut signal_fut = signal_receiver.next();
+        let _ = exec.run_until_stalled(&mut signal_fut).expect_pending("no outstanding signals");
+    }
+
+    #[fuchsia::test]
+    fn obex_disconnect() {
+        let mut exec: fuchsia_async::TestExecutor = fasync::TestExecutor::new();
+
+        let (mut remote, _notifier_stream, _session, mut signal_receiver) =
+            run_mns_session(&mut exec);
+
+        // Mimic a OBEX DISCONNECT request from remote MNS client.
+        send_packet(&mut remote, RequestPacket::new(OpCode::Disconnect, vec![], HeaderSet::new()));
+
+        let _ = exec.run_until_stalled(&mut futures::future::pending::<()>());
+
+        // Should have received signal to terminate session.
+        let mut signal_fut = signal_receiver.next();
+        let Some(SessionSignal::Terminate) =
+            exec.run_until_stalled(&mut signal_fut).expect("should have received signal")
+        else {
+            panic!("unexpected signal received");
+        };
+
+        // No more signals can be expected from this session.
+        let mut signal_fut = signal_receiver.next();
+        let None = exec.run_until_stalled(&mut signal_fut).expect("not pending") else {
+            panic!("unexpected signal sender status");
+        };
     }
 }

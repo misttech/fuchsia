@@ -2,9 +2,9 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use anyhow::{format_err, Error};
+use anyhow::{Error, format_err};
 use fuchsia_async as fasync;
-use futures::channel::mpsc::{channel, SendError};
+use futures::channel::mpsc::{SendError, channel};
 use futures::{Sink, SinkExt, Stream, StreamExt};
 use log::{info, warn};
 use rustyline::error::ReadlineError;
@@ -21,10 +21,7 @@ const PROMPT: &str = "MESSAGE_ACCESSOR> ";
 pub async fn start_accessor_loop<'a>(client: AccessorClient) -> Result<(), Error> {
     let (mut commands, mut acks) = cmd_stream();
     while let Some(cmd) = commands.next().await {
-        handle_cmd(cmd, client.clone()).await.map_err(|e| {
-            warn!("Error: {}", e);
-            e
-        })?;
+        handle_cmd(cmd, client.clone()).await?;
         acks.send(()).await?;
     }
 
@@ -93,7 +90,7 @@ async fn handle_cmd(line: String, client: AccessorClient) -> Result<(), Error> {
 
     match cmd {
         Some(Ok(Cmd::Exit)) => {
-            return Err(format_err!("exited").into());
+            return Err(format_err!("Terminating current Accessor FIDL client"));
         }
         Some(Ok(Cmd::Help)) => {
             info!("{}", Cmd::help_msg());
