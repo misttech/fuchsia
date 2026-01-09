@@ -7,101 +7,15 @@
 #include <fidl/fuchsia.boot/cpp/wire.h>
 #include <fidl/fuchsia.kernel/cpp/wire.h>
 #include <fidl/fuchsia.system.state/cpp/common_types_format.h>
-#include <lib/fidl/cpp/wire/channel.h>  // fidl::WireCall
-#include <lib/zbi-format/zbi.h>
-#include <lib/zbitl/error-string.h>
-#include <lib/zbitl/image.h>
-#include <lib/zbitl/item.h>
-#include <lib/zbitl/vmo.h>
+#include <lib/fidl/cpp/wire/channel.h>
+#include <lib/mexec_boot/mexec_boot.h>
 #include <zircon/processargs.h>  // PA_LIFECYCLE
 #include <zircon/syscalls/system.h>
 
-#include <src/bringup/lib/mexec/mexec.h>
 #include <src/devices/lib/log/log.h>
-#include <src/lib/fsl/vmo/sized_vmo.h>
-#include <src/lib/fsl/vmo/vector.h>
 
 namespace driver_manager {
 namespace {
-
-struct MexecVmos {
-  zx::vmo kernel_zbi;
-  zx::vmo data_zbi;
-};
-
-zx::result<MexecVmos> GetMexecZbis(zx::unowned_resource mexec_resource) {
-  zx::result client = component::Connect<fuchsia_system_state::SystemStateTransition>();
-  if (client.is_error()) {
-    fdf_log::error("Failed to connect to StateStateTransition: {}", client.status_string());
-    return client.take_error();
-  }
-
-  fidl::Result result = fidl::Call(*client)->GetMexecZbis();
-  if (result.is_error()) {
-    fdf_log::error("Failed to get mexec zbis: {}", result.error_value().FormatDescription());
-    zx_status_t status = result.error_value().is_domain_error()
-                             ? result.error_value().domain_error()
-                             : result.error_value().framework_error().status();
-    return zx::error(status);
-  }
-  zx::vmo& kernel_zbi = result->kernel_zbi();
-  zx::vmo& data_zbi = result->data_zbi();
-
-  if (zx_status_t status = mexec::PrepareDataZbi(std::move(mexec_resource), data_zbi.borrow());
-      status != ZX_OK) {
-    fdf_log::error("Failed to prepare mexec data ZBI: {}", zx_status_get_string(status));
-    return zx::error(status);
-  }
-
-  zx::result connect_result = component::Connect<fuchsia_boot::Items>();
-  if (connect_result.is_error()) {
-    fdf_log::error("Failed to connect to fuchsia.boot::Items: {}", connect_result.status_string());
-    return connect_result.take_error();
-  }
-  fidl::WireSyncClient<fuchsia_boot::Items> items(std::move(connect_result).value());
-
-  // Driver metadata that the driver framework generally expects to be present.
-  constexpr std::array kItemsToAppend{ZBI_TYPE_DRV_MAC_ADDRESS, ZBI_TYPE_DRV_PARTITION_MAP,
-                                      ZBI_TYPE_DRV_BOARD_PRIVATE, ZBI_TYPE_DRV_BOARD_INFO};
-  zbitl::Image data_image{data_zbi.borrow()};
-  for (uint32_t type : kItemsToAppend) {
-    std::string_view name = zbitl::TypeName(type);
-
-    // TODO(https://fxbug.dev/42053781): Use a method that returns all matching items of
-    // a given type instead of guessing possible `extra` values.
-    for (uint32_t extra : std::array{0, 1, 2}) {
-      fidl::WireResult result = items->Get(type, extra);
-      if (!result.ok()) {
-        return zx::error(result.status());
-      }
-      if (!result.value().payload.is_valid()) {
-        // Absence is signified with an empty result value.
-        fdf_log::info("No {} item ({:#x}) present to append to mexec data ZBI", name, type);
-        continue;
-      }
-      fsl::SizedVmo payload(std::move(result.value().payload), result.value().length);
-
-      std::vector<char> contents;
-      if (!fsl::VectorFromVmo(payload, &contents)) {
-        fdf_log::error("Failed to read contents of {} item ({:#x})", name, type);
-        return zx::error(ZX_ERR_INTERNAL);
-      }
-
-      if (fit::result result = data_image.Append(zbi_header_t{.type = type, .extra = extra},
-                                                 zbitl::AsBytes(contents));
-          result.is_error()) {
-        fdf_log::error("Failed to append {} item ({:#x}) to mexec data ZBI: {}", name, type,
-                       zbitl::ViewErrorString(result.error_value()));
-        return zx::error(ZX_ERR_INTERNAL);
-      }
-    }
-  }
-
-  return zx::ok(MexecVmos{
-      .kernel_zbi = std::move(kernel_zbi),
-      .data_zbi = std::move(data_zbi),
-  });
-}
 
 SystemPowerState GetSystemPowerState() {
   zx::result client = component::Connect<fuchsia_system_state::SystemStateTransition>();
@@ -348,12 +262,7 @@ void ShutdownManager::SystemExecute() {
       break;
     case SystemPowerState::kMexec: {
       fdf_log::info("About to mexec...");
-      zx::result<MexecVmos> mexec_vmos = GetMexecZbis(mexec_resource_.borrow());
-      status = mexec_vmos.status_value();
-      if (status == ZX_OK) {
-        status = mexec::BootZbi(mexec_resource_.borrow(), std::move(mexec_vmos->kernel_zbi),
-                                std::move(mexec_vmos->data_zbi));
-      }
+      status = mexec_boot(mexec_resource_.get());
       what = "zx_system_mexec";
       break;
     }

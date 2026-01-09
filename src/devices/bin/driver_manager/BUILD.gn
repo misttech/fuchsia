@@ -112,6 +112,7 @@ source_set("driver_runner") {
     "//src/bringup/lib/mexec",
     "//src/devices/bind/fuchsia.platform:fuchsia.platform_cpp",
     "//src/devices/lib/log",
+    "//src/devices/lib/mexec_boot:mexec_boot_cc",
     "//src/lib/fsl",
     "//src/lib/fxl",
     "//src/lib/zbitl",
