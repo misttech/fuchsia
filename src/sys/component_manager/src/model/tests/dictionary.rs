@@ -2,7 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use crate::framework::capability_store;
+use crate::framework::capabilities;
 use crate::model::routing::Route;
 use crate::model::testing::out_dir::OutDir;
 use crate::model::testing::routing_test_helpers::RoutingTestBuilder;
@@ -17,11 +17,12 @@ use cm_rust_testing::*;
 use cm_types::RelativePath;
 use fidl::endpoints::{self, ServerEnd};
 use fidl_fidl_examples_routing_echo::EchoMarker;
-use futures::TryStreamExt;
+use fuchsia_component::runtime;
+use futures::{FutureExt, StreamExt};
 use moniker::Moniker;
 use routing_test_helpers::RoutingTestModel;
 use zx_status::Status;
-use {fidl_fuchsia_component_sandbox as fsandbox, fuchsia_async as fasync};
+use {fidl_fuchsia_component_runtime as fruntime, fuchsia_async as fasync};
 
 #[fuchsia::test]
 async fn use_protocol_from_dictionary() {
@@ -261,7 +262,7 @@ async fn use_from_void_nested_dictionary() {
 async fn test_dictionary_from_program() {
     // Tests a dictionary that is backed by the program.
 
-    const ROUTER_PATH: &str = "/svc/fuchsia.component.sandbox.DictionaryRouter";
+    const ROUTER_PATH: &str = "/svc/fuchsia.component.runtime.DictionaryRouter";
     let components = vec![
         (
             "root",
@@ -285,77 +286,45 @@ async fn test_dictionary_from_program() {
     ];
     let test = RoutingTestBuilder::new("root", components).build().await;
 
-    let (store, server) = endpoints::create_proxy::<fsandbox::CapabilityStoreMarker>();
+    let (capabilities_proxy, server) = endpoints::create_proxy::<fruntime::CapabilitiesMarker>();
     let weak_root = test.model.root().as_weak();
-    let _store_task = fasync::Task::spawn(async move {
-        capability_store::serve(server.into_channel(), weak_root.clone(), weak_root.clone())
+    let _capabilities_task = fasync::Task::spawn(async move {
+        capabilities::serve(server.into_channel(), weak_root.clone(), weak_root.clone())
             .await
             .unwrap();
     });
 
     // Create a dictionary with a Sender at "A" for the Echo protocol.
-    let dict_id = 1;
-    store.dictionary_create(dict_id).await.unwrap().unwrap();
-    let (receiver_client, mut receiver_stream) =
-        endpoints::create_request_stream::<fsandbox::ReceiverMarker>();
-    let connector_id = 10;
-    store.connector_create(connector_id, receiver_client).await.unwrap().unwrap();
-    store
-        .dictionary_insert(
-            dict_id,
-            &fsandbox::DictionaryItem { key: "A".into(), value: connector_id },
-        )
-        .await
-        .unwrap()
-        .unwrap();
+    let dictionary = runtime::Dictionary::new_with_proxy(capabilities_proxy.clone()).await;
+    let (connector, mut receiver) =
+        runtime::Connector::new_with_proxy(capabilities_proxy.clone()).await;
+    dictionary.insert("A", connector).await;
 
     // Serve the Echo protocol from the Receiver.
     let _receiver_task = fasync::Task::spawn(async move {
         let mut task_group = fasync::TaskGroup::new();
-        while let Ok(Some(request)) = receiver_stream.try_next().await {
-            match request {
-                fsandbox::ReceiverRequest::Receive { channel, control_handle: _ } => {
-                    let channel: ServerEnd<EchoMarker> = channel.into();
-                    task_group.spawn(OutDir::echo_protocol_fn(channel.into_stream()));
-                }
-                fsandbox::ReceiverRequest::_UnknownMethod { .. } => {
-                    unimplemented!()
-                }
-            }
+        while let Some(channel) = receiver.next().await {
+            let channel: ServerEnd<EchoMarker> = channel.into();
+            task_group.spawn(OutDir::echo_protocol_fn(channel.into_stream()));
         }
+        task_group.join().await
     });
 
     // Serve the Router protocol from the root's out dir. Its implementation calls Dictionary/Clone
     // and returns the handle.
     let mut root_out_dir = OutDir::new();
-    let dict_store2 = store.clone();
+    let dictionary_clone = dictionary.clone();
     root_out_dir.add_entry(
         ROUTER_PATH.parse().unwrap(),
         vfs::service::endpoint(move |scope, channel| {
-            let server_end: ServerEnd<fsandbox::DictionaryRouterMarker> =
+            let server_end: ServerEnd<fruntime::DictionaryRouterMarker> =
                 channel.into_zx_channel().into();
-            let mut stream = server_end.into_stream();
-            let store = dict_store2.clone();
-            scope.spawn(async move {
-                while let Ok(Some(request)) = stream.try_next().await {
-                    match request {
-                        fsandbox::DictionaryRouterRequest::Route { payload: _, responder } => {
-                            let dup_dict_id = dict_id + 1;
-                            store.duplicate(dict_id, dup_dict_id).await.unwrap().unwrap();
-                            let capability = store.export(dup_dict_id).await.unwrap().unwrap();
-                            let fsandbox::Capability::Dictionary(dict) = capability else {
-                                panic!("capability was not a dictionary? {capability:?}");
-                            };
-                            let _ = responder.send(Ok(
-                                fsandbox::DictionaryRouterRouteResponse::Dictionary(dict),
-                            ));
-                        }
-                        fsandbox::DictionaryRouterRequest::_UnknownMethod { .. } => {
-                            unimplemented!()
-                        }
-                    }
-                }
-            });
+            let router_receiver =
+                runtime::DictionaryRouterReceiver { stream: server_end.into_stream() };
+            let dictionary = dictionary_clone.clone();
+            scope.spawn(router_receiver.handle_with(move |_request, _instance_token| {
+                futures::future::ready(Ok(Some(dictionary.clone()))).boxed()
+            }));
         }),
     );
     test.mock_runner.add_host_fn("test:///root", root_out_dir.host_fn());
@@ -373,12 +342,7 @@ async fn test_dictionary_from_program() {
     }
 
     // Now, remove "A" from the dictionary. Using "A" this time should fail.
-    let dest_id = 100;
-    store
-        .dictionary_remove(dict_id, "A", Some(&fsandbox::WrappedNewCapabilityId { id: dest_id }))
-        .await
-        .unwrap()
-        .unwrap();
+    dictionary.remove("A").await;
     test.check_use(
         "leaf".try_into().unwrap(),
         CheckUse::Protocol {
