@@ -157,6 +157,24 @@ class LeakedAllocation {
     __asm__ volatile("xor %%r9, %%r9" ::: "%r9");
     __asm__ volatile("xor %%r10, %%r10" ::: "%r10");
     __asm__ volatile("xor %%r11, %%r11" ::: "%r11");
+#elif defined(__riscv)
+    __asm__ volatile("mv t0, zero" ::: "t0");
+    __asm__ volatile("mv t1, zero" ::: "t1");
+    __asm__ volatile("mv t2, zero" ::: "t2");
+    __asm__ volatile("mv a0, zero" ::: "a0");
+    __asm__ volatile("mv a1, zero" ::: "a1");
+    __asm__ volatile("mv a2, zero" ::: "a2");
+    __asm__ volatile("mv a3, zero" ::: "a3");
+    __asm__ volatile("mv a4, zero" ::: "a4");
+    __asm__ volatile("mv a5, zero" ::: "a5");
+    __asm__ volatile("mv a6, zero" ::: "a6");
+    __asm__ volatile("mv a7, zero" ::: "a7");
+    __asm__ volatile("mv t3, zero" ::: "t3");
+    __asm__ volatile("mv t4, zero" ::: "t4");
+    __asm__ volatile("mv t5, zero" ::: "t5");
+    __asm__ volatile("mv t6, zero" ::: "t6");
+#else
+#error "Unknown architecture"
 #endif
   }
 
