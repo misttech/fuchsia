@@ -148,7 +148,10 @@ pub async fn print_output(
 ) -> Result<()> {
     if cmd.debug_json {
         let raw_data = get_raw_data(collector).await?;
-        writeln!(writer, "{}", String::from_utf8(raw_data)?)?;
+        writeln!(writer, "{}", String::from_utf8(raw_data)?).map_err(|err| match err.kind() {
+            std::io::ErrorKind::BrokenPipe => fho::Error::ExitWithCode(141),
+            _ => fho::Error::Unexpected(err.into()),
+        })?;
         Ok(())
     } else {
         let memory_monitor_output = get_output(collector).await?;

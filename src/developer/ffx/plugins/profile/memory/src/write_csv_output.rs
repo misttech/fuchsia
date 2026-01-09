@@ -35,7 +35,11 @@ fn write_detailed_processes_digest<W: Write>(
                     sizes.private,
                     sizes.scaled,
                     sizes.total,
-                )?;
+                )
+                .map_err(|err| match err.kind() {
+                    std::io::ErrorKind::BrokenPipe => fho::Error::ExitWithCode(141),
+                    _ => fho::Error::Unexpected(err.into()),
+                })?;
             }
         }
     }
@@ -58,7 +62,11 @@ fn write_short_processes_digest<W: Write>(
             process.memory.private,
             process.memory.scaled,
             process.memory.total
-        )?;
+        )
+        .map_err(|err| match err.kind() {
+            std::io::ErrorKind::BrokenPipe => fho::Error::ExitWithCode(141),
+            _ => fho::Error::Unexpected(err.into()),
+        })?;
     }
     Ok(())
 }
@@ -70,7 +78,11 @@ pub fn write_csv_buckets<W: Write>(
     capture_time: u64,
 ) -> Result<()> {
     for bucket in buckets {
-        writeln!(w, "{},{},{}", nanoseconds_to_seconds(capture_time), bucket.name, bucket.size,)?;
+        writeln!(w, "{},{},{}", nanoseconds_to_seconds(capture_time), bucket.name, bucket.size,)
+            .map_err(|err| match err.kind() {
+                std::io::ErrorKind::BrokenPipe => fho::Error::ExitWithCode(141),
+                _ => fho::Error::Unexpected(err.into()),
+            })?;
     }
     Ok(())
 }

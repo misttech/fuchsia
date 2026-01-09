@@ -37,7 +37,7 @@ fn print_processes_digest<W: Write>(
     w: &mut W,
     processes: Vec<processed::Process>,
     size_formatter: fn(u64) -> String,
-) -> Result<()> {
+) -> std::io::Result<()> {
     for process in processes {
         writeln!(w, "Process name:         {}", process.name)?;
         writeln!(w, "Process koid:         {}", process.koid)?;
@@ -134,7 +134,7 @@ fn print_complete_digest<W: Write>(
     w: &mut W,
     digest: processed::Digest,
     size_formatter: fn(u64) -> String,
-) -> Result<()> {
+) -> std::io::Result<()> {
     writeln!(w, "Time:  {} ns", digest.time)?;
     writeln!(w, "VMO:   {}", size_formatter(digest.total_committed_bytes_in_vmos))?;
     writeln!(w, "Free:  {}", size_formatter(digest.kernel.free))?;
@@ -193,10 +193,19 @@ pub fn write_human_readable_output<'a, W: Write>(
 
     match output {
         ProfileMemoryOutput::CompleteDigest(digest) => {
-            print_complete_digest(w, digest, size_to_string_formatter)
+            print_complete_digest(w, digest, size_to_string_formatter).map_err(|err| {
+                match err.kind() {
+                    std::io::ErrorKind::BrokenPipe => fho::Error::ExitWithCode(141).into(),
+                    _ => fho::Error::Unexpected(err.into()).into(),
+                }
+            })
         }
         ProfileMemoryOutput::ProcessDigest(processes_digest) => {
             print_processes_digest(w, processes_digest.process_data, size_to_string_formatter)
+                .map_err(|err| match err.kind() {
+                    std::io::ErrorKind::BrokenPipe => fho::Error::ExitWithCode(141).into(),
+                    _ => fho::Error::Unexpected(err.into()).into(),
+                })
         }
         ProfileMemoryOutput::ComponentDigest(_) => errors::ffx_bail!("Not supported"),
     }

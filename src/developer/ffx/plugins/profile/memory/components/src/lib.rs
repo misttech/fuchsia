@@ -121,9 +121,17 @@ impl MemoryComponentsTool {
                 .try_into()
                 .map_err(|err| ffx_error!("Failed to convert statistics: {err}"))?;
 
-            w.serialize(statistics)
-                .map_err(|err| ffx_error!("Failed to write statistics: {err}"))?;
-            w.flush().map_err(|err| ffx_error!("Failed to flush stdout: {err}"))?;
+            w.serialize(statistics).map_err(|err| match err.kind() {
+                csv::ErrorKind::Io(io) => match io.kind() {
+                    std::io::ErrorKind::BrokenPipe => fho::Error::ExitWithCode(141),
+                    _ => fho::Error::Unexpected(err.into()),
+                },
+                _ => ffx_error!("Failed to write statistics: {err}").into(),
+            })?;
+            w.flush().map_err(|err| match err.kind() {
+                std::io::ErrorKind::BrokenPipe => fho::Error::ExitWithCode(141),
+                _ => ffx_error!("Failed to flush stdout: {err}").into(),
+            })?;
             sleep(Duration::from_secs(interval));
         }
     }
@@ -160,9 +168,12 @@ impl MemoryComponentsTool {
         if writer.is_machine() {
             writer.machine(ComponentProfileResult::Summary(profile_result))?;
         } else {
-            output::write_summary(&mut writer.stdout(), self.cmd.csv, &profile_result)
-                .or_else(|e| writeln!(writer.stderr(), "Error: {}", e))
-                .map_err(|e| fho::Error::Unexpected(e.into()))?;
+            output::write_summary(&mut writer.stdout(), self.cmd.csv, &profile_result).map_err(
+                |e| match e.kind() {
+                    std::io::ErrorKind::BrokenPipe => fho::Error::ExitWithCode(141),
+                    _ => fho::Error::Unexpected(e.into()),
+                },
+            )?;
         }
         Ok(())
     }
