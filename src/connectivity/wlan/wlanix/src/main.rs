@@ -1660,20 +1660,7 @@ async fn handle_nl80211_message<I: IfaceManager>(
         }
         Nl80211Cmd::GetScan => {
             info!("Nl80211Cmd::GetScan");
-            // TODO(https://fxbug.dev/472353791): Get iface ID from nl80211 request.
-            let client_iface_and_id = match iface_manager.list_ifaces().iter().min() {
-                Some(iface_id) => iface_manager
-                    .get_client_iface(*iface_id)
-                    .await
-                    .map(|iface| (iface, *iface_id as u32))
-                    .map_err(|e| {
-                        error!("Failed to get client iface {}: {}", iface_id, e);
-                        zx::sys::ZX_ERR_NOT_FOUND
-                    }),
-                None => Err(zx::sys::ZX_ERR_INVALID_ARGS),
-            };
-
-            match client_iface_and_id {
+            match get_client_iface_and_id(&message.payload.attrs[..], &iface_manager).await {
                 Ok((client_iface, iface_id)) => {
                     let results = client_iface.get_last_scan_results();
                     info!("Processing {} scan results", results.len());
@@ -4412,22 +4399,21 @@ mod tests {
         assert_matches!(responses[1], fidl_wlanix::Nl80211Message::Done(_));
     }
 
-    // TODO(https://fxbug.dev/472353791): Uncomment this test
-    // #[fuchsia::test]
-    // fn get_scan_results_no_iface_args() {
-    //     let mut exec = fasync::TestExecutor::new();
-    //     let mut test_values = setup_nl80211_test(&mut exec);
+    #[fuchsia::test]
+    fn get_scan_results_no_iface_args() {
+        let mut exec = fasync::TestExecutor::new();
+        let mut test_values = setup_nl80211_test(&mut exec);
 
-    //     let get_scan_message = build_nl80211_message(Nl80211Cmd::GetScan, vec![]);
-    //     let get_scan_fut = test_values.nl80211_proxy.message_v2(&get_scan_message);
+        let get_scan_message = build_nl80211_message(Nl80211Cmd::GetScan, vec![]);
+        let get_scan_fut = test_values.nl80211_proxy.message_v2(&get_scan_message);
 
-    //     let mut get_scan_fut = pin!(get_scan_fut);
-    //     assert_matches!(exec.run_until_stalled(&mut test_values.nl80211_fut), Poll::Pending);
-    //     assert_matches!(
-    //         exec.run_until_stalled(&mut get_scan_fut),
-    //         Poll::Ready(Ok(Err(zx::sys::ZX_ERR_INVALID_ARGS)))
-    //     );
-    // }
+        let mut get_scan_fut = pin!(get_scan_fut);
+        assert_matches!(exec.run_until_stalled(&mut test_values.nl80211_fut), Poll::Pending);
+        assert_matches!(
+            exec.run_until_stalled(&mut get_scan_fut),
+            Poll::Ready(Ok(Err(zx::sys::ZX_ERR_INVALID_ARGS)))
+        );
+    }
 
     fn deserialize(vmo: zx::Vmo) -> Vec<Nl80211Message> {
         let value = vmo.read_to_vec(0, vmo.get_content_size().unwrap()).unwrap();
