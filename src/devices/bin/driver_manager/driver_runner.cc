@@ -8,6 +8,7 @@
 #include <fidl/fuchsia.driver.development/cpp/wire.h>
 #include <fidl/fuchsia.driver.host/cpp/wire.h>
 #include <fidl/fuchsia.driver.index/cpp/wire.h>
+#include <fidl/fuchsia.power.broker/cpp/fidl.h>
 #include <fidl/fuchsia.process/cpp/wire.h>
 #include <lib/async/cpp/task.h>
 #include <lib/component/incoming/cpp/protocol.h>
@@ -296,8 +297,8 @@ DriverRunner::DriverRunner(
   }
 
   if (topology_client.has_value()) {
-    topology_ =
-        fidl::WireSyncClient<fuchsia_power_broker::Topology>(std::move(topology_client.value()));
+    topology_ = fidl::Client<fuchsia_power_broker::Topology>(std::move(topology_client.value()),
+                                                             dispatcher);
   }
 }
 
@@ -624,6 +625,11 @@ void DriverRunner::BindToUrl(Node& node, std::string_view driver_url_suffix,
   bind_manager_.Bind(node, driver_url_suffix, std::move(result_tracker));
 }
 
+void DriverRunner::AddLeaseControlChannel(
+    fidl::ClientEnd<fuchsia_power_broker::LeaseControl> lease) {
+  leases_.push_back(std::move(lease));
+}
+
 void DriverRunner::RebindComposite(std::string spec, std::optional<std::string> driver_url,
                                    fit::callback<void(zx::result<>)> callback) {
   composite_node_spec_manager_.Rebind(spec, driver_url, std::move(callback));
@@ -777,6 +783,78 @@ zx::result<BindSpecResult> DriverRunner::BindToParentSpec(fidl::AnyArena& arena,
                                                           bool enable_multibind) {
   return this->composite_node_spec_manager_.BindParentSpec(arena, composite_parents, node,
                                                            enable_multibind);
+}
+
+void DriverRunner::CreatePowerElement(std::string_view name,
+                                      fuchsia_power_broker::DependencyToken element_token,
+                                      std::span<fuchsia_power_broker::DependencyToken>& deps,
+                                      fidl::ServerEnd<fuchsia_power_broker::ElementControl> control,
+                                      fidl::ClientEnd<fuchsia_power_broker::ElementRunner> runner,
+                                      fidl::ServerEnd<fuchsia_power_broker::Lessor> lessor,
+                                      fit::callback<void(zx::result<bool>)> cb) {
+  if (!topology_.has_value()) {
+    cb(zx::ok(false));
+    return;
+  }
+
+  fidl::Arena arena;
+
+  std::vector<fuchsia_power_broker::LevelDependency> ds;
+  for (fuchsia_power_broker::DependencyToken& dep : deps) {
+    fuchsia_power_broker::DependencyToken clone;
+    zx_status_t dupe_result = dep.duplicate(ZX_RIGHT_SAME_RIGHTS, &clone);
+    if (dupe_result != ZX_OK) {
+      cb(zx::error(dupe_result));
+      return;
+    }
+
+    std::vector<fuchsia_power_broker::PowerLevel> reqs_by_pref;
+    reqs_by_pref.push_back(static_cast<fuchsia_power_broker::PowerLevel>(1));
+
+    fuchsia_power_broker::LevelDependency level_dep;
+    level_dep.dependency_type() = fuchsia_power_broker::DependencyType::kAssertive,
+    level_dep.dependent_level() = static_cast<fuchsia_power_broker::PowerLevel>(1),
+    level_dep.requires_token() = std::move(dep),
+    level_dep.requires_level_by_preference() = reqs_by_pref;
+    ds.push_back(std::move(level_dep));
+  }
+
+  fuchsia_power_broker::ElementSchema schema;
+  schema.element_name() = name;
+  schema.initial_current_level() = static_cast<fuchsia_power_broker::PowerLevel>(1);
+  schema.valid_levels() = std::vector<fuchsia_power_broker::PowerLevel>{
+      static_cast<fuchsia_power_broker::PowerLevel>(0),
+      static_cast<fuchsia_power_broker::PowerLevel>(1),
+  };
+  schema.dependencies() = std::move(ds);
+  schema.lessor_channel() = std::move(lessor);
+  schema.element_control() = std::move(control);
+  schema.element_runner() = std::move(runner);
+
+  topology_.value()
+      ->AddElement(std::move(schema))
+      .Then([cb = std::move(cb)](
+                fidl::Result<fuchsia_power_broker::Topology::AddElement>& add_result) mutable {
+        if (add_result.is_error() && add_result.error_value().is_framework_error()) {
+          cb(zx::error(add_result.error_value().framework_error().status()));
+          return;
+        }
+        if (add_result.is_error()) {
+          // This is a protocol error.
+          switch (add_result.error_value().domain_error()) {
+            case fuchsia_power_broker::AddElementError::kInvalid:
+              cb(zx::error(ZX_ERR_INVALID_ARGS));
+              return;
+            case fuchsia_power_broker::AddElementError::kNotAuthorized:
+              cb(zx::error(ZX_ERR_ACCESS_DENIED));
+              return;
+            default:
+              cb(zx::error(ZX_ERR_INTERNAL));
+              return;
+          }
+        }
+        cb(zx::ok(true));
+      });
 }
 
 void DriverRunner::RequestMatchFromDriverIndex(

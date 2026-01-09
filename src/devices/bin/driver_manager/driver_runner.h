@@ -191,6 +191,8 @@ class DriverRunner : public fidl::WireServer<fuchsia_driver_framework::Composite
     return driver_hosts_;
   }
 
+  void AddLeaseControlChannel(fidl::ClientEnd<fuchsia_power_broker::LeaseControl> lease) override;
+
  private:
   // NodeManager interface.
   // Attempt to bind `node`. A nullptr for result_tracker is acceptable if the caller doesn't intend
@@ -227,6 +229,13 @@ class DriverRunner : public fidl::WireServer<fuchsia_driver_framework::Composite
                                          fidl::ServerEnd<fuchsia_io::Directory> exposed_dir,
                                          std::shared_ptr<bool> exposed_dir_connected,
                                          bool use_next_vdso);
+  void CreatePowerElement(std::string_view name,
+                          fuchsia_power_broker::DependencyToken element_token,
+                          std::span<fuchsia_power_broker::DependencyToken>& deps,
+                          fidl::ServerEnd<fuchsia_power_broker::ElementControl> control,
+                          fidl::ClientEnd<fuchsia_power_broker::ElementRunner> runner,
+                          fidl::ServerEnd<fuchsia_power_broker::Lessor> lessor,
+                          fit::callback<void(zx::result<bool>)> cb) override;
 
   uint64_t next_driver_host_id_ = 0;
   fidl::WireClient<fuchsia_driver_index::DriverIndex> driver_index_;
@@ -269,7 +278,8 @@ class DriverRunner : public fidl::WireServer<fuchsia_driver_framework::Composite
   std::optional<fidl::WireSharedClient<fuchsia_driver_loader::DriverHostLauncher>>
       driver_host_launcher_;
 
-  std::optional<fidl::WireSyncClient<fuchsia_power_broker::Topology>> topology_;
+  std::optional<fidl::Client<fuchsia_power_broker::Topology>> topology_;
+  std::vector<fidl::ClientEnd<fuchsia_power_broker::LeaseControl>> leases_;
 };
 
 Collection ToCollection(const Node& node, fuchsia_driver_framework::DriverPackageType package_type);

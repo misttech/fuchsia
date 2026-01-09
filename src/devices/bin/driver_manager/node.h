@@ -91,8 +91,7 @@ using OnBindWaitCompleter =
 struct PowerElementHandles {
   fidl::ClientEnd<fuchsia_power_broker::ElementControl> element_control;
   fidl::ServerEnd<fuchsia_power_broker::ElementRunner> element_runner;
-  fidl::ClientEnd<fuchsia_power_broker::Lessor> lessor;
-  fuchsia_power_broker::DependencyToken token;
+  fidl::Client<fuchsia_power_broker::Lessor> lessor;
 };
 
 class NodeManager {
@@ -140,9 +139,32 @@ class NodeManager {
 
   virtual void WaitForBootup(fit::callback<void()> callback) { callback(); }
 
-  virtual zx::result<PowerElementHandles> CreatePowerElement(
-      std::span<fuchsia_power_broker::DependencyToken> deps) {
-    return zx::error(ZX_ERR_NOT_SUPPORTED);
+  virtual void ImportDictionary(fuchsia_component_sandbox::DictionaryRef dictionary,
+                                fit::callback<void(zx::result<uint64_t>)> callback) {
+    callback(zx::error(ZX_ERR_NOT_SUPPORTED));
+  }
+
+  // Create a power element where |element_token| is the access token for the newly created
+  // element. |deps| are the tokens this element should depend on.
+  // |cb| is called with:
+  //   - `zx::ok(true)` if the power element was successfully created
+  //   - `zx::ok(false)` if the power element could not be created because this is not a suspend-
+  //     enabled platform.
+  //   - `zx::error` if an error happens creating the element on a suspend-enabled platform.
+  virtual void CreatePowerElement(std::string_view name,
+                                  fuchsia_power_broker::DependencyToken element_token,
+                                  std::span<fuchsia_power_broker::DependencyToken>& deps,
+                                  fidl::ServerEnd<fuchsia_power_broker::ElementControl> control,
+                                  fidl::ClientEnd<fuchsia_power_broker::ElementRunner> runner,
+                                  fidl::ServerEnd<fuchsia_power_broker::Lessor> lessor,
+                                  fit::callback<void(zx::result<bool>)> cb) {
+    cb(zx::error(ZX_ERR_NOT_SUPPORTED));
+  }
+
+  // Store the `fuchsia.power.broker/LeaseControl` channel associated with the power element for
+  // this element.
+  virtual void AddLeaseControlChannel(fidl::ClientEnd<fuchsia_power_broker::LeaseControl> lease) {
+    ZX_PANIC("Unimplemented AddLeaseControlChannel");
   }
 
   virtual DictionaryUtil& dictionary_util() { ZX_PANIC("Unimplemented dictionary_util"); }
@@ -238,6 +260,8 @@ class Node : public fidl::WireServer<fuchsia_driver_framework::NodeController>,
       fuchsia_component_runner::wire::ComponentStartInfo start_info,
       fidl::ServerEnd<fuchsia_component_runner::ComponentController> component_controller,
       fit::callback<void(zx::result<>)> cb);
+
+  void LeaseDriverPowerElement(fit::callback<void(zx::result<>)> cb);
 
   // ComponentOwner
   void SetController(fidl::ClientEnd<fuchsia_component::Controller> component_controller) override;
@@ -560,6 +584,14 @@ class Node : public fidl::WireServer<fuchsia_driver_framework::NodeController>,
       fidl::ServerEnd<fuchsia_component_runner::ComponentController> component_controller,
       fit::callback<void(zx::result<>)> cb);
 
+  // Creates a driver host, if necessary, and then starts the driver with the dynamic linker. If
+  // |colocate| is true a driver host is not created because we use an existing one.
+  void CreateHostAndStartDriverWithDynamicLinker(
+      DriverHost::DriverLoadArgs load_args, DriverHost::DriverStartArgs start_args,
+      std::string_view url,
+      fidl::ServerEnd<fuchsia_component_runner::ComponentController> component_controller,
+      bool colocate, fit::callback<void(zx::result<>)> cb);
+
   zx::result<zx::event> DuplicateNodeToken();
 
   std::string name_;
@@ -671,6 +703,9 @@ class Node : public fidl::WireServer<fuchsia_driver_framework::NodeController>,
   // Handlers for FIDL connections.
   DriverHostConnection driver_host_handler_;
   ComponentControllerConnection component_controller_handler_;
+
+  fuchsia_power_broker::DependencyToken power_element_token_;
+  PowerElementHandles pe_handles_;
 };
 
 }  // namespace driver_manager

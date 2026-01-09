@@ -16,6 +16,16 @@ class TestNodeManagerBase : public driver_manager::NodeManager {
   zx::result<driver_manager::DriverHost*> CreateDriverHost(bool use_next_vdso) override {
     return zx::error(ZX_ERR_NOT_SUPPORTED);
   }
+
+  void CreatePowerElement(std::string_view name,
+                          fuchsia_power_broker::DependencyToken element_token,
+                          std::span<fuchsia_power_broker::DependencyToken>& deps,
+                          fidl::ServerEnd<fuchsia_power_broker::ElementControl> control,
+                          fidl::ClientEnd<fuchsia_power_broker::ElementRunner> runner,
+                          fidl::ServerEnd<fuchsia_power_broker::Lessor> lessor,
+                          fit::callback<void(zx::result<bool>)> cb) override {
+    cb(zx::ok(false));
+  }
 };
 
 class DriverManagerTestBase : public gtest::TestLoopFixture {
