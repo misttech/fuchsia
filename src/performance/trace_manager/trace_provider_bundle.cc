@@ -10,9 +10,16 @@
 
 namespace tracing {
 
-TraceProviderBundle::TraceProviderBundle(fuchsia::tracing::provider::ProviderPtr provider,
-                                         uint32_t id, zx_koid_t pid, const std::string& name)
-    : provider(std::move(provider)), id(id), pid(pid), name(name) {}
+TraceProviderBundle::TraceProviderBundle(
+    fidl::ClientEnd<fuchsia_tracing_provider::Provider> provider, uint32_t id, zx_koid_t pid,
+    const std::string& name, async_dispatcher_t* dispatcher)
+    : provider(std::move(provider), dispatcher, this), id(id), pid(pid), name(name) {}
+
+void TraceProviderBundle::on_fidl_error(fidl::UnbindInfo info) {
+  if (on_unbound_) {
+    on_unbound_(info);
+  }
+}
 
 std::string TraceProviderBundle::ToString() const {
   // The pid and name should be present, so we don't try to get fancy with

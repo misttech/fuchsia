@@ -18,10 +18,11 @@ TEST_F(TraceManagerTest, DuplicateInitialization) {
   zx_status_t status = zx::socket::create(0u, &our_socket, &their_socket);
   ASSERT_EQ(status, ZX_OK);
 
-  controller::TraceConfig config{GetDefaultTraceConfig()};
-  controller::SessionPtr controller_2;
-  provisioner()->InitializeTracing(controller_2.NewRequest(), std::move(config),
-                                   std::move(their_socket));
+  fuchsia_tracing_controller::TraceConfig config{GetDefaultTraceConfig()};
+  auto endpoints = fidl::Endpoints<fuchsia_tracing_controller::Session>::Create();
+  auto result = provisioner_client()->InitializeTracing(
+      {{std::move(endpoints.server), std::move(config), std::move(their_socket)}});
+  ASSERT_TRUE(result.is_ok());
   // There's no state transition here that would trigger a call to
   // |LoopQuit()|. Nor is there a result.
   // Mostly we just want to verify things don't hang.
@@ -31,8 +32,8 @@ TEST_F(TraceManagerTest, DuplicateInitialization) {
 TEST_F(TraceManagerTest, LargeBuffers) {
   ConnectToProvisionerService();
 
-  controller::TraceConfig config{GetDefaultTraceConfig()};
-  config.set_buffer_size_megabytes_hint(1024);
+  fuchsia_tracing_controller::TraceConfig config{GetDefaultTraceConfig()};
+  config.buffer_size_megabytes_hint(1024);
   ASSERT_TRUE(InitializeSession(std::move(config)));
   EXPECT_EQ(GetSessionState(), SessionState::kInitialized);
 }

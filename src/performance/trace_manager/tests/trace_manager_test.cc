@@ -12,11 +12,7 @@
 namespace tracing {
 namespace test {
 
-TraceManagerTest::TraceManagerTest() : executor_(dispatcher()) {
-  controller_.events().OnSessionStateChange = [this](controller::SessionState state) {
-    FidlOnSessionStateChange(state);
-  };
-}
+TraceManagerTest::TraceManagerTest() : executor_(dispatcher()) {}
 
 void TraceManagerTest::SetUp() {
   TestLoopFixture::SetUp();
@@ -36,39 +32,43 @@ void TraceManagerTest::TearDown() {
 
 void TraceManagerTest::ConnectToProvisionerService() {
   FX_LOGS(DEBUG) << "ConnectToProvisionerService";
-  context_provider().ConnectToPublicService(provisioner_.NewRequest());
+  auto [client_end, server_end] =
+      fidl::Endpoints<fuchsia_tracing_controller::Provisioner>::Create();
+  context_provider().public_service_directory()->Connect(
+      fidl::DiscoverableProtocolName<fuchsia_tracing_controller::Provisioner>,
+      server_end.TakeChannel());
+  provisioner_ = fidl::Client(std::move(client_end), dispatcher());
 }
 
 void TraceManagerTest::DisconnectFromControllerService() {
   FX_LOGS(DEBUG) << "DisconnectFromControllerService";
-  controller_.Unbind();
+  controller_ = {};
 }
 
 bool TraceManagerTest::AddFakeProvider(zx_koid_t pid, const std::string& name,
                                        FakeProvider** out_provider) {
-  provider::RegistryPtr registry;
-  context_provider().ConnectToPublicService(registry.NewRequest());
+  auto [client_end, server_end] = fidl::Endpoints<fuchsia_tracing_provider::Registry>::Create();
+  context_provider().public_service_directory()->Connect(
+      fidl::DiscoverableProtocolName<fuchsia_tracing_provider::Registry>, server_end.TakeChannel());
+  fidl::Client<fuchsia_tracing_provider::Registry> registry(std::move(client_end), dispatcher());
 
   auto provider_impl = std::make_unique<FakeProvider>(pid, name);
   auto provider = std::make_unique<FakeProviderBinding>(std::move(provider_impl));
 
-  fidl::InterfaceHandle<provider::Provider> provider_client{provider->NewBinding()};
+  auto provider_client = provider->NewBinding(dispatcher());
   if (!provider_client.is_valid()) {
     return false;
   }
 
-  registry->RegisterProvider(std::move(provider_client), provider->impl()->pid(),
-                             provider->impl()->name());
+  auto result = registry->RegisterProvider({{std::move(provider_client), pid, name}});
+  if (result.is_error()) {
+    return false;
+  }
   if (out_provider) {
-    *out_provider = provider->impl().get();
+    *out_provider = provider->provider.get();
   }
   fake_provider_bindings_.push_back(std::move(provider));
   return true;
-}
-
-void TraceManagerTest::OnSessionStateChange() {
-  FX_LOGS(DEBUG) << "Session state change, QuitLoop";
-  QuitLoop();
 }
 
 TraceManagerTest::SessionState TraceManagerTest::GetSessionState() const {
@@ -91,26 +91,29 @@ TraceManagerTest::SessionState TraceManagerTest::GetSessionState() const {
 }
 
 // static
-controller::TraceConfig TraceManagerTest::GetDefaultTraceConfig() {
+fuchsia_tracing_controller::TraceConfig TraceManagerTest::GetDefaultTraceConfig() {
   std::vector<std::string> categories{kTestUmbrellaCategory};
-  controller::TraceConfig config;
-  config.set_categories(std::move(categories));
-  config.set_buffer_size_megabytes_hint(kDefaultBufferSizeMegabytes);
-  config.set_start_timeout_milliseconds(kDefaultStartTimeoutMilliseconds);
-  config.set_buffering_mode(fuchsia::tracing::BufferingMode::ONESHOT);
+  fuchsia_tracing_controller::TraceConfig config;
+  config.categories(std::move(categories));
+  config.buffer_size_megabytes_hint(kDefaultBufferSizeMegabytes);
+  config.start_timeout_milliseconds(kDefaultStartTimeoutMilliseconds);
+  config.buffering_mode(fuchsia_tracing::BufferingMode::kOneshot);
   return config;
 }
 
-void TraceManagerTest::InitializeSessionWorker(controller::TraceConfig config, bool* success) {
-  // Require a mode to be set, no default here.
-  FX_CHECK(config.has_buffering_mode());
-
+void TraceManagerTest::InitializeSessionWorker(fuchsia_tracing_controller::TraceConfig config,
+                                               bool* success) {
   zx::socket our_socket, their_socket;
   zx_status_t status = zx::socket::create(0u, &our_socket, &their_socket);
   ASSERT_EQ(status, ZX_OK);
 
-  provisioner_->InitializeTracing(controller_.NewRequest(), std::move(config),
-                                  std::move(their_socket));
+  auto [client_end, server_end] = fidl::Endpoints<fuchsia_tracing_controller::Session>::Create();
+  auto result = provisioner_->InitializeTracing(
+      {{std::move(server_end), std::move(config), std::move(their_socket)}});
+  ASSERT_TRUE(result.is_ok());
+
+  controller_ = fidl::Client(std::move(client_end), dispatcher(), this);
+
   RunLoopUntilIdle();
   FX_LOGS(DEBUG) << "Loop done, expecting session initialized";
   ASSERT_EQ(GetSessionState(), SessionState::kInitialized);
@@ -131,7 +134,7 @@ void TraceManagerTest::InitializeSessionWorker(controller::TraceConfig config, b
   *success = true;
 }
 
-bool TraceManagerTest::InitializeSession(controller::TraceConfig config) {
+bool TraceManagerTest::InitializeSession(fuchsia_tracing_controller::TraceConfig config) {
   bool success{};
   FX_LOGS(DEBUG) << "Initializing session";
   InitializeSessionWorker(std::move(config), &success);
@@ -142,25 +145,35 @@ bool TraceManagerTest::InitializeSession(controller::TraceConfig config) {
 }
 
 // static
-controller::StartOptions TraceManagerTest::GetDefaultStartOptions() {
+fuchsia_tracing_controller::StartOptions TraceManagerTest::GetDefaultStartOptions() {
   std::vector<std::string> additional_categories{};
-  controller::StartOptions options;
-  options.set_buffer_disposition(fuchsia::tracing::BufferDisposition::RETAIN);
-  options.set_additional_categories(std::move(additional_categories));
+  fuchsia_tracing_controller::StartOptions options;
+  options.buffer_disposition(fuchsia_tracing::BufferDisposition::kRetain);
+  options.additional_categories(std::move(additional_categories));
   return options;
 }
 
-void TraceManagerTest::BeginStartSession(controller::StartOptions options) {
+void TraceManagerTest::BeginStartSession(fuchsia_tracing_controller::StartOptions options) {
   FX_LOGS(DEBUG) << "Starting session";
 
   MarkBeginOperation();
 
   start_state_.start_completed = false;
-  auto callback = [this](controller::Session_StartTracing_Result result) {
-    start_state_.start_completed = true;
-    start_state_.start_result = std::move(result);
-  };
-  controller_->StartTracing(std::move(options), callback);
+  controller_->StartTracing({{std::move(options)}})
+      .ThenExactlyOnce(
+          [this](fidl::Result<fuchsia_tracing_controller::Session::StartTracing>& result) {
+            start_state_.start_completed = true;
+            if (result.is_error()) {
+              if (result.error_value().is_domain_error()) {
+                start_state_.start_result = fit::error(result.error_value().domain_error());
+              } else {
+                start_state_.start_result =
+                    fit::error(fuchsia_tracing_controller::StartError::kNotInitialized);
+              }
+            } else {
+              start_state_.start_result = fit::ok();
+            }
+          });
 
   RunLoopUntilIdle();
   // The loop will exit for the transition to kStarting.
@@ -203,39 +216,48 @@ bool TraceManagerTest::FinishStartSession() {
   if (!start_state_.start_completed) {
     return false;
   }
-  EXPECT_FALSE(start_state_.start_result.is_err());
+  EXPECT_TRUE(start_state_.start_result.is_ok());
 
   FX_LOGS(DEBUG) << "Session started";
   return true;
 }
 
-bool TraceManagerTest::StartSession(controller::StartOptions options) {
+bool TraceManagerTest::StartSession(fuchsia_tracing_controller::StartOptions options) {
   BeginStartSession(std::move(options));
   return FinishStartSession();
 }
 
 // static
-controller::StopOptions TraceManagerTest::GetDefaultStopOptions() {
-  controller::StopOptions options;
-  options.set_write_results(true);
+fuchsia_tracing_controller::StopOptions TraceManagerTest::GetDefaultStopOptions() {
+  fuchsia_tracing_controller::StopOptions options;
+  options.write_results(true);
   return options;
 }
 
-void TraceManagerTest::BeginStopSession(controller::StopOptions options) {
+void TraceManagerTest::BeginStopSession(fuchsia_tracing_controller::StopOptions options) {
   FX_LOGS(DEBUG) << "Stopping session";
 
   MarkBeginOperation();
 
   stop_state_.stop_completed = false;
-  auto callback = [this](controller::Session_StopTracing_Result result) {
-    ASSERT_TRUE(result.is_response());
-    stop_state_.stop_completed = true;
-    stop_state_.stop_result = std::move(result.response());
-    // We need to run the loop one last time to pick up the result.
-    // Be sure to exit it now that we have the result.
-    QuitLoop();
-  };
-  controller_->StopTracing(std::move(options), callback);
+  controller_->StopTracing({{std::move(options)}})
+      .ThenExactlyOnce(
+          [this](fidl::Result<fuchsia_tracing_controller::Session::StopTracing>& result) {
+            stop_state_.stop_completed = true;
+            if (result.is_error()) {
+              if (result.error_value().is_domain_error()) {
+                stop_state_.stop_result = fit::error(result.error_value().domain_error());
+              } else {
+                stop_state_.stop_result =
+                    fit::error(fuchsia_tracing_controller::StopError::kNotInitialized);
+              }
+            } else {
+              stop_state_.stop_result = fit::ok(std::move(result.value()));
+            }
+            // We need to run the loop one last time to pick up the result.
+            // Be sure to exit it now that we have the result.
+            QuitLoop();
+          });
 
   RunLoopUntilIdle();
   // The loop will exit for the transition to kStopping.
@@ -282,7 +304,7 @@ bool TraceManagerTest::FinishStopSession() {
   return true;
 }
 
-bool TraceManagerTest::StopSession(controller::StopOptions options) {
+bool TraceManagerTest::StopSession(fuchsia_tracing_controller::StopOptions options) {
   BeginStopSession(std::move(options));
   return FinishStopSession();
 }
@@ -335,48 +357,49 @@ bool TraceManagerTest::TerminateSession() {
 void TraceManagerTest::MarkAllProvidersStarted() {
   FX_LOGS(DEBUG) << "Marking all providers started";
   for (const auto& p : fake_provider_bindings()) {
-    p->impl()->MarkStarted();
+    p->provider->MarkStarted();
   }
 }
 
 void TraceManagerTest::MarkAllProvidersStopped() {
   FX_LOGS(DEBUG) << "Marking all providers stopped";
   for (const auto& p : fake_provider_bindings()) {
-    p->impl()->MarkStopped();
+    p->provider->MarkStopped();
   }
 }
 
 void TraceManagerTest::MarkAllProvidersTerminated() {
   FX_LOGS(DEBUG) << "Marking all providers terminated";
   for (const auto& p : fake_provider_bindings()) {
-    p->impl()->MarkTerminated();
+    p->provider->MarkTerminated();
   }
 }
 
 void TraceManagerTest::VerifyCounts(int expected_start_count, int expected_stop_count) {
   SessionState state{GetSessionState()};
   for (const auto& p : fake_provider_bindings()) {
-    const std::string& name = p->impl()->name();
+    const std::string& name = p->provider->name();
     if (state != SessionState::kReady) {
-      EXPECT_EQ(p->impl()->initialize_count(), 1) << name;
+      EXPECT_EQ(p->provider->initialize_count(), 1) << name;
     } else {
-      EXPECT_EQ(p->impl()->initialize_count(), 0) << name;
+      EXPECT_EQ(p->provider->initialize_count(), 0) << name;
     }
-    EXPECT_EQ(p->impl()->start_count(), expected_start_count) << name;
-    EXPECT_EQ(p->impl()->stop_count(), expected_stop_count) << name;
+    EXPECT_EQ(p->provider->start_count(), expected_start_count) << name;
+    EXPECT_EQ(p->provider->stop_count(), expected_stop_count) << name;
     if (state != SessionState::kNonexistent) {
-      EXPECT_EQ(p->impl()->terminate_count(), 0) << name;
+      EXPECT_EQ(p->provider->terminate_count(), 0) << name;
     } else {
-      EXPECT_EQ(p->impl()->terminate_count(), 1) << name;
+      EXPECT_EQ(p->provider->terminate_count(), 1) << name;
     }
   }
 }
 
 // fidl event
-void TraceManagerTest::FidlOnSessionStateChange(controller::SessionState state) {
-  FX_LOGS(DEBUG) << "FidlOnSessionStateChange " << state;
+void TraceManagerTest::OnSessionStateChange(
+    fidl::Event<fuchsia_tracing_controller::Session::OnSessionStateChange>& event) {
+  FX_LOGS(DEBUG) << "OnSessionStateChange " << static_cast<uint32_t>(event.state());
   ++on_session_state_change_event_count_;
-  last_session_state_event_ = state;
+  last_session_state_event_ = event.state();
 }
 
 }  // namespace test

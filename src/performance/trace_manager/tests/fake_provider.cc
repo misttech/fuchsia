@@ -4,7 +4,7 @@
 
 #include "src/performance/trace_manager/tests/fake_provider.h"
 
-#include <fuchsia/tracing/provider/cpp/fidl.h>
+#include <fidl/fuchsia.tracing.provider/cpp/fidl.h>
 #include <lib/syslog/cpp/macros.h>
 #include <lib/trace-engine/buffer_internal.h>
 #include <lib/trace-engine/fields.h>
@@ -21,7 +21,7 @@ std::string FakeProvider::PrettyName() const {
 }
 
 // fidl
-void FakeProvider::Initialize(provider::ProviderConfig config) {
+void FakeProvider::Initialize(InitializeRequest& request, InitializeCompleter::Sync& completer) {
   FX_LOGS(DEBUG) << PrettyName() << ": Received Initialize message";
   ++initialize_count_;
   if (!responsive_) {
@@ -33,20 +33,18 @@ void FakeProvider::Initialize(provider::ProviderConfig config) {
     return;
   }
 
-  EXPECT_TRUE(config.buffer);
-  EXPECT_TRUE(config.fifo);
-  if (!config.buffer || !config.fifo) {
-    return;
-  }
+  auto& config = request.config();
+  ASSERT_TRUE(config.buffer().is_valid());
+  ASSERT_TRUE(config.fifo().is_valid());
 
   AdvanceToState(State::kInitialized);
 
-  buffering_mode_ = config.buffering_mode;
+  buffering_mode_ = config.buffering_mode();
   // We need to save |vmo_| and especially |fifo_| - otherwise they'll get
   // closed and trace-manager will interpret that as us going away.
-  buffer_vmo_ = std::move(config.buffer);
-  fifo_ = std::move(config.fifo);
-  enabled_categories_ = std::move(config.categories);
+  buffer_vmo_ = std::move(config.buffer());
+  fifo_ = std::move(config.fifo());
+  enabled_categories_ = std::move(config.categories());
 
   InitializeBuffer();
   // Write the trace initialization record in case Start is called with
@@ -55,7 +53,7 @@ void FakeProvider::Initialize(provider::ProviderConfig config) {
 }
 
 // fidl
-void FakeProvider::Start(provider::StartOptions options) {
+void FakeProvider::Start(StartRequest& request, StartCompleter::Sync& completer) {
   FX_LOGS(DEBUG) << PrettyName() << ": Received Start message";
   ++start_count_;
   if (!responsive_) {
@@ -69,7 +67,7 @@ void FakeProvider::Start(provider::StartOptions options) {
     return;
   }
 
-  if (options.buffer_disposition == fuchsia::tracing::BufferDisposition::RETAIN) {
+  if (request.options().buffer_disposition() == fuchsia_tracing::BufferDisposition::kRetain) {
     // Don't reset the buffer pointer.
     FX_LOGS(DEBUG) << "Retaining buffer contents";
   } else {
@@ -84,7 +82,7 @@ void FakeProvider::Start(provider::StartOptions options) {
 }
 
 // fidl
-void FakeProvider::Stop() {
+void FakeProvider::Stop(StopCompleter::Sync& completer) {
   FX_LOGS(DEBUG) << PrettyName() << ": Received Stop message";
   ++stop_count_;
   if (!responsive_) {
@@ -104,7 +102,7 @@ void FakeProvider::Stop() {
 }
 
 // fidl
-void FakeProvider::Terminate() {
+void FakeProvider::Terminate(TerminateCompleter::Sync& completer) {
   FX_LOGS(DEBUG) << PrettyName() << ": Received Terminate message";
   ++terminate_count_;
   if (!responsive_) {
@@ -125,11 +123,14 @@ void FakeProvider::Terminate() {
 }
 
 // fidl
-void FakeProvider::GetKnownCategories(FakeProvider::GetKnownCategoriesCallback callback) {
+void FakeProvider::GetKnownCategories(GetKnownCategoriesCompleter::Sync& completer) {
   if (!responsive_) {
+    // Buffer the completer, but don't respond. We need to effectively leak the completer and not
+    // respond to it.
+    pending_cat_completers_.push_back(completer.ToAsync());
     return;
   }
-  callback(known_categories_);
+  completer.Reply({{.categories = known_categories_}});
 }
 
 void FakeProvider::MarkStarted() {
@@ -224,7 +225,7 @@ void FakeProvider::InitializeBuffer() {
   // E.g., We don't emit any records to the durable buffer so ensure
   // TraceManager will see the buffer beginning with a zero-length record
   // which tells it there isn't any.
-  if (buffering_mode_ == fuchsia::tracing::BufferingMode::ONESHOT) {
+  if (buffering_mode_ == fuchsia_tracing::BufferingMode::kOneshot) {
     size_t rolling_buffer0_offset = kHeaderSize;
     WriteZeroLengthRecord(rolling_buffer0_offset);
   } else {
@@ -244,19 +245,19 @@ void FakeProvider::ComputeBufferSizes() {
 
   // See trace-engine's |trace_context::ComputeBufferSizes()|.
   switch (buffering_mode_) {
-    case fuchsia::tracing::BufferingMode::ONESHOT:
+    case fuchsia_tracing::BufferingMode::kOneshot:
       durable_buffer_size_ = 0;
       rolling_buffer_size_ = total_buffer_size_ - header_size;
       break;
-    case fuchsia::tracing::BufferingMode::CIRCULAR:
-    case fuchsia::tracing::BufferingMode::STREAMING: {
+    case fuchsia_tracing::BufferingMode::kCircular:
+    case fuchsia_tracing::BufferingMode::kStreaming: {
       size_t avail = total_buffer_size_ - header_size;
       durable_buffer_size_ = kDurableBufferSize;
       uint64_t off_by = (avail - durable_buffer_size_) & 15;
       durable_buffer_size_ += off_by;
       rolling_buffer_size_ = (avail - durable_buffer_size_) / 2;
       // Ensure entire buffer is used.
-      FX_DCHECK(durable_buffer_size_ + 2 * rolling_buffer_size_ == avail);
+      FX_DCHECK(durable_buffer_size_ + (2 * rolling_buffer_size_) == avail);
       break;
     }
     default:
@@ -280,14 +281,16 @@ void FakeProvider::InitBufferHeader() {
   header.version = TRACE_BUFFER_HEADER_V0;
 
   switch (buffering_mode_) {
-    case fuchsia::tracing::BufferingMode::ONESHOT:
+    case fuchsia_tracing::BufferingMode::kOneshot:
       header.buffering_mode = static_cast<uint8_t>(TRACE_BUFFERING_MODE_ONESHOT);
       break;
-    case fuchsia::tracing::BufferingMode::CIRCULAR:
+    case fuchsia_tracing::BufferingMode::kCircular:
       header.buffering_mode = static_cast<uint8_t>(TRACE_BUFFERING_MODE_CIRCULAR);
       break;
-    case fuchsia::tracing::BufferingMode::STREAMING:
+    case fuchsia_tracing::BufferingMode::kStreaming:
       header.buffering_mode = static_cast<uint8_t>(TRACE_BUFFERING_MODE_STREAMING);
+      break;
+    default:
       break;
   }
 
@@ -337,12 +340,16 @@ void FakeProvider::WriteRecordToBuffer(const uint8_t* data, size_t size) {
                  << buffer_next_;
   size_t offset;
   switch (buffering_mode_) {
-    case fuchsia::tracing::BufferingMode::ONESHOT:
+    case fuchsia_tracing::BufferingMode::kOneshot:
       offset = kHeaderSize + buffer_next_;
       break;
-    case fuchsia::tracing::BufferingMode::CIRCULAR:
-    case fuchsia::tracing::BufferingMode::STREAMING:
+    case fuchsia_tracing::BufferingMode::kCircular:
+    case fuchsia_tracing::BufferingMode::kStreaming:
       offset = kHeaderSize + durable_buffer_size_ + buffer_next_;
+      break;
+    default:
+      FX_NOTREACHED();
+      offset = 0;
       break;
   }
   WriteBytes(data, offset, size);
@@ -390,6 +397,13 @@ std::ostream& operator<<(std::ostream& out, FakeProvider::State state) {
   }
 
   return out;
+}
+
+fidl::ClientEnd<fuchsia_tracing_provider::Provider> FakeProviderBinding::NewBinding(
+    async_dispatcher_t* dispatcher) {
+  auto [client_end, server_end] = fidl::Endpoints<fuchsia_tracing_provider::Provider>::Create();
+  binding = fidl::BindServer(dispatcher, std::move(server_end), provider.get());
+  return std::move(client_end);
 }
 
 }  // namespace test

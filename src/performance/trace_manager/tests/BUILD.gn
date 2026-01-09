@@ -33,6 +33,9 @@ executable("trace_manager_tests_bin") {
   ]
 
   deps = [
+    "//sdk/fidl/fuchsia.tracing:fuchsia.tracing_cpp",
+    "//sdk/fidl/fuchsia.tracing.controller:fuchsia.tracing.controller_cpp",
+    "//sdk/fidl/fuchsia.tracing.provider:fuchsia.tracing.provider_cpp",
     "//sdk/lib/async-default",
     "//sdk/lib/async-loop:async-loop-cpp",
     "//sdk/lib/fdio",

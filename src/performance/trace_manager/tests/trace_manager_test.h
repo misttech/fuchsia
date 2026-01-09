@@ -5,7 +5,9 @@
 #ifndef SRC_PERFORMANCE_TRACE_MANAGER_TESTS_TRACE_MANAGER_TEST_H_
 #define SRC_PERFORMANCE_TRACE_MANAGER_TESTS_TRACE_MANAGER_TEST_H_
 
-#include <lib/fidl/cpp/binding.h>
+#include <fidl/fuchsia.tracing.controller/cpp/fidl.h>
+#include <fidl/fuchsia.tracing.provider/cpp/fidl.h>
+#include <lib/fidl/cpp/wire/channel.h>
 #include <lib/sys/cpp/testing/component_context_provider.h>
 #include <lib/zx/socket.h>
 
@@ -23,9 +25,8 @@
 namespace tracing {
 namespace test {
 
-namespace controller = fuchsia::tracing::controller;
-
-class TraceManagerTest : public gtest::TestLoopFixture {
+class TraceManagerTest : public gtest::TestLoopFixture,
+                         public fidl::AsyncEventHandler<fuchsia_tracing_controller::Session> {
  public:
   // |TraceSession| intentionally doesn't have |kTerminated| as that is
   // represented by the session being non-existent. However, it's helpful in
@@ -64,9 +65,9 @@ class TraceManagerTest : public gtest::TestLoopFixture {
   static constexpr zx_koid_t kProvider3Pid = 1236;
   static constexpr char kProvider3Name[] = "test-provider3";
 
-  static controller::TraceConfig GetDefaultTraceConfig();
-  static controller::StartOptions GetDefaultStartOptions();
-  static controller::StopOptions GetDefaultStopOptions();
+  static fuchsia_tracing_controller::TraceConfig GetDefaultTraceConfig();
+  static fuchsia_tracing_controller::StartOptions GetDefaultStartOptions();
+  static fuchsia_tracing_controller::StopOptions GetDefaultStopOptions();
 
   TraceManagerTest();
 
@@ -74,15 +75,22 @@ class TraceManagerTest : public gtest::TestLoopFixture {
 
   sys::testing::ComponentContextProvider& context_provider() { return context_provider_; }
 
-  const controller::SessionPtr& controller() const { return controller_; }
+  fidl::Client<fuchsia_tracing_controller::Session>& session_client() { return controller_; }
 
-  const controller::ProvisionerPtr& provisioner() const { return provisioner_; }
+  fidl::Client<fuchsia_tracing_controller::Provisioner>& provisioner_client() {
+    return provisioner_;
+  }
+
+  void handle_unknown_event(
+      fidl::UnknownEventMetadata<fuchsia_tracing_controller::Session> metadata) override {}
 
   int on_session_state_change_event_count() const { return on_session_state_change_event_count_; }
   int begin_session_state_change_event_count() const {
     return begin_session_state_change_event_count_;
   }
-  controller::SessionState last_session_state_event() const { return last_session_state_event_; }
+  fuchsia_tracing_controller::SessionState last_session_state_event() const {
+    return last_session_state_event_;
+  }
 
   const std::vector<std::unique_ptr<FakeProviderBinding>>& fake_provider_bindings() const {
     return fake_provider_bindings_;
@@ -90,10 +98,6 @@ class TraceManagerTest : public gtest::TestLoopFixture {
 
   void ConnectToProvisionerService();
   void DisconnectFromControllerService();
-
-  const fidl::InterfaceRequest<controller::Session> NewControllerRequest() {
-    return controller_.NewRequest();
-  }
 
   // The caller must run the loop to complete the registration.
   // If |*out_provider| is non-NULL, a borrowed copy of the pointer is
@@ -119,7 +123,7 @@ class TraceManagerTest : public gtest::TestLoopFixture {
   // constraint, roll your own or use something else.
   // These assume the controller connection is already made.
   // The default session doesn't have a consumer.
-  bool InitializeSession(controller::TraceConfig config = GetDefaultTraceConfig());
+  bool InitializeSession(fuchsia_tracing_controller::TraceConfig config = GetDefaultTraceConfig());
   bool TerminateSession();
 
   // Terminating a session involves two steps: Initiating the termination
@@ -137,15 +141,16 @@ class TraceManagerTest : public gtest::TestLoopFixture {
   // constraint, roll your own or use something else.
   // These assume the needed interface is already connected.
   // These combine both the "begin" and "finish" operations.
-  bool StartSession(controller::StartOptions options = GetDefaultStartOptions());
-  bool StopSession(controller::StopOptions options = GetDefaultStopOptions());
+  bool StartSession(fuchsia_tracing_controller::StartOptions options = GetDefaultStartOptions());
+  bool StopSession(fuchsia_tracing_controller::StopOptions options = GetDefaultStopOptions());
 
   // Starting and stopping a session involves two steps: initiating the request
   // and waiting for it to complete. Call these when you want to access
   // intermediate state.
-  void BeginStartSession(controller::StartOptions options = GetDefaultStartOptions());
+  void BeginStartSession(
+      fuchsia_tracing_controller::StartOptions options = GetDefaultStartOptions());
   bool FinishStartSession();
-  void BeginStopSession(controller::StopOptions options = GetDefaultStopOptions());
+  void BeginStopSession(fuchsia_tracing_controller::StopOptions options = GetDefaultStopOptions());
   bool FinishStopSession();
 
   // Helpers to advance provider state.
@@ -174,14 +179,15 @@ class TraceManagerTest : public gtest::TestLoopFixture {
   // This value is only valid between those calls.
   struct StartState {
     bool start_completed = false;
-    controller::Session_StartTracing_Result start_result;
+    fit::result<fuchsia_tracing_controller::StartError> start_result = fit::ok();
   };
 
   // For communication between |BeginStop(),FinishStop()|.
   // This value is only valid between those calls.
   struct StopState {
     bool stop_completed = false;
-    controller::StopResult stop_result;
+    fit::result<fuchsia_tracing_controller::StopError, fuchsia_tracing_controller::StopResult>
+        stop_result = fit::ok(fuchsia_tracing_controller::StopResult{});
   };
 
   void SetUp() override;
@@ -189,17 +195,18 @@ class TraceManagerTest : public gtest::TestLoopFixture {
 
   // Helper functions to cope with functions calling |ASSERT_*|: they have to
   // return void.
-  void InitializeSessionWorker(controller::TraceConfig config, bool* out_success);
+  void InitializeSessionWorker(fuchsia_tracing_controller::TraceConfig config, bool* out_success);
 
   // Handler for OnSessionStateChange fidl event.
-  void FidlOnSessionStateChange(controller::SessionState state);
+  void OnSessionStateChange(
+      fidl::Event<fuchsia_tracing_controller::Session::OnSessionStateChange>& event) override;
 
   sys::testing::ComponentContextProvider context_provider_;
   std::unique_ptr<TraceManagerApp> app_;
 
   // Interfaces to make service requests.
-  controller::SessionPtr controller_;
-  controller::ProvisionerPtr provisioner_;
+  fidl::Client<fuchsia_tracing_controller::Session> controller_;
+  fidl::Client<fuchsia_tracing_controller::Provisioner> provisioner_;
 
   // Running count of session state changes.
   int on_session_state_change_event_count_ = 0;
@@ -209,7 +216,7 @@ class TraceManagerTest : public gtest::TestLoopFixture {
   // (e.g., terminating -> terminated).
   int begin_session_state_change_event_count_ = 0;
   // The last recorded session state, for verification purposes.
-  controller::SessionState last_session_state_event_{};
+  fuchsia_tracing_controller::SessionState last_session_state_event_{};
 
   async::Executor executor_;
   // Socket for communication with controller.

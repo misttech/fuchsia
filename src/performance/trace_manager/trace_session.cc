@@ -8,11 +8,11 @@
 #include <lib/async/default.h>
 #include <lib/syslog/cpp/macros.h>
 #include <lib/trace-engine/fields.h>
+#include <lib/zx/vmo.h>
 
 #include <numeric>
 #include <unordered_set>
 
-#include "src/performance/trace_manager/deferred_buffer_forwarder.h"
 #include "src/performance/trace_manager/util.h"
 
 namespace tracing {
@@ -20,9 +20,10 @@ namespace tracing {
 TraceSession::TraceSession(async::Executor& executor, std::shared_ptr<BufferForwarder> destination,
                            std::vector<std::string> enabled_categories,
                            size_t buffer_size_megabytes,
-                           fuchsia::tracing::BufferingMode buffering_mode,
+                           fuchsia_tracing::BufferingMode buffering_mode,
                            TraceProviderSpecMap&& provider_specs, zx::duration start_timeout,
-                           zx::duration stop_timeout, controller::FxtVersion fxt_version,
+                           zx::duration stop_timeout,
+                           fuchsia_tracing_controller::FxtVersion fxt_version,
                            fit::closure abort_handler, AlertCallback alert_callback)
     : executor_(executor),
       buffer_forwarder_(std::move(destination)),
@@ -51,8 +52,8 @@ void TraceSession::AddProvider(TraceProviderBundle* provider) {
 
   size_t buffer_size_megabytes = buffer_size_megabytes_;
   // Include at least the umbrella enabled categories.
-  std::unordered_set<std::string> provider_specific_categories(enabled_categories_->begin(),
-                                                               enabled_categories_->end());
+  std::unordered_set<std::string> provider_specific_categories(enabled_categories_.begin(),
+                                                               enabled_categories_.end());
   auto spec_iter = provider_specs_.find(provider->name);
   if (spec_iter != provider_specs_.end()) {
     const TraceProviderSpec* spec = &spec_iter->second;
@@ -102,7 +103,7 @@ void TraceSession::AddProvider(TraceProviderBundle* provider) {
       case State::kStarting:
       case State::kStarted:
         // This is a new provider, there is nothing in the buffer to retain.
-        tracee->Start(fuchsia::tracing::BufferDisposition::CLEAR_ENTIRE, additional_categories_);
+        tracee->Start(fuchsia_tracing::BufferDisposition::kClearEntire, additional_categories_);
         break;
       case State::kStopping:
       case State::kStopped:
@@ -121,7 +122,6 @@ void TraceSession::MarkInitialized() { TransitionToState(State::kInitialized); }
 
 void TraceSession::Terminate(fit::closure callback) {
   if (state_ == State::kTerminating) {
-    FX_LOGS(DEBUG) << "Ignoring terminate request, already terminating";
     return;
   }
 
@@ -136,14 +136,14 @@ void TraceSession::Terminate(fit::closure callback) {
   TerminateSessionIfEmpty();
 }
 
-void TraceSession::Start(fuchsia::tracing::BufferDisposition buffer_disposition,
+void TraceSession::Start(fuchsia_tracing::BufferDisposition buffer_disposition,
                          const std::vector<std::string>& additional_categories,
-                         controller::Session::StartTracingCallback callback) {
+                         StartTracingCallback callback) {
   FX_DCHECK(state_ == State::kInitialized || state_ == State::kStopped);
 
   if (force_clear_buffer_contents_) {
     // "force-clear" -> Clear the entire buffer because it was saved.
-    buffer_disposition = fuchsia::tracing::BufferDisposition::CLEAR_ENTIRE;
+    buffer_disposition = fuchsia_tracing::BufferDisposition::kClearEntire;
   }
   force_clear_buffer_contents_ = false;
 
@@ -168,8 +168,7 @@ void TraceSession::Start(fuchsia::tracing::BufferDisposition buffer_disposition,
   additional_categories_ = additional_categories;
 }
 
-void TraceSession::Stop(bool write_results,
-                        fit::function<void(controller::Session_StopTracing_Result)> callback) {
+void TraceSession::Stop(bool write_results, StopTracingCallback callback) {
   FX_DCHECK(state_ == State::kInitialized || state_ == State::kStarting ||
             state_ == State::kStarted);
 
@@ -249,10 +248,7 @@ void TraceSession::NotifyStarted() {
     FX_LOGS(DEBUG) << "Marking session as having started";
     session_start_timeout_.Cancel();
     auto callback = std::move(start_callback_);
-    controller::Session_StartTracing_Result result;
-    controller::Session_StartTracing_Response response;
-    result.set_response(response);
-    callback(std::move(result));
+    callback(fit::ok());
   }
 }
 
@@ -320,14 +316,11 @@ void TraceSession::NotifyStopped() {
 
     FX_LOGS(INFO) << "Writing " << trace_stats_.size() << " trace stats to result.";
 
-    controller::Session_StopTracing_Result stop_result;
-    controller::StopResult result;
-    result.set_provider_stats(std::move(trace_stats_));
-    stop_result.set_response(std::move(result));
-    FX_LOGS(INFO) << "Replying to Stop() with a StopResult.";
+    fuchsia_tracing_controller::StopResult result;
+    result.provider_stats(std::move(trace_stats_));
     auto callback = std::move(stop_callback_);
     FX_DCHECK(callback);
-    callback(std::move(stop_result));
+    callback(fit::ok(std::move(result)));
     FX_LOGS(INFO) << "Stop() callback complete.";
   } else {
     FX_LOGS(WARNING) << "Stop() did not provide a callback??";
@@ -468,11 +461,9 @@ void TraceSession::Abort() {
   if (stop_callback_) {
     TransitionToState(State::kStopped);
     session_stop_timeout_.Cancel();
-    controller::Session_StopTracing_Result stop_result;
-    stop_result.set_err(controller::StopError::ABORTED);
     auto callback = std::move(stop_callback_);
     FX_DCHECK(callback);
-    callback(std::move(stop_result));
+    callback(fit::error(fuchsia_tracing_controller::StopError::kAborted));
   }
   abort_handler_();
 }

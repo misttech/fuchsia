@@ -2,7 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#include "tracee.h"
+#include "src/performance/trace_manager/tracee.h"
 
 #include <lib/async/cpp/task.h>
 #include <lib/async/default.h>
@@ -14,7 +14,7 @@
 
 #include <fbl/algorithm.h>
 
-#include "util.h"
+#include "src/performance/trace_manager/util.h"
 #include "zircon/syscalls.h"
 
 // LINT.IfChange
@@ -27,14 +27,14 @@ namespace tracing {
 
 namespace {
 
-fuchsia::tracing::BufferingMode EngineBufferingModeToProviderMode(trace_buffering_mode_t mode) {
+fuchsia_tracing::BufferingMode EngineBufferingModeToProviderMode(trace_buffering_mode_t mode) {
   switch (mode) {
     case TRACE_BUFFERING_MODE_ONESHOT:
-      return fuchsia::tracing::BufferingMode::ONESHOT;
+      return fuchsia_tracing::BufferingMode::kOneshot;
     case TRACE_BUFFERING_MODE_CIRCULAR:
-      return fuchsia::tracing::BufferingMode::CIRCULAR;
+      return fuchsia_tracing::BufferingMode::kCircular;
     case TRACE_BUFFERING_MODE_STREAMING:
-      return fuchsia::tracing::BufferingMode::STREAMING;
+      return fuchsia_tracing::BufferingMode::kStreaming;
     default:
       __UNREACHABLE;
   }
@@ -52,10 +52,10 @@ Tracee::Tracee(async::Executor& executor, std::shared_ptr<const BufferForwarder>
 
 bool Tracee::operator==(TraceProviderBundle* bundle) const { return bundle_ == bundle; }
 
-bool Tracee::Initialize(fidl::VectorPtr<std::string> categories, size_t buffer_size,
-                        fuchsia::tracing::BufferingMode buffering_mode,
-                        StartCallback start_callback, StopCallback stop_callback,
-                        TerminateCallback terminate_callback, AlertCallback alert_callback) {
+bool Tracee::Initialize(std::vector<std::string> categories, size_t buffer_size,
+                        fuchsia_tracing::BufferingMode buffering_mode, StartCallback start_callback,
+                        StopCallback stop_callback, TerminateCallback terminate_callback,
+                        AlertCallback alert_callback) {
   FX_DCHECK(state_ == State::kReady);
   FX_DCHECK(!buffer_vmo_);
   FX_DCHECK(start_callback);
@@ -76,7 +76,7 @@ bool Tracee::Initialize(fidl::VectorPtr<std::string> categories, size_t buffer_s
     //
     // For the same reason, we need to add on some additional space for the metadata records that
     // trace-engine writes since the partially fill the buffer.
-    if (buffering_mode != fuchsia::tracing::BufferingMode::ONESHOT) {
+    if (buffering_mode != fuchsia_tracing::BufferingMode::kOneshot) {
       buffer_size += kMaxDurableBufferSize + size_t{zx_system_get_page_size()};
     }
   }
@@ -113,14 +113,16 @@ bool Tracee::Initialize(fidl::VectorPtr<std::string> categories, size_t buffer_s
     return false;
   }
 
-  fuchsia::tracing::provider::ProviderConfig provider_config;
-  provider_config.buffering_mode = buffering_mode;
-  provider_config.buffer = std::move(buffer_vmo_for_provider);
-  provider_config.fifo = std::move(fifo_for_provider);
-  if (categories.has_value()) {
-    provider_config.categories = std::move(categories.value());
+  fuchsia_tracing_provider::ProviderConfig provider_config;
+  provider_config.buffering_mode(buffering_mode);
+  provider_config.buffer(std::move(buffer_vmo_for_provider));
+  provider_config.fifo(std::move(fifo_for_provider));
+  provider_config.categories(std::move(categories));
+  auto result = bundle_->provider->Initialize({std::move(provider_config)});
+  if (result.is_error()) {
+    FX_LOGS(ERROR) << *bundle_ << ": Failed to initialize provider: " << result.error_value();
+    return false;
   }
-  bundle_->provider->Initialize(std::move(provider_config));
 
   buffering_mode_ = buffering_mode;
   buffer_vmo_ = std::move(buffer_vmo);
@@ -145,21 +147,27 @@ void Tracee::Terminate() {
   if (state_ == State::kTerminating || state_ == State::kTerminated) {
     return;
   }
-  bundle_->provider->Terminate();
+  auto result = bundle_->provider->Terminate();
+  if (result.is_error()) {
+    FX_LOGS(ERROR) << *bundle_ << ": Failed to terminate provider: " << result.error_value();
+  }
   TransitionToState(State::kTerminating);
 }
 
-void Tracee::Start(fuchsia::tracing::BufferDisposition buffer_disposition,
+void Tracee::Start(fuchsia_tracing::BufferDisposition buffer_disposition,
                    const std::vector<std::string>& additional_categories) {
   // TraceSession should not call us unless we're ready, either because this
   // is the first time, or subsequent times after tracing has fully stopped
   // from the preceding time.
   FX_DCHECK(state_ == State::kInitialized || state_ == State::kStopped);
 
-  fuchsia::tracing::provider::StartOptions start_options;
-  start_options.buffer_disposition = buffer_disposition;
-  start_options.additional_categories = additional_categories;
-  bundle_->provider->Start(std::move(start_options));
+  fuchsia_tracing_provider::StartOptions start_options;
+  start_options.buffer_disposition(buffer_disposition);
+  start_options.additional_categories(additional_categories);
+  auto result = bundle_->provider->Start({std::move(start_options)});
+  if (result.is_error()) {
+    FX_LOGS(ERROR) << *bundle_ << ": Failed to start provider: " << result.error_value();
+  }
 
   TransitionToState(State::kStarting);
   was_started_ = true;
@@ -176,7 +184,10 @@ void Tracee::Stop(bool write_results) {
     }
     return;
   }
-  bundle_->provider->Stop();
+  auto result = bundle_->provider->Stop();
+  if (result.is_error()) {
+    FX_LOGS(ERROR) << *bundle_ << ": Failed to stop provider: " << result.error_value();
+  }
   TransitionToState(State::kStopping);
   write_results_ = write_results;
 }
@@ -251,7 +262,7 @@ void Tracee::OnFifoReadable(async_dispatcher_t* dispatcher, async::WaitBase* wai
       }
       break;
     case TRACE_PROVIDER_SAVE_BUFFER:
-      if (buffering_mode_ != fuchsia::tracing::BufferingMode::STREAMING) {
+      if (buffering_mode_ != fuchsia_tracing::BufferingMode::kStreaming) {
         FX_LOGS(WARNING) << *bundle_ << ": Received TRACE_PROVIDER_SAVE_BUFFER in mode "
                          << ModeName(buffering_mode_);
       } else if (state_ == State::kStarted || state_ == State::kStopping ||
@@ -335,7 +346,7 @@ TransferStatus Tracee::WriteChunk(uint64_t offset, uint64_t last, uint64_t end,
   ZX_DEBUG_ASSERT(end <= buffer_size);
   ZX_DEBUG_ASSERT(end == 0 || last <= end);
   offset += last;
-  if (buffering_mode_ == fuchsia::tracing::BufferingMode::ONESHOT ||
+  if (buffering_mode_ == fuchsia_tracing::BufferingMode::kOneshot ||
       // If end is zero then the header wasn't updated when tracing stopped.
       end == 0) {
     uint64_t size = buffer_size - last;
@@ -386,7 +397,7 @@ TransferStatus Tracee::TransferRecords() const {
     }
   }
 
-  if (buffering_mode_ != fuchsia::tracing::BufferingMode::ONESHOT) {
+  if (buffering_mode_ != fuchsia_tracing::BufferingMode::kOneshot) {
     uint64_t offset = header->get_durable_buffer_offset();
     uint64_t last = last_durable_data_end_;
     uint64_t end = header->durable_data_end();
@@ -424,7 +435,7 @@ TransferStatus Tracee::TransferRecords() const {
 
   if (header->wrapped_count() > 0) {
     int buffer_number = get_buffer_number(header->wrapped_count() - 1);
-    if (buffering_mode_ != fuchsia::tracing::BufferingMode::STREAMING) {
+    if (buffering_mode_ != fuchsia_tracing::BufferingMode::kStreaming) {
       // In non streaming modes, we haven't transferred any data yet, so we always need to transfer
       // the non active buffer
       if (auto transfer_status = write_rolling_chunk(buffer_number);
@@ -446,20 +457,20 @@ TransferStatus Tracee::TransferRecords() const {
     return transfer_status;
   }
 
-  provider_stats_.set_name(bundle_->name);
-  provider_stats_.set_pid(bundle_->pid);
-  provider_stats_.set_buffering_mode(EngineBufferingModeToProviderMode(header->buffering_mode()));
-  provider_stats_.set_buffer_wrapped_count(header->wrapped_count());
-  provider_stats_.set_records_dropped(header->num_records_dropped());
+  provider_stats_.name(bundle_->name);
+  provider_stats_.pid(bundle_->pid);
+  provider_stats_.buffering_mode(EngineBufferingModeToProviderMode(header->buffering_mode()));
+  provider_stats_.buffer_wrapped_count(header->wrapped_count());
+  provider_stats_.records_dropped(header->num_records_dropped());
   float durable_buffer_used = 0;
   if (header->durable_buffer_size() > 0) {
     durable_buffer_used = (static_cast<float>(header->durable_data_end()) /
                            static_cast<float>(header->durable_buffer_size())) *
                           100;
   }
-  provider_stats_.set_percentage_durable_buffer_used(durable_buffer_used);
-  provider_stats_.set_non_durable_bytes_written(header->rolling_data_end(0) +
-                                                header->rolling_data_end(1));
+  provider_stats_.percentage_durable_buffer_used(durable_buffer_used);
+  provider_stats_.non_durable_bytes_written(header->rolling_data_end(0) +
+                                            header->rolling_data_end(1));
 
   if ((header->buffering_mode() == TRACE_BUFFERING_MODE_ONESHOT &&
        header->rolling_data_end(0) > kInitRecordSizeBytes) ||
@@ -479,7 +490,7 @@ TransferStatus Tracee::TransferRecords() const {
   return TransferStatus::kComplete;
 }
 
-std::optional<controller::ProviderStats> Tracee::GetStats() const {
+std::optional<fuchsia_tracing_controller::ProviderStats> Tracee::GetStats() const {
   if (state_ == State::kTerminated || state_ == State::kStopped) {
     return std::move(provider_stats_);
   }
@@ -487,7 +498,7 @@ std::optional<controller::ProviderStats> Tracee::GetStats() const {
 }
 
 void Tracee::TransferBuffer(uint32_t wrapped_count, uint64_t durable_data_end) {
-  FX_DCHECK(buffering_mode_ == fuchsia::tracing::BufferingMode::STREAMING);
+  FX_DCHECK(buffering_mode_ == fuchsia_tracing::BufferingMode::kStreaming);
   FX_DCHECK(buffer_vmo_);
 
   if (!DoTransferBuffer(wrapped_count, durable_data_end)) {
@@ -579,6 +590,7 @@ void Tracee::NotifyBufferSaved(uint32_t wrapped_count, uint64_t durable_data_end
                  << ", durable_data_end=" << durable_data_end;
   trace_provider_packet_t packet{
       .request = TRACE_PROVIDER_BUFFER_SAVED,
+      .data16 = 0,
       .data32 = wrapped_count,
       .data64 = durable_data_end,
   };
@@ -607,14 +619,16 @@ void Tracee::Abort() {
   Terminate();
 }
 
-const char* Tracee::ModeName(fuchsia::tracing::BufferingMode mode) {
+const char* Tracee::ModeName(fuchsia_tracing::BufferingMode mode) {
   switch (mode) {
-    case fuchsia::tracing::BufferingMode::ONESHOT:
+    case fuchsia_tracing::BufferingMode::kOneshot:
       return "oneshot";
-    case fuchsia::tracing::BufferingMode::CIRCULAR:
+    case fuchsia_tracing::BufferingMode::kCircular:
       return "circular";
-    case fuchsia::tracing::BufferingMode::STREAMING:
+    case fuchsia_tracing::BufferingMode::kStreaming:
       return "streaming";
+    default:
+      return "unknown";
   }
 }
 

@@ -68,20 +68,20 @@ TEST_F(TraceManagerTest, InitToFiniWithProviderAddedAfterSessionStarts) {
 
   const std::string kDuplicatedCategory = "this_should_be_deduped";
 
-  fuchsia::tracing::controller::ProviderSpec provider1_spec;
-  provider1_spec.set_name(kProvider1Name);
-  provider1_spec.set_categories({"union", "sammamish", "washington", kDuplicatedCategory});
-  std::vector<fuchsia::tracing::controller::ProviderSpec> provider_specs;
+  fuchsia_tracing_controller::ProviderSpec provider1_spec;
+  provider1_spec.name(kProvider1Name);
+  provider1_spec.categories({{"union", "sammamish", "washington", kDuplicatedCategory}});
+  std::vector<fuchsia_tracing_controller::ProviderSpec> provider_specs;
   provider_specs.push_back(std::move(provider1_spec));
 
-  fuchsia::tracing::controller::ProviderSpec provider2_spec;
-  provider2_spec.set_name(kProvider2Name);
-  provider2_spec.set_categories({"rainier", "baker", "stuart", kDuplicatedCategory});
+  fuchsia_tracing_controller::ProviderSpec provider2_spec;
+  provider2_spec.name(kProvider2Name);
+  provider2_spec.categories({{"rainier", "baker", "stuart", kDuplicatedCategory}});
   provider_specs.push_back(std::move(provider2_spec));
 
   auto trace_config = GetDefaultTraceConfig();
-  trace_config.mutable_categories()->push_back(kDuplicatedCategory);
-  trace_config.set_provider_specs(std::move(provider_specs));
+  trace_config.categories()->push_back(kDuplicatedCategory);
+  trace_config.provider_specs(std::move(provider_specs));
   ASSERT_TRUE(InitializeSession(std::move(trace_config)));
 
   EXPECT_THAT(provider1->GetEnabledCategories(),
@@ -156,9 +156,9 @@ TEST_F(TraceManagerTest, Alerted) {
   // Intermediate-length alert name (10 characters).
   provider->SendAlert(kAlertName);
   std::string received_alert_name;
-  controller()->WatchAlert([&received_alert_name](controller::Session_WatchAlert_Result result) {
-    ASSERT_TRUE(result.is_response());
-    received_alert_name = result.response().alert_name;
+  session_client()->WatchAlert().ThenExactlyOnce([&received_alert_name](auto& result) {
+    ASSERT_TRUE(result.is_ok());
+    received_alert_name = result.value().alert_name();
   });
   RunLoopUntilIdle();
   ASSERT_EQ(kAlertName, received_alert_name);
@@ -166,9 +166,9 @@ TEST_F(TraceManagerTest, Alerted) {
   // Minimum-length alert name (1 character).
   provider->SendAlert(kAlertNameMin);
   received_alert_name.clear();
-  controller()->WatchAlert([&received_alert_name](controller::Session_WatchAlert_Result result) {
-    ASSERT_TRUE(result.is_response());
-    received_alert_name = result.response().alert_name;
+  session_client()->WatchAlert().ThenExactlyOnce([&received_alert_name](auto& result) {
+    ASSERT_TRUE(result.is_ok());
+    received_alert_name = result.value().alert_name();
   });
   RunLoopUntilIdle();
   ASSERT_EQ(kAlertNameMin, received_alert_name);
@@ -176,9 +176,9 @@ TEST_F(TraceManagerTest, Alerted) {
   // Maximum-length alert name (14 characters).
   provider->SendAlert(kAlertNameMax);
   received_alert_name.clear();
-  controller()->WatchAlert([&received_alert_name](controller::Session_WatchAlert_Result result) {
-    ASSERT_TRUE(result.is_response());
-    received_alert_name = result.response().alert_name;
+  session_client()->WatchAlert().ThenExactlyOnce([&received_alert_name](auto& result) {
+    ASSERT_TRUE(result.is_ok());
+    received_alert_name = result.value().alert_name();
   });
   RunLoopUntilIdle();
   ASSERT_EQ(kAlertNameMax, received_alert_name);
@@ -207,9 +207,9 @@ TEST_F(TraceManagerTest, AlertSequence) {
 
   // Calling |WatchAlert| before sending alert.
   std::string received_alert_name;
-  controller()->WatchAlert([&received_alert_name](controller::Session_WatchAlert_Result result) {
-    ASSERT_TRUE(result.is_response());
-    received_alert_name = result.response().alert_name;
+  session_client()->WatchAlert().ThenExactlyOnce([&received_alert_name](auto& result) {
+    ASSERT_TRUE(result.is_ok());
+    received_alert_name = result.value().alert_name();
   });
   RunLoopUntilIdle();
   ASSERT_EQ("", received_alert_name);
@@ -226,9 +226,9 @@ TEST_F(TraceManagerTest, AlertSequence) {
 
   for (uint8_t i = 0; i < 4; ++i) {
     received_alert_name.clear();
-    controller()->WatchAlert([&received_alert_name](controller::Session_WatchAlert_Result result) {
-      ASSERT_TRUE(result.is_response());
-      received_alert_name = result.response().alert_name;
+    session_client()->WatchAlert().ThenExactlyOnce([&received_alert_name](auto& result) {
+      ASSERT_TRUE(result.is_ok());
+      received_alert_name = result.value().alert_name();
     });
     RunLoopUntilIdle();
     std::string alert_name = kAlertName;
@@ -246,9 +246,9 @@ TEST_F(TraceManagerTest, AlertSequence) {
 
   for (uint8_t i = 2; i < kMaxAlertQueueDepth + 2; ++i) {
     received_alert_name.clear();
-    controller()->WatchAlert([&received_alert_name](controller::Session_WatchAlert_Result result) {
-      ASSERT_TRUE(result.is_response());
-      received_alert_name = result.response().alert_name;
+    session_client()->WatchAlert().ThenExactlyOnce([&received_alert_name](auto& result) {
+      ASSERT_TRUE(result.is_ok());
+      received_alert_name = result.value().alert_name();
     });
     RunLoopUntilIdle();
     std::string alert_name = kAlertName;

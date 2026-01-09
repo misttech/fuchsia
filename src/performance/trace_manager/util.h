@@ -5,7 +5,8 @@
 #ifndef SRC_PERFORMANCE_TRACE_MANAGER_UTIL_H_
 #define SRC_PERFORMANCE_TRACE_MANAGER_UTIL_H_
 
-#include <fuchsia/tracing/controller/cpp/fidl.h>
+#include <fidl/fuchsia.tracing.controller/cpp/fidl.h>
+#include <fidl/fuchsia.tracing/cpp/fidl.h>
 #include <lib/async/cpp/executor.h>
 #include <lib/async/cpp/time.h>
 #include <lib/fpromise/promise.h>
@@ -15,8 +16,6 @@
 #include <iosfwd>
 
 namespace tracing {
-
-namespace controller = fuchsia::tracing::controller;
 
 enum class TransferStatus {
   // The transfer is complete.
@@ -32,9 +31,9 @@ enum class TransferStatus {
 
 std::ostream& operator<<(std::ostream& out, TransferStatus status);
 
-std::ostream& operator<<(std::ostream& out, fuchsia::tracing::BufferDisposition disposition);
+std::ostream& operator<<(std::ostream& out, fuchsia_tracing::BufferDisposition disposition);
 
-std::ostream& operator<<(std::ostream& out, controller::SessionState state);
+std::ostream& operator<<(std::ostream& out, fuchsia_tracing_controller::SessionState state);
 
 struct ResultTimedOut {};
 template <typename Promise>

@@ -5,15 +5,17 @@
 #ifndef SRC_PERFORMANCE_TRACE_MANAGER_TRACEE_H_
 #define SRC_PERFORMANCE_TRACE_MANAGER_TRACEE_H_
 
+#include <fidl/fuchsia.tracing.controller/cpp/fidl.h>
+#include <fidl/fuchsia.tracing.provider/cpp/fidl.h>
+#include <fidl/fuchsia.tracing/cpp/fidl.h>
 #include <lib/async/cpp/executor.h>
 #include <lib/async/cpp/wait.h>
-#include <lib/fidl/cpp/string.h>
-#include <lib/fidl/cpp/vector.h>
 #include <lib/fit/function.h>
 #include <lib/zx/fifo.h>
 #include <lib/zx/vmo.h>
 
 #include <iosfwd>
+#include <vector>
 
 #include <trace-reader/reader_internal.h>
 
@@ -28,7 +30,7 @@ class TraceSession;
 
 class Tracee {
  public:
-  enum class State {
+  enum class State : uint8_t {
     // The provider is ready to be initialized.
     kReady,
     // The provider has been initialized.
@@ -61,19 +63,19 @@ class Tracee {
 
   bool operator==(TraceProviderBundle* bundle) const;
 
-  bool Initialize(fidl::VectorPtr<std::string> categories, size_t buffer_size,
-                  fuchsia::tracing::BufferingMode buffering_mode, StartCallback start_callback,
+  bool Initialize(std::vector<std::string> categories, size_t buffer_size,
+                  fuchsia_tracing::BufferingMode buffering_mode, StartCallback start_callback,
                   StopCallback stop_callback, TerminateCallback terminate_callback,
                   AlertCallback alert_callback);
 
   void Terminate();
 
-  void Start(fuchsia::tracing::BufferDisposition buffer_disposition,
+  void Start(fuchsia_tracing::BufferDisposition buffer_disposition,
              const std::vector<std::string>& additional_categories);
 
   void Stop(bool write_results);
 
-  std::optional<controller::ProviderStats> GetStats() const;
+  std::optional<fuchsia_tracing_controller::ProviderStats> GetStats() const;
 
   // Transfer all collected records to output_.
   TransferStatus TransferRecords() const;
@@ -97,10 +99,10 @@ class Tracee {
   static constexpr size_t kFifoSizeInPackets = 4u;
 
   // Given |wrapped_count|, return the corresponding buffer number.
-  static int get_buffer_number(uint32_t wrapped_count) { return wrapped_count & 1; }
+  static uint32_t get_buffer_number(uint32_t wrapped_count) { return wrapped_count & 1; }
 
   // TODO(dje): Until fidl prints names.
-  static const char* ModeName(fuchsia::tracing::BufferingMode mode);
+  static const char* ModeName(fuchsia_tracing::BufferingMode mode);
 
   void TransitionToState(State new_state);
   void OnHandleReady(async_dispatcher_t* dispatcher, async::WaitBase* wait, zx_status_t status,
@@ -127,7 +129,7 @@ class Tracee {
   const TraceProviderBundle* bundle_;
   State state_ = State::kReady;
 
-  fuchsia::tracing::BufferingMode buffering_mode_;
+  fuchsia_tracing::BufferingMode buffering_mode_;
   zx::vmo buffer_vmo_;
   size_t buffer_vmo_size_ = 0u;
   zx::fifo fifo_;
@@ -157,7 +159,7 @@ class Tracee {
   mutable bool results_written_ = false;
 
   // Final trace stats
-  mutable controller::ProviderStats provider_stats_;
+  mutable fuchsia_tracing_controller::ProviderStats provider_stats_;
 
   fxl::WeakPtrFactory<Tracee> weak_ptr_factory_;
 

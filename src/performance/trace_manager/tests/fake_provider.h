@@ -5,9 +5,9 @@
 #ifndef SRC_PERFORMANCE_TRACE_MANAGER_TESTS_FAKE_PROVIDER_H_
 #define SRC_PERFORMANCE_TRACE_MANAGER_TESTS_FAKE_PROVIDER_H_
 
-#include <fuchsia/tracing/controller/cpp/fidl.h>
-#include <fuchsia/tracing/provider/cpp/fidl.h>
-#include <lib/fidl/cpp/binding.h>
+#include <fidl/fuchsia.tracing.controller/cpp/fidl.h>
+#include <fidl/fuchsia.tracing.provider/cpp/fidl.h>
+#include <lib/fidl/cpp/wire/channel.h>
 #include <lib/trace-engine/buffer_internal.h>
 #include <lib/trace-provider/provider.h>
 #include <lib/zx/fifo.h>
@@ -20,9 +20,7 @@
 namespace tracing {
 namespace test {
 
-namespace provider = fuchsia::tracing::provider;
-
-class FakeProvider : public provider::Provider {
+class FakeProvider : public fidl::Server<fuchsia_tracing_provider::Provider> {
  public:
   // Track the last request made.
   enum State {
@@ -53,12 +51,12 @@ class FakeProvider : public provider::Provider {
 
   std::string PrettyName() const;
 
-  // |Provider| implementation.
-  void Initialize(provider::ProviderConfig config) override;
-  void Start(provider::StartOptions options) override;
-  void Stop() override;
-  void Terminate() override;
-  void GetKnownCategories(GetKnownCategoriesCallback callback) override;
+  // |fidl::Server<fuchsia_tracing_provider::Provider>| implementation.
+  void Initialize(InitializeRequest& request, InitializeCompleter::Sync& completer) override;
+  void Start(StartRequest& request, StartCompleter::Sync& completer) override;
+  void Stop(StopCompleter::Sync& completer) override;
+  void Terminate(TerminateCompleter::Sync& completer) override;
+  void GetKnownCategories(GetKnownCategoriesCompleter::Sync& completer) override;
 
   // Helpers to provide discrete advancement of provider state.
   // These should only be called when the provider is in the preceding state,
@@ -89,7 +87,7 @@ class FakeProvider : public provider::Provider {
   void SendAlert(const char* alert_name);
   const std::vector<std::string>& GetEnabledCategories() const { return enabled_categories_; }
 
-  void SetKnownCategories(std::vector<fuchsia::tracing::KnownCategory> known_categories) {
+  void SetKnownCategories(std::vector<fuchsia_tracing::KnownCategory> known_categories) {
     known_categories_ = std::move(known_categories);
   }
 
@@ -117,11 +115,11 @@ class FakeProvider : public provider::Provider {
 
   State state_ = State::kReady;
 
-  fuchsia::tracing::BufferingMode buffering_mode_;
+  fuchsia_tracing::BufferingMode buffering_mode_;
   zx::vmo buffer_vmo_;
   zx::fifo fifo_;
   std::vector<std::string> enabled_categories_;
-  std::vector<fuchsia::tracing::KnownCategory> known_categories_;
+  std::vector<fuchsia_tracing::KnownCategory> known_categories_;
 
   size_t total_buffer_size_ = 0;
   size_t durable_buffer_size_ = 0;
@@ -133,10 +131,20 @@ class FakeProvider : public provider::Provider {
   int stop_count_ = 0;
   int terminate_count_ = 0;
 
+  std::vector<
+      typename fidl::Server<fuchsia_tracing_provider::Provider>::GetKnownCategoriesCompleter::Async>
+      pending_cat_completers_;
   bool responsive_ = true;
 };
 
-using FakeProviderBinding = fidl::Binding<provider::Provider, std::unique_ptr<FakeProvider>>;
+struct FakeProviderBinding {
+  explicit FakeProviderBinding(std::unique_ptr<FakeProvider> p) : provider(std::move(p)) {}
+
+  fidl::ClientEnd<fuchsia_tracing_provider::Provider> NewBinding(async_dispatcher_t* dispatcher);
+
+  std::unique_ptr<FakeProvider> provider;
+  std::optional<fidl::ServerBindingRef<fuchsia_tracing_provider::Provider>> binding;
+};
 
 }  // namespace test
 }  // namespace tracing

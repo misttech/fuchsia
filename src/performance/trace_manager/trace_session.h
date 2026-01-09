@@ -5,13 +5,11 @@
 #ifndef SRC_PERFORMANCE_TRACE_MANAGER_TRACE_SESSION_H_
 #define SRC_PERFORMANCE_TRACE_MANAGER_TRACE_SESSION_H_
 
-#include <fuchsia/tracing/controller/cpp/fidl.h>
-#include <fuchsia/tracing/cpp/fidl.h>
-#include <fuchsia/tracing/provider/cpp/fidl.h>
+#include <fidl/fuchsia.tracing.controller/cpp/fidl.h>
+#include <fidl/fuchsia.tracing.provider/cpp/fidl.h>
+#include <fidl/fuchsia.tracing/cpp/fidl.h>
 #include <lib/async/cpp/executor.h>
 #include <lib/async/cpp/task.h>
-#include <lib/fidl/cpp/string.h>
-#include <lib/fidl/cpp/vector.h>
 #include <lib/fit/function.h>
 #include <lib/zx/socket.h>
 #include <lib/zx/time.h>
@@ -27,8 +25,6 @@
 #include "src/performance/trace_manager/tracee.h"
 
 namespace tracing {
-
-namespace controller = fuchsia::tracing::controller;
 
 // Determines when trace_manager forwards trace data to the socket
 enum class DataForwarding {
@@ -66,6 +62,10 @@ class TraceSession {
   };
 
   using AlertCallback = fit::function<void(const std::string& alert_name)>;
+  using StartTracingCallback =
+      fit::function<void(fit::result<fuchsia_tracing_controller::StartError>)>;
+  using StopTracingCallback = fit::function<void(
+      fit::result<fuchsia_tracing_controller::StopError, fuchsia_tracing_controller::StopResult>)>;
 
   // Initializes a new session that streams results to |destination|.
   // Every provider active in this session is handed |categories| and a vmo of size
@@ -75,10 +75,10 @@ class TraceSession {
   // unrecoverable errors that render the session dead.
   TraceSession(async::Executor& executor, std::shared_ptr<BufferForwarder> destination,
                std::vector<std::string> categories, size_t buffer_size_megabytes,
-               fuchsia::tracing::BufferingMode buffering_mode,
-               TraceProviderSpecMap&& provider_specs, zx::duration start_timeout,
-               zx::duration stop_timeout, controller::FxtVersion fxt_version,
-               fit::closure abort_handler, AlertCallback alert_callback);
+               fuchsia_tracing::BufferingMode buffering_mode, TraceProviderSpecMap&& provider_specs,
+               zx::duration start_timeout, zx::duration stop_timeout,
+               fuchsia_tracing_controller::FxtVersion fxt_version, fit::closure abort_handler,
+               AlertCallback alert_callback);
 
   // Frees all allocated resources and closes the outgoing
   // connection.
@@ -110,9 +110,8 @@ class TraceSession {
   // Starts the trace.
   // Invokes |callback| when all providers in this session have
   // acknowledged the start request, or after |start_timeout_| has elapsed.
-  void Start(fuchsia::tracing::BufferDisposition buffer_disposition,
-             const std::vector<std::string>& additional_categories,
-             controller::Session::StartTracingCallback callback);
+  void Start(fuchsia_tracing::BufferDisposition buffer_disposition,
+             const std::vector<std::string>& additional_categories, StartTracingCallback callback);
 
   // Stops all providers that are part of this session, streams out
   // all remaining trace records and finally invokes |callback|.
@@ -122,11 +121,10 @@ class TraceSession {
   //
   // If stopping providers takes longer than |stop_timeout_|, we forcefully
   // stop tracing and invoke |callback|.
-  void Stop(bool write_results,
-            fit::function<void(controller::Session_StopTracing_Result)> callback);
+  void Stop(bool write_results, StopTracingCallback callback);
 
   // Remove |provider|, it's dead Jim.
-  void RemoveDeadProvider(TraceProviderBundle* provider);
+  void RemoveDeadProvider(TraceProviderBundle* bundle);
 
  private:
   friend std::ostream& operator<<(std::ostream& out, TraceSession::State state);
@@ -158,7 +156,7 @@ class TraceSession {
   // Returns true on success or non fatal error.
   // Returns false if a fatal error occurred, in which case the caller is expected to call
   // |Abort()| and immediately return as |this| will be deleted.
-  bool WriteProviderData(Tracee* tracee);
+  static bool WriteProviderData(Tracee* tracee);
 
   // Abort's the trace session.
   // N.B. Upon return |this| will have been deleted.
@@ -169,9 +167,9 @@ class TraceSession {
   async::Executor& executor_;
   State state_ = State::kReady;
   std::shared_ptr<BufferForwarder> buffer_forwarder_;
-  fidl::VectorPtr<std::string> enabled_categories_;
+  std::vector<std::string> enabled_categories_;
   size_t buffer_size_megabytes_;
-  fuchsia::tracing::BufferingMode buffering_mode_;
+  fuchsia_tracing::BufferingMode buffering_mode_;
   TraceProviderSpecMap provider_specs_;
   zx::duration start_timeout_;
   // The stop timeout is used for both stopping and terminating.
@@ -190,11 +188,11 @@ class TraceSession {
   async::TaskMethod<TraceSession, &TraceSession::SessionTerminateTimeout>
       session_terminate_timeout_{this};
 
-  controller::Session::StartTracingCallback start_callback_;
-  fit::function<void(controller::Session_StopTracing_Result)> stop_callback_;
+  StartTracingCallback start_callback_;
+  StopTracingCallback stop_callback_;
   fit::closure terminate_callback_;
 
-  controller::FxtVersion fxt_version_;
+  fuchsia_tracing_controller::FxtVersion fxt_version_;
 
   fit::closure abort_handler_;
   AlertCallback alert_callback_;
@@ -208,7 +206,7 @@ class TraceSession {
   bool write_results_on_terminate_ = true;
 
   // Trace stats from each provider are stored here on terminate.
-  std::vector<controller::ProviderStats> trace_stats_;
+  std::vector<fuchsia_tracing_controller::ProviderStats> trace_stats_;
 
   fxl::WeakPtrFactory<TraceSession> weak_ptr_factory_;
 

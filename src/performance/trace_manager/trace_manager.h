@@ -5,13 +5,12 @@
 #ifndef SRC_PERFORMANCE_TRACE_MANAGER_TRACE_MANAGER_H_
 #define SRC_PERFORMANCE_TRACE_MANAGER_TRACE_MANAGER_H_
 
-#include <fuchsia/tracing/controller/cpp/fidl.h>
-#include <fuchsia/tracing/cpp/fidl.h>
-#include <fuchsia/tracing/provider/cpp/fidl.h>
+#include <fidl/fuchsia.tracing.controller/cpp/fidl.h>
+#include <fidl/fuchsia.tracing.provider/cpp/fidl.h>
+#include <fidl/fuchsia.tracing/cpp/fidl.h>
 #include <lib/async/cpp/executor.h>
-#include <lib/fidl/cpp/binding_set.h>
-#include <lib/fidl/cpp/interface_ptr_set.h>
-#include <lib/fidl/cpp/interface_request.h>
+#include <lib/component/incoming/cpp/protocol.h>
+#include <lib/fidl/cpp/wire/channel.h>
 #include <lib/sys/cpp/component_context.h>
 #include <lib/zx/socket.h>
 
@@ -24,14 +23,11 @@
 
 namespace tracing {
 
-namespace controller = fuchsia::tracing::controller;
-namespace provider = fuchsia::tracing::provider;
-
 // forward decl, here to break mutual header dependency
 class TraceManagerApp;
 class TraceManager;
 
-class TraceController : public controller::Session {
+class TraceController : public fidl::Server<fuchsia_tracing_controller::Session> {
   friend TraceManager;
 
  public:
@@ -46,14 +42,16 @@ class TraceController : public controller::Session {
   TraceSession* session() const { return session_.get(); }
 
  private:
-  // |Session| implementation.
-  void StartTracing(controller::StartOptions options, StartTracingCallback start_callback) override;
-  void StopTracing(controller::StopOptions options, StopTracingCallback stop_callback) override;
-  void WatchAlert(WatchAlertCallback cb) override;
-  void handle_unknown_method(uint64_t ordinal, bool method_has_response) override;
+  // |fuchsia_tracing_controller::Session| implementation.
+  void StartTracing(StartTracingRequest& request, StartTracingCompleter::Sync& completer) override;
+  void StopTracing(StopTracingRequest& request, StopTracingCompleter::Sync& completer) override;
+  void WatchAlert(WatchAlertCompleter::Sync& completer) override;
+  void handle_unknown_method(
+      fidl::UnknownMethodMetadata<fuchsia_tracing_controller::Session> metadata,
+      fidl::UnknownMethodCompleter::Sync& completer) override;
 
-  void SendSessionStateEvent(controller::SessionState state);
-  controller::SessionState TranslateSessionState(TraceSession::State state);
+  void SendSessionStateEvent(fuchsia_tracing_controller::SessionState state);
+  static fuchsia_tracing_controller::SessionState TranslateSessionState(TraceSession::State state);
 
   TraceManagerApp* const app_;
 
@@ -62,10 +60,11 @@ class TraceController : public controller::Session {
 
   std::unique_ptr<TraceSession> session_;
   std::queue<std::string> alerts_;
-  std::queue<WatchAlertCallback> watch_alert_callbacks_;
+  std::queue<WatchAlertCompleter::Async> watch_alert_completers_;
 };
 
-class TraceManager : public controller::Provisioner, public provider::Registry {
+class TraceManager : public fidl::Server<fuchsia_tracing_controller::Provisioner>,
+                     public fidl::Server<fuchsia_tracing_provider::Registry> {
   friend TraceController;
 
  public:
@@ -78,21 +77,24 @@ class TraceManager : public controller::Provisioner, public provider::Registry {
   void OnEmptyControllerSet();
 
  private:
-  // |Provisioner| implementation.
-  void InitializeTracing(fidl::InterfaceRequest<controller::Session> controller,
-                         controller::TraceConfig config, zx::socket output) override;
-  void GetProviders(GetProvidersCallback cb) override;
-  void GetKnownCategories(GetKnownCategoriesCallback callback) override;
-  void handle_unknown_method(uint64_t ordinal, bool method_has_response) override;
+  // |fuchsia_tracing_controller::Provisioner| implementation.
+  void InitializeTracing(InitializeTracingRequest& request,
+                         InitializeTracingCompleter::Sync& completer) override;
+  void GetProviders(GetProvidersCompleter::Sync& completer) override;
+  void GetKnownCategories(GetKnownCategoriesCompleter::Sync& completer) override;
+  void handle_unknown_method(
+      fidl::UnknownMethodMetadata<fuchsia_tracing_controller::Provisioner> metadata,
+      fidl::UnknownMethodCompleter::Sync& completer) override;
 
-  // |TraceRegistry| implementation.
-  void RegisterProviderWorker(fidl::InterfaceHandle<provider::Provider> provider, uint64_t pid,
-                              fidl::StringPtr name);
-  void RegisterProvider(fidl::InterfaceHandle<provider::Provider> provider, uint64_t pid,
-                        std::string name) override;
-  void RegisterProviderSynchronously(fidl::InterfaceHandle<provider::Provider> provider,
-                                     uint64_t pid, std::string name,
-                                     RegisterProviderSynchronouslyCallback callback) override;
+  // |fuchsia_tracing_provider::Registry| implementation.
+  void RegisterProvider(RegisterProviderRequest& request,
+                        RegisterProviderCompleter::Sync& completer) override;
+  void RegisterProviderSynchronously(
+      RegisterProviderSynchronouslyRequest& request,
+      RegisterProviderSynchronouslyCompleter::Sync& completer) override;
+
+  void RegisterProviderWorker(fidl::ClientEnd<fuchsia_tracing_provider::Provider> provider,
+                              uint64_t pid, const std::string& name);
 
   void CloseSession();
 

@@ -5,7 +5,10 @@
 #include "src/performance/trace_manager/trace_manager.h"
 
 #include <fidl/fuchsia.sysinfo/cpp/fidl.h>
-#include <fuchsia/tracing/cpp/fidl.h>
+#include <fidl/fuchsia.tracing.controller/cpp/fidl.h>
+#include <fidl/fuchsia.tracing.provider/cpp/fidl.h>
+#include <fidl/fuchsia.tracing/cpp/fidl.h>
+#include <lib/async/cpp/executor.h>
 #include <lib/component/incoming/cpp/protocol.h>
 #include <lib/fidl/cpp/clone.h>
 #include <lib/fpromise/bridge.h>
@@ -15,7 +18,7 @@
 
 #include <algorithm>
 #include <iostream>
-#include <unordered_set>
+#include <set>
 
 #include "src/performance/trace_manager/app.h"
 #include "src/performance/trace_manager/deferred_buffer_forwarder.h"
@@ -31,8 +34,8 @@ constexpr uint32_t kMinBufferSizeMegabytes = 1;
 // These defaults are copied from fuchsia.tracing/trace_controller.fidl.
 constexpr uint32_t kDefaultBufferSizeMegabytesHint = 4;
 constexpr zx::duration kDefaultStartTimeout{zx::msec(5000)};
-constexpr fuchsia::tracing::BufferingMode kDefaultBufferingMode =
-    fuchsia::tracing::BufferingMode::ONESHOT;
+constexpr fuchsia_tracing::BufferingMode kDefaultBufferingMode =
+    fuchsia_tracing::BufferingMode::kOneshot;
 
 constexpr size_t kMaxAlertQueueDepth = 16;
 
@@ -43,22 +46,18 @@ uint32_t ConstrainBufferSize(uint32_t buffer_size_megabytes) {
   return std::max(buffer_size_megabytes, kMinBufferSizeMegabytes);
 }
 
-struct KnownCategoryHash {
-  auto operator()(const fuchsia::tracing::KnownCategory& k) const -> size_t {
-    return std::hash<std::string>{}(k.name) ^ std::hash<std::string>{}(k.description);
+struct KnownCategoryComparator {
+  bool operator()(const fuchsia_tracing::KnownCategory& lhs,
+                  const fuchsia_tracing::KnownCategory& rhs) const {
+    if (lhs.name() != rhs.name()) {
+      return lhs.name() < rhs.name();
+    }
+    return lhs.description() < rhs.description();
   }
 };
 
-struct KnownCategoryEquals {
-  auto operator()(const fuchsia::tracing::KnownCategory& k1,
-                  const fuchsia::tracing::KnownCategory& k2) const -> bool {
-    return k1.name == k2.name && k1.description == k2.description;
-  }
-};
-
-using KnownCategorySet =
-    std::unordered_set<fuchsia::tracing::KnownCategory, KnownCategoryHash, KnownCategoryEquals>;
-using KnownCategoryVector = std::vector<fuchsia::tracing::KnownCategory>;
+using KnownCategorySet = std::set<fuchsia_tracing::KnownCategory, KnownCategoryComparator>;
+using KnownCategoryVector = std::vector<fuchsia_tracing::KnownCategory>;
 
 std::optional<std::string> GetBoardName() {
   zx::result client_end = component::Connect<fuchsia_sysinfo::SysInfo>();
@@ -83,21 +82,20 @@ TraceController::TraceController(TraceManagerApp* app, std::unique_ptr<TraceSess
 TraceController::~TraceController() = default;
 
 // fidl
-void TraceController::handle_unknown_method(uint64_t ordinal, bool method_has_response) {
-  FX_LOGS(WARNING) << "Received an unknown method with ordinal " << ordinal;
+void TraceController::handle_unknown_method(
+    fidl::UnknownMethodMetadata<fuchsia_tracing_controller::Session> metadata,
+    fidl::UnknownMethodCompleter::Sync& completer) {
+  FX_LOGS(WARNING) << "Received an unknown Session method with ordinal " << metadata.method_ordinal;
 }
 
 // fidl
-void TraceController::StartTracing(controller::StartOptions options,
-                                   StartTracingCallback start_callback) {
+void TraceController::StartTracing(StartTracingRequest& request,
+                                   StartTracingCompleter::Sync& completer) {
   FX_LOGS(DEBUG) << "StartTracing";
-
-  controller::Session_StartTracing_Result result;
 
   if (!session_) {
     FX_LOGS(ERROR) << "Ignoring start request, trace must be initialized first";
-    result.set_err(controller::StartError::NOT_INITIALIZED);
-    start_callback(std::move(result));
+    completer.Reply(fit::error(fuchsia_tracing_controller::StartError::kNotInitialized));
     return;
   }
 
@@ -105,18 +103,15 @@ void TraceController::StartTracing(controller::StartOptions options,
     case TraceSession::State::kStarting:
     case TraceSession::State::kStarted:
       FX_LOGS(ERROR) << "Ignoring start request, trace already started";
-      result.set_err(controller::StartError::ALREADY_STARTED);
-      start_callback(std::move(result));
+      completer.Reply(fit::error(fuchsia_tracing_controller::StartError::kAlreadyStarted));
       return;
     case TraceSession::State::kStopping:
       FX_LOGS(ERROR) << "Ignoring start request, trace stopping";
-      result.set_err(controller::StartError::STOPPING);
-      start_callback(std::move(result));
+      completer.Reply(fit::error(fuchsia_tracing_controller::StartError::kStopping));
       return;
     case TraceSession::State::kTerminating:
       FX_LOGS(ERROR) << "Ignoring start request, trace terminating";
-      result.set_err(controller::StartError::TERMINATING);
-      start_callback(std::move(result));
+      completer.Reply(fit::error(fuchsia_tracing_controller::StartError::kTerminating));
       return;
     case TraceSession::State::kInitialized:
     case TraceSession::State::kStopped:
@@ -127,60 +122,56 @@ void TraceController::StartTracing(controller::StartOptions options,
   }
 
   std::vector<std::string> additional_categories;
-  if (options.has_additional_categories()) {
-    additional_categories = std::move(options.additional_categories());
+  if (request.additional_categories()) {
+    additional_categories = std::move(*request.additional_categories());
   }
 
   // This default matches trace's.
-  fuchsia::tracing::BufferDisposition buffer_disposition =
-      fuchsia::tracing::BufferDisposition::RETAIN;
-  if (options.has_buffer_disposition()) {
-    buffer_disposition = options.buffer_disposition();
+  fuchsia_tracing::BufferDisposition buffer_disposition =
+      fuchsia_tracing::BufferDisposition::kRetain;
+  if (request.buffer_disposition()) {
+    buffer_disposition = *request.buffer_disposition();
     switch (buffer_disposition) {
-      case fuchsia::tracing::BufferDisposition::CLEAR_ENTIRE:
-      case fuchsia::tracing::BufferDisposition::CLEAR_NONDURABLE:
-      case fuchsia::tracing::BufferDisposition::RETAIN:
+      case fuchsia_tracing::BufferDisposition::kClearEntire:
+      case fuchsia_tracing::BufferDisposition::kClearNondurable:
+      case fuchsia_tracing::BufferDisposition::kRetain:
         break;
       default:
-        FX_LOGS(ERROR) << "Bad value for buffer disposition: " << buffer_disposition
-                       << ", dropping connection";
-        // TODO(dje): IWBN to drop the connection. How?
-        result.set_err(controller::StartError::TERMINATING);
-        start_callback(std::move(result));
+        FX_LOGS(ERROR) << "Bad value for buffer disposition: "
+                       << static_cast<uint32_t>(buffer_disposition) << ", dropping connection";
+        completer.Close(ZX_ERR_NOT_SUPPORTED);
         return;
     }
   }
 
   FX_LOGS(INFO) << "Starting trace, buffer disposition: " << buffer_disposition;
 
-  session_->Start(buffer_disposition, additional_categories, std::move(start_callback));
+  session_->Start(buffer_disposition, additional_categories,
+                  [completer = completer.ToAsync()](
+                      fit::result<fuchsia_tracing_controller::StartError> result) mutable {
+                    completer.Reply(result);
+                  });
 }
 
 // fidl
-void TraceController::StopTracing(controller::StopOptions options,
-                                  StopTracingCallback stop_callback) {
-  controller::Session_StopTracing_Result stop_result;
-
+void TraceController::StopTracing(StopTracingRequest& request,
+                                  StopTracingCompleter::Sync& completer) {
   if (session_->state() != TraceSession::State::kInitialized &&
       session_->state() != TraceSession::State::kStarting &&
       session_->state() != TraceSession::State::kStarted) {
     FX_LOGS(INFO) << "Ignoring stop request, state != Initialized,Starting,Started";
-    stop_result.set_err(controller::StopError::NOT_STARTED);
-    stop_callback(std::move(stop_result));
+    completer.Reply(fit::error(fuchsia_tracing_controller::StopError::kNotStarted));
     return;
   }
 
-  bool write_results = false;
-  if (options.has_write_results()) {
-    write_results = options.write_results();
-  }
+  bool write_results = request.write_results().value_or(false);
 
   FX_LOGS(INFO) << "Stopping trace" << (write_results ? ", and writing results" : "");
-  session_->Stop(write_results, [stop_callback = std::move(stop_callback)](
-                                    controller::Session_StopTracing_Result result) {
-    FX_LOGS(DEBUG) << "Stopped trace";
-    stop_callback(std::move(result));
-  });
+  session_->Stop(
+      write_results,
+      [completer = completer.ToAsync()](
+          fit::result<fuchsia_tracing_controller::StopError, fuchsia_tracing_controller::StopResult>
+              result) mutable { completer.Reply(std::move(result)); });
 }
 
 void TraceController::TerminateTracing(fit::closure cb) {
@@ -240,13 +231,16 @@ void TraceManager::OnEmptyControllerSet() {
 }
 
 // fidl
-void TraceManager::handle_unknown_method(uint64_t ordinal, bool method_has_response) {
-  FX_LOGS(WARNING) << "Received an unknown method with ordinal " << ordinal;
+void TraceManager::handle_unknown_method(
+    fidl::UnknownMethodMetadata<fuchsia_tracing_controller::Provisioner> metadata,
+    fidl::UnknownMethodCompleter::Sync& completer) {
+  FX_LOGS(WARNING) << "Received an unknown Provisioner method with ordinal "
+                   << metadata.method_ordinal;
 }
 
 // fidl
-void TraceManager::InitializeTracing(fidl::InterfaceRequest<controller::Session> controller,
-                                     controller::TraceConfig config, zx::socket output) {
+void TraceManager::InitializeTracing(InitializeTracingRequest& request,
+                                     InitializeTracingCompleter::Sync& completer) {
   FX_LOGS(DEBUG) << "InitializeTracing";
 
   if (trace_controller_) {
@@ -254,39 +248,40 @@ void TraceManager::InitializeTracing(fidl::InterfaceRequest<controller::Session>
     return;
   }
 
-  uint32_t default_buffer_size_megabytes = kDefaultBufferSizeMegabytesHint;
-  if (config.has_buffer_size_megabytes_hint()) {
-    const uint32_t buffer_size_mb_hint = config.buffer_size_megabytes_hint();
-    default_buffer_size_megabytes = ConstrainBufferSize(buffer_size_mb_hint);
-  }
+  const auto& config = request.config();
+  uint32_t default_buffer_size_megabytes = ConstrainBufferSize(
+      config.buffer_size_megabytes_hint().value_or(kDefaultBufferSizeMegabytesHint));
 
   TraceProviderSpecMap provider_specs;
-  if (config.has_provider_specs()) {
-    for (const auto& it : config.provider_specs()) {
+  if (config.provider_specs()) {
+    for (const auto& it : *config.provider_specs()) {
+      // Names are provided just for debugging diagnostic purposes. If there isn't one, we can just
+      // skip it.
+      if (!it.name()) {
+        continue;
+      }
       TraceProviderSpec provider_spec;
-      if (it.has_buffer_size_megabytes_hint()) {
-        provider_spec.buffer_size_megabytes = it.buffer_size_megabytes_hint();
+      if (it.buffer_size_megabytes_hint()) {
+        provider_spec.buffer_size_megabytes = *it.buffer_size_megabytes_hint();
       }
-      if (it.has_categories()) {
-        provider_spec.categories = it.categories();
+      if (it.categories()) {
+        provider_spec.categories = *it.categories();
       }
-      provider_specs[it.name()] = provider_spec;
+      provider_specs[*it.name()] = provider_spec;
     }
   }
 
-  fuchsia::tracing::BufferingMode tracing_buffering_mode = kDefaultBufferingMode;
-  if (config.has_buffering_mode()) {
-    tracing_buffering_mode = config.buffering_mode();
-  }
+  fuchsia_tracing::BufferingMode tracing_buffering_mode =
+      config.buffering_mode().value_or(kDefaultBufferingMode);
   const char* mode_name;
   switch (tracing_buffering_mode) {
-    case fuchsia::tracing::BufferingMode::ONESHOT:
+    case fuchsia_tracing::BufferingMode::kOneshot:
       mode_name = "oneshot";
       break;
-    case fuchsia::tracing::BufferingMode::CIRCULAR:
+    case fuchsia_tracing::BufferingMode::kCircular:
       mode_name = "circular";
       break;
-    case fuchsia::tracing::BufferingMode::STREAMING:
+    case fuchsia_tracing::BufferingMode::kStreaming:
       mode_name = "streaming";
       break;
     default:
@@ -294,13 +289,17 @@ void TraceManager::InitializeTracing(fidl::InterfaceRequest<controller::Session>
       return;
   }
 
-  controller::FxtVersion fxt_version;
-  if (config.has_version()) {
-    fxt_version.set_major(config.version().major());
-    fxt_version.set_minor(config.version().minor());
+  fuchsia_tracing_controller::FxtVersion fxt_version;
+  if (config.version()) {
+    if (config.version()->major()) {
+      fxt_version.major(*config.version()->major());
+    }
+    if (config.version()->minor()) {
+      fxt_version.minor(*config.version()->minor());
+    }
   } else {
-    fxt_version.set_major(kDefaultMajorVersion);
-    fxt_version.set_minor(kDefaultMinorVersion);
+    fxt_version.major(kDefaultMajorVersion);
+    fxt_version.minor(kDefaultMinorVersion);
   }
 
   FX_LOGS(INFO) << "Initializing trace with " << default_buffer_size_megabytes
@@ -315,14 +314,13 @@ void TraceManager::InitializeTracing(fidl::InterfaceRequest<controller::Session>
   }
 
   std::vector<std::string> categories;
-  if (config.has_categories()) {
-    categories = config.categories();
+  if (config.categories()) {
+    categories = *config.categories();
   }
 
-  zx::duration start_timeout = kDefaultStartTimeout;
-  if (config.has_start_timeout_milliseconds()) {
-    start_timeout = zx::msec(config.start_timeout_milliseconds());
-  }
+  zx::duration start_timeout =
+      zx::msec(static_cast<int64_t>(config.start_timeout_milliseconds().value_or(
+          static_cast<uint64_t>(kDefaultStartTimeout.to_msecs()))));
 
   std::string board_name = GetBoardName().value_or("");
 
@@ -334,14 +332,14 @@ void TraceManager::InitializeTracing(fidl::InterfaceRequest<controller::Session>
   // or not, we check that we're not currently running on astro, since astro has very little disk
   // space. We should generalize this check to say, check for how much storage is available and make
   // a decision based on that instead of just checking a specific hardcoded board name.
-  if (config.has_defer_transfer() && config.defer_transfer() && board_name != "astro") {
+  if (config.defer_transfer().value_or(false) && board_name != "astro") {
     forwarding = DataForwarding::kBuffered;
   }
 
   std::shared_ptr<BufferForwarder> forwarder =
       forwarding == DataForwarding::kEager
-          ? std::make_shared<BufferForwarder>(std::move(output))
-          : std::make_shared<DeferredBufferForwarder>(std::move(output));
+          ? std::make_shared<BufferForwarder>(std::move(request.output()))
+          : std::make_shared<DeferredBufferForwarder>(std::move(request.output()));
 
   auto session = std::make_unique<TraceSession>(
       executor_, std::move(forwarder), std::move(categories), default_buffer_size_megabytes,
@@ -367,23 +365,21 @@ void TraceManager::InitializeTracing(fidl::InterfaceRequest<controller::Session>
   }
 
   trace_controller_ = std::make_shared<TraceController>(app_, std::move(session));
-  app_->AddSessionBinding(trace_controller_, std::move(controller));
+  app_->AddSessionBinding(trace_controller_, std::move(request.controller()));
 }
 
 // fidl
-void TraceManager::GetProviders(GetProvidersCallback callback) {
+void TraceManager::GetProviders(GetProvidersCompleter::Sync& completer) {
   FX_LOGS(DEBUG) << "GetProviders";
-  controller::Provisioner_GetProviders_Result result;
-  std::vector<controller::ProviderInfo> provider_info;
+  std::vector<fuchsia_tracing_controller::ProviderInfo> provider_info;
   for (const auto& provider : providers_) {
-    controller::ProviderInfo info;
-    info.set_id(provider.id);
-    info.set_pid(provider.pid);
-    info.set_name(provider.name);
+    fuchsia_tracing_controller::ProviderInfo info;
+    info.id(provider.id);
+    info.pid(provider.pid);
+    info.name(provider.name);
     provider_info.push_back(std::move(info));
   }
-  result.set_response(controller::Provisioner_GetProviders_Response(std::move(provider_info)));
-  callback(std::move(result));
+  completer.Reply({{.providers = std::move(provider_info)}});
 }
 
 // Allows multiple callers to race to call the same callback.
@@ -417,11 +413,11 @@ class CompleterMerger {
 };
 
 // fidl
-void TraceManager::GetKnownCategories(GetKnownCategoriesCallback callback) {
+void TraceManager::GetKnownCategories(GetKnownCategoriesCompleter::Sync& completer) {
   FX_LOGS(DEBUG) << "GetKnownCategories";
   KnownCategorySet known_categories;
   for (const auto& [name, description] : config_.known_categories()) {
-    known_categories.insert({.name = name, .description = description});
+    known_categories.insert({{.name = {name}, .description = {description}}});
   }
   std::vector<fpromise::promise<KnownCategoryVector>> promises;
   fpromise::promise<> timeout = executor_.MakeDelayedPromise(zx::sec(1));
@@ -430,49 +426,54 @@ void TraceManager::GetKnownCategories(GetKnownCategoriesCallback callback) {
     promises.push_back(bridge.consumer.promise());
 
     CompleterMerger<KnownCategoryVector> merger{bridge.completer.bind()};
-    provider.provider->GetKnownCategories(merger);
+    provider.provider->GetKnownCategories().Then(
+        [merger](fidl::Result<fuchsia_tracing_provider::Provider::GetKnownCategories>& result) {
+          if (result.is_ok()) {
+            merger(std::move(result->categories()));
+          } else {
+            merger({});
+          }
+        });
     timeout = fpromise::promise<>{timeout.and_then([merger = merger]() mutable { merger({}); })};
   }
   auto joined_promise =
       fpromise::join_promise_vector(std::move(promises))
-          .and_then(
-              [callback = std::move(callback), known_categories = std::move(known_categories)](
-                  std::vector<fpromise::result<KnownCategoryVector>>& results) mutable {
-                for (const auto& result : results) {
-                  if (result.is_ok()) {
-                    const auto& result_known_categories = result.value();
-                    known_categories.insert(result_known_categories.begin(),
-                                            result_known_categories.end());
-                  }
-                }
-                controller::Provisioner_GetKnownCategories_Result result;
-                result.set_response(controller::Provisioner_GetKnownCategories_Response(
-                    {known_categories.begin(), known_categories.end()}));
-                callback(std::move(result));
-              });
+          .and_then([completer = completer.ToAsync(),
+                     known_categories = std::move(known_categories)](
+                        std::vector<fpromise::result<KnownCategoryVector>>& results) mutable {
+            for (const auto& result : results) {
+              if (result.is_ok()) {
+                const auto& result_known_categories = result.value();
+                known_categories.insert(result_known_categories.begin(),
+                                        result_known_categories.end());
+              }
+            }
+            KnownCategoryVector final_categories{known_categories.begin(), known_categories.end()};
+            completer.Reply({{.categories = std::move(final_categories)}});
+          });
 
   executor_.schedule_task(std::move(joined_promise));
   executor_.schedule_task(std::move(timeout));
 }
 
-void TraceController::WatchAlert(WatchAlertCallback cb) {
+void TraceController::WatchAlert(WatchAlertCompleter::Sync& completer) {
   FX_LOGS(DEBUG) << "WatchAlert";
   if (alerts_.empty()) {
-    watch_alert_callbacks_.push(std::move(cb));
+    watch_alert_completers_.push(completer.ToAsync());
   } else {
-    controller::Session_WatchAlert_Result result;
-    result.set_response(controller::Session_WatchAlert_Response(std::move(alerts_.front())));
-    cb(std::move(result));
+    completer.Reply({{.alert_name = std::move(alerts_.front())}});
     alerts_.pop();
   }
 }
 
-void TraceManager::RegisterProviderWorker(fidl::InterfaceHandle<provider::Provider> provider,
-                                          uint64_t pid, fidl::StringPtr name) {
-  FX_LOGS(DEBUG) << "Registering provider {" << pid << ":" << name.value_or("") << "}";
-  auto it = providers_.emplace(providers_.end(), provider.Bind(), next_provider_id_++, pid,
-                               name.value_or(""));
-  it->provider.set_error_handler([this, it](zx_status_t status) {
+void TraceManager::RegisterProviderWorker(
+    fidl::ClientEnd<fuchsia_tracing_provider::Provider> provider, uint64_t pid,
+    const std::string& name) {
+  FX_LOGS(DEBUG) << "Registering provider {" << pid << ":" << name << "}";
+  auto it = providers_.emplace(providers_.end(), std::move(provider), next_provider_id_++, pid,
+                               name, executor_.dispatcher());
+
+  it->SetOnUnbound([this, it](fidl::UnbindInfo info) {
     if (session()) {
       session()->RemoveDeadProvider(&(*it));
     }
@@ -485,26 +486,30 @@ void TraceManager::RegisterProviderWorker(fidl::InterfaceHandle<provider::Provid
 }
 
 // fidl
-void TraceManager::RegisterProvider(fidl::InterfaceHandle<provider::Provider> provider,
-                                    uint64_t pid, std::string name) {
-  RegisterProviderWorker(std::move(provider), pid, std::move(name));
+void TraceManager::RegisterProvider(RegisterProviderRequest& request,
+                                    RegisterProviderCompleter::Sync& completer) {
+  RegisterProviderWorker(std::move(request.provider()), request.pid(), request.name());
 }
 
 // fidl
-void TraceManager::RegisterProviderSynchronously(fidl::InterfaceHandle<provider::Provider> provider,
-                                                 uint64_t pid, std::string name,
-                                                 RegisterProviderSynchronouslyCallback callback) {
-  RegisterProviderWorker(std::move(provider), pid, std::move(name));
+void TraceManager::RegisterProviderSynchronously(
+    RegisterProviderSynchronouslyRequest& request,
+    RegisterProviderSynchronouslyCompleter::Sync& completer) {
+  RegisterProviderWorker(std::move(request.provider()), request.pid(), request.name());
   auto session_ptr = session();
   bool already_started = (session_ptr && (session_ptr->state() == TraceSession::State::kStarting ||
                                           session_ptr->state() == TraceSession::State::kStarted));
-  callback(ZX_OK, already_started);
+  completer.Reply({ZX_OK, already_started});
 }
 
-void TraceController::SendSessionStateEvent(controller::SessionState state) {
-  for (const auto& binding : app_->session_bindings().bindings()) {
-    binding->events().OnSessionStateChange(state);
-  }
+void TraceController::SendSessionStateEvent(fuchsia_tracing_controller::SessionState state) {
+  app_->session_bindings().ForEachBinding(
+      [state](const fidl::ServerBinding<fuchsia_tracing_controller::Session>& binding) {
+        fit::result<fidl::Error> result = fidl::SendEvent(binding)->OnSessionStateChange({state});
+        if (result.is_error()) {
+          FX_LOGS(ERROR) << "Failed to send OnSessionStateChange event: " << result.error_value();
+        }
+      });
 }
 
 TraceSession* TraceManager::session() const {
@@ -514,27 +519,28 @@ TraceSession* TraceManager::session() const {
   return nullptr;
 }
 
-controller::SessionState TraceController::TranslateSessionState(TraceSession::State state) {
+fuchsia_tracing_controller::SessionState TraceController::TranslateSessionState(
+    TraceSession::State state) {
   switch (state) {
     case TraceSession::State::kReady:
-      return controller::SessionState::READY;
+      return fuchsia_tracing_controller::SessionState::kReady;
     case TraceSession::State::kInitialized:
-      return controller::SessionState::INITIALIZED;
+      return fuchsia_tracing_controller::SessionState::kInitialized;
     case TraceSession::State::kStarting:
-      return controller::SessionState::STARTING;
+      return fuchsia_tracing_controller::SessionState::kStarting;
     case TraceSession::State::kStarted:
-      return controller::SessionState::STARTED;
+      return fuchsia_tracing_controller::SessionState::kStarted;
     case TraceSession::State::kStopping:
-      return controller::SessionState::STOPPING;
+      return fuchsia_tracing_controller::SessionState::kStopping;
     case TraceSession::State::kStopped:
-      return controller::SessionState::STOPPED;
+      return fuchsia_tracing_controller::SessionState::kStopped;
     case TraceSession::State::kTerminating:
-      return controller::SessionState::TERMINATING;
+      return fuchsia_tracing_controller::SessionState::kTerminating;
   }
 }
 
 void TraceController::OnAlert(const std::string& alert_name) {
-  if (watch_alert_callbacks_.empty()) {
+  if (watch_alert_completers_.empty()) {
     if (alerts_.size() == kMaxAlertQueueDepth) {
       // We're at our queue depth limit. Discard the oldest alert.
       alerts_.pop();
@@ -544,10 +550,8 @@ void TraceController::OnAlert(const std::string& alert_name) {
     return;
   }
 
-  controller::Session_WatchAlert_Result result;
-  result.set_response(controller::Session_WatchAlert_Response(alert_name));
-  watch_alert_callbacks_.front()(std::move(result));
-  watch_alert_callbacks_.pop();
+  watch_alert_completers_.front().Reply({{.alert_name = alert_name}});
+  watch_alert_completers_.pop();
 }
 
 }  // namespace tracing

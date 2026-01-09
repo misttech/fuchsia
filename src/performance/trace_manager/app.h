@@ -5,9 +5,9 @@
 #ifndef SRC_PERFORMANCE_TRACE_MANAGER_APP_H_
 #define SRC_PERFORMANCE_TRACE_MANAGER_APP_H_
 
-#include <fuchsia/tracing/controller/cpp/fidl.h>
-#include <fuchsia/tracing/provider/cpp/fidl.h>
-#include <lib/fidl/cpp/binding_set.h>
+#include <fidl/fuchsia.tracing.controller/cpp/fidl.h>
+#include <fidl/fuchsia.tracing.provider/cpp/fidl.h>
+#include <lib/fidl/cpp/wire/channel.h>
 #include <lib/sys/cpp/component_context.h>
 
 #include <memory>
@@ -22,30 +22,28 @@ class TraceManagerApp {
                   async::Executor& executor);
   ~TraceManagerApp();
 
-  void AddSessionBinding(std::shared_ptr<controller::Session> trace_session,
-                         fidl::InterfaceRequest<controller::Session> session_controller);
+  void AddSessionBinding(std::shared_ptr<TraceController> trace_session,
+                         fidl::ServerEnd<fuchsia_tracing_controller::Session> session_controller);
 
-  void CloseSessionBindings() { session_bindings_.CloseAll(); }
+  void CloseSessionBindings() { session_bindings_.CloseAll(ZX_ERR_PEER_CLOSED); }
 
   // For testing.
   sys::ComponentContext* context() const { return context_.get(); }
   const TraceManager* trace_manager() const { return &trace_manager_; }
 
-  const fidl::BindingSet<controller::Session, std::shared_ptr<controller::Session>>&
-  session_bindings() const {
+  fidl::ServerBindingGroup<fuchsia_tracing_controller::Session>& session_bindings() {
     return session_bindings_;
   }
 
  private:
   std::unique_ptr<sys::ComponentContext> context_;
 
+  async_dispatcher_t* dispatcher_;
   TraceManager trace_manager_;
 
-  fidl::BindingSet<fuchsia::tracing::provider::Registry> provider_registry_bindings_;
-  fidl::BindingSet<fuchsia::tracing::controller::Provisioner> provisioner_bindings_;
-  fidl::BindingSet<fuchsia::tracing::controller::Session,
-                   std::shared_ptr<fuchsia::tracing::controller::Session>>
-      session_bindings_;
+  fidl::ServerBindingGroup<fuchsia_tracing_provider::Registry> provider_registry_bindings_;
+  fidl::ServerBindingGroup<fuchsia_tracing_controller::Provisioner> provisioner_bindings_;
+  fidl::ServerBindingGroup<fuchsia_tracing_controller::Session> session_bindings_;
 
   TraceManagerApp(const TraceManagerApp&) = delete;
   TraceManagerApp(TraceManagerApp&&) = delete;

@@ -4,10 +4,10 @@
 
 #include "src/performance/trace_manager/buffer_forwarder.h"
 
+#include <lib/fit/defer.h>
 #include <lib/syslog/cpp/macros.h>
 #include <lib/trace-engine/fields.h>
-
-#include "lib/fit/defer.h"
+#include <lib/zx/vmar.h>
 
 namespace tracing {
 

@@ -20,12 +20,12 @@ TEST_F(TraceManagerTest, RetryAfterFailedStop) {
 
   ASSERT_TRUE(StartSession());
 
-  controller::StopOptions stop_options{GetDefaultStopOptions()};
-  controller()->StopTracing(std::move(stop_options),
-                            [](controller::Session_StopTracing_Result result) {
-                              ASSERT_TRUE(result.is_err());
-                              ASSERT_EQ(result.err(), controller::StopError::ABORTED);
-                            });
+  fuchsia_tracing_controller::StopOptions stop_options{GetDefaultStopOptions()};
+  session_client()->StopTracing({{std::move(stop_options)}}).ThenExactlyOnce([](auto& result) {
+    ASSERT_TRUE(result.is_error());
+    ASSERT_TRUE(result.error_value().is_domain_error());
+    ASSERT_EQ(result.error_value().domain_error(), fuchsia_tracing_controller::StopError::kAborted);
+  });
   RunLoopUntilIdle();
   ASSERT_EQ(GetSessionState(), SessionState::kStopping);
 
@@ -45,18 +45,22 @@ TEST_F(TraceManagerTest, RetryAfterFailedStop) {
   zx_status_t status = zx::socket::create(0u, &our_socket, &their_socket);
   ASSERT_EQ(status, ZX_OK);
 
-  controller::TraceConfig config{GetDefaultTraceConfig()};
-  provisioner()->InitializeTracing(NewControllerRequest(), std::move(config),
-                                   std::move(their_socket));
+  fuchsia_tracing_controller::TraceConfig config{GetDefaultTraceConfig()};
+  auto endpoints = fidl::Endpoints<fuchsia_tracing_controller::Session>::Create();
+  session_client() = fidl::Client(std::move(endpoints.client), dispatcher(), this);
+  auto initialize_result = provisioner_client()->InitializeTracing(
+      {{std::move(endpoints.server), std::move(config), std::move(their_socket)}});
+  ASSERT_TRUE(initialize_result.is_ok());
+
   RunLoopUntilIdle();
   ASSERT_EQ(GetSessionState(), SessionState::kInitialized);
   RunLoopUntilIdle();
 
-  controller::StartOptions start_options{GetDefaultStartOptions()};
+  fuchsia_tracing_controller::StartOptions start_options{GetDefaultStartOptions()};
   bool start_completed = false;
-  controller()->StartTracing(
-      std::move(start_options),
-      [this, &start_completed](controller::Session_StartTracing_Result in_result) {
+  session_client()
+      ->StartTracing({{std::move(start_options)}})
+      .ThenExactlyOnce([this, &start_completed](auto& result) {
         start_completed = true;
         QuitLoop();
       });
@@ -72,13 +76,14 @@ TEST_F(TraceManagerTest, RetryAfterFailedStop) {
 
 template <typename T>
 void TryExtraStop(TraceManagerTest* fixture, const T& interface_ptr) {
-  controller::StopOptions stop_options{fixture->GetDefaultStopOptions()};
+  fuchsia_tracing_controller::StopOptions stop_options{fixture->GetDefaultStopOptions()};
   bool stop_completed = false;
-  interface_ptr->StopTracing(
-      std::move(stop_options),
-      [fixture, &stop_completed](controller::Session_StopTracing_Result result) {
-        ASSERT_TRUE(result.is_err());
-        ASSERT_EQ(result.err(), controller::StopError::NOT_STARTED);
+  interface_ptr->StopTracing({{std::move(stop_options)}})
+      .ThenExactlyOnce([fixture, &stop_completed](auto& result) {
+        ASSERT_TRUE(result.is_error());
+        ASSERT_TRUE(result.error_value().is_domain_error());
+        ASSERT_EQ(result.error_value().domain_error(),
+                  fuchsia_tracing_controller::StopError::kNotStarted);
         stop_completed = true;
         fixture->QuitLoop();
       });
@@ -101,7 +106,7 @@ TEST_F(TraceManagerTest, ExtraStop) {
 
   // Now try stopping again.
   // This should complete with a NOT_STARTED error
-  TryExtraStop(this, controller());
+  TryExtraStop(this, session_client());
 }
 
 TEST_F(TraceManagerTest, StopWhileStopping) {
@@ -114,10 +119,10 @@ TEST_F(TraceManagerTest, StopWhileStopping) {
 
   ASSERT_TRUE(StartSession());
 
-  controller::StopOptions stop1_options{GetDefaultStopOptions()};
-  controller()->StopTracing(
-      std::move(stop1_options),
-      [](controller::Session_StopTracing_Result result) { ASSERT_TRUE(result.is_response()); });
+  fuchsia_tracing_controller::StopOptions stop1_options{GetDefaultStopOptions()};
+  session_client()->StopTracing({{std::move(stop1_options)}}).ThenExactlyOnce([](auto& result) {
+    ASSERT_TRUE(result.is_ok());
+  });
   RunLoopUntilIdle();
   // The loop will exit for the transition to kStopping.
   FX_LOGS(DEBUG) << "Loop done, expecting session stopping";
@@ -126,19 +131,25 @@ TEST_F(TraceManagerTest, StopWhileStopping) {
   // Now try another Stop while we're still in |kStopping|.
   // The provider doesn't advance state until we tell it to, so we should
   // still remain in |kStopping|.
-  controller::StopOptions stop2_options{GetDefaultStopOptions()};
+  fuchsia_tracing_controller::StopOptions stop2_options{GetDefaultStopOptions()};
   bool stop_completed = false;
-  controller()->StopTracing(std::move(stop2_options),
-                            [this, &stop_completed](controller::Session_StopTracing_Result result) {
-                              ASSERT_TRUE(result.is_err());
-                              ASSERT_EQ(result.err(), controller::StopError::NOT_STARTED);
-                              stop_completed = true;
-                              QuitLoop();
-                            });
+  session_client()
+      ->StopTracing({{std::move(stop2_options)}})
+      .ThenExactlyOnce([this, &stop_completed](auto& result) {
+        ASSERT_TRUE(result.is_error());
+        ASSERT_TRUE(result.error_value().is_domain_error());
+        ASSERT_EQ(result.error_value().domain_error(),
+                  fuchsia_tracing_controller::StopError::kNotStarted);
+        stop_completed = true;
+        QuitLoop();
+      });
   RunLoopUntilIdle();
   FX_LOGS(DEBUG) << "Stop loop done";
   EXPECT_TRUE(stop_completed);
   EXPECT_TRUE(GetSessionState() == SessionState::kStopping);
+
+  MarkAllProvidersStopped();
+  RunLoopUntilIdle();
 }
 
 }  // namespace test

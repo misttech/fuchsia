@@ -5,7 +5,7 @@
 #ifndef SRC_PERFORMANCE_TRACE_MANAGER_TRACE_PROVIDER_BUNDLE_H_
 #define SRC_PERFORMANCE_TRACE_MANAGER_TRACE_PROVIDER_BUNDLE_H_
 
-#include <fuchsia/tracing/provider/cpp/fidl.h>
+#include <fidl/fuchsia.tracing.provider/cpp/fidl.h>
 #include <stdint.h>
 
 #include <iosfwd>
@@ -14,24 +14,33 @@
 
 namespace tracing {
 
-struct TraceProviderBundle {
-  TraceProviderBundle(fuchsia::tracing::provider::ProviderPtr provider, uint32_t id, zx_koid_t pid,
-                      const std::string& name);
-  ~TraceProviderBundle() = default;
+struct TraceProviderBundle : public fidl::AsyncEventHandler<fuchsia_tracing_provider::Provider> {
+  TraceProviderBundle(fidl::ClientEnd<fuchsia_tracing_provider::Provider> provider, uint32_t id,
+                      zx_koid_t pid, const std::string& name, async_dispatcher_t* dispatcher);
+  ~TraceProviderBundle() override = default;
 
   TraceProviderBundle(const TraceProviderBundle& value) = delete;
   TraceProviderBundle& operator=(const TraceProviderBundle&) = delete;
 
-  TraceProviderBundle(const TraceProviderBundle&& value) = delete;
-  TraceProviderBundle& operator=(const TraceProviderBundle&&) = delete;
+  TraceProviderBundle(TraceProviderBundle&& value) = default;
+  TraceProviderBundle& operator=(TraceProviderBundle&&) = default;
+
+  void on_fidl_error(fidl::UnbindInfo info) override;
+
+  void SetOnUnbound(fit::function<void(fidl::UnbindInfo)> on_unbound) {
+    on_unbound_ = std::move(on_unbound);
+  }
 
   std::string ToString() const;
 
-  fuchsia::tracing::provider::ProviderPtr provider;
+  fidl::Client<fuchsia_tracing_provider::Provider> provider;
 
   uint32_t id;
   zx_koid_t pid;
-  const std::string name;
+  std::string name;
+
+ private:
+  fit::function<void(fidl::UnbindInfo)> on_unbound_;
 };
 
 struct TraceProviderSpec {

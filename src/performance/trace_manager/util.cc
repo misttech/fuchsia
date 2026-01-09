@@ -27,44 +27,50 @@ std::ostream& operator<<(std::ostream& out, TransferStatus status) {
   return out;
 }
 
-std::ostream& operator<<(std::ostream& out, fuchsia::tracing::BufferDisposition disposition) {
+std::ostream& operator<<(std::ostream& out, fuchsia_tracing::BufferDisposition disposition) {
   switch (disposition) {
-    case fuchsia::tracing::BufferDisposition::CLEAR_ENTIRE:
+    case fuchsia_tracing::BufferDisposition::kClearEntire:
       out << "clear-all";
       break;
-    case fuchsia::tracing::BufferDisposition::CLEAR_NONDURABLE:
+    case fuchsia_tracing::BufferDisposition::kClearNondurable:
       out << "clear-nondurable";
       break;
-    case fuchsia::tracing::BufferDisposition::RETAIN:
+    case fuchsia_tracing::BufferDisposition::kRetain:
       out << "retain";
+      break;
+    default:
+      out << "unknown(" << static_cast<uint32_t>(disposition) << ")";
       break;
   }
 
   return out;
 }
 
-std::ostream& operator<<(std::ostream& out, controller::SessionState state) {
+std::ostream& operator<<(std::ostream& out, fuchsia_tracing_controller::SessionState state) {
   switch (state) {
-    case controller::SessionState::READY:
+    case fuchsia_tracing_controller::SessionState::kReady:
       out << "ready";
       break;
-    case controller::SessionState::INITIALIZED:
+    case fuchsia_tracing_controller::SessionState::kInitialized:
       out << "initialized";
       break;
-    case controller::SessionState::STARTING:
+    case fuchsia_tracing_controller::SessionState::kStarting:
       out << "starting";
       break;
-    case controller::SessionState::STARTED:
+    case fuchsia_tracing_controller::SessionState::kStarted:
       out << "started";
       break;
-    case controller::SessionState::STOPPING:
+    case fuchsia_tracing_controller::SessionState::kStopping:
       out << "stopping";
       break;
-    case controller::SessionState::STOPPED:
+    case fuchsia_tracing_controller::SessionState::kStopped:
       out << "stopped";
       break;
-    case controller::SessionState::TERMINATING:
-      out << "terminaing";
+    case fuchsia_tracing_controller::SessionState::kTerminating:
+      out << "terminating";
+      break;
+    default:
+      out << "unknown(" << static_cast<uint32_t>(state) << ")";
       break;
   }
 
