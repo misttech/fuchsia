@@ -77,16 +77,14 @@ impl SidTable {
         Self::new_from(policy, new_entries)
     }
 
-    /// Returns a `SecurityId` (SID) representing the supplied `security_context`.
-    /// If an entry already exists that matches `security_context` then the existing SID is
-    /// returned.
-    /// Otherwise the `security_context`'s fields are validated against the policy constraints,
-    /// and an explanatory error returned if they are inconsistent.
-    pub fn security_context_to_sid(
-        &mut self,
+    /// Returns the `SecurityId` (SID) representing the supplied `security_context`, if it is
+    /// already present in the SID table. If a SID is returned then `security_context` must be valid
+    /// by definition, since `security_context_to_sid()` will only insert validated contexts.
+    pub fn security_context_to_existing_sid(
+        &self,
         security_context: &SecurityContext,
-    ) -> Result<SecurityId, SecurityContextError> {
-        let existing = &self.entries[ReferenceInitialSid::FirstUnused as usize..]
+    ) -> Option<SecurityId> {
+        let index = &self.entries[ReferenceInitialSid::FirstUnused as usize..]
             .iter()
             .position(|entry| match entry {
                 Entry::Valid { security_context: entry_security_context } => {
@@ -96,15 +94,25 @@ impl SidTable {
             })
             .map(|slice_relative_index| {
                 slice_relative_index + (ReferenceInitialSid::FirstUnused as usize)
-            });
-        let index = if let Some(index) = existing {
-            *index
-        } else {
-            self.policy.validate_security_context(security_context)?;
-            let index = self.entries.len();
-            self.entries.push(Entry::Valid { security_context: security_context.clone() });
-            index
-        };
+            })?;
+        Some(SecurityId(NonZeroU32::new(*index as u32).unwrap()))
+    }
+
+    /// Returns a `SecurityId` (SID) representing the supplied `security_context`.
+    /// If an entry already exists that matches `security_context` then the existing SID is
+    /// returned.
+    /// Otherwise the `security_context`'s fields are validated against the policy constraints,
+    /// and an explanatory error returned if they are inconsistent.
+    pub fn security_context_to_sid(
+        &mut self,
+        security_context: &SecurityContext,
+    ) -> Result<SecurityId, SecurityContextError> {
+        if let Some(sid) = self.security_context_to_existing_sid(security_context) {
+            return Ok(sid);
+        }
+        self.policy.validate_security_context(security_context)?;
+        let index = self.entries.len();
+        self.entries.push(Entry::Valid { security_context: security_context.clone() });
         Ok(SecurityId(NonZeroU32::new(index as u32).unwrap()))
     }
 

@@ -10,7 +10,8 @@ use crate::policy::parser::PolicyData;
 
 use crate::policy::{
     AccessDecision, AccessVector, AccessVectorComputer, ClassId, ClassPermissionId,
-    FsUseLabelAndType, FsUseType, Policy, XpermsAccessDecision, XpermsKind, parse_policy_by_value,
+    FsUseLabelAndType, FsUseType, Policy, SecurityContext, XpermsAccessDecision, XpermsKind,
+    parse_policy_by_value,
 };
 use crate::sid_table::SidTable;
 use crate::sync::RwLock;
@@ -171,16 +172,12 @@ impl SecurityServer {
         &self,
         security_context: NullessByteStr<'_>,
     ) -> Result<SecurityId, anyhow::Error> {
-        let mut locked_state = self.backend.state.write();
-        let active_policy = locked_state
-            .active_policy
-            .as_mut()
-            .ok_or_else(|| anyhow::anyhow!("no policy loaded"))?;
-        let context = active_policy
-            .parsed
-            .parse_security_context(security_context)
-            .map_err(anyhow::Error::from)?;
-        active_policy.sid_table.security_context_to_sid(&context).map_err(anyhow::Error::from)
+        self.backend.compute_sid(|active_policy| {
+            active_policy
+                .parsed
+                .parse_security_context(security_context)
+                .map_err(anyhow::Error::from)
+        })
     }
 
     /// Returns the Security Context string for the requested `sid`.
@@ -507,23 +504,49 @@ impl SecurityServerBackend {
         target_sid: SecurityId,
         target_class: impl Into<ObjectClass>,
     ) -> Result<SecurityId, anyhow::Error> {
-        let mut locked_state = self.state.write();
-        let active_policy = locked_state.expect_active_policy_mut();
+        let target_class = target_class.into();
 
-        let source_context = active_policy.sid_table.sid_to_security_context(source_sid);
-        let target_context = active_policy.sid_table.sid_to_security_context(target_sid);
+        self.compute_sid(|active_policy| {
+            let source_context = active_policy.sid_table.sid_to_security_context(source_sid);
+            let target_context = active_policy.sid_table.sid_to_security_context(target_sid);
 
-        let security_context = active_policy.parsed.compute_create_context(
-            source_context,
-            target_context,
-            target_class.into(),
-        );
+            Ok(active_policy.parsed.compute_create_context(
+                source_context,
+                target_context,
+                target_class,
+            ))
+        })
+        .context("computing new security context from policy")
+    }
 
-        active_policy
-            .sid_table
-            .security_context_to_sid(&security_context)
-            .map_err(anyhow::Error::from)
-            .context("computing new security context from policy")
+    /// Helper for call-sites that need to compute a `SecurityContext` and assign a SID to it.
+    fn compute_sid(
+        &self,
+        compute_context: impl Fn(&ActivePolicy) -> Result<SecurityContext, anyhow::Error>,
+    ) -> Result<SecurityId, anyhow::Error> {
+        // Initially assume that the computed context will most likely already have a SID assigned,
+        // so that the operation can be completed without any modification of the SID table.
+        let readable_state = self.state.read();
+        let policy_change_count = readable_state.policy_change_count;
+        let policy_state = readable_state
+            .active_policy
+            .as_ref()
+            .ok_or_else(|| anyhow::anyhow!("no policy loaded"))?;
+        let context = compute_context(policy_state)?;
+        if let Some(sid) = policy_state.sid_table.security_context_to_existing_sid(&context) {
+            return Ok(sid);
+        }
+        std::mem::drop(readable_state);
+
+        // Since the computed context was not found in the table, re-try the operation with the
+        // policy state write-locked to allow for the SID table to be updated. In the rare case of
+        // a new policy having been loaded in-between the read- and write-locked stages, the
+        // `context` is re-computed using the new policy state.
+        let mut writable_state = self.state.write();
+        let needs_recompute = policy_change_count != writable_state.policy_change_count;
+        let policy_state = writable_state.active_policy.as_mut().unwrap();
+        let context = if needs_recompute { compute_context(policy_state)? } else { context };
+        policy_state.sid_table.security_context_to_sid(&context).map_err(anyhow::Error::from)
     }
 }
 
