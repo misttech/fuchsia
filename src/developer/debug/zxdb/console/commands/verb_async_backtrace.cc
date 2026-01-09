@@ -337,6 +337,16 @@ fxl::RefPtr<AsyncOutputBuffer> FormatTaskRunner(const ExprValue& task_runner,
   return FormatFuture(future.value(), options, context, indent);
 }
 
+fxl::RefPtr<AsyncOutputBuffer> FormatWrappedFuture(const ExprValue& wrapped_future,
+                                                   const FormatFutureOptions& options,
+                                                   const fxl::RefPtr<EvalContext>& context,
+                                                   int indent) {
+  ErrOrValue future = ResolveNonstaticMember(context, wrapped_future, {"__0"});
+  if (future.has_error())
+    return FormatError("Invalid WrappedFuture", future.err());
+  return FormatFuture(future.value(), options, context, indent);
+}
+
 fxl::RefPtr<AsyncOutputBuffer> FormatScopeJoin(const ExprValue& task_runner,
                                                const FormatFutureOptions& options,
                                                const fxl::RefPtr<EvalContext>& context,
@@ -407,6 +417,8 @@ fxl::RefPtr<AsyncOutputBuffer> FormatFuture(const ExprValue& future,
   if (IsAsyncFunctionOrBlock(future.type()))
     return FormatAsyncFunctionOrBlock(future, options, context, indent);
 
+  // These types are silently unwrapped to their respective "inner" types. These types specifically
+  // will not show up explicitly in the async-backtrace output.
   if (type == "core::pin::Pin")
     return FormatPin(future, options, context, indent);
   if (type == "fuchsia_async::runtime::fuchsia::executor::scope::Join")
@@ -429,6 +441,9 @@ fxl::RefPtr<AsyncOutputBuffer> FormatFuture(const ExprValue& future,
     return FormatRemote(future, options, context, indent);
   if (type == "vfs::execution_scope::TaskRunner")
     return FormatTaskRunner(future, options, context, indent);
+  if (type == "starnix_core::task::kernel_threads::WrappedFuture") {
+    return FormatWrappedFuture(future, options, context, indent);
+  }
 
   // NOTE: `select!` and `join!` macro expand to PollFn. It'll be useful if we could describe it.
   // However, PollFn could encode an arbitrary function so there's a chance we're doing very wrong.
@@ -765,7 +780,6 @@ void OnStackReady(Stack& stack, fxl::RefPtr<CommandContext> cmd_context,
   for (size_t i = 0; i < stack.size(); i++) {
     if (!stack[i]->GetLocation().has_symbols())
       continue;
-    // TODO(https://fxbug.dev/339724188): Traverse nested scopes.
     std::string func_name(StripTemplate(stack[i]->GetLocation().symbol().Get()->GetFullName()));
     std::string expr;
     if (func_name == "fuchsia_async::runtime::fuchsia::executor::local::LocalExecutor::run") {
