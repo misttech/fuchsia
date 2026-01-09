@@ -1231,6 +1231,14 @@
 
                 // TODO(https://fxbug.dev/468074994): Investigate and re-enable.
                 "NetlinkRouteTest.VethAdd",
+
+                // TODO(https://fxbug.dev/474544848): New failing tests.
+                "LinkTest.LinkAtWithEmptyPathNeedsNoCapForSameCreds",
+                "LinkTest.LinkAtWithEmptyPathNeedsCapDacReadSearch",
+                "LinkTest.LinkAtWithEmptyPathNeedsNoCapForAtFcwd",
+                "MsgqueueTest.MsgOpReceiveMax",
+                "TruncateTest.TruncateNonWriteable",
+                "XattrTest.TrustedNamespaceWithCapSysAdminInNewUserns",
             ],
         },
     ],
