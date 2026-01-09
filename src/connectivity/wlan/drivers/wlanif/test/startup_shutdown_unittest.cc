@@ -68,9 +68,10 @@ struct BaseWlanFullmacServerForStartup
     fuchsia_wlan_fullmac::WlanFullmacImplQuerySecuritySupportResponse response;
 
     fuchsia_wlan_common::SecuritySupport support;
-    support.sae(
-        fuchsia_wlan_common::SaeFeature().driver_handler_supported(false).sme_handler_supported(
-            true));
+    support.sae(fuchsia_wlan_common::SaeFeature()
+                    .driver_handler_supported(false)
+                    .sme_handler_supported(true)
+                    .hash_to_element_supported(false));
     support.mfp(fuchsia_wlan_common::MfpFeature().supported(false));
 
     response.resp(support);

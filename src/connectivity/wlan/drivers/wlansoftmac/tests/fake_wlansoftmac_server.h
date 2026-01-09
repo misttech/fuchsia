@@ -158,9 +158,10 @@ class BasicWlanSoftmacServer : public UnimplementedWlanSoftmacServer {
 
   void QuerySecuritySupport(QuerySecuritySupportCompleter::Sync& completer) override {
     fuchsia_wlan_common::SecuritySupport response;
-    response.sae(
-        fuchsia_wlan_common::SaeFeature().driver_handler_supported(false).sme_handler_supported(
-            true));
+    response.sae(fuchsia_wlan_common::SaeFeature()
+                     .driver_handler_supported(false)
+                     .sme_handler_supported(true)
+                     .hash_to_element_supported(false));
     response.mfp(fuchsia_wlan_common::MfpFeature().supported(false));
     completer.Reply(fit::ok(response));
   }

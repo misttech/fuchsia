@@ -778,6 +778,7 @@ mod tests {
             sae: Some(fidl_common::SaeFeature {
                 driver_handler_supported: Some(false),
                 sme_handler_supported: Some(false),
+                hash_to_element_supported: Some(false),
                 ..Default::default()
             }),
             ..Default::default()

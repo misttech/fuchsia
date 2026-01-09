@@ -369,6 +369,7 @@ pub mod test_utils {
                         sae: Some(fidl_common::SaeFeature {
                             driver_handler_supported: Some(false),
                             sme_handler_supported: Some(true),
+                            hash_to_element_supported: Some(false),
                             ..Default::default()
                         }),
                         mfp: Some(fidl_common::MfpFeature {

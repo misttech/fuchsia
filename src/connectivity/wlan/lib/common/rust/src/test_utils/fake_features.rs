@@ -37,6 +37,7 @@ pub fn fake_security_support_empty() -> fidl_common::SecuritySupport {
         sae: Some(fidl_common::SaeFeature {
             driver_handler_supported: Some(false),
             sme_handler_supported: Some(false),
+            hash_to_element_supported: Some(false),
             ..Default::default()
         }),
         ..Default::default()

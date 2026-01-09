@@ -23,6 +23,7 @@ static EMPTY_SECURITY_SUPPORT: LazyLock<fidl_common::SecuritySupport> =
         sae: Some(fidl_common::SaeFeature {
             driver_handler_supported: Some(false),
             sme_handler_supported: Some(true),
+            hash_to_element_supported: Some(true),
             ..Default::default()
         }),
         ..Default::default()

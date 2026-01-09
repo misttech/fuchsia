@@ -94,6 +94,11 @@ type SaeFeature = table {
     1: driver_handler_supported bool;
     /// SAE can be handled by SME.
     2: sme_handler_supported bool;
+    /// Indicates whether the driver is compatible with SAE hash-to-element.
+    /// In the SME handler case, this just means passing through SAE frames
+    /// with the SAE_HASH_TO_ELEMENT status code.
+    @available(added=NEXT)
+    3: hash_to_element_supported bool;
 };
 
 /// Management Frame Protection.
