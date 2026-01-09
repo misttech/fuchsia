@@ -37,7 +37,6 @@ impl
         // TODO(https://fxbug.dev/42052994): Remove this once DFv2 is enabled by default and there
         // exists only one da7219 driver.
         disabled_drivers.push("fuchsia-boot:///#meta/da7219.cm".to_string());
-        builder.platform_bundle("driver_framework_common");
 
         if development_support.heapdump.driver_framework {
             context.ensure_build_type_and_feature_set_level(

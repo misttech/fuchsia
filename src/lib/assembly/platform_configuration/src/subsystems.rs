@@ -132,13 +132,19 @@ impl DefineSubsystemConfiguration<()> for CommonBundles {
                     "embeddable_userdebug",
                     "embeddable_eng",
                     "bootstrap_realm_development_access",
+                    "driver_framework_common",
                 ]
             }
             (FeatureSetLevel::Embeddable, BuildType::UserDebug) => {
-                vec!["embeddable", "embeddable_userdebug", "bootstrap_realm_development_access"]
+                vec![
+                    "embeddable",
+                    "embeddable_userdebug",
+                    "bootstrap_realm_development_access",
+                    "driver_framework_common",
+                ]
             }
             (FeatureSetLevel::Embeddable, BuildType::User) => {
-                vec!["embeddable"]
+                vec!["embeddable", "driver_framework_common"]
             }
             (FeatureSetLevel::Bootstrap, _) => {
                 vec![
@@ -149,6 +155,8 @@ impl DefineSubsystemConfiguration<()> for CommonBundles {
                     "bootstrap_userdebug",
                     "bootstrap_eng",
                     "bootstrap_realm_development_access",
+                    "driver_framework_common",
+                    "legacy_power_framework",
                 ]
             }
             (FeatureSetLevel::Utility, BuildType::Eng) => {
@@ -164,6 +172,8 @@ impl DefineSubsystemConfiguration<()> for CommonBundles {
                     "core_realm_development_access_eng",
                     "core_realm_eng",
                     "mdns",
+                    "driver_framework_common",
+                    "legacy_power_framework",
                 ]
             }
             (FeatureSetLevel::Utility, BuildType::UserDebug) => {
@@ -177,10 +187,19 @@ impl DefineSubsystemConfiguration<()> for CommonBundles {
                     "core_realm_development_access_userdebug",
                     "core_realm_user_and_userdebug",
                     "mdns",
+                    "driver_framework_common",
+                    "legacy_power_framework",
                 ]
             }
             (FeatureSetLevel::Utility, BuildType::User) => {
-                vec!["embeddable", "bootstrap", "core_realm", "core_realm_user_and_userdebug"]
+                vec![
+                    "embeddable",
+                    "bootstrap",
+                    "core_realm",
+                    "core_realm_user_and_userdebug",
+                    "driver_framework_common",
+                    "legacy_power_framework",
+                ]
             }
             (FeatureSetLevel::Standard, BuildType::Eng) => {
                 vec![
@@ -200,6 +219,8 @@ impl DefineSubsystemConfiguration<()> for CommonBundles {
                     "testing_support",
                     "tracing",
                     "mdns",
+                    "driver_framework_common",
+                    "legacy_power_framework",
                 ]
             }
             (FeatureSetLevel::Standard, BuildType::UserDebug) => {
@@ -216,6 +237,8 @@ impl DefineSubsystemConfiguration<()> for CommonBundles {
                     "standard_userdebug",
                     "standard_userdebug_and_eng",
                     "mdns",
+                    "driver_framework_common",
+                    "legacy_power_framework",
                 ]
             }
             (FeatureSetLevel::Standard, BuildType::User) => {
@@ -226,6 +249,8 @@ impl DefineSubsystemConfiguration<()> for CommonBundles {
                     "core_realm_user_and_userdebug",
                     "common_standard",
                     "mdns",
+                    "driver_framework_common",
+                    "legacy_power_framework",
                 ]
             }
         } {

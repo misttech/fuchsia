@@ -65,10 +65,6 @@ impl DefineSubsystemConfiguration<PowerConfig> for PowerManagementSubsystem {
                 .context("Adding power_manager's thermal config file")?;
         }
 
-        if *context.feature_set_level != FeatureSetLevel::Embeddable {
-            builder.platform_bundle("legacy_power_framework");
-        }
-
         if config.enable_non_hermetic_testing {
             context.ensure_build_type_and_feature_set_level(
                 &[BuildType::Eng],
