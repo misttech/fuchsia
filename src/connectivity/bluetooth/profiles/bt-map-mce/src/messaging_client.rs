@@ -16,7 +16,7 @@ use fuchsia_bluetooth::types::{Channel, PeerId};
 use fuchsia_sync::Mutex;
 use futures::stream::{FusedStream, Stream};
 use futures::{Future, StreamExt};
-use log::{trace, warn};
+use log::{info, warn};
 use std::collections::HashMap;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -76,7 +76,7 @@ impl Stream for MessagingClient {
                 Poll::Pending => {}
                 Poll::Ready(Some(Ok(MessagingClientRequest::WatchAccessor { responder }))) => {
                     if self.accessor_request.is_some() {
-                        let _ = responder.send(Err(fidl_fuchsia_bluetooth_map::Error::Unavailable));
+                        let _ = responder.send(Err(fidl_fuchsia_bluetooth_map::Error::BadRequest));
                     } else {
                         self.accessor_request = Some(responder);
                     }
@@ -84,15 +84,23 @@ impl Stream for MessagingClient {
                 Poll::Ready(Some(Ok(unknown))) => {
                     warn!("Unknown method received: {:?}", unknown);
                 }
-                Poll::Ready(Some(Err(_))) | Poll::Ready(None) => {
-                    warn!("Error in {:?} stream", MessagingClientMarker::PROTOCOL_NAME);
+                error_or_terminated => {
                     let _ = self.fidl_stream.take();
                     let _ = self.accessor_request.take();
+                    warn!(
+                        "{:?} FIDL stream terminated{}",
+                        MessagingClientMarker::PROTOCOL_NAME,
+                        if let Poll::Ready(Some(Err(e))) = error_or_terminated {
+                            format!(": {e:?}")
+                        } else {
+                            "".to_string()
+                        }
+                    );
                 }
             }
         }
 
-        // If no WatchAccessor request, we don't need to look for an available [AccessorHandle].
+        // If no WatchAccessor request, we don't need to look for an available `Accessor`
         if self.accessor_request.is_none() {
             self.waker = Some(cx.waker().clone());
             return Poll::Pending;
@@ -102,6 +110,7 @@ impl Stream for MessagingClient {
             self.waker = Some(cx.waker().clone());
             return Poll::Pending;
         };
+
         let (accessor_client, accessor_request_stream): (ClientEnd<AccessorMarker>, _) =
             fidl::endpoints::create_request_stream();
         let watch_responder = self.accessor_request.take().unwrap();
@@ -176,19 +185,23 @@ impl MessagingClient {
         let chan = channel.try_into().map_err(|e: zx::Status| Error::Other(e.into()))?;
 
         self.accessor_manager.remove_disconnected();
-        let mut lock = self.accessor_manager.connected_peers.lock();
 
         let mut is_new_peer = false;
-        let accessor = lock.entry(peer_id).or_insert_with(|| {
-            is_new_peer = true;
-            Arc::new(Accessor::new(peer_id))
-        });
+        let accessor = {
+            let mut lock = self.accessor_manager.connected_peers.lock();
+            let accessor = lock.entry(peer_id).or_insert_with(|| {
+                is_new_peer = true;
+                Arc::new(Accessor::new(peer_id))
+            });
+            accessor.clone()
+        };
+
+        accessor.set_mas_connection(chan, mas_config).await;
 
         // If new peer, wake the waker to notify that a new peer is available.
-        if is_new_peer && self.waker.is_some() {
-            self.waker.take().unwrap().wake();
+        if let Some(waker) = self.waker.take_if(|_| is_new_peer) {
+            waker.wake();
         }
-        accessor.set_mas_connection(chan, mas_config);
         Ok(())
     }
 
@@ -249,7 +262,6 @@ async fn run_accessor_fidl_server(
     mut accessor_request_stream: AccessorRequestStream,
 ) -> PeerId {
     let peer_id = accessor.peer_id;
-    trace!(peer_id:%; "New Accessor server running");
     accessor.is_fidl_running.store(true, Ordering::SeqCst);
     while let Some(item) = accessor_request_stream.next().await {
         match item {
@@ -297,8 +309,17 @@ impl Accessor {
         self.is_fidl_running.load(Ordering::SeqCst)
     }
 
-    fn set_mas_connection(&self, channel: Channel, mas_config: MasConfig) {
+    async fn set_mas_connection(&self, channel: Channel, mas_config: MasConfig) {
         let mas_instance = MasInstance::create(channel, mas_config);
+
+        // Some devices expect OBEX CONNECT request right away after the transport is connected.
+        // Even if the initial OBEX CONNECT fails, do not deem the entire connection as having failed
+        // since some platforms require additional user permission before OBEX connection.
+        match mas_instance.connect().await {
+            Ok(()) => info!(peer_id:% = self.peer_id; "automatic OBEX CONNECT accepted"),
+            Err(e) => info!(peer_id:% = self.peer_id, e:?; "initial OBEX CONNECT failed"),
+        }
+
         let _ = self.mas_instances.lock().insert(mas_instance.id(), Arc::new(mas_instance));
     }
 
@@ -473,7 +494,7 @@ mod tests {
     use async_utils::PollExt;
     use bt_map::{MapSupportedFeatures, MessageType};
     use bt_obex::header::{Header, HeaderSet};
-    use bt_obex::operation::{OpCode, RequestPacket};
+    use bt_obex::operation::{OpCode, RequestPacket, ResponseCode, ResponsePacket};
     use fidl::endpoints::{create_proxy_and_stream, create_request_stream};
     use fidl_fuchsia_bluetooth_bredr::{ProfileMarker, ProfileRequest, ProfileRequestStream};
     use fidl_fuchsia_bluetooth_map::{
@@ -482,7 +503,7 @@ mod tests {
     };
     use fuchsia_async as fasync;
     use fuchsia_bluetooth::profile::DataElement;
-    use packet_encoding::Decodable;
+    use packet_encoding::{Decodable, Encodable};
     use std::pin::pin;
 
     use crate::message_access_service::tests::send_ok_response;
@@ -491,18 +512,50 @@ mod tests {
     const TEST_PEER_ID: u64 = 1;
     const TEST_MAS_INSTANCE_ID: u8 = 1;
 
+    /// Checks that we have successfully sent out an OBEX CONNECT request
+    /// and mock a response from the remote OBEX server.
+    #[track_caller]
+    fn verify_and_respond_to_obex_connect_request(
+        exec: &mut fasync::TestExecutor,
+        remote_mas_channel: &mut Channel,
+        remote_response_ok: bool,
+    ) {
+        let request_raw =
+            expect_stream_item(exec, remote_mas_channel).expect("should have request");
+        let request = RequestPacket::decode(&request_raw[..]).expect("can decode request");
+        assert_eq!(request.code(), &OpCode::Connect);
+
+        if remote_response_ok {
+            let _ = send_ok_response(
+                remote_mas_channel,
+                vec![Header::ConnectionId(1.try_into().unwrap())],
+                vec![0x10, 0x00, 0xff, 0xff], // data for connection
+            );
+        } else {
+            let response = ResponsePacket::new(
+                ResponseCode::Forbidden,
+                vec![],
+                HeaderSet::from_headers(vec![]).unwrap(),
+            );
+            let mut response_buf = vec![0; response.encoded_len()];
+            response.encode(&mut response_buf[..]).unwrap();
+            let _ = remote_mas_channel.write(&response_buf[..]).unwrap();
+        }
+    }
+
     // Creates a `MessagingClient` for test purposes. Returned messaging
     // client is connected to a single MAS instance from a remote peer.
     #[track_caller]
     fn test_messaging_client(
         exec: &mut fasync::TestExecutor,
+        initial_obex_connect_success: bool,
     ) -> (ProfileRequestStream, MessagingClient, Channel, MessagingClientProxy) {
         let (profile_proxy, mut profile_requests) = create_proxy_and_stream::<ProfileMarker>();
 
         let mut messaging_client = MessagingClient::new(profile_proxy);
 
         // Can connect to MAS instance.
-        let (local, remote) = Channel::create();
+        let (local, mut remote) = Channel::create();
         {
             let connect_fut = messaging_client.connect_new_mas(
                 PeerId(TEST_PEER_ID),
@@ -531,6 +584,14 @@ mod tests {
                 }
                 _ => panic!("should be connect request"),
             }
+
+            let _ = exec.run_until_stalled(&mut connect_fut).expect_pending("should be pending");
+
+            verify_and_respond_to_obex_connect_request(
+                exec,
+                &mut remote,
+                initial_obex_connect_success,
+            );
 
             let _ = exec
                 .run_until_stalled(&mut connect_fut)
@@ -588,7 +649,7 @@ mod tests {
     fn accessor_stream() {
         let mut exec = fasync::TestExecutor::new();
         let (_profile_requests, mut messaging_client, _remote, messaging_client_proxy) =
-            test_messaging_client(&mut exec);
+            test_messaging_client(&mut exec, true);
 
         let watch_req_fut = messaging_client_proxy.watch_accessor();
         let mut watch_req_fut = pin!(watch_req_fut);
@@ -623,7 +684,7 @@ mod tests {
     fn accessor_terminatation() {
         let mut exec = fasync::TestExecutor::new();
         let (_profile_requests, mut messaging_client, _remote, messaging_client_proxy) =
-            test_messaging_client(&mut exec);
+            test_messaging_client(&mut exec, true);
 
         let watch_req_fut = messaging_client_proxy.watch_accessor();
         let mut watch_req_fut = pin!(watch_req_fut);
@@ -665,7 +726,7 @@ mod tests {
 
         // Set up MessagingClient and run the Accessor FIDL.
         let (_profile_requests, mut messaging_client, _remote, messaging_client_proxy) =
-            test_messaging_client(&mut exec);
+            test_messaging_client(&mut exec, true);
         let watch_req_fut = messaging_client_proxy.watch_accessor();
         let mut watch_req_fut = pin!(watch_req_fut);
 
@@ -700,7 +761,7 @@ mod tests {
 
         // Set up MessagingClient and run the Accessor FIDL.
         let (_profile_requests, mut messaging_client, remote, messaging_client_proxy) =
-            test_messaging_client(&mut exec);
+            test_messaging_client(&mut exec, true);
         let watch_req_fut = messaging_client_proxy.watch_accessor();
         let mut watch_req_fut = pin!(watch_req_fut);
 
@@ -729,7 +790,7 @@ mod tests {
 
         // Set up MessagingClient and run the Accessor FIDL.
         let (_profile_requests, mut messaging_client, mut remote_mas, messaging_client_proxy) =
-            test_messaging_client(&mut exec);
+            test_messaging_client(&mut exec, false);
         let watch_req_fut = messaging_client_proxy.watch_accessor();
         let mut watch_req_fut = pin!(watch_req_fut);
 
@@ -762,15 +823,8 @@ mod tests {
                 .expect_pending("accessor server still running");
 
             // Should have sent OBEX CONNET request to peer.
-            let request_raw =
-                expect_stream_item(&mut exec, &mut remote_mas).expect("should have request");
-            let request = RequestPacket::decode(&request_raw[..]).expect("can decode request");
-            assert_eq!(request.code(), &OpCode::Connect);
-            let _ = send_ok_response(
-                &mut remote_mas,
-                vec![Header::ConnectionId(1.try_into().unwrap())],
-                vec![0x10, 0x00, 0xff, 0xff], // data for connection
-            );
+            verify_and_respond_to_obex_connect_request(&mut exec, &mut remote_mas, true);
+
             exec.run_until_stalled(&mut accessor_fut)
                 .expect_pending("accessor server still running");
             exec.run_until_stalled(&mut request_fut).expect_pending("should not be ready");
@@ -837,8 +891,6 @@ mod tests {
             exec.run_until_stalled(&mut request_fut).expect_pending("should not be ready");
             exec.run_until_stalled(&mut accessor_fut)
                 .expect_pending("accessor server still running");
-
-            // This time, no OBEX CONNECT request to peer's MAS since it is already connected.
 
             // Should have sent OBEX PUT request for registering notification.
             let request_raw = expect_stream_item(&mut exec, &mut remote_mas).expect("request");

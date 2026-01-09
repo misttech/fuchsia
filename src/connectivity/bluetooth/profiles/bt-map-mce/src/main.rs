@@ -4,7 +4,7 @@
 
 #![recursion_limit = "1024"]
 
-use anyhow::{format_err, Context, Error};
+use anyhow::{Context, Error, format_err};
 use fidl_map::MessagingClientRequestStream;
 use fuchsia_bluetooth::profile::ProtocolDescriptor;
 use fuchsia_bluetooth::types::{Channel, PeerId};
@@ -12,7 +12,7 @@ use fuchsia_component::server::ServiceFs;
 use fuchsia_inspect::health::Reporter;
 use futures::channel::mpsc::{self, UnboundedReceiver};
 use futures::stream::FuturesUnordered;
-use futures::{future, pin_mut, StreamExt};
+use futures::{StreamExt, future, pin_mut};
 use log::{error, info, warn};
 use profile_client::{ProfileClient, ProfileEvent};
 use {fidl_fuchsia_bluetooth_bredr as bredr, fidl_fuchsia_bluetooth_map as fidl_map};
@@ -107,10 +107,11 @@ async fn run_messaging_client(
             }
             stream = fidl_stream_receiver.select_next_some() => {
                 if let Err(e) = messaging_client.set_fidl_stream(stream) {
-                    warn!(e:?; "");
+                    warn!(e:?; "Failed to set client connection");
                 }
             }
             accessor_fut = messaging_client.select_next_some() => {
+                info!("Running a new Accessor FIDL server");
                 accessor_service_futs.push(accessor_fut);
             }
             peer_id = accessor_service_futs.select_next_some() => {
@@ -164,6 +165,8 @@ async fn main() -> Result<(), Error> {
         },
     );
     pin_mut!(fidl_fut);
+
+    info!("MAP Messaging Client Equipment running.");
 
     match future::select(mce_fut, fidl_fut).await {
         future::Either::Left((_, _)) => {
