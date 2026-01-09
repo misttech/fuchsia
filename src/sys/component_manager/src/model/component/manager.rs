@@ -153,8 +153,11 @@ impl ComponentManagerInstance {
             let res = async move {
                 let statecontrol_proxy = this.connect_to_statecontrol_admin().await?;
                 statecontrol_proxy
-                    .perform_reboot(&fstatecontrol::RebootOptions {
-                        reasons: Some(vec![fstatecontrol::RebootReason2::CriticalComponentFailure]),
+                    .shutdown(&fstatecontrol::ShutdownOptions {
+                        action: Some(fstatecontrol::ShutdownAction::Reboot),
+                        reasons: Some(vec![
+                            fstatecontrol::ShutdownReason::CriticalComponentFailure,
+                        ]),
                         ..Default::default()
                     })
                     .await?

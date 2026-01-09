@@ -22,7 +22,7 @@ use cm_config::AllowlistEntryBuilder;
 use cm_rust::{ComponentDecl, RegistrationSource, RunnerRegistration};
 use cm_rust_testing::*;
 use errors::{ActionError, ModelError, StartActionError};
-use fidl::endpoints::{create_endpoints, ProtocolMarker, ServerEnd};
+use fidl::endpoints::{ProtocolMarker, ServerEnd, create_endpoints};
 use futures::channel::mpsc;
 use futures::future::pending;
 use futures::join;
@@ -33,9 +33,9 @@ use moniker::{ChildName, Moniker};
 use std::collections::HashSet;
 use std::sync::{Arc, Weak};
 use test_case::test_case;
+use vfs::ToObjectRequest;
 use vfs::directory::entry::OpenRequest;
 use vfs::execution_scope::ExecutionScope;
-use vfs::ToObjectRequest;
 use zx::AsHandleRef;
 use {
     fidl_fuchsia_component as fcomponent, fidl_fuchsia_component_decl as fdecl,
@@ -536,14 +536,21 @@ async fn on_terminate_stop_triggers_reboot() {
         ActionsManager::register(component.clone(), StopAction::new(false)).await.unwrap();
     };
     let recv_reboot = async move {
-        let reasons = match receiver.next().await.unwrap() {
-            fstatecontrol::AdminRequest::PerformReboot {
-                options: fstatecontrol::RebootOptions { reasons: Some(reasons), .. },
+        let options = match receiver.next().await.unwrap() {
+            fstatecontrol::AdminRequest::Shutdown {
+                options:
+                    options @ fstatecontrol::ShutdownOptions {
+                        action: Some(_), reasons: Some(_), ..
+                    },
                 ..
-            } => reasons,
+            } => options,
             _ => panic!("unexpected request"),
         };
-        assert_matches!(&reasons[..], [fstatecontrol::RebootReason2::CriticalComponentFailure]);
+        assert_matches!(&options.action, Some(fstatecontrol::ShutdownAction::Reboot));
+        assert_matches!(
+            options.reasons.as_ref().unwrap().as_slice(),
+            [fstatecontrol::ShutdownReason::CriticalComponentFailure]
+        );
     };
     join!(stop, recv_reboot);
     assert!(test.model.top_instance().has_reboot_task());
@@ -584,14 +591,19 @@ async fn on_terminate_exit_triggers_reboot() {
     let info = ComponentInfo::new(component.clone()).await;
     test.mock_runner.wait_for_url("test:///system").await;
     test.mock_runner.abort_controller(&info.channel_id);
-    let reasons = match receiver.next().await.unwrap() {
-        fstatecontrol::AdminRequest::PerformReboot {
-            options: fstatecontrol::RebootOptions { reasons: Some(reasons), .. },
+    let options = match receiver.next().await.unwrap() {
+        fstatecontrol::AdminRequest::Shutdown {
+            options:
+                options @ fstatecontrol::ShutdownOptions { action: Some(_), reasons: Some(_), .. },
             ..
-        } => reasons,
+        } => options,
         _ => panic!("unexpected request"),
     };
-    assert_matches!(&reasons[..], [fstatecontrol::RebootReason2::CriticalComponentFailure]);
+    assert_matches!(&options.action, Some(fstatecontrol::ShutdownAction::Reboot));
+    assert_matches!(
+        options.reasons.as_ref().unwrap().as_slice(),
+        [fstatecontrol::ShutdownReason::CriticalComponentFailure]
+    );
 
     assert!(test.model.top_instance().has_reboot_task());
 }
@@ -714,7 +726,7 @@ async fn on_terminate_with_failed_reboot_panics() {
     test.mock_runner.wait_for_url("test:///system").await;
     test.mock_runner.abort_controller(&info.channel_id);
     match receiver.next().await.unwrap() {
-        fstatecontrol::AdminRequest::PerformReboot { responder, .. } => {
+        fstatecontrol::AdminRequest::Shutdown { responder, .. } => {
             responder.send(Err(zx::sys::ZX_ERR_INTERNAL)).unwrap();
         }
         _ => panic!("unexpected request"),
