@@ -13,8 +13,8 @@ class _Results {
 }
 
 _Results _inputLatency(Model model) {
-  final latencyValues =
-      getEventToVsyncLatencyValues(model, 'input', 'presentation_on_event');
+  final latencyValues = getEventToVsyncLatencyValues(
+      model, 'input', 'touch-binding-process-report');
   if (latencyValues.isEmpty) {
     // TODO: In the future, we could look into allowing clients to specify
     // whether this case should throw or not.  For the moment, we mirror the

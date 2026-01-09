@@ -6155,7 +6155,7 @@
         {
             "cat": "input",
             "dur": 44.916666666666664,
-            "name": "presentation_on_event",
+            "name": "touch-binding-process-report",
             "ph": "X",
             "pid": 23282,
             "tid": 23284,
@@ -6173,7 +6173,7 @@
         {
             "cat": "input",
             "dur": 12.541666666666666,
-            "name": "presentation_on_event",
+            "name": "touch-binding-process-report",
             "ph": "X",
             "pid": 23282,
             "tid": 23284,
@@ -7260,7 +7260,7 @@
         {
             "cat": "input",
             "dur": 45.20833333333333,
-            "name": "presentation_on_event",
+            "name": "touch-binding-process-report",
             "ph": "X",
             "pid": 23282,
             "tid": 23284,
@@ -7789,7 +7789,7 @@
         {
             "cat": "input",
             "dur": 39.041666666666664,
-            "name": "presentation_on_event",
+            "name": "touch-binding-process-report",
             "ph": "X",
             "pid": 23282,
             "tid": 23284,
@@ -8171,7 +8171,7 @@
         {
             "cat": "input",
             "dur": 46.20833333333333,
-            "name": "presentation_on_event",
+            "name": "touch-binding-process-report",
             "ph": "X",
             "pid": 23282,
             "tid": 23284,
@@ -8827,7 +8827,7 @@
         {
             "cat": "input",
             "dur": 42.45833333333333,
-            "name": "presentation_on_event",
+            "name": "touch-binding-process-report",
             "ph": "X",
             "pid": 23282,
             "tid": 23284,
@@ -9466,7 +9466,7 @@
         {
             "cat": "input",
             "dur": 44.791666666666664,
-            "name": "presentation_on_event",
+            "name": "touch-binding-process-report",
             "ph": "X",
             "pid": 23282,
             "tid": 23284,
@@ -10100,7 +10100,7 @@
         {
             "cat": "input",
             "dur": 48,
-            "name": "presentation_on_event",
+            "name": "touch-binding-process-report",
             "ph": "X",
             "pid": 23282,
             "tid": 23284,
