@@ -8,8 +8,9 @@ use anyhow::{Context, Error};
 use fidl::HandleBased;
 use fidl::endpoints::Proxy;
 use fuchsia_sync::{Mutex as SMutex, RwLock};
-use futures::TryStreamExt;
+use futures::channel::mpsc;
 use futures::lock::Mutex;
+use futures::{StreamExt, TryStreamExt, stream};
 use log::{debug, error, info};
 use std::sync::Arc;
 use {
@@ -58,6 +59,7 @@ pub struct BatteryManager {
     charge_wake_lease: Arc<Mutex<Option<fsystem::LeaseToken>>>,
 
     previous_level: Arc<Mutex<Option<f32>>>,
+    update_sender: mpsc::Sender<(fpower::BatteryInfo, Option<zx::EventPair>)>,
 }
 
 #[inline]
@@ -67,6 +69,11 @@ fn get_current_time() -> i64 {
 
 impl BatteryManager {
     pub fn new_with_logger(logger: HistoryLogger) -> BatteryManager {
+        let watchers_arc = Arc::new(Mutex::new(Vec::new()));
+        // For now the size is arbitrary chosen. Will log error and catch in CQ.
+        let (sender, receiver) = futures::channel::mpsc::channel(10);
+        Self::start_watcher_worker(watchers_arc.clone(), receiver);
+
         BatteryManager {
             battery_info: Arc::new(RwLock::new(fpower::BatteryInfo {
                 status: Some(fpower::BatteryStatus::NotAvailable),
@@ -79,7 +86,7 @@ impl BatteryManager {
                 timestamp: Some(get_current_time()),
                 ..Default::default()
             })),
-            watchers: Arc::new(Mutex::new(Vec::new())),
+            watchers: watchers_arc,
             simulation_state: RwLock::new(false),
             simulated_battery_info: RwLock::new(fpower::BatteryInfo {
                 status: Some(fpower::BatteryStatus::NotAvailable),
@@ -97,7 +104,41 @@ impl BatteryManager {
             info_recorders: BatteryInfoRecorders::new(),
             charge_wake_lease: Arc::new(Mutex::new(None)),
             previous_level: Arc::new(Mutex::new(None)),
+            update_sender: sender,
         }
+    }
+
+    // Global Worker Task (This runs only once)
+    fn start_watcher_worker(
+        watchers_arc: Arc<Mutex<Vec<fpower::BatteryInfoWatcherProxy>>>,
+        mut receiver: mpsc::Receiver<(fpower::BatteryInfo, Option<zx::EventPair>)>,
+    ) {
+        fasync::Task::local(async move {
+            // Processes updates sequentially, guaranteeing order.
+            while let Some((info, wake_lease)) = receiver.next().await {
+                let watchers_to_send = {
+                    let mut watchers_guard = watchers_arc.lock().await;
+                    watchers_guard.retain(|w| !w.is_closed()); // Cleanup of closed channels
+                    watchers_guard.clone() // Clone the cleaned list for concurrent sending
+                };
+
+                stream::iter(watchers_to_send)
+                    .for_each_concurrent(None, |w| {
+                        let info_clone = info.clone();
+                        let wake_lease_dup = BatteryManager::duplicate_wake_lease(&wake_lease);
+
+                        async move {
+                            if let Err(e) =
+                                w.on_change_battery_info(&info_clone.into(), wake_lease_dup).await
+                            {
+                                log::warn!("failed to send battery info to watcher {:?}", e);
+                            }
+                        }
+                    })
+                    .await;
+            }
+        })
+        .detach();
     }
 
     // Adds watcher
@@ -119,28 +160,15 @@ impl BatteryManager {
         }
     }
 
-    pub fn run_watchers(
-        watchers: Arc<Mutex<Vec<fpower::BatteryInfoWatcherProxy>>>,
+    pub fn common_update_watchers(
+        &self,
         info: fpower::BatteryInfo,
         wake_lease: Option<zx::EventPair>,
     ) {
-        debug!("::manager:: run watchers...");
-        fasync::Task::spawn(async move {
-            let watchers = {
-                let mut watchers = watchers.lock().await;
-                watchers.retain(|w| !w.is_closed());
-                watchers.clone()
-            };
-            debug!("::manager:: run watchers [{:?}]", &watchers.len());
-            for w in &watchers {
-                let wake_lease_dup = Self::duplicate_wake_lease(&wake_lease);
-                if let Err(e) = w.on_change_battery_info(&info.clone().into(), wake_lease_dup).await
-                {
-                    error!("failed to send battery info to watcher {:?}", e);
-                }
-            }
-        })
-        .detach()
+        debug!("::manager:: update watchers...");
+        if let Err(e) = self.update_sender.clone().try_send((info, wake_lease)) {
+            log::error!("Failed to send watcher update: {:?}", e);
+        }
     }
 
     async fn determine_suspend_status(
@@ -237,8 +265,7 @@ impl BatteryManager {
 
     fn update_watchers(&self, wake_lease: Option<zx::EventPair>) {
         let info = self.get_battery_info_copy();
-        let watchers = self.watchers.clone();
-        BatteryManager::run_watchers(watchers, info, wake_lease);
+        self.common_update_watchers(info, wake_lease);
     }
 
     pub fn is_simulating(&self) -> bool {
@@ -396,7 +423,7 @@ mod tests {
             create_request_stream::<fpower::BatteryInfoWatcherMarker>();
         let watcher = watcher_client_end.into_proxy();
 
-        let watchers = Arc::new(Mutex::new(vec![watcher]));
+        battery_manager.add_watcher(watcher.clone()).await;
 
         // Create a zx::EventPair for the test
         let (tx, rx) = zx::EventPair::create();
@@ -428,8 +455,8 @@ mod tests {
             };
         };
         let request_fut = async move {
-            info!("Running watchers");
-            BatteryManager::run_watchers(watchers, battery_info, wake_lease);
+            info!("Updating watchers");
+            battery_manager.common_update_watchers(battery_info, wake_lease);
         };
 
         join(serve_fut, request_fut).await;
@@ -450,7 +477,8 @@ mod tests {
             create_request_stream::<fpower::BatteryInfoWatcherMarker>();
         let watcher2 = watcher2_client_end.into_proxy();
 
-        let watchers = Arc::new(Mutex::new(vec![watcher1, watcher2]));
+        battery_manager.add_watcher(watcher1).await;
+        battery_manager.add_watcher(watcher2).await;
 
         let serve1_fut = async move {
             // first request should match first change notification sent
@@ -508,9 +536,9 @@ mod tests {
         };
 
         let request_fut = async move {
-            BatteryManager::run_watchers(watchers.clone(), battery_info.clone(), None);
+            battery_manager.common_update_watchers(battery_info.clone(), None);
             battery_info.level_percent = Some(60.0);
-            BatteryManager::run_watchers(watchers, battery_info, None);
+            battery_manager.common_update_watchers(battery_info, None);
         };
 
         join3(serve1_fut, serve2_fut, request_fut).await;
