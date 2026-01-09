@@ -117,6 +117,12 @@ impl LocalExecutor {
         }
         let _drop_main_task = DropMainTask(&self.ehandle);
 
+        // Ensure that this object is available for zxdb to find in this stack frame (even if it is
+        // inlined). With certain optimization settings, `self` might get optimized such that there
+        // is insufficient metadata for the debugger to recover this symbol, which it needs in
+        // order to walk the async task tree.
+        std::hint::black_box(&self);
+
         self.ehandle.inner().worker_lifecycle::<UNTIL_STALLED>();
 
         // SAFETY: We spawned the task earlier, so `R` (the return type) will be the correct type
