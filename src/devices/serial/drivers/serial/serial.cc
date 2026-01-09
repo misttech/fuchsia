@@ -4,6 +4,7 @@
 
 #include "serial.h"
 
+#include <fidl/fuchsia.hardware.power/cpp/fidl.h>
 #include <lib/driver/component/cpp/driver_export.h>
 #include <lib/driver/component/cpp/node_add_args.h>
 #include <zircon/status.h>
@@ -14,6 +15,8 @@
 #include <bind/fuchsia/cpp/bind.h>
 #include <bind/fuchsia/serial/cpp/bind.h>
 #include <fbl/alloc_checker.h>
+
+#include "src/devices/serial/drivers/serial/serial_config.h"
 
 namespace serial {
 
@@ -136,6 +139,11 @@ zx_status_t SerialDevice::Enable(bool enable) {
 }
 
 void SerialDevice::ResetSerialImplConnectionAndThen(fit::closure completer) {
+  if (!serial_.is_valid()) {
+    completer();
+    return;
+  }
+
   fdf::Arena arena('SERI');
   serial_.buffer(arena)->CancelAll().Then([&serial = serial_, arena = std::move(arena),
                                            completer = std::move(completer)](auto&) mutable {
@@ -150,6 +158,19 @@ void SerialDevice::ResetSerialImplConnectionAndThen(fit::closure completer) {
 }
 
 zx_status_t SerialDevice::Bind(fidl::ServerEnd<fuchsia_hardware_serial::Device> server) {
+  if (!serial_.is_valid()) {
+    // Use the first Zircon transport connection attempt as a signal that our client wants to use it
+    // instead of driver transport. We can keep the connection with our parent open once the client
+    // has indicated this.
+    zx::result serial_client = incoming()->Connect<fuchsia_hardware_serialimpl::Service::Device>();
+    if (serial_client.is_error()) {
+      FDF_LOG(ERROR, "Failed to get FIDL serial client: %s", serial_client.status_string());
+      return serial_client.error_value();
+    }
+
+    serial_.Bind(*std::move(serial_client), fdf::Dispatcher::GetCurrent()->get());
+  }
+
   if (binding_.has_value()) {
     FDF_LOG(WARNING, "SerialDevice::Bind - already bound!");
     return ZX_ERR_ALREADY_BOUND;
@@ -185,14 +206,6 @@ void SerialDevice::PrepareStop(fdf::PrepareStopCompleter completer) {
 zx::result<> SerialDevice::Start() {
   FDF_LOG(TRACE, "SerialDevice::Start");
 
-  zx::result serial_client = incoming()->Connect<fuchsia_hardware_serialimpl::Service::Device>();
-  if (serial_client.is_error()) {
-    FDF_LOG(ERROR, "Failed to get FIDL serial client: %s", serial_client.status_string());
-    return serial_client.take_error();
-  }
-
-  serial_.Bind(*std::move(serial_client), fdf::Dispatcher::GetCurrent()->get());
-
   if (zx_status_t status = Init(); status != ZX_OK) {
     return zx::error(status);
   }
@@ -206,9 +219,17 @@ zx::result<> SerialDevice::Start() {
 }
 
 zx_status_t SerialDevice::Init() {
+  zx::result serial_client = incoming()->Connect<fuchsia_hardware_serialimpl::Service::Device>();
+  if (serial_client.is_error()) {
+    FDF_LOG(ERROR, "Failed to get FIDL serial client: %s", serial_client.status_string());
+    return serial_client.error_value();
+  }
+
+  fdf::WireSyncClient client(*std::move(serial_client));
+
   zx_status_t status = ZX_OK;
   fdf::Arena arena('SERI');
-  if (auto result = serial_.sync().buffer(arena)->GetInfo(); !result.ok()) {
+  if (auto result = client.buffer(arena)->GetInfo(); !result.ok()) {
     status = result.status();
   } else if (result->is_error()) {
     status = result->error_value();
@@ -225,23 +246,86 @@ zx_status_t SerialDevice::Init() {
 }
 
 zx_status_t SerialDevice::Bind() {
-  fuchsia_hardware_serial::Service::InstanceHandler handler({
-      .device =
-          [this](fidl::ServerEnd<fuchsia_hardware_serial::Device> server) {
-            Bind(std::move(server));
-          },
-  });
-  zx::result<> result =
-      outgoing()->AddService<fuchsia_hardware_serial::Service>(std::move(handler));
-  if (result.is_error()) {
-    FDF_LOG(ERROR, "Failed to add service to the outgoing directory: %s", result.status_string());
+  {
+    fuchsia_hardware_serial::Service::InstanceHandler handler({
+        .device =
+            [this](fidl::ServerEnd<fuchsia_hardware_serial::Device> server) {
+              Bind(std::move(server));
+            },
+    });
+    zx::result<> result =
+        outgoing()->AddService<fuchsia_hardware_serial::Service>(std::move(handler));
+    if (result.is_error()) {
+      FDF_LOG(ERROR, "Failed to add service to the outgoing directory: %s", result.status_string());
+      return result.error_value();
+    }
+  }
+
+  {
+    // Forward driver transport connection attempts to the parent.
+    fuchsia_hardware_serialimpl::Service::InstanceHandler handler({
+        .device =
+            [this](fdf::ServerEnd<fuchsia_hardware_serialimpl::Device> server) {
+              zx::result<> result =
+                  incoming()->Connect<fuchsia_hardware_serialimpl::Service::Device>(
+                      std::move(server));
+              if (result.is_error()) {
+                FDF_LOG(WARNING, "Failed to connect to serialimpl service: %s",
+                        result.status_string());
+              }
+            },
+    });
+    if (zx::result<> result =
+            outgoing()->AddService<fuchsia_hardware_serialimpl::Service>(std::move(handler));
+        result.is_error()) {
+      FDF_LOG(ERROR, "Failed to add service: %s", result.status_string());
+      return result.error_value();
+    }
+  }
+
+  std::vector<fuchsia_driver_framework::Offer> offers{
+      fdf::MakeOffer2<fuchsia_hardware_serial::Service>(),
+      fdf::MakeOffer2<fuchsia_hardware_serialimpl::Service>(),
+  };
+
+  if (take_config<serial_config::Config>().enable_suspend()) {
+    // Forward PowerTokenProvider to the parent if suspend is enabled.
+    fuchsia_hardware_power::PowerTokenService::InstanceHandler handler({
+        .token_provider =
+            [this](fidl::ServerEnd<fuchsia_hardware_power::PowerTokenProvider> server) {
+              zx::result<> result =
+                  incoming()->Connect<fuchsia_hardware_power::PowerTokenService::TokenProvider>(
+                      std::move(server));
+              if (result.is_error()) {
+                FDF_LOG(WARNING, "Failed to connect to power token service: %s",
+                        result.status_string());
+              }
+            },
+    });
+    if (zx::result<> result =
+            outgoing()->AddService<fuchsia_hardware_power::PowerTokenService>(std::move(handler));
+        result.is_error()) {
+      FDF_LOG(ERROR, "Failed to add power token service: %s", result.status_string());
+      return result.error_value();
+    }
+
+    offers.push_back(fdf::MakeOffer2<fuchsia_hardware_power::PowerTokenService>());
+  }
+
+  // Forward MAC address metadata if it exists.
+  if (zx::result<bool> result =
+          mac_address_metadata_server_.ForwardAndServe(*outgoing(), dispatcher(), incoming());
+      result.is_error()) {
+    FDF_LOG(ERROR, "Failed to forward metadata: %s", result.status_string());
     return result.error_value();
   }
 
   FDF_LOG(TRACE, "SerialDevice added service to the outgoing directory");
 
-  std::vector<fuchsia_driver_framework::Offer> offers{
-      fdf::MakeOffer2<fuchsia_hardware_serial::Service>()};
+  const std::optional mac_address_offer = mac_address_metadata_server_.CreateOffer();
+  if (mac_address_offer.has_value()) {
+    offers.push_back(mac_address_offer.value());
+  }
 
   std::vector<fuchsia_driver_framework::NodeProperty2> props{
       fdf::MakeProperty2(bind_fuchsia::PROTOCOL, bind_fuchsia_serial::BIND_PROTOCOL_DEVICE),

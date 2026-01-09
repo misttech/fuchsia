@@ -12,6 +12,8 @@
 #include <sdk/lib/driver/testing/cpp/driver_runtime.h>
 #include <src/lib/testing/predicates/status.h>
 
+#include "src/devices/serial/drivers/serial/serial_config.h"
+
 namespace {
 
 constexpr size_t kBufferLength = 16;
@@ -149,10 +151,19 @@ class SerialTest : public ::testing::Test {
 };
 
 TEST_F(SerialTest, Lifetime) {
-  EXPECT_TRUE(driver_test().StartDriver().is_ok());
+  EXPECT_TRUE(driver_test()
+                  .StartDriverWithCustomStartArgs([](fdf::DriverStartArgs& args) {
+                    serial_config::Config config{{.enable_suspend = true}};
+                    args.config(config.ToVmo());
+                  })
+                  .is_ok());
 
-  // Manually set enabled to true.
-  serial_impl([](FakeSerialImpl& serial_impl) { serial_impl.set_enabled(true); });
+  zx::result client_end = driver_test().Connect<fuchsia_hardware_serial::Service::Device>();
+  EXPECT_TRUE(client_end.is_ok());
+
+  driver_test().runtime().RunUntilIdle();
+
+  EXPECT_TRUE(serial_impl([](FakeSerialImpl& serial_impl) { return serial_impl.enabled(); }));
 
   EXPECT_TRUE(driver_test().StopDriver().is_ok());
 
@@ -160,7 +171,12 @@ TEST_F(SerialTest, Lifetime) {
 }
 
 TEST_F(SerialTest, Read) {
-  EXPECT_TRUE(driver_test().StartDriver().is_ok());
+  EXPECT_TRUE(driver_test()
+                  .StartDriverWithCustomStartArgs([](fdf::DriverStartArgs& args) {
+                    serial_config::Config config{{.enable_suspend = true}};
+                    args.config(config.ToVmo());
+                  })
+                  .is_ok());
 
   zx::result client_end = driver_test().Connect<fuchsia_hardware_serial::Service::Device>();
   EXPECT_TRUE(client_end.is_ok());
@@ -191,7 +207,12 @@ TEST_F(SerialTest, Read) {
 }
 
 TEST_F(SerialTest, Write) {
-  EXPECT_TRUE(driver_test().StartDriver().is_ok());
+  EXPECT_TRUE(driver_test()
+                  .StartDriverWithCustomStartArgs([](fdf::DriverStartArgs& args) {
+                    serial_config::Config config{{.enable_suspend = true}};
+                    args.config(config.ToVmo());
+                  })
+                  .is_ok());
   zx::result client_end = driver_test().Connect<fuchsia_hardware_serial::Service::Device>();
   EXPECT_TRUE(client_end.is_ok());
   fidl::WireClient client(*std::move(client_end),

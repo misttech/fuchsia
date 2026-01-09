@@ -42,6 +42,7 @@ test("serialutil-test-bin") {
     "//sdk/lib/driver/compat/cpp",
     "//sdk/lib/driver/testing/cpp",
     "//sdk/lib/fit",
+    "//src/devices/serial/drivers/serial:serial_config",
     "//src/lib/fxl/test:gtest_main",
     "//src/lib/testing/predicates",
   ]

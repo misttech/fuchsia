@@ -17,6 +17,8 @@
 #include <zircon/assert.h>
 #include <zircon/status.h>
 
+#include <bind/fuchsia/hardware/serial/cpp/bind.h>
+
 namespace bt_transport_uart {
 namespace fhbt = fuchsia_hardware_bluetooth;
 
@@ -150,8 +152,11 @@ zx::result<> BtTransportUart::Start() {
       mac_address_metadata_server_.MakeOffer(),
   };
 
-  // Properties are automatically added for each offer, no need to specify any.
-  std::array<fuchsia_driver_framework::NodeProperty, 0> properties{};
+  auto properties = std::to_array({
+      // Prevent the serial core driver from binding to our node.
+      fdf::MakeProperty(bind_fuchsia_hardware_serial::SERVICE,
+                        bind_fuchsia_hardware_serial::SERVICE_ZIRCONTRANSPORT),
+  });
 
   // Add bt-transport-uart child node.
   zx::result child = AddChild("bt-transport-uart", properties, offers);

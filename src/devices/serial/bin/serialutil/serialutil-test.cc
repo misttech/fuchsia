@@ -19,6 +19,7 @@
 #include <src/lib/testing/predicates/status.h>
 
 #include "serial.h"
+#include "src/devices/serial/drivers/serial/serial_config.h"
 
 namespace {
 
@@ -117,7 +118,14 @@ class FixtureConfig final {
 // program and accessing the backing driver.
 class SerialTest : public ::testing::Test {
  public:
-  void SetUp() override { EXPECT_OK(driver_test_.StartDriver()); }
+  void SetUp() override {
+    EXPECT_TRUE(driver_test_
+                    .StartDriverWithCustomStartArgs([](fdf::DriverStartArgs& args) {
+                      serial_config::Config config{{.enable_suspend = true}};
+                      args.config(config.ToVmo());
+                    })
+                    .is_ok());
+  }
   void TearDown() override { EXPECT_OK(driver_test_.StopDriver()); }
 
   // Provides access to the `FakeSerialImpl` driver instance that has been loaded in the test

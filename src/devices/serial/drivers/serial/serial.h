@@ -5,10 +5,12 @@
 #ifndef SRC_DEVICES_SERIAL_DRIVERS_SERIAL_SERIAL_H_
 #define SRC_DEVICES_SERIAL_DRIVERS_SERIAL_SERIAL_H_
 
+#include <fidl/fuchsia.boot.metadata/cpp/fidl.h>
 #include <fidl/fuchsia.hardware.serial/cpp/wire.h>
 #include <fidl/fuchsia.hardware.serialimpl/cpp/driver/wire.h>
 #include <lib/driver/component/cpp/driver_base.h>
 #include <lib/driver/devfs/cpp/connector.h>
+#include <lib/driver/metadata/cpp/metadata_server.h>
 #include <zircon/types.h>
 
 namespace serial {
@@ -52,6 +54,9 @@ class SerialDevice : public fdf::DriverBase,
 
   fidl::ServerBindingGroup<fuchsia_hardware_serial::DeviceProxy> proxy_bindings_;
   std::optional<fidl::ServerBinding<fuchsia_hardware_serial::Device>> binding_;
+
+  fdf_metadata::MetadataServer<fuchsia_boot_metadata::MacAddressMetadata>
+      mac_address_metadata_server_;
 };
 
 }  // namespace serial
