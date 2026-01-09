@@ -43,7 +43,7 @@ std::istream& operator>>(std::istream& is, const std::string& value) {
   }
 
   // Required to set eofbit as appropriate.
-  is.peek();
+  std::ignore = is.peek();
 
   return is;
 }
