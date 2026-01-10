@@ -47,6 +47,7 @@ zx::result<> WipeBlockPartition(const paver::BlockDevices& devices,
                                 std::optional<uuid::Uuid> unique_guid,
                                 std::optional<uuid::Uuid> type_guid);
 
+zx::result<std::string> GetBoardName(fidl::UnownedClientEnd<fuchsia_io::Directory> svc_root);
 zx::result<> IsBoard(fidl::UnownedClientEnd<fuchsia_io::Directory> svc_root,
                      std::string_view board_name);
 

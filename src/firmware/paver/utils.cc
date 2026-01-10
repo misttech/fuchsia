@@ -152,8 +152,7 @@ zx::result<> WipeBlockPartition(const paver::BlockDevices& devices, std::optiona
   return zx::ok();
 }
 
-zx::result<> IsBoard(fidl::UnownedClientEnd<fuchsia_io::Directory> svc_root,
-                     std::string_view board_name) {
+zx::result<std::string> GetBoardName(fidl::UnownedClientEnd<fuchsia_io::Directory> svc_root) {
   zx::result status =
       component::ConnectAt<fuchsia_sysinfo::SysInfo>(svc_root, "fuchsia.sysinfo.SysInfo");
   if (status.is_error()) {
@@ -167,9 +166,21 @@ zx::result<> IsBoard(fidl::UnownedClientEnd<fuchsia_io::Directory> svc_root,
   if (zx_status_t status = response.status; status != ZX_OK) {
     return zx::error(status);
   }
-  if (response.name.get() == board_name) {
+
+  return zx::ok(std::string(response.name.data(), response.name.size()));
+}
+
+zx::result<> IsBoard(fidl::UnownedClientEnd<fuchsia_io::Directory> svc_root,
+                     std::string_view board_name) {
+  zx::result<std::string> result = GetBoardName(svc_root);
+  if (result.is_error()) {
+    return result.take_error();
+  }
+
+  if (result.value() == board_name) {
     return zx::ok();
   }
+
   return zx::error(ZX_ERR_NOT_SUPPORTED);
 }
 
