@@ -237,6 +237,8 @@ class DriverRunner : public fidl::WireServer<fuchsia_driver_framework::Composite
                           fidl::ServerEnd<fuchsia_power_broker::Lessor> lessor,
                           fit::callback<void(zx::result<bool>)> cb) override;
 
+  void OnBootupComplete();
+
   uint64_t next_driver_host_id_ = 0;
   fidl::WireClient<fuchsia_driver_index::DriverIndex> driver_index_;
   LoaderServiceFactory loader_service_factory_;

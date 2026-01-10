@@ -38,6 +38,10 @@ class BootupTracker {
   // Used to mark boot-up as done for testing purposes only.
   void BootupDoneForTesting();
 
+  // Returns whether boot-up is currently complete. Use `WaitForBootup` instead
+  // of polling this value if you are watching for boot completion.
+  bool BootupComplete() const;
+
  protected:
   // Exposed for testing.
   virtual void ResetBootupTimer();

@@ -33,7 +33,6 @@
 namespace fdf {
 
 using namespace fuchsia_driver_framework;
-
 }
 namespace fdh = fuchsia_driver_host;
 namespace fdd = fuchsia_driver_development;
@@ -561,6 +560,7 @@ zx::result<> DriverRunner::StartRootDriver(std::string_view url) {
                                        ? fdf::DriverPackageType::kBoot
                                        : fdf::DriverPackageType::kBase;
   bootup_tracker_->Start();
+  WaitForBootup([this]() { this->OnBootupComplete(); });
   return StartDriver(*root_node_, url, package);
 }
 
@@ -627,6 +627,12 @@ void DriverRunner::BindToUrl(Node& node, std::string_view driver_url_suffix,
 
 void DriverRunner::AddLeaseControlChannel(
     fidl::ClientEnd<fuchsia_power_broker::LeaseControl> lease) {
+  // We only hold leases for drivers added before we consider boot-up complete.
+  // After boot-up is complete, just drop the lease immediately.
+  if (bootup_tracker_->BootupComplete()) {
+    return;
+  }
+
   leases_.push_back(std::move(lease));
 }
 
@@ -856,6 +862,8 @@ void DriverRunner::CreatePowerElement(std::string_view name,
         cb(zx::ok(true));
       });
 }
+
+void DriverRunner::OnBootupComplete() { leases_.clear(); }
 
 void DriverRunner::RequestMatchFromDriverIndex(
     fuchsia_driver_index::wire::MatchDriverArgs args,

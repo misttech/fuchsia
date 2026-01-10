@@ -57,6 +57,8 @@ void BootupTracker::BootupDoneForTesting() {
   bootup_done_ = true;
 }
 
+bool BootupTracker::BootupComplete() const { return bootup_done_; }
+
 void BootupTracker::CheckBootupDone() {
   if (IsUpdateDeadlineExceeded()) {
     fdf_log::warn("Deadline exceeded in the bootup tracker with:");
