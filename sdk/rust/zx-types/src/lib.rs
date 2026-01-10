@@ -2198,6 +2198,7 @@ struct_decl_macro! {
         pub cpu_number: u32,
         pub flags: u32,
         pub idle_time: zx_duration_t,
+        pub normalized_busy_time: zx_duration_t,
         pub reschedules: u64,
         pub context_switches: u64,
         pub irq_preempts: u64,
@@ -2211,6 +2212,8 @@ struct_decl_macro! {
         pub syscalls: u64,
         pub reschedule_ipis: u64,
         pub generic_ipis: u64,
+        pub active_energy_consumption_nj: u64,
+        pub idle_energy_consumption_nj: u64,
     }
 }
 

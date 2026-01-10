@@ -274,6 +274,9 @@ class ZxInfoCpuStats : public Class<zx_info_cpu_stats_t> {
   static uint32_t cpu_number(const zx_info_cpu_stats_t* from) { return from->cpu_number; }
   static uint32_t flags(const zx_info_cpu_stats_t* from) { return from->flags; }
   static zx_duration_t idle_time(const zx_info_cpu_stats_t* from) { return from->idle_time; }
+  static zx_duration_t normalized_busy_time(const zx_info_cpu_stats_t* from) {
+    return from->normalized_busy_time;
+  }
   static uint64_t reschedules(const zx_info_cpu_stats_t* from) { return from->reschedules; }
   static uint64_t context_switches(const zx_info_cpu_stats_t* from) {
     return from->context_switches;
@@ -287,6 +290,12 @@ class ZxInfoCpuStats : public Class<zx_info_cpu_stats_t> {
   static uint64_t syscalls(const zx_info_cpu_stats_t* from) { return from->syscalls; }
   static uint64_t reschedule_ipis(const zx_info_cpu_stats_t* from) { return from->reschedule_ipis; }
   static uint64_t generic_ipis(const zx_info_cpu_stats_t* from) { return from->generic_ipis; }
+  static uint64_t active_energy_consumption_nj(const zx_info_cpu_stats_t* from) {
+    return from->active_energy_consumption_nj;
+  }
+  static uint64_t idle_energy_consumption_nj(const zx_info_cpu_stats_t* from) {
+    return from->idle_energy_consumption_nj;
+  }
 
  private:
   ZxInfoCpuStats() : Class("zx_info_cpu_stats_t") {
@@ -296,6 +305,8 @@ class ZxInfoCpuStats : public Class<zx_info_cpu_stats_t> {
         "flags", SyscallType::kUint32, flags));
     AddField(std::make_unique<ClassField<zx_info_cpu_stats_t, zx_duration_t>>(
         "idle_time", SyscallType::kDuration, idle_time));
+    AddField(std::make_unique<ClassField<zx_info_cpu_stats_t, zx_duration_t>>(
+        "normalized_busy_time", SyscallType::kDuration, normalized_busy_time));
     AddField(std::make_unique<ClassField<zx_info_cpu_stats_t, uint64_t>>(
         "reschedules", SyscallType::kUint64, reschedules));
     AddField(std::make_unique<ClassField<zx_info_cpu_stats_t, uint64_t>>(
@@ -318,6 +329,10 @@ class ZxInfoCpuStats : public Class<zx_info_cpu_stats_t> {
         "reschedule_ipis", SyscallType::kUint64, reschedule_ipis));
     AddField(std::make_unique<ClassField<zx_info_cpu_stats_t, uint64_t>>(
         "generic_ipis", SyscallType::kUint64, generic_ipis));
+    AddField(std::make_unique<ClassField<zx_info_cpu_stats_t, uint64_t>>(
+        "active_energy_consumption_nj", SyscallType::kUint64, active_energy_consumption_nj));
+    AddField(std::make_unique<ClassField<zx_info_cpu_stats_t, uint64_t>>(
+        "idle_energy_consumption_nj", SyscallType::kUint64, idle_energy_consumption_nj));
   }
   ZxInfoCpuStats(const ZxInfoCpuStats&) = delete;
   ZxInfoCpuStats& operator=(const ZxInfoCpuStats&) = delete;

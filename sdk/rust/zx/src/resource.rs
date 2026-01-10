@@ -157,6 +157,7 @@ impl From<sys::zx_info_cpu_stats_t> for PerCpuStats {
             cpu_number,
             flags,
             idle_time,
+            normalized_busy_time,
             reschedules,
             context_switches,
             irq_preempts,
@@ -170,11 +171,14 @@ impl From<sys::zx_info_cpu_stats_t> for PerCpuStats {
             syscalls,
             reschedule_ipis,
             generic_ipis,
+            active_energy_consumption_nj,
+            idle_energy_consumption_nj,
         } = info;
         PerCpuStats {
             cpu_number,
             flags,
             idle_time,
+            normalized_busy_time,
             reschedules,
             context_switches,
             irq_preempts,
@@ -188,6 +192,8 @@ impl From<sys::zx_info_cpu_stats_t> for PerCpuStats {
             syscalls,
             reschedule_ipis,
             generic_ipis,
+            active_energy_consumption_nj,
+            idle_energy_consumption_nj,
         }
     }
 }

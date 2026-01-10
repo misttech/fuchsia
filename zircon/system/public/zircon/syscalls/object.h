@@ -829,6 +829,7 @@ typedef struct zx_info_cpu_stats {
     uint32_t flags;
 
     zx_duration_mono_t idle_time;
+    zx_duration_mono_t normalized_busy_time;
 
     // kernel scheduler counters
     uint64_t reschedules;
@@ -848,6 +849,10 @@ typedef struct zx_info_cpu_stats {
     // inter-processor interrupts
     uint64_t reschedule_ipis;
     uint64_t generic_ipis;
+
+    // estimated cpu energy consumption
+    uint64_t active_energy_consumption_nj;
+    uint64_t idle_energy_consumption_nj;
 } zx_info_cpu_stats_t;
 
 // Information about memory usage as seen by the kernel.

@@ -1140,6 +1140,7 @@ OBJECT_GET_INFO_THREAD_STATS_DISPLAY_TEST(
 
 #define OBJECT_GET_INFO_CPU_STATS_DISPLAY_TEST_CONTENT(result, expected)                   \
   constexpr zx_duration_t kIdleTime = ZX_SEC(50) + 567;                                    \
+  constexpr zx_duration_t kNormalizedBusyTime = ZX_SEC(10) + 1;                            \
   constexpr uint64_t kReschedules = 321;                                                   \
   constexpr uint64_t kContextSwitches = 130;                                               \
   constexpr uint64_t kIrqPreempts = 10;                                                    \
@@ -1151,10 +1152,13 @@ OBJECT_GET_INFO_THREAD_STATS_DISPLAY_TEST(
   constexpr uint64_t kSyscalls = 15;                                                       \
   constexpr uint64_t kRecheduleIpis = 2;                                                   \
   constexpr uint64_t kGenericIpis = 1;                                                     \
+  constexpr uint64_t kActiveEnergyConsumption = 100;                                       \
+  constexpr uint64_t kIdleEnergyConsumption = 200;                                         \
   zx_info_cpu_stats_t buffer;                                                              \
   buffer.cpu_number = 1;                                                                   \
   buffer.flags = 0;                                                                        \
   buffer.idle_time = kIdleTime;                                                            \
+  buffer.normalized_busy_time = kNormalizedBusyTime;                                       \
   buffer.reschedules = kReschedules;                                                       \
   buffer.context_switches = kContextSwitches;                                              \
   buffer.irq_preempts = kIrqPreempts;                                                      \
@@ -1166,6 +1170,8 @@ OBJECT_GET_INFO_THREAD_STATS_DISPLAY_TEST(
   buffer.syscalls = kSyscalls;                                                             \
   buffer.reschedule_ipis = kRecheduleIpis;                                                 \
   buffer.generic_ipis = kGenericIpis;                                                      \
+  buffer.active_energy_consumption_nj = kActiveEnergyConsumption;                          \
+  buffer.idle_energy_consumption_nj = kIdleEnergyConsumption;                              \
   auto value =                                                                             \
       ZxObjectGetInfo(result, #result, kHandle, ZX_INFO_CPU_STATS,                         \
                       reinterpret_cast<void*>(&buffer), sizeof(buffer), nullptr, nullptr); \
@@ -1187,13 +1193,14 @@ OBJECT_GET_INFO_CPU_STATS_DISPLAY_TEST(
     "zx_object_get_info("
     "handle: \x1B[32mhandle\x1B[0m = \x1B[31mcefa1db0\x1B[0m, "
     "topic: \x1B[32mzx.object_info_topic\x1B[0m = \x1B[34mZX_INFO_CPU_STATS\x1B[0m, "
-    "buffer_size: \x1B[32msize\x1B[0m = \x1B[34m120\x1B[0m)\n"
+    "buffer_size: \x1B[32msize\x1B[0m = \x1B[34m144\x1B[0m)\n"
     "\x1B[32m0.000000\x1B[0m "
     "  -> \x1B[32mZX_OK\x1B[0m\n"
     "    info: \x1B[32mzx_info_cpu_stats_t\x1B[0m = {\n"
     "      cpu_number: \x1B[32muint32\x1B[0m = \x1B[34m1\x1B[0m\n"
     "      flags: \x1B[32muint32\x1B[0m = \x1B[34m0\x1B[0m\n"
     "      idle_time: \x1B[32mzx.duration\x1B[0m = \x1B[34m50 seconds and 567 nano seconds\x1B[0m\n"
+    "      normalized_busy_time: \x1B[32mzx.duration\x1B[0m = \x1B[34m10 seconds and 1 nano seconds\x1B[0m\n"
     "      reschedules: \x1B[32muint64\x1B[0m = \x1B[34m321\x1B[0m\n"
     "      context_switches: \x1B[32muint64\x1B[0m = \x1B[34m130\x1B[0m\n"
     "      irq_preempts: \x1B[32muint64\x1B[0m = \x1B[34m10\x1B[0m\n"
@@ -1205,6 +1212,8 @@ OBJECT_GET_INFO_CPU_STATS_DISPLAY_TEST(
     "      syscalls: \x1B[32muint64\x1B[0m = \x1B[34m15\x1B[0m\n"
     "      reschedule_ipis: \x1B[32muint64\x1B[0m = \x1B[34m2\x1B[0m\n"
     "      generic_ipis: \x1B[32muint64\x1B[0m = \x1B[34m1\x1B[0m\n"
+    "      active_energy_consumption_nj: \x1B[32muint64\x1B[0m = \x1B[34m100\x1B[0m\n"
+    "      idle_energy_consumption_nj: \x1B[32muint64\x1B[0m = \x1B[34m200\x1B[0m\n"
     "    }\n")
 
 #define OBJECT_GET_INFO_VMAR_DISPLAY_TEST_CONTENT(result, expected)                             \
