@@ -6,6 +6,29 @@ import("//build/components.gni")
 import("//build/rust/rustc_test.gni")
 import("//src/starnix/tests/starnix_test_subpackages.gni")
 
+rustc_test("iptables_test_bin") {
+  edition = "2024"
+  sources = [ "src/lib.rs" ]
+  output_name = "iptables_test"
+  deps = [
+    "//sdk/fidl/fuchsia.component:fuchsia.component_rust",
+    "//sdk/fidl/fuchsia.component.decl:fuchsia.component.decl_rust",
+    "//sdk/fidl/fuchsia.net:fuchsia.net_rust",
+    "//sdk/fidl/fuchsia.process:fuchsia.process_rust",
+    "//sdk/rust/zx",
+    "//src/lib/fuchsia",
+    "//src/lib/fuchsia-component-test",
+    "//src/lib/fuchsia-runtime",
+    "//src/lib/network/fidl_fuchsia_net_filter_ext",
+    "//src/lib/network/fidl_fuchsia_net_matchers_ext",
+    "//src/sys/lib/component-events",
+    "//third_party/rust_crates:libc",
+    "//third_party/rust_crates:log",
+    "//third_party/rust_crates:test-case",
+  ]
+  configs += [ "//build/config/rust/lints:deny_unused_results" ]
+}
+
 resource("iptables_binary") {
   sources = [ "//prebuilt/third_party/3pp/iptables/linux-${current_cpu}/bin/xtables-legacy-multi" ]
   outputs = "data/{{source_file_part}}"
@@ -26,7 +49,7 @@ fuchsia_test_component("ip6tables_restore") {
 fuchsia_test_component("iptables_test") {
   manifest = "meta/iptables_test.cml"
   test_type = "starnix"
-  deps = [ "//src/connectivity/network/tests/iptables:iptables_test" ]
+  deps = [ ":iptables_test_bin" ]
 }
 
 fuchsia_test_component("realm") {
