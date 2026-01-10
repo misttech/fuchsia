@@ -41,4 +41,5 @@ ffx_plugin("ffx_net") {
 
   args_sources = [ "src/args.rs" ]
   sources = [ "src/lib.rs" ]
+  configs = [ "//build/config/rust/lints:deny_unused_results" ]
 }

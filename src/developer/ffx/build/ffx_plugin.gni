@@ -118,6 +118,11 @@ template("ffx_plugin") {
       "args_with_unit_tests",
     ]
 
+    _extra_configs = []
+    if (defined(invoker.configs)) {
+      _extra_configs = invoker.configs
+    }
+
     # Ensure all FIDL dependencies meet the compatibility and stability
     # requirements.
     # Each target below must use these two variables for this to work.
@@ -209,6 +214,7 @@ template("ffx_plugin") {
         # them to the larger RBE workers.
         _concurrent_jobs = concurrent_jobs.rust_highmem
         configs += _concurrent_jobs.configs
+        configs += _extra_configs
         forward_variables_from(_concurrent_jobs.vars, "*")
       }
 
@@ -285,6 +291,7 @@ template("ffx_plugin") {
                                  ])
       assert_no_deps = disallowed_category_markers
       deps += [ category_marker ]
+      configs += _extra_configs
 
       # As these are large libraries that are slow to compile on RBE workers, switch
       # them to the larger RBE workers.
@@ -353,6 +360,7 @@ template("ffx_plugin") {
         forward_variables_from(invoker,
                                "*",
                                _args_parameter_names + [
+                                     "configs",
                                      "config_data",
                                      "name",
                                      "original_target_name",
@@ -368,6 +376,7 @@ template("ffx_plugin") {
           category_marker,
         ]
         assert_no_deps = disallowed_category_markers
+        configs += _extra_configs
       }
 
       suite_target_additional_deps += [ ":${_crate_name}" ]
