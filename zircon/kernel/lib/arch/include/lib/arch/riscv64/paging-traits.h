@@ -42,7 +42,7 @@ struct RiscvSatp : public SysRegBase<RiscvSatp, uint64_t> {
   uint64_t root_address() const { return ppn() << 12; }
 
   RiscvSatp& set_root_address(uint64_t addr) {
-    ZX_ASSERT((fbl::ExtractBits<11, 0, uint64_t>(addr) == 0));
+    ZX_DEBUG_ASSERT((fbl::ExtractBits<11, 0, uint64_t>(addr) == 0));
     return set_ppn(addr >> 12);
   }
 

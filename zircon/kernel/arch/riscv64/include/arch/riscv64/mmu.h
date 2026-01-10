@@ -19,13 +19,8 @@
 //
 // The dimensions of the paging are determined by libpage.
 //
-
 // SvXXx4 for hypervisor guest translation
-#define MMU_GUEST_SIZE_SHIFT (kVirtualAddressSize + 2)
-
-#define RISCV64_MMU_PT_KERNEL_BASE_INDEX (kNumPageTableEntries / 2)
-#define RISCV64_MMU_PT_KERNEL_ENTRIES (kNumPageTableEntries / 2)
-#define RISCV64_MMU_PPN_BITS 56
+constexpr size_t MMU_GUEST_SIZE_SHIFT = (kVirtualAddressSize + 2);
 
 // page table bits
 #define RISCV64_PTE_V (1ul << 0)  // valid
@@ -39,8 +34,9 @@
 #define RISCV64_PTE_D (1ul << 7)         // dirty
 #define RISCV64_PTE_RSW_MASK (3ul << 8)  // reserved for software
 #define RISCV64_PTE_PPN_SHIFT (10)
+#define RISCV64_PTE_PPN_BITS (56)
 #define RISCV64_PTE_PPN_MASK \
-  (((1ul << (RISCV64_MMU_PPN_BITS - kPageTableLevelShift)) - 1) << RISCV64_PTE_PPN_SHIFT)
+  (((1ul << (RISCV64_PTE_PPN_BITS - kPageTableLevelShift)) - 1) << RISCV64_PTE_PPN_SHIFT)
 
 // Svpbmt (Page based memory types) extension
 // Normal memory
@@ -51,22 +47,6 @@
 #define RISCV64_PTE_PBMT_IO (2ul << 61)
 #define RISCV64_PTE_PBMT_MASK (3ul << 61)
 
-// SATP register, contains the current mmu mode, address space id, and
-// pointer to root page table
-#define RISCV64_SATP_MODE_NONE (0ul)
-#define RISCV64_SATP_MODE_SV32 (1ul)
-#define RISCV64_SATP_MODE_SV39 (8ul)
-#define RISCV64_SATP_MODE_SV48 (9ul)
-#define RISCV64_SATP_MODE_SV57 (10ul)
-#define RISCV64_SATP_MODE_SV64 (11ul)
-
-#define RISCV64_SATP_MODE_SHIFT (60)
-#define RISCV64_SATP_ASID_SHIFT (44)
-#define RISCV64_SATP_ASID_SIZE (16)
-#define RISCV64_SATP_ASID_MASK ((1ul << RISCV64_SATP_ASID_SIZE) - 1)
-#define RISCV64_SATP_PPN_SIZE (44)
-#define RISCV64_SATP_PPN_MASK ((1ul << RISCV64_SATP_PPN_SIZE) - 1)
-
 using pte_t = uintptr_t;
 
 // Kernel's use of asids:
@@ -75,29 +55,16 @@ using pte_t = uintptr_t;
 // unique asid for the duration of its lifetime, between FIRST_USER_ASID and MAX_USER_ASID.
 //   When not using asids, all aspaces are assigned UNUSED_ASID which is always zero. A full flush
 // of the TLB is performed when context switching.
-const size_t MMU_RISCV64_ASID_BITS = 16;
-const uint16_t MMU_RISCV64_UNUSED_ASID = 0;
-const uint16_t MMU_RISCV64_KERNEL_ASID = 1;
-const uint16_t MMU_RISCV64_FIRST_USER_ASID = 2;
-const uint16_t MMU_RISCV64_MAX_USER_ASID = (1u << MMU_RISCV64_ASID_BITS) - 1;
+constexpr size_t MMU_RISCV64_ASID_BITS = 16;
+constexpr uint16_t MMU_RISCV64_UNUSED_ASID = 0;
+constexpr uint16_t MMU_RISCV64_KERNEL_ASID = 1;
+constexpr uint16_t MMU_RISCV64_FIRST_USER_ASID = 2;
+constexpr uint16_t MMU_RISCV64_MAX_USER_ASID = (1u << MMU_RISCV64_ASID_BITS) - 1;
 
 void riscv64_mmu_early_init();
 void riscv64_mmu_early_init_percpu();
 void riscv64_mmu_init();
 void riscv64_mmu_prevm_init();
-
-// Helper routines for various page table entry manipulation
-constexpr bool riscv64_pte_is_valid(pte_t pte) { return pte & RISCV64_PTE_V; }
-constexpr bool riscv64_pte_is_leaf(pte_t pte) { return (pte & RISCV64_PTE_PERM_MASK) != 0; }
-
-// riscv PPN is stored shifted over 2 from the natural alignment
-constexpr paddr_t riscv64_pte_pa(pte_t pte) {
-  return (pte & RISCV64_PTE_PPN_MASK) << (kPageShift - RISCV64_PTE_PPN_SHIFT);
-}
-
-constexpr pte_t riscv64_pte_pa_to_pte(paddr_t pa) {
-  return (pa >> kPageShift) << RISCV64_PTE_PPN_SHIFT;
-}
 
 // Helper routines for flushing the paging related TLBs on the local cpu
 // From RISC-V privileged spec 1.12, section 4.2.1 - Supervisor Memory-Management Fence Instruction
@@ -126,7 +93,7 @@ inline void riscv64_tlb_flush_address_one_asid(vaddr_t va, uint16_t asid) {
 
 // Extract the asid field out of the SATP register
 inline uint16_t riscv64_current_asid() {
-  return (riscv64_csr_read(RISCV64_CSR_SATP) >> RISCV64_SATP_ASID_SHIFT) & RISCV64_SATP_ASID_MASK;
+  return static_cast<uint16_t>(arch::RiscvSatp::Read().asid());
 }
 
 // The physical address of an identity-mapping root page table covering the
