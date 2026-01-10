@@ -49,6 +49,13 @@ inline paddr_t KernelPhysicalAddressOf(size_t idx) {
   return KernelPhysicalAddressOf(reinterpret_cast<uintptr_t>(&Symbol[idx]));
 }
 
+// A non-const variable with all-zero initialized contents (whether default or
+// explicitly so) can normally go into bss pages.  These are not guaranteed to
+// be physically contiguous with the rest of the kernel image.  So any variable
+// that could wind up in bss must be annotated with this macro if it will be
+// used with KernelPhysicalAddressOf().
+#define KERNEL_PHYSICAL_CONTIGUOUS_DATA [[gnu::section(".data")]]
+
 // The remaining hand-off data to be consumed at the end of the hand-off phase
 // (see EndHandoff()).
 struct HandoffEnd {

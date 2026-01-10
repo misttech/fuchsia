@@ -277,10 +277,12 @@ void PostHandoffBootstrap(PhysHandoff* handoff) {
 paddr_t KernelPhysicalLoadAddress() { return kBootConstants.kernel_physical_load_address; }
 
 paddr_t KernelPhysicalAddressOf(uintptr_t va) {
+  // Only allow addresses within the bounds of the original file image, which
+  // is physically contiguous.  The bss pages are not necessarily contiguous.
   const uintptr_t start = reinterpret_cast<uintptr_t>(__executable_start);
-  [[maybe_unused]] const uintptr_t end = reinterpret_cast<uintptr_t>(_end);
+  [[maybe_unused]] const uintptr_t end = reinterpret_cast<uintptr_t>(__data_end);
   ZX_DEBUG_ASSERT_MSG(va >= start, "%#" PRIxPTR " < %p", va, __executable_start);
-  ZX_DEBUG_ASSERT_MSG(va < end, "%#" PRIxPTR " < %p", va, _end);
+  ZX_DEBUG_ASSERT_MSG(va < end, "%#" PRIxPTR " >= %p", va, __data_end);
   return kBootConstants.kernel_physical_load_address + (va - start);
 }
 
