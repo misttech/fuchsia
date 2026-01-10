@@ -125,6 +125,7 @@ static zx_status_t gueststats(zx_handle_t info_resource, zx_duration_t delay) {
 
 static zx_status_t cpustats(zx_handle_t info_resource, zx_duration_t delay) {
   static zx_duration_t last_idle_time[MAX_CPUS];
+  static zx_duration_t last_normalized_busy_time[MAX_CPUS];
   static zx_info_cpu_stats_t old_stats[MAX_CPUS];
   zx_info_cpu_stats_t stats[MAX_CPUS];
 
@@ -143,7 +144,7 @@ static zx_status_t cpustats(zx_handle_t info_resource, zx_duration_t delay) {
   }
 
   printf(
-      "cpu    load"
+      "cpu    load    busy"
       " sched (cs ylds pmpts irq_pmpts)"
       " excep"
       " pagef"
@@ -152,7 +153,6 @@ static zx_status_t cpustats(zx_handle_t info_resource, zx_duration_t delay) {
       " ipi (rs  gen)\n");
   for (size_t i = 0; i < actual; i++) {
     zx_duration_t idle_time = stats[i].idle_time;
-
     zx_duration_t delta_time = zx_duration_sub_duration(idle_time, last_idle_time[i]);
     zx_duration_t busy_time;
     if (delay > delta_time) {
@@ -162,8 +162,17 @@ static zx_status_t cpustats(zx_handle_t info_resource, zx_duration_t delay) {
     }
     unsigned long busypercent = zx_duration_mul_int64(busy_time, 10000) / delay;
 
+    zx_duration_t normalized_busy_time = stats[i].normalized_busy_time;
+    zx_duration_t delta_normalized_busy_time =
+        zx_duration_sub_duration(normalized_busy_time, last_normalized_busy_time[i]);
+    if (delta_normalized_busy_time > delay) {
+      delta_normalized_busy_time = 0;
+    }
+    unsigned long load = zx_duration_mul_int64(delta_normalized_busy_time, 10000) / delay;
+
     printf(
         "%3zu"
+        " %3lu.%02lu%%"
         " %3lu.%02lu%%"
         " %9lu %4lu %5lu %9lu"
         " %6lu"
@@ -172,7 +181,7 @@ static zx_status_t cpustats(zx_handle_t info_resource, zx_duration_t delay) {
         " %8lu %4lu %6lu"
         " %8lu %4lu"
         "\n",
-        i, busypercent / 100, busypercent % 100,
+        i, load / 100, load % 100, busypercent / 100, busypercent % 100,
         stats[i].context_switches - old_stats[i].context_switches,
         stats[i].yields - old_stats[i].yields, stats[i].preempts - old_stats[i].preempts,
         stats[i].irq_preempts - old_stats[i].irq_preempts,
@@ -184,6 +193,7 @@ static zx_status_t cpustats(zx_handle_t info_resource, zx_duration_t delay) {
         stats[i].generic_ipis - old_stats[i].generic_ipis);
 
     old_stats[i] = stats[i];
+    last_normalized_busy_time[i] = normalized_busy_time;
     last_idle_time[i] = idle_time;
   }
 
@@ -191,7 +201,7 @@ static zx_status_t cpustats(zx_handle_t info_resource, zx_duration_t delay) {
 }
 
 static zx_status_t cpuload(zx_handle_t info_resource, zx_duration_t delay) {
-  static zx_duration_t last_idle_time[MAX_CPUS];
+  static zx_duration_t last_normalized_busy_time[MAX_CPUS];
   zx_info_cpu_stats_t stats[MAX_CPUS];
 
   // retrieve the system stats
@@ -209,16 +219,14 @@ static zx_status_t cpuload(zx_handle_t info_resource, zx_duration_t delay) {
   }
 
   for (size_t i = 0; i < actual; i++) {
-    zx_duration_t idle_time = stats[i].idle_time;
+    zx_duration_t normalized_busy_time = stats[i].normalized_busy_time;
 
-    zx_duration_t delta_time = zx_duration_sub_duration(idle_time, last_idle_time[i]);
-    zx_duration_t busy_time;
-    if (delay > delta_time) {
-      busy_time = zx_duration_sub_duration(delay, delta_time);
-    } else {
-      busy_time = 0;
+    zx_duration_t delta_normalized_busy_time =
+        zx_duration_sub_duration(normalized_busy_time, last_normalized_busy_time[i]);
+    if (delta_normalized_busy_time > delay) {
+      delta_normalized_busy_time = 0;
     }
-    const double busypercent = (double)busy_time / (double)delay;
+    const double busypercent = (double)delta_normalized_busy_time / (double)delay;
 
     static const char kBar[] = "||||||||||||||||||||";
     static const int kBarLength = sizeof(kBar);
@@ -233,7 +241,7 @@ static zx_status_t cpuload(zx_handle_t info_resource, zx_duration_t delay) {
       printf("\n");
     }
 
-    last_idle_time[i] = idle_time;
+    last_normalized_busy_time[i] = normalized_busy_time;
   }
   if (actual % 4 != 3) {
     printf("\n");

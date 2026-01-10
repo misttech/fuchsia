@@ -1591,6 +1591,7 @@ void Scheduler::RescheduleCommon(Thread* const current_thread, EndTraceCallback 
   const SchedDuration actual_runtime_ns =
       ktl::max<SchedDuration>(now - current_state->last_started_running_, SchedDuration{0});
   current_state->last_started_running_ = now;
+  percpu::Get(current_cpu).stats.last_updated_instant = now.raw_value();
 
   const SchedDuration total_runtime_ns = now - start_of_current_time_slice_ns_;
 
@@ -1855,6 +1856,12 @@ void Scheduler::RescheduleCommon(Thread* const current_thread, EndTraceCallback 
     power_level_control_.SendPendingPowerLevelRequest(queue_guard);
   }
 
+  if (current_thread->IsIdle()) {
+    percpu::Get(current_cpu).stats.idle_time += actual_runtime_ns;
+  } else {
+    percpu::Get(current_cpu).stats.normalized_busy_time += actual_runtime_ns * processing_rate();
+  }
+
   // Update the current processing rate only after any uses in the reschedule
   // path above to ensure the scale is applied consistently over the interval
   // between reschedules (i.e. not earlier than the requested update).
@@ -1866,10 +1873,6 @@ void Scheduler::RescheduleCommon(Thread* const current_thread, EndTraceCallback 
   const bool processing_rate_updated = UpdateProcessingRate(mono_and_boot_now.boot_ticks);
 
   SetIdle(next_thread->IsIdle());
-
-  if (current_thread->IsIdle()) {
-    percpu::Get(current_cpu).stats.idle_time += actual_runtime_ns;
-  }
 
   {
     // Each path below must set the preemption time.

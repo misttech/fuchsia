@@ -39,6 +39,9 @@ struct guest_stats {
 
 // per cpu kernel level statistics
 struct cpu_stats {
+  zx_instant_mono_t last_updated_instant;
+  zx_duration_mono_t normalized_busy_time;
+
   zx_duration_mono_t idle_time;
   ulong reschedules;
   ulong context_switches;

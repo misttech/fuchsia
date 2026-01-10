@@ -169,41 +169,47 @@ zx_info_cpu_stats_t GetCPUStats(uint32_t cpu_num) {
   const auto* cpu = &percpu::Get(cpu_num);
 
   // copy the per cpu stats from the kernel percpu structure
-  // NOTE: it's technically racy to read this without grabbing a lock
-  // but since each field is wordwise any reasonable architecture will not
-  // return a corrupted value.
-  zx_info_cpu_stats_t stats = {};
-  stats.cpu_number = cpu_num;
-  stats.flags = mp_is_cpu_online(cpu_num) ? ZX_INFO_CPU_STATS_FLAG_ONLINE : 0;
+  cpu_stats cpu_stats;
 
-  // account for idle time if a cpu is currently idle
+  // account for current runtime
   {
-    const Thread& idle_power_thread = cpu->idle_power_thread.thread();
-    SingleChainLockGuard guard{IrqSaveOption, idle_power_thread.get_lock(),
-                               CLT_TAG("ZX_INFO_CPU_STATS idle time rollup")};
-    zx_time_t idle_time = cpu->stats.idle_time;
-    const bool is_idle = Scheduler::PeekIsIdle(cpu_num);
-    if (is_idle) {
-      zx_duration_mono_t recent_idle = zx_time_sub_time(
-          current_mono_time(), idle_power_thread.scheduler_state().last_started_running());
-      idle_time = zx_duration_add_duration(idle_time, recent_idle);
-    }
-    stats.idle_time = idle_time;
+    Scheduler::RunInLockedScheduler(cpu_num, [&] {
+      // The scheduler queue lock synchronizes this copy.
+      concurrent::WellDefinedCopyFrom<concurrent::SyncOpt::None, alignof(decltype(cpu_stats))>(
+          &cpu_stats, &cpu->stats, sizeof(cpu_stats));
+
+      zx_duration_mono_t recent_runtime_ns =
+          ktl::max<zx_duration_mono_t>(current_mono_time() - cpu_stats.last_updated_instant, 0);
+      // Account for idle time if a cpu is currently idle.
+      if (Scheduler::PeekIsIdle(cpu_num)) {
+        cpu_stats.idle_time += recent_runtime_ns;
+      } else {
+        cpu_stats.normalized_busy_time += ffl::Round<zx_duration_mono_t>(
+            recent_runtime_ns * cpu->scheduler.exported_processing_rate());
+      }
+    });
   }
 
-  stats.reschedules = cpu->stats.reschedules;
-  stats.context_switches = cpu->stats.context_switches;
-  stats.irq_preempts = cpu->stats.irq_preempts;
-  stats.preempts = cpu->stats.preempts;
-  stats.yields = cpu->stats.yields;
-  stats.ints = cpu->stats.interrupts;
-  stats.timer_ints = cpu->stats.timer_ints;
-  stats.timers = cpu->stats.timers;
-  stats.page_faults = cpu->stats.page_faults;
+  // copy the per cpu stats from the kernel percpu structure
+  zx_info_cpu_stats_t stats = {};
+
+  stats.cpu_number = cpu_num;
+  stats.flags = mp_is_cpu_online(cpu_num) ? ZX_INFO_CPU_STATS_FLAG_ONLINE : 0;
+  stats.idle_time = cpu_stats.idle_time;
+  stats.normalized_busy_time = cpu_stats.normalized_busy_time;
+  stats.reschedules = cpu_stats.reschedules;
+  stats.context_switches = cpu_stats.context_switches;
+  stats.irq_preempts = cpu_stats.irq_preempts;
+  stats.preempts = cpu_stats.preempts;
+  stats.yields = cpu_stats.yields;
+  stats.ints = cpu_stats.interrupts;
+  stats.timer_ints = cpu_stats.timer_ints;
+  stats.timers = cpu_stats.timers;
+  stats.page_faults = cpu_stats.page_faults;
   stats.exceptions = 0;  // deprecated, use "kcounter" command for now.
-  stats.syscalls = cpu->stats.syscalls;
-  stats.reschedule_ipis = cpu->stats.reschedule_ipis;
-  stats.generic_ipis = cpu->stats.generic_ipis;
+  stats.syscalls = cpu_stats.syscalls;
+  stats.reschedule_ipis = cpu_stats.reschedule_ipis;
+  stats.generic_ipis = cpu_stats.generic_ipis;
 
   return stats;
 }
