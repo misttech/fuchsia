@@ -70,12 +70,16 @@ constexpr size_t kMmuPtKernelEntries = (kNumPageTableEntries / 2);
 
 // The main translation table for the kernel. Used by the one kernel address space
 // when kernel only threads are active.
-alignas(kPageSize) pte_t kernel_translation_table[kNumPageTableEntries];
+// NOTE: placed in the .data segment to allow for KernelPhysicalAddressOf to work properly
+// if BSS is not allocated contiguously.
+alignas(kPageSize) __SECTION(".data") pte_t kernel_translation_table[kNumPageTableEntries];
 paddr_t kernel_translation_table_phys;
 
 // A copy of the bootstrap translation table with user space identity mapped, used
 // when booting secondary cores.
-alignas(kPageSize) pte_t bootstrap_translation_table[kNumPageTableEntries];
+// NOTE: placed in the .data segment to allow for KernelPhysicalAddressOf to work properly
+// if BSS is not allocated contiguously.
+alignas(kPageSize) __SECTION(".data") pte_t bootstrap_translation_table[kNumPageTableEntries];
 
 // Track the size and capability of the hardware ASID, and if its in use.
 uint64_t riscv_asid_mask;
