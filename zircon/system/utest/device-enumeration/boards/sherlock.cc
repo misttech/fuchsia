@@ -76,6 +76,8 @@ TEST_F(DeviceEnumerationTest, SherlockTest) {
       // Touchscreen
       "i2c-1.aml-i2c.i2c.i2c-1-56.focaltech_touch.focaltouch-HidDevice",
 
+      "bt-uart.bluetooth-composite-spec.aml-uart",
+
 #ifdef include_packaged_drivers
 
       "mipi-csi2.aml-mipi",
@@ -94,6 +96,10 @@ TEST_F(DeviceEnumerationTest, SherlockTest) {
 
       "mipi-csi2.aml-mipi.imx227_sensor.imx227.isp",
       "mipi-csi2.aml-mipi.imx227_sensor.imx227.isp.arm-isp.camera_controller",
+
+      // Bluetooth
+      "bt-uart.bluetooth-composite-spec.aml-uart.serial.bt-transport-uart",
+      "bt-uart.bluetooth-composite-spec.aml-uart.serial.bt-transport-uart.bt-hci-broadcom",
 #endif
   };
   VerifyNodes(kNodeMonikers);

@@ -8,7 +8,7 @@
     },
     {
         "device": {
-            "fuchsia.hardware.serialimpl.Service": "fuchsia.hardware.serialimpl.Service.DriverTransport",
+            "fuchsia.hardware.serial.Service": "fuchsia.hardware.serial.Service.ZirconTransport",
             "fuchsia.BIND_SERIAL_CLASS": "fuchsia.serial.BIND_SERIAL_CLASS.BLUETOOTH_HCI"
         },
         "expected": "match",

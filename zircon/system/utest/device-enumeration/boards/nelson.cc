@@ -14,8 +14,7 @@ TEST_F(DeviceEnumerationTest, NelsonTest) {
       "gpio.aml-gpio.gpio-init",
       "gpio-h.aml-gpio.gpio",
       "nelson-buttons.buttons",
-      "bt-uart.bluetooth-composite-spec.aml-uart.bt-transport-uart",
-      "bt-uart.bluetooth-composite-spec.aml-uart.bt-transport-uart.bt-hci-broadcom",
+      "bt-uart.bluetooth-composite-spec.aml-uart",
       "i2c-0.aml-i2c",
       "i2c-1.aml-i2c",
       "i2c-2.aml-i2c",
@@ -89,6 +88,10 @@ TEST_F(DeviceEnumerationTest, NelsonTest) {
       // WLAN
       "aml-sdio.aml_sdio.aml-sd-emmc.sdmmc.sdmmc-sdio.sdmmc-sdio-1.wifi.brcmfmac-wlanphyimpl",
       "aml-sdio.aml_sdio.aml-sd-emmc.sdmmc.sdmmc-sdio.sdmmc-sdio-1.wifi.brcmfmac-wlanphyimpl.wlanphy",
+
+      // Bluetooth
+      "bt-uart.bluetooth-composite-spec.aml-uart.serial.bt-transport-uart",
+      "bt-uart.bluetooth-composite-spec.aml-uart.serial.bt-transport-uart.bt-hci-broadcom",
 #endif
 
       "i2c-2.aml-i2c.i2c.i2c-2-45.tas58xx.TAS5805m.brownout_protection.nelson-brownout-protection",

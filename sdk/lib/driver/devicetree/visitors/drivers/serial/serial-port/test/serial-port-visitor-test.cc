@@ -14,7 +14,7 @@
 #include <cstdint>
 
 #include <bind/fuchsia/cpp/bind.h>
-#include <bind/fuchsia/hardware/serialimpl/cpp/bind.h>
+#include <bind/fuchsia/hardware/serial/cpp/bind.h>
 #include <bind/fuchsia/serial/cpp/bind.h>
 #include <gtest/gtest.h>
 
@@ -85,16 +85,16 @@ TEST(SerialPortVisitorTest, TestMetadataAndBindProperty) {
       EXPECT_TRUE(fdf_devicetree::testing::CheckHasProperties(
           {{
               fdf::MakeProperty2(bind_fuchsia_serial::NAME, TEST_NAME),
-              fdf::MakeProperty2(bind_fuchsia_hardware_serialimpl::SERVICE,
-                                 bind_fuchsia_hardware_serialimpl::SERVICE_DRIVERTRANSPORT),
+              fdf::MakeProperty2(bind_fuchsia_hardware_serial::SERVICE,
+                                 bind_fuchsia_hardware_serial::SERVICE_ZIRCONTRANSPORT),
           }},
           (*mgr_request.parents2())[1].properties(), false));
       EXPECT_TRUE(fdf_devicetree::testing::CheckHasBindRules(
           {{
               fdf::MakeAcceptBindRule2(bind_fuchsia::SERIAL_CLASS,
                                        static_cast<uint32_t>(TEST_CLASS)),
-              fdf::MakeAcceptBindRule2(bind_fuchsia_hardware_serialimpl::SERVICE,
-                                       bind_fuchsia_hardware_serialimpl::SERVICE_DRIVERTRANSPORT),
+              fdf::MakeAcceptBindRule2(bind_fuchsia_hardware_serial::SERVICE,
+                                       bind_fuchsia_hardware_serial::SERVICE_ZIRCONTRANSPORT),
               // TODO(https://fxbug.dev/467370573): Temporary workaround for a composite issue.
               // Remove this once the composite issue is resolved.
               fdf::MakeRejectBindRule2(bind_fuchsia_serial::NAME, "bt-passthrough-hci"),

@@ -13,7 +13,6 @@
         bind: "meta/bind/serial.bindbc",
         colocate: "true",
         default_dispatcher_opts: [ "allow_sync_calls" ],
-        fallback: "true",
     },
     capabilities: [
         { service: "fuchsia.boot.metadata.MacAddressMetadata" },

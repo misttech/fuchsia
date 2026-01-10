@@ -12,7 +12,7 @@
 #include <lib/driver/logging/cpp/logger.h>
 
 #include <bind/fuchsia/cpp/bind.h>
-#include <bind/fuchsia/hardware/serialimpl/cpp/bind.h>
+#include <bind/fuchsia/hardware/serial/cpp/bind.h>
 #include <bind/fuchsia/serial/cpp/bind.h>
 
 namespace serial_port_visitor_dt {
@@ -134,16 +134,16 @@ zx::result<> SerialPortVisitor::AddChildNodeSpec(fdf_devicetree::Node& child, ui
       .bind_rules =
           {
               fdf::MakeAcceptBindRule2(bind_fuchsia::SERIAL_CLASS, serial_class),
-              fdf::MakeAcceptBindRule2(bind_fuchsia_hardware_serialimpl::SERVICE,
-                                       bind_fuchsia_hardware_serialimpl::SERVICE_DRIVERTRANSPORT),
+              fdf::MakeAcceptBindRule2(bind_fuchsia_hardware_serial::SERVICE,
+                                       bind_fuchsia_hardware_serial::SERVICE_ZIRCONTRANSPORT),
               // TODO(https://fxbug.dev/467370573): Temporary workaround for a composite issue.
               // Remove this once the composite issue is resolved.
               fdf::MakeRejectBindRule2(bind_fuchsia_serial::NAME, "bt-passthrough-hci"),
           },
       .properties =
           {
-              fdf::MakeProperty2(bind_fuchsia_hardware_serialimpl::SERVICE,
-                                 bind_fuchsia_hardware_serialimpl::SERVICE_DRIVERTRANSPORT),
+              fdf::MakeProperty2(bind_fuchsia_hardware_serial::SERVICE,
+                                 bind_fuchsia_hardware_serial::SERVICE_ZIRCONTRANSPORT),
           },
   }};
 

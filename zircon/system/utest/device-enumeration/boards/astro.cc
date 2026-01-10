@@ -18,8 +18,7 @@ TEST_F(DeviceEnumerationTest, AstroTest) {
       "i2c-2.aml-i2c",
       "aml_gpu.aml-gpu-composite.aml-gpu",
       "aml-usb-phy.aml_usb_phy",
-      "bt-uart.bluetooth-composite-spec.aml-uart.bt-transport-uart",
-      "bt-uart.bluetooth-composite-spec.aml-uart.bt-transport-uart.bt-hci-broadcom",
+      "bt-uart.bluetooth-composite-spec.aml-uart",
 
       // XHCI driver will not be loaded if we are in USB peripheral mode.
       // "xhci.xhci.usb-bus",
@@ -89,6 +88,10 @@ TEST_F(DeviceEnumerationTest, AstroTest) {
       // WLAN
       "aml-sdio.aml_sdio.aml-sd-emmc.sdmmc.sdmmc-sdio.sdmmc-sdio-1.wifi.brcmfmac-wlanphyimpl",
       "aml-sdio.aml_sdio.aml-sd-emmc.sdmmc.sdmmc-sdio.sdmmc-sdio-1.wifi.brcmfmac-wlanphyimpl.wlanphy",
+
+      // Bluetooth
+      "bt-uart.bluetooth-composite-spec.aml-uart.bt-transport-uart",
+      "bt-uart.bluetooth-composite-spec.aml-uart.bt-transport-uart.bt-hci-broadcom",
 #endif
 
   };

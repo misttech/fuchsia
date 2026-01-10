@@ -97,6 +97,8 @@ TEST_F(DeviceEnumerationTest, Vim3DeviceTreeTest) {
 
       // display
       "display-ff900000.amlogic-display.display-coordinator",
+
+      "bt-uart-ffd24000.aml-uart.serial",
 #endif
 
   };
