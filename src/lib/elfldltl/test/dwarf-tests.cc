@@ -10,6 +10,9 @@
 #include <lib/elfldltl/testing/diagnostics.h>
 #include <lib/elfldltl/testing/typed-test.h>
 
+#include <concepts>
+#include <ranges>
+
 #include <gmock/gmock.h>
 #include <gtest/gtest.h>
 
@@ -661,8 +664,12 @@ TYPED_TEST(ElfldltlDwarfTests, EhFrameHdr) {
   using Word = typename Elf::Word;
   using Phdr = typename Elf::Phdr;
   using value_type = elfldltl::dwarf::EhFrameHdrEntry<size_type>;
+  using EhFrameHdr = elfldltl::dwarf::EhFrameHdr<Elf>;
 
-  elfldltl::dwarf::EhFrameHdr<Elf> eh_frame_hdr;
+  static_assert(std::ranges::random_access_range<EhFrameHdr>);
+  static_assert(std::same_as<value_type, std::ranges::range_value_t<EhFrameHdr>>);
+
+  EhFrameHdr eh_frame_hdr;
   EXPECT_TRUE(eh_frame_hdr.empty());
 
   auto diag = elfldltl::testing::ExpectOkDiagnostics();

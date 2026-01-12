@@ -8,6 +8,7 @@
 #include <compare>
 #include <ios>
 #include <iterator>
+#include <ranges>
 
 #include "../diagnostics.h"
 #include "../layout.h"
@@ -49,14 +50,8 @@ struct EhFrameHdrEncoding {
 // It can be used as `auto [pc, fde]` in for loops.
 template <typename SizeType>
 struct EhFrameHdrEntry {
-  constexpr bool operator==(const EhFrameHdrEntry& other) const {
-    return pc == other.pc && fde == other.fde;
-  }
-
-  constexpr bool operator!=(const EhFrameHdrEntry& other) const { return !(*this == other); }
-
-  constexpr bool operator<=>(const EhFrameHdrEntry& other) const { return pc <=> other.pc; }
-  constexpr bool operator<=>(SizeType other) const { return pc <=> other.pc; }
+  constexpr auto operator<=>(const EhFrameHdrEntry& other) const = default;
+  constexpr auto operator<=>(SizeType other) const { return pc <=> other.pc; }
 
   SizeType pc = 0, fde = 0;
 };
@@ -94,31 +89,19 @@ class EhFrameHdr {
   using address_size_type = typename Elf::size_type;
   using Phdr = typename Elf::Phdr;
 
-  // Standard container API types.
-  using value_type = EhFrameHdrEntry<address_size_type>;
-  using size_type = size_t;
-  using difference_type = ptrdiff_t;
-  using const_reference = const value_type&;
-  using reference = value_type&;
-  using const_pointer = const value_type*;
-  using pointer = value_type*;
-
   class iterator {
    public:
-    using iterator_category = std::random_access_iterator_tag;
+    using value_type = EhFrameHdrEntry<address_size_type>;
+    using difference_type = ptrdiff_t;  // std::weakly_incrementable requires.
 
     constexpr iterator() = default;
-
     constexpr iterator(const iterator&) = default;
-
     constexpr iterator& operator=(const iterator&) = default;
 
     constexpr bool operator==(const iterator& other) const {
       assert(hdr_ == other.hdr_);
       return pos_ == other.pos_;
     }
-
-    constexpr bool operator!=(const iterator& other) const { return !(*this == other); }
 
     constexpr std::strong_ordering operator<=>(const iterator& other) const {
       assert(hdr_ == other.hdr_);
@@ -129,7 +112,7 @@ class EhFrameHdr {
 
     constexpr const value_type* operator->() const { return &entry_; }
 
-    constexpr const value_type& operator[](ptrdiff_t n) { return *(*this + n); }
+    constexpr const value_type& operator[](ptrdiff_t n) const { return *(*this + n); }
 
     constexpr iterator& operator++() {  // prefix
       *this += 1;
@@ -170,17 +153,22 @@ class EhFrameHdr {
       return *this;
     }
 
-    constexpr iterator operator+(ptrdiff_t n) {
+    constexpr iterator operator+(ptrdiff_t n) const {
       iterator it = *this;
+      it += n;
+      return it;
+    }
+
+    friend constexpr iterator operator+(ptrdiff_t n, iterator it) {
       it += n;
       return it;
     }
 
     constexpr iterator& operator-=(ptrdiff_t n) { return *this += -n; }
 
-    constexpr iterator operator-(ptrdiff_t n) { return *this + -n; }
+    constexpr iterator operator-(ptrdiff_t n) const { return *this + -n; }
 
-    constexpr iterator operator-(const iterator& other) {
+    constexpr ptrdiff_t operator-(const iterator& other) const {
       assert(other.hdr_ == hdr_);
       const ptrdiff_t distance =
           (static_cast<ptrdiff_t>(pos_) - static_cast<ptrdiff_t>(other.pos_));
@@ -246,8 +234,11 @@ class EhFrameHdr {
     size_t pos_ = 0;
     value_type entry_;
   };
+  static_assert(std::random_access_iterator<iterator>);
 
   using const_iterator = iterator;
+
+  using value_type = iterator::value_type;
 
   static constexpr uint8_t kAddressSize = sizeof(address_size_type);
 
@@ -396,6 +387,7 @@ class EhFrameHdr {
   uint8_t entry_size_ = 0;
   uint8_t table_offset_ = 0;
 };
+static_assert(std::ranges::random_access_range<EhFrameHdr<>>);
 
 }  // namespace elfldltl::dwarf
 
