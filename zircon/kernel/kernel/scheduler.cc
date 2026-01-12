@@ -3163,6 +3163,22 @@ void Scheduler::UpdateProcessingLimits(ktl::span<zx_cpu_perf_limit_t> limits) {
   RescheduleMask(cpus_to_evaluate_updates);
 }
 
+void Scheduler::GetProcessingLimits(ktl::span<zx_cpu_perf_limit_t> limits) {
+  DEBUG_ASSERT(limits.size() <= percpu::processor_count());
+  for (cpu_num_t i = 0; i < limits.size(); i++) {
+    Scheduler* scheduler = Scheduler::Get(i);
+    Guard<MonitoredSpinLock, IrqSave> guard{&scheduler->queue_lock_, SOURCE_TAG};
+
+    limits[i].logical_cpu_number = i;
+    limits[i].limit_type = ZX_CPU_PERF_LIMIT_TYPE_RATE;
+
+    limits[i].min = power_management::PowerLevel::FromProcessingRate(
+        scheduler->power_level_control_.processing_rate_limit_min());
+    limits[i].max = power_management::PowerLevel::FromProcessingRate(
+        scheduler->power_level_control_.processing_rate_limit_max());
+  }
+}
+
 cpu_mask_t Scheduler::SetCpuAffinity(Thread& thread, cpu_mask_t affinity,
                                      AffinityType affinity_type) {
   DEBUG_ASSERT_MSG(

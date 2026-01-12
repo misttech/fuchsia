@@ -332,27 +332,32 @@ class Scheduler {
   // effective values in place, which may be different than the requested values
   // if they are below the minimum safe values for the respective CPUs.
   //
-  // Requires |info.size()| <= num CPUs.
+  // Requires info.size() <= num CPUs.
   static void UpdateProcessingRates(ktl::span<zx_cpu_performance_info_t> info) TA_EXCL(queue_lock_);
 
-  // Gets the performance scales of up to count CPUs. Returns the last values
-  // requested by userspace, even if they have not yet taken effect.
+  // Gets the performance scales of up to info.size() CPUs. Returns the last
+  // values requested by userspace, even if they have not yet taken effect.
   //
-  // Requires |info.size()| <= num CPUs.
+  // Requires info.size() <= num CPUs.
   static void GetPerformanceScales(ktl::span<zx_cpu_performance_info_t> info) TA_EXCL(queue_lock_);
 
-  // Gets the default performance scales of up to count CPUs. Returns the
+  // Gets the default performance scales of up to info.size() CPUs. Returns the
   // initial values determined by the system topology, or 1.0 when no topology
   // is available.
   //
-  // Requires |info.size()| <= num CPUs.
+  // Requires info.size() <= num CPUs.
   static void GetDefaultPerformanceScales(ktl::span<zx_cpu_performance_info_t> info)
       TA_EXCL(queue_lock_);
 
   // Updates the performance limits of the requested CPUs.
   //
-  // Requires |limits.size()| <= num CPUs.
+  // Requires limits.size() <= num CPUs.
   static void UpdateProcessingLimits(ktl::span<zx_cpu_perf_limit_t> limits) TA_EXCL(queue_lock_);
+
+  // Gets the processing limits of up to limits.size() CPUs.
+  //
+  // Requires limits.size() <= num CPUs.
+  static void GetProcessingLimits(ktl::span<zx_cpu_perf_limit_t> limits) TA_EXCL(queue_lock_);
 
   // Get the mask of valid CPUs that thread may run on. If a new mask
   // is set, the thread will be migrated to satisfy the new constraint.
@@ -1541,6 +1546,14 @@ class Scheduler {
     // Returns the maximum processing rate of this processor. Initially set from the CPU topology
     // data and updated whenever the energy model is set/updated by userspace.
     SchedProcessingRate max_processing_rate() const { return max_processing_rate_; }
+
+    // Returns the minimum processing rate limit of this processor. Initially
+    // set to 0.0 and updated by userspace to effect performance limits policy.
+    SchedProcessingRate processing_rate_limit_min() const { return processing_rate_limit_min_; }
+
+    // Returns the maximum processing rate limit of this processor. Initially
+    // set to 1.0 and updated by userspace to effect performance limits policy.
+    SchedProcessingRate processing_rate_limit_max() const { return processing_rate_limit_max_; }
 
     // Returns the processing rate of the active power level immediately before
     // the current power level. This rate is the lower bound of the performance

@@ -20,6 +20,7 @@
 #include <iterator>
 #include <limits>
 #include <thread>
+#include <tuple>
 #include <utility>
 #include <vector>
 
@@ -253,13 +254,15 @@ TEST(SystemCpu, GetPerformanceInfoArgumentValidation) {
 
   const zx::result cpu_count = GetCpuCount();
   ASSERT_TRUE(cpu_count.is_ok());
-  std::vector<zx_cpu_performance_info_t> info(*cpu_count);
+
+  std::vector<zx_cpu_performance_info_t> perf_info(*cpu_count);
+  std::vector<zx_cpu_perf_limit_t> limit_info(*cpu_count);
 
   // Test invalid handle -> ZX_ERR_BAD_HANDLE.
   {
     size_t count;
-    const zx_status_t status = zx_system_get_performance_info(ZX_HANDLE_INVALID, kInvalidTopic,
-                                                              info.size(), info.data(), &count);
+    const zx_status_t status = zx_system_get_performance_info(
+        ZX_HANDLE_INVALID, kInvalidTopic, perf_info.size(), perf_info.data(), &count);
     EXPECT_EQ(ZX_ERR_BAD_HANDLE, status);
   }
 
@@ -269,8 +272,8 @@ TEST(SystemCpu, GetPerformanceInfoArgumentValidation) {
     ASSERT_TRUE(info_resource.is_ok());
 
     size_t count;
-    const zx_status_t status = zx_system_get_performance_info(info_resource->get(), kInvalidTopic,
-                                                              info.size(), info.data(), &count);
+    const zx_status_t status = zx_system_get_performance_info(
+        info_resource->get(), kInvalidTopic, perf_info.size(), perf_info.data(), &count);
     EXPECT_EQ(ZX_ERR_WRONG_TYPE, status);
   }
 
@@ -280,48 +283,53 @@ TEST(SystemCpu, GetPerformanceInfoArgumentValidation) {
     ASSERT_TRUE(info_resource.is_ok());
 
     size_t count;
-    const zx_status_t status = zx_system_get_performance_info(info_resource->get(), kInvalidTopic,
-                                                              info.size(), info.data(), &count);
+    const zx_status_t status = zx_system_get_performance_info(
+        info_resource->get(), kInvalidTopic, perf_info.size(), perf_info.data(), &count);
     EXPECT_EQ(ZX_ERR_OUT_OF_RANGE, status);
   }
 
   // Test invalid topic -> ZX_ERR_INVALID_ARGS.
   {
     size_t count;
-    const zx_status_t status = zx_system_get_performance_info(resource->get(), kInvalidTopic,
-                                                              info.size(), info.data(), &count);
+    const zx_status_t status = zx_system_get_performance_info(
+        resource->get(), kInvalidTopic, perf_info.size(), perf_info.data(), &count);
     EXPECT_EQ(ZX_ERR_INVALID_ARGS, status);
   }
 
-  // Test info_count == 0 -> ZX_ERR_OUT_OF_RANGE.
-  {
-    size_t count;
-    const zx_status_t status =
-        zx_system_get_performance_info(resource->get(), ZX_CPU_PERF_SCALE, 0, info.data(), &count);
-    EXPECT_EQ(ZX_ERR_OUT_OF_RANGE, status);
-  }
+  using Tuple = std::tuple<uint32_t, void*, size_t>;
+  for (auto [topic, info_ptr, info_size] :
+       {Tuple{ZX_CPU_PERF_SCALE, perf_info.data(), perf_info.size()},
+        Tuple{ZX_CPU_PERF_LIMIT, limit_info.data(), limit_info.size()}}) {
+    // Test info_count == 0 -> ZX_ERR_OUT_OF_RANGE.
+    {
+      size_t count;
+      const zx_status_t status =
+          zx_system_get_performance_info(resource->get(), topic, 0, info_ptr, &count);
+      EXPECT_EQ(ZX_ERR_OUT_OF_RANGE, status);
+    }
 
-  // Test info_count > num_cpus -> ZX_ERR_OUT_OF_RANGE.
-  {
-    size_t count;
-    const zx_status_t status = zx_system_get_performance_info(resource->get(), ZX_CPU_PERF_SCALE,
-                                                              info.size() + 1, info.data(), &count);
-    EXPECT_EQ(ZX_ERR_OUT_OF_RANGE, status);
-  }
+    // Test info_count > num_cpus -> ZX_ERR_OUT_OF_RANGE.
+    {
+      size_t count;
+      const zx_status_t status =
+          zx_system_get_performance_info(resource->get(), topic, info_size + 1, info_ptr, &count);
+      EXPECT_EQ(ZX_ERR_OUT_OF_RANGE, status);
+    }
 
-  // Test info_count < num_cpus -> ZX_ERR_OUT_OF_RANGE.
-  {
-    size_t count;
-    const zx_status_t status = zx_system_get_performance_info(resource->get(), ZX_CPU_PERF_SCALE,
-                                                              info.size() - 1, info.data(), &count);
-    EXPECT_EQ(ZX_ERR_OUT_OF_RANGE, status);
-  }
+    // Test info_count < num_cpus -> ZX_ERR_OUT_OF_RANGE.
+    {
+      size_t count;
+      const zx_status_t status =
+          zx_system_get_performance_info(resource->get(), topic, info_size - 1, info_ptr, &count);
+      EXPECT_EQ(ZX_ERR_OUT_OF_RANGE, status);
+    }
 
-  // Test invalid output_count -> ZX_ERR_INVALID_ARGS.
-  {
-    const zx_status_t status = zx_system_get_performance_info(resource->get(), ZX_CPU_PERF_SCALE,
-                                                              info.size(), info.data(), nullptr);
-    EXPECT_EQ(ZX_ERR_INVALID_ARGS, status);
+    // Test invalid output_count -> ZX_ERR_INVALID_ARGS.
+    {
+      const zx_status_t status =
+          zx_system_get_performance_info(resource->get(), topic, info_size, info_ptr, nullptr);
+      EXPECT_EQ(ZX_ERR_INVALID_ARGS, status);
+    }
   }
 }
 
@@ -332,19 +340,17 @@ TEST(SystemCpu, GetPerformanceInfo) {
   const zx::result cpu_count = GetCpuCount();
   ASSERT_TRUE(cpu_count.is_ok());
 
-  std::vector<zx_cpu_performance_info_t> info(*cpu_count);
-  std::vector<zx_cpu_performance_info_t> default_info(*cpu_count);
-
   {
+    std::vector<zx_cpu_performance_info_t> perf_info(*cpu_count);
+
     size_t count = kInvalidInfoCount;
-    const zx_status_t status =
-        zx_system_get_performance_info(resource->get(), ZX_CPU_DEFAULT_PERF_SCALE,
-                                       default_info.size(), default_info.data(), &count);
+    const zx_status_t status = zx_system_get_performance_info(
+        resource->get(), ZX_CPU_DEFAULT_PERF_SCALE, perf_info.size(), perf_info.data(), &count);
     ASSERT_OK(status);
-    ASSERT_EQ(default_info.size(), count);
+    ASSERT_EQ(perf_info.size(), count);
 
     uint32_t last_cpu = kInvalidCpu;
-    for (const auto& entry : default_info) {
+    for (const auto& entry : perf_info) {
       EXPECT_TRUE(last_cpu == kInvalidCpu || entry.logical_cpu_number > last_cpu);
       last_cpu = entry.logical_cpu_number;
       EXPECT_FALSE(entry.performance_scale.integral_part == 0 &&
@@ -353,18 +359,49 @@ TEST(SystemCpu, GetPerformanceInfo) {
   }
 
   {
+    std::vector<zx_cpu_performance_info_t> perf_info(*cpu_count);
+
     size_t count = kInvalidInfoCount;
     const zx_status_t status = zx_system_get_performance_info(
-        resource->get(), ZX_CPU_PERF_SCALE, default_info.size(), default_info.data(), &count);
+        resource->get(), ZX_CPU_PERF_SCALE, perf_info.size(), perf_info.data(), &count);
     ASSERT_OK(status);
-    ASSERT_EQ(default_info.size(), count);
+    ASSERT_EQ(perf_info.size(), count);
 
     uint32_t last_cpu = kInvalidCpu;
-    for (const auto& entry : default_info) {
+    for (const auto& entry : perf_info) {
       EXPECT_TRUE(last_cpu == kInvalidCpu || entry.logical_cpu_number > last_cpu);
       last_cpu = entry.logical_cpu_number;
       EXPECT_FALSE(entry.performance_scale.integral_part == 0 &&
                    entry.performance_scale.fractional_part == 0);
+    }
+  }
+
+  {
+    std::vector<zx_cpu_perf_limit_t> limit_info(*cpu_count);
+
+    size_t count = kInvalidInfoCount;
+    const zx_status_t status = zx_system_get_performance_info(
+        resource->get(), ZX_CPU_PERF_LIMIT, limit_info.size(), limit_info.data(), &count);
+    ASSERT_OK(status);
+    ASSERT_EQ(limit_info.size(), count);
+
+    uint32_t last_cpu = kInvalidCpu;
+    for (const auto& entry : limit_info) {
+      EXPECT_TRUE(last_cpu == kInvalidCpu || entry.logical_cpu_number > last_cpu);
+      last_cpu = entry.logical_cpu_number;
+
+      EXPECT_EQ(entry.limit_type, ZX_CPU_PERF_LIMIT_TYPE_RATE);
+
+      // Assume that in the core test environment the min and max rate limits
+      // will be left to the defaults. If this assumption becomes invalid, this
+      // test will need to be revised.
+      //
+      // This test will also need to be updated when the scale/format for
+      // userspace rates is revisited.
+      // TODO(https://fxbug.dev/448136916): Define the scale/format used for
+      // userspace rates and remove assumptions that the range is [0, 1000].
+      EXPECT_EQ(entry.min, 0);
+      EXPECT_EQ(entry.max, 1000);
     }
   }
 }

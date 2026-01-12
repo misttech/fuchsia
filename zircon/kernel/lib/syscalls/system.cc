@@ -728,35 +728,73 @@ zx_status_t sys_system_get_performance_info(zx_handle_t resource, uint32_t topic
     return ZX_ERR_OUT_OF_RANGE;
   }
 
-  fbl::AllocChecker checker;
-  auto performance_info = ktl::make_unique<zx_cpu_performance_info_t[]>(&checker, info_count);
-  if (!checker.check()) {
-    return ZX_ERR_NO_MEMORY;
-  }
-
   switch (topic) {
-    case ZX_CPU_PERF_SCALE:
-      Scheduler::GetPerformanceScales(ktl::span{performance_info.get(), info_count});
-      break;
+    case ZX_CPU_PERF_SCALE: {
+      fbl::AllocChecker checker;
+      auto performance_info = ktl::make_unique<zx_cpu_performance_info_t[]>(&checker, info_count);
+      if (!checker.check()) {
+        return ZX_ERR_NO_MEMORY;
+      }
 
-    case ZX_CPU_DEFAULT_PERF_SCALE:
+      Scheduler::GetPerformanceScales(ktl::span{performance_info.get(), info_count});
+
+      auto info = info_void.reinterpret<zx_cpu_performance_info_t>();
+      if (info.copy_array_to_user(performance_info.get(), info_count) != ZX_OK) {
+        return ZX_ERR_INVALID_ARGS;
+      }
+
+      if (output_count.copy_to_user(info_count) != ZX_OK) {
+        return ZX_ERR_INVALID_ARGS;
+      }
+
+      return ZX_OK;
+    }
+
+    case ZX_CPU_DEFAULT_PERF_SCALE: {
+      fbl::AllocChecker checker;
+      auto performance_info = ktl::make_unique<zx_cpu_performance_info_t[]>(&checker, info_count);
+      if (!checker.check()) {
+        return ZX_ERR_NO_MEMORY;
+      }
+
       Scheduler::GetDefaultPerformanceScales(ktl::span{performance_info.get(), info_count});
-      break;
+
+      auto info = info_void.reinterpret<zx_cpu_performance_info_t>();
+      if (info.copy_array_to_user(performance_info.get(), info_count) != ZX_OK) {
+        return ZX_ERR_INVALID_ARGS;
+      }
+
+      if (output_count.copy_to_user(info_count) != ZX_OK) {
+        return ZX_ERR_INVALID_ARGS;
+      }
+
+      return ZX_OK;
+    }
+
+    case ZX_CPU_PERF_LIMIT: {
+      fbl::AllocChecker checker;
+      auto limit_info = ktl::make_unique<zx_cpu_perf_limit_t[]>(&checker, info_count);
+      if (!checker.check()) {
+        return ZX_ERR_NO_MEMORY;
+      }
+
+      Scheduler::GetProcessingLimits(ktl::span{limit_info.get(), info_count});
+
+      auto info = info_void.reinterpret<zx_cpu_perf_limit_t>();
+      if (info.copy_array_to_user(limit_info.get(), info_count) != ZX_OK) {
+        return ZX_ERR_INVALID_ARGS;
+      }
+
+      if (output_count.copy_to_user(info_count) != ZX_OK) {
+        return ZX_ERR_INVALID_ARGS;
+      }
+
+      return ZX_OK;
+    }
 
     default:
       return ZX_ERR_INVALID_ARGS;
   }
-
-  auto info = info_void.reinterpret<zx_cpu_performance_info_t>();
-  if (info.copy_array_to_user(performance_info.get(), info_count) != ZX_OK) {
-    return ZX_ERR_INVALID_ARGS;
-  }
-
-  if (output_count.copy_to_user(info_count) != ZX_OK) {
-    return ZX_ERR_INVALID_ARGS;
-  }
-
-  return ZX_OK;
 }
 
 // TODO(https://fxbug.dev/42182544): Reconcile with HaltToken, zx_system_powerctl, and

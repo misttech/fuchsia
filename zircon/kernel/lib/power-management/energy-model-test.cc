@@ -26,7 +26,6 @@
 
 namespace {
 
-using ffl::FromRatio;
 using power_management::ControlInterface;
 using power_management::EnergyModel;
 using power_management::PowerDomain;
@@ -43,7 +42,17 @@ bool InRange(const Ranged& ranged, const Element& element) {
   return std::ranges::find(ranged, element) != std::cend(ranged);
 }
 
-ProcessingRate ToProcessingRate(uint64_t unscaled) { return FromRatio<uint64_t>(unscaled, 1000); }
+TEST(PowerLevelTest, ToFromRate) {
+  const ProcessingRate min_rate{0};
+  const ProcessingRate max_rate{1};
+  const uint64_t min_user_rate{0};
+  const uint64_t max_user_rate{PowerLevel::kUserProcessingRateScale};
+
+  EXPECT_EQ(min_rate, PowerLevel::ToProcessingRate(min_user_rate));
+  EXPECT_EQ(max_rate, PowerLevel::ToProcessingRate(max_user_rate));
+  EXPECT_EQ(min_user_rate, PowerLevel::FromProcessingRate(min_rate));
+  EXPECT_EQ(max_user_rate, PowerLevel::FromProcessingRate(max_rate));
+}
 
 TEST(PowerLevelTest, Ctor) {
   constexpr zx_processor_power_level_t kLevel = {
@@ -58,7 +67,7 @@ TEST(PowerLevelTest, Ctor) {
   PowerLevel level(0, kLevel);
 
   EXPECT_EQ(level.level(), 0);
-  EXPECT_EQ(level.processing_rate(), ToProcessingRate(kLevel.processing_rate));
+  EXPECT_EQ(level.processing_rate(), PowerLevel::ToProcessingRate(kLevel.processing_rate));
   EXPECT_EQ(level.power_coefficient_nw(), kLevel.power_coefficient_nw);
   EXPECT_EQ(level.control(), static_cast<ControlInterface>(kLevel.control_interface));
   EXPECT_EQ(level.control_argument(), kLevel.control_argument);
@@ -81,7 +90,7 @@ TEST(PowerLevelTest, Ctor2) {
   PowerLevel level(123, kLevel);
 
   EXPECT_EQ(level.level(), 123);
-  EXPECT_EQ(level.processing_rate(), ToProcessingRate(kLevel.processing_rate));
+  EXPECT_EQ(level.processing_rate(), PowerLevel::ToProcessingRate(kLevel.processing_rate));
   EXPECT_EQ(level.power_coefficient_nw(), kLevel.power_coefficient_nw);
   EXPECT_EQ(level.control(), static_cast<ControlInterface>(kLevel.control_interface));
   EXPECT_EQ(level.control_argument(), kLevel.control_argument);

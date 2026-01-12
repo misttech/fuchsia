@@ -49,9 +49,17 @@ class PowerLevel {
     kActive,
   };
 
+  // Scale for processing rates communicated to/from userspace. This should be
+  // replaced with either a fixed point format or a scaling relative to the max
+  // userspace rate provided in the energy model.
+  static constexpr uint64_t kUserProcessingRateScale = 1000u;
+
   // TODO(eieio): Normalize relative to the max processing rate of all power levels.
   static constexpr ProcessingRate ToProcessingRate(uint64_t processing_rate) {
-    return ffl::FromRatio<uint64_t>(processing_rate, 1000);
+    return ffl::FromRatio<uint64_t>(processing_rate, kUserProcessingRateScale);
+  }
+  static constexpr uint64_t FromProcessingRate(ProcessingRate processing_rate) {
+    return ffl::Round<uint64_t>(processing_rate * kUserProcessingRateScale);
   }
 
   constexpr PowerLevel() = default;
@@ -62,7 +70,8 @@ class PowerLevel {
         processing_rate_(ToProcessingRate(level.processing_rate)),
         power_coefficient_nw_(level.power_coefficient_nw),
         power_cost_nw_per_rate_(level.processing_rate > 0
-                                    ? level.power_coefficient_nw * 1000 / level.processing_rate
+                                    ? level.power_coefficient_nw * kUserProcessingRateScale /
+                                          level.processing_rate
                                     : 0),
         level_(level_index) {
     memcpy(name_.data(), level.diagnostic_name, name_.size());
