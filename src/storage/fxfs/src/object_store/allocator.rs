@@ -1553,8 +1553,14 @@ impl Allocator {
     }
 
     /// Gets the bytes limit for an owner object.
-    pub fn get_bytes_limit(&self, owner_object_id: u64) -> Option<u64> {
+    pub fn get_owner_bytes_limit(&self, owner_object_id: u64) -> Option<u64> {
         self.inner.lock().info.limit_bytes.get(&owner_object_id).copied()
+    }
+
+    /// Gets the number of bytes currently used by allocations, reservations or uncommitted
+    /// allocations.
+    pub fn get_owner_bytes_used(&self, owner_object_id: u64) -> u64 {
+        self.inner.lock().owner_bytes.get(&owner_object_id).map_or(0, |info| info.used_bytes().0)
     }
 
     /// Deallocates the given device range for the specified object.

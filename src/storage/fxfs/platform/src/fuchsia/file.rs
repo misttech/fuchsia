@@ -9,7 +9,7 @@ use crate::fuchsia::paged_object_handle::PagedObjectHandle;
 use crate::fuchsia::pager::{
     MarkDirtyRange, PageInRange, PagerBacked, PagerPacketReceiverRegistration, default_page_in,
 };
-use crate::fuchsia::volume::{FxVolume, info_to_filesystem_info};
+use crate::fuchsia::volume::FxVolume;
 use anyhow::Error;
 use fidl_fuchsia_io as fio;
 use fxfs::filesystem::{MAX_FILE_SIZE, SyncOptions};
@@ -584,13 +584,7 @@ impl vfs::node::Node for FxFile {
     }
 
     fn query_filesystem(&self) -> Result<fio::FilesystemInfo, Status> {
-        let store = self.handle.store();
-        Ok(info_to_filesystem_info(
-            store.filesystem().get_info(),
-            store.filesystem().block_size(),
-            store.object_count(),
-            self.handle.owner().id(),
-        ))
+        Ok(self.handle.owner().filesystem_info_for_volume())
     }
 
     async fn list_extended_attributes(&self) -> Result<Vec<Vec<u8>>, Status> {

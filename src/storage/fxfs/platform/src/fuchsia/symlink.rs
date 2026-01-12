@@ -5,7 +5,7 @@
 use crate::fuchsia::directory::FxDirectory;
 use crate::fuchsia::errors::map_to_status;
 use crate::fuchsia::node::FxNode;
-use crate::fuchsia::volume::{FxVolume, info_to_filesystem_info};
+use crate::fuchsia::volume::FxVolume;
 use anyhow::Error;
 use fidl_fuchsia_io as fio;
 use fxfs::errors::FxfsError;
@@ -199,13 +199,7 @@ impl Node for FxSymlink {
     }
 
     fn query_filesystem(&self) -> Result<fio::FilesystemInfo, zx::Status> {
-        let store = self.handle.store();
-        Ok(info_to_filesystem_info(
-            store.filesystem().get_info(),
-            store.filesystem().block_size(),
-            store.object_count(),
-            self.handle.owner().id(),
-        ))
+        Ok(self.handle.owner().filesystem_info_for_volume())
     }
 
     async fn list_extended_attributes(&self) -> Result<Vec<Vec<u8>>, zx::Status> {

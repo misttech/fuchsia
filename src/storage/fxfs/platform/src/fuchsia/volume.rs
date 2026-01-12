@@ -225,6 +225,23 @@ impl FxVolume {
         &self.blob_resupplied_count
     }
 
+    /// Reports the filesystem info, but if the volume has a space limit applied then the space
+    /// available and space used are reported based on the volume instead.
+    pub fn filesystem_info_for_volume(&self) -> fio::FilesystemInfo {
+        let allocator = self.store.filesystem().allocator();
+        let info =
+            if let Some(limit) = allocator.get_owner_bytes_limit(self.store.store_object_id()) {
+                filesystem::Info {
+                    used_bytes: allocator.get_owner_bytes_used(self.store.store_object_id()),
+                    total_bytes: limit,
+                }
+            } else {
+                self.store.filesystem().get_info()
+            };
+
+        info_to_filesystem_info(info, self.store.block_size(), self.store.object_count(), self.id())
+    }
+
     /// Stop profiling, recover resources from it and finalize recordings.
     pub async fn stop_profile_tasks(self: &Arc<Self>) {
         let Some(mut state) = self.profile_state.lock().take() else { return };
@@ -936,7 +953,7 @@ const FXFS_INFO_NAME_FIDL: [i8; 32] = [
     0, 0, 0, 0,
 ];
 
-pub fn info_to_filesystem_info(
+fn info_to_filesystem_info(
     info: filesystem::Info,
     block_size: u64,
     object_count: u64,

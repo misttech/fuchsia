@@ -7,7 +7,7 @@ use crate::fuchsia::errors::map_to_status;
 use crate::fuchsia::file::FxFile;
 use crate::fuchsia::node::{FxNode, GetResult, OpenedNode};
 use crate::fuchsia::symlink::FxSymlink;
-use crate::fuchsia::volume::{FxVolume, RootDir, info_to_filesystem_info};
+use crate::fuchsia::volume::{FxVolume, RootDir};
 use anyhow::{Error, bail};
 use either::{Left, Right};
 use fidl::endpoints::ServerEnd;
@@ -890,13 +890,7 @@ impl vfs::node::Node for FxDirectory {
     }
 
     fn query_filesystem(&self) -> Result<fio::FilesystemInfo, zx::Status> {
-        let store = self.directory.store();
-        Ok(info_to_filesystem_info(
-            store.filesystem().get_info(),
-            store.filesystem().block_size(),
-            store.object_count(),
-            self.volume().id(),
-        ))
+        Ok(self.volume().filesystem_info_for_volume())
     }
 
     async fn list_extended_attributes(&self) -> Result<Vec<Vec<u8>>, zx::Status> {

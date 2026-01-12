@@ -799,7 +799,7 @@ impl VolumesDirectory {
 
     fn handle_get_limit(self: &Arc<Self>, store_id: u64) -> u64 {
         let fs = self.root_volume.volume_directory().store().filesystem();
-        fs.allocator().get_bytes_limit(store_id).unwrap_or_default()
+        fs.allocator().get_owner_bytes_limit(store_id).unwrap_or_default()
     }
 
     async fn handle_get_info(self: &Arc<Self>, store_id: u64) -> Result<[u8; 16], Error> {
@@ -1888,7 +1888,25 @@ mod tests {
         .unwrap();
 
         let vol = VolumeInfo::new(&volumes_directory, "foo").await;
+        let old_info = {
+            let (status, info) = vol.file_proxy.query_filesystem().await.expect("Getting fs info");
+            assert_eq!(status, zx::Status::OK.into_raw());
+            let info = info.unwrap();
+            // With no limit set, the total filesystem size should be returned.
+            assert!(info.total_bytes > BYTES_LIMIT);
+            info
+        };
+
         vol.volume_proxy.set_limit(BYTES_LIMIT).await.unwrap().expect("To set limits");
+        {
+            let (status, info) = vol.file_proxy.query_filesystem().await.expect("Getting fs info");
+            assert!(status == zx::Status::OK.into_raw());
+            let new_info = info.unwrap();
+            assert_eq!(new_info.total_bytes, BYTES_LIMIT);
+            // Now since the limit is the volume limit, the space used should be the volume usage,
+            // which should be strictly less than the filesystem.
+            assert!(new_info.used_bytes < old_info.used_bytes);
+        }
 
         let zeros = vec![0u8; BLOCK_SIZE];
         // First write should succeed.
