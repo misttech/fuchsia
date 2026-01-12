@@ -119,6 +119,7 @@ fuchsia_cc_test(
         "@fuchsia_sdk//fidl/fuchsia.hardware.pin:fuchsia.hardware.pin_cpp",
         "@fuchsia_sdk//pkg/driver_fake_bti_cpp",
         "@fuchsia_sdk//pkg/driver_fake_mmio_reg_cpp",
+        "@fuchsia_sdk//pkg/driver_fake_pin_cpp",
         "@fuchsia_sdk//pkg/driver_fake_platform_device_cpp",
         "@fuchsia_sdk//pkg/driver_testing_cpp",
     ],

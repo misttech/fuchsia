@@ -6,11 +6,12 @@
 
 #include <fidl/fuchsia.hardware.clock/cpp/wire_test_base.h>
 #include <fidl/fuchsia.hardware.gpio/cpp/wire_test_base.h>
-#include <fidl/fuchsia.hardware.pin/cpp/wire_test_base.h>
+#include <fidl/fuchsia.hardware.pin/cpp/fidl.h>
 #include <fidl/fuchsia.hardware.platform.device/cpp/fidl.h>
 #include <lib/ddk/platform-defs.h>
 #include <lib/driver/fake-bti/cpp/fake-bti.h>
 #include <lib/driver/fake-mmio-reg/cpp/fake-mmio-reg.h>
+#include <lib/driver/fake-pin/cpp/fake-pin.h>
 #include <lib/driver/fake-platform-device/cpp/fake-pdev.h>
 #include <lib/driver/testing/cpp/driver_test.h>
 #include <lib/fdio/directory.h>
@@ -99,43 +100,18 @@ class FakeClock : public fidl::testing::WireTestBase<fuchsia_hardware_clock::Clo
   fidl::ServerBindingGroup<fuchsia_hardware_clock::Clock> bindings_;
 };
 
-class FakeGpio : public fidl::testing::WireTestBase<fuchsia_hardware_gpio::Gpio>,
-                 public fidl::testing::WireTestBase<fuchsia_hardware_pin::Pin> {
+class FakeGpio : public fidl::testing::WireTestBase<fuchsia_hardware_gpio::Gpio> {
  public:
   FakeGpio() = default;
 
   zx::result<> Serve(async_dispatcher_t* dispatcher, fdf::OutgoingDirectory& to_driver_vfs,
                      std::string_view instance) {
-    // Serve gpio service.
-    {
-      fuchsia_hardware_gpio::Service::InstanceHandler handler{{
-          .device = gpio_bindings_.CreateHandler(this, dispatcher, fidl::kIgnoreBindingClosure),
-      }};
+    fuchsia_hardware_gpio::Service::InstanceHandler handler{{
+        .device = gpio_bindings_.CreateHandler(this, dispatcher, fidl::kIgnoreBindingClosure),
+    }};
 
-      zx::result result =
-          to_driver_vfs.AddService<fuchsia_hardware_gpio::Service>(std::move(handler), instance);
-      if (result.is_error()) {
-        return result.take_error();
-      }
-    }
-
-    // Serve pin service.
-    {
-      fuchsia_hardware_pin::Service::InstanceHandler handler{{
-          .device = pin_bindings_.CreateHandler(this, dispatcher, fidl::kIgnoreBindingClosure),
-      }};
-
-      zx::result result =
-          to_driver_vfs.AddService<fuchsia_hardware_pin::Service>(std::move(handler), instance);
-      if (result.is_error()) {
-        return result.take_error();
-      }
-    }
-
-    return zx::ok();
+    return to_driver_vfs.AddService<fuchsia_hardware_gpio::Service>(std::move(handler), instance);
   }
-
-  bool IsFakeGpioSetToSclk() const { return set_to_sclk_; }
 
  protected:
   void SetBufferMode(SetBufferModeRequestView request,
@@ -148,25 +124,12 @@ class FakeGpio : public fidl::testing::WireTestBase<fuchsia_hardware_gpio::Gpio>
     FAIL() << "unknown method (Gpio) ordinal " << metadata.method_ordinal;
   }
 
-  void Configure(ConfigureRequestView request, ConfigureCompleter::Sync& completer) override {
-    if (request->config.has_function()) {
-      set_to_sclk_ = request->config.function() == 1;  // function is SCLK.
-    }
-    completer.ReplySuccess({});
-  }
-  void handle_unknown_method(fidl::UnknownMethodMetadata<fuchsia_hardware_pin::Pin> metadata,
-                             fidl::UnknownMethodCompleter::Sync& completer) override {
-    FAIL() << "unknown method (Pin) ordinal " << metadata.method_ordinal;
-  }
-
   void NotImplemented_(const std::string& name, fidl::CompleterBase& completer) override {
     completer.Close(ZX_ERR_NOT_SUPPORTED);
   }
 
  private:
-  bool set_to_sclk_ = false;  // Even though the board driver may set this, do not assume it is set.
   fidl::ServerBindingGroup<fuchsia_hardware_gpio::Gpio> gpio_bindings_;
-  fidl::ServerBindingGroup<fuchsia_hardware_pin::Pin> pin_bindings_;
 };
 
 class AmlG12CompositeTestEnvironment : public fdf_testing::Environment {
@@ -248,14 +211,38 @@ class AmlG12CompositeTestEnvironment : public fdf_testing::Environment {
       }
     }
 
+    {
+      zx::result result = to_driver_vfs.AddService<fuchsia_hardware_pin::Service>(
+          sclk_tdm_a_pin_.CreateInstanceHandler(), Driver::kGpioTdmASclkParentName);
+      if (result.is_error()) {
+        return result.take_error();
+      }
+    }
+
+    {
+      zx::result result = to_driver_vfs.AddService<fuchsia_hardware_pin::Service>(
+          sclk_tdm_b_pin_.CreateInstanceHandler(), Driver::kGpioTdmBSclkParentName);
+      if (result.is_error()) {
+        return result.take_error();
+      }
+    }
+
+    {
+      zx::result result = to_driver_vfs.AddService<fuchsia_hardware_pin::Service>(
+          sclk_tdm_c_pin_.CreateInstanceHandler(), Driver::kGpioTdmCSclkParentName);
+      if (result.is_error()) {
+        return result.take_error();
+      }
+    }
+
     return zx::ok();
   }
 
   FakeClock& clock_gate() { return clock_gate_; }
   FakeClock& clock_pll() { return clock_pll_; }
-  FakeGpio& sclk_tdm_a() { return sclk_tdm_a_; }
-  FakeGpio& sclk_tdm_b() { return sclk_tdm_b_; }
-  FakeGpio& sclk_tdm_c() { return sclk_tdm_c_; }
+  fdf_fake::FakePin& sclk_tdm_a_pin() { return sclk_tdm_a_pin_; }
+  fdf_fake::FakePin& sclk_tdm_b_pin() { return sclk_tdm_b_pin_; }
+  fdf_fake::FakePin& sclk_tdm_c_pin() { return sclk_tdm_c_pin_; }
   fake_mmio::FakeMmioRegRegion& mmio() { return mmio_reg_region_; }
 
  private:
@@ -265,6 +252,9 @@ class AmlG12CompositeTestEnvironment : public fdf_testing::Environment {
   FakeGpio sclk_tdm_a_;
   FakeGpio sclk_tdm_b_;
   FakeGpio sclk_tdm_c_;
+  fdf_fake::FakePin sclk_tdm_a_pin_;
+  fdf_fake::FakePin sclk_tdm_b_pin_;
+  fdf_fake::FakePin sclk_tdm_c_pin_;
 
   fake_mmio::FakeMmioRegRegion mmio_reg_region_{kMmioRegSize, kMmioRegCount};
   std::array<uint64_t, kMmioRegCount> mmio_reg_values_;
@@ -318,17 +308,17 @@ class AmlG12CompositeTest : public testing::Test {
 
   bool IsTdmASclkSet() {
     return driver_test_.RunInEnvironmentTypeContext<bool>(
-        [](auto& env) { return env.sclk_tdm_a().IsFakeGpioSetToSclk(); });
+        [](auto& env) { return env.sclk_tdm_a_pin().take_function() == kSclkPinFunction; });
   }
 
   bool IsTdmBSclkSet() {
     return driver_test_.RunInEnvironmentTypeContext<bool>(
-        [](auto& env) { return env.sclk_tdm_b().IsFakeGpioSetToSclk(); });
+        [](auto& env) { return env.sclk_tdm_b_pin().take_function() == kSclkPinFunction; });
   }
 
   bool IsTdmCSclkSet() {
     return driver_test_.RunInEnvironmentTypeContext<bool>(
-        [](auto& env) { return env.sclk_tdm_c().IsFakeGpioSetToSclk(); });
+        [](auto& env) { return env.sclk_tdm_c_pin().take_function() == kSclkPinFunction; });
   }
 
   void CheckDefaultDaiFormats(fuchsia_hardware_audio::ElementId id) {
@@ -440,6 +430,8 @@ class AmlG12CompositeTest : public testing::Test {
   }
 
  private:
+  static constexpr uint64_t kSclkPinFunction = 1;
+
   fidl::SyncClient<fuchsia_hardware_audio::Composite> client_;
   fdf_testing::BackgroundDriverTest<FixtureConfig> driver_test_;
 };
