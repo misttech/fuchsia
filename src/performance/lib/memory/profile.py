@@ -5,6 +5,7 @@
 
 import fnmatch
 import json
+import re
 from typing import Any, Mapping, cast
 
 from honeydew.fuchsia_device.fuchsia_device import FuchsiaDevice
@@ -14,7 +15,9 @@ _DESCRIPTION_BASE = "Total populated bytes for private uncompressed memory VMOs"
 
 
 def capture(
-    dut: FuchsiaDevice, principal_groups: Mapping[str, str] | None = None
+    dut: FuchsiaDevice,
+    principal_groups: Mapping[str, str] | None = None,
+    buckets_metrics: str | None = None,
 ) -> metrics.Report:
     """Captures kernel and user space memory metrics using `ffx profile memory`.
     See documentation at
@@ -22,6 +25,9 @@ def capture(
 
     Args:
       dut: A FuchsiaDevice instance connected to the device to profile.
+      buckets_metrics: for each bucket matching this regular expression
+        a metric labelled "Memory/Bucket/{bucket_name}/CommittedBytes" is
+        returned. When not set, none is returned.
       principal_groups: mapping from group name to a `fnmatch` pattern
         that selects the principals by name. A metric labelled
         "Memory/Principal/{group_name}/PrivatePopulated" is returned for each
@@ -48,7 +54,9 @@ def capture(
             ],
         )
     )
-    structured = process_component_profile(principal_groups, component_profile)
+    structured = process_component_profile(
+        principal_groups, buckets_metrics, component_profile
+    )
     description = metrics.describe_callable(capture)
     return metrics.Report(
         structured,
@@ -67,9 +75,24 @@ def capture(
 
 
 def process_component_profile(
-    principal_groups: Mapping[str, str], component_profile: Any
+    principal_groups: Mapping[str, str],
+    buckets_metrics: str | None,
+    component_profile: Any,
 ) -> list[metrics.TestCaseResult]:
     results: list[metrics.TestCaseResult] = []
+
+    if buckets_metrics:
+        for bucket in component_profile["ComponentDigest"]["digest"]["buckets"]:
+            if re.match(buckets_metrics, bucket["name"]):
+                results.append(
+                    metrics.TestCaseResult(
+                        label=f"Memory/Bucket/{bucket['name']}/CommittedBytes",
+                        unit=metrics.Unit.bytes,
+                        values=[bucket["size"]],
+                        doc=f"Total committed bytes in the bucket: {bucket['name']}",
+                    )
+                )
+
     for group_name, pattern in principal_groups.items():
         digest = component_profile["ComponentDigest"]
         private_populated = sum(

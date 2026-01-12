@@ -51,12 +51,43 @@ MM2_OUTPUT = """
                 }
             ],
             "undigested": 0
+            "digest": {
+                "buckets": [
+                    {
+                    "name": "ZBI Buffer",
+                    "size": 0
+                    },
+                    {
+                    "name": "Graphics",
+                    "size": 49152
+                    }
+                ]
+            }
         }
-    }
 """
 
 
 class ProfileTest(unittest.TestCase):
+    def test_capture_and_export_digest(self) -> None:
+        def ffx_run_fake_implementation(args: list[str]) -> str:
+            return MM2_OUTPUT
+
+        dut = Mock()
+        dut.ffx.run.side_effect = ffx_run_fake_implementation
+        report = profile.capture(dut, buckets_metrics="Graphics")
+
+        self.assertEqual(
+            report.structured,
+            [
+                metrics.TestCaseResult(
+                    label="Memory/Bucket/Graphics/CommittedBytes",
+                    unit=metrics.Unit.bytes,
+                    values=(49152,),
+                    doc="TTotal committed bytes in the bucket: Graphics",
+                )
+            ],
+        )
+
     def test_capture_and_compute_metrics(self) -> None:
         def ffx_run_fake_implementation(args: list[str]) -> str:
             backend = args[args.index("--backend") + 1]
