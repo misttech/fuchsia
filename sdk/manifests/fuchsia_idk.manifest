@@ -73,6 +73,7 @@ cc_source_library://pkg/driver_fake_gpio_cpp (unstable)
 cc_source_library://pkg/driver_fake_interconnect_cpp (unstable)
 cc_source_library://pkg/driver_fake_mmio_reg_cpp
 cc_source_library://pkg/driver_fake_object_cpp
+cc_source_library://pkg/driver_fake_pin_cpp (unstable)
 cc_source_library://pkg/driver_fake_platform_device_cpp (unstable)
 cc_source_library://pkg/driver_fake_resource_cpp (unstable)
 cc_source_library://pkg/driver_fake_vreg_cpp (unstable)
