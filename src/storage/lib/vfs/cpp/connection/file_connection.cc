@@ -99,12 +99,6 @@ void FileConnection::Query(QueryCompleter::Sync& completer) {
 zx_status_t FileConnection::WithNodeInfoDeprecated(
     fit::callback<zx_status_t(fuchsia_io::wire::NodeInfoDeprecated)> handler) const {
   fio::wire::FileObject file_object;
-  zx::result<zx::event> observer = vnode()->GetObserver();
-  if (observer.is_ok()) {
-    file_object.event = std::move(*observer);
-  } else if (observer.error_value() != ZX_ERR_NOT_SUPPORTED) {
-    return observer.error_value();
-  }
   if (stream()) {
     if (zx_status_t status = stream()->duplicate(ZX_RIGHT_SAME_RIGHTS, &file_object.stream);
         status != ZX_OK) {
@@ -134,11 +128,6 @@ zx::result<> FileConnection::WithRepresentation(
     builder.attributes(fidl::ObjectView<fio::wire::NodeAttributes2>::FromExternal(*attributes));
   }
   builder.is_append(GetAppend());
-  if (zx::result observer = vnode()->GetObserver(); observer.is_ok()) {
-    builder.observer(std::move(*observer));
-  } else if (observer.error_value() != ZX_ERR_NOT_SUPPORTED) {
-    return observer.take_error();
-  }
   if (this->stream()) {
     zx::stream stream;
     if (zx_status_t status = this->stream()->duplicate(ZX_RIGHT_SAME_RIGHTS, &stream);

@@ -181,9 +181,6 @@ class Vnode : public VnodeRefCounted<Vnode>, public fbl::Recyclable<Vnode> {
   // methods on the vnode. Other errors are considered fatal and will terminate the connection.
   virtual zx::result<zx::stream> CreateStream(uint32_t stream_options);
 
-  // Get an event which transmits information about an object's readability/writability.
-  virtual zx::result<zx::event> GetObserver() const { return zx::error(ZX_ERR_NOT_SUPPORTED); }
-
   // Acquire a vmo from a vnode.
   //
   // At the moment, mmap can only map files from read-only filesystems, since (without paging) there
