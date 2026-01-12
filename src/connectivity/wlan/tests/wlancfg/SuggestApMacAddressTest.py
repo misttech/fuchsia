@@ -25,7 +25,7 @@ logger = logging.getLogger(__name__)
 TEST_SSID = "testssid"
 
 
-class SuggestApMacAddress(fuchsia_wlan_base_test.FuchsiaWlanBaseTest):
+class SuggestApMacAddressTest(fuchsia_wlan_base_test.FuchsiaWlanBaseTest):
     """Tests that we see the expected behavior with enabling and disabling
         client connections
 
