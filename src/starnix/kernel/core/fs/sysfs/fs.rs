@@ -303,6 +303,31 @@ impl SysFs {
                             );
                         });
                     });
+                    dir.subdir("firmware", dir_mode, |dir| {
+                        dir.subdir("android", 0o755, |dir| {
+                            dir.entry(
+                                "compatible",
+                                StubEmptyFile::new_node(bug_ref!("https://fxbug.dev/452096300")),
+                                mode!(IFREG, 0o444),
+                            );
+                            dir.subdir("vbmeta", 0o755, |dir| {
+                                dir.entry(
+                                    "parts",
+                                    StubEmptyFile::new_node(bug_ref!(
+                                        "https://fxbug.dev/452096300"
+                                    )),
+                                    mode!(IFREG, 0o444),
+                                );
+                            });
+                        });
+                    });
+                    dir.subdir("mcu", dir_mode, |dir| {
+                        dir.entry(
+                            "board_type",
+                            BytesFile::new_node(b"starnix\n".to_vec()),
+                            mode!(IFREG, 0o444),
+                        );
+                    });
                 });
             });
         });

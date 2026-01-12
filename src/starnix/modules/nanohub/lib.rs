@@ -15,4 +15,4 @@ mod socket_tunnel_file;
 
 pub mod sysfs;
 
-pub use nanohub::{nanohub_device_init, nanohub_procfs_builder};
+pub use nanohub::nanohub_device_init;

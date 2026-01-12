@@ -212,7 +212,6 @@ fn create_test_kernel(
         None,
         fuchsia_inspect::Node::default(),
         security::testing::kernel_state(security_server),
-        Vec::new(),
         /* time_adjustment_proxy=*/ None,
         /* device_tree=*/ None,
     )

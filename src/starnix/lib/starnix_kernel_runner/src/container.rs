@@ -34,7 +34,6 @@ use starnix_core::task::container_namespace::ContainerNamespace;
 use starnix_core::task::{
     CurrentTask, ExitStatus, Kernel, RoleOverrides, SchedulerManager, parse_cmdline,
 };
-use starnix_core::vfs::pseudo::simple_directory::SimpleDirectoryMutator;
 use starnix_core::vfs::{FileSystemOptions, FsContext, LookupContext, Namespace, WhatToMount};
 use starnix_logging::{
     CATEGORY_STARNIX, NAME_CREATE_CONTAINER, log_debug, log_error, log_info, log_warn,
@@ -643,12 +642,6 @@ async fn create_container(
         kernel_cmdline.extend(&*params);
     }
 
-    // Collect a vector of functions to be invoked while constructing /proc/device-tree
-    let mut procfs_device_tree_setup: Vec<fn(&SimpleDirectoryMutator)> = vec![];
-    if features.nanohub {
-        procfs_device_tree_setup.push(starnix_modules_nanohub::nanohub_procfs_builder);
-    }
-
     // Check whether we actually have access to a role manager by trying to set our own
     // thread's role.
     let mut rt_mappings = RoleOverrides::new();
@@ -696,7 +689,6 @@ async fn create_container(
         Some(crash_reporter),
         kernel_node,
         security_state,
-        procfs_device_tree_setup,
         time_adjustment_proxy,
         device_tree,
     )

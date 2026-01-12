@@ -22,7 +22,6 @@ use crate::task::{
 use crate::time::{HrTimerManager, HrTimerManagerHandle};
 use crate::vdso::vdso_loader::Vdso;
 use crate::vfs::fs_args::MountParams;
-use crate::vfs::pseudo::simple_directory::SimpleDirectoryMutator;
 use crate::vfs::socket::{
     GenericMessage, GenericNetlink, NetlinkAccessControl, NetlinkContextImpl,
     NetlinkToClientSender, SocketAddress, SocketTokensStore,
@@ -297,10 +296,6 @@ pub struct Kernel {
     /// Handler for crashing Linux processes.
     pub crash_reporter: CrashReporter,
 
-    /// Vector of functions to be run when procfs is constructed. This is to allow
-    /// modules to expose directories into /proc/device-tree.
-    pub procfs_device_tree_setup: Vec<fn(&SimpleDirectoryMutator)>,
-
     /// Whether this kernel is shutting down. When shutting down, new processes may not be spawned.
     shutting_down: AtomicBool,
 
@@ -404,7 +399,6 @@ impl Kernel {
         crash_reporter_proxy: Option<CrashReporterProxy>,
         inspect_node: fuchsia_inspect::Node,
         security_state: security::KernelState,
-        procfs_device_tree_setup: Vec<fn(&SimpleDirectoryMutator)>,
         time_adjustment_proxy: Option<AdjustSynchronousProxy>,
         device_tree: Option<Devicetree>,
     ) -> Result<Arc<Kernel>, zx::Status> {
@@ -476,7 +470,6 @@ impl Kernel {
             hrtimer_manager,
             memory_attribution_manager: MemoryAttributionManager::new(kernel.clone()),
             crash_reporter,
-            procfs_device_tree_setup,
             shutting_down: AtomicBool::new(false),
             container_control_handle: Mutex::new(None),
             ebpf_state: Default::default(),

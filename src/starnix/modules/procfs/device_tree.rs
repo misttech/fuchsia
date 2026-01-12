@@ -2,38 +2,29 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use starnix_core::task::Kernel;
-use starnix_core::vfs::pseudo::simple_directory::{SimpleDirectory, SimpleDirectoryMutator};
-use starnix_core::vfs::pseudo::stub_empty_file::StubEmptyFile;
-use starnix_core::vfs::{FileSystemHandle, FsNodeHandle};
-use starnix_logging::bug_ref;
-use starnix_uapi::file_mode::mode;
+use starnix_core::task::CurrentTask;
+use starnix_core::vfs::{FsNode, FsNodeOps, SymlinkTarget, fs_node_impl_symlink};
+use starnix_sync::{FileOpsCore, Locked};
+use starnix_uapi::errors::Errno;
 
-pub fn device_tree_directory(kernel: &Kernel, fs: &FileSystemHandle) -> FsNodeHandle {
-    let dir = SimpleDirectory::new();
-    dir.edit(fs, |dir| {
-        dir.subdir("firmware", 0o755, build_firmware_directory);
-        for setup_function in &kernel.procfs_device_tree_setup {
-            setup_function(dir);
-        }
-    });
-    // TODO: Validate the mode bits are correct.
-    dir.into_node(fs, 0o777)
+/// A node that represents a link to /sys/firmware/devicetree/base
+pub struct DeviceTreeSymlink;
+
+impl DeviceTreeSymlink {
+    pub fn new_node() -> impl FsNodeOps {
+        Self {}
+    }
 }
 
-fn build_firmware_directory(dir: &SimpleDirectoryMutator) {
-    dir.subdir("android", 0o755, |dir| {
-        dir.entry(
-            "compatible",
-            StubEmptyFile::new_node(bug_ref!("https://fxbug.dev/452096300")),
-            mode!(IFREG, 0o444),
-        );
-        dir.subdir("vbmeta", 0o755, |dir| {
-            dir.entry(
-                "parts",
-                StubEmptyFile::new_node(bug_ref!("https://fxbug.dev/452096300")),
-                mode!(IFREG, 0o444),
-            );
-        });
-    });
+impl FsNodeOps for DeviceTreeSymlink {
+    fs_node_impl_symlink!();
+
+    fn readlink(
+        &self,
+        _locked: &mut Locked<FileOpsCore>,
+        _node: &FsNode,
+        _current_task: &CurrentTask,
+    ) -> Result<SymlinkTarget, Errno> {
+        Ok(SymlinkTarget::Path("/sys/firmware/devicetree/base".into()))
+    }
 }

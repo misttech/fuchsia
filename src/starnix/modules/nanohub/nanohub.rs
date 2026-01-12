@@ -12,23 +12,13 @@ use futures::TryStreamExt;
 use starnix_core::device::serial::SerialDevice;
 use starnix_core::fs::sysfs::build_device_directory;
 use starnix_core::task::{CurrentTask, Kernel};
-use starnix_core::vfs::pseudo::simple_directory::SimpleDirectoryMutator;
-use starnix_core::vfs::pseudo::simple_file::BytesFile;
 use starnix_logging::{log_error, log_info, log_warn};
 use starnix_sync::{Locked, Unlocked};
-use starnix_uapi::mode;
 use std::ops::DerefMut;
 use std::sync::Arc;
 use {fidl_fuchsia_hardware_google_nanohub as fnanohub, fidl_fuchsia_hardware_serial as fserial};
 
 const SERIAL_DIRECTORY: &str = "/dev/class/serial";
-
-/// Function to be invoked by ProcDirectory while constructing /proc/device-tree
-pub fn nanohub_procfs_builder(mutator: &SimpleDirectoryMutator) {
-    mutator.subdir("mcu", 0o555, |dir| {
-        dir.entry("board_type", BytesFile::new_node(b"starnix".to_vec()), mode!(IFREG, 0o444));
-    });
-}
 
 pub fn nanohub_device_init(locked: &mut Locked<Unlocked>, current_task: &CurrentTask) {
     register_socket_tunnel_device(

@@ -5,7 +5,7 @@
 use crate::cgroups::cgroups_file;
 use crate::config_gz::ConfigFile;
 use crate::cpuinfo::CpuinfoFile;
-use crate::device_tree::device_tree_directory;
+use crate::device_tree::DeviceTreeSymlink;
 use crate::devices::DevicesFile;
 use crate::filesystems::FilesystemsFile;
 use crate::kmsg::kmsg_file;
@@ -86,7 +86,7 @@ impl ProcDirectory {
             "config.gz".into() => read_only_file(fs, ConfigFile::new_node()),
             "cpuinfo".into() => read_only_file(fs, CpuinfoFile::new_node()),
             "devices".into() => read_only_file(fs, DevicesFile::new_node()),
-            "device-tree".into() => device_tree_directory(kernel, fs),
+            "device-tree".into() => symlink_file(fs, DeviceTreeSymlink::new_node()),
             "diskstats".into() => stub_file(fs, bug_ref!("https://fxbug.dev/322893370")),
             "filesystems".into() => read_only_file(fs, FilesystemsFile::new_node(&kernel.expando.get::<FsRegistry>())),
             "kallsyms".into() => read_only_file(fs, SimpleFileNode::new(|| {
