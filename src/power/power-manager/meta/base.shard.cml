@@ -54,6 +54,7 @@
             ],
             availability: "optional",
         },
+        { service: "fuchsia.hardware.trippoint.TripPointService" },
     ],
     expose: [
         {

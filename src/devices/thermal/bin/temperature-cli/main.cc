@@ -23,16 +23,16 @@ constexpr char kUsageMessage[] = R"""(Usage: temperature-cli <device> <command>
     name - Get sensor name (for temperature class device)
 
     Example:
-    temperature-cli /dev/class/temperature/000
-    temperature-cli /dev/class/temperature/000 name
+    temperature-cli /svc/fuchsia.hardware.temperature/<instance_name>/<ServiceMemberName>
+    temperature-cli /svc/fuchsia.hardware.temperature/<instance_name>/<ServiceMemberName> name
     - or -
     temperature-cli /dev/class/adc/000 read
     temperature-cli /dev/class/adc/000 resolution
     - or -
-    temperature-cli /dev/class/trippoint/000 trippoint
-    temperature-cli /dev/class/trippoint/000 trippoint 0:below,4.2 1:above,50.1 2:above,cleared
-    temperature-cli /dev/class/trippoint/000 wait
-    temperature-cli /dev/class/trippoint/000 name
+    temperature-cli /svc/fuchsia.hardware.trippoint.TripPointService/<instance_name>/<ServiceMemberName> trippoint
+    temperature-cli /svc/fuchsia.hardware.trippoint.TripPointService/<instance_name>/<ServiceMemberName> trippoint 0:below,4.2 1:above,50.1 2:above,cleared
+    temperature-cli /svc/fuchsia.hardware.trippoint.TripPointService/<instance_name>/<ServiceMemberName> wait
+    temperature-cli /svc/fuchsia.hardware.trippoint.TripPointService/<instance_name>/<ServiceMemberName> name
 )""";
 
 namespace FidlTemperature = fuchsia_hardware_temperature;

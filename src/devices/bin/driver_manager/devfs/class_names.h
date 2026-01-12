@@ -124,8 +124,6 @@ const std::unordered_map<std::string_view, ServiceEntry> kClassNameToService = {
      {ServiceEntry::kDevfsAndService, "fuchsia.hardware.ax88179.Service", "hooks"}},
     {"thermal", {ServiceEntry::kDevfsAndService, "fuchsia.hardware.thermal.Service", "device"}},
     {"tpm", {ServiceEntry::kDevfsAndService, "fuchsia.tpm.Service", "device"}},
-    {"trippoint",
-     {ServiceEntry::kDevfsAndService, "fuchsia.hardware.trippoint.TripPointService", "trippoint"}},
     {"usb-device",
      {ServiceEntry::kDevfsAndService, "fuchsia.hardware.usb.device.Service", "device"}},
     {"usb-tester",

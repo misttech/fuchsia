@@ -7,6 +7,8 @@ use crate::driver_utils::{Driver, connect_proxy, list_drivers};
 use anyhow::{Error, Result, format_err};
 use async_trait::async_trait;
 use diagnostics_hierarchy::LinearHistogramParams;
+use fidl::endpoints::Proxy;
+use fuchsia_component::client as fclient;
 use fuchsia_inspect::{
     self as inspect, ArrayProperty, HistogramProperty, IntLinearHistogramProperty, Property,
 };
@@ -19,15 +21,15 @@ use std::collections::HashMap;
 use std::rc::Rc;
 use {
     fidl_fuchsia_hardware_power_sensor as fpower,
-    fidl_fuchsia_hardware_temperature as ftemperature, fidl_fuchsia_power_metrics as fmetrics,
+    fidl_fuchsia_hardware_temperature as ftemperature,
+    fidl_fuchsia_hardware_trippoint as ftrippoint, fidl_fuchsia_power_metrics as fmetrics,
     fidl_fuchsia_ui_activity as factivity, fuchsia_async as fasync,
 };
 
 // The fuchsia.hardware.temperature.Device is composed into fuchsia.hardware.thermal.Device, and
 // fuchsia.hardware.trippoint also provides temperature sensors so this driver is found in
 // three directories.
-const TEMPERATURE_SERVICE_DIRS: [&str; 3] =
-    ["/dev/class/temperature", "/dev/class/thermal", "/dev/class/trippoint"];
+const TEMPERATURE_SERVICE_DIRS: [&str; 2] = ["/dev/class/temperature", "/dev/class/thermal"];
 const POWER_SERVICE_DIRS: [&str; 1] = ["/dev/class/power-sensor"];
 
 // Type aliases for convenience.
@@ -55,6 +57,22 @@ pub async fn generate_temperature_drivers(
             let alias = driver_aliases.get(&sensor_name);
             drivers.push(Driver { sensor_name, proxy, alias: alias.cloned() });
         }
+    }
+
+    for trippoint_proxy in
+        fclient::Service::open(ftrippoint::TripPointServiceMarker)?.enumerate().await?
+    {
+        let temperature_proxy = ftemperature::DeviceProxy::new(
+            trippoint_proxy.connect_to_trippoint()?.into_channel().map_err(|e| {
+                anyhow::anyhow!(
+                    "Mapping trippoint proxy to temperature proxy failed with err: {:?}",
+                    e
+                )
+            })?,
+        );
+        let sensor_name = temperature_proxy.get_sensor_name().await?;
+        let alias = driver_aliases.get(&sensor_name);
+        drivers.push(Driver { sensor_name, proxy: temperature_proxy, alias: alias.cloned() });
     }
     Ok(drivers)
 }

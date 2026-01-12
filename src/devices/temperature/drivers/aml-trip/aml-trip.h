@@ -10,7 +10,6 @@
 #include <fidl/fuchsia.hardware.trippoint/cpp/wire.h>
 #include <fidl/fuchsia.hardware.trippoint/cpp/wire_types.h>
 #include <lib/driver/component/cpp/driver_base.h>
-#include <lib/driver/devfs/cpp/connector.h>
 
 #include "aml-trip-device.h"
 
@@ -24,8 +23,7 @@ class AmlTrip final : public fdf::DriverBase {
   static constexpr size_t kTrimMmioIndex = 1;
 
   AmlTrip(fdf::DriverStartArgs start_args, fdf::UnownedSynchronizedDispatcher dispatcher)
-      : fdf::DriverBase(kDriverName, std::move(start_args), std::move(dispatcher)),
-        devfs_connector_(fit::bind_member<&AmlTrip::Serve>(this)) {}
+      : fdf::DriverBase(kDriverName, std::move(start_args), std::move(dispatcher)) {}
 
   // Lifecycle Management.
   zx::result<> Start() override;
@@ -33,14 +31,9 @@ class AmlTrip final : public fdf::DriverBase {
   void Stop() override;
 
  private:
-  // FIDL / Driver Framework Helpers
-  void Serve(fidl::ServerEnd<fuchsia_hardware_trippoint::TripPoint> request);
-  zx::result<> CreateDevfsNode();
-
   std::unique_ptr<AmlTripDevice> device_;
   fidl::ServerBindingGroup<fuchsia_hardware_trippoint::TripPoint> trippoint_bindings_;
   fdf::OwnedChildNode child_;
-  driver_devfs::Connector<fuchsia_hardware_trippoint::TripPoint> devfs_connector_;
 };
 
 }  // namespace temperature

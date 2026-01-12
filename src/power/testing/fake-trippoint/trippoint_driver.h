@@ -8,7 +8,6 @@
 #include <fidl/fuchsia.hardware.trippoint/cpp/fidl.h>
 #include <fidl/test.trippoint/cpp/fidl.h>
 #include <lib/driver/component/cpp/driver_base.h>
-#include <lib/driver/devfs/cpp/connector.h>
 #include <zircon/status.h>
 
 namespace fake_trippoint {
@@ -40,10 +39,6 @@ class TrippointDriver : public fdf::DriverBase,
       fidl::UnknownMethodCompleter::Sync& completer) override;
 
  private:
-  zx::result<> CreateDevfsNode();
-  void Serve(fidl::ServerEnd<fuchsia_hardware_trippoint::TripPoint> request);
-
-  driver_devfs::Connector<fuchsia_hardware_trippoint::TripPoint> devfs_connector_;
   fidl::ServerBindingGroup<fuchsia_hardware_trippoint::TripPoint> trippoint_bindings_;
   fidl::ServerBindingGroup<test_trippoint::Control> control_bindings_;
 

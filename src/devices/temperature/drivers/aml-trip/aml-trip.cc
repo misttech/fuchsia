@@ -95,19 +95,24 @@ zx::result<> AmlTrip::Start() {
     device_->SetRebootTemperatureCelsius(*critical_temperature);
   }
 
-  auto result = outgoing()->component().AddUnmanagedProtocol<fuchsia_hardware_trippoint::TripPoint>(
-      trippoint_bindings_.CreateHandler(device_.get(), dispatcher(), fidl::kIgnoreBindingClosure),
+  auto result = outgoing()->AddService<fuchsia_hardware_trippoint::TripPointService>(
+      fuchsia_hardware_trippoint::TripPointService::InstanceHandler({
+          .trippoint = trippoint_bindings_.CreateHandler(
+              device_.get(), fdf::Dispatcher::GetCurrent()->async_dispatcher(),
+              fidl::kIgnoreBindingClosure),
+      }),
       kChildNodeName);
   if (result.is_error()) {
     FDF_LOG(ERROR, "Failed to add Device service %s", result.status_string());
     return result.take_error();
   }
 
-  zx::result create_devfs_node_result = CreateDevfsNode();
-  if (create_devfs_node_result.is_error()) {
-    FDF_LOG(ERROR, "Failed to export to devfs %s", create_devfs_node_result.status_string());
-    return create_devfs_node_result.take_error();
+  zx::result child = AddOwnedChild(kChildNodeName);
+  if (child.is_error()) {
+    FDF_LOG(ERROR, "Failed to add owned child: %s", child.status_string());
+    return child.take_error();
   }
+  child_ = std::move(child.value());
 
   FDF_LOG(INFO, "Started Amlogic Trip Point Driver");
 
@@ -119,33 +124,6 @@ void AmlTrip::Stop() {}
 void AmlTrip::PrepareStop(fdf::PrepareStopCompleter completer) {
   device_->Shutdown();
   completer(zx::ok());
-}
-
-zx::result<> AmlTrip::CreateDevfsNode() {
-  zx::result connector = devfs_connector_.Bind(dispatcher());
-  if (connector.is_error()) {
-    FDF_LOG(ERROR, "Error creating devfs node");
-    return connector.take_error();
-  }
-
-  fuchsia_driver_framework::DevfsAddArgs devfs_args{
-      {.connector = std::move(connector.value()),
-       .class_name = "trippoint",
-       .connector_supports = fuchsia_device_fs::ConnectionType::kController}};
-
-  zx::result child = AddOwnedChild(kChildNodeName, devfs_args);
-  if (child.is_error()) {
-    FDF_LOG(ERROR, "Failed to add owned child: %s", child.status_string());
-    return child.take_error();
-  }
-  child_ = std::move(child.value());
-
-  return zx::ok();
-}
-
-void AmlTrip::Serve(fidl::ServerEnd<fuchsia_hardware_trippoint::TripPoint> request) {
-  trippoint_bindings_.AddBinding(dispatcher(), std::move(request), device_.get(),
-                                 fidl::kIgnoreBindingClosure);
 }
 
 }  // namespace temperature

@@ -120,8 +120,9 @@ class AmlTripTest : public ::testing::Test {
   void SetUp() override {
     driver_test_.RunInEnvironmentTypeContext([](auto& env) { env.Init(std::string{kTestName}); });
     ASSERT_OK(driver_test_.StartDriver());
-    zx::result client = driver_test_.ConnectThroughDevfs<fuchsia_hardware_trippoint::TripPoint>(
-        AmlTrip::kChildNodeName);
+    zx::result client =
+        driver_test_.Connect<fuchsia_hardware_trippoint::TripPointService::Trippoint>(
+            AmlTrip::kChildNodeName);
     ASSERT_OK(client);
     client_.Bind(std::move(client.value()));
   }

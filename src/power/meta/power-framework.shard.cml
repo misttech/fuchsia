@@ -93,6 +93,12 @@
             to: "self/toolbox",
             target_availability: "unknown",
         },
+        {
+            service: [ "fuchsia.hardware.trippoint.TripPointService" ],
+            from: "#boot-drivers",
+            to: [ "#power_manager" ],
+            availability: "optional",
+        },
     ],
     expose: [
         {

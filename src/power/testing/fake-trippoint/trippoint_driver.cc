@@ -14,7 +14,6 @@ namespace fake_trippoint {
 TrippointDriver::TrippointDriver(fdf::DriverStartArgs start_args,
                                  fdf::UnownedSynchronizedDispatcher driver_dispatcher)
     : DriverBase("fake-trippoint", std::move(start_args), std::move(driver_dispatcher)),
-      devfs_connector_(fit::bind_member<&TrippointDriver::Serve>(this)),
       temp_celsius_(0.0f),
       status_(ZX_OK) {}
 
@@ -42,10 +41,12 @@ zx::result<> TrippointDriver::Start() {
     return control_result.take_error();
   }
 
-  if (zx::result result = CreateDevfsNode(); result.is_error()) {
-    fdf::error("Failed to export to devfs: %s", result.status_string());
-    return result.take_error();
+  zx::result child = AddOwnedChild("fake-trippoint-dev");
+  if (child.is_error()) {
+    fdf::error("Failed to add owned child: %s", child.status_string());
+    return child.take_error();
   }
+  child_ = std::move(child.value());
 
   return zx::ok();
 }
@@ -87,34 +88,6 @@ void TrippointDriver::handle_unknown_method(
   fdf::error(
       "Unknown method in fuchsia.hardware.trippoint TripPoint protocol, closing with ZX_ERR_NOT_SUPPORTED");
   completer.Close(ZX_ERR_NOT_SUPPORTED);
-}
-
-zx::result<> TrippointDriver::CreateDevfsNode() {
-  fdf::info("Creating devfs node");
-  zx::result connector = devfs_connector_.Bind(dispatcher());
-  if (connector.is_error()) {
-    fdf::error("Error creating devfs node");
-    return connector.take_error();
-  }
-
-  fuchsia_driver_framework::DevfsAddArgs devfs_args{
-      {.connector = std::move(connector.value()),
-       .class_name = "trippoint",
-       .connector_supports = fuchsia_device_fs::ConnectionType::kController}};
-
-  zx::result child = AddOwnedChild("fake-trippoint-dev", devfs_args);
-  if (child.is_error()) {
-    fdf::error("Failed to add owned child: %s", child.status_string());
-    return child.take_error();
-  }
-  child_ = std::move(child.value());
-
-  return zx::ok();
-}
-
-void TrippointDriver::Serve(fidl::ServerEnd<fuchsia_hardware_trippoint::TripPoint> request) {
-  trippoint_bindings_.AddBinding(dispatcher(), std::move(request), this,
-                                 fidl::kIgnoreBindingClosure);
 }
 
 }  // namespace fake_trippoint

@@ -184,7 +184,7 @@ DDK_PROTOCOL_DEF(USB_INTERFACE_ASSOCIATION, 166, "usb-interface-association", PF
 DDK_PROTOCOL_DEF(WLAN_FACTORY,            168,   "wlan-factory", 0)
 // 170 was fan
 DDK_PROTOCOL_DEF(AUDIO_COMPOSITE,         171, "audio-composite", 0)
-DDK_PROTOCOL_DEF(TRIP_POINT,              172, "trippoint", 0)
+// 172 was trippoint
 DDK_PROTOCOL_DEF(SUSPEND_HAL,             173, "suspend", 0)
 DDK_PROTOCOL_DEF(MALI_UTIL,               174, "mali-util", 0)
 DDK_PROTOCOL_DEF(HRTIMER,                 175, "hrtimer", 0)
