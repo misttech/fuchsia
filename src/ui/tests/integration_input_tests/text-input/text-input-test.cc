@@ -392,12 +392,15 @@ class ChromiumInputTest : public ChromiumInputBase {
     FX_LOGS(INFO) << "Waiting on app ready to handle input events";
     RunLoopUntil([this]() { return keyboard_input_state_->IsReadyForInput(); });
 
-    // Not quite exactly the location of the text area under test, but since the
-    // text area occupies all the screen, it's very likely within the text area.
-    InjectTap(display_width() / 2, display_height() / 2);
-
     FX_LOGS(INFO) << "Waiting on app focused on textarea: ready for key events";
-    RunLoopUntil([this]() { return keyboard_input_state_->IsReadyForKey(); });
+    RunLoopUntil([this]() {
+      // TODO(b/475249349): Repeating the tap may not be necessary, but adding
+      // it for now to stable the test after chromium 145.0.7622.0 roll.
+      // Not quite exactly the location of the text area under test, but since the
+      // text area occupies all the screen, it's very likely within the text area.
+      InjectTap(display_width() / 2, display_height() / 2);
+      return keyboard_input_state_->IsReadyForKey();
+    });
   }
 };
 
