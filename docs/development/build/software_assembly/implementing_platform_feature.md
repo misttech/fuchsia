@@ -73,8 +73,8 @@ the product or board configuration. The first step is to define the schema
 for these flags.
 
 All platform feature flags are declared within Rust structs in
-[`//src/lib/assembly/config_schema`][config-schema]. Each subsystem usually
-has its own file in this directory (e.g. `fonts_config.rs` or
+[`//src/lib/assembly/config_schema/src/platform_settings`][config-schema]. Each
+subsystem usually has its own file in this directory (e.g. `fonts_config.rs` or
 `network_config.rs`).
 
 **Example:** For an example, follow these steps:
