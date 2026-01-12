@@ -120,6 +120,7 @@ var (
 )
 
 type buildModules interface {
+	BuildDir() string
 	ClippyTargets() []build.ClippyTarget
 	GeneratedSources() []string
 	Images() []build.Image
@@ -251,7 +252,7 @@ func buildImpl(
 	// fail.
 	artifacts.LogFiles = make(map[string]string)
 
-	ninjaPath, err := toolAbsPath(modules, buildDir, platform, "ninja")
+	ninjaPath, err := toolAbsPath(modules, platform, "ninja")
 	if err != nil {
 		return artifacts, err
 	}
@@ -335,13 +336,13 @@ func buildImpl(
 
 	// Similar to `fx ninjatrace2json`, generate and collect ninja traces
 	// in each (sub)build dir where ninja is invoked.
-	ninjatraceToolPath, err := toolAbsPath(modules, buildDir, platform, "ninjatrace_prebuilt")
+	ninjatraceToolPath, err := toolAbsPath(modules, platform, "ninjatrace_prebuilt")
 	if err != nil {
 		return artifacts, err
 	}
 
 	// Collect buildstats in each ninja (sub)build dir.
-	buildstatsToolPath, err := toolAbsPath(modules, buildDir, platform, "buildstats_prebuilt")
+	buildstatsToolPath, err := toolAbsPath(modules, platform, "buildstats_prebuilt")
 	if err != nil {
 		return artifacts, err
 	}
@@ -382,7 +383,7 @@ func buildImpl(
 			ninjaPath: ninjaPath,
 			buildDir:  buildDir,
 		}
-		fs, err := getNinjaDebugFiles(egCtx, subninjaRunner, targets, topNinjaTrace, ninjatraceToolPath, buildstatsToolPath)
+		fs, err := getNinjaDebugFiles(egCtx, subninjaRunner, topNinjaTrace, ninjatraceToolPath, buildstatsToolPath)
 		if err != nil {
 			logger.Warningf(ctx, "(ignored) Failed to analyze top ninja log %s, with error: %v", topNinjaTrace, err)
 			return nil
@@ -399,7 +400,7 @@ func buildImpl(
 				ninjaPath: ninjaPath,
 				buildDir:  filepath.Dir(ninjaBuildTrace),
 			}
-			fs, err := getNinjaDebugFiles(egCtx, subninjaRunner, []string{}, ninjaBuildTrace, ninjatraceToolPath, buildstatsToolPath)
+			fs, err := getNinjaDebugFiles(egCtx, subninjaRunner, ninjaBuildTrace, ninjatraceToolPath, buildstatsToolPath)
 			if err != nil {
 				logger.Warningf(ctx, "(ignored) Failed to analyze sub ninja log %s, with error: %v", ninjaBuildTrace, err)
 				return nil
@@ -479,7 +480,7 @@ func buildImpl(
 		return artifacts, fmt.Errorf("build failed, see ninja output for details: %w", ninjaErr)
 	}
 
-	gnPath, err := toolAbsPath(modules, buildDir, platform, "gn")
+	gnPath, err := toolAbsPath(modules, platform, "gn")
 	if err != nil {
 		return artifacts, err
 	}
@@ -498,7 +499,7 @@ func buildImpl(
 		}
 		if !noop {
 			// Upload additional ninja files to help with debugging.
-			ninjaDebugFilePaths := collectNinjaArtifacts(buildDir, ninjaDebugFileSets, fileExists)
+			ninjaDebugFilePaths := collectNinjaArtifacts(ninjaDebugFileSets, fileExists)
 			if err := saveDebugFiles(ninjaDebugFilePaths); err != nil {
 				return artifacts, err
 			}
@@ -526,7 +527,7 @@ func buildImpl(
 	// it's not the end of the world to do this analysis unnecessarily, since it
 	// only takes ~10 seconds and we do use the results most of the time,
 	// including on all the slowest infra builders.
-	newArtifacts, err := affectedImpl(ctx, runner, staticSpec, contextSpec, modules, platform, targets)
+	newArtifacts, err := affectedImpl(ctx, runner, contextSpec, modules, platform, targets)
 	if err != nil {
 		return artifacts, err
 	}
@@ -535,7 +536,7 @@ func buildImpl(
 }
 
 // getNinjaDebugFiles creates a ninja trace file that will be exposed for debugging.
-func getNinjaDebugFiles(ctx context.Context, r ninjaRunner, targets []string, ninjaTrace string, ninjatraceToolPath string, buildstatsToolPath string) (*ninjaDebugFileSet, error) {
+func getNinjaDebugFiles(ctx context.Context, r ninjaRunner, ninjaTrace string, ninjatraceToolPath string, buildstatsToolPath string) (*ninjaDebugFileSet, error) {
 	// Write auxiliary files and the final ninja trace to the same dir where the ninja log resides.
 	// This this assumes that the build dir is writeable.
 	logger.Debugf(ctx, "analyzing ninja trace: %s", ninjaTrace)
@@ -563,7 +564,7 @@ func getNinjaDebugFiles(ctx context.Context, r ninjaRunner, targets []string, ni
 	return debugFiles, nil
 }
 
-func collectNinjaArtifacts(buildDir string, ninjaDebugFiles []*ninjaDebugFileSet, fileExists func(string) bool) []string {
+func collectNinjaArtifacts(ninjaDebugFiles []*ninjaDebugFileSet, fileExists func(string) bool) []string {
 	var paths []string
 	for _, ndf := range ninjaDebugFiles {
 		files := []string{ndf.depsPath, ndf.tracePath, ndf.statsPath}
@@ -905,12 +906,12 @@ func chooseLintTargets(
 // Note that not all tools in tool_paths.json can be assumed to be present in
 // the build directory prior to `fint build` running because only a subset of
 // them are prebuilts, and the rest are built from source.
-func toolAbsPath(modules buildModules, buildDir, platform, tool string) (string, error) {
+func toolAbsPath(modules buildModules, platform, tool string) (string, error) {
 	t, err := modules.Tools().LookupTool(platform, tool)
 	if err != nil {
 		return "", err
 	}
-	return filepath.Abs(filepath.Join(buildDir, t.Path))
+	return filepath.Abs(filepath.Join(modules.BuildDir(), t.Path))
 }
 
 // toStructPB converts a Go struct to a Struct protobuf. Unfortunately, short of

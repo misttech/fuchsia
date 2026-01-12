@@ -32,6 +32,7 @@ import (
 )
 
 type fakeBuildModules struct {
+	buildDir         string
 	clippyTargets    []build.ClippyTarget
 	generatedSources []string
 	images           []build.Image
@@ -40,6 +41,7 @@ type fakeBuildModules struct {
 	tools            build.Tools
 }
 
+func (m fakeBuildModules) BuildDir() string                              { return m.buildDir }
 func (m fakeBuildModules) ClippyTargets() []build.ClippyTarget           { return m.clippyTargets }
 func (m fakeBuildModules) GeneratedSources() []string                    { return m.generatedSources }
 func (m fakeBuildModules) Images() []build.Image                         { return m.images }
@@ -689,6 +691,7 @@ func TestBuild(t *testing.T) {
 			}
 
 			fileExists := func(_ string) bool { return true }
+			tc.modules.buildDir = tc.contextSpec.BuildDir
 			tc.modules.tools = append(tc.modules.tools, makeTools(
 				map[string][]string{
 					"gn":                  {"linux", "mac"},
@@ -786,14 +789,14 @@ func findNinjaTargets(cmds [][]string) []string {
 			continue
 		}
 		// Skip over each `-flag value` pair until we reach the list of targets.
-		for i := 1; i < len(cmd); i += 1 {
+		for i := 1; i < len(cmd); i++ {
 			if strings.HasPrefix(cmd[i], "-") {
 				// The current token appears to be an option.
 				if !strings.Contains(cmd[i], "=") {
 					// It doesn't contain an '=' to separate the value from the key,
 					// so assume the following token is the value for this argument
 					// and skip it.
-					i += 1
+					i++
 				}
 			} else {
 				// We've reached the start of the list of targets, assumed to

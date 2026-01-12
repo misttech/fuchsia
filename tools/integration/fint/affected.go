@@ -32,7 +32,7 @@ func Affected(ctx context.Context, staticSpec *fintpb.Static, contextSpec *fintp
 	if err != nil {
 		return &fintpb.BuildArtifacts{}, err
 	}
-	artifacts, err := affectedImpl(ctx, &subprocess.Runner{}, staticSpec, contextSpec, modules, platform, ninjaTargets)
+	artifacts, err := affectedImpl(ctx, &subprocess.Runner{}, contextSpec, modules, platform, ninjaTargets)
 	if err != nil && artifacts != nil && artifacts.FailureSummary == "" {
 		// Fall back to using the error text as the failure summary if the
 		// failure summary is unset. It's better than failing without emitting
@@ -40,7 +40,6 @@ func Affected(ctx context.Context, staticSpec *fintpb.Static, contextSpec *fintp
 		artifacts.FailureSummary = err.Error()
 	}
 	return artifacts, err
-
 }
 
 // affectedImpl contains the business logic of `fint affected`, extracted into
@@ -48,7 +47,6 @@ func Affected(ctx context.Context, staticSpec *fintpb.Static, contextSpec *fintp
 func affectedImpl(
 	ctx context.Context,
 	runner subprocessRunner,
-	staticSpec *fintpb.Static,
 	contextSpec *fintpb.Context,
 	modules buildModules,
 	platform string,
@@ -56,7 +54,7 @@ func affectedImpl(
 ) (*fintpb.BuildArtifacts, error) {
 	artifacts := &fintpb.BuildArtifacts{}
 
-	ninjaPath, err := toolAbsPath(modules, contextSpec.BuildDir, platform, "ninja")
+	ninjaPath, err := toolAbsPath(modules, platform, "ninja")
 	if err != nil {
 		return artifacts, err
 	}
