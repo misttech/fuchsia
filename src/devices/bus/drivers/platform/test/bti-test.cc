@@ -7,10 +7,9 @@
 #include <fidl/fuchsia.driver.test/cpp/fidl.h>
 #include <fidl/fuchsia.hardware.btitest/cpp/wire.h>
 #include <lib/async-loop/cpp/loop.h>
-#include <lib/async-loop/default.h>
 #include <lib/ddk/platform-defs.h>
 #include <lib/device-watcher/cpp/device-watcher.h>
-#include <lib/driver_test_realm/realm_builder/cpp/lib.h>
+#include <lib/driver_test_realm/realm_builder/cpp/builder.h>
 #include <lib/fdio/cpp/caller.h>
 #include <lib/fdio/directory.h>
 #include <lib/fdio/fd.h>
@@ -33,28 +32,32 @@ constexpr char kParentPath[] = "dev-topological/sys/platform/bti-test";
 constexpr char kDeviceName[] = "test-bti";
 
 TEST(PbusBtiTest, BtiIsSameAfterCrash) {
+  async::Loop loop(&kAsyncLoopConfigNeverAttachToThread);
+  loop.StartThread();
+
   auto realm_builder = component_testing::RealmBuilder::Create();
-  driver_test_realm::Setup(realm_builder);
-  std::vector<fuchsia_component_test::Capability> offers = {{
-      fuchsia_component_test::Capability::WithProtocol(
-          fuchsia_component_test::Protocol{{.name = "fuchsia.kernel.IommuResource"}}),
-  }};
-  driver_test_realm::AddDtrOffers(realm_builder, ParentRef{}, offers);
 
-  async::Loop loop(&kAsyncLoopConfigNoAttachToCurrentThread);
+  auto options =
+      driver_test_realm::OptionsBuilder()
+          .add_extra_realm_capability(
+              fuchsia_component_test::Capability::WithProtocol(
+                  fuchsia_component_test::Protocol{{.name = "fuchsia.kernel.IommuResource"}}),
+              ParentRef{})
+          .Build();
+  driver_test_realm::Setup(realm_builder, loop.dispatcher(), options,
+                           fuchsia_driver_test::RealmArgs{{
+                               .root_driver = "fuchsia-boot:///platform-bus#meta/platform-bus.cm",
+                           }});
+
   auto realm = realm_builder.Build(loop.dispatcher());
+  auto boot_result = driver_test_realm::WaitForBootup(realm);
+  ASSERT_EQ(ZX_OK, boot_result.status_value());
 
-  // Start DriverTestRealm.
-  zx::result dtr_client = realm.component().Connect<fuchsia_driver_test::Realm>();
-  ASSERT_OK(dtr_client);
-  auto result = fidl::Call(*dtr_client)
-                    ->Start(fuchsia_driver_test::RealmArgs{{
-                        .root_driver = "fuchsia-boot:///platform-bus#meta/platform-bus.cm",
-                        .dtr_offers = offers,
-                    }});
-  ASSERT_TRUE(result.is_ok());
+  auto node = driver_test_realm::WaitForNode(realm, "bti-test");
+  ASSERT_TRUE(node.is_ok());
 
   // Connect to the parent directory.
+  // TODO(https://fxbug.dev/377735979): Connect using a different mechanism.
   fbl::unique_fd parent_dir;
   {
     fbl::unique_fd fd;
@@ -66,6 +69,9 @@ TEST(PbusBtiTest, BtiIsSameAfterCrash) {
         uint64_t{fuchsia_io::wire::kPermReadable | fuchsia_io::wire::Flags::kProtocolDirectory},
         parent_dir.reset_and_get_address()));
   }
+
+  node = driver_test_realm::WaitForNode(realm, "bti-test.test-bti");
+  ASSERT_TRUE(node.is_ok());
 
   uint64_t koid1;
   {
@@ -94,6 +100,9 @@ TEST(PbusBtiTest, BtiIsSameAfterCrash) {
                                                      nullptr));
   }
 
+  node = driver_test_realm::WaitForNode(realm, "bti-test.test-bti");
+  ASSERT_TRUE(node.is_ok());
+
   // We implicitly rely on driver host being rebound in the event of a crash.
   uint64_t koid2;
   {
@@ -111,6 +120,8 @@ TEST(PbusBtiTest, BtiIsSameAfterCrash) {
   }
 
   ASSERT_EQ(koid1, koid2);
+
+  driver_test_realm::ShutdownRealm(realm);
 }
 
 }  // namespace

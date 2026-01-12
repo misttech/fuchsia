@@ -61,7 +61,7 @@ using component_testing::VoidRef;
 
 namespace {
 
-Capability ConvertCapability(fuchsia_component_test::Capability capability) {
+Capability ConvertCapability(const fuchsia_component_test::Capability& capability) {
   std::optional<Capability> converted;
   switch (capability.Which()) {
     case fuchsia_component_test::Capability::Tag::kProtocol: {

@@ -7,7 +7,7 @@
 #include <lib/async-loop/cpp/loop.h>
 #include <lib/async-loop/default.h>
 #include <lib/device-watcher/cpp/device-watcher.h>
-#include <lib/driver_test_realm/realm_builder/cpp/lib.h>
+#include <lib/driver_test_realm/realm_builder/cpp/builder.h>
 #include <lib/sys/component/cpp/testing/realm_builder.h>
 #include <lib/syslog/cpp/macros.h>
 
@@ -22,21 +22,13 @@ namespace power_integration_test {
 class PowerIntegrationTest : public gtest::TestLoopFixture {};
 
 TEST_F(PowerIntegrationTest, MetadataPassing) {
-  auto builder = component_testing::RealmBuilder::Create();
-  driver_test_realm::Setup(builder);
-
   async::Loop loop{&kAsyncLoopConfigNoAttachToCurrentThread};
   loop.StartThread();
 
+  auto builder = component_testing::RealmBuilder::Create();
   builder.AddChild(
       "power-broker", "#meta/mock-power-broker.cm",
       component_testing::ChildOptions{.startup_mode = component_testing::StartupMode::LAZY});
-
-  builder.AddRoute(component_testing::Route{
-      .capabilities = {component_testing::Protocol{.name = "fuchsia.logger.LogSink"}},
-      .source = {component_testing::ParentRef{}},
-      .targets = {component_testing::ChildRef{"power-broker"}},
-  });
 
   builder.AddRoute(component_testing::Route{
       .capabilities = {component_testing::Protocol{
@@ -45,26 +37,23 @@ TEST_F(PowerIntegrationTest, MetadataPassing) {
       .targets = {component_testing::ParentRef{}},
   });
 
-  std::vector<fuchsia_component_test::Capability> dtr_offers = {
+  std::vector<fuchsia_component_test::Capability> offers = {
       fuchsia_component_test::Capability::WithProtocol({{
           .name = "fuchsia.power.broker.Topology",
       }}),
   };
-  driver_test_realm::AddDtrOffers(builder, component_testing::ChildRef{"power-broker"}, dtr_offers);
 
-  auto test_realm = builder.Build(dispatcher());
-
-  // connect to the realm protocol so we can control the test realm
-  fidl::SyncClient<fuchsia_driver_test::Realm> realm_protocol(
-      std::move(test_realm.component().Connect<fuchsia_driver_test::Realm>().value()));
-
-  // now actually start the realm
   auto realm_args = fuchsia_driver_test::RealmArgs();
   realm_args.root_driver() = "fuchsia-boot:///#meta/platform-bus.cm";
-  realm_args.dtr_offers(dtr_offers);
 
-  auto start_result = realm_protocol->Start(std::move(realm_args));
-  ASSERT_TRUE(start_result.is_ok());
+  driver_test_realm::OptionsBuilder options;
+  options.driver_offers(component_testing::ChildRef{"power-broker"}, offers);
+
+  driver_test_realm::Setup(builder, loop.dispatcher(), options.Build(), std::move(realm_args));
+
+  auto test_realm = builder.Build(loop.dispatcher());
+  auto boot_result = driver_test_realm::WaitForBootup(test_realm);
+  ASSERT_EQ(ZX_OK, boot_result.status_value());
 
   auto get_elements_result =
       test_realm.component().Connect<fuchsia_test_drivers_power::GetPowerElements>(
@@ -85,5 +74,7 @@ TEST_F(PowerIntegrationTest, MetadataPassing) {
       FX_LOGS(INFO) << "Found element named '" << element_name << "'";
     }
   }
+
+  driver_test_realm::ShutdownRealm(test_realm);
 }
 }  // namespace power_integration_test
