@@ -20,7 +20,7 @@ pub use implementation::executor::{
     LocalExecutor, LocalExecutorBuilder, MonotonicDuration, MonotonicInstant, SendExecutor,
     SendExecutorBuilder, SpawnableFuture, TestExecutor, TestExecutorBuilder,
 };
-pub use implementation::task::{JoinHandle, Task, unblock, yield_now};
+pub use implementation::task::{CancelableJoinHandle, JoinHandle, Task, unblock, yield_now};
 pub use implementation::timer::Timer;
 
 mod task_group;

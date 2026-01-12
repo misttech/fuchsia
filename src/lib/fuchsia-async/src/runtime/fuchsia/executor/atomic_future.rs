@@ -527,6 +527,11 @@ impl<'a> AtomicFutureHandle<'a> {
         self.meta().state.load(Relaxed) & DETACHED != 0
     }
 
+    /// Returns true if the task is aborted.
+    pub(crate) fn is_aborted(&self) -> bool {
+        self.meta().state.load(Relaxed) & ABORTED != 0
+    }
+
     /// Takes the result.
     ///
     /// # Safety

@@ -3,6 +3,7 @@
 // found in the LICENSE file.
 
 use crate::EHandle;
+use crate::runtime::fuchsia::scope::JoinError;
 use crate::scope::ScopeHandle;
 use futures::prelude::*;
 use std::future::poll_fn;
@@ -79,6 +80,40 @@ impl<T: 'static> Future for JoinHandle<T> {
         let result = unsafe { self.scope.poll_join_result(self.task_id, cx) };
         if result.is_ready() {
             self.task_id = 0;
+        }
+        result
+    }
+}
+
+/// A `JoinHandle` which returns `Err` when canceled instead of pending forever.
+#[derive(Debug)]
+pub struct CancelableJoinHandle<T> {
+    inner: JoinHandle<T>,
+}
+
+impl<T> CancelableJoinHandle<T> {
+    /// Aborts a task and returns a future that resolves once the task is
+    /// aborted. The future can be ignored in which case the task will still be
+    /// aborted.
+    pub fn abort(self) -> impl Future<Output = Option<T>> {
+        self.inner.abort()
+    }
+}
+
+impl<T> From<JoinHandle<T>> for CancelableJoinHandle<T> {
+    fn from(inner: JoinHandle<T>) -> Self {
+        Self { inner }
+    }
+}
+
+impl<T: 'static> Future for CancelableJoinHandle<T> {
+    type Output = Result<T, JoinError>;
+
+    fn poll(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
+        // SAFETY: We spawned the task so the return type should be correct.
+        let result = unsafe { self.inner.scope.try_poll_join_result(self.inner.task_id, cx) };
+        if result.is_ready() {
+            self.inner.task_id = 0;
         }
         result
     }

@@ -7,6 +7,7 @@ use super::atomic_future::{AbortAndDetachResult, AtomicFutureHandle};
 use super::common::{Executor, TaskHandle};
 use crate::EHandle;
 use crate::condition::{Condition, ConditionGuard, WakerEntry};
+use core::{error, fmt};
 use fuchsia_sync::Mutex;
 use futures::Stream;
 use pin_project_lite::pin_project;
@@ -17,13 +18,13 @@ use std::borrow::Borrow;
 use std::collections::hash_map::Entry;
 use std::collections::hash_set;
 use std::future::{Future, IntoFuture};
+use std::hash;
 use std::marker::PhantomData;
 use std::mem::{self, ManuallyDrop};
 use std::ops::{Deref, DerefMut};
 use std::pin::Pin;
 use std::sync::{Arc, Weak};
 use std::task::{Context, Poll, Waker, ready};
-use std::{fmt, hash};
 
 //
 // # Public API
@@ -847,6 +848,25 @@ impl ScopeActiveGuard {
     }
 }
 
+/// An error indicating that a task failed to execute to completion.
+pub struct JoinError {
+    _phantom: PhantomData<()>,
+}
+
+impl fmt::Debug for JoinError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_tuple("JoinError").finish()
+    }
+}
+
+impl fmt::Display for JoinError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "JoinError: a task failed to execute to completion")
+    }
+}
+
+impl error::Error for JoinError {}
+
 //
 // # Internal API
 //
@@ -1350,6 +1370,30 @@ impl ScopeHandle {
         }
     }
 
+    /// Polls for a join result for the given task ID, or a `JoinError` if the
+    /// task was canceled.
+    ///
+    /// # Safety
+    ///
+    /// The caller must guarantee that `R` is the correct type.
+    pub(crate) unsafe fn try_poll_join_result<R>(
+        &self,
+        task_id: usize,
+        cx: &mut Context<'_>,
+    ) -> Poll<Result<R, JoinError>> {
+        let task = ready!(self.lock().results.poll_join_result(task_id, cx));
+        match unsafe { task.take_result() } {
+            Some(result) => Poll::Ready(Ok(result)),
+            None => {
+                if task.is_aborted() {
+                    Poll::Ready(Err(JoinError { _phantom: PhantomData }))
+                } else {
+                    Poll::Pending
+                }
+            }
+        }
+    }
+
     /// Polls for the task to be aborted.
     pub(crate) unsafe fn poll_aborted<R>(
         &self,
@@ -1629,6 +1673,7 @@ mod tests {
     // NOTE: Tests that work on both the fuchsia and portable runtimes should be placed in
     // runtime/scope.rs.
 
+    use super::super::super::task::CancelableJoinHandle;
     use super::*;
     use crate::{
         EHandle, LocalExecutor, SendExecutorBuilder, SpawnableFuture, Task, TestExecutor, Timer,
@@ -2706,5 +2751,31 @@ mod tests {
         drop(guard);
         assert_eq!(executor.run_until_stalled(&mut join), Poll::Ready(()));
         assert!(checker_child.is_dropped());
+    }
+
+    #[test]
+    fn await_canceled_task_pends_forever() {
+        let mut executor = TestExecutor::new();
+        let scope = executor.global_scope().new_child();
+
+        let task = scope.spawn(pending::<()>());
+        let mut main_future = pin!(async move {
+            drop(scope);
+            task.await;
+        });
+        assert_eq!(executor.run_until_stalled(&mut main_future), Poll::Pending,);
+    }
+
+    #[test]
+    fn await_canceled_abortable_task_finishes_with_error() {
+        let mut executor = TestExecutor::new();
+        let scope = executor.global_scope().new_child();
+
+        let task = CancelableJoinHandle::from(scope.spawn(pending::<()>()));
+        let mut main_future = pin!(async move {
+            drop(scope);
+            let _ = task.await;
+        });
+        assert_eq!(executor.run_until_stalled(&mut main_future), Poll::Ready(()),);
     }
 }

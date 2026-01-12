@@ -15,7 +15,7 @@ pub mod task {
     use futures::FutureExt;
 
     // NOTE: This isn't quite API equivalent to Fuchsia's JoinHandle.
-    pub use tokio::task::JoinHandle;
+    pub use tokio::task::{JoinHandle, JoinHandle as CancelableJoinHandle};
 
     impl<T> From<JoinHandle<T>> for Task<T> {
         fn from(task: JoinHandle<T>) -> Self {
