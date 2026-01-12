@@ -726,6 +726,7 @@ sdk_molecule("core_cc_source_libraries") {
     "//sdk/lib/driver/fake-object/cpp:cpp_sdk",
     "//sdk/lib/driver/fake-pin/cpp:cpp_sdk",
     "//sdk/lib/driver/fake-platform-device/cpp:cpp_sdk",
+    "//sdk/lib/driver/fake-reset/cpp:cpp_sdk",
     "//sdk/lib/driver/fake-vreg/cpp:cpp_sdk",
     "//sdk/lib/driver/metadata/cpp:cpp_sdk",
     "//sdk/lib/driver/mmio/cpp:cpp_sdk",

@@ -126,6 +126,7 @@ _partner_idk_unstable_source_sets_list = [
   "//sdk/lib/driver/fake-gpio/cpp",
   "//sdk/lib/driver/fake-interconnect/cpp",
   "//sdk/lib/driver/fake-pin/cpp",
+  "//sdk/lib/driver/fake-reset/cpp",
   "//sdk/lib/driver/fake-platform-device/cpp",
   "//sdk/lib/driver/fake-resource/cpp",
   "//sdk/lib/driver/fake-vreg/cpp",
