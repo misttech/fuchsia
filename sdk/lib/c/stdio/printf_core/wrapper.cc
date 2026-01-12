@@ -18,7 +18,7 @@ int PrintfImpl(int (*write)(std::string_view str, void* hook), void* hook, std::
     void* hook;
   } write_buffer_hook = {.write = write, .hook = hook};
 
-  WriteBuffer<WriteMode::FLUSH_TO_STREAM> write_buffer{
+  FlushingBuffer write_buffer{
       buffer.data(),
       buffer.size(),
       [](cpp::string_view str, void* arg) -> int {
@@ -27,11 +27,11 @@ int PrintfImpl(int (*write)(std::string_view str, void* hook), void* hook, std::
       },
       &write_buffer_hook,
   };
-  Writer<WriteMode::FLUSH_TO_STREAM> writer{write_buffer};
+  Writer writer{write_buffer};
 
   internal::ArgList arg_list{args};
   int result = printf_main(&writer, format, arg_list);
-  write_buffer.overflow_write(newline == PrintfNewline::kYes ? kNewline : kEmpty);
+  write_buffer.flush_to_stream(newline == PrintfNewline::kYes ? kNewline : kEmpty);
 
   return result;
 }
