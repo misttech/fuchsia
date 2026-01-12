@@ -2313,7 +2313,7 @@ void VmCowPages::AddPageTransaction::Cancel(VmPageList& pl) {
 zx::result<VmCowPages::AddPageTransaction> VmCowPages::BeginAddPageWithSlotLocked(
     uint64_t offset, VmPageOrMarkerRef slot, CanOverwriteSlot overwrite) {
   canary_.Assert();
-  zx_status_t status = CheckOverwriteConditionsLocked(offset, slot, overwrite);
+  zx_status_t status = CheckOverwriteConditionsLocked(offset, *slot, overwrite);
   if (unlikely(status != ZX_OK)) {
     return zx::error(status);
   }
@@ -2360,7 +2360,7 @@ zx::result<VmCowPages::AddPageTransaction> VmCowPages::BeginAddPageLocked(
     return zx::error(ZX_ERR_NO_MEMORY);
   }
 
-  zx_status_t status = CheckOverwriteConditionsLocked(offset, VmPageOrMarkerRef(slot), overwrite);
+  zx_status_t status = CheckOverwriteConditionsLocked(offset, *slot, overwrite);
   if (unlikely(status != ZX_OK)) {
     if (slot->IsEmpty()) {
       page_list_.ReturnEmptySlot(offset);
@@ -2371,7 +2371,7 @@ zx::result<VmCowPages::AddPageTransaction> VmCowPages::BeginAddPageLocked(
   return zx::ok(AddPageTransaction(VmPageOrMarkerRef(slot), offset, overwrite));
 }
 
-zx_status_t VmCowPages::CheckOverwriteConditionsLocked(uint64_t offset, VmPageOrMarkerRef slot,
+zx_status_t VmCowPages::CheckOverwriteConditionsLocked(uint64_t offset, const VmPageOrMarker& slot,
                                                        CanOverwriteSlot overwrite) {
   // Pages can be added as part of Init, but not once we transition to dead.
   DEBUG_ASSERT(life_cycle_ != LifeCycle::Dead);
@@ -2382,25 +2382,24 @@ zx_status_t VmCowPages::CheckOverwriteConditionsLocked(uint64_t offset, VmPageOr
 
   // Make sure we're allowed to overwrite the VmPageOrMarker type in |slot|. See the comments for
   // CanOverwriteSlot for what each option means.
-  if (overwrite == CanOverwriteSlot::Empty && !slot->IsEmpty()) {
+  if (overwrite == CanOverwriteSlot::Empty && !slot.IsEmpty()) {
     return ZX_ERR_ALREADY_EXISTS;
   }
 
-  if (overwrite == CanOverwriteSlot::EmptyOrParent && !slot->IsEmpty() &&
-      !slot->IsParentContent()) {
+  if (overwrite == CanOverwriteSlot::EmptyOrParent && !slot.IsEmpty() && !slot.IsParentContent()) {
     return ZX_ERR_ALREADY_EXISTS;
   }
 
-  if (overwrite == CanOverwriteSlot::ZeroMarkerOrInterval && slot->IsPageOrRef()) {
+  if (overwrite == CanOverwriteSlot::ZeroMarkerOrInterval && slot.IsPageOrRef()) {
     // If we have a page source, the page source should be able to validate the page.
     // Note that having a page source implies that any content must be an actual page and so
     // although we return an error for any kind of content, the debug check only gets run for page
     // sources where it will be a real page.
-    DEBUG_ASSERT(!page_source_ || page_source_->DebugIsPageOk(slot->Page(), offset));
+    DEBUG_ASSERT(!page_source_ || page_source_->DebugIsPageOk(slot.Page(), offset));
     return ZX_ERR_ALREADY_EXISTS;
   }
 
-  DEBUG_ASSERT(overwrite == CanOverwriteSlot::PageOrRef || !slot->IsPageOrRef());
+  DEBUG_ASSERT(overwrite == CanOverwriteSlot::PageOrRef || !slot.IsPageOrRef());
   return ZX_OK;
 }
 
@@ -2641,15 +2640,15 @@ zx_status_t VmCowPages::CloneCowPageLocked(uint64_t offset, list_node_t* alloc_l
   return ZX_OK;
 }
 
-void VmCowPages::DecrementCowContentShareCount(VmPageOrMarkerRef content, uint64_t offset,
+void VmCowPages::DecrementCowContentShareCount(const VmPageOrMarker& content, uint64_t offset,
                                                ScopedPageFreedList& list,
                                                VmCompression* compression) {
   // Only hidden nodes have content with a non-zero share count.
   DEBUG_ASSERT(is_hidden());
 
   // Release the reference we held to the forked page.
-  if (content->IsPage()) {
-    vm_page_t* page = content->Page();
+  if (content.IsPage()) {
+    vm_page_t* page = content.Page();
     if (page->object.share_count > 0) {
       // The page is now shared one less time.
       page->object.share_count--;
@@ -2664,10 +2663,10 @@ void VmCowPages::DecrementCowContentShareCount(VmPageOrMarkerRef content, uint64
       list_add_tail(list.List(), &page->queue_node);
     }
   } else {
-    DEBUG_ASSERT(content->IsReference());
-    uint32_t prev = compression->GetMetadata(content->Reference());
+    DEBUG_ASSERT(content.IsReference());
+    uint32_t prev = compression->GetMetadata(content.Reference());
     if (prev > 0) {
-      compression->SetMetadata(content->Reference(), prev - 1);
+      compression->SetMetadata(content.Reference(), prev - 1);
     } else {
       VmPageOrMarker removed = page_list_.RemoveContent(offset);
       compression->Free(removed.ReleaseReference());
@@ -2770,7 +2769,7 @@ void VmCowPages::FindPageContentLocked(uint64_t offset, uint64_t max_owner_lengt
 
     __UNINITIALIZED VMPLCursor cursor =
         cur.locked_or(this).page_list_.LookupNearestMutableCursor(offset);
-    VmPageOrMarkerRef p = cursor.current();
+    const VmPageOrMarker* p = cursor.current();
     const bool cursor_correct_offset = p && cursor.offset() == offset;
     // If this slot has any actual content, then can immediately return it.
     if (cursor_correct_offset && !p->IsEmpty() && !p->IsParentContent()) {
@@ -2806,7 +2805,7 @@ void VmCowPages::FindPageContentLocked(uint64_t offset, uint64_t max_owner_lengt
         //     this length.
         if (cur.locked_or(this).node_has_parent_content_markers()) {
           uint64_t new_owner_length = 0;
-          cursor.ForEveryContiguous([&new_owner_length, max_owner_length](VmPageOrMarkerRef p) {
+          cursor.ForEveryContiguous([&new_owner_length, max_owner_length](const VmPageOrMarker* p) {
             if (p->IsParentContent() && new_owner_length < max_owner_length) {
               new_owner_length += kPageSize;
               return ZX_ERR_NEXT;
@@ -3187,7 +3186,7 @@ void VmCowPages::LookupCursor::EstablishCursor() {
   DEBUG_ASSERT(offset_ < end_offset_);
 
   target_->FindPageContentLocked(offset_, end_offset_ - offset_, &owner_info_);
-  owner_cursor_ = owner_info_.cursor.current();
+  owner_cursor_ = owner_info_.cursor.current_ref();
   is_valid_ = true;
 }
 
@@ -3285,9 +3284,10 @@ VmCowPages::LookupCursor::TargetAllocateCopyPageAsResult(vm_page_t* source, Dirt
       (TargetIsOwner() && owner_info_.cursor.current() &&
        owner_info_.owner.locked_or(target_).page_source_type() != PageSourceType::UserPager);
   __UNINITIALIZED auto page_transaction =
-      can_reuse_slot ? target_->BeginAddPageWithSlotLocked(offset_, owner_info_.cursor.current(),
-                                                           CanOverwriteSlot::ZeroMarkerOrInterval)
-                     : target_->BeginAddPageLocked(offset_, CanOverwriteSlot::ZeroMarkerOrInterval);
+      can_reuse_slot
+          ? target_->BeginAddPageWithSlotLocked(offset_, owner_info_.cursor.current_ref(),
+                                                CanOverwriteSlot::ZeroMarkerOrInterval)
+          : target_->BeginAddPageLocked(offset_, CanOverwriteSlot::ZeroMarkerOrInterval);
   if (page_transaction.is_error()) {
     target_->FreePage(out_page);
     return page_transaction.take_error();
@@ -3531,7 +3531,7 @@ uint VmCowPages::LookupCursor::IfExistPages(bool will_write, uint max_pages, pad
 
   // Take up to the max_pages as long as they exist contiguously.
   uint pages = 0;
-  owner_info_.cursor.ForEveryContiguous([&](VmPageOrMarkerRef page) {
+  owner_info_.cursor.ForEveryContiguous([&](const VmPageOrMarker* page) {
     if (page->IsPage()) {
       paddrs[pages] = page->PageAsPaddr();
       pages++;
@@ -4318,7 +4318,7 @@ ktl::pair<zx_status_t, uint64_t> VmCowPages::ZeroPagesNoDirectPageSourceLocked(
     }
     AssertHeld(cursor.owner_info_.owner->lock_ref());
     cursor.owner_info_.owner->DecrementCowContentShareCount(
-        cursor.owner_cursor_, cursor.owner_info_.owner_offset, deferred.FreedList(this),
+        *cursor.owner_cursor_, cursor.owner_info_.owner_offset, deferred.FreedList(this),
         Pmm::Node().GetPageCompression());
     return ZX_OK;
   };
@@ -4810,8 +4810,8 @@ zx_status_t VmCowPages::DecompressInRange(VmCowRange range) {
             return ZX_ERR_NEXT;
           }
           AssertHeld(owner->lock_ref());
-          zx_status_t status = owner->ReplaceReferenceWithPageLocked(VmPageOrMarkerRef(p),
-                                                                     owner_offset, &page_request);
+          zx_status_t status =
+              owner->ReplaceReferenceWithPageLocked(p, owner_offset, &page_request);
           if (status == ZX_OK) {
             cur_offset = this_offset + kPageSize;
             return ZX_ERR_NEXT;
@@ -5796,7 +5796,7 @@ zx_status_t VmCowPages::SupplyPagesLocked(VmCowRange range, VmPageSpliceList* pa
       DEBUG_ASSERT(lookup_info.owner);
       if (lookup_info.cursor.current()->IsPageOrRef()) {
         lookup_info.owner.locked().DecrementCowContentShareCount(
-            lookup_info.cursor.current(), lookup_info.owner_offset, deferred.FreedList(this),
+            *lookup_info.cursor.current(), lookup_info.owner_offset, deferred.FreedList(this),
             compression);
       }
     } else if (!node_has_parent_content_markers() && old_page->IsEmpty() &&
@@ -5808,7 +5808,7 @@ zx_status_t VmCowPages::SupplyPagesLocked(VmCowRange range, VmPageSpliceList* pa
       if (lookup_info.cursor.current() && lookup_info.cursor.current()->IsPageOrRef() &&
           lookup_info.owner->is_hidden()) {
         lookup_info.owner.locked().DecrementCowContentShareCount(
-            lookup_info.cursor.current(), lookup_info.owner_offset, deferred.FreedList(this),
+            *lookup_info.cursor.current(), lookup_info.owner_offset, deferred.FreedList(this),
             compression);
       }
     }

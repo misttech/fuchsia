@@ -1216,7 +1216,7 @@ class VmCowPages final : public fbl::ContainableBaseClasses<
   void CancelAddPageLocked(AddPageTransaction& transaction) TA_REQ(lock());
 
   // Helper for checking the |overwrite| conditions on a given slot.
-  zx_status_t CheckOverwriteConditionsLocked(uint64_t offset, VmPageOrMarkerRef slot,
+  zx_status_t CheckOverwriteConditionsLocked(uint64_t offset, const VmPageOrMarker& slot,
                                              CanOverwriteSlot overwrite) TA_REQ(lock());
 
   // Add a page to the object at |offset|. This is just a wrapper around performing
@@ -1318,7 +1318,7 @@ class VmCowPages final : public fbl::ContainableBaseClasses<
   //
   // This method assumes that the caller is overriding the slot in a child and that it will perform
   // any necessary range change updates etc.
-  void DecrementCowContentShareCount(VmPageOrMarkerRef content, uint64_t offset,
+  void DecrementCowContentShareCount(const VmPageOrMarker& content, uint64_t offset,
                                      ScopedPageFreedList& list, VmCompression* compression)
       TA_REQ(lock());
 
@@ -1867,7 +1867,7 @@ class VmCowPages::LookupCursor {
       // Increment the owner offset and step the page list cursor to the next slot.
       owner_info_.owner_offset += kPageSize;
       owner_info_.cursor.step();
-      owner_cursor_ = owner_info_.cursor.current();
+      owner_cursor_ = owner_info_.cursor.current_ref();
 
       // When iterating, it's possible that we need to find a new owner even before we hit the
       // visible_end. This happens since even if we have no content at our cursor, we might have a

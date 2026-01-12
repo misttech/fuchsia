@@ -1075,7 +1075,7 @@ static bool vmpl_cursor_test() {
 
   // Iterate to the next marker, which is in a different node, and count the number of items.
   uint64_t items = 0;
-  cursor.ForEveryContiguous([&items](VmPageOrMarkerRef page_or_marker) {
+  cursor.ForEveryContiguous([&items](const VmPageOrMarker* page_or_marker) {
     items++;
     return page_or_marker->IsMarker() ? ZX_ERR_STOP : ZX_ERR_NEXT;
   });
@@ -1090,7 +1090,7 @@ static bool vmpl_cursor_test() {
   // Attempting to do this again should fail as next item is in the next node.
   items = 0;
   cursor.step();
-  cursor.ForEveryContiguous([&items](VmPageOrMarkerRef page_or_marker) {
+  cursor.ForEveryContiguous([&items](const VmPageOrMarker* page_or_marker) {
     items++;
     return page_or_marker->IsMarker() ? ZX_ERR_STOP : ZX_ERR_NEXT;
   });

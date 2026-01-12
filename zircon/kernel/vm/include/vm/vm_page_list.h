@@ -711,13 +711,16 @@ class VMPLCursor {
  public:
   VMPLCursor() : index_(kPageFanOut) {}
 
+  // See VMPLCursor::current.
+  VmPageOrMarkerRef current_ref() const {
+    return VmPageOrMarkerRef(valid() ? &(node_->pages_[index_]) : nullptr);
+  }
+
   // Retrieve the current VmPageOrMarker pointed at by the cursor. This will be a nullptr if the
   // cursor is no longer valid. The slot pointed at may itself be empty.
   // Note that it is up to the caller to know the offset, which it can track by remembering how
   // many |step|s it has done.
-  VmPageOrMarkerRef current() const {
-    return VmPageOrMarkerRef(valid() ? &(node_->pages_[index_]) : nullptr);
-  }
+  const VmPageOrMarker* current() const { return valid() ? &(node_->pages_[index_]) : nullptr; }
 
   // Move the cursor to the next entry. The next entry can then be retrieved by calling |current|,
   // and if there is no next entry then current will return a nullptr.
@@ -730,8 +733,8 @@ class VMPLCursor {
     }
   }
 
-  // Calls the provided callback of type [](VmPageOrMarkerRef)->zx_status_t on every entry as long
-  // as they are contiguous. This is equivalent a loop calling |step| and |current|, but can
+  // Calls the provided callback of type [](const VmPageOrMarker*)->zx_status_t on every entry as
+  // long as they are contiguous. This is equivalent a loop calling |step| and |current|, but can
   // produce more optimal code gen with the internal loop.
   // The callback can return ZX_ERR_NEXT to continue, ZX_ERR_STOP to cease iteration gracefully, or
   // any other status to terminate with that status code.
@@ -739,7 +742,8 @@ class VMPLCursor {
   zx_status_t ForEveryContiguous(F func) {
     while (valid()) {
       while (index_ < kPageFanOut) {
-        zx_status_t status = func(VmPageOrMarkerRef(&node_->pages_[index_]));
+        const VmPageOrMarker* slot = &node_->pages_[index_];
+        zx_status_t status = func(slot);
         if (status != ZX_ERR_NEXT) {
           return status == ZX_ERR_STOP ? ZX_OK : status;
         }
