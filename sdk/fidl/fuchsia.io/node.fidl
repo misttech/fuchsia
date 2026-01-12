@@ -497,7 +497,9 @@ open protocol Node {
         flags Flags;
     }) -> () error zx.Status;
 
-    /// Query the filesystem for filesystem-specific information.
+    /// Query the filesystem for details specific to the filesystem and/or volume. If the current
+    /// volume has different settings or the storage is accounted seperately from the rest of the
+    /// filesystem that may be reported instead of filesystem-wide details.
     @selector("fuchsia.io.admin/DirectoryAdmin.QueryFilesystem")
     strict QueryFilesystem() -> (struct {
         s zx.Status;

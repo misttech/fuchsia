@@ -78,7 +78,7 @@ pub trait Node: GetEntryInfo + IntoAny + Send + Sync + 'static {
         ready(Err(Status::NOT_SUPPORTED))
     }
 
-    /// Returns information about the filesystem.
+    /// Returns information about the filesystem and/or volume.
     fn query_filesystem(&self) -> Result<fio::FilesystemInfo, Status> {
         Err(Status::NOT_SUPPORTED)
     }
