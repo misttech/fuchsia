@@ -371,12 +371,12 @@ enum Cmd {
 // don't satisfy (2). Conversely, the `wait_async` machinery on timers can already deal with
 // HandleBased objects, so a Counter can be readily used there.
 async fn run_utc_timeline_monitor(counter: zx::Counter, recv: mpsc::UnboundedReceiver<bool>) {
-    run_utc_timeline_monitor_internal(
-        counter,
-        recv,
-        crate::time::utc::duplicate_real_utc_clock_handle,
-    )
-    .await;
+    let utc_handle = crate::time::utc::duplicate_real_utc_clock_handle().inspect_err(|err| {
+        log_error!("run_utc_timeline_monitor: could not monitor UTC timeline: {err:?}")
+    });
+    if let Ok(utc_handle) = utc_handle {
+        run_utc_timeline_monitor_internal(counter, recv, utc_handle).await;
+    }
 }
 
 // See `run_utc_timeline_monitor`.
@@ -384,64 +384,58 @@ async fn run_utc_timeline_monitor(counter: zx::Counter, recv: mpsc::UnboundedRec
 async fn run_utc_timeline_monitor_internal(
     counter: zx::Counter,
     mut recv: mpsc::UnboundedReceiver<bool>,
-    utc_handle_fn: fn() -> Result<UtcClock, zx::Status>,
+    utc_handle: UtcClock,
 ) {
     log_debug!("run_utc_timeline_monitor: monitoring UTC clock timeline changes: enter");
-    let utc_handle = utc_handle_fn().inspect_err(|err| {
-        log_error!("run_utc_timeline_monitor: could not monitor UTC timeline: {err:?}")
-    });
-    if let Ok(utc_handle) = utc_handle {
-        let koid = utc_handle.as_handle_ref().get_koid();
-        log_debug!(
-            "run_utc_timeline_monitor: monitoring UTC clock timeline: enter: UTC clock koid={koid:?}, counter={counter:?}"
-        );
-        let utc_handle = std::rc::Rc::new(utc_handle);
-        let utc_handle_fn = || utc_handle.clone();
-        let mut interested = false;
-        loop {
-            let utc_handle = utc_handle_fn();
-            // CLOCK_UPDATED is auto-cleared.
-            let mut updated_fut =
-                fasync::OnSignals::new(utc_handle.as_handle_ref(), zx::Signals::CLOCK_UPDATED)
-                    .fuse();
-            let mut interest_fut = recv.next();
+    let koid = utc_handle.as_handle_ref().get_koid();
+    log_debug!(
+        "run_utc_timeline_monitor: monitoring UTC clock timeline: enter: UTC clock koid={koid:?}, counter={counter:?}"
+    );
+    let utc_handle = std::rc::Rc::new(utc_handle);
+    let utc_handle_fn = || utc_handle.clone();
+    let mut interested = false;
+    loop {
+        let utc_handle = utc_handle_fn();
+        // CLOCK_UPDATED is auto-cleared.
+        let mut updated_fut =
+            fasync::OnSignals::new(utc_handle.as_handle_ref(), zx::Signals::CLOCK_UPDATED).fuse();
+        let mut interest_fut = recv.next();
 
-            // Note: all select! branches must allow for exit when their respective futures are
-            // used up.
-            select! {
-                result = updated_fut => {
-                    if result.is_err() {
-                        log_warn!("run_utc_timeline_monitor: could not wait on signals: {:?}, counter={counter:?}", result);
+        // Note: all select! branches must allow for exit when their respective futures are
+        // used up.
+        select! {
+            result = updated_fut => {
+                if result.is_err() {
+                    log_warn!("run_utc_timeline_monitor: could not wait on signals: {:?}, counter={counter:?}", result);
+                    break;
+                }
+                if interested {
+                    log_debug!("run_utc_timeline_monitor: UTC timeline updated, counter: {counter:?}");
+                    // The consumer of this `counter` should wait for COUNTER_POSITIVE, and
+                    // once it observes the value of the counter, subtract the read value from
+                    // counter.
+                    counter
+                        .add(1)
+                        // Ignore the error after logging it. Should we exit the loop here?
+                        .inspect_err(|err| {
+                            log_error!("run_utc_timeline_monitor: could not increment counter: {err:?}")
+                        })
+                        .unwrap_or(());
+                }
+            },
+            result = interest_fut => {
+                match result {
+                    Some(interest) => {
+                        log_debug!("interest change: {counter:?}, interest: {interest:?}");
+                        interested = interest;
+                    }
+                    None => {
+                        log_debug!("no longer needs counter monitoring: {counter:?}");
                         break;
                     }
-                    if interested {
-                        log_debug!("run_utc_timeline_monitor: UTC timeline updated, counter: {counter:?}");
-                        // The consumer of this `counter` should wait for COUNTER_POSITIVE, and
-                        // once it observes the value of the counter, subtract the read value from
-                        // counter.
-                        counter
-                            .add(1)
-                            // Ignore the error after logging it. Should we exit the loop here?
-                            .inspect_err(|err| {
-                                log_error!("run_utc_timeline_monitor: could not increment counter: {err:?}")
-                            })
-                            .unwrap_or(());
-                    }
-                },
-                result = interest_fut => {
-                    match result {
-                        Some(interest) => {
-                            log_debug!("interest change: {counter:?}, interest: {interest:?}");
-                            interested = interest;
-                        }
-                        None => {
-                            log_debug!("no longer needs counter monitoring: {counter:?}");
-                            break;
-                        }
-                    }
-                },
-            };
-        }
+                }
+            },
+        };
     }
     log_debug!("run_utc_timeline_monitor: monitoring UTC clock timeline changes: exit");
 }
@@ -1520,12 +1514,12 @@ mod tests {
     #[fuchsia::test]
     async fn utc_timeline_monitor_exits_on_interest_drop() {
         let counter = zx::Counter::create();
-        let utc_clock_fn = || Ok(create_utc_clock_for_test());
+        let utc_clock = create_utc_clock_for_test();
         let (tx, rx) = mpsc::unbounded();
 
         drop(tx);
         // Expect that this call returns, when tx no longer exists. Incorrect
         // handling of tx closure could cause it to hang otherwise.
-        run_utc_timeline_monitor_internal(counter, rx, utc_clock_fn).await;
+        run_utc_timeline_monitor_internal(counter, rx, utc_clock).await;
     }
 }
