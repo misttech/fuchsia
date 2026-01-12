@@ -60,9 +60,7 @@ fn wait_signaled_sync(event: &zx::Event) -> zx::WaitResult {
         let result = event.wait_one(zx::Signals::EVENT_SIGNALED, timeout);
         if let zx::WaitResult::Ok(_) = result {
             if logged {
-                log_error!(
-                    "wait_signaled_sync: signal resolved. See HrTimer bug: b/454085350: result={result:?}",
-                );
+                log_error!("wait_signaled_sync: signal resolved: result={result:?}",);
             }
             return result;
         }
@@ -74,8 +72,9 @@ fn wait_signaled_sync(event: &zx::Event) -> zx::WaitResult {
         // This is bad and should never happen. If it does, it's a bug that has to be found and
         // fixed. There is no good way to proceed if these signals are not being signaled properly.
         log_error!(
+            // Check logs for a `kBadState` status reported from the hrtimer driver.
             // LINT.IfChange(hrtimer_wait_signaled_sync_tefmo)
-            "wait_signaled_sync: not signaled yet. See HrTimer bug: b/454085350: result={result:?}",
+            "wait_signaled_sync: not signaled yet. Report to `componentid:1408151`: result={result:?}",
             // LINT.ThenChange(//tools/testing/tefmocheck/string_in_log_check.go:hrtimer_wait_signaled_sync_tefmo)
         );
         if !logged {
@@ -99,12 +98,14 @@ macro_rules! log_long_op {
             futures::select! {
                 res = fut.as_mut().fuse() => {
                     if logged {
-                        log_warn!("unexpected blocking is now resolved: long-running async operation at {}:{}. See HrTimer bug: b/428223204", file!(), line!());
+                        log_warn!("unexpected blocking is now resolved: long-running async operation at {}:{}.",
+                            file!(), line!());
                     }
                     break res;
                 }
                 _ = timeout.fuse() => {
-                    log_warn!("unexpected blocking: long-running async operation at {}:{}. See HrTimer bug: b/428223204",
+                    // Check logs for a `kBadState` status reported from the hrtimer driver.
+                    log_warn!("unexpected blocking: long-running async op at {}:{}. Report to `componentId:1408151`",
                         file!(), line!());
                     if !logged {
                         #[cfg(all(target_os = "fuchsia", not(doc)))]
