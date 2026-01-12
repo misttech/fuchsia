@@ -82,11 +82,11 @@ pub mod device {
         TemporarySlaacConfig, WeakAddressId,
     };
     pub use crate::internal::device::{
-        AddressRemovedReason, DelIpAddr, IpAddressState, IpDeviceAddressContext,
-        IpDeviceBindingsContext, IpDeviceConfigurationContext, IpDeviceEvent, IpDeviceHandler,
-        IpDeviceIpExt, IpDeviceSendContext, IpDeviceStateContext, IpDeviceTimerId,
-        Ipv4DeviceTimerId, Ipv6DeviceConfigurationContext, Ipv6DeviceContext, Ipv6DeviceHandler,
-        Ipv6DeviceTimerId, Ipv6LinkLayerAddr, WithIpDeviceConfigurationMutInner,
+        AddressRemovedReason, DelIpAddr, IpAddressState, IpDeviceAddAddressContext,
+        IpDeviceAddressContext, IpDeviceBindingsContext, IpDeviceConfigurationContext,
+        IpDeviceEvent, IpDeviceHandler, IpDeviceIpExt, IpDeviceSendContext, IpDeviceStateContext,
+        IpDeviceTimerId, Ipv4DeviceTimerId, Ipv6DeviceConfigurationContext, Ipv6DeviceContext,
+        Ipv6DeviceHandler, Ipv6DeviceTimerId, Ipv6LinkLayerAddr, WithIpDeviceConfigurationMutInner,
         WithIpv6DeviceConfigurationMutInner, add_ip_addr_subnet_with_config,
         clear_ipv4_device_state, clear_ipv6_device_state, del_ip_addr_inner, get_ipv4_addr_subnet,
         get_ipv6_hop_limit, is_ip_device_enabled, is_ip_multicast_forwarding_enabled,

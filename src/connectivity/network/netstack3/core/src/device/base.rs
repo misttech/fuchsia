@@ -41,10 +41,11 @@ use netstack3_device::{
 use netstack3_filter::ProofOfEgressCheck;
 use netstack3_ip::device::{
     AddressId, AddressIdIter, DadState, DualStackIpDeviceState, IpAddressData, IpAddressEntry,
-    IpDeviceAddressContext, IpDeviceConfigurationContext, IpDeviceFlags, IpDeviceIpExt,
-    IpDeviceSendContext, IpDeviceStateContext, Ipv4AddrConfig, Ipv4DeviceConfiguration,
-    Ipv6AddrConfig, Ipv6DeviceConfiguration, Ipv6DeviceConfigurationContext, Ipv6DeviceContext,
-    Ipv6NetworkLearnedParameters, PrimaryAddressId, WeakAddressId,
+    IpDeviceAddAddressContext, IpDeviceAddressContext, IpDeviceConfigurationContext, IpDeviceFlags,
+    IpDeviceIpExt, IpDeviceSendContext, IpDeviceStateContext, Ipv4AddrConfig,
+    Ipv4DeviceConfiguration, Ipv6AddrConfig, Ipv6DeviceConfiguration,
+    Ipv6DeviceConfigurationContext, Ipv6DeviceContext, Ipv6NetworkLearnedParameters,
+    PrimaryAddressId, WeakAddressId,
 };
 use netstack3_ip::nud::{
     ConfirmationFlags, DynamicNeighborUpdateSource, NudHandler, NudIpHandler, NudUserConfig,
@@ -324,6 +325,23 @@ impl<BC: BindingsContext, L> IpDeviceAddressIdContext<Ipv4> for CoreCtx<'_, BC, 
 }
 
 impl<BC: BindingsContext, L: LockBefore<crate::lock_ordering::IpDeviceAddresses<Ipv4>>>
+    IpDeviceAddAddressContext<Ipv4, BC> for CoreCtx<'_, BC, L>
+{
+    fn add_ip_address(
+        &mut self,
+        device_id: &Self::DeviceId,
+        addr: AddrSubnet<Ipv4Addr, Ipv4DeviceAddr>,
+        config: Ipv4AddrConfig<BC::Instant>,
+    ) -> Result<Self::AddressId, ExistsError> {
+        let mut state = ip_device_state(self, device_id);
+        let addr_id = state
+            .write_lock::<crate::lock_ordering::IpDeviceAddresses<Ipv4>>()
+            .add(IpAddressEntry::new(addr, DadState::Uninitialized, config));
+        addr_id
+    }
+}
+
+impl<BC: BindingsContext, L: LockBefore<crate::lock_ordering::IpDeviceAddresses<Ipv4>>>
     IpDeviceStateContext<Ipv4, BC> for CoreCtx<'_, BC, L>
 {
     type IpDeviceAddressCtx<'a> =
@@ -337,19 +355,6 @@ impl<BC: BindingsContext, L: LockBefore<crate::lock_ordering::IpDeviceAddresses<
         let mut state = ip_device_state(self, device_id);
         let flags = &*state.lock::<crate::lock_ordering::IpDeviceFlags<Ipv4>>();
         cb(flags)
-    }
-
-    fn add_ip_address(
-        &mut self,
-        device_id: &Self::DeviceId,
-        addr: AddrSubnet<Ipv4Addr, Ipv4DeviceAddr>,
-        config: Ipv4AddrConfig<BC::Instant>,
-    ) -> Result<Self::AddressId, ExistsError> {
-        let mut state = ip_device_state(self, device_id);
-        let addr_id = state
-            .write_lock::<crate::lock_ordering::IpDeviceAddresses<Ipv4>>()
-            .add(IpAddressEntry::new(addr, DadState::Uninitialized, config));
-        addr_id
     }
 
     fn remove_ip_address(
@@ -595,6 +600,23 @@ impl<
 }
 
 impl<BC: BindingsContext, L: LockBefore<crate::lock_ordering::IpDeviceAddresses<Ipv6>>>
+    IpDeviceAddAddressContext<Ipv6, BC> for CoreCtx<'_, BC, L>
+{
+    fn add_ip_address(
+        &mut self,
+        device_id: &Self::DeviceId,
+        addr: AddrSubnet<Ipv6Addr, Ipv6DeviceAddr>,
+        config: Ipv6AddrConfig<BC::Instant>,
+    ) -> Result<Self::AddressId, ExistsError> {
+        let mut state = ip_device_state(self, device_id);
+        let addr_id = state
+            .write_lock::<crate::lock_ordering::IpDeviceAddresses<Ipv6>>()
+            .add(IpAddressEntry::new(addr, DadState::Uninitialized, config));
+        addr_id
+    }
+}
+
+impl<BC: BindingsContext, L: LockBefore<crate::lock_ordering::IpDeviceAddresses<Ipv6>>>
     IpDeviceStateContext<Ipv6, BC> for CoreCtx<'_, BC, L>
 {
     type IpDeviceAddressCtx<'a> =
@@ -608,19 +630,6 @@ impl<BC: BindingsContext, L: LockBefore<crate::lock_ordering::IpDeviceAddresses<
         let mut state = ip_device_state(self, device_id);
         let flags = &*state.lock::<crate::lock_ordering::IpDeviceFlags<Ipv6>>();
         cb(flags)
-    }
-
-    fn add_ip_address(
-        &mut self,
-        device_id: &Self::DeviceId,
-        addr: AddrSubnet<Ipv6Addr, Ipv6DeviceAddr>,
-        config: Ipv6AddrConfig<BC::Instant>,
-    ) -> Result<Self::AddressId, ExistsError> {
-        let mut state = ip_device_state(self, device_id);
-        let addr_id = state
-            .write_lock::<crate::lock_ordering::IpDeviceAddresses<Ipv6>>()
-            .add(IpAddressEntry::new(addr, DadState::Uninitialized, config));
-        addr_id
     }
 
     fn remove_ip_address(

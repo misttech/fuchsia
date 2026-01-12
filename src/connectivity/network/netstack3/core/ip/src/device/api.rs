@@ -31,6 +31,7 @@ use crate::internal::device::state::{
 use crate::internal::device::{
     self, AddressRemovedReason, DelIpAddr, IpDeviceAddressContext as _, IpDeviceBindingsContext,
     IpDeviceConfigurationContext, IpDeviceEvent, IpDeviceIpExt, IpDeviceStateContext as _,
+    WithIpDeviceConfigurationMutInner,
 };
 use crate::internal::gmp::{GmpHandler as _, GmpStateContext};
 use crate::internal::routing::IpRoutingDeviceContext;
@@ -94,7 +95,8 @@ where
             return Err(AddIpAddrSubnetError::InvalidAddr);
         }
         let (core_ctx, bindings_ctx) = self.contexts();
-        core_ctx.with_ip_device_configuration(device, |config, mut core_ctx| {
+        core_ctx.with_ip_device_configuration_mut(device, |mut core_ctx| {
+            let (config, mut core_ctx) = core_ctx.ip_device_configuration_and_ctx();
             device::add_ip_addr_subnet_with_config(
                 &mut core_ctx,
                 bindings_ctx,

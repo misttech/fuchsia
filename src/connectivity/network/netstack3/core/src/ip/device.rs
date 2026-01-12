@@ -1217,6 +1217,24 @@ where
     }
 }
 
+impl<'a, Config, I: IpDeviceIpExt, BC: BindingsContext, L> device::IpDeviceAddAddressContext<I, BC>
+    for CoreCtxWithIpDeviceConfiguration<'a, Config, L, BC>
+where
+    CoreCtx<'a, BC, L>: device::IpDeviceAddAddressContext<I, BC>,
+{
+    fn add_ip_address(
+        &mut self,
+        device_id: &Self::DeviceId,
+        addr: AddrSubnet<I::Addr, I::AssignedWitness>,
+        config: I::AddressConfig<BC::Instant>,
+    ) -> Result<Self::AddressId, ExistsError> {
+        let Self { config: _, core_ctx } = self;
+        device::IpDeviceAddAddressContext::<I, BC>::add_ip_address(
+            core_ctx, device_id, addr, config,
+        )
+    }
+}
+
 impl<'a, Config, I: IpDeviceIpExt, BC: BindingsContext, L> device::IpDeviceStateContext<I, BC>
     for CoreCtxWithIpDeviceConfiguration<'a, Config, L, BC>
 where
@@ -1232,16 +1250,6 @@ where
     ) -> O {
         let Self { config: _, core_ctx } = self;
         device::IpDeviceStateContext::<I, BC>::with_ip_device_flags(core_ctx, device_id, cb)
-    }
-
-    fn add_ip_address(
-        &mut self,
-        device_id: &Self::DeviceId,
-        addr: AddrSubnet<I::Addr, I::AssignedWitness>,
-        config: I::AddressConfig<BC::Instant>,
-    ) -> Result<Self::AddressId, ExistsError> {
-        let Self { config: _, core_ctx } = self;
-        device::IpDeviceStateContext::<I, BC>::add_ip_address(core_ctx, device_id, addr, config)
     }
 
     fn remove_ip_address(

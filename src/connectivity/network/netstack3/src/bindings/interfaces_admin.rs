@@ -50,6 +50,7 @@ use net_types::ip::{
 };
 use net_types::{SpecifiedAddr, Witness, map_ip_twice};
 use netstack3_core::device::{BlackholeDevice, DeviceConfigurationUpdateError, DeviceId};
+use netstack3_core::error::NotFoundError;
 use netstack3_core::ip::{
     AddIpAddrSubnetError, AddrSubnetAndManualConfigEither, CommonAddressConfig,
     CommonAddressProperties, IpDeviceConfigurationAndFlags, IpDeviceConfigurationUpdate,
@@ -1492,7 +1493,7 @@ async fn run_address_state_provider(
         let device_id = ctx.bindings_ctx().devices.get_core_id(id).expect("interface not found");
         ctx.api().device_ip_any().add_ip_addr_subnet(&device_id, addr_subnet_and_config)
     };
-    let (state_to_remove_from_core, removal_reason) = match add_to_core_result {
+    let (state_to_remove_from_core, mut removal_reason) = match add_to_core_result {
         Err(e) => {
             let removal_reason = match e {
                 AddIpAddrSubnetError::Exists => {
@@ -1612,6 +1613,45 @@ async fn run_address_state_provider(
     // Remove the address.
     let bindings_ctx = ctx.bindings_ctx();
     let core_id = bindings_ctx.devices.get_core_id(id).expect("missing device info for interface");
+
+    let StateInCore { address: remove_address, subnet_route } = state_to_remove_from_core;
+
+    // The presence of this `route_set` indicates that we added a subnet route
+    // previously due to the `add_subnet_route` AddressParameters option.
+    // Closing `route_set` will correctly remove this route.
+    if let Some((route_set_v4, route_set_v6)) = subnet_route {
+        route_set_v4.close().await;
+        route_set_v6.close().await;
+    }
+
+    if remove_address {
+        let result = ctx.api().device_ip_any().del_ip_addr(&core_id, address);
+        match result {
+            Ok(resource_removal) => {
+                let _: AddrSubnetEither = resource_removal
+                    .map_deferred(|d| {
+                        d.map_left(|l| l.into_future("device addr", &address, &ctx).map(Into::into))
+                            .map_right(|r| {
+                                r.into_future("device addr", &address, &ctx).map(Into::into)
+                            })
+                    })
+                    .into_future()
+                    .await;
+            }
+            Err(NotFoundError) => {
+                // We *must* have raced here with a core-initiated removal.
+                // Wait to get the real reason.
+                removal_reason =
+                    Some(stop_receiver.await.expect("address disappeared without removal reason"));
+            }
+        }
+    }
+
+    // After the address is removed from core we can remove it from the
+    // bindings' book-keeping attached to the device. Note that this must happen
+    // _after_ we've resolved the race with core removal above, otherwise core
+    // doesn't have access to the removal reason sender.
+
     // We can drop the join handle safely, since it does not encode task
     // lifetime (this task, specifically).
     let _: futures::future::Shared<fasync::JoinHandle<()>> =
@@ -1629,28 +1669,6 @@ async fn run_address_state_provider(
     // variable name to prevent misuse.
     let id = ();
     let () = id;
-
-    let StateInCore { address: remove_address, subnet_route } = state_to_remove_from_core;
-
-    // The presence of this `route_set` indicates that we added a subnet route
-    // previously due to the `add_subnet_route` AddressParameters option.
-    // Closing `route_set` will correctly remove this route.
-    if let Some((route_set_v4, route_set_v6)) = subnet_route {
-        route_set_v4.close().await;
-        route_set_v6.close().await;
-    }
-
-    if remove_address {
-        let result =
-            ctx.api().device_ip_any().del_ip_addr(&core_id, address).expect("address must exist");
-        let _: AddrSubnetEither = result
-            .map_deferred(|d| {
-                d.map_left(|l| l.into_future("device addr", &address, &ctx).map(Into::into))
-                    .map_right(|r| r.into_future("device addr", &address, &ctx).map(Into::into))
-            })
-            .into_future()
-            .await;
-    }
 
     if let Some(removal_reason) = removal_reason {
         send_address_removal_event(address.get(), &core_id, control_handle, removal_reason.into());

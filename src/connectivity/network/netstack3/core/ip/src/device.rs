@@ -559,14 +559,6 @@ pub trait IpDeviceStateContext<I: IpDeviceIpExt, BT: IpDeviceStateBindingsTypes>
         cb: F,
     ) -> O;
 
-    /// Adds an IP address for the device.
-    fn add_ip_address(
-        &mut self,
-        device_id: &Self::DeviceId,
-        addr: AddrSubnet<I::Addr, I::AssignedWitness>,
-        config: I::AddressConfig<BT::Instant>,
-    ) -> Result<Self::AddressId, ExistsError>;
-
     /// Removes an address from the device identified by the ID.
     fn remove_ip_address(
         &mut self,
@@ -630,6 +622,23 @@ pub trait IpDeviceStateContext<I: IpDeviceIpExt, BT: IpDeviceStateBindingsTypes>
     );
 }
 
+/// A trait abstracting the ability to add an IP address to a device instance.
+///
+/// This trait is _only_ accessible to callers in this crate via
+/// [`WithIpDeviceConfigurationMutInner`], which guarantees that adding an
+/// address can _only_ happen under exclusive device configuration access.
+pub trait IpDeviceAddAddressContext<I: IpDeviceIpExt, BT: IpDeviceStateBindingsTypes>:
+    IpDeviceAddressContext<I, BT>
+{
+    /// Adds an IP address for the device.
+    fn add_ip_address(
+        &mut self,
+        device_id: &Self::DeviceId,
+        addr: AddrSubnet<I::Addr, I::AssignedWitness>,
+        config: I::AddressConfig<BT::Instant>,
+    ) -> Result<Self::AddressId, ExistsError>;
+}
+
 /// The context provided to the callback passed to
 /// [`IpDeviceConfigurationContext::with_ip_device_configuration_mut`].
 pub trait WithIpDeviceConfigurationMutInner<I: IpDeviceIpExt, BT: IpDeviceStateBindingsTypes>:
@@ -637,6 +646,7 @@ pub trait WithIpDeviceConfigurationMutInner<I: IpDeviceIpExt, BT: IpDeviceStateB
 {
     /// The inner device state context.
     type IpDeviceStateCtx<'s>: IpDeviceStateContext<I, BT, DeviceId = Self::DeviceId>
+        + IpDeviceAddAddressContext<I, BT>
         + GmpHandler<I, BT>
         + NudIpHandler<I, BT>
         + DadHandler<I, BT>
@@ -1567,10 +1577,15 @@ pub fn leave_ip_multicast<
 /// currently holding a a reference to the IP device's IP configuration as a way
 /// to prove that caller has synchronized this operation with other accesses to
 /// the IP device configuration.
+///
+/// See [`IpDeviceAddAddressContext`] for further synchronization guarantees.
 pub fn add_ip_addr_subnet_with_config<
     I: IpDeviceIpExt,
     BC: IpDeviceBindingsContext<I, CC::DeviceId>,
-    CC: IpDeviceStateContext<I, BC> + GmpHandler<I, BC> + DadHandler<I, BC>,
+    CC: IpDeviceStateContext<I, BC>
+        + IpDeviceAddAddressContext<I, BC>
+        + GmpHandler<I, BC>
+        + DadHandler<I, BC>,
 >(
     core_ctx: &mut CC,
     bindings_ctx: &mut BC,
@@ -1714,6 +1729,11 @@ pub fn del_ip_addr_inner<
     addr: DelIpAddr<CC::AddressId, I::Addr>,
     reason: AddressRemovedReason,
     // Require configuration lock to do this.
+    //
+    // This ensures a fixed device configuration, but also synchronization with
+    // address addition and removal.
+    //
+    // See `IpDeviceAddAddressContext` for further synchronization guarantees.
     _config: &I::Configuration,
 ) -> Result<
     (
