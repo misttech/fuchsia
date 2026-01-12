@@ -175,7 +175,7 @@ class GlobalHandleWaker(HandleWaker):
             )
             logger.debug("[[ TRACE BEGIN ]]")
             for line in map(lambda x: x.strip(), traceback.format_exception(e)):
-                logger.info(f"-- {line}")
+                logger.debug(f"-- {line}")
             logger.debug("[[ TRACE END ]]")
 
     def unregister(self, h: fc.BaseHandle) -> None:
