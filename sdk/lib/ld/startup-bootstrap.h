@@ -11,13 +11,15 @@
 
 namespace ld {
 
-struct StartupBootstrap : public ld::Bootstrap {
+class StartupBootstrap : public ld::Bootstrap {
+ public:
   template <typename PageSizeT>
   StartupBootstrap(auto& diag, const void* vdso_base, PageSizeT&& page_size)
       : ld::Bootstrap{diag, vdso_base, std::forward<PageSizeT>(page_size),
                       // See below about the module storage.
                       gSelfModule, gVdsoModule} {}
 
+ private:
   // We want these objects to be in bss to reduce the amount of data pages
   // which need COW.  In general the only data/bss we want should be part of
   // `_ld_abi`, but the ld.so and vDSO modules will always be in the `_ld_abi`
@@ -30,34 +32,6 @@ struct StartupBootstrap : public ld::Bootstrap {
 
   [[gnu::section(".bss.vdso_module")]] constinit static inline abi::Abi<>::Module gVdsoModule =
       abi::Abi<>::Module::LinkerZeroInitialized();
-};
-
-// This determines the whole-page bounds of the RELRO + data + bss segment.
-// (LLD uses a layout with two contiguous segments, but that's equivalent.)
-// After startup, protect all of this rather than just the RELRO region.
-// Use like: `auto [start, size] = DataBounds(page_size);`
-struct DataBounds {
-  DataBounds() = delete;
-
-  explicit DataBounds(size_t page_size)
-      : start(PageRound(kStart, page_size)),      // Page above RO.
-        size(PageRound(kEnd, page_size) - start)  // Page above RW.
-  {}
-
-  uintptr_t start;
-  size_t size;
-
- private:
-  // These are actually defined implicitly by the linker: _etext is the limit
-  // of the read-only segments (code and/or RODATA), so the data starts on the
-  // next page up; _end is the limit of the bss, which implicitly extends to
-  // the end of that page.
-  [[gnu::visibility("hidden")]] static std::byte kStart[] __asm__("_etext");
-  [[gnu::visibility("hidden")]] static std::byte kEnd[] __asm__("_end");
-
-  static uintptr_t PageRound(void* ptr, size_t page_size) {
-    return (reinterpret_cast<uintptr_t>(ptr) + page_size - 1) & -page_size;
-  }
 };
 
 // TODO(https://fxbug.dev/42080826): After LlvmProfdata:UseCounters, functions will load

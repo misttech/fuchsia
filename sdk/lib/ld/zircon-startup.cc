@@ -36,13 +36,13 @@ auto MakeStartupSystemPageAllocator(StartupData& startup) {
 }
 
 auto MakeStartupScratchAllocator(SystemPageAllocator system) {
-  return MakeScratchAllocator(system);
+  return MakeScratchAllocator(std::move(system));
 }
 
 using ScratchAllocator = decltype(MakeStartupScratchAllocator(SystemPageAllocator{}));
 
 auto MakeStartupInitialExecAllocator(SystemPageAllocator system) {
-  return MakeInitialExecAllocator(system);
+  return MakeInitialExecAllocator(std::move(system));
 }
 
 using InitialExecAllocator = decltype(MakeStartupInitialExecAllocator(SystemPageAllocator{}));
@@ -81,12 +81,14 @@ LoadExecutableResult LoadExecutable(Diagnostics& diag, StartupData& startup,
   return result;
 }
 
-[[maybe_unused]] void ProtectData(Diagnostics& diag, size_t page_size, zx::vmar self) {
-  auto [data_start, data_size] = DataBounds(page_size);
-  zx_status_t status = self.protect(ZX_VM_PERM_READ, data_start, data_size);
-  if (status != ZX_OK) [[unlikely]] {
-    diag.SystemError("cannot protect dynamic linker data pages", elfldltl::ZirconError{status});
-  }
+[[maybe_unused]] void ProtectData(Diagnostics& diag, const StartupBootstrap& bootstrap,
+                                  zx::vmar self) {
+  bootstrap.OnWritablePages([&diag, self = std::move(self)](uintptr_t start, size_t size) {
+    zx_status_t status = self.protect(ZX_VM_PERM_READ, start, size);
+    if (status != ZX_OK) [[unlikely]] {
+      diag.SystemError("cannot protect dynamic linker data pages", elfldltl::ZirconError{status});
+    }
+  });
 }
 
 ld::Debugdata::Deferred PublishProfdata(Diagnostics& diag, zx::unowned_vmar vmar,
@@ -175,7 +177,7 @@ extern "C" StartLdResult StartLd(zx_handle_t handle, void* vdso) {
   // the user entry point as its third argument.  Eventually, the user's libc
   // will pass this to ld::Debugdata::Forward.
   ld::Debugdata::Deferred debugdata =
-      PublishProfdata(diag, startup.vmar.borrow(), StartupBootstrap::gSelfModule.build_id);
+      PublishProfdata(diag, startup.vmar.borrow(), bootstrap.self_module().build_id);
 
   // Set up the allocators.  These objects hold zx::unowned_vmar copies but do
   // not own the VMAR handle.
@@ -225,7 +227,7 @@ extern "C" StartLdResult StartLd(zx_handle_t handle, void* vdso) {
     // Now that startup is completed, protect not only the RELRO, but also all
     // the data and bss.  Then drop that VMAR handle so the protections cannot
     // be changed again.
-    ProtectData(diag, bootstrap.page_size(), std::move(startup.self_vmar));
+    ProtectData(diag, bootstrap, std::move(startup.self_vmar));
   }
 
   // Bail out before handoff if any errors have been detected.

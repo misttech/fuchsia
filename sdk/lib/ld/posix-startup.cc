@@ -42,13 +42,13 @@ constexpr auto MakeStartupSystemPageAllocator(StartupData& startup) {
 }
 
 auto MakeStartupScratchAllocator(SystemPageAllocator system) {
-  return MakeScratchAllocator(system);
+  return MakeScratchAllocator(std::move(system));
 }
 
 using ScratchAllocator = decltype(MakeStartupScratchAllocator(SystemPageAllocator{}));
 
 auto MakeStartupInitialExecAllocator(SystemPageAllocator system) {
-  return MakeInitialExecAllocator(system);
+  return MakeInitialExecAllocator(std::move(system));
 }
 
 using InitialExecAllocator = decltype(MakeStartupInitialExecAllocator(SystemPageAllocator{}));
@@ -146,11 +146,13 @@ std::pair<StartupModule*, size_t> LoadExecutable(Diagnostics& diag, StartupData&
   return {main_executable, needed_count};
 }
 
-[[maybe_unused]] void ProtectData(Diagnostics& diag, size_t page_size) {
-  auto [data_start, data_size] = DataBounds(page_size);
-  if (mprotect(reinterpret_cast<void*>(data_start), data_size, PROT_READ) != 0) [[unlikely]] {
-    diag.SystemError("cannot mprotect dynamic linker data pages", elfldltl::PosixError{errno});
-  }
+[[maybe_unused]] void ProtectData(Diagnostics& diag, const StartupBootstrap& bootstrap) {
+  bootstrap.OnWritablePages([&diag](uintptr_t start, size_t size) {
+    void* const ptr = reinterpret_cast<void*>(start);
+    if (mprotect(ptr, size, PROT_READ) != 0) [[unlikely]] {
+      diag.SystemError("cannot mprotect dynamic linker data pages", elfldltl::PosixError{errno});
+    }
+  });
 }
 
 }  // namespace
@@ -247,7 +249,7 @@ extern "C" uintptr_t StartLd(StartupStack& stack) {
   if constexpr (kProtectData) {
     // Now that startup is completed, protect not only the RELRO, but also all
     // the data and bss.
-    ProtectData(diag, startup.page_size);
+    ProtectData(diag, bootstrap);
   }
 
   // Bail out before handoff if any errors have been detected.

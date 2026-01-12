@@ -20,9 +20,9 @@ namespace ld {
 // The scratch allocator gets fresh pages from the system and then unmaps them
 // all at the end of the allocator object's lifetime.
 template <class Memory>
-inline auto MakeScratchAllocator(Memory memory) {
+inline auto MakeScratchAllocator(Memory&& memory) {
   return trivial_allocator::BasicOwningAllocator(
-      trivial_allocator::PageAllocator(std::move(memory)));
+      trivial_allocator::PageAllocator(std::forward<Memory>(memory)));
 }
 
 // The initial-exec allocator gets fresh pages from the system.  When they've
@@ -31,7 +31,7 @@ inline auto MakeScratchAllocator(Memory memory) {
 // This always permits doing two consecutive allocations of data structures and
 // then updating the first data structure to point to the second.
 template <class Memory>
-inline auto MakeInitialExecAllocator(Memory memory) {
+inline auto MakeInitialExecAllocator(Memory&& memory) {
   using InitialExecAllocatorBase =
       trivial_allocator::BasicLeakyAllocator<trivial_allocator::SealedPageAllocator<Memory, 1>>;
 
@@ -43,7 +43,7 @@ inline auto MakeInitialExecAllocator(Memory memory) {
     ~InitialExecAllocator() { std::move(this->allocate_function()).Seal(); }
   };
 
-  return InitialExecAllocator{std::move(memory)};
+  return InitialExecAllocator{std::forward<Memory>(memory)};
 }
 
 inline void CheckAlloc(Diagnostics& diag, fbl::AllocChecker& ac, std::string_view what) {

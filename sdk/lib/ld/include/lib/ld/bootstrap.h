@@ -126,10 +126,55 @@ class Bootstrap {
   }
 
   PreloadedList& preloaded() { return preloaded_; }
+
   Module& self_module() { return preloaded_.front().module; }
+  const Module& self_module() const { return preloaded_.front().module; }
+
   Module& vdso_module() { return preloaded_.back().module; }
+  const Module& vdso_module() const { return preloaded_.back().module; }
 
   size_t page_size() const { return page_size_; }
+
+  // Call f(start, size) for each whole-page region in self_module() containing
+  // writable PT_LOAD segment data.
+  void OnWritablePages(std::invocable<uintptr_t, size_t> auto&& f) const
+    requires(std::is_void_v<std::invoke_result_t<decltype(f), uintptr_t, size_t>>)
+  {
+    const Module& self = self_module();
+    uintptr_t pending_start = self.vaddr_start;
+    uintptr_t pending_end = self.vaddr_start;
+
+    auto report_pending = [&f, &pending_start, &pending_end]() {
+      if (pending_end > pending_start) {
+        const size_t size = pending_end - pending_start;
+        f(pending_start, size);
+      }
+    };
+
+    for (const auto& phdr : self.phdrs.get()) {
+      if (phdr.type == elfldltl::ElfPhdrType::kLoad && (phdr.flags & Phdr::kWrite)) {
+        // This is a writable segment.  Compute its page-rounded bounds.
+        uintptr_t vaddr = phdr.vaddr + self.link_map.addr;
+        uintptr_t start = vaddr & -page_size();
+        uintptr_t end = (vaddr + phdr.memsz + page_size() - 1) & -page_size();
+
+        // If this is contiguous with the pending segment, just extend it.
+        if (start == pending_end) {
+          pending_end = end;
+          continue;
+        }
+
+        // Call f on the pending segment (if any).
+        report_pending();
+
+        // Collect this segment as pending for the next iteration.
+        pending_start = start;
+        pending_end = end;
+      }
+    }
+
+    report_pending();
+  }
 
  private:
   static void FillModule(Module& module, std::span<const Dyn> dyn, size_t vaddr_start,
