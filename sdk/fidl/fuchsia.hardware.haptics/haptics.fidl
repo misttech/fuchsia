@@ -23,6 +23,16 @@ open protocol Device {
         /// amplitude of vibrations are unaltered.
         amplitude float32;
     }) -> () error zx.Status;
+
+    /// Returns the haptics-related properties of the haptics device.
+    flexible GetProperties() -> (struct {
+        /// The fundamental resonant frequency (F0) (in hertz) of the haptics device. Also known as
+        /// F0.
+        fundamental_resonant_frequency_hz float32;
+
+        /// The quality factor of the haptics device. Also known as the Q factor.
+        quality_factor float32;
+    }) error zx.Status;
 };
 
 service Service {

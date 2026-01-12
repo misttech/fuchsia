@@ -33,6 +33,17 @@ async fn handle_device_requests(mut requests: DeviceRequestStream) -> anyhow::Re
 
                 responder.send(Ok(())).context("Failed to send response")?;
             }
+            DeviceRequest::GetProperties { responder } => {
+                // Value must be greater than 0 in order to pass tests.
+                const FUNDAMENTAL_RESONANT_FREQUENCY_HZ: f32 = 123.0;
+
+                // Value must be greater than 0 in order to pass tests.
+                const QUALITY_FACTOR: f32 = 789.0;
+
+                responder
+                    .send(Ok((QUALITY_FACTOR, FUNDAMENTAL_RESONANT_FREQUENCY_HZ)))
+                    .context("Failed to send response")?;
+            }
             DeviceRequest::_UnknownMethod { ordinal, .. } => {
                 error!("Received unknown method {}", ordinal);
             }
