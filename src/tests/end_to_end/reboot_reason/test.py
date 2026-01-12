@@ -19,7 +19,7 @@ class RebootReasonTest(fuchsia_base_test.FuchsiaBaseTest):
     def test_reboot_reason(self) -> None:
         _LOGGER.info("[test_reboot_reason] Rebooting device...")
         # Under the hood, this makes a FIDL call over
-        # fuchsia.hardware.power.statecontrol/Admin::PerformReboot() with reboot reason
+        # fuchsia.hardware.power.statecontrol/Admin::Shutdown() with shutdown reason
         # DEVELOPER_REQUEST.
         self.dut.reboot()
         _LOGGER.info("[test_reboot_reason] Device has rebooted successfully")
