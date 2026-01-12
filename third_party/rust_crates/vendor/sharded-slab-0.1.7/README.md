@@ -11,7 +11,7 @@ A lock-free concurrent slab.
 [crates-badge]: https://img.shields.io/crates/v/sharded-slab.svg
 [crates-url]: https://crates.io/crates/sharded-slab
 [docs-badge]: https://docs.rs/sharded-slab/badge.svg
-[docs-url]: https://docs.rs/sharded-slab/0.1.4/sharded_slab
+[docs-url]: https://docs.rs/sharded-slab/latest
 [ci-badge]: https://github.com/hawkw/sharded-slab/workflows/CI/badge.svg
 [ci-url]: https://github.com/hawkw/sharded-slab/actions?workflow=CI
 [license-badge]: https://img.shields.io/crates/l/sharded-slab
@@ -35,7 +35,7 @@ optimization, and there may still be some lurking bugs.
 First, add this to your `Cargo.toml`:
 
 ```toml
-sharded-slab = "0.1.1"
+sharded-slab = "0.1.7"
 ```
 
 This crate provides two types, [`Slab`] and [`Pool`], which provide slightly
@@ -127,7 +127,7 @@ assert_eq!(hello.as_str(), "hello everyone!");
 
 ## Comparison with Similar Crates
 
-- [`slab`]: Carl Lerche's `slab` crate provides a slab implementation with a
+- [`slab`][slab crate]: Carl Lerche's `slab` crate provides a slab implementation with a
   similar API, implemented by storing all data in a single vector.
 
   Unlike `sharded-slab`, inserting and removing elements from the slab requires
@@ -150,7 +150,7 @@ assert_eq!(hello.as_str(), "hello everyone!");
   concurrent use-cases, while `slab` should be preferred in single-threaded
   use-cases.
 
-[`slab`]: https://crates.io/crates/slab
+[slab crate]: https://crates.io/crates/slab
 
 ## Safety and Correctness
 

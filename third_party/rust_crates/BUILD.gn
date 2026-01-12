@@ -17162,16 +17162,16 @@ rustc_library("sha2-v0_10_8") {
   applicable_licenses = [ ":sha2-v0_10_8.license" ]
 }
 
-license("sharded-slab-v0_1_4.license") {
+license("sharded-slab-v0_1_7.license") {
   public_package_name = "sharded_slab"
   license_files =
-      [ "//third_party/rust_crates/vendor/sharded-slab-0.1.4/LICENSE" ]
+      [ "//third_party/rust_crates/vendor/sharded-slab-0.1.7/LICENSE" ]
 }
 
-rustc_library("sharded-slab-v0_1_4") {
+rustc_library("sharded-slab-v0_1_7") {
   crate_name = "sharded_slab"
-  source_root = "//third_party/rust_crates/vendor/sharded-slab-0.1.4/src/lib.rs"
-  output_name = "sharded_slab-feb472376bcc1d39"
+  source_root = "//third_party/rust_crates/vendor/sharded-slab-0.1.7/src/lib.rs"
+  output_name = "sharded_slab-1e410e2a47695cd3"
   edition = "2018"
   disable_clippy = true
   enforce_source_listing = false
@@ -17184,13 +17184,13 @@ rustc_library("sharded-slab-v0_1_4") {
 
   rustflags = [
     "--cap-lints=allow",
-    "-Cmetadata=feb472376bcc1d39",
-    "-Cextra-filename=-feb472376bcc1d39",
+    "-Cmetadata=1e410e2a47695cd3",
+    "-Cextra-filename=-1e410e2a47695cd3",
   ]
 
   visibility = [ ":*" ]
 
-  applicable_licenses = [ ":sharded-slab-v0_1_4.license" ]
+  applicable_licenses = [ ":sharded-slab-v0_1_7.license" ]
 }
 
 license("shared_child-v1_1_1.license") {
@@ -19571,7 +19571,7 @@ rustc_library("tracing-subscriber-v0_3_18") {
   deps += [ ":nu-ansi-term-v0_46_0" ]
   deps += [ ":once_cell-v1_21_3" ]
   deps += [ ":regex-v1_7_3" ]
-  deps += [ ":sharded-slab-v0_1_4" ]
+  deps += [ ":sharded-slab-v0_1_7" ]
   deps += [ ":smallvec-v1_15_1" ]
   deps += [ ":thread_local-v1_1_9" ]
   deps += [ ":tracing-log-v0_2_0" ]
