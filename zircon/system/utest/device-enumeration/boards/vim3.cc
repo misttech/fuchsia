@@ -48,9 +48,10 @@ TEST_F(DeviceEnumerationTest, Vim3DeviceTreeTest) {
       // EMMC
       "mmc-ffe07000.aml-sd-emmc",
       "mmc-ffe07000.aml-sd-emmc.sdmmc",
-      "mmc-ffe07000.aml-sd-emmc.sdmmc.sdmmc-mmc.boot1.block",
-      "mmc-ffe07000.aml-sd-emmc.sdmmc.sdmmc-mmc.boot2.block",
+      "mmc-ffe07000.aml-sd-emmc.sdmmc.sdmmc-mmc.boot1",
+      "mmc-ffe07000.aml-sd-emmc.sdmmc.sdmmc-mmc.boot2",
       "mmc-ffe07000.aml-sd-emmc.sdmmc.sdmmc-mmc.rpmb",
+      "mmc-ffe07000.aml-sd-emmc.sdmmc.sdmmc-mmc.user",
 
       "usb-phy-ffe09000.aml_usb_phy",
       "usb-phy-ffe09000.aml_usb_phy.dwc2",

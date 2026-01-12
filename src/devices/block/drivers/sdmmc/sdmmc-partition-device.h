@@ -12,8 +12,6 @@
 #include <lib/zircon-internal/thread_annotations.h>
 #include <zircon/types.h>
 
-#include <cinttypes>
-
 #include <fbl/auto_lock.h>
 
 #include "sdmmc-types.h"
@@ -68,6 +66,7 @@ class PartitionDevice : public ddk::BlockImplProtocol<PartitionDevice>,
 
   const char* partition_name_ = nullptr;
   fidl::WireSyncClient<fuchsia_driver_framework::NodeController> controller_;
+  fidl::WireSyncClient<fuchsia_driver_framework::Node> node_;
 
   fbl::Mutex lock_;
   std::optional<block_server::BlockServer> block_server_ TA_GUARDED(lock_);

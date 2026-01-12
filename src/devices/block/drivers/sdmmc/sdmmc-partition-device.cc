@@ -83,8 +83,11 @@ zx_status_t PartitionDevice::AddDevice() {
 
   auto [controller_client_end, controller_server_end] =
       fidl::Endpoints<fuchsia_driver_framework::NodeController>::Create();
+  auto [node_client_end, node_server_end] =
+      fidl::Endpoints<fuchsia_driver_framework::Node>::Create();
 
   controller_.Bind(std::move(controller_client_end));
+  node_.Bind(std::move(node_client_end));
 
   fidl::Arena arena;
 
@@ -100,7 +103,8 @@ zx_status_t PartitionDevice::AddDevice() {
                         .properties2(properties)
                         .Build();
 
-  auto result = sdmmc_parent_->block_node()->AddChild(args, std::move(controller_server_end), {});
+  auto result = sdmmc_parent_->block_node()->AddChild(args, std::move(controller_server_end),
+                                                      std::move(node_server_end));
   if (!result.ok()) {
     FDF_LOGL(ERROR, logger(), "Failed to add child partition device: %s", result.status_string());
     return result.status();
