@@ -7,9 +7,11 @@
 #include <fidl/fuchsia.hardware.clock/cpp/test_base.h>
 #include <fidl/fuchsia.hardware.interconnect/cpp/fidl.h>
 #include <fidl/fuchsia.hardware.platform.device/cpp/fidl.h>
-#include <fidl/fuchsia.hardware.reset/cpp/test_base.h>
+#include <fidl/fuchsia.hardware.reset/cpp/fidl.h>
 #include <fidl/fuchsia.hardware.usb.phy/cpp/fidl.h>
+#include <fidl/fuchsia.hardware.vreg/cpp/test_base.h>
 #include <lib/driver/fake-clock/cpp/fake-clock.h>
+#include <lib/driver/fake-reset/cpp/fake-reset.h>
 #include <lib/driver/fake-vreg/cpp/fake-vreg.h>
 
 #include <optional>
@@ -29,38 +31,6 @@ namespace fpdev = fuchsia_hardware_platform_device;
 namespace fphy = fuchsia_hardware_usb_phy;
 namespace freset = fuchsia_hardware_reset;
 namespace fvreg = fuchsia_hardware_vreg;
-
-class FakeReset : public fidl::testing::TestBase<freset::Reset> {
- public:
-  freset::Service::InstanceHandler GetInstanceHandler(async_dispatcher_t* dispatcher) {
-    return freset::Service::InstanceHandler({
-        .reset = bindings_.CreateHandler(this, dispatcher, fidl::kIgnoreBindingClosure),
-    });
-  }
-
-  bool toggled() {
-    const bool value = toggled_;
-    toggled_ = false;
-    return value;
-  }
-
- private:
-  void ToggleWithTimeout(ToggleWithTimeoutRequest& request,
-                         ToggleWithTimeoutCompleter::Sync& completer) override {
-    toggled_ = true;
-    completer.Reply(zx::ok());
-  }
-
-  void handle_unknown_method(fidl::UnknownMethodMetadata<freset::Reset> metadata,
-                             fidl::UnknownMethodCompleter::Sync& completer) override {
-    FAIL();
-  }
-
-  void NotImplemented_(const std::string& name, fidl::CompleterBase& completer) override { FAIL(); }
-
-  bool toggled_ = false;
-  fidl::ServerBindingGroup<freset::Reset> bindings_;
-};
 
 class FakeUsbPhy : public fidl::Server<fphy::UsbPhy>, public fidl::Server<fphy::ConnectionWatcher> {
  public:
@@ -206,7 +176,7 @@ class Environment : public fdf_testing::Environment {
                                                    "bus-aggr-clk");
     EXPECT_TRUE(result.is_ok());
 
-    result = directory.AddService<freset::Service>(reset_.GetInstanceHandler(dispatcher), "reset");
+    result = directory.AddService<freset::Service>(reset_.CreateInstanceHandler(), "reset");
     EXPECT_TRUE(result.is_ok());
 
     result = directory.AddService<fvreg::Service>(vreg_.CreateInstanceHandler(), "regulator");
@@ -218,7 +188,7 @@ class Environment : public fdf_testing::Environment {
   ddk_fake::FakeMmioRegRegion& reg_region() { return reg_region_; }
 
   const fdf_fake::FakeClock& clock() const { return clock_; }
-  FakeReset& reset() { return reset_; }
+  fdf_fake::FakeReset& reset() { return reset_; }
   const fdf_fake::FakeVreg& vreg() const { return vreg_; }
 
  private:
@@ -231,7 +201,7 @@ class Environment : public fdf_testing::Environment {
   FakePath path_;
   FakeUsbPhy usb_phy_;
   fdf_fake::FakeClock clock_;
-  FakeReset reset_;
+  fdf_fake::FakeReset reset_;
   fdf_fake::FakeVreg vreg_;
 };
 
@@ -321,7 +291,7 @@ TEST_F(ManagedTestFixture, Dfv2Lifecycle) {
 TEST_F(ManagedTestFixture, ResourcesManagedInStart) {
   dut_.RunInEnvironmentTypeContext([](Environment& env) {
     EXPECT_TRUE(env.vreg().enabled());
-    EXPECT_FALSE(env.reset().toggled());
+    EXPECT_FALSE(env.reset().take_toggled());
     EXPECT_TRUE(env.clock().enabled());
   });
 }
