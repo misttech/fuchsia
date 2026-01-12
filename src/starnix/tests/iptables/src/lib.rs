@@ -11,8 +11,8 @@ use component_events::events::{EventStream, ExitStatus, Stopped, StoppedPayload}
 use component_events::matcher::EventMatcher;
 use fidl_fuchsia_net_filter_ext::{
     Action, ControllerId, Domain, InstalledIpRoutine, InstalledNatRoutine, IpHook, MarkAction,
-    Matchers, Namespace, NamespaceId, NatHook, Resource, Routine, RoutineId, RoutineType, Rule,
-    RuleId,
+    Matchers, Namespace, NamespaceId, NatHook, Resource, ResourceId, Routine, RoutineId,
+    RoutineType, Rule, RuleId,
 };
 use fuchsia_component_test::{RealmBuilder, RealmBuilderParams, RealmInstance};
 use fuchsia_runtime::{HandleInfo, HandleType};
@@ -61,66 +61,96 @@ const MANGLE_TABLE_WITH_MARK_TARGET: &[&str] =
     &["*mangle", "-A INPUT -i lo -j MARK --set-mark 0x1/0x3", "COMMIT"];
 
 const MANGLE_TABLE_WITH_NOOP_TARGET: &[&str] = &["*mangle", "-A INPUT -i lo", "COMMIT"];
+const EBPF_LOADER: &'static str = "ebpf_loader";
+const EBPF_PROGRAM_PIN_PATH: &'static str = "/sys/fs/bpf/test_program";
+const FILTER_TABLE_WITH_BPF_MATCHER: &[&str] =
+    &["*filter", "-A INPUT -m bpf --object-pinned /sys/fs/bpf/test_program", "COMMIT"];
 
-/// Runs component `name` in Realm collection "test-programs" and with `input_lines` as stdin.
-/// Items in `input_lines` are suffixed with newline character, and sent one line at a time, and
-/// then stdin is closed. Checks that component exited with `ExitStatus::Clean` and returns the
-/// realm.
-/// Panics if any errors are encountered.
-async fn run_with_input(name: &'static str, input_lines: &[&'static str]) -> RealmInstance {
-    let mut events = EventStream::open().await.unwrap();
-    let builder =
-        RealmBuilder::with_params(RealmBuilderParams::new().from_relative_url("#meta/realm.cm"))
-            .await
-            .expect("create realm builder");
+struct TestRealm {
+    realm: RealmInstance,
+    realm_proxy: fcomponent::RealmProxy,
+}
 
-    let realm = builder.build().await.unwrap();
-    let test_realm: fcomponent::RealmProxy =
-        realm.root.connect_to_protocol_at_exposed_dir().unwrap();
-
-    info!("Running {name}");
-
-    let (stdin_recv, stdin_send) = zx::Socket::create_stream();
-    test_realm
-        .create_child(
-            &fcomponent_decl::CollectionRef { name: "test-programs".to_string() },
-            &fcomponent_decl::Child {
-                name: Some(name.to_string()),
-                url: Some(format!("#meta/{name}.cm")),
-                startup: Some(fcomponent_decl::StartupMode::Eager),
-                ..Default::default()
-            },
-            fcomponent::CreateChildArgs {
-                numbered_handles: Some(vec![fprocess::HandleInfo {
-                    id: HandleInfo::new(HandleType::FileDescriptor, libc::STDIN_FILENO as u16)
-                        .as_raw(),
-                    handle: stdin_recv.into(),
-                }]),
-                ..Default::default()
-            },
+impl TestRealm {
+    /// Starts test realm.
+    async fn new() -> Self {
+        let builder = RealmBuilder::with_params(
+            RealmBuilderParams::new().from_relative_url("#meta/realm.cm"),
         )
         .await
-        .expect("fidl call to fuchsia.component.Realm/CreateChild")
-        .expect("CreateChild successfully creates child component in collection");
+        .expect("create realm builder");
 
-    for line in input_lines {
-        info!("{name}: {line}");
-        let bytes = format!("{line}\n").into_bytes();
-        assert_eq!(stdin_send.write(&bytes).expect("write to stdin"), bytes.len());
+        let realm = builder.build().await.unwrap();
+        let realm_proxy: fcomponent::RealmProxy =
+            realm.root.connect_to_protocol_at_exposed_dir().unwrap();
+
+        TestRealm { realm, realm_proxy }
     }
 
-    drop(stdin_send);
+    /// Runs component `name` in the realm feeding `input_lines` as stdin. Items
+    /// in `input_lines` are suffixed with newline character, and sent one line
+    /// at a time, and then stdin is closed. Checks that component exited with
+    /// `ExitStatus::Clean` and returns the realm. Panics if any errors are
+    /// encountered.
+    async fn run_with_input(&self, name: &str, input_lines: &[&str]) {
+        info!("Running {name}");
 
-    let event = EventMatcher::ok()
-        .moniker(format!("realm_builder:{}/test-programs:{name}", realm.root.child_name()))
-        .stop(None)
-        .wait::<Stopped>(&mut events)
-        .await
-        .expect("wait for stopped event");
-    let StoppedPayload { status, .. } = event.result().expect("extract event payload");
-    assert_eq!(status, &ExitStatus::Clean);
+        let (stdin_recv, stdin_send) = zx::Socket::create_stream();
+        self.realm_proxy
+            .create_child(
+                &fcomponent_decl::CollectionRef { name: "test-programs".to_string() },
+                &fcomponent_decl::Child {
+                    name: Some(name.to_string()),
+                    url: Some(format!("#meta/{name}.cm")),
+                    startup: Some(fcomponent_decl::StartupMode::Eager),
+                    ..Default::default()
+                },
+                fcomponent::CreateChildArgs {
+                    numbered_handles: Some(vec![fprocess::HandleInfo {
+                        id: HandleInfo::new(HandleType::FileDescriptor, libc::STDIN_FILENO as u16)
+                            .as_raw(),
+                        handle: stdin_recv.into(),
+                    }]),
+                    ..Default::default()
+                },
+            )
+            .await
+            .expect("fidl call to fuchsia.component.Realm/CreateChild")
+            .expect("CreateChild successfully creates child component in collection");
 
-    realm
+        for line in input_lines {
+            info!("{name}: {line}");
+            let bytes = format!("{line}\n").into_bytes();
+            assert_eq!(stdin_send.write(&bytes).expect("write to stdin"), bytes.len());
+        }
+
+        drop(stdin_send);
+
+        let mut events = EventStream::open().await.unwrap();
+        let event = EventMatcher::ok()
+            .moniker(format!("realm_builder:{}/test-programs:{name}", self.realm.root.child_name()))
+            .stop(None)
+            .wait::<Stopped>(&mut events)
+            .await
+            .expect("wait for stopped event");
+        let StoppedPayload { status, .. } = event.result().expect("extract event payload");
+        assert_eq!(status, &ExitStatus::Clean);
+    }
+
+    async fn fetch_starnix_filter_state(
+        &self,
+    ) -> HashMap<fnet_filter_ext::ResourceId, fnet_filter_ext::Resource> {
+        let state =
+            self.realm.root.connect_to_protocol_at_exposed_dir().expect("connect to protocol");
+        let stream =
+            fnet_filter_ext::event_stream_from_state(state).expect("get filter event stream");
+        let mut stream = pin!(stream);
+        let mut all_resources: HashMap<_, _> =
+            fnet_filter_ext::get_existing_resources(&mut stream).await.expect("get resources");
+        all_resources
+            .remove(&ControllerId(String::from("starnix")))
+            .expect("starnix should create controller")
+    }
 }
 
 // Starnix's iptables subsystem prefixes table names with their IP version so
@@ -435,6 +465,26 @@ enum Ip {
     V6,
 }
 
+impl Ip {
+    fn iptables_restore(&self) -> &'static str {
+        match self {
+            Ip::V4 => IPTABLES_RESTORE,
+            Ip::V6 => IP6TABLES_RESTORE,
+        }
+    }
+
+    fn namespace(&self, table_name: &str) -> Namespace {
+        match self {
+            Ip::V4 => {
+                Namespace { id: namespace_id_for_ipv4_table(table_name), domain: Domain::Ipv4 }
+            }
+            Ip::V6 => {
+                Namespace { id: namespace_id_for_ipv6_table(table_name), domain: Domain::Ipv6 }
+            }
+        }
+    }
+}
+
 #[test_case(
     Ip::V4,
     "filter",
@@ -512,32 +562,42 @@ async fn create_chain(
     table_spec: &[&'static str],
     expected_resources_fn: fn(Namespace) -> Vec<Resource>,
 ) {
-    let (binary, namespace) = match protocol {
-        Ip::V4 => (
-            IPTABLES_RESTORE,
-            Namespace { id: namespace_id_for_ipv4_table(table_name), domain: Domain::Ipv4 },
-        ),
-        Ip::V6 => (
-            IP6TABLES_RESTORE,
-            Namespace { id: namespace_id_for_ipv6_table(table_name), domain: Domain::Ipv6 },
-        ),
-    };
+    let realm = TestRealm::new().await;
+    realm.run_with_input(protocol.iptables_restore(), table_spec).await;
+    let starnix = realm.fetch_starnix_filter_state().await;
 
-    let realm = run_with_input(binary, table_spec).await;
-
-    let state = realm.root.connect_to_protocol_at_exposed_dir().expect("connect to protocol");
-    let stream = fnet_filter_ext::event_stream_from_state(state).expect("get filter event stream");
-    let mut stream = pin!(stream);
-    let observed: HashMap<_, _> =
-        fnet_filter_ext::get_existing_resources(&mut stream).await.expect("get resources");
-    let starnix = observed
-        .get(&ControllerId(String::from("starnix")))
-        .expect("starnix should create controller");
-
-    for expected_resource in expected_resources_fn(namespace) {
+    for expected_resource in expected_resources_fn(protocol.namespace(table_name)) {
         let observed_resource = starnix
             .get(&expected_resource.id())
             .expect("expected resource {expected_resource:#?}; did not find in {starnix:#?}");
         assert_eq!(observed_resource, &expected_resource);
     }
+}
+
+#[test_case(Ip::V6, FILTER_TABLE_WITH_BPF_MATCHER; "filter chain bpf matcher ipv6")]
+#[test_case(Ip::V4, FILTER_TABLE_WITH_BPF_MATCHER; "filter chain bpf matcher ipv4")]
+#[fuchsia::test]
+async fn create_chain_with_bpf_matcher(
+    protocol: Ip,
+    table_spec: &[&'static str],
+) {
+    let realm = TestRealm::new().await;
+    realm.run_with_input(EBPF_LOADER, &[EBPF_PROGRAM_PIN_PATH]).await;
+    realm.run_with_input(protocol.iptables_restore(), table_spec).await;
+    let starnix = realm.fetch_starnix_filter_state().await;
+
+    let routine_id =
+        RoutineId { namespace: protocol.namespace("filter").id, name: String::from("INPUT") };
+    let rule_id = RuleId { routine: routine_id, index: 0 };
+    let rule = starnix
+        .get(&ResourceId::Rule(rule_id))
+        .expect("expected routine {routine_id:#?}; did not find in {starnix:#?}");
+    assert!(matches!(
+        rule,
+        Resource::Rule(Rule {
+            id: _,
+            matchers: Matchers { ebpf_program: Some(_), .. },
+            action: Action::None
+        })
+    ));
 }
