@@ -259,7 +259,6 @@ impl Broker {
                         .activated
                         .for_lease(&lease_id)
                         .into_iter()
-                        .chain(self.catalog.opportunistic_claims.activated.for_lease(&lease_id))
                         .filter(|c| c.dependency == dependency)
                         .for_each(|c| {
                             // Eagerly deactivate these claims, instead of simply
@@ -268,7 +267,6 @@ impl Broker {
                             if !claim_on_broken_element {
                                 self.catalog.assertive_claims.deactivate_claim(&c.id);
                             }
-                            self.catalog.opportunistic_claims.deactivate_claim(&c.id);
                             affected_elements.insert(c.requires().element_id);
                             affected_leases.insert(lease_id.clone());
                         });
@@ -301,8 +299,8 @@ impl Broker {
             return;
         }
         if prev_level.is_none() || prev_level.unwrap() < level {
-            // The level was increased, look for activated assertive or pending
-            // opportunistic claims that are newly satisfied by the new current level:
+            // The level was increased, look for activated assertive claims that are newly
+            // satisfied by the new current level:
             log::debug!(
                 "update_current_level({element_id}): level increased from {prev_level:?} to {level:?}"
             );
@@ -312,7 +310,6 @@ impl Broker {
                 .activated
                 .for_required_element(element_id)
                 .into_iter()
-                .chain(self.catalog.opportunistic_claims.pending.for_required_element(element_id))
                 .collect();
             log::debug!(
                 "update_current_level({element_id}): claims_for_required_element = {}",
@@ -382,15 +379,7 @@ impl Broker {
                 .marked_to_deactivate_for_element(element_id);
             let assertive_claims_with_no_dependents =
                 self.find_claims_to_drop_or_deactivate(&assertive_claims_marked_to_deactivate);
-            let opportunistic_claims_marked_to_deactivate = self
-                .catalog
-                .opportunistic_claims
-                .activated
-                .marked_to_deactivate_for_element(element_id);
-            let opportunistic_claims_with_no_dependents =
-                self.find_claims_to_drop_or_deactivate(&opportunistic_claims_marked_to_deactivate);
             self.drop_or_deactivate_assertive_claims(&assertive_claims_with_no_dependents);
-            self.drop_or_deactivate_opportunistic_claims(&opportunistic_claims_with_no_dependents);
 
             // After handling the claims that were dropped properly, we handle those
             // which were dropped unexpectedly, i.e. 'disorderly' elements. When this
@@ -536,15 +525,6 @@ impl Broker {
         // Activate all pending assertive claims that have all of their
         // dependencies satisfied.
         self.activate_assertive_claims_if_dependencies_satisfied(assertive_claims);
-        // For pending opportunistic claims, if the current level satisfies them,
-        // activate the claim.
-        // (If the current level does not satisfy the claim, it will be
-        // activated as part of update_current_level once it does.)
-        for claim in self.catalog.opportunistic_claims.pending.for_lease(&lease.id) {
-            if self.current_level_satisfies(claim.requires()) {
-                self.catalog.opportunistic_claims.activate_claim(&claim.id)
-            }
-        }
         self.update_lease_status(&lease.id);
         Ok(lease)
     }
@@ -553,7 +533,7 @@ impl Broker {
     /// begins the orderly drop of the dependency chain.
     pub fn drop_lease(&mut self, lease_id: &LeaseID) -> Result<(), Error> {
         // Drop the lease to mark all the relevant claims as deactivated.
-        let (lease, assertive_claims, opportunistic_claims) = self.catalog.drop(lease_id)?;
+        let (lease, assertive_claims) = self.catalog.drop(lease_id)?;
         let counter = self.adjust_lease_counter(
             &lease.underlying_element_id,
             lease.underlying_element_level.level,
@@ -566,14 +546,10 @@ impl Broker {
 
         // Find the set of claims that can be dropped immediately.
         let assertive_claims_dropped = self.find_claims_to_drop_or_deactivate(&assertive_claims);
-        let opportunistic_claims_dropped =
-            self.find_claims_to_drop_or_deactivate(&opportunistic_claims);
         // Drop the discovered set of claims and forcefully update opportunistic leases,
         // which don't have direct dependencies on this lease and thus won't be found via
         // the claim search through this lease.
         self.drop_or_deactivate_assertive_claims(&assertive_claims_dropped);
-        self.drop_or_deactivate_opportunistic_claims(&opportunistic_claims_dropped);
-        self.update_opportunistic_leases(&assertive_claims);
         // Remove the lease information and then remove the underlying element.
         self.catalog.lease_status.remove(lease_id);
         self.remove_element(&lease.synthetic_element_id);
@@ -586,20 +562,6 @@ impl Broker {
             return LeaseStatus::Pending;
         }
 
-        // If the lease has any Pending opportunistic claims, it is still Pending.
-        if !self.catalog.opportunistic_claims.pending.for_lease(lease_id).is_empty() {
-            return LeaseStatus::Pending;
-        }
-
-        // If the lease has any opportunistic claims that have not been satisfied
-        // it is still Pending.
-        let opportunistic_claims = self.catalog.opportunistic_claims.activated.for_lease(lease_id);
-        for claim in opportunistic_claims {
-            if !self.current_level_satisfies(claim.requires()) {
-                return LeaseStatus::Pending;
-            }
-        }
-
         // If the lease has any assertive claims that have not been satisfied
         // it is still Pending.
         for claim in self.catalog.assertive_claims.activated.for_lease(lease_id) {
@@ -609,31 +571,6 @@ impl Broker {
         }
         // All claims are assertive and satisfied, so the lease is Satisfied.
         LeaseStatus::Satisfied
-    }
-
-    /// For each supportive claim, determine the leases that have opportunistic claims
-    /// that depend on this supportive claim.
-    fn update_opportunistic_leases(&mut self, assertive_claims: &[Claim]) {
-        let mut opportunistic_leases: HashSet<LeaseID> = HashSet::new();
-        for assertive_claim in assertive_claims {
-            let requires_element = &assertive_claim.requires().element_id;
-            for opportunistic_claim in
-                self.catalog.opportunistic_claims.activated.for_required_element(requires_element)
-            {
-                if assertive_claim.lease_id == opportunistic_claim.lease_id {
-                    continue;
-                } else if assertive_claim
-                    .requires()
-                    .level
-                    .satisfies(opportunistic_claim.requires().level)
-                {
-                    opportunistic_leases.insert(opportunistic_claim.lease_id.clone());
-                }
-            }
-        }
-        for lease in &opportunistic_leases {
-            self.update_lease_status(lease);
-        }
     }
 
     /// Re-evaluates the lease status and updates the status map.
@@ -819,23 +756,6 @@ impl Broker {
             if has_dependents {
                 continue;
             }
-            for related_claim in
-                self.catalog.opportunistic_claims.activated.for_lease(&claim_to_check.lease_id)
-            {
-                if claim_to_check.dependent().element_id == related_claim.requires().element_id
-                    && claim_to_check.dependent().level >= related_claim.requires().level
-                    && self.current_level_satisfies(related_claim.requires())
-                {
-                    log::debug!(
-                        "won't drop/deactivate {claim_to_check}, has opportunistic dependent {related_claim}"
-                    );
-                    has_dependents = true;
-                    break;
-                }
-            }
-            if has_dependents {
-                continue;
-            }
             log::debug!("will drop/deactivate {claim_to_check}");
             claims_to_drop_or_deactivate.push(claim_to_check.clone());
         }
@@ -857,25 +777,6 @@ impl Broker {
         let element_ids_affected = element_ids_required_by_claims(claims).collect::<Vec<_>>();
         self.update_required_levels(
             element_ids_affected.iter().map(|id| *id),
-            &mut EagerInspectWriter,
-        );
-    }
-
-    /// Takes a Vec of opportunistic claims, deactivates them if their lease is open,
-    /// or drops them if their lease has been dropped. Then updates required
-    /// levels of elements affected.
-    fn drop_or_deactivate_opportunistic_claims(&mut self, claims: &[Claim]) {
-        for claim in claims {
-            if self.catalog.is_lease_dropped(&claim.lease_id) {
-                log::debug!("drop opportunistic claim: {claim}");
-                self.catalog.opportunistic_claims.drop_claim(&claim.id);
-            } else {
-                log::debug!("deactivate opportunistic claim: {claim}");
-                self.catalog.opportunistic_claims.deactivate_claim(&claim.id);
-            }
-        }
-        self.update_required_levels(
-            element_ids_required_by_claims(claims),
             &mut EagerInspectWriter,
         );
     }
@@ -1128,17 +1029,6 @@ struct Catalog {
     /// Each assertive claim will start as Pending, and will be Activated once all
     /// dependencies of its required element are satisfied.
     assertive_claims: ClaimActivationTracker,
-    /// Opportunistic claims can also be either Pending or Activated.
-    /// Pending opportunistic claims do not affect the required levels of their
-    /// required elements.
-    /// Activated opportunistic claims will keep the required level of their
-    /// required elements from dropping until the lease holder has a chance
-    /// to drop the lease and release its claims.
-    /// Each opportunistic claim will start as pending and will be activated when
-    /// the current level of their required element satisfies their required
-    /// level. In order for this to happen, an assertive claim from
-    /// another lease must have been activated and then satisfied.
-    opportunistic_claims: ClaimActivationTracker,
     last_claim_id: ClaimID,
 }
 
@@ -1149,7 +1039,6 @@ impl Catalog {
             leases: HashMap::new(),
             lease_status: SubscribeMap::new(Some(inspect_parent.create_child("leases"))),
             assertive_claims: ClaimActivationTracker::new(DependencyType::Assertive),
-            opportunistic_claims: ClaimActivationTracker::new(DependencyType::Opportunistic),
             last_claim_id: ClaimID(0),
         }
     }
@@ -1180,10 +1069,7 @@ impl Catalog {
     /// no activated claims or satisfied leases.
     fn calculate_required_level(&self, element_id: &ElementID) -> IndexedPowerLevel {
         let minimum_level = self.minimum_level(element_id);
-        let mut activated_claims = self.assertive_claims.activated.for_required_element(element_id);
-        activated_claims.extend(
-            self.opportunistic_claims.activated.for_required_element(element_id).into_iter(),
-        );
+        let activated_claims = self.assertive_claims.activated.for_required_element(element_id);
         max(
             max_level_required_by_claims(&activated_claims).unwrap_or(minimum_level),
             self.calculate_level_required_by_leases(element_id).unwrap_or(minimum_level),
@@ -1210,25 +1096,12 @@ impl Catalog {
             .filter(|l| self.get_lease_status(&l.id) == Some(LeaseStatus::Satisfied))
     }
 
-    // Given a set of assertive and opportunistic claims, filter out any redundant claims. A claim
-    // is redundant if there exists another *assertive* claim between the *same pair of elements*
-    // at an *equal or higher level*.
-    fn filter_out_redundant_claims(
-        &self,
-        mut assertive_claims: Vec<Claim>,
-        mut opportunistic_claims: Vec<Claim>,
-    ) -> (Vec<Claim>, Vec<Claim>) {
+    // Given a set of claims, filter out any redundant claims. A claim is redundant if there exists
+    // another claim between the *same pair of elements* at an *equal or higher level*.
+    fn filter_out_redundant_claims(&self, mut assertive_claims: Vec<Claim>) -> Vec<Claim> {
         let mut essential_assertive_claims: Vec<Claim> = Vec::new();
-        let mut essential_opportunistic_claims: Vec<Claim> = Vec::new();
         let mut observed_pairs: HashMap<(ElementID, ElementID), ElementLevel> = HashMap::new();
         assertive_claims.sort_unstable_by_key(|claim| {
-            (
-                claim.dependent().element_id.clone(),
-                claim.requires().element_id.clone(),
-                usize::MAX - claim.requires().level.index,
-            )
-        });
-        opportunistic_claims.sort_unstable_by_key(|claim| {
             (
                 claim.dependent().element_id.clone(),
                 claim.requires().element_id.clone(),
@@ -1246,22 +1119,7 @@ impl Catalog {
             }
             essential_assertive_claims.push(claim.clone());
         }
-        for claim in opportunistic_claims {
-            let element_pair =
-                (claim.dependent().element_id.clone(), claim.requires().element_id.clone());
-            #[allow(clippy::map_entry, reason = "mass allow for https://fxbug.dev/381896734")]
-            if observed_pairs.contains_key(&element_pair) {
-                if let Some(requires) = observed_pairs.get(&element_pair) {
-                    if requires.level.satisfies(claim.requires().level) {
-                        continue;
-                    }
-                }
-            } else {
-                observed_pairs.insert(element_pair, claim.requires().clone());
-            }
-            essential_opportunistic_claims.push(claim.clone());
-        }
-        (essential_assertive_claims, essential_opportunistic_claims)
+        essential_assertive_claims
     }
 
     // Creates an element that represents the lease and adds it to the topology
@@ -1331,34 +1189,25 @@ impl Catalog {
             element_id: lease_element_id,
             level: IndexedPowerLevel { level: LeasePowerLevel::Satisfied as u8, index: 1 },
         };
-        let (assertive_dependencies, opportunistic_dependencies) =
+        let (assertive_dependencies, _opportunistic_dependencies) =
             self.topology.all_assertive_and_opportunistic_dependencies(&lease_element_level);
         // Create all possible claims from the assertive and opportunistic dependencies.
         let assertive_claims = assertive_dependencies
             .into_iter()
             .map(|dependency| self.add_claim(dependency, &lease.id))
             .collect::<Vec<Claim>>();
-        let opportunistic_claims = opportunistic_dependencies
-            .into_iter()
-            .map(|dependency| self.add_claim(dependency, &lease.id))
-            .collect::<Vec<Claim>>();
         // Filter claims down to only the essential (i.e. non-redundant) claims.
-        let (essential_assertive_claims, essential_opportunistic_claims) =
-            self.filter_out_redundant_claims(assertive_claims, opportunistic_claims);
+        let essential_assertive_claims = self.filter_out_redundant_claims(assertive_claims);
         for claim in &essential_assertive_claims {
             self.assertive_claims.pending.add(claim.clone());
-        }
-        for claim in essential_opportunistic_claims {
-            self.opportunistic_claims.pending.add(claim);
         }
         (lease, essential_assertive_claims)
     }
 
     /// Drops an existing lease, and initiates process of releasing all
     /// associated claims.
-    /// Returns the dropped lease, a Vec of assertive claims marked to deactivate,
-    /// and a Vec of opportunistic claims marked to deactivate.
-    fn drop(&mut self, lease_id: &LeaseID) -> Result<(Lease, Vec<Claim>, Vec<Claim>), Error> {
+    /// Returns the dropped lease and a Vec of assertive claims marked to deactivate.
+    fn drop(&mut self, lease_id: &LeaseID) -> Result<(Lease, Vec<Claim>), Error> {
         log::debug!("drop(lease:{lease_id})");
         let lease = self.leases.remove(lease_id).ok_or_else(|| anyhow!("{lease_id} not found"))?;
         self.lease_status.remove(lease_id);
@@ -1375,22 +1224,11 @@ impl Catalog {
                 log::error!("cannot remove pending assertive claim: not found: {}", claim.id);
             }
         }
-        let pending_opportunistic_claims = self.opportunistic_claims.pending.for_lease(&lease.id);
-        for claim in pending_opportunistic_claims {
-            if let Some(removed) = self.opportunistic_claims.pending.remove(&claim.id) {
-                log::debug!("removing pending opportunistic claim: {:?}", &removed);
-            } else {
-                log::error!("cannot remove pending opportunistic claim: not found: {}", claim.id);
-            }
-        }
-        // Assertive andOpportunistic claims should be marked to deactivate in an orderly sequence.
+        // Assertive claims should be marked to deactivate in an orderly sequence.
         log::debug!("drop(lease:{lease_id}): marking activated assertive claims to deactivate");
         let assertive_claims_to_deactivate =
             self.assertive_claims.activated.mark_to_deactivate(&lease.id);
-        log::debug!("drop(lease:{lease_id}): marking activated opportunistic claims to deactivate");
-        let opportunistic_claims_to_deactivate =
-            self.opportunistic_claims.activated.mark_to_deactivate(&lease.id);
-        Ok((lease, assertive_claims_to_deactivate, opportunistic_claims_to_deactivate))
+        Ok((lease, assertive_claims_to_deactivate))
     }
 
     pub fn get_lease_status(&self, lease_id: &LeaseID) -> Option<LeaseStatus> {
@@ -1747,16 +1585,6 @@ mod tests {
             vec![],
             "assertive_claims.pending not empty"
         );
-        assert_eq!(
-            catalog.opportunistic_claims.activated.for_lease(lease_id),
-            vec![],
-            "opportunistic_claims.activated not empty"
-        );
-        assert_eq!(
-            catalog.opportunistic_claims.pending.for_lease(lease_id),
-            vec![],
-            "opportunistic_claims.pending not empty"
-        );
     }
 
     #[fuchsia::test]
@@ -1948,116 +1776,30 @@ mod tests {
         //  A     B
         //  1 ==> 1 (redundant with A@2=>B@2)
         //  2 ==> 2
-        let (essential_assertive_claims, essential_opportunistic_claims) =
-            broker.catalog.filter_out_redundant_claims(
-                vec![claim_a_1_b_1.clone(), claim_a_2_b_2.clone()],
-                vec![],
-            );
-        assert_eq!(essential_assertive_claims, vec![claim_a_2_b_2.clone()]);
-        assert_eq!(essential_opportunistic_claims, vec![]);
-
-        //  A     B
-        //  1 --> 1 (redundant with A@2=>B@2)
-        //  2 ==> 2
-        let (essential_assertive_claims, essential_opportunistic_claims) = broker
+        let essential_assertive_claims = broker
             .catalog
-            .filter_out_redundant_claims(vec![claim_a_2_b_2.clone()], vec![claim_a_1_b_1.clone()]);
+            .filter_out_redundant_claims(vec![claim_a_1_b_1.clone(), claim_a_2_b_2.clone()]);
         assert_eq!(essential_assertive_claims, vec![claim_a_2_b_2.clone()]);
-        assert_eq!(essential_opportunistic_claims, vec![]);
-
-        //  A     B
-        //  1 ==> 1 (not redundant, opportunistic claims cannot satisfy assertive claims)
-        //  2 --> 2
-        let (essential_assertive_claims, essential_opportunistic_claims) = broker
-            .catalog
-            .filter_out_redundant_claims(vec![claim_a_1_b_1.clone()], vec![claim_a_2_b_2.clone()]);
-        assert_eq!(essential_assertive_claims, vec![claim_a_1_b_1.clone()]);
-        assert_eq!(essential_opportunistic_claims, vec![claim_a_2_b_2.clone()]);
-
-        //  A     B
-        //  1 --> 1 (redundant with A@2->B@2)
-        //  2 --> 2
-        let (essential_assertive_claims, essential_opportunistic_claims) =
-            broker.catalog.filter_out_redundant_claims(
-                vec![],
-                vec![claim_a_1_b_1.clone(), claim_a_2_b_2.clone()],
-            );
-        assert_eq!(essential_assertive_claims, vec![]);
-        assert_eq!(essential_opportunistic_claims, vec![claim_a_2_b_2.clone()]);
 
         //  A     B     C
         //  1 ========> 1 (not redundant, not between same elements)
         //  2 ==> 2
-        let (essential_assertive_claims, essential_opportunistic_claims) =
-            broker.catalog.filter_out_redundant_claims(
-                vec![claim_a_1_c_1.clone(), claim_a_2_b_2.clone()],
-                vec![],
-            );
+        let essential_assertive_claims = broker
+            .catalog
+            .filter_out_redundant_claims(vec![claim_a_1_c_1.clone(), claim_a_2_b_2.clone()]);
         assert_eq!(essential_assertive_claims, vec![claim_a_2_b_2.clone(), claim_a_1_c_1.clone()]);
-        assert_eq!(essential_opportunistic_claims, vec![]);
-
-        //  A     B     C
-        //  1 --------> 1 (not redundant, not between same elements)
-        //  2 --> 2
-        let (essential_assertive_claims, essential_opportunistic_claims) =
-            broker.catalog.filter_out_redundant_claims(
-                vec![],
-                vec![claim_a_1_c_1.clone(), claim_a_2_b_2.clone()],
-            );
-        assert_eq!(essential_assertive_claims, vec![]);
-        assert_eq!(
-            essential_opportunistic_claims,
-            vec![claim_a_2_b_2.clone(), claim_a_1_c_1.clone()]
-        );
 
         //  A     B     C
         //  1 ==> 1 ==> 1 (not redundant, A@2=>C@2 cannot satisfy B@1=>C@1, not between same elements)
         //  2 ========> 2
-        let (essential_assertive_claims, essential_opportunistic_claims) =
-            broker.catalog.filter_out_redundant_claims(
-                vec![claim_a_1_b_1.clone(), claim_b_1_c_1.clone(), claim_a_2_c_2.clone()],
-                vec![],
-            );
+        let essential_assertive_claims = broker.catalog.filter_out_redundant_claims(vec![
+            claim_a_1_b_1.clone(),
+            claim_b_1_c_1.clone(),
+            claim_a_2_c_2.clone(),
+        ]);
         assert_eq!(
             essential_assertive_claims,
             vec![claim_a_1_b_1.clone(), claim_a_2_c_2.clone(), claim_b_1_c_1.clone()]
-        );
-        assert_eq!(essential_opportunistic_claims, vec![]);
-
-        //  A     B     C
-        //  1 ==> 1 --> 1 (not redundant, A@2=>C@2 - B@1->C@1, not between same elements)
-        //  2 ========> 2
-        let (essential_assertive_claims, essential_opportunistic_claims) =
-            broker.catalog.filter_out_redundant_claims(
-                vec![claim_a_1_b_1.clone(), claim_a_2_c_2.clone()],
-                vec![claim_b_1_c_1.clone()],
-            );
-        assert_eq!(essential_assertive_claims, vec![claim_a_1_b_1.clone(), claim_a_2_c_2.clone()]);
-        assert_eq!(essential_opportunistic_claims, vec![claim_b_1_c_1.clone()]);
-
-        //  A     B     C
-        //  1 ==> 1 ==> 1 (not redundant, A@2->C@2 - B@1=>C@1, not between same elements)
-        //  2 --------> 2
-        let (essential_assertive_claims, essential_opportunistic_claims) =
-            broker.catalog.filter_out_redundant_claims(
-                vec![claim_a_1_b_1.clone(), claim_b_1_c_1.clone()],
-                vec![claim_a_2_c_2.clone()],
-            );
-        assert_eq!(essential_assertive_claims, vec![claim_a_1_b_1.clone(), claim_b_1_c_1.clone()]);
-        assert_eq!(essential_opportunistic_claims, vec![claim_a_2_c_2.clone()]);
-
-        //  A     B     C
-        //  1 ==> 1 --> 1 (not redundant, A@2->C@2 - B@1->C@1, not between same elements)
-        //  2 --------> 2
-        let (essential_assertive_claims, essential_opportunistic_claims) =
-            broker.catalog.filter_out_redundant_claims(
-                vec![claim_a_1_b_1.clone()],
-                vec![claim_b_1_c_1.clone(), claim_a_2_c_2.clone()],
-            );
-        assert_eq!(essential_assertive_claims, vec![claim_a_1_b_1.clone()]);
-        assert_eq!(
-            essential_opportunistic_claims,
-            vec![claim_a_2_c_2.clone(), claim_b_1_c_1.clone()]
         );
     }
 
