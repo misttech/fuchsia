@@ -147,6 +147,7 @@ type Node = table {
             vector<fuchsia.driver.framework.NodeProperty2>:fuchsia.driver.framework.MAX_PROPERTY_COUNT;
     13: power_config
             vector<fuchsia.hardware.power.PowerElementConfiguration>:MAX_INFO_STRING_LENGTH;
+    14: driver_host string:MAX;
 };
 
 /// This is originally from the Banjo fuchsia.hardware.platform.device library,

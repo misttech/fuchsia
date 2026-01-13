@@ -45,6 +45,9 @@ alias NodeName = string:MAX_NODE_NAME_LENGTH;
 @available(added=26)
 alias NodeProperties = vector<NodeProperty2>:MAX_PROPERTY_COUNT;
 
+@available(added=NEXT)
+const MAX_DRIVER_HOST_LENGTH uint8 = 128;
+
 /// Definition of a symbol provided by a driver for a node. A symbol is local to
 /// a driver host.
 type NodeSymbol = table {
@@ -238,6 +241,15 @@ type NodeAddArgs = resource table {
     /// type offers for offers that exist in this dictionary.
     @available(added=HEAD)
     9: offers_dictionary fuchsia.component.sandbox.DictionaryRef;
+
+    /// An identifier for the driver host which a driver that binds to this node should live in.
+    /// All drivers which specify the same identifier will be colocated into the same driver host.
+    /// If the driver host hasn't been started, it will be started upon the time the node is bound
+    /// to. Only respected if the driver binds directly to this node. If a composite binds to this
+    /// node, then this field will be ignored as it should be expressed in the composite node spec
+    /// instead.
+    @available(added=NEXT)
+    10: driver_host string:MAX_DRIVER_HOST_LENGTH;
 };
 
 @available(added=29)

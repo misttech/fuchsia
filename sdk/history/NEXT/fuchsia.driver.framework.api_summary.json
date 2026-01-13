@@ -198,6 +198,12 @@
     },
     {
         "kind": "table/member",
+        "name": "fuchsia.driver.framework/CompositeNodeSpec.driver_host",
+        "ordinal": "4",
+        "type": "string:128"
+    },
+    {
+        "kind": "table/member",
         "name": "fuchsia.driver.framework/CompositeNodeSpec.name",
         "ordinal": "1",
         "type": "string"
@@ -631,6 +637,12 @@
     },
     {
         "kind": "const",
+        "name": "fuchsia.driver.framework/MAX_DRIVER_HOST_LENGTH",
+        "type": "uint8",
+        "value": "128"
+    },
+    {
+        "kind": "const",
         "name": "fuchsia.driver.framework/MAX_MODULE_NAME_LENGTH",
         "type": "uint8",
         "value": "128"
@@ -704,6 +716,12 @@
         "name": "fuchsia.driver.framework/NodeAddArgs.devfs_args",
         "ordinal": "5",
         "type": "fuchsia.driver.framework/DevfsAddArgs"
+    },
+    {
+        "kind": "table/member",
+        "name": "fuchsia.driver.framework/NodeAddArgs.driver_host",
+        "ordinal": "10",
+        "type": "string:128"
     },
     {
         "kind": "table/member",

@@ -314,6 +314,7 @@ pub struct CompositeNodeSpecDef {
     /// the primary node.
     #[serde(with = "opt_vec_parent_spec2")]
     pub parents2: Option<Vec<fdf::ParentSpec2>>,
+    pub driver_host: Option<String>,
     #[doc(hidden)]
     #[serde(with = "SourceBreakingDef")]
     pub __source_breaking: fidl::marker::SourceBreaking,

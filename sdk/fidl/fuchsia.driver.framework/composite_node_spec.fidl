@@ -78,6 +78,13 @@ type CompositeNodeSpec = table {
     /// the primary node.
     @available(added=27)
     3: parents2 vector<ParentSpec2>:MAX;
+
+    /// An identifier for the driver host which a driver that binds to this node spec should live
+    /// in. All drivers which specify the same identifier will be colocated into the same driver
+    /// host. If the driver host hasn't been started, it will be started upon the time the node is
+    /// bound to. 
+    @available(added=NEXT)
+    4: driver_host string:MAX_DRIVER_HOST_LENGTH;
 };
 
 /// Error codes for the CompositeNodeManager protocol.
