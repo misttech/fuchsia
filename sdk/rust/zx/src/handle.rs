@@ -685,13 +685,6 @@ pub trait AsHandleRef {
         NullableHandle::raw_handle(&self.as_handle_ref())
     }
 
-    /// Wraps the
-    /// [zx_object_get_info](https://fuchsia.dev/fuchsia-src/reference/syscalls/object_get_info.md)
-    /// syscall for the ZX_INFO_HANDLE_COUNT topic.
-    fn count_info(&self) -> Result<HandleCountInfo, Status> {
-        NullableHandle::count_info(&self.as_handle_ref())
-    }
-
     /// Returns the koid (kernel object ID) for this handle.
     fn get_koid(&self) -> Result<Koid, Status> {
         NullableHandle::koid(&self.as_handle_ref())

@@ -108,6 +108,13 @@ macro_rules! delegated_concrete_handle_based_impls {
         pub fn basic_info(&self) -> Result<$crate::HandleBasicInfo, $crate::Status> {
             self.0.basic_info()
         }
+
+        /// Wraps the
+        /// [`zx_object_get_info`](https://fuchsia.dev/fuchsia-src/reference/syscalls/object_get_info)
+        /// syscall for the `ZX_INFO_HANDLE_COUNT` topic.
+        pub fn count_info(&self) -> Result<$crate::HandleCountInfo, $crate::Status> {
+            self.0.count_info()
+        }
     };
 }
 

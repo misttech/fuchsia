@@ -7,7 +7,7 @@ use fuchsia_component::client::connect_to_protocol;
 
 use std::thread::sleep;
 use std::time::Duration;
-use zx::{AsHandleRef, HandleBased};
+use zx::HandleBased;
 
 #[fuchsia::test]
 async fn can_connect_to_publisher_service() {

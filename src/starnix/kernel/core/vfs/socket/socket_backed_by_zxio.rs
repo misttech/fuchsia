@@ -808,7 +808,7 @@ mod tokens_store {
     use starnix_uapi::uid_t;
     use std::collections::{HashMap, hash_map};
     use std::sync::{Arc, OnceLock, Weak};
-    use zx::{AsHandleRef as _, HandleBased as _};
+    use zx::HandleBased as _;
 
     /// Trait for the `Kernel` functionality used in `SocketTokensStore`. Mocked
     /// in tests.
@@ -1027,7 +1027,7 @@ mod tokens_store {
         use fuchsia_async::TestExecutor;
         use std::pin::pin;
         use test_case::test_matrix;
-        use zx::MonotonicDuration;
+        use zx::{AsHandleRef, MonotonicDuration};
 
         struct TestSocketTokenStoreHost {
             socket_tokens_store: SocketTokensStore<TestSocketTokenStoreHost>,
