@@ -19,7 +19,6 @@ from pathlib import Path
 
 _SCRIPT_DIR = os.path.dirname(__file__)
 sys.path.insert(0, _SCRIPT_DIR)
-import bazel_action_utils
 import bazel_compdb_utils
 import bazel_rust_analyzer_utils
 import build_utils
@@ -33,6 +32,7 @@ from bazel_action_utils import (
     FileOutput,
     FinalSymlinkOutput,
     PackageOutput,
+    update_gn_targets_symlink,
 )
 from build_utils import FilePath
 
@@ -1085,6 +1085,16 @@ def list_to_pairs(l: T.Iterable[T.Any]) -> T.Iterable[tuple[T.Any, T.Any]]:
 
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
+
+    parser.add_argument(
+        "--verbose_failures",
+        action="store_true",
+        default=False,
+        help="If specified, extra information is printed on Bazel failures.",
+    )
+
+    ##
+    # Options for directory that the build is running in.
     parser.add_argument(
         "--build-dir",
         type=Path,
@@ -1095,20 +1105,13 @@ def main() -> int:
         type=Path,
         help="Specify Fuchsia source directory (defaults to auto-detected)",
     )
+
+    ##
+    # The command and targets to run
     parser.add_argument(
         "--command",
         required=True,
         help="Bazel command, e.g. `build`, `run`, `test`",
-    )
-    parser.add_argument(
-        "--gn-target-label",
-        required=True,
-        help="Label of GN target invoking this script.",
-    )
-    parser.add_argument(
-        "--gn-targets-repository-dir",
-        type=Path,
-        help="Path of @gn_targets repository directory for this invocation.",
     )
     parser.add_argument(
         "--bazel-platform-label",
@@ -1128,19 +1131,16 @@ def main() -> int:
         nargs="*",
         help="list of stamp files to touch.",
     )
-    parser.add_argument(
-        "--bazel-build-events-log-json",
-        type=Path,
-        help="Path to JSON formatted event log for build actions.",
-    )
 
     parser.add_argument("--depfile", help="Ninja depfile output path.")
-    parser.add_argument(
-        "--allow-directory-in-outputs",
-        action="store_true",
-        default=False,
-        help="Allow directory outputs in `--bazel-outputs`, NOTE timestamps on directories do NOT accurately reflect content freshness, which can lead to incremental build incorrectness.",
-    )
+
+    ##
+    # Outputs written to document the run (for IDE use or debugging)
+    #
+    #  These are per-invocation data, and when the inovcations are statically defined, these
+    #  paths will need to be generated and then provided outwards, perhaps in the
+    #  LastBuildInvocations file, but they can't be passed in via args (or read from manifests)
+    #  as they aren't apriori knowable.
     parser.add_argument(
         "--path-mapping",
         help="If specified, write a mapping of Ninja outputs to realpaths Bazel outputs",
@@ -1162,15 +1162,14 @@ def main() -> int:
         "--debug-symbols-manifest",
         help="If specified, write debug symbols manifest to file.",
     )
+
+    ##
+    # Outputs for helping with IDE integration
+
     parser.add_argument(
         "--compdb-file",
         type=Path,
         help="If specified, write compile_commands.json for the Bazel targets built to file.",
-    )
-    parser.add_argument(
-        "--rust-sysroot",
-        type=Path,
-        help="Path to Rust sysroot directory.",
     )
     parser.add_argument(
         "--rust-project-json",
@@ -1178,11 +1177,27 @@ def main() -> int:
         help="If specified, write rust-project.json for the Bazel targets built to file.",
     )
     parser.add_argument(
-        "--verbose_failures",
-        action="store_true",
-        default=False,
-        help="If specified, extra information is printed on Bazel failures.",
+        "--rust-sysroot",
+        type=Path,
+        help="Path to Rust sysroot directory to embed in the rust-project.json that's generated",
     )
+
+    ##
+    # Used for recording the last bazel build invocations
+
+    parser.add_argument(
+        "--bazel-build-events-log-json",
+        type=Path,
+        help="Path to JSON formatted event log for build actions.",
+    )
+    parser.add_argument(
+        "--gn-target-label",
+        required=True,
+        help="Label of GN target invoking this script.",
+    )
+
+    ##
+    # These are extra arguments for passing to Bazel.
     parser.add_argument("extra_bazel_args", nargs=argparse.REMAINDER)
 
     args = parser.parse_args()
@@ -1207,6 +1222,9 @@ def main() -> int:
     package_outputs: list[PackageOutput] = []
     final_symlink_outputs: list[FinalSymlinkOutput] = []
 
+    # This is a set of the symlinks that need to be created/refreshed for the gn targets
+    gn_targets_dirs: set[Path] = set()
+
     for target in args.bazel_targets:
         target_info = bazel_target_infos.get_info(
             target, args.bazel_platform_label
@@ -1216,10 +1234,20 @@ def main() -> int:
             directory_outputs.extend(target_info.directory_outputs)
             package_outputs.extend(target_info.package_outputs)
             final_symlink_outputs.extend(target_info.final_symlink_outputs)
+
+            gn_targets_dirs.add(Path(target_info.gn_targets_dir))
         else:
             return parser.error(
                 f"Bazel target not found in bazel_target_infos.json: {target}  keys: {bazel_target_infos._targets.keys()}"
             )
+
+    # Ensure that all of the target infos we found are using the same gn_target_dir, because we
+    # can only have one of those.
+    if len(gn_targets_dirs) > 1:
+        return parser.error(
+            "Found multiple gn targets directories for the bazel action."
+        )
+    gn_targets_dir = list(gn_targets_dirs)[0]
 
     if args.extra_bazel_args and args.extra_bazel_args[0] != "--":
         return parser.error(
@@ -1252,11 +1280,8 @@ def main() -> int:
     time_profile.start(
         "gn_targets_dir", "Updating @gn_targets directory symlink"
     )
-    actions_map = bazel_action_utils.BazelBuildActionsMap.create_from_build_dir(
-        build_dir
-    )
-    actions_map.update_gn_targets_symlink(
-        args.gn_target_label, bazel_paths, check_license_timestamp=True
+    update_gn_targets_symlink(
+        bazel_paths, gn_targets_dir, check_license_timestamp=True
     )
     time_profile.stop()
 
@@ -1932,7 +1957,7 @@ track all input files that the repository rule may access when it is run.
                 bazel_targets=args.bazel_targets,
                 build_args=configured_args,
                 gn_label=args.gn_target_label,
-                gn_targets_dir=str(args.gn_targets_repository_dir),
+                gn_targets_dir=str(gn_targets_dir),
                 bazel_action_timings=time_profile.to_json_timings(),
             ),
         )

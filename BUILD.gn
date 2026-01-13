@@ -2226,7 +2226,7 @@ generated_file("bazel_build_action_targets") {
   output_conversion = "json"
 }
 
-# LINT.ThenChange(//build/bazel/scripts/bazel_action_utils.py:bazel_build_actions, //build/bazel/bazel_action.gni:bazel_build_actions, //build/bazel/scripts/workspace_utils.py:bazel_build_actions)
+# LINT.ThenChange(//build/bazel/bazel_action.gni:bazel_build_actions, //build/bazel/scripts/workspace_utils.py:bazel_build_actions)
 
 # LINT.IfChange(bazel_target_infos)
 #
@@ -2262,7 +2262,11 @@ generated_file("bazel_build_action_targets") {
 #   bazel_platform_config:
 #     - Required: bazel config to add to the bazel command line with the --config arg
 #     - Type: string
-
+#
+#   gn_targets_dir
+#     - Required: Path to @gn_targets directory for gn_label, relative to Ninja build directory.
+#     - Type: string
+#
 #  The other fields depend on the 'type':
 #
 #     "file":

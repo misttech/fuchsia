@@ -14,7 +14,7 @@ from pathlib import Path
 sys.path.insert(0, os.path.dirname(__file__))
 import build_utils
 import stdio_redirection
-from build_utils import FilePath
+from build_utils import BazelPaths
 
 
 @dataclasses.dataclass(order=True, frozen=True)
@@ -63,6 +63,7 @@ class BazelTargetInfo(object):
     bazel_target: str
     bazel_platform_label: str
     bazel_platform_config: str
+    gn_targets_dir: str
     copy_outputs: list[FileOutput] = dataclasses.field(default_factory=list)
     directory_outputs: list[DirectoryOutput] = dataclasses.field(
         default_factory=list
@@ -91,12 +92,14 @@ class BazelTargetInfosMap(object):
             bazel_target = entry["bazel_target"]
             bazel_platform_label = entry["bazel_platform_label"]
             bazel_platform_config = entry["bazel_platform_config"]
+            gn_targets_dir = entry["gn_targets_dir"]
             target_info = self._targets.setdefault(
                 (bazel_target, bazel_platform_label),
                 BazelTargetInfo(
                     bazel_target=bazel_target,
                     bazel_platform_label=bazel_platform_label,
                     bazel_platform_config=bazel_platform_config,
+                    gn_targets_dir=gn_targets_dir,
                 ),
             )
 
@@ -163,348 +166,36 @@ class BazelTargetInfosMap(object):
         return self._targets.get((target, platform))
 
 
-@dataclasses.dataclass
-class BazelBuildActionInfo(object):
-    """Model an entry in the bazel_build_action_targets.json file.
+# LINT.IfChange(gn_targets_dir)
+# Path of the @gn_targets symlink relative to the Bazel workspace directory.
+GN_TARGETS_SYMLINK_PATH = "fuchsia_build_generated/gn_targets_dir"
+# LINT.ThenChange(//build/bazel/toplevel.MODULE.bazel:gn_targets_dir)
 
-    See //BUILD.gn for schema description.
+
+def update_gn_targets_symlink(
+    bazel_paths: BazelPaths,
+    gn_targets_dir: Path,
+    check_license_timestamp: bool = False,
+) -> None:
+    """Update the (singular) Bazel workspace's symlink to the per-action gn_targets workspace dir.
+
+    This updates the one-and-only Bazel build workspace's symlink to that of the appropriate
+    gn_targets directory, so that Bazel has access to the correct inputs from GN for the
+    Bazel action about to run.
     """
-
-    # LINT.IfChange(bazel_build_actions)
-    gn_target: str
-    bazel_targets: list[str]
-    no_sdk: bool
-    gn_targets_dir: str
-    gn_targets_manifest: str
-    gn_targets_licenses_spdx: str
-    debug_symbols_manifest: str
-    bazel_command_file: str = ""
-    bazel_explain_file: str = ""
-    bazel_compdb_file: str = ""
-    bazel_rust_project_json: str = ""
-    path_mapping: str = ""
-    timings_file: str = ""
-    build_events_log_json: str = ""
-    # LINT.ThenChange(//BUILD.gn:bazel_build_actions)
-
-
-class BazelBuildActionsMap(object):
-    """A class used to model a map of Bazel top-level targets to the GN bazel_action() labels that builds them.
-
-    This is built from the content of the //:bazel_build_action_targets generated_file() output.
-    This does not provide information about the dependencies of the top-level Bazel actions,
-    for these, an actual Bazel query is needed, see BazelBuildActionQuery below.
-    """
-
-    # LINT.IfChange(gn_targets_dir)
-    # Path of the @gn_targets symlink relative to the Bazel workspace directory.
-    GN_TARGETS_SYMLINK_PATH = "fuchsia_build_generated/gn_targets_dir"
-    # LINT.ThenChange(//build/bazel/toplevel.MODULE.bazel:gn_targets_dir)
-
-    def __init__(self, json_content: list[dict[str, T.Any]]) -> None:
-        self._targets: dict[str, BazelBuildActionInfo] = {}
-        self._bazel_to_gn: dict[str, str] = {}
-        for entry in json_content:
-            info = BazelBuildActionInfo(**entry)
-            self._targets[info.gn_target] = info
-            for bazel_target in info.bazel_targets:
-                self._bazel_to_gn[bazel_target] = info.gn_target
-
-    @staticmethod
-    def create_from_build_dir(build_dir: Path) -> "BazelBuildActionsMap":
-        """Create instance from content of Ninja build directory.
-
-        Args:
-            build_dir: Ninja build directory, populated by `fx gen`.
-        Returns:
-            New BazelBuildActionsMap
-        Raises:
-            FileNotFoundError if file is missing.
-        """
-        with (build_dir / "bazel_build_action_targets.json").open("rb") as f:
-            content = json.load(f)
-        return BazelBuildActionsMap(content)
-
-    @property
-    def bazel_targets(self) -> list[str]:
-        return sorted(self._bazel_to_gn.keys())
-
-    @property
-    def gn_targets(self) -> list[str]:
-        return sorted(set(self._bazel_to_gn.values()))
-
-    def label_items(self) -> T.Iterable[tuple[str, BazelBuildActionInfo]]:
-        return self._targets.items()
-
-    def get_info(self, gn_label: str) -> T.Optional[BazelBuildActionInfo]:
-        """Retrieve BazelBuildActionInfo matching a given GN label."""
-        return self._targets.get(gn_label)
-
-    def find_gn_target_for(self, bazel_target: str) -> str:
-        """Retrieve the GN target label used to build a given top-level Bazel target.
-
-        Args:
-            bazel_target: A top-level Bazel target that is built by one of
-               the GN bazel_action() targets.
-
-        Returns:
-            The corresponding GN target label, or an empty string if there is no match.
-        """
-        return self._bazel_to_gn.get(bazel_target, "")
-
-    def update_gn_targets_symlink(
-        self,
-        gn_label: str,
-        bazel_paths: build_utils.BazelPaths,
-        check_license_timestamp: bool = False,
-    ) -> Path:
-        """Update the @gn_targets symlink for a given bazel_action() GN target.
-
-        Args:
-           gn_label: GN label of the bazel_action() target.
-
-           bazel_paths: A BazelPaths instance used to locate the workspace and build directory.
-
-           check_licenses_timestamp: Optional boolean flag. Set it to perform a
-               consistency check verifying that the timestamp of the license file in the
-               directory is not 0. Raise an AssertionError otherwise.
-
-        Returns:
-           None if the GN label does not match a known bazel_action() target reachable from
-           //:bazel_build_action_targets. Otherwise, the symlink's target after the update is
-           complete.
-
-        Raises:
-           ValueError if the GN label does not match a bazel_action() target reachable from
-           //:bazel_build_action_targets.
-
-           AssertionError if the @gn_targets directory does not exist. This corresponds to
-           a bug in the Fuchsia build rules.
-
-           AssertionError if check_licenses_timestamp is True and the timestamp of
-           @gn_targets//:all_licenses.spdx is 0. This corresponds to a bug in the Fuchsia
-           build rules.
-        """
-        info = self._targets.get(gn_label)
-        if not info:
-            raise ValueError(
-                f"The GN label {gn_label} is not reachable from //:bazel_build_action_targets\n\n"
-                + "To fix this, ensure that the target is reachable from //:default, //:root_targets or listed in\n\n"
-                "the 'extra_bazel_build_action_labels' build configuration variable.\n"
-            )
-
-        gn_targets_dir = bazel_paths.ninja_build_dir / info.gn_targets_dir
+    if check_license_timestamp:
+        # LINT.IfChange(all_licenses_spdx_path)
+        license_file = gn_targets_dir / "all_licenses.spdx.json"
+        # LINT.ThenChange(//build/bazel/scripts/workspace_utils.py:all_licenses_spdx_path)
+        license_info = os.stat(license_file)
         assert (
-            gn_targets_dir.exists()
-        ), f"Missing @gn_targets_dir for {gn_label}: {gn_targets_dir}"
+            license_info.st_mtime != 0
+        ), f"PANIC: The timestamp of {license_file} is 0. It should have been updated by Ninja.\n"
 
-        if check_license_timestamp:
-            # LINT.IfChange(all_licenses_spdx_path)
-            license_file = gn_targets_dir / "all_licenses.spdx.json"
-            # LINT.ThenChange(//build/bazel/scripts/workspace_utils.py:all_licenses_spdx_path)
-            license_info = os.stat(license_file)
-            assert (
-                license_info.st_mtime != 0
-            ), f"PANIC: The timestamp of {license_file} is 0. It should have been updated by Ninja.\n"
-
-        build_utils.force_symlink(
-            bazel_paths.workspace / self.GN_TARGETS_SYMLINK_PATH,
-            gn_targets_dir,
-        )
-        return gn_targets_dir
-
-
-class BazelBuildActionQuery(object):
-    """Convenience class to wrap Bazel query operations.
-
-    Useful when trying to find the wrapping GN bazel_action() target for a
-    given Bazel target, GN target, or in case of failure, a message explaining its reason.
-    """
-
-    def __init__(
-        self, bazel_target: str, actions_map: BazelBuildActionsMap
-    ) -> None:
-        """Create instance.
-
-        Args:
-            bazel_target: Bazel target label.
-            actions_map: A BazelBuildActionsMap instance.
-        """
-        self._bazel_target = bazel_target
-        self._actions_map = actions_map
-
-    def make_query_command(
-        self, bazel_pre_cmd_args: list[FilePath]
-    ) -> list[FilePath]:
-        """Return the query command to be performed.
-
-        Note that this forces @gn_targets to be empty, which will generate errors
-        that are ignored through the use of --keep_going. The error output *must*
-        be filtered with filter_query_errors() to detect real errors, before
-        calling process_query_output().
-
-        Args:
-            bazel_pre_cmd_args: List of command-line arguments that appear before the 'query'
-               command. At a minimum, this would be a list with a single item with the path
-               of the Bazel binary / launcher script.
-        Returns:
-            A string list representing a command to be passed to a function
-            like subprocess.run().
-        """
-        query_expr = "allpaths(set(%s), %s)" % (
-            " ".join(self._actions_map.bazel_targets),
-            self._bazel_target,
-        )
-
-        return bazel_pre_cmd_args + [
-            "query",
-            "--config=no_gn_targets",
-            "--config=quiet",
-            "--keep_going",
-            query_expr,
-        ]
-
-    @staticmethod
-    def filter_query_errors(errors: str) -> str:
-        """Filter the errors generated by the invocation of a make_query_command() result.
-
-        This removes all errors that are due to the empty @gn_targets repository,
-        but leaves any others, to catch unexpected breakages due to developer changes.
-
-        Args:
-            errors: The query's command stderr output as a string.
-        Returns:
-            The error output without expected errors related to  @gn_targets.
-            A non-empty value means that real errors were detected during the query.
-        """
-        real_errors = []
-        for error in errors.splitlines():
-            if (
-                error.startswith("ERROR: ")
-                and "no such package '@@gn_targets+//" in error
-            ):
-                continue
-            if error.startswith(
-                "Starting local Bazel server and connecting to it..."
-            ):
-                continue
-            if error.startswith('ERROR: Evaluation of query "allpaths(set('):
-                continue
-            if error.startswith(
-                "WARNING: --keep_going specified, ignoring errors."
-            ):
-                continue
-            real_errors.append(error)
-
-        return "\n".join(real_errors)
-
-    def process_query_output(self, query_result: str) -> list[str]:
-        """Parse the result of a Bazel query to get a list of GN  bazel_action() labels.
-
-        Args:
-            query_result: The stdout of running the Bazel cquery command generated
-                by make_query_command() as a string.
-        Returns:
-            A list of GN target strings, each pointing to a target definition
-            using bazel_action() or one of its wrappers, that depend on this
-            instance's bazel target.
-        """
-        lines = query_result.splitlines()
-        gn_targets = set()
-
-        for line in lines:
-            gn_target = self._actions_map.find_gn_target_for(line)
-            if gn_target:
-                gn_targets.add(gn_target)
-
-        return sorted(gn_targets)
-
-
-def find_gn_bazel_action_infos_for(
-    bazel_target: str,
-    actions_map: BazelBuildActionsMap,
-    bazel_launcher: build_utils.BazelLauncher,
-    log: T.Optional[build_utils.LogFunc] = None,
-    log_err: T.Optional[build_utils.LogFunc] = None,
-) -> list[BazelBuildActionInfo]:
-    """Find the BazelBuildActionInfo instances matching a given Bazel target.
-
-    Find all GN bazel_action() target whose top-level bazel targets
-    depend on a given |bazel_target|, and return the corresponding
-    BazelBuildActionInfo items in a list.
-
-    This is the main logic around `fx bazel-tool set_gn_targets`.
-
-    Args:
-        bazel_target: Bazel target label to look for. Must start
-           with // or @.
-
-        actions_map: A BazelBuildActionsMap instance used as input.
-
-        bazel_launcher: A build_utils.BazelLauncher instance.
-
-        log: Optional LogFunc instance to log individual steps.
-        log_err: Optional LogFunc instance to log error messages.
-
-    Returns:
-        A list of BazelBuildActionInfo items. In case of failure,
-        errors will be sent to |log_err| and the function will return
-        an empty list.
-
-        An empty list without errors means the target is not a known
-        dependency of the actions_map's GN and Bazel targets.
-
-    Raises:
-        AssertionError if |bazel_target| has invalid format.
-    """
-    # Check inputs.
-    if not bazel_target.startswith(("@", "//")):
-        if log_err:
-            log_err(f"Target label must start with // or @: {bazel_target}")
-        return []
-
-    if "(" in bazel_target:
-        if log_err:
-            log_err(
-                f"Target label cannot include GN toolchain suffix: {bazel_target}"
-            )
-        return []
-
-    gn_target = actions_map.find_gn_target_for(bazel_target)
-    if gn_target:
-        if log:
-            log(
-                f"Bazel target {bazel_target} maps directly to GN target {gn_target}"
-            )
-        info = actions_map.get_info(gn_target)
-        assert info  # Appease mypy
-        return [info]
-
-    action_query = BazelBuildActionQuery(bazel_target, actions_map)
-    query_command = action_query.make_query_command([])
-    ret = bazel_launcher.run_bazel_command(
-        query_command, **bazel_launcher.CAPTURE_KWARGS
+    build_utils.force_symlink(
+        bazel_paths.workspace / GN_TARGETS_SYMLINK_PATH,
+        gn_targets_dir,
     )
-    if ret.returncode != 0:
-        ret.stderr = action_query.filter_query_errors(ret.stderr)
-        if ret.stderr:
-            # Report unexpected errors directly.
-            if log_err:
-                log_err(
-                    f"Bazel query returned unexpected errors:\n%s\n"
-                    % ret.stderr
-                )
-            return []
-
-    gn_targets = action_query.process_query_output(ret.stdout)
-    if log:
-        log(f"Bazel query result: {gn_targets}")
-
-    return [
-        info
-        for gn_target, info in actions_map.label_items()
-        if gn_target in gn_targets
-    ]
 
 
 def find_prefix_in_input(
