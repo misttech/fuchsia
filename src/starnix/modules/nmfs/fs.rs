@@ -58,6 +58,50 @@ pub(crate) enum TransportType {
     Lowpan = 6,
 }
 
+#[derive(Clone, Copy, Debug, Deserialize_repr, PartialEq, Serialize_repr)]
+#[repr(u8)]
+pub(crate) enum NetworkCapability {
+    Mms = 0,
+    Supl = 1,
+    Dun = 2,
+    Fota = 3,
+    Ims = 4,
+    Cbs = 5,
+    WifiP2p = 6,
+    Ia = 7,
+    Rcs = 8,
+    Xcap = 9,
+    Eims = 10,
+    NotMetered = 11,
+    Internet = 12,
+    NotRestricted = 13,
+    Trusted = 14,
+    NotVpn = 15,
+    Validated = 16,
+    CaptivePortal = 17,
+    NotRoaming = 18,
+    Foreground = 19,
+    NotCongested = 20,
+    NotSuspended = 21,
+    OemPaid = 22,
+    Mcs = 23,
+    PartialConnectivity = 24,
+    TemporarilyNotMetered = 25,
+    OemPrivate = 26,
+    VehicleInternal = 27,
+    NotVcnManaged = 28,
+    Enterprise = 29,
+    Vsim = 30,
+    Bip = 31,
+    HeadUnit = 32,
+    Mmtel = 33,
+    PrioritizeLatency = 34,
+    PrioritizeBandwidth = 35,
+    LocalNetwork = 36,
+    NotBandwidthConstrained = 37,
+    PrioritizeUnifiedCommunications = 38,
+}
+
 #[derive(Clone, Debug, Default, Deserialize, PartialEq, Serialize)]
 #[serde(tag = "version")]
 pub(crate) enum VersionedProperties {
@@ -66,6 +110,8 @@ pub(crate) enum VersionedProperties {
     V2 {
         #[serde(with = "transport_list")]
         transports: Vec<TransportType>,
+        #[serde(with = "capability_list")]
+        capabilities: Vec<NetworkCapability>,
     },
 }
 
@@ -385,37 +431,42 @@ mod addr_list {
     }
 }
 
-mod transport_list {
-    use super::TransportType;
-    use serde::{Deserialize, Deserializer, Serialize, Serializer};
-    use starnix_logging::log_error;
+macro_rules! tolerant_repr_serde_impl {
+    ($module_name:ident, $NewType:path) => {
+        mod $module_name {
+            use serde::{Deserialize, Deserializer, Serialize, Serializer};
+            use starnix_logging::log_error;
 
-    pub fn serialize<S>(transports: &Vec<TransportType>, serializer: S) -> Result<S::Ok, S::Error>
-    where
-        S: Serializer,
-    {
-        let nums = transports.iter().map(|transport| *transport as u8).collect::<Vec<_>>();
-        nums.serialize(serializer)
-    }
+            pub fn serialize<S>(items: &Vec<$NewType>, serializer: S) -> Result<S::Ok, S::Error>
+            where
+                S: Serializer,
+            {
+                let nums = items.iter().map(|item| *item as u8).collect::<Vec<_>>();
+                nums.serialize(serializer)
+            }
 
-    pub fn deserialize<'de, D>(deserializer: D) -> Result<Vec<TransportType>, D::Error>
-    where
-        D: Deserializer<'de>,
-    {
-        let numbers = Vec::<serde_json::Value>::deserialize(deserializer)?;
-        let transports = numbers
-            .into_iter()
-            .filter_map(|v| match serde_json::from_value::<TransportType>(v.clone()) {
-                Ok(t) => Some(t),
-                Err(_) => {
-                    log_error!("unknown transport type value: {}", v);
-                    None
-                }
-            })
-            .collect();
-        Ok(transports)
-    }
+            pub fn deserialize<'de, D>(deserializer: D) -> Result<Vec<$NewType>, D::Error>
+            where
+                D: Deserializer<'de>,
+            {
+                let vals = Vec::<serde_json::Value>::deserialize(deserializer)?;
+                Ok(vals
+                    .into_iter()
+                    .filter_map(|val| match serde_json::from_value::<$NewType>(val.clone()) {
+                        Ok(s) => Some(s),
+                        Err(_) => {
+                            log_error!("unknown value: {}", val);
+                            None
+                        }
+                    })
+                    .collect())
+            }
+        }
+    };
 }
+
+tolerant_repr_serde_impl!(transport_list, crate::TransportType);
+tolerant_repr_serde_impl!(capability_list, crate::NetworkCapability);
 
 #[cfg(test)]
 mod tests {
@@ -453,13 +504,18 @@ mod tests {
                     TransportType::WifiAware,
                     TransportType::Lowpan,
                 ],
+                capabilities: vec![
+                    NetworkCapability::Trusted,
+                    NetworkCapability::Internet,
+                    NetworkCapability::Validated,
+                ],
             },
         };
         serde_helper(network);
     }
 
     #[::fuchsia::test]
-    fn network_message_serde_unknown_transport() {
+    fn network_message_serde_unknown_transports_and_capabilities() {
         let json = r#"{
             "netid": 123,
             "mark": 456,
@@ -467,7 +523,8 @@ mod tests {
             "dnsv4": ["192.168.0.1"],
             "dnsv6": ["2001:db8::1"],
             "version": "V2",
-            "transports": [1, 99, 3]
+            "transports": [1, 99, 3],
+            "capabilities": [11, 99]
         }"#;
 
         let expected = NetworkMessage {
@@ -478,6 +535,7 @@ mod tests {
             dnsv6: vec![std_ip_v6!("2001:db8::1")],
             versioned_properties: VersionedProperties::V2 {
                 transports: vec![TransportType::Wifi, TransportType::Ethernet],
+                capabilities: vec![NetworkCapability::NotMetered],
             },
         };
 

@@ -305,9 +305,23 @@ TEST_F(NmfsTest, NmfsV2NetworkFileWriteFailure) {
     "handle": 78,
     "dnsv4": [],
     "dnsv6": [],
-    "transports": 0
+    "transports": 0,
+    "capabilities": []
 })",
                          "Transport list must be provided in an array");
+
+  ExpectFileWriteFailure("/tmp/fuchsia_network_monitor/1",
+                         R"({
+    "version": "V2",
+    "netid": 1,
+    "mark": 56,
+    "handle": 78,
+    "dnsv4": [],
+    "dnsv6": [],
+    "transports": [],
+    "capabilities": 0
+})",
+                         "Capabilities list must be provided in an array");
 
   // All fields must be provided.
   ExpectFileWriteFailure("/tmp/fuchsia_network_monitor/1",
@@ -317,9 +331,22 @@ TEST_F(NmfsTest, NmfsV2NetworkFileWriteFailure) {
     "mark": 56,
     "handle": 78,
     "dnsv4": [],
-    "dnsv6": []
+    "dnsv6": [],
+    "capabilities": []
 })",
                          "All fields must be provided in JSON, missing transports");
+
+  ExpectFileWriteFailure("/tmp/fuchsia_network_monitor/1",
+                         R"({
+    "version": "V2",
+    "netid": 1,
+    "mark": 56,
+    "handle": 78,
+    "dnsv4": [],
+    "dnsv6": [],
+    "transports": []
+})",
+                         "All fields must be provided in JSON, missing capabilities");
 }
 
 TEST_F(NmfsTest, NmfsCannotCreateDir) {
@@ -423,21 +450,43 @@ TEST_F(NmfsTest, NmfsDefaultNetworkFile) {
 }
 
 TEST_F(NmfsTest, NmfsV2NetworkFileWriteSuccessTransportList) {
-  EXPECT_TRUE(files::WriteFile("/tmp/fuchsia_network_monitor/7",
-                               R"({
+  ExpectFileWriteSuccess("/tmp/fuchsia_network_monitor/7",
+                         R"({
     "version": "V2",
     "netid": 7,
     "mark": 56,
     "handle": 78,
     "dnsv4": [],
     "dnsv6": [],
-    "transports": [0, 1, 2, 3]
-  })"))
-      << "All JSON fields must be provided with proper formatting";
+    "transports": [0, 1, 2, 3],
+    "capabilities": []
+  })",
+                         "All JSON fields must be provided with proper formatting");
   // File output should be able to be rewritten to the file without formatting changes.
   std::string network_info;
   EXPECT_TRUE(files::ReadFileToString("/tmp/fuchsia_network_monitor/7", &network_info))
       << "Network file should be readable";
   EXPECT_TRUE(files::WriteFile("/tmp/fuchsia_network_monitor/7", network_info))
+      << "Contents from read should be writeable to the same file";
+}
+
+TEST_F(NmfsTest, NmfsV2NetworkFileWriteSuccessCapabilityList) {
+  ExpectFileWriteSuccess("/tmp/fuchsia_network_monitor/8",
+                         R"({
+    "version": "V2",
+    "netid": 8,
+    "mark": 56,
+    "handle": 78,
+    "dnsv4": [],
+    "dnsv6": [],
+    "transports": [],
+    "capabilities": [0, 1, 2, 3]
+  })",
+                         "All JSON fields must be provided with proper formatting");
+  // File output should be able to be rewritten to the file without formatting changes.
+  std::string network_info;
+  EXPECT_TRUE(files::ReadFileToString("/tmp/fuchsia_network_monitor/8", &network_info))
+      << "Network file should be readable";
+  EXPECT_TRUE(files::WriteFile("/tmp/fuchsia_network_monitor/8", network_info))
       << "Contents from read should be writeable to the same file";
 }
