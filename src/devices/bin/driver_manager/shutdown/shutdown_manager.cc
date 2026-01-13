@@ -94,6 +94,10 @@ ShutdownManager::ShutdownManager(NodeRemover* node_remover, async_dispatcher_t* 
   } else {
     mexec_resource_ = std::move(mexec_resource.value());
   }
+  node_remover_->SetOnRemovalTimeoutCallback([&]() {
+    fdf_log::info("Driver timed out during shutdown, issuing syscall to reboot/shutdown");
+    SystemExecute();
+  });
 }
 
 // Invoked when the channel is closed or on any binding-related error.

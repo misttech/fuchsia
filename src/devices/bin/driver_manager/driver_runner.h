@@ -127,6 +127,10 @@ class DriverRunner : public fidl::WireServer<fuchsia_driver_framework::Composite
     removal_tracker_.FinishEnumeration();
   }
 
+  void SetOnRemovalTimeoutCallback(fit::callback<void()> callback) override {
+    removal_tracker_.SetOnRemovalTimeoutCallback(std::move(callback));
+  }
+
   void RebindComposite(std::string spec, std::optional<std::string> driver_url,
                        fit::callback<void(zx::result<>)> callback) override;
 

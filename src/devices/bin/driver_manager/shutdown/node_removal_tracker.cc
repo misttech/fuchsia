@@ -82,6 +82,7 @@ void NodeRemovalTracker::Notify(NodeId id, NodeState state) {
 }
 
 void NodeRemovalTracker::OnRemovalTimeout() {
+  timeout_count_++;
   fdf_log::info("Removal hanging, nodes remaining: {} pkg, {} pkg+boot", remaining_pkg_node_count(),
                 remaining_node_count());
   for (auto& [id, node] : nodes_) {
@@ -92,6 +93,9 @@ void NodeRemovalTracker::OnRemovalTimeout() {
     // Please notify //src/developer/forensics/OWNERS upon changing.
     fdf_log::info("  '{}' ('{}'): {}", node.name, node.driver_url,
                   GetNodeStateDescription(node.state));
+  }
+  if (timeout_count_ >= 3) {
+    on_removal_timeout_callback_();
   }
   handle_timeout_task_.PostDelayed(dispatcher_, kRemovalTimeoutDuration);
 }
@@ -120,6 +124,9 @@ void NodeRemovalTracker::set_pkg_callback(fit::callback<void()> callback) {
 }
 void NodeRemovalTracker::set_all_callback(fit::callback<void()> callback) {
   all_callback_ = std::move(callback);
+}
+void NodeRemovalTracker::SetOnRemovalTimeoutCallback(fit::callback<void()> callback) {
+  on_removal_timeout_callback_ = std::move(callback);
 }
 
 void NodeRemovalTracker::FinishEnumeration() {

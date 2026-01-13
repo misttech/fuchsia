@@ -37,6 +37,8 @@ class NodeRemovalTracker {
   void set_pkg_callback(fit::callback<void()> callback);
   void set_all_callback(fit::callback<void()> callback);
 
+  void SetOnRemovalTimeoutCallback(fit::callback<void()> callback);
+
  private:
   void OnRemovalTimeout();
 
@@ -51,12 +53,15 @@ class NodeRemovalTracker {
   bool fully_enumerated_ = false;
   NodeId next_node_id_ = 0;
 
+  uint32_t timeout_count_ = 0;
+
   std::unordered_set<NodeId> remaining_pkg_nodes_;
   std::unordered_set<NodeId> remaining_non_pkg_nodes_;
   std::unordered_map<NodeId, NodeInfo> nodes_;
 
   fit::callback<void()> pkg_callback_;
   fit::callback<void()> all_callback_;
+  fit::callback<void()> on_removal_timeout_callback_;
 
   async_dispatcher_t* const dispatcher_;
 
