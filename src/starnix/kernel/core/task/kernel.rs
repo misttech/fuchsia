@@ -597,6 +597,7 @@ impl Kernel {
         }
 
         // Step 4: Clean up any structures that can keep non-Linux processes live in our job.
+        log_debug!("cleaning up pinned memory");
         self.expando.remove::<memory_pinning::ShadowProcess>();
 
         // Step 5: Make sure this is the only process running in the job. We already should have
@@ -642,6 +643,7 @@ impl Kernel {
         }
 
         // Step 6: Forcibly unmounts the mounts' FileSystems.
+        log_debug!("clearing mounts");
         self.mounts.clear();
 
         // Step 7: Tell CF the container stopped.
