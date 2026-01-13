@@ -57,6 +57,7 @@ config("android_aidl_rust_config") {
     "-Aunused-crate-dependencies",
     "-Adeprecated",
     "-Aunused-variables",
+    "-Aunreachable-patterns",
   ]
   configs = [ ":android_rust_config" ]
 }
