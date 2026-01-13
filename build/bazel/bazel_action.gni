@@ -280,735 +280,752 @@ declare_args() {
 #        Expands to {{BAZEL_TARGET_OUT_DIR}}/{{BAZEL_TARGET_NAME}}.
 #
 template("bazel_action") {
-  assert(defined(invoker.command), "command must be defined!")
-  assert(defined(invoker.bazel_targets), "bazel_targets must be defined!")
-  assert(invoker.bazel_targets != [], "bazel_targets cannot be empty!")
+  # Bazel actions can only be run in the default toolchain, so no-op the template since
+  # trying to enforce this in all the BUILD.gn files themselves is currently infeasible.
+  if (current_toolchain == default_toolchain) {
+    assert(defined(invoker.command), "command must be defined!")
+    assert(defined(invoker.bazel_targets), "bazel_targets must be defined!")
+    assert(invoker.bazel_targets != [], "bazel_targets cannot be empty!")
 
-  _no_sdk = defined(invoker.no_sdk) && invoker.no_sdk
-  _build_for_host = defined(invoker.host) && invoker.host
-  assert(!_build_for_host || _no_sdk,
-         "`no_sdk` must true when `host` is true. ")
+    _no_sdk = defined(invoker.no_sdk) && invoker.no_sdk
+    _build_for_host = defined(invoker.host) && invoker.host
+    assert(!_build_for_host || _no_sdk,
+           "`no_sdk` must true when `host` is true. ")
 
-  # Limit usage of `bazel_platform` to host platforms to minimize chances of
-  # misuse. It's created to support cross-compiling SDK host tools.
-  if (defined(invoker.bazel_platform)) {
-    assert(_build_for_host,
-           "`bazel_platform` is only supported when `host` is true.")
-  }
-
-  # Calculate the correct bazel platform to use from the build_for_host and bazel_platform params.
-  if (_build_for_host) {
-    _bazel_platform_config = "host_config_args"
+    # Limit usage of `bazel_platform` to host platforms to minimize chances of
+    # misuse. It's created to support cross-compiling SDK host tools.
     if (defined(invoker.bazel_platform)) {
-      _bazel_platform_label =
-          "//build/bazel/platforms:${invoker.bazel_platform}"
+      assert(_build_for_host,
+             "`bazel_platform` is only supported when `host` is true.")
+    }
+
+    # Calculate the correct bazel platform to use from the build_for_host and bazel_platform params.
+    if (_build_for_host) {
+      _bazel_platform_config = "host_config_args"
+      if (defined(invoker.bazel_platform)) {
+        _bazel_platform_label =
+            "//build/bazel/platforms:${invoker.bazel_platform}"
+      } else {
+        _bazel_platform_label = "//build/bazel/platforms:host"
+      }
     } else {
-      _bazel_platform_label = "//build/bazel/platforms:host"
-    }
-  } else {
-    # Since this template can only be used on the default toolchain, the
-    # platform is always Fuchsia.
-    _bazel_platform_config = "fuchsia_config_args"
-    _bazel_platform_label = "//build/bazel/platforms:fuchsia_${current_cpu}"
-  }
-
-  _copy_outputs = []
-  if (defined(invoker.copy_outputs)) {
-    _copy_outputs = invoker.copy_outputs
-  }
-
-  _directory_outputs = []
-  if (defined(invoker.directory_outputs)) {
-    _directory_outputs = invoker.directory_outputs
-  }
-
-  _package_outputs = []
-  if (defined(invoker.package_outputs)) {
-    _package_outputs = invoker.package_outputs
-  }
-
-  _final_symlink_outputs = []
-  if (defined(invoker.final_symlink_outputs)) {
-    _final_symlink_outputs = invoker.final_symlink_outputs
-  }
-
-  assert(
-      _copy_outputs != [] || _directory_outputs != [] ||
-          _package_outputs != [] || _final_symlink_outputs != [],
-      "At least one of `copy_outputs`, `directory_outputs` or `package_outputs` must be a non-empty list!")
-
-  _has_package_outputs = false
-
-  _ninja_base_dir = target_out_dir
-  if (defined(invoker.ninja_base_dir)) {
-    _ninja_base_dir = invoker.ninja_base_dir
-  }
-
-  _bazel_targets = invoker.bazel_targets
-
-  # Collect all outputs into a single list of scopes with different schemas.
-  # All of them have a "type" string key, and a "bazel_target" label string.
-
-  _all_outputs = []
-
-  foreach(entry, _copy_outputs) {
-    assert("$entry" != entry,
-           "`copy_outputs` items must be scopes, string found: \"$entry\"")
-    assert(defined(entry.bazel),
-           "`copy_outputs` scope requires bazel key: $entry")
-    assert(defined(entry.ninja),
-           "`copy_outputs` scope requires ninja key: $entry")
-
-    _bazel_target = _bazel_targets[0]
-    if (defined(entry.bazel_target)) {
-      _bazel_target = entry.bazel_target
+      # Since this template can only be used on the default toolchain, the
+      # platform is always Fuchsia.
+      _bazel_platform_config = "fuchsia_config_args"
+      _bazel_platform_label = "//build/bazel/platforms:fuchsia_${current_cpu}"
     }
 
-    foreach(path, [ entry.bazel ]) {
-      assert(rebase_path(path, "//") != path,
-             "bazel output path must be relative: $path")
-      assert(string_replace("XX$path", "XX-", "") == "XX$path",
-             "bazel output path cannot begin with dash: $path")
-      if (string_replace(path, "{{BAZEL_TARGET_", "") != path) {
-        _bazel_target_name = get_label_info(_bazel_target, "name")
-        _bazel_target_package =
-            rebase_path(get_label_info(_bazel_target, "dir"), "//")
-        _bazel_target_out_dir = "bazel-bin/" + _bazel_target_package
-
-        path = string_replace(path, "{{BAZEL_TARGET_NAME}}", _bazel_target_name)
-        path = string_replace(path,
-                              "{{BAZEL_TARGET_PACKAGE}}",
-                              _bazel_target_package)
-        path = string_replace(path,
-                              "{{BAZEL_TARGET_OUT_DIR}}",
-                              _bazel_target_out_dir)
-        path = string_replace(path,
-                              "{{BAZEL_TARGET_OUT_PATH}}",
-                              "${_bazel_target_out_dir}/${_bazel_target_name}")
-      }
-
-      # In case of typo with a substitution (e.g. writing {{BAZEL_TARGET_O_DIR}})
-      # GN will complain with an error but will not display the problematic
-      # so use an assert to provide a user-friendly message.
-      assert(string_replace(path, "{{", "") == path,
-             "Unsupported substitution in Bazel output path: $path")
-
-      _bazel_file = path
+    _copy_outputs = []
+    if (defined(invoker.copy_outputs)) {
+      _copy_outputs = invoker.copy_outputs
     }
 
-    _all_outputs += [
-      {
-        type = "file"
-        bazel_target = get_label_info(_bazel_target, "label_no_toolchain")
-        bazel_file = _bazel_file
-        ninja_file = "${_ninja_base_dir}/${entry.ninja}"
-      },
-    ]
-  }
-
-  foreach(entry, _directory_outputs) {
-    assert("$entry" != entry,
-           "`directory_outputs` items must be scopes, string found: \"$entry\"")
-    assert(defined(entry.bazel_dir),
-           "`directory_outputs` scope requires bazel_dir key: $entry")
-    assert(defined(entry.ninja_dir),
-           "`directory_outputs` scope requires ninja_dir key: $entry")
-    assert(defined(entry.tracked_files),
-           "`directory_outputs` scope requires tracked_files key: $entry")
-
-    _bazel_target = _bazel_targets[0]
-    if (defined(entry.bazel_target)) {
-      _bazel_target = entry.bazel_target
+    _directory_outputs = []
+    if (defined(invoker.directory_outputs)) {
+      _directory_outputs = invoker.directory_outputs
     }
 
-    foreach(path, [ entry.bazel_dir ]) {
-      assert(rebase_path(path, "//") != path,
-             "bazel output path must be relative: $path")
-      assert(string_replace("XX$path", "XX-", "") == "XX$path",
-             "bazel output path cannot begin with dash: $path")
-      if (string_replace(path, "{{BAZEL_TARGET_", "") != path) {
-        _bazel_target_name = get_label_info(_bazel_target, "name")
-        _bazel_target_package =
-            rebase_path(get_label_info(_bazel_target, "dir"), "//")
-        _bazel_target_out_dir = "bazel-bin/" + _bazel_target_package
-
-        path = string_replace(path, "{{BAZEL_TARGET_NAME}}", _bazel_target_name)
-        path = string_replace(path,
-                              "{{BAZEL_TARGET_PACKAGE}}",
-                              _bazel_target_package)
-        path = string_replace(path,
-                              "{{BAZEL_TARGET_OUT_DIR}}",
-                              _bazel_target_out_dir)
-        path = string_replace(path,
-                              "{{BAZEL_TARGET_OUT_PATH}}",
-                              "${_bazel_target_out_dir}/${_bazel_target_name}")
-      }
-
-      # In case of typo with a substitution (e.g. writing {{BAZEL_TARGET_O_DIR}})
-      # GN will complain with an error but will not display the problematic
-      # so use an assert to provide a user-friendly message.
-      assert(string_replace(path, "{{", "") == path,
-             "Unsupported substitution in Bazel output path: $path")
-
-      _bazel_dir = path
+    _package_outputs = []
+    if (defined(invoker.package_outputs)) {
+      _package_outputs = invoker.package_outputs
     }
 
-    _all_outputs += [
-      {
-        type = "directory"
-        bazel_target = get_label_info(_bazel_target, "label_no_toolchain")
-        bazel_dir = _bazel_dir
-        ninja_dir = "${_ninja_base_dir}/${entry.ninja_dir}"
-        copy_debug_symbols =
-            defined(entry.copy_debug_symbols) && entry.copy_debug_symbols
-        assert(entry.tracked_files != [],
-               "Directory outputs require tracked files.")
-        tracked_files = entry.tracked_files
-      },
-    ]
-  }
-
-  foreach(entry, _package_outputs) {
-    assert("$entry" != entry,
-           "`package_outputs` items must be scopes, string found: \"$entry\"")
-    assert(defined(entry.package_label),
-           "`package_outputs` scope requires package_label key: $entry")
-    _archive = ""
-    if (defined(entry.archive)) {
-      _archive = "${_ninja_base_dir}/${entry.archive}"
+    _final_symlink_outputs = []
+    if (defined(invoker.final_symlink_outputs)) {
+      _final_symlink_outputs = invoker.final_symlink_outputs
     }
-    _all_outputs += [
-      {
-        type = "package"
-        bazel_target = get_label_info(entry.package_label, "label_no_toolchain")
-        ninja_archive = _archive
-        copy_debug_symbols =
-            defined(entry.copy_debug_symbols) && entry.copy_debug_symbols
-      },
-    ]
 
-    _has_package_outputs = true
-  }
-
-  foreach(entry, _final_symlink_outputs) {
     assert(
-        "$entry" != entry,
-        "`final_symlink_outputs` items must be scopes, string found: \"$entry\"")
-    assert(defined(entry.bazel),
-           "`final_symlink_outputs` scope requires bazel key: $entry")
-    assert(defined(entry.ninja),
-           "`final_symlink_outputs` scope requires ninja key: $entry")
+        _copy_outputs != [] || _directory_outputs != [] ||
+            _package_outputs != [] || _final_symlink_outputs != [],
+        "At least one of `copy_outputs`, `directory_outputs` or `package_outputs` must be a non-empty list!")
 
-    _bazel_target = _bazel_targets[0]
-    if (defined(entry.bazel_target)) {
-      _bazel_target = entry.bazel_target
+    _has_package_outputs = false
+
+    _ninja_base_dir = target_out_dir
+    if (defined(invoker.ninja_base_dir)) {
+      _ninja_base_dir = invoker.ninja_base_dir
     }
 
-    foreach(path, [ entry.bazel ]) {
-      assert(rebase_path(path, "//") != path,
-             "bazel output path must be relative: $path")
-      assert(string_replace("XX$path", "XX-", "") == "XX$path",
-             "bazel output path cannot begin with dash: $path")
-      if (string_replace(path, "{{BAZEL_TARGET_", "") != path) {
-        _bazel_target_name = get_label_info(_bazel_target, "name")
-        _bazel_target_package =
-            rebase_path(get_label_info(_bazel_target, "dir"), "//")
-        _bazel_target_out_dir = "bazel-bin/" + _bazel_target_package
+    _bazel_targets = invoker.bazel_targets
 
-        path = string_replace(path, "{{BAZEL_TARGET_NAME}}", _bazel_target_name)
-        path = string_replace(path,
-                              "{{BAZEL_TARGET_PACKAGE}}",
-                              _bazel_target_package)
-        path = string_replace(path,
-                              "{{BAZEL_TARGET_OUT_DIR}}",
-                              _bazel_target_out_dir)
-        path = string_replace(path,
-                              "{{BAZEL_TARGET_OUT_PATH}}",
-                              "${_bazel_target_out_dir}/${_bazel_target_name}")
+    # Collect all outputs into a single list of scopes with different schemas.
+    # All of them have a "type" string key, and a "bazel_target" label string.
+
+    _all_outputs = []
+
+    foreach(entry, _copy_outputs) {
+      assert("$entry" != entry,
+             "`copy_outputs` items must be scopes, string found: \"$entry\"")
+      assert(defined(entry.bazel),
+             "`copy_outputs` scope requires bazel key: $entry")
+      assert(defined(entry.ninja),
+             "`copy_outputs` scope requires ninja key: $entry")
+
+      _bazel_target = _bazel_targets[0]
+      if (defined(entry.bazel_target)) {
+        _bazel_target = entry.bazel_target
       }
 
-      # In case of typo with a substitution (e.g. writing {{BAZEL_TARGET_O_DIR}})
-      # GN will complain with an error but will not display the problematic
-      # so use an assert to provide a user-friendly message.
-      assert(string_replace(path, "{{", "") == path,
-             "Unsupported substitution in Bazel output path: $path")
+      foreach(path, [ entry.bazel ]) {
+        assert(rebase_path(path, "//") != path,
+               "bazel output path must be relative: $path")
+        assert(string_replace("XX$path", "XX-", "") == "XX$path",
+               "bazel output path cannot begin with dash: $path")
+        if (string_replace(path, "{{BAZEL_TARGET_", "") != path) {
+          _bazel_target_name = get_label_info(_bazel_target, "name")
+          _bazel_target_package =
+              rebase_path(get_label_info(_bazel_target, "dir"), "//")
+          _bazel_target_out_dir = "bazel-bin/" + _bazel_target_package
 
-      _bazel_file = path
+          path =
+              string_replace(path, "{{BAZEL_TARGET_NAME}}", _bazel_target_name)
+          path = string_replace(path,
+                                "{{BAZEL_TARGET_PACKAGE}}",
+                                _bazel_target_package)
+          path = string_replace(path,
+                                "{{BAZEL_TARGET_OUT_DIR}}",
+                                _bazel_target_out_dir)
+          path =
+              string_replace(path,
+                             "{{BAZEL_TARGET_OUT_PATH}}",
+                             "${_bazel_target_out_dir}/${_bazel_target_name}")
+        }
+
+        # In case of typo with a substitution (e.g. writing {{BAZEL_TARGET_O_DIR}})
+        # GN will complain with an error but will not display the problematic
+        # so use an assert to provide a user-friendly message.
+        assert(string_replace(path, "{{", "") == path,
+               "Unsupported substitution in Bazel output path: $path")
+
+        _bazel_file = path
+      }
+
+      _all_outputs += [
+        {
+          type = "file"
+          bazel_target = get_label_info(_bazel_target, "label_no_toolchain")
+          bazel_file = _bazel_file
+          ninja_file = "${_ninja_base_dir}/${entry.ninja}"
+        },
+      ]
     }
 
-    _all_outputs += [
-      {
-        type = "final_symlink"
-        bazel_target = get_label_info(_bazel_target, "label_no_toolchain")
-        bazel_file = _bazel_file
-        ninja_file = "${_ninja_base_dir}/${entry.ninja}"
-      },
-    ]
-  }
+    foreach(entry, _directory_outputs) {
+      assert(
+          "$entry" != entry,
+          "`directory_outputs` items must be scopes, string found: \"$entry\"")
+      assert(defined(entry.bazel_dir),
+             "`directory_outputs` scope requires bazel_dir key: $entry")
+      assert(defined(entry.ninja_dir),
+             "`directory_outputs` scope requires ninja_dir key: $entry")
+      assert(defined(entry.tracked_files),
+             "`directory_outputs` scope requires tracked_files key: $entry")
 
-  # Write the log of build events to a target-specific file.
-  # See https://bazel.build/remote/bep for details.
-  # For now, produce in JSON output since we lack a tool to convert from
-  # binary to other formats in the tree.
-  _bazel_build_events_log_json =
-      "$target_out_dir/$target_name.bazel_events.log.json"
+      _bazel_target = _bazel_targets[0]
+      if (defined(entry.bazel_target)) {
+        _bazel_target = entry.bazel_target
+      }
 
-  _rebased_bazel_build_events_log_json =
-      rebase_path(_bazel_build_events_log_json, root_build_dir)
+      foreach(path, [ entry.bazel_dir ]) {
+        assert(rebase_path(path, "//") != path,
+               "bazel output path must be relative: $path")
+        assert(string_replace("XX$path", "XX-", "") == "XX$path",
+               "bazel output path cannot begin with dash: $path")
+        if (string_replace(path, "{{BAZEL_TARGET_", "") != path) {
+          _bazel_target_name = get_label_info(_bazel_target, "name")
+          _bazel_target_package =
+              rebase_path(get_label_info(_bazel_target, "dir"), "//")
+          _bazel_target_out_dir = "bazel-bin/" + _bazel_target_package
 
-  _bazel_build_files = []
-  _bazel_targets = []
-  foreach(label, invoker.bazel_targets) {
-    dir = get_label_info(label, "dir")
-    name = get_label_info(label, "name")
-    assert(get_path_info(dir, "file") != "...",
-           "`...` is not supported in bazel_targets")
-    _bazel_build_files += [ "${dir}/BUILD.bazel" ]
-    _bazel_targets += [ "${dir}:${name}" ]
-  }
+          path =
+              string_replace(path, "{{BAZEL_TARGET_NAME}}", _bazel_target_name)
+          path = string_replace(path,
+                                "{{BAZEL_TARGET_PACKAGE}}",
+                                _bazel_target_package)
+          path = string_replace(path,
+                                "{{BAZEL_TARGET_OUT_DIR}}",
+                                _bazel_target_out_dir)
+          path =
+              string_replace(path,
+                             "{{BAZEL_TARGET_OUT_PATH}}",
+                             "${_bazel_target_out_dir}/${_bazel_target_name}")
+        }
 
-  # A group to depend on all bazel_input_xxx() dependencies.
-  _bazel_inputs_group_target = "$target_name.bazel_inputs"
-  group(_bazel_inputs_group_target) {
-    forward_variables_from(invoker,
-                           [
-                             "deps",
-                             "testonly",
-                           ])
-    if (defined(invoker.bazel_inputs)) {
+        # In case of typo with a substitution (e.g. writing {{BAZEL_TARGET_O_DIR}})
+        # GN will complain with an error but will not display the problematic
+        # so use an assert to provide a user-friendly message.
+        assert(string_replace(path, "{{", "") == path,
+               "Unsupported substitution in Bazel output path: $path")
+
+        _bazel_dir = path
+      }
+
+      _all_outputs += [
+        {
+          type = "directory"
+          bazel_target = get_label_info(_bazel_target, "label_no_toolchain")
+          bazel_dir = _bazel_dir
+          ninja_dir = "${_ninja_base_dir}/${entry.ninja_dir}"
+          copy_debug_symbols =
+              defined(entry.copy_debug_symbols) && entry.copy_debug_symbols
+          assert(entry.tracked_files != [],
+                 "Directory outputs require tracked files.")
+          tracked_files = entry.tracked_files
+        },
+      ]
+    }
+
+    foreach(entry, _package_outputs) {
+      assert("$entry" != entry,
+             "`package_outputs` items must be scopes, string found: \"$entry\"")
+      assert(defined(entry.package_label),
+             "`package_outputs` scope requires package_label key: $entry")
+      _archive = ""
+      if (defined(entry.archive)) {
+        _archive = "${_ninja_base_dir}/${entry.archive}"
+      }
+      _all_outputs += [
+        {
+          type = "package"
+          bazel_target =
+              get_label_info(entry.package_label, "label_no_toolchain")
+          ninja_archive = _archive
+          copy_debug_symbols =
+              defined(entry.copy_debug_symbols) && entry.copy_debug_symbols
+        },
+      ]
+
+      _has_package_outputs = true
+    }
+
+    foreach(entry, _final_symlink_outputs) {
+      assert(
+          "$entry" != entry,
+          "`final_symlink_outputs` items must be scopes, string found: \"$entry\"")
+      assert(defined(entry.bazel),
+             "`final_symlink_outputs` scope requires bazel key: $entry")
+      assert(defined(entry.ninja),
+             "`final_symlink_outputs` scope requires ninja key: $entry")
+
+      _bazel_target = _bazel_targets[0]
+      if (defined(entry.bazel_target)) {
+        _bazel_target = entry.bazel_target
+      }
+
+      foreach(path, [ entry.bazel ]) {
+        assert(rebase_path(path, "//") != path,
+               "bazel output path must be relative: $path")
+        assert(string_replace("XX$path", "XX-", "") == "XX$path",
+               "bazel output path cannot begin with dash: $path")
+        if (string_replace(path, "{{BAZEL_TARGET_", "") != path) {
+          _bazel_target_name = get_label_info(_bazel_target, "name")
+          _bazel_target_package =
+              rebase_path(get_label_info(_bazel_target, "dir"), "//")
+          _bazel_target_out_dir = "bazel-bin/" + _bazel_target_package
+
+          path =
+              string_replace(path, "{{BAZEL_TARGET_NAME}}", _bazel_target_name)
+          path = string_replace(path,
+                                "{{BAZEL_TARGET_PACKAGE}}",
+                                _bazel_target_package)
+          path = string_replace(path,
+                                "{{BAZEL_TARGET_OUT_DIR}}",
+                                _bazel_target_out_dir)
+          path =
+              string_replace(path,
+                             "{{BAZEL_TARGET_OUT_PATH}}",
+                             "${_bazel_target_out_dir}/${_bazel_target_name}")
+        }
+
+        # In case of typo with a substitution (e.g. writing {{BAZEL_TARGET_O_DIR}})
+        # GN will complain with an error but will not display the problematic
+        # so use an assert to provide a user-friendly message.
+        assert(string_replace(path, "{{", "") == path,
+               "Unsupported substitution in Bazel output path: $path")
+
+        _bazel_file = path
+      }
+
+      _all_outputs += [
+        {
+          type = "final_symlink"
+          bazel_target = get_label_info(_bazel_target, "label_no_toolchain")
+          bazel_file = _bazel_file
+          ninja_file = "${_ninja_base_dir}/${entry.ninja}"
+        },
+      ]
+    }
+
+    # Write the log of build events to a target-specific file.
+    # See https://bazel.build/remote/bep for details.
+    # For now, produce in JSON output since we lack a tool to convert from
+    # binary to other formats in the tree.
+    _bazel_build_events_log_json =
+        "$target_out_dir/$target_name.bazel_events.log.json"
+
+    _rebased_bazel_build_events_log_json =
+        rebase_path(_bazel_build_events_log_json, root_build_dir)
+
+    _bazel_build_files = []
+    _bazel_targets = []
+    foreach(label, invoker.bazel_targets) {
+      dir = get_label_info(label, "dir")
+      name = get_label_info(label, "name")
+      assert(get_path_info(dir, "file") != "...",
+             "`...` is not supported in bazel_targets")
+      _bazel_build_files += [ "${dir}/BUILD.bazel" ]
+      _bazel_targets += [ "${dir}:${name}" ]
+    }
+
+    # A group to depend on all bazel_input_xxx() dependencies.
+    _bazel_inputs_group_target = "$target_name.bazel_inputs"
+    group(_bazel_inputs_group_target) {
+      forward_variables_from(invoker,
+                             [
+                               "deps",
+                               "testonly",
+                             ])
+      if (defined(invoker.bazel_inputs)) {
+        if (!defined(deps)) {
+          deps = []
+        }
+        deps += invoker.bazel_inputs
+      }
+      visibility = [ ":*" ]
+    }
+
+    # Generate a manifest file that references all transitive bazel_input_file()
+    # and bazel_input_directory() dependencies from 'deps' or 'bazel_inputs'.
+    #
+    # These are passed to bazel_action.py to populate the @gn_targets external
+    # repository with symlinks and filegroups().
+    #
+    _gn_targets_repository_manifest =
+        "$target_out_dir/${target_name}.gn_targets_manifest.json"
+    _gn_targets_repository_manifest_target = "${target_name}.gn_targets"
+    generate_gn_targets_repository_manifest(
+        _gn_targets_repository_manifest_target) {
+      forward_variables_from(invoker, [ "testonly" ])
+      output = _gn_targets_repository_manifest
+      deps = [ ":${_bazel_inputs_group_target}" ]
+    }
+
+    # Generate an SPDX file that contains license information for all
+    # dependencies of this bazel_action() GN target, this will be exposed
+    # through the special @gn_targets//all_licenses_spdx_json, which should
+    # be used in product-specific build rules instead of
+    # @legacy_ninja_build_outputs//:all_bazel_inputs_licenses_spdx_json
+
+    _all_licenses_spdx_target = "${target_name}.all_licenses_spdx"
+    _all_licenses_spdx_file =
+        "$target_out_dir/${target_name}.all_licenses.spdx.json"
+
+    generated_licenses_spdx(_all_licenses_spdx_target) {
+      forward_variables_from(invoker, [ "testonly" ])
+      target = ":${_bazel_inputs_group_target}"
+      output = _all_licenses_spdx_file
+      spdx_root_package_name = "Fuchsia"
+      debug_hints = true
+
+      include_host_tools = defined(invoker.include_host_tools_licenses) &&
+                           invoker.include_host_tools_licenses
+
+      ignore_collection_errors =
+          defined(invoker.ignore_license_collection_errors) &&
+          invoker.ignore_license_collection_errors
+
+      visibility = [ ":*" ]
+    }
+
+    # Location of the @gn_targets repository for this Bazel invocation.
+    # This points to a directory that is generated by //build/regenerator
+    # before the build, to allow for Bazel queries to be performed as soon as
+    # possible.
+    _gn_targets_repository_path = "${target_out_dir}/${target_name}.gn_targets"
+
+    # A file that will contain a mapping from Bazel artifacts to Ninja outputs.
+    _path_mapping = "${target_out_dir}/${target_name}.path_mapping"
+    _rebased_path_mapping = rebase_path(_path_mapping, root_build_dir)
+
+    # A file that will receive the exact Bazel command invoked by the
+    # bazel_action.py script.
+    _bazel_command_file = "${target_out_dir}/${target_name}.bazel_command.sh"
+    _rebased_bazel_command_file =
+        rebase_path(_bazel_command_file, root_build_dir)
+
+    # A file that will receive the explain output from the bazel_action.py script.
+    #
+    # The output is from dependency checker in Bazel build's execution phase to
+    # explain, for each build step, either why it is being executed, or that it is
+    # up-to-date.
+    #
+    # NOTE: This file will only include explain output from the `build` command,
+    # not other commands like `query`.
+    _bazel_explain_file = "${target_out_dir}/${target_name}.bazel_explain.txt"
+    _rebased_bazel_explain_file =
+        rebase_path(_bazel_explain_file, root_build_dir)
+
+    _timings_file = "${target_out_dir}/${target_name}.bazel_action_timings.json"
+    _rebased_timings_file = rebase_path(_timings_file, root_build_dir)
+
+    _debug_symbols_manifest =
+        "${target_out_dir}/${target_name}.debug_symbols.json"
+    _rebased_debug_symbols_manifest =
+        rebase_path(_debug_symbols_manifest, root_build_dir)
+
+    _rust_project_json = "${target_out_dir}/${target_name}.rust-project.json"
+    _rebased_rust_project_json = rebase_path(_rust_project_json, root_build_dir)
+
+    action(target_name) {
+      forward_variables_from(invoker,
+                             [
+                               "deps",
+                               "check_for_output_dir_leaks",
+                               "testonly",
+                               "visibility",
+                             ])
+
+      mnemonic = "BAZEL"
+      script = "//build/bazel/scripts/bazel_action.py"
+
+      inputs = [
+                 "//build/bazel/toplevel.MODULE.bazel",
+                 "//build/bazel/templates/template.platform_mappings",
+                 "//build/bazel/templates/template.bazel.sh.config",
+                 "//build/bazel/templates/template.bazelrc",
+
+                 # Imported by bazel_action.py
+                 "//build/api/debug_symbols.py",
+                 "//build/bazel/scripts/bazel_compdb_utils.py",
+                 "//build/bazel/scripts/bazel_rust_analyzer_utils.py",
+                 "//build/bazel/scripts/build_utils.py",
+                 "//build/bazel/scripts/stdio_redirection.py",
+                 "//build/bazel/scripts/thread_pool_helpers.py",
+                 "//build/bazel/scripts/workspace_utils.py",
+                 "//build/bazel/wrapper.bazel.sh",
+               ] + _bazel_build_files
+
+      if (defined(invoker.inputs)) {
+        inputs += invoker.inputs
+      }
+
+      depfile = "${target_gen_dir}/${target_name}.d"
+
+      outputs = [
+        _path_mapping,
+        _bazel_command_file,
+        _bazel_explain_file,
+        _debug_symbols_manifest,
+        _rust_project_json,
+        _timings_file,
+      ]
+
+      # Write stamp files for every Bazel target executed by this bazel_action.
+      # Note these stamps are written to paths based on Bazel target labels.
+      # This makes sure the same Bazel target is not claimed by multiple
+      # bazel_actions in the same build graph, which breaks Ninja noop checks,
+      # see http://b/353897478. In case it happens, GN will fail complaining about
+      # multiple targets sharing the same output.
+      _dedupe_stamps = []
+      foreach(_bazel_target, _bazel_targets) {
+        _out_dir = get_label_info(_bazel_target, "target_out_dir")
+        _bazel_label = get_label_info(_bazel_target, "name")
+
+        _dedupe_suffix = "${current_os}_${current_cpu}"
+        if (_build_for_host) {
+          _dedupe_suffix = "${host_os}_${host_cpu}"
+        }
+        if (defined(invoker.bazel_platform)) {
+          _dedupe_suffix = invoker.bazel_platform
+        }
+
+        _dedupe_stamps += [ "${_out_dir}/${_bazel_label}.${_dedupe_suffix}.bazel_target_can_only_be_referenced_by_one_bazel_action" ]
+      }
+      outputs += _dedupe_stamps
+
+      args = [
+               "--build-dir",
+               rebase_path(root_build_dir, root_build_dir),
+               "--fuchsia-dir",
+               rebase_path("//", root_build_dir),
+               "--command",
+               invoker.command,
+               "--gn-target-label",
+               get_label_info(":$target_name", "label_no_toolchain"),
+               "--gn-targets-repository-dir",
+               rebase_path(_gn_targets_repository_path, root_build_dir),
+               "--bazel-platform-label",
+               _bazel_platform_label,
+               "--bazel-targets",
+             ] + _bazel_targets +
+             [
+               "--depfile",
+               rebase_path(depfile, root_build_dir),
+               "--command-file",
+               _rebased_bazel_command_file,
+               "--timings-file",
+               _rebased_timings_file,
+               "--explain-file",
+               _rebased_bazel_explain_file,
+               "--path-mapping",
+               _rebased_path_mapping,
+               "--debug-symbols-manifest",
+               _rebased_debug_symbols_manifest,
+               "--rust-sysroot",
+               rebased_rustc_prefix,
+               "--rust-project-json",
+               _rebased_rust_project_json,
+               "--stamp-files",
+             ]
+      foreach(s, _dedupe_stamps) {
+        args += [ rebase_path(s, root_build_dir) ]
+      }
+      if (bazel_verbose_failures) {
+        args += [ "--verbose_failures" ]
+      }
+
+      if (bazel_auto_refresh_compdb) {
+        _compdb_file =
+            "${target_out_dir}/${target_name}.bazel_compile_commands.json"
+        _rebased_compdb_file = rebase_path(_compdb_file, root_build_dir)
+        outputs += [ _compdb_file ]
+        args += [
+          "--compdb-file",
+          _rebased_compdb_file,
+        ]
+      }
+
+      # Set the expected outputs
+      foreach(output, _all_outputs) {
+        if (output.type == "file") {
+          outputs += [ output.ninja_file ]
+        } else if (output.type == "directory") {
+          foreach(tracked_file, output.tracked_files) {
+            outputs += [ "${output.ninja_dir}/${tracked_file}" ]
+          }
+        } else if (output.type == "package") {
+          outputs += [ output.ninja_archive ]
+        } else if (output.type == "final_symlink") {
+          outputs += [ output.ninja_file ]
+        }
+      }
+
+      if (_has_package_outputs) {
+        # These starlark script are used to perform queries to get provider values
+        # for each package.
+        inputs += [ "//build/bazel/starlark/FuchsiaPackageInfo_archive.cquery" ]
+      }
+
+      if (invoker.command == "build") {
+        outputs += [ _bazel_build_events_log_json ]
+
+        args += [
+          "--bazel-build-events-log-json",
+          _rebased_bazel_build_events_log_json,
+        ]
+      }
+
+      args += [ "--" ]
+
+      if (bazel_quiet) {
+        args += [ "--config=quiet" ]
+      } else {
+        # Disable INFO lines and printing results, this makes Bazel output much
+        # less chatty when invoked from Ninja. https://fxbug.dev/42077198
+        args += [ "--ui_event_filters=-info" ]
+
+        if (invoker.command != "query") {
+          # The --show_result option is not supported by bazel query.
+          args += [ "--show_result=0" ]
+        }
+      }
+
+      # Set the previously-computed bazel platform configuration args
+      args += [
+        "--config=${_bazel_platform_config}",
+        "--platforms=${_bazel_platform_label}",
+      ]
+
+      # When remote builds are enabled, append the right build arguments.
+      # These must appear on the Bazel command-line otherwise remote builds
+      # will fail on infra (the reason being that the Bazel wrapper script
+      # detects these options to add infra-specific proxy configuration
+      # the the final command-line).
+      if (enable_bazel_remote_rbe) {
+        _remote_build = !defined(invoker.remote_build) || invoker.remote_build
+        if (_remote_build) {
+          # It is assumed that remote builds are enabled for both the default
+          # and host GN toolchains at the same time.
+          args += bazel_args.remote_build
+        }
+      } else {
+        # Remote builds are globally disabled, so ignore this value if it exists.
+        not_needed(invoker, [ "remote_build" ])
+      }
+
+      # Similarly, this config must appear on the command-line and cannot
+      # be part of --config=host or --config=fuchsia.
+      if (bazel_upload_build_events != "") {
+        args += [ "--config=$bazel_upload_build_events" ]
+      }
+
+      # --config=quiet is always used by default, but it is possible
+      # to disable that by setting filter_bazel_info_logs to false.
+      _filter_bazel_info_logs = true
+      if (defined(invoker.filter_bazel_info_logs)) {
+        _filter_bazel_info_logs = invoker.filter_bazel_info_logs
+      }
+      if (!_filter_bazel_info_logs) {
+        args += [ "--config=verbose" ]
+      }
+
+      metadata = {
+        if (defined(invoker.metadata)) {
+          forward_variables_from(invoker.metadata, "*")
+        }
+
+        # Hint to ninja that this action can take about a minute, so that it's
+        # appropriately weighted in the calculation of the critical path for a
+        # build.
+        ninja_edge_weights =
+            [ rebase_path(outputs[0], root_build_dir) + ",60000" ]
+
+        if (invoker.command == "build") {
+          # Used by //:bazel_build_events_logs Build API module.
+          bazel_build_events_log = [
+            {
+              gn_label = get_label_info(":$target_name", "label_no_toolchain")
+              build_events_log = _rebased_bazel_build_events_log_json
+              format = "json"
+            },
+          ]
+
+          # Used by //:bazel_build_actions target.
+          bazel_build_actions_barrier = []
+          bazel_build_actions = [
+            # LINT.IfChange(bazel_build_actions)
+            {
+              gn_target = get_label_info(":$target_name", "label_no_toolchain")
+              bazel_targets = _bazel_targets
+              no_sdk = _no_sdk
+              gn_targets_dir =
+                  rebase_path(_gn_targets_repository_path, root_build_dir)
+              gn_targets_manifest =
+                  rebase_path(_gn_targets_repository_manifest, root_build_dir)
+              gn_targets_licenses_spdx =
+                  rebase_path(_all_licenses_spdx_file, root_build_dir)
+              debug_symbols_manifest = _rebased_debug_symbols_manifest
+              bazel_command_file = _rebased_bazel_command_file
+              bazel_explain_file = _rebased_bazel_explain_file
+              path_mapping = _rebased_path_mapping
+              timings_file = _rebased_timings_file
+              build_events_log_json = _rebased_bazel_build_events_log_json
+              bazel_rust_project_json = _rebased_rust_project_json
+
+              if (bazel_auto_refresh_compdb) {
+                bazel_compdb_file = _rebased_compdb_file
+              }
+            },
+            # LINT.ThenChange(//BUILD.gn:bazel_build_actions)
+          ]
+
+          # Used by //:debug_symbols
+          debug_symbol_manifests = [
+            {
+              label = get_label_info(":$target_name", "label_no_toolchain")
+              manifest = _rebased_debug_symbols_manifest
+            },
+          ]
+        }
+
+        # Used by //:bazel_target_infos target.
+        bazel_target_infos_barrier = []
+        bazel_target_infos = []
+        foreach(entry, _all_outputs) {
+          # LINT.IfChange(bazel_target_infos)
+          bazel_target_infos += [
+            {
+              forward_variables_from(entry,
+                                     "*",
+                                     [
+                                       "ninja_file",
+                                       "ninja_archive",
+                                       "ninja_dir",
+                                     ])
+
+              # To differentiate different bazel invocations' outputs.
+              bazel_platform_config = _bazel_platform_config
+              bazel_platform_label = _bazel_platform_label
+
+              # These all need to be rebased from GN paths to outdir-relative paths
+              if (defined(entry.ninja_file)) {
+                ninja_file = rebase_path(entry.ninja_file, root_build_dir)
+              }
+              if (defined(entry.ninja_archive)) {
+                ninja_archive = rebase_path(entry.ninja_archive, root_build_dir)
+              }
+              if (defined(entry.ninja_dir)) {
+                ninja_dir = rebase_path(entry.ninja_dir, root_build_dir)
+              }
+            },
+          ]
+          # LINT.ThenChange(//BUILD.gn:bazel_target_infos, //build/bazel/scripts/bazel_build_action_utils.py:bazel_target_infos)
+        }
+      }
+
+      if (defined(invoker.extra_bazel_args)) {
+        args += invoker.extra_bazel_args
+      }
+
       if (!defined(deps)) {
         deps = []
       }
-      deps += invoker.bazel_inputs
-    }
-    visibility = [ ":*" ]
-  }
-
-  # Generate a manifest file that references all transitive bazel_input_file()
-  # and bazel_input_directory() dependencies from 'deps' or 'bazel_inputs'.
-  #
-  # These are passed to bazel_action.py to populate the @gn_targets external
-  # repository with symlinks and filegroups().
-  #
-  _gn_targets_repository_manifest =
-      "$target_out_dir/${target_name}.gn_targets_manifest.json"
-  _gn_targets_repository_manifest_target = "${target_name}.gn_targets"
-  generate_gn_targets_repository_manifest(
-      _gn_targets_repository_manifest_target) {
-    forward_variables_from(invoker, [ "testonly" ])
-    output = _gn_targets_repository_manifest
-    deps = [ ":${_bazel_inputs_group_target}" ]
-  }
-
-  # Generate an SPDX file that contains license information for all
-  # dependencies of this bazel_action() GN target, this will be exposed
-  # through the special @gn_targets//all_licenses_spdx_json, which should
-  # be used in product-specific build rules instead of
-  # @legacy_ninja_build_outputs//:all_bazel_inputs_licenses_spdx_json
-
-  _all_licenses_spdx_target = "${target_name}.all_licenses_spdx"
-  _all_licenses_spdx_file =
-      "$target_out_dir/${target_name}.all_licenses.spdx.json"
-
-  generated_licenses_spdx(_all_licenses_spdx_target) {
-    forward_variables_from(invoker, [ "testonly" ])
-    target = ":${_bazel_inputs_group_target}"
-    output = _all_licenses_spdx_file
-    spdx_root_package_name = "Fuchsia"
-    debug_hints = true
-
-    include_host_tools = defined(invoker.include_host_tools_licenses) &&
-                         invoker.include_host_tools_licenses
-
-    ignore_collection_errors =
-        defined(invoker.ignore_license_collection_errors) &&
-        invoker.ignore_license_collection_errors
-
-    visibility = [ ":*" ]
-  }
-
-  # Location of the @gn_targets repository for this Bazel invocation.
-  # This points to a directory that is generated by //build/regenerator
-  # before the build, to allow for Bazel queries to be performed as soon as
-  # possible.
-  _gn_targets_repository_path = "${target_out_dir}/${target_name}.gn_targets"
-
-  # A file that will contain a mapping from Bazel artifacts to Ninja outputs.
-  _path_mapping = "${target_out_dir}/${target_name}.path_mapping"
-  _rebased_path_mapping = rebase_path(_path_mapping, root_build_dir)
-
-  # A file that will receive the exact Bazel command invoked by the
-  # bazel_action.py script.
-  _bazel_command_file = "${target_out_dir}/${target_name}.bazel_command.sh"
-  _rebased_bazel_command_file = rebase_path(_bazel_command_file, root_build_dir)
-
-  # A file that will receive the explain output from the bazel_action.py script.
-  #
-  # The output is from dependency checker in Bazel build's execution phase to
-  # explain, for each build step, either why it is being executed, or that it is
-  # up-to-date.
-  #
-  # NOTE: This file will only include explain output from the `build` command,
-  # not other commands like `query`.
-  _bazel_explain_file = "${target_out_dir}/${target_name}.bazel_explain.txt"
-  _rebased_bazel_explain_file = rebase_path(_bazel_explain_file, root_build_dir)
-
-  _timings_file = "${target_out_dir}/${target_name}.bazel_action_timings.json"
-  _rebased_timings_file = rebase_path(_timings_file, root_build_dir)
-
-  _debug_symbols_manifest =
-      "${target_out_dir}/${target_name}.debug_symbols.json"
-  _rebased_debug_symbols_manifest =
-      rebase_path(_debug_symbols_manifest, root_build_dir)
-
-  _rust_project_json = "${target_out_dir}/${target_name}.rust-project.json"
-  _rebased_rust_project_json = rebase_path(_rust_project_json, root_build_dir)
-
-  action(target_name) {
-    forward_variables_from(invoker,
-                           [
-                             "deps",
-                             "check_for_output_dir_leaks",
-                             "testonly",
-                             "visibility",
-                           ])
-
-    mnemonic = "BAZEL"
-    script = "//build/bazel/scripts/bazel_action.py"
-
-    inputs = [
-               "//build/bazel/toplevel.MODULE.bazel",
-               "//build/bazel/templates/template.platform_mappings",
-               "//build/bazel/templates/template.bazel.sh.config",
-               "//build/bazel/templates/template.bazelrc",
-
-               # Imported by bazel_action.py
-               "//build/api/debug_symbols.py",
-               "//build/bazel/scripts/bazel_compdb_utils.py",
-               "//build/bazel/scripts/bazel_rust_analyzer_utils.py",
-               "//build/bazel/scripts/build_utils.py",
-               "//build/bazel/scripts/stdio_redirection.py",
-               "//build/bazel/scripts/thread_pool_helpers.py",
-               "//build/bazel/scripts/workspace_utils.py",
-               "//build/bazel/wrapper.bazel.sh",
-             ] + _bazel_build_files
-
-    if (defined(invoker.inputs)) {
-      inputs += invoker.inputs
-    }
-
-    depfile = "${target_gen_dir}/${target_name}.d"
-
-    outputs = [
-      _path_mapping,
-      _bazel_command_file,
-      _bazel_explain_file,
-      _debug_symbols_manifest,
-      _rust_project_json,
-      _timings_file,
-    ]
-
-    # Write stamp files for every Bazel target executed by this bazel_action.
-    # Note these stamps are written to paths based on Bazel target labels.
-    # This makes sure the same Bazel target is not claimed by multiple
-    # bazel_actions in the same build graph, which breaks Ninja noop checks,
-    # see http://b/353897478. In case it happens, GN will fail complaining about
-    # multiple targets sharing the same output.
-    _dedupe_stamps = []
-    foreach(_bazel_target, _bazel_targets) {
-      _out_dir = get_label_info(_bazel_target, "target_out_dir")
-      _bazel_label = get_label_info(_bazel_target, "name")
-
-      _dedupe_suffix = "${current_os}_${current_cpu}"
-      if (_build_for_host) {
-        _dedupe_suffix = "${host_os}_${host_cpu}"
-      }
-      if (defined(invoker.bazel_platform)) {
-        _dedupe_suffix = invoker.bazel_platform
-      }
-
-      _dedupe_stamps += [ "${_out_dir}/${_bazel_label}.${_dedupe_suffix}.bazel_target_can_only_be_referenced_by_one_bazel_action" ]
-    }
-    outputs += _dedupe_stamps
-
-    args = [
-             "--build-dir",
-             rebase_path(root_build_dir, root_build_dir),
-             "--fuchsia-dir",
-             rebase_path("//", root_build_dir),
-             "--command",
-             invoker.command,
-             "--gn-target-label",
-             get_label_info(":$target_name", "label_no_toolchain"),
-             "--gn-targets-repository-dir",
-             rebase_path(_gn_targets_repository_path, root_build_dir),
-             "--bazel-platform-label",
-             _bazel_platform_label,
-             "--bazel-targets",
-           ] + _bazel_targets +
-           [
-             "--depfile",
-             rebase_path(depfile, root_build_dir),
-             "--command-file",
-             _rebased_bazel_command_file,
-             "--timings-file",
-             _rebased_timings_file,
-             "--explain-file",
-             _rebased_bazel_explain_file,
-             "--path-mapping",
-             _rebased_path_mapping,
-             "--debug-symbols-manifest",
-             _rebased_debug_symbols_manifest,
-             "--rust-sysroot",
-             rebased_rustc_prefix,
-             "--rust-project-json",
-             _rebased_rust_project_json,
-             "--stamp-files",
-           ]
-    foreach(s, _dedupe_stamps) {
-      args += [ rebase_path(s, root_build_dir) ]
-    }
-    if (bazel_verbose_failures) {
-      args += [ "--verbose_failures" ]
-    }
-
-    if (bazel_auto_refresh_compdb) {
-      _compdb_file =
-          "${target_out_dir}/${target_name}.bazel_compile_commands.json"
-      _rebased_compdb_file = rebase_path(_compdb_file, root_build_dir)
-      outputs += [ _compdb_file ]
-      args += [
-        "--compdb-file",
-        _rebased_compdb_file,
-      ]
-    }
-
-    # Set the expected outputs
-    foreach(output, _all_outputs) {
-      if (output.type == "file") {
-        outputs += [ output.ninja_file ]
-      } else if (output.type == "directory") {
-        foreach(tracked_file, output.tracked_files) {
-          outputs += [ "${output.ninja_dir}/${tracked_file}" ]
-        }
-      } else if (output.type == "package") {
-        outputs += [ output.ninja_archive ]
-      } else if (output.type == "final_symlink") {
-        outputs += [ output.ninja_file ]
-      }
-    }
-
-    if (_has_package_outputs) {
-      # These starlark script are used to perform queries to get provider values
-      # for each package.
-      inputs += [ "//build/bazel/starlark/FuchsiaPackageInfo_archive.cquery" ]
-    }
-
-    if (invoker.command == "build") {
-      outputs += [ _bazel_build_events_log_json ]
-
-      args += [
-        "--bazel-build-events-log-json",
-        _rebased_bazel_build_events_log_json,
-      ]
-    }
-
-    args += [ "--" ]
-
-    if (bazel_quiet) {
-      args += [ "--config=quiet" ]
-    } else {
-      # Disable INFO lines and printing results, this makes Bazel output much
-      # less chatty when invoked from Ninja. https://fxbug.dev/42077198
-      args += [ "--ui_event_filters=-info" ]
-
-      if (invoker.command != "query") {
-        # The --show_result option is not supported by bazel query.
-        args += [ "--show_result=0" ]
-      }
-    }
-
-    # Set the previously-computed bazel platform configuration args
-    args += [
-      "--config=${_bazel_platform_config}",
-      "--platforms=${_bazel_platform_label}",
-    ]
-
-    # When remote builds are enabled, append the right build arguments.
-    # These must appear on the Bazel command-line otherwise remote builds
-    # will fail on infra (the reason being that the Bazel wrapper script
-    # detects these options to add infra-specific proxy configuration
-    # the the final command-line).
-    if (enable_bazel_remote_rbe) {
-      _remote_build = !defined(invoker.remote_build) || invoker.remote_build
-      if (_remote_build) {
-        # It is assumed that remote builds are enabled for both the default
-        # and host GN toolchains at the same time.
-        args += bazel_args.remote_build
-      }
-    } else {
-      # Remote builds are globally disabled, so ignore this value if it exists.
-      not_needed(invoker, [ "remote_build" ])
-    }
-
-    # Similarly, this config must appear on the command-line and cannot
-    # be part of --config=host or --config=fuchsia.
-    if (bazel_upload_build_events != "") {
-      args += [ "--config=$bazel_upload_build_events" ]
-    }
-
-    # --config=quiet is always used by default, but it is possible
-    # to disable that by setting filter_bazel_info_logs to false.
-    _filter_bazel_info_logs = true
-    if (defined(invoker.filter_bazel_info_logs)) {
-      _filter_bazel_info_logs = invoker.filter_bazel_info_logs
-    }
-    if (!_filter_bazel_info_logs) {
-      args += [ "--config=verbose" ]
-    }
-
-    metadata = {
-      if (defined(invoker.metadata)) {
-        forward_variables_from(invoker.metadata, "*")
-      }
-
-      # Hint to ninja that this action can take about a minute, so that it's
-      # appropriately weighted in the calculation of the critical path for a
-      # build.
-      ninja_edge_weights =
-          [ rebase_path(outputs[0], root_build_dir) + ",60000" ]
-
-      if (invoker.command == "build") {
-        # Used by //:bazel_build_events_logs Build API module.
-        bazel_build_events_log = [
-          {
-            gn_label = get_label_info(":$target_name", "label_no_toolchain")
-            build_events_log = _rebased_bazel_build_events_log_json
-            format = "json"
-          },
-        ]
-
-        # Used by //:bazel_build_actions target.
-        bazel_build_actions_barrier = []
-        bazel_build_actions = [
-          # LINT.IfChange(bazel_build_actions)
-          {
-            gn_target = get_label_info(":$target_name", "label_no_toolchain")
-            bazel_targets = _bazel_targets
-            no_sdk = _no_sdk
-            gn_targets_dir =
-                rebase_path(_gn_targets_repository_path, root_build_dir)
-            gn_targets_manifest =
-                rebase_path(_gn_targets_repository_manifest, root_build_dir)
-            gn_targets_licenses_spdx =
-                rebase_path(_all_licenses_spdx_file, root_build_dir)
-            debug_symbols_manifest = _rebased_debug_symbols_manifest
-            bazel_command_file = _rebased_bazel_command_file
-            bazel_explain_file = _rebased_bazel_explain_file
-            path_mapping = _rebased_path_mapping
-            timings_file = _rebased_timings_file
-            build_events_log_json = _rebased_bazel_build_events_log_json
-            bazel_rust_project_json = _rebased_rust_project_json
-
-            if (bazel_auto_refresh_compdb) {
-              bazel_compdb_file = _rebased_compdb_file
-            }
-          },
-          # LINT.ThenChange(//BUILD.gn:bazel_build_actions)
-        ]
-
-        # Used by //:debug_symbols
-        debug_symbol_manifests = [
-          {
-            label = get_label_info(":$target_name", "label_no_toolchain")
-            manifest = _rebased_debug_symbols_manifest
-          },
-        ]
-      }
-
-      # Used by //:bazel_target_infos target.
-      bazel_target_infos_barrier = []
-      bazel_target_infos = []
-      foreach(entry, _all_outputs) {
-        # LINT.IfChange(bazel_target_infos)
-        bazel_target_infos += [
-          {
-            forward_variables_from(entry,
-                                   "*",
-                                   [
-                                     "ninja_file",
-                                     "ninja_archive",
-                                     "ninja_dir",
-                                   ])
-
-            # To differentiate different bazel invocations' outputs.
-            bazel_platform_config = _bazel_platform_config
-            bazel_platform_label = _bazel_platform_label
-
-            # These all need to be rebased from GN paths to outdir-relative paths
-            if (defined(entry.ninja_file)) {
-              ninja_file = rebase_path(entry.ninja_file, root_build_dir)
-            }
-            if (defined(entry.ninja_archive)) {
-              ninja_archive = rebase_path(entry.ninja_archive, root_build_dir)
-            }
-            if (defined(entry.ninja_dir)) {
-              ninja_dir = rebase_path(entry.ninja_dir, root_build_dir)
-            }
-          },
-        ]
-        # LINT.ThenChange(//BUILD.gn:bazel_target_infos, //build/bazel/scripts/bazel_build_action_utils.py:bazel_target_infos)
-      }
-    }
-
-    if (defined(invoker.extra_bazel_args)) {
-      args += invoker.extra_bazel_args
-    }
-
-    if (!defined(deps)) {
-      deps = []
-    }
-    deps += [
-      # This dependency exists to ensure that this manifest is generated
-      # at `gn gen` time
-      ":${_gn_targets_repository_manifest_target}",
-
-      # This dependency exists to ensure the SPDX file is updated if needed.
-      # //build/regenerator will write a placeholder file at the same location
-      # with a timestamp in the distant past, as this is needed to perform
-      # Bazel queries before calling Ninja. However, building Bazel targets
-      # require a valid license file.
-      ":${_all_licenses_spdx_target}",
-
-      # In addition to checking whether the action is allowed, this dependency
-      # ensures that the template is being used on the default toolchain.
-      "//build/bazel:bazel_action_allowlist",
-    ]
-
-    if (!_no_sdk) {
       deps += [
-        # TODO(https://fxbug.dev/333907192): Remove this IDK.
-        "//build/bazel:fuchsia_internal_only_idk.hash",
+        # This dependency exists to ensure that this manifest is generated
+        # at `gn gen` time
+        ":${_gn_targets_repository_manifest_target}",
 
-        # The IDK repository is generated by regenerator.py but contains
-        # symlinks to Ninja artifact locations. Ensure the ninja artifacts
-        # exist.
-        "//sdk:ensure_bazel_in_tree_idk_is_populated_for_bazel_action",
+        # This dependency exists to ensure the SPDX file is updated if needed.
+        # //build/regenerator will write a placeholder file at the same location
+        # with a timestamp in the distant past, as this is needed to perform
+        # Bazel queries before calling Ninja. However, building Bazel targets
+        # require a valid license file.
+        ":${_all_licenses_spdx_target}",
+
+        # In addition to checking whether the action is allowed, this dependency
+        # ensures that the template is being used on the default toolchain.
+        "//build/bazel:bazel_action_allowlist",
       ]
+
+      if (!_no_sdk) {
+        deps += [
+          # TODO(https://fxbug.dev/333907192): Remove this IDK.
+          "//build/bazel:fuchsia_internal_only_idk.hash",
+
+          # The IDK repository is generated by regenerator.py but contains
+          # symlinks to Ninja artifact locations. Ensure the ninja artifacts
+          # exist.
+          "//sdk:ensure_bazel_in_tree_idk_is_populated_for_bazel_action",
+        ]
+      }
+
+      # Using the console pool prevents concurrent bazel build actions to run
+      # (otherwise the `bazel-bin` symlink target would become unpredictable
+      # resulting in erroneous outputs or errors), as well as allow Bazel to
+      # print its progress on smart terminals when `fx build` is invoked
+      # from one, which is handy to follow long-lasting commands.
+      pool = "//:console($default_toolchain)"
+
+      # This action definitely cannot be hermetic. Callers should add
+      # themselves to the //build:non_hermetic_deps visibility list.
+      hermetic_deps = false
+
+      # The build events log contains absolute paths written by Bazel!
+      check_for_output_dir_leaks = false
     }
-
-    # Using the console pool prevents concurrent bazel build actions to run
-    # (otherwise the `bazel-bin` symlink target would become unpredictable
-    # resulting in erroneous outputs or errors), as well as allow Bazel to
-    # print its progress on smart terminals when `fx build` is invoked
-    # from one, which is handy to follow long-lasting commands.
-    pool = "//:console($default_toolchain)"
-
-    # This action definitely cannot be hermetic. Callers should add
-    # themselves to the //build:non_hermetic_deps visibility list.
-    hermetic_deps = false
-
-    # The build events log contains absolute paths written by Bazel!
-    check_for_output_dir_leaks = false
+  } else {
+    not_needed(invoker, "*")
+    not_needed([ "target_name" ])
   }
 }
