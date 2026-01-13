@@ -1083,118 +1083,6 @@ def list_to_pairs(l: T.Iterable[T.Any]) -> T.Iterable[tuple[T.Any, T.Any]]:
             is_first = True
 
 
-class FileOutputsAction(argparse.Action):
-    """ArgumentParser action class to convert --file-outputs arguments into FileOutputs instances."""
-
-    def __init__(  # type: ignore
-        self, option_strings, dest, nargs=None, default=None, **kwargs
-    ):
-        if nargs is not None:
-            raise ValueError("nargs not allowed")
-        if default is not None:
-            raise ValueError("default not allowed")
-        super().__init__(option_strings, dest, nargs="+", default=[], **kwargs)
-
-    def __call__(self, parser, namespace, values: list[T.Any], option_string):  # type: ignore
-        if len(values) < 2:
-            raise ValueError(
-                f"expected at least 2 arguments for {option_string}"
-            )
-        if len(values) & 1 != 0:
-            raise ValueError(
-                f"expected an even number of arguments for {option_string}"
-            )
-        dest_list = getattr(namespace, self.dest, [])
-        dest_list.extend(
-            [
-                FileOutput(bazel_path, ninja_path)
-                for bazel_path, ninja_path in list_to_pairs(values)
-            ]
-        )
-        setattr(namespace, self.dest, dest_list)
-
-
-class DirectoryOutputsAction(argparse.Action):
-    """ArgumentParser action class to convert --directory-outputs arguments into DirectoryOutputs instances."""
-
-    def __init__(  # type: ignore
-        self, option_strings, dest, nargs=None, default=None, **kwargs
-    ):
-        if nargs is not None:
-            raise ValueError("nargs not allowed")
-        if default is not None:
-            raise ValueError("default not allowed")
-        super().__init__(option_strings, dest, nargs="+", default=[], **kwargs)
-
-    def __call__(self, parser, namespace, values: list[T.Any], option_string):  # type: ignore
-        if len(values) < 3:
-            raise ValueError(
-                f"expected at least 3 arguments for {option_string}"
-            )
-        dest_list = getattr(namespace, self.dest, [])
-        bazel_path = values[0]
-        ninja_path = values[1]
-        copy_debug_symbols = bool(values[2] == "true")
-        tracked_files = values[3:]
-        dest_list.append(
-            DirectoryOutput(
-                bazel_path, ninja_path, tracked_files, copy_debug_symbols
-            )
-        )
-        setattr(namespace, self.dest, dest_list)
-
-
-class FinalSymlinkOutputsAction(argparse.Action):
-    """ArgumentParser action class to convert --final-symlink-outputs arguments into a FinalSymlinkOutputs instances."""
-
-    def __init__(  # type: ignore
-        self, option_strings, dest, nargs=None, default=None, **kwargs
-    ):
-        if nargs is not None:
-            raise ValueError("nargs not allowed")
-        if default is not None:
-            raise ValueError("default not allowed")
-        super().__init__(option_strings, dest, nargs="+", default=[], **kwargs)
-
-    def __call__(self, parser, namespace, values: list[T.Any], option_string):  # type: ignore
-        if len(values) != 2:
-            raise ValueError(f"expected 2 arguments for {option_string}")
-        dest_list = getattr(namespace, self.dest, [])
-        bazel_path = values[0]
-        ninja_path = values[1]
-        dest_list.append(FinalSymlinkOutput(bazel_path, ninja_path))
-        setattr(namespace, self.dest, dest_list)
-
-
-class PackageOutputsAction(argparse.Action):
-    """ArgumentParser action class to convert --package-outputs arguments into PackageOutputs instances."""
-
-    def __init__(  # type: ignore
-        self, option_strings, dest, nargs=None, default=None, **kwargs
-    ):
-        if nargs is not None:
-            raise ValueError("nargs not allowed")
-        if default is not None:
-            raise ValueError("default not allowed")
-        super().__init__(option_strings, dest, nargs=4, default=[], **kwargs)
-
-    def __call__(self, parser, namespace, values: list[T.Any], option_string):  # type: ignore
-        assert len(values) == 4
-        if not values[0]:
-            raise ValueError("expected non-empty Bazel package label.")
-        dest_list = getattr(namespace, self.dest, [])
-        package_label = values[0]
-        archive_path = values[1] if values[1] != "NONE" else None
-        manifest_path = values[2] if values[2] != "NONE" else None
-        copy_debug_symbols = bool(values[3] == "true")
-        dest_list.append(
-            PackageOutput(
-                package_label, archive_path, manifest_path, copy_debug_symbols
-            )
-        )
-        setattr(namespace, self.dest, dest_list)
-
-
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument(
@@ -1240,27 +1128,6 @@ def main() -> int:
         nargs="*",
         help="list of stamp files to touch.",
     )
-    parser.add_argument(
-        "--file-outputs",
-        action=FileOutputsAction,
-        help="A list of (bazel_path, ninja_path) file bazel_paths.",
-    )
-    parser.add_argument(
-        "--directory-outputs",
-        action=DirectoryOutputsAction,
-        help="4 or more arguments to specify a single Bazel output directory. Begins with (bazel_path, ninja_path, copy_debug_symbols) values, followed by one or more tracked relative file",
-    )
-    parser.add_argument(
-        "--package-outputs",
-        action=PackageOutputsAction,
-        help="A tuple of four values describing Fuchsia package related outputs. Fields are Bazel package target label, archive output path or 'NONE', manifest output path or 'NONE', and copy debug symbols flag as either 'true' or 'false' string",
-    )
-    parser.add_argument(
-        "--final-symlink-outputs",
-        action=FinalSymlinkOutputsAction,
-        help="A (bazel_path, ninja_path) pair to specify a single final symlink to a Bazel artifact.",
-    )
-
     parser.add_argument(
         "--bazel-build-events-log-json",
         type=Path,
@@ -1329,99 +1196,30 @@ def main() -> int:
                 f"Wildcards are not allowed in --bazel-targets:  {target}"
             )
 
-    # Validate that we have the right outputs from the bazel_target_infos.json manifest
+    # Get the outputs for each bazel target that need to be copied out of the bazel outdir
     bazel_target_infos = BazelTargetInfosMap.create_from_build_dir(
         args.build_dir
     )
 
-    target_infos_file_outputs: list[FileOutput] = []
-    target_infos_directory_outputs: list[DirectoryOutput] = []
-    target_infos_package_outputs: list[PackageOutput] = []
-    target_infos_final_symlinks: list[FinalSymlinkOutput] = []
+    # Merge all the expected outputs together
+    file_outputs: list[FileOutput] = []
+    directory_outputs: list[DirectoryOutput] = []
+    package_outputs: list[PackageOutput] = []
+    final_symlink_outputs: list[FinalSymlinkOutput] = []
 
     for target in args.bazel_targets:
         target_info = bazel_target_infos.get_info(
             target, args.bazel_platform_label
         )
         if target_info:
-            target_infos_file_outputs.extend(target_info.copy_outputs)
-            target_infos_directory_outputs.extend(target_info.directory_outputs)
-            target_infos_package_outputs.extend(target_info.package_outputs)
-            target_infos_final_symlinks.extend(
-                target_info.final_symlink_outputs
-            )
+            file_outputs.extend(target_info.copy_outputs)
+            directory_outputs.extend(target_info.directory_outputs)
+            package_outputs.extend(target_info.package_outputs)
+            final_symlink_outputs.extend(target_info.final_symlink_outputs)
         else:
             return parser.error(
                 f"Bazel target not found in bazel_target_infos.json: {target}  keys: {bazel_target_infos._targets.keys()}"
             )
-
-    if args.file_outputs != target_infos_file_outputs:
-        arg_paths = "\n".join(
-            [
-                f"{e.bazel_path} -> {e.ninja_path}"
-                for e in sorted(args.file_outputs)
-            ]
-        )
-        info_paths = "\n".join(
-            [
-                f"{e.bazel_path} -> {e.ninja_path}"
-                for e in sorted(target_infos_file_outputs)
-            ]
-        )
-
-        return parser.error(
-            f"Mismatch in file outputs:  passed: \n{arg_paths}\n  vs. manifest: \n{info_paths}\n\n"
-        )
-
-    if target_infos_directory_outputs != args.directory_outputs:
-        arg_paths = "\n".join(
-            [
-                f"{e.bazel_path} -> {e.ninja_path}"
-                for e in sorted(args.directory_outputs)
-            ]
-        )
-        info_paths = "\n".join(
-            [
-                f"{e.bazel_path} -> {e.ninja_path}"
-                for e in sorted(target_infos_directory_outputs)
-            ]
-        )
-
-        return parser.error(
-            f"Mismatch in file outputs:  passed: \n{arg_paths}\n  vs. manifest: \n{info_paths}\n\n"
-        )
-
-    if args.package_outputs != target_infos_package_outputs:
-        arg_paths = "\n".join(
-            [f"{e.archive_path}" for e in sorted(args.package_outputs)]
-        )
-        info_paths = "\n".join(
-            [f"{e.archive_path}" for e in sorted(target_infos_package_outputs)]
-        )
-
-        return parser.error(
-            f"Mismatch in file outputs:  passed: \n{arg_paths}\n  vs. manifest: \n{info_paths}\n\n"
-        )
-
-    if args.final_symlink_outputs != target_infos_final_symlinks:
-        arg_paths = "\n".join(
-            [
-                f"{e.bazel_path} -> {e.ninja_path}"
-                for e in sorted(args.final_symlink_outputs)
-            ]
-        )
-        info_paths = "\n".join(
-            [
-                f"{e.bazel_path} -> {e.ninja_path}"
-                for e in sorted(target_infos_final_symlinks)
-            ]
-        )
-
-        return parser.error(
-            f"Mismatch in file outputs:  passed: \n{arg_paths}\n  vs. manifest: \n{info_paths}\n\n"
-        )
-
-    _build_fuchsia_package = args.command == "build" and args.package_outputs
 
     if args.extra_bazel_args and args.extra_bazel_args[0] != "--":
         return parser.error(
@@ -1479,7 +1277,7 @@ def main() -> int:
 
     extract_debug_symbols = any(
         entry.copy_debug_symbols
-        for entry in args.package_outputs + args.directory_outputs
+        for entry in package_outputs + directory_outputs
     )
 
     bazel_launcher = build_utils.BazelLauncher(
@@ -1804,7 +1602,7 @@ def main() -> int:
     file_copies: list[tuple[Path, Path]] = []
     unwanted_dirs = []
 
-    for file_output in args.file_outputs:
+    for file_output in file_outputs:
         src_path = workspace_dir / file_output.bazel_path
         if src_path.is_dir():
             unwanted_dirs.append(src_path)
@@ -1820,7 +1618,7 @@ def main() -> int:
         return 1
 
     final_symlinks: list[tuple[Path, Path]] = []
-    for final_symlink_output in args.final_symlink_outputs:
+    for final_symlink_output in final_symlink_outputs:
         src_path = workspace_dir / final_symlink_output.bazel_path
         target_path = src_path.resolve()
         link_path = Path(final_symlink_output.ninja_path)
@@ -1828,19 +1626,12 @@ def main() -> int:
 
     bazel_execroot = bazel_paths.execroot
 
-    if _build_fuchsia_package:
+    if args.command == "build" and package_outputs:
         time_profile.start(
             "package_info", "Run cquery to extract Fuchsia package information"
         )
 
-        for entry in args.package_outputs:
-            if not (
-                entry.archive_path
-                or entry.manifest_path
-                or entry.copy_debug_symbols
-            ):
-                continue
-
+        for entry in package_outputs:
             # Run a cquery to extract the FuchsiaPackageInfo and
             # FuchsiaDebugSymbolInfo provider values.
             query_result = run_starlark_cquery(
@@ -1859,15 +1650,7 @@ def main() -> int:
                 file_copies.append(
                     (
                         bazel_execroot / bazel_archive_path,
-                        entry.archive_path,
-                    )
-                )
-
-            if entry.manifest_path:
-                file_copies.append(
-                    (
-                        bazel_execroot / bazel_manifest_path,
-                        entry.manifest_path,
+                        Path(entry.archive_path),
                     )
                 )
 
@@ -1883,7 +1666,7 @@ def main() -> int:
     unwanted_files: list[Path] = []
     invalid_tracked_files: list[Path] = []
 
-    for dir_output in args.directory_outputs:
+    for dir_output in directory_outputs:
         src_path = workspace_dir / dir_output.bazel_path
         if not src_path.exists():
             missing_directories.append(src_path)

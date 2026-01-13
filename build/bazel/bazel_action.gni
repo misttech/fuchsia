@@ -147,9 +147,6 @@ declare_args() {
 #          archive: (required)
 #             output path for the package's archive, relative to `ninja_base_dir`.
 #
-#          manifest: (optional)
-#             output path for the package's manifest file, relative to `ninja_base_dir`.
-#
 #          copy_debug_symbols: (optional)
 #             A boolean flag, set it to true to copy all debug symbols from
 #             the package's ELF binaries to the top-level ${root_build_dir}/.build-id/
@@ -340,10 +337,7 @@ template("bazel_action") {
           _package_outputs != [] || _final_symlink_outputs != [],
       "At least one of `copy_outputs`, `directory_outputs` or `package_outputs` must be a non-empty list!")
 
-  _has_file_outputs = false
-  _has_directory_outputs = false
   _has_package_outputs = false
-  _has_final_symlink_outputs = false
 
   _ninja_base_dir = target_out_dir
   if (defined(invoker.ninja_base_dir)) {
@@ -410,7 +404,6 @@ template("bazel_action") {
         ninja_file = "${_ninja_base_dir}/${entry.ninja}"
       },
     ]
-    _has_file_outputs = true
   }
 
   foreach(entry, _directory_outputs) {
@@ -468,11 +461,11 @@ template("bazel_action") {
         ninja_dir = "${_ninja_base_dir}/${entry.ninja_dir}"
         copy_debug_symbols =
             defined(entry.copy_debug_symbols) && entry.copy_debug_symbols
+        assert(entry.tracked_files != [],
+               "Directory outputs require tracked files.")
         tracked_files = entry.tracked_files
       },
     ]
-
-    _has_directory_outputs = true
   }
 
   foreach(entry, _package_outputs) {
@@ -484,17 +477,11 @@ template("bazel_action") {
     if (defined(entry.archive)) {
       _archive = "${_ninja_base_dir}/${entry.archive}"
     }
-    _manifest = ""
-    if (defined(entry.manifest)) {
-      assert(false, "manifest-only bazel package was found.")
-      _manifest = "${_ninja_base_dir}/${entry.manifest}"
-    }
     _all_outputs += [
       {
         type = "package"
         bazel_target = get_label_info(entry.package_label, "label_no_toolchain")
         ninja_archive = _archive
-        ninja_manifest = _manifest
         copy_debug_symbols =
             defined(entry.copy_debug_symbols) && entry.copy_debug_symbols
       },
@@ -557,7 +544,6 @@ template("bazel_action") {
         ninja_file = "${_ninja_base_dir}/${entry.ninja}"
       },
     ]
-    _has_final_symlink_outputs = true
   }
 
   # Write the log of build events to a target-specific file.
@@ -797,34 +783,18 @@ template("bazel_action") {
       ]
     }
 
-    if (_has_file_outputs) {
-      args += [ "--file-outputs" ]
-      foreach(output, _all_outputs) {
-        if (output.type == "file") {
-          args += [
-            output.bazel_file,
-            rebase_path(output.ninja_file, root_build_dir),
-          ]
-          outputs += [ output.ninja_file ]
+    # Set the expected outputs
+    foreach(output, _all_outputs) {
+      if (output.type == "file") {
+        outputs += [ output.ninja_file ]
+      } else if (output.type == "directory") {
+        foreach(tracked_file, output.tracked_files) {
+          outputs += [ "${output.ninja_dir}/${tracked_file}" ]
         }
-      }
-    }
-
-    if (_has_directory_outputs) {
-      foreach(output, _all_outputs) {
-        if (output.type == "directory") {
-          args += [
-                    "--directory-outputs",
-                    output.bazel_dir,
-                    rebase_path(output.ninja_dir, root_build_dir),
-                    "${output.copy_debug_symbols}",
-                  ] + output.tracked_files
-          assert(output.tracked_files != [],
-                 "Directory outputs require tracked files.")
-          foreach(tracked_file, output.tracked_files) {
-            outputs += [ "${output.ninja_dir}/${tracked_file}" ]
-          }
-        }
+      } else if (output.type == "package") {
+        outputs += [ output.ninja_archive ]
+      } else if (output.type == "final_symlink") {
+        outputs += [ output.ninja_file ]
       }
     }
 
@@ -835,42 +805,6 @@ template("bazel_action") {
         "//build/bazel/starlark/FuchsiaPackageInfo_archive_and_manifest.cquery",
         "//build/bazel/starlark/FuchsiaDebugSymbolInfo_debug_symbol_dirs.cquery",
       ]
-      foreach(output, _all_outputs) {
-        if (output.type == "package") {
-          _archive_arg = "NONE"
-          if (output.ninja_archive != "") {
-            outputs += [ output.ninja_archive ]
-            _archive_arg = rebase_path(output.ninja_archive, root_build_dir)
-          }
-          _manifest_arg = "NONE"
-          if (output.ninja_manifest != "") {
-            outputs += [ output.ninja_manifest ]
-            _manifest_arg = rebase_path(output.ninja_manifest, root_build_dir)
-          }
-          _copy_debug_symbols = output.copy_debug_symbols
-
-          args += [
-            "--package-outputs",
-            output.bazel_target,
-            _archive_arg,
-            _manifest_arg,
-            "${output.copy_debug_symbols}",
-          ]
-        }
-      }
-    }
-
-    if (_has_final_symlink_outputs) {
-      args += [ "--final-symlink-outputs" ]
-      foreach(output, _all_outputs) {
-        if (output.type == "final_symlink") {
-          args += [
-            output.bazel_file,
-            rebase_path(output.ninja_file, root_build_dir),
-          ]
-          outputs += [ output.ninja_file ]
-        }
-      }
     }
 
     if (invoker.command == "build") {

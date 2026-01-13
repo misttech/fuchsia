@@ -35,7 +35,7 @@ class DirectoryOutput:
 
     bazel_path: str
     ninja_path: str
-    tracked_files: set[str] = dataclasses.field(default_factory=set)
+    tracked_files: list[str] = dataclasses.field(default_factory=list)
     copy_debug_symbols: bool = False
 
 
@@ -44,8 +44,7 @@ class PackageOutput:
     """A package created by Bazel that's to be exported back to ninja."""
 
     package_label: str
-    archive_path: T.Optional[str] = None
-    manifest_path: T.Optional[str] = None
+    archive_path: str
     copy_debug_symbols: bool = False
 
 
