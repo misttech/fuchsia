@@ -57,9 +57,9 @@ impl Start for WeakComponentInstance {
         incoming: IncomingCapabilities,
     ) -> Result<(), ActionError> {
         let Ok(component) = self.upgrade() else {
-            return Err(ActionError::StartError {
-                err: StartActionError::InstanceDestroyed { moniker: self.moniker.clone() },
-            });
+            return Err(ActionError::from(StartActionError::InstanceDestroyed {
+                moniker: self.moniker.clone(),
+            }));
         };
         component.ensure_started_etc(reason, execution_controller_task, incoming).await
     }

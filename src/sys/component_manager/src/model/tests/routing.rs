@@ -40,7 +40,7 @@ use {
     cm_rust::*,
     cm_rust_testing::*,
     cm_types::RelativePath,
-    errors::{ActionError, ModelError, ResolveActionError, StartActionError},
+    errors::{ActionErrorKind, ModelError, ResolveActionError, StartActionError},
     fasync::TestExecutor,
     fidl::endpoints::{ProtocolMarker, ServerEnd},
     fidl_fidl_examples_routing_echo as echo, fidl_fuchsia_component as fcomponent,
@@ -1539,12 +1539,12 @@ async fn use_runner_from_environment_not_found() {
     // Bind "b". We expect it to fail because routing failed.
     let err = universe.start_instance(&["b"].try_into().unwrap()).await.unwrap_err();
     let err = match err {
-        ModelError::ActionError {
-            err:
-                ActionError::StartError {
-                    err: StartActionError::ResolveRunnerError { err, moniker, .. },
-                },
-        } if moniker == ["b"].try_into().unwrap() => err,
+        ModelError::ActionError { err } => match err.kind() {
+            ActionErrorKind::StartError {
+                err: StartActionError::ResolveRunnerError { err, moniker, .. },
+            } if *moniker == ["b"].try_into().unwrap() => err.clone(),
+            _ => panic!("Unexpected error trying to start b: {}", err),
+        },
         err => panic!("Unexpected error trying to start b: {}", err),
     };
 
@@ -1962,20 +1962,20 @@ async fn resolver_is_not_available() {
         // Bind "c". We expect to see a failure that the scheme is not registered.
         async move {
             match universe.start_instance(&["c"].try_into().unwrap()).await {
-                Err(ModelError::ActionError {
-                    err:
-                        ActionError::ResolveError {
-                            err:
-                                ResolveActionError::ResolverError {
-                                    url,
-                                    err: ResolverError::SchemeNotRegistered,
-                                },
-                        },
-                }) => {
-                    assert_eq!(url, "base://c");
-                }
-                _ => {
-                    panic!("expected ResolverError");
+                Err(ModelError::ActionError { err }) => match err.kind() {
+                    ActionErrorKind::ResolveError {
+                        err:
+                            ResolveActionError::ResolverError {
+                                url,
+                                err: ResolverError::SchemeNotRegistered,
+                            },
+                    } => {
+                        assert_eq!(*url, "base://c");
+                    }
+                    _ => panic!("expected ResolverError, got {:?}", err),
+                },
+                err => {
+                    panic!("expected ResolverError, got {:?}", err);
                 }
             };
         },
@@ -2065,20 +2065,20 @@ async fn resolver_component_decl_is_validated() {
         // Bind "b". We expect to see a ResolverError.
         async move {
             match universe.start_instance(&["b"].try_into().unwrap()).await {
-                Err(ModelError::ActionError {
-                    err:
-                        ActionError::ResolveError {
-                            err:
-                                ResolveActionError::ResolverError {
-                                    url,
-                                    err: ResolverError::ManifestInvalid(_),
-                                },
-                        },
-                }) => {
-                    assert_eq!(url, "base://b");
-                }
-                _ => {
-                    panic!("expected ResolverError");
+                Err(ModelError::ActionError { err }) => match err.kind() {
+                    ActionErrorKind::ResolveError {
+                        err:
+                            ResolveActionError::ResolverError {
+                                url,
+                                err: ResolverError::ManifestInvalid(_),
+                            },
+                    } => {
+                        assert_eq!(*url, "base://b");
+                    }
+                    _ => panic!("expected ResolverError, got {:?}", err),
+                },
+                err => {
+                    panic!("expected ResolverError, got {:?}", err);
                 }
             };
         },

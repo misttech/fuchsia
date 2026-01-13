@@ -3,15 +3,15 @@
 // found in the LICENSE file.
 
 use crate::model::actions::{Action, ActionKey, ActionsManager, ShutdownAction, ShutdownType};
-use crate::model::component::instance::InstanceState;
 use crate::model::component::ComponentInstance;
+use crate::model::component::instance::InstanceState;
 use ::routing::component_instance::ExtendedInstanceInterface;
 use async_trait::async_trait;
 use errors::{ActionError, DestroyActionError};
-use futures::future::join_all;
 use futures::Future;
+use futures::future::join_all;
 use hooks::EventPayload;
-use std::pin::{pin, Pin};
+use std::pin::{Pin, pin};
 use std::sync::Arc;
 
 /// Destroy this component instance, including all instances nested in its component.
@@ -138,18 +138,18 @@ fn ok_or_first_error(results: Vec<Result<(), ActionError>>) -> Result<(), Action
 pub mod tests {
     use super::*;
     use crate::model::actions::test_utils::{
-        is_child_deleted, is_destroyed, MockAction as TestUtilsMockAction,
+        MockAction as TestUtilsMockAction, is_child_deleted, is_destroyed,
     };
     use crate::model::component::StartReason;
     use crate::model::testing::test_helpers::{
-        component_decl_with_test_runner, execution_is_shut_down, get_incarnation_id, has_child,
-        ActionsTest,
+        ActionsTest, component_decl_with_test_runner, execution_is_shut_down, get_incarnation_id,
+        has_child,
     };
     use crate::model::testing::test_hook::Lifecycle;
     use cm_rust_testing::*;
     use fuchsia_async as fasync;
-    use futures::channel::mpsc;
     use futures::StreamExt;
+    use futures::channel::mpsc;
     use moniker::{ChildName, Moniker};
 
     #[fuchsia::test]
@@ -832,9 +832,9 @@ pub mod tests {
         // Now we can allow the mock destroy action to complete with an error, and wait for our
         // destroy child call to finish.
         destroy_completer
-            .send(Err(ActionError::DestroyError {
-                err: DestroyActionError::InstanceNotFound { moniker: component_d.moniker.clone() },
-            }))
+            .send(Err(ActionError::from(DestroyActionError::InstanceNotFound {
+                moniker: component_d.moniker.clone(),
+            })))
             .unwrap();
         destroy_child_task.await.expect_err("destroy succeeded unexpectedly");
 

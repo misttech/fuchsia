@@ -21,7 +21,7 @@ use async_trait::async_trait;
 use cm_config::AllowlistEntryBuilder;
 use cm_rust::{ComponentDecl, RegistrationSource, RunnerRegistration};
 use cm_rust_testing::*;
-use errors::{ActionError, ModelError, StartActionError};
+use errors::{ActionErrorKind, ModelError, StartActionError};
 use fidl::endpoints::{ProtocolMarker, ServerEnd, create_endpoints};
 use futures::channel::mpsc;
 use futures::future::pending;
@@ -462,8 +462,8 @@ async fn reboot_on_terminate_disallowed() {
         .start_instance(&["system"].try_into().unwrap(), &StartReason::Debug)
         .await;
     let expected_moniker = Moniker::try_from(["system"]).unwrap();
-    assert_matches!(res, Err(ModelError::ActionError {
-        err: ActionError::StartError {
+    assert_matches!(res, Err(ModelError::ActionError { err }) => {
+        assert_matches!(err.kind(), ActionErrorKind::StartError {
             err: StartActionError::RebootOnTerminateForbidden {
                 err: PolicyError::ChildPolicyDisallowed {
                     policy,
@@ -471,8 +471,8 @@ async fn reboot_on_terminate_disallowed() {
                 },
                 moniker: m1
             }
-        }
-    }) if &policy == "reboot_on_terminate" && m1 == expected_moniker && m2 == expected_moniker);
+        } if policy == "reboot_on_terminate" && m1 == &expected_moniker && m2 == &expected_moniker);
+    });
 }
 
 const REBOOT_PROTOCOL: &str = fstatecontrol::AdminMarker::DEBUG_NAME;

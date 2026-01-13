@@ -95,7 +95,7 @@ pub mod tests {
     use crate::model::testing::test_helpers::{ActionsTest, component_decl_with_test_runner};
     use assert_matches::assert_matches;
     use cm_rust_testing::*;
-    use errors::{ActionError, UnresolveActionError};
+    use errors::{ActionErrorKind, UnresolveActionError};
     use hooks::EventType;
     use moniker::Moniker;
     use std::sync::Arc;
@@ -319,7 +319,7 @@ pub mod tests {
         // the collection is stopped. Then it's an error to unresolve a Destroyed component.
         assert_matches!(
             ActionsManager::register(component_a.clone(), UnresolveAction::new()).await,
-            Err(ActionError::UnresolveError {
+            Err(e) if matches!(e.kind(), ActionErrorKind::UnresolveError {
                 err: UnresolveActionError::InstanceDestroyed { .. }
             })
         );

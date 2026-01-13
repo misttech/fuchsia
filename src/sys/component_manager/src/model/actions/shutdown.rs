@@ -139,9 +139,10 @@ impl ShutdownJob {
             .collect();
         process_deps(&self.component_decl, &dynamic_children, &mut self.dependencies);
 
-        let sorted_map = self.dependencies.topological_sort().map_err(|_| {
-            ActionError::ShutdownError { err: ShutdownActionError::CyclesDetected {} }
-        })?;
+        let sorted_map = self
+            .dependencies
+            .topological_sort()
+            .map_err(|_| ActionError::from(ShutdownActionError::CyclesDetected {}))?;
 
         for dependency_node in sorted_map.into_iter() {
             let component = match dependency_node {
@@ -3356,7 +3357,7 @@ mod tests {
             // Now we can allow the mock shutdown action to complete with an error, and wait for
             // our destroy child call to finish.
             shutdown_completer
-                .send(Err(ActionError::StopError { err: StopActionError::GetParentFailed }))
+                .send(Err(ActionError::from(StopActionError::GetParentFailed)))
                 .unwrap();
             a_shutdown_notifier.await.expect_err("shutdown succeeded unexpectedly");
 

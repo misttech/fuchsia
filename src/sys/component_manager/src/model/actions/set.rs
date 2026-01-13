@@ -210,7 +210,7 @@ pub mod tests {
     use crate::model::actions::{DestroyAction, ShutdownAction, ShutdownType};
     use crate::model::testing::test_helpers::ActionsTest;
     use assert_matches::assert_matches;
-    use errors::StopActionError;
+    use errors::{ActionErrorKind, StopActionError};
     use fuchsia_async as fasync;
 
     async fn register_action_in_new_task<A>(
@@ -266,7 +266,7 @@ pub mod tests {
             component.clone(),
             action_set.clone(),
             tx2,
-            Err(ActionError::StopError { err: StopActionError::GetParentFailed }), // Some random error.
+            Err(ActionError::from(StopActionError::GetParentFailed)), // Some random error.
         )
         .await;
         let (tx3, rx3) = oneshot::channel();
@@ -287,7 +287,7 @@ pub mod tests {
         action_set.lock().finish(&ActionKey::Shutdown);
         assert_matches!(
             rx2.await.expect("Unable to receive result of Notification"),
-            Err(ActionError::StopError { err: StopActionError::GetParentFailed })
+            Err(e) if matches!(e.kind(), ActionErrorKind::StopError { err: StopActionError::GetParentFailed })
         );
     }
 }

@@ -392,7 +392,47 @@ pub enum DynamicCapabilityError {
 }
 
 #[derive(Debug, Clone, Error)]
-pub enum ActionError {
+#[error(transparent)]
+pub struct ActionError {
+    kind: Box<ActionErrorKind>,
+}
+
+impl ActionError {
+    pub fn kind(&self) -> &ActionErrorKind {
+        &self.kind
+    }
+}
+
+impl From<ActionErrorKind> for ActionError {
+    fn from(err: ActionErrorKind) -> Self {
+        ActionError { kind: Box::new(err) }
+    }
+}
+
+macro_rules! impl_from_action_error_kind {
+    ($($ty:ty,)+) => {
+        $(
+            impl From<$ty> for ActionError {
+                fn from(err: $ty) -> Self {
+                    ActionError::from(ActionErrorKind::from(err))
+                }
+            }
+        )+
+    }
+}
+
+impl_from_action_error_kind! {
+    DiscoverActionError,
+    ResolveActionError,
+    UnresolveActionError,
+    StartActionError,
+    StopActionError,
+    DestroyActionError,
+    ShutdownActionError,
+}
+
+#[derive(Debug, Clone, Error)]
+pub enum ActionErrorKind {
     #[error("discover: {err}")]
     DiscoverError {
         #[from]
@@ -438,36 +478,36 @@ pub enum ActionError {
 
 impl Explain for ActionError {
     fn as_zx_status(&self) -> zx::Status {
-        match self {
-            ActionError::DiscoverError { .. } => zx::Status::INTERNAL,
-            ActionError::ResolveError { err } => err.as_zx_status(),
-            ActionError::UnresolveError { .. } => zx::Status::INTERNAL,
-            ActionError::StartError { err } => err.as_zx_status(),
-            ActionError::StopError { .. } => zx::Status::INTERNAL,
-            ActionError::DestroyError { .. } => zx::Status::INTERNAL,
-            ActionError::ShutdownError { .. } => zx::Status::INTERNAL,
+        match &*self.kind {
+            ActionErrorKind::DiscoverError { .. } => zx::Status::INTERNAL,
+            ActionErrorKind::ResolveError { err } => err.as_zx_status(),
+            ActionErrorKind::UnresolveError { .. } => zx::Status::INTERNAL,
+            ActionErrorKind::StartError { err } => err.as_zx_status(),
+            ActionErrorKind::StopError { .. } => zx::Status::INTERNAL,
+            ActionErrorKind::DestroyError { .. } => zx::Status::INTERNAL,
+            ActionErrorKind::ShutdownError { .. } => zx::Status::INTERNAL,
         }
     }
 }
 
 impl From<ActionError> for fcomponent::Error {
     fn from(err: ActionError) -> Self {
-        match err {
-            ActionError::DiscoverError { .. } => fcomponent::Error::Internal,
-            ActionError::ResolveError { .. } => fcomponent::Error::Internal,
-            ActionError::UnresolveError { .. } => fcomponent::Error::Internal,
-            ActionError::StartError { err } => err.into(),
-            ActionError::StopError { err } => err.into(),
-            ActionError::DestroyError { err } => err.into(),
-            ActionError::ShutdownError { .. } => fcomponent::Error::Internal,
+        match *err.kind {
+            ActionErrorKind::DiscoverError { .. } => fcomponent::Error::Internal,
+            ActionErrorKind::ResolveError { .. } => fcomponent::Error::Internal,
+            ActionErrorKind::UnresolveError { .. } => fcomponent::Error::Internal,
+            ActionErrorKind::StartError { err } => err.into(),
+            ActionErrorKind::StopError { err } => err.into(),
+            ActionErrorKind::DestroyError { err } => err.into(),
+            ActionErrorKind::ShutdownError { .. } => fcomponent::Error::Internal,
         }
     }
 }
 
 impl From<ActionError> for fsys::ResolveError {
     fn from(err: ActionError) -> Self {
-        match err {
-            ActionError::ResolveError { err } => err.into(),
+        match *err.kind {
+            ActionErrorKind::ResolveError { err } => err.into(),
             _ => fsys::ResolveError::Internal,
         }
     }
@@ -475,8 +515,8 @@ impl From<ActionError> for fsys::ResolveError {
 
 impl From<ActionError> for fsys::UnresolveError {
     fn from(err: ActionError) -> Self {
-        match err {
-            ActionError::UnresolveError { err } => err.into(),
+        match *err.kind {
+            ActionErrorKind::UnresolveError { err } => err.into(),
             _ => fsys::UnresolveError::Internal,
         }
     }
@@ -484,8 +524,8 @@ impl From<ActionError> for fsys::UnresolveError {
 
 impl From<ActionError> for fsys::StartError {
     fn from(err: ActionError) -> Self {
-        match err {
-            ActionError::StartError { err } => err.into(),
+        match *err.kind {
+            ActionErrorKind::StartError { err } => err.into(),
             _ => fsys::StartError::Internal,
         }
     }
@@ -493,8 +533,8 @@ impl From<ActionError> for fsys::StartError {
 
 impl From<ActionError> for fsys::StopError {
     fn from(err: ActionError) -> Self {
-        match err {
-            ActionError::StopError { err } => err.into(),
+        match *err.kind {
+            ActionErrorKind::StopError { err } => err.into(),
             _ => fsys::StopError::Internal,
         }
     }
@@ -502,8 +542,8 @@ impl From<ActionError> for fsys::StopError {
 
 impl From<ActionError> for fsys::DestroyError {
     fn from(err: ActionError) -> Self {
-        match err {
-            ActionError::DestroyError { err } => err.into(),
+        match *err.kind {
+            ActionErrorKind::DestroyError { err } => err.into(),
             _ => fsys::DestroyError::Internal,
         }
     }

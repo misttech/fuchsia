@@ -7,28 +7,28 @@ use crate::model::component::StartReason;
 use crate::model::routing::route_and_open_capability;
 use crate::model::start::Start;
 use crate::model::testing::routing_test_helpers::*;
+use ::routing_test_helpers::RoutingTestModel;
 use ::routing_test_helpers::component_id_index::make_index_file;
 use ::routing_test_helpers::storage::CommonStorageTest;
-use ::routing_test_helpers::RoutingTestModel;
 use assert_matches::assert_matches;
 use async_utils::PollExt;
 use cm_rust::*;
 use cm_rust_testing::*;
 use component_id_index::InstanceId;
-use errors::{ActionError, CreateNamespaceError, ModelError, StartActionError};
+use errors::{ActionErrorKind, CreateNamespaceError, ModelError, StartActionError};
 use fidl::endpoints::ServerEnd;
 use fuchsia_async::TestExecutor;
 use futures::channel::mpsc;
-use futures::{pin_mut, StreamExt};
+use futures::{StreamExt, pin_mut};
 use moniker::Moniker;
 use router_error::{DowncastErrorForTest, RouterError};
-use routing::error::RoutingError;
 use routing::RouteRequest;
+use routing::error::RoutingError;
 use std::path::Path;
+use vfs::ToObjectRequest;
 use vfs::directory::entry::OpenRequest;
 use vfs::execution_scope::ExecutionScope;
 use vfs::path::Path as VfsPath;
-use vfs::ToObjectRequest;
 use {
     fidl_fuchsia_component as fcomponent, fidl_fuchsia_component_decl as fdecl,
     fidl_fuchsia_io as fio, fuchsia_sync as fsync,
@@ -504,13 +504,13 @@ async fn use_restricted_storage_start_failure() {
         test.start_instance(&Moniker::parse_str("/parent_consumer/child_consumer").unwrap()).await;
     assert_matches!(
         child_bind_result,
-        Err(ModelError::ActionError {
-            err: ActionError::StartError {
+        Err(ModelError::ActionError { err }) => {
+            assert_matches!(err.kind(), ActionErrorKind::StartError {
                 err: StartActionError::CreateNamespaceError(
                     CreateNamespaceError::InstanceNotInInstanceIdIndex(err)
                 )
-            }
-        }) if moniker::ExtendedMoniker::from(err.clone()) == moniker::ExtendedMoniker::from(Moniker::try_from([]).unwrap())
+            } if moniker::ExtendedMoniker::from(err.clone()) == moniker::ExtendedMoniker::from(Moniker::try_from([]).unwrap()));
+        }
     );
 }
 

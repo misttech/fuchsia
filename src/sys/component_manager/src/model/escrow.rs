@@ -669,11 +669,10 @@ mod tests {
         );
         start_rx.next().await.unwrap();
 
-        // Fail the start request.
         result_tx
-            .unbounded_send(Err(ActionError::StartError {
-                err: StartActionError::Aborted { moniker: Moniker::default() },
-            }))
+            .unbounded_send(Err(ActionError::from(StartActionError::Aborted {
+                moniker: Moniker::default(),
+            })))
             .unwrap();
 
         // Connection got closed.
@@ -715,9 +714,9 @@ mod tests {
 
         // Fail the rest of the start process. This doesn't matter to open.
         result_tx
-            .unbounded_send(Err(ActionError::StartError {
-                err: StartActionError::Aborted { moniker: Moniker::default() },
-            }))
+            .unbounded_send(Err(ActionError::from(StartActionError::Aborted {
+                moniker: Moniker::default(),
+            })))
             .unwrap();
 
         let mut outgoing = escrow.unwrap().outgoing_dir.into_stream();

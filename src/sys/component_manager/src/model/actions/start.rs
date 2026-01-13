@@ -686,7 +686,7 @@ mod tests {
     use cm_rust::push_box;
     use cm_rust_testing::{ChildBuilder, ComponentDeclBuilder};
     use directed_graph::DirectedGraph;
-    use errors::ModelError;
+    use errors::{ActionErrorKind, ModelError};
     use fuchsia_async as fasync;
     use fuchsia_sync::Mutex;
     use futures::channel::mpsc;
@@ -880,8 +880,8 @@ mod tests {
         // Stop should cancel start.
         let stop_fut = child.actions().register_no_wait(StopAction::new(false)).await;
         assert_matches!(
-            start_fut.await.unwrap_err(),
-            ActionError::StartError { err: StartActionError::Aborted { .. } }
+            start_fut.await.unwrap_err().kind(),
+            ActionErrorKind::StartError { err: StartActionError::Aborted { .. } }
         );
 
         continue_tx.send(()).unwrap();
@@ -939,29 +939,30 @@ mod tests {
         let test_topology = ActionsTest::new(components[0].0, components, None).await;
         let child = test_topology.look_up([TEST_CHILD_NAME].try_into().unwrap()).await;
 
-        assert_matches!(
-            ActionsManager::register(
-                child.clone(),
-                StartAction::new(StartReason::Debug, None, IncomingCapabilities::default()),
-            ).await,
-            Err(
-                ActionError::StartError{
-                    err: StartActionError::StructuredConfigError{
-                        moniker,
-                        err: StructuredConfigError::ConfigResolutionFailed (
-                            config_encoder::ResolutionError::InvalidValue {
-                                key,
-                                source: config_encoder::ValueError::TypeMismatch{
-                                    expected,
-                                    received,
-                                }
-                            }
+        let res = ActionsManager::register(
+            child.clone(),
+            StartAction::new(StartReason::Debug, None, IncomingCapabilities::default()),
+        )
+        .await;
 
-                        )
-                    }
+        assert_matches!(
+            res.unwrap_err().kind(),
+            ActionErrorKind::StartError{
+                err: StartActionError::StructuredConfigError{
+                    moniker,
+                    err: StructuredConfigError::ConfigResolutionFailed (
+                        config_encoder::ResolutionError::InvalidValue {
+                            key,
+                            source: config_encoder::ValueError::TypeMismatch{
+                                expected,
+                                received,
+                            }
+                        }
+
+                    )
                 }
-            )
-            if moniker == "child".parse().unwrap()
+            }
+            if moniker == &"child".parse().unwrap()
                 && key == "my_config"
                 && expected == "Int8"
                 && received == "Single(Bool(false))"

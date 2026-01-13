@@ -146,7 +146,7 @@ pub mod tests {
     use crate::model::testing::test_helpers::{ActionsTest, component_decl_with_test_runner};
     use assert_matches::assert_matches;
     use cm_rust_testing::ComponentDeclBuilder;
-    use errors::{ActionError, ResolveActionError};
+    use errors::{ActionErrorKind, ResolveActionError};
     use futures::FutureExt;
     use futures::channel::oneshot;
     use moniker::Moniker;
@@ -188,7 +188,7 @@ pub mod tests {
         // Error to resolve a shut-down component.
         assert_matches!(
             ActionsManager::register(component_a.clone(), ResolveAction::new()).await,
-            Err(ActionError::ResolveError { err: ResolveActionError::InstanceShutDown { .. } })
+            Err(e) if matches!(e.kind(), ActionErrorKind::ResolveError { err: ResolveActionError::InstanceShutDown { .. } })
         );
         assert!(!is_resolved(&component_a).await);
         assert!(is_stopped(&component_root, &"a".try_into().unwrap()).await);
@@ -227,7 +227,7 @@ pub mod tests {
         // We should now see the abort error from the action.
         assert_matches!(
             resolve_fut.await,
-            Err(ActionError::ResolveError { err: ResolveActionError::Aborted { .. } })
+            Err(e) if matches!(e.kind(), ActionErrorKind::ResolveError { err: ResolveActionError::Aborted { .. } })
         );
     }
 }
