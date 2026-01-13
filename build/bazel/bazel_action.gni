@@ -64,14 +64,14 @@ declare_args() {
 #     Type: list of GN labels.
 #
 #   bazel_targets:
-#     A list of Bazel target patterns for the `bazel build` command.
+#     A list of Bazel targets for the `bazel build` command.
 #     This list cannot be empty since there is no concept of 'default'
 #     targets in Bazel. Note target sets (i.e. `...`) are not supported.
 #
 #     Relative target names (e.g. ":foo" or "foo:bar") are supported and
 #     will be resolved relative to the current directory.
 #
-#     Type: list of Bazel target patterns.
+#     Type: list of Bazel targets.
 #
 #   ninja_base_dir: (optional)
 #     A GN path for the base directory used for `ninja` paths in the
@@ -299,6 +299,22 @@ template("bazel_action") {
            "`bazel_platform` is only supported when `host` is true.")
   }
 
+  # Calculate the correct bazel platform to use from the build_for_host and bazel_platform params.
+  if (_build_for_host) {
+    _bazel_platform_config = "host_config_args"
+    if (defined(invoker.bazel_platform)) {
+      _bazel_platform_label =
+          "//build/bazel/platforms:${invoker.bazel_platform}"
+    } else {
+      _bazel_platform_label = "//build/bazel/platforms:host"
+    }
+  } else {
+    # Since this template can only be used on the default toolchain, the
+    # platform is always Fuchsia.
+    _bazel_platform_config = "fuchsia_config_args"
+    _bazel_platform_label = "//build/bazel/platforms:fuchsia_${current_cpu}"
+  }
+
   _copy_outputs = []
   if (defined(invoker.copy_outputs)) {
     _copy_outputs = invoker.copy_outputs
@@ -470,6 +486,7 @@ template("bazel_action") {
     }
     _manifest = ""
     if (defined(entry.manifest)) {
+      assert(false, "manifest-only bazel package was found.")
       _manifest = "${_ninja_base_dir}/${entry.manifest}"
     }
     _all_outputs += [
@@ -739,6 +756,8 @@ template("bazel_action") {
              get_label_info(":$target_name", "label_no_toolchain"),
              "--gn-targets-repository-dir",
              rebase_path(_gn_targets_repository_path, root_build_dir),
+             "--bazel-platform-label",
+             _bazel_platform_label,
              "--bazel-targets",
            ] + _bazel_targets +
            [
@@ -878,25 +897,11 @@ template("bazel_action") {
       }
     }
 
-    if (_build_for_host) {
-      args += [ "--config=host_config_args" ]
-      if (defined(invoker.bazel_platform)) {
-        args +=
-            [ "--platforms=//build/bazel/platforms:${invoker.bazel_platform}" ]
-      } else {
-        args += [ "--platforms=//build/bazel/platforms:host" ]
-      }
-    } else {
-      # Since this template can only be used on the default toolchain, the
-      # platform is always Fuchsia.
-      args += [ "--config=fuchsia_config_args" ]
-      if (defined(invoker.bazel_platform)) {
-        args +=
-            [ "--platforms=//build/bazel/platforms:${invoker.bazel_platform}" ]
-      } else {
-        args += [ "--platforms=//build/bazel/platforms:fuchsia_${current_cpu}" ]
-      }
-    }
+    # Set the previously-computed bazel platform configuration args
+    args += [
+      "--config=${_bazel_platform_config}",
+      "--platforms=${_bazel_platform_label}",
+    ]
 
     # When remote builds are enabled, append the right build arguments.
     # These must appear on the Bazel command-line otherwise remote builds
@@ -988,6 +993,40 @@ template("bazel_action") {
             manifest = _rebased_debug_symbols_manifest
           },
         ]
+      }
+
+      # Used by //:bazel_target_infos target.
+      bazel_target_infos_barrier = []
+      bazel_target_infos = []
+      foreach(entry, _all_outputs) {
+        # LINT.IfChange(bazel_target_infos)
+        bazel_target_infos += [
+          {
+            forward_variables_from(entry,
+                                   "*",
+                                   [
+                                     "ninja_file",
+                                     "ninja_archive",
+                                     "ninja_dir",
+                                   ])
+
+            # To differentiate different bazel invocations' outputs.
+            bazel_platform_config = _bazel_platform_config
+            bazel_platform_label = _bazel_platform_label
+
+            # These all need to be rebased from GN paths to outdir-relative paths
+            if (defined(entry.ninja_file)) {
+              ninja_file = rebase_path(entry.ninja_file, root_build_dir)
+            }
+            if (defined(entry.ninja_archive)) {
+              ninja_archive = rebase_path(entry.ninja_archive, root_build_dir)
+            }
+            if (defined(entry.ninja_dir)) {
+              ninja_dir = rebase_path(entry.ninja_dir, root_build_dir)
+            }
+          },
+        ]
+        # LINT.ThenChange(//BUILD.gn:bazel_target_infos, //build/bazel/scripts/bazel_build_action_utils.py:bazel_target_infos)
       }
     }
 

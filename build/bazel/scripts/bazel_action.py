@@ -6,7 +6,6 @@
 "Run a Bazel command from Ninja. See bazel_action.gni for details."
 
 import argparse
-import dataclasses
 import errno
 import filecmp
 import json
@@ -27,7 +26,14 @@ import build_utils
 import stdio_redirection
 import thread_pool_helpers
 import workspace_utils
-from bazel_action_utils import BazelStderrDebugLineFilter
+from bazel_action_utils import (
+    BazelStderrDebugLineFilter,
+    BazelTargetInfosMap,
+    DirectoryOutput,
+    FileOutput,
+    FinalSymlinkOutput,
+    PackageOutput,
+)
 from build_utils import FilePath
 
 _BUILD_API_DIR = os.path.join(_SCRIPT_DIR, "../../api")
@@ -1077,12 +1083,6 @@ def list_to_pairs(l: T.Iterable[T.Any]) -> T.Iterable[tuple[T.Any, T.Any]]:
             is_first = True
 
 
-@dataclasses.dataclass
-class FileOutputs:
-    bazel_path: str
-    ninja_path: str
-
-
 class FileOutputsAction(argparse.Action):
     """ArgumentParser action class to convert --file-outputs arguments into FileOutputs instances."""
 
@@ -1107,19 +1107,11 @@ class FileOutputsAction(argparse.Action):
         dest_list = getattr(namespace, self.dest, [])
         dest_list.extend(
             [
-                FileOutputs(bazel_path, ninja_path)
+                FileOutput(bazel_path, ninja_path)
                 for bazel_path, ninja_path in list_to_pairs(values)
             ]
         )
         setattr(namespace, self.dest, dest_list)
-
-
-@dataclasses.dataclass
-class DirectoryOutputs:
-    bazel_path: str
-    ninja_path: str
-    tracked_files: list[str] = dataclasses.field(default_factory=list)
-    copy_debug_symbols: bool = False
 
 
 class DirectoryOutputsAction(argparse.Action):
@@ -1145,17 +1137,11 @@ class DirectoryOutputsAction(argparse.Action):
         copy_debug_symbols = bool(values[2] == "true")
         tracked_files = values[3:]
         dest_list.append(
-            DirectoryOutputs(
+            DirectoryOutput(
                 bazel_path, ninja_path, tracked_files, copy_debug_symbols
             )
         )
         setattr(namespace, self.dest, dest_list)
-
-
-@dataclasses.dataclass
-class FinalSymlinkOutputs:
-    bazel_path: str
-    ninja_path: str
 
 
 class FinalSymlinkOutputsAction(argparse.Action):
@@ -1176,16 +1162,8 @@ class FinalSymlinkOutputsAction(argparse.Action):
         dest_list = getattr(namespace, self.dest, [])
         bazel_path = values[0]
         ninja_path = values[1]
-        dest_list.append(FinalSymlinkOutputs(bazel_path, ninja_path))
+        dest_list.append(FinalSymlinkOutput(bazel_path, ninja_path))
         setattr(namespace, self.dest, dest_list)
-
-
-@dataclasses.dataclass
-class PackageOutputs:
-    package_label: str
-    archive_path: T.Optional[str] = None
-    manifest_path: T.Optional[str] = None
-    copy_debug_symbols: bool = False
 
 
 class PackageOutputsAction(argparse.Action):
@@ -1210,7 +1188,7 @@ class PackageOutputsAction(argparse.Action):
         manifest_path = values[2] if values[2] != "NONE" else None
         copy_debug_symbols = bool(values[3] == "true")
         dest_list.append(
-            PackageOutputs(
+            PackageOutput(
                 package_label, archive_path, manifest_path, copy_debug_symbols
             )
         )
@@ -1243,6 +1221,11 @@ def main() -> int:
         "--gn-targets-repository-dir",
         type=Path,
         help="Path of @gn_targets repository directory for this invocation.",
+    )
+    parser.add_argument(
+        "--bazel-platform-label",
+        required=True,
+        help="Bazel platform target label",
     )
     parser.add_argument(
         "--bazel-targets",
@@ -1345,6 +1328,98 @@ def main() -> int:
             return parser.error(
                 f"Wildcards are not allowed in --bazel-targets:  {target}"
             )
+
+    # Validate that we have the right outputs from the bazel_target_infos.json manifest
+    bazel_target_infos = BazelTargetInfosMap.create_from_build_dir(
+        args.build_dir
+    )
+
+    target_infos_file_outputs: list[FileOutput] = []
+    target_infos_directory_outputs: list[DirectoryOutput] = []
+    target_infos_package_outputs: list[PackageOutput] = []
+    target_infos_final_symlinks: list[FinalSymlinkOutput] = []
+
+    for target in args.bazel_targets:
+        target_info = bazel_target_infos.get_info(
+            target, args.bazel_platform_label
+        )
+        if target_info:
+            target_infos_file_outputs.extend(target_info.copy_outputs)
+            target_infos_directory_outputs.extend(target_info.directory_outputs)
+            target_infos_package_outputs.extend(target_info.package_outputs)
+            target_infos_final_symlinks.extend(
+                target_info.final_symlink_outputs
+            )
+        else:
+            return parser.error(
+                f"Bazel target not found in bazel_target_infos.json: {target}  keys: {bazel_target_infos._targets.keys()}"
+            )
+
+    if args.file_outputs != target_infos_file_outputs:
+        arg_paths = "\n".join(
+            [
+                f"{e.bazel_path} -> {e.ninja_path}"
+                for e in sorted(args.file_outputs)
+            ]
+        )
+        info_paths = "\n".join(
+            [
+                f"{e.bazel_path} -> {e.ninja_path}"
+                for e in sorted(target_infos_file_outputs)
+            ]
+        )
+
+        return parser.error(
+            f"Mismatch in file outputs:  passed: \n{arg_paths}\n  vs. manifest: \n{info_paths}\n\n"
+        )
+
+    if target_infos_directory_outputs != args.directory_outputs:
+        arg_paths = "\n".join(
+            [
+                f"{e.bazel_path} -> {e.ninja_path}"
+                for e in sorted(args.directory_outputs)
+            ]
+        )
+        info_paths = "\n".join(
+            [
+                f"{e.bazel_path} -> {e.ninja_path}"
+                for e in sorted(target_infos_directory_outputs)
+            ]
+        )
+
+        return parser.error(
+            f"Mismatch in file outputs:  passed: \n{arg_paths}\n  vs. manifest: \n{info_paths}\n\n"
+        )
+
+    if args.package_outputs != target_infos_package_outputs:
+        arg_paths = "\n".join(
+            [f"{e.archive_path}" for e in sorted(args.package_outputs)]
+        )
+        info_paths = "\n".join(
+            [f"{e.archive_path}" for e in sorted(target_infos_package_outputs)]
+        )
+
+        return parser.error(
+            f"Mismatch in file outputs:  passed: \n{arg_paths}\n  vs. manifest: \n{info_paths}\n\n"
+        )
+
+    if args.final_symlink_outputs != target_infos_final_symlinks:
+        arg_paths = "\n".join(
+            [
+                f"{e.bazel_path} -> {e.ninja_path}"
+                for e in sorted(args.final_symlink_outputs)
+            ]
+        )
+        info_paths = "\n".join(
+            [
+                f"{e.bazel_path} -> {e.ninja_path}"
+                for e in sorted(target_infos_final_symlinks)
+            ]
+        )
+
+        return parser.error(
+            f"Mismatch in file outputs:  passed: \n{arg_paths}\n  vs. manifest: \n{info_paths}\n\n"
+        )
 
     _build_fuchsia_package = args.command == "build" and args.package_outputs
 

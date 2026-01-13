@@ -17,6 +17,153 @@ import stdio_redirection
 from build_utils import FilePath
 
 
+@dataclasses.dataclass(order=True, frozen=True)
+class FileOutput:
+    """Mapping of a bazel output path to a ninja output path."""
+
+    bazel_path: str
+    ninja_path: str
+
+
+@dataclasses.dataclass(order=True, frozen=True)
+class DirectoryOutput:
+    """Mapping of a bazel output directory to a ninja output directory.
+
+    Includes tracked files used as the 'marker' files to detect changes in the
+    (otherwise opaque) directory contents.
+    """
+
+    bazel_path: str
+    ninja_path: str
+    tracked_files: set[str] = dataclasses.field(default_factory=set)
+    copy_debug_symbols: bool = False
+
+
+@dataclasses.dataclass(order=True, frozen=True)
+class PackageOutput:
+    """A package created by Bazel that's to be exported back to ninja."""
+
+    package_label: str
+    archive_path: T.Optional[str] = None
+    manifest_path: T.Optional[str] = None
+    copy_debug_symbols: bool = False
+
+
+@dataclasses.dataclass(order=True, frozen=True)
+class FinalSymlinkOutput:
+    """A bazel output path that's to be linked to a "final" ninja output path."""
+
+    bazel_path: str
+    ninja_path: str
+
+
+@dataclasses.dataclass
+class BazelTargetInfo(object):
+    """The outputs to map from Bazel to Ninja, for a given Bazel target."""
+
+    bazel_target: str
+    bazel_platform_label: str
+    bazel_platform_config: str
+    copy_outputs: list[FileOutput] = dataclasses.field(default_factory=list)
+    directory_outputs: list[DirectoryOutput] = dataclasses.field(
+        default_factory=list
+    )
+    package_outputs: list[PackageOutput] = dataclasses.field(
+        default_factory=list
+    )
+    final_symlink_outputs: list[FinalSymlinkOutput] = dataclasses.field(
+        default_factory=list
+    )
+
+
+class BazelTargetInfosMap(object):
+    """A class used to model a map of Bazel target + configuration info to corresponding inputs and outputs.
+
+    This is build from the content of the //:bazel_target_infos generated_file() output.
+
+    See //BUILD.gn for schema description.
+    """
+
+    def __init__(self, json_content: list[dict[str, T.Any]]) -> None:
+        self._targets: dict[tuple[str, str | None], BazelTargetInfo] = {}
+
+        # LINT.IfChange(bazel_target_infos)
+        for entry in json_content:
+            bazel_target = entry["bazel_target"]
+            bazel_platform_label = entry["bazel_platform_label"]
+            bazel_platform_config = entry["bazel_platform_config"]
+            target_info = self._targets.setdefault(
+                (bazel_target, bazel_platform_label),
+                BazelTargetInfo(
+                    bazel_target=bazel_target,
+                    bazel_platform_label=bazel_platform_label,
+                    bazel_platform_config=bazel_platform_config,
+                ),
+            )
+
+            # each entry is one of several different types, differentiated by a 'type' field
+            entry_type: str = entry["type"]
+
+            if entry_type == "file":
+                target_info.copy_outputs.append(
+                    FileOutput(
+                        bazel_path=entry["bazel_file"],
+                        ninja_path=entry["ninja_file"],
+                    )
+                )
+            elif entry_type == "directory":
+                target_info.directory_outputs.append(
+                    DirectoryOutput(
+                        bazel_path=entry["bazel_dir"],
+                        ninja_path=entry["ninja_dir"],
+                        tracked_files=entry["tracked_files"],
+                        copy_debug_symbols=entry["copy_debug_symbols"],
+                    )
+                )
+            elif entry_type == "package":
+                target_info.package_outputs.append(
+                    PackageOutput(
+                        package_label=bazel_target,
+                        archive_path=entry["ninja_archive"],
+                        copy_debug_symbols=entry["copy_debug_symbols"],
+                    )
+                )
+            elif entry_type == "final_symlink":
+                target_info.final_symlink_outputs.append(
+                    FinalSymlinkOutput(
+                        bazel_path=entry["bazel_file"],
+                        ninja_path=entry["ninja_file"],
+                    )
+                )
+            else:
+                raise ValueError(
+                    f"Unknown output entry type in bazel_target_info.json: {entry_type}"
+                )
+
+        # LINT.ThenChange(//BUILD.gn:bazel_target_infos, //build/bazel/bazel_action.gni:bazel_target_infos)
+
+    @staticmethod
+    def create_from_build_dir(build_dir: Path) -> "BazelTargetInfosMap":
+        """Create instance from content of Ninja build directory.
+
+        Args:
+            build_dir: Ninja build directory, populated by `fx gen`.
+        Returns:
+            New BazelBuildActionsMap
+        Raises:
+            FileNotFoundError if file is missing.
+        """
+        with (build_dir / "bazel_target_infos.json").open("rb") as f:
+            content = json.load(f)
+        return BazelTargetInfosMap(content)
+
+    def get_info(
+        self, target: str, platform: str | None
+    ) -> BazelTargetInfo | None:
+        """Retrieve BazelTargetInfo matching a given Bazel target label."""
+        return self._targets.get((target, platform))
+
+
 @dataclasses.dataclass
 class BazelBuildActionInfo(object):
     """Model an entry in the bazel_build_action_targets.json file.

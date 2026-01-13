@@ -2228,6 +2228,109 @@ generated_file("bazel_build_action_targets") {
 
 # LINT.ThenChange(//build/bazel/scripts/bazel_action_utils.py:bazel_build_actions, //build/bazel/bazel_action.gni:bazel_build_actions, //build/bazel/scripts/workspace_utils.py:bazel_build_actions)
 
+# LINT.IfChange(bazel_target_infos)
+#
+# The bazel_target_infos.json file maps provides the information necessary for Ninja to
+# run a bazel action, by telling the bazel_action.py script how to find all the inputs that
+# need to be symlinked into the workspace for a given action and all the outputs to copy out
+# of that action.
+#
+# This will eventually replace the above 'bazel_build_action_targets.json' file, which is oriented
+# around the bazel action build groups, and isn't per-bazel target.
+#
+# This data is structured for ease of generation, and is flattened into a more manageable format by
+# the parsing code used by bazel_action.py.
+#
+# Type: list(scope)
+#
+#   type:
+#     - Required: The output type, one of:
+#         file
+#         directory
+#         package
+#         final_symlink
+#     - Type: string
+#
+#   bazel_target:
+#     - Required: bazel target that builds the directory
+#     - Type: string
+#
+#   bazel_platform_label:
+#     - Required: bazel platform label to use with the --platforms arg when calling bazel
+#     - Type: string
+#
+#   bazel_platform_config:
+#     - Required: bazel config to add to the bazel command line with the --config arg
+#     - Type: string
+
+#  The other fields depend on the 'type':
+#
+#     "file":
+#        bazel_file:
+#          - Required: Path in the bazel outdir to copy a file from
+#          - Type: string
+#
+#        ninja_file:
+#          - Required: path in the ninja outdir to copy to the file to
+#          - Type: string
+#
+#     "directory":
+#        bazel_dir:
+#          - Required: path in the bazel outputs to the directory to copy
+#          - Type: string
+#
+#        ninja_dir:
+#          - Required: path in the ninja outdir to copy to the directory to
+#          - Type: string
+#
+#        tracked_files:
+#          - Required: list of file paths that are expected outputs by ninja, and used to track if
+#            the directory contents have changed.
+#          - Type: string
+#
+#        copy_debug_symbols:
+#          - Optional: whether or not to copy debug symbols from the outputs back to ninja.
+#          - Default: false
+#          - Type: boolean
+#
+#     "package":
+#
+#        ninja_archive:
+#          - Required: path the package archive (far) file
+#          - Type: string
+#
+#        copy_debug_symbols:
+#          - Optional: whether or not to copy debug symbols from the package back to ninja.
+#          - Default: false
+#          - Type: boolean
+#
+#     "final_symlink":
+#        bazel_file:
+#          - Required: path in the bazel outputs that's the symlink target
+#          - Type: string
+#
+#        ninja_file:
+#          - Required: path in the ninja outdir that's the symlink source
+#          - Type: string
+#
+generated_file("bazel_target_infos") {
+  testonly = true
+  deps = [
+           ":default",
+
+           # //:root_targets has bazel_action() dependencies that are always defined
+           # in the GN graph, so depend on it.
+           "//:root_targets",
+         ] + extra_bazel_build_action_labels
+
+  data_keys = [ "bazel_target_infos" ]
+  walk_keys = [ "bazel_target_infos_barrier" ]
+  outputs = [ "$root_build_dir/$target_name.json" ]
+  output_conversion = "json"
+}
+
+# LINT.ThenChange(//build/bazel/scripts/bazel_action_utils.py:bazel_target_infos, //build/bazel/bazel_action.gni:bazel_target_infos)
+
 ###
 ### Top-level targets.
 ###
