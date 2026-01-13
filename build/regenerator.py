@@ -107,7 +107,7 @@ def generate_bazel_content_hash_files(
     return result
 
 
-def update_prebuilt_build_ids_list(fuchsia_dir: Path, list_file: Path):
+def update_prebuilt_build_ids_list(fuchsia_dir: Path, list_file: Path) -> None:
     """Update the file containing the list of files under //prebuilt/.build-id
 
     This just does the equivalent of a glob() over the directory to find all
