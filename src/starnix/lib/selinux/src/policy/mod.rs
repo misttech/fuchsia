@@ -20,7 +20,9 @@ pub use index::FsUseLabelAndType;
 pub use parser::PolicyCursor;
 pub use security_context::{SecurityContext, SecurityContextError};
 
-use crate::{self as sc, PolicyCap};
+use crate::{
+    ClassPermission, KernelClass, KernelPermission, NullessByteStr, ObjectClass, PolicyCap,
+};
 use index::PolicyIndex;
 use metadata::HandleUnknown;
 use parsed_policy::ParsedPolicy;
@@ -338,10 +340,7 @@ impl Policy {
 
     /// If there is an fs_use statement for the given filesystem type, returns the associated
     /// [`SecurityContext`] and [`FsUseType`].
-    pub fn fs_use_label_and_type(
-        &self,
-        fs_type: sc::NullessByteStr<'_>,
-    ) -> Option<FsUseLabelAndType> {
+    pub fn fs_use_label_and_type(&self, fs_type: NullessByteStr<'_>) -> Option<FsUseLabelAndType> {
         self.0.fs_use_label_and_type(fs_type)
     }
 
@@ -349,23 +348,23 @@ impl Policy {
     /// [`SecurityContext`].
     pub fn genfscon_label_for_fs_and_path(
         &self,
-        fs_type: sc::NullessByteStr<'_>,
-        node_path: sc::NullessByteStr<'_>,
-        class_id: Option<sc::KernelClass>,
+        fs_type: NullessByteStr<'_>,
+        node_path: NullessByteStr<'_>,
+        class_id: Option<KernelClass>,
     ) -> Option<SecurityContext> {
         self.0.genfscon_label_for_fs_and_path(fs_type, node_path, class_id)
     }
 
     /// Returns the [`SecurityContext`] defined by this policy for the specified
     /// well-known (or "initial") Id.
-    pub fn initial_context(&self, id: sc::InitialSid) -> security_context::SecurityContext {
+    pub fn initial_context(&self, id: crate::InitialSid) -> security_context::SecurityContext {
         self.0.initial_context(id)
     }
 
     /// Returns a [`SecurityContext`] with fields parsed from the supplied Security Context string.
     pub fn parse_security_context(
         &self,
-        security_context: sc::NullessByteStr<'_>,
+        security_context: NullessByteStr<'_>,
     ) -> Result<security_context::SecurityContext, security_context::SecurityContextError> {
         security_context::SecurityContext::parse(&self.0, security_context)
     }
@@ -394,8 +393,8 @@ impl Policy {
         &self,
         source: &SecurityContext,
         target: &SecurityContext,
-        class: impl Into<sc::ObjectClass>,
-        name: sc::NullessByteStr<'_>,
+        class: impl Into<ObjectClass>,
+        name: NullessByteStr<'_>,
     ) -> Option<SecurityContext> {
         self.0.compute_create_context_with_name(source, target, class.into(), name)
     }
@@ -421,7 +420,7 @@ impl Policy {
         &self,
         source: &SecurityContext,
         target: &SecurityContext,
-        class: impl Into<sc::ObjectClass>,
+        class: impl Into<ObjectClass>,
     ) -> SecurityContext {
         self.0.compute_create_context(source, target, class.into())
     }
@@ -445,7 +444,7 @@ impl Policy {
         &self,
         source_context: &SecurityContext,
         target_context: &SecurityContext,
-        object_class: impl Into<sc::ObjectClass>,
+        object_class: impl Into<ObjectClass>,
     ) -> AccessDecision {
         if let Some(target_class) = self.0.class(object_class.into()) {
             self.0.parsed_policy().compute_access_decision(
@@ -466,7 +465,7 @@ impl Policy {
         xperms_kind: XpermsKind,
         source_context: &SecurityContext,
         target_context: &SecurityContext,
-        object_class: impl Into<sc::ObjectClass>,
+        object_class: impl Into<ObjectClass>,
         xperms_prefix: u8,
     ) -> XpermsAccessDecision {
         if let Some(target_class) = self.0.class(object_class.into()) {
@@ -500,7 +499,7 @@ impl Policy {
 
 impl AccessVectorComputer for Policy {
     fn access_vector_from_permissions<
-        P: sc::ClassPermission + Into<sc::KernelPermission> + Clone + 'static,
+        P: ClassPermission + Into<KernelPermission> + Clone + 'static,
     >(
         &self,
         permissions: &[P],
@@ -532,7 +531,7 @@ impl Unvalidated {
     }
 }
 
-/// An owner of policy information that can translate [`sc::Permission`] values into
+/// An owner of policy information that can translate [`crate::Permission`] values into
 /// [`AccessVector`] values that are consistent with the owned policy.
 pub trait AccessVectorComputer {
     /// Returns an [`AccessVector`] containing the supplied kernel `permissions`.
@@ -542,7 +541,7 @@ pub trait AccessVectorComputer {
     /// result in unknown `permissions` being ignored, while deny-unknown will cause
     /// `None` to be returned if one or more `permissions` are unknown.
     fn access_vector_from_permissions<
-        P: sc::ClassPermission + Into<sc::KernelPermission> + Clone + 'static,
+        P: ClassPermission + Into<KernelPermission> + Clone + 'static,
     >(
         &self,
         permissions: &[P],
