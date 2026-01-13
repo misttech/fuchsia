@@ -332,12 +332,14 @@ class LinkingSession<Loader>::SessionModule
 
   // Perform relative and symbolic relocations, resolving symbols from the
   // ordered list of modules as needed.
-  bool Relocate(Diagnostics& diag, const auto& ordered_modules, size_type max_static_tls_modid) {
+  bool Relocate(Diagnostics& diag, std::ranges::forward_range auto&& ordered_modules,
+                size_type max_static_tls_modid) {
     TlsDescResolver tls_desc_resolver =
         TlsDescResolver(max_static_tls_modid, runtime_module_.tls_desc_indirect_list());
     ld::ModuleMemory memory = ld::ModuleMemory{module()};
-    auto resolver = elfldltl::MakeSymbolResolver(runtime_module_, ordered_modules, diag,
-                                                 tls_desc_resolver, ld::kResolverPolicy);
+    auto resolver = elfldltl::MakeSymbolResolver(
+        runtime_module_, std::forward<decltype(ordered_modules)>(ordered_modules), diag,
+        tls_desc_resolver, ld::kResolverPolicy);
     return elfldltl::RelocateRelative(diag, memory, reloc_info(), load_bias()) &&
            elfldltl::RelocateSymbolic(memory, diag, reloc_info(), symbol_info(), load_bias(),
                                       resolver);

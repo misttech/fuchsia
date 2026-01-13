@@ -18,6 +18,11 @@
 
 namespace dl {
 
+template <class Iterator>
+concept IteratorHasArrow = requires(Iterator it) {
+  { it.operator->() } -> std::same_as<typename Iterator::value_type*>;
+};
+
 template <std::ranges::input_range... Views>
   requires(sizeof...(Views) > 0 &&
            (std::is_same_v<
@@ -31,9 +36,17 @@ class ConcatView : public std::ranges::view_interface<ConcatView<Views...>> {
   constexpr explicit(false) ConcatView(Views... views) : views_{std::move(views)...} {}
 
   constexpr auto begin() { return BeginIterator(this); }
-  constexpr auto begin() const { return BeginIterator(this); }
+  constexpr auto begin() const
+    requires(std::ranges::range<const Views> && ...)
+  {
+    return BeginIterator(this);
+  }
   constexpr auto end() { return EndIterator(this); }
-  constexpr auto end() const { return EndIterator(this); }
+  constexpr auto end() const
+    requires(std::ranges::range<const Views> && ...)
+  {
+    return EndIterator(this);
+  }
 
  private:
   // The iterator implementation holds a pointer to the containing concat_view
@@ -51,11 +64,13 @@ class ConcatView : public std::ranges::view_interface<ConcatView<Views...>> {
   class IteratorImpl {
    public:
     using value_type = std::ranges::range_value_t<std::tuple_element_t<0, std::tuple<Views...>>>;
+    using difference_type = ptrdiff_t;  // Required by std::weakly_incrementable.
     using pointer = value_type*;
     using reference = value_type&;
 
     constexpr IteratorImpl() = default;
     constexpr IteratorImpl(const IteratorImpl&) = default;
+    constexpr IteratorImpl& operator=(const IteratorImpl&) = default;
 
     constexpr bool operator==(const IteratorImpl&) const = default;
 
@@ -67,7 +82,7 @@ class ConcatView : public std::ranges::view_interface<ConcatView<Views...>> {
       return *this;
     }
 
-    constexpr IteratorImpl& operator++(int) {  // postfix
+    constexpr IteratorImpl operator++(int) {  // postfix
       IteratorImpl old = *this;
       ++*this;
       return old;
@@ -77,7 +92,9 @@ class ConcatView : public std::ranges::view_interface<ConcatView<Views...>> {
       return std::visit([](const auto& it) -> decltype(auto) { return *it; }, it_);
     }
 
-    constexpr decltype(auto) operator->() const {
+    constexpr decltype(auto) operator->() const
+      requires(IteratorHasArrow<std::ranges::iterator_t<Views>> && ...)
+    {
       return std::visit([](const auto& it) -> decltype(auto) { return it.operator->(); }, it_);
     }
 
