@@ -33,16 +33,9 @@ using devmgr_integration_test::IsolatedDevmgr;
 namespace fio = fuchsia_io;
 
 TEST(PbusTest, Enumeration) {
-  // NB: this loop is never run. RealmBuilder::Build is in the call stack, and insists on a non-null
-  // dispatcher.
-  //
-  // TODO(https://fxbug.dev/42065538): Remove this.
-  async::Loop loop(&kAsyncLoopConfigNeverAttachToThread);
-  zx::result devmgr = IsolatedDevmgr::Create(
-      {
-          .root_device_driver = "fuchsia-boot:///platform-bus#meta/platform-bus.cm",
-      },
-      loop.dispatcher());
+  zx::result devmgr = IsolatedDevmgr::Create({
+      .root_device_driver = "fuchsia-boot:///platform-bus#meta/platform-bus.cm",
+  });
   ASSERT_OK(devmgr.status_value());
 
   const int dirfd = devmgr.value().devfs_root().get();

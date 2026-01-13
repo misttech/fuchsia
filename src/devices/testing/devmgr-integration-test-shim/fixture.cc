@@ -10,7 +10,7 @@
 #include <lib/async-loop/default.h>
 #include <lib/async/cpp/wait.h>
 #include <lib/async/dispatcher.h>
-#include <lib/driver_test_realm/realm_builder/cpp/lib.h>
+#include <lib/driver_test_realm/realm_builder/cpp/builder.h>
 #include <lib/fdio/cpp/caller.h>
 #include <lib/fdio/directory.h>
 #include <lib/fdio/fd.h>
@@ -51,45 +51,44 @@ __EXPORT
 IsolatedDevmgr::IsolatedDevmgr() = default;
 
 __EXPORT
-zx::result<IsolatedDevmgr> IsolatedDevmgr::Create(devmgr_launcher::Args args,
-                                                  async_dispatcher_t* dispatcher) {
+zx::result<IsolatedDevmgr> IsolatedDevmgr::Create(devmgr_launcher::Args args) {
   IsolatedDevmgr devmgr;
-
-  // Create and build the realm.
-  auto realm_builder = component_testing::RealmBuilder::Create();
-  driver_test_realm::Setup(realm_builder);
+  devmgr.loop_ = std::make_unique<async::Loop>(&kAsyncLoopConfigNeverAttachToThread);
+  devmgr.loop_->StartThread();
 
   std::vector<fuchsia_component_test::Capability> exposes = {{
       fuchsia_component_test::Capability::WithService(
           fuchsia_component_test::Service{{.name = "fuchsia.sysinfo.Service"}}),
   }};
-  driver_test_realm::AddDtrExposes(realm_builder, exposes);
 
-  devmgr.realm_ = std::make_unique<component_testing::RealmRoot>(realm_builder.Build(dispatcher));
+  // Create and build the realm.
+  auto realm_builder = component_testing::RealmBuilder::Create();
+  driver_test_realm::Setup(
+      realm_builder, devmgr.loop_->dispatcher(),
+      driver_test_realm::OptionsBuilder().driver_exposes(exposes).Build(),
+      fuchsia_driver_test::RealmArgs{{
+          .root_driver = PathToUrl(args.root_device_driver),
+          .driver_tests_enable = std::move(args.driver_tests_enable),
+          .driver_tests_disable = std::move(args.driver_tests_disable),
+          .software_devices =
+              std::vector{
+                  fuchsia_driver_test::SoftwareDevice{{
+                      .device_name = "ram-disk",
+                      .device_id = bind_fuchsia_platform::BIND_PLATFORM_DEV_DID_RAM_DISK,
+                  }},
+              },
+      }});
 
-  // Start DriverTestRealm.
-  zx::result dtr_client = devmgr.realm_->component().Connect<fuchsia_driver_test::Realm>();
-  if (dtr_client.is_error()) {
-    return dtr_client.take_error();
+  devmgr.realm_ = std::make_unique<component_testing::RealmRoot>(
+      realm_builder.Build(devmgr.loop_->dispatcher()));
+
+  auto boot_result = driver_test_realm::WaitForBootup(*devmgr.realm_);
+  if (boot_result.status_value() != ZX_OK) {
+    return zx::error(boot_result.status_value());
   }
-  auto result =
-      fidl::Call(*dtr_client)
-          ->Start(fuchsia_driver_test::RealmArgs{{
-              .root_driver = PathToUrl(args.root_device_driver),
-              .driver_tests_enable = std::move(args.driver_tests_enable),
-              .driver_tests_disable = std::move(args.driver_tests_disable),
-              .dtr_exposes = exposes,
-              .software_devices =
-                  std::vector{
-                      fuchsia_driver_test::SoftwareDevice{{
-                          .device_name = "ram-disk",
-                          .device_id = bind_fuchsia_platform::BIND_PLATFORM_DEV_DID_RAM_DISK,
-                      }},
-                  },
-          }});
-  ZX_ASSERT(result.is_ok());
 
   // Connect to dev.
+  // TODO(https://fxbug.dev/377735979): Connect using a different mechanism.
   fidl::InterfaceHandle<fuchsia::io::Directory> dev;
   if (zx_status_t status = devmgr.realm_->component().exposed()->Open(
           "dev-topological", fuchsia::io::PERM_READABLE, {}, dev.NewRequest().TakeChannel());
@@ -113,6 +112,10 @@ __EXPORT
 IsolatedDevmgr& IsolatedDevmgr::operator=(IsolatedDevmgr&& other) noexcept = default;
 
 __EXPORT
-IsolatedDevmgr::~IsolatedDevmgr() = default;
+IsolatedDevmgr::~IsolatedDevmgr() {
+  if (realm_) {
+    driver_test_realm::ShutdownRealm(*realm_);
+  }
+}
 
 }  // namespace devmgr_integration_test

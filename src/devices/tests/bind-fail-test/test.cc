@@ -21,12 +21,7 @@ TEST(BindFailTest, BindFail) {
 
   args.root_device_driver = "/boot/meta/test-parent-sys.cm";
 
-  // NB: this loop is never run. RealmBuilder::Build is in the call stack, and insists on a non-null
-  // dispatcher.
-  //
-  // TODO(https://fxbug.dev/42065538): Remove this.
-  async::Loop loop(&kAsyncLoopConfigNeverAttachToThread);
-  zx::result devmgr = IsolatedDevmgr::Create(std::move(args), loop.dispatcher());
+  zx::result devmgr = IsolatedDevmgr::Create(std::move(args));
   ASSERT_OK(devmgr.status_value());
 
   fidl::ClientEnd<fuchsia_device::Controller> client_end;

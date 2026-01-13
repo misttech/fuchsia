@@ -41,11 +41,7 @@ class IsolatedDevmgr {
   static devmgr_launcher::Args DefaultArgs();
 
   // Launch a new isolated devmgr.
-  //
-  // TODO(https://fxbug.dev/42065538): Remove |dispatcher| once RealmBuilder::Build no longer
-  // requires it.
-  static zx::result<IsolatedDevmgr> Create(devmgr_launcher::Args args,
-                                           async_dispatcher_t* dispatcher);
+  static zx::result<IsolatedDevmgr> Create(devmgr_launcher::Args args);
 
   // Get a fd to the root of the isolate devmgr's devfs.  This fd
   // may be used with openat() and fdio_watch_directory().
@@ -57,6 +53,7 @@ class IsolatedDevmgr {
   }
 
  private:
+  std::unique_ptr<async::Loop> loop_;
   std::unique_ptr<component_testing::RealmRoot> realm_;
 
   // FD to the root of devmgr's devfs
