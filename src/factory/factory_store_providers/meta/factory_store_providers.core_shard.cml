@@ -29,6 +29,17 @@
             to: "#factory_store_providers",
         },
         {
+            protocol: [ "fuchsia.feedback.CrashReporter" ],
+            from: "#feedback",
+            to: "#factory_store_providers",
+
+            // Other components like #hwinfo provide data to #feedback, but #hwinfo sources
+            // data from #factory_store_providers. Break this dependency cycle by allowing
+            // #factory_store_providers to run without #feedback. This should always be
+            // acceptable since #feedback is only used during startup of this component.
+            dependency: "weak",
+        },
+        {
             protocol: [
                 "fuchsia.factory.AlphaFactoryStoreProvider",
                 "fuchsia.factory.CastCredentialsFactoryStoreProvider",

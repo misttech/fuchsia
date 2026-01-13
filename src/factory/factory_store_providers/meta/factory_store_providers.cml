@@ -20,7 +20,12 @@
         },
     ],
     use: [
-        { protocol: "fuchsia.boot.FactoryItems" },
+        {
+            protocol: [
+                "fuchsia.boot.FactoryItems",
+                "fuchsia.feedback.CrashReporter",
+            ],
+        },
         {
             directory: "config-data",
             rights: [ "r*" ],

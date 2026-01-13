@@ -5,9 +5,9 @@
 mod config;
 mod validators;
 
-use anyhow::{format_err, Error};
+use anyhow::{Error, format_err};
 use config::{Config, ConfigContext, FactoryConfig};
-use fidl::endpoints::{create_proxy, ProtocolMarker, Request, RequestStream};
+use fidl::endpoints::{ProtocolMarker, Request, RequestStream, create_proxy};
 use fidl_fuchsia_boot::FactoryItemsMarker;
 use fidl_fuchsia_factory::{
     AlphaFactoryStoreProviderMarker, AlphaFactoryStoreProviderRequest,
@@ -20,7 +20,6 @@ use fidl_fuchsia_factory::{
     WeaveFactoryStoreProviderRequestStream, WidevineFactoryStoreProviderMarker,
     WidevineFactoryStoreProviderRequest, WidevineFactoryStoreProviderRequestStream,
 };
-use fidl_fuchsia_io as fio;
 use fuchsia_bootfs::BootfsParser;
 use fuchsia_component::server::ServiceFs;
 use futures::lock::Mutex;
@@ -30,6 +29,7 @@ use std::sync::Arc;
 use vfs::directory;
 use vfs::file::vmo::read_only;
 use vfs::tree_builder::TreeBuilder;
+use {fidl_fuchsia_feedback as ffeedback, fidl_fuchsia_io as fio};
 
 const CONCURRENT_LIMIT: usize = 10_000;
 const DEFAULT_BOOTFS_FACTORY_ITEM_EXTRA: u32 = 0;
@@ -44,8 +44,9 @@ enum IncomingServices {
     WidevineFactoryStoreProvider(WidevineFactoryStoreProviderRequestStream),
 }
 
-fn parse_bootfs<'a>(vmo: zx::Vmo) -> Arc<directory::immutable::Simple> {
+async fn parse_bootfs<'a>(vmo: zx::Vmo) -> Arc<directory::immutable::Simple> {
     let mut tree_builder = TreeBuilder::empty_dir();
+    let mut has_invalid_factory_data = false;
 
     match BootfsParser::create_from_vmo(vmo) {
         Ok(parser) => parser.iter().for_each(|result| match result {
@@ -60,17 +61,29 @@ fn parse_bootfs<'a>(vmo: zx::Vmo) -> Arc<directory::immutable::Simple> {
                         &path_parts,
                         read_only(payload.unwrap_or_else(|| {
                             log::error!("Failed to buffer bootfs entry {}", name);
+                            has_invalid_factory_data = true;
                             Vec::new()
                         })),
                     )
                     .unwrap_or_else(|err| {
                         log::error!("Failed to add bootfs entry {} to directory: {}", name, err);
+                        has_invalid_factory_data = true;
                     });
             }
-            Err(err) => log::error!("BootfsParser: {}", err),
+            Err(err) => {
+                log::error!("BootfsParser: {}", err);
+                has_invalid_factory_data = true;
+            }
         }),
-        Err(err) => log::error!("BootfsParser: {}", err),
+        Err(err) => {
+            log::error!("BootfsParser: {}", err);
+            has_invalid_factory_data = true;
+        }
     };
+
+    if has_invalid_factory_data {
+        file_crash_report(CORRUPT_FACTORY_DATA_CRASH_SIGNATURE).await;
+    }
 
     tree_builder.build()
 }
@@ -178,11 +191,14 @@ async fn open_factory_source(factory_config: FactoryConfig) -> Result<fio::Direc
     match factory_config {
         FactoryConfig::FactoryItems => {
             log::info!("{}", "Reading from FactoryItems service");
-            let factory_items_directory =
-                fetch_new_factory_item().await.map(|vmo| parse_bootfs(vmo)).unwrap_or_else(|err| {
+            let factory_items_directory = match fetch_new_factory_item().await {
+                Ok(item) => parse_bootfs(item).await,
+                Err(err) => {
                     log::error!("Failed to get factory item, returning empty item list: {}", err);
+                    file_crash_report(CORRUPT_FACTORY_DATA_CRASH_SIGNATURE).await;
                     directory::immutable::simple()
-                });
+                }
+            };
             Ok(vfs::directory::serve_read_only(factory_items_directory))
         }
         FactoryConfig::FactoryVerity => {
@@ -191,6 +207,34 @@ async fn open_factory_source(factory_config: FactoryConfig) -> Result<fio::Direc
             fdio::open("/factory", fio::PERM_READABLE, directory_server_end.into_channel())?;
             Ok(directory_proxy)
         }
+    }
+}
+
+/// Default name to use for `program_name` in the crash report.
+const DEFAULT_PROGRAM_NAME: &'static str = "factory_store_providers";
+
+const CORRUPT_FACTORY_DATA_CRASH_SIGNATURE: &'static str = "fuchsia-factory-invalid-data";
+
+/// Files a request to the CrashReporter service with the specified crash report signature.
+async fn file_crash_report(signature: &str) {
+    let report = ffeedback::CrashReport {
+        program_name: Some(DEFAULT_PROGRAM_NAME.to_string()),
+        crash_signature: Some(signature.to_string()),
+        is_fatal: Some(false),
+        ..Default::default()
+    };
+
+    let crash_reporter =
+        match fuchsia_component::client::connect_to_protocol::<ffeedback::CrashReporterMarker>() {
+            Ok(proxy) => proxy,
+            Err(e) => {
+                log::warn!("Failed to connect to CrashReporter: {:?}", e);
+                return;
+            }
+        };
+
+    if let Err(e) = crash_reporter.file_report(report).await {
+        log::warn!("Failed to file crash report: {:?}", e);
     }
 }
 
