@@ -165,6 +165,7 @@ fit::result<Error, bool> CfiUnwinder::Step(Memory* stack, const Registers& curre
         // It's entirely possible at this point for the 32 bit binary to have CFI instructions for
         // this 32 bit PC value, so we continue on.
         regs = *maybe_32bit;
+        next = Registers(regs.arch());
       }
     }
   }
