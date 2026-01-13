@@ -33,7 +33,7 @@ zx::result<> RamdiskController::Start() {
     return result;
   }
   inspector().Health().Ok();
-  node_client_.Bind(std::move(node()), dispatcher());
+  node_client_.Bind(std::move(node()));
 
   return zx::ok();
 }
@@ -127,13 +127,31 @@ void RamdiskController::Create(CreateRequestView request, CreateCompleter::Sync&
                                   async_dispatcher_t*, async::WaitOnce*, zx_status_t,
                                   const zx_packet_signal_t*) { ramdisks_.erase(id); });
 
-  if (zx::result ramdisk =
-          Ramdisk::Create(this, dispatcher(), std::move(vmo), partition_info, std::move(outgoing),
-                          id, request->has_publish() ? request->publish() : false);
+  fidl::Arena arena;
+  const auto args = fuchsia_driver_framework::wire::NodeAddArgs::Builder(arena)
+                        .name(arena, "ramdisk-" + std::to_string(id))
+                        .Build();
+  auto [controller_client_end, controller_server_end] =
+      fidl::Endpoints<fuchsia_driver_framework::NodeController>::Create();
+  auto [node_client_end, node_server_end] =
+      fidl::Endpoints<fuchsia_driver_framework::Node>::Create();
+
+  auto result =
+      node_client_->AddChild(args, std::move(controller_server_end), std::move(node_server_end));
+  if (!result.ok()) {
+    FDF_LOGL(ERROR, logger(), "Failed to add child ramdisk: %s", result.status_string());
+    completer.Reply(zx::error(result.status()));
+    return;
+  }
+
+  if (zx::result ramdisk = Ramdisk::Create(this, dispatcher(), std::move(node_client_end),
+                                           std::move(vmo), partition_info, std::move(outgoing), id,
+                                           request->has_publish() ? request->publish() : false);
       ramdisk.is_error()) {
     completer.Reply(ramdisk.take_error());
   } else {
     ramdisks_.emplace(id, std::make_pair(*std::move(ramdisk), std::move(waiter)));
+    ramdisk_controllers_.emplace(id, std::move(controller_client_end));
     completer.ReplySuccess(std::move(client), std::move(endpoint0));
   }
 }

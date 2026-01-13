@@ -1,0 +1,10 @@
+{
+    "short_description": "Toy driver for block-relay integration test",
+    "manufacturer": "",
+    "families": [],
+    "models": [],
+    "areas": [
+        "Storage",
+        "Test"
+    ]
+}

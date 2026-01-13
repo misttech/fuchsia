@@ -493,7 +493,7 @@ impl Matcher for GptAllMatcher {
                     })
                 {
                     self.system_gpt_path = Some(device.topological_path().to_string());
-                    env.register_system_gpt(gpt)?;
+                    env.register_system_gpt(device, gpt)?;
                     Ok(Some(DeviceTag::SystemPartitionTable))
                 } else {
                     env.register_filesystem(gpt);
@@ -561,7 +561,7 @@ impl Matcher for SystemGptMatcher {
             }
             PartitionMapType::StorageHost => {
                 let (gpt, _) = env.launch_and_enumerate_gpt_component(device).await?;
-                env.register_system_gpt(gpt)?;
+                env.register_system_gpt(device, gpt)?;
             }
         };
 
@@ -995,7 +995,11 @@ mod tests {
             Ok((Filesystem::Queue(vec![]), partitions))
         }
 
-        fn register_system_gpt(&mut self, _gpt: Filesystem) -> Result<(), Error> {
+        fn register_system_gpt(
+            &mut self,
+            _device: &dyn Device,
+            _gpt: Filesystem,
+        ) -> Result<(), Error> {
             assert_eq!(
                 std::mem::take(&mut *self.expect_register_system_gpt.lock()),
                 true,

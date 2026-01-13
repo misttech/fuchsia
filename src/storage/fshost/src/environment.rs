@@ -73,8 +73,8 @@ pub trait Environment: Send + Sync {
         device: &mut dyn Device,
     ) -> Result<(Filesystem, Vec<PartitionInfo>), Error>;
 
-    /// Registers a GPT filesystem as the system GPT.
-    fn register_system_gpt(&mut self, gpt: Filesystem) -> Result<(), Error>;
+    /// Registers a mounted GPT (bound to `device`) as the system GPT.
+    fn register_system_gpt(&mut self, device: &dyn Device, gpt: Filesystem) -> Result<(), Error>;
 
     /// Returns a proxy for the exposed dir of the partition table manager.  This can be called
     /// before the manager is bound and it will get routed once bound.
@@ -165,6 +165,12 @@ pub trait Environment: Send + Sync {
     async fn provision_fxfs(&mut self, _device: &mut dyn Device) -> Result<(), Error> {
         Ok(())
     }
+}
+
+enum BufferedDirectory {
+    Queue(Vec<ServerEnd<fio::DirectoryMarker>>),
+    Dir(fio::DirectoryProxy),
+    Closed,
 }
 
 pub enum Filesystem {
@@ -333,8 +339,10 @@ impl MaybeFs for Option<Box<dyn Container>> {
 /// Implements the Environment trait and keeps track of mounted filesystems.
 pub struct FshostEnvironment {
     config: Arc<fshost_config::Config>,
-    // When storage-host is enabled, the GPT is run as a component.
+    // When storage-host is enabled, the GPT is run as a component.  `gpt_device_service_instance`
+    // will connect to the volume Service instance for the block device that `gpt` is mounted on.
     gpt: Filesystem,
+    gpt_device_service_instance: BufferedDirectory,
     // `container` is set inside mount_fxblob() or mount_fvm() and represents the overall
     // Fxfs/Fvm instance which contains both a data and blob volume.
     container: Option<Box<dyn Container>>,
@@ -364,6 +372,7 @@ impl FshostEnvironment {
         Self {
             config: config.clone(),
             gpt: Filesystem::Queue(Vec::new()),
+            gpt_device_service_instance: BufferedDirectory::Queue(Vec::new()),
             container: None,
             blobfs: Filesystem::Queue(Vec::new()),
             data: Filesystem::Queue(Vec::new()),
@@ -404,6 +413,25 @@ impl FshostEnvironment {
     /// mounted and it will get routed once the data partition is mounted.
     pub fn data_root(&mut self) -> Result<fio::DirectoryProxy, Error> {
         self.data.root()
+    }
+
+    /// Returns a proxy for the fuchsia.hardware.block.volume.Service instance for the block device
+    /// containing the system GPT.  This can be called before that device is discovered, and the
+    /// client will hanging-get until that happens.
+    pub fn system_gpt_volume_service_instance(&mut self) -> Result<fio::DirectoryProxy, Error> {
+        match &mut self.gpt_device_service_instance {
+            BufferedDirectory::Queue(queue) => {
+                let (proxy, server_end) = create_proxy::<fio::DirectoryMarker>();
+                queue.push(server_end);
+                Ok(proxy)
+            }
+            BufferedDirectory::Dir(dir) => {
+                let (proxy, server_end) = create_proxy::<fio::DirectoryMarker>();
+                dir.clone(server_end.into_channel().into())?;
+                Ok(proxy)
+            }
+            BufferedDirectory::Closed => bail!("system gpt is closed"),
+        }
     }
 
     pub fn launcher(&self) -> Arc<FilesystemLauncher> {
@@ -761,7 +789,11 @@ impl Environment for FshostEnvironment {
         Ok((Filesystem::ServingGpt(serving), partitions))
     }
 
-    fn register_system_gpt(&mut self, mut gpt: Filesystem) -> Result<(), Error> {
+    fn register_system_gpt(
+        &mut self,
+        device: &dyn Device,
+        mut gpt: Filesystem,
+    ) -> Result<(), Error> {
         if self.gpt.is_serving() {
             // If we want to support multiple GPT devices, we'll need to change Environment to
             // separate the system GPT and other GPTs.
@@ -773,6 +805,27 @@ impl Environment for FshostEnvironment {
             exposed_dir.clone(server.into_channel().into())?;
         }
         self.gpt = gpt;
+        match device.service_instance_directory() {
+            Ok(dir) => {
+                match &mut self.gpt_device_service_instance {
+                    BufferedDirectory::Queue(queue) => {
+                        for server in queue.drain(..) {
+                            dir.clone(server.into_channel().into())?;
+                        }
+                        self.gpt_device_service_instance = BufferedDirectory::Dir(dir);
+                    }
+                    // gpt and gpt_device_service_instance should be set together, and we checked
+                    // for repeated calls above
+                    BufferedDirectory::Dir(_) => unreachable!(),
+                    BufferedDirectory::Closed => {}
+                }
+            }
+            Err(err) => {
+                log::warn!(
+                    err:?; "Failed to get service instance directory; block-relay will not start");
+                self.gpt_device_service_instance = BufferedDirectory::Closed;
+            }
+        }
         Ok(())
     }
 
@@ -1150,25 +1203,9 @@ impl Environment for FshostEnvironment {
             "fshost was not configured to provision Fxfs yet `provision_fxfs(..)` was called"
         );
 
-        // Clone partition directory to pass to fxfs provisioner
-        let exposed_dir = self.partition_manager_exposed_dir()?;
-        let partitions_dir = fuchsia_fs::directory::open_directory(
-            &exposed_dir,
-            fpartitions::PartitionServiceMarker::SERVICE_NAME,
-            fuchsia_fs::PERM_READABLE,
-        )
-        .await?;
-        // `device.path()` returns the path to the Volume protocol, strip the "/volume" suffix to
-        // get the path of the partition.
-        // TODO(https://fxbug.dev/438829467): consider changing `device.path()` to return path
-        // without "/volume".
-        let path = device
-            .path()
-            .strip_suffix("/volume")
-            .ok_or_else(|| anyhow!("failed to strip volume suffix from device path"))?;
-        let partition_service =
-            fuchsia_fs::directory::open_directory(&partitions_dir, path, fio::PERM_READABLE)
-                .await?;
+        let partition_service = device
+            .service_instance_directory()
+            .with_context(|| anyhow!("Failed to open service instance for {}", device.path()))?;
 
         let fxfs_provisioner = connect_to_protocol::<ffxfsprovisioner::FxfsProvisionerMarker>()
             .context("failed to connect to fxfs provisioner protocol")?;

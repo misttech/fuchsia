@@ -6,7 +6,10 @@ import("//build/fidl/fidl.gni")
 
 fidl("fuchsia.hardware.block.volume") {
   sources = [ "volume.fidl" ]
-  public_deps = [ "//sdk/fidl/fuchsia.storage.block" ]
+  public_deps = [
+    "//sdk/fidl/fuchsia.driver.framework",
+    "//sdk/fidl/fuchsia.storage.block",
+  ]
 
   # TODO(https://fxbug.dev/42169676): Remove this dependency since this target does
   # not directly depend on these libraries.

@@ -25,6 +25,7 @@ group("drivers-not-templates") {
     "//src/lib/ddktl:drivers",
     "//src/media/bundles:drivers",
     "//src/power:drivers",
+    "//src/storage/block-relay/testing/toy-driver",
     "//src/storage/fvm/driver",
     "//src/sys/component_manager/tests/structured_config/client_integration/cpp_driver:receiver_component",
     "//src/ui/bundles:drivers",

@@ -46,10 +46,17 @@ pub trait BlockConnector: Send + Sync {
 pub struct DirBasedBlockConnector(fio::DirectoryProxy, String);
 
 impl DirBasedBlockConnector {
+    /// Creates a new [`DirBasedBlockConnector`].  It is expected that `path` within `dir` hosts the
+    /// Volume protocol.
     pub fn new(dir: fio::DirectoryProxy, path: String) -> Self {
         Self(dir, path)
     }
 
+    pub fn dir(&self) -> &fio::DirectoryProxy {
+        &self.0
+    }
+
+    /// Returns the path relative to the directory which hosts the volume protocol.
     pub fn path(&self) -> &str {
         &self.1
     }

@@ -33,9 +33,11 @@ class RamdiskController : public fdf::DriverBase,
       fidl::UnknownMethodMetadata<fuchsia_hardware_ramdisk::Controller> metadata,
       fidl::UnknownMethodCompleter::Sync& completer) override {}
 
-  fidl::SharedClient<fuchsia_driver_framework::Node> node_client_;
+  fidl::WireSyncClient<fuchsia_driver_framework::Node> node_client_;
   std::unordered_map<int, std::pair<std::unique_ptr<Ramdisk>, std::unique_ptr<async::WaitOnce>>>
       ramdisks_;
+  std::unordered_map<int, fidl::ClientEnd<fuchsia_driver_framework::NodeController>>
+      ramdisk_controllers_;
 };
 
 }  // namespace ramdisk_v2

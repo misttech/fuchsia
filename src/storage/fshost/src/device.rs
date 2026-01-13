@@ -8,7 +8,7 @@ use anyhow::{Context, Error, anyhow};
 use async_trait::async_trait;
 use fidl::endpoints::create_proxy;
 use fidl_fuchsia_device::{ControllerMarker, ControllerProxy};
-use fidl_fuchsia_io::{self as fio};
+use fidl_fuchsia_io::{self as fio, DirectoryProxy};
 use fidl_fuchsia_storage_block::{BlockMarker, BlockProxy};
 use fs_management::filesystem::{BlockConnector, DirBasedBlockConnector};
 use fs_management::format::{DiskFormat, detect_disk_format};
@@ -85,6 +85,12 @@ pub trait Device: Send + Sync {
     /// Attempts to resize above this value will fail.
     async fn set_partition_max_bytes(&mut self, _max_bytes: u64) -> Result<(), Error> {
         Err(anyhow!("Unimplemented"))
+    }
+
+    /// Returns a DirectoryProxy connected to the fuchsia.hardware.block.volume.Service instance
+    /// directory for the device.  The device must originate from a Service instance.
+    fn service_instance_directory(&self) -> Result<DirectoryProxy, Error> {
+        Err(anyhow!("Device is not a volume service instance"))
     }
 
     /// Returns the connection to the Controller interface of the device.  Panics if the device
@@ -422,9 +428,9 @@ impl Device for BlockDevice {
     }
 }
 
-/// A device that only serves the volume protocol at the specified path.
+/// A device which is backed by a fuchsia.hardware.block.volume.Service instance directory.
 #[derive(Debug)]
-pub struct VolumeProtocolDevice {
+pub struct VolumeServiceDevice {
     connector: Box<DirBasedBlockConnector>,
     source: String,
 
@@ -440,15 +446,19 @@ pub struct VolumeProtocolDevice {
     parent: Parent,
 }
 
-impl VolumeProtocolDevice {
-    pub fn new(
-        dir: fio::DirectoryProxy,
-        path: impl ToString,
-        source: impl ToString,
+impl VolumeServiceDevice {
+    pub async fn new(
+        service_dir: &DirectoryProxy,
+        instance_name: String,
+        source: String,
         parent: Parent,
     ) -> Result<Self, Error> {
-        let source = format!("{}/{}", source.to_string(), path.to_string());
-        let connector = Box::new(DirBasedBlockConnector::new(dir, path.to_string() + "/volume"));
+        let source = format!("{source}/{instance_name}");
+        let instance_dir =
+            fuchsia_fs::directory::open_directory(&service_dir, &instance_name, fio::PERM_READABLE)
+                .await
+                .context("Failed to open service instance")?;
+        let connector = Box::new(DirBasedBlockConnector::new(instance_dir, "volume".to_string()));
         let block_proxy = connector.connect_block()?.into_proxy();
         Ok(Self {
             connector,
@@ -464,7 +474,7 @@ impl VolumeProtocolDevice {
 }
 
 #[async_trait]
-impl Device for VolumeProtocolDevice {
+impl Device for VolumeServiceDevice {
     async fn get_block_info(&self) -> Result<fidl_fuchsia_storage_block::BlockInfo, Error> {
         let block_proxy = self.block_proxy()?;
         let info = block_proxy.get_info().await?.map_err(zx::Status::from_raw)?;
@@ -484,7 +494,7 @@ impl Device for VolumeProtocolDevice {
     }
 
     fn path(&self) -> &str {
-        self.connector.path()
+        &self.source
     }
 
     fn topological_path(&self) -> &str {
@@ -535,6 +545,12 @@ impl Device for VolumeProtocolDevice {
 
     async fn set_partition_max_bytes(&mut self, max_bytes: u64) -> Result<(), Error> {
         crate::volume::set_partition_max_bytes(self, max_bytes).await
+    }
+
+    fn service_instance_directory(&self) -> Result<DirectoryProxy, Error> {
+        let (instance_dir, server_end) = create_proxy::<fio::DirectoryMarker>();
+        self.connector.dir().clone(server_end.into_channel().into())?;
+        Ok(instance_dir)
     }
 
     fn block_connector(&self) -> Result<Box<dyn BlockConnector>, Error> {

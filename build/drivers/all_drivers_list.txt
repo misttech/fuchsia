@@ -5,10 +5,8 @@
 //examples/drivers/power/cpp:driver
 //examples/drivers/power/rust:driver
 //examples/drivers/simple/dfv1:driver
-BAZEL:@//examples/drivers/simple/dfv2:pkg
 //examples/drivers/simple/rust:driver
 //examples/drivers/skeleton:driver
-BAZEL:@//examples/drivers/template:pkg
 //examples/drivers/transport/banjo/v1:child_driver
 //examples/drivers/transport/banjo/v1:parent_driver
 //examples/drivers/transport/banjo/v2:child_driver
@@ -17,8 +15,6 @@ BAZEL:@//examples/drivers/template:pkg
 //examples/drivers/transport/driver/rust_next/parent:driver
 //examples/drivers/transport/driver/v1:child_driver
 //examples/drivers/transport/driver/v1:parent_driver
-BAZEL:@//examples/drivers/transport/driver/v2:driver_transport_child_pkg
-BAZEL:@//examples/drivers/transport/driver/v2:driver_transport_parent_pkg
 //examples/drivers/transport/zircon/rust/child:driver
 //examples/drivers/transport/zircon/rust/parent:driver
 //examples/drivers/transport/zircon/rust_next/child:driver
@@ -206,6 +202,9 @@ BAZEL:@//examples/drivers/transport/driver/v2:driver_transport_parent_pkg
 //src/devices/tests/bind-fail-test:fuchsia_driver
 //src/devices/tests/bindlib-codegen-test:child-driver-driver
 //src/devices/tests/bindlib-codegen-test:parent-driver-driver
+//src/devices/tests/composite-test/drivers:composite-driver
+//src/devices/tests/composite-test/drivers:leaf-driver
+//src/devices/tests/composite-test/drivers:root-driver
 //src/devices/tests/ctf/basic_driver:basic-driver
 //src/devices/tests/ddk-fallback-test-v2:ddk-fallback-test-driver-module
 //src/devices/tests/ddk-fallback-test:ddk-fallback-test-driver
@@ -229,9 +228,6 @@ BAZEL:@//examples/drivers/transport/driver/v2:driver_transport_parent_pkg
 //src/devices/tests/multibind-composite-test/drivers:root-driver
 //src/devices/tests/multibind-composite-test/drivers:spec-composite-1-driver
 //src/devices/tests/multibind-composite-test/drivers:spec-composite-2-driver
-//src/devices/tests/composite-test/drivers:leaf-driver
-//src/devices/tests/composite-test/drivers:composite-driver
-//src/devices/tests/composite-test/drivers:root-driver
 //src/devices/tests/nonbindable:driver
 //src/devices/tests/runtime-composite-test/drivers:composite-driver
 //src/devices/tests/runtime-composite-test/drivers:leaf-driver
@@ -360,6 +356,7 @@ BAZEL:@//examples/drivers/transport/driver/v2:driver_transport_parent_pkg
 //src/power/testing/fake-battery:fake_battery_driver
 //src/power/testing/fake-trippoint:driver
 //src/power/testing/system-integration/example/test-driver:driver
+//src/storage/block-relay/testing/toy-driver:driver
 //src/storage/fvm/driver:fuchsia_driver
 //src/sys/component_manager/tests/structured_config/client_integration/cpp_driver:receiver_driver
 //src/ui/backlight/drivers/ti-lp8556:ti-lp8556-driver
@@ -382,3 +379,7 @@ BAZEL:@//examples/drivers/transport/driver/v2:driver_transport_parent_pkg
 //src/ui/light/drivers/aml-light:aml-light-driver
 //tools/create/goldens/my-driver-cpp:driver
 //zircon/third_party/dev/ethernet/e1000:e1000-driver
+BAZEL:@//examples/drivers/simple/dfv2:pkg
+BAZEL:@//examples/drivers/template:pkg
+BAZEL:@//examples/drivers/transport/driver/v2:driver_transport_child_pkg
+BAZEL:@//examples/drivers/transport/driver/v2:driver_transport_parent_pkg

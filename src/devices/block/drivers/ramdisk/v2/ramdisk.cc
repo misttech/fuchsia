@@ -30,7 +30,8 @@ static std::unique_ptr<fdf_dispatcher_shutdown_observer_t> NewObserver() {
 }
 
 zx::result<std::unique_ptr<Ramdisk>> Ramdisk::Create(
-    RamdiskController* controller, async_dispatcher_t* dispatcher, zx::vmo vmo,
+    RamdiskController* controller, async_dispatcher_t* dispatcher,
+    fidl::ClientEnd<fuchsia_driver_framework::Node> node, zx::vmo vmo,
     const block_server::PartitionInfo& partition_info, component::OutgoingDirectory outgoing,
     int id, bool publish) {
   fzl::OwnedVmoMapper mapping;
@@ -40,11 +41,12 @@ zx::result<std::unique_ptr<Ramdisk>> Ramdisk::Create(
       status != ZX_OK) {
     return zx::error(status);
   }
-  std::unique_ptr<Ramdisk> ramdisk(
-      new Ramdisk(controller, std::move(mapping), partition_info, std::move(outgoing)));
+  std::unique_ptr<Ramdisk> ramdisk(new Ramdisk(controller, std::move(node), std::move(mapping),
+                                               partition_info, std::move(outgoing)));
   if (zx::result result =
           ramdisk->outgoing_.AddUnmanagedProtocol<fuchsia_hardware_ramdisk::Ramdisk>(
-              ramdisk->bind_handler(dispatcher));
+              ramdisk->ramdisk_bindings_.CreateHandler(ramdisk.get(), dispatcher,
+                                                       fidl::kIgnoreBindingClosure));
       result.is_error()) {
     return result.take_error();
   }
@@ -64,6 +66,9 @@ zx::result<std::unique_ptr<Ramdisk>> Ramdisk::Create(
                          ramdisk.get()](fidl::ServerEnd<fuchsia_storage_block::Block> server_end) {
                       ramdisk->block_server_.Serve(std::move(server_end));
                     },
+                .node = ramdisk->node_bindings_.CreateHandler(
+                    ramdisk.get(), fdf::Dispatcher::GetCurrent()->async_dispatcher(),
+                    fidl::kIgnoreBindingClosure),
             }),
             std::to_string(id));
         result.is_error()) {
@@ -126,6 +131,19 @@ void Ramdisk::SleepAfter(SleepAfterRequestView request, SleepAfterCompleter::Syn
 void Ramdisk::GetBlockCounts(GetBlockCountsCompleter::Sync& completer) {
   std::lock_guard<std::mutex> lock(lock_);
   completer.Reply(block_counts_);
+}
+
+void Ramdisk::AddChild(AddChildRequestView request, AddChildCompleter::Sync& completer) {
+  fidl::WireResult result = node_->AddChild(request->args, std::move(request->controller), {});
+  if (!result.ok()) {
+    completer.ReplyError(fuchsia_driver_framework::NodeError::kInternal);
+    return;
+  }
+  if (result->is_error()) {
+    completer.ReplyError(result->error_value());
+    return;
+  }
+  completer.ReplySuccess();
 }
 
 void Ramdisk::StartThread(block_server::Thread thread) {

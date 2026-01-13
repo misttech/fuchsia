@@ -5,6 +5,7 @@ archivist
 ?asix-88772b
 ?blobfs
 block-core
+?block-relay
 ?bootstrap
 ?bt-transport-usb
 ?bus-kpci

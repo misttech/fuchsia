@@ -9,7 +9,8 @@ use futures::future::FutureExt as _;
 use std::collections::HashMap;
 
 use {
-    fidl_fuchsia_fshost as ffshost, fidl_fuchsia_fxfs as ffxfs, fidl_fuchsia_io as fio,
+    fidl_fuchsia_fshost as ffshost, fidl_fuchsia_fxfs as ffxfs,
+    fidl_fuchsia_hardware_block_volume as fvolume, fidl_fuchsia_io as fio,
     fidl_fuchsia_logger as flogger, fidl_fuchsia_process as fprocess,
     fidl_fuchsia_storage_partitions as fpartitions, fidl_fuchsia_update_verify as ffuv,
 };
@@ -267,6 +268,7 @@ impl FshostBuilder {
                     .capability(Capability::directory("tmp").rights(fio::RW_STAR_DIR))
                     .capability(Capability::directory("volumes").rights(fio::RW_STAR_DIR))
                     .capability(Capability::service::<fpartitions::PartitionServiceMarker>())
+                    .capability(Capability::service::<fvolume::ServiceMarker>())
                     .from(&fshost)
                     .to(Ref::parent()),
             )

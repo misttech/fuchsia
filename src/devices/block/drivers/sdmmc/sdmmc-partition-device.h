@@ -5,6 +5,7 @@
 #ifndef SRC_DEVICES_BLOCK_DRIVERS_SDMMC_SDMMC_PARTITION_DEVICE_H_
 #define SRC_DEVICES_BLOCK_DRIVERS_SDMMC_SDMMC_PARTITION_DEVICE_H_
 
+#include <fidl/fuchsia.hardware.block.volume/cpp/wire.h>
 #include <fuchsia/hardware/block/driver/cpp/banjo.h>
 #include <fuchsia/hardware/block/partition/cpp/banjo.h>
 #include <lib/driver/compat/cpp/compat.h>
@@ -23,7 +24,8 @@ class SdmmcBlockDevice;
 
 class PartitionDevice : public ddk::BlockImplProtocol<PartitionDevice>,
                         public ddk::BlockPartitionProtocol<PartitionDevice>,
-                        public block_server::Interface {
+                        public block_server::Interface,
+                        public fidl::WireServer<fuchsia_hardware_block_volume::Node> {
  public:
   PartitionDevice(SdmmcBlockDevice* sdmmc_parent, const block_info_t& block_info,
                   EmmcPartition partition);
@@ -39,6 +41,9 @@ class PartitionDevice : public ddk::BlockImplProtocol<PartitionDevice>,
 
   EmmcPartition partition() const { return partition_; }
   block_info_t block_info() const { return block_info_; }
+
+  // fuchsia.driver.framework.Node
+  void AddChild(AddChildRequestView request, AddChildCompleter::Sync& completer) override;
 
   // Visible for testing.
   const block_impl_protocol_ops_t& block_impl_protocol_ops() const {
@@ -67,6 +72,7 @@ class PartitionDevice : public ddk::BlockImplProtocol<PartitionDevice>,
   const char* partition_name_ = nullptr;
   fidl::WireSyncClient<fuchsia_driver_framework::NodeController> controller_;
   fidl::WireSyncClient<fuchsia_driver_framework::Node> node_;
+  fidl::ServerBindingGroup<fuchsia_hardware_block_volume::Node> node_bindings_;
 
   fbl::Mutex lock_;
   std::optional<block_server::BlockServer> block_server_ TA_GUARDED(lock_);

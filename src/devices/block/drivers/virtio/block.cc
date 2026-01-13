@@ -963,7 +963,7 @@ zx::result<> BlockDriver::Start() {
     return zx::error(status);
   }
 
-  parent_node_.Bind(std::move(node()));
+  node_.Bind(std::move(node()));
 
   auto [controller_client_end, controller_server_end] =
       fidl::Endpoints<fuchsia_driver_framework::NodeController>::Create();
@@ -984,7 +984,7 @@ zx::result<> BlockDriver::Start() {
                         .properties2(properties)
                         .Build();
 
-  auto result = parent_node_->AddChild(args, std::move(controller_server_end), {});
+  auto result = node_->AddChild(args, std::move(controller_server_end), {});
   if (!result.ok()) {
     FDF_LOG(ERROR, "Failed to add child: %s", result.status_string());
     return zx::error(result.status());
@@ -996,6 +996,9 @@ zx::result<> BlockDriver::Start() {
                   [this](fidl::ServerEnd<fuchsia_storage_block::Block> server_end) {
                     block_device_->ServeRequests(std::move(server_end));
                   },
+              .node = node_bindings_.CreateHandler(
+                  this, fdf::Dispatcher::GetCurrent()->async_dispatcher(),
+                  fidl::kIgnoreBindingClosure),
           }));
       result.is_error()) {
     FDF_LOGL(ERROR, logger(), "Failed to add volume service instance: %s", result.status_string());
@@ -1049,6 +1052,19 @@ void BlockDriver::BlockImplQueue(block_op_t* bop, block_impl_queue_callback comp
     FDF_LOG(ERROR, "BlockImplQueue called for driver that has not been started.");
     completion_cb(cookie, ZX_ERR_BAD_STATE, bop);
   }
+}
+
+void BlockDriver::AddChild(AddChildRequestView request, AddChildCompleter::Sync& completer) {
+  fidl::WireResult result = node_->AddChild(request->args, std::move(request->controller), {});
+  if (!result.ok()) {
+    completer.ReplyError(fuchsia_driver_framework::NodeError::kInternal);
+    return;
+  }
+  if (result->is_error()) {
+    completer.ReplyError(result->error_value());
+    return;
+  }
+  completer.ReplySuccess();
 }
 
 }  // namespace virtio

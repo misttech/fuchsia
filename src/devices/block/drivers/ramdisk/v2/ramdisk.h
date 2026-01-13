@@ -5,6 +5,7 @@
 #ifndef SRC_DEVICES_BLOCK_DRIVERS_RAMDISK_V2_RAMDISK_H_
 #define SRC_DEVICES_BLOCK_DRIVERS_RAMDISK_V2_RAMDISK_H_
 
+#include <fidl/fuchsia.hardware.block.volume/cpp/wire.h>
 #include <fidl/fuchsia.hardware.ramdisk/cpp/wire.h>
 #include <lib/driver/component/cpp/driver_base.h>
 #include <lib/fzl/owned-vmo-mapper.h>
@@ -23,10 +24,12 @@
 namespace ramdisk_v2 {
 
 class Ramdisk : public fidl::WireServer<fuchsia_hardware_ramdisk::Ramdisk>,
-                public block_server::Interface {
+                public block_server::Interface,
+                public fidl::WireServer<fuchsia_hardware_block_volume::Node> {
  public:
   static zx::result<std::unique_ptr<Ramdisk>> Create(
-      RamdiskController* controller, async_dispatcher_t* dispatcher, zx::vmo vmo,
+      RamdiskController* controller, async_dispatcher_t* dispatcher,
+      fidl::ClientEnd<fuchsia_driver_framework::Node> node, zx::vmo vmo,
       const block_server::PartitionInfo& partition_info, component::OutgoingDirectory outgoing,
       int id, bool publish);
 
@@ -34,18 +37,23 @@ class Ramdisk : public fidl::WireServer<fuchsia_hardware_ramdisk::Ramdisk>,
   Ramdisk& operator=(const Ramdisk&) = delete;
   ~Ramdisk();
 
-  // FIDL interface Ramdisk
+  // fuchsia.hardware.ramdisk.Ramdisk
   void SetFlags(SetFlagsRequestView request, SetFlagsCompleter::Sync& completer) override;
   void Wake(WakeCompleter::Sync& completer) override;
   void SleepAfter(SleepAfterRequestView request, SleepAfterCompleter::Sync& completer) override;
   void GetBlockCounts(GetBlockCountsCompleter::Sync& completer) override;
 
+  // fuchsia.driver.framework.Node
+  void AddChild(AddChildRequestView request, AddChildCompleter::Sync& completer) override;
+
  private:
-  Ramdisk(RamdiskController* controller, fzl::OwnedVmoMapper mapping,
-          const block_server::PartitionInfo& partition_info, component::OutgoingDirectory outgoing)
+  Ramdisk(RamdiskController* controller, fidl::ClientEnd<fuchsia_driver_framework::Node> node,
+          fzl::OwnedVmoMapper mapping, const block_server::PartitionInfo& partition_info,
+          component::OutgoingDirectory outgoing)
       : controller_(controller),
         block_size_(partition_info.block_size),
         block_count_(partition_info.block_count),
+        node_(std::move(node)),
         mapping_(std::move(mapping)),
         outgoing_(std::move(outgoing)),
         block_server_(partition_info, this) {}
@@ -66,6 +74,8 @@ class Ramdisk : public fidl::WireServer<fuchsia_hardware_ramdisk::Ramdisk>,
   const uint32_t block_size_;
   const uint64_t block_count_;
 
+  fidl::WireSyncClient<fuchsia_driver_framework::Node> node_;
+
   fzl::OwnedVmoMapper mapping_;
 
   // Guards fields of the ramdisk which may be accessed concurrently.
@@ -81,6 +91,9 @@ class Ramdisk : public fidl::WireServer<fuchsia_hardware_ramdisk::Ramdisk>,
 
   component::OutgoingDirectory outgoing_;
   block_server::BlockServer block_server_;
+
+  fidl::ServerBindingGroup<fuchsia_hardware_ramdisk::Ramdisk> ramdisk_bindings_;
+  fidl::ServerBindingGroup<fuchsia_hardware_block_volume::Node> node_bindings_;
 };
 
 }  // namespace ramdisk_v2

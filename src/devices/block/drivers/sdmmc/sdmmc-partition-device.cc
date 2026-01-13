@@ -121,6 +121,9 @@ zx_status_t PartitionDevice::AddDevice() {
                             if (block_server_)
                               block_server_->Serve(std::move(server_end));
                           },
+                      .node = node_bindings_.CreateHandler(
+                          this, fdf::Dispatcher::GetCurrent()->async_dispatcher(),
+                          fidl::kIgnoreBindingClosure),
                   }),
                   partition_name_);
       result.is_error()) {
@@ -188,6 +191,19 @@ zx_status_t PartitionDevice::BlockPartitionGetMetadata(partition_metadata_t* out
   out_metadata->num_blocks = block_info_.block_count;
   out_metadata->flags = 0;
   return ZX_OK;
+}
+
+void PartitionDevice::AddChild(AddChildRequestView request, AddChildCompleter::Sync& completer) {
+  fidl::WireResult result = node_->AddChild(request->args, std::move(request->controller), {});
+  if (!result.ok()) {
+    completer.ReplyError(fuchsia_driver_framework::NodeError::kInternal);
+    return;
+  }
+  if (result->is_error()) {
+    completer.ReplyError(result->error_value());
+    return;
+  }
+  completer.ReplySuccess();
 }
 
 fdf::Logger& PartitionDevice::logger() const { return sdmmc_parent_->logger(); }

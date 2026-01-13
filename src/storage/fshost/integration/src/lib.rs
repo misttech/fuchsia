@@ -40,6 +40,11 @@ pub const VFS_TYPE_FXFS: u32 = 0x73667866;
 pub const VFS_TYPE_F2FS: u32 = 0xfe694d21;
 pub const STARNIX_VOLUME_NAME: &str = "starnix_volume";
 
+/// fshost will expose an alias of its fuchsia.hardware.block.volume.Service directory at this path.
+/// This allows tests to disambiguate service instances from the driver test realm, which are
+/// automatically aggregated.
+pub const FSHOST_VOLUME_SERVICE_DIR_NAME: &str = "VolumeService";
+
 pub fn round_down<
     T: Into<U>,
     U: Copy + std::ops::Rem<U, Output = U> + std::ops::Sub<U, Output = U>,
@@ -126,6 +131,19 @@ impl TestFixtureBuilder {
     pub async fn build(self) -> TestFixture {
         let builder = RealmBuilder::new().await.unwrap();
         let fshost = self.fshost.build(&builder).await;
+        // Create a second alias which routes fshost's volume Service capability to the parent.
+        builder
+            .add_route(
+                Route::new()
+                    .capability(
+                        Capability::service::<fvolume::ServiceMarker>()
+                            .as_(FSHOST_VOLUME_SERVICE_DIR_NAME),
+                    )
+                    .from(&fshost)
+                    .to(Ref::parent()),
+            )
+            .await
+            .unwrap();
 
         let maybe_zbi_vmo = match self.zbi_ramdisk {
             Some(disk_builder) => Some(disk_builder.build_as_zbi_ramdisk().await),

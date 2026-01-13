@@ -4,6 +4,7 @@
 #ifndef SRC_DEVICES_BLOCK_DRIVERS_VIRTIO_BLOCK_H_
 #define SRC_DEVICES_BLOCK_DRIVERS_VIRTIO_BLOCK_H_
 
+#include <fidl/fuchsia.hardware.block.volume/cpp/wire.h>
 #include <fidl/fuchsia.storage.block/cpp/wire.h>
 #include <fuchsia/hardware/block/driver/c/banjo.h>
 #include <fuchsia/hardware/block/driver/cpp/banjo.h>
@@ -284,7 +285,9 @@ class BlockDevice : public virtio::Device, public block_server::Interface {
   fdf::Logger& logger_;
 };
 
-class BlockDriver : public fdf::DriverBase, public ddk::BlockImplProtocol<BlockDriver> {
+class BlockDriver : public fdf::DriverBase,
+                    public ddk::BlockImplProtocol<BlockDriver>,
+                    public fidl::WireServer<fuchsia_hardware_block_volume::Node> {
  public:
   static constexpr char kDriverName[] = "virtio-block";
 
@@ -299,6 +302,9 @@ class BlockDriver : public fdf::DriverBase, public ddk::BlockImplProtocol<BlockD
   void BlockImplQuery(block_info_t* info, size_t* bopsz);
   void BlockImplQueue(block_op_t* bop, block_impl_queue_callback completion_cb, void* cookie);
 
+  // fuchsia.driver.framework.Node
+  void AddChild(AddChildRequestView request, AddChildCompleter::Sync& completer) override;
+
  protected:
   // Override to inject dependency for unit testing.
   virtual zx::result<std::unique_ptr<BlockDevice>> CreateBlockDevice();
@@ -308,8 +314,9 @@ class BlockDriver : public fdf::DriverBase, public ddk::BlockImplProtocol<BlockD
  private:
   std::unique_ptr<BlockDevice> block_device_;
 
-  fidl::WireSyncClient<fuchsia_driver_framework::Node> parent_node_;
+  fidl::WireSyncClient<fuchsia_driver_framework::Node> node_;
   fidl::WireSyncClient<fuchsia_driver_framework::NodeController> node_controller_;
+  fidl::ServerBindingGroup<fuchsia_hardware_block_volume::Node> node_bindings_;
 
   // Legacy DFv1-based protocols.
   // TODO(https://fxbug.dev/394968352): Remove once all clients use Volume service provided by

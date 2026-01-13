@@ -2,7 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use crate::device::{BlockDevice, Device, NandDevice, Parent, VolumeProtocolDevice};
+use crate::device::{BlockDevice, Device, NandDevice, Parent, VolumeServiceDevice};
 use anyhow::{Context as _, Error};
 use async_trait::async_trait;
 use fuchsia_fs::directory::{WatchEvent, WatchMessage};
@@ -146,10 +146,8 @@ impl WatchSource for DirSource {
             let dir = dir.clone();
             let source = source.clone();
             async move {
-                let dir_clone = fuchsia_fs::directory::clone(&dir)
-                    .map_err(|err| log::warn!(err:?; "Failed to clone dir"))
-                    .ok()?;
-                VolumeProtocolDevice::new(dir_clone, filename, source, parent)
+                VolumeServiceDevice::new(&dir, filename, source, parent)
+                    .await
                     .map(|d| Box::new(d) as Box<dyn Device>)
                     .map_err(|err| {
                         log::warn!(err:?; "Failed to create device (maybe it went away?)");
@@ -305,16 +303,16 @@ mod tests {
         .expect("failed to make watcher");
 
         let expected_devices = std::collections::HashSet::from([
-            "block-000".to_string(),
-            "block-001".to_string(),
-            "nand-000".to_string(),
-            "nand-001".to_string(),
-            "000/volume".to_string(),
-            "001/volume".to_string(),
+            "/test-dev/class/block/000".to_string(),
+            "/test-dev/class/block/001".to_string(),
+            "/test-dev/class/nand/000".to_string(),
+            "/test-dev/class/nand/001".to_string(),
+            "test-dir-source/000".to_string(),
+            "test-dir-source/001".to_string(),
         ]);
         let mut devices = std::collections::HashSet::new();
         for _ in 0..expected_devices.len() {
-            devices.insert(device_stream.next().await.unwrap().topological_path().to_string());
+            devices.insert(device_stream.next().await.unwrap().path().to_string());
         }
         assert_eq!(devices, expected_devices);
 

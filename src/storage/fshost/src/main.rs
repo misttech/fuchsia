@@ -75,12 +75,14 @@ async fn main() -> Result<(), Error> {
             )) as Box<dyn WatchSource>);
         }
         sources.extend(
-            fuchsia_fs::directory::open_in_namespace(VOLUME_SERVICE_PATH, fio::Flags::empty()).map(
-                |d| {
-                    Box::new(DirSource::new(d, VOLUME_SERVICE_PATH, Parent::Dev))
-                        as Box<dyn WatchSource>
-                },
-            ),
+            fuchsia_fs::directory::open_in_namespace(
+                VOLUME_SERVICE_PATH,
+                fio::PERM_READABLE | fio::Flags::PROTOCOL_DIRECTORY,
+            )
+            .map(|d| {
+                Box::new(DirSource::new(d, VOLUME_SERVICE_PATH, Parent::Dev))
+                    as Box<dyn WatchSource>
+            }),
         );
         sources
     } else {
@@ -155,6 +157,7 @@ async fn main() -> Result<(), Error> {
     if config.storage_host {
         export.add_entry("gpt", remote_dir(env.partition_manager_exposed_dir()?)).unwrap();
     }
+    let system_gpt_service_instance = env.system_gpt_volume_service_instance()?;
     let env: Arc<Mutex<dyn Environment>> = Arc::new(Mutex::new(env));
     // Guard to prevent concurrent access to the system container (or the partition backing it).
     // TODO(https://fxbug.dev/444486641): Using a shared lock like this is not ideal, as we could
@@ -176,6 +179,9 @@ async fn main() -> Result<(), Error> {
                 ramdisk_device.as_ref().map(|d| d.topological_path().to_string()),
                 launcher,
             ),
+        fidl_fuchsia_hardware_block_volume::ServiceMarker::SERVICE_NAME => vfs::pseudo_directory! {
+            "default" => remote_dir(system_gpt_service_instance),
+        }
     };
     if config.fxfs_blob {
         export

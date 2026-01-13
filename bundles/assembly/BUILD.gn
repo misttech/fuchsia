@@ -2556,12 +2556,18 @@ assembly_input_bundle("fshost_storage") {
       components = [
         {
           component_name = "fshost"
-          shards = [ "//src/storage/fshost/meta/core_fshost.cml" ]
+          shards = [
+            "//src/storage/fshost/meta/core_fshost.cml",
+            "//src/storage/fshost/meta/block_relay_child.shard.cml",
+          ]
         },
       ]
     },
   ]
-  bootfs_packages = [ "//src/storage/memfs:package" ]
+  bootfs_packages = [
+    "//src/storage/block-relay",
+    "//src/storage/memfs:package",
+  ]
 }
 
 # AIB for fshost's storage-host configuration with GPT+Fxfs.
