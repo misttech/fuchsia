@@ -7,6 +7,9 @@
 
 #include <lib/fit/result.h>
 
+#include <cassert>
+#include <concepts>
+#include <ranges>
 #include <type_traits>
 #include <utility>
 
@@ -15,6 +18,104 @@
 #include "symbol.h"
 
 namespace elfldltl {
+
+enum class ResolverPolicy : bool {
+  // The first symbol found takes precedence, searching ends after finding the
+  // first.
+  kStrictLinkOrder,
+
+  // This follows LD_DYNAMIC_WEAK=1 semantics, the resolver will resolve to the
+  // first STB_GLOBAL symbol even if an STB_WEAK symbol was seen earlier.  If
+  // no global symbol was found the first STB_WEAK symbol will prevail.
+  kStrongOverWeak,
+};
+
+// The projection function passed to ResolveSymbol<Elf> returns this type.
+template <class Elf>
+using ResolveSymbolProjResult = fit::result<bool, const typename Elf::Sym*>;
+
+// This is the value_type of the fit::result value of ResolveSymbol<Elf>.  The
+// module iterator is where the projection function found the symbol pointer.
+// A success return with the end() iterator and nullptr means none was found.
+template <class Elf, std::forward_iterator Iterator>
+struct ResolveSymbolResult {
+  Iterator module;
+  const typename Elf::Sym* symbol = nullptr;
+};
+
+// Apply the projection function to each module until one returns either an
+// error result or a success result that's not nullptr and qualifies as the
+// best definition by the policy.  If the last call attempted returned a
+// success result with nullptr, then this returns a success result of
+// {.module=modules.end(), .symbol=nullptr}.
+template <class Elf = elfldltl::Elf<>, std::ranges::forward_range Range,
+          std::invocable<std::ranges::range_reference_t<Range>> Proj>
+  requires std::convertible_to<  //
+      std::invoke_result_t<Proj, std::ranges::range_reference_t<Range>>,
+      ResolveSymbolProjResult<Elf>>
+constexpr fit::result<bool, ResolveSymbolResult<Elf, std::ranges::iterator_t<Range>>> ResolveSymbol(
+    auto& diag, Range&& modules, Proj&& proj, ResolverPolicy policy) {
+  using Sym = typename Elf::Sym;
+  using Result = ResolveSymbolResult<Elf, std::ranges::iterator_t<Range>>;
+  Result found = {.module = modules.end()};
+  for (auto it = modules.begin(); it != modules.end(); ++it) {
+    auto result = std::invoke(proj, *it);
+    if (result.is_error()) [[unlikely]] {
+      // The hook said to fail the whole resolution, which to the caller likely
+      // means the entire relocation of the referring module.  The error value
+      // will tell the caller whether to bail out now or continue at a higher
+      // level, such as relocating other modules.
+      return result.take_error();
+    }
+    const Sym* sym = *result;
+    if (!sym) {
+      continue;
+    }
+    switch (sym->bind()) {
+      case ElfSymBind::kWeak:
+        // In kStrongOverWeak policy the first weak definition will prevail
+        // if no strong definition is found later.
+        if (policy == ResolverPolicy::kStrongOverWeak) {
+          assert(!found.symbol == (found.module == modules.end()));
+          if (!found.symbol) {  // No definition seen yet.
+            found = {.module = it, .symbol = sym};
+          }
+          continue;
+        }
+        // In kStrictLinkOrder policy, STB_WEAK is like STB_GLOBAL at
+        // runtime.
+        [[fallthrough]];
+      case ElfSymBind::kGlobal:
+        // The first (strong) global always prevails regardless of policy.
+        return fit::ok(Result{.module = it, .symbol = sym});
+      case ElfSymBind::kLocal:
+        // Local symbols are never matched by name.
+        if (!diag.FormatWarning("STB_LOCAL found in hash table")) {
+          return fit::error{false};
+        }
+        continue;
+      case ElfSymBind::kUnique:
+        // This definition expects to prevail, but will not be used as
+        // intended.  So it's always an error, rather than considering
+        // another definition.
+        if (!diag.FormatError("STB_GNU_UNIQUE not supported")) {
+          return fit::error{false};
+        }
+        break;
+      default:
+        if (!diag.FormatError("Unknown symbol binding type", static_cast<unsigned>(sym->bind()))) {
+          return fit::error{false};
+        }
+        break;
+    }
+
+    // That returned a definition or continued to look for another so this is
+    // only reached for the error cases where the Diagnostics object said to
+    // keep going.
+    [[unlikely]] return fit::error{true};
+  }
+  return fit::ok(found);
+}
 
 // This type implements a Definition which can be used as the return type for
 // the `resolve` parameter for RelocateSymbolic. See link.h for more details.
@@ -105,17 +206,6 @@ struct ResolverDefinition {
   TlsDescResolver* tlsdesc_resolver_ = nullptr;
 };
 
-enum class ResolverPolicy : bool {
-  // The first symbol found takes precedence, searching ends after finding the
-  // first.
-  kStrictLinkOrder,
-
-  // This follows LD_DYNAMIC_WEAK=1 semantics, the resolver will resolve to the
-  // first STB_GLOBAL symbol even if an STB_WEAK symbol was seen earlier.
-  // If no global symbol was found the first STB_WEAK symbol will prevail.
-  kStrongOverWeak,
-};
-
 // Returns a callable object which can be used for RelocateSymbolic's `resolve`
 // argument.  This takes some Module object (as described above) whose
 // symbol_info() contains the symbol given by RelocateSymbolic.  The `modules`
@@ -132,14 +222,16 @@ enum class ResolverPolicy : bool {
 // returned object, which in turn must outlive its return values (Definition
 // objects).  The tlsdesc_resolver reference is saved in Definition objects so
 // it can be called from the RelocateSymbolic callbacks.
-template <class Module, class ModuleList, class Diagnostics, typename TlsDescResolver>
+template <class Module, std::ranges::forward_range ModuleList, class Diagnostics,
+          typename TlsDescResolver>
 constexpr auto MakeSymbolResolver(const Module& ref_module, ModuleList& modules, Diagnostics& diag,
                                   TlsDescResolver& tlsdesc_resolver,
                                   ResolverPolicy policy = ResolverPolicy::kStrictLinkOrder) {
   using Definition = ResolverDefinition<Module, TlsDescResolver>;
+  using Elf = Definition::Elf;
 
   return [&ref_module, &modules, &diag, &tlsdesc_resolver, policy](
-             const auto& ref, RelocateTls tls_type) -> fit::result<bool, Definition> {
+             const auto& ref, RelocateTls tls_type) mutable -> fit::result<bool, Definition> {
     if (ref.runtime_local()) {
       // The symbol just resolves to itself in the referring module.  Usually
       // this would have been replaced with an R_*_RELATIVE reloc (and then
@@ -160,10 +252,22 @@ constexpr auto MakeSymbolResolver(const Module& ref_module, ModuleList& modules,
     }
 
     SymbolName name{ref_module.symbol_info(), ref};
+    auto lookup_in_module = [&diag, &name](const auto& module) mutable {
+      return module.Lookup(diag, name);
+    };
 
-    // Return the chosen Definition after some checking.
-    auto use = [&ref_module, tls_type, &diag, &tlsdesc_resolver,
-                &name](Definition def) -> fit::result<bool, Definition> {
+    if (name.empty()) [[unlikely]] {
+      return fit::error{diag.FormatError("Symbol had invalid st_name")};
+    }
+
+    auto result = ResolveSymbol<Elf>(diag, modules, lookup_in_module, policy);
+    if (result.is_error()) [[unlikely]] {
+      return result.take_error();
+    }
+
+    if (result->symbol) {
+      // Return the chosen Definition after some checking.
+      Definition def{result->symbol, std::addressof(*result->module)};
       switch (tls_type) {
         case RelocateTls::kNone:
           if (def.symbol_->type() == ElfSymType::kTls) [[unlikely]] {
@@ -202,71 +306,9 @@ constexpr auto MakeSymbolResolver(const Module& ref_module, ModuleList& modules,
       return fit::ok(def);
     };
 
-    if (name.empty()) [[unlikely]] {
-      return fit::error{diag.FormatError("Symbol had invalid st_name")};
-    }
-
-    Definition weak_def = Definition::UndefinedWeak(&tlsdesc_resolver);
-    for (const auto& module : modules) {
-      auto lookup = module.Lookup(diag, name);
-      if (lookup.is_error()) [[unlikely]] {
-        // The module's hook said to fail the whole resolution, which to the
-        // caller likely means the entire relocation of the referring module.
-        // The error value will tell the caller whether to bail out now or
-        // continue at a higher level, such as relocating other modules.
-        return lookup.take_error();
-      }
-
-      if (const auto* sym = lookup.value()) {
-        const Definition module_def{sym, &module};
-        switch (sym->bind()) {
-          case ElfSymBind::kWeak:
-            // In kStrongOverWeak policy the first weak definition will prevail
-            // if no strong definition is found later.
-            if (policy == ResolverPolicy::kStrongOverWeak) {
-              if (weak_def.undefined_weak()) {
-                weak_def = module_def;
-              }
-              continue;
-            }
-            [[fallthrough]];
-          case ElfSymBind::kGlobal:
-            // The first (strong) global always prevails regardless of policy.
-            return use(module_def);
-          case ElfSymBind::kLocal:
-            // Local symbols are never matched by name.
-            if (!diag.FormatWarning("STB_LOCAL found in hash table")) {
-              return fit::error{false};
-            }
-            continue;
-          case ElfSymBind::kUnique:
-            if (!diag.FormatError("STB_GNU_UNIQUE not supported")) {
-              return fit::error{false};
-            }
-            break;
-          default:
-            if (!diag.FormatError("Unknown symbol binding type",
-                                  static_cast<unsigned>(sym->bind()))) {
-              return fit::error{false};
-            }
-            break;
-        }
-
-        // That returned a definition or continued to look for another so this
-        // is only reached for the error cases where the Diagnostics object
-        // said to keep going.
-        [[unlikely]] return fit::error{true};
-      }
-    }
-
-    if (!weak_def.undefined_weak()) {
-      // The only definition found was weak in kStrongOverWeak mode.
-      return use(weak_def);
-    }
-
     // Undefined weak is a valid return value for an STB_WEAK reference.
     if (ref.bind() == ElfSymBind::kWeak) [[likely]] {
-      return fit::ok(weak_def);
+      return fit::ok(Definition::UndefinedWeak(&tlsdesc_resolver));
     }
 
     return fit::error{diag.UndefinedSymbol(name)};
