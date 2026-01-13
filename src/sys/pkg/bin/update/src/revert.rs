@@ -4,7 +4,7 @@
 
 use anyhow::{Context, Error};
 use fidl_fuchsia_hardware_power_statecontrol::{
-    AdminMarker, AdminProxy, RebootOptions, RebootReason2,
+    AdminMarker, AdminProxy, ShutdownAction, ShutdownOptions, ShutdownReason,
 };
 use fidl_fuchsia_paver::{BootManagerMarker, BootManagerProxy, PaverMarker};
 use fuchsia_component::client::connect_to_protocol;
@@ -46,12 +46,13 @@ async fn handle_revert_impl(
         .context("flush responded with")?;
 
     admin
-        .perform_reboot(&RebootOptions {
-            reasons: Some(vec![RebootReason2::DeveloperRequest]),
+        .shutdown(&ShutdownOptions {
+            action: Some(ShutdownAction::Reboot),
+            reasons: Some(vec![ShutdownReason::DeveloperRequest]),
             ..Default::default()
         })
         .await
-        .context("while performing reboot call")?
+        .context("while performing shutdown")?
         .map_err(Status::from_raw)
-        .context("reboot responded with")
+        .context("shutdown responded with")
 }
