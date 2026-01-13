@@ -93,7 +93,6 @@ impl FactoryItems {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use fidl::AsHandleRef;
     use fuchsia_async as fasync;
 
     fn serve_factory_items(items: Vec<ZbiResult>) -> Result<fboot::FactoryItemsProxy, Error> {

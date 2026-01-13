@@ -754,7 +754,7 @@ HandleDef{
     let mut value = fidl::new_empty!(test_conformance::GoldenHandleBasicRightsStruct, DefaultFuchsiaResourceDialect);
     Decoder::<DefaultFuchsiaResourceDialect>::decode_with_context::<test_conformance::GoldenHandleBasicRightsStruct>(_V2_CONTEXT, bytes, &mut handle_infos, &mut value).unwrap();
     
-match value.v.basic_info() {
+match value.v.as_handle_ref().basic_info() {
 	Ok(info) => {
 		assert_eq!(info.koid.raw_koid(), _handle_koids[0]);
 		assert_eq!(info.object_type, fidl::ObjectType::EVENT);
@@ -783,7 +783,7 @@ HandleDef{
 0,]);
     let mut value = fidl::new_empty!(test_conformance::GoldenNullableHandleStruct, DefaultFuchsiaResourceDialect);
     Decoder::<DefaultFuchsiaResourceDialect>::decode_with_context::<test_conformance::GoldenNullableHandleStruct>(_V2_CONTEXT, bytes, &mut handle_infos, &mut value).unwrap();
-    assert_eq!(value.v.as_ref().unwrap().basic_info().unwrap().koid.raw_koid(), _handle_koids[0]);
+    assert_eq!(value.v.as_ref().unwrap().as_handle_ref().basic_info().unwrap().koid.raw_koid(), _handle_koids[0]);
 
 }
 

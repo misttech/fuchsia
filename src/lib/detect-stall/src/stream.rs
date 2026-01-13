@@ -8,7 +8,7 @@ use fidl::endpoints::RequestStream;
 use fuchsia_async as fasync;
 use fuchsia_sync::Mutex;
 use futures::channel::oneshot::{self, Receiver};
-use futures::{ready, Stream, StreamExt};
+use futures::{Stream, StreamExt, ready};
 use pin_project_lite::pin_project;
 use std::future::Future as _;
 use std::pin::Pin;
@@ -171,7 +171,6 @@ mod tests {
     use assert_matches::assert_matches;
     use fasync::TestExecutor;
     use fidl::endpoints::Proxy;
-    use fidl::AsHandleRef;
     use futures::{FutureExt, TryStreamExt};
     use std::pin::pin;
     use {fidl_fuchsia_io as fio, fuchsia_async as fasync};

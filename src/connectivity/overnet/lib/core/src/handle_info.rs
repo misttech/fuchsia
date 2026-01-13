@@ -2,12 +2,9 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use anyhow::{bail, Error};
+use anyhow::{Error, bail};
 use fidl::HandleRef;
 use fidl_fuchsia_overnet_protocol::{ChannelRights, EventPairRights, SocketRights, SocketType};
-
-#[cfg(target_os = "fuchsia")]
-use fidl::AsHandleRef;
 
 #[cfg(not(target_os = "fuchsia"))]
 use fidl::EmulatedHandleRef;

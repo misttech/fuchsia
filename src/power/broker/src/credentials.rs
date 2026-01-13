@@ -3,7 +3,7 @@
 // found in the LICENSE file.
 use fidl_fuchsia_power_broker::{DependencyToken, Permissions};
 use std::collections::HashMap;
-use zx::{self as zx, AsHandleRef};
+use zx::AsHandleRef;
 
 use crate::topology::ElementID;
 
@@ -49,7 +49,7 @@ impl From<DependencyToken> for Token {
 
 impl Token {
     fn koid(&self) -> Option<zx::Koid> {
-        let Ok(info) = self.token.basic_info() else {
+        let Ok(info) = self.token.as_handle_ref().basic_info() else {
             return None;
         };
         Some(info.koid)
@@ -196,7 +196,7 @@ mod tests {
         let element_id = ElementID::new(1);
         let gold_credential = Credential {
             element: element_id,
-            id: DependencyToken::create().get_koid().expect("get_koid failed"),
+            id: DependencyToken::create().as_handle_ref().get_koid().expect("get_koid failed"),
             permissions: Permissions::MODIFY_ASSERTIVE_DEPENDENT,
         };
         assert_eq!(
@@ -223,7 +223,10 @@ mod tests {
         let token_kryptonite_dup =
             token_kryptonite.duplicate_handle(zx::Rights::SAME_RIGHTS).expect("dup failed");
         let credential = registry.lookup(&token_kryptonite_dup.into()).unwrap();
-        assert_eq!(credential.id, token_kryptonite.basic_info().expect("basic_info failed").koid);
+        assert_eq!(
+            credential.id,
+            token_kryptonite.as_handle_ref().basic_info().expect("basic_info failed").koid
+        );
         assert_eq!(credential.element, element_kryptonite);
         assert_eq!(credential.permissions.contains(Permissions::MODIFY_ASSERTIVE_DEPENDENT), true);
         assert_eq!(credential.permissions.contains(Permissions::MODIFY_DEPENDENCY), false);

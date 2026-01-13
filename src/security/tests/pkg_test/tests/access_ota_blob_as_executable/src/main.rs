@@ -25,7 +25,7 @@ use log::info;
 use security_pkg_test_util::config::load_config;
 use security_pkg_test_util::storage::mount_image_as_ramdisk;
 use std::fs::File;
-use zx::{AsHandleRef, Rights, Status};
+use zx::{Rights, Status};
 
 const DEFAULT_DOMAIN: &str = "fuchsia.com";
 const HELLO_WORLD_PACKAGE_NAME: &str = "hello_world";

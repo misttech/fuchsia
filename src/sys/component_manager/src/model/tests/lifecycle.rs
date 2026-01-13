@@ -818,8 +818,8 @@ async fn open_then_stop_with_escrow() {
     out_dir.host_fn()(outgoing_server_end);
     let server_end = request_rx.next().await.unwrap();
     assert_eq!(
-        client_end.basic_info().unwrap().related_koid,
-        server_end.basic_info().unwrap().koid
+        client_end.as_handle_ref().basic_info().unwrap().related_koid,
+        server_end.as_handle_ref().basic_info().unwrap().koid
     );
 }
 

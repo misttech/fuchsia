@@ -56,10 +56,13 @@ impl EscrowedState {
 impl Debug for EscrowedState {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("EscrowedState")
-            .field("outgoing", &self.outgoing_dir.basic_info().unwrap().koid)
+            .field("outgoing", &self.outgoing_dir.as_handle_ref().basic_info().unwrap().koid)
             .field(
                 "escrowed_dictionary",
-                &self.escrowed_dictionary.as_ref().map(|v| v.token.basic_info().unwrap().koid),
+                &self
+                    .escrowed_dictionary
+                    .as_ref()
+                    .map(|v| v.token.as_handle_ref().basic_info().unwrap().koid),
             )
             .field(
                 "escrowed_dictionary_handle",

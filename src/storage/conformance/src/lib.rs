@@ -9,7 +9,6 @@
 
 use async_trait::async_trait;
 use fidl::endpoints::{ClientEnd, ProtocolMarker, Proxy, create_proxy};
-use fidl::prelude::*;
 use futures::{StreamExt as _, TryStreamExt as _};
 use {fidl_fuchsia_io as fio, fidl_fuchsia_io_test as io_test};
 

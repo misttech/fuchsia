@@ -372,7 +372,6 @@ impl BatteryManager {
 mod tests {
     use super::*;
     use crate::HistoryLoggerConfig;
-    use fidl::AsHandleRef;
     use fidl::endpoints::create_request_stream;
     use fuchsia_inspect::{self as inspect};
     use futures::channel::oneshot;

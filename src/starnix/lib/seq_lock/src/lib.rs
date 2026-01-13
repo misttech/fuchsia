@@ -8,7 +8,7 @@ use std::mem::{align_of, size_of};
 use std::sync::Arc;
 use std::sync::atomic::{AtomicU32, Ordering};
 use zerocopy::{Immutable, IntoBytes};
-use zx::{self as zx, AsHandleRef as _, HandleBased as _};
+use zx::HandleBased as _;
 
 /// Declare an instance of [`SeqLock`] by supplying header([`H`]) and value([`T`]) types,
 /// which should be configured with C-style layout & alignment.

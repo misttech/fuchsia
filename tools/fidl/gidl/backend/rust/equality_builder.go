@@ -70,10 +70,10 @@ func (b *equalityCheckBuilder) visit(expr string, value ir.Value, decl mixer.Dec
 	case ir.RawFloat:
 		b.write("assert_eq!(%s.to_bits(), 0x%x)", expr, value)
 	case ir.Handle:
-		b.write("assert_eq!(%s.basic_info().unwrap().koid.raw_koid(), _handle_koids[%d]);", expr, value)
+		b.write("assert_eq!(%s.as_handle_ref().basic_info().unwrap().koid.raw_koid(), _handle_koids[%d]);", expr, value)
 	case ir.RestrictedHandle:
 		b.write(`
-match %s.basic_info() {
+match %s.as_handle_ref().basic_info() {
 	Ok(info) => {
 		assert_eq!(info.koid.raw_koid(), _handle_koids[%d]);
 		assert_eq!(info.object_type, %s);

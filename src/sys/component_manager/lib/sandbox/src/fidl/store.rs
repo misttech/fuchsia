@@ -143,7 +143,7 @@ pub async fn serve_capability_store(
                     let Capability::Dictionary(_) = &cap else {
                         return Err(fsandbox::CapabilityStoreError::WrongType);
                     };
-                    let koid = server_end.basic_info().unwrap().related_koid;
+                    let koid = server_end.as_handle_ref().basic_info().unwrap().related_koid;
                     registry::insert(
                         cap,
                         koid,
@@ -571,11 +571,9 @@ mod tests {
     use super::*;
     use crate::{Data, DirConnectable};
     use assert_matches::assert_matches;
-    use cm_types::RelativePath;
     use fidl::endpoints::{ServerEnd, create_endpoints};
-    use fidl::{HandleBased, endpoints};
+    use fidl::{AsHandleRef, HandleBased, endpoints};
     use futures::channel::mpsc::{UnboundedReceiver, UnboundedSender, unbounded};
-    use zx::AsHandleRef;
 
     #[fuchsia::test]
     async fn import_export() {
@@ -588,7 +586,7 @@ mod tests {
 
         let (ch, _) = fidl::Channel::create();
         let handle = ch.into_handle();
-        let handle_koid = handle.get_koid().unwrap();
+        let handle_koid = handle.as_handle_ref().get_koid().unwrap();
         let cap1 = Capability::Handle(handle.into());
         let cap2 = Capability::Data(Data::Int64(42));
         store
@@ -688,7 +686,7 @@ mod tests {
 
         let (ch, _) = fidl::Channel::create();
         let handle = ch.into_handle();
-        let handle_koid = handle.get_koid().unwrap();
+        let handle_koid = handle.as_handle_ref().get_koid().unwrap();
         let cap1 = Capability::Handle(handle.into());
         let cap2 = Capability::Data(Data::Int64(42));
         store
@@ -706,7 +704,7 @@ mod tests {
         store.drop(2).await.unwrap().unwrap();
         assert_matches!(
             store.export(1).await.unwrap(),
-            Ok(fsandbox::Capability::Handle(h)) if h.get_koid().unwrap() == handle_koid
+            Ok(fsandbox::Capability::Handle(h)) if h.as_handle_ref().get_koid().unwrap() == handle_koid
         );
         assert_matches!(
             store.export(2).await.unwrap(),
@@ -759,7 +757,7 @@ mod tests {
 
         let (event, _) = fidl::EventPair::create();
         let handle = event.into_handle();
-        let handle_koid = handle.get_koid().unwrap();
+        let handle_koid = handle.as_handle_ref().get_koid().unwrap();
         let cap1 = Capability::Handle(handle.into());
         store
             .import(1, cap1.into_fsandbox_capability(WeakInstanceToken::new_invalid()))
@@ -874,8 +872,8 @@ mod tests {
         aggregate.send(server_end, RelativePath::new("bar").unwrap(), None).unwrap();
         let (received_server_end, path, flags) = source_dir_receiver.try_next().unwrap().unwrap();
         assert_eq!(
-            client_end.basic_info().unwrap().koid,
-            received_server_end.basic_info().unwrap().related_koid
+            client_end.as_handle_ref().basic_info().unwrap().koid,
+            received_server_end.as_handle_ref().basic_info().unwrap().related_koid
         );
         assert_eq!(path, RelativePath::new("foo").unwrap());
         assert_eq!(flags, Some(fio::PERM_READABLE));
@@ -914,8 +912,8 @@ mod tests {
             aggregate.send(server_end, RelativePath::new(name).unwrap(), None).unwrap();
             let (received_server_end, path, flags) = receiver.try_next().unwrap().unwrap();
             assert_eq!(
-                client_end.basic_info().unwrap().koid,
-                received_server_end.basic_info().unwrap().related_koid
+                client_end.as_handle_ref().basic_info().unwrap().koid,
+                received_server_end.as_handle_ref().basic_info().unwrap().related_koid
             );
             assert_eq!(path, RelativePath::new("foo").unwrap());
             assert_eq!(flags, Some(fio::PERM_READABLE));
@@ -952,8 +950,8 @@ mod tests {
             aggregate.send(server_end, RelativePath::new(name).unwrap(), None).unwrap();
             let (received_server_end, path, flags) = receiver.try_next().unwrap().unwrap();
             assert_eq!(
-                client_end.basic_info().unwrap().koid,
-                received_server_end.basic_info().unwrap().related_koid
+                client_end.as_handle_ref().basic_info().unwrap().koid,
+                received_server_end.as_handle_ref().basic_info().unwrap().related_koid
             );
             assert_eq!(path, RelativePath::new("foo").unwrap());
             assert_eq!(flags, Some(fio::PERM_READABLE));

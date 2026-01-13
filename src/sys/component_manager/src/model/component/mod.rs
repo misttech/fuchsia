@@ -1652,7 +1652,7 @@ pub mod tests {
     use vfs::ToObjectRequest;
     use vfs::path::Path as VfsPath;
     use vfs::service::host;
-    use zx::{self as zx, AsHandleRef};
+    use zx::AsHandleRef;
     use {fidl_fuchsia_logger as flogger, fuchsia_async as fasync};
 
     const FLAGS: fio::Flags = fio::PERM_READABLE;
@@ -2756,8 +2756,8 @@ pub mod tests {
         let server_end = open_request_rx.next().await.unwrap();
         assert!(root.is_started().await);
         assert_eq!(
-            client_end.basic_info().unwrap().related_koid,
-            server_end.basic_info().unwrap().koid
+            client_end.as_handle_ref().basic_info().unwrap().related_koid,
+            server_end.as_handle_ref().basic_info().unwrap().koid
         );
     }
 

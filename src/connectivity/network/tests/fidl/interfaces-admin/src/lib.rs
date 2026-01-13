@@ -43,7 +43,6 @@ use std::ops::Not as _;
 use std::pin::pin;
 use std::u16;
 use test_case::test_case;
-use zx::{self as zx, AsHandleRef};
 use {
     fidl_fuchsia_net as fnet, fidl_fuchsia_net_ext as fnet_ext,
     fidl_fuchsia_net_interfaces as fnet_interfaces,

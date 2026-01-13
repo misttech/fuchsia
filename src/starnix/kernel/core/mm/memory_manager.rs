@@ -64,7 +64,7 @@ use std::ops::{Deref, DerefMut, Range, RangeBounds};
 use std::sync::{Arc, LazyLock, Weak};
 use syncio::zxio::zxio_default_maybe_faultable_copy;
 use zerocopy::IntoBytes;
-use zx::{AsHandleRef, HandleBased, Rights, VmarInfo, VmoChildOptions};
+use zx::{HandleBased, Rights, VmarInfo, VmoChildOptions};
 
 pub const ZX_VM_SPECIFIC_OVERWRITE: zx::VmarFlags =
     zx::VmarFlags::from_bits_retain(zx::VmarFlagsExtended::SPECIFIC_OVERWRITE.bits());

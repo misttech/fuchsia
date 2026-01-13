@@ -379,7 +379,7 @@ pub mod tests {
     use std::collections::HashMap;
     use std::sync::Arc;
     use std::task::Poll;
-    use zx::{self as zx, AsHandleRef, Koid};
+    use zx::{AsHandleRef, Koid};
 
     #[fuchsia::test]
     /// Test scenario where we tell the controller to stop the component and
@@ -885,8 +885,8 @@ pub mod tests {
         let escrow = program.finalize().escrow_request;
         let received_outgoing_dir_server = escrow.unwrap().outgoing_dir.unwrap();
         assert_eq!(
-            outgoing_dir_client.basic_info().unwrap().koid,
-            received_outgoing_dir_server.basic_info().unwrap().related_koid
+            outgoing_dir_client.as_handle_ref().basic_info().unwrap().koid,
+            received_outgoing_dir_server.as_handle_ref().basic_info().unwrap().related_koid
         );
     }
 }

@@ -1585,8 +1585,8 @@ mod everything {
                 .unwrap();
             let dir_request = dir_receiver.next().await.unwrap();
             assert_eq!(
-                client_end.basic_info().unwrap().koid,
-                dir_request.channel.basic_info().unwrap().related_koid
+                client_end.as_handle_ref().basic_info().unwrap().koid,
+                dir_request.channel.as_handle_ref().basic_info().unwrap().related_koid
             );
             assert_eq!("foo/bar", dir_request.path);
             assert_eq!(fio::PERM_WRITABLE, dir_request.flags);
@@ -1735,8 +1735,8 @@ mod everything {
                 .unwrap();
             let dir_request = dir_receiver.next().await.unwrap();
             assert_eq!(
-                client_end.basic_info().unwrap().koid,
-                dir_request.channel.basic_info().unwrap().related_koid
+                client_end.as_handle_ref().basic_info().unwrap().koid,
+                dir_request.channel.as_handle_ref().basic_info().unwrap().related_koid
             );
             assert_eq!("foo/bar", dir_request.path);
             assert_eq!(fio::PERM_WRITABLE, dir_request.flags);

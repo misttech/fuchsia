@@ -240,7 +240,7 @@ async fn receive_protocol_through_capability_requested() {
         {
             assert_eq!(
                 channel.get_koid().unwrap(),
-                proxy.as_channel().basic_info().unwrap().related_koid,
+                proxy.as_channel().as_ref().basic_info().unwrap().related_koid,
             );
         }
         something_else => panic!("something unexpected happened: {something_else:?}"),

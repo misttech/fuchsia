@@ -687,13 +687,6 @@ pub trait AsHandleRef {
 
     /// Wraps the
     /// [zx_object_get_info](https://fuchsia.dev/fuchsia-src/reference/syscalls/object_get_info.md)
-    /// syscall for the ZX_INFO_HANDLE_BASIC topic.
-    fn basic_info(&self) -> Result<HandleBasicInfo, Status> {
-        NullableHandle::basic_info(&self.as_handle_ref())
-    }
-
-    /// Wraps the
-    /// [zx_object_get_info](https://fuchsia.dev/fuchsia-src/reference/syscalls/object_get_info.md)
     /// syscall for the ZX_INFO_HANDLE_COUNT topic.
     fn count_info(&self) -> Result<HandleCountInfo, Status> {
         NullableHandle::count_info(&self.as_handle_ref())

@@ -76,7 +76,7 @@ use {
     },
     test_case::test_case,
     vfs::{execution_scope::ExecutionScope, pseudo_directory, service},
-    zx::{self as zx, AsHandleRef},
+    zx::AsHandleRef,
 };
 
 instantiate_common_routing_tests! { RoutingTestBuilder }
@@ -3371,8 +3371,8 @@ async fn source_component_stopping_when_routing() {
     // The request should hit the outgoing directory of the component.
     let server_end = open_request_rx.next().await.unwrap();
     assert_eq!(
-        client_end.basic_info().unwrap().related_koid,
-        server_end.basic_info().unwrap().koid
+        client_end.as_handle_ref().basic_info().unwrap().related_koid,
+        server_end.as_handle_ref().basic_info().unwrap().koid
     );
     assert!(root.is_started().await);
 }
@@ -3437,8 +3437,8 @@ async fn source_component_stopped_after_routing_before_open() {
 
     let server_end = open_request_rx.next().await.unwrap();
     assert_eq!(
-        client_end.basic_info().unwrap().related_koid,
-        server_end.basic_info().unwrap().koid
+        client_end.as_handle_ref().basic_info().unwrap().related_koid,
+        server_end.as_handle_ref().basic_info().unwrap().koid
     );
 
     assert!(root.is_started().await);

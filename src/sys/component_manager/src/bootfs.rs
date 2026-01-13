@@ -2,7 +2,6 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use fidl::AsHandleRef as _;
 use fidl_fuchsia_boot::BootfsFileVmo;
 use fuchsia_bootfs::{
     BootfsParser, BootfsParserError, zbi_bootfs_is_aligned, zbi_bootfs_page_align,
@@ -427,6 +426,7 @@ mod tests {
     use fuchsia_bootfs::BootfsEntry;
     use std::fs::File;
     use std::io::Read;
+    use zx::AsHandleRef;
 
     // This uses a test bootfs image containing synthetic data from
     // //src/sys/lib/fuchsia-bootfs.

@@ -554,6 +554,7 @@ mod tests {
         assert_eq!(
             outgoing_dir_server_end
                 .into_channel()
+                .as_handle_ref()
                 .basic_info()
                 .expect("failed to get basic info")
                 .koid,
@@ -561,6 +562,7 @@ mod tests {
                 .outgoing_dir_proxy
                 .into_channel()
                 .expect("failed to convert to channel")
+                .as_handle_ref()
                 .basic_info()
                 .expect("failed to get basic info")
                 .related_koid,

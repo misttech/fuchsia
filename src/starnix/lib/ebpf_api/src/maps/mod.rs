@@ -42,7 +42,7 @@ use std::fmt::Debug;
 use std::ops::Deref;
 use std::pin::Pin;
 use std::sync::Arc;
-use zx::{AsHandleRef, HandleBased};
+use zx::HandleBased;
 
 use crate::maps::buffer::VmoOrName;
 

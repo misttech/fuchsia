@@ -26,7 +26,7 @@ use futures::stream::StreamExt;
 use power_broker_client::{LeaseHelper, PowerElementContext};
 use std::cell::{Cell, RefCell};
 use std::rc::Rc;
-use zx::{AsHandleRef, HandleBased};
+use zx::HandleBased;
 use {
     fidl_fuchsia_power_broker as fbroker, fidl_fuchsia_power_observability as fobs,
     fidl_fuchsia_power_suspend as fsuspend,

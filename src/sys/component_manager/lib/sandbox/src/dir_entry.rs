@@ -49,8 +49,8 @@ mod tests {
     use crate::fidl::RemotableCapability;
     use crate::{Capability, Connector, Dict, DirEntry, WeakInstanceToken};
     use assert_matches::assert_matches;
+    use fidl::Channel;
     use fidl::endpoints::ClientEnd;
-    use fidl::{AsHandleRef, Channel};
     use futures::StreamExt;
     use vfs::ToObjectRequest as _;
     use vfs::directory::entry::OpenRequest;

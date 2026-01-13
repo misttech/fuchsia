@@ -18,7 +18,7 @@ use net_types::ip::Ip;
 use netstack3_core::device::DeviceId;
 use netstack3_core::routes::AddableEntry;
 use thiserror::Error;
-use zx::{self as zx, AsHandleRef, HandleBased as _};
+use zx::HandleBased as _;
 use {
     fidl_fuchsia_net_routes_admin as fnet_routes_admin,
     fidl_fuchsia_net_routes_ext as fnet_routes_ext, fuchsia_async as fasync,

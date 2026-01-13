@@ -24,7 +24,6 @@ use sandbox::{
 use std::collections::HashMap;
 use std::sync::Arc;
 use vfs::WeakExecutionScope;
-use zx::AsHandleRef;
 use zx::sys::ZX_CHANNEL_MAX_MSG_BYTES;
 use {fidl_fuchsia_component_runtime as fruntime, fidl_fuchsia_io as fio, fuchsia_async as fasync};
 
@@ -746,7 +745,7 @@ mod tests {
     use super::*;
     use assert_matches::assert_matches;
     use vfs::ExecutionScope;
-    use zx::HandleBased;
+    use zx::{AsHandleRef, HandleBased};
 
     fn new_connection()
     -> (fruntime::CapabilitiesProxy, Arc<RemotedRuntimeCapabilities>, ExecutionScope) {
@@ -839,8 +838,8 @@ mod tests {
             other_message => panic!("unexpected message: {other_message:?}"),
         };
         assert_eq!(
-            client_end.basic_info().unwrap().koid,
-            received_server_end.basic_info().unwrap().related_koid
+            client_end.as_handle_ref().basic_info().unwrap().koid,
+            received_server_end.as_handle_ref().basic_info().unwrap().related_koid
         );
     }
 

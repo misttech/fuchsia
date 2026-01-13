@@ -1243,10 +1243,8 @@ pub fn selinux_fs(
 mod tests {
     use super::*;
     use fuchsia_runtime;
-
     use selinux::SecurityServer;
     use zerocopy::{FromBytes, KnownLayout};
-    use zx::{self as zx, AsHandleRef as _};
 
     #[fuchsia::test]
     fn status_vmo_has_correct_size_and_rights() {

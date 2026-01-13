@@ -7,7 +7,7 @@ use fuchsia_component_test::{ChildOptions, RealmBuilder};
 use fuchsia_runtime::{HandleInfo, HandleType};
 use futures::channel::mpsc;
 use futures::{FutureExt, SinkExt, StreamExt};
-use zx::{AsHandleRef, Event};
+use zx::Event;
 use {
     fidl_fuchsia_component as fcomp, fidl_fuchsia_component_decl as fdecl,
     fidl_fuchsia_process as fprocess, fidl_fuchsia_sys2 as fsys,

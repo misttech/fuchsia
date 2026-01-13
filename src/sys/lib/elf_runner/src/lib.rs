@@ -1829,8 +1829,8 @@ mod tests {
                 let outgoing_dir_server = outgoing_dir.unwrap();
 
                 assert_eq!(
-                    outgoing_dir_client.basic_info().unwrap().koid,
-                    outgoing_dir_server.basic_info().unwrap().related_koid
+                    outgoing_dir_client.as_handle_ref().basic_info().unwrap().koid,
+                    outgoing_dir_server.as_handle_ref().basic_info().unwrap().related_koid
                 );
             }
             other => panic!("unexpected event result: {:?}", other),

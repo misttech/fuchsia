@@ -172,7 +172,7 @@ pub fn publish(
     })?;
 
     // unwrap: safe since we have a valid tree handle coming from the server we spawn.
-    let tree_koid = tree.get_koid().unwrap();
+    let tree_koid = tree.as_handle_ref().get_koid().unwrap();
     if let Err(err) = inspect_sink.publish(finspect::InspectSinkPublishRequest {
         tree: Some(tree),
         name: tree_name,
@@ -253,7 +253,7 @@ pub async fn fetch_escrow(
     let (tree, handle) = if should_replace_with_tree {
         let (client, stream) = fidl::endpoints::create_request_stream::<finspect::TreeMarker>();
         // unwrap: safe since we have a valid tree handle coming from above.
-        let client_koid = client.get_koid().unwrap();
+        let client_koid = client.as_handle_ref().get_koid().unwrap();
         (Some(client), Some(TreeServerHandle { client_koid, stream }))
     } else {
         (None, None)
@@ -525,7 +525,7 @@ mod tests {
             Ok(InspectSinkRequest::Publish {
                 payload: finspect::InspectSinkPublishRequest { tree: Some(tree), .. },
                 ..
-            }) => tree.basic_info().unwrap().koid,
+            }) => tree.as_handle_ref().basic_info().unwrap().koid,
             other => {
                 panic!("unexpected request: {other:?}");
             }
@@ -565,8 +565,8 @@ mod tests {
                     hello: "world"
                 });
                 assert_eq!(
-                    client_token.unwrap().token.basic_info().unwrap().koid,
-                    token.basic_info().unwrap().related_koid
+                    client_token.unwrap().token.as_handle_ref().basic_info().unwrap().koid,
+                    token.as_handle_ref().basic_info().unwrap().related_koid
                 );
             }
             other => {
@@ -582,7 +582,7 @@ mod tests {
             fidl::endpoints::create_request_stream::<finspect::InspectSinkMarker>();
         let (_local_token, remote_token) = zx::EventPair::create();
         let token = EscrowToken { token: remote_token };
-        let expected_koid = token.token.basic_info().unwrap().koid;
+        let expected_koid = token.token.as_handle_ref().basic_info().unwrap().koid;
 
         let publisher_fut =
             fetch_escrow(token, FetchEscrowOptions::new().on_inspect_sink_client(client));
@@ -593,7 +593,10 @@ mod tests {
                 Some(Ok(InspectSinkRequest::FetchEscrow { payload, responder })) => (payload, responder)
             );
             let received_token = payload.token.unwrap();
-            assert_eq!(received_token.token.basic_info().unwrap().koid, expected_koid);
+            assert_eq!(
+                received_token.token.as_handle_ref().basic_info().unwrap().koid,
+                expected_koid
+            );
             responder
                 .send(finspect::InspectSinkFetchEscrowResponse {
                     vmo: Some(zx::Vmo::create(0).unwrap()),
