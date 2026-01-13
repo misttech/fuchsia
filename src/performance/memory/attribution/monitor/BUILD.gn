@@ -55,6 +55,8 @@ rustc_binary("bin") {
     "//third_party/rust_crates:log",
     "//third_party/rust_crates:serde_json",
     "//third_party/rust_crates:zerocopy",
+    "//third_party/rust_crates:zstd",
+    "//third_party/zstd",
   ]
 
   test_deps = [

@@ -185,13 +185,14 @@ impl MemoryComponentsTool {
         self.monitor_proxy
             .get_snapshot(server_end)
             .map_err(|err| ffx_error!("Failed to call MemoryMonitorProxy/GetSnapshot: {err}"))?;
-
-        let mut buffer: Vec<u8> = Vec::new();
+        let mut compressed_data: Vec<u8> = Vec::new();
         client_socket
-            .read_to_end(&mut buffer)
+            .read_to_end(&mut compressed_data)
             .await
             .map_err(|err| ffx_error!("Failed to read socket: {err}"))?;
-        let snapshot: fplugin::Snapshot = fidl::unpersist(&buffer)
+        let data = zstd::decode_all(std::io::Cursor::new(compressed_data))
+            .map_err(|err| ffx_error!("Failed to uncompress: {err}"))?;
+        let snapshot: fplugin::Snapshot = fidl::unpersist(&data)
             .map_err(|err| ffx_error!("Failed to unpersist elements: {err}"))?;
         Ok(snapshot)
     }

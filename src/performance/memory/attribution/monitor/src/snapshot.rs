@@ -58,14 +58,25 @@ impl AttributionSnapshot {
     }
 
     pub async fn serve(self, socket: zx::Socket) -> anyhow::Result<()> {
-        duration!(CATEGORY_MEMORY_CAPTURE, "AttributionSnapshot::serve");
-        let mut asocket = fidl::AsyncSocket::from_socket(socket);
-
-        let data = {
-            duration!(CATEGORY_MEMORY_CAPTURE, "AttributionSnapshot::serve persist");
+        duration!(CATEGORY_MEMORY_CAPTURE, "serve:snapshort");
+        let data: Vec<u8> = {
+            duration!(CATEGORY_MEMORY_CAPTURE, "persist:serve:snapshot");
             fidl::persist(&self.0).unwrap()
         };
-        asocket.write_all(&data).await?;
+        std::mem::drop(self);
+
+        let compressed_data = {
+            duration!(CATEGORY_MEMORY_CAPTURE, "compress:serve:snapshot", "uncompressed"=>data.len());
+            // zstd does not support async write to a socket.
+            // Use bulk compression instead, to avoid stopping the event loop with blocking writes.
+            zstd::bulk::compress(&data, 3)?
+        };
+        std::mem::drop(data);
+
+        {
+            duration!(CATEGORY_MEMORY_CAPTURE, "send:serve:snapshot", "compressed"=>compressed_data.len());
+            fidl::AsyncSocket::from_socket(socket).write_all(&compressed_data).await?;
+        }
         Ok(())
     }
 }
