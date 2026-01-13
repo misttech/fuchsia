@@ -20,6 +20,12 @@ void Dwc3::CmdStartNewConfig(const Endpoint& ep, uint32_t rsrc_id) {
       .set_COMMANDPARAM(rsrc_id)
       .set_CMDACT(1)
       .WriteTo(mmio);
+
+  while (true) {
+    if (!DEPCMD::Get(ep_num).ReadFrom(mmio).CMDACT()) {
+      break;
+    }
+  }
 }
 
 void Dwc3::CmdEpSetConfig(const Endpoint& ep, bool modify) {
@@ -48,6 +54,12 @@ void Dwc3::CmdEpSetConfig(const Endpoint& ep, bool modify) {
       .WriteTo(mmio);
   DEPCMDPAR2::Get(ep_num).FromValue(0).WriteTo(mmio);
   DEPCMD::Get(ep_num).FromValue(0).set_CMDTYP(DEPCMD::DEPCFG).set_CMDACT(1).WriteTo(mmio);
+
+  while (true) {
+    if (!DEPCMD::Get(ep_num).ReadFrom(mmio).CMDACT()) {
+      break;
+    }
+  }
 }
 
 void Dwc3::CmdEpTransferConfig(const Endpoint& ep) {
@@ -58,6 +70,12 @@ void Dwc3::CmdEpTransferConfig(const Endpoint& ep) {
   DEPCMDPAR1::Get(ep_num).FromValue(0).WriteTo(mmio);
   DEPCMDPAR2::Get(ep_num).FromValue(0).WriteTo(mmio);
   DEPCMD::Get(ep_num).FromValue(0).set_CMDTYP(DEPCMD::DEPXFERCFG).set_CMDACT(1).WriteTo(mmio);
+
+  while (true) {
+    if (!DEPCMD::Get(ep_num).ReadFrom(mmio).CMDACT()) {
+      break;
+    }
+  }
 }
 
 void Dwc3::CmdEpStartTransfer(const Endpoint& ep, zx_paddr_t trb_phys) {
