@@ -2,7 +2,6 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use crate::autorepeater::Autorepeater;
 use crate::display_ownership::DisplayOwnership;
 use crate::focus_listener::FocusListener;
 use crate::{input_device, input_handler, metrics};
@@ -156,31 +155,6 @@ impl InputPipelineAssembly {
                             "display ownership is not supposed to terminate - this is likely a problem: {:?}", e));
                 }).unwrap();
             h.set_handler_unhealthy("Receive loop terminated for handler: DisplayOwnership");
-        }));
-        InputPipelineAssembly { sender, receiver, tasks, metrics_logger }
-    }
-
-    /// Adds the autorepeater into the input pipeline assembly.  The autorepeater
-    /// is installed after any handlers that have been already added to the
-    /// assembly.
-    pub fn add_autorepeater(self, input_handlers_node: &fuchsia_inspect::Node) -> Self {
-        let (sender, autorepeat_receiver, mut tasks, metrics_logger) = self.into_components();
-        let (autorepeat_sender, receiver) = mpsc::unbounded();
-        let metrics_logger_clone = metrics_logger.clone();
-        let a = Autorepeater::new(autorepeat_receiver, input_handlers_node, metrics_logger.clone());
-        tasks.push(fasync::Task::local(async move {
-            a.clone().set_handler_healthy();
-            a.clone()
-                .run(autorepeat_sender)
-                .await
-                .map_err(|e| {
-                    metrics_logger_clone.log_error(
-                        InputPipelineErrorMetricDimensionEvent::InputPipelineAutorepeatRunningError,
-                        std::format!("error while running autorepeater: {:?}", e),
-                    );
-                })
-                .expect("autorepeater should never error out");
-            a.set_handler_unhealthy("Receive loop terminated for handler: Autorepeater");
         }));
         InputPipelineAssembly { sender, receiver, tasks, metrics_logger }
     }

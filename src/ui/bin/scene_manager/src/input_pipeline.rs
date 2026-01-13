@@ -555,7 +555,7 @@ fn add_text_settings_handler(
 ) -> InputPipelineAssembly {
     let proxy = connect_to_protocol::<fsettings::KeyboardMarker>()
         .expect("needs a connection to fuchsia.settings.Keyboard");
-    let text_handler = TextSettingsHandler::new(None, None, input_handlers_node, metrics_logger);
+    let text_handler = TextSettingsHandler::new(None, input_handlers_node, metrics_logger);
     text_handler.clone().serve(proxy);
     assembly.add_handler(text_handler)
 }

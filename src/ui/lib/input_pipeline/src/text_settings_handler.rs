@@ -3,7 +3,7 @@
 // found in the LICENSE file.
 
 use crate::input_handler::{InputHandlerStatus, UnhandledInputHandler};
-use crate::{autorepeater, input_device, metrics};
+use crate::{input_device, metrics};
 use anyhow::{Context, Error, Result};
 use async_trait::async_trait;
 use async_utils::hanging_get::client::HangingGetStream;
@@ -22,9 +22,6 @@ pub struct TextSettingsHandler {
     /// in an refcell as it can be changed out of band through
     /// `fuchsia.input.keymap.Configuration/SetLayout`.
     keymap_id: RefCell<Option<finput::KeymapId>>,
-
-    /// Stores the currently active autorepeat settings.
-    autorepeat_settings: RefCell<Option<autorepeater::Settings>>,
 
     /// The inventory of this handler's Inspect status.
     pub inspect_status: InputHandlerStatus,
@@ -62,9 +59,7 @@ impl UnhandledInputHandler for TextSettingsHandler {
                     "text_settings_handler::Instance::handle_unhandled_input_event: keymap_id = {:?}",
                     &keymap_id
                 );
-                event = event
-                    .into_with_keymap(keymap_id)
-                    .into_with_autorepeat_settings(self.get_autorepeat_settings());
+                event = event.into_with_keymap(keymap_id);
                 vec![input_device::InputEvent {
                     device_event: input_device::InputDeviceEvent::Keyboard(event),
                     device_descriptor,
@@ -94,7 +89,6 @@ impl TextSettingsHandler {
     /// you want the defaults.
     pub fn new(
         initial_keymap: Option<finput::KeymapId>,
-        initial_autorepeat: Option<autorepeater::Settings>,
         input_handlers_node: &fuchsia_inspect::Node,
         metrics_logger: metrics::MetricsLogger,
     ) -> Rc<Self> {
@@ -103,12 +97,7 @@ impl TextSettingsHandler {
             "text_settings_handler",
             /* generates_events */ false,
         );
-        Rc::new(Self {
-            keymap_id: RefCell::new(initial_keymap),
-            autorepeat_settings: RefCell::new(initial_autorepeat),
-            inspect_status,
-            metrics_logger,
-        })
+        Rc::new(Self { keymap_id: RefCell::new(initial_keymap), inspect_status, metrics_logger })
     }
 
     /// Processes requests for keymap change from `stream`.
@@ -123,9 +112,8 @@ impl TextSettingsHandler {
                 .await
                 .context("while waiting on fuchsia.settings.Keyboard/Watch")?
             {
-                Some(fsettings::KeyboardSettings { keymap, autorepeat, .. }) => {
+                Some(fsettings::KeyboardSettings { keymap, .. }) => {
                     self.set_keymap_id(keymap);
-                    self.set_autorepeat_settings(autorepeat.map(|e| e.into()));
                     log::info!("keymap ID set to: {:?}", self.get_keymap_id());
                 }
                 e => {
@@ -163,18 +151,9 @@ impl TextSettingsHandler {
         *(self.keymap_id.borrow_mut()) = keymap_id;
     }
 
-    fn set_autorepeat_settings(self: &Rc<Self>, autorepeat: Option<autorepeater::Settings>) {
-        *(self.autorepeat_settings.borrow_mut()) = autorepeat.map(|s| s.into());
-    }
-
     /// Gets the currently active keymap ID.
     pub fn get_keymap_id(&self) -> Option<finput::KeymapId> {
         self.keymap_id.borrow().clone()
-    }
-
-    /// Gets the currently active autorepeat settings.
-    pub fn get_autorepeat_settings(&self) -> Option<autorepeater::Settings> {
-        self.autorepeat_settings.borrow().clone()
     }
 
     fn get_keymap_name(&self) -> Option<String> {
@@ -214,16 +193,12 @@ mod tests {
         )
     }
 
-    fn key_event_with_settings(
-        keymap: Option<String>,
-        settings: autorepeater::Settings,
-    ) -> input_device::InputEvent {
+    fn key_event_with_settings(keymap: Option<String>) -> input_device::InputEvent {
         let keyboard_event = keyboard_binding::KeyboardEvent::new(
             fidl_fuchsia_input::Key::A,
             fidl_fuchsia_ui_input3::KeyEventType::Pressed,
         )
-        .into_with_keymap(keymap)
-        .into_with_autorepeat_settings(Some(settings));
+        .into_with_keymap(keymap);
         input_event_from(keyboard_event)
     }
 
@@ -271,7 +246,6 @@ mod tests {
         for test in tests {
             let handler = TextSettingsHandler::new(
                 test.keymap_id.clone(),
-                None,
                 &test_node,
                 metrics::MetricsLogger::default(),
             );
@@ -284,14 +258,12 @@ mod tests {
     fn serve_into(
         mut server_end: fsettings::KeyboardRequestStream,
         keymap: Option<finput::KeymapId>,
-        autorepeat: Option<fsettings::Autorepeat>,
     ) {
         fasync::Task::local(async move {
             if let Ok(Some(fsettings::KeyboardRequest::Watch { responder, .. })) =
                 server_end.try_next().await
             {
-                let settings =
-                    fsettings::KeyboardSettings { keymap, autorepeat, ..Default::default() };
+                let settings = fsettings::KeyboardSettings { keymap, ..Default::default() };
                 responder.send(&settings).expect("response sent");
             }
         })
@@ -302,18 +274,13 @@ mod tests {
     async fn config_call_processing() {
         let inspector = fuchsia_inspect::Inspector::default();
         let test_node = inspector.root().create_child("test_node");
-        let handler =
-            TextSettingsHandler::new(None, None, &test_node, metrics::MetricsLogger::default());
+        let handler = TextSettingsHandler::new(None, &test_node, metrics::MetricsLogger::default());
 
         let (proxy, stream) =
             fidl::endpoints::create_proxy_and_stream::<fsettings::KeyboardMarker>();
 
         // Serve a specific keyboard setting.
-        serve_into(
-            stream,
-            Some(finput::KeymapId::FrAzerty),
-            Some(fsettings::Autorepeat { delay: 43, period: 44 }),
-        );
+        serve_into(stream, Some(finput::KeymapId::FrAzerty));
 
         // Start an asynchronous handler that processes keymap configuration calls
         // incoming from `server_end`.
@@ -327,16 +294,9 @@ mod tests {
         // we quit the loop if nothing happened after a generous amount of time.
         let deadline =
             fuchsia_async::MonotonicInstant::after(zx::MonotonicDuration::from_seconds(5));
-        let autorepeat: autorepeater::Settings = Default::default();
         loop {
             let result = handler.clone().handle_unhandled_input_event(unhandled_key_event()).await;
-            let expected = key_event_with_settings(
-                Some("FR_AZERTY".to_owned()),
-                autorepeat
-                    .clone()
-                    .into_with_delay(zx::MonotonicDuration::from_nanos(43))
-                    .into_with_period(zx::MonotonicDuration::from_nanos(44)),
-            );
+            let expected = key_event_with_settings(Some("FR_AZERTY".to_owned()));
             if vec![expected] == result {
                 break;
             }
@@ -353,12 +313,8 @@ mod tests {
     async fn text_settings_handler_initialized_with_inspect_node() {
         let inspector = fuchsia_inspect::Inspector::default();
         let fake_handlers_node = inspector.root().create_child("input_handlers_node");
-        let _handler = TextSettingsHandler::new(
-            None,
-            None,
-            &fake_handlers_node,
-            metrics::MetricsLogger::default(),
-        );
+        let _handler =
+            TextSettingsHandler::new(None, &fake_handlers_node, metrics::MetricsLogger::default());
         diagnostics_assertions::assert_data_tree!(inspector, root: {
             input_handlers_node: {
                 text_settings_handler: {
@@ -380,12 +336,8 @@ mod tests {
     async fn text_settings_handler_inspect_counts_events() {
         let inspector = fuchsia_inspect::Inspector::default();
         let fake_handlers_node = inspector.root().create_child("input_handlers_node");
-        let text_settings_handler = TextSettingsHandler::new(
-            None,
-            None,
-            &fake_handlers_node,
-            metrics::MetricsLogger::default(),
-        );
+        let text_settings_handler =
+            TextSettingsHandler::new(None, &fake_handlers_node, metrics::MetricsLogger::default());
         let device_descriptor = input_device::InputDeviceDescriptor::Keyboard(
             keyboard_binding::KeyboardDeviceDescriptor {
                 keys: vec![finput::Key::A, finput::Key::B],
