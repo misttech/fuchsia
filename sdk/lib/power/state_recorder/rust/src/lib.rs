@@ -127,12 +127,116 @@ impl StateRecorderManager {
     }
 }
 
+// Helpers for sharing logic between Recorders
+fn register_with_manager(
+    manager: &Arc<Mutex<StateRecorderManager>>,
+    name: &str,
+) -> Result<inspect::Node, StateRecorderError> {
+    let mut manager = manager.lock();
+    if let Err(e) = manager.register_name(name) {
+        return Err(e);
+    }
+    Ok(manager.node.create_child(name))
+}
+
+fn setup_recording_backend<T, F>(
+    node: &inspect::Node,
+    options: &RecorderOptions,
+    record_item: F,
+) -> Result<(RecorderHistory<T>, Option<PersistenceHandler<T>>), StateRecorderError>
+where
+    T: Copy + std::fmt::Debug + std::fmt::Display + std::str::FromStr + Send + Sync + 'static,
+    F: Fn(&inspect::Node, &T) + Send + Sync + Clone + 'static,
+{
+    if options.lazy_record {
+        let shared_buffer = if let Some(config) = &options.persistence {
+            let (handler, buffer) = PersistenceHandler::new(config.clone(), options.capacity);
+
+            // Handle Previous Boot Node
+            let prev_data = PersistenceHandler::<T>::read_log(&config.previous_path);
+            if !prev_data.is_empty() {
+                let data_arc = Arc::new(prev_data);
+                let record_item = record_item.clone();
+                node.record_lazy_child("previous_boot_history", move || {
+                    let data = data_arc.clone();
+                    let record_item = record_item.clone();
+                    async move {
+                        let inspector = Inspector::default();
+                        let root = inspector.root();
+                        for (i, (ts, val)) in data.iter().enumerate() {
+                            root.record_child(i.to_string(), |child| {
+                                child.record_int("@time", *ts);
+                                record_item(child, val);
+                            });
+                        }
+                        Ok(inspector)
+                    }
+                    .boxed()
+                });
+            }
+            (Some(handler), buffer)
+        } else {
+            (None, Arc::new(Mutex::new(TimestampRingBuffer::<T>::with_capacity(options.capacity))))
+        };
+
+        // reset_info
+        let buffer_cloned = shared_buffer.1.clone();
+        node.record_lazy_child("reset_info", move || {
+            let history = buffer_cloned.clone();
+            async move {
+                let inspector = Inspector::default();
+                let node = inspector.root();
+                let (count, last_reset_ns) = history.lock().get_reset_info();
+                node.record_int("count", count as i64);
+                node.record_int("last_reset_ns", last_reset_ns);
+                Ok(inspector)
+            }
+            .boxed()
+        });
+
+        // history
+        let buffer_cloned = shared_buffer.1.clone();
+        node.record_lazy_child("history", move || {
+            let history = buffer_cloned.clone();
+            let record_item = record_item.clone();
+            async move {
+                let inspector = Inspector::default();
+                let node = inspector.root();
+                for (i, (timestamp, state_value)) in history.lock().iter().enumerate() {
+                    node.record_child(format!("{}", i), |node| {
+                        node.record_int("@time", timestamp);
+                        record_item(node, &state_value);
+                    });
+                }
+                Ok(inspector)
+            }
+            .boxed()
+        });
+
+        Ok((RecorderHistory::Lazy(shared_buffer.1), shared_buffer.0))
+    } else {
+        if options.persistence.is_some() {
+            return Err(StateRecorderError::InvalidOptions(
+                "Persistence not supported in eager mode".to_string(),
+            ));
+        }
+
+        node.record_child("reset_info", |node| {
+            node.record_int("count", 0);
+            node.record_int("last_reset_ns", zx::BootInstant::get().into_nanos());
+        });
+
+        let history_node = BoundedListNode::new(node.create_child("history"), options.capacity);
+        Ok((RecorderHistory::Eager(history_node), None))
+    }
+}
+
 /// Supertrait that combines traits an enum type must satisfy to be compatible with StateRecorder.
 pub trait RecordableEnum:
-    Copy + Debug + Display + FromStr + Eq + Hash + IntoEnumIterator + Into<u64> + Send + Sync
+    Copy + Debug + Display + Eq + Hash + IntoEnumIterator + Into<u64> + Send + Sync
 {
 }
-impl<T: Copy + Debug + Display + FromStr + Eq + Hash + IntoEnumIterator + Into<u64> + Send + Sync>
+impl<T: Copy + Debug + Display + Eq + Hash + IntoEnumIterator + Into<u64> + Send + Sync>
     RecordableEnum for T
 {
 }
@@ -149,25 +253,25 @@ struct StateName {
     inspect_name: Arc<String>,
 }
 
-/// Records time series data for an enum-valued state. This is best-suited for categorical
+/// Records time series data for an named-u64 value state. This is best-suited for categorical
 /// observations, where the name of the state and not a numeric value will be most relevant for
 /// diagnostic and forensic purposes.
-pub struct EnumStateRecorder<T: RecordableEnum> {
+pub struct NamedU64StateRecorder {
     manager: Arc<Mutex<StateRecorderManager>>,
     name: String,
     trace_category: &'static CStr,
-    state_names: HashMap<T, StateName>,
-    history: RecorderHistory<T>,
-    persistence: Option<PersistenceHandler<T>>,
+    state_names: HashMap<u64, StateName>,
+    history: RecorderHistory<u64>,
+    persistence: Option<PersistenceHandler<u64>>,
     _root_node: inspect::Node,
     trace_id: ftrace::Id,
     trace_track_name: &'static CStr,
     trace_state_event: Option<ftrace::AsyncScope<&'static CStr, &'static CStr>>,
 }
 
-impl<T: RecordableEnum> std::fmt::Debug for EnumStateRecorder<T> {
+impl std::fmt::Debug for NamedU64StateRecorder {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.debug_struct("StateRecorder")
+        f.debug_struct("NamedU64StateRecorder")
             .field("metadata", &self.name)
             .field("trace_category", &self.trace_category)
             .field("history", &self.history)
@@ -175,13 +279,16 @@ impl<T: RecordableEnum> std::fmt::Debug for EnumStateRecorder<T> {
     }
 }
 
-impl<T: RecordableEnum + 'static> EnumStateRecorder<T> {
-    /// Creates a new EnumStateRecorder that records up to `capacity` state values on a rolling
-    /// basis.
+impl Drop for NamedU64StateRecorder {
+    fn drop(&mut self) {
+        self.manager.lock().unregister_name(&self.name);
+    }
+}
+
+impl NamedU64StateRecorder {
+    /// Creates a new NamedU64StateRecorder with a given name and a map of u64 to state names.
     ///
-    /// An EnumStateRecorder created by this function is linked to this module's singleton
-    /// StateRecorderManager, which in turn corresponds to the singleton Inspector. Any client not
-    /// using the singleton Inspector should call `new_with_manager` instead.
+    /// See `RecorderOptions` for more details on options that can be specified.
     ///
     /// Errors:
     ///   - StateRecorderError::DuplicateName: `metadata.name` is already in use by a StateRecorder
@@ -192,119 +299,42 @@ impl<T: RecordableEnum + 'static> EnumStateRecorder<T> {
     pub fn new(
         name: String,
         trace_category: &'static CStr,
+        state_names_map: HashMap<u64, String>,
         options: RecorderOptions,
     ) -> Result<Self, StateRecorderError> {
-        let manager = options.manager.unwrap_or_else(|| SINGLETON_MANAGER.clone());
-        let node = {
-            let mut manager = manager.lock();
-            if let Err(e) = manager.register_name(&name) {
-                return Err(e);
-            }
-            manager.node.create_child(&name)
-        };
+        let manager = options.manager.clone().unwrap_or_else(|| SINGLETON_MANAGER.clone());
+        let node = register_with_manager(&manager, &name)?;
 
-        // Build up the map of enums to state names, returning an error if any name is not a valid
+        // Build up the map of u64 to state names, returning an error if any name is not a valid
         // str.
         let mut state_names = HashMap::new();
-        for variant in T::iter() {
-            let inspect_name = Arc::new(variant.to_string());
+        for (value, name_str) in state_names_map {
+            let inspect_name = Arc::new(name_str);
             let trace_name = lazy_static_cstr(&inspect_name)?;
-            state_names.insert(variant, StateName { inspect_name, trace_name });
+            state_names.insert(value, StateName { inspect_name, trace_name });
         }
 
         node.record_child("metadata", |metadata_node| {
             metadata_node.record_string("name", &name);
             metadata_node.record_string("type", "enum");
             metadata_node.record_child("states", |states_node| {
-                for (state_enum, state_name) in state_names.iter() {
-                    states_node.record_uint(state_name.inspect_name.as_ref(), (*state_enum).into());
+                for (state_value, state_name) in state_names.iter() {
+                    states_node.record_uint(state_name.inspect_name.as_ref(), *state_value);
                 }
             });
         });
 
-        let mut persistence_handler = None;
-
-        let history = if options.lazy_record {
-            let shared_buffer = if let Some(config) = options.persistence {
-                let (handler, buffer) = PersistenceHandler::new(config.clone(), options.capacity);
-
-                // Handle Previous Boot Node (Static read from disk)
-                let prev_data = PersistenceHandler::<T>::read_log(&config.previous_path);
-
-                if !prev_data.is_empty() {
-                    let data_arc = Arc::new(prev_data);
-                    node.record_lazy_child("previous_boot_history", move || {
-                        let data = data_arc.clone();
-                        async move {
-                            let inspector = Inspector::default();
-                            let root = inspector.root();
-                            for (i, (ts, val)) in data.iter().enumerate() {
-                                root.record_child(i.to_string(), |child| {
-                                    child.record_int("@time", *ts);
-                                    child.record_string("value", val.to_string());
-                                });
-                            }
-                            Ok(inspector)
-                        }
-                        .boxed()
-                    });
-                }
-
-                persistence_handler = Some(handler);
-                buffer
-            } else {
-                Arc::new(Mutex::new(TimestampRingBuffer::<T>::with_capacity(options.capacity)))
-            };
-
-            // "reset_info"
-            let buffer_cloned = shared_buffer.clone();
-            node.record_lazy_child("reset_info", move || {
-                let history = buffer_cloned.clone();
-                async move {
-                    let inspector = Inspector::default();
-                    let node = inspector.root();
-                    let (count, last_reset_ns) = history.lock().get_reset_info();
-                    node.record_int("count", count as i64);
-                    node.record_int("last_reset_ns", last_reset_ns);
-                    Ok(inspector)
-                }
-                .boxed()
-            });
-            let buffer_cloned = shared_buffer.clone();
-            node.record_lazy_child("history", move || {
-                let history = buffer_cloned.clone();
-                async move {
-                    let inspector = Inspector::default();
-                    let node = inspector.root();
-                    for (i, (timestamp, state_enum)) in history.lock().iter().enumerate() {
-                        node.record_child(format!("{}", i), |node| {
-                            node.record_int("@time", timestamp);
-                            node.record_string("value", state_enum.to_string());
-                        });
-                    }
-                    Ok(inspector)
-                }
-                .boxed()
-            });
-
-            RecorderHistory::Lazy(shared_buffer)
-        } else {
-            // --- EAGER MODE (Persistence NOT Supported for now) ---
-            if options.persistence.is_some() {
-                return Err(StateRecorderError::InvalidOptions(
-                    "Persistence not supported in eager mode".to_string(),
-                ));
-            }
-
-            node.record_child("reset_info", |node| {
-                node.record_int("count", 0);
-                node.record_int("last_reset_ns", zx::BootInstant::get().into_nanos());
-            });
-
-            let history_node = BoundedListNode::new(node.create_child("history"), options.capacity);
-
-            RecorderHistory::Eager(history_node)
+        // Closure to format values using the state_names map
+        // We clone the map for use in the closure.
+        let names_map: HashMap<u64, Arc<String>> =
+            state_names.iter().map(|(k, v)| (*k, v.inspect_name.clone())).collect();
+        let names_map_arc = Arc::new(names_map);
+        let record_item = move |node: &inspect::Node, val: &u64| {
+            let name_str = names_map_arc.get(val).map(|s| s.as_str()).unwrap_or("<Unknown>");
+            node.record_string("value", name_str);
         };
+
+        let (history, persistence) = setup_recording_backend(&node, &options, record_item)?;
 
         let trace_id = ftrace::Id::random();
         let trace_id_u64: u64 = trace_id.into();
@@ -316,7 +346,7 @@ impl<T: RecordableEnum + 'static> EnumStateRecorder<T> {
             trace_category,
             state_names,
             history,
-            persistence: persistence_handler,
+            persistence,
             _root_node: node,
             trace_id,
             trace_track_name,
@@ -324,21 +354,21 @@ impl<T: RecordableEnum + 'static> EnumStateRecorder<T> {
         })
     }
 
-    fn state_name(&self, state_enum: T) -> &StateName {
+    fn state_name(&self, val: u64) -> &StateName {
         static UNKNOWN_NAME: LazyLock<StateName> = LazyLock::new(|| StateName {
             trace_name: c"<Unknown>",
             inspect_name: Arc::new("<Unknown>".to_string()),
         });
-        self.state_names.get(&state_enum).unwrap_or(&UNKNOWN_NAME)
+        self.state_names.get(&val).unwrap_or(&UNKNOWN_NAME)
     }
 
-    pub fn record(&mut self, state_enum: T) {
+    pub fn record(&mut self, val: u64) {
         // Clear the trace state event to end the current slice, if one exists.
         self.trace_state_event.take();
 
         // Clone `inspect_name` so this borrow of `self` can end before the mutable borrows used
         // to modify self.trace_state_event and self.history below.
-        let state_name = self.state_name(state_enum);
+        let state_name = self.state_name(val);
         let inspect_name = state_name.inspect_name.clone();
 
         // The async instant must be emitted before the async event begins to name the track
@@ -353,7 +383,7 @@ impl<T: RecordableEnum + 'static> EnumStateRecorder<T> {
         // If Persistence is on (Lazy), the handler OWNS the buffer update.
         if let Some(handler) = &mut self.persistence {
             // Updates the shared buffer inside its lock and handle persistence.
-            handler.append(timestamp, state_enum);
+            handler.append(timestamp, val);
         } else {
             // Update manually
             match &mut self.history {
@@ -364,16 +394,54 @@ impl<T: RecordableEnum + 'static> EnumStateRecorder<T> {
                     });
                 }
                 RecorderHistory::Lazy(history) => {
-                    history.lock().insert(timestamp, state_enum);
+                    history.lock().insert(timestamp, val);
                 }
             }
         }
     }
 }
 
-impl<T: RecordableEnum> Drop for EnumStateRecorder<T> {
-    fn drop(&mut self) {
-        self.manager.lock().unregister_name(&self.name);
+/// Records time series data for an enum-valued state. This is best-suited for categorical
+/// observations, where the name of the state and not a numeric value will be most relevant for
+/// diagnostic and forensic purposes.
+pub struct EnumStateRecorder<T: RecordableEnum> {
+    inner: NamedU64StateRecorder,
+    _phantom: PhantomData<T>,
+}
+
+impl<T: RecordableEnum> std::fmt::Debug for EnumStateRecorder<T> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("EnumStateRecorder").field("inner", &self.inner).finish()
+    }
+}
+
+impl<T: RecordableEnum + 'static> EnumStateRecorder<T> {
+    /// Creates a new EnumStateRecorder with a given name.
+    ///
+    /// See `RecorderOptions` for more details on options that can be specified.
+    ///
+    /// Errors:
+    ///   - StateRecorderError::DuplicateName: `metadata.name` is already in use by a StateRecorder
+    ///     associated with `manager`.
+    ///   - StateRecorderError::IncompatibleString: Either `name` or the display name of a state
+    ///     cannot be converted to a CString.
+    ///   - StateRecorderError::InvalidOptions: `options` is invalid for the given mode.
+    pub fn new(
+        name: String,
+        trace_category: &'static CStr,
+        options: RecorderOptions,
+    ) -> Result<Self, StateRecorderError> {
+        let mut map = HashMap::new();
+        for variant in T::iter() {
+            map.insert(variant.into(), variant.to_string());
+        }
+        let inner = NamedU64StateRecorder::new(name, trace_category, map, options)?;
+
+        Ok(Self { inner, _phantom: PhantomData })
+    }
+
+    pub fn record(&mut self, state_enum: T) {
+        self.inner.record(state_enum.into());
     }
 }
 
@@ -867,125 +935,36 @@ impl<T: RecordableNumericType> NumericStateRecorder<T> {
         range: Option<(T, T)>,
         options: RecorderOptions,
     ) -> Result<Self, StateRecorderError> {
-        let manager = options.manager.unwrap_or_else(|| SINGLETON_MANAGER.clone());
-        let node = {
-            let mut manager = manager.lock();
-            if let Err(e) = manager.register_name(&name) {
-                return Err(e);
-            }
-            manager.node.create_child(&name)
-        };
+        let manager = options.manager.clone().unwrap_or_else(|| SINGLETON_MANAGER.clone());
+        let node = register_with_manager(&manager, &name)?;
 
         let trace_name = lazy_static_cstr(&name)?;
-        let units = format!("{}", units);
+        let units_str = format!("{}", units);
 
         node.record_child("metadata", |metadata_node| {
             metadata_node.record_string("name", &name);
             metadata_node.record_string("type", "numeric");
-            metadata_node.record_string("units", &units);
+            metadata_node.record_string("units", &units_str);
             match range {
                 Some(r) => metadata_node.record_child("range", |node| T::record_range(&r, node)),
                 None => metadata_node.record_string("range", "<Unspecified>"),
             }
         });
 
-        let mut persistence_handler = None;
-        let history = if options.lazy_record {
-            // --- LAZY MODE (Shared Buffer) ---
-
-            let shared_buffer = if let Some(config) = options.persistence {
-                let (handler, buffer) = PersistenceHandler::new(config.clone(), options.capacity);
-
-                // Handle Previous Boot Node (Static read from disk)
-                let prev_data = PersistenceHandler::<T>::read_log(&config.previous_path);
-
-                if !prev_data.is_empty() {
-                    let data_arc = Arc::new(prev_data);
-                    node.record_lazy_child("previous_boot_history", move || {
-                        let data = data_arc.clone();
-                        async move {
-                            let inspector = Inspector::default();
-                            let root = inspector.root();
-                            for (i, (ts, val)) in data.iter().enumerate() {
-                                root.record_child(i.to_string(), |child| {
-                                    child.record_int("@time", *ts);
-                                    // Use generic numeric record trait method
-                                    val.record(child, "value");
-                                });
-                            }
-                            Ok(inspector)
-                        }
-                        .boxed()
-                    });
-                }
-
-                persistence_handler = Some(handler);
-                buffer
-            } else {
-                Arc::new(Mutex::new(TimestampRingBuffer::<T>::with_capacity(options.capacity)))
-            };
-
-            // "reset_info"
-            let buffer_cloned = shared_buffer.clone();
-            node.record_lazy_child("reset_info", move || {
-                let history = buffer_cloned.clone();
-                async move {
-                    let inspector = Inspector::default();
-                    let node = inspector.root();
-                    let (count, last_reset_ns) = history.lock().get_reset_info();
-                    node.record_int("count", count as i64);
-                    node.record_int("last_reset_ns", last_reset_ns);
-                    Ok(inspector)
-                }
-                .boxed()
-            });
-
-            // "history"
-            let buffer_cloned = shared_buffer.clone();
-            node.record_lazy_child("history", move || {
-                let history = buffer_cloned.clone();
-                async move {
-                    let inspector = Inspector::default();
-                    let node = inspector.root();
-                    for (i, (timestamp, state_value)) in history.lock().iter().enumerate() {
-                        node.record_child(format!("{}", i), |node| {
-                            node.record_int("@time", timestamp);
-                            // Numeric-specific record
-                            state_value.record(&node, "value");
-                        });
-                    }
-                    Ok(inspector)
-                }
-                .boxed()
-            });
-
-            RecorderHistory::Lazy(shared_buffer)
-        } else {
-            // --- EAGER MODE (Persistence NOT Supported for now) ---
-            if options.persistence.is_some() {
-                return Err(StateRecorderError::InvalidOptions(
-                    "Persistence not supported in eager mode".to_string(),
-                ));
-            }
-
-            node.record_child("reset_info", |node| {
-                node.record_int("count", 0);
-                node.record_int("last_reset_ns", zx::BootInstant::get().into_nanos());
-            });
-
-            let history_node = BoundedListNode::new(node.create_child("history"), options.capacity);
-
-            RecorderHistory::Eager(history_node)
+        let record_item = |node: &inspect::Node, val: &T| {
+            val.record(node, "value");
         };
+
+        let (history, persistence) = setup_recording_backend(&node, &options, record_item)?;
 
         Ok(Self {
             manager,
             name,
             trace_category,
             trace_name,
-            units,
+            units: units_str,
             history,
-            persistence: persistence_handler,
+            persistence,
             _root_node: node,
             trace_id: ftrace::Id::random(),
             _phantom: PhantomData,
@@ -1666,8 +1645,19 @@ mod tests {
         // Verify disk content
         let curr_csv = storage_path.join("crash_test.csv");
         let content = fs::read_to_string(curr_csv).unwrap();
-        assert!(content.contains("ON"));
-        assert!(content.contains("OFF"));
+        // Should contain integer values (ON=1, OFF=0) in order
+        let lines: Vec<&str> = content.trim().lines().collect();
+        assert_eq!(lines.len(), 2, "Expected 2 lines of recorded history");
+
+        // First record: ON (1)
+        let parts0: Vec<&str> = lines[0].split(',').collect();
+        assert_eq!(parts0.len(), 2, "Invalid CSV format in line 1");
+        assert_eq!(parts0[1], "1", "First record should be ON (1)");
+
+        // Second record: OFF (0)
+        let parts1: Vec<&str> = lines[1].split(',').collect();
+        assert_eq!(parts1.len(), 2, "Invalid CSV format in line 2");
+        assert_eq!(parts1[1], "0", "Second record should be OFF (0)");
 
         // 3. FORCE "CRASH" STATE
         // Create 'Previous' file so library thinks this is a crash restart, not a reboot.
@@ -1782,8 +1772,8 @@ mod tests {
         // - "Current" file exists in persistent storage (saved from previous run).
         // - "Previous" file in volatile storage is MISSING (cleared by OS reboot).
         let curr_csv = storage_path.join("reboot_test.csv");
-        // Write raw CSV data simulating timestamps 1000 and 2000
-        fs::write(&curr_csv, "1000,ON\n2000,OFF\n").unwrap();
+        // Write raw CSV data simulating timestamps 1000 and 2000 with integers (ON=1, OFF=0)
+        fs::write(&curr_csv, "1000,1\n2000,0\n").unwrap();
 
         // Ensure volatile file doesn't exist (simulating clean /tmp)
         let prev_csv = volatile_path.join("reboot_test.csv");
@@ -1803,8 +1793,7 @@ mod tests {
         assert!(curr_csv.exists(), "Library should have create a new current file");
 
         let rotated_content = fs::read_to_string(&prev_csv).unwrap();
-        assert!(rotated_content.contains("1000,ON"));
-        assert!(rotated_content.contains("2000,OFF"));
+        assert_eq!(rotated_content, "1000,1\n2000,0\n");
 
         // 5. ASSERTIONS (Inspect)
         assert_data_tree!(inspector, root: {
@@ -1879,6 +1868,252 @@ mod tests {
                         count: 0i64,
                         last_reset_ns: AnyIntProperty,
                     },
+                }
+            }
+        });
+    }
+
+    #[test_case(false; "eager")]
+    #[test_case(true; "lazy")]
+    #[fuchsia::test]
+    async fn test_named_u64_recorder(lazy_record: bool) {
+        use std::fs;
+        use tempfile::tempdir;
+
+        // Setup isolated persistence environment
+        let dir = tempdir().unwrap();
+        let storage_path = dir.path().join("data");
+        let volatile_path = dir.path().join("tmp");
+        fs::create_dir(&storage_path).unwrap();
+        fs::create_dir(&volatile_path).unwrap();
+
+        let inspector = Inspector::default();
+        let manager = StateRecorderManager::new(&inspector);
+
+        let mut map = HashMap::new();
+        map.insert(100, "Hundred".to_string());
+        map.insert(200, "TwoHundred".to_string());
+
+        let persistence_opts = if lazy_record {
+            Some(
+                PersistenceOptions::new("my_u64_metrics_p".to_string())
+                    .storage_dir(storage_path.to_str().unwrap())
+                    .volatile_dir(volatile_path.to_str().unwrap()),
+            )
+        } else {
+            None
+        };
+
+        // 1. Start Recorder and Record Data
+        let mut recorder = NamedU64StateRecorder::new(
+            "my_u64_metrics_p".into(),
+            c"power_test",
+            map.clone(),
+            RecorderOptions {
+                lazy_record,
+                capacity: 10,
+                manager: Some(manager.clone()),
+                persistence: persistence_opts.clone(),
+            },
+        )
+        .unwrap();
+
+        recorder.record(100);
+        recorder.record(200);
+        recorder.record(300); // Unknown
+
+        // 2. Verify Persistence (Lazy mode only)
+        if lazy_record {
+            drop(recorder); // Drop to ensure flush and release name
+
+            let curr_csv = storage_path.join("my_u64_metrics_p.csv");
+            let content = fs::read_to_string(&curr_csv).unwrap();
+            let lines: Vec<&str> = content.trim().lines().collect();
+            assert_eq!(lines.len(), 3, "Expected 3 lines of recorded history");
+
+            // First record: 100
+            let parts0: Vec<&str> = lines[0].split(',').collect();
+            assert_eq!(parts0.len(), 2, "Invalid CSV format in line 1");
+            assert_eq!(parts0[1], "100", "First record should be 100");
+
+            // Second record: 200
+            let parts1: Vec<&str> = lines[1].split(',').collect();
+            assert_eq!(parts1.len(), 2, "Invalid CSV format in line 2");
+            assert_eq!(parts1[1], "200", "Second record should be 200");
+
+            // Third record: 300
+            let parts2: Vec<&str> = lines[2].split(',').collect();
+            assert_eq!(parts2.len(), 2, "Invalid CSV format in line 3");
+            assert_eq!(parts2[1], "300", "Third record should be 300");
+
+            // 3. Restart Recorder (Simulate Reboot)
+            let mut _recorder_restarted = NamedU64StateRecorder::new(
+                "my_u64_metrics_p".into(),
+                c"power_test",
+                map,
+                RecorderOptions {
+                    lazy_record,
+                    capacity: 10,
+                    manager: Some(manager),
+                    persistence: persistence_opts,
+                },
+            )
+            .unwrap();
+
+            assert_data_tree!(inspector, root: {
+                power_observability_state_recorders: {
+                    my_u64_metrics_p: {
+                        metadata: {
+                            name: "my_u64_metrics_p",
+                            type: "enum",
+                            states: {
+                                "Hundred": 100u64,
+                                "TwoHundred": 200u64,
+                            }
+                        },
+                        previous_boot_history: {
+                            "0": {
+                                "@time": AnyIntProperty,
+                                "value": "Hundred",
+                            },
+                            "1": {
+                                "@time": AnyIntProperty,
+                                "value": "TwoHundred",
+                            },
+                             "2": {
+                                "@time": AnyIntProperty,
+                                "value": "<Unknown>",
+                            },
+                        },
+                        history: {},
+                        reset_info: {
+                            count: 0,
+                            last_reset_ns: AnyIntProperty,
+                        }
+                    }
+                }
+            });
+        } else {
+            // Eager mode
+            // Recorder IS ALIVE here, so node exists.
+            assert_data_tree!(inspector, root: {
+                power_observability_state_recorders: {
+                    my_u64_metrics_p: {
+                        metadata: {
+                            name: "my_u64_metrics_p",
+                            type: "enum",
+                            states: {
+                                "Hundred": 100u64,
+                                "TwoHundred": 200u64,
+                            }
+                        },
+                        history: {
+                            "0": {
+                                "@time": AnyIntProperty,
+                                "value": "Hundred",
+                            },
+                            "1": {
+                                "@time": AnyIntProperty,
+                                "value": "TwoHundred",
+                            },
+                             "2": {
+                                "@time": AnyIntProperty,
+                                "value": "<Unknown>",
+                            },
+                        },
+                        reset_info: {
+                            count: 0,
+                            last_reset_ns: AnyIntProperty,
+                        }
+                    }
+                }
+            });
+        }
+    }
+
+    #[test_case(true; "lazy")]
+    #[fuchsia::test]
+    async fn test_numeric_persistence_reboot(lazy_record: bool) {
+        use std::fs;
+        use tempfile::tempdir;
+
+        // 1. Setup isolated persistence environment
+        let dir = tempdir().unwrap();
+        let storage_path = dir.path().join("data");
+        let volatile_path = dir.path().join("tmp");
+        fs::create_dir(&storage_path).unwrap();
+        fs::create_dir(&volatile_path).unwrap();
+
+        let inspector = Inspector::default();
+        let manager = StateRecorderManager::new(&inspector);
+
+        let create_options = |manager_ref| RecorderOptions {
+            lazy_record,
+            capacity: 10,
+            manager: Some(manager_ref),
+            persistence: Some(
+                PersistenceOptions::new("num_reboot_test".to_string())
+                    .storage_dir(storage_path.to_str().unwrap())
+                    .volatile_dir(volatile_path.to_str().unwrap()),
+            ),
+        };
+
+        // 2. SIMULATE FRESH REBOOT STATE
+        // - "Current" file exists (saved from previous run).
+        // - "Previous" file in volatile is MISSING.
+        let curr_csv = storage_path.join("num_reboot_test.csv");
+        // Write raw CSV data: time,value
+        fs::write(&curr_csv, "1000,42\n2000,100\n").unwrap();
+
+        let prev_csv = volatile_path.join("num_reboot_test.csv");
+        assert!(!prev_csv.exists());
+
+        // 3. START RECORDER
+        let mut _recorder = NumericStateRecorder::new(
+            "num_reboot_test".into(),
+            c"power_test",
+            units!(Number),
+            Some((0u64, 200u64)),
+            create_options(manager),
+        )
+        .unwrap();
+
+        // 4. VERIFY FILESYSTEM (Rotation)
+        // The file should have been moved from 'data' to 'tmp'.
+        assert!(prev_csv.exists(), "Library should have rotated curr -> prev");
+        assert!(curr_csv.exists(), "Library should have create a new current file");
+
+        let rotated_content = fs::read_to_string(&prev_csv).unwrap();
+        assert_eq!(rotated_content, "1000,42\n2000,100\n");
+
+        // 5. ASSERTIONS (Inspect)
+        assert_data_tree!(inspector, root: {
+            power_observability_state_recorders: {
+                num_reboot_test: {
+                    metadata: {
+                        name: "num_reboot_test",
+                        type: "numeric",
+                        units: "#",
+                        range: {
+                            min_inc: 0u64,
+                            max_inc: 200u64,
+                        }
+                    },
+                    previous_boot_history: {
+                        "0": {
+                            "@time": 1000i64,
+                            "value": 42u64,
+                        },
+                        "1": {
+                            "@time": 2000i64,
+                            "value": 100u64,
+                        },
+                    },
+                    history: {},
+                    reset_info: {
+                        count: 0i64,
+                        last_reset_ns: AnyIntProperty,
+                    }
                 }
             }
         });
