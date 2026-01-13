@@ -6,6 +6,7 @@
 
 #include <algorithm>
 
+#include "src/developer/debug/zxdb/client/pretty_frame_glob.h"
 #include "src/developer/debug/zxdb/client/stack.h"
 
 namespace zxdb {
@@ -157,10 +158,16 @@ void PrettyStackManager::LoadDefaultMatchers() {
   // that will be much slower to match against. If we find a more general match is needed, it would
   // be best to hardcode this rust annotation scheme rather than try to express this with globs.
   matchers.push_back(StackGlob(
-      "Rust library",
+      "Rust panic",
       {PrettyFrameGlob::Func("__fuchsia_libc::__abort_impl__"),
        PrettyFrameGlob::Wildcard(0, 16),
        PrettyFrameGlob::Func("std::sys::backtrace::__rust_end_short_backtrace<*>")}));
+
+  // These frames are optionally on the abort path.
+  matchers.push_back(StackGlob("Rust panic", {
+          PrettyFrameGlob::Func("std::panicking::panic_handler"),
+          PrettyFrameGlob::Func("core::panicking::panic_fmt")
+        }));
 
   // This is generic code that appears around the top of the stack when dumping a backtrace from a
   // failed assertion.

@@ -88,6 +88,27 @@ std::vector<std::unique_ptr<Frame>> GetRustAsyncExecutorPollResultFrames() {
   return frames;
 }
 
+std::vector<std::unique_ptr<Frame>> GetRustPanickingFrames() {
+  std::vector<std::unique_ptr<Frame>> frames;
+
+  // This name is special, and we have to include it for the matcher to to match.
+  //
+  // TODO(https://fxbug.dev/456895946): Do not depend on libc internals (i.e. the namespace name).
+  frames.push_back(std::make_unique<MockFrame>(nullptr, nullptr, 0x1001, 0x2001,
+                                               "__fuchsia_libc::__abort_impl__", FileLine()));
+  frames.push_back(
+      std::make_unique<MockFrame>(nullptr, nullptr, 0x1002, 0x2002, "anything1", FileLine()));
+  frames.push_back(std::make_unique<MockFrame>(nullptr, nullptr, 0x1003, 0x2003, "anything2",
+                                               FileLine("rust_file.rs", 12)));
+  frames.push_back(
+      std::make_unique<MockFrame>(nullptr, nullptr, 0x1004, 0x2004, "anything3", FileLine()));
+  frames.push_back(std::make_unique<MockFrame>(nullptr, nullptr, 0x1005, 0x2005,
+                                               "std::sys::backtrace::__rust_end_short_backtrace<*>",
+                                               FileLine()));
+
+  return frames;
+}
+
 }  // namespace
 
 TEST(PrettyStackManager, StackGlobMatchesAt) {
@@ -374,6 +395,30 @@ TEST(PrettyStackManager, DefaultMatchersRust) {
   entries = manager->ProcessStack(stack);
   // Because of the above, we'll have two for this one.
   ASSERT_EQ(2u, entries.size());
+
+  frames.clear();
+
+  // This is just default panicking frames that ends right at the "__rust_end_short_backtrace"
+  // frame. We should collapse them all.
+  // frames = GetRustPanickingFrames();
+  stack.SetFramesForTest(GetRustPanickingFrames(), true);
+  entries = manager->ProcessStack(stack);
+  ASSERT_EQ(1u, entries.size());
+
+  frames.clear();
+
+  // Now we take the default set of panicking frames and add two more on top of them after the
+  // "__rust_end_short_backtrace" frame.
+  frames = GetRustPanickingFrames();
+  frames.push_back(std::make_unique<MockFrame>(nullptr, nullptr, 0x1006, 0x2006,
+                                               "std::panicking::panic_handler", FileLine()));
+  frames.push_back(std::make_unique<MockFrame>(nullptr, nullptr, 0x1006, 0x2006,
+                                               "core::panicking::panic_fmt", FileLine()));
+  stack.SetFramesForTest(std::move(frames), true);
+
+  // This should also collapse into a single elided entry.
+  entries = manager->ProcessStack(stack);
+  ASSERT_EQ(1u, entries.size());
 }
 
 }  // namespace zxdb
