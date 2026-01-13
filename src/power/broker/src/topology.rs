@@ -483,8 +483,8 @@ impl Topology {
     /// will never be turned on.
     fn invalidate_dependent_elements(&mut self, invalid_element_id: &ElementID) {
         // Prior to removing any dependencies that are no longer valid, ensure that we add a
-        // opportunistic dependency to the unsatisfiable element, which forces *future* leases into the
-        // contingent state and prevents the broker from attempting to turn on other dependent
+        // assertive dependency to the unsatisfiable element, which forces *future* leases into the
+        // pending state and prevents the broker from attempting to turn on other dependent
         // elements. Existing leases will remain unaffected.
         let assertive_dependents_of_invalid_elements: Vec<ElementLevel> = self
             .assertive_dependencies
@@ -501,7 +501,7 @@ impl Topology {
             })
             .collect();
         for dependent in assertive_dependents_of_invalid_elements {
-            self.add_opportunistic_dependency(
+            self.add_assertive_dependency(
                 &Dependency {
                     dependent: dependent.clone(),
                     requires: ElementLevel {
@@ -537,7 +537,7 @@ impl Topology {
             })
             .collect();
         for dependent in opportunistic_dependents_of_invalid_elements {
-            self.add_opportunistic_dependency(
+            self.add_assertive_dependency(
                 &Dependency {
                     dependent: dependent.clone(),
                     requires: ElementLevel {
@@ -626,6 +626,7 @@ impl Topology {
         Ok(())
     }
 
+    #[cfg(test)]
     /// Adds a opportunistic dependency to the Topology.
     pub fn add_opportunistic_dependency<I>(
         &mut self,
@@ -1148,7 +1149,6 @@ mod tests {
                         meta: {
                             "1": {
                                 required_level: fpb::PowerLevel::MAX as u64,
-                                opportunistic: true,
                             }
                         }
                     },

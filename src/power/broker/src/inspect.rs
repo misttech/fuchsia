@@ -140,7 +140,7 @@ impl ElementData {
             None => {}
             Some(Either::Left(property)) => property.set(level as u64),
             Some(Either::Right(_)) => {
-                unreachable!("we shouldn't be setting level for an unsatisfiable element");
+                // Ignore update level requests for the unsatifiable element.
             }
         }
     }
