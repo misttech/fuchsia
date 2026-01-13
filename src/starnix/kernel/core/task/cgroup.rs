@@ -219,6 +219,14 @@ impl CgroupRoot {
     pub fn get_cgroup<TG: Copy + Into<ThreadGroupKey>>(&self, tg: TG) -> Option<Weak<Cgroup>> {
         self.pid_table.lock().get(&tg.into()).cloned()
     }
+
+    pub fn get_cgroup_inspect(&self) -> fuchsia_inspect::Inspector {
+        let inspector = fuchsia_inspect::Inspector::default();
+        let cgroups = inspector.root();
+        cgroups.record_uint("pids", self.pid_table.lock().len() as u64);
+        cgroups.record_uint("count", self.children.lock().count_descendants());
+        inspector
+    }
 }
 
 impl CgroupOps for CgroupRoot {
@@ -333,6 +341,10 @@ impl CgroupChildren {
 
     fn get_children(&self) -> Vec<CgroupHandle> {
         self.0.values().cloned().collect()
+    }
+
+    fn count_descendants(&self) -> u64 {
+        self.0.values().map(|child| 1 + child.count_descendants()).sum()
     }
 }
 
@@ -569,6 +581,10 @@ impl Cgroup {
     /// Errors if parent node is no longer around.
     fn parent(&self) -> Result<Option<CgroupHandle>, Errno> {
         self.parent.as_ref().map(|weak| weak.upgrade().ok_or_else(|| errno!(ENODEV))).transpose()
+    }
+
+    fn count_descendants(&self) -> u64 {
+        self.state.lock().children.count_descendants()
     }
 }
 

@@ -496,6 +496,15 @@ impl Kernel {
             }
         });
 
+        let kernel = Arc::downgrade(&this);
+        this.inspect_node.record_lazy_child("cgroupv2", move || {
+            if let Some(kernel) = kernel.upgrade() {
+                async move { Ok(kernel.cgroups.cgroup2.get_cgroup_inspect()) }.boxed()
+            } else {
+                async move { Err(anyhow::format_err!("kernel was dropped")) }.boxed()
+            }
+        });
+
         Ok(this)
     }
 
