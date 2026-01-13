@@ -62,6 +62,15 @@ CfiParser::CfiParser(Registers::Arch arch, Module::AddressSize size, uint64_t co
       RegisterID::kArm64_x30,
   };
 
+  // Similar to arm64, arm32's LR is considered preserved for the same reason as arm64 (LR is
+  // clobbered by virtue of using the bl instruction). Likewise, SP is also not considered
+  // preserved, since it will be recovered either by CFA or ARM EHABI unwinding instructions.
+  static const RegisterID arm32_preserved[] = {
+      RegisterID::kArm64_x4, RegisterID::kArm64_x5, RegisterID::kArm64_x6,
+      RegisterID::kArm64_x7, RegisterID::kArm64_x8, RegisterID::kArm64_x9,
+      RegisterID::kArm64_x10, RegisterID::kArm64_x11, RegisterID::kArm32_lr,
+  };
+
   static const RegisterID riscv64_preserved[] = {
       RegisterID::kRiscv64_gp,  RegisterID::kRiscv64_tp,  RegisterID::kRiscv64_s0,
       RegisterID::kRiscv64_s1,  RegisterID::kRiscv64_s2,  RegisterID::kRiscv64_s3,
@@ -78,6 +87,9 @@ CfiParser::CfiParser(Registers::Arch arch, Module::AddressSize size, uint64_t co
       length = sizeof(x64_preserved) / sizeof(RegisterID);
       break;
     case Registers::Arch::kArm32:
+      preserved = arm32_preserved;
+      length = sizeof(arm32_preserved) / sizeof(RegisterID);
+      break;
     case Registers::Arch::kArm64:
       preserved = arm64_preserved;
       length = sizeof(arm64_preserved) / sizeof(RegisterID);
