@@ -63,6 +63,8 @@ pub struct SessionChannelInspect {
     initial_local_credits: IValue<Option<u64>>,
     /// The initial remote credit amount (if applicable).
     initial_remote_credits: IValue<Option<u64>>,
+    /// The negotiated maximum frame size for this channel.
+    max_packet_size: IValue<Option<u16>>,
     inspect_node: inspect::Node,
 }
 
@@ -78,10 +80,17 @@ impl SessionChannelInspect {
         }
     }
 
-    pub fn set_flow_control(&mut self, flow_control: FlowControlMode) {
-        if let FlowControlMode::CreditBased(credits) = flow_control {
-            self.initial_local_credits.iset(Some(credits.local() as u64));
-            self.initial_remote_credits.iset(Some(credits.remote() as u64));
+    pub fn set_parameters(&mut self, size: u16, flow_control: FlowControlMode) {
+        self.max_packet_size.iset(Some(size));
+        match flow_control {
+            FlowControlMode::CreditBased(credits) => {
+                self.initial_local_credits.iset(Some(credits.local() as u64));
+                self.initial_remote_credits.iset(Some(credits.remote() as u64));
+            }
+            FlowControlMode::None => {
+                self.initial_local_credits.iset(None);
+                self.initial_remote_credits.iset(None);
+            }
         }
     }
 }
@@ -93,8 +102,8 @@ pub struct SessionMultiplexerInspect {
     role: inspect::StringProperty,
     /// The flow control parameter of the multiplexer.
     flow_control: inspect::StringProperty,
-    /// The maximum frame size parameter of the multiplexer.
-    max_frame_size: inspect::UintProperty,
+    /// The default maximum frame size parameter of the multiplexer.
+    default_max_packet_size: inspect::UintProperty,
     inspect_node: inspect::Node,
 }
 
@@ -112,12 +121,15 @@ impl SessionMultiplexerInspect {
         self.role.set(role_to_display_str(role));
     }
 
-    pub fn set_parameters(&mut self, parameters: SessionParameters) {
+    pub fn set_default_max_packet_size(&mut self, max_packet_size: u16) {
+        self.default_max_packet_size =
+            self.inspect_node.create_uint("default_max_packet_size", max_packet_size as u64);
+    }
+
+    pub fn set_session_parameters(&mut self, parameters: SessionParameters) {
         let flow_control =
             if parameters.credit_based_flow { CREDIT_FLOW_CONTROL } else { NO_FLOW_CONTROL };
         self.flow_control = self.inspect_node.create_string("flow_control", flow_control);
-        self.max_frame_size =
-            self.inspect_node.create_uint("max_frame_size", parameters.max_frame_size as u64);
     }
 
     pub fn node(&self) -> &inspect::Node {
@@ -213,14 +225,15 @@ mod tests {
         });
 
         // Inspect with a different role and parameters.
-        let parameters = SessionParameters { credit_based_flow: true, max_frame_size: 99 };
+        let parameters = SessionParameters { credit_based_flow: true };
         multiplexer.set_role(Role::Initiator);
-        multiplexer.set_parameters(parameters);
+        multiplexer.set_session_parameters(parameters);
+        multiplexer.set_default_max_packet_size(99);
         assert_data_tree!(inspect, root: {
             multiplexer: {
                 role: "Initiator",
                 flow_control: CREDIT_FLOW_CONTROL,
-                max_frame_size: 99u64,
+                default_max_packet_size: 99u64,
             }
         });
     }
@@ -248,28 +261,30 @@ mod tests {
             }
         });
 
-        // Flow control property set with a null flow control mode. No credits should be stored.
-        channel.set_flow_control(FlowControlMode::None);
-        assert_data_tree!(inspect, root: {
-            channel: {
-                dlci: 8u64,
-                server_channel: 4u64,
-            }
-        });
-
-        // Flow control property set with a credit based flow control mode.
-        channel.set_flow_control(FlowControlMode::CreditBased(Credits::new(10, 19)));
+        // Parameters are set with credit flow control.
+        channel.set_parameters(1024, FlowControlMode::CreditBased(Credits::new(10, 19)));
         assert_data_tree!(inspect, root: {
             channel: {
                 dlci: 8u64,
                 server_channel: 4u64,
                 initial_local_credits: 10u64,
                 initial_remote_credits: 19u64,
+                max_packet_size: 1024u64,
+            }
+        });
+
+        // Parameters are changed with no flow control, don't expect credits in the updated tree
+        channel.set_parameters(500, FlowControlMode::None);
+        assert_data_tree!(inspect, root: {
+            channel: {
+                dlci: 8u64,
+                server_channel: 4u64,
+                max_packet_size: 500u64,
             }
         });
     }
 
-    #[test]
+    #[fuchsia::test]
     fn duplex_data_stream_inspect_tree_updates_when_changed() {
         let mut exec = fasync::TestExecutor::new_with_fake_time();
         exec.set_fake_time(fasync::MonotonicInstant::from_nanos(1_234_567));

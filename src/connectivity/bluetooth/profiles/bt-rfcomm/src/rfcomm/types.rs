@@ -15,6 +15,8 @@ pub enum Error {
     ChannelNotEstablished(DLCI),
     #[error("DLCI {:?} is already established", .0)]
     ChannelAlreadyEstablished(DLCI),
+    #[error("DLCI {:?} parameters not negotiated", .0)]
+    ChannelParametersNotNegotiated(DLCI),
     #[error("Multiplexer has already started")]
     MultiplexerAlreadyStarted,
     #[error("Multiplexer has not started")]

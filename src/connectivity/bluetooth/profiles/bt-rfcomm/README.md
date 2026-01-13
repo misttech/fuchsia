@@ -62,13 +62,14 @@ the current state of the RFCOMM server, use `ffx inspect show core/bluetooth-cor
           connected = (Connected / Disconnected)
           multiplexer:
             flow_control = (Credit-Based / None)
-            max_frame_size
+            default_max_packet_size
             role = (Unassigned / Negotiating / Initiator / Responder)
             channel_#:
               dlci
               server_channel
               initial_local_credits
               initial_remote_credits
+              max_packet_size
               flow_controller:
                 controller_type = (simple / credit_flow)
                 local_credits

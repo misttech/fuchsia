@@ -497,6 +497,13 @@ impl FlowControlMode {
             Self::None => Self::None,
         }
     }
+
+    pub fn initial_remote_credits(&self) -> Option<u8> {
+        match self {
+            Self::CreditBased(credits) => Some(credits.remote() as u8),
+            Self::None => None,
+        }
+    }
 }
 
 /// User data frames with optional credits to be used for flow control.
@@ -527,27 +534,39 @@ struct EstablishedChannelTask {
     terminated: Shared<BoxFuture<'static, ()>>,
 }
 
-/// The RFCOMM Channel associated with a DLCI for an RFCOMM Session. This channel is a client-
-/// interfacing channel - the remote end of the channel is held by a profile or application that
-/// requires RFCOMM functionality.
+/// Parameters associated with the RFCOMM channel. These are negotiated between the local device
+/// and remote peer.
+#[derive(Debug)]
+struct SessionChannelParameters {
+    /// The maximum packet size that can be sent on the channel.
+    max_packet_size: u16,
+    /// The flow control mode for the channel.
+    flow_control: FlowControlMode,
+}
+
+/// The RFCOMM Channel associated with a DLCI for an RFCOMM Session.
+/// The local end of the channel is held by the `bt-rfcomm` component and is used a means to forward
+/// user data received from the remote peer.
+/// The remote end of the channel is held by a profile or application that requires RFCOMM
+/// functionality.
 ///
 /// Typical usage looks like:
 ///   let (local, remote) = Channel::create();
-///   let session_channel = SessionChannel::new(role, dlci);
-///   session_channel.establish(local, frame_sender);
+///   let mut session_channel = SessionChannel::new(role, dlci);
+///   session_channel.set_parameters(parameters);
+///   session_channel.establish(..);
 ///   // Give remote to some client requesting RFCOMM.
 ///   pass_channel_to_rfcomm_client(remote);
 ///
-///   let _ = session_channel.receive_user_data(FlowControlledData { user_data_buf1, credits1 }).await;
-///   let _ = session_channel.receive_user_data(FlowControlledData { user_data_buf2, credits2 }).await;
+///   session_channel.receive_user_data(FlowControlledData { user_data_buf1, credits1 }).await;
+///   session_channel.receive_user_data(FlowControlledData { user_data_buf2, credits2 }).await;
 pub struct SessionChannel {
     /// The DLCI associated with this channel.
     dlci: DLCI,
     /// The role assigned to the local RFCOMM session.
     role: Role,
-    /// The flow control mode used for this SessionChannel. If unset during establishment, the
-    /// channel will default to credit-based flow control.
-    flow_control: Option<FlowControlMode>,
+    /// The parameters for this channel.
+    parameters: Option<SessionChannelParameters>,
     /// The processing task that supports the RX & TX datapaths for the established channel.
     established_task: Option<EstablishedChannelTask>,
     /// The inspect node for this channel.
@@ -567,7 +586,7 @@ impl SessionChannel {
         Self {
             dlci,
             role,
-            flow_control: None,
+            parameters: None,
             established_task: None,
             inspect: SessionChannelInspect::default(),
         }
@@ -581,22 +600,28 @@ impl SessionChannel {
 
     /// Returns true if the parameters for this SessionChannel have been negotiated.
     pub fn parameters_negotiated(&self) -> bool {
-        self.flow_control.is_some()
+        self.parameters.is_some()
     }
 
-    /// Sets the flow control mode for this channel. Returns an Error if the channel
-    /// has already been established, as the flow control mode cannot be changed after
-    /// the channel has been opened and established.
-    ///
-    /// Note: It is valid to call `set_flow_control()` multiple times before the
-    /// channel has been established (usually due to back and forth during parameter negotiation).
-    /// The most recent `flow_control` will be used.
-    pub fn set_flow_control(&mut self, flow_control: FlowControlMode) -> Result<(), Error> {
+    pub fn max_packet_size(&self) -> Option<u16> {
+        self.parameters.as_ref().map(|p| p.max_packet_size)
+    }
+
+    /// Sets the parameters for this channel.
+    /// Returns an Error if the channel has already been established, as the flow control mode and
+    /// max packet size cannot be changed after the channel has been opened and established.
+    pub fn set_parameters(
+        &mut self,
+        max_packet_size: u16,
+        flow_control: FlowControlMode,
+    ) -> Result<(), Error> {
         if self.is_established() {
             return Err(Error::ChannelAlreadyEstablished(self.dlci));
         }
-        self.flow_control = Some(flow_control.as_new());
-        self.inspect.set_flow_control(flow_control);
+
+        self.parameters =
+            Some(SessionChannelParameters { max_packet_size, flow_control: flow_control.as_new() });
+        self.inspect.set_parameters(max_packet_size, flow_control);
         Ok(())
     }
 
@@ -649,26 +674,32 @@ impl SessionChannel {
     /// Starts the processing task over the provided RFCOMM `channel`.
     /// While unusual, it is OK to call establish() multiple times. The currently active
     /// processing task will be terminated and a new task will be created with the provided
-    /// `channel`. If the flow control has not been negotiated, the channel will default
-    /// to using credit-based flow control.
-    pub fn establish(&mut self, channel: Channel, data_to_peer_sender: mpsc::Sender<Frame>) {
+    /// `channel`.
+    ///
+    /// Returns an error if the channel parameters have not been negotiated.
+    pub fn establish(
+        &mut self,
+        channel: Channel,
+        data_to_peer_sender: mpsc::Sender<Frame>,
+    ) -> Result<(), Error> {
         let (data_from_peer_sender, data_from_peer_receiver) = mpsc::unbounded();
         let (termination_sender, termination_receiver) = oneshot::channel();
-        let flow_controller: Box<dyn FlowController> =
-            match self.flow_control.get_or_insert(FlowControlMode::CreditBased(Credits::default()))
-            {
-                FlowControlMode::None => {
-                    let mut simple_controller = SimpleController::new(self.role, self.dlci);
-                    let _ = simple_controller.iattach(self.inspect.node(), FLOW_CONTROLLER);
-                    Box::new(simple_controller)
-                }
-                FlowControlMode::CreditBased(credits) => {
-                    let mut credit_flow_controller =
-                        CreditFlowController::new(self.role, self.dlci, credits.as_new());
-                    let _ = credit_flow_controller.iattach(self.inspect.node(), FLOW_CONTROLLER);
-                    Box::new(credit_flow_controller)
-                }
-            };
+
+        let channel_parameters =
+            self.parameters.as_ref().ok_or(Error::ChannelParametersNotNegotiated(self.dlci))?;
+        let flow_controller: Box<dyn FlowController> = match &channel_parameters.flow_control {
+            FlowControlMode::None => {
+                let mut simple_controller = SimpleController::new(self.role, self.dlci);
+                let _ = simple_controller.iattach(self.inspect.node(), FLOW_CONTROLLER);
+                Box::new(simple_controller)
+            }
+            FlowControlMode::CreditBased(credits) => {
+                let mut credit_flow_controller =
+                    CreditFlowController::new(self.role, self.dlci, credits.as_new());
+                let _ = credit_flow_controller.iattach(self.inspect.node(), FLOW_CONTROLLER);
+                Box::new(credit_flow_controller)
+            }
+        };
 
         let _task = Self::establish_with_controller(
             self.role,
@@ -683,6 +714,7 @@ impl SessionChannel {
         self.established_task =
             Some(EstablishedChannelTask { _task, data_from_peer_sender, terminated });
         trace!(dlci:% = self.dlci; "Started SessionChannel processing task");
+        Ok(())
     }
 
     /// Receive a user data payload from the remote peer, which will be queued to be sent
@@ -730,10 +762,10 @@ mod tests {
         assert_user_data_frame, expect_frame, expect_user_data_frame, poll_stream,
     };
 
-    fn establish_channel(channel: &mut SessionChannel) -> (Channel, mpsc::Receiver<Frame>) {
-        let (local, remote) = Channel::create();
+    fn establish_channel(session_channel: &mut SessionChannel) -> (Channel, mpsc::Receiver<Frame>) {
         let (frame_sender, frame_receiver) = mpsc::channel(0);
-        channel.establish(local, frame_sender);
+        let (local, remote) = Channel::create();
+        session_channel.establish(local, frame_sender).unwrap();
         (remote, frame_receiver)
     }
 
@@ -745,15 +777,14 @@ mod tests {
     fn create_and_establish(
         role: Role,
         dlci: DLCI,
-        flow_control: Option<FlowControlMode>,
+        flow_control: FlowControlMode,
     ) -> (inspect::Inspector, SessionChannel, Channel, mpsc::Receiver<Frame>) {
         let inspect = inspect::Inspector::default();
         let mut session_channel =
             SessionChannel::new(dlci, role).with_inspect(inspect.root(), "channel_").unwrap();
         assert!(!session_channel.is_established());
-        if let Some(flow_control) = flow_control {
-            assert!(session_channel.set_flow_control(flow_control).is_ok());
-        }
+        // Arbitrary max packet size since tests don't do any size specific things.
+        assert!(session_channel.set_parameters(1000, flow_control).is_ok());
 
         let (remote, frame_receiver) = establish_channel(&mut session_channel);
         assert!(session_channel.is_established());
@@ -761,18 +792,89 @@ mod tests {
         (inspect, session_channel, remote, frame_receiver)
     }
 
-    #[test]
-    fn test_establish_channel_and_send_data_with_no_flow_control() {
+    #[fuchsia::test]
+    fn establish_fails_if_parameters_not_set() {
+        let _exec = fasync::TestExecutor::new();
+        let dlci = DLCI::try_from(8).unwrap();
+        let mut session_channel = SessionChannel::new(dlci, Role::Responder);
+        let (local, _remote) = Channel::create();
+        let (frame_sender, _frame_receiver) = mpsc::channel(0);
+
+        // Should fail because parameters haven't been set.
+        assert_matches!(
+            session_channel.establish(local, frame_sender),
+            Err(Error::ChannelParametersNotNegotiated(_))
+        );
+    }
+
+    #[fuchsia::test]
+    fn set_parameters_after_termination() {
+        let mut exec = fasync::TestExecutor::new();
+        let inspect = inspect::Inspector::default();
+        let dlci = DLCI::try_from(8).unwrap();
+        let mut session_channel = SessionChannel::new(dlci, Role::Responder)
+            .with_inspect(inspect.root(), "channel_")
+            .unwrap();
+        let (local, remote) = Channel::create();
+        let (frame_sender, mut frame_receiver) = mpsc::channel(0);
+
+        // Set parameters and establish.
+        let max_packet_size = 1000;
+        assert!(session_channel.set_parameters(max_packet_size, FlowControlMode::None).is_ok());
+        assert!(session_channel.establish(local, frame_sender).is_ok());
+        assert!(session_channel.is_established());
+
+        // The SessionChannel task should still be running.
+        let mut finished = session_channel.finished();
+        exec.run_until_stalled(&mut finished).expect_pending("task is active");
+
+        // To terminate, we drop `remote` end which is held by some application.
+        drop(remote);
+        // Expect the outgoing DISCONNECT frame and the task should finish.
+        let _frame = exec
+            .run_until_stalled(&mut frame_receiver.next())
+            .expect("future completed")
+            .expect("frame received");
+        exec.run_until_stalled(&mut finished).expect("task finished");
+        assert!(!session_channel.is_established());
+
+        // New, different parameters can be set.
+        let new_max_packet_size = 512;
+        let new_flow_control = FlowControlMode::CreditBased(Credits::new(5, 5));
+        assert!(session_channel.set_parameters(new_max_packet_size, new_flow_control).is_ok());
+
+        // Establish again.
+        let (local2, _remote2) = Channel::create();
+        let (frame_sender2, _frame_receiver2) = mpsc::channel(0);
+        assert!(session_channel.establish(local2, frame_sender2).is_ok());
+        assert!(session_channel.is_established());
+    }
+
+    #[fuchsia::test]
+    fn establish_succeeds_with_parameters() {
+        let _exec = fasync::TestExecutor::new();
+        let dlci = DLCI::try_from(8).unwrap();
+        let mut session_channel = SessionChannel::new(dlci, Role::Responder);
+        let (local, _remote) = Channel::create();
+        let (frame_sender, _frame_receiver) = mpsc::channel(0);
+
+        assert!(session_channel.set_parameters(1024, FlowControlMode::None).is_ok());
+        assert!(session_channel.establish(local, frame_sender).is_ok());
+        assert!(session_channel.is_established());
+    }
+
+    #[fuchsia::test]
+    fn establish_channel_and_send_data_with_no_flow_control() {
         let mut exec = fasync::TestExecutor::new();
 
         let role = Role::Responder;
         let dlci = DLCI::try_from(8).unwrap();
         let (_inspect, mut session_channel, mut client, mut outgoing_frames) =
-            create_and_establish(role, dlci, Some(FlowControlMode::None));
+            create_and_establish(role, dlci, FlowControlMode::None);
         // Trying to change the flow control mode after establishment should fail.
         assert!(
             session_channel
-                .set_flow_control(FlowControlMode::CreditBased(Credits::default()))
+                .set_parameters(400, FlowControlMode::CreditBased(Credits::default()))
                 .is_err()
         );
 
@@ -820,21 +922,18 @@ mod tests {
         assert!(!session_channel.is_established());
     }
 
-    /// Tests the SessionChannel relay with default flow control parameters (credit-based
-    /// flow control with 0 initial credits). This is a fairly common case since we only
-    /// do PN once, so most RFCOMM channels that are established will not have negotiated
-    /// credits.
+    /// Tests the SessionChannel relay with default flow control parameters
     #[fuchsia::test]
-    fn test_session_channel_with_default_credit_flow_control() {
+    fn session_channel_with_default_credit_flow_control() {
         let mut exec = fasync::TestExecutor::new();
 
         let role = Role::Responder;
         let dlci = DLCI::try_from(8).unwrap();
         let (_inspect, mut session_channel, mut client, mut outgoing_frames) =
-            create_and_establish(role, dlci, None);
+            create_and_establish(role, dlci, FlowControlMode::CreditBased(Credits::default()));
 
         exec.run_until_stalled(&mut client.next()).expect_pending("no application data");
-        poll_stream(&mut exec, &mut outgoing_frames).expect_pending("no outgoing frame");
+        poll_stream(&mut exec, &mut outgoing_frames).expect_pending("no outgoing frames");
 
         // Receive user data from remote peer be relayed to the profile-client. The peer issues 0
         // extra credits.
@@ -891,8 +990,8 @@ mod tests {
         assert_eq!(received_data2, user_data2);
     }
 
-    #[test]
-    fn test_session_channel_with_negotiated_credit_flow_control() {
+    #[fuchsia::test]
+    fn session_channel_with_negotiated_credit_flow_control() {
         let mut exec = fasync::TestExecutor::new();
 
         let role = Role::Responder;
@@ -900,10 +999,10 @@ mod tests {
         let (_inspect, mut session_channel, mut client, mut outgoing_frames) = create_and_establish(
             role,
             dlci,
-            Some(FlowControlMode::CreditBased(Credits::new(
+            FlowControlMode::CreditBased(Credits::new(
                 12, // Arbitrary
                 6,  // Arbitrary
-            ))),
+            )),
         );
 
         exec.run_until_stalled(&mut client.next()).expect_pending("shouldn't have data");
@@ -1206,12 +1305,15 @@ mod tests {
         assert_matches!(send_result, Ok(_));
     }
 
-    #[test]
+    #[fuchsia::test]
     fn finished_signal_resolves_when_session_channel_dropped() {
         let mut exec = fasync::TestExecutor::new();
 
-        let (_inspect, session_channel, _client, _outgoing_frames) =
-            create_and_establish(Role::Initiator, DLCI::try_from(8).unwrap(), None);
+        let (_inspect, session_channel, _client, _outgoing_frames) = create_and_establish(
+            Role::Initiator,
+            DLCI::try_from(8).unwrap(),
+            FlowControlMode::None,
+        );
 
         // Finished signal is pending while the channel is active.
         let mut finished = session_channel.finished();
@@ -1228,8 +1330,11 @@ mod tests {
         let mut exec = fasync::TestExecutor::new();
 
         let dlci = DLCI::try_from(19).unwrap();
-        let (_inspect, session_channel, _client, mut outgoing_frames) =
-            create_and_establish(Role::Responder, dlci, None);
+        let (_inspect, session_channel, _client, mut outgoing_frames) = create_and_establish(
+            Role::Responder,
+            dlci,
+            FlowControlMode::CreditBased(Credits::new(0, 0)),
+        );
 
         // Finished signal is pending while the channel is active.
         let mut finished = session_channel.finished();
@@ -1247,7 +1352,7 @@ mod tests {
         assert_matches!(exec.run_until_stalled(&mut finished), Poll::Ready(_));
     }
 
-    #[test]
+    #[fuchsia::test]
     fn finished_signal_before_establishment_resolves_immediately() {
         let mut exec = fasync::TestExecutor::new();
 
@@ -1259,13 +1364,16 @@ mod tests {
         assert!(!session_channel.is_established());
     }
 
-    #[test]
+    #[fuchsia::test]
     fn finish_signal_resolves_with_multiple_establishments() {
         let mut exec = fasync::TestExecutor::new();
 
         let dlci = DLCI::try_from(19).unwrap();
-        let (_inspect, mut session_channel, _client, _outgoing_frames) =
-            create_and_establish(Role::Responder, dlci, None);
+        let (_inspect, mut session_channel, _client, _outgoing_frames) = create_and_establish(
+            Role::Responder,
+            dlci,
+            FlowControlMode::CreditBased(Credits::new(0, 0)),
+        );
 
         let mut finished = session_channel.finished();
         assert_matches!(exec.run_until_stalled(&mut finished), Poll::Pending);
@@ -1617,6 +1725,39 @@ mod tests {
     }
 
     #[fuchsia::test]
+    async fn set_parameters_updates_inspect() {
+        let inspect = inspect::Inspector::default();
+        let dlci = DLCI::try_from(8).unwrap();
+        let mut session_channel = SessionChannel::new(dlci, Role::Responder)
+            .with_inspect(inspect.root(), "channel_")
+            .unwrap();
+
+        // Initial state - no parameters.
+        assert_data_tree!(inspect, root: {
+            channel_: {
+                dlci: 8u64,
+                server_channel: 4u64,
+            }
+        });
+
+        // Set parameters.
+        let max_packet_size = 1024;
+        let flow_control = FlowControlMode::CreditBased(Credits::new(10, 10));
+        assert!(session_channel.set_parameters(max_packet_size, flow_control).is_ok());
+
+        // Inspect should be updated.
+        assert_data_tree!(inspect, root: {
+            channel_: {
+                dlci: 8u64,
+                server_channel: 4u64,
+                max_packet_size: 1024u64,
+                initial_local_credits: 10u64,
+                initial_remote_credits: 10u64,
+            }
+        });
+    }
+
+    #[fuchsia::test]
     async fn session_channel_inspect_updates_with_new_flow_control() {
         let inspect = inspect::Inspector::default();
 
@@ -1626,7 +1767,7 @@ mod tests {
             .with_inspect(inspect.root(), "channel_")
             .unwrap();
         // Default tree.
-        assert_data_tree!(inspect, root: {
+        assert_data_tree!( inspect, root: {
             channel_: {
                 dlci: 8u64,
                 server_channel: 4u64,
@@ -1637,7 +1778,7 @@ mod tests {
             12, // Arbitrary
             15, // Arbitrary
         ));
-        assert!(channel.set_flow_control(flow_control).is_ok());
+        assert!(channel.set_parameters(980, flow_control).is_ok());
         // Inspect tree should be updated with the initial credits.
         assert_data_tree!(inspect, root: {
             channel_: {
@@ -1645,11 +1786,12 @@ mod tests {
                 server_channel: 4u64,
                 initial_local_credits: 12u64,
                 initial_remote_credits: 15u64,
+                max_packet_size: 980u64,
             },
         });
     }
 
-    #[test]
+    #[fuchsia::test]
     fn session_channel_inspect_updates_when_established() {
         let mut exec = fasync::TestExecutor::new_with_fake_time();
         exec.set_fake_time(fasync::MonotonicInstant::from_nanos(7_000_000));
@@ -1661,7 +1803,7 @@ mod tests {
             15, // Arbitrary
         ));
         let (inspect, _channel, _client, mut outgoing_frames) =
-            create_and_establish(Role::Initiator, DLCI::try_from(8).unwrap(), Some(flow_control));
+            create_and_establish(Role::Initiator, DLCI::try_from(8).unwrap(), flow_control);
         // Upon establishment, the inspect tree should have a `flow_controller` node.
         assert_data_tree!(@executor exec, inspect, root: {
             channel_: contains {
@@ -1694,13 +1836,14 @@ mod tests {
             channel_: {
                 dlci: 8u64,
                 server_channel: 4u64,
+                max_packet_size: 1000u64, // Default in `create_and_establish`
                 initial_local_credits: 12u64,
                 initial_remote_credits: 15u64,
             },
         });
     }
 
-    #[test]
+    #[fuchsia::test]
     fn credit_flow_controller_inspect_updates_after_data_exchange() {
         let mut exec = fasync::TestExecutor::new_with_fake_time();
         exec.set_fake_time(fasync::MonotonicInstant::from_nanos(987_000_000));

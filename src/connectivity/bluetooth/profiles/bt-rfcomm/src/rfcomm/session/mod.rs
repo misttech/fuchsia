@@ -26,8 +26,8 @@ pub mod channel;
 /// The multiplexer that manages RFCOMM channels for this session.
 pub mod multiplexer;
 
-use self::channel::{Credits, FlowControlMode, FlowControlledData};
-use self::multiplexer::{SessionMultiplexer, SessionParameters};
+use self::channel::FlowControlledData;
+use self::multiplexer::{DlcNegotiationParameters, SessionMultiplexer, SessionParameters};
 use crate::rfcomm::inspect::SessionInspect;
 use crate::rfcomm::types::{Error, SignaledTask};
 
@@ -270,37 +270,25 @@ impl SessionInner {
         }
     }
 
-    /// Finishes parameter negotiation for the Session with the provided `params` and
-    /// reserves the specified DLCI.
-    fn finish_parameter_negotiation(&mut self, params: &ParameterNegotiationParams) {
-        // Update the session-specific parameters - currently only credit-based flow control
-        // and max frame size are negotiated.
-        let requested_parameters = SessionParameters {
+    /// Handles a parameter negotiation command/response for the Session and specified DLC.
+    /// Returns the negotiated max frame size and initial remote credits (if applicable).
+    fn handle_parameter_negotiation(
+        &mut self,
+        params: &ParameterNegotiationParams,
+    ) -> DlcNegotiationParameters {
+        // Update the session-specific parameters.
+        let _ = self.multiplexer().negotiate_session_parameters(SessionParameters {
             credit_based_flow: params.credit_based_flow(),
-            max_frame_size: params.max_frame_size,
-        };
-        let updated_parameters = self.multiplexer().negotiate_parameters(requested_parameters);
+        });
 
-        // Reserve the DLCI if it doesn't exist.
-        let _ = self.multiplexer().find_or_create_session_channel(params.dlci);
-
-        // Set the flow control method depending on the negotiated parameters.
-        let flow_control = if updated_parameters.credit_based_flow {
-            // The credits provided in the peer's response `params` is our (local) credit count.
-            // `DEFAULT_INITIAL_CREDITS` is always assigned as the peer's (remote) credit count.
-            let credits = Credits::new(
-                usize::from(params.initial_credits),
-                usize::from(DEFAULT_INITIAL_CREDITS),
-            );
-            FlowControlMode::CreditBased(credits)
-        } else {
-            FlowControlMode::None
-        };
-        // The result is irrelevant because the DLCI was just created and can't be established
-        // already. Setting the initial credits should always succeed.
-        if let Err(e) = self.multiplexer().set_flow_control(params.dlci, flow_control) {
-            warn!("Setting flow control failed: {e:?}");
-        }
+        // Update the channel-specific parameters.
+        self.multiplexer().negotiate_channel_parameters(
+            params.dlci,
+            DlcNegotiationParameters {
+                max_frame_size: params.max_frame_size,
+                initial_credits: params.initial_credits,
+            },
+        )
     }
 
     /// Relays the outbound `channel_result` for the provided `server_channel` to the local client
@@ -349,8 +337,11 @@ impl SessionInner {
             warn!(role:? = self.role(); "ParameterNegotiation request before multiplexer startup");
             return Err(Error::MultiplexerNotStarted);
         }
-        let max_frame_size = self.multiplexer().parameters().max_frame_size;
-        let pn_params = ParameterNegotiationParams::default_command(dlci, max_frame_size);
+
+        // We always ask to use our default preferred packet size. This can be negotiated in the
+        // peer's response.
+        let max_packet_size = self.multiplexer().default_max_packet_size();
+        let pn_params = ParameterNegotiationParams::default_command(dlci, max_packet_size);
         let pn_command = MuxCommand {
             params: MuxCommandParams::ParameterNegotiation(pn_params),
             command_response: CommandResponse::Command,
@@ -538,7 +529,7 @@ impl SessionInner {
             return match &mux_command.params {
                 MuxCommandParams::ParameterNegotiation(pn_response) => {
                     // Finish parameter negotiation based on remote peer's response.
-                    self.finish_parameter_negotiation(&pn_response);
+                    let _ = self.handle_parameter_negotiation(&pn_response);
                     // Process the open channel request for the DLCI. The DLCI is guaranteed
                     // to be a valid user DLCI since we initiated the PN.
                     let server_channel = pn_response.dlci.try_into().unwrap();
@@ -563,24 +554,23 @@ impl SessionInner {
                     return Ok(());
                 }
 
-                // Update the session specific parameters.
-                self.finish_parameter_negotiation(&pn_command);
+                // Update the session and channel specific parameters.
+                let session_channel_parameters = self.handle_parameter_negotiation(&pn_command);
 
                 // Reply back with the negotiated parameters as a response - most parameters are
                 // simply echoed.
-                // Session-wide parameters: Credit-based flow & max frame size are negotiated.
-                // TODO(https://fxbug.dev/460778521): Max frame size can be negotiated for a
-                // specific DLC.
-                // DLC-specific parameters: Initial credit count is set to a default value.
+                // Session-wide parameters: Credit-based flow control mode can be negotiated.
+                // DLC-specific parameters: Max packet size & initial credit count.
                 let mut pn_response = pn_command.clone();
-                let updated_parameters = self.multiplexer().parameters();
-                pn_response.credit_based_flow_handshake = if updated_parameters.credit_based_flow {
-                    CreditBasedFlowHandshake::SupportedResponse
-                } else {
-                    CreditBasedFlowHandshake::Unsupported
-                };
-                pn_response.max_frame_size = updated_parameters.max_frame_size;
-                pn_response.initial_credits = DEFAULT_INITIAL_CREDITS;
+                let updated_session_parameters = self.multiplexer().parameters();
+                pn_response.credit_based_flow_handshake =
+                    if updated_session_parameters.credit_based_flow {
+                        CreditBasedFlowHandshake::SupportedResponse
+                    } else {
+                        CreditBasedFlowHandshake::Unsupported
+                    };
+                pn_response.max_frame_size = session_channel_parameters.max_frame_size;
+                pn_response.initial_credits = session_channel_parameters.initial_credits;
                 MuxCommandParams::ParameterNegotiation(pn_response)
             }
             MuxCommandParams::RemotePortNegotiation(command) => {
@@ -1073,6 +1063,7 @@ mod tests {
     use futures::task::Poll;
     use std::pin::pin;
 
+    use crate::rfcomm::session::channel::{Credits, FlowControlMode};
     use crate::rfcomm::session::multiplexer::ParameterNegotiationState;
     use crate::rfcomm::test_util::*;
 
@@ -1081,11 +1072,13 @@ mod tests {
     /// `dlci` is the DLCI being negotiated.
     /// `credit_flow` indicates whether credit-based flow control should be set or not.
     /// `max_frame_size` indicates the max frame size to use for the PN.
-    fn make_dlc_pn_frame(
+    /// `credits`: indicates the number of credits to issue.
+    fn make_dlc_pn_frame_with_credits(
         command_response: CommandResponse,
         dlci: DLCI,
         credit_flow: bool,
         max_frame_size: u16,
+        initial_credits: u8,
     ) -> Frame {
         let credit_based_flow_handshake = match (credit_flow, command_response) {
             (false, _) => CreditBasedFlowHandshake::Unsupported,
@@ -1098,7 +1091,7 @@ mod tests {
                 credit_based_flow_handshake,
                 priority: 12,
                 max_frame_size,
-                initial_credits: DEFAULT_INITIAL_CREDITS,
+                initial_credits,
             }),
             command_response,
         };
@@ -1110,6 +1103,21 @@ mod tests {
             command_response,
             credits: None,
         }
+    }
+
+    fn make_dlc_pn_frame(
+        command_response: CommandResponse,
+        dlci: DLCI,
+        credit_flow: bool,
+        max_frame_size: u16,
+    ) -> Frame {
+        make_dlc_pn_frame_with_credits(
+            command_response,
+            dlci,
+            credit_flow,
+            max_frame_size,
+            DEFAULT_INITIAL_CREDITS,
+        )
     }
 
     const MAX_PACKET_SIZE_FOR_TEST: u16 = 800;
@@ -1223,7 +1231,7 @@ mod tests {
         }
     }
 
-    #[test]
+    #[fuchsia::test]
     fn test_outstanding_frame_manager() {
         let mut outstanding_frames = OutstandingFrames::new();
 
@@ -1295,7 +1303,7 @@ mod tests {
         assert_matches!(outstanding_frames.register_frame(&mux_command2), Ok(true));
     }
 
-    #[test]
+    #[fuchsia::test]
     fn test_session_inner_inspect() {
         let mut exec = fasync::TestExecutor::new();
         let inspect = inspect::Inspector::default();
@@ -1331,7 +1339,7 @@ mod tests {
         });
     }
 
-    #[test]
+    #[fuchsia::test]
     fn test_register_l2cap_channel() {
         let mut exec = fasync::TestExecutor::new();
 
@@ -1344,7 +1352,7 @@ mod tests {
         exec.run_until_stalled(&mut processing_fut).expect("should be done");
     }
 
-    #[test]
+    #[fuchsia::test]
     fn test_receiving_data_is_ok() {
         let mut exec = fasync::TestExecutor::new();
 
@@ -1362,7 +1370,7 @@ mod tests {
             .expect_pending("shouldn't be done while remote is live");
     }
 
-    #[test]
+    #[fuchsia::test]
     fn test_peer_disconnection_notifies_termination_future() {
         let mut exec = fasync::TestExecutor::new();
 
@@ -1390,7 +1398,7 @@ mod tests {
         assert!(exec.run_until_stalled(&mut closed_fut3).is_ready());
     }
 
-    #[test]
+    #[fuchsia::test]
     fn test_receiving_user_sabm_before_mux_startup_is_rejected() {
         let mut exec = fasync::TestExecutor::new();
 
@@ -1408,7 +1416,7 @@ mod tests {
         );
     }
 
-    #[test]
+    #[fuchsia::test]
     fn test_receiving_mux_sabm_starts_multiplexer_with_ua_response() {
         let mut exec = fasync::TestExecutor::new();
 
@@ -1429,7 +1437,7 @@ mod tests {
         assert_eq!(session.role(), Role::Responder);
     }
 
-    #[test]
+    #[fuchsia::test]
     fn test_receiving_mux_sabm_after_mux_startup_is_rejected() {
         let mut exec = fasync::TestExecutor::new();
 
@@ -1448,41 +1456,45 @@ mod tests {
         );
     }
 
-    #[test]
-    fn test_receiving_multiple_pn_commands_results_in_set_parameters() {
+    #[fuchsia::test]
+    fn receiving_multiple_pn_commands_results_in_set_parameters() {
         let mut exec = fasync::TestExecutor::new();
 
         let (mut session, mut outgoing_frames, _rfcomm_channels) = setup_session();
         assert!(!session.session_parameters_negotiated());
         assert!(session.multiplexer().start(Role::Responder).is_ok());
 
-        // Remote initiates DLC PN over a random user DLCI - expect to reply with a DLCPN response.
+        // Remote initiates DLC PN over a random user DLCI with no credit flow control.
         let random_dlci = DLCI::try_from(3).unwrap();
-        let dlcpn = make_dlc_pn_frame(CommandResponse::Command, random_dlci, false, 1000);
+        let pn = make_dlc_pn_frame_with_credits(
+            CommandResponse::Command,
+            random_dlci,
+            false,
+            1000,
+            /*initial_credits= */ 0,
+        );
         // Expect to choose the smaller packet size.
-        let expected_response = make_dlc_pn_frame(
+        let expected_response = make_dlc_pn_frame_with_credits(
             CommandResponse::Response,
             random_dlci,
             false,
-            MAX_PACKET_SIZE_FOR_TEST,
+            MAX_PACKET_SIZE_FOR_TEST, // MAX_PACKET_SIZE_FOR_TEST < 1000
+            /*initial_credits= */ 0,
         );
         handle_and_expect_frame(
             &mut exec,
             &mut session,
             &mut outgoing_frames,
-            dlcpn,
+            pn,
             expected_response.data,
         );
 
         // The global session parameters should be set.
-        let expected_parameters = SessionParameters {
-            credit_based_flow: false,
-            max_frame_size: MAX_PACKET_SIZE_FOR_TEST,
-        };
+        let expected_parameters = SessionParameters { credit_based_flow: false };
         assert_eq!(session.session_parameters(), expected_parameters);
 
         // Multiple DLC PN requests before a DLC is established is OK - new parameters.
-        let dlcpn =
+        let pn2 =
             make_dlc_pn_frame(CommandResponse::Command, random_dlci, true, PEER_MAX_PACKET_SIZE);
         // Expect to choose the smaller packet size.
         let expected_response =
@@ -1491,54 +1503,48 @@ mod tests {
             &mut exec,
             &mut session,
             &mut outgoing_frames,
-            dlcpn,
+            pn2,
             expected_response.data,
         );
 
         // The global session parameters should be updated.
-        let expected_parameters =
-            SessionParameters { credit_based_flow: true, max_frame_size: PEER_MAX_PACKET_SIZE };
+        let expected_parameters = SessionParameters { credit_based_flow: true };
         assert_eq!(session.session_parameters(), expected_parameters);
     }
 
-    #[test]
-    fn test_dlcpn_renegotiation_does_not_update_parameters() {
+    /// Verifies that the max frame size parameter is negotiated per DLC, but the session-wide
+    /// credit flow control parameter cannot change.
+    #[fuchsia::test]
+    fn pn_after_dlc_established() {
         let mut exec = fasync::TestExecutor::new();
-
-        // Create and start a SessionInner that relays any opened RFCOMM channels.
         let (mut session, mut outgoing_frames, mut channel_receiver) = setup_session();
         assert!(session.multiplexer().start(Role::Responder).is_ok());
 
         // Remote peer initiates DLC PN over a random DLCI - expect to reply with a PN.
-        let random_dlci = DLCI::try_from(3).unwrap();
-        let dlcpn = make_dlc_pn_frame(CommandResponse::Command, random_dlci, true, 100);
-        let expected_response =
-            make_dlc_pn_frame(CommandResponse::Response, random_dlci, true, 100);
+        let user_dlci = DLCI::try_from(4).unwrap();
+        let pn = make_dlc_pn_frame(CommandResponse::Command, user_dlci, true, 100);
+        let expected_response = make_dlc_pn_frame(CommandResponse::Response, user_dlci, true, 100);
         handle_and_expect_frame(
             &mut exec,
             &mut session,
             &mut outgoing_frames,
-            dlcpn,
+            pn,
             expected_response.data,
         );
 
         // The global session parameters should be set.
-        let expected_parameters =
-            SessionParameters { credit_based_flow: true, max_frame_size: 100 };
+        let expected_parameters = SessionParameters { credit_based_flow: true };
         assert_eq!(session.session_parameters(), expected_parameters);
 
         // Remote peer sends SABM over a user DLCI - this will establish the DLCI.
-        let generic_dlci = 6;
-        let user_dlci = DLCI::try_from(generic_dlci).unwrap();
         let user_sabm = Frame::make_sabm_command(Role::Initiator, user_dlci);
         let _channel = {
             let mut handle_fut = Box::pin(session.handle_frame(user_sabm));
             exec.run_until_stalled(&mut handle_fut).expect_pending("waiting for channel delivery");
             // We expect a channel to be delivered from the`channel_opened_fn`.
             let c = expect_channel(&mut exec, &mut channel_receiver);
-            // Continue to run the `handle_frame` to process the result of the channel delivery.
             exec.run_until_stalled(&mut handle_fut).expect_pending("waiting for outgoing frame");
-            // We expect to respond to the peer with a positive UA.
+            // We expect to respond to the peer with a positive UA for the established DLC.
             expect_frame(
                 &mut exec,
                 &mut outgoing_frames,
@@ -1555,16 +1561,20 @@ mod tests {
         // There should be an established DLC.
         assert!(session.multiplexer().any_dlc_established());
 
-        // Remote tries to re-negotiate the session parameters, we expect to reply with
-        // a UIH PN response with the current session parameters (max_frame_size = 100).
-        let dlcpn = make_dlc_pn_frame(CommandResponse::Command, user_dlci, true, 60);
-        let expected_response = make_dlc_pn_frame(CommandResponse::Response, user_dlci, true, 100);
+        // Remote sends a new PN for a different channel and attempts to update the session
+        // parameters.
+        let user_dlci2 = DLCI::try_from(14).unwrap();
+        let pn2 = make_dlc_pn_frame(CommandResponse::Command, user_dlci2, false, 600);
+        // We should accept the new frame size (600 < MAX_PACKET_SIZE_FOR_TEST) but credit flow
+        // control should remain on.
+        let expected_response2 =
+            make_dlc_pn_frame(CommandResponse::Response, user_dlci2, true, 600);
         handle_and_expect_frame(
             &mut exec,
             &mut session,
             &mut outgoing_frames,
-            dlcpn,
-            expected_response.data,
+            pn2,
+            expected_response2.data,
         );
 
         // The global session parameters should not be updated since the first DLC has
@@ -1572,7 +1582,7 @@ mod tests {
         assert_eq!(session.session_parameters(), expected_parameters);
     }
 
-    #[test]
+    #[fuchsia::test]
     fn test_establish_dlci_request_relays_channel_to_channel_open_fn() {
         let mut exec = fasync::TestExecutor::new();
 
@@ -1607,7 +1617,7 @@ mod tests {
         }
     }
 
-    #[test]
+    #[fuchsia::test]
     fn test_no_registered_clients_rejects_establish_dlci_request() {
         let mut exec = fasync::TestExecutor::new();
 
@@ -1631,7 +1641,7 @@ mod tests {
         );
     }
 
-    #[test]
+    #[fuchsia::test]
     fn received_user_data_is_relayed_to_and_from_profile_client() {
         let mut exec = fasync::TestExecutor::new();
 
@@ -1642,11 +1652,11 @@ mod tests {
         // Establish a user DLCI with an adequate amount of credits - the RFCOMM channel should
         // be delivered to the channel receiver.
         let user_dlci = DLCI::try_from(8).unwrap();
-        let _ = session.multiplexer().find_or_create_session_channel(user_dlci);
         assert!(
             session
                 .multiplexer()
-                .set_flow_control(user_dlci, FlowControlMode::CreditBased(Credits::new(7, 7)))
+                .find_or_create_session_channel(user_dlci)
+                .set_parameters(1000, FlowControlMode::CreditBased(Credits::new(7, 7)))
                 .is_ok()
         );
         let mut profile_client_channel = {
@@ -1695,7 +1705,7 @@ mod tests {
         );
     }
 
-    #[test]
+    #[fuchsia::test]
     fn test_receiving_invalid_mux_command_results_in_non_supported_command() {
         let mut exec = fasync::TestExecutor::new();
 
@@ -1720,7 +1730,7 @@ mod tests {
         assert!(exec.run_until_stalled(&mut handle_fut).is_ready());
     }
 
-    #[test]
+    #[fuchsia::test]
     fn test_disconnect_over_user_dlci_closes_session_channel() {
         let mut exec = fasync::TestExecutor::new();
 
@@ -1803,7 +1813,7 @@ mod tests {
         }
     }
 
-    #[test]
+    #[fuchsia::test]
     fn test_start_multiplexer() {
         let mut exec = fasync::TestExecutor::new();
 
@@ -1845,7 +1855,7 @@ mod tests {
         assert_eq!(session.role(), Role::Initiator);
     }
 
-    #[test]
+    #[fuchsia::test]
     fn test_peer_rejects_multiplexer_startup() {
         let mut exec = fasync::TestExecutor::new();
 
@@ -1878,7 +1888,7 @@ mod tests {
         assert_eq!(session.role(), Role::Unassigned);
     }
 
-    #[test]
+    #[fuchsia::test]
     fn test_initiating_parameter_negotiation_expects_response() {
         let mut exec = fasync::TestExecutor::new();
 
@@ -1916,12 +1926,11 @@ mod tests {
             assert_matches!(exec.run_until_stalled(&mut handle_fut), Poll::Ready(Ok(_)));
         }
         assert!(session.multiplexer().parameters_negotiated());
-        let expected_parameters =
-            SessionParameters { credit_based_flow: true, max_frame_size: PEER_MAX_PACKET_SIZE };
+        let expected_parameters = SessionParameters { credit_based_flow: true };
         assert_eq!(session.multiplexer().parameters(), expected_parameters);
     }
 
-    #[test]
+    #[fuchsia::test]
     fn test_peer_rejects_parameter_negotiation_with_dm() {
         let mut exec = fasync::TestExecutor::new();
 
@@ -1951,13 +1960,13 @@ mod tests {
         // The session-wide parameters should not be negotiated.
         assert_matches!(
             session.multiplexer().parameter_negotiation_state(),
-            ParameterNegotiationState::NotNegotiated(_)
+            ParameterNegotiationState::NotNegotiated
         );
         // Client should be notified of cancellation.
         expect_channel_error(&mut exec, &mut outbound_channels, ErrorCode::Canceled);
     }
 
-    #[test]
+    #[fuchsia::test]
     fn test_peer_rejects_parameter_negotiation_with_disc() {
         let mut exec = fasync::TestExecutor::new();
 
@@ -1990,13 +1999,13 @@ mod tests {
         // The session-wide parameters should not be negotiated.
         assert_matches!(
             session.multiplexer().parameter_negotiation_state(),
-            ParameterNegotiationState::NotNegotiated(_)
+            ParameterNegotiationState::NotNegotiated
         );
         // Client should be notified of cancellation.
         expect_channel_error(&mut exec, &mut outbound_channels, ErrorCode::Canceled);
     }
 
-    #[test]
+    #[fuchsia::test]
     fn test_open_channel_request_establishes_channel_after_mux_startup_and_pn() {
         let mut exec = fasync::TestExecutor::new();
 
@@ -2077,7 +2086,7 @@ mod tests {
         assert!(session.multiplexer().dlci_established(&expected_dlci));
     }
 
-    #[test]
+    #[fuchsia::test]
     fn test_open_channel_request_rejected_by_peer() {
         let mut exec = fasync::TestExecutor::new();
 
@@ -2091,7 +2100,7 @@ mod tests {
         let server_channel = ServerChannel::try_from(5).unwrap();
         let expected_dlci = server_channel.to_dlci(Role::Responder).unwrap();
         // Simulate PN finishing ahead of time so that we can directly test the rejection case.
-        session.finish_parameter_negotiation(&ParameterNegotiationParams::default_command(
+        let _ = session.handle_parameter_negotiation(&ParameterNegotiationParams::default_command(
             expected_dlci,
             MAX_PACKET_SIZE_FOR_TEST,
         ));
@@ -2120,7 +2129,7 @@ mod tests {
         expect_channel_error(&mut exec, &mut outbound_channels, ErrorCode::Canceled);
     }
 
-    #[test]
+    #[fuchsia::test]
     fn test_cancellation_during_open_channel_notifies_client() {
         let mut exec = fasync::TestExecutor::new();
 
@@ -2216,7 +2225,7 @@ mod tests {
         assert!(exec.run_until_stalled(&mut channel_closed_fut).is_ready());
     }
 
-    #[test]
+    #[fuchsia::test]
     fn test_open_multiple_channels_establishes_channels_after_acknowledgement() {
         let mut exec = fasync::TestExecutor::new();
 
@@ -2292,7 +2301,7 @@ mod tests {
         );
     }
 
-    #[test]
+    #[fuchsia::test]
     fn test_open_rfcomm_channel_relays_channel_to_callback() {
         let mut exec = fasync::TestExecutor::new();
 
@@ -2341,7 +2350,7 @@ mod tests {
         expect_channel_error(&mut exec, &mut outbound_channels2, ErrorCode::Canceled);
     }
 
-    #[test]
+    #[fuchsia::test]
     fn test_open_same_rfcomm_channel_fails() {
         let mut exec = fasync::TestExecutor::new();
 

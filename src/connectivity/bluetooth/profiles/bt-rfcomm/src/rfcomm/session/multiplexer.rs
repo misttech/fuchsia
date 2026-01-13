@@ -3,71 +3,66 @@
 // found in the LICENSE file.
 
 use bt_rfcomm::frame::Frame;
+use bt_rfcomm::frame::mux_commands::DEFAULT_INITIAL_CREDITS;
 use bt_rfcomm::{DLCI, RfcommError, Role};
 use fuchsia_bluetooth::types::Channel;
 use fuchsia_inspect as inspect;
-use fuchsia_inspect_derive::Inspect;
+use fuchsia_inspect_derive::{AttachError, Inspect};
 use futures::channel::mpsc;
-use log::{info, trace};
+use log::{info, trace, warn};
 use std::collections::HashMap;
 
 use crate::rfcomm::inspect::SessionMultiplexerInspect;
-use crate::rfcomm::session::channel::{FlowControlMode, FlowControlledData, SessionChannel};
+use crate::rfcomm::session::channel::{
+    Credits, FlowControlMode, FlowControlledData, SessionChannel,
+};
 use crate::rfcomm::types::Error;
+
+/// The negotiation parameters associated with a specific DLC.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct DlcNegotiationParameters {
+    /// The maximum frame size for the DLC.
+    pub max_frame_size: u16,
+    /// The initial number of credits for the DLC. Only applicable when flow control is enabled.
+    ///
+    /// If the parameters are associated with a request from a peer, then these credits are the
+    /// initial credits that are assigned to the local device (i.e. `initial_local_credits`).
+    /// If the parameters are associated with a response to a peer, then these credits are the
+    /// initial credits that are assigned to the remote device (i.e. `initial_remote_credits`).
+    pub initial_credits: u8,
+}
 
 /// The parameters associated with this Session.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct SessionParameters {
     /// Whether credit-based flow control is being used for this session.
     pub credit_based_flow: bool,
-
-    /// The max MTU size of an RFCOMM frame.
-    pub max_frame_size: u16,
 }
 
-impl SessionParameters {
-    fn default_preferred(max_frame_size: u16) -> Self {
-        // By default, we prefer to use credit flow control.
-        SessionParameters { max_frame_size, credit_based_flow: true }
-    }
-
-    /// Combines the current session parameters with the `other` parameters and returns
-    /// a negotiated SessionParameters.
-    fn negotiate(&self, other: &SessionParameters) -> Self {
-        // Our implementation is OK with credit based flow. We choose whatever the new
-        // configuration requests.
-        let credit_based_flow = other.credit_based_flow;
-        // Use the smaller, more restrictive, max frame size.
-        let max_frame_size = std::cmp::min(self.max_frame_size, other.max_frame_size);
-        Self { credit_based_flow, max_frame_size }
+/// By default, we prefer credit-based flow control.
+impl Default for SessionParameters {
+    fn default() -> Self {
+        Self { credit_based_flow: true }
     }
 }
 
 /// The current state of the session parameters.
-#[derive(Clone, Copy, Debug, PartialEq)]
+#[derive(Clone, Copy, Debug, Default, PartialEq)]
 pub enum ParameterNegotiationState {
-    /// Parameters have not been negotiated - contains our preferred `SessionParameters`
-    NotNegotiated(SessionParameters),
+    /// Parameters have not been negotiated.
+    #[default]
+    NotNegotiated,
     /// Parameters have been negotiated.
     Negotiated(SessionParameters),
 }
 
 impl ParameterNegotiationState {
-    /// Returns the current session parameters.
-    /// If not negotiated, then the default preferred parameters is returned.
-    fn parameters(&self) -> SessionParameters {
-        match self {
-            Self::Negotiated(params) => *params,
-            Self::NotNegotiated(params) => *params,
-        }
-    }
-
     /// Negotiates the `new` parameters with the (potential) current parameters. Returns
     /// the parameters that were set.
-    fn negotiate(&mut self, new: SessionParameters) -> SessionParameters {
-        let updated = self.parameters().negotiate(&new);
-        *self = Self::Negotiated(updated);
-        updated
+    fn negotiate(&mut self, new_parameters: SessionParameters) -> SessionParameters {
+        // Our implementation is OK with either flow control mode. Choose whatever is requested.
+        *self = Self::Negotiated(new_parameters);
+        new_parameters
     }
 }
 
@@ -80,19 +75,26 @@ impl ParameterNegotiationState {
 /// been established. RFCOMM 5.5.3 states that renegotiation of parameters is optional - this
 /// multiplexer will simply echo the current parameters in the event a negotiation request is
 /// received after the first DLC is opened and established.
-#[derive(Inspect)]
 pub struct SessionMultiplexer {
     /// The role for the multiplexer.
     role: Role,
-    /// The maximum RFCOMM packet size that can be sent over the underlying transport.
+    /// The maximum RFCOMM packet size that can be sent over the underlying transport. This is the
+    /// stack's preferred maximum packet size, and can be negotiated for each DLC.
     max_rfcomm_packet_size: u16,
     /// The parameters for the multiplexer.
     parameters: ParameterNegotiationState,
     /// Local opened RFCOMM channels for this session.
     channels: HashMap<DLCI, SessionChannel>,
     /// The inspect node for this object.
-    #[inspect(forward)]
     inspect: SessionMultiplexerInspect,
+}
+
+impl Inspect for &mut SessionMultiplexer {
+    fn iattach(self, parent: &inspect::Node, name: impl AsRef<str>) -> Result<(), AttachError> {
+        self.inspect.iattach(parent, name)?;
+        self.inspect.set_default_max_packet_size(self.max_rfcomm_packet_size);
+        Ok(())
+    }
 }
 
 impl SessionMultiplexer {
@@ -100,9 +102,7 @@ impl SessionMultiplexer {
         Self {
             role: Role::Unassigned,
             max_rfcomm_packet_size,
-            parameters: ParameterNegotiationState::NotNegotiated(
-                SessionParameters::default_preferred(max_rfcomm_packet_size),
-            ),
+            parameters: ParameterNegotiationState::default(),
             channels: HashMap::new(),
             inspect: SessionMultiplexerInspect::default(),
         }
@@ -127,6 +127,11 @@ impl SessionMultiplexer {
         self.parameters().credit_based_flow
     }
 
+    /// Returns the default max frame size for the session.
+    pub fn default_max_packet_size(&self) -> u16 {
+        self.max_rfcomm_packet_size
+    }
+
     #[cfg(test)]
     pub fn parameter_negotiation_state(&self) -> ParameterNegotiationState {
         self.parameters
@@ -134,32 +139,76 @@ impl SessionMultiplexer {
 
     /// Returns true if the session parameters have been negotiated.
     pub fn parameters_negotiated(&self) -> bool {
-        std::matches!(&self.parameters, ParameterNegotiationState::Negotiated(_))
+        std::matches!(&self.parameters, ParameterNegotiationState::Negotiated { .. })
     }
 
     /// Returns the parameters associated with this session.
     pub fn parameters(&self) -> SessionParameters {
-        self.parameters.parameters()
+        match &self.parameters {
+            ParameterNegotiationState::Negotiated(p) => *p,
+            ParameterNegotiationState::NotNegotiated => SessionParameters::default(),
+        }
     }
 
     /// Negotiates the parameters for this session - returns the session parameters that were set.
-    pub fn negotiate_parameters(
+    pub fn negotiate_session_parameters(
         &mut self,
         new_session_parameters: SessionParameters,
     ) -> SessionParameters {
-        // The session parameters can only be modified if no DLCs have been established.
-        // TODO(https://fxbug.dev/460778521): Max packet size can be negotiated for a specific DLC.
-        // This should only verify that Credit Flow Control is not changed.
+        // This implementation does not support changing the flow control setting after a DLC has
+        // been established. See RFCOMM Section 5.5.3 for details.
         if self.any_dlc_established() {
-            info!(new_session_parameters:?; "Negotiation request with at least one established DLC");
-            return self.parameters();
+            let current = self.parameters();
+            if current.credit_based_flow != new_session_parameters.credit_based_flow {
+                warn!(
+                    "Negotiation request for conflicting flow control setting. Using current credit-flow setting = {}",
+                    current.credit_based_flow
+                );
+            }
+            return current;
         }
 
-        // Otherwise, it is OK to negotiate the multiplexer parameters.
+        // No DLCs have been established yet. Negotiate the session-wide flow control mode.
         let updated = self.parameters.negotiate(new_session_parameters);
         trace!("Updated Session parameters: {:?}", updated);
-        self.inspect.set_parameters(updated);
+        self.inspect.set_session_parameters(updated);
         updated
+    }
+
+    /// Negotiates the peer's `channel_parameters` with our parameters for the specific `dlci`.
+    /// Returns the negotiated max packet size and initial remote credits (if applicable) that are
+    /// set for the DLC.
+    pub fn negotiate_channel_parameters(
+        &mut self,
+        dlci: DLCI,
+        channel_parameters: DlcNegotiationParameters,
+    ) -> DlcNegotiationParameters {
+        // The negotiated maximum frame size is always the smaller value requested between the peer
+        // and our preferred default.
+        let negotiated_max_packet_size =
+            std::cmp::min(self.max_rfcomm_packet_size, channel_parameters.max_frame_size);
+
+        // Initialize the flow control mode based on the session-wide flow control mode.
+        let flow_control = if self.credit_based_flow() {
+            // The credits provided by the peer in `initial_credits` is our (local) credit count.
+            // In return, we always assign `DEFAULT_INITIAL_CREDITS` as the peer's (remote) credit
+            // count.
+            let credits = Credits::new(
+                usize::from(channel_parameters.initial_credits),
+                usize::from(DEFAULT_INITIAL_CREDITS),
+            );
+            FlowControlMode::CreditBased(credits)
+        } else {
+            FlowControlMode::None
+        };
+        // Will be 0 if flow control is disabled.
+        let initial_credits = flow_control.initial_remote_credits().unwrap_or(0);
+
+        let channel = self.find_or_create_session_channel(dlci);
+        if let Err(e) = channel.set_parameters(negotiated_max_packet_size, flow_control) {
+            warn!("Failed to set parameters for {dlci:?}: {e:?}");
+        }
+        DlcNegotiationParameters { max_frame_size: negotiated_max_packet_size, initial_credits }
     }
 
     /// Returns true if the multiplexer has started.
@@ -199,6 +248,16 @@ impl SessionMultiplexer {
             .fold(false, |acc, (_, session_channel)| acc | session_channel.is_established())
     }
 
+    /// Returns true if the parameters have been negotiated for the provided `dlci`.
+    pub fn dlc_parameters_negotiated(&self, dlci: &DLCI) -> bool {
+        self.channels.get(dlci).is_some_and(|c| c.parameters_negotiated())
+    }
+
+    #[cfg(test)]
+    fn get_session_channel(&self, dlci: DLCI) -> Option<&SessionChannel> {
+        self.channels.get(&dlci)
+    }
+
     /// Finds or initializes a new SessionChannel for the provided `dlci`. Returns a mutable
     /// reference to the channel.
     pub fn find_or_create_session_channel(&mut self, dlci: DLCI) -> &mut SessionChannel {
@@ -208,25 +267,6 @@ impl SessionMultiplexer {
             channel
         });
         channel
-    }
-
-    /// Returns true if the parameters have been negotiated for the provided `dlci`.
-    pub fn dlc_parameters_negotiated(&self, dlci: &DLCI) -> bool {
-        self.channels.get(dlci).is_some_and(|c| c.parameters_negotiated())
-    }
-
-    /// Sets the flow control mode of the RFCOMM channel associated with the `dlci` to use
-    /// the provided `flow_control`.
-    /// Returns an Error if the DLCI is not registered or if the SessionChannel has already
-    /// been established.
-    pub fn set_flow_control(
-        &mut self,
-        dlci: DLCI,
-        flow_control: FlowControlMode,
-    ) -> Result<(), Error> {
-        self.channels.get_mut(&dlci).map_or(Err(RfcommError::InvalidDLCI(dlci).into()), |channel| {
-            channel.set_flow_control(flow_control)
-        })
     }
 
     /// Attempts to establish a SessionChannel for the provided `dlci`.
@@ -241,21 +281,29 @@ impl SessionMultiplexer {
     ) -> Result<Channel, Error> {
         // If the session parameters have not been negotiated, set them to our preferred default.
         if !self.parameters_negotiated() {
-            let _ = self.negotiate_parameters(self.parameters());
+            let _ = self.negotiate_session_parameters(SessionParameters::default());
         }
+        let session_max_packet_size = self.default_max_packet_size();
 
-        // Potentially reserve a new `SessionChannel` for the provided DLCI - the max TX for this
-        // channel is the negotiated `max_frame_size`.
-        let max_tx_size = self.parameters().max_frame_size;
+        // Potentially reserve a new `SessionChannel` for the provided DLCI.
         let channel = self.find_or_create_session_channel(dlci);
         if channel.is_established() {
             return Err(Error::ChannelAlreadyEstablished(dlci));
         }
 
+        // If the channel parameters have not been negotiated, set them to our preferred default.
+        if !channel.parameters_negotiated() {
+            channel.set_parameters(
+                session_max_packet_size,
+                FlowControlMode::CreditBased(Credits::default()),
+            )?;
+        }
+
         // Create endpoints for the session channel. The local end is held by this component
         // and the remote end is returned to be held by a RFCOMM profile.
+        let max_tx_size = channel.max_packet_size().expect("set in `set_parameters`");
         let (local, remote) = Channel::create_with_max_tx(max_tx_size.into());
-        channel.establish(local, user_data_sender);
+        channel.establish(local, user_data_sender)?;
         Ok(remote)
     }
 
@@ -283,28 +331,187 @@ impl SessionMultiplexer {
 #[cfg(test)]
 mod tests {
     use super::*;
+
     use assert_matches::assert_matches;
+    use async_utils::PollExt;
     use diagnostics_assertions::assert_data_tree;
     use futures::StreamExt;
 
     use crate::rfcomm::inspect::CREDIT_FLOW_CONTROL;
     use crate::rfcomm::session::channel::Credits;
+    use crate::rfcomm::types::SignaledTask;
 
-    #[test]
+    #[fuchsia::test]
     fn negotiate_session_parameters() {
         const DEFAULT_MAX_TX: u16 = 900;
         let mut multiplexer = SessionMultiplexer::create(DEFAULT_MAX_TX);
         assert!(!multiplexer.parameters_negotiated());
 
-        let new_parameters = SessionParameters { credit_based_flow: true, max_frame_size: 1000 };
-        let negotiated = multiplexer.negotiate_parameters(new_parameters);
-        let expected = SessionParameters { credit_based_flow: true, max_frame_size: 900 };
-        // Expect the negotiated to contain the smaller frame size
-        assert_eq!(negotiated, expected);
+        let new_parameters = SessionParameters { credit_based_flow: true };
+        let negotiated = multiplexer.negotiate_session_parameters(new_parameters);
+        assert_eq!(negotiated, SessionParameters { credit_based_flow: true });
         assert!(multiplexer.parameters_negotiated());
     }
 
-    #[test]
+    #[fuchsia::test]
+    fn renegotiate_parameters_after_channel_closed() {
+        let mut exec = fuchsia_async::TestExecutor::new();
+        let mut multiplexer = SessionMultiplexer::create(900);
+        let dlci = DLCI::try_from(8).unwrap();
+
+        // Negotiate initial parameters.
+        let negotiated_params1 = multiplexer.negotiate_channel_parameters(
+            dlci,
+            DlcNegotiationParameters { max_frame_size: 500, initial_credits: 10 },
+        );
+        assert_eq!(negotiated_params1.max_frame_size, 500);
+
+        // Establish the channel.
+        let (sender, mut frame_receiver) = mpsc::channel(0);
+        let channel_remote =
+            multiplexer.establish_session_channel(dlci, sender).expect("can establish");
+        assert!(multiplexer.dlci_established(&dlci));
+        let channel = multiplexer.get_session_channel(dlci).expect("channel exists");
+        let mut closed_fut = channel.finished();
+        exec.run_until_stalled(&mut closed_fut).expect_pending("channel still active");
+
+        // Simulate the RFCOMM application closing the channel.
+        drop(channel_remote);
+
+        // Expect the outgoing disconnect frame and the channel should be considered closed.
+        let _frame = exec.run_until_stalled(&mut frame_receiver.next()).expect("frame received");
+        exec.run_until_stalled(&mut closed_fut).expect("channel closed");
+        assert!(!multiplexer.dlci_established(&dlci));
+
+        // Re-negotiate parameters with new values.
+        let negotiated_params2 = multiplexer.negotiate_channel_parameters(
+            dlci,
+            DlcNegotiationParameters { max_frame_size: 750, initial_credits: 0 },
+        );
+        // Should accept new parameters.
+        assert_eq!(negotiated_params2.max_frame_size, 750);
+
+        // Channel can be re-established and should have the new parameters.
+        let (sender2, _receiver2) = mpsc::channel(0);
+        let _ = multiplexer.establish_session_channel(dlci, sender2).expect("can establish again");
+        assert!(multiplexer.dlci_established(&dlci));
+
+        let channel2 = multiplexer.get_session_channel(dlci).expect("channel exists");
+        assert_eq!(channel2.max_packet_size(), Some(750));
+        let mut closed_fut2 = channel2.finished();
+        exec.run_until_stalled(&mut closed_fut2).expect_pending("channel still active");
+    }
+
+    #[fuchsia::test]
+    fn negotiate_multiple_channels_and_renegotiation() {
+        let mut multiplexer = SessionMultiplexer::create(900);
+        let dlci1 = DLCI::try_from(8).unwrap();
+        let dlci2 = DLCI::try_from(9).unwrap();
+
+        // Negotiate parameters for DLCI 1.
+        let parameters1 = multiplexer.negotiate_channel_parameters(
+            dlci1,
+            DlcNegotiationParameters { max_frame_size: 500, initial_credits: 10 },
+        );
+        assert_eq!(parameters1.max_frame_size, 500);
+        assert_eq!(parameters1.initial_credits, DEFAULT_INITIAL_CREDITS);
+        let channel1 = multiplexer.get_session_channel(dlci1).expect("channel should exist");
+        assert_eq!(channel1.max_packet_size(), Some(500));
+
+        // Negotiate parameters for DLCI 2.
+        let parameters2 = multiplexer.negotiate_channel_parameters(
+            dlci2,
+            DlcNegotiationParameters { max_frame_size: 600, initial_credits: 20 },
+        );
+        assert_eq!(parameters2.max_frame_size, 600);
+        assert_eq!(parameters2.initial_credits, DEFAULT_INITIAL_CREDITS);
+        let channel2 = multiplexer.get_session_channel(dlci2).expect("channel should exist");
+        assert_eq!(channel2.max_packet_size(), Some(600));
+
+        // Renegotiate parameters for DLCI 1.
+        let parameters1_updated = multiplexer.negotiate_channel_parameters(
+            dlci1,
+            DlcNegotiationParameters { max_frame_size: 550, initial_credits: 15 },
+        );
+        assert_eq!(parameters1_updated.max_frame_size, 550);
+        assert_eq!(parameters1_updated.initial_credits, DEFAULT_INITIAL_CREDITS);
+        let channel1_updated =
+            multiplexer.get_session_channel(dlci1).expect("channel should exist");
+        assert_eq!(channel1_updated.max_packet_size(), Some(550));
+    }
+
+    #[fuchsia::test]
+    fn negotiate_session_parameters_after_dlc_established_is_ignored() {
+        let _exec = fuchsia_async::TestExecutor::new();
+        let mut multiplexer = SessionMultiplexer::create(900);
+        let dlci = DLCI::try_from(8).unwrap();
+
+        // Establish a channel.
+        let (sender, _receiver) = mpsc::channel(0);
+        let _ = multiplexer.establish_session_channel(dlci, sender).expect("can establish");
+        assert!(multiplexer.any_dlc_established());
+
+        // Default is credit-based flow control.
+        assert!(multiplexer.credit_based_flow());
+
+        // Attempt to negotiate no credit-based flow control.
+        let new_params = SessionParameters { credit_based_flow: false };
+        let negotiated = multiplexer.negotiate_session_parameters(new_params);
+
+        // Should be ignored, and return the current parameters (credit based).
+        assert_eq!(negotiated.credit_based_flow, true);
+        assert!(multiplexer.credit_based_flow());
+    }
+
+    #[fuchsia::test]
+    fn negotiate_channel_parameters_ignores_credits_if_flow_control_disabled() {
+        let mut multiplexer = SessionMultiplexer::create(900);
+        let dlci = DLCI::try_from(8).unwrap();
+
+        // Negotiate NO credit-based flow control.
+        let _ = multiplexer
+            .negotiate_session_parameters(SessionParameters { credit_based_flow: false });
+        assert!(!multiplexer.credit_based_flow());
+
+        // Negotiate channel parameters with initial credits.
+        let negotiated = multiplexer.negotiate_channel_parameters(
+            dlci,
+            DlcNegotiationParameters { max_frame_size: 500, initial_credits: 10 },
+        );
+
+        // Initial credits should be 0 because flow control is disabled.
+        assert_eq!(negotiated.initial_credits, 0);
+        // Max frame size should still be negotiated.
+        assert_eq!(negotiated.max_frame_size, 500);
+    }
+
+    #[fuchsia::test]
+    fn negotiate_channel_parameters_respects_max_frame_size() {
+        let mut multiplexer = SessionMultiplexer::create(900);
+        let dlci = DLCI::try_from(8).unwrap();
+
+        // Request larger than preferred
+        let negotiated_parameters = multiplexer.negotiate_channel_parameters(
+            dlci,
+            DlcNegotiationParameters { max_frame_size: 1000, initial_credits: 10 },
+        );
+        // Should be capped at 900.
+        assert_eq!(negotiated_parameters.max_frame_size, 900);
+        let channel = multiplexer.get_session_channel(dlci).expect("channel should exist");
+        assert_eq!(channel.max_packet_size(), Some(900));
+
+        // Request smaller than preferred
+        let negotiated_parameters2 = multiplexer.negotiate_channel_parameters(
+            dlci,
+            DlcNegotiationParameters { max_frame_size: 500, initial_credits: 10 },
+        );
+        // Should be 500.
+        assert_eq!(negotiated_parameters2.max_frame_size, 500);
+        let channel = multiplexer.get_session_channel(dlci).expect("channel should exist");
+        assert_eq!(channel.max_packet_size(), Some(500));
+    }
+
+    #[fuchsia::test]
     fn start_multiplexer_multiple_times_is_error() {
         const DEFAULT_MAX_TX: u16 = 900;
         let mut multiplexer = SessionMultiplexer::create(DEFAULT_MAX_TX);
@@ -325,17 +532,19 @@ mod tests {
         let dlci = DLCI::try_from(9).unwrap();
         let (sender, _receiver) = mpsc::channel(0);
         // Establish a channel with credit flow control.
-        let _ = multiplexer.find_or_create_session_channel(dlci);
         multiplexer
-            .set_flow_control(dlci, FlowControlMode::CreditBased(Credits::new(10, 10)))
-            .expect("can set flow control");
+            .find_or_create_session_channel(dlci)
+            .set_parameters(DEFAULT_MAX_TX, FlowControlMode::CreditBased(Credits::new(10, 10)))
+            .expect("can set parameters");
         let mut user_rfcomm_channel =
             multiplexer.establish_session_channel(dlci, sender).expect("can register");
         assert!(multiplexer.any_dlc_established());
         assert!(multiplexer.dlci_established(&dlci));
 
         // Can't set the flow control for a DLCI that has already been established.
-        let result = multiplexer.set_flow_control(dlci, FlowControlMode::None);
+        let result = multiplexer
+            .find_or_create_session_channel(dlci)
+            .set_parameters(DEFAULT_MAX_TX, FlowControlMode::None);
         assert_matches!(result, Err(Error::ChannelAlreadyEstablished(_)));
 
         // Data received from the peer should be forwarded to the `user_rfcomm_channel`.
@@ -349,7 +558,7 @@ mod tests {
         assert!(!multiplexer.dlci_established(&dlci));
     }
 
-    #[test]
+    #[fuchsia::test]
     fn multiplexer_inspect_hierarchy() {
         let mut exec = fuchsia_async::TestExecutor::new();
         let inspect = inspect::Inspector::default();
@@ -361,6 +570,7 @@ mod tests {
         assert_data_tree!(@executor exec, inspect, root: {
             multiplexer: {
                 role: "Unassigned",
+                default_max_packet_size: 600u64,
             },
         });
 
@@ -370,6 +580,7 @@ mod tests {
         assert_data_tree!(@executor exec, inspect, root: {
             multiplexer: {
                 role: "Unassigned",
+                default_max_packet_size: 600u64,
                 channel_0: contains {
                     dlci: 9u64,
                 }
@@ -385,7 +596,7 @@ mod tests {
             multiplexer: {
                 role: "Unassigned",
                 flow_control: CREDIT_FLOW_CONTROL,
-                max_frame_size: 600u64,
+                default_max_packet_size: 600u64,
                 channel_0: contains {
                     dlci: 9u64,
                 },
@@ -408,7 +619,7 @@ mod tests {
             multiplexer: {
                 role: "Unassigned",
                 flow_control: CREDIT_FLOW_CONTROL,
-                max_frame_size: 600u64,
+                default_max_packet_size: 600u64,
                 channel_0: contains {
                     dlci: 9u64,
                 },
