@@ -19,8 +19,8 @@ use log::{error, warn};
 use net_types::ip::IpVersion;
 use netstack3_core::device::DeviceId;
 use netstack3_core::filter::{
-    BindingsPacketMatcher, FilterIpExt, FilterIpPacket, Interfaces, SocketEgressFilterResult,
-    SocketIngressFilterResult, SocketOpsFilter,
+    BindingsPacketMatcher, FilterIpExt, FilterIpPacket, FilterPacketMetadata, Interfaces,
+    SocketEgressFilterResult, SocketIngressFilterResult, SocketOpsFilter,
 };
 use netstack3_core::ip::{Mark, MarkDomain, Marks};
 use netstack3_core::socket::SocketCookie;
@@ -37,6 +37,9 @@ use {
     fidl_fuchsia_ebpf as febpf, fidl_fuchsia_net_filter as fnet_filter,
     fidl_fuchsia_posix as fposix,
 };
+
+/// The mark domain used to pass socket UID.
+pub const MARK_DOMAIN_UID: MarkDomain = MarkDomain::Mark2;
 
 // Transmutes `Vec<u64>` to `Vec<EbpfInstruction>`.
 fn code_from_vec(code: Vec<u64>) -> Vec<EbpfInstruction> {
@@ -262,8 +265,15 @@ pub struct SocketInfo {
 
 impl SocketInfo {
     pub fn new(socket_cookie: SocketCookie, marks: &Marks) -> Self {
-        let Mark(socket_uid) = marks.get(MarkDomain::Mark2).clone();
+        let Mark(socket_uid) = marks.get(MARK_DOMAIN_UID).clone();
         Self { socket_cookie: socket_cookie.export_value(), socket_uid }
+    }
+
+    pub fn from_packet_metadata(packet_metadata: &impl FilterPacketMetadata) -> Self {
+        let socket_cookie =
+            packet_metadata.cookie().map(|cookie| cookie.export_value()).unwrap_or(0);
+        let Mark(socket_uid) = packet_metadata.marks().get(MARK_DOMAIN_UID).clone();
+        Self { socket_cookie, socket_uid }
     }
 }
 
@@ -388,11 +398,11 @@ where
         &self,
         packet: &P,
         interfaces: Interfaces<'_, D>,
+        socket_info: &impl FilterPacketMetadata,
     ) -> bool {
-        trace_duration!("ebpf::packet_matcher");
+        trace_duration!(c"ebpf::packet_matcher");
 
-        // TODO(https://fxbug.dev/455585276): Use actual socket info and ifindex.
-        let socket_info = SocketInfo { socket_cookie: 0, socket_uid: None };
+        let socket_info = SocketInfo::from_packet_metadata(socket_info);
 
         // `ifindex` field is set to either ingress or ingress interface index
         // depending on the context. When executing forwarding hooks we have
@@ -1073,7 +1083,7 @@ mod tests {
         let socket_cookie = SocketCookie::new(socket_resource_token.token());
 
         let mut marks = Marks::default();
-        *marks.get_mut(MarkDomain::Mark2) = Mark(Some(UID));
+        *marks.get_mut(MARK_DOMAIN_UID) = Mark(Some(UID));
 
         let device = FakeDeviceId;
 

@@ -19,7 +19,7 @@ use crate::conntrack::{Connection, FinalizeConnectionError, GetConnectionError};
 use crate::context::{FilterBindingsContext, FilterBindingsTypes, FilterIpContext};
 use crate::packets::{FilterIpExt, FilterIpPacket, MaybeTransportPacket};
 use crate::state::{
-    Action, FilterIpMetadata, FilterMarkMetadata, Hook, Routine, Rule, TransparentProxy,
+    Action, FilterIpMetadata, FilterPacketMetadata, Hook, Routine, Rule, TransparentProxy,
 };
 
 /// The final result of packet processing at a given filtering hook.
@@ -170,10 +170,10 @@ where
     P: FilterIpPacket<I>,
     D: InterfaceProperties<BC::DeviceClass>,
     BC: FilterBindingsContext<D>,
-    M: FilterMarkMetadata,
+    M: FilterPacketMetadata,
 {
     for Rule { matcher, action, validation_info: () } in rules {
-        if matcher.matches(packet, interfaces) {
+        if matcher.matches(packet, interfaces, metadata) {
             match action {
                 Action::Accept => return RoutineResult::Accept,
                 Action::Return => return RoutineResult::Return,
@@ -225,7 +225,7 @@ where
     P: FilterIpPacket<I>,
     D: InterfaceProperties<BC::DeviceClass>,
     BC: FilterBindingsContext<D>,
-    M: FilterMarkMetadata,
+    M: FilterPacketMetadata,
 {
     let Hook { routines } = hook;
     for routine in routines {
@@ -256,7 +256,7 @@ where
     P: FilterIpPacket<I>,
     D: InterfaceProperties<BC::DeviceClass>,
     BC: FilterBindingsContext<D>,
-    M: FilterMarkMetadata,
+    M: FilterPacketMetadata,
 {
     let Hook { routines } = hook;
     for routine in routines {
@@ -842,6 +842,7 @@ mod tests {
     use derivative::Derivative;
     use ip_test_macro::ip_test;
     use net_types::ip::{AddrSubnet, Ipv4};
+    use netstack3_base::socket::SocketCookie;
     use netstack3_base::testutil::{FakeDeviceClass, FakeMatcherDeviceId};
     use netstack3_base::{
         AddressMatcher, AddressMatcherType, AssignedAddrIpExt, InterfaceMatcher, MarkDomain, Marks,
@@ -860,7 +861,7 @@ mod tests {
     use crate::packets::testutil::internal::{
         ArbitraryValue, FakeIpPacket, FakeTcpSegment, FakeUdpPacket, TransportPacketExt,
     };
-    use crate::state::{IpRoutines, NatRoutines, UninstalledRoutine};
+    use crate::state::{FakePacketMetadata, IpRoutines, NatRoutines, UninstalledRoutine};
     use crate::testutil::TestIpExt;
 
     impl<I: IpExt> Rule<I, FakeBindingsCtx<I>, ()> {
@@ -879,7 +880,7 @@ mod tests {
                 &Routine { rules: Vec::new() },
                 &FakeIpPacket::<_, FakeTcpSegment>::arbitrary_value(),
                 Interfaces { ingress: None, egress: None },
-                &mut NullMetadata {},
+                &mut FakePacketMetadata::default(),
             ),
             RoutineResult::Return
         );
@@ -900,32 +901,10 @@ mod tests {
                 &routine,
                 &FakeIpPacket::<_, FakeTcpSegment>::arbitrary_value(),
                 Interfaces { ingress: None, egress: None },
-                &mut NullMetadata {},
+                &mut FakePacketMetadata::default(),
             ),
             RoutineResult::Drop
         );
-    }
-
-    struct NullMetadata {}
-
-    impl<I: IpExt, A, BT: FilterBindingsTypes> FilterIpMetadata<I, A, BT> for NullMetadata {
-        fn take_connection_and_direction(
-            &mut self,
-        ) -> Option<(Connection<I, NatConfig<I, A>, BT>, ConnectionDirection)> {
-            None
-        }
-
-        fn replace_connection_and_direction(
-            &mut self,
-            _conn: Connection<I, NatConfig<I, A>, BT>,
-            _direction: ConnectionDirection,
-        ) -> Option<Connection<I, NatConfig<I, A>, BT>> {
-            None
-        }
-    }
-
-    impl FilterMarkMetadata for NullMetadata {
-        fn apply_mark_action(&mut self, _domain: MarkDomain, _action: MarkAction) {}
     }
 
     #[derive(Derivative)]
@@ -955,9 +934,21 @@ mod tests {
         }
     }
 
-    impl<I: TestIpExt, A, BT: FilterBindingsTypes> FilterMarkMetadata for PacketMetadata<I, A, BT> {
+    impl<I, A, BT> FilterPacketMetadata for PacketMetadata<I, A, BT>
+    where
+        I: TestIpExt,
+        BT: FilterBindingsTypes,
+    {
         fn apply_mark_action(&mut self, domain: MarkDomain, action: MarkAction) {
             action.apply(self.marks.get_mut(domain))
+        }
+
+        fn cookie(&self) -> Option<SocketCookie> {
+            None
+        }
+
+        fn marks(&self) -> &Marks {
+            &self.marks
         }
     }
 
@@ -968,7 +959,7 @@ mod tests {
                 &Hook::default(),
                 &FakeIpPacket::<_, FakeTcpSegment>::arbitrary_value(),
                 Interfaces { ingress: None, egress: None },
-                &mut NullMetadata {},
+                &mut FakePacketMetadata::default(),
             ),
             Verdict::Accept(())
         );
@@ -987,7 +978,7 @@ mod tests {
                 &hook,
                 &FakeIpPacket::<_, FakeTcpSegment>::arbitrary_value(),
                 Interfaces { ingress: None, egress: None },
-                &mut NullMetadata {},
+                &mut FakePacketMetadata::default(),
             ),
             Verdict::Accept(())
         );
@@ -1008,7 +999,7 @@ mod tests {
                 &routine,
                 &FakeIpPacket::<_, FakeTcpSegment>::arbitrary_value(),
                 Interfaces { ingress: None, egress: None },
-                &mut NullMetadata {},
+                &mut FakePacketMetadata::default(),
             ),
             RoutineResult::Accept
         );
@@ -1033,7 +1024,7 @@ mod tests {
                 &routine,
                 &FakeIpPacket::<_, FakeTcpSegment>::arbitrary_value(),
                 Interfaces { ingress: None, egress: None },
-                &mut NullMetadata {},
+                &mut FakePacketMetadata::default(),
             ),
             RoutineResult::Accept
         );
@@ -1059,7 +1050,7 @@ mod tests {
                 &hook,
                 &FakeIpPacket::<_, FakeTcpSegment>::arbitrary_value(),
                 Interfaces { ingress: None, egress: None },
-                &mut NullMetadata {},
+                &mut FakePacketMetadata::default(),
             ),
             Verdict::Drop
         );
@@ -1089,7 +1080,7 @@ mod tests {
                 &hook,
                 &FakeIpPacket::<_, FakeTcpSegment>::arbitrary_value(),
                 Interfaces { ingress: None, egress: None },
-                &mut NullMetadata {},
+                &mut FakePacketMetadata::default(),
             ),
             Verdict::Drop
         );
@@ -1121,7 +1112,7 @@ mod tests {
                 &ingress,
                 &FakeIpPacket::<_, FakeTcpSegment>::arbitrary_value(),
                 Interfaces { ingress: None, egress: None },
-                &mut NullMetadata {},
+                &mut FakePacketMetadata::default(),
             ),
             IngressVerdict::TransparentLocalDelivery {
                 addr: <Ipv4 as crate::packets::testutil::internal::TestIpExt>::DST_IP,
@@ -1148,7 +1139,7 @@ mod tests {
                 &routine,
                 &FakeIpPacket::<_, FakeTcpSegment>::arbitrary_value(),
                 Interfaces { ingress: None, egress: None },
-                &mut NullMetadata {},
+                &mut FakePacketMetadata::default(),
             ),
             RoutineResult::Drop
         );
@@ -1172,7 +1163,7 @@ mod tests {
                 &routine,
                 &FakeIpPacket::<_, FakeTcpSegment>::arbitrary_value(),
                 Interfaces { ingress: None, egress: None },
-                &mut NullMetadata {},
+                &mut FakePacketMetadata::default(),
             ),
             RoutineResult::Accept
         );
@@ -1196,7 +1187,7 @@ mod tests {
                 &routine,
                 &FakeIpPacket::<_, FakeTcpSegment>::arbitrary_value(),
                 Interfaces { ingress: None, egress: None },
-                &mut NullMetadata {},
+                &mut FakePacketMetadata::default(),
             ),
             RoutineResult::Drop
         );
@@ -1217,7 +1208,7 @@ mod tests {
                 &routine,
                 &FakeIpPacket::<_, FakeTcpSegment>::arbitrary_value(),
                 Interfaces { ingress: None, egress: None },
-                &mut NullMetadata {},
+                &mut FakePacketMetadata::default(),
             ),
             RoutineResult::Return
         );
@@ -1250,7 +1241,7 @@ mod tests {
                 &mut bindings_ctx,
                 &mut FakeIpPacket::<I, FakeTcpSegment>::arbitrary_value(),
                 &FakeMatcherDeviceId::wlan_interface(),
-                &mut NullMetadata {},
+                &mut FakePacketMetadata::default(),
             ),
             Verdict::Drop.into()
         );
@@ -1272,7 +1263,7 @@ mod tests {
                 &mut bindings_ctx,
                 &mut FakeIpPacket::<I, FakeTcpSegment>::arbitrary_value(),
                 &FakeMatcherDeviceId::wlan_interface(),
-                &mut NullMetadata {},
+                &mut FakePacketMetadata::default(),
             ),
             Verdict::Drop
         );
@@ -1295,7 +1286,7 @@ mod tests {
                 &mut FakeIpPacket::<I, FakeTcpSegment>::arbitrary_value(),
                 &FakeMatcherDeviceId::wlan_interface(),
                 &FakeMatcherDeviceId::ethernet_interface(),
-                &mut NullMetadata {},
+                &mut FakePacketMetadata::default(),
             ),
             Verdict::Drop
         );
@@ -1317,7 +1308,7 @@ mod tests {
                 &mut bindings_ctx,
                 &mut FakeIpPacket::<I, FakeTcpSegment>::arbitrary_value(),
                 &FakeMatcherDeviceId::wlan_interface(),
-                &mut NullMetadata {},
+                &mut FakePacketMetadata::default(),
             ),
             Verdict::Drop
         );
@@ -1340,7 +1331,7 @@ mod tests {
                     &mut bindings_ctx,
                     &mut FakeIpPacket::<I, FakeTcpSegment>::arbitrary_value(),
                     &FakeMatcherDeviceId::wlan_interface(),
-                    &mut NullMetadata {},
+                    &mut FakePacketMetadata::default(),
                 )
                 .0,
             Verdict::Drop
@@ -1426,7 +1417,7 @@ mod tests {
                 ..ArbitraryValue::arbitrary_value()
             },
             &FakeMatcherDeviceId::wlan_interface(),
-            &mut NullMetadata {},
+            &mut FakePacketMetadata::default(),
         )
     }
 
@@ -1468,7 +1459,7 @@ mod tests {
             &mut bindings_ctx,
             &mut FakeIpPacket::<I, FakeTcpSegment>::arbitrary_value(),
             &interface,
-            &mut NullMetadata {},
+            &mut FakePacketMetadata::default(),
         )
     }
 
@@ -1541,7 +1532,7 @@ mod tests {
                 &mut bindings_ctx,
                 &mut packet,
                 &FakeMatcherDeviceId::ethernet_interface(),
-                &mut NullMetadata {},
+                &mut FakePacketMetadata::default(),
             );
             assert_eq!(verdict, Verdict::Accept(()));
 
@@ -1549,7 +1540,7 @@ mod tests {
                 &mut bindings_ctx,
                 &mut reply_packet,
                 &FakeMatcherDeviceId::ethernet_interface(),
-                &mut NullMetadata {},
+                &mut FakePacketMetadata::default(),
             );
             assert_eq!(verdict, Verdict::Accept(()));
 
@@ -1557,7 +1548,7 @@ mod tests {
                 &mut bindings_ctx,
                 &mut packet,
                 &FakeMatcherDeviceId::ethernet_interface(),
-                &mut NullMetadata {},
+                &mut FakePacketMetadata::default(),
             );
             assert_eq!(verdict, Verdict::Accept(()));
         }
@@ -1569,7 +1560,7 @@ mod tests {
             &mut bindings_ctx,
             &mut FakeIpPacket::<I, FakeUdpPacket>::arbitrary_value(),
             &FakeMatcherDeviceId::ethernet_interface(),
-            &mut NullMetadata {},
+            &mut FakePacketMetadata::default(),
         );
         assert_eq!(verdict, Verdict::Drop);
     }
@@ -1613,7 +1604,7 @@ mod tests {
             &mut bindings_ctx,
             &mut packet,
             &FakeMatcherDeviceId::ethernet_interface(),
-            &mut NullMetadata {},
+            &mut FakePacketMetadata::default(),
         );
         assert_eq!(verdict, Verdict::Accept(()));
         assert_eq!(packet.src_ip, I::SRC_IP);
@@ -1630,7 +1621,7 @@ mod tests {
             &mut bindings_ctx,
             &mut packet,
             &FakeMatcherDeviceId::ethernet_interface(),
-            &mut NullMetadata {},
+            &mut FakePacketMetadata::default(),
         );
         assert_eq!(verdict, Verdict::Accept(()));
         assert_ne!(packet.body.src_port, src_port);

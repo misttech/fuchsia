@@ -52,8 +52,8 @@ pub use packets::{
 };
 pub use state::validation::{ValidRoutines, ValidationError};
 pub use state::{
-    Action, FilterIpMetadata, FilterMarkMetadata, Hook, IpRoutines, NatRoutines, Routine, Routines,
-    Rule, State, TransparentProxy, UninstalledRoutine,
+    Action, FilterIpMetadata, FilterPacketMetadata, Hook, IpRoutines, NatRoutines, Routine,
+    Routines, Rule, State, TransparentProxy, UninstalledRoutine,
 };
 
 /// Testing-related utilities for use by other crates.
@@ -61,6 +61,7 @@ pub use state::{
 pub mod testutil {
     pub use crate::logic::testutil::NoopImpl;
     pub use crate::packets::testutil::new_filter_egress_ip_packet;
+    pub use crate::state::FakePacketMetadata;
     use net_types::ip::IpVersion;
     use packet::FragmentedByteSlice;
 

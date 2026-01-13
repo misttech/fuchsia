@@ -209,7 +209,7 @@ pub(crate) mod testutil {
     use crate::logic::FilterTimerId;
     use crate::logic::nat::NatConfig;
     use crate::state::validation::ValidRoutines;
-    use crate::state::{IpRoutines, NatRoutines, OneWayBoolean, Routines};
+    use crate::state::{FilterPacketMetadata, IpRoutines, NatRoutines, OneWayBoolean, Routines};
     use crate::{Interfaces, conntrack};
 
     pub trait TestIpExt: FilterIpExt + AssignedAddrIpExt {}
@@ -493,6 +493,7 @@ pub(crate) mod testutil {
             &self,
             _packet: &P,
             _interfaces: Interfaces<'_, FakeMatcherDeviceId>,
+            _socket_info: &impl FilterPacketMetadata,
         ) -> bool {
             let _: usize = self.num_calls.fetch_add(1, core::sync::atomic::Ordering::SeqCst);
             self.result

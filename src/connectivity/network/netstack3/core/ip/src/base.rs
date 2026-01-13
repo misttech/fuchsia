@@ -25,7 +25,7 @@ use net_types::{
     LinkLocalAddress, MulticastAddr, MulticastAddress, NonMappedAddr, NonMulticastAddr,
     SpecifiedAddr, SpecifiedAddress as _, Witness,
 };
-use netstack3_base::socket::SocketIpAddrExt as _;
+use netstack3_base::socket::{SocketCookie, SocketIpAddrExt as _};
 use netstack3_base::sync::{Mutex, PrimaryRc, RwLock, StrongRc, WeakRc};
 use netstack3_base::{
     AnyDevice, BroadcastIpExt, CoreTimerContext, Counter, CounterCollectionSpec, CounterContext,
@@ -34,13 +34,13 @@ use netstack3_base::{
     IpDeviceAddressIdContext, IpExt, MarkDomain, Marks, Matcher as _, MatcherBindingsTypes,
     NestedIntoCoreTimerCtx, NotFoundError, ResourceCounterContext, RngContext,
     SendFrameErrorReason, StrongDeviceIdentifier, TimerBindingsTypes, TimerContext, TimerHandler,
-    TxMetadataBindingsTypes, WeakIpAddressId, WrapBroadcastMarker,
+    TxMetadata as _, TxMetadataBindingsTypes, WeakIpAddressId, WrapBroadcastMarker,
 };
 use netstack3_filter::{
     self as filter, ConnectionDirection, ConntrackConnection, FilterBindingsContext,
     FilterBindingsTypes, FilterHandler as _, FilterIpContext, FilterIpExt, FilterIpMetadata,
-    FilterIpPacket, FilterMarkMetadata, FilterTimerId, ForwardedPacket, IngressVerdict, MarkAction,
-    TransportPacketSerializer, Tuple, WeakConnectionError, WeakConntrackConnection,
+    FilterIpPacket, FilterPacketMetadata, FilterTimerId, ForwardedPacket, IngressVerdict,
+    MarkAction, TransportPacketSerializer, Tuple, WeakConnectionError, WeakConntrackConnection,
 };
 use netstack3_hashmap::HashMap;
 use packet::{
@@ -356,10 +356,18 @@ impl<I: packet_formats::ip::IpExt, A, BT: FilterBindingsTypes + TxMetadataBindin
 }
 
 impl<I: packet_formats::ip::IpExt, A, BT: FilterBindingsTypes + TxMetadataBindingsTypes>
-    FilterMarkMetadata for IpLayerPacketMetadata<I, A, BT>
+    FilterPacketMetadata for IpLayerPacketMetadata<I, A, BT>
 {
     fn apply_mark_action(&mut self, domain: MarkDomain, action: MarkAction) {
         action.apply(self.marks.get_mut(domain))
+    }
+
+    fn cookie(&self) -> Option<SocketCookie> {
+        self.tx_metadata.socket_cookie()
+    }
+
+    fn marks(&self) -> &Marks {
+        &self.marks
     }
 }
 

@@ -12,11 +12,12 @@ use core::fmt::Debug;
 use core::hash::{Hash, Hasher};
 use core::num::NonZeroU16;
 use core::ops::RangeInclusive;
+use netstack3_base::socket::SocketCookie;
 
 use derivative::Derivative;
 use net_types::ip::{GenericOverIp, Ip};
 use netstack3_base::{
-    CoreTimerContext, Inspectable, InspectableValue, Inspector as _, MarkDomain,
+    CoreTimerContext, Inspectable, InspectableValue, Inspector as _, MarkDomain, Marks,
     MatcherBindingsTypes, TimerContext,
 };
 use packet_formats::ip::IpExt;
@@ -509,7 +510,7 @@ impl<I: IpExt, A: InspectableValue, BT: FilterBindingsTypes> Inspectable for Sta
 
 /// A trait for interacting with the pieces of packet metadata that are
 /// important for filtering.
-pub trait FilterIpMetadata<I: IpExt, A, BT: FilterBindingsTypes>: FilterMarkMetadata {
+pub trait FilterIpMetadata<I: IpExt, A, BT: FilterBindingsTypes>: FilterPacketMetadata {
     /// Removes the conntrack connection and packet direction, if they exist.
     fn take_connection_and_direction(
         &mut self,
@@ -524,14 +525,52 @@ pub trait FilterIpMetadata<I: IpExt, A, BT: FilterBindingsTypes>: FilterMarkMeta
     ) -> Option<conntrack::Connection<I, NatConfig<I, A>, BT>>;
 }
 
-/// A trait for interacting with packet mark metadata.
+/// A trait for interacting with packet metadata.
 //
 // The reason why we split this trait from the `FilterIpMetadata` is to avoid
-// introducing trait bounds and type parameters into methods that only need
-// to change the mark, for example, all the `check_routine*` methods. Those
-// methods does not need the ability to take conntrack related information. This
+// introducing trait bounds and type parameters into functions that don't
+// depend on conntrack, for example, all the `check_routine*` methods. This
 // becomes a meaningful simplification for those cases.
-pub trait FilterMarkMetadata {
+pub trait FilterPacketMetadata {
     /// Applies the mark action to the metadata.
     fn apply_mark_action(&mut self, domain: MarkDomain, action: MarkAction);
+    /// Socket cookie.
+    fn cookie(&self) -> Option<SocketCookie>;
+    /// Socket marks.
+    fn marks(&self) -> &Marks;
+}
+
+/// No-op implementation of `FilterIpMetadata` and `FilterPacketMetadata`
+/// traits.
+#[derive(Default)]
+pub struct FakePacketMetadata {
+    marks: Marks,
+}
+
+impl<I: IpExt, A, BT: FilterBindingsTypes> FilterIpMetadata<I, A, BT> for FakePacketMetadata {
+    fn take_connection_and_direction(
+        &mut self,
+    ) -> Option<(conntrack::Connection<I, NatConfig<I, A>, BT>, ConnectionDirection)> {
+        None
+    }
+
+    fn replace_connection_and_direction(
+        &mut self,
+        _conn: conntrack::Connection<I, NatConfig<I, A>, BT>,
+        _direction: ConnectionDirection,
+    ) -> Option<conntrack::Connection<I, NatConfig<I, A>, BT>> {
+        None
+    }
+}
+
+impl FilterPacketMetadata for FakePacketMetadata {
+    fn apply_mark_action(&mut self, _domain: MarkDomain, _action: MarkAction) {}
+
+    fn cookie(&self) -> Option<SocketCookie> {
+        None
+    }
+
+    fn marks(&self) -> &Marks {
+        &self.marks
+    }
 }

@@ -16,6 +16,7 @@ use packet_formats::ip::IpExt;
 use crate::FilterBindingsTypes;
 use crate::logic::Interfaces;
 use crate::packets::{FilterIpExt, FilterIpPacket, MaybeTransportPacket, TransportPacketData};
+use crate::state::FilterPacketMetadata;
 
 /// A matcher for transport-layer protocol or port numbers.
 #[derive(Debug, Clone)]
@@ -65,6 +66,7 @@ pub trait BindingsPacketMatcher<D> {
         &self,
         packet: &P,
         interfaces: Interfaces<'_, D>,
+        meta: &impl FilterPacketMetadata,
     ) -> bool;
 }
 
@@ -73,6 +75,7 @@ impl<D> BindingsPacketMatcher<D> for Never {
         &self,
         _packet: &P,
         _interfaces: Interfaces<'_, D>,
+        _meta: &impl FilterPacketMetadata,
     ) -> bool {
         match *self {}
     }
@@ -83,8 +86,9 @@ impl<D, M: BindingsPacketMatcher<D>> BindingsPacketMatcher<D> for Arc<M> {
         &self,
         packet: &P,
         interfaces: Interfaces<'_, D>,
+        meta: &impl FilterPacketMetadata,
     ) -> bool {
-        self.as_ref().matches(packet, interfaces)
+        self.as_ref().matches(packet, interfaces, meta)
     }
 }
 
@@ -115,7 +119,12 @@ where
     I: FilterIpExt,
     BT: FilterBindingsTypes,
 {
-    pub(crate) fn matches<P, D>(&self, packet: &P, interfaces: Interfaces<'_, D>) -> bool
+    pub(crate) fn matches<P, D>(
+        &self,
+        packet: &P,
+        interfaces: Interfaces<'_, D>,
+        meta: &impl FilterPacketMetadata,
+    ) -> bool
     where
         P: FilterIpPacket<I>,
         D: InterfaceProperties<BT::DeviceClass>,
@@ -137,7 +146,7 @@ where
             && src_address.matches(&packet.src_addr())
             && dst_address.matches(&packet.dst_addr())
             && transport_protocol.matches(&(packet.protocol(), packet.maybe_transport_packet()))
-            && external_matcher.as_ref().map_or(true, |m| m.matches(packet, interfaces))
+            && external_matcher.as_ref().map_or(true, |m| m.matches(packet, interfaces, meta))
     }
 }
 
@@ -157,6 +166,7 @@ mod tests {
         ArbitraryValue, FakeIcmpEchoRequest, FakeIpPacket, FakeNullPacket, FakeTcpSegment,
         FakeUdpPacket, TestIpExt, TransportPacketExt,
     };
+    use crate::state::FakePacketMetadata;
 
     #[test_case(InterfaceMatcher::Id(FakeMatcherDeviceId::wlan_interface().id))]
     #[test_case(InterfaceMatcher::Name(FakeMatcherDeviceId::wlan_interface().name))]
@@ -175,6 +185,7 @@ mod tests {
                     ingress: Some(&FakeMatcherDeviceId::wlan_interface()),
                     egress: Some(&FakeMatcherDeviceId::wlan_interface())
                 },
+                &FakePacketMetadata::default(),
             ),
             true
         );
@@ -185,6 +196,7 @@ mod tests {
                     ingress: Some(&FakeMatcherDeviceId::ethernet_interface()),
                     egress: Some(&FakeMatcherDeviceId::ethernet_interface())
                 },
+                &FakePacketMetadata::default(),
             ),
             false
         );
@@ -206,15 +218,17 @@ mod tests {
             matcher.matches(
                 &FakeIpPacket::<Ipv4, FakeTcpSegment>::arbitrary_value(),
                 Interfaces { ingress: None, egress: Some(&FakeMatcherDeviceId::wlan_interface()) },
+                &FakePacketMetadata::default(),
             ),
-            false
+            false,
         );
         assert_eq!(
             matcher.matches(
                 &FakeIpPacket::<Ipv4, FakeTcpSegment>::arbitrary_value(),
                 Interfaces { ingress: Some(&FakeMatcherDeviceId::wlan_interface()), egress: None },
+                &FakePacketMetadata::default(),
             ),
-            false
+            false,
         );
         assert_eq!(
             matcher.matches(
@@ -223,8 +237,9 @@ mod tests {
                     ingress: Some(&FakeMatcherDeviceId::wlan_interface()),
                     egress: Some(&FakeMatcherDeviceId::wlan_interface())
                 },
+                &FakePacketMetadata::default(),
             ),
-            true
+            true,
         );
     }
 
@@ -283,8 +298,9 @@ mod tests {
                 matcher.matches::<_, FakeMatcherDeviceId>(
                     &FakeIpPacket::<I, FakeTcpSegment>::arbitrary_value(),
                     Interfaces { ingress: None, egress: None },
+                    &FakePacketMetadata::default(),
                 ),
-                invert
+                invert,
             );
             assert_eq!(
                 matcher.matches::<_, FakeMatcherDeviceId>(
@@ -294,8 +310,9 @@ mod tests {
                         body: FakeTcpSegment::arbitrary_value(),
                     },
                     Interfaces { ingress: None, egress: None },
+                    &FakePacketMetadata::default(),
                 ),
-                invert
+                invert,
             );
         }
     }
@@ -359,8 +376,11 @@ mod tests {
             ..Default::default()
         };
 
-        matcher
-            .matches::<_, FakeMatcherDeviceId>(&packet, Interfaces { ingress: None, egress: None })
+        matcher.matches::<_, FakeMatcherDeviceId>(
+            &packet,
+            Interfaces { ingress: None, egress: None },
+            &FakePacketMetadata::default(),
+        )
     }
 
     #[test_case(
@@ -415,6 +435,7 @@ mod tests {
                     ..ArbitraryValue::arbitrary_value()
                 },
                 Interfaces { ingress: None, egress: None },
+                &FakePacketMetadata::default(),
             ),
             expect_match
         );
@@ -436,6 +457,7 @@ mod tests {
                     ..ArbitraryValue::arbitrary_value()
                 },
                 Interfaces { ingress: None, egress: None },
+                &FakePacketMetadata::default(),
             ),
             expect_match
         );
@@ -462,6 +484,7 @@ mod tests {
                     ..ArbitraryValue::arbitrary_value()
                 },
                 Interfaces { ingress: None, egress: None },
+                &FakePacketMetadata::default(),
             ),
             false
         );
@@ -472,6 +495,7 @@ mod tests {
                     ..ArbitraryValue::arbitrary_value()
                 },
                 Interfaces { ingress: None, egress: None },
+                &FakePacketMetadata::default(),
             ),
             false
         );
@@ -479,6 +503,7 @@ mod tests {
             matcher.matches::<_, FakeMatcherDeviceId>(
                 &FakeIpPacket::<_, FakeTcpSegment>::arbitrary_value(),
                 Interfaces { ingress: None, egress: None },
+                &FakePacketMetadata::default(),
             ),
             true
         );
@@ -491,6 +516,7 @@ mod tests {
                 .matches::<_, FakeMatcherDeviceId>(
                     &FakeIpPacket::<Ipv4, FakeTcpSegment>::arbitrary_value(),
                     Interfaces { ingress: None, egress: None },
+                    &FakePacketMetadata::default(),
                 ),
             true
         );
@@ -511,6 +537,7 @@ mod tests {
                     ingress: Some(&FakeMatcherDeviceId::ethernet_interface()),
                     egress: None
                 },
+                &FakePacketMetadata::default(),
             ),
             result
         );
