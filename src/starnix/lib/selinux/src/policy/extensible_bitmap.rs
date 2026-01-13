@@ -2,14 +2,13 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+use super::error::ValidateError;
 use super::parser::PolicyCursor;
 use super::{
-    Counted, PolicyValidationContext, Validate, ValidateArray, array_type,
+    Array, Counted, PolicyValidationContext, Validate, ValidateArray, array_type,
     array_type_validate_deref_both,
 };
-use crate::policy::error::ValidateError;
 
-use crate::policy::Array;
 use std::cmp::Ordering;
 use zerocopy::{FromBytes, Immutable, KnownLayout, Unaligned, little_endian as le};
 
@@ -290,11 +289,12 @@ impl ValidateArray<Metadata, MapItem> for ExtensibleBitmap {
 
 #[cfg(test)]
 mod tests {
+    use super::super::error::ParseError;
+    use super::super::parser::{PolicyCursor, PolicyData};
+    use super::super::testing::{as_parse_error, as_validate_error};
+    use super::super::{Parse, PolicyValidationContext};
     use super::*;
-    use crate::policy::Parse;
-    use crate::policy::error::ParseError;
-    use crate::policy::parser::{PolicyCursor, PolicyData};
-    use crate::policy::testing::{as_parse_error, as_validate_error};
+
     use std::borrow::Borrow;
     use std::sync::Arc;
 
@@ -302,10 +302,7 @@ mod tests {
         ($parse_output:ident, $data:expr, $result:tt, $policy_data:tt, $check_impl:block) => {{
             let data = Arc::new($data);
             fn check_by_value(
-                $result: Result<
-                    ($parse_output, PolicyCursor),
-                    <$parse_output as crate::policy::Parse>::Error,
-                >,
+                $result: Result<($parse_output, PolicyCursor), <$parse_output as Parse>::Error>,
                 $policy_data: &PolicyData,
             ) -> Option<($parse_output, PolicyCursor)> {
                 $check_impl
@@ -424,8 +421,7 @@ mod tests {
             {
                 let (parsed, tail) = result.expect("parsed");
                 assert_eq!(36, tail.offset());
-                let mut context =
-                    crate::policy::PolicyValidationContext { data: policy_data.clone() };
+                let mut context = PolicyValidationContext { data: policy_data.clone() };
                 assert_eq!(
                     Err(ValidateError::InvalidExtensibleBitmapItemSize {
                         found_size: MAP_NODE_BITS - 1
@@ -453,8 +449,7 @@ mod tests {
             {
                 let (parsed, tail) = result.expect("parsed");
                 assert_eq!(36, tail.offset());
-                let mut context =
-                    crate::policy::PolicyValidationContext { data: policy_data.clone() };
+                let mut context = PolicyValidationContext { data: policy_data.clone() };
                 assert_eq!(
                     Err(ValidateError::MisalignedExtensibleBitmapHighBit {
                         found_size: MAP_NODE_BITS,
@@ -520,8 +515,7 @@ mod tests {
             {
                 let (parsed, tail) = result.expect("parsed");
                 assert_eq!(36, tail.offset());
-                let mut context =
-                    crate::policy::PolicyValidationContext { data: policy_data.clone() };
+                let mut context = PolicyValidationContext { data: policy_data.clone() };
                 match parsed.validate(&mut context).map_err(as_validate_error) {
                     Err(ValidateError::MisalignedExtensibleBitmapItemStartBit {
                         found_start_bit,
@@ -558,8 +552,7 @@ mod tests {
             {
                 let (parsed, tail) = result.expect("parsed");
                 assert_eq!(36, tail.offset());
-                let mut context =
-                    crate::policy::PolicyValidationContext { data: policy_data.clone() };
+                let mut context = PolicyValidationContext { data: policy_data.clone() };
                 assert_eq!(
                     parsed.validate(&mut context).map_err(as_validate_error),
                     Err(ValidateError::OutOfOrderExtensibleBitmapItems {

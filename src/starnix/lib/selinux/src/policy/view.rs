@@ -2,10 +2,10 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use super::PolicyValidationContext;
 use super::arrays::SimpleArrayView;
 use super::parser::{PolicyCursor, PolicyData, PolicyOffset};
-use crate::policy::{Counted, Parse, Validate};
+use super::{Counted, Parse, PolicyValidationContext, Validate};
+
 use hashbrown::hash_table::HashTable;
 use std::fmt::Debug;
 use std::hash::{DefaultHasher, Hash, Hasher};
@@ -162,7 +162,7 @@ pub struct ArrayDataViewIter<D> {
 
 impl<T> ArrayDataViewIter<T> {
     /// Creates a new array data view iterator from the start cursor and remaining count.
-    pub(crate) fn new(policy_data: PolicyData, offset: PolicyOffset, remaining: u32) -> Self {
+    fn new(policy_data: PolicyData, offset: PolicyOffset, remaining: u32) -> Self {
         Self { phantom: PhantomData, policy_data, offset, remaining }
     }
 }
@@ -187,7 +187,7 @@ impl<D: Walk> std::iter::Iterator for ArrayDataViewIter<D> {
 /// This struct contains the start offset of the array and the number of objects in the array.
 /// To access the objects in the array, use [`ArrayView::data`].
 #[derive(Debug, Clone, Copy)]
-pub(crate) struct ArrayView<M, D> {
+pub(super) struct ArrayView<M, D> {
     phantom: PhantomData<(M, D)>,
     start: PolicyOffset,
     count: u32,
@@ -277,7 +277,7 @@ where
 /// This struct contains only a vector of offsets into the policy data, to allow efficient lookup
 /// of vector elements with matching metadata.
 #[derive(Debug, Clone)]
-pub(crate) struct HashedArrayView<D: HasMetadata> {
+pub(super) struct HashedArrayView<D: HasMetadata> {
     phantom: PhantomData<D>,
     index: HashTable<PolicyOffset>,
     /// The offset in the policy data at which the elements indexed by this [`HashedArrayView`]

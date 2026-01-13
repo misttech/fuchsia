@@ -2,16 +2,15 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use super::arrays::{FsContext, FsUseType};
+use super::arrays::{ACCESS_VECTOR_RULE_TYPE_TYPE_TRANSITION, FsContext, FsUseType};
 use super::metadata::HandleUnknown;
 use super::security_context::{SecurityContext, SecurityLevel};
 use super::symbols::{
     Class, ClassDefault, ClassDefaultRange, Classes, CommonSymbol, CommonSymbols, Permission,
 };
 use super::{ParsedPolicy, RoleId, TypeId};
-
-use crate::policy::arrays::ACCESS_VECTOR_RULE_TYPE_TYPE_TRANSITION;
 use crate::{ClassPermission as _, NullessByteStr, PolicyCap};
+
 use std::collections::HashMap;
 
 /// The [`SecurityContext`] and [`FsUseType`] derived from some `fs_use_*` line of the policy.
@@ -30,12 +29,12 @@ pub struct FsUseLabelAndType {
 #[derive(Debug)]
 pub(super) struct PolicyIndex {
     /// Map from object class Ids to their offset in the associate policy's
-    /// [`crate::symbols::Classes`] collection. The map includes mappings from both the Ids used
+    /// [`super::symbols::Classes`] collection. The map includes mappings from both the Ids used
     /// internally for kernel object classes, and from the policy-defined Id for each policy-
     /// defined class - if an object class is not found in this map then it is not defined by the
     /// policy.
     classes: HashMap<crate::ObjectClass, usize>,
-    /// Map from well-known permissions to their class's associated [`crate::symbols::Permissions`]
+    /// Map from well-known permissions to their class's associated [`super::symbols::Permissions`]
     /// collection.
     permissions: HashMap<crate::KernelPermission, PermissionIndex>,
     /// The parsed binary policy.

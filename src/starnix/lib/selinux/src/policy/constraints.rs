@@ -420,8 +420,8 @@ impl<'a> ContextExpression<'a> {
 
 #[cfg(test)]
 mod tests {
+    use super::super::{find_class_by_name, parse_policy_by_value};
     use super::*;
-    use crate::policy::{find_class_by_name, parse_policy_by_value};
 
     impl PartialEq for Operand<'_> {
         fn eq(&self, other: &Self) -> bool {

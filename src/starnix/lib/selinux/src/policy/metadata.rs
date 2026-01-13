@@ -2,12 +2,12 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+use super::error::{ParseError, ValidateError};
 use super::parser::PolicyCursor;
 use super::{
     Array, Counted, Parse, PolicyValidationContext, Validate, ValidateArray, array_type,
     array_type_validate_deref_both,
 };
-use crate::policy::error::{ParseError, ValidateError};
 
 use zerocopy::{FromBytes, Immutable, KnownLayout, Unaligned, little_endian as le};
 
@@ -187,19 +187,18 @@ impl Validate for Counts {
 
 #[cfg(test)]
 mod tests {
+    use super::super::parser::PolicyCursor;
+    use super::super::testing::{as_parse_error, as_validate_error};
+    use super::super::{PolicyValidationContext, Validate};
     use super::*;
 
-    use crate::policy::parser::PolicyCursor;
-    use crate::policy::testing::{as_parse_error, as_validate_error};
     use std::sync::Arc;
 
     macro_rules! validate_test {
         ($parse_output:ident, $data:expr, $result:tt, $check_impl:block) => {{
             let data = Arc::new($data);
-            let mut context = crate::policy::PolicyValidationContext { data: data.clone() };
-            fn check_by_value(
-                $result: Result<(), <$parse_output as crate::policy::Validate>::Error>,
-            ) {
+            let mut context = PolicyValidationContext { data: data.clone() };
+            fn check_by_value($result: Result<(), <$parse_output as Validate>::Error>) {
                 $check_impl
             }
 
@@ -237,7 +236,7 @@ mod tests {
             u32::from_le_bytes(bytes.clone().as_slice().try_into().unwrap());
 
         let data = Arc::new(bytes);
-        let mut context = crate::policy::PolicyValidationContext { data: data.clone() };
+        let mut context = PolicyValidationContext { data: data.clone() };
         let (magic, tail) =
             PolicyCursor::parse::<Magic>(PolicyCursor::new(data.clone())).expect("magic");
         assert_eq!(data.len(), tail.offset() as usize);
@@ -299,7 +298,7 @@ mod tests {
     fn invalid_policy_version() {
         let bytes = [(POLICYDB_VERSION_MIN - 1).to_le_bytes().as_slice()].concat();
         let data = Arc::new(bytes);
-        let mut context = crate::policy::PolicyValidationContext { data: data.clone() };
+        let mut context = PolicyValidationContext { data: data.clone() };
         let (policy_version, tail) =
             PolicyCursor::parse::<PolicyVersion>(PolicyCursor::new(data.clone())).expect("magic");
         assert_eq!(data.len(), tail.offset() as usize);
@@ -312,7 +311,7 @@ mod tests {
 
         let bytes = [(POLICYDB_VERSION_MAX + 1).to_le_bytes().as_slice()].concat();
         let data = Arc::new(bytes);
-        let mut context = crate::policy::PolicyValidationContext { data: data.clone() };
+        let mut context = PolicyValidationContext { data: data.clone() };
         let (policy_version, tail) =
             PolicyCursor::parse::<PolicyVersion>(PolicyCursor::new(data.clone())).expect("magic");
         assert_eq!(data.len(), tail.offset() as usize);

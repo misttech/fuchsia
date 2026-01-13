@@ -2,18 +2,17 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+use super::error::ValidateError;
+use super::extensible_bitmap::ExtensibleBitmap;
 use super::parser::{PolicyCursor, PolicyData, PolicyOffset};
+use super::symbols::{MlsLevel, MlsRange};
 use super::view::{ArrayView, HasMetadata, Walk};
 use super::{
-    AccessVector, Array, ClassId, Counted, Parse, PolicyValidationContext, RoleId, TypeId,
+    AccessVector, Array, ClassId, Counted, Parse, PolicyValidationContext, RoleId, TypeId, UserId,
     Validate, ValidateArray, array_type, array_type_validate_deref_both,
 };
-use crate::policy::UserId;
-use crate::policy::error::ValidateError;
-use crate::policy::extensible_bitmap::ExtensibleBitmap;
-use crate::policy::symbols::{MlsLevel, MlsRange};
-use anyhow::Context as _;
 
+use anyhow::Context as _;
 use std::num::NonZeroU32;
 use std::ops::Shl;
 use zerocopy::{FromBytes, Immutable, KnownLayout, Unaligned, little_endian as le};

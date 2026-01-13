@@ -21,18 +21,18 @@ pub use parser::PolicyCursor;
 pub use security_context::{SecurityContext, SecurityContextError};
 
 use crate::{self as sc, PolicyCap};
-use anyhow::Context as _;
 use index::PolicyIndex;
 use metadata::HandleUnknown;
 use parsed_policy::ParsedPolicy;
 use parser::PolicyData;
-use std::fmt::{Debug, Display, LowerHex};
-use std::sync::Arc;
+use symbols::{find_class_by_name, find_common_symbol_by_name_bytes};
 
+use anyhow::Context as _;
+use std::fmt::{Debug, Display, LowerHex};
 use std::num::{NonZeroU32, NonZeroU64};
 use std::ops::Deref;
 use std::str::FromStr;
-use symbols::{find_class_by_name, find_common_symbol_by_name_bytes};
+use std::sync::Arc;
 use zerocopy::{
     FromBytes, Immutable, KnownLayout, Ref, SplitByteSlice, Unaligned, little_endian as le,
 };
@@ -709,21 +709,21 @@ macro_rules! array_type {
         #[doc = $data_type_name]
         #[doc = "`] data items."]
         #[derive(Debug, PartialEq)]
-        pub(super) struct $type_name(crate::policy::Array<$metadata_type, $data_type>);
+        pub(super) struct $type_name(super::Array<$metadata_type, $data_type>);
 
         impl std::ops::Deref for $type_name {
-            type Target = crate::policy::Array<$metadata_type, $data_type>;
+            type Target = super::Array<$metadata_type, $data_type>;
 
             fn deref(&self) -> &Self::Target {
                 &self.0
             }
         }
 
-        impl crate::policy::Parse for $type_name
+        impl super::Parse for $type_name
         where
-            crate::policy::Array<$metadata_type, $data_type>: crate::policy::Parse,
+            super::Array<$metadata_type, $data_type>: super::Parse,
         {
-            type Error = <Array<$metadata_type, $data_type> as crate::policy::Parse>::Error;
+            type Error = <Array<$metadata_type, $data_type> as super::Parse>::Error;
 
             fn parse(bytes: PolicyCursor) -> Result<(Self, PolicyCursor), Self::Error> {
                 let (array, tail) = Array::<$metadata_type, $data_type>::parse(bytes)?;
@@ -866,14 +866,19 @@ pub(super) mod testing {
 
 #[cfg(test)]
 pub(super) mod tests {
-    use super::*;
-
-    use crate::policy::metadata::HandleUnknown;
-    use crate::policy::{SecurityContext, parse_policy_by_value};
+    use super::arrays::XpermsBitmap;
+    use super::metadata::HandleUnknown;
+    use super::security_context::SecurityContext;
+    use super::symbols::find_class_by_name;
+    use super::{
+        AccessVector, Policy, TypeId, XpermsAccessDecision, XpermsKind, parse_policy_by_value,
+    };
     use crate::{FileClass, InitialSid, KernelClass};
 
+    use anyhow::Context as _;
     use serde::Deserialize;
-    use std::ops::Shl;
+    use std::ops::{Deref, Shl};
+    use zerocopy::little_endian as le;
 
     /// Returns whether the input types are explicitly granted `permission` via an `allow [...];`
     /// policy statement.

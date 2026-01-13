@@ -2,13 +2,13 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use crate::policy::arrays::Context;
-use crate::policy::extensible_bitmap::ExtensibleBitmapSpan;
-use crate::policy::index::PolicyIndex;
-use crate::policy::symbols::MlsLevel;
-use crate::policy::{CategoryId, ParsedPolicy, RoleId, SensitivityId, TypeId, UserId};
-
+use super::arrays::Context;
+use super::extensible_bitmap::ExtensibleBitmapSpan;
+use super::index::PolicyIndex;
+use super::symbols::MlsLevel;
+use super::{CategoryId, ParsedPolicy, RoleId, SensitivityId, TypeId, UserId};
 use crate::NullessByteStr;
+
 use bstr::BString;
 use std::cell::RefCell;
 use std::cmp::Ordering;
@@ -40,7 +40,7 @@ impl SecurityContext {
     /// Returns a new instance with the specified field values.
     /// Fields are not validated against the policy until explicitly via `validate()`,
     /// or implicitly via insertion into a [`SidTable`].
-    pub(crate) fn new(
+    pub(super) fn new(
         user: UserId,
         role: RoleId,
         type_: TypeId,
@@ -269,7 +269,7 @@ impl SecurityLevel {
     }
 
     /// Helper used by `initial_context()` to create a
-    /// [`crate::SecurityLevel`] instance from the policy fields.
+    /// [`SecurityLevel`] instance from the policy fields.
     pub(super) fn new_from_mls_level(level: &MlsLevel) -> SecurityLevel {
         SecurityLevel::new(
             level.sensitivity(),
