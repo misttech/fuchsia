@@ -30,7 +30,7 @@
         {
             protocol: [
                 "fuchsia.diagnostics.Sample",
-                "fuchsia.hardware.power.statecontrol.RebootMethodsWatcherRegister",
+                "fuchsia.hardware.power.statecontrol.ShutdownWatcherRegister",
                 "fuchsia.metrics.MetricEventLoggerFactory",
             ],
         },

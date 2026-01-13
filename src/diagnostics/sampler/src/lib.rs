@@ -10,7 +10,7 @@ use diagnostics_reader::drain_batch_iterator;
 use fidl::endpoints::{ControlHandle, RequestStream, create_endpoints};
 use fidl_fuchsia_diagnostics as fdiagnostics;
 use fidl_fuchsia_hardware_power_statecontrol::{
-    RebootMethodsWatcherRegisterMarker, RebootWatcherMarker, RebootWatcherRequest,
+    ShutdownWatcherMarker, ShutdownWatcherRegisterMarker, ShutdownWatcherRequest,
 };
 use fidl_fuchsia_metrics::MetricEventLoggerFactoryMarker;
 use fuchsia_component_client::connect_to_protocol;
@@ -94,32 +94,35 @@ pub async fn main() -> Result<(), AnyhowError> {
         .collect::<Vec<_>>()
         .await;
 
-    let (reboot_watcher_client, reboot_watcher_request_stream) =
-        fidl::endpoints::create_request_stream::<RebootWatcherMarker>();
-    let reboot_watcher_register = connect_to_protocol::<RebootMethodsWatcherRegisterMarker>()?;
-    reboot_watcher_register.register_watcher(reboot_watcher_client).await?;
+    let (shutdown_watcher_client, shutdown_watcher_request_stream) =
+        fidl::endpoints::create_request_stream::<ShutdownWatcherMarker>();
+    let shutdown_watcher_register = connect_to_protocol::<ShutdownWatcherRegisterMarker>()?;
+    shutdown_watcher_register.register_watcher(shutdown_watcher_client).await?;
 
     let sink_stream = sample_sink_server.into_stream();
     let sample_sink_control = sink_stream.control_handle();
     let mut sink_stream = sink_stream.fuse();
-    let mut reboot_stream = Either::Left(reboot_watcher_request_stream);
+    let mut shutdown_stream = Either::Left(shutdown_watcher_request_stream);
     let mut shutdown = false;
 
     component::health().set_ok();
 
     loop {
-        match select(reboot_stream.next(), sink_stream.next()).await {
-            Either::Left((reboot, _)) => match reboot {
-                Some(Ok(RebootWatcherRequest::OnReboot { responder, .. })) => {
+        match select(shutdown_stream.next(), sink_stream.next()).await {
+            Either::Left((shutdown_request, _)) => match shutdown_request {
+                Some(Ok(ShutdownWatcherRequest::OnShutdown { responder, .. })) => {
                     shutdown = true;
                     sample_sink_control.send_on_now_or_never()?;
                     responder.send()?;
                 }
+                Some(Ok(ShutdownWatcherRequest::_UnknownMethod { .. })) => {
+                    warn!("Sampler encountered unknown method on ShutdownWatcher");
+                }
                 Some(Err(err)) => {
-                    warn!(err:?; "Sampler encountered error on RebootWatcher, data may be missing");
+                    warn!(err:?; "Sampler encountered error on ShutdownWatcher, data may be missing");
                 }
                 None => {
-                    reboot_stream = Either::Right(stream::pending());
+                    shutdown_stream = Either::Right(stream::pending());
                     continue;
                 }
             },

@@ -145,7 +145,7 @@ pub async fn create_realm(options: ftest::RealmOptions) -> Result<RealmInstance,
     builder
         .add_route(
             Route::new()
-                .capability(Capability::protocol::<fpower::RebootMethodsWatcherRegisterMarker>())
+                .capability(Capability::protocol::<fpower::ShutdownWatcherRegisterMarker>())
                 .from(&mocks_server)
                 .to(&wrapper_realm),
         )
@@ -153,7 +153,7 @@ pub async fn create_realm(options: ftest::RealmOptions) -> Result<RealmInstance,
     wrapper_realm
         .add_route(
             Route::new()
-                .capability(Capability::protocol::<fpower::RebootMethodsWatcherRegisterMarker>())
+                .capability(Capability::protocol::<fpower::ShutdownWatcherRegisterMarker>())
                 .from(Ref::parent())
                 .to(&sampler),
         )
@@ -305,7 +305,7 @@ async fn serve_mocks(handles: LocalComponentHandles) -> Result<(), Error> {
 
     fs.dir("svc")
         .add_fidl_service(move |stream| {
-            mocks::serve_reboot_server(stream, snd.clone());
+            mocks::serve_shutdown_server(stream, snd.clone());
         })
         .add_fidl_service(move |stream| {
             mocks::serve_reboot_controller(stream, rcv.clone());

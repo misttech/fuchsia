@@ -21,7 +21,7 @@
             to: [ "#sampler" ],
         },
         {
-            protocol: [ "fuchsia.hardware.power.statecontrol.RebootMethodsWatcherRegister" ],
+            protocol: [ "fuchsia.hardware.power.statecontrol.ShutdownWatcherRegister" ],
             from: "parent",
             to: "#sampler",
         },

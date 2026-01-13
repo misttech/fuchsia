@@ -29,19 +29,19 @@ pub(crate) fn fake_index() -> Index {
     index
 }
 
-pub fn serve_reboot_server(
-    mut stream: reboot::RebootMethodsWatcherRegisterRequestStream,
-    mut proxy_sender: mpsc::Sender<reboot::RebootWatcherProxy>,
+pub fn serve_shutdown_server(
+    mut stream: reboot::ShutdownWatcherRegisterRequestStream,
+    mut proxy_sender: mpsc::Sender<reboot::ShutdownWatcherProxy>,
 ) {
     fasync::Task::spawn(async move {
         while let Some(req) = stream.try_next().await.unwrap() {
             match req {
-                reboot::RebootMethodsWatcherRegisterRequest::RegisterWatcher {
-                    watcher,
-                    responder,
-                } => {
+                reboot::ShutdownWatcherRegisterRequest::RegisterWatcher { watcher, responder } => {
                     proxy_sender.send(watcher.into_proxy()).await.unwrap();
                     responder.send().unwrap();
+                }
+                reboot::ShutdownWatcherRegisterRequest::_UnknownMethod { .. } => {
+                    unimplemented!();
                 }
             }
         }
@@ -51,15 +51,16 @@ pub fn serve_reboot_server(
 
 pub fn serve_reboot_controller(
     mut stream: controller::MockRebootControllerRequestStream,
-    proxy_receiver: Arc<Mutex<mpsc::Receiver<reboot::RebootWatcherProxy>>>,
+    proxy_receiver: Arc<Mutex<mpsc::Receiver<reboot::ShutdownWatcherProxy>>>,
 ) {
     fasync::Task::spawn(async move {
         while let Some(req) = stream.try_next().await.unwrap() {
             let proxy = proxy_receiver.lock().await.next().await.unwrap();
             match req {
                 controller::MockRebootControllerRequest::TriggerReboot { responder } => match proxy
-                    .on_reboot(&reboot::RebootOptions {
-                        reasons: Some(vec![reboot::RebootReason2::UserRequest]),
+                    .on_shutdown(&reboot::ShutdownOptions {
+                        action: Some(reboot::ShutdownAction::Reboot),
+                        reasons: Some(vec![reboot::ShutdownReason::UserRequest]),
                         __source_breaking: fidl::marker::SourceBreaking,
                     })
                     .await
