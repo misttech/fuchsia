@@ -1325,9 +1325,9 @@ impl<S: HandleOwner> StoreObjectHandle<S> {
                             current_range.end - current_range.start,
                             device_range_len,
                         );
+                        let crypt_ctx = key.crypt_ctx(self.object_id, current_range.start);
                         current_range.start += split;
-
-                        (key.crypt_ctx(self.object_id, current_range.start), split)
+                        (crypt_ctx, split)
                     } else {
                         (None, device_range_len)
                     }

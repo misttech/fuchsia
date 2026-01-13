@@ -61,8 +61,8 @@ use fprint::TypeFingerprint;
 use fuchsia_sync::Mutex;
 use fxfs_crypto::ff1::Ff1;
 use fxfs_crypto::{
-    Cipher, CipherHolder, Crypt, FxfsCipher, KeyPurpose, ObjectType, StreamCipher, UnwrappedKey,
-    WrappingKeyId,
+    CipherHolder, Crypt, KeyPurpose, ObjectType, StreamCipher, UnwrappedKey, WrappingKeyId,
+    key_to_cipher,
 };
 use fxfs_macros::{Migrate, migrate_to_version};
 use rand::RngCore;
@@ -1276,6 +1276,7 @@ impl ObjectStore {
             encryption_options
         {
             permanent_keys = permanent;
+            let cipher = key_to_cipher(&key, &unwrapped_key)?;
             transaction.add(
                 store.store_object_id(),
                 Mutation::insert_object(
@@ -1283,7 +1284,6 @@ impl ObjectStore {
                     ObjectValue::keys(vec![(key_id, key)].into()),
                 ),
             );
-            let cipher: Arc<dyn Cipher> = Arc::new(FxfsCipher::new(&unwrapped_key));
             store.key_manager.insert(
                 object_id,
                 Arc::new(vec![(key_id, CipherHolder::Cipher(cipher))].into()),

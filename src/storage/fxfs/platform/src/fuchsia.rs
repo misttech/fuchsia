@@ -20,6 +20,9 @@ mod symlink;
 pub mod volume;
 pub mod volumes_directory;
 
+#[cfg(test)]
+mod inline_encryption;
+
 #[cfg(any(test, feature = "testing"))]
 pub mod testing;
 

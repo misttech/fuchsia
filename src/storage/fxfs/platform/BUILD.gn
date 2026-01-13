@@ -20,6 +20,7 @@ platform_sources = [
   "src/fuchsia/fxblob/reader.rs",
   "src/fuchsia/fxblob/testing.rs",
   "src/fuchsia/fxblob/writer.rs",
+  "src/fuchsia/inline_encryption.rs",
   "src/fuchsia/memory_pressure.rs",
   "src/fuchsia/node.rs",
   "src/fuchsia/paged_object_handle.rs",
@@ -90,6 +91,7 @@ rustc_library("platform") {
     sources += platform_sources
     deps += platform_deps
     test_deps += [
+      "//sdk/fidl/fuchsia.hardware.inlineencryption:fuchsia.hardware.inlineencryption_rust",
       "//src/lib/fdio/rust:fdio",
       "//src/lib/fuchsia",
       "//src/lib/fuchsia-fs",
@@ -97,6 +99,7 @@ rustc_library("platform") {
       "//src/storage/blobfs/bin:blobfs-component",
       "//src/storage/crypt/fxfs:lib",
       "//src/storage/crypt/fxfs/common:lib",
+      "//src/storage/crypt/starnix:lib",
       "//src/storage/fxfs:lib",
       "//src/storage/fxfs/crypto/insecure",
       "//src/storage/lib/blob_writer:blob-writer",
@@ -108,6 +111,7 @@ rustc_library("platform") {
       "//third_party/rust_crates:assert_matches",
       "//third_party/rust_crates:libc",
       "//third_party/rust_crates:rand",
+      "//third_party/rust_crates:test-case",
     ]
 
     # The test requires more than typical memory,
