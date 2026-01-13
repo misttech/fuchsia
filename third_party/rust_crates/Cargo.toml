@@ -268,7 +268,7 @@ vte = "0.15"
 walkdir = "2.5.0"
 which = "4.0.2"
 xml-rs = "0.8"
-zerocopy = { version = "0.8.33", features = ["derive", "simd"] }
+zerocopy = { version = "0.8.33", features = ["alloc", "derive", "simd"] }
 zstd = "0.11.2"
 # keep-sorted end
 

@@ -21752,6 +21752,7 @@ rustc_library("zerocopy-v0_8_33") {
     "--cap-lints=allow",
     "-Cmetadata=8bb48175406a8c87",
     "-Cextra-filename=-8bb48175406a8c87",
+    "--cfg=feature=\"alloc\"",
     "--cfg=feature=\"derive\"",
     "--cfg=feature=\"simd\"",
     "--cfg=feature=\"zerocopy-derive\"",
