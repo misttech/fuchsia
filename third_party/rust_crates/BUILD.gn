@@ -271,7 +271,7 @@ group("data-encoding") {
 
 if (current_os == "fuchsia") {
   group("der") {
-    public_deps = [ ":der-v0_7_9" ]
+    public_deps = [ ":der-v0_7_10" ]
   }
 }
 
@@ -5507,18 +5507,18 @@ rustc_library("der-v0_6_1") {
   applicable_licenses = [ ":der-v0_6_1.license" ]
 }
 
-license("der-v0_7_9.license") {
+license("der-v0_7_10.license") {
   public_package_name = "der"
   license_files = [
-    "//third_party/rust_crates/vendor/der-0.7.9/LICENSE-APACHE",
-    "//third_party/rust_crates/vendor/der-0.7.9/LICENSE-MIT",
+    "//third_party/rust_crates/vendor/der-0.7.10/LICENSE-APACHE",
+    "//third_party/rust_crates/vendor/der-0.7.10/LICENSE-MIT",
   ]
 }
 
-rustc_library("der-v0_7_9") {
+rustc_library("der-v0_7_10") {
   crate_name = "der"
-  source_root = "//third_party/rust_crates/vendor/der-0.7.9/src/lib.rs"
-  output_name = "der-4cc4231953c3a106"
+  source_root = "//third_party/rust_crates/vendor/der-0.7.10/src/lib.rs"
+  output_name = "der-99f3a17c1b8110d1"
   edition = "2021"
   disable_clippy = true
   enforce_source_listing = false
@@ -5535,8 +5535,8 @@ rustc_library("der-v0_7_9") {
 
   rustflags = [
     "--cap-lints=allow",
-    "-Cmetadata=4cc4231953c3a106",
-    "-Cextra-filename=-4cc4231953c3a106",
+    "-Cmetadata=99f3a17c1b8110d1",
+    "-Cextra-filename=-99f3a17c1b8110d1",
     "--cfg=feature=\"alloc\"",
     "--cfg=feature=\"derive\"",
     "--cfg=feature=\"flagset\"",
@@ -5548,7 +5548,7 @@ rustc_library("der-v0_7_9") {
 
   visibility = [ ":*" ]
 
-  applicable_licenses = [ ":der-v0_7_9.license" ]
+  applicable_licenses = [ ":der-v0_7_10.license" ]
 }
 
 license("der_derive-v0_7_3.license") {
@@ -12943,7 +12943,7 @@ rustc_library("pkcs1-v0_7_5") {
   configs -= [ "//build/config/rust:2018_idioms" ]
 
   deps = []
-  deps += [ ":der-v0_7_9" ]
+  deps += [ ":der-v0_7_10" ]
   deps += [ ":pkcs8-v0_10_2" ]
   deps += [ ":spki-v0_7_3" ]
 
@@ -12981,7 +12981,7 @@ rustc_library("pkcs8-v0_10_2") {
   configs -= [ "//build/config/rust:2018_idioms" ]
 
   deps = []
-  deps += [ ":der-v0_7_9" ]
+  deps += [ ":der-v0_7_10" ]
   deps += [ ":spki-v0_7_3" ]
 
   rustenv = []
@@ -16490,7 +16490,7 @@ rustc_library("sec1-v0_7_3") {
   deps = []
   deps += [ ":zeroize-v1_8_1" ]
   deps += [ ":base16ct-v0_2_0" ]
-  deps += [ ":der-v0_7_9" ]
+  deps += [ ":der-v0_7_10" ]
   deps += [ ":generic-array-v0_14_9" ]
   deps += [ ":pkcs8-v0_10_2" ]
 
@@ -17739,7 +17739,7 @@ rustc_library("spki-v0_7_3") {
 
   deps = []
   deps += [ ":base64ct-v1_6_0" ]
-  deps += [ ":der-v0_7_9" ]
+  deps += [ ":der-v0_7_10" ]
 
   rustenv = []
 
@@ -21592,7 +21592,7 @@ rustc_library("x509-cert-v0_2_5") {
 
   deps = []
   deps += [ ":const-oid-v0_9_6" ]
-  deps += [ ":der-v0_7_9" ]
+  deps += [ ":der-v0_7_10" ]
   deps += [ ":spki-v0_7_3" ]
   deps += [ ":tls_codec-v0_4_2" ]
 

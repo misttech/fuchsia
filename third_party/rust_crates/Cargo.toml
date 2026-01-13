@@ -283,7 +283,7 @@ features = ["ansi", "env-filter", "fmt", "registry", "std", "tracing-log"]
 coset = { version = "0.3.8", features = ["std"] }
 # do not add back without verifying certificate transparency is ready to use - see https://fxbug.dev/25100
 # ct-logs = "0.6"
-der = { version = "0.7.9", features = ["alloc", "derive", "flagset", "oid", "zeroize"] }
+der = { version = "0.7.10", features = ["alloc", "derive", "flagset", "oid", "zeroize"] }
 euclid = { version = "0.22.11", features = [ "serde" ] }
 flagset = "0.4.7"
 getopts = "0.2"

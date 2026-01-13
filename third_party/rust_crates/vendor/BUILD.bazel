@@ -655,14 +655,14 @@ alias(
 )
 
 alias(
-    name = "der-0.7.9",
-    actual = "//third_party/rust_crates/vendor/der-0.7.9:der",
+    name = "der-0.7.10",
+    actual = "//third_party/rust_crates/vendor/der-0.7.10:der",
     tags = ["manual"],
 )
 
 alias(
     name = "der",
-    actual = "//third_party/rust_crates/vendor/der-0.7.9:der",
+    actual = "//third_party/rust_crates/vendor/der-0.7.10:der",
     tags = ["manual"],
 )
 

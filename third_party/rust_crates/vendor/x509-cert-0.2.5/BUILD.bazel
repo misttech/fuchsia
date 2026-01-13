@@ -80,7 +80,7 @@ rust_library(
     version = "0.2.5",
     deps = [
         "//third_party/rust_crates/vendor/const-oid-0.9.6:const_oid",
-        "//third_party/rust_crates/vendor/der-0.7.9:der",
+        "//third_party/rust_crates/vendor/der-0.7.10:der",
         "//third_party/rust_crates/vendor/spki-0.7.3:spki",
     ],
 )
