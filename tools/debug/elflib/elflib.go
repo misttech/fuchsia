@@ -160,6 +160,9 @@ func forEachNote(note []byte, endian binary.ByteOrder, entryFn func(noteEntry)) 
 }
 
 func parseBuildIDs(filename string, endian binary.ByteOrder, data io.ReaderAt, size uint64) ([][]byte, error) {
+	if size == 0 {
+		return [][]byte{}, nil
+	}
 	noteBytes := make([]byte, size)
 	_, err := data.ReadAt(noteBytes, 0)
 	if err != nil {

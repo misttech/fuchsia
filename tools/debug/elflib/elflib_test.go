@@ -83,6 +83,21 @@ func TestEmptyEtRelBuildIDs(t *testing.T) {
 	}
 }
 
+func TestEmptyEtRelEmptyNoteBuildIDs(t *testing.T) {
+	testfile := filepath.Join(*testDataDir, "empty-note-section.elf")
+	f, err := os.Open(testfile)
+	if err != nil {
+		t.Fatal("from os.Open: ", err)
+	}
+	buildIDs, err := GetBuildIDs(testfile, f)
+	if err != nil {
+		t.Fatal("from GetBuildIDs: ", err)
+	}
+	if len(buildIDs) != 0 {
+		t.Fatal("expected no build IDs but got ", buildIDs)
+	}
+}
+
 func TestHasMagic(t *testing.T) {
 	{
 		buff := []byte("\177ELF...")
