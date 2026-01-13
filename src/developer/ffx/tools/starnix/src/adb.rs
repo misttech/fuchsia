@@ -9,9 +9,10 @@ use ffx_config::keys::EMU_INSTANCE_ROOT_DIR;
 use ffx_emulator_config::ShowDetail;
 use ffx_emulator_engines::EngineBuilder;
 use fho::{FfxContext, Result, return_bug, return_user_error};
-use futures::FutureExt;
+use fidl_fuchsia_starnix_container::ControllerProxy;
 use futures::io::AsyncReadExt;
 use futures::stream::StreamExt;
+use futures::{FutureExt, channel};
 use log::info;
 use netext::{MultithreadedTokioAsyncWrapper, TcpListenerStream, TokioAsyncReadExt};
 use schemars::JsonSchema;
@@ -278,27 +279,31 @@ struct AdbProxyArgs {
 }
 
 impl AdbProxyArgs {
+    async fn reconnect(
+        rcs_connector: &Connector<RemoteControlProxyHolder>,
+        moniker: &Option<String>,
+    ) -> anyhow::Result<(ControllerProxy, Arc<AtomicBool>)> {
+        let rcs_proxy = connect_to_rcs(rcs_connector).await?;
+        anyhow::Ok((
+            connect_to_controller(&rcs_proxy, moniker.clone()).await?,
+            Arc::new(AtomicBool::new(false)),
+        ))
+    }
     async fn run_proxy(
         &self,
         adb: &str,
         rcs_connector: &Connector<RemoteControlProxyHolder>,
     ) -> Result<()> {
-        let reconnect = || async {
-            let rcs_proxy = connect_to_rcs(rcs_connector).await?;
-            anyhow::Ok((
-                connect_to_controller(&rcs_proxy, self.moniker.clone()).await?,
-                Arc::new(AtomicBool::new(false)),
-            ))
-        };
-        let mut controller_proxy = reconnect().await?;
-
+        let mut controller_proxy = AdbProxyArgs::reconnect(rcs_connector, &self.moniker).await?;
         let mut signals = Signals::new(&[SIGINT]).unwrap();
         let handle = signals.handle();
-        let signal_thread = std::thread::spawn(move || {
+        let (tx, mut rx) = channel::oneshot::channel();
+        let _signal_thread = std::thread::spawn(move || {
             if let Some(signal) = signals.forever().next() {
                 assert_eq!(signal, SIGINT);
                 eprintln!("Caught interrupt. Shutting down starnix adb bridge...");
-                std::process::exit(0);
+                let _ = tx.send(());
+                return;
             }
         });
 
@@ -330,9 +335,42 @@ impl AdbProxyArgs {
             println!("ADB bridge started. To connect: adb connect {listen_address}");
         }
         let mut listener = TcpListenerStream(listener);
-        while let Some(stream) = listener.next().await {
+
+        loop {
+            let handle_stream_fut = Self::handle_stream_next(
+                &mut listener,
+                &rcs_connector,
+                &self.moniker,
+                &mut controller_proxy,
+            );
+            futures::select! {
+                stream_res = handle_stream_fut.fuse() => {
+                    log::debug!("Handled stream event");
+                    if !stream_res? {
+                        log::debug!("Stream ran out of connections.");
+                        break;
+                    }
+                },
+                _signal_res = rx => {
+                    log::debug!("Got interrupt");
+                    break;
+                }
+            }
+        }
+
+        handle.close();
+        Ok(())
+    }
+
+    async fn handle_stream_next(
+        listener: &mut TcpListenerStream,
+        rcs_connector: &Connector<RemoteControlProxyHolder>,
+        moniker: &Option<String>,
+        controller_proxy: &mut (ControllerProxy, Arc<AtomicBool>),
+    ) -> Result<bool> {
+        if let Some(stream) = listener.next().await {
             if controller_proxy.1.load(Ordering::SeqCst) {
-                controller_proxy = reconnect().await?;
+                *controller_proxy = Self::reconnect(&rcs_connector, &moniker).await?;
             }
 
             let stream = stream.map_err(|e| fho::Error::Unexpected(e.into()))?;
@@ -355,11 +393,10 @@ impl AdbProxyArgs {
                 reconnect_flag.store(true, std::sync::atomic::Ordering::SeqCst);
             })
             .detach();
+            Ok(true)
+        } else {
+            Ok(false)
         }
-
-        handle.close();
-        signal_thread.join().expect("signal thread to shutdown without panic");
-        Ok(())
     }
 }
 
