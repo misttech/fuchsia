@@ -80,4 +80,13 @@ mod test {
         let _guard = value.lock();
         assert!(value.try_lock().is_none());
     }
+
+    #[test]
+    #[cfg(detect_lock_cycles)]
+    #[should_panic(expected = "Found cycle in mutex dependency graph")]
+    fn test_mutex_reentrancy() {
+        let value = Mutex::<u32>::new(5);
+        let _guard = value.lock();
+        let _guard2 = value.lock();
+    }
 }

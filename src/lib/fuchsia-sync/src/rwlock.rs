@@ -695,4 +695,31 @@ mod test {
         let guard = state.value.read();
         assert_eq!(1000, *guard, "The RwLock held the wrong value at the end.");
     }
+
+    #[test]
+    #[cfg(detect_lock_cycles)]
+    #[should_panic(expected = "Found cycle in mutex dependency graph")]
+    fn test_rwlock_write_write_reentrancy() {
+        let value = RwLock::<u32>::new(5);
+        let _guard = value.write();
+        let _guard2 = value.write();
+    }
+
+    #[test]
+    #[cfg(detect_lock_cycles)]
+    #[should_panic(expected = "Found cycle in mutex dependency graph")]
+    fn test_rwlock_read_write_reentrancy() {
+        let value = RwLock::<u32>::new(5);
+        let _guard = value.read();
+        let _guard2 = value.write();
+    }
+
+    #[test]
+    #[cfg(detect_lock_cycles)]
+    #[should_panic(expected = "Found cycle in mutex dependency graph")]
+    fn test_rwlock_write_read_reentrancy() {
+        let value = RwLock::<u32>::new(5);
+        let _guard = value.write();
+        let _guard2 = value.read();
+    }
 }
