@@ -71,6 +71,9 @@ TEST_F(DeviceEnumerationTest, Nuc11TNBv5Test) {
       "PC00.bus.00_02_0.00_02_0.intel-display-controller.display-coordinator",
       "PC00.bus.00_14_0.00_14_0.xhci.usb-bus",
       "PC00.bus.00_17_0.00_17_0.ahci",
+#ifdef include_packaged_drivers
+      "PC00.bus.00_14_3.00_14_3.iwlwifi-wlanphyimpl",
+#endif
   };
   VerifyNodes(kNodeMonikers);
 }
