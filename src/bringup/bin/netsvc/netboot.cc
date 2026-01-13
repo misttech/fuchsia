@@ -276,13 +276,14 @@ zx_status_t reboot() {
   }
 
   fidl::Arena arena;
-  auto builder = fuchsia_hardware_power_statecontrol::wire::RebootOptions::Builder(arena);
-  fuchsia_hardware_power_statecontrol::RebootReason2 reasons[1] = {
-      fuchsia_hardware_power_statecontrol::RebootReason2::kDeveloperRequest};
+  auto builder = fuchsia_hardware_power_statecontrol::wire::ShutdownOptions::Builder(arena);
+  fuchsia_hardware_power_statecontrol::ShutdownReason reasons[1] = {
+      fuchsia_hardware_power_statecontrol::ShutdownReason::kDeveloperRequest};
   auto vector_view =
-      fidl::VectorView<fuchsia_hardware_power_statecontrol::RebootReason2>::FromExternal(reasons);
+      fidl::VectorView<fuchsia_hardware_power_statecontrol::ShutdownReason>::FromExternal(reasons);
   builder.reasons(vector_view);
-  fidl::WireResult response = fidl::WireCall(client_end.value())->PerformReboot(builder.Build());
+  builder.action(fuchsia_hardware_power_statecontrol::ShutdownAction::kReboot);
+  fidl::WireResult response = fidl::WireCall(client_end.value())->Shutdown(builder.Build());
   if (response.status() != ZX_OK) {
     return response.status();
   }
