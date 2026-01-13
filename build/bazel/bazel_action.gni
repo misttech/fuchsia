@@ -801,10 +801,7 @@ template("bazel_action") {
     if (_has_package_outputs) {
       # These starlark script are used to perform queries to get provider values
       # for each package.
-      inputs += [
-        "//build/bazel/starlark/FuchsiaPackageInfo_archive_and_manifest.cquery",
-        "//build/bazel/starlark/FuchsiaDebugSymbolInfo_debug_symbol_dirs.cquery",
-      ]
+      inputs += [ "//build/bazel/starlark/FuchsiaPackageInfo_archive.cquery" ]
     }
 
     if (invoker.command == "build") {

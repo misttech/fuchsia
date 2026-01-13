@@ -1631,30 +1631,35 @@ def main() -> int:
             "package_info", "Run cquery to extract Fuchsia package information"
         )
 
+        # Query against all package output targets at once.  The query results
+        # embed the target labels so that they can be matched with the ninja
+        # output paths.
+        query_result = run_starlark_cquery(
+            [entry.package_label for entry in package_outputs],
+            "FuchsiaPackageInfo_archive.cquery",
+        )
+
+        # The results are lines of json, so split them and parse each.  They're
+        # each a dict of:
+        #   target:  "@@<the bazel target>""
+        #   archive_path: "<path to the archive file>""
+        results: dict[str, str] = {
+            p["target"].removeprefix("@@"): p["archive_path"]
+            for p in [json.loads(line) for line in query_result]
+        }
+
+        # Now match each package output label to its results and add to the file
+        # copies to perform.
         for entry in package_outputs:
-            # Run a cquery to extract the FuchsiaPackageInfo and
-            # FuchsiaDebugSymbolInfo provider values.
-            query_result = run_starlark_cquery(
-                [entry.package_label],
-                "package_archive_manifest_and_debug_symbol_dirs.cquery",
+            bazel_archive_path = results.get(entry.package_label)
+
+            # This is just in case we don't get a result for a label, or they
+            # change format on us.
+            assert bazel_archive_path
+
+            file_copies.append(
+                (bazel_execroot / bazel_archive_path, Path(entry.archive_path))
             )
-            assert (
-                len(query_result) > 2
-            ), f"Unexpected FuchsiaPackageInfo cquery result: {query_result}"
-
-            # Get all paths, which are relative to the Bazel execroot.
-            bazel_archive_path, bazel_manifest_path = query_result[:2]
-            bazel_debug_symbol_dirs = query_result[2:]
-
-            if entry.archive_path:
-                file_copies.append(
-                    (
-                        bazel_execroot / bazel_archive_path,
-                        Path(entry.archive_path),
-                    )
-                )
-
-        time_profile.stop()
 
     time_profile.start(
         "check_output_directories",

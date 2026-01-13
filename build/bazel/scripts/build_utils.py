@@ -1006,6 +1006,9 @@ class BazelQueryCache(object):
             query_start_time = time.time()
 
         ret = launcher.run_query(query_type, query_args, ignore_errors=False)
+        # Log any query errors (which may have a return code of 0), if logging enabled.
+        if log and ret.stderr:
+            log(f"Query error:\n{ret.stderr}")
         if ret.returncode != 0:
             return None
 
