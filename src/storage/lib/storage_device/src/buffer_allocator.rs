@@ -16,7 +16,6 @@ mod buffer_source {
     use fuchsia_runtime::vmar_root_self;
     use std::ops::Range;
     use std::sync::Arc;
-    use zx::{self as zx, AsHandleRef};
 
     /// A buffer source backed by a VMO.
     #[derive(Debug)]

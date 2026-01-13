@@ -6,7 +6,6 @@ use super::MapError;
 use ebpf::EbpfBufferPtr;
 use std::fmt::Debug;
 use std::sync::{Arc, LazyLock};
-use zx::AsHandleRef as _;
 
 #[derive(Debug)]
 pub(super) struct MapBuffer {

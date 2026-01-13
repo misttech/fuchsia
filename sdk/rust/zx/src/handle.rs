@@ -685,19 +685,6 @@ pub trait AsHandleRef {
         NullableHandle::raw_handle(&self.as_handle_ref())
     }
 
-    /// Set the [Property::NAME] property for this object.
-    ///
-    /// The name's length must be less than [sys::ZX_MAX_NAME_LEN], i.e.
-    /// name.[to_bytes_with_nul()](CStr::to_bytes_with_nul()).len() <= [sys::ZX_MAX_NAME_LEN], or
-    /// Err([Status::INVALID_ARGS]) will be returned.
-    ///
-    /// Wraps a call to the
-    /// [zx_object_get_property](https://fuchsia.dev/fuchsia-src/reference/syscalls/object_get_property.md)
-    /// syscall for the ZX_PROP_NAME property.
-    fn set_name(&self, name: &Name) -> Result<(), Status> {
-        NullableHandle::set_name(&self.as_handle_ref(), name)
-    }
-
     /// Wraps the
     /// [zx_object_get_info](https://fuchsia.dev/fuchsia-src/reference/syscalls/object_get_info.md)
     /// syscall for the ZX_INFO_HANDLE_BASIC topic.

@@ -16,7 +16,6 @@ use std::sync::atomic::{AtomicU8, Ordering};
 use fidl_fuchsia_hardware_network as netdev;
 use fuchsia_runtime::vmar_root_self;
 use static_assertions::{const_assert, const_assert_eq};
-use zx::AsHandleRef as _;
 use zx::sys::ZX_MIN_PAGE_SHIFT;
 
 use crate::error::{Error, Result};

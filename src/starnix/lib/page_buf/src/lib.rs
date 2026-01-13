@@ -7,7 +7,6 @@
 use std::mem::MaybeUninit;
 use std::ptr::NonNull;
 use std::sync::Arc;
-use zx::AsHandleRef;
 
 const DEFAULT_VMO_NAME: zx::Name = zx::Name::from_bytes_lossy(b"starnix_page_buf");
 

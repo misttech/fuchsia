@@ -7,7 +7,7 @@ use fuchsia_runtime::{HandleInfo, HandleType};
 use futures::FutureExt as _;
 use log::{debug, error};
 use thiserror::Error;
-use zx::{AsHandleRef, Task as _};
+use zx::Task as _;
 use {fidl_fuchsia_process as fprocess, fuchsia_async as fasync};
 
 use crate::util::{self, ConnectToProtocolError};

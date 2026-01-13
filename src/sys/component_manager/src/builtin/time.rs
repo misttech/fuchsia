@@ -9,7 +9,7 @@ use fuchsia_fs::{PERM_READABLE, file};
 use fuchsia_runtime::{UtcClock, UtcInstant};
 use futures::prelude::*;
 use std::sync::Arc;
-use zx::{AsHandleRef, ClockOpts, HandleBased, Rights};
+use zx::{ClockOpts, HandleBased, Rights};
 
 /// An implementation of the `fuchsia.time.Maintenance` protocol, which
 /// maintains a UTC clock, vending out handles with write access.

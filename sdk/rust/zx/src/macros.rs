@@ -94,6 +94,13 @@ macro_rules! delegated_concrete_handle_based_impls {
         pub fn get_name(&self) -> Result<$crate::Name, $crate::Status> {
             self.0.get_name()
         }
+
+        /// Wraps a call to the
+        /// [`zx_object_set_property`](https://fuchsia.dev/fuchsia-src/reference/syscalls/object_set_property)
+        /// syscall for the `ZX_PROP_NAME` property.
+        pub fn set_name(&self, name: &$crate::Name) -> Result<(), $crate::Status> {
+            self.0.set_name(name)
+        }
     };
 }
 

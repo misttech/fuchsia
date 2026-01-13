@@ -7,7 +7,6 @@ use crate::modules::ModulesAndSymbols;
 use crate::utils::*;
 use fdf::{CurrentDispatcher, OnDispatcher};
 use fdf_component::Incoming;
-use fidl::AsHandleRef;
 use fidl::client::decode_transaction_body;
 use fidl::encoding::{DefaultFuchsiaResourceDialect, EmptyStruct, ResultType, clear_tls_buf};
 use fidl::endpoints::{RequestStream, ServerEnd};

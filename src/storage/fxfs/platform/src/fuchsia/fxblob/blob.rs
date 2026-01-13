@@ -32,7 +32,7 @@ use std::ops::Range;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use storage_device::buffer;
-use zx::{self as zx, AsHandleRef, HandleBased, Status};
+use zx::{HandleBased, Status};
 
 pub const BLOCK_SIZE: u64 = fuchsia_merkle::BLOCK_SIZE as u64;
 

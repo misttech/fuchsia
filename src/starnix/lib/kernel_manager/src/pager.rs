@@ -6,9 +6,6 @@
 //! the target, hence the need for a transfer VMO.  This also uses a static zeroed VMO to transfer
 //! pages that should be zeroed.
 
-use fidl::AsHandleRef;
-use zx::sys::zx_page_request_command_t::{ZX_PAGER_VMO_COMPLETE, ZX_PAGER_VMO_READ};
-
 use fidl_fuchsia_starnix_runner as fstarnixrunner;
 use futures::TryStreamExt;
 use starnix_logging::{
@@ -21,6 +18,7 @@ use std::collections::HashMap;
 use std::collections::hash_map::Entry;
 use std::ops::Range;
 use std::sync::Arc;
+use zx::sys::zx_page_request_command_t::{ZX_PAGER_VMO_COMPLETE, ZX_PAGER_VMO_READ};
 
 // N.B. At time of writing, no particular science has gone into picking these numbers; tweaking
 // these numbers might or might not give us better performance.

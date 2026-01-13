@@ -8,7 +8,7 @@ use fuchsia_component::server::ServiceFs;
 use fuchsia_runtime::process_self;
 use futures::{StreamExt, TryFutureExt, TryStreamExt, try_join};
 use log::warn;
-use zx::{self as zx, AsHandleRef, HandleBased, Peered};
+use zx::{HandleBased, Peered};
 use {fidl_fuchsia_fuzzer as fuzz, fuchsia_async as fasync};
 
 struct Instrumentation {

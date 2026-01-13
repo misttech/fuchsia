@@ -6,7 +6,7 @@ pub use heapdump_vmo::resources_table_v1::ResourceKey;
 use heapdump_vmo::resources_table_v1::ResourcesTableWriter;
 use std::sync::atomic::Ordering::Release;
 use std::sync::atomic::fence;
-use zx::{self as zx, AsHandleRef, HandleBased};
+use zx::HandleBased;
 
 /// We cap the size of our backing VMO at 2 GiB, then preallocate it and map it entirely.
 /// Actual memory for each page will only be committed when we first write to that page.

@@ -2,7 +2,6 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use fidl::AsHandleRef;
 use fuchsia_component::directory::open_file_async;
 use zx::Status;
 use {fidl_fuchsia_data as fdata, fidl_fuchsia_io as fio};

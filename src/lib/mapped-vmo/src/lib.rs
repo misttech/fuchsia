@@ -9,7 +9,6 @@
 use fuchsia_runtime::vmar_root_self;
 use shared_buffer::SharedBuffer;
 use std::ops::{Deref, DerefMut};
-use zx::{self as zx, AsHandleRef};
 
 mod immutable;
 pub use immutable::{Error as ImmutableMappingError, ImmutableMapping};

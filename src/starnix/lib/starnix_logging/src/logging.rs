@@ -154,7 +154,10 @@ pub fn impossible_error(status: zx::Status) -> Errno {
 }
 
 pub fn set_zx_name(obj: &impl zx::AsHandleRef, name: impl AsRef<[u8]>) {
-    obj.set_name(&zx::Name::from_bytes_lossy(name.as_ref())).map_err(impossible_error).unwrap();
+    obj.as_handle_ref()
+        .set_name(&zx::Name::from_bytes_lossy(name.as_ref()))
+        .map_err(impossible_error)
+        .unwrap();
 }
 
 pub fn with_zx_name<O: zx::AsHandleRef>(obj: O, name: impl AsRef<[u8]>) -> O {

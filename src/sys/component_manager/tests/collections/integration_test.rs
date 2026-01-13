@@ -3,7 +3,7 @@
 // found in the LICENSE file.
 
 use anyhow::Error;
-use fidl::{endpoints, AsHandleRef, HandleBased};
+use fidl::{HandleBased, endpoints};
 use fuchsia_component::client;
 use fuchsia_runtime::{HandleInfo, HandleType};
 use {

@@ -6,7 +6,7 @@ use crate::notification::Notification;
 use crate::reply::*;
 use crate::sequencer::Sequencer;
 use crate::{sequencer, throttled_log, wire, wire_convert};
-use anyhow::{anyhow, Context, Error};
+use anyhow::{Context, Error, anyhow};
 use async_trait::async_trait;
 use fuchsia_async::{DurationExt, TimeoutExt};
 use futures::{FutureExt, TryStreamExt};
@@ -14,7 +14,6 @@ use mapped_vmo::Mapping;
 use std::cell::RefCell;
 use std::collections::{HashMap, VecDeque};
 use std::ops::Range;
-use zx::{self as zx, AsHandleRef};
 
 /// Parameters needed to construct an AudioStream.
 #[derive(Debug, Copy, Clone)]
@@ -430,7 +429,8 @@ impl<'a> AudioStream<'a> for AudioOutput<'a> {
                 None => {
                     // TODO(https://fxbug.dev/42052022): temporary for debugging
                     throttled_log::info!(
-                    "conn.borrow on packet completion (to add to packets_avail) failed - disconnected with outstanding packets");
+                        "conn.borrow on packet completion (to add to packets_avail) failed - disconnected with outstanding packets"
+                    );
                     // ignore: disconnected before our await completed
                     ()
                 }
@@ -477,7 +477,8 @@ impl<'a> AudioStream<'a> for AudioOutput<'a> {
                 None => {
                     // TODO(https://fxbug.dev/42052022): temporary for debugging
                     throttled_log::info!(
-                  "conn.borrow on completion (removing from packets_pending) failed - disconnected with outstanding packets?");
+                        "conn.borrow on completion (removing from packets_pending) failed - disconnected with outstanding packets?"
+                    );
                     // ignore: disconnected before our await completed
                     ()
                 }
@@ -857,8 +858,12 @@ impl<'a> AudioStream<'a> for AudioInput<'a> {
             || resp.payload_offset != (packet_range.start as u64)
             || resp.payload_size != (buffer_size as u64)
         {
-            log::warn!("skipping captured packet {:?}, expected {{.payload_buffer_id=0, .payload_offset={}, .payload_size={}}}",
-                resp, packet_range.start, buffer_size);
+            log::warn!(
+                "skipping captured packet {:?}, expected {{.payload_buffer_id=0, .payload_offset={}, .payload_size={}}}",
+                resp,
+                packet_range.start,
+                buffer_size
+            );
             return Ok(());
         }
 

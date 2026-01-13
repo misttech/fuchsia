@@ -13,7 +13,7 @@ use std::cmp::max;
 use std::sync::Arc;
 
 #[cfg(target_os = "fuchsia")]
-use zx::{self as zx, AsHandleRef, HandleBased};
+use zx::HandleBased;
 
 /// Root of the Inspect API. Through this API, further nodes can be created and inspect can be
 /// served.

@@ -6,7 +6,6 @@
 
 use crate::{elf_parse as elf, util};
 use thiserror::Error;
-use zx::{self as zx, AsHandleRef};
 
 /// Possible errors that can occur during ELF loading.
 #[derive(Error, Debug)]
@@ -308,6 +307,7 @@ mod tests {
     use std::cell::RefCell;
     use std::mem::size_of;
     use std::sync::LazyLock;
+    use zx::AsHandleRef;
 
     #[test]
     fn test_vmo_name_with_prefix() {
@@ -379,7 +379,7 @@ mod tests {
             flags: zx::VmarFlags,
         ) -> Result<usize, zx::Status> {
             self.0.borrow_mut().push(RecordedMapping {
-                vmo: vmo.as_handle_ref().duplicate(zx::Rights::SAME_RIGHTS).unwrap().into(),
+                vmo: vmo.duplicate(zx::Rights::SAME_RIGHTS).unwrap(),
                 vmo_offset,
                 length,
                 flags,

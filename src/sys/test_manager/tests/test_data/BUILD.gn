@@ -275,7 +275,6 @@ rustc_test("debug_data_write_test_bin") {
   deps = [
     "//sdk/fidl/fuchsia.debugdata:fuchsia.debugdata_rust",
     "//sdk/rust/zx",
-    "//src/lib/fidl/rust/fidl",
     "//src/lib/fuchsia",
     "//src/lib/fuchsia-component",
   ]
