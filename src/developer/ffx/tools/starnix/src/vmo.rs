@@ -29,7 +29,7 @@ pub async fn starnix_vmo(
     StarnixVmoCommand { koid }: StarnixVmoCommand,
     rcs_proxy: &rc::RemoteControlProxy,
 ) -> Result<VmoCommandOutput> {
-    let controller_proxy = connect_to_contoller(&rcs_proxy, None).await?;
+    let controller_proxy = connect_to_controller(&rcs_proxy, None).await?;
     let mut references = controller_proxy
         .get_vmo_references(&fstarcontainer::ControllerGetVmoReferencesRequest {
             koid: Some(koid),

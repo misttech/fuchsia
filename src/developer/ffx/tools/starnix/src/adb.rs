@@ -286,7 +286,7 @@ impl AdbProxyArgs {
         let reconnect = || async {
             let rcs_proxy = connect_to_rcs(rcs_connector).await?;
             anyhow::Ok((
-                connect_to_contoller(&rcs_proxy, self.moniker.clone()).await?,
+                connect_to_controller(&rcs_proxy, self.moniker.clone()).await?,
                 Arc::new(AtomicBool::new(false)),
             ))
         };

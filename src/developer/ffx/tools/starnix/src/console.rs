@@ -156,7 +156,7 @@ automated test."
                Use ffx starnix console --help for more information."
         );
     }
-    let controller = connect_to_contoller(&rcs_proxy, moniker).await?;
+    let controller = connect_to_controller(&rcs_proxy, moniker).await?;
 
     env.append(&mut get_environ());
 

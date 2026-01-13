@@ -71,7 +71,7 @@ pub async fn connect_to_rcs(
         .context("connecting to RCS")
 }
 
-pub async fn connect_to_contoller(
+pub async fn connect_to_controller(
     rcs_proxy: &rc::RemoteControlProxy,
     moniker: Option<String>,
 ) -> Result<ControllerProxy> {

@@ -49,7 +49,7 @@ pub async fn starnix_kill(
     StarnixKillCommand { pid, signal }: StarnixKillCommand,
     rcs_proxy: &rc::RemoteControlProxy,
 ) -> Result<KillCommandOutput> {
-    let controller_proxy = connect_to_contoller(&rcs_proxy, None).await?;
+    let controller_proxy = connect_to_controller(&rcs_proxy, None).await?;
     match controller_proxy
         .send_signal(&fstarcontainer::ControllerSendSignalRequest {
             pid: Some(pid),
