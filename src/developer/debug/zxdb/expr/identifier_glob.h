@@ -45,7 +45,11 @@ namespace zxdb {
 //  - It does not work recursively so while "Foo<*>" is "Foo<Bar<*>>" is currently a literal. This
 //    could be changed in the future if needed.
 //
-//  - Global qualifications "::Foo" are ignored. Everything is assumed to be fully-qualified.
+//  - Global qualifications "::Foo" are ignored. Names are assumed to be globally qualified, unless
+//    |match_any_namespace| is given during initialization.
+//
+//  - When |match_any_namespace| is given, simple names such as "Foo" will match all of
+//    "SomeNamespace::Foo", "OtherNamespace::Foo", and "Foo".
 //
 // Scoring glob matching
 // ---------------------
@@ -68,7 +72,7 @@ namespace zxdb {
 // To measure match priority, Matches() computes the number of template parameters the last
 // encountered wildcard (if any) matches. Better matches have lower scores.
 //   - An exact string match with no wildcard will have a score of 0.
-//   - A single wildcare matching a single template parameter will score 1.
+//   - A single wildcard matching a single template parameter will score 1.
 //   - Two wildcards matching two template parameters will score 1.
 //   - One wildcard matching two template parameters will score 2.
 //   - The glob "Foo<*, Bar>" matching "Foo<int, Bar>" will score 1 (last * matched 1 param).
@@ -80,7 +84,25 @@ namespace zxdb {
 //   - "MyClass<int, int>::Something<int>" will score 1.
 //   - "MyClass<int, int, int>::Something<int>" will score 2.
 //   - "MyClass<int, int>::Something<int, int>" will also score 2 (not clear which is better).
-
+//
+// Scoring namespace glob matching
+// -------------------------------
+//
+// Say we have three globs:
+//   [1] Foo (where match_any_namespace is true)
+//   [2] MyClass::Foo
+//   [3] Nested::Namespace::Foo
+//   [4] MyClass::Foo<*>
+//
+// The requirements are now:
+//   - A function named "MyClass::Foo" should preferentially match [1], and secondarily match [2].
+//   - A function named "Nested::Namespace::Foo" should preferentially match [3] and secondarily
+//     match [1].
+//   - A function named "MyClass::Foo<int>" is the same as described above. [3] is deferentially
+//     matched, [1] does not match at all.
+//
+// Match priority is measured similarly to template globs, the score is computed as the number of
+// namespace scopes that were skipped. Again, better matches have lower scores.
 class IdentifierGlob {
  public:
   // Call Init() to initialize with a parsed identifier.
@@ -92,6 +114,7 @@ class IdentifierGlob {
 
   // An error is returned if the glob could not be parsed. It must be syntactially valid.
   Err Init(const std::string& glob);
+  Err Init(const std::string& glob, bool match_any_namespace);
 
   // When the glob matches the given type, the match score will be returned. Lower scores are
   // better matches (see above).
@@ -100,6 +123,7 @@ class IdentifierGlob {
   std::optional<int> Matches(const ParsedIdentifier& type) const;
 
  private:
+  bool match_any_namespace_ = true;
   ParsedIdentifier parsed_;
 };
 

@@ -29,10 +29,23 @@ class PrettyFrameGlob {
   static PrettyFrameGlob Func(IdentifierGlob func_glob);
   static PrettyFrameGlob FuncFile(IdentifierGlob func_glob, std::string file);
 
+  // This effectively emulates things like "*::Foo" where "Foo" is a function name. The wildcard
+  // logic in IdentifierGlob is specifically for handling template type names and is not well suited
+  // to also serve for matching namespace components. Really all we care about is the last element
+  // of the name in these cases.
+  enum class MatchStyle : uint8_t {
+    kFullyQualified,
+    kAllNamespaces,
+  };
+
   // These function variants will parse the function as an IdentifierGlob and assert that it
-  // parses properly. They are designed for tests and built-in globs.
-  static PrettyFrameGlob Func(const std::string& func_glob);
-  static PrettyFrameGlob FuncFile(const std::string& func_glob, std::string file);
+  // parses properly. They are designed for tests and built-in globs. In general the fully qualified
+  // matching style should be used, one notable exception is libc start up functions, see
+  // PrettyStackManager for details.
+  static PrettyFrameGlob Func(const std::string& func_glob,
+                              MatchStyle match_style = MatchStyle::kFullyQualified);
+  static PrettyFrameGlob FuncFile(const std::string& func_glob, std::string file,
+                                  MatchStyle match_style = MatchStyle::kFullyQualified);
 
   bool is_wildcard() const { return !function_ && !file_; }
 

@@ -136,4 +136,20 @@ TEST(IdentifierGlob, LiteralStarTemplate) {
   EXPECT_EQ(Score(2), lit_star.Matches(Parse("MyClass<int,double,float>")));
 }
 
+TEST(IdentifierGlob, MatchAnyNamespace) {
+  IdentifierGlob match_any_ns;
+  ASSERT_FALSE(match_any_ns.Init("Foo", true).has_error());
+
+  // Score is determined by the number of ignored namespace components.
+  EXPECT_EQ(Score(1), match_any_ns.Matches(Parse("SomeNS::Foo")));
+  EXPECT_EQ(Score(1), match_any_ns.Matches(Parse("OtherNS::Foo")));
+  EXPECT_EQ(Score(3), match_any_ns.Matches(Parse("::VeryNested::Class::Private::Foo")));
+  EXPECT_EQ(Score(0), match_any_ns.Matches(Parse("Foo")));
+
+  // Only matches the last component, never match any templates.
+  EXPECT_EQ(std::nullopt, match_any_ns.Matches(Parse("NS::Foo::Func")));
+  EXPECT_EQ(std::nullopt, match_any_ns.Matches(Parse("Foo::Func")));
+  EXPECT_EQ(std::nullopt, match_any_ns.Matches(Parse("SomeNS::Foo<int>")));
+}
+
 }  // namespace zxdb

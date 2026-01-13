@@ -92,10 +92,8 @@ std::vector<std::unique_ptr<Frame>> GetRustPanickingFrames() {
   std::vector<std::unique_ptr<Frame>> frames;
 
   // This name is special, and we have to include it for the matcher to to match.
-  //
-  // TODO(https://fxbug.dev/456895946): Do not depend on libc internals (i.e. the namespace name).
-  frames.push_back(std::make_unique<MockFrame>(nullptr, nullptr, 0x1001, 0x2001,
-                                               "__fuchsia_libc::__abort_impl__", FileLine()));
+  frames.push_back(
+      std::make_unique<MockFrame>(nullptr, nullptr, 0x1001, 0x2001, "__abort_impl__", FileLine()));
   frames.push_back(
       std::make_unique<MockFrame>(nullptr, nullptr, 0x1002, 0x2002, "anything1", FileLine()));
   frames.push_back(std::make_unique<MockFrame>(nullptr, nullptr, 0x1003, 0x2003, "anything2",
@@ -326,6 +324,24 @@ TEST(PrettyStackManager, DefaultMatchersCpp) {
   stack.SetFramesForTest(std::move(frames), true);
   entries = manager->ProcessStack(stack);
   ASSERT_EQ(1u, entries.size());
+
+  // Libc startup matchers.
+  frames.clear();
+
+  // Expect that we only have source info for the user's "main" function in a process's startup
+  // thread.
+  frames.push_back(
+      std::make_unique<MockFrame>(nullptr, nullptr, 0x1001, 0x2001, "_start", FileLine("", 0)));
+  frames.push_back(std::make_unique<MockFrame>(nullptr, nullptr, 0x1002, 0x2002,
+                                               "__libc_start_main", FileLine("", 0)));
+  frames.push_back(std::make_unique<MockFrame>(nullptr, nullptr, 0x1003, 0x2003, "main",
+                                               FileLine("myfile.c", 10)));
+
+  stack.SetFramesForTest(std::move(frames), true);
+  entries = manager->ProcessStack(stack);
+
+  // There are 2 entries since we don't elide the user's "main".
+  EXPECT_EQ(entries.size(), 2u);
 }
 
 // Same as above but for Rust.

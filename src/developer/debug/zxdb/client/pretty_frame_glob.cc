@@ -42,18 +42,19 @@ PrettyFrameGlob PrettyFrameGlob::FuncFile(IdentifierGlob func_glob, std::string 
 }
 
 // static
-PrettyFrameGlob PrettyFrameGlob::Func(const std::string& func_glob) {
+PrettyFrameGlob PrettyFrameGlob::Func(const std::string& func_glob, MatchStyle match_style) {
   IdentifierGlob glob;
-  Err err = glob.Init(func_glob);
+  Err err = glob.Init(func_glob, match_style == MatchStyle::kAllNamespaces);
   FX_DCHECK(err.ok());
 
   return Func(std::move(glob));
 }
 
 // static
-PrettyFrameGlob PrettyFrameGlob::FuncFile(const std::string& func_glob, std::string file) {
+PrettyFrameGlob PrettyFrameGlob::FuncFile(const std::string& func_glob, std::string file,
+                                          MatchStyle match_style) {
   IdentifierGlob glob;
-  Err err = glob.Init(func_glob);
+  Err err = glob.Init(func_glob, match_style == MatchStyle::kAllNamespaces);
   FX_DCHECK(err.ok());
 
   return FuncFile(std::move(glob), std::move(file));

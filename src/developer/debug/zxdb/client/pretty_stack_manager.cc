@@ -125,19 +125,27 @@ void PrettyStackManager::LoadDefaultMatchers() {
       });
   matchers.push_back(std::move(rust_async_dispatch));
 
-  // C startup code. The functions depends on the platform, so just match the file name for most of
-  // them. The number of functions in __libc_start_main has varied between 1 and 2 over time. Since
-  // these aren't likely to be re-used in other places we can have very general matchers here. The
+  // C startup code. The functions depends on the platform, so loosely match the function names. The
+  // number of functions in __libc_start_main has varied between 1 and 2 over time. Since these
+  // aren't likely to be reused in other places we can have very general matchers here. The
   // duplicate "libc startup" entries will be merged to produce just one entry.
   //
-  // TODO(https://fxbug.dev/456895946): This has implementation knowledge of
-  // both old and new libc implementations; see the bug for details on morphing
-  // this into a more robust de facto protocol between debugger and libc.
-  PrettyFrameGlob libc_start_main_c = PrettyFrameGlob::File("__libc_start_main.c");
-  PrettyFrameGlob libc_start_main = PrettyFrameGlob::File("start-main.cc");
-  PrettyFrameGlob libc_start = PrettyFrameGlob::Func("_start");
+  // See https://fxbug.dev/456895946 for further discussion on this and the preferred libc details
+  // that we may rely on here. In particular, these function names need to work in the presence of
+  // both ELF only symbols and a mixture of ELF and DWARF symbols.
+  //
+  // So, therefore, the expected callchain for the first thread of a new process would look like:
+  //
+  //                      _start -> __libc_start_main -> main
+  //
+  // We of course don't want to elide the user's main function, so we only include the first two
+  // here for elision. This series of function names is consistent across several different libc
+  // implementations, so we can expect it to work cross-platform.
+  PrettyFrameGlob libc_start_main = PrettyFrameGlob::Func("__libc_start_main",
+                                                          PrettyFrameGlob::MatchStyle::kAllNamespaces);
+  PrettyFrameGlob libc_start = PrettyFrameGlob::Func("_start",
+                                                     PrettyFrameGlob::MatchStyle::kAllNamespaces);
   matchers.push_back(StackGlob("libc startup", {libc_start_main}));
-  matchers.push_back(StackGlob("libc startup", {libc_start_main_c}));
   matchers.push_back(StackGlob("libc startup", {libc_start}));
 
   // Rust has placeholder symbols in the stack "__rust_begin_short_backtrace" and
@@ -159,7 +167,7 @@ void PrettyStackManager::LoadDefaultMatchers() {
   // be best to hardcode this rust annotation scheme rather than try to express this with globs.
   matchers.push_back(StackGlob(
       "Rust panic",
-      {PrettyFrameGlob::Func("__fuchsia_libc::__abort_impl__"),
+      {PrettyFrameGlob::Func("__abort_impl__"),
        PrettyFrameGlob::Wildcard(0, 16),
        PrettyFrameGlob::Func("std::sys::backtrace::__rust_end_short_backtrace<*>")}));
 
