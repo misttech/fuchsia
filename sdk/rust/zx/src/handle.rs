@@ -685,19 +685,6 @@ pub trait AsHandleRef {
         NullableHandle::raw_handle(&self.as_handle_ref())
     }
 
-    /// Causes packet delivery on the given port when the object changes state and matches signals.
-    /// [zx_object_wait_async](https://fuchsia.dev/fuchsia-src/reference/syscalls/object_wait_async.md)
-    /// syscall.
-    fn wait_async_handle(
-        &self,
-        port: &Port,
-        key: u64,
-        signals: Signals,
-        options: WaitAsyncOpts,
-    ) -> Result<(), Status> {
-        NullableHandle::wait_async(&self.as_handle_ref(), port, key, signals, options)
-    }
-
     /// Get the [Property::NAME] property for this object.
     ///
     /// Wraps a call to the

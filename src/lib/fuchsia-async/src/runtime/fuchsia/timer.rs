@@ -24,7 +24,6 @@ use std::pin::Pin;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicU8, Ordering};
 use std::task::{Poll, Waker, ready};
-use zx::AsHandleRef as _;
 
 pub trait TimeInterface:
     Clone + Copy + fmt::Debug + PartialEq + PartialOrd + Ord + Send + Sync + 'static
@@ -434,7 +433,7 @@ impl<T: TimeInterface> Timers<T> {
             }
 
             self.timer
-                .wait_async_handle(
+                .wait_async(
                     EHandle::local().port(),
                     inner.port_key,
                     if self.fake { zx::Signals::USER_0 } else { zx::Signals::TIMER_SIGNALED },

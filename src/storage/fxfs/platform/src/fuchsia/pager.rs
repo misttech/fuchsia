@@ -28,7 +28,7 @@ use zx::{self as zx, AsHandleRef, PacketContents, PagerPacket, SignalPacket};
 pub static STRONG_FILE_REFS: AtomicU64 = AtomicU64::new(0);
 
 fn watch_for_zero_children(file: &impl PagerBacked) -> Result<(), zx::Status> {
-    file.vmo().as_handle_ref().wait_async_handle(
+    file.vmo().wait_async(
         file.pager().executor.port(),
         file.pager_packet_receiver_registration().key(),
         zx::Signals::VMO_ZERO_CHILDREN,

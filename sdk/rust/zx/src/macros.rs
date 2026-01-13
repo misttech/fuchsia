@@ -74,6 +74,19 @@ macro_rules! delegated_concrete_handle_based_impls {
         ) -> $crate::WaitResult {
             self.0.wait_one(signals, deadline)
         }
+
+        /// Wraps the
+        /// [`zx_object_wait_async`](https://fuchsia.dev/fuchsia-src/reference/syscalls/object_wait_async)
+        /// syscall.
+        pub fn wait_async(
+            &self,
+            port: &$crate::Port,
+            key: u64,
+            signals: $crate::Signals,
+            options: $crate::WaitAsyncOpts,
+        ) -> Result<(), $crate::Status> {
+            self.0.wait_async(port, key, signals, options)
+        }
     };
 }
 

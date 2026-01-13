@@ -202,7 +202,7 @@ impl PortEvent {
             v => unreachable!("unexpected value = {v}"),
         }
 
-        handle.wait_async_handle(&self.port, key, signals, opts)
+        handle.as_handle_ref().wait_async(&self.port, key, signals, opts)
     }
 
     /// Cancels async port notifications on an object.

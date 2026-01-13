@@ -602,9 +602,7 @@ mod tests {
         let event = Event::create();
         let no_opts = WaitAsyncOpts::empty();
 
-        assert!(
-            event.wait_async_handle(&port, key, Signals::USER_0 | Signals::USER_1, no_opts).is_ok()
-        );
+        assert!(event.wait_async(&port, key, Signals::USER_0 | Signals::USER_1, no_opts).is_ok());
 
         // Waiting without setting any signal should time out.
         assert_eq!(port.wait(MonotonicInstant::after(ten_ms)), Err(Status::TIMED_OUT));
@@ -627,7 +625,7 @@ mod tests {
         assert_eq!(port.wait(MonotonicInstant::after(ten_ms)), Err(Status::TIMED_OUT));
 
         // Calling wait_async again should result in another packet.
-        assert!(event.wait_async_handle(&port, key, Signals::USER_0, no_opts).is_ok());
+        assert!(event.wait_async(&port, key, Signals::USER_0, no_opts).is_ok());
         let read_packet = port.wait(MonotonicInstant::after(ten_ms)).unwrap();
         assert_eq!(read_packet.key(), key);
         assert_eq!(read_packet.status(), 0);
@@ -642,13 +640,13 @@ mod tests {
 
         // Calling wait_async_handle then cancel, we should not get a packet as cancel will
         // remove it from  the queue.
-        assert!(event.wait_async_handle(&port, key, Signals::USER_0, no_opts).is_ok());
+        assert!(event.wait_async(&port, key, Signals::USER_0, no_opts).is_ok());
         assert!(port.cancel(key).is_ok());
         assert_eq!(port.wait(MonotonicInstant::after(ten_ms)), Err(Status::TIMED_OUT));
 
         // If the event is signalled after the cancel, we also shouldn't get a packet.
         assert!(event.signal(Signals::USER_0, Signals::NONE).is_ok()); // clear signal
-        assert!(event.wait_async_handle(&port, key, Signals::USER_0, no_opts).is_ok());
+        assert!(event.wait_async(&port, key, Signals::USER_0, no_opts).is_ok());
         assert!(port.cancel(key).is_ok());
         assert!(event.signal(Signals::NONE, Signals::USER_0).is_ok());
         assert_eq!(port.wait(MonotonicInstant::after(ten_ms)), Err(Status::TIMED_OUT));

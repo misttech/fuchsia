@@ -294,7 +294,7 @@ impl Pager {
     }
 
     fn watch_for_zero_children(&self, vmo: &zx::Vmo, inode_num: u32) -> Result<(), zx::Status> {
-        vmo.as_handle_ref().wait_async_handle(
+        vmo.wait_async(
             &self.port,
             inode_num as u64,
             zx::Signals::VMO_ZERO_CHILDREN,

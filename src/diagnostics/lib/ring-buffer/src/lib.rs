@@ -10,7 +10,6 @@ use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::task::Poll;
 use thiserror::Error;
-use zx::AsHandleRef;
 
 /// Size of the kernel header in the ring buffer. This is different to the FXT header.
 pub const RING_BUFFER_MESSAGE_HEADER_SIZE: usize = 16;
@@ -247,7 +246,7 @@ impl Reader {
             self.registration.waker.register(cx.waker());
             if !self.registration.async_wait.swap(true, Ordering::Relaxed) {
                 self.shared_region
-                    .wait_async_handle(
+                    .wait_async(
                         self.registration.port(),
                         self.registration.key(),
                         zx::Signals::IOB_SHARED_REGION_UPDATED,

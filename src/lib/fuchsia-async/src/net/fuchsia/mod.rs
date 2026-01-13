@@ -13,7 +13,6 @@ pub use self::udp::*;
 use futures::io::{self, AsyncRead, AsyncWrite};
 use futures::ready;
 use futures::task::{AtomicWaker, Context};
-use zx::{self as zx, AsHandleRef};
 
 use std::convert::{AsMut, AsRef};
 use std::io::{Read, Write};
@@ -234,7 +233,7 @@ where
             let handle = zx::NullableHandle::from_raw(raw_handle);
             let signals = zx::Signals::from_bits_truncate(raw_signals);
 
-            let res = handle.wait_async_handle(
+            let res = handle.wait_async(
                 self.signal_receiver.port(),
                 self.signal_receiver.key(),
                 signals,

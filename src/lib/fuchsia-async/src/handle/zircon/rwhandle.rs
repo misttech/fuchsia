@@ -306,7 +306,7 @@ where
             if old.intersects(signal) {
                 inner.signals &= !signal;
                 std::mem::drop(inner);
-                self.handle.wait_async_handle(
+                self.handle.as_handle_ref().wait_async(
                     self.receiver.port(),
                     self.receiver.key(),
                     signal | OBJECT_PEER_CLOSED,

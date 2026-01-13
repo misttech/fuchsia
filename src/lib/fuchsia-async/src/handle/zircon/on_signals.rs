@@ -122,7 +122,7 @@ impl<'a, H: AsHandleRef + 'a> OnSignalsFuture<'a, H> {
             registration.receiver().task.register(cx.waker());
         }
 
-        handle.wait_async_handle(
+        handle.as_handle_ref().wait_async(
             registration.port().unwrap(),
             registration.key().unwrap(),
             signals,

@@ -27,7 +27,6 @@ use std::sync::{Arc, Weak};
 use std::task::{Context, Poll};
 use std::time::Duration;
 use zerocopy::FromBytes;
-use zx::AsHandleRef as _;
 
 // Aim to keep 25% of the buffer free. This is expressed as a fraction: numerator / denominator.
 const SPACE_THRESHOLD_NUMERATOR: usize = 1;
@@ -248,7 +247,7 @@ impl SharedBuffer {
             } else {
                 if interrupt_needs_arming {
                     self.event
-                        .wait_async_handle(
+                        .wait_async(
                             &self.port,
                             INTERRUPT_KEY,
                             zx::Signals::USER_0,
@@ -319,7 +318,7 @@ impl SharedBuffer {
                     inner.read_socket(&mut sockets, socket_id, |socket| {
                         socket
                             .socket
-                            .wait_async_handle(
+                            .wait_async(
                                 &self.port,
                                 socket_id.0 as u64,
                                 zx::Signals::OBJECT_READABLE | zx::Signals::OBJECT_PEER_CLOSED,
@@ -780,7 +779,7 @@ impl ContainerBuffer {
         let (ep0, ep1) = inner.ring_buffer.new_iob_writer(self.container_id.0 as u64).unwrap();
 
         inner.iob_peers.insert(|idx| {
-            ep1.wait_async_handle(
+            ep1.wait_async(
                 &self.shared_buffer.port,
                 idx as u64 | IOB_PEER_CLOSED_KEY_BASE,
                 zx::Signals::IOB_PEER_CLOSED,
@@ -881,7 +880,7 @@ impl ContainerBuffer {
         let mut sockets = self.shared_buffer.sockets.lock();
         let socket_id = SocketId(sockets.insert(|socket_id| {
             socket
-                .wait_async_handle(
+                .wait_async(
                     &self.shared_buffer.port,
                     socket_id as u64,
                     zx::Signals::OBJECT_READABLE | zx::Signals::OBJECT_PEER_CLOSED,
