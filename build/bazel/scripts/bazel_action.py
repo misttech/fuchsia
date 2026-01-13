@@ -1124,13 +1124,6 @@ def main() -> int:
         nargs="*",
         help="list of bazel targets.",
     )
-    parser.add_argument(
-        "--stamp-files",
-        type=Path,
-        default=[],
-        nargs="*",
-        help="list of stamp files to touch.",
-    )
 
     parser.add_argument("--depfile", help="Ninja depfile output path.")
 
@@ -1225,6 +1218,10 @@ def main() -> int:
     # This is a set of the symlinks that need to be created/refreshed for the gn targets
     gn_targets_dirs: set[Path] = set()
 
+    # These are the per-action stamp files that need to be touched to make sure that only
+    # one bazel_action() target in GN creates a gn_target.
+    stamp_paths: set[Path] = set()
+
     for target in args.bazel_targets:
         target_info = bazel_target_infos.get_info(
             target, args.bazel_platform_label
@@ -1236,6 +1233,7 @@ def main() -> int:
             final_symlink_outputs.extend(target_info.final_symlink_outputs)
 
             gn_targets_dirs.add(Path(target_info.gn_targets_dir))
+            stamp_paths.add(Path(target_info.stamp_path))
         else:
             return parser.error(
                 f"Bazel target not found in bazel_target_infos.json: {target}  keys: {bazel_target_infos._targets.keys()}"
@@ -1931,7 +1929,7 @@ track all input files that the repository rule may access when it is run.
 
         write_file_if_changed(args.depfile, depfile_content)
 
-        for stamp_file in args.stamp_files:
+        for stamp_file in stamp_paths:
             stamp_file.parent.mkdir(parents=True, exist_ok=True)
             stamp_file.write_text("")
 

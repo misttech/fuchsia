@@ -727,7 +727,7 @@ template("bazel_action") {
       # bazel_actions in the same build graph, which breaks Ninja noop checks,
       # see http://b/353897478. In case it happens, GN will fail complaining about
       # multiple targets sharing the same output.
-      _dedupe_stamps = []
+      _dedupe_stamp_lookup = []
       foreach(_bazel_target, _bazel_targets) {
         _out_dir = get_label_info(_bazel_target, "target_out_dir")
         _bazel_label = get_label_info(_bazel_target, "name")
@@ -740,9 +740,15 @@ template("bazel_action") {
           _dedupe_suffix = invoker.bazel_platform
         }
 
-        _dedupe_stamps += [ "${_out_dir}/${_bazel_label}.${_dedupe_suffix}.bazel_target_can_only_be_referenced_by_one_bazel_action" ]
+        _stamp_path = "${_out_dir}/${_bazel_label}.${_dedupe_suffix}.bazel_target_can_only_be_referenced_by_one_bazel_action"
+        outputs += [ _stamp_path ]
+        _dedupe_stamp_lookup += [
+          {
+            bazel_target = _bazel_target
+            stamp_path = _stamp_path
+          },
+        ]
       }
-      outputs += _dedupe_stamps
 
       args = [
                "--build-dir",
@@ -774,11 +780,8 @@ template("bazel_action") {
                rebased_rustc_prefix,
                "--rust-project-json",
                _rebased_rust_project_json,
-               "--stamp-files",
              ]
-      foreach(s, _dedupe_stamps) {
-        args += [ rebase_path(s, root_build_dir) ]
-      }
+
       if (bazel_verbose_failures) {
         args += [ "--verbose_failures" ]
       }
@@ -951,6 +954,16 @@ template("bazel_action") {
                                        "ninja_archive",
                                        "ninja_dir",
                                      ])
+
+              # Look up the stamp path for the bazel target that makes these outputs.
+              _stamp_entry = {
+              }
+              foreach(_stamp_entry, _dedupe_stamp_lookup) {
+                if (_stamp_entry.bazel_target == bazel_target) {
+                  stamp_path =
+                      rebase_path(_stamp_entry.stamp_path, root_build_dir)
+                }
+              }
 
               # To differentiate different bazel invocations' outputs.
               bazel_platform_config = _bazel_platform_config

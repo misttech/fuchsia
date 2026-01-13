@@ -64,6 +64,7 @@ class BazelTargetInfo(object):
     bazel_platform_label: str
     bazel_platform_config: str
     gn_targets_dir: str
+    stamp_path: str
     copy_outputs: list[FileOutput] = dataclasses.field(default_factory=list)
     directory_outputs: list[DirectoryOutput] = dataclasses.field(
         default_factory=list
@@ -93,6 +94,7 @@ class BazelTargetInfosMap(object):
             bazel_platform_label = entry["bazel_platform_label"]
             bazel_platform_config = entry["bazel_platform_config"]
             gn_targets_dir = entry["gn_targets_dir"]
+            stamp_path = entry["stamp_path"]
             target_info = self._targets.setdefault(
                 (bazel_target, bazel_platform_label),
                 BazelTargetInfo(
@@ -100,6 +102,7 @@ class BazelTargetInfosMap(object):
                     bazel_platform_label=bazel_platform_label,
                     bazel_platform_config=bazel_platform_config,
                     gn_targets_dir=gn_targets_dir,
+                    stamp_path=stamp_path,
                 ),
             )
 
