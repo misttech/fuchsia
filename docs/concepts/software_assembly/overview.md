@@ -153,6 +153,13 @@ a new product bundle using already built platform, board, and product artifacts.
 
 Software Assembly provides tools for verifying the quality of a Product Bundle.
 
+{% dynamic if user.is_googler %}
+
+Note: If you are a Googler, see more information about size checks at
+go/fuchsia-size.
+
+{% dynamic endif %}
+
 The **size check** tool informs the user whether the Product Bundle fits within
 the partition size constraints of the target hardware. A [product size
 report][size-check] can be generated using the following Bazel rules:
