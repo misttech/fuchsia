@@ -443,6 +443,7 @@ fn prepare_client_interface(
                 phy_id: 0,
                 phy_assigned_id: 0,
                 sta_addr: [0; 6],
+                factory_addr: [0; 6],
             };
             responder
                 .send(Ok(&response))

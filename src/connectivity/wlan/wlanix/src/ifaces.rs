@@ -821,6 +821,7 @@ pub mod test_utils {
             phy_id: 10,
             phy_assigned_id: 100,
             sta_addr: [1, 2, 3, 4, 5, 6],
+            factory_addr: [1, 2, 3, 4, 5, 6],
         };
 
     pub fn fake_scan_result() -> fidl_sme::ScanResult {
@@ -897,6 +898,7 @@ pub mod test_utils {
                 phy_id: 42,
                 phy_assigned_id: 1337,
                 sta_addr: [13, 37, 13, 37, 13, 37],
+                factory_addr: [13, 37, 13, 37, 13, 37],
             })
         }
 
@@ -1709,6 +1711,7 @@ mod tests {
                 phy_id: 2,
                 phy_assigned_id: 3,
                 sta_addr: [4, 5, 6, 7, 8, 9],
+                factory_addr: [4, 5, 6, 7, 8, 9],
             };
         responder.send(Ok(&RESPONSE)).expect("Failed to send result");
         let response = assert_matches!(exec.run_until_stalled(&mut query_fut), Poll::Ready(Ok(response)) => response);

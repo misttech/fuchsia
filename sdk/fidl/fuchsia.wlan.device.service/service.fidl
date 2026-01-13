@@ -20,8 +20,10 @@ type QueryIfaceResponse = struct {
     phy_id uint16;
     /// Local ID assigned by this iface's PHY.
     phy_assigned_id uint16;
-    /// The iface's MAC.
+    /// The iface's current station MAC address.
     sta_addr ieee80211.MacAddr;
+    /// MAC address assigned by the factory.
+    factory_addr ieee80211.MacAddr;
 };
 
 type DestroyIfaceRequest = struct {

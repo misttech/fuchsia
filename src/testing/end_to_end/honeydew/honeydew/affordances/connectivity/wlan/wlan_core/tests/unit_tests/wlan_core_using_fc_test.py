@@ -87,6 +87,7 @@ _TEST_QUERY_IFACE_RESP_FC = f_wlan_device_service.DeviceMonitorQueryIfaceResult(
                 phy_id=1,
                 phy_assigned_id=1,
                 sta_addr=bytes([1, 2, 3, 4, 5, 6]),
+                factory_addr=bytes([1, 2, 3, 4, 5, 6]),
             )
         )
     )
@@ -97,6 +98,7 @@ _TEST_QUERY_IFACE_RESP = f_wlan_device_service.QueryIfaceResponse(
     phy_id=1,
     phy_assigned_id=1,
     sta_addr=bytes([1, 2, 3, 4, 5, 6]),
+    factory_addr=bytes([1, 2, 3, 4, 5, 6]),
 )
 
 _TEST_SERVING_AP_INFO = f_wlan_sme.ServingApInfo(

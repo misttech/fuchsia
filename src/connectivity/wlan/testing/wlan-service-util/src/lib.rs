@@ -2,7 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use anyhow::{format_err, Context as _, Error};
+use anyhow::{Context as _, Error, format_err};
 use fidl_fuchsia_wlan_common::WlanMacRole;
 use fidl_fuchsia_wlan_device_service::{
     DestroyIfaceRequest, DeviceMonitorCreateIfaceRequest, DeviceMonitorCreateIfaceResponse,
@@ -116,12 +116,12 @@ mod tests {
         DeviceMonitorRequestStream,
     };
     use fuchsia_async::TestExecutor;
-    use futures::task::Poll;
     use futures::StreamExt;
+    use futures::task::Poll;
     use std::pin::pin;
 
-    pub(crate) fn setup_fake_service<M: fidl::endpoints::ProtocolMarker>(
-    ) -> (fuchsia_async::TestExecutor, M::Proxy, M::RequestStream) {
+    pub(crate) fn setup_fake_service<M: fidl::endpoints::ProtocolMarker>()
+    -> (fuchsia_async::TestExecutor, M::Proxy, M::RequestStream) {
         let exec = fuchsia_async::TestExecutor::new();
         let (proxy, server) = fidl::endpoints::create_proxy::<M>();
         (exec, proxy, server.into_stream())
@@ -131,7 +131,14 @@ mod tests {
         sta_addr: [u8; 6],
         role: fidl_fuchsia_wlan_common::WlanMacRole,
     ) -> QueryIfaceResponse {
-        QueryIfaceResponse { role, id: 0, phy_id: 0, phy_assigned_id: 0, sta_addr }
+        QueryIfaceResponse {
+            role,
+            id: 0,
+            phy_id: 0,
+            phy_assigned_id: 0,
+            sta_addr,
+            factory_addr: sta_addr,
+        }
     }
 
     pub fn respond_to_query_iface_list_request(

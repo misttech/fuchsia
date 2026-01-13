@@ -1130,9 +1130,17 @@ mod tests {
         id: u16,
         phy_id: u16,
         phy_assigned_id: u16,
-        mac: [u8; 6],
+        sta_addr: [u8; 6],
+        factory_addr: [u8; 6],
     ) -> fidl_service::QueryIfaceResponse {
-        fidl_service::QueryIfaceResponse { role, id, phy_id, phy_assigned_id, sta_addr: mac }
+        fidl_service::QueryIfaceResponse {
+            role,
+            id,
+            phy_id,
+            phy_assigned_id,
+            sta_addr,
+            factory_addr,
+        }
     }
 
     /// This test mimics a client of the DeviceWatcher watcher receiving an OnPhyCreated event and
@@ -1588,12 +1596,14 @@ mod tests {
         let fake_iface_id = 1;
         let fake_phy_assigned_id = 1;
         let fake_sta_addr = [0, 1, 2, 3, 4, 5];
+        let fake_factory_addr = [0, 1, 2, 3, 4, 5];
         let iface_response = create_iface_response(
             fake_role,
             fake_iface_id,
             fake_phy_id,
             fake_phy_assigned_id,
             fake_sta_addr,
+            fake_factory_addr,
         );
 
         {
@@ -1646,12 +1656,14 @@ mod tests {
         let fake_iface_id = 1;
         let fake_phy_assigned_id = 1;
         let fake_sta_addr = [0, 1, 2, 3, 4, 5];
+        let fake_factory_addr = [0, 1, 2, 3, 4, 5];
         let iface_response = create_iface_response(
             fake_role,
             fake_iface_id,
             fake_phy_id,
             fake_phy_assigned_id,
             fake_sta_addr,
+            fake_factory_addr,
         );
 
         {
@@ -1709,12 +1721,14 @@ mod tests {
         let fake_iface_id = 1;
         let fake_phy_assigned_id = 1;
         let fake_sta_addr = [0, 1, 2, 3, 4, 5];
+        let fake_factory_addr = [0, 1, 2, 3, 4, 5];
         let iface_response = create_iface_response(
             fake_role,
             fake_iface_id,
             fake_phy_id,
             fake_phy_assigned_id,
             fake_sta_addr,
+            fake_factory_addr,
         );
 
         {
@@ -1785,12 +1799,14 @@ mod tests {
         let fake_iface_id = 1;
         let fake_phy_assigned_id = 1;
         let fake_sta_addr = [0, 1, 2, 3, 4, 5];
+        let fake_factory_addr = [0, 1, 2, 3, 4, 5];
         let iface_response = create_iface_response(
             fake_role,
             fake_iface_id,
             fake_phy_id,
             fake_phy_assigned_id,
             fake_sta_addr,
+            fake_factory_addr,
         );
 
         // Add the same iface ID twice

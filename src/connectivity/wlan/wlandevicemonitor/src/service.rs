@@ -581,6 +581,7 @@ async fn query_iface(
         phy_id: phy_ownership.phy_id,
         phy_assigned_id: phy_ownership.phy_assigned_id,
         sta_addr: iface_query_info.sta_addr,
+        factory_addr: iface_query_info.factory_addr,
     })
 }
 
@@ -3769,6 +3770,7 @@ mod tests {
                 phy_id: 10,
                 phy_assigned_id: 0,
                 sta_addr: [2; 6],
+                factory_addr: [2; 6],
             }
         );
     }

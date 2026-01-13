@@ -815,12 +815,13 @@ async fn get_iface_ids(
 
 fn format_iface_query_response(resp: QueryIfaceResponse) -> String {
     format!(
-        "QueryIfaceResponse {{ role: {:?}, id: {}, phy_id: {}, phy_assigned_id: {}, sta_addr: {} }}",
+        "QueryIfaceResponse {{ role: {:?}, id: {}, phy_id: {}, phy_assigned_id: {}, sta_addr: {}, factory_addr: {}}}",
         resp.role,
         resp.id,
         resp.phy_id,
         resp.phy_assigned_id,
-        MacAddr::from(resp.sta_addr)
+        MacAddr::from(resp.sta_addr),
+        MacAddr::from(resp.factory_addr),
     )
 }
 

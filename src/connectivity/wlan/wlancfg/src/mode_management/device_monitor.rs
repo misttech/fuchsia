@@ -244,6 +244,7 @@ mod tests {
             phy_id: 0,
             phy_assigned_id: 0,
             sta_addr: [0, 1, 2, 3, 4, 5],
+            factory_addr: [0, 1, 2, 3, 4, 5],
         });
         send_query_iface_response(&mut exec, &mut test_values.monitor_stream, iface_response);
 
@@ -276,6 +277,7 @@ mod tests {
             phy_id: 0,
             phy_assigned_id: 0,
             sta_addr: [0, 1, 2, 3, 4, 5],
+            factory_addr: [0, 1, 2, 3, 4, 5],
         });
         send_query_iface_response(&mut exec, &mut test_values.monitor_stream, iface_response);
 
@@ -309,6 +311,7 @@ mod tests {
             phy_id: 0,
             phy_assigned_id: 0,
             sta_addr: [0, 1, 2, 3, 4, 5],
+            factory_addr: [0, 1, 2, 3, 4, 5],
         });
         send_query_iface_response(&mut exec, &mut test_values.monitor_stream, iface_response);
 
@@ -341,6 +344,7 @@ mod tests {
             phy_id: 0,
             phy_assigned_id: 0,
             sta_addr: [0, 1, 2, 3, 4, 5],
+            factory_addr: [0, 1, 2, 3, 4, 5],
         });
         send_query_iface_response(&mut exec, &mut test_values.monitor_stream, iface_response);
 
@@ -387,6 +391,7 @@ mod tests {
             phy_id: 0,
             phy_assigned_id: 0,
             sta_addr: [0, 1, 2, 3, 4, 5],
+            factory_addr: [0, 1, 2, 3, 4, 5],
         });
         send_query_iface_response(&mut exec, &mut test_values.monitor_stream, iface_response);
 
@@ -615,6 +620,7 @@ mod tests {
             phy_id: 0,
             phy_assigned_id: 0,
             sta_addr: [0, 1, 2, 3, 4, 5],
+            factory_addr: [0, 1, 2, 3, 4, 5],
         });
         send_query_iface_response(&mut exec, &mut test_values.monitor_stream, iface_response);
 
