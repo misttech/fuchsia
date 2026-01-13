@@ -392,7 +392,10 @@ closed protocol UsmeBootstrap {
 // High level SME info independent of the current MAC role.
 type GenericSmeQuery = struct {
     role fuchsia.wlan.common.WlanMacRole;
+    // Current station MAC address.
     sta_addr ieee80211.MacAddr;
+    // MAC address assigned by the factory.
+    factory_addr ieee80211.MacAddr;
 };
 
 closed protocol GenericSme {

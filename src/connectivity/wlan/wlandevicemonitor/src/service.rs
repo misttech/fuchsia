@@ -544,7 +544,7 @@ async fn create_iface(
         format_err!("Failed to register Generic SME event stream with internal handler: {}", e)
     })?;
 
-    let fidl_sme::GenericSmeQuery { role: iface_role, sta_addr: iface_sta_address } = new_iface
+    let fidl_sme::GenericSmeQuery { role: iface_role, sta_addr: iface_sta_address, .. } = new_iface
         .generic_sme
         .query()
         .await
@@ -3052,6 +3052,7 @@ mod tests {
                 .send(&fidl_sme::GenericSmeQuery {
                     role: fidl_common::WlanMacRole::Client,
                     sta_addr: [0, 1, 2, 3, 4, 5],
+                    factory_addr: [6, 7, 8, 9, 0, 1],
                 })
                 .expect("Failed to send GenericSme.Query response");
             }
@@ -3307,6 +3308,7 @@ mod tests {
                 .send(&fidl_sme::GenericSmeQuery {
                     role: fidl_common::WlanMacRole::Client,
                     sta_addr: sta_address,
+                    factory_addr: sta_address,
                 })
                 .expect("Failed to send GenericSme.Query response");
             });
@@ -3753,6 +3755,7 @@ mod tests {
                 responder.send(&fidl_sme::GenericSmeQuery {
                     role: fidl_common::WlanMacRole::Client,
                     sta_addr: [2; 6],
+                    factory_addr: [2; 6],
                 }).expect("Failed to send query response");
             }
         );

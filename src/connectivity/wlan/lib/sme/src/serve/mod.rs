@@ -52,6 +52,7 @@ async fn serve_generic_sme(
                         responder.send(&fidl_sme::GenericSmeQuery {
                             role: info.role,
                             sta_addr: info.sta_addr,
+                            factory_addr: info.factory_addr,
                         })
                     }
                     fidl_sme::GenericSmeRequest::GetClientSme { sme_server, responder } => {

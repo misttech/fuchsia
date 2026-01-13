@@ -855,6 +855,7 @@ mod tests {
             Poll::Ready(Ok(fidl_sme::GenericSmeQuery {
                 role: fidl_common::WlanMacRole::Client,
                 sta_addr: [2, 2, 2, 2, 2, 2],
+                factory_addr: [2, 2, 2, 2, 2, 2],
             }))
         ));
     }
