@@ -4,6 +4,7 @@
 
 #include <lib/driver/logging/cpp/logger.h>
 #include <lib/fit/defer.h>
+#include <lib/trace/event.h>
 
 #include "src/devices/usb/drivers/dwc3/dwc3-metrics.h"
 #include "src/devices/usb/drivers/dwc3/dwc3-regs.h"
@@ -13,6 +14,7 @@
 namespace dwc3 {
 
 void Dwc3::HandleEpEvent(uint32_t event) {
+  TRACE_DURATION("dwc3", "HandleEpEvent", "event", event);
   const uint32_t type = DEPEVT_TYPE(event);
   const uint8_t ep_num = DEPEVT_PHYS_EP(event);
   const uint32_t status = DEPEVT_STATUS(event);
@@ -48,6 +50,7 @@ void Dwc3::HandleEpEvent(uint32_t event) {
 }
 
 void Dwc3::HandleEvent(uint32_t event) {
+  TRACE_DURATION("dwc3", "HandleEvent", "event", event);
   if (!(event & DEPEVT_NON_EP)) {
     HandleEpEvent(event);
     return;
@@ -180,6 +183,7 @@ void Dwc3::HandleEvent(uint32_t event) {
 
 void Dwc3::HandleIrq(async_dispatcher_t* dispatcher, async::IrqBase* irq, zx_status_t status,
                      const zx_packet_interrupt_t* interrupt) {
+  TRACE_DURATION("dwc3", "Dwc3::HandleIrq", "status", status);
   irq_.ack();
 
   if (!controller_started_ || !power_on_) {
@@ -205,6 +209,7 @@ void Dwc3::HandleIrq(async_dispatcher_t* dispatcher, async::IrqBase* irq, zx_sta
 }
 
 void Dwc3::StartEvents() {
+  TRACE_DURATION("dwc3", "Dwc3::StartEvents");
   zx::result result = event_fifo_.Init(bti_);
   if (result.is_error()) {
     fdf::error("Failed to init event fifo {}", result);

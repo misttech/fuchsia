@@ -5,6 +5,7 @@
 #include <fidl/fuchsia.hardware.usb.descriptor/cpp/wire.h>
 #include <lib/driver/logging/cpp/logger.h>
 #include <lib/fit/defer.h>
+#include <lib/trace/event.h>
 #include <zircon/errors.h>
 
 #include <mutex>
@@ -16,6 +17,7 @@ namespace dwc3 {
 namespace fdescriptor = fuchsia_hardware_usb_descriptor;
 
 zx_status_t Dwc3::Ep0Init() {
+  TRACE_DURATION("dwc3", "Dwc3::Ep0Init");
   if (zx::result result = ep0_.shared_fifo.Init(bti_); result.is_error()) {
     return result.error_value();
   }
@@ -31,6 +33,7 @@ zx_status_t Dwc3::Ep0Init() {
 }
 
 void Dwc3::Ep0Start() {
+  TRACE_DURATION("dwc3", "Dwc3::Ep0Start");
   CmdStartNewConfig(ep0_.out, 0);
   EpSetConfig(ep0_.out, true);
   EpSetConfig(ep0_.in, true);
@@ -39,6 +42,7 @@ void Dwc3::Ep0Start() {
 }
 
 void Dwc3::Ep0QueueSetup() {
+  TRACE_DURATION("dwc3", "Dwc3::Ep0QueueSetup");
   CacheFlushInvalidate(ep0_.buffer.get(), 0, sizeof(fdescriptor::wire::UsbSetup));
   EpStartTransfer(ep0_.out, ep0_.shared_fifo, TRB_TRBCTL_SETUP, ep0_.buffer->phys(),
                   sizeof(fdescriptor::wire::UsbSetup));
@@ -46,6 +50,7 @@ void Dwc3::Ep0QueueSetup() {
 }
 
 void Dwc3::Ep0StartEndpoints() {
+  TRACE_DURATION("dwc3", "Dwc3::Ep0StartEndpoints");
   fdf::debug("Dwc3::Ep0StartEndpoints");
 
   ep0_.in.type = USB_ENDPOINT_CONTROL;
@@ -61,6 +66,7 @@ void Dwc3::Ep0StartEndpoints() {
 }
 
 void Dwc3::HandleEp0TransferCompleteEvent(uint8_t ep_num) {
+  TRACE_DURATION("dwc3", "Dwc3::HandleEp0TransferCompleteEvent", "ep_num", ep_num);
   ZX_ASSERT(is_ep0_num(ep_num));
 
   // Only DataOut state needs TRB read.
@@ -114,6 +120,7 @@ void Dwc3::HandleEp0TransferCompleteEvent(uint8_t ep_num) {
 }
 
 void Dwc3::HandleEp0TransferNotReadyEvent(uint8_t ep_num, uint32_t stage) {
+  TRACE_DURATION("dwc3", "Dwc3::HandleEp0TransferNotReadyEvent", "ep_num", ep_num, "stage", stage);
   fdf::debug("Dwc3::HandleEp0TransferNotReadyEvent state {} stage {}", ep0_.state, stage);
 
   ZX_ASSERT(is_ep0_num(ep_num));
@@ -170,6 +177,7 @@ void Dwc3::HandleEp0TransferNotReadyEvent(uint8_t ep_num, uint32_t stage) {
 }
 
 void Dwc3::HandleEp0Setup(size_t length) {
+  TRACE_DURATION("dwc3", "Dwc3::HandleEp0Setup", "length", length);
   if (ep0_.cur_setup.bm_request_type == (USB_DIR_OUT | USB_TYPE_STANDARD | USB_RECIP_DEVICE)) {
     // handle some special setup requests in this driver
     switch (ep0_.cur_setup.b_request) {

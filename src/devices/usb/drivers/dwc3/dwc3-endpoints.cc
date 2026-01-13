@@ -3,6 +3,7 @@
 // found in the LICENSE file.
 
 #include <lib/driver/logging/cpp/logger.h>
+#include <lib/trace/event.h>
 
 #include "src/devices/usb/drivers/dwc3/dwc3-regs.h"
 #include "src/devices/usb/drivers/dwc3/dwc3.h"
@@ -10,6 +11,7 @@
 namespace dwc3 {
 
 void Dwc3::EpEnable(Endpoint& ep, bool enable) {
+  TRACE_DURATION("dwc3", "Dwc3::EpEnable", "ep_num", ep.ep_num, "enable", enable);
   auto* mmio = get_mmio();
 
   if (enable) {
@@ -22,6 +24,7 @@ void Dwc3::EpEnable(Endpoint& ep, bool enable) {
 }
 
 void Dwc3::EpSetConfig(Endpoint& ep, bool enable) {
+  TRACE_DURATION("dwc3", "Dwc3::EpSetConfig", "ep_num", ep.ep_num, "enable", enable);
   fdf::debug("Dwc3::EpSetConfig {}", ep.ep_num);
 
   if (enable) {
@@ -34,6 +37,7 @@ void Dwc3::EpSetConfig(Endpoint& ep, bool enable) {
 }
 
 zx_status_t Dwc3::EpSetStall(Endpoint& ep, bool stall) {
+  TRACE_DURATION("dwc3", "Dwc3::EpSetStall", "ep_num", ep.ep_num, "stall", stall);
   if (!ep.enabled) {
     return ZX_ERR_BAD_STATE;
   }
@@ -50,6 +54,8 @@ zx_status_t Dwc3::EpSetStall(Endpoint& ep, bool stall) {
 
 void Dwc3::EpStartTransfer(Endpoint& ep, TrbFifo& fifo, uint32_t type, zx_paddr_t buffer,
                            size_t length) {
+  TRACE_DURATION("dwc3", "Dwc3::EpStartTransfer", "ep_num", ep.ep_num, "type", type, "length",
+                 length);
   fdf::debug("Dwc3::EpStartTransfer ep {} type %u length {}", ep.ep_num, type, length);
 
   dwc3_trb_t* trb = fifo.AdvanceWrite();
@@ -63,6 +69,7 @@ void Dwc3::EpStartTransfer(Endpoint& ep, TrbFifo& fifo, uint32_t type, zx_paddr_
 }
 
 void Dwc3::EpServer::CancelAll(zx_status_t reason) {
+  TRACE_DURATION("dwc3", "Dwc3::EpServer::CancelAll", "ep_num", uep_->ep.ep_num, "reason", reason);
   fdf::debug("Dwc3::EpServer::CancelAll ep {} reason {}", uep_->ep.ep_num,
              zx_status_get_string(reason));
 
@@ -79,6 +86,7 @@ void Dwc3::EpServer::CancelAll(zx_status_t reason) {
 }
 
 void Dwc3::UserEpQueueNext(UserEndpoint& uep) {
+  TRACE_DURATION("dwc3", "Dwc3::UserEpQueueNext", "ep_num", uep.ep.ep_num);
   if (uep.server->current_req.has_value() || !uep.ep.got_not_ready ||
       uep.server->queued_reqs.empty()) {
     return;
@@ -98,6 +106,7 @@ void Dwc3::UserEpQueueNext(UserEndpoint& uep) {
 }
 
 void Dwc3::HandleEpTransferCompleteEvent(uint8_t ep_num) {
+  TRACE_DURATION("dwc3", "Dwc3::HandleEpTransferCompleteEvent", "ep_num", ep_num);
   if (is_ep0_num(ep_num)) {
     HandleEp0TransferCompleteEvent(ep_num);
     return;
@@ -125,6 +134,7 @@ void Dwc3::HandleEpTransferCompleteEvent(uint8_t ep_num) {
 }
 
 void Dwc3::HandleEpTransferNotReadyEvent(uint8_t ep_num, uint32_t stage) {
+  TRACE_DURATION("dwc3", "Dwc3::HandleEpTransferNotReadyEvent", "ep_num", ep_num, "stage", stage);
   if (is_ep0_num(ep_num)) {
     HandleEp0TransferNotReadyEvent(ep_num, stage);
     return;
@@ -137,6 +147,8 @@ void Dwc3::HandleEpTransferNotReadyEvent(uint8_t ep_num, uint32_t stage) {
 }
 
 void Dwc3::HandleEpTransferStartedEvent(uint8_t ep_num, uint32_t rsrc_id) {
+  TRACE_DURATION("dwc3", "Dwc3::HandleEpTransferStartedEvent", "ep_num", ep_num, "rsrc_id",
+                 rsrc_id);
   if (is_ep0_num(ep_num)) {
     ((ep_num == kEp0Out) ? ep0_.out : ep0_.in).rsrc_id = rsrc_id;
   } else {

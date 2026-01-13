@@ -2,12 +2,15 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+#include <lib/trace/event.h>
+
 #include "src/devices/usb/drivers/dwc3/dwc3-regs.h"
 #include "src/devices/usb/drivers/dwc3/dwc3.h"
 
 namespace dwc3 {
 
 void Dwc3::CmdStartNewConfig(const Endpoint& ep, uint32_t rsrc_id) {
+  TRACE_DURATION("dwc3", "Dwc3::CmdStartNewConfig", "ep_num", ep.ep_num, "rsrc_id", rsrc_id);
   auto* mmio = get_mmio();
   const uint8_t ep_num = ep.ep_num;
 
@@ -29,6 +32,7 @@ void Dwc3::CmdStartNewConfig(const Endpoint& ep, uint32_t rsrc_id) {
 }
 
 void Dwc3::CmdEpSetConfig(const Endpoint& ep, bool modify) {
+  TRACE_DURATION("dwc3", "Dwc3::CmdEpSetConfig", "ep_num", ep.ep_num, "modify", modify);
   auto* mmio = get_mmio();
   const uint8_t ep_num = ep.ep_num;
 
@@ -63,6 +67,7 @@ void Dwc3::CmdEpSetConfig(const Endpoint& ep, bool modify) {
 }
 
 void Dwc3::CmdEpTransferConfig(const Endpoint& ep) {
+  TRACE_DURATION("dwc3", "Dwc3::CmdEpTransferConfig", "ep_num", ep.ep_num);
   auto* mmio = get_mmio();
   const uint8_t ep_num = ep.ep_num;
 
@@ -79,6 +84,7 @@ void Dwc3::CmdEpTransferConfig(const Endpoint& ep) {
 }
 
 void Dwc3::CmdEpStartTransfer(const Endpoint& ep, zx_paddr_t trb_phys) {
+  TRACE_DURATION("dwc3", "Dwc3::CmdEpStartTransfer", "ep_num", ep.ep_num, "trb_phys", trb_phys);
   auto* mmio = get_mmio();
   const uint8_t ep_num = ep.ep_num;
 
@@ -103,6 +109,7 @@ void Dwc3::CmdEpStartTransfer(const Endpoint& ep, zx_paddr_t trb_phys) {
 }
 
 void Dwc3::CmdEpEndTransfer(const Endpoint& ep) {
+  TRACE_DURATION("dwc3", "Dwc3::CmdEpEndTransfer", "ep_num", ep.ep_num);
   if (!power_on_) {
     return;
   }
@@ -132,6 +139,7 @@ void Dwc3::CmdEpEndTransfer(const Endpoint& ep) {
 }
 
 void Dwc3::CmdEpSetStall(const Endpoint& ep) {
+  TRACE_DURATION("dwc3", "Dwc3::CmdEpSetStall", "ep_num", ep.ep_num);
   auto* mmio = get_mmio();
 
   const uint32_t ep_num = ep.ep_num;
@@ -154,6 +162,7 @@ void Dwc3::CmdEpSetStall(const Endpoint& ep) {
 }
 
 void Dwc3::CmdEpClearStall(const Endpoint& ep) {
+  TRACE_DURATION("dwc3", "Dwc3::CmdEpClearStall", "ep_num", ep.ep_num);
   auto* mmio = get_mmio();
 
   const uint32_t ep_num = ep.ep_num;

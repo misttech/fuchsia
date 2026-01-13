@@ -83,6 +83,7 @@ cc_library(
         "@fuchsia_sdk//pkg/hwreg",
         "@fuchsia_sdk//pkg/inspect",
         "@fuchsia_sdk//pkg/sync_cpp",
+        "@fuchsia_sdk//pkg/trace",
     ],
 )
 

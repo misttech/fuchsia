@@ -19,6 +19,7 @@
 #include <lib/driver/logging/cpp/logger.h>
 #include <lib/driver/platform-device/cpp/pdev.h>
 #include <lib/fit/defer.h>
+#include <lib/trace/event.h>
 #include <lib/zx/clock.h>
 #include <zircon/syscalls.h>
 #include <zircon/threads.h>
@@ -73,12 +74,17 @@ class QualcommExtension final : public PlatformExtension {
         regulator_client_(std::move(regulator_client)) {}
 
   // PlatformExtension interface implementation.
-  zx::result<> Start() override { return PowerOn(true); }
+  zx::result<> Start() override {
+    TRACE_DURATION("dwc3", "QualcommExtension::Start");
+    return PowerOn(true);
+  }
   zx::result<> Suspend() override {
+    TRACE_DURATION("dwc3", "QualcommExtension::Suspend");
     HsPhyCtrl::Get().ReadFrom(&mmio_).set_utmi_otg_vbus_valid(false).WriteTo(&mmio_);
     return PowerOff();
   }
   zx::result<> Resume() override {
+    TRACE_DURATION("dwc3", "QualcommExtension::Resume");
     if (zx::result<> result = PowerOn(false); result.is_error()) {
       return result;
     }
@@ -88,6 +94,7 @@ class QualcommExtension final : public PlatformExtension {
 
  private:
   zx::result<> PowerOn(bool driver_start) {
+    TRACE_DURATION("dwc3", "QualcommExtension::PowerOn", "driver_start", driver_start);
     if (power_on_) {
       return zx::ok();
     }
@@ -123,6 +130,7 @@ class QualcommExtension final : public PlatformExtension {
   }
 
   zx::result<> PowerOff() {
+    TRACE_DURATION("dwc3", "QualcommExtension::PowerOff");
     if (!power_on_) {
       return zx::ok();
     }
@@ -161,6 +169,7 @@ class QualcommExtension final : public PlatformExtension {
 
 std::unique_ptr<QualcommExtension> QualcommExtension::Create(Dwc3* parent,
                                                              const fdf::MmioView& mmio) {
+  TRACE_DURATION("dwc3", "QualcommExtension::Create");
   // Get all resources.
   static const std::unordered_map<BusPath, const std::string> kBusPathNames{
       {BusPath::kUsbDdr, "interconnect-usb-ddr"},
@@ -213,6 +222,7 @@ std::unique_ptr<QualcommExtension> QualcommExtension::Create(Dwc3* parent,
 }
 
 zx::result<> QualcommExtension::VoteBandwidth(State state) {
+  TRACE_DURATION("dwc3", "QualcommExtension::VoteBandwidth", "state", static_cast<uint8_t>(state));
   static const std::unordered_map<State, std::unordered_map<BusPath, std::pair<uint32_t, uint32_t>>>
       kVoteMap = {
           {
@@ -272,6 +282,7 @@ zx::result<> QualcommExtension::VoteBandwidth(State state) {
 }
 
 zx::result<> QualcommExtension::VoteVoltage(bool on) {
+  TRACE_DURATION("dwc3", "QualcommExtension::VoteVoltage", "on", on);
   if (on) {
     fidl::Result enable = fidl::Call(regulator_client_)->Enable();
     if (enable.is_error()) {
@@ -294,6 +305,7 @@ zx::result<> QualcommExtension::VoteVoltage(bool on) {
 }
 
 zx::result<> QualcommExtension::VoteClocks(bool on) {
+  TRACE_DURATION("dwc3", "QualcommExtension::VoteClocks", "on", on);
   constexpr std::array<std::string, 6> kClockNames{
       "xo", "sleep-clk", "iface-clk", "core-clk", "utmi-clk", "bus-aggr-clk",
   };
@@ -326,6 +338,8 @@ zx::result<> QualcommExtension::VoteClocks(bool on) {
 
 zx_status_t CacheFlushCommon(dma_buffer::ContiguousBuffer* buffer, zx_off_t offset, size_t length,
                              uint32_t flush_options) {
+  TRACE_DURATION("dwc3", "CacheFlushCommon", "offset", offset, "length", length, "flush_options",
+                 flush_options);
   if (offset + length < offset || offset + length > buffer->size()) {
     return ZX_ERR_OUT_OF_RANGE;
   }
@@ -336,15 +350,18 @@ zx_status_t CacheFlushCommon(dma_buffer::ContiguousBuffer* buffer, zx_off_t offs
 }  // namespace
 
 zx_status_t CacheFlush(dma_buffer::ContiguousBuffer* buffer, zx_off_t offset, size_t length) {
+  TRACE_DURATION("dwc3", "CacheFlush", "offset", offset, "length", length);
   return CacheFlushCommon(buffer, offset, length, ZX_CACHE_FLUSH_DATA);
 }
 
 zx_status_t CacheFlushInvalidate(dma_buffer::ContiguousBuffer* buffer, zx_off_t offset,
                                  size_t length) {
+  TRACE_DURATION("dwc3", "CacheFlushInvalidate", "offset", offset, "length", length);
   return CacheFlushCommon(buffer, offset, length, ZX_CACHE_FLUSH_DATA | ZX_CACHE_FLUSH_INVALIDATE);
 }
 
 zx::eventpair Dwc3::AcquireWakeLease() {
+  TRACE_DURATION("dwc3", "Dwc3::AcquireWakeLease");
   if (!config_.enable_suspend()) {
     return {};
   }
@@ -393,6 +410,7 @@ zx::eventpair Dwc3::AcquireWakeLease() {
 }
 
 zx::result<> Dwc3::Start() {
+  TRACE_DURATION("dwc3", "Dwc3::Start");
   auto phy_client_end = incoming()->Connect<fphy::Service::Device>("dwc3-phy");
   if (phy_client_end.is_ok()) {
     phy_.Bind(*std::move(phy_client_end));
@@ -468,6 +486,7 @@ zx::result<> Dwc3::Start() {
 }
 
 zx_status_t Dwc3::AcquirePDevResources() {
+  TRACE_DURATION("dwc3", "Dwc3::AcquirePDevResources");
   auto pdev_client_end = incoming()->Connect<fpdev::Service::Device>("pdev");
   if (pdev_client_end.is_error()) {
     fdf::error("fidl::CreateEndpoints<fpdev::Service>(): {}", pdev_client_end);
@@ -537,6 +556,7 @@ zx_status_t Dwc3::AcquirePDevResources() {
 }
 
 zx_status_t Dwc3::Init() {
+  TRACE_DURATION("dwc3", "Dwc3::Init");
   // Start by identifying our hardware and making sure that we recognize it, and
   // it is a version that we know we can support.  Then, reset the hardware so
   // that we know it is in a good state.
@@ -612,6 +632,7 @@ zx_status_t Dwc3::Init() {
 }
 
 void Dwc3::ReleaseResources() {
+  TRACE_DURATION("dwc3", "Dwc3::ReleaseResources");
   // If we managed to get our registers mapped, place the device into reset so
   // we are certain that there is no DMA going on in the background.
   if (mmio_.has_value() && power_on_) {
@@ -648,6 +669,7 @@ void Dwc3::ReleaseResources() {
 }
 
 zx_status_t Dwc3::CheckHwVersion() {
+  TRACE_DURATION("dwc3", "Dwc3::CheckHwVersion");
   auto* mmio = get_mmio();
   const uint32_t core_id = GSNPSID::Get().ReadFrom(mmio).core_id();
   if (core_id == 0x5533) {
@@ -686,6 +708,7 @@ zx_status_t Dwc3::CheckHwVersion() {
 }
 
 zx_status_t Dwc3::ResetHw() {
+  TRACE_DURATION("dwc3", "Dwc3::ResetHw");
   auto* mmio = get_mmio();
 
   // Clear the run/stop bit and request a software reset.
@@ -704,11 +727,13 @@ zx_status_t Dwc3::ResetHw() {
 }
 
 void Dwc3::SetDeviceAddress(uint32_t address) {
+  TRACE_DURATION("dwc3", "Dwc3::SetDeviceAddress", "address", address);
   auto* mmio = get_mmio();
   DCFG::Get().ReadFrom(mmio).set_DEVADDR(address).WriteTo(mmio);
 }
 
 void Dwc3::StartPeripheralMode() {
+  TRACE_DURATION("dwc3", "Dwc3::StartPeripheralMode");
   auto* mmio = get_mmio();
 
   // configure and enable PHYs
@@ -745,6 +770,7 @@ void Dwc3::StartPeripheralMode() {
 }
 
 void Dwc3::ResetConfiguration() {
+  TRACE_DURATION("dwc3", "Dwc3::ResetConfiguration");
   auto* mmio = get_mmio();
   // disable all endpoints except EP0_OUT and EP0_IN
   DALEPENA::Get().FromValue(0).EnableEp(kEp0Out).EnableEp(kEp0In).WriteTo(mmio);
@@ -778,6 +804,7 @@ void Dwc3::ResetConfiguration() {
 }
 
 void Dwc3::HandleResetEvent() {
+  TRACE_DURATION("dwc3", "Dwc3::HandleResetEvent");
   fdf::info("Dwc3::HandleResetEvent");
 
   ResetEndpoints();
@@ -799,6 +826,7 @@ void Dwc3::HandleResetEvent() {
 }
 
 void Dwc3::HandleConnectionDoneEvent() {
+  TRACE_DURATION("dwc3", "Dwc3::HandleConnectionDoneEvent");
   uint16_t ep0_max_packet = 0;
   fdescriptor::wire::UsbSpeed new_speed{fdescriptor::UsbSpeed::kUndefined};
 
@@ -853,6 +881,7 @@ void Dwc3::HandleConnectionDoneEvent() {
 }
 
 void Dwc3::HandleDisconnectedEvent() {
+  TRACE_DURATION("dwc3", "Dwc3::HandleDisconnectedEvent");
   fdf::info("Dwc3::HandleDisconnectedEvent");
 
   if (dci_intf_.is_valid()) {
@@ -879,6 +908,7 @@ void Dwc3::HandleDisconnectedEvent() {
 }
 
 void Dwc3::Stop() {
+  TRACE_DURATION("dwc3", "Dwc3::Stop");
   fdf::debug("Stop()");
   irq_handler_.Cancel();
   ReleaseResources();
@@ -895,19 +925,25 @@ void Dwc3::Stop() {
 }
 
 void Dwc3::Suspend(fdf_power::SuspendCompleter completer) {
+  TRACE_DURATION("dwc3", "Dwc3::Suspend");
   // no-op.
   completer();
 }
 
 void Dwc3::Resume(fdf_power::ResumeCompleter completer) {
+  TRACE_DURATION("dwc3", "Dwc3::Resume");
   // no-op.
   completer();
 }
 
-bool Dwc3::SuspendEnabled() { return false; }
+bool Dwc3::SuspendEnabled() {
+  TRACE_INSTANT("dwc3", "Dwc3::SuspendEnabled", TRACE_SCOPE_THREAD);
+  return false;
+}
 
 void Dwc3::ConnectToEndpoint(ConnectToEndpointRequest& request,
                              ConnectToEndpointCompleter::Sync& completer) {
+  TRACE_DURATION("dwc3", "Dwc3::ConnectToEndpoint");
   UserEndpoint* uep{get_user_endpoint(UsbAddressToEpNum(request.ep_addr()))};
   if (uep == nullptr || !uep->server.has_value()) {
     completer.Reply(fit::as_error(ZX_ERR_INVALID_ARGS));
@@ -919,6 +955,7 @@ void Dwc3::ConnectToEndpoint(ConnectToEndpointRequest& request,
 }
 
 void Dwc3::SetInterface(SetInterfaceRequest& request, SetInterfaceCompleter::Sync& completer) {
+  TRACE_DURATION("dwc3", "Dwc3::SetInterface");
   if (!request.interface().is_valid()) {
     fdf::error("Interface should be valid");
     completer.Reply(zx::error(ZX_ERR_INVALID_ARGS));
@@ -936,6 +973,7 @@ void Dwc3::SetInterface(SetInterfaceRequest& request, SetInterfaceCompleter::Syn
 }
 
 void Dwc3::StartController(StartControllerCompleter::Sync& completer) {
+  TRACE_DURATION("dwc3", "Dwc3::StartController");
   controller_started_ = true;
 
   if (power_on_) {
@@ -946,6 +984,7 @@ void Dwc3::StartController(StartControllerCompleter::Sync& completer) {
 }
 
 void Dwc3::StopController(StopControllerCompleter::Sync& completer) {
+  TRACE_DURATION("dwc3", "Dwc3::StopController");
   controller_started_ = false;
   ResetEndpoints();
 
@@ -966,6 +1005,7 @@ void Dwc3::StopController(StopControllerCompleter::Sync& completer) {
 
 void Dwc3::ConfigureEndpoint(ConfigureEndpointRequest& request,
                              ConfigureEndpointCompleter::Sync& completer) {
+  TRACE_DURATION("dwc3", "Dwc3::ConfigureEndpoint");
   if (!power_on_) {
     completer.Reply(zx::error(ZX_ERR_IO_NOT_PRESENT));
     return;
@@ -1013,6 +1053,7 @@ void Dwc3::ConfigureEndpoint(ConfigureEndpointRequest& request,
 
 void Dwc3::DisableEndpoint(DisableEndpointRequest& request,
                            DisableEndpointCompleter::Sync& completer) {
+  TRACE_DURATION("dwc3", "Dwc3::DisableEndpoint");
   if (!power_on_) {
     completer.Reply(zx::error(ZX_ERR_IO_NOT_PRESENT));
     return;
@@ -1034,6 +1075,7 @@ void Dwc3::DisableEndpoint(DisableEndpointRequest& request,
 
 void Dwc3::EndpointSetStall(EndpointSetStallRequest& request,
                             EndpointSetStallCompleter::Sync& completer) {
+  TRACE_DURATION("dwc3", "Dwc3::EndpointSetStall");
   if (!power_on_) {
     completer.Reply(zx::error(ZX_ERR_IO_NOT_PRESENT));
     return;
@@ -1056,6 +1098,7 @@ void Dwc3::EndpointSetStall(EndpointSetStallRequest& request,
 
 void Dwc3::EndpointClearStall(EndpointClearStallRequest& request,
                               EndpointClearStallCompleter::Sync& completer) {
+  TRACE_DURATION("dwc3", "Dwc3::EndpointClearStall");
   if (!power_on_) {
     completer.Reply(zx::error(ZX_ERR_IO_NOT_PRESENT));
     return;
@@ -1077,6 +1120,7 @@ void Dwc3::EndpointClearStall(EndpointClearStallRequest& request,
 }
 
 void Dwc3::CancelAll(CancelAllRequest& request, CancelAllCompleter::Sync& completer) {
+  TRACE_DURATION("dwc3", "Dwc3::CancelAll");
   const uint8_t ep_num = UsbAddressToEpNum(request.ep_address());
   UserEndpoint* const uep = get_user_endpoint(ep_num);
 
@@ -1090,6 +1134,7 @@ void Dwc3::CancelAll(CancelAllRequest& request, CancelAllCompleter::Sync& comple
 }
 
 void Dwc3::EpServer::GetInfo(GetInfoCompleter::Sync& completer) {
+  TRACE_DURATION("dwc3", "Dwc3::EpServer::GetInfo");
   auto info{fendpoint::EndpointInfo::WithControl(fendpoint::ControlEndpointInfo{})};
 
   switch (uep_->ep.type) {
@@ -1119,6 +1164,7 @@ void Dwc3::EpServer::GetInfo(GetInfoCompleter::Sync& completer) {
 
 void Dwc3::EpServer::QueueRequests(QueueRequestsRequest& request,
                                    QueueRequestsCompleter::Sync& completer) {
+  TRACE_DURATION("dwc3", "Dwc3::EpServer::QueueRequests");
   if (!uep_->ep.enabled) {
     fdf::error("Dwc3: ep({}) not enabled!", uep_->ep.ep_num);
   }
@@ -1157,11 +1203,13 @@ void Dwc3::EpServer::QueueRequests(QueueRequestsRequest& request,
 }
 
 void Dwc3::EpServer::CancelAll(CancelAllCompleter::Sync& completer) {
+  TRACE_DURATION("dwc3", "Dwc3::EpServer::CancelAll");
   CancelAll(ZX_ERR_IO_NOT_PRESENT);
   completer.Reply(zx::ok());
 }
 
 void Dwc3::EpReset(Endpoint& ep) {
+  TRACE_DURATION("dwc3", "Dwc3::EpReset", "ep_num", ep.ep_num);
   if (!power_on_) {
     return;
   }
@@ -1172,11 +1220,13 @@ void Dwc3::EpReset(Endpoint& ep) {
 }
 
 void Dwc3::UserEpReset(UserEndpoint& uep) {
+  TRACE_DURATION("dwc3", "Dwc3::UserEpReset", "ep_num", uep.ep.ep_num);
   uep.server->CancelAll(ZX_ERR_IO_NOT_PRESENT);
   EpReset(uep.ep);
 }
 
 void Dwc3::Ep0Reset() {
+  TRACE_DURATION("dwc3", "Dwc3::Ep0Reset");
   if (ep0_.transfer_in_progress_) {
     bool is_out = (ep0_.cur_setup.bm_request_type & USB_DIR_MASK) == USB_DIR_OUT;
     if (ep0_.state == Ep0::State::Status) {
@@ -1195,6 +1245,7 @@ void Dwc3::Ep0Reset() {
 }
 
 void Dwc3::ResetEndpoints() {
+  TRACE_DURATION("dwc3", "Dwc3::ResetEndpoints");
   Ep0Reset();
   for (UserEndpoint& uep : user_endpoints_) {
     UserEpReset(uep);
@@ -1203,6 +1254,7 @@ void Dwc3::ResetEndpoints() {
 
 void Dwc3::OnConnectStatusChanged(
     fidl::Result<fuchsia_hardware_usb_phy::ConnectionWatcher::WatchConnectStatusChanged>& result) {
+  TRACE_DURATION("dwc3", "Dwc3::OnConnectStatusChanged");
   ZX_DEBUG_ASSERT(platform_extension_);
 
   if (result.is_error() && result.error_value().is_framework_error()) {
@@ -1212,6 +1264,7 @@ void Dwc3::OnConnectStatusChanged(
 
   zx::eventpair wake_lease{};
   auto next_call = fit::defer([&]() {
+    TRACE_DURATION("dwc3", "WatchConnectStatusChanged");
     connection_watcher_->WatchConnectStatusChanged({std::move(wake_lease)})
         .Then(fit::bind_member<&Dwc3::OnConnectStatusChanged>(this));
   });
