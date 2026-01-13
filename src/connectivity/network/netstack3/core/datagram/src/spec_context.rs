@@ -279,10 +279,8 @@ pub trait DualStackDatagramSpecBoundStateContext<
         + TransportIpContext<I::OtherVersion, BC>
         + CoreTxMetadataContext<TxMetadata<I::OtherVersion, CC::WeakDeviceId, Self>, BC>;
 
-    fn dual_stack_enabled(
-        core_ctx: &CC,
-        state: &impl AsRef<IpOptions<I, CC::WeakDeviceId, Self>>,
-    ) -> bool;
+    fn dual_stack_enabled(core_ctx: &CC, ip_options: &IpOptions<I, CC::WeakDeviceId, Self>)
+    -> bool;
 
     fn to_other_socket_options<'a>(
         core_ctx: &CC,
@@ -338,15 +336,15 @@ where
 {
     type IpSocketsCtx<'a> = S::IpSocketsCtx<'a>;
 
-    fn dual_stack_enabled(&self, state: &impl AsRef<IpOptions<I, Self::WeakDeviceId, S>>) -> bool {
-        S::dual_stack_enabled(self, state)
+    fn dual_stack_enabled(&self, ip_options: &IpOptions<I, Self::WeakDeviceId, S>) -> bool {
+        S::dual_stack_enabled(self, ip_options)
     }
 
     fn to_other_socket_options<'a>(
         &self,
-        state: &'a IpOptions<I, Self::WeakDeviceId, S>,
+        ip_options: &'a IpOptions<I, Self::WeakDeviceId, S>,
     ) -> &'a DatagramIpSpecificSocketOptions<I::OtherVersion, Self::WeakDeviceId> {
-        S::to_other_socket_options(self, state)
+        S::to_other_socket_options(self, ip_options)
     }
 
     fn ds_converter(&self) -> impl DualStackConverter<I, Self::WeakDeviceId, S> {

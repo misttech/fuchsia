@@ -107,7 +107,7 @@ where
     }
 
     fn mark_matches(&self, mark: &netstack3_base::MarkInDomainMatcher) -> bool {
-        let options = self.state.get_options(self.ctx);
+        let options = self.state.options();
         mark.matcher.matches(options.marks().get(mark.domain))
     }
 }

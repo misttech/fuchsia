@@ -48,7 +48,8 @@ use netstack3_datagram::{
     ListenerInfo, MulticastMembershipInterfaceSelector, NonDualStackConverter,
     NonDualStackDatagramBoundStateContext, NonDualStackDatagramSpecBoundStateContext,
     SendError as DatagramSendError, SetMulticastMembershipError, SocketInfo,
-    SocketState as DatagramSocketState, WrapOtherStackIpOptions, WrapOtherStackIpOptionsMut,
+    SocketState as DatagramSocketState, SocketStateInner as DatagramSocketStateInner,
+    WrapOtherStackIpOptions, WrapOtherStackIpOptionsMut,
 };
 use netstack3_filter::{SocketIngressFilterResult, SocketOpsFilter, SocketOpsFilterBindingContext};
 use netstack3_hashmap::hash_map::DefaultHasher;
@@ -1510,8 +1511,8 @@ fn try_deliver<
     packet: UdpPacket<&[u8]>,
 ) -> bool {
     let delivered = core_ctx.with_socket_state(&id, |core_ctx, state| {
-        let should_deliver = match state {
-            DatagramSocketState::Bound(DatagramBoundSocketState {
+        let should_deliver = match &state.inner {
+            DatagramSocketStateInner::Bound(DatagramBoundSocketState {
                 socket_type,
                 original_bound_addr: _,
             }) => match socket_type {
@@ -1530,7 +1531,7 @@ fn try_deliver<
                 }
                 DatagramBoundSocketStateType::Listener { state: _, sharing: _ } => true,
             },
-            DatagramSocketState::Unbound(_) => true,
+            DatagramSocketStateInner::Unbound(_) => true,
         };
 
         if !should_deliver {
@@ -1555,7 +1556,7 @@ fn try_deliver<
             data,
             device_id,
             id.socket_cookie(),
-            state.get_options(core_ctx).marks(),
+            state.options().marks(),
         );
 
         match filter_result {
@@ -1842,7 +1843,7 @@ where
                 },
             };
 
-            let options = state.get_options(ctx);
+            let options = state.options();
 
             results.extend(core::iter::once(UdpSocketDiagnostics {
                 state: udp_state,
@@ -2784,9 +2785,9 @@ impl<
     type IpSocketsCtx<'a> = CC::IpSocketsCtx<'a>;
     fn dual_stack_enabled(
         _core_ctx: &CC,
-        state: &impl AsRef<IpOptions<Ipv6, CC::WeakDeviceId, Udp<BC>>>,
+        ip_options: &IpOptions<Ipv6, CC::WeakDeviceId, Udp<BC>>,
     ) -> bool {
-        let DualStackSocketState { dual_stack_enabled, .. } = state.as_ref().other_stack();
+        let DualStackSocketState { dual_stack_enabled, .. } = ip_options.other_stack();
         *dual_stack_enabled
     }
 

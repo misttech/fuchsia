@@ -453,8 +453,7 @@ impl<BT: IcmpEchoBindingsTypes> DatagramSocketSpec for Icmp<BT> {
         <Self::AddrSpec as SocketMapAddrSpec>::RemoteIdentifier,
     >;
 
-    type ConnState<I: datagram::IpExt, D: WeakDeviceIdentifier> =
-        datagram::ConnState<I, I, D, Self>;
+    type ConnState<I: datagram::IpExt, D: WeakDeviceIdentifier> = datagram::ConnState<I, D, Self>;
     // Store the remote port/id set by `connect`. This does not participate in
     // demuxing, so not part of the socketmap, but we need to store it so that
     // it can be reported later.

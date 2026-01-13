@@ -37,7 +37,7 @@ pub use internal::datagram::{
     ExpectedUnboundError, InUseError, IpExt, IpOptions, ListenerInfo, MulticastInterfaceSelector,
     MulticastMembershipInterfaceSelector, NonDualStackConverter,
     NonDualStackDatagramBoundStateContext, ReferenceState, SendError, SendToError,
-    SetMulticastMembershipError, SocketInfo, SocketState, StrongRc, WeakRc,
+    SetMulticastMembershipError, SocketInfo, SocketState, SocketStateInner, StrongRc, WeakRc,
     WrapOtherStackIpOptions, WrapOtherStackIpOptionsMut,
 };
 pub use internal::diagnostics::{DatagramSocketDiagnosticsSpec, SocketStateForMatching};

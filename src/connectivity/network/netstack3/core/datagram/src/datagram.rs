@@ -151,32 +151,32 @@ impl<I: netstack3_base::IpExt + DualStackIpExt + netstack3_base::IcmpIpExt + Fil
 #[derive(Derivative, GenericOverIp)]
 #[generic_over_ip(I, Ip)]
 #[derivative(Debug(bound = ""))]
-#[allow(missing_docs)]
-pub enum SocketState<I: IpExt, D: WeakDeviceIdentifier, S: DatagramSocketSpec> {
-    Unbound(UnboundSocketState<I, D, S>),
-    Bound(BoundSocketState<I, D, S>),
+pub struct SocketState<I: IpExt, D: WeakDeviceIdentifier, S: DatagramSocketSpec> {
+    /// Bind/connect state of the socket.
+    pub inner: SocketStateInner<I, D, S>,
+
+    /// Socket options that do not depend on the bind/connect state.
+    pub(crate) ip_options: IpOptions<I, D, S>,
 }
 
-impl<I: IpExt, D: WeakDeviceIdentifier, S: DatagramSocketSpec> AsRef<IpOptions<I, D, S>>
-    for SocketState<I, D, S>
-{
-    fn as_ref(&self) -> &IpOptions<I, D, S> {
-        match self {
-            Self::Unbound(unbound) => unbound.as_ref(),
-            Self::Bound(bound) => bound.as_ref(),
-        }
-    }
+#[derive(Derivative, GenericOverIp)]
+#[generic_over_ip(I, Ip)]
+#[derivative(Debug(bound = ""))]
+#[allow(missing_docs)]
+pub enum SocketStateInner<I: IpExt, D: WeakDeviceIdentifier, S: DatagramSocketSpec> {
+    Unbound(UnboundSocketState<D, S>),
+    Bound(BoundSocketState<I, D, S>),
 }
 
 impl<I: IpExt, D: WeakDeviceIdentifier, S: DatagramSocketSpec> SocketState<I, D, S> {
     /// Returns [`SocketInfo`] for this datagram socket.
     pub fn to_socket_info(&self) -> SocketInfo<I::Addr, D> {
-        match self {
-            Self::Unbound(_) => SocketInfo::Unbound,
-            Self::Bound(BoundSocketState { socket_type, original_bound_addr: _ }) => {
+        match &self.inner {
+            SocketStateInner::Unbound(_) => SocketInfo::Unbound,
+            SocketStateInner::Bound(BoundSocketState { socket_type, original_bound_addr: _ }) => {
                 match socket_type {
                     BoundSocketStateType::Listener { state, sharing: _ } => {
-                        let ListenerState { addr, ip_options: _ } = state;
+                        let ListenerState { addr } = state;
                         SocketInfo::Listener(addr.clone().into())
                     }
                     BoundSocketStateType::Connected { state, sharing: _ } => {
@@ -262,7 +262,7 @@ impl<I: IpExt, D: WeakDeviceIdentifier, S: DatagramSocketSpec> SocketState<I, D,
             socket_options: _,
             other_stack: _,
             common,
-        } = self.as_ref();
+        } = self.options();
         inspector.record_child("MulticastGroupMemberships", |node| {
             for (index, (multicast_addr, device)) in multicast_memberships.iter().enumerate() {
                 node.record_debug_child(index, |node| {
@@ -283,121 +283,47 @@ impl<I: IpExt, D: WeakDeviceIdentifier, S: DatagramSocketSpec> SocketState<I, D,
         &'a self,
         core_ctx: &CC,
     ) -> (&'a IpOptions<I, CC::WeakDeviceId, S>, &'a Option<CC::WeakDeviceId>) {
-        match self {
-            SocketState::Unbound(state) => {
-                let UnboundSocketState { ip_options, device, sharing: _ } = state;
-                (ip_options, device)
+        let device = match &self.inner {
+            SocketStateInner::Unbound(state) => {
+                let UnboundSocketState { device, sharing: _ } = state;
+                device
             }
-            SocketState::Bound(BoundSocketState { socket_type, original_bound_addr: _ }) => {
+            SocketStateInner::Bound(BoundSocketState { socket_type, original_bound_addr: _ }) => {
                 match socket_type {
                     BoundSocketStateType::Listener { state, sharing: _ } => {
-                        let ListenerState { ip_options, addr: ListenerAddr { device, ip: _ } } =
-                            state;
-                        (ip_options, device)
+                        let ListenerState { addr: ListenerAddr { device, ip: _ } } = state;
+                        device
                     }
                     BoundSocketStateType::Connected { state, sharing: _ } => {
                         match core_ctx.dual_stack_context() {
                             MaybeDualStack::DualStack(dual_stack) => {
                                 match dual_stack.ds_converter().convert(state) {
-                                    DualStackConnState::ThisStack(state) => {
-                                        state.get_options_device()
-                                    }
+                                    DualStackConnState::ThisStack(state) => state.get_device(),
                                     DualStackConnState::OtherStack(state) => {
-                                        dual_stack.assert_dual_stack_enabled(state);
-                                        state.get_options_device()
+                                        dual_stack.assert_dual_stack_enabled(&self.ip_options);
+                                        state.get_device()
                                     }
                                 }
                             }
                             MaybeDualStack::NotDualStack(not_dual_stack) => {
-                                not_dual_stack.nds_converter().convert(state).get_options_device()
+                                not_dual_stack.nds_converter().convert(state).get_device()
                             }
                         }
                     }
                 }
             }
-        }
+        };
+        (&self.ip_options, device)
     }
 
     /// Returns `IpOptions`.
-    pub fn get_options<
-        'a,
-        BC: DatagramBindingsTypes,
-        CC: DatagramBoundStateContext<I, BC, S, WeakDeviceId = D>,
-    >(
-        &'a self,
-        core_ctx: &CC,
-    ) -> &'a IpOptions<I, CC::WeakDeviceId, S> {
-        match self {
-            SocketState::Unbound(state) => {
-                let UnboundSocketState { ip_options, device: _, sharing: _ } = state;
-                ip_options
-            }
-            SocketState::Bound(BoundSocketState { socket_type, original_bound_addr: _ }) => {
-                match socket_type {
-                    BoundSocketStateType::Listener { state, sharing: _ } => {
-                        let ListenerState { ip_options, addr: _ } = state;
-                        ip_options
-                    }
-                    BoundSocketStateType::Connected { state, sharing: _ } => {
-                        match core_ctx.dual_stack_context() {
-                            MaybeDualStack::DualStack(dual_stack) => {
-                                match dual_stack.ds_converter().convert(state) {
-                                    DualStackConnState::ThisStack(state) => state.as_ref(),
-                                    DualStackConnState::OtherStack(state) => {
-                                        dual_stack.assert_dual_stack_enabled(state);
-                                        state.as_ref()
-                                    }
-                                }
-                            }
-                            MaybeDualStack::NotDualStack(not_dual_stack) => {
-                                not_dual_stack.nds_converter().convert(state).as_ref()
-                            }
-                        }
-                    }
-                }
-            }
-        }
+    pub fn options(&self) -> &IpOptions<I, D, S> {
+        &self.ip_options
     }
 
     /// Returns mutable `IpOptions`.
-    pub fn get_options_mut<
-        'a,
-        BC: DatagramBindingsTypes,
-        CC: DatagramBoundStateContext<I, BC, S, WeakDeviceId = D>,
-    >(
-        &'a mut self,
-        core_ctx: &mut CC,
-    ) -> &'a mut IpOptions<I, CC::WeakDeviceId, S> {
-        match self {
-            SocketState::Unbound(state) => {
-                let UnboundSocketState { ip_options, device: _, sharing: _ } = state;
-                ip_options
-            }
-            SocketState::Bound(BoundSocketState { socket_type, original_bound_addr: _ }) => {
-                match socket_type {
-                    BoundSocketStateType::Listener { state, sharing: _ } => {
-                        let ListenerState { ip_options, addr: _ } = state;
-                        ip_options
-                    }
-                    BoundSocketStateType::Connected { state, sharing: _ } => {
-                        match core_ctx.dual_stack_context_mut() {
-                            MaybeDualStack::DualStack(dual_stack) => {
-                                match dual_stack.ds_converter().convert(state) {
-                                    DualStackConnState::ThisStack(state) => state.as_mut(),
-                                    DualStackConnState::OtherStack(state) => {
-                                        dual_stack.assert_dual_stack_enabled(state);
-                                        state.as_mut()
-                                    }
-                                }
-                            }
-                            MaybeDualStack::NotDualStack(not_dual_stack) => {
-                                not_dual_stack.nds_converter().convert(state).as_mut()
-                            }
-                        }
-                    }
-                }
-            }
-        }
+    pub fn options_mut(&mut self) -> &mut IpOptions<I, D, S> {
+        &mut self.ip_options
     }
 }
 
@@ -415,18 +341,6 @@ pub struct BoundSocketState<I: IpExt, D: WeakDeviceIdentifier, S: DatagramSocket
     pub original_bound_addr: Option<S::ListenerIpAddr<I>>,
 }
 
-impl<I: IpExt, D: WeakDeviceIdentifier, S: DatagramSocketSpec> AsRef<IpOptions<I, D, S>>
-    for BoundSocketState<I, D, S>
-{
-    fn as_ref(&self) -> &IpOptions<I, D, S> {
-        let BoundSocketState { socket_type, original_bound_addr: _ } = self;
-        match socket_type {
-            BoundSocketStateType::Listener { state, sharing: _ } => state.as_ref(),
-            BoundSocketStateType::Connected { state, sharing: _ } => state.as_ref(),
-        }
-    }
-}
-
 /// State for the sub-types of bound socket (e.g. Listener or Connected).
 #[derive(Derivative)]
 #[derivative(Debug(bound = "D: Debug"))]
@@ -436,60 +350,25 @@ pub enum BoundSocketStateType<I: IpExt, D: WeakDeviceIdentifier, S: DatagramSock
     Connected { state: S::ConnState<I, D>, sharing: S::SharingState },
 }
 
-impl<I: IpExt, D: WeakDeviceIdentifier, S: DatagramSocketSpec> AsRef<IpOptions<I, D, S>>
-    for BoundSocketStateType<I, D, S>
-{
-    fn as_ref(&self) -> &IpOptions<I, D, S> {
-        match self {
-            Self::Listener { state, sharing: _ } => state.as_ref(),
-            Self::Connected { state, sharing: _ } => state.as_ref(),
-        }
-    }
-}
-
 #[derive(Derivative)]
 #[derivative(Debug(bound = ""), Default(bound = ""))]
-pub struct UnboundSocketState<I: IpExt, D: WeakDeviceIdentifier, S: DatagramSocketSpec> {
+pub struct UnboundSocketState<D: WeakDeviceIdentifier, S: DatagramSocketSpec> {
     device: Option<D>,
     sharing: S::SharingState,
-    ip_options: IpOptions<I, D, S>,
-}
-
-impl<I: IpExt, D: WeakDeviceIdentifier, S: DatagramSocketSpec> AsRef<IpOptions<I, D, S>>
-    for UnboundSocketState<I, D, S>
-{
-    fn as_ref(&self) -> &IpOptions<I, D, S> {
-        &self.ip_options
-    }
 }
 
 /// State associated with a listening socket.
 #[derive(Derivative)]
 #[derivative(Debug(bound = ""))]
 pub struct ListenerState<I: IpExt, D: WeakDeviceIdentifier, S: DatagramSocketSpec + ?Sized> {
-    pub(crate) ip_options: IpOptions<I, D, S>,
     pub(crate) addr: ListenerAddr<S::ListenerIpAddr<I>, D>,
-}
-
-impl<I: IpExt, D: WeakDeviceIdentifier, S: DatagramSocketSpec> AsRef<IpOptions<I, D, S>>
-    for ListenerState<I, D, S>
-{
-    fn as_ref(&self) -> &IpOptions<I, D, S> {
-        &self.ip_options
-    }
 }
 
 /// State associated with a connected socket.
 #[derive(Derivative)]
 #[derivative(Debug(bound = "D: Debug"))]
-pub struct ConnState<
-    WireI: IpExt,
-    SocketI: IpExt,
-    D: WeakDeviceIdentifier,
-    S: DatagramSocketSpec + ?Sized,
-> {
+pub struct ConnState<WireI: IpExt, D: WeakDeviceIdentifier, S: DatagramSocketSpec + ?Sized> {
     pub(crate) socket: IpSock<WireI, D>,
-    pub(crate) ip_options: IpOptions<SocketI, D, S>,
     pub(crate) shutdown: Shutdown,
     pub(crate) addr: ConnAddr<
         ConnIpAddr<
@@ -519,51 +398,26 @@ pub struct ConnState<
     pub(crate) extra: S::ConnStateExtra,
 }
 
-impl<WireI: IpExt, SocketI: IpExt, D: WeakDeviceIdentifier, S: DatagramSocketSpec>
-    AsRef<IpOptions<SocketI, D, S>> for ConnState<WireI, SocketI, D, S>
-{
-    fn as_ref(&self) -> &IpOptions<SocketI, D, S> {
-        &self.ip_options
-    }
-}
-
-impl<WireI: IpExt, SocketI: IpExt, D: WeakDeviceIdentifier, S: DatagramSocketSpec> AsRef<Shutdown>
-    for ConnState<WireI, SocketI, D, S>
+impl<WireI: IpExt, D: WeakDeviceIdentifier, S: DatagramSocketSpec> AsRef<Shutdown>
+    for ConnState<WireI, D, S>
 {
     fn as_ref(&self) -> &Shutdown {
         &self.shutdown
     }
 }
 
-impl<WireI: IpExt, SocketI: IpExt, D: WeakDeviceIdentifier, S: DatagramSocketSpec>
-    AsMut<IpOptions<SocketI, D, S>> for ConnState<WireI, SocketI, D, S>
-{
-    fn as_mut(&mut self) -> &mut IpOptions<SocketI, D, S> {
-        &mut self.ip_options
-    }
-}
-
-impl<WireI: IpExt, SocketI: IpExt, D: WeakDeviceIdentifier, S: DatagramSocketSpec> AsMut<Shutdown>
-    for ConnState<WireI, SocketI, D, S>
+impl<WireI: IpExt, D: WeakDeviceIdentifier, S: DatagramSocketSpec> AsMut<Shutdown>
+    for ConnState<WireI, D, S>
 {
     fn as_mut(&mut self) -> &mut Shutdown {
         &mut self.shutdown
     }
 }
 
-impl<WireI: IpExt, SocketI: IpExt, D: WeakDeviceIdentifier, S: DatagramSocketSpec>
-    ConnState<WireI, SocketI, D, S>
-{
+impl<WireI: IpExt, D: WeakDeviceIdentifier, S: DatagramSocketSpec> ConnState<WireI, D, S> {
     /// Returns true if the connection can receive traffic.
     pub fn should_receive(&self) -> bool {
-        let Self {
-            shutdown,
-            socket: _,
-            ip_options: _,
-            clear_device_on_disconnect: _,
-            addr: _,
-            extra: _,
-        } = self;
+        let Self { shutdown, socket: _, clear_device_on_disconnect: _, addr: _, extra: _ } = self;
         let Shutdown { receive, send: _ } = shutdown;
         !*receive
     }
@@ -587,9 +441,9 @@ impl<WireI: IpExt, SocketI: IpExt, D: WeakDeviceIdentifier, S: DatagramSocketSpe
         &self.extra
     }
 
-    fn get_options_device(&self) -> (&IpOptions<SocketI, D, S>, &Option<D>) {
-        let Self { ip_options, addr: ConnAddr { device, .. }, .. } = self;
-        (ip_options, device)
+    fn get_device(&self) -> &Option<D> {
+        let Self { addr: ConnAddr { device, .. }, .. } = self;
+        device
     }
 }
 
@@ -602,31 +456,9 @@ pub enum DualStackConnState<
     S: DatagramSocketSpec + ?Sized,
 > {
     /// The [`ConnState`] for a socked connected with [`I::Version`].
-    ThisStack(ConnState<I, I, D, S>),
+    ThisStack(ConnState<I, D, S>),
     /// The [`ConnState`] for a socked connected with [`I::OtherVersion`].
-    OtherStack(ConnState<I::OtherVersion, I, D, S>),
-}
-
-impl<I: IpExt, D: WeakDeviceIdentifier, S: DatagramSocketSpec> AsRef<IpOptions<I, D, S>>
-    for DualStackConnState<I, D, S>
-{
-    fn as_ref(&self) -> &IpOptions<I, D, S> {
-        match self {
-            DualStackConnState::ThisStack(state) => state.as_ref(),
-            DualStackConnState::OtherStack(state) => state.as_ref(),
-        }
-    }
-}
-
-impl<I: IpExt, D: WeakDeviceIdentifier, S: DatagramSocketSpec> AsMut<IpOptions<I, D, S>>
-    for DualStackConnState<I, D, S>
-{
-    fn as_mut(&mut self) -> &mut IpOptions<I, D, S> {
-        match self {
-            DualStackConnState::ThisStack(state) => state.as_mut(),
-            DualStackConnState::OtherStack(state) => state.as_mut(),
-        }
-    }
+    OtherStack(ConnState<I::OtherVersion, D, S>),
 }
 
 impl<I: IpExt, D: WeakDeviceIdentifier, S: DatagramSocketSpec> AsRef<Shutdown>
@@ -748,12 +580,6 @@ pub struct IpOptions<I: IpExt, D: WeakDeviceIdentifier, S: DatagramSocketSpec + 
     common: DatagramIpAgnosticOptions,
 }
 
-impl<I: IpExt, D: WeakDeviceIdentifier, S: DatagramSocketSpec> AsRef<Self> for IpOptions<I, D, S> {
-    fn as_ref(&self) -> &Self {
-        self
-    }
-}
-
 impl<I: IpExt, D: WeakDeviceIdentifier, S: DatagramSocketSpec> IpOptions<I, D, S> {
     /// Returns the IP options for the other stack.
     pub fn other_stack(&self) -> &S::OtherStackIpOptions<I, D> {
@@ -827,13 +653,14 @@ impl<A: Eq + Hash, D: Eq + Hash> IntoIterator for MulticastMemberships<A, D> {
 fn leave_all_joined_groups<A: IpAddress, BC, CC: MulticastMembershipHandler<A::Version, BC>>(
     core_ctx: &mut CC,
     bindings_ctx: &mut BC,
-    memberships: MulticastMemberships<A, CC::WeakDeviceId>,
+    memberships: &MulticastMemberships<A, CC::WeakDeviceId>,
 ) {
-    for (addr, device) in memberships {
+    let MulticastMemberships(map) = memberships;
+    for (addr, device) in map.iter() {
         let Some(device) = device.upgrade() else {
             continue;
         };
-        core_ctx.leave_multicast_group(bindings_ctx, &device, addr)
+        core_ctx.leave_multicast_group(bindings_ctx, &device, addr.clone())
     }
 }
 
@@ -1059,7 +886,7 @@ pub trait DualStackDatagramBoundStateContext<
         + CoreTxMetadataContext<TxMetadata<I::OtherVersion, Self::WeakDeviceId, S>, BC>;
 
     /// Returns if the socket state indicates dual-stack operation is enabled.
-    fn dual_stack_enabled(&self, state: &impl AsRef<IpOptions<I, Self::WeakDeviceId, S>>) -> bool;
+    fn dual_stack_enabled(&self, ip_options: &IpOptions<I, Self::WeakDeviceId, S>) -> bool;
 
     /// Returns the [`DatagramIpSpecificSocketOptions`] to use for packets in the other stack.
     fn to_other_socket_options<'a>(
@@ -1067,11 +894,11 @@ pub trait DualStackDatagramBoundStateContext<
         state: &'a IpOptions<I, Self::WeakDeviceId, S>,
     ) -> &'a DatagramIpSpecificSocketOptions<I::OtherVersion, Self::WeakDeviceId>;
 
-    /// Asserts that the socket state indicates dual-stack operation is enabled.
+    /// Asserts that the socket options indicates dual-stack operation is enabled.
     ///
     /// Provided trait function.
-    fn assert_dual_stack_enabled(&self, state: &impl AsRef<IpOptions<I, Self::WeakDeviceId, S>>) {
-        debug_assert!(self.dual_stack_enabled(state), "socket must be dual-stack enabled")
+    fn assert_dual_stack_enabled(&self, ip_options: &IpOptions<I, Self::WeakDeviceId, S>) {
+        debug_assert!(self.dual_stack_enabled(ip_options), "socket must be dual-stack enabled")
     }
 
     /// Returns an instance of a type that implements [`DualStackConverter`]
@@ -1141,7 +968,7 @@ pub trait NonDualStackConverter<I: IpExt, D: WeakDeviceIdentifier, S: DatagramSo
             <S::AddrSpec as SocketMapAddrSpec>::RemoteIdentifier,
         >,
     >
-    + OwnedOrRefsBidirectionalConverter<S::ConnState<I, D>, ConnState<I, I, D, S>>
+    + OwnedOrRefsBidirectionalConverter<S::ConnState<I, D>, ConnState<I, D, S>>
 {
 }
 
@@ -1163,7 +990,7 @@ where
                 <S::AddrSpec as SocketMapAddrSpec>::RemoteIdentifier,
             >,
         >
-        + OwnedOrRefsBidirectionalConverter<S::ConnState<I, D>, ConnState<I, I, D, S>>,
+        + OwnedOrRefsBidirectionalConverter<S::ConnState<I, D>, ConnState<I, D, S>>,
 {
 }
 
@@ -1272,11 +1099,7 @@ pub trait DualStackBaseIpExt:
         + Into<ConnInfoAddr<Self::Addr, <S::AddrSpec as SocketMapAddrSpec>::RemoteIdentifier>>;
 
     /// Connection state for a dual-stack socket.
-    type DualStackConnState<D: WeakDeviceIdentifier, S: DatagramSocketSpec>: Debug
-        + AsRef<IpOptions<Self, D, S>>
-        + AsMut<IpOptions<Self, D, S>>
-        + Send
-        + Sync
+    type DualStackConnState<D: WeakDeviceIdentifier, S: DatagramSocketSpec>: Debug + Send + Sync
     where
         Self::OtherVersion: DualStackBaseIpExt;
 
@@ -1328,8 +1151,7 @@ impl DualStackBaseIpExt for Ipv4 {
         <S::AddrSpec as SocketMapAddrSpec>::RemoteIdentifier,
     >;
     /// IPv4 sockets cannot connect on dual-stack addresses.
-    type DualStackConnState<D: WeakDeviceIdentifier, S: DatagramSocketSpec> =
-        ConnState<Self, Self, D, S>;
+    type DualStackConnState<D: WeakDeviceIdentifier, S: DatagramSocketSpec> = ConnState<Self, D, S>;
 
     fn into_dual_stack_bound_socket_id<D: WeakDeviceIdentifier, S: DatagramSocketSpec>(
         id: S::SocketId<Self, D>,
@@ -1340,14 +1162,8 @@ impl DualStackBaseIpExt for Ipv4 {
     fn conn_addr_from_state<D: WeakDeviceIdentifier, S: DatagramSocketSpec>(
         state: &Self::DualStackConnState<D, S>,
     ) -> ConnAddr<Self::DualStackConnIpAddr<S>, D> {
-        let ConnState {
-            socket: _,
-            ip_options: _,
-            shutdown: _,
-            addr,
-            clear_device_on_disconnect: _,
-            extra: _,
-        } = state;
+        let ConnState { socket: _, shutdown: _, addr, clear_device_on_disconnect: _, extra: _ } =
+            state;
         addr.clone()
     }
 }
@@ -1391,7 +1207,6 @@ impl DualStackBaseIpExt for Ipv6 {
             DualStackConnState::OtherStack(state) => {
                 let ConnState {
                     socket: _,
-                    ip_options: _,
                     shutdown: _,
                     addr,
                     clear_device_on_disconnect: _,
@@ -1496,11 +1311,7 @@ pub trait DatagramSocketSpec: Sized + 'static {
     /// [`DualStackIpExt::ConnState`], which will be one of [`ConnState`] or
     /// [`DualStackConnState`]. Non-dual-stack-capable protocols (like ICMP and
     /// raw IP sockets) should just use [`ConnState`].
-    type ConnState<I: IpExt, D: WeakDeviceIdentifier>: Debug
-        + AsRef<IpOptions<I, D, Self>>
-        + AsMut<IpOptions<I, D, Self>>
-        + Send
-        + Sync;
+    type ConnState<I: IpExt, D: WeakDeviceIdentifier>: Debug + Send + Sync;
 
     /// The extra state that a connection state want to remember.
     ///
@@ -1623,7 +1434,10 @@ pub fn create_primary_id<I: IpExt, D: WeakDeviceIdentifier, S: DatagramSocketSpe
     settings: &DatagramSettings,
 ) -> PrimaryRc<I, D, S> {
     PrimaryRc::new(ReferenceState {
-        state: RwLock::new(SocketState::Unbound(UnboundSocketState::default())),
+        state: RwLock::new(SocketState {
+            inner: SocketStateInner::Unbound(UnboundSocketState::default()),
+            ip_options: Default::default(),
+        }),
         external_data,
         send_buffer: SendBufferTracking::new(writable_listener, settings),
         counters: Default::default(),
@@ -1715,14 +1529,13 @@ pub enum SocketInfo<A: IpAddress, D> {
 /// `SocketI`. This allows it to be used for both single-stack remove operations
 /// (where `WireI` and `SocketI` are the same), as well as dual-stack remove
 /// operations (where `WireI`, and `SocketI` may be different).
-enum Remove<WireI: IpExt, SocketI: IpExt, D: WeakDeviceIdentifier, S: DatagramSocketSpec> {
+enum Remove<WireI: IpExt, D: WeakDeviceIdentifier, S: DatagramSocketSpec> {
     Listener {
         // The socket's address, stored as a concrete `ListenerIpAddr`.
         concrete_addr: ListenerAddr<
             ListenerIpAddr<WireI::Addr, <S::AddrSpec as SocketMapAddrSpec>::LocalIdentifier>,
             D,
         >,
-        ip_options: IpOptions<SocketI, D, S>,
         sharing: S::SharingState,
         socket_id:
             <S::SocketMapSpec<WireI, D> as DatagramSocketMapSpec<WireI, D, S::AddrSpec>>::BoundSocketId,
@@ -1737,7 +1550,6 @@ enum Remove<WireI: IpExt, SocketI: IpExt, D: WeakDeviceIdentifier, S: DatagramSo
             >,
             D,
         >,
-        ip_options: IpOptions<SocketI, D, S>,
         sharing: S::SharingState,
         socket_id:
             <S::SocketMapSpec<WireI, D> as DatagramSocketMapSpec<WireI, D, S::AddrSpec>>::BoundSocketId,
@@ -1748,13 +1560,11 @@ enum Remove<WireI: IpExt, SocketI: IpExt, D: WeakDeviceIdentifier, S: DatagramSo
 ///
 /// Like [`Remove`], this type takes two generic `IpExt` parameters so that
 /// it can be used from single-stack and dual-stack remove operations.
-struct RemoveOperation<WireI: IpExt, SocketI: IpExt, D: WeakDeviceIdentifier, S: DatagramSocketSpec>(
-    Remove<WireI, SocketI, D, S>,
+struct RemoveOperation<WireI: IpExt, D: WeakDeviceIdentifier, S: DatagramSocketSpec>(
+    Remove<WireI, D, S>,
 );
 
-impl<WireI: IpExt, SocketI: IpExt, D: WeakDeviceIdentifier, S: DatagramSocketSpec>
-    RemoveOperation<WireI, SocketI, D, S>
-{
+impl<WireI: IpExt, D: WeakDeviceIdentifier, S: DatagramSocketSpec> RemoveOperation<WireI, D, S> {
     /// Apply this remove operation to the given `BoundSocketMap`.
     ///
     /// # Panics
@@ -1764,10 +1574,10 @@ impl<WireI: IpExt, SocketI: IpExt, D: WeakDeviceIdentifier, S: DatagramSocketSpe
     fn apply(
         self,
         sockets: &mut BoundSocketMap<WireI, D, S::AddrSpec, S::SocketMapSpec<WireI, D>>,
-    ) -> RemoveInfo<WireI, SocketI, D, S> {
+    ) -> RemoveInfo<WireI, D, S> {
         let RemoveOperation(remove) = self;
         match &remove {
-            Remove::Listener { concrete_addr, ip_options: _, sharing: _, socket_id } => {
+            Remove::Listener { concrete_addr, sharing: _, socket_id } => {
                 let ListenerAddr { ip: ListenerIpAddr { addr, identifier }, device } =
                     concrete_addr;
                 BoundStateHandler::<_, S, _>::remove_listener(
@@ -1778,7 +1588,7 @@ impl<WireI: IpExt, SocketI: IpExt, D: WeakDeviceIdentifier, S: DatagramSocketSpe
                     socket_id,
                 );
             }
-            Remove::Connected { concrete_addr, ip_options: _, sharing: _, socket_id } => {
+            Remove::Connected { concrete_addr, sharing: _, socket_id } => {
                 sockets
                     .conns_mut()
                     .remove(socket_id, concrete_addr)
@@ -1791,7 +1601,7 @@ impl<WireI: IpExt, SocketI: IpExt, D: WeakDeviceIdentifier, S: DatagramSocketSpe
 
 // A single stack implementation of `RemoveOperation` (e.g. where `WireI` and
 // `SocketI` are the same type).
-impl<I: IpExt, D: WeakDeviceIdentifier, S: DatagramSocketSpec> RemoveOperation<I, I, D, S> {
+impl<I: IpExt, D: WeakDeviceIdentifier, S: DatagramSocketSpec> RemoveOperation<I, D, S> {
     /// Constructs the remove operation from existing socket state.
     fn new_from_state<BC, CC: NonDualStackDatagramBoundStateContext<I, BC, S, WeakDeviceId = D>>(
         core_ctx: &mut CC,
@@ -1801,14 +1611,13 @@ impl<I: IpExt, D: WeakDeviceIdentifier, S: DatagramSocketSpec> RemoveOperation<I
         let BoundSocketState { socket_type: state, original_bound_addr: _ } = state;
         RemoveOperation(match state {
             BoundSocketStateType::Listener {
-                state: ListenerState { addr: ListenerAddr { ip, device }, ip_options },
+                state: ListenerState { addr: ListenerAddr { ip, device } },
                 sharing,
             } => Remove::Listener {
                 concrete_addr: ListenerAddr {
                     ip: core_ctx.nds_converter().convert(ip.clone()),
                     device: device.clone(),
                 },
-                ip_options: ip_options.clone(),
                 sharing: sharing.clone(),
                 socket_id: S::make_bound_socket_map_id(socket_id),
             },
@@ -1816,14 +1625,12 @@ impl<I: IpExt, D: WeakDeviceIdentifier, S: DatagramSocketSpec> RemoveOperation<I
                 let ConnState {
                     addr,
                     socket: _,
-                    ip_options,
                     clear_device_on_disconnect: _,
                     shutdown: _,
                     extra: _,
                 } = core_ctx.nds_converter().convert(state);
                 Remove::Connected {
                     concrete_addr: addr.clone(),
-                    ip_options: ip_options.clone(),
                     sharing: sharing.clone(),
                     socket_id: S::make_bound_socket_map_id(socket_id),
                 }
@@ -1836,42 +1643,24 @@ impl<I: IpExt, D: WeakDeviceIdentifier, S: DatagramSocketSpec> RemoveOperation<I
 ///
 /// Like [`Remove`], this type takes two generic `IpExt` parameters so that
 /// it can be used from single-stack and dual-stack remove operations.
-struct RemoveInfo<WireI: IpExt, SocketI: IpExt, D: WeakDeviceIdentifier, S: DatagramSocketSpec>(
-    Remove<WireI, SocketI, D, S>,
+struct RemoveInfo<WireI: IpExt, D: WeakDeviceIdentifier, S: DatagramSocketSpec>(
+    Remove<WireI, D, S>,
 );
 
-impl<WireI: IpExt, SocketI: IpExt, D: WeakDeviceIdentifier, S: DatagramSocketSpec>
-    RemoveInfo<WireI, SocketI, D, S>
-{
-    fn into_options(self) -> IpOptions<SocketI, D, S> {
-        let RemoveInfo(remove) = self;
-        match remove {
-            Remove::Listener { concrete_addr: _, ip_options, sharing: _, socket_id: _ } => {
-                ip_options
-            }
-            Remove::Connected { concrete_addr: _, ip_options, sharing: _, socket_id: _ } => {
-                ip_options
-            }
-        }
-    }
-
-    fn into_options_sharing_and_device(
-        self,
-    ) -> (IpOptions<SocketI, D, S>, S::SharingState, Option<D>) {
+impl<WireI: IpExt, D: WeakDeviceIdentifier, S: DatagramSocketSpec> RemoveInfo<WireI, D, S> {
+    fn into_sharing_and_device(self) -> (S::SharingState, Option<D>) {
         let RemoveInfo(remove) = self;
         match remove {
             Remove::Listener {
                 concrete_addr: ListenerAddr { ip: _, device },
-                ip_options,
                 sharing,
                 socket_id: _,
-            } => (ip_options, sharing, device),
+            } => (sharing, device),
             Remove::Connected {
                 concrete_addr: ConnAddr { ip: _, device },
-                ip_options,
                 sharing,
                 socket_id: _,
-            } => (ip_options, sharing, device),
+            } => (sharing, device),
         }
     }
 
@@ -1890,7 +1679,6 @@ impl<WireI: IpExt, SocketI: IpExt, D: WeakDeviceIdentifier, S: DatagramSocketSpe
         match remove {
             Remove::Listener {
                 concrete_addr: ListenerAddr { ip: ListenerIpAddr { addr, identifier }, device },
-                ip_options: _,
                 sharing,
                 socket_id,
             } => {
@@ -1899,7 +1687,7 @@ impl<WireI: IpExt, SocketI: IpExt, D: WeakDeviceIdentifier, S: DatagramSocketSpe
                 )
                 .expect("reinserting just-removed listener failed");
             }
-            Remove::Connected { concrete_addr, ip_options: _, sharing, socket_id } => {
+            Remove::Connected { concrete_addr, sharing, socket_id } => {
                 let _entry = sockets
                     .conns_mut()
                     .try_insert(concrete_addr, sharing, socket_id)
@@ -1910,19 +1698,18 @@ impl<WireI: IpExt, SocketI: IpExt, D: WeakDeviceIdentifier, S: DatagramSocketSpe
 }
 
 /// The yet-to-be-performed removal of a single-stack socket.
-type SingleStackRemoveOperation<I, D, S> = RemoveOperation<I, I, D, S>;
+type SingleStackRemoveOperation<I, D, S> = RemoveOperation<I, D, S>;
 
 /// Information for a recently-removed single-stack socket.
-type SingleStackRemoveInfo<I, D, S> = RemoveInfo<I, I, D, S>;
+type SingleStackRemoveInfo<I, D, S> = RemoveInfo<I, D, S>;
 
 /// State associated with removing a dual-stack socket.
 enum DualStackRemove<I: IpExt, D: WeakDeviceIdentifier, S: DatagramSocketSpec> {
-    CurrentStack(Remove<I, I, D, S>),
-    OtherStack(Remove<I::OtherVersion, I, D, S>),
+    CurrentStack(Remove<I, D, S>),
+    OtherStack(Remove<I::OtherVersion, D, S>),
     ListenerBothStacks {
         identifier: <S::AddrSpec as SocketMapAddrSpec>::LocalIdentifier,
         device: Option<D>,
-        ip_options: IpOptions<I, D, S>,
         sharing: S::SharingState,
         socket_ids: PairedBoundSocketIds<I, D, S>,
     },
@@ -1941,25 +1728,20 @@ impl<I: IpExt, D: WeakDeviceIdentifier, S: DatagramSocketSpec> DualStackRemoveOp
     >(
         core_ctx: &mut CC,
         socket_id: &S::SocketId<I, D>,
+        ip_options: &IpOptions<I, D, S>,
         state: &BoundSocketState<I, D, S>,
     ) -> Self {
         let BoundSocketState { socket_type: state, original_bound_addr: _ } = state;
         DualStackRemoveOperation(match state {
-            BoundSocketStateType::Listener {
-                state: ListenerState { addr, ip_options },
-                sharing,
-            } => {
+            BoundSocketStateType::Listener { state: ListenerState { addr }, sharing } => {
                 let ListenerAddr { ip, device } = addr.clone();
-                match (
-                    core_ctx.ds_converter().convert(ip),
-                    core_ctx.dual_stack_enabled(&ip_options),
-                ) {
+                match (core_ctx.ds_converter().convert(ip), core_ctx.dual_stack_enabled(ip_options))
+                {
                     // Dual-stack enabled, bound in both stacks.
                     (DualStackListenerIpAddr::BothStacks(identifier), true) => {
                         DualStackRemove::ListenerBothStacks {
                             identifier: identifier.clone(),
                             device,
-                            ip_options: ip_options.clone(),
                             sharing: sharing.clone(),
                             socket_ids: PairedBoundSocketIds {
                                 this: S::make_bound_socket_map_id(socket_id),
@@ -1971,7 +1753,6 @@ impl<I: IpExt, D: WeakDeviceIdentifier, S: DatagramSocketSpec> DualStackRemoveOp
                     (DualStackListenerIpAddr::ThisStack(addr), true | false) => {
                         DualStackRemove::CurrentStack(Remove::Listener {
                             concrete_addr: ListenerAddr { ip: addr, device },
-                            ip_options: ip_options.clone(),
                             sharing: sharing.clone(),
                             socket_id: S::make_bound_socket_map_id(socket_id),
                         })
@@ -1980,7 +1761,6 @@ impl<I: IpExt, D: WeakDeviceIdentifier, S: DatagramSocketSpec> DualStackRemoveOp
                     (DualStackListenerIpAddr::OtherStack(addr), true) => {
                         DualStackRemove::OtherStack(Remove::Listener {
                             concrete_addr: ListenerAddr { ip: addr, device },
-                            ip_options: ip_options.clone(),
                             sharing: sharing.clone(),
                             socket_id: core_ctx.to_other_bound_socket_id(socket_id),
                         })
@@ -1997,31 +1777,27 @@ impl<I: IpExt, D: WeakDeviceIdentifier, S: DatagramSocketSpec> DualStackRemoveOp
                         let ConnState {
                             addr,
                             socket: _,
-                            ip_options,
                             clear_device_on_disconnect: _,
                             shutdown: _,
                             extra: _,
                         } = state;
                         DualStackRemove::CurrentStack(Remove::Connected {
                             concrete_addr: addr.clone(),
-                            ip_options: ip_options.clone(),
                             sharing: sharing.clone(),
                             socket_id: S::make_bound_socket_map_id(socket_id),
                         })
                     }
                     DualStackConnState::OtherStack(state) => {
-                        core_ctx.assert_dual_stack_enabled(&state);
+                        core_ctx.assert_dual_stack_enabled(&ip_options);
                         let ConnState {
                             addr,
                             socket: _,
-                            ip_options,
                             clear_device_on_disconnect: _,
                             shutdown: _,
                             extra: _,
                         } = state;
                         DualStackRemove::OtherStack(Remove::Connected {
                             concrete_addr: addr.clone(),
-                            ip_options: ip_options.clone(),
                             sharing: sharing.clone(),
                             socket_id: core_ctx.to_other_bound_socket_id(socket_id),
                         })
@@ -2057,19 +1833,12 @@ impl<I: IpExt, D: WeakDeviceIdentifier, S: DatagramSocketSpec> DualStackRemoveOp
                 let RemoveInfo(remove) = RemoveOperation(remove).apply(other_sockets);
                 DualStackRemoveInfo(DualStackRemove::OtherStack(remove))
             }
-            DualStackRemove::ListenerBothStacks {
-                identifier,
-                device,
-                ip_options,
-                sharing,
-                socket_ids,
-            } => {
+            DualStackRemove::ListenerBothStacks { identifier, device, sharing, socket_ids } => {
                 PairedSocketMapMut::<_, _, S> { bound: sockets, other_bound: other_sockets }
                     .remove_listener(&DualStackUnspecifiedAddr, identifier, &device, &socket_ids);
                 DualStackRemoveInfo(DualStackRemove::ListenerBothStacks {
                     identifier,
                     device,
-                    ip_options,
                     sharing,
                     socket_ids,
                 })
@@ -2084,37 +1853,17 @@ struct DualStackRemoveInfo<I: IpExt, D: WeakDeviceIdentifier, S: DatagramSocketS
 );
 
 impl<I: IpExt, D: WeakDeviceIdentifier, S: DatagramSocketSpec> DualStackRemoveInfo<I, D, S> {
-    fn into_options(self) -> IpOptions<I, D, S> {
+    fn into_sharing_and_device(self) -> (S::SharingState, Option<D>) {
         let DualStackRemoveInfo(dual_stack_remove) = self;
         match dual_stack_remove {
-            DualStackRemove::CurrentStack(remove) => RemoveInfo(remove).into_options(),
-            DualStackRemove::OtherStack(remove) => RemoveInfo(remove).into_options(),
-            DualStackRemove::ListenerBothStacks {
-                identifier: _,
-                device: _,
-                ip_options,
-                sharing: _,
-                socket_ids: _,
-            } => ip_options,
-        }
-    }
-
-    fn into_options_sharing_and_device(self) -> (IpOptions<I, D, S>, S::SharingState, Option<D>) {
-        let DualStackRemoveInfo(dual_stack_remove) = self;
-        match dual_stack_remove {
-            DualStackRemove::CurrentStack(remove) => {
-                RemoveInfo(remove).into_options_sharing_and_device()
-            }
-            DualStackRemove::OtherStack(remove) => {
-                RemoveInfo(remove).into_options_sharing_and_device()
-            }
+            DualStackRemove::CurrentStack(remove) => RemoveInfo(remove).into_sharing_and_device(),
+            DualStackRemove::OtherStack(remove) => RemoveInfo(remove).into_sharing_and_device(),
             DualStackRemove::ListenerBothStacks {
                 identifier: _,
                 device,
-                ip_options,
                 sharing,
                 socket_ids: _,
-            } => (ip_options, sharing, device),
+            } => (sharing, device),
         }
     }
 
@@ -2143,13 +1892,7 @@ impl<I: IpExt, D: WeakDeviceIdentifier, S: DatagramSocketSpec> DualStackRemoveIn
             DualStackRemove::OtherStack(remove) => {
                 RemoveInfo(remove).reinsert(other_sockets);
             }
-            DualStackRemove::ListenerBothStacks {
-                identifier,
-                device,
-                ip_options: _,
-                sharing,
-                socket_ids,
-            } => {
+            DualStackRemove::ListenerBothStacks { identifier, device, sharing, socket_ids } => {
                 let mut socket_maps_pair =
                     PairedSocketMapMut { bound: sockets, other_bound: other_sockets };
                 BoundStateHandler::<_, S, _>::try_insert_listener(
@@ -2498,9 +2241,10 @@ fn listen_inner<
         ),
     }
 
-    let UnboundSocketState { device, sharing, ip_options } = match state {
-        SocketState::Unbound(state) => state,
-        SocketState::Bound(_) => return Err(Either::Left(ExpectedUnboundError)),
+    let SocketState { inner, ip_options } = state;
+    let UnboundSocketState { device, sharing } = match inner {
+        SocketStateInner::Unbound(state) => state,
+        SocketStateInner::Bound(_) => return Err(Either::Left(ExpectedUnboundError)),
     };
 
     let dual_stack = core_ctx.dual_stack_context_mut();
@@ -2732,13 +2476,9 @@ fn listen_inner<
 
     // Replace the unbound state only after we're sure the
     // insertion has succeeded.
-    *state = SocketState::Bound(BoundSocketState {
+    state.inner = SocketStateInner::Bound(BoundSocketState {
         socket_type: BoundSocketStateType::Listener {
-            state: ListenerState {
-                // TODO(https://fxbug.dev/42082099): Remove this clone().
-                ip_options: ip_options.clone(),
-                addr: bound_addr,
-            },
+            state: ListenerState { addr: bound_addr },
             sharing: sharing.clone(),
         },
         original_bound_addr,
@@ -2773,19 +2513,14 @@ pub enum ConnectError {
 }
 
 /// Parameters required to connect a socket.
-struct ConnectParameters<
-    WireI: IpExt,
-    SocketI: IpExt,
-    D: WeakDeviceIdentifier,
-    S: DatagramSocketSpec,
-> {
+struct ConnectParameters<WireI: IpExt, D: WeakDeviceIdentifier, S: DatagramSocketSpec> {
     local_ip: Option<SocketIpAddr<WireI::Addr>>,
     local_port: Option<<S::AddrSpec as SocketMapAddrSpec>::LocalIdentifier>,
     remote_ip: ZonedAddr<SocketIpAddr<WireI::Addr>, D::Strong>,
     remote_port: <S::AddrSpec as SocketMapAddrSpec>::RemoteIdentifier,
     device: Option<D>,
     sharing: S::SharingState,
-    ip_options: IpOptions<SocketI, D, S>,
+    common_ip_options: DatagramIpAgnosticOptions,
     socket_options: DatagramIpSpecificSocketOptions<WireI, D>,
     socket_id:
         <S::SocketMapSpec<WireI, D> as DatagramSocketMapSpec<WireI, D, S::AddrSpec>>::BoundSocketId,
@@ -2801,14 +2536,13 @@ struct ConnectParameters<
 /// The output of `remove_original` is fed into `reinsert_original`.
 fn connect_inner<
     WireI: IpExt,
-    SocketI: IpExt,
     D: WeakDeviceIdentifier,
     S: DatagramSocketSpec,
     R,
     BC: DatagramBindingsContext,
     CC: IpSocketHandler<WireI, BC, WeakDeviceId = D, DeviceId = D::Strong>,
 >(
-    connect_params: ConnectParameters<WireI, SocketI, D, S>,
+    connect_params: ConnectParameters<WireI, D, S>,
     core_ctx: &mut CC,
     bindings_ctx: &mut BC,
     sockets: &mut BoundSocketMap<WireI, D, S::AddrSpec, S::SocketMapSpec<WireI, D>>,
@@ -2819,7 +2553,7 @@ fn connect_inner<
         &mut BoundSocketMap<WireI, D, S::AddrSpec, S::SocketMapSpec<WireI, D>>,
         R,
     ),
-) -> Result<ConnState<WireI, SocketI, D, S>, ConnectError> {
+) -> Result<ConnState<WireI, D, S>, ConnectError> {
     let ConnectParameters {
         local_ip,
         local_port,
@@ -2827,7 +2561,7 @@ fn connect_inner<
         remote_port,
         device,
         sharing,
-        ip_options,
+        common_ip_options,
         socket_options,
         socket_id,
         original_shutdown,
@@ -2856,7 +2590,7 @@ fn connect_inner<
             local_ip: local_ip.and_then(IpDeviceAddr::new_from_socket_ip_addr),
             remote_ip,
             proto: S::ip_proto::<WireI>(),
-            options: &ip_options.common,
+            options: &common_ip_options,
         },
     )?;
 
@@ -2900,7 +2634,6 @@ fn connect_inner<
     };
     Ok(ConnState {
         socket: ip_sock,
-        ip_options,
         clear_device_on_disconnect,
         shutdown: original_shutdown.unwrap_or_else(Shutdown::default),
         addr: bound_addr,
@@ -2910,7 +2643,7 @@ fn connect_inner<
 
 /// State required to perform single-stack connection of a socket.
 struct SingleStackConnectOperation<I: IpExt, D: WeakDeviceIdentifier, S: DatagramSocketSpec> {
-    params: ConnectParameters<I, I, D, S>,
+    params: ConnectParameters<I, D, S>,
     remove_op: Option<SingleStackRemoveOperation<I, D, S>>,
     sharing: S::SharingState,
 }
@@ -2930,8 +2663,9 @@ impl<I: IpExt, D: WeakDeviceIdentifier, S: DatagramSocketSpec>
         remote_port: <S::AddrSpec as SocketMapAddrSpec>::RemoteIdentifier,
         extra: S::ConnStateExtra,
     ) -> Self {
-        match state {
-            SocketState::Unbound(UnboundSocketState { device, sharing, ip_options }) => {
+        let SocketState { ip_options, inner } = state;
+        match inner {
+            SocketStateInner::Unbound(UnboundSocketState { device, sharing }) => {
                 SingleStackConnectOperation {
                     params: ConnectParameters {
                         local_ip: None,
@@ -2940,7 +2674,7 @@ impl<I: IpExt, D: WeakDeviceIdentifier, S: DatagramSocketSpec>
                         remote_port,
                         device: device.clone(),
                         sharing: sharing.clone(),
-                        ip_options: ip_options.clone(),
+                        common_ip_options: ip_options.common.clone(),
                         socket_options: ip_options.socket_options.clone(),
                         socket_id: S::make_bound_socket_map_id(socket_id),
                         original_shutdown: None,
@@ -2950,13 +2684,13 @@ impl<I: IpExt, D: WeakDeviceIdentifier, S: DatagramSocketSpec>
                     remove_op: None,
                 }
             }
-            SocketState::Bound(state) => {
+            SocketStateInner::Bound(state) => {
                 let remove_op =
                     SingleStackRemoveOperation::new_from_state(core_ctx, socket_id, state);
                 let BoundSocketState { socket_type, original_bound_addr: _ } = state;
                 match socket_type {
                     BoundSocketStateType::Listener {
-                        state: ListenerState { ip_options, addr: ListenerAddr { ip, device } },
+                        state: ListenerState { addr: ListenerAddr { ip, device } },
                         sharing,
                     } => {
                         let ListenerIpAddr { addr, identifier } =
@@ -2969,7 +2703,7 @@ impl<I: IpExt, D: WeakDeviceIdentifier, S: DatagramSocketSpec>
                                 remote_port,
                                 device: device.clone(),
                                 sharing: sharing.clone(),
-                                ip_options: ip_options.clone(),
+                                common_ip_options: ip_options.common.clone(),
                                 socket_options: ip_options.socket_options.clone(),
                                 socket_id: S::make_bound_socket_map_id(socket_id),
                                 original_shutdown: None,
@@ -2982,7 +2716,6 @@ impl<I: IpExt, D: WeakDeviceIdentifier, S: DatagramSocketSpec>
                     BoundSocketStateType::Connected { state, sharing } => {
                         let ConnState {
                             socket: _,
-                            ip_options,
                             shutdown,
                             addr:
                                 ConnAddr {
@@ -3000,7 +2733,7 @@ impl<I: IpExt, D: WeakDeviceIdentifier, S: DatagramSocketSpec>
                                 remote_port,
                                 device: device.clone(),
                                 sharing: sharing.clone(),
-                                ip_options: ip_options.clone(),
+                                common_ip_options: ip_options.common.clone(),
                                 socket_options: ip_options.socket_options.clone(),
                                 socket_id: S::make_bound_socket_map_id(socket_id),
                                 original_shutdown: Some(shutdown.clone()),
@@ -3030,7 +2763,7 @@ impl<I: IpExt, D: WeakDeviceIdentifier, S: DatagramSocketSpec>
         core_ctx: &mut CC,
         bindings_ctx: &mut BC,
         socket_map: &mut BoundSocketMap<I, D, S::AddrSpec, S::SocketMapSpec<I, D>>,
-    ) -> Result<(ConnState<I, I, D, S>, S::SharingState), ConnectError> {
+    ) -> Result<(ConnState<I, D, S>, S::SharingState), ConnectError> {
         let SingleStackConnectOperation { params, remove_op, sharing } = self;
         let remove_fn =
             |sockets: &mut BoundSocketMap<I, D, S::AddrSpec, S::SocketMapSpec<I, D>>| {
@@ -3052,7 +2785,7 @@ impl<I: IpExt, D: WeakDeviceIdentifier, S: DatagramSocketSpec>
 /// State required to perform dual-stack connection of a socket.
 struct DualStackConnectOperation<I: DualStackIpExt, D: WeakDeviceIdentifier, S: DatagramSocketSpec>
 {
-    params: EitherStack<ConnectParameters<I, I, D, S>, ConnectParameters<I::OtherVersion, I, D, S>>,
+    params: EitherStack<ConnectParameters<I, D, S>, ConnectParameters<I::OtherVersion, D, S>>,
     remove_op: Option<DualStackRemoveOperation<I, D, S>>,
     sharing: S::SharingState,
 }
@@ -3072,8 +2805,9 @@ impl<I: DualStackIpExt, D: WeakDeviceIdentifier, S: DatagramSocketSpec>
         remote_port: <S::AddrSpec as SocketMapAddrSpec>::RemoteIdentifier,
         extra: S::ConnStateExtra,
     ) -> Result<Self, ConnectError> {
-        match state {
-            SocketState::Unbound(UnboundSocketState { device, sharing, ip_options }) => {
+        let SocketState { ip_options, inner } = state;
+        match inner {
+            SocketStateInner::Unbound(UnboundSocketState { device, sharing }) => {
                 // Unbound sockets don't have a predisposition of which stack to
                 // connect in. Instead, it's dictated entirely by the remote.
                 let params = match remote_ip {
@@ -3085,7 +2819,7 @@ impl<I: DualStackIpExt, D: WeakDeviceIdentifier, S: DatagramSocketSpec>
                             remote_port,
                             device: device.clone(),
                             sharing: sharing.clone(),
-                            ip_options: ip_options.clone(),
+                            common_ip_options: ip_options.common.clone(),
                             socket_options: ip_options.socket_options.clone(),
                             socket_id: S::make_bound_socket_map_id(socket_id),
                             original_shutdown: None,
@@ -3103,7 +2837,7 @@ impl<I: DualStackIpExt, D: WeakDeviceIdentifier, S: DatagramSocketSpec>
                             remote_port,
                             device: device.clone(),
                             sharing: sharing.clone(),
-                            ip_options: ip_options.clone(),
+                            common_ip_options: ip_options.common.clone(),
                             socket_options: core_ctx.to_other_socket_options(ip_options).clone(),
                             socket_id: core_ctx.to_other_bound_socket_id(socket_id),
                             original_shutdown: None,
@@ -3113,14 +2847,15 @@ impl<I: DualStackIpExt, D: WeakDeviceIdentifier, S: DatagramSocketSpec>
                 };
                 Ok(DualStackConnectOperation { params, remove_op: None, sharing: sharing.clone() })
             }
-            SocketState::Bound(state) => {
-                let remove_op =
-                    DualStackRemoveOperation::new_from_state(core_ctx, socket_id, state);
+            SocketStateInner::Bound(state) => {
+                let remove_op = DualStackRemoveOperation::new_from_state(
+                    core_ctx, socket_id, ip_options, state,
+                );
 
                 let BoundSocketState { socket_type, original_bound_addr: _ } = state;
                 match socket_type {
                     BoundSocketStateType::Listener {
-                        state: ListenerState { ip_options, addr: ListenerAddr { ip, device } },
+                        state: ListenerState { addr: ListenerAddr { ip, device } },
                         sharing,
                     } => {
                         match (remote_ip, core_ctx.ds_converter().convert(ip)) {
@@ -3151,7 +2886,7 @@ impl<I: DualStackIpExt, D: WeakDeviceIdentifier, S: DatagramSocketSpec>
                                     remote_port,
                                     device: device.clone(),
                                     sharing: sharing.clone(),
-                                    ip_options: ip_options.clone(),
+                                    common_ip_options: ip_options.common.clone(),
                                     socket_options: ip_options.socket_options.clone(),
                                     socket_id: S::make_bound_socket_map_id(socket_id),
                                     original_shutdown: None,
@@ -3174,7 +2909,7 @@ impl<I: DualStackIpExt, D: WeakDeviceIdentifier, S: DatagramSocketSpec>
                                     remote_port,
                                     device: device.clone(),
                                     sharing: sharing.clone(),
-                                    ip_options: ip_options.clone(),
+                                    common_ip_options: ip_options.common.clone(),
                                     socket_options: ip_options.socket_options.clone(),
                                     socket_id: S::make_bound_socket_map_id(socket_id),
                                     original_shutdown: None,
@@ -3198,7 +2933,7 @@ impl<I: DualStackIpExt, D: WeakDeviceIdentifier, S: DatagramSocketSpec>
                                     remote_port,
                                     device: device.clone(),
                                     sharing: sharing.clone(),
-                                    ip_options: ip_options.clone(),
+                                    common_ip_options: ip_options.common.clone(),
                                     socket_options: core_ctx
                                         .to_other_socket_options(ip_options)
                                         .clone(),
@@ -3223,7 +2958,7 @@ impl<I: DualStackIpExt, D: WeakDeviceIdentifier, S: DatagramSocketSpec>
                                     remote_port,
                                     device: device.clone(),
                                     sharing: sharing.clone(),
-                                    ip_options: ip_options.clone(),
+                                    common_ip_options: ip_options.common.clone(),
                                     socket_options: core_ctx
                                         .to_other_socket_options(ip_options)
                                         .clone(),
@@ -3255,7 +2990,6 @@ impl<I: DualStackIpExt, D: WeakDeviceIdentifier, S: DatagramSocketSpec>
                                 DualStackRemoteIp::ThisStack(remote_ip),
                                 DualStackConnState::ThisStack(ConnState {
                                     socket: _,
-                                    ip_options,
                                     shutdown,
                                     addr:
                                         ConnAddr {
@@ -3274,7 +3008,7 @@ impl<I: DualStackIpExt, D: WeakDeviceIdentifier, S: DatagramSocketSpec>
                                     remote_port,
                                     device: device.clone(),
                                     sharing: sharing.clone(),
-                                    ip_options: ip_options.clone(),
+                                    common_ip_options: ip_options.common.clone(),
                                     socket_options: ip_options.socket_options.clone(),
                                     socket_id: S::make_bound_socket_map_id(socket_id),
                                     original_shutdown: Some(shutdown.clone()),
@@ -3288,7 +3022,6 @@ impl<I: DualStackIpExt, D: WeakDeviceIdentifier, S: DatagramSocketSpec>
                                 DualStackRemoteIp::OtherStack(remote_ip),
                                 DualStackConnState::OtherStack(ConnState {
                                     socket: _,
-                                    ip_options,
                                     shutdown,
                                     addr:
                                         ConnAddr {
@@ -3307,7 +3040,7 @@ impl<I: DualStackIpExt, D: WeakDeviceIdentifier, S: DatagramSocketSpec>
                                     remote_port,
                                     device: device.clone(),
                                     sharing: sharing.clone(),
-                                    ip_options: ip_options.clone(),
+                                    common_ip_options: ip_options.common.clone(),
                                     socket_options: core_ctx
                                         .to_other_socket_options(ip_options)
                                         .clone(),
@@ -3450,26 +3183,28 @@ fn disconnect_to_unbound<
     core_ctx: &mut CC,
     id: &S::SocketId<I, CC::WeakDeviceId>,
     clear_device_on_disconnect: bool,
+    ip_options: &IpOptions<I, CC::WeakDeviceId, S>,
     socket_state: &BoundSocketState<I, CC::WeakDeviceId, S>,
-) -> UnboundSocketState<I, CC::WeakDeviceId, S> {
-    let (ip_options, sharing, mut device) = match core_ctx.dual_stack_context_mut() {
+) -> UnboundSocketState<CC::WeakDeviceId, S> {
+    let (sharing, mut device) = match core_ctx.dual_stack_context_mut() {
         MaybeDualStack::NotDualStack(nds) => {
             let remove_op = SingleStackRemoveOperation::new_from_state(nds, id, socket_state);
             let info = core_ctx.with_bound_sockets_mut(|_core_ctx, bound| remove_op.apply(bound));
-            info.into_options_sharing_and_device()
+            info.into_sharing_and_device()
         }
         MaybeDualStack::DualStack(ds) => {
-            let remove_op = DualStackRemoveOperation::new_from_state(ds, id, socket_state);
+            let remove_op =
+                DualStackRemoveOperation::new_from_state(ds, id, ip_options, socket_state);
             let info = ds.with_both_bound_sockets_mut(|_core_ctx, bound, other_bound| {
                 remove_op.apply(bound, other_bound)
             });
-            info.into_options_sharing_and_device()
+            info.into_sharing_and_device()
         }
     };
     if clear_device_on_disconnect {
         device = None
     }
-    UnboundSocketState { device, sharing, ip_options }
+    UnboundSocketState { device, sharing }
 }
 
 /// Converts a connected socket to a listener socket.
@@ -3486,16 +3221,16 @@ fn disconnect_to_listener<
     id: &S::SocketId<I, CC::WeakDeviceId>,
     listener_ip: S::ListenerIpAddr<I>,
     clear_device_on_disconnect: bool,
+    ip_options: &IpOptions<I, CC::WeakDeviceId, S>,
     socket_state: &BoundSocketState<I, CC::WeakDeviceId, S>,
 ) -> BoundSocketState<I, CC::WeakDeviceId, S> {
-    let (ip_options, sharing, device) = match core_ctx.dual_stack_context_mut() {
+    let (sharing, device) = match core_ctx.dual_stack_context_mut() {
         MaybeDualStack::NotDualStack(nds) => {
             let ListenerIpAddr { addr, identifier } =
                 nds.nds_converter().convert(listener_ip.clone());
             let remove_op = SingleStackRemoveOperation::new_from_state(nds, id, socket_state);
             core_ctx.with_bound_sockets_mut(|_core_ctx, bound| {
-                let (ip_options, sharing, mut device) =
-                    remove_op.apply(bound).into_options_sharing_and_device();
+                let (sharing, mut device) = remove_op.apply(bound).into_sharing_and_device();
                 if clear_device_on_disconnect {
                     device = None;
                 }
@@ -3508,17 +3243,18 @@ fn disconnect_to_listener<
                     S::make_bound_socket_map_id(id),
                 )
                 .expect("inserting listener for disconnected socket should succeed");
-                (ip_options, sharing, device)
+                (sharing, device)
             })
         }
         MaybeDualStack::DualStack(ds) => {
-            let remove_op = DualStackRemoveOperation::new_from_state(ds, id, socket_state);
+            let remove_op =
+                DualStackRemoveOperation::new_from_state(ds, id, ip_options, socket_state);
             let other_id = ds.to_other_bound_socket_id(id);
             let id = S::make_bound_socket_map_id(id);
             let converter = ds.ds_converter();
             ds.with_both_bound_sockets_mut(|_core_ctx, bound, other_bound| {
-                let (ip_options, sharing, mut device) =
-                    remove_op.apply(bound, other_bound).into_options_sharing_and_device();
+                let (sharing, mut device) =
+                    remove_op.apply(bound, other_bound).into_sharing_and_device();
                 if clear_device_on_disconnect {
                     device = None;
                 }
@@ -3558,14 +3294,14 @@ fn disconnect_to_listener<
                     }
                 }
                 .expect("inserting listener for disconnected socket should succeed");
-                (ip_options, sharing, device)
+                (sharing, device)
             })
         }
     };
     BoundSocketState {
         original_bound_addr: Some(listener_ip.clone()),
         socket_type: BoundSocketStateType::Listener {
-            state: ListenerState { ip_options, addr: ListenerAddr { ip: listener_ip, device } },
+            state: ListenerState { addr: ListenerAddr { ip: listener_ip, device } },
             sharing,
         },
     }
@@ -3724,18 +3460,12 @@ fn send_oneshot<
 
 /// Mutably holds the original state of a bound socket required to update the
 /// bound device.
-enum SetBoundDeviceParameters<
-    'a,
-    WireI: IpExt,
-    SocketI: IpExt,
-    D: WeakDeviceIdentifier,
-    S: DatagramSocketSpec,
-> {
+enum SetBoundDeviceParameters<'a, WireI: IpExt, D: WeakDeviceIdentifier, S: DatagramSocketSpec> {
     Listener {
         ip: &'a ListenerIpAddr<WireI::Addr, <S::AddrSpec as SocketMapAddrSpec>::LocalIdentifier>,
         device: &'a mut Option<D>,
     },
-    Connected(&'a mut ConnState<WireI, SocketI, D, S>),
+    Connected(&'a mut ConnState<WireI, D, S>),
 }
 
 /// Update the device for a bound socket.
@@ -3750,7 +3480,6 @@ enum SetBoundDeviceParameters<
 fn set_bound_device_single_stack<
     'a,
     WireI: IpExt,
-    SocketI: IpExt,
     D: WeakDeviceIdentifier,
     S: DatagramSocketSpec,
     BC: DatagramBindingsContext,
@@ -3758,11 +3487,12 @@ fn set_bound_device_single_stack<
 >(
     bindings_ctx: &mut BC,
     core_ctx: &mut CC,
-    params: SetBoundDeviceParameters<'a, WireI, SocketI, D, S>,
+    params: SetBoundDeviceParameters<'a, WireI, D, S>,
     sockets: &mut BoundSocketMap<WireI, D, S::AddrSpec, S::SocketMapSpec<WireI, D>>,
     socket_id: &<
             S::SocketMapSpec<WireI, D> as DatagramSocketMapSpec<WireI, D, S::AddrSpec>
         >::BoundSocketId,
+    common_ip_options: &DatagramIpAgnosticOptions,
     new_device: Option<&D::Strong>,
 ) -> Result<(), SocketError> {
     let (local_ip, remote_ip, old_device) = match &params {
@@ -3772,7 +3502,6 @@ fn set_bound_device_single_stack<
         } => (addr.as_ref(), None, device.as_ref()),
         SetBoundDeviceParameters::Connected(ConnState {
             socket: _,
-            ip_options: _,
             addr:
                 ConnAddr {
                     ip: ConnIpAddr { local: (local_ip, _local_id), remote: (remote_ip, _remote_id) },
@@ -3815,7 +3544,6 @@ fn set_bound_device_single_stack<
         }
         SetBoundDeviceParameters::Connected(ConnState {
             socket,
-            ip_options,
             addr,
             shutdown: _,
             clear_device_on_disconnect,
@@ -3831,7 +3559,7 @@ fn set_bound_device_single_stack<
                         local_ip: IpDeviceAddr::new_from_socket_ip_addr(local_ip.clone()),
                         remote_ip: remote_ip.clone(),
                         proto: socket.proto(),
-                        options: &ip_options.common,
+                        options: common_ip_options,
                     },
                 )
                 .map_err(|_: IpSockCreationError| {
@@ -4164,30 +3892,29 @@ where
             all_sockets.remove(id.borrow()).expect("socket already closed")
         });
         core_ctx.with_socket_state(&id, |core_ctx, state| {
-            let ip_options = match state {
-                SocketState::Unbound(UnboundSocketState { device: _, sharing: _, ip_options }) => {
-                    ip_options.clone()
-                }
-                SocketState::Bound(state) => match core_ctx.dual_stack_context_mut() {
+            let SocketState { ip_options, inner } = state;
+            match inner {
+                SocketStateInner::Unbound(UnboundSocketState { device: _, sharing: _ }) => {}
+                SocketStateInner::Bound(state) => match core_ctx.dual_stack_context_mut() {
                     MaybeDualStack::DualStack(dual_stack) => {
-                        let op = DualStackRemoveOperation::new_from_state(dual_stack, &id, state);
-                        dual_stack
+                        let op = DualStackRemoveOperation::new_from_state(
+                            dual_stack, &id, ip_options, state,
+                        );
+                        let _: DualStackRemoveInfo<_, _, _> = dual_stack
                             .with_both_bound_sockets_mut(|_core_ctx, sockets, other_sockets| {
                                 op.apply(sockets, other_sockets)
-                            })
-                            .into_options()
+                            });
                     }
                     MaybeDualStack::NotDualStack(not_dual_stack) => {
                         let op =
                             SingleStackRemoveOperation::new_from_state(not_dual_stack, &id, state);
-                        core_ctx
-                            .with_bound_sockets_mut(|_core_ctx, sockets| op.apply(sockets))
-                            .into_options()
+                        let _: SingleStackRemoveInfo<_, _, _> =
+                            core_ctx.with_bound_sockets_mut(|_core_ctx, sockets| op.apply(sockets));
                     }
                 },
             };
             DatagramBoundStateContext::<I, _, _>::with_transport_context(core_ctx, |core_ctx| {
-                leave_all_joined_groups(core_ctx, bindings_ctx, ip_options.multicast_memberships)
+                leave_all_joined_groups(core_ctx, bindings_ctx, &ip_options.multicast_memberships)
             });
         });
         // Drop the (hopefully last) strong ID before unwrapping the primary
@@ -4260,13 +3987,14 @@ where
                     Err(ConnectError::RemoteUnexpectedlyMapped)
                 }
             }?;
-            let original_bound_addr = match state {
-                SocketState::Unbound(_) => None,
-                SocketState::Bound(BoundSocketState { socket_type: _, original_bound_addr }) => {
-                    original_bound_addr.clone()
-                }
+            let original_bound_addr = match &state.inner {
+                SocketStateInner::Unbound(_) => None,
+                SocketStateInner::Bound(BoundSocketState {
+                    socket_type: _,
+                    original_bound_addr,
+                }) => original_bound_addr.clone(),
             };
-            *state = SocketState::Bound(BoundSocketState {
+            state.inner = SocketStateInner::Bound(BoundSocketState {
                 socket_type: BoundSocketStateType::Connected { state: conn_state, sharing },
                 original_bound_addr,
             });
@@ -4280,9 +4008,10 @@ where
         id: &DatagramApiSocketId<I, C, S>,
     ) -> Result<(), ExpectedConnError> {
         self.core_ctx().with_socket_state_mut(id, |core_ctx, state| {
-            let inner_state = match state {
-                SocketState::Unbound(_) => return Err(ExpectedConnError),
-                SocketState::Bound(state) => state,
+            let SocketState { ip_options, inner } = state;
+            let inner_state = match inner {
+                SocketStateInner::Unbound(_) => return Err(ExpectedConnError),
+                SocketStateInner::Bound(state) => state,
             };
             let BoundSocketState { socket_type, original_bound_addr } = inner_state;
             let conn_state = match socket_type {
@@ -4308,18 +4037,20 @@ where
                 }
             };
 
-            *state = match original_bound_addr {
-                None => SocketState::Unbound(disconnect_to_unbound(
+            state.inner = match original_bound_addr {
+                None => SocketStateInner::Unbound(disconnect_to_unbound(
                     core_ctx,
                     id,
                     clear_device_on_disconnect,
+                    &state.ip_options,
                     inner_state,
                 )),
-                Some(original_bound_addr) => SocketState::Bound(disconnect_to_listener(
+                Some(original_bound_addr) => SocketStateInner::Bound(disconnect_to_listener(
                     core_ctx,
                     id,
                     original_bound_addr.clone(),
                     clear_device_on_disconnect,
+                    &ip_options,
                     inner_state,
                 )),
             };
@@ -4333,14 +4064,15 @@ where
         id: &DatagramApiSocketId<I, C, S>,
     ) -> Option<ShutdownType> {
         self.core_ctx().with_socket_state(id, |core_ctx, state| {
-            let state = match state {
-                SocketState::Unbound(_) => return None,
-                SocketState::Bound(BoundSocketState { socket_type, original_bound_addr: _ }) => {
-                    match socket_type {
-                        BoundSocketStateType::Listener { state: _, sharing: _ } => return None,
-                        BoundSocketStateType::Connected { state, sharing: _ } => state,
-                    }
-                }
+            let state = match &state.inner {
+                SocketStateInner::Unbound(_) => return None,
+                SocketStateInner::Bound(BoundSocketState {
+                    socket_type,
+                    original_bound_addr: _,
+                }) => match socket_type {
+                    BoundSocketStateType::Listener { state: _, sharing: _ } => return None,
+                    BoundSocketStateType::Connected { state, sharing: _ } => state,
+                },
             };
             let Shutdown { send, receive } = match core_ctx.dual_stack_context_mut() {
                 MaybeDualStack::DualStack(ds) => ds.ds_converter().convert(state).as_ref(),
@@ -4359,16 +4091,17 @@ where
         which: ShutdownType,
     ) -> Result<(), ExpectedConnError> {
         self.core_ctx().with_socket_state_mut(id, |core_ctx, state| {
-            let state = match state {
-                SocketState::Unbound(_) => return Err(ExpectedConnError),
-                SocketState::Bound(BoundSocketState { socket_type, original_bound_addr: _ }) => {
-                    match socket_type {
-                        BoundSocketStateType::Listener { state: _, sharing: _ } => {
-                            return Err(ExpectedConnError);
-                        }
-                        BoundSocketStateType::Connected { state, sharing: _ } => state,
+            let state = match &mut state.inner {
+                SocketStateInner::Unbound(_) => return Err(ExpectedConnError),
+                SocketStateInner::Bound(BoundSocketState {
+                    socket_type,
+                    original_bound_addr: _,
+                }) => match socket_type {
+                    BoundSocketStateType::Listener { state: _, sharing: _ } => {
+                        return Err(ExpectedConnError);
                     }
-                }
+                    BoundSocketStateType::Connected { state, sharing: _ } => state,
+                },
             };
             let (shutdown_send, shutdown_receive) = which.to_send_receive();
             let Shutdown { send, receive } = match core_ctx.dual_stack_context_mut() {
@@ -4389,16 +4122,18 @@ where
     ) -> Result<(), SendError<S::SerializeError>> {
         let (core_ctx, bindings_ctx) = self.contexts();
         core_ctx.with_socket_state(id, |core_ctx, state| {
-            let state = match state {
-                SocketState::Unbound(_) => return Err(SendError::NotConnected),
-                SocketState::Bound(BoundSocketState { socket_type, original_bound_addr: _ }) => {
-                    match socket_type {
-                        BoundSocketStateType::Listener { state: _, sharing: _ } => {
-                            return Err(SendError::NotConnected);
-                        }
-                        BoundSocketStateType::Connected { state, sharing: _ } => state,
+            let SocketState { inner, ip_options } = state;
+            let state = match inner {
+                SocketStateInner::Unbound(_) => return Err(SendError::NotConnected),
+                SocketStateInner::Bound(BoundSocketState {
+                    socket_type,
+                    original_bound_addr: _,
+                }) => match socket_type {
+                    BoundSocketStateType::Listener { state: _, sharing: _ } => {
+                        return Err(SendError::NotConnected);
                     }
-                }
+                    BoundSocketStateType::Connected { state, sharing: _ } => state,
+                },
             };
 
             struct SendParams<
@@ -4442,7 +4177,6 @@ where
                     match dual_stack.ds_converter().convert(state) {
                         DualStackConnState::ThisStack(ConnState {
                             socket,
-                            ip_options,
                             clear_device_on_disconnect: _,
                             shutdown,
                             addr: ConnAddr { ip, device: _ },
@@ -4460,7 +4194,6 @@ where
                         ),
                         DualStackConnState::OtherStack(ConnState {
                             socket,
-                            ip_options,
                             clear_device_on_disconnect: _,
                             shutdown,
                             addr: ConnAddr { ip, device: _ },
@@ -4481,7 +4214,6 @@ where
                 MaybeDualStack::NotDualStack(not_dual_stack) => {
                     let ConnState {
                         socket,
-                        ip_options,
                         clear_device_on_disconnect: _,
                         shutdown,
                         addr: ConnAddr { ip, device: _ },
@@ -4556,9 +4288,10 @@ where
                 Ok(()) | Err(Either::Left(ExpectedUnboundError)) => (),
                 Err(Either::Right(e)) => return Err(Either::Left(e)),
             };
-            let state = match state {
-                SocketState::Unbound(_) => panic!("expected bound socket"),
-                SocketState::Bound(BoundSocketState {
+            let SocketState { inner, ip_options } = state;
+            let state = match inner {
+                SocketStateInner::Unbound(_) => panic!("expected bound socket"),
+                SocketStateInner::Bound(BoundSocketState {
                     socket_type: state,
                     original_bound_addr: _,
                 }) => state,
@@ -4593,7 +4326,7 @@ where
                 (MaybeDualStack::NotDualStack(nds), DualStackRemoteIp::ThisStack(remote_ip)) => {
                     match state {
                         BoundSocketStateType::Listener {
-                            state: ListenerState { ip_options, addr: ListenerAddr { ip, device } },
+                            state: ListenerState { addr: ListenerAddr { ip, device } },
                             sharing: _,
                         } => {
                             let ListenerIpAddr { addr, identifier } =
@@ -4617,7 +4350,6 @@ where
                         BoundSocketStateType::Connected { state, sharing: _ } => {
                             let ConnState {
                                 socket: _,
-                                ip_options,
                                 clear_device_on_disconnect: _,
                                 shutdown,
                                 addr:
@@ -4647,7 +4379,7 @@ where
                 }
                 (MaybeDualStack::DualStack(ds), remote_ip) => match state {
                     BoundSocketStateType::Listener {
-                        state: ListenerState { ip_options, addr: ListenerAddr { ip, device } },
+                        state: ListenerState { addr: ListenerAddr { ip, device } },
                         sharing: _,
                     } => match (ds.ds_converter().convert(ip), remote_ip) {
                         (
@@ -4754,7 +4486,6 @@ where
                             ) => {
                                 let ConnState {
                                     socket: _,
-                                    ip_options,
                                     clear_device_on_disconnect: _,
                                     shutdown,
                                     addr,
@@ -4786,7 +4517,6 @@ where
                             ) => {
                                 let ConnState {
                                     socket: _,
-                                    ip_options,
                                     clear_device_on_disconnect: _,
                                     shutdown,
                                     addr,
@@ -4859,13 +4589,17 @@ where
     ) -> Result<(), SocketError> {
         let (core_ctx, bindings_ctx) = self.contexts();
         core_ctx.with_socket_state_mut(id, |core_ctx, state| {
-            match state {
-                SocketState::Unbound(state) => {
-                    let UnboundSocketState { device, sharing: _, ip_options: _ } = state;
+            let SocketState { inner, ip_options } = state;
+            match inner {
+                SocketStateInner::Unbound(state) => {
+                    let UnboundSocketState { device, sharing: _ } = state;
                     *device = new_device.map(|d| d.downgrade());
                     Ok(())
                 }
-                SocketState::Bound(BoundSocketState { socket_type, original_bound_addr: _ }) => {
+                SocketStateInner::Bound(BoundSocketState {
+                    socket_type,
+                    original_bound_addr: _,
+                }) => {
                     // Information about the set-device operation for the given
                     // socket.
                     enum Operation<
@@ -4877,11 +4611,11 @@ where
                         DualStackSC,
                     > {
                         ThisStack {
-                            params: SetBoundDeviceParameters<'a, I, I, D, S>,
+                            params: SetBoundDeviceParameters<'a, I, D, S>,
                             core_ctx: CC,
                         },
                         OtherStack {
-                            params: SetBoundDeviceParameters<'a, I::OtherVersion, I, D, S>,
+                            params: SetBoundDeviceParameters<'a, I::OtherVersion, D, S>,
                             core_ctx: DualStackSC,
                         },
                         ListenerBothStacks {
@@ -4895,10 +4629,7 @@ where
                     let op = match core_ctx.dual_stack_context_mut() {
                         MaybeDualStack::DualStack(ds) => match socket_type {
                             BoundSocketStateType::Listener { state, sharing: _ } => {
-                                let ListenerState {
-                                    ip_options: _,
-                                    addr: ListenerAddr { ip, device },
-                                } = state;
+                                let ListenerState { addr: ListenerAddr { ip, device } } = state;
                                 match ds.ds_converter().convert(ip) {
                                     DualStackListenerIpAddr::ThisStack(ip) => {
                                         Operation::ThisStack {
@@ -4944,10 +4675,7 @@ where
                         },
                         MaybeDualStack::NotDualStack(nds) => match socket_type {
                             BoundSocketStateType::Listener { state, sharing: _ } => {
-                                let ListenerState {
-                                    ip_options: _,
-                                    addr: ListenerAddr { ip, device },
-                                } = state;
+                                let ListenerState { addr: ListenerAddr { ip, device } } = state;
                                 Operation::ThisStack {
                                     params: SetBoundDeviceParameters::Listener {
                                         ip: nds.nds_converter().convert(ip),
@@ -4980,6 +4708,7 @@ where
                                         params,
                                         bound,
                                         &socket_id,
+                                        &ip_options.common,
                                         new_device,
                                     )
                                 },
@@ -4994,6 +4723,7 @@ where
                                     params,
                                     bound,
                                     &socket_id,
+                                    &ip_options.common,
                                     new_device,
                                 )
                             })
@@ -5068,7 +4798,7 @@ where
                 }
             };
 
-            let ip_options = state.get_options_mut(core_ctx);
+            let ip_options = state.options_mut();
 
             let Some(strong_interface) = interface.as_strong() else {
                 return Err(SetMulticastMembershipError::DeviceDoesNotExist);
@@ -5114,8 +4844,8 @@ where
         id: &DatagramApiSocketId<I, C, S>,
         update: impl FnOnce(&mut SocketHopLimits<I>),
     ) {
-        self.core_ctx().with_socket_state_mut(id, |core_ctx, state| {
-            let options = state.get_options_mut(core_ctx);
+        self.core_ctx().with_socket_state_mut(id, |_core_ctx, state| {
+            let options = state.options_mut();
 
             update(&mut options.socket_options.hop_limits)
         })
@@ -5147,13 +4877,13 @@ where
         id: &DatagramApiSocketId<I, C, S>,
         cb: impl FnOnce(&mut S::OtherStackIpOptions<I, DatagramApiWeakDeviceId<C>>) -> R,
     ) -> Result<R, ExpectedUnboundError> {
-        self.core_ctx().with_socket_state_mut(id, |core_ctx, state| {
-            let is_unbound = match state {
-                SocketState::Unbound(_) => true,
-                SocketState::Bound(_) => false,
+        self.core_ctx().with_socket_state_mut(id, |_core_ctx, state| {
+            let is_unbound = match &state.inner {
+                SocketStateInner::Unbound(_) => true,
+                SocketStateInner::Bound(_) => false,
             };
             if is_unbound {
-                let options = state.get_options_mut(core_ctx);
+                let options = state.options_mut();
                 Ok(cb(&mut options.other_stack))
             } else {
                 Err(ExpectedUnboundError)
@@ -5168,8 +4898,8 @@ where
         id: &DatagramApiSocketId<I, C, S>,
         cb: impl FnOnce(&mut S::OtherStackIpOptions<I, DatagramApiWeakDeviceId<C>>) -> R,
     ) -> R {
-        self.core_ctx().with_socket_state_mut(id, |core_ctx, state| {
-            let options = state.get_options_mut(core_ctx);
+        self.core_ctx().with_socket_state_mut(id, |_core_ctx, state| {
+            let options = state.options_mut();
             cb(&mut options.other_stack)
         })
     }
@@ -5229,8 +4959,8 @@ where
             &mut S::OtherStackIpOptions<I, DatagramApiWeakDeviceId<C>>,
         ) -> R,
     ) -> R {
-        self.core_ctx().with_socket_state_mut(id, |core_ctx, state| {
-            let options = state.get_options_mut(core_ctx);
+        self.core_ctx().with_socket_state_mut(id, |_core_ctx, state| {
+            let options = state.options_mut();
             cb(&mut options.socket_options, &mut options.other_stack)
         })
     }
@@ -5261,9 +4991,9 @@ where
         f: impl FnOnce(&mut S::SharingState),
     ) -> Result<(), ExpectedUnboundError> {
         self.core_ctx().with_socket_state_mut(id, |_core_ctx, state| {
-            let state = match state {
-                SocketState::Bound(_) => return Err(ExpectedUnboundError),
-                SocketState::Unbound(state) => state,
+            let state = match &mut state.inner {
+                SocketStateInner::Bound(_) => return Err(ExpectedUnboundError),
+                SocketStateInner::Unbound(state) => state,
             };
 
             f(&mut state.sharing);
@@ -5274,17 +5004,18 @@ where
     /// Returns the socket's sharing state.
     pub fn get_sharing(&mut self, id: &DatagramApiSocketId<I, C, S>) -> S::SharingState {
         self.core_ctx().with_socket_state(id, |_core_ctx, state| {
-            match state {
-                SocketState::Unbound(state) => {
-                    let UnboundSocketState { device: _, sharing, ip_options: _ } = state;
+            match &state.inner {
+                SocketStateInner::Unbound(state) => {
+                    let UnboundSocketState { device: _, sharing } = state;
                     sharing
                 }
-                SocketState::Bound(BoundSocketState { socket_type, original_bound_addr: _ }) => {
-                    match socket_type {
-                        BoundSocketStateType::Listener { state: _, sharing } => sharing,
-                        BoundSocketStateType::Connected { state: _, sharing } => sharing,
-                    }
-                }
+                SocketStateInner::Bound(BoundSocketState {
+                    socket_type,
+                    original_bound_addr: _,
+                }) => match socket_type {
+                    BoundSocketStateType::Listener { state: _, sharing } => sharing,
+                    BoundSocketStateType::Connected { state: _, sharing } => sharing,
+                },
             }
             .clone()
         })
@@ -5292,8 +5023,8 @@ where
 
     /// Sets the IP transparent option.
     pub fn set_ip_transparent(&mut self, id: &DatagramApiSocketId<I, C, S>, value: bool) {
-        self.core_ctx().with_socket_state_mut(id, |core_ctx, state| {
-            state.get_options_mut(core_ctx).common.transparent = value;
+        self.core_ctx().with_socket_state_mut(id, |_core_ctx, state| {
+            state.options_mut().common.transparent = value;
         })
     }
 
@@ -5307,8 +5038,8 @@ where
 
     /// Sets the socket mark at `domain`.
     pub fn set_mark(&mut self, id: &DatagramApiSocketId<I, C, S>, domain: MarkDomain, mark: Mark) {
-        self.core_ctx().with_socket_state_mut(id, |core_ctx, state| {
-            *state.get_options_mut(core_ctx).common.marks.get_mut(domain) = mark;
+        self.core_ctx().with_socket_state_mut(id, |_core_ctx, state| {
+            *state.options_mut().common.marks.get_mut(domain) = mark;
         })
     }
 
@@ -5326,8 +5057,8 @@ where
         id: &DatagramApiSocketId<I, C, S>,
         value: Option<I::BroadcastMarker>,
     ) {
-        self.core_ctx().with_socket_state_mut(id, |core_ctx, state| {
-            state.get_options_mut(core_ctx).socket_options.allow_broadcast = value;
+        self.core_ctx().with_socket_state_mut(id, |_core_ctx, state| {
+            state.options_mut().socket_options.allow_broadcast = value;
         })
     }
 
@@ -5348,9 +5079,8 @@ where
         id: &DatagramApiSocketId<I, C, S>,
         value: Option<&DatagramApiDeviceId<C>>,
     ) {
-        self.core_ctx().with_socket_state_mut(id, |core_ctx, state| {
-            state.get_options_mut(core_ctx).socket_options.multicast_interface =
-                value.map(|v| v.downgrade());
+        self.core_ctx().with_socket_state_mut(id, |_core_ctx, state| {
+            state.options_mut().socket_options.multicast_interface = value.map(|v| v.downgrade());
         })
     }
 
@@ -5367,8 +5097,8 @@ where
 
     /// Sets the multicast loopback flag.
     pub fn set_multicast_loop(&mut self, id: &DatagramApiSocketId<I, C, S>, value: bool) {
-        self.core_ctx().with_socket_state_mut(id, |core_ctx, state| {
-            state.get_options_mut(core_ctx).socket_options.multicast_loop = value;
+        self.core_ctx().with_socket_state_mut(id, |_core_ctx, state| {
+            state.options_mut().socket_options.multicast_loop = value;
         })
     }
 
@@ -5382,8 +5112,8 @@ where
 
     /// Sets the Traffic Class option.
     pub fn set_dscp_and_ecn(&mut self, id: &DatagramApiSocketId<I, C, S>, value: DscpAndEcn) {
-        self.core_ctx().with_socket_state_mut(id, |core_ctx, state| {
-            state.get_options_mut(core_ctx).socket_options.dscp_and_ecn = value;
+        self.core_ctx().with_socket_state_mut(id, |_core_ctx, state| {
+            state.options_mut().socket_options.dscp_and_ecn = value;
         })
     }
 
@@ -6193,7 +5923,7 @@ mod test {
         type IpSocketsCtx<'a> = InnerIpSocketCtx<D>;
         fn dual_stack_enabled(
             _core_ctx: &FakeDualStackCoreCtx<D>,
-            _state: &impl AsRef<IpOptions<Ipv6, FakeWeakDeviceId<D>, FakeStateSpec>>,
+            _ip_options: &IpOptions<Ipv6, FakeWeakDeviceId<D>, FakeStateSpec>,
         ) -> bool {
             // For now, it's simplest to have dual-stack unconditionally enabled
             // for datagram tests. However, in the future this could be stateful
@@ -6448,7 +6178,7 @@ mod test {
             device_b.mark_removed();
         }
 
-        leave_all_joined_groups(&mut core_ctx, &mut bindings_ctx, memberships);
+        leave_all_joined_groups(&mut core_ctx, &mut bindings_ctx, &memberships);
         for (device, addr, expected) in [
             (&device_a, multicast_addr1, false),
             (&device_a, multicast_addr2, false),
@@ -6613,13 +6343,9 @@ mod test {
         api.core_ctx().with_socket_state_mut(
             &socket,
             |_core_ctx, state: &mut SocketState<I, _, FakeStateSpec>| {
-                let sharing = match state {
-                    SocketState::Unbound(UnboundSocketState {
-                        device: _,
-                        sharing,
-                        ip_options: _,
-                    }) => sharing,
-                    SocketState::Bound(BoundSocketState {
+                let sharing = match &mut state.inner {
+                    SocketStateInner::Unbound(UnboundSocketState { device: _, sharing }) => sharing,
+                    SocketStateInner::Bound(BoundSocketState {
                         socket_type,
                         original_bound_addr: _,
                     }) => match socket_type {

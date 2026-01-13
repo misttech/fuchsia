@@ -103,7 +103,7 @@ impl<
 
     fn dual_stack_enabled(
         core_ctx: &UninstantiableWrapper<P>,
-        _state: &impl AsRef<IpOptions<I, P::WeakDeviceId, S>>,
+        _state: &IpOptions<I, P::WeakDeviceId, S>,
     ) -> bool {
         core_ctx.uninstantiable_unreachable()
     }
