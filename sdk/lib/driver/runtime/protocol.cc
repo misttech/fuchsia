@@ -17,7 +17,10 @@ zx_status_t Protocol::Register(zx::channel token, fdf_dispatcher_t* dispatcher) 
   }
   dispatcher_ = dispatcher;
 
+#pragma clang diagnostic push  // for fdf_token_register
+#pragma clang diagnostic ignored "-Wdeprecated-declarations"
   zx_status_t status = fdf_token_register(token.release(), dispatcher_, this);
+#pragma clang diagnostic pop  // "-Wdeprecated-declarations"
   if (status != ZX_OK) {
     dispatcher_ = nullptr;
     return status;

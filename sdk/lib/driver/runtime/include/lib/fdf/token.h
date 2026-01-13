@@ -37,20 +37,13 @@ __BEGIN_CDECLS
 //
 //   // Parent driver
 //
-//   void token_transfer_handler(fdf_dispatcher_t* dispatcher, fdf_token_t* token_handler,
-//                               zx_status_t status,
-//                               fdf_handle_t handle) {
-//     // Do something with the received FDF handle.
-//     ...
-//   }
-//
 //   void my_function() {
 //     zx_handle_t token;
 //     // Token received from child driver.
 //     ...
-//     // Register a handler for the token.
-//     fdf_token_t token_handler{token_transfer_handler};
-//     zx_status_t status = fdf_token_register(token, driver_dispatcher(), &token_handler));
+//     // Receive the driver handle for the token
+//     fdf_handle_t channel;
+//     zx_status_t status = fdf_token_receive(token, &channel);
 //     ...
 //   }
 typedef struct fdf_token fdf_token_t;
@@ -77,6 +70,9 @@ struct fdf_token {
 
 // Registers a token transfer handler for |token|.
 //
+// Note: This function is deprecated and will be removed at a later date. You should use
+// |fdf_token_receive| instead.
+//
 // The transfer handler will be scheduled to be called on the dispatcher when a client calls
 // |fdf_token_transfer| with the channel peer of |token|, If the connection has already been
 // requested, the handler will be scheduled immediately.
@@ -94,7 +90,8 @@ struct fdf_token {
 // ZX_ERR_BAD_STATE: The dispatcher is shutting down, or |handler|
 // has already been registered.
 zx_status_t fdf_token_register(zx_handle_t token, fdf_dispatcher_t* dispatcher,
-                               fdf_token_t* handler);
+                               fdf_token_t* handler)
+    ZX_REMOVED_SINCE(1, NEXT, NEXT, "Use fdf_token_receive instead of fdf_token_register");
 
 // Receives the corresponding driver handle for |token| if it has been transferred.
 //
