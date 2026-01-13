@@ -112,6 +112,15 @@ pub(crate) enum VersionedProperties {
         transports: Vec<TransportType>,
         #[serde(with = "capability_list")]
         capabilities: Vec<NetworkCapability>,
+        name: String,
+        // Whether or not there is a v4/v6 address assigned for
+        // the underlying link properties.
+        addrv4: bool,
+        addrv6: bool,
+        // Whether or not there is a v4/v6 default route for
+        // the underlying link properties.
+        defaultv4: bool,
+        defaultv6: bool,
     },
 }
 
@@ -509,6 +518,11 @@ mod tests {
                     NetworkCapability::Internet,
                     NetworkCapability::Validated,
                 ],
+                name: "test01".to_string(),
+                addrv4: false,
+                addrv6: true,
+                defaultv4: false,
+                defaultv6: true,
             },
         };
         serde_helper(network);
@@ -524,7 +538,12 @@ mod tests {
             "dnsv6": ["2001:db8::1"],
             "version": "V2",
             "transports": [1, 99, 3],
-            "capabilities": [11, 99]
+            "capabilities": [11, 99],
+            "name": "test01",
+            "addrv4": false,
+            "addrv6": false,
+            "defaultv4": false,
+            "defaultv6": false
         }"#;
 
         let expected = NetworkMessage {
@@ -536,6 +555,11 @@ mod tests {
             versioned_properties: VersionedProperties::V2 {
                 transports: vec![TransportType::Wifi, TransportType::Ethernet],
                 capabilities: vec![NetworkCapability::NotMetered],
+                name: "test01".to_string(),
+                addrv4: false,
+                addrv6: false,
+                defaultv4: false,
+                defaultv6: false,
             },
         };
 

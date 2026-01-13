@@ -332,7 +332,12 @@ TEST_F(NmfsTest, NmfsV2NetworkFileWriteFailure) {
     "handle": 78,
     "dnsv4": [],
     "dnsv6": [],
-    "capabilities": []
+    "capabilities": [],
+    "name": "",
+    "addrv4": false,
+    "addrv6": false,
+    "defaultv4": false,
+    "defaultv6": false
 })",
                          "All fields must be provided in JSON, missing transports");
 
@@ -344,9 +349,99 @@ TEST_F(NmfsTest, NmfsV2NetworkFileWriteFailure) {
     "handle": 78,
     "dnsv4": [],
     "dnsv6": [],
-    "transports": []
+    "transports": [],
+    "name": "",
+    "addrv4": false,
+    "addrv6": false,
+    "defaultv4": false,
+    "defaultv6": false
 })",
                          "All fields must be provided in JSON, missing capabilities");
+
+  ExpectFileWriteFailure("/tmp/fuchsia_network_monitor/1",
+                         R"({
+    "version": "V2",
+    "netid": 1,
+    "mark": 56,
+    "handle": 78,
+    "dnsv4": [],
+    "dnsv6": [],
+    "transports": [],
+    "capabilities": [],
+    "addrv6": false,
+    "addrv6": false,
+    "defaultv4": false,
+    "defaultv6": false
+})",
+                         "All fields must be provided in JSON, missing name");
+
+  ExpectFileWriteFailure("/tmp/fuchsia_network_monitor/1",
+                         R"({
+    "version": "V2",
+    "netid": 1,
+    "mark": 56,
+    "handle": 78,
+    "dnsv4": [],
+    "dnsv6": [],
+    "transports": [],
+    "capabilities": [],
+    "name": "",
+    "addrv6": false,
+    "defaultv4": false,
+    "defaultv6": false
+})",
+                         "All fields must be provided in JSON, missing addrv4");
+
+  ExpectFileWriteFailure("/tmp/fuchsia_network_monitor/1",
+                         R"({
+    "version": "V2",
+    "netid": 1,
+    "mark": 56,
+    "handle": 78,
+    "dnsv4": [],
+    "dnsv6": [],
+    "transports": [],
+    "capabilities": [],
+    "name": "",
+    "addrv4": false,
+    "defaultv4": false,
+    "defaultv6": false
+})",
+                         "All fields must be provided in JSON, missing addrv6");
+
+  ExpectFileWriteFailure("/tmp/fuchsia_network_monitor/1",
+                         R"({
+    "version": "V2",
+    "netid": 1,
+    "mark": 56,
+    "handle": 78,
+    "dnsv4": [],
+    "dnsv6": [],
+    "transports": [],
+    "capabilities": [],
+    "name": "",
+    "addrv4": false,
+    "addrv6": false,
+    "defaultv6": false
+})",
+                         "All fields must be provided in JSON, missing defaultv4");
+
+  ExpectFileWriteFailure("/tmp/fuchsia_network_monitor/1",
+                         R"({
+    "version": "V2",
+    "netid": 1,
+    "mark": 56,
+    "handle": 78,
+    "dnsv4": [],
+    "dnsv6": [],
+    "transports": [],
+    "capabilities": [],
+    "name": "",
+    "addrv4": false,
+    "addrv6": false,
+    "defaultv4": false
+})",
+                         "All fields must be provided in JSON, missing defaultv6");
 }
 
 TEST_F(NmfsTest, NmfsCannotCreateDir) {
@@ -459,7 +554,12 @@ TEST_F(NmfsTest, NmfsV2NetworkFileWriteSuccessTransportList) {
     "dnsv4": [],
     "dnsv6": [],
     "transports": [0, 1, 2, 3],
-    "capabilities": []
+    "capabilities": [],
+    "name": "test",
+    "addrv4": true,
+    "addrv6": false,
+    "defaultv4": false,
+    "defaultv6": false
   })",
                          "All JSON fields must be provided with proper formatting");
   // File output should be able to be rewritten to the file without formatting changes.
@@ -480,7 +580,12 @@ TEST_F(NmfsTest, NmfsV2NetworkFileWriteSuccessCapabilityList) {
     "dnsv4": [],
     "dnsv6": [],
     "transports": [],
-    "capabilities": [0, 1, 2, 3]
+    "capabilities": [0, 1, 2, 3],
+    "name": "test",
+    "addrv4": true,
+    "addrv6": false,
+    "defaultv4": false,
+    "defaultv6": false
   })",
                          "All JSON fields must be provided with proper formatting");
   // File output should be able to be rewritten to the file without formatting changes.
