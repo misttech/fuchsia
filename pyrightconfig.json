@@ -25,8 +25,11 @@
     "fuchsiaExtraPaths": [
         // keep-sorted start
         "build/api",
+        "build/bazel",
+        "build/bazel/scripts",
         "build/python/modules",
         "build/python/tests",
+        "build/sdk",
         "scripts/lib",
         "src/developer/ffx/lib/fuchsia-controller/cpp",
         "src/developer/ffx/lib/fuchsia-controller/python",
