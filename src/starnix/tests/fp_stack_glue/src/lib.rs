@@ -12,7 +12,7 @@ use fuchsia_component_test::{
 };
 use futures::StreamExt;
 use log::{info, warn};
-use zx::{AsHandleRef, Task};
+use zx::Task;
 use {
     fidl_fuchsia_buildinfo as fbuildinfo, fidl_fuchsia_component_runner as frunner,
     fidl_fuchsia_sys2 as fsys,

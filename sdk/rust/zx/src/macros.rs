@@ -87,6 +87,13 @@ macro_rules! delegated_concrete_handle_based_impls {
         ) -> Result<(), $crate::Status> {
             self.0.wait_async(port, key, signals, options)
         }
+
+        /// Wraps a call to the
+        /// [`zx_object_get_property`](https://fuchsia.dev/fuchsia-src/reference/syscalls/object_get_property)
+        /// syscall for the `ZX_PROP_NAME` property.
+        pub fn get_name(&self) -> Result<$crate::Name, $crate::Status> {
+            self.0.get_name()
+        }
     };
 }
 

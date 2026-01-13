@@ -274,7 +274,7 @@ impl Job for zx::Job {
     }
 
     fn get_name(&self) -> Result<zx::Name, zx::Status> {
-        fidl::AsHandleRef::get_name(&self)
+        zx::Job::get_name(&self)
     }
 
     fn children(&self) -> Result<Vec<zx::Koid>, zx::Status> {
@@ -323,7 +323,7 @@ pub trait Process {
 
 impl Process for zx::Process {
     fn get_name(&self) -> Result<zx::Name, zx::Status> {
-        fidl::AsHandleRef::get_name(self)
+        zx::Process::get_name(&self)
     }
 
     fn info_vmos<'a>(

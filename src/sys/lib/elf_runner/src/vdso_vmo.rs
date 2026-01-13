@@ -6,7 +6,7 @@ use crate::error::VdsoError;
 use fuchsia_runtime::{HandleInfo, HandleType, take_startup_handle};
 use std::collections::HashMap;
 use std::sync::LazyLock;
-use zx::{self as zx, AsHandleRef, HandleBased};
+use zx::HandleBased;
 
 fn take_vdso_vmos() -> Result<HashMap<zx::Name, zx::Vmo>, VdsoError> {
     let mut vmos = HashMap::new();

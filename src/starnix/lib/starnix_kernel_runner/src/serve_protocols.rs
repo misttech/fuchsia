@@ -4,7 +4,6 @@
 
 use crate::Container;
 use anyhow::{Context as _, Error};
-use fidl::AsHandleRef;
 use fidl::endpoints::{ControlHandle, RequestStream, ServerEnd};
 use fuchsia_async::{
     DurationExt, {self as fasync},
