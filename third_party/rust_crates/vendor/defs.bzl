@@ -477,7 +477,7 @@ _NORMAL_DEPENDENCIES = {
             "textwrap": Label("//third_party/rust_crates/vendor/textwrap-0.16.2:textwrap"),
             "thiserror": Label("//third_party/rust_crates/vendor/thiserror-2.0.12:thiserror"),
             "tokio-rustls": Label("//third_party/rust_crates/vendor/tokio-rustls-0.24.1:tokio_rustls"),
-            "toml": Label("//third_party/rust_crates/vendor/toml-0.9.5:toml"),
+            "toml": Label("//third_party/rust_crates/vendor/toml-0.9.11+spec-1.1.0:toml"),
             "toml_edit": Label("//third_party/rust_crates/vendor/toml_edit-0.2.1:toml_edit"),
             "tracing": Label("//third_party/rust_crates/vendor/tracing-0.1.41:tracing"),
             "tracing-core": Label("//third_party/rust_crates/vendor/tracing-core-0.1.34:tracing_core"),

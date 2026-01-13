@@ -2761,14 +2761,14 @@ alias(
 )
 
 alias(
-    name = "toml-0.9.5",
-    actual = "//third_party/rust_crates/vendor/toml-0.9.5:toml",
+    name = "toml-0.9.11+spec-1.1.0",
+    actual = "//third_party/rust_crates/vendor/toml-0.9.11-spec-1.1.0:toml",
     tags = ["manual"],
 )
 
 alias(
     name = "toml",
-    actual = "//third_party/rust_crates/vendor/toml-0.9.5:toml",
+    actual = "//third_party/rust_crates/vendor/toml-0.9.11-spec-1.1.0:toml",
     tags = ["manual"],
 )
 

@@ -1148,7 +1148,7 @@ if (!(current_os == "fuchsia")) {
 }
 
 group("toml") {
-  public_deps = [ ":toml-v0_9_5" ]
+  public_deps = [ ":toml-v0_9_11+spec-1_1_0" ]
 }
 
 group("toml_edit") {
@@ -16900,19 +16900,19 @@ rustc_macro("serde_repr-v0_1_7") {
   applicable_licenses = [ ":serde_repr-v0_1_7.license" ]
 }
 
-license("serde_spanned-v1_0_2.license") {
+license("serde_spanned-v1_0_4.license") {
   public_package_name = "serde_spanned"
   license_files = [
-    "//third_party/rust_crates/vendor/serde_spanned-1.0.2/LICENSE-APACHE",
-    "//third_party/rust_crates/vendor/serde_spanned-1.0.2/LICENSE-MIT",
+    "//third_party/rust_crates/vendor/serde_spanned-1.0.4/LICENSE-APACHE",
+    "//third_party/rust_crates/vendor/serde_spanned-1.0.4/LICENSE-MIT",
   ]
 }
 
-rustc_library("serde_spanned-v1_0_2") {
+rustc_library("serde_spanned-v1_0_4") {
   crate_name = "serde_spanned"
   source_root =
-      "//third_party/rust_crates/vendor/serde_spanned-1.0.2/src/lib.rs"
-  output_name = "serde_spanned-7fece5760fb5c04d"
+      "//third_party/rust_crates/vendor/serde_spanned-1.0.4/src/lib.rs"
+  output_name = "serde_spanned-6c88c347bfd9e87b"
   edition = "2021"
   disable_clippy = true
   enforce_source_listing = false
@@ -16925,8 +16925,8 @@ rustc_library("serde_spanned-v1_0_2") {
 
   rustflags = [
     "--cap-lints=allow",
-    "-Cmetadata=7fece5760fb5c04d",
-    "-Cextra-filename=-7fece5760fb5c04d",
+    "-Cmetadata=6c88c347bfd9e87b",
+    "-Cextra-filename=-6c88c347bfd9e87b",
     "--cfg=feature=\"alloc\"",
     "--cfg=feature=\"serde\"",
     "--cfg=feature=\"std\"",
@@ -16934,7 +16934,7 @@ rustc_library("serde_spanned-v1_0_2") {
 
   visibility = [ ":*" ]
 
-  applicable_licenses = [ ":serde_spanned-v1_0_2.license" ]
+  applicable_licenses = [ ":serde_spanned-v1_0_4.license" ]
 }
 
 license("serde_yaml-v0_9_14.license") {
@@ -19148,18 +19148,19 @@ rustc_library("tokio-stream-v0_1_17") {
   applicable_licenses = [ ":tokio-stream-v0_1_17.license" ]
 }
 
-license("toml-v0_9_5.license") {
+license("toml-v0_9_11+spec-1_1_0.license") {
   public_package_name = "toml"
   license_files = [
-    "//third_party/rust_crates/vendor/toml-0.9.5/LICENSE-APACHE",
-    "//third_party/rust_crates/vendor/toml-0.9.5/LICENSE-MIT",
+    "//third_party/rust_crates/vendor/toml-0.9.11-spec-1.1.0/LICENSE-APACHE",
+    "//third_party/rust_crates/vendor/toml-0.9.11-spec-1.1.0/LICENSE-MIT",
   ]
 }
 
-rustc_library("toml-v0_9_5") {
+rustc_library("toml-v0_9_11+spec-1_1_0") {
   crate_name = "toml"
-  source_root = "//third_party/rust_crates/vendor/toml-0.9.5/src/lib.rs"
-  output_name = "toml-1b9fcb02c38aaa8b"
+  source_root =
+      "//third_party/rust_crates/vendor/toml-0.9.11-spec-1.1.0/src/lib.rs"
+  output_name = "toml-e3e5799d7c71f57d"
   edition = "2021"
   disable_clippy = true
   enforce_source_listing = false
@@ -19167,19 +19168,19 @@ rustc_library("toml-v0_9_5") {
 
   deps = []
   deps += [ ":indexmap-v2_12_1" ]
-  deps += [ ":serde-v1_0_228" ]
-  deps += [ ":serde_spanned-v1_0_2" ]
-  deps += [ ":toml_datetime-v0_7_3" ]
-  deps += [ ":toml_parser-v1_0_4" ]
-  deps += [ ":toml_writer-v1_0_4" ]
+  deps += [ ":serde_core-v1_0_228" ]
+  deps += [ ":serde_spanned-v1_0_4" ]
+  deps += [ ":toml_datetime-v0_7_5+spec-1_1_0" ]
+  deps += [ ":toml_parser-v1_0_6+spec-1_1_0" ]
+  deps += [ ":toml_writer-v1_0_6+spec-1_1_0" ]
   deps += [ ":winnow-v0_7_13" ]
 
   rustenv = []
 
   rustflags = [
     "--cap-lints=allow",
-    "-Cmetadata=1b9fcb02c38aaa8b",
-    "-Cextra-filename=-1b9fcb02c38aaa8b",
+    "-Cmetadata=e3e5799d7c71f57d",
+    "-Cextra-filename=-e3e5799d7c71f57d",
     "--cfg=feature=\"default\"",
     "--cfg=feature=\"display\"",
     "--cfg=feature=\"parse\"",
@@ -19189,22 +19190,21 @@ rustc_library("toml-v0_9_5") {
 
   visibility = [ ":*" ]
 
-  applicable_licenses = [ ":toml-v0_9_5.license" ]
+  applicable_licenses = [ ":toml-v0_9_11+spec-1_1_0.license" ]
 }
 
-license("toml_datetime-v0_7_3.license") {
+license("toml_datetime-v0_7_5+spec-1_1_0.license") {
   public_package_name = "toml_datetime"
   license_files = [
-    "//third_party/rust_crates/vendor/toml_datetime-0.7.3/LICENSE-APACHE",
-    "//third_party/rust_crates/vendor/toml_datetime-0.7.3/LICENSE-MIT",
+    "//third_party/rust_crates/vendor/toml_datetime-0.7.5-spec-1.1.0/LICENSE-APACHE",
+    "//third_party/rust_crates/vendor/toml_datetime-0.7.5-spec-1.1.0/LICENSE-MIT",
   ]
 }
 
-rustc_library("toml_datetime-v0_7_3") {
+rustc_library("toml_datetime-v0_7_5+spec-1_1_0") {
   crate_name = "toml_datetime"
-  source_root =
-      "//third_party/rust_crates/vendor/toml_datetime-0.7.3/src/lib.rs"
-  output_name = "toml_datetime-5f8acf5da7da39e0"
+  source_root = "//third_party/rust_crates/vendor/toml_datetime-0.7.5-spec-1.1.0/src/lib.rs"
+  output_name = "toml_datetime-e9f113904943c48"
   edition = "2021"
   disable_clippy = true
   enforce_source_listing = false
@@ -19217,8 +19217,8 @@ rustc_library("toml_datetime-v0_7_3") {
 
   rustflags = [
     "--cap-lints=allow",
-    "-Cmetadata=5f8acf5da7da39e0",
-    "-Cextra-filename=-5f8acf5da7da39e0",
+    "-Cmetadata=e9f113904943c48",
+    "-Cextra-filename=-e9f113904943c48",
     "--cfg=feature=\"alloc\"",
     "--cfg=feature=\"serde\"",
     "--cfg=feature=\"std\"",
@@ -19226,7 +19226,7 @@ rustc_library("toml_datetime-v0_7_3") {
 
   visibility = [ ":*" ]
 
-  applicable_licenses = [ ":toml_datetime-v0_7_3.license" ]
+  applicable_licenses = [ ":toml_datetime-v0_7_5+spec-1_1_0.license" ]
 }
 
 license("toml_edit-v0_2_1.license") {
@@ -19264,18 +19264,19 @@ rustc_library("toml_edit-v0_2_1") {
   applicable_licenses = [ ":toml_edit-v0_2_1.license" ]
 }
 
-license("toml_parser-v1_0_4.license") {
+license("toml_parser-v1_0_6+spec-1_1_0.license") {
   public_package_name = "toml_parser"
   license_files = [
-    "//third_party/rust_crates/vendor/toml_parser-1.0.4/LICENSE-APACHE",
-    "//third_party/rust_crates/vendor/toml_parser-1.0.4/LICENSE-MIT",
+    "//third_party/rust_crates/vendor/toml_parser-1.0.6-spec-1.1.0/LICENSE-APACHE",
+    "//third_party/rust_crates/vendor/toml_parser-1.0.6-spec-1.1.0/LICENSE-MIT",
   ]
 }
 
-rustc_library("toml_parser-v1_0_4") {
+rustc_library("toml_parser-v1_0_6+spec-1_1_0") {
   crate_name = "toml_parser"
-  source_root = "//third_party/rust_crates/vendor/toml_parser-1.0.4/src/lib.rs"
-  output_name = "toml_parser-2ec8c3767ba3b2ff"
+  source_root =
+      "//third_party/rust_crates/vendor/toml_parser-1.0.6-spec-1.1.0/src/lib.rs"
+  output_name = "toml_parser-fe42a5be3800d966"
   edition = "2021"
   disable_clippy = true
   enforce_source_listing = false
@@ -19288,29 +19289,30 @@ rustc_library("toml_parser-v1_0_4") {
 
   rustflags = [
     "--cap-lints=allow",
-    "-Cmetadata=2ec8c3767ba3b2ff",
-    "-Cextra-filename=-2ec8c3767ba3b2ff",
+    "-Cmetadata=fe42a5be3800d966",
+    "-Cextra-filename=-fe42a5be3800d966",
     "--cfg=feature=\"alloc\"",
     "--cfg=feature=\"std\"",
   ]
 
   visibility = [ ":*" ]
 
-  applicable_licenses = [ ":toml_parser-v1_0_4.license" ]
+  applicable_licenses = [ ":toml_parser-v1_0_6+spec-1_1_0.license" ]
 }
 
-license("toml_writer-v1_0_4.license") {
+license("toml_writer-v1_0_6+spec-1_1_0.license") {
   public_package_name = "toml_writer"
   license_files = [
-    "//third_party/rust_crates/vendor/toml_writer-1.0.4/LICENSE-APACHE",
-    "//third_party/rust_crates/vendor/toml_writer-1.0.4/LICENSE-MIT",
+    "//third_party/rust_crates/vendor/toml_writer-1.0.6-spec-1.1.0/LICENSE-APACHE",
+    "//third_party/rust_crates/vendor/toml_writer-1.0.6-spec-1.1.0/LICENSE-MIT",
   ]
 }
 
-rustc_library("toml_writer-v1_0_4") {
+rustc_library("toml_writer-v1_0_6+spec-1_1_0") {
   crate_name = "toml_writer"
-  source_root = "//third_party/rust_crates/vendor/toml_writer-1.0.4/src/lib.rs"
-  output_name = "toml_writer-65bd90034b7befd"
+  source_root =
+      "//third_party/rust_crates/vendor/toml_writer-1.0.6-spec-1.1.0/src/lib.rs"
+  output_name = "toml_writer-102c32e8c9692ec5"
   edition = "2021"
   disable_clippy = true
   enforce_source_listing = false
@@ -19322,15 +19324,15 @@ rustc_library("toml_writer-v1_0_4") {
 
   rustflags = [
     "--cap-lints=allow",
-    "-Cmetadata=65bd90034b7befd",
-    "-Cextra-filename=-65bd90034b7befd",
+    "-Cmetadata=102c32e8c9692ec5",
+    "-Cextra-filename=-102c32e8c9692ec5",
     "--cfg=feature=\"alloc\"",
     "--cfg=feature=\"std\"",
   ]
 
   visibility = [ ":*" ]
 
-  applicable_licenses = [ ":toml_writer-v1_0_4.license" ]
+  applicable_licenses = [ ":toml_writer-v1_0_6+spec-1_1_0.license" ]
 }
 
 license("tower-service-v0_3_3.license") {
