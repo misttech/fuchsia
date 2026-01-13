@@ -1,0 +1,131 @@
+#!/bin/bash
+# Copyright 2026 The Fuchsia Authors. All rights reserved.
+# Use of this source code is governed by a BSD-style license that can be
+# found in the LICENSE file.
+
+#### CATEGORY=Build
+### Build Fuchsia and attempt to fix failures with Gemini.
+
+## usage: fx g-build [BUILD_ARGS]...
+##
+## This command runs the standard 'fx build' with the provided arguments.
+## If the build fails, it will invoke Gemini to diagnose and attempt to
+## fix the build error.
+##
+## All arguments are passed directly to 'fx build'. See 'fx build --help' for details.
+
+# Ensure FUCHSIA_FX_INVOKER is set for duration of script for tool analytics.
+export FUCHSIA_FX_INVOKER=gemini
+trap 'unset FUCHSIA_FX_INVOKER' EXIT
+
+source "$(cd "$(dirname "${BASH_SOURCE[0]}")" >/dev/null 2>&1 && pwd)"/../lib/vars.sh || exit $?
+SIGINT_EXIT_CODE=130 # Exit code for SIGINT (Ctrl+C)
+MAX_ATTEMPTS=3
+
+function fix_build_with_gemini {
+  local -r build_output="$1"
+  shift
+  local -r gemini_prompt=$(cat <<EOF
+The Fuchsia build failed. Your task is to diagnose and fix the build error.
+
+**Output Requirements**
+* Prefix output from "Implement" and "Summarize" with "[fx-gemini]".
+* The output should be concise and suitable for CLI output.
+
+**Workflow**
+1.  **Analyze:**
+    *   Examine the build error messages provided below to understand the root cause.
+    *   Examine recent code changes using \`git log -p -1\` or \`git diff HEAD\` to see the latest modifications.
+    *   Do not modify \`tools/devshell/contrib/g-build\` itself.
+2.  **Plan:**
+    *   Based on your analysis, formulate a clear plan to fix the issue.
+3.  **Implement:**
+    *   Edit only the files provided from the BUILD OUTPUT section.
+    *   Do not edit any existing comments or code not relevant to the fix.
+    *   Adhere to the existing coding style of the file(s) being modified.
+4.  **Summarize:**
+    *   Summarize the changes you made and exit the session.
+    *   Do not run build commands. The calling script will re-run the build to verify your fix.
+
+**BUILD OUTPUT**
+${build_output}
+EOF
+)
+  local GEMINI_ALLOWED_TOOLS="write_file,search_for_files_codesearch,code_editor,ShellTool(fx),ShellTool(ls),ShellTool(jiri),ShellTool(git diff),ShellTool(git log)"
+  local -r jq_filter='if .type == "message" and .role == "assistant" then
+      .content
+    elif .type == "tool_use" then
+      "[fx-gemini] Using tool [\(.tool_name)]" +
+      (if .tool_name == "write_file" or .tool_name == "read_file" then
+        ": \(.parameters.file_path // "Unknown file")"
+      elif .parameters.description then
+        ": \(.parameters.description)"
+      else
+        ""
+      end)
+    else
+      empty
+    end | select(length > 0)
+  '
+  set -o pipefail
+  /google/bin/releases/gemini-cli/tools/gemini \
+    -m gemini-2.5-flash \
+    -p "${gemini_prompt}" \
+    --allowed-tools "${GEMINI_ALLOWED_TOOLS}" \
+    --output-format stream-json 2>&1 | \
+  grep --line-buffered '^\{' | \
+  fx-command-run jq --unbuffered -r "${jq_filter}" >&2
+  local gemini_status=${PIPESTATUS[0]}
+  set +o pipefail
+
+  if [[ "${gemini_status}" -ne 0 ]]; then
+      echo >&2 "[fx-gemini] Gemini process failed with status ${gemini_status}."
+  fi
+
+  if [[ "${gemini_status}" -eq 0 ]]; then
+      echo >&2 "[fx-gemini] Ensuring trailing newlines in modified files..."
+      git diff --name-only HEAD | while read -r line; do
+          abs_path="$(git rev-parse --show-toplevel)/$line"
+          if [[ -f "$abs_path" ]] && [[ -n "$(tail -c 1 "$abs_path")" ]]; then
+              echo "" >> "$abs_path"
+              echo >&2 "[fx-gemini] Added missing newline to: $line"
+          fi
+      done
+  fi
+
+}
+
+set +e
+BUILD_OUTPUT_FILE=$(mktemp)
+trap 'rm -f "${BUILD_OUTPUT_FILE}"' EXIT
+
+fx-command-run build "$@" 2>&1 | tee "${BUILD_OUTPUT_FILE}"
+BUILD_STATUS=${PIPESTATUS[0]}
+BUILD_OUTPUT=$(<"${BUILD_OUTPUT_FILE}")
+set -e
+
+# If the build failed, attempt to fix it with Gemini (up to 3 times)
+if [[ "${BUILD_STATUS}" -ne 0 && "${BUILD_STATUS}" -ne "${SIGINT_EXIT_CODE}" ]]; then
+  for i in $(seq 1 $MAX_ATTEMPTS)
+  do
+    echo >&2 "[fx-gemini] Build failed. Attempting fix $i of $MAX_ATTEMPTS with Gemini..."
+    if fix_build_with_gemini "${BUILD_OUTPUT}" "$@"; then
+      # Re-run the build to check if the fix was successful
+      echo >&2 "[fx-gemini] Re-running build to verify fix..."
+      set +e
+      # BUILD_OUTPUT_FILE is still the one from the initial mktemp
+      fx-command-run build -q "$@" 2>&1 | tee "${BUILD_OUTPUT_FILE}"
+      new_build_status=${PIPESTATUS[0]}
+      BUILD_OUTPUT=$(<"${BUILD_OUTPUT_FILE}") # Update BUILD_OUTPUT for the next loop
+      set -e
+      if [[ "${new_build_status}" -eq 0 ]]; then
+          echo >&2 "[fx-gemini] Gemini successfully fixed the build on attempt $i."
+          exit 0
+      fi
+    fi
+  done
+  echo >&2 "[fx-gemini] Gemini failed to fix the build after $MAX_ATTEMPTS attempts."
+  exit 1
+fi
+
+exit ${BUILD_STATUS}
