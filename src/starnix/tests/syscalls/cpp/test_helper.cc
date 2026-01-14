@@ -636,6 +636,22 @@ void ScopedMount::Unmount() {
   }
 }
 
+ScopedPipe::ScopedPipe() {
+  int pipe_fds[2];
+  SAFE_SYSCALL(pipe(pipe_fds));
+  read_side_ = fbl::unique_fd(pipe_fds[0]);
+  write_side_ = fbl::unique_fd(pipe_fds[1]);
+}
+
+ScopedPipe::ScopedPipe(ScopedPipe &&o)
+    : read_side_(std::move(o.read_side_)), write_side_(std::move(o.write_side_)) {}
+
+ScopedPipe &ScopedPipe::operator=(ScopedPipe &&o) {
+  read_side_ = std::move(o.read_side_);
+  write_side_ = std::move(o.write_side_);
+  return *this;
+}
+
 Poker::Poker(fbl::unique_fd pipe_write_side) : pipe_write_side_(std::move(pipe_write_side)) {}
 
 Poker::Poker(Poker &&o) : pipe_write_side_(std::move(o.pipe_write_side_)) {}
@@ -668,13 +684,12 @@ void Holder::hold() {
   SAFE_SYSCALL(select(pipe_read_side_fd + 1, &read_fds, nullptr, nullptr, nullptr));
 }
 
-Rendezvous MakeRendezvous() {
-  static_assert(sizeof(int) == sizeof(fbl::unique_fd));
-  fbl::unique_fd unique_fds[2];
-  SAFE_SYSCALL(pipe(reinterpret_cast<int *>(&unique_fds)));
+Rendezvous MakeRendezvous() { return MakeRendezvous(ScopedPipe()); }
+
+Rendezvous MakeRendezvous(ScopedPipe pipe) {
   return {
-      .poker = Poker(std::move(unique_fds[1])),
-      .holder = Holder(std::move(unique_fds[0])),
+      .poker = Poker(std::move(pipe.WriteSide())),
+      .holder = Holder(std::move(pipe.ReadSide())),
   };
 }
 

@@ -510,6 +510,26 @@ enum AccessType { Read, Write };
 // Checks whether the provided access segfaults.
 testing::AssertionResult TestThatAccessSegfaults(void *test_address, AccessType type);
 
+// A RAII container for a pair of file descriptors representing a pipe.
+class ScopedPipe {
+ public:
+  ScopedPipe();
+  ScopedPipe(ScopedPipe &&o);
+  ScopedPipe &operator=(ScopedPipe &&o);
+  ScopedPipe(const ScopedPipe &) = delete;
+  ScopedPipe &operator=(const ScopedPipe &) = delete;
+
+  const fbl::unique_fd &ReadSide() const { return read_side_; }
+  fbl::unique_fd &ReadSide() { return read_side_; }
+
+  const fbl::unique_fd &WriteSide() const { return write_side_; }
+  fbl::unique_fd &WriteSide() { return write_side_; }
+
+ private:
+  fbl::unique_fd read_side_;
+  fbl::unique_fd write_side_;
+};
+
 // A means of unblocking some other thread or process that is waiting (or may in the
 // future wait) on a corresponding `Holder`.
 class Poker {
@@ -561,6 +581,9 @@ struct Rendezvous {
 // Constructs a new pipe-backed `Poker`-`Holder` pair for synchronization of two
 // threads or processes.
 Rendezvous MakeRendezvous();
+
+// Constructs a `Poker`-`Holder` pair from an existing pipe.
+Rendezvous MakeRendezvous(ScopedPipe pipe);
 
 }  // namespace test_helper
 
