@@ -12,12 +12,17 @@ fuchsia_rust_driver("driver") {
   sources = [
     "src/dma_buffer.rs",
     "src/lib.rs",
+    "src/transfer_manager.rs",
   ]
   deps = [
     "//sdk/lib/driver/component/rust",
     "//sdk/rust/zx",
+    "//src/devices/block/drivers/cqhci/spec",
     "//src/lib/fuchsia-async",
+    "//src/lib/fuchsia-sync",
+    "//third_party/rust_crates:futures",
     "//third_party/rust_crates:log",
+    "//third_party/rust_crates:scopeguard",
     "//third_party/rust_crates:zerocopy",
   ]
   test_deps = [

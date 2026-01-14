@@ -7,6 +7,7 @@ use log::info;
 use zx::Status;
 
 mod dma_buffer;
+mod transfer_manager;
 
 struct CqhciDriver {
     _node: Node,
