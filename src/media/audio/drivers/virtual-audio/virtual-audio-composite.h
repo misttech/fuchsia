@@ -84,6 +84,9 @@ class VirtualAudioComposite
   void GetDaiFormats(GetDaiFormatsRequest& request,
                      GetDaiFormatsCompleter::Sync& completer) override;
   void SetDaiFormat(SetDaiFormatRequest& request, SetDaiFormatCompleter::Sync& completer) override;
+  void handle_unknown_method(
+      fidl::UnknownMethodMetadata<fuchsia_hardware_audio::Composite> metadata,
+      fidl::UnknownMethodCompleter::Sync& completer) override;
 
   // fuchsia.hardware.audio.RingBuffer implementation.
   void GetProperties(fidl::Server<fuchsia_hardware_audio::RingBuffer>::GetPropertiesCompleter::Sync&

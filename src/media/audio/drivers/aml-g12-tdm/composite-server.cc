@@ -1156,4 +1156,11 @@ void AudioCompositeServer::handle_unknown_method(
           metadata.method_ordinal);
 }
 
+void AudioCompositeServer::handle_unknown_method(
+    fidl::UnknownMethodMetadata<fuchsia_hardware_audio::Composite> metadata,
+    fidl::UnknownMethodCompleter::Sync& completer) {
+  FDF_LOG(ERROR, "AudioCompositeServer::handle_unknown_method (Composite) ordinal %zu",
+          metadata.method_ordinal);
+}
+
 }  // namespace audio::aml_g12

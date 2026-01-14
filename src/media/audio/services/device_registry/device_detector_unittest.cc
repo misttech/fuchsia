@@ -77,6 +77,12 @@ class FakeAudioComposite : public fidl::testing::TestBase<fha::Composite>,
 
   void GetProperties(GetPropertiesCompleter::Sync& completer) override { completer.Reply({}); }
 
+  void handle_unknown_method(
+      fidl::UnknownMethodMetadata<fuchsia_hardware_audio::Composite> metadata,
+      fidl::UnknownMethodCompleter::Sync& completer) override {
+    completer.Close(ZX_ERR_NOT_SUPPORTED);
+  }
+
   fbl::RefPtr<fs::Service> AsService() {
     return fbl::MakeRefCounted<fs::Service>([this](fidl::ServerEnd<fha::Composite> c) {
       binding_ = fidl::BindServer(dispatcher(), std::move(c), this);

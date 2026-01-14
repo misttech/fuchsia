@@ -1049,6 +1049,15 @@ void VirtualAudioComposite::handle_unknown_method(
              metadata.method_ordinal);
 }
 
+// Driver doesn't support a new Composite method. Complain loudly but don't disconnect, since
+// this test fixture might be used with a client that is built with a newer SDK version.
+void VirtualAudioComposite::handle_unknown_method(
+    fidl::UnknownMethodMetadata<fuchsia_hardware_audio::Composite> metadata,
+    fidl::UnknownMethodCompleter::Sync& completer) {
+  fdf::error("VirtualAudioComposite::handle_unknown_method (Composite) ordinal {}",
+             metadata.method_ordinal);
+}
+
 void VirtualAudioComposite::Serve(fidl::ServerEnd<fuchsia_hardware_audio::Composite> server) {
   if (composite_binding_.has_value()) {
     fdf::error("Already bound");

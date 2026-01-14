@@ -429,7 +429,7 @@ class Device : public std::enable_shared_from_this<Device> {
   FidlErrorHandler<fuchsia_hardware_audio::Codec> codec_handler_;
 
   std::optional<fidl::Client<fuchsia_hardware_audio::Composite>> composite_client_;
-  FidlErrorHandler<fuchsia_hardware_audio::Composite> composite_handler_;
+  FidlOpenErrorHandler<fuchsia_hardware_audio::Composite> composite_handler_;
 
   // Assigned by this service, guaranteed unique for this boot session, but not across reboots.
   const TokenId token_id_;

@@ -158,6 +158,9 @@ class AudioCompositeServer final
                                  typename fuchsia_hardware_audio_signalprocessing::SignalProcessing>
                                  metadata,
                              fidl::UnknownMethodCompleter::Sync& completer) override;
+  void handle_unknown_method(
+      fidl::UnknownMethodMetadata<fuchsia_hardware_audio::Composite> metadata,
+      fidl::UnknownMethodCompleter::Sync& completer) override;
 
   std::unique_ptr<Recorder>& device_inspect() { return recorder_; }
 

@@ -331,6 +331,9 @@ class FakeComposite final
       fidl::UnknownMethodMetadata<fuchsia_hardware_audio_signalprocessing::SignalProcessing>
           metadata,
       fidl::UnknownMethodCompleter::Sync& completer) final;
+  void handle_unknown_method(
+      fidl::UnknownMethodMetadata<fuchsia_hardware_audio::Composite> metadata,
+      fidl::UnknownMethodCompleter::Sync& completer) final;
 
   // Internal implementation methods/members
   static bool DaiFormatIsSupported(ElementId element_id,

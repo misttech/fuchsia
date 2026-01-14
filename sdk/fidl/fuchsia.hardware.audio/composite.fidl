@@ -63,6 +63,7 @@ type CompositeProperties = table {
 /// The hardware abstracted by the Composite protocol will be turned off (placed in its lowest
 /// supported power state) until a call to any APIs that requires the hardware to be turned on
 /// (placed in a higher power state).
+@available(replaced=HEAD)
 closed protocol Composite {
     /// Allows providing driver health state.
     compose Health;
@@ -147,6 +148,96 @@ closed protocol Composite {
     /// Returns `WRONG_TYPE` if the `ElementType` of the element represented by the id is not
     /// `DAI_INTERCONNECT`.
     strict SetDaiFormat(struct {
+        processing_element_id ElementId;
+        format DaiFormat;
+    }) -> () error DriverError;
+};
+
+@available(added=HEAD)
+open protocol Composite {
+    /// Allows providing driver health state.
+    compose Health;
+
+    /// Allows providing signal processing capabilities.
+    /// Supporting the `signalprocessing` protocols -- and exposing one or more elements and one or
+    /// more topologies -- is required for `Composite` implementations (unlike `Codec`, `Dai` and
+    /// `StreamConfig` implementations where this is optional).
+    compose fuchsia.hardware.audio.signalprocessing.Connector;
+
+    /// Resets the hardware including all DAI interconnects and signal processing.
+    /// As a result, all channels obtained by `CreateRingBuffer` will be closed.
+    ///
+    /// `Reset` returns when the hardware is fully reset. At this point, a client would need to
+    /// reconfigure any DAI interconnects, select a signal processing topology and reconfigure
+    /// any processing elements, and reconstruct any ring buffers.
+    ///
+    /// If the driver can't successfully reset the hardware, it will return an error and then close
+    /// the protocol channel, in this case the client may obtain a new protocol channel and retry.
+    flexible Reset() -> () error DriverError;
+
+    /// Retrieves top level static properties.
+    flexible GetProperties() -> (struct {
+        properties CompositeProperties;
+    });
+
+    /// Retrieves the ring buffer formats supported by a `RING_BUFFER` processing element
+    /// in the topology supported by this driver as returned by `GetElements` from
+    /// fuchsia.hardware.audio.signalprocessing.
+    /// Returns `SHOULD_WAIT` if the ring buffer formats are not available at the time, the
+    /// client may retry at a later time.
+    /// Returns `INVALID_ARGS` if the `processing_element_id` does not match an id returned
+    /// by `GetElements`.
+    /// Returns `WRONG_TYPE` if the `ElementType` of the element represented by the id is not
+    /// `RING_BUFFER`.
+    /// Retrieving multiple `SupportedFormats` allows for cases where exclusive combinations of
+    /// the parameters in `SupportedFormats` may be supported.
+    flexible GetRingBufferFormats(struct {
+        processing_element_id ElementId;
+    }) -> (struct {
+        ring_buffer_formats vector<SupportedFormats>:MAX_COUNT_FORMATS;
+    }) error DriverError;
+
+    /// `CreateRingBuffer` is sent by clients to select a ring buffer format for the `RING_BUFFER`
+    /// processing element specified by `processing_element_id`. The format is based on information
+    /// that the driver provides in `GetRingBufferFormats`, what is supported by the client, and
+    /// any other requirement. The returned `ring_buffer` channel is used to access and control the
+    /// audio buffer provided by the driver.
+    /// Returns `INVALID_ARGS` if the `processing_element_id` does not match an id returned
+    /// by `GetElements`.
+    /// Returns `WRONG_TYPE` if the `ElementType` of the element represented by the id is not
+    /// `RING_BUFFER`.
+    flexible CreateRingBuffer(resource struct {
+        processing_element_id ElementId;
+        format Format;
+        ring_buffer server_end:RingBuffer;
+    }) -> () error DriverError;
+
+    /// Retrieves the DAI formats supported by a `DAI_INTERCONNECT` processing element
+    /// in the topology supported by this driver as returned by `GetElements` from
+    /// fuchsia.hardware.audio.signalprocessing.
+    /// Returns `SHOULD_WAIT` if the DAI formats are not available at the time, the client
+    /// may retry at a later time.
+    /// Returns `INVALID_ARGS` if the `processing_element_id` does not match an id returned
+    /// by `GetElements`.
+    /// Returns `WRONG_TYPE` if the `ElementType` of the element represented by the id is not
+    /// `DAI_INTERCONNECT`.
+    /// Retrieving multiple `DaiSupportedFormats` allows for cases where exclusive combinations of
+    /// the parameters in SupportedFormats may be supported.
+    flexible GetDaiFormats(struct {
+        processing_element_id ElementId;
+    }) -> (struct {
+        dai_formats vector<DaiSupportedFormats>:MAX_COUNT_FORMATS;
+    }) error DriverError;
+
+    /// `SetDaiFormat` is sent by clients to select a DAI format for the `DAI_INTERCONNECT`
+    /// processing element specified by `processing_element_id`. The format is based on information
+    /// that the driver provides in `GetDaiFormats`, what is supported by the client, and any other
+    /// requirement.
+    /// Returns `INVALID_ARGS` if the `processing_element_id` does not match an id returned
+    /// by `GetElements`.
+    /// Returns `WRONG_TYPE` if the `ElementType` of the element represented by the id is not
+    /// `DAI_INTERCONNECT`.
+    flexible SetDaiFormat(struct {
         processing_element_id ElementId;
         format DaiFormat;
     }) -> () error DriverError;

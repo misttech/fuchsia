@@ -9,6 +9,7 @@
 #include <lib/zx/vmo.h>
 #include <zircon/compiler.h>
 #include <zircon/errors.h>
+#include <zircon/fidl.h>
 #include <zircon/rights.h>
 #include <zircon/time.h>
 
@@ -2448,6 +2449,32 @@ void AdminTest::TestSetGainElementStateInvalidGain(fhasp::ElementId element_id) 
 // Verify the driver responds to the GetHealthState query.
 DEFINE_ADMIN_TEST_CLASS(CompositeHealth, { RequestHealthAndExpectHealthy(); });
 
+// Verify the driver does not close the channel when an unknown method is called.
+DEFINE_ADMIN_TEST_CLASS(CompositeUnknownMethod, {
+  // Unbind to get raw channel
+  auto channel = composite().Unbind().TakeChannel();
+
+  // Send unknown method
+  fidl_message_header_t header = {};
+  header.txid = 0;  // One way call
+  header.at_rest_flags[0] = FIDL_MESSAGE_HEADER_AT_REST_FLAGS_0_USE_VERSION_V2;
+  header.magic_number = kFidlWireFormatMagicNumberInitial;
+  // Select an ordinal with the high bit set (0x8...) to indicate a flexible method.
+  // This ensures the runtime treats it as an "Unknown Flexible" method rather than
+  // a "Strict Protocol Violation", allowing handle_unknown_method to be called.
+  header.ordinal = 0x9234567812345678;
+  header.dynamic_flags |= FIDL_MESSAGE_HEADER_DYNAMIC_FLAGS_FLEXIBLE_METHOD;
+
+  ASSERT_EQ(channel.write(0, &header, sizeof(header), nullptr, 0), ZX_OK);
+
+  // Rebind and re-add error handler
+  composite().Bind(std::move(channel));
+  AddErrorHandler(composite(), "Composite");
+
+  // Verify connection is still alive using a valid method
+  RequestHealthAndExpectHealthy();
+});
+
 // Verify a valid unique_id, manufacturer, product are successfully received.
 DEFINE_ADMIN_TEST_CLASS(CompositeProperties, {
   ASSERT_NO_FAILURE_OR_SKIP(RetrieveProperties());
@@ -3155,6 +3182,7 @@ void RegisterAdminTestsForDevice(const DeviceEntry& device_entry) {
     // Composite test cases
     //
     REGISTER_ADMIN_TEST(CompositeHealth, device_entry);
+    REGISTER_ADMIN_TEST(CompositeUnknownMethod, device_entry);
     REGISTER_ADMIN_TEST(CompositeProperties, device_entry);
     REGISTER_ADMIN_TEST(CompositeRingBufferFormats, device_entry);
 

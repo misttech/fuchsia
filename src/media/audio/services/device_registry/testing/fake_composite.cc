@@ -842,6 +842,18 @@ void FakeComposite::handle_unknown_method(
   completer.Close(ZX_ERR_NOT_SUPPORTED);
 }
 
+void FakeComposite::handle_unknown_method(
+    fidl::UnknownMethodMetadata<fuchsia_hardware_audio::Composite> metadata,
+    fidl::UnknownMethodCompleter::Sync& completer) {
+  ADR_WARN_METHOD() << "(Composite) ordinal " << metadata.method_ordinal;
+  // If we've been instructed to be unresponsive, pend the completer - indefinitely.
+  if (!responsive()) {
+    unknown_method_completers_.emplace_back(completer.ToAsync());
+    return;
+  }
+  completer.Close(ZX_ERR_NOT_SUPPORTED);
+}
+
 // Inject std::nullopt to simulate "no topology", such as at power-up or after Reset().
 void FakeComposite::InjectTopologyChange(std::optional<TopologyId> topology_id) {
   topology_has_changed_ = topology_id.has_value();

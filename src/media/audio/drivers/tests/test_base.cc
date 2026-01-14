@@ -267,22 +267,28 @@ void TestBase::RetrieveProperties() {
           }
         }));
   } else if (device_entry().isComposite()) {
-    composite()->GetProperties(AddCallback(
-        "Composite::GetProperties", [this](fuchsia::hardware::audio::CompositeProperties props) {
-          properties() = BaseProperties{};
-          if (props.has_unique_id()) {
-            properties()->unique_id.emplace(props.unique_id());
-          }
-          if (props.has_manufacturer()) {
-            properties()->manufacturer = props.manufacturer();
-          }
-          if (props.has_product()) {
-            properties()->product = props.product();
-          }
-          if (props.has_clock_domain()) {
-            properties()->clock_domain = props.clock_domain();
-          }
-        }));
+    composite()->GetProperties(
+        AddCallback("Composite::GetProperties",
+                    [this](fuchsia::hardware::audio::Composite_GetProperties_Result result) {
+                      if (!result.is_response()) {
+                        ADD_FAILURE() << "GetProperties failed: (framework error)";
+                        return;
+                      }
+                      auto props = std::move(result.response().properties);
+                      properties() = BaseProperties{};
+                      if (props.has_unique_id()) {
+                        properties()->unique_id.emplace(props.unique_id());
+                      }
+                      if (props.has_manufacturer()) {
+                        properties()->manufacturer = props.manufacturer();
+                      }
+                      if (props.has_product()) {
+                        properties()->product = props.product();
+                      }
+                      if (props.has_clock_domain()) {
+                        properties()->clock_domain = props.clock_domain();
+                      }
+                    }));
   } else if (device_entry().isDai()) {
     dai()->GetProperties(
         AddCallback("Dai::GetProperties", [this](fuchsia::hardware::audio::DaiProperties props) {
