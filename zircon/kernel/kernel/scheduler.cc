@@ -1591,12 +1591,22 @@ void Scheduler::RescheduleCommon(Thread* const current_thread, EndTraceCallback 
   const SchedDuration actual_runtime_ns =
       ktl::max<SchedDuration>(now - current_state->last_started_running_, SchedDuration{0});
   current_state->last_started_running_ = now;
-  percpu::Get(current_cpu).stats.last_updated_instant = now.raw_value();
 
   const SchedDuration total_runtime_ns = now - start_of_current_time_slice_ns_;
 
   current_state->runtime_ns_ += actual_runtime_ns;
   current_thread->UpdateRuntimeStats(current_thread->state());
+
+  // Because idle and busy time calculations depend on the coherency of
+  // cpu_stats::last_updated_instant with cpu_stats::idle_time and
+  // cpu_stats::normalized_busy_time, these must be updated in the same
+  // acquisition of the queue lock.
+  percpu::Get(current_cpu).stats.last_updated_instant = now.raw_value();
+  if (current_thread->IsIdle()) {
+    percpu::Get(current_cpu).stats.idle_time += actual_runtime_ns;
+  } else {
+    percpu::Get(current_cpu).stats.normalized_busy_time += actual_runtime_ns * processing_rate();
+  }
 
   // Update the energy consumption accumulators for the current task and
   // processor.
@@ -1854,12 +1864,6 @@ void Scheduler::RescheduleCommon(Thread* const current_thread, EndTraceCallback 
 
     // Send a pending power level request before updating the processing rate.
     power_level_control_.SendPendingPowerLevelRequest(queue_guard);
-  }
-
-  if (current_thread->IsIdle()) {
-    percpu::Get(current_cpu).stats.idle_time += actual_runtime_ns;
-  } else {
-    percpu::Get(current_cpu).stats.normalized_busy_time += actual_runtime_ns * processing_rate();
   }
 
   // Update the current processing rate only after any uses in the reschedule
