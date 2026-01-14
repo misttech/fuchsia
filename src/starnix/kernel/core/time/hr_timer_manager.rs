@@ -619,9 +619,11 @@ impl HrTimerManager {
             .with_async_closure(closure)
             .build();
         system_task.kernel().kthreads.spawner().spawn_from_request(req);
+        log_info!("hr_timer_manager: waiting on setup done");
         wait_signaled_sync(&setup_done)
             .to_result()
             .map_err(|status| from_status_like_fdio!(status))?;
+        log_info!("hr_timer_manager: setup done");
 
         Ok(())
     }

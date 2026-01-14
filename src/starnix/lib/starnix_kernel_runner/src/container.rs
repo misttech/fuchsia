@@ -799,7 +799,7 @@ async fn create_container(
         }
     }
 
-    log_debug!("Creating init process.");
+    log_info!("Creating init process.");
     let init_task = create_init_process(
         kernel.kthreads.unlocked_for_async().deref_mut(),
         &kernel,
