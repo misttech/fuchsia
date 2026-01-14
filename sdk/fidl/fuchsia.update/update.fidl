@@ -231,7 +231,7 @@ type State = strict union {
     ///
     6: waiting_for_reboot InstallingData;
 
-    /// The Manager encountered an update in the installation of the update.
+    /// The Manager encountered an error during the installation of the update.
     ///
     /// **This is a terminal state**
     ///
