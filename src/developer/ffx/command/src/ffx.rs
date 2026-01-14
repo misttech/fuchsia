@@ -188,15 +188,16 @@ impl FfxCommandLine {
                 Error::Help { command: self.command.clone(), output, code }
             }
         };
-        let args_for_analytics: Vec<_> = match enhanced_analytics().await {
+        let redacted_args: Vec<_> = self
+            .redact_ffx_cmd()
+            .into_iter()
+            .chain(subcmd_name.map(|_| "<unknown-subtool>".to_owned()).into_iter())
+            .collect();
+        let enhanced_args = match enhanced_analytics().await {
             // construct a 'sanitized' argument list that includes an indication of whether
             // it was just no arguments passed or an unknown subtool.
-            false => self
-                .redact_ffx_cmd()
-                .into_iter()
-                .chain(subcmd_name.map(|_| "<unknown-subtool>".to_owned()).into_iter())
-                .collect(),
-            true => self.unredacted_args_for_analytics(),
+            false => None,
+            true => Some(self.unredacted_args_for_analytics()),
         };
 
         let error_res = match help_err.exit_code() {
@@ -208,7 +209,7 @@ impl FfxCommandLine {
             }),
         };
 
-        metrics.command_finished(&error_res, &args_for_analytics).await?;
+        metrics.command_finished(&error_res, &redacted_args, enhanced_args.as_deref()).await?;
         Ok(help_err)
     }
 

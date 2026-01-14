@@ -72,7 +72,8 @@ impl MetricsSession {
     pub async fn command_finished(
         self,
         res: &Result<ExitStatus, Error>,
-        sanitized_args: &[impl AsRef<str>],
+        redacted_args: &[impl AsRef<str>],
+        enhanced_args: Option<&[impl AsRef<str>]>,
     ) -> Result<CommandStats> {
         let exit_code = match res {
             Ok(c) => c.code().unwrap_or(1),
@@ -87,12 +88,17 @@ impl MetricsSession {
         let command_duration = command_done - self.session_start;
         let analytics_duration = if self.enabled {
             let timing_in_millis = command_duration.as_millis();
-            let sanitized_args = sanitized_args.iter().map(AsRef::as_ref).join(" ");
-
+            let redacted_args = redacted_args.iter().map(AsRef::as_ref).join(" ");
+            let enhanced_args = enhanced_args.map(|val| val.iter().map(AsRef::as_ref).join(" "));
             let analytics_task = fuchsia_async::Task::local(async move {
-                if let Err(e) =
-                    add_ffx_launch_event(sanitized_args, timing_in_millis, exit_code, error_message)
-                        .await
+                if let Err(e) = add_ffx_launch_event(
+                    redacted_args,
+                    enhanced_args,
+                    timing_in_millis,
+                    exit_code,
+                    error_message,
+                )
+                .await
                 {
                     log::error!("metrics submission failed: {}", e);
                 }

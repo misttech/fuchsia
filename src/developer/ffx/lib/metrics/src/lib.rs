@@ -48,7 +48,8 @@ pub fn sanitize(parameter: &str) -> String {
 }
 
 pub async fn add_ffx_launch_event(
-    sanitized_args: String,
+    redacted_args: String,
+    enhanced_args: Option<String>,
     time: u128,
     exit_code: i32,
     error_message: Option<String>,
@@ -58,10 +59,17 @@ pub async fn add_ffx_launch_event(
         ("time", u64_time.into()),
         ("exit_code", exit_code.to_string().into()),
         ("error_message", error_message.unwrap_or_else(|| "".to_string()).into()),
+        ("redacted_args", redacted_args.into()),
     ]);
     let mut metrics_svc = ga4_metrics().await?;
     metrics_svc
-        .add_custom_event(None, Some(&sanitized_args), None, custom_dimensions, Some("invoke"))
+        .add_custom_event(
+            None,
+            enhanced_args.as_ref().map(String::as_str),
+            None,
+            custom_dimensions,
+            Some("invoke"),
+        )
         .await?;
     metrics_svc.send_events().await
 }

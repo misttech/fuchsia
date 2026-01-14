@@ -226,6 +226,9 @@ pub async fn run<T: ToolSuite>(icmd: InitializedCmd) -> Result<ExitStatus> {
     };
     ffx_config::logging::init(&context, app.verbose, &log_dest)?;
 
+    let metrics = MetricsSession::start(&context).await?;
+    log::debug!("metrics session started");
+
     let tools = T::from_env(&context)?;
 
     match help_state {
@@ -305,9 +308,6 @@ pub async fn run<T: ToolSuite>(icmd: InitializedCmd) -> Result<ExitStatus> {
 
     log::info!("starting command: {:?}", Vec::from_iter(cmd.all_iter()));
     log::info!("with context: {kind:#?}", kind = context.env_kind());
-
-    let metrics = MetricsSession::start(&context).await?;
-    log::debug!("metrics session started");
 
     let stamp = stamp_file(&app.stamp)?;
     let res = match tool {

@@ -163,6 +163,7 @@ impl<M> Clone for FhoSuite<M> {
 struct FhoTool<M: FfxTool> {
     env: FhoEnvironment,
     redacted_args: Vec<String>,
+    enhanced_args: Option<Vec<String>>,
     main: M,
 }
 
@@ -200,7 +201,10 @@ impl<T: FfxTool> ToolRunner for FhoTool<T> {
         } else {
             self.main.main(writer).await.map(|_| ExitStatus::from_raw(0))
         };
-        let res = metrics.command_finished(&res, &self.redacted_args).await.and(res);
+        let res = metrics
+            .command_finished(&res, &self.redacted_args, self.enhanced_args.as_deref())
+            .await
+            .and(res);
         self.env.wrap_main_result(res)
     }
 }
@@ -216,9 +220,10 @@ impl<T: FfxTool> FhoTool<T> {
         let is_machine_output = ffx.global.machine.is_some();
         let env = FhoEnvironment::new(context, &ffx);
         ffx_diagnostics_analytics_state::set_command_line_context(env.ffx_command(), &tool);
-        let redacted_args = match send_enhanced_analytics().await {
-            false => ffx.redact_subcmd(&tool),
-            true => ffx.unredacted_args_for_analytics(),
+        let redacted_args = ffx.redact_subcmd(&tool);
+        let enhanced_args = match send_enhanced_analytics().await {
+            false => None,
+            true => Some(ffx.unredacted_args_for_analytics()),
         };
         let main = T::from_env(env.clone(), tool).await?;
         if !main.supports_machine_output() && is_machine_output {
@@ -227,7 +232,7 @@ impl<T: FfxTool> FhoTool<T> {
             )));
         }
 
-        let found = FhoTool { env, redacted_args, main };
+        let found = FhoTool { env, redacted_args, enhanced_args, main };
         Ok(Box::new(found))
     }
 }

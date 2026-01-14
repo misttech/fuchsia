@@ -199,14 +199,15 @@ impl ToolRunner for FfxSubCommand {
             if !analytics_command(&self.app.unredacted_args_for_analytics().join(" ")) {
                 metrics.print_notice(&mut std::io::stderr()).await?;
             }
-            let args_for_analytics = match send_enhanced_analytics().await {
-                false => ffx_lib_suite::ffx_plugin_redact_args(&self.app, &self.cmd),
-                true => self.app.unredacted_args_for_analytics(),
+            let redacted_args = ffx_lib_suite::ffx_plugin_redact_args(&self.app, &self.cmd);
+            let enhanced_args = match send_enhanced_analytics().await {
+                false => None,
+                true => Some(self.app.unredacted_args_for_analytics()),
             };
             let res = run_legacy_subcommand(self.app, self.context, self.cmd)
                 .await
                 .map(|_| ExitStatus::from_raw(0));
-            metrics.command_finished(&res, &args_for_analytics).await.and(res)
+            metrics.command_finished(&res, &redacted_args, enhanced_args.as_deref()).await.and(res)
         }
     }
 }
