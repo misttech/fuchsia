@@ -54,6 +54,7 @@ rust_library(
     ),
     crate_features = [
         "default-hasher",
+        "inline-more",
         "serde",
     ],
     crate_root = "src/lib.rs",

@@ -8241,6 +8241,7 @@ rustc_library("hashbrown-v0_16_1") {
     "-Cmetadata=cd7a074e7a5f21d9",
     "-Cextra-filename=-cd7a074e7a5f21d9",
     "--cfg=feature=\"default-hasher\"",
+    "--cfg=feature=\"inline-more\"",
     "--cfg=feature=\"serde\"",
   ]
 
