@@ -503,13 +503,11 @@ impl Interface for Data {
                 )?
             };
 
-            if opts.inline_crypto_options.is_enabled() {
+            if opts.inline_crypto.is_enabled() {
                 let fscrypt_info = self.fscrypt_info.lock();
-                if let Some(cipher) =
-                    fscrypt_info.fscrypt_keys.get(&opts.inline_crypto_options.slot)
-                {
+                if let Some(cipher) = fscrypt_info.fscrypt_keys.get(&opts.inline_crypto.slot) {
                     cipher
-                        .decrypt(&mut data, opts.inline_crypto_options.dun as u128)
+                        .decrypt(&mut data, opts.inline_crypto.dun as u128)
                         .map_err(|_| zx::Status::IO)?;
                 }
             }
@@ -555,13 +553,11 @@ impl Interface for Data {
             {
                 tracking.lock().insert(device_block_offset, &data[..]);
             }
-            if opts.inline_crypto_options.is_enabled() {
+            if opts.inline_crypto.is_enabled() {
                 let fscrypt_info = self.fscrypt_info.lock();
-                if let Some(cipher) =
-                    fscrypt_info.fscrypt_keys.get(&opts.inline_crypto_options.slot)
-                {
+                if let Some(cipher) = fscrypt_info.fscrypt_keys.get(&opts.inline_crypto.slot) {
                     cipher
-                        .encrypt(&mut data, opts.inline_crypto_options.dun as u128)
+                        .encrypt(&mut data, opts.inline_crypto.dun as u128)
                         .map_err(|_| zx::Status::IO)?;
                 }
             }

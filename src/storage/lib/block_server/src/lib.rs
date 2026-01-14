@@ -715,7 +715,7 @@ impl<SM: SessionManager> SessionHelper<SM> {
                             .checked_mul(self.block_size as u64)
                             .ok_or(zx::Status::OUT_OF_RANGE)?,
                         options: ReadOptions {
-                            inline_crypto_options: InlineCryptoOptions {
+                            inline_crypto: InlineCryptoOptions {
                                 dun: request.dun,
                                 slot: request.slot,
                             },
@@ -723,7 +723,7 @@ impl<SM: SessionManager> SessionHelper<SM> {
                     },
                     BlockOpcode::Write => {
                         let mut options = WriteOptions {
-                            inline_crypto_options: InlineCryptoOptions {
+                            inline_crypto: InlineCryptoOptions {
                                 dun: request.dun,
                                 slot: request.slot,
                             },

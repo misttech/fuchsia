@@ -22,13 +22,13 @@ bitflags! {
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub struct WriteOptions {
     pub flags: WriteFlags,
-    pub inline_crypto_options: InlineCryptoOptions,
+    pub inline_crypto: InlineCryptoOptions,
 }
 
 #[repr(C)]
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub struct ReadOptions {
-    pub inline_crypto_options: InlineCryptoOptions,
+    pub inline_crypto: InlineCryptoOptions,
 }
 
 #[repr(C)]

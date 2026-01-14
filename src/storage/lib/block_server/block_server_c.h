@@ -68,12 +68,12 @@ struct InlineCryptoOptions {
 };
 
 struct ReadOptions {
-  InlineCryptoOptions inline_crypto_options;
+  InlineCryptoOptions inline_crypto;
 };
 
 struct WriteOptions {
   WriteFlags flags;
-  InlineCryptoOptions inline_crypto_options;
+  InlineCryptoOptions inline_crypto;
 };
 
 struct Operation {

@@ -613,7 +613,7 @@ mod tests {
                 0,
                 buf.as_ref(),
                 WriteOptions {
-                    inline_crypto_options: InlineCryptoOptions { dun: 0, slot: expected_slot },
+                    inline_crypto: InlineCryptoOptions { dun: 0, slot: expected_slot },
                     ..Default::default()
                 },
             )
@@ -626,7 +626,7 @@ mod tests {
                 0,
                 read_buf.as_mut(),
                 ReadOptions {
-                    inline_crypto_options: InlineCryptoOptions { dun: 0, slot: expected_slot + 1 },
+                    inline_crypto: InlineCryptoOptions { dun: 0, slot: expected_slot + 1 },
                 },
             )
             .await
@@ -636,9 +636,7 @@ mod tests {
             .read_with_opts(
                 0,
                 read_buf.as_mut(),
-                ReadOptions {
-                    inline_crypto_options: InlineCryptoOptions { dun: 0, slot: expected_slot },
-                },
+                ReadOptions { inline_crypto: InlineCryptoOptions { dun: 0, slot: expected_slot } },
             )
             .await
             .expect("Read failed");

@@ -521,7 +521,7 @@ impl<S: HandleOwner> StoreObjectHandle<S> {
                     crypt_ctx.map_or_else(
                         || WriteOptions::default(),
                         |(dun, slot)| WriteOptions {
-                            inline_crypto_options: InlineCryptoOptions { dun, slot },
+                            inline_crypto: InlineCryptoOptions { dun, slot },
                             ..Default::default()
                         },
                     ),
@@ -753,7 +753,7 @@ impl<S: HandleOwner> StoreObjectHandle<S> {
                     .read_with_opts(
                         device_offset as u64,
                         buffer.reborrow(),
-                        ReadOptions { inline_crypto_options: InlineCryptoOptions { dun, slot } },
+                        ReadOptions { inline_crypto: InlineCryptoOptions { dun, slot } },
                     )
                     .await?;
             } else {

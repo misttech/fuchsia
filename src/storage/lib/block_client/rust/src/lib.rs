@@ -501,8 +501,8 @@ impl Common {
                     vmo_offset: self.to_blocks(offset)?,
                     dev_offset: self.to_blocks(device_offset)?,
                     trace_flow_id,
-                    dun: opts.inline_crypto_options.dun,
-                    slot: opts.inline_crypto_options.slot,
+                    dun: opts.inline_crypto.dun,
+                    slot: opts.inline_crypto.slot,
                     ..Default::default()
                 })
                 .await?
@@ -524,8 +524,8 @@ impl Common {
                         vmo_offset: 0,
                         dev_offset: device_block,
                         trace_flow_id,
-                        dun: opts.inline_crypto_options.dun,
-                        slot: opts.inline_crypto_options.slot,
+                        dun: opts.inline_crypto.dun,
+                        slot: opts.inline_crypto.slot,
                         ..Default::default()
                     })
                     .await?;
@@ -574,8 +574,8 @@ impl Common {
                     vmo_offset: self.to_blocks(offset)?,
                     dev_offset: self.to_blocks(device_offset)?,
                     trace_flow_id,
-                    dun: opts.inline_crypto_options.dun,
-                    slot: opts.inline_crypto_options.slot,
+                    dun: opts.inline_crypto.dun,
+                    slot: opts.inline_crypto.slot,
                     ..Default::default()
                 })
                 .await?;
@@ -598,8 +598,8 @@ impl Common {
                         vmo_offset: 0,
                         dev_offset: device_block,
                         trace_flow_id,
-                        dun: opts.inline_crypto_options.dun,
-                        slot: opts.inline_crypto_options.slot,
+                        dun: opts.inline_crypto.dun,
+                        slot: opts.inline_crypto.slot,
                         ..Default::default()
                     })
                     .await?;
