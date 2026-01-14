@@ -70,6 +70,44 @@ GIT_REPO=$(git -C "${FUCHSIA_ROOT}" config --get remote.origin.url)
 
 CIPD_CLIENT="cipd"
 
+
+echo "Creating README.fuchsia..."
+cat <<EOF > "${OUT_DIR}/README.fuchsia"
+Name: alpine
+Upstream Git: https://hub.docker.com/_/alpine
+Version: ha256:c5b1261d6d3e43071626931fc004f70149baeba2c8ec672bd4f27761f8e1ad6b
+Security Critical: no
+License: MIT
+License File: LICENSE
+Description:
+A minimal Docker image based on Alpine Linux.
+EOF
+
+echo "Creating LICENSE..."
+cat <<EOF > "${OUT_DIR}/LICENSE"
+MIT License
+
+Copyright (c) 2019 Natanael Copa
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
+EOF
+
 function create_cipd_yaml() {
   local arch=$1
   local cipd_package_name="fuchsia/starnix/alpine-image-${arch}"
@@ -82,6 +120,8 @@ package: ${cipd_package_name}
 install_mode: copy
 data:
   - file: ${arch}/alpine.tar
+  - file: README.fuchsia
+  - file: LICENSE
 EOF
 }
 
