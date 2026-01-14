@@ -833,10 +833,10 @@ def verify_unknown_gn_targets(
     missing_ninja_packages = set()
     build_dirs: set[str] = set()
     for error_line in build_files_error:
-        if not ("ERROR: " in error_line and "@gn_targets//" in error_line):
+        if not ("ERROR: " in error_line and "@gn_targets" in error_line):
             continue
 
-        pos = error_line.find("@@gn_targets//")
+        pos = error_line.find("@@gn_targets")
         if pos < 0:
             # Should not happen, do not assert and let the caller print the full error
             # after this.
