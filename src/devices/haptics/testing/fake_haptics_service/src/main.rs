@@ -4,9 +4,6 @@
 
 //! The fake haptics service's goal is to provide a component that offers a fake
 //! fuchsia.hardware.haptics.Service` FIDL service instance.
-//!
-//! Currently, it responds to `StartVibration()` and `StopVibration()` by returning
-//! `ZX_ERR_NOT_IMPLEMENTED`.
 
 use anyhow::Context;
 use fidl_fuchsia_hardware_haptics::{DeviceRequest, DeviceRequestStream, ServiceRequest};
@@ -18,6 +15,9 @@ async fn handle_device_requests(mut requests: DeviceRequestStream) -> anyhow::Re
     while let Some(request) = requests.try_next().await.context("Failed to get request")? {
         match request {
             DeviceRequest::StartVibration { responder } => {
+                responder.send(Ok(())).context("Failed to send response")?;
+            }
+            DeviceRequest::PlayVibration { duration: _, responder } => {
                 responder.send(Ok(())).context("Failed to send response")?;
             }
             DeviceRequest::StopVibration { responder } => {
