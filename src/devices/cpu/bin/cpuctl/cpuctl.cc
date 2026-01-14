@@ -71,29 +71,32 @@ void usage(const char* cmd) {
 
   // clang-format off
   fprintf(stderr, "\nInteract with the CPU\n");
-  fprintf(stderr, "\t%s help                     Print this message and quit.\n", cmd);
-  fprintf(stderr, "\t%s list                     List this system's performance domains\n", cmd);
-  fprintf(stderr, "\t%s describe [domain]        Describes a given performance domain's operating points\n",
+  fprintf(stderr, "\t%s help                      Print this message and quit.\n", cmd);
+  fprintf(stderr, "\t%s list                      List this system's performance domains\n", cmd);
+  fprintf(stderr, "\t%s describe [domain]         Describes a given performance domain's operating points\n",
           cmd);
-  fprintf(stderr, "\t%s                          describes all domains if `domain` is omitted.\n",
+  fprintf(stderr, "\t%s                           describes all domains if `domain` is omitted.\n",
           spaces);
-
-  fprintf(stderr, "\t%s kernel-config            List the power domains registered with the kernel.\n",
+  fprintf(stderr, "\t%s kernel-config             List the power domains registered with the kernel.\n",
           cmd);
-  fprintf(stderr, "\t%s opp <domain> [opp]       Set the CPU's operating point to `opp`. \n",
+  fprintf(stderr, "\t%s opp <domain> [opp]        Set the domain's operating point to `opp`. \n",
           cmd);
-  fprintf(stderr, "\t%s                          Returns the current opp if `opp` is omitted.\n",
+  fprintf(stderr, "\t%s                           Returns the current opp if `opp` is omitted.\n",
+          spaces);
+  fprintf(stderr, "\t%s limits <domain> [min max] Set the domain's operating point limits to `min max`. \n",
+          cmd);
+  fprintf(stderr, "\t%s                           Returns the current limits if `min max` is omitted.\n",
           spaces);
 
   fprintf(stderr, "\t%s stress [-d domains] [-t timeout] [-c count]\n", cmd);
-  fprintf(stderr, "\t%s                          ex: %s stress -d /dev/class/cpu/000,/dev/class/cpu/001 -c 100 -t 10\n", spaces, cmd);
-  fprintf(stderr, "\t%s                          Stress test by rapidly and randomly assigning opps.\n", spaces);
-  fprintf(stderr, "\t%s                          `domains` is a commas separated list of performance domains to test\n", spaces);
-  fprintf(stderr, "\t%s                          If `domains` is omitted, all domains are tested.\n", spaces);
-  fprintf(stderr, "\t%s                          `timeout` defines the number of milliseconds to wait before assigning a domain\n", spaces);
-  fprintf(stderr, "\t%s                          If `timeout` is omitted, a default value of %lu is used.\n", spaces, kDefaultStressTestTimeoutMs);
-  fprintf(stderr, "\t%s                          `count` defines the number of iterations the stress test should run for\n", spaces);
-  fprintf(stderr, "\t%s                          If `count` is omitted, a default value of %lu is used.\n", spaces, kDefaultStressTestIterations);
+  fprintf(stderr, "\t%s                           ex: %s stress -d /dev/class/cpu/000,/dev/class/cpu/001 -c 100 -t 10\n", spaces, cmd);
+  fprintf(stderr, "\t%s                           Stress test by rapidly and randomly assigning opps.\n", spaces);
+  fprintf(stderr, "\t%s                           `domains` is a commas separated list of performance domains to test\n", spaces);
+  fprintf(stderr, "\t%s                           If `domains` is omitted, all domains are tested.\n", spaces);
+  fprintf(stderr, "\t%s                           `timeout` defines the number of milliseconds to wait before assigning a domain\n", spaces);
+  fprintf(stderr, "\t%s                           If `timeout` is omitted, a default value of %lu is used.\n", spaces, kDefaultStressTestTimeoutMs);
+  fprintf(stderr, "\t%s                           `count` defines the number of iterations the stress test should run for\n", spaces);
+  fprintf(stderr, "\t%s                           If `count` is omitted, a default value of %lu is used.\n", spaces, kDefaultStressTestIterations);
   // clang-format on
 }
 
@@ -234,7 +237,7 @@ int kernel_config() {
     return -5;
   }
 
-  auto print_cpu_nums = []<size_t N>(uint64_t(&mask)[N]) {
+  auto print_cpu_nums = []<size_t N>(uint64_t (&mask)[N]) {
     for (size_t i = 0; i < N; ++i) {
       if (mask[i] == 0) {
         continue;
@@ -349,13 +352,14 @@ void set_current_operating_point(const char* argument, const char* opp) {
     return;
   }
 
-  int64_t desired_opp_l = parse_positive_long(opp);
-  if (desired_opp_l < 0 || desired_opp_l > opp_count) {
-    std::cerr << "Bad opp '%s', must be a positive integer between 0 and %u\n" << opp << opp_count;
+  const int64_t desired_opp_l = parse_positive_long(opp);
+  if (desired_opp_l < 0 || desired_opp_l >= opp_count) {
+    std::cerr << "Bad opp " << opp << ", must be a positive integer between 0 and " << opp_count
+              << "\n";
     return;
   }
 
-  uint32_t desired_opp = static_cast<uint32_t>(desired_opp_l);
+  const uint32_t desired_opp = static_cast<uint32_t>(desired_opp_l);
 
   zx_status_t status = client.SetCurrentOperatingPoint(static_cast<uint32_t>(desired_opp));
   if (status != ZX_OK) {
@@ -405,6 +409,62 @@ void get_current_operating_point(const char* argument) {
   std::cout << "    Voltage: ";
   print_voltage(opp);
   std::cout << std::endl;
+}
+
+void set_current_operating_point_limits(const char* argument, const char* min_opp,
+                                        const char* max_opp) {
+  zx::result domain = PerformanceDomainFromArgument(argument);
+  if (domain.is_error()) {
+    std::cerr << "Failed to connect to performance domain device '" << argument << "'"
+              << " st = " << domain.status_string() << "\n";
+    return;
+  }
+  CpuPerformanceDomain& client = domain.value();
+
+  const auto [opp_count_status, opp_count] = client.GetOperatingPointCount();
+  if (opp_count_status != ZX_OK) {
+    std::cerr << "Failed to get operating point counts, st = " << opp_count_status << "\n";
+    return;
+  }
+
+  const int64_t min_opp_l = parse_positive_long(min_opp);
+  if (min_opp_l < 0 || min_opp_l >= opp_count) {
+    std::cerr << "Bad opp " << min_opp_l << ", must be a positive integer between 0 and "
+              << opp_count << "\n";
+    return;
+  }
+
+  const int64_t max_opp_l = parse_positive_long(max_opp);
+  if (max_opp_l < 0 || max_opp_l >= opp_count) {
+    std::cerr << "Bad opp " << max_opp_l << ", must be a positive integer between 0 and "
+              << opp_count << "\n";
+    return;
+  }
+
+  const zx_status_t status = client.SetOperatingPointLimits(static_cast<uint32_t>(min_opp_l),
+                                                            static_cast<uint32_t>(max_opp_l));
+  if (status != ZX_OK) {
+    std::cout << "Failed to set current operating point limits, st = " << status << "\n";
+  }
+}
+
+void get_current_operating_point_limits(const char* argument) {
+  zx::result domain = PerformanceDomainFromArgument(argument);
+  if (domain.is_error()) {
+    std::cerr << "Failed to connect to performance domain device '" << argument << "'"
+              << " st = " << domain.status_string() << "\n";
+    return;
+  }
+
+  CpuPerformanceDomain& client = domain.value();
+  const auto [status, min_opp, max_opp] = client.GetCurrentOperatingPointLimits();
+
+  if (status != ZX_OK) {
+    std::cout << "Failed to get current operating point limits, st = " << status << "\n";
+    return;
+  }
+
+  std::cout << "Current limits: min_opp = " << min_opp << " max_opp = " << max_opp << "\n";
 }
 
 zx_status_t describe_all() {
@@ -525,6 +585,16 @@ int main(int argc, char* argv[]) {
       get_current_operating_point(argv[2]);
     } else {
       fprintf(stderr, "opp <domain> [opp]\n");
+      usage(cmd);
+      return -1;
+    }
+  } else if (!strncmp(subcmd, "limits", 6)) {
+    if (argc == 5) {
+      set_current_operating_point_limits(argv[2], argv[3], argv[4]);
+    } else if (argc == 3) {
+      get_current_operating_point_limits(argv[2]);
+    } else {
+      fprintf(stderr, "limits <domain> [min max]\n");
       usage(cmd);
       return -1;
     }

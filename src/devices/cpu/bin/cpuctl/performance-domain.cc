@@ -124,3 +124,29 @@ zx_status_t CpuPerformanceDomain::SetCurrentOperatingPoint(uint32_t new_opp) {
 
   return ZX_OK;
 }
+
+zx_status_t CpuPerformanceDomain::SetOperatingPointLimits(uint32_t min_opp, uint32_t max_opp) {
+  auto result = cpu_client_->SetOperatingPointLimits(min_opp, max_opp);
+  if (result.status() != ZX_OK) {
+    return result.status();
+  }
+
+  if (result->is_error()) {
+    return result->error_value();
+  }
+
+  return ZX_OK;
+}
+
+std::tuple<zx_status_t, uint32_t, uint32_t> CpuPerformanceDomain::GetCurrentOperatingPointLimits() {
+  auto result = cpu_client_->GetCurrentOperatingPointLimits();
+  if (result.status() != ZX_OK) {
+    return {result.status(), 0, 0};
+  }
+
+  if (result->is_error()) {
+    return {result->error_value(), 0, 0};
+  }
+
+  return {ZX_OK, result.value()->minimum_opp, result->value()->maximum_opp};
+}

@@ -25,6 +25,8 @@ class CpuPerformanceDomain {
   std::tuple<zx_status_t, const std::vector<cpuctrl::wire::CpuOperatingPointInfo>&>
   GetOperatingPoints();
   zx_status_t SetCurrentOperatingPoint(uint32_t new_opp);
+  zx_status_t SetOperatingPointLimits(uint32_t min_opp, uint32_t max_opp);
+  std::tuple<zx_status_t, uint32_t, uint32_t> GetCurrentOperatingPointLimits();
 
  protected:
   // Don't allow explicit construction.
