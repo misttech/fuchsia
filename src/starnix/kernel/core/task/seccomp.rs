@@ -18,6 +18,7 @@ use ebpf::{
     ProgramArgument, Type, bpf_addressing_mode, bpf_class, convert_and_link_cbpf,
 };
 use ebpf_api::SECCOMP_CBPF_CONFIG;
+use linux_uapi::AUDIT_SECCOMP;
 use starnix_lifecycle::AtomicU64Counter;
 use starnix_logging::{log_warn, track_stub};
 use starnix_sync::{FileOpsCore, Locked, Mutex, Unlocked};
@@ -415,17 +416,19 @@ impl SeccompState {
         } else {
             "unknown"
         };
-        starnix_logging::log_info!(
-            "type=SECCOMP: uid={} gid={} pid={} comm={} syscall={} ip={} ARCH={} SYSCALL={}",
-            uid,
-            gid,
-            task.thread_group().leader,
-            task.command(),
-            syscall.decl.number,
-            task.thread_state.registers.instruction_pointer_register(),
-            arch,
-            syscall.decl.name(),
-        );
+        task.kernel().audit_logger().audit_log(AUDIT_SECCOMP as u16, || {
+            format!(
+                "uid={} gid={} pid={} comm={} syscall={} ip={} ARCH={} SYSCALL={}",
+                uid,
+                gid,
+                task.thread_group().leader,
+                task.command(),
+                syscall.decl.number,
+                task.thread_state.registers.instruction_pointer_register(),
+                arch,
+                syscall.decl.name(),
+            )
+        });
     }
 
     /// Take the given |action| on the given |task|.  The action is one of the SECCOMP_RET values

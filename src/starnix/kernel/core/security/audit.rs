@@ -296,11 +296,13 @@ impl AuditLogger {
     ) {
         // At this point, we know that the audit framework is not disabled until reboot.
         let audit_message = self.prepend_audit_metadata(audit_formatter);
+
         // If there is no audit sink and the auditing is partially enabled, print and return
         // without pushing the message to the backlog.
         if client_guard.client.is_none() {
-            log_warn!("{audit_message}");
+            log_warn!("audit: type={audit_type} msg={audit_message}");
         }
+
         if client_guard.client.is_some() || self.configuration.audit_mode == AuditMode::Enabled {
             self.push_back_audit(audit_type, audit_message, client_guard);
             client_guard.client.as_ref().inspect(|client| client.notify());

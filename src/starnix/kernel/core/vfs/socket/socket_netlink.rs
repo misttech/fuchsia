@@ -1707,7 +1707,7 @@ impl AuditNetlinkClient {
         nl_payload: Vec<u8>,
     ) -> Result<NetlinkMessage<GenericMessage>, Errno> {
         let audit_msg = String::from_utf8_lossy(nl_payload.as_bytes());
-        self.audit_logger.audit_log(nl_hdr.message_type as u16, move || audit_msg);
+        self.audit_logger.audit_log(nl_hdr.message_type, move || audit_msg);
         Ok(AuditNetlinkClient::build_audit_ack(Ok(()), nl_hdr))
     }
 
