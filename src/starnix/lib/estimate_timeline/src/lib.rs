@@ -74,11 +74,14 @@ impl TimeFetcher for DefaultFetcher {
     }
 }
 
+/// A single entry in the timeline, mapping a boot time to a monotonic offset.
+type TimelineEntry = (zx::BootInstant, TimeOffsetMillis);
+
 #[derive(Debug, Default)]
 pub struct TimelineEstimator<T: TimeFetcher> {
     /// A timeline of (boot_time_nanos, monotonic_offset_millis) pairs.
     /// The monotonic offset is calculated as (boot_time_nanos - monotonic_time_nanos) / 1,000,000.
-    timeline: VecDeque<(zx::BootInstant, TimeOffsetMillis)>,
+    timeline: VecDeque<TimelineEntry>,
     /// Max timeline size value
     max_timeline_size: u64,
     /// Number of times the timeline has overflowed
@@ -127,14 +130,15 @@ impl<T: TimeFetcher> TimelineEstimator<T> {
             let new_boot_time = TimeOffsetMillis::from(self.time_fetcher.get_boot());
             let prev_boot_time = TimeOffsetMillis::from(current_boot_time);
             if new_boot_time - prev_boot_time < TIMELINE_BOOT_TIME_THRESHOLD_MS {
-                if (current_boot_time < boot_time) || boot_time < *last_recorded_boot_time {
-                    timeline.push_back((current_boot_time, current_offset));
-                } else {
+                if !((current_boot_time < boot_time) || boot_time < *last_recorded_boot_time) {
                     // We tend to be one of the last components to wakeup and many other components
                     // tend to log first. If we get a log message with an earlier timestamp, assume
                     // that the timestamp on that log is in our current time offset.
-                    timeline.push_back((boot_time, current_offset));
+                    if boot_time != current_boot_time {
+                        timeline.push_back((boot_time, current_offset));
+                    }
                 }
+                timeline.push_back((current_boot_time, current_offset));
             }
             if timeline.len() > TIMELINE_MAX_SIZE {
                 // Keep only the first 200 elements.
@@ -188,10 +192,10 @@ mod tests {
             }
         }
 
-        fn set_times(&self, boot_nanos: i64, monotonic_nanos: i64) {
+        fn set_times(&self, boot: zx::BootInstant, monotonic: zx::MonotonicInstant) {
             let mut inner = self.inner.lock().unwrap();
-            inner.boot = zx::BootInstant::from_nanos(boot_nanos);
-            inner.monotonic = zx::MonotonicInstant::from_nanos(monotonic_nanos);
+            inner.boot = boot;
+            inner.monotonic = monotonic;
         }
     }
 
@@ -210,7 +214,10 @@ mod tests {
         let fetcher = FakeFetcher::new();
         // Initial state: boot=0, mono=0.
         // We want to start with something non-zero to be interesting.
-        fetcher.set_times(1000 * NANOS_PER_MILLISECOND, 100 * NANOS_PER_MILLISECOND); // boot=1000ms, mono=100ms
+        fetcher.set_times(
+            zx::BootInstant::from_nanos(1000 * NANOS_PER_MILLISECOND),
+            zx::MonotonicInstant::from_nanos(100 * NANOS_PER_MILLISECOND),
+        ); // boot=1000ms, mono=100ms
 
         let mut state = TimelineEstimator::new(fetcher.clone());
 
@@ -223,7 +230,10 @@ mod tests {
 
         // Advance 100ms (no drift change).
         // boot=1100, mono=200. Offset=900.
-        fetcher.set_times(1100 * NANOS_PER_MILLISECOND, 200 * NANOS_PER_MILLISECOND);
+        fetcher.set_times(
+            zx::BootInstant::from_nanos(1100 * NANOS_PER_MILLISECOND),
+            zx::MonotonicInstant::from_nanos(200 * NANOS_PER_MILLISECOND),
+        );
 
         // Query for current time.
         let mono = state
@@ -241,7 +251,10 @@ mod tests {
     fn test_boot_time_to_monotonic_time_suspend() {
         let fetcher = FakeFetcher::new();
 
-        fetcher.set_times(1000 * NANOS_PER_MILLISECOND, 100 * NANOS_PER_MILLISECOND);
+        fetcher.set_times(
+            zx::BootInstant::from_nanos(1000 * NANOS_PER_MILLISECOND),
+            zx::MonotonicInstant::from_nanos(100 * NANOS_PER_MILLISECOND),
+        );
 
         let mut state = TimelineEstimator::new(fetcher.clone());
 
@@ -251,7 +264,10 @@ mod tests {
 
         // Suspend: boot + 1000ms, mono + 0ms.
         // boot=2000, mono=100. Offset=1900.
-        fetcher.set_times(2000 * NANOS_PER_MILLISECOND, 100 * NANOS_PER_MILLISECOND);
+        fetcher.set_times(
+            zx::BootInstant::from_nanos(2000 * NANOS_PER_MILLISECOND),
+            zx::MonotonicInstant::from_nanos(100 * NANOS_PER_MILLISECOND),
+        );
 
         // Call to update timeline.
         // This should detect drift (1900 - 900 = 1000 > 200).
@@ -277,7 +293,7 @@ mod tests {
     #[test]
     fn test_boot_time_to_monotonic_time_overflow() {
         let fetcher = FakeFetcher::new();
-        fetcher.set_times(0, 0);
+        fetcher.set_times(zx::BootInstant::from_nanos(0), zx::MonotonicInstant::from_nanos(0));
 
         let mut state = TimelineEstimator::new(fetcher.clone());
         state.boot_time_to_monotonic_time(zx::BootInstant::from_nanos(0));
@@ -291,7 +307,10 @@ mod tests {
             // Drift needs to change.
             // Increase boot by 300ms, mono by 0.
             current_boot += 300 * NANOS_PER_MILLISECOND;
-            fetcher.set_times(current_boot, current_mono);
+            fetcher.set_times(
+                zx::BootInstant::from_nanos(current_boot),
+                zx::MonotonicInstant::from_nanos(current_mono),
+            );
 
             state.boot_time_to_monotonic_time(zx::BootInstant::from_nanos(current_boot));
         }
@@ -306,7 +325,10 @@ mod tests {
 
         for _ in 0..200 {
             current_boot += 300 * NANOS_PER_MILLISECOND;
-            fetcher.set_times(current_boot, current_mono);
+            fetcher.set_times(
+                zx::BootInstant::from_nanos(current_boot),
+                zx::MonotonicInstant::from_nanos(current_mono),
+            );
             state.boot_time_to_monotonic_time(zx::BootInstant::from_nanos(current_boot));
         }
         // 300 + 200 = 500 total in loop.
@@ -315,10 +337,71 @@ mod tests {
     }
 
     #[test]
+    fn test_boot_time_to_monotonic_time_intermediate_update() {
+        let fetcher = FakeFetcher::new();
+        // Initial: boot=2000, mono=1000. Offset=1000.
+        fetcher.set_times(
+            zx::BootInstant::from_nanos(2000 * NANOS_PER_MILLISECOND),
+            zx::MonotonicInstant::from_nanos(1000 * NANOS_PER_MILLISECOND),
+        );
+
+        let mut state = TimelineEstimator::new(fetcher.clone());
+        // This has the side effect of performing a timeline transformation
+        // (when the clock is set to a specific value). This has the side-effect of updating
+        // the estimation state to a value that we want it in for subsequent tests.
+        // For intermediate updates, we look at not just clock values,
+        // but also timestamps from logs. This simulates a log coming in at 2 seconds after
+        // the system boots.
+        state
+            .boot_time_to_monotonic_time(zx::BootInstant::from_nanos(2000 * NANOS_PER_MILLISECOND));
+
+        // Update with small boot delta (<200ms) but large drift (>200ms).
+        // boot=2150 (+150ms). mono=600 (-400ms).
+        // offset=1550. Drift=550.
+        fetcher.set_times(
+            zx::BootInstant::from_nanos(2150 * NANOS_PER_MILLISECOND),
+            zx::MonotonicInstant::from_nanos(600 * NANOS_PER_MILLISECOND),
+        );
+
+        // Query with intermediate time 2100.
+        // Should insert (2100, 1550) and (2150, 1550).
+        let mono = state
+            .boot_time_to_monotonic_time(zx::BootInstant::from_nanos(2100 * NANOS_PER_MILLISECOND));
+
+        // Expected mono = 2100 - 1550 = 550.
+        assert_eq!(mono.into_nanos(), 550 * NANOS_PER_MILLISECOND);
+
+        // Check timeline behavior.
+        // Query 2050 (before 2100). Should use old offset 1000.
+        // 2050 - 1000 = 1050.
+        let mono_prev = state
+            .boot_time_to_monotonic_time(zx::BootInstant::from_nanos(2050 * NANOS_PER_MILLISECOND));
+        assert_eq!(mono_prev.into_nanos(), 1050 * NANOS_PER_MILLISECOND);
+
+        // Query 2125 (after 2100). Should use new offset 1550.
+        // 2125 - 1550 = 575.
+        let mono_next = state
+            .boot_time_to_monotonic_time(zx::BootInstant::from_nanos(2125 * NANOS_PER_MILLISECOND));
+        assert_eq!(mono_next.into_nanos(), 575 * NANOS_PER_MILLISECOND);
+
+        // Query 2150 (current). Offset 1550.
+        // 2150 - 1550 = 600.
+        let mono_curr = state
+            .boot_time_to_monotonic_time(zx::BootInstant::from_nanos(2150 * NANOS_PER_MILLISECOND));
+        assert_eq!(mono_curr.into_nanos(), 600 * NANOS_PER_MILLISECOND);
+
+        // Ensure size is correct (should be 3: 2000, 2100, 2150).
+        assert_eq!(state.max_timeline_size, 3);
+    }
+
+    #[test]
     fn test_boot_time_to_monotonic_time_retroactive_update() {
         let fetcher = FakeFetcher::new();
         // Initial: boot=1000, mono=100. Offset=900.
-        fetcher.set_times(1000 * NANOS_PER_MILLISECOND, 100 * NANOS_PER_MILLISECOND);
+        fetcher.set_times(
+            zx::BootInstant::from_nanos(1000 * NANOS_PER_MILLISECOND),
+            zx::MonotonicInstant::from_nanos(100 * NANOS_PER_MILLISECOND),
+        );
 
         let mut state = TimelineEstimator::new(fetcher.clone());
         state
@@ -326,7 +409,10 @@ mod tests {
 
         // Advance to boot=5000, mono=2000. Offset=3000.
         // Drift = 3000 - 900 = 2100 > 200.
-        fetcher.set_times(5000 * NANOS_PER_MILLISECOND, 2000 * NANOS_PER_MILLISECOND);
+        fetcher.set_times(
+            zx::BootInstant::from_nanos(5000 * NANOS_PER_MILLISECOND),
+            zx::MonotonicInstant::from_nanos(2000 * NANOS_PER_MILLISECOND),
+        );
 
         // Query with boot=4500.
         // 1000 < 4500 < 5000.
