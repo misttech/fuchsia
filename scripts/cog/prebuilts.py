@@ -16,6 +16,7 @@ LOCAL_JIRI_MANIFEST_CONTENT = """
   <imports>
     <localimport file="manifests/third_party/all"/>
     <localimport file="manifests/prebuilts"/>
+    <localimport file="integration/internal/vendor/google/minimal"/>
   </imports>
 </manifest>
 """
@@ -26,13 +27,13 @@ class Prebuilts:
 
     def __init__(
         self,
-        cartfs_directory: str,
-        workspace_dir: str,
+        cartfs_directory: Path,
+        workspace_dir: Path,
         workspace_name: str,
         repo_name: str,
     ):
-        self.cartfs_directory = Path(cartfs_directory)
-        self.workspace_dir = Path(workspace_dir)
+        self.cartfs_directory = cartfs_directory
+        self.workspace_dir = workspace_dir
         self.workspace_name = workspace_name
         self.repo_name = repo_name
 
@@ -94,22 +95,6 @@ class Prebuilts:
             check=True,
         )
 
-    def _create_jiri_snapshot(self) -> None:
-        """Create snapshot."""
-        logger.log_info("Create snapshot at .jiri_root/update_history/latest.")
-        (self.cartfs_directory / ".jiri_root/update_history").mkdir(
-            parents=True, exist_ok=True
-        )
-        subprocess.run(
-            [
-                ".jiri_root/bin/jiri",
-                "snapshot",
-                ".jiri_root/update_history/latest",
-            ],
-            cwd=self.cartfs_directory,
-            check=True,
-        )
-
     def is_jiri_bootstrapped(self) -> bool:
         """Checks if jiri is bootstrapped."""
         jiri_root = self.cartfs_directory / ".jiri_root"
@@ -126,9 +111,113 @@ class Prebuilts:
         """Fetches prebuilts for the given repo."""
         logger.log_info(f"Fetching prebuilts for {self.repo_name}.")
         subprocess.run(
-            [".jiri_root/bin/jiri", "fetch-packages"],
+            [".jiri_root/bin/jiri", "update"],
             cwd=self.cartfs_directory,
             check=True,
+        )
+
+    def create_integration_repository(self) -> None:
+        """Creates the integration repository."""
+        logger.log_info("Creating the integration repository.")
+        integration_directory = self.cartfs_directory / "integration"
+
+        # Setup the integration repository
+        if (
+            integration_directory.exists()
+            and (integration_directory / ".git").is_dir()
+        ):
+            subprocess.run(
+                [
+                    "git",
+                    "pull",
+                ],
+                cwd=integration_directory,
+                check=True,
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+            )
+        else:
+            shutil.rmtree(integration_directory, ignore_errors=True)
+            subprocess.run(
+                [
+                    "git",
+                    "clone",
+                    "sso://turquoise-internal.googlesource.com/integration",
+                ],
+                cwd=self.cartfs_directory,
+                check=True,
+            )
+
+        # Determine the fuchsia repo commit hash.
+        fuchsia_repo_states = (
+            subprocess.run(
+                [
+                    "git",
+                    "citc",
+                    "api.get-repo-states",
+                    "fuchsia",
+                ],
+                check=True,
+                capture_output=True,
+            )
+            .stdout.decode("utf-8")
+            .strip()
+            .split("\n")
+        )
+        for state in fuchsia_repo_states:
+            if "base_commit_hash" in state:
+                fuchsia_repo_commit_hash = (
+                    state.split(":")[1].strip().replace('"', "")
+                )
+                break
+
+        logger.log_info(f"fuchsia_repo_commit_hash: {fuchsia_repo_commit_hash}")
+
+        # We use the first 7 characters of the fuchsia repo to look up in
+        # integration repo's commit message
+        commit_hash_prefix = fuchsia_repo_commit_hash[:7]
+        logger.log_info(f"commit_hash_prefix: {commit_hash_prefix}")
+
+        integration_repo_commit_hash = (
+            subprocess.run(
+                [
+                    "git",
+                    "log",
+                    "--grep",
+                    commit_hash_prefix,
+                    "--format=%H",
+                ],
+                cwd=integration_directory,
+                check=True,
+                capture_output=True,
+            )
+            .stdout.decode("utf-8")
+            .strip()
+            .split("\n")[-1]
+        )
+        logger.log_info(
+            f"integration_repo_commit_hash: {integration_repo_commit_hash}"
+        )
+
+        if not integration_repo_commit_hash:
+            logger.log_info(
+                "Fuchsia commit is not rolled to integration repo yet. We will"
+                "use the latest integration repo commit hash."
+            )
+            return
+
+        # checkout the integration repo based on the fuchsia repo commit hash
+        subprocess.run(
+            [
+                "git",
+                "reset",
+                "--hard",
+                integration_repo_commit_hash,
+            ],
+            cwd=integration_directory,
+            check=True,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
         )
 
     def cartfs_structure_initialization(self) -> None:
@@ -170,7 +259,6 @@ class Prebuilts:
         )
 
         self._write_jiri_config()
-        self._create_jiri_snapshot()
 
         # Create directories
         (self.cartfs_directory / ".fx").mkdir(exist_ok=True)
@@ -209,6 +297,7 @@ class Prebuilts:
             ".cipd",
             ".fx",
             "integration",
+            "vendor",
         ]:
             repo_path = self.workspace_dir / self.repo_name / path
             cartfs_path = self.cartfs_directory / path

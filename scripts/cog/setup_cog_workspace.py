@@ -126,14 +126,15 @@ def main() -> int | None:
 
     # TODO: Move this logic into the workspace instance.
     prebuilts_manager = prebuilts.Prebuilts(
-        str(workspace_instance.cartfs_workspace_dir),
-        str(workspace_instance.workspace_dir),
+        workspace_instance.cartfs_workspace_dir,
+        workspace_instance.workspace_dir,
         workspace_instance.workspace_name,
         workspace_instance.repo_name,
     )
     if not prebuilts_manager.is_jiri_bootstrapped():
         prebuilts_manager.bootstrap_jiri()
 
+    prebuilts_manager.create_integration_repository()
     prebuilts_manager.cartfs_structure_initialization()
     prebuilts_manager.fetch_prebuilts()
     prebuilts_manager.create_symlinks()
