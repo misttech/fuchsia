@@ -89,7 +89,7 @@ using OnBindWaitCompleter =
     fit::callback<void(zx::result<fuchsia_driver_framework::wire::DriverResult>)>;
 
 struct PowerElementHandles {
-  fidl::ClientEnd<fuchsia_power_broker::ElementControl> element_control;
+  fidl::Client<fuchsia_power_broker::ElementControl> element_control;
   fidl::ServerEnd<fuchsia_power_broker::ElementRunner> element_runner;
   fidl::Client<fuchsia_power_broker::Lessor> lessor;
 };
@@ -168,6 +168,7 @@ class NodeManager {
   }
 
   virtual DictionaryUtil& dictionary_util() { ZX_PANIC("Unimplemented dictionary_util"); }
+  virtual bool SuspendEnabled() { ZX_PANIC("Unimplemented SuspendEnabled"); }
 };
 
 class Node : public fidl::WireServer<fuchsia_driver_framework::NodeController>,
@@ -593,6 +594,24 @@ class Node : public fidl::WireServer<fuchsia_driver_framework::NodeController>,
       bool colocate, fit::callback<void(zx::result<>)> cb);
 
   zx::result<zx::event> DuplicateNodeToken();
+
+  // Returns a duplicate of the node's power element token, if available.
+  //
+  // If the node has no power token, this will return an invalid zx::event.
+  zx::event DuplicatePowerToken() {
+    if (!power_element_token_.is_valid()) {
+      return zx::event();
+    }
+    zx::event dupe;
+    zx_status_t dupe_result = power_element_token_.duplicate(ZX_RIGHT_SAME_RIGHTS, &dupe);
+    ZX_ASSERT_MSG(dupe_result == ZX_OK, "Element token duplication failed.");
+    return dupe;
+  }
+
+  // Return the handle ID of the power token. This should only be used for
+  // examining handle identity, not for any actual operations on the Zircon
+  // object.
+  zx_handle_t GetPowerTokenHandle() { return power_element_token_.get(); }
 
   std::string name_;
 

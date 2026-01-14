@@ -73,9 +73,8 @@ class DriverRunner : public fidl::WireServer<fuchsia_driver_framework::Composite
                inspect::ComponentInspector& inspect, LoaderServiceFactory loader_service_factory,
                async_dispatcher_t* dispatcher, bool enable_test_shutdown_delays,
                OfferInjector offer_injector,
-               std::optional<DynamicLinkerArgs> dynamic_linker_args = std::nullopt,
-               std::optional<fidl::ClientEnd<fuchsia_power_broker::Topology>> topology_client =
-                   std::nullopt);
+               fidl::ClientEnd<fuchsia_power_broker::Topology> topology_client,
+               std::optional<DynamicLinkerArgs> dynamic_linker_args = std::nullopt);
 
   // fidl::WireServer<fuchsia_driver_framework::CompositeNodeManager> interface
   void AddSpec(AddSpecRequestView request, AddSpecCompleter::Sync& completer) override;
@@ -172,6 +171,8 @@ class DriverRunner : public fidl::WireServer<fuchsia_driver_framework::Composite
   std::unordered_set<const DriverHost*> DriverHostsWithDriverUrl(std::string_view url);
 
   fpromise::promise<inspect::Inspector> Inspect() const;
+
+  bool SuspendEnabled() override { return power_topology_.is_valid(); }
 
   std::vector<fuchsia_driver_development::wire::CompositeNodeInfo> GetCompositeListInfo(
       fidl::AnyArena& arena) const;
@@ -284,7 +285,7 @@ class DriverRunner : public fidl::WireServer<fuchsia_driver_framework::Composite
   std::optional<fidl::WireSharedClient<fuchsia_driver_loader::DriverHostLauncher>>
       driver_host_launcher_;
 
-  std::optional<fidl::Client<fuchsia_power_broker::Topology>> topology_;
+  fidl::Client<fuchsia_power_broker::Topology> power_topology_;
   std::vector<fidl::ClientEnd<fuchsia_power_broker::LeaseControl>> leases_;
 };
 

@@ -252,8 +252,8 @@ DriverRunner::DriverRunner(
     fidl::ClientEnd<fdi::DriverIndex> driver_index, inspect::ComponentInspector& inspect,
     LoaderServiceFactory loader_service_factory, async_dispatcher_t* dispatcher,
     bool enable_test_shutdown_delays, OfferInjector offer_injector,
-    std::optional<DynamicLinkerArgs> dynamic_linker_args,
-    std::optional<fidl::ClientEnd<fuchsia_power_broker::Topology>> topology_client)
+    fidl::ClientEnd<fuchsia_power_broker::Topology> topology_client,
+    std::optional<DynamicLinkerArgs> dynamic_linker_args)
     : driver_index_(std::move(driver_index), dispatcher),
       loader_service_factory_(std::move(loader_service_factory)),
       dictionary_util_(std::move(capability_store), dispatcher),
@@ -284,6 +284,10 @@ DriverRunner::DriverRunner(
 
   bootup_tracker_ = std::make_shared<BootupTracker>(&bind_manager_, dispatcher);
   runner_.SetBootupTracker(bootup_tracker_);
+  if (topology_client.is_valid()) {
+    power_topology_ =
+        fidl::Client<fuchsia_power_broker::Topology>(std::move(topology_client), dispatcher);
+  }
 
   // Setup the driver notifier.
   auto [notifier_client, notifier_server] =
@@ -293,11 +297,6 @@ DriverRunner::DriverRunner(
   fidl::OneWayStatus status = driver_index_->SetNotifier(std::move(notifier_client));
   if (!status.ok()) {
     fdf_log::warn("Failed to set the driver notifier: {}", status.status_string());
-  }
-
-  if (topology_client.has_value()) {
-    topology_ = fidl::Client<fuchsia_power_broker::Topology>(std::move(topology_client.value()),
-                                                             dispatcher);
   }
 }
 
@@ -798,14 +797,13 @@ void DriverRunner::CreatePowerElement(std::string_view name,
                                       fidl::ClientEnd<fuchsia_power_broker::ElementRunner> runner,
                                       fidl::ServerEnd<fuchsia_power_broker::Lessor> lessor,
                                       fit::callback<void(zx::result<bool>)> cb) {
-  if (!topology_.has_value()) {
+  if (!power_topology_.is_valid()) {
     cb(zx::ok(false));
     return;
   }
 
   fidl::Arena arena;
-
-  std::vector<fuchsia_power_broker::LevelDependency> ds;
+  std::vector<fuchsia_power_broker::LevelDependency> level_deps;
   for (fuchsia_power_broker::DependencyToken& dep : deps) {
     fuchsia_power_broker::DependencyToken clone;
     zx_status_t dupe_result = dep.duplicate(ZX_RIGHT_SAME_RIGHTS, &clone);
@@ -820,9 +818,10 @@ void DriverRunner::CreatePowerElement(std::string_view name,
     fuchsia_power_broker::LevelDependency level_dep;
     level_dep.dependency_type() = fuchsia_power_broker::DependencyType::kAssertive,
     level_dep.dependent_level() = static_cast<fuchsia_power_broker::PowerLevel>(1),
-    level_dep.requires_token() = std::move(dep),
+    level_dep.requires_token() = std::move(clone),
     level_dep.requires_level_by_preference() = reqs_by_pref;
-    ds.push_back(std::move(level_dep));
+
+    level_deps.push_back(std::move(level_dep));
   }
 
   fuchsia_power_broker::ElementSchema schema;
@@ -832,13 +831,12 @@ void DriverRunner::CreatePowerElement(std::string_view name,
       static_cast<fuchsia_power_broker::PowerLevel>(0),
       static_cast<fuchsia_power_broker::PowerLevel>(1),
   };
-  schema.dependencies() = std::move(ds);
+  schema.dependencies() = std::move(level_deps);
   schema.lessor_channel() = std::move(lessor);
   schema.element_control() = std::move(control);
   schema.element_runner() = std::move(runner);
 
-  topology_.value()
-      ->AddElement(std::move(schema))
+  power_topology_->AddElement(std::move(schema))
       .Then([cb = std::move(cb)](
                 fidl::Result<fuchsia_power_broker::Topology::AddElement>& add_result) mutable {
         if (add_result.is_error() && add_result.error_value().is_framework_error()) {

@@ -334,7 +334,8 @@ void DriverRunnerTestBase::SetupDriverRunner(FakeDriverIndex driver_index) {
                          driver_manager::OfferInjector{{
                              .power_inject_offer = false,
                              .power_suspend_enabled = false,
-                         }});
+                         }},
+                         fidl::ClientEnd<fuchsia_power_broker::Topology>());
   SetupDevfs();
 }
 
@@ -366,6 +367,7 @@ void DriverRunnerTestBase::SetupDriverRunnerWithDynamicLinker(
           .power_inject_offer = false,
           .power_suspend_enabled = false,
       }},
+      fidl::ClientEnd<fuchsia_power_broker::Topology>(),
       driver_manager::DriverRunner::DynamicLinkerArgs{
           [loader = dynamic_linker_.get()]() { return DynamicLinkerFactory(loader); },
           std::move(driver_host_runner)});

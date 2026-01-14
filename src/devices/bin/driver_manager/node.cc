@@ -15,6 +15,7 @@
 #include <algorithm>
 #include <deque>
 #include <optional>
+#include <queue>
 #include <unordered_set>
 #include <utility>
 #include <variant>
@@ -82,6 +83,17 @@ const char* CollectionName(Collection collection) {
       return "base-drivers";
     case Collection::kFullPackage:
       return "full-drivers";
+  }
+}
+
+zx::result<> RegistrationErrorToResult(fuchsia_power_broker::RegisterDependencyTokenError e) {
+  switch (e) {
+    case fuchsia_power_broker::RegisterDependencyTokenError::kAlreadyInUse:
+      return zx::error(ZX_ERR_ALREADY_EXISTS);
+    case fuchsia_power_broker::RegisterDependencyTokenError::kInternal:
+      return zx::error(ZX_ERR_INTERNAL);
+    default:
+      ZX_PANIC("Unknown register dependency token error");
   }
 }
 
@@ -1670,12 +1682,62 @@ void Node::StartDriver(
   // These are the start args used if we're not starting with the dynamic linker.
   DriverHost::DriverStartArgs normal_start_args =
       DriverHost::DriverStartArgs(properties, symbols, offers, start_info);
-  zx::event clone;
-  power_element_token_.duplicate(ZX_RIGHT_SAME_RIGHTS, &clone);
   std::vector<fuchsia_power_broker::DependencyToken> deps;
-  std::span<fuchsia_power_broker::DependencyToken> deps_span(deps);
 
-  PowerElementHandles handles;
+  // Only create a series of dependencies if this is a suspend-enabled platform. On non-enabled
+  // platforms we'll use an empty vector for the rest of this function, which is valid. The
+  // rest of the driver start code also has checks so it works properly on non-enabled platforms.
+  if ((*node_manager_)->SuspendEnabled()) {
+    std::span<const std::weak_ptr<Node>> parent_nodes = parents();
+    std::queue<std::weak_ptr<Node>> ancestors;
+    for (auto parent : parent_nodes) {
+      ancestors.push(parent);
+    }
+
+    std::unordered_set<zx_handle_t> visited_ancestor_koids;
+
+    // Collect dependencies on the most immediate ancestor nodes which have attached drivers.
+    // A parent driver might give us a valid token if:
+    //   * the parent went away after we identified it
+    //   * the parent failed registering a dependency token when it was created
+    //   * duplication of the parent's dependency token fails
+    while (!ancestors.empty()) {
+      std::shared_ptr<Node> ancestor = ancestors.front().lock();
+      ancestors.pop();
+      if (!ancestor) {
+        continue;
+      }
+
+      if (!ancestor->is_bound()) {
+        for (const auto& elder : ancestor->parents()) {
+          ancestors.push(elder);
+        }
+        continue;
+      }
+
+      // Prevent multiple dependencies on the same ancestor.
+      if (visited_ancestor_koids.contains(ancestor->GetPowerTokenHandle())) {
+        // We arrived back at the same ancestors through multiple parents.
+        continue;
+      }
+
+      zx::event token_copy = ancestor->DuplicatePowerToken();
+      if (!token_copy.is_valid()) {
+        fdf_log::error("Power token invalid on suspend-enabled platform for node: {}",
+                       std::string(url));
+        cb(zx::error(ZX_ERR_BAD_STATE));
+        return;
+      }
+
+      visited_ancestor_koids.insert(ancestor->GetPowerTokenHandle());
+      deps.push_back(std::move(token_copy));
+    }
+  }
+
+  zx::event clone;
+  ZX_ASSERT_MSG(power_element_token_.duplicate(ZX_RIGHT_SAME_RIGHTS, &clone) == ZX_OK,
+                "Event duplication failed while collecting power element dependencies");
+  std::span<fuchsia_power_broker::DependencyToken> deps_span(deps);
 
   auto [lessor_client, lessor_server] = fidl::Endpoints<fuchsia_power_broker::Lessor>::Create();
   auto [element_control_client, element_control_server] =
@@ -1683,16 +1745,20 @@ void Node::StartDriver(
   auto [element_runner_client, element_runner_server] =
       fidl::Endpoints<fuchsia_power_broker::ElementRunner>::Create();
 
-  handles.element_runner = std::move(element_runner_server);
-  handles.lessor =
-      fidl::Client<fuchsia_power_broker::Lessor>(std::move(lessor_client), dispatcher_);
-  handles.element_control = std::move(element_control_client);
+  // Create a shared pointer because we want to create a callbacks below that have access to these
+  // handles and then after these callbacks are created we use one of the handles to make a FIDL
+  // call.
+  std::shared_ptr<PowerElementHandles> handles_ptr = std::make_shared<PowerElementHandles>(
+      fidl::Client<fuchsia_power_broker::ElementControl>(std::move(element_control_client),
+                                                         dispatcher_),
+      std::move(element_runner_server),
+      fidl::Client<fuchsia_power_broker::Lessor>(std::move(lessor_client), dispatcher_));
 
   (*node_manager_)
       ->CreatePowerElement(
           name_, std::move(clone), deps_span, std::move(element_control_server),
           std::move(element_runner_client), std::move(lessor_server),
-          [weak_self = weak_from_this(), handles = std::move(handles), cb = std::move(cb),
+          [weak_self = weak_from_this(), handles_ptr = handles_ptr, cb = std::move(cb),
            use_dynamic_linker = use_dynamic_linker,
            url = std::string(start_info.resolved_url().get()), colocate = colocate,
            dynamic_linker_start_args = std::move(dynamic_linker_start_args),
@@ -1710,9 +1776,14 @@ void Node::StartDriver(
               cb(pe_created.take_error());
               return;
             }
+            zx::event copy;
+            ZX_ASSERT_MSG(
+                self->power_element_token_.duplicate(ZX_RIGHT_SAME_RIGHTS, &copy) == ZX_OK,
+                "Power element token duplication failed after element creation.");
 
-            // Run this after we create the lease for the power element, or immediately if lease is
-            // not created because this is not a power-enabled platform.
+            // Run this after we create the lease for the power element, or
+            // immediately if lease is not created because this is not a
+            // power-enabled platform.
             fit::callback<void(zx::result<>)> create_host_and_start_driver_cb =
                 [weak_self = self->weak_from_this(), colocate = colocate,
                  use_dynamic_linker = use_dynamic_linker,
@@ -1726,13 +1797,16 @@ void Node::StartDriver(
                   if (!self) {
                     return;
                   }
-                  // Launch a driver host if we are not colocated.
+
                   if (lease_success.is_error()) {
+                    fdf_log::warn("{} failed to start beacause lease failed", std::string(url));
+
                     cb(lease_success);
                     return;
                   }
 
-                  // If we're using the dynamic linker, we don't continue starting the driver here.
+                  // If we're using the dynamic linker, we don't continue
+                  // starting the driver here.
                   if (use_dynamic_linker) {
                     self->CreateHostAndStartDriverWithDynamicLinker(
                         std::move(*dynamic_linker_load_args), std::move(*dynamic_linker_start_args),
@@ -1740,7 +1814,8 @@ void Node::StartDriver(
                     return;
                   }
 
-                  // Since we're not colocating we need to create a new driver host.
+                  // Since we're not colocating we need to create a new driver
+                  // host.
                   if (!colocate) {
                     auto result = (*self->node_manager_)->CreateDriverHost(use_next_vdso);
                     if (result.is_error()) {
@@ -1797,15 +1872,59 @@ void Node::StartDriver(
                       });
                 };
 
+            fit::callback<void(fit::callback<void(zx::result<>)>)> post_dependency_registration =
+                [weak_self =
+                     self->weak_from_this()](fit::callback<void(zx::result<>)> post_lease) mutable {
+                  std::shared_ptr<driver_manager::Node> self = weak_self.lock();
+                  if (!self) {
+                    return;
+                  }
+                  self->LeaseDriverPowerElement(std::move(post_lease));
+                };
+
             // If this is a suspend-enabled platform, CreatePowerElement returns zx::result<true>.
-            // If suspend isn't enabled, we get a zx::result<false>, which is not an error, but the
-            // element channels are not valid, so we shouldn't stash them and we shouldn't lease
-            // the power element since we didn't create it.
+            // If suspend isn't enabled, we get a zx::result<false>, which is not an error, but
+            // the element channels are not valid, so we shouldn't stash them and we shouldn't
+            // register a dependency token or lease the power element since we didn't create
+            // it.
             if (pe_created.value()) {
-              self->pe_handles_ = std::move(handles);
-              self->LeaseDriverPowerElement(std::move(create_host_and_start_driver_cb));
+              // Now that the power element is created, move the handles for it into the node
+              self->pe_handles_ = std::move(*handles_ptr);
+
+              self->pe_handles_.element_control
+                  ->RegisterDependencyToken({{
+                      .token = std::move(copy),
+                  }})
+                  .Then([weak_self = self->weak_from_this(),
+                         post_dependency_registration = std::move(post_dependency_registration),
+                         create_host_and_start_driver_cb =
+                             std::move(create_host_and_start_driver_cb),
+                         url](fidl::Result<
+                              fuchsia_power_broker::ElementControl::RegisterDependencyToken>
+                                  call_result) mutable {
+                    std::shared_ptr<driver_manager::Node> self = weak_self.lock();
+                    if (!self) {
+                      create_host_and_start_driver_cb(zx::error(ZX_ERR_CANCELED));
+                      return;
+                    }
+                    if (call_result.is_error()) {
+                      fdf_log::warn(
+                          "Failed creating power dependency token for {}, this may lead to improper ",
+                          std::string(url), "power management behavior.");
+                      self->power_element_token_.reset();
+                      if (call_result.error_value().is_framework_error()) {
+                        create_host_and_start_driver_cb(
+                            zx::error(call_result.error_value().framework_error().status()));
+                      } else {
+                        create_host_and_start_driver_cb(
+                            RegistrationErrorToResult(call_result.error_value().domain_error()));
+                      }
+                      return;
+                    }
+                    post_dependency_registration(std::move(create_host_and_start_driver_cb));
+                  });
             } else {
-              // Just finish start the driver.
+              // CreatePowerElement returned zx::ok(false).
               create_host_and_start_driver_cb(zx::ok());
             }
           });
@@ -2207,11 +2326,11 @@ bool Node::MaybeDestroyDriverComponent() {
                 "DestroyDriverComponent called without a valid controller.");
 
   // The non-removal intent flows require destroying the component and making a new one.
-  // Also if we are waiting for the removal, we want to destroy the component as either a new node
-  // is intended to replace the existing which requires a new component, or the parent node is
-  // trying to remove the child node in which case the child has to destroy its component to
-  // proceed with removal.
-  // We also want to destroy the root node if it is stopping, hence the empty parent check.
+  // Also if we are waiting for the removal, we want to destroy the component as either a
+  // new node is intended to replace the existing which requires a new component, or the
+  // parent node is trying to remove the child node in which case the child has to destroy
+  // its component to proceed with removal. We also want to destroy the root node if it is
+  // stopping, hence the empty parent check.
   if ((shutdown_intent() != ShutdownIntent::kRemoval || remove_complete_callback_ ||
        should_destroy_ || parents().empty())) {
     component_controller_->Destroy().Then(
@@ -2246,8 +2365,8 @@ void Node::OnDriverHostFidlError(fidl::UnbindInfo info) {
 
   // The only valid way a driver host should shut down the Driver channel
   // is with the ZX_OK epitaph.
-  // TODO(b/322235974): Increase the log severity to ERROR once we resolve the component shutdown
-  // order in DriverTestRealm.
+  // TODO(b/322235974): Increase the log severity to ERROR once we resolve the component
+  // shutdown order in DriverTestRealm.
   if (info.reason() != fidl::Reason::kPeerClosedWhileReading || info.status() != ZX_OK) {
     fdf_log::warn("Node: {}: driver channel shutdown with: {}", name(), info.FormatDescription());
   }

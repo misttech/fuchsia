@@ -26,6 +26,8 @@ class TestNodeManagerBase : public driver_manager::NodeManager {
                           fit::callback<void(zx::result<bool>)> cb) override {
     cb(zx::ok(false));
   }
+
+  bool SuspendEnabled() override { return false; }
 };
 
 class DriverManagerTestBase : public gtest::TestLoopFixture {

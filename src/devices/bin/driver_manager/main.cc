@@ -95,14 +95,14 @@ int main(int argc, char** argv) {
     return introspector_result.error_value();
   }
 
-  std::optional<fidl::ClientEnd<fuchsia_power_broker::Topology>> topology_client;
+  fidl::ClientEnd<fuchsia_power_broker::Topology> topology_client;
   if (config.power_suspend_enabled()) {
     zx::result<fidl::ClientEnd<fuchsia_power_broker::Topology>> topology_result =
         component::Connect<fuchsia_power_broker::Topology>();
     if (topology_result.is_error()) {
       return topology_result.error_value();
     }
-    topology_client.emplace(std::move(topology_result.value()));
+    topology_client = std::move(*topology_result);
   }
 
   auto capability_store_result = component::Connect<fuchsia_component_sandbox::CapabilityStore>();
@@ -156,7 +156,7 @@ int main(int argc, char** argv) {
           .power_inject_offer = config.power_inject_offer(),
           .power_suspend_enabled = config.power_suspend_enabled(),
       }},
-      std::nullopt, std::move(topology_client));
+      std::move(topology_client), std::nullopt);
 
   // Setup devfs.
   std::shared_ptr<driver_manager::Devfs> devfs;
