@@ -16,6 +16,10 @@ class Serial(abc.ABC):
     ) -> str:
         """Reads bytes directly from the serial port and decodes them as a utf-8 string.
 
+        This method makes no guarantees around timing of the serial output being read.
+        For example, the output of a serial command from `send` is not guaranteed to be
+        immediately available in the output of `read`.
+
         Args:
             size: The number of bytes to read.
 

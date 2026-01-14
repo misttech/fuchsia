@@ -59,7 +59,7 @@ class SerialUsingUnixSocket(serial_interface.Serial):
 
         try:
             with socket.socket(socket.AF_UNIX, socket.SOCK_STREAM) as s:
-                s.settimeout(10)
+                s.settimeout(1)
                 s.connect(self._socket_path)
                 return s.recv(size).decode("utf-8", errors="ignore")
         except socket.timeout as e:

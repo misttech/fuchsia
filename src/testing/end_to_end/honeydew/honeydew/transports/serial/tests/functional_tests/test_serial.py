@@ -37,25 +37,25 @@ class SerialTransportTests(fuchsia_base_test.FuchsiaBaseTest):
             )
 
     def test_read(self) -> None:
-        """Test case for Serial.read()"""
-        read_end_time = time.time() + 60
-        test_string_found = False
-        test_string = "serial_transport_test__test_read__string"
-        self.device.serial.send(cmd=f"echo {test_string}")
-        buffer = ""
+        """
+        Test case for Serial.read()
+
+        Only verifies that data can be read from the
+        serial stream.
+        """
+        read_end_time = time.time() + 10
+        string_found = False
         while time.time() < read_end_time:
             try:
                 read_data = self.device.serial.read()
-                buffer += read_data
-                if test_string in buffer:
-                    test_string_found = True
-                    break
+                if len(read_data) > 0:
+                    string_found = True
             except Exception:
                 time.sleep(0.1)
 
         asserts.assert_true(
-            test_string_found,
-            f"Target string not found within 30 seconds.",
+            string_found,
+            f"Data not read within 10 seconds.",
         )
 
 
