@@ -49,21 +49,7 @@ fit::result<Error, std::vector<fuchsia_power_broker::LevelDependency>> ConvertPo
   // If we don't know the type, default to assertive. This possibly results in
   // unintentionally high power consumption, but is more likely to preserve
   // programmatic correctness.
-  fuchsia_power_broker::DependencyType dep_type;
-  switch (driver_config_deps.strength) {
-    case RequirementType::kAssertive:
-      dep_type = fuchsia_power_broker::DependencyType::kAssertive;
-      break;
-    case RequirementType::kOpportunistic:
-      dep_type = fuchsia_power_broker::DependencyType::kOpportunistic;
-      break;
-    default:
-      if (fdf::Logger::HasGlobalInstance()) {
-        FDF_LOGL(WARNING, *fdf::Logger::GlobalInstance(),
-                 "Dependency level not recognized, using assertive");
-      }
-      dep_type = fuchsia_power_broker::DependencyType::kAssertive;
-  }
+  fuchsia_power_broker::DependencyType dep_type = fuchsia_power_broker::DependencyType::kAssertive;
 
   // Go through each of the level dependencies and translate them
   for (const auto& driver_framework_level_dep : driver_config_deps.level_deps) {

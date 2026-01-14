@@ -38,7 +38,6 @@ TEST(PowerConfigTest, CheckValues) {
   ASSERT_EQ(dependency.parent().value().Which(),
             fuchsia_hardware_power::ParentElement::Tag::kInstanceName);
   ASSERT_EQ(dependency.parent().value().instance_name().value(), "my-rad-parent");
-  ASSERT_EQ(dependency.strength().value(), fuchsia_hardware_power::RequirementType::kAssertive);
 
   ASSERT_EQ(dependency.level_deps().value().size(), 2);
   fuchsia_hardware_power::LevelTuple& level_tuple = dependency.level_deps().value()[0];

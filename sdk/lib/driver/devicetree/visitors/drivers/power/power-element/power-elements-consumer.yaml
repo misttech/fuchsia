@@ -48,7 +48,7 @@ examples:
                 latency-us = <1000>;
               };
             };
-            level-dependencies = <&rail_on_level 1>;
+            level-dependencies = <&rail_on_level>;
           };
         };
       };

@@ -63,11 +63,6 @@ struct LevelTuple {
   uint8_t parent_level;
 };
 
-enum class RequirementType : uint32_t {
-  kAssertive = 1,
-  kOpportunistic = 2,
-};
-
 // NOTE: This is _not_ a complete list of SAG elements. This enum only lists the elements supported
 // by the power support library.
 enum class SagElement : uint32_t {
@@ -157,8 +152,6 @@ struct PowerDependency {
 
   // The map of level dependencies from `child` to `parent`.
   std::vector<LevelTuple> level_deps;
-
-  RequirementType strength;
 };
 
 // Contains the `PowerElement` description and any dependencies it has on other `PowerElement`s.

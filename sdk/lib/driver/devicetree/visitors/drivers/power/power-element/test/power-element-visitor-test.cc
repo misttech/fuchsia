@@ -77,48 +77,48 @@ TEST(PowerElementVisitorTest, TestMetadataAndBindProperty) {
 
       ASSERT_TRUE((*node.power_config())[0].dependencies());
       auto dependencies = (*node.power_config())[0].dependencies();
-      EXPECT_EQ(dependencies->size(), 4u);
+      EXPECT_EQ(dependencies->size(), 3u);
       uint32_t dependencies_tested = 0;
       for (auto& dependency : *dependencies) {
         EXPECT_EQ(dependency.child(), "wake-on-interrupt");
         ASSERT_TRUE(dependency.level_deps());
-        EXPECT_EQ(dependency.level_deps()->size(), 1u);
 
         if (dependency.parent()->sag().has_value()) {
           if (dependency.parent()->sag().value() ==
               fuchsia_hardware_power::SagElement::kExecutionState) {
             dependencies_tested++;
-            if (dependency.level_deps()->at(0).parent_level() == 2u) {
-              EXPECT_EQ(dependency.level_deps()->at(0).child_level(), 2u);
-              EXPECT_EQ(dependency.strength(),
-                        static_cast<fuchsia_hardware_power::RequirementType>(1u));
-            } else {
-              EXPECT_EQ(dependency.level_deps()->at(0).child_level(), 1u);
-              EXPECT_EQ(dependency.level_deps()->at(0).parent_level(), 1u);
-              EXPECT_EQ(dependency.strength(),
-                        static_cast<fuchsia_hardware_power::RequirementType>(2u));
+            EXPECT_EQ(dependency.level_deps()->size(), 2u);
+            bool found_suspend = false;
+            bool found_active = false;
+            for (const auto& level_dep : *dependency.level_deps()) {
+              if (level_dep.child_level() == 1u && level_dep.parent_level() == 1u) {
+                found_suspend = true;
+              }
+              if (level_dep.child_level() == 2u && level_dep.parent_level() == 2u) {
+                found_active = true;
+              }
             }
+            EXPECT_TRUE(found_suspend);
+            EXPECT_TRUE(found_active);
           }
         }
 
         if (dependency.parent()->cpu_control().has_value()) {
           dependencies_tested++;
+          EXPECT_EQ(dependency.level_deps()->size(), 1u);
           EXPECT_EQ(dependency.level_deps()->at(0).child_level(), 1u);
           EXPECT_EQ(dependency.level_deps()->at(0).parent_level(), 1u);
-          EXPECT_EQ(dependency.strength(),
-                    static_cast<fuchsia_hardware_power::RequirementType>(1u));
         }
 
         if (dependency.parent()->instance_name().has_value()) {
           dependencies_tested++;
+          EXPECT_EQ(dependency.level_deps()->size(), 1u);
           EXPECT_EQ(dependency.parent()->instance_name().value(), "rail-1");
           EXPECT_EQ(dependency.level_deps()->at(0).child_level(), 2u);
           EXPECT_EQ(dependency.level_deps()->at(0).parent_level(), 0u);
-          EXPECT_EQ(dependency.strength(),
-                    static_cast<fuchsia_hardware_power::RequirementType>(2u));
         }
       }
-      EXPECT_EQ(dependencies_tested, 4u);
+      EXPECT_EQ(dependencies_tested, 3u);
     }
 
     if (node.name()->find("power-controller") != std::string::npos) {

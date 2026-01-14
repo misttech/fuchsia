@@ -164,7 +164,6 @@ class FakePlatformDevice : public fidl::Server<fuchsia_hardware_platform_device:
         .parent = fuchsia_hardware_power::ParentElement::WithSag(
             fuchsia_hardware_power::SagElement::kExecutionState),
         .level_deps = {{std::move(wake_handling_on)}},
-        .strength = fuchsia_hardware_power::RequirementType::kAssertive,
     }};
     fuchsia_hardware_power::PowerLevel off = {{.level = kPowerLevelOff, .name = "off"}};
     fuchsia_hardware_power::PowerLevel on = {{.level = kPowerLevelOn, .name = "on"}};

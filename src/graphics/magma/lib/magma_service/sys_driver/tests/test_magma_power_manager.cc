@@ -252,7 +252,6 @@ fuchsia_hardware_power::PowerElementConfiguration hardware_power_config() {
       .parent = fuchsia_hardware_power::ParentElement::WithSag(
           fuchsia_hardware_power::SagElement::kApplicationActivity),
       .level_deps = {{on_to_aa_active}},
-      .strength = fuchsia_hardware_power::RequirementType::kAssertive,
   }};
 
   fuchsia_hardware_power::PowerElementConfiguration hardware_power_config = {

@@ -58,11 +58,6 @@ type LevelTuple = table {
     2: parent_level uint8;
 };
 
-type RequirementType = strict enum {
-    ASSERTIVE = 1;
-    OPPORTUNISTIC = 2;
-};
-
 /// Describes the relationship between the `PowerLevel`s of two
 /// `PowerElement`s. `child` is the name of the `PowerElement` which has
 /// `PowerLevel`s that depend on `parent`.
@@ -73,7 +68,6 @@ type PowerDependency = table {
     1: child string:MAX_NAME_LENGTH;
     2: parent ParentElement;
     3: level_deps vector<LevelTuple>:MAX_LEVELS;
-    4: strength RequirementType;
 };
 
 /// Contains the `PowerElement` description and any dependencies it has on

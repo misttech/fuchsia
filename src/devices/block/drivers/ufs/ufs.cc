@@ -72,7 +72,6 @@ fuchsia_hardware_power::PowerElementConfiguration GetHardwarePowerConfig() {
       .parent = fuchsia_hardware_power::ParentElement::WithCpuControl(
           fuchsia_hardware_power::CpuPowerElement::kCpu),
       .level_deps = {{on_to_cpu}},
-      .strength = fuchsia_hardware_power::RequirementType::kAssertive,
   }};
 
   fuchsia_hardware_power::PowerElementConfiguration hardware_power_config = {

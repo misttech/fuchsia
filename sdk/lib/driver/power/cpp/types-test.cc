@@ -461,13 +461,11 @@ TEST(TypesTest, PowerDependencyFromNatural) {
       {.child = "test child",
        .parent = fuchsia_hardware_power::ParentElement::WithInstanceName("test parent element"),
        .level_deps = {{{{.child_level = 111, .parent_level = 0}},
-                       {{.child_level = 222, .parent_level = 1}}}},
-       .strength = fuchsia_hardware_power::RequirementType::kAssertive}};
+                       {{.child_level = 222, .parent_level = 1}}}}}};
   zx::result power_dependency = PowerDependency::FromFidl(fidl);
   ASSERT_TRUE(power_dependency.is_ok()) << power_dependency.status_string();
   ASSERT_EQ(power_dependency->child, "test child");
   ASSERT_EQ(power_dependency->parent, ParentElement::WithInstanceName("test parent element"));
-  ASSERT_EQ(power_dependency->strength, RequirementType::kAssertive);
   ASSERT_EQ(power_dependency->level_deps.size(), 2u);
 
   ASSERT_EQ(power_dependency->level_deps[0].child_level, 111u);
@@ -498,14 +496,12 @@ TEST(TypesTest, PowerDependencyFromWire) {
               arena, "test parent element"))
           .level_deps(
               fidl::VectorView<fuchsia_hardware_power::wire::LevelTuple>::FromExternal(level_deps))
-          .strength(fuchsia_hardware_power::wire::RequirementType::kAssertive)
           .Build();
 
   zx::result power_dependency = PowerDependency::FromFidl(fidl);
   ASSERT_TRUE(power_dependency.is_ok()) << power_dependency.status_string();
   ASSERT_EQ(power_dependency->child, "test child");
   ASSERT_EQ(power_dependency->parent, ParentElement::WithInstanceName("test parent element"));
-  ASSERT_EQ(power_dependency->strength, RequirementType::kAssertive);
   ASSERT_EQ(power_dependency->level_deps.size(), 2u);
 
   ASSERT_EQ(power_dependency->level_deps[0].child_level, 111u);
@@ -518,9 +514,7 @@ TEST(TypesTest, PowerDependencyFromWire) {
 // Verify `PowerDependency::FromFidl()` will fail if child is missing.
 TEST(TypesTest, PowerDependencyFromNaturalMissingChild) {
   fuchsia_hardware_power::PowerDependency fidl{
-      {.parent = fuchsia_hardware_power::ParentElement::WithInstanceName(""),
-       .level_deps = {{}},
-       .strength = fuchsia_hardware_power::RequirementType::kAssertive}};
+      {.parent = fuchsia_hardware_power::ParentElement::WithInstanceName(""), .level_deps = {{}}}};
   zx::result power_dependency = PowerDependency::FromFidl(fidl);
   ASSERT_EQ(power_dependency.status_value(), ZX_ERR_INVALID_ARGS);
 }
@@ -535,7 +529,6 @@ TEST(TypesTest, PowerDependencyFromWireMissingChild) {
               arena, "test parent element"))
           .level_deps(
               fidl::VectorView<fuchsia_hardware_power::wire::LevelTuple>::FromExternal(level_deps))
-          .strength(fuchsia_hardware_power::wire::RequirementType::kAssertive)
           .Build();
 
   zx::result power_dependency = PowerDependency::FromFidl(fidl);
@@ -544,10 +537,7 @@ TEST(TypesTest, PowerDependencyFromWireMissingChild) {
 
 // Verify `PowerDependency::FromFidl()` will fail if parent is missing.
 TEST(TypesTest, PowerDependencyFromNaturalMissingParent) {
-  fuchsia_hardware_power::PowerDependency fidl{
-      {.child = "",
-       .level_deps = {{}},
-       .strength = fuchsia_hardware_power::RequirementType::kAssertive}};
+  fuchsia_hardware_power::PowerDependency fidl{{.child = "", .level_deps = {{}}}};
   zx::result power_dependency = PowerDependency::FromFidl(fidl);
   ASSERT_EQ(power_dependency.status_value(), ZX_ERR_INVALID_ARGS);
 }
@@ -561,7 +551,6 @@ TEST(TypesTest, PowerDependencyFromWireMissingParent) {
           .child("test child")
           .level_deps(
               fidl::VectorView<fuchsia_hardware_power::wire::LevelTuple>::FromExternal(level_deps))
-          .strength(fuchsia_hardware_power::wire::RequirementType::kAssertive)
           .Build();
 
   zx::result power_dependency = PowerDependency::FromFidl(fidl);
@@ -571,9 +560,7 @@ TEST(TypesTest, PowerDependencyFromWireMissingParent) {
 // Verify `PowerDependency::FromFidl()` will succeed if level dependencies are missing.
 TEST(TypesTest, PowerDependencyFromNaturalMissingLevelDeps) {
   fuchsia_hardware_power::PowerDependency fidl{
-      {.child = "",
-       .parent = fuchsia_hardware_power::ParentElement::WithInstanceName(""),
-       .strength = fuchsia_hardware_power::RequirementType::kAssertive}};
+      {.child = "", .parent = fuchsia_hardware_power::ParentElement::WithInstanceName("")}};
   zx::result power_dependency = PowerDependency::FromFidl(fidl);
   ASSERT_TRUE(power_dependency.is_ok()) << power_dependency.status_string();
   ASSERT_TRUE(power_dependency->level_deps.empty());
@@ -586,39 +573,11 @@ TEST(TypesTest, PowerDependencyFromWireMissingLevelDeps) {
                   .child("test child")
                   .parent(fuchsia_hardware_power::wire::ParentElement::WithInstanceName(
                       arena, "test parent element"))
-                  .strength(fuchsia_hardware_power::wire::RequirementType::kAssertive)
                   .Build();
 
   zx::result power_dependency = PowerDependency::FromFidl(fidl);
   ASSERT_TRUE(power_dependency.is_ok()) << power_dependency.status_string();
   ASSERT_TRUE(power_dependency->level_deps.empty());
-}
-
-// Verify `PowerDependency::FromFidl()` will fail if strength is missing.
-TEST(TypesTest, PowerDependencyFromNaturalMissingStrength) {
-  fuchsia_hardware_power::PowerDependency fidl{
-      {.child = "",
-       .parent = fuchsia_hardware_power::ParentElement::WithInstanceName(""),
-       .level_deps = {{}}}};
-  zx::result power_dependency = PowerDependency::FromFidl(fidl);
-  ASSERT_EQ(power_dependency.status_value(), ZX_ERR_INVALID_ARGS);
-}
-
-// Verify `PowerDependency::FromFidl()` will fail if strength is missing.
-TEST(TypesTest, PowerDependencyFromWireMissingStrength) {
-  fidl::Arena arena;
-  std::vector<fuchsia_hardware_power::wire::LevelTuple> level_deps;
-  auto fidl =
-      fuchsia_hardware_power::wire::PowerDependency::Builder(arena)
-          .child("test child")
-          .parent(fuchsia_hardware_power::wire::ParentElement::WithInstanceName(
-              arena, "test parent element"))
-          .level_deps(
-              fidl::VectorView<fuchsia_hardware_power::wire::LevelTuple>::FromExternal(level_deps))
-          .Build();
-
-  zx::result power_dependency = PowerDependency::FromFidl(fidl);
-  ASSERT_EQ(power_dependency.status_value(), ZX_ERR_INVALID_ARGS);
 }
 
 // Power element configuration tests.
@@ -631,14 +590,12 @@ TEST(TypesTest, PowerElementConfigurationFromNatural) {
   fuchsia_hardware_power::PowerDependency dependency1{
       {.child = "test child 1",
        .parent = fuchsia_hardware_power::ParentElement::WithInstanceName("test parent element 1"),
-       .level_deps = {{}},
-       .strength = fuchsia_hardware_power::RequirementType::kAssertive}};
+       .level_deps = {{}}}};
 
   fuchsia_hardware_power::PowerDependency dependency2{
       {.child = "test child 2",
        .parent = fuchsia_hardware_power::ParentElement::WithInstanceName("test parent element 2"),
-       .level_deps = {{}},
-       .strength = fuchsia_hardware_power::RequirementType::kOpportunistic}};
+       .level_deps = {{}}}};
 
   fuchsia_hardware_power::PowerElementConfiguration fidl{
       {.element = std::move(element),
@@ -654,13 +611,11 @@ TEST(TypesTest, PowerElementConfigurationFromNatural) {
   ASSERT_EQ(config->dependencies[0].parent,
             ParentElement::WithInstanceName("test parent element 1"));
   ASSERT_TRUE(config->dependencies[0].level_deps.empty());
-  ASSERT_EQ(config->dependencies[0].strength, RequirementType::kAssertive);
 
   ASSERT_EQ(config->dependencies[1].child, "test child 2");
   ASSERT_EQ(config->dependencies[1].parent,
             ParentElement::WithInstanceName("test parent element 2"));
   ASSERT_TRUE(config->dependencies[1].level_deps.empty());
-  ASSERT_EQ(config->dependencies[1].strength, RequirementType::kOpportunistic);
 }
 
 // Verify that `PowerElementConfiguration::FromFidl()` can convert a
@@ -675,13 +630,11 @@ TEST(TypesTest, PowerElementConfigurationFromWire) {
           .child("test child 1")
           .parent(fuchsia_hardware_power::wire::ParentElement::WithInstanceName(
               arena, "test parent element 1"))
-          .strength(fuchsia_hardware_power::RequirementType::kAssertive)
           .Build(),
       fuchsia_hardware_power::wire::PowerDependency::Builder(arena)
           .child("test child 2")
           .parent(fuchsia_hardware_power::wire::ParentElement::WithInstanceName(
               arena, "test parent element 2"))
-          .strength(fuchsia_hardware_power::RequirementType::kOpportunistic)
           .Build()};
   auto fidl = fuchsia_hardware_power::wire::PowerElementConfiguration::Builder(arena)
                   .element(element)
@@ -700,13 +653,11 @@ TEST(TypesTest, PowerElementConfigurationFromWire) {
   ASSERT_EQ(config->dependencies[0].parent,
             ParentElement::WithInstanceName("test parent element 1"));
   ASSERT_TRUE(config->dependencies[0].level_deps.empty());
-  ASSERT_EQ(config->dependencies[0].strength, RequirementType::kAssertive);
 
   ASSERT_EQ(config->dependencies[1].child, "test child 2");
   ASSERT_EQ(config->dependencies[1].parent,
             ParentElement::WithInstanceName("test parent element 2"));
   ASSERT_TRUE(config->dependencies[1].level_deps.empty());
-  ASSERT_EQ(config->dependencies[1].strength, RequirementType::kOpportunistic);
 }
 
 // Verify `PowerElementConfiguration::FromFidl()` will fail if element is missing.

@@ -37,7 +37,6 @@
                         parent_level: 1,
                     },
                 ],
-                strength: "ASSERTIVE",
             },
             {
                 child: "pe-fake-child",
@@ -50,7 +49,6 @@
                         parent_level: 1,
                     },
                 ],
-                strength: "ASSERTIVE",
             },
         ],
     },

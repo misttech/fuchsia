@@ -342,7 +342,6 @@ TEST_F(PowerLibTest, AddElementSingleDep) {
       .child = "n/a",
       .parent = fdf_power::ParentElement::WithInstanceName(parent_name),
       .level_deps = {one_to_one, three_to_two},
-      .strength = fdf_power::RequirementType::kAssertive,
   };
 
   fdf_power::PowerElementConfiguration df_config{.element = pe, .dependencies = {power_dep}};
@@ -498,7 +497,6 @@ TEST_F(PowerLibTest, AddElementDoubleDep) {
       .child = "n/a",
       .parent = parent_name_first,
       .level_deps = {one_to_one},
-      .strength = fdf_power::RequirementType::kAssertive,
   };
 
   uint8_t dep_two_level = 3;
@@ -511,7 +509,6 @@ TEST_F(PowerLibTest, AddElementDoubleDep) {
       .child = "n/a",
       .parent = parent_name_second,
       .level_deps = {three_to_two},
-      .strength = fdf_power::RequirementType::kAssertive,
   };
 
   fdf_power::PowerElementConfiguration df_config = {.element = pe,
@@ -632,7 +629,6 @@ TEST_F(PowerLibTest, LevelDependencyWithSingleParent) {
       .child = "n/a",
       .parent = parent,
       .level_deps = {one_to_one, three_to_two},
-      .strength = fdf_power::RequirementType::kAssertive,
   };
 
   fdf_power::PowerElementConfiguration df_config = {.element{pe}, .dependencies = {power_dep}};
@@ -673,7 +669,6 @@ TEST_F(PowerLibTest, ExtractPowerLevelsFromConfig) {
       .child = "n/a",
       .parent = parent,
       .level_deps = {},
-      .strength = fdf_power::RequirementType::kAssertive,
   };
 
   fdf_power::PowerElementConfiguration df_config{.element = pe, .dependencies = {power_dep}};
@@ -761,7 +756,6 @@ TEST_F(PowerLibTest, GetTokensOneDepOneLevel) {
                   .parent_level = 2,
               },
           },
-      .strength = fdf_power::RequirementType::kAssertive,
   };
 
   fdf_power::PowerElementConfiguration df_config = {.element = pe, .dependencies = {power_dep}};
@@ -839,7 +833,6 @@ TEST_F(PowerLibTest, GetTokensOneDepTwoLevels) {
                   .parent_level = 4,
               },
           },
-      .strength = fdf_power::RequirementType::kAssertive,
   };
 
   fdf_power::PowerElementConfiguration df_config{.element = pe, .dependencies = {power_dep}};
@@ -920,7 +913,6 @@ TEST_F(PowerLibTest, GetTokensTwoDepTwoLevels) {
                   .parent_level = 2,
               },
           },
-      .strength = fdf_power::RequirementType::kAssertive,
   };
 
   // Create a dependency between a level on this element and a level on the
@@ -935,7 +927,6 @@ TEST_F(PowerLibTest, GetTokensTwoDepTwoLevels) {
                   .parent_level = 4,
               },
           },
-      .strength = fdf_power::RequirementType::kAssertive,
   };
 
   fdf_power::PowerElementConfiguration df_config{.element = pe,
@@ -1008,7 +999,6 @@ TEST_F(PowerLibTest, ApplyPowerConfiguration) {
       .child = "the_element",
       .parent = parent_name_first,
       .level_deps = {one_to_one},
-      .strength = fdf_power::RequirementType::kAssertive,
   };
 
   fdf_power::LevelTuple three_to_two{
@@ -1020,7 +1010,6 @@ TEST_F(PowerLibTest, ApplyPowerConfiguration) {
       .child = "the_element",
       .parent = parent_name_second,
       .level_deps = {three_to_two},
-      .strength = fdf_power::RequirementType::kAssertive,
   };
 
   fdf_power::PowerElementConfiguration df_config{.element = pe,
@@ -1183,7 +1172,6 @@ TEST_F(PowerLibTest, GetTokensOneLevelTwoDeps) {
                   .parent_level = 2,
               },
           },
-      .strength = fdf_power::RequirementType::kAssertive,
   };
 
   // Create a dependency between a level on this element and a level on the
@@ -1198,7 +1186,6 @@ TEST_F(PowerLibTest, GetTokensOneLevelTwoDeps) {
                   .parent_level = 6,
               },
           },
-      .strength = fdf_power::RequirementType::kAssertive,
   };
 
   fdf_power::PowerElementConfiguration df_config{.element = pe,
@@ -1317,7 +1304,6 @@ TEST_F(PowerLibTest, TestSagElements) {
       .child = "n/a",
       .parent = parent,
       .level_deps = {one_to_one, three_to_two},
-      .strength = fdf_power::RequirementType::kAssertive,
   };
 
   fdf_power::PowerElementConfiguration df_config{.element = pe, .dependencies = {power_dep}};
@@ -1360,7 +1346,6 @@ TEST_F(PowerLibTest, TestCpuElementParent) {
       .child = "little_one",
       .parent = parent,
       .level_deps = {one_on_three},
-      .strength = fdf_power::RequirementType::kAssertive,
   };
 
   fdf_power::PowerElementConfiguration pe_config{.element = child_element,
@@ -1467,7 +1452,6 @@ TEST_F(PowerLibTest, TestCpuElementManagerCloseOnRequest) {
       .child = "little_one",
       .parent = parent,
       .level_deps = {one_on_three},
-      .strength = fdf_power::RequirementType::kAssertive,
   };
 
   fdf_power::PowerElementConfiguration pe_config{.element = child_element,
@@ -1531,7 +1515,6 @@ TEST_F(PowerLibTest, TestCpuElementParentNotAvailable) {
       .child = "little_one",
       .parent = parent,
       .level_deps = {one_on_three},
-      .strength = fdf_power::RequirementType::kAssertive,
   };
 
   fdf_power::PowerElementConfiguration pe_config{.element = child_element,
@@ -1602,7 +1585,6 @@ TEST_F(PowerLibTest, TestAllParentElementTypes) {
       .child = "little_one",
       .parent = cpu_parent,
       .level_deps = {one_on_cpu_three, two_on_cpu_four},
-      .strength = fdf_power::RequirementType::kAssertive,
   };
 
   fdf_power::LevelTuple on_application_activity_active{
@@ -1614,7 +1596,6 @@ TEST_F(PowerLibTest, TestAllParentElementTypes) {
       .child = "little_one",
       .parent = sag_parent,
       .level_deps = {on_application_activity_active},
-      .strength = fdf_power::RequirementType::kAssertive,
   };
 
   fdf_power::LevelTuple two_on_parent{
@@ -1626,7 +1607,6 @@ TEST_F(PowerLibTest, TestAllParentElementTypes) {
       .child = "little_one",
       .parent = driver_parent,
       .level_deps = {two_on_parent},
-      .strength = fdf_power::RequirementType::kAssertive,
   };
 
   fdf_power::PowerElementConfiguration pe_config{.element = child_element,
@@ -1799,7 +1779,6 @@ TEST_F(PowerLibTest, TestDriverAndSagElements) {
       .child = "n/a",
       .parent = parent,
       .level_deps = {one_to_one, three_to_two},
-      .strength = fdf_power::RequirementType::kAssertive,
   };
 
   fdf_power::LevelTuple two_to_two{
@@ -1811,7 +1790,6 @@ TEST_F(PowerLibTest, TestDriverAndSagElements) {
       .child = "n/a",
       .parent = driver_parent,
       .level_deps = {two_to_two},
-      .strength = fdf_power::RequirementType::kAssertive,
   };
 
   fdf_power::PowerElementConfiguration df_config{.element = pe,
@@ -1885,7 +1863,6 @@ TEST_F(PowerLibTest, TestDriverInstanceDep) {
       .child = "n/a",
       .parent = driver_parent,
       .level_deps = {two_to_two},
-      .strength = fdf_power::RequirementType::kAssertive,
   };
 
   fdf_power::PowerElementConfiguration df_config{.element = pe, .dependencies = {driver_power_dep}};

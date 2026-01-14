@@ -64,7 +64,7 @@
 				};
 				boot-level {
 					level = <2>;
-					level-dependencies = <&cpu_on_level 1>;
+					level-dependencies = <&cpu_on_level>;
 					level-transition-table {
 						transition-to-off {
 							target-level = <0>;

@@ -365,7 +365,7 @@
 
 				boot-level {
 					level = <0x02>;
-					level-dependencies = <0x37 0x01>;
+					level-dependencies = <0x37>;
 
 					level-transition-table {
 

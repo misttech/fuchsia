@@ -114,29 +114,11 @@ impl From<LevelTuple> for fidl_power::LevelTuple {
 }
 
 #[derive(Deserialize, Debug)]
-enum RequirementType {
-    #[serde(alias = "ASSERTIVE")]
-    Assertive,
-    #[serde(alias = "OPPORTUNISTIC")]
-    Opportunistic,
-}
-
-impl From<RequirementType> for fidl_power::RequirementType {
-    fn from(value: RequirementType) -> Self {
-        match value {
-            RequirementType::Assertive => fidl_power::RequirementType::Assertive,
-            RequirementType::Opportunistic => fidl_power::RequirementType::Opportunistic,
-        }
-    }
-}
-
-#[derive(Deserialize, Debug)]
 #[serde(deny_unknown_fields)]
 struct PowerDependency {
     child: String,
     parent: ParentElement,
     level_deps: Vec<LevelTuple>,
-    strength: RequirementType,
 }
 
 impl From<PowerDependency> for fidl_power::PowerDependency {
@@ -145,7 +127,6 @@ impl From<PowerDependency> for fidl_power::PowerDependency {
             child: Some(value.child),
             parent: Some(value.parent.into()),
             level_deps: Some(value.level_deps.into_iter().map(Into::into).collect()),
-            strength: Some(value.strength.into()),
             ..Default::default()
         }
     }

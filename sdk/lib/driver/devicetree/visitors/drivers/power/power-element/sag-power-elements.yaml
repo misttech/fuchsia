@@ -93,7 +93,7 @@ examples:
           ...
           handling-level {
             level = <1>;
-            level-dependencies = <&sag_execution_suspending 2>;
+            level-dependencies = <&sag_execution_suspending>;
           };
         };
       };

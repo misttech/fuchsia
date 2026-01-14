@@ -62,11 +62,11 @@
           };
           handling-level {
             level = <1>;
-            level-dependencies = <&sag_execution_suspending 2 &cpu_on_level 1>;
+            level-dependencies = <&sag_execution_suspending &cpu_on_level>;
           };
           on-level {
             level = <2>;
-            level-dependencies = <&sag_execution_active 1 &rail_on_level 2>;
+            level-dependencies = <&sag_execution_active &rail_on_level>;
           };
         };
       };

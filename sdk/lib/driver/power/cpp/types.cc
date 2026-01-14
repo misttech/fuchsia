@@ -235,29 +235,14 @@ zx::result<PowerDependency> PowerDependency::FromFidl(
     }
   }
 
-  const auto& fidl_strength = src.strength();
-  if (!fidl_strength.has_value()) {
-    return zx::error(ZX_ERR_INVALID_ARGS);
-  }
-  RequirementType strength;
-  switch (fidl_strength.value()) {
-    case fuchsia_hardware_power::RequirementType::kAssertive:
-      strength = RequirementType::kAssertive;
-      break;
-    case fuchsia_hardware_power::RequirementType::kOpportunistic:
-      strength = RequirementType::kOpportunistic;
-      break;
-  }
-
   return zx::ok(PowerDependency{.child{child.value()},
                                 .parent{std::move(parent.value())},
-                                .level_deps{std::move(level_deps)},
-                                .strength = strength});
+                                .level_deps{std::move(level_deps)}});
 }
 
 zx::result<PowerDependency> PowerDependency::FromFidl(
     const fuchsia_hardware_power::wire::PowerDependency& src) {
-  if (!src.has_child() || !src.has_parent() || !src.has_strength()) {
+  if (!src.has_child() || !src.has_parent()) {
     return zx::error(ZX_ERR_INVALID_ARGS);
   }
 
@@ -277,20 +262,9 @@ zx::result<PowerDependency> PowerDependency::FromFidl(
     }
   }
 
-  RequirementType strength;
-  switch (src.strength()) {
-    case fuchsia_hardware_power::wire::RequirementType::kAssertive:
-      strength = RequirementType::kAssertive;
-      break;
-    case fuchsia_hardware_power::wire::RequirementType::kOpportunistic:
-      strength = RequirementType::kOpportunistic;
-      break;
-  }
-
   return zx::ok(PowerDependency{.child{std::string{src.child().get()}},
                                 .parent{std::move(parent.value())},
-                                .level_deps{std::move(level_deps)},
-                                .strength = strength});
+                                .level_deps{std::move(level_deps)}});
 }
 
 zx::result<PowerElementConfiguration> PowerElementConfiguration::FromFidl(

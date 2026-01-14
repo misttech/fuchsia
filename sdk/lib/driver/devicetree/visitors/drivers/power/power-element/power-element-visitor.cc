@@ -21,35 +21,18 @@ using fuchsia_hardware_power::PowerDependency;
 using fuchsia_hardware_power::PowerElement;
 using fuchsia_hardware_power::PowerElementConfiguration;
 using fuchsia_hardware_power::PowerLevel;
-using fuchsia_hardware_power::RequirementType;
 using fuchsia_hardware_power::SagElement;
 using fuchsia_hardware_power::Transition;
 }  // namespace
 
 namespace power_element_visitor_dt {
 
-// 1 cell to represent the type
-constexpr const uint32_t kPowerDependencyCellSize = 1;
-class PowerDependencyCell {
- public:
-  using PowerDependencyArray = devicetree::PropEncodedArrayElement<kPowerDependencyCellSize>;
-
-  explicit PowerDependencyCell(fdf_devicetree::PropertyCells cells)
-      : property_array_(cells, kPowerDependencyCellSize) {}
-
-  // 1st cell represents the type.
-  RequirementType type() { return static_cast<RequirementType>(*property_array_[0][0]); }
-
- private:
-  devicetree::PropEncodedArray<PowerDependencyArray> property_array_;
-};
-
 PowerElementVisitor::PowerElementVisitor() {
   fdf_devicetree::Properties level_properties = {};
   level_properties.emplace_back(
       std::make_unique<fdf_devicetree::Uint32Property>(kLevel, /* required */ true));
   level_properties.emplace_back(std::make_unique<fdf_devicetree::ReferenceProperty>(
-      kLevelDependencies, 1u, /* required */ false));
+      kLevelDependencies, 0u, /* required */ false));
   level_parser_ = std::make_unique<fdf_devicetree::PropertyParser>(std::move(level_properties));
 
   fdf_devicetree::Properties transition_properties = {};
@@ -191,16 +174,14 @@ std::optional<ParentElement> PowerElementVisitor::GetParentElementFromLevelRef(
 
 PowerDependency& PowerElementVisitor::GetPowerDependency(PowerElementConfiguration& element_config,
                                                          const std::string& child_name,
-                                                         const ParentElement& parent,
-                                                         const RequirementType& type) {
+                                                         const ParentElement& parent) {
   if (!element_config.dependencies()) {
     element_config.dependencies() = std::vector<PowerDependency>();
   }
 
   // Check if the dependency already exists.
   for (auto& dependency : *element_config.dependencies()) {
-    if (dependency.child() == child_name && dependency.parent() == parent &&
-        dependency.strength() == type) {
+    if (dependency.child() == child_name && dependency.parent() == parent) {
       return dependency;
     }
   }
@@ -208,7 +189,6 @@ PowerDependency& PowerElementVisitor::GetPowerDependency(PowerElementConfigurati
   PowerDependency dependency;
   dependency.child() = child_name;
   dependency.parent() = parent;
-  dependency.strength() = type;
   dependency.level_deps() = std::vector<LevelTuple>();
   element_config.dependencies()->push_back(dependency);
   return element_config.dependencies()->back();
@@ -242,10 +222,8 @@ zx::result<> PowerElementVisitor::ParseLevel(fdf_devicetree::Node& node,
         return zx::error(ZX_ERR_INVALID_ARGS);
       }
 
-      auto type = PowerDependencyCell(entry.property_cells()).type();
-
-      PowerDependency& dependency = GetPowerDependency(
-          element_config, *element_config.element()->name(), *parent_element, type);
+      PowerDependency& dependency =
+          GetPowerDependency(element_config, *element_config.element()->name(), *parent_element);
 
       LevelTuple level_tuple;
       level_tuple.child_level() = level.level();

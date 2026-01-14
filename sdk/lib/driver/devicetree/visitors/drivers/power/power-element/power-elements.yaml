@@ -54,10 +54,9 @@ definitions:
         description: Phandles of level nodes that this level depends on.
         $ref: /schemas/types.yaml#/definitions/phandle-array
         items:
-          maxItems: 2
-          minItems: 2
-          description: 1st cell for phandle and 2nd cell for
-            fuchsia.hardware.power::RequirementType.
+          maxItems: 1
+          minItems: 1
+          description: 1st cell for phandle.
     required:
       - level
 
@@ -108,7 +107,7 @@ examples:
                 latency-us = <1000>;
               };
             };
-            level-dependencies = <&rail_on_level 1>;
+            level-dependencies = <&rail_on_level>;
           };
         };
       };

@@ -46,8 +46,7 @@ class PowerElementVisitor : public fdf_devicetree::Visitor {
   // does not exist, a new entry is added and returned.
   static fuchsia_hardware_power::PowerDependency& GetPowerDependency(
       fuchsia_hardware_power::PowerElementConfiguration& element_config,
-      const std::string& child_name, const fuchsia_hardware_power::ParentElement& parent,
-      const fuchsia_hardware_power::RequirementType& type);
+      const std::string& child_name, const fuchsia_hardware_power::ParentElement& parent);
 
   // Helper method that returns the power element configuration for a given power element node.
   zx::result<fuchsia_hardware_power::PowerElementConfiguration> ParsePowerElement(
