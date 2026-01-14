@@ -6,23 +6,19 @@ use core::future::Future;
 
 /// An executor which futures can be spawned on.
 pub trait Executor {
-    /// A task which completes with the output of a future.
+    /// A join handle which completes with the output of a future.
     ///
-    /// `Tasks`s have abort-on-drop semantics.
-    type Task<T>
+    /// `JoinHandle`s have detach-on-drop semantics.
+    type JoinHandle<T>
     where
         T: 'static;
 
-    /// Spawns the given future on this executor, returning a `Task` for the
+    /// Spawns the given future on this executor, returning a `JoinHandle` for the
     /// task.
-    fn spawn<F>(&self, future: F) -> Self::Task<F::Output>
+    fn spawn<F>(&self, future: F) -> Self::JoinHandle<F::Output>
     where
         F: Future + Send + 'static,
         F::Output: Send + 'static;
-
-    /// Detaches the given task so that it can run independely in the
-    /// background.
-    fn detach<T>(&self, task: Self::Task<T>);
 }
 
 /// Identifies an executor as being able to run a transport.

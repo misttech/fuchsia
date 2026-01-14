@@ -86,12 +86,10 @@ impl EchoLauncherServerHandler<fidl::Channel> for EchoLauncherServer {
         let server_end = ServerEnd::<Echo, _>::from_untyped(server);
         let client_end = ClientEnd::<Echo, _>::from_untyped(client);
 
-        server_end
-            .spawn_on_with(
-                |server| EchoServer { server: server.clone(), prefix, quiet: self.quiet },
-                &self.scope,
-            )
-            .detach_on_drop();
+        server_end.spawn_on_with(
+            |server| EchoServer { server: server.clone(), prefix, quiet: self.quiet },
+            &self.scope,
+        );
 
         if responder.respond(client_end).await.is_err() {
             self.server.close();
@@ -113,16 +111,10 @@ impl EchoLauncherServerHandler<fidl::Channel> for EchoLauncherServer {
             );
         }
 
-        request
-            .spawn_on_with(
-                |server| EchoServer {
-                    server: server.clone(),
-                    prefix: echo_prefix,
-                    quiet: self.quiet,
-                },
-                &self.scope,
-            )
-            .detach_on_drop();
+        request.spawn_on_with(
+            |server| EchoServer { server: server.clone(), prefix: echo_prefix, quiet: self.quiet },
+            &self.scope,
+        );
     }
 }
 

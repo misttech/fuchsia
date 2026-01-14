@@ -10,7 +10,7 @@ use core::task::{Context, Poll};
 
 use fidl_next_protocol::mpsc::Mpsc as BaseMpsc;
 use fidl_next_protocol::{NonBlockingTransport, Transport};
-use fuchsia_async::{Scope, ScopeHandle, Task};
+use fuchsia_async::{CancelableJoinHandle, Scope, ScopeHandle, Task};
 
 use crate::{ClientEnd, Executor, HasExecutor, RunsTransport, ServerEnd};
 
@@ -18,59 +18,50 @@ use crate::{ClientEnd, Executor, HasExecutor, RunsTransport, ServerEnd};
 pub struct FuchsiaAsync;
 
 impl Executor for FuchsiaAsync {
-    type Task<T>
-        = Task<T>
+    type JoinHandle<T>
+        = CancelableJoinHandle<T>
     where
         T: 'static;
 
-    fn spawn<F>(&self, future: F) -> Self::Task<F::Output>
+    fn spawn<F>(&self, future: F) -> Self::JoinHandle<F::Output>
     where
         F: Future + Send + 'static,
         F::Output: Send + 'static,
     {
-        Task::spawn(future)
-    }
-
-    fn detach<T: 'static>(&self, task: Self::Task<T>) {
-        drop(task.detach_on_drop());
+        #[allow(clippy::useless_conversion)]
+        CancelableJoinHandle::from(Task::spawn(future).detach_on_drop())
     }
 }
 
 impl Executor for Scope {
-    type Task<T>
-        = Task<T>
+    type JoinHandle<T>
+        = CancelableJoinHandle<T>
     where
         T: 'static;
 
-    fn spawn<F>(&self, future: F) -> Self::Task<F::Output>
+    fn spawn<F>(&self, future: F) -> Self::JoinHandle<F::Output>
     where
         F: Future + Send + 'static,
         F::Output: Send + 'static,
     {
-        self.compute(future)
-    }
-
-    fn detach<T: 'static>(&self, task: Self::Task<T>) {
-        drop(task.detach_on_drop());
+        #[allow(clippy::useless_conversion)]
+        CancelableJoinHandle::from(self.compute(future).detach_on_drop())
     }
 }
 
 impl Executor for ScopeHandle {
-    type Task<T>
-        = Task<T>
+    type JoinHandle<T>
+        = CancelableJoinHandle<T>
     where
         T: 'static;
 
-    fn spawn<F>(&self, future: F) -> Self::Task<F::Output>
+    fn spawn<F>(&self, future: F) -> Self::JoinHandle<F::Output>
     where
         F: Future + Send + 'static,
         F::Output: Send + 'static,
     {
-        self.compute(future)
-    }
-
-    fn detach<T: 'static>(&self, task: Self::Task<T>) {
-        drop(task.detach_on_drop());
+        #[allow(clippy::useless_conversion)]
+        CancelableJoinHandle::from(self.compute(future).detach_on_drop())
     }
 }
 

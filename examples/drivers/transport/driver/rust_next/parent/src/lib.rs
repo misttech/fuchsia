@@ -68,7 +68,7 @@ struct Service;
 
 impl i2cimpl::ServiceHandler for Service {
     fn device(&self, server_end: ServerEnd<i2cimpl::Device>) {
-        server_end.spawn(DeviceServer).detach();
+        server_end.spawn(DeviceServer);
     }
 }
 

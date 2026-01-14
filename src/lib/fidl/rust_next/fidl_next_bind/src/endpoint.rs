@@ -257,9 +257,9 @@ endpoint! {
     ServerEnd
 }
 
-/// A client or server handler task.
-pub type HandlerTask<T, H, E = <T as HasExecutor>::Executor> =
-    <E as Executor>::Task<Result<H, ProtocolError<<T as Transport>::Error>>>;
+/// A client or server handler join handle.
+pub type HandlerJoinHandle<T, H, E = <T as HasExecutor>::Executor> =
+    <E as Executor>::JoinHandle<Result<H, ProtocolError<<T as Transport>::Error>>>;
 
 impl<P, T: Transport> ClientEnd<P, T> {
     /// Spawns a dispatcher for the given client end with a handler computed
@@ -270,7 +270,7 @@ impl<P, T: Transport> ClientEnd<P, T> {
         self,
         create_handler: impl FnOnce(Client<P, T>) -> H,
         executor: &E,
-    ) -> (Client<P, T>, HandlerTask<T, H, E>)
+    ) -> (Client<P, T>, HandlerJoinHandle<T, H, E>)
     where
         P: DispatchClientMessage<H, T>,
         T: 'static,
@@ -291,7 +291,7 @@ impl<P, T: Transport> ClientEnd<P, T> {
         self,
         handler: H,
         executor: &E,
-    ) -> (Client<P, T>, HandlerTask<T, H, E>)
+    ) -> (Client<P, T>, HandlerJoinHandle<T, H, E>)
     where
         P: DispatchClientMessage<H, T>,
         T: 'static,
@@ -316,9 +316,7 @@ impl<P, T: Transport> ClientEnd<P, T> {
         H: Send + 'static,
         E: Executor,
     {
-        let (client, task) = Self::spawn_handler_full_on_with(self, create_handler, executor);
-        executor.detach(task);
-        client
+        Self::spawn_handler_full_on_with(self, create_handler, executor).0
     }
 
     /// Spawns a dispatcher for the given client end with a handler on an
@@ -342,7 +340,7 @@ impl<P, T: Transport> ClientEnd<P, T> {
     pub fn spawn_handler_full_with<H>(
         self,
         create_handler: impl FnOnce(Client<P, T>) -> H,
-    ) -> (Client<P, T>, HandlerTask<T, H>)
+    ) -> (Client<P, T>, HandlerJoinHandle<T, H>)
     where
         P: DispatchClientMessage<H, T>,
         T: HasExecutor + 'static,
@@ -356,7 +354,7 @@ impl<P, T: Transport> ClientEnd<P, T> {
     /// default executor for the transport.
     ///
     /// Returns the client and a join handle for the spawned task.
-    pub fn spawn_handler_full<H>(self, handler: H) -> (Client<P, T>, HandlerTask<T, H>)
+    pub fn spawn_handler_full<H>(self, handler: H) -> (Client<P, T>, HandlerJoinHandle<T, H>)
     where
         P: DispatchClientMessage<H, T>,
         T: HasExecutor + 'static,
@@ -399,7 +397,7 @@ impl<P, T: Transport> ClientEnd<P, T> {
     ///
     /// The spawned dispatcher will ignore all incoming events. Returns the
     /// client and a join handle for the spawned task.
-    pub fn spawn_full_on<E>(self, executor: &E) -> (Client<P, T>, HandlerTask<T, (), E>)
+    pub fn spawn_full_on<E>(self, executor: &E) -> (Client<P, T>, HandlerJoinHandle<T, (), E>)
     where
         P: DispatchClientMessage<IgnoreEvents, T>,
         T: 'static,
@@ -420,9 +418,7 @@ impl<P, T: Transport> ClientEnd<P, T> {
         T: 'static,
         E: Executor,
     {
-        let (client, task) = Self::spawn_full_on(self, executor);
-        executor.detach(task);
-        client
+        Self::spawn_full_on(self, executor).0
     }
 
     /// Spawns a dispatcher for the given client end on the default executor for
@@ -430,7 +426,7 @@ impl<P, T: Transport> ClientEnd<P, T> {
     ///
     /// The spawned dispatcher will ignore all incoming events. Returns the
     /// client and a join handle for the spawned task.
-    pub fn spawn_full(self) -> (Client<P, T>, HandlerTask<T, ()>)
+    pub fn spawn_full(self) -> (Client<P, T>, HandlerJoinHandle<T, ()>)
     where
         P: DispatchClientMessage<IgnoreEvents, T>,
         T: HasExecutor + 'static,
@@ -463,7 +459,7 @@ impl<P, T: Transport> ServerEnd<P, T> {
         self,
         create_handler: impl FnOnce(Server<P, T>) -> H,
         executor: &E,
-    ) -> (HandlerTask<T, H, E>, Server<P, T>)
+    ) -> (HandlerJoinHandle<T, H, E>, Server<P, T>)
     where
         P: DispatchServerMessage<H, T>,
         T: 'static,
@@ -484,7 +480,7 @@ impl<P, T: Transport> ServerEnd<P, T> {
         self,
         handler: H,
         executor: &E,
-    ) -> (HandlerTask<T, H, E>, Server<P, T>)
+    ) -> (HandlerJoinHandle<T, H, E>, Server<P, T>)
     where
         P: DispatchServerMessage<H, T>,
         T: 'static,
@@ -502,7 +498,7 @@ impl<P, T: Transport> ServerEnd<P, T> {
         self,
         create_handler: impl FnOnce(Server<P, T>) -> H,
         executor: &E,
-    ) -> HandlerTask<T, H, E>
+    ) -> HandlerJoinHandle<T, H, E>
     where
         P: DispatchServerMessage<H, T>,
         T: 'static,
@@ -518,7 +514,7 @@ impl<P, T: Transport> ServerEnd<P, T> {
     /// executor.
     ///
     /// Returns the join handle for the spawned task.
-    pub fn spawn_on<H, E>(self, handler: H, executor: &E) -> HandlerTask<T, H, E>
+    pub fn spawn_on<H, E>(self, handler: H, executor: &E) -> HandlerJoinHandle<T, H, E>
     where
         P: DispatchServerMessage<H, T>,
         T: 'static,
@@ -535,7 +531,7 @@ impl<P, T: Transport> ServerEnd<P, T> {
     pub fn spawn_full_with<H>(
         self,
         create_handler: impl FnOnce(Server<P, T>) -> H,
-    ) -> (HandlerTask<T, H>, Server<P, T>)
+    ) -> (HandlerJoinHandle<T, H>, Server<P, T>)
     where
         P: DispatchServerMessage<H, T>,
         T: HasExecutor + 'static,
@@ -549,7 +545,7 @@ impl<P, T: Transport> ServerEnd<P, T> {
     /// default executor for the transport.
     ///
     /// Returns the join handle for the spawned task and the server.
-    pub fn spawn_full<H>(self, handler: H) -> (HandlerTask<T, H>, Server<P, T>)
+    pub fn spawn_full<H>(self, handler: H) -> (HandlerJoinHandle<T, H>, Server<P, T>)
     where
         P: DispatchServerMessage<H, T>,
         T: HasExecutor + 'static,
@@ -562,7 +558,10 @@ impl<P, T: Transport> ServerEnd<P, T> {
     /// from a closure on the default executor for the transport.
     ///
     /// Returns the join handle for the spawned task.
-    pub fn spawn_with<H>(self, create_handler: impl FnOnce(Server<P, T>) -> H) -> HandlerTask<T, H>
+    pub fn spawn_with<H>(
+        self,
+        create_handler: impl FnOnce(Server<P, T>) -> H,
+    ) -> HandlerJoinHandle<T, H>
     where
         P: DispatchServerMessage<H, T>,
         T: HasExecutor + 'static,
@@ -576,7 +575,7 @@ impl<P, T: Transport> ServerEnd<P, T> {
     /// default executor for the transport.
     ///
     /// Returns the join handle for the spawned task.
-    pub fn spawn<H>(self, handler: H) -> HandlerTask<T, H>
+    pub fn spawn<H>(self, handler: H) -> HandlerJoinHandle<T, H>
     where
         P: DispatchServerMessage<H, T>,
         T: HasExecutor + 'static,

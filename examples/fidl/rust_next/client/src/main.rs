@@ -38,7 +38,7 @@ async fn main() -> Result<(), Error> {
     client.send_string("hi").await.context("send_string failed")?;
 
     // Wait for the dispatcher task to complete (which happens when EventHandler closes the client)
-    task.await.context("dispatcher task failed")?;
+    task.await.context("dispatcher task failed")?.unwrap();
 
     Ok(())
 }

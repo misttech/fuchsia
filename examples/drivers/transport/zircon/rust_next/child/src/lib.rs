@@ -93,7 +93,7 @@ mod tests {
 
     impl i2c::ServiceHandler for Service {
         fn device(&self, server_end: fidl_next::ServerEnd<i2c::Device>) {
-            server_end.spawn_on(I2cServer {}, &self.scope).detach_on_drop();
+            server_end.spawn_on(I2cServer {}, &self.scope);
         }
     }
 

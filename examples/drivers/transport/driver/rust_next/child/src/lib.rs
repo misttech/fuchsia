@@ -123,12 +123,10 @@ mod tests {
             server_end: fidl_next::ServerEnd<i2cimpl::Device, fdf_fidl::DriverChannel>,
         ) {
             let bitrate = self.bitrate.clone();
-            server_end
-                .spawn_on(
-                    I2cImplServer { bitrate },
-                    &fdf_fidl::FidlExecutor::from(self.dispatcher.clone()),
-                )
-                .detach();
+            server_end.spawn_on(
+                I2cImplServer { bitrate },
+                &fdf_fidl::FidlExecutor::from(self.dispatcher.clone()),
+            );
         }
     }
 

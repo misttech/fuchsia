@@ -36,7 +36,7 @@ async fn driver_fidl_server() {
         let server_end: ServerEnd<Device, _> =
             ServerEnd::from_untyped(AsyncChannel::new(server_chan));
 
-        server_end.spawn(DeviceServer).detach();
+        server_end.spawn(DeviceServer);
         let client: Client<_, AsyncChannel> = client_end.spawn();
 
         let res = client.get_hardware_id().await.unwrap();

@@ -134,8 +134,8 @@ async fn main() {
     clear(&client).await;
     on_error(&server).await;
 
-    client_task.await.unwrap();
-    server_task.await.unwrap();
+    client_task.await.unwrap().unwrap();
+    server_task.await.unwrap().unwrap();
 }
 
 #[cfg(test)]
@@ -153,8 +153,8 @@ mod tests {
 
         client.close();
 
-        assert_eq!(client_task.await.unwrap().error, None);
-        assert_eq!(server_task.await.unwrap().last_result, Some(42));
+        assert_eq!(client_task.await.unwrap().unwrap().error, None);
+        assert_eq!(server_task.await.unwrap().unwrap().last_result, Some(42));
     }
 
     #[fuchsia_async::run_singlethreaded(test)]
@@ -168,8 +168,8 @@ mod tests {
 
         client.close();
 
-        assert_eq!(client_task.await.unwrap().error, None);
-        assert_eq!(server_task.await.unwrap().last_result, Some(33));
+        assert_eq!(client_task.await.unwrap().unwrap().error, None);
+        assert_eq!(server_task.await.unwrap().unwrap().last_result, Some(33));
     }
 
     #[fuchsia_async::run_singlethreaded(test)]
@@ -184,8 +184,8 @@ mod tests {
 
         client.close();
 
-        assert_eq!(client_task.await.unwrap().error, None);
-        assert_eq!(server_task.await.unwrap().last_result, None);
+        assert_eq!(client_task.await.unwrap().unwrap().error, None);
+        assert_eq!(server_task.await.unwrap().unwrap().last_result, None);
     }
 
     #[fuchsia_async::run_singlethreaded(test)]
@@ -199,7 +199,7 @@ mod tests {
 
         client.close();
 
-        assert_eq!(client_task.await.unwrap().error, Some(100));
-        assert_eq!(server_task.await.unwrap().last_result, None);
+        assert_eq!(client_task.await.unwrap().unwrap().error, Some(100));
+        assert_eq!(server_task.await.unwrap().unwrap().last_result, None);
     }
 }

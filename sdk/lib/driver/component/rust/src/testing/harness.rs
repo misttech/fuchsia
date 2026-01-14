@@ -226,7 +226,7 @@ mod tests {
 
     impl fexample::EchoServiceHandler for Service {
         fn regular_echo(&self, server_end: NextServerEnd<fexample::Echo>) {
-            server_end.spawn_on(EchoServer, &self.scope).detach_on_drop();
+            server_end.spawn_on(EchoServer, &self.scope);
         }
 
         fn reversed_echo(&self, _server_end: NextServerEnd<fexample::Echo>) {}

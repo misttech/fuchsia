@@ -47,7 +47,7 @@ struct Service {
 
 impl i2c::ServiceHandler for Service {
     fn device(&self, server_end: ServerEnd<i2c::Device>) {
-        server_end.spawn_on(DeviceServer, &self.scope).detach_on_drop();
+        server_end.spawn_on(DeviceServer, &self.scope);
     }
 }
 

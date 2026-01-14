@@ -22,7 +22,7 @@ use fidl_next::{
 };
 use futures::task::AtomicWaker;
 use libasync::callback_state::CallbackSharedState;
-use libasync::{OnDispatcher, Task};
+use libasync::{JoinHandle, OnDispatcher};
 use libasync_sys::{async_begin_wait, async_dispatcher, async_wait};
 use zx::sys::{
     ZX_CHANNEL_PEER_CLOSED, ZX_CHANNEL_READABLE, ZX_ERR_BUFFER_TOO_SMALL, ZX_ERR_CANCELED,
@@ -245,18 +245,14 @@ impl<D> From<D> for FidlExecutor<D> {
 }
 
 impl<D: OnDispatcher + 'static> Executor for FidlExecutor<D> {
-    type Task<T: 'static> = Task<T>;
+    type JoinHandle<T: 'static> = JoinHandle<T>;
 
-    fn spawn<F>(&self, future: F) -> Self::Task<F::Output>
+    fn spawn<F>(&self, future: F) -> Self::JoinHandle<F::Output>
     where
         F: Future + Send + 'static,
         F::Output: Send + 'static,
     {
-        self.0.compute(future)
-    }
-
-    fn detach<T: 'static>(&self, task: Self::Task<T>) {
-        task.detach()
+        self.0.compute(future).detach_on_drop()
     }
 }
 

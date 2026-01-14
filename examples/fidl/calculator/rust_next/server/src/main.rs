@@ -113,7 +113,7 @@ mod tests {
         assert_eq!(response.sum, 7.7);
 
         sender.close();
-        server.await.unwrap();
+        server.await.unwrap().unwrap();
     }
 
     #[fuchsia::test]
@@ -126,7 +126,7 @@ mod tests {
         assert_eq!(response.difference, 4.5);
 
         sender.close();
-        server.await.unwrap();
+        server.await.unwrap().unwrap();
     }
 
     #[fuchsia::test]
@@ -139,7 +139,7 @@ mod tests {
         assert_eq!(response.product, 3.0);
 
         sender.close();
-        server.await.unwrap();
+        server.await.unwrap().unwrap();
     }
 
     #[fuchsia::test]
@@ -152,7 +152,7 @@ mod tests {
         assert_eq!(response.quotient, 0.5);
 
         sender.close();
-        server.await.unwrap();
+        server.await.unwrap().unwrap();
     }
 
     #[fuchsia::test]
@@ -165,6 +165,6 @@ mod tests {
         assert_eq!(response.power, 81.0);
 
         sender.close();
-        server.await.unwrap();
+        server.await.unwrap().unwrap();
     }
 }
