@@ -34,12 +34,12 @@
 use binder_ndk_sys::AIBinder;
 
 #[repr(C)]
-#[derive(Debug, Copy, Clone)]
+#[derive(Debug)]
 pub struct ARpcServer {
     _unused: [u8; 0],
 }
 #[repr(C)]
-#[derive(Debug, Copy, Clone)]
+#[derive(Debug)]
 pub struct ARpcSession {
     _unused: [u8; 0],
 }
@@ -135,6 +135,9 @@ unsafe extern "C" {
             unsafe extern "C" fn(param: *mut ::std::os::raw::c_void) -> ::std::os::raw::c_int,
         >,
         param: *mut ::std::os::raw::c_void,
+        paramDeleteFd: ::std::option::Option<
+            unsafe extern "C" fn(param: *mut ::std::os::raw::c_void),
+        >,
     ) -> *mut AIBinder;
 }
 unsafe extern "C" {
