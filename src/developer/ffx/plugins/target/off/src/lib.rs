@@ -6,7 +6,9 @@ use async_trait::async_trait;
 use ffx_off_args::OffCommand;
 use ffx_writer::SimpleWriter;
 use fho::{FfxContext, FfxMain, FfxTool};
-use fidl_fuchsia_hardware_power_statecontrol::AdminProxy;
+use fidl_fuchsia_hardware_power_statecontrol::{
+    AdminProxy, ShutdownAction, ShutdownOptions, ShutdownReason,
+};
 use target_holders::moniker;
 use zx_status as zx;
 
@@ -29,7 +31,13 @@ impl FfxMain for OffTool {
 }
 
 async fn off(admin_proxy: AdminProxy, _cmd: OffCommand) -> fho::Result<()> {
-    let res = admin_proxy.poweroff().await;
+    let res = admin_proxy
+        .shutdown(&ShutdownOptions {
+            action: Some(ShutdownAction::Poweroff),
+            reasons: Some(vec![ShutdownReason::DeveloperRequest]),
+            ..Default::default()
+        })
+        .await;
     match res {
         Ok(_) => Ok(()),
         Err(ref e) => match e {
@@ -53,7 +61,9 @@ mod test {
 
     fn setup_fake_admin_server() -> AdminProxy {
         fake_proxy(|req| match req {
-            AdminRequest::Poweroff { responder } => {
+            AdminRequest::Shutdown { options, responder } => {
+                assert_eq!(options.action, Some(ShutdownAction::Poweroff));
+                assert_eq!(options.reasons, Some(vec![ShutdownReason::DeveloperRequest]));
                 responder.send(Ok(())).unwrap();
             }
             _ => assert!(false),

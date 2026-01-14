@@ -27,7 +27,9 @@ use ffx_fastboot_interface::fastboot_interface::{FastbootInterface, UploadProgre
 use ffx_writer::VerifiedMachineWriter;
 use fho::{FfxContext, FfxMain, FfxTool, deferred, return_bug, return_user_error};
 use fidl::Error;
-use fidl_fuchsia_hardware_power_statecontrol::AdminProxy;
+use fidl_fuchsia_hardware_power_statecontrol::{
+    AdminProxy, ShutdownAction, ShutdownOptions, ShutdownReason,
+};
 use fidl_fuchsia_hwinfo::DeviceProxy;
 use futures::try_join;
 use schemars::JsonSchema;
@@ -123,7 +125,14 @@ Reboot the Target to the bootloader and re-run this command."
                 let p_proxy = self.power_proxy.await?;
 
                 // These calls erroring is fine...
-                match p_proxy.reboot_to_bootloader().await {
+                match p_proxy
+                    .shutdown(&ShutdownOptions {
+                        action: Some(ShutdownAction::RebootToBootloader),
+                        reasons: Some(vec![ShutdownReason::DeveloperRequest]),
+                        ..Default::default()
+                    })
+                    .await
+                {
                     Ok(_) => {}
                     Err(e) => handle_fidl_connection_err(e)?,
                 };

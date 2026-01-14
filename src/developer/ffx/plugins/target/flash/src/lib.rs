@@ -23,7 +23,9 @@ use ffx_ssh::SshKeyFiles;
 use ffx_writer::{ToolIO, VerifiedMachineWriter};
 use fho::{FfxContext, FfxMain, FfxTool, deferred, return_bug, return_user_error};
 use fidl::Error;
-use fidl_fuchsia_hardware_power_statecontrol::AdminProxy;
+use fidl_fuchsia_hardware_power_statecontrol::{
+    AdminProxy, ShutdownAction, ShutdownOptions, ShutdownReason,
+};
 use fidl_fuchsia_hwinfo::DeviceProxy;
 use futures::try_join;
 use schemars::JsonSchema;
@@ -319,7 +321,14 @@ async fn reboot_target_to_bootloader_and_rediscover(
     log::debug!("Target in Product state. Rebooting to bootloader...",);
 
     // These calls erroring is fine...
-    match power_proxy.reboot_to_bootloader().await {
+    match power_proxy
+        .shutdown(&ShutdownOptions {
+            action: Some(ShutdownAction::RebootToBootloader),
+            reasons: Some(vec![ShutdownReason::DeveloperRequest]),
+            ..Default::default()
+        })
+        .await
+    {
         Ok(_) => {}
         Err(e) => handle_fidl_connection_err(e)?,
     };
