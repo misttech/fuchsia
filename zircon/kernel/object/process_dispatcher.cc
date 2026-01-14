@@ -171,6 +171,10 @@ zx_status_t ProcessDispatcher::CreateShared(
     return result;
   }
 
+  // Copy the process properties that aren't inherently shared.
+  new_process.dispatcher()->set_dyn_break_on_load(shared_proc->get_dyn_break_on_load());
+  new_process.dispatcher()->set_debug_addr(shared_proc->get_debug_addr());
+
   // Only now that the process has been fully created and initialized can we register it with its
   // parent job. We don't want anyone to see it in a partially initialized state.
   if (!shared_proc->job()->AddChildProcess(new_process.dispatcher())) {

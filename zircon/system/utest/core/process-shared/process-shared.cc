@@ -11,6 +11,7 @@
 #include <lib/zx/result.h>
 #include <lib/zx/thread.h>
 #include <zircon/errors.h>
+#include <zircon/processargs.h>
 #include <zircon/syscalls-next.h>
 #include <zircon/syscalls.h>
 #include <zircon/syscalls/resource.h>
@@ -486,4 +487,141 @@ TEST(ProcessShared, InfoProcessMaps) {
     EXPECT_GE(maps[i].base, prev_base);
     prev_base = maps[i].base;
   }
+}
+
+// See that a process created via zx_process_create_shared starts off with an independent copy of
+// the prototype process's:
+//   * ZX_PROP_PROCESS_BREAK_ON_LOAD
+//   * ZX_PROP_PROCESS_DEBUG_ADDR
+TEST(ProcessShared, PropertiesCopied) {
+  NEEDS_NEXT_SKIP(zx_process_create_shared);
+
+  zx::process prototype_process;
+  zx::vmar shared_vmar;
+  constexpr const char kPrototypeName[] = "prototype_process";
+  ASSERT_OK(zx::process::create(*zx::job::default_job(), kPrototypeName, sizeof(kPrototypeName),
+                                ZX_PROCESS_SHARED, &prototype_process, &shared_vmar));
+
+  // ZX_PROP_PROCESS_BREAK_ON_LOAD
+  const uint64_t break_on_load = 0x10adf00d;
+  ASSERT_OK(prototype_process.set_property(ZX_PROP_PROCESS_BREAK_ON_LOAD, &break_on_load,
+                                           sizeof(break_on_load)));
+
+  // ZX_PROP_PROCESS_DEBUG_ADDR
+  const uint64_t debug_addr = 0xfeedface;
+  ASSERT_OK(
+      prototype_process.set_property(ZX_PROP_PROCESS_DEBUG_ADDR, &debug_addr, sizeof(debug_addr)));
+
+  zx::process process;
+  zx::vmar restricted_vmar;
+  constexpr const char kProcessName[] = "process";
+  ASSERT_OK(zx_process_create_shared(prototype_process.get(), 0, kProcessName, sizeof(kProcessName),
+                                     process.reset_and_get_address(),
+                                     restricted_vmar.reset_and_get_address()));
+
+  {
+    // ZX_PROP_PROCESS_BREAK_ON_LOAD
+
+    // See that the new processes inherits the prototype's value.
+    uint64_t value{};
+    ASSERT_OK(process.get_property(ZX_PROP_PROCESS_BREAK_ON_LOAD, &value, sizeof(value)));
+    ASSERT_EQ(value, break_on_load);
+
+    // See that the new process's value can diverge from the prototype's.
+    const uint64_t new_value = 0;
+    ASSERT_OK(process.set_property(ZX_PROP_PROCESS_BREAK_ON_LOAD, &new_value, sizeof(new_value)));
+    ASSERT_OK(prototype_process.get_property(ZX_PROP_PROCESS_BREAK_ON_LOAD, &value, sizeof(value)));
+    ASSERT_EQ(value, break_on_load);
+  }
+
+  {
+    // ZX_PROP_PROCESS_DEBUG_ADDR
+
+    // See that the new processes inherits the prototype's value.
+    uint64_t value{};
+    ASSERT_OK(process.get_property(ZX_PROP_PROCESS_DEBUG_ADDR, &value, sizeof(value)));
+    ASSERT_EQ(value, debug_addr);
+
+    // See that the new process's value can diverge from the prototype's.
+    const uint64_t new_value = 0;
+    ASSERT_OK(process.set_property(ZX_PROP_PROCESS_DEBUG_ADDR, &new_value, sizeof(new_value)));
+    ASSERT_OK(prototype_process.get_property(ZX_PROP_PROCESS_DEBUG_ADDR, &value, sizeof(value)));
+    ASSERT_EQ(value, debug_addr);
+  }
+}
+
+// See that a process created via zx_process_create_shared shares the prototype process's:
+//   * ZX_PROP_PROCESS_VDSO_BASE_ADDRESS
+//   * ZX_PROP_PROCESS_HW_TRACE_CONTEXT_ID
+TEST(ProcessShared, PropertiesShared) {
+  NEEDS_NEXT_SKIP(zx_process_create_shared);
+
+  zx::process prototype_process;
+  zx::vmar shared_vmar;
+  constexpr const char kPrototypeName[] = "prototype_process";
+  ASSERT_OK(zx::process::create(*zx::job::default_job(), kPrototypeName, sizeof(kPrototypeName),
+                                ZX_PROCESS_SHARED, &prototype_process, &shared_vmar));
+
+  // ZX_PROP_PROCESS_VDSO_BASE_ADDRESS
+  uint64_t vdso_base_addr;
+  ASSERT_OK(prototype_process.get_property(ZX_PROP_PROCESS_VDSO_BASE_ADDRESS, &vdso_base_addr,
+                                           sizeof(vdso_base_addr)));
+
+#if defined(__x86_64__)
+  // ZX_PROP_PROCESS_HW_TRACE_CONTEXT_ID
+  //
+  // Only on x86 and only available when kernel.enable-debugging-syscalls=true.
+  bool debugging_syscalls_enabled;
+  uint64_t hw_trace_context_id;
+  zx_status_t status = prototype_process.get_property(
+      ZX_PROP_PROCESS_HW_TRACE_CONTEXT_ID, &hw_trace_context_id, sizeof(hw_trace_context_id));
+  if (status != ZX_ERR_NOT_SUPPORTED) {
+    ASSERT_OK(status);
+    ASSERT_NE(0, hw_trace_context_id);
+    debugging_syscalls_enabled = true;
+  }
+#endif
+
+  zx::process process;
+  zx::vmar restricted_vmar;
+  constexpr const char kProcessName[] = "process";
+  ASSERT_OK(zx_process_create_shared(prototype_process.get(), 0, kProcessName, sizeof(kProcessName),
+                                     process.reset_and_get_address(),
+                                     restricted_vmar.reset_and_get_address()));
+
+  {
+    // ZX_PROP_PROCESS_VDSO_BASE_ADDRESS
+
+    // See that the shared process matches the prototype.  I.e. both start at zero.
+    uint64_t process_value{};
+    ASSERT_OK(process.get_property(ZX_PROP_PROCESS_VDSO_BASE_ADDRESS, &process_value,
+                                   sizeof(process_value)));
+    ASSERT_EQ(process_value, vdso_base_addr);
+    ASSERT_EQ(0, vdso_base_addr);
+
+    // Map the vDSO into the prototype, which will implicitly set the base address property for both
+    // processes.
+    ASSERT_OK(mini_process_load_vdso(prototype_process.get(), shared_vmar.get(), nullptr, nullptr));
+
+    // See that the property of both processes match.
+    ASSERT_OK(process.get_property(ZX_PROP_PROCESS_VDSO_BASE_ADDRESS, &process_value,
+                                   sizeof(process_value)));
+    ASSERT_NE(0, process_value);
+    uint64_t prototype_value{};
+    ASSERT_OK(process.get_property(ZX_PROP_PROCESS_VDSO_BASE_ADDRESS, &prototype_value,
+                                   sizeof(prototype_value)));
+    ASSERT_NE(0, prototype_value);
+    ASSERT_EQ(process_value, prototype_value);
+  }
+
+#if defined(__x86_64__)
+  {
+    // ZX_PROP_PROCESS_HW_TRACE_CONTEXT_ID
+    if (debugging_syscalls_enabled) {
+      uint64_t value{};
+      ASSERT_OK(process.get_property(ZX_PROP_PROCESS_HW_TRACE_CONTEXT_ID, &value, sizeof(value)));
+      ASSERT_EQ(value, hw_trace_context_id);
+    }
+  }
+#endif
 }

@@ -329,8 +329,8 @@ zx_status_t sys_process_create_shared(zx_handle_t shared_proc_handle, uint32_t o
   LTRACEF("name %s\n", buf);
 
   fbl::RefPtr<ProcessDispatcher> shared_proc;
-  result = up->handle_table().GetDispatcherWithRights(*up, shared_proc_handle,
-                                                      ZX_RIGHT_MANAGE_PROCESS, &shared_proc);
+  result = up->handle_table().GetDispatcherWithRights(
+      *up, shared_proc_handle, ZX_RIGHT_MANAGE_PROCESS | ZX_RIGHT_GET_PROPERTY, &shared_proc);
   if (result != ZX_OK) {
     return result;
   }

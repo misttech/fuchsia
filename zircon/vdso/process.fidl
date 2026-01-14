@@ -175,6 +175,9 @@ closed protocol Process {
     /// `zx_process_create_shared()` creates a new process that shares part of its address space
     /// with `shared_proc`. The created process will be added to the same job as `shared_proc`.
     ///
+    /// The created process's initial `ZX_PROP_PROCESS_*` properties will match those of the
+    /// *shared_proc*.
+    ///
     /// `shared_proc` must have been created with `ZX_PROCESS_SHARED`, or via
     /// `zx_process_create_shared()`.
     ///
@@ -186,7 +189,8 @@ closed protocol Process {
     ///
     /// ## Rights
     ///
-    /// *shared_proc* must be of type `ZX_OBJ_TYPE_PROCESS` and have `ZX_RIGHT_MANAGE_PROCESS`.
+    /// *shared_proc* must be of type `ZX_OBJ_TYPE_PROCESS` and have `ZX_RIGHT_MANAGE_PROCESS` and
+    /// `ZX_RIGHT_GET_PROPERTY`.
     ///
     /// See [`zx_process_create()`].
     ///
@@ -218,8 +222,10 @@ closed protocol Process {
     ///
     /// ## See also
     ///
+    ///  - [`zx_object_get_property()`]
     ///  - [`zx_process_create()`]
     ///
+    /// [`zx_object_get_property()`]: object_get_property.md
     /// [`zx_process_create()`]: process_create.md
     @next
     strict CreateShared(resource struct {
