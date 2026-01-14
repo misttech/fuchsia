@@ -9,7 +9,7 @@ use fdf::{CurrentDispatcher, OnDispatcher};
 use fdf_component::Incoming;
 use fidl::client::decode_transaction_body;
 use fidl::encoding::{DefaultFuchsiaResourceDialect, EmptyStruct, ResultType, clear_tls_buf};
-use fidl::endpoints::{RequestStream, ServerEnd};
+use fidl::endpoints::{ClientEnd, RequestStream, ServerEnd};
 use fuchsia_sync::Mutex;
 use futures::channel::oneshot;
 use futures::{FutureExt, TryStreamExt};
@@ -21,7 +21,7 @@ use std::sync::{Arc, Weak};
 use zx::{HandleBased, Status};
 use {
     fidl_fuchsia_data as fdata, fidl_fuchsia_driver_framework as fidl_fdf,
-    fidl_fuchsia_driver_host as fdh,
+    fidl_fuchsia_driver_host as fdh, fidl_fuchsia_power_broker as fpb,
 };
 
 unsafe extern "C" {
@@ -199,6 +199,18 @@ struct DriverInner {
 
     // This is the token representing the node of this driver in the driver manager.
     node_token: Option<fidl::Event>,
+
+    #[allow(unused)]
+    power_element: Option<PowerElementHandles>,
+}
+
+#[allow(unused)]
+#[derive(Debug)]
+struct PowerElementHandles {
+    control: ClientEnd<fpb::ElementControlMarker>,
+    runner: ServerEnd<fpb::ElementRunnerMarker>,
+    lessor: ClientEnd<fpb::LessorMarker>,
+    element_token: fpb::DependencyToken,
 }
 
 impl Drop for DriverInner {
@@ -280,6 +292,24 @@ impl Driver {
             t.duplicate_handle(fidl::Rights::SAME_RIGHTS)
                 .expect("Failed to duplicate node token handle.")
         });
+
+        // All or nothing, either we get all the power element-related handles or we get none.
+        let power_element = match start_args.power_element_args.take() {
+            Some(fidl_fdf::PowerElementArgs {
+                control_client: Some(control_client),
+                runner_server: Some(runner_server),
+                lessor_client: Some(lessor_client),
+                token: Some(token),
+                ..
+            }) => Some(PowerElementHandles {
+                control: control_client,
+                runner: runner_server,
+                lessor: lessor_client,
+                element_token: token,
+            }),
+            _ => None,
+        };
+
         let driver = Arc::new(Driver {
             url: url.clone(),
             inner: Mutex::new(DriverInner {
@@ -290,6 +320,7 @@ impl Driver {
                 token: None,
                 shutdown_signaler: None,
                 node_token,
+                power_element,
             }),
         });
         let driver_runtime_handle = env.new_driver(Arc::into_raw(driver.clone()));
@@ -355,6 +386,24 @@ impl Driver {
             t.duplicate_handle(fidl::Rights::SAME_RIGHTS)
                 .expect("Failed to duplicate node token handle.")
         });
+
+        // All or nothing, either we get all the power element-related handles or we get none.
+        let power_element = match start_args.power_element_args.take() {
+            Some(fidl_fdf::PowerElementArgs {
+                control_client: Some(control_client),
+                runner_server: Some(runner_server),
+                lessor_client: Some(lessor_client),
+                token: Some(token),
+                ..
+            }) => Some(PowerElementHandles {
+                control: control_client,
+                runner: runner_server,
+                lessor: lessor_client,
+                element_token: token,
+            }),
+            _ => None,
+        };
+
         let driver = Arc::new(Driver {
             url: url.clone(),
             inner: Mutex::new(DriverInner {
@@ -365,6 +414,7 @@ impl Driver {
                 token: None,
                 shutdown_signaler: None,
                 node_token,
+                power_element,
             }),
         });
         let driver_runtime_handle = env.new_driver(Arc::into_raw(driver.clone()));
