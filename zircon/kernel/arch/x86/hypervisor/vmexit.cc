@@ -1191,7 +1191,7 @@ zx::result<> vmexit_handler(AutoVmcs& vmcs, GuestState& guest_state,
     case ZX_ERR_INTERNAL_INTR_KILLED:
       break;
     default:
-      dprintf(CRITICAL, "hypervisor: VM exit handler (regular) for %s (%u) returned %d\n",
+      dprintf(CRITICAL, "hypervisor: VM exit handler for %s (%u) returned %d\n",
               exit_reason_name(exit_info.exit_reason), static_cast<uint32_t>(exit_info.exit_reason),
               result.status_value());
       dump_guest_state(guest_state, exit_info);
