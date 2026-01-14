@@ -1161,6 +1161,23 @@ async fn handle_supplicant_sta_iface_request<I: IfaceManager>(
             let result = result.as_ref().map_err(|status| *status);
             responder.send(result).context("send GetMacAddress response")?;
         }
+        fidl_wlanix::SupplicantStaIfaceRequest::GetFactoryMacAddress { responder } => {
+            let (iface, iface_id) = get_iface_and_log(
+                "fidl_wlanix::SupplicantStaIfaceRequest::GetFactoryMacAddress",
+                iface_manager,
+                &iface_name,
+            )
+            .await?;
+            let result = match iface.query().await {
+                Ok(response) => Ok(response.factory_addr),
+                Err(e) => {
+                    error!("Failed to query iface {}: {}", iface_id, e);
+                    Err(zx::sys::ZX_ERR_INTERNAL)
+                }
+            };
+            let result = result.as_ref().map_err(|status| *status);
+            responder.send(result).context("send GetFactoryMacAddress response")?;
+        }
         fidl_wlanix::SupplicantStaIfaceRequest::SetBtCoexistenceMode { payload, responder } => {
             let (iface, _) = get_iface_and_log(
                 "fidl_wlanix::SupplicantStaIfaceRequest::SetBtCoexistenceMode",

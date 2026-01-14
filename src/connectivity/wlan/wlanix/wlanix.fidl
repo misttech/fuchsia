@@ -191,6 +191,9 @@ open protocol SupplicantStaIface {
     flexible GetMacAddress() -> (table {
         1: mac_addr fuchsia.wlan.ieee80211.MacAddr;
     }) error zx.Status;
+    flexible GetFactoryMacAddress() -> (struct {
+        mac_addr fuchsia.wlan.ieee80211.MacAddr;
+    }) error zx.Status;
     flexible SetBtCoexistenceMode(table {
         1: mode BtCoexistenceMode;
     }) -> () error WlanixError;

@@ -314,6 +314,13 @@ void FakeWlanix::GetMacAddress(GetMacAddressCompleter::Sync& completer) {
   completer.Reply(fit::ok(&response));
 }
 
+void FakeWlanix::GetFactoryMacAddress(GetFactoryMacAddressCompleter::Sync& completer) {
+  AppendCommand(Command{.tag = CommandTag::kSupplicantStaIfaceGetFactoryMacAddress});
+  fuchsia_wlan_wlanix::wire::SupplicantStaIfaceGetFactoryMacAddressResponse response;
+  response.mac_addr = {12, 34, 56, 78, 90, 12};
+  completer.Reply(fit::ok(&response));
+}
+
 void FakeWlanix::SetBtCoexistenceMode(
     fuchsia_wlan_wlanix::wire::SupplicantStaIfaceSetBtCoexistenceModeRequest* request,
     SetBtCoexistenceModeCompleter::Sync& completer) {
