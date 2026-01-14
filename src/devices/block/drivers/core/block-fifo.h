@@ -5,27 +5,21 @@
 #ifndef SRC_DEVICES_BLOCK_DRIVERS_CORE_BLOCK_FIFO_H_
 #define SRC_DEVICES_BLOCK_DRIVERS_CORE_BLOCK_FIFO_H_
 
-// TODO(https://github.com/rust-lang/rust-bindgen/issues/316): Remove redundant
-// definition when Rust bindgen can handle this.
-#define _SENTINEL_SLOT_VALUE (0xff)
-#define SENTINEL_SLOT_VALUE ((uint8_t)_SENTINEL_SLOT_VALUE)
-
 #include <stdint.h>
 #include <zircon/types.h>
 
 // LINT.IfChange
+constexpr uint8_t SENTINEL_SLOT_VALUE = 0xFF;
 
-// bindgen doesn't like 'using'.
-// NOLINTBEGIN(modernize-use-using)
-typedef uint32_t reqid_t;
-typedef uint16_t groupid_t;
-typedef uint16_t vmoid_t;
+using reqid_t = uint32_t;
+using groupid_t = uint16_t;
+using vmoid_t = uint16_t;
 
-typedef struct BlockFifoCommand {
+struct BlockFifoCommand {
   uint8_t opcode;
   uint8_t padding_to_satisfy_zerocopy[3];
   uint32_t flags;
-} block_fifo_command_t;
+};
 
 // * Reads with Decompression *
 //
@@ -48,8 +42,8 @@ typedef struct BlockFifoCommand {
 // The group may only contain read requests applicable to the decompressed read.
 //
 // There is a 128 MiB limit on the total compressed amount.
-typedef struct BlockFifoRequest {
-  block_fifo_command_t command;
+struct BlockFifoRequest {
+  BlockFifoCommand command;
   reqid_t reqid;
   groupid_t group;
   vmoid_t vmoid;
@@ -66,7 +60,7 @@ typedef struct BlockFifoRequest {
   uint32_t dun;
   // The keyslot for the key used to encrypt/decrypt the request's data. If `slot` is set to
   // SENTINEL_SLOT_VALUE, this request does not use inline crypto.
-  uint8_t slot;
+  uint8_t slot = SENTINEL_SLOT_VALUE;
   uint8_t padding;
 
   // The number of bytes to skip at the beginning (only applicable for the first request in a
@@ -78,21 +72,23 @@ typedef struct BlockFifoRequest {
   uint32_t uncompressed_bytes;
 
   uint32_t padding2;
-} block_fifo_request_t;
+};
 
-typedef struct BlockFifoResponse {
+struct BlockFifoResponse {
   zx_status_t status;
   reqid_t reqid;
   groupid_t group;
   uint16_t padding_to_satisfy_zerocopy;
   uint32_t count;
   uint64_t padding_to_match_request_size_and_alignment[6];
-} block_fifo_response_t;
-
-// NOLINTEND(modernize-use-using)
+};
 
 // Notify humans to update Rust bindings because there's no bindgen automation.
 // TODO(https://fxbug.dev/42153476): Remove lint when no longer necessary.
 // LINT.ThenChange(//src/storage/lib/block_protocol/src/fifo.rs)
+
+using block_fifo_command_t = BlockFifoCommand;
+using block_fifo_request_t = BlockFifoRequest;
+using block_fifo_response_t = BlockFifoResponse;
 
 #endif  // SRC_DEVICES_BLOCK_DRIVERS_CORE_BLOCK_FIFO_H_

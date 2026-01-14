@@ -503,7 +503,7 @@ impl Interface for Data {
                 )?
             };
 
-            if opts.inline_crypto_options.slot != 0xff {
+            if opts.inline_crypto_options.is_enabled() {
                 let fscrypt_info = self.fscrypt_info.lock();
                 if let Some(cipher) =
                     fscrypt_info.fscrypt_keys.get(&opts.inline_crypto_options.slot)
@@ -555,7 +555,7 @@ impl Interface for Data {
             {
                 tracking.lock().insert(device_block_offset, &data[..]);
             }
-            if opts.inline_crypto_options.slot != 0xff {
+            if opts.inline_crypto_options.is_enabled() {
                 let fscrypt_info = self.fscrypt_info.lock();
                 if let Some(cipher) =
                     fscrypt_info.fscrypt_keys.get(&opts.inline_crypto_options.slot)

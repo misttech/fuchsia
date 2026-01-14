@@ -15,8 +15,8 @@
 
 use zerocopy::{FromBytes, Immutable, IntoBytes, KnownLayout};
 
-pub const _SENTINEL_SLOT_VALUE: u32 = 255;
 pub type zx_status_t = i32;
+pub const SENTINEL_SLOT_VALUE: u8 = 255;
 pub type reqid_t = u32;
 pub type groupid_t = u16;
 pub type vmoid_t = u16;
@@ -38,11 +38,10 @@ const _: () = {
     ["Offset of field: BlockFifoCommand::flags"]
         [::std::mem::offset_of!(BlockFifoCommand, flags) - 4usize];
 };
-pub type block_fifo_command_t = BlockFifoCommand;
 #[repr(C)]
-#[derive(Debug, Default, Copy, Clone, FromBytes, Immutable, IntoBytes, KnownLayout)]
+#[derive(Debug, Copy, Clone, FromBytes, Immutable, IntoBytes, KnownLayout)]
 pub struct BlockFifoRequest {
-    pub command: block_fifo_command_t,
+    pub command: BlockFifoCommand,
     pub reqid: reqid_t,
     pub group: groupid_t,
     pub vmoid: vmoid_t,
