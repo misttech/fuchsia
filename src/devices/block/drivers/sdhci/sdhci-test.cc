@@ -2755,6 +2755,162 @@ TEST_F(SdhciTest, PrepareStop) {
   driver_test().ShutdownAndDestroyDriver();
 }
 
+TEST_F(SdhciTest, InhibitCmdChecked) {
+  driver_test().RunInEnvironmentTypeContext([&](Environment& env) {
+    Capabilities0::Get()
+        .FromValue(0)
+        .set_adma2_support(1)
+        .set_v3_64_bit_system_address_support(1)
+        .WriteTo(&env.mmio());
+  });
+
+  ASSERT_OK(StartDriver());
+
+  driver_test().RunInEnvironmentTypeContext([&](Environment& env) {
+    PresentState::Get().FromValue(0).set_command_inhibit_cmd(1).WriteTo(&env.mmio());
+  });
+
+  fuchsia_hardware_sdmmc::wire::SdmmcReq request = {
+      .cmd_idx = SDMMC_SEND_STATUS,
+      .cmd_flags = SDMMC_SEND_STATUS_FLAGS,
+      .arg = 0,
+      .suppress_error_messages = false,
+      .client_id = 0,
+  };
+
+  fdf::Arena arena('TEST');
+  client_.buffer(arena)
+      ->Request(fidl::VectorView<fuchsia_hardware_sdmmc::wire::SdmmcReq>::FromExternal(&request, 1))
+      .ThenExactlyOnce([](auto& result) {
+        ASSERT_TRUE(result.ok());
+        // The request should fail due to inhibit cmd being set.
+        ASSERT_TRUE(result->is_error());
+        EXPECT_EQ(result->error_value(), ZX_ERR_TIMED_OUT);
+      });
+  driver_test().runtime().RunUntilIdle();
+
+  ASSERT_OK(StopDriver());
+}
+
+TEST_F(SdhciTest, InhibitDatChecked) {
+  driver_test().RunInEnvironmentTypeContext([&](Environment& env) {
+    Capabilities0::Get()
+        .FromValue(0)
+        .set_adma2_support(1)
+        .set_v3_64_bit_system_address_support(1)
+        .WriteTo(&env.mmio());
+  });
+
+  ASSERT_OK(StartDriver());
+
+  zx::vmo vmo;
+  ASSERT_OK(zx::vmo::create(zx_system_get_page_size(), 0, &vmo));
+  fdf::Arena arena('TEST');
+  client_.buffer(arena)
+      ->RegisterVmo(0, 0, std::move(vmo), 0, zx_system_get_page_size(),
+                    fuchsia_hardware_sdmmc::SdmmcVmoRight::kWrite)
+      .ThenExactlyOnce([](auto& result) {
+        ASSERT_TRUE(result.ok());
+        EXPECT_TRUE(result->is_ok());
+      });
+  driver_test().runtime().RunUntilIdle();
+
+  driver_test().RunInEnvironmentTypeContext([&](Environment& env) {
+    PresentState::Get().FromValue(0).set_command_inhibit_dat(1).WriteTo(&env.mmio());
+  });
+
+  {
+    fuchsia_hardware_sdmmc::wire::SdmmcBufferRegion buffer = {
+        .buffer = fuchsia_hardware_sdmmc::wire::SdmmcBuffer::WithVmoId(0),
+        .offset = 0,
+        .size = 512,
+    };
+
+    fuchsia_hardware_sdmmc::wire::SdmmcReq request = {
+        .cmd_idx = SDMMC_READ_BLOCK,
+        .cmd_flags = SDMMC_READ_BLOCK_FLAGS,
+        .arg = 1,
+        .blocksize = 512,
+        .suppress_error_messages = false,
+        .client_id = 0,
+        .buffers = fidl::VectorView<fuchsia_hardware_sdmmc::wire::SdmmcBufferRegion>::FromExternal(
+            &buffer, 1),
+    };
+
+    client_.buffer(arena)
+        ->Request(
+            fidl::VectorView<fuchsia_hardware_sdmmc::wire::SdmmcReq>::FromExternal(&request, 1))
+        .ThenExactlyOnce([](auto& result) {
+          ASSERT_TRUE(result.ok());
+          ASSERT_TRUE(result.ok());
+          // The request should fail due to inhibit dat being set.
+          ASSERT_TRUE(result->is_error());
+          EXPECT_EQ(result->error_value(), ZX_ERR_TIMED_OUT);
+        });
+  }
+
+  {
+    fuchsia_hardware_sdmmc::wire::SdmmcReq request = {
+        .cmd_idx = SDMMC_ERASE,  // Choose a command with R1b but no data.
+        .cmd_flags = SDMMC_ERASE_FLAGS,
+        .arg = 1,
+        .suppress_error_messages = false,
+        .client_id = 0,
+    };
+
+    client_.buffer(arena)
+        ->Request(
+            fidl::VectorView<fuchsia_hardware_sdmmc::wire::SdmmcReq>::FromExternal(&request, 1))
+        .ThenExactlyOnce([](auto& result) {
+          ASSERT_TRUE(result.ok());
+          ASSERT_TRUE(result.ok());
+          // The request should fail due to inhibit dat being set.
+          ASSERT_TRUE(result->is_error());
+          EXPECT_EQ(result->error_value(), ZX_ERR_TIMED_OUT);
+        });
+  }
+
+  driver_test().runtime().RunUntilIdle();
+
+  ASSERT_OK(StopDriver());
+}
+
+TEST_F(SdhciTest, InhibitDatIgnoreForAbort) {
+  driver_test().RunInEnvironmentTypeContext([&](Environment& env) {
+    Capabilities0::Get()
+        .FromValue(0)
+        .set_adma2_support(1)
+        .set_v3_64_bit_system_address_support(1)
+        .WriteTo(&env.mmio());
+  });
+
+  ASSERT_OK(StartDriver());
+
+  driver_test().RunInEnvironmentTypeContext([&](Environment& env) {
+    PresentState::Get().FromValue(0).set_command_inhibit_dat(1).WriteTo(&env.mmio());
+  });
+
+  fuchsia_hardware_sdmmc::wire::SdmmcReq request = {
+      .cmd_idx = SDMMC_STOP_TRANSMISSION,
+      .cmd_flags = SDMMC_STOP_TRANSMISSION_FLAGS,
+      .arg = 0,
+      .suppress_error_messages = false,
+      .client_id = 0,
+  };
+
+  fdf::Arena arena('TEST');
+  client_.buffer(arena)
+      ->Request(fidl::VectorView<fuchsia_hardware_sdmmc::wire::SdmmcReq>::FromExternal(&request, 1))
+      .ThenExactlyOnce([](auto& result) {
+        ASSERT_TRUE(result.ok());
+        // The request should succeed despite inhibit cmd being set.
+        ASSERT_TRUE(result->is_ok());
+      });
+  driver_test().runtime().RunUntilIdle();
+
+  ASSERT_OK(StopDriver());
+}
+
 }  // namespace sdhci
 
 FUCHSIA_DRIVER_EXPORT(sdhci::TestSdhci);

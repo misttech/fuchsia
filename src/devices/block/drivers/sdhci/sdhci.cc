@@ -521,10 +521,13 @@ zx::result<Sdhci::PendingRequest> Sdhci::StartRequest(
     DmaDescriptorBuilder<OwnedVmoInfo>& builder) {
   // Every command requires that the Command Inhibit is unset.
   auto inhibit_mask = PresentState::Get().FromValue(0).set_command_inhibit_cmd(1);
+  if (request.cmd_flags & SDMMC_RESP_DATA_PRESENT) {
+    inhibit_mask.set_command_inhibit_dat(1);
+  }
 
   // Busy type commands must also wait for the DATA Inhibit to be 0 UNLESS
   // it's an abort command which can be issued with the data lines active.
-  if ((request.cmd_flags & SDMMC_RESP_LEN_48B) && (request.cmd_flags & SDMMC_CMD_TYPE_ABORT)) {
+  if ((request.cmd_flags & SDMMC_RESP_LEN_48B) && !(request.cmd_flags & SDMMC_CMD_TYPE_ABORT)) {
     inhibit_mask.set_command_inhibit_dat(1);
   }
 
