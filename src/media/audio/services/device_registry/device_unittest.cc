@@ -1147,7 +1147,7 @@ TEST_F(CompositeTest, Reset) {
 
     std::stringstream stream;
     stream << "Validating CreateRingBuffer on element_id " << element_id << " with format "
-           << *safe_format.pcm_format();
+           << safe_format.pcm_format().value();
     SCOPED_TRACE(stream.str());
 
     uint32_t requested_ring_buffer_bytes = 2000;
@@ -1194,10 +1194,10 @@ TEST_F(CompositeTest, Reset) {
 //
 // Creating a RingBuffer should succeed.
 void CompositeTest::TestCreateRingBuffer(const std::shared_ptr<Device>& device,
-                                         ElementId element_id, const fha::Format& safe_format) {
+                                         ElementId element_id, const fha::Format2& safe_format) {
   std::stringstream stream;
   stream << "Validating CreateRingBuffer on element_id " << element_id << " with format "
-         << *safe_format.pcm_format();
+         << safe_format.pcm_format().value();
   SCOPED_TRACE(stream.str());
 
   uint32_t requested_ring_buffer_bytes = 4000;

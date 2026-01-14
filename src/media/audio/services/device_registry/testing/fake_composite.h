@@ -135,13 +135,13 @@ class FakeComposite final
   static const fuchsia_hardware_audio::PcmSupportedFormats kDefaultPcmRingBufferFormatSet;
   static const fuchsia_hardware_audio::PcmSupportedFormats kDefaultPcmRingBufferFormatSet2;
 
-  static const fuchsia_hardware_audio::SupportedFormats kDefaultRbFormatSet;
-  static const fuchsia_hardware_audio::SupportedFormats kDefaultRbFormatSet2;
+  static const fuchsia_hardware_audio::SupportedFormats2 kDefaultRbFormatSet;
+  static const fuchsia_hardware_audio::SupportedFormats2 kDefaultRbFormatSet2;
 
-  static const std::vector<fuchsia_hardware_audio::SupportedFormats> kDefaultRbFormatSets;
-  static const std::vector<fuchsia_hardware_audio::SupportedFormats> kDefaultRbFormatSets2;
+  static const std::vector<fuchsia_hardware_audio::SupportedFormats2> kDefaultRbFormatSets;
+  static const std::vector<fuchsia_hardware_audio::SupportedFormats2> kDefaultRbFormatSets2;
 
-  static const std::unordered_map<ElementId, std::vector<fuchsia_hardware_audio::SupportedFormats>>
+  static const std::unordered_map<ElementId, std::vector<fuchsia_hardware_audio::SupportedFormats2>>
       kDefaultRbFormatsMap;
 
   static const fuchsia_hardware_audio::PcmFormat kDefaultRbFormat;

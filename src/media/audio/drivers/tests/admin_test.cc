@@ -200,8 +200,10 @@ void AdminTest::RequestRingBufferChannel() {
 
     // If a ring_buffer_id exists, request it - but don't fail if the driver has no ring buffer.
     if (ring_buffer_id().has_value()) {
+      fuchsia::hardware::audio::Format2 format2;
+      format2.set_pcm_format(std::move(*rb_format.mutable_pcm_format()));
       composite()->CreateRingBuffer(
-          *ring_buffer_id(), std::move(rb_format), ring_buffer_handle.NewRequest(),
+          *ring_buffer_id(), std::move(format2), ring_buffer_handle.NewRequest(),
           // Unlike in other driver types, Composite::CreateRingBuffer has a completion. However,
           // a client need not actually wait for this completion before using the ring_buffer.
           // For sequences such as Composite::CreateRingBuffer > RingBuffer::GetProperties,
@@ -421,8 +423,8 @@ void AdminTest::RetrieveRingBufferFormats() {
                     for (size_t i = 0; i < supported_formats.size(); ++i) {
                       SCOPED_TRACE(testing::Message()
                                    << "Composite supported_formats[" << i << "]");
-                      ASSERT_TRUE(supported_formats[i].has_pcm_supported_formats());
-                      auto& format_set = *supported_formats[i].mutable_pcm_supported_formats();
+                      ASSERT_TRUE(supported_formats[i].is_pcm_supported_formats());
+                      auto& format_set = supported_formats[i].pcm_supported_formats();
                       ring_buffer_pcm_formats().push_back(std::move(format_set));
                     }
                   }));

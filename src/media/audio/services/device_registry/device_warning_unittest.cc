@@ -64,11 +64,11 @@ class CompositeWarningTest : public CompositeTest {
   // Creating a RingBuffer should fail with `expected_error`.
   void ExpectCreateRingBufferError(const std::shared_ptr<Device>& device, ElementId element_id,
                                    fad::ControlCreateRingBufferError expected_error,
-                                   const fha::Format& format,
+                                   const fha::Format2& format,
                                    uint32_t requested_ring_buffer_bytes = 1024) {
     std::stringstream stream;
     stream << "Validating CreateRingBuffer on element_id " << element_id << " with format "
-           << *format.pcm_format();
+           << format.pcm_format().value();
     SCOPED_TRACE(stream.str());
 
     auto response_received = false;
@@ -351,15 +351,13 @@ TEST_F(CodecWarningTest, CreateRingBufferWrongDeviceType) {
   ASSERT_EQ(device_presence_watcher()->error_devices().size(), 0u);
   ASSERT_TRUE(device->is_operational());
   ASSERT_TRUE(SetControl(device));
-  auto format = fha::Format{{
-      fha::PcmFormat{{
-          .number_of_channels = 1,
-          .sample_format = fha::SampleFormat::kPcmSigned,
-          .bytes_per_sample = 2u,
-          .valid_bits_per_sample = 16,
-          .frame_rate = 48000,
-      }},
-  }};
+  auto format = fha::Format2::WithPcmFormat(fha::PcmFormat{{
+      .number_of_channels = 1,
+      .sample_format = fha::SampleFormat::kPcmSigned,
+      .bytes_per_sample = 2u,
+      .valid_bits_per_sample = 16,
+      .frame_rate = 48000,
+  }});
   int32_t min_bytes = 100;
   bool callback_received = false;
   auto received_error = fad::ControlCreateRingBufferError(0);
@@ -989,7 +987,7 @@ TEST_F(CompositeWarningTest, CreateRingBufferInvalidFormat) {
     fake_driver->ReserveRingBufferSize(ring_buffer_id, 8192);
     auto invalid_format = SafeDriverRingBufferFormatFromElementDriverRingBufferFormatSets(
         ring_buffer_id, ring_buffer_format_sets_by_element);
-    invalid_format.pcm_format()->number_of_channels(0);
+    invalid_format.pcm_format().value().number_of_channels(0);
 
     ExpectCreateRingBufferError(device, ring_buffer_id,
                                 fad::ControlCreateRingBufferError::kInvalidFormat, invalid_format);
@@ -1010,7 +1008,8 @@ TEST_F(CompositeWarningTest, CreateRingBufferUnsupportedFormat) {
     fake_driver->ReserveRingBufferSize(ring_buffer_id, 8192);
     auto unsupported_format = SafeDriverRingBufferFormatFromElementDriverRingBufferFormatSets(
         ring_buffer_id, ring_buffer_format_sets_by_element);
-    unsupported_format.pcm_format()->frame_rate(unsupported_format.pcm_format()->frame_rate() - 1);
+    unsupported_format.pcm_format().value().frame_rate(
+        unsupported_format.pcm_format().value().frame_rate() - 1);
 
     ExpectCreateRingBufferError(device, ring_buffer_id,
                                 fad::ControlCreateRingBufferError::kFormatMismatch,

@@ -146,7 +146,7 @@ class VirtualAudioComposite
   // ring-buffer state
   bool ring_buffer_vmo_fetched_ = false;
   bool ring_buffer_started_ = false;
-  std::optional<fuchsia_hardware_audio::Format> ring_buffer_format_;
+  std::optional<fuchsia_hardware_audio::Format2> ring_buffer_format_;
   uint64_t ring_buffer_active_channel_mask_;
   zx::time active_channel_set_time_;
 

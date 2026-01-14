@@ -59,7 +59,7 @@ class DeviceTestBase : public gtest::TestLoopFixture {
   }
 
   static bool HasRingBuffer(const std::shared_ptr<Device>& device, ElementId element_id) {
-    return device->ring_buffer_map_.find(element_id) != device->ring_buffer_map_.end();
+    return device->ring_buffer_map_.contains(element_id);
   }
 
   static bool RingBufferIsCreatingOrStopped(const std::shared_ptr<Device>& device,
@@ -248,13 +248,13 @@ class DeviceTestBase : public gtest::TestLoopFixture {
 
     std::optional<fuchsia_hardware_audio::DaiFormat> dai_format(
         ElementId element_id = fuchsia_audio_device::kDefaultDaiInterconnectElementId) {
-      if (dai_formats_.find(element_id) == dai_formats_.end()) {
+      if (!dai_formats_.contains(element_id)) {
         return std::nullopt;
       }
       return dai_formats_.at(element_id);
     }
     std::optional<fuchsia_hardware_audio::CodecFormatInfo> codec_format_info(ElementId element_id) {
-      if (codec_format_infos_.find(element_id) == codec_format_infos_.end()) {
+      if (!codec_format_infos_.contains(element_id)) {
         return std::nullopt;
       }
       return codec_format_infos_.at(element_id);
@@ -413,7 +413,7 @@ class CompositeTest : public DeviceTestBase {
  protected:
   static inline const std::string kClassName = "CompositeTest";
   static const std::vector<
-      std::pair<ElementId, std::vector<fuchsia_hardware_audio::SupportedFormats>>>&
+      std::pair<ElementId, std::vector<fuchsia_hardware_audio::SupportedFormats2>>>&
   ElementDriverRingBufferFormatSets(const std::shared_ptr<Device>& device) {
     return device->element_driver_ring_buffer_format_sets_;
   }
@@ -451,7 +451,7 @@ class CompositeTest : public DeviceTestBase {
   }
 
   void TestCreateRingBuffer(const std::shared_ptr<Device>& device, ElementId element_id,
-                            const fuchsia_hardware_audio::Format& safe_format);
+                            const fuchsia_hardware_audio::Format2& safe_format);
 
   bool ExpectDaiFormatMatches(ElementId dai_id,
                               const fuchsia_hardware_audio::DaiFormat& dai_format) {

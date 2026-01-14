@@ -69,13 +69,18 @@ bool ClientIsValidForDeviceType(const fad::DeviceType& device_type,
 
 // Translate from fuchsia_hardware_audio::SupportedFormats to fuchsia_audio_device::PcmFormatSet.
 std::vector<fad::PcmFormatSet> TranslateRingBufferFormatSets(
-    const std::vector<fha::SupportedFormats>& ring_buffer_format_sets) {
+    const std::vector<fha::SupportedFormats2>& ring_buffer_format_sets) {
   // translated_ring_buffer_format_sets is more complex to copy, since fuchsia_audio_device defines
   // its tables from scratch instead of reusing types from fuchsia_hardware_audio. We build from the
   // inside-out: populating attributes then channel_sets then translated_ring_buffer_format_sets.
   std::vector<fad::PcmFormatSet> translated_ring_buffer_format_sets;
   for (auto& ring_buffer_format_set : ring_buffer_format_sets) {
-    auto& pcm_formats = *ring_buffer_format_set.pcm_supported_formats();
+    if (ring_buffer_format_set.Which() != fha::SupportedFormats2::Tag::kPcmSupportedFormats) {
+      FX_LOGS(WARNING) << "TranslateRingBufferFormatSets: ignored unsupported format set type "
+                       << static_cast<uint32_t>(ring_buffer_format_set.Which());
+      continue;
+    }
+    auto& pcm_formats = ring_buffer_format_set.pcm_supported_formats().value();
 
     const uint32_t max_format_rate =
         *std::max_element(pcm_formats.frame_rates()->begin(), pcm_formats.frame_rates()->end());
@@ -150,7 +155,7 @@ std::vector<fad::PcmFormatSet> TranslateRingBufferFormatSets(
 }
 
 bool ValidateRingBufferFormatSets(
-    const std::vector<fha::SupportedFormats>& ring_buffer_format_sets) {
+    const std::vector<fha::SupportedFormats2>& ring_buffer_format_sets) {
   LogRingBufferFormatSets(ring_buffer_format_sets);
 
   if (ring_buffer_format_sets.empty()) {
@@ -159,11 +164,12 @@ bool ValidateRingBufferFormatSets(
   }
 
   for (const auto& rb_format_set : ring_buffer_format_sets) {
-    if (!rb_format_set.pcm_supported_formats().has_value()) {
-      FX_LOGS(WARNING) << "GetSupportedFormats: pcm_supported_formats is absent";
+    if (rb_format_set.Which() != fha::SupportedFormats2::Tag::kPcmSupportedFormats) {
+      FX_LOGS(WARNING) << "GetSupportedFormats: pcm_supported_formats is absent (tag "
+                       << static_cast<uint32_t>(rb_format_set.Which()) << ")";
       return false;
     }
-    const auto& pcm_format_set = *rb_format_set.pcm_supported_formats();
+    const auto& pcm_format_set = rb_format_set.pcm_supported_formats().value();
 
     // Frame rates
     if (!pcm_format_set.frame_rates().has_value() || pcm_format_set.frame_rates()->empty()) {
@@ -649,14 +655,14 @@ bool ValidateRingBufferProperties(const fha::RingBufferProperties& rb_props) {
   return true;
 }
 
-bool ValidateRingBufferFormat(const fha::Format& ring_buffer_format) {
+bool ValidateRingBufferFormat(const fha::Format2& ring_buffer_format) {
   ADR_LOG(kLogDeviceMethods);
   LogRingBufferFormat(ring_buffer_format);
-  if (!ring_buffer_format.pcm_format().has_value()) {
+  if (ring_buffer_format.Which() != fha::Format2::Tag::kPcmFormat) {
     FX_LOGS(WARNING) << "ring_buffer_format must set pcm_format";
     return false;
   }
-  auto& pcm_format = *ring_buffer_format.pcm_format();
+  auto& pcm_format = ring_buffer_format.pcm_format().value();
   if (pcm_format.number_of_channels() == 0) {
     FX_LOGS(WARNING) << "RingBuffer number_of_channels is too low";
     return false;
@@ -722,7 +728,7 @@ bool ValidateSampleFormatCompatibility(uint8_t bytes_per_sample, fha::SampleForm
   return false;
 }
 
-bool ValidateRingBufferVmo(const zx::vmo& vmo, uint32_t num_frames, const fha::Format& rb_format,
+bool ValidateRingBufferVmo(const zx::vmo& vmo, uint32_t num_frames, const fha::Format2& rb_format,
                            zx_rights_t required_rights) {
   ADR_LOG(kLogDeviceMethods);
   LogRingBufferVmo(vmo, num_frames, rb_format);

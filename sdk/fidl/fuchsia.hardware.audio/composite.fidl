@@ -189,12 +189,12 @@ open protocol Composite {
     /// by `GetElements`.
     /// Returns `WRONG_TYPE` if the `ElementType` of the element represented by the id is not
     /// `RING_BUFFER`.
-    /// Retrieving multiple `SupportedFormats` allows for cases where exclusive combinations of
-    /// the parameters in `SupportedFormats` may be supported.
+    /// Retrieving multiple `SupportedFormats2` allows for cases where exclusive combinations of
+    /// the parameters in `SupportedFormats2` may be supported.
     flexible GetRingBufferFormats(struct {
         processing_element_id ElementId;
     }) -> (struct {
-        ring_buffer_formats vector<SupportedFormats>:MAX_COUNT_FORMATS;
+        ring_buffer_formats vector<SupportedFormats2>:MAX_COUNT_FORMATS;
     }) error DriverError;
 
     /// `CreateRingBuffer` is sent by clients to select a ring buffer format for the `RING_BUFFER`
@@ -208,7 +208,7 @@ open protocol Composite {
     /// `RING_BUFFER`.
     flexible CreateRingBuffer(resource struct {
         processing_element_id ElementId;
-        format Format;
+        format Format2;
         ring_buffer server_end:RingBuffer;
     }) -> () error DriverError;
 
@@ -222,7 +222,7 @@ open protocol Composite {
     /// Returns `WRONG_TYPE` if the `ElementType` of the element represented by the id is not
     /// `DAI_INTERCONNECT`.
     /// Retrieving multiple `DaiSupportedFormats` allows for cases where exclusive combinations of
-    /// the parameters in SupportedFormats may be supported.
+    /// the parameters in DaiSupportedFormats may be supported.
     flexible GetDaiFormats(struct {
         processing_element_id ElementId;
     }) -> (struct {

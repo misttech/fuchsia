@@ -22,7 +22,7 @@ bool RingBufferFormatIsSupported(
     ElementId element_id,
     const std::vector<fuchsia_audio_device::ElementRingBufferFormatSet>&
         element_ring_buffer_format_sets,
-    const fuchsia_hardware_audio::Format& format);
+    const fuchsia_hardware_audio::Format2& format);
 
 }  // namespace media_audio
 

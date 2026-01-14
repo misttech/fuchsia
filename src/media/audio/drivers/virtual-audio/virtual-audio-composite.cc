@@ -165,7 +165,7 @@ void VirtualAudioComposite::GetFormat(GetFormatCompleter::Sync& completer) {
     return;
   }
 
-  auto& pcm_format = ring_buffer_format_->pcm_format();
+  auto pcm_format = ring_buffer_format_->pcm_format();
   auto& ring_buffer = GetRingBuffer(kRingBufferId);
   int64_t external_delay = 0;
   if (ring_buffer.external_delay().has_value()) {
@@ -370,7 +370,7 @@ void VirtualAudioComposite::GetRingBufferFormats(GetRingBufferFormatsRequest& re
     completer.Reply(zx::error(fuchsia_hardware_audio::DriverError::kInvalidArgs));
     return;
   }
-  std::vector<fuchsia_hardware_audio::SupportedFormats> all_formats;
+  std::vector<fuchsia_hardware_audio::SupportedFormats2> all_formats;
   auto& ring_buffer = GetRingBuffer(request.processing_element_id());
   for (auto& formats : ring_buffer.supported_formats().value()) {
     fuchsia_hardware_audio::PcmSupportedFormats pcm_formats;
@@ -417,8 +417,8 @@ void VirtualAudioComposite::GetRingBufferFormats(GetRingBufferFormatsRequest& re
       pcm_formats2.sample_formats(std::move(sample_formats));
       pcm_formats2.bytes_per_sample(std::move(bytes_per_sample));
       pcm_formats2.valid_bits_per_sample(std::move(valid_bits_per_sample));
-      fuchsia_hardware_audio::SupportedFormats formats_entry;
-      formats_entry.pcm_supported_formats(std::move(pcm_formats2));
+      auto formats_entry = fuchsia_hardware_audio::SupportedFormats2::WithPcmSupportedFormats(
+          std::move(pcm_formats2));
       all_formats.push_back(std::move(formats_entry));
     }
   }
@@ -443,7 +443,12 @@ void VirtualAudioComposite::CreateRingBuffer(CreateRingBufferRequest& request,
     completer.Reply(zx::error(fuchsia_hardware_audio::DriverError::kInvalidArgs));
     return;
   }
-  ring_buffer_format_.emplace(std::move(request.format()));
+  if (request.format().Which() != fuchsia_hardware_audio::Format2::Tag::kPcmFormat) {
+    fdf::error("CreateRingBuffer: non-PCM formats not supported");
+    completer.Reply(zx::error(fuchsia_hardware_audio::DriverError::kNotSupported));
+    return;
+  }
+  ring_buffer_format_.emplace(request.format());
   ring_buffer_active_channel_mask_ =
       (1 << ring_buffer_format_->pcm_format()->number_of_channels()) - 1;
   active_channel_set_time_ = zx::clock::get_monotonic();

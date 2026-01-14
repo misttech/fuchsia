@@ -288,12 +288,10 @@ class AmlG12CompositeTest : public testing::Test {
         48'000, 32, 16);
   }
 
-  static fuchsia_hardware_audio::Format GetDefaultRingBufferFormat() {
+  static fuchsia_hardware_audio::Format2 GetDefaultRingBufferFormat() {
     fuchsia_hardware_audio::PcmFormat pcm_format{
         2, fuchsia_hardware_audio::SampleFormat::kPcmSigned, 2, 16, 48'000};
-    fuchsia_hardware_audio::Format format;
-    format.pcm_format(std::move(pcm_format));
-    return format;
+    return fuchsia_hardware_audio::Format2::WithPcmFormat(std::move(pcm_format));
   }
 
   bool IsFakeClockGateEnabled() {
@@ -875,8 +873,8 @@ TEST_F(AmlG12CompositeTest, GetRingBufferFormats) {
     ASSERT_GE(1, ring_buffer_formats_result->ring_buffer_formats().size());
     // Only 2 bytes per sample supported.
     auto& first_format = ring_buffer_formats_result->ring_buffer_formats()[0];
-    ASSERT_TRUE(first_format.pcm_supported_formats());
-    auto& first_pcm_format = *first_format.pcm_supported_formats();
+    ASSERT_TRUE(first_format.pcm_supported_formats().has_value());
+    auto& first_pcm_format = first_format.pcm_supported_formats().value();
     ASSERT_TRUE(first_pcm_format.bytes_per_sample());
     ASSERT_EQ(1, first_pcm_format.bytes_per_sample()->size());
     ASSERT_EQ(2, (*first_pcm_format.bytes_per_sample())[0]);
@@ -902,48 +900,57 @@ TEST_F(AmlG12CompositeTest, CreateRingBuffer) {
   }
   // Any Ring Buffer field not in the supported ones returns an error.
   {
-    auto format = GetDefaultRingBufferFormat();
-    format.pcm_format()->number_of_channels(123);  // Bad number of channels.
+    auto pcm_format = GetDefaultRingBufferFormat().pcm_format().value();
+    pcm_format.number_of_channels(123);  // Bad number of channels.
     auto endpoints = fidl::CreateEndpoints<fuchsia_hardware_audio::RingBuffer>();
     fuchsia_hardware_audio::CompositeCreateRingBufferRequest request(
-        kEngineARingBufferIdOutput, std::move(format), std::move(endpoints->server));
+        kEngineARingBufferIdOutput,
+        fuchsia_hardware_audio::Format2::WithPcmFormat(std::move(pcm_format)),
+        std::move(endpoints->server));
     auto ring_buffer_result = client()->CreateRingBuffer(std::move(request));
     ASSERT_FALSE(ring_buffer_result.is_ok());
   }
   {
-    auto format = GetDefaultRingBufferFormat();
-    format.pcm_format()->sample_format(
-        fuchsia_hardware_audio::SampleFormat::kPcmFloat);  // Bad format.
+    auto pcm_format = GetDefaultRingBufferFormat().pcm_format().value();
+    pcm_format.sample_format(fuchsia_hardware_audio::SampleFormat::kPcmFloat);  // Bad format.
     auto endpoints = fidl::CreateEndpoints<fuchsia_hardware_audio::RingBuffer>();
     fuchsia_hardware_audio::CompositeCreateRingBufferRequest request(
-        kEngineARingBufferIdOutput, std::move(format), std::move(endpoints->server));
+        kEngineARingBufferIdOutput,
+        fuchsia_hardware_audio::Format2::WithPcmFormat(std::move(pcm_format)),
+        std::move(endpoints->server));
     auto ring_buffer_result = client()->CreateRingBuffer(std::move(request));
     ASSERT_FALSE(ring_buffer_result.is_ok());
   }
   {
-    auto format = GetDefaultRingBufferFormat();
-    format.pcm_format()->bytes_per_sample(123);  // Bad bytes per sample.
+    auto pcm_format = GetDefaultRingBufferFormat().pcm_format().value();
+    pcm_format.bytes_per_sample(123);  // Bad bytes per sample.
     auto endpoints = fidl::CreateEndpoints<fuchsia_hardware_audio::RingBuffer>();
     fuchsia_hardware_audio::CompositeCreateRingBufferRequest request(
-        kEngineARingBufferIdOutput, std::move(format), std::move(endpoints->server));
+        kEngineARingBufferIdOutput,
+        fuchsia_hardware_audio::Format2::WithPcmFormat(std::move(pcm_format)),
+        std::move(endpoints->server));
     auto ring_buffer_result = client()->CreateRingBuffer(std::move(request));
     ASSERT_FALSE(ring_buffer_result.is_ok());
   }
   {
-    auto format = GetDefaultRingBufferFormat();
-    format.pcm_format()->valid_bits_per_sample(123);  // Bad valid bits per sample.
+    auto pcm_format = GetDefaultRingBufferFormat().pcm_format().value();
+    pcm_format.valid_bits_per_sample(123);  // Bad valid bits per sample.
     auto endpoints = fidl::CreateEndpoints<fuchsia_hardware_audio::RingBuffer>();
     fuchsia_hardware_audio::CompositeCreateRingBufferRequest request(
-        kEngineARingBufferIdOutput, std::move(format), std::move(endpoints->server));
+        kEngineARingBufferIdOutput,
+        fuchsia_hardware_audio::Format2::WithPcmFormat(std::move(pcm_format)),
+        std::move(endpoints->server));
     auto ring_buffer_result = client()->CreateRingBuffer(std::move(request));
     ASSERT_FALSE(ring_buffer_result.is_ok());
   }
   {
-    auto format = GetDefaultRingBufferFormat();
-    format.pcm_format()->frame_rate(123);  // Bad frame rate.
+    auto pcm_format = GetDefaultRingBufferFormat().pcm_format().value();
+    pcm_format.frame_rate(123);  // Bad frame rate.
     auto endpoints = fidl::CreateEndpoints<fuchsia_hardware_audio::RingBuffer>();
     fuchsia_hardware_audio::CompositeCreateRingBufferRequest request(
-        kEngineARingBufferIdOutput, std::move(format), std::move(endpoints->server));
+        kEngineARingBufferIdOutput,
+        fuchsia_hardware_audio::Format2::WithPcmFormat(std::move(pcm_format)),
+        std::move(endpoints->server));
     auto ring_buffer_result = client()->CreateRingBuffer(std::move(request));
     ASSERT_FALSE(ring_buffer_result.is_ok());
   }
@@ -966,9 +973,11 @@ class AmlG12CompositeRingBufferTest : public AmlG12CompositeTest {
   fidl::SyncClient<fuchsia_hardware_audio::RingBuffer> GetRingBufferClientReadyForSetActiveChannels(
       fuchsia_hardware_audio::ElementId id, uint32_t number_of_channels) {
     auto endpoints = fidl::CreateEndpoints<fuchsia_hardware_audio::RingBuffer>();
-    fuchsia_hardware_audio::Format format = GetDefaultRingBufferFormat();
-    format.pcm_format()->number_of_channels(number_of_channels);
-    fuchsia_hardware_audio::CompositeCreateRingBufferRequest request(id, format,
+    auto pcm_format = GetDefaultRingBufferFormat().pcm_format().value();
+    pcm_format.number_of_channels(number_of_channels);
+    fuchsia_hardware_audio::Format2 format =
+        fuchsia_hardware_audio::Format2::WithPcmFormat(std::move(pcm_format));
+    fuchsia_hardware_audio::CompositeCreateRingBufferRequest request(id, std::move(format),
                                                                      std::move(endpoints->server));
     auto ring_buffer_result = client()->CreateRingBuffer(std::move(request));
     ZX_ASSERT(ring_buffer_result.is_ok());
@@ -1013,9 +1022,9 @@ class AmlG12CompositeRingBufferTest : public AmlG12CompositeTest {
 
     uint64_t vmo_size;
     ASSERT_EQ(ZX_OK, get_vmo_result->ring_buffer().get_size(&vmo_size));
-    fuchsia_hardware_audio::Format format = GetDefaultRingBufferFormat();
-    uint32_t frame_size =
-        format.pcm_format()->number_of_channels() * format.pcm_format()->bytes_per_sample();
+    fuchsia_hardware_audio::Format2 format = GetDefaultRingBufferFormat();
+    auto& pcm_format = format.pcm_format().value();
+    uint32_t frame_size = pcm_format.number_of_channels() * pcm_format.bytes_per_sample();
     ASSERT_GE(vmo_size, kMinFrames * frame_size);
   }
 

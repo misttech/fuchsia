@@ -132,8 +132,8 @@ void LogTranslatedRingBufferFormatSets(
 void LogTranslatedRingBufferFormatSet(
     const fuchsia_audio_device::PcmFormatSet& translated_ring_buffer_format_set);
 void LogRingBufferFormatSets(
-    const std::vector<fuchsia_hardware_audio::SupportedFormats>& ring_buffer_format_sets);
-void LogRingBufferFormat(const fuchsia_hardware_audio::Format& ring_buffer_format);
+    const std::vector<fuchsia_hardware_audio::SupportedFormats2>& ring_buffer_format_sets);
+void LogRingBufferFormat(const fuchsia_hardware_audio::Format2& ring_buffer_format);
 
 void LogElementDaiFormatSets(
     const std::vector<fuchsia_audio_device::ElementDaiFormatSet>& element_dai_format_sets);
@@ -145,7 +145,7 @@ void LogDaiFormat(std::optional<fuchsia_hardware_audio::DaiFormat> dai_format);
 
 void LogRingBufferProperties(const fuchsia_hardware_audio::RingBufferProperties& rb_props);
 void LogRingBufferVmo(const zx::vmo& vmo, uint32_t num_frames,
-                      fuchsia_hardware_audio::Format rb_format);
+                      fuchsia_hardware_audio::Format2 rb_format);
 void LogDelayInfo(const fuchsia_hardware_audio::DelayInfo& info);
 void LogActiveChannels(uint64_t channel_bitmask, zx::time set_time);
 

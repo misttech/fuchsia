@@ -631,12 +631,12 @@ void LogTranslatedRingBufferFormatSet(const fad::PcmFormatSet& translated_ring_b
   }
 }
 
-void LogRingBufferFormatSets(const std::vector<fha::SupportedFormats>& ring_buffer_format_sets) {
+void LogRingBufferFormatSets(const std::vector<fha::SupportedFormats2>& ring_buffer_format_sets) {
   if constexpr (!kLogCompositeFidlResponseValues) {
     return;
   }
 
-  FX_LOGS(INFO) << "fuchsia_hardware_audio/SupportedFormats";
+  FX_LOGS(INFO) << "fuchsia_hardware_audio/SupportedFormats2";
   FX_LOGS(INFO) << "    ring_buffer_format_sets [" << ring_buffer_format_sets.size() << "]";
   for (auto idx = 0u; idx < ring_buffer_format_sets.size(); ++idx) {
     const auto& ring_buffer_format_set = ring_buffer_format_sets[idx];
@@ -645,7 +645,7 @@ void LogRingBufferFormatSets(const std::vector<fha::SupportedFormats>& ring_buff
       continue;
     }
     FX_LOGS(INFO) << "      [" << idx << "] pcm_supported_formats";
-    const auto& pcm_format_set = *ring_buffer_format_set.pcm_supported_formats();
+    auto pcm_format_set = ring_buffer_format_set.pcm_supported_formats().value();
     if (pcm_format_set.channel_sets().has_value()) {
       const auto& channel_sets = *pcm_format_set.channel_sets();
       FX_LOGS(INFO) << "            channel_sets [" << channel_sets.size() << "]";
@@ -1288,12 +1288,12 @@ void LogRingBufferProperties(const fha::RingBufferProperties& rb_props) {
   }
 }
 
-void LogRingBufferFormat(const fha::Format& ring_buffer_format) {
+void LogRingBufferFormat(const fha::Format2& ring_buffer_format) {
   if constexpr (!kLogRingBufferFidlResponseValues) {
     return;
   }
 
-  FX_LOGS(INFO) << "fuchsia_hardware_audio/Format";
+  FX_LOGS(INFO) << "fuchsia_hardware_audio/Format2";
   if (!ring_buffer_format.pcm_format().has_value()) {
     FX_LOGS(INFO) << "    pcm_format           <none> (non-compliant)";
     return;
@@ -1312,7 +1312,7 @@ void LogRingBufferFormat(const fha::Format& ring_buffer_format) {
                 << ring_buffer_format.pcm_format()->frame_rate();
 }
 
-void LogRingBufferVmo(const zx::vmo& vmo, uint32_t num_frames, fha::Format rb_format) {
+void LogRingBufferVmo(const zx::vmo& vmo, uint32_t num_frames, fha::Format2 rb_format) {
   if constexpr (!kLogRingBufferFidlResponseValues) {
     return;
   }
@@ -1341,14 +1341,23 @@ void LogRingBufferVmo(const zx::vmo& vmo, uint32_t num_frames, fha::Format rb_fo
                 << ((info.rights & ZX_RIGHT_SET_PROPERTY) ? " SET_PROPERTY" : "")
                 << ((info.rights & ZX_RIGHT_RESIZE) ? " RESIZE" : "") << " )";
   FX_LOGS(INFO) << "    size                 " << size << " bytes";
-  FX_LOGS(INFO) << "    calculated_size      "
-                << num_frames * rb_format.pcm_format()->number_of_channels() *
-                       rb_format.pcm_format()->bytes_per_sample();
+
+  uint64_t calculated_size = 0;
+  if (rb_format.pcm_format().has_value()) {
+    calculated_size = num_frames * rb_format.pcm_format()->number_of_channels() *
+                      rb_format.pcm_format()->bytes_per_sample();
+  }
+  FX_LOGS(INFO) << "    calculated_size      " << calculated_size;
   FX_LOGS(INFO) << "        num_frames           " << num_frames;
-  FX_LOGS(INFO) << "        num_channels         "
-                << static_cast<uint16_t>(rb_format.pcm_format()->number_of_channels());
-  FX_LOGS(INFO) << "        bytes_per_sample     "
-                << static_cast<uint16_t>(rb_format.pcm_format()->bytes_per_sample());
+  if (rb_format.pcm_format().has_value()) {
+    FX_LOGS(INFO) << "        num_channels         "
+                  << static_cast<uint16_t>(rb_format.pcm_format()->number_of_channels());
+    FX_LOGS(INFO) << "        bytes_per_sample     "
+                  << static_cast<uint16_t>(rb_format.pcm_format()->bytes_per_sample());
+  } else {
+    FX_LOGS(INFO) << "        num_channels         <unknown>";
+    FX_LOGS(INFO) << "        bytes_per_sample     <unknown>";
+  }
 }
 
 void LogActiveChannels(uint64_t channel_bitmask, zx::time set_time) {

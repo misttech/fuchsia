@@ -520,7 +520,8 @@ void RegisterBasicTestsForDevice(const DeviceEntry& device_entry) {
     REGISTER_BASIC_TEST(GetInitialPlugState, device_entry);
     REGISTER_BASIC_TEST(WatchPlugSecondTimeNoResponse, device_entry);
   } else if (device_entry.isComposite()) {
-    // No test cases here.
+    // No test cases here; by definition Composite drivers can have
+    // only one concurrently-connected client.
   } else if (device_entry.isDai()) {
     REGISTER_BASIC_TEST(Health, device_entry);
     REGISTER_BASIC_TEST(GetProperties, device_entry);

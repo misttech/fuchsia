@@ -114,7 +114,7 @@ bool DaiFormatIsSupported(ElementId element_id,
 bool RingBufferFormatIsSupported(
     ElementId element_id,
     const std::vector<fad::ElementRingBufferFormatSet>& element_ring_buffer_format_sets,
-    const fha::Format& format) {
+    const fha::Format2& format) {
   if (!ValidateRingBufferFormat(format)) {
     return false;
   }
@@ -141,32 +141,32 @@ bool RingBufferFormatIsSupported(
     for (auto sample_type : *ring_buffer_format_set.sample_types()) {
       switch (sample_type) {
         case fuchsia_audio::SampleType::kUint8:
-          if (format.pcm_format()->sample_format() == fha::SampleFormat::kPcmUnsigned &&
-              format.pcm_format()->bytes_per_sample() == 1) {
+          if (format.pcm_format().value().sample_format() == fha::SampleFormat::kPcmUnsigned &&
+              format.pcm_format().value().bytes_per_sample() == 1) {
             match = true;
           }
           break;
         case fuchsia_audio::SampleType::kInt16:
-          if (format.pcm_format()->sample_format() == fha::SampleFormat::kPcmSigned &&
-              format.pcm_format()->bytes_per_sample() == 2) {
+          if (format.pcm_format().value().sample_format() == fha::SampleFormat::kPcmSigned &&
+              format.pcm_format().value().bytes_per_sample() == 2) {
             match = true;
           }
           break;
         case fuchsia_audio::SampleType::kInt32:
-          if (format.pcm_format()->sample_format() == fha::SampleFormat::kPcmSigned &&
-              format.pcm_format()->bytes_per_sample() == 4) {
+          if (format.pcm_format().value().sample_format() == fha::SampleFormat::kPcmSigned &&
+              format.pcm_format().value().bytes_per_sample() == 4) {
             match = true;
           }
           break;
         case fuchsia_audio::SampleType::kFloat32:
-          if (format.pcm_format()->sample_format() == fha::SampleFormat::kPcmFloat &&
-              format.pcm_format()->bytes_per_sample() == 4) {
+          if (format.pcm_format().value().sample_format() == fha::SampleFormat::kPcmFloat &&
+              format.pcm_format().value().bytes_per_sample() == 4) {
             match = true;
           }
           break;
         case fuchsia_audio::SampleType::kFloat64:
-          if (format.pcm_format()->sample_format() == fha::SampleFormat::kPcmFloat &&
-              format.pcm_format()->bytes_per_sample() == 8) {
+          if (format.pcm_format().value().sample_format() == fha::SampleFormat::kPcmFloat &&
+              format.pcm_format().value().bytes_per_sample() == 8) {
             match = true;
           }
           break;
@@ -184,7 +184,7 @@ bool RingBufferFormatIsSupported(
     }
     for (auto channel_set : *ring_buffer_format_set.channel_sets()) {
       if (channel_set.attributes().has_value() &&
-          channel_set.attributes()->size() == format.pcm_format()->number_of_channels()) {
+          channel_set.attributes()->size() == format.pcm_format().value().number_of_channels()) {
         match = true;
         break;
       }
@@ -198,7 +198,7 @@ bool RingBufferFormatIsSupported(
       return false;
     }
     for (auto frame_rate : *ring_buffer_format_set.frame_rates()) {
-      if (frame_rate == format.pcm_format()->frame_rate()) {
+      if (frame_rate == format.pcm_format().value().frame_rate()) {
         match = true;
         break;
       }

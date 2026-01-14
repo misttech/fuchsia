@@ -335,8 +335,8 @@ void AudioCompositeServer::GetRingBufferFormats(GetRingBufferFormatsRequest& req
   size_t ring_buffer_index = ring_buffer - kRingBufferIds.begin();
   ZX_ASSERT(ring_buffer_index < kNumberOfTdmEngines);
 
-  fuchsia_hardware_audio::SupportedFormats formats_entry;
-  formats_entry.pcm_supported_formats(supported_ring_buffer_formats_[ring_buffer_index]);
+  auto formats_entry = fuchsia_hardware_audio::SupportedFormats2::WithPcmSupportedFormats(
+      supported_ring_buffer_formats_[ring_buffer_index]);
   completer.Reply(zx::ok(std::vector{std::move(formats_entry)}));
 }
 
@@ -352,7 +352,7 @@ void AudioCompositeServer::CreateRingBuffer(CreateRingBufferRequest& request,
   size_t ring_buffer_index = ring_buffer - kRingBufferIds.begin();
   ZX_ASSERT(ring_buffer_index < kNumberOfTdmEngines);
   auto& supported = supported_ring_buffer_formats_[ring_buffer_index];
-  if (!request.format().pcm_format().has_value()) {
+  if (request.format().Which() != fuchsia_hardware_audio::Format2::Tag::kPcmFormat) {
     FDF_LOG(ERROR, "No PCM formats provided for Ring Buffer id (%lu)",
             request.processing_element_id());
     completer.Reply(zx::error(fuchsia_hardware_audio::DriverError::kInvalidArgs));
@@ -365,7 +365,7 @@ void AudioCompositeServer::CreateRingBuffer(CreateRingBufferRequest& request,
   ZX_ASSERT(supported.valid_bits_per_sample().has_value());
   ZX_ASSERT(supported.frame_rates().has_value());
 
-  auto& requested = *request.format().pcm_format();
+  auto& requested = request.format().pcm_format().value();
 
   bool number_of_channels_found = false;
   for (auto& supported_channel_set : *supported.channel_sets()) {
@@ -757,8 +757,8 @@ void RingBufferServer::GetVmo(
     binding_.Close(ZX_ERR_BAD_STATE);
     return;
   }
-  uint32_t frame_size = engine_.ring_buffer_format.pcm_format()->number_of_channels() *
-                        engine_.ring_buffer_format.pcm_format()->bytes_per_sample();
+  uint32_t frame_size = engine_.ring_buffer_format.pcm_format().value().number_of_channels() *
+                        engine_.ring_buffer_format.pcm_format().value().bytes_per_sample();
   size_t ring_buffer_size = fbl::round_up<size_t, size_t>(
       request.min_frames() * frame_size + engine_.device->fifo_depth(),
       std::lcm(frame_size, engine_.device->GetBufferAlignment()));
@@ -938,10 +938,10 @@ void RingBufferServer::SetActiveChannels(
   auto call_time = zx::clock::get_monotonic();
   // Check if bitmask activating channels go beyond the current number of channels.
   if (request.active_channels_bitmask() &
-      ~((1 << engine_.ring_buffer_format.pcm_format()->number_of_channels()) - 1)) {
+      ~((1 << engine_.ring_buffer_format.pcm_format().value().number_of_channels()) - 1)) {
     FDF_LOG(ERROR, "Bitmask: 0x%lX activating channels beyond the current number of channels: %u",
             request.active_channels_bitmask(),
-            engine_.ring_buffer_format.pcm_format()->number_of_channels());
+            engine_.ring_buffer_format.pcm_format().value().number_of_channels());
     TRACE_INSTANT("power-audio", "aml-g12-audio-composite::SetActiveChannels exit",
                   TRACE_SCOPE_PROCESS, "status", ZX_ERR_INVALID_ARGS, "reason",
                   "Bitmask out of range");

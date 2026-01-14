@@ -1536,7 +1536,7 @@ void Device::RetrieveRingBufferFormatSets() {
 
 void Device::AddRingBufferFormatSet(
     ElementId id, std::shared_ptr<std::unordered_set<ElementId>>& remaining_ring_buffer_ids,
-    const std::vector<fuchsia_hardware_audio::SupportedFormats>& format_set) {
+    const std::vector<fuchsia_hardware_audio::SupportedFormats2>& format_set) {
   std::string context{"GetRingBufferFormats (element "};
   context.append(std::to_string(id)).append(") response");
   if (has_error()) {
@@ -1721,7 +1721,7 @@ zx::result<zx::clock> Device::GetReadOnlyClock() const {
 
 // Determine the full fuchsia_hardware_audio::Format needed for ConnectRingBufferFidl.
 // This method expects that the required fields are present.
-std::optional<fha::Format> Device::SupportedDriverFormatForClientFormat(
+std::optional<fha::Format2> Device::SupportedDriverFormatForClientFormat(
     ElementId element_id, const fuchsia_audio::Format& client_format) {
   fha::SampleFormat driver_sample_format;
   uint8_t bytes_per_sample, max_valid_bits;
@@ -1760,7 +1760,7 @@ std::optional<fha::Format> Device::SupportedDriverFormatForClientFormat(
                       << static_cast<uint32_t>(client_sample_type);
   }
 
-  std::vector<fha::SupportedFormats> driver_ring_buffer_format_sets;
+  std::vector<fha::SupportedFormats2> driver_ring_buffer_format_sets;
   for (const auto& element_entry_pair : element_driver_ring_buffer_format_sets_) {
     if (element_entry_pair.first == element_id) {
       driver_ring_buffer_format_sets = element_entry_pair.second;
@@ -1773,7 +1773,10 @@ std::optional<fha::Format> Device::SupportedDriverFormatForClientFormat(
   // If format/bytes/rate/channels all match, save the highest valid_bits within our limit.
   uint8_t best_valid_bits = 0;
   for (const auto& ring_buffer_format_set : driver_ring_buffer_format_sets) {
-    const auto pcm_format_set = *ring_buffer_format_set.pcm_supported_formats();
+    if (ring_buffer_format_set.Which() != fha::SupportedFormats2::Tag::kPcmSupportedFormats) {
+      continue;
+    }
+    const auto pcm_format_set = ring_buffer_format_set.pcm_supported_formats().value();
     if (std::count_if(
             pcm_format_set.sample_formats()->begin(), pcm_format_set.sample_formats()->end(),
             [driver_sample_format](const auto& f) { return f == driver_sample_format; }) &&
@@ -1807,15 +1810,13 @@ std::optional<fha::Format> Device::SupportedDriverFormatForClientFormat(
       << "successful match for client format: " << channel_count << "-chan " << frame_rate << "hz "
       << client_sample_type << " (valid_bits " << static_cast<uint16_t>(best_valid_bits) << ")";
 
-  return fha::Format{{
-      fha::PcmFormat{{
-          .number_of_channels = static_cast<uint8_t>(channel_count),
-          .sample_format = driver_sample_format,
-          .bytes_per_sample = bytes_per_sample,
-          .valid_bits_per_sample = best_valid_bits,
-          .frame_rate = frame_rate,
-      }},
-  }};
+  return fha::Format2::WithPcmFormat(fha::PcmFormat{{
+      .number_of_channels = static_cast<uint8_t>(channel_count),
+      .sample_format = driver_sample_format,
+      .bytes_per_sample = bytes_per_sample,
+      .valid_bits_per_sample = best_valid_bits,
+      .frame_rate = frame_rate,
+  }});
 }
 
 // If the optional<weak_ptr> is set AND the weak_ptr can be locked to its shared_ptr, then the
@@ -2232,7 +2233,7 @@ bool Device::CodecStop() {
 // This method guarantees to call create_ring_buffer_callback (immediately or asynchronously).
 // For certain unrecoverable errors, OnError is called as well.
 bool Device::CreateRingBuffer(
-    ElementId element_id, const fha::Format& format, uint32_t requested_ring_buffer_bytes,
+    ElementId element_id, const fha::Format2& format, uint32_t requested_ring_buffer_bytes,
     fit::callback<void(fit::result<fad::ControlCreateRingBufferError, Device::RingBufferInfo>)>
         create_ring_buffer_callback) {
   if (!GetControlNotify()) {
@@ -2269,8 +2270,8 @@ bool Device::CreateRingBuffer(
     return false;
   }
 
-  auto bytes_per_sample = format.pcm_format()->bytes_per_sample();
-  auto sample_format = format.pcm_format()->sample_format();
+  auto bytes_per_sample = format.pcm_format().value().bytes_per_sample();
+  auto sample_format = format.pcm_format().value().sample_format();
   if (!ValidateSampleFormatCompatibility(bytes_per_sample, sample_format)) {
     create_ring_buffer_callback(fit::error(fad::ControlCreateRingBufferError::kInvalidFormat));
     return false;
@@ -2306,7 +2307,7 @@ bool Device::CreateRingBuffer(
 }
 
 void Device::ConnectRingBufferFidl(
-    ElementId element_id, fha::Format driver_format,
+    ElementId element_id, fha::Format2 driver_format,
     fit::callback<void(fad::ControlCreateRingBufferError status)> callback) {
   ADR_LOG_METHOD(kLogRingBufferMethods || kLogRingBufferFidlCalls);
 
@@ -2316,8 +2317,9 @@ void Device::ConnectRingBufferFidl(
 
   auto [client_end, server_end] = fidl::Endpoints<fha::RingBuffer>::Create();
 
+  fha::Format2 format2 = driver_format;
   (*composite_client_)
-      ->CreateRingBuffer({element_id, driver_format, std::move(server_end)})
+      ->CreateRingBuffer({element_id, std::move(format2), std::move(server_end)})
       .Then([this, element_id, driver_format, client_end = std::move(client_end),
              callback = std::move(callback)](
                 fidl::Result<fha::Composite::CreateRingBuffer>& result) mutable {

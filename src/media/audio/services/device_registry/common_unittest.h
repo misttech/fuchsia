@@ -65,11 +65,11 @@ fuchsia_audio::Format SafeRingBufferFormatFromElementRingBufferFormatSets(
 fuchsia_audio::Format SafeRingBufferFormatFromRingBufferFormatSets(
     const std::vector<fuchsia_audio_device::PcmFormatSet>& ring_buffer_format_sets);
 
-fuchsia_hardware_audio::Format SafeDriverRingBufferFormatFromDriverRingBufferFormatSets(
-    const std::vector<fuchsia_hardware_audio::SupportedFormats>& driver_ring_buffer_format_sets);
-fuchsia_hardware_audio::Format SafeDriverRingBufferFormatFromElementDriverRingBufferFormatSets(
+fuchsia_hardware_audio::Format2 SafeDriverRingBufferFormatFromDriverRingBufferFormatSets(
+    const std::vector<fuchsia_hardware_audio::SupportedFormats2>& driver_ring_buffer_format_sets);
+fuchsia_hardware_audio::Format2 SafeDriverRingBufferFormatFromElementDriverRingBufferFormatSets(
     ElementId element_id,
-    const std::vector<std::pair<ElementId, std::vector<fuchsia_hardware_audio::SupportedFormats>>>&
+    const std::vector<std::pair<ElementId, std::vector<fuchsia_hardware_audio::SupportedFormats2>>>&
         element_driver_ring_buffer_format_sets);
 
 }  // namespace media_audio

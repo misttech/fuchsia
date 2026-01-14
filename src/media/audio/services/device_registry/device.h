@@ -104,7 +104,7 @@ class Device : public std::enable_shared_from_this<Device> {
   // Translate from the specified client format to the fuchsia_hardware_audio format that the driver
   // can support, including valid_bits_per_sample (which clients don't specify). If the driver
   // cannot satisfy the requested format, `.pcm_format` will be missing in the returned table.
-  std::optional<fuchsia_hardware_audio::Format> SupportedDriverFormatForClientFormat(
+  std::optional<fuchsia_hardware_audio::Format2> SupportedDriverFormatForClientFormat(
       ElementId element_id,
       // TODO(https://fxbug.dev/42069015): Consider using media_audio::Format internally.
       const fuchsia_audio::Format& client_format);
@@ -126,7 +126,7 @@ class Device : public std::enable_shared_from_this<Device> {
     fuchsia_audio_device::RingBufferProperties properties;
   };
   bool CreateRingBuffer(
-      ElementId element_id, const fuchsia_hardware_audio::Format& format,
+      ElementId element_id, const fuchsia_hardware_audio::Format2& format,
       uint32_t requested_ring_buffer_bytes,
       fit::callback<void(
           fit::result<fuchsia_audio_device::ControlCreateRingBufferError, Device::RingBufferInfo>)>
@@ -276,7 +276,7 @@ class Device : public std::enable_shared_from_this<Device> {
       const std::vector<fuchsia_hardware_audio::DaiSupportedFormats>& dai_format_sets);
   void AddRingBufferFormatSet(
       ElementId id, std::shared_ptr<std::unordered_set<ElementId>>& remaining_ring_buffer_ids,
-      const std::vector<fuchsia_hardware_audio::SupportedFormats>& format_set);
+      const std::vector<fuchsia_hardware_audio::SupportedFormats2>& format_set);
 
   void RetrieveSignalProcessingTopologies();
   void RetrieveSignalProcessingElements();
@@ -392,7 +392,7 @@ class Device : public std::enable_shared_from_this<Device> {
   // Create the driver RingBuffer FIDL connection.
   // `callback` is guaranteed to be called.
   void ConnectRingBufferFidl(
-      ElementId element_id, fuchsia_hardware_audio::Format driver_format,
+      ElementId element_id, fuchsia_hardware_audio::Format2 driver_format,
       fit::callback<void(fuchsia_audio_device::ControlCreateRingBufferError status)> callback);
   // Retrieve the underlying RingBufferProperties (turn_on_delay and needs_cache_flush_...).
   void RetrieveRingBufferProperties(ElementId element_id);
@@ -439,7 +439,7 @@ class Device : public std::enable_shared_from_this<Device> {
   // Initialization is complete (state becomes Initialized) when these optionals have values.
   std::optional<fuchsia_hardware_audio::CodecProperties> codec_properties_;
   std::optional<fuchsia_hardware_audio::CompositeProperties> composite_properties_;
-  std::optional<std::vector<fuchsia_hardware_audio::SupportedFormats>> ring_buffer_format_sets_;
+  std::optional<std::vector<fuchsia_hardware_audio::SupportedFormats2>> ring_buffer_format_sets_;
   std::optional<fuchsia_hardware_audio::PlugState> plug_state_;
   std::optional<bool> health_state_;
 
@@ -464,7 +464,7 @@ class Device : public std::enable_shared_from_this<Device> {
 
   bool ring_buffer_format_sets_retrieved_ = false;
   std::vector<fuchsia_audio_device::ElementRingBufferFormatSet> element_ring_buffer_format_sets_;
-  std::vector<std::pair<ElementId, std::vector<fuchsia_hardware_audio::SupportedFormats>>>
+  std::vector<std::pair<ElementId, std::vector<fuchsia_hardware_audio::SupportedFormats2>>>
       element_driver_ring_buffer_format_sets_;
 
   struct CodecFormat {
@@ -510,7 +510,7 @@ class Device : public std::enable_shared_from_this<Device> {
     std::optional<fuchsia_hardware_audio::RingBufferProperties> ring_buffer_properties;
     std::optional<uint32_t> num_ring_buffer_frames;
     std::optional<fuchsia_hardware_audio::DelayInfo> delay_info;
-    std::optional<fuchsia_hardware_audio::Format> driver_format;
+    std::optional<fuchsia_hardware_audio::Format2> driver_format;
 
     uint64_t bytes_per_frame = 0u;
     std::optional<uint32_t> requested_ring_buffer_bytes;

@@ -71,15 +71,18 @@ bool ElementStateMatchesSettableElementState(
       (state.vendor_specific_data() == settable_state.vendor_specific_data());
 }
 
-bool FormatIsSupported(const fha::Format& format,
-                       const std::vector<fha::SupportedFormats>& ring_buffer_format_sets) {
-  if (!format.pcm_format().has_value()) {
+bool FormatIsSupported(const fha::Format2& format,
+                       const std::vector<fha::SupportedFormats2>& ring_buffer_format_sets) {
+  if (format.Which() != fha::Format2::Tag::kPcmFormat) {
     return false;
   }
 
   for (const auto& format_set : ring_buffer_format_sets) {
+    if (format_set.Which() != fha::SupportedFormats2::Tag::kPcmSupportedFormats) {
+      continue;
+    }
     bool match = false;
-    for (const auto& frame_rate : *format_set.pcm_supported_formats()->frame_rates()) {
+    for (const auto& frame_rate : format_set.pcm_supported_formats()->frame_rates().value()) {
       if (frame_rate == format.pcm_format()->frame_rate()) {
         match = true;
         break;
@@ -90,7 +93,7 @@ bool FormatIsSupported(const fha::Format& format,
     }
 
     match = false;
-    for (const auto& sample_format : *format_set.pcm_supported_formats()->sample_formats()) {
+    for (const auto& sample_format : format_set.pcm_supported_formats()->sample_formats().value()) {
       if (sample_format == format.pcm_format()->sample_format()) {
         match = true;
         break;
@@ -101,7 +104,7 @@ bool FormatIsSupported(const fha::Format& format,
     }
 
     match = false;
-    for (const auto& channel_set : *format_set.pcm_supported_formats()->channel_sets()) {
+    for (const auto& channel_set : format_set.pcm_supported_formats()->channel_sets().value()) {
       if (channel_set.attributes()->size() == format.pcm_format()->number_of_channels()) {
         match = true;
         break;
@@ -112,7 +115,8 @@ bool FormatIsSupported(const fha::Format& format,
     }
 
     match = false;
-    for (const auto& bytes_per_sample : *format_set.pcm_supported_formats()->bytes_per_sample()) {
+    for (const auto& bytes_per_sample :
+         format_set.pcm_supported_formats()->bytes_per_sample().value()) {
       if (bytes_per_sample == format.pcm_format()->bytes_per_sample()) {
         match = true;
         break;
@@ -123,7 +127,8 @@ bool FormatIsSupported(const fha::Format& format,
     }
 
     match = false;
-    for (const auto& valid_bits : *format_set.pcm_supported_formats()->valid_bits_per_sample()) {
+    for (const auto& valid_bits :
+         format_set.pcm_supported_formats()->valid_bits_per_sample().value()) {
       if (valid_bits == format.pcm_format()->valid_bits_per_sample()) {
         match = true;
         break;
@@ -458,8 +463,14 @@ void FakeComposite::CreateRingBuffer(CreateRingBufferRequest& request,
     ADR_WARN_METHOD() << "ring buffer allocation size not found";
   }
 
+  if (request.format().Which() != fha::Format2::Tag::kPcmFormat) {
+    ADR_WARN_METHOD() << "ring_buffer_format not PCM for element_id " << element_id;
+    completer.Reply(fit::error(fha::DriverError::kNotSupported));
+    return;
+  }
+
   auto ring_buffer_impl = std::make_unique<FakeCompositeRingBuffer>(
-      this, element_id, *request.format().pcm_format(), ring_buffer_allocated_size);
+      this, element_id, request.format().pcm_format().value(), ring_buffer_allocated_size);
 
   auto match_active_channels = active_channels_support_overrides_.find(element_id);
   if (match_active_channels != active_channels_support_overrides_.end()) {

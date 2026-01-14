@@ -215,62 +215,62 @@ fuchsia_audio::Format SecondRingBufferFormatFromElementRingBufferFormatSets(
 }
 
 // From many SupportedFormats, get a Format.
-fha::Format SafeDriverRingBufferFormatFromDriverRingBufferFormatSets(
-    const std::vector<fha::SupportedFormats>& driver_ring_buffer_format_sets) {
-  auto first_format_set = *driver_ring_buffer_format_sets.front().pcm_supported_formats();
-  fha::Format ring_buffer_format{{
-      .pcm_format = fha::PcmFormat{{
-          .number_of_channels =
-              static_cast<uint8_t>(first_format_set.channel_sets()->front().attributes()->size()),
-          .sample_format = first_format_set.sample_formats()->front(),
-          .bytes_per_sample = first_format_set.bytes_per_sample()->front(),
-          .valid_bits_per_sample = first_format_set.valid_bits_per_sample()->front(),
-          .frame_rate = first_format_set.frame_rates()->front(),
-      }},
-  }};
+fha::Format2 SafeDriverRingBufferFormatFromDriverRingBufferFormatSets(
+    const std::vector<fha::SupportedFormats2>& driver_ring_buffer_format_sets) {
+  auto first_format_set = driver_ring_buffer_format_sets.front().pcm_supported_formats().value();
+  fha::Format2 ring_buffer_format = fha::Format2::WithPcmFormat(fha::PcmFormat{{
+      .number_of_channels =
+          static_cast<uint8_t>(first_format_set.channel_sets()->front().attributes()->size()),
+      .sample_format = first_format_set.sample_formats()->front(),
+      .bytes_per_sample = first_format_set.bytes_per_sample()->front(),
+      .valid_bits_per_sample = first_format_set.valid_bits_per_sample()->front(),
+      .frame_rate = first_format_set.frame_rates()->front(),
+  }});
 
   if (!ValidateRingBufferFormat(ring_buffer_format)) {
     ADD_FAILURE() << "first entries did not create a valid DaiFormat";
-    return {};
+    return fha::Format2::WithPcmFormat(fha::PcmFormat());
   }
   return ring_buffer_format;
 }
 
 // From many SupportedFormats, get a DIFFERENT Format.
-fha::Format SecondDriverRingBufferFormatFromDriverRingBufferFormatSets(
-    const std::vector<fha::SupportedFormats>& driver_ring_buffer_format_sets) {
+fha::Format2 SecondDriverRingBufferFormatFromDriverRingBufferFormatSets(
+    const std::vector<fha::SupportedFormats2>& driver_ring_buffer_format_sets) {
   auto safe_format =
       SafeDriverRingBufferFormatFromDriverRingBufferFormatSets(driver_ring_buffer_format_sets);
-  auto driver_rb_format_set = *driver_ring_buffer_format_sets.begin()->pcm_supported_formats();
-  if (safe_format.pcm_format().has_value()) {
+  auto driver_rb_format_set =
+      driver_ring_buffer_format_sets.begin()->pcm_supported_formats().value();
+  if (safe_format.Which() == fha::Format2::Tag::kPcmFormat) {
     if (driver_rb_format_set.channel_sets()->size() > 1) {
-      safe_format.pcm_format()->number_of_channels() =
+      safe_format.pcm_format().value().number_of_channels() =
           static_cast<uint8_t>(driver_rb_format_set.channel_sets()->rbegin()->attributes()->size());
       return safe_format;
     }
     if (driver_rb_format_set.sample_formats()->size() > 1) {
-      safe_format.pcm_format()->sample_format() = *driver_rb_format_set.sample_formats()->rbegin();
+      safe_format.pcm_format().value().sample_format() =
+          *driver_rb_format_set.sample_formats()->rbegin();
       return safe_format;
     }
     if (driver_rb_format_set.bytes_per_sample()->size() > 1) {
-      safe_format.pcm_format()->bytes_per_sample() =
+      safe_format.pcm_format().value().bytes_per_sample() =
           *driver_rb_format_set.bytes_per_sample()->rbegin();
       return safe_format;
     }
     if (driver_rb_format_set.frame_rates()->size() > 1) {
-      safe_format.pcm_format()->frame_rate() = *driver_rb_format_set.frame_rates()->rbegin();
+      safe_format.pcm_format().value().frame_rate() = *driver_rb_format_set.frame_rates()->rbegin();
       return safe_format;
     }
   }
   ADD_FAILURE()
       << "SecondDriverRingBufferFormatFromDriverRingBufferFormatSets: Only one format is possible";
-  return {};
+  return fha::Format2::WithPcmFormat(fha::PcmFormat());
 }
 
 // From a multi-element collection, each with many SupportedFormats, get a Format.
-fha::Format SafeDriverRingBufferFormatFromElementDriverRingBufferFormatSets(
+fha::Format2 SafeDriverRingBufferFormatFromElementDriverRingBufferFormatSets(
     ElementId element_id,
-    const std::vector<std::pair<ElementId, std::vector<fha::SupportedFormats>>>&
+    const std::vector<std::pair<ElementId, std::vector<fha::SupportedFormats2>>>&
         element_driver_ring_buffer_format_sets) {
   for (const auto& element_entry : element_driver_ring_buffer_format_sets) {
     if (element_entry.first == element_id) {
@@ -280,13 +280,13 @@ fha::Format SafeDriverRingBufferFormatFromElementDriverRingBufferFormatSets(
   ADD_FAILURE()
       << "SafeDriverRingBufferFormatFromElementDriverRingBufferFormatSets: No element_driver_ring_buffer_format_sets entry found with specified element_id "
       << element_id;
-  return {};
+  return fha::Format2::WithPcmFormat(fha::PcmFormat());
 }
 
 // From a multi-element collection, each with many SupportedFormats, get ANOTHER Format.
-fha::Format SecondDriverRingBufferFormatFromElementDriverRingBufferFormatSets(
+fha::Format2 SecondDriverRingBufferFormatFromElementDriverRingBufferFormatSets(
     ElementId element_id,
-    const std::vector<std::pair<ElementId, std::vector<fha::SupportedFormats>>>&
+    const std::vector<std::pair<ElementId, std::vector<fha::SupportedFormats2>>>&
         element_driver_ring_buffer_format_sets) {
   for (const auto& element_entry : element_driver_ring_buffer_format_sets) {
     if (element_entry.first == element_id) {
@@ -296,7 +296,7 @@ fha::Format SecondDriverRingBufferFormatFromElementDriverRingBufferFormatSets(
   ADD_FAILURE()
       << "SecondDriverRingBufferFormatFromElementDriverRingBufferFormatSets: No element_driver_ring_buffer_format_sets entry found with specified element_id "
       << element_id;
-  return {};
+  return fha::Format2::WithPcmFormat(fha::PcmFormat());
 }
 
 }  // namespace media_audio

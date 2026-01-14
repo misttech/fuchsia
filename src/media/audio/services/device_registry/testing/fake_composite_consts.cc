@@ -154,19 +154,18 @@ const fha::PcmSupportedFormats FakeComposite::kDefaultPcmRingBufferFormatSet2{{
     .valid_bits_per_sample = kDefaultRbValidBitsPerSampleSet2,
     .frame_rates = kDefaultRbFrameRates2,
 }};
-const fha::SupportedFormats FakeComposite::kDefaultRbFormatSet{{
-    .pcm_supported_formats = kDefaultPcmRingBufferFormatSet,
-}};
-const fha::SupportedFormats FakeComposite::kDefaultRbFormatSet2{{
-    .pcm_supported_formats = kDefaultPcmRingBufferFormatSet2,
-}};
+const fha::SupportedFormats2 FakeComposite::kDefaultRbFormatSet =
+    fha::SupportedFormats2::WithPcmSupportedFormats(kDefaultPcmRingBufferFormatSet);
+const fha::SupportedFormats2 FakeComposite::kDefaultRbFormatSet2 =
+    fha::SupportedFormats2::WithPcmSupportedFormats(kDefaultPcmRingBufferFormatSet2);
 
 // RingBuffer format sets that are returned by the driver.
-const std::vector<fha::SupportedFormats> FakeComposite::kDefaultRbFormatSets{kDefaultRbFormatSet};
-const std::vector<fha::SupportedFormats> FakeComposite::kDefaultRbFormatSets2{kDefaultRbFormatSet2};
+const std::vector<fha::SupportedFormats2> FakeComposite::kDefaultRbFormatSets{kDefaultRbFormatSet};
+const std::vector<fha::SupportedFormats2> FakeComposite::kDefaultRbFormatSets2{
+    kDefaultRbFormatSet2};
 
 // Map of RingBuffer format sets, by element. Used internally by the driver.
-const std::unordered_map<ElementId, std::vector<fha::SupportedFormats>>
+const std::unordered_map<ElementId, std::vector<fha::SupportedFormats2>>
     FakeComposite::kDefaultRbFormatsMap = {{
         {kDestRbElementId, kDefaultRbFormatSets},
         {kSourceRbElementId, kDefaultRbFormatSets2},

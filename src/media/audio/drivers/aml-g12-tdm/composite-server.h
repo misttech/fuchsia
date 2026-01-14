@@ -27,11 +27,14 @@ class RingBufferServer;
 class AudioCompositeServer;
 
 struct Engine {
+  Engine()
+      : ring_buffer_format(
+            fuchsia_hardware_audio::Format2::WithPcmFormat(fuchsia_hardware_audio::PcmFormat{})) {}
   size_t ring_buffer_index;
   size_t dai_index;
   std::optional<AmlTdmConfigDevice> device;
   std::unique_ptr<RingBufferServer> ring_buffer;
-  fuchsia_hardware_audio::Format ring_buffer_format;
+  fuchsia_hardware_audio::Format2 ring_buffer_format;
   metadata::AmlConfig config;
 };
 
