@@ -1216,6 +1216,7 @@ EOF
 
   envs=(
     "FX_BUILD_UUID=$build_uuid"
+    "FX_BUILD_LOGDIR=$build_log_dir"
     "${user_rbe_env[@]}"
     "TERM=${TERM}"
     "PATH=${PATH}"
