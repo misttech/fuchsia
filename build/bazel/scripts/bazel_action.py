@@ -1432,6 +1432,13 @@ def main() -> int:
     quiet = os.environ.get("FX_BUILD_QUIET") == "1"
     if quiet:
         cmd_args += ["--config=quiet"]
+    else:
+        # Disable INFO lines and printing results, this makes Bazel output much
+        # less chatty when invoked from Ninja. https://fxbug.dev/42077198
+        cmd_args += ["--ui_event_filters=-info"]
+        if args.command != "query":
+            # The --show_result option is not supported by bazel query.
+            cmd_args += ["--show_result=0"]
 
     cmd_args += [
         # Ensure that all debug symbols are properly generated during the build

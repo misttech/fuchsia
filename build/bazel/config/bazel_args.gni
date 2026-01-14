@@ -8,14 +8,6 @@ import("//build/config/clang/clang.gni")
 import("//build/config/compiler.gni")
 import("//build/config/fuchsia_cxx_version.gni")
 
-declare_args() {
-  # Suppress Bazel non-error output
-  # This is now disabled by default since bazel_action()
-  # uses the //:console pool to print its output directly
-  # to stdout/stderr during the Ninja build.
-  bazel_quiet = false
-}
-
 # Compute the list of `bazel build` arguments corresponding to the current
 # GN build configuration.
 #
