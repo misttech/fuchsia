@@ -244,15 +244,15 @@ impl DiscoveryBuilder {
     /// -- sources
     pub fn build_with_stream<S>(self, context: &EnvironmentContext, stream: S) -> Discovery
     where
-        S: Stream<Item = TargetEvent> + Unpin + 'static,
+        S: Stream<Item = TargetEvent> + Send + Unpin + 'static,
     {
         let res = self.build(context);
-        let inner_stream: Box<dyn Stream<Item = TargetEvent> + Unpin> = if let Some(t) = res.timeout
-        {
-            Box::new(stream.take_until(fuchsia_async::Timer::new(t)))
-        } else {
-            Box::new(stream)
-        };
+        let inner_stream: Box<dyn Stream<Item = TargetEvent> + Send + Unpin> =
+            if let Some(t) = res.timeout {
+                Box::new(stream.take_until(fuchsia_async::Timer::new(t)))
+            } else {
+                Box::new(stream)
+            };
         res.stream.lock().unwrap().replace(inner_stream);
         res
     }
@@ -279,13 +279,13 @@ pub struct Discovery {
     // For testing purposes, we can provide an arbitrary stream.
     // For example, in the testing module `setup_test()` uses this to store
     // a `Vec<_>` stream iterator.
-    stream: Mutex<Option<Box<dyn Stream<Item = TargetEvent> + Unpin>>>,
+    stream: Mutex<Option<Box<dyn Stream<Item = TargetEvent> + Send + Unpin>>>,
     context: EnvironmentContext,
 }
 
 impl Discovery {
     // Discover devices via mDNS broadcast, etc, with a time limit
-    fn create_stream(&self) -> Result<Pin<Box<dyn Stream<Item = TargetEvent>>>> {
+    fn create_stream(&self) -> Result<Pin<Box<dyn Stream<Item = TargetEvent> + Send>>> {
         if let Some(stream) = self.stream.lock().unwrap().take() {
             // In tests, we'll just use the provided stream
             return Ok(Box::pin(stream));
@@ -311,7 +311,7 @@ impl Discovery {
     pub fn discovery_stream(
         &self,
         query: TargetInfoQuery,
-    ) -> Result<impl Stream<Item = TargetEvent> + use<>> {
+    ) -> Result<impl Stream<Item = TargetEvent> + Send + use<>> {
         let stream = self.create_stream()?;
         // The logic here is tricky. We want to close the stream as _soon_
         // as we see a matching query, rather than, say, using scan()
