@@ -71,6 +71,7 @@ template("subbuild") {
   action(target_name) {
     script = "//build/subbuild.py"
     outputs = [ _build_dir_stamp ]
+    mnemonic = "NINJA"
 
     foreach(output, invoker.outputs) {
       outputs += [ _build_dir + output ]
