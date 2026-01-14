@@ -194,6 +194,7 @@ template("python_library") {
     script = "//build/python/mypy_checker.py"
     outputs = [ "${target_out_dir}/${target_name}.mypy_checked" ]
     depfile = "${target_out_dir}/${target_name}.d"
+    mnemonic = "MYPY"
     args =
     # This source list includes only direct library sources, excluding
     # any dependencies.
