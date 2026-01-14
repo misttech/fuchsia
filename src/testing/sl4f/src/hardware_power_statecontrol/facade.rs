@@ -41,7 +41,7 @@ impl HardwarePowerStatecontrolFacade {
             .get_admin_proxy()?
             .shutdown(&ShutdownOptions {
                 action: Some(ShutdownAction::Reboot),
-                reasons: Some(vec![ShutdownReason::UserRequest]),
+                reasons: Some(vec![ShutdownReason::DeveloperRequest]),
                 ..Default::default()
             })
             .await?
@@ -63,7 +63,7 @@ impl HardwarePowerStatecontrolFacade {
             .get_admin_proxy()?
             .shutdown(&ShutdownOptions {
                 action: Some(ShutdownAction::RebootToBootloader),
-                reasons: Some(vec![ShutdownReason::UserRequest]),
+                reasons: Some(vec![ShutdownReason::DeveloperRequest]),
                 ..Default::default()
             })
             .await?
@@ -84,7 +84,7 @@ impl HardwarePowerStatecontrolFacade {
             .get_admin_proxy()?
             .shutdown(&ShutdownOptions {
                 action: Some(ShutdownAction::RebootToRecovery),
-                reasons: Some(vec![ShutdownReason::UserRequest]),
+                reasons: Some(vec![ShutdownReason::DeveloperRequest]),
                 ..Default::default()
             })
             .await?
@@ -106,7 +106,7 @@ impl HardwarePowerStatecontrolFacade {
             .get_admin_proxy()?
             .shutdown(&ShutdownOptions {
                 action: Some(ShutdownAction::Poweroff),
-                reasons: Some(vec![ShutdownReason::UserRequest]),
+                reasons: Some(vec![ShutdownReason::DeveloperRequest]),
                 ..Default::default()
             })
             .await?
