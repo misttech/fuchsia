@@ -81,7 +81,7 @@
     <project name="third_party/android.googlesource.com/platform/system/libbase"
              path="third_party/android/platform/system/libbase"
              remote="https://fuchsia.googlesource.com/third_party/android.googlesource.com/platform/system/libbase"
-             revision="5f246b12b44ab9d034eae1f537a862592fa7f576"/>
+             revision="55aab9e9acb686b59ddb57877084a0be0cac020f"/>
     <project name="third_party/android.googlesource.com/platform/system/keymint"
              path="third_party/android/platform/system/keymint/src"
              remote="https://fuchsia.googlesource.com/third_party/android.googlesource.com/platform/system/keymint"
