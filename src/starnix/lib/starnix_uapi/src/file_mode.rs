@@ -166,7 +166,7 @@ mod inner_access {
     // Part of the code for the NONE cases that are produced by the macro triggers the lint, but as
     // a whole, the produced code is still correct.
     #![allow(clippy::bad_bit_mask)] // TODO(b/303500202) Remove once addressed in bitflags.
-    use super::OpenFlags;
+    use super::{FileMode, OpenFlags};
     use crate::errors::{Errno, errno};
 
     bitflags::bitflags! {
@@ -203,6 +203,18 @@ mod inner_access {
 
         pub fn rwx_bits(&self) -> u8 {
             self.bits() & Self::ACCESS_MASK.bits()
+        }
+
+        pub fn user_mode(&self) -> FileMode {
+            FileMode::from_bits(u32::from(self.rwx_bits()) << 6)
+        }
+
+        pub fn group_mode(&self) -> FileMode {
+            FileMode::from_bits(u32::from(self.rwx_bits()) << 3)
+        }
+
+        pub fn other_mode(&self) -> FileMode {
+            FileMode::from_bits(u32::from(self.rwx_bits()))
         }
     }
 

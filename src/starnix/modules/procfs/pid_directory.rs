@@ -36,7 +36,7 @@ use starnix_types::time::duration_to_scheduler_clock;
 use starnix_uapi::auth::{CAP_SYS_NICE, CAP_SYS_RESOURCE};
 use starnix_uapi::device_type::DeviceType;
 use starnix_uapi::errors::Errno;
-use starnix_uapi::file_mode::{FileMode, mode};
+use starnix_uapi::file_mode::{Access, FileMode, mode};
 use starnix_uapi::open_flags::OpenFlags;
 use starnix_uapi::resource_limits::Resource;
 use starnix_uapi::user_address::UserAddress;
@@ -55,9 +55,9 @@ fn task_entries(scope: TaskEntryScope) -> Vec<(FsString, FileMode)> {
         (b"cgroup".into(), mode!(IFREG, 0o444)),
         (b"cwd".into(), mode!(IFLNK, 0o777)),
         (b"exe".into(), mode!(IFLNK, 0o777)),
-        (b"fd".into(), mode!(IFDIR, 0o777)),
+        (b"fd".into(), mode!(IFDIR, 0o500)),
         (b"fdinfo".into(), mode!(IFDIR, 0o777)),
-        (b"io".into(), mode!(IFREG, 0o444)),
+        (b"io".into(), mode!(IFREG, 0o400)),
         (b"limits".into(), mode!(IFREG, 0o444)),
         (b"maps".into(), mode!(IFREG, 0o444)),
         (b"mem".into(), mode!(IFREG, 0o600)),
@@ -69,11 +69,11 @@ fn task_entries(scope: TaskEntryScope) -> Vec<(FsString, FileMode)> {
         (b"statm".into(), mode!(IFREG, 0o444)),
         (b"status".into(), mode!(IFREG, 0o444)),
         (b"cmdline".into(), mode!(IFREG, 0o444)),
-        (b"environ".into(), mode!(IFREG, 0o444)),
-        (b"auxv".into(), mode!(IFREG, 0o444)),
+        (b"environ".into(), mode!(IFREG, 0o400)),
+        (b"auxv".into(), mode!(IFREG, 0o400)),
         (b"comm".into(), mode!(IFREG, 0o644)),
         (b"attr".into(), mode!(IFDIR, 0o555)),
-        (b"ns".into(), mode!(IFDIR, 0o777)),
+        (b"ns".into(), mode!(IFDIR, 0o511)),
         (b"mountinfo".into(), mode!(IFREG, 0o444)),
         (b"mounts".into(), mode!(IFREG, 0o444)),
         (b"oom_adj".into(), mode!(IFREG, 0o744)),
@@ -82,11 +82,11 @@ fn task_entries(scope: TaskEntryScope) -> Vec<(FsString, FileMode)> {
         (b"timerslack_ns".into(), mode!(IFREG, 0o666)),
         (b"wchan".into(), mode!(IFREG, 0o444)),
         (b"clear_refs".into(), mode!(IFREG, 0o200)),
-        (b"pagemap".into(), mode!(IFREG, 0o444)),
+        (b"pagemap".into(), mode!(IFREG, 0o400)),
     ];
 
     if scope == TaskEntryScope::ThreadGroup {
-        entries.push((b"task".into(), mode!(IFDIR, 0o777)));
+        entries.push((b"task".into(), mode!(IFDIR, 0o555)));
     }
 
     entries
@@ -132,7 +132,7 @@ impl TaskDirectory {
                 scope,
                 inode_range: fs.allocate_ino_range(task_entries(scope).len()),
             })),
-            FsNodeInfo::new(mode!(IFDIR, 0o777), creds),
+            FsNodeInfo::new(mode!(IFDIR, 0o555), creds),
         )
     }
 }
@@ -361,7 +361,9 @@ impl FsNodeOps for FdDirectory {
         let fd = FdNumber::from_fs_str(name).map_err(|_| errno!(ENOENT))?;
         let task = Task::from_weak(&self.task)?;
         // Make sure that the file descriptor exists before creating the node.
-        let _ = task.files.get_allowing_opath(fd).map_err(|_| errno!(ENOENT))?;
+        let file = task.files.get_allowing_opath(fd).map_err(|_| errno!(ENOENT))?;
+        // Derive the symlink's mode from the mode in which the file was opened.
+        let mode = FileMode::IFLNK | Access::from_open_flags(file.flags()).user_mode();
         let task_reference = self.task.clone();
         Ok(node.fs().create_node_and_allocate_node_id(
             CallbackSymlinkNode::new(move || {
@@ -369,7 +371,7 @@ impl FsNodeOps for FdDirectory {
                 let file = task.files.get_allowing_opath(fd).map_err(|_| errno!(ENOENT))?;
                 Ok(SymlinkTarget::Node(file.name.to_passive()))
             }),
-            FsNodeInfo::new(mode!(IFLNK, 0o777), task.real_fscred()),
+            FsNodeInfo::new(mode, task.real_fscred()),
         ))
     }
 }
