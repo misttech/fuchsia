@@ -1034,6 +1034,11 @@ function fx-try-locked {
   else
     echo "Locked by ${_FX_LOCK_FILE}..."
     while ! shlock -f "${_FX_LOCK_FILE}" -p $$; do sleep .1; done
+
+    # This message is critical for AI agents to understand when a build
+    # is proceeding after acquiring a lock. Do not remove.
+    echo "Lock acquired, proceeding with build."
+
     fx-cmd-locked "$@"
   fi
 }
