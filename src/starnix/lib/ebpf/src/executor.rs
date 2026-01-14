@@ -328,7 +328,7 @@ impl<C: EbpfProgramContext> BpfVisitor for ComputationContext<'_, C> {
         self.alu(dst, src, |x, y| {
             alu32(x, y, |x, y| {
                 let x = x as i32;
-                x.unbounded_shr(y) as u32
+                x.overflowing_shr(y).0 as u32
             })
         })
     }
@@ -341,13 +341,10 @@ impl<C: EbpfProgramContext> BpfVisitor for ComputationContext<'_, C> {
     ) -> Result<(), String> {
         self.alu(dst, src, |x, y| {
             let x = x as i64;
-            // rust shift operation takes 32 bits rhs. If `y` doesn't fit,
-            // compute the result here.
-            if y > u32::MAX.into() {
-                if x >= 0 { 0 } else { u64::MAX }
-            } else {
-                x.unbounded_shr(y as u32) as u64
-            }
+            // ebpf mask shift operation to the number of bytes, as does `overflowing_sh{rl}`
+            // rust operation. So, it is valid to just cast it to `u32`.
+            let y = y as u32;
+            x.overflowing_shr(y).0 as u64
         })
     }
     #[inline(always)]
@@ -375,7 +372,7 @@ impl<C: EbpfProgramContext> BpfVisitor for ComputationContext<'_, C> {
         dst: Register,
         src: Source,
     ) -> Result<(), String> {
-        self.alu(dst, src, |x, y| alu32(x, y, |x, y| x.unbounded_shl(y)))
+        self.alu(dst, src, |x, y| alu32(x, y, |x, y| x.overflowing_shl(y).0))
     }
     #[inline(always)]
     fn lsh64<'a>(
@@ -385,9 +382,10 @@ impl<C: EbpfProgramContext> BpfVisitor for ComputationContext<'_, C> {
         src: Source,
     ) -> Result<(), String> {
         self.alu(dst, src, |x, y| {
-            // rust shift operation takes 32 bits rhs. If `y` doesn't fit,
-            // compute the result here.
-            if y > u32::MAX.into() { 0 } else { x.unbounded_shl(y as u32) }
+            // ebpf mask shift operation to the number of bytes, as does `overflowing_sh{rl}`
+            // rust operation. So, it is valid to just cast it to `u32`.
+            let y = y as u32;
+            x.overflowing_shl(y).0
         })
     }
     #[inline(always)]
@@ -469,7 +467,7 @@ impl<C: EbpfProgramContext> BpfVisitor for ComputationContext<'_, C> {
         dst: Register,
         src: Source,
     ) -> Result<(), String> {
-        self.alu(dst, src, |x, y| alu32(x, y, |x, y| x.unbounded_shr(y)))
+        self.alu(dst, src, |x, y| alu32(x, y, |x, y| x.overflowing_shr(y).0))
     }
     #[inline(always)]
     fn rsh64<'a>(
@@ -479,9 +477,10 @@ impl<C: EbpfProgramContext> BpfVisitor for ComputationContext<'_, C> {
         src: Source,
     ) -> Result<(), String> {
         self.alu(dst, src, |x, y| {
-            // rust shift operation takes 32 bits rhs. If `y` doesn't fit,
-            // compute the result here.
-            if y > u32::MAX.into() { 0 } else { x.unbounded_shr(y as u32) }
+            // ebpf mask shift operation to the number of bytes, as does `overflowing_sh{rl}`
+            // rust operation. So, it is valid to just cast it to `u32`.
+            let y = y as u32;
+            x.overflowing_shr(y).0
         })
     }
     #[inline(always)]

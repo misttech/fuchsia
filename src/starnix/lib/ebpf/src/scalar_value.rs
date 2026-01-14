@@ -249,8 +249,8 @@ impl std::ops::Shl for [< $t:upper Range>] {
         if rhs_max > self.max.leading_zeros() {
             return Self::max();
         }
-        let min = self.min.unbounded_shl(rhs_min);
-        let max = self.max.unbounded_shl(rhs_max);
+        let min = self.min.overflowing_shl(rhs_min).0;
+        let max = self.max.overflowing_shl(rhs_max).0;
         Self { min, max }
     }
 }
@@ -258,16 +258,16 @@ impl std::ops::Shl for [< $t:upper Range>] {
 impl std::ops::Shr for [< $t:upper Range>] {
     type Output = Self;
     fn shr(self, rhs: Self) -> Self {
-        #[allow(irrefutable_let_patterns)]
-        let Ok(rhs_max) = u32::try_from(rhs.max) else {
-            return Self::max();
-        };
-        #[allow(irrefutable_let_patterns)]
-        let Ok(rhs_min) = u32::try_from(rhs.min) else {
-            return Self::max();
-        };
-        let min = self.min.unbounded_shr(rhs_max);
-        let max = self.min.unbounded_shr(rhs_min);
+        // ebpf mask shift operation to the number of bytes, if `rhs.max` is greater than the
+        // number of bits, no information can be computed, expect that `shr` result is always
+        // lesser than the initial value.
+        if rhs.max >= $t::BITS.into() {
+            return Self { min: 0, max: self.max }
+        }
+        let rhs_max = rhs.max as u32;
+        let rhs_min = rhs.min as u32;
+        let min = self.min.overflowing_shr(rhs_max).0;
+        let max = self.max.overflowing_shr(rhs_min).0;
         Self { min, max }
     }
 }
@@ -424,26 +424,16 @@ impl [< $t:upper ScalarValueData>] {
     pub fn ashr(self, rhs: Self) -> Self {
         fn ashr(x: [< $t >], y: [< $t >]) -> [< $t >] {
             let x = x.cast_signed();
-            // rust shift operation takes 32 bits rhs. If `y` doesn't fit,
-            // compute the result here.
-            if y > u32::MAX.into() {
-                if x >= 0 {
-                    0
-                } else {
-                    [< $t >]::MAX
-                }
-            } else {
-                x.unbounded_shr(y as u32).cast_unsigned()
-            }
+            // ebpf mask shift operation to the number of bytes, as does `overflowing_sh{rl}`
+            // rust operation. So, it is valid to just cast it to `u32`.
+            let y = y as u32;
+            x.overflowing_shr(y).0.cast_unsigned()
         }
         fn shr(x: [< $t >], y: [< $t >]) -> [< $t >] {
-            // rust shift operation takes 32 bits rhs. If `y` doesn't fit,
-            // compute the result here.
-            if y > u32::MAX.into() {
-                0
-            } else {
-                x.unbounded_shr(y as u32)
-            }
+            // ebpf mask shift operation to the number of bytes, as does `overflowing_sh{rl}`
+            // rust operation. So, it is valid to just cast it to `u32`.
+            let y = y as u32;
+            x.overflowing_shr(y).0
         }
         if !rhs.is_known() {
             return self.base(rhs);
@@ -609,13 +599,11 @@ impl std::ops::Shl for [< $t:upper ScalarValueData>] {
         let urange = self.urange << rhs.urange;
         if rhs.is_known() {
             return self.shift_operation(rhs.value, urange, |x, y| {
-                // rust shift operation takes 32 bits rhs. If `y` doesn't fit,
-                // compute the result here.
-                if y > u32::MAX.into() {
-                    0
-                } else {
-                    x.unbounded_shl(y as u32)
-                }
+                // ebpf mask shift operation to the number of bytes, as does
+                // `overflowing_sh{rl}` rust operation. So, it is valid to just cast it to
+                // `u32`.
+                let y = y as u32;
+                x.overflowing_shl(y).0
             });
         }
         Self {
@@ -631,13 +619,11 @@ impl std::ops::Shr for [< $t:upper ScalarValueData>] {
         let urange = self.urange >> rhs.urange;
         if rhs.is_known() {
             return self.shift_operation(rhs.value, urange, |x, y| {
-                // rust shift operation takes 32 bits rhs. If `y` doesn't fit,
-                // compute the result here.
-                if y > u32::MAX.into() {
-                    0
-                } else {
-                    x.unbounded_shr(y as u32)
-                }
+                // ebpf mask shift operation to the number of bytes, as does
+                // `overflowing_sh{rl}` rust operation. So, it is valid to just cast it to
+                // `u32`.
+                let y = y as u32;
+                x.overflowing_shr(y).0
             });
         }
         Self {

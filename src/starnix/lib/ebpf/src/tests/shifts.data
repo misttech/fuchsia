@@ -11,19 +11,19 @@ lddw %r6, 0xffffffff
 
 mov %r2, 1
 rsh %r2, %r3
-jne %r2, 0, exit
+jne %r2, 1, exit
 
 mov %r2, 1
 rsh %r2, %r4
-jne %r2, 0, exit
+jne %r2, 1, exit
 
 mov %r2, 1
 lsh %r2, %r3
-jne %r2, 0, exit
+jne %r2, 1, exit
 
 mov %r2, 1
 lsh %r2, %r4
-jne %r2, 0, exit
+jne %r2, 1, exit
 
 mov %r2, %r5
 arsh %r2, %r3
@@ -35,19 +35,19 @@ jne %r2, %r5, exit
 
 mov %r2, 1
 rsh32 %r2, %r3
-jne %r2, 0, exit
+jne %r2, 1, exit
 
 mov %r2, 1
 rsh32 %r2, %r4
-jne %r2, 0, exit
+jne %r2, 1, exit
 
 mov %r2, 1
 lsh32 %r2, %r3
-jne %r2, 0, exit
+jne %r2, 1, exit
 
 mov %r2, 1
 lsh32 %r2, %r4
-jne %r2, 0, exit
+jne %r2, 1, exit
 
 mov %r2, %r5
 arsh32 %r2, %r3
