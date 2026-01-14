@@ -11,14 +11,14 @@ CpuCtrlProtocolServer::CpuCtrlProtocolServer() {}
 
 void CpuCtrlProtocolServer::GetOperatingPointInfo(GetOperatingPointInfoRequestView request,
                                                   GetOperatingPointInfoCompleter::Sync& completer) {
-  if (request->opp >= operating_points_.size()) {
+  if (request->opp >= kOperatingPoints.size()) {
     completer.ReplyError(ZX_ERR_OUT_OF_RANGE);
     return;
   }
 
   fuchsia_hardware_cpu_ctrl::wire::CpuOperatingPointInfo result;
-  result.frequency_hz = operating_points_[request->opp].freq_hz;
-  result.voltage_uv = operating_points_[request->opp].volt_uv;
+  result.frequency_hz = kOperatingPoints[request->opp].freq_hz;
+  result.voltage_uv = kOperatingPoints[request->opp].volt_uv;
 
   completer.ReplySuccess(result);
 }
@@ -37,21 +37,76 @@ void CpuCtrlProtocolServer::GetCurrentOperatingPoint(
   completer.Reply(current_opp_);
 }
 
+void CpuCtrlProtocolServer::SetMinimumOperatingPointLimit(
+    SetMinimumOperatingPointLimitRequestView request,
+    SetMinimumOperatingPointLimitCompleter::Sync& completer) {
+  if (request->minimum_opp >= kOperatingPoints.size()) {
+    completer.ReplyError(ZX_ERR_OUT_OF_RANGE);
+    return;
+  }
+
+  {
+    std::scoped_lock lock(lock_);
+    minimum_opp_ = request->minimum_opp;
+  }
+
+  completer.ReplySuccess();
+}
+
+void CpuCtrlProtocolServer::SetMaximumOperatingPointLimit(
+    SetMaximumOperatingPointLimitRequestView request,
+    SetMaximumOperatingPointLimitCompleter::Sync& completer) {
+  if (request->maximum_opp >= kOperatingPoints.size()) {
+    completer.ReplyError(ZX_ERR_OUT_OF_RANGE);
+    return;
+  }
+
+  {
+    std::scoped_lock lock(lock_);
+    maximum_opp_ = request->maximum_opp;
+  }
+
+  completer.ReplySuccess();
+}
+
+void CpuCtrlProtocolServer::SetOperatingPointLimits(
+    SetOperatingPointLimitsRequestView request, SetOperatingPointLimitsCompleter::Sync& completer) {
+  if (request->minimum_opp >= kOperatingPoints.size() ||
+      request->maximum_opp >= kOperatingPoints.size()) {
+    completer.ReplyError(ZX_ERR_OUT_OF_RANGE);
+    return;
+  }
+
+  {
+    std::scoped_lock lock(lock_);
+    minimum_opp_ = request->minimum_opp;
+    maximum_opp_ = request->maximum_opp;
+  }
+
+  completer.ReplySuccess();
+}
+
+void CpuCtrlProtocolServer::GetCurrentOperatingPointLimits(
+    GetCurrentOperatingPointLimitsCompleter::Sync& completer) {
+  std::scoped_lock lock(lock_);
+  completer.ReplySuccess(minimum_opp_, maximum_opp_);
+}
+
 void CpuCtrlProtocolServer::GetOperatingPointCount(
     GetOperatingPointCountCompleter::Sync& completer) {
-  completer.ReplySuccess(static_cast<uint32_t>(operating_points_.size()));
+  completer.ReplySuccess(static_cast<uint32_t>(kOperatingPoints.size()));
 }
 
 void CpuCtrlProtocolServer::GetNumLogicalCores(GetNumLogicalCoresCompleter::Sync& completer) {
-  completer.Reply(static_cast<uint64_t>(logical_core_ids_.size()));
+  completer.Reply(static_cast<uint64_t>(kLogicalCoreIds.size()));
 }
 
 void CpuCtrlProtocolServer::GetLogicalCoreId(GetLogicalCoreIdRequestView request,
                                              GetLogicalCoreIdCompleter::Sync& completer) {
-  if (request->index >= logical_core_ids_.size()) {
+  if (request->index >= kLogicalCoreIds.size()) {
     completer.Close(ZX_ERR_OUT_OF_RANGE);
   }
-  completer.Reply(logical_core_ids_[request->index]);
+  completer.Reply(kLogicalCoreIds[request->index]);
 }
 
 void CpuCtrlProtocolServer::GetDomainId(GetDomainIdCompleter::Sync& completer) {

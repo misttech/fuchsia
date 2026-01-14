@@ -90,6 +90,27 @@ class AmlCpu : public fidl::WireServer<fuchsia_hardware_cpu_ctrl::Device> {
   void SetCurrentOperatingPoint(SetCurrentOperatingPointRequestView request,
                                 SetCurrentOperatingPointCompleter::Sync& completer) override;
   void GetCurrentOperatingPoint(GetCurrentOperatingPointCompleter::Sync& completer) override;
+
+  void SetMinimumOperatingPointLimit(
+      SetMinimumOperatingPointLimitRequestView request,
+      SetMinimumOperatingPointLimitCompleter::Sync& completer) override {
+    completer.ReplyError(ZX_ERR_NOT_SUPPORTED);
+  }
+  void SetMaximumOperatingPointLimit(
+      SetMaximumOperatingPointLimitRequestView request,
+      SetMaximumOperatingPointLimitCompleter::Sync& completer) override {
+    completer.ReplyError(ZX_ERR_NOT_SUPPORTED);
+  }
+  void SetOperatingPointLimits(SetOperatingPointLimitsRequestView request,
+                               SetOperatingPointLimitsCompleter::Sync& completer) override {
+    completer.ReplyError(ZX_ERR_NOT_SUPPORTED);
+  }
+
+  void GetCurrentOperatingPointLimits(
+      GetCurrentOperatingPointLimitsCompleter::Sync& completer) override {
+    completer.ReplyError(ZX_ERR_NOT_SUPPORTED);
+  }
+
   void GetOperatingPointCount(GetOperatingPointCountCompleter::Sync& completer) override;
   void GetNumLogicalCores(GetNumLogicalCoresCompleter::Sync& completer) override;
   void GetLogicalCoreId(GetLogicalCoreIdRequestView request,
