@@ -83,6 +83,7 @@ pub fn process_snapshot_detailed(
             .as_ref()
             .ok_or_else(|| anyhow::anyhow!("Missing compression statistics"))?,
         &bucket_definitions,
+        false,
     )
     .expect("Digest computation should succeed");
     let ProcessedAttributionData { principals, resources, resource_names } =

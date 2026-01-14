@@ -39,8 +39,16 @@
       "kind": "Switch",
       "optionality": "optional",
       "long": "--buckets",
-      "short": null,
+      "short": "b",
       "description": "prints a bucketized digest of the memory usage.",
+      "hidden": false
+    },
+    {
+      "kind": "Switch",
+      "optionality": "optional",
+      "long": "--list-vmos",
+      "short": "l",
+      "description": "used in conjunction with --buckets to print the content of each bucket.",
       "hidden": false
     },
     {

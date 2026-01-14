@@ -51,6 +51,7 @@ pub async fn periodic_monitoring(
                 &kmem_stats,
                 &kmem_stats_compression,
                 bucket_definitions,
+                false,
             )?;
             _current =
                 update_inspect_summary(attribution_data, timestamp, &kmem_stats, &inspect_root);
@@ -312,8 +313,13 @@ mod tests {
         let timestamp = zx::BootInstant::get();
         let attribution_data = get_attribution_data();
         let (kernel_stats, kernel_stats_compression) = get_kernel_stats();
-        let digest =
-            Digest::compute(&attribution_data, &kernel_stats, &kernel_stats_compression, &vec![])?;
+        let digest = Digest::compute(
+            &attribution_data,
+            &kernel_stats,
+            &kernel_stats_compression,
+            &vec![],
+            false,
+        )?;
         let mut bucket_list_node = std::cell::OnceCell::new();
         // Update inspect history twice, and ensure both instances are recorded.
         let _summary =

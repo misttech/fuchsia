@@ -26,7 +26,7 @@ pub struct ComponentSummaryProfileResult {
     pub unclaimed: u64,
     #[serde(with = "fplugin_serde::PerformanceImpactMetricsDef")]
     pub performance: fplugin::PerformanceImpactMetrics,
-    pub digest: Digest,
+    pub digest: Option<Digest>,
 }
 
 /// Summary view of the memory usage on a device.

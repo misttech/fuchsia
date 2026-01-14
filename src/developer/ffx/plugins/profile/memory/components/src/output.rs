@@ -15,7 +15,7 @@ use std::cmp::Reverse;
 pub fn write_summary(
     f: &mut dyn std::io::Write,
     csv: bool,
-    profile_result: &ComponentSummaryProfileResult,
+    profile_result: ComponentSummaryProfileResult,
 ) -> std::io::Result<()> {
     if csv {
         let mut csv_writer = csv::Writer::from_writer(f);
@@ -35,7 +35,7 @@ pub fn write_summary(
         }
     } else {
         write_summary_kernel_stats(f, &profile_result.kernel, &profile_result.performance)?;
-        write_digest(f, &profile_result.digest)?;
+        profile_result.digest.map(|d| write_digest(f, d)).transpose()?;
         for principal in &profile_result.principals {
             writeln!(f)?;
             writeln!(f)?;
@@ -45,15 +45,27 @@ pub fn write_summary(
     Ok(())
 }
 
-fn write_digest(w: &mut dyn std::io::Write, digest: &digest::Digest) -> std::io::Result<()> {
+fn write_digest(w: &mut dyn std::io::Write, digest: digest::Digest) -> std::io::Result<()> {
     if digest.buckets.len() > 0 {
         writeln!(w, "")?;
     }
-    let mut buckets: Vec<&digest::Bucket> = digest.buckets.iter().collect();
+    let mut buckets: Vec<digest::Bucket> = digest.buckets.into_iter().collect();
     buckets.sort_by_key(|bucket| Reverse(bucket.size));
 
-    for bucket in buckets {
+    for bucket in buckets.iter_mut() {
         writeln!(w, "Bucket {}: {}", bucket.name, format_bytes(bucket.size as f64))?;
+        for vmos in bucket.vmos.iter_mut() {
+            vmos.sort_by_key(|vmo| Reverse(vmo.size));
+            for vmo in vmos {
+                writeln!(
+                    w,
+                    "    Vmo {}({}): {}",
+                    vmo.name,
+                    vmo.principals.join(", "),
+                    format_bytes(vmo.size as f64),
+                )?;
+            }
+        }
     }
     Ok(())
 }
@@ -339,7 +351,7 @@ mod tests {
             write_summary(
                 &mut buf,
                 true,
-                &ComponentSummaryProfileResult {
+                ComponentSummaryProfileResult {
                     principals: vec![principal],
                     unclaimed: 1,
                     ..Default::default()
@@ -378,7 +390,7 @@ mod tests {
             write_summary(
                 &mut buf,
                 true,
-                &ComponentSummaryProfileResult {
+                ComponentSummaryProfileResult {
                     principals: vec![principal],
                     unclaimed: 1,
                     ..Default::default()

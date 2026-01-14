@@ -26,8 +26,15 @@ pub struct ComponentsCommand {
     #[argh(switch, description = "outputs data in csv format.")]
     pub csv: bool,
 
-    #[argh(switch, description = "prints a bucketized digest of the memory usage.")]
+    #[argh(switch, short = 'b', description = "prints a bucketized digest of the memory usage.")]
     pub buckets: bool,
+
+    #[argh(
+        switch,
+        short = 'l',
+        description = "used in conjunction with --buckets to print the content of each bucket."
+    )]
+    pub list_vmos: bool,
 
     #[argh(switch, description = "outputs a detailed output, machine only.")]
     pub detailed: bool,

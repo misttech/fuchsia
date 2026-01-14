@@ -111,6 +111,7 @@ impl FfxMain for MemoryTool {
                         debug_json: self.cmd.debug_json,
                         csv: self.cmd.csv,
                         buckets: self.cmd.buckets,
+                        list_vmos: false,
                         detailed: false,
                         stats_only: None,
                     },

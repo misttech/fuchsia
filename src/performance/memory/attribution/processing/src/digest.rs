@@ -9,6 +9,8 @@ use serde::de::Error;
 use serde::{Deserialize, Deserializer, Serialize};
 use std::collections::HashMap;
 use std::collections::hash_map::Entry::Occupied;
+#[cfg(target_os = "fuchsia")]
+use {crate::CATEGORY_MEMORY_CAPTURE, fuchsia_trace::duration};
 use {fidl_fuchsia_kernel as fkernel, fidl_fuchsia_memory_attribution_plugin as fplugin};
 
 const UNDIGESTED: &str = "Undigested";
@@ -88,7 +90,9 @@ where
 pub struct Bucket {
     pub name: String,
     pub size: u64,
+    pub vmos: Option<Vec<NamedVmo>>,
 }
+
 /// Contains a view of the system's memory usage, aggregated in groups called buckets, which are
 /// configurable.
 #[derive(Debug, Default, PartialEq, Eq, Serialize)]
@@ -96,10 +100,19 @@ pub struct Digest {
     pub buckets: Vec<Bucket>,
 }
 
+/// Non-owning structure to keep track of known undigested VMOs.
 struct UndigestedVmo<'a> {
     size: u64,
     name: &'a ZXName,
-    principals: Option<&'a Vec<&'a str>>,
+    principals: &'a Vec<&'a str>,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize)]
+/// Owning structure to report known VMOs.
+pub struct NamedVmo {
+    pub name: ZXName,
+    pub size: u64,
+    pub principals: Vec<String>,
 }
 
 impl Digest {
@@ -110,7 +123,11 @@ impl Digest {
         kmem_stats: &fkernel::MemoryStats,
         kmem_stats_compression: &fkernel::MemoryStatsCompression,
         bucket_definitions: &[BucketDefinition],
+        detailed_vmos: bool,
     ) -> Result<Digest> {
+        #[cfg(target_os = "fuchsia")]
+        duration!(CATEGORY_MEMORY_CAPTURE, c"Digest::compute");
+
         // Maps resources' (VMO, Process, Job. See Resource) ids
         // to their owner, i.e. the principal they have been
         // attributed to.
@@ -128,6 +145,7 @@ impl Digest {
             owners
         };
 
+        let no_principals = vec![];
         let mut undigested_vmos: HashMap<u64, UndigestedVmo<'_>> = attribution_data
             .resources
             .iter()
@@ -135,7 +153,14 @@ impl Digest {
                 fplugin::ResourceType::Vmo(vmo) => {
                     attribution_data.resource_names.get(r.resource.name_index).and_then(|name| {
                         vmo.scaled_committed_bytes.map(|size| {
-                            (*koid, UndigestedVmo { name, size, principals: owners.get(koid) })
+                            (
+                                *koid,
+                                UndigestedVmo {
+                                    name,
+                                    size,
+                                    principals: owners.get(koid).unwrap_or(&no_principals),
+                                },
+                            )
                         })
                     })
                 }
@@ -157,18 +182,27 @@ impl Digest {
         let mut buckets: Vec<Bucket> = bucket_definitions
             .iter()
             .map(|bd| {
-                let mut bucket = Bucket { name: bd.name.to_owned(), size: 0 };
+                let mut bucket = Bucket { name: bd.name.to_owned(), size: 0, vmos: None };
                 processes.iter().for_each(|(process_name, process)| {
                     if bd.process_match(process_name) {
                         for koid in process.vmos.iter().flatten() {
                             bucket.size += match undigested_vmos.entry(*koid) {
                                 Occupied(e) => {
                                     let UndigestedVmo { size: _, name, principals } = e.get();
-                                    if bd.vmo_match(&name)
-                                        && bd.principals_match(principals.unwrap_or(&vec![]))
-                                    {
-                                        let (_, UndigestedVmo { size, .. }) = e.remove_entry();
-                                        size
+                                    if bd.vmo_match(&name) && bd.principals_match(principals) {
+                                        let (_, vmo) = e.remove_entry();
+                                        if detailed_vmos {
+                                            bucket.vmos.get_or_insert_default().push(NamedVmo {
+                                                name: vmo.name.clone(),
+                                                size: vmo.size,
+                                                principals: vmo
+                                                    .principals
+                                                    .into_iter()
+                                                    .map(|&name| name.to_owned())
+                                                    .collect(),
+                                            });
+                                        }
+                                        vmo.size
                                     } else {
                                         0
                                     }
@@ -187,6 +221,24 @@ impl Digest {
         let undigested = Bucket {
             name: UNDIGESTED.to_string(),
             size: undigested_vmos.values().map(|UndigestedVmo { size, .. }| *size).sum(),
+            vmos: if detailed_vmos {
+                Some(
+                    undigested_vmos
+                        .values()
+                        .map(|vmo| NamedVmo {
+                            name: vmo.name.clone(),
+                            size: vmo.size,
+                            principals: vmo
+                                .principals
+                                .into_iter()
+                                .map(|&name| name.to_owned())
+                                .collect(),
+                        })
+                        .collect(),
+                )
+            } else {
+                None
+            },
         };
 
         let total_vmo_size: u64 =
@@ -201,6 +253,7 @@ impl Digest {
             Bucket {
                 name: ORPHANED.to_string(),
                 size: kmem_stats.vmo_bytes.unwrap_or(0).saturating_sub(total_vmo_size),
+                vmos: None,
             },
             // This bucket aggregates overall kernel memory usage.
             Bucket {
@@ -215,35 +268,42 @@ impl Digest {
                     )
                 })()
                 .unwrap_or(0),
+                vmos: None,
             },
             // This bucket contains the amount of free memory in the system.
-            Bucket { name: FREE.to_string(), size: kmem_stats.free_bytes.unwrap_or(0) },
+            Bucket { name: FREE.to_string(), size: kmem_stats.free_bytes.unwrap_or(0), vmos: None },
             // Those buckets contain pager related information.
             Bucket {
                 name: PAGER_TOTAL.to_string(),
                 size: kmem_stats.vmo_reclaim_total_bytes.unwrap_or(0),
+                vmos: None,
             },
             Bucket {
                 name: PAGER_NEWEST.to_string(),
                 size: kmem_stats.vmo_reclaim_newest_bytes.unwrap_or(0),
+                vmos: None,
             },
             Bucket {
                 name: PAGER_OLDEST.to_string(),
                 size: kmem_stats.vmo_reclaim_oldest_bytes.unwrap_or(0),
+                vmos: None,
             },
             // Those buckets account for discardable memory.
             Bucket {
                 name: DISCARDABLE_LOCKED.to_string(),
                 size: kmem_stats.vmo_discardable_locked_bytes.unwrap_or(0),
+                vmos: None,
             },
             Bucket {
                 name: DISCARDABLE_UNLOCKED.to_string(),
                 size: kmem_stats.vmo_discardable_unlocked_bytes.unwrap_or(0),
+                vmos: None,
             },
             // This bucket accounts for compressed memory.
             Bucket {
                 name: ZRAM_COMPRESSED_BYTES.to_string(),
                 size: kmem_stats_compression.compressed_storage_bytes.unwrap_or(0),
+                vmos: None,
             },
         ]);
         Ok(Digest { buckets })
@@ -369,29 +429,58 @@ mod tests {
         )
     }
 
+    fn sort_buckets_for_assert(digest: &mut Digest) {
+        for bucket in digest.buckets.iter_mut() {
+            for vmos in bucket.vmos.iter_mut() {
+                vmos.sort_by(|vmo1, vmo2| vmo1.name.cmp(&vmo2.name));
+            }
+        }
+    }
+
     #[test]
     fn test_digest_no_definitions() {
         let (kernel_stats, kernel_stats_compression) = get_kernel_stats();
-        let digest = Digest::compute(
-            &get_attribution_data(),
-            &kernel_stats,
-            &kernel_stats_compression,
-            &vec![],
-        )
-        .unwrap();
+        let digest = {
+            let mut digest = Digest::compute(
+                &get_attribution_data(),
+                &kernel_stats,
+                &kernel_stats_compression,
+                &vec![],
+                true,
+            )
+            .unwrap();
+            sort_buckets_for_assert(&mut digest);
+            digest
+        };
         let expected_buckets = vec![
-            Bucket { name: UNDIGESTED.to_string(), size: 1024 }, // The two VMOs are unmatched, 512 + 512
+            // The two VMOs are unmatched, 512 + 512
+            Bucket {
+                name: UNDIGESTED.to_string(),
+                size: 1024,
+                vmos: Some(vec![
+                    NamedVmo {
+                        name: ZXName::from_string_lossy("matched"),
+                        size: 512,
+                        principals: vec!["principal".to_string()],
+                    },
+                    NamedVmo {
+                        name: ZXName::from_string_lossy("resource"),
+                        size: 512,
+                        principals: vec![],
+                    },
+                ]),
+            },
             // No matched VMOs, one UNDIGESTED VMO => 10000 - 1024 = 8976
-            Bucket { name: ORPHANED.to_string(), size: 8976 },
+            Bucket { name: ORPHANED.to_string(), size: 8976, vmos: None },
             // wired + heap + mmu + ipc + other => 3 + 4 + 7 + 8 + 9 = 31
-            Bucket { name: KERNEL.to_string(), size: 31 },
-            Bucket { name: FREE.to_string(), size: 2 },
-            Bucket { name: PAGER_TOTAL.to_string(), size: 14 },
-            Bucket { name: PAGER_NEWEST.to_string(), size: 15 },
-            Bucket { name: PAGER_OLDEST.to_string(), size: 16 },
-            Bucket { name: DISCARDABLE_LOCKED.to_string(), size: 18 },
-            Bucket { name: DISCARDABLE_UNLOCKED.to_string(), size: 19 },
-            Bucket { name: ZRAM_COMPRESSED_BYTES.to_string(), size: 21 },
+            Bucket { name: KERNEL.to_string(), size: 31, vmos: None },
+            Bucket { name: FREE.to_string(), size: 2, vmos: None },
+            Bucket { name: PAGER_TOTAL.to_string(), size: 14, vmos: None },
+            Bucket { name: PAGER_NEWEST.to_string(), size: 15, vmos: None },
+            Bucket { name: PAGER_OLDEST.to_string(), size: 16, vmos: None },
+            Bucket { name: DISCARDABLE_LOCKED.to_string(), size: 18, vmos: None },
+            Bucket { name: DISCARDABLE_UNLOCKED.to_string(), size: 19, vmos: None },
+            Bucket { name: ZRAM_COMPRESSED_BYTES.to_string(), size: 21, vmos: None },
         ];
 
         assert_eq!(digest.buckets, expected_buckets);
@@ -400,33 +489,56 @@ mod tests {
     #[test]
     fn test_digest_with_matching_vmo() -> Result<(), anyhow::Error> {
         let (kernel_stats, kernel_stats_compression) = get_kernel_stats();
-        let digest = Digest::compute(
-            &get_attribution_data(),
-            &kernel_stats,
-            &kernel_stats_compression,
-            &vec![BucketDefinition {
-                name: "matched".to_string(),
-                process: None,
-                vmo: Some(Regex::new("matched")?),
-                principal: None,
-                event_code: Default::default(),
-            }],
-        )
-        .unwrap();
+        let digest = {
+            let mut digest = Digest::compute(
+                &get_attribution_data(),
+                &kernel_stats,
+                &kernel_stats_compression,
+                &vec![BucketDefinition {
+                    name: "matched".to_string(),
+                    process: None,
+                    vmo: Some(Regex::new("matched")?),
+                    principal: None,
+                    event_code: Default::default(),
+                }],
+                true,
+            )
+            .unwrap();
+            sort_buckets_for_assert(&mut digest);
+            digest
+        };
         let expected_buckets = vec![
-            Bucket { name: "matched".to_string(), size: 512 }, // One VMO is matched, the other is not
-            Bucket { name: UNDIGESTED.to_string(), size: 512 }, // One unmatched VMO
+            // One VMO is matched, the other is not
+            Bucket {
+                name: "matched".to_string(),
+                size: 512,
+                vmos: Some(vec![NamedVmo {
+                    name: ZXName::from_string_lossy("matched"),
+                    size: 512,
+                    principals: vec!["principal".to_owned()],
+                }]),
+            },
+            // One unmatched VMO
+            Bucket {
+                name: UNDIGESTED.to_string(),
+                size: 512,
+                vmos: Some(vec![NamedVmo {
+                    name: ZXName::from_string_lossy("resource"),
+                    size: 512,
+                    principals: vec![],
+                }]),
+            },
             // One matched VMO, one unmatched VMO //=> 10000 - 512 - 512 = 8976
-            Bucket { name: ORPHANED.to_string(), size: 8976 },
+            Bucket { name: ORPHANED.to_string(), size: 8976, vmos: None },
             // wired + heap + mmu + ipc + other => 3 + 4 + 7 + 8 + 9 = 31
-            Bucket { name: KERNEL.to_string(), size: 31 },
-            Bucket { name: FREE.to_string(), size: 2 },
-            Bucket { name: PAGER_TOTAL.to_string(), size: 14 },
-            Bucket { name: PAGER_NEWEST.to_string(), size: 15 },
-            Bucket { name: PAGER_OLDEST.to_string(), size: 16 },
-            Bucket { name: DISCARDABLE_LOCKED.to_string(), size: 18 },
-            Bucket { name: DISCARDABLE_UNLOCKED.to_string(), size: 19 },
-            Bucket { name: ZRAM_COMPRESSED_BYTES.to_string(), size: 21 },
+            Bucket { name: KERNEL.to_string(), size: 31, vmos: None },
+            Bucket { name: FREE.to_string(), size: 2, vmos: None },
+            Bucket { name: PAGER_TOTAL.to_string(), size: 14, vmos: None },
+            Bucket { name: PAGER_NEWEST.to_string(), size: 15, vmos: None },
+            Bucket { name: PAGER_OLDEST.to_string(), size: 16, vmos: None },
+            Bucket { name: DISCARDABLE_LOCKED.to_string(), size: 18, vmos: None },
+            Bucket { name: DISCARDABLE_UNLOCKED.to_string(), size: 19, vmos: None },
+            Bucket { name: ZRAM_COMPRESSED_BYTES.to_string(), size: 21, vmos: None },
         ];
 
         assert_eq!(digest.buckets, expected_buckets);
@@ -436,31 +548,52 @@ mod tests {
     #[test]
     fn test_digest_with_matching_process() -> Result<(), anyhow::Error> {
         let (kernel_stats, kernel_stats_compression) = get_kernel_stats();
-        let digest = Digest::compute(
-            &get_attribution_data(),
-            &kernel_stats,
-            &kernel_stats_compression,
-            &vec![BucketDefinition {
-                name: "matched".to_string(),
-                process: Some(Regex::new("matched")?),
-                vmo: None,
-                principal: None,
-                event_code: Default::default(),
-            }],
-        )
-        .unwrap();
+        let digest = {
+            let mut digest = Digest::compute(
+                &get_attribution_data(),
+                &kernel_stats,
+                &kernel_stats_compression,
+                &vec![BucketDefinition {
+                    name: "matched".to_string(),
+                    process: Some(Regex::new("matched")?),
+                    vmo: None,
+                    principal: None,
+                    event_code: Default::default(),
+                }],
+                true,
+            )
+            .unwrap();
+            sort_buckets_for_assert(&mut digest);
+            digest
+        };
         let expected_buckets = vec![
-            Bucket { name: "matched".to_string(), size: 1024 }, // Both VMOs are matched => 512 + 512 = 1024
-            Bucket { name: UNDIGESTED.to_string(), size: 0 },   // No unmatched VMO
-            Bucket { name: ORPHANED.to_string(), size: 8976 }, // Two matched VMO => 10000 - 512 - 512 = 8976
-            Bucket { name: KERNEL.to_string(), size: 31 }, // wired + heap + mmu + ipc + other => 3 + 4 + 7 + 8 + 9 = 31
-            Bucket { name: FREE.to_string(), size: 2 },
-            Bucket { name: PAGER_TOTAL.to_string(), size: 14 },
-            Bucket { name: PAGER_NEWEST.to_string(), size: 15 },
-            Bucket { name: PAGER_OLDEST.to_string(), size: 16 },
-            Bucket { name: DISCARDABLE_LOCKED.to_string(), size: 18 },
-            Bucket { name: DISCARDABLE_UNLOCKED.to_string(), size: 19 },
-            Bucket { name: ZRAM_COMPRESSED_BYTES.to_string(), size: 21 },
+            // Both VMOs are matched => 512 + 512 = 1024
+            Bucket {
+                name: "matched".to_string(),
+                size: 1024,
+                vmos: Some(vec![
+                    NamedVmo {
+                        name: ZXName::from_string_lossy("matched"),
+                        size: 512,
+                        principals: vec!["principal".to_owned()],
+                    },
+                    NamedVmo {
+                        name: ZXName::from_string_lossy("resource"),
+                        size: 512,
+                        principals: vec![],
+                    },
+                ]),
+            },
+            Bucket { name: UNDIGESTED.to_string(), size: 0, vmos: Some(vec![]) }, // No unmatched VMO
+            Bucket { name: ORPHANED.to_string(), size: 8976, vmos: None }, // Two matched VMO => 10000 - 512 - 512 = 8976
+            Bucket { name: KERNEL.to_string(), size: 31, vmos: None }, // wired + heap + mmu + ipc + other => 3 + 4 + 7 + 8 + 9 = 31
+            Bucket { name: FREE.to_string(), size: 2, vmos: None },
+            Bucket { name: PAGER_TOTAL.to_string(), size: 14, vmos: None },
+            Bucket { name: PAGER_NEWEST.to_string(), size: 15, vmos: None },
+            Bucket { name: PAGER_OLDEST.to_string(), size: 16, vmos: None },
+            Bucket { name: DISCARDABLE_LOCKED.to_string(), size: 18, vmos: None },
+            Bucket { name: DISCARDABLE_UNLOCKED.to_string(), size: 19, vmos: None },
+            Bucket { name: ZRAM_COMPRESSED_BYTES.to_string(), size: 21, vmos: None },
         ];
 
         assert_eq!(digest.buckets, expected_buckets);
@@ -470,33 +603,56 @@ mod tests {
     #[test]
     fn test_digest_with_matching_principal() -> Result<(), anyhow::Error> {
         let (kernel_stats, kernel_stats_compression) = get_kernel_stats();
-        let digest = Digest::compute(
-            &get_attribution_data(),
-            &kernel_stats,
-            &kernel_stats_compression,
-            &vec![BucketDefinition {
-                name: "matched".to_string(),
-                process: None,
-                vmo: None,
-                principal: Some(Regex::new("principal")?),
-                event_code: Default::default(),
-            }],
-        )
-        .unwrap();
+        let digest = {
+            let mut digest = Digest::compute(
+                &get_attribution_data(),
+                &kernel_stats,
+                &kernel_stats_compression,
+                &vec![BucketDefinition {
+                    name: "matched".to_string(),
+                    process: None,
+                    vmo: None,
+                    principal: Some(Regex::new("principal")?),
+                    event_code: Default::default(),
+                }],
+                true,
+            )
+            .unwrap();
+            sort_buckets_for_assert(&mut digest);
+            digest
+        };
         let expected_buckets = vec![
-            Bucket { name: "matched".to_string(), size: 512 }, // One VMO is matched, the other is not
-            Bucket { name: UNDIGESTED.to_string(), size: 512 }, // One unmatched VMO
+            // One VMO is matched, the other is not
+            Bucket {
+                name: "matched".to_string(),
+                size: 512,
+                vmos: Some(vec![NamedVmo {
+                    name: ZXName::from_string_lossy("matched"),
+                    size: 512,
+                    principals: vec!["principal".to_owned()],
+                }]),
+            },
+            // One unmatched VMO
+            Bucket {
+                name: UNDIGESTED.to_string(),
+                size: 512,
+                vmos: Some(vec![NamedVmo {
+                    name: ZXName::from_string_lossy("resource"),
+                    size: 512,
+                    principals: vec![],
+                }]),
+            },
             // One matched VMO, one unmatched VMO //=> 10000 - 512 - 512 = 8976
-            Bucket { name: ORPHANED.to_string(), size: 8976 },
+            Bucket { name: ORPHANED.to_string(), size: 8976, vmos: None },
             // wired + heap + mmu + ipc + other => 3 + 4 + 7 + 8 + 9 = 31
-            Bucket { name: KERNEL.to_string(), size: 31 },
-            Bucket { name: FREE.to_string(), size: 2 },
-            Bucket { name: PAGER_TOTAL.to_string(), size: 14 },
-            Bucket { name: PAGER_NEWEST.to_string(), size: 15 },
-            Bucket { name: PAGER_OLDEST.to_string(), size: 16 },
-            Bucket { name: DISCARDABLE_LOCKED.to_string(), size: 18 },
-            Bucket { name: DISCARDABLE_UNLOCKED.to_string(), size: 19 },
-            Bucket { name: ZRAM_COMPRESSED_BYTES.to_string(), size: 21 },
+            Bucket { name: KERNEL.to_string(), size: 31, vmos: None },
+            Bucket { name: FREE.to_string(), size: 2, vmos: None },
+            Bucket { name: PAGER_TOTAL.to_string(), size: 14, vmos: None },
+            Bucket { name: PAGER_NEWEST.to_string(), size: 15, vmos: None },
+            Bucket { name: PAGER_OLDEST.to_string(), size: 16, vmos: None },
+            Bucket { name: DISCARDABLE_LOCKED.to_string(), size: 18, vmos: None },
+            Bucket { name: DISCARDABLE_UNLOCKED.to_string(), size: 19, vmos: None },
+            Bucket { name: ZRAM_COMPRESSED_BYTES.to_string(), size: 21, vmos: None },
         ];
 
         assert_eq!(digest.buckets, expected_buckets);
@@ -506,32 +662,55 @@ mod tests {
     #[test]
     fn test_digest_with_matching_principal_process_and_vmo() -> Result<(), anyhow::Error> {
         let (kernel_stats, kernel_stats_compression) = get_kernel_stats();
-        let digest = Digest::compute(
-            &get_attribution_data(),
-            &kernel_stats,
-            &kernel_stats_compression,
-            &vec![BucketDefinition {
-                name: "matched".to_string(),
-                process: Some(Regex::new("matched")?),
-                vmo: Some(Regex::new("matched")?),
-                principal: Some(Regex::new("principal")?),
-                event_code: Default::default(),
-            }],
-        )
-        .unwrap();
+        let digest = {
+            let mut digest = Digest::compute(
+                &get_attribution_data(),
+                &kernel_stats,
+                &kernel_stats_compression,
+                &vec![BucketDefinition {
+                    name: "matched".to_string(),
+                    process: Some(Regex::new("matched")?),
+                    vmo: Some(Regex::new("matched")?),
+                    principal: Some(Regex::new("principal")?),
+                    event_code: Default::default(),
+                }],
+                true,
+            )
+            .unwrap();
+            sort_buckets_for_assert(&mut digest);
+            digest
+        };
         let expected_buckets = vec![
-            Bucket { name: "matched".to_string(), size: 512 }, // One VMO is matched, the other is not
-            Bucket { name: UNDIGESTED.to_string(), size: 512 }, // One unmatched VMO
+            // One VMO is matched, the other is not
+            Bucket {
+                name: "matched".to_string(),
+                size: 512,
+                vmos: Some(vec![NamedVmo {
+                    name: ZXName::from_string_lossy("matched"),
+                    size: 512,
+                    principals: vec!["principal".to_owned()],
+                }]),
+            },
+            // One unmatched VMO
+            Bucket {
+                name: UNDIGESTED.to_string(),
+                size: 512,
+                vmos: Some(vec![NamedVmo {
+                    name: ZXName::from_string_lossy("resource"),
+                    size: 512,
+                    principals: vec![],
+                }]),
+            },
             // One matched VMO, one unmatched VMO => 10000 - 512 - 512 = 8976
-            Bucket { name: ORPHANED.to_string(), size: 8976 },
-            Bucket { name: KERNEL.to_string(), size: 31 }, // wired + heap + mmu + ipc + other => 3 + 4 + 7 + 8 + 9 = 31
-            Bucket { name: FREE.to_string(), size: 2 },
-            Bucket { name: PAGER_TOTAL.to_string(), size: 14 },
-            Bucket { name: PAGER_NEWEST.to_string(), size: 15 },
-            Bucket { name: PAGER_OLDEST.to_string(), size: 16 },
-            Bucket { name: DISCARDABLE_LOCKED.to_string(), size: 18 },
-            Bucket { name: DISCARDABLE_UNLOCKED.to_string(), size: 19 },
-            Bucket { name: ZRAM_COMPRESSED_BYTES.to_string(), size: 21 },
+            Bucket { name: ORPHANED.to_string(), size: 8976, vmos: None },
+            Bucket { name: KERNEL.to_string(), size: 31, vmos: None }, // wired + heap + mmu + ipc + other => 3 + 4 + 7 + 8 + 9 = 31
+            Bucket { name: FREE.to_string(), size: 2, vmos: None },
+            Bucket { name: PAGER_TOTAL.to_string(), size: 14, vmos: None },
+            Bucket { name: PAGER_NEWEST.to_string(), size: 15, vmos: None },
+            Bucket { name: PAGER_OLDEST.to_string(), size: 16, vmos: None },
+            Bucket { name: DISCARDABLE_LOCKED.to_string(), size: 18, vmos: None },
+            Bucket { name: DISCARDABLE_UNLOCKED.to_string(), size: 19, vmos: None },
+            Bucket { name: ZRAM_COMPRESSED_BYTES.to_string(), size: 21, vmos: None },
         ];
 
         assert_eq!(digest.buckets, expected_buckets);

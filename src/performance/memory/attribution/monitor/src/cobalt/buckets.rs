@@ -326,6 +326,7 @@ mod tests {
             &kmem_stats,
             &kmem_stats_compression,
             &bucket_definitions,
+            false,
         )?;
         let bucket_codes = prepare_bucket_codes(&bucket_definitions);
         let upload = upload_metrics(

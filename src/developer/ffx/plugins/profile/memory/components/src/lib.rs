@@ -164,11 +164,12 @@ impl MemoryComponentsTool {
             return Ok(());
         }
 
-        let profile_result = process_snapshot_summary(snapshot);
+        let profile_result =
+            process_snapshot_summary(snapshot, self.cmd.buckets, self.cmd.list_vmos);
         if writer.is_machine() {
             writer.machine(ComponentProfileResult::Summary(profile_result))?;
         } else {
-            output::write_summary(&mut writer.stdout(), self.cmd.csv, &profile_result).map_err(
+            output::write_summary(&mut writer.stdout(), self.cmd.csv, profile_result).map_err(
                 |e| match e.kind() {
                     std::io::ErrorKind::BrokenPipe => fho::Error::ExitWithCode(141),
                     _ => fho::Error::Unexpected(e.into()),
@@ -198,7 +199,11 @@ impl MemoryComponentsTool {
     }
 }
 
-fn process_snapshot_summary(snapshot: fplugin::Snapshot) -> ComponentSummaryProfileResult {
+fn process_snapshot_summary(
+    snapshot: fplugin::Snapshot,
+    buckets: bool,
+    list_vmos: bool,
+) -> ComponentSummaryProfileResult {
     // Map from moniker token ID to Principal struct.
     let principals: Vec<Principal> =
         snapshot.principals.into_iter().flatten().map(|p| p.into()).collect();
@@ -233,13 +238,20 @@ fn process_snapshot_summary(snapshot: fplugin::Snapshot) -> ComponentSummaryProf
             .collect(),
         attributions,
     });
-    let digest = digest::Digest::compute(
-        &attribution_data,
-        &snapshot.kernel_statistics.as_ref().unwrap().memory_stats.as_ref().unwrap(),
-        &snapshot.kernel_statistics.as_ref().unwrap().compression_stats.as_ref().unwrap(),
-        &bucket_definitions,
-    )
-    .expect("Digest computation should succeed");
+    let digest = if buckets {
+        Some(
+            digest::Digest::compute(
+                &attribution_data,
+                &snapshot.kernel_statistics.as_ref().unwrap().memory_stats.as_ref().unwrap(),
+                &snapshot.kernel_statistics.as_ref().unwrap().compression_stats.as_ref().unwrap(),
+                &bucket_definitions,
+                list_vmos,
+            )
+            .expect("Digest computation should succeed"),
+        )
+    } else {
+        None
+    };
     let MemorySummary { principals, unclaimed } = attribution_data.summary();
     ComponentSummaryProfileResult {
         kernel: snapshot.kernel_statistics.unwrap().into(),
@@ -255,6 +267,7 @@ mod tests {
     use std::collections::HashMap;
 
     use super::*;
+    use attribution_processing::digest::NamedVmo;
     use attribution_processing::summary::{PrincipalSummary, VmoSummary};
     use fidl_fuchsia_memory_attribution_plugin as fplugin;
 
@@ -620,8 +633,9 @@ mod tests {
             ..Default::default()
         };
 
-        let ComponentSummaryProfileResult { principals, unclaimed, performance, digest, .. } =
-            process_snapshot_summary(snapshot);
+        let ComponentSummaryProfileResult {
+            principals, unclaimed, performance, mut digest, ..
+        } = process_snapshot_summary(snapshot, true, true);
 
         // VMO 1011 is the parent of VMO 1010, but not claimed by any Principal; it is thus
         // unclaimed.
@@ -825,24 +839,93 @@ mod tests {
                 ..Default::default()
             }
         );
-
+        for digest in digest.iter_mut() {
+            for bucket in digest.buckets.iter_mut() {
+                for vmos in bucket.vmos.iter_mut() {
+                    vmos.sort_by(|vmo1, vmo2| vmo1.name.cmp(&vmo2.name));
+                    for vmo in vmos.iter_mut() {
+                        vmo.principals.sort();
+                    }
+                }
+            }
+        }
         assert_eq!(
             digest,
-            digest::Digest {
+            Some(digest::Digest {
                 buckets: vec![
-                    digest::Bucket { name: "da_bucket".to_string(), size: 1024 },
-                    digest::Bucket { name: "Undigested".to_string(), size: 6272 },
-                    digest::Bucket { name: "Orphaned".to_string(), size: 0 },
-                    digest::Bucket { name: "Kernel".to_string(), size: 39 },
-                    digest::Bucket { name: "Free".to_string(), size: 2 },
-                    digest::Bucket { name: "[Addl]PagerTotal".to_string(), size: 14 },
-                    digest::Bucket { name: "[Addl]PagerNewest".to_string(), size: 15 },
-                    digest::Bucket { name: "[Addl]PagerOldest".to_string(), size: 16 },
-                    digest::Bucket { name: "[Addl]DiscardableLocked".to_string(), size: 18 },
-                    digest::Bucket { name: "[Addl]DiscardableUnlocked".to_string(), size: 19 },
-                    digest::Bucket { name: "[Addl]ZramCompressedBytes".to_string(), size: 16 }
+                    digest::Bucket {
+                        name: "da_bucket".to_string(),
+                        size: 1024,
+                        vmos: Some(vec![NamedVmo {
+                            name: ZXName::from_string_lossy("root_vmo"),
+                            size: 1024,
+                            principals: vec!["root".to_owned()]
+                        }])
+                    },
+                    digest::Bucket {
+                        name: "Undigested".to_string(),
+                        size: 6272,
+                        vmos: Some(vec![
+                            NamedVmo {
+                                name: ZXName::from_string_lossy("2_vmo"),
+                                size: 1024,
+                                principals: vec!["component 3".to_owned()],
+                            },
+                            NamedVmo {
+                                name: ZXName::from_string_lossy("2_vmo_parent"),
+                                size: 1024,
+                                principals: vec![],
+                            },
+                            NamedVmo {
+                                name: ZXName::from_string_lossy("component_vmo"),
+                                size: 128,
+                                principals: vec!["component 4".to_owned()],
+                            },
+                            NamedVmo {
+                                name: ZXName::from_string_lossy("component_vmo_mapped"),
+                                size: 1024,
+                                principals: vec!["component 4".to_owned()],
+                            },
+                            NamedVmo {
+                                name: ZXName::from_string_lossy("component_vmo_mapped2"),
+                                size: 1024,
+                                principals: vec!["component 4".to_owned()],
+                            },
+                            NamedVmo {
+                                name: ZXName::from_string_lossy("runner_vmo"),
+                                size: 1024,
+                                principals: vec!["runner".to_owned()],
+                            },
+                            NamedVmo {
+                                name: ZXName::from_string_lossy("shared_vmo"),
+                                size: 1024,
+                                principals: vec!["component 3".to_owned(), "root".to_owned()],
+                            },
+                        ])
+                    },
+                    digest::Bucket { name: "Orphaned".to_string(), size: 0, vmos: None },
+                    digest::Bucket { name: "Kernel".to_string(), size: 39, vmos: None },
+                    digest::Bucket { name: "Free".to_string(), size: 2, vmos: None },
+                    digest::Bucket { name: "[Addl]PagerTotal".to_string(), size: 14, vmos: None },
+                    digest::Bucket { name: "[Addl]PagerNewest".to_string(), size: 15, vmos: None },
+                    digest::Bucket { name: "[Addl]PagerOldest".to_string(), size: 16, vmos: None },
+                    digest::Bucket {
+                        name: "[Addl]DiscardableLocked".to_string(),
+                        size: 18,
+                        vmos: None,
+                    },
+                    digest::Bucket {
+                        name: "[Addl]DiscardableUnlocked".to_string(),
+                        size: 19,
+                        vmos: None,
+                    },
+                    digest::Bucket {
+                        name: "[Addl]ZramCompressedBytes".to_string(),
+                        size: 16,
+                        vmos: None,
+                    }
                 ]
-            }
+            })
         );
     }
 
@@ -1008,7 +1091,7 @@ mod tests {
         };
 
         let ComponentSummaryProfileResult { principals, unclaimed, .. } =
-            process_snapshot_summary(snapshot);
+            process_snapshot_summary(snapshot, true, true);
 
         assert_eq!(unclaimed, 0);
         assert_eq!(principals.len(), 3);
