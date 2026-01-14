@@ -2267,8 +2267,19 @@ TEST(Vmar, PartialUnmapAndRead) {
   // Map a two-page VMO.
   zx_handle_t vmo;
   ASSERT_EQ(zx_vmo_create(zx_system_get_page_size() * 2, 0, &vmo), ZX_OK);
+
+  // Use a sub-VMAR so that unmapped addresses can remain reserved.
+  uintptr_t vmar_base;
+  zx_handle_t vmar;
+  ASSERT_OK(zx_vmar_allocate(zx_vmar_root_self(), ZX_VM_CAN_MAP_READ | ZX_VM_CAN_MAP_WRITE, 0,
+                             zx_system_get_page_size() * 2, &vmar, &vmar_base));
+  auto destroy = fit::defer([&]() {
+    // Cleanup the VMAR later.
+    EXPECT_EQ(zx_vmar_destroy(vmar), ZX_OK);
+  });
+
   uintptr_t mapping_addr;
-  ASSERT_EQ(zx_vmar_map(zx_vmar_root_self(), ZX_VM_PERM_READ | ZX_VM_PERM_WRITE, 0, vmo, 0,
+  ASSERT_EQ(zx_vmar_map(vmar, ZX_VM_PERM_READ | ZX_VM_PERM_WRITE, 0, vmo, 0,
                         zx_system_get_page_size() * 2, &mapping_addr),
             ZX_OK);
   EXPECT_EQ(zx_handle_close(vmo), ZX_OK);
@@ -2277,8 +2288,8 @@ TEST(Vmar, PartialUnmapAndRead) {
   memset(ptr, 0, zx_system_get_page_size() * 2);
 
   // Unmap the second page.
-  zx_vmar_unmap(zx_vmar_root_self(), mapping_addr + zx_system_get_page_size(),
-                zx_system_get_page_size());
+  ASSERT_OK(
+      zx_vmar_unmap(vmar, mapping_addr + zx_system_get_page_size(), zx_system_get_page_size()));
 
   char buffer[zx_system_get_page_size() * 2];
   size_t actual_read;
@@ -2307,15 +2318,26 @@ TEST(Vmar, PartialUnmapAndRead) {
   EXPECT_EQ(actual_read, 1);
 
   // Unmap the left over first page.
-  EXPECT_EQ(zx_vmar_unmap(zx_vmar_root_self(), mapping_addr, zx_system_get_page_size()), ZX_OK);
+  EXPECT_EQ(zx_vmar_unmap(vmar, mapping_addr, zx_system_get_page_size()), ZX_OK);
 }
 
 TEST(Vmar, PartialUnmapAndWrite) {
   // Map a two-page VMO.
   zx_handle_t vmo;
   ASSERT_EQ(zx_vmo_create(zx_system_get_page_size() * 2, 0, &vmo), ZX_OK);
+
+  // Use a sub-VMAR so that unmapped addresses can remain reserved.
+  uintptr_t vmar_base;
+  zx_handle_t vmar;
+  ASSERT_OK(zx_vmar_allocate(zx_vmar_root_self(), ZX_VM_CAN_MAP_READ | ZX_VM_CAN_MAP_WRITE, 0,
+                             zx_system_get_page_size() * 2, &vmar, &vmar_base));
+  auto destroy = fit::defer([&]() {
+    // Cleanup the VMAR later.
+    EXPECT_EQ(zx_vmar_destroy(vmar), ZX_OK);
+  });
+
   uintptr_t mapping_addr;
-  ASSERT_EQ(zx_vmar_map(zx_vmar_root_self(), ZX_VM_PERM_READ | ZX_VM_PERM_WRITE, 0, vmo, 0,
+  ASSERT_EQ(zx_vmar_map(vmar, ZX_VM_PERM_READ | ZX_VM_PERM_WRITE, 0, vmo, 0,
                         zx_system_get_page_size() * 2, &mapping_addr),
             ZX_OK);
   EXPECT_EQ(zx_handle_close(vmo), ZX_OK);
@@ -2324,8 +2346,8 @@ TEST(Vmar, PartialUnmapAndWrite) {
   memset(ptr, 0, zx_system_get_page_size() * 2);
 
   // Unmap the second page.
-  zx_vmar_unmap(zx_vmar_root_self(), mapping_addr + zx_system_get_page_size(),
-                zx_system_get_page_size());
+  ASSERT_OK(
+      zx_vmar_unmap(vmar, mapping_addr + zx_system_get_page_size(), zx_system_get_page_size()));
 
   char buffer[zx_system_get_page_size() * 2];
   size_t actual_written;
@@ -2355,7 +2377,7 @@ TEST(Vmar, PartialUnmapAndWrite) {
   EXPECT_EQ(actual_written, 1);
 
   // Unmap the left over first page.
-  EXPECT_EQ(zx_vmar_unmap(zx_vmar_root_self(), mapping_addr, zx_system_get_page_size()), ZX_OK);
+  EXPECT_EQ(zx_vmar_unmap(vmar, mapping_addr, zx_system_get_page_size()), ZX_OK);
 }
 
 TEST(Vmar, PartialUnmapWithVmarOffset) {
@@ -2364,14 +2386,22 @@ TEST(Vmar, PartialUnmapWithVmarOffset) {
   // Map a VMO, using an offset into the VMO.
   zx_handle_t vmo;
   ASSERT_EQ(zx_vmo_create(kVmoSize, 0, &vmo), ZX_OK);
+
+  // Use a sub-VMAR so that we can test accesses beyond the mapped range.
+  uintptr_t vmar_base;
+  zx_handle_t vmar;
+  ASSERT_OK(zx_vmar_allocate(zx_vmar_root_self(),
+                             ZX_VM_CAN_MAP_READ | ZX_VM_CAN_MAP_WRITE | ZX_VM_CAN_MAP_SPECIFIC, 0,
+                             kVmoSize, &vmar, &vmar_base));
+  auto destroy = fit::defer([&]() {
+    // Cleanup the VMAR later.
+    EXPECT_EQ(zx_vmar_destroy(vmar), ZX_OK);
+  });
+
   uintptr_t mapping_addr;
-  ASSERT_EQ(zx_vmar_map(zx_vmar_root_self(), ZX_VM_PERM_READ | ZX_VM_PERM_WRITE, 0, vmo, kOffset,
+  ASSERT_EQ(zx_vmar_map(vmar, ZX_VM_PERM_READ | ZX_VM_PERM_WRITE | ZX_VM_SPECIFIC, 0, vmo, kOffset,
                         kVmoSize - kOffset, &mapping_addr),
             ZX_OK);
-  auto unmap = fit::defer([&]() {
-    // Cleanup the mapping we created.
-    zx::vmar::root_self()->unmap(mapping_addr, kVmoSize - kOffset);
-  });
 
   EXPECT_EQ(zx_handle_close(vmo), ZX_OK);
 
