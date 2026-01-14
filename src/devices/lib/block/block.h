@@ -9,10 +9,10 @@
 
 #include "src/devices/block/drivers/core/block-fifo.h"
 
-static_assert(sizeof(block_fifo_request_t) == sizeof(block_fifo_response_t),
+static_assert(sizeof(BlockFifoRequest) == sizeof(BlockFifoResponse),
               "FIFO messages are the same size in both directions");
 
-#define BLOCK_FIFO_ESIZE (sizeof(block_fifo_request_t))
+#define BLOCK_FIFO_ESIZE (sizeof(BlockFifoRequest))
 #define BLOCK_FIFO_MAX_DEPTH (4096 / BLOCK_FIFO_ESIZE)
 
 #endif  // SRC_DEVICES_LIB_BLOCK_BLOCK_H_

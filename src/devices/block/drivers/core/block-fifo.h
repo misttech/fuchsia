@@ -87,8 +87,4 @@ struct BlockFifoResponse {
 // TODO(https://fxbug.dev/42153476): Remove lint when no longer necessary.
 // LINT.ThenChange(//src/storage/lib/block_protocol/src/fifo.rs)
 
-using block_fifo_command_t = BlockFifoCommand;
-using block_fifo_request_t = BlockFifoRequest;
-using block_fifo_response_t = BlockFifoResponse;
-
 #endif  // SRC_DEVICES_BLOCK_DRIVERS_CORE_BLOCK_FIFO_H_

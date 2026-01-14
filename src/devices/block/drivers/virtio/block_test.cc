@@ -362,7 +362,7 @@ TEST_F(BlockDriverTest, BlockServer) {
   // It doesn't matter if we leak the ID.
   vmoid_t vmoid = owned_vmoid.TakeId();
 
-  block_fifo_request_t requests[] = {
+  BlockFifoRequest requests[] = {
       {.command =
            {
                .opcode = BLOCK_OPCODE_WRITE,
@@ -391,14 +391,14 @@ TEST_F(BlockDriverTest, BlockServer) {
 
   EXPECT_OK(client->FifoTransaction(requests, 3));
 
-  block_fifo_request_t big_request = {.command =
-                                          {
-                                              .opcode = BLOCK_OPCODE_WRITE,
-                                          },
-                                      .vmoid = vmoid,
-                                      .length = static_cast<uint32_t>(kLen / kBlkSize),
-                                      .vmo_offset = 0,
-                                      .dev_offset = 0};
+  BlockFifoRequest big_request = {.command =
+                                      {
+                                          .opcode = BLOCK_OPCODE_WRITE,
+                                      },
+                                  .vmoid = vmoid,
+                                  .length = static_cast<uint32_t>(kLen / kBlkSize),
+                                  .vmo_offset = 0,
+                                  .dev_offset = 0};
 
   EXPECT_OK(client->FifoTransaction(&big_request, 1));
 }
@@ -423,7 +423,7 @@ TEST_F(BlockDriverTest, BarriersOk) {
   // It doesn't matter if we leak the ID.
   vmoid_t vmoid = owned_vmoid.TakeId();
 
-  block_fifo_request_t requests[] = {
+  BlockFifoRequest requests[] = {
       {.command =
            {
                .opcode = BLOCK_OPCODE_WRITE,
@@ -458,7 +458,7 @@ TEST_F(BlockDriverTest, BarriersError) {
   // It doesn't matter if we leak the ID.
   vmoid_t vmoid = owned_vmoid.TakeId();
 
-  block_fifo_request_t requests[] = {
+  BlockFifoRequest requests[] = {
       {.command =
            {
                .opcode = BLOCK_OPCODE_WRITE,

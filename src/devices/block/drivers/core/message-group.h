@@ -55,7 +55,7 @@ class MessageGroup {
  private:
   mutable std::mutex lock_;
   bool pending_ TA_GUARDED(lock_) = false;
-  block_fifo_response_t response_ TA_GUARDED(lock_);
+  BlockFifoResponse response_ TA_GUARDED(lock_);
   uint32_t op_count_ TA_GUARDED(lock_) = 0;
   Server& server_ TA_GUARDED(lock_);
 };

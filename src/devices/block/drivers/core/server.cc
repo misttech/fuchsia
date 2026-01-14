@@ -45,7 +45,7 @@ void BlockCompleteCb(void* cookie, zx_status_t status, block_op_t* bop) {
   msg.reset();
 }
 
-block_command_t OpcodeAndFlagsToCommand(block_fifo_command_t command) {
+block_command_t OpcodeAndFlagsToCommand(BlockFifoCommand command) {
   // BLOCK_IO_FLAG_GROUP_LAST and BLOCK_IO_FLAG_GROUP_ITEM are used in block_client, and these flags
   // are not used in block driver.
   const uint32_t group_mask = BLOCK_IO_FLAG_GROUP_LAST | BLOCK_IO_FLAG_GROUP_ITEM;
@@ -73,7 +73,7 @@ zx::result<std::unique_ptr<OffsetMap>> OffsetMap::Create(
   return zx::ok(std::move(map));
 }
 
-bool OffsetMap::AdjustRequest(block_fifo_request_t& request) const {
+bool OffsetMap::AdjustRequest(BlockFifoRequest& request) const {
   if (request.length == 0) {
     return false;
   }
@@ -95,7 +95,7 @@ void Server::Enqueue(std::unique_ptr<Message> message) {
   bp_->Queue(message->Op(), BlockCompleteCb, message.release());
 }
 
-void Server::SendResponse(const block_fifo_response_t& response) {
+void Server::SendResponse(const BlockFifoResponse& response) {
   TRACE_DURATION("storage", "SendResponse");
   for (;;) {
     zx_status_t status = fifo_.write_one(response);
@@ -128,7 +128,7 @@ void Server::FinishTransaction(zx_status_t status, reqid_t reqid, groupid_t grou
   if (group != kNoGroup) {
     groups_[group]->Complete(status);
   } else {
-    SendResponse(block_fifo_response_t{
+    SendResponse(BlockFifoResponse{
         .status = status,
         .reqid = reqid,
         .group = group,
@@ -137,7 +137,7 @@ void Server::FinishTransaction(zx_status_t status, reqid_t reqid, groupid_t grou
   }
 }
 
-zx_status_t Server::Read(block_fifo_request_t* requests, size_t* count) {
+zx_status_t Server::Read(BlockFifoRequest* requests, size_t* count) {
   // Keep trying to read messages from the fifo until we have a reason to
   // terminate
   while (true) {
@@ -268,7 +268,7 @@ void Server::GetFifo(GetFifoCompleter::Sync& completer) {
   completer.ReplySuccess(std::move(fifo.value()));
 }
 
-zx_status_t Server::ProcessReadWriteRequest(block_fifo_request_t* request) {
+zx_status_t Server::ProcessReadWriteRequest(BlockFifoRequest* request) {
   if (request->command.flags & BLOCK_IO_FLAG_DECOMPRESS_WITH_ZSTD) {
     if (request->command.opcode == BLOCK_OPCODE_READ) {
       return ZX_ERR_NOT_SUPPORTED;
@@ -358,7 +358,7 @@ zx_status_t Server::ProcessReadWriteRequest(block_fifo_request_t* request) {
       // Take a copy of the |oneshot_group| shared_ptr into each completer, so oneshot_group is
       // deallocated after all messages complete.
       auto completer = [this, oneshot_group, transaction_group, do_postflush](
-                           zx_status_t status, block_fifo_request_t& req) mutable {
+                           zx_status_t status, BlockFifoRequest& req) mutable {
         TRACE_DURATION("storage", "FinishTransactionGroup");
         if (req.trace_flow_id) {
           TRACE_FLOW_STEP("storage", "BlockOp", req.trace_flow_id);
@@ -366,7 +366,7 @@ zx_status_t Server::ProcessReadWriteRequest(block_fifo_request_t* request) {
         if (do_postflush && transaction_group->StatusOkPendingLastOp() && status == ZX_OK) {
           // Issue (Post)Flush command when last sub transaction completed.
           auto postflush_completer = [transaction_group](zx_status_t postflush_status,
-                                                         block_fifo_request_t& req) {
+                                                         BlockFifoRequest& req) {
             transaction_group->Complete(postflush_status);
           };
           if (zx_status_t status =
@@ -405,14 +405,14 @@ zx_status_t Server::ProcessReadWriteRequest(block_fifo_request_t* request) {
     }
     ZX_DEBUG_ASSERT(len_remaining == 0);
   } else {
-    auto completer = [this, do_postflush](zx_status_t status, block_fifo_request_t& req) {
+    auto completer = [this, do_postflush](zx_status_t status, BlockFifoRequest& req) {
       TRACE_DURATION("storage", "FinishTransaction");
       if (req.trace_flow_id) {
         TRACE_FLOW_STEP("storage", "BlockOp", req.trace_flow_id);
       }
       if (do_postflush && status == ZX_OK) {
         // Issue (Post)Flush command
-        auto postflush_completer = [this](zx_status_t postflush_status, block_fifo_request_t& req) {
+        auto postflush_completer = [this](zx_status_t postflush_status, BlockFifoRequest& req) {
           FinishTransaction(postflush_status, req.reqid, req.group);
         };
         if (zx_status_t status =
@@ -446,7 +446,7 @@ zx_status_t Server::ProcessReadWriteRequest(block_fifo_request_t* request) {
   return ZX_OK;
 }
 
-zx_status_t Server::ProcessCloseVmoRequest(block_fifo_request_t* request) {
+zx_status_t Server::ProcessCloseVmoRequest(BlockFifoRequest* request) {
   fbl::AutoLock lock(&server_lock_);
   auto iobuf = tree_.find(request->vmoid);
   if (!iobuf.IsValid()) {
@@ -462,7 +462,7 @@ zx_status_t Server::ProcessCloseVmoRequest(block_fifo_request_t* request) {
   return ZX_OK;
 }
 
-zx_status_t Server::IssueFlushCommand(block_fifo_request_t* request, MessageCompleter completer,
+zx_status_t Server::IssueFlushCommand(BlockFifoRequest* request, MessageCompleter completer,
                                       bool internal_cmd) {
   std::unique_ptr<Message> msg;
   zx_status_t status =
@@ -479,14 +479,14 @@ zx_status_t Server::IssueFlushCommand(block_fifo_request_t* request, MessageComp
   return ZX_OK;
 }
 
-zx_status_t Server::ProcessFlushRequest(block_fifo_request_t* request) {
-  auto completer = [this](zx_status_t result, block_fifo_request_t& req) {
+zx_status_t Server::ProcessFlushRequest(BlockFifoRequest* request) {
+  auto completer = [this](zx_status_t result, BlockFifoRequest& req) {
     FinishTransaction(result, req.reqid, req.group);
   };
   return IssueFlushCommand(request, std::move(completer), /*internal_cmd=*/false);
 }
 
-zx_status_t Server::ProcessTrimRequest(block_fifo_request_t* request) {
+zx_status_t Server::ProcessTrimRequest(BlockFifoRequest* request) {
   if (!request->length) {
     return ZX_ERR_INVALID_ARGS;
   }
@@ -497,7 +497,7 @@ zx_status_t Server::ProcessTrimRequest(block_fifo_request_t* request) {
   }
 
   std::unique_ptr<Message> msg;
-  auto completer = [this](zx_status_t result, block_fifo_request_t& req) {
+  auto completer = [this](zx_status_t result, BlockFifoRequest& req) {
     FinishTransaction(result, req.reqid, req.group);
   };
   zx_status_t status =
@@ -512,7 +512,7 @@ zx_status_t Server::ProcessTrimRequest(block_fifo_request_t* request) {
   return ZX_OK;
 }
 
-void Server::ProcessRequest(block_fifo_request_t* request) {
+void Server::ProcessRequest(BlockFifoRequest* request) {
   TRACE_DURATION("storage", "Server::ProcessRequest", "opcode", request->command.opcode);
   if (request->trace_flow_id) {
     TRACE_FLOW_STEP("storage", "BlockOp", request->trace_flow_id);
@@ -544,7 +544,7 @@ void Server::ProcessRequest(block_fifo_request_t* request) {
 }
 
 zx_status_t Server::Serve() {
-  block_fifo_request_t requests[BLOCK_FIFO_MAX_DEPTH];
+  BlockFifoRequest requests[BLOCK_FIFO_MAX_DEPTH];
   size_t count;
   while (true) {
     if (zx_status_t status = Read(requests, &count); status != ZX_OK) {

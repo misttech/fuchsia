@@ -43,7 +43,7 @@ zx_status_t Client::BlockDetachVmo(storage::Vmoid vmoid) {
   if (!vmoid.IsAttached()) {
     return ZX_OK;
   }
-  block_fifo_request_t request = {};
+  BlockFifoRequest request = {};
   request.command = {.opcode = BLOCK_OPCODE_CLOSE_VMO, .flags = 0};
   request.vmoid = vmoid.TakeId();
   return Transaction(&request, 1);
@@ -57,7 +57,7 @@ zx::result<storage::OwnedVmoid> Client::RegisterVmo(const zx::vmo& vmo) {
   return zx::ok(storage::OwnedVmoid(std::move(vmoid), this));
 }
 
-zx_status_t Client::Transaction(block_fifo_request_t* requests, size_t count) {
+zx_status_t Client::Transaction(BlockFifoRequest* requests, size_t count) {
   if (count == 0)
     return ZX_OK;
 
@@ -113,7 +113,7 @@ zx_status_t Client::Transaction(block_fifo_request_t* requests, size_t count) {
         reading_ = true;
 
         constexpr size_t kMaxResponseCount = 8;
-        block_fifo_response_t response[kMaxResponseCount];
+        BlockFifoResponse response[kMaxResponseCount];
         size_t count = kMaxResponseCount;
 
         // Unlocked block.
@@ -157,9 +157,9 @@ zx_status_t Client::Transaction(block_fifo_request_t* requests, size_t count) {
   return status;
 }
 
-zx_status_t Client::DoRead(block_fifo_response_t* response, size_t* count) {
+zx_status_t Client::DoRead(BlockFifoResponse* response, size_t* count) {
   while (true) {
-    switch (zx_status_t status = fifo_.read(sizeof(block_fifo_request_t), response, *count, count);
+    switch (zx_status_t status = fifo_.read(sizeof(BlockFifoRequest), response, *count, count);
             status) {
       case ZX_ERR_SHOULD_WAIT: {
         zx_signals_t signals;
@@ -176,10 +176,10 @@ zx_status_t Client::DoRead(block_fifo_response_t* response, size_t* count) {
   }
 }
 
-zx_status_t Client::DoWrite(block_fifo_request_t* request, size_t count) {
+zx_status_t Client::DoWrite(BlockFifoRequest* request, size_t count) {
   while (true) {
     size_t actual;
-    switch (zx_status_t status = fifo_.write(sizeof(block_fifo_request_t), request, count, &actual);
+    switch (zx_status_t status = fifo_.write(sizeof(BlockFifoRequest), request, count, &actual);
             status) {
       case ZX_OK:
         count -= actual;

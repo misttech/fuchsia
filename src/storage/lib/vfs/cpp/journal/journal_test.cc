@@ -3029,14 +3029,14 @@ std::unique_ptr<Journal> CreateJournal(TestTransactionHandler& handler) {
   info_block.Update(0, 0);
 
   // Write the super-block to the device.
-  block_fifo_request_t requests[] = {{
-                                         .command = {.opcode = BLOCK_OPCODE_WRITE, .flags = 0},
-                                         .vmoid = info_block.buffer().vmoid(),
-                                         .length = kJournalMetadataBlocks,
-                                     },
-                                     {
-                                         .command = {.opcode = BLOCK_OPCODE_FLUSH, .flags = 0},
-                                     }};
+  BlockFifoRequest requests[] = {{
+                                     .command = {.opcode = BLOCK_OPCODE_WRITE, .flags = 0},
+                                     .vmoid = info_block.buffer().vmoid(),
+                                     .length = kJournalMetadataBlocks,
+                                 },
+                                 {
+                                     .command = {.opcode = BLOCK_OPCODE_FLUSH, .flags = 0},
+                                 }};
   EXPECT_EQ(handler.GetDevice()->FifoTransaction(requests, 2), ZX_OK);
 
   return std::make_unique<Journal>(&handler, std::move(info_block), std::move(journal_buffer),
@@ -3051,16 +3051,16 @@ TEST(JournalCallbackTest, CommitCallbackTriggeredAtCorrectTime) {
 
   // Keep track of all the requests so that we can replay them later and potentially in a different
   // order.
-  std::vector<block_fifo_request_t> requests;
+  std::vector<BlockFifoRequest> requests;
   storage::VmoBuffer replay_buffer;
   int replay_blocks = 0;
   ASSERT_EQ(replay_buffer.Initialize(&device, 100, kBlockSize, "test-buffer"), ZX_OK);
-  device.set_hook([&](const block_fifo_request_t& request, const zx::vmo* vmo) {
+  device.set_hook([&](const BlockFifoRequest& request, const zx::vmo* vmo) {
     switch (request.command.opcode) {
       case BLOCK_OPCODE_WRITE: {
         vmo->read(replay_buffer.Data(replay_blocks), request.vmo_offset * kBlockSize,
                   request.length * kBlockSize);
-        block_fifo_request_t replay_request = request;
+        BlockFifoRequest replay_request = request;
         replay_request.vmoid = replay_buffer.vmoid();
         replay_request.vmo_offset = replay_blocks;
         replay_blocks += request.length;
@@ -3109,7 +3109,7 @@ TEST(JournalCallbackTest, CommitCallbackTriggeredAtCorrectTime) {
                                            }},
                    .commit_callback =
                        [&]() {
-                         block_fifo_request_t request = {
+                         BlockFifoRequest request = {
                              .command = {.opcode = BLOCK_OPCODE_WRITE, .flags = 0},
                              .vmoid = test_buffer.vmoid(),
                              .length = 1,
@@ -3144,7 +3144,7 @@ TEST(JournalCallbackTest, CommitCallbackTriggeredAtCorrectTime) {
       auto result = ReplayJournal(&handler, &device, 0, kJournalLength, kJournalBlockSize);
       EXPECT_TRUE(result.is_ok());
 
-      block_fifo_request_t request = {
+      BlockFifoRequest request = {
           .command = {.opcode = BLOCK_OPCODE_READ, .flags = 0},
           .vmoid = test_buffer.vmoid(),
           .length = 3,
@@ -3225,7 +3225,7 @@ TEST(JournalCallbackTest, CompleteCallbackTriggeredAtCorrectTime) {
                          // always be true.
                          EXPECT_TRUE(commit_callback_received);
 
-                         block_fifo_request_t request = {
+                         BlockFifoRequest request = {
                              .command = {.opcode = BLOCK_OPCODE_READ, .flags = 0},
                              .vmoid = test_buffer.vmoid(),
                              .length = 2,

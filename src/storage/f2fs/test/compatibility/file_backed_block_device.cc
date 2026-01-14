@@ -13,7 +13,7 @@ FileBackedBlockDevice::FileBackedBlockDevice(fbl::unique_fd fd, const uint64_t b
                                              const uint32_t block_size)
     : fd_(std::move(fd)), block_count_(block_count), block_size_(block_size) {}
 
-zx_status_t FileBackedBlockDevice::FifoTransaction(block_fifo_request_t* requests, size_t count) {
+zx_status_t FileBackedBlockDevice::FifoTransaction(BlockFifoRequest* requests, size_t count) {
   std::lock_guard mutex_lock(mutex_);
   for (size_t i = 0; i < count; ++i) {
     switch (requests[i].command.opcode) {

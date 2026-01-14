@@ -68,7 +68,7 @@ class BlobTest : public BlobfsTestSetup,
   void SetUp() override {
     auto device =
         std::make_unique<block_client::FakeBlockDevice>(kTestDeviceNumBlocks, kTestDeviceBlockSize);
-    device->set_hook([this](const block_fifo_request_t& request, const zx::vmo* vmo) {
+    device->set_hook([this](const BlockFifoRequest& request, const zx::vmo* vmo) {
       std::lock_guard l(this->hook_lock_);
       if (hook_) {
         return hook_(request, vmo);
@@ -153,7 +153,7 @@ TEST_P(BlobTest, ReadingBlobZerosTail) {
   // Read the block that contains the blob.
   storage::VmoBuffer buffer;
   ASSERT_OK(buffer.Initialize(block_device.get(), 1, kBlobfsBlockSize, "test_buffer"));
-  block_fifo_request_t request = {
+  BlockFifoRequest request = {
       .command = {.opcode = BLOCK_OPCODE_READ, .flags = 0},
       .vmoid = buffer.vmoid(),
       .length = kBlobfsBlockSize / kTestDeviceBlockSize,
@@ -310,9 +310,8 @@ TEST_P(BlobTest, ReadErrorsTemporary) {
 
   // Add a hook to toggle read failure.
   std::atomic<zx_status_t> fail_ops = ZX_OK;
-  set_hook([&fail_ops](const block_fifo_request_t& _req, const zx::vmo* _vmo) {
-    return fail_ops.load();
-  });
+  set_hook(
+      [&fail_ops](const BlockFifoRequest& _req, const zx::vmo* _vmo) { return fail_ops.load(); });
 
   // Attempt a read with various failure modes.
   char buf;

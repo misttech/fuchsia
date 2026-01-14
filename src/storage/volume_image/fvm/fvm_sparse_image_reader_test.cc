@@ -69,7 +69,7 @@ TEST(FvmSparseImageReaderTest, PartitionsInImagePassFsck) {
 
   // Initialize the entire ramdisk with a filler (that isn't zero).
   for (uint64_t offset = 0; offset < disk_size; offset += kInitialVmoSize) {
-    block_fifo_request_t request = {
+    BlockFifoRequest request = {
         .command = {.opcode = BLOCK_OPCODE_WRITE, .flags = 0},
         .vmoid = vmo_id,
         .length =
@@ -93,7 +93,7 @@ TEST(FvmSparseImageReaderTest, PartitionsInImagePassFsck) {
     ASSERT_TRUE(result.is_ok()) << result.error();
 
     // Write the mapping to the ram disk.
-    block_fifo_request_t request = {
+    BlockFifoRequest request = {
         .command = {.opcode = BLOCK_OPCODE_WRITE, .flags = 0},
         .vmoid = vmo_id,
         .length = static_cast<uint32_t>(map.count / kDeviceBlockSize),

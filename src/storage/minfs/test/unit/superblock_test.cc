@@ -81,7 +81,7 @@ void FillSuperblockFields(Superblock* info) {
 // Fills write request for the respective block locations.
 void FillWriteRequest(MockTransactionHandler* transaction_handler, uint32_t first_block_location,
                       uint32_t second_block_location, vmoid_t vmoid,
-                      block_fifo_request_t* out_requests) {
+                      BlockFifoRequest* out_requests) {
   out_requests[0].command = {.opcode = BLOCK_OPCODE_WRITE, .flags = 0};
   out_requests[0].vmoid = vmoid;
   out_requests[0].length = 1;
@@ -113,7 +113,7 @@ TEST(SuperblockTest, TestBitmapReconstruction) {
   block[5000] = 0xFF;
 
   zx::vmo vmo;
-  block_fifo_request_t request[2];
+  BlockFifoRequest request[2];
   storage::OwnedVmoid vmoid;
   ASSERT_NO_FATAL_FAILURE(CreateAndRegisterVmo(&device, 2, &vmo, &vmoid));
   ASSERT_EQ(vmo.write(block, 0, kMinfsBlockSize), ZX_OK);
@@ -185,7 +185,7 @@ TEST(SuperblockTest, TestCorruptSuperblockWithoutCorrection) {
   backup.major_version = 0x55;
 
   // Write superblock and backup to disk.
-  block_fifo_request_t request[2];
+  BlockFifoRequest request[2];
   zx::vmo vmo;
   storage::OwnedVmoid vmoid;
   ASSERT_NO_FATAL_FAILURE(CreateAndRegisterVmo(&device, 2, &vmo, &vmoid));
@@ -228,7 +228,7 @@ TEST(SuperblockTest, TestCorruptSuperblockWithCorrection) {
   info.major_version = 0xdeadbeef;
 
   // Write superblock and backup to disk.
-  block_fifo_request_t request[2];
+  BlockFifoRequest request[2];
   zx::vmo vmo;
   storage::OwnedVmoid vmoid;
   ASSERT_NO_FATAL_FAILURE(CreateAndRegisterVmo(&device, 2, &vmo, &vmoid));
@@ -267,7 +267,7 @@ TEST(SuperblockTest, TestRepairSuperblockWithBitmapReconstruction) {
 
   Superblock info = {};
   // Write corrupted superblock and backup to disk.
-  block_fifo_request_t request[2];
+  BlockFifoRequest request[2];
   zx::vmo vmo;
   storage::OwnedVmoid vmoid;
   ASSERT_NO_FATAL_FAILURE(CreateAndRegisterVmo(&device, 2, &vmo, &vmoid));

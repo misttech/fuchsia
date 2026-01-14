@@ -37,7 +37,7 @@ TEST(ReaderTest, Read) {
 
   ASSERT_EQ(vmo.write(buf.data(), 0, buf.size()), ZX_OK);
 
-  block_fifo_request_t request{
+  BlockFifoRequest request{
       .command = {.opcode = BLOCK_OPCODE_WRITE, .flags = 0},
       .vmoid = vmoid.get(),
       .length = kBufferSize / kBlockSize,
@@ -69,7 +69,7 @@ TEST(ReaderTest, ReadVmo) {
 
   ASSERT_EQ(vmo.write(buf.data(), 0, buf.size()), ZX_OK);
 
-  block_fifo_request_t request{
+  BlockFifoRequest request{
       .command = {.opcode = BLOCK_OPCODE_WRITE, .flags = 0},
       .vmoid = vmoid.get(),
       .length = kBufferSize / kBlockSize,
@@ -106,7 +106,7 @@ TEST(WriterTest, Write) {
 
   ASSERT_EQ(writer.Write(0, kBufferSize, buf.data()), ZX_OK);
 
-  block_fifo_request_t request{
+  BlockFifoRequest request{
       .command = {.opcode = BLOCK_OPCODE_READ, .flags = 0},
       .vmoid = vmoid.get(),
       .length = kBufferSize / kBlockSize,
@@ -141,7 +141,7 @@ TEST(WriterTest, WriteVmo) {
 
   ASSERT_EQ(writer.Write(0, kBufferSize, write_vmo, 0), ZX_OK);
 
-  block_fifo_request_t request{
+  BlockFifoRequest request{
       .command = {.opcode = BLOCK_OPCODE_READ, .flags = 0},
       .vmoid = vmoid.get(),
       .length = kBufferSize / kBlockSize,

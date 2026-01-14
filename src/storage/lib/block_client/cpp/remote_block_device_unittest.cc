@@ -48,7 +48,7 @@ class MockBlockDevice final : public fidl::testing::WireTestBase<fuchsia_storage
     fidl::BindServer(loop_.dispatcher(), std::move(server_end), this);
   }
 
-  zx_status_t ReadFifoRequests(block_fifo_request_t* requests, size_t* count) const {
+  zx_status_t ReadFifoRequests(BlockFifoRequest* requests, size_t* count) const {
     zx_signals_t seen;
     zx_status_t status = session_.fifo_.wait_one(ZX_FIFO_READABLE | ZX_FIFO_PEER_CLOSED,
                                                  zx::deadline_after(zx::sec(5)), &seen);
@@ -58,7 +58,7 @@ class MockBlockDevice final : public fidl::testing::WireTestBase<fuchsia_storage
     return session_.fifo_.read(requests, BLOCK_FIFO_MAX_DEPTH, count);
   }
 
-  zx_status_t WriteFifoResponse(const block_fifo_response_t& response) const {
+  zx_status_t WriteFifoResponse(const BlockFifoResponse& response) const {
     return session_.fifo_.write_one(response);
   }
 
@@ -126,8 +126,8 @@ class MockBlockDevice final : public fidl::testing::WireTestBase<fuchsia_storage
       completer.Close(ZX_OK);
     }
 
-    fzl::fifo<block_fifo_response_t, block_fifo_request_t> fifo_;
-    fzl::fifo<block_fifo_request_t, block_fifo_response_t> peer_fifo_;
+    fzl::fifo<BlockFifoResponse, BlockFifoRequest> fifo_;
+    fzl::fifo<BlockFifoRequest, BlockFifoResponse> peer_fifo_;
   };
 
   MockSession session_;
@@ -184,7 +184,7 @@ TEST(RemoteBlockDeviceTest, WriteTransactionReadResponse) {
   ASSERT_EQ(device->BlockAttachVmo(vmo, &vmoid.GetReference(device.value().get())), ZX_OK);
   ASSERT_EQ(kGoldenVmoid, vmoid.get());
 
-  block_fifo_request_t request;
+  BlockFifoRequest request;
   request.command = {.opcode = BLOCK_OPCODE_READ, .flags = 0};
   request.reqid = 1;
   request.group = 0;
@@ -194,13 +194,13 @@ TEST(RemoteBlockDeviceTest, WriteTransactionReadResponse) {
   request.dev_offset = 0;
 
   std::thread server_thread([&mock_device, &request] {
-    block_fifo_request_t server_request;
+    BlockFifoRequest server_request;
     size_t actual;
     EXPECT_EQ(mock_device.ReadFifoRequests(&server_request, &actual), ZX_OK);
     EXPECT_EQ(actual, 1u);
     EXPECT_EQ(0, memcmp(&server_request, &request, sizeof(request)));
 
-    block_fifo_response_t response;
+    BlockFifoResponse response;
     response.status = ZX_OK;
     response.reqid = request.reqid;
     response.group = request.group;
@@ -258,9 +258,9 @@ TEST(RemoteBlockDeviceTest, LargeThreadCountSuceeds) {
   fbl::ConditionVariable condition;
   int done = 0;
   for (auto& thread : threads) {
-    thread = std::thread([device = device.value().get(), &mutex, &done, &condition,
-                          vmoid = vmoid.get()]() {
-      block_fifo_request_t requests[] = {{
+    thread = std::thread(
+        [device = device.value().get(), &mutex, &done, &condition, vmoid = vmoid.get()]() {
+          BlockFifoRequest requests[] = {{
                                              .command = {.opcode = BLOCK_OPCODE_READ, .flags = 0},
                                              .vmoid = vmoid,
                                              .length = 1,
@@ -270,14 +270,14 @@ TEST(RemoteBlockDeviceTest, LargeThreadCountSuceeds) {
                                              .vmoid = vmoid,
                                              .length = 1,
                                          }};
-      ASSERT_EQ(device->FifoTransaction(requests, std::size(requests)), ZX_OK);
-      fbl::AutoLock lock(&mutex);
-      ++done;
-      condition.Signal();
-    });
+          ASSERT_EQ(device->FifoTransaction(requests, std::size(requests)), ZX_OK);
+          fbl::AutoLock lock(&mutex);
+          ++done;
+          condition.Signal();
+        });
   }
   vmoid.TakeId();  // We don't need the vmoid any more.
-  block_fifo_request_t requests[kThreadCount * 2 + BLOCK_FIFO_MAX_DEPTH];
+  BlockFifoRequest requests[kThreadCount * 2 + BLOCK_FIFO_MAX_DEPTH];
   size_t request_count = 0;
   // Maps from group to (request-id, count).
   std::unordered_map<groupid_t, std::pair<uint32_t, int>> groups;
@@ -304,7 +304,7 @@ TEST(RemoteBlockDeviceTest, LargeThreadCountSuceeds) {
     // Finish one request.
     for (const auto& [group_id, group] : groups) {
       if (group.second == 2) {
-        block_fifo_response_t response;
+        BlockFifoResponse response;
         response.status = ZX_OK;
         response.reqid = group.first;
         response.group = group_id;
@@ -354,7 +354,7 @@ TEST(RemoteBlockDeviceTest, NoHangForErrorsWithMultipleThreads) {
 
     for (auto& thread : threads) {
       thread = std::thread([device = device.get(), vmoid = vmoid.get()]() {
-        block_fifo_request_t request = {};
+        BlockFifoRequest request = {};
         request.command = {.opcode = BLOCK_OPCODE_READ, .flags = 0};
         request.vmoid = vmoid;
         request.length = 1;
@@ -364,7 +364,7 @@ TEST(RemoteBlockDeviceTest, NoHangForErrorsWithMultipleThreads) {
     vmoid.TakeId();  // We don't need the vmoid any more.
 
     // Wait for at least 2 requests to be received.
-    block_fifo_request_t requests[BLOCK_FIFO_MAX_DEPTH];
+    BlockFifoRequest requests[BLOCK_FIFO_MAX_DEPTH];
     size_t request_count = 0;
     while (request_count < 2) {
       size_t count = 0;

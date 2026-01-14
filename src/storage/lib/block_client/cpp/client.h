@@ -41,7 +41,7 @@ class Client : public storage::VmoidRegistry {
   zx::result<storage::OwnedVmoid> RegisterVmo(const zx::vmo& vmo);
 
   // Issues a group of block requests over the underlying fifo, and waits for a response.
-  zx_status_t Transaction(block_fifo_request_t* requests, size_t count);
+  zx_status_t Transaction(BlockFifoRequest* requests, size_t count);
 
  private:
   struct BlockCompletion {
@@ -50,8 +50,8 @@ class Client : public storage::VmoidRegistry {
     zx_status_t status = ZX_ERR_IO;
   };
 
-  zx_status_t DoRead(block_fifo_response_t* response, size_t* count);
-  zx_status_t DoWrite(block_fifo_request_t* request, size_t count);
+  zx_status_t DoRead(BlockFifoResponse* response, size_t* count);
+  zx_status_t DoWrite(BlockFifoRequest* request, size_t count);
 
   const fidl::ClientEnd<fuchsia_storage_block::Session> session_;
   const zx::fifo fifo_;

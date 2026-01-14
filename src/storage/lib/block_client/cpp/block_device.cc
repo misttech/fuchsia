@@ -10,7 +10,7 @@ zx_status_t BlockDevice::BlockDetachVmo(storage::Vmoid vmoid) {
   if (!vmoid.IsAttached()) {
     return ZX_OK;
   }
-  block_fifo_request_t request = {};
+  BlockFifoRequest request = {};
   request.command = {.opcode = BLOCK_OPCODE_CLOSE_VMO, .flags = 0};
   request.vmoid = vmoid.TakeId();
   return FifoTransaction(&request, 1);

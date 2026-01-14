@@ -417,7 +417,7 @@ TEST_F(WritebackTest, DataWriteFailure) {
   ASSERT_FALSE(page->IsDirty());
 
   // I/O failure
-  auto hook = [](const block_fifo_request_t &_req, const zx::vmo *_vmo) { return ZX_ERR_IO; };
+  auto hook = [](const BlockFifoRequest &_req, const zx::vmo *_vmo) { return ZX_ERR_IO; };
   LockedPage(page).SetDirty();
   ASSERT_TRUE(page->IsDirty());
   DeviceTester::SetHook(fs_.get(), hook);

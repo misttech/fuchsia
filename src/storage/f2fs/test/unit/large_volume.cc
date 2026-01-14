@@ -34,8 +34,8 @@ class LargeFakeDevice : public FakeBlockDevice {
 
   // |LargeFakeDevice::FifoTransaction()| is thread unsafe. Do not use it in a multithreaded
   // environment.
-  zx_status_t FifoTransaction(block_fifo_request_t* requests, size_t count) override {
-    std::vector<block_fifo_request_t> new_request_list;
+  zx_status_t FifoTransaction(BlockFifoRequest* requests, size_t count) override {
+    std::vector<BlockFifoRequest> new_request_list;
     for (size_t i = 0; i < count; ++i) {
       for (uint32_t j = 0; j < requests[i].length; ++j) {
         const uint64_t request_offset = requests[i].dev_offset + j;
@@ -60,7 +60,7 @@ class LargeFakeDevice : public FakeBlockDevice {
           }
         }
 
-        block_fifo_request_t new_request = requests[i];
+        BlockFifoRequest new_request = requests[i];
         new_request.length = 1;
         new_request.vmo_offset += j;
         new_request.dev_offset = ramdisk_offset;

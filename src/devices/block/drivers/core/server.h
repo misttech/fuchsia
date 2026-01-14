@@ -39,7 +39,7 @@ class OffsetMap {
 
   // Adjusts `request` by applying the map to dev_offset.
   // Returns false if the request would exceed the range known to OffsetMap.
-  bool AdjustRequest(block_fifo_request_t& request) const;
+  bool AdjustRequest(BlockFifoRequest& request) const;
 
  private:
   explicit OffsetMap(fuchsia_storage_block::wire::BlockOffsetMapping mapping);
@@ -76,7 +76,7 @@ class Server : public fidl::WireServer<fuchsia_storage_block::Session> {
   void FinishTransaction(zx_status_t status, reqid_t reqid, groupid_t group);
 
   // Send the given response to the client.
-  void SendResponse(const block_fifo_response_t& response);
+  void SendResponse(const BlockFifoResponse& response);
 
   // Initiates a shutdown of the server.  When this finishes, the server might still be running, but
   // it should terminate shortly.
@@ -91,24 +91,24 @@ class Server : public fidl::WireServer<fuchsia_storage_block::Session> {
          std::unique_ptr<OffsetMap> offset_map);
 
   // Helper for processing a single message read from the FIFO.
-  void ProcessRequest(block_fifo_request_t* request);
-  zx_status_t ProcessReadWriteRequest(block_fifo_request_t* request);
-  zx_status_t ProcessCloseVmoRequest(block_fifo_request_t* request);
-  zx_status_t ProcessFlushRequest(block_fifo_request_t* request);
-  zx_status_t ProcessTrimRequest(block_fifo_request_t* request);
+  void ProcessRequest(BlockFifoRequest* request);
+  zx_status_t ProcessReadWriteRequest(BlockFifoRequest* request);
+  zx_status_t ProcessCloseVmoRequest(BlockFifoRequest* request);
+  zx_status_t ProcessFlushRequest(BlockFifoRequest* request);
+  zx_status_t ProcessTrimRequest(BlockFifoRequest* request);
 
-  zx_status_t IssueFlushCommand(block_fifo_request_t* request, MessageCompleter completer,
+  zx_status_t IssueFlushCommand(BlockFifoRequest* request, MessageCompleter completer,
                                 bool internal_cmd);
 
-  zx_status_t Read(block_fifo_request_t* requests, size_t* count);
+  zx_status_t Read(BlockFifoRequest* requests, size_t* count);
 
   zx::result<vmoid_t> FindVmoIdLocked() TA_REQ(server_lock_);
 
   // Sends the request embedded in the message down to the lower layers.
   void Enqueue(std::unique_ptr<Message> message) TA_EXCL(server_lock_);
 
-  fzl::fifo<block_fifo_response_t, block_fifo_request_t> fifo_;
-  fzl::fifo<block_fifo_request_t, block_fifo_response_t> fifo_peer_;
+  fzl::fifo<BlockFifoResponse, BlockFifoRequest> fifo_;
+  fzl::fifo<BlockFifoRequest, BlockFifoResponse> fifo_peer_;
   block_info_t info_;
   std::unique_ptr<OffsetMap> offset_map_;
   ddk::BlockProtocolClient* bp_;

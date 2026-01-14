@@ -644,7 +644,7 @@ TEST(SegmentManagerExceptionTest, BuildSitEntriesDiskFail) TA_NO_THREAD_SAFETY_A
 
   pgoff_t target_addr = fs->GetSegmentManager().CurrentSitAddr(0) * kDefaultSectorsPerBlock;
 
-  auto hook = [target_addr](const block_fifo_request_t &_req, const zx::vmo *_vmo) {
+  auto hook = [target_addr](const BlockFifoRequest &_req, const zx::vmo *_vmo) {
     if (_req.dev_offset == target_addr) {
       return ZX_ERR_PEER_CLOSED;
     }

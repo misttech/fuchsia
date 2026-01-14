@@ -34,8 +34,8 @@ void TestBind(Volume::Version version, bool fvm) {
 }
 DEFINE_EACH_DEVICE(ZxcryptTest, TestBind)
 
-// TODO(aarongreen): When https://fxbug.dev/42106007 is resolved, add tests that check zxcrypt_rekey and
-// zxcrypt_shred.
+// TODO(aarongreen): When https://fxbug.dev/42106007 is resolved, add tests that check zxcrypt_rekey
+// and zxcrypt_shred.
 
 // FIDL tests
 void TestBlockGetInfo(Volume::Version version, bool fvm) {
@@ -414,7 +414,7 @@ void DISABLED_TestVmoStall(Volume::Version version, bool fvm) {
   size_t max = Volume::kBufferSize / (device.block_size() * blks_per_req);
   size_t num = max + 1;
   fbl::AllocChecker ac;
-  std::unique_ptr<block_fifo_request_t[]> requests(new (&ac) block_fifo_request_t[num]);
+  std::unique_ptr<BlockFifoRequest[]> requests(new (&ac) BlockFifoRequest[num]);
   ASSERT_TRUE(ac.check());
   for (size_t i = 0; i < num; ++i) {
     uint8_t opcode = i % 2 == 0 ? BLOCK_OPCODE_WRITE : BLOCK_OPCODE_READ;
@@ -463,7 +463,7 @@ void TestUnalignedVmoOffset(Volume::Version version, bool fvm) {
   ASSERT_NO_FATAL_FAILURE(device.SetupDevmgr());
   ASSERT_NO_FATAL_FAILURE(device.Bind(version, fvm));
 
-  block_fifo_request_t request{
+  BlockFifoRequest request{
       .command = {.opcode = BLOCK_OPCODE_READ, .flags = 0},
       .length = 2,
       .vmo_offset = 1,

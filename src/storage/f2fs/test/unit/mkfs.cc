@@ -470,7 +470,7 @@ TEST(FormatFilesystemTest, DeviceFailure) {
   uint32_t bad_block = std::numeric_limits<uint32_t>::max();
   bool trim_error = false;
   // Set a hook to trigger an io error which causes mkfs fail.
-  auto hook = [&bad_block, &trim_error](const block_fifo_request_t &_req, const zx::vmo *_vmo) {
+  auto hook = [&bad_block, &trim_error](const BlockFifoRequest &_req, const zx::vmo *_vmo) {
     if (_req.command.opcode == BLOCK_OPCODE_TRIM && trim_error) {
       return ZX_ERR_IO_REFUSED;
     }

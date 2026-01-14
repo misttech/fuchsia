@@ -109,7 +109,7 @@ class BlobfsCheckerTest : public testing::Test {
     // Read the block that contains the blob.
     storage::VmoBuffer buffer;
     ASSERT_OK(buffer.Initialize(device.get(), 1, kBlobfsBlockSize, "test_buffer"));
-    block_fifo_request_t request{
+    BlockFifoRequest request{
         .command = {.opcode = BLOCK_OPCODE_READ, .flags = 0},
         .vmoid = buffer.vmoid(),
         .length = kBlobfsBlockSize / kBlockSize,
@@ -152,7 +152,7 @@ class BlobfsCheckerTest : public testing::Test {
 
     storage::VmoBuffer buffer;
     ASSERT_OK(buffer.Initialize(device.get(), 1, kBlobfsBlockSize, "test_buffer"));
-    block_fifo_request_t request{
+    BlockFifoRequest request{
         .command = {.opcode = BLOCK_OPCODE_READ, .flags = 0},
         .vmoid = buffer.vmoid(),
         .length = kBlobfsBlockSize / kBlockSize,
@@ -228,7 +228,7 @@ class BlobfsCheckerTest : public testing::Test {
 
     storage::VmoBuffer buffer;
     ASSERT_OK(buffer.Initialize(device.get(), 1, kBlobfsBlockSize, "test_buffer"));
-    block_fifo_request_t request{
+    BlockFifoRequest request{
         .command = {.opcode = BLOCK_OPCODE_READ, .flags = 0},
         .vmoid = buffer.vmoid(),
         .length = kBlobfsBlockSize / kBlockSize,
@@ -465,7 +465,7 @@ TEST_F(BlobfsCheckerTest, CorruptUnallocatedNode) {
   {
     storage::VmoBuffer buffer;
     ASSERT_OK(buffer.Initialize(device.get(), 1, kBlobfsBlockSize, "test_buffer"));
-    block_fifo_request_t request{
+    BlockFifoRequest request{
         .command = {.opcode = BLOCK_OPCODE_READ, .flags = 0},
         .vmoid = buffer.vmoid(),
         .length = kBlobfsBlockSize / kBlockSize,

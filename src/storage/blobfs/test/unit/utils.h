@@ -29,7 +29,7 @@ constexpr uint32_t kDiskBlockRatio = kBlockSize / kDeviceBlockSize;
 // Callback for MockTransactionManager to invoke on calls to Transaction(). |request| is performed
 // on the provided |vmo|.
 using TransactionCallback =
-    fit::function<zx_status_t(const block_fifo_request_t& request, const zx::vmo& vmo)>;
+    fit::function<zx_status_t(const BlockFifoRequest& request, const zx::vmo& vmo)>;
 
 using block_client::BlockDevice;
 
@@ -74,7 +74,7 @@ class MockTransactionManager : public TransactionManager, public block_client::B
   }
 
   // FIFO protocol.
-  zx_status_t FifoTransaction(block_fifo_request_t* requests, size_t count) final;
+  zx_status_t FifoTransaction(BlockFifoRequest* requests, size_t count) final;
 
   zx::result<std::string> GetTopologicalPath() const final {
     return zx::error(ZX_ERR_NOT_SUPPORTED);

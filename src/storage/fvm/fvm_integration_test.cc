@@ -194,7 +194,7 @@ class VmoClient : public fbl::RefCounted<VmoClient> {
 
   void CheckWrite(VmoBuf& vbuf, size_t buf_off, size_t dev_off, size_t len);
   void CheckRead(VmoBuf& vbuf, size_t buf_off, size_t dev_off, size_t len);
-  void Transaction(block_fifo_request_t* requests, size_t count) {
+  void Transaction(BlockFifoRequest* requests, size_t count) {
     ASSERT_OK(client_->Transaction(requests, count));
   }
   zx::result<storage::OwnedVmoid> RegisterVmo(const zx::vmo& vmo) {
@@ -224,7 +224,7 @@ class VmoBuf {
 
   ~VmoBuf() {
     if (vmo_.is_valid()) {
-      block_fifo_request_t request = {
+      BlockFifoRequest request = {
           .command = {.opcode = BLOCK_OPCODE_CLOSE_VMO, .flags = 0},
           .group = client_->group(),
           .vmoid = vmoid_.TakeId(),
@@ -278,7 +278,7 @@ void VmoClient::CheckWrite(VmoBuf& vbuf, size_t buf_off, size_t dev_off, size_t 
   ASSERT_EQ(dev_off % block_size_, 0);
 
   // Write to the block device
-  block_fifo_request_t request = {
+  BlockFifoRequest request = {
       .command = {.opcode = BLOCK_OPCODE_WRITE, .flags = 0},
       .group = group(),
       .vmoid = vbuf.vmoid_.get(),
@@ -301,7 +301,7 @@ void VmoClient::CheckRead(VmoBuf& vbuf, size_t buf_off, size_t dev_off, size_t l
   ASSERT_EQ(dev_off % block_size_, 0);
 
   // Read from the block device
-  block_fifo_request_t request = {
+  BlockFifoRequest request = {
       .command = {.opcode = BLOCK_OPCODE_READ, .flags = 0},
       .group = group(),
       .vmoid = vbuf.vmoid_.get(),

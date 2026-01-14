@@ -125,7 +125,7 @@ fvm::ExtentDescriptor GetExtent(fvm::PartitionDescriptor* pd, size_t extent) {
 }
 
 zx_status_t FlushClient(block_client::Client& client) {
-  block_fifo_request_t request;
+  BlockFifoRequest request;
   request.group = 0;
   request.vmoid = block::wire::kVmoidInvalid;
   request.command = {.opcode = BLOCK_OPCODE_FLUSH, .flags = 0};
@@ -139,7 +139,7 @@ zx_status_t FlushClient(block_client::Client& client) {
 // Stream an FVM partition to disk.
 zx_status_t StreamFvmPartition(fvm::SparseReader* reader, PartitionInfo* part,
                                const fzl::VmoMapper& mapper, block_client::Client& client,
-                               size_t block_size, block_fifo_request_t* request) {
+                               size_t block_size, BlockFifoRequest* request) {
   size_t slice_size = reader->Image()->slice_size;
   const size_t vmo_cap = mapper.size();
   for (size_t e = 0; e < part->aligned_pd.extent_count; e++) {
@@ -866,7 +866,7 @@ zx::result<> FvmStreamPartitions(const fbl::unique_fd& devfs_root,
       return vmoid.take_error();
     }
 
-    block_fifo_request_t request = {
+    BlockFifoRequest request = {
         .command = {.opcode = BLOCK_OPCODE_WRITE, .flags = 0},
         .group = 0,
         .vmoid = vmoid->get(),

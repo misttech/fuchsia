@@ -42,7 +42,7 @@ TEST_F(SyncFdioTest, Sync) {
 
   std::atomic_uint64_t num_writes = 0;
   std::atomic_uint64_t num_flushes = 0;
-  block_device()->set_hook([&](const block_fifo_request_t& request, const zx::vmo* vmo) {
+  block_device()->set_hook([&](const BlockFifoRequest& request, const zx::vmo* vmo) {
     switch (request.command.opcode) {
       case BLOCK_OPCODE_WRITE:
         num_writes++;

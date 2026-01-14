@@ -167,9 +167,7 @@ TEST_F(GcTest, CheckpointDiskReadFailOnGc) TA_NO_THREAD_SAFETY_ANALYSIS {
   constexpr uint32_t kInvalidRatio = 5;
   auto files = MakeGcTriggerCondition(5, false);
 
-  auto hook = [](const block_fifo_request_t &_req, const zx::vmo *_vmo) {
-    return ZX_ERR_PEER_CLOSED;
-  };
+  auto hook = [](const BlockFifoRequest &_req, const zx::vmo *_vmo) { return ZX_ERR_PEER_CLOSED; };
   DeviceTester::SetHook(fs_.get(), hook);
   size_t to_secure = files.size() * kFileBlocks * kInvalidRatio / 100;
   ASSERT_EQ(fs_->StartGc(safemath::checked_cast<uint32_t>(to_secure)).error_value(),
@@ -182,9 +180,7 @@ TEST_F(GcTest, CheckpointDiskReadFailOnGc) TA_NO_THREAD_SAFETY_ANALYSIS {
 TEST_F(GcTest, CheckpointDiskReadFailOnGcPreFree) TA_NO_THREAD_SAFETY_ANALYSIS {
   DisableFsck();
 
-  auto hook = [](const block_fifo_request_t &_req, const zx::vmo *_vmo) {
-    return ZX_ERR_PEER_CLOSED;
-  };
+  auto hook = [](const BlockFifoRequest &_req, const zx::vmo *_vmo) { return ZX_ERR_PEER_CLOSED; };
 
   uint32_t prefree_segno = fs_->GetSegmentManager().CURSEG_I(CursegType::kCursegWarmData)->segno;
   constexpr uint32_t kInvalidRatio = 100;

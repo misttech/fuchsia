@@ -66,7 +66,7 @@ TEST(FakeBlockDeviceTest, WriteAndReadUsingFifoTransaction) {
   ASSERT_NO_FATAL_FAILURE(CreateAndRegisterVmo(device, kVmoBlocks, &vmo, &vmoid));
 
   // Write some data to the device.
-  fake_device->set_hook([&](const block_fifo_request_t& request, const zx::vmo* vmo) {
+  fake_device->set_hook([&](const BlockFifoRequest& request, const zx::vmo* vmo) {
     EXPECT_EQ(request.command.opcode, BLOCK_OPCODE_WRITE);
     EXPECT_EQ(request.length, kVmoBlocks);
     return ZX_OK;
@@ -75,7 +75,7 @@ TEST(FakeBlockDeviceTest, WriteAndReadUsingFifoTransaction) {
   char src[kVmoBlocks * kBlockSizeDefault];
   memset(src, 'a', sizeof(src));
   ASSERT_EQ(vmo.write(src, 0, sizeof(src)), ZX_OK);
-  block_fifo_request_t request;
+  BlockFifoRequest request;
   request.command = {.opcode = BLOCK_OPCODE_WRITE, .flags = 0};
   request.vmoid = vmoid.get();
   request.length = kVmoBlocks;
@@ -90,7 +90,7 @@ TEST(FakeBlockDeviceTest, WriteAndReadUsingFifoTransaction) {
   ASSERT_EQ(vmo.write(dst, 0, sizeof(dst)), ZX_OK);
 
   // Read data from the fake back into the registered VMO.
-  fake_device->set_hook([&](const block_fifo_request_t& request, const zx::vmo* vmo) {
+  fake_device->set_hook([&](const BlockFifoRequest& request, const zx::vmo* vmo) {
     EXPECT_EQ(request.command.opcode, BLOCK_OPCODE_READ);
     EXPECT_EQ(request.length, kVmoBlocks);
     return ZX_OK;
@@ -105,7 +105,7 @@ TEST(FakeBlockDeviceTest, WriteAndReadUsingFifoTransaction) {
   ASSERT_EQ(vmo.read(dst, 0, sizeof(dst)), ZX_OK);
   EXPECT_EQ(memcmp(src, dst, sizeof(src)), 0);
 
-  fake_device->set_hook([&](const block_fifo_request_t& request, const zx::vmo* vmo) {
+  fake_device->set_hook([&](const BlockFifoRequest& request, const zx::vmo* vmo) {
     EXPECT_EQ(request.command.opcode, BLOCK_OPCODE_CLOSE_VMO);
     return ZX_OK;
   });
@@ -120,12 +120,12 @@ TEST(FakeBlockDeviceTest, FifoTransactionFlush) {
   storage::OwnedVmoid vmoid;
   ASSERT_NO_FATAL_FAILURE(CreateAndRegisterVmo(device, kVmoBlocks, &vmo, &vmoid));
 
-  fake_device->set_hook([&](const block_fifo_request_t& request, const zx::vmo* vmo) {
+  fake_device->set_hook([&](const BlockFifoRequest& request, const zx::vmo* vmo) {
     EXPECT_EQ(request.command.opcode, BLOCK_OPCODE_FLUSH);
     return ZX_OK;
   });
 
-  block_fifo_request_t request;
+  BlockFifoRequest request;
   request.command = {.opcode = BLOCK_OPCODE_FLUSH, .flags = 0};
   request.vmoid = vmoid.get();
   request.length = 0;
@@ -133,7 +133,7 @@ TEST(FakeBlockDeviceTest, FifoTransactionFlush) {
   request.dev_offset = 0;
   EXPECT_EQ(device->FifoTransaction(&request, 1), ZX_OK);
 
-  fake_device->set_hook([&](const block_fifo_request_t& request, const zx::vmo* vmo) {
+  fake_device->set_hook([&](const BlockFifoRequest& request, const zx::vmo* vmo) {
     EXPECT_EQ(request.command.opcode, BLOCK_OPCODE_CLOSE_VMO);
     return ZX_OK;
   });
@@ -153,7 +153,7 @@ TEST(FakeBlockDeviceTest, FifoTransactionWriteThenFlush) {
   memset(src, 'a', sizeof(src));
   ASSERT_EQ(vmo.write(src, 0, sizeof(src)), ZX_OK);
 
-  block_fifo_request_t requests[2];
+  BlockFifoRequest requests[2];
   requests[0].command = {.opcode = BLOCK_OPCODE_WRITE, .flags = 0};
   requests[0].vmoid = vmoid.get();
   requests[0].length = kVmoBlocks;
@@ -172,7 +172,7 @@ TEST(FakeBlockDeviceTest, FifoTransactionWriteThenFlush) {
   memset(dst, 0, sizeof(dst));
   ASSERT_EQ(vmo.write(dst, 0, sizeof(dst)), ZX_OK);
 
-  block_fifo_request_t request;
+  BlockFifoRequest request;
   request.command = {.opcode = BLOCK_OPCODE_READ, .flags = 0};
   request.vmoid = vmoid.get();
   request.length = kVmoBlocks;
@@ -197,7 +197,7 @@ TEST(FakeBlockDeviceTest, FifoTransactionFlushThenWrite) {
   memset(src, 'a', sizeof(src));
   ASSERT_EQ(vmo.write(src, 0, sizeof(src)), ZX_OK);
 
-  block_fifo_request_t requests[2];
+  BlockFifoRequest requests[2];
   requests[0].command = {.opcode = BLOCK_OPCODE_FLUSH, .flags = 0};
   requests[0].vmoid = vmoid.get();
   requests[0].length = 0;
@@ -217,7 +217,7 @@ TEST(FakeBlockDeviceTest, FifoTransactionFlushThenWrite) {
   memset(dst, 0, sizeof(dst));
   ASSERT_EQ(vmo.write(dst, 0, sizeof(dst)), ZX_OK);
 
-  block_fifo_request_t request;
+  BlockFifoRequest request;
   request.command = {.opcode = BLOCK_OPCODE_READ, .flags = 0};
   request.vmoid = vmoid.get();
   request.length = kVmoBlocks;
@@ -238,7 +238,7 @@ TEST(FakeBlockDeviceTest, FifoTransactionClose) {
   ASSERT_NO_FATAL_FAILURE(CreateAndRegisterVmo(device, kVmoBlocks, &vmo, &vmoid));
   vmoid_t id = vmoid.TakeId();
 
-  block_fifo_request_t request;
+  BlockFifoRequest request;
   request.command = {.opcode = BLOCK_OPCODE_CLOSE_VMO, .flags = 0};
   request.vmoid = id;
   request.length = 0;
@@ -259,7 +259,7 @@ TEST(FakeBlockDeviceTest, FifoTransactionUnsupportedTrim) {
   storage::OwnedVmoid vmoid;
   ASSERT_NO_FATAL_FAILURE(CreateAndRegisterVmo(device, kVmoBlocks, &vmo, &vmoid));
 
-  block_fifo_request_t request;
+  BlockFifoRequest request;
   request.command = {.opcode = BLOCK_OPCODE_TRIM, .flags = 0};
   request.vmoid = vmoid.get();
   request.length = kVmoBlocks;
@@ -285,7 +285,7 @@ TEST(FakeBlockDeviceTest, BlockLimitPartialyFailTransaction) {
     ASSERT_EQ(vmo.write(block.data(), i * block.size(), block.size()), ZX_OK);
   }
 
-  block_fifo_request_t request;
+  BlockFifoRequest request;
   request.command = {.opcode = BLOCK_OPCODE_WRITE, .flags = 0};
   request.vmoid = vmoid.get();
   request.length = kVmoBlocks;
@@ -332,7 +332,7 @@ TEST(FakeBlockDeviceTest, BlockLimitFailsDistinctTransactions) {
   ASSERT_NO_FATAL_FAILURE(
       CreateAndRegisterVmo(reinterpret_cast<BlockDevice*>(device.get()), kVmoBlocks, &vmo, &vmoid));
 
-  block_fifo_request_t request;
+  BlockFifoRequest request;
   request.command = {.opcode = BLOCK_OPCODE_WRITE, .flags = 0};
   request.vmoid = vmoid.get();
   request.length = kVmoBlocks;
@@ -363,7 +363,7 @@ TEST(FakeBlockDeviceTest, BlockLimitFailsMergedTransactions) {
       CreateAndRegisterVmo(reinterpret_cast<BlockDevice*>(device.get()), kVmoBlocks, &vmo, &vmoid));
 
   constexpr size_t kRequests = 3;
-  block_fifo_request_t requests[kRequests];
+  BlockFifoRequest requests[kRequests];
   for (auto& request : requests) {
     request.command = {.opcode = BLOCK_OPCODE_WRITE, .flags = 0};
     request.vmoid = vmoid.get();
@@ -391,7 +391,7 @@ TEST(FakeBlockDeviceTest, BlockLimitResetsDevice) {
   ASSERT_NO_FATAL_FAILURE(
       CreateAndRegisterVmo(reinterpret_cast<BlockDevice*>(device.get()), kVmoBlocks, &vmo, &vmoid));
 
-  block_fifo_request_t request;
+  BlockFifoRequest request;
   request.command = {.opcode = BLOCK_OPCODE_WRITE, .flags = 0};
   request.vmoid = vmoid.get();
   request.length = kVmoBlocks;
@@ -422,14 +422,14 @@ TEST(FakeBlockDeviceTest, Hook) {
   char v = 1;
   ASSERT_EQ(vmo.write(&v, 0, 1), ZX_OK);
 
-  block_fifo_request_t request = {
+  BlockFifoRequest request = {
       .command = {.opcode = BLOCK_OPCODE_WRITE, .flags = 0},
       .vmoid = vmoid.get(),
       .length = 5555,
       .vmo_offset = 1234,
       .dev_offset = 5678,
   };
-  device.set_hook([&](const block_fifo_request_t& request, const zx::vmo* vmo) {
+  device.set_hook([&](const BlockFifoRequest& request, const zx::vmo* vmo) {
     EXPECT_NE(vmo, nullptr);
     if (vmo) {
       char v = 0;
@@ -459,7 +459,7 @@ TEST(FakeBlockDeviceTest, WipeZeroesDevice) {
   char v = 1;
   ASSERT_EQ(vmo.write(&v, 0, 1), ZX_OK);
 
-  block_fifo_request_t request = {
+  BlockFifoRequest request = {
       .command = {.opcode = BLOCK_OPCODE_WRITE, .flags = 0},
       .vmoid = vmoid.get(),
       .length = 1,
@@ -482,7 +482,7 @@ TEST(FakeBlockDeviceTest, TrimFailsIfUnsupported) {
   FakeBlockDevice device(
       {.block_count = kBlockCountDefault, .block_size = kBlockSizeDefault, .supports_trim = false});
 
-  block_fifo_request_t request = {
+  BlockFifoRequest request = {
       .command = {.opcode = BLOCK_OPCODE_TRIM, .flags = 0},
       .vmoid = BLOCK_VMOID_INVALID,
       .length = 1,
@@ -496,7 +496,7 @@ TEST(FakeBlockDeviceTest, TrimSucceedsIfSupported) {
   FakeBlockDevice device(
       {.block_count = kBlockCountDefault, .block_size = kBlockSizeDefault, .supports_trim = true});
 
-  block_fifo_request_t request = {
+  BlockFifoRequest request = {
       .command = {.opcode = BLOCK_OPCODE_TRIM, .flags = 0},
       .vmoid = BLOCK_VMOID_INVALID,
       .length = 1,

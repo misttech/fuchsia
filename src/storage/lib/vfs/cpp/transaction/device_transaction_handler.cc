@@ -32,7 +32,7 @@ zx_status_t DeviceTransactionHandler::RunRequests(
   std::vector<uint64_t> trace_flow_ids;
 
   // Update all the outgoing transactions to be in disk blocks.
-  std::vector<block_fifo_request_t> block_requests(operations.size());
+  std::vector<BlockFifoRequest> block_requests(operations.size());
   {
     // This duration mainly exists to give the below TRACE_FLOW_BEGIN calls a context which ends
     // before the actual blocking call to |FifoTransaction|. Flow events originate from the end of
@@ -106,7 +106,7 @@ zx_status_t DeviceTransactionHandler::RunRequests(
 }
 
 zx_status_t DeviceTransactionHandler::Flush() {
-  block_fifo_request_t request = {
+  BlockFifoRequest request = {
       .command = {.opcode = BLOCK_OPCODE_FLUSH, .flags = 0},
   };
   return GetDevice()->FifoTransaction(&request, 1);

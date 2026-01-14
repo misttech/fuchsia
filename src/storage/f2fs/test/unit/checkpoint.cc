@@ -451,7 +451,7 @@ TEST_F(CheckpointTest, PurgeOrphanInode) {
 
               // Check device peer closed exception
               {
-                auto hook = [](const block_fifo_request_t &_req, const zx::vmo *_vmo) {
+                auto hook = [](const BlockFifoRequest &_req, const zx::vmo *_vmo) {
                   if (_req.command.opcode == BLOCK_OPCODE_READ) {
                     return ZX_ERR_PEER_CLOSED;
                   }
@@ -874,7 +874,7 @@ TEST_F(CheckpointTest, CpError) {
 
   // Set a hook to trigger an io error with any write requests on FakeBlockDevice,
   // which causes that f2fs sets the checkpoint error flag.
-  auto hook = [](const block_fifo_request_t &_req, const zx::vmo *_vmo) {
+  auto hook = [](const BlockFifoRequest &_req, const zx::vmo *_vmo) {
     if (_req.command.opcode == BLOCK_OPCODE_WRITE) {
       return ZX_ERR_PEER_CLOSED;
     }
@@ -910,7 +910,7 @@ TEST_F(CheckpointTest, ValidateCheckpointFirstCpPackDiskFail) {
   block_t cp_start_blk_no = LeToCpu(fs_->GetSuperblockInfo().GetSuperblock().cp_blkaddr);
   block_t target_addr = cp_start_blk_no * kDefaultSectorsPerBlock;
 
-  auto hook = [target_addr](const block_fifo_request_t &_req, const zx::vmo *_vmo) {
+  auto hook = [target_addr](const BlockFifoRequest &_req, const zx::vmo *_vmo) {
     if (_req.dev_offset == target_addr) {
       return ZX_ERR_PEER_CLOSED;
     }
@@ -945,7 +945,7 @@ TEST_F(CheckpointTest, ValidateCheckpointSecondCpPackDiskFail) {
 
   block_t target_addr = second_cp_blk_no * kDefaultSectorsPerBlock;
 
-  auto hook = [target_addr](const block_fifo_request_t &_req, const zx::vmo *_vmo) {
+  auto hook = [target_addr](const BlockFifoRequest &_req, const zx::vmo *_vmo) {
     if (_req.dev_offset == target_addr) {
       return ZX_ERR_PEER_CLOSED;
     }
@@ -974,7 +974,7 @@ TEST_F(CheckpointTest, FlushNatEntriesDiskFail) {
   pgoff_t target_addr =
       MapTester::GetCurrentNatAddr(fs_->GetNodeManager(), 0) * kDefaultSectorsPerBlock;
 
-  auto hook = [target_addr](const block_fifo_request_t &_req, const zx::vmo *_vmo) {
+  auto hook = [target_addr](const BlockFifoRequest &_req, const zx::vmo *_vmo) {
     if (_req.dev_offset == target_addr) {
       return ZX_ERR_PEER_CLOSED;
     }
@@ -1006,7 +1006,7 @@ TEST_F(CheckpointTest, FlushSitEntriesDiskFail) TA_NO_THREAD_SAFETY_ANALYSIS {
   fs_->GetMetaVnode().Writeback(true, true);
   pgoff_t target_addr = fs_->GetSegmentManager().CurrentSitAddr(0) * kDefaultSectorsPerBlock;
 
-  auto hook = [target_addr](const block_fifo_request_t &_req, const zx::vmo *_vmo) {
+  auto hook = [target_addr](const BlockFifoRequest &_req, const zx::vmo *_vmo) {
     if (_req.dev_offset == target_addr) {
       return ZX_ERR_PEER_CLOSED;
     }
@@ -1047,7 +1047,7 @@ TEST_F(CheckpointTest, DoCheckpointDiskFail) {
   WritebackOperation op;
   fs_->GetMetaVnode().Writeback(true, true);
 
-  auto hook = [&](const block_fifo_request_t &_req, const zx::vmo *_vmo) {
+  auto hook = [&](const BlockFifoRequest &_req, const zx::vmo *_vmo) {
     if (_req.command.opcode == BLOCK_OPCODE_WRITE &&
         _req.command.flags & BLOCK_IO_FLAG_FORCE_ACCESS) {
       return ZX_ERR_PEER_CLOSED;
@@ -1071,7 +1071,7 @@ TEST_F(CheckpointTest, ReadCompactSummaryDiskFail) TA_NO_THREAD_SAFETY_ANALYSIS 
 
   block_t target_addr = fs_->GetSegmentManager().StartSumBlock() * kDefaultSectorsPerBlock;
 
-  auto hook = [target_addr](const block_fifo_request_t &_req, const zx::vmo *_vmo) {
+  auto hook = [target_addr](const BlockFifoRequest &_req, const zx::vmo *_vmo) {
     if (_req.dev_offset == target_addr) {
       return ZX_ERR_PEER_CLOSED;
     }
@@ -1098,7 +1098,7 @@ TEST_F(CheckpointTest, ReadNormalSummaryDiskFail) TA_NO_THREAD_SAFETY_ANALYSIS {
                             kNrCursegType, static_cast<int>(CursegType::kCursegWarmData)) *
                         kDefaultSectorsPerBlock;
 
-  auto hook = [target_addr](const block_fifo_request_t &_req, const zx::vmo *_vmo) {
+  auto hook = [target_addr](const BlockFifoRequest &_req, const zx::vmo *_vmo) {
     if (_req.dev_offset == target_addr) {
       return ZX_ERR_PEER_CLOSED;
     }

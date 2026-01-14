@@ -13,7 +13,7 @@
 
 namespace block_client {
 
-zx_status_t RemoteBlockDevice::FifoTransaction(block_fifo_request_t* requests, size_t count) {
+zx_status_t RemoteBlockDevice::FifoTransaction(BlockFifoRequest* requests, size_t count) {
   return fifo_client_.Transaction(requests, count);
 }
 
@@ -204,7 +204,7 @@ zx_status_t ReadWriteBlocks(fidl::UnownedClientEnd<fuchsia_storage_block::Block>
   }
 
   static std::atomic<uint32_t> counter;
-  block_fifo_request_t request = {
+  BlockFifoRequest request = {
       .command =
           {
               .opcode = static_cast<uint8_t>(write ? BLOCK_OPCODE_WRITE : BLOCK_OPCODE_READ),
@@ -221,15 +221,15 @@ zx_status_t ReadWriteBlocks(fidl::UnownedClientEnd<fuchsia_storage_block::Block>
   }
 
   size_t actual;
-  if (zx_status_t status = fifo.write(sizeof(block_fifo_request_t), &request, 1, &actual);
+  if (zx_status_t status = fifo.write(sizeof(BlockFifoRequest), &request, 1, &actual);
       status != ZX_OK) {
     return status;
   }
 
-  block_fifo_response_t fifo_response;
+  BlockFifoResponse fifo_response;
   zx_signals_t signals;
   fifo.wait_one(ZX_FIFO_READABLE | ZX_FIFO_PEER_CLOSED, zx::time::infinite(), &signals);
-  if (zx_status_t status = fifo.read(sizeof(block_fifo_response_t), &fifo_response, 1, &actual);
+  if (zx_status_t status = fifo.read(sizeof(BlockFifoResponse), &fifo_response, 1, &actual);
       status != ZX_OK) {
     return status;
   }

@@ -73,7 +73,7 @@ class FakeBlockDevice : public block_client::BlockDevice {
  public:
   FakeBlockDevice() = default;
 
-  zx_status_t FifoTransaction(block_fifo_request_t* requests, size_t count) final { return ZX_OK; }
+  zx_status_t FifoTransaction(BlockFifoRequest* requests, size_t count) final { return ZX_OK; }
   zx::result<std::string> GetTopologicalPath() const final { return zx::ok(std::string()); }
   zx::result<> Rebind(std::string_view url_suffix) const override {
     return zx::error(ZX_ERR_NOT_SUPPORTED);

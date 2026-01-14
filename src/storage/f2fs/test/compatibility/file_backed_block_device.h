@@ -42,7 +42,7 @@ class FileBackedBlockDevice : public block_client::BlockDevice {
 
   zx_status_t VolumeShrink(uint64_t offset, uint64_t length) final { return ZX_ERR_NOT_SUPPORTED; }
 
-  zx_status_t FifoTransaction(block_fifo_request_t* requests, size_t count) final;
+  zx_status_t FifoTransaction(BlockFifoRequest* requests, size_t count) final;
   zx_status_t BlockGetInfo(fuchsia_storage_block::wire::BlockInfo* out_info) const final;
   zx_status_t BlockAttachVmo(const zx::vmo& vmo, storage::Vmoid* out_vmoid) final;
 

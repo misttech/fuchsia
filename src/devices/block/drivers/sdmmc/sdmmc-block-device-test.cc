@@ -2730,7 +2730,7 @@ TEST_P(SdmmcBlockDeviceTest, BlockServer) {
 
     EXPECT_OK(vmo.write(buffer.get(), 0, len));
 
-    block_fifo_request_t requests[] = {
+    BlockFifoRequest requests[] = {
         {
             .command =
                 {
@@ -2781,7 +2781,7 @@ TEST_P(SdmmcBlockDeviceTest, BlockServer) {
 
     EXPECT_BYTES_EQ(read_buffer.get(), buffer.get(), len);
 
-    block_fifo_request_t bad_request{
+    BlockFifoRequest bad_request{
         .command =
             {
                 .opcode = BLOCK_OPCODE_WRITE,
@@ -2855,26 +2855,26 @@ TEST_P(SdmmcBlockDeviceTest, BlockServerMaxTransferSize) {
     const uint32_t blocks1 = max_transfer_size_in_blocks - 1;
     const uint32_t blocks2 = 2 * max_transfer_size_in_blocks - blocks1;
 
-    block_fifo_request_t requests[] = {{
-                                           .command =
-                                               {
-                                                   .opcode = BLOCK_OPCODE_WRITE,
-                                               },
-                                           .vmoid = vmoid,
-                                           .length = blocks1,
-                                           .vmo_offset = 0,
-                                           .dev_offset = 0,
-                                       },
-                                       {
-                                           .command =
-                                               {
-                                                   .opcode = BLOCK_OPCODE_WRITE,
-                                               },
-                                           .vmoid = vmoid,
-                                           .length = blocks2,
-                                           .vmo_offset = blocks1,
-                                           .dev_offset = blocks1,
-                                       }};
+    BlockFifoRequest requests[] = {{
+                                       .command =
+                                           {
+                                               .opcode = BLOCK_OPCODE_WRITE,
+                                           },
+                                       .vmoid = vmoid,
+                                       .length = blocks1,
+                                       .vmo_offset = 0,
+                                       .dev_offset = 0,
+                                   },
+                                   {
+                                       .command =
+                                           {
+                                               .opcode = BLOCK_OPCODE_WRITE,
+                                           },
+                                       .vmoid = vmoid,
+                                       .length = blocks2,
+                                       .vmo_offset = blocks1,
+                                       .dev_offset = blocks1,
+                                   }};
 
     EXPECT_OK(client->FifoTransaction(requests, 2));
 
@@ -2946,26 +2946,26 @@ TEST_P(SdmmcBlockDeviceTest, BlockServerSplitTransfer) {
     const uint32_t blocks1 = max_transfer_size_in_blocks - 10;
     const uint32_t blocks2 = 2 * max_transfer_size_in_blocks - blocks1;
 
-    block_fifo_request_t requests[] = {{
-                                           .command =
-                                               {
-                                                   .opcode = BLOCK_OPCODE_WRITE,
-                                               },
-                                           .vmoid = vmoid,
-                                           .length = blocks1,
-                                           .vmo_offset = 0,
-                                           .dev_offset = 0,
-                                       },
-                                       {
-                                           .command =
-                                               {
-                                                   .opcode = BLOCK_OPCODE_WRITE,
-                                               },
-                                           .vmoid = vmoid,
-                                           .length = blocks2,
-                                           .vmo_offset = blocks1,
-                                           .dev_offset = blocks1,
-                                       }};
+    BlockFifoRequest requests[] = {{
+                                       .command =
+                                           {
+                                               .opcode = BLOCK_OPCODE_WRITE,
+                                           },
+                                       .vmoid = vmoid,
+                                       .length = blocks1,
+                                       .vmo_offset = 0,
+                                       .dev_offset = 0,
+                                   },
+                                   {
+                                       .command =
+                                           {
+                                               .opcode = BLOCK_OPCODE_WRITE,
+                                           },
+                                       .vmoid = vmoid,
+                                       .length = blocks2,
+                                       .vmo_offset = blocks1,
+                                       .dev_offset = blocks1,
+                                   }};
 
     EXPECT_OK(client->FifoTransaction(requests, 2));
 
@@ -3029,7 +3029,7 @@ TEST_P(SdmmcBlockDeviceTest, PackedCommandWriteError) {
     EXPECT_OK(client->BlockAttachVmo(vmo, &owned_vmoid));
     vmoid_t vmoid = owned_vmoid.TakeId();
 
-    block_fifo_request_t requests[] = {
+    BlockFifoRequest requests[] = {
         {
             .command = {.opcode = BLOCK_OPCODE_WRITE},
             .vmoid = vmoid,
@@ -3065,7 +3065,7 @@ TEST_P(SdmmcBlockDeviceTest, PackedCommandWriteError) {
     EXPECT_OK(client->BlockAttachVmo(vmo, &owned_vmoid));
     vmoid_t vmoid = owned_vmoid.TakeId();
 
-    block_fifo_request_t requests[] = {
+    BlockFifoRequest requests[] = {
         {
             .command = {.opcode = BLOCK_OPCODE_WRITE},
             .vmoid = vmoid,
@@ -3107,7 +3107,7 @@ TEST_P(SdmmcBlockDeviceTest, PackedCommandReadError) {
     EXPECT_OK(client->BlockAttachVmo(vmo, &owned_vmoid));
     vmoid_t vmoid = owned_vmoid.TakeId();
 
-    block_fifo_request_t requests[] = {
+    BlockFifoRequest requests[] = {
         {
             .command = {.opcode = BLOCK_OPCODE_READ},
             .vmoid = vmoid,
@@ -3143,7 +3143,7 @@ TEST_P(SdmmcBlockDeviceTest, PackedCommandReadError) {
     EXPECT_OK(client->BlockAttachVmo(vmo, &owned_vmoid));
     vmoid_t vmoid = owned_vmoid.TakeId();
 
-    block_fifo_request_t requests[] = {
+    BlockFifoRequest requests[] = {
         {
             .command = {.opcode = BLOCK_OPCODE_READ},
             .vmoid = vmoid,

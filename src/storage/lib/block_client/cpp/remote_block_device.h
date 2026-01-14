@@ -32,7 +32,7 @@ class RemoteBlockDevice final : public BlockDevice {
   RemoteBlockDevice& operator=(const RemoteBlockDevice&) = delete;
   RemoteBlockDevice(const RemoteBlockDevice&) = delete;
 
-  zx_status_t FifoTransaction(block_fifo_request_t* requests, size_t count) final;
+  zx_status_t FifoTransaction(BlockFifoRequest* requests, size_t count) final;
   zx::result<std::string> GetTopologicalPath() const final;
   zx::result<> Rebind(std::string_view url_suffix) const final;
   zx_status_t BlockGetInfo(fuchsia_storage_block::wire::BlockInfo* out_info) const final;

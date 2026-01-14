@@ -110,7 +110,7 @@ void FakeBlockDevice::WaitOnPaused() const __TA_REQUIRES(lock_) {
     pause_condition_.Wait(&lock_);
 }
 
-zx_status_t FakeBlockDevice::FifoTransaction(block_fifo_request_t* requests, size_t count) {
+zx_status_t FakeBlockDevice::FifoTransaction(BlockFifoRequest* requests, size_t count) {
   fbl::AutoLock lock(&lock_);
   const uint32_t block_size = block_size_;
   for (size_t i = 0; i < count; i++) {
@@ -256,7 +256,7 @@ FakeFVMBlockDevice::FakeFVMBlockDevice(uint64_t block_count, uint32_t block_size
   ZX_ASSERT(slice_capacity >= manager_info_.assigned_slice_count);
 }
 
-zx_status_t FakeFVMBlockDevice::FifoTransaction(block_fifo_request_t* requests, size_t count) {
+zx_status_t FakeFVMBlockDevice::FifoTransaction(BlockFifoRequest* requests, size_t count) {
   fbl::AutoLock lock(&fvm_lock_);
   // Don't need WaitOnPaused() here because this code just validates the input. The actual
   // requests will be excuted by the FakeBlockDevice::FifoTransaction() call at the bottom which

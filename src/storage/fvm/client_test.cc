@@ -16,7 +16,7 @@ using block_client::BlockDevice;
 class MockDeviceBase : public BlockDevice {
  public:
   ~MockDeviceBase() override = default;
-  zx_status_t FifoTransaction(block_fifo_request_t* requests, size_t count) final {
+  zx_status_t FifoTransaction(BlockFifoRequest* requests, size_t count) final {
     return ZX_ERR_NOT_SUPPORTED;
   }
   zx::result<std::string> GetTopologicalPath() const final {

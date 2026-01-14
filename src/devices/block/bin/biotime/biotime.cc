@@ -197,7 +197,7 @@ zx_status_t BioReadWrite(const BioReadWriteArgs& rw_args, zx_duration_t* xfer_du
     while (total_xfer_ops > 0) {
       rw_args.max_pending_ops.acquire();
 
-      block_fifo_request_t req = {
+      BlockFifoRequest req = {
           .command =
               {
                   .opcode = static_cast<uint8_t>(rw_args.is_write ? BLOCK_OPCODE_WRITE
@@ -259,7 +259,7 @@ zx_status_t BioReadWrite(const BioReadWriteArgs& rw_args, zx_duration_t* xfer_du
 
   size_t total_xfer_ops = rw_args.total_xfer_ops;
   while (total_xfer_ops > 0) {
-    block_fifo_response_t resp;
+    BlockFifoResponse resp;
     if (zx_status_t status = fifo.read(sizeof(resp), &resp, 1, nullptr); status != ZX_OK) {
       if (status == ZX_ERR_SHOULD_WAIT) {
         if (zx_status_t status = fifo.wait_one(ZX_FIFO_READABLE | ZX_FIFO_PEER_CLOSED,

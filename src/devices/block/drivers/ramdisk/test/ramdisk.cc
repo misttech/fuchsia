@@ -555,7 +555,7 @@ TEST_P(RamdiskTests, RamdiskTestFifoBasic) {
 
   // Batch write the VMO to the ramdisk
   // Split it into two requests, spread across the disk
-  block_fifo_request_t requests[] = {
+  BlockFifoRequest requests[] = {
       {
           .command = {.opcode = BLOCK_OPCODE_WRITE, .flags = 0},
           .group = group,
@@ -608,7 +608,7 @@ TEST_P(RamdiskTests, RamdiskTestFifoNoGroup) {
   ASSERT_TRUE(fifo_result.ok()) << fifo_result.FormatDescription();
   const fit::result fifo_response = fifo_result.value();
   ASSERT_TRUE(fifo_response.is_ok()) << zx_status_get_string(fifo_response.error_value());
-  fzl::fifo<block_fifo_request_t, block_fifo_response_t> fifo(std::move(fifo_response->fifo));
+  fzl::fifo<BlockFifoRequest, BlockFifoResponse> fifo(std::move(fifo_response->fifo));
 
   // Create an arbitrary VMO, fill it with some stuff
   uint64_t vmo_size = zx_system_get_page_size() * 3;
@@ -631,7 +631,7 @@ TEST_P(RamdiskTests, RamdiskTestFifoNoGroup) {
 
   // Batch write the VMO to the ramdisk
   // Split it into two requests, spread across the disk
-  block_fifo_request_t requests[2];
+  BlockFifoRequest requests[2];
   requests[0].reqid = 0;
   requests[0].vmoid = attach_vmo_response.value()->vmoid.id;
   requests[0].command = {.opcode = BLOCK_OPCODE_WRITE, .flags = 0};
@@ -646,7 +646,7 @@ TEST_P(RamdiskTests, RamdiskTestFifoNoGroup) {
   requests[1].vmo_offset = 1;
   requests[1].dev_offset = 100;
 
-  auto write_request = [&fifo](block_fifo_request_t* request) {
+  auto write_request = [&fifo](BlockFifoRequest* request) {
     size_t actual;
     ASSERT_EQ(fifo.write(request, 1, &actual), ZX_OK);
     ASSERT_EQ(actual, 1ul);
@@ -654,7 +654,7 @@ TEST_P(RamdiskTests, RamdiskTestFifoNoGroup) {
 
   auto read_response = [&fifo](reqid_t reqid) {
     zx::time deadline = zx::deadline_after(zx::sec(1));
-    block_fifo_response_t response;
+    BlockFifoResponse response;
     ASSERT_EQ(fifo.wait_one(ZX_FIFO_READABLE, deadline, nullptr), ZX_OK);
     ASSERT_EQ(fifo.read(&response, 1, nullptr), ZX_OK);
     ASSERT_EQ(response.status, ZX_OK);
@@ -715,7 +715,7 @@ void WriteStripedVmoHelper(block_client::Client& client, const TestVmoObject& ob
                            size_t objs, groupid_t group, uint32_t kBlockSize) {
   // Make a separate request for each block
   size_t blocks = obj.vmo_size / kBlockSize;
-  std::vector<block_fifo_request_t> requests(blocks);
+  std::vector<BlockFifoRequest> requests(blocks);
   for (size_t b = 0; b < blocks; b++) {
     requests[b].group = group;
     requests[b].vmoid = obj.vmoid.id;
@@ -737,7 +737,7 @@ void ReadStripedVmoHelper(block_client::Client& client, const TestVmoObject& obj
 
   // Next, read to the vmo from the disk
   size_t blocks = obj.vmo_size / kBlockSize;
-  std::vector<block_fifo_request_t> requests(blocks);
+  std::vector<BlockFifoRequest> requests(blocks);
   for (size_t b = 0; b < blocks; b++) {
     requests[b].group = group;
     requests[b].vmoid = obj.vmoid.id;
@@ -758,7 +758,7 @@ void ReadStripedVmoHelper(block_client::Client& client, const TestVmoObject& obj
 
 // Tears down an object created by "CreateVmoHelper".
 void CloseVmoHelper(block_client::Client& client, const TestVmoObject& obj, groupid_t group) {
-  block_fifo_request_t request;
+  BlockFifoRequest request;
   request.group = group;
   request.vmoid = obj.vmoid.id;
   request.command = {.opcode = BLOCK_OPCODE_CLOSE_VMO, .flags = 0};
@@ -855,7 +855,7 @@ TEST_P(RamdiskTests, RamdiskTestFifoLargeOpsCount) {
   for (size_t num_ops = 1; num_ops <= 32; num_ops++) {
     groupid_t group = 0;
 
-    std::vector<block_fifo_request_t> requests(num_ops);
+    std::vector<BlockFifoRequest> requests(num_ops);
 
     for (size_t b = 0; b < num_ops; b++) {
       requests[b].group = group;
@@ -908,7 +908,7 @@ TEST_P(RamdiskTests, RamdiskTestFifoLargeOpsCountShutdown) {
   const size_t kNumOps = BLOCK_FIFO_MAX_DEPTH;
   groupid_t group = 0;
 
-  std::vector<block_fifo_request_t> requests(kNumOps);
+  std::vector<BlockFifoRequest> requests(kNumOps);
 
   for (size_t b = 0; b < kNumOps; b++) {
     requests[b].group = group;
@@ -931,8 +931,7 @@ TEST_P(RamdiskTests, RamdiskTestFifoLargeOpsCountShutdown) {
   // version of the server; as a consequence, it is preserved
   // to help detect regressions.
   size_t actual;
-  ASSERT_EQ(fifo.write(sizeof(block_fifo_request_t), requests.data(), requests.size(), &actual),
-            ZX_OK);
+  ASSERT_EQ(fifo.write(sizeof(BlockFifoRequest), requests.data(), requests.size(), &actual), ZX_OK);
   usleep(100);
 }
 
@@ -965,7 +964,7 @@ TEST_P(RamdiskTests, RamdiskTestFifoIntermediateOpFailure) {
   ASSERT_EQ(obj.vmo.read(originalbuf.get(), 0, kBufferSize), ZX_OK);
 
   // Test that we can use regular transactions (writing)
-  block_fifo_request_t requests[kRequestCount];
+  BlockFifoRequest requests[kRequestCount];
   for (size_t i = 0; i < std::size(requests); i++) {
     requests[i].group = group;
     requests[i].vmoid = obj.vmoid.id;
@@ -1033,7 +1032,7 @@ TEST_P(RamdiskTests, RamdiskTestFifoBadClientVmoid) {
   ASSERT_NO_FATAL_FAILURE(CreateVmoHelper(client, obj, kBlockSize));
 
   // Bad request: Writing to the wrong vmoid
-  block_fifo_request_t request;
+  BlockFifoRequest request;
   request.group = group;
   request.vmoid = static_cast<vmoid_t>(obj.vmoid.id + 5);
   request.command = {.opcode = BLOCK_OPCODE_WRITE, .flags = 0};
@@ -1065,7 +1064,7 @@ TEST_P(RamdiskTests, RamdiskTestFifoBadClientUnalignedRequest) {
   TestVmoObject obj;
   ASSERT_NO_FATAL_FAILURE(CreateVmoHelper(client, obj, kBlockSize * 2));
 
-  block_fifo_request_t request;
+  BlockFifoRequest request;
   request.group = group;
   request.vmoid = static_cast<vmoid_t>(obj.vmoid.id);
   request.command = {.opcode = BLOCK_OPCODE_WRITE, .flags = 0};
@@ -1100,7 +1099,7 @@ TEST_P(RamdiskTests, RamdiskTestFifoBadClientOverflow) {
   TestVmoObject obj;
   ASSERT_NO_FATAL_FAILURE(CreateVmoHelper(client, obj, kBlockSize * 2));
 
-  block_fifo_request_t request;
+  BlockFifoRequest request;
   request.group = group;
   request.vmoid = static_cast<vmoid_t>(obj.vmoid.id);
   request.command = {.opcode = BLOCK_OPCODE_WRITE, .flags = 0};
@@ -1165,7 +1164,7 @@ TEST_P(RamdiskTests, RamdiskTestFifoBadClientBadVmo) {
   obj.vmoid.id = vmoid.value().TakeId();
 
   // Send a request to write to write 2 blocks -- even though that's larger than the VMO
-  block_fifo_request_t request = {
+  BlockFifoRequest request = {
       .command = {.opcode = BLOCK_OPCODE_WRITE, .flags = 0},
       .group = group,
       .vmoid = obj.vmoid.id,
@@ -1214,7 +1213,7 @@ TEST_P(RamdiskTests, RamdiskTestFifoSleepUnavailable) {
 
   // Batch write the VMO to the ramdisk
   // Split it into two requests, spread across the disk
-  block_fifo_request_t requests[] = {
+  BlockFifoRequest requests[] = {
       {
           .command = {.opcode = BLOCK_OPCODE_WRITE, .flags = 0},
           .group = group,
@@ -1387,7 +1386,7 @@ class RamdiskTestWithClient : public testing::TestWithParam<bool> {
 
 TEST_P(RamdiskTestWithClient, RamdiskTestFifoSleepDeferred) {
   // Create a bunch of requests, some of which are guaranteed to block.
-  block_fifo_request_t requests[16];
+  BlockFifoRequest requests[16];
   for (size_t i = 0; i < std::size(requests); ++i) {
     requests[i].group = 0;
     requests[i].vmoid = vmoid_.id;
@@ -1533,7 +1532,7 @@ TEST_P(RamdiskTestWithClient, DiscardOnWake) {
             ZX_OK);
   ASSERT_EQ(ramdisk_->SleepAfter(100).status_value(), ZX_OK);
 
-  block_fifo_request_t requests[5];
+  BlockFifoRequest requests[5];
   for (size_t i = 0; i < std::size(requests); ++i) {
     if (i == 2) {
       // Insert a flush midway through.
@@ -1590,7 +1589,7 @@ TEST_P(RamdiskTestWithClient, DiscardRandomOnWake) {
     fill_random(buf_.get(), vmo_size_);
     ASSERT_EQ(vmo_.write(buf_.get(), 0, vmo_size_), ZX_OK);
 
-    block_fifo_request_t requests[5];
+    BlockFifoRequest requests[5];
     for (size_t i = 0; i < std::size(requests); ++i) {
       if (i == 2) {
         // Insert a flush midway through.
@@ -1654,7 +1653,7 @@ TEST_P(RamdiskTestWithClient, DiscardRandomOnWakeWithBarriers) {
       fill_random(buf_.get(), vmo_size_);
       ASSERT_EQ(vmo_.write(buf_.get(), 0, vmo_size_), ZX_OK);
 
-      block_fifo_request_t requests[4];
+      BlockFifoRequest requests[4];
       for (size_t i = 0; i < std::size(requests); ++i) {
         requests[i].group = 0;
         requests[i].vmoid = vmoid_.id;

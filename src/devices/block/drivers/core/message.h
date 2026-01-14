@@ -15,7 +15,7 @@
 class IoBuffer;
 class Server;
 
-using MessageCompleter = fit::function<void(zx_status_t, block_fifo_request_t&)>;
+using MessageCompleter = fit::function<void(zx_status_t, BlockFifoRequest&)>;
 
 // A single unit of work transmitted to the underlying block layer.
 // Message contains a block_op_t, which is dynamically sized. Therefore, it implements its
@@ -33,7 +33,7 @@ class Message final : public fbl::DoublyLinkedListable<Message*> {
 
   // Allocate a new, uninitialized Message whose block_op begins in a memory region that
   // is block_op_size bytes long.
-  static zx_status_t Create(fbl::RefPtr<IoBuffer> iobuf, Server* server, block_fifo_request_t* req,
+  static zx_status_t Create(fbl::RefPtr<IoBuffer> iobuf, Server* server, BlockFifoRequest* req,
                             size_t block_op_size, MessageCompleter completer,
                             std::unique_ptr<Message>* out);
 
@@ -53,7 +53,7 @@ class Message final : public fbl::DoublyLinkedListable<Message*> {
   Server* server_;
   size_t op_size_;
   zx_status_t result_ = ZX_OK;
-  block_fifo_request_t req_{};
+  BlockFifoRequest req_{};
   // Must be at the end of structure.
   union {
     block_op_t op_;

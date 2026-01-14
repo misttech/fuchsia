@@ -25,7 +25,7 @@ namespace block_client {
 class BlockDevice : public storage::VmoidRegistry {
  public:
   // FIFO protocol. This is the normal way to read from and write to the block device.
-  virtual zx_status_t FifoTransaction(block_fifo_request_t* requests, size_t count) = 0;
+  virtual zx_status_t FifoTransaction(BlockFifoRequest* requests, size_t count) = 0;
 
   // Returns the full topological path of the device.
   virtual zx::result<std::string> GetTopologicalPath() const = 0;

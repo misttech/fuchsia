@@ -75,14 +75,14 @@ class MockBlockDevice : public FakeBlockDevice {
 
   bool saw_trim() const { return saw_trim_; }
 
-  zx_status_t FifoTransaction(block_fifo_request_t* requests, size_t count) final;
+  zx_status_t FifoTransaction(BlockFifoRequest* requests, size_t count) final;
   zx_status_t BlockGetInfo(fuchsia_storage_block::wire::BlockInfo* info) const final;
 
  private:
   bool saw_trim_ = false;
 };
 
-zx_status_t MockBlockDevice::FifoTransaction(block_fifo_request_t* requests, size_t count) {
+zx_status_t MockBlockDevice::FifoTransaction(BlockFifoRequest* requests, size_t count) {
   for (size_t i = 0; i < count; i++) {
     if (requests[i].command.opcode == BLOCK_OPCODE_TRIM) {
       saw_trim_ = true;

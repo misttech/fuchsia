@@ -186,7 +186,7 @@ class TestDevice final {
   }
 
   // Sends |num| requests over the block fifo to read or write blocks.
-  zx_status_t block_fifo_txn(block_fifo_request_t* requests, size_t num) {
+  zx_status_t block_fifo_txn(BlockFifoRequest* requests, size_t num) {
     for (size_t i = 0; i < num; ++i) {
       requests[i].group = req_.group;
       requests[i].vmoid = req_.vmoid;
@@ -290,7 +290,7 @@ class TestDevice final {
   // Client for the block I/O protocol to the block server. Created/destroyed on demand.
   std::unique_ptr<block_client::Client> client_;
   // Request structure used to send messages via the block I/O protocol.
-  block_fifo_request_t req_;
+  BlockFifoRequest req_;
   // VMO attached to the zxcrypt device for use with the block I/O protocol.
   zx::vmo vmo_;
   // An internal write buffer, initially filled with pseudo-random data

@@ -235,7 +235,7 @@ class GcTester {
 
 class DeviceTester {
  public:
-  using Hook = std::function<zx_status_t(const block_fifo_request_t &request, const zx::vmo *vmo)>;
+  using Hook = std::function<zx_status_t(const BlockFifoRequest &request, const zx::vmo *vmo)>;
   static void SetHook(F2fs *fs, Hook hook);
 };
 

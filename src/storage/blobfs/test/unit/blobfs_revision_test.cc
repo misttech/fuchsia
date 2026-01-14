@@ -97,7 +97,7 @@ TEST_F(BlobfsTestAtRev4, WontReadRev2) {
     // Scope the vmo buffer. Destroying implicitly on test exit seems to cause ordering issues.
     storage::VmoBuffer buffer;
     ASSERT_EQ(buffer.Initialize(device.get(), 1, kBlobfsBlockSize, "test_buffer"), ZX_OK);
-    block_fifo_request_t request{
+    BlockFifoRequest request{
         .command = {.opcode = BLOCK_OPCODE_READ, .flags = 0},
         .vmoid = buffer.vmoid(),
         .length = kBlobfsBlockSize / kBlockSize,

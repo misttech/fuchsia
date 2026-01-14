@@ -494,7 +494,7 @@ TEST(AllocatorTest, ResetFromStorageTest) {
 
   // Set callback which reads |bitmap_data| into each vmo block.
   transaction_manager.SetTransactionCallback(
-      [&bitmap_data](const block_fifo_request_t& request, const zx::vmo& vmo) {
+      [&bitmap_data](const BlockFifoRequest& request, const zx::vmo& vmo) {
         if (request.command.opcode == BLOCK_OPCODE_READ) {
           if (GetVmoSize(vmo) < kDeviceBlockSize) {
             return ZX_ERR_BUFFER_TOO_SMALL;

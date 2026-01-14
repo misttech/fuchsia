@@ -46,7 +46,7 @@ record the duration (
 [source](https://cs.opensource.google/fuchsia/fuchsia/+/main:src/storage/blobfs/blobfs.h;l=97;drc=f14ae2556f5c35bf9f33f4cd7f1b6fb5a53dd80d)):
 
 ```
-  zx_status_t Transaction(block_fifo_request_t* requests, size_t count) final {
+  zx_status_t Transaction(BlockFifoRequest* requests, size_t count) final {
     TRACE_DURATION("blobfs", "Blobfs::Transaction", "count", count);
     return block_device_->FifoTransaction(requests, count);
   }

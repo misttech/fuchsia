@@ -156,7 +156,7 @@ zx::result<> BlockPartitionClient::Read(vmoid_t vmoid, size_t vmo_size, size_t d
     return zx::error(ZX_ERR_OUT_OF_RANGE);
   }
 
-  block_fifo_request_t request = {
+  BlockFifoRequest request = {
       .command = {.opcode = BLOCK_OPCODE_READ, .flags = 0},
       .group = 0,
       .vmoid = vmoid,
@@ -198,7 +198,7 @@ zx::result<> BlockPartitionClient::Write(vmoid_t vmoid, size_t vmo_size, size_t 
     return zx::error(ZX_ERR_OUT_OF_RANGE);
   }
 
-  block_fifo_request_t request = {
+  BlockFifoRequest request = {
       .command = {.opcode = BLOCK_OPCODE_WRITE, .flags = 0},
       .group = 0,
       .vmoid = vmoid,
@@ -225,7 +225,7 @@ zx::result<> BlockPartitionClient::Trim() {
     return status.take_error();
   }
 
-  block_fifo_request_t request = {
+  BlockFifoRequest request = {
       .command = {.opcode = BLOCK_OPCODE_TRIM, .flags = 0},
       .group = 0,
       .vmoid = BLOCK_VMOID_INVALID,
@@ -243,7 +243,7 @@ zx::result<> BlockPartitionClient::Flush() {
     return status.take_error();
   }
 
-  block_fifo_request_t request = {
+  BlockFifoRequest request = {
       .command = {.opcode = BLOCK_OPCODE_FLUSH, .flags = 0},
       .group = 0,
       .vmoid = BLOCK_VMOID_INVALID,

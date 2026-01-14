@@ -134,7 +134,7 @@ TEST(BlockServer, Basic) {
   ASSERT_EQ(client->BlockAttachVmo(vmo, &vmoid), ZX_OK);
   storage::OwnedVmoid owned_vmoid(std::move(vmoid), (*client).get());
 
-  block_fifo_request_t request = {
+  BlockFifoRequest request = {
       .command =
           {
               .opcode = BLOCK_OPCODE_WRITE,
@@ -285,7 +285,7 @@ TEST(BlockServer, FullFifo) {
   ASSERT_TRUE(response.is_ok());
   zx::fifo fifo = std::move(response->fifo);
 
-  block_fifo_request_t request = {
+  BlockFifoRequest request = {
       .command =
           {
               .opcode = BLOCK_OPCODE_WRITE,
@@ -301,7 +301,7 @@ TEST(BlockServer, FullFifo) {
     request.reqid = request_id;
     zx_status_t status;
     size_t actual;
-    while ((status = fifo.write(sizeof(block_fifo_request_t), &request, 1, &actual)) ==
+    while ((status = fifo.write(sizeof(BlockFifoRequest), &request, 1, &actual)) ==
            ZX_ERR_SHOULD_WAIT) {
       zx_signals_t signals;
       fifo.wait_one(ZX_FIFO_WRITABLE, zx::time::infinite(), &signals);
@@ -313,10 +313,10 @@ TEST(BlockServer, FullFifo) {
   // Now make sure we receive the 1000 requests.
   std::unordered_set<uint32_t> received;
   for (int i = 0; i < 1000; ++i) {
-    block_fifo_response_t response;
+    BlockFifoResponse response;
     zx_status_t status;
     size_t actual;
-    while ((status = fifo.read(sizeof(block_fifo_response_t), &response, 1, &actual)) ==
+    while ((status = fifo.read(sizeof(BlockFifoResponse), &response, 1, &actual)) ==
            ZX_ERR_SHOULD_WAIT) {
       zx_signals_t signals;
       fifo.wait_one(ZX_FIFO_READABLE, zx::time::infinite(), &signals);
@@ -371,7 +371,7 @@ TEST(BlockServer, Group) {
     vmo_id = response->vmoid.id;
   }
 
-  block_fifo_request_t request = {
+  BlockFifoRequest request = {
       .command =
           {
               .opcode = BLOCK_OPCODE_READ,
@@ -391,7 +391,7 @@ TEST(BlockServer, Group) {
       request.command.flags |= BLOCK_IO_FLAG_GROUP_LAST;
     zx_status_t status;
     size_t actual;
-    while ((status = fifo.write(sizeof(block_fifo_request_t), &request, 1, &actual)) ==
+    while ((status = fifo.write(sizeof(BlockFifoRequest), &request, 1, &actual)) ==
            ZX_ERR_SHOULD_WAIT) {
       zx_signals_t signals;
       fifo.wait_one(ZX_FIFO_WRITABLE, zx::time::infinite(), &signals);
@@ -400,10 +400,10 @@ TEST(BlockServer, Group) {
     ASSERT_EQ(status, ZX_OK);
   }
 
-  block_fifo_response_t response;
+  BlockFifoResponse response;
   zx_status_t status;
   size_t actual;
-  while ((status = fifo.read(sizeof(block_fifo_response_t), &response, 1, &actual)) ==
+  while ((status = fifo.read(sizeof(BlockFifoResponse), &response, 1, &actual)) ==
          ZX_ERR_SHOULD_WAIT) {
     zx_signals_t signals;
     fifo.wait_one(ZX_FIFO_READABLE, zx::time::infinite(), &signals);
@@ -467,7 +467,7 @@ TEST(BlockServer, SimulatedBarrierFlushFailure) {
   ASSERT_EQ(client->BlockAttachVmo(vmo, &vmoid), ZX_OK);
   storage::OwnedVmoid owned_vmoid(std::move(vmoid), (*client).get());
 
-  block_fifo_request_t request = {
+  BlockFifoRequest request = {
       .command =
           {
               .opcode = BLOCK_OPCODE_WRITE,
@@ -519,7 +519,7 @@ TEST(BlockServer, SimulatedBarrierWriteFailure) {
   ASSERT_EQ(client->BlockAttachVmo(vmo, &vmoid), ZX_OK);
   storage::OwnedVmoid owned_vmoid(std::move(vmoid), (*client).get());
 
-  block_fifo_request_t request = {
+  BlockFifoRequest request = {
       .command =
           {
               .opcode = BLOCK_OPCODE_WRITE,
@@ -571,7 +571,7 @@ TEST(BlockServer, SimulatedFuaFlushFailure) {
   ASSERT_EQ(client->BlockAttachVmo(vmo, &vmoid), ZX_OK);
   storage::OwnedVmoid owned_vmoid(std::move(vmoid), (*client).get());
 
-  block_fifo_request_t request = {
+  BlockFifoRequest request = {
       .command =
           {
               .opcode = BLOCK_OPCODE_WRITE,
@@ -623,7 +623,7 @@ TEST(BlockServer, SimulatedFuaWriteFailure) {
   ASSERT_EQ(client->BlockAttachVmo(vmo, &vmoid), ZX_OK);
   storage::OwnedVmoid owned_vmoid(std::move(vmoid), (*client).get());
 
-  block_fifo_request_t request = {
+  BlockFifoRequest request = {
       .command =
           {
               .opcode = BLOCK_OPCODE_WRITE,
@@ -698,7 +698,7 @@ TEST(BlockServer, GroupWithSimulatedFua) {
     vmo_id = response->vmoid.id;
   }
 
-  block_fifo_request_t request = {
+  BlockFifoRequest request = {
       .command =
           {
               .opcode = BLOCK_OPCODE_WRITE,
@@ -724,7 +724,7 @@ TEST(BlockServer, GroupWithSimulatedFua) {
       request.command.flags |= BLOCK_IO_FLAG_GROUP_LAST;
     zx_status_t status;
     size_t actual;
-    while ((status = fifo.write(sizeof(block_fifo_request_t), &request, 1, &actual)) ==
+    while ((status = fifo.write(sizeof(BlockFifoRequest), &request, 1, &actual)) ==
            ZX_ERR_SHOULD_WAIT) {
       zx_signals_t signals;
       fifo.wait_one(ZX_FIFO_WRITABLE, zx::time::infinite(), &signals);
@@ -733,10 +733,10 @@ TEST(BlockServer, GroupWithSimulatedFua) {
     ASSERT_EQ(status, ZX_OK);
   }
 
-  block_fifo_response_t response;
+  BlockFifoResponse response;
   zx_status_t status;
   size_t actual;
-  while ((status = fifo.read(sizeof(block_fifo_response_t), &response, 1, &actual)) ==
+  while ((status = fifo.read(sizeof(BlockFifoResponse), &response, 1, &actual)) ==
          ZX_ERR_SHOULD_WAIT) {
     zx_signals_t signals;
     fifo.wait_one(ZX_FIFO_READABLE, zx::time::infinite(), &signals);
@@ -796,7 +796,7 @@ TEST(BlockServer, GroupWithSimulatedBarrierAndFailedFlush) {
     vmo_id = response->vmoid.id;
   }
 
-  block_fifo_request_t request = {
+  BlockFifoRequest request = {
       .command =
           {
               .opcode = BLOCK_OPCODE_WRITE,
@@ -821,7 +821,7 @@ TEST(BlockServer, GroupWithSimulatedBarrierAndFailedFlush) {
       request.command.flags |= BLOCK_IO_FLAG_GROUP_LAST;
     zx_status_t status;
     size_t actual;
-    while ((status = fifo.write(sizeof(block_fifo_request_t), &request, 1, &actual)) ==
+    while ((status = fifo.write(sizeof(BlockFifoRequest), &request, 1, &actual)) ==
            ZX_ERR_SHOULD_WAIT) {
       zx_signals_t signals;
       fifo.wait_one(ZX_FIFO_WRITABLE, zx::time::infinite(), &signals);
@@ -830,10 +830,10 @@ TEST(BlockServer, GroupWithSimulatedBarrierAndFailedFlush) {
     ASSERT_EQ(status, ZX_OK);
   }
 
-  block_fifo_response_t response;
+  BlockFifoResponse response;
   zx_status_t status;
   size_t actual;
-  while ((status = fifo.read(sizeof(block_fifo_response_t), &response, 1, &actual)) ==
+  while ((status = fifo.read(sizeof(BlockFifoResponse), &response, 1, &actual)) ==
          ZX_ERR_SHOULD_WAIT) {
     zx_signals_t signals;
     fifo.wait_one(ZX_FIFO_READABLE, zx::time::infinite(), &signals);
@@ -891,7 +891,7 @@ TEST(BlockServer, GroupWithSimulatedFuaAndFailedFlush) {
     vmo_id = response->vmoid.id;
   }
 
-  block_fifo_request_t request = {
+  BlockFifoRequest request = {
       .command =
           {
               .opcode = BLOCK_OPCODE_WRITE,
@@ -916,7 +916,7 @@ TEST(BlockServer, GroupWithSimulatedFuaAndFailedFlush) {
       request.command.flags |= BLOCK_IO_FLAG_GROUP_LAST;
     zx_status_t status;
     size_t actual;
-    while ((status = fifo.write(sizeof(block_fifo_request_t), &request, 1, &actual)) ==
+    while ((status = fifo.write(sizeof(BlockFifoRequest), &request, 1, &actual)) ==
            ZX_ERR_SHOULD_WAIT) {
       zx_signals_t signals;
       fifo.wait_one(ZX_FIFO_WRITABLE, zx::time::infinite(), &signals);
@@ -925,10 +925,10 @@ TEST(BlockServer, GroupWithSimulatedFuaAndFailedFlush) {
     ASSERT_EQ(status, ZX_OK);
   }
 
-  block_fifo_response_t response;
+  BlockFifoResponse response;
   zx_status_t status;
   size_t actual;
-  while ((status = fifo.read(sizeof(block_fifo_response_t), &response, 1, &actual)) ==
+  while ((status = fifo.read(sizeof(BlockFifoResponse), &response, 1, &actual)) ==
          ZX_ERR_SHOULD_WAIT) {
     zx_signals_t signals;
     fifo.wait_one(ZX_FIFO_READABLE, zx::time::infinite(), &signals);

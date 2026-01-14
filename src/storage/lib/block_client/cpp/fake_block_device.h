@@ -60,7 +60,7 @@ class FakeBlockDevice : public BlockDevice {
   // in the transaction may or may not also be sent into the callback. (In practice, requests are
   // processed in order, so all requests after the first failing request wouldn't be processed.)
   // Not thread safe.  Should be called only when the device is not active.
-  using Hook = std::function<zx_status_t(const block_fifo_request_t& request, const zx::vmo* vmo)>;
+  using Hook = std::function<zx_status_t(const BlockFifoRequest& request, const zx::vmo* vmo)>;
   void set_hook(Hook hook) { hook_ = std::move(hook); }
 
   // When paused, this device will make FIFO operations block until Resume() is called. The device
@@ -115,7 +115,7 @@ class FakeBlockDevice : public BlockDevice {
     return ZX_ERR_NOT_SUPPORTED;
   }
 
-  zx_status_t FifoTransaction(block_fifo_request_t* requests, size_t count) override;
+  zx_status_t FifoTransaction(BlockFifoRequest* requests, size_t count) override;
   zx_status_t BlockGetInfo(fuchsia_storage_block::wire::BlockInfo* out_info) const override;
   zx_status_t BlockAttachVmo(const zx::vmo& vmo, storage::Vmoid* out_vmoid) final;
 
@@ -159,7 +159,7 @@ class FakeFVMBlockDevice : public FakeBlockDevice {
   FakeFVMBlockDevice(uint64_t block_count, uint32_t block_size, uint64_t slice_size,
                      uint64_t slice_capacity);
 
-  zx_status_t FifoTransaction(block_fifo_request_t* requests, size_t count) final;
+  zx_status_t FifoTransaction(BlockFifoRequest* requests, size_t count) final;
   zx_status_t VolumeGetInfo(fuchsia_storage_block::wire::VolumeManagerInfo* out_manager_info,
                             fuchsia_storage_block::wire::VolumeInfo* out_volume_info) const final;
   zx_status_t VolumeQuerySlices(const uint64_t* slices, size_t slices_count,

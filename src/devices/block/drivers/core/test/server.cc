@@ -83,7 +83,7 @@ TEST_F(ServerTestFixture, StartServer) {
 TEST_F(ServerTestFixture, SplitRequestAfterFailedRequestReturnsFailure) {
   zx::result fifo_result = server_->GetFifo();
   ASSERT_OK(fifo_result);
-  fzl::fifo<block_fifo_request_t, block_fifo_response_t> fifo(std::move(fifo_result.value()));
+  fzl::fifo<BlockFifoRequest, BlockFifoResponse> fifo(std::move(fifo_result.value()));
   CreateThread();
   auto cleanup = fit::defer([&] {
     server_->Shutdown();
@@ -95,7 +95,7 @@ TEST_F(ServerTestFixture, SplitRequestAfterFailedRequestReturnsFailure) {
   zx::result vmoid = server_->AttachVmo(std::move(vmo));
   ASSERT_OK(vmoid);
 
-  block_fifo_request_t request = {
+  BlockFifoRequest request = {
       .command = {.opcode = BLOCK_OPCODE_WRITE, .flags = BLOCK_IO_FLAG_GROUP_ITEM},
       .reqid = 100,
       .group = 5,
@@ -119,7 +119,7 @@ TEST_F(ServerTestFixture, SplitRequestAfterFailedRequestReturnsFailure) {
   ASSERT_OK(fifo.write(&request, 1, &actual_count));
   ASSERT_EQ(actual_count, 1);
 
-  block_fifo_response_t response;
+  BlockFifoResponse response;
   zx_signals_t seen;
   ASSERT_OK(fifo.wait_one(ZX_FIFO_READABLE | ZX_FIFO_PEER_CLOSED, zx::time::infinite(), &seen));
   ASSERT_OK(fifo.read_one(&response));
@@ -149,7 +149,7 @@ TEST_F(ServerTestFixture, SplitRequestAfterFailedRequestReturnsFailure) {
   // Make sure the group is correctly cleaned up and able to be used for another request.
   blkdev_.set_callback({});
 
-  block_fifo_request_t requests[] = {
+  BlockFifoRequest requests[] = {
       {
           .command = {.opcode = BLOCK_OPCODE_WRITE, .flags = BLOCK_IO_FLAG_GROUP_ITEM},
           .reqid = 103,
@@ -209,7 +209,7 @@ TEST(OffsetMap, RemapRequests) {
       .length = 100,
   });
   ASSERT_OK(map);
-  block_fifo_request_t request{
+  BlockFifoRequest request{
       .command = {.opcode = BLOCK_OPCODE_WRITE},
       .reqid = 1,
       .group = 2,
@@ -217,9 +217,9 @@ TEST(OffsetMap, RemapRequests) {
       .length = 10,
       .vmo_offset = 0x2000,
   };
-  const block_fifo_request_t orig_request = request;
+  const BlockFifoRequest orig_request = request;
 
-  auto AssertUnchangedExceptOffset = [&orig_request](block_fifo_request_t& request) {
+  auto AssertUnchangedExceptOffset = [&orig_request](BlockFifoRequest& request) {
     request.dev_offset = orig_request.dev_offset;
     ASSERT_BYTES_EQ(&request, &orig_request, sizeof(request));
   };

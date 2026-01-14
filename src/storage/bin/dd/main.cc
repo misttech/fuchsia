@@ -236,7 +236,7 @@ class Target {
   ~Target() {
     if (vmoid_.IsAttached()) {
       ZX_DEBUG_ASSERT(variant_ == Variant::kBlock && block_);
-      block_fifo_request_t request;
+      BlockFifoRequest request;
       request.vmoid = vmoid_.TakeId();
       request.command = {.opcode = BLOCK_OPCODE_CLOSE_VMO, .flags = 0};
       if (zx_status_t status = block_->Transaction(&request, 1); status != ZX_OK) {
@@ -333,7 +333,7 @@ class Target {
         break;
       }
       case Variant::kBlock: {
-        block_fifo_request_t request;
+        BlockFifoRequest request;
         request.vmoid = vmoid_.get();
         request.command = {.opcode = BLOCK_OPCODE_READ, .flags = 0};
         request.length = nblocks;
@@ -383,7 +383,7 @@ class Target {
         break;
       }
       case Variant::kBlock: {
-        block_fifo_request_t request;
+        BlockFifoRequest request;
         request.vmoid = vmoid_.get();
         request.command = {.opcode = BLOCK_OPCODE_WRITE, .flags = 0};
         request.length = nblocks;

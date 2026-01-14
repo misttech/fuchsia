@@ -161,7 +161,7 @@ static zx::duration iotime_fifo(const char* dev, int is_read, fbl::unique_fd fd,
   auto cleanup = fit::defer([&]() { block_device->BlockDetachVmo(std::move(vmoid)); });
 
   const uint8_t opcode = is_read ? BLOCK_OPCODE_READ : BLOCK_OPCODE_WRITE;
-  block_fifo_request_t request = {
+  BlockFifoRequest request = {
       .command = {.opcode = opcode, .flags = 0},
       .reqid = 0,
       .group = 0,

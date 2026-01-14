@@ -72,14 +72,14 @@ class ServerTest : public zxtest::Test {
     return ZX_OK;
   }
 
-  void RequestOne(const block_fifo_request_t& request) {
+  void RequestOne(const BlockFifoRequest& request) {
     // Write request.
     size_t actual_count = 0;
     ASSERT_OK(fifo_.write(sizeof(request), &request, 1, &actual_count));
     ASSERT_EQ(actual_count, 1);
   }
 
-  void RequestOneAndWaitResponse(const block_fifo_request_t& request, zx_status_t expected_status,
+  void RequestOneAndWaitResponse(const BlockFifoRequest& request, zx_status_t expected_status,
                                  uint32_t expected_response_count = 1) {
     // Write request.
     size_t actual_count = 0;
@@ -90,7 +90,7 @@ class ServerTest : public zxtest::Test {
     zx_signals_t observed;
     ASSERT_OK(fifo_.wait_one(ZX_FIFO_READABLE, zx::time::infinite(), &observed));
 
-    block_fifo_response_t response;
+    BlockFifoResponse response;
     ASSERT_OK(fifo_.read(sizeof(response), &response, 1, &actual_count));
     ASSERT_EQ(actual_count, 1);
     ASSERT_EQ(response.status, expected_status);
@@ -119,7 +119,7 @@ TEST_F(ServerTest, CloseVMO) {
   AttachVmo(/*do_fill=*/false);
 
   // Request close VMO.
-  block_fifo_request_t req = {
+  BlockFifoRequest req = {
       .command = {.opcode = BLOCK_OPCODE_CLOSE_VMO, .flags = 0},
       .reqid = 0x100,
       .group = 0,
@@ -136,7 +136,7 @@ TEST_F(ServerTest, ReadSingleTest) {
   AttachVmo(/*do_fill=*/true);
 
   // Request close VMO.
-  block_fifo_request_t req = {
+  BlockFifoRequest req = {
       .command = {.opcode = BLOCK_OPCODE_READ, .flags = 0},
       .reqid = 0x100,
       .group = 0,
@@ -155,7 +155,7 @@ TEST_F(ServerTest, ReadManyBlocksHasOneResponse) {
   CreateServer(block_info);
   AttachVmo(/*do_fill=*/true);
 
-  block_fifo_request_t reqs[2] = {
+  BlockFifoRequest reqs[2] = {
       {
           .command = {.opcode = BLOCK_OPCODE_READ, .flags = 0},
           .reqid = 0x100,
@@ -185,7 +185,7 @@ TEST_F(ServerTest, ReadManyBlocksHasOneResponse) {
   zx_signals_t observed;
   ASSERT_OK(zx_object_wait_one(fifo_.get(), ZX_FIFO_READABLE, ZX_TIME_INFINITE, &observed));
 
-  block_fifo_response_t res;
+  BlockFifoResponse res;
   ASSERT_OK(fifo_.read(sizeof(res), &res, 1, &actual_count));
   ASSERT_EQ(actual_count, 1);
   ASSERT_OK(res.status);
@@ -209,7 +209,7 @@ TEST_F(ServerTest, TestLargeGroupedTransaction) {
   CreateServer(block_info);
   AttachVmo(/*do_fill=*/true);
 
-  block_fifo_request_t reqs[2] = {
+  BlockFifoRequest reqs[2] = {
       {
           .command = {.opcode = BLOCK_OPCODE_READ, .flags = BLOCK_IO_FLAG_GROUP_ITEM},
           .reqid = 0x101,
@@ -240,7 +240,7 @@ TEST_F(ServerTest, TestLargeGroupedTransaction) {
   zx_signals_t observed;
   ASSERT_OK(zx_object_wait_one(fifo_.get(), ZX_FIFO_READABLE, ZX_TIME_INFINITE, &observed));
 
-  block_fifo_response_t res;
+  BlockFifoResponse res;
   ASSERT_OK(fifo_.read(sizeof(res), &res, 1, &actual_count));
   ASSERT_EQ(actual_count, 1);
   ASSERT_OK(res.status);
@@ -255,7 +255,7 @@ TEST_F(ServerTest, FuaWrite) {
   CreateServer(block_info);
   AttachVmo(/*do_fill=*/true);
 
-  block_fifo_request_t req = {
+  BlockFifoRequest req = {
       .command = {.opcode = BLOCK_OPCODE_WRITE, .flags = BLOCK_IO_FLAG_FORCE_ACCESS},  // Write FUA
       .reqid = 0x100,
       .group = 0,
@@ -282,7 +282,7 @@ TEST_F(ServerTest, FuaWriteWithFua) {
   CreateServer(block_info);
   AttachVmo(/*do_fill=*/true);
 
-  block_fifo_request_t req = {
+  BlockFifoRequest req = {
       .command = {.opcode = BLOCK_OPCODE_WRITE, .flags = BLOCK_IO_FLAG_FORCE_ACCESS},  // Write FUA
       .reqid = 0x100,
       .group = 0,
@@ -305,7 +305,7 @@ TEST_F(ServerTest, Postflush) {
   CreateServer(block_info);
   AttachVmo(/*do_fill=*/true);
 
-  block_fifo_request_t req = {
+  BlockFifoRequest req = {
       .command = {.opcode = BLOCK_OPCODE_WRITE, .flags = BLOCK_IO_FLAG_FORCE_ACCESS},  // FUA
       .reqid = 0x100,
       .group = 0,
@@ -332,7 +332,7 @@ TEST_F(ServerTest, PostflushException) {
   CreateServer(block_info);
   AttachVmo(/*do_fill=*/true);
 
-  block_fifo_request_t req = {
+  BlockFifoRequest req = {
       .command = {.opcode = BLOCK_OPCODE_WRITE, .flags = BLOCK_IO_FLAG_FORCE_ACCESS},  // FUA
       .reqid = 0x100,
       .group = 0,
@@ -387,7 +387,7 @@ TEST_F(ServerTest, FuaWriteWithLargeGroupedTransaction) {
   CreateServer(block_info);
   AttachVmo(/*do_fill=*/true);
 
-  block_fifo_request_t req = {
+  BlockFifoRequest req = {
       .command = {.opcode = BLOCK_OPCODE_WRITE, .flags = BLOCK_IO_FLAG_FORCE_ACCESS},
       .reqid = 0x100,
       .group = 0,
@@ -415,7 +415,7 @@ TEST_F(ServerTest, PostflushWithLargeGroupedTransaction) {
   CreateServer(block_info);
   AttachVmo(/*do_fill=*/true);
 
-  block_fifo_request_t req = {
+  BlockFifoRequest req = {
       .command = {.opcode = BLOCK_OPCODE_WRITE, .flags = BLOCK_IO_FLAG_FORCE_ACCESS},
       .reqid = 0x100,
       .group = 0,
@@ -445,7 +445,7 @@ TEST_F(ServerTest, PostflushWithLargeGroupedTransactionException) {
   CreateServer(block_info);
   AttachVmo(/*do_fill=*/true);
 
-  block_fifo_request_t req = {
+  BlockFifoRequest req = {
       .command = {.opcode = BLOCK_OPCODE_WRITE,
                   .flags = BLOCK_IO_FLAG_FORCE_ACCESS},  // Write flush and FUA
       .reqid = 0x100,
@@ -503,7 +503,7 @@ TEST_F(ServerTest, PostflushMustBeIssuedOnlyAfterGroupLast) {
   CreateServer(block_info);
   AttachVmo(/*do_fill=*/true);
 
-  block_fifo_request_t reqs[2] = {
+  BlockFifoRequest reqs[2] = {
       {
           .command = {.opcode = BLOCK_OPCODE_WRITE,
                       .flags = BLOCK_IO_FLAG_GROUP_ITEM |

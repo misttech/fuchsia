@@ -57,7 +57,7 @@ TEST(MountTest, ReadsExceptForSuperBlockFail) {
   ASSERT_TRUE(Mkfs(bcache_or.value().get()).is_ok());
 
   // Fail request for block 8 which should be the first block of the inode bitmap.
-  device_ptr->set_hook([](const block_fifo_request_t& request, const zx::vmo*) {
+  device_ptr->set_hook([](const BlockFifoRequest& request, const zx::vmo*) {
     return request.dev_offset == 8 * kMinfsBlockSize / kBlockSize ? ZX_ERR_IO : ZX_OK;
   });
 

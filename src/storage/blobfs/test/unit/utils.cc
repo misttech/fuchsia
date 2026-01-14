@@ -36,7 +36,7 @@ void VerifySizeBlockAligned(BlockDevice* device, size_t size, uint64_t offset,
 
 }  // namespace
 
-zx_status_t MockTransactionManager::FifoTransaction(block_fifo_request_t* requests, size_t count) {
+zx_status_t MockTransactionManager::FifoTransaction(BlockFifoRequest* requests, size_t count) {
   fbl::AutoLock lock(&lock_);
 
   if (transaction_callback_) {
@@ -150,7 +150,7 @@ void DeviceBlockRead(BlockDevice* device, void* buf, size_t size, uint64_t dev_o
 
   storage::OwnedVmoid vmoid = AttachVmo(device, &vmo);
 
-  block_fifo_request_t request;
+  BlockFifoRequest request;
   request.command = {.opcode = BLOCK_OPCODE_READ, .flags = 0};
   request.vmoid = vmoid.get();
   request.length = safemath::checked_cast<uint32_t>(size / block_size);
@@ -170,7 +170,7 @@ void DeviceBlockWrite(BlockDevice* device, const void* buf, size_t size, uint64_
 
   storage::OwnedVmoid vmoid = AttachVmo(device, &vmo);
 
-  block_fifo_request_t request;
+  BlockFifoRequest request;
   request.command = {.opcode = BLOCK_OPCODE_WRITE, .flags = 0};
   request.vmoid = vmoid.get();
   request.length = safemath::checked_cast<uint32_t>(size / block_size);

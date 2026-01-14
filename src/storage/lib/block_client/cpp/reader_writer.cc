@@ -84,7 +84,7 @@ zx_status_t ReaderWriter::DoIo(uint64_t offset, size_t count, vmoid_t vmoid, uin
       memcpy(buffer_.start(), *buf, amount);
     }
     uint8_t opcode = write ? BLOCK_OPCODE_WRITE : BLOCK_OPCODE_READ;
-    block_fifo_request_t request = {
+    BlockFifoRequest request = {
         .command = {.opcode = opcode, .flags = 0},
         .vmoid = vmoid,
         .length = safemath::checked_cast<uint32_t>(amount / block_size_),

@@ -45,9 +45,9 @@ class MockBlockDevice : public block_client::FakeBlockDevice {
   MockBlockDevice() : FakeBlockDevice(kNumBlocks, kBlockSize) {}
   ~MockBlockDevice() override {}
 
-  const std::vector<block_fifo_request_t>& requests() const { return requests_; }
+  const std::vector<BlockFifoRequest>& requests() const { return requests_; }
 
-  zx_status_t FifoTransaction(block_fifo_request_t* requests, size_t count) final {
+  zx_status_t FifoTransaction(BlockFifoRequest* requests, size_t count) final {
     if (called_) {
       return ZX_ERR_IO_REFUSED;
     }
@@ -57,7 +57,7 @@ class MockBlockDevice : public block_client::FakeBlockDevice {
   }
 
  private:
-  std::vector<block_fifo_request_t> requests_;
+  std::vector<BlockFifoRequest> requests_;
   bool called_ = false;
 };
 
@@ -66,7 +66,7 @@ class MockTransactionHandler : public fs::DeviceTransactionHandler {
   MockTransactionHandler() = default;
   ~MockTransactionHandler() override {}
 
-  const std::vector<block_fifo_request_t>& GetRequests() const { return device_.requests(); }
+  const std::vector<BlockFifoRequest>& GetRequests() const { return device_.requests(); }
 
   uint64_t BlockNumberToDevice(uint64_t block_num) const final { return block_num * kBlockRatio; }
 
@@ -99,7 +99,7 @@ TEST_F(TransactionHandlerTest, RunRequestsOneRequest) {
   std::vector<BufferedOperation> operations = {{kVmoid, {OperationType::kWrite, 1, 2, 3}}};
   EXPECT_EQ(handler_->RunRequests(operations), ZX_OK);
 
-  const std::vector<block_fifo_request_t>& requests = handler_->GetRequests();
+  const std::vector<BlockFifoRequest>& requests = handler_->GetRequests();
   EXPECT_EQ(1u, requests.size());
   EXPECT_EQ(1 * kBlockRatio, requests[0].vmo_offset);
   EXPECT_EQ(2 * kBlockRatio, requests[0].dev_offset);
@@ -113,7 +113,7 @@ TEST_F(TransactionHandlerTest, RunRequestsTrim) {
   std::vector<BufferedOperation> operations = {{kVmoid, {OperationType::kTrim, 1, 2, 3}}};
   EXPECT_EQ(handler_->RunRequests(operations), ZX_OK);
 
-  const std::vector<block_fifo_request_t>& requests = handler_->GetRequests();
+  const std::vector<BlockFifoRequest>& requests = handler_->GetRequests();
   EXPECT_EQ(1u, requests.size());
   EXPECT_EQ(1 * kBlockRatio, requests[0].vmo_offset);
   EXPECT_EQ(2 * kBlockRatio, requests[0].dev_offset);
@@ -129,7 +129,7 @@ TEST_F(TransactionHandlerTest, RunRequestsManyRequests) {
   operations.push_back({30, {OperationType::kRead, 37, 38, 39}});
   EXPECT_EQ(handler_->RunRequests(operations), ZX_OK);
 
-  const std::vector<block_fifo_request_t>& requests = handler_->GetRequests();
+  const std::vector<BlockFifoRequest>& requests = handler_->GetRequests();
   EXPECT_EQ(3u, requests.size());
   EXPECT_EQ(unsigned{BLOCK_OPCODE_READ}, requests[0].command.opcode);
   EXPECT_EQ(10, requests[0].vmoid);
@@ -159,7 +159,7 @@ TEST_F(TransactionHandlerTest, RunRequestsFails) {
 
 TEST_F(TransactionHandlerTest, FlushCallsFlush) {
   handler_->Flush();
-  const std::vector<block_fifo_request_t>& requests = handler_->GetRequests();
+  const std::vector<BlockFifoRequest>& requests = handler_->GetRequests();
   EXPECT_EQ(1u, requests.size());
   EXPECT_EQ(unsigned{BLOCK_OPCODE_FLUSH}, requests[0].command.opcode);
 }
@@ -169,7 +169,7 @@ TEST_F(TransactionHandlerTest, RunRequestsWriteFua) {
   std::vector<BufferedOperation> operations = {{kVmoid, {OperationType::kWriteFua, 1, 2, 3}}};
   EXPECT_EQ(handler_->RunRequests(operations), ZX_OK);
 
-  const std::vector<block_fifo_request_t>& requests = handler_->GetRequests();
+  const std::vector<BlockFifoRequest>& requests = handler_->GetRequests();
   EXPECT_EQ(1u, requests.size());
   EXPECT_EQ(1 * kBlockRatio, requests[0].vmo_offset);
   EXPECT_EQ(2 * kBlockRatio, requests[0].dev_offset);

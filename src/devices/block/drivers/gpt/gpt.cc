@@ -229,7 +229,7 @@ class BlockClient : public block_client::BlockDevice {
     return ZX_ERR_NOT_SUPPORTED;
   }
 
-  zx_status_t FifoTransaction(block_fifo_request_t* requests, size_t count) override {
+  zx_status_t FifoTransaction(BlockFifoRequest* requests, size_t count) override {
     ZX_ASSERT_MSG(count == 1, "Only single-length txns supported");
     auto buf = std::make_unique<uint8_t[]>(block_op_size_);
     auto bop = reinterpret_cast<block_op_t*>(buf.get());

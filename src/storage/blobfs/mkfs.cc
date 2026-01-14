@@ -233,8 +233,8 @@ zx_status_t WriteFilesystemToDisk(BlockDevice* device, const Superblock& superbl
     return block * (kBlobfsBlockSize / disk_block);
   };
 
-  block_fifo_request_t requests[5] = {};
-  using RequestLengthType = decltype(block_fifo_request_t::length);
+  BlockFifoRequest requests[5] = {};
+  using RequestLengthType = decltype(BlockFifoRequest::length);
   static_assert(
       std::is_same_v<RequestLengthType, uint32_t>,
       "Type of length field for block FIFO request has changed, validate conversions below.");
@@ -279,7 +279,7 @@ zx_status_t WriteFilesystemToDisk(BlockDevice* device, const Superblock& superbl
   if (status != ZX_OK)
     return status;
 
-  block_fifo_request_t flush_request = {
+  BlockFifoRequest flush_request = {
       .command = {.opcode = BLOCK_OPCODE_FLUSH, .flags = 0},
   };
   return device->FifoTransaction(&flush_request, 1);

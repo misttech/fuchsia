@@ -310,7 +310,7 @@ VnodeMinfs::~VnodeMinfs() {
   // Detach the vmoids from the underlying block device,
   // so the underlying VMO may be released.
   size_t request_count = 0;
-  block_fifo_request_t request[2];
+  BlockFifoRequest request[2];
   if (vmoid_.IsAttached()) {
     request[request_count].vmoid = vmoid_.TakeId();
     request[request_count].command = {.opcode = BLOCK_OPCODE_CLOSE_VMO, .flags = 0};

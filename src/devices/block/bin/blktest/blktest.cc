@@ -196,7 +196,7 @@ TEST(BlkdevTests, blkdev_test_fifo_basic) {
 
   // Batch write the VMO to the blkdev
   // Split it into two requests, spread across the disk
-  block_fifo_request_t requests[] = {
+  BlockFifoRequest requests[] = {
       {
           .command = {.opcode = BLOCK_OPCODE_WRITE, .flags = 0},
           .group = group,
@@ -262,7 +262,7 @@ TEST(BlkdevTests, DISABLED_blkdev_test_fifo_whole_disk) {
   vmoid_t vmoid = vmoid_result->get();
 
   // Batch write the VMO to the blkdev
-  block_fifo_request_t request = {
+  BlockFifoRequest request = {
       .command = {.opcode = BLOCK_OPCODE_WRITE, .flags = 0},
       .group = group,
       .vmoid = vmoid,
@@ -318,7 +318,7 @@ void WriteStripedVmoHelper(block_client::Client& block_client, const TestVmoObje
                            size_t objs, groupid_t group, size_t kBlockSize) {
   // Make a separate request for each block
   size_t blocks = obj.vmo_size / kBlockSize;
-  std::vector<block_fifo_request_t> requests(blocks);
+  std::vector<BlockFifoRequest> requests(blocks);
   for (size_t b = 0; b < blocks; b++) {
     requests[b].group = group;
     requests[b].vmoid = obj.vmoid.id;
@@ -340,7 +340,7 @@ void ReadStripedVmoHelper(block_client::Client& block_client, const TestVmoObjec
 
   // Next, read to the vmo from the disk
   size_t blocks = obj.vmo_size / kBlockSize;
-  std::vector<block_fifo_request_t> requests(blocks);
+  std::vector<BlockFifoRequest> requests(blocks);
   for (size_t b = 0; b < blocks; b++) {
     requests[b].group = group;
     requests[b].vmoid = obj.vmoid.id;
@@ -362,7 +362,7 @@ void ReadStripedVmoHelper(block_client::Client& block_client, const TestVmoObjec
 
 // Tears down an object created by "CreateVmoHelper".
 void CloseVmoHelper(block_client::Client& block_client, TestVmoObject& obj, groupid_t group) {
-  block_fifo_request_t request;
+  BlockFifoRequest request;
   request.group = group;
   request.vmoid = obj.vmoid.id;
   request.command = {.opcode = BLOCK_OPCODE_CLOSE_VMO, .flags = 0};
@@ -505,7 +505,7 @@ TEST(BlkdevTests, blkdev_test_fifo_bad_client_vmoid) {
   ASSERT_NO_FATAL_FAILURE(CreateVmoHelper(block_client, obj, kBlockSize));
 
   // Bad request: Writing to the wrong vmoid
-  block_fifo_request_t request;
+  BlockFifoRequest request;
   request.group = group;
   request.vmoid = static_cast<vmoid_t>(obj.vmoid.id + 5);
   request.command = {.opcode = BLOCK_OPCODE_WRITE, .flags = 0};
@@ -534,7 +534,7 @@ TEST(BlkdevTests, blkdev_test_fifo_bad_client_unaligned_request) {
   TestVmoObject obj;
   ASSERT_NO_FATAL_FAILURE(CreateVmoHelper(block_client, obj, kBlockSize * 2));
 
-  block_fifo_request_t request;
+  BlockFifoRequest request;
   request.group = group;
   request.vmoid = static_cast<vmoid_t>(obj.vmoid.id);
   request.command = {.opcode = BLOCK_OPCODE_WRITE, .flags = 0};
@@ -573,7 +573,7 @@ TEST(BlkdevTests, blkdev_test_barriers) {
   vmoid_t vmoid = vmoid_result->get();
 
   // Write the VMO to the blkdev with a barrier.
-  block_fifo_request_t request;
+  BlockFifoRequest request;
   request.command = {.opcode = BLOCK_OPCODE_WRITE, .flags = BLOCK_IO_FLAG_PRE_BARRIER};
   request.group = group;
   request.vmoid = vmoid;
@@ -628,7 +628,7 @@ TEST(BlkdevTests, blkdev_test_force_access) {
   vmoid_t vmoid = vmoid_result->get();
 
   // Write the VMO to the blkdev with FUA set.
-  block_fifo_request_t request;
+  BlockFifoRequest request;
   request.command = {.opcode = BLOCK_OPCODE_WRITE, .flags = BLOCK_IO_FLAG_FORCE_ACCESS};
   request.group = group;
   request.vmoid = vmoid;
@@ -675,7 +675,7 @@ TEST(BlkdevTests, blkdev_test_fifo_bad_client_overflow) {
   TestVmoObject obj;
   ASSERT_NO_FATAL_FAILURE(CreateVmoHelper(block_client, obj, kBlockSize * 2));
 
-  block_fifo_request_t request;
+  BlockFifoRequest request;
   request.group = group;
   request.vmoid = static_cast<vmoid_t>(obj.vmoid.id);
   request.command = {.opcode = BLOCK_OPCODE_WRITE, .flags = 0};
@@ -746,7 +746,7 @@ TEST(BlkdevTests, blkdev_test_fifo_bad_client_bad_vmo) {
   const uint64_t length =
       1 +
       (fbl::round_up(obj.vmo_size, static_cast<uint64_t>(zx_system_get_page_size())) / kBlockSize);
-  block_fifo_request_t request;
+  BlockFifoRequest request;
   request.group = group;
   request.vmoid = static_cast<vmoid_t>(obj.vmoid.id);
   request.command = {.opcode = BLOCK_OPCODE_WRITE, .flags = 0};
@@ -786,7 +786,7 @@ TEST(BlkdevTests, blkdev_test_fifo_trim) {
   vmoid_t vmoid = vmoid_result->get();
 
   // Write the VMO to the blkdev
-  block_fifo_request_t request;
+  BlockFifoRequest request;
   request.command = {.opcode = BLOCK_OPCODE_WRITE, .flags = 0};
   request.group = group;
   request.vmoid = vmoid;

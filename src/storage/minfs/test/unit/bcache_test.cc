@@ -31,9 +31,9 @@ class MockBlockDevice : public FakeBlockDevice {
     request_ = {};
   }
 
-  block_fifo_request_t request() const { return request_; }
+  BlockFifoRequest request() const { return request_; }
 
-  zx_status_t FifoTransaction(block_fifo_request_t* requests, size_t count) final {
+  zx_status_t FifoTransaction(BlockFifoRequest* requests, size_t count) final {
     if (count != 1 || called_) {
       return ZX_ERR_IO_REFUSED;
     }
@@ -43,7 +43,7 @@ class MockBlockDevice : public FakeBlockDevice {
   }
 
  private:
-  block_fifo_request_t request_ = {};
+  BlockFifoRequest request_ = {};
   bool called_ = false;
 };
 
@@ -86,7 +86,7 @@ TEST_F(BcacheTestWithMockDevice, RunOperation) {
 
   ASSERT_EQ(bcache_->RunOperation(operation, &buffer), ZX_OK);
 
-  block_fifo_request_t request = device_->request();
+  BlockFifoRequest request = device_->request();
   ASSERT_EQ(request.command.opcode, unsigned{BLOCK_OPCODE_WRITE});
   ASSERT_EQ(buffer.vmoid(), request.vmoid);
   ASSERT_EQ(bcache_->BlockNumberToDevice(kVmoOffset), request.vmo_offset);
