@@ -586,4 +586,7 @@ class FfxImpl(ffx_interface.FFX):
             if machine is not None:
                 ffx_args.extend(["--machine", str(machine)])
 
+        # Add log file path
+        ffx_args.extend(["-o", str(Path(self.config.logs_dir) / "ffx.log")])
+
         return [self.config.binary_path] + ffx_args + cmd
