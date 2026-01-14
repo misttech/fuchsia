@@ -66,7 +66,7 @@ pub mod test {
 
     impl FastbootInterface for TestFastbootInterface {}
 
-    #[async_trait(?Send)]
+    #[async_trait]
     impl Fastboot for TestFastbootInterface {
         async fn get_var(&mut self, name: &str) -> Result<String, FastbootError> {
             let mut state = self.state.lock().unwrap();

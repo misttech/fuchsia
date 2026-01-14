@@ -14,7 +14,7 @@ use ffx_fastboot_interface::interface_factory::{
 };
 use ffx_fastboot_transport_interface::tcp::{TcpNetworkInterface, open_once};
 use fuchsia_async::Timer;
-use netext::TokioAsyncWrapper;
+
 use std::net::SocketAddr;
 use std::path::PathBuf;
 use std::time::Duration;
@@ -65,11 +65,16 @@ impl Drop for TcpFactory {
     }
 }
 
-#[async_trait(?Send)]
-impl InterfaceFactoryBase<TcpNetworkInterface<TokioAsyncWrapper<TcpStream>>> for TcpFactory {
+#[async_trait]
+impl InterfaceFactoryBase<TcpNetworkInterface<netext::MultithreadedTokioAsyncWrapper<TcpStream>>>
+    for TcpFactory
+{
     async fn open(
         &mut self,
-    ) -> Result<TcpNetworkInterface<TokioAsyncWrapper<TcpStream>>, InterfaceFactoryError> {
+    ) -> Result<
+        TcpNetworkInterface<netext::MultithreadedTokioAsyncWrapper<TcpStream>>,
+        InterfaceFactoryError,
+    > {
         let wait_duration = Duration::from_secs(self.retry_wait_seconds);
         let mut try_count = 1;
         loop {
@@ -134,7 +139,10 @@ impl InterfaceFactoryBase<TcpNetworkInterface<TokioAsyncWrapper<TcpStream>>> for
     }
 }
 
-impl InterfaceFactory<TcpNetworkInterface<TokioAsyncWrapper<TcpStream>>> for TcpFactory {}
+impl InterfaceFactory<TcpNetworkInterface<netext::MultithreadedTokioAsyncWrapper<TcpStream>>>
+    for TcpFactory
+{
+}
 
 fn filter_target(handle: &TargetHandle) -> bool {
     match &handle.state {

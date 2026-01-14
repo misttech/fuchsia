@@ -26,11 +26,11 @@ use tokio::sync::mpsc::Sender;
 //
 
 #[derive(Debug)]
-pub struct FastbootProxy<T: AsyncRead + AsyncWrite + Unpin> {
+pub struct FastbootProxy<T: AsyncRead + AsyncWrite + Unpin + Send> {
     #[allow(dead_code)]
     target_id: String,
     interface: Option<T>,
-    interface_factory: Box<dyn InterfaceFactory<T>>,
+    interface_factory: Box<dyn InterfaceFactory<T> + Send>,
     ctx: FastbootContext,
 }
 
@@ -44,7 +44,7 @@ fn handle_timeout_as_okay(r: Result<Reply>) -> Result<Reply> {
     }
 }
 
-impl<T: AsyncRead + AsyncWrite + Unpin + Debug> FastbootInterface for FastbootProxy<T> {}
+impl<T: AsyncRead + AsyncWrite + Unpin + Debug + Send> FastbootInterface for FastbootProxy<T> {}
 
 #[derive(Debug)]
 struct VariableListener(Sender<Variable>);
@@ -97,11 +97,11 @@ impl fastboot::UploadProgressListener for ProgressListener {
     }
 }
 
-impl<T: AsyncRead + AsyncWrite + Unpin + Debug> FastbootProxy<T> {
+impl<T: AsyncRead + AsyncWrite + Unpin + Debug + Send> FastbootProxy<T> {
     pub fn new(
         target_id: String,
         interface: T,
-        interface_factory: impl InterfaceFactory<T> + 'static,
+        interface_factory: impl InterfaceFactory<T> + Send + 'static,
     ) -> Self {
         Self {
             target_id,
@@ -133,8 +133,8 @@ impl<T: AsyncRead + AsyncWrite + Unpin + Debug> FastbootProxy<T> {
     }
 }
 
-#[async_trait(?Send)]
-impl<T: AsyncRead + AsyncWrite + Unpin + Debug> Fastboot for FastbootProxy<T> {
+#[async_trait]
+impl<T: AsyncRead + AsyncWrite + Unpin + Debug + Send> Fastboot for FastbootProxy<T> {
     async fn get_var(&mut self, name: &str) -> core::result::Result<String, FastbootError> {
         let command = Command::GetVar(ClientVariable::Oem(name.to_string()));
         match send(self.ctx.clone(), command.clone(), self.interface().await?).await {
@@ -528,7 +528,7 @@ mod test {
     #[derive(Default, Debug, Clone)]
     struct TestTransportFactory {}
 
-    #[async_trait(?Send)]
+    #[async_trait]
     impl InterfaceFactoryBase<TestTransport> for TestTransportFactory {
         async fn open(&mut self) -> Result<TestTransport, InterfaceFactoryError> {
             Ok(TestTransport::new())

@@ -26,15 +26,15 @@ pub enum InterfaceFactoryError {
     ConnectionError(String, SocketAddr, u64),
 }
 
-#[async_trait(?Send)]
-pub trait InterfaceFactoryBase<T: AsyncRead + AsyncWrite + Unpin> {
+#[async_trait]
+pub trait InterfaceFactoryBase<T: AsyncRead + AsyncWrite + Unpin + Send> {
     async fn open(&mut self) -> Result<T, InterfaceFactoryError>;
     async fn close(&self);
     async fn rediscover(&mut self) -> Result<(), InterfaceFactoryError>;
 }
 
-#[async_trait(?Send)]
-pub trait InterfaceFactory<T: AsyncRead + AsyncWrite + Unpin>:
+#[async_trait]
+pub trait InterfaceFactory<T: AsyncRead + AsyncWrite + Unpin + Send>:
     std::fmt::Debug + InterfaceFactoryBase<T>
 {
 }

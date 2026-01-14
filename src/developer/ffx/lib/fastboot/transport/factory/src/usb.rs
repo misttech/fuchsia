@@ -111,7 +111,7 @@ impl FastbootUsbLiveTester for StrictGetVarFastbootUsbLiveTester {
     }
 }
 
-#[async_trait(?Send)]
+#[async_trait]
 impl InterfaceFactoryBase<AsyncInterface> for UsbFactory {
     async fn open(&mut self) -> Result<AsyncInterface, InterfaceFactoryError> {
         let interface = open_interface_with_serial(&self.serial)

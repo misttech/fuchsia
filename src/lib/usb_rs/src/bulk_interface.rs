@@ -17,8 +17,8 @@ const MAX_USBFS_BULK_WRITE_SIZE: usize = 256 * 1024;
 pub struct BulkInterface {
     inner: Arc<Interface>,
     guard: Arc<RwLock<()>>,
-    read_future: Option<Pin<Box<dyn Future<Output = std::io::Result<Vec<u8>>>>>>,
-    write_future: Option<Pin<Box<dyn Future<Output = std::io::Result<usize>>>>>,
+    read_future: Option<Pin<Box<dyn Future<Output = std::io::Result<Vec<u8>>> + Send>>>,
+    write_future: Option<Pin<Box<dyn Future<Output = std::io::Result<usize>> + Send>>>,
 }
 
 impl std::fmt::Debug for BulkInterface {

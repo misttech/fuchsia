@@ -9,8 +9,8 @@ use tokio::sync::mpsc::Sender;
 
 pub trait FastbootInterface: std::fmt::Debug + Fastboot {}
 
-#[async_trait(?Send)]
-pub trait Fastboot {
+#[async_trait]
+pub trait Fastboot: Send {
     async fn get_var(&mut self, name: &str) -> Result<String, FastbootError>;
 
     async fn get_all_vars(&mut self, listener: Sender<Variable>) -> Result<(), FastbootError>;

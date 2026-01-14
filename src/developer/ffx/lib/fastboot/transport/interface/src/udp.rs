@@ -11,7 +11,7 @@ use std::fmt;
 use std::net::SocketAddr;
 use std::num::Wrapping;
 use std::pin::Pin;
-use std::rc::Rc;
+use std::sync::Arc;
 use std::time::Duration;
 use timeout::timeout;
 use tokio::net::UdpSocket;
@@ -71,9 +71,9 @@ impl<B: SplitByteSlice> Packet<B> {
 pub struct UdpNetworkInterface {
     maximum_size: u16,
     sequence: Wrapping<u16>,
-    socket: Rc<UdpSocket>,
-    read_task: Option<Pin<Box<dyn Future<Output = std::io::Result<(usize, Vec<u8>)>>>>>,
-    write_task: Option<Pin<Box<dyn Future<Output = std::io::Result<usize>>>>>,
+    socket: Arc<UdpSocket>,
+    read_task: Option<Pin<Box<dyn Future<Output = std::io::Result<(usize, Vec<u8>)>> + Send>>>,
+    write_task: Option<Pin<Box<dyn Future<Output = std::io::Result<usize>> + Send>>>,
 }
 
 impl fmt::Debug for UdpNetworkInterface {
@@ -268,7 +268,7 @@ pub async fn open(addr: SocketAddr) -> Result<UdpNetworkInterface> {
     );
 
     Ok(UdpNetworkInterface {
-        socket: socket.into(),
+        socket: Arc::new(socket),
         maximum_size,
         sequence: Wrapping(sequence + 1),
         read_task: None,

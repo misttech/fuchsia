@@ -5,7 +5,7 @@
 use anyhow::{Context as _, Result, bail};
 use futures::prelude::*;
 use futures::task::{Context, Poll};
-use netext::{TokioAsyncReadExt, TokioAsyncWrapper};
+use netext::TokioAsyncReadExt;
 use std::fmt;
 use std::net::SocketAddr;
 use std::pin::Pin;
@@ -23,8 +23,8 @@ pub struct TcpNetworkInterface<T> {
     stream: T,
     read_avail_bytes: Option<u64>,
     /// Returns a tuple of (avail_bytes, bytes_read, bytes)
-    read_task: Option<Pin<Box<dyn Future<Output = std::io::Result<(u64, usize, Vec<u8>)>>>>>,
-    write_task: Option<Pin<Box<dyn Future<Output = std::io::Result<usize>>>>>,
+    read_task: Option<Pin<Box<dyn Future<Output = std::io::Result<(u64, usize, Vec<u8>)>> + Send>>>,
+    write_task: Option<Pin<Box<dyn Future<Output = std::io::Result<usize>> + Send>>>,
     /// Flag to indicate if the header for a given Write operation was completed
     wrote_header: bool,
     /// Task to write the "header" for the Fastboot over TCP message
@@ -39,7 +39,7 @@ pub struct TcpNetworkInterface<T> {
     /// `AsyncWrite` will still only be `16`. If we keep all this in a single task,
     /// then the total bytes will be larger than intended, causing `AsyncWrite`
     /// operations like `write_all` to fail in confusing ways.
-    write_header_task: Option<Pin<Box<dyn Future<Output = std::io::Result<()>>>>>,
+    write_header_task: Option<Pin<Box<dyn Future<Output = std::io::Result<()>> + Send>>>,
 }
 
 impl<T> fmt::Debug for TcpNetworkInterface<T> {
@@ -52,7 +52,7 @@ impl<T> fmt::Debug for TcpNetworkInterface<T> {
 
 impl<T> AsyncRead for TcpNetworkInterface<T>
 where
-    T: AsyncRead + AsyncWrite + std::marker::Unpin + Clone + 'static,
+    T: AsyncRead + AsyncWrite + std::marker::Unpin + Clone + Send + 'static,
 {
     fn poll_read(
         mut self: Pin<&mut Self>,
@@ -106,7 +106,7 @@ where
 
 impl<T> AsyncWrite for TcpNetworkInterface<T>
 where
-    T: AsyncWrite + std::marker::Unpin + Clone + 'static,
+    T: AsyncWrite + std::marker::Unpin + Clone + Send + 'static,
 {
     fn poll_write(
         mut self: Pin<&mut Self>,
@@ -212,7 +212,7 @@ pub const HANDSHAKE_TIMEOUT_MILLIS: u64 = 1000;
 pub async fn open_once(
     target: &SocketAddr,
     handshake_timeout: Duration,
-) -> Result<TcpNetworkInterface<TokioAsyncWrapper<TcpStream>>> {
+) -> Result<TcpNetworkInterface<netext::MultithreadedTokioAsyncWrapper<TcpStream>>> {
     let mut addr: SocketAddr = target.clone();
     if addr.port() == 0 {
         log::debug!("Address does not have port set ({addr:?}. Using default:  {FASTBOOT_PORT}");
@@ -224,7 +224,7 @@ pub async fn open_once(
         let mut stream = TcpStream::connect(addr)
             .await
             .context("Establishing TCP connection")?
-            .into_futures_stream();
+            .into_multithreaded_futures_stream();
         handshake(&mut stream).await?;
         Ok(TcpNetworkInterface {
             stream,

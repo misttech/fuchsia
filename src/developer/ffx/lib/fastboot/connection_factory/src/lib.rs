@@ -13,7 +13,7 @@ use ffx_fastboot_transport_factory::udp::UdpFactory;
 use ffx_fastboot_transport_factory::usb::UsbFactory;
 use ffx_fastboot_transport_interface::tcp::TcpNetworkInterface;
 use ffx_fastboot_transport_interface::udp::UdpNetworkInterface;
-use netext::TokioAsyncWrapper;
+use netext::MultithreadedTokioAsyncWrapper;
 use std::net::SocketAddr;
 use std::path::PathBuf;
 use tokio::net::TcpStream;
@@ -159,7 +159,7 @@ pub async fn tcp_proxy(
     fastboot_device_file_path: Option<PathBuf>,
     addr: &SocketAddr,
     config: FastbootNetworkConnectionConfig,
-) -> Result<FastbootProxy<TcpNetworkInterface<TokioAsyncWrapper<TcpStream>>>> {
+) -> Result<FastbootProxy<TcpNetworkInterface<MultithreadedTokioAsyncWrapper<TcpStream>>>> {
     let mut factory = TcpFactory::new(
         context,
         target_name,
@@ -173,7 +173,7 @@ pub async fn tcp_proxy(
         .open()
         .await
         .with_context(|| format!("FastbootProxy connecting via TCP to Fastboot address: {addr}"))?;
-    Ok(FastbootProxy::<TcpNetworkInterface<TokioAsyncWrapper<TcpStream>>>::new(
+    Ok(FastbootProxy::<TcpNetworkInterface<MultithreadedTokioAsyncWrapper<TcpStream>>>::new(
         addr.to_string(),
         interface,
         factory,

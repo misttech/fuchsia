@@ -14,7 +14,7 @@ use ffx_fastboot_interface::interface_factory::{
 };
 use ffx_fastboot_transport_interface::tcp::{TcpNetworkInterface, open_once};
 use fuchsia_async::{Task, Timer};
-use netext::TokioAsyncWrapper;
+use netext::MultithreadedTokioAsyncWrapper;
 use std::collections::BTreeSet;
 use std::fmt;
 use std::fmt::Display;
@@ -278,13 +278,13 @@ where
 /// Creates a FastbootProxy over TCP for a device at the given SocketAddr
 async fn tcp_proxy(
     addr: &SocketAddr,
-) -> Result<FastbootProxy<TcpNetworkInterface<TokioAsyncWrapper<TcpStream>>>> {
+) -> Result<FastbootProxy<TcpNetworkInterface<MultithreadedTokioAsyncWrapper<TcpStream>>>> {
     let mut factory = OneshotTcpFactory::new(*addr);
     let interface = factory
         .open()
         .await
         .with_context(|| format!("connecting via TCP to Fastboot address: {addr}"))?;
-    Ok(FastbootProxy::<TcpNetworkInterface<TokioAsyncWrapper<TcpStream>>>::new(
+    Ok(FastbootProxy::<TcpNetworkInterface<MultithreadedTokioAsyncWrapper<TcpStream>>>::new(
         addr.to_string(),
         interface,
         factory,
@@ -302,11 +302,14 @@ impl OneshotTcpFactory {
     }
 }
 
-#[async_trait(?Send)]
-impl InterfaceFactoryBase<TcpNetworkInterface<TokioAsyncWrapper<TcpStream>>> for OneshotTcpFactory {
+#[async_trait]
+impl InterfaceFactoryBase<TcpNetworkInterface<MultithreadedTokioAsyncWrapper<TcpStream>>>
+    for OneshotTcpFactory
+{
     async fn open(
         &mut self,
-    ) -> Result<TcpNetworkInterface<TokioAsyncWrapper<TcpStream>>, InterfaceFactoryError> {
+    ) -> Result<TcpNetworkInterface<MultithreadedTokioAsyncWrapper<TcpStream>>, InterfaceFactoryError>
+    {
         let interface = open_once(&self.addr, Duration::from_secs(1))
             .await
             .with_context(|| format!("connecting via TCP to Fastboot address: {}", self.addr))?;
@@ -324,7 +327,10 @@ impl InterfaceFactoryBase<TcpNetworkInterface<TokioAsyncWrapper<TcpStream>>> for
     }
 }
 
-impl InterfaceFactory<TcpNetworkInterface<TokioAsyncWrapper<TcpStream>>> for OneshotTcpFactory {}
+impl InterfaceFactory<TcpNetworkInterface<MultithreadedTokioAsyncWrapper<TcpStream>>>
+    for OneshotTcpFactory
+{
+}
 
 ///////////////////////////////////////////////////////////////////////////////
 // Tests

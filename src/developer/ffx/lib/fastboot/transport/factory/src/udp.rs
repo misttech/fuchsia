@@ -60,7 +60,7 @@ impl Drop for UdpFactory {
     }
 }
 
-#[async_trait(?Send)]
+#[async_trait]
 impl InterfaceFactoryBase<UdpNetworkInterface> for UdpFactory {
     async fn open(&mut self) -> Result<UdpNetworkInterface, InterfaceFactoryError> {
         let wait_duration = Duration::from_secs(self.retry_wait_seconds);
