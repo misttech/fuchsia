@@ -39,7 +39,7 @@ inline ktl::atomic<zx_ticks_t> mono_ticks_modifier{0};
 //
 // "Very Close" in this case means a value that is within approximately 10 years of setting bit 63,
 // assuming a clock rate of 10ghz.
-inline constexpr zx_ticks_t kMonoTicksOopsThreshold =
+inline constexpr uint64_t kTicksOopsThreshold =
     0x8000'0000'0000'0000ul -
     (static_cast<uint64_t>(365.2422 * 10 * 86400) *  // 10 years of seconds
      10'000'000'000);                                // 10GHz
@@ -49,23 +49,23 @@ inline ktl::atomic<uint64_t> boot_ticks_offset{0};
 
 }  // namespace internal
 
-// Sets the initial ticks offset. This offset is used to ensure that both the boot and monotonic
-// timelines start at 0.
+// Sets the initial ticks value using the underlying hardware register value. This value is used to
+// ensure that both the boot and monotonic timelines start at 0.
 //
 // Must be called with interrupts disabled, before secondary CPUs are booted.
-inline void timer_set_initial_ticks_offset(uint64_t offset) {
-  // Check that the new offset is non-positive. If it's not, this is an immediate failure.
-  const zx_ticks_t new_mono_offset = static_cast<zx_ticks_t>(offset);
-  DEBUG_ASSERT(new_mono_offset <= 0);
-
-  // Now, verify that the offset is not "dangerously close" to setting bit 63. If it is, emit
-  // a KERNEL OOPS. We have to negate the new_mono_offset as it's passed in as the negation of the
-  // current value of the ticks counter, and we want to undo that before comparing to the threshold.
-  if ((-new_mono_offset) > internal::kMonoTicksOopsThreshold) {
-    KERNEL_OOPS("initial ticks offset %ld is very close to setting the bit 63\n", new_mono_offset);
+inline void timer_set_initial_ticks(uint64_t ticks) {
+  // Verify that the offset is not "dangerously close" to setting bit 63. If it is, emit a KERNEL
+  // OOPS.
+  if (ticks > internal::kTicksOopsThreshold) {
+    KERNEL_OOPS("initial ticks value %lu is very close to setting bit 63\n", ticks);
   }
 
-  internal::mono_ticks_modifier.store(new_mono_offset, ktl::memory_order_relaxed);
+  // Negate the value to yield a signed offset that later be added to an observed counter register
+  // value.
+  const zx_ticks_t offset = -static_cast<zx_ticks_t>(ticks);
+  printf("timer: initial offset is %ld\n", offset);
+
+  internal::mono_ticks_modifier.store(offset, ktl::memory_order_relaxed);
   internal::boot_ticks_offset.store(offset, ktl::memory_order_relaxed);
 }
 
