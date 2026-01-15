@@ -206,7 +206,7 @@ impl SimulatedBatteryInfoSource {
 mod tests {
     use super::*;
     use crate::battery_manager::BatteryManager;
-    use crate::{HistoryLogger, HistoryLoggerConfig, inspect};
+    use crate::{HistoryLogger, HistoryLoggerConfig, RecorderConfig, inspect};
     use fidl::endpoints::create_request_stream;
     use futures::TryStreamExt;
     use futures::future::*;
@@ -233,7 +233,7 @@ mod tests {
 
         let config = create_config(&dir, 1, 1, "curr_data.txt", "prev_data.txt");
         let logger = HistoryLogger::from_file(inspector.root(), config);
-        (dir, Arc::new(BatteryManager::new_with_logger(logger)))
+        (dir, Arc::new(BatteryManager::new_with_logger(logger, RecorderConfig::default())))
     }
 
     #[fuchsia_async::run_until_stalled(test)]

@@ -8,7 +8,9 @@ use fuchsia_inspect::{self as inspect};
 use fuchsia_inspect_contrib::nodes::BoundedListNode;
 use fuchsia_sync::Mutex;
 use log::{error, warn};
-use state_recorder::{NumericStateRecorder, PersistenceOptions, RecorderOptions, units};
+use state_recorder::{
+    NumericStateRecorder, PersistenceOptions, RecordableNumericType, RecorderOptions, Units, units,
+};
 use std::collections::VecDeque;
 use std::fmt::Write;
 use std::fs::{self as fs, OpenOptions, read_to_string};
@@ -17,10 +19,9 @@ use std::str::FromStr;
 
 static BATTERY_LEVEL_HEADER: &str = "# BATTERY LEVEL";
 static CHARGE_STATUS_HEADER: &str = "# CHARGE STATUS";
+static BATTERY_HISTORY_FILE_FOR_RENAME: &str = "/data/history_before_rename.txt";
 
 const MAX_POWER_CONSUMPTION_MEASUREMENTS: usize = 20;
-
-static BATTERY_HISTORY_FILE_FOR_RENAME: &str = "/data/history_before_rename.txt";
 
 #[derive(Clone)]
 pub struct HistoryLoggerConfig {
@@ -30,70 +31,69 @@ pub struct HistoryLoggerConfig {
     pub charge_status_buffer_capacity: usize,
 }
 
+#[derive(Clone)]
+pub struct PersistenceDirs {
+    pub storage_dir: String,
+    pub volatile_dir: String,
+}
+
+#[derive(Clone, Default)]
+pub struct RecorderConfig {
+    /// If None, default system persistence locations are used.
+    /// If Some, use specific (String, String) for storage and volatile dirs.
+    pub persistence_dirs: Option<PersistenceDirs>,
+}
+
 pub struct BatteryInfoRecorders {
-    pub present_voltage: Mutex<NumericStateRecorder<u32>>,
-    pub remaining_capacity: Mutex<NumericStateRecorder<u32>>,
-    pub present_current: Mutex<NumericStateRecorder<i32>>,
-    pub average_current: Mutex<NumericStateRecorder<i32>>,
+    present_voltage: Mutex<NumericStateRecorder<u32>>,
+    remaining_capacity: Mutex<NumericStateRecorder<u32>>,
+    present_current: Mutex<NumericStateRecorder<i32>>,
+    average_current: Mutex<NumericStateRecorder<i32>>,
 }
 
 impl BatteryInfoRecorders {
-    pub fn new() -> Self {
-        let present_voltage_recorder = NumericStateRecorder::new(
-            "present_voltage".into(),
-            c"power",
+    pub fn new(config: RecorderConfig) -> Self {
+        let mut present_voltage_opts = PersistenceOptions::new("present_voltage".to_string());
+        let mut remaining_capacity_opts = PersistenceOptions::new("remaining_capacity".to_string());
+        let mut present_current_opts = PersistenceOptions::new("charge_current".to_string());
+        let mut average_current_opts = PersistenceOptions::new("average_current".to_string());
+
+        // Apply overrides if they exist
+        if let Some(PersistenceDirs { storage_dir, volatile_dir }) = &config.persistence_dirs {
+            present_voltage_opts =
+                present_voltage_opts.storage_dir(storage_dir).volatile_dir(volatile_dir);
+            remaining_capacity_opts =
+                remaining_capacity_opts.storage_dir(storage_dir).volatile_dir(volatile_dir);
+            present_current_opts =
+                present_current_opts.storage_dir(storage_dir).volatile_dir(volatile_dir);
+            average_current_opts =
+                average_current_opts.storage_dir(storage_dir).volatile_dir(volatile_dir);
+        }
+
+        let present_voltage_recorder = Self::create_recorder(
+            "present_voltage",
             units!(Milli, Volts),
-            None,
-            RecorderOptions {
-                lazy_record: true,
-                capacity: MAX_POWER_CONSUMPTION_MEASUREMENTS,
-                manager: None,
-                persistence: Some(PersistenceOptions::new("present_voltage".to_string())),
-            },
-        )
-        .expect("present_voltage_recorder construction failed");
-
-        let remaining_capacity_recorder = NumericStateRecorder::new(
-            "remaining_capacity".into(),
-            c"power",
+            MAX_POWER_CONSUMPTION_MEASUREMENTS,
+            present_voltage_opts,
+        );
+        let remaining_capacity_recorder = Self::create_recorder(
+            "remaining_capacity",
             units!(Micro, AmpHours),
-            None,
-            RecorderOptions {
-                lazy_record: true,
-                capacity: MAX_POWER_CONSUMPTION_MEASUREMENTS,
-                manager: None,
-                persistence: Some(PersistenceOptions::new("remaining_capacity".to_string())),
-            },
-        )
-        .expect("remaining_capacity_recorder construction failed");
-
-        let present_current_recorder = NumericStateRecorder::new(
-            "charge_current".into(),
-            c"power",
+            MAX_POWER_CONSUMPTION_MEASUREMENTS,
+            remaining_capacity_opts,
+        );
+        let present_current_recorder = Self::create_recorder(
+            "charge_current",
             units!(Micro, Amps),
-            None,
-            RecorderOptions {
-                lazy_record: true,
-                capacity: MAX_POWER_CONSUMPTION_MEASUREMENTS,
-                manager: None,
-                persistence: Some(PersistenceOptions::new("present_current".to_string())),
-            },
-        )
-        .expect("present_current_recorder construction failed");
-
-        let average_current_recorder = NumericStateRecorder::new(
-            "average_current".into(),
-            c"power",
+            MAX_POWER_CONSUMPTION_MEASUREMENTS,
+            present_current_opts,
+        );
+        let average_current_recorder = Self::create_recorder(
+            "average_current",
             units!(Micro, Amps),
-            None,
-            RecorderOptions {
-                lazy_record: true,
-                capacity: MAX_POWER_CONSUMPTION_MEASUREMENTS,
-                manager: None,
-                persistence: Some(PersistenceOptions::new("average_current".to_string())),
-            },
-        )
-        .expect("average_current_recorder construction failed");
+            MAX_POWER_CONSUMPTION_MEASUREMENTS,
+            average_current_opts,
+        );
 
         Self {
             present_voltage: Mutex::new(present_voltage_recorder),
@@ -124,6 +124,30 @@ impl BatteryInfoRecorders {
         if let Some(current) = current {
             self.average_current.lock().record(current);
         }
+    }
+
+    fn create_recorder<T>(
+        name: &str,
+        unit: Units,
+        capacity: usize,
+        persistence: PersistenceOptions,
+    ) -> NumericStateRecorder<T>
+    where
+        T: RecordableNumericType,
+    {
+        NumericStateRecorder::new(
+            name.to_string(),
+            c"power",
+            unit,
+            None,
+            RecorderOptions {
+                lazy_record: true,
+                capacity,
+                manager: None,
+                persistence: Some(persistence),
+            },
+        )
+        .unwrap_or_else(|_| panic!("{} construction failed", name))
     }
 }
 

@@ -2,7 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use crate::history_logger::{BatteryInfoRecorders, HistoryLogger};
+use crate::history_logger::{BatteryInfoRecorders, HistoryLogger, RecorderConfig};
 use crate::polisher::Polisher;
 use anyhow::{Context, Error};
 use fidl::HandleBased;
@@ -68,7 +68,10 @@ fn get_current_time() -> i64 {
 }
 
 impl BatteryManager {
-    pub fn new_with_logger(logger: HistoryLogger) -> BatteryManager {
+    pub fn new_with_logger(
+        logger: HistoryLogger,
+        recorder_config: RecorderConfig,
+    ) -> BatteryManager {
         let watchers_arc = Arc::new(Mutex::new(Vec::new()));
         // For now the size is arbitrary chosen. Will log error and catch in CQ.
         let (sender, receiver) = futures::channel::mpsc::channel(10);
@@ -101,7 +104,7 @@ impl BatteryManager {
             }),
             data_polisher: Arc::new(Mutex::new(Polisher::new())),
             history_logger: Arc::new(SMutex::new(logger)),
-            info_recorders: BatteryInfoRecorders::new(),
+            info_recorders: BatteryInfoRecorders::new(recorder_config),
             charge_wake_lease: Arc::new(Mutex::new(None)),
             previous_level: Arc::new(Mutex::new(None)),
             update_sender: sender,
@@ -372,6 +375,7 @@ impl BatteryManager {
 mod tests {
     use super::*;
     use crate::HistoryLoggerConfig;
+    use crate::history_logger::PersistenceDirs;
     use fidl::endpoints::create_request_stream;
     use fuchsia_inspect::{self as inspect};
     use futures::channel::oneshot;
@@ -404,7 +408,14 @@ mod tests {
         logger.change_temporary_file_for_renaming_for_test(
             dir.path().join("tmp.txt").to_str().unwrap().to_string(),
         );
-        let battery_manager = Arc::new(BatteryManager::new_with_logger(logger));
+
+        let storage_dir = dir.path().to_str().unwrap().to_string();
+        let volatile_dir = dir.path().to_str().unwrap().to_string();
+
+        let recorder_config = RecorderConfig {
+            persistence_dirs: Some(PersistenceDirs { storage_dir, volatile_dir }),
+        };
+        let battery_manager = Arc::new(BatteryManager::new_with_logger(logger, recorder_config));
         (dir, battery_manager)
     }
 

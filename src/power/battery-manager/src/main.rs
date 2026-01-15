@@ -9,7 +9,7 @@ mod polisher;
 
 use crate::battery_manager::{BatteryManager, BatterySimulationStateObserver};
 use crate::battery_simulator::SimulatedBatteryInfoSource;
-use crate::history_logger::{HistoryLogger, HistoryLoggerConfig};
+use crate::history_logger::{HistoryLogger, HistoryLoggerConfig, RecorderConfig};
 use anyhow::{Context, Error};
 use battery_manager_config::Config;
 use fidl_fuchsia_power_battery::BatteryManagerRequestStream;
@@ -102,7 +102,9 @@ async fn main() -> Result<(), Error> {
     };
 
     let logger = HistoryLogger::from_file(inspector.root(), logger_config);
-    let battery_manager = Arc::new(BatteryManager::new_with_logger(logger));
+
+    let config = RecorderConfig::default();
+    let battery_manager = Arc::new(BatteryManager::new_with_logger(logger, config));
     let battery_manager_clone = battery_manager.clone();
 
     let config = Config::take_from_startup_handle();
