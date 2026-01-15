@@ -221,11 +221,6 @@ const int32_t kDefaultInset = 0;
 
 fuchsia_ui_composition::ViewBoundProtocols NoViewProtocols() { return {}; }
 
-// Testing FlatlandDisplay requires much of the same setup as testing Flatland, so we use the same
-// test fixture class (defined immediately below), but renamed to group FlatlandDisplay tests.
-class FlatlandTest;
-using FlatlandDisplayTest = FlatlandTest;
-
 class EventHandler : public fidl::AsyncEventHandler<fuchsia_ui_composition::Flatland> {
  public:
   EventHandler(scheduling::SessionId session_id,
@@ -672,6 +667,78 @@ class FlatlandTest : public LoggingEventLoop, public ::testing::Test {
   std::map<scheduling::SchedulingIdPair, zx::time> requested_presentation_times_;
   std::unordered_map<scheduling::SessionId, scheduling::PresentId> pending_instance_updates_;
   fuchsia::sysmem2::AllocatorSyncPtr sysmem_allocator_;
+};
+
+// Adds FlatlandDisplay-specific helpers to FlatlandTest.  We can't easily put them into standalone
+// helper functions because they use the `PRESENT()` macro, which expect to have access to protected
+// members of FlatlandTest.
+class FlatlandDisplayTest : public FlatlandTest {
+ protected:
+  void ConnectChildViewToDisplayThenValidate(const std::shared_ptr<FlatlandDisplay>& display,
+                                             const std::shared_ptr<Flatland>& child,
+                                             const uint32_t kWidth, const uint32_t kHeight) {
+    auto [child_view_watcher_client_end, child_view_watcher_server_end] =
+        fidl::Endpoints<ChildViewWatcher>::Create();
+
+    auto [parent_viewport_watcher_client_end, parent_viewport_watcher_server_end] =
+        fidl::Endpoints<ParentViewportWatcher>::Create();
+    fidl::Client parent_viewport_watcher(std::move(parent_viewport_watcher_client_end),
+                                         dispatcher());
+
+    SetDisplayContent(display.get(), child.get(), std::move(child_view_watcher_server_end),
+                      std::move(parent_viewport_watcher_server_end));
+
+    std::optional<LayoutInfo> layout_info;
+    parent_viewport_watcher->GetLayout().ThenExactlyOnce(
+        [&](ParentViewportWatcher_GetLayoutResult& result) {
+          ASSERT_TRUE(result.is_ok());
+          layout_info = result->info();
+        });
+
+    std::optional<ParentViewportStatus> parent_viewport_watcher_status;
+    parent_viewport_watcher->GetStatus().ThenExactlyOnce(
+        [&](ParentViewportWatcher_GetStatusResult& result) {
+          ASSERT_TRUE(result.is_ok());
+          parent_viewport_watcher_status = result->status();
+        });
+
+    RunLoopUntilIdle();
+
+    // LayoutInfo is sent as soon as the content/graph link is established, to allow clients to
+    // generate their first frame with minimal latency.
+    ASSERT_TRUE(layout_info.has_value());
+    EXPECT_EQ(layout_info->logical_size()->width(), kWidth);
+    EXPECT_EQ(layout_info->logical_size()->height(), kHeight);
+
+    // The ParentViewportWatcher's status must wait until the first frame is generated (represented
+    // here by the call to UpdateLinks() below).
+    EXPECT_FALSE(parent_viewport_watcher_status.has_value());
+
+    UpdateLinks(display->root_transform());
+
+    // UpdateLinks() causes us to receive the status notification.  The link is considered to be
+    // disconnected because the child has not yet presented its first frame.
+    EXPECT_TRUE(parent_viewport_watcher_status.has_value());
+    EXPECT_EQ(parent_viewport_watcher_status.value(),
+              ParentViewportStatus::kDisconnectedFromDisplay);
+    parent_viewport_watcher_status.reset();
+
+    PRESENT(child, true);
+
+    // The status won't change to "connected" until UpdateLinks() is called again.
+    parent_viewport_watcher->GetStatus().ThenExactlyOnce(
+        [&](ParentViewportWatcher_GetStatusResult& result) {
+          ASSERT_TRUE(result.is_ok());
+          parent_viewport_watcher_status = result->status();
+        });
+    RunLoopUntilIdle();
+    EXPECT_FALSE(parent_viewport_watcher_status.has_value());
+
+    UpdateLinks(display->root_transform());
+
+    EXPECT_TRUE(parent_viewport_watcher_status.has_value());
+    EXPECT_EQ(parent_viewport_watcher_status.value(), ParentViewportStatus::kConnectedToDisplay);
+  }
 };
 
 template <typename T>
@@ -5989,76 +6056,6 @@ TEST_F(FlatlandTest, NoDoubleDestroyRequest) {
   EXPECT_EQ(destroy_instance_function_invocation_count, 1U);
 }
 
-TEST_F(FlatlandDisplayTest, SimpleSetContent) {
-  constexpr uint32_t kWidth = 800;
-  constexpr uint32_t kHeight = 600;
-
-  std::shared_ptr<FlatlandDisplay> display = CreateFlatlandDisplay(kWidth, kHeight);
-  std::shared_ptr<Flatland> child = CreateFlatland();
-
-  const ContentId kLinkId1 = {1};
-
-  auto [child_view_watcher_client_end, child_view_watcher_server_end] =
-      fidl::Endpoints<ChildViewWatcher>::Create();
-
-  auto [parent_viewport_watcher_client_end, parent_viewport_watcher_server_end] =
-      fidl::Endpoints<ParentViewportWatcher>::Create();
-  fidl::Client parent_viewport_watcher(std::move(parent_viewport_watcher_client_end), dispatcher());
-
-  SetDisplayContent(display.get(), child.get(), std::move(child_view_watcher_server_end),
-                    std::move(parent_viewport_watcher_server_end));
-
-  std::optional<LayoutInfo> layout_info;
-  parent_viewport_watcher->GetLayout().ThenExactlyOnce(
-      [&](ParentViewportWatcher_GetLayoutResult& result) {
-        ASSERT_TRUE(result.is_ok());
-        layout_info = result->info();
-      });
-
-  std::optional<ParentViewportStatus> parent_viewport_watcher_status;
-  parent_viewport_watcher->GetStatus().ThenExactlyOnce(
-      [&](ParentViewportWatcher_GetStatusResult& result) {
-        ASSERT_TRUE(result.is_ok());
-        parent_viewport_watcher_status = result->status();
-      });
-
-  RunLoopUntilIdle();
-
-  // LayoutInfo is sent as soon as the content/graph link is established, to allow clients to
-  // generate their first frame with minimal latency.
-  ASSERT_TRUE(layout_info.has_value());
-  EXPECT_EQ(layout_info->logical_size()->width(), kWidth);
-  EXPECT_EQ(layout_info->logical_size()->height(), kHeight);
-
-  // The ParentViewportWatcher's status must wait until the first frame is generated (represented
-  // here by the call to UpdateLinks() below).
-  EXPECT_FALSE(parent_viewport_watcher_status.has_value());
-
-  UpdateLinks(display->root_transform());
-
-  // UpdateLinks() causes us to receive the status notification.  The link is considered to be
-  // disconnected because the child has not yet presented its first frame.
-  EXPECT_TRUE(parent_viewport_watcher_status.has_value());
-  EXPECT_EQ(parent_viewport_watcher_status.value(), ParentViewportStatus::kDisconnectedFromDisplay);
-  parent_viewport_watcher_status.reset();
-
-  PRESENT(child, true);
-
-  // The status won't change to "connected" until UpdateLinks() is called again.
-  parent_viewport_watcher->GetStatus().ThenExactlyOnce(
-      [&](ParentViewportWatcher_GetStatusResult& result) {
-        ASSERT_TRUE(result.is_ok());
-        parent_viewport_watcher_status = result->status();
-      });
-  RunLoopUntilIdle();
-  EXPECT_FALSE(parent_viewport_watcher_status.has_value());
-
-  UpdateLinks(display->root_transform());
-
-  EXPECT_TRUE(parent_viewport_watcher_status.has_value());
-  EXPECT_EQ(parent_viewport_watcher_status.value(), ParentViewportStatus::kConnectedToDisplay);
-}
-
 TEST_F(FlatlandTest, CreateAndReleaseFilledRect) {
   std::shared_ptr<Flatland> flatland = CreateFlatland();
 
@@ -6088,9 +6085,28 @@ TEST_F(FlatlandTest, PresentWithScheduleAsapConfig) {
   ApplySessionUpdatesAndSignalFences();
 }
 
+TEST_F(FlatlandDisplayTest, SimpleSetContent) {
+  constexpr uint32_t kWidth = 800;
+  constexpr uint32_t kHeight = 600;
+
+  std::shared_ptr<FlatlandDisplay> display = CreateFlatlandDisplay(kWidth, kHeight);
+
+  std::shared_ptr<Flatland> child = CreateFlatland();
+  ConnectChildViewToDisplayThenValidate(display, child, kWidth, kHeight);
+
+  std::shared_ptr<Flatland> child2 = CreateFlatland();
+  ConnectChildViewToDisplayThenValidate(display, child2, kWidth, kHeight);
+
+  std::shared_ptr<Flatland> child3 = CreateFlatland();
+  ConnectChildViewToDisplayThenValidate(display, child3, kWidth, kHeight);
+
+  // Verify that previously-connected Flatland sessions can re-connect to the display.
+  ConnectChildViewToDisplayThenValidate(display, child2, kWidth, kHeight);
+  ConnectChildViewToDisplayThenValidate(display, child, kWidth, kHeight);
+}
+
 // TODO(https://fxbug.dev/42156567): other FlatlandDisplayTests that should be written:
 // - version of SimpleSetContent where the child presents before SetDisplayContent() is called.
-// - call SetDisplayContent() multiple times.
 
 #undef EXPECT_MATRIX
 #undef PRESENT
