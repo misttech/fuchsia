@@ -202,10 +202,6 @@ impl RecoveryViewAssistant {
             menu::MenuItem::WipeDataConfirm => {
                 self.view_sender.queue_message(RecoveryMessages::WipeData);
             }
-            menu_item => {
-                self.log(format!("Not implemented: {menu_item:?}"));
-                self.view_sender.queue_message(RecoveryMessages::TaskDone);
-            }
         }
     }
 }

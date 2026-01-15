@@ -5,7 +5,6 @@
 pub const MAIN_MENU: &[MenuItem] = &[
     MenuItem::Reboot,
     MenuItem::RebootBootloader,
-    MenuItem::Fastboot,
     MenuItem::Sideload,
     MenuItem::WipeData,
     MenuItem::PowerOff,
@@ -17,7 +16,6 @@ pub const WIPE_DATA_MENU: &[MenuItem] = &[MenuItem::WipeDataCancel, MenuItem::Wi
 pub enum MenuItem {
     Reboot,
     RebootBootloader,
-    Fastboot,
     Sideload,
     WipeData,
     PowerOff,
@@ -30,7 +28,6 @@ impl MenuItem {
         match self {
             MenuItem::Reboot => "Reboot system now",
             MenuItem::RebootBootloader => "Reboot to bootloader",
-            MenuItem::Fastboot => "Enter fastboot",
             MenuItem::Sideload => "Apply update from ADB",
             MenuItem::WipeData => "Wipe data/factory reset",
             MenuItem::PowerOff => "Power off",
