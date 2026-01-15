@@ -589,4 +589,7 @@ class FfxImpl(ffx_interface.FFX):
         # Add log file path
         ffx_args.extend(["-o", str(Path(self.config.logs_dir) / "ffx.log")])
 
+        # Inject configuration via command line arguments
+        ffx_args.extend(self.config.get_config_args())
+
         return [self.config.binary_path] + ffx_args + cmd

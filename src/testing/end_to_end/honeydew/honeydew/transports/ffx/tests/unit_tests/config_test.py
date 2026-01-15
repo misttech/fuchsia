@@ -31,11 +31,6 @@ _FFX_CMD_OPTIONS: list[str] = [
     _ISOLATE_DIR,
 ]
 
-_FFX_CONFIG_SET: list[str] = _FFX_CMD_OPTIONS + [
-    "config",
-    "set",
-]
-
 _INPUT_ARGS: dict[str, Any] = {
     "target_name": _TARGET_NAME,
     "ffx_config_data": ffx_config.FfxConfigData(
@@ -76,27 +71,29 @@ class FfxConfigTests(unittest.TestCase):
         )
 
         ffx_configs_calls = [
-            mock.call(_FFX_CONFIG_SET + ["log.dir", _LOGS_DIR]),
-            mock.call(_FFX_CONFIG_SET + ["log.level", _LOGS_LEVEL.lower()]),
             mock.call(
-                _FFX_CONFIG_SET
-                + ["discovery.mdns.enabled", str(_MDNS_ENABLED).lower()]
+                _FFX_CMD_OPTIONS
+                + [
+                    "-c",
+                    f"log.dir={_LOGS_DIR}",
+                    "-c",
+                    f"log.level={_LOGS_LEVEL}",
+                    "-c",
+                    f"discovery.mdns.enabled={str(_MDNS_ENABLED).lower()}",
+                    "-c",
+                    f"ffx.subtool-search-paths={_SUBTOOLS_SEARCH_PATH}",
+                    "-c",
+                    f"proxy.timeout_secs={_PROXY_TIMEOUT_SECS}",
+                    "-c",
+                    f"ssh.keepalive_timeout={_SSH_KEEPALIVE_TIMEOUT}",
+                    "daemon",
+                    "start",
+                    "--background",
+                ]
             ),
-            mock.call(
-                _FFX_CONFIG_SET
-                + ["proxy.timeout_secs", str(_PROXY_TIMEOUT_SECS)]
-            ),
-            mock.call(
-                _FFX_CONFIG_SET
-                + ["ssh.keepalive_timeout", str(_SSH_KEEPALIVE_TIMEOUT)]
-            ),
-            mock.call(
-                _FFX_CONFIG_SET
-                + ["ffx.subtool-search-paths", _SUBTOOLS_SEARCH_PATH]
-            ),
-            mock.call(_FFX_CMD_OPTIONS + ["daemon", "start", "--background"]),
         ]
         mock_host_shell_run.assert_has_calls(ffx_configs_calls, any_order=True)
+        self.assertEqual(mock_host_shell_run.call_count, 1)
 
         # Calling setup() again should fail
         with self.assertRaises(ffx_config.FfxConfigError):

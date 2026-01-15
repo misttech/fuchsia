@@ -60,6 +60,7 @@ class FfxTestCase(fuchsia_base_test.FuchsiaBaseTest):
                 "--isolate-dir",
                 config.isolate_dir.directory(),
             ]
+        cmd += config.get_config_args()
         cmd += args
         _LOGGER.info("Running FFX cmd: %s", cmd)
         proc = subprocess.Popen(
@@ -76,6 +77,7 @@ class FfxTestCase(fuchsia_base_test.FuchsiaBaseTest):
                 "--isolate-dir",
                 config.isolate_dir.directory(),
             ]
+        cmd += config.get_config_args()
         cmd += args
         _LOGGER.info("Running FFX cmd: %s", cmd)
         proc = subprocess.run(cmd, capture_output=True)
@@ -96,6 +98,7 @@ class FfxTestCase(fuchsia_base_test.FuchsiaBaseTest):
                 "--isolate-dir",
                 config.isolate_dir.directory(),
             ]
+        cmd += config.get_config_args()
         cmd += args
         _LOGGER.info("Running FFX cmd: %s", cmd)
         proc = subprocess.run(cmd, capture_output=True)

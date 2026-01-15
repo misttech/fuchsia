@@ -14,43 +14,11 @@ from honeydew.utils import host_shell
 
 _FFX_BINARY: str = "ffx"
 
-_FFX_CONFIG_CMDS: dict[str, list[str]] = {
-    "LOG_DIR": [
-        "config",
-        "set",
-        "log.dir",
-    ],
-    "LOG_LEVEL": [
-        "config",
-        "set",
-        "log.level",
-    ],
-    "MDNS": [
-        "config",
-        "set",
-        "discovery.mdns.enabled",
-    ],
-    "SUB_TOOLS_PATH": [
-        "config",
-        "set",
-        "ffx.subtool-search-paths",
-    ],
-    "PROXY_TIMEOUT": [
-        "config",
-        "set",
-        "proxy.timeout_secs",
-    ],
-    "SSH_KEEPALIVE_TIMEOUT": [
-        "config",
-        "set",
-        "ssh.keepalive_timeout",
-    ],
-    "DAEMON_START": [
-        "daemon",
-        "start",
-        "--background",
-    ],
-}
+_FFX_DAEMON_START: list[str] = [
+    "daemon",
+    "start",
+    "--background",
+]
 
 
 _LOGGER: logging.Logger = logging.getLogger(__name__)
@@ -100,6 +68,27 @@ class FfxConfigData:
             f"proxy_timeout_secs={self.proxy_timeout_secs}, "
             f"ssh_keepalive_timeout={self.ssh_keepalive_timeout}, "
         )
+
+    def get_config_args(self) -> list[str]:
+        """Returns the FFX command arguments to set the configuration.
+
+        Returns:
+            List of FFX command arguments.
+        """
+        configs = {
+            "log.dir": self.logs_dir,
+            "log.level": self.logs_level,
+            "discovery.mdns.enabled": str(self.mdns_enabled).lower(),
+            "ffx.subtool-search-paths": self.subtools_search_path,
+            "proxy.timeout_secs": self.proxy_timeout_secs,
+            "ssh.keepalive_timeout": self.ssh_keepalive_timeout,
+        }
+
+        ffx_args = []
+        for key, value in configs.items():
+            if value is not None:
+                ffx_args.extend(["-c", f"{key}={value}"])
+        return ffx_args
 
 
 class FfxConfig:
@@ -171,35 +160,22 @@ class FfxConfig:
         self._proxy_timeout_secs: int | None = proxy_timeout_secs
         self._ssh_keepalive_timeout: int | None = ssh_keepalive_timeout
 
-        self._run(_FFX_CONFIG_CMDS["LOG_DIR"] + [self._logs_dir])
-
-        if self._logs_level is not None:
-            self._run(_FFX_CONFIG_CMDS["LOG_LEVEL"] + [self._logs_level])
-
-        self._run(_FFX_CONFIG_CMDS["MDNS"] + [str(self._mdns_enabled).lower()])
-
-        # Setting this based on the recommendation from awdavies@ for below
-        # FuchsiaController error:
-        #   FFX Library Error: Timeout attempting to reach target
-        if self._proxy_timeout_secs is not None:
-            self._run(
-                _FFX_CONFIG_CMDS["PROXY_TIMEOUT"]
-                + [str(self._proxy_timeout_secs)]
+        # We only run "ffx daemon start" if we are provided with an isolated environment.
+        if self._isolate_dir:
+            # In order to run "ffx daemon start" using self._run(), we need to
+            # construct a temporary config data object. This is kind of a hack,
+            # but a follow-up CL removes this entire call to "ffx daemon start".
+            temp_config_data = FfxConfigData(
+                binary_path=self._ffx_binary,
+                isolate_dir=self._isolate_dir,
+                logs_dir=self._logs_dir,
+                logs_level=self._logs_level,
+                mdns_enabled=self._mdns_enabled,
+                subtools_search_path=self._subtools_search_path,
+                proxy_timeout_secs=self._proxy_timeout_secs,
+                ssh_keepalive_timeout=self._ssh_keepalive_timeout,
             )
-
-        if self._ssh_keepalive_timeout is not None:
-            self._run(
-                _FFX_CONFIG_CMDS["SSH_KEEPALIVE_TIMEOUT"]
-                + [str(self._ssh_keepalive_timeout)]
-            )
-
-        if self._subtools_search_path is not None:
-            self._run(
-                _FFX_CONFIG_CMDS["SUB_TOOLS_PATH"]
-                + [self._subtools_search_path]
-            )
-
-        self._run(_FFX_CONFIG_CMDS["DAEMON_START"])
+            self._run(temp_config_data.get_config_args() + _FFX_DAEMON_START)
 
         self._setup_done = True
 
