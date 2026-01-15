@@ -17,11 +17,24 @@ import("//build/toolchain/concurrent_jobs.gni")
 import("//build/tools/json_merge/json_merge.gni")
 import("//tools/fidl/measure-tape/measure_tape.gni")
 
+config("optimize-for-size") {
+  # "opt-level=z" saves 400 KiB compared to "s" on component framework binary.
+  rustflags = [
+    "-Copt-level=z",
+    "-Cpanic=abort",
+  ]
+
+  # Apply the same configuration as //build/config/rust:bootfs
+  if (target_cpu == "arm64" && is_debug) {
+    configs = [ "//build/config/lto:thinlto" ]
+  }
+}
+
 _component_manager_bin = {
   with_unit_tests = true
   edition = "2024"
 
-  configs_to_add = [ "//build/config/rust:bootfs" ]
+  configs_to_add = [ ":optimize-for-size" ]
 
   # As this is a large binary that uses many resources to compile (and takes minutes when LTO is
   # enabled, shift it to the large RBE worker pool)
