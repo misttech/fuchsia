@@ -1093,6 +1093,13 @@ def main() -> int:
         help="If specified, extra information is printed on Bazel failures.",
     )
 
+    parser.add_argument(
+        "--filter-bazel-info-logs",
+        action=argparse.BooleanOptionalAction,
+        default=True,
+        help="Filter out INFO level logs from Bazel output.",
+    )
+
     ##
     # Options for directory that the build is running in.
     parser.add_argument(
@@ -1433,12 +1440,16 @@ def main() -> int:
     if quiet:
         cmd_args += ["--config=quiet"]
     else:
-        # Disable INFO lines and printing results, this makes Bazel output much
-        # less chatty when invoked from Ninja. https://fxbug.dev/42077198
-        cmd_args += ["--ui_event_filters=-info"]
-        if args.command != "query":
-            # The --show_result option is not supported by bazel query.
-            cmd_args += ["--show_result=0"]
+        # This is true by default, and so we usually filter logs
+        if args.filter_bazel_info_logs:
+            # Disable INFO lines and printing results, this makes Bazel output much
+            # less chatty when invoked from Ninja. https://fxbug.dev/42077198
+            cmd_args += ["--ui_event_filters=-info"]
+            if args.command != "query":
+                # The --show_result option is not supported by bazel query.
+                cmd_args += ["--show_result=0"]
+        else:
+            cmd_args += ["--config=verbose"]
 
     cmd_args += [
         # Ensure that all debug symbols are properly generated during the build

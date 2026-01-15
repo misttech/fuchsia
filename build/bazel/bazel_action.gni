@@ -786,6 +786,16 @@ template("bazel_action") {
         args += [ "--verbose_failures" ]
       }
 
+      # --config=quiet is always used by default, but it is possible
+      # to disable that by setting filter_bazel_info_logs to false.
+      _filter_bazel_info_logs = true
+      if (defined(invoker.filter_bazel_info_logs)) {
+        _filter_bazel_info_logs = invoker.filter_bazel_info_logs
+      }
+      if (!_filter_bazel_info_logs) {
+        args += [ "--no-filter-bazel-info-logs" ]
+      }
+
       if (bazel_auto_refresh_compdb) {
         _compdb_file =
             "${target_out_dir}/${target_name}.bazel_compile_commands.json"
@@ -856,16 +866,6 @@ template("bazel_action") {
       # be part of --config=host or --config=fuchsia.
       if (bazel_upload_build_events != "") {
         args += [ "--config=$bazel_upload_build_events" ]
-      }
-
-      # --config=quiet is always used by default, but it is possible
-      # to disable that by setting filter_bazel_info_logs to false.
-      _filter_bazel_info_logs = true
-      if (defined(invoker.filter_bazel_info_logs)) {
-        _filter_bazel_info_logs = invoker.filter_bazel_info_logs
-      }
-      if (!_filter_bazel_info_logs) {
-        args += [ "--config=verbose" ]
       }
 
       metadata = {
