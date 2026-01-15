@@ -286,7 +286,7 @@ impl FhoTargetEnvironmentInner {
         let behavior = self
             .initialize_behavior_with(move || async move {
                 let overnet_injector =
-                    Injection::initialize_overnet(context.clone(), None, build_info).await?;
+                    Injection::initialize_overnet(context.clone(), None, build_info)?;
                 log::info!("Initializing ConnectionBehavior::DaemonConnector");
                 Ok(ConnectionBehavior::DaemonConnector(Arc::new(overnet_injector)))
             })
@@ -323,10 +323,7 @@ impl FhoTargetEnvironmentInner {
     /// While the surface of this function is a little awkward, this is necessary to provide a
     /// readable error. Authors shouldn't use this directly, they should instead use
     /// `TryFromEnv`.
-    pub async fn injector<T: TryFromEnv>(
-        &self,
-        env: &fho::FhoEnvironment,
-    ) -> Result<Arc<dyn Injector>> {
+    pub fn injector<T: TryFromEnv>(&self, env: &fho::FhoEnvironment) -> Result<Arc<dyn Injector>> {
         let strict = env.ffx_command().global.strict;
         let behavior = self.behavior()?;
         match *behavior {

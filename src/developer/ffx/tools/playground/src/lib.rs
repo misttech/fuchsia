@@ -144,15 +144,13 @@ pub async fn exec_playground(
     let quit_sender = Arc::new(Mutex::new(Some(quit_sender)));
     {
         let quit_sender = Arc::clone(&quit_sender);
-        interpreter
-            .add_command("quit", move |_, _| {
-                if let Some(quit_sender) = quit_sender.lock().unwrap().take() {
-                    let _ = quit_sender.send(());
-                }
+        interpreter.add_command("quit", move |_, _| {
+            if let Some(quit_sender) = quit_sender.lock().unwrap().take() {
+                let _ = quit_sender.send(());
+            }
 
-                async move { Ok(Value::Null) }
-            })
-            .await;
+            async move { Ok(Value::Null) }
+        });
     }
     {
         let remote_proxy = Arc::clone(&remote_proxy);

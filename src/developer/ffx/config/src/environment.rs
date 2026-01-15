@@ -385,7 +385,7 @@ mod test {
         }"#;
 
     #[fuchsia::test]
-    async fn test_loading_and_saving_environment() {
+    fn test_loading_and_saving_environment() {
         let mut test_env = test_init().expect("initializing test environment");
         let env: EnvironmentFiles = serde_json::from_str(ENVIRONMENT).unwrap();
 

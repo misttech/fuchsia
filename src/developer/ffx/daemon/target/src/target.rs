@@ -1029,7 +1029,7 @@ impl Target {
         }
     }
 
-    pub async fn usb(&self) -> Result<(String, Interface)> {
+    pub fn usb(&self) -> Result<(String, Interface)> {
         if !self.is_enabled() {
             return Err(anyhow!("Cannot open USB interface for disabled target"));
         }
@@ -1038,7 +1038,7 @@ impl Target {
         match id.as_ref().and_then(|i| i.serial()) {
             Some(s) => Ok((
                 s.to_string(),
-                open_interface_with_serial(s).await.with_context(|| {
+                open_interface_with_serial(s).with_context(|| {
                     format!("Failed to open target usb interface by serial {s}")
                 })?,
             )),

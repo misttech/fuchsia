@@ -29,18 +29,16 @@ async fn test_interpreter(
     let fs_root = with_dirs.unwrap_or_else(|| fdomain_client::Handle::invalid().into());
     let (interpreter, fut) = Interpreter::new(ns, fs_root).await;
     if with_test_cmds {
-        interpreter
-            .add_command("test_cmd_yield_union", |args, _underscore| {
-                assert!(args.is_empty());
-                async move {
-                    Ok(Value::Union(
-                        "test.fidlcodec.examples/U8U16Union".into(),
-                        "variant_u8".into(),
-                        Box::new(Value::U8(42)),
-                    ))
-                }
-            })
-            .await;
+        interpreter.add_command("test_cmd_yield_union", |args, _underscore| {
+            assert!(args.is_empty());
+            async move {
+                Ok(Value::Union(
+                    "test.fidlcodec.examples/U8U16Union".into(),
+                    "variant_u8".into(),
+                    Box::new(Value::U8(42)),
+                ))
+            }
+        });
     }
     fuchsia_async::Task::spawn(fut).detach();
 

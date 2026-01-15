@@ -328,7 +328,7 @@ mod tests {
     }
 
     #[fuchsia::test]
-    async fn test_config_error() {
+    fn test_config_error() {
         let env = crate::test_env().build().unwrap();
         let context = &env.context;
 

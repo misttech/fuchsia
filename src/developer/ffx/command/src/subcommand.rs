@@ -41,7 +41,7 @@ pub struct ExternalSubTool {
 }
 
 impl ExternalSubTool {
-    pub async fn run_and_capture(self) -> Result<(ExitStatus, String, String)> {
+    pub fn run_and_capture(self) -> Result<(ExitStatus, String, String)> {
         let mut command = std::process::Command::new(&self.path);
         command
             .env(EnvironmentContext::FFX_BIN_ENV, self.context.rerun_bin()?)
@@ -573,7 +573,7 @@ mod tests {
     }
 
     #[fuchsia::test]
-    async fn test_with_tools_manifest() {
+    fn test_with_tools_manifest() {
         let test_env = ffx_config::test_init().expect("test init");
 
         create_mock_subtool(

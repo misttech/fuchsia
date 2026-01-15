@@ -101,7 +101,6 @@ impl Recorder for DoctorRecorder {
 #[cfg(test)]
 mod test {
     use super::*;
-    use fuchsia_async as fasync;
     use std::collections::HashSet;
     use std::io::Read;
     use tempfile::tempdir;
@@ -113,8 +112,8 @@ mod test {
     const FILE_NAME: &str = "log.txt";
     const NON_EXISTENT_FILE_NAME: &str = "does_not_exist.txt";
 
-    #[fasync::run_singlethreaded(test)]
-    async fn test() -> Result<()> {
+    #[fuchsia::test]
+    fn test() -> Result<()> {
         let temp = tempdir()?;
         let root = temp.path().to_path_buf();
 

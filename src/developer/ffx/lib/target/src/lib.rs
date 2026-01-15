@@ -228,7 +228,7 @@ pub fn open_target_with_fut<'a, 'b: 'a>(
     Ok((target_proxy, fut))
 }
 
-pub async fn is_discovery_enabled(ctx: &EnvironmentContext) -> bool {
+pub fn is_discovery_enabled(ctx: &EnvironmentContext) -> bool {
     // TODO (b/355292969): put back the discovery check after we've addressed the flakes associated
     // with client-side discovery. (Currently re-enabled, but I want to validate the flake before resolving
     // this bug -slgrady 8/7/24)

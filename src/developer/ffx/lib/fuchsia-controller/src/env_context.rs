@@ -68,7 +68,7 @@ impl EnvContext {
         self.lib_ctx.upgrade().expect("library context instance deallocated early")
     }
 
-    pub async fn new(
+    pub fn new(
         lib_ctx: Weak<LibContext>,
         config: Vec<FfxConfigEntry>,
         isolate_dir: Option<PathBuf>,

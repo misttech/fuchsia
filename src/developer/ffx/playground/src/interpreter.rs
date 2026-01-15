@@ -845,7 +845,7 @@ impl Interpreter {
     /// global scope, and assigns it an invocable value which calls the closure
     /// given in `cmd`. The closure takes a list of arguments as [`Value`]s and
     /// an optional `Value` which is the current value of `$_`
-    pub async fn add_command<
+    pub fn add_command<
         F: Fn(Vec<Value>, Option<Value>) -> R + Send + Sync + 'static,
         R: Future<Output = anyhow::Result<Value>> + Send + 'static,
     >(

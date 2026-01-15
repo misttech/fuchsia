@@ -1367,6 +1367,7 @@ mod test {
         };
     }
 
+    #[allow(clippy::unused_async)]
     #[fuchsia::test]
     async fn test_double_listen() {
         let (
@@ -1507,6 +1508,7 @@ mod test {
         assert_eq!(cid, got_cid);
     }
 
+    #[allow(clippy::unused_async)]
     #[fuchsia::test]
     async fn test_listen_drop_listen() {
         let (

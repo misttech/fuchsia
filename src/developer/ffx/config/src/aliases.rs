@@ -114,7 +114,7 @@ mod test {
     use crate::{self as ffx_config, ConfigLevel};
 
     #[fuchsia::test]
-    async fn test_ffx_isolated() {
+    fn test_ffx_isolated() {
         let env = ffx_config::test_init().expect("create test config");
 
         // It'd be nice to check that isolation is not set by default,
@@ -139,7 +139,7 @@ mod test {
     }
 
     #[fuchsia::test]
-    async fn test_ffx_isolated_can_override_global() {
+    fn test_ffx_isolated_can_override_global() {
         let env = ffx_config::test_init().expect("create test config");
 
         env.context
@@ -163,7 +163,7 @@ mod test {
     }
 
     #[fuchsia::test]
-    async fn test_ffx_isolated_can_be_overridden() {
+    fn test_ffx_isolated_can_be_overridden() {
         let env = ffx_config::test_init().expect("create test config");
 
         env.context

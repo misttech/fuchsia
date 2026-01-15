@@ -375,7 +375,7 @@ pub async fn doctor_cmd_impl<W: Write + Send + Sync + 'static>(
     };
 
     if cmd.repair_keys {
-        let keys = SshKeyFiles::load(&context).await?;
+        let keys = SshKeyFiles::load(&context)?;
         let message = keys.check_keys(true)?;
         writeln!(&mut writer, "{message}")?;
     }
@@ -1086,7 +1086,7 @@ async fn check_ssh_keys<W: Write>(
     ledger: &mut DoctorLedger<W>,
 ) -> Result<()> {
     let ssh_node: usize;
-    match SshKeyFiles::load(ctx).await {
+    match SshKeyFiles::load(ctx) {
         Ok(ssh_files) => {
             let (description, outcome) = match ssh_files.check_keys(false) {
                 Ok(_) => (
@@ -1306,7 +1306,7 @@ async fn run_google_network_checks<W: Write>(
                 Some(wcmd) => {
                     let main_node =
                         ledger.add_node("Google Network Checks", LedgerMode::Automatic)?;
-                    let (_exit_status, stdout, _stderr) = wcmd.run_and_capture().await?;
+                    let (_exit_status, stdout, _stderr) = wcmd.run_and_capture()?;
                     for line in stdout.trim().lines().filter(|l| !l.trim().is_empty()) {
                         match serde_json::from_str::<DoctorCheck>(&line) {
                             Ok(data) => {
@@ -2874,7 +2874,7 @@ mod test {
             .level(Some(ConfigLevel::User))
             .build()
             .set(&test_env.context, json!([&priv_key]))?;
-        let keys = SshKeyFiles::load(&test_env.context).await?;
+        let keys = SshKeyFiles::load(&test_env.context)?;
         keys.create_keys_if_needed(false)?;
         Ok(())
     }

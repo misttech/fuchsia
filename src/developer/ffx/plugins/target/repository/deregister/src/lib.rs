@@ -47,7 +47,7 @@ impl FfxMain for DeregisterTool {
                 Some(name.to_string())
             }
         } else {
-            pkg::config::get_default_repository(&self.context).await?
+            pkg::config::get_default_repository(&self.context)?
         }
         .ok_or_else(|| {
             user_error!(
@@ -257,7 +257,7 @@ mod test {
         let env = ffx_config::test_init().unwrap();
 
         let default_repo_name = "default-repo";
-        pkg::config::set_default_repository(&env.context, default_repo_name).await.unwrap();
+        pkg::config::set_default_repository(&env.context, default_repo_name).unwrap();
         env.context
             .query(TARGET_DEFAULT_KEY)
             .level(Some(ConfigLevel::User))
@@ -290,7 +290,7 @@ mod test {
         let env = ffx_config::test_init().unwrap();
 
         let default_repo_name = "default-repo";
-        pkg::config::set_default_repository(&env.context, default_repo_name).await.unwrap();
+        pkg::config::set_default_repository(&env.context, default_repo_name).unwrap();
         env.context
             .query(TARGET_DEFAULT_KEY)
             .level(Some(ConfigLevel::User))
@@ -327,7 +327,7 @@ mod test {
         let env = ffx_config::test_init().unwrap();
 
         let default_repo_name = "default-repo";
-        pkg::config::set_default_repository(&env.context, default_repo_name).await.unwrap();
+        pkg::config::set_default_repository(&env.context, default_repo_name).unwrap();
         env.context
             .query(TARGET_DEFAULT_KEY)
             .level(Some(ConfigLevel::User))

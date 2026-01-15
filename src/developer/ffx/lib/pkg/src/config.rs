@@ -16,7 +16,7 @@ pub const DEFAULT_REPO_NAME: &str = "devhost";
 // LINT.ThenChange(/src/developer/ffx/plugins/repository/add-from-pm/src/args.rs)
 
 // Try to figure out why the server is not running.
-pub async fn determine_why_repository_server_is_not_running(
+pub fn determine_why_repository_server_is_not_running(
     context: &EnvironmentContext,
 ) -> anyhow::Error {
     macro_rules! check {
@@ -30,7 +30,7 @@ pub async fn determine_why_repository_server_is_not_running(
         };
     }
 
-    match check!(repository_listen_addr(context).await) {
+    match check!(repository_listen_addr(context)) {
         Some(addr) => {
             return anyhow!(
                 "ffx config detects repository.server.listen to be {addr} \
@@ -54,7 +54,7 @@ pub async fn determine_why_repository_server_is_not_running(
 }
 
 /// Return the repository server address from ffx config.
-pub async fn repository_listen_addr(
+pub fn repository_listen_addr(
     context: &EnvironmentContext,
 ) -> Result<Option<std::net::SocketAddr>> {
     if let Some(address) = context.get::<Option<String>, _>(CONFIG_KEY_SERVER_LISTEN)? {
@@ -73,12 +73,12 @@ pub async fn repository_listen_addr(
 }
 
 /// Return the default repository from the configuration if set.
-pub async fn get_default_repository(context: &EnvironmentContext) -> Result<Option<String>> {
+pub fn get_default_repository(context: &EnvironmentContext) -> Result<Option<String>> {
     context.get(CONFIG_KEY_DEFAULT_REPOSITORY).map_err(Into::into)
 }
 
 /// Sets the default repository from the config.
-pub async fn set_default_repository(context: &EnvironmentContext, repo_name: &str) -> Result<()> {
+pub fn set_default_repository(context: &EnvironmentContext, repo_name: &str) -> Result<()> {
     context
         .query(CONFIG_KEY_DEFAULT_REPOSITORY)
         .level(Some(ConfigLevel::User))
@@ -87,7 +87,8 @@ pub async fn set_default_repository(context: &EnvironmentContext, repo_name: &st
 }
 
 /// Unsets the default repository from the config.
-pub async fn unset_default_repository(context: &EnvironmentContext) -> Result<()> {
+
+pub fn unset_default_repository(context: &EnvironmentContext) -> Result<()> {
     context
         .query(CONFIG_KEY_DEFAULT_REPOSITORY)
         .level(Some(ConfigLevel::User))
@@ -104,7 +105,7 @@ mod tests {
     const CONFIG_KEY_ROOT: &str = "repository";
 
     #[fuchsia::test]
-    async fn test_get_set_unset_default_repository() {
+    fn test_get_set_unset_default_repository() {
         let env = ffx_config::test_init().expect("test init");
         env.context
             .query(CONFIG_KEY_ROOT)
@@ -114,33 +115,33 @@ mod tests {
             .unwrap();
 
         // Initially there's no default.
-        assert_eq!(get_default_repository(&env.context).await.unwrap(), None);
+        assert_eq!(get_default_repository(&env.context).unwrap(), None);
 
         // Setting the default should write to the config.
-        set_default_repository(&env.context, "foo").await.unwrap();
+        set_default_repository(&env.context, "foo").unwrap();
         assert_eq!(
             env.context.get::<Value, _>(CONFIG_KEY_DEFAULT_REPOSITORY).unwrap(),
             json!("foo"),
         );
-        assert_eq!(get_default_repository(&env.context).await.unwrap(), Some("foo".into()));
+        assert_eq!(get_default_repository(&env.context).unwrap(), Some("foo".into()));
 
         // We don't care if the repository has `.` in it.
-        set_default_repository(&env.context, "foo.bar").await.unwrap();
+        set_default_repository(&env.context, "foo.bar").unwrap();
         assert_eq!(
             env.context.get::<Value, _>(CONFIG_KEY_DEFAULT_REPOSITORY).unwrap(),
             json!("foo.bar"),
         );
-        assert_eq!(get_default_repository(&env.context).await.unwrap(), Some("foo.bar".into()));
+        assert_eq!(get_default_repository(&env.context).unwrap(), Some("foo.bar".into()));
 
         // Unset removes the default repository from the config.
-        unset_default_repository(&env.context).await.unwrap();
+        unset_default_repository(&env.context).unwrap();
         assert_eq!(
             env.context.get::<Option<Value>, _>(CONFIG_KEY_DEFAULT_REPOSITORY).unwrap(),
             None,
         );
-        assert_eq!(get_default_repository(&env.context).await.unwrap(), None);
+        assert_eq!(get_default_repository(&env.context).unwrap(), None);
 
         // Unsetting the repo again returns an error.
-        assert!(unset_default_repository(&env.context).await.is_err());
+        assert!(unset_default_repository(&env.context).is_err());
     }
 }

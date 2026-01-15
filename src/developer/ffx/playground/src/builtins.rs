@@ -57,8 +57,7 @@ impl Interpreter {
 
                     Ok(inner.open(path, fs_root, pwd).await?)
                 }
-            })
-            .await;
+            });
 
             let inner_weak = Arc::downgrade(&self.inner);
             let fs_root_getter = fs_root_getter_clone.clone();
@@ -87,8 +86,7 @@ impl Interpreter {
                     let _ = inner.invoke_value(closure, vec![server], under).await?;
                     Ok(client)
                 }
-            })
-            .await;
+            });
 
             let inner_weak = Arc::downgrade(&self.inner);
             self.add_command("read", move |mut args, under| {
@@ -126,8 +124,7 @@ impl Interpreter {
                         Err(anyhow!("value cannot be read"))
                     }
                 }
-            })
-            .await;
+            });
 
             let Value::OutOfLine(PlaygroundValue::Invocable(pwd_setter)) =
                 self.run(r"\x {$pwd = $x}").await.expect("Could not build pwd setter")
@@ -176,8 +173,7 @@ impl Interpreter {
                         .expect("cd setter failed!");
                     Ok(Value::Null)
                 }
-            })
-            .await;
+            });
 
             let inner_weak = Arc::downgrade(&self.inner);
             let pwd_getter = pwd_getter_clone.clone();
@@ -256,8 +252,7 @@ impl Interpreter {
                         ]))
                     };
                 }
-            })
-            .await;
+            });
 
             let inner_weak = Arc::downgrade(&self.inner);
             self.add_command("srv", move |mut args, underscore| {
@@ -283,8 +278,7 @@ impl Interpreter {
                         .into(),
                     )))
                 }
-            })
-            .await;
+            });
 
             self.run("def cat(path) {open $path | read}")
                 .await

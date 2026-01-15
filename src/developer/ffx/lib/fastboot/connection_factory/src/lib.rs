@@ -54,7 +54,7 @@ impl FastbootConnectionFactory for ConnectionFactory {
                 Ok(Box::new(usb_proxy(serial_number).await?))
             }
             FastbootConnectionKind::Tcp(target_name, addr) => {
-                let config = FastbootNetworkConnectionConfig::new_tcp(&self.context).await;
+                let config = FastbootNetworkConnectionConfig::new_tcp(&self.context);
                 let fastboot_device_file_path: Option<PathBuf> =
                     self.context.get(ffx_config::keys::FASTBOOT_FILE_PATH).ok();
                 Ok(Box::new(
@@ -63,7 +63,7 @@ impl FastbootConnectionFactory for ConnectionFactory {
                 ))
             }
             FastbootConnectionKind::Udp(target_name, addr) => {
-                let config = FastbootNetworkConnectionConfig::new_udp(&self.context).await;
+                let config = FastbootNetworkConnectionConfig::new_udp(&self.context);
                 let fastboot_device_file_path: Option<PathBuf> =
                     self.context.get(ffx_config::keys::FASTBOOT_FILE_PATH).ok();
                 Ok(Box::new(
@@ -95,7 +95,7 @@ impl FastbootNetworkConnectionConfig {
         Self { retry_wait_seconds, retry_count, retry_forever: false }
     }
 
-    async fn new_from_config(
+    fn new_from_config(
         context: &EnvironmentContext,
         retry_key: &str,
         retry_default: u64,
@@ -111,7 +111,7 @@ impl FastbootNetworkConnectionConfig {
         Self { retry_wait_seconds: 2, retry_count: 0, retry_forever: true }
     }
 
-    pub async fn new_tcp(context: &EnvironmentContext) -> Self {
+    pub fn new_tcp(context: &EnvironmentContext) -> Self {
         Self::new_from_config(
             context,
             TCP_RETRY_COUNT,
@@ -119,10 +119,9 @@ impl FastbootNetworkConnectionConfig {
             TCP_WAIT_SECONDS,
             TCP_WAIT_SECONDS_DEFAULT,
         )
-        .await
     }
 
-    pub async fn new_udp(context: &EnvironmentContext) -> Self {
+    pub fn new_udp(context: &EnvironmentContext) -> Self {
         Self::new_from_config(
             context,
             UDP_RETRY_COUNT,
@@ -130,7 +129,6 @@ impl FastbootNetworkConnectionConfig {
             UDP_WAIT_SECONDS,
             UDP_WAIT_SECONDS_DEFAULT,
         )
-        .await
     }
 }
 

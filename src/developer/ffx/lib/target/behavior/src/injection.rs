@@ -114,7 +114,7 @@ impl Injection {
         }
     }
 
-    pub(crate) async fn initialize_overnet(
+    pub(crate) fn initialize_overnet(
         env_context: EnvironmentContext,
         router_interval: Option<Duration>,
         version_info: ffx_build_version::VersionInfo,

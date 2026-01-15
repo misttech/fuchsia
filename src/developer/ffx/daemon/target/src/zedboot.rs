@@ -30,11 +30,11 @@ const DISCOVERY_ZEDBOOT_ENABLED: &str = "discovery.zedboot.enabled";
 const ZEDBOOT_MCAST_V6: Ipv6Addr = Ipv6Addr::new(0xff02, 0, 0, 0, 0, 0, 0, 1);
 const ZEDBOOT_REDISCOVERY_INTERFACE_INTERVAL: Duration = Duration::from_secs(5);
 
-pub async fn zedboot_discovery(
+pub fn zedboot_discovery(
     context: &EnvironmentContext,
     e: events::Queue<DaemonEvent>,
 ) -> Result<Task<()>> {
-    let port = port(&context).await?;
+    let port = port(&context)?;
     let context_clone = context.clone();
     Ok(Task::local(interface_discovery(
         context_clone,
@@ -44,7 +44,7 @@ pub async fn zedboot_discovery(
     )))
 }
 
-async fn port(context: &EnvironmentContext) -> Result<NonZeroU16> {
+fn port(context: &EnvironmentContext) -> Result<NonZeroU16> {
     context
         .get(DISCOVERY_ZEDBOOT_ADVERT_PORT)
         .map(|port| {

@@ -53,7 +53,7 @@ impl LibContext {
     pub(crate) async fn notifier_descriptor(&self) -> Result<RawFd> {
         let mut notifier = self.notifier.lock().await;
         if !notifier.is_some() {
-            *notifier = Some(LibNotifier::new().await?);
+            *notifier = Some(LibNotifier::new()?);
         }
         Ok(notifier.as_ref().unwrap().receiver())
     }
@@ -105,7 +105,7 @@ pub(crate) struct LibNotifier {
 impl LibNotifier {
     // This function isn't actually async, but it should be called inside an
     // executor to ensure spawned tasks are scheduled correctly.
-    async fn new() -> Result<Self> {
+    fn new() -> Result<Self> {
         let (stream_rx, mut stream_tx) = UnixStream::pair()?;
         let (tx, rx) = async_channel::unbounded::<zx_types::zx_handle_t>();
         let pipe_reader_task = fuchsia_async::Task::local(async move {

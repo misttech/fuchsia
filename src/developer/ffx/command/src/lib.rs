@@ -447,7 +447,7 @@ mod test {
     use std::io::BufWriter;
 
     #[fuchsia::test]
-    async fn test_stamp_file_creation() {
+    fn test_stamp_file_creation() {
         let dir = tempfile::tempdir().unwrap();
         let path = dir.path().join("stamp").into_os_string().into_string().ok();
         let stamp = stamp_file(&path);
@@ -456,27 +456,27 @@ mod test {
     }
 
     #[fuchsia::test]
-    async fn test_stamp_file_no_create() {
+    fn test_stamp_file_no_create() {
         let no_stamp = stamp_file(&None);
         assert!(no_stamp.unwrap().is_none());
     }
 
     #[fuchsia::test]
-    async fn test_write_exit_code() {
+    fn test_write_exit_code() {
         let mut out = BufWriter::new(Vec::new());
         write_exit_code(&Ok(ExitStatus::from_raw(0)), &mut out);
         assert_eq!(String::from_utf8(out.into_inner().unwrap()).unwrap(), "0\n");
     }
 
     #[fuchsia::test]
-    async fn test_write_exit_code_on_failure() {
+    fn test_write_exit_code_on_failure() {
         let mut out = BufWriter::new(Vec::new());
         write_exit_code(&Result::<ExitStatus>::Err(Error::from(anyhow::anyhow!("fail"))), &mut out);
         assert_eq!(String::from_utf8(out.into_inner().unwrap()).unwrap(), "1\n")
     }
 
     #[fuchsia::test]
-    async fn test_serializable_error_from_error() -> () {
+    fn test_serializable_error_from_error() -> () {
         assert_eq!(
             SerializableError::from(Error::Unexpected(anyhow::Error::msg("Cytherea".to_string()))),
             SerializableError::Unexpected { code: 1, message: "Cytherea".to_string() }
@@ -508,7 +508,7 @@ mod test {
     }
 
     #[fuchsia::test]
-    async fn test_serializable_error() -> () {
+    fn test_serializable_error() -> () {
         let cases = vec![
             SerializableError::Unexpected { code: 1, message: "Cytherea".to_string() },
             SerializableError::User { code: 1, message: "Cytherea".to_string() },

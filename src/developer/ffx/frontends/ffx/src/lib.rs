@@ -13,6 +13,7 @@ pub fn ffx_plugin_has_schema() -> bool {
     unreachable!("This is a side effect needed for the jinja template")
 }
 
+#[allow(clippy::unused_async)]
 pub async fn ffx_plugin_impl(_: &FhoEnvironment, _: FfxBuiltIn) -> Result<()> {
     unreachable!("This is a side effect needed for the jinja template")
 }

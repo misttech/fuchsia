@@ -131,7 +131,7 @@ impl DaemonEventHandler {
         }
     }
 
-    async fn handle_overnet_peer_lost(&self, node_id: u64) {
+    fn handle_overnet_peer_lost(&self, node_id: u64) {
         self.target_collection.update_target(
             &[TargetUpdateFilter::OvernetNodeId(node_id)],
             target::TargetUpdateBuilder::new().disconnected().build(),
@@ -139,7 +139,7 @@ impl DaemonEventHandler {
         );
     }
 
-    async fn handle_zedboot(&self, t: Description) {
+    fn handle_zedboot(&self, t: Description) {
         log::trace!(
             "Found new target via zedboot: {}",
             t.nodename.as_deref().unwrap_or(ffx_target::UNKNOWN_TARGET_NAME)
@@ -277,14 +277,14 @@ impl EventHandler<DaemonEvent> for DaemonEventHandler {
         match event {
             DaemonEvent::WireTraffic(traffic) => match traffic {
                 WireTrafficType::Zedboot(t) => {
-                    self.handle_zedboot(t).await;
+                    self.handle_zedboot(t);
                 }
             },
             DaemonEvent::OvernetPeer(node_id) => {
                 self.handle_overnet_peer(node_id).await;
             }
             DaemonEvent::OvernetPeerLost(node_id) => {
-                self.handle_overnet_peer_lost(node_id).await;
+                self.handle_overnet_peer_lost(node_id);
             }
             _ => (),
         }
@@ -366,7 +366,7 @@ impl Daemon {
         self.start_discovery(Arc::clone(&node)).await?;
         self.start_ascendd(ascendd);
         let _socket_file_watcher =
-            self.start_socket_watch(quit_tx.clone()).await.context("Starting socket watcher")?;
+            self.start_socket_watch(quit_tx.clone()).context("Starting socket watcher")?;
         self.start_signal_monitoring(quit_tx.clone());
         let should_start_expiry = context.get(DISCOVERY_EXPIRE_TARGETS).unwrap_or(true);
         if should_start_expiry == true {
@@ -442,7 +442,7 @@ impl Daemon {
         // TODO: these tasks could and probably should be managed by the daemon
         // instead of being detached.
         Daemon::spawn_onet_discovery(node, self.event_queue.clone());
-        let discovery = zedboot_discovery(&self.context.clone(), self.event_queue.clone()).await?;
+        let discovery = zedboot_discovery(&self.context.clone(), self.event_queue.clone())?;
         self.tasks.push(Rc::new(discovery));
         Ok(())
     }
@@ -476,7 +476,7 @@ impl Daemon {
         self.ascendd.replace(Some(ascendd));
     }
 
-    async fn start_socket_watch(&self, quit_tx: mpsc::Sender<()>) -> Result<RecommendedWatcher> {
+    fn start_socket_watch(&self, quit_tx: mpsc::Sender<()>) -> Result<RecommendedWatcher> {
         let socket_path = self.socket_path.clone();
         let socket_dir = self.socket_path.parent().context("Getting parent directory of socket")?;
         let event_handler = move |res| {

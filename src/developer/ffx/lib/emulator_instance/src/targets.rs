@@ -371,7 +371,7 @@ mod tests {
         Ok(())
     }
     #[fuchsia::test]
-    async fn test_handle_event() -> Result<()> {
+    fn test_handle_event() -> Result<()> {
         let temp = tempdir().expect("cannot get tempdir");
         let instance_dir = temp.path().to_path_buf();
         if !instance_dir.exists() {

@@ -287,7 +287,7 @@ mod tests {
     }
 
     #[fuchsia::test]
-    async fn test_filter_transfer_manifest_for_repository_artifacts() {
+    fn test_filter_transfer_manifest_for_repository_artifacts() {
         let original_manifest = TransferManifestV1 {
             entries: vec![
                 TransferEntry {
@@ -376,7 +376,7 @@ mod tests {
     }
 
     #[fuchsia::test]
-    async fn test_filter_transfer_manifest_for_flash_artifacts() {
+    fn test_filter_transfer_manifest_for_flash_artifacts() {
         let original_manifest = TransferManifestV1 {
             entries: vec![
                 TransferEntry {

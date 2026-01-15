@@ -308,7 +308,7 @@ mod test {
     use std::net::{IpAddr, Ipv4Addr, Ipv6Addr, SocketAddrV6};
 
     #[fuchsia::test]
-    async fn test_parse_fastboot_mode() -> Result<()> {
+    fn test_parse_fastboot_mode() -> Result<()> {
         let should_be_tcp = "tcp".parse::<FastbootMode>()?;
         assert_eq!(FastbootMode::TCP, should_be_tcp);
 
@@ -327,7 +327,7 @@ mod test {
     }
 
     #[fuchsia::test]
-    async fn test_parse_fastboot_entry() -> Result<()> {
+    fn test_parse_fastboot_entry() -> Result<()> {
         assert!("tcp:127.0.0.1:81111111111111111111".parse::<FastbootEntry>().is_err());
         assert!("tCp:127.0.0.1:811".parse::<FastbootEntry>().is_err());
         assert!("tCp:totally&not&an&ip&address:811".parse::<FastbootEntry>().is_err());
@@ -367,7 +367,7 @@ mod test {
     }
 
     #[fuchsia::test]
-    async fn test_display_fastboot_entry() -> Result<()> {
+    fn test_display_fastboot_entry() -> Result<()> {
         let entry = FastbootEntry {
             mode: FastbootMode::TCP,
             socket_addr: "127.0.0.1:8080".parse().unwrap(),

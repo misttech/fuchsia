@@ -59,6 +59,7 @@ impl TaskManager {
 mod tests {
     use super::*;
 
+    #[allow(clippy::unused_async)]
     #[fuchsia::test]
     async fn test_drain() {
         let t = TaskManager::new();

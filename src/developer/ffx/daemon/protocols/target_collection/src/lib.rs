@@ -216,7 +216,7 @@ impl TargetCollectionProtocol {
     // Discovery is turned off, so  we're not going to discover
     // anything.  But since the query provided us with an address/
     // serial#, we can try to connect to it.
-    async fn add_and_use_target(
+    fn add_and_use_target(
         &self,
         target_collection: &Rc<TargetCollection>,
         node: &Arc<overnet_core::Router>,
@@ -340,7 +340,7 @@ impl FidlProtocol for TargetCollectionProtocol {
                             // try to connect to the target, just add the target
                             // automatically.
                             TargetInfoQuery::Addr(_) | TargetInfoQuery::Serial(_) => {
-                                self.add_and_use_target(&target_collection, &node, query).await
+                                self.add_and_use_target(&target_collection, &node, query)
                             }
                             _ => {
                                 // If we don't have enough information, but
@@ -348,7 +348,7 @@ impl FidlProtocol for TargetCollectionProtocol {
                                 // the target based on the query. Otherwise,
                                 // fail with TargetNotFound.
                                 let can_discover =
-                                    ffx_target::is_discovery_enabled(&cx.environment()).await;
+                                    ffx_target::is_discovery_enabled(&cx.environment());
                                 if can_discover {
                                     target_collection
                                         // OpenTarget is called on behalf of

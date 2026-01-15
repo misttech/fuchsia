@@ -44,7 +44,7 @@ pub async fn maybe_locally_resolve_target_spec(
     env_context: &EnvironmentContext,
 ) -> Result<TargetInfoQuery> {
     // This should be read as "is discovery enabled on the daemon".
-    if crate::is_discovery_enabled(env_context).await {
+    if crate::is_discovery_enabled(env_context) {
         Ok(target_spec.clone())
     } else {
         log::warn!(

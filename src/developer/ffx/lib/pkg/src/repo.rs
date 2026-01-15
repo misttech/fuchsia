@@ -458,14 +458,14 @@ mod tests {
     }
 
     #[fuchsia::test]
-    async fn test_pm_repo_spec_to_backend() {
+    fn test_pm_repo_spec_to_backend() {
         let spec = pm_repo_spec();
         let backend = repo_spec_to_backend(&spec, new_https_client()).unwrap();
         assert_eq!(spec, backend.spec());
     }
 
     #[fuchsia::test]
-    async fn test_filesystem_repo_spec_to_backend() {
+    fn test_filesystem_repo_spec_to_backend() {
         let spec = filesystem_repo_spec();
         let backend = repo_spec_to_backend(&spec, new_https_client()).unwrap();
         assert_eq!(spec, backend.spec());

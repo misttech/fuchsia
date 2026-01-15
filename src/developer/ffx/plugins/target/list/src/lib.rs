@@ -39,7 +39,7 @@ impl FfxMain for ListTool {
         // at which point this check goes away.
         let direct_mode = self.context.is_strict()
             || self.context.get_direct_connection_mode()
-            || !ffx_target::is_discovery_enabled(&self.context).await;
+            || !ffx_target::is_discovery_enabled(&self.context);
 
         let spec = ffx_target::get_target_specifier(&self.context)?;
         let query = TargetInfoQuery::from(spec.clone());

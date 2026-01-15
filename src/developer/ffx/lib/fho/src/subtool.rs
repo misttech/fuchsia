@@ -119,6 +119,7 @@ pub struct MetadataCmd {
 }
 
 impl MetadataCmd {
+    #[allow(clippy::unused_async)]
     pub async fn run(self, info: &'static CommandInfo) -> Result<ExitStatus> {
         let meta = FhoToolMetadata::new(info.name, info.description);
         match &self.output_path {

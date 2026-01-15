@@ -642,7 +642,7 @@ impl SshKeyFiles {
     /// loads the file paths from the config properties `ssh.pub` and `ssh.priv`.
     /// If none of the paths configured are to files that exist, the paths will
     ///  be set to the default sources, which is the first element in the config settings.
-    pub async fn load(ctx: &EnvironmentContext) -> Result<Self, SshKeyError> {
+    pub fn load(ctx: &EnvironmentContext) -> Result<Self, SshKeyError> {
         // initialize to the first path in the list, then iterate through the list to select
         // the first file that exists.
         let authorized_keys_files: Vec<PathBuf> = ctx.query(SSH_PUB_KEY).build().get(ctx)?;
@@ -1189,7 +1189,7 @@ mod test {
     use tempfile::TempDir;
 
     #[fuchsia::test]
-    async fn test_load() {
+    fn test_load() {
         // Set up the test environment and set the ssh key paths
         let env = test_init().expect("test env init");
         env.context
@@ -1217,7 +1217,7 @@ mod test {
 
         // set the config
 
-        let ssh_files = match SshKeyFiles::load(&env.context).await {
+        let ssh_files = match SshKeyFiles::load(&env.context) {
             Ok(ssh) => ssh,
             Err(e) => panic!("load failed: {e:?}"),
         };

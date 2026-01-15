@@ -45,7 +45,7 @@ pub struct GetVarFastbootUsbLiveTester;
 
 impl FastbootUsbLiveTester for GetVarFastbootUsbLiveTester {
     async fn is_fastboot_usb_live(&mut self, serial: &str) -> bool {
-        open_interface_with_serial(serial).await.is_ok()
+        open_interface_with_serial(serial).is_ok()
     }
 }
 
@@ -108,7 +108,7 @@ pub trait SerialNumberFinder: Send + 'static {
 pub struct DefaultSerialFinder {}
 impl SerialNumberFinder for DefaultSerialFinder {
     async fn find_serial_numbers(&mut self) -> Vec<String> {
-        find_serial_numbers().await
+        find_serial_numbers()
     }
 }
 
@@ -225,7 +225,7 @@ fn device_is_fastboot(
 /// How many URBs to allocate for each device we communicate with.
 const URB_POOL_SIZE: usize = 32;
 
-async fn find_serial_numbers() -> Vec<String> {
+fn find_serial_numbers() -> Vec<String> {
     log::debug!("finding serial numbers");
     let mut serials = Vec::new();
 
@@ -262,7 +262,7 @@ async fn find_serial_numbers() -> Vec<String> {
     return serials;
 }
 
-pub async fn open_interface_with_serial<P>(serial: P) -> Result<Interface>
+pub fn open_interface_with_serial<P>(serial: P) -> Result<Interface>
 where
     P: AsRef<str>,
 {

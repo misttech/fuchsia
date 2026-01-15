@@ -1315,6 +1315,7 @@ mod test {
         assert_eq!(5, b);
     }
 
+    #[allow(clippy::unused_async)]
     #[fuchsia::test]
     async fn promote_handles() {
         let mut ns = lib::Namespace::new();
@@ -1413,6 +1414,7 @@ mod test {
         .await;
     }
 
+    #[allow(clippy::unused_async)]
     #[fuchsia::test]
     async fn duplicate_raw_handle() {
         let client = fdomain_local::local_client(|| Err(zx_status::Status::NOT_SUPPORTED));

@@ -235,9 +235,8 @@ async fn preprocess_flash_cmd(
                 if cmd.skip_authorized_keys {
                     log::warn!("Skipping uploading authorized keys");
                 } else {
-                    let ssh_keys = SshKeyFiles::load(ctx)
-                        .await
-                        .context("finding ssh authorized_keys file.")?;
+                    let ssh_keys =
+                        SshKeyFiles::load(ctx).context("finding ssh authorized_keys file.")?;
                     ssh_keys.create_keys_if_needed(false).context("creating ssh keys if needed")?;
                     if ssh_keys.authorized_keys.exists() {
                         let k = ssh_keys.authorized_keys.display().to_string();
@@ -424,7 +423,7 @@ Reboot the Target to the bootloader and re-run this command."
                         } else {
                             &socket_addr.to_string()
                         };
-                        let config = FastbootNetworkConnectionConfig::new_udp(&self.ctx).await;
+                        let config = FastbootNetworkConnectionConfig::new_udp(&self.ctx);
                         let fastboot_device_file_path: Option<PathBuf> =
                             self.ctx.get(FASTBOOT_FILE_PATH).ok();
                         let mut proxy = udp_proxy(

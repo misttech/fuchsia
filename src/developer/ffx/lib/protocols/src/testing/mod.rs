@@ -45,7 +45,8 @@ pub async fn create_proxy<F: FidlProtocol + 'static>(
     });
     (client, task)
 }
-pub async fn create_proxy_arc<F: FidlProtocol + 'static>(
+
+pub fn create_proxy_arc<F: FidlProtocol + 'static>(
     f: Arc<Mutex<F>>,
     fake_daemon: &FakeDaemon,
 ) -> (<F::Protocol as ProtocolMarker>::Proxy, Task<()>) {

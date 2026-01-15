@@ -243,7 +243,7 @@ RemoteForward = "quoted two words"
     }
 
     #[fuchsia::test]
-    async fn test_keepalive_timeout() {
+    fn test_keepalive_timeout() {
         let mut cfg = SshConfig::empty();
         cfg.set_server_alive_count_max(30).expect("couldn't set keepalive timeout");
         let args = cfg.to_args();

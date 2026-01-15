@@ -895,7 +895,7 @@ mod test {
     }
 
     #[fuchsia::test]
-    async fn test_address_sorting() {
+    fn test_address_sorting() {
         let non_link_local_addr: TargetAddr = "[2001:db8::1]:0".parse().unwrap();
         let link_local_addr: TargetAddr = "[fe80::1]:0".parse().unwrap();
 

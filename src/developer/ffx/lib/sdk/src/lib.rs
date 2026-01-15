@@ -571,7 +571,7 @@ mod test {
     }
 
     #[fuchsia::test]
-    async fn test_sdk_manifest() {
+    fn test_sdk_manifest() {
         let root = sdk_test_data_root();
         let sdk_root = root.path();
         let manifest: Manifest = serde_json::from_reader(BufReader::new(
@@ -589,7 +589,7 @@ mod test {
     }
 
     #[fuchsia::test]
-    async fn test_sdk_manifest_host_tool() {
+    fn test_sdk_manifest_host_tool() {
         let root = sdk_test_data_root();
         let sdk_root = root.path();
         let manifest: Manifest = serde_json::from_reader(BufReader::new(
@@ -614,7 +614,7 @@ mod test {
     }
 
     #[fuchsia::test]
-    async fn test_sdk_manifest_ffx_tool() {
+    fn test_sdk_manifest_ffx_tool() {
         let root = sdk_test_data_root();
         let sdk_root = root.path();
         let manifest: Manifest = serde_json::from_reader(BufReader::new(

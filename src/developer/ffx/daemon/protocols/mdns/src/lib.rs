@@ -392,7 +392,7 @@ mod tests {
             mdns_task: None,
             mdns_port: Some(0),
         }));
-        let (proxy, _task) = protocols::testing::create_proxy_arc(protocol.clone(), &daemon).await;
+        let (proxy, _task) = protocols::testing::create_proxy_arc(protocol.clone(), &daemon);
         let svc_inner = protocol.lock().await.inner.clone().unwrap();
         let nodename = "plop".to_owned();
         // Skip port binding.

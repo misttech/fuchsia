@@ -333,7 +333,7 @@ pub mod testing {
             Self { circuit_node, error_receiver, behavior, already_failed: false }
         }
 
-        async fn handle_transaction(req: rcs_fidl::RemoteControlRequest) {
+        fn handle_transaction(req: rcs_fidl::RemoteControlRequest) {
             match req {
                 rcs_fidl::RemoteControlRequest::EchoString { value, responder } => {
                     responder.send(&value).unwrap()
@@ -409,7 +409,7 @@ pub mod testing {
                     );
                     Task::local(async move {
                         while let Ok(Some(req)) = stream.try_next().await {
-                            Self::handle_transaction(req).await;
+                            Self::handle_transaction(req);
                         }
                     })
                     .detach();

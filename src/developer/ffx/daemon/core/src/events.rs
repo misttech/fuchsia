@@ -123,7 +123,7 @@ impl<T: EventTrait + 'static> Dispatcher<T> {
         }
     }
 
-    async fn push(&self, e: T) -> Result<()> {
+    fn push(&self, e: T) -> Result<()> {
         let inner = match self.inner.upgrade() {
             Some(i) => i,
             None => return Err(anyhow!("done")),
@@ -263,10 +263,7 @@ impl<T: 'static + EventTrait> Queue<T> {
             // so just return if there's an error. The result for continuing and
             // adding the dispatcher anyway would be about the same, this just
             // makes cleanup slightly faster.
-            match dispatcher
-                .push(event.clone())
-                .await
-                .context("sending synthesized event to child queue")
+            match dispatcher.push(event.clone()).context("sending synthesized event to child queue")
             {
                 Ok(_) => (),
                 Err(e) => {
@@ -337,7 +334,7 @@ where
 
         let mut new_handlers = Vec::new();
         for dispatcher in handlers.drain(..) {
-            match dispatcher.push(event.clone()).await {
+            match dispatcher.push(event.clone()) {
                 Ok(()) => new_handlers.push(dispatcher),
                 Err(e) => {
                     log::debug!("dispatcher closed. reason: {:#}", e);

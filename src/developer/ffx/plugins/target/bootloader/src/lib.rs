@@ -176,7 +176,7 @@ Reboot the Target to the bootloader and re-run this command."
                                 );
                                 socket_addr.to_string()
                             };
-                            let config = FastbootNetworkConnectionConfig::new_tcp(&self.ctx).await;
+                            let config = FastbootNetworkConnectionConfig::new_tcp(&self.ctx);
                             let fastboot_device_file_path: Option<PathBuf> =
                                 self.ctx.get(FASTBOOT_FILE_PATH).ok();
                             let proxy = tcp_proxy(
@@ -199,7 +199,7 @@ Reboot the Target to the bootloader and re-run this command."
                             let target_addr: TargetIpAddr = addr.into();
                             let socket_addr: SocketAddr = target_addr.into();
                             let target_name = if let Some(nodename) = handle.node_name {
-                                nodename.to_string()
+                                nodename
                             } else {
                                 log::debug!(
                                     r"
@@ -210,7 +210,7 @@ Reboot the Target to the bootloader and re-run this command."
                                 );
                                 socket_addr.to_string()
                             };
-                            let config = FastbootNetworkConnectionConfig::new_udp(&self.ctx).await;
+                            let config = FastbootNetworkConnectionConfig::new_udp(&self.ctx);
                             let fastboot_device_file_path: Option<PathBuf> =
                                 self.ctx.get(FASTBOOT_FILE_PATH).ok();
                             let proxy = udp_proxy(

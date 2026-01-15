@@ -158,7 +158,7 @@ mod tests {
     use super::*;
 
     #[fuchsia::test]
-    async fn test_path_from_file_url() {
+    fn test_path_from_file_url() {
         let input = url::Url::parse("fake://foo#bar").expect("url");
         let output = path_from_file_url(&input);
         assert!(output.is_none());

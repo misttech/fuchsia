@@ -80,7 +80,7 @@ impl FastbootUsbLiveTester for StrictGetVarFastbootUsbLiveTester {
         if !(*serial == self.serial) {
             return false;
         }
-        let Ok(mut interface) = open_interface_with_serial(serial).await else {
+        let Ok(mut interface) = open_interface_with_serial(serial) else {
             return false;
         };
 
@@ -115,7 +115,6 @@ impl FastbootUsbLiveTester for StrictGetVarFastbootUsbLiveTester {
 impl InterfaceFactoryBase<AsyncInterface> for UsbFactory {
     async fn open(&mut self) -> Result<AsyncInterface, InterfaceFactoryError> {
         let interface = open_interface_with_serial(&self.serial)
-            .await
             .or_else_analytics(|e| {
                 PointOfFailure::FactoryOpenErrorGeneral("usb".to_owned(), e).into()
             })

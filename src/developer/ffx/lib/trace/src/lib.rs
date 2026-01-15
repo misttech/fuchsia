@@ -77,7 +77,7 @@ pub fn get_category_groups(ctx: &EnvironmentContext) -> Result<HashMap<String, V
     Ok(category_group_map)
 }
 
-pub async fn get_category_group_names(ctx: &EnvironmentContext) -> Result<Vec<String>> {
+pub fn get_category_group_names(ctx: &EnvironmentContext) -> Result<Vec<String>> {
     let all_groups = ctx
         .query("trace.category_groups")
         .select(ffx_config::SelectMode::All)
@@ -144,7 +144,7 @@ mod tests {
     use serde_json::json;
 
     #[fuchsia::test]
-    async fn test_get_category_group() {
+    fn test_get_category_group() {
         let env = ffx_config::test_init().unwrap();
         let birds = vec!["chickens", "bald_eagle", "blue-jay", "hawk*", "goose:gosling"];
         env.context
@@ -157,7 +157,7 @@ mod tests {
     }
 
     #[fuchsia::test]
-    async fn test_get_category_group_names() {
+    fn test_get_category_group_names() {
         let env = ffx_config::test_init().unwrap();
         let birds = vec!["chickens", "ducks"];
         let bees = vec!["honey", "bumble"];
@@ -179,17 +179,13 @@ mod tests {
             .build()
             .set(&env.context, json!(bees))
             .unwrap();
-        assert!(
-            get_category_group_names(&env.context).await.unwrap().contains(&"birds".to_owned())
-        );
-        assert!(get_category_group_names(&env.context).await.unwrap().contains(&"bees".to_owned()));
-        assert!(
-            get_category_group_names(&env.context).await.unwrap().contains(&"*invalid".to_owned())
-        );
+        assert!(get_category_group_names(&env.context).unwrap().contains(&"birds".to_owned()));
+        assert!(get_category_group_names(&env.context).unwrap().contains(&"bees".to_owned()));
+        assert!(get_category_group_names(&env.context).unwrap().contains(&"*invalid".to_owned()));
     }
 
     #[fuchsia::test]
-    async fn test_get_category_group_not_found() {
+    fn test_get_category_group_not_found() {
         let env = ffx_config::test_init().unwrap();
         let err = get_category_group(&env.context, "not_found").unwrap_err();
         assert!(
@@ -203,7 +199,7 @@ mod tests {
         &["chic*kens", "*turkeys", "golden eagle", "ha,wk*", "goose:gosl\"ing"];
 
     #[fuchsia::test]
-    async fn test_validate_category_name() {
+    fn test_validate_category_name() {
         for category in INVALID_CATEGORIES {
             let err = validate_category_name(category).unwrap_err();
             let expected_message = format!("category \"{category}\" is invalid");
@@ -219,7 +215,7 @@ mod tests {
     }
 
     #[fuchsia::test]
-    async fn test_get_category_group_invalid_category() {
+    fn test_get_category_group_invalid_category() {
         let env = ffx_config::test_init().unwrap();
         for invalid_category in INVALID_CATEGORIES {
             env.context
@@ -239,7 +235,7 @@ mod tests {
     }
 
     #[fuchsia::test]
-    async fn test_expand_categories() {
+    fn test_expand_categories() {
         let env = ffx_config::test_init().unwrap();
         let birds = vec!["chickens", "bald_eagle", "hawk*", "goose:gosling", "blue-jay"];
         env.context
@@ -265,7 +261,7 @@ mod tests {
     }
 
     #[fuchsia::test]
-    async fn test_expand_categories_invalid() {
+    fn test_expand_categories_invalid() {
         let env = ffx_config::test_init().unwrap();
         for invalid_category in INVALID_CATEGORIES {
             let err =
@@ -280,7 +276,7 @@ mod tests {
     }
 
     #[fuchsia::test]
-    async fn test_curated_category_groups_valid() {
+    fn test_curated_category_groups_valid() {
         let env = ffx_config::test_init().unwrap();
 
         // Get all of the category groups found in config.json

@@ -145,7 +145,7 @@ impl LibraryCommand {
                 }
             }
             Self::CreateEnvContext { lib, config, responder, isolate_dir } => {
-                match EnvContext::new(Arc::downgrade(&lib), config, isolate_dir).await {
+                match EnvContext::new(Arc::downgrade(&lib), config, isolate_dir) {
                     Ok(e) => {
                         responder.send(Ok(Arc::new(e))).unwrap();
                     }
