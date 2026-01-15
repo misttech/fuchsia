@@ -1899,8 +1899,8 @@ zx::result<VmCowPages::LockedRefPtr> VmCowPages::CreateCloneLocked(SnapshotType 
 
     // Decrement the share count on all pages. As every page we can see is also owned by this, and
     // we have continuously held our lock, no page should need to be freed as a result.
-    zx_status_t status = RemoveOwnedHierarchyPagesInRangeLocked(
-        [&](VmPageOrMarker* p, const VmCowPages* owner, uint64_t this_offset,
+    zx_status_t status = ForEveryOwnedHierarchyPageInRangeLocked(
+        [&](const VmPageOrMarker* p, const VmCowPages* owner, uint64_t this_offset,
             uint64_t owner_offset) {
           if (p->IsPage()) {
             vm_page_t* page = p->Page();
@@ -1919,8 +1919,8 @@ zx::result<VmCowPages::LockedRefPtr> VmCowPages::CreateCloneLocked(SnapshotType 
 
   // Update any share counts for content the clone will be able to see, and populate a temporary
   // page list with any parent content markers if needed.
-  zx_status_t status = ForEveryOwnedMutableHierarchyPageInRangeLocked(
-      [&](VmPageOrMarkerRef p, VmCowPages* owner, uint64_t cow_clone_offset,
+  zx_status_t status = ForEveryOwnedHierarchyPageInRangeLocked(
+      [&](const VmPageOrMarker* p, VmCowPages* owner, uint64_t cow_clone_offset,
           uint64_t owner_offset) {
         if (tree_has_parent_content_markers() && p->IsPageOrRef()) {
           const uint64_t off = cow_clone_offset - range.offset;
