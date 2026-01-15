@@ -71,7 +71,7 @@ class GUSB2PHYCFG : public hwreg::RegisterBase<GUSB2PHYCFG, uint32_t> {
   DEF_BIT(4, ULPI_UTMI_Sel);
   DEF_BIT(3, PHYIF);
   DEF_FIELD(2, 0, TOutCal);
-  static auto Get(uint32_t index) { return hwreg::RegisterAddr<GUSB2PHYCFG>(0xc118 + index * 0x4); }
+  static auto Get(uint32_t index) { return hwreg::RegisterAddr<GUSB2PHYCFG>(0xc200 + index * 0x4); }
 };
 
 // Global USB 3.1 PIPE Control Register
