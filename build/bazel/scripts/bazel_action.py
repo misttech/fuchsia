@@ -1229,6 +1229,10 @@ def main() -> int:
     # one bazel_action() target in GN creates a gn_target.
     stamp_paths: set[Path] = set()
 
+    # The platform configto use.  When building a single GN label, there can only be one
+    # of these.
+    bazel_platform_config: str | None = None
+
     for target in args.bazel_targets:
         target_info = bazel_target_infos.get_info(
             target, args.bazel_platform_label
@@ -1241,6 +1245,15 @@ def main() -> int:
 
             gn_targets_dirs.add(Path(target_info.gn_targets_dir))
             stamp_paths.add(Path(target_info.stamp_path))
+
+            if bazel_platform_config:
+                if bazel_platform_config != target_info.bazel_platform_config:
+                    return parser.error(
+                        f"Found multiple Bazel platform configs in the selected targets: {bazel_platform_config} and {target_info.bazel_platform_config} "
+                    )
+            else:
+                bazel_platform_config = target_info.bazel_platform_config
+
         else:
             return parser.error(
                 f"Bazel target not found in bazel_target_infos.json: {target}  keys: {bazel_target_infos._targets.keys()}"
@@ -1373,7 +1386,12 @@ def main() -> int:
         assert result is not None
         return result
 
-    configured_args = args.extra_bazel_args
+    # Construct the configured_args from the Bazel platform configuration and any
+    # passed-in extra arguments.
+    configured_args = [
+        f"--config={bazel_platform_config}",
+        f"--platforms={args.bazel_platform_label}",
+    ] + args.extra_bazel_args
 
     time_profile.start(
         "buildfiles_genquery", "Generating buildfiles_genquery/BUILD.bazel"

@@ -839,12 +839,6 @@ template("bazel_action") {
 
       args += [ "--" ]
 
-      # Set the previously-computed bazel platform configuration args
-      args += [
-        "--config=${_bazel_platform_config}",
-        "--platforms=${_bazel_platform_label}",
-      ]
-
       # When remote builds are enabled, append the right build arguments.
       # These must appear on the Bazel command-line otherwise remote builds
       # will fail on infra (the reason being that the Bazel wrapper script
