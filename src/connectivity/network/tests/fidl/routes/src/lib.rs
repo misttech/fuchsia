@@ -409,35 +409,36 @@ fn assert_eq_unordered<T: Debug + Eq + Hash + PartialEq>(a: Vec<T>, b: Vec<T>) {
 // See `src/connectivity/network/netstack/netstack.go`.
 const DEFAULT_INTERFACE_METRIC: u32 = 100;
 
+fn loopback_metric<N: Netstack>() -> u32 {
+    match N::VERSION {
+        NetstackVersion::Netstack2 { .. } | NetstackVersion::ProdNetstack2 => 100,
+        NetstackVersion::Netstack3 | NetstackVersion::ProdNetstack3 => 1000,
+    }
+}
+
 // The initial IPv4 routes that are installed on the loopback interface.
 fn initial_loopback_routes_v4<N: Netstack>(
     loopback_id: u64,
     table_id: u32,
 ) -> impl Iterator<Item = fnet_routes_ext::InstalledRoute<Ipv4>> {
-    [new_installed_route(
-        net_subnet_v4!("127.0.0.0/8"),
-        loopback_id,
-        DEFAULT_INTERFACE_METRIC,
-        true,
-        table_id,
-    )]
-    .into_iter()
-    // TODO(https://fxbug.dev/42074061) Unify the loopback routes between
-    // Netstack2 and Netstack3
-    .chain(match N::VERSION {
-        NetstackVersion::Netstack3 | NetstackVersion::ProdNetstack3 => {
-            Either::Left(std::iter::once(new_installed_route(
-                net_subnet_v4!("224.0.0.0/4"),
-                loopback_id,
-                DEFAULT_INTERFACE_METRIC,
-                true,
-                table_id,
-            )))
-        }
-        NetstackVersion::Netstack2 { tracing: _, fast_udp: _ } | NetstackVersion::ProdNetstack2 => {
-            Either::Right(std::iter::empty())
-        }
-    })
+    let metric = loopback_metric::<N>();
+    [new_installed_route(net_subnet_v4!("127.0.0.0/8"), loopback_id, metric, true, table_id)]
+        .into_iter()
+        // TODO(https://fxbug.dev/42074061) Unify the loopback routes between
+        // Netstack2 and Netstack3
+        .chain(match N::VERSION {
+            NetstackVersion::Netstack3 | NetstackVersion::ProdNetstack3 => {
+                Either::Left(std::iter::once(new_installed_route(
+                    net_subnet_v4!("224.0.0.0/4"),
+                    loopback_id,
+                    metric,
+                    true,
+                    table_id,
+                )))
+            }
+            NetstackVersion::Netstack2 { tracing: _, fast_udp: _ }
+            | NetstackVersion::ProdNetstack2 => Either::Right(std::iter::empty()),
+        })
 }
 
 // The initial IPv6 routes that are installed on the loopback interface.
@@ -445,30 +446,24 @@ fn initial_loopback_routes_v6<N: Netstack>(
     loopback_id: u64,
     table_id: u32,
 ) -> impl Iterator<Item = fnet_routes_ext::InstalledRoute<Ipv6>> {
-    [new_installed_route(
-        net_subnet_v6!("::1/128"),
-        loopback_id,
-        DEFAULT_INTERFACE_METRIC,
-        true,
-        table_id,
-    )]
-    .into_iter()
-    // TODO(https://fxbug.dev/42074061) Unify the loopback routes between
-    // Netstack2 and Netstack3
-    .chain(match N::VERSION {
-        NetstackVersion::Netstack3 | NetstackVersion::ProdNetstack3 => {
-            Either::Left(std::iter::once(new_installed_route(
-                net_subnet_v6!("ff00::/8"),
-                loopback_id,
-                DEFAULT_INTERFACE_METRIC,
-                true,
-                table_id,
-            )))
-        }
-        NetstackVersion::Netstack2 { tracing: _, fast_udp: _ } | NetstackVersion::ProdNetstack2 => {
-            Either::Right(std::iter::empty())
-        }
-    })
+    let metric = loopback_metric::<N>();
+    [new_installed_route(net_subnet_v6!("::1/128"), loopback_id, metric, true, table_id)]
+        .into_iter()
+        // TODO(https://fxbug.dev/42074061) Unify the loopback routes between
+        // Netstack2 and Netstack3
+        .chain(match N::VERSION {
+            NetstackVersion::Netstack3 | NetstackVersion::ProdNetstack3 => {
+                Either::Left(std::iter::once(new_installed_route(
+                    net_subnet_v6!("ff00::/8"),
+                    loopback_id,
+                    metric,
+                    true,
+                    table_id,
+                )))
+            }
+            NetstackVersion::Netstack2 { tracing: _, fast_udp: _ }
+            | NetstackVersion::ProdNetstack2 => Either::Right(std::iter::empty()),
+        })
 }
 
 // The initial IPv4 routes that are installed on an ethernet interface.

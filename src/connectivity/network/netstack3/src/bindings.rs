@@ -380,6 +380,12 @@ const DEFAULT_LOOPBACK_MTU: Mtu = Mtu::new(65536);
 /// The value is currently kept in sync with the Netstack2 implementation.
 const DEFAULT_INTERFACE_METRIC: u32 = 100;
 
+/// Default routing metric for the loopback interface.
+///
+/// This value is larger than [`DEFAULT_INTERFACE_METRIC`] to avoid choosing
+/// loopback if a route conflicts with another interface.
+const LOOPBACK_INTERFACE_METRIC: u32 = 1000;
+
 /// Global stack configuration.
 #[derive(Debug, Default)]
 pub(crate) struct GlobalConfig {
@@ -1174,7 +1180,7 @@ impl Netstack {
         let loopback = self.ctx.api().device::<LoopbackDevice>().add_device(
             DeviceIdAndName { id: binding_id, name: LOOPBACK_NAME.to_string() },
             LoopbackCreationProperties { mtu: DEFAULT_LOOPBACK_MTU },
-            RawMetric(DEFAULT_INTERFACE_METRIC),
+            RawMetric(LOOPBACK_INTERFACE_METRIC),
             loopback_info,
         );
 

@@ -887,12 +887,12 @@ async fn test_list_del_routes() {
         ),
         fnet_routes_ext::Route::<Ipv4>::new_forward_with_inherited_metric(
             Ipv4::MULTICAST_SUBNET,
-            loopback_id.get(),
+            if_id.get(),
             None,
         ),
         fnet_routes_ext::Route::<Ipv4>::new_forward_with_inherited_metric(
             Ipv4::MULTICAST_SUBNET,
-            if_id.get(),
+            loopback_id.get(),
             None,
         ),
     ];
@@ -910,12 +910,12 @@ async fn test_list_del_routes() {
         ),
         fnet_routes_ext::Route::<Ipv6>::new_forward_with_inherited_metric(
             Ipv6::MULTICAST_SUBNET,
-            loopback_id.get(),
+            if_id.get(),
             None,
         ),
         fnet_routes_ext::Route::<Ipv6>::new_forward_with_inherited_metric(
             Ipv6::MULTICAST_SUBNET,
-            if_id.get(),
+            loopback_id.get(),
             None,
         ),
     ];
