@@ -74,13 +74,13 @@ pub use ip::{
 };
 pub use map_deref::{MapDeref, MapDerefExt};
 pub use matchers::{
-    AddressMatcher, AddressMatcherEither, AddressMatcherType, BoundInterfaceMatcher,
-    InterfaceMatcher, InterfaceProperties, IpSocketMatcher, IpSocketProperties,
-    IpSocketPropertiesMatcher, MarkInDomainMatcher, MarkMatcher, MarkMatchers, Matcher,
-    MatcherBindingsTypes, MaybeSocketTransportProperties, PortMatcher, SocketCookieMatcher,
-    SocketTransportProtocolMatcher, SubnetMatcher, TcpSocketMatcher, TcpSocketProperties,
-    TcpSocketState, TcpStateMatcher, UdpSocketMatcher, UdpSocketProperties, UdpSocketState,
-    UdpStateMatcher,
+    AddressMatcher, AddressMatcherEither, AddressMatcherType, BoundAddressMatcherEither,
+    BoundInterfaceMatcher, BoundPortMatcher, InterfaceMatcher, InterfaceProperties,
+    IpSocketMatcher, IpSocketProperties, IpSocketPropertiesMatcher, MarkInDomainMatcher,
+    MarkMatcher, MarkMatchers, Matcher, MatcherBindingsTypes, MaybeSocketTransportProperties,
+    PortMatcher, SocketCookieMatcher, SocketTransportProtocolMatcher, SubnetMatcher,
+    TcpSocketMatcher, TcpSocketProperties, TcpSocketState, TcpStateMatcher, UdpSocketMatcher,
+    UdpSocketProperties, UdpSocketState, UdpStateMatcher,
 };
 pub use num::PositiveIsize;
 pub use port_alloc::{EphemeralPort, PortAllocImpl, simple_randomized_port_alloc};

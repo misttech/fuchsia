@@ -52,26 +52,26 @@ impl<'a, I: DualStackIpExt, D: netstack3_base::WeakDeviceIdentifier, BT: TcpBind
 impl<'a, I: DualStackIpExt, D: netstack3_base::WeakDeviceIdentifier, BT: TcpBindingsTypes>
     netstack3_base::TcpSocketProperties for TcpSocketStateForMatching<'a, I, D, BT>
 {
-    fn src_port_matches(&self, matcher: &netstack3_base::PortMatcher) -> bool {
+    fn src_port_matches(&self, matcher: &netstack3_base::BoundPortMatcher) -> bool {
         let src_port = match &self.state.socket_state {
-            TcpSocketStateInner::Unbound(_) => return false,
+            TcpSocketStateInner::Unbound(_) => None,
             TcpSocketStateInner::Bound(BoundSocketState::Listener((_, _, addr))) => {
-                I::get_bound_info(addr).port.get()
+                Some(I::get_bound_info(addr).port.get())
             }
             TcpSocketStateInner::Bound(BoundSocketState::Connected { conn, .. }) => {
-                I::get_conn_info(conn).local_addr.port.get()
+                Some(I::get_conn_info(conn).local_addr.port.get())
             }
         };
 
         matcher.matches(&src_port)
     }
 
-    fn dst_port_matches(&self, matcher: &netstack3_base::PortMatcher) -> bool {
+    fn dst_port_matches(&self, matcher: &netstack3_base::BoundPortMatcher) -> bool {
         let dst_port = match &self.state.socket_state {
             TcpSocketStateInner::Unbound(_)
-            | TcpSocketStateInner::Bound(BoundSocketState::Listener(_)) => return false,
+            | TcpSocketStateInner::Bound(BoundSocketState::Listener(_)) => None,
             TcpSocketStateInner::Bound(BoundSocketState::Connected { conn, .. }) => {
-                I::get_conn_info(conn).remote_addr.port.get()
+                Some(I::get_conn_info(conn).remote_addr.port.get())
             }
         };
 
@@ -92,7 +92,7 @@ where
         I::VERSION == *family
     }
 
-    fn src_addr_matches(&self, addr: &netstack3_base::AddressMatcherEither) -> bool {
+    fn src_addr_matches(&self, addr: &netstack3_base::BoundAddressMatcherEither) -> bool {
         let src_addr = match &self.state.socket_state {
             TcpSocketStateInner::Unbound(_) => None,
             TcpSocketStateInner::Bound(BoundSocketState::Listener((_, _, addr))) => {
@@ -103,20 +103,19 @@ where
             }
         };
 
-        let Some(src_addr) = src_addr else { return false };
-        addr.matches(&src_addr.to_ip_addr())
+        addr.matches(&src_addr.map(|a| a.to_ip_addr()))
     }
 
-    fn dst_addr_matches(&self, addr: &netstack3_base::AddressMatcherEither) -> bool {
+    fn dst_addr_matches(&self, addr: &netstack3_base::BoundAddressMatcherEither) -> bool {
         let dst_addr = match &self.state.socket_state {
             TcpSocketStateInner::Unbound(_)
-            | TcpSocketStateInner::Bound(BoundSocketState::Listener(_)) => return false,
+            | TcpSocketStateInner::Bound(BoundSocketState::Listener(_)) => None,
             TcpSocketStateInner::Bound(BoundSocketState::Connected { conn, .. }) => {
-                I::get_conn_info(conn).remote_addr.ip.addr().get()
+                Some(I::get_conn_info(conn).remote_addr.ip.addr().get())
             }
         };
 
-        addr.matches(&dst_addr.to_ip_addr())
+        addr.matches(&dst_addr.map(|a| a.to_ip_addr()))
     }
 
     fn transport_protocol_matches(
@@ -292,10 +291,10 @@ mod tests {
     use net_types::ip::{Ip, Subnet};
     use netstack3_base::testutil::{FakeDeviceId, FakeNetworkSpec as _, set_logger_for_test};
     use netstack3_base::{
-        AddressMatcher, AddressMatcherEither, AddressMatcherType, BoundInterfaceMatcher,
-        InterfaceMatcher, IpSocketMatcher, Mark, MarkDomain, MarkMatcher, PortMatcher,
-        SocketCookieMatcher, SocketTransportProtocolMatcher, StrongDeviceIdentifier, SubnetMatcher,
-        TcpSocketMatcher, TcpStateMatcher, UdpSocketMatcher,
+        AddressMatcher, AddressMatcherEither, AddressMatcherType, BoundAddressMatcherEither,
+        BoundInterfaceMatcher, BoundPortMatcher, InterfaceMatcher, IpSocketMatcher, Mark,
+        MarkDomain, MarkMatcher, PortMatcher, SocketCookieMatcher, SocketTransportProtocolMatcher,
+        StrongDeviceIdentifier, SubnetMatcher, TcpSocketMatcher, TcpStateMatcher, UdpSocketMatcher,
     };
 
     use super::*;
@@ -377,20 +376,20 @@ mod tests {
         let matcher = I::map_ip_in(
             I::TEST_ADDRS.local_ip.get(),
             |addr| {
-                AddressMatcherEither::V4(AddressMatcher {
+                BoundAddressMatcherEither::Bound(AddressMatcherEither::V4(AddressMatcher {
                     matcher: AddressMatcherType::Subnet(SubnetMatcher(
                         Subnet::new(addr, 32).unwrap(),
                     )),
                     invert: false,
-                })
+                }))
             },
             |addr| {
-                AddressMatcherEither::V6(AddressMatcher {
+                BoundAddressMatcherEither::Bound(AddressMatcherEither::V6(AddressMatcher {
                     matcher: AddressMatcherType::Subnet(SubnetMatcher(
                         Subnet::new(addr, 128).unwrap(),
                     )),
                     invert: false,
-                })
+                }))
             },
         );
         api.bound_sockets_diagnostics(&IpSocketMatcher::SrcAddr(matcher), &mut results);
@@ -411,20 +410,20 @@ mod tests {
         let matcher = I::map_ip_in(
             I::TEST_ADDRS.remote_ip.get(),
             |addr| {
-                AddressMatcherEither::V4(AddressMatcher {
+                BoundAddressMatcherEither::Bound(AddressMatcherEither::V4(AddressMatcher {
                     matcher: AddressMatcherType::Subnet(SubnetMatcher(
                         Subnet::new(addr, 32).unwrap(),
                     )),
                     invert: false,
-                })
+                }))
             },
             |addr| {
-                AddressMatcherEither::V6(AddressMatcher {
+                BoundAddressMatcherEither::Bound(AddressMatcherEither::V6(AddressMatcher {
                     matcher: AddressMatcherType::Subnet(SubnetMatcher(
                         Subnet::new(addr, 128).unwrap(),
                     )),
                     invert: false,
-                })
+                }))
             },
         );
         api.bound_sockets_diagnostics(&IpSocketMatcher::SrcAddr(matcher), &mut results);
@@ -454,20 +453,20 @@ mod tests {
         let matcher = I::map_ip_in(
             I::TEST_ADDRS.remote_ip.get(),
             |addr| {
-                AddressMatcherEither::V4(AddressMatcher {
+                BoundAddressMatcherEither::Bound(AddressMatcherEither::V4(AddressMatcher {
                     matcher: AddressMatcherType::Subnet(SubnetMatcher(
                         Subnet::new(addr, 32).unwrap(),
                     )),
                     invert: false,
-                })
+                }))
             },
             |addr| {
-                AddressMatcherEither::V6(AddressMatcher {
+                BoundAddressMatcherEither::Bound(AddressMatcherEither::V6(AddressMatcher {
                     matcher: AddressMatcherType::Subnet(SubnetMatcher(
                         Subnet::new(addr, 128).unwrap(),
                     )),
                     invert: false,
-                })
+                }))
             },
         );
         api.bound_sockets_diagnostics(&IpSocketMatcher::DstAddr(matcher), &mut results);
@@ -490,20 +489,20 @@ mod tests {
         let matcher = I::map_ip_in(
             I::TEST_ADDRS.local_ip.get(),
             |addr| {
-                AddressMatcherEither::V4(AddressMatcher {
+                BoundAddressMatcherEither::Bound(AddressMatcherEither::V4(AddressMatcher {
                     matcher: AddressMatcherType::Subnet(SubnetMatcher(
                         Subnet::new(addr, 32).unwrap(),
                     )),
                     invert: false,
-                })
+                }))
             },
             |addr| {
-                AddressMatcherEither::V6(AddressMatcher {
+                BoundAddressMatcherEither::Bound(AddressMatcherEither::V6(AddressMatcher {
                     matcher: AddressMatcherType::Subnet(SubnetMatcher(
                         Subnet::new(addr, 128).unwrap(),
                     )),
                     invert: false,
-                })
+                }))
             },
         );
         api.bound_sockets_diagnostics(&IpSocketMatcher::DstAddr(matcher), &mut results);
@@ -734,10 +733,10 @@ mod tests {
 
         api.bound_sockets_diagnostics(
             &IpSocketMatcher::Proto(SocketTransportProtocolMatcher::Tcp(
-                TcpSocketMatcher::DstPort(PortMatcher {
+                TcpSocketMatcher::DstPort(BoundPortMatcher::Bound(PortMatcher {
                     range: REMOTE_PORT_1.get()..=REMOTE_PORT_1.get(),
                     invert: false,
-                }),
+                })),
             )),
             &mut results,
         );
@@ -773,10 +772,10 @@ mod tests {
         results.clear();
         api.bound_sockets_diagnostics(
             &IpSocketMatcher::Proto(SocketTransportProtocolMatcher::Tcp(
-                TcpSocketMatcher::DstPort(PortMatcher {
+                TcpSocketMatcher::DstPort(BoundPortMatcher::Bound(PortMatcher {
                     range: REMOTE_PORT_2.get()..=REMOTE_PORT_2.get(),
                     invert: false,
-                }),
+                })),
             )),
             &mut results,
         );
@@ -821,10 +820,10 @@ mod tests {
         let mut results = Vec::new();
         api.bound_sockets_diagnostics(
             &IpSocketMatcher::Proto(SocketTransportProtocolMatcher::Tcp(
-                TcpSocketMatcher::SrcPort(PortMatcher {
+                TcpSocketMatcher::SrcPort(BoundPortMatcher::Bound(PortMatcher {
                     range: LOCAL_PORT_1.get()..=LOCAL_PORT_1.get(),
                     invert: false,
-                }),
+                })),
             )),
             &mut results,
         );
@@ -844,10 +843,10 @@ mod tests {
         results.clear();
         api.bound_sockets_diagnostics(
             &IpSocketMatcher::Proto(SocketTransportProtocolMatcher::Tcp(
-                TcpSocketMatcher::SrcPort(PortMatcher {
+                TcpSocketMatcher::SrcPort(BoundPortMatcher::Bound(PortMatcher {
                     range: (LOCAL_PORT_1.get() + 1)..=(LOCAL_PORT_1.get() + 1),
                     invert: false,
-                }),
+                })),
             )),
             &mut results,
         );
@@ -880,10 +879,10 @@ mod tests {
         let mut results = Vec::new();
         api.bound_sockets_diagnostics(
             &IpSocketMatcher::Proto(SocketTransportProtocolMatcher::Tcp(
-                TcpSocketMatcher::DstPort(PortMatcher {
+                TcpSocketMatcher::DstPort(BoundPortMatcher::Bound(PortMatcher {
                     range: LOCAL_PORT_2.get()..=LOCAL_PORT_2.get(),
                     invert: false,
-                }),
+                })),
             )),
             &mut results,
         );
@@ -905,10 +904,10 @@ mod tests {
         results.clear();
         api.bound_sockets_diagnostics(
             &IpSocketMatcher::Proto(SocketTransportProtocolMatcher::Tcp(
-                TcpSocketMatcher::DstPort(PortMatcher {
+                TcpSocketMatcher::DstPort(BoundPortMatcher::Bound(PortMatcher {
                     range: (LOCAL_PORT_2.get() + 1)..=(LOCAL_PORT_2.get() + 1),
                     invert: false,
-                }),
+                })),
             )),
             &mut results,
         );
@@ -1011,6 +1010,268 @@ mod tests {
             &mut results,
         );
         assert_eq!(results, Vec::new());
+    }
+
+    #[ip_test(I)]
+    fn diagnostics_match_src_addr_unbound<I: TcpTestIpExt>()
+    where
+        TcpCoreCtx<FakeDeviceId, TcpBindingsCtx<FakeDeviceId>>:
+            TcpContext<I, TcpBindingsCtx<FakeDeviceId>>,
+    {
+        set_logger_for_test();
+
+        let mut ctx = TcpCtx::with_core_ctx(TcpCoreCtx::new::<I>(
+            I::TEST_ADDRS.local_ip,
+            I::TEST_ADDRS.remote_ip,
+        ));
+        let mut api = ctx.tcp_api::<I>();
+
+        // Bound to wildcard address.
+        let s1 = api.create(Default::default());
+        api.bind(&s1, None, Some(LOCAL_PORT_1)).expect("bind should succeed");
+        api.listen(&s1, NonZeroUsize::new(1).unwrap()).expect("listen should succeed");
+
+        // Bound to specific address.
+        let s2 = api.create(Default::default());
+        api.bind(&s2, Some(ZonedAddr::Unzoned(I::TEST_ADDRS.local_ip)), Some(LOCAL_PORT_2))
+            .expect("bind should succeed");
+        api.listen(&s2, NonZeroUsize::new(1).unwrap()).expect("listen should succeed");
+
+        let mut results = Vec::new();
+        let matcher = match I::VERSION {
+            net_types::ip::IpVersion::V4 => BoundAddressMatcherEither::Unbound,
+            net_types::ip::IpVersion::V6 => BoundAddressMatcherEither::Unbound,
+        };
+        api.bound_sockets_diagnostics(&IpSocketMatcher::SrcAddr(matcher), &mut results);
+        assert_eq!(
+            results,
+            vec![TcpSocketDiagnostics {
+                state_machine: netstack3_base::TcpSocketState::Listen,
+                tuple: TcpSocketDiagnosticTuple::Bound { src_addr: None, src_port: LOCAL_PORT_1 },
+                cookie: s1.socket_cookie(),
+                marks: Marks::default(),
+            }]
+        );
+
+        results.clear();
+        let matcher = I::map_ip_in(
+            I::TEST_ADDRS.local_ip.get(),
+            |addr| {
+                BoundAddressMatcherEither::Bound(AddressMatcherEither::V4(AddressMatcher {
+                    matcher: AddressMatcherType::Subnet(SubnetMatcher(
+                        Subnet::new(addr, 32).unwrap(),
+                    )),
+                    invert: false,
+                }))
+            },
+            |addr| {
+                BoundAddressMatcherEither::Bound(AddressMatcherEither::V6(AddressMatcher {
+                    matcher: AddressMatcherType::Subnet(SubnetMatcher(
+                        Subnet::new(addr, 128).unwrap(),
+                    )),
+                    invert: false,
+                }))
+            },
+        );
+        api.bound_sockets_diagnostics(&IpSocketMatcher::SrcAddr(matcher), &mut results);
+        assert_eq!(
+            results,
+            vec![TcpSocketDiagnostics {
+                state_machine: netstack3_base::TcpSocketState::Listen,
+                tuple: TcpSocketDiagnosticTuple::Bound {
+                    src_addr: Some(I::TEST_ADDRS.local_ip.get()),
+                    src_port: LOCAL_PORT_2,
+                },
+                cookie: s2.socket_cookie(),
+                marks: Marks::default(),
+            }]
+        );
+    }
+
+    #[ip_test(I)]
+    fn diagnostics_match_dst_addr_unbound<I: TcpTestIpExt>()
+    where
+        TcpCoreCtx<FakeDeviceId, TcpBindingsCtx<FakeDeviceId>>:
+            TcpContext<I, TcpBindingsCtx<FakeDeviceId>>,
+    {
+        set_logger_for_test();
+
+        let mut ctx = TcpCtx::with_core_ctx(TcpCoreCtx::new::<I>(
+            I::TEST_ADDRS.local_ip,
+            I::TEST_ADDRS.remote_ip,
+        ));
+        let mut api = ctx.tcp_api::<I>();
+
+        // Not connected, so no destination address.
+        let s1 = api.create(Default::default());
+        api.bind(&s1, Some(ZonedAddr::Unzoned(I::TEST_ADDRS.local_ip)), Some(LOCAL_PORT_1))
+            .expect("bind should succeed");
+        api.listen(&s1, NonZeroUsize::new(1).unwrap()).expect("listen should succeed");
+
+        // Connected, so has a destination address.
+        let s2 = api.create(Default::default());
+        api.bind(&s2, Some(ZonedAddr::Unzoned(I::TEST_ADDRS.local_ip)), Some(LOCAL_PORT_2))
+            .expect("bind should succeed");
+        api.connect(&s2, Some(ZonedAddr::Unzoned(I::TEST_ADDRS.remote_ip)), REMOTE_PORT_1)
+            .expect("connect should succeed");
+
+        let mut results = Vec::new();
+        let matcher = match I::VERSION {
+            net_types::ip::IpVersion::V4 => BoundAddressMatcherEither::Unbound,
+            net_types::ip::IpVersion::V6 => BoundAddressMatcherEither::Unbound,
+        };
+        api.bound_sockets_diagnostics(&IpSocketMatcher::DstAddr(matcher), &mut results);
+        assert_eq!(
+            results,
+            vec![TcpSocketDiagnostics {
+                state_machine: netstack3_base::TcpSocketState::Listen,
+                tuple: TcpSocketDiagnosticTuple::Bound {
+                    src_addr: Some(I::TEST_ADDRS.local_ip.get()),
+                    src_port: LOCAL_PORT_1
+                },
+                cookie: s1.socket_cookie(),
+                marks: Marks::default(),
+            }]
+        );
+
+        results.clear();
+        let matcher = I::map_ip_in(
+            I::TEST_ADDRS.remote_ip.get(),
+            |addr| {
+                BoundAddressMatcherEither::Bound(AddressMatcherEither::V4(AddressMatcher {
+                    matcher: AddressMatcherType::Subnet(SubnetMatcher(
+                        Subnet::new(addr, 32).unwrap(),
+                    )),
+                    invert: false,
+                }))
+            },
+            |addr| {
+                BoundAddressMatcherEither::Bound(AddressMatcherEither::V6(AddressMatcher {
+                    matcher: AddressMatcherType::Subnet(SubnetMatcher(
+                        Subnet::new(addr, 128).unwrap(),
+                    )),
+                    invert: false,
+                }))
+            },
+        );
+        api.bound_sockets_diagnostics(&IpSocketMatcher::DstAddr(matcher), &mut results);
+        assert_eq!(
+            results,
+            vec![TcpSocketDiagnostics {
+                state_machine: netstack3_base::TcpSocketState::SynSent,
+                tuple: TcpSocketDiagnosticTuple::Connected {
+                    src_addr: I::TEST_ADDRS.local_ip.get(),
+                    src_port: LOCAL_PORT_2,
+                    dst_addr: I::TEST_ADDRS.remote_ip.get(),
+                    dst_port: REMOTE_PORT_1,
+                },
+                cookie: s2.socket_cookie(),
+                marks: Marks::default(),
+            }]
+        );
+    }
+
+    #[ip_test(I)]
+    fn diagnostics_match_src_port_unbound<I: TcpTestIpExt>()
+    where
+        TcpCoreCtx<FakeDeviceId, TcpBindingsCtx<FakeDeviceId>>:
+            TcpContext<I, TcpBindingsCtx<FakeDeviceId>>,
+    {
+        set_logger_for_test();
+
+        let mut ctx = TcpCtx::with_core_ctx(TcpCoreCtx::new::<I>(
+            I::TEST_ADDRS.local_ip,
+            I::TEST_ADDRS.remote_ip,
+        ));
+        let mut api = ctx.tcp_api::<I>();
+
+        let s1 = api.create(Default::default());
+        api.bind(&s1, Some(ZonedAddr::Unzoned(I::TEST_ADDRS.local_ip)), Some(LOCAL_PORT_1))
+            .expect("bind should succeed");
+        api.listen(&s1, NonZeroUsize::new(1).unwrap()).expect("listen should succeed");
+
+        let mut results = Vec::new();
+        api.bound_sockets_diagnostics(
+            &IpSocketMatcher::Proto(SocketTransportProtocolMatcher::Tcp(
+                TcpSocketMatcher::SrcPort(BoundPortMatcher::Unbound),
+            )),
+            &mut results,
+        );
+        // All visible TCP sockets have a source port.
+        assert_eq!(results, Vec::new());
+    }
+
+    #[ip_test(I)]
+    fn diagnostics_match_dst_port_unbound<I: TcpTestIpExt>()
+    where
+        TcpCoreCtx<FakeDeviceId, TcpBindingsCtx<FakeDeviceId>>:
+            TcpContext<I, TcpBindingsCtx<FakeDeviceId>>,
+    {
+        set_logger_for_test();
+
+        let mut ctx = TcpCtx::with_core_ctx(TcpCoreCtx::new::<I>(
+            I::TEST_ADDRS.local_ip,
+            I::TEST_ADDRS.remote_ip,
+        ));
+        let mut api = ctx.tcp_api::<I>();
+
+        // Not connected, so no destination port.
+        let s1 = api.create(Default::default());
+        api.bind(&s1, Some(ZonedAddr::Unzoned(I::TEST_ADDRS.local_ip)), Some(LOCAL_PORT_1))
+            .expect("bind should succeed");
+        api.listen(&s1, NonZeroUsize::new(1).unwrap()).expect("listen should succeed");
+
+        // Connected, so has a destination port.
+        let s2 = api.create(Default::default());
+        api.bind(&s2, Some(ZonedAddr::Unzoned(I::TEST_ADDRS.local_ip)), Some(LOCAL_PORT_2))
+            .expect("bind should succeed");
+        api.connect(&s2, Some(ZonedAddr::Unzoned(I::TEST_ADDRS.remote_ip)), REMOTE_PORT_1)
+            .expect("connect should succeed");
+
+        let mut results = Vec::new();
+        api.bound_sockets_diagnostics(
+            &IpSocketMatcher::Proto(SocketTransportProtocolMatcher::Tcp(
+                TcpSocketMatcher::DstPort(BoundPortMatcher::Unbound),
+            )),
+            &mut results,
+        );
+        assert_eq!(
+            results,
+            vec![TcpSocketDiagnostics {
+                state_machine: netstack3_base::TcpSocketState::Listen,
+                tuple: TcpSocketDiagnosticTuple::Bound {
+                    src_addr: Some(I::TEST_ADDRS.local_ip.get()),
+                    src_port: LOCAL_PORT_1
+                },
+                cookie: s1.socket_cookie(),
+                marks: Marks::default(),
+            }]
+        );
+
+        results.clear();
+        api.bound_sockets_diagnostics(
+            &IpSocketMatcher::Proto(SocketTransportProtocolMatcher::Tcp(
+                TcpSocketMatcher::DstPort(BoundPortMatcher::Bound(PortMatcher {
+                    range: REMOTE_PORT_1.get()..=REMOTE_PORT_1.get(),
+                    invert: false,
+                })),
+            )),
+            &mut results,
+        );
+        assert_eq!(
+            results,
+            vec![TcpSocketDiagnostics {
+                state_machine: netstack3_base::TcpSocketState::SynSent,
+                tuple: TcpSocketDiagnosticTuple::Connected {
+                    src_addr: I::TEST_ADDRS.local_ip.get(),
+                    src_port: LOCAL_PORT_2,
+                    dst_addr: I::TEST_ADDRS.remote_ip.get(),
+                    dst_port: REMOTE_PORT_1,
+                },
+                cookie: s2.socket_cookie(),
+                marks: Marks::default(),
+            }]
+        );
     }
 
     const LOCAL: &'static str = "local";

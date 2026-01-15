@@ -30,7 +30,7 @@ type BoundInterface = flexible union {
     /// [`Interface`] for matching criteria).
     1: bound Interface;
     /// Matches iff the outgoing traffic is not bound to a device.
-    2: unbound struct {};
+    2: unbound Empty;
 };
 
 /// A matcher for IP addresses.
@@ -68,6 +68,15 @@ type Port = struct {
     end uint16;
     /// Whether to check for an "inverse" or "negative" match.
     invert bool;
+};
+
+/// A matcher for transport-layer port numbers that might be unbound.
+type BoundPort = flexible union {
+    /// Matches iff the port is bound and matches (see [`Port`] for matching
+    /// criteria).
+    1: bound Port;
+    /// Matches iff the port is unbound.
+    2: unbound Empty;
 };
 
 /// A matcher for TCP packets.
@@ -141,14 +150,23 @@ type SocketCookie = struct {
 /// An empty type for use in unions.
 type Empty = struct {};
 
+/// A matcher for IP addresses that might be unbound.
+type BoundAddress = flexible union {
+    /// Matches iff the address is bound to a matching address (see [`Address`]
+    /// for matching criteria.
+    1: bound Address;
+    /// Matches iff the address is unbound.
+    2: unbound Empty;
+};
+
 /// A matcher for TCP sockets.
 type TcpSocket = flexible union {
     /// Only matches against the transport protocol and nothing else.
     1: empty Empty;
     /// Match against the source port of TCP sockets.
-    2: src_port Port;
+    2: src_port BoundPort;
     /// Match against the destination port of TCP sockets.
-    3: dst_port Port;
+    3: dst_port BoundPort;
     /// The TCP socket's state must be contained in the set of states. If unset,
     /// matches all states, just as if it was fully set.
     ///
@@ -174,9 +192,9 @@ type UdpSocket = flexible union {
     /// Only matches against the transport protocol and nothing else.
     1: empty Empty;
     /// Match against the source port of UDP sockets.
-    2: src_port Port;
+    2: src_port BoundPort;
     /// Match against the destination port of UDP sockets.
-    3: dst_port Port;
+    3: dst_port BoundPort;
 
     /// The UDP socket's state must be contained in the set of states.
     ///

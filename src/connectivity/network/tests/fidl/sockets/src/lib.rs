@@ -530,11 +530,9 @@ async fn control_disconnect_ip_tcp_connected<I: Ip>(name: &str) {
         .disconnect_ip(&fnet_sockets::ControlDisconnectIpRequest {
             matchers: Some(vec![
                 fnet_sockets::IpSocketMatcher::Proto(fnet_matchers::SocketTransportProtocol::Tcp(
-                    fnet_matchers::TcpSocket::SrcPort(fnet_matchers::Port {
-                        start: LOCAL_PORT,
-                        end: LOCAL_PORT,
-                        invert: false,
-                    }),
+                    fnet_matchers::TcpSocket::SrcPort(fnet_matchers::BoundPort::Bound(
+                        fnet_matchers::Port { start: LOCAL_PORT, end: LOCAL_PORT, invert: false },
+                    )),
                 )),
                 fnet_sockets::IpSocketMatcher::Proto(fnet_matchers::SocketTransportProtocol::Tcp(
                     fnet_matchers::TcpSocket::States(fnet_matchers::TcpState::ESTABLISHED),

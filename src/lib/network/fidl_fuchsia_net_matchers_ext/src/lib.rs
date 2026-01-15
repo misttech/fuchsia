@@ -92,9 +92,7 @@ pub enum BoundInterfaceError {
 impl From<BoundInterface> for fnet_matchers::BoundInterface {
     fn from(matcher: BoundInterface) -> Self {
         match matcher {
-            BoundInterface::Unbound => {
-                fnet_matchers::BoundInterface::Unbound(fnet_matchers::Unbound)
-            }
+            BoundInterface::Unbound => fnet_matchers::BoundInterface::Unbound(fnet_matchers::Empty),
             BoundInterface::Bound(interface) => {
                 fnet_matchers::BoundInterface::Bound(interface.into())
             }
@@ -107,7 +105,7 @@ impl TryFrom<fnet_matchers::BoundInterface> for BoundInterface {
 
     fn try_from(matcher: fnet_matchers::BoundInterface) -> Result<Self, Self::Error> {
         match matcher {
-            fnet_matchers::BoundInterface::Unbound(fnet_matchers::Unbound) => {
+            fnet_matchers::BoundInterface::Unbound(fnet_matchers::Empty) => {
                 Ok(BoundInterface::Unbound)
             }
             fnet_matchers::BoundInterface::Bound(interface) => Ok(BoundInterface::Bound(
@@ -333,13 +331,95 @@ impl TryFrom<fnet_matchers::Address> for Address {
     }
 }
 
+/// Extension type for [`fnet_matchers::BoundAddress`].
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum BoundAddress {
+    Unbound,
+    Bound(Address),
+}
+
+/// Errors when creating an [`BoundAddress`].
+#[derive(Debug, Error, PartialEq)]
+pub enum BoundAddressError {
+    #[error(transparent)]
+    Address(AddressError),
+    #[error("bound address union is of an unknown variant")]
+    UnknownUnionVariant(u64),
+}
+
+impl From<BoundAddress> for fnet_matchers::BoundAddress {
+    fn from(matcher: BoundAddress) -> Self {
+        match matcher {
+            BoundAddress::Unbound => fnet_matchers::BoundAddress::Unbound(fnet_matchers::Empty),
+            BoundAddress::Bound(address) => fnet_matchers::BoundAddress::Bound(address.into()),
+        }
+    }
+}
+
+impl TryFrom<fnet_matchers::BoundAddress> for BoundAddress {
+    type Error = BoundAddressError;
+
+    fn try_from(matcher: fnet_matchers::BoundAddress) -> Result<Self, Self::Error> {
+        match matcher {
+            fnet_matchers::BoundAddress::Unbound(fnet_matchers::Empty) => Ok(BoundAddress::Unbound),
+            fnet_matchers::BoundAddress::Bound(address) => {
+                Ok(BoundAddress::Bound(address.try_into().map_err(BoundAddressError::Address)?))
+            }
+            fnet_matchers::BoundAddress::__SourceBreaking { unknown_ordinal } => {
+                Err(BoundAddressError::UnknownUnionVariant(unknown_ordinal))
+            }
+        }
+    }
+}
+
 /// Extension type for [`fnet_matchers::Port`].
 ///
 /// This type witnesses to the invariant that `start <= end`.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct Port {
     range: RangeInclusive<u16>,
     invert: bool,
+}
+
+/// Extension type for [`fnet_matchers::BoundPort`].
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub enum BoundPort {
+    Unbound,
+    Bound(Port),
+}
+
+/// Errors when creating an [`BoundPort`].
+#[derive(Debug, Error, PartialEq, Eq)]
+pub enum BoundPortError {
+    #[error(transparent)]
+    Port(PortError),
+    #[error("bound port union is of an unknown variant")]
+    UnknownUnionVariant(u64),
+}
+
+impl From<BoundPort> for fnet_matchers::BoundPort {
+    fn from(matcher: BoundPort) -> Self {
+        match matcher {
+            BoundPort::Unbound => fnet_matchers::BoundPort::Unbound(fnet_matchers::Empty),
+            BoundPort::Bound(port) => fnet_matchers::BoundPort::Bound(port.into()),
+        }
+    }
+}
+
+impl TryFrom<fnet_matchers::BoundPort> for BoundPort {
+    type Error = BoundPortError;
+
+    fn try_from(matcher: fnet_matchers::BoundPort) -> Result<Self, Self::Error> {
+        match matcher {
+            fnet_matchers::BoundPort::Unbound(fnet_matchers::Empty) => Ok(BoundPort::Unbound),
+            fnet_matchers::BoundPort::Bound(port) => {
+                Ok(BoundPort::Bound(port.try_into().map_err(BoundPortError::Port)?))
+            }
+            fnet_matchers::BoundPort::__SourceBreaking { unknown_ordinal } => {
+                Err(BoundPortError::UnknownUnionVariant(unknown_ordinal))
+            }
+        }
+    }
 }
 
 /// Errors when creating a `Port`.
@@ -588,15 +668,15 @@ impl From<MarkInDomain> for fnet_matchers::MarkInDomain {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum TcpSocket {
     Empty,
-    SrcPort(Port),
-    DstPort(Port),
+    SrcPort(BoundPort),
+    DstPort(BoundPort),
     States(fnet_matchers::TcpState),
 }
 
 #[derive(Debug, PartialEq, Eq, Error)]
 pub enum TcpSocketError {
-    #[error("port matcher conversion failed: {0}")]
-    Port(PortError),
+    #[error("bound port matcher conversion failed: {0}")]
+    BoundPort(BoundPortError),
     #[error("tcp union is of an unknown variant")]
     UnknownUnionVariant(u64),
 }
@@ -608,10 +688,10 @@ impl TryFrom<fnet_matchers::TcpSocket> for TcpSocket {
         match matcher {
             fnet_matchers::TcpSocket::Empty(fnet_matchers::Empty) => Ok(Self::Empty),
             fnet_matchers::TcpSocket::SrcPort(port) => {
-                Ok(Self::SrcPort(port.try_into().map_err(|e| TcpSocketError::Port(e))?))
+                Ok(Self::SrcPort(port.try_into().map_err(|e| TcpSocketError::BoundPort(e))?))
             }
             fnet_matchers::TcpSocket::DstPort(port) => {
-                Ok(Self::DstPort(port.try_into().map_err(|e| TcpSocketError::Port(e))?))
+                Ok(Self::DstPort(port.try_into().map_err(|e| TcpSocketError::BoundPort(e))?))
             }
             fnet_matchers::TcpSocket::States(states) => Ok(Self::States(states)),
             fnet_matchers::TcpSocket::__SourceBreaking { unknown_ordinal } => {
@@ -636,15 +716,15 @@ impl From<TcpSocket> for fnet_matchers::TcpSocket {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum UdpSocket {
     Empty,
-    SrcPort(Port),
-    DstPort(Port),
+    SrcPort(BoundPort),
+    DstPort(BoundPort),
     States(fnet_matchers::UdpState),
 }
 
 #[derive(Debug, PartialEq, Eq, Error)]
 pub enum UdpSocketError {
-    #[error("port matcher conversion failed: {0}")]
-    Port(PortError),
+    #[error("bound port matcher conversion failed: {0}")]
+    BoundPort(BoundPortError),
     #[error("udp union is of an unknown variant")]
     UnknownUnionVariant(u64),
 }
@@ -656,10 +736,10 @@ impl TryFrom<fnet_matchers::UdpSocket> for UdpSocket {
         match matcher {
             fnet_matchers::UdpSocket::Empty(fnet_matchers::Empty) => Ok(Self::Empty),
             fnet_matchers::UdpSocket::SrcPort(port) => {
-                Ok(Self::SrcPort(port.try_into().map_err(|e| UdpSocketError::Port(e))?))
+                Ok(Self::SrcPort(port.try_into().map_err(|e| UdpSocketError::BoundPort(e))?))
             }
             fnet_matchers::UdpSocket::DstPort(port) => {
-                Ok(Self::DstPort(port.try_into().map_err(|e| UdpSocketError::Port(e))?))
+                Ok(Self::DstPort(port.try_into().map_err(|e| UdpSocketError::BoundPort(e))?))
             }
             fnet_matchers::UdpSocket::States(states) => Ok(Self::States(states)),
             fnet_matchers::UdpSocket::__SourceBreaking { unknown_ordinal } => {
@@ -737,7 +817,7 @@ mod tests {
         "Interface"
     )]
     #[test_case(
-        fnet_matchers::BoundInterface::Unbound(fnet_matchers::Unbound),
+        fnet_matchers::BoundInterface::Unbound(fnet_matchers::Empty),
         BoundInterface::Unbound;
         "BoundInterface Unbound"
     )]
@@ -831,16 +911,16 @@ mod tests {
     )]
     #[test_case(
         fnet_matchers::TcpSocket::SrcPort(
-            fnet_matchers::Port { start: 1024, end: u16::MAX, invert: false }
+            fnet_matchers::BoundPort::Bound(fnet_matchers::Port { start: 1024, end: u16::MAX, invert: false })
         ),
-        TcpSocket::SrcPort(Port { range: 1024..=u16::MAX, invert: false });
+        TcpSocket::SrcPort(BoundPort::Bound(Port { range: 1024..=u16::MAX, invert: false }));
         "TcpSocketSrcPort"
     )]
     #[test_case(
         fnet_matchers::TcpSocket::DstPort(
-            fnet_matchers::Port { start: 80, end: 80, invert: true }
+            fnet_matchers::BoundPort::Bound(fnet_matchers::Port { start: 80, end: 80, invert: true })
         ),
-        TcpSocket::DstPort(Port { range: 80..=80, invert: true });
+        TcpSocket::DstPort(BoundPort::Bound(Port { range: 80..=80, invert: true }));
         "TcpSocketDstPort"
     )]
     #[test_case(
@@ -855,16 +935,16 @@ mod tests {
     )]
     #[test_case(
         fnet_matchers::UdpSocket::SrcPort(
-            fnet_matchers::Port { start: 1024, end: u16::MAX, invert: false }
+            fnet_matchers::BoundPort::Bound(fnet_matchers::Port { start: 1024, end: u16::MAX, invert: false })
         ),
-        UdpSocket::SrcPort(Port { range: 1024..=u16::MAX, invert: false });
+        UdpSocket::SrcPort(BoundPort::Bound(Port { range: 1024..=u16::MAX, invert: false }));
         "UdpSocketSrcPort"
     )]
     #[test_case(
         fnet_matchers::UdpSocket::DstPort(
-            fnet_matchers::Port { start: 53, end: 53, invert: true }
+            fnet_matchers::BoundPort::Bound(fnet_matchers::Port { start: 53, end: 53, invert: true })
         ),
-        UdpSocket::DstPort(Port { range: 53..=53, invert: true });
+        UdpSocket::DstPort(BoundPort::Bound(Port { range: 53..=53, invert: true }));
         "UdpSocketDstPort"
     )]
     #[test_case(
@@ -875,20 +955,50 @@ mod tests {
     #[test_case(
         fnet_matchers::SocketTransportProtocol::Tcp(
             fnet_matchers::TcpSocket::SrcPort(
-                fnet_matchers::Port { start: 123, end: 123, invert: false }
+                fnet_matchers::BoundPort::Bound(fnet_matchers::Port { start: 123, end: 123, invert: false })
             )
         ),
-        SocketTransportProtocol::Tcp(TcpSocket::SrcPort(Port { range: 123..=123, invert: false }));
+        SocketTransportProtocol::Tcp(TcpSocket::SrcPort(BoundPort::Bound(Port { range: 123..=123, invert: false })));
         "SocketTransportProtocolTcp"
     )]
     #[test_case(
         fnet_matchers::SocketTransportProtocol::Udp(
             fnet_matchers::UdpSocket::SrcPort(
-                fnet_matchers::Port { start: 123, end: 123, invert: false }
+                fnet_matchers::BoundPort::Bound(fnet_matchers::Port { start: 123, end: 123, invert: false })
             )
         ),
-        SocketTransportProtocol::Udp(UdpSocket::SrcPort(Port { range: 123..=123, invert: false }));
+        SocketTransportProtocol::Udp(UdpSocket::SrcPort(BoundPort::Bound(Port { range: 123..=123, invert: false })));
         "SocketTransportProtocolUdp"
+    )]
+    #[test_case(
+        fnet_matchers::BoundPort::Unbound(fnet_matchers::Empty),
+        BoundPort::Unbound;
+        "BoundPort Unbound"
+    )]
+    #[test_case(
+        fnet_matchers::BoundAddress::Unbound(fnet_matchers::Empty),
+        BoundAddress::Unbound;
+        "BoundAddress Unbound"
+    )]
+    #[test_case(
+        fnet_matchers::TcpSocket::SrcPort(fnet_matchers::BoundPort::Unbound(fnet_matchers::Empty)),
+        TcpSocket::SrcPort(BoundPort::Unbound);
+        "TcpSocket SrcPort Unbound"
+    )]
+    #[test_case(
+        fnet_matchers::TcpSocket::DstPort(fnet_matchers::BoundPort::Unbound(fnet_matchers::Empty)),
+        TcpSocket::DstPort(BoundPort::Unbound);
+        "TcpSocket DstPort Unbound"
+    )]
+    #[test_case(
+        fnet_matchers::UdpSocket::SrcPort(fnet_matchers::BoundPort::Unbound(fnet_matchers::Empty)),
+        UdpSocket::SrcPort(BoundPort::Unbound);
+        "UdpSocket SrcPort Unbound"
+    )]
+    #[test_case(
+        fnet_matchers::UdpSocket::DstPort(fnet_matchers::BoundPort::Unbound(fnet_matchers::Empty)),
+        UdpSocket::DstPort(BoundPort::Unbound);
+        "UdpSocket DstPort Unbound"
     )]
     fn convert_from_fidl_and_back<F, E>(fidl_type: F, local_type: E)
     where
@@ -1010,19 +1120,19 @@ mod tests {
         "TcpSocket UnknownUnionVariant"
     )]
     #[test_case(
-        fnet_matchers::TcpSocket::SrcPort(fnet_matchers::Port {
+        fnet_matchers::TcpSocket::SrcPort(fnet_matchers::BoundPort::Bound(fnet_matchers::Port {
             start: 1,
             end: 0,
             invert: false,
-        }) => Err(TcpSocketError::Port(PortError::InvalidPortRange));
+        })) => Err(TcpSocketError::BoundPort(BoundPortError::Port(PortError::InvalidPortRange)));
         "TcpSocket SrcPort Error"
     )]
     #[test_case(
-        fnet_matchers::TcpSocket::DstPort(fnet_matchers::Port {
+        fnet_matchers::TcpSocket::DstPort(fnet_matchers::BoundPort::Bound(fnet_matchers::Port {
             start: 1,
             end: 0,
             invert: false,
-        }) => Err(TcpSocketError::Port(PortError::InvalidPortRange));
+        })) => Err(TcpSocketError::BoundPort(BoundPortError::Port(PortError::InvalidPortRange)));
         "TcpSocket DstPort Error"
     )]
     fn tcp_socket_try_from_error(
@@ -1037,19 +1147,19 @@ mod tests {
         "UdpSocket UnknownUnionVariant"
     )]
     #[test_case(
-        fnet_matchers::UdpSocket::SrcPort(fnet_matchers::Port {
+        fnet_matchers::UdpSocket::SrcPort(fnet_matchers::BoundPort::Bound(fnet_matchers::Port {
             start: 1,
             end: 0,
             invert: false,
-        }) => Err(UdpSocketError::Port(PortError::InvalidPortRange));
+        })) => Err(UdpSocketError::BoundPort(BoundPortError::Port(PortError::InvalidPortRange)));
         "UdpSocket SrcPort Error"
     )]
     #[test_case(
-        fnet_matchers::UdpSocket::DstPort(fnet_matchers::Port {
+        fnet_matchers::UdpSocket::DstPort(fnet_matchers::BoundPort::Bound(fnet_matchers::Port {
             start: 1,
             end: 0,
             invert: false,
-        }) => Err(UdpSocketError::Port(PortError::InvalidPortRange));
+        })) => Err(UdpSocketError::BoundPort(BoundPortError::Port(PortError::InvalidPortRange)));
         "UdpSocket DstPort Error"
     )]
     fn udp_socket_try_from_error(

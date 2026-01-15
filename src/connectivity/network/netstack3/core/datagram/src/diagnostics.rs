@@ -81,12 +81,12 @@ where
         I::VERSION == *family
     }
 
-    fn src_addr_matches(&self, addr: &netstack3_base::AddressMatcherEither) -> bool {
-        addr.required_matches(self.state.local_ip().map(|addr| addr.addr().get().into()).as_ref())
+    fn src_addr_matches(&self, addr: &netstack3_base::BoundAddressMatcherEither) -> bool {
+        addr.matches(&self.state.local_ip().map(|addr| addr.addr().get().into()))
     }
 
-    fn dst_addr_matches(&self, addr: &netstack3_base::AddressMatcherEither) -> bool {
-        addr.required_matches(self.state.remote_ip().map(|addr| addr.addr().get().into()).as_ref())
+    fn dst_addr_matches(&self, addr: &netstack3_base::BoundAddressMatcherEither) -> bool {
+        addr.matches(&self.state.remote_ip().map(|addr| addr.addr().get().into()))
     }
 
     fn transport_protocol_matches(&self, proto: &SocketTransportProtocolMatcher) -> bool {

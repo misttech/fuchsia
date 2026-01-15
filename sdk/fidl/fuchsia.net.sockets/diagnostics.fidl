@@ -18,9 +18,9 @@ type IpSocketMatcher = flexible union {
     /// Matches only a specific IP version.
     1: family fuchsia.net.IpVersion;
     /// Matches the source address of the socket.
-    2: src_addr fuchsia.net.matchers.Address;
+    2: src_addr fuchsia.net.matchers.BoundAddress;
     /// Matches the address of the socket.
-    3: dst_addr fuchsia.net.matchers.Address;
+    3: dst_addr fuchsia.net.matchers.BoundAddress;
     /// Matches transport-level information for the socket.
     4: proto fuchsia.net.matchers.SocketTransportProtocol;
     /// Matches the network interface the socket was bound to (e.g. using

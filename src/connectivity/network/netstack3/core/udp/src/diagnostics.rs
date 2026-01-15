@@ -115,14 +115,14 @@ where
     D: WeakDeviceIdentifier,
     BT: UdpBindingsTypes,
 {
-    fn src_port_matches(&self, matcher: &netstack3_base::PortMatcher) -> bool {
+    fn src_port_matches(&self, matcher: &netstack3_base::BoundPortMatcher) -> bool {
         let Self(udp_state) = self;
-        matcher.required_matches(udp_state.local_identifier().map(|p| p.get()).as_ref())
+        matcher.matches(&udp_state.local_identifier().map(|p| p.get()))
     }
 
-    fn dst_port_matches(&self, matcher: &netstack3_base::PortMatcher) -> bool {
+    fn dst_port_matches(&self, matcher: &netstack3_base::BoundPortMatcher) -> bool {
         let Self(udp_state) = self;
-        matcher.required_matches(udp_state.remote_identifier().as_ref())
+        matcher.matches(&udp_state.remote_identifier())
     }
 
     fn state_matches(&self, matcher: &netstack3_base::UdpStateMatcher) -> bool {
@@ -165,10 +165,10 @@ mod tests {
     use net_types::{Witness as _, ZonedAddr};
     use netstack3_base::testutil::{FakeDeviceId, set_logger_for_test};
     use netstack3_base::{
-        AddressMatcher, AddressMatcherEither, AddressMatcherType, BoundInterfaceMatcher,
-        InterfaceMatcher, IpSocketMatcher, Mark, MarkDomain, MarkMatcher, PortMatcher,
-        SocketCookieMatcher, SocketTransportProtocolMatcher, SubnetMatcher, TcpSocketMatcher,
-        UdpSocketMatcher, UdpStateMatcher,
+        AddressMatcher, AddressMatcherEither, AddressMatcherType, BoundAddressMatcherEither,
+        BoundInterfaceMatcher, BoundPortMatcher, InterfaceMatcher, IpSocketMatcher, Mark,
+        MarkDomain, MarkMatcher, PortMatcher, SocketCookieMatcher, SocketTransportProtocolMatcher,
+        SubnetMatcher, TcpSocketMatcher, UdpSocketMatcher, UdpStateMatcher,
     };
 
     use crate::internal::base::testutils::{FakeUdpCoreCtx, TestIpExt, UdpFakeDeviceCtx};
@@ -232,16 +232,16 @@ mod tests {
         let matcher = I::map_ip_in(
             I::TEST_ADDRS.subnet,
             |subnet| {
-                AddressMatcherEither::V4(AddressMatcher {
+                BoundAddressMatcherEither::Bound(AddressMatcherEither::V4(AddressMatcher {
                     matcher: AddressMatcherType::Subnet(SubnetMatcher(subnet)),
                     invert: false,
-                })
+                }))
             },
             |subnet| {
-                AddressMatcherEither::V6(AddressMatcher {
+                BoundAddressMatcherEither::Bound(AddressMatcherEither::V6(AddressMatcher {
                     matcher: AddressMatcherType::Subnet(SubnetMatcher(subnet)),
                     invert: false,
-                })
+                }))
             },
         );
         api.bound_sockets_diagnostics(&IpSocketMatcher::SrcAddr(matcher), &mut results);
@@ -261,24 +261,83 @@ mod tests {
         let matcher = I::map_ip_in(
             I::TEST_ADDRS.remote_ip.get(),
             |addr| {
-                AddressMatcherEither::V4(AddressMatcher {
+                BoundAddressMatcherEither::Bound(AddressMatcherEither::V4(AddressMatcher {
                     matcher: AddressMatcherType::Subnet(SubnetMatcher(
                         Subnet::new(addr, 32).unwrap(),
                     )),
                     invert: false,
-                })
+                }))
             },
             |addr| {
-                AddressMatcherEither::V6(AddressMatcher {
+                BoundAddressMatcherEither::Bound(AddressMatcherEither::V6(AddressMatcher {
                     matcher: AddressMatcherType::Subnet(SubnetMatcher(
                         Subnet::new(addr, 128).unwrap(),
                     )),
                     invert: false,
-                })
+                }))
             },
         );
         api.bound_sockets_diagnostics(&IpSocketMatcher::SrcAddr(matcher), &mut results);
         assert_eq!(results, Vec::new());
+    }
+
+    #[ip_test(I)]
+    fn diagnostics_match_src_addr_unbound<I: TestIpExt>() {
+        set_logger_for_test();
+
+        let mut ctx = UdpFakeDeviceCtx::with_core_ctx(FakeUdpCoreCtx::new_fake_device::<I>());
+        let mut api = UdpApi::<I, _>::new(ctx.as_mut());
+
+        let socket1 = api.create();
+        api.listen(&socket1, Some(ZonedAddr::Unzoned(I::TEST_ADDRS.local_ip)), Some(LOCAL_PORT_1))
+            .expect("listen should succeed");
+
+        let socket2 = api.create();
+        api.listen(&socket2, None, Some(LOCAL_PORT_2)).expect("listen should succeed");
+
+        let mut results = Vec::new();
+        let matcher = match I::VERSION {
+            net_types::ip::IpVersion::V4 => BoundAddressMatcherEither::Unbound,
+            net_types::ip::IpVersion::V6 => BoundAddressMatcherEither::Unbound,
+        };
+        api.bound_sockets_diagnostics(&IpSocketMatcher::SrcAddr(matcher), &mut results);
+        assert_eq!(
+            results,
+            vec![UdpSocketDiagnostics {
+                state: UdpSocketDiagnosticTuple::Bound { src_addr: None, src_port: LOCAL_PORT_2 },
+                cookie: socket2.socket_cookie(),
+                marks: Marks::default(),
+            }]
+        );
+
+        results.clear();
+        let matcher = I::map_ip_in(
+            I::TEST_ADDRS.subnet,
+            |subnet| {
+                BoundAddressMatcherEither::Bound(AddressMatcherEither::V4(AddressMatcher {
+                    matcher: AddressMatcherType::Subnet(SubnetMatcher(subnet)),
+                    invert: false,
+                }))
+            },
+            |subnet| {
+                BoundAddressMatcherEither::Bound(AddressMatcherEither::V6(AddressMatcher {
+                    matcher: AddressMatcherType::Subnet(SubnetMatcher(subnet)),
+                    invert: false,
+                }))
+            },
+        );
+        api.bound_sockets_diagnostics(&IpSocketMatcher::SrcAddr(matcher), &mut results);
+        assert_eq!(
+            results,
+            vec![UdpSocketDiagnostics {
+                state: UdpSocketDiagnosticTuple::Bound {
+                    src_addr: Some(I::TEST_ADDRS.local_ip.get()),
+                    src_port: LOCAL_PORT_1
+                },
+                cookie: socket1.socket_cookie(),
+                marks: Marks::default(),
+            }]
+        );
     }
 
     #[ip_test(I)]
@@ -302,16 +361,16 @@ mod tests {
         let matcher = I::map_ip_in(
             I::TEST_ADDRS.subnet,
             |subnet| {
-                AddressMatcherEither::V4(AddressMatcher {
+                BoundAddressMatcherEither::Bound(AddressMatcherEither::V4(AddressMatcher {
                     matcher: AddressMatcherType::Subnet(SubnetMatcher(subnet)),
                     invert: false,
-                })
+                }))
             },
             |subnet| {
-                AddressMatcherEither::V6(AddressMatcher {
+                BoundAddressMatcherEither::Bound(AddressMatcherEither::V6(AddressMatcher {
                     matcher: AddressMatcherType::Subnet(SubnetMatcher(subnet)),
                     invert: false,
-                })
+                }))
             },
         );
         api.bound_sockets_diagnostics(&IpSocketMatcher::DstAddr(matcher), &mut results);
@@ -333,24 +392,99 @@ mod tests {
         let matcher = I::map_ip_in(
             I::TEST_ADDRS.local_ip.get(),
             |addr| {
-                AddressMatcherEither::V4(AddressMatcher {
+                BoundAddressMatcherEither::Bound(AddressMatcherEither::V4(AddressMatcher {
                     matcher: AddressMatcherType::Subnet(SubnetMatcher(
                         Subnet::new(addr, 32).unwrap(),
                     )),
                     invert: false,
-                })
+                }))
             },
             |addr| {
-                AddressMatcherEither::V6(AddressMatcher {
+                BoundAddressMatcherEither::Bound(AddressMatcherEither::V6(AddressMatcher {
                     matcher: AddressMatcherType::Subnet(SubnetMatcher(
                         Subnet::new(addr, 128).unwrap(),
                     )),
                     invert: false,
-                })
+                }))
             },
         );
         api.bound_sockets_diagnostics(&IpSocketMatcher::DstAddr(matcher), &mut results);
         assert_eq!(results, Vec::new());
+    }
+
+    #[ip_test(I)]
+    fn diagnostics_match_dst_addr_unbound<I: TestIpExt>() {
+        set_logger_for_test();
+
+        let mut ctx = UdpFakeDeviceCtx::with_core_ctx(FakeUdpCoreCtx::new_fake_device::<I>());
+        let mut api = UdpApi::<I, _>::new(ctx.as_mut());
+
+        let socket1 = api.create();
+        api.listen(&socket1, Some(ZonedAddr::Unzoned(I::TEST_ADDRS.local_ip)), Some(LOCAL_PORT_1))
+            .expect("listen should succeed");
+        api.connect(
+            &socket1,
+            Some(ZonedAddr::Unzoned(I::TEST_ADDRS.remote_ip)),
+            UdpRemotePort::Set(REMOTE_PORT_1),
+        )
+        .expect("connect should succeed");
+
+        let socket2 = api.create();
+        api.listen(&socket2, Some(ZonedAddr::Unzoned(I::TEST_ADDRS.local_ip)), Some(LOCAL_PORT_2))
+            .expect("listen should succeed");
+
+        let mut results = Vec::new();
+        let matcher = match I::VERSION {
+            net_types::ip::IpVersion::V4 => BoundAddressMatcherEither::Unbound,
+            net_types::ip::IpVersion::V6 => BoundAddressMatcherEither::Unbound,
+        };
+        api.bound_sockets_diagnostics(&IpSocketMatcher::DstAddr(matcher), &mut results);
+        assert_eq!(
+            results,
+            vec![UdpSocketDiagnostics {
+                state: UdpSocketDiagnosticTuple::Bound {
+                    src_addr: Some(I::TEST_ADDRS.local_ip.get()),
+                    src_port: LOCAL_PORT_2
+                },
+                cookie: socket2.socket_cookie(),
+                marks: Marks::default(),
+            }]
+        );
+
+        results.clear();
+        let matcher = I::map_ip_in(
+            I::TEST_ADDRS.remote_ip.get(),
+            |addr| {
+                BoundAddressMatcherEither::Bound(AddressMatcherEither::V4(AddressMatcher {
+                    matcher: AddressMatcherType::Subnet(SubnetMatcher(
+                        Subnet::new(addr, 32).unwrap(),
+                    )),
+                    invert: false,
+                }))
+            },
+            |addr| {
+                BoundAddressMatcherEither::Bound(AddressMatcherEither::V6(AddressMatcher {
+                    matcher: AddressMatcherType::Subnet(SubnetMatcher(
+                        Subnet::new(addr, 128).unwrap(),
+                    )),
+                    invert: false,
+                }))
+            },
+        );
+        api.bound_sockets_diagnostics(&IpSocketMatcher::DstAddr(matcher), &mut results);
+        assert_eq!(
+            results,
+            vec![UdpSocketDiagnostics {
+                state: UdpSocketDiagnosticTuple::Connected {
+                    src_addr: I::TEST_ADDRS.local_ip.get(),
+                    src_port: LOCAL_PORT_1,
+                    dst_addr: I::TEST_ADDRS.remote_ip.get(),
+                    dst_port: REMOTE_PORT_1.get(),
+                },
+                cookie: socket1.socket_cookie(),
+                marks: Marks::default(),
+            }]
+        );
     }
 
     #[ip_test(I)]
@@ -399,10 +533,10 @@ mod tests {
         let mut results = Vec::new();
         api.bound_sockets_diagnostics(
             &IpSocketMatcher::Proto(SocketTransportProtocolMatcher::Udp(
-                UdpSocketMatcher::SrcPort(PortMatcher {
+                UdpSocketMatcher::SrcPort(BoundPortMatcher::Bound(PortMatcher {
                     range: LOCAL_PORT_1.get()..=LOCAL_PORT_1.get(),
                     invert: false,
-                }),
+                })),
             )),
             &mut results,
         );
@@ -421,10 +555,10 @@ mod tests {
         results.clear();
         api.bound_sockets_diagnostics(
             &IpSocketMatcher::Proto(SocketTransportProtocolMatcher::Udp(
-                UdpSocketMatcher::SrcPort(PortMatcher {
+                UdpSocketMatcher::SrcPort(BoundPortMatcher::Bound(PortMatcher {
                     range: (LOCAL_PORT_1.get() + 1)..=(LOCAL_PORT_1.get() + 1),
                     invert: false,
-                }),
+                })),
             )),
             &mut results,
         );
@@ -451,10 +585,10 @@ mod tests {
         let mut results = Vec::new();
         api.bound_sockets_diagnostics(
             &IpSocketMatcher::Proto(SocketTransportProtocolMatcher::Udp(
-                UdpSocketMatcher::DstPort(PortMatcher {
+                UdpSocketMatcher::DstPort(BoundPortMatcher::Bound(PortMatcher {
                     range: LOCAL_PORT_1.get()..=LOCAL_PORT_1.get(),
                     invert: false,
-                }),
+                })),
             )),
             &mut results,
         );
@@ -475,14 +609,98 @@ mod tests {
         results.clear();
         api.bound_sockets_diagnostics(
             &IpSocketMatcher::Proto(SocketTransportProtocolMatcher::Udp(
-                UdpSocketMatcher::DstPort(PortMatcher {
+                UdpSocketMatcher::DstPort(BoundPortMatcher::Bound(PortMatcher {
                     range: (LOCAL_PORT_1.get() + 1)..=(LOCAL_PORT_1.get() + 1),
                     invert: false,
-                }),
+                })),
             )),
             &mut results,
         );
         assert_eq!(results, Vec::new());
+    }
+
+    #[ip_test(I)]
+    fn diagnostics_match_src_port_unbound<I: TestIpExt>() {
+        set_logger_for_test();
+
+        let mut ctx = UdpFakeDeviceCtx::with_core_ctx(FakeUdpCoreCtx::new_fake_device::<I>());
+        let mut api = UdpApi::<I, _>::new(ctx.as_mut());
+
+        let socket = api.create();
+        api.listen(&socket, Some(ZonedAddr::Unzoned(I::TEST_ADDRS.local_ip)), Some(LOCAL_PORT_1))
+            .expect("listen should succeed");
+
+        let mut results = Vec::new();
+        // Source port is always present (bound) for sockets visible in diagnostics.
+        api.bound_sockets_diagnostics(
+            &IpSocketMatcher::Proto(SocketTransportProtocolMatcher::Udp(
+                UdpSocketMatcher::SrcPort(BoundPortMatcher::Unbound),
+            )),
+            &mut results,
+        );
+        assert_eq!(results, Vec::new());
+    }
+
+    #[ip_test(I)]
+    fn diagnostics_match_dst_port_unbound<I: TestIpExt>() {
+        set_logger_for_test();
+
+        let mut ctx = UdpFakeDeviceCtx::with_core_ctx(FakeUdpCoreCtx::new_fake_device::<I>());
+        let mut api = UdpApi::<I, _>::new(ctx.as_mut());
+
+        // Unconnected socket (no destination port).
+        let socket1 = api.create();
+        api.listen(&socket1, Some(ZonedAddr::Unzoned(I::TEST_ADDRS.local_ip)), Some(LOCAL_PORT_1))
+            .expect("listen should succeed");
+
+        // Connected socket (has destination port).
+        let socket2 = api.create();
+        api.listen(&socket2, Some(ZonedAddr::Unzoned(I::TEST_ADDRS.local_ip)), Some(LOCAL_PORT_2))
+            .expect("listen should succeed");
+        api.connect(
+            &socket2,
+            Some(ZonedAddr::Unzoned(I::TEST_ADDRS.remote_ip)),
+            UdpRemotePort::Set(REMOTE_PORT_2),
+        )
+        .expect("connect should succeed");
+
+        let mut results = Vec::new();
+        api.bound_sockets_diagnostics(
+            &IpSocketMatcher::Proto(SocketTransportProtocolMatcher::Udp(
+                UdpSocketMatcher::DstPort(BoundPortMatcher::Unbound),
+            )),
+            &mut results,
+        );
+        assert_eq!(
+            results,
+            vec![UdpSocketDiagnostics {
+                state: UdpSocketDiagnosticTuple::Bound {
+                    src_addr: Some(I::TEST_ADDRS.local_ip.get()),
+                    src_port: LOCAL_PORT_1
+                },
+                cookie: socket1.socket_cookie(),
+                marks: Marks::default(),
+            }]
+        );
+
+        results.clear();
+        api.bound_sockets_diagnostics(
+            &IpSocketMatcher::Proto(SocketTransportProtocolMatcher::Udp(
+                UdpSocketMatcher::DstPort(BoundPortMatcher::Unbound),
+            )),
+            &mut results,
+        );
+        assert_eq!(
+            results,
+            vec![UdpSocketDiagnostics {
+                state: UdpSocketDiagnosticTuple::Bound {
+                    src_addr: Some(I::TEST_ADDRS.local_ip.get()),
+                    src_port: LOCAL_PORT_1,
+                },
+                cookie: socket1.socket_cookie(),
+                marks: Marks::default(),
+            }]
+        );
     }
 
     #[ip_test(I)]
@@ -703,10 +921,10 @@ mod tests {
         let mut results = Vec::new();
         api.bound_sockets_diagnostics(
             &IpSocketMatcher::Proto(SocketTransportProtocolMatcher::Udp(
-                UdpSocketMatcher::DstPort(PortMatcher {
+                UdpSocketMatcher::DstPort(BoundPortMatcher::Bound(PortMatcher {
                     range: REMOTE_PORT_1.get()..=REMOTE_PORT_1.get(),
                     invert: false,
-                }),
+                })),
             )),
             &mut results,
         );
@@ -740,10 +958,10 @@ mod tests {
         results.clear();
         api.bound_sockets_diagnostics(
             &IpSocketMatcher::Proto(SocketTransportProtocolMatcher::Udp(
-                UdpSocketMatcher::DstPort(PortMatcher {
+                UdpSocketMatcher::DstPort(BoundPortMatcher::Bound(PortMatcher {
                     range: REMOTE_PORT_2.get()..=REMOTE_PORT_2.get(),
                     invert: false,
-                }),
+                })),
             )),
             &mut results,
         );

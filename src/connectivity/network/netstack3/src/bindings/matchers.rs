@@ -86,6 +86,19 @@ impl TryFromFidl<fnet_matchers_ext::Port> for netstack3_core::ip::PortMatcher {
     }
 }
 
+impl TryFromFidl<fnet_matchers_ext::BoundPort> for netstack3_core::ip::BoundPortMatcher {
+    type Error = Never;
+
+    fn try_from_fidl(fidl: fnet_matchers_ext::BoundPort) -> Result<Self, Self::Error> {
+        Ok(match fidl {
+            fnet_matchers_ext::BoundPort::Bound(port) => {
+                netstack3_core::ip::BoundPortMatcher::Bound(port.into_core())
+            }
+            fnet_matchers_ext::BoundPort::Unbound => netstack3_core::ip::BoundPortMatcher::Unbound,
+        })
+    }
+}
+
 impl TryFromFidl<fnet_matchers_ext::Address> for netstack3_core::ip::AddressMatcherEither {
     type Error = Never;
 
@@ -136,6 +149,23 @@ impl TryFromFidl<fnet_matchers_ext::Address> for netstack3_core::ip::AddressMatc
         };
 
         Ok(core_matcher)
+    }
+}
+
+impl TryFromFidl<fnet_matchers_ext::BoundAddress>
+    for netstack3_core::ip::BoundAddressMatcherEither
+{
+    type Error = Never;
+
+    fn try_from_fidl(fidl: fnet_matchers_ext::BoundAddress) -> Result<Self, Self::Error> {
+        Ok(match fidl {
+            fnet_matchers_ext::BoundAddress::Bound(address) => {
+                netstack3_core::ip::BoundAddressMatcherEither::Bound(address.into_core())
+            }
+            fnet_matchers_ext::BoundAddress::Unbound => {
+                netstack3_core::ip::BoundAddressMatcherEither::Unbound
+            }
+        })
     }
 }
 

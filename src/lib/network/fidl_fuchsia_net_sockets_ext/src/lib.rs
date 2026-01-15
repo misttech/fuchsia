@@ -14,8 +14,8 @@ use {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum IpSocketMatcher {
     Family(ip::IpVersion),
-    SrcAddr(fnet_matchers_ext::Address),
-    DstAddr(fnet_matchers_ext::Address),
+    SrcAddr(fnet_matchers_ext::BoundAddress),
+    DstAddr(fnet_matchers_ext::BoundAddress),
     Proto(fnet_matchers_ext::SocketTransportProtocol),
     BoundInterface(fnet_matchers_ext::BoundInterface),
     Cookie(fnet_matchers::SocketCookie),
@@ -27,7 +27,7 @@ pub enum IpSocketMatcherError {
     #[error("got unexpected union variant: {0}")]
     UnknownUnionVariant(u64),
     #[error("address matcher conversion failure: {0}")]
-    Address(fnet_matchers_ext::AddressError),
+    Address(fnet_matchers_ext::BoundAddressError),
     #[error("protocol matcher conversion failure: {0}")]
     TransportProtocol(fnet_matchers_ext::SocketTransportProtocolError),
     #[error("bound interface matcher conversion failure: {0}")]
@@ -117,29 +117,37 @@ mod tests {
         "FamilyIpv6"
     )]
     #[test_case(
-        fnet_sockets::IpSocketMatcher::SrcAddr(fnet_matchers::Address {
-            matcher: fnet_matchers::AddressMatcherType::Subnet(fidl_subnet!("192.0.2.0/24")),
-            invert: true,
-        }),
-        IpSocketMatcher::SrcAddr(fnet_matchers_ext::Address {
-            matcher: fnet_matchers_ext::AddressMatcherType::Subnet(
-                fnet_matchers_ext::Subnet::try_from(fidl_subnet!("192.0.2.0/24")).unwrap()
-            ),
-            invert: true,
-        });
+        fnet_sockets::IpSocketMatcher::SrcAddr(fnet_matchers::BoundAddress::Bound(
+            fnet_matchers::Address {
+                matcher: fnet_matchers::AddressMatcherType::Subnet(fidl_subnet!("192.0.2.0/24")),
+                invert: true,
+            }
+        )),
+        IpSocketMatcher::SrcAddr(fnet_matchers_ext::BoundAddress::Bound(
+            fnet_matchers_ext::Address {
+                matcher: fnet_matchers_ext::AddressMatcherType::Subnet(
+                    fnet_matchers_ext::Subnet::try_from(fidl_subnet!("192.0.2.0/24")).unwrap()
+                ),
+                invert: true,
+            }
+        ));
         "SrcAddr"
     )]
     #[test_case(
-        fnet_sockets::IpSocketMatcher::DstAddr(fnet_matchers::Address {
-            matcher: fnet_matchers::AddressMatcherType::Subnet(fidl_subnet!("2001:db8::/32")),
-            invert: false,
-        }),
-        IpSocketMatcher::DstAddr(fnet_matchers_ext::Address {
-            matcher: fnet_matchers_ext::AddressMatcherType::Subnet(
-                fnet_matchers_ext::Subnet::try_from(fidl_subnet!("2001:db8::/32")).unwrap()
-            ),
-            invert: false,
-        });
+        fnet_sockets::IpSocketMatcher::DstAddr(fnet_matchers::BoundAddress::Bound(
+            fnet_matchers::Address {
+                matcher: fnet_matchers::AddressMatcherType::Subnet(fidl_subnet!("2001:db8::/32")),
+                invert: false,
+            }
+        )),
+        IpSocketMatcher::DstAddr(fnet_matchers_ext::BoundAddress::Bound(
+            fnet_matchers_ext::Address {
+                matcher: fnet_matchers_ext::AddressMatcherType::Subnet(
+                    fnet_matchers_ext::Subnet::try_from(fidl_subnet!("2001:db8::/32")).unwrap()
+                ),
+                invert: false,
+            }
+        ));
         "DstAddr"
     )]
     #[test_case(
@@ -162,7 +170,7 @@ mod tests {
     )]
     #[test_case(
         fnet_sockets::IpSocketMatcher::BoundInterface(fnet_matchers::BoundInterface::Unbound(
-            fnet_matchers::Unbound
+            fnet_matchers::Empty
         )),
         IpSocketMatcher::BoundInterface(fnet_matchers_ext::BoundInterface::Unbound);
         "BoundInterfaceUnbound"
@@ -198,6 +206,52 @@ mod tests {
         });
         "Mark"
     )]
+    #[test_case(
+        fnet_sockets::IpSocketMatcher::SrcAddr(fnet_matchers::BoundAddress::Unbound(fnet_matchers::Empty)),
+        IpSocketMatcher::SrcAddr(fnet_matchers_ext::BoundAddress::Unbound);
+        "SrcAddrUnbound"
+    )]
+    #[test_case(
+        fnet_sockets::IpSocketMatcher::DstAddr(fnet_matchers::BoundAddress::Unbound(fnet_matchers::Empty)),
+        IpSocketMatcher::DstAddr(fnet_matchers_ext::BoundAddress::Unbound);
+        "DstAddrUnbound"
+    )]
+    #[test_case(
+        fnet_sockets::IpSocketMatcher::Proto(fnet_matchers::SocketTransportProtocol::Tcp(
+            fnet_matchers::TcpSocket::SrcPort(fnet_matchers::BoundPort::Unbound(fnet_matchers::Empty))
+        )),
+        IpSocketMatcher::Proto(fnet_matchers_ext::SocketTransportProtocol::Tcp(
+            fnet_matchers_ext::TcpSocket::SrcPort(fnet_matchers_ext::BoundPort::Unbound)
+        ));
+        "ProtoTcpSrcPortUnbound"
+    )]
+    #[test_case(
+        fnet_sockets::IpSocketMatcher::Proto(fnet_matchers::SocketTransportProtocol::Tcp(
+            fnet_matchers::TcpSocket::DstPort(fnet_matchers::BoundPort::Unbound(fnet_matchers::Empty))
+        )),
+        IpSocketMatcher::Proto(fnet_matchers_ext::SocketTransportProtocol::Tcp(
+            fnet_matchers_ext::TcpSocket::DstPort(fnet_matchers_ext::BoundPort::Unbound)
+        ));
+        "ProtoTcpDstPortUnbound"
+    )]
+    #[test_case(
+        fnet_sockets::IpSocketMatcher::Proto(fnet_matchers::SocketTransportProtocol::Udp(
+            fnet_matchers::UdpSocket::SrcPort(fnet_matchers::BoundPort::Unbound(fnet_matchers::Empty))
+        )),
+        IpSocketMatcher::Proto(fnet_matchers_ext::SocketTransportProtocol::Udp(
+            fnet_matchers_ext::UdpSocket::SrcPort(fnet_matchers_ext::BoundPort::Unbound)
+        ));
+        "ProtoUdpSrcPortUnbound"
+    )]
+    #[test_case(
+        fnet_sockets::IpSocketMatcher::Proto(fnet_matchers::SocketTransportProtocol::Udp(
+            fnet_matchers::UdpSocket::DstPort(fnet_matchers::BoundPort::Unbound(fnet_matchers::Empty))
+        )),
+        IpSocketMatcher::Proto(fnet_matchers_ext::SocketTransportProtocol::Udp(
+            fnet_matchers_ext::UdpSocket::DstPort(fnet_matchers_ext::BoundPort::Unbound)
+        ));
+        "ProtoUdpDstPortUnbound"
+    )]
     fn convert_from_fidl_and_back<F, E>(fidl_type: F, local_type: E)
     where
         E: TryFrom<F> + Clone + std::fmt::Debug + PartialEq,
@@ -214,11 +268,15 @@ mod tests {
         "UnknownUnionVariant"
     )]
     #[test_case(
-        fnet_sockets::IpSocketMatcher::SrcAddr(fnet_matchers::Address {
-            matcher: fnet_matchers::AddressMatcherType::__SourceBreaking { unknown_ordinal: 100 },
-            invert: false,
-        }) => Err(IpSocketMatcherError::Address(fnet_matchers_ext::AddressError::AddressMatcherType(
-            fnet_matchers_ext::AddressMatcherTypeError::UnknownUnionVariant
+        fnet_sockets::IpSocketMatcher::SrcAddr(fnet_matchers::BoundAddress::Bound(
+            fnet_matchers::Address {
+                matcher: fnet_matchers::AddressMatcherType::__SourceBreaking { unknown_ordinal: 100 },
+                invert: false,
+            }
+        )) => Err(IpSocketMatcherError::Address(fnet_matchers_ext::BoundAddressError::Address(
+            fnet_matchers_ext::AddressError::AddressMatcherType(
+                fnet_matchers_ext::AddressMatcherTypeError::UnknownUnionVariant
+            )
         )));
         "AddressError"
     )]

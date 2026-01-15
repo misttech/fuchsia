@@ -260,6 +260,25 @@ impl Matcher<u16> for PortMatcher {
     }
 }
 
+/// A matcher for (possibly bound) transport-layer port numbers.
+#[derive(Clone, Debug)]
+pub enum BoundPortMatcher {
+    /// The target is bound to a port matched by the inner matcher.
+    Bound(PortMatcher),
+    /// The target is not bound to a specific port.
+    Unbound,
+}
+
+impl Matcher<Option<u16>> for BoundPortMatcher {
+    fn matches(&self, actual: &Option<u16>) -> bool {
+        match (self, actual) {
+            (BoundPortMatcher::Unbound, None) => true,
+            (BoundPortMatcher::Bound(matcher), Some(port)) => matcher.matches(&port),
+            _ => false,
+        }
+    }
+}
+
 bitflags! {
     /// A matcher for TCP state machine state.
     #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, PartialOrd, Ord, Hash)]
@@ -334,21 +353,21 @@ impl TcpSocketState {
 /// having to specifically expose that state.
 pub trait TcpSocketProperties {
     /// Returns whether the socket's source port is matched by the matcher.
-    fn src_port_matches(&self, matcher: &PortMatcher) -> bool;
+    fn src_port_matches(&self, matcher: &BoundPortMatcher) -> bool;
 
     /// Returns whether the socket's destination port is matched by the matcher.
-    fn dst_port_matches(&self, matcher: &PortMatcher) -> bool;
+    fn dst_port_matches(&self, matcher: &BoundPortMatcher) -> bool;
 
     /// Returns whether the socket's TCP state is matched by the matcher.
     fn state_matches(&self, matcher: &TcpStateMatcher) -> bool;
 }
 
 impl TcpSocketProperties for Never {
-    fn src_port_matches(&self, _matcher: &PortMatcher) -> bool {
+    fn src_port_matches(&self, _matcher: &BoundPortMatcher) -> bool {
         unimplemented!()
     }
 
-    fn dst_port_matches(&self, _matcher: &PortMatcher) -> bool {
+    fn dst_port_matches(&self, _matcher: &BoundPortMatcher) -> bool {
         unimplemented!()
     }
 
@@ -361,11 +380,11 @@ impl<T> TcpSocketProperties for &T
 where
     T: TcpSocketProperties,
 {
-    fn src_port_matches(&self, matcher: &PortMatcher) -> bool {
+    fn src_port_matches(&self, matcher: &BoundPortMatcher) -> bool {
         (*self).src_port_matches(matcher)
     }
 
-    fn dst_port_matches(&self, matcher: &PortMatcher) -> bool {
+    fn dst_port_matches(&self, matcher: &BoundPortMatcher) -> bool {
         (*self).dst_port_matches(matcher)
     }
 
@@ -379,9 +398,9 @@ pub enum TcpSocketMatcher {
     /// Match any TCP socket without further constraints.
     Empty,
     /// Match on the source port.
-    SrcPort(PortMatcher),
+    SrcPort(BoundPortMatcher),
     /// Match on the destination port.
-    DstPort(PortMatcher),
+    DstPort(BoundPortMatcher),
     /// Match on the state of the TCP state machine.
     State(TcpStateMatcher),
 }
@@ -436,21 +455,21 @@ impl UdpSocketState {
 /// having to specifically expose that state.
 pub trait UdpSocketProperties {
     /// Returns whether the socket's source port is matched by the matcher.
-    fn src_port_matches(&self, matcher: &PortMatcher) -> bool;
+    fn src_port_matches(&self, matcher: &BoundPortMatcher) -> bool;
 
     /// Returns whether the socket's destination port is matched by the matcher.
-    fn dst_port_matches(&self, matcher: &PortMatcher) -> bool;
+    fn dst_port_matches(&self, matcher: &BoundPortMatcher) -> bool;
 
     /// Returns whether the socket's UDP state is matched by the matcher.
     fn state_matches(&self, matcher: &UdpStateMatcher) -> bool;
 }
 
 impl UdpSocketProperties for Never {
-    fn src_port_matches(&self, _matcher: &PortMatcher) -> bool {
+    fn src_port_matches(&self, _matcher: &BoundPortMatcher) -> bool {
         unimplemented!()
     }
 
-    fn dst_port_matches(&self, _matcher: &PortMatcher) -> bool {
+    fn dst_port_matches(&self, _matcher: &BoundPortMatcher) -> bool {
         unimplemented!()
     }
 
@@ -463,11 +482,11 @@ impl<U> UdpSocketProperties for &U
 where
     U: UdpSocketProperties,
 {
-    fn src_port_matches(&self, matcher: &PortMatcher) -> bool {
+    fn src_port_matches(&self, matcher: &BoundPortMatcher) -> bool {
         (*self).src_port_matches(matcher)
     }
 
-    fn dst_port_matches(&self, matcher: &PortMatcher) -> bool {
+    fn dst_port_matches(&self, matcher: &BoundPortMatcher) -> bool {
         (*self).dst_port_matches(matcher)
     }
 
@@ -481,9 +500,9 @@ pub enum UdpSocketMatcher {
     /// Match any UDP socket without further constraints.
     Empty,
     /// Match the source port.
-    SrcPort(PortMatcher),
+    SrcPort(BoundPortMatcher),
     /// Match the destination port.
-    DstPort(PortMatcher),
+    DstPort(BoundPortMatcher),
     /// Match the UDP state.
     State(UdpStateMatcher),
 }
@@ -624,17 +643,24 @@ pub enum AddressMatcherEither {
     V6(AddressMatcher<Ipv6Addr>),
 }
 
-impl Matcher<IpAddr> for AddressMatcherEither {
-    fn matches(&self, addr: &IpAddr) -> bool {
-        match self {
-            AddressMatcherEither::V4(matcher) => match addr {
-                IpAddr::V4(addr) => matcher.matches(addr),
-                IpAddr::V6(_) => false,
+/// An IP-generic address matcher that matches a (possibly bound) IP address.
+pub enum BoundAddressMatcherEither {
+    /// The target is bound to an address matched by the inner matcher.
+    Bound(AddressMatcherEither),
+    /// The target is not bound to a specific address.
+    Unbound,
+}
+
+impl Matcher<Option<IpAddr>> for BoundAddressMatcherEither {
+    fn matches(&self, addr: &Option<IpAddr>) -> bool {
+        match (self, addr) {
+            (BoundAddressMatcherEither::Unbound, None) => true,
+            (BoundAddressMatcherEither::Bound(matcher), Some(addr)) => match (matcher, addr) {
+                (AddressMatcherEither::V4(matcher), IpAddr::V4(addr)) => matcher.matches(addr),
+                (AddressMatcherEither::V6(matcher), IpAddr::V6(addr)) => matcher.matches(addr),
+                _ => false,
             },
-            AddressMatcherEither::V6(matcher) => match addr {
-                IpAddr::V4(_) => false,
-                IpAddr::V6(addr) => matcher.matches(addr),
-            },
+            _ => false,
         }
     }
 }
@@ -647,11 +673,11 @@ pub trait IpSocketProperties<DeviceClass> {
 
     /// Returns whether the provided address matcher matches the socket's source
     /// address.
-    fn src_addr_matches(&self, addr: &AddressMatcherEither) -> bool;
+    fn src_addr_matches(&self, addr: &BoundAddressMatcherEither) -> bool;
 
     /// Returns whether the provided address matcher matches the socket's
     /// destination address.
-    fn dst_addr_matches(&self, addr: &AddressMatcherEither) -> bool;
+    fn dst_addr_matches(&self, addr: &BoundAddressMatcherEither) -> bool;
 
     /// Returns whether the transport protocol matches the socket's
     /// transport-layer information.
@@ -673,9 +699,9 @@ pub enum IpSocketMatcher<DeviceClass> {
     /// Matches the socket's address family.
     Family(net_types::ip::IpVersion),
     /// Matches the socket's source address.
-    SrcAddr(AddressMatcherEither),
+    SrcAddr(BoundAddressMatcherEither),
     /// Matches the socket's destination address.
-    DstAddr(AddressMatcherEither),
+    DstAddr(BoundAddressMatcherEither),
     /// Matches the socket's transport protocol.
     Proto(SocketTransportProtocolMatcher),
     /// Matches the socket's bound interface.
@@ -1089,9 +1115,27 @@ mod tests {
         matcher.matches(&actual)
     }
 
+    #[test_case(BoundPortMatcher::Unbound, None => true)]
+    #[test_case(BoundPortMatcher::Unbound, Some(80) => false)]
+    #[test_case(
+        BoundPortMatcher::Bound(PortMatcher { range: 10..=20, invert: false }),
+        None => false
+    )]
+    #[test_case(
+        BoundPortMatcher::Bound(PortMatcher { range: 10..=20, invert: false }),
+        Some(10) => true
+    )]
+    #[test_case(
+        BoundPortMatcher::Bound(PortMatcher { range: 10..=20, invert: false }),
+        Some(9) => false
+    )]
+    fn bound_port_matcher(matcher: BoundPortMatcher, actual: Option<u16>) -> bool {
+        matcher.matches(&actual)
+    }
+
     struct FakeTcpSocket {
-        src_port: u16,
-        dst_port: u16,
+        src_port: Option<u16>,
+        dst_port: Option<u16>,
         state: TcpSocketState,
     }
 
@@ -1116,11 +1160,11 @@ mod tests {
     }
 
     impl TcpSocketProperties for FakeTcpSocket {
-        fn src_port_matches(&self, matcher: &PortMatcher) -> bool {
+        fn src_port_matches(&self, matcher: &BoundPortMatcher) -> bool {
             matcher.matches(&self.src_port)
         }
 
-        fn dst_port_matches(&self, matcher: &PortMatcher) -> bool {
+        fn dst_port_matches(&self, matcher: &BoundPortMatcher) -> bool {
             matcher.matches(&self.dst_port)
         }
 
@@ -1130,8 +1174,8 @@ mod tests {
     }
 
     struct FakeUdpSocket {
-        src_port: u16,
-        dst_port: u16,
+        src_port: Option<u16>,
+        dst_port: Option<u16>,
         state: UdpSocketState,
     }
 
@@ -1156,11 +1200,11 @@ mod tests {
     }
 
     impl UdpSocketProperties for FakeUdpSocket {
-        fn src_port_matches(&self, matcher: &PortMatcher) -> bool {
+        fn src_port_matches(&self, matcher: &BoundPortMatcher) -> bool {
             matcher.matches(&self.src_port)
         }
 
-        fn dst_port_matches(&self, matcher: &PortMatcher) -> bool {
+        fn dst_port_matches(&self, matcher: &BoundPortMatcher) -> bool {
             matcher.matches(&self.dst_port)
         }
 
@@ -1174,8 +1218,8 @@ mod tests {
         I: TestIpExt,
         T: MaybeSocketTransportProperties,
     {
-        src_ip: I::Addr,
-        dst_ip: I::Addr,
+        src_ip: Option<I::Addr>,
+        dst_ip: Option<I::Addr>,
         proto: T,
         intf: Option<FakeMatcherDeviceId>,
         cookie: u64,
@@ -1215,12 +1259,12 @@ mod tests {
             *family == I::VERSION
         }
 
-        fn src_addr_matches(&self, addr: &AddressMatcherEither) -> bool {
-            addr.matches(&self.src_ip.into())
+        fn src_addr_matches(&self, addr: &BoundAddressMatcherEither) -> bool {
+            addr.matches(&self.src_ip.map(|a| a.into()))
         }
 
-        fn dst_addr_matches(&self, addr: &AddressMatcherEither) -> bool {
-            addr.matches(&self.dst_ip.into())
+        fn dst_addr_matches(&self, addr: &BoundAddressMatcherEither) -> bool {
+            addr.matches(&self.dst_ip.map(|a| a.into()))
         }
 
         fn transport_protocol_matches(&self, matcher: &SocketTransportProtocolMatcher) -> bool {
@@ -1242,63 +1286,127 @@ mod tests {
 
     #[test_case(
         TcpSocketMatcher::Empty,
-        FakeTcpSocket { src_port: 80, dst_port: 12345, state: TcpSocketState::Established } => true;
+        FakeTcpSocket {
+            src_port: Some(80), dst_port: Some(12345), state: TcpSocketState::Established
+        } => true;
         "empty matcher"
     )]
     #[test_case(
-        TcpSocketMatcher::SrcPort(PortMatcher { range: 80..=80, invert: false }),
-        FakeTcpSocket { src_port: 80, dst_port: 12345, state: TcpSocketState::Established } => true;
+        TcpSocketMatcher::SrcPort(BoundPortMatcher::Bound(
+            PortMatcher { range: 80..=80, invert: false }
+        )),
+        FakeTcpSocket {
+            src_port: Some(80), dst_port: Some(12345), state: TcpSocketState::Established
+        } => true;
         "src_port match"
     )]
     #[test_case(
-        TcpSocketMatcher::SrcPort(PortMatcher { range: 80..=80, invert: false }),
-        FakeTcpSocket { src_port: 81, dst_port: 12345, state: TcpSocketState::Established } => false;
+        TcpSocketMatcher::SrcPort(BoundPortMatcher::Bound(
+            PortMatcher { range: 80..=80, invert: false }
+        )),
+        FakeTcpSocket {
+            src_port: Some(81), dst_port: Some(12345), state: TcpSocketState::Established
+        } => false;
         "src_port no match"
     )]
     #[test_case(
-        TcpSocketMatcher::SrcPort(PortMatcher { range: 80..=80, invert: true }),
-        FakeTcpSocket { src_port: 80, dst_port: 12345, state: TcpSocketState::Established } => false;
+        TcpSocketMatcher::SrcPort(BoundPortMatcher::Bound(PortMatcher {
+            range: 80..=80, invert: true
+        })),
+        FakeTcpSocket {
+            src_port: Some(80), dst_port: Some(12345), state: TcpSocketState::Established
+        } => false;
         "src_port invert no match"
     )]
     #[test_case(
-        TcpSocketMatcher::SrcPort(PortMatcher { range: 80..=80, invert: true }),
-        FakeTcpSocket { src_port: 81, dst_port: 12345, state: TcpSocketState::Established } => true;
+        TcpSocketMatcher::SrcPort(BoundPortMatcher::Bound(
+            PortMatcher { range: 80..=80, invert: true }
+        )),
+        FakeTcpSocket {
+            src_port: Some(81), dst_port: Some(12345), state: TcpSocketState::Established
+        } => true;
         "src_port invert match"
     )]
     #[test_case(
-        TcpSocketMatcher::DstPort(PortMatcher { range: 12345..=12345, invert: false }),
-        FakeTcpSocket { src_port: 80, dst_port: 12345, state: TcpSocketState::Established } => true;
+        TcpSocketMatcher::DstPort(BoundPortMatcher::Bound(
+            PortMatcher {range: 12345..=12345, invert: false }
+        )),
+        FakeTcpSocket {
+            src_port: Some(80), dst_port: Some(12345), state: TcpSocketState::Established
+        } => true;
         "dst_port match"
     )]
     #[test_case(
-        TcpSocketMatcher::DstPort(PortMatcher { range: 12345..=12345, invert: false }),
-        FakeTcpSocket { src_port: 80, dst_port: 12346, state: TcpSocketState::Established } => false;
+        TcpSocketMatcher::DstPort(BoundPortMatcher::Bound(
+            PortMatcher { range: 12345..=12345, invert: false }
+        )),
+        FakeTcpSocket {
+            src_port: Some(80), dst_port: Some(12346), state: TcpSocketState::Established
+        } => false;
         "dst_port no match"
     )]
     #[test_case(
         TcpSocketMatcher::State(TcpStateMatcher::ESTABLISHED),
-        FakeTcpSocket { src_port: 80, dst_port: 12345, state: TcpSocketState::Established } => true;
+        FakeTcpSocket {
+            src_port: Some(80), dst_port: Some(12345), state: TcpSocketState::Established
+        } => true;
         "state match"
     )]
     #[test_case(
         TcpSocketMatcher::State(TcpStateMatcher::SYN_SENT),
-        FakeTcpSocket { src_port: 80, dst_port: 12345, state: TcpSocketState::Established } => false;
+        FakeTcpSocket {
+            src_port: Some(80), dst_port: Some(12345), state: TcpSocketState::Established
+        } => false;
         "state no match"
     )]
     #[test_case(
         TcpSocketMatcher::State(TcpStateMatcher::ESTABLISHED | TcpStateMatcher::SYN_SENT),
-        FakeTcpSocket { src_port: 80, dst_port: 12345, state: TcpSocketState::Established } => true;
+        FakeTcpSocket {
+            src_port: Some(80), dst_port: Some(12345), state: TcpSocketState::Established
+        } => true;
         "state multi match established"
     )]
     #[test_case(
         TcpSocketMatcher::State(TcpStateMatcher::ESTABLISHED | TcpStateMatcher::SYN_SENT),
-        FakeTcpSocket { src_port: 80, dst_port: 12345, state: TcpSocketState::SynSent } => true;
+        FakeTcpSocket {
+            src_port: Some(80), dst_port: Some(12345), state: TcpSocketState::SynSent
+        } => true;
         "state multi match syn_sent"
     )]
     #[test_case(
         TcpSocketMatcher::State(TcpStateMatcher::ESTABLISHED | TcpStateMatcher::SYN_SENT),
-        FakeTcpSocket { src_port: 80, dst_port: 12345, state: TcpSocketState::FinWait1 } => false;
+        FakeTcpSocket {
+            src_port: Some(80), dst_port: Some(12345), state: TcpSocketState::FinWait1
+        } => false;
         "state multi no match"
+    )]
+    #[test_case(
+        TcpSocketMatcher::SrcPort(BoundPortMatcher::Unbound),
+        FakeTcpSocket {
+            src_port: None, dst_port: Some(12345), state: TcpSocketState::Established
+        } => true;
+        "src_port unbound match"
+    )]
+    #[test_case(
+        TcpSocketMatcher::SrcPort(BoundPortMatcher::Unbound),
+        FakeTcpSocket {
+            src_port: Some(80), dst_port: Some(12345), state: TcpSocketState::Established
+        } => false;
+        "src_port unbound no match"
+    )]
+    #[test_case(
+        TcpSocketMatcher::DstPort(BoundPortMatcher::Unbound),
+        FakeTcpSocket {
+            src_port: Some(80), dst_port: None, state: TcpSocketState::Established
+        } => true;
+        "dst_port unbound match"
+    )]
+    #[test_case(
+        TcpSocketMatcher::DstPort(BoundPortMatcher::Unbound),
+        FakeTcpSocket {
+            src_port: Some(80), dst_port: Some(12345), state: TcpSocketState::Established
+        } => false;
+        "dst_port unbound no match"
     )]
     fn tcp_socket_matcher(matcher: TcpSocketMatcher, socket: FakeTcpSocket) -> bool {
         matcher.matches(&socket)
@@ -1306,48 +1414,100 @@ mod tests {
 
     #[test_case(
         UdpSocketMatcher::Empty,
-        FakeUdpSocket { src_port: 53, dst_port: 12345, state: UdpSocketState::Bound } => true;
+        FakeUdpSocket {
+            src_port: Some(53), dst_port: Some(12345), state: UdpSocketState::Bound
+        } => true;
         "empty matcher"
     )]
     #[test_case(
-        UdpSocketMatcher::SrcPort(PortMatcher { range: 53..=53, invert: false }),
-        FakeUdpSocket { src_port: 53, dst_port: 12345, state: UdpSocketState::Bound } => true;
+        UdpSocketMatcher::SrcPort(BoundPortMatcher::Bound(
+            PortMatcher { range: 53..=53, invert: false }
+        )),
+        FakeUdpSocket {
+            src_port: Some(53), dst_port: Some(12345), state: UdpSocketState::Bound
+        } => true;
         "src_port match"
     )]
     #[test_case(
-        UdpSocketMatcher::SrcPort(PortMatcher { range: 53..=53, invert: false }),
-        FakeUdpSocket { src_port: 54, dst_port: 12345, state: UdpSocketState::Bound } => false;
+        UdpSocketMatcher::SrcPort(BoundPortMatcher::Bound(
+            PortMatcher { range: 53..=53, invert: false }
+        )),
+        FakeUdpSocket {
+            src_port: Some(54), dst_port: Some(12345), state: UdpSocketState::Bound
+        } => false;
         "src_port no match"
     )]
     #[test_case(
-        UdpSocketMatcher::DstPort(PortMatcher { range: 12345..=12345, invert: false }),
-        FakeUdpSocket { src_port: 53, dst_port: 12345, state: UdpSocketState::Bound } => true;
+        UdpSocketMatcher::DstPort(BoundPortMatcher::Bound(
+            PortMatcher { range: 12345..=12345, invert: false }
+        )),
+        FakeUdpSocket {
+            src_port: Some(53), dst_port: Some(12345), state: UdpSocketState::Bound
+         } => true;
         "dst_port match"
     )]
     #[test_case(
-        UdpSocketMatcher::DstPort(PortMatcher { range: 12345..=12345, invert: false }),
-        FakeUdpSocket { src_port: 53, dst_port: 12346, state: UdpSocketState::Bound } => false;
+        UdpSocketMatcher::DstPort(BoundPortMatcher::Bound(
+            PortMatcher { range: 12345..=12345, invert: false }
+        )),
+        FakeUdpSocket {
+            src_port: Some(53), dst_port: Some(12346), state: UdpSocketState::Bound
+        } => false;
         "dst_port no match"
     )]
     #[test_case(
         UdpSocketMatcher::State(UdpStateMatcher::BOUND),
-        FakeUdpSocket { src_port: 53, dst_port: 12345, state: UdpSocketState::Bound } => true;
+        FakeUdpSocket {
+            src_port: Some(53), dst_port: Some(12345), state: UdpSocketState::Bound
+         } => true;
         "state match bound"
     )]
     #[test_case(
         UdpSocketMatcher::State(UdpStateMatcher::CONNECTED),
-        FakeUdpSocket { src_port: 53, dst_port: 12345, state: UdpSocketState::Bound } => false;
+        FakeUdpSocket {
+            src_port: Some(53), dst_port: Some(12345), state: UdpSocketState::Bound
+        } => false;
         "state no match connected"
     )]
     #[test_case(
         UdpSocketMatcher::State(UdpStateMatcher::BOUND | UdpStateMatcher::CONNECTED),
-        FakeUdpSocket { src_port: 53, dst_port: 12345, state: UdpSocketState::Bound } => true;
+        FakeUdpSocket {
+            src_port: Some(53), dst_port: Some(12345), state: UdpSocketState::Bound
+         } => true;
         "state multi match bound"
     )]
     #[test_case(
         UdpSocketMatcher::State(UdpStateMatcher::BOUND | UdpStateMatcher::CONNECTED),
-        FakeUdpSocket { src_port: 53, dst_port: 12345, state: UdpSocketState::Connected } => true;
+        FakeUdpSocket {
+            src_port: Some(53), dst_port: Some(12345), state: UdpSocketState::Connected
+         } => true;
         "state multi match connected"
+    )]
+    #[test_case(
+        UdpSocketMatcher::SrcPort(BoundPortMatcher::Unbound),
+        FakeUdpSocket {
+            src_port: None, dst_port: Some(12345), state: UdpSocketState::Bound
+         } => true;
+        "src_port unbound match"
+    )]
+    #[test_case(
+        UdpSocketMatcher::SrcPort(BoundPortMatcher::Unbound),
+        FakeUdpSocket {
+            src_port: Some(53), dst_port: Some(12345), state: UdpSocketState::Bound
+        } => false;
+        "src_port unbound no match"
+    )]
+    #[test_case(
+        UdpSocketMatcher::DstPort(BoundPortMatcher::Unbound),
+        FakeUdpSocket { src_port: Some(53), dst_port: None, state: UdpSocketState::Bound } => true;
+        "dst_port unbound match"
+    )]
+    #[test_case(
+        UdpSocketMatcher::DstPort(BoundPortMatcher::Unbound),
+        FakeUdpSocket {
+            src_port: Some(53), dst_port: Some(12345), state: UdpSocketState::Bound
+        } => false;
+        "dst_port unbound no match"
     )]
     fn udp_socket_matcher(matcher: UdpSocketMatcher, socket: FakeUdpSocket) -> bool {
         matcher.matches(&socket)
@@ -1357,21 +1517,29 @@ mod tests {
     #[test_case(
         IpSocketMatcher::Proto(SocketTransportProtocolMatcher::Tcp(TcpSocketMatcher::Empty)),
         FakeIpSocket {
-            src_ip: <I as TestIpExt>::TEST_ADDRS.local_ip.get(),
-            dst_ip: <I as TestIpExt>::TEST_ADDRS.remote_ip.get(),
-            proto: FakeTcpSocket { src_port: 80, dst_port: 12345, state: TcpSocketState::Established },
+            src_ip: Some(<I as TestIpExt>::TEST_ADDRS.local_ip.get()),
+            dst_ip: Some(<I as TestIpExt>::TEST_ADDRS.remote_ip.get()),
+            proto: FakeTcpSocket {
+                src_port: Some(80),
+                dst_port: Some(12345),
+                state: TcpSocketState::Established,
+            },
             cookie: 0,
             intf: None,
             marks: Marks::default(),
         } => true;
-        "tcp empty"
+        "tcpm empty"
     )]
     #[test_case(
         IpSocketMatcher::Proto(SocketTransportProtocolMatcher::Tcp(TcpSocketMatcher::Empty)),
         FakeIpSocket {
-            src_ip: <I as TestIpExt>::TEST_ADDRS.local_ip.get(),
-            dst_ip: <I as TestIpExt>::TEST_ADDRS.remote_ip.get(),
-            proto: FakeUdpSocket { src_port: 53, dst_port: 12345, state: UdpSocketState::Bound },
+            src_ip: Some(<I as TestIpExt>::TEST_ADDRS.local_ip.get()),
+            dst_ip: Some(<I as TestIpExt>::TEST_ADDRS.remote_ip.get()),
+            proto: FakeUdpSocket {
+                src_port: Some(53),
+                dst_port: Some(12345),
+                state: UdpSocketState::Bound,
+            },
             cookie: 0,
             intf: None,
             marks: Marks::default(),
@@ -1381,9 +1549,13 @@ mod tests {
     #[test_case(
         IpSocketMatcher::Proto(SocketTransportProtocolMatcher::Udp(UdpSocketMatcher::Empty)),
         FakeIpSocket {
-            src_ip: <I as TestIpExt>::TEST_ADDRS.local_ip.get(),
-            dst_ip: <I as TestIpExt>::TEST_ADDRS.remote_ip.get(),
-            proto: FakeTcpSocket { src_port: 80, dst_port: 12345, state: TcpSocketState::Established },
+            src_ip: Some(<I as TestIpExt>::TEST_ADDRS.local_ip.get()),
+            dst_ip: Some(<I as TestIpExt>::TEST_ADDRS.remote_ip.get()),
+            proto: FakeTcpSocket {
+                src_port: Some(80),
+                dst_port: Some(12345),
+                state: TcpSocketState::Established
+            },
             cookie: 0,
             intf: None,
             marks: Marks::default(),
@@ -1393,9 +1565,13 @@ mod tests {
     #[test_case(
         IpSocketMatcher::Proto(SocketTransportProtocolMatcher::Udp(UdpSocketMatcher::Empty)),
         FakeIpSocket {
-            src_ip: <I as TestIpExt>::TEST_ADDRS.local_ip.get(),
-            dst_ip: <I as TestIpExt>::TEST_ADDRS.remote_ip.get(),
-            proto: FakeUdpSocket { src_port: 53, dst_port: 12345, state: UdpSocketState::Bound },
+            src_ip: Some(<I as TestIpExt>::TEST_ADDRS.local_ip.get()),
+            dst_ip: Some(<I as TestIpExt>::TEST_ADDRS.remote_ip.get()),
+            proto: FakeUdpSocket {
+                src_port: Some(53),
+                dst_port: Some(12345),
+                state: UdpSocketState::Bound,
+            },
             cookie: 0,
             intf: None,
             marks: Marks::default(),
@@ -1405,13 +1581,19 @@ mod tests {
     #[test_case(
         IpSocketMatcher::Proto(
             SocketTransportProtocolMatcher::Tcp(
-                TcpSocketMatcher::SrcPort(PortMatcher { range: 80..=80, invert: false })
+                TcpSocketMatcher::SrcPort(BoundPortMatcher::Bound(
+                    PortMatcher { range: 80..=80, invert: false }
+                ))
             )
         ),
         FakeIpSocket {
-            src_ip: <I as TestIpExt>::TEST_ADDRS.local_ip.get(),
-            dst_ip: <I as TestIpExt>::TEST_ADDRS.remote_ip.get(),
-            proto: FakeTcpSocket { src_port: 80, dst_port: 12345, state: TcpSocketState::Established },
+            src_ip: Some(<I as TestIpExt>::TEST_ADDRS.local_ip.get()),
+            dst_ip: Some(<I as TestIpExt>::TEST_ADDRS.remote_ip.get()),
+            proto: FakeTcpSocket {
+                src_port: Some(80),
+                dst_port: Some(12345),
+                state: TcpSocketState::Established,
+            },
             cookie: 0,
             intf: None,
             marks: Marks::default(),
@@ -1421,13 +1603,19 @@ mod tests {
     #[test_case(
         IpSocketMatcher::Proto(
             SocketTransportProtocolMatcher::Tcp(
-                TcpSocketMatcher::SrcPort(PortMatcher { range: 80..=80, invert: false })
+                TcpSocketMatcher::SrcPort(BoundPortMatcher::Bound(
+                    PortMatcher { range: 80..=80, invert: false }
+                ))
             )
         ),
         FakeIpSocket {
-            src_ip: <I as TestIpExt>::TEST_ADDRS.local_ip.get(),
-            dst_ip: <I as TestIpExt>::TEST_ADDRS.remote_ip.get(),
-            proto: FakeTcpSocket { src_port: 81, dst_port: 12345, state: TcpSocketState::Established },
+            src_ip: Some(<I as TestIpExt>::TEST_ADDRS.local_ip.get()),
+            dst_ip: Some(<I as TestIpExt>::TEST_ADDRS.remote_ip.get()),
+            proto: FakeTcpSocket {
+                src_port: Some(81),
+                dst_port: Some(12345),
+                state: TcpSocketState::Established,
+            },
             cookie: 0,
             intf: None,
             marks: Marks::default(),
@@ -1437,13 +1625,19 @@ mod tests {
     #[test_case(
         IpSocketMatcher::Proto(
             SocketTransportProtocolMatcher::Udp(
-                UdpSocketMatcher::SrcPort(PortMatcher { range: 53..=53, invert: false })
+                UdpSocketMatcher::SrcPort(BoundPortMatcher::Bound(
+                    PortMatcher { range: 53..=53, invert: false }
+                ))
             )
         ),
         FakeIpSocket {
-            src_ip: <I as TestIpExt>::TEST_ADDRS.local_ip.get(),
-            dst_ip: <I as TestIpExt>::TEST_ADDRS.remote_ip.get(),
-            proto: FakeUdpSocket { src_port: 53, dst_port: 12345, state: UdpSocketState::Bound },
+            src_ip: Some(<I as TestIpExt>::TEST_ADDRS.local_ip.get()),
+            dst_ip: Some(<I as TestIpExt>::TEST_ADDRS.remote_ip.get()),
+            proto: FakeUdpSocket {
+                src_port: Some(53),
+                dst_port: Some(12345),
+                state: UdpSocketState::Bound,
+            },
             cookie: 0,
             intf: None,
             marks: Marks::default(),
@@ -1453,13 +1647,19 @@ mod tests {
     #[test_case(
         IpSocketMatcher::Proto(
             SocketTransportProtocolMatcher::Udp(
-                UdpSocketMatcher::SrcPort(PortMatcher { range: 53..=53, invert: false })
+                UdpSocketMatcher::SrcPort(BoundPortMatcher::Bound(
+                    PortMatcher { range: 53..=53, invert: false }
+                ))
             )
         ),
         FakeIpSocket {
-            src_ip: <I as TestIpExt>::TEST_ADDRS.local_ip.get(),
-            dst_ip: <I as TestIpExt>::TEST_ADDRS.remote_ip.get(),
-            proto: FakeUdpSocket { src_port: 54, dst_port: 12345, state: UdpSocketState::Bound },
+            src_ip: Some(<I as TestIpExt>::TEST_ADDRS.local_ip.get()),
+            dst_ip: Some(<I as TestIpExt>::TEST_ADDRS.remote_ip.get()),
+            proto: FakeUdpSocket {
+                src_port: Some(54),
+                dst_port: Some(12345),
+                state: UdpSocketState::Bound,
+            },
             cookie: 0,
             intf: None,
             marks: Marks::default(),
@@ -1469,9 +1669,13 @@ mod tests {
     #[test_case(
         IpSocketMatcher::Cookie(SocketCookieMatcher { cookie: 123, invert: false }),
         FakeIpSocket {
-            src_ip: <I as TestIpExt>::TEST_ADDRS.local_ip.get(),
-            dst_ip: <I as TestIpExt>::TEST_ADDRS.remote_ip.get(),
-            proto: FakeTcpSocket { src_port: 80, dst_port: 12345, state: TcpSocketState::Established },
+            src_ip: Some(<I as TestIpExt>::TEST_ADDRS.local_ip.get()),
+            dst_ip: Some(<I as TestIpExt>::TEST_ADDRS.remote_ip.get()),
+            proto: FakeTcpSocket {
+                src_port: Some(80),
+                dst_port: Some(12345),
+                state: TcpSocketState::Established,
+            },
             cookie: 123,
             intf: None,
             marks: Marks::default(),
@@ -1481,9 +1685,13 @@ mod tests {
     #[test_case(
         IpSocketMatcher::Cookie(SocketCookieMatcher { cookie: 123, invert: false }),
         FakeIpSocket {
-            src_ip: <I as TestIpExt>::TEST_ADDRS.local_ip.get(),
-            dst_ip: <I as TestIpExt>::TEST_ADDRS.remote_ip.get(),
-            proto: FakeTcpSocket { src_port: 80, dst_port: 12345, state: TcpSocketState::Established },
+            src_ip: Some(<I as TestIpExt>::TEST_ADDRS.local_ip.get()),
+            dst_ip: Some(<I as TestIpExt>::TEST_ADDRS.remote_ip.get()),
+            proto: FakeTcpSocket {
+                src_port: Some(80),
+                dst_port: Some(12345),
+                state: TcpSocketState::Established,
+            },
             cookie: 456,
             intf: None,
             marks: Marks::default(),
@@ -1496,9 +1704,13 @@ mod tests {
             matcher: MarkMatcher::Unmarked,
         }),
         FakeIpSocket {
-            src_ip: <I as TestIpExt>::TEST_ADDRS.local_ip.get(),
-            dst_ip: <I as TestIpExt>::TEST_ADDRS.remote_ip.get(),
-            proto: FakeTcpSocket { src_port: 80, dst_port: 12345, state: TcpSocketState::Established },
+            src_ip: Some(<I as TestIpExt>::TEST_ADDRS.local_ip.get()),
+            dst_ip: Some(<I as TestIpExt>::TEST_ADDRS.remote_ip.get()),
+            proto: FakeTcpSocket {
+                src_port: Some(80),
+                dst_port: Some(12345),
+                state: TcpSocketState::Established,
+            },
             cookie: 0,
             intf: None,
             marks: Marks::default(),
@@ -1511,9 +1723,13 @@ mod tests {
             matcher: MarkMatcher::Unmarked,
         }),
         FakeIpSocket {
-            src_ip: <I as TestIpExt>::TEST_ADDRS.local_ip.get(),
-            dst_ip: <I as TestIpExt>::TEST_ADDRS.remote_ip.get(),
-            proto: FakeTcpSocket { src_port: 80, dst_port: 12345, state: TcpSocketState::Established },
+            src_ip: Some(<I as TestIpExt>::TEST_ADDRS.local_ip.get()),
+            dst_ip: Some(<I as TestIpExt>::TEST_ADDRS.remote_ip.get()),
+            proto: FakeTcpSocket {
+                src_port: Some(80),
+                dst_port: Some(12345),
+                state: TcpSocketState::Established,
+            },
             cookie: 0,
             intf: None,
             marks: Marks::new([(MarkDomain::Mark1, 1)]),
@@ -1526,9 +1742,13 @@ mod tests {
             matcher: MarkMatcher::Unmarked,
         }),
         FakeIpSocket {
-            src_ip: <I as TestIpExt>::TEST_ADDRS.local_ip.get(),
-            dst_ip: <I as TestIpExt>::TEST_ADDRS.remote_ip.get(),
-            proto: FakeTcpSocket { src_port: 80, dst_port: 12345, state: TcpSocketState::Established },
+            src_ip: Some(<I as TestIpExt>::TEST_ADDRS.local_ip.get()),
+            dst_ip: Some(<I as TestIpExt>::TEST_ADDRS.remote_ip.get()),
+            proto: FakeTcpSocket {
+                src_port: Some(80),
+                dst_port: Some(12345),
+                state: TcpSocketState::Established,
+            },
             cookie: 0,
             intf: None,
             marks: Marks::default(),
@@ -1541,9 +1761,13 @@ mod tests {
             matcher: MarkMatcher::Unmarked,
         }),
         FakeIpSocket {
-            src_ip: <I as TestIpExt>::TEST_ADDRS.local_ip.get(),
-            dst_ip: <I as TestIpExt>::TEST_ADDRS.remote_ip.get(),
-            proto: FakeTcpSocket { src_port: 80, dst_port: 12345, state: TcpSocketState::Established },
+            src_ip: Some(<I as TestIpExt>::TEST_ADDRS.local_ip.get()),
+            dst_ip: Some(<I as TestIpExt>::TEST_ADDRS.remote_ip.get()),
+            proto: FakeTcpSocket {
+                src_port: Some(80),
+                dst_port: Some(12345),
+                state: TcpSocketState::Established,
+            },
             cookie: 0,
             intf: None,
             marks: Marks::new([(MarkDomain::Mark2, 1)]),
@@ -1555,9 +1779,13 @@ mod tests {
             InterfaceMatcher::Id(FakeMatcherDeviceId::wlan_interface().id)
         )),
         FakeIpSocket {
-            src_ip: <I as TestIpExt>::TEST_ADDRS.local_ip.get(),
-            dst_ip: <I as TestIpExt>::TEST_ADDRS.remote_ip.get(),
-            proto: FakeTcpSocket { src_port: 80, dst_port: 12345, state: TcpSocketState::Established },
+            src_ip: Some(<I as TestIpExt>::TEST_ADDRS.local_ip.get()),
+            dst_ip: Some(<I as TestIpExt>::TEST_ADDRS.remote_ip.get()),
+            proto: FakeTcpSocket {
+                src_port: Some(80),
+                dst_port: Some(12345),
+                state: TcpSocketState::Established,
+            },
             cookie: 0,
             intf: Some(FakeMatcherDeviceId::wlan_interface()),
             marks: Marks::default(),
@@ -1569,14 +1797,50 @@ mod tests {
             InterfaceMatcher::Id(FakeMatcherDeviceId::wlan_interface().id)
         )),
         FakeIpSocket {
-            src_ip: <I as TestIpExt>::TEST_ADDRS.local_ip.get(),
-            dst_ip: <I as TestIpExt>::TEST_ADDRS.remote_ip.get(),
-            proto: FakeTcpSocket { src_port: 80, dst_port: 12345, state: TcpSocketState::Established },
+            src_ip: Some(<I as TestIpExt>::TEST_ADDRS.local_ip.get()),
+            dst_ip: Some(<I as TestIpExt>::TEST_ADDRS.remote_ip.get()),
+            proto: FakeTcpSocket {
+                src_port: Some(80),
+                dst_port: Some(12345),
+                state: TcpSocketState::Established,
+            },
             cookie: 0,
             intf: Some(FakeMatcherDeviceId::ethernet_interface()),
             marks: Marks::default(),
         } => false;
         "bound_interface no match"
+    )]
+    #[test_case(
+        IpSocketMatcher::BoundInterface(BoundInterfaceMatcher::Unbound),
+        FakeIpSocket {
+            src_ip: Some(<I as TestIpExt>::TEST_ADDRS.local_ip.get()),
+            dst_ip: Some(<I as TestIpExt>::TEST_ADDRS.remote_ip.get()),
+            proto: FakeTcpSocket {
+                src_port: Some(80),
+                dst_port: Some(12345),
+                state: TcpSocketState::Established,
+            },
+            cookie: 0,
+            intf: None,
+            marks: Marks::default(),
+        } => true;
+        "bound_interface unbound match"
+    )]
+    #[test_case(
+        IpSocketMatcher::BoundInterface(BoundInterfaceMatcher::Unbound),
+        FakeIpSocket {
+            src_ip: Some(<I as TestIpExt>::TEST_ADDRS.local_ip.get()),
+            dst_ip: Some(<I as TestIpExt>::TEST_ADDRS.remote_ip.get()),
+            proto: FakeTcpSocket {
+                src_port: Some(80),
+                dst_port: Some(12345),
+                state: TcpSocketState::Established,
+            },
+            cookie: 0,
+            intf: Some(FakeMatcherDeviceId::wlan_interface()),
+            marks: Marks::default(),
+        } => false;
+        "bound_interface unbound no match"
     )]
     fn ip_socket_matcher<I: TestIpExt, T: MaybeSocketTransportProperties>(
         matcher: IpSocketMatcher<FakeDeviceClass>,
@@ -1646,46 +1910,67 @@ mod tests {
         let v4_subnet = Subnet::new(Ipv4Addr::new([192, 0, 2, 0]), 24).unwrap();
         let v6_subnet = Subnet::new(Ipv6Addr::new([0x2001, 0xdb8, 0, 0, 0, 0, 0, 0]), 32).unwrap();
 
-        let v4_matcher = AddressMatcherEither::V4(AddressMatcher {
-            matcher: AddressMatcherType::Subnet(SubnetMatcher(v4_subnet)),
-            invert: false,
-        });
-        assert!(v4_matcher.matches(&v4_addr));
-        assert!(!v4_matcher.matches(&v6_addr));
+        let v4_matcher =
+            BoundAddressMatcherEither::Bound(AddressMatcherEither::V4(AddressMatcher {
+                matcher: AddressMatcherType::Subnet(SubnetMatcher(v4_subnet)),
+                invert: false,
+            }));
+        assert!(v4_matcher.matches(&Some(v4_addr)));
+        assert!(!v4_matcher.matches(&Some(v6_addr)));
 
-        let v6_matcher = AddressMatcherEither::V6(AddressMatcher {
-            matcher: AddressMatcherType::Subnet(SubnetMatcher(v6_subnet)),
-            invert: false,
-        });
-        assert!(!v6_matcher.matches(&v4_addr));
-        assert!(v6_matcher.matches(&v6_addr));
+        let v6_matcher =
+            BoundAddressMatcherEither::Bound(AddressMatcherEither::V6(AddressMatcher {
+                matcher: AddressMatcherType::Subnet(SubnetMatcher(v6_subnet)),
+                invert: false,
+            }));
+        assert!(!v6_matcher.matches(&Some(v4_addr)));
+        assert!(v6_matcher.matches(&Some(v6_addr)));
     }
 
     #[test_case(IpSocketMatcher::Family(IpVersion::V4) => true; "v4 family matcher on v4 socket")]
     #[test_case(IpSocketMatcher::Family(IpVersion::V6) => false; "v6 family matcher on v4 socket")]
-    #[test_case(IpSocketMatcher::SrcAddr(AddressMatcherEither::V4(AddressMatcher {
-        matcher: AddressMatcherType::Subnet(SubnetMatcher(Ipv4::TEST_ADDRS.subnet)),
+    #[test_case(IpSocketMatcher::SrcAddr(BoundAddressMatcherEither::Bound(AddressMatcherEither::V4(
+        AddressMatcher {
+            matcher: AddressMatcherType::Subnet(SubnetMatcher(Ipv4::TEST_ADDRS.subnet)),
+            invert: false,
+        }
+    ))) => true; "src_addr match")]
+    #[test_case(IpSocketMatcher::SrcAddr(BoundAddressMatcherEither::Bound(AddressMatcherEither::V4(
+        AddressMatcher {
+            matcher: AddressMatcherType::Subnet(SubnetMatcher(
+                Subnet::new(Ipv4Addr::new([0, 0, 0, 0]), 32).unwrap()
+            )),
+            invert: false,
+        }
+    ))) => false; "src_addr no match")]
+    #[test_case(IpSocketMatcher::DstAddr(BoundAddressMatcherEither::Bound(AddressMatcherEither::V4(
+        AddressMatcher {
+            matcher: AddressMatcherType::Subnet(SubnetMatcher(Ipv4::TEST_ADDRS.subnet)),
+            invert: false,
+        }
+    ))) => true; "dst_addr match")]
+    #[test_case(IpSocketMatcher::DstAddr(BoundAddressMatcherEither::Bound(AddressMatcherEither::V4(
+        AddressMatcher {
+            matcher: AddressMatcherType::Subnet(SubnetMatcher(
+                Subnet::new(Ipv4Addr::new([0, 0, 0, 0]), 32).unwrap()
+            )),
         invert: false,
-    })) => true; "src_addr match")]
-    #[test_case(IpSocketMatcher::SrcAddr(AddressMatcherEither::V4(AddressMatcher {
-        matcher: AddressMatcherType::Subnet(SubnetMatcher(Subnet::new(Ipv4Addr::new([0, 0, 0, 0]), 32).unwrap())),
-        invert: false,
-    })) => false; "src_addr no match")]
-    #[test_case(IpSocketMatcher::DstAddr(AddressMatcherEither::V4(AddressMatcher {
-        matcher: AddressMatcherType::Subnet(SubnetMatcher(Ipv4::TEST_ADDRS.subnet)),
-        invert: false,
-    })) => true; "dst_addr match")]
-    #[test_case(IpSocketMatcher::DstAddr(AddressMatcherEither::V4(AddressMatcher {
-        matcher: AddressMatcherType::Subnet(SubnetMatcher(Subnet::new(Ipv4Addr::new([0, 0, 0, 0]), 32).unwrap())),
-        invert: false,
-    })) => false; "dst_addr no match")]
+    }))) => false; "dst_addr no match")]
+    #[test_case(
+        IpSocketMatcher::SrcAddr(BoundAddressMatcherEither::Unbound) => false;
+        "src_addr unbound mismatch"
+    )]
+    #[test_case(
+        IpSocketMatcher::DstAddr(BoundAddressMatcherEither::Unbound) => false;
+        "dst_addr unbound mismatch"
+    )]
     fn ip_socket_matcher_test_v4(matcher: IpSocketMatcher<FakeDeviceClass>) -> bool {
         let socket = FakeIpSocket::<Ipv4, _> {
-            src_ip: <Ipv4 as TestIpExt>::TEST_ADDRS.local_ip.get(),
-            dst_ip: <Ipv4 as TestIpExt>::TEST_ADDRS.remote_ip.get(),
+            src_ip: Some(<Ipv4 as TestIpExt>::TEST_ADDRS.local_ip.get()),
+            dst_ip: Some(<Ipv4 as TestIpExt>::TEST_ADDRS.remote_ip.get()),
             proto: FakeTcpSocket {
-                src_port: 80,
-                dst_port: 12345,
+                src_port: Some(80),
+                dst_port: Some(12345),
                 state: TcpSocketState::Established,
             },
             cookie: 0,
@@ -1697,29 +1982,78 @@ mod tests {
 
     #[test_case(IpSocketMatcher::Family(IpVersion::V4) => false; "v4 family matcher on v6 socket")]
     #[test_case(IpSocketMatcher::Family(IpVersion::V6) => true; "v6 family matcher on v6 socket")]
-    #[test_case(IpSocketMatcher::SrcAddr(AddressMatcherEither::V6(AddressMatcher {
-        matcher: AddressMatcherType::Subnet(SubnetMatcher(Ipv6::TEST_ADDRS.subnet)),
-        invert: false,
-    })) => true; "src_addr match v6")]
-    #[test_case(IpSocketMatcher::SrcAddr(AddressMatcherEither::V6(AddressMatcher {
-        matcher: AddressMatcherType::Subnet(SubnetMatcher(Subnet::new(Ipv6Addr::new([0; 8]), 128).unwrap())),
-        invert: false,
-    })) => false; "src_addr no match v6")]
-    #[test_case(IpSocketMatcher::DstAddr(AddressMatcherEither::V6(AddressMatcher {
-        matcher: AddressMatcherType::Subnet(SubnetMatcher(Ipv6::TEST_ADDRS.subnet)),
-        invert: false,
-    })) => true; "dst_addr match v6")]
-    #[test_case(IpSocketMatcher::DstAddr(AddressMatcherEither::V6(AddressMatcher {
-        matcher: AddressMatcherType::Subnet(SubnetMatcher(Subnet::new(Ipv6Addr::new([0; 8]), 128).unwrap())),
-        invert: false,
-    })) => false; "dst_addr no match v6")]
+    #[test_case(IpSocketMatcher::SrcAddr(BoundAddressMatcherEither::Bound(AddressMatcherEither::V6(
+        AddressMatcher {
+            matcher: AddressMatcherType::Subnet(SubnetMatcher(Ipv6::TEST_ADDRS.subnet)),
+            invert: false,
+        }
+    ))) => true; "src_addr match v6")]
+    #[test_case(IpSocketMatcher::SrcAddr(BoundAddressMatcherEither::Bound(AddressMatcherEither::V6(
+        AddressMatcher {
+            matcher: AddressMatcherType::Subnet(SubnetMatcher(
+                Subnet::new(Ipv6Addr::new([0; 8]), 128).unwrap()
+            )),
+            invert: false,
+        }
+    ))) => false; "src_addr no match v6")]
+    #[test_case(IpSocketMatcher::DstAddr(BoundAddressMatcherEither::Bound(AddressMatcherEither::V6(
+        AddressMatcher {
+            matcher: AddressMatcherType::Subnet(SubnetMatcher(Ipv6::TEST_ADDRS.subnet)),
+            invert: false,
+        }
+    ))) => true; "dst_addr match v6")]
+    #[test_case(IpSocketMatcher::DstAddr(BoundAddressMatcherEither::Bound(AddressMatcherEither::V6(
+        AddressMatcher {
+            matcher: AddressMatcherType::Subnet(SubnetMatcher(
+                Subnet::new(Ipv6Addr::new([0; 8]), 128).unwrap()
+            )),
+            invert: false,
+        }
+    ))) => false; "dst_addr no match v6")]
     fn ip_socket_matcher_test_v6(matcher: IpSocketMatcher<FakeDeviceClass>) -> bool {
         let socket = FakeIpSocket::<Ipv6, _> {
-            src_ip: <Ipv6 as TestIpExt>::TEST_ADDRS.local_ip.get(),
-            dst_ip: <Ipv6 as TestIpExt>::TEST_ADDRS.remote_ip.get(),
+            src_ip: Some(<Ipv6 as TestIpExt>::TEST_ADDRS.local_ip.get()),
+            dst_ip: Some(<Ipv6 as TestIpExt>::TEST_ADDRS.remote_ip.get()),
             proto: FakeTcpSocket {
-                src_port: 80,
-                dst_port: 12345,
+                src_port: Some(80),
+                dst_port: Some(12345),
+                state: TcpSocketState::Established,
+            },
+            cookie: 0,
+            intf: None,
+            marks: Marks::default(),
+        };
+        matcher.matches(&socket)
+    }
+
+    #[test_case(
+        IpSocketMatcher::SrcAddr(BoundAddressMatcherEither::Unbound) => true;
+        "src_addr unbound match"
+    )]
+    #[test_case(IpSocketMatcher::SrcAddr(BoundAddressMatcherEither::Bound(AddressMatcherEither::V4(
+        AddressMatcher {
+            matcher: AddressMatcherType::Subnet(SubnetMatcher(Ipv4::TEST_ADDRS.subnet)),
+            invert: false,
+        }
+    ))) => false; "src_addr bound mismatch")]
+    #[test_case(
+        IpSocketMatcher::DstAddr(BoundAddressMatcherEither::Unbound) => true;
+        "dst_addr unbound match"
+    )]
+    #[test_case(IpSocketMatcher::DstAddr(BoundAddressMatcherEither::Bound(AddressMatcherEither::V4(
+        AddressMatcher {
+            matcher: AddressMatcherType::Subnet(SubnetMatcher(Ipv4::TEST_ADDRS.subnet)),
+            invert: false,
+        }
+    ))) => false; "dst_addr bound mismatch")]
+
+    fn ip_socket_matcher_unbound(matcher: IpSocketMatcher<FakeDeviceClass>) -> bool {
+        let socket = FakeIpSocket::<Ipv4, _> {
+            src_ip: None,
+            dst_ip: None,
+            proto: FakeTcpSocket {
+                src_port: Some(80),
+                dst_port: Some(12345),
                 state: TcpSocketState::Established,
             },
             cookie: 0,
