@@ -970,7 +970,7 @@ __NO_RETURN void Thread::Current::Exit(int retcode) {
                                CLT_TAG("Thread::Current::Exit finish in list_guard")};
 
     // enter the dead state and finish any migration.
-    Scheduler::RunInLockedCurrentScheduler([current_thread]() {
+    Scheduler::RunInLockedCurrentScheduler([current_thread](Scheduler&) {
       ChainLockTransaction::AssertActive();
       current_thread->get_lock().AssertHeld();
       current_thread->set_death();
@@ -1288,7 +1288,7 @@ void Thread::Current::DoSuspend() {
     // Make sure the suspend signal wasn't cleared while we were running the
     // callback.
     else if (current_thread->signals() & THREAD_SIGNAL_SUSPEND) {
-      Scheduler::RunInLockedCurrentScheduler([current_thread]() {
+      Scheduler::RunInLockedCurrentScheduler([current_thread](Scheduler&) {
         ChainLockTransaction::AssertActive();
         current_thread->get_lock().AssertHeld();
         current_thread->set_suspended();

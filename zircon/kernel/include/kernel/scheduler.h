@@ -367,11 +367,12 @@ class Scheduler {
   // Run the passed callable while holding the specified scheduler's lock.
   // Currently used only by the threadload debug function in kernel/debug.cc
   template <typename Callable>
+    requires requires(Scheduler& scheduler, Callable callable) { callable(scheduler); }
   static auto RunInLockedScheduler(cpu_num_t which_cpu, Callable callable) {
     // The call do Get will eventually DEBUG_ASSERT if our cpu ID is out of range.
     Scheduler& scheduler = *Get(which_cpu);
     Guard<MonitoredSpinLock, IrqSave> queue_guard{&scheduler.queue_lock_, SOURCE_TAG};
-    return callable();
+    return callable(scheduler);
   }
 
   // Run the passed callable while holding the current CPU's scheduler's lock.
@@ -379,26 +380,26 @@ class Scheduler {
   // state, but need to be holding the current scheduler's lock in order to do
   // so.
   template <typename Callable>
-  static void RunInLockedCurrentScheduler(Callable callable) {
+    requires requires(Scheduler& scheduler, Callable callable) { callable(scheduler); }
+  static auto RunInLockedCurrentScheduler(Callable callable) {
     DEBUG_ASSERT(arch_ints_disabled());
     Scheduler& scheduler = *Get();
     Guard<MonitoredSpinLock, NoIrqSave> queue_guard{&scheduler.queue_lock_, SOURCE_TAG};
-    callable();
+    return callable(scheduler);
   }
 
   // Run the passed callable while holding the specified thread's scheduler's
   // lock, if any. Used by SetMigrateFn in thread.cc.
   template <typename Callable>
-  static void RunInThreadsSchedulerLocked(Thread* thread, Callable callable)
+  static auto RunInThreadsSchedulerLocked(Thread* thread, Callable callable)
       TA_REQ(thread->get_lock()) {
     const cpu_num_t thread_cpu = thread->scheduler_state().curr_cpu();
     if (thread_cpu != INVALID_CPU) {
       Scheduler& scheduler = *Get(thread_cpu);
       Guard<MonitoredSpinLock, NoIrqSave> queue_guard{&scheduler.queue_lock_, SOURCE_TAG};
-      callable();
-    } else {
-      callable();
+      return callable();
     }
+    return callable();
   }
 
   // Set/clears the current cpu's bit in the global mp_active_mask.  Holds the
@@ -496,6 +497,9 @@ class Scheduler {
     Guard<MonitoredSpinLock, IrqSave> guard{&queue_lock_, SOURCE_TAG};
     return power_level_control_.max_idle_power_coefficient_nw();
   }
+
+  // Const accessor for static analysis.
+  const auto& queue_lock_cap() const TA_RET_CAP(queue_lock_) { return queue_lock_; }
 
  private:
   friend struct Thread;

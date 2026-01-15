@@ -165,29 +165,30 @@ RecurringCallback g_threadload_callback([]() {
       SingleChainLockGuard thread_guard{IrqSaveOption, idle_power_thread.get_lock(),
                                         CLT_TAG("g_threadload_callback")};
 
-      maybe_idle_time = Scheduler::RunInLockedScheduler(i, [&]() -> ktl::optional<zx_duration_t> {
-        // Don't display time for inactive cpus.
-        if (!Scheduler::PeekIsActive(i)) {
-          return ktl::nullopt;
-        }
+      maybe_idle_time =
+          Scheduler::RunInLockedScheduler(i, [&](Scheduler&) -> ktl::optional<zx_duration_t> {
+            // Don't display time for inactive cpus.
+            if (!Scheduler::PeekIsActive(i)) {
+              return ktl::nullopt;
+            }
 
-        // The scheduler queue lock synchronizes this copy.
-        const auto& percpu = percpu::Get(i);
-        concurrent::WellDefinedCopyFrom<concurrent::SyncOpt::None, alignof(decltype(stats))>(
-            &stats, &percpu.stats, sizeof(stats));
+            // The scheduler queue lock synchronizes this copy.
+            const auto& percpu = percpu::Get(i);
+            concurrent::WellDefinedCopyFrom<concurrent::SyncOpt::None, alignof(decltype(stats))>(
+                &stats, &percpu.stats, sizeof(stats));
 
-        // If the cpu is currently idle, add the time since it went idle up until now to the idle
-        // counter.
-        if (Scheduler::PeekIsIdle(i)) {
-          ChainLockTransaction::AssertActive();
-          idle_power_thread.get_lock().AssertHeld();
-          zx_duration_mono_t recent_idle_time = zx_time_sub_time(
-              current_mono_time(), idle_power_thread.scheduler_state().last_started_running());
-          return zx_duration_add_duration(stats.idle_time, recent_idle_time);
-        }
+            // If the cpu is currently idle, add the time since it went idle up until now to the
+            // idle counter.
+            if (Scheduler::PeekIsIdle(i)) {
+              ChainLockTransaction::AssertActive();
+              idle_power_thread.get_lock().AssertHeld();
+              zx_duration_mono_t recent_idle_time =
+                  zx_time_sub_time(current_mono_time(), percpu.stats.last_updated_instant);
+              return zx_duration_add_duration(stats.idle_time, recent_idle_time);
+            }
 
-        return stats.idle_time;
-      });
+            return stats.idle_time;
+          });
     }
 
     if (!maybe_idle_time.has_value()) {

@@ -172,23 +172,25 @@ zx_info_cpu_stats_t GetCPUStats(uint32_t cpu_num) {
   cpu_stats cpu_stats;
 
   // account for current runtime
-  {
-    Scheduler::RunInLockedScheduler(cpu_num, [&] {
-      // The scheduler queue lock synchronizes this copy.
-      concurrent::WellDefinedCopyFrom<concurrent::SyncOpt::None, alignof(decltype(cpu_stats))>(
-          &cpu_stats, &cpu->stats, sizeof(cpu_stats));
+  Scheduler::RunInLockedScheduler(
+      cpu_num, [&](Scheduler& scheduler) TA_REQ(scheduler.queue_lock_cap()) {
+        // The scheduler queue lock synchronizes this copy, since these values
+        // are updated while holding the queue lock.
+        // TODO(eieio): Does this really need well-defined-copy semantics?
+        concurrent::WellDefinedCopyFrom<concurrent::SyncOpt::None, alignof(decltype(cpu_stats))>(
+            &cpu_stats, &cpu->stats, sizeof(cpu_stats));
 
-      zx_duration_mono_t recent_runtime_ns =
-          ktl::max<zx_duration_mono_t>(current_mono_time() - cpu_stats.last_updated_instant, 0);
-      // Account for idle time if a cpu is currently idle.
-      if (Scheduler::PeekIsIdle(cpu_num)) {
-        cpu_stats.idle_time += recent_runtime_ns;
-      } else {
-        cpu_stats.normalized_busy_time += ffl::Round<zx_duration_mono_t>(
-            recent_runtime_ns * cpu->scheduler.exported_processing_rate());
-      }
-    });
-  }
+        zx_duration_mono_t recent_runtime_ns =
+            ktl::max<zx_duration_mono_t>(current_mono_time() - cpu_stats.last_updated_instant, 0);
+
+        // Account for idle time if a cpu is currently idle.
+        if (Scheduler::PeekIsIdle(cpu_num)) {
+          cpu_stats.idle_time += recent_runtime_ns;
+        } else {
+          cpu_stats.normalized_busy_time +=
+              ffl::Round<zx_duration_mono_t>(recent_runtime_ns * scheduler.processing_rate());
+        }
+      });
 
   // copy the per cpu stats from the kernel percpu structure
   zx_info_cpu_stats_t stats = {};
