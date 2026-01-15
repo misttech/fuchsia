@@ -23,7 +23,7 @@ class FuchsiaControllerImpl(fuchsia_controller_interface.FuchsiaController):
 
     Args:
         target_name: Fuchsia device name.
-        config: Configuration associated with FuchsiaController, FFX and FFX daemon.
+        config: Configuration associated with FuchsiaController, FFX.
         device_ip: Fuchsia device IP Address.
 
     Raises:

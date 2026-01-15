@@ -28,17 +28,14 @@ _FFX_BINARY: str = "ffx"
 _FFX_CMDS: dict[str, list[str]] = {
     "TARGET_SHOW": ["--machine", "json", "target", "show"],
     "TARGET_SSH_ADDRESS": [
-        "--direct",
         "target",
         "list",
         "--format",
         "addresses",
     ],
-    "TARGET_LIST": ["--direct", "--machine", "json", "target", "list"],
+    "TARGET_LIST": ["--machine", "json", "target", "list"],
     "TARGET_WAIT": ["target", "wait", "--timeout", "0"],
     "TARGET_WAIT_DOWN": ["target", "wait", "--down", "--timeout", "0"],
-    # Tell the daemon to drop its connection to the target
-    "TARGET_DISCONNECT": ["daemon", "disconnect"],
     "TEST_RUN": ["test", "run"],
     "TARGET_SSH": ["target", "ssh"],
     "MONITOR_STATUS": ["--machine", "json", "monitor", "status"],
@@ -55,7 +52,7 @@ class FfxImpl(ffx_interface.FFX):
 
     Args:
         target_name: Fuchsia device name.
-        config: Configuration associated with FFX and FFX daemon.
+        config: Configuration associated with FFX.
         target_ip_port: Fuchsia device IP address and port.
 
         Note: When target_ip is provided, it will be used instead of target_name
@@ -501,12 +498,6 @@ class FfxImpl(ffx_interface.FFX):
         self.run(cmd=_FFX_CMDS["TARGET_WAIT_DOWN"])
         _LOGGER.info("%s is not connected to host", self._target_name)
 
-        _LOGGER.debug(
-            "Informing the FFX daemon to drop the connection to %s",
-            self._target_name,
-        )
-        self.run(cmd=_FFX_CMDS["TARGET_DISCONNECT"])
-
         return
 
     def _get_target_status(self) -> MonitorTargetInfo:
@@ -588,6 +579,9 @@ class FfxImpl(ffx_interface.FFX):
 
         # Add log file path
         ffx_args.extend(["-o", str(Path(self.config.logs_dir) / "ffx.log")])
+
+        # To run FFX in direct mode
+        ffx_args.extend(["--direct"])
 
         # Inject configuration via command line arguments
         ffx_args.extend(self.config.get_config_args())

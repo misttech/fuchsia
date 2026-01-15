@@ -9,7 +9,6 @@ from unittest import mock
 
 import fuchsia_controller_py as fuchsia_controller
 
-from honeydew import errors
 from honeydew.transports.ffx import config as ffx_config
 from honeydew.utils import host_shell
 
@@ -70,30 +69,7 @@ class FfxConfigTests(unittest.TestCase):
             ssh_keepalive_timeout=_SSH_KEEPALIVE_TIMEOUT,
         )
 
-        ffx_configs_calls = [
-            mock.call(
-                _FFX_CMD_OPTIONS
-                + [
-                    "-c",
-                    f"log.dir={_LOGS_DIR}",
-                    "-c",
-                    f"log.level={_LOGS_LEVEL}",
-                    "-c",
-                    f"discovery.mdns.enabled={str(_MDNS_ENABLED).lower()}",
-                    "-c",
-                    f"ffx.subtool-search-paths={_SUBTOOLS_SEARCH_PATH}",
-                    "-c",
-                    f"proxy.timeout_secs={_PROXY_TIMEOUT_SECS}",
-                    "-c",
-                    f"ssh.keepalive_timeout={_SSH_KEEPALIVE_TIMEOUT}",
-                    "daemon",
-                    "start",
-                    "--background",
-                ]
-            ),
-        ]
-        mock_host_shell_run.assert_has_calls(ffx_configs_calls, any_order=True)
-        self.assertEqual(mock_host_shell_run.call_count, 1)
+        mock_host_shell_run.assert_not_called()
 
         # Calling setup() again should fail
         with self.assertRaises(ffx_config.FfxConfigError):
@@ -108,41 +84,7 @@ class FfxConfigTests(unittest.TestCase):
                 ssh_keepalive_timeout=_SSH_KEEPALIVE_TIMEOUT,
             )
 
-    @mock.patch.object(
-        host_shell,
-        "run",
-        side_effect=errors.HostCmdError(
-            "error",
-        ),
-        autospec=True,
-    )
-    def test_setup_raises_ffx_config_error(
-        self, mock_host_shell_run: mock.Mock
-    ) -> None:
-        """Test case for ffx_config.FfxConfig.setup() raises FfxConfigError"""
-
-        ffx_config_obj: ffx_config.FfxConfig = ffx_config.FfxConfig()
-
-        with self.assertRaises(ffx_config.FfxConfigError):
-            ffx_config_obj.setup(
-                binary_path=_BINARY_PATH,
-                isolate_dir=_ISOLATE_DIR,
-                logs_dir=_LOGS_DIR,
-                logs_level=_LOGS_LEVEL,
-                enable_mdns=_MDNS_ENABLED,
-                subtools_search_path=_SUBTOOLS_SEARCH_PATH,
-                proxy_timeout_secs=_PROXY_TIMEOUT_SECS,
-                ssh_keepalive_timeout=_SSH_KEEPALIVE_TIMEOUT,
-            )
-
-        mock_host_shell_run.assert_called()
-
-    @mock.patch.object(
-        ffx_config.FfxConfig,
-        "_run",
-        autospec=True,
-    )
-    def test_close(self, mock_ffx_config_run: mock.Mock) -> None:
+    def test_close(self) -> None:
         """Test case for ffx_config.FfxConfig.close()"""
 
         ffx_config_obj: ffx_config.FfxConfig = ffx_config.FfxConfig()
@@ -158,7 +100,6 @@ class FfxConfigTests(unittest.TestCase):
             proxy_timeout_secs=_PROXY_TIMEOUT_SECS,
             ssh_keepalive_timeout=_SSH_KEEPALIVE_TIMEOUT,
         )
-        mock_ffx_config_run.assert_called()
 
         ffx_config_obj.close()
 
@@ -172,12 +113,7 @@ class FfxConfigTests(unittest.TestCase):
         with self.assertRaises(ffx_config.FfxConfigError):
             ffx_config_obj.close()
 
-    @mock.patch.object(
-        ffx_config.FfxConfig,
-        "_run",
-        autospec=True,
-    )
-    def test_get_config(self, mock_ffx_config_run: mock.Mock) -> None:
+    def test_get_config(self) -> None:
         """Test case for ffx_config.FfxConfig.get_config()"""
 
         ffx_config_obj: ffx_config.FfxConfig = ffx_config.FfxConfig()
@@ -193,7 +129,6 @@ class FfxConfigTests(unittest.TestCase):
             proxy_timeout_secs=_PROXY_TIMEOUT_SECS,
             ssh_keepalive_timeout=_SSH_KEEPALIVE_TIMEOUT,
         )
-        mock_ffx_config_run.assert_called()
 
         self.assertEqual(
             str(ffx_config_obj.get_config()),

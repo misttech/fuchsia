@@ -381,6 +381,7 @@ class FfxImplTests(unittest.TestCase):
                 _ISOLATE_DIR,
                 "-o",
                 str(Path(_LOGS_DIR) / "ffx.log"),
+                "--direct",
                 "-c",
                 f"log.dir={_LOGS_DIR}",
                 "-c",
@@ -426,6 +427,7 @@ class FfxImplTests(unittest.TestCase):
                 "raw",
                 "-o",
                 str(Path(_LOGS_DIR) / "ffx.log"),
+                "--direct",
                 "-c",
                 f"log.dir={_LOGS_DIR}",
                 "-c",
@@ -571,6 +573,7 @@ class FfxImplTests(unittest.TestCase):
                 _ISOLATE_DIR,
                 "-o",
                 str(Path(_LOGS_DIR) / "ffx.log"),
+                "--direct",
                 "-c",
                 f"log.dir={_LOGS_DIR}",
                 "-c",
@@ -625,4 +628,4 @@ class FfxImplTests(unittest.TestCase):
     def test_wait_for_rcs_disconnection(self, mock_ffx_run: mock.Mock) -> None:
         """Test case for ffx_impl.wait_for_rcs_disconnection()"""
         self.ffx_obj_with_ip.wait_for_rcs_disconnection()
-        self.assertEqual(mock_ffx_run.call_count, 2)
+        self.assertEqual(mock_ffx_run.call_count, 1)

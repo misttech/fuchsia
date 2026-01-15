@@ -40,16 +40,6 @@ class FfxTestCase(fuchsia_base_test.FuchsiaBaseTest):
         super().setup_class()
         self.dut: fuchsia_device.FuchsiaDevice = self.fuchsia_devices[0]
 
-    def teardown_test(self) -> None:
-        # Until total daemonless functionality is implemented, we must ensure
-        # the daemon is running before test teardown, because Lacewing expects
-        # the daemon to be running for teardown operations. Previously the
-        # daemon was automatically restarted by `ffx target wait`, but this is
-        # now no longer the case because the command does not use the daemon
-        # anymore.
-        self.dut.ffx.run(["daemon", "start", "--background"])
-        super().teardown_test()
-
     def spawn_ffx(self, args: list[str]) -> SpawnedFfx:
         """Run ffx in the specific way we need, not the standard Honeydew way.
         Don't wait for the command to return."""

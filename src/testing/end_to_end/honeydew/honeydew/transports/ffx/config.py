@@ -10,16 +10,8 @@ from dataclasses import dataclass
 import fuchsia_controller_py as fuchsia_controller
 
 from honeydew import errors
-from honeydew.utils import host_shell
 
 _FFX_BINARY: str = "ffx"
-
-_FFX_DAEMON_START: list[str] = [
-    "daemon",
-    "start",
-    "--background",
-]
-
 
 _LOGGER: logging.Logger = logging.getLogger(__name__)
 
@@ -131,22 +123,11 @@ class FfxConfig:
 
         Raises:
             FfxConfigError: If setup has already been called once.
-
-        Note:
-            * This method should be called only once to ensure daemon logs are
-              going to single location.
-            * If this method is not called then FFX logs will not be saved and
-              will use the system level FFX daemon (instead of spawning new one
-              using isolation).
-            * FFX daemon clean up is already handled by this method though users
-              can manually call close() to clean up earlier in the process if
-              necessary.
         """
         if self._setup_done:
             raise FfxConfigError("setup has already been called once.")
 
-        # Prevent FFX daemon leaks by ensuring clean up occurs upon normal
-        # program termination.
+        # Ensure clean up occurs upon normal program termination.
         atexit.register(self._atexit_callback)
 
         self._ffx_binary: str = binary_path if binary_path else _FFX_BINARY
@@ -159,23 +140,6 @@ class FfxConfig:
         self._subtools_search_path: str | None = subtools_search_path
         self._proxy_timeout_secs: int | None = proxy_timeout_secs
         self._ssh_keepalive_timeout: int | None = ssh_keepalive_timeout
-
-        # We only run "ffx daemon start" if we are provided with an isolated environment.
-        if self._isolate_dir:
-            # In order to run "ffx daemon start" using self._run(), we need to
-            # construct a temporary config data object. This is kind of a hack,
-            # but a follow-up CL removes this entire call to "ffx daemon start".
-            temp_config_data = FfxConfigData(
-                binary_path=self._ffx_binary,
-                isolate_dir=self._isolate_dir,
-                logs_dir=self._logs_dir,
-                logs_level=self._logs_level,
-                mdns_enabled=self._mdns_enabled,
-                subtools_search_path=self._subtools_search_path,
-                proxy_timeout_secs=self._proxy_timeout_secs,
-                ssh_keepalive_timeout=self._ssh_keepalive_timeout,
-            )
-            self._run(temp_config_data.get_config_args() + _FFX_DAEMON_START)
 
         self._setup_done = True
 
@@ -223,29 +187,3 @@ class FfxConfig:
             self.close()
         except FfxConfigError:
             pass
-
-    def _run(
-        self,
-        cmd: list[str],
-    ) -> None:
-        """Executes `ffx {cmd}`.
-
-        Args:
-            cmd: FFX command to run.
-
-        Raises:
-            FfxConfigError: In case of any other FFX command failure, or
-                when called after `FfxConfig.close`.
-        """
-        if self._isolate_dir is None:
-            raise FfxConfigError("_run called after calling close.")
-
-        ffx_args: list[str] = []
-        ffx_args.extend(["--isolate-dir", self._isolate_dir.directory()])
-        ffx_cmd: list[str] = [self._ffx_binary] + ffx_args + cmd
-
-        try:
-            host_shell.run(cmd=ffx_cmd)
-            return
-        except errors.HostCmdError as err:
-            raise FfxConfigError(err) from err
