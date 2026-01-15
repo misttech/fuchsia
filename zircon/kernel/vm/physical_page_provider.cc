@@ -28,6 +28,12 @@ PhysicalPageProvider::~PhysicalPageProvider() {
   // Possible we were destructed without being initialized and in error paths we can destruct
   // without detached_ or closed_ becoming true, so cannot check for those.
   if (phys_base_ == kInvalidPhysBase) {
+    // If a failure is encountered during creation, we might have accumulated some pages which need
+    // to be returned to the PMM. Initialization isn't complete and these pages haven't been used
+    // yet, so no need to unloan and no need to delay reuse either.
+    if (unlikely(!list_is_empty(&free_list_))) {
+      Pmm::Node().FreeList(&free_list_, PmmOptDelayReuse::Default);
+    }
     return;
   }
 
@@ -127,8 +133,11 @@ void PhysicalPageProvider::FreePages(list_node* pages) {
     // Check if we are detached, and if so put the pages straight in the free_list_ instead of
     // loaning them out, since we will be being closed soon and will only have to go and retrieve
     // them.
+    // Also check for the case where we're not fully initialized yet. It's possible to fail partway
+    // through inserting pages during creation, which will require freeing any already inserted
+    // pages back to the PMM.
     Guard<Mutex> guard{&mtx_};
-    if (DetachedLocked()) {
+    if (DetachedLocked() || phys_base_ == kInvalidPhysBase) {
       if (list_is_empty(&free_list_)) {
         list_move(pages, &free_list_);
       } else {
