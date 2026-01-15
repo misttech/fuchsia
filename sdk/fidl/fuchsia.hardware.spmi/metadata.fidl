@@ -14,8 +14,10 @@ type SubTargetInfo = table {
     /// The size of the SPMI register region accessible to this sub-target. The sum of `address` and
     /// `size` must be less than or equal to 65536. Required.
     2: size uint32;
-    /// The name of this sub-target. Optional.
+    /// The name of this sub-target to be used for bind properties. Optional.
     3: name string:MAX_SPMI_NAME_LEN;
+    /// A human-readable name for this sub-target. Optional.
+    4: display_name string:MAX;
 };
 
 type TargetInfo = table {
@@ -23,8 +25,10 @@ type TargetInfo = table {
     1: id uint8;
     /// Sub-target register regions within this target. Optional.
     2: sub_targets vector<SubTargetInfo>:MAX_SUB_TARGETS;
-    /// The name of this target. Optional.
+    /// The name of this target to be used for bind properties. Optional.
     3: name string:MAX_SPMI_NAME_LEN;
+    /// A human-readable name for this target. Optional.
+    4: display_name string:MAX;
 };
 
 /// `ControllerInfo` is passed to SPMI controller drivers via metadata.
