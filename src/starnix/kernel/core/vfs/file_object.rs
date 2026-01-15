@@ -28,9 +28,7 @@ use starnix_uapi::user_address::ArchSpecific;
 
 use fidl::HandleBased;
 use linux_uapi::{FSCRYPT_MODE_AES_256_CTS, FSCRYPT_MODE_AES_256_XTS};
-use starnix_logging::{
-    CATEGORY_STARNIX_MM, impossible_error, log_error, trace_duration, track_stub,
-};
+use starnix_logging::{CATEGORY_STARNIX_MM, impossible_error, trace_duration, track_stub};
 use starnix_sync::{
     BeforeFsNodeAppend, FileOpsCore, LockBefore, LockEqualOrBefore, Locked, Mutex, Unlocked,
 };
@@ -2250,23 +2248,7 @@ impl fmt::Debug for FileObject {
 }
 
 impl OnWakeOps for FileReleaser {
-    /// Called when the underneath `FileOps` is waken up by the power framework.
-    fn on_wake(&self, current_task: &CurrentTask, baton_lease: &zx::NullableHandle) {
-        // Activate associated wake leases in registered epfd.
-        for (_, file) in self.epoll_files.lock().iter() {
-            if let Some(file) = file.upgrade() {
-                if let Some(epoll_file) = file.downcast_file::<EpollFileObject>() {
-                    if let Some(weak_handle) = self.weak_handle.upgrade() {
-                        if let Err(e) =
-                            epoll_file.activate_lease(current_task, &weak_handle, baton_lease)
-                        {
-                            log_error!("Failed to activate wake lease in epoll control file: {e}");
-                        }
-                    }
-                }
-            }
-        }
-    }
+    fn on_wake(&self, _current_task: &CurrentTask, _baton_lease: &zx::NullableHandle) {}
 }
 
 /// A FileObject with the type of its FileOps known. Dereferencing it returns the FileOps.

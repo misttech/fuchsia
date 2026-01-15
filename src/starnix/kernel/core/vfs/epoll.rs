@@ -461,30 +461,6 @@ impl EpollFileObject {
 
         Ok(result)
     }
-
-    /// Drop the wake lease associated with the `file`.
-    pub fn drop_lease(&self, current_task: &CurrentTask, file: &FileHandle) {
-        let mut guard = self.state.lock();
-        let key = file.id.as_epoll_key();
-        if let Entry::Occupied(_) = guard.wait_objects.entry(key.into()) {
-            current_task.kernel().suspend_resume_manager.remove_epoll(key);
-        }
-    }
-
-    /// Activate the wake lease associated with the `file`.
-    ///
-    /// `baton_lease` is passed by reference to ensure that the lease remains on hold until
-    /// this function returns.
-    pub fn activate_lease(
-        &self,
-        current_task: &CurrentTask,
-        file: &FileHandle,
-        _baton_lease: &zx::NullableHandle,
-    ) -> Result<(), Errno> {
-        let key = file.id.as_epoll_key();
-        current_task.kernel().suspend_resume_manager.add_epoll(current_task, key);
-        Ok(())
-    }
 }
 
 impl FileOps for EpollFileObject {

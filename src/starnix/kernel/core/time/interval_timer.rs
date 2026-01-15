@@ -13,19 +13,17 @@ use crate::vfs::timer::TimerOps;
 use assert_matches::assert_matches;
 use fuchsia_runtime::UtcInstant;
 use futures::channel::mpsc;
-use futures::{FutureExt, StreamExt, select};
-use starnix_logging::log_debug;
-use std::ops::DerefMut;
-use std::pin::pin;
-
 use futures::stream::AbortHandle;
-use starnix_logging::{log_error, log_trace, log_warn, track_stub};
+use futures::{FutureExt, StreamExt, select};
+use starnix_logging::{log_debug, log_error, log_trace, log_warn, track_stub};
 use starnix_sync::Mutex;
 use starnix_types::ownership::TempRef;
 use starnix_types::time::{duration_from_timespec, timespec_from_duration};
 use starnix_uapi::errors::Errno;
 use starnix_uapi::{SI_TIMER, itimerspec};
 use std::fmt::Debug;
+use std::ops::DerefMut;
+use std::pin::pin;
 use std::sync::{Arc, Weak};
 
 #[derive(Default)]
@@ -212,6 +210,8 @@ impl IntervalTimer {
         wakeup_type: TimerWakeup,
         signal_event: SignalEvent,
     ) -> Result<IntervalTimerHandle, Errno> {
+        // TODO(b/470129973): We may also need to add hr_timer for regular wakeups on the real time
+        // timeline, to track UTC timeline changes.
         let hr_timer = match wakeup_type {
             TimerWakeup::Regular => None,
             TimerWakeup::Alarm => Some(HrTimer::new()),
