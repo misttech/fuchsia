@@ -722,18 +722,22 @@ async fn create_container(
 
     kernel.hrtimer_manager.init(system_task).source_context("initializing HrTimer manager")?;
 
+    log_info!("Initializing suspend resume manager.");
     if let Err(e) = kernel.suspend_resume_manager.init(&system_task) {
         log_warn!("Suspend/Resume manager initialization failed: ({e:?})");
     }
 
     // Real Time clock is present in all configuration.
+    log_info!("Initializing RTC device.");
     rtc_device_init(kernel.kthreads.unlocked_for_async().deref_mut(), &system_task)
         .context("in starnix_kernel_runner, while initializing RTC")?;
 
     // Register common devices and add them in sysfs and devtmpfs.
+    log_info!("Registering devices and filesystems.");
     init_common_devices(kernel.kthreads.unlocked_for_async().deref_mut(), &kernel)?;
     register_common_file_systems(kernel.kthreads.unlocked_for_async().deref_mut(), &kernel);
 
+    log_info!("Mounting filesystems.");
     mount_filesystems(
         kernel.kthreads.unlocked_for_async().deref_mut(),
         &system_task,
@@ -744,6 +748,7 @@ async fn create_container(
 
     // Run all common features that were specified in the .cml.
     {
+        log_info!("Running container features.");
         run_container_features(
             kernel.kthreads.unlocked_for_async().deref_mut(),
             &system_task,
@@ -751,6 +756,7 @@ async fn create_container(
         )?;
     }
 
+    log_info!("Initializing remote block devices.");
     init_remote_block_devices(kernel.kthreads.unlocked_for_async().deref_mut(), &system_task)
         .source_context("initalizing remote block devices")?;
 
@@ -767,6 +773,7 @@ async fn create_container(
     .map(|s| to_cstr(s))
     .collect::<Vec<_>>();
 
+    log_info!("Opening start_info file.");
     let executable = system_task
         .open_file(
             kernel.kthreads.unlocked_for_async().deref_mut(),
@@ -784,6 +791,7 @@ async fn create_container(
     let rlimits = parse_rlimits(&start_info.program.rlimits)?;
 
     // Serve the runtime directory.
+    log_info!("Starting runtime directory.");
     if let Some(runtime_dir) = start_info.runtime_dir.take() {
         kernel.kthreads.spawn_future(async move || serve_runtime_dir(runtime_dir).await);
     }
@@ -791,7 +799,7 @@ async fn create_container(
     // At this point the runtime environment has been prepared but nothing is actually running yet.
     // Pause here if a debugger needs time to attach to the job.
     if let Some(break_on_start) = start_info.break_on_start.take() {
-        log_debug!("Waiting for signal from debugger before spawning init process...");
+        log_info!("Waiting for signal from debugger before spawning init process...");
         if let Err(e) =
             fuchsia_async::OnSignals::new(break_on_start, zx::Signals::EVENTPAIR_PEER_CLOSED).await
         {
