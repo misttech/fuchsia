@@ -31,12 +31,15 @@ required for running the test suite.
 
    ```posix-terminal
    DEV_ROOT={{ '<var>' }}DEV_ROOT{{ '</var>' }}
-   TEST_TOOLCHAIN={{ '<var>' }}RUST_SRC{{ '</var>' }}/src/ci/docker/scripts/fuchsia-test-runner.py
+   # The path to the rust source must be short (less than ~100 characters)
+   # to avoid socket path length issues with the emulator.
+   TEST_TOOLCHAIN=$DEV_ROOT/rust/src/ci/docker/scripts/fuchsia-test-runner.py
 
    python3 $TEST_TOOLCHAIN start \
      --rust-build $DEV_ROOT/rust/build/fuchsia-rust \
-     --sdk $DEV_ROOT/sdk \
-     --target {{ '<var>' }}x86_64|arm64{{ '</var>' }}-unknown-fuchsia
+     --sdk $DEV_ROOT/cipd/sdk \
+     --target {{ '<var>' }}x86_64|arm64{{ '</var>' }}-unknown-fuchsia \
+     --toolchain-dir $DEV_ROOT/rust
    ```
 
    Note: If the host architecture doesn't match the target architecture,
@@ -47,12 +50,12 @@ required for running the test suite.
 
    ```posix-terminal
    DEV_ROOT={{ '<var>' }}DEV_ROOT{{ '</var>' }}
-   TEST_TOOLCHAIN={{ '<var>' }}RUST_SRC{{ '</var>' }}/src/ci/docker/scripts/fuchsia-test-runner.py
+   TEST_TOOLCHAIN=$DEV_ROOT/rust/src/ci/docker/scripts/fuchsia-test-runner.py
 
    ( \
-     source $DEV_ROOT/rust/fuchsia-env.sh && \
+     source $DEV_ROOT/fuchsia-env.sh && \
      $DEV_ROOT/rust/x.py \
-       --config $DEV_ROOT/rust/fuchsia-config.toml \
+       --config $DEV_ROOT/fuchsia-config.toml \
        --stage=2 \
        test {{ '<var>' }}TEST_SUITE{{ '</var>' }} \
        --target {{ '<var>' }}x86_64|aarch64{{ '</var>' }}-unknown-fuchsia \
@@ -61,11 +64,11 @@ required for running the test suite.
        --test-args --target-rustcflags \
        --test-args -L \
        --test-args --target-rustcflags \
-       --test-args $DEV_ROOT/sdk/arch/{{ '<var>' }}x64|a64{{ '</var>' }}/sysroot/lib \
+       --test-args $DEV_ROOT/cipd/sdk/arch/{{ '<var>' }}x64|a64{{ '</var>' }}/sysroot/lib \
        --test-args --target-rustcflags \
        --test-args -L \
        --test-args --target-rustcflags \
-       --test-args $DEV_ROOT/sdk/arch/{{ '<var>' }}x64|a64{{ '</var>' }}/lib \
+       --test-args $DEV_ROOT/cipd/sdk/arch/{{ '<var>' }}x64|a64{{ '</var>' }}/lib \
        --test-args --target-rustcflags \
        --test-args -Cpanic=abort \
        --test-args --target-rustcflags \
@@ -81,7 +84,7 @@ required for running the test suite.
 
    ```posix-terminal
    DEV_ROOT={{ '<var>' }}DEV_ROOT{{ '</var>' }}
-   TEST_TOOLCHAIN={{ '<var>' }}RUST_SRC{{ '</var>' }}src/ci/docker/scripts/fuchsia-test-runner.py
+   TEST_TOOLCHAIN=$DEV_ROOT/rust/src/ci/docker/scripts/fuchsia-test-runner.py
 
    python3 $TEST_TOOLCHAIN stop
    ```
@@ -124,10 +127,10 @@ environments.
 
    ```posix-terminal
    DEV_ROOT={{ '<var>' }}DEV_ROOT{{ '</var>' }}
-   TEST_TOOLCHAIN={{ '<var>' }}RUST_SRC{{ '</var>' }}/src/ci/docker/scripts/fuchsia-test-runner.py
+   TEST_TOOLCHAIN=$DEV_ROOT/rust/src/ci/docker/scripts/fuchsia-test-runner.py
 
    python3 $TEST_TOOLCHAIN debug \
-     --rust-src {{ '<var>' }}RUST_SRC{{ '</var>' }} \
+     --rust-src $DEV_ROOT/rust \
      --test {{ '<var>' }}TEST_PATH{{ '</var>' }}
    ```
 
@@ -139,12 +142,12 @@ environments.
 
    ```posix-terminal
    DEV_ROOT={{ '<var>' }}DEV_ROOT{{ '</var>' }}
-   TEST_TOOLCHAIN={{ '<var>' }}RUST_SRC{{ '</var>' }}/src/ci/docker/scripts/fuchsia-test-runner.py
+   TEST_TOOLCHAIN=$DEV_ROOT/rust/src/ci/docker/scripts/fuchsia-test-runner.py
 
    ( \
-     source $DEV_ROOT/rust/fuchsia-env.sh && \
+     source $DEV_ROOT/fuchsia-env.sh && \
      $DEV_ROOT/rust/x.py \
-       --config $DEV_ROOT/rust/fuchsia-config.toml \
+       --config $DEV_ROOT/fuchsia-config.toml \
        --stage=2 \
        test {{ '<var>' }}TEST_SUITE{{ '</var>' }} \
        --target {{ '<var>' }}x86_64|aarch64{{ '</var>' }}-fuchsia \
@@ -153,11 +156,11 @@ environments.
        --test-args --target-rustcflags \
        --test-args -L \
        --test-args --target-rustcflags \
-       --test-args $DEV_ROOT/sdk/arch/{{ '<var>' }}x64|a64{{ '</var>' }}/sysroot/lib \
+       --test-args $DEV_ROOT/cipd/sdk/arch/{{ '<var>' }}x64|a64{{ '</var>' }}/sysroot/lib \
        --test-args --target-rustcflags \
        --test-args -L \
        --test-args --target-rustcflags \
-       --test-args $DEV_ROOT/sdk/arch/{{ '<var>' }}x64|a64{{ '</var>' }}/lib \
+       --test-args $DEV_ROOT/cipd/sdk/arch/{{ '<var>' }}x64|a64{{ '</var>' }}/lib \
        --test-args --target-rustcflags \
        --test-args -Cpanic=abort \
        --test-args --target-rustcflags \

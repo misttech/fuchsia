@@ -230,6 +230,7 @@ Prior to building a custom Rust toolchain for Fuchsia, you need to do the follow
    CIPD_DIR="${DEV_ROOT}/cipd"
    ZLIB_INSTALL_DIR="${DEV_ROOT}/install/zlib"
    ZSTD_INSTALL_DIR="${DEV_ROOT}/install/zstd"
+   HOST_SYSROOT="${CIPD_DIR}/linux"
    STAGE0_DIR="${CIPD_DIR}/stage0"
 
    ( \
