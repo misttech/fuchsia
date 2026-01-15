@@ -16,7 +16,12 @@
 #include "src/devices/bin/driver_loader/loader.h"
 
 namespace driver_manager {
-
+struct PowerElementStartArgs {
+  fidl::ClientEnd<fuchsia_power_broker::ElementControl> element_control;
+  fidl::ServerEnd<fuchsia_power_broker::ElementRunner> element_runner;
+  fidl::ClientEnd<fuchsia_power_broker::Lessor> lessor;
+  fuchsia_power_broker::DependencyToken power_element_token;
+};
 class DriverHost {
  public:
   using StartCallback = fit::callback<void(zx::result<>)>;
@@ -71,14 +76,14 @@ class DriverHost {
                      fidl::VectorView<fuchsia_driver_framework::wire::Offer> offers,
                      fuchsia_component_runner::wire::ComponentStartInfo start_info,
                      zx::event node_token, fidl::ServerEnd<fuchsia_driver_host::Driver> driver,
-                     StartCallback cb) = 0;
+                     PowerElementStartArgs power_element_args, StartCallback cb) = 0;
 
   // Loads and starts a driver using dynamic linking.
   virtual void StartWithDynamicLinker(fidl::ClientEnd<fuchsia_driver_framework::Node> node,
                                       std::string node_name, DriverLoadArgs load_args,
                                       DriverStartArgs start_args, zx::event node_token,
                                       fidl::ServerEnd<fuchsia_driver_host::Driver> driver,
-                                      StartCallback cb) {
+                                      PowerElementStartArgs power_element_args, StartCallback cb) {
     cb(zx::error(ZX_ERR_NOT_SUPPORTED));
   }
 
@@ -104,12 +109,15 @@ class DriverHostComponent final
              fidl::VectorView<fuchsia_driver_framework::wire::NodeSymbol> symbols,
              fidl::VectorView<fuchsia_driver_framework::wire::Offer> offers,
              fuchsia_component_runner::wire::ComponentStartInfo start_info, zx::event node_token,
-             fidl::ServerEnd<fuchsia_driver_host::Driver> driver, StartCallback cb) override;
+             fidl::ServerEnd<fuchsia_driver_host::Driver> driver,
+             PowerElementStartArgs power_element_args, StartCallback cb) override;
 
   void StartWithDynamicLinker(fidl::ClientEnd<fuchsia_driver_framework::Node> node,
                               std::string node_name, DriverLoadArgs load_args,
                               DriverStartArgs start_args, zx::event node_token,
                               fidl::ServerEnd<fuchsia_driver_host::Driver> driver_host_server_end,
+                              PowerElementStartArgs power_element_args,
+
                               StartCallback cb) override;
 
   zx::result<fuchsia_driver_host::ProcessInfo> GetProcessInfo() const;

@@ -1567,7 +1567,7 @@ void Node::handle_unknown_method(
 }
 
 void Node::LeaseDriverPowerElement(fit::callback<void(zx::result<>)> cb) {
-  pe_handles_.lessor->Lease({{.level = 1}})
+  pe_handles_->lessor->Lease({{.level = 1}})
       .Then([this, cb = std::move(cb)](
                 fidl::Result<fuchsia_power_broker::Lessor::Lease>& lease_result) mutable {
         if (lease_result.is_error() && lease_result.error_value().is_framework_error()) {
@@ -1754,13 +1754,14 @@ void Node::StartDriver(
       std::move(element_runner_server),
       fidl::Client<fuchsia_power_broker::Lessor>(std::move(lessor_client), dispatcher_));
 
+  auto url_str = std::string(start_info.resolved_url().get());
+
   (*node_manager_)
       ->CreatePowerElement(
           name_, std::move(clone), deps_span, std::move(element_control_server),
           std::move(element_runner_client), std::move(lessor_server),
           [weak_self = weak_from_this(), handles_ptr = handles_ptr, cb = std::move(cb),
-           use_dynamic_linker = use_dynamic_linker,
-           url = std::string(start_info.resolved_url().get()), colocate = colocate,
+           use_dynamic_linker = use_dynamic_linker, url = url_str, colocate = colocate,
            dynamic_linker_start_args = std::move(dynamic_linker_start_args),
            dynamic_linker_load_args = std::move(dynamic_linker_load_args),
            component_controller = std::move(component_controller), use_next_vdso = use_next_vdso,
@@ -1772,7 +1773,7 @@ void Node::StartDriver(
             }
 
             if (pe_created.is_error()) {
-              fdf_log::warn("Failed creating power element for driver {}", std::string(url));
+              fdf_log::warn("Failed creating power element for driver {}", url);
               cb(pe_created.take_error());
               return;
             }
@@ -1792,25 +1793,47 @@ void Node::StartDriver(
                  component_controller = std::move(component_controller),
                  use_next_vdso = use_next_vdso, cb = std::move(cb),
                  normal_start_args =
-                     std::move(normal_start_args)](zx::result<> lease_success) mutable {
+                     std::move(normal_start_args)](zx::result<> power_setup) mutable {
                   std::shared_ptr<driver_manager::Node> self = weak_self.lock();
                   if (!self) {
                     return;
                   }
 
-                  if (lease_success.is_error()) {
-                    fdf_log::warn("{} failed to start beacause lease failed", std::string(url));
-
-                    cb(lease_success);
+                  if (power_setup.is_error()) {
+                    fdf_log::warn("{} failed to start because power element setup failed",
+                                  std::string(url));
+                    cb(power_setup);
                     return;
                   }
 
+                  PowerElementStartArgs pe_args;
+                  // Package up power-related args for sending to the driver host.
+                  if (self->pe_handles_.has_value()) {
+                    auto element_control_channel =
+                        self->pe_handles_->element_control.UnbindMaybeGetEndpoint();
+                    ZX_ASSERT_MSG(element_control_channel.is_ok(),
+                                  "Failed unbinding element control channel for transfer");
+                    pe_args.element_control = std::move(*element_control_channel);
+
+                    auto lessor_channel = self->pe_handles_->lessor.UnbindMaybeGetEndpoint();
+                    ZX_ASSERT_MSG(lessor_channel.is_ok(),
+                                  "Failed unbinding lessor channel for transfer");
+                    pe_args.lessor = std::move(*lessor_channel);
+
+                    zx::event token_copy = self->DuplicatePowerToken();
+                    ZX_ASSERT_MSG(token_copy.is_valid(),
+                                  "Power element token invalid on suspend-enabled platform.");
+                    pe_args.power_element_token = std::move(token_copy);
+
+                    pe_args.element_runner = std::move(self->pe_handles_->element_runner);
+                  }
                   // If we're using the dynamic linker, we don't continue
                   // starting the driver here.
                   if (use_dynamic_linker) {
                     self->CreateHostAndStartDriverWithDynamicLinker(
                         std::move(*dynamic_linker_load_args), std::move(*dynamic_linker_start_args),
-                        url, std::move(component_controller), colocate, std::move(cb));
+                        url, std::move(component_controller), std::move(pe_args), colocate,
+                        std::move(cb));
                     return;
                   }
 
@@ -1854,7 +1877,7 @@ void Node::StartDriver(
                   auto start_info = fidl::ToWire(arena, std::move(normal_start_args.start_info_));
                   self->driver_host_.value()->Start(
                       std::move(client_end), self->name_, properties, symbols, offers, start_info,
-                      std::move(node_token), std::move(driver_endpoints.server),
+                      std::move(node_token), std::move(driver_endpoints.server), std::move(pe_args),
                       [weak_self = self->weak_from_this(), name = self->name_,
                        cb = std::move(cb)](zx::result<> result) mutable {
                         auto node_ptr = weak_self.lock();
@@ -1891,7 +1914,10 @@ void Node::StartDriver(
               // Now that the power element is created, move the handles for it into the node
               self->pe_handles_ = std::move(*handles_ptr);
 
-              self->pe_handles_.element_control
+              // Register a dependency token on the power element so other elements can depend on
+              // it. After doing this we'll call `post_dependency_registration`, which leases the
+              // element.
+              self->pe_handles_->element_control
                   ->RegisterDependencyToken({{
                       .token = std::move(copy),
                   }})
@@ -1994,10 +2020,11 @@ void Node::CreateHostAndStartDriverWithDynamicLinker(
     DriverHost::DriverLoadArgs load_args, DriverHost::DriverStartArgs start_args,
     std::string_view url,
     fidl::ServerEnd<fuchsia_component_runner::ComponentController> component_controller,
-    bool colocate, fit::callback<void(zx::result<>)> cb) {
+    PowerElementStartArgs power_element_args, bool colocate, fit::callback<void(zx::result<>)> cb) {
   if (colocate) {
     StartDriverWithDynamicLinker(std::move(load_args), std::move(start_args), url,
-                                 std::move(component_controller), std::move(cb));
+                                 std::move(component_controller), std::move(power_element_args),
+                                 std::move(cb));
     return;
   }
 
@@ -2006,6 +2033,7 @@ void Node::CreateHostAndStartDriverWithDynamicLinker(
           [weak_self = weak_from_this(), name = name_, load_args = std::move(load_args),
            start_args = std::move(start_args), url = std::string(url),
            component_controller = std::move(component_controller),
+           power_element_args = std::move(power_element_args),
            cb = std::move(cb)](zx::result<DriverHost*> driver_host) mutable {
             std::shared_ptr<driver_manager::Node> node_ptr = weak_self.lock();
             if (!node_ptr) {
@@ -2020,7 +2048,8 @@ void Node::CreateHostAndStartDriverWithDynamicLinker(
             }
             node_ptr->driver_host_ = driver_host.value();
             node_ptr->StartDriverWithDynamicLinker(std::move(load_args), std::move(start_args), url,
-                                                   std::move(component_controller), std::move(cb));
+                                                   std::move(component_controller),
+                                                   std::move(power_element_args), std::move(cb));
           });
 }
 
@@ -2028,7 +2057,7 @@ void Node::StartDriverWithDynamicLinker(
     DriverHost::DriverLoadArgs load_args, DriverHost::DriverStartArgs start_args,
     std::string_view url,
     fidl::ServerEnd<fuchsia_component_runner::ComponentController> component_controller,
-    fit::callback<void(zx::result<>)> cb) {
+    PowerElementStartArgs power_element_args, fit::callback<void(zx::result<>)> cb) {
   auto [client_end, server_end] = fidl::Endpoints<fdf::Node>::Create();
 
   auto driver_endpoints = fidl::Endpoints<fuchsia_driver_host::Driver>::Create();
@@ -2046,7 +2075,8 @@ void Node::StartDriverWithDynamicLinker(
                                   std::move(node_token_dup));
   driver_host_.value()->StartWithDynamicLinker(std::move(client_end), name_, std::move(load_args),
                                                std::move(start_args), std::move(node_token),
-                                               std::move(driver_endpoints.server), std::move(cb));
+                                               std::move(driver_endpoints.server),
+                                               std::move(power_element_args), std::move(cb));
 }
 
 zx::result<zx::event> Node::DuplicateNodeToken() {

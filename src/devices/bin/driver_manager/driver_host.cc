@@ -4,6 +4,7 @@
 
 #include "src/devices/bin/driver_manager/driver_host.h"
 
+#include <fidl/fuchsia.driver.framework/cpp/fidl.h>
 #include <lib/driver/component/cpp/internal/start_args.h>
 
 #include <memory>
@@ -201,7 +202,8 @@ void DriverHostComponent::Start(
     fidl::VectorView<fuchsia_driver_framework::wire::NodeSymbol> symbols,
     fidl::VectorView<fuchsia_driver_framework::wire::Offer> offers,
     frunner::wire::ComponentStartInfo start_info, zx::event node_token,
-    fidl::ServerEnd<fuchsia_driver_host::Driver> driver, StartCallback cb) {
+    fidl::ServerEnd<fuchsia_driver_host::Driver> driver, PowerElementStartArgs power_element_args,
+    StartCallback cb) {
   auto binary = fdf_internal::ProgramValue(start_info.program(), "binary").value_or("");
   fidl::Arena arena;
   auto args = fdf::wire::DriverStartArgs::Builder(arena);
@@ -233,6 +235,17 @@ void DriverHostComponent::Start(
       .program(start_info.program())
       .incoming(start_info.ns())
       .outgoing_dir(std::move(start_info.outgoing_dir()));
+
+  // If the channel is valid, pass power-related args
+  if (power_element_args.element_control.is_valid()) {
+    auto power_builder = fdf::wire::PowerElementArgs::Builder(arena);
+    args.power_element_args(
+        power_builder.control_client(std::move(power_element_args.element_control))
+            .runner_server(std::move(power_element_args.element_runner))
+            .lessor_client(std::move(power_element_args.lessor))
+            .token(std::move(power_element_args.power_element_token))
+            .Build());
+  }
 
   auto status = SetEncodedConfig(args, start_info);
   if (status.is_error()) {
@@ -350,7 +363,8 @@ zx::result<> DriverHostComponent::InstallLoader(
 void DriverHostComponent::StartWithDynamicLinker(
     fidl::ClientEnd<fuchsia_driver_framework::Node> node, std::string node_name,
     DriverLoadArgs load_args, DriverStartArgs start_args, zx::event node_token,
-    fidl::ServerEnd<fuchsia_driver_host::Driver> driver, StartCallback cb) {
+    fidl::ServerEnd<fuchsia_driver_host::Driver> driver, PowerElementStartArgs power_element_args,
+    StartCallback cb) {
   if (!IsDynamicLinkingEnabled()) {
     cb(zx::error(ZX_ERR_NOT_SUPPORTED));
     return;
@@ -369,7 +383,8 @@ void DriverHostComponent::StartWithDynamicLinker(
   dynamic_linker_driver_loader_->LoadDriver(args).ThenExactlyOnce(
       [this, driver = std::move(driver), node = std::move(node), node_name,
        start_args = std::move(start_args), node_token = std::move(node_token), driver_name,
-       cb = std::move(cb)](auto& result) mutable {
+       cb = std::move(cb),
+       power_element_args = std::move(power_element_args)](auto& result) mutable {
         if (!result.ok()) {
           fdf_log::error("Failed to start driver {} in driver host: {}", driver_name,
                          result.error());
@@ -387,7 +402,7 @@ void DriverHostComponent::StartWithDynamicLinker(
         Start(std::move(node), node_name, fidl::ToWire(arena, start_args.node_properties_),
               fidl::ToWire(arena, start_args.symbols_), fidl::ToWire(arena, start_args.offers_),
               fidl::ToWire(arena, std::move(start_args.start_info_)), std::move(node_token),
-              std::move(driver), std::move(cb));
+              std::move(driver), std::move(power_element_args), std::move(cb));
       });
 }
 

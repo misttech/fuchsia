@@ -57,6 +57,7 @@ class Node;
 struct NodeInfo;
 class NodeRemovalTracker;
 class BootupTracker;
+struct PowerElementStartArgs;
 
 class DriverHostConnection : public fidl::WireAsyncEventHandler<fuchsia_driver_host::Driver> {
  public:
@@ -583,7 +584,7 @@ class Node : public fidl::WireServer<fuchsia_driver_framework::NodeController>,
       DriverHost::DriverLoadArgs load_args, DriverHost::DriverStartArgs start_args,
       std::string_view url,
       fidl::ServerEnd<fuchsia_component_runner::ComponentController> component_controller,
-      fit::callback<void(zx::result<>)> cb);
+      PowerElementStartArgs power_element_args, fit::callback<void(zx::result<>)> cb);
 
   // Creates a driver host, if necessary, and then starts the driver with the dynamic linker. If
   // |colocate| is true a driver host is not created because we use an existing one.
@@ -591,7 +592,8 @@ class Node : public fidl::WireServer<fuchsia_driver_framework::NodeController>,
       DriverHost::DriverLoadArgs load_args, DriverHost::DriverStartArgs start_args,
       std::string_view url,
       fidl::ServerEnd<fuchsia_component_runner::ComponentController> component_controller,
-      bool colocate, fit::callback<void(zx::result<>)> cb);
+      PowerElementStartArgs power_element_args, bool colocate,
+      fit::callback<void(zx::result<>)> cb);
 
   zx::result<zx::event> DuplicateNodeToken();
 
@@ -724,7 +726,7 @@ class Node : public fidl::WireServer<fuchsia_driver_framework::NodeController>,
   ComponentControllerConnection component_controller_handler_;
 
   fuchsia_power_broker::DependencyToken power_element_token_;
-  PowerElementHandles pe_handles_;
+  std::optional<PowerElementHandles> pe_handles_;
 };
 
 }  // namespace driver_manager
