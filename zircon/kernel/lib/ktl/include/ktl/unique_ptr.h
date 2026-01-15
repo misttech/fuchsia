@@ -24,8 +24,8 @@ ktl::enable_if_t<!ktl::is_array_v<T>, unique_ptr<T>> make_unique(fbl::AllocCheck
   return unique_ptr<T>(new (ac) T(std::forward<Args>(args)...));
 }
 
-// For an unbounded array of given size, each element is default-constructed.
-// This is different from plain `new (ac) T[n]`, which leaves it uninitialized.
+// For an unbounded array of given size, each element is value-initialized.
+// This is different from plain `new (ac) T[n]`, which performs default-initialization.
 template <typename T, typename... Args>
 ktl::enable_if_t<ktl::is_unbounded_array_v<T>, unique_ptr<T>> make_unique(fbl::AllocChecker* ac,
                                                                           size_t n) {
