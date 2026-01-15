@@ -491,7 +491,7 @@ impl SecurityServer {
         &self,
         source_sid: SecurityId,
         target_sid: SecurityId,
-        target_class: ObjectClass,
+        target_class: impl Into<ObjectClass>,
     ) -> Result<SecurityId, anyhow::Error> {
         self.backend.compute_create_sid(source_sid, target_sid, target_class)
     }
@@ -502,8 +502,10 @@ impl SecurityServerBackend {
         &self,
         source_sid: SecurityId,
         target_sid: SecurityId,
-        target_class: ObjectClass,
+        target_class: impl Into<ObjectClass>,
     ) -> Result<SecurityId, anyhow::Error> {
+        let target_class = target_class.into();
+
         self.compute_sid(|active_policy| {
             let source_context = active_policy.sid_table.sid_to_security_context(source_sid);
             let target_context = active_policy.sid_table.sid_to_security_context(target_sid);
@@ -581,13 +583,13 @@ impl Query for SecurityServerBackend {
         decision
     }
 
-    fn compute_create_sid(
+    fn compute_new_fs_node_sid(
         &self,
         source_sid: SecurityId,
         target_sid: SecurityId,
-        target_class: ObjectClass,
+        fs_node_class: FsNodeClass,
     ) -> Result<SecurityId, anyhow::Error> {
-        self.compute_create_sid(source_sid, target_sid, target_class)
+        self.compute_create_sid(source_sid, target_sid, fs_node_class)
     }
 
     fn compute_new_fs_node_sid_with_name(

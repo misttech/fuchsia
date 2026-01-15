@@ -128,7 +128,7 @@ impl<'a> PermissionCheck<'a> {
                 return Ok(sid);
             }
         }
-        self.access_vector_cache.compute_create_sid(source_sid, target_sid, fs_node_class.into())
+        self.access_vector_cache.compute_new_fs_node_sid(source_sid, target_sid, fs_node_class)
     }
 
     /// Returns the raw `AccessDecision` for a specified source, target and class.
@@ -315,11 +315,11 @@ mod tests {
             AccessDecision::allow(AccessVector::NONE)
         }
 
-        fn compute_create_sid(
+        fn compute_new_fs_node_sid(
             &self,
             _source_sid: SecurityId,
             _target_sid: SecurityId,
-            _target_class: ObjectClass,
+            _fs_node_class: FsNodeClass,
         ) -> Result<SecurityId, anyhow::Error> {
             unreachable!();
         }
@@ -371,11 +371,11 @@ mod tests {
             AccessDecision::allow(AccessVector::ALL)
         }
 
-        fn compute_create_sid(
+        fn compute_new_fs_node_sid(
             &self,
             _source_sid: SecurityId,
             _target_sid: SecurityId,
-            _target_class: ObjectClass,
+            _fs_node_class: FsNodeClass,
         ) -> Result<SecurityId, anyhow::Error> {
             unreachable!();
         }
@@ -427,11 +427,11 @@ mod tests {
             AccessDecision::allow(AccessVector::NONE)
         }
 
-        fn compute_create_sid(
+        fn compute_new_fs_node_sid(
             &self,
             _source_sid: SecurityId,
             _target_sid: SecurityId,
-            _target_class: ObjectClass,
+            _fs_node_class: FsNodeClass,
         ) -> Result<SecurityId, anyhow::Error> {
             unreachable!();
         }
@@ -483,11 +483,11 @@ mod tests {
             AccessDecision::allow(AccessVector::ALL)
         }
 
-        fn compute_create_sid(
+        fn compute_new_fs_node_sid(
             &self,
             _source_sid: SecurityId,
             _target_sid: SecurityId,
-            _target_class: ObjectClass,
+            _fs_node_class: FsNodeClass,
         ) -> Result<SecurityId, anyhow::Error> {
             unreachable!();
         }
