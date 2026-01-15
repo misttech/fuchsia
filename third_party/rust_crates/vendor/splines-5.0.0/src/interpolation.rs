@@ -1,13 +1,18 @@
 //! Available interpolation modes.
 
-#[cfg(feature = "serialization")] use serde_derive::{Deserialize, Serialize};
+#[cfg(feature = "serde")]
+use serde::{Deserialize, Serialize};
 
 /// Available kind of interpolations.
 ///
 /// Feel free to visit each variant for more documentation.
+#[non_exhaustive]
 #[derive(Copy, Clone, Debug, Eq, PartialEq)]
-#[cfg_attr(feature = "serialization", derive(Deserialize, Serialize))]
-#[cfg_attr(feature = "serialization", serde(rename_all = "snake_case"))]
+#[cfg_attr(
+  feature = "serde",
+  derive(Deserialize, Serialize),
+  serde(rename_all = "snake_case")
+)]
 pub enum Interpolation<T, V> {
   /// Hold a [`Key`] until the sampling value passes the normalized step threshold, in which
   /// case the next key is used.
@@ -19,16 +24,29 @@ pub enum Interpolation<T, V> {
   ///
   /// [`Key`]: crate::key::Key
   Step(T),
+
   /// Linear interpolation between a key and the next one.
   Linear,
+
   /// Cosine interpolation between a key and the next one.
   Cosine,
+
   /// Catmull-Rom interpolation, performing a cubic Hermite interpolation using four keys.
+  ///
+  /// # Notes
+  ///
+  /// Given four keys `P0`, `P1`, `P2` and `P3`, interpolated values are only possible between
+  /// `P1` and `P2`. Trying to sample before `P1` and after `P2` will result with no values, as
+  /// four keys (one before the beginning key, the beginning key, the end key and one after the
+  /// end key) are required to perform interpolation.
+  ///
+  /// This requires uniform spacing.
   CatmullRom,
+
   /// Bézier interpolation.
   ///
-  /// A control point that uses such an interpolation is associated with an extra point. The segmant
-  /// connecting both is called the _tangent_ of this point. The part of the spline defined between
+  /// A control point that uses such an interpolation is associated with an extra point. The segment
+  /// connecting both is called the _tangent_ at this point. The part of the spline defined between
   /// this control point and the next one will be interpolated across with Bézier interpolation. Two
   /// cases are possible:
   ///
@@ -40,6 +58,7 @@ pub enum Interpolation<T, V> {
   ///   point and the current control point’s associated point. This is called _quadratic Bézer
   ///   interpolation_ and it kicks ass too, but a bit less than cubic.
   Bezier(V),
+
   /// A special Bézier interpolation using an _input tangent_ and an _output tangent_.
   ///
   /// With this kind of interpolation, a control point has an input tangent, which has the same role
@@ -52,8 +71,6 @@ pub enum Interpolation<T, V> {
   ///
   /// Stroke Bézier interpolation is always a cubic Bézier interpolation by default.
   StrokeBezier(V, V),
-  #[doc(hidden)]
-  __NonExhaustive
 }
 
 impl<T, V> Default for Interpolation<T, V> {

@@ -84,36 +84,54 @@
 //!
 //! So here’s a list of currently supported features and how to enable them:
 //!
-//!   - **Serialization / deserialization.**
+//!   - **[serde](https://crates.io/crates/cgmath).**
 //!     - This feature implements both the `Serialize` and `Deserialize` traits from `serde` for all
 //!       types exported by this crate.
-//!     - Enable with the `"serialization"` feature.
+//!     - Enable with the `"serde"` feature.
 //!   - **[cgmath](https://crates.io/crates/cgmath) implementors.**
 //!     - Adds some useful implementations of `Interpolate` for some cgmath types.
-//!     - Enable with the `"impl-cgmath"` feature.
+//!     - Enable with the `"cgmath"` feature.
+//!   - **[glam](https://crates.io/crates/glam) implementors.**
+//!     - Adds some useful implementations of `Interpolate` for some glam types.
+//!     - Enable with the `"glam"` feature.
 //!   - **[nalgebra](https://crates.io/crates/nalgebra) implementors.**
 //!     - Adds some useful implementations of `Interpolate` for some nalgebra types.
-//!     - Enable with the `"impl-nalgebra"` feature.
+//!     - Enable with the `"nalgebra"` feature.
+//!   - **[num-traits](https://crates.io/crates/num-traits) implementation (useful for `no_std`).**
+//!     - Uses `num-traits`’ implementation when required (used in `no_std`).
+//!     - Required if you want to use the provided implementations.
 //!   - **Standard library / no standard library.**
 //!     - It’s possible to compile against the standard library or go on your own without it.
 //!     - Compiling with the standard library is enabled by default.
 //!     - Use `default-features = []` in your `Cargo.toml` to disable.
 //!     - Enable explicitly with the `"std"` feature.
+//!     - See the `no_std` section for more.
 //!
-//! [`Interpolation`]: crate::interpolation::Interpolation
+//! # `no_std` support
+//!
+//! This crate can be used within a `no_std` environment by not enabling the `"std"` feature. However, if
+//! you go that way, some useful impls won’t be generated for you automatically, so you won’t be able to
+//! use [`f32`] for instance. You will either have to come up with your type wrapper implementing the
+//! [`Interpolate`] trait, or enable the `"num-traits"` feature.
+//!
+//! [`Interpolate`]: crate::interpolation::Interpolate
+//! [`InterpolatiInterpolateon`]: crate::interpolation::InterpolaInterpolatetion
 
 #![cfg_attr(not(feature = "std"), no_std)]
-#![cfg_attr(not(feature = "std"), feature(alloc))]
-#![cfg_attr(not(feature = "std"), feature(core_intrinsics))]
 
-#[cfg(not(feature = "std"))] extern crate alloc;
+#[cfg(not(feature = "std"))]
+extern crate alloc;
 
-#[cfg(feature = "impl-cgmath")] mod cgmath;
+#[cfg(feature = "cgmath")]
+mod cgmath;
+#[cfg(feature = "glam")]
+mod glam;
 pub mod interpolate;
 pub mod interpolation;
 pub mod iter;
 pub mod key;
-#[cfg(feature = "impl-nalgebra")] mod nalgebra;
+#[cfg(feature = "nalgebra")]
+mod nalgebra;
 pub mod spline;
 
 pub use crate::interpolate::Interpolate;

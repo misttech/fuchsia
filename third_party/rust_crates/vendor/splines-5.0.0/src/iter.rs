@@ -11,9 +11,13 @@ use crate::{Key, Spline};
 /// Iterator over spline keys.
 ///
 /// This iterator type is guaranteed to iterate over sorted keys.
-pub struct Iter<'a, T, V> where T: 'a, V: 'a {
+pub struct Iter<'a, T, V>
+where
+  T: 'a,
+  V: 'a,
+{
   spline: &'a Spline<T, V>,
-  i: usize
+  i: usize,
 }
 
 impl<'a, T, V> Iterator for Iter<'a, T, V> {
@@ -22,7 +26,7 @@ impl<'a, T, V> Iterator for Iter<'a, T, V> {
   fn next(&mut self) -> Option<Self::Item> {
     let r = self.spline.0.get(self.i);
 
-    if let Some(_) = r {
+    if r.is_some() {
       self.i += 1;
     }
 
@@ -35,10 +39,6 @@ impl<'a, T, V> IntoIterator for &'a Spline<T, V> {
   type IntoIter = Iter<'a, T, V>;
 
   fn into_iter(self) -> Self::IntoIter {
-    Iter {
-      spline: self,
-      i: 0
-    }
+    Self::IntoIter { spline: self, i: 0 }
   }
 }
-

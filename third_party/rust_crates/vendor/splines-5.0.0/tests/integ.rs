@@ -1,7 +1,4 @@
-use splines::{Interpolation, Key, Spline};
-
-#[cfg(feature = "impl-cgmath")] use cgmath as cg;
-#[cfg(feature = "impl-nalgebra")] use nalgebra as na;
+use splines::{Interpolation, Key, Spline, spline::SampledWithKey};
 
 #[test]
 fn step_interpolation_f32() {
@@ -16,8 +13,14 @@ fn step_interpolation_f32() {
   assert_eq!(spline.sample(0.9), Some(10.));
   assert_eq!(spline.sample(1.), None);
   assert_eq!(spline.clamped_sample(1.), Some(10.));
-  assert_eq!(spline.sample_with_key(0.2), Some((10., &start, Some(&end))));
-  assert_eq!(spline.clamped_sample_with_key(1.), Some((10., &end, None)));
+  assert_eq!(
+    spline.sample_with_key(0.2),
+    Some(SampledWithKey { value: 10., key: 0 })
+  );
+  assert_eq!(
+    spline.clamped_sample_with_key(1.),
+    Some(SampledWithKey { value: 10., key: 1 })
+  );
 }
 
 #[test]
@@ -33,8 +36,14 @@ fn step_interpolation_f64() {
   assert_eq!(spline.sample(0.9), Some(10.));
   assert_eq!(spline.sample(1.), None);
   assert_eq!(spline.clamped_sample(1.), Some(10.));
-  assert_eq!(spline.sample_with_key(0.2), Some((10., &start, Some(&end))));
-  assert_eq!(spline.clamped_sample_with_key(1.), Some((10., &end, None)));
+  assert_eq!(
+    spline.sample_with_key(0.2),
+    Some(SampledWithKey { value: 10., key: 0 })
+  );
+  assert_eq!(
+    spline.clamped_sample_with_key(1.),
+    Some(SampledWithKey { value: 10., key: 1 })
+  );
 }
 
 #[test]
@@ -149,34 +158,6 @@ fn several_interpolations_several_keys() {
   assert_eq!(spline.clamped_sample(11.), Some(4.));
 }
 
-#[cfg(feature = "impl-cgmath")]
-#[test]
-fn cgmath_vector_interpolation() {
-  use splines::Interpolate;
-
-  let start = cg::Vector2::new(0.0, 0.0);
-  let mid = cg::Vector2::new(0.5, 0.5);
-  let end = cg::Vector2::new(1.0, 1.0);
-
-  assert_eq!(Interpolate::lerp(start, end, 0.0), start);
-  assert_eq!(Interpolate::lerp(start, end, 1.0), end);
-  assert_eq!(Interpolate::lerp(start, end, 0.5), mid);
-}
-
-#[cfg(feature = "impl-nalgebra")]
-#[test]
-fn nalgebra_vector_interpolation() {
-  use splines::Interpolate;
-
-  let start = na::Vector2::new(0.0, 0.0);
-  let mid = na::Vector2::new(0.5, 0.5);
-  let end = na::Vector2::new(1.0, 1.0);
-
-  assert_eq!(Interpolate::lerp(start, end, 0.0), start);
-  assert_eq!(Interpolate::lerp(start, end, 1.0), end);
-  assert_eq!(Interpolate::lerp(start, end, 0.5), mid);
-}
-
 #[test]
 fn add_key_empty() {
   let mut spline: Spline<f32, f32> = Spline::from_vec(vec![]);
@@ -194,7 +175,7 @@ fn add_key() {
   let k4 = Key::new(10., 2., Interpolation::Linear);
   let end = Key::new(11., 4., Interpolation::default());
   let new = Key::new(2.4, 40., Interpolation::Linear);
-  let mut spline = Spline::from_vec(vec![start, k1, k2.clone(), k3, k4, end]);
+  let mut spline = Spline::from_vec(vec![start, k1, k2, k3, k4, end]);
 
   assert_eq!(spline.keys(), &[start, k1, k2, k3, k4, end]);
   spline.add(new);
@@ -218,7 +199,7 @@ fn remove_element() {
   let k3 = Key::new(3., 1., Interpolation::Linear);
   let k4 = Key::new(10., 2., Interpolation::Linear);
   let end = Key::new(11., 4., Interpolation::default());
-  let mut spline = Spline::from_vec(vec![start, k1, k2.clone(), k3, k4, end]);
+  let mut spline = Spline::from_vec(vec![start, k1, k2, k3, k4, end]);
   let removed = spline.remove(2);
 
   assert_eq!(removed, Some(k2));

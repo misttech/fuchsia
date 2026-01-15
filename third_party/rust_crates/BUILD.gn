@@ -1042,7 +1042,7 @@ if (current_os == "fuchsia") {
 }
 
 group("splines") {
-  public_deps = [ ":splines-v2_2_0" ]
+  public_deps = [ ":splines-v5_0_0" ]
 }
 
 group("static_assertions") {
@@ -17758,16 +17758,16 @@ rustc_library("spki-v0_7_3") {
   applicable_licenses = [ ":spki-v0_7_3.license" ]
 }
 
-license("splines-v2_2_0.license") {
+license("splines-v5_0_0.license") {
   public_package_name = "splines"
-  license_files = [ "//third_party/rust_crates/vendor/splines-2.2.0/LICENSE" ]
+  license_files = [ "//third_party/rust_crates/vendor/splines-5.0.0/LICENSE" ]
 }
 
-rustc_library("splines-v2_2_0") {
+rustc_library("splines-v5_0_0") {
   crate_name = "splines"
-  source_root = "//third_party/rust_crates/vendor/splines-2.2.0/src/lib.rs"
-  output_name = "splines-d1b51f4ec5d923f7"
-  edition = "2018"
+  source_root = "//third_party/rust_crates/vendor/splines-5.0.0/src/lib.rs"
+  output_name = "splines-68fcf4387aa25b6e"
+  edition = "2024"
   disable_clippy = true
   enforce_source_listing = false
   configs -= [ "//build/config/rust:2018_idioms" ]
@@ -17778,15 +17778,15 @@ rustc_library("splines-v2_2_0") {
 
   rustflags = [
     "--cap-lints=allow",
-    "-Cmetadata=d1b51f4ec5d923f7",
-    "-Cextra-filename=-d1b51f4ec5d923f7",
+    "-Cmetadata=68fcf4387aa25b6e",
+    "-Cextra-filename=-68fcf4387aa25b6e",
     "--cfg=feature=\"default\"",
     "--cfg=feature=\"std\"",
   ]
 
   visibility = [ ":*" ]
 
-  applicable_licenses = [ ":splines-v2_2_0.license" ]
+  applicable_licenses = [ ":splines-v5_0_0.license" ]
 }
 
 license("static_assertions-v1_1_0.license") {

@@ -466,7 +466,7 @@ _NORMAL_DEPENDENCIES = {
             "slab": Label("//third_party/rust_crates/vendor/slab-0.4.11:slab"),
             "smallvec": Label("//third_party/rust_crates/vendor/smallvec-1.15.1:smallvec"),
             "socket2": Label("//third_party/rust_crates/vendor/socket2-0.5.9:socket2"),
-            "splines": Label("//third_party/rust_crates/vendor/splines-2.2.0:splines"),
+            "splines": Label("//third_party/rust_crates/vendor/splines-5.0.0:splines"),
             "static_assertions": Label("//third_party/rust_crates/vendor/static_assertions-1.1.0:static_assertions"),
             "strsim": Label("//third_party/rust_crates/vendor/strsim-0.11.1:strsim"),
             "strum": Label("//third_party/rust_crates/vendor/strum-0.27.2:strum"),

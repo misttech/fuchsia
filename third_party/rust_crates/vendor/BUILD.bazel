@@ -2521,14 +2521,14 @@ alias(
 )
 
 alias(
-    name = "splines-2.2.0",
-    actual = "//third_party/rust_crates/vendor/splines-2.2.0:splines",
+    name = "splines-5.0.0",
+    actual = "//third_party/rust_crates/vendor/splines-5.0.0:splines",
     tags = ["manual"],
 )
 
 alias(
     name = "splines",
-    actual = "//third_party/rust_crates/vendor/splines-2.2.0:splines",
+    actual = "//third_party/rust_crates/vendor/splines-5.0.0:splines",
     tags = ["manual"],
 )
 
