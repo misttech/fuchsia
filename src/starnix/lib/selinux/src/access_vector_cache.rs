@@ -5,7 +5,7 @@
 use crate::access_cache::AccessCache;
 use crate::policy::{AccessDecision, XpermsAccessDecision, XpermsKind};
 use crate::security_server::SecurityServerBackend;
-use crate::{FsNodeClass, KernelClass, NullessByteStr, ObjectClass, SecurityId};
+use crate::{FsNodeClass, NullessByteStr, ObjectClass, SecurityId};
 use std::sync::Arc;
 
 pub use crate::access_cache::CacheStats;
@@ -26,15 +26,17 @@ pub(super) trait Query {
         target_class: ObjectClass,
     ) -> AccessDecision;
 
-    /// Returns the security identifier (SID) with which to label a new `fs_node_class` instance
-    /// created by `source_sid` in a parent directory labeled `target_sid` should be labeled,
-    /// if no more specific SID was specified by `compute_new_fs_node_sid_with_name()`, based on
-    /// the file's name.
-    fn compute_new_fs_node_sid(
+    /// Returns the security identifier (SID) with which to label a new object of `object_class`.
+    /// The label is calculated based on the creating `source_sid` and the `target_sid` of the
+    /// container (e.g. file-system, parent file node, process, etc).
+    ///
+    /// This computation does not take into account filename transition rules, for which the
+    /// `compute_fs_node_sid_with_name()` lookup should be used instead.
+    fn compute_create_sid(
         &self,
         source_sid: SecurityId,
         target_sid: SecurityId,
-        fs_node_class: FsNodeClass,
+        target_class: ObjectClass,
     ) -> Result<SecurityId, anyhow::Error>;
 
     /// Returns the security identifier (SID) with which to label a new `fs_node_class` instance of
@@ -129,17 +131,17 @@ impl FifoQueryCache {
         })
     }
 
-    pub fn compute_new_fs_node_sid(
+    pub fn compute_create_sid(
         &self,
         delegate: &impl Query,
         source_sid: SecurityId,
         target_sid: SecurityId,
-        fs_node_class: FsNodeClass,
+        target_class: ObjectClass,
     ) -> Result<SecurityId, anyhow::Error> {
-        let target_class = ObjectClass::Kernel(KernelClass::from(fs_node_class));
-        let query_args = AccessQueryArgs { source_sid, target_sid, target_class };
+        let query_args =
+            AccessQueryArgs { source_sid, target_sid, target_class: target_class.clone() };
         self.sid_cache.get_or_try_insert(query_args, || {
-            delegate.compute_new_fs_node_sid(source_sid, target_sid, fs_node_class)
+            delegate.compute_create_sid(source_sid, target_sid, target_class)
         })
     }
 
@@ -245,18 +247,13 @@ impl Query for AccessVectorCache {
         )
     }
 
-    fn compute_new_fs_node_sid(
+    fn compute_create_sid(
         &self,
         source_sid: SecurityId,
         target_sid: SecurityId,
-        fs_node_class: FsNodeClass,
+        target_class: ObjectClass,
     ) -> Result<SecurityId, anyhow::Error> {
-        self.cache.compute_new_fs_node_sid(
-            self.backend.as_ref(),
-            source_sid,
-            target_sid,
-            fs_node_class,
-        )
+        self.cache.compute_create_sid(self.backend.as_ref(), source_sid, target_sid, target_class)
     }
 
     fn compute_new_fs_node_sid_with_name(
@@ -353,11 +350,11 @@ mod tests {
             AccessDecision::allow(AccessVector::ALL)
         }
 
-        fn compute_new_fs_node_sid(
+        fn compute_create_sid(
             &self,
             _source_sid: SecurityId,
             _target_sid: SecurityId,
-            _fs_node_class: FsNodeClass,
+            _target_class: ObjectClass,
         ) -> Result<SecurityId, anyhow::Error> {
             unreachable!()
         }

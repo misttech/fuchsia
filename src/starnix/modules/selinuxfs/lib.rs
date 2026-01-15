@@ -460,7 +460,7 @@ impl SeLinuxApiOps for CreateApi {
 
         let result = self
             .security_server
-            .compute_create_sid(scontext, tcontext, tclass)
+            .compute_create_sid(scontext, tcontext, tclass.into())
             .map_err(|_| errno!(EINVAL))?;
         self.result.set(result).map_err(|_| errno!(EINVAL))?;
 
