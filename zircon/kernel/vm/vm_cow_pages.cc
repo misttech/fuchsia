@@ -980,12 +980,6 @@ VmCowPages::VmCowPages(VmCowPagesOptions options, uint32_t pmm_alloc_flags, uint
                        uint64_t lock_order)
     : pmm_alloc_flags_(pmm_alloc_flags),
       options_(options),
-// If both local and shared locks are defined then there is still only one true lock, the shared
-// one, with the local lock existing to increase the tracking ability of lockdep. The local lock
-// therefore needs to be pointed at the shared lock to forward the actual locking actions.
-#if VMO_USE_LOCAL_LOCK && VMO_USE_SHARED_LOCK
-      lock_(hierarchy_state_ptr_->lock()->lock()),
-#endif
 #if (LOCK_DEP_ENABLED_FEATURE_LEVEL > 0)
       lock_order_(lock_order),
 #endif
