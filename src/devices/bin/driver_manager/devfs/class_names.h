@@ -46,6 +46,7 @@ struct ServiceEntry {
 // update the driver_test entry in kClassNameToService to:
 // {"driver_test", {ServiceEntry::kDevfsAndService,
 //                        "fidl.examples.echo.DriverEchoService", "echo_device"}},
+// LINT.IfChange
 const std::unordered_map<std::string_view, ServiceEntry> kClassNameToService = {
     {"acpi", {ServiceEntry::kDevfs, "", ""}},
     {"adc", {ServiceEntry::kDevfsAndService, "fuchsia.hardware.adc.Service", "device"}},
@@ -184,6 +185,7 @@ const std::unordered_set<std::string> kClassesThatAllowTopologicalPath({
     "devfs_service_test",
     "network",
 });
+// LINT.ThenChange(//src/devices/bin/driver_manager_rust/devfs/src/class_names.rs)
 
 }  // namespace driver_manager
 

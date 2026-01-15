@@ -5,6 +5,7 @@
 group("tests") {
   testonly = true
   deps = [
+    "devfs:driver_manager_devfs_test",
     "types:driver_manager_types_test",
     "utils:driver_manager_utils_test",
   ]
