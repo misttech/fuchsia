@@ -69,7 +69,11 @@ impl MockRebootService {
                     responder.send(result)?;
                 }
                 AdminRequest::Shutdown { options, responder } => {
-                    let result = (self.call_hook)(options);
+                    let result = if options.action.is_none() {
+                        Err(zx::Status::INVALID_ARGS.into_raw())
+                    } else {
+                        (self.call_hook)(options)
+                    };
                     responder.send(result)?;
                 }
                 _ => {
@@ -100,7 +104,7 @@ impl MockRebootService {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use fidl_fuchsia_hardware_power_statecontrol::RebootReason2;
+    use fidl_fuchsia_hardware_power_statecontrol::{RebootReason2, ShutdownAction};
     use fuchsia_async as fasync;
     use std::sync::atomic::{AtomicU32, Ordering};
 
@@ -137,6 +141,23 @@ mod tests {
             .await
             .expect("made reboot call");
         assert_eq!(reboot_result, Err(zx::Status::INTERNAL.into_raw()));
+    }
+
+    #[fasync::run_singlethreaded(test)]
+    async fn test_mock_reboot_fails_on_no_action() {
+        let reboot_service = Arc::new(MockRebootService::new(Box::new(|_| Ok(()))));
+
+        let reboot_service_clone = Arc::clone(&reboot_service);
+        let proxy = reboot_service_clone.spawn_reboot_service();
+
+        let shutdown_result = proxy
+            .shutdown(&ShutdownOptions {
+                reasons: Some(vec![ShutdownReason::SystemUpdate]),
+                ..Default::default()
+            })
+            .await
+            .expect("made shutdown call");
+        assert_eq!(shutdown_result, Err(zx::Status::INVALID_ARGS.into_raw()));
     }
 
     #[fasync::run_singlethreaded(test)]
@@ -178,6 +199,7 @@ mod tests {
         // Succeed when given expected shutdown reason.
         let () = proxy
             .shutdown(&ShutdownOptions {
+                action: Some(ShutdownAction::Reboot),
                 reasons: Some(vec![ShutdownReason::DeveloperRequest]),
                 ..Default::default()
             })
@@ -205,7 +227,7 @@ mod tests {
             })
             .await
             .expect("made reboot call")
-            .expect("reboot call succeeded");
+            .expect("shutdown call succeeded");
         assert_eq!(called.load(Ordering::SeqCst), 1);
     }
 }
