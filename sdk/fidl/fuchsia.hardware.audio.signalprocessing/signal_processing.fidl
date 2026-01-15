@@ -51,13 +51,24 @@ type ElementType = flexible enum {
     /// Sample Rate Conversion.
     SAMPLE_RATE_CONVERSION = 11;
 
-    /// Ring Buffer.
-    /// This is the first of two types of elements that can start/end processing pipelines.
+    /// Ring Buffer. A source or sink for audio data, transmitted via cross-process circular buffer.
+    /// This is the first of three types of elements that can start/end processing pipelines.
+    /// Drivers that include an element with this type must support Composite methods
+    /// `GetRingBufferFormats` and `CreateRingBuffer` for that element's ID.
     RING_BUFFER = 13;
 
     /// Digital Audio Interface Interconnect.
-    /// This is the second of two types of elements that can start/end processing pipelines.
+    /// This is the second of three types of elements that can start/end processing pipelines.
+    /// Drivers that include an element with this type must support Composite methods
+    /// `GetDaiFormats` and `SetDaiFormat` for that element's ID.
     DAI_INTERCONNECT = 14;
+
+    /// Packet Stream. A source or sink for audio data, transmitted via discrete packets.
+    /// This is the third of three types of elements that can start/end processing pipelines.
+    /// Drivers that include an element with this type must support Composite methods
+    /// `GetPacketStreamFormats` and `CreatePacketStream` for that element's ID.
+    @available(added=HEAD)
+    PACKET_STREAM = 15;
 };
 
 /// Type-specific Parameters for an `Element`.

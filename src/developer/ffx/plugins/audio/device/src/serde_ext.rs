@@ -398,6 +398,7 @@ pub enum ElementTypeDef {
     SampleRateConversion,
     RingBuffer,
     DaiInterconnect,
+    PacketStream,
     #[serde(skip)]
     __SourceBreaking {
         unknown_ordinal: u32,

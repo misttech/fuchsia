@@ -54,29 +54,17 @@ type ChannelSet = table {
     1: attributes vector<ChannelAttributes>:MAX_COUNT_CHANNELS_IN_RING_BUFFER;
 };
 
-/// Deprecated: Use `SupportedFormats2` instead.
-// TODO(https://fxbug.dev/468373525): Mark as deprecated in API once all
-// protocols that use this type have been updated to use `SupportedFormats2`.
-type SupportedFormats = table {
-    1: pcm_supported_formats PcmSupportedFormats;
-};
-
-/// All the possible formats supported by this device.
-// TODO(https://fxbug.dev/468373525): Rename `SupportedFormats2` to
-// `SupportedFormats` once `SupportedFormats` is removed.
-@available(added=HEAD)
-type SupportedFormats2 = flexible union {
-    /// Supported formats for non-compressed PCM samples, with attributes.
-    1: pcm_supported_formats PcmSupportedFormats;
-};
-
-/// Format supporting non-compressed PCM audio. Each frame consists of one or more
+/// Format supporting PCM audio. Each frame consists of one or more
 /// (number_of_channels) samples, stored contiguously. Within the `bytes_per_sample` allocated for
 /// each sample, `valid_bits_per_sample` bits of data are stored in the most-significant
 /// (left-justified) portion.
-/// All values listed in each vector are supported. When not all combinations supported by
-/// the driver can be described with one `SupportedFormats` or `PcmSupportedFormats`,
-/// `GetSupportedFormats` returns more than one `SupportedFormats` in the returned vector.
+///
+/// All values listed in each vector are supported. This implies a cross-product: any listed
+/// item in one vector is supported in combination with any listed item in another vector.
+/// When not all combinations supported by the driver can be described with one
+/// `PcmSupportedFormats` table, `GetSupportedFormats` must return a vector with multiple
+/// `SupportedFormats` entries.
+///
 /// For more detailed information see [Audio Driver Streaming Interface](https://fuchsia.dev/fuchsia-src/concepts/drivers/driver_architectures/audio_drivers/audio_streaming).
 type PcmSupportedFormats = table {
     /// Vector of possible `ChannelSets` supported.
@@ -114,25 +102,11 @@ type PcmSupportedFormats = table {
     5: frame_rates vector<uint32>:MAX_COUNT_SUPPORTED_RATES;
 };
 
-/// Deprecated: Use `Format2` instead.
-// TODO(https://fxbug.dev/468373525): Mark as deprecated in API once all
-// protocols that use this type have been updated to use `Format2`.
-type Format = table {
-    1: pcm_format PcmFormat;
-};
-
-// TODO(https://fxbug.dev/468373525): Rename `Format2` to `Format` once
-// `Format` is removed.
-@available(added=HEAD)
-type Format2 = flexible union {
-    /// Format supporting non-compressed PCM samples.
-    1: pcm_format PcmFormat;
-};
-
-/// Format supporting non-compressed PCM audio. Frames are made up of `number_of_channels` samples
+/// Format supporting PCM audio. Frames are made up of `number_of_channels` samples
 /// which have `valid_bits_per_sample` bits of most-significant (left-justified) data within
-/// `bytes_per_sample`. bytes. For more detailed information see
-/// [Audio Driver Streaming Interface](https://fuchsia.dev/fuchsia-src/concepts/drivers/driver_architectures/audio_drivers/audio_streaming).
+/// `bytes_per_sample` bytes.
+///
+/// For more detailed information see [Audio Driver Streaming Interface](https://fuchsia.dev/fuchsia-src/concepts/drivers/driver_architectures/audio_drivers/audio_streaming).
 type PcmFormat = struct {
     /// Number of channels.
     number_of_channels uint8;
@@ -140,12 +114,13 @@ type PcmFormat = struct {
     /// The format of all samples.
     sample_format SampleFormat;
 
-    /// Bytes allocated to hold a sample, equal or bigger than the valid sample size in
+    /// Bytes allocated to hold a sample, must be greater than or equal to the valid sample size in
     /// `valid_bits_per_sample`.
     bytes_per_sample uint8;
 
-    /// Number of valid bits in a sample, must be equal or smaller than bits in `bytes_per_sample`.
-    /// If smaller, bits are left justified, and any additional bits must be ignored by the
+    /// Number of valid bits in a sample, must be less than or equal to `bytes_per_sample * 8`.
+    /// If less than `bytes_per_sample * 8`, the valid bits (those containing audio)
+    /// are left justified, and any additional bits must be ignored by the
     /// receiver.
     valid_bits_per_sample uint8;
 

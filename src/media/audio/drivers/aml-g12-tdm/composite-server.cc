@@ -518,6 +518,18 @@ void AudioCompositeServer::SetDaiFormat(SetDaiFormatRequest& request,
   completer.Reply(zx::ok());
 }
 
+void AudioCompositeServer::GetPacketStreamFormats(
+    GetPacketStreamFormatsRequest& request, GetPacketStreamFormatsCompleter::Sync& completer) {
+  // Packet streams are not supported.
+  completer.Reply(zx::error(fuchsia_hardware_audio::DriverError::kNotSupported));
+}
+
+void AudioCompositeServer::CreatePacketStream(CreatePacketStreamRequest& request,
+                                              CreatePacketStreamCompleter::Sync& completer) {
+  // Packet streams are not supported.
+  completer.Reply(zx::error(fuchsia_hardware_audio::DriverError::kNotSupported));
+}
+
 zx_status_t AudioCompositeServer::StartSocPower(bool wait_for_completion) {
   TRACE_DURATION("power-audio", "aml-g12-audio-composite::StartSocPower");
   auto call_time = zx::clock::get_monotonic();

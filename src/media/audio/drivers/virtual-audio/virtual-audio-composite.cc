@@ -468,6 +468,18 @@ void VirtualAudioComposite::ResetRingBuffer() {
   // We don't reset ring_buffer_format_ and dai_format_ to allow for retrieval for observability.
 }
 
+void VirtualAudioComposite::GetPacketStreamFormats(
+    GetPacketStreamFormatsRequest& request, GetPacketStreamFormatsCompleter::Sync& completer) {
+  // TODO(https://fxbug.dev/468151981): Implement PacketStream support.
+  completer.Reply(zx::error(fuchsia_hardware_audio::DriverError::kNotSupported));
+}
+
+void VirtualAudioComposite::CreatePacketStream(CreatePacketStreamRequest& request,
+                                               CreatePacketStreamCompleter::Sync& completer) {
+  // TODO(https://fxbug.dev/468151981): Implement PacketStream support.
+  completer.Reply(zx::error(fuchsia_hardware_audio::DriverError::kNotSupported));
+}
+
 // RingBuffer implementation
 //
 void VirtualAudioComposite::GetProperties(

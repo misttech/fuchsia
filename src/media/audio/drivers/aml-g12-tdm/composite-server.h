@@ -147,6 +147,10 @@ class AudioCompositeServer final
   void GetDaiFormats(GetDaiFormatsRequest& request,
                      GetDaiFormatsCompleter::Sync& completer) override;
   void SetDaiFormat(SetDaiFormatRequest& request, SetDaiFormatCompleter::Sync& completer) override;
+  void GetPacketStreamFormats(GetPacketStreamFormatsRequest& request,
+                              GetPacketStreamFormatsCompleter::Sync& completer) override;
+  void CreatePacketStream(CreatePacketStreamRequest& request,
+                          CreatePacketStreamCompleter::Sync& completer) override;
 
   // FIDL natural C++ methods for fuchsia.hardware.audio.signalprocessing.SignalProcessing.
   void GetElements(GetElementsCompleter::Sync& completer) override;

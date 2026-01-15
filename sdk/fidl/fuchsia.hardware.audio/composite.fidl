@@ -99,8 +99,9 @@ closed protocol Composite {
     /// by `GetElements`.
     /// Returns `WRONG_TYPE` if the `ElementType` of the element represented by the id is not
     /// `RING_BUFFER`.
-    /// Retrieving multiple `SupportedFormats` allows for cases where exclusive combinations of
-    /// the parameters in `SupportedFormats` may be supported.
+    /// Returning a vector with multiple `SupportedFormats` enables cases where exclusive
+    /// combinations of the parameters in `SupportedFormats` may be supported.
+    /// The vector returned to the caller must contain at least one entry.
     strict GetRingBufferFormats(struct {
         processing_element_id ElementId;
     }) -> (struct {
@@ -131,8 +132,9 @@ closed protocol Composite {
     /// by `GetElements`.
     /// Returns `WRONG_TYPE` if the `ElementType` of the element represented by the id is not
     /// `DAI_INTERCONNECT`.
-    /// Retrieving multiple `DaiSupportedFormats` allows for cases where exclusive combinations of
-    /// the parameters in SupportedFormats may be supported.
+    /// Returning a vector with multiple `DaiSupportedFormats` enables cases where exclusive
+    /// combinations of the parameters in SupportedFormats may be supported.
+    /// The vector returned to the caller must contain at least one entry.
     strict GetDaiFormats(struct {
         processing_element_id ElementId;
     }) -> (struct {
@@ -191,6 +193,7 @@ open protocol Composite {
     /// `RING_BUFFER`.
     /// Retrieving multiple `SupportedFormats2` allows for cases where exclusive combinations of
     /// the parameters in `SupportedFormats2` may be supported.
+    /// The vector returned to the caller must contain at least one entry.
     flexible GetRingBufferFormats(struct {
         processing_element_id ElementId;
     }) -> (struct {
@@ -206,6 +209,8 @@ open protocol Composite {
     /// by `GetElements`.
     /// Returns `WRONG_TYPE` if the `ElementType` of the element represented by the id is not
     /// `RING_BUFFER`.
+    /// Returns `NOT_SUPPORTED` if the driver does not support ring buffers, or if the specified
+    /// `format` is not supported.
     flexible CreateRingBuffer(resource struct {
         processing_element_id ElementId;
         format Format2;
@@ -223,6 +228,7 @@ open protocol Composite {
     /// `DAI_INTERCONNECT`.
     /// Retrieving multiple `DaiSupportedFormats` allows for cases where exclusive combinations of
     /// the parameters in DaiSupportedFormats may be supported.
+    /// The vector returned to the caller must contain at least one entry.
     flexible GetDaiFormats(struct {
         processing_element_id ElementId;
     }) -> (struct {
@@ -240,6 +246,48 @@ open protocol Composite {
     flexible SetDaiFormat(struct {
         processing_element_id ElementId;
         format DaiFormat;
+    }) -> () error DriverError;
+
+    /// Retrieves the packet-stream formats supported by a `PACKET_STREAM` processing element
+    /// in the topologies supported by this driver, as returned by `GetElements` and `GetTopologies`
+    /// from fuchsia.hardware.audio.signalprocessing.
+    ///
+    /// Returns `SHOULD_WAIT` if the packet-stream formats are not available at this time. The
+    /// client may retry this request at a later time.
+    /// Returns `INVALID_ARGS` if the `processing_element_id` does not match an id returned by
+    /// `GetElements`.
+    /// Returns `WRONG_TYPE` if the `ElementType` of the element represented by the id is not
+    /// `PACKET_STREAM`.
+    /// Returns `NOT_SUPPORTED` if the driver does not support packet streams.
+    /// Returning a vector with multiple `SupportedFormats2` enables cases where exclusive
+    /// combinations of the parameters in `SupportedFormats2` may be supported.
+    /// The vector returned to the caller must contain at least one entry.
+    @available(added=HEAD)
+    flexible GetPacketStreamFormats(struct {
+        processing_element_id ElementId;
+    }) -> (struct {
+        packet_stream_formats vector<SupportedFormats2>:MAX_COUNT_FORMATS;
+    }) error DriverError;
+
+    /// `CreatePacketStream` is sent by clients to select a packet-stream format for the
+    /// `PACKET_STREAM` processing element specified by `processing_element_id`. The format is based
+    /// on information that the driver provides in `GetPacketStreamFormats`, what is supported by
+    /// the client, and any other requirement. The returned `packet_stream` channel is used to
+    /// access and control the packet stream protocol served by the driver.
+    ///
+    /// Returns `INVALID_ARGS` if the `processing_element_id` does not match an id returned by
+    /// `GetElements`.
+    /// Returns `WRONG_TYPE` if the `ElementType` of the element represented by the id is not
+    /// `PACKET_STREAM`.
+    /// Returns `SHOULD_WAIT` if the server cannot create a packet stream for this element/format
+    /// at this time, but it should be able to at some future time. This request can be retried.
+    /// Returns `NOT_SUPPORTED` if the driver does not support packet streams, or if the specified
+    ///`format` is not supported.
+    @available(added=HEAD)
+    flexible CreatePacketStream(resource struct {
+        processing_element_id ElementId;
+        format Format2;
+        packet_stream_control server_end:PacketStreamControl;
     }) -> () error DriverError;
 };
 
