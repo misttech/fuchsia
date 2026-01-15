@@ -239,7 +239,7 @@ impl Component {
                 let _ = job
                     .set_policy(zx::JobPolicy::Basic(
                         zx::JobPolicyOption::Absolute,
-                        vec![(zx::JobCondition::BadHandle, zx::JobAction::Deny)],
+                        vec![(zx::JobCondition::BadHandle, zx::JobAction::DenyException)],
                     ))
                     .map_err(|e| ComponentError::CreateJob(e))?;
             }
