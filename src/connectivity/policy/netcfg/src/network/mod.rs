@@ -15,6 +15,8 @@ mod token_map;
 use {
     fidl_fuchsia_net as fnet, fidl_fuchsia_net_name as fnet_name,
     fidl_fuchsia_net_policy_properties as fnp_properties,
+    fidl_fuchsia_net_policy_socketproxy as fnp_socketproxy,
+    fidl_fuchsia_posix_socket as fposix_socket,
 };
 
 pub(crate) struct NetworkTokenContents {
@@ -303,12 +305,9 @@ struct UpdatesApplied {
 }
 
 impl PropertyUpdate {
-    pub fn default_network<N: TryInto<InterfaceId>>(
-        mut self,
-        network_id: N,
-    ) -> Result<Self, N::Error> {
-        self.default_network = Some(Some(network_id.try_into()?));
-        Ok(self)
+    pub fn default_network<N: Into<InterfaceId>>(mut self, network_id: N) -> Self {
+        self.default_network = Some(Some(network_id.into()));
+        self
     }
 
     pub fn default_network_lost(mut self) -> Self {
@@ -316,17 +315,27 @@ impl PropertyUpdate {
         self
     }
 
-    pub fn socket_marks<N: TryInto<InterfaceId>, Marks: Into<fnet::Marks>>(
+    pub fn socket_marks<N: Into<InterfaceId>, Marks: Into<fnet::Marks>>(
         mut self,
         network_id: N,
         marks: Marks,
-    ) -> Result<Self, N::Error> {
-        self.socket_marks = Some((network_id.try_into()?, marks.into()));
-        Ok(self)
+    ) -> Self {
+        self.socket_marks = Some((network_id.into(), marks.into()));
+        self
     }
 
     pub fn dns(mut self, dns_servers: &DnsServers) -> Self {
         self.dns = Some(dns_servers.consolidated_dns_servers());
+        self
+    }
+
+    pub fn add_network<N: Into<InterfaceId>>(self, _id: N) -> Self {
+        // TODO(https://fxbug.dev/428712735): Implement tracking of added networks.
+        self
+    }
+
+    pub fn remove_network<N: Into<InterfaceId>>(self, _id: N) -> Self {
+        // TODO(https://fxbug.dev/428712735): Implement tracking of added networks.
         self
     }
 }
@@ -475,6 +484,108 @@ impl NetpolNetworksService {
         }
 
         Ok(())
+    }
+
+    pub async fn handle_delegated_networks_update(
+        &mut self,
+        update: Result<fnp_socketproxy::NetworkRegistryRequest, fidl::Error>,
+    ) -> Result<(), anyhow::Error> {
+        use fnp_socketproxy::{
+            NetworkInfo, NetworkRegistryAddError, NetworkRegistryRemoveError,
+            NetworkRegistryRequest, NetworkRegistrySetDefaultError, NetworkRegistryUpdateError,
+        };
+
+        match update {
+            Err(e) => {
+                error!(
+                    "Encountered error watching for delegated network \
+                                    updates: {e:?}"
+                );
+                Ok(())
+            }
+            Ok(NetworkRegistryRequest::SetDefault { network_id, responder }) => responder.send(
+                (async || match network_id {
+                    // TODO(https://fxbug.dev/475266563): Stop using
+                    // `fuchsia.posix.socket.OptionalUint32` here.
+                    fposix_socket::OptionalUint32::Value(interface_id) => {
+                        self.update(
+                            PropertyUpdate::default().default_network(
+                                InterfaceId::try_from(interface_id)
+                                    .map_err(|_| NetworkRegistrySetDefaultError::NotFound)?,
+                            ),
+                        )
+                        .await;
+                        Ok(())
+                    }
+                    fposix_socket::OptionalUint32::Unset(_) => {
+                        self.update(PropertyUpdate::default().default_network_lost()).await;
+                        Ok(())
+                    }
+                })()
+                .await,
+            ),
+            Ok(NetworkRegistryRequest::Add { network, responder }) => responder.send(
+                (async || {
+                    let network_id: InterfaceId = network
+                        .network_id
+                        .and_then(|id| id.try_into().ok())
+                        .ok_or(NetworkRegistryAddError::MissingNetworkId)?;
+                    let NetworkInfo::Starnix(info) =
+                        network.info.ok_or(NetworkRegistryAddError::MissingNetworkInfo)?
+                    else {
+                        return Err(NetworkRegistryAddError::MissingNetworkInfo);
+                    };
+                    self.update(PropertyUpdate::default().add_network(network_id).socket_marks(
+                        network_id,
+                        // TODO(https://fxbug.dev/431822969): Replace this with a common definition
+                        // of which mark domain is used for which purpose.
+                        fnet::Marks { mark_1: info.mark, mark_2: None, ..Default::default() },
+                    ))
+                    .await;
+                    Ok(())
+                })()
+                .await,
+            ),
+            Ok(NetworkRegistryRequest::Update { network, responder }) => responder.send(
+                (async || {
+                    let network_id: InterfaceId = network
+                        .network_id
+                        .and_then(|id| id.try_into().ok())
+                        .ok_or(NetworkRegistryUpdateError::MissingNetworkId)?;
+                    let NetworkInfo::Starnix(info) =
+                        network.info.ok_or(NetworkRegistryUpdateError::MissingNetworkInfo)?
+                    else {
+                        return Err(NetworkRegistryUpdateError::MissingNetworkInfo);
+                    };
+                    self.update(PropertyUpdate::default().add_network(network_id).socket_marks(
+                        network_id,
+                        // TODO(https://fxbug.dev/431822969): Replace this with a common definition
+                        // of which mark domain is used for which purpose.
+                        fnet::Marks { mark_1: info.mark, mark_2: None, ..Default::default() },
+                    ))
+                    .await;
+                    Ok(())
+                })()
+                .await,
+            ),
+            Ok(NetworkRegistryRequest::Remove { network_id, responder }) => responder.send(
+                (async || {
+                    self.update(
+                        PropertyUpdate::default().remove_network(
+                            // Try to convert network_id to an `InterfaceId`. If
+                            // this fails (i.e. the network_id is 0) this is
+                            // treated the same as a `NOT_FOUND` error.
+                            InterfaceId::try_from(network_id)
+                                .map_err(|_| NetworkRegistryRemoveError::NotFound)?,
+                        ),
+                    )
+                    .await;
+                    Ok(())
+                })()
+                .await,
+            ),
+        }
+        .context("while handling DelegatedNetwork request")
     }
 
     async fn changed_default_network(

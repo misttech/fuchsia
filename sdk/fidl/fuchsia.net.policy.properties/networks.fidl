@@ -15,16 +15,6 @@ type NetworkToken = resource table {
     1: value zx.Handle:EVENTPAIR;
 };
 
-type DefaultNetworkUpdate = table {
-    /// The value of the new interface id.
-    /// NOTE: Required if `socket_marks` is set.
-    1: interface_id fuchsia.net.InterfaceId;
-
-    /// The socket marks associated with that interface.
-    /// NOTE: Required if `interface_id` is set.
-    2: socket_marks fuchsia.net.Marks;
-};
-
 /// A single update from [`Networks.WatchProperties`].
 type PropertyUpdate = flexible union {
     /// The socket marks associated with this network.
@@ -35,19 +25,6 @@ type PropertyUpdate = flexible union {
         /// NOTE: Required, this field must always be set.
         1: servers vector<fuchsia.net.name.DnsServer>:MAX;
     };
-};
-
-/// Protocol to allow `netcfg` to watch `socket-proxy` for changes in default
-/// network and its associated socket marks. Only one connection to this
-/// protocol is supported at once. If a second connection is made it will be
-/// shut down with a `CONNECTION_ABORTED` error.
-@discoverable
-open protocol DefaultNetworkWatcher {
-    /// Watch the current default network. On first call, an update will be
-    /// immediately be sent. Subsequent calls will return only when a change
-    /// occurs.
-    /// NOTE: An empty update signifies that the default network has been lost.
-    strict Watch() -> (DefaultNetworkUpdate);
 };
 
 // TODO(https://fxbug.dev/42159332): Use built-in empty struct when available.

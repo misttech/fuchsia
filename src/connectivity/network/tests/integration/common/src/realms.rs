@@ -186,6 +186,7 @@ impl ManagementAgent {
                 fnet_masquerade::FactoryMarker::PROTOCOL_NAME,
                 fnet_name::DnsServerWatcherMarker::PROTOCOL_NAME,
                 fnp_properties::NetworksMarker::PROTOCOL_NAME,
+                fnp_socketproxy::NetworkRegistryMarker::PROTOCOL_NAME,
             ],
             Self::NetCfg(NetCfgVersion::Advanced) => &[
                 fnet_dhcpv6::PrefixProviderMarker::PROTOCOL_NAME,
@@ -193,6 +194,7 @@ impl ManagementAgent {
                 fnet_name::DnsServerWatcherMarker::PROTOCOL_NAME,
                 fnet_virtualization::ControlMarker::PROTOCOL_NAME,
                 fnp_properties::NetworksMarker::PROTOCOL_NAME,
+                fnp_socketproxy::NetworkRegistryMarker::PROTOCOL_NAME,
             ],
         }
     }
@@ -519,7 +521,7 @@ impl<'a> From<&'a KnownServiceProvider> for fnetemul::ChildDef {
                                             component_name
                                         )),
                                         fnetemul::Capability::ChildDep(protocol_dep::<
-                                            fnp_properties::DefaultNetworkWatcherMarker,
+                                            fnp_socketproxy::NetworkRegistryMarker,
                                         >(
                                             component_name
                                         )),
@@ -782,7 +784,6 @@ impl<'a> From<&'a KnownServiceProvider> for fnetemul::ChildDef {
                     fnp_socketproxy::StarnixNetworksMarker::PROTOCOL_NAME.to_string(),
                     fnp_socketproxy::FuchsiaNetworksMarker::PROTOCOL_NAME.to_string(),
                     fnp_socketproxy::DnsServerWatcherMarker::PROTOCOL_NAME.to_string(),
-                    fnp_properties::DefaultNetworkWatcherMarker::PROTOCOL_NAME.to_string(),
                 ]),
                 uses: Some(fnetemul::ChildUses::Capabilities(vec![
                     fnetemul::Capability::ChildDep(protocol_dep::<fposix_socket::ProviderMarker>(
@@ -793,6 +794,12 @@ impl<'a> From<&'a KnownServiceProvider> for fnetemul::ChildDef {
                             constants::netstack::COMPONENT_NAME,
                         ),
                     ),
+                    fnetemul::Capability::ChildDep(fnetemul::ChildDep {
+                        is_weak: Some(true),
+                        ..protocol_dep::<fnp_socketproxy::NetworkRegistryMarker>(
+                            constants::netcfg::COMPONENT_NAME,
+                        )
+                    }),
                 ])),
                 ..Default::default()
             },
@@ -860,11 +867,18 @@ impl<'a> From<&'a KnownServiceProvider> for fnetemul::ChildDef {
                     constants::fake_socket_proxy::COMPONENT_URL.to_string(),
                 )),
                 exposes: Some(vec![
-                    fnp_properties::DefaultNetworkWatcherMarker::PROTOCOL_NAME.to_string(),
                     fnp_socketproxy::DnsServerWatcherMarker::PROTOCOL_NAME.to_string(),
                     fnp_socketproxy::FuchsiaNetworksMarker::PROTOCOL_NAME.to_string(),
-                    fnp_testing::FakeSocketProxy_Marker::PROTOCOL_NAME.to_string(),
+                    fnp_socketproxy::NetworkRegistryMarker::PROTOCOL_NAME.to_string(),
                 ]),
+                uses: Some(fnetemul::ChildUses::Capabilities(vec![
+                    fnetemul::Capability::ChildDep(fnetemul::ChildDep {
+                        is_weak: Some(true),
+                        ..protocol_dep::<fnp_socketproxy::NetworkRegistryMarker>(
+                            constants::netcfg::COMPONENT_NAME,
+                        )
+                    }),
+                ])),
                 ..Default::default()
             },
             KnownServiceProvider::FakeNetcfg => fnetemul::ChildDef {
@@ -875,6 +889,7 @@ impl<'a> From<&'a KnownServiceProvider> for fnetemul::ChildDef {
                 exposes: Some(vec![
                     fnp_properties::NetworksMarker::PROTOCOL_NAME.to_string(),
                     fnp_testing::FakeNetcfgMarker::PROTOCOL_NAME.to_string(),
+                    fnp_socketproxy::NetworkRegistryMarker::PROTOCOL_NAME.to_string(),
                 ]),
                 ..Default::default()
             },

@@ -4,7 +4,7 @@
 
 #![cfg(test)]
 
-use anyhow::{anyhow, Context as _, Error};
+use anyhow::{Context as _, Error, anyhow};
 use assert_matches::assert_matches;
 use fidl::endpoints::create_endpoints;
 use fidl_fuchsia_net::{self as fnet, MarkDomain, SocketAddress};
@@ -16,14 +16,13 @@ use fuchsia_component_test::{
 };
 use futures::lock::Mutex;
 use futures::{FutureExt as _, StreamExt as _, TryStreamExt as _};
-use net_declare::{fidl_ip, fidl_socket_addr};
+use net_declare::{fidl_ip, fidl_ip_v4, fidl_ip_v6, fidl_socket_addr};
 use pretty_assertions::assert_eq;
-use socket_proxy_testing::{RegistryType, ToDnsServerList as _, ToNetwork as _};
-use std::future::Future;
+use socket_proxy::registry::NetworkRegistryRequest;
+use socket_proxy_testing::{self, RegistryType, ToDnsServerList as _, ToNetwork as _};
 use std::sync::Arc;
 use test_case::test_case;
 use {
-    fidl_fuchsia_net_policy_properties as fnp_properties,
     fidl_fuchsia_net_policy_socketproxy as fnp_socketproxy, fidl_fuchsia_posix as fposix,
     fidl_fuchsia_posix_socket_raw as fposix_socket_raw, fuchsia_async as fasync,
 };
@@ -412,19 +411,48 @@ async fn inner_provider_mock(
     Ok(())
 }
 
+enum NetcfgService {
+    DelegatedNetworks(fnp_socketproxy::NetworkRegistryRequestStream),
+}
 async fn netcfg_mock(
     handles: LocalComponentHandles,
-    default_network_updates: Arc<Mutex<Vec<fnp_properties::DefaultNetworkUpdate>>>,
+    default_network_updates: Arc<Mutex<Vec<NetworkRegistryRequest>>>,
 ) -> Result<(), Error> {
-    let watcher = handles
-        .connect_to_protocol::<fnp_properties::DefaultNetworkWatcherProxy>()
-        .expect("could not connect to DefaultNetworkWatcher");
+    let mut fs = ServiceFs::new();
+    let _ = fs.dir("svc").add_fidl_service(NetcfgService::DelegatedNetworks);
+    let _ = fs.serve_connection(handles.outgoing_dir)?;
 
-    loop {
-        let update = watcher.watch().await.expect("watcher failed");
-        log::info!("Got Watcher Update: {update:?}");
-        default_network_updates.lock().await.push(update);
-    }
+    fs.map(Ok)
+        .try_for_each_concurrent(0, |req| async {
+            match req {
+                NetcfgService::DelegatedNetworks(stream) => {
+                    use fnp_socketproxy::NetworkRegistryRequest;
+                    stream
+                        .map(|i| i.context("fidl error"))
+                        .try_for_each(|req| async {
+                            default_network_updates.lock().await.push((&req).into());
+                            match req {
+                                NetworkRegistryRequest::SetDefault { responder, .. } => {
+                                    responder.send(Ok(()))?;
+                                }
+                                NetworkRegistryRequest::Add { responder, .. } => {
+                                    responder.send(Ok(()))?;
+                                }
+                                NetworkRegistryRequest::Update { responder, .. } => {
+                                    responder.send(Ok(()))?;
+                                }
+                                NetworkRegistryRequest::Remove { responder, .. } => {
+                                    responder.send(Ok(()))?;
+                                }
+                            }
+                            Ok(())
+                        })
+                        .await?;
+                }
+            }
+            Ok(())
+        })
+        .await
 }
 
 fn create_starnix_network(id: u32, mark: u32) -> fnp_socketproxy::Network {
@@ -517,9 +545,9 @@ async fn integration(should_set_default: bool, expected_mark: OptionalUint32) ->
     builder
         .add_route(
             Route::new()
-                .capability(Capability::protocol::<fnp_properties::DefaultNetworkWatcherMarker>())
-                .from(&socket_proxy)
-                .to(&netcfg),
+                .capability(Capability::protocol::<fnp_socketproxy::NetworkRegistryMarker>())
+                .from(&netcfg)
+                .to(&socket_proxy),
         )
         .await?;
 
@@ -719,27 +747,44 @@ async fn integration(should_set_default: bool, expected_mark: OptionalUint32) ->
             zx::MonotonicDuration::from_seconds(1).after_now(),
             || async { default_network_updates.lock().await.clone() },
             vec![
-                // Initial default
-                Default::default(),
-                // Default network 1 with mark 123 added
-                fnp_properties::DefaultNetworkUpdate {
-                    interface_id: Some(1),
-                    socket_marks: Some(fnet::Marks { mark_1: Some(123), ..Default::default() }),
-                    ..Default::default()
+                NetworkRegistryRequest::Add {
+                    network: fnp_socketproxy::Network {
+                        network_id: Some(1),
+                        info: Some(fnp_socketproxy::NetworkInfo::Starnix(
+                            fnp_socketproxy::StarnixNetworkInfo {
+                                mark: Some(123),
+                                ..Default::default()
+                            },
+                        )),
+                        dns_servers: Some(Default::default()),
+                        ..Default::default()
+                    },
                 },
-                // Network 1 removed
-                Default::default(),
+                NetworkRegistryRequest::SetDefault { network_id: Some(1) },
+                NetworkRegistryRequest::SetDefault { network_id: None },
+                NetworkRegistryRequest::Remove { network_id: 1 },
             ],
         )
         .await;
     } else {
-        // If no default is set, no updates are expected.
         check_until(
             zx::MonotonicDuration::from_seconds(1).after_now(),
             || async { default_network_updates.lock().await.clone() },
             vec![
-                // Initial default
-                Default::default(),
+                NetworkRegistryRequest::Add {
+                    network: fnp_socketproxy::Network {
+                        network_id: Some(1),
+                        info: Some(fnp_socketproxy::NetworkInfo::Starnix(
+                            fnp_socketproxy::StarnixNetworkInfo {
+                                mark: Some(123),
+                                ..Default::default()
+                            },
+                        )),
+                        dns_servers: Some(Default::default()),
+                        ..Default::default()
+                    },
+                },
+                NetworkRegistryRequest::Remove { network_id: 1 },
             ],
         )
         .await;
@@ -796,9 +841,9 @@ async fn integration_across_registries() -> Result<(), Error> {
     builder
         .add_route(
             Route::new()
-                .capability(Capability::protocol::<fnp_properties::DefaultNetworkWatcherMarker>())
-                .from(&socket_proxy)
-                .to(&netcfg),
+                .capability(Capability::protocol::<fnp_socketproxy::NetworkRegistryMarker>())
+                .from(&netcfg)
+                .to(&socket_proxy),
         )
         .await?;
 
@@ -937,32 +982,20 @@ async fn integration_across_registries() -> Result<(), Error> {
         zx::MonotonicDuration::from_seconds(1).after_now(),
         || async { default_network_updates.lock().await.clone() },
         vec![
-            // Initial default
-            Default::default(),
-            // Set starnix as default network.
-            fnp_properties::DefaultNetworkUpdate {
-                interface_id: Some(STARNIX_NETWORK_ID.into()),
-                socket_marks: Some(fnet::Marks {
-                    mark_1: Some(STARNIX_NETWORK_MARK),
+            NetworkRegistryRequest::Add {
+                network: fnp_socketproxy::Network {
+                    network_id: Some(STARNIX_NETWORK_ID.into()),
+                    info: Some(fnp_socketproxy::NetworkInfo::Starnix(
+                        fnp_socketproxy::StarnixNetworkInfo {
+                            mark: Some(STARNIX_NETWORK_MARK),
+                            ..Default::default()
+                        },
+                    )),
+                    dns_servers: Some(Default::default()),
                     ..Default::default()
-                }),
-                ..Default::default()
+                },
             },
-            // Fuchsia network comes up, becomes the new default.
-            fnp_properties::DefaultNetworkUpdate {
-                interface_id: Some(FUCHSIA_NETWORK_ID.into()),
-                socket_marks: Some(fnet::Marks::default()),
-                ..Default::default()
-            },
-            // Fuchsia network deleted, fall back to starnix.
-            fnp_properties::DefaultNetworkUpdate {
-                interface_id: Some(STARNIX_NETWORK_ID.into()),
-                socket_marks: Some(fnet::Marks {
-                    mark_1: Some(STARNIX_NETWORK_MARK),
-                    ..Default::default()
-                }),
-                ..Default::default()
-            },
+            NetworkRegistryRequest::SetDefault { network_id: Some(STARNIX_NETWORK_ID.into()) },
         ],
     )
     .await;
@@ -973,10 +1006,30 @@ async fn integration_across_registries() -> Result<(), Error> {
 #[fuchsia::test]
 async fn test_socket_proxy_no_double_connect() -> Result<(), Error> {
     let builder = RealmBuilder::new().await?;
+    let netcfg = builder
+        .add_local_child(
+            "netcfg",
+            {
+                let default_network_updates = Arc::new(Mutex::new(Vec::new()));
+                move |handles: LocalComponentHandles| {
+                    Box::pin(netcfg_mock(handles, default_network_updates.clone()))
+                }
+            },
+            ChildOptions::new().eager(),
+        )
+        .await?;
     let socket_proxy = builder
         .add_child("socket_proxy", "#meta/network-socket-proxy.cm", ChildOptions::new().eager())
         .await?;
 
+    builder
+        .add_route(
+            Route::new()
+                .capability(Capability::protocol::<fnp_socketproxy::NetworkRegistryMarker>())
+                .from(&netcfg)
+                .to(&socket_proxy),
+        )
+        .await?;
     builder
         .add_route(
             Route::new()
@@ -1069,10 +1122,30 @@ async fn wait_on_dns_server_list_response(
 #[fuchsia::test]
 async fn watch_dns_with_registry() -> Result<(), Error> {
     let builder = RealmBuilder::new().await?;
+    let netcfg = builder
+        .add_local_child(
+            "netcfg",
+            {
+                let default_network_updates = Arc::new(Mutex::new(Vec::new()));
+                move |handles: LocalComponentHandles| {
+                    Box::pin(netcfg_mock(handles, default_network_updates.clone()))
+                }
+            },
+            ChildOptions::new().eager(),
+        )
+        .await?;
     let socket_proxy = builder
         .add_child("socket_proxy", "#meta/network-socket-proxy.cm", ChildOptions::new().eager())
         .await?;
 
+    builder
+        .add_route(
+            Route::new()
+                .capability(Capability::protocol::<fnp_socketproxy::NetworkRegistryMarker>())
+                .from(&netcfg)
+                .to(&socket_proxy),
+        )
+        .await?;
     builder
         .add_route(
             Route::new()
@@ -1194,9 +1267,9 @@ async fn watch_dns_across_registries() -> Result<(), Error> {
     builder
         .add_route(
             Route::new()
-                .capability(Capability::protocol::<fnp_properties::DefaultNetworkWatcherMarker>())
-                .from(&socket_proxy)
-                .to(&netcfg),
+                .capability(Capability::protocol::<fnp_socketproxy::NetworkRegistryMarker>())
+                .from(&netcfg)
+                .to(&socket_proxy),
         )
         .await?;
     builder
@@ -1211,17 +1284,6 @@ async fn watch_dns_across_registries() -> Result<(), Error> {
         .await?;
 
     let realm = builder.build().await?;
-
-    log::info!("Waiting for netcfg_mock to start");
-    check_until(
-        zx::MonotonicDuration::from_seconds(1).after_now(),
-        || async { default_network_updates.lock().await.clone() },
-        vec![
-            // Initial default
-            Default::default(),
-        ],
-    )
-    .await;
 
     let dns_watcher: fnp_socketproxy::DnsServerWatcherProxy = realm
         .root
@@ -1320,16 +1382,42 @@ async fn watch_dns_across_registries() -> Result<(), Error> {
         zx::MonotonicDuration::from_seconds(1).after_now(),
         || async { default_network_updates.lock().await.clone() },
         vec![
-            // Initial call, empty update.
-            Default::default(),
-            // Network id 3 with no marks.
-            fnp_properties::DefaultNetworkUpdate {
-                interface_id: Some(3),
-                socket_marks: Some(Default::default()),
-                ..Default::default()
+            NetworkRegistryRequest::Add {
+                network: fnp_socketproxy::Network {
+                    network_id: Some(1),
+                    info: Some(fnp_socketproxy::NetworkInfo::Starnix(
+                        fnp_socketproxy::StarnixNetworkInfo {
+                            mark: Some(1),
+                            handle: Some(0),
+                            ..Default::default()
+                        },
+                    )),
+                    dns_servers: Some(fnp_socketproxy::NetworkDnsServers {
+                        v4: Some(vec![fidl_ip_v4!("192.0.2.0")]),
+                        v6: Some(vec![]),
+                        ..Default::default()
+                    }),
+                    ..Default::default()
+                },
             },
-            // Default network removed, empty update.
-            Default::default(),
+            NetworkRegistryRequest::Update {
+                network: fnp_socketproxy::Network {
+                    network_id: Some(1),
+                    info: Some(fnp_socketproxy::NetworkInfo::Starnix(
+                        fnp_socketproxy::StarnixNetworkInfo {
+                            mark: Some(1),
+                            handle: Some(0),
+                            ..Default::default()
+                        },
+                    )),
+                    dns_servers: Some(fnp_socketproxy::NetworkDnsServers {
+                        v4: Some(vec![fidl_ip_v4!("192.0.2.0")]),
+                        v6: Some(vec![fidl_ip_v6!("2001:db8::4")]),
+                        ..Default::default()
+                    }),
+                    ..Default::default()
+                },
+            },
         ],
     )
     .await;

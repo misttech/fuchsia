@@ -13,8 +13,13 @@
                 "fuchsia.net.policy.properties.DefaultNetworkWatcher",
                 "fuchsia.net.policy.socketproxy.DnsServerWatcher",
                 "fuchsia.net.policy.socketproxy.FuchsiaNetworks",
-                "fuchsia.net.policy.testing.FakeSocketProxy",
+                "fuchsia.net.policy.socketproxy.NetworkRegistry",
             ],
+        },
+    ],
+    use: [
+        {
+            protocol: [ "fuchsia.net.policy.socketproxy.NetworkRegistry" ],
         },
     ],
     expose: [
@@ -23,7 +28,7 @@
                 "fuchsia.net.policy.properties.DefaultNetworkWatcher",
                 "fuchsia.net.policy.socketproxy.DnsServerWatcher",
                 "fuchsia.net.policy.socketproxy.FuchsiaNetworks",
-                "fuchsia.net.policy.testing.FakeSocketProxy",
+                "fuchsia.net.policy.socketproxy.NetworkRegistry",
             ],
             from: "self",
         },

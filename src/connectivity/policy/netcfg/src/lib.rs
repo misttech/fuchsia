@@ -86,7 +86,7 @@ impl InterfaceId {
         }
     }
 
-    const fn get(self) -> u64 {
+    pub const fn get(self) -> u64 {
         self.0.get()
     }
 }
@@ -107,6 +107,13 @@ impl TryFrom<u64> for InterfaceId {
     type Error = std::num::TryFromIntError;
     fn try_from(val: u64) -> Result<Self, Self::Error> {
         Ok(Self(NonZeroU64::try_from(val)?))
+    }
+}
+
+impl TryFrom<u32> for InterfaceId {
+    type Error = std::num::TryFromIntError;
+    fn try_from(val: u32) -> Result<Self, Self::Error> {
+        Ok(Self(NonZeroU64::try_from(val as u64)?))
     }
 }
 
@@ -181,6 +188,11 @@ const WLAN_AP_DHCP_LEASE_TIME_SECONDS: u32 = 24 * 60 * 60;
 type DnsServerWatchers<'a> = async_utils::stream::StreamMap<
     DnsServersUpdateSource,
     BoxStream<'a, (DnsServersUpdateSource, Result<Vec<fnet_name::DnsServer_>, fidl::Error>)>,
+>;
+
+type DelegatedNetworksStream = futures::future::Either<
+    fnp_socketproxy::NetworkRegistryRequestStream,
+    futures::stream::Empty<Result<fnp_socketproxy::NetworkRegistryRequest, fidl::Error>>,
 >;
 
 /// Defines log levels.
@@ -841,6 +853,7 @@ enum RequestStream {
     Masquerade(fnet_masquerade::FactoryRequestStream),
     DnsServerWatcher(fnet_name::DnsServerWatcherRequestStream),
     NetworkAttributes(fnp_properties::NetworksRequestStream),
+    DelegatedNetworks(fnp_socketproxy::NetworkRegistryRequestStream),
 }
 
 impl std::fmt::Debug for RequestStream {
@@ -851,6 +864,7 @@ impl std::fmt::Debug for RequestStream {
             RequestStream::Masquerade(_) => write!(f, "Masquerade"),
             RequestStream::DnsServerWatcher(_) => write!(f, "DnsServerWatcher"),
             RequestStream::NetworkAttributes(_) => write!(f, "NetworkAttributes"),
+            RequestStream::DelegatedNetworks(_) => write!(f, "DelegatedNetworks"),
         }
     }
 }
@@ -1192,13 +1206,6 @@ impl<'a> NetCfg<'a> {
         // `netstack_dns_server_stream` is not expected to end so we can fuse the
         // `StreamMap` without issue.
         let mut dns_watchers = dns_watchers.fuse();
-        let default_network_updates: Pin<
-            Box<
-                dyn futures::Stream<
-                        Item = Result<fnp_properties::DefaultNetworkUpdate, fidl::Error>,
-                    >,
-            >,
-        >;
 
         assert!(
             dns_watchers
@@ -1226,20 +1233,7 @@ impl<'a> NetCfg<'a> {
                     .is_none(),
                 "dns watchers should be empty"
             );
-            default_network_updates = Box::pin(futures::stream::try_unfold(
-                fuchsia_component::client::connect_to_protocol::<
-                    fnp_properties::DefaultNetworkWatcherMarker,
-                >()
-                .context(
-                    "failed to connect to fuchsia.network.policy.properties/DefaultNetworkWatcher",
-                )?,
-                move |proxy| proxy.watch().map_ok(move |s| Some((s, proxy))),
-            ));
-        } else {
-            default_network_updates =
-                Box::pin(futures::stream::try_unfold((), |_| async { Ok(None) }));
         }
-        let mut default_network_updates = default_network_updates.fuse();
 
         let mut masquerade_handler = MasqueradeHandler::default();
 
@@ -1251,7 +1245,8 @@ impl<'a> NetCfg<'a> {
             .add_fidl_service(RequestStream::Dhcpv6PrefixProvider)
             .add_fidl_service(RequestStream::Masquerade)
             .add_fidl_service(RequestStream::DnsServerWatcher)
-            .add_fidl_service(RequestStream::NetworkAttributes);
+            .add_fidl_service(RequestStream::NetworkAttributes)
+            .add_fidl_service(RequestStream::DelegatedNetworks);
         let _: &mut ServiceFs<_> =
             fs.take_and_serve_directory_handle().context("take and serve directory handle")?;
         let mut fs = fs.fuse();
@@ -1270,6 +1265,9 @@ impl<'a> NetCfg<'a> {
             dns::DnsServerWatcherRequestStreams::default();
 
         let mut networks_request_streams = network::NetworksRequestStreams::default();
+
+        let mut delegated_networks_stream =
+            DelegatedNetworksStream::Right(futures_util::stream::empty());
 
         // Lifecycle handle takes no args, must be set to zero.
         // See zircon/processargs.h.
@@ -1294,7 +1292,7 @@ impl<'a> NetCfg<'a> {
             NetworkAttributesRequest(
                 (network::ConnectionId, Result<fnp_properties::NetworksRequest, fidl::Error>),
             ),
-            DefaultNetworkUpdate(Result<fnp_properties::DefaultNetworkUpdate, fidl::Error>),
+            DelegatedNetworksUpdate(Result<fnp_socketproxy::NetworkRegistryRequest, fidl::Error>),
             ProvisioningEvent(ProvisioningEvent),
         }
 
@@ -1388,8 +1386,8 @@ impl<'a> NetCfg<'a> {
                 net_attr_req = networks_request_streams.select_next_some() => {
                     Event::NetworkAttributesRequest(net_attr_req)
                 }
-                default_network_update = default_network_updates.select_next_some() => {
-                    Event::DefaultNetworkUpdate(default_network_update)
+                delegated_networks_update = delegated_networks_stream.select_next_some() => {
+                    Event::DelegatedNetworksUpdate(delegated_networks_update)
                 }
                 complete => return Err(anyhow::anyhow!("eventloop ended unexpectedly")),
             };
@@ -1443,48 +1441,13 @@ impl<'a> NetCfg<'a> {
                 Event::NetworkAttributesRequest((id, req)) => {
                     self.netpol_networks_service.handle_network_attributes_request(id, req).await?
                 }
-                Event::DefaultNetworkUpdate(update) => match update {
-                    Err(e) => error!("Encountered error watching for network updates: {e:?}"),
-                    Ok(fnp_properties::DefaultNetworkUpdate {
-                        interface_id, socket_marks, ..
-                    }) => match (interface_id, socket_marks) {
-                        (None, Some(sm)) => {
-                            error!(
-                                "Default network update malformed: missing interface_id, while \
-                                 socket_marks are present {sm:?}"
-                            )
-                        }
-                        (Some(ii), None) => {
-                            error!(
-                                "Default network update malformed: missing socket_marks, while \
-                                 interface_id is present {ii:?}"
-                            )
-                        }
-                        (None, None) => {
-                            self.netpol_networks_service
-                                .update(network::PropertyUpdate::default().default_network_lost())
-                                .await
-                        }
-                        (Some(interface_id), Some(socket_marks)) => {
-                            if let Err(e) = (async || {
-                                self.netpol_networks_service
-                                    .update(
-                                        network::PropertyUpdate::default()
-                                            .default_network(interface_id)
-                                            .context("while setting default network")?
-                                            .socket_marks(interface_id, socket_marks)
-                                            .context("while setting socket_marks")?,
-                                    )
-                                    .await;
-                                Ok::<(), anyhow::Error>(())
-                            })()
-                            .await
-                            {
-                                error!("Could not handle default network update: {e:?}");
-                            }
-                        }
-                    },
-                },
+                Event::DelegatedNetworksUpdate(update) => {
+                    if let Err(e) =
+                        self.netpol_networks_service.handle_delegated_networks_update(update).await
+                    {
+                        error!("Could not handle delegated network update: {e:?}");
+                    }
+                }
                 Event::ProvisioningEvent(event) => {
                     self.handle_provisioning_event(
                         event,
@@ -1496,6 +1459,7 @@ impl<'a> NetCfg<'a> {
                         &mut masquerade_handler,
                         &mut masquerade_events,
                         &mut networks_request_streams,
+                        &mut delegated_networks_stream,
                     )
                     .await?
                 }
@@ -1516,6 +1480,7 @@ impl<'a> NetCfg<'a> {
         masquerade_handler: &mut MasqueradeHandler,
         masquerade_events: &mut futures::stream::SelectAll<masquerade::EventStream>,
         networks_request_streams: &mut network::NetworksRequestStreams,
+        delegated_networks_stream: &mut DelegatedNetworksStream,
     ) -> Result<(), anyhow::Error> {
         match event {
             ProvisioningEvent::InterfaceWatcherResult(if_watcher_res) => {
@@ -1588,6 +1553,16 @@ impl<'a> NetCfg<'a> {
                     }
                     RequestStream::NetworkAttributes(req_stream) => {
                         networks_request_streams.push(req_stream)
+                    }
+                    RequestStream::DelegatedNetworks(req_stream) => {
+                        if let futures::future::Either::Right(_) = delegated_networks_stream {
+                            *delegated_networks_stream = futures::future::Either::Left(req_stream);
+                        } else {
+                            error!(
+                                "Only one instance of fidl.net.policy.socketproxy/NetworkRegistry \
+                                 may be active at a time"
+                            );
+                        }
                     }
                 };
             }

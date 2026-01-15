@@ -5,57 +5,37 @@
 use std::sync::Arc;
 
 use anyhow::Context as _;
+use fidl_fuchsia_net_policy_socketproxy as fnp_socketproxy;
+use fuchsia_component::client::connect_to_protocol;
 use fuchsia_component::server::ServiceFs;
-use futures::SinkExt as _;
-use futures::channel::mpsc;
 use futures::lock::Mutex;
 use futures::stream::{StreamExt as _, TryStreamExt as _};
 use log::{debug, error};
-use {
-    fidl_fuchsia_net_policy_properties as fnp_properties,
-    fidl_fuchsia_net_policy_socketproxy as fnp_socketproxy,
-    fidl_fuchsia_net_policy_testing as fnp_testing,
-};
 
 async fn handle_provider(
-    tx: mpsc::Sender<fnp_properties::DefaultNetworkUpdate>,
-    rs: fnp_testing::FakeSocketProxy_RequestStream,
+    delegated_networks: Arc<fnp_socketproxy::NetworkRegistryProxy>,
+    rs: fnp_socketproxy::NetworkRegistryRequestStream,
 ) -> Result<(), anyhow::Error> {
     rs.map(|r| r.context("fidl error"))
         .try_for_each(|req| {
-            let mut tx = tx.clone();
+            let delegated_networks = delegated_networks.clone();
             async move {
                 match req {
-                    fnp_testing::FakeSocketProxy_Request::UpdateDefaultNetwork {
-                        update,
+                    fnp_socketproxy::NetworkRegistryRequest::SetDefault {
+                        network_id,
                         responder,
                     } => {
-                        tx.send(update).await?;
-                        responder.send()?;
+                        responder.send(delegated_networks.set_default(&network_id).await?)?;
                     }
-                }
-                Ok(())
-            }
-        })
-        .await
-}
-
-async fn handle_default_network_watcher(
-    rx: Arc<Mutex<mpsc::Receiver<fnp_properties::DefaultNetworkUpdate>>>,
-    rs: fnp_properties::DefaultNetworkWatcherRequestStream,
-) -> Result<(), anyhow::Error> {
-    rs.map(|r| r.context("fidl error"))
-        .try_for_each(|req| {
-            let rx = rx.clone();
-            async move {
-                let mut rx = rx.try_lock().expect("only one default network watcher at once");
-                match req {
-                    fnp_properties::DefaultNetworkWatcherRequest::Watch { responder } => {
-                        if let Some(upd) = rx.next().await {
-                            responder.send(&upd)?;
-                        }
+                    fnp_socketproxy::NetworkRegistryRequest::Add { network, responder } => {
+                        responder.send(delegated_networks.add(&network).await?)?;
                     }
-                    _ => {}
+                    fnp_socketproxy::NetworkRegistryRequest::Update { network, responder } => {
+                        responder.send(delegated_networks.update(&network).await?)?;
+                    }
+                    fnp_socketproxy::NetworkRegistryRequest::Remove { network_id, responder } => {
+                        responder.send(delegated_networks.remove(network_id).await?)?;
+                    }
                 }
                 Ok(())
             }
@@ -110,8 +90,7 @@ async fn handle_fuchsia_networks(
 }
 
 enum IncomingServices {
-    FakeSocketProxy(fnp_testing::FakeSocketProxy_RequestStream),
-    DefaultNetworkWatcher(fnp_properties::DefaultNetworkWatcherRequestStream),
+    FakeSocketProxy(fnp_socketproxy::NetworkRegistryRequestStream),
     DnsServerWatcher(fnp_socketproxy::DnsServerWatcherRequestStream),
     FuchsiaNetworks(fnp_socketproxy::FuchsiaNetworksRequestStream),
 }
@@ -121,28 +100,31 @@ async fn main() -> Result<(), anyhow::Error> {
     debug!("Starting fake-socket-proxy");
 
     let mut fs = ServiceFs::new_local();
-    let (tx, rx) = mpsc::channel(100);
-    let rx = Arc::new(Mutex::new(rx));
+    let delegated_networks = Arc::new(
+        connect_to_protocol::<fnp_socketproxy::NetworkRegistryMarker>()
+            .expect("can't connect to NetworkRegistry"),
+    );
     let _ = fs
         .dir("svc")
         .add_fidl_service(IncomingServices::FakeSocketProxy)
-        .add_fidl_service(IncomingServices::DefaultNetworkWatcher)
         .add_fidl_service(IncomingServices::DnsServerWatcher)
         .add_fidl_service(IncomingServices::FuchsiaNetworks);
 
     let _ = fs.take_and_serve_directory_handle()?;
 
     fs.for_each_concurrent(10, |request| {
-        let tx = tx.clone();
-        let rx = rx.clone();
+        let delegated_networks = delegated_networks.clone();
         async {
             if let Err(e) = match request {
-                IncomingServices::FakeSocketProxy(rs) => handle_provider(tx, rs).await,
-                IncomingServices::DefaultNetworkWatcher(rs) => {
-                    handle_default_network_watcher(rx, rs).await
+                IncomingServices::FakeSocketProxy(rs) => {
+                    handle_provider(delegated_networks, rs).await.context("fake socket proxy")
                 }
-                IncomingServices::DnsServerWatcher(rs) => handle_dns_server_watcher(rs).await,
-                IncomingServices::FuchsiaNetworks(rs) => handle_fuchsia_networks(rs).await,
+                IncomingServices::DnsServerWatcher(rs) => {
+                    handle_dns_server_watcher(rs).await.context("dns server watcher")
+                }
+                IncomingServices::FuchsiaNetworks(rs) => {
+                    handle_fuchsia_networks(rs).await.context("fuchsia networks")
+                }
             } {
                 error!("{e:?}")
             }

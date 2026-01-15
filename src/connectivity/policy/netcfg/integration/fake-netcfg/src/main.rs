@@ -4,6 +4,7 @@
 
 use std::sync::Arc;
 
+use anyhow::Context as _;
 use fidl_fuchsia_net_policy_properties::PropertyUpdate;
 use fuchsia_component::server::ServiceFs;
 use futures::lock::Mutex;
@@ -28,13 +29,15 @@ async fn handle_fake_netcfg_request(
             responder,
         } => {
             let mut update = netcfg::network::PropertyUpdate::default();
+            let network_id: netcfg::InterfaceId =
+                network_id.try_into().context("while converting network id")?;
             if is_default {
-                update = update.default_network(network_id)?;
+                update = update.default_network(network_id);
             }
             for upd in updates {
                 match upd {
                     PropertyUpdate::SocketMarks(marks) => {
-                        update = update.socket_marks(network_id, marks)?;
+                        update = update.socket_marks(network_id, marks);
                     }
                     PropertyUpdate::DnsConfiguration(dns_configuration) => {
                         let mut dns_servers = dns_server_watcher::DnsServers::default();
@@ -48,7 +51,7 @@ async fn handle_fake_netcfg_request(
                                     if d.source.is_none() {
                                         d.source = Some(fnet_name::DnsServerSource::SocketProxy(
                                             fnet_name::SocketProxyDnsServerSource {
-                                                source_interface: Some(network_id),
+                                                source_interface: Some(network_id.get()),
                                                 ..Default::default()
                                             },
                                         ));

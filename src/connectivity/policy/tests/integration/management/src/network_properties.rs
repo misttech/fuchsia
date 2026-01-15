@@ -29,7 +29,8 @@ use std::sync::Arc;
 use {
     fidl_fuchsia_net as fnet, fidl_fuchsia_net_name as fnet_name,
     fidl_fuchsia_net_policy_properties as fnp_properties,
-    fidl_fuchsia_net_policy_testing as fnp_testing,
+    fidl_fuchsia_net_policy_socketproxy as fnp_socketproxy,
+    fidl_fuchsia_net_policy_testing as fnp_testing, fidl_fuchsia_posix_socket as fposix_socket,
 };
 
 trait TakeNetwork {
@@ -48,10 +49,14 @@ impl TakeNetwork for fnp_properties::NetworksWatchDefaultResponse {
     }
 }
 
-fn network_update(network_id: u64, marks: fnet::Marks) -> fnp_properties::DefaultNetworkUpdate {
-    fnp_properties::DefaultNetworkUpdate {
-        interface_id: Some(network_id),
-        socket_marks: Some(marks),
+fn network(network_id: u32, mark: Option<u32>) -> fnp_socketproxy::Network {
+    fnp_socketproxy::Network {
+        network_id: Some(network_id),
+        info: Some(fnp_socketproxy::NetworkInfo::Starnix(fnp_socketproxy::StarnixNetworkInfo {
+            mark: mark,
+            handle: None,
+            ..Default::default()
+        })),
         ..Default::default()
     }
 }
@@ -226,39 +231,54 @@ async fn test_track_socket_marks<N: Netstack, M: Manager>(name: &str) {
 
                 let test = async move {
                     let socket_proxy = realm
-                        .connect_to_protocol_from_child::<fnp_testing::FakeSocketProxy_Marker>(
+                        .connect_to_protocol_from_child::<fnp_socketproxy::NetworkRegistryMarker>(
                             realms::constants::fake_socket_proxy::COMPONENT_NAME,
                         )
                         .expect("failed to connect to FakeSocketProxy");
 
                     socket_proxy
-                        .update_default_network(&network_update(1, marks(Some(1), None)))
+                        .add(&network(1, Some(1)))
                         .await
-                        .expect("fidl error");
+                        .expect("fidl error")
+                        .expect("protocol error");
+                    socket_proxy
+                        .set_default(&fposix_socket::OptionalUint32::Value(1))
+                        .await
+                        .expect("fidl error")
+                        .expect("protocol error");
                     let _ = rx.next().await;
 
                     socket_proxy
-                        .update_default_network(&network_update(1, marks(Some(2), Some(10))))
+                        .update(&network(1, Some(2)))
                         .await
-                        .expect("fidl error");
+                        .expect("fidl error")
+                        .expect("protocol error");
                     let _ = rx.next().await;
 
                     socket_proxy
-                        .update_default_network(&network_update(1, marks(Some(4), None)))
+                        .update(&network(1, Some(4)))
                         .await
-                        .expect("fidl error");
+                        .expect("fidl error")
+                        .expect("protocol error");
                     let _ = rx.next().await;
 
                     socket_proxy
-                        .update_default_network(&Default::default())
+                        .set_default(&fposix_socket::OptionalUint32::Unset(fposix_socket::Empty))
                         .await
-                        .expect("fidl error");
+                        .expect("fidl error")
+                        .expect("protocol error");
                     let _ = rx.next().await;
 
                     socket_proxy
-                        .update_default_network(&network_update(1, marks(Some(8), None)))
+                        .update(&network(1, Some(8)))
                         .await
-                        .expect("fidl error");
+                        .expect("fidl error")
+                        .expect("protocol error");
+                    socket_proxy
+                        .set_default(&fposix_socket::OptionalUint32::Value(1))
+                        .await
+                        .expect("fidl error")
+                        .expect("protocol error");
                     let _ = rx.next().await;
 
                     let updates = last_updates.lock().await.clone();
@@ -266,7 +286,7 @@ async fn test_track_socket_marks<N: Netstack, M: Manager>(name: &str) {
                         &updates,
                         &vec![
                             Some(PropertyUpdate::SocketMarks(marks(Some(1), None))),
-                            Some(PropertyUpdate::SocketMarks(marks(Some(2), Some(10)))),
+                            Some(PropertyUpdate::SocketMarks(marks(Some(2), None))),
                             Some(PropertyUpdate::SocketMarks(marks(Some(4), None))),
                             // None update represents the empty default_network.update call
                             None,
@@ -321,10 +341,10 @@ async fn test_track_dns_changes<N: Netstack, M: Manager>(name: &str) -> Result<(
             socket_proxy_type: SocketProxyType::Fake,
             ..Default::default()
         },
-        |_if_id, network, _interface_state, realm, _sandbox| {
+        |_if_id, test_network, _interface_state, realm, _sandbox| {
             async move {
                 let fake_ep =
-                    network.create_fake_endpoint().expect("failed to create fake endpoint");
+                    test_network.create_fake_endpoint().expect("failed to create fake endpoint");
 
                 async fn update_dns(
                     fake_ep: &netemul::TestFakeEndpoint<'_>,
@@ -352,14 +372,20 @@ async fn test_track_dns_changes<N: Netstack, M: Manager>(name: &str) -> Result<(
                 .fuse();
                 let mut wait_for_netmgr = pin!(wait_for_netmgr);
                 let socket_proxy = realm
-                    .connect_to_protocol_from_child::<fnp_testing::FakeSocketProxy_Marker>(
+                    .connect_to_protocol_from_child::<fnp_socketproxy::NetworkRegistryMarker>(
                         realms::constants::fake_socket_proxy::COMPONENT_NAME,
                     )
                     .expect("failed to connect to FakeSocketProxy");
                 socket_proxy
-                    .update_default_network(&network_update(2, Default::default()))
+                    .add(&network(2, None))
                     .await
-                    .expect("fidl error");
+                    .expect("fidl error")
+                    .expect("protocol error");
+                socket_proxy
+                    .set_default(&fposix_socket::OptionalUint32::Value(2))
+                    .await
+                    .expect("fidl error")
+                    .expect("protocol error");
                 let networks = realm
                     .connect_to_protocol_from_child::<fnp_properties::NetworksMarker>(
                         realms::constants::netcfg::COMPONENT_NAME,
