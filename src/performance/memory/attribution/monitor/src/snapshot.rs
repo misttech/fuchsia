@@ -2,6 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+use anyhow::anyhow;
 use attribution_processing::AttributionData;
 use attribution_processing::digest::BucketDefinition;
 use fidl_fuchsia_memory_attribution_plugin as fplugin;
@@ -10,6 +11,7 @@ use futures::AsyncWriteExt;
 use stalls::MemoryStallMetrics;
 use stalls::refaults::RefaultProvider;
 use traces::CATEGORY_MEMORY_CAPTURE;
+use zstd::stream::raw::CParameter::ChecksumFlag;
 
 /// AttributionSnapshot holds and serves a snapshot of the memory of a Fuchsia system, to be sent
 /// to a ffx command on a host.
@@ -69,7 +71,11 @@ impl AttributionSnapshot {
             duration!(CATEGORY_MEMORY_CAPTURE, "compress:serve:snapshot", "uncompressed"=>data.len());
             // zstd does not support async write to a socket.
             // Use bulk compression instead, to avoid stopping the event loop with blocking writes.
-            zstd::bulk::compress(&data, 3)?
+            let mut compressor = zstd::bulk::Compressor::new(3)?;
+            compressor.context_mut().set_parameter(ChecksumFlag(true)).map_err(|code| {
+                anyhow!("Failed to enable checksum: {}", zstd::zstd_safe::get_error_name(code))
+            })?;
+            compressor.compress(&data)?
         };
         std::mem::drop(data);
 
