@@ -173,6 +173,9 @@ zx::result<> Node::Publish(fdf::WireSyncClient<fuchsia_hardware_platform_bus::Pl
     // Pass properties to pbus node directly if we are not adding a composite spec.
     if (!composite_) {
       pbus_node_.properties() = node_properties_;
+      if (!driver_host_.empty()) {
+        pbus_node_.driver_host() = driver_host_;
+      }
     }
 
     fdf::Arena arena('PBUS');
@@ -192,6 +195,9 @@ zx::result<> Node::Publish(fdf::WireSyncClient<fuchsia_hardware_platform_bus::Pl
     node_add_args.name() = fdf_name();
 
     node_add_args.properties2() = node_properties_;
+    if (!driver_host_.empty()) {
+      node_add_args.driver_host() = driver_host_;
+    }
 
     auto [client_end, server_end] =
         fidl::Endpoints<fuchsia_driver_framework::NodeController>::Create();
@@ -253,6 +259,10 @@ zx::result<> Node::Publish(fdf::WireSyncClient<fuchsia_hardware_platform_bus::Pl
         .name = fdf_name(),
         .parents2 = std::move(parents_),
     }};
+
+    if (!driver_host_.empty()) {
+      group.driver_host() = driver_host_;
+    }
 
     auto devicegroup_result = mgr->AddSpec({std::move(group)});
     if (devicegroup_result.is_error()) {

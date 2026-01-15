@@ -11,6 +11,7 @@
 #include "lib/driver/devicetree/visitors/default/bind-property/bind-property.h"
 #include "lib/driver/devicetree/visitors/default/boot-metadata/boot-metadata.h"
 #include "lib/driver/devicetree/visitors/default/bti/bti.h"
+#include "lib/driver/devicetree/visitors/default/driver-host/driver-host.h"
 #include "lib/driver/devicetree/visitors/default/mmio/mmio.h"
 #include "lib/driver/devicetree/visitors/default/smc/smc.h"
 
@@ -24,8 +25,9 @@ namespace fdf_devicetree {
 //           DefaultVisitors<MyDriverVisitor> visitors;
 //           devicetree_manager.Walk(visitors);
 template <typename... AdditionalVisitors>
-using DefaultVisitors = MultiVisitor<BindPropertyVisitor, MmioVisitor, BtiVisitor,
-                                     BootMetadataVisitor, SmcVisitor, AdditionalVisitors...>;
+using DefaultVisitors =
+    MultiVisitor<BindPropertyVisitor, MmioVisitor, BtiVisitor, BootMetadataVisitor, SmcVisitor,
+                 DriverHostVisitor, AdditionalVisitors...>;
 
 }  // namespace fdf_devicetree
 

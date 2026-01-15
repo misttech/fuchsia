@@ -96,6 +96,9 @@ class Node {
     return manager_->RegisterIommu(iommu_id, iommu);
   }
 
+  // Sets the driver host that the driver that binds to this node will end up in.
+  void SetDriverHost(std::string_view driver_host) { driver_host_ = driver_host; }
+
   // Returns the index of the node in the nodes publish list.
   uint32_t GetPublishIndex() const;
 
@@ -111,6 +114,8 @@ class Node {
 
   const std::string& name() const { return name_; }
   const std::string& fdf_name() const { return fdf_name_; }
+
+  std::string_view driver_host() const { return driver_host_; }
 
   ParentNode parent() const;
 
@@ -137,6 +142,7 @@ class Node {
   Node* parent_;
   std::string name_;
   std::string fdf_name_;
+  std::string driver_host_;
   std::unordered_map<std::string_view, devicetree::PropertyValue> properties_;
   std::optional<Phandle> phandle_;
   std::vector<Node*> children_;

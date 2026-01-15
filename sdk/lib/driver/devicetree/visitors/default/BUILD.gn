@@ -8,6 +8,7 @@ group("tests") {
   deps = [
     "boot-metadata:tests",
     "bti:tests",
+    "driver-host:tests",
     "mmio:tests",
     "smc:tests",
   ]
@@ -28,6 +29,7 @@ sdk_source_set("default") {
     "bind-property",
     "boot-metadata",
     "bti",
+    "driver-host",
     "mmio",
     "smc",
     "//sdk/lib/driver/logging/cpp",
