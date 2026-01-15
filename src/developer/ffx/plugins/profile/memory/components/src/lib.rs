@@ -117,20 +117,20 @@ impl MemoryComponentsTool {
                 .monitor_proxy
                 .get_system_statistics()
                 .await
-                .map_err(|err| ffx_error!("Failed to get statistics: {err}"))?
+                .map_err(|err| ffx_error!("Failed to get statistics: {err:?} :{err}"))?
                 .try_into()
-                .map_err(|err| ffx_error!("Failed to convert statistics: {err}"))?;
+                .map_err(|err| ffx_error!("Failed to convert statistics: {err:?} :{err}"))?;
 
             w.serialize(statistics).map_err(|err| match err.kind() {
                 csv::ErrorKind::Io(io) => match io.kind() {
                     std::io::ErrorKind::BrokenPipe => fho::Error::ExitWithCode(141),
                     _ => fho::Error::Unexpected(err.into()),
                 },
-                _ => ffx_error!("Failed to write statistics: {err}").into(),
+                _ => ffx_error!("Failed to write statistics: {err:?} :{err}").into(),
             })?;
             w.flush().map_err(|err| match err.kind() {
                 std::io::ErrorKind::BrokenPipe => fho::Error::ExitWithCode(141),
-                _ => ffx_error!("Failed to flush stdout: {err}").into(),
+                _ => ffx_error!("Failed to flush stdout: {err:?} :{err}").into(),
             })?;
             sleep(Duration::from_secs(interval));
         }
@@ -183,18 +183,18 @@ impl MemoryComponentsTool {
         let (client_end, server_end) = fidl::Socket::create_stream();
         let mut client_socket = fidl::AsyncSocket::from_socket(client_end);
 
-        self.monitor_proxy
-            .get_snapshot(server_end)
-            .map_err(|err| ffx_error!("Failed to call MemoryMonitorProxy/GetSnapshot: {err}"))?;
+        self.monitor_proxy.get_snapshot(server_end).map_err(|err| {
+            ffx_error!("Failed to call MemoryMonitorProxy/GetSnapshot: {err:?} : {err}")
+        })?;
         let mut compressed_data: Vec<u8> = Vec::new();
         client_socket
             .read_to_end(&mut compressed_data)
             .await
-            .map_err(|err| ffx_error!("Failed to read socket: {err}"))?;
+            .map_err(|err| ffx_error!("Failed to read socket: {err:?} : {err}"))?;
         let data = zstd::decode_all(std::io::Cursor::new(compressed_data))
-            .map_err(|err| ffx_error!("Failed to uncompress: {err}"))?;
+            .map_err(|err| ffx_error!("Failed to uncompress: {err:?} : {err}"))?;
         let snapshot: fplugin::Snapshot = fidl::unpersist(&data)
-            .map_err(|err| ffx_error!("Failed to unpersist elements: {err}"))?;
+            .map_err(|err| ffx_error!("Failed to unpersist elements: {err:?} : {err}"))?;
         Ok(snapshot)
     }
 }
