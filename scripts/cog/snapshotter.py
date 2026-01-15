@@ -45,8 +45,10 @@ def snapshot_workspace(
     copy_subdirs = [
         "prebuilt",
         ".cipd",
-        ".jiri_manifest",
         ".jiri_root",
+        "vendor",
+        "integration",
+        "third_party",
     ]
 
     if use_local_mock_cartfs:
@@ -83,6 +85,12 @@ def snapshot_workspace(
                 to_path_rel = workspace_to_snapshot_to / subdir
                 from_path_abs = cartfs_mount_point / from_path_rel
                 to_path_abs = cartfs_mount_point / to_path_rel
+
+                if not from_path_abs.exists():
+                    logger.log_info(
+                        f"Skipping {from_path_rel} because it does not exist."
+                    )
+                    continue
 
                 if not from_path_abs.is_dir():
                     shutil.copyfile(from_path_abs, to_path_abs)
