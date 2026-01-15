@@ -9,7 +9,8 @@ use fidl::endpoints::{DiscoverableProtocolMarker, ProtocolMarker};
 use fuchsia_component::client::connect_to_protocol_sync;
 use starnix_core::task::CurrentTask;
 use starnix_core::vfs::{
-    FileObject, FileOps, FsNode, FsNodeOps, InputBuffer, OutputBuffer, fileops_impl_noop_sync,
+    AppendLockGuard, FileObject, FileOps, FsNode, FsNodeOps, InputBuffer, OutputBuffer,
+    fileops_impl_noop_sync,
 };
 use starnix_core::{fileops_impl_seekable, fs_node_impl_not_dir};
 use starnix_logging::log_error;
@@ -234,5 +235,19 @@ impl<P: DiscoverableProtocolMarker, O: SysfsOps<P::SynchronousProxy>> FsNodeOps
         _flags: OpenFlags,
     ) -> Result<Box<dyn FileOps>, Errno> {
         SysfsFile::<P, O>::new(Box::new(O::default())).map(|f| f as Box<dyn FileOps>)
+    }
+
+    /// Support no-op trunc for Nanohub sysfs endpoints
+    /// This is a safe no-op as these nodes do not have persistent file backings
+    /// and only support show/store operations which are mapped to read/write FileOps.
+    fn truncate(
+        &self,
+        _locked: &mut Locked<FileOpsCore>,
+        _guard: &AppendLockGuard<'_>,
+        _node: &FsNode,
+        _current_task: &CurrentTask,
+        _length: u64,
+    ) -> Result<(), Errno> {
+        Ok(())
     }
 }
