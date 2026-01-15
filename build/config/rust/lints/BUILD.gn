@@ -146,7 +146,7 @@ config("deny_default") {
 #
 # Entries in this list are blanket exceptions granted to all Rust targets.
 config("toolchain_roll_exceptions") {
-  # LINT.IfChange(toolchain_roll_exceptions)
+  # LINT.IfChange(rustc_toolchain_roll_exceptions)
   rustflags = [
     # TODO(https://fxbug.dev/423021172) Allow renamed lints until after the next toolchain roll.
     "-Arenamed_and_removed_lints",
@@ -155,9 +155,9 @@ config("toolchain_roll_exceptions") {
     "-Anon_local_definitions",
 
     # TODO(https://fxbug.dev/365108268) Remove blanket allow once lint is actionable.
-    "-Aelided_named_lifetimes",
+    "-Amismatched_lifetime_syntaxes",
   ]
-  # LINT.ThenChange(//build/config/rust/lints/BUILD.bazel:toolchain_roll_exceptions)
+  # LINT.ThenChange(//build/config/rust/lints/BUILD.bazel:rustc_toolchain_roll_exceptions)
 }
 
 config("deny_unused_results") {

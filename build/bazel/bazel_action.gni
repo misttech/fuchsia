@@ -695,6 +695,10 @@ template("bazel_action") {
                  "//build/bazel/templates/template.bazel.sh.config",
                  "//build/bazel/templates/template.bazelrc",
 
+                 # TODO(https://fxbug.dev/475142618): Remove this once change in rust.BUILD.bazel
+                 # correctly trigger bazel action rebuilds.
+                 "//build/bazel/toolchains/rust/rust.BUILD.bazel",
+
                  # Imported by bazel_action.py
                  "//build/api/debug_symbols.py",
                  "//build/bazel/scripts/bazel_compdb_utils.py",

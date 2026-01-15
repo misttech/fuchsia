@@ -25,6 +25,45 @@ _HOST_STRIP_LEVEL = {
 }
 # LINT.ThenChange(//build/bazel/debug_symbols/README.md)
 
+_DEFAULT_COMMON_RUST_FLAGS = [
+    # GN: //build/config/rust:2018_idioms
+    "-Wrust-2018-idioms",
+
+    # GN: //build/config:werror
+    "-Dwarnings",
+
+    # GN: //build/config:stack-size-section
+    "-Zemit-stack-sizes",
+
+    # GN: //build/config/rust:default_debug_assertions
+    #
+    # TODO(jayzhuang): Enable debug-assertions for non-release builds.
+    "-Cdebug-assertions=no",
+
+    # `-Zfunction-sections` flag controls both text and data sections.
+    "-Zfunction-sections",
+
+    # GN: //build/config:relative_paths
+    #
+    # `-Zremap-cwd-prefix` ensures that absolute paths do not leak into
+    # outputs for universal reproducibility while keeping the command line
+    # free of absolute paths for remote caching benefit.
+    # Available since: https://github.com/rust-lang/rust/pull/87320
+    "-Zremap-cwd-prefix=.",
+
+    # GN: //build/config/rust:no_features,
+    "-Zallow-features=",
+]
+
+_DEFAULT_HOST_RUST_FLAGS = _DEFAULT_COMMON_RUST_FLAGS + [
+    "-Clink-arg=-Wl,-mllvm=--stack-size-section",
+]
+
+_DEFAULT_TARGET_RUST_FLAGS = _DEFAULT_COMMON_RUST_FLAGS + [
+    "-Cforce-frame-pointers",
+    "-Clink-arg=-mllvm=--stack-size-section",
+]
+
 filegroup(
     name = "rustc_lib",
     srcs = glob(
@@ -53,6 +92,7 @@ rust_toolchain(
     stdlib_linkflags = ["-lpthread", "-ldl"],
     exec_triple = "x86_64-unknown-linux-gnu",
     target_triple = "x86_64-unknown-linux-gnu",
+    extra_rustc_flags = _DEFAULT_HOST_RUST_FLAGS,
 
     # Ensure debug symbols are preserved even with --compilation_mode is
     # set to 'fastbuild' or 'opt', as there are no separate actions to produce
@@ -98,6 +138,7 @@ rust_toolchain(
     stdlib_linkflags = ["-lpthread", "-ldl"],
     exec_triple = "aarch64-unknown-linux-gnu",
     target_triple = "aarch64-unknown-linux-gnu",
+    extra_rustc_flags = _DEFAULT_HOST_RUST_FLAGS,
 
     # Ensure debug symbols are preserved even with --compilation_mode is
     # set to 'fastbuild' or 'opt', as there are no separate actions to produce
@@ -143,6 +184,7 @@ rust_toolchain(
     stdlib_linkflags = [],
     exec_triple = "x86_64-unknown-fuchsia",
     target_triple = "x86_64-unknown-fuchsia",
+    extra_rustc_flags = _DEFAULT_TARGET_RUST_FLAGS,
 )
 
 toolchain(
@@ -179,11 +221,13 @@ rust_toolchain(
     stdlib_linkflags = [],
     exec_triple = "aarch64-unknown-fuchsia",
     target_triple = "aarch64-unknown-fuchsia",
-    # See https://fuchsia.dev/fuchsia-src/concepts/kernel/shadow_call_stack#use_in_zircon_fuchsia
-    # Rust compilers are detecting incompatible ABIs in rust builds. Any Rust
-    # code that is targeted for ARM64 Fuchsia must be compiled with shadow
-    # call stack to avoid build failures due to ABI mismatch.
-    extra_rustc_flags = ["-Zsanitizer=shadow-call-stack"],
+    extra_rustc_flags = _DEFAULT_TARGET_RUST_FLAGS + [
+        # See https://fuchsia.dev/fuchsia-src/concepts/kernel/shadow_call_stack#use_in_zircon_fuchsia
+        # Rust compilers are detecting incompatible ABIs in rust builds. Any Rust
+        # code that is targeted for ARM64 Fuchsia must be compiled with shadow
+        # call stack to avoid build failures due to ABI mismatch.
+        "-Zsanitizer=shadow-call-stack",
+    ],
 )
 
 toolchain(
@@ -223,11 +267,13 @@ rust_toolchain(
     stdlib_linkflags = [],
     exec_triple = "riscv64-unknown-fuchsia",
     target_triple = "riscv64-unknown-fuchsia",
-    # See https://fuchsia.dev/fuchsia-src/concepts/kernel/shadow_call_stack#use_in_zircon_fuchsia
-    # Rust compilers are detecting incompatible ABIs in rust builds. Any Rust
-    # code that is targeted for RISC-V64 Fuchsia must be compiled with shadow
-    # call stack to avoid build failures due to ABI mismatch.
-    extra_rustc_flags = ["-Zsanitizer=shadow-call-stack"],
+    extra_rustc_flags = _DEFAULT_TARGET_RUST_FLAGS + [
+        # See https://fuchsia.dev/fuchsia-src/concepts/kernel/shadow_call_stack#use_in_zircon_fuchsia
+        # Rust compilers are detecting incompatible ABIs in rust builds. Any Rust
+        # code that is targeted for RISC-V64 Fuchsia must be compiled with shadow
+        # call stack to avoid build failures due to ABI mismatch.
+        "-Zsanitizer=shadow-call-stack",
+    ],
 )
 
 toolchain(

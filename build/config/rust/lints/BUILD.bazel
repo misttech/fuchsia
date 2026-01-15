@@ -55,7 +55,7 @@ _RUSTC_LINT_CONFIGS = {
     # LINT.ThenChange(//build/config/rust/lints/BUILD.gn:rustc_deny_default)
 
     # LINT.IfChange(rustc_toolchain_roll_exceptions)
-    "elided_named_lifetimes": "allow",
+    "mismatched_lifetime_syntaxes": "allow",
     "non_local_definitions": "allow",
     "renamed_and_removed_lints": "allow",
     # LINT.ThenChange(//build/config/rust/lints/BUILD.gn:rustc_toolchain_roll_exceptions)
