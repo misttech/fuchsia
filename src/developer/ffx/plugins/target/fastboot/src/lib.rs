@@ -75,6 +75,7 @@ where
 }
 
 async fn fastboot_impl<F>(
+    ctx: &EnvironmentContext,
     writer: &mut VerifiedMachineWriter<FastbootMessage>,
     command: &FastbootCommand,
     interface: &mut F,
@@ -210,6 +211,36 @@ where
                 log::debug!("Keeping file: {:?}", out_path);
             }
         }
+        FastbootSubcommand::Authorize(_) => {
+            let keys = ffx_ssh::SshKeyFiles::load(ctx).map_err(|e| anyhow!(e))?;
+            // Stage the file
+            let (client, server) = mpsc::channel(1);
+            try_join!(
+                async {
+                    interface
+                        .stage(
+                            &keys.authorized_keys.as_os_str().to_str().ok_or_else(|| {
+                                anyhow!("Authorized keys file path should be a str")
+                            })?,
+                            client,
+                        )
+                        .await
+                        .map_err(|e| anyhow!(e))
+                },
+                sink(server)
+            )
+            .map_err(fho::Error::from)?;
+            log::debug!("Uploaded authorized keys file: {}", keys.authorized_keys.display());
+            // Send the command
+            interface
+                .oem("add-staged-bootloader-file ssh.authorized_keys")
+                .await
+                .map_err(|e| anyhow!(e))
+                .map_err(fho::Error::from)?;
+            log::debug!("Sent oem command");
+            interface.continue_boot().await.map_err(|e| anyhow!(e)).map_err(fho::Error::from)?;
+            log::debug!("Sent continue boot command");
+        }
     };
     Ok(())
 }
@@ -230,7 +261,7 @@ async fn cmd_impl(
             FastbootConnectionState::Usb => {
                 let serial_num = fastboot_state.serial_number;
                 let mut proxy = usb_proxy(serial_num).await?;
-                fastboot_impl(writer, command, &mut proxy).await
+                fastboot_impl(ctx, writer, command, &mut proxy).await
             }
             FastbootConnectionState::Udp(addrs) => {
                 let config = FastbootNetworkConnectionConfig::new_udp(ctx);
@@ -238,7 +269,7 @@ async fn cmd_impl(
                     gather_connection_info(ctx, &handle.node_name, addrs)?;
                 let mut proxy =
                     udp_proxy(ctx, target_name, fastboot_device_file_path, &addr, config).await?;
-                fastboot_impl(writer, command, &mut proxy).await
+                fastboot_impl(ctx, writer, command, &mut proxy).await
             }
             FastbootConnectionState::Tcp(addrs) => {
                 let config = FastbootNetworkConnectionConfig::new_tcp(ctx);
@@ -246,7 +277,7 @@ async fn cmd_impl(
                     gather_connection_info(ctx, &handle.node_name, addrs)?;
                 let mut proxy =
                     tcp_proxy(ctx, target_name, fastboot_device_file_path, &addr, config).await?;
-                fastboot_impl(writer, command, &mut proxy).await
+                fastboot_impl(ctx, writer, command, &mut proxy).await
             }
         },
         _ => {
@@ -292,7 +323,14 @@ fn gather_connection_info(
 #[cfg(test)]
 mod test {
     use super::*;
+    use chrono::Duration;
+    use ffx_fastboot_interface::fastboot_interface::*;
+    use ffx_fastboot_tool_args::AuthorizeSubcommand;
+    use ffx_writer::{Format, TestBuffers};
     use std::str::FromStr;
+    use std::sync::{Arc, Mutex};
+    use tempfile::NamedTempFile;
+    use tokio::sync::mpsc::Sender;
 
     #[fuchsia::test]
     async fn test_gather_connection_info_fails() -> Result<()> {
@@ -347,6 +385,121 @@ mod test {
                 fastboot_device_file_path: Some("/foo".into()),
             }
         );
+        Ok(())
+    }
+
+    #[derive(Default, Debug, Clone)]
+    struct MockInterface {
+        staged_path: Arc<Mutex<Option<String>>>,
+        oem_commands: Arc<Mutex<Vec<String>>>,
+        continue_boot_called: Arc<Mutex<bool>>,
+    }
+
+    impl FastbootInterface for MockInterface {}
+
+    #[async_trait]
+    impl Fastboot for MockInterface {
+        async fn stage(
+            &mut self,
+            path: &str,
+            _sender: mpsc::Sender<UploadProgress>,
+        ) -> Result<(), FastbootError> {
+            *self.staged_path.lock().unwrap() = Some(path.to_string());
+            Ok(())
+        }
+
+        async fn oem(&mut self, command: &str) -> Result<(), FastbootError> {
+            self.oem_commands.lock().unwrap().push(command.to_string());
+            Ok(())
+        }
+
+        async fn continue_boot(&mut self) -> Result<(), FastbootError> {
+            *self.continue_boot_called.lock().unwrap() = true;
+            Ok(())
+        }
+
+        async fn flash(
+            &mut self,
+            _partition_name: &str,
+            _path: &str,
+            _listener: Sender<UploadProgress>,
+            _timeout: Duration,
+        ) -> Result<(), FastbootError> {
+            unimplemented!()
+        }
+        async fn erase(&mut self, _partition_name: &str) -> Result<(), FastbootError> {
+            unimplemented!()
+        }
+        async fn reboot(&mut self) -> Result<(), FastbootError> {
+            unimplemented!()
+        }
+        async fn reboot_bootloader(
+            &mut self,
+            _sender: mpsc::Sender<RebootEvent>,
+        ) -> Result<(), FastbootError> {
+            unimplemented!()
+        }
+        async fn get_var(&mut self, _name: &str) -> Result<String, FastbootError> {
+            unimplemented!()
+        }
+        async fn get_all_vars(
+            &mut self,
+            _sender: mpsc::Sender<Variable>,
+        ) -> Result<(), FastbootError> {
+            unimplemented!()
+        }
+        async fn set_active(&mut self, _slot: &str) -> Result<(), FastbootError> {
+            unimplemented!()
+        }
+        async fn boot(&mut self) -> Result<(), FastbootError> {
+            unimplemented!()
+        }
+        async fn get_staged(&mut self, _path: &str) -> Result<(), FastbootError> {
+            unimplemented!()
+        }
+    }
+
+    fn setup_ssh_paths(context: &EnvironmentContext) -> (NamedTempFile, NamedTempFile) {
+        let temp_ssh_priv = NamedTempFile::new().expect("creating temp file for ssh.priv");
+        context
+            .query("ssh.priv")
+            .level(Some(ffx_config::ConfigLevel::User))
+            .build()
+            .set(context, temp_ssh_priv.path().to_string_lossy().into())
+            .expect("creating temp ssh.priv");
+        let temp_ssh_pub = NamedTempFile::new().expect("creating temp file for ssh.pub");
+        context
+            .query("ssh.pub")
+            .level(Some(ffx_config::ConfigLevel::User))
+            .build()
+            .set(context, temp_ssh_pub.path().to_string_lossy().into())
+            .expect("creating temp ssh.pub");
+        (temp_ssh_priv, temp_ssh_pub)
+    }
+
+    #[fuchsia::test]
+    async fn test_authorize() -> Result<()> {
+        let env = ffx_config::test_init()?;
+        let (_priv, authorized_keys) = setup_ssh_paths(&env.context);
+        let authorized_keys_path = authorized_keys.path().to_string_lossy();
+
+        let mut interface = MockInterface::default();
+        let command =
+            FastbootCommand { subcommand: FastbootSubcommand::Authorize(AuthorizeSubcommand {}) };
+        let buffers = TestBuffers::default();
+        let mut writer = VerifiedMachineWriter::new_test(Some(Format::Json), &buffers);
+
+        fastboot_impl(&env.context, &mut writer, &command, &mut interface).await?;
+
+        assert_eq!(
+            interface.staged_path.lock().unwrap().as_deref(),
+            Some(authorized_keys_path).as_deref()
+        );
+        assert_eq!(
+            *interface.oem_commands.lock().unwrap(),
+            vec!["add-staged-bootloader-file ssh.authorized_keys"]
+        );
+        assert!(*interface.continue_boot_called.lock().unwrap());
         Ok(())
     }
 }

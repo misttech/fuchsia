@@ -24,6 +24,7 @@ ffx_plugin("ffx_fastboot_tool") {
     "//src/developer/ffx/lib/fastboot/connection_factory:lib",
     "//src/developer/ffx/lib/fastboot/interface:lib",
     "//src/developer/ffx/lib/fho:lib",
+    "//src/developer/ffx/lib/ssh:lib",
     "//src/developer/ffx/lib/target:lib",
     "//src/developer/ffx/lib/writer:lib",
     "//src/storage/lib/sparse/rust:lib",
@@ -36,7 +37,11 @@ ffx_plugin("ffx_fastboot_tool") {
     "//third_party/rust_crates:tokio",
   ]
 
-  test_deps = [ "//src/lib/fuchsia" ]
+  test_deps = [
+    "//src/lib/fuchsia",
+    "//third_party/rust_crates:chrono",
+    "//third_party/rust_crates:tempfile",
+  ]
 
   args_test_deps = []
 

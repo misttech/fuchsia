@@ -31,6 +31,7 @@ pub enum FastbootSubcommand {
     Reboot(RebootSubcommand),
     Continue(ContinueSubcommand),
     Sparse(SparseSubcommand),
+    Authorize(AuthorizeSubcommand),
 }
 
 #[derive(ArgsInfo, FromArgs, Eq, PartialEq, Clone, Debug)]
@@ -70,6 +71,16 @@ pub struct SparseSubcommand {
     /// where to put the sparse images
     pub out_dir: PathBuf,
 }
+
+#[derive(ArgsInfo, FromArgs, Eq, PartialEq, Clone, Debug)]
+/// Authorize subcommand.
+#[argh(
+    subcommand,
+    name = "authorize",
+    note = "Sends a Fuchsia-specific OEM command to the target to upload the
+ssh authorized keys and continue boot for the Target."
+)]
+pub struct AuthorizeSubcommand {}
 
 #[derive(ArgsInfo, FromArgs, Eq, PartialEq, Clone, Debug)]
 /// Get Variable subcommand

@@ -11,6 +11,7 @@ ffx/target/default/get.golden
 ffx/target/discover.golden
 ffx/target/echo.golden
 ffx/target/fastboot.golden
+ffx/target/fastboot/authorize.golden
 ffx/target/fastboot/continue.golden
 ffx/target/fastboot/flash.golden
 ffx/target/fastboot/getvar.golden
