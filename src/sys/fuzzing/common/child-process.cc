@@ -452,7 +452,9 @@ ZxPromise<> ChildProcess::Kill() {
 }
 
 void ChildProcess::KillSync() {
-  process_.kill();
+  if (process_) {
+    process_.kill();
+  }
 
   CloseStdin();
   if (stdin_thread_.joinable()) {
