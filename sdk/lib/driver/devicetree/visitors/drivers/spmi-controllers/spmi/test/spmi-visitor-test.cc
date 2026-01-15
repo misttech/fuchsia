@@ -139,6 +139,9 @@ TEST(SpmiVisitorTest, TwoControllers) {
       FindTargetById(0, *controller_0);
   ASSERT_TRUE(target_0);
 
+  ASSERT_TRUE(target_0->display_name());
+  EXPECT_EQ(*target_0->display_name(), "target-a-0");
+
   ASSERT_TRUE(target_0->sub_targets());
   ASSERT_EQ(target_0->sub_targets()->size(), 4u);
 
@@ -149,12 +152,22 @@ TEST(SpmiVisitorTest, TwoControllers) {
   ASSERT_TRUE(sub_target_1000->size());
   EXPECT_EQ(sub_target_1000->size(), 0x1000);
 
+  EXPECT_FALSE(sub_target_1000->name());
+
+  ASSERT_TRUE(sub_target_1000->display_name());
+  EXPECT_EQ(*sub_target_1000->display_name(), "vreg-1000");
+
   const std::optional<fuchsia_hardware_spmi::SubTargetInfo> sub_target_2000 =
       FindSubTargetByAddress(0x2000, *target_0);
   ASSERT_TRUE(sub_target_2000);
 
   ASSERT_TRUE(sub_target_2000->size());
   EXPECT_EQ(sub_target_2000->size(), 0x800);
+
+  EXPECT_FALSE(sub_target_2000->name());
+
+  ASSERT_TRUE(sub_target_2000->display_name());
+  EXPECT_EQ(*sub_target_2000->display_name(), "gpio-2000");
 
   const std::optional<fuchsia_hardware_spmi::SubTargetInfo> sub_target_3000 =
       FindSubTargetByAddress(0x3000, *target_0);
@@ -166,6 +179,9 @@ TEST(SpmiVisitorTest, TwoControllers) {
   ASSERT_TRUE(sub_target_3000->name());
   EXPECT_EQ(*sub_target_3000->name(), "i2c-core");
 
+  ASSERT_TRUE(sub_target_3000->display_name());
+  EXPECT_EQ(*sub_target_3000->display_name(), "i2c-3000");
+
   const std::optional<fuchsia_hardware_spmi::SubTargetInfo> sub_target_ffff =
       FindSubTargetByAddress(0xffff, *target_0);
   ASSERT_TRUE(sub_target_ffff);
@@ -176,6 +192,9 @@ TEST(SpmiVisitorTest, TwoControllers) {
   ASSERT_TRUE(sub_target_ffff->name());
   EXPECT_EQ(*sub_target_ffff->name(), "i2c-config");
 
+  ASSERT_TRUE(sub_target_ffff->display_name());
+  EXPECT_EQ(*sub_target_ffff->display_name(), "i2c-3000");
+
   const std::optional<fuchsia_hardware_spmi::TargetInfo> target_3 =
       FindTargetById(3, *controller_0);
   ASSERT_TRUE(target_3);
@@ -184,6 +203,9 @@ TEST(SpmiVisitorTest, TwoControllers) {
 
   ASSERT_TRUE(target_3->name());
   EXPECT_EQ(*target_3->name(), "vreg");
+
+  ASSERT_TRUE(target_3->display_name());
+  EXPECT_EQ(*target_3->display_name(), "target-b-3");
 
   // First controller composite node specs
   const auto vreg_1000 = spmi_tester->FindMgrRequest("vreg-1000");

@@ -208,7 +208,10 @@ zx::result<fuchsia_hardware_spmi::TargetInfo> SpmiVisitor::ParseTarget(
 
   node.set_register_type(fdf_devicetree::RegisterType::kSpmi);
 
-  fuchsia_hardware_spmi::TargetInfo target{{.id = target_id}};
+  fuchsia_hardware_spmi::TargetInfo target{{
+      .id = target_id,
+      .display_name = node.fdf_name(),
+  }};
   if (!reg_names.empty()) {
     target.name() = reg_names[0];
   }
@@ -308,6 +311,7 @@ zx::result<std::vector<fuchsia_hardware_spmi::SubTargetInfo>> SpmiVisitor::Parse
     fuchsia_hardware_spmi::SubTargetInfo sub_target{{
         .address = static_cast<uint16_t>(address),
         .size = size,
+        .display_name = node.fdf_name(),
     }};
 
     fuchsia_driver_framework::ParentSpec2 sub_target_spec{{
