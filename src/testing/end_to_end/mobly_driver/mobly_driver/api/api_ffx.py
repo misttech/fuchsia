@@ -133,14 +133,7 @@ class FfxClient:
             if isolate_dir is not None:
                 cmd += ["--isolate-dir", isolate_dir]
 
-            cmd += [
-                "-t",
-                target_name,
-                "target",
-                "list",
-                "--format",
-                "addresses",
-            ]
+            cmd += ["target", "list", "--format", "addresses", target_name]
             output = subprocess.check_output(cmd, timeout=5).decode().strip()
         except (
             subprocess.CalledProcessError,
