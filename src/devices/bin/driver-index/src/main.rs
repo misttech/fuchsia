@@ -133,7 +133,7 @@ async fn run_composite_node_specs_iterator_server(
                     let result = {
                         let mut specs = specs_clone.lock();
                         let len = specs.len();
-                        specs.split_off(len - std::cmp::min(10, len))
+                        specs.split_off(len - std::cmp::min(5, len))
                     };
 
                     responder
