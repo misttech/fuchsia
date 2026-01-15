@@ -208,7 +208,7 @@ struct DriverInner {
 #[derive(Debug)]
 struct PowerElementHandles {
     control: ClientEnd<fpb::ElementControlMarker>,
-    runner: ServerEnd<fpb::ElementRunnerMarker>,
+    runner: Option<ServerEnd<fpb::ElementRunnerMarker>>,
     lessor: ClientEnd<fpb::LessorMarker>,
     element_token: fpb::DependencyToken,
 }
@@ -303,7 +303,7 @@ impl Driver {
                 ..
             }) => Some(PowerElementHandles {
                 control: control_client,
-                runner: runner_server,
+                runner: Some(runner_server),
                 lessor: lessor_client,
                 element_token: token,
             }),
@@ -397,7 +397,7 @@ impl Driver {
                 ..
             }) => Some(PowerElementHandles {
                 control: control_client,
-                runner: runner_server,
+                runner: Some(runner_server),
                 lessor: lessor_client,
                 element_token: token,
             }),
@@ -524,6 +524,25 @@ impl Driver {
                     };
                 })?;
         }
+
+        {
+            let mut inner = self.inner.lock();
+            if let Some(PowerElementHandles { runner, .. }) = &mut inner.power_element
+                && let Some(runner_channel) = runner.take()
+            {
+                scope.spawn_local(async move {
+                    let mut lease_req_stream = runner_channel.into_stream();
+                    while let Ok(Some(fpb::ElementRunnerRequest::SetLevel {
+                        level: _,
+                        responder,
+                    })) = lease_req_stream.try_next().await
+                    {
+                        let _ = responder.send();
+                    }
+                });
+            }
+        }
+
         let mut client_chan = match task_result.await.unwrap() {
             Err(e) => {
                 // We need to shutdown the dispatcher if start failed.
