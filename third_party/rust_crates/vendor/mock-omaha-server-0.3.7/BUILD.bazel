@@ -75,6 +75,10 @@ rust_library(
     }),
     version = "0.3.7",
     deps = [
+        "//src/lib/fuchsia-async",
+        "//src/lib/fuchsia-hyper",
+        "//src/lib/fuchsia-sync",
+        "//third_party/rust_crates/vendor:argh",
         "//third_party/rust_crates/vendor/anyhow-1.0.100:anyhow",
         "//third_party/rust_crates/vendor/argh-0.1.12:argh",
         "//third_party/rust_crates/vendor/derive_builder-0.20.2:derive_builder",
@@ -89,5 +93,10 @@ rust_library(
         "//third_party/rust_crates/vendor/sha2-0.10.8:sha2",
         "//third_party/rust_crates/vendor/thiserror-2.0.12:thiserror",
         "//third_party/rust_crates/vendor/url-2.3.1:url",
-    ],
+    ] + select({
+        "@rules_rust//rust/platform:x86_64-unknown-linux-gnu": [
+            "//third_party/rust_crates/vendor:tokio",  # x86_64-unknown-linux-gnu
+        ],
+        "//conditions:default": [],
+    }),
 )

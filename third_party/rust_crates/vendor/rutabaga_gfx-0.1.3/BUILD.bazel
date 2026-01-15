@@ -6,7 +6,6 @@
 #     fx update-rustc-third-party
 ###############################################################################
 
-load("@rules_rust//cargo:defs.bzl", "cargo_build_script")
 load("@rules_rust//rust:defs.bzl", "rust_library")
 load("@rules_license//rules:package_info.bzl", "package_info")
 
@@ -71,7 +70,6 @@ rust_library(
         "//third_party/rust_crates/vendor/cfg-if-1.0.3:cfg_if",
         "//third_party/rust_crates/vendor/libc-0.2.174:libc",
         "//third_party/rust_crates/vendor/log-0.4.27:log",
-        "//third_party/rust_crates/vendor/rutabaga_gfx-0.1.3:build_script_build",
         "//third_party/rust_crates/vendor/thiserror-1.0.69:thiserror",
         "//third_party/rust_crates/vendor/zerocopy-0.7.35:zerocopy",
     ] + select({
@@ -80,66 +78,4 @@ rust_library(
         ],
         "//conditions:default": [],
     }),
-)
-
-cargo_build_script(
-    name = "_bs",
-    srcs = glob(
-        include = ["**/*.rs"],
-        allow_empty = False,
-    ),
-    compile_data = glob(
-        include = ["**"],
-        allow_empty = True,
-        exclude = [
-            "**/* *",
-            "**/*.rs",
-            ".tmp_git_root/**/*",
-            "BUILD",
-            "BUILD.bazel",
-            "WORKSPACE",
-            "WORKSPACE.bazel",
-        ],
-    ),
-    crate_features = [
-        "gfxstream",
-    ],
-    crate_name = "build_script_build",
-    crate_root = "build.rs",
-    data = glob(
-        include = ["**"],
-        allow_empty = True,
-        exclude = [
-            "**/* *",
-            ".tmp_git_root/**/*",
-            "BUILD",
-            "BUILD.bazel",
-            "WORKSPACE",
-            "WORKSPACE.bazel",
-        ],
-    ),
-    edition = "2021",
-    pkg_name = "rutabaga_gfx",
-    rustc_flags = [
-        "--cap-lints=allow",
-    ],
-    tags = [
-        "cargo-bazel",
-        "crate-name=rutabaga_gfx",
-        "manual",
-        "noclippy",
-        "norustfmt",
-    ],
-    version = "0.1.3",
-    visibility = ["//visibility:private"],
-    deps = [
-        "//third_party/rust_crates/empty/pkg-config:pkg_config",
-        "//third_party/rust_crates/vendor/anyhow-1.0.100:anyhow",
-    ],
-)
-
-alias(
-    name = "build_script_build",
-    actual = ":_bs",
-    tags = ["manual"],
 )

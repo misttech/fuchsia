@@ -12,6 +12,14 @@
 load("@rules_rust//crate_universe:defs.bzl", "crate")
 
 CRATE_ANNOTATIONS = {
+    "anyhow": [
+        crate.annotation(
+            version = "1.0.100",
+            # TODO(https://github.com/rust-lang/rust/pull/99301): Re-enable this build script,
+            # which adds `error_generic_member_access` that is currently unstable.
+            gen_build_script = False,
+        ),
+    ],
     "libc": [
         crate.annotation(
             version = "0.2.171",
@@ -71,10 +79,10 @@ CRATE_ANNOTATIONS = {
                 common = [],
                 selects = {
                     "x86_64-unknown-linux-gnu": [
-                        "//third_party/rust_crates/vendor/bytes-1.10.0:bytes",
-                        "//third_party/rust_crates/vendor/libc-0.2.171:libc",
+                        "//third_party/rust_crates/vendor/bytes-1.11.0:bytes",
+                        "//third_party/rust_crates/vendor/libc-0.2.174:libc",
                         "//third_party/rust_crates/ask2patch/memchr",
-                        "//third_party/rust_crates/vendor/mio-0.8.9:mio",
+                        "//third_party/rust_crates/vendor/mio-0.8.11:mio",
                         "//third_party/rust_crates/vendor/num_cpus-1.16.0:num_cpus",
                         "//third_party/rust_crates/vendor/signal-hook-registry-1.4.1:signal_hook_registry",
                         "//third_party/rust_crates/vendor/socket2-0.5.9:socket2",
@@ -115,12 +123,29 @@ CRATE_ANNOTATIONS = {
     ],
     "proc-macro2": [
         crate.annotation(
-            version = "1.0.86",
+            version = "1.0.97",
             rustc_flags =
                 [
                     "--cfg=span_locations",
                     "--cfg=wrap_proc_macro",
                 ],
+            # Build script will try to enable "--cfg=proc_macro_span", but proc_macro_span is still
+            # an unstable feature.
+            gen_build_script = False,
+        ),
+    ],
+    "thiserror": [
+        crate.annotation(
+            version = "2.0.12",
+            # TODO(https://github.com/rust-lang/rust/pull/99301): Re-enable this build script,
+            # which adds `error_generic_member_access` that is currently unstable.
+            gen_build_script = False,
+        ),
+        crate.annotation(
+            version = "1.0.69",
+            # TODO(https://github.com/rust-lang/rust/pull/99301): Re-enable this build script,
+            # which adds `error_generic_member_access` that is currently unstable.
+            gen_build_script = False,
         ),
     ],
     "zerocopy": [
@@ -148,6 +173,38 @@ CRATE_ANNOTATIONS = {
             rustc_env = {
                 "RING_CORE_PREFIX": "ring_core_0_17_8_",
             },
+        ),
+    ],
+    "rutabaga_gfx": [
+        crate.annotation(
+            version = "0.1.3",
+            # Build script can add features we don't support.
+            gen_build_script = False,
+        ),
+    ],
+    "ahash": [
+        crate.annotation(
+            version = "0.8.12",
+            # Build script can add features we don't support.
+            gen_build_script = False,
+        ),
+    ],
+    "mock-omaha-server": [
+        crate.annotation(
+            version = "0.3.7",
+            deps = crate.select(
+                common = [
+                    "//src/lib/fuchsia-async",
+                    "//src/lib/fuchsia-hyper",
+                    "//src/lib/fuchsia-sync",
+                    "//third_party/rust_crates/vendor:argh",
+                ],
+                selects = {
+                    "x86_64-unknown-linux-gnu": [
+                        "//third_party/rust_crates/vendor:tokio",
+                    ],
+                },
+            ),
         ),
     ],
 }
