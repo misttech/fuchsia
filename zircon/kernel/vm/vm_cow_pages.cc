@@ -4233,11 +4233,6 @@ ktl::pair<zx_status_t, uint64_t> VmCowPages::ZeroPagesNoDirectPageSourceLocked(
   // pages.
   DEBUG_ASSERT(can_decommit_zero_pages());
 
-  // Unmap any page that is touched by this range in any of our, or our children's, mapping
-  // regions. We do this on the assumption we are going to be able to free pages either completely
-  // or by turning them into markers and it's more efficient to unmap once in bulk here.
-  RangeChangeUpdateLocked(range, RangeChangeOp::Unmap, &deferred);
-
   // This function tries to zero pages as optimally as possible for most cases, so we attempt
   // increasingly expensive actions only if certain preconditions do not allow us to perform the
   // cheaper action. Broadly speaking, the sequence of actions that are attempted are as follows.
@@ -4324,6 +4319,17 @@ ktl::pair<zx_status_t, uint64_t> VmCowPages::ZeroPagesNoDirectPageSourceLocked(
   };
 
   uint64_t zeroed_len = 0;
+
+  bool already_unmapped = false;
+  auto do_unmap = [&]() TA_REQ(lock()) {
+    if (!already_unmapped) {
+      already_unmapped = true;
+      // Let's apply the range change to the entire remaining range, which may be more efficient
+      // than repeatedly unmapping smaller ranges (and doing the associated mapping walk).
+      RangeChangeUpdateLocked(range.TrimedFromStart(zeroed_len), RangeChangeOp::Unmap, &deferred);
+    }
+  };
+
   // Main page list traversal loop to remove any existing pages / markers, zero existing pages, and
   // also insert any new markers / zero pages in gaps as applicable. We use the VmPageList traversal
   // helper here instead of iterating over each offset in the range so we can efficiently skip over
@@ -4349,6 +4355,10 @@ ktl::pair<zx_status_t, uint64_t> VmCowPages::ZeroPagesNoDirectPageSourceLocked(
           zeroed_len += kPageSize;
           return ZX_ERR_NEXT;
         }
+
+        // All of the below cases change the page list, which requires us to invalidate the mappings
+        // of the affected pages.
+        do_unmap();
 
         if (slot->IsPageOrRef() && !is_root_source_user_pager_backed()) {
           // We have a page or a reference in an anonymous hierarchy, so we can just remove the
@@ -4421,6 +4431,9 @@ ktl::pair<zx_status_t, uint64_t> VmCowPages::ZeroPagesNoDirectPageSourceLocked(
           if (!can_see_parent(offset)) {
             continue;
           }
+
+          // Inform potential mappings of the marker we are inserting.
+          do_unmap();
 
           // Let's look up the owner of whatever content is remaining, and decrement their share
           // count. We will no longer be referencing it after inserting a marker.
