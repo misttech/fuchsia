@@ -81,7 +81,7 @@ struct VmCowRange {
   }
 
   VmCowRange OffsetBy(uint64_t delta) const { return VmCowRange(offset + delta, len); }
-  VmCowRange TrimedFromStart(uint64_t amount) const {
+  VmCowRange TrimmedFromStart(uint64_t amount) const {
     return VmCowRange(offset + amount, len - amount);
   }
   // Returns the minimal range that covers both |this| and |other|. If these ranges are disjoint

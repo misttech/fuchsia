@@ -1734,7 +1734,7 @@ zx_status_t VmObjectPaged::TakePages(uint64_t offset, uint64_t len, VmPageSplice
     splice_offset += taken_len;
 
     // Record the completed portion.
-    range = range.TrimedFromStart(taken_len);
+    range = range.TrimmedFromStart(taken_len);
 
     if (status == ZX_ERR_SHOULD_WAIT) {
       status = page_request.Wait();

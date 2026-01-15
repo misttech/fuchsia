@@ -4320,7 +4320,7 @@ ktl::pair<zx_status_t, uint64_t> VmCowPages::ZeroPagesNoDirectPageSourceLocked(
       already_unmapped = true;
       // Let's apply the range change to the entire remaining range, which may be more efficient
       // than repeatedly unmapping smaller ranges (and doing the associated mapping walk).
-      RangeChangeUpdateLocked(range.TrimedFromStart(zeroed_len), RangeChangeOp::Unmap, &deferred);
+      RangeChangeUpdateLocked(range.TrimmedFromStart(zeroed_len), RangeChangeOp::Unmap, &deferred);
     }
   };
 
@@ -4700,7 +4700,7 @@ zx_status_t VmCowPages::ProtectRangeFromReclamation(VmCowRange range, bool set_a
         return cursor.status_value();
       }
       AssertHeld(cursor->lock_ref());
-      for (; !range.is_empty(); range = range.TrimedFromStart(kPageSize)) {
+      for (; !range.is_empty(); range = range.TrimmedFromStart(kPageSize)) {
         // Lookup the page, this will fault in the page from the parent if necessary, but will not
         // allocate pages directly in this if it is a child.
         auto result = cursor->RequirePage(false, static_cast<uint>(range.len / kPageSize), deferred,
@@ -4787,7 +4787,7 @@ zx_status_t VmCowPages::ProtectRangeFromReclamation(VmCowRange range, bool set_a
       }
 
       // Ignore the error, move to the next offset.
-      range = range.TrimedFromStart(kPageSize);
+      range = range.TrimmedFromStart(kPageSize);
     }
   }
   return ZX_OK;
