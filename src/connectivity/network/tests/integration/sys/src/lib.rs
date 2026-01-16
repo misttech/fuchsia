@@ -11,8 +11,6 @@ use netemul::{TestRealm, TestSandbox};
 use netstack_testing_common::realms::{Netstack, NetstackVersion, TestSandboxExt as _, constants};
 use netstack_testing_macros::netstack_test;
 use std::borrow::Cow;
-use std::collections::HashSet;
-use std::iter;
 use {fidl_fuchsia_netemul as fnetemul, fidl_fuchsia_posix_socket as fposix_socket};
 
 const MOCK_SERVICES_NAME: &str = "mock";
@@ -148,62 +146,6 @@ async fn ns_sets_thread_profiles<N: Netstack>(name: &str) {
 
 #[netstack_test]
 #[variant(N, Netstack)]
-async fn ns_requests_inspect_persistence<N: Netstack>(name: &str) {
-    let sandbox = netemul::TestSandbox::new().expect("failed to create sandbox");
-    let (_realm, fs) = create_netstack_with_mock_endpoint::<
-        fidl_fuchsia_diagnostics_persist::DataPersistenceRequestStream,
-        N,
-    >(&sandbox, name);
-
-    let config = persistence_config::load_configuration_files_from(CONFIG_PATH)
-        .expect("load configuration files failed");
-
-    assert_persist_called_for_tags::<N>(fs, &config).await
-}
-
-// N.B.: If the test realm has been created with a mock service endpoint for
-// fuchsia.diagnostics.persist.DataPersistence, then this function must be
-// called to unblock netstack's calls to that mock service.
-async fn assert_persist_called_for_tags<N: Netstack>(
-    fs: ServiceFs<ServiceObj<'_, fidl_fuchsia_diagnostics_persist::DataPersistenceRequestStream>>,
-    config: &persistence_config::Config,
-) {
-    // Read a request from the DataPersistence request stream. Tests should only
-    // send one PersistTags request with all configured tags.
-    let (persist_tags, responder) = fs
-        .flatten()
-        .next()
-        .await
-        .expect("fs terminated unexpectedly")
-        .expect("fs failure")
-        .into_persist_tags()
-        .expect("unexpected request");
-
-    let got_tags = persist_tags
-        .into_iter()
-        .map(|t| persistence_config::Tag::new(t).expect("invalid tag"))
-        .collect::<HashSet<persistence_config::Tag>>();
-
-    let want_tags = config
-        .get(NETSTACK_SERVICE_NAME)
-        .expect("config missing netstack service")
-        .keys()
-        .cloned()
-        .collect::<HashSet<persistence_config::Tag>>();
-
-    assert_eq!(got_tags, want_tags);
-
-    responder
-        .send(
-            &iter::repeat(fidl_fuchsia_diagnostics_persist::PersistResult::Queued)
-                .take(got_tags.len())
-                .collect::<Vec<_>>(),
-        )
-        .expect("failed to respond");
-}
-
-#[netstack_test]
-#[variant(N, Netstack)]
 async fn ns_persist_tags_under_size_limits<N: Netstack>(name: &str) {
     test_persistence::<N, _>(name, |inspect_payload, tag, tag_config| {
         // Convert inspect payload to a JSON string.
@@ -281,15 +223,10 @@ where
     ) -> (),
 {
     let sandbox = netemul::TestSandbox::new().expect("failed to create sandbox");
-    let (realm, fs) = create_netstack_with_mock_endpoint::<
-        fidl_fuchsia_diagnostics_persist::DataPersistenceRequestStream,
-        N,
-    >(&sandbox, name);
+    let realm = sandbox.create_netstack_realm::<N, _>(name).expect("create netstack realm");
 
     let config = persistence_config::load_configuration_files_from(CONFIG_PATH)
         .expect("load configuration files failed");
-
-    assert_persist_called_for_tags::<N>(fs, &config).await;
 
     // Create a socket to ensure socket Inspect data is available.
     let _socket = realm

@@ -20,7 +20,6 @@ rustc_test("sys") {
     "//src/connectivity/network/tests/integration/common:netstack_testing_common",
     "//src/connectivity/network/tests/integration/macros:netstack_testing_macros",
     "//src/diagnostics/lib/persistence:lib",
-    "//src/diagnostics/persistence/fidl:persist_rust",
     "//src/lib/async-utils",
     "//src/lib/diagnostics/reader",
     "//src/lib/diagnostics/selectors",

@@ -29,10 +29,6 @@
     ],
     use: [
         {
-            protocol: "fuchsia.diagnostics.persist.DataPersistence",
-            availability: "optional",
-        },
-        {
             directory: "config-data",
             rights: [ "r*" ],
             path: "/config/data",
