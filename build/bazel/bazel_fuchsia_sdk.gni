@@ -128,10 +128,6 @@ template("generate_fuchsia_bazel_sdk") {
 #       the test suite. Its content will be shared by all CPU architectures.
 #       Default is $target_out_dir/$target_name/output_user_root
 #
-#    remote_build: (optional)
-#       Set to false to prevent use of remote services for building,
-#       overriding the global `enable_bazel_remote_rbe` setting.
-#
 #    remote_build_strategy: (optional)
 #       Override the global `bazel_rbe_exec_strategy` setting for building.
 #       Valid choices:
@@ -214,13 +210,6 @@ template("run_fuchsia_bazel_sdk_tests") {
       deps = []
 
       _remote_build = enable_bazel_remote_rbe
-      if (_remote_build) {
-        if (defined(invoker.remote_build)) {
-          _remote_build = invoker.remote_build
-        }
-      } else {
-        not_needed(invoker, [ "remote_build" ])
-      }
       _remote_build_strategy = bazel_rbe_exec_strategy
       if (defined(invoker.remote_build_strategy)) {
         _remote_build_strategy = invoker.remote_build_strategy

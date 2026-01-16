@@ -65,7 +65,6 @@ template("bazel_fuchsia_package") {
                              "testonly",
                              "visibility",
                              "inputs",
-                             "remote_build",
                            ])
 
     bazel_target = bazel_target

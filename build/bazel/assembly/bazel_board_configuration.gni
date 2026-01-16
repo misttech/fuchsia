@@ -44,7 +44,6 @@ template("bazel_board_configuration") {
                              "testonly",
                              "visibility",
                              "inputs",
-                             "remote_build",
                            ])
 
     bazel_target = bazel_target

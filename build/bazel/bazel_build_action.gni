@@ -132,13 +132,6 @@ import("//build/bazel/bazel_action.gni")
 #     Type: boolean
 #     Default: true
 #
-#   remote_build: (optional)
-#     Set this to false to override the global default `enable_bazel_remote_rbe`
-#     setting which controls whether the underlying bazel invocation
-#     will build remotely using RBE.
-#     Type: boolean
-#     Default: `enable_bazel_remote_rbe` (global)
-#
 #   include_host_tools_licenses: (optional)
 #     Set this to true to include the licenses of host tool dependencies in
 #     @gn_targets//:all_licenses.spdx.json.

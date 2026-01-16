@@ -179,13 +179,6 @@ declare_args() {
 #     Type: boolean
 #     Default: true
 #
-#   remote_build: (optional)
-#     Set this to false to override the global default `enable_bazel_remote_rbe`
-#     setting which controls whether the underlying bazel invocation
-#     will build remotely using RBE.
-#     Type: boolean
-#     Default: `enable_bazel_remote_rbe` (global)
-#
 #   include_host_tools_licenses: (optional)
 #     Set this to true to include the licenses of host tool dependencies in
 #     @gn_targets//:all_licenses.spdx.json.
@@ -849,15 +842,9 @@ template("bazel_action") {
       # detects these options to add infra-specific proxy configuration
       # the the final command-line).
       if (enable_bazel_remote_rbe) {
-        _remote_build = !defined(invoker.remote_build) || invoker.remote_build
-        if (_remote_build) {
-          # It is assumed that remote builds are enabled for both the default
-          # and host GN toolchains at the same time.
-          args += bazel_args.remote_build
-        }
-      } else {
-        # Remote builds are globally disabled, so ignore this value if it exists.
-        not_needed(invoker, [ "remote_build" ])
+        # It is assumed that remote builds are enabled for both the default
+        # and host GN toolchains at the same time.
+        args += bazel_args.remote_build
       }
 
       # Similarly, this config must appear on the command-line and cannot
