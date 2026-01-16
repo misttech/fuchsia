@@ -5,7 +5,7 @@
 """A macro for defining a Rust binary with optional unit tests."""
 
 load("@rules_rust//rust:defs.bzl", "rust_binary")
-load("//build/tools/bazel2gn/bazel_rules:rustc_test.bzl", "rustc_test")
+load("//build/bazel/rules/rust:rustc_test.bzl", "rustc_test")
 
 def _rustc_binary_impl(name, with_unit_tests, test_deps, lint_config, **kwargs):
     if lint_config == None:
