@@ -22,8 +22,11 @@
             protocol: [
                 "fuchsia.net.routes.State",
                 "fuchsia.posix.socket.Provider",
-                "fuchsia.scheduler.RoleManager",
             ],
+        },
+        {
+            protocol: [ "fuchsia.scheduler.RoleManager" ],
+            availability: "optional",
         },
     ],
     expose: [

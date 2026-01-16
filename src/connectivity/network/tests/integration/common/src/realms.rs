@@ -10,9 +10,9 @@ use std::collections::HashMap;
 use cm_rust::NativeIntoFidl as _;
 use fidl::endpoints::DiscoverableProtocolMarker as _;
 use {
-    fidl_fuchsia_component as fcomponent, fidl_fuchsia_net_debug as fnet_debug,
-    fidl_fuchsia_net_dhcp as fnet_dhcp, fidl_fuchsia_net_dhcpv6 as fnet_dhcpv6,
-    fidl_fuchsia_net_filter as fnet_filter,
+    fidl_fuchsia_component as fcomponent, fidl_fuchsia_diagnostics_persist as fdiagnostics_persist,
+    fidl_fuchsia_net_debug as fnet_debug, fidl_fuchsia_net_dhcp as fnet_dhcp,
+    fidl_fuchsia_net_dhcpv6 as fnet_dhcpv6, fidl_fuchsia_net_filter as fnet_filter,
     fidl_fuchsia_net_filter_deprecated as fnet_filter_deprecated,
     fidl_fuchsia_net_interfaces as fnet_interfaces,
     fidl_fuchsia_net_interfaces_admin as fnet_interfaces_admin,
@@ -30,8 +30,8 @@ use {
     fidl_fuchsia_net_virtualization as fnet_virtualization, fidl_fuchsia_netemul as fnetemul,
     fidl_fuchsia_posix_socket as fposix_socket,
     fidl_fuchsia_posix_socket_packet as fposix_socket_packet,
-    fidl_fuchsia_posix_socket_raw as fposix_socket_raw, fidl_fuchsia_stash as fstash,
-    fidl_fuchsia_update_verify as fupdate_verify,
+    fidl_fuchsia_posix_socket_raw as fposix_socket_raw, fidl_fuchsia_scheduler as fscheduler,
+    fidl_fuchsia_stash as fstash, fidl_fuchsia_update_verify as fupdate_verify,
 };
 
 use anyhow::Context as _;
@@ -416,7 +416,12 @@ impl<'a> From<&'a KnownServiceProvider> for fnetemul::ChildDef {
                     version.get_services().iter().map(|service| service.to_string()).collect(),
                 ),
                 uses: {
-                    let mut uses = vec![fnetemul::Capability::LogSink(fnetemul::Empty {})];
+                    let mut uses = vec![
+                        fnetemul::Capability::LogSink(fnetemul::Empty {}),
+                        fnetemul::Capability::ChildDep(void_protocol_dep::<
+                            fdiagnostics_persist::DataPersistenceMarker,
+                        >()),
+                    ];
                     match version {
                         // NB: intentionally do not route SecureStore; it is
                         // intentionally not available in all tests to
@@ -726,6 +731,9 @@ impl<'a> From<&'a KnownServiceProvider> for fnetemul::ChildDef {
                     >(
                         constants::fake_clock::COMPONENT_NAME
                     )),
+                    fnetemul::Capability::ChildDep(void_protocol_dep::<
+                        fscheduler::RoleManagerMarker,
+                    >()),
                 ])),
                 ..Default::default()
             },

@@ -17,12 +17,14 @@ const MOCK_SERVICES_NAME: &str = "mock";
 const CONFIG_PATH: &str = "/pkg/data/netstack.persist";
 const NETSTACK_SERVICE_NAME: &str = "netstack";
 
-fn create_netstack_with_mock_endpoint<'s, RS: RequestStream + 'static, N: Netstack>(
+fn create_netstack_with_mock_endpoint<'s, RS, N>(
     sandbox: &'s TestSandbox,
     name: &'s str,
 ) -> (TestRealm<'s>, ServiceFs<ServiceObj<'s, RS>>)
 where
+    RS: RequestStream + 'static,
     RS::Protocol: DiscoverableProtocolMarker,
+    N: Netstack,
 {
     let mut netstack: fnetemul::ChildDef =
         netstack_testing_common::realms::KnownServiceProvider::Netstack(
@@ -44,11 +46,31 @@ where
     {
         let fnetemul::ChildUses::Capabilities(capabilities) =
             netstack.uses.as_mut().expect("empty uses");
+
+        // Remove any existing ChildDep capability with the same name as the endpoint
+        // we wish to add.
+        let new_capability_name = RS::Protocol::PROTOCOL_NAME.to_string();
+        capabilities.retain(|cap| {
+            match cap {
+                fnetemul::Capability::ChildDep(child_dep) => {
+                    match &child_dep.capability {
+                        Some(fnetemul::ExposedCapability::Protocol(name)) => {
+                            name != &new_capability_name
+                        }
+                        // Keep deps without a capability or ExposedCapability
+                        // that is not a Protocol.
+                        _ => true,
+                    }
+                }
+                // Keep all other capability variants.
+                _ => true,
+            }
+        });
+
+        // Add the new capability.
         capabilities.push(fnetemul::Capability::ChildDep(fnetemul::ChildDep {
             name: Some(MOCK_SERVICES_NAME.to_string()),
-            capability: Some(fnetemul::ExposedCapability::Protocol(
-                RS::Protocol::PROTOCOL_NAME.to_string(),
-            )),
+            capability: Some(fnetemul::ExposedCapability::Protocol(new_capability_name)),
             ..Default::default()
         }));
     }
