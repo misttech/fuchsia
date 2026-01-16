@@ -781,8 +781,8 @@
     },
     {
         "package": "fuchsia/tools/buildidtool/linux-amd64",
-        "version": "git_revision:60009530a614e2c7b5cdfdcbc707932e9e5a860d",
-        "instance_id": "FIFgJ238MCawqe2ug-TBbFshxB4sZi3bv6kHwyu5GAQC"
+        "version": "git_revision:5e8afb1eef4b7825123ee6671df19dc5a7fb60a5",
+        "instance_id": "nRXDkb8jYK_Rloit2KUgpNzNQARZqBJy2VmtZ2YBg0AC"
     },
     {
         "package": "fuchsia/tools/buildstats/linux-amd64",

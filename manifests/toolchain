@@ -197,7 +197,7 @@
          https://fuchsia.googlesource.com/fuchsia/+/{{.git_revision}}/tools/debug/buildidtool
     -->
     <package name="fuchsia/tools/buildidtool/${platform}"
-             version="git_revision:60009530a614e2c7b5cdfdcbc707932e9e5a860d"
+             version="git_revision:5e8afb1eef4b7825123ee6671df19dc5a7fb60a5"
              path="prebuilt/tools/buildidtool/{{.OS}}-{{.Arch}}"
              platforms="linux-amd64"/>
 
