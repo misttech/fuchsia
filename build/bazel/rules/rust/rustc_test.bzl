@@ -5,14 +5,16 @@
 """A macro for defining a Rust test with Fuchsia-specific lint config by default."""
 
 load("@rules_rust//rust:defs.bzl", "rust_test")
+load("//build/bazel/rules/rust:common.bzl", "with_fuchsia_rustc_flags")
 
-def _rustc_test_impl(name, lint_config, **kwargs):
+def _rustc_test_impl(name, lint_config, rustc_flags, **kwargs):
     if lint_config == None:
         lint_config = "//build/config/rust/lints:clippy_warn_default"
 
     rust_test(
         name = name,
         lint_config = lint_config,
+        rustc_flags = with_fuchsia_rustc_flags(rustc_flags),
         **kwargs
     )
 

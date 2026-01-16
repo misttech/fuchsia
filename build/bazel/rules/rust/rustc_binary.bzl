@@ -5,14 +5,18 @@
 """A macro for defining a Rust binary with optional unit tests."""
 
 load("@rules_rust//rust:defs.bzl", "rust_binary")
+load("//build/bazel/rules/rust:common.bzl", "with_fuchsia_rustc_flags")
 load("//build/bazel/rules/rust:rustc_test.bzl", "rustc_test")
 
-def _rustc_binary_impl(name, with_unit_tests, test_deps, lint_config, **kwargs):
+def _rustc_binary_impl(name, with_unit_tests, test_deps, lint_config, rustc_flags, **kwargs):
     if lint_config == None:
         lint_config = "//build/config/rust/lints:clippy_warn_production"
 
+    rustc_flags = with_fuchsia_rustc_flags(rustc_flags)
+
     rust_binary(
         name = name,
+        rustc_flags = rustc_flags,
         lint_config = lint_config,
         **kwargs
     )
@@ -21,6 +25,7 @@ def _rustc_binary_impl(name, with_unit_tests, test_deps, lint_config, **kwargs):
         rustc_test(
             name = "{}_test".format(name),
             crate = ":{}".format(name),
+            rustc_flags = rustc_flags,
             deps = test_deps,
         )
 
