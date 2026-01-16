@@ -27,18 +27,26 @@ required for running the test suite.
    You can set `TEST_TOOLCHAIN_TMP_DIR` to different values in different shells
    to manage multiple test environments simultaneously.
 
-2. Start the testing environment:
+   Note: `TEST_TOOLCHAIN_TMP_DIR` must be short (less than ~100 characters) to
+   avoid socket path length issues with the emulator.
+
+2. Ensure `zlib` is accessible to `lld`
+
+    ```posix-terminal
+    DEV_ROOT={{ '<var>' }}DEV_ROOT{{ '</var>' }}
+    export LIBRARY_PATH=$LIBRARY_PATH:$DEV_ROOT/install/zlib/lib
+    ```
+
+3. Start the testing environment:
 
    ```posix-terminal
    DEV_ROOT={{ '<var>' }}DEV_ROOT{{ '</var>' }}
-   # The path to the rust source must be short (less than ~100 characters)
-   # to avoid socket path length issues with the emulator.
    TEST_TOOLCHAIN=$DEV_ROOT/rust/src/ci/docker/scripts/fuchsia-test-runner.py
 
    python3 $TEST_TOOLCHAIN start \
      --rust-build $DEV_ROOT/rust/build/fuchsia-rust \
      --sdk $DEV_ROOT/cipd/sdk \
-     --target {{ '<var>' }}x86_64|arm64{{ '</var>' }}-unknown-fuchsia \
+     --target {{ '<var>' }}x86_64|aarch64{{ '</var>' }}-unknown-fuchsia \
      --toolchain-dir $DEV_ROOT/rust
    ```
 
@@ -46,7 +54,7 @@ required for running the test suite.
    emulation may be too slow to run the test suite effectively. In most cases,
    you'll want them to match.
 
-3. Run the rust test suite:
+4. Run the Rust test suite:
 
    ```posix-terminal
    DEV_ROOT={{ '<var>' }}DEV_ROOT{{ '</var>' }}
@@ -80,7 +88,7 @@ required for running the test suite.
 
    The test results will be printed to standard output.
 
-4. Stop the testing environment:
+5. Stop the testing environment:
 
    ```posix-terminal
    DEV_ROOT={{ '<var>' }}DEV_ROOT{{ '</var>' }}
