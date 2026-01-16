@@ -256,9 +256,14 @@ if (current_toolchain == default_toolchain) {
     contents = {
       mode = rbe_mode
       settings = rbe_settings
+
+      # after considering top-level overrides
       final = {
-        # after considering top-level overrides
+        # LINT.IfChange(FinalRbeSettings)
         bazel_enable = enable_bazel_remote_rbe
+        bazel_exec_strategy = bazel_rbe_exec_strategy
+
+        # LINT.ThenChange(//build/bazel/scripts/bazel_action_utils.py:BazelRbeSettings)
 
         # LINT.IfChange
         bazel_download_outputs = bazel_rbe_download_outputs

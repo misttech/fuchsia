@@ -3,7 +3,6 @@
 # found in the LICENSE file.
 
 import("//build/bazel/bazel_inputs.gni")
-import("//build/bazel/config/bazel_args.gni")
 import("//build/bazel/config/logging.gni")
 import("//build/bazel/remote_services.gni")
 import("//build/licenses/generated_licenses_spdx.gni")
@@ -678,6 +677,9 @@ template("bazel_action") {
                                "testonly",
                                "visibility",
                              ])
+      if (!defined(deps)) {
+        deps = []
+      }
 
       mnemonic = "BAZEL"
       script = "//build/bazel/scripts/bazel_action.py"
@@ -717,6 +719,11 @@ template("bazel_action") {
         _rust_project_json,
         _timings_file,
       ]
+
+      # bazel_action.py always checks the rbe_settings.json file to see if
+      # RBE is enabled or not.
+      inputs += [ "${root_build_dir}/rbe_settings.json" ]
+      deps += [ "//build/rbe:rbe_settings.json" ]
 
       # Write stamp files for every Bazel target executed by this bazel_action.
       # Note these stamps are written to paths based on Bazel target labels.
@@ -836,18 +843,7 @@ template("bazel_action") {
 
       args += [ "--" ]
 
-      # When remote builds are enabled, append the right build arguments.
-      # These must appear on the Bazel command-line otherwise remote builds
-      # will fail on infra (the reason being that the Bazel wrapper script
-      # detects these options to add infra-specific proxy configuration
-      # the the final command-line).
-      if (enable_bazel_remote_rbe) {
-        # It is assumed that remote builds are enabled for both the default
-        # and host GN toolchains at the same time.
-        args += bazel_args.remote_build
-      }
-
-      # Similarly, this config must appear on the command-line and cannot
+      # This config must appear on the command-line and cannot
       # be part of --config=host or --config=fuchsia.
       if (bazel_upload_build_events != "") {
         args += [ "--config=$bazel_upload_build_events" ]
@@ -968,9 +964,6 @@ template("bazel_action") {
         args += invoker.extra_bazel_args
       }
 
-      if (!defined(deps)) {
-        deps = []
-      }
       deps += [
         # This dependency exists to ensure that this manifest is generated
         # at `gn gen` time

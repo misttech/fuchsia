@@ -131,25 +131,9 @@ if (fuchsia_cxx_version == 20) {
   ]
 }
 
-# Arguments related to remote builds. These can be disabled per target so cannot
-# belong to _common_args.
-_remote_build_args = []
-if (enable_bazel_remote_rbe) {
-  if (bazel_rbe_exec_strategy == "remote") {
-    _remote_build_args += [ "--config=remote" ]
-  } else if (bazel_rbe_exec_strategy == "local") {
-    _remote_build_args += [ "--config=remote_cache_only" ]
-  } else if (bazel_rbe_exec_strategy == "nocache") {
-    _remote_build_args += [ "--config=nocache" ]
-  } else {
-    assert(false, "Unknown bazel_rbe_exec_strategy: $bazel_rbe_exec_strategy")
-  }
-}
-
 bazel_args = {
   common = _common_args
   build = _build_args
-  remote_build = _remote_build_args
   current_os = current_os
   current_cpu = current_cpu
 }

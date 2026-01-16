@@ -26,6 +26,7 @@ import stdio_redirection
 import thread_pool_helpers
 import workspace_utils
 from bazel_action_utils import (
+    BazelRbeSettings,
     BazelStderrDebugLineFilter,
     BazelTargetInfosMap,
     DirectoryOutput,
@@ -1305,19 +1306,6 @@ def main() -> int:
 
     bazel_output_base_dir = bazel_paths.output_base
 
-    jobs = None
-    if "--config=remote" in args.extra_bazel_args:
-        cpus = os.cpu_count()
-        if cpus:
-            jobs = 10 * cpus
-
-    if jobs is None:
-        # If an explicit job count was passed to `fx build`, tell Bazel to respect it.
-        # See https://fxbug.dev/351623259
-        job_count = os.environ.get("FUCHSIA_BAZEL_JOB_COUNT")
-        if job_count:
-            jobs = int(job_count)
-
     extract_debug_symbols = any(
         entry.copy_debug_symbols
         for entry in package_outputs + directory_outputs
@@ -1393,6 +1381,18 @@ def main() -> int:
         f"--platforms={args.bazel_platform_label}",
     ] + args.extra_bazel_args
 
+    # When remote builds are enabled, append the right build arguments.
+    # These must appear on the Bazel command-line otherwise remote builds
+    # will fail on infra (the reason being that the Bazel wrapper script
+    # detects these options to add infra-specific proxy configuration
+    # the the final command-line).
+    rbe_settings = BazelRbeSettings.create_from_build_dir(args.build_dir)
+    if rbe_settings.enabled:
+        assert rbe_settings.exec_strategy != None
+        # If RBE is enabled, append the chosen RBE config to
+        # the command line.
+        configured_args += [f"--config={rbe_settings.exec_strategy}"]
+
     time_profile.start(
         "buildfiles_genquery", "Generating buildfiles_genquery/BUILD.bazel"
     )
@@ -1450,6 +1450,23 @@ def main() -> int:
     # in the environment.
     if os.environ.get(_ENV_DEBUG_SANDBOX, "0") == "1":
         cmd_args.append("--sandbox_debug")
+
+    jobs = None
+    # When running jobs remotely, increase the number of allowed jobs to 10x
+    # when running jobs locally.  This is different from the reclient config
+    # because this controls the _running_ of jobs, not the checking of the
+    # cache for jobs.
+    if rbe_settings.enabled and rbe_settings.exec_strategy == "remote":
+        cpus = os.cpu_count()
+        if cpus:
+            jobs = 10 * cpus
+
+    if jobs is None:
+        # If an explicit job count was passed to `fx build`, tell Bazel to respect it.
+        # See https://fxbug.dev/351623259
+        job_count = os.environ.get("FUCHSIA_BAZEL_JOB_COUNT")
+        if job_count:
+            jobs = int(job_count)
 
     if jobs:
         cmd_args += [f"--jobs={jobs}"]
