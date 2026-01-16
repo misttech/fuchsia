@@ -34,6 +34,10 @@ pub struct KernelCgroups {
 impl KernelCgroups {
     /// Returns a locked `CgroupPidTable`, which guarantees that processes would not move in this
     /// cgroup hierarchy until the lock is freed.
+    ///
+    /// Note: Mutex dependency graph:
+    ///
+    /// `KernelPidTable` -> `CgroupRootPidTable` -> `CgroupState` -> `ThreadGroupState`
     pub fn lock_cgroup2_pid_table(&self) -> MutexGuard<'_, CgroupPidTable> {
         self.cgroup2.pid_table.lock()
     }
@@ -173,6 +177,15 @@ impl CgroupPidTable {
             return None;
         }
         Some(KernelSignal::Freeze(state.create_freeze_waiter()))
+    }
+
+    /// Remove a `ThreadGroup` from the root cgroup pid table and from the cgroup it is in.
+    pub fn remove_process(&mut self, thread_group_key: ThreadGroupKey) {
+        if let Some(entry) = self.remove(&thread_group_key) {
+            if let Some(cgroup) = entry.upgrade() {
+                cgroup.state.lock().processes.remove(&thread_group_key);
+            }
+        }
     }
 }
 
@@ -764,6 +777,32 @@ mod test {
             let thread_state = thread.read();
             let kernel_signals = thread_state.kernel_signals_for_test();
             assert_matches!(kernel_signals.front(), Some(KernelSignal::Freeze(_)));
+        })
+        .await;
+    }
+
+    #[::fuchsia::test]
+    async fn cgroup_tg_release_removes_pid() {
+        spawn_kernel_and_run(async |locked, current_task| {
+            let kernel = current_task.kernel();
+            let root = &kernel.cgroups.cgroup2;
+            let cgroup = root.new_child("test".into()).expect("new_child on root cgroup succeeds");
+
+            let process = current_task.clone_task_for_test(locked, 0, Some(SIGCHLD));
+            cgroup
+                .add_process(locked.cast_locked(), process.thread_group())
+                .expect("add process to cgroup");
+
+            assert_eq!(
+                root.get_cgroup(process.temp_task().thread_group()).unwrap().as_ptr(),
+                Arc::as_ptr(&cgroup)
+            );
+
+            // Drop the process to release it.
+            drop(process);
+
+            // Verify that the process is removed from the cgroup pid table.
+            assert!(root.pid_table.lock().is_empty());
         })
         .await;
     }

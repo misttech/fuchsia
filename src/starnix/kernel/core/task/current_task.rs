@@ -1650,6 +1650,8 @@ impl CurrentTask {
 
         let kernel = self.kernel();
 
+        let mut pids = kernel.pids.write();
+
         // Lock the cgroup process hierarchy so that the parent process cannot move to a different
         // cgroup while a new task or thread_group is created. This may be unnecessary if
         // CLONE_INTO_CGROUP is implemented and passed in.
@@ -1659,8 +1661,6 @@ impl CurrentTask {
             .maybe_create_freeze_signal(self.thread_group())
             .into_iter()
             .collect::<VecDeque<_>>();
-
-        let mut pids = kernel.pids.write();
 
         let pid;
         let command;
@@ -1749,6 +1749,12 @@ impl CurrentTask {
                 task_info
             }
         };
+
+        // Drop the lock on the cgroup pid_table before creating the TaskBuilder.
+        // If the TaskBuilder creation fails, the TaskBuilder is dropped, which calls
+        // ThreadGroup::remove. ThreadGroup::remove takes the cgroup pid_table lock, causing
+        // a cyclic lock dependency.
+        std::mem::drop(cgroup2_pid_table);
 
         // Only create the vfork event when the caller requested CLONE_VFORK.
         let vfork_event = if clone_vfork { Some(Arc::new(zx::Event::create())) } else { None };

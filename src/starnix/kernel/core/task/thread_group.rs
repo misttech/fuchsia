@@ -762,6 +762,11 @@ impl ThreadGroup {
             // for an idea.
             std::mem::drop(state);
 
+            // Remove the process from the cgroup2 pid table after TG lock is dropped.
+            // This function will hold the CgroupState lock which should be before the TG lock. See
+            // more in lock_cgroup2_pid_table comments.
+            self.kernel.cgroups.lock_cgroup2_pid_table().remove_process(self.into());
+
             // We will need the immediate parent and the reaper. Once we have them, we can make
             // sure to take the locks in the right order: parent before child.
             let parent = self.read().parent.clone();
