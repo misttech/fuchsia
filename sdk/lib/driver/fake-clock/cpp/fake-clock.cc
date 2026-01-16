@@ -40,6 +40,10 @@ void FakeClock::SetRate(SetRateRequestView request, SetRateCompleter::Sync& comp
     completer.ReplyError(set_rate_result_.status_value());
     return;
   }
+  if (request->hz > max_rate_.value_or(std::numeric_limits<uint64_t>::max())) {
+    completer.ReplyError(ZX_ERR_NOT_SUPPORTED);
+    return;
+  }
   rate_ = request->hz;
   completer.ReplySuccess();
 }
@@ -103,6 +107,12 @@ std::optional<uint64_t> FakeClock::take_rate() {
 std::optional<uint32_t> FakeClock::take_input_idx() {
   std::optional<uint32_t> res = input_idx_;
   input_idx_.reset();
+  return res;
+}
+
+std::optional<uint64_t> FakeClock::take_max_rate() {
+  std::optional<uint64_t> res = max_rate_;
+  max_rate_.reset();
   return res;
 }
 

@@ -41,6 +41,7 @@ class FakeClock final : public fidl::testing::WireTestBase<fuchsia_hardware_cloc
   std::optional<bool> take_enabled();
   std::optional<uint64_t> take_rate();
   std::optional<uint32_t> take_input_idx();
+  std::optional<uint64_t> take_max_rate();
 
   void set_enable_result(zx::result<> result) { enable_result_ = result; }
   void set_disable_result(zx::result<> result) { disable_result_ = result; }
@@ -50,6 +51,7 @@ class FakeClock final : public fidl::testing::WireTestBase<fuchsia_hardware_cloc
   void set_supported_rates(std::vector<uint64_t> rates) { supported_rates_ = std::move(rates); }
   void set_id(uint32_t id) { id_ = id; }
   void set_name(std::string name) { name_ = std::move(name); }
+  void set_max_rate(uint64_t max_hz) { max_rate_ = max_hz; }
 
   // Method to manually update rate without triggering FIDL calls/results (setup).
   void set_rate(uint64_t hz) { rate_ = hz; }
@@ -71,6 +73,7 @@ class FakeClock final : public fidl::testing::WireTestBase<fuchsia_hardware_cloc
   std::vector<uint64_t> supported_rates_;
   uint32_t id_ = 0;
   std::string name_ = "fake-clock";
+  std::optional<uint64_t> max_rate_ = std::nullopt;
 
   zx::result<> enable_result_ = zx::ok();
   zx::result<> disable_result_ = zx::ok();
