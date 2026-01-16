@@ -53,7 +53,7 @@
     <project name="third_party/android.googlesource.com/platform/system/logging"
              path="third_party/android/platform/system/logging"
              remote="https://fuchsia.googlesource.com/third_party/android.googlesource.com/platform/system/logging"
-             revision="406d04b8002d27c47cc76cf1358d8241078b28a4"/>
+             revision="57539814beaabb5def3e679fe6606bff2d6de1c0"/>
     <project name="third_party/android/platform/system/tools/aidl"
              path="third_party/android/platform/system/tools/aidl"
              remote="https://fuchsia.googlesource.com/third_party/android/platform/system/tools/aidl"
