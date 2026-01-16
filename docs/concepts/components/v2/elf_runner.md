@@ -219,6 +219,41 @@ and `red`.
 }
 ```
 
+#### Memory Attribution
+
+The `memory_attribution` field can be set to allow the component to provide
+additional memory attribution information beyond what the elf runner exports.
+Most often this is useful for runners implementing memory attribution on behalf
+of child components they start. In additional to setting this field to true,
+the component should expose the `fuchsia.memory.attribution.Provider` FIDL
+protocol from their component.
+
+```json5
+{
+    program: {
+        runner: "elf",
+        binary: "bin/foo",
+        {{ '<strong>' }}memory_attribution: "true"{{ '</strong>' }}
+    }
+}
+```
+
+#### Use Next VDSO
+
+The `use_next_vdso` field can be set to allow the component to utilize
+experimental syscalls APIs available only through the "next" VDSO. These APIs
+do not provide any stability guarantees.
+
+```json5
+{
+    program: {
+        runner: "elf",
+        binary: "bin/foo",
+        {{ '<strong>' }}use_next_vdso: "true"{{ '</strong>' }}
+    }
+}
+```
+
 ## Further Reading
 
 For a detailed explanation of how processes are created, please see
