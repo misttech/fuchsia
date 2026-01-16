@@ -7702,6 +7702,8 @@ rustc_library("futures-util-v0_3_31") {
   visibility = [ ":*" ]
 
   applicable_licenses = [ ":futures-util-v0_3_31.license" ]
+
+  disable_rustdoc = true
 }
 
 license("generator-v0_8_7.license") {
