@@ -22,6 +22,7 @@ pub use riscv64::*;
 
 use starnix_logging::{CATEGORY_STARNIX, NAME_MAP_RESTRICTED_STATE, firehose_trace_duration};
 use starnix_uapi::__static_assertions::assert_not_impl_any;
+use std::ops::Deref;
 use std::ptr::NonNull;
 
 /// `RestrictedState` manages accesses into the restricted state VMO.
@@ -125,10 +126,16 @@ pub trait RegisterStorage:
 {
 }
 
-#[derive(Eq, PartialEq, Debug, Clone)]
+#[derive(Eq, PartialEq, Clone)]
 struct MappedVmoRegs(NonNull<zx::sys::zx_restricted_state_t>);
 // MappedVmoRegs should be tied to the CurrentTask, so it is not Send or Sync.
 assert_not_impl_any!(MappedVmoRegs: Send, Sync);
+
+impl std::fmt::Debug for MappedVmoRegs {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_tuple("MappedVmoRegs").field(&format_args!("{:?}", self.deref())).finish()
+    }
+}
 
 impl std::ops::Deref for MappedVmoRegs {
     type Target = zx::sys::zx_restricted_state_t;
