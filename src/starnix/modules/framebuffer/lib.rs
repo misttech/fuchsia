@@ -16,7 +16,7 @@ use starnix_core::task::{CurrentTask, Kernel};
 use starnix_core::vfs::{
     CloseFreeSafe, FileObject, FileOps, NamespaceNode, fileops_impl_memory, fileops_impl_noop_sync,
 };
-use starnix_logging::{log_info, log_warn};
+use starnix_logging::{log_info, log_warn, track_stub};
 use starnix_sync::{FileOpsCore, LockEqualOrBefore, Locked, Mutex, RwLock, Unlocked};
 use starnix_syscalls::{SUCCESS, SyscallArg, SyscallResult};
 use starnix_uapi::device_type::DeviceType;
@@ -24,8 +24,9 @@ use starnix_uapi::errors::Errno;
 use starnix_uapi::open_flags::OpenFlags;
 use starnix_uapi::user_address::{MultiArchUserRef, UserAddress};
 use starnix_uapi::{
-    FB_TYPE_PACKED_PIXELS, FB_VISUAL_TRUECOLOR, FBIOGET_FSCREENINFO, FBIOGET_VSCREENINFO,
-    FBIOPUT_VSCREENINFO, errno, error, fb_bitfield, fb_fix_screeninfo, fb_var_screeninfo, uapi,
+    FB_BLANK_POWERDOWN, FB_BLANK_UNBLANK, FB_TYPE_PACKED_PIXELS, FB_VISUAL_TRUECOLOR, FBIOBLANK,
+    FBIOGET_FSCREENINFO, FBIOGET_VSCREENINFO, FBIOPUT_VSCREENINFO, errno, error, fb_bitfield,
+    fb_fix_screeninfo, fb_var_screeninfo, uapi,
 };
 use std::sync::Arc;
 use zerocopy::IntoBytes;
@@ -301,7 +302,32 @@ impl FileOps for Framebuffer {
                 Ok(SUCCESS)
             }
 
+            FBIOBLANK => {
+                let arg = u32::from(arg);
+                match arg {
+                    FB_BLANK_POWERDOWN => {
+                        // TODO(https://fxbug.dev/475633434): power off display. As placeholder behavior make the screen dark grey.
+                        let memory = self.get_memory()?;
+                        let memory_len = self.memory_len();
+                        memory.write(&vec![0x40; memory_len], 0).map_err(|_| errno!(EIO))?;
+                        Ok(SUCCESS)
+                    }
+                    FB_BLANK_UNBLANK => {
+                        // TODO(https://fxbug.dev/475633434): power on display. As placeholder behavior make the screen light grey.
+                        let memory = self.get_memory()?;
+                        let memory_len = self.memory_len();
+                        memory.write(&vec![0xc0; memory_len], 0).map_err(|_| errno!(EIO))?;
+                        Ok(SUCCESS)
+                    }
+                    _ => {
+                        track_stub!(TODO("https://fxbug.dev/475633434"), "FBIOBLANK", arg);
+                        error!(EINVAL)
+                    }
+                }
+            }
+
             _ => {
+                track_stub!(TODO("https://fxbug.dev/475633434"), "fb ioctl", request);
                 error!(EINVAL)
             }
         }
