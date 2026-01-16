@@ -5,15 +5,6 @@
 import("//build/bazel/bazel_action.gni")
 import("//build/bazel/bazel_build_action.gni")
 import("//build/bazel/bazel_fuchsia_sdk.gni")
-import("//build/bazel/bazel_inputs.gni")
-import("//build/bazel/config/logging.gni")
-import("//build/bazel/generate_prebuilt_dir_content_hash.gni")
-import("//build/bazel/remote_services.gni")
-import("//build/config/fuchsia/platform_version.gni")
-import("//build/config/fuchsia/target_api_level.gni")
-import("//build/sdk/config.gni")
-import("//build/sdk/idk.gni")
-import("//build/sdk/sdk_collection.gni")
 
 # Generate a Bazel SDK directly from the content of ://sdk:bazel_in_tree_idk
 # and verify that it matches the content of @fuchsia_sdk. This is performed
