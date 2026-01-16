@@ -354,7 +354,7 @@ struct Driver;
 
 class DriverRunnerTestBase : public gtest::TestLoopFixture {
  public:
-  DriverRunnerTestBase() : realm_(dispatcher()) {}
+  DriverRunnerTestBase();
   void TearDown() override { Unbind(); }
 
  protected:

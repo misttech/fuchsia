@@ -33,6 +33,11 @@ class TestNodeManagerBase : public driver_manager::NodeManager {
   }
 
   bool SuspendEnabled() override { return false; }
+
+  driver_manager::MemoryAttributor& memory_attributor() override { return attributor_; }
+
+ private:
+  driver_manager::MemoryAttributor attributor_{async_get_default_dispatcher()};
 };
 
 class DriverManagerTestBase : public gtest::TestLoopFixture {

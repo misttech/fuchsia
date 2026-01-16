@@ -18,6 +18,7 @@ fidl("fuchsia.memory.attribution") {
   visibility = [
     "//examples/components/runner/colocated/*",
     "//src/developer/memory/*",
+    "//src/devices/bin/driver_manager/*",
     "//src/performance/memory/*",
     "//src/starnix/*",
     "//src/storage/fxfs/*",

@@ -265,7 +265,8 @@ DriverRunner::DriverRunner(
               fidl::WireClient(std::move(introspector), dispatcher), offer_injector),
       removal_tracker_(dispatcher),
       enable_test_shutdown_delays_(enable_test_shutdown_delays),
-      dynamic_linker_args_(std::move(dynamic_linker_args)) {
+      dynamic_linker_args_(std::move(dynamic_linker_args)),
+      memory_attributor_(dispatcher_) {
   if (enable_test_shutdown_delays_) {
     // TODO(https://fxbug.dev/42084497): Allow the seed to be set from the configuration.
     auto seed = std::chrono::system_clock::now().time_since_epoch().count();
@@ -434,7 +435,9 @@ void DriverRunner::handle_unknown_method(
                 metadata.method_ordinal);
 }
 
-void DriverRunner::Get(GetRequest& request, GetCompleter::Sync& completer) {
+void DriverRunner::Get(GetRequest& request,
+                       fidl::Completer<fidl::internal::NaturalCompleterBase<
+                           fuchsia_driver_token::NodeBusTopology::Get>>::Sync& completer) {
   zx_info_handle_basic_t info;
   zx_status_t status =
       request.token().get_info(ZX_INFO_HANDLE_BASIC, &info, sizeof(info), nullptr, nullptr);
@@ -537,6 +540,9 @@ void DriverRunner::WaitForBootup(fit::callback<void()> callback) {
 
 void DriverRunner::PublishComponentRunner(component::OutgoingDirectory& outgoing) {
   zx::result result = runner_.Publish(outgoing);
+  ZX_ASSERT_MSG(result.is_ok(), "%s", result.status_string());
+
+  result = memory_attributor_.Publish(outgoing);
   ZX_ASSERT_MSG(result.is_ok(), "%s", result.status_string());
 
   result = outgoing.AddUnmanagedProtocol<fdf::CompositeNodeManager>(

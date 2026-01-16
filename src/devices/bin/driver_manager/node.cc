@@ -538,6 +538,8 @@ void Node::SetController(fidl::ClientEnd<fcomponent::Controller> component_contr
 
 void Node::SetShouldDestroy() { should_destroy_ = true; }
 
+bool g_use_test_process_koid = false;
+
 void Node::OnBind() {
   if (controller_ref_) {
     zx::result<zx::event> node_token = DuplicateNodeToken();
@@ -551,6 +553,28 @@ void Node::OnBind() {
       fdf_log::error("Failed to send OnBind event: {}", result.error_value().FormatDescription());
     }
   }
+
+  zx::result node_token = DuplicateNodeToken();
+  if (node_token.is_error()) {
+    return;
+  }
+  auto koid = token_koid();
+  if (!koid) {
+    return;
+  }
+
+  zx_koid_t process_koid;
+  if (g_use_test_process_koid) {
+    process_koid = 1337;
+  } else {
+    zx::result result = driver_host()->GetProcessKoid();
+    if (result.is_error()) {
+      return;
+    }
+    process_koid = result.value();
+  }
+  node_manager_.value()->memory_attributor().AddDriver(std::move(node_token.value()), koid.value(),
+                                                       process_koid);
 
   // Report on successes immediately without waiting for boot-up to complete.
   bind_err_ = {};
@@ -684,6 +708,9 @@ void Node::FinishShutdown(fit::callback<void()> shutdown_callback) {
   ZX_ASSERT_MSG(GetNodeState() == NodeState::kWaitingOnDestroy,
                 "FinishShutdown called in invalid node state: %s",
                 GetNodeShutdownCoordinator().NodeStateAsString());
+  if (auto koid = token_koid(); koid.has_value()) {
+    node_manager_.value()->memory_attributor().RemoveDriver(koid.value());
+  }
   if (shutdown_intent() == ShutdownIntent::kRestart) {
     fdf_log::debug("Node: {} finishing restart", name());
     shutdown_callback();

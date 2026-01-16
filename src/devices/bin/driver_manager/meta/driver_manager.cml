@@ -13,6 +13,7 @@
         binary: "bin/driver_manager",
         lifecycle: { stop_event: "notify" },
         main_process_critical: "true",
+        memory_attribution: "true",
     },
     use: [
         {

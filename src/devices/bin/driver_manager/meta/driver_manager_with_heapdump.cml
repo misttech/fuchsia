@@ -13,6 +13,7 @@
         binary: "bin/driver_manager_with_heapdump",
         lifecycle: { stop_event: "notify" },
         main_process_critical: "true",
+        memory_attribution: "true",
     },
     use: [
         { protocol: "fuchsia.memory.heapdump.process.Registry" },

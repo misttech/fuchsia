@@ -26,6 +26,7 @@
 #include "src/devices/bin/driver_manager/devfs/devfs.h"
 #include "src/devices/bin/driver_manager/dictionary_util.h"
 #include "src/devices/bin/driver_manager/driver_host.h"
+#include "src/devices/bin/driver_manager/memory_attribution.h"
 #include "src/devices/bin/driver_manager/node_types.h"
 #include "src/devices/bin/driver_manager/shutdown/node_removal_tracker.h"
 #include "src/devices/bin/driver_manager/shutdown/node_shutdown_coordinator.h"
@@ -174,6 +175,7 @@ class NodeManager {
 
   virtual DictionaryUtil& dictionary_util() { ZX_PANIC("Unimplemented dictionary_util"); }
   virtual bool SuspendEnabled() { ZX_PANIC("Unimplemented SuspendEnabled"); }
+  virtual MemoryAttributor& memory_attributor() { ZX_PANIC("Unimplemented memory_attributor"); }
 };
 
 class Node : public fidl::WireServer<fuchsia_driver_framework::NodeController>,

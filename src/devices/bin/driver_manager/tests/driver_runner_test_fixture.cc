@@ -20,6 +20,10 @@
 #include "src/devices/bin/driver_manager/testing/fake_driver_index.h"
 #include "src/storage/lib/vfs/cpp/synchronous_vfs.h"
 
+namespace driver_manager {
+extern bool g_use_test_process_koid;
+}
+
 namespace driver_runner {
 
 namespace fdata = fuchsia_data;
@@ -242,6 +246,10 @@ void DriverHostComponentStart(driver_runner::TestRealm& realm,
     static_cast<fidl::WireServer<frunner::ComponentRunner>&>(driver_host_runner)
         .Start(&request, completer);
   }
+}
+
+DriverRunnerTestBase::DriverRunnerTestBase() : realm_(dispatcher()) {
+  driver_manager::g_use_test_process_koid = true;
 }
 
 fidl::ClientEnd<fcomponent::Realm> DriverRunnerTestBase::ConnectToRealm() {

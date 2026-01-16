@@ -33,6 +33,7 @@
 #include "src/devices/bin/driver_manager/dictionary_util.h"
 #include "src/devices/bin/driver_manager/driver_host.h"
 #include "src/devices/bin/driver_manager/driver_host_runner.h"
+#include "src/devices/bin/driver_manager/memory_attribution.h"
 #include "src/devices/bin/driver_manager/node.h"
 #include "src/devices/bin/driver_manager/offer_injection.h"
 #include "src/devices/bin/driver_manager/runner.h"
@@ -44,7 +45,6 @@
 // dispatcher. It is not safe to use a multi-threaded dispatcher with this code.
 
 namespace driver_manager {
-
 class DriverRunner : public fidl::WireServer<fuchsia_driver_framework::CompositeNodeManager>,
                      public fidl::WireServer<fuchsia_driver_index::DriverNotifier>,
                      public fidl::WireServer<fuchsia_driver_crash::CrashIntrospect>,
@@ -216,6 +216,7 @@ class DriverRunner : public fidl::WireServer<fuchsia_driver_framework::Composite
   bool IsDriverHostValid(DriverHost* driver_host) const override;
 
   DictionaryUtil& dictionary_util() override { return dictionary_util_; }
+  MemoryAttributor& memory_attributor() override { return memory_attributor_; }
 
   // BindManagerBridge interface.
   zx::result<std::string> StartDriver(
@@ -290,6 +291,8 @@ class DriverRunner : public fidl::WireServer<fuchsia_driver_framework::Composite
 
   fidl::Client<fuchsia_power_broker::Topology> power_topology_;
   std::vector<fidl::ClientEnd<fuchsia_power_broker::LeaseControl>> leases_;
+
+  MemoryAttributor memory_attributor_;
 };
 
 Collection ToCollection(const Node& node, fuchsia_driver_framework::DriverPackageType package_type);
