@@ -53,6 +53,65 @@ idk_cc_source_library(
     ],
 )
 
+# The headers used by some_library.cc are made available as follows:
+# * dependency.h: via `hdrs` in the deps ":test_source_set_dependency"
+#   * another_header.h: via `hdrs_for_internal_use` in the deps ":test_source_set_dependency"
+# * test_header.h: via `hdrs`
+idk_cc_shared_library(
+    name = "test-shared-library",
+    testonly = True,
+    srcs = [
+        "internal/helper.cc",
+        "some_library.cc",
+    ],
+    hdrs = ["include/lib/test_lib/test_header.h"],
+    api_area = "Developer",
+    api_file_path = "different_file_name_shared_library.api",
+    category = "partner",
+    fuchsia_deps = [
+        # This target defines `RequiredFunction()`. ":test_executable" would
+        # fail to link if this dependency is not included in the `cc_library()`.
+        ":test_source_set_dependency",
+    ],
+    idk_name = "test_shared_library",
+    output_name = "my_test_shared_library",
+    deps = [
+        # Cover deps strings that omit the package path, omit the target name,
+        # and provide the full label. The first case is covered in `fuchsia_deps`.
+        "//build/bazel/bazel_idk/tests",
+        "//build/bazel/bazel_idk/tests:test_source_set_dependency2",
+    ],
+)
+
+# The headers used by some_library.cc are made available as follows:
+# * dependency.h: via `hdrs` in the deps ":test_source_set_dependency"
+#   * another_header.h: via `hdrs_for_internal_use` in the deps ":test_source_set_dependency"
+# * test_header.h: via `hdrs`
+idk_cc_static_library(
+    name = "test-static-library",
+    testonly = True,
+    srcs = [
+        "internal/helper.cc",
+        "some_library.cc",
+    ],
+    hdrs = ["include/lib/test_lib/test_header.h"],
+    api_area = "Developer",
+    api_file_path = "different_file_name_static_library.api",
+    category = "partner",
+    fuchsia_deps = [
+        # This target defines `RequiredFunction()`. ":test_executable" would
+        # fail to link if this dependency is not included in the `cc_library()`.
+        ":test_source_set_dependency",
+    ],
+    idk_name = "test_static_library",
+    deps = [
+        # Cover deps strings that omit the package path, omit the target name,
+        # and provide the full label. The first case is covered in `fuchsia_deps`.
+        "//build/bazel/bazel_idk/tests",
+        "//build/bazel/bazel_idk/tests:test_source_set_dependency2",
+    ],
+)
+
 idk_cc_source_library(
     name = "test_source_set_dependency",
     testonly = True,
@@ -150,65 +209,6 @@ idk_cc_source_library_zx(
 
     # Prevent mistaken use of this target as a group of tests.
     visibility = ["//visibility:private"],
-)
-
-# The headers used by some_library.cc are made available as follows:
-# * dependency.h: via `hdrs` in the deps ":test_source_set_dependency"
-#   * another_header.h: via `hdrs_for_internal_use` in the deps ":test_source_set_dependency"
-# * test_header.h: via `hdrs`
-idk_cc_shared_library(
-    name = "test-shared-library",
-    testonly = True,
-    srcs = [
-        "internal/helper.cc",
-        "some_library.cc",
-    ],
-    hdrs = ["include/lib/test_lib/test_header.h"],
-    api_area = "Developer",
-    api_file_path = "different_file_name_shared_library.api",
-    category = "partner",
-    fuchsia_deps = [
-        # This target defines `RequiredFunction()`. ":test_executable" would
-        # fail to link if this dependency is not included in the `cc_library()`.
-        ":test_source_set_dependency",
-    ],
-    idk_name = "test_shared_library",
-    output_name = "my_test_shared_library",
-    deps = [
-        # Cover deps strings that omit the package path, omit the target name,
-        # and provide the full label. The first case is covered in `fuchsia_deps`.
-        "//build/bazel/bazel_idk/tests",
-        "//build/bazel/bazel_idk/tests:test_source_set_dependency2",
-    ],
-)
-
-# The headers used by some_library.cc are made available as follows:
-# * dependency.h: via `hdrs` in the deps ":test_source_set_dependency"
-#   * another_header.h: via `hdrs_for_internal_use` in the deps ":test_source_set_dependency"
-# * test_header.h: via `hdrs`
-idk_cc_static_library(
-    name = "test-static-library",
-    testonly = True,
-    srcs = [
-        "internal/helper.cc",
-        "some_library.cc",
-    ],
-    hdrs = ["include/lib/test_lib/test_header.h"],
-    api_area = "Developer",
-    api_file_path = "different_file_name_static_library.api",
-    category = "partner",
-    fuchsia_deps = [
-        # This target defines `RequiredFunction()`. ":test_executable" would
-        # fail to link if this dependency is not included in the `cc_library()`.
-        ":test_source_set_dependency",
-    ],
-    idk_name = "test_static_library",
-    deps = [
-        # Cover deps strings that omit the package path, omit the target name,
-        # and provide the full label. The first case is covered in `fuchsia_deps`.
-        "//build/bazel/bazel_idk/tests",
-        "//build/bazel/bazel_idk/tests:test_source_set_dependency2",
-    ],
 )
 
 idk_noop_atom(
