@@ -23,7 +23,10 @@ rustc_library("lib") {
     "//third_party/rust_crates:serde",
   ]
 
-  test_deps = [ "//src/lib/fuchsia" ]
+  test_deps = [
+    "//src/connectivity/lib/net-declare",
+    "//src/lib/fuchsia",
+  ]
 }
 
 group("tests") {

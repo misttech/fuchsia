@@ -484,16 +484,11 @@ impl std::fmt::Display for TargetAddr {
 #[cfg(test)]
 mod test {
     use super::*;
+    use net_declare::std_socket_addr;
 
     #[fuchsia::test]
     fn test_port_str_with_ipv6_bracket() {
-        let v6addr: std::net::SocketAddr = std::net::SocketAddrV6::new(
-            std::net::Ipv6Addr::new(0x2001, 0xdb8, 0, 0, 0, 0, 0, 1),
-            8080,
-            0,
-            1,
-        )
-        .into();
+        let v6addr = std_socket_addr!("[2001:db8::1%1]:8080");
         let addr: TargetAddr = v6addr.into();
         let s = addr.optional_port_str();
         assert_eq!(&s, "[2001:db8::1]:8080");
