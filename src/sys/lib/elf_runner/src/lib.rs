@@ -428,7 +428,10 @@ impl ElfRunner {
             fdio::open_at(
                 outgoing_dir_client.channel(),
                 ".",
-                fio::Flags::PROTOCOL_DIRECTORY,
+                fio::Flags::PROTOCOL_DIRECTORY
+                    | fio::PERM_READABLE
+                    | fio::PERM_WRITABLE
+                    | fio::PERM_EXECUTABLE,
                 outgoing_dir.into_channel(),
             )
             .unwrap();
