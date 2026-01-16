@@ -48,10 +48,6 @@
             as: "fuchsia.component.PersistenceBinder",
         },
         {
-            dictionary: "diagnostics-persist-capabilities",
-            from: "#persistence",
-        },
-        {
             protocol: "fuchsia.component.Binder",
             from: "#detect",
             as: "fuchsia.component.DetectBinder",

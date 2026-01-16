@@ -17,13 +17,11 @@ rustc_library("lib") {
 
   deps = [
     ":persistence-build-config",
-    "//sdk/fidl/fuchsia.component.sandbox:fuchsia.component.sandbox_rust",
     "//sdk/fidl/fuchsia.diagnostics:fuchsia.diagnostics_rust",
     "//sdk/fidl/fuchsia.process.lifecycle:fuchsia.process.lifecycle_rust",
     "//sdk/fidl/fuchsia.update:fuchsia.update_rust",
     "//sdk/rust/zx",
     "//src/diagnostics/lib/persistence:lib",
-    "//src/diagnostics/persistence/fidl:persist_rust",
     "//src/lib/diagnostics/data/rust",
     "//src/lib/diagnostics/inspect/runtime/rust",
     "//src/lib/diagnostics/inspect/rust",
@@ -34,7 +32,6 @@ rustc_library("lib") {
     "//src/lib/fuchsia-async",
     "//src/lib/fuchsia-component",
     "//src/lib/fuchsia-runtime",
-    "//src/lib/sandbox",
     "//third_party/rust_crates:anyhow",
     "//third_party/rust_crates:argh",
     "//third_party/rust_crates:futures",
@@ -47,12 +44,10 @@ rustc_library("lib") {
   ]
 
   sources = [
-    "src/constants.rs",
     "src/fetcher.rs",
     "src/file_handler.rs",
     "src/inspect_server.rs",
     "src/lib.rs",
-    "src/persist_server.rs",
     "src/scheduler.rs",
   ]
 

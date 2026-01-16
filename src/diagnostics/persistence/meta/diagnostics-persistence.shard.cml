@@ -16,12 +16,6 @@
             "SCUDO_OPTIONS=release_to_os_interval_ms=0",
         ],
     },
-    capabilities: [
-        {
-            dictionary: "diagnostics-persist-capabilities",
-            path: "/svc/fuchsia.component.sandbox.DictionaryRouter",
-        },
-    ],
     use: [
         {
             protocol: [
@@ -51,10 +45,6 @@
         // TODO(https://fxbug.dev/42051341): Put /cache here when possible.
     ],
     expose: [
-        {
-            dictionary: "diagnostics-persist-capabilities",
-            from: "self",
-        },
         {
             protocol: "fuchsia.component.Binder",
             from: "framework",

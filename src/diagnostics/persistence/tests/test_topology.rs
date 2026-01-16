@@ -3,7 +3,6 @@
 // found in the LICENSE file.
 
 use crate::TestRealmOptions;
-use fidl_fuchsia_component_sandbox as fsandbox;
 use fidl_fuchsia_diagnostics::{ArchiveAccessorMarker, SampleMarker};
 use fidl_fuchsia_inspect::InspectSinkMarker;
 use fidl_fuchsia_logger::LogSinkMarker;
@@ -18,8 +17,7 @@ const SINGLE_COUNTER_URL: &str = "#meta/single_counter_test_component.cm";
 const PERSISTENCE_URL: &str = "#meta/persistence.cm";
 
 pub async fn create(options: &TestRealmOptions) -> RealmInstance {
-    let TestRealmOptions { name, config, filesystem, skip_update_check, with_data_persistence } =
-        options;
+    let TestRealmOptions { name, config, filesystem, skip_update_check } = options;
 
     let builder = RealmBuilder::with_params(RealmBuilderParams::new().realm_name(name))
         .await
@@ -121,36 +119,6 @@ pub async fn create(options: &TestRealmOptions) -> RealmInstance {
         )
         .await
         .expect("Failed to add route for fuchsia.samplertestcontroller.SamplerTestController");
-
-    // TODO(https://fxbug.dev/460853191): Remove with DataPersistence.
-    if *with_data_persistence {
-        builder
-            .add_route(
-                Route::new()
-                    .capability(
-                        Capability::protocol_by_name(
-                            "fuchsia.diagnostics.persist.DataPersistence-test-service",
-                        )
-                        .as_("fuchsia.diagnostics.persist.DataPersistence"),
-                    )
-                    .from(Ref::dictionary(&persistence, "diagnostics-persist-capabilities"))
-                    .to(Ref::parent()),
-            )
-            .await
-            .expect(
-                "Failed to add route for fuchsia.diagnostics.persist.DataPersistence-test-service",
-            );
-
-        builder
-            .add_route(
-                Route::new()
-                    .capability(Capability::protocol::<fsandbox::CapabilityStoreMarker>())
-                    .from(Ref::framework())
-                    .to(&persistence),
-            )
-            .await
-            .expect("Failed to add fuchsia.component.sandbox routes");
-    }
 
     let archivist = builder
         .add_child("archivist", ARCHIVIST_URL, ChildOptions::new().eager())

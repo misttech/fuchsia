@@ -24,9 +24,8 @@ struct TaggedPersist {
     /// Tags must not be duplicated within a service, even between files.
     /// Tags must conform to /[a-z][a-z-]*/.
     tag: String,
-    /// Each tag will only be requestable via a named service. Multiple tags can use the
-    /// same service name, which will be published and routed as DataPersistence_{service_name}.
-    /// Service names must conform to /[a-z][a-z-]*/.
+    /// Tags are organized under a named service. Multiple tags can use the same
+    /// service name. Service names must conform to /[a-z][a-z-]*/.
     service_name: String,
     #[serde(flatten)]
     tag_config: TagConfig,

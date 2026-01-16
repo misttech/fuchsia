@@ -7,7 +7,6 @@ use component_events::events::*;
 use component_events::matcher::*;
 use diagnostics_reader::{ArchiveReader, Inspect, RetryConfig, ToSelectorArguments};
 use fidl_fuchsia_component::BinderMarker;
-use fidl_fuchsia_diagnostics_persist::{DataPersistenceProxy, PersistResult};
 use fidl_fuchsia_samplertestcontroller::SamplerTestControllerProxy;
 use fidl_test_persistence_factory::ControllerProxy;
 use fuchsia_async as fasync;
@@ -74,48 +73,8 @@ enum Published {
 struct TestRealm {
     options: TestRealmOptions,
     instance: RealmInstance,
-    persistence: DataPersistenceProxy,
     inspect: SamplerTestControllerProxy,
     controller: ControllerProxy,
-}
-
-/// Calls to DataPersistence should noop and return PersistResult::Queued.
-// TODO(https://fxbug.dev/460853191): Remove with DataPersistence.
-#[fuchsia::test]
-async fn data_persistence_noop() {
-    let realm = TestRealm::new(
-        TestRealmOptions::new(include_str!("test_data/config/empty.persist"))
-            .with_data_persistence(),
-    )
-    .await;
-
-    wait_for_inspect_source(&realm.instance).await;
-    realm.start_persistence().await;
-
-    const WRONG_TAG: &str = "wrong-component-metric";
-
-    assert_matches!(realm.persistence.persist(TAG).await, Ok(PersistResult::Queued));
-    assert_matches!(realm.persistence.persist(WRONG_TAG).await, Ok(PersistResult::Queued));
-    assert_matches!(
-        realm.persistence
-            .persist_tags(&[
-                TAG.to_string(),
-                WRONG_TAG.to_string(),
-            ])
-            .await,
-        Ok(res) if res == vec![PersistResult::Queued, PersistResult::Queued]
-    );
-
-    // Duplicate tags
-    assert_matches!(
-        realm.persistence
-            .persist_tags(&[
-                TAG.to_string(),
-                TAG.to_string(),
-            ])
-            .await,
-        Ok(res) if res == vec![PersistResult::Queued, PersistResult::Queued]
-    );
 }
 
 /// Inspect data should be persisted through the current boot then published on
@@ -471,8 +430,6 @@ pub(crate) struct TestRealmOptions {
     config: &'static str,
     filesystem: mock_filesystems::TestFs,
     skip_update_check: bool,
-    // TODO(https://fxbug.dev/460853191): Remove with DataPersistence.
-    with_data_persistence: bool,
 }
 
 impl TestRealmOptions {
@@ -483,19 +440,10 @@ impl TestRealmOptions {
             let id: u64 = rand::random();
             format!("auto-{id:x}")
         };
-        Self {
-            name,
-            config,
-            filesystem: mock_filesystems::TestFs::new(),
-            skip_update_check: false,
-            with_data_persistence: false,
-        }
+        Self { name, config, filesystem: mock_filesystems::TestFs::new(), skip_update_check: false }
     }
     fn skip_update_check(self) -> Self {
         Self { skip_update_check: true, ..self }
-    }
-    fn with_data_persistence(self) -> Self {
-        Self { with_data_persistence: true, ..self }
     }
 }
 
@@ -504,11 +452,9 @@ impl TestRealm {
         let instance = test_topology::create(&options).await;
         // `inspect` is the source of Inspect data that Persistence will read and persist.
         let inspect = instance.root.connect_to_protocol_at_exposed_dir().unwrap();
-        // `persistence` is the connection to ask for new data to be read and persisted.
-        let persistence = instance.root.connect_to_protocol_at_exposed_dir().unwrap();
         // `controller` is the connection to send control signals to the test's update-checker mock.
         let controller = instance.root.connect_to_protocol_at_exposed_dir().unwrap();
-        TestRealm { options, instance, inspect, persistence, controller }
+        TestRealm { options, instance, inspect, controller }
     }
 
     async fn start_persistence(&self) {
@@ -593,13 +539,7 @@ impl TestRealm {
     /// Tear down the realm to make sure everything is gone before you restart it.
     /// Then create and return a new realm.
     async fn restart(self) -> TestRealm {
-        let Self {
-            options,
-            instance,
-            inspect: _inspect,
-            persistence: _persistence,
-            controller: _controller,
-        } = self;
+        let Self { options, instance, inspect: _inspect, controller: _controller } = self;
         instance.destroy().await.expect("destroy should work");
         TestRealm::new(options).await
     }

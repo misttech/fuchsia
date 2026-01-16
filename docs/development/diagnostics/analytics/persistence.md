@@ -89,24 +89,6 @@ be OK to persist to subsequent boots. For example, numbers such as
 runtime-generated hashes could be used to link multiple boot records if
 they were persisted.
 
-## Route and use the service {#route-service}
-
-Each service-name will be published as
-fuchsia.diagnostics.persist.DataPersistence-service-name in the
-"diagnostics-persist-capabilities" dictionary. This must be routed to any
-component that will use a tag defined for that service.
-
-The FIDL protocol for that service is in
-//src/diagnostics/persistence/fidl/persist.fidl. The function call is
-
-```
-protocol DataPersistence {
-    Persist(string:MAX_NAME_SIZE tag) -> (PersistResult result);
-};
-```
-
-The desired result is `PersistResult::QUEUED`.
-
 # Use the published data {#use-published-data}
 
 On the next boot, the stored data will be published to Inspect as soon as the
