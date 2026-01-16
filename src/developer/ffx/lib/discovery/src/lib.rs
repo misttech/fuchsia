@@ -244,10 +244,10 @@ impl DiscoveryBuilder {
     /// -- sources
     pub fn build_with_stream<S>(self, context: &EnvironmentContext, stream: S) -> Discovery
     where
-        S: Stream<Item = TargetEvent> + Send + Unpin + 'static,
+        S: Stream<Item = TargetEvent> + Unpin + Send + Sync + 'static,
     {
         let res = self.build(context);
-        let inner_stream: Box<dyn Stream<Item = TargetEvent> + Send + Unpin> =
+        let inner_stream: Box<dyn Stream<Item = TargetEvent> + Unpin + Send + Sync> =
             if let Some(t) = res.timeout {
                 Box::new(stream.take_until(fuchsia_async::Timer::new(t)))
             } else {
@@ -279,7 +279,7 @@ pub struct Discovery {
     // For testing purposes, we can provide an arbitrary stream.
     // For example, in the testing module `setup_test()` uses this to store
     // a `Vec<_>` stream iterator.
-    stream: Mutex<Option<Box<dyn Stream<Item = TargetEvent> + Send + Unpin>>>,
+    stream: Mutex<Option<Box<dyn Stream<Item = TargetEvent> + Unpin + Send + Sync>>>,
     context: EnvironmentContext,
 }
 
@@ -468,6 +468,8 @@ pub mod test {
     use std::fs::File;
     use std::io::Write;
     use std::str::FromStr;
+
+    static_assertions::assert_impl_all!(Discovery: Send, Sync);
 
     fn setup_test(context: &EnvironmentContext) -> (Discovery, TargetHandle, TargetHandle) {
         let handle1 = TargetHandle {
