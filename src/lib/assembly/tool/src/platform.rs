@@ -6,6 +6,7 @@ use crate::{Tool, ToolCommand, ToolCommandLog, ToolProvider};
 
 use anyhow::{Context, Result, anyhow};
 use camino::Utf8PathBuf;
+use std::io::Write;
 use std::path::PathBuf;
 use std::process::Command;
 use utf8_path::PathToStringExt;
@@ -60,7 +61,20 @@ impl Tool for PlatformTool {
             .args(args)
             .output()
             .context(format!("Failed to run the tool: {}", path))?;
-        if !output.status.success() {
+        if output.status.success() {
+            // Output stderr and stdout from the tool on success cases as well as failures.
+
+            if !output.stderr.is_empty() {
+                std::io::stderr()
+                    .write_all(&output.stderr)
+                    .context("writing tool stderr on success.")?;
+            }
+            if !output.stdout.is_empty() {
+                std::io::stdout()
+                    .write_all(&output.stdout)
+                    .context("writing tool stdout on success.")?;
+            }
+        } else {
             let command = format!("{} {}", path, args.join(" "));
             return Err(anyhow!("{} exited with status: {}", path, output.status)
                 .context(format!("stderr: {}", String::from_utf8_lossy(&output.stderr)))

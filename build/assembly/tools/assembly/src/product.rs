@@ -130,88 +130,88 @@ fn print_developer_overrides_banner(
     } else {
         overrides_path.as_str()
     };
-    println!();
-    println!("WARNING!:  Adding the following via developer overrides from: {overrides_target}");
+    eprintln!();
+    eprintln!("WARNING!:  Adding the following via developer overrides from: {overrides_target}");
 
     let all_packages_in_base = overrides.developer_only_options.all_packages_in_base;
     let netboot_mode = overrides.developer_only_options.netboot_mode;
     if all_packages_in_base || netboot_mode {
-        println!();
-        println!("  Options:");
+        eprintln!();
+        eprintln!("  Options:");
         if all_packages_in_base {
-            println!("    all_packages_in_base: enabled")
+            eprintln!("    all_packages_in_base: enabled")
         }
         if netboot_mode {
-            println!("    netboot_mode: enabled")
+            eprintln!("    netboot_mode: enabled")
         }
     }
 
     if overrides.platform.as_object().is_some_and(|p| !p.is_empty()) {
-        println!();
-        println!("  Platform Configuration Overrides / Additions:");
+        eprintln!();
+        eprintln!("  Platform Configuration Overrides / Additions:");
         for line in serde_json::to_string_pretty(&overrides.platform)?.lines() {
-            println!("    {}", line);
+            eprintln!("    {}", line);
         }
     }
 
     if overrides.product.as_object().is_some_and(|p| !p.is_empty()) {
-        println!();
-        println!("  Product Configuration Overrides / Additions:");
+        eprintln!();
+        eprintln!("  Product Configuration Overrides / Additions:");
         for line in serde_json::to_string_pretty(&overrides.product)?.lines() {
-            println!("    {}", line);
+            eprintln!("    {}", line);
         }
     }
 
     if overrides.board.as_object().is_some_and(|p| !p.is_empty()) {
-        println!();
-        println!("  Board Configuration Overrides / Additions:");
+        eprintln!();
+        eprintln!("  Board Configuration Overrides / Additions:");
         for line in serde_json::to_string_pretty(&overrides.board)?.lines() {
-            println!("    {}", line);
+            eprintln!("    {}", line);
         }
     }
 
     if !overrides.kernel.command_line_args.is_empty() {
-        println!();
-        println!("  Additional kernel command line arguments:");
+        eprintln!();
+        eprintln!("  Additional kernel command line arguments:");
         for arg in &overrides.kernel.command_line_args {
-            println!("    {arg}");
+            eprintln!("    {arg}");
         }
     }
 
     if !overrides.packages.is_empty() {
-        println!();
-        println!("  Additional packages:");
+        eprintln!();
+        eprintln!("  Additional packages:");
         for details in &overrides.packages {
-            println!("    {} -> {}", details.set, details.package);
+            eprintln!("    {} -> {}", details.set, details.package);
         }
     }
 
     if !overrides.shell_commands.is_empty() {
-        println!();
-        println!("  Additional shell command stubs:");
+        eprintln!();
+        eprintln!("  Additional shell command stubs:");
         for (entry, components) in &overrides.shell_commands {
-            println!("    package: \"{entry}\"");
+            eprintln!("    package: \"{entry}\"");
             for component in components {
-                println!("      {component}")
+                eprintln!("      {component}")
             }
         }
     }
 
     if !overrides.packages_to_compile.is_empty() {
-        println!();
-        println!("  Additions to compiled packages:");
+        eprintln!();
+        eprintln!("  Additions to compiled packages:");
         for package in &overrides.packages_to_compile {
-            println!("    package: \"{}\"", package.name);
+            eprintln!("    package: \"{}\"", package.name);
             for component in &package.components {
-                println!("      component: \"meta/{}.cm\"", component.component_name);
+                eprintln!("      component: \"meta/{}.cm\"", component.component_name);
                 for shard in &component.shards {
-                    println!("        {shard}");
+                    eprintln!("        {shard}");
                 }
             }
             if !package.contents.is_empty() {
-                println!("      contents:");
+                eprintln!("      contents:");
                 for content in &package.contents {
-                    println!("        {}  (from: {})", content.destination, content.source);
+                    eprintln!("        {}  (from: {})", content.destination, content.source);
                 }
             }
         }
@@ -222,20 +222,20 @@ fn print_developer_overrides_banner(
             .with_context(|| format!("parsing {} as a package manifest", path))?;
         let blobs = manifest.into_blobs();
         if blobs.len() > 1 {
-            println!();
-            println!("  Additional bootfs files:");
+            eprintln!();
+            eprintln!("  Additional bootfs files:");
             for blob in blobs {
                 if blob.path.starts_with("meta/") {
                     continue;
                 }
-                println!("    {}  (from: {})", blob.path, blob.source_path);
+                eprintln!("    {}  (from: {})", blob.path, blob.source_path);
             }
         }
     }
 
-    println!();
+    eprintln!();
     // And an additional empty line to make sure that any /r's don't attempt to overwrite the last
     // line of this warning.
-    println!();
+    eprintln!();
     Ok(())
 }
