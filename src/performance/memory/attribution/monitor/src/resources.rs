@@ -270,7 +270,7 @@ pub trait Job: Send {
 
 impl Job for zx::Job {
     fn get_koid(&self) -> Result<zx::Koid, zx::Status> {
-        fidl::AsHandleRef::get_koid(&self)
+        zx::Job::koid(self)
     }
 
     fn get_name(&self) -> Result<zx::Name, zx::Status> {

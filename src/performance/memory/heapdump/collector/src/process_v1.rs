@@ -12,7 +12,7 @@ use heapdump_vmo::stack_trace_compression;
 use log::{info, warn};
 use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
-use zx::{self as zx, AsHandleRef, Koid};
+use zx::Koid;
 use {
     fidl_fuchsia_memory_heapdump_client as fheapdump_client,
     fidl_fuchsia_memory_heapdump_process as fheapdump_process,
@@ -50,7 +50,7 @@ impl ProcessV1 {
         snapshot_storage: Arc<Mutex<SnapshotStorage>>,
     ) -> Result<ProcessV1, anyhow::Error> {
         let name = get_process_name(&process)?;
-        let koid = process.get_koid()?;
+        let koid = process.koid()?;
         Ok(ProcessV1 {
             name,
             koid,
@@ -334,7 +334,7 @@ mod tests {
         let resources_writer = unsafe { ResourcesTableWriter::new(&resources_vmo) }.unwrap();
 
         let process = fuchsia_runtime::process_self().duplicate(zx::Rights::SAME_RIGHTS).unwrap();
-        let koid = process.get_koid().unwrap();
+        let koid = process.koid().unwrap();
 
         // Create channels and send the registration message.
         let (registry_proxy, registry_stream) =

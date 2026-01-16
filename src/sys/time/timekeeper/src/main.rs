@@ -223,7 +223,7 @@ struct MonitorTrack {
 }
 
 fn koid_of(c: &UtcClock) -> u64 {
-    c.as_handle_ref().get_koid().expect("infallible").raw_koid()
+    c.as_handle_ref().koid().expect("infallible").raw_koid()
 }
 
 #[fuchsia::main(logging_tags=["time", "timekeeper"])]

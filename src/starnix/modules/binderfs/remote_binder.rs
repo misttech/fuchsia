@@ -815,7 +815,7 @@ impl<F: RemoteControllerConnector> RemoteBinderHandle<F> {
                     // remote handle is closed by this closure.
                     let result: Result<_, Error> = (|| {
                         let binder = payload.binder.ok_or_else(|| errno!(EINVAL))?;
-                        let koid = binder.get_koid()?;
+                        let koid = binder.as_handle_ref().koid()?;
                         Ok(binder_tasks.borrow_mut().remove(&koid))
                     })();
                     match result {

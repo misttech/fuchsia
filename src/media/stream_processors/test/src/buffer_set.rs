@@ -4,10 +4,10 @@
 
 //! Handles negotiating buffer sets with the codec server and sysmem.
 
-use crate::buffer_collection_constraints::*;
 use crate::Result;
+use crate::buffer_collection_constraints::*;
 use anyhow::Context as _;
-use fidl::endpoints::{create_endpoints, ClientEnd, Proxy};
+use fidl::endpoints::{ClientEnd, Proxy, create_endpoints};
 use fidl_fuchsia_media::*;
 use fidl_fuchsia_sysmem2::*;
 use fuchsia_component::client;
@@ -17,7 +17,6 @@ use std::fmt;
 use std::iter::StepBy;
 use std::ops::RangeFrom;
 use thiserror::Error;
-use zx::{self as zx, AsHandleRef};
 
 #[derive(Debug, Error)]
 pub enum Error {
@@ -67,7 +66,7 @@ pub struct BufferSetFactory;
 
 fn set_allocator_name(sysmem_client: &fidl_fuchsia_sysmem2::AllocatorProxy) -> Result<()> {
     let name = fuchsia_runtime::process_self().get_name()?;
-    let koid = fuchsia_runtime::process_self().get_koid()?;
+    let koid = fuchsia_runtime::process_self().koid()?;
     Ok(sysmem_client.set_debug_client_info(&AllocatorSetDebugClientInfoRequest {
         name: Some(name.to_string()),
         id: Some(koid.raw_koid()),

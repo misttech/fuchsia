@@ -1252,7 +1252,8 @@ impl FDomain {
     ) -> Result<proto::FDomainGetKoidResponse> {
         self.using_handle(request.handle, |h| {
             h.handle
-                .get_koid()
+                .as_handle_ref()
+                .koid()
                 .map(|k| proto::FDomainGetKoidResponse { koid: k.raw_koid() })
                 .map_err(|e| proto::Error::TargetError(e.into_raw()))
         })

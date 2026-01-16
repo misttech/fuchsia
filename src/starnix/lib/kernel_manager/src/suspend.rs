@@ -149,7 +149,7 @@ pub async fn suspend_container(
         let mut resume_reasons: Vec<String> = Vec::new();
         for wait_item in &wait_items {
             if (wait_item.pending & wait_item.waitfor) != zx::Signals::NONE {
-                let koid = wait_item.handle.get_koid().unwrap();
+                let koid = wait_item.handle.koid().unwrap();
                 if let Some(event) = wake_sources.get(&koid) {
                     log::info!("Woke container from sleep for: {}", event.name,);
                     resume_reasons.push(event.name.clone());

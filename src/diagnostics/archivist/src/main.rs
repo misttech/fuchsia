@@ -17,20 +17,17 @@ use diagnostics_log_encoding::encode::{
     Encoder, EncoderOpts, LogEvent, MutableBuffer, WriteEventParams,
 };
 use fidl_fuchsia_logger::MAX_DATAGRAM_LEN_BYTES;
+use fuchsia_async::SendExecutorBuilder;
 use fuchsia_component::client;
 use fuchsia_component::server::{MissingStartupHandle, ServiceFs};
 use fuchsia_inspect::component;
 use fuchsia_inspect::health::Reporter;
-use fuchsia_runtime as rt;
 use log::{LevelFilter, debug};
 use moniker::Moniker;
 use std::fmt;
 use std::io::Cursor;
 use std::sync::atomic::{AtomicU64, Ordering};
-use zx::AsHandleRef;
-
-use fuchsia_async::SendExecutorBuilder;
-use {fidl_fuchsia_component_sandbox as fsandbox, fuchsia_async as fasync};
+use {fidl_fuchsia_component_sandbox as fsandbox, fuchsia_async as fasync, fuchsia_runtime as rt};
 
 const INSPECTOR_SIZE: usize = 2 * 1024 * 1024 /* 2MB */;
 
@@ -154,10 +151,10 @@ async fn init_diagnostics(
     thread_local! {
         static PID_AND_TID: (zx::Koid, zx::Koid) = (
             rt::process_self()
-                .get_koid()
+                .koid()
                 .unwrap_or_else(|_| zx::Koid::from_raw(zx::sys::zx_koid_t::MAX)),
             rt::with_thread_self(|thread| {
-                thread.get_koid().unwrap_or_else(|_| zx::Koid::from_raw(zx::sys::zx_koid_t::MAX))
+                thread.koid().unwrap_or_else(|_| zx::Koid::from_raw(zx::sys::zx_koid_t::MAX))
             }),
         );
     }

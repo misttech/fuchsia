@@ -221,7 +221,7 @@ mod tests {
             id: &Arc<ComponentIdentity>,
             tree: ClientEnd<TreeMarker>,
         ) -> zx::Koid {
-            let koid = tree.as_handle_ref().get_koid().unwrap();
+            let koid = tree.as_handle_ref().koid().unwrap();
             let component = self.components.get(id).expect("unknown component");
             let proxy = component.proxy.as_ref().expect("InspectSink proxy stopped");
             proxy
@@ -567,7 +567,7 @@ mod tests {
 
         // Fetch the escrowed VMO, provide tree to publish with the same name.
         let (tree, stream) = fidl::endpoints::create_request_stream::<TreeMarker>();
-        let koid = tree.as_handle_ref().get_koid().unwrap();
+        let koid = tree.as_handle_ref().koid().unwrap();
         let resp = proxy
             .fetch_escrow(finspect::InspectSinkFetchEscrowRequest {
                 token: Some(finspect::EscrowToken { token: token1 }),
@@ -630,7 +630,7 @@ mod tests {
 
         // Fetch the escrowed VMO, provide tree to publish with the same name.
         let (tree, stream) = fidl::endpoints::create_request_stream::<TreeMarker>();
-        let koid = tree.as_handle_ref().get_koid().unwrap();
+        let koid = tree.as_handle_ref().koid().unwrap();
         let resp = proxy
             .fetch_escrow(finspect::InspectSinkFetchEscrowRequest {
                 token: Some(finspect::EscrowToken { token: token1 }),

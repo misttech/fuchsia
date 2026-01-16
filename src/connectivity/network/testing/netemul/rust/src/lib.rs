@@ -1123,7 +1123,7 @@ impl<'a> TestEndpoint<'a> {
         let (client, server) = fidl::endpoints::create_proxy::<fnetwork::PortMarker>();
         self.get_port(server)?;
         let identity = client.get_identity().await?;
-        Ok(identity.get_koid()?)
+        Ok(identity.koid()?)
     }
 }
 

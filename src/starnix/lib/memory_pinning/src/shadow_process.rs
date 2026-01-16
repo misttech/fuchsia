@@ -113,7 +113,6 @@ mod tests {
     use super::*;
     use fidl_fuchsia_scheduler::{RoleManagerRequest, RoleManagerSetRoleResponse};
     use futures::StreamExt;
-    use zx::AsHandleRef;
 
     #[fuchsia::test]
     fn create_without_role_manager_succeeds() {
@@ -135,16 +134,16 @@ mod tests {
                 role_manager_client,
             )
             .unwrap();
-            send_vmar_koid.send(shadow_process.vmar.get_koid().unwrap()).unwrap();
+            send_vmar_koid.send(shadow_process.vmar.koid().unwrap()).unwrap();
         });
 
         match role_manager_server.next().await.unwrap().unwrap() {
             RoleManagerRequest::SetRole { payload, responder } => {
                 responder.send(Ok(RoleManagerSetRoleResponse::default())).unwrap();
-                let shadow_vmar_koid = recv_vmar_koid.await.unwrap();
+                let shadow_vmar_koid: zx::Koid = recv_vmar_koid.await.unwrap();
 
                 let received_vmar_koid = match &payload.target {
-                    Some(RoleTarget::Vmar(vmar)) => vmar.get_koid().unwrap(),
+                    Some(RoleTarget::Vmar(vmar)) => vmar.koid().unwrap(),
                     other => panic!("unexpected SetRole target {other:#?}"),
                 };
                 assert_eq!(shadow_vmar_koid, received_vmar_koid);
@@ -182,7 +181,7 @@ mod tests {
         // be fully committed & populated.
         let pinned_mapping_info = &mappings_after_pinning[0];
         assert_eq!(pinned_mapping_info.mmu_flags, zx::VmarFlagsExtended::PERM_READ);
-        assert_eq!(pinned_mapping_info.vmo_koid, to_map.get_koid().unwrap());
+        assert_eq!(pinned_mapping_info.vmo_koid, to_map.koid().unwrap());
         assert_eq!(pinned_mapping_info.vmo_offset, 0);
         assert_eq!(pinned_mapping_info.committed_bytes, 8192);
         assert_eq!(pinned_mapping_info.populated_bytes, 8192);

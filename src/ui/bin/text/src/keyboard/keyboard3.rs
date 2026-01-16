@@ -1,10 +1,10 @@
 // Copyright 2020 The Fuchsia Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
-use anyhow::{format_err, Context as _, Error};
+use anyhow::{Context as _, Error, format_err};
 use fuchsia_async::{self as fasync, TimeoutExt};
 use futures::lock::Mutex;
-use futures::{future, TryStreamExt};
+use futures::{TryStreamExt, future};
 use std::collections::{HashMap, HashSet};
 use std::fmt;
 use std::hash::{Hash, Hasher};
@@ -40,15 +40,14 @@ impl Clone for ViewRef {
 /// Compares ViewRefs by underlying zx::Koid.
 impl PartialEq for ViewRef {
     fn eq(&self, other: &Self) -> bool {
-        self.inner.reference.as_handle_ref().get_koid()
-            == other.inner.reference.as_handle_ref().get_koid()
+        self.inner.reference.as_handle_ref().koid() == other.inner.reference.as_handle_ref().koid()
     }
 }
 
 impl fmt::Debug for ViewRef {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_struct("ViewRef")
-            .field("koid", &self.inner.reference.as_handle_ref().get_koid().unwrap())
+            .field("koid", &self.inner.reference.as_handle_ref().koid().unwrap())
             .finish()
     }
 }
@@ -56,7 +55,7 @@ impl fmt::Debug for ViewRef {
 /// Hashes based on the underlying zx::Koid.
 impl Hash for ViewRef {
     fn hash<H: Hasher>(&self, state: &mut H) {
-        let koid = self.inner.reference.as_handle_ref().get_koid().unwrap();
+        let koid = self.inner.reference.as_handle_ref().koid().unwrap();
         koid.hash(state);
     }
 }
@@ -354,11 +353,7 @@ impl KeyListenerStore {
     }
 
     fn is_focused(&self, view_ref: &ViewRef) -> bool {
-        if let Some(focused_view) = &self.focused_view {
-            focused_view == view_ref
-        } else {
-            false
-        }
+        if let Some(focused_view) = &self.focused_view { focused_view == view_ref } else { false }
     }
 
     async fn dispatch_key(&self, event: ui_input3::KeyEvent) -> Result<bool, Error> {

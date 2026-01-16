@@ -76,7 +76,7 @@ async fn main() -> Result<()> {
     utc_clock.update(clock_builder.build()).context("while updating the test UTC clock")?;
 
     log::info!("Vendored UTC parameters:");
-    log::info!("    - koid              = {:?}", utc_clock.as_handle_ref().get_koid());
+    log::info!("    - koid              = {:?}", utc_clock.as_handle_ref().koid());
     log::info!("    - boot_at_backstop  = {boot_at_backstop:?}");
     log::info!("    - boot_now          = {boot_now:?}");
     log::info!("    - utc_backstop:     = {utc_backstop:?}");

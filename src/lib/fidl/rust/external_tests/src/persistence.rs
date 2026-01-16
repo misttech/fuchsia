@@ -51,15 +51,15 @@ fn standalone_encode_decode_value() {
 mod zx {
     use fidl::{
         convert_handle_dispositions_to_infos, standalone_decode_resource,
-        standalone_encode_resource, AsHandleRef,
+        standalone_encode_resource,
     };
     use fidl_test_external::StructWithHandles;
 
     #[test]
     fn standalone_encode_decode_resource() {
         let (c1, c2) = zx::Channel::create();
-        let c1_koid = c1.get_koid();
-        let c2_koid = c2.get_koid();
+        let c1_koid = c1.koid();
+        let c2_koid = c2.koid();
 
         let value = StructWithHandles { v: vec![c1, c2] };
 
@@ -73,7 +73,7 @@ mod zx {
             standalone_decode_resource(&bytes, &mut handle_infos, &metadata)
                 .expect("decoding failed");
 
-        assert_eq!(value_out.v[0].get_koid(), c1_koid);
-        assert_eq!(value_out.v[1].get_koid(), c2_koid);
+        assert_eq!(value_out.v[0].koid(), c1_koid);
+        assert_eq!(value_out.v[1].koid(), c2_koid);
     }
 }

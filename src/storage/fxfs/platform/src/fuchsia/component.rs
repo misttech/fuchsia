@@ -9,7 +9,6 @@ use crate::fuchsia::volumes_directory::VolumesDirectory;
 use anyhow::{Context, Error, bail};
 use async_trait::async_trait;
 use block_client::{BlockClient as _, RemoteBlockClient};
-use fidl::AsHandleRef;
 use fidl::endpoints::{ClientEnd, DiscoverableProtocolMarker, RequestStream};
 use fidl_fuchsia_fs::{AdminMarker, AdminRequest, AdminRequestStream};
 use fidl_fuchsia_fs_startup::{
@@ -69,7 +68,7 @@ struct InspectedFxFilesystem(OpenFxFilesystem, /*fs_id=*/ u64);
 
 impl From<OpenFxFilesystem> for InspectedFxFilesystem {
     fn from(fs: OpenFxFilesystem) -> Self {
-        Self(fs, zx::Event::create().get_koid().unwrap().raw_koid())
+        Self(fs, zx::Event::create().koid().unwrap().raw_koid())
     }
 }
 

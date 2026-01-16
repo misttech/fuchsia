@@ -12,7 +12,6 @@ use fuchsia_runtime as rt;
 use std::collections::HashSet;
 use std::io::Cursor;
 use std::sync::atomic::{AtomicU32, Ordering};
-use zx::{self as zx, AsHandleRef};
 
 #[derive(Default)]
 pub(crate) struct SinkConfig {
@@ -24,9 +23,9 @@ pub(crate) struct SinkConfig {
 
 thread_local! {
     static PROCESS_ID: zx::Koid =
-        rt::process_self().get_koid().unwrap_or_else(|_| zx::Koid::from_raw(zx::sys::zx_koid_t::MAX));
+        rt::process_self().koid().unwrap_or_else(|_| zx::Koid::from_raw(zx::sys::zx_koid_t::MAX));
     static THREAD_ID: zx::Koid = rt::with_thread_self(|thread| {
-        thread.get_koid().unwrap_or_else(|_| zx::Koid::from_raw(zx::sys::zx_koid_t::MAX))
+        thread.koid().unwrap_or_else(|_| zx::Koid::from_raw(zx::sys::zx_koid_t::MAX))
     });
 }
 

@@ -13,7 +13,7 @@ use std::collections::HashMap;
 use std::future::Future;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicU64, Ordering};
-use zx::AsHandleRef;
+
 use {
     fidl_fuchsia_component as fcomponent, fidl_fuchsia_component_runner as fcrunner,
     fidl_fuchsia_memory_attribution as fattribution, fuchsia_async as fasync,
@@ -133,7 +133,7 @@ fn get_attribution(resource_tracker: Arc<ResourceTracker>) -> Vec<fattribution::
     let mut children = vec![];
     for (_, (token, koid)) in resource_tracker.resources.lock().iter() {
         children.push(fattribution::AttributionUpdate::Add(fattribution::NewPrincipal {
-            identifier: Some(token.get_koid().unwrap().raw_koid()),
+            identifier: Some(token.koid().unwrap().raw_koid()),
             description: Some(fattribution::Description::Component(
                 token.duplicate_handle(fidl::Rights::SAME_RIGHTS).unwrap(),
             )),
@@ -141,7 +141,7 @@ fn get_attribution(resource_tracker: Arc<ResourceTracker>) -> Vec<fattribution::
             ..Default::default()
         }));
         children.push(fattribution::AttributionUpdate::Update(fattribution::UpdatedPrincipal {
-            identifier: Some(token.get_koid().unwrap().raw_koid()),
+            identifier: Some(token.koid().unwrap().raw_koid()),
             resources: Some(fattribution::Resources::Data(fattribution::Data {
                 resources: vec![fattribution::Resource::KernelObject(koid.raw_koid())],
             })),
@@ -186,7 +186,7 @@ fn start(
 
     let updates = vec![
         fattribution::AttributionUpdate::Add(fattribution::NewPrincipal {
-            identifier: Some(instance_token.get_koid().unwrap().raw_koid()),
+            identifier: Some(instance_token.koid().unwrap().raw_koid()),
             description: Some(fattribution::Description::Component(
                 instance_token.duplicate_handle(fidl::Rights::SAME_RIGHTS).unwrap(),
             )),
@@ -194,7 +194,7 @@ fn start(
             ..Default::default()
         }),
         fattribution::AttributionUpdate::Update(fattribution::UpdatedPrincipal {
-            identifier: Some(instance_token.get_koid().unwrap().raw_koid()),
+            identifier: Some(instance_token.koid().unwrap().raw_koid()),
             resources: Some(fattribution::Resources::Data(fattribution::Data {
                 resources: vec![fattribution::Resource::KernelObject(vmo_koid)],
             })),
@@ -210,7 +210,7 @@ fn start(
         termination_clone.await;
         if let Some((token, _)) = tracker.resources.lock().remove(&id) {
             publisher.on_update(vec![fattribution::AttributionUpdate::Remove(
-                token.get_koid().unwrap().raw_koid(),
+                token.koid().unwrap().raw_koid(),
             )]);
         }
     })

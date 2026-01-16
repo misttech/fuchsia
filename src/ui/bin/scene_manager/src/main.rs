@@ -575,7 +575,6 @@ pub async fn handle_graphical_presenter_request_stream(
 
 mod tests {
     use super::*;
-    use fidl::AsHandleRef;
     use fidl::endpoints::create_proxy_and_stream;
     use fidl_fuchsia_element::GraphicalPresenterMarker;
     use fuchsia_scenic as scenic;
@@ -625,7 +624,7 @@ mod tests {
 
         let view_creation_token_pair = scenic::flatland::ViewCreationTokenPair::new()?;
         let expected_viewport_creation_token_koid =
-            view_creation_token_pair.viewport_creation_token.value.get_koid();
+            view_creation_token_pair.viewport_creation_token.value.koid();
         let view_spec = ViewSpec {
             viewport_creation_token: Some(view_creation_token_pair.viewport_creation_token),
             ..Default::default()
@@ -640,7 +639,7 @@ mod tests {
         let (recorded_viewport_creation_token, recorded_view_ref) =
             scene_manager.lock().await.get_set_root_view_called_args();
         assert_eq!(
-            recorded_viewport_creation_token.value.get_koid(),
+            recorded_viewport_creation_token.value.koid(),
             expected_viewport_creation_token_koid
         );
 

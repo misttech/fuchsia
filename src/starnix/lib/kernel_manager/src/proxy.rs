@@ -162,7 +162,7 @@ async fn start_proxy(
     }
 
     trace_instant("starnix_runner:start_proxy:loop:exit", proxy_name);
-    if let Ok(koid) = proxy.message_counter.get_koid() {
+    if let Ok(koid) = proxy.message_counter.koid() {
         wake_sources.lock().remove(&koid);
     }
 }

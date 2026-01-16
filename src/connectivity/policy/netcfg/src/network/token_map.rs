@@ -5,8 +5,8 @@
 //! Defines structures for tracking and managing data associated with a zx::EventPair.
 
 use fuchsia_async as fasync;
-use futures::lock::{Mutex, MutexGuard};
 use futures::FutureExt as _;
+use futures::lock::{Mutex, MutexGuard};
 use std::collections::HashMap;
 use std::future::Future;
 use std::sync::Arc;
@@ -72,7 +72,7 @@ impl<Data> TokenMap<Data> {
         let (watcher, token) = zx::EventPair::create();
         self.insert(
             data,
-            token.get_koid().expect("unable to fetch koid for event_pair"),
+            token.koid().expect("unable to fetch koid for event_pair"),
             fasync::OnSignals::new(watcher, zx::Signals::OBJECT_PEER_CLOSED).map(|_| ()),
         )
         .await;
@@ -85,7 +85,8 @@ impl<Data> TokenMap<Data> {
     /// [`MapData`] object containing a reference to the underlying data, and a
     /// mutex lock of the map.
     pub async fn get<Handle: AsHandleRef>(&self, handle_ref: Handle) -> Option<MapData<'_, Data>> {
-        let koid = handle_ref.get_koid().expect("unable to fetch koid for provided handle");
+        let koid =
+            handle_ref.as_handle_ref().koid().expect("unable to fetch koid for provided handle");
         let data = self.entries.lock().await;
         MapData::new(data, koid)
     }
@@ -106,11 +107,7 @@ impl<'a, Data> MapData<'a, Data> {
         data: MutexGuard<'a, HashMap<zx::Koid, TokenMapEntry<Data>>>,
         koid: zx::Koid,
     ) -> Option<Self> {
-        if data.contains_key(&koid) {
-            Some(MapData { data, koid })
-        } else {
-            None
-        }
+        if data.contains_key(&koid) { Some(MapData { data, koid }) } else { None }
     }
 }
 

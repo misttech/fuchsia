@@ -340,8 +340,8 @@ mod tests {
     use std::collections::HashSet;
     use std::ffi::CString;
     use zx::{
-        AsHandleRef, Instant, JobAction, JobCondition, JobCriticalOptions, JobDefaultTimerMode,
-        JobInfo, JobPolicy, JobPolicyOption, Koid, MonotonicDuration, Signals, Task, sys,
+        Instant, JobAction, JobCondition, JobCriticalOptions, JobDefaultTimerMode, JobInfo,
+        JobPolicy, JobPolicyOption, Koid, MonotonicDuration, Signals, Task, sys,
     };
 
     #[test]
@@ -433,14 +433,14 @@ mod tests {
         created_children.push(fresh_job.create_child_job().expect("failed to create child job"));
         let reported_children_koids = fresh_job.children().unwrap();
         assert_eq!(reported_children_koids.len(), 1);
-        assert_eq!(Koid::from(reported_children_koids[0]), created_children[0].get_koid().unwrap());
+        assert_eq!(Koid::from(reported_children_koids[0]), created_children[0].koid().unwrap());
         for _ in 0..INFO_VEC_SIZE_INITIAL {
             created_children
                 .push(fresh_job.create_child_job().expect("failed to create child job"));
         }
         let reported_children_koids = fresh_job.children().unwrap();
         let created_children_koids =
-            created_children.iter().map(|p| p.get_koid().unwrap()).collect::<Vec<_>>();
+            created_children.iter().map(|p| p.koid().unwrap()).collect::<Vec<_>>();
         assert_eq!(reported_children_koids.len(), INFO_VEC_SIZE_INITIAL + 1);
         assert_eq!(
             HashSet::<_>::from_iter(&reported_children_koids),
@@ -464,7 +464,7 @@ mod tests {
         );
         let reported_process_koids = fresh_job.processes().unwrap();
         assert_eq!(reported_process_koids.len(), 1);
-        assert_eq!(Koid::from(reported_process_koids[0]), created_processes[0].get_koid().unwrap());
+        assert_eq!(Koid::from(reported_process_koids[0]), created_processes[0].koid().unwrap());
         for index in 0..INFO_VEC_SIZE_INITIAL {
             created_processes.push(
                 fresh_job
@@ -475,7 +475,7 @@ mod tests {
         }
         let reported_process_koids = fresh_job.processes().unwrap();
         let created_process_koids =
-            created_processes.iter().map(|p| p.get_koid().unwrap()).collect::<Vec<_>>();
+            created_processes.iter().map(|p| p.koid().unwrap()).collect::<Vec<_>>();
         assert_eq!(reported_process_koids.len(), INFO_VEC_SIZE_INITIAL + 1);
         assert_eq!(
             HashSet::<_>::from_iter(&reported_process_koids),
@@ -496,7 +496,7 @@ mod tests {
         let reported_job_handle = zx::Job::from(
             fresh_job.get_child(&reported_job_koid, zx::Rights::SAME_RIGHTS).unwrap(),
         );
-        assert_eq!(reported_job_handle.get_koid(), created_job.get_koid());
+        assert_eq!(reported_job_handle.koid(), created_job.koid());
 
         // We can even create a process on the handle we got back, and test ProcessKoid
         let created_process = reported_job_handle
@@ -508,6 +508,6 @@ mod tests {
         let reported_process_koid = reported_process_koids.remove(0);
         let reported_process_handle =
             reported_job_handle.get_child(&reported_process_koid, zx::Rights::SAME_RIGHTS).unwrap();
-        assert_eq!(reported_process_handle.get_koid(), created_process.get_koid());
+        assert_eq!(reported_process_handle.koid(), created_process.koid());
     }
 }

@@ -4,8 +4,6 @@
 
 use crate::{Result, SessionId};
 
-use zx::AsHandleRef;
-
 /// A universally unique id.
 #[derive(Debug)]
 pub struct Id {
@@ -18,7 +16,7 @@ pub struct Id {
 impl Id {
     pub fn new() -> Result<Self> {
         let id_handle = zx::Event::create();
-        let id = id_handle.get_koid()?.raw_koid();
+        let id = id_handle.koid()?.raw_koid();
 
         Ok(Self { id, id_handle })
     }

@@ -23,7 +23,6 @@ use std::sync::Arc;
 use suspend::{
     ASLEEP_SIGNAL, AWAKE_SIGNAL, SuspendContext, WakeSource, WakeSources, suspend_container,
 };
-use zx::AsHandleRef;
 use {
     fidl_fuchsia_component as fcomponent, fidl_fuchsia_component_decl as fdecl,
     fidl_fuchsia_component_runner as frunner, fidl_fuchsia_io as fio,
@@ -214,7 +213,7 @@ pub async fn serve_starnix_manager(
                 };
 
                 suspend_context.wake_sources.lock().insert(
-                    message_counter.get_koid().unwrap(),
+                    message_counter.koid().unwrap(),
                     WakeSource::from_counter(
                         message_counter.duplicate_handle(zx::Rights::SAME_RIGHTS)?,
                         name.clone(),
@@ -250,7 +249,7 @@ pub async fn serve_starnix_manager(
                     continue;
                 };
                 suspend_context.wake_sources.lock().insert(
-                    handle.get_koid().unwrap(),
+                    handle.koid().unwrap(),
                     WakeSource::from_handle(
                         handle,
                         name.clone(),
@@ -269,7 +268,7 @@ pub async fn serve_starnix_manager(
                     continue;
                 };
 
-                suspend_context.wake_sources.lock().remove(&handle.get_koid().unwrap());
+                suspend_context.wake_sources.lock().remove(&handle.koid().unwrap());
             }
             fstarnixrunner::ManagerRequest::CreatePager { payload, .. } => {
                 std::thread::spawn(|| {

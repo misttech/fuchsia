@@ -307,7 +307,6 @@ mod tests {
     use std::cell::RefCell;
     use std::mem::size_of;
     use std::sync::LazyLock;
-    use zx::AsHandleRef;
 
     #[test]
     fn test_vmo_name_with_prefix() {
@@ -529,7 +528,7 @@ mod tests {
         // We must check that KOIDs are the same, since we duplicate the handle when recording it
         // in TrackingMapper.
         let mapping = mapping_iter.next().expect("mapping from ELF VMO");
-        assert_eq!(mapping.vmo.get_koid().unwrap(), vmo.get_koid().unwrap());
+        assert_eq!(mapping.vmo.koid().unwrap(), vmo.koid().unwrap());
 
         let mut data = vec![0; *PAGE_SIZE];
 
@@ -589,7 +588,7 @@ mod tests {
         // We must check that KOIDs are the same, since we duplicate the handle when recording it
         // in TrackingMapper.
         let mapping = mapping_iter.next().expect("mapping from ELF VMO");
-        assert_eq!(mapping.vmo.get_koid().unwrap(), vmo.get_koid().unwrap());
+        assert_eq!(mapping.vmo.koid().unwrap(), vmo.koid().unwrap());
 
         let mut data = vec![0; *PAGE_SIZE];
 
@@ -639,7 +638,7 @@ mod tests {
         // We must check that KOIDs are different, since we duplicate the handle when recording it
         // in TrackingMapper.
         let mapping = mapping_iter.next().expect("mapping from ELF VMO");
-        assert_ne!(mapping.vmo.get_koid().unwrap(), vmo.get_koid().unwrap());
+        assert_ne!(mapping.vmo.koid().unwrap(), vmo.koid().unwrap());
 
         // Attempt to write to the VMO to ensure it has the ZX_RIGHT_WRITE right.
         mapping.vmo.write(b"FUCHSIA!", mapping.vmo_offset).expect("write to COW VMO");

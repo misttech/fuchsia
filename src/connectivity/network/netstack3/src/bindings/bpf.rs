@@ -32,7 +32,6 @@ use std::collections::{HashMap, hash_map};
 use std::mem::offset_of;
 use std::sync::{Arc, Weak};
 use zerocopy::FromBytes;
-use zx::AsHandleRef;
 use {
     fidl_fuchsia_ebpf as febpf, fidl_fuchsia_net_filter as fnet_filter,
     fidl_fuchsia_posix as fposix,
@@ -643,7 +642,7 @@ impl EbpfMapCache {
             .vmo
             .as_ref()
             .ok_or(MapError::InvalidParam)?
-            .get_koid()
+            .koid()
             .map_err(|_: zx::Status| MapError::InvalidVmo)?;
 
         let mut maps = self.maps.lock();

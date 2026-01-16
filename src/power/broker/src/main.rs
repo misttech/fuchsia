@@ -80,7 +80,7 @@ impl BrokerSvc {
                         let (client, server_end) =
                             fidl::endpoints::create_endpoints::<LeaseControlMarker>();
                         let lease_control_koid =
-                            server_end.channel().as_handle_ref().get_koid().unwrap();
+                            server_end.channel().as_handle_ref().koid().unwrap();
                         let resp = {
                             let mut broker = self.broker.borrow_mut();
                             let Some(level) =

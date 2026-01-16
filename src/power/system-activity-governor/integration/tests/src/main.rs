@@ -8,8 +8,8 @@ use diagnostics_assertions::{
 };
 use diagnostics_hierarchy::DiagnosticsHierarchy;
 use diagnostics_reader::ArchiveReader;
+use fidl::HandleBased;
 use fidl::endpoints::create_endpoints;
-use fidl::{AsHandleRef, HandleBased};
 use fidl_fuchsia_power_broker::{self as fbroker, LeaseStatus};
 use fidl_test_systemactivitygovernor::RealmOptions;
 use fuchsia_component::client::connect_to_protocol;
@@ -1479,7 +1479,7 @@ async fn test_activity_governor_take_wake_lease_raises_execution_state_to_wake_h
             ref fobs::WAKE_LEASES_NODE: {
                 var server_token_koid: {
                     ref fobs::WAKE_LEASE_ITEM_NODE_CREATED_AT: NonZeroUintProperty,
-                    ref fobs::WAKE_LEASE_ITEM_CLIENT_TOKEN_KOID: wake_lease.get_koid().unwrap().raw_koid(),
+                    ref fobs::WAKE_LEASE_ITEM_CLIENT_TOKEN_KOID: wake_lease.koid().unwrap().raw_koid(),
                     ref fobs::WAKE_LEASE_ITEM_NAME: wake_lease_name,
                     ref fobs::WAKE_LEASE_ITEM_TYPE: AnyStringProperty,
                     ref fobs::WAKE_LEASE_ITEM_STATUS: fobs::WAKE_LEASE_ITEM_STATUS_SATISFIED,
@@ -1558,7 +1558,7 @@ async fn test_activity_governor_acquire_wake_lease_raises_execution_state_to_sus
             ref fobs::WAKE_LEASES_NODE: {
                 var server_token_koid: {
                     ref fobs::WAKE_LEASE_ITEM_NODE_CREATED_AT: NonZeroUintProperty,
-                    ref fobs::WAKE_LEASE_ITEM_CLIENT_TOKEN_KOID: wake_lease.get_koid().unwrap().raw_koid(),
+                    ref fobs::WAKE_LEASE_ITEM_CLIENT_TOKEN_KOID: wake_lease.koid().unwrap().raw_koid(),
                     ref fobs::WAKE_LEASE_ITEM_NAME: wake_lease_name,
                     ref fobs::WAKE_LEASE_ITEM_TYPE: AnyStringProperty,
                     ref fobs::WAKE_LEASE_ITEM_STATUS: fobs::WAKE_LEASE_ITEM_STATUS_SATISFIED,
@@ -1639,7 +1639,7 @@ async fn test_activity_governor_take_application_activity_lease() -> Result<()> 
             ref fobs::WAKE_LEASES_NODE: {
                 var server_token_koid: {
                     ref fobs::WAKE_LEASE_ITEM_NODE_CREATED_AT: NonZeroUintProperty,
-                    ref fobs::WAKE_LEASE_ITEM_CLIENT_TOKEN_KOID: application_activity_lease.get_koid().unwrap().raw_koid(),
+                    ref fobs::WAKE_LEASE_ITEM_CLIENT_TOKEN_KOID: application_activity_lease.koid().unwrap().raw_koid(),
                     ref fobs::WAKE_LEASE_ITEM_NAME: application_activity_lease_name,
                     ref fobs::WAKE_LEASE_ITEM_TYPE: AnyStringProperty,
                     ref fobs::WAKE_LEASE_ITEM_STATUS: fobs::WAKE_LEASE_ITEM_STATUS_SATISFIED,
@@ -1723,7 +1723,7 @@ async fn test_activity_governor_handles_1000_wake_leases() -> Result<()> {
 
         let server_token_koid =
             &wake_lease.basic_info().unwrap().related_koid.raw_koid().to_string();
-        let client_token_koid = &wake_lease.get_koid().unwrap().raw_koid();
+        let client_token_koid = &wake_lease.koid().unwrap().raw_koid();
 
         let mut wake_lease_child = TreeAssertion::new(server_token_koid, false);
         wake_lease_child.add_property_assertion(
@@ -1786,7 +1786,7 @@ async fn test_activity_governor_handles_1000_acquired_wake_leases() -> Result<()
 
         let server_token_koid =
             &wake_lease.basic_info().unwrap().related_koid.raw_koid().to_string();
-        let client_token_koid = &wake_lease.get_koid().unwrap().raw_koid();
+        let client_token_koid = &wake_lease.koid().unwrap().raw_koid();
 
         let mut wake_lease_child = TreeAssertion::new(server_token_koid, false);
         wake_lease_child.add_property_assertion(

@@ -14,7 +14,6 @@ use fuchsia_scenic::{
     duplicate_buffer_collection_token,
 };
 use std::ffi::{CString, c_char, c_void};
-use zx::AsHandleRef;
 use {
     fidl_fuchsia_images2 as fimages2, fidl_fuchsia_sysmem2 as fsysmem2,
     fidl_fuchsia_ui_composition as fland,
@@ -420,7 +419,7 @@ impl VulkanRenderer {
         let sysmem_allocator = connect_to_protocol::<fsysmem2::AllocatorMarker>()?;
         sysmem_allocator.set_debug_client_info(&fsysmem2::AllocatorSetDebugClientInfoRequest {
             name: Some("flatland-rainbow example".to_string()),
-            id: Some(fuchsia_runtime::process_self().get_koid()?.raw_koid()),
+            id: Some(fuchsia_runtime::process_self().koid()?.raw_koid()),
             ..Default::default()
         })?;
 

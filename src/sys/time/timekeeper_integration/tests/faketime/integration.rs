@@ -3,7 +3,7 @@
 // found in the LICENSE file.
 
 use anyhow::{Context, Result};
-use fidl::{endpoints, AsHandleRef, HandleBased};
+use fidl::{AsHandleRef, HandleBased, endpoints};
 use fidl_fuchsia_metrics_test::{LogMethod, MetricEventLoggerQuerierProxy};
 use fidl_fuchsia_testing::Increment;
 use fidl_fuchsia_time_external::{Status, TimeSample};
@@ -13,12 +13,12 @@ use futures::{Future, StreamExt};
 use std::sync::Arc;
 use test_util::assert_geq;
 use time_metrics_registry::{
-    TimekeeperTimeSourceEventsMigratedMetricDimensionEventType as TimeSourceEvent,
     TIMEKEEPER_TIME_SOURCE_EVENTS_MIGRATED_METRIC_ID,
+    TimekeeperTimeSourceEventsMigratedMetricDimensionEventType as TimeSourceEvent,
 };
 use timekeeper_integration_lib::{
-    create_cobalt_event_stream, new_nonshareable_clock, poll_until_async, poll_until_async_2,
-    FakeClockController, RemotePushSourcePuppet, STD_DEV, VALID_TIME,
+    FakeClockController, RemotePushSourcePuppet, STD_DEV, VALID_TIME, create_cobalt_event_stream,
+    new_nonshareable_clock, poll_until_async, poll_until_async_2,
 };
 use {
     fidl_fuchsia_testing as ffte, fidl_fuchsia_testing_harness as ffth, fidl_fuchsia_time as fft,
@@ -28,7 +28,7 @@ use {
 use fidl_fuchsia_testing as _; // TODO: fmil - Figure out why this is needed.
 
 fn koid_of(c: &zx::Clock) -> u64 {
-    c.as_handle_ref().get_koid().expect("infallible").raw_koid()
+    c.as_handle_ref().koid().expect("infallible").raw_koid()
 }
 
 /// Connect to the FIDL protocol defined by the marker `T`, which served from
@@ -194,9 +194,9 @@ async fn test_restart_inactive_time_source_that_claims_healthy() -> Result<()> {
             .await
             .expect("Failed to get restart event");
         assert_eq!(restart_event.metric_id, TIMEKEEPER_TIME_SOURCE_EVENTS_MIGRATED_METRIC_ID);
-        assert!(restart_event
-            .event_codes
-            .contains(&(TimeSourceEvent::RestartedSampleTimeOut as u32)));
+        assert!(
+            restart_event.event_codes.contains(&(TimeSourceEvent::RestartedSampleTimeOut as u32))
+        );
     })
     .await
 }

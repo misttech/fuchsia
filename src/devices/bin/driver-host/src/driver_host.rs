@@ -16,7 +16,7 @@ use std::cell::RefCell;
 use std::collections::BTreeSet;
 use std::rc::Rc;
 use std::sync::{Arc, Weak};
-use zx::{AsHandleRef, Status};
+use zx::Status;
 use {
     fidl_fuchsia_driver_framework as fidl_fdf, fidl_fuchsia_driver_host as fdh,
     fidl_fuchsia_ldsvc as fldsvc, fidl_fuchsia_system_state as fss,
@@ -324,7 +324,7 @@ impl DriverHost {
     }
 
     fn add_exception(&self, info: task_exceptions::ExceptionInfo) {
-        let Ok(thread_koid) = info.thread.get_koid() else {
+        let Ok(thread_koid) = info.thread.koid() else {
             log::error!("failed to get the exception thread's koid.");
             return;
         };
@@ -397,14 +397,11 @@ type ProcessInfo =
     Result<(u64, u64, u64, &'static [fdh::ThreadInfo], &'static [fdh::DispatcherInfo]), i32>;
 
 fn get_process_info() -> ProcessInfo {
-    let job_koid =
-        fuchsia_runtime::job_default().get_koid().map_err(zx::Status::into_raw)?.raw_koid();
-    let process_koid =
-        fuchsia_runtime::process_self().get_koid().map_err(Status::into_raw)?.raw_koid();
-    let main_thread_koid = fuchsia_runtime::with_thread_self(|thread| {
-        thread.get_koid().map_err(zx::Status::into_raw)
-    })?
-    .raw_koid();
+    let job_koid = fuchsia_runtime::job_default().koid().map_err(zx::Status::into_raw)?.raw_koid();
+    let process_koid = fuchsia_runtime::process_self().koid().map_err(Status::into_raw)?.raw_koid();
+    let main_thread_koid =
+        fuchsia_runtime::with_thread_self(|thread| thread.koid().map_err(zx::Status::into_raw))?
+            .raw_koid();
     static THREAD_INFO: [fdh::ThreadInfo; 0] = [];
     static DISPATCHER_INFO: [fdh::DispatcherInfo; 0] = [];
     Ok((job_koid, process_koid, main_thread_koid, &THREAD_INFO, &DISPATCHER_INFO))

@@ -236,7 +236,7 @@ mod tests {
         let volume_client = receiver.next().await.unwrap();
         assert_eq!(
             volume.as_channel().as_handle_ref().basic_info().unwrap().related_koid,
-            volume_client.channel().as_handle_ref().get_koid().unwrap()
+            volume_client.channel().as_handle_ref().koid().unwrap()
         );
     }
 }

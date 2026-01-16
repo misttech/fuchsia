@@ -5,7 +5,7 @@
 use ebpf_api::{AttachType, ProgramType};
 use fidl_fuchsia_ebpf as febpf;
 use zerocopy::{FromBytes, Immutable, IntoBytes, KnownLayout};
-use zx::{AsHandleRef as _, HandleBased as _};
+use zx::HandleBased;
 
 // The structs below must match the structs in `ebpf_test_progs.c`.
 // LINT.IfChange
@@ -132,7 +132,7 @@ impl TestProgram {
     }
 
     pub fn get_program_id(&self) -> febpf::ProgramId {
-        febpf::ProgramId { id: self.handle.handle.get_koid().expect("get koid").raw_koid() }
+        febpf::ProgramId { id: self.handle.handle.koid().expect("get koid").raw_koid() }
     }
 
     // Mark the program defunct and return the server handle.

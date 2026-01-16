@@ -6,7 +6,7 @@ use fuchsia_sync::Mutex;
 use moniker::Moniker;
 use std::collections::HashMap;
 use std::sync::Arc;
-use zx::{AsHandleRef, HandleBased, Koid};
+use zx::{HandleBased, Koid};
 
 use super::context::ModelContext;
 
@@ -45,7 +45,7 @@ impl InstanceRegistry {
 
     fn add(&self, moniker: Moniker) -> InstanceToken {
         let event = zx::Event::create();
-        let koid = event.get_koid().expect(KOID_ERROR);
+        let koid = event.koid().expect(KOID_ERROR);
         self.koid_to_moniker.lock().insert(koid, moniker);
         InstanceToken(event)
     }
@@ -60,7 +60,7 @@ impl InstanceRegistry {
     /// If this method returns `None`, then either the component instance has
     /// been destroyed, or the token was not minted by component_manager.
     pub fn get(&self, token: &InstanceToken) -> Option<Moniker> {
-        let koid = token.0.get_koid().expect(KOID_ERROR);
+        let koid = token.0.koid().expect(KOID_ERROR);
         self.koid_to_moniker.lock().get(&koid).cloned()
     }
 
@@ -101,7 +101,7 @@ impl Drop for InstanceTokenState {
         match self {
             InstanceTokenState::Unset => {}
             InstanceTokenState::Set { token, context } => {
-                context.instance_registry().remove(token.0.get_koid().expect(KOID_ERROR));
+                context.instance_registry().remove(token.0.koid().expect(KOID_ERROR));
             }
         }
     }

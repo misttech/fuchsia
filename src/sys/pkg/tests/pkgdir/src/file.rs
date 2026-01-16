@@ -364,8 +364,8 @@ async fn get_backing_memory_per_package_source(source: PackageSource) {
             )
             .await;
             assert_ne!(
-                vmo0.as_handle_ref().get_koid().unwrap(),
-                vmo1.as_handle_ref().get_koid().unwrap(),
+                vmo0.as_handle_ref().koid().unwrap(),
+                vmo1.as_handle_ref().koid().unwrap(),
                 "We should receive our own clone each time we invoke with {:?}",
                 fio::VmoFlags::PRIVATE_CLONE,
             );

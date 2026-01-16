@@ -959,8 +959,8 @@ mod tests {
             cloned_event.wake_lease.as_ref().unwrap().as_handle_ref().raw_handle()
         );
         assert_eq!(
-            event_with_lease.wake_lease.as_ref().unwrap().get_koid(),
-            cloned_event.wake_lease.as_ref().unwrap().get_koid()
+            event_with_lease.wake_lease.as_ref().unwrap().koid(),
+            cloned_event.wake_lease.as_ref().unwrap().koid()
         );
     }
 

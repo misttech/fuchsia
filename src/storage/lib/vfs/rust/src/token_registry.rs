@@ -15,9 +15,9 @@ use std::sync::Arc;
 use zx_status::Status;
 
 #[cfg(not(target_os = "fuchsia"))]
-use fuchsia_async::emulated_handle::{AsHandleRef, Koid};
+use fuchsia_async::emulated_handle::Koid;
 #[cfg(target_os = "fuchsia")]
-use zx::{AsHandleRef, Koid};
+use zx::Koid;
 
 const DEFAULT_TOKEN_RIGHTS: Rights = Rights::BASIC;
 
@@ -65,7 +65,7 @@ impl TokenRegistry {
             Entry::Occupied(o) => o.into_mut(),
             Entry::Vacant(v) => {
                 let handle = Event::create().into_handle();
-                let koid = handle.get_koid()?;
+                let koid = handle.koid()?;
                 assert!(
                     token_to_owner.insert(koid, &owner.0 as &dyn TokenInterface).is_none(),
                     "koid is a duplicate"
@@ -82,7 +82,7 @@ impl TokenRegistry {
         &self,
         token: NullableHandle,
     ) -> Result<Option<Arc<dyn MutableDirectory>>, Status> {
-        let koid = token.get_koid()?;
+        let koid = token.koid()?;
         let this = self.inner.lock();
 
         match this.token_to_owner.get(&koid) {
@@ -101,7 +101,7 @@ impl TokenRegistry {
         let mut this = self.inner.lock();
 
         if let Some(handle) = this.owner_to_token.remove(&ptr) {
-            this.token_to_owner.remove(&handle.get_koid().unwrap()).unwrap();
+            this.token_to_owner.remove(&handle.koid().unwrap()).unwrap();
         }
     }
 }
@@ -157,7 +157,7 @@ impl<T: TokenInterface> PinnedDrop for Tokenizable<T> {
 mod tests {
     use self::mocks::{MockChannel, MockDirectory};
     use super::{DEFAULT_TOKEN_RIGHTS, TokenRegistry, Tokenizable};
-    use fidl::{AsHandleRef, HandleBased, Rights};
+    use fidl::{HandleBased, Rights};
     use futures::pin_mut;
     use std::sync::Arc;
 
@@ -170,8 +170,8 @@ mod tests {
         let token1 = TokenRegistry::get_token(client.as_ref()).unwrap();
         let token2 = TokenRegistry::get_token(client.as_ref()).unwrap();
 
-        let koid1 = token1.get_koid().unwrap();
-        let koid2 = token2.get_koid().unwrap();
+        let koid1 = token1.koid().unwrap();
+        let koid2 = token2.koid().unwrap();
         assert_eq!(koid1, koid2);
     }
 
@@ -232,8 +232,8 @@ mod tests {
             {
                 let token2 = TokenRegistry::get_token(client.as_ref()).unwrap();
 
-                let koid1 = token.get_koid().unwrap();
-                let koid2 = token2.get_koid().unwrap();
+                let koid1 = token.koid().unwrap();
+                let koid2 = token2.koid().unwrap();
                 assert_eq!(koid1, koid2);
             }
 

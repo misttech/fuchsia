@@ -108,7 +108,7 @@ impl InspectRepository {
         tree: Option<ClientEnd<finspect::TreeMarker>>,
     ) -> Option<zx::Vmo> {
         debug!(identity:% = component; "Fetch Escrowed inspect handle.");
-        let koid = token.token.as_handle_ref().get_koid().unwrap();
+        let koid = token.token.as_handle_ref().koid().unwrap();
         let mut guard = self.inner.write();
         let container = guard.diagnostics_containers.get_mut(&component)?;
         let (handle, _) = container.remove_handle(koid);
@@ -330,7 +330,7 @@ mod tests {
         let repo = Arc::new(InspectRepository::new(vec![], fasync::Scope::new()));
         let identity = Arc::new(ComponentIdentity::unknown());
         let (proxy, server_end) = fidl::endpoints::create_proxy::<finspect::TreeMarker>();
-        let koid = proxy.as_channel().as_handle_ref().get_koid().unwrap();
+        let koid = proxy.as_channel().as_handle_ref().koid().unwrap();
         repo.add_inspect_handle(Arc::clone(&identity), InspectHandle::tree(proxy, Some("test")));
         {
             let mut guard = repo.inner.write();
@@ -467,7 +467,7 @@ mod tests {
         let moniker = ExtendedMoniker::parse_str("a/b/foo").unwrap();
         let identity = Arc::new(ComponentIdentity::new(moniker, TEST_URL));
         let (proxy, server_end) = fidl::endpoints::create_proxy::<finspect::TreeMarker>();
-        let koid = proxy.as_channel().as_handle_ref().get_koid().unwrap();
+        let koid = proxy.as_channel().as_handle_ref().koid().unwrap();
 
         repo.add_inspect_handle(Arc::clone(&identity), InspectHandle::tree(proxy, Some("tree")));
         {

@@ -9,17 +9,14 @@ use fuchsia_component::server::ServiceFs;
 use fuchsia_runtime::{self as fruntime, HandleInfo, HandleType};
 use futures::prelude::*;
 use std::{env, fs};
-use zx::{self as zx, AsHandleRef};
 
 async fn run_util_server(mut stream: UtilRequestStream) -> Result<(), Error> {
     // If we've been given a lifecycle channel, figure out its koid
     let lifecycle_koid: u64 =
         match fruntime::take_startup_handle(HandleInfo::new(HandleType::Lifecycle, 0)) {
-            Some(handle) => handle
-                .as_handle_ref()
-                .get_koid()
-                .expect("failed to get basic lifecycle handle info")
-                .raw_koid(),
+            Some(handle) => {
+                handle.koid().expect("failed to get basic lifecycle handle info").raw_koid()
+            }
             None => zx::sys::ZX_KOID_INVALID,
         };
 

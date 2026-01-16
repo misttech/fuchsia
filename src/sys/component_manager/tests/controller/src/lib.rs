@@ -19,7 +19,7 @@ use std::sync::Arc;
 use test_case::test_case;
 use vfs::file::vmo::read_only;
 use vfs::pseudo_directory;
-use zx::{self as zx, AsHandleRef, HandleBased};
+use zx::HandleBased;
 use {
     fidl_fidl_examples_routing_echo as fecho, fidl_fuchsia_component as fcomponent,
     fidl_fuchsia_component_decl as fcdecl, fidl_fuchsia_component_runtime as fruntime,
@@ -430,7 +430,7 @@ async fn start_with_numbered_handles() {
     let s2_from_runner = local_component_handles
         .take_numbered_handle(handle_id)
         .expect("child was not given the numbered handle");
-    assert_eq!(s1.basic_info().unwrap().related_koid, s2_from_runner.get_koid().unwrap());
+    assert_eq!(s1.basic_info().unwrap().related_koid, s2_from_runner.koid().unwrap());
 }
 
 #[fuchsia::test]

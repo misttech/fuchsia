@@ -1027,7 +1027,7 @@ mod tokens_store {
         use fuchsia_async::TestExecutor;
         use std::pin::pin;
         use test_case::test_matrix;
-        use zx::{AsHandleRef, MonotonicDuration};
+        use zx::MonotonicDuration;
 
         struct TestSocketTokenStoreHost {
             socket_tokens_store: SocketTokensStore<TestSocketTokenStoreHost>,
@@ -1138,7 +1138,7 @@ mod tokens_store {
             let token2 = token_resolver
                 .get_token(syncio::ZxioTokenType::SharingDomain)
                 .expect("Failed to get token");
-            assert!(token1.get_koid() == token2.get_koid());
+            assert!(token1.koid() == token2.koid());
 
             // Token should not be dropped while we have a TokenResolver.
             advance_time(&mut executor, delay2);

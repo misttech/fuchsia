@@ -412,8 +412,8 @@ mod tests {
     use std::ffi::CString;
     use std::mem::MaybeUninit;
     use zx::{
-        AsHandleRef, Instant, MapDetails, ProcessInfo, ProcessInfoFlags, Signals, Task,
-        TaskStatsInfo, VmarFlags, Vmo, sys, system_get_page_size,
+        Instant, MapDetails, ProcessInfo, ProcessInfoFlags, Signals, Task, TaskStatsInfo,
+        VmarFlags, Vmo, sys, system_get_page_size,
     };
 
     const STARTED: ProcessInfoFlags = ProcessInfoFlags::STARTED;
@@ -536,7 +536,7 @@ mod tests {
 
         // Create two mappings so we know what to expect from our test calls.
         let vmo = Vmo::create(system_get_page_size() as u64).unwrap();
-        let vmo_koid = vmo.get_koid().unwrap();
+        let vmo_koid = vmo.koid().unwrap();
 
         let map1 = root_vmar
             .map(0, &vmo, 0, system_get_page_size() as usize, VmarFlags::PERM_READ)
@@ -589,7 +589,7 @@ mod tests {
 
         // Create two mappings so we know what to expect from our test calls.
         let vmo = Vmo::create(system_get_page_size() as u64).unwrap();
-        let vmo_koid = vmo.get_koid().unwrap();
+        let vmo_koid = vmo.koid().unwrap();
 
         let map1 = root_vmar
             .map(0, &vmo, 0, system_get_page_size() as usize, VmarFlags::PERM_READ)
@@ -624,7 +624,7 @@ mod tests {
 
         // Create two mappings so we know what to expect from our test calls.
         let vmo = Vmo::create(system_get_page_size() as u64).unwrap();
-        let vmo_koid = vmo.get_koid().unwrap();
+        let vmo_koid = vmo.koid().unwrap();
 
         let mut data = vec![MaybeUninit::uninit(); 2048];
         let (info, _, available) = process.info_vmos(&mut data).unwrap();
@@ -643,7 +643,7 @@ mod tests {
 
         // Create two mappings so we know what to expect from our test calls.
         let vmo = Vmo::create(system_get_page_size() as u64).unwrap();
-        let vmo_koid = vmo.get_koid().unwrap();
+        let vmo_koid = vmo.koid().unwrap();
 
         let info = process.info_vmos_vec().unwrap();
 
@@ -669,13 +669,13 @@ mod tests {
     #[test]
     fn threads_contain_self() {
         let current_thread_koid =
-            fuchsia_runtime::with_thread_self(|thread| thread.get_koid().unwrap());
+            fuchsia_runtime::with_thread_self(|thread| thread.koid().unwrap());
         let threads_koids = fuchsia_runtime::process_self().threads().unwrap();
         assert!(threads_koids.contains(&current_thread_koid));
         let thread_handle = fuchsia_runtime::process_self()
             .get_child(&current_thread_koid, zx::Rights::NONE)
             .unwrap();
-        assert_eq!(thread_handle.get_koid().unwrap(), current_thread_koid);
+        assert_eq!(thread_handle.koid().unwrap(), current_thread_koid);
     }
 
     // The vdso_next tests don't have permission to create raw processes.
@@ -697,7 +697,7 @@ mod tests {
             job.create_child_process(zx::ProcessOptions::empty(), b"test-process").unwrap();
 
         let thread = process.create_thread(b"test-thread").unwrap();
-        let thread_koid = thread.get_koid().unwrap();
+        let thread_koid = thread.koid().unwrap();
 
         assert!(process.threads().unwrap().is_empty());
         assert!(process.get_child(&thread_koid, zx::Rights::NONE).is_err());
@@ -722,9 +722,9 @@ mod tests {
 
         let threads_koids = process.threads().unwrap();
         assert_eq!(threads_koids.len(), 1);
-        assert_eq!(threads_koids[0], thread1.get_koid().unwrap());
+        assert_eq!(threads_koids[0], thread1.koid().unwrap());
         assert_eq!(
-            process.get_child(&threads_koids[0], zx::Rights::NONE).unwrap().get_koid().unwrap(),
+            process.get_child(&threads_koids[0], zx::Rights::NONE).unwrap().koid().unwrap(),
             threads_koids[0]
         );
 
@@ -734,14 +734,14 @@ mod tests {
 
         let threads_koids = process.threads().unwrap();
         assert_eq!(threads_koids.len(), 2);
-        assert!(threads_koids.contains(&thread1.get_koid().unwrap()));
-        assert!(threads_koids.contains(&thread2.get_koid().unwrap()));
+        assert!(threads_koids.contains(&thread1.koid().unwrap()));
+        assert!(threads_koids.contains(&thread2.koid().unwrap()));
         assert_eq!(
-            process.get_child(&threads_koids[0], zx::Rights::NONE).unwrap().get_koid().unwrap(),
+            process.get_child(&threads_koids[0], zx::Rights::NONE).unwrap().koid().unwrap(),
             threads_koids[0]
         );
         assert_eq!(
-            process.get_child(&threads_koids[1], zx::Rights::NONE).unwrap().get_koid().unwrap(),
+            process.get_child(&threads_koids[1], zx::Rights::NONE).unwrap().koid().unwrap(),
             threads_koids[1]
         );
 

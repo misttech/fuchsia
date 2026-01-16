@@ -842,7 +842,6 @@ mod tests {
     use assert_matches::assert_matches;
     use fidl_fuchsia_diagnostics::{ArchiveAccessorMarker, BatchIteratorMarker};
     use fuchsia_inspect::{Inspector, Node};
-    use zx::AsHandleRef;
 
     #[fuchsia::test]
     async fn logs_only_accept_basic_component_selectors() {
@@ -998,11 +997,11 @@ mod tests {
     fn socket_writer_handles_json() {
         let vmo = zx::Vmo::create(1).unwrap();
         vmo.write(&[5u8], 0).unwrap();
-        let koid = vmo.get_koid().unwrap();
+        let koid = vmo.koid().unwrap();
         let text = FormattedContent::Json(Buffer { size: 1, vmo });
         let result = get_buffer_from_formatted_content(text).unwrap();
         assert_eq!(result.size, 1);
-        assert_eq!(result.vmo.get_koid().unwrap(), koid);
+        assert_eq!(result.vmo.koid().unwrap(), koid);
         let mut buffer = [0];
         result.vmo.read(&mut buffer, 0).unwrap();
         assert_eq!(buffer[0], 5);

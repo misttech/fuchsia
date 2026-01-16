@@ -3,10 +3,9 @@
 // found in the LICENSE file.
 
 use std::sync::LazyLock;
-use zx::{self as zx, AsHandleRef};
 
 pub static PLACEHOLDER_TEXT: LazyLock<String> = LazyLock::new(|| "x".repeat(32000));
 pub static PROCESS_ID: LazyLock<zx::Koid> =
-    LazyLock::new(|| fuchsia_runtime::process_self().get_koid().unwrap());
+    LazyLock::new(|| fuchsia_runtime::process_self().koid().unwrap());
 pub static THREAD_ID: LazyLock<zx::Koid> =
-    LazyLock::new(|| fuchsia_runtime::with_thread_self(|thread| thread.get_koid().unwrap()));
+    LazyLock::new(|| fuchsia_runtime::with_thread_self(|thread| thread.koid().unwrap()));

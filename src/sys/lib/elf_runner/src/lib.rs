@@ -407,8 +407,7 @@ impl ElfRunner {
         let runtime_dir_server_end = start_info
             .runtime_dir
             .ok_or(StartComponentError::StartInfoError(StartInfoError::MissingRuntimeDir))?;
-        let job_koid =
-            job.proc().get_koid().map_err(StartComponentError::JobGetKoidFailed)?.raw_koid();
+        let job_koid = job.proc().koid().map_err(StartComponentError::JobGetKoidFailed)?.raw_koid();
 
         let runtime_dir = RuntimeDirBuilder::new(runtime_dir_server_end)
             .args(program_config.args.clone())
@@ -525,7 +524,7 @@ impl ElfRunner {
                 .expect("failed to set process as critical");
         }
 
-        let pid = process.get_koid().map_err(StartComponentError::ProcessGetKoidFailed)?.raw_koid();
+        let pid = process.koid().map_err(StartComponentError::ProcessGetKoidFailed)?.raw_koid();
 
         // Add process ID to the runtime dir.
         runtime_dir.add_process_id(pid);
@@ -1529,7 +1528,7 @@ mod tests {
                         ..
                     },
             })) => {
-                assert_eq!(job_id, job.get_koid().unwrap().raw_koid());
+                assert_eq!(job_id, job.koid().unwrap().raw_koid());
             }
             other => panic!("unexpected event result: {:?}", other),
         }
@@ -1667,7 +1666,7 @@ mod tests {
             zx::ClockOpts::AUTO_START | zx::ClockOpts::MONOTONIC | zx::ClockOpts::MAPPABLE,
             None,
         )?;
-        let clock_koid = clock.get_koid().unwrap();
+        let clock_koid = clock.koid().unwrap();
 
         let (_runtime_dir, runtime_dir_server) = create_proxy::<fio::DirectoryMarker>();
         let mut start_info = hello_world_startinfo(runtime_dir_server);
@@ -1687,7 +1686,7 @@ mod tests {
             payload
                 .handles
                 .iter()
-                .any(|handle_info| handle_info.handle.get_koid().unwrap() == clock_koid)
+                .any(|handle_info| handle_info.handle.koid().unwrap() == clock_koid)
         );
 
         Ok(())

@@ -20,7 +20,6 @@ use futures::{FutureExt as _, StreamExt as _, TryStreamExt as _, select, stream}
 use itertools::Itertools;
 use log::{debug, error, info, warn};
 use thiserror::Error;
-use zx::AsHandleRef as _;
 
 use {
     fidl_fuchsia_ebpf as febpf, fidl_fuchsia_net_filter as fnet_filter,
@@ -552,9 +551,8 @@ async fn serve_controller(
                         continue;
                     }
                 };
-                let id = febpf::ProgramId {
-                    id: handle.get_koid().expect("Failed to get koid").raw_koid(),
-                };
+                let id =
+                    febpf::ProgramId { id: handle.koid().expect("Failed to get koid").raw_koid() };
                 let result = ebpf_registry.register(ctx.bindings_ctx(), id, program);
 
                 if result.is_ok() {

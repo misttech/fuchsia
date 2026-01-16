@@ -586,7 +586,7 @@ mod tests {
 
         let (ch, _) = fidl::Channel::create();
         let handle = ch.into_handle();
-        let handle_koid = handle.as_handle_ref().get_koid().unwrap();
+        let handle_koid = handle.as_handle_ref().koid().unwrap();
         let cap1 = Capability::Handle(handle.into());
         let cap2 = Capability::Data(Data::Int64(42));
         store
@@ -604,7 +604,7 @@ mod tests {
         let cap2 = store.export(2).await.unwrap().unwrap();
         assert_matches!(
             cap1,
-            fsandbox::Capability::Handle(h) if h.get_koid().unwrap() == handle_koid
+            fsandbox::Capability::Handle(h) if h.as_handle_ref().koid().unwrap() == handle_koid
         );
         assert_matches!(
             cap2,
@@ -686,7 +686,7 @@ mod tests {
 
         let (ch, _) = fidl::Channel::create();
         let handle = ch.into_handle();
-        let handle_koid = handle.as_handle_ref().get_koid().unwrap();
+        let handle_koid = handle.as_handle_ref().koid().unwrap();
         let cap1 = Capability::Handle(handle.into());
         let cap2 = Capability::Data(Data::Int64(42));
         store
@@ -704,7 +704,7 @@ mod tests {
         store.drop(2).await.unwrap().unwrap();
         assert_matches!(
             store.export(1).await.unwrap(),
-            Ok(fsandbox::Capability::Handle(h)) if h.as_handle_ref().get_koid().unwrap() == handle_koid
+            Ok(fsandbox::Capability::Handle(h)) if h.as_handle_ref().koid().unwrap() == handle_koid
         );
         assert_matches!(
             store.export(2).await.unwrap(),
@@ -757,7 +757,7 @@ mod tests {
 
         let (event, _) = fidl::EventPair::create();
         let handle = event.into_handle();
-        let handle_koid = handle.as_handle_ref().get_koid().unwrap();
+        let handle_koid = handle.as_handle_ref().koid().unwrap();
         let cap1 = Capability::Handle(handle.into());
         store
             .import(1, cap1.into_fsandbox_capability(WeakInstanceToken::new_invalid()))
@@ -770,7 +770,7 @@ mod tests {
         let cap1 = store.export(2).await.unwrap().unwrap();
         assert_matches!(
             cap1,
-            fsandbox::Capability::Handle(h) if h.get_koid().unwrap() == handle_koid
+            fsandbox::Capability::Handle(h) if h.as_handle_ref().koid().unwrap() == handle_koid
         );
     }
 

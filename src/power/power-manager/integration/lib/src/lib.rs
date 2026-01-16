@@ -9,7 +9,6 @@ use crate::mocks::activity_service::MockActivityService;
 use crate::mocks::admin::MockStateControlAdminService;
 use crate::mocks::input_settings_service::MockInputSettingsService;
 use crate::mocks::kernel_service::MockKernelService;
-use fidl::AsHandleRef as _;
 use fidl::endpoints::{DiscoverableProtocolMarker, ProtocolMarker, ServiceMarker};
 use fuchsia_component::client::Service;
 use fuchsia_component_test::{
@@ -65,7 +64,7 @@ impl TestEnvBuilder {
         // the current process.
         let realm_name = format!(
             "{}-{}",
-            fuchsia_runtime::process_self().get_koid().unwrap().raw_koid(),
+            fuchsia_runtime::process_self().koid().unwrap().raw_koid(),
             UNIQUE_REALM_NUMBER.fetch_add(1, Ordering::Relaxed)
         );
 

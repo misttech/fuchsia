@@ -298,7 +298,7 @@ mod tests {
         fn assert_fs_gave_back_server_end(self, client_end: ClientEnd<fio::DirectoryMarker>) {
             let reclaimed_server_end: zx::Channel = self.server_end.lock().take().unwrap();
             assert_eq!(
-                client_end.get_koid().unwrap(),
+                client_end.as_handle_ref().koid().unwrap(),
                 reclaimed_server_end.basic_info().unwrap().related_koid
             )
         }

@@ -15,7 +15,7 @@ pub trait ViewRefExt {
 
 impl ViewRefExt for ViewRef {
     fn get_koid(&self) -> Result<zx::Koid, zx::Status> {
-        self.reference.as_handle_ref().get_koid()
+        self.reference.as_handle_ref().koid()
     }
 }
 

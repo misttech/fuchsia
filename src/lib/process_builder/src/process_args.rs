@@ -243,7 +243,7 @@ mod tests {
     use anyhow::Error;
     use fuchsia_runtime::HandleType;
     use std::iter;
-    use zx::{AsHandleRef, HandleBased};
+    use zx::HandleBased;
 
     #[test]
     fn build_and_write_message() -> Result<(), Error> {
@@ -266,7 +266,7 @@ mod tests {
             },
         ];
         let handle_koids: Vec<zx::Koid> =
-            handles.iter().map(|h| h.handle.get_koid()).collect::<Result<_, _>>()?;
+            handles.iter().map(|h| h.handle.koid()).collect::<Result<_, _>>()?;
 
         let config = MessageContents {
             args: vec![CString::new("arg1")?, CString::new("arg2")?, CString::new("arg3")?],
@@ -312,7 +312,7 @@ mod tests {
         assert_eq!(read_bytes, correct);
 
         let read_koids: Vec<zx::Koid> =
-            read_handles.iter().map(|h| h.get_koid()).collect::<Result<_, _>>()?;
+            read_handles.iter().map(|h| h.koid()).collect::<Result<_, _>>()?;
         assert_eq!(read_koids, handle_koids);
 
         Ok(())

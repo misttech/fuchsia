@@ -6,7 +6,6 @@ use attribution_server::{AttributionServer, AttributionServerHandle};
 use fidl::endpoints::{ControlHandle, DiscoverableProtocolMarker, RequestStream};
 use futures::TryStreamExt;
 use std::sync::Arc;
-use zx::AsHandleRef;
 use {fidl_fuchsia_io as fio, fidl_fuchsia_memory_attribution as fattribution};
 
 use crate::ComponentSet;
@@ -37,7 +36,7 @@ impl MemoryReporter {
             })),
             Some(Box::new(move |token| {
                 deleted_component_publisher.on_update(vec![
-                    fattribution::AttributionUpdate::Remove(token.get_koid().unwrap().raw_koid()),
+                    fattribution::AttributionUpdate::Remove(token.koid().unwrap().raw_koid()),
                 ]);
             })),
         );
@@ -76,7 +75,7 @@ impl MemoryReporter {
 
     fn build_new_attribution(component: &ElfComponentInfo) -> Vec<fattribution::AttributionUpdate> {
         let instance_token = component.copy_instance_token().unwrap();
-        let instance_token_koid = instance_token.get_koid().unwrap().raw_koid();
+        let instance_token_koid = instance_token.koid().unwrap().raw_koid();
         let new_principal = fattribution::NewPrincipal {
             identifier: Some(instance_token_koid),
             description: Some(fattribution::Description::Component(instance_token)),
@@ -102,7 +101,7 @@ impl MemoryReporter {
             identifier: Some(instance_token_koid),
             resources: Some(fattribution::Resources::Data(fattribution::Data {
                 resources: vec![fattribution::Resource::KernelObject(
-                    component.copy_job().proc().get_koid().unwrap().raw_koid(),
+                    component.copy_job().proc().koid().unwrap().raw_koid(),
                 )],
             })),
             ..Default::default()

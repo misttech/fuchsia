@@ -14,7 +14,7 @@ use fuchsia_inspect::health::Reporter;
 
 use futures::channel::mpsc::{UnboundedReceiver, UnboundedSender};
 use metrics_registry::*;
-use zx::{AsHandleRef, HandleBased};
+use zx::HandleBased;
 
 /// A [`ConsumerControlsEvent`] represents an event where one or more consumer control buttons
 /// were pressed.
@@ -43,8 +43,8 @@ impl Clone for ConsumerControlsEvent {
 impl PartialEq for ConsumerControlsEvent {
     fn eq(&self, other: &Self) -> bool {
         self.pressed_buttons == other.pressed_buttons
-            && self.wake_lease.as_ref().map(|h| h.get_koid())
-                == other.wake_lease.as_ref().map(|h| h.get_koid())
+            && self.wake_lease.as_ref().map(|h| h.koid())
+                == other.wake_lease.as_ref().map(|h| h.koid())
     }
 }
 

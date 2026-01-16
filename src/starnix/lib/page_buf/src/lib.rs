@@ -129,7 +129,7 @@ impl<T> Drop for PageBuf<T> {
 mod tests {
     use super::*;
     use fuchsia_runtime::vmar_root_self;
-    use zx::{AsHandleRef, HandleBased};
+    use zx::HandleBased;
 
     #[track_caller]
     fn fill_buf(buf: &mut PageBuf<[u8; 16]>) {
@@ -171,7 +171,7 @@ mod tests {
 
         assert_eq!(name, &DEFAULT_VMO_NAME);
         assert_eq!(range, &desired_range);
-        assert_eq!(details.vmo_koid, buf.vmo.get_koid().unwrap());
+        assert_eq!(details.vmo_koid, buf.vmo.koid().unwrap());
 
         // Verify unmapping on drop
         drop(buf);
@@ -241,7 +241,7 @@ mod tests {
             observed_range.contains(&expected_range.end)
                 || observed_range.end == expected_range.end
         );
-        assert_eq!(details.vmo_koid, buf.vmo.get_koid().unwrap());
+        assert_eq!(details.vmo_koid, buf.vmo.koid().unwrap());
         assert_eq!(details.vmo_offset, 0);
         assert_eq!(
             details.mmu_flags,

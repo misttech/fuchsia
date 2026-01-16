@@ -4,7 +4,7 @@
 
 use crate::{Capability, RemoteError};
 use fidl::HandleRef;
-use fidl::handle::{AsHandleRef, EventPair, Signals};
+use fidl::handle::{EventPair, Signals};
 use fuchsia_async as fasync;
 use fuchsia_sync::Mutex;
 use futures::FutureExt;
@@ -22,7 +22,7 @@ static REGISTRY: LazyLock<Mutex<Registry>> = LazyLock::new(|| Mutex::new(Registr
 pub(crate) fn try_from_handle_in_registry<'a>(
     handle_ref: HandleRef<'_>,
 ) -> Result<Capability, RemoteError> {
-    let koid = handle_ref.get_koid().unwrap();
+    let koid = handle_ref.koid().unwrap();
     let capability = get(koid).ok_or(RemoteError::Unregistered)?;
     Ok(capability)
 }

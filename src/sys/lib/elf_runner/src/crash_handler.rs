@@ -8,7 +8,6 @@ use futures::TryStreamExt;
 use log::error;
 use moniker::Moniker;
 use vfs::ExecutionScope;
-use zx::{self as zx, AsHandleRef};
 
 // Registers with the job to catch exceptions raised by it. Whenever we see an exception from this
 // job, record that the crash happened, and inform zircon that it should proceed to the next crash
@@ -59,7 +58,7 @@ async fn record_exception(
 ) -> Result<(), ExceptionError> {
     // An exception has occurred, record information about the crash so that it may be retrieved
     // later.
-    let thread_koid = exception_info.thread.get_koid().map_err(ExceptionError::GetThreadKoid)?;
+    let thread_koid = exception_info.thread.koid().map_err(ExceptionError::GetThreadKoid)?;
     crash_records.add_report(thread_koid, ComponentCrashInfo { url: resolved_url, moniker }).await;
 
     // We've stored all the information we need, so mark the exception handle such that the next
@@ -149,7 +148,7 @@ mod tests {
 
         // Get the thread's koid, so that we know which thread to look for in the records once it
         // crashes
-        let thread_koid = process_start_data.thread.get_koid()?;
+        let thread_koid = process_start_data.thread.koid()?;
 
         // We've got the thread koid, so now we can actually start the process
         process_start_data.process.start(

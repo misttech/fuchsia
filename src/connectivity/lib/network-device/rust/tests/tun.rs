@@ -4,10 +4,10 @@
 
 //! Fuchsia netdevice client tun test
 use assert_matches::assert_matches;
-use fidl::{endpoints, AsHandleRef};
+use fidl::endpoints;
 use fuchsia_component::client::connect_to_protocol;
-use futures::future::{Future, FutureExt as _};
 use futures::TryStreamExt as _;
+use futures::future::{Future, FutureExt as _};
 use netdevice_client::{Client, DerivableConfig, Port, Session};
 use std::convert::TryInto as _;
 use std::io::{Read as _, Write as _};
@@ -382,10 +382,7 @@ async fn watch_rx_leases() {
                 let yielded_lease = assert_matches!(yielded_lease.inner(),
                  netdev::DelegatedRxLeaseHandle::Channel(c) => c);
                 // Prove we have the same lease.
-                assert_eq!(
-                    yielded_lease.get_koid().unwrap(),
-                    lease.basic_info().unwrap().related_koid
-                );
+                assert_eq!(yielded_lease.koid().unwrap(), lease.basic_info().unwrap().related_koid);
             }
         },
     )

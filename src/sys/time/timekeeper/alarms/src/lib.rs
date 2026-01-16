@@ -431,7 +431,7 @@ pub fn get_stream_koid(
     stream: fta::WakeAlarmsRequestStream,
 ) -> (zx::Koid, fta::WakeAlarmsRequestStream) {
     let (inner, is_terminated) = stream.into_inner();
-    let koid = inner.channel().as_channel().get_koid().expect("infallible");
+    let koid = inner.channel().as_channel().as_handle_ref().koid().expect("infallible");
     let stream = fta::WakeAlarmsRequestStream::from_inner(inner, is_terminated);
     (koid, stream)
 }
@@ -681,7 +681,7 @@ impl Loop {
 // Forwards the clock transformation of an updated clock into the alarm manager, to allow
 // correcting the boot time deadlines of clocks on the UTC timeline.
 async fn monitor_utc_clock_changes(utc_clock: fxr::UtcClock, mut cmd: mpsc::Sender<Cmd>) {
-    let koid = utc_clock.as_handle_ref().get_koid();
+    let koid = utc_clock.as_handle_ref().koid();
     log::info!("monitor_utc_clock_changes: entry");
     loop {
         // CLOCK_UPDATED signal is self-clearing.
@@ -1164,7 +1164,7 @@ async fn wake_timer_loop(
                     debug!(
                         "[{}] wake_timer_loop: bogus lease {:?}",
                         line!(),
-                        &keep_alive.get_koid().unwrap()
+                        &keep_alive.koid().unwrap()
                     );
 
                     {
@@ -1301,7 +1301,7 @@ async fn wake_timer_loop(
                 debug!(
                     "wake_timer_loop: ALARM!!! reached deadline: {}, wakey-wakey! {:?}",
                     format_timer(expired_deadline.into()),
-                    keep_alive.get_koid().unwrap(),
+                    keep_alive.koid().unwrap(),
                 );
                 let expired_count =
                     notify_all(&mut timers, &keep_alive, now, None, &slack_histogram_prop)
@@ -1349,7 +1349,7 @@ async fn wake_timer_loop(
                 let (_dummy_lease, peer) = zx::EventPair::create();
                 debug!(
                     "bogus lease: {:?} fidl error [{}:{}]",
-                    &peer.get_koid().unwrap(),
+                    &peer.koid().unwrap(),
                     file!(),
                     line!()
                 );
@@ -1388,7 +1388,7 @@ async fn wake_timer_loop(
                 let (_dummy_lease, peer) = zx::EventPair::create();
                 debug!(
                     "bogus lease: {:?} driver error. [{}:{}]",
-                    &peer.get_koid().unwrap(),
+                    &peer.koid().unwrap(),
                     file!(),
                     line!()
                 );

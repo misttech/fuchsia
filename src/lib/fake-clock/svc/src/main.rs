@@ -12,7 +12,7 @@ use fuchsia_async as fasync;
 use fuchsia_component::server::ServiceFs;
 use futures::stream::{StreamExt, TryStreamExt};
 use log::{debug, error, trace, warn};
-use zx::{self as zx, AsHandleRef, Peered};
+use zx::Peered;
 
 use fuchsia_sync::Mutex;
 use std::collections::{BinaryHeap, HashMap, HashSet, hash_map};
@@ -748,9 +748,9 @@ async fn handle_events<T: FakeClockObserver>(
             FakeClockRequest::RescheduleEventInMonotonic { event, time, responder } => {
                 let mut mc = mock_clock.lock();
                 let result = event
-                    .get_koid()
+                    .koid()
                     .and_then(|k| mc.reschedule_event_in_mono(time, k).map_err(zx::Status::from));
-                responder.send(result.map_err(|status| {
+                responder.send(result.map_err(|status: zx::Status| {
                     warn!("error in reschedule call {:?}", status);
                     status.into_raw()
                 }))
@@ -758,15 +758,15 @@ async fn handle_events<T: FakeClockObserver>(
             FakeClockRequest::RescheduleEventInBoot { event, time, responder } => {
                 let mut mc = mock_clock.lock();
                 let result = event
-                    .get_koid()
+                    .koid()
                     .and_then(|k| mc.reschedule_event_in_boot(time, k).map_err(zx::Status::from));
-                responder.send(result.map_err(|status| {
+                responder.send(result.map_err(|status: zx::Status| {
                     warn!("error in reschedule call {:?}", status);
                     status.into_raw()
                 }))
             }
             FakeClockRequest::CancelEvent { event, responder } => {
-                if let Ok(k) = event.get_koid() {
+                if let Ok(k) = event.koid() {
                     mock_clock.lock().cancel_event(k);
                 }
                 responder.send()
@@ -1019,7 +1019,7 @@ mod tests {
         };
         let mut recv = clock_handle.lock().observer.receiver.take().unwrap();
         // store the koid
-        let koid = event.get_koid().unwrap();
+        let koid = event.koid().unwrap();
         // dispose of the client side
         std::mem::drop(event);
         assert_eq!(recv.next().await.unwrap(), koid);
@@ -1036,7 +1036,7 @@ mod tests {
         assert!(!check_signaled(&client));
         // now reschedule the same event:
         let sched = mock_clock.mono_clock.time + zx::MonotonicDuration::from_millis(20);
-        let res = mock_clock.reschedule_event_in_mono(sched, client.get_koid().unwrap());
+        let res = mock_clock.reschedule_event_in_mono(sched, client.koid().unwrap());
         assert_eq!(res, Ok(()));
         println!("{:?}", mock_clock.mono_clock.pending_events);
         assert!(!check_signaled(&client));
@@ -1051,7 +1051,7 @@ mod tests {
         client.signal(zx::Signals::EVENTPAIR_SIGNALED, zx::Signals::NONE).unwrap();
         assert!(!check_signaled(&client));
         let sched = mock_clock.mono_clock.time + TEN_MILLIS;
-        let res = mock_clock.reschedule_event_in_mono(sched, client.get_koid().unwrap());
+        let res = mock_clock.reschedule_event_in_mono(sched, client.koid().unwrap());
         assert_eq!(res, Ok(()));
         // not yet signaled...
         assert!(!check_signaled(&client));

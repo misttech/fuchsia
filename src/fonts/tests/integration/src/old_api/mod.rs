@@ -4,7 +4,7 @@
 
 use crate::util::ProviderFactory;
 use crate::{FONTS_MEDIUM_CM, FONTS_SMALL_CM};
-use anyhow::{format_err, Context as _, Error};
+use anyhow::{Context as _, Error, format_err};
 use fidl_fuchsia_fonts as fonts;
 use log::info;
 use zx::AsHandleRef;
@@ -53,7 +53,7 @@ async fn get_font_info(
     assert!(font.buffer.size > 0);
     assert!(font.buffer.size <= font.buffer.vmo.get_size()?);
 
-    let vmo_koid = font.buffer.vmo.as_handle_ref().get_koid()?;
+    let vmo_koid = font.buffer.vmo.as_handle_ref().koid()?;
     Ok(FontInfo {
         vmo_koid,
         buffer_id: font.buffer_id,

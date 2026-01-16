@@ -633,7 +633,7 @@ mod tests {
 
     // Create a discardable koid for tests.
     fn new_koid() -> zx::Koid {
-        zx::Event::create().as_handle_ref().get_koid().unwrap()
+        zx::Event::create().as_handle_ref().koid().unwrap()
     }
 
     fn new_transform(

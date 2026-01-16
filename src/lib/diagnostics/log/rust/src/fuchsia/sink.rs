@@ -14,7 +14,6 @@ use std::io::Cursor;
 use std::mem::MaybeUninit;
 use std::sync::OnceLock;
 use std::sync::atomic::{AtomicU32, AtomicUsize, Ordering};
-use zx::{self as zx, AsHandleRef};
 
 // This is the amount of data that can be buffered by the BufferedPublisher before messages are
 // dropped.
@@ -29,10 +28,10 @@ pub(crate) struct SinkConfig {
 
 thread_local! {
     static PROCESS_ID: zx::Koid = rt::process_self()
-        .get_koid()
+        .koid()
         .unwrap_or_else(|_| zx::Koid::from_raw(zx::sys::zx_koid_t::MAX));
     static THREAD_ID: zx::Koid = rt::with_thread_self(|thread| {
-        thread.get_koid().unwrap_or_else(|_| zx::Koid::from_raw(zx::sys::zx_koid_t::MAX))
+        thread.koid().unwrap_or_else(|_| zx::Koid::from_raw(zx::sys::zx_koid_t::MAX))
     });
 }
 

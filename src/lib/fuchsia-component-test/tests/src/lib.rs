@@ -2,9 +2,9 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use anyhow::{format_err, Error};
+use anyhow::{Error, format_err};
 use assert_matches::assert_matches;
-use cm_rust::{push_box, FidlIntoNative};
+use cm_rust::{FidlIntoNative, push_box};
 use cm_rust_testing::*;
 use fidl::endpoints::ClientEnd;
 use fidl_fidl_examples_routing_echo::{self as fecho, EchoMarker as EchoClientStatsMarker};
@@ -20,7 +20,7 @@ use futures::future::pending;
 use futures::lock::Mutex;
 use futures::{FutureExt, SinkExt, StreamExt, TryStreamExt};
 use std::sync::Arc;
-use zx::{self as zx, AsHandleRef, HandleBased};
+use zx::HandleBased;
 use {
     fidl_fuchsia_component_decl as fcdecl, fidl_fuchsia_component_test as ftest,
     fidl_fuchsia_data as fdata, fidl_fuchsia_examples_services as fex_services,
@@ -1918,8 +1918,8 @@ async fn start_and_stop() -> Result<(), Error> {
             .await?;
         let mut handles = handles_receiver.next().await.unwrap();
         assert_eq!(
-            event.get_koid().unwrap(),
-            handles.take_numbered_handle(123).unwrap().get_koid().unwrap()
+            event.koid().unwrap(),
+            handles.take_numbered_handle(123).unwrap().koid().unwrap()
         );
     }
 

@@ -115,6 +115,11 @@ macro_rules! delegated_concrete_handle_based_impls {
         pub fn count_info(&self) -> Result<$crate::HandleCountInfo, $crate::Status> {
             self.0.count_info()
         }
+
+        /// Returns the [Koid] for the object referred to by this handle.
+        pub fn koid(&self) -> Result<$crate::Koid, $crate::Status> {
+            self.0.koid()
+        }
     };
 }
 

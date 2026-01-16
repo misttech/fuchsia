@@ -26,7 +26,7 @@ use starnix_uapi::{
 };
 use std::collections::HashSet;
 use std::sync::Arc;
-use zx::{AsHandleRef, HandleBased};
+use zx::HandleBased;
 
 // Implementation of the sync framework described at:
 // https://source.android.com/docs/core/graphics/sync
@@ -161,7 +161,7 @@ impl FileOps for SyncFile {
                 let mut set = HashSet::<zx::Koid>::new();
 
                 for sync_point in &self.fence.sync_points {
-                    let koid = sync_point.counter.get_koid().unwrap();
+                    let koid = sync_point.counter.koid().unwrap();
                     if set.insert(koid) {
                         fence.sync_points.push(sync_point.clone());
                     }
@@ -169,14 +169,14 @@ impl FileOps for SyncFile {
 
                 if let Some(file2) = file2.downcast_file::<SyncFile>() {
                     for sync_point in &file2.fence.sync_points {
-                        let koid = sync_point.counter.get_koid().unwrap();
+                        let koid = sync_point.counter.koid().unwrap();
                         if set.insert(koid) {
                             fence.sync_points.push(sync_point.clone());
                         }
                     }
                 } else if let Some(file2) = file2.downcast_file::<RemoteCounter>() {
                     let counter = file2.duplicate_handle()?;
-                    let koid = counter.get_koid().map_err(impossible_error)?;
+                    let koid = counter.koid().map_err(impossible_error)?;
                     if set.insert(koid) {
                         fence.sync_points.push(SyncPoint::new(Timeline::Hwc, counter.into()));
                     }

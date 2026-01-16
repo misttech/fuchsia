@@ -955,7 +955,7 @@ impl<R: Rtc, D: 'static + Diagnostics> ClockManager<R, D> {
 
 /// Applies an update to the supplied clock, panicking with a comprehensible error on failure.
 fn update_clock(clock: &Arc<UtcClock>, track: &Track, update: impl Into<UtcClockUpdate>) {
-    debug!("update_clock: updating clock with koid: {:?}", clock.as_handle_ref().get_koid());
+    debug!("update_clock: updating clock with koid: {:?}", clock.as_handle_ref().koid());
     if let Err(status) = clock.update(update) {
         // Clock update errors should only be caused by an invalid clock (or potentially a
         // serious bug in the generation of a time update). There isn't anything Timekeeper

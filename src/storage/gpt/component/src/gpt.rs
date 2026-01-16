@@ -20,7 +20,6 @@ use std::collections::BTreeMap;
 use std::num::NonZero;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Weak};
-use zx::AsHandleRef as _;
 use {
     fidl_fuchsia_storage_block as fblock, fidl_fuchsia_storage_partitions as fpartitions,
     fuchsia_async as fasync,
@@ -228,7 +227,7 @@ impl Inner {
     /// Ensures that `transaction` matches our pending transaction.
     fn ensure_transaction_matches(&self, transaction: &zx::EventPair) -> Result<(), zx::Status> {
         if let Some(pending) = self.pending_transaction.as_ref() {
-            if transaction.get_koid()? == pending.client_koid {
+            if transaction.koid()? == pending.client_koid {
                 Ok(())
             } else {
                 Err(zx::Status::BAD_HANDLE)
@@ -430,7 +429,7 @@ impl GptManager {
         }
         let transaction = inner.gpt.create_transaction().unwrap();
         let (client_end, server_end) = zx::EventPair::create();
-        let client_koid = client_end.get_koid()?;
+        let client_koid = client_end.koid()?;
         let signal_waiter = fasync::OnSignals::new(server_end, zx::Signals::EVENTPAIR_PEER_CLOSED);
         let this = self.clone();
         let task = fasync::Task::spawn(async move {

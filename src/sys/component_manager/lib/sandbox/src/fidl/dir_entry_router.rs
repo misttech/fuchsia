@@ -4,7 +4,7 @@
 
 use crate::fidl::router;
 use crate::{ConversionError, DirEntry, Router, RouterResponse, WeakInstanceToken};
-use fidl::handle::AsHandleRef;
+use fidl::AsHandleRef;
 use futures::TryStreamExt;
 use std::sync::Arc;
 use vfs::directory::entry::DirectoryEntry;
@@ -48,7 +48,7 @@ impl crate::fidl::IntoFsandboxCapability for Router<DirEntry> {
     fn into_fsandbox_capability(self, token: WeakInstanceToken) -> fsandbox::Capability {
         let (client_end, sender_stream) =
             fidl::endpoints::create_request_stream::<fsandbox::DirEntryRouterMarker>();
-        self.serve_and_register(sender_stream, client_end.get_koid().unwrap(), token);
+        self.serve_and_register(sender_stream, client_end.as_handle_ref().koid().unwrap(), token);
         fsandbox::Capability::DirEntryRouter(client_end)
     }
 }

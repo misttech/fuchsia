@@ -3,14 +3,14 @@
 // found in the LICENSE file.
 
 use crate::options::AsyncOptions;
-use anyhow::{bail, Context as _, Result};
+use anyhow::{Context as _, Result, bail};
 use fidl_fuchsia_fuzzer as fuzz;
 use futures::channel::{mpsc, oneshot};
 use futures::lock::Mutex;
-use futures::{pin_mut, select, FutureExt, SinkExt, StreamExt, TryStreamExt};
+use futures::{FutureExt, SinkExt, StreamExt, TryStreamExt, pin_mut, select};
 use std::cell::RefCell;
 use std::collections::HashMap;
-use zx::{self as zx, AsHandleRef, HandleBased};
+use zx::HandleBased;
 
 /// Provides coverage data from multiple instrumented processes to the fuzzing engine.
 ///
@@ -57,7 +57,7 @@ impl Aggregator {
         eventpair: zx::EventPair,
         process: zx::Process,
     ) -> Result<(u64, fuzz::Options)> {
-        let koid = process.get_koid().context("failed to get koid for instrumented process")?;
+        let koid = process.koid().context("failed to get koid for instrumented process")?;
         let target_id = koid.raw_koid();
         let instrumented = fuzz::InstrumentedProcess { eventpair, process };
         let coverage_data =
@@ -299,12 +299,12 @@ pub async fn provide_data(
 
 #[cfg(test)]
 mod tests {
-    use super::{collect_data, provide_data, Aggregator};
-    use anyhow::{bail, Context as _, Result};
+    use super::{Aggregator, collect_data, provide_data};
+    use anyhow::{Context as _, Result, bail};
     use fidl::endpoints::create_proxy_and_stream;
     use fuchsia_runtime::process_self;
-    use futures::{pin_mut, select, try_join, FutureExt};
-    use zx::{self as zx, AsHandleRef, Peered};
+    use futures::{FutureExt, pin_mut, select, try_join};
+    use zx::Peered;
     use {fidl_fuchsia_fuzzer as fuzz, fuchsia_async as fasync};
 
     // Test fixtures.
@@ -341,7 +341,7 @@ mod tests {
         let options = fuzz::Options { runs: Some(1000), ..Default::default() };
         proxy.set_options(&options).context("CoverageDataProvider.SetOptions")?;
         let mut modules_added = 0;
-        let koid = process_self().get_koid().context("failed to get process koid")?;
+        let koid = process_self().koid().context("failed to get process koid")?;
         while modules_added < num_modules {
             let batch = proxy
                 .watch_coverage_data()

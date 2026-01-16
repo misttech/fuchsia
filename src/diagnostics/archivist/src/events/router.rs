@@ -521,7 +521,7 @@ mod tests {
 
         // Emit an event
         let (_, server_end) = fidl::endpoints::create_proxy::<LogSinkMarker>();
-        let request_stream_koid = server_end.as_handle_ref().get_koid().unwrap();
+        let request_stream_koid = server_end.as_handle_ref().koid().unwrap();
         let request_stream = LogSinkRequestStream::from_channel(fidl::AsyncChannel::from_channel(
             server_end.into_channel(),
         ));
@@ -546,7 +546,7 @@ mod tests {
         } => {
             assert_eq!(payload.component, *IDENTITY);
             let actual_koid = payload.request_stream
-                .into_inner().0.channel().as_channel().as_handle_ref().get_koid().unwrap();
+                .into_inner().0.channel().as_channel().as_handle_ref().koid().unwrap();
             assert_eq!(actual_koid, request_stream_koid);
         });
         assert!(second_receiver.next().now_or_never().is_none());

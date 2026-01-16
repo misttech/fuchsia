@@ -225,7 +225,7 @@ async fn trace_component_start(
     url: Option<String>,
 ) {
     if fuchsia_trace::category_enabled(c"component:start") {
-        let pid = process.get_koid().unwrap().raw_koid();
+        let pid = process.koid().unwrap().raw_koid();
         let moniker = match component_instance {
             None => "Missing component instance".to_string(),
             Some(component_instance) => match connect_to_protocol::<IntrospectorMarker>() {
@@ -334,8 +334,7 @@ mod tests {
     async fn utc_clock_is_cloned() {
         let clock = fuchsia_runtime::UtcClock::create(zx::ClockOpts::MONOTONIC, None)
             .expect("failed to create clock");
-        let expected_clock_koid =
-            clock.as_handle_ref().get_koid().expect("failed to get clock koid");
+        let expected_clock_koid = clock.koid().expect("failed to get clock koid");
 
         // We are affecting the process-wide clock here, but since Rust test cases are run in their
         // own process, this won't interact with other running tests.
@@ -414,7 +413,7 @@ mod tests {
                 |hi: fproc::HandleInfo| if hi.id == clock_id { Some(hi.handle) } else { None },
             )
             .expect("UTC clock handle");
-        let clock_koid = utc_clock_handle.get_koid().expect("failed to get koid");
+        let clock_koid = utc_clock_handle.koid().expect("failed to get koid");
         assert_eq!(expected_clock_koid, clock_koid);
     }
 }

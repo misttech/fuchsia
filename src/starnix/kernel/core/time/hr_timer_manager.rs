@@ -22,7 +22,7 @@ use starnix_uapi::errors::Errno;
 use starnix_uapi::{errno, from_status_like_fdio};
 use std::collections::{HashMap, VecDeque};
 use std::sync::{Arc, OnceLock, Weak};
-use zx::{self as zx, AsHandleRef, HandleBased, HandleRef};
+use zx::{AsHandleRef, HandleBased, HandleRef};
 use {fidl_fuchsia_time_alarms as fta, fuchsia_async as fasync, fuchsia_trace as ftrace};
 
 /// Max value for inspect event history.
@@ -388,7 +388,7 @@ async fn run_utc_timeline_monitor_internal(
     utc_handle: UtcClock,
 ) {
     log_debug!("run_utc_timeline_monitor: monitoring UTC clock timeline changes: enter");
-    let koid = utc_handle.as_handle_ref().get_koid();
+    let koid = utc_handle.koid();
     log_debug!(
         "run_utc_timeline_monitor: monitoring UTC clock timeline: enter: UTC clock koid={koid:?}, counter={counter:?}"
     );
@@ -1146,7 +1146,7 @@ impl HrTimer {
     ///
     /// All holders of the same [HrTimerHandle] will see the same value here.
     pub fn get_id(&self) -> zx::Koid {
-        self.event.as_handle_ref().get_koid().expect("infallible")
+        self.event.koid().expect("infallible")
     }
 
     /// Returns the unique alarm ID for this [HrTimer].

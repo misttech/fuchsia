@@ -8,7 +8,7 @@ use starnix_sync::RwLock;
 use starnix_uapi::{pid_t, tid_t};
 use std::collections::HashMap;
 use std::sync::{Arc, Weak};
-use zx::{AsHandleRef, Koid};
+use zx::Koid;
 
 #[derive(Debug, Clone)]
 pub struct KoidPair {
@@ -137,7 +137,7 @@ impl TracePerformanceEventManager {
         for tid in &ids {
             let pair = pid_table.get_task(*tid).upgrade().map(|t| KoidPair {
                 process: t.thread_group().get_process_koid().ok(),
-                thread: t.thread.read().as_ref().and_then(|t| t.get_koid().ok()),
+                thread: t.thread.read().as_ref().and_then(|t| t.koid().ok()),
             });
             if let Some(pair) = pair {
                 // ignore entries with no process or thread.
@@ -166,7 +166,7 @@ mod tests {
         spawn_kernel_and_run(async move |locked, current_task| {
             let kernel = current_task.kernel();
             let pid = current_task.task.tid;
-            let tkoid = current_task.thread.read().as_ref().and_then(|t| t.get_koid().ok());
+            let tkoid = current_task.thread.read().as_ref().and_then(|t| t.koid().ok());
             let pkoid = current_task.thread_group().get_process_koid().ok();
 
             let _another_current = create_task(locked, &kernel, "another-task");

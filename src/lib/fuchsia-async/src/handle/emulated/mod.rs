@@ -137,6 +137,18 @@ impl<'a> HandleRef<'a> {
             reserved: 0,
         })
     }
+
+    /// Returns the koid (kernel object ID) for this handle.
+    pub fn koid(&self) -> Result<Koid, Status> {
+        if self.is_invalid() {
+            return Err(zx_status::Status::BAD_HANDLE);
+        }
+        let koid = with_handle(self.raw_handle(), |mut h, side| {
+            let h = h.as_hdl_data();
+            h.koids(side).0
+        });
+        Ok(Koid(koid))
+    }
 }
 
 #[derive(Debug, Eq, PartialEq, Hash)]
@@ -187,12 +199,8 @@ pub trait AsHandleRef {
     }
 
     /// Returns the koid (kernel object ID) for this handle.
-    fn get_koid(&self) -> Result<Koid, zx_status::Status> {
-        let koid = with_handle(self.raw_handle(), |mut h, side| {
-            let h = h.as_hdl_data();
-            h.koids(side).0
-        });
-        Ok(Koid(koid))
+    fn koid(&self) -> Result<Koid, zx_status::Status> {
+        self.as_handle_ref().koid()
     }
 }
 
@@ -426,6 +434,11 @@ impl Handle {
     /// Signal the object referred to by the handle.
     pub fn signal(&self, clear: Signals, set: Signals) -> Result<(), Status> {
         self.as_handle_ref().signal(clear, set)
+    }
+
+    /// Returns the koid (kernel object ID) for this handle.
+    pub fn koid(&self) -> Result<Koid, Status> {
+        self.as_handle_ref().koid()
     }
 }
 

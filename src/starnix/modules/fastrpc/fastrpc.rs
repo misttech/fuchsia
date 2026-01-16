@@ -29,7 +29,7 @@ use starnix_uapi::{errno, error};
 use std::collections::VecDeque;
 use std::sync::atomic::{AtomicI64, Ordering};
 use std::sync::{Arc, OnceLock};
-use zx::{AsHandleRef, HandleBased};
+use zx::HandleBased;
 
 type IoctlInvokeFdPtr = MultiArchUserRef<
     linux_uapi::fastrpc_ioctl_invoke_fd,
@@ -116,7 +116,6 @@ impl Scalar {
 
 // All fidl transport errors should be considered as error, and converted to IO error.
 fn fidl_error_to_errno(info: &str, error: fidl::Error) -> starnix_uapi::errors::Errno {
-
     if !error.is_closed() {
         log_error!("{}: {:?}", info, error);
         return errno!(EIO);
@@ -215,7 +214,7 @@ impl Alloc for SystemHeap {
             .map_err(|e| fidl_error_to_errno("allocate call", e))?
             .map_err(|e| zx_i32_to_errno("allocate", e))?;
 
-        log_debug!("allocated vmo with koid {:?}", vmo.get_koid());
+        log_debug!("allocated vmo with koid {:?}", vmo.koid());
 
         let memory = Arc::new(MemoryObject::from(vmo));
 

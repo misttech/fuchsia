@@ -24,7 +24,7 @@ use starnix_uapi::errors::Errno;
 use starnix_uapi::{bpf_attr__bindgen_ty_4, errno, error};
 use std::sync::atomic::Ordering;
 use std::sync::{Arc, Weak};
-use zx::{AsHandleRef as _, HandleBased};
+use zx::HandleBased;
 
 #[derive(Clone, Debug)]
 pub struct ProgramInfo {
@@ -121,7 +121,7 @@ impl Program {
 
         let (fidl_handle, service_handle) = zx::EventPair::create();
         let fidl_id =
-            febpf::ProgramId { id: fidl_handle.get_koid().expect("Failed to get koid").raw_koid() };
+            febpf::ProgramId { id: fidl_handle.koid().expect("Failed to get koid").raw_koid() };
         let fidl_handle = febpf::ProgramHandle { handle: fidl_handle };
 
         let program = ProgramHandle::new(

@@ -2,7 +2,6 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use fidl::AsHandleRef;
 use fidl::endpoints::{ServerEnd, create_endpoints};
 use fidl_fuchsia_memory_heapdump_process as fheapdump_process;
 use std::sync::Mutex;
@@ -247,7 +246,7 @@ fn get_current_thread_koid_and_name(koid_cache: &mut Option<zx::Koid>) -> (zx::K
     // cannot be cached as it can change between calls.
     fuchsia_runtime::with_thread_self(|thread| {
         let koid = koid_cache
-            .get_or_insert_with(|| thread.get_koid().expect("failed to get current thread's koid"));
+            .get_or_insert_with(|| thread.koid().expect("failed to get current thread's koid"));
         let name = thread.get_name().expect("failed to get current thread's name");
         (*koid, name)
     })

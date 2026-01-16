@@ -11,7 +11,7 @@ use starnix_uapi::errors::Errno;
 use std::mem::MaybeUninit;
 use std::sync::Arc;
 use zerocopy::FromBytes;
-use zx::{AsHandleRef, HandleBased, Koid};
+use zx::{HandleBased, Koid};
 
 #[derive(Debug)]
 pub enum MemoryObject {
@@ -61,7 +61,7 @@ impl From<zx::Vmo> for MemoryObject {
 
 impl From<UtcClock> for MemoryObject {
     fn from(utc_clock: UtcClock) -> MemoryObject {
-        let koid = utc_clock.as_handle_ref().get_koid().expect("koid should always be readable");
+        let koid = utc_clock.koid().expect("koid should always be readable");
         MemoryObject::MemoryMappedClock { koid, utc_clock }
     }
 }

@@ -42,7 +42,6 @@ use netstack3_core::{IpExt, icmp, udp};
 use packet::{Buf, BufferMut};
 use packet_formats::ip::DscpAndEcn;
 use thiserror::Error;
-use zx::AsHandleRef as _;
 use zx::prelude::HandleBased as _;
 
 use crate::bindings::errno::ErrnoError;
@@ -1623,9 +1622,8 @@ where
                         (ReusePortOption::Disabled, None)
                     }
                     fposix_socket::ReusePortOption::Enabled(token) => {
-                        let koid = token
-                            .get_koid()
-                            .expect("invalid sharing domain token in ReusePortOption");
+                        let koid =
+                            token.koid().expect("invalid sharing domain token in ReusePortOption");
                         (ReusePortOption::Enabled(SharingDomain::new(koid.raw_koid())), Some(token))
                     }
                 };

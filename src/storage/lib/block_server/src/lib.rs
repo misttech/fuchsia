@@ -1280,7 +1280,7 @@ mod tests {
     use std::sync::Arc;
     use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
     use std::task::{Context, Poll};
-    use zx::{AsHandleRef as _, HandleBased as _};
+    use zx::HandleBased as _;
     use {fidl_fuchsia_storage_block as fblock, fuchsia_async as fasync};
 
     #[derive(Default)]
@@ -1542,7 +1542,7 @@ mod tests {
         let (proxy, stream) = fidl::endpoints::create_proxy_and_stream::<fblock::BlockMarker>();
 
         let vmo = zx::Vmo::create(zx::system_get_page_size() as u64).unwrap();
-        let koid = vmo.get_koid().unwrap();
+        let koid = vmo.koid().unwrap();
 
         futures::join!(
             async {
@@ -1550,7 +1550,7 @@ mod tests {
                     BLOCK_SIZE,
                     Arc::new(MockInterface {
                         read_hook: Some(Box::new(move |_, _, vmo, _| {
-                            assert_eq!(vmo.get_koid().unwrap(), koid);
+                            assert_eq!(vmo.koid().unwrap(), koid);
                             Box::pin(async { Ok(()) })
                         })),
                         ..MockInterface::default()

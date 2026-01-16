@@ -5,7 +5,7 @@
 use assert_matches::assert_matches;
 use attribution_testing::PrincipalIdentifier;
 use diagnostics_reader::ArchiveReader;
-use fidl::AsHandleRef;
+
 use fidl::endpoints::DiscoverableProtocolMarker;
 use fidl_fuchsia_component::CreateChildArgs;
 use fidl_fuchsia_component_decl::{Child, CollectionRef, StartupMode};
@@ -112,7 +112,7 @@ async fn mmap_anonymous() {
     assert_matches!(
         resource,
         attribution_testing::Resource::Vmar { process: process_koid, base, len }
-        if process_koid == process.get_koid().unwrap() &&
+        if process_koid == process.koid().unwrap() &&
             find_mapping_in_range(&process, |map, info| {
                 // Within the restricted aspace.
                 if map.base >= base && map.base + map.size <= base + len {

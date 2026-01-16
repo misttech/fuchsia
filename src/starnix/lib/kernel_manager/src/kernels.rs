@@ -11,7 +11,6 @@ use fuchsia_sync::Mutex;
 use std::collections::HashMap;
 use std::sync::Arc;
 use vfs::execution_scope::ExecutionScope;
-use zx::AsHandleRef;
 use {
     fidl_fuchsia_component as fcomponent, fidl_fuchsia_component_runner as frunner,
     fidl_fuchsia_power_system as fpower, zx,
@@ -69,7 +68,7 @@ impl Kernels {
         let (kernel, on_stop) =
             StarnixKernel::create(realm, KERNEL_URL, start_info, controller).await?;
         let kernel_job = kernel.job.clone();
-        let kernel_koid = kernel.job.get_koid()?;
+        let kernel_koid = kernel.job.koid()?;
 
         *kernel.wake_lease.lock() = wake_lease;
         log::info!("Acquired wake lease for {:?}", kernel_job);
@@ -99,7 +98,7 @@ impl Kernels {
             fuchsia_trace::Scope::Process
         );
         // LINT.ThenChange(//src/performance/lib/trace_processing/metrics/suspend.py)
-        let job_koid = container_job.get_koid()?;
+        let job_koid = container_job.koid()?;
         if let Some(kernel) = self.kernels.lock().get(&job_koid) {
             kernel.wake_lease.lock().take();
             log::info!("Dropped wake lease for {:?}", container_job);
@@ -112,7 +111,7 @@ impl Kernels {
         // LINT.IfChange
         fuchsia_trace::duration!("power", "starnix-runner:acquire-application-activity-lease");
         // LINT.ThenChange(//src/performance/lib/trace_processing/metrics/suspend.py)
-        let job_koid = container_job.get_koid()?;
+        let job_koid = container_job.koid()?;
         if let Some(kernel) = self.kernels.lock().get(&job_koid) {
             let activity_governor = connect_to_protocol::<fpower::ActivityGovernorMarker>()?;
             let wake_lease = match activity_governor

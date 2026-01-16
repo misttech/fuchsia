@@ -196,7 +196,7 @@ mod tests {
         let element_id = ElementID::new(1);
         let gold_credential = Credential {
             element: element_id,
-            id: DependencyToken::create().as_handle_ref().get_koid().expect("get_koid failed"),
+            id: DependencyToken::create().as_handle_ref().koid().expect("get_koid failed"),
             permissions: Permissions::MODIFY_ASSERTIVE_DEPENDENT,
         };
         assert_eq!(

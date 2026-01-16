@@ -27,7 +27,7 @@ use netstack3_core::socket::{
     SharingDomain,
 };
 use netstack3_core::{tcp, udp};
-use zx::AsHandleRef as _;
+use zx::AsHandleRef;
 use {fidl_fuchsia_net as fnet, fidl_fuchsia_posix_socket as psocket};
 
 use crate::bindings::devices::{
@@ -90,7 +90,8 @@ pub(crate) async fn serve(
     let channel_koid = stream_inner
         .channel()
         .as_channel()
-        .get_koid()
+        .as_handle_ref()
+        .koid()
         .expect("failed to get channel koid")
         .raw_koid();
     let mut stream = psocket::ProviderRequestStream::from_inner(stream_inner, terminated);

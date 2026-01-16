@@ -46,7 +46,7 @@ pub async fn get_typeface_info_detailed(
     assert!(buffer.size > 0);
     assert!(buffer.size <= buffer.vmo.get_size()?);
 
-    let vmo_koid = buffer.vmo.as_handle_ref().get_koid()?;
+    let vmo_koid = buffer.vmo.as_handle_ref().koid()?;
     Ok(TypefaceInfo {
         vmo_koid,
         buffer_id: typeface.buffer_id.unwrap(),

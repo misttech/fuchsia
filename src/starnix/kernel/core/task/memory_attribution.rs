@@ -4,7 +4,6 @@
 use crate::task::CurrentTask;
 use crate::task::dynamic_thread_spawner::SpawnRequestBuilder;
 use attribution_server::{AttributionServer, AttributionServerHandle};
-use fidl::AsHandleRef;
 use fidl_fuchsia_memory_attribution as fattribution;
 use starnix_logging::log_error;
 use starnix_sync::{Locked, Mutex, Unlocked};
@@ -353,7 +352,7 @@ fn new_principal(pid: i32, name: String) -> fattribution::AttributionUpdate {
 
 /// Builds an `UpdatedPrincipal` event. If the task has an invalid root VMAR, returns `None`.
 fn updated_principal(thread_group: &ThreadGroup) -> Option<fattribution::AttributionUpdate> {
-    let Some(process_koid) = thread_group.process.get_koid().ok() else {
+    let Some(process_koid) = thread_group.process.koid().ok() else {
         return None;
     };
     let update = fattribution::AttributionUpdate::Update(fattribution::UpdatedPrincipal {

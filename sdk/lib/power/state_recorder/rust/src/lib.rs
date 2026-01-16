@@ -29,7 +29,7 @@ use std::path::Path;
 use std::str::FromStr;
 use std::sync::{Arc, LazyLock};
 use strum::IntoEnumIterator;
-use zx::AsHandleRef;
+
 use {fuchsia_inspect as inspect, fuchsia_trace as ftrace, zx};
 
 static CSTR_POOL: LazyLock<Mutex<HashMap<String, &'static CStr>>> =
@@ -78,7 +78,7 @@ pub fn manager() -> Arc<Mutex<StateRecorderManager>> {
 // Record this process's PID for use in trace track names.
 static PID: LazyLock<u64> = LazyLock::new(|| {
     let process = fuchsia_runtime::process_self();
-    process.get_koid().expect("failed to get koid").raw_koid()
+    process.koid().expect("failed to get koid").raw_koid()
 });
 
 #[derive(thiserror::Error, Debug)]

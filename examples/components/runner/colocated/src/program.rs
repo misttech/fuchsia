@@ -12,7 +12,7 @@ use futures::future::{BoxFuture, FutureExt};
 use log::warn;
 use runner::component::{Controllable, StopInfo};
 use std::sync::Arc;
-use zx::{AsHandleRef, Koid};
+use zx::Koid;
 use {fidl_fuchsia_examples_colocated as fcolocated, fuchsia_async as fasync};
 
 /// [`ColocatedProgram `] represents an instance of a program run by the
@@ -27,7 +27,7 @@ pub struct ColocatedProgram {
 impl ColocatedProgram {
     pub fn new(numbered_handles: Vec<HandleInfo>) -> Result<Self, anyhow::Error> {
         let vmo = zx::Vmo::create(1024)?;
-        let vmo_koid = vmo.get_koid()?;
+        let vmo_koid = vmo.koid()?;
 
         let terminated = Arc::new(OnceCell::new());
         let terminated_clone = terminated.clone();

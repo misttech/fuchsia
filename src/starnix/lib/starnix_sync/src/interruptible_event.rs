@@ -185,7 +185,6 @@ impl InterruptibleEvent {
 #[cfg(test)]
 mod test {
     use super::*;
-    use zx::AsHandleRef;
 
     #[test]
     fn test_wait_block_and_notify() {
@@ -235,7 +234,7 @@ mod test {
         let event = Arc::new(InterruptibleEvent::new());
 
         let (root_thread_handle, root_thread_koid) = fuchsia_runtime::with_thread_self(|thread| {
-            (thread.duplicate_handle(zx::Rights::SAME_RIGHTS).unwrap(), thread.get_koid().unwrap())
+            (thread.duplicate_handle(zx::Rights::SAME_RIGHTS).unwrap(), thread.koid().unwrap())
         });
 
         let event_for_blocked_thread = event.clone();

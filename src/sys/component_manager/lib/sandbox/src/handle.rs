@@ -47,14 +47,14 @@ mod tests {
     use crate::fidl::IntoFsandboxCapability;
     use crate::{Capability, WeakInstanceToken};
     use assert_matches::assert_matches;
-    use fidl::handle::{AsHandleRef, HandleBased};
+    use fidl::handle::HandleBased;
     use fidl_fuchsia_component_sandbox as fsandbox;
 
     // Tests converting the Handle to FIDL and back.
     #[fuchsia::test]
     async fn handle_into_fidl() {
         let event = zx::Event::create();
-        let expected_koid = event.get_koid().unwrap();
+        let expected_koid = event.koid().unwrap();
 
         let handle = Handle::from(event.into_handle());
 
@@ -70,7 +70,7 @@ mod tests {
         let handle: zx::NullableHandle = handle.into();
 
         // The handle should be for same Event that was in the original OneShotHandle.
-        let got_koid = handle.get_koid().unwrap();
+        let got_koid = handle.koid().unwrap();
         assert_eq!(got_koid, expected_koid);
     }
 
@@ -78,13 +78,13 @@ mod tests {
     #[fuchsia::test]
     async fn try_clone() {
         let event = zx::Event::create();
-        let expected_koid = event.get_koid().unwrap();
+        let expected_koid = event.koid().unwrap();
 
         let handle = Handle::from(event.into_handle());
         let handle = handle.try_clone().unwrap();
         let handle: zx::NullableHandle = handle.into();
 
-        let got_koid = handle.get_koid().unwrap();
+        let got_koid = handle.koid().unwrap();
         assert_eq!(got_koid, expected_koid);
 
         let (ch, _) = zx::Channel::create();

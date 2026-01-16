@@ -10,7 +10,6 @@ use fuchsia_component_test::{Capability, ChildOptions, RealmBuilder, Ref, Route}
 use futures::channel::mpsc;
 use futures::{FutureExt, SinkExt, StreamExt};
 use std::collections::BTreeMap;
-use zx::AsHandleRef;
 use {fidl_fuchsia_component as fcomponent, fidl_fuchsia_io as fio, fuchsia_async as fasync};
 
 // TODO(https://fxbug.dev/42172627): Deduplicate this function. It is used in other CM integration tests
@@ -239,7 +238,7 @@ async fn receive_protocol_through_capability_requested() {
             && name == "example-name".to_string() =>
         {
             assert_eq!(
-                channel.get_koid().unwrap(),
+                channel.koid().unwrap(),
                 proxy.as_channel().as_ref().basic_info().unwrap().related_koid,
             );
         }

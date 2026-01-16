@@ -1,6 +1,7 @@
 // Copyright 2021 The Fuchsia Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
+use crate::Size;
 use crate::app::{Config, MessageInternal};
 use crate::drawing::DisplayRotation;
 use crate::geometry::UintSize;
@@ -10,8 +11,7 @@ use crate::render::generic::{self, Backend};
 use crate::render::{self, ContextInner};
 use crate::view::strategies::base::{FlatlandParams, ViewStrategy, ViewStrategyPtr};
 use crate::view::{UserInputMessage, ViewAssistantContext, ViewAssistantPtr, ViewDetails, ViewKey};
-use crate::Size;
-use anyhow::{ensure, Context, Error, Result};
+use anyhow::{Context, Error, Result, ensure};
 use async_trait::async_trait;
 use async_utils::hanging_get::client::HangingGetStream;
 use display_utils::BufferCollectionId as DisplayBufferCollectionId;
@@ -239,7 +239,7 @@ impl FlatlandViewStrategy {
             use fidl::endpoints::Proxy;
             use zx::AsHandleRef;
 
-            let koid = flatland.as_channel().get_koid().unwrap().raw_koid();
+            let koid = flatland.as_channel().as_handle_ref().koid().unwrap().raw_koid();
             instant!(
                 c"gfx",
                 c"FlatlandViewStrategy::new",

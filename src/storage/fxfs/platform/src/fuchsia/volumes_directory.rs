@@ -37,7 +37,6 @@ use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, OnceLock, Weak};
 use vfs::directory::entry_container::MutableDirectory;
 use vfs::directory::helper::DirectlyMutable;
-use zx::{self as zx, AsHandleRef};
 use {fidl_fuchsia_io as fio, fuchsia_async as fasync};
 
 const MEBIBYTE: u64 = 1024 * 1024;
@@ -166,7 +165,7 @@ impl MountedVolumesGuard<'_> {
         let volume = FxVolumeAndRoot::new::<T>(
             Arc::downgrade(&self.volumes_directory),
             store,
-            unique_id.get_koid().unwrap().raw_koid(),
+            unique_id.koid().unwrap().raw_koid(),
             self.volumes_directory.blob_resupplied_count.clone(),
         )
         .await?;
@@ -617,7 +616,7 @@ impl VolumesDirectory {
         info!(
             store_id;
             "Serving volume, pager port koid={}",
-            fasync::EHandle::local().port().get_koid().unwrap().raw_koid()
+            fasync::EHandle::local().port().koid().unwrap().raw_koid()
         );
         Ok(())
     }

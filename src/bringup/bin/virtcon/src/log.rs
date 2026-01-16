@@ -8,7 +8,6 @@ use fuchsia_async::{self as fasync, OnSignals};
 use std::io::sink;
 use term_model::ansi::Processor;
 use term_model::event::EventListener;
-use zx::{self as zx, AsHandleRef};
 
 pub trait LogClient: 'static + Clone {
     type Listener;
@@ -35,7 +34,7 @@ impl Log {
 
         // Get our process koid so we can filter out our own debug messages from the log.
         let proc_koid =
-            fuchsia_runtime::process_self().get_koid().expect("failed to get koid for process");
+            fuchsia_runtime::process_self().koid().expect("failed to get koid for process");
 
         fasync::Task::local(async move {
             let mut sink = sink();

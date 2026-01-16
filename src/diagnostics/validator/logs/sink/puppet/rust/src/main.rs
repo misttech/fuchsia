@@ -10,7 +10,6 @@ use fuchsia_async::Task;
 use fuchsia_component::server::ServiceFs;
 use futures::prelude::*;
 use log::{debug, error, info, trace, warn};
-use zx::{self as zx, AsHandleRef};
 use {diagnostics_log_validator_utils as utils, fuchsia_runtime as rt};
 
 #[fuchsia::main(logging = false)]
@@ -73,8 +72,8 @@ async fn run_puppet(
             LogSinkPuppetRequest::GetInfo { responder } => {
                 let info = PuppetInfo {
                     tag: None,
-                    pid: rt::process_self().get_koid().unwrap().raw_koid(),
-                    tid: rt::with_thread_self(|thread| thread.get_koid().unwrap()).raw_koid(),
+                    pid: rt::process_self().koid().unwrap().raw_koid(),
+                    tid: rt::with_thread_self(|thread| thread.koid().unwrap()).raw_koid(),
                 };
                 responder.send(&info).unwrap();
             }

@@ -3,8 +3,8 @@
 // found in the LICENSE file.
 
 use crate::FrameUsage;
-use anyhow::{format_err, Context, Error};
-use fidl::endpoints::{create_endpoints, ClientEnd, Proxy};
+use anyhow::{Context, Error, format_err};
+use fidl::endpoints::{ClientEnd, Proxy, create_endpoints};
 use fidl_fuchsia_images2::{ColorSpace, PixelFormat, PixelFormatModifier};
 use fidl_fuchsia_sysmem2::{
     AllocatorAllocateSharedCollectionRequest, AllocatorBindSharedCollectionRequest,
@@ -12,12 +12,11 @@ use fidl_fuchsia_sysmem2::{
     BufferCollectionConstraints, BufferCollectionInfo, BufferCollectionMarker,
     BufferCollectionProxy, BufferCollectionSetConstraintsRequest,
     BufferCollectionTokenDuplicateRequest, BufferCollectionTokenMarker, BufferCollectionTokenProxy,
-    BufferMemoryConstraints, BufferUsage, ImageFormatConstraints, NodeSetNameRequest,
-    CPU_USAGE_READ_OFTEN, CPU_USAGE_WRITE_OFTEN, NONE_USAGE,
+    BufferMemoryConstraints, BufferUsage, CPU_USAGE_READ_OFTEN, CPU_USAGE_WRITE_OFTEN,
+    ImageFormatConstraints, NONE_USAGE, NodeSetNameRequest,
 };
 use fuchsia_component::client::connect_to_protocol;
 use std::cmp;
-use zx::AsHandleRef;
 
 fn linear_image_format_constraints(
     width: u32,
@@ -103,11 +102,7 @@ fn stride_bytes_per_width_pixel(pixel_type: PixelFormat) -> Result<u32, Error> {
 }
 
 fn round_up_to_align(x: u32, align: u32) -> u32 {
-    if align == 0 {
-        x
-    } else {
-        ((x + align - 1) / align) * align
-    }
+    if align == 0 { x } else { ((x + align - 1) / align) * align }
 }
 
 // See ImageFormatMinimumRowBytes
@@ -144,7 +139,7 @@ pub struct BufferCollectionAllocator {
 pub fn set_allocator_name(sysmem_client: &AllocatorProxy) -> Result<(), Error> {
     Ok(sysmem_client.set_debug_client_info(&AllocatorSetDebugClientInfoRequest {
         name: Some(fuchsia_runtime::process_self().get_name()?.to_string()),
-        id: Some(fuchsia_runtime::process_self().get_koid()?.raw_koid()),
+        id: Some(fuchsia_runtime::process_self().koid()?.raw_koid()),
         ..Default::default()
     })?)
 }

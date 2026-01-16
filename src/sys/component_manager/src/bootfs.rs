@@ -426,7 +426,6 @@ mod tests {
     use fuchsia_bootfs::BootfsEntry;
     use std::fs::File;
     use std::io::Read;
-    use zx::AsHandleRef;
 
     // This uses a test bootfs image containing synthetic data from
     // //src/sys/lib/fuchsia-bootfs.
@@ -636,7 +635,7 @@ mod tests {
                 .is_ok(),
             true
         );
-        let entry1_bootfs_vmo_koid = entry1_bootfs_vmo.get_koid().unwrap();
+        let entry1_bootfs_vmo_koid = entry1_bootfs_vmo.koid().unwrap();
 
         let mut userboot_bootfs_entries = Vec::new();
         userboot_bootfs_entries

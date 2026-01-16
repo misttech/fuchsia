@@ -14,7 +14,7 @@ use fuchsia_sync::{Mutex, MutexGuard};
 use std::marker::PhantomPinned;
 use std::pin::Pin;
 use std::sync::Arc;
-use zx::{AsHandleRef, Event, MonotonicDuration, Status};
+use zx::{Event, MonotonicDuration, Status};
 
 pub struct FatFilesystemInner {
     filesystem: Option<FileSystem>,
@@ -169,7 +169,7 @@ impl FatFilesystem {
             total_nodes: 0,
             used_nodes: 0,
             free_shared_pool_bytes: 0,
-            fs_id: self.fs_id().get_koid()?.raw_koid(),
+            fs_id: self.fs_id().koid()?.raw_koid(),
             block_size: cluster_size as u32,
             max_filename_size: MAX_FILENAME_LEN,
             fs_type: fidl_fuchsia_fs::VfsType::Fatfs.into_primitive(),

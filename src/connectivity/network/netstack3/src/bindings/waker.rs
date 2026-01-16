@@ -12,7 +12,7 @@ use futures::future::{FusedFuture, OptionFuture};
 use futures::{FutureExt as _, TryStreamExt as _};
 use log::{debug, info, warn};
 use netstack3_core::sync::Mutex;
-use zx::{AsHandleRef, HandleBased};
+use zx::HandleBased;
 use {
     fidl_fuchsia_net_power as fnet_power, fidl_fuchsia_net_resources as fnet_resources,
     fuchsia_async as fasync,
@@ -106,7 +106,7 @@ pub(crate) struct WakeGroupId {
 impl WakeGroupId {
     fn new() -> Self {
         let token = zx::Event::create();
-        let koid = token.get_koid().expect("get koid of wake group token");
+        let koid = token.koid().expect("get koid of wake group token");
         Self { token, koid }
     }
 
@@ -123,7 +123,7 @@ impl WakeGroupId {
 impl From<fnet_resources::WakeGroupToken> for WakeGroupId {
     fn from(token: fnet_resources::WakeGroupToken) -> Self {
         let fnet_resources::WakeGroupToken { token } = token;
-        let koid = token.get_koid().expect("get koid of wake group token");
+        let koid = token.koid().expect("get koid of wake group token");
         Self { token, koid }
     }
 }

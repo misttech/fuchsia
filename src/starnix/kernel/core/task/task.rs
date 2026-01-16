@@ -45,9 +45,7 @@ use std::mem::MaybeUninit;
 use std::sync::atomic::{AtomicBool, AtomicU8, Ordering};
 use std::sync::{Arc, Weak};
 use std::{cmp, fmt};
-use zx::{
-    AsHandleRef, Signals, Task as _, {self as zx},
-};
+use zx::{AsHandleRef, Signals, Task as _};
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum ExitStatus {
@@ -1595,7 +1593,7 @@ impl Task {
         let Some(ref mapping_table) = *self.kernel().pid_to_koid_mapping.read() else { return };
 
         let pkoid = self.thread_group().get_process_koid().ok();
-        let tkoid = self.thread.read().as_ref().and_then(|t| t.get_koid().ok());
+        let tkoid = self.thread.read().as_ref().and_then(|t| t.koid().ok());
         mapping_table.write().insert(self.tid, KoidPair { process: pkoid, thread: tkoid });
     }
 }

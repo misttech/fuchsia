@@ -8,7 +8,7 @@ use fsysmem2::{
     BufferCollectionTokenDuplicateRequest, NodeSetNameRequest,
 };
 
-use fidl::endpoints::{create_endpoints, create_proxy, Proxy};
+use fidl::endpoints::{Proxy, create_endpoints, create_proxy};
 use fidl_fuchsia_hardware_display_types as fdisplay_types;
 use fidl_fuchsia_images2::{self as fimages2};
 use fidl_fuchsia_sysmem2::{
@@ -16,7 +16,7 @@ use fidl_fuchsia_sysmem2::{
     BufferCollectionProxy, BufferCollectionTokenMarker, BufferCollectionTokenProxy,
 };
 use fuchsia_component::client::connect_to_protocol;
-use zx::{self as zx, AsHandleRef, HandleBased};
+use zx::HandleBased;
 
 use crate::controller::Coordinator;
 use crate::error::{Error, Result};
@@ -177,7 +177,7 @@ async fn allocate_image_buffer(
         connect_to_protocol::<AllocatorMarker>().map_err(|_| Error::SysmemConnection)?;
     {
         let name = fuchsia_runtime::process_self().get_name()?;
-        let koid = fuchsia_runtime::process_self().get_koid()?;
+        let koid = fuchsia_runtime::process_self().koid()?;
         allocator.set_debug_client_info(&AllocatorSetDebugClientInfoRequest {
             name: Some(name.to_string()),
             id: Some(koid.raw_koid()),

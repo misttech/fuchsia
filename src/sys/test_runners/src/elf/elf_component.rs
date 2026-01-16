@@ -531,7 +531,7 @@ where
     let mut runtime_dir_builder = TreeBuilder::empty_dir();
     let job_id = component
         .job
-        .get_koid()
+        .koid()
         .map_err(|s| ComponentError::ServeRuntimeDir(anyhow!("cannot get job koid: {}", s)))?
         .raw_koid();
     runtime_dir_builder

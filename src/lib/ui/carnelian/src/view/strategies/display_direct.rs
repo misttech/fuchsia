@@ -11,18 +11,18 @@ use crate::view::strategies::base::{ViewStrategy, ViewStrategyPtr};
 use crate::view::{
     DisplayInfo, UserInputMessage, ViewAssistantContext, ViewAssistantPtr, ViewDetails,
 };
-use crate::{input, IntPoint, IntSize, Size, ViewKey};
-use anyhow::{bail, ensure, Context, Error};
+use crate::{IntPoint, IntSize, Size, ViewKey, input};
+use anyhow::{Context, Error, bail, ensure};
 use async_trait::async_trait;
 use display_utils::{
-    BufferCollectionId, EventId, ImageId as DisplayImageId, LayerId, PixelFormat, INVALID_LAYER_ID,
+    BufferCollectionId, EventId, INVALID_LAYER_ID, ImageId as DisplayImageId, LayerId, PixelFormat,
 };
 use euclid::size2;
 use fidl_fuchsia_hardware_display::{
     ConfigStamp, CoordinatorApplyConfig3Request, CoordinatorListenerRequest, CoordinatorProxy,
     INVALID_CONFIG_STAMP_VALUE,
 };
-use fidl_fuchsia_hardware_display_types::{ImageBufferUsage, ImageMetadata, INVALID_DISP_ID};
+use fidl_fuchsia_hardware_display_types::{INVALID_DISP_ID, ImageBufferUsage, ImageMetadata};
 use fuchsia_async::{self as fasync};
 use fuchsia_framebuffer::sysmem::BufferCollectionAllocator;
 use fuchsia_framebuffer::{FrameSet, FrameUsage, ImageId};
@@ -30,9 +30,7 @@ use fuchsia_trace::{duration, instant};
 use futures::channel::mpsc::UnboundedSender;
 use std::collections::{BTreeMap, BTreeSet, VecDeque};
 use std::sync::atomic::{AtomicU64, Ordering};
-use zx::{
-    self as zx, AsHandleRef, Event, HandleBased, MonotonicDuration, MonotonicInstant, Status,
-};
+use zx::{Event, HandleBased, MonotonicDuration, MonotonicInstant, Status};
 
 type WaitEvents = BTreeMap<ImageId, (Event, EventId)>;
 
@@ -56,11 +54,7 @@ impl Iterator for CollectionIdGenerator {
         let value = NEXT_ID_VALUE.fetch_add(1, Ordering::Relaxed);
         // fetch_add wraps on overflow, which we'll use as a signal
         // that this generator is out of ids.
-        if value == 0 {
-            None
-        } else {
-            Some(BufferCollectionId(value))
-        }
+        if value == 0 { None } else { Some(BufferCollectionId(value)) }
     }
 }
 fn next_collection_id() -> BufferCollectionId {
@@ -80,11 +74,7 @@ impl Iterator for ImageIdGenerator {
         let id = NEXT_ID.fetch_add(1, Ordering::Relaxed);
         // fetch_add wraps on overflow, which we'll use as a signal
         // that this generator is out of ids.
-        if id == 0 {
-            None
-        } else {
-            Some(id)
-        }
+        if id == 0 { None } else { Some(id) }
     }
 }
 fn next_image_id() -> u64 {
@@ -97,7 +87,7 @@ async fn create_and_import_event(
     let event = Event::create();
 
     let their_event = event.duplicate_handle(zx::Rights::SAME_RIGHTS)?;
-    let event_id_value = event.get_koid()?.raw_koid();
+    let event_id_value = event.koid()?.raw_koid();
     let event_id = EventId(event_id_value);
     coordinator.import_event(Event::from_handle(their_event.into_handle()), &event_id.into())?;
     Ok((event, event_id))
@@ -748,7 +738,10 @@ impl ViewStrategy for DisplayDirectViewStrategy {
                 eprintln!("Carnelian ignoring CoordinatorListenerRequest::OnDisplaysChanged");
             }
             CoordinatorListenerRequest::OnClientOwnershipChange { has_ownership, .. } => {
-                eprintln!("Carnelian ignoring CoordinatorListenerRequest::OnClientOwnershipChange (value: {})", has_ownership);
+                eprintln!(
+                    "Carnelian ignoring CoordinatorListenerRequest::OnClientOwnershipChange (value: {})",
+                    has_ownership
+                );
             }
             _ => (),
         }

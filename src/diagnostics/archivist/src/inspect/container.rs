@@ -68,10 +68,10 @@ impl InspectHandle {
     pub fn koid(&self) -> zx::Koid {
         match self {
             Self::Directory { proxy } => {
-                proxy.as_channel().as_handle_ref().get_koid().expect("DirectoryProxy has koid")
+                proxy.as_channel().as_handle_ref().koid().expect("DirectoryProxy has koid")
             }
             Self::Tree { proxy, .. } => {
-                proxy.as_channel().as_handle_ref().get_koid().expect("TreeProxy has koid")
+                proxy.as_channel().as_handle_ref().koid().expect("TreeProxy has koid")
             }
             // We return the related koid to index based on it so that the retrieval is more
             // efficient.

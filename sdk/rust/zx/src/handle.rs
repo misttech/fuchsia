@@ -684,11 +684,6 @@ pub trait AsHandleRef {
     fn raw_handle(&self) -> sys::zx_handle_t {
         NullableHandle::raw_handle(&self.as_handle_ref())
     }
-
-    /// Returns the koid (kernel object ID) for this handle.
-    fn get_koid(&self) -> Result<Koid, Status> {
-        NullableHandle::koid(&self.as_handle_ref())
-    }
 }
 
 impl<T: AsHandleRef> AsHandleRef for &T {

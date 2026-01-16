@@ -172,7 +172,7 @@ pub fn publish(
     })?;
 
     // unwrap: safe since we have a valid tree handle coming from the server we spawn.
-    let tree_koid = tree.as_handle_ref().get_koid().unwrap();
+    let tree_koid = tree.as_handle_ref().koid().unwrap();
     if let Err(err) = inspect_sink.publish(finspect::InspectSinkPublishRequest {
         tree: Some(tree),
         name: tree_name,
@@ -253,7 +253,7 @@ pub async fn fetch_escrow(
     let (tree, handle) = if should_replace_with_tree {
         let (client, stream) = fidl::endpoints::create_request_stream::<finspect::TreeMarker>();
         // unwrap: safe since we have a valid tree handle coming from above.
-        let client_koid = client.as_handle_ref().get_koid().unwrap();
+        let client_koid = client.as_handle_ref().koid().unwrap();
         (Some(client), Some(TreeServerHandle { client_koid, stream }))
     } else {
         (None, None)

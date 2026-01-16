@@ -288,7 +288,7 @@ pub(crate) mod vdso_next {
             let message =
                 unsafe { &(*((addr + system_get_page_size() as usize) as *const Message)) };
 
-            assert_eq!(message.tag, ep1.get_koid().unwrap().raw_koid());
+            assert_eq!(message.tag, ep1.koid().unwrap().raw_koid());
             assert_eq!(message.length, 5);
             assert_eq!(&message.data[..5], b"hello");
         }

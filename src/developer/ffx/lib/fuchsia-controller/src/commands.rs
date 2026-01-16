@@ -168,7 +168,7 @@ impl LibraryCommand {
             }
             Self::HandleGetKoid { handle, responder } => {
                 let handle = ManuallyDrop::new(handle);
-                responder.send(handle.get_koid()).unwrap();
+                responder.send(handle.koid()).unwrap();
             }
             Self::OpenDeviceProxy { env, moniker, capability_name, responder } => {
                 match env.connect_device_proxy(moniker, capability_name).await {

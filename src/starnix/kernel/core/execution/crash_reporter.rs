@@ -16,7 +16,6 @@ use starnix_logging::{
 use starnix_sync::Mutex;
 use std::collections::{HashMap, VecDeque};
 use std::sync::Arc;
-use zx::{self as zx, AsHandleRef};
 
 /// The maximum number of crashes we allow to happen for a process within the last
 /// CrashReporter.crash_loop_age_out before we consider it to be crash looping. 8 within 8 minutes
@@ -111,14 +110,14 @@ impl CrashReporter {
         let process_koid = current_task
             .thread_group()
             .process
-            .get_koid()
+            .koid()
             .expect("handles for processes with crashing threads are still valid");
         let thread_koid = current_task
             .thread
             .read()
             .as_ref()
             .expect("coredumps occur in tasks with associated threads")
-            .get_koid()
+            .koid()
             .expect("handles for crashing threads are still valid");
         let linux_pid = current_task.thread_group().leader as i64;
         let thread_name = current_task.command().to_string();

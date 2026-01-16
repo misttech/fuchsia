@@ -15,7 +15,6 @@ group("tests") {
 rustc_binary("report_then_panic_on_start_bin") {
   deps = [
     "fidl:fuchsia.test_rust",
-    "//sdk/rust/zx",
     "//src/lib/fuchsia",
     "//src/lib/fuchsia-component",
     "//src/lib/fuchsia-runtime",

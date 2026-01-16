@@ -920,7 +920,7 @@ mod tests {
             .unwrap();
         let (ch, _) = fidl::Channel::create();
         let handle = ch.into_handle();
-        let handle_koid = handle.get_koid().unwrap();
+        let handle_koid = handle.koid().unwrap();
         let value = 20;
         store.import(value, fsandbox::Capability::Handle(handle)).await.unwrap().unwrap();
         store
@@ -978,7 +978,7 @@ mod tests {
         assert_matches!(
             store.export(102).await.unwrap().unwrap(),
             fsandbox::Capability::Handle(handle)
-            if handle.get_koid().unwrap() == handle_koid
+            if handle.koid().unwrap() == handle_koid
         );
 
         // Dictionary should now be empty.

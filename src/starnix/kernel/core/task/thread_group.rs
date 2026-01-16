@@ -1339,7 +1339,7 @@ impl ThreadGroup {
     }
 
     pub fn time_stats(&self) -> TaskTimeStats {
-        let process: &zx::Process = if zx::AsHandleRef::as_handle_ref(&self.process).is_invalid() {
+        let process: &zx::Process = if self.process.as_handle_ref().is_invalid() {
             // `process` must be valid for all tasks, except `kthreads`. In that case get the
             // stats from starnix process.
             assert_eq!(
@@ -1729,7 +1729,7 @@ impl ThreadGroup {
     /// This encapsulation is important since the relationship between the ThreadGroup
     /// and the Process may change over time. See [ThreadGroup::process] for more details.
     pub fn get_process_koid(&self) -> Result<Koid, Status> {
-        self.process.get_koid()
+        self.process.koid()
     }
 }
 

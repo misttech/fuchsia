@@ -2,7 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use anyhow::{format_err, Context as _, Error};
+use anyhow::{Context as _, Error, format_err};
 use fidl::client::QueryResponseFut;
 use fidl::endpoints::{ClientEnd, Proxy};
 use fidl_fuchsia_sysmem2::{
@@ -15,10 +15,9 @@ use fidl_fuchsia_sysmem2::{
 };
 use futures::future::{FusedFuture, Future};
 use futures::task::{Context, Poll};
-use futures::{ready, FutureExt};
+use futures::{FutureExt, ready};
 use log::error;
 use std::pin::Pin;
-use zx::{self as zx, AsHandleRef};
 
 /// A set of buffers that have been allocated with the SysmemAllocator.
 #[derive(Debug)]
@@ -42,7 +41,7 @@ pub struct AllocatorDebugInfo {
 
 fn default_allocator_name() -> Result<AllocatorDebugInfo, Error> {
     let name = fuchsia_runtime::process_self().get_name()?;
-    let koid = fuchsia_runtime::process_self().get_koid()?;
+    let koid = fuchsia_runtime::process_self().koid()?;
     Ok(AllocatorDebugInfo { name: name.to_string(), id: koid.raw_koid() })
 }
 
@@ -295,8 +294,8 @@ mod tests {
     use fidl_fuchsia_sysmem2::{
         AllocatorMarker, AllocatorRequest, BufferCollectionInfo, BufferCollectionRequest,
         BufferCollectionTokenProxy, BufferCollectionTokenRequest,
-        BufferCollectionTokenRequestStream, BufferMemoryConstraints, BufferUsage, CoherencyDomain,
-        Heap, SingleBufferSettings, VmoBuffer, CPU_USAGE_READ, VIDEO_USAGE_HW_DECODER,
+        BufferCollectionTokenRequestStream, BufferMemoryConstraints, BufferUsage, CPU_USAGE_READ,
+        CoherencyDomain, Heap, SingleBufferSettings, VIDEO_USAGE_HW_DECODER, VmoBuffer,
     };
     use fuchsia_async as fasync;
     use futures::StreamExt;

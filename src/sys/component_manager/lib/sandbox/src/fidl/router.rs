@@ -16,7 +16,7 @@ use {fidl_fuchsia_component_sandbox as fsandbox, fidl_fuchsia_io as fio, zx};
 impl Request {
     pub fn into_fsandbox_request(self, token: WeakInstanceToken) -> fsandbox::RouteRequest {
         let (token_event_pair, server) = zx::EventPair::create();
-        token.clone().register(token_event_pair.get_koid().unwrap(), server);
+        token.clone().register(token_event_pair.koid().unwrap(), server);
         let fsandbox::Capability::Dictionary(dictionary_ref) =
             self.metadata.into_fsandbox_capability(token)
         else {
@@ -57,7 +57,7 @@ where
     let resp = match (payload.requesting, payload.metadata) {
         (Some(token), Some(metadata)) => {
             let capability =
-                crate::fidl::registry::get(token.token.as_handle_ref().get_koid().unwrap());
+                crate::fidl::registry::get(token.token.as_handle_ref().koid().unwrap());
             let component = match capability {
                 Some(crate::Capability::Instance(c)) => c,
                 Some(_) => return Err(fsandbox::RouterError::InvalidArgs),

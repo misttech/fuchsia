@@ -855,8 +855,7 @@ impl FsInspectVolume for FxVolume {
         let (used_bytes, bytes_limit) =
             self.store.filesystem().allocator().owner_allocation_info(self.store.store_object_id());
         let encrypted = self.store().crypt().is_some();
-        let port_koid =
-            fasync::EHandle::local().port().as_handle_ref().get_koid().unwrap().raw_koid();
+        let port_koid = fasync::EHandle::local().port().as_handle_ref().koid().unwrap().raw_koid();
         VolumeData { bytes_limit, used_bytes, used_nodes: object_count, encrypted, port_koid }
     }
 }

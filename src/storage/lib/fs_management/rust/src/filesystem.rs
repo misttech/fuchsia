@@ -18,7 +18,7 @@ use fuchsia_component_client::{
 };
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
-use zx::{self as zx, AsHandleRef as _, Status};
+use zx::Status;
 use {fidl_fuchsia_component_decl as fdecl, fidl_fuchsia_io as fio};
 
 /// Creates new connections to an instance of fuchsia.hardware.block.Block and similar protocols
@@ -180,7 +180,7 @@ impl Filesystem {
                 let name = format!(
                     "{}-{}-{}",
                     component_name,
-                    fuchsia_runtime::process_self().get_koid().unwrap().raw_koid(),
+                    fuchsia_runtime::process_self().koid().unwrap().raw_koid(),
                     COLLECTION_COUNTER.fetch_add(1, Ordering::Relaxed)
                 );
 

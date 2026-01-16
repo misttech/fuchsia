@@ -25,7 +25,7 @@ use fuchsia_runtime::{
 use starnix_logging::{log_info, log_warn};
 use starnix_sync::Mutex;
 use std::sync::LazyLock;
-use zx::{self as zx, AsHandleRef, HandleBased, Rights, Unowned};
+use zx::{self as zx, HandleBased, Rights, Unowned};
 
 /// The basic rights to use when creating or duplicating a UTC clock. Restrict these
 /// on a case-by-case basis only.
@@ -65,7 +65,7 @@ static VENDORED_UTC_HANDLE_FOR_TESTS: LazyLock<Option<UtcClockHandle>> = LazyLoc
             .map(|handle: zx::Clock| {
                 // Verify that the handle koid matches with the handle koid logged by the UTC vendor component.
                 log_warn!("Starnix kernel is using a vendored UTC handle. This is acceptable ONLY in tests.");
-                log_warn!("Vendored UTC clock handle koid: {:?}", handle.as_handle_ref().get_koid());
+                log_warn!("Vendored UTC clock handle koid: {:?}", handle.koid());
                 // Make sure to remove unneeded rights, even if we know that the test fixture will
                 // give us proper handle rights.
                  handle.replace_handle(*UTC_CLOCK_BASIC_RIGHTS)

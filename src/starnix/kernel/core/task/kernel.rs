@@ -57,7 +57,7 @@ use std::num::NonZeroU64;
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicBool, AtomicU8, AtomicU16, Ordering};
 use std::sync::{Arc, OnceLock, Weak};
-use zx::{AsHandleRef, CpuFeatureFlags};
+use zx::CpuFeatureFlags;
 use {
     fidl_fuchsia_io as fio, fidl_fuchsia_memory_attribution as fattribution,
     fuchsia_async as fasync,
@@ -608,7 +608,7 @@ impl Kernel {
         // kernel.
         let kernel_job = fuchsia_runtime::job_default();
         assert_eq!(kernel_job.children().unwrap(), &[], "starnix does not create any child jobs");
-        let own_koid = fuchsia_runtime::process_self().get_koid().unwrap();
+        let own_koid = fuchsia_runtime::process_self().koid().unwrap();
 
         log_debug!("waiting for this to be the only process in the job");
         loop {
@@ -790,7 +790,7 @@ impl Kernel {
             };
 
             let tg_node = thread_groups.create_child(format!("{}", thread_group.leader));
-            if let Ok(koid) = &thread_group.process.get_koid() {
+            if let Ok(koid) = &thread_group.process.koid() {
                 tg_node.record_int("koid", koid.raw_koid() as i64);
             }
             tg_node.record_int("pid", thread_group.leader as i64);

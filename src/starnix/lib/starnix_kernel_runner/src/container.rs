@@ -54,9 +54,7 @@ use std::collections::BTreeMap;
 use std::ffi::CString;
 use std::ops::DerefMut;
 use std::sync::Arc;
-use zx::{
-    AsHandleRef, Task as _, {self as zx},
-};
+use zx::Task as _;
 use {
     fidl_fuchsia_boot as fboot, fidl_fuchsia_component as fcomponent,
     fidl_fuchsia_component_runner as frunner, fidl_fuchsia_element as felement,
@@ -133,7 +131,7 @@ fn attribution_info_for_kernel(
         identifier: starnix_kernel_id, // Recipient.
         resources: Some(fattribution::Resources::Data(fattribution::Data {
             resources: vec![fattribution::Resource::ProcessMapped(fattribution::ProcessMapped {
-                process: fuchsia_runtime::process_self().get_koid().unwrap().raw_koid(),
+                process: fuchsia_runtime::process_self().koid().unwrap().raw_koid(),
                 base: 0, // Attribute all the range.
                 len: u64::max_value(),
                 hint_skip_handle_table: false,
@@ -156,7 +154,7 @@ fn attribution_info_for_kernel(
         identifier: container_id,
         resources: Some(fattribution::Resources::Data(fattribution::Data {
             resources: vec![fattribution::Resource::KernelObject(
-                fuchsia_runtime::job_default().get_koid().unwrap().raw_koid(),
+                fuchsia_runtime::job_default().koid().unwrap().raw_koid(),
             )],
         })),
         ..Default::default()
@@ -1080,7 +1078,7 @@ async fn serve_runtime_dir(runtime_dir: ServerEnd<fio::DirectoryMarker>) {
 }
 
 fn create_job_id_vmo() -> Result<zx::Vmo, Error> {
-    let job_id = fuchsia_runtime::job_default().get_koid().context("reading own job koid")?;
+    let job_id = fuchsia_runtime::job_default().koid().context("reading own job koid")?;
     let job_id_str = job_id.raw_koid().to_string();
     let job_id_vmo = zx::Vmo::create(job_id_str.len() as u64).context("creating job id vmo")?;
     job_id_vmo.write(job_id_str.as_bytes(), 0).context("write job id to vmo")?;

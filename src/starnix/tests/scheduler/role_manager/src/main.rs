@@ -22,7 +22,6 @@ use futures::channel::mpsc::{UnboundedReceiver, UnboundedSender};
 use log::info;
 use serde::Deserialize;
 use std::collections::BTreeMap;
-use zx::{self as zx, AsHandleRef};
 
 #[fuchsia::main]
 async fn main() {
@@ -314,7 +313,7 @@ struct FakeProfileRequests {
 impl FakeProfileRequests {
     async fn with_next<R>(&mut self, op: impl FnOnce(zx::Koid, &str) -> R) -> R {
         let next = self.receiver.next().await.unwrap();
-        let ret = op(next.thread.get_koid().unwrap(), &next.role);
+        let ret = op(next.thread.koid().unwrap(), &next.role);
         let response = RoleManagerSetRoleResponse { ..Default::default() };
         next.responder.send(Ok(response)).unwrap();
         ret
