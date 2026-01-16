@@ -331,3 +331,103 @@ impl DriverHost for DriverHostComponent {
             .map_err(zx::Status::from_raw)
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use fidl::HandleBased;
+
+    #[test]
+    fn test_get_filename() {
+        assert_eq!(get_filename("foo/bar/baz.so"), "baz.so");
+        assert_eq!(get_filename("baz.so"), "baz.so");
+        assert_eq!(get_filename("/baz.so"), "baz.so");
+        assert_eq!(get_filename(""), "");
+    }
+
+    #[test]
+    fn test_get_program_string_value() {
+        let program = fdata::Dictionary {
+            entries: Some(vec![
+                fdata::DictionaryEntry {
+                    key: "binary".to_string(),
+                    value: Some(Box::new(fdata::DictionaryValue::Str("driver.so".to_string()))),
+                },
+                fdata::DictionaryEntry {
+                    key: "other".to_string(),
+                    value: Some(Box::new(fdata::DictionaryValue::Str("value".to_string()))),
+                },
+            ]),
+            ..Default::default()
+        };
+
+        assert_eq!(get_program_string_value(&program, "binary"), Ok("driver.so"));
+        assert_eq!(get_program_string_value(&program, "other"), Ok("value"));
+        assert_eq!(get_program_string_value(&program, "missing"), Err(zx::Status::NOT_FOUND));
+    }
+
+    #[test]
+    fn test_get_program_value_as_obj_vector() {
+        let dict1 = fdata::Dictionary {
+            entries: Some(vec![fdata::DictionaryEntry {
+                key: "k1".to_string(),
+                value: Some(Box::new(fdata::DictionaryValue::Str("v1".to_string()))),
+            }]),
+            ..Default::default()
+        };
+        let dict2 = fdata::Dictionary {
+            entries: Some(vec![fdata::DictionaryEntry {
+                key: "k2".to_string(),
+                value: Some(Box::new(fdata::DictionaryValue::Str("v2".to_string()))),
+            }]),
+            ..Default::default()
+        };
+
+        let program = fdata::Dictionary {
+            entries: Some(vec![fdata::DictionaryEntry {
+                key: "modules".to_string(),
+                value: Some(Box::new(fdata::DictionaryValue::ObjVec(vec![
+                    dict1.clone(),
+                    dict2.clone(),
+                ]))),
+            }]),
+            ..Default::default()
+        };
+
+        let modules = get_program_value_as_obj_vector(&program, "modules").unwrap();
+        assert_eq!(modules.len(), 2);
+        assert_eq!(get_program_string_value(modules[0], "k1"), Ok("v1"));
+        assert_eq!(get_program_string_value(modules[1], "k2"), Ok("v2"));
+    }
+
+    #[test]
+    fn test_set_encoded_config_buffer() {
+        let vmo = zx::Vmo::create(100).unwrap();
+        vmo.write(b"test", 0).unwrap();
+        let mut start_info = frunner::ComponentStartInfo {
+            encoded_config: Some(fmem::Data::Buffer(fmem::Buffer {
+                vmo: vmo.duplicate_handle(zx::Rights::SAME_RIGHTS).unwrap(),
+                size: 4,
+            })),
+            ..Default::default()
+        };
+
+        let config_vmo = set_encoded_config(&mut start_info).unwrap().unwrap();
+        let mut buf = [0u8; 4];
+        config_vmo.read(&mut buf, 0).unwrap();
+        assert_eq!(&buf, b"test");
+    }
+
+    #[test]
+    fn test_set_encoded_config_bytes() {
+        let mut start_info = frunner::ComponentStartInfo {
+            encoded_config: Some(fmem::Data::Bytes(b"test_bytes".to_vec())),
+            ..Default::default()
+        };
+
+        let config_vmo = set_encoded_config(&mut start_info).unwrap().unwrap();
+        let mut buf = [0u8; 10];
+        config_vmo.read(&mut buf, 0).unwrap();
+        assert_eq!(&buf, b"test_bytes");
+    }
+}

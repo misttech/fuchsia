@@ -186,3 +186,59 @@ pub fn create_runtime_dir(process_info: Arc<CachedProcessInfo>) -> Arc<Simple> {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use fidl::endpoints::{create_proxy, create_proxy_and_stream};
+    use futures::stream::StreamExt;
+
+    #[fuchsia::test]
+    async fn test_runtime_dir_creation() {
+        let (proxy, mut stream) = create_proxy_and_stream::<fdh::DriverHostMarker>();
+        let process_info = Arc::new(CachedProcessInfo::new(proxy));
+
+        // Mock the get_process_info call
+        fuchsia_async::Task::spawn(async move {
+            if let Some(Ok(fdh::DriverHostRequest::GetProcessInfo { responder })) =
+                stream.next().await
+            {
+                responder.send(Ok((123, 456, 789, &[], &[]))).unwrap();
+            }
+        })
+        .detach();
+
+        let dir = create_runtime_dir(process_info);
+
+        let scope = ExecutionScope::new();
+        let (root_proxy, root_server) = create_proxy::<fio::DirectoryMarker>();
+        vfs::directory::serve_on(dir, fio::Flags::PERM_READ_BYTES, scope, root_server);
+
+        let entries = fuchsia_fs::directory::readdir(&root_proxy).await.unwrap();
+        // Check for "elf" directory
+        assert!(entries.iter().any(|e| e.name == "elf"));
+
+        let elf_proxy =
+            fuchsia_fs::directory::open_directory(&root_proxy, "elf", fio::Flags::PERM_READ_BYTES)
+                .await
+                .unwrap();
+        let elf_entries = fuchsia_fs::directory::readdir(&elf_proxy).await.unwrap();
+        assert!(elf_entries.iter().any(|e| e.name == "process_start_time"));
+        assert!(elf_entries.iter().any(|e| e.name == "job_id"));
+        assert!(elf_entries.iter().any(|e| e.name == "process_id"));
+
+        let job_id_file =
+            fuchsia_fs::directory::open_file(&elf_proxy, "job_id", fio::Flags::PERM_READ_BYTES)
+                .await
+                .unwrap();
+        let job_id = fuchsia_fs::file::read_to_string(&job_id_file).await.unwrap();
+        assert_eq!(job_id, "123");
+
+        let process_id_file =
+            fuchsia_fs::directory::open_file(&elf_proxy, "process_id", fio::Flags::PERM_READ_BYTES)
+                .await
+                .unwrap();
+        let process_id = fuchsia_fs::file::read_to_string(&process_id_file).await.unwrap();
+        assert_eq!(process_id, "456");
+    }
+}

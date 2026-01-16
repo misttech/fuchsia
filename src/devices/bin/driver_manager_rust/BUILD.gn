@@ -5,10 +5,10 @@
 group("tests") {
   testonly = true
   deps = [
-    "devfs:driver_manager_devfs_test",
-    "driver_host:driver_manager_driver_host_test",
-    "shutdown:driver_manager_shutdown_test",
-    "types:driver_manager_types_test",
-    "utils:driver_manager_utils_test",
+    "devfs:tests",
+    "driver_host:tests",
+    "shutdown:tests",
+    "types:tests",
+    "utils:tests",
   ]
 }
