@@ -5,7 +5,6 @@
 #include "src/devices/misc/drivers/compat/driver.h"
 
 #include <dirent.h>
-#include <fidl/fuchsia.boot/cpp/wire_test_base.h>
 #include <fidl/fuchsia.device.fs/cpp/wire_test_base.h>
 #include <fidl/fuchsia.driver.framework/cpp/wire_test_base.h>
 #include <fidl/fuchsia.io/cpp/wire_test_base.h>
@@ -38,7 +37,6 @@
 #include "src/devices/misc/drivers/compat/loader.h"
 #include "src/devices/misc/drivers/compat/v1_test.h"
 
-namespace fboot = fuchsia_boot;
 namespace fdata = fuchsia_data;
 namespace fdf {
 
@@ -284,22 +282,6 @@ class TestMsiResource : public fidl::testing::WireTestBase<fkernel::MsiResource>
   zx::event fake_resource_;
 };
 
-class TestItems : public fidl::testing::WireTestBase<fboot::Items> {
- public:
-  fidl::ProtocolHandler<fboot::Items> GetHandler() {
-    return bindings_.CreateHandler(this, async_get_default_dispatcher(),
-                                   fidl::kIgnoreBindingClosure);
-  }
-
- private:
-  void NotImplemented_(const std::string& name, fidl::CompleterBase& completer) override {
-    printf("Not implemented: Items::%s\n", name.data());
-    completer.Close(ZX_ERR_NOT_SUPPORTED);
-  }
-
-  fidl::ServerBindingGroup<fboot::Items> bindings_;
-};
-
 class TestFile : public fidl::testing::WireTestBase<fio::File> {
  public:
   TestFile() = default;
@@ -526,11 +508,6 @@ class IncomingNamespace {
         return result.take_error();
       }
 
-      result = outgoing.AddUnmanagedProtocol<fboot::Items>(items_.GetHandler());
-      if (result.is_error()) {
-        return result.take_error();
-      }
-
       result = outgoing.AddUnmanagedProtocol<fuchsia_scheduler::RoleManager>(
           role_manager_->GetHandler());
       if (result.is_error()) {
@@ -588,7 +565,6 @@ class IncomingNamespace {
   TestInfoResource info_resource_;
   TestMsiResource msi_resource_;
   std::optional<TestRoleManager> role_manager_;
-  TestItems items_;
   TestFile v1_test_file_;
   TestFile firmware_file_;
   TestDirectory pkg_directory_;

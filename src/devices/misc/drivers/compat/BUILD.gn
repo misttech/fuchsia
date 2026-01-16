@@ -45,7 +45,6 @@ source_set("lib") {
     "//src/lib/driver_symbols",
   ]
   public_deps = [
-    "//sdk/fidl/fuchsia.boot:fuchsia.boot_cpp",
     "//sdk/fidl/fuchsia.device:fuchsia.device_cpp",
     "//sdk/fidl/fuchsia.driver.compat:fuchsia.driver.compat_cpp",
     "//sdk/fidl/fuchsia.kernel:fuchsia.kernel_cpp",

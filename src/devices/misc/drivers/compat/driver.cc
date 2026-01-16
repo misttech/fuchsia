@@ -4,7 +4,6 @@
 
 #include "src/devices/misc/drivers/compat/driver.h"
 
-#include <fidl/fuchsia.boot/cpp/wire.h>
 #include <fidl/fuchsia.driver.framework/cpp/wire.h>
 #include <fidl/fuchsia.scheduler/cpp/wire.h>
 #include <fidl/fuchsia.system.state/cpp/wire.h>
@@ -28,7 +27,6 @@
 #include "src/devices/misc/drivers/compat/compat_driver_server.h"
 #include "src/lib/driver_symbols/symbols.h"
 
-namespace fboot = fuchsia_boot;
 namespace fdf {
 
 using namespace fuchsia_driver_framework;
@@ -695,12 +693,8 @@ zx::result<> Driver::StartDriver() {
     }
   } else {
     // Else, run create and return.
-    auto client_end = incoming()->Connect<fboot::Items>();
-    if (client_end.is_error()) {
-      return zx::error(client_end.status_value());
-    }
-    zx_status_t status = record_->ops->create(context_, device_.ZxDevice(), "proxy",
-                                              client_end->channel().release());
+    zx_status_t status =
+        record_->ops->create(context_, device_.ZxDevice(), "proxy", ZX_HANDLE_INVALID);
     if (status != ZX_OK) {
       logger_->log(fdf::ERROR, "Failed to load driver '{}', 'create' failed: {}", url_str,
                    zx::make_result(status));
