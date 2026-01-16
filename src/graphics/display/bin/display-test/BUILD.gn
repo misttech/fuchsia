@@ -9,9 +9,13 @@ executable("bin") {
 
   sources = [
     "display.cc",
+    "display.h",
     "image.cc",
+    "image.h",
     "main.cc",
+    "utils.h",
     "virtual-layer.cc",
+    "virtual-layer.h",
   ]
 
   deps = [

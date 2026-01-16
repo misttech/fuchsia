@@ -29,6 +29,7 @@ source_set("common_srcs") {
     "clock/cdclk.h",
     "ddi-aux-channel.cc",
     "ddi-aux-channel.h",
+    "ddi-physical-layer-internal.h",
     "ddi-physical-layer-manager.cc",
     "ddi-physical-layer-manager.h",
     "ddi-physical-layer.cc",
