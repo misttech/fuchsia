@@ -327,6 +327,18 @@ fxl::RefPtr<AsyncOutputBuffer> FormatPin(const ExprValue& pin, const FormatFutur
   return FormatFuture(pointer.value(), options, context, indent);
 }
 
+fxl::RefPtr<AsyncOutputBuffer> FormatMaybeDangling(const ExprValue& maybe_dangling,
+                                                   const FormatFutureOptions& options,
+                                                   const fxl::RefPtr<EvalContext>& context,
+                                                   int indent) {
+  ErrOrValue inner = ResolveNonstaticMember(context, maybe_dangling, {"__0"});
+  if (inner.has_error()) {
+    return FormatError("Invalid MaybeDangling", inner.err());
+  }
+
+  return FormatFuture(inner.value(), options, context, indent);
+}
+
 fxl::RefPtr<AsyncOutputBuffer> FormatTaskRunner(const ExprValue& task_runner,
                                                 const FormatFutureOptions& options,
                                                 const fxl::RefPtr<EvalContext>& context,
@@ -421,6 +433,8 @@ fxl::RefPtr<AsyncOutputBuffer> FormatFuture(const ExprValue& future,
   // will not show up explicitly in the async-backtrace output.
   if (type == "core::pin::Pin")
     return FormatPin(future, options, context, indent);
+  if (type == "core::mem::maybe_dangling::MaybeDangling")
+    return FormatMaybeDangling(future, options, context, indent);
   if (type == "fuchsia_async::runtime::fuchsia::executor::scope::Join")
     return FormatScopeJoin(future, options, context, indent);
   if (type == "fuchsia_async::runtime::fuchsia::task::Task")
