@@ -164,13 +164,6 @@ declare_args() {
 #     NOTE: This feature is a special case and is not available to wrappers
 #     like `bazel_build_action()` intentionally, in order to limit its usage.
 #
-#   filter_bazel_info_logs: (optional)
-#     When true (the default value), INFO level logs are filtered from Bazel.
-#     INFO level logs from Bazel are usually not interesting during Ninja
-#     invocations.
-#     Type: boolean
-#     Default: true
-#
 #   include_host_tools_licenses: (optional)
 #     Set this to true to include the licenses of host tool dependencies in
 #     @gn_targets//:all_licenses.spdx.json.
@@ -783,16 +776,6 @@ template("bazel_action") {
                "--rust-project-json",
                _rebased_rust_project_json,
              ]
-
-      # --config=quiet is always used by default, but it is possible
-      # to disable that by setting filter_bazel_info_logs to false.
-      _filter_bazel_info_logs = true
-      if (defined(invoker.filter_bazel_info_logs)) {
-        _filter_bazel_info_logs = invoker.filter_bazel_info_logs
-      }
-      if (!_filter_bazel_info_logs) {
-        args += [ "--no-filter-bazel-info-logs" ]
-      }
 
       if (bazel_auto_refresh_compdb) {
         _compdb_file =

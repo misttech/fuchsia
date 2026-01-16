@@ -121,13 +121,6 @@ import("//build/bazel/bazel_action.gni")
 #             the package's ELF binaries to the top-level ${root_build_dir}/.build-id/
 #             directory.
 #
-#   filter_bazel_info_logs: (optional)
-#     When true (the default value), INFO level logs are filtered from Bazel.
-#     INFO level logs from Bazel are usually not interesting during Ninja
-#     invocations. Setting this to false can be useful during development.
-#     Type: boolean
-#     Default: true
-#
 #   include_host_tools_licenses: (optional)
 #     Set this to true to include the licenses of host tool dependencies in
 #     @gn_targets//:all_licenses.spdx.json.

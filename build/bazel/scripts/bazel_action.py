@@ -1088,13 +1088,6 @@ def list_to_pairs(l: T.Iterable[T.Any]) -> T.Iterable[tuple[T.Any, T.Any]]:
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
 
-    parser.add_argument(
-        "--filter-bazel-info-logs",
-        action=argparse.BooleanOptionalAction,
-        default=True,
-        help="Filter out INFO level logs from Bazel output.",
-    )
-
     ##
     # Options for directory that the build is running in.
     parser.add_argument(
@@ -1468,16 +1461,16 @@ def main() -> int:
     if quiet:
         cmd_args += ["--config=quiet"]
     else:
-        # This is true by default, and so we usually filter logs
-        if args.filter_bazel_info_logs:
-            # Disable INFO lines and printing results, this makes Bazel output much
-            # less chatty when invoked from Ninja. https://fxbug.dev/42077198
-            cmd_args += ["--ui_event_filters=-info"]
-            if args.command != "query":
-                # The --show_result option is not supported by bazel query.
-                cmd_args += ["--show_result=0"]
-        else:
-            cmd_args += ["--config=verbose"]
+        # Normal builds always need to print INFO level messages so that
+        # warnings can be emitted from bazel ctx.run_shell() commands,
+        # otherwise any stderr/stdout warnings from tools are eaten by
+        # the build.
+        #
+        #  Known uses:
+        #     - size checker outputs
+        #     - developer overrides warnings for assembly
+        #
+        cmd_args += ["--config=verbose"]
 
     cmd_args += [
         # Ensure that all debug symbols are properly generated during the build
