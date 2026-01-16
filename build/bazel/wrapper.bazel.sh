@@ -13,6 +13,9 @@
 _SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" >/dev/null 2>&1 && pwd)"
 readonly _SCRIPT_DIR
 
+_SRCDIR="$(cd "$(dirname "$(readlink -f "${BASH_SOURCE[0]}")")" >/dev/null 2>&1 && pwd)"
+readonly _SRCDIR
+
 function die {
   echo >&2 "ERROR: $*"
   exit 1
@@ -60,6 +63,9 @@ source "${_SCRIPT_ARGS_FILE}"
 [[ -d "${_PREBUILT_PYTHON_DIR}" ]] || die "_PREBUILT_PYTHON_DIR should be a directory: ${_PREBUILT_PYTHON_DIR}"
 
 readonly _REMOTE_SERVICES_BAZELRC="${_NINJA_BUILD_DIR}/regenerator_outputs/remote_services.bazelrc"
+
+readonly _GENERATE_INVOCATION_BAZELRC="${_SRCDIR}/scripts/generate_invocation_bazelrc.py"
+readonly _INVOCATION_BAZELRC="${_BAZEL_WORKSPACE}/invocation.bazelrc"
 
 # Exported explicitly to be used by repository rules to reference the
 # Ninja output directory and binary.
@@ -165,70 +171,46 @@ esac
 # command.
 _BAZEL_EXTRA_ARGS=()
 
-# For infra builds, connections to various remote services are tunneled
-# through local socket relays, launched by [infra/infra]/cmd/buildproxywrap/main.go.
-# Detect manually provided config options that involve the proxies.
-# TODO(https://fxbug.dev/445093719): This method doesn't work if the same configs
-# are indirectly enabled.
+# The following step is sensitive to special environment variables:
+#   * per-invocation build metadata
+#       When uploading results to build event services like ResultStore or
+#       Sponge, include extra metadata that links related invocations.
+#   * proxy overrides sockets for remote services
+#       For infra builds, connections to various remote services are tunneled
+#       through local socket relays, launched by
+#       [infra/infra]/cmd/buildproxywrap/main.go.
+# These environment-sensitive modifications to config definitions
+# manifest in the short-lived 'invocation.bazelrc'.
+# Delete after use.
+trap "rm -f ${_INVOCATION_BAZELRC}" EXIT
+"${_GENERATE_INVOCATION_BAZELRC}" > "${_INVOCATION_BAZELRC}"
+
+# Save a copy of the invocation.bazelrc to the build log dir.
+# Bazel invocations occur in the same workspace, so invocations
+# are distinguished by timestamp.
+[[ -z "$FX_BUILD_LOGDIR" ]] || {
+  readonly logdir="$FX_BUILD_LOGDIR/bazel_logs"
+  mkdir -p "$logdir"
+  readonly date="$(date +%Y%m%d-%H%M%S)"
+  cp "${_INVOCATION_BAZELRC}" "$logdir/invocation-$date.bazelrc"
+}
+
+
+# Non-remote configuration permits use of a disk-cache, below.
 has_remote_config=
-siblings_link_template=
-proxy_overrides=()
 for arg in "${_BAZEL_DIRECT_ARGS[@]}"
 do
   # Check for infra and non-infra config variations to allow for local testing.
   # "sponge" and "resultstore" come from 'build/bazel/remote_services.gni',
   # and are added in 'build/bazel/bazel_action.gni'.
+  # TODO(https://fxbug.dev/445093719): This method doesn't work if the same
+  # configs are indirectly enabled.
   case "$arg" in
-    --config=sponge | --config=sponge_infra) # Sponge build event service
-      [[ "${BAZEL_sponge_socket_path-NOT_SET}" == "NOT_SET" ]] ||
-        proxy_overrides+=( "--bes_proxy=unix://$BAZEL_sponge_socket_path" )
-        siblings_link_template="http://sponge/invocations/"
-      ;;
-    --config=resultstore | --config=resultstore_infra) # Resultstore build event service
-      [[ "${BAZEL_resultstore_socket_path-NOT_SET}" == "NOT_SET" ]] ||
-        proxy_overrides+=( "--bes_proxy=unix://$BAZEL_resultstore_socket_path" )
-        # Note: go/fxbtx uses project=rbe-fuchsia-prod
-        siblings_link_template="http://go/fxbtx/"
-      ;;
     --config=remote | --config=remote_cache_only)  # Remote build execution service
       has_remote_config=true
-      [[ "${BAZEL_rbe_socket_path-NOT_SET}" == "NOT_SET" ]] ||
-        proxy_overrides+=( "--remote_proxy=unix://$BAZEL_rbe_socket_path" )
       ;;
   esac
 done
-
-# Propagate some build metadata from the environment.
-# Some of these values are set by infra.
-build_metadata=()
-[[ "${BUILDBUCKET_ID-NOT_SET}" == "NOT_SET" ]] || {
-  build_metadata+=(
-    "BUILDBUCKET_ID=$BUILDBUCKET_ID"
-    "SIBLING_BUILDS_LINK=${siblings_link_template}?q=BUILDBUCKET_ID:$BUILDBUCKET_ID"
-  )
-  case "$BUILDBUCKET_ID" in
-    */led/*)
-      build_metadata+=(
-        "PARENT_BUILD_LINK=http://go/lucibuild/$BUILDBUCKET_ID/+/build.proto"
-      )
-      ;;
-    *)
-      build_metadata+=("PARENT_BUILD_LINK=http://go/bbid/$BUILDBUCKET_ID")
-      ;;
-  esac
-}
-
-[[ "${BUILDBUCKET_BUILDER-NOT_SET}" == "NOT_SET" ]] ||
-  build_metadata+=( "BUILDBUCKET_BUILDER=$BUILDBUCKET_BUILDER" )
-
-# Developers' builds will have one uuid per `fx build` invocation
-# that can be used to correlate multiple bazel sub-builds.
-[[ "${FX_BUILD_UUID-NOT_SET}" == "NOT_SET" ]] ||
-  build_metadata+=(
-    "FX_BUILD_UUID=$FX_BUILD_UUID"
-    "SIBLING_BUILDS_LINK=${siblings_link_template}?q=FX_BUILD_UUID:$FX_BUILD_UUID"
-  )
-  # search for siblings
 
 # In Corp environments with valid gcert credentials, use the credential helper
 # to automatically exchange LOAS for OAuth (Google Cloud Platform) tokens.
@@ -260,14 +242,9 @@ _BAZEL_PRE_COMMAND_ARGS+=(
   # TODO(digit): Import this from the workspace's .bazelrc file.
   --bazelrc="${_REMOTE_SERVICES_BAZELRC}"
 
-  # TODO(b/474384667): generate invocation.bazelrc and use it here
-  # once per build invocation.
+  # For ephemeral configuration that amends remote_services.bazelrc:
+  --bazelrc="${_INVOCATION_BAZELRC}"
 )
-
-# Add build metadata.
-for metadata in "${build_metadata[@]}"; do
-  _BAZEL_EXTRA_ARGS+=("--build_metadata=${metadata}")
-done
 
 # Use a shared disk cache if FUCHSIA_BAZEL_DISK_CACHE is set and
 # --config=remote is not used. Bazel documentation states that --disk_cache
@@ -287,7 +264,6 @@ done
 [[ -n "${bazel_command_does_configuration}" ]] &&
   _BAZEL_EXTRA_ARGS+=(
     "${use_gcert_auth[@]}"
-    "${proxy_overrides[@]}"
   )
 
 # Setting $USER so `bazel` won't fail in environments with fake UIDs. Even if
