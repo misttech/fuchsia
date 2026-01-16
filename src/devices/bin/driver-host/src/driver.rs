@@ -289,7 +289,8 @@ impl Driver {
             None
         };
 
-        let power_aware = false;
+        let power_aware = get_program_string(program, "suspend_enabled")
+            .map_or_else(|_| false, |val| matches!(val, "true"));
 
         let library = LoaderService::try_load(vmo, &vmar).await?;
         start_args.vmar = vmar;
@@ -414,7 +415,8 @@ impl Driver {
             get_program_string(program, "default_dispatcher_scheduler_role").unwrap_or("");
         let allowed_scheduler_roles = get_program_strvec(program, "allowed_scheduler_roles")?;
 
-        let power_aware = false;
+        let power_aware = get_program_string(program, "suspend_enabled")
+            .map_or_else(|_| false, |val| matches!(val, "true"));
 
         let loaded_driver = LoadedDriver(dynamic_linking_abi);
         let hooks = loaded_driver.get_hooks(basename(binary))?;
@@ -715,6 +717,16 @@ impl Driver {
     fn shutdown(&self, driver_request: ServerEnd<fdh::DriverMarker>) {
         let runtime_handle = self.inner.lock().runtime_handle.take();
         let shutdown_signaler = self.inner.lock().shutdown_signaler.take();
+
+        // Drop the element control channel to destroy the power element
+        match &mut self.inner.lock().power_element {
+            PowerElementState::HostOwned(PowerElementHandles { control, .. })
+            | PowerElementState::DriverOwned(control) => {
+                let _ = control.take();
+            }
+            _ => {}
+        }
+
         if let Some(runtime_handle) = runtime_handle {
             runtime_handle.shutdown(move |runtime_handle| {
                 // SAFETY: This is safe because we previously leaked the arc when creating the
