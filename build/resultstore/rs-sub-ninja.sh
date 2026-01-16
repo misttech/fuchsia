@@ -53,6 +53,41 @@ CFG="$SCRIPT_DIR/fuchsia-resultstore.cfg"
   esac
 }
 
+# Scan ninja arguments for important options.
+ninja_args=("$@")
+subbuild_dir=
+prev_opt=""
+for opt  # "$@"
+do
+  # handle --option arg
+  if [[ -n "$prev_opt" ]]
+  then
+    eval "$prev_opt"=\$opt
+    prev_opt=
+    shift
+    continue
+  fi
+
+  case "$opt" in
+    -C) prev_opt=subbuild_dir ;;
+  esac
+  shift
+done
+
+wrap_options=(
+  --rsproxy "$rsproxy"
+)
+
+[[ "${FX_BUILD_LOGDIR:-NOT_SET}" == "NOT_SET" ]] || {
+  [[ -n "$subbuild_dir" ]] || {
+    echo "Error: Expected a ninja -C subdir, but found none."
+    exit 1
+  }
+  wrap_options+=( --log-dir "$FX_BUILD_LOGDIR/rsproxy_logs/$subbuild_dir"  )
+}
+# Otherwise, if FX_BUILD_LOGDIR isn't set, this is probably being invoked
+# outside of 'fx build', so just fallback to using some temp dir.
+
 rsproxy_options=(
   --cfg "$CFG"
 )
@@ -65,11 +100,11 @@ full_cmd=(
   env
   NINJA_BUILD_ID="$invocation_id"
   "$proxy_wrap"
-  --rsproxy "$rsproxy"
-  # TODO: point --log-dir under _build_logs.  Currently defaults to /tmp.
+  "${wrap_options[@]}"
   --rsproxy_options
   "${rsproxy_options[@]}"
   --
-  "$rsninja" "$@"
+  "$rsninja" "${ninja_args[@]}"
 )
+
 exec "${full_cmd[@]}"
