@@ -35,7 +35,7 @@ use wlan_sme::serve::create_sme;
 use {
     fidl_fuchsia_wlan_common as fidl_common, fidl_fuchsia_wlan_internal as fidl_internal,
     fidl_fuchsia_wlan_mlme as fidl_mlme, fidl_fuchsia_wlan_sme as fidl_sme,
-    fuchsia_async as fasync, fuchsia_inspect_auto_persist as auto_persist,
+    fuchsia_async as fasync,
 };
 
 #[derive(thiserror::Error, Debug)]
@@ -62,8 +62,6 @@ pub enum FullmacMlmeError {
     FailedToQueryVendorDriver(anyhow::Error),
     #[error("Failed to convert query from vendor driver: {0:?}")]
     FailedToConvertVendorDriverQuery(anyhow::Error),
-    #[error("Failed to create persistence proxy: {0}")]
-    FailedToCreatePersistenceProxy(fidl::Error),
     #[error("Failed to create sme: {0}")]
     FailedToCreateSme(anyhow::Error),
     #[error("Failed to create WlanFullmacImplIfcRequestStream: {0}")]
@@ -329,14 +327,6 @@ async fn start<D: DeviceOps + Send + 'static>(
         .query_spectrum_management_support()
         .map_err(FullmacMlmeError::FailedToQueryVendorDriver)?;
 
-    // TODO(https://fxbug.dev/42064968): Get persistence working by adding the appropriate configs
-    //                         in *.cml files
-    let (persistence_proxy, _persistence_server_end) =
-        fidl::endpoints::create_proxy::<fidl_fuchsia_diagnostics_persist::DataPersistenceMarker>();
-
-    let (persistence_req_sender, _persistence_req_forwarder_fut) =
-        auto_persist::create_persistence_req_sender(persistence_proxy);
-
     let (mlme_request_stream, sme_fut) = create_sme(
         cfg.into(),
         mlme_event_receiver,
@@ -344,7 +334,6 @@ async fn start<D: DeviceOps + Send + 'static>(
         security_support,
         spectrum_management_support,
         inspector,
-        persistence_req_sender,
         generic_sme_stream,
     )
     .map_err(FullmacMlmeError::FailedToCreateSme)?;

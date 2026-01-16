@@ -17,9 +17,7 @@ use crate::mode_management::phy_manager::{PhyManager, PhyManagerApi};
 use crate::mode_management::{DEFECT_CHANNEL_SIZE, create_iface_manager, device_monitor, recovery};
 use crate::telemetry::{TelemetryEvent, TelemetrySender};
 use crate::util::listener;
-use crate::util::testing::{
-    create_inspect_persistence_channel, generate_ssid, run_until_completion, run_while,
-};
+use crate::util::testing::{generate_ssid, run_until_completion, run_while};
 use anyhow::{Error, format_err};
 use assert_matches::assert_matches;
 use fidl::endpoints::{create_proxy, create_request_stream};
@@ -186,7 +184,6 @@ fn test_setup(
     let mut saved_networks_mgt_fut = pin!(SavedNetworksManager::new_for_test());
     let saved_networks = run_until_completion(exec, &mut saved_networks_mgt_fut);
     let saved_networks = Arc::new(saved_networks);
-    let (persistence_req_sender, _persistence_stream) = create_inspect_persistence_channel();
     let (telemetry_sender, telemetry_receiver) = mpsc::channel::<TelemetryEvent>(100);
     let telemetry_sender = TelemetrySender::new(telemetry_sender);
     let (scan_request_sender, scan_request_receiver) =
@@ -198,7 +195,6 @@ fn test_setup(
         saved_networks.clone(),
         scan_requester.clone(),
         inspect::Inspector::default().root().create_child("connection_selector"),
-        persistence_req_sender.clone(),
         telemetry_sender.clone(),
     ));
     let (connection_selection_request_sender, connection_selection_request_receiver) =

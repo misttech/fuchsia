@@ -21,7 +21,7 @@ use std::sync::Arc;
 use wlan_common::timer::{self, ScheduledEvent};
 use {
     fidl_fuchsia_wlan_common as fidl_common, fidl_fuchsia_wlan_mlme as fidl_mlme,
-    fidl_fuchsia_wlan_sme as fidl_sme, fuchsia_inspect_auto_persist as auto_persist,
+    fidl_fuchsia_wlan_sme as fidl_sme,
 };
 
 pub type ClientSmeServer = mpsc::UnboundedSender<client::Endpoint>;
@@ -122,7 +122,6 @@ pub fn create_sme(
     security_support: fidl_common::SecuritySupport,
     spectrum_management_support: fidl_common::SpectrumManagementSupport,
     inspector: fuchsia_inspect::Inspector,
-    persistence_req_sender: auto_persist::PersistenceReqSender,
     generic_sme_request_stream: <fidl_sme::GenericSmeMarker as fidl::endpoints::ProtocolMarker>::RequestStream,
 ) -> Result<
     (MlmeStream, Pin<Box<impl Future<Output = Result<(), anyhow::Error>> + use<>>>),
@@ -145,7 +144,6 @@ pub fn create_sme(
                 telemetry_endpoint_receiver,
                 inspector,
                 inspect_node,
-                persistence_req_sender,
             );
             (
                 SmeServer::Client(sender),
@@ -287,8 +285,6 @@ mod tests {
         let mut _exec = fasync::TestExecutor::new();
         let inspector = Inspector::default();
         let (_mlme_event_sender, mlme_event_stream) = mpsc::unbounded();
-        let (persistence_req_sender, _persistence_stream) =
-            test_utils::create_inspect_persistence_channel();
         let (_generic_sme_proxy, generic_sme_stream) =
             create_proxy_and_stream::<fidl_sme::GenericSmeMarker>();
         let device_info = fidl_mlme::DeviceInfo {
@@ -302,7 +298,6 @@ mod tests {
             fake_security_support(),
             fake_spectrum_management_support_empty(),
             inspector,
-            persistence_req_sender,
             generic_sme_stream,
         );
 
@@ -314,8 +309,6 @@ mod tests {
         let mut exec = fasync::TestExecutor::new();
         let (_mlme_event_sender, mlme_event_stream) = mpsc::unbounded();
         let inspector = Inspector::default();
-        let (persistence_req_sender, _persistence_stream) =
-            test_utils::create_inspect_persistence_channel();
         let (generic_sme_proxy, generic_sme_stream) =
             create_proxy_and_stream::<fidl_sme::GenericSmeMarker>();
         let (_mlme_req_stream, serve_fut) = create_sme(
@@ -325,7 +318,6 @@ mod tests {
             fake_security_support(),
             fake_spectrum_management_support_empty(),
             inspector,
-            persistence_req_sender,
             generic_sme_stream,
         )
         .unwrap();
@@ -346,7 +338,6 @@ mod tests {
         // These values must stay in scope or the SME will terminate, but they
         // are not relevant to Generic SME tests.
         _inspector: Inspector,
-        _persistence_stream: mpsc::Receiver<String>,
         _mlme_event_sender: mpsc::UnboundedSender<crate::MlmeEvent>,
         // Executor goes last to avoid test shutdown failures.
         exec: fasync::TestExecutor,
@@ -362,8 +353,6 @@ mod tests {
         let mut exec = fasync::TestExecutor::new();
         let inspector = Inspector::default();
         let (mlme_event_sender, mlme_event_stream) = mpsc::unbounded();
-        let (persistence_req_sender, persistence_stream) =
-            test_utils::create_inspect_persistence_channel();
         let (generic_sme_proxy, generic_sme_stream) =
             create_proxy_and_stream::<fidl_sme::GenericSmeMarker>();
         let device_info =
@@ -375,7 +364,6 @@ mod tests {
             fake_security_support(),
             fake_spectrum_management_support_empty(),
             inspector.clone(),
-            persistence_req_sender,
             generic_sme_stream,
         )?;
         let mut serve_fut = Box::pin(serve_fut);
@@ -386,7 +374,6 @@ mod tests {
                 proxy: generic_sme_proxy,
                 mlme_req_stream,
                 _inspector: inspector,
-                _persistence_stream: persistence_stream,
                 _mlme_event_sender: mlme_event_sender,
                 exec,
             },

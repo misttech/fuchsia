@@ -14,7 +14,6 @@ use crate::telemetry::{self, TelemetryEvent, TelemetrySender};
 use anyhow::format_err;
 use async_trait::async_trait;
 use fuchsia_inspect::Node as InspectNode;
-use fuchsia_inspect_auto_persist::{self as auto_persist, AutoPersist};
 use fuchsia_inspect_contrib::inspect_insert;
 use fuchsia_inspect_contrib::log::WriteInspect;
 use fuchsia_inspect_contrib::nodes::BoundedListNode as InspectBoundedListNode;
@@ -157,7 +156,7 @@ pub struct ConnectionSelector {
     scan_requester: Arc<dyn scan::ScanRequestApi>,
     last_scan_result_time: Arc<Mutex<zx::MonotonicInstant>>,
     _inspect_node_root: Arc<Mutex<InspectNode>>,
-    inspect_node_for_connection_selection: Arc<Mutex<AutoPersist<InspectBoundedListNode>>>,
+    inspect_node_for_connection_selection: Arc<Mutex<InspectBoundedListNode>>,
     telemetry_sender: TelemetrySender,
 }
 
@@ -166,17 +165,11 @@ impl ConnectionSelector {
         saved_network_manager: Arc<dyn SavedNetworksManagerApi>,
         scan_requester: Arc<dyn scan::ScanRequestApi>,
         inspect_node: InspectNode,
-        persistence_req_sender: auto_persist::PersistenceReqSender,
         telemetry_sender: TelemetrySender,
     ) -> Self {
         let inspect_node_for_connection_selection = InspectBoundedListNode::new(
             inspect_node.create_child("connection_selection"),
             INSPECT_EVENT_LIMIT_FOR_CONNECTION_SELECTIONS,
-        );
-        let inspect_node_for_connection_selection = AutoPersist::new(
-            inspect_node_for_connection_selection,
-            "wlancfg-network-selection",
-            persistence_req_sender,
         );
         Self {
             saved_network_manager,
@@ -756,9 +749,9 @@ mod tests {
     use crate::config_management::{ConnectFailure, FailureReason, SavedNetworksManager};
     use crate::util::testing::fakes::{FakeSavedNetworksManager, FakeScanRequester};
     use crate::util::testing::{
-        create_inspect_persistence_channel, generate_channel, generate_random_bss,
-        generate_random_connect_reason, generate_random_network_identifier,
-        generate_random_password, generate_random_scan_result, generate_random_scanned_candidate,
+        generate_channel, generate_random_bss, generate_random_connect_reason,
+        generate_random_network_identifier, generate_random_password, generate_random_scan_result,
+        generate_random_scanned_candidate,
     };
     use assert_matches::assert_matches;
     use diagnostics_assertions::{AnyNumericProperty, assert_data_tree};
@@ -796,7 +789,6 @@ mod tests {
         let scan_requester = Arc::new(FakeScanRequester::new());
         let inspector = inspect::Inspector::default();
         let inspect_node = inspector.root().create_child("connection_selection_test");
-        let (persistence_req_sender, _persistence_stream) = create_inspect_persistence_channel();
         let (telemetry_sender, telemetry_receiver) = mpsc::channel::<TelemetryEvent>(100);
 
         let connection_selector = Rc::new(ConnectionSelector::new(
@@ -807,7 +799,6 @@ mod tests {
             },
             scan_requester.clone(),
             inspect_node,
-            persistence_req_sender,
             TelemetrySender::new(telemetry_sender),
         ));
 

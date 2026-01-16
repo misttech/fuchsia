@@ -13,7 +13,6 @@ use fidl_fuchsia_wlan_wlanix::{
 };
 use fuchsia_component::server::ServiceFs;
 use fuchsia_sync::Mutex;
-use futures::future::OptionFuture;
 use futures::{FutureExt, StreamExt, TryFutureExt};
 use ieee80211::{Bssid, MacAddrBytes};
 use log::{debug, error, info, warn};
@@ -2344,21 +2343,12 @@ async fn main() {
         wlan_telemetry::setup_disconnected_cobalt_proxy()
             .expect("Failed to create any FIDL channels, panicking")
     });
-    let (persistence_sender, persistence_fut) = wlan_telemetry::setup_persistence_req_sender()
-        .map(|(sender, future)| (sender, OptionFuture::from(Some(future))))
-        .unwrap_or_else(|err| {
-            error!("Inspect data will not persist across reboot: {}", err);
-            // To keep the code paths identical, create an empty OptionFuture that can run in the
-            // `try_join!()`.
-            (wlan_telemetry::setup_disconnected_persistence_req_sender(), OptionFuture::from(None))
-        });
     const CLIENT_STATS_NODE_NAME: &str = "client_stats";
     let (telemetry_sender, serve_telemetry_fut) = wlan_telemetry::serve_telemetry(
         cobalt_logger,
         monitor_svc.clone(),
         fuchsia_inspect::component::inspector().root().create_child(CLIENT_STATS_NODE_NAME),
         &format!("root/{CLIENT_STATS_NODE_NAME}"),
-        persistence_sender,
     );
 
     let iface_manager =
@@ -2369,7 +2359,6 @@ async fn main() {
 
     let res = futures::try_join!(
         serve_telemetry_fut,
-        persistence_fut.map(Ok),
         report_battery_updates(telemetry_sender.clone()).map(Ok),
         serve_fidl(Arc::clone(&wifi_state), Arc::new(iface_manager), telemetry_sender),
         serve_phy_events(phy_events_proxy, wifi_state)

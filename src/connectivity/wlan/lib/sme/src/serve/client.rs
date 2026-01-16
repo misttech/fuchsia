@@ -21,7 +21,7 @@ use std::sync::Arc;
 use wlan_common::scan::write_vmo;
 use {
     fidl_fuchsia_wlan_common as fidl_common, fidl_fuchsia_wlan_ieee80211 as fidl_ieee80211,
-    fidl_fuchsia_wlan_mlme as fidl_mlme, fuchsia_inspect_auto_persist as auto_persist,
+    fidl_fuchsia_wlan_mlme as fidl_mlme,
 };
 
 pub type Endpoint = ServerEnd<fidl_sme::ClientSmeMarker>;
@@ -40,7 +40,6 @@ pub fn serve(
     >,
     inspector: fuchsia_inspect::Inspector,
     inspect_node: fuchsia_inspect::Node,
-    persistence_req_sender: auto_persist::PersistenceReqSender,
 ) -> (MlmeSink, MlmeStream, impl Future<Output = Result<(), anyhow::Error>>) {
     let wpa3_supported =
         security_support.mfp.as_ref().is_some_and(|mfp| mfp.supported.unwrap_or(false))
@@ -54,7 +53,6 @@ pub fn serve(
         device_info,
         inspector,
         inspect_node,
-        persistence_req_sender,
         security_support,
         spectrum_management_support,
     );

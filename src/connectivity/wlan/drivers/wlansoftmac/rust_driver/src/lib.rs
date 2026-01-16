@@ -19,8 +19,7 @@ use wlan_mlme::{DriverEvent, DriverEventSink};
 use wlan_sme::serve::create_sme;
 use {
     fidl_fuchsia_wlan_common as fidl_common, fidl_fuchsia_wlan_sme as fidl_sme,
-    fidl_fuchsia_wlan_softmac as fidl_softmac, fuchsia_inspect_auto_persist as auto_persist,
-    wlan_trace as wtrace,
+    fidl_fuchsia_wlan_softmac as fidl_softmac, wlan_trace as wtrace,
 };
 
 const INSPECT_VMO_SIZE_BYTES: usize = 1000 * 1024;
@@ -127,13 +126,6 @@ async fn start<D: DeviceOps + 'static>(
 
     info!("Querying complete!");
 
-    // TODO(https://fxbug.dev/42064968): Get persistence working by adding the appropriate configs
-    //                         in *.cml files
-    let (persistence_proxy, _persistence_server_end) =
-        fidl::endpoints::create_proxy::<fidl_fuchsia_diagnostics_persist::DataPersistenceMarker>();
-    let (persistence_req_sender, _persistence_req_forwarder_fut) =
-        auto_persist::create_persistence_req_sender(persistence_proxy);
-
     let config = wlan_sme::Config {
         wep_supported: legacy_privacy_support.wep_supported,
         wpa1_supported: legacy_privacy_support.wpa1_supported,
@@ -157,7 +149,6 @@ async fn start<D: DeviceOps + 'static>(
         security_support,
         spectrum_management_support,
         inspector,
-        persistence_req_sender,
         generic_sme_request_stream,
     ) {
         Ok((mlme_request_stream, sme)) => (mlme_request_stream, sme),

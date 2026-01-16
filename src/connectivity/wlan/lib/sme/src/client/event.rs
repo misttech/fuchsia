@@ -31,7 +31,6 @@ pub const SAE_RETRANSMISSION_TIMEOUT_MILLIS: i64 = 1000;
 pub const DEAUTHENTICATE_TIMEOUT_MILLIS: i64 = 500;
 
 pub const INSPECT_PULSE_CHECK_MINUTES: i64 = 1;
-pub const INSPECT_PULSE_PERSIST_MINUTES: i64 = 5;
 
 #[derive(Debug, Clone)]
 pub enum Event {
@@ -39,8 +38,6 @@ pub enum Event {
     RsnaResponseTimeout(RsnaResponseTimeout),
     RsnaRetransmissionTimeout(RsnaRetransmissionTimeout),
     InspectPulseCheck(InspectPulseCheck),
-    /// From startup, periodically schedule an event to persist the Inspect pulse data
-    InspectPulsePersist(InspectPulsePersist),
     SaeTimeout(SaeTimeout),
     DeauthenticateTimeout(DeauthenticateTimeout),
 }
@@ -62,11 +59,6 @@ impl From<RsnaRetransmissionTimeout> for Event {
 impl From<InspectPulseCheck> for Event {
     fn from(this: InspectPulseCheck) -> Self {
         Event::InspectPulseCheck(this)
-    }
-}
-impl From<InspectPulsePersist> for Event {
-    fn from(this: InspectPulsePersist) -> Self {
-        Event::InspectPulsePersist(this)
     }
 }
 impl From<SaeTimeout> for Event {
@@ -112,14 +104,6 @@ pub struct InspectPulseCheck;
 impl TimeoutDuration for InspectPulseCheck {
     fn timeout_duration(&self) -> zx::MonotonicDuration {
         zx::MonotonicDuration::from_minutes(INSPECT_PULSE_CHECK_MINUTES)
-    }
-}
-
-#[derive(Debug, Clone)]
-pub struct InspectPulsePersist;
-impl TimeoutDuration for InspectPulsePersist {
-    fn timeout_duration(&self) -> zx::MonotonicDuration {
-        zx::MonotonicDuration::from_minutes(INSPECT_PULSE_PERSIST_MINUTES)
     }
 }
 

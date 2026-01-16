@@ -12,7 +12,6 @@ use crate::config_management::{
 };
 use anyhow::format_err;
 use async_trait::async_trait;
-use futures::channel::mpsc;
 use futures::lock::Mutex;
 use log::{info, warn};
 use rand::Rng;
@@ -202,7 +201,9 @@ impl SavedNetworksManagerApi for FakeSavedNetworksManager {
         match predetermined_response {
             Some(resp) => resp,
             None => {
-                warn!("FakeSavedNetworksManager lookup_compatible response is not set, returning all networks with matching SSID");
+                warn!(
+                    "FakeSavedNetworksManager lookup_compatible response is not set, returning all networks with matching SSID"
+                );
                 self.saved_networks
                     .lock()
                     .await
@@ -311,11 +312,6 @@ impl SavedNetworksManagerApi for FakeSavedNetworksManager {
     ) -> PastConnectionList {
         self.past_connections_response.clone()
     }
-}
-
-pub fn create_inspect_persistence_channel() -> (mpsc::Sender<String>, mpsc::Receiver<String>) {
-    const DEFAULT_BUFFER_SIZE: usize = 100; // arbitrary value
-    mpsc::channel(DEFAULT_BUFFER_SIZE)
 }
 
 /// Create past connection data with all random values. Tests can set the values they care about.

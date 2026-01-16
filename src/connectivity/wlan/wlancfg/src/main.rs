@@ -25,7 +25,6 @@ use fuchsia_async::DurationExt;
 use fuchsia_component::server::ServiceFs;
 use fuchsia_inspect::component;
 use futures::channel::{mpsc, oneshot};
-use futures::future::OptionFuture;
 use futures::lock::Mutex;
 use futures::prelude::*;
 use futures::{TryFutureExt, select};
@@ -58,8 +57,7 @@ use wlancfg_lib::telemetry::{
 use wlancfg_lib::util;
 use {
     fidl_fuchsia_wlan_policy as fidl_policy, fuchsia_async as fasync,
-    fuchsia_inspect_auto_persist as auto_persist, fuchsia_trace_provider as ftrace_provider,
-    wlan_trace as wtrace,
+    fuchsia_trace_provider as ftrace_provider, wlan_trace as wtrace,
 };
 
 const REGULATORY_LISTENER_TIMEOUT_SEC: i64 = 30;
@@ -243,26 +241,6 @@ async fn run_all_futures() -> Result<(), Error> {
     let cfg = wlancfg_config::Config::take_from_startup_handle();
     let monitor_svc = fuchsia_component::client::connect_to_protocol::<DeviceMonitorMarker>()
         .context("failed to connect to device monitor")?;
-    let persistence_proxy = fuchsia_component::client::connect_to_protocol::<
-        fidl_fuchsia_diagnostics_persist::DataPersistenceMarker,
-    >();
-    let (persistence_req_sender, persistence_req_forwarder_fut) = match persistence_proxy {
-        Ok(persistence_proxy) => {
-            let (s, f) = auto_persist::create_persistence_req_sender(persistence_proxy);
-            (s, OptionFuture::from(Some(f)))
-        }
-        Err(e) => {
-            error!("Failed to connect to persistence service: {}", e);
-            // To simplify the code, we still create mpsc::Sender, but there's nothing to forward
-            // the tag to the Persistence service because we can't connect to it.
-            // Note: because we drop the receiver here, be careful about log spam when sending
-            //       tags through the `sender` below. This is automatically handled by
-            //       `auto_persist::AutoPersist` because it only logs the first time sending
-            //       fail, so just use that wrapper type instead of logging directly.
-            let (sender, _receiver) = mpsc::channel::<String>(1);
-            (sender, OptionFuture::from(None))
-        }
-    };
 
     let cobalt_svc = connect_to_metrics_logger_factory().await?;
     let cobalt_proxy = match create_metrics_logger(&cobalt_svc).await {
@@ -285,7 +263,6 @@ async fn run_all_futures() -> Result<(), Error> {
         cobalt_proxy,
         component::inspector().root().create_child("client_stats"),
         external_inspect_node.create_child("client_stats"),
-        persistence_req_sender.clone(),
         defect_sender.clone(),
     );
     component::inspector().root().record(external_inspect_node);
@@ -299,7 +276,6 @@ async fn run_all_futures() -> Result<(), Error> {
         saved_networks.clone(),
         scan_requester.clone(),
         component::inspector().root().create_child("connection_selector"),
-        persistence_req_sender.clone(),
         telemetry_sender.clone(),
     ));
     let (connection_selection_request_sender, connection_selection_request_receiver) =
@@ -412,7 +388,6 @@ async fn run_all_futures() -> Result<(), Error> {
         scanning_service,
         regulatory_fut,
         telemetry_fut.map(Ok),
-        persistence_req_forwarder_fut.map(Ok),
         roam_manager_service_fut.map(Ok),
         connection_selection_service.map(Ok)
     )?;

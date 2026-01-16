@@ -6,7 +6,6 @@ use crate::util::cobalt_logger::log_cobalt_batch;
 use derivative::Derivative;
 use fidl_fuchsia_metrics::{MetricEvent, MetricEventPayload};
 use fuchsia_inspect::Node as InspectNode;
-use fuchsia_inspect_auto_persist::{self as auto_persist, AutoPersist};
 use fuchsia_inspect_contrib::id_enum::IdEnum;
 use fuchsia_inspect_contrib::inspect_log;
 use fuchsia_inspect_contrib::nodes::{BoundedListNode, LruCacheNode};
@@ -154,8 +153,8 @@ pub struct DisconnectInfo {
 pub struct ConnectDisconnectLogger {
     connection_state: Arc<Mutex<ConnectionState>>,
     cobalt_proxy: fidl_fuchsia_metrics::MetricEventLoggerProxy,
-    connect_events_node: Mutex<AutoPersist<BoundedListNode>>,
-    disconnect_events_node: Mutex<AutoPersist<BoundedListNode>>,
+    connect_events_node: Mutex<BoundedListNode>,
+    disconnect_events_node: Mutex<BoundedListNode>,
     inspect_metadata_node: Mutex<InspectMetadataNode>,
     time_series_stats: ConnectDisconnectTimeSeries,
     successive_connect_attempt_failures: AtomicUsize,
@@ -169,7 +168,6 @@ impl ConnectDisconnectLogger {
         inspect_node: &InspectNode,
         inspect_metadata_node: &InspectNode,
         inspect_metadata_path: &str,
-        persistence_req_sender: auto_persist::PersistenceReqSender,
         time_matrix_client: &S,
     ) -> Self {
         let connect_events = inspect_node.create_child("connect_events");
@@ -177,15 +175,13 @@ impl ConnectDisconnectLogger {
         let this = Self {
             cobalt_proxy,
             connection_state: Arc::new(Mutex::new(ConnectionState::Idle(IdleState {}))),
-            connect_events_node: Mutex::new(AutoPersist::new(
-                BoundedListNode::new(connect_events, INSPECT_CONNECT_EVENTS_LIMIT),
-                "wlan-connect-events",
-                persistence_req_sender.clone(),
+            connect_events_node: Mutex::new(BoundedListNode::new(
+                connect_events,
+                INSPECT_CONNECT_EVENTS_LIMIT,
             )),
-            disconnect_events_node: Mutex::new(AutoPersist::new(
-                BoundedListNode::new(disconnect_events, INSPECT_DISCONNECT_EVENTS_LIMIT),
-                "wlan-disconnect-events",
-                persistence_req_sender,
+            disconnect_events_node: Mutex::new(BoundedListNode::new(
+                disconnect_events,
+                INSPECT_DISCONNECT_EVENTS_LIMIT,
             )),
             inspect_metadata_node: Mutex::new(InspectMetadataNode::new(inspect_metadata_node)),
             time_series_stats: ConnectDisconnectTimeSeries::new(
@@ -247,7 +243,7 @@ impl ConnectDisconnectLogger {
 
             self.time_series_stats.log_connected_networks(1 << connected_network_id);
 
-            inspect_log!(self.connect_events_node.lock().get_mut(), {
+            inspect_log!(self.connect_events_node.lock(), {
                 network_id: connected_network_id,
             });
         }
@@ -301,7 +297,7 @@ impl ConnectDisconnectLogger {
         let disconnect_source = InspectDisconnectSource::from(&info.disconnect_source);
         let disconnect_source_id =
             inspect_metadata_node.disconnect_sources.insert(disconnect_source) as u64;
-        inspect_log!(self.disconnect_events_node.lock().get_mut(), {
+        inspect_log!(self.disconnect_events_node.lock(), {
             connected_duration: info.connected_duration.into_nanos(),
             disconnect_source_id: disconnect_source_id,
             network_id: connected_network_id,
@@ -562,7 +558,6 @@ mod tests {
             &harness.inspect_node,
             &harness.inspect_metadata_node,
             &harness.inspect_metadata_path,
-            harness.persistence_sender.clone(),
             &client,
         );
         let bss = random_bss_description!();
@@ -626,7 +621,6 @@ mod tests {
             &test_helper.inspect_node,
             &test_helper.inspect_metadata_node,
             &test_helper.inspect_metadata_path,
-            test_helper.persistence_sender.clone(),
             &test_helper.mock_time_matrix_client,
         );
 
@@ -683,7 +677,6 @@ mod tests {
             &test_helper.inspect_node,
             &test_helper.inspect_metadata_node,
             &test_helper.inspect_metadata_path,
-            test_helper.persistence_sender.clone(),
             &test_helper.mock_time_matrix_client,
         );
 
@@ -721,7 +714,6 @@ mod tests {
             &test_helper.inspect_node,
             &test_helper.inspect_metadata_node,
             &test_helper.inspect_metadata_path,
-            test_helper.persistence_sender.clone(),
             &test_helper.mock_time_matrix_client,
         );
 
@@ -750,7 +742,6 @@ mod tests {
             &test_helper.inspect_node,
             &test_helper.inspect_metadata_node,
             &test_helper.inspect_metadata_path,
-            test_helper.persistence_sender.clone(),
             &test_helper.mock_time_matrix_client,
         );
 
@@ -808,7 +799,6 @@ mod tests {
             &test_helper.inspect_node,
             &test_helper.inspect_metadata_node,
             &test_helper.inspect_metadata_path,
-            test_helper.persistence_sender.clone(),
             &test_helper.mock_time_matrix_client,
         );
 
@@ -869,7 +859,6 @@ mod tests {
             &test_helper.inspect_node,
             &test_helper.inspect_metadata_node,
             &test_helper.inspect_metadata_path,
-            test_helper.persistence_sender.clone(),
             &test_helper.mock_time_matrix_client,
         );
 
@@ -894,7 +883,6 @@ mod tests {
             &test_helper.inspect_node,
             &test_helper.inspect_metadata_node,
             &test_helper.inspect_metadata_path,
-            test_helper.persistence_sender.clone(),
             &test_helper.mock_time_matrix_client,
         );
 
@@ -942,7 +930,6 @@ mod tests {
             &test_helper.inspect_node,
             &test_helper.inspect_metadata_node,
             &test_helper.inspect_metadata_path,
-            test_helper.persistence_sender.clone(),
             &test_helper.mock_time_matrix_client,
         );
 
@@ -1035,7 +1022,6 @@ mod tests {
             &test_helper.inspect_node,
             &test_helper.inspect_metadata_node,
             &test_helper.inspect_metadata_path,
-            test_helper.persistence_sender.clone(),
             &test_helper.mock_time_matrix_client,
         );
 
@@ -1122,7 +1108,6 @@ mod tests {
             &test_helper.inspect_node,
             &test_helper.inspect_metadata_node,
             &test_helper.inspect_metadata_path,
-            test_helper.persistence_sender.clone(),
             &test_helper.mock_time_matrix_client,
         );
 
@@ -1152,7 +1137,6 @@ mod tests {
             &test_helper.inspect_node,
             &test_helper.inspect_metadata_node,
             &test_helper.inspect_metadata_path,
-            test_helper.persistence_sender.clone(),
             &test_helper.mock_time_matrix_client,
         );
 

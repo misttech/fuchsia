@@ -2,7 +2,6 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use futures::channel::mpsc;
 use ieee80211::{MacAddr, MacAddrBytes};
 use wlan_common::ie::rsn::akm::{self, AKM_PSK, Akm};
 use wlan_common::ie::rsn::cipher::{self, CIPHER_CCMP_128, Cipher};
@@ -114,9 +113,4 @@ pub fn fake_device_info(sta_addr: MacAddr) -> fidl_mlme::DeviceInfo {
             .into_primitive(),
         qos_capable: true,
     }
-}
-
-pub fn create_inspect_persistence_channel() -> (mpsc::Sender<String>, mpsc::Receiver<String>) {
-    const DEFAULT_BUFFER_SIZE: usize = 100; // arbitrary value
-    mpsc::channel(DEFAULT_BUFFER_SIZE)
 }

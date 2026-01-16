@@ -12,7 +12,7 @@ use wlan_common::bss::BssDescription;
 use {
     fidl_fuchsia_power_battery as fidl_battery, fidl_fuchsia_wlan_ieee80211 as fidl_ieee80211,
     fidl_fuchsia_wlan_internal as fidl_internal, fuchsia_async as fasync,
-    fuchsia_inspect_auto_persist as auto_persist, wlan_legacy_metrics_registry as metrics,
+    wlan_legacy_metrics_registry as metrics,
 };
 
 mod processors;
@@ -100,25 +100,6 @@ pub fn setup_disconnected_cobalt_proxy()
     Ok(fidl::endpoints::create_proxy::<fidl_fuchsia_metrics::MetricEventLoggerMarker>().0)
 }
 
-pub fn setup_persistence_req_sender()
--> Result<(auto_persist::PersistenceReqSender, impl Future<Output = ()>), anyhow::Error> {
-    fuchsia_component::client::connect_to_protocol::<
-        fidl_fuchsia_diagnostics_persist::DataPersistenceMarker,
-    >()
-    .map(auto_persist::create_persistence_req_sender)
-}
-
-/// Creates a disconnected channel with the same types as the persistence service. This allows for
-/// a fallback with a uniform code path in case of a failure to connect to the persistence service.
-pub fn setup_disconnected_persistence_req_sender() -> auto_persist::PersistenceReqSender {
-    let (sender, _receiver) = mpsc::channel::<String>(1);
-    // Note: because we drop the receiver here, be careful about log spam when sending
-    // tags through the `sender` below. This is automatically handled by `auto_persist::AutoPersist`
-    // because it only logs the first time sending fails, so just use that wrapper type instead of
-    // writing directly to this channel.
-    sender
-}
-
 /// How often to refresh time series stats. Also how often to request packet counters.
 const TELEMETRY_QUERY_INTERVAL: zx::MonotonicDuration = zx::MonotonicDuration::from_seconds(10);
 
@@ -127,7 +108,6 @@ pub fn serve_telemetry(
     monitor_svc_proxy: fidl_fuchsia_wlan_device_service::DeviceMonitorProxy,
     inspect_node: InspectNode,
     inspect_path: &str,
-    persistence_req_sender: auto_persist::PersistenceReqSender,
 ) -> (TelemetrySender, impl Future<Output = Result<(), Error>> + use<>) {
     let (sender, mut receiver) =
         mpsc::channel::<TelemetryEvent>(util::sender::TELEMETRY_EVENT_BUFFER_SIZE);
@@ -155,7 +135,6 @@ pub fn serve_telemetry(
         &inspect_node,
         &inspect_metadata_node,
         &inspect_metadata_path,
-        persistence_req_sender,
         &time_matrix_client,
     );
     let iface_logger = processors::iface::IfaceLogger::new(cobalt_proxy.clone());

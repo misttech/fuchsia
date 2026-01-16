@@ -5,7 +5,6 @@
 use crate::client::connection_selection::scoring_functions;
 use crate::client::types;
 use crate::telemetry::{TelemetryEvent, TelemetrySender};
-use fuchsia_inspect_auto_persist::AutoPersist;
 use fuchsia_inspect_contrib::inspect_log;
 use fuchsia_inspect_contrib::log::InspectList;
 use fuchsia_inspect_contrib::nodes::BoundedListNode as InspectBoundedListNode;
@@ -19,7 +18,7 @@ use std::sync::Arc;
 pub async fn select_bss(
     allowed_candidate_list: Vec<types::ScannedCandidate>,
     reason: types::ConnectReason,
-    inspect_node: Arc<Mutex<AutoPersist<InspectBoundedListNode>>>,
+    inspect_node: Arc<Mutex<InspectBoundedListNode>>,
     telemetry_sender: TelemetrySender,
 ) -> Option<types::ScannedCandidate> {
     if allowed_candidate_list.is_empty() {
@@ -56,7 +55,7 @@ pub async fn select_bss(
 
     // Log the candidates into Inspect
     inspect_log!(
-        inspect_node.get_mut(),
+        inspect_node,
         candidates: InspectList(&allowed_candidate_list),
         selected?: selected_candidate.map(|(candidate, _)| candidate)
     );
@@ -81,8 +80,7 @@ mod test {
     use super::*;
     use crate::config_management::{ConnectFailure, FailureReason};
     use crate::util::testing::{
-        create_inspect_persistence_channel, generate_channel,
-        generate_random_bss_with_compatibility, generate_random_connect_reason,
+        generate_channel, generate_random_bss_with_compatibility, generate_random_connect_reason,
         generate_random_scanned_candidate,
     };
     use assert_matches::assert_matches;
@@ -101,7 +99,7 @@ mod test {
 
     struct TestValues {
         inspector: inspect::Inspector,
-        inspect_node: Arc<Mutex<AutoPersist<InspectBoundedListNode>>>,
+        inspect_node: Arc<Mutex<InspectBoundedListNode>>,
         telemetry_sender: TelemetrySender,
         telemetry_receiver: mpsc::Receiver<TelemetryEvent>,
     }
@@ -110,8 +108,6 @@ mod test {
         let inspector = inspect::Inspector::default();
         let inspect_node =
             InspectBoundedListNode::new(inspector.root().create_child("bss_select_test"), 10);
-        let (persistence_req_sender, _persistence_stream) = create_inspect_persistence_channel();
-        let inspect_node = AutoPersist::new(inspect_node, "test", persistence_req_sender);
         let (telemetry_sender, telemetry_receiver) = mpsc::channel::<TelemetryEvent>(100);
 
         TestValues {

@@ -10,9 +10,9 @@ use fuchsia_inspect::reader::{
     DiagnosticsHierarchy, {self as reader},
 };
 use fuchsia_inspect::{Inspector, Node as InspectNode};
+use futures::TryStreamExt;
 use futures::stream::FusedStream;
 use futures::task::Poll;
-use futures::TryStreamExt;
 use std::pin::pin;
 use windowed_stats::experimental::testing::MockTimeMatrixClient;
 
@@ -85,9 +85,6 @@ pub struct TestHelper {
     pub monitor_svc_proxy: fidl_fuchsia_wlan_device_service::DeviceMonitorProxy,
     monitor_svc_stream: fidl_fuchsia_wlan_device_service::DeviceMonitorRequestStream,
     pub telemetry_svc_stream: Option<fidl_fuchsia_wlan_sme::TelemetryRequestStream>,
-
-    pub persistence_sender: mpsc::Sender<String>,
-    persistence_stream: mpsc::Receiver<String>,
 
     pub mock_time_matrix_client: MockTimeMatrixClient,
 
@@ -261,22 +258,8 @@ impl TestHelper {
         }
     }
 
-    // TODO(339221340): remove these allows once the skeleton has a few uses
-    #[allow(unused)]
     pub fn create_inspect_node(&mut self, name: &str) -> InspectNode {
         self.inspector.root().create_child(name)
-    }
-
-    // TODO(339221340): remove these allows once the skeleton has a few uses
-    #[allow(unused)]
-    pub fn get_persistence_reqs(&mut self) -> Vec<String> {
-        let mut persistence_reqs = vec![];
-        loop {
-            match self.persistence_stream.try_next() {
-                Ok(Some(tag)) => persistence_reqs.push(tag),
-                _ => return persistence_reqs,
-            }
-        }
     }
 }
 
@@ -295,9 +278,6 @@ pub fn setup_test() -> TestHelper {
     let inspect_metadata_node = inspect_node.create_child("metadata");
     let inspect_metadata_path = "root/test_stats/metadata".to_string();
 
-    const DEFAULT_BUFFER_SIZE: usize = 100; // arbitrary value
-    let (persistence_sender, persistence_stream) = mpsc::channel(DEFAULT_BUFFER_SIZE);
-
     let mock_time_matrix_client = MockTimeMatrixClient::new();
 
     TestHelper {
@@ -311,8 +291,6 @@ pub fn setup_test() -> TestHelper {
         monitor_svc_proxy,
         monitor_svc_stream,
         telemetry_svc_stream: None,
-        persistence_sender,
-        persistence_stream,
         mock_time_matrix_client,
         exec,
     }

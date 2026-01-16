@@ -22,12 +22,6 @@
             to: "#wlanix",
         },
         {
-            protocol: "fuchsia.diagnostics.persist.DataPersistence-wlan",
-            from: "#diagnostics/diagnostics-persist-capabilities",
-            as: "fuchsia.diagnostics.persist.DataPersistence",
-            to: "#wlanix",
-        },
-        {
             protocol: [
                 "fuchsia.power.broker.Topology",
                 "fuchsia.power.system.ActivityGovernor",

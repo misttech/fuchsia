@@ -20,7 +20,6 @@ use self::scan::{DiscoveryScan, ScanScheduler};
 use self::state::{ClientState, ConnectCommand};
 use crate::responder::Responder;
 use crate::{Config, MlmeRequest, MlmeSink, MlmeStream};
-use fuchsia_inspect_auto_persist::{self as auto_persist, AutoPersist};
 use futures::channel::{mpsc, oneshot};
 use ieee80211::{Bssid, MacAddrBytes, Ssid};
 use log::{error, info, warn};
@@ -263,7 +262,6 @@ pub struct ClientSme {
     state: Option<ClientState>,
     scan_sched: ScanScheduler<Responder<Result<Vec<ScanResult>, fidl_mlme::ScanResultCode>>>,
     wmm_status_responders: Vec<Responder<fidl_sme::ClientSmeWmmStatusResult>>,
-    auto_persist_last_pulse: AutoPersist<()>,
     context: Context,
 }
 
@@ -661,7 +659,6 @@ impl ClientSme {
         info: fidl_mlme::DeviceInfo,
         inspector: fuchsia_inspect::Inspector,
         inspect_node: fuchsia_inspect::Node,
-        persistence_req_sender: auto_persist::PersistenceReqSender,
         security_support: fidl_common::SecuritySupport,
         spectrum_management_support: fidl_common::SpectrumManagementSupport,
     ) -> (Self, MlmeSink, MlmeStream, timer::EventStream<Event>) {
@@ -675,13 +672,6 @@ impl ClientSme {
             &spectrum_management_support,
         ));
         let _ = timer.schedule(event::InspectPulseCheck);
-        let _ = timer.schedule(event::InspectPulsePersist);
-        let mut auto_persist_last_pulse =
-            AutoPersist::new((), "wlanstack-last-pulse", persistence_req_sender);
-        {
-            // Request auto-persistence of pulse once on startup
-            let _guard = auto_persist_last_pulse.get_mut();
-        }
 
         (
             ClientSme {
@@ -693,7 +683,6 @@ impl ClientSme {
                     Arc::clone(&device_info), spectrum_management_support
                 ),
                 wmm_status_responders: vec![],
-                auto_persist_last_pulse,
                 context: Context {
                     mlme_sink: MlmeSink::new(mlme_sink.clone()),
                     device_info,
@@ -964,15 +953,6 @@ impl super::Station for ClientSme {
             Event::InspectPulseCheck(..) => {
                 self.context.mlme_sink.send(MlmeRequest::WmmStatusReq);
                 let _ = self.context.timer.schedule(event::InspectPulseCheck);
-                state
-            }
-            Event::InspectPulsePersist(..) => {
-                // Auto persist based on a timer to avoid log spam. The default approach is
-                // is to wrap AutoPersist around the Inspect PulseNode, but because the pulse
-                // is updated every second (due to SignalIndication event), we'd send a request
-                // to persistence service which'd log every second that it's queued until backoff.
-                let _guard = self.auto_persist_last_pulse.get_mut();
-                let _ = self.context.timer.schedule(event::InspectPulsePersist);
                 state
             }
         });
@@ -1640,14 +1620,11 @@ mod tests {
         let _executor = fuchsia_async::TestExecutor::new();
         let inspector = finspect::Inspector::default();
         let sme_root_node = inspector.root().create_child("sme");
-        let (persistence_req_sender, _persistence_receiver) =
-            test_utils::create_inspect_persistence_channel();
         let (mut sme, _mlme_sink, mut mlme_stream, _time_stream) = ClientSme::new(
             ClientConfig::from_config(SmeConfig::default().with_wep(), false),
             test_utils::fake_device_info(*CLIENT_ADDR),
             inspector,
             sme_root_node,
-            persistence_req_sender,
             fake_security_support(),
             fake_spectrum_management_support_empty(),
         );
@@ -2143,45 +2120,6 @@ mod tests {
         assert_eq!(receiver.try_recv(), Ok(Some(Err(zx::sys::ZX_ERR_IO))));
     }
 
-    #[test]
-    fn test_inspect_pulse_persist() {
-        let _executor = fuchsia_async::TestExecutor::new();
-        let inspector = finspect::Inspector::default();
-        let sme_root_node = inspector.root().create_child("sme");
-        let (persistence_req_sender, mut persistence_receiver) =
-            test_utils::create_inspect_persistence_channel();
-        let (mut sme, _mlme_sink, _mlme_stream, mut time_stream) = ClientSme::new(
-            ClientConfig::from_config(SmeConfig::default().with_wep(), false),
-            test_utils::fake_device_info(*CLIENT_ADDR),
-            inspector,
-            sme_root_node,
-            persistence_req_sender,
-            fake_security_support(),
-            fake_spectrum_management_support_empty(),
-        );
-        assert_eq!(ClientSmeStatus::Idle, sme.status());
-
-        // Verify we request persistence on startup
-        assert_matches!(persistence_receiver.try_next(), Ok(Some(tag)) => {
-            assert_eq!(&tag, "wlanstack-last-pulse");
-        });
-
-        let mut persist_event = None;
-        while let Ok(Some((_timeout, timed_event, _handle))) = time_stream.try_next() {
-            if let Event::InspectPulsePersist(..) = timed_event.event {
-                persist_event = Some(timed_event);
-                break;
-            }
-        }
-        assert!(persist_event.is_some());
-        sme.on_timeout(persist_event.unwrap());
-
-        // Verify we request persistence again on timeout
-        assert_matches!(persistence_receiver.try_next(), Ok(Some(tag)) => {
-            assert_eq!(&tag, "wlanstack-last-pulse");
-        });
-    }
-
     fn assert_no_connect(mlme_stream: &mut mpsc::UnboundedReceiver<MlmeRequest>) {
         loop {
             match mlme_stream.try_next() {
@@ -2223,14 +2161,11 @@ mod tests {
     async fn create_sme() -> (ClientSme, MlmeStream, timer::EventStream<Event>) {
         let inspector = finspect::Inspector::default();
         let sme_root_node = inspector.root().create_child("sme");
-        let (persistence_req_sender, _persistence_receiver) =
-            test_utils::create_inspect_persistence_channel();
         let (client_sme, _mlme_sink, mlme_stream, time_stream) = ClientSme::new(
             ClientConfig::default(),
             test_utils::fake_device_info(*CLIENT_ADDR),
             inspector,
             sme_root_node,
-            persistence_req_sender,
             fake_security_support(),
             fake_spectrum_management_support_empty(),
         );

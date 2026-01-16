@@ -20,10 +20,7 @@
             protocol: [ "fuchsia.wlan.device.service.DeviceMonitor" ],
         },
         {
-            protocol: [
-                "fuchsia.diagnostics.persist.DataPersistence",
-                "fuchsia.metrics.MetricEventLoggerFactory",
-            ],
+            protocol: [ "fuchsia.metrics.MetricEventLoggerFactory" ],
         },
 
         // System power level controls.
