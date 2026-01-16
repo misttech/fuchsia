@@ -408,6 +408,7 @@ pub fn write_rule<W: io::Write>(
     // From the gn custom configs, add flags, env vars, and visibility
     let mut visibility = vec![];
 
+    let mut disable_rustdoc = false;
     let mut uses_fuchsia_license = false;
     let mut license_files = vec![];
 
@@ -446,6 +447,9 @@ pub fn write_rule<W: io::Write>(
             }
             if let Some(ref vis) = cfg.visibility {
                 visibility.extend(vis.iter().map(|v| format!("  visibility += [\"{}\"]", v)));
+            }
+            if let Some(disable) = cfg.disable_rustdoc {
+                disable_rustdoc = disable;
             }
             if let Some(ref uses) = cfg.uses_fuchsia_license {
                 uses_fuchsia_license = *uses;
@@ -516,6 +520,8 @@ pub fn write_rule<W: io::Write>(
     if is_test {
         target_name.push_str("-test");
     }
+
+    let optional_disable_rustdoc = if disable_rustdoc { "disable_rustdoc = true" } else { "" };
 
     let optional_testonly = if is_testonly || is_test { "testonly = true" } else { "" };
 
@@ -663,6 +669,7 @@ uses_fuchsia_license = true
         root_path = root_relative_path,
         aliased_deps = aliased_deps_str,
         dependencies = dependencies,
+        optional_disable_rustdoc = optional_disable_rustdoc,
         cfgs = configs.render_gn(),
         rustenv = rustenv.render_gn(),
         rustflags = rustflags.render_gn(),
@@ -802,6 +809,7 @@ mod tests {
   
   applicable_licenses = []
 
+  
 }
 
 "#
@@ -869,6 +877,7 @@ mod tests {
   
   applicable_licenses = []
 
+  
 }
 
 "#
@@ -935,6 +944,7 @@ mod tests {
   
   applicable_licenses = []
 
+  
 }
 
 "#

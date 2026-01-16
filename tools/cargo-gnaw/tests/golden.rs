@@ -122,6 +122,11 @@ fn main() {
             options: Default::default(),
         },
         TestCase {
+            manifest_path: vec!["disable_rustdoc", "Cargo.toml"],
+            golden_expected_filename: vec!["disable_rustdoc", "BUILD.gn"],
+            options: Default::default(),
+        },
+        TestCase {
             manifest_path: vec!["binary_with_tests", "Cargo.toml"],
             golden_expected_filename: vec!["binary_with_tests", "BUILD.gn"],
             options: Default::default(),

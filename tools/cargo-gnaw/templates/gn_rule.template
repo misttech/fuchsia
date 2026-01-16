@@ -13,4 +13,5 @@
   {visibility}
   {optional_testonly}
   {applicable_licenses}
+  {optional_disable_rustdoc}
 }}

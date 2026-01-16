@@ -101,6 +101,9 @@ pub struct TargetCfg {
     /// GN Visibility that controls which targets can depend on this target.
     visibility: Option<Vec<String>>,
 
+    /// Controls whether rustdoc will be build for this crate.
+    disable_rustdoc: Option<bool>,
+
     // Whether the package uses the Fuchsia license.
     uses_fuchsia_license: Option<bool>,
 
