@@ -201,16 +201,24 @@ struct DriverInner {
     node_token: Option<fidl::Event>,
 
     #[allow(unused)]
-    power_element: Option<PowerElementHandles>,
+    power_element: PowerElementState,
 }
 
 #[allow(unused)]
 #[derive(Debug)]
 struct PowerElementHandles {
-    control: ClientEnd<fpb::ElementControlMarker>,
+    control: Option<ClientEnd<fpb::ElementControlMarker>>,
     runner: Option<ServerEnd<fpb::ElementRunnerMarker>>,
     lessor: ClientEnd<fpb::LessorMarker>,
     element_token: fpb::DependencyToken,
+}
+
+#[allow(unused)]
+#[derive(Debug)]
+enum PowerElementState {
+    HostOwned(PowerElementHandles),
+    DriverOwned(Option<ClientEnd<fpb::ElementControlMarker>>),
+    NoElement,
 }
 
 impl Drop for DriverInner {
@@ -281,6 +289,8 @@ impl Driver {
             None
         };
 
+        let power_aware = false;
+
         let library = LoaderService::try_load(vmo, &vmar).await?;
         start_args.vmar = vmar;
         let hooks = Hooks::new_from_library(&library)?;
@@ -294,21 +304,48 @@ impl Driver {
         });
 
         // All or nothing, either we get all the power element-related handles or we get none.
-        let power_element = match start_args.power_element_args.take() {
-            Some(fidl_fdf::PowerElementArgs {
-                control_client: Some(control_client),
-                runner_server: Some(runner_server),
-                lessor_client: Some(lessor_client),
-                token: Some(token),
-                ..
-            }) => Some(PowerElementHandles {
-                control: control_client,
-                runner: Some(runner_server),
-                lessor: lessor_client,
-                element_token: token,
-            }),
-            _ => None,
+        let (power_element, remaining) = match (start_args.power_element_args.take(), power_aware) {
+            (
+                Some(fidl_fdf::PowerElementArgs {
+                    control_client: Some(control_client),
+                    runner_server: Some(runner_server),
+                    lessor_client: Some(lessor_client),
+                    token: Some(token),
+                    ..
+                }),
+                true,
+            ) => (
+                PowerElementState::DriverOwned(Some(control_client)),
+                Some(fidl_fdf::PowerElementArgs {
+                    control_client: None,
+                    runner_server: Some(runner_server),
+                    lessor_client: Some(lessor_client),
+                    token: Some(token),
+                    ..Default::default()
+                }),
+            ),
+            (
+                Some(fidl_fdf::PowerElementArgs {
+                    control_client: Some(control_client),
+                    runner_server: Some(runner_server),
+                    lessor_client: Some(lessor_client),
+                    token: Some(token),
+                    ..
+                }),
+                false,
+            ) => (
+                PowerElementState::HostOwned(PowerElementHandles {
+                    control: Some(control_client),
+                    runner: Some(runner_server),
+                    lessor: lessor_client,
+                    element_token: token,
+                }),
+                None,
+            ),
+            _ => (PowerElementState::NoElement, None),
         };
+
+        start_args.power_element_args = remaining;
 
         let driver = Arc::new(Driver {
             url: url.clone(),
@@ -377,6 +414,8 @@ impl Driver {
             get_program_string(program, "default_dispatcher_scheduler_role").unwrap_or("");
         let allowed_scheduler_roles = get_program_strvec(program, "allowed_scheduler_roles")?;
 
+        let power_aware = false;
+
         let loaded_driver = LoadedDriver(dynamic_linking_abi);
         let hooks = loaded_driver.get_hooks(basename(binary))?;
         let mut symbols = loaded_driver.get_symbols(program)?;
@@ -388,21 +427,48 @@ impl Driver {
         });
 
         // All or nothing, either we get all the power element-related handles or we get none.
-        let power_element = match start_args.power_element_args.take() {
-            Some(fidl_fdf::PowerElementArgs {
-                control_client: Some(control_client),
-                runner_server: Some(runner_server),
-                lessor_client: Some(lessor_client),
-                token: Some(token),
-                ..
-            }) => Some(PowerElementHandles {
-                control: control_client,
-                runner: Some(runner_server),
-                lessor: lessor_client,
-                element_token: token,
-            }),
-            _ => None,
+        let (power_element, remaining) = match (start_args.power_element_args.take(), power_aware) {
+            (
+                Some(fidl_fdf::PowerElementArgs {
+                    control_client: Some(control_client),
+                    runner_server: Some(runner_server),
+                    lessor_client: Some(lessor_client),
+                    token: Some(token),
+                    ..
+                }),
+                true,
+            ) => (
+                PowerElementState::DriverOwned(Some(control_client)),
+                Some(fidl_fdf::PowerElementArgs {
+                    control_client: None,
+                    runner_server: Some(runner_server),
+                    lessor_client: Some(lessor_client),
+                    token: Some(token),
+                    ..Default::default()
+                }),
+            ),
+            (
+                Some(fidl_fdf::PowerElementArgs {
+                    control_client: Some(control_client),
+                    runner_server: Some(runner_server),
+                    lessor_client: Some(lessor_client),
+                    token: Some(token),
+                    ..
+                }),
+                false,
+            ) => (
+                PowerElementState::HostOwned(PowerElementHandles {
+                    control: Some(control_client),
+                    runner: Some(runner_server),
+                    lessor: lessor_client,
+                    element_token: token,
+                }),
+                None,
+            ),
+            _ => (PowerElementState::NoElement, None),
         };
+
+        start_args.power_element_args = remaining;
 
         let driver = Arc::new(Driver {
             url: url.clone(),
@@ -527,7 +593,8 @@ impl Driver {
 
         {
             let mut inner = self.inner.lock();
-            if let Some(PowerElementHandles { runner, .. }) = &mut inner.power_element
+            if let PowerElementState::HostOwned(PowerElementHandles { runner, .. }) =
+                &mut inner.power_element
                 && let Some(runner_channel) = runner.take()
             {
                 scope.spawn_local(async move {
