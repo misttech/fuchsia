@@ -44,7 +44,7 @@ pub trait Product<P> {
     fn oem_files(&self) -> &Vec<OemFile>;
 }
 
-#[async_trait(?Send)]
+#[async_trait]
 pub trait Flash {
     async fn flash<F, T>(
         &self,
@@ -54,11 +54,11 @@ pub trait Flash {
         cmd: ManifestParams,
     ) -> Result<()>
     where
-        F: FileResolver + Sync,
+        F: FileResolver + Sync + Send,
         T: FastbootInterface;
 }
 
-#[async_trait(?Send)]
+#[async_trait]
 pub trait Unlock {
     async fn unlock<F, T>(
         &self,
@@ -67,7 +67,7 @@ pub trait Unlock {
         _fastboot_interface: &mut T,
     ) -> Result<()>
     where
-        F: FileResolver + Sync,
+        F: FileResolver + Sync + Send,
         T: FastbootInterface,
     {
         ffx_bail!(
@@ -77,7 +77,7 @@ pub trait Unlock {
     }
 }
 
-#[async_trait(?Send)]
+#[async_trait]
 pub trait Boot {
     async fn boot<F, T>(
         &self,
@@ -88,7 +88,7 @@ pub trait Boot {
         cmd: ManifestParams,
     ) -> Result<()>
     where
-        F: FileResolver + Sync,
+        F: FileResolver + Sync + Send,
         T: FastbootInterface;
 }
 

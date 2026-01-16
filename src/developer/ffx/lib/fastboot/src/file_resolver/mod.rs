@@ -7,7 +7,7 @@ use async_trait::async_trait;
 
 pub mod resolvers;
 
-#[async_trait(?Send)]
+#[async_trait]
 pub trait FileResolver {
     async fn get_file(&mut self, file: &str) -> Result<String>;
 }
@@ -27,7 +27,7 @@ pub mod test {
         }
     }
 
-    #[async_trait(?Send)]
+    #[async_trait]
     impl FileResolver for TestResolver {
         async fn get_file(&mut self, file: &str) -> Result<String> {
             Ok(file.to_owned())

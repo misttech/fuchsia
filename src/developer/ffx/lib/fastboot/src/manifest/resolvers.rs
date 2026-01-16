@@ -44,7 +44,7 @@ impl FlashManifestResolver {
     }
 }
 
-#[async_trait(?Send)]
+#[async_trait]
 impl FileResolver for FlashManifestResolver {
     async fn get_file(&mut self, file: &str) -> Result<String> {
         self.0.get_file(file).await
@@ -112,7 +112,7 @@ impl ArchiveResolver {
     }
 }
 
-#[async_trait(?Send)]
+#[async_trait]
 impl FileResolver for ArchiveResolver {
     async fn get_file(&mut self, file: &str) -> Result<String> {
         let mut file = match self.internal_manifest_path.parent() {
@@ -165,7 +165,7 @@ impl FlashManifestTarResolver {
     }
 }
 
-#[async_trait(?Send)]
+#[async_trait]
 impl FileResolver for FlashManifestTarResolver {
     async fn get_file(&mut self, file: &str) -> Result<String> {
         self.0.get_file(file).await

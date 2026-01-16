@@ -30,7 +30,7 @@ impl EmptyResolver {
     }
 }
 
-#[async_trait(?Send)]
+#[async_trait]
 impl FileResolver for EmptyResolver {
     async fn get_file(&mut self, file: &str) -> Result<String> {
         if PathBuf::from(file).is_absolute() {
@@ -65,7 +65,7 @@ impl Resolver {
     }
 }
 
-#[async_trait(?Send)]
+#[async_trait]
 impl FileResolver for Resolver {
     async fn get_file(&mut self, file: &str) -> Result<String> {
         if PathBuf::from(file).is_absolute() {
@@ -102,7 +102,7 @@ impl ZipArchiveResolver {
     }
 }
 
-#[async_trait(?Send)]
+#[async_trait]
 impl FileResolver for ZipArchiveResolver {
     async fn get_file(&mut self, file: &str) -> Result<String> {
         let mut file = self
@@ -156,7 +156,7 @@ impl TarResolver {
     }
 }
 
-#[async_trait(?Send)]
+#[async_trait]
 impl FileResolver for TarResolver {
     async fn get_file(&mut self, file: &str) -> Result<String> {
         let mut parent = self.root_path().to_path_buf();

@@ -18,7 +18,7 @@ use ffx_flash_manifest::ManifestParams;
 use ffx_flash_manifest::v2::FlashManifest;
 use tokio::sync::mpsc::Sender;
 
-#[async_trait(?Send)]
+#[async_trait]
 impl Flash for FlashManifest {
     async fn flash<F, T>(
         &self,
@@ -28,7 +28,7 @@ impl Flash for FlashManifest {
         cmd: ManifestParams,
     ) -> Result<()>
     where
-        F: FileResolver + Sync,
+        F: FileResolver + Sync + Send,
         T: FastbootInterface,
     {
         if !cmd.skip_verify {
@@ -61,7 +61,7 @@ impl Flash for FlashManifest {
     }
 }
 
-#[async_trait(?Send)]
+#[async_trait]
 impl Unlock for FlashManifest {
     async fn unlock<F, T>(
         &self,
@@ -70,14 +70,14 @@ impl Unlock for FlashManifest {
         fastboot_interface: &mut T,
     ) -> Result<()>
     where
-        F: FileResolver + Sync,
+        F: FileResolver + Sync + Send,
         T: FastbootInterface,
     {
         unlock(messenger.clone(), file_resolver, &self.credentials, fastboot_interface).await
     }
 }
 
-#[async_trait(?Send)]
+#[async_trait]
 impl Boot for FlashManifest {
     async fn boot<F, T>(
         &self,
@@ -88,7 +88,7 @@ impl Boot for FlashManifest {
         cmd: ManifestParams,
     ) -> Result<()>
     where
-        F: FileResolver + Sync,
+        F: FileResolver + Sync + Send,
         T: FastbootInterface,
     {
         self.v1.boot(messenger, file_resolver, slot, fastboot_interface, cmd).await

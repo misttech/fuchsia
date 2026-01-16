@@ -13,7 +13,7 @@ use ffx_flash_manifest::v2::FlashManifest as FlashManifestV2;
 use ffx_flash_manifest::v3::FlashManifest;
 use tokio::sync::mpsc::Sender;
 
-#[async_trait(?Send)]
+#[async_trait]
 impl Flash for FlashManifest {
     async fn flash<F, T>(
         &self,
@@ -23,7 +23,7 @@ impl Flash for FlashManifest {
         cmd: ManifestParams,
     ) -> Result<()>
     where
-        F: FileResolver + Sync,
+        F: FileResolver + Sync + Send,
         T: FastbootInterface,
     {
         let v2: FlashManifestV2 = self.into();
@@ -31,7 +31,7 @@ impl Flash for FlashManifest {
     }
 }
 
-#[async_trait(?Send)]
+#[async_trait]
 impl Unlock for FlashManifest {
     async fn unlock<F, T>(
         &self,
@@ -40,7 +40,7 @@ impl Unlock for FlashManifest {
         fastboot_interface: &mut T,
     ) -> Result<()>
     where
-        F: FileResolver + Sync,
+        F: FileResolver + Sync + Send,
         T: FastbootInterface,
     {
         let v2: FlashManifestV2 = self.into();
@@ -48,7 +48,7 @@ impl Unlock for FlashManifest {
     }
 }
 
-#[async_trait(?Send)]
+#[async_trait]
 impl Boot for FlashManifest {
     async fn boot<F, T>(
         &self,
@@ -59,7 +59,7 @@ impl Boot for FlashManifest {
         cmd: ManifestParams,
     ) -> Result<()>
     where
-        F: FileResolver + Sync,
+        F: FileResolver + Sync + Send,
         T: FastbootInterface,
     {
         let v2: FlashManifestV2 = self.into();

@@ -36,7 +36,7 @@ pub struct Image {
     // Ignore the rest of the fields
 }
 
-#[async_trait(?Send)]
+#[async_trait]
 impl Flash for FlashManifestVersion {
     async fn flash<F, T>(
         &self,
@@ -46,7 +46,7 @@ impl Flash for FlashManifestVersion {
         cmd: ManifestParams,
     ) -> Result<()>
     where
-        F: FileResolver + Sync,
+        F: FileResolver + Sync + Send,
         T: FastbootInterface,
     {
         match self {
@@ -58,7 +58,7 @@ impl Flash for FlashManifestVersion {
     }
 }
 
-#[async_trait(?Send)]
+#[async_trait]
 impl Unlock for FlashManifestVersion {
     async fn unlock<F, T>(
         &self,
@@ -67,7 +67,7 @@ impl Unlock for FlashManifestVersion {
         fastboot_interface: &mut T,
     ) -> Result<()>
     where
-        F: FileResolver + Sync,
+        F: FileResolver + Sync + Send,
         T: FastbootInterface,
     {
         match self {
@@ -79,7 +79,7 @@ impl Unlock for FlashManifestVersion {
     }
 }
 
-#[async_trait(?Send)]
+#[async_trait]
 impl Boot for FlashManifestVersion {
     async fn boot<F, T>(
         &self,
@@ -90,7 +90,7 @@ impl Boot for FlashManifestVersion {
         cmd: ManifestParams,
     ) -> Result<()>
     where
-        F: FileResolver + Sync,
+        F: FileResolver + Sync + Send,
         T: FastbootInterface,
     {
         match self {
@@ -242,7 +242,7 @@ pub struct FlashManifest<F: FileResolver + Sync> {
     version: FlashManifestVersion,
 }
 
-impl<F: FileResolver + Sync> FlashManifest<F> {
+impl<F: FileResolver + Sync + Send> FlashManifest<F> {
     pub async fn flash<T: FastbootInterface>(
         &mut self,
         messenger: &Sender<Event>,

@@ -54,7 +54,7 @@ impl PartitionTrait for Partition {
     }
 }
 
-#[async_trait(?Send)]
+#[async_trait]
 impl Flash for FlashManifest {
     async fn flash<F, T>(
         &self,
@@ -64,7 +64,7 @@ impl Flash for FlashManifest {
         cmd: ManifestParams,
     ) -> Result<()>
     where
-        F: FileResolver + Sync,
+        F: FileResolver + Sync + Send,
         T: FastbootInterface,
     {
         let product = match self.0.iter().find(|product| product.name == cmd.product) {
@@ -78,10 +78,10 @@ impl Flash for FlashManifest {
     }
 }
 
-#[async_trait(?Send)]
+#[async_trait]
 impl Unlock for FlashManifest {}
 
-#[async_trait(?Send)]
+#[async_trait]
 impl Boot for FlashManifest {
     async fn boot<F, T>(
         &self,
@@ -92,7 +92,7 @@ impl Boot for FlashManifest {
         cmd: ManifestParams,
     ) -> Result<()>
     where
-        F: FileResolver + Sync,
+        F: FileResolver + Sync + Send,
         T: FastbootInterface,
     {
         let product = match self.0.iter().find(|product| product.name == cmd.product) {
