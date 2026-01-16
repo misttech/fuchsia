@@ -20,3 +20,17 @@ generated_file("bazel_args_json") {
   contents = bazel_args
   output_conversion = "json"
 }
+
+declare_args() {
+  # Output extra information when Bazel build actions fail.
+  bazel_verbose_failures = true
+}
+
+generated_file("global_args.json") {
+  outputs = [ "$root_build_dir/bazel_args/global_args.json" ]
+  contents = {
+    verbose_failures = bazel_verbose_failures
+    upload_build_events = bazel_upload_build_events
+  }
+  output_conversion = "json"
+}

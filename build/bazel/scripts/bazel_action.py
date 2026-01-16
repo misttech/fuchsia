@@ -26,6 +26,7 @@ import stdio_redirection
 import thread_pool_helpers
 import workspace_utils
 from bazel_action_utils import (
+    BazelGlobalArguments,
     BazelRbeSettings,
     BazelStderrDebugLineFilter,
     BazelTargetInfosMap,
@@ -1088,13 +1089,6 @@ def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
 
     parser.add_argument(
-        "--verbose_failures",
-        action="store_true",
-        default=False,
-        help="If specified, extra information is printed on Bazel failures.",
-    )
-
-    parser.add_argument(
         "--filter-bazel-info-logs",
         action=argparse.BooleanOptionalAction,
         default=True,
@@ -1197,11 +1191,12 @@ def main() -> int:
         help="Label of GN target invoking this script.",
     )
 
-    ##
-    # These are extra arguments for passing to Bazel.
-    parser.add_argument("extra_bazel_args", nargs=argparse.REMAINDER)
-
     args = parser.parse_args()
+
+    # Load the extra global settings configured via GN global args
+    global_bazel_args = BazelGlobalArguments.create_from_build_dir(
+        args.build_dir
+    )
 
     if not args.bazel_targets:
         return parser.error("A least one --bazel-targets value is needed!")
@@ -1267,12 +1262,6 @@ def main() -> int:
             "Found multiple gn targets directories for the bazel action."
         )
     gn_targets_dir = list(gn_targets_dirs)[0]
-
-    if args.extra_bazel_args and args.extra_bazel_args[0] != "--":
-        return parser.error(
-            "Extra bazel args should be separated from script args using --"
-        )
-    args.extra_bazel_args = args.extra_bazel_args[1:]
 
     try:
         bazel_paths = build_utils.BazelPaths.new(
@@ -1379,7 +1368,7 @@ def main() -> int:
     configured_args = [
         f"--config={bazel_platform_config}",
         f"--platforms={args.bazel_platform_label}",
-    ] + args.extra_bazel_args
+    ]
 
     # When remote builds are enabled, append the right build arguments.
     # These must appear on the Bazel command-line otherwise remote builds
@@ -1392,6 +1381,10 @@ def main() -> int:
         # If RBE is enabled, append the chosen RBE config to
         # the command line.
         configured_args += [f"--config={rbe_settings.exec_strategy}"]
+
+    # if build-event uploading is enabled in global args, then append the config for that
+    if global_bazel_args.upload_build_events:
+        configured_args += [f"--config={global_bazel_args.upload_build_events}"]
 
     time_profile.start(
         "buildfiles_genquery", "Generating buildfiles_genquery/BUILD.bazel"
@@ -1443,7 +1436,7 @@ def main() -> int:
     cmd_args += configured_args
     cmd_args += ["//buildfiles_genquery:genquery"]
     cmd_args += args.bazel_targets
-    if _DEBUG or args.verbose_failures:
+    if _DEBUG or global_bazel_args.verbose_failures:
         cmd_args += ["--verbose_failures"]
 
     # Add --sandbox_debug if FUCHSIA_DEBUG_BAZEL_SANDBOX=1 is
@@ -1614,7 +1607,7 @@ def main() -> int:
         #
         # Note most build users are not interested in executing bazel directly, so hiding this
         # message bechind a flag.
-        if _DEBUG or args.verbose_failures:
+        if _DEBUG or global_bazel_args.verbose_failures:
             print(
                 "\nERROR when calling Bazel. To reproduce, run this in the Ninja output directory:\n\n  %s\n"
                 % " ".join(shlex.quote(c) for c in ret.args),

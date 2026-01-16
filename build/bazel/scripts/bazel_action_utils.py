@@ -218,6 +218,38 @@ class BazelRbeSettings(object):
             )
 
 
+@dataclasses.dataclass
+class BazelGlobalArguments(object):
+    verbose_failures: bool
+    upload_build_events: str | None
+
+    @staticmethod
+    def create_from_build_dir(build_dir: Path) -> "BazelGlobalArguments":
+        """Create instance from content of Ninja build directory.
+
+        Args:
+            build_dir: Ninja build directory, populated by `fx gen`.
+        Returns:
+            New BazelGlobalArguments
+        Raises:
+            FileNotFoundError if file is missing.
+        """
+        with (build_dir / "bazel_args" / "global_args.json").open("rb") as f:
+            content = json.load(f)
+            verbose_failures = content["verbose_failures"]
+            if not isinstance(verbose_failures, bool):
+                raise ValueError(
+                    f"'verbose_failures' must be a boolean, not: {verbose_failures}"
+                )
+            upload_build_events = content["upload_build_events"]
+            return BazelGlobalArguments(
+                verbose_failures=verbose_failures,
+                upload_build_events=(
+                    upload_build_events if upload_build_events != "" else None
+                ),
+            )
+
+
 # LINT.IfChange(gn_targets_dir)
 # Path of the @gn_targets symlink relative to the Bazel workspace directory.
 GN_TARGETS_SYMLINK_PATH = "fuchsia_build_generated/gn_targets_dir"

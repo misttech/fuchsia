@@ -121,10 +121,6 @@ import("//build/bazel/bazel_action.gni")
 #             the package's ELF binaries to the top-level ${root_build_dir}/.build-id/
 #             directory.
 #
-#   extra_bazel_args: (optional)
-#     A list extra command line arguments to pass to Bazel.
-#     Type: list of string.
-#
 #   filter_bazel_info_logs: (optional)
 #     When true (the default value), INFO level logs are filtered from Bazel.
 #     INFO level logs from Bazel are usually not interesting during Ninja
