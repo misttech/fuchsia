@@ -2,11 +2,6 @@
 <manifest>
   <!-- Starnix specific packages -->
   <packages>
-    <!-- Alpine Linux image for testing on x64 -->
-    <package name="fuchsia/starnix/alpine-image-amd64"
-             path="prebuilt/starnix/alpine-image-amd64"
-             version="version:1"/>
-
     <!-- Starnix root filesystem image for testing on x64 -->
     <package name="fuchsia/third_party/starnix/linux-amd64"
              path="prebuilt/starnix/linux-amd64"
@@ -60,6 +55,16 @@
     <package name="fuchsia/third_party/starnix/fuse-overlayfs-arm64"
              path="prebuilt/starnix/fuse-overlayfs-arm64"
              version="version:746960bdbe1b9abed91b8224d186941d5510a223"/>
+
+    <!-- Starnix Alpine container image for x64 -->
+    <package name="fuchsia/starnix/alpine-image-amd64"
+             version="git_revision:4193c6607c2038a65b88f8aaee7af75d096c68d5"
+             path="prebuilt/starnix/alpine-image-amd64"/>
+
+     <!-- Starnix Alpine container image for arm64 -->
+     <package name="fuchsia/starnix/alpine-image-arm64"
+              version="git_revision:4193c6607c2038a65b88f8aaee7af75d096c68d5"
+              path="prebuilt/starnix/alpine-image-arm64"/>
 
     <!-- Starnix test binaries -->
     <package name="fuchsia/starnix/tests/syscalls/linux-amd64"

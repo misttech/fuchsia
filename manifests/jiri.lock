@@ -251,8 +251,13 @@
     },
     {
         "package": "fuchsia/starnix/alpine-image-amd64",
-        "version": "version:1",
-        "instance_id": "ioEJjmyIn1FMsULUnqu2cr6DRGNJBs7UWCLqgWr1D-EC"
+        "version": "git_revision:4193c6607c2038a65b88f8aaee7af75d096c68d5",
+        "instance_id": "nnbhJuYhFesAauq2mqkU4dWyhDWiyHZtsM2pqVBIAMUC"
+    },
+    {
+        "package": "fuchsia/starnix/alpine-image-arm64",
+        "version": "git_revision:4193c6607c2038a65b88f8aaee7af75d096c68d5",
+        "instance_id": "_CDuV-9QTFq-U1zsW0P9Xz9_L7_iiI9HkpdufYxCoo8C"
     },
     {
         "package": "fuchsia/starnix/tests/syscalls/linux-amd64",
