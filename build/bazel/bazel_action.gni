@@ -622,10 +622,6 @@ template("bazel_action") {
     # possible.
     _gn_targets_repository_path = "${target_out_dir}/${target_name}.gn_targets"
 
-    # A file that will contain a mapping from Bazel artifacts to Ninja outputs.
-    _path_mapping = "${target_out_dir}/${target_name}.path_mapping"
-    _rebased_path_mapping = rebase_path(_path_mapping, root_build_dir)
-
     # A file that will receive the exact Bazel command invoked by the
     # bazel_action.py script.
     _bazel_command_file = "${target_out_dir}/${target_name}.bazel_command.sh"
@@ -698,7 +694,6 @@ template("bazel_action") {
       depfile = "${target_gen_dir}/${target_name}.d"
 
       outputs = [
-        _path_mapping,
         _bazel_command_file,
         _bazel_explain_file,
         _debug_symbols_manifest,
@@ -767,8 +762,6 @@ template("bazel_action") {
                _rebased_timings_file,
                "--explain-file",
                _rebased_bazel_explain_file,
-               "--path-mapping",
-               _rebased_path_mapping,
                "--debug-symbols-manifest",
                _rebased_debug_symbols_manifest,
                "--rust-sysroot",
@@ -856,7 +849,6 @@ template("bazel_action") {
               debug_symbols_manifest = _rebased_debug_symbols_manifest
               bazel_command_file = _rebased_bazel_command_file
               bazel_explain_file = _rebased_bazel_explain_file
-              path_mapping = _rebased_path_mapping
               timings_file = _rebased_timings_file
               build_events_log_json = _rebased_bazel_build_events_log_json
               bazel_rust_project_json = _rebased_rust_project_json

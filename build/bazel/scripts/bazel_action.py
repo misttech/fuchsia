@@ -1130,10 +1130,6 @@ def main() -> int:
     #  LastBuildInvocations file, but they can't be passed in via args (or read from manifests)
     #  as they aren't apriori knowable.
     parser.add_argument(
-        "--path-mapping",
-        help="If specified, write a mapping of Ninja outputs to realpaths Bazel outputs",
-    )
-    parser.add_argument(
         "--command-file",
         help="If specified, write the command used to invoke Bazel to file.",
     )
@@ -1885,21 +1881,6 @@ def main() -> int:
             "copy_debug_symbols", "Copy debug symbols to Ninja build directory."
         )
         copy_debug_symbols_to_build_dir(build_dir, debug_symbols_manifest)
-
-    if args.path_mapping:
-        time_profile.start("file_mapping", "Write file mapping file")
-        # When determining source path of the copied output, follow links to get
-        # out of bazel-bin, because the content of bazel-bin is not guaranteed
-        # to be stable after subsequent `bazel` commands.
-        write_file_if_changed(
-            args.path_mapping,
-            "\n".join(
-                str(dst_path)
-                + ":"
-                + os.path.relpath(src_path.resolve(), build_dir)
-                for src_path, dst_path in all_copies
-            ),
-        )
 
     if args.depfile:
         time_profile.start("depfile", "Write Ninja depfile")
