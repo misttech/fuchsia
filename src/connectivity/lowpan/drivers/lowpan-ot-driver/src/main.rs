@@ -22,10 +22,11 @@ use openthread_fuchsia::Platform as OtPlatform;
 use config::Config;
 use fidl::endpoints::create_proxy;
 
-use crate::driver::{get_product_metadata, OtDriver, ProductMetadata};
+use crate::driver::{OtDriver, ProductMetadata, get_product_metadata};
 use crate::prelude::*;
 use fuchsia as _;
 use futures::channel::mpsc;
+use openthread::ot::BorderAgent;
 use std::ffi::CString;
 use std::num::NonZeroU32;
 
@@ -38,15 +39,15 @@ mod driver;
 mod prelude {
     #![allow(unused_imports)]
 
-    pub use crate::convert_ext::{FromExt as _, IntoExt as _};
     pub use crate::Result;
-    pub use anyhow::{bail, format_err, Context as _};
+    pub use crate::convert_ext::{FromExt as _, IntoExt as _};
+    pub use anyhow::{Context as _, bail, format_err};
     pub use fasync::TimeoutExt as _;
     pub use futures::future::BoxFuture;
     pub use futures::stream::BoxStream;
     pub use log::{debug, error, info, trace, warn};
-    pub use lowpan_driver_common::pii::MarkPii;
     pub use lowpan_driver_common::ZxResult;
+    pub use lowpan_driver_common::pii::MarkPii;
     pub use net_declare::{fidl_ip, fidl_ip_v6};
     pub use std::convert::TryInto;
     pub use std::fmt::Debug;
@@ -243,6 +244,12 @@ impl Config {
         } else {
             warn!("Backbone interface not set, border routing not supported");
         }
+
+        // The OpenThread stack enables ePSKc mode by default, which can cause feature
+        // control conflicts. To prevent this, the LowPAN driver forces ePSKc mode off
+        // during initialization. The feature will only be re-enabled upon explicit request
+        // from the user via feature config.
+        ot_instance.border_agent_ephemeral_key_set_enabled(false /* enable */);
 
         let product_metadata =
             get_product_metadata(connect_to_protocol::<fidl_fuchsia_hwinfo::ProductMarker>()?)
