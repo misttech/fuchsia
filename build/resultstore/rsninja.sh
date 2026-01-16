@@ -14,6 +14,11 @@
 # mechanism between rsproxy-wrap.sh and rs-ninja.sh (from rsclient) to
 # change without breaking the build.
 
+# See also rs-sub-ninja.sh, which a suitable drop-in replacement
+# that includes rsproxy-wrap.sh.
+# Use rsninja.sh when there is a need to insert other wrappers
+# between rsproxy-wrap.sh and ninja (like in `fx build`).
+
 set -euo pipefail
 
 readonly SCRIPT_DIR="$(dirname "${BASH_SOURCE[0]}")"
@@ -24,7 +29,7 @@ readonly FUCHSIA_DIR="$(readlink -f "$SCRIPT_DIR/../..")"
 source "${FUCHSIA_DIR}/tools/devshell/lib/platform.sh"
 
 # rsclient install path is set in manifests/prebuilts
-readonly PREBUILT_RSCLIENT_DIR="prebuilt/rsclient/$HOST_PLATFORM"
+readonly PREBUILT_RSCLIENT_DIR="${FUCHSIA_DIR}/prebuilt/rsclient/$HOST_PLATFORM"
 readonly wrapper="$PREBUILT_RSCLIENT_DIR/bin/rs-ninja.sh"
 readonly ninja_bin="$PREBUILT_NINJA"
 
