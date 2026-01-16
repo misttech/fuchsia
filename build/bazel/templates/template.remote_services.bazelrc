@@ -4,6 +4,9 @@
 
 # AUTO-GENERATED - DO NOT EDIT!
 
+# Note: Many of the configuration definitions here may be amended
+# by the output of generate_invocation_bazelrc.py.
+
 # Enable gcert authentication, which will automatically refresh OAuth
 # tokens while gcert certificate (unrestricted) is still valid.
 # Use build/rbe/check_loas_restrictions.sh to determine certificate type.

@@ -37,6 +37,11 @@ if (is_host) {
     ]
   }
 
+  python_build_time_tests("generate_invocation_bazelrc_test") {
+    tests = [ "generate_invocation_bazelrc_test.py" ]
+    inputs = [ "generate_invocation_bazelrc_test.py" ]
+  }
+
   python_build_time_tests("remote_services_utils_test") {
     tests = [ "remote_services_utils_test.py" ]
     inputs = [ "remote_services_utils_test.py" ]

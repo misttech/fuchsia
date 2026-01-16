@@ -176,6 +176,8 @@ proxy_overrides=()
 for arg in "${_BAZEL_DIRECT_ARGS[@]}"
 do
   # Check for infra and non-infra config variations to allow for local testing.
+  # "sponge" and "resultstore" come from 'build/bazel/remote_services.gni',
+  # and are added in 'build/bazel/bazel_action.gni'.
   case "$arg" in
     --config=sponge | --config=sponge_infra) # Sponge build event service
       [[ "${BAZEL_sponge_socket_path-NOT_SET}" == "NOT_SET" ]] ||
@@ -257,6 +259,9 @@ _BAZEL_PRE_COMMAND_ARGS+=(
   # Parse the .bazelrc defining configs related to remote builds.
   # TODO(digit): Import this from the workspace's .bazelrc file.
   --bazelrc="${_REMOTE_SERVICES_BAZELRC}"
+
+  # TODO(b/474384667): generate invocation.bazelrc and use it here
+  # once per build invocation.
 )
 
 # Add build metadata.
