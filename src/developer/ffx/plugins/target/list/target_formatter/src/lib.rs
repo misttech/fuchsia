@@ -584,8 +584,8 @@ impl From<Vec<TargetInfo>> for TabularTargetFormatter {
 #[cfg(test)]
 mod test {
     use super::*;
+    use net_declare::std_ip;
     use std::collections::HashMap;
-    use std::net::{IpAddr, Ipv4Addr, Ipv6Addr};
     use std::sync::LazyLock;
 
     fn make_target(addr: TargetAddr) -> TargetInfo {
@@ -599,15 +599,11 @@ mod test {
     }
 
     fn make_ip_v4_addr(port: u16) -> TargetAddr {
-        TargetAddr::new(IpAddr::from(Ipv4Addr::new(127, 0, 0, 1)), 0, port)
+        TargetAddr::new(std_ip!("127.0.0.1"), 0, port)
     }
 
     fn make_ip_v6_port_info(scope_id: u32, port: u16) -> TargetAddr {
-        TargetAddr::new(
-            IpAddr::from(Ipv6Addr::new(0xfe80, 0, 0, 0, 1, 0x101, 0x101, 0x101)),
-            scope_id,
-            port,
-        )
+        TargetAddr::new(std_ip!("fe80::1:101:101:101"), scope_id, port)
     }
 
     fn make_usb_addr(ctx: u32) -> TargetAddr {
@@ -717,14 +713,8 @@ mod test {
         TargetInfo {
             nodename: Some("fooberdoober".to_string()),
             addresses: vec![
-                TargetAddr::new(
-                    IpAddr::from(Ipv6Addr::new(
-                        0x101, 0x101, 0x101, 0x101, 0x101, 0x101, 0x101, 0x101,
-                    )),
-                    198,
-                    0,
-                ),
-                TargetAddr::new(IpAddr::from(Ipv4Addr::new(122, 24, 25, 25)), 186, 0),
+                TargetAddr::new(std_ip!("101:101:101:101:101:101:101:101"), 198, 0),
+                TargetAddr::new(std_ip!("122.24.25.25"), 186, 0),
             ],
             is_default,
             ..Default::default()
@@ -742,7 +732,7 @@ mod test {
     fn make_valid_ipv4_only_target() -> TargetInfo {
         TargetInfo {
             nodename: Some("fooberdoober4".to_string()),
-            addresses: vec![TargetAddr::new(IpAddr::from(Ipv4Addr::new(122, 24, 25, 25)), 186, 0)],
+            addresses: vec![TargetAddr::new(std_ip!("122.24.25.25"), 186, 0)],
             rcs_state: RemoteControlState::Unknown,
             target_state: TargetState::Unknown,
             ..Default::default()
@@ -764,11 +754,7 @@ mod test {
             make_valid_default_target(),
             TargetInfo {
                 nodename: Some("lorberding".to_string()),
-                addresses: vec![TargetAddr::new(
-                    IpAddr::from(Ipv6Addr::new(0xfe80, 0, 0, 0, 0x101, 0x101, 0x101, 0x101)),
-                    137,
-                    0,
-                )],
+                addresses: vec![TargetAddr::new(std_ip!("fe80::101:101:101:101"), 137, 0)],
                 rcs_state: RemoteControlState::Unknown,
                 target_state: TargetState::Unknown,
                 ..Default::default()
@@ -783,11 +769,7 @@ mod test {
             make_valid_target(),
             TargetInfo {
                 nodename: Some("lorberding".to_string()),
-                addresses: vec![TargetAddr::new(
-                    IpAddr::from(Ipv6Addr::new(0xfe80, 0, 0, 0, 0x101, 0x101, 0x101, 0x101)),
-                    137,
-                    0,
-                )],
+                addresses: vec![TargetAddr::new(std_ip!("fe80::101:101:101:101"), 137, 0)],
                 rcs_state: RemoteControlState::Unknown,
                 target_state: TargetState::Unknown,
                 ..Default::default()
@@ -805,11 +787,7 @@ mod test {
             make_valid_default_target(),
             TargetInfo {
                 nodename: None,
-                addresses: vec![TargetAddr::new(
-                    IpAddr::from(Ipv6Addr::new(0xfe80, 0, 0, 0, 0x101, 0x101, 0x101, 0x101)),
-                    137,
-                    0,
-                )],
+                addresses: vec![TargetAddr::new(std_ip!("fe80::101:101:101:101"), 137, 0)],
                 rcs_state: RemoteControlState::Unknown,
                 target_state: TargetState::Unknown,
                 serial_number: Some("cereal".to_owned()),
@@ -825,11 +803,7 @@ mod test {
             make_valid_target(),
             TargetInfo {
                 nodename: None,
-                addresses: vec![TargetAddr::new(
-                    IpAddr::from(Ipv6Addr::new(0xfe80, 0, 0, 0, 0x101, 0x101, 0x101, 0x101)),
-                    137,
-                    0,
-                )],
+                addresses: vec![TargetAddr::new(std_ip!("fe80::101:101:101:101"), 137, 0)],
                 rcs_state: RemoteControlState::Unknown,
                 target_state: TargetState::Unknown,
                 serial_number: Some("cereal".to_owned()),
@@ -848,11 +822,7 @@ mod test {
             make_valid_default_target(),
             TargetInfo {
                 nodename: None,
-                addresses: vec![TargetAddr::new(
-                    IpAddr::from(Ipv6Addr::new(0xfe80, 0, 0, 0, 0x101, 0x101, 0x101, 0x101)),
-                    137,
-                    0,
-                )],
+                addresses: vec![TargetAddr::new(std_ip!("fe80::101:101:101:101"), 137, 0)],
                 rcs_state: RemoteControlState::Unknown,
                 target_state: TargetState::Unknown,
                 serial_number: Some("cereal".to_owned()),
@@ -860,11 +830,7 @@ mod test {
             },
             TargetInfo {
                 nodename: None,
-                addresses: vec![TargetAddr::new(
-                    IpAddr::from(Ipv6Addr::new(0xfe80, 0, 0, 0, 0x101, 0x101, 0x101, 0x100)),
-                    42,
-                    0,
-                )],
+                addresses: vec![TargetAddr::new(std_ip!("fe80::101:101:101:100"), 42, 0)],
                 rcs_state: RemoteControlState::Unknown,
                 target_state: TargetState::Unknown,
                 ..Default::default()
@@ -885,11 +851,7 @@ mod test {
             make_valid_default_target(),
             TargetInfo {
                 nodename: None,
-                addresses: vec![TargetAddr::new(
-                    IpAddr::from(Ipv6Addr::new(0xfe80, 0, 0, 0, 0x101, 0x101, 0x101, 0x101)),
-                    137,
-                    0,
-                )],
+                addresses: vec![TargetAddr::new(std_ip!("fe80::101:101:101:101"), 137, 0)],
                 rcs_state: RemoteControlState::Unknown,
                 target_state: TargetState::Unknown,
                 ..Default::default()
@@ -904,11 +866,7 @@ mod test {
             make_valid_target(),
             TargetInfo {
                 nodename: None,
-                addresses: vec![TargetAddr::new(
-                    IpAddr::from(Ipv6Addr::new(0xfe80, 0, 0, 0, 0x101, 0x101, 0x101, 0x101)),
-                    137,
-                    0,
-                )],
+                addresses: vec![TargetAddr::new(std_ip!("fe80::101:101:101:101"), 137, 0)],
                 rcs_state: RemoteControlState::Unknown,
                 target_state: TargetState::Unknown,
                 ..Default::default()
@@ -946,11 +904,7 @@ mod test {
             make_valid_default_target(),
             TargetInfo {
                 nodename: None,
-                addresses: vec![TargetAddr::new(
-                    IpAddr::from(Ipv6Addr::new(0xfe80, 0, 0, 0, 0x101, 0x101, 0x101, 0x101)),
-                    137,
-                    0,
-                )],
+                addresses: vec![TargetAddr::new(std_ip!("fe80::101:101:101:101"), 137, 0)],
                 rcs_state: RemoteControlState::Unknown,
                 target_state: TargetState::Unknown,
                 ..Default::default()
@@ -965,11 +919,7 @@ mod test {
             make_valid_target(),
             TargetInfo {
                 nodename: None,
-                addresses: vec![TargetAddr::new(
-                    IpAddr::from(Ipv6Addr::new(0xfe80, 0, 0, 0, 0x101, 0x101, 0x101, 0x101)),
-                    137,
-                    0,
-                )],
+                addresses: vec![TargetAddr::new(std_ip!("fe80::101:101:101:101"), 137, 0)],
                 rcs_state: RemoteControlState::Unknown,
                 target_state: TargetState::Unknown,
                 ..Default::default()
@@ -987,22 +937,14 @@ mod test {
             make_valid_default_target(),
             TargetInfo {
                 nodename: None,
-                addresses: vec![TargetAddr::new(
-                    IpAddr::from(Ipv6Addr::new(0xfe80, 0, 0, 0, 0x101, 0x101, 0x101, 0x101)),
-                    137,
-                    0,
-                )],
+                addresses: vec![TargetAddr::new(std_ip!("fe80::101:101:101:101"), 137, 0)],
                 rcs_state: RemoteControlState::Unknown,
                 target_state: TargetState::Unknown,
                 ..Default::default()
             },
             TargetInfo {
                 nodename: None,
-                addresses: vec![TargetAddr::new(
-                    IpAddr::from(Ipv6Addr::new(0xfe80, 0, 0, 0, 0x101, 0x101, 0x101, 0x101)),
-                    42,
-                    0,
-                )],
+                addresses: vec![TargetAddr::new(std_ip!("fe80::101:101:101:101"), 42, 0)],
                 rcs_state: RemoteControlState::Unknown,
                 target_state: TargetState::Unknown,
                 ..Default::default()
@@ -1020,22 +962,14 @@ mod test {
             make_valid_target(),
             TargetInfo {
                 nodename: None,
-                addresses: vec![TargetAddr::new(
-                    IpAddr::from(Ipv6Addr::new(0xfe80, 0, 0, 0, 0x101, 0x101, 0x101, 0x101)),
-                    137,
-                    0,
-                )],
+                addresses: vec![TargetAddr::new(std_ip!("fe80::101:101:101:101"), 137, 0)],
                 rcs_state: RemoteControlState::Unknown,
                 target_state: TargetState::Unknown,
                 ..Default::default()
             },
             TargetInfo {
                 nodename: None,
-                addresses: vec![TargetAddr::new(
-                    IpAddr::from(Ipv6Addr::new(0xfe80, 0, 0, 0, 0x101, 0x101, 0x101, 0x101)),
-                    42,
-                    0,
-                )],
+                addresses: vec![TargetAddr::new(std_ip!("fe80::101:101:101:101"), 42, 0)],
                 rcs_state: RemoteControlState::Unknown,
                 target_state: TargetState::Unknown,
                 ..Default::default()
@@ -1353,11 +1287,7 @@ mod test {
         target1.is_default = Some(true);
         let target2 = TargetInfo {
             nodename: Some("other-target".to_string()),
-            addresses: vec![TargetAddr::new(
-                IpAddr::from(Ipv6Addr::new(0xfe80, 0, 0, 0, 0x101, 0x101, 0x101, 0x101)),
-                137,
-                0,
-            )],
+            addresses: vec![TargetAddr::new(std_ip!("fe80::101:101:101:101"), 137, 0)],
             rcs_state: RemoteControlState::Unknown,
             target_state: TargetState::Unknown,
             ..Default::default()

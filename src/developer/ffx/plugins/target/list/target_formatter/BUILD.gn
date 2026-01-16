@@ -20,7 +20,10 @@ rustc_library("target_formatter") {
     "//third_party/rust_crates:serde",
     "//third_party/rust_crates:serde_json",
   ]
-  test_deps = [ "//src/lib/fuchsia" ]
+  test_deps = [
+    "//src/connectivity/lib/net-declare",
+    "//src/lib/fuchsia",
+  ]
   sources = [ "src/lib.rs" ]
 
   inputs = [

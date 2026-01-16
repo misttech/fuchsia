@@ -292,6 +292,7 @@ mod tests {
     use ffx_writer::{Format, TestBuffers};
     use fidl_fuchsia_developer_ffx::{TargetAddrInfo, TargetInfo, TargetIp, TargetRequest};
     use fidl_fuchsia_net::{IpAddress, Ipv4Address};
+    use net_declare::std_socket_addr;
     use serde_json::Value;
     use std::sync::Arc;
     use target_holders::fdomain::fake_proxy;
@@ -636,7 +637,7 @@ mod tests {
     }
 
     async fn setup_fake_resolution() -> Resolution {
-        let device_address = std::net::SocketAddr::new("127.0.0.1".parse().unwrap(), 22);
+        let device_address = std_socket_addr!("127.0.0.1:22");
         let target_addr = TargetIpAddr::from(device_address.clone());
         let target_info =
             TargetInfo { addresses: Some(vec![target_addr.into()]), ..Default::default() };
