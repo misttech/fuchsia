@@ -114,6 +114,7 @@ class FFX(abc.ABC):
         capture_output: bool = True,
         log_output: bool = True,
         include_target: bool = True,
+        machine: ffx_types.MachineFormat | None = None,
     ) -> str:
         """Runs an FFX command.
 
@@ -130,6 +131,7 @@ class FFX(abc.ABC):
                 or spammy output.
             include_target: If set to True, `ffx -t {target} {cmd}` will be run.
                 Otherwise, `ffx {cmd}` will be run.
+            machine: If set, `ffx --machine {machine} {cmd}` will be run.
 
         Returns:
             Output of FFX command when capture_output is set to True, otherwise
