@@ -109,8 +109,9 @@ void HermeticAudioTest::SetUpTestSuite() {
 }
 
 void HermeticAudioTest::SetUpRealm() {
+  bg_loop_.StartThread();
   ASSERT_NO_FATAL_FAILURE(
-      HermeticAudioRealm::Create(make_test_suite_options_(), dispatcher(), realm_));
+      HermeticAudioRealm::Create(make_test_suite_options_(), bg_loop_.dispatcher(), realm_));
 
   realm_->Connect(thermal_client_state_connector_.NewRequest());
   realm_->Connect(thermal_test_client_state_control_sync_.NewRequest());
@@ -120,6 +121,7 @@ void HermeticAudioTest::TearDownRealm() {
   bool complete = false;
   realm_->Teardown([&](fit::result<fuchsia::component::Error> result) { complete = true; });
   RunLoopUntil([&]() { return complete; });
+  bg_loop_.Quit();
 }
 
 void HermeticAudioTest::SetUp() {

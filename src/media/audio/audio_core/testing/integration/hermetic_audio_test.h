@@ -185,6 +185,8 @@ class HermeticAudioTest : public TestFixture {
     bool is_default = false;
   };
 
+  async::Loop bg_loop_{&kAsyncLoopConfigNeverAttachToThread};
+
   // Ensures all devices have been accounted for before the most recent OnDefaultDeviceChanged
   // callback can be processed.
   bool initial_devices_received_ = false;

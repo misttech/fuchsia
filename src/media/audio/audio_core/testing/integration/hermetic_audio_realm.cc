@@ -4,10 +4,10 @@
 
 #include "src/media/audio/audio_core/testing/integration/hermetic_audio_realm.h"
 
+#include <fidl/fuchsia.driver.test/cpp/fidl.h>
 #include <fidl/fuchsia.inspect/cpp/fidl.h>
-#include <fuchsia/driver/test/cpp/fidl.h>
 #include <lib/device-watcher/cpp/device-watcher.h>
-#include <lib/driver_test_realm/realm_builder/cpp/lib.h>
+#include <lib/driver_test_realm/realm_builder/cpp/builder.h>
 #include <lib/fdio/directory.h>
 #include <lib/fdio/fd.h>
 #include <lib/fidl/cpp/synchronous_interface_ptr.h>
@@ -169,20 +169,8 @@ void HermeticAudioRealm::Create(Options options, async_dispatcher* dispatcher,
   auto& realm = realm_out->root_;
 
   // Start DriverTestRealm.
-  fidl::SynchronousInterfacePtr<fuchsia::driver::test::Realm> driver_test_realm;
-  ASSERT_EQ(ZX_OK, realm.component().Connect(driver_test_realm.NewRequest()));
-  fuchsia::driver::test::RealmArgs realm_args;
-  realm_args.set_root_driver("fuchsia-boot:///platform-bus#meta/platform-bus.cm");
-  realm_args.set_software_devices(std::vector{
-      fuchsia::driver::test::SoftwareDevice{
-          .device_name = "virtual-audio-legacy",
-          .device_id = bind_fuchsia_platform::BIND_PLATFORM_DEV_DID_VIRTUAL_AUDIO_LEGACY,
-      },
-  });
-
-  fuchsia::driver::test::Realm_Start_Result realm_result;
-  ASSERT_EQ(ZX_OK, driver_test_realm->Start(std::move(realm_args), &realm_result));
-  ASSERT_FALSE(realm_result.is_err()) << "status = " << realm_result.err();
+  zx::result<> boot_result = driver_test_realm::WaitForBootup(realm);
+  ASSERT_EQ(ZX_OK, boot_result.status_value());
 
   // Hold a reference to fuchsia.virtualaudio.Control.
   ASSERT_NO_FATAL_FAILURE(ConnectToVirtualAudio(realm, realm_out->virtual_audio_control_));
@@ -317,8 +305,17 @@ HermeticAudioRealm::CtorArgs HermeticAudioRealm::BuildRealm(Options options,
     });
   }
 
+  fuchsia_driver_test::RealmArgs realm_args;
+  realm_args.root_driver("fuchsia-boot:///platform-bus#meta/platform-bus.cm");
+  realm_args.software_devices(std::vector{
+      fuchsia_driver_test::SoftwareDevice{{
+          .device_name = "virtual-audio-legacy",
+          .device_id = bind_fuchsia_platform::BIND_PLATFORM_DEV_DID_VIRTUAL_AUDIO_LEGACY,
+      }},
+  });
+
   // Add a hermetic driver realm and route "/dev" to audio_core.
-  driver_test_realm::Setup(builder);
+  driver_test_realm::Setup(builder, dispatcher, {}, std::move(realm_args));
   builder.AddRoute({
       .capabilities =
           {
