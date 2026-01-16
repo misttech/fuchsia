@@ -73,7 +73,7 @@
     <project name="third_party/android.googlesource.com/platform/system/core"
              path="third_party/android/platform/system/core"
              remote="https://fuchsia.googlesource.com/third_party/android.googlesource.com/platform/system/core"
-             revision="30650d6d57a0878c1d1972320179864a714d49b4"/>
+             revision="a3b721a32242006b59cb12bd62c9133632af3a2d"/>
     <project name="third_party/android/platform/system/bt"
              path="third_party/android/platform/system/bt"
              remote="https://fuchsia.googlesource.com/third_party/android/platform/system/bt"
