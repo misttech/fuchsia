@@ -76,6 +76,10 @@ fn bind_credential_to_protocol(
             Credential::None => protocol.bind(None).ok(),
             _ => None,
         },
+        SecurityDescriptor::Owe => match credential {
+            Credential::None => protocol.bind(None).ok(),
+            _ => None,
+        },
         SecurityDescriptor::Wep => match credential {
             Credential::WepKey(wep_keys) => {
                 let key = wep_keys.get_key();
@@ -121,11 +125,12 @@ pub fn select_authentication_method(
     protocols.sort_by_key(|protocol| {
         Reverse(match protocol {
             SecurityDescriptor::Open => 0,
+            SecurityDescriptor::Owe => 3,
             SecurityDescriptor::Wep => 1,
             SecurityDescriptor::Wpa(wpa) => match wpa {
                 WpaDescriptor::Wpa1 { .. } => 2,
-                WpaDescriptor::Wpa2 { .. } => 3,
-                WpaDescriptor::Wpa3 { .. } => 4,
+                WpaDescriptor::Wpa2 { .. } => 4,
+                WpaDescriptor::Wpa3 { .. } => 5,
             },
         })
     });

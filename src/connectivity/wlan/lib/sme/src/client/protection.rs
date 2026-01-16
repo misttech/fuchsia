@@ -215,6 +215,7 @@ impl<'a> TryFrom<SecurityContext<'a, SecurityAuthenticator>> for Protection {
                 .is_open()
                 .then(|| Protection::Open)
                 .ok_or_else(|| format_err!("BSS is not configured for open authentication")),
+            SecurityAuthenticator::Owe => Err(format_err!("OWE is unsupported")),
             SecurityAuthenticator::Wep(authenticator) => context.map(authenticator).try_into(),
             SecurityAuthenticator::Wpa(wpa) => match wpa {
                 wpa::WpaAuthenticator::Wpa1 { credentials, .. } => {

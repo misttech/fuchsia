@@ -2,8 +2,8 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use super::akm::{self, AKM_PSK, AKM_SAE};
-use super::cipher::{self, CIPHER_CCMP_128};
+use super::akm::{self, AKM_OWE, AKM_PSK, AKM_SAE};
+use super::cipher::{self, CIPHER_CCMP_128, CIPHER_GCMP_256};
 use super::suite_filter::DEFAULT_GROUP_MGMT_CIPHER;
 use super::{pmkid, suite_selector};
 
@@ -53,6 +53,8 @@ pub enum Error {
     CannotDeriveWpa2Rsne,
     #[error("cannot derive WPA3 RSNE")]
     CannotDeriveWpa3Rsne,
+    #[error("cannot derive OWE RSNE")]
+    CannotDeriveOweRsne,
 }
 
 #[macro_export]
@@ -116,6 +118,12 @@ impl RsnCapabilities {
     pub fn is_wpa3_compatible(&self, wpa2_compatibility_mode: bool) -> bool {
         self.mgmt_frame_protection_cap()
             && (self.mgmt_frame_protection_req() || wpa2_compatibility_mode)
+            && !self.contains_unsupported_capability()
+    }
+
+    pub fn is_owe_compatible(&self) -> bool {
+        self.mgmt_frame_protection_cap()
+            && self.mgmt_frame_protection_req()
             && !self.contains_unsupported_capability()
     }
 
@@ -214,6 +222,27 @@ impl Rsne {
         ))
     }
 
+    /// Common OWE configuration that works with most implementations.
+    ///
+    /// There are multiple possible OWE RSNE variants, but this one is likely to be the one most
+    /// used. For example, only CCMP-128 group and pairwise cipher is used here, but according to
+    /// WPA3 and Wi-Fi Enhanced Open Deployment and Implementation Guide, on extremely-high
+    /// throughput (EHT) deployments, the AP would also have GCMP-256 cipher
+    pub fn common_owe_rsne() -> Self {
+        Rsne {
+            group_data_cipher_suite: Some(CIPHER_CCMP_128),
+            pairwise_cipher_suites: vec![CIPHER_CCMP_128],
+            akm_suites: vec![AKM_OWE],
+            rsn_capabilities: Some(
+                RsnCapabilities(0)
+                    .with_mgmt_frame_protection_cap(true)
+                    .with_mgmt_frame_protection_req(true),
+            ),
+            group_mgmt_cipher_suite: Some(DEFAULT_GROUP_MGMT_CIPHER),
+            ..Default::default()
+        }
+    }
+
     /// Constructs Supplicant's RSNE with:
     /// Group Data Cipher: same as A-RSNE (CCMP-128 or TKIP)
     /// Pairwise Cipher: best from A-RSNE (prefer CCMP-128 over TKIP)
@@ -289,6 +318,40 @@ impl Rsne {
             }],
             akm_suites: vec![akm::Akm { oui: suite_selector::OUI, suite_type: akm::SAE }],
             rsn_capabilities,
+            ..Default::default()
+        })
+    }
+
+    /// Constructs Supplicant's RSNE with:
+    /// Group Data Cipher: same as A-RSNE (CCMP-128 or GCMP-256)
+    /// Pairwise Cipher: same as A-RSNE (prefer GCMP-256 > CCMP-128 > the rest)
+    /// AKM: OWE
+    pub fn derive_owe_s_rsne(
+        &self,
+        security_support: &fidl_common::SecuritySupport,
+    ) -> Result<Rsne, Error> {
+        if !self.is_owe_rsn_compatible(&security_support) {
+            return Err(Error::CannotDeriveOweRsne);
+        }
+
+        // GCMP-256 > CCMP-128 > the rest (which are uncommon configurations)
+        let pairwise_cipher_suites =
+            vec![match self.pairwise_cipher_suites.iter().max_by_key(|cipher_suite| {
+                match **cipher_suite {
+                    CIPHER_GCMP_256 => 2,
+                    CIPHER_CCMP_128 => 1,
+                    _ => 0,
+                }
+            }) {
+                Some(cipher_suite) => cipher_suite.clone(),
+                None => return Err(Error::NoPairwiseCipherSuite),
+            }];
+
+        Ok(Rsne {
+            group_data_cipher_suite: self.group_data_cipher_suite.clone(),
+            pairwise_cipher_suites,
+            akm_suites: vec![akm::Akm { oui: suite_selector::OUI, suite_type: akm::OWE }],
+            rsn_capabilities: self.rsn_capabilities.clone(),
             ..Default::default()
         })
     }
@@ -538,10 +601,38 @@ impl Rsne {
         // WFA WPA3 specification v3.0: 2.3 rule 7: Verify that we actually support MFP, regardless of whether
         // the features bits indicate we need that support. SAE without MFP is not a valid configuration.
         features_supported &=
-            security_support.mfp.as_ref().map_or(false, |mfp| mfp.supported.unwrap_or(false));
+            security_support.mfp.as_ref().and_then(|mfp| mfp.supported).unwrap_or(false);
         group_data_supported
             && pairwise_supported
             && sae_supported
+            && caps_supported
+            && features_supported
+    }
+
+    pub fn is_owe_rsn_compatible(&self, security_support: &fidl_common::SecuritySupport) -> bool {
+        let group_data_supported = self.group_data_cipher_suite.as_ref().is_some_and(|cipher| {
+            cipher.has_known_usage()
+                && [cipher::CCMP_128, cipher::GCMP_256].contains(&cipher.suite_type)
+        });
+        let pairwise_supported = self.pairwise_cipher_suites.iter().any(|cipher| {
+            cipher.has_known_usage()
+                && [cipher::CCMP_128, cipher::GCMP_256, cipher::CCMP_256, cipher::GCMP_128]
+                    .contains(&cipher.suite_type)
+        });
+        let akm_supported = self.akm_suites.contains(&AKM_OWE);
+        let caps_supported =
+            self.rsn_capabilities.as_ref().is_some_and(RsnCapabilities::is_owe_compatible);
+        let mut features_supported = self
+            .rsn_capabilities
+            .as_ref()
+            .unwrap_or(&RsnCapabilities(0))
+            .is_compatible_with_features(security_support);
+        // MFP is mandatory for OWE.
+        features_supported &=
+            security_support.mfp.as_ref().and_then(|mfp| mfp.supported).unwrap_or(false);
+        group_data_supported
+            && pairwise_supported
+            && akm_supported
             && caps_supported
             && features_supported
     }
@@ -890,6 +981,13 @@ mod tests {
         let mut security_support = fake_security_support_empty();
         security_support.mfp.as_mut().unwrap().supported = Some(true);
         assert_eq!(rsne.is_wpa3_rsn_compatible(&security_support), false);
+
+        let rsne = Rsne {
+            pairwise_cipher_suites: vec![CIPHER_CCMP_128],
+            akm_suites: vec![AKM_OWE],
+            ..Default::default()
+        };
+        assert_eq!(rsne.is_owe_rsn_compatible(&security_support), false);
     }
 
     #[test]
@@ -1075,6 +1173,13 @@ mod tests {
             ..Default::default()
         };
         assert_eq!(rsne.is_wpa3_rsn_compatible(&MFP_SUPPORT_ONLY), false);
+
+        let rsne = Rsne {
+            group_data_cipher_suite: Some(CIPHER_CCMP_128),
+            akm_suites: vec![AKM_OWE],
+            ..Default::default()
+        };
+        assert_eq!(rsne.is_owe_rsn_compatible(&MFP_SUPPORT_ONLY), false);
     }
 
     #[test]
@@ -1095,6 +1200,7 @@ mod tests {
         };
         assert_eq!(rsne.is_wpa2_rsn_compatible(&fake_security_support_empty()), false);
         assert_eq!(rsne.is_wpa3_rsn_compatible(&MFP_SUPPORT_ONLY), false);
+        assert_eq!(rsne.is_owe_rsn_compatible(&MFP_SUPPORT_ONLY), false);
 
         let rsne = Rsne {
             group_data_cipher_suite: Some(CIPHER_CCMP_128),
@@ -1103,6 +1209,7 @@ mod tests {
             ..Default::default()
         };
         assert_eq!(rsne.is_wpa3_rsn_compatible(&MFP_SUPPORT_ONLY), false);
+        assert_eq!(rsne.is_owe_rsn_compatible(&MFP_SUPPORT_ONLY), false);
 
         let rsne = Rsne {
             group_data_cipher_suite: Some(CIPHER_CCMP_128),
@@ -1122,6 +1229,7 @@ mod tests {
         };
         assert_eq!(rsne.is_wpa2_rsn_compatible(&fake_security_support_empty()), false);
         assert_eq!(rsne.is_wpa3_rsn_compatible(&MFP_SUPPORT_ONLY), false);
+        assert_eq!(rsne.is_owe_rsn_compatible(&MFP_SUPPORT_ONLY), false);
     }
 
     #[test]
@@ -1201,6 +1309,18 @@ mod tests {
     }
 
     #[test]
+    fn test_compatible_owe_rsne() {
+        let rsne = Rsne::common_owe_rsne();
+        assert!(rsne.is_owe_rsn_compatible(&MFP_SUPPORT_ONLY));
+    }
+
+    #[test]
+    fn test_incompatible_owe_rsne_no_mfp() {
+        let rsne = Rsne::common_owe_rsne();
+        assert!(!rsne.is_owe_rsn_compatible(&fake_security_support_empty()));
+    }
+
+    #[test]
     fn test_ccmp128_group_data_pairwise_cipher_psk() {
         let a_rsne = Rsne {
             group_data_cipher_suite: Some(CIPHER_CCMP_128),
@@ -1276,6 +1396,72 @@ mod tests {
         let expected_rsne_bytes =
             vec![48, 20, 1, 0, 0, 15, 172, 4, 1, 0, 0, 15, 172, 4, 1, 0, 0, 15, 172, 8, 192, 0];
         assert_eq!(s_rsne.into_bytes(), expected_rsne_bytes);
+    }
+
+    #[test_case(
+        Rsne::common_owe_rsne(),
+        vec![48, 20, 1, 0, 0, 15, 172, 4, 1, 0, 0, 15, 172, 4, 1, 0, 0, 15, 172, 18, 192, 0];
+        "common OWE RSNE"
+    )]
+    #[test_case(
+        Rsne {
+            group_data_cipher_suite: Some(CIPHER_GCMP_256),
+            ..Rsne::common_owe_rsne()
+        },
+        vec![48, 20, 1, 0, 0, 15, 172, 9, 1, 0, 0, 15, 172, 4, 1, 0, 0, 15, 172, 18, 192, 0];
+        "group data cipher GCMP-256"
+    )]
+    #[test_case(
+        Rsne {
+            pairwise_cipher_suites: vec![CIPHER_CCMP_128, CIPHER_GCMP_256],
+            ..Rsne::common_owe_rsne()
+        },
+        vec![48, 20, 1, 0, 0, 15, 172, 4, 1, 0, 0, 15, 172, 9, 1, 0, 0, 15, 172, 18, 192, 0];
+        "pairwise cipher GCMP-256"
+    )]
+    #[test_case(
+        Rsne {
+            pairwise_cipher_suites: vec![cipher::Cipher::new_dot11(cipher::CCMP_256)],
+            ..Rsne::common_owe_rsne()
+        },
+        vec![48, 20, 1, 0, 0, 15, 172, 4, 1, 0, 0, 15, 172, 10, 1, 0, 0, 15, 172, 18, 192, 0];
+        "pairwise cipher CCMP-256"
+    )]
+    #[test_case(
+        Rsne {
+            pairwise_cipher_suites: vec![cipher::Cipher::new_dot11(cipher::GCMP_128)],
+            ..Rsne::common_owe_rsne()
+        },
+        vec![48, 20, 1, 0, 0, 15, 172, 4, 1, 0, 0, 15, 172, 8, 1, 0, 0, 15, 172, 18, 192, 0];
+        "pairwise cipher GCMP-128"
+    )]
+    #[fuchsia::test]
+    fn test_derive_owe_s_rsne(a_rsne: Rsne, expected_rsne_bytes: Vec<u8>) {
+        let s_rsne = a_rsne
+            .derive_owe_s_rsne(&MFP_SUPPORT_ONLY)
+            .expect("could not derive OWE Supplicant RSNE");
+        assert_eq!(s_rsne.into_bytes(), expected_rsne_bytes);
+    }
+
+    #[test]
+    fn test_derive_owe_s_rsne_wrong_group_data_cipher() {
+        let mut a_rsne = Rsne::common_owe_rsne();
+        a_rsne.group_data_cipher_suite = Some(CIPHER_TKIP);
+        a_rsne.derive_owe_s_rsne(&MFP_SUPPORT_ONLY).expect_err("expect failure");
+    }
+
+    #[test]
+    fn test_derive_owe_s_rsne_wrong_pairwise_data_cipher() {
+        let mut a_rsne = Rsne::common_owe_rsne();
+        a_rsne.pairwise_cipher_suites = vec![CIPHER_TKIP];
+        a_rsne.derive_owe_s_rsne(&MFP_SUPPORT_ONLY).expect_err("expect failure");
+    }
+
+    #[test]
+    fn test_derive_owe_s_rsne_wrong_akm() {
+        let mut a_rsne = Rsne::common_owe_rsne();
+        a_rsne.akm_suites = vec![AKM_SAE];
+        a_rsne.derive_owe_s_rsne(&MFP_SUPPORT_ONLY).expect_err("expect failure");
     }
 
     #[test]

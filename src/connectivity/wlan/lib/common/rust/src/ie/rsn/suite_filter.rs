@@ -2,8 +2,8 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use super::akm::{self, Akm, AKM_EAP};
-use super::cipher::{self, Cipher, CIPHER_BIP_CMAC_128, CIPHER_CCMP_128};
+use super::akm::{self, AKM_EAP, Akm};
+use super::cipher::{self, CIPHER_BIP_CMAC_128, CIPHER_CCMP_128, Cipher};
 use crate::ie;
 
 // IEEE 802.11-2016, 9.4.2.25.2
@@ -132,6 +132,26 @@ pub const WPA3_ENTERPRISE_192_BIT: SuiteFilter<'_> = SuiteFilter {
     known_akms: &[akm::EAP_SUITEB_SHA384],
     known_pairwise_ciphers: &[cipher::GCMP_256],
     required_group_mgmt_cipher: Some(cipher::BIP_GMAC_256),
+};
+
+/// WFA, WPA3 and Wi-Fi Enhanced Open Deployment and Implementation Guide, 2.11 and 2.12
+///
+/// HPE Aruba Networking documentation:
+/// - https://arubanetworking.hpe.com/techdocs/aos/wifi-design-deploy/security/modes/enhanced-open/#enhanced-open-only-mode
+pub const OWE: SuiteFilter<'_> = SuiteFilter {
+    known_group_data_ciphers: &[cipher::CCMP_128, cipher::GCMP_256],
+    known_akms: &[akm::OWE],
+    // The deployment guide from WFA only mention CCMP-128 and GCMP-256 ciphers.
+    // However, HPE Aruba Networking documentation additionally mentions CCMP-256 and GCMP-128.
+    // We'll include them here so that in case they show up, we can at least parse them
+    // and maybe log metrics.
+    known_pairwise_ciphers: &[
+        cipher::CCMP_128,
+        cipher::GCMP_256,
+        cipher::CCMP_256,
+        cipher::GCMP_128,
+    ],
+    required_group_mgmt_cipher: None,
 };
 
 #[cfg(test)]

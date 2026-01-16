@@ -208,6 +208,7 @@ impl From<WepKey> for BareCredentials {
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
 pub enum SecurityDescriptor {
     Open,
+    Owe,
     Wep,
     Wpa(wpa::WpaDescriptor),
 }
@@ -215,6 +216,8 @@ pub enum SecurityDescriptor {
 impl SecurityDescriptor {
     /// Open (no user authentication nor traffic encryption).
     pub const OPEN: Self = SecurityDescriptor::Open;
+    /// Open **and encrypted** (no user authentication).
+    pub const OWE: Self = SecurityDescriptor::Owe;
     /// WEP (trivially insecure; for legacy support only).
     ///
     /// This protocol is not configurable beyond the format of credentials used to authenticate.
@@ -257,6 +260,7 @@ impl SecurityDescriptor {
     ) -> Result<SecurityAuthenticator, SecurityError> {
         match self {
             SecurityDescriptor::Open if credentials.is_none() => Ok(SecurityAuthenticator::Open),
+            SecurityDescriptor::Owe if credentials.is_none() => Ok(SecurityAuthenticator::Owe),
             SecurityDescriptor::Wep => match credentials {
                 Some(BareCredentials::WepKey(key)) => {
                     Ok(SecurityAuthenticator::Wep(wep::WepAuthenticator { key }))
@@ -275,6 +279,10 @@ impl SecurityDescriptor {
         matches!(self, SecurityDescriptor::Open)
     }
 
+    pub fn is_owe(&self) -> bool {
+        matches!(self, SecurityDescriptor::Owe)
+    }
+
     pub fn is_wep(&self) -> bool {
         matches!(self, SecurityDescriptor::Wep)
     }
@@ -288,6 +296,7 @@ impl From<fidl_security::Protocol> for SecurityDescriptor {
     fn from(protocol: fidl_security::Protocol) -> Self {
         match protocol {
             fidl_security::Protocol::Open => SecurityDescriptor::Open,
+            fidl_security::Protocol::Owe => SecurityDescriptor::Owe,
             fidl_security::Protocol::Wep => SecurityDescriptor::Wep,
             fidl_security::Protocol::Wpa1 => {
                 SecurityDescriptor::Wpa(wpa::WpaDescriptor::Wpa1 { credentials: () })
@@ -325,6 +334,7 @@ impl From<SecurityDescriptor> for fidl_security::Protocol {
     fn from(descriptor: SecurityDescriptor) -> Self {
         match descriptor {
             SecurityDescriptor::Open => fidl_security::Protocol::Open,
+            SecurityDescriptor::Owe => fidl_security::Protocol::Owe,
             SecurityDescriptor::Wep => fidl_security::Protocol::Wep,
             SecurityDescriptor::Wpa(wpa) => match wpa {
                 wpa::WpaDescriptor::Wpa1 { .. } => fidl_security::Protocol::Wpa1,
@@ -352,6 +362,7 @@ impl From<wpa::WpaDescriptor> for SecurityDescriptor {
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum SecurityAuthenticator {
     Open,
+    Owe,
     Wep(wep::WepAuthenticator),
     Wpa(wpa::WpaAuthenticator),
 }
@@ -362,6 +373,7 @@ impl SecurityAuthenticator {
     pub fn into_descriptor(self) -> SecurityDescriptor {
         match self {
             SecurityAuthenticator::Open => SecurityDescriptor::Open,
+            SecurityAuthenticator::Owe => SecurityDescriptor::Owe,
             SecurityAuthenticator::Wep(_) => SecurityDescriptor::Wep,
             SecurityAuthenticator::Wpa(authenticator) => {
                 SecurityDescriptor::Wpa(authenticator.into_descriptor())
@@ -389,7 +401,7 @@ impl SecurityAuthenticator {
     /// corresponding credentials in this case.
     pub fn to_credentials(&self) -> Option<BareCredentials> {
         match self {
-            SecurityAuthenticator::Open => None,
+            SecurityAuthenticator::Open | SecurityAuthenticator::Owe => None,
             SecurityAuthenticator::Wep(wep::WepAuthenticator { key }) => Some(key.clone().into()),
             SecurityAuthenticator::Wpa(wpa) => Some(wpa.to_credentials().into()),
         }
@@ -411,6 +423,10 @@ impl SecurityAuthenticator {
 
     pub fn is_open(&self) -> bool {
         matches!(self, SecurityAuthenticator::Open)
+    }
+
+    pub fn is_owe(&self) -> bool {
+        matches!(self, SecurityAuthenticator::Owe)
     }
 
     pub fn is_wep(&self) -> bool {
@@ -439,6 +455,10 @@ impl From<SecurityAuthenticator> for fidl_security::Authentication {
         match authenticator {
             SecurityAuthenticator::Open => fidl_security::Authentication {
                 protocol: fidl_security::Protocol::Open,
+                credentials: None,
+            },
+            SecurityAuthenticator::Owe => fidl_security::Authentication {
+                protocol: fidl_security::Protocol::Owe,
                 credentials: None,
             },
             SecurityAuthenticator::Wep(wep) => fidl_security::Authentication {

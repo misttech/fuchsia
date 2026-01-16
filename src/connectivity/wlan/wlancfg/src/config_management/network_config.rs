@@ -502,6 +502,8 @@ impl From<SecurityDescriptor> for SecurityType {
     fn from(descriptor: SecurityDescriptor) -> Self {
         match descriptor {
             SecurityDescriptor::Open => SecurityType::None,
+            // TODO(https://fxbug.dev/458136222): Introduce SecurityType::Owe
+            SecurityDescriptor::Owe => SecurityType::None,
             SecurityDescriptor::Wep => SecurityType::Wep,
             SecurityDescriptor::Wpa(wpa) => match wpa {
                 WpaDescriptor::Wpa1 { .. } => SecurityType::Wpa,
@@ -782,6 +784,10 @@ fn bind_credential_to_protocol(
             Credential::None => protocol.bind(None).ok(),
             _ => None,
         },
+        SecurityDescriptor::Owe => match credential {
+            Credential::None => protocol.bind(None).ok(),
+            _ => None,
+        },
         SecurityDescriptor::Wep => match credential {
             Credential::Password(key) => {
                 WepKey::parse(key).ok().and_then(|key| protocol.bind(Some(key.into())).ok())
@@ -824,11 +830,12 @@ pub fn select_authentication_method(
     protocols.sort_by_key(|protocol| {
         Reverse(match protocol {
             SecurityDescriptor::Open => 0,
+            SecurityDescriptor::Owe => 3,
             SecurityDescriptor::Wep => 1,
             SecurityDescriptor::Wpa(wpa) => match wpa {
                 WpaDescriptor::Wpa1 { .. } => 2,
-                WpaDescriptor::Wpa2 { .. } => 3,
-                WpaDescriptor::Wpa3 { .. } => 4,
+                WpaDescriptor::Wpa2 { .. } => 4,
+                WpaDescriptor::Wpa3 { .. } => 5,
             },
         })
     });
@@ -1511,6 +1518,12 @@ mod tests {
         Some(SecurityAuthenticator::Open)
     )]
     #[test_case(
+        [SecurityDescriptor::OWE],
+        Credential::None
+        =>
+        Some(SecurityAuthenticator::Owe)
+    )]
+    #[test_case(
         [SecurityDescriptor::WEP],
         policy_wep_key()
         =>
@@ -1525,6 +1538,12 @@ mod tests {
         Some(SecurityAuthenticator::Wpa(WpaAuthenticator::Wpa1 {
             credentials: Wpa1Credentials::Passphrase(common_wpa_password()),
         }))
+    )]
+    #[test_case(
+        [SecurityDescriptor::OPEN, SecurityDescriptor::OWE],
+        Credential::None
+        =>
+        Some(SecurityAuthenticator::Owe)
     )]
     #[test_case(
         [SecurityDescriptor::WPA1, SecurityDescriptor::WPA2_PERSONAL],
