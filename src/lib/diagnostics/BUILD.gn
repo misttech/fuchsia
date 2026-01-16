@@ -12,6 +12,7 @@ group("diagnostics") {
     "log/bench:build-only",
     "reader",
     "selectors",
+    "selectors-ext",
     "selectors/bench:build-only",
   ]
 }
@@ -30,6 +31,7 @@ group("tests") {
     "python:tests",
     "reader:tests",
     "selectors:tests",
+    "selectors-ext:tests",
     "testing:tests",
   ]
 }
