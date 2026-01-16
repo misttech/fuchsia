@@ -77,24 +77,23 @@
                 // denied on newer kernels. All that said, the CAP_SYS_ADMIN and CAP_SYSLOG are
                 // the greatest common denominator for all the differences in behavior.
                 "SyslogAccessTestAll*_SysAdmin_NoSyslog_*",
+
+                // These will be fixed with the kernel uprev. We'll temporarily skip them while
+                // that image rolls, and then remove these entries.
+                "AccessTest.FsUidIgnoredUnlessEaccess",
+                "AccessTest.EaccessChecksAgainstEffectiveCredsOwner",
+                "AccessTest.EaccessChecksAgainstEffectiveCredsNonOwner",
+                "IcmpPingSocket.SetInvalid",
             ],
         },
         {
             type: "expect_failure",
             matchers: [
-                // TODO(https://fxbug.dev/436980834): Tests needs to be reworked.
-                "AccessTest.FsUidIgnoredUnlessEaccess",
-                "AccessTest.EaccessChecksAgainstEffectiveCredsOwner",
-                "AccessTest.EaccessChecksAgainstEffectiveCredsNonOwner",
-
                 // TODO(https://fxbug.dev/317285180): Test needs to run where Binder is available.
                 "BinderWithoutSE*",
 
                 // TODO(https://fxbug.dev/436918865): Test needs to be reworked.
                 "FsTest.CreateExistingFileInReadonlyFilesystemReturnsEEXIST",
-
-                // TODO(https://fxbug.dev/450310239): Linux behavior on Machina (5.10x) isn't consistent with 6.x
-                "IcmpPingSocket.SetInvalid",
 
                 // TODO(https://fxbug.dev/437164575): Test needs to be reworked.
                 "InputTest.DevicePropertiesMatchKeyboardProperties",
