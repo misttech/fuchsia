@@ -1220,7 +1220,6 @@ EOF
     "${user_rbe_env[@]}"
     "TERM=${TERM}"
     "PATH=${PATH}"
-    "NINJA_BUILD_ID=$build_uuid"  # for the top-level ResultStore invocation
     # By default, also show the number of actively running actions.
     "NINJA_STATUS=${NINJA_STATUS:-"[%f/%t][%p/%w](%r) "}"
     # By default, print the 4 oldest commands that are still running.

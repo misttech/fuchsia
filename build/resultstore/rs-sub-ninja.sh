@@ -27,29 +27,40 @@ readonly proxy_wrap="$PREBUILT_RSCLIENT_DIR/bin/rsproxy-wrap.sh"
 readonly rsproxy="$PREBUILT_RSCLIENT_DIR/bin/rsproxy"
 readonly rsninja="$SCRIPT_DIR/rsninja.sh"
 
+# Use re-client's credentials helper tool to exchange LOAS for OAuth2 tokens.
+readonly credshelper="${PREBUILT_RECLIENT_DIR}/credshelper"
+
 # TODO(b/473907403): for infra builds, plumb remote service proxy overrides:
 #   BAZEL_resultstore_socket_path -> RS_rs_service
 #   BAZEL_rbe_socket_path -> RS_cas_service
 # These will take precedence over values in .cfg files.
 # All sub-invocations can share the same sockets.
 
-# TODO(b/465157948): inject build metadata that reflects any parent
-# invocations coming from bazel or ninja, as well as the top-level
-# FX_BUILD_UUID or BUILDBUCKET_ID.  Set SUBBUILDS_LINK for this invocation,
-# and set PARENT_BUILD_LINK in the environment for sub-invocations.
-
 # TODO: scan ninja options for flags that produce extra output files,
 # such as traces.  Convert these into rsproxy invocation artifacts
-# as post-build uploads.
+# as --post_build_uploads.
+
+rsproxy_options=()
 
 # FX_BUILD_LOAS_TYPE is set by 'fx build' to either "restricted" or
 # "unrestricted", and influences authentication method.
 # Infra builds don't set this, but instead pass environment variables
 # that will override the cfg values.
-CFG="$SCRIPT_DIR/fuchsia-resultstore.cfg"
-[[ "${FX_BUILD_LOAS_TYPE:-NOT_SET}" != "NOT_SET" ]] || {
+[[ "${FX_BUILD_LOAS_TYPE:-NOT_SET}" == "NOT_SET" ]] || {
   case "$FX_BUILD_LOAS_TYPE" in
-    unrestricted) CFG="$SCRIPT_DIR/fuchsia-resultstore-gcertauth.cfg" ;;
+    unrestricted)
+      readonly CFG="$SCRIPT_DIR/fuchsia-resultstore-gcertauth.cfg"
+      rsproxy_options+=(
+        --cfg "$CFG"
+        --credentials_helper "${credshelper}"
+      )
+      ;;
+    *)
+      readonly CFG="$SCRIPT_DIR/fuchsia-resultstore.cfg"
+      rsproxy_options+=(
+        --cfg "$CFG"
+      )
+      ;;
   esac
 }
 
@@ -88,23 +99,14 @@ wrap_options=(
 # Otherwise, if FX_BUILD_LOGDIR isn't set, this is probably being invoked
 # outside of 'fx build', so just fallback to using some temp dir.
 
-rsproxy_options=(
-  --cfg "$CFG"
-)
-
-# Give sub-ninja a new invocation id.
-# This is different from FX_BUILD_UUID.
-readonly invocation_id="$("${PREBUILT_PYTHON3}" -S -c 'import uuid; print(uuid.uuid4())')"
-
 full_cmd=(
-  env
-  NINJA_BUILD_ID="$invocation_id"
   "$proxy_wrap"
   "${wrap_options[@]}"
   --rsproxy_options
   "${rsproxy_options[@]}"
   --
-  "$rsninja" "${ninja_args[@]}"
+  "$rsninja"
+  "${ninja_args[@]}"
 )
 
 exec "${full_cmd[@]}"
