@@ -60,7 +60,7 @@ zx::result<std::shared_ptr<Node>> ParentSetCollector::TryToAssemble(
 
   auto result = Node::CreateCompositeNode(std::string(name), parent_nodes, parent_names_.value(),
                                           parent_properties_, node_manager, dispatcher,
-                                          primary_index_.value());
+                                          driver_host_name_for_colocation_, primary_index_.value());
   if (result.is_error()) {
     return result.take_error();
   }

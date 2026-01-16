@@ -19,6 +19,7 @@ using RemoveCompositeNodeCallback = fit::callback<void(zx::result<>)>;
 struct CompositeNodeSpecCreateInfo {
   std::string name;
   std::vector<fuchsia_driver_framework::ParentSpec2> parents;
+  std::string driver_host_name_for_colocation;
 };
 
 // This partially abstract class represents a composite node spec and is responsible for managing
@@ -50,6 +51,9 @@ class CompositeNodeSpec {
   }
 
   const std::string& name() const { return name_; }
+  const std::string& driver_host_name_for_colocation() const {
+    return driver_host_name_for_colocation_;
+  }
 
   std::optional<NodeWkPtr> completed_composite_node() const {
     return parent_set_collector_.completed_composite_node();
@@ -62,6 +66,7 @@ class CompositeNodeSpec {
 
  private:
   std::string name_;
+  std::string driver_host_name_for_colocation_;
 
   ParentSetCollector parent_set_collector_;
 

@@ -157,10 +157,11 @@ zx::result<> SetEncodedConfig(fidl::WireTableBuilder<fdf::wire::DriverStartArgs>
 DriverHostComponent::DriverHostComponent(
     fidl::ClientEnd<fdh::DriverHost> driver_host, async_dispatcher_t* dispatcher,
     fbl::DoublyLinkedList<std::unique_ptr<DriverHostComponent>>* driver_hosts,
-    std::shared_ptr<bool> server_connected,
+    std::shared_ptr<bool> server_connected, std::string_view name_for_colocation,
     fidl::ClientEnd<fuchsia_driver_loader::DriverHost> dynamic_linker_driver_loader)
     : driver_host_(std::move(driver_host), dispatcher,
                    fidl::ObserveTeardown([this, driver_hosts] { driver_hosts->erase(*this); })),
+      name_for_colocation_(name_for_colocation),
       dispatcher_(dispatcher),
       server_connected_(std::move(server_connected)) {
   InitializeElfDir();

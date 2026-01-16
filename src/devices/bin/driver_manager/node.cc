@@ -349,7 +349,8 @@ zx::result<std::shared_ptr<Node>> Node::CreateCompositeNode(
     std::string_view node_name, std::vector<std::weak_ptr<Node>> parents,
     std::vector<std::string> parents_names,
     const std::vector<fuchsia_driver_framework::NodePropertyEntry2>& parent_properties,
-    NodeManager* driver_binder, async_dispatcher_t* dispatcher, uint32_t primary_index) {
+    NodeManager* driver_binder, async_dispatcher_t* dispatcher,
+    std::string_view driver_host_name_for_colocation, uint32_t primary_index) {
   ZX_ASSERT(!parents.empty());
 
   if (parents.size() != parent_properties.size()) {
@@ -374,6 +375,7 @@ zx::result<std::shared_ptr<Node>> Node::CreateCompositeNode(
                              dispatcher, primary_index);
 
   composite->SetCompositeParentProperties(parent_properties);
+  composite->driver_host_name_for_colocation_ = driver_host_name_for_colocation;
 
   Node* primary = composite->GetPrimaryParent();
   // We know that our device has a parent because we're creating it.
@@ -1075,6 +1077,9 @@ void Node::AddChildHelper(fuchsia_driver_framework::NodeAddArgs args,
       properties.emplace_back(ToProperty2(property));
     }
   }
+  if (args.driver_host()) {
+    child->driver_host_name_for_colocation_ = args.driver_host().value();
+  }
 
   bool has_dictionary_offer = false;
   if (fdf_offers.has_value()) {
@@ -1633,11 +1638,21 @@ void Node::StartDriver(
 
   if (colocate && !driver_host_) {
     fdf_log::error(
-        "Failed to start driver '{}', driver is colocated but does not have a prent with a "
+        "Failed to start driver '{}', driver is colocated but does not have a parent with a "
         "driver host",
         url);
     cb(zx::error(ZX_ERR_INVALID_ARGS));
     return;
+  }
+
+  bool found_driver_host = colocate;
+
+  if (!found_driver_host) {
+    // Attempt to get a cached driver host by name if available. Otherwise this will be started.
+    driver_host_ = (*node_manager_)->GetDriverHost(driver_host_name_for_colocation_);
+    if (driver_host_) {
+      found_driver_host = true;
+    }
   }
 
   fidl::Arena arena;
@@ -1653,7 +1668,7 @@ void Node::StartDriver(
   auto offers = fidl::ToWire(arena, natural_offers);
   auto properties = fidl::ToWire(arena, GetNodePropertyDict());
 
-  if (colocate) {
+  if (found_driver_host) {
     // Whether dynamic linking is enabled for a driver host is determined by the first driver in the
     // host. Otherwise for colocated drivers, we need to match what has been set for the driver
     // host.
@@ -1760,8 +1775,9 @@ void Node::StartDriver(
       ->CreatePowerElement(
           name_, std::move(clone), deps_span, std::move(element_control_server),
           std::move(element_runner_client), std::move(lessor_server),
-          [weak_self = weak_from_this(), handles_ptr = handles_ptr, cb = std::move(cb),
-           use_dynamic_linker = use_dynamic_linker, url = url_str, colocate = colocate,
+          [weak_self = weak_from_this(), handles_ptr = std::move(handles_ptr), cb = std::move(cb),
+           use_dynamic_linker = use_dynamic_linker, url = url_str,
+           found_driver_host = found_driver_host,
            dynamic_linker_start_args = std::move(dynamic_linker_start_args),
            dynamic_linker_load_args = std::move(dynamic_linker_load_args),
            component_controller = std::move(component_controller), use_next_vdso = use_next_vdso,
@@ -1786,7 +1802,7 @@ void Node::StartDriver(
             // immediately if lease is not created because this is not a
             // power-enabled platform.
             fit::callback<void(zx::result<>)> create_host_and_start_driver_cb =
-                [weak_self = self->weak_from_this(), colocate = colocate,
+                [weak_self = self->weak_from_this(), found_driver_host = found_driver_host,
                  use_dynamic_linker = use_dynamic_linker,
                  dynamic_linker_load_args = std::move(dynamic_linker_load_args),
                  dynamic_linker_start_args = std::move(dynamic_linker_start_args), url = url,
@@ -1832,15 +1848,16 @@ void Node::StartDriver(
                   if (use_dynamic_linker) {
                     self->CreateHostAndStartDriverWithDynamicLinker(
                         std::move(*dynamic_linker_load_args), std::move(*dynamic_linker_start_args),
-                        url, std::move(component_controller), std::move(pe_args), colocate,
+                        url, std::move(component_controller), std::move(pe_args), found_driver_host,
                         std::move(cb));
                     return;
                   }
 
-                  // Since we're not colocating we need to create a new driver
-                  // host.
-                  if (!colocate) {
-                    auto result = (*self->node_manager_)->CreateDriverHost(use_next_vdso);
+                  // Since we're not colocating we need to create a new driver host.
+                  if (!found_driver_host) {
+                    auto result = (*self->node_manager_)
+                                      ->CreateDriverHost(use_next_vdso,
+                                                         self->driver_host_name_for_colocation_);
                     if (result.is_error()) {
                       cb(result.take_error());
                       return;
@@ -2020,8 +2037,9 @@ void Node::CreateHostAndStartDriverWithDynamicLinker(
     DriverHost::DriverLoadArgs load_args, DriverHost::DriverStartArgs start_args,
     std::string_view url,
     fidl::ServerEnd<fuchsia_component_runner::ComponentController> component_controller,
-    PowerElementStartArgs power_element_args, bool colocate, fit::callback<void(zx::result<>)> cb) {
-  if (colocate) {
+    PowerElementStartArgs power_element_args, bool found_driver_host,
+    fit::callback<void(zx::result<>)> cb) {
+  if (found_driver_host) {
     StartDriverWithDynamicLinker(std::move(load_args), std::move(start_args), url,
                                  std::move(component_controller), std::move(power_element_args),
                                  std::move(cb));
@@ -2030,6 +2048,7 @@ void Node::CreateHostAndStartDriverWithDynamicLinker(
 
   (*node_manager_)
       ->CreateDriverHostDynamicLinker(
+          driver_host_name_for_colocation_,
           [weak_self = weak_from_this(), name = name_, load_args = std::move(load_args),
            start_args = std::move(start_args), url = std::string(url),
            component_controller = std::move(component_controller),
@@ -2073,10 +2092,10 @@ void Node::StartDriverWithDynamicLinker(
   state_.emplace<DriverComponent>(*this, std::string(url), std::move(component_controller),
                                   std::move(server_end), std::move(driver_endpoints.client),
                                   std::move(node_token_dup));
-  driver_host_.value()->StartWithDynamicLinker(std::move(client_end), name_, std::move(load_args),
-                                               std::move(start_args), std::move(node_token),
-                                               std::move(driver_endpoints.server),
-                                               std::move(power_element_args), std::move(cb));
+  driver_host()->StartWithDynamicLinker(std::move(client_end), name_, std::move(load_args),
+                                        std::move(start_args), std::move(node_token),
+                                        std::move(driver_endpoints.server),
+                                        std::move(power_element_args), std::move(cb));
 }
 
 zx::result<zx::event> Node::DuplicateNodeToken() {

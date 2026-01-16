@@ -114,11 +114,15 @@ class NodeManager {
     return zx::error(ZX_ERR_NOT_SUPPORTED);
   }
 
-  virtual zx::result<DriverHost*> CreateDriverHost(bool use_next_vdso) = 0;
+  virtual DriverHost* GetDriverHost(std::string_view driver_name_name_for_colocation) = 0;
+
+  virtual zx::result<DriverHost*> CreateDriverHost(
+      bool use_next_vdso, std::string_view driver_name_name_for_colocation) = 0;
 
   // Creates the driver host component, loads the driver host using dynamic linking,
   // and calls |cb| on completion or error.
   virtual void CreateDriverHostDynamicLinker(
+      std::string_view driver_name_name_for_colocation,
       fit::callback<void(zx::result<DriverHost*>)> completion_cb) {
     completion_cb(zx::error(ZX_ERR_NOT_SUPPORTED));
   }
@@ -195,7 +199,8 @@ class Node : public fidl::WireServer<fuchsia_driver_framework::NodeController>,
       std::string_view node_name, std::vector<std::weak_ptr<Node>> parents,
       std::vector<std::string> parents_names,
       const std::vector<fuchsia_driver_framework::NodePropertyEntry2>& parent_properties,
-      NodeManager* driver_binder, async_dispatcher_t* dispatcher, uint32_t primary_index = 0);
+      NodeManager* driver_binder, async_dispatcher_t* dispatcher,
+      std::string_view driver_host_name_for_colocation, uint32_t primary_index = 0);
 
   // This is called when |node_ref_| is unbound from the dispatcher.
   void OnNodeServerUnbound(fidl::UnbindInfo info);
@@ -340,6 +345,14 @@ class Node : public fidl::WireServer<fuchsia_driver_framework::NodeController>,
   }
 
   const DriverHost* driver_host() const {
+    if (node_manager_.has_value() && node_manager_.value()->IsDriverHostValid(*driver_host_)) {
+      return *driver_host_;
+    }
+
+    return nullptr;
+  }
+
+  DriverHost* driver_host() {
     if (node_manager_.has_value() && node_manager_.value()->IsDriverHostValid(*driver_host_)) {
       return *driver_host_;
     }
@@ -592,7 +605,7 @@ class Node : public fidl::WireServer<fuchsia_driver_framework::NodeController>,
       DriverHost::DriverLoadArgs load_args, DriverHost::DriverStartArgs start_args,
       std::string_view url,
       fidl::ServerEnd<fuchsia_component_runner::ComponentController> component_controller,
-      PowerElementStartArgs power_element_args, bool colocate,
+      PowerElementStartArgs power_element_args, bool found_driver_host,
       fit::callback<void(zx::result<>)> cb);
 
   zx::result<zx::event> DuplicateNodeToken();
@@ -665,6 +678,9 @@ class Node : public fidl::WireServer<fuchsia_driver_framework::NodeController>,
 
   Collection collection_ = Collection::kNone;
   fuchsia_driver_framework::DriverPackageType driver_package_type_;
+  // If specified by the parent in NodeAddArgs, this will be used to determine which driver host to
+  // load into.
+  std::string driver_host_name_for_colocation_;
   fit::nullable<DriverHost*> driver_host_;
 
   // An outstanding rebind request.

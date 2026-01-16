@@ -198,7 +198,8 @@ class FakeNodeManager : public TestNodeManagerBase {
   FakeNodeManager(async_dispatcher_t* dispatcher, fidl::WireClient<fuchsia_component::Realm> realm)
       : dispatcher_(dispatcher), realm_(std::move(realm)), dictionary_util_(dispatcher) {}
 
-  zx::result<driver_manager::DriverHost*> CreateDriverHost(bool use_next_vdso) override {
+  zx::result<driver_manager::DriverHost*> CreateDriverHost(
+      bool use_next_vdso, std::string_view driver_host_name_for_colocation) override {
     return zx::ok(&driver_host_);
   }
 

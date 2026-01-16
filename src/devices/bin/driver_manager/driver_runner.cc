@@ -351,6 +351,9 @@ void DriverRunner::AddSpec(AddSpecRequestView request, AddSpecCompleter::Sync& c
       CompositeNodeSpecCreateInfo{
           .name = std::string(request->name().get()),
           .parents = std::move(parents),
+          .driver_host_name_for_colocation = request->has_driver_host()
+                                                 ? std::string(request->driver_host().get())
+                                                 : std::string(),
       },
       dispatcher_, this);
   composite_node_spec_manager_.AddSpec(
@@ -671,7 +674,20 @@ void DriverRunner::RebindCompositesWithDriver(const std::string& url,
   }
 }
 
-zx::result<DriverHost*> DriverRunner::CreateDriverHost(bool use_next_vdso) {
+DriverHost* DriverRunner::GetDriverHost(std::string_view driver_host_name_for_colocation) {
+  if (driver_host_name_for_colocation.empty()) {
+    return nullptr;
+  }
+  for (auto& driver_host : driver_hosts_) {
+    if (driver_host.name_for_colocation() == driver_host_name_for_colocation) {
+      return &driver_host;
+    }
+  }
+  return nullptr;
+}
+
+zx::result<DriverHost*> DriverRunner::CreateDriverHost(
+    bool use_next_vdso, std::string_view driver_host_name_for_colocation) {
   auto endpoints = fidl::Endpoints<fio::Directory>::Create();
   std::string name = "driver-host-" + std::to_string(next_driver_host_id_++);
 
@@ -696,8 +712,9 @@ zx::result<DriverHost*> DriverRunner::CreateDriverHost(bool use_next_vdso) {
     return loader_service_client.take_error();
   }
 
-  auto driver_host = std::make_unique<DriverHostComponent>(std::move(*client_end), dispatcher_,
-                                                           &driver_hosts_, connected);
+  auto driver_host =
+      std::make_unique<DriverHostComponent>(std::move(*client_end), dispatcher_, &driver_hosts_,
+                                            connected, driver_host_name_for_colocation);
   auto result = driver_host->InstallLoader(std::move(*loader_service_client));
   if (result.is_error()) {
     fdf_log::error("Failed to install loader service: {}", result);
@@ -711,6 +728,7 @@ zx::result<DriverHost*> DriverRunner::CreateDriverHost(bool use_next_vdso) {
 }
 
 void DriverRunner::CreateDriverHostDynamicLinker(
+    std::string_view driver_host_name_for_colocation,
     fit::callback<void(zx::result<DriverHost*>)> completion_cb) {
   if (!dynamic_linker_args_.has_value()) {
     fdf_log::error("Dynamic linker was not available");
@@ -744,7 +762,7 @@ void DriverRunner::CreateDriverHostDynamicLinker(
   dynamic_linker_args_->driver_host_runner->StartDriverHost(
       driver_host_launcher_->Clone(), std::move(endpoints.server), connected,
       [this, completion_cb = std::move(completion_cb), client_end = std::move(client_end),
-       connected = std::move(connected)](
+       connected = std::move(connected), name = std::string(driver_host_name_for_colocation)](
           zx::result<fidl::ClientEnd<fuchsia_driver_loader::DriverHost>> result) mutable {
         if (result.is_error()) {
           completion_cb(result.take_error());
@@ -752,7 +770,8 @@ void DriverRunner::CreateDriverHostDynamicLinker(
         }
 
         auto driver_host = std::make_unique<DriverHostComponent>(
-            std::move(*client_end), dispatcher_, &driver_hosts_, connected, std::move(*result));
+            std::move(*client_end), dispatcher_, &driver_hosts_, connected, name,
+            std::move(*result));
 
         auto driver_host_ptr = driver_host.get();
         driver_hosts_.push_back(std::move(driver_host));

@@ -13,7 +13,12 @@ class TestNodeManagerBase : public driver_manager::NodeManager {
   void Bind(driver_manager::Node& node,
             std::shared_ptr<driver_manager::BindResultTracker> result_tracker) override {}
 
-  zx::result<driver_manager::DriverHost*> CreateDriverHost(bool use_next_vdso) override {
+  driver_manager::DriverHost* GetDriverHost(
+      std::string_view driver_host_name_for_colocation) override {
+    return nullptr;
+  }
+  zx::result<driver_manager::DriverHost*> CreateDriverHost(
+      bool use_next_vdso, std::string_view driver_host_name_for_colocation) override {
     return zx::error(ZX_ERR_NOT_SUPPORTED);
   }
 

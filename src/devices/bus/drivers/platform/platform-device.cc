@@ -424,6 +424,7 @@ zx::result<> PlatformDevice::CreateNode() {
       .offers2 = std::move(offers),
       .bus_info = std::move(bus_info),
       .properties2 = std::move(props),
+      .driver_host = node_.driver_host(),
   }};
 
   auto parent = bus()->platform_node();

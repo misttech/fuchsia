@@ -22,7 +22,10 @@ using NodeWkPtr = std::weak_ptr<Node>;
 // it will return a vector containing all the parent node pointers.
 class ParentSetCollector {
  public:
-  explicit ParentSetCollector(size_t size) : parents_(size), parent_properties_(size) {}
+  explicit ParentSetCollector(size_t size, std::string_view driver_host_name_for_colocation)
+      : parents_(size),
+        parent_properties_(size),
+        driver_host_name_for_colocation_(driver_host_name_for_colocation) {}
 
   void BindToComposite(std::vector<std::string> parent_names, uint32_t primary_index) {
     parent_names_ = std::move(parent_names);
@@ -73,6 +76,8 @@ class ParentSetCollector {
 
   std::optional<uint32_t> primary_index_;
   std::optional<std::vector<std::string>> parent_names_;
+
+  std::string driver_host_name_for_colocation_;
 
   // Contains a weak pointer to the composite node when the parent set is assembled.
   std::optional<std::weak_ptr<driver_manager::Node>> completed_composite_node_;

@@ -116,7 +116,8 @@ class FakeNodeManager : public TestNodeManagerBase {
  public:
   explicit FakeNodeManager(async_dispatcher_t* dispatcher) : dispatcher_(dispatcher) {}
 
-  zx::result<DriverHost*> CreateDriverHost(bool use_next_vdso) override {
+  zx::result<DriverHost*> CreateDriverHost(
+      bool use_next_vdso, std::string_view driver_host_name_for_colocation) override {
     return zx::ok(&driver_host_);
   }
 

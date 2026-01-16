@@ -13,7 +13,9 @@ namespace driver_manager {
 CompositeNodeSpec::CompositeNodeSpec(CompositeNodeSpecCreateInfo create_info,
                                      async_dispatcher_t* dispatcher, NodeManager* node_manager)
     : name_(create_info.name),
-      parent_set_collector_(create_info.parents.size()),
+      driver_host_name_for_colocation_(create_info.driver_host_name_for_colocation),
+      parent_set_collector_(create_info.parents.size(),
+                            create_info.driver_host_name_for_colocation),
       dispatcher_(dispatcher),
       node_manager_(node_manager) {
   parent_specs_ = std::move(create_info.parents);
@@ -80,13 +82,15 @@ void CompositeNodeSpec::Remove(RemoveCompositeNodeCallback callback) {
   auto node = parent_set_collector_.completed_composite_node();
   if (node && !node->expired()) {
     node->lock()->RemoveCompositeNodeForRebind(std::move(callback));
-    parent_set_collector_ = ParentSetCollector(parent_specs_.size());
+    parent_set_collector_ =
+        ParentSetCollector(parent_specs_.size(), driver_host_name_for_colocation());
     driver_url_ = "";
     composite_info_.reset();
     return;
   }
 
-  parent_set_collector_ = ParentSetCollector(parent_specs_.size());
+  parent_set_collector_ =
+      ParentSetCollector(parent_specs_.size(), driver_host_name_for_colocation());
   driver_url_ = "";
   composite_info_.reset();
   callback(zx::ok());

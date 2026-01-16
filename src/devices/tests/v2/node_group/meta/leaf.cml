@@ -11,6 +11,7 @@
         binary: "driver/nodegroup_leaf.so",
         bind: "meta/bind/leaf.bindbc",
         service_connect_validation: "true",
+        default_dispatcher_opts: [ "allow_sync_calls" ],
     },
     use: [
         { protocol: "fuchsia.nodegroup.test.Waiter" },

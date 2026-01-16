@@ -205,10 +205,13 @@ class DriverRunner : public fidl::WireServer<fuchsia_driver_framework::Composite
   void Bind(Node& node, std::shared_ptr<BindResultTracker> result_tracker) override;
   void BindToUrl(Node& node, std::string_view driver_url_suffix,
                  std::shared_ptr<BindResultTracker> result_tracker) override;
-  zx::result<DriverHost*> CreateDriverHost(bool use_next_vdso) override;
+  DriverHost* GetDriverHost(std::string_view driver_host_name_for_colocation) override;
+  zx::result<DriverHost*> CreateDriverHost(
+      bool use_next_vdso, std::string_view driver_host_name_for_colocation) override;
   // Creates the driver host component, loads the driver host using dynamic linking,
   // and calls |cb| on completion. |cb| will only be called if the return value is zx::ok.
   void CreateDriverHostDynamicLinker(
+      std::string_view driver_host_name_for_colocation,
       fit::callback<void(zx::result<DriverHost*>)> completion_cb) override;
   bool IsDriverHostValid(DriverHost* driver_host) const override;
 

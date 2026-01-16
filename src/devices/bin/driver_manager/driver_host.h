@@ -101,7 +101,7 @@ class DriverHostComponent final
   DriverHostComponent(fidl::ClientEnd<fuchsia_driver_host::DriverHost> driver_host,
                       async_dispatcher_t* dispatcher,
                       fbl::DoublyLinkedList<std::unique_ptr<DriverHostComponent>>* driver_hosts,
-                      std::shared_ptr<bool> server_connected,
+                      std::shared_ptr<bool> server_connected, std::string_view name_for_colocation,
                       fidl::ClientEnd<fuchsia_driver_loader::DriverHost> loader_client = {});
 
   void Start(fidl::ClientEnd<fuchsia_driver_framework::Node> client_end, std::string node_name,
@@ -131,12 +131,15 @@ class DriverHostComponent final
 
   zx::result<> InstallLoader(fidl::ClientEnd<fuchsia_ldsvc::Loader> loader_client) const;
 
+  std::string_view name_for_colocation() const { return name_for_colocation_; }
+
  private:
   void InitializeElfDir();
 
   bool IsDynamicLinkingEnabled() const override { return dynamic_linker_driver_loader_.is_valid(); }
 
   fidl::WireSharedClient<fuchsia_driver_host::DriverHost> driver_host_;
+  std::string name_for_colocation_;
   mutable std::optional<fuchsia_driver_host::ProcessInfo> process_info_;
   vfs::PseudoDir runtime_dir_;
   async_dispatcher_t* dispatcher_;

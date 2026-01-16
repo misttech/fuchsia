@@ -38,8 +38,8 @@ std::shared_ptr<driver_manager::Node> DriverManagerTestBase::CreateCompositeNode
   for (auto& parent : parents) {
     parent_names.push_back(parent.lock()->name());
   }
-  return driver_manager::Node::CreateCompositeNode(name, std::move(parents),
-                                                   std::move(parent_names), parent_properties,
-                                                   GetNodeManager(), dispatcher(), primary_index)
+  return driver_manager::Node::CreateCompositeNode(
+             name, std::move(parents), std::move(parent_names), parent_properties, GetNodeManager(),
+             dispatcher(), "", primary_index)
       .value();
 }
