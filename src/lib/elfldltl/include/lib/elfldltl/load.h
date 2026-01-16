@@ -256,14 +256,15 @@ using NoSegmentWrapper = SegmentType;
 // After adjustment, VisitSegments can be used to iterate over segments()
 // using std::visit.
 //
-template <class Elf, template <typename> class Container,
+template <class ElfLayout, template <typename> class Container,
           PhdrLoadPolicy Policy = PhdrLoadPolicy::kBasic,
           template <class SegmentType> class SegmentWrapper = NoSegmentWrapper>
 class LoadInfo {
  private:
-  using Types = internal::LoadSegmentTypes<typename Elf::size_type>;
+  using Types = internal::LoadSegmentTypes<typename ElfLayout::size_type>;
 
  public:
+  using Elf = ElfLayout;
   using size_type = typename Elf::size_type;
   using Region = typename Types::Region;
   using Phdr = typename Elf::Phdr;

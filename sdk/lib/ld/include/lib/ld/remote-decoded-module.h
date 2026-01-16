@@ -242,7 +242,7 @@ class RemoteDecodedModule : public RemoteDecodedFile, public RemoteDecodedModule
     std::span<const Addr> preinit_array;  // DT_PREINIT_ARRAY
   };
 
-  // This is the Memory API object returned by memory_metadata(), below.
+  // This is the Memory API object returned by metadata_memory(), below.
   using MetadataMemory = elfldltl::LoadInfoMappedMemory<LoadInfo, elfldltl::MappedVmoFile>;
 
   // A default-constructed object is just an empty placeholder that can be

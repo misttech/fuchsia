@@ -7,12 +7,14 @@
 
 #include <lib/fit/result.h>
 
+#include <concepts>
 #include <optional>
 #include <span>
 #include <vector>
 
 #include "container.h"
 #include "diagnostics.h"
+#include "memory.h"
 
 namespace elfldltl {
 
@@ -43,11 +45,28 @@ namespace elfldltl {
 // the default container (std::vector) a deduction guide allows construction
 // with no template parameters.
 
-template <class Diagnostics, class LoadInfo, typename GetMutableMemory,
+template <class T, class LoadInfo>
+concept GetMutableMemoryApiResult =
+    std::same_as<T, fit::result<bool, typename T::value_type>> &&
+    MemoryWriter<typename T::value_type, typename LoadInfo::Elf::size_type,
+                 typename LoadInfo::Elf::Addr> &&
+    (std::copy_constructible<typename T::value_type> ||
+     (!std::is_const_v<typename LoadInfo::Segment> &&
+      std::move_constructible<typename T::value_type>));
+
+template <typename T, class Diagnostics, class LoadInfo>
+concept GetMutableMemoryApi =
+    std::invocable<T, Diagnostics&, typename LoadInfo::Segment&> &&
+    GetMutableMemoryApiResult<                                               //
+        std::invoke_result_t<T, Diagnostics&, typename LoadInfo::Segment&>,  //
+        LoadInfo>;
+
+template <class Diagnostics, class LoadInfo,
+          GetMutableMemoryApi<Diagnostics, LoadInfo> GetMutableMemory,
           template <class> class Container = StdContainer<std::vector>::Container>
 class LoadInfoMutableMemory {
  public:
-  using size_type = typename LoadInfo::size_type;
+  using size_type = typename LoadInfo::Elf::size_type;
 
   // Cannot be default-constructed, copied, or moved.
   LoadInfoMutableMemory() = delete;
@@ -132,12 +151,8 @@ class LoadInfoMutableMemory {
   using LoadSegment =
       std::conditional_t<std::is_const_v<LoadInfo>, const typename LoadInfo::Segment,
                          typename LoadInfo::Segment>;
-  using MutableMemory = std::decay_t<  //
-      decltype(std::declval<GetMutableMemory>()(std::declval<Diagnostics&>(),
-                                                std::declval<LoadSegment&>())
-                   .value())>;
-  static_assert(std::is_move_constructible_v<MutableMemory> ||
-                std::is_copy_constructible_v<MutableMemory>);
+  using MutableMemory =
+      std::invoke_result_t<GetMutableMemory, Diagnostics&, LoadSegment&>::value_type;
   static_assert(
       !std::is_const_v<LoadSegment> || std::is_copy_constructible_v<MutableMemory>,
       "elfldltl::LoadInfoMutableMemory requires copyable GetMutableMemory return values when LoadInfo template parameter is const");
@@ -195,7 +210,7 @@ class LoadInfoMutableMemory {
       }
       if (!it->has_memory()) {
         // This segment hasn't been mutated yet.  Get a MutableMemory for it.
-        auto result = get_mutable_memory_(diag_, it->segment());
+        auto result = std::invoke(get_mutable_memory_, diag_, it->segment());
         if (result.is_error()) {
           return result.take_error();
         }
