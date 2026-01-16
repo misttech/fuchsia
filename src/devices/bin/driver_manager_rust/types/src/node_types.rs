@@ -39,7 +39,7 @@ pub enum NodeType {
 }
 
 #[derive(PartialEq, Eq, Clone, Copy, Debug)]
-pub enum NodeState {
+pub enum ShutdownState {
     Running,
     Prestop,
     WaitingOnDriverBind,
