@@ -166,6 +166,14 @@
       "short": null,
       "description": "authentication method to use.",
       "hidden": false
+    },
+    {
+      "kind": "Switch",
+      "optionality": "optional",
+      "long": "--zbi-only",
+      "short": null,
+      "description": "only build the ZBI and copy it to the top level of the output directory.",
+      "hidden": false
     }
   ],
   "notes": [

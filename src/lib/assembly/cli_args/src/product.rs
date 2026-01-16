@@ -203,6 +203,9 @@ pub enum AssemblyMode {
     /// This is often used for testing Assembly itself.
     TestNoPlatform,
 
+    /// Skips the filesystems (fvm/fxfs) generation.
+    SkipFilesystems,
+
     /// The normal mode of operation for assembly is to build everything.
     #[default]
     BuildEverything,
@@ -219,6 +222,11 @@ impl AssemblyMode {
     pub fn is_default(&self) -> bool {
         matches!(self, Self::BuildEverything)
     }
+
+    /// Whether to configure subsystems based on the mode.
+    pub fn should_configure_subsystems(&self) -> bool {
+        return self.is_default() || *self == AssemblyMode::SkipFilesystems;
+    }
 }
 
 impl FromStr for AssemblyMode {
@@ -229,6 +237,7 @@ impl FromStr for AssemblyMode {
             "test-ramdisk" => Ok(Self::TestRamdisk),
             "test-zbi" => Ok(Self::TestZBI),
             "test-no-platform" => Ok(Self::TestNoPlatform),
+            "skip-filesystems" => Ok(Self::SkipFilesystems),
             _ => Err(format!(
                 "Unknown option for 'mode', valid values are 'test-ramdisk', 'test-zbi' and 'test-no-platform': {}",
                 s
@@ -244,10 +253,12 @@ impl fmt::Display for AssemblyMode {
             AssemblyMode::TestZBI => write!(f, "test-zbi"),
             AssemblyMode::TestNoPlatform => write!(f, "test-no-platform"),
             AssemblyMode::BuildEverything => write!(f, "build-everything"),
+            AssemblyMode::SkipFilesystems => write!(f, "skip-filesystems"),
         }
     }
 }
 
+/// Get the default assembly mode.
 pub fn default_mode() -> AssemblyMode {
     AssemblyMode::default()
 }

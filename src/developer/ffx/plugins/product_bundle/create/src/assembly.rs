@@ -6,7 +6,7 @@ use anyhow::Result;
 use assembled_system::AssembledSystem;
 use assembly_api::release_info::*;
 use assembly_artifact_cache::{ArtifactCache, ArtifactError};
-use assembly_cli_args::{ProductArgs, ValidationMode};
+use assembly_cli_args::{AssemblyMode, ProductArgs, ValidationMode};
 use assembly_container::AssemblyContainer;
 use assembly_release_info::{BoardReleaseInfo, ProductReleaseInfo, ReleaseInfo};
 use camino::Utf8PathBuf;
@@ -65,6 +65,7 @@ impl Assembly {
         self,
         context: &EnvironmentContext,
         should_configure_example: bool,
+        zbi_only: bool,
         outdir: &Utf8PathBuf,
     ) -> Result<AssembledSystem> {
         let gendir = tempfile::TempDir::new().unwrap();
@@ -82,7 +83,7 @@ impl Assembly {
             suppress_overrides_warning: false,
             developer_overrides: None,
             include_example_aib_for_tests: Some(should_configure_example),
-            mode: Default::default(),
+            mode: if zbi_only { AssemblyMode::SkipFilesystems } else { Default::default() },
         };
         let create_system_outputs = assembly_api::assemble(context, args)?;
         AssembledSystem::from_dir(create_system_outputs.outdir)

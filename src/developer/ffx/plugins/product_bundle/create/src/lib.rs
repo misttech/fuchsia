@@ -8,6 +8,7 @@ use anyhow::{Context, Result, anyhow};
 use assembly::Assembly;
 use assembly_artifact_cache::{ArtifactCache, ArtifactError};
 use assembly_tool::PlatformToolProvider;
+use assembly_util::fast_copy;
 use camino::Utf8PathBuf;
 use delivery_blob::DeliveryBlobType;
 use errors::FfxError;
@@ -122,6 +123,9 @@ struct SanitizedCreateCommand {
 
     /// What result we want from running `ffx product create`.
     pub result: CreateResult,
+
+    /// Whether to only build the ZBI and skip filesystems.
+    pub zbi_only: bool,
 }
 
 /// What result we want from running `ffx product create`.
@@ -132,6 +136,9 @@ enum CreateResult {
 
     /// Run assembly and generate the outputs to this path.
     Out(Utf8PathBuf),
+
+    /// Run assembly and output only what's required for the ZBI to this path.
+    ZbiOnly(Utf8PathBuf),
 
     /// Run assembly and generates the outputs to the default location.
     Default,
@@ -147,13 +154,20 @@ impl TryFrom<CreateCommand> for SanitizedCreateCommand {
         let platform = cmd.platform;
 
         // Determine what result we want from this command.
-        let result = match (cmd.stage, cmd.out) {
-            (true, Some(_)) => {
+        let result = match (cmd.stage, cmd.out, cmd.zbi_only) {
+            (true, Some(_), _) => {
                 anyhow::bail!("--stage and --out cannot be used together.")
             }
-            (true, None) => CreateResult::Stage,
-            (false, Some(out)) => CreateResult::Out(out),
-            (false, None) => CreateResult::Default,
+            (true, _, true) => {
+                anyhow::bail!("--stage and --zbi-only cannot be used together.")
+            }
+            (_, None, true) => {
+                anyhow::bail!("--out is required when --zbi-only is specified.");
+            }
+            (true, None, false) => CreateResult::Stage,
+            (false, Some(out), true) => CreateResult::ZbiOnly(out),
+            (false, Some(out), false) => CreateResult::Out(out),
+            (false, None, false) => CreateResult::Default,
         };
 
         // Choose between a product_config.board_config combo and --product --board flags.
@@ -182,6 +196,7 @@ impl TryFrom<CreateCommand> for SanitizedCreateCommand {
             auth,
             recovery_product_config,
             recovery_board_config,
+            zbi_only,
             ..
         } = cmd;
 
@@ -204,6 +219,7 @@ impl TryFrom<CreateCommand> for SanitizedCreateCommand {
             tuf_keys,
             ota_manifest_key,
             result,
+            zbi_only,
         })
     }
 }
@@ -253,6 +269,7 @@ async fn sanitized_product_bundle_create(
     let out = match cmd.result {
         CreateResult::Stage => return Ok(()),
         CreateResult::Out(out) => Ok(out),
+        CreateResult::ZbiOnly(out) => Ok(out),
         CreateResult::Default => default_path_for_product_bundle_name(&name),
     }?;
 
@@ -275,9 +292,32 @@ async fn sanitized_product_bundle_create(
     let system = Box::pin(assembly.create_system(
         context,
         should_configure_example,
+        cmd.zbi_only,
         &tmp_path.join("system"),
     ))
     .await?;
+
+    if cmd.zbi_only {
+        let zbi_path = system
+            .images
+            .iter()
+            .find_map(|i| match i {
+                assembled_system::Image::ZBI { path, .. } => Some(path.clone()),
+                _ => None,
+            })
+            .ok_or_else(|| anyhow!("No ZBI found in assembled system"))?;
+
+        if !out.is_dir() {
+            return Err(ArtifactError::new(anyhow::anyhow!("Zbi output path is not a directory")));
+        }
+
+        let dest_path = out.join("fuchsia.zbi");
+
+        fast_copy(&zbi_path, &dest_path)
+            .with_context(|| format!("copying zbi from {} to {}", zbi_path, dest_path))?;
+        println!("{}", dest_path);
+        return Ok(());
+    }
     let mut builder = ProductBundleBuilder::new(name.clone(), version)
         .system(system, Slot::A)
         .update_package(update_version_file, 1, cmd.ota_manifest_key);
@@ -298,6 +338,7 @@ async fn sanitized_product_bundle_create(
         let recovery_system = Box::pin(recovery_assembly.create_system(
             context,
             should_configure_example,
+            /* zbi_only=*/ false,
             &tmp_path.join("recovery_system"),
         ))
         .await?;
@@ -414,6 +455,7 @@ mod test {
             stage: false,
             out: None,
             auth: AuthFlowChoice::Default,
+            zbi_only: false,
         };
 
         let result = SanitizedCreateCommand::try_from(cmd);
@@ -441,6 +483,7 @@ mod test {
             stage: false,
             out: None,
             auth: AuthFlowChoice::Default,
+            zbi_only: false,
         };
 
         let result = SanitizedCreateCommand::try_from(cmd);

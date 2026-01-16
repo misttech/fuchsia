@@ -122,7 +122,10 @@ impl AssembledSystem {
         // create a disk image that has a non-sparse fxfs image to avoid adding it to the system image.
         let constructed_disk_image_path: Option<Utf8PathBuf> =
         // Create all the filesystems and FVMs.
-            if let Some(fvm_config) = fvm_config {
+            if assembly_mode == AssemblyMode::SkipFilesystems {
+                info!("Skipping filesystem creation");
+                None
+            } else if let Some(fvm_config) = fvm_config {
                 // Determine whether blobfs should be compressed.
                 // We refrain from compressing blobfs if the FVM is destined for the ZBI, because the ZBI
                 // compression will be more optimized.

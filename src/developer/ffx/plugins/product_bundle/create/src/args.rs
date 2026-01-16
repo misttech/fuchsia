@@ -116,4 +116,8 @@ pub struct CreateCommand {
     /// authentication method to use.
     #[argh(option, default = "AuthFlowChoice::Default")]
     pub auth: AuthFlowChoice,
+
+    /// only build the ZBI and copy it to the top level of the output directory.
+    #[argh(switch)]
+    pub zbi_only: bool,
 }

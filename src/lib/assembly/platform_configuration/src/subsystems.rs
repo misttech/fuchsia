@@ -86,7 +86,7 @@ pub fn define_configuration(
     let mut builder = ConfigurationBuilderImpl::new(icu_config.clone());
 
     // Only perform configuration if the mode is not a test mode.
-    if mode.is_default() {
+    if AssemblyMode::should_configure_subsystems(mode) {
         let build_type = &platform.build_type;
         let gendir = gendir.as_ref().to_path_buf();
         let resource_dir = resource_dir.as_ref().to_path_buf();
