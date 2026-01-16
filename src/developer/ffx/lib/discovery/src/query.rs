@@ -240,8 +240,7 @@ pub fn target_addr_info_to_socketaddr(tai: TargetIpAddrInfo) -> SocketAddr {
 mod test {
     use super::*;
     use fidl_fuchsia_developer_ffx::{TargetIp, TargetIpPort};
-    use fidl_fuchsia_net as net;
-    use std::net::{IpAddr, Ipv4Addr, SocketAddr};
+    use net_declare::{fidl_ip, std_socket_addr};
     use test_case::test_case;
 
     #[test]
@@ -313,56 +312,41 @@ mod test {
     #[test]
     fn test_target_addr_info_to_socketaddr() {
         let tai = TargetIpAddrInfo::IpPort(TargetIpPort {
-            ip: net::IpAddress::Ipv4(net::Ipv4Address { addr: [127, 0, 0, 1] }),
+            ip: fidl_ip!("127.0.0.1"),
             port: 8022,
             scope_id: 0,
         });
 
-        let sa = "127.0.0.1:8022".parse::<SocketAddr>().unwrap();
+        let sa = std_socket_addr!("127.0.0.1:8022");
 
         assert_eq!(target_addr_info_to_socketaddr(tai), sa);
 
-        let tai = TargetIpAddrInfo::Ip(TargetIp {
-            ip: net::IpAddress::Ipv4(net::Ipv4Address { addr: [127, 0, 0, 1] }),
-            scope_id: 0,
-        });
+        let tai = TargetIpAddrInfo::Ip(TargetIp { ip: fidl_ip!("127.0.0.1"), scope_id: 0 });
 
-        let sa = "127.0.0.1:0".parse::<SocketAddr>().unwrap();
+        let sa = std_socket_addr!("127.0.0.1:0");
+
+        assert_eq!(target_addr_info_to_socketaddr(tai), sa);
+
+        let tai =
+            TargetIpAddrInfo::IpPort(TargetIpPort { ip: fidl_ip!("::1"), port: 8022, scope_id: 0 });
+
+        let sa = std_socket_addr!("[::1]:8022");
+
+        assert_eq!(target_addr_info_to_socketaddr(tai), sa);
+
+        let tai = TargetIpAddrInfo::Ip(TargetIp { ip: fidl_ip!("fe80::1"), scope_id: 1 });
+
+        let sa = std_socket_addr!("[fe80::1%1]:0");
 
         assert_eq!(target_addr_info_to_socketaddr(tai), sa);
 
         let tai = TargetIpAddrInfo::IpPort(TargetIpPort {
-            ip: net::IpAddress::Ipv6(net::Ipv6Address {
-                addr: [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1],
-            }),
-            port: 8022,
-            scope_id: 0,
-        });
-
-        let sa = "[::1]:8022".parse::<SocketAddr>().unwrap();
-
-        assert_eq!(target_addr_info_to_socketaddr(tai), sa);
-
-        let tai = TargetIpAddrInfo::Ip(TargetIp {
-            ip: net::IpAddress::Ipv6(net::Ipv6Address {
-                addr: [0xfe, 0x80, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1],
-            }),
-            scope_id: 1,
-        });
-
-        let sa = "[fe80::1%1]:0".parse::<SocketAddr>().unwrap();
-
-        assert_eq!(target_addr_info_to_socketaddr(tai), sa);
-
-        let tai = TargetIpAddrInfo::IpPort(TargetIpPort {
-            ip: net::IpAddress::Ipv6(net::Ipv6Address {
-                addr: [0xfe, 0x80, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1],
-            }),
+            ip: fidl_ip!("fe80::1"),
             port: 8022,
             scope_id: 1,
         });
 
-        let sa = "[fe80::1%1]:8022".parse::<SocketAddr>().unwrap();
+        let sa = std_socket_addr!("[fe80::1%1]:8022");
 
         assert_eq!(target_addr_info_to_socketaddr(tai), sa);
     }
@@ -452,7 +436,7 @@ mod test {
         "Test Serial"
     )]
     #[test_case(
-        TargetInfoQuery::Addr(SocketAddr::new(IpAddr::V4(Ipv4Addr::new(192, 168, 1, 1)),8082)),
+        TargetInfoQuery::Addr(std_socket_addr!("192.168.1.1:8082")),
         Some("192.168.1.1:8082".to_string());
         "Test Addr"
     )]

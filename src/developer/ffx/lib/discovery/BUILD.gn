@@ -40,6 +40,7 @@ rustc_library("lib") {
 
   test_deps = [
     "//sdk/fidl/fuchsia.net:fuchsia.net_rust",
+    "//src/connectivity/lib/net-declare",
     "//src/developer/ffx/config:lib",
     "//src/lib/fuchsia",
     "//third_party/rust_crates:pretty_assertions",

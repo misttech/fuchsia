@@ -383,8 +383,8 @@ mod test {
     use super::*;
     use addr::TargetAddr;
     use manual_targets::watcher::ManualTarget;
+    use net_declare::std_socket_addr;
     use pretty_assertions::assert_eq;
-    use std::net::{IpAddr, Ipv4Addr, Ipv6Addr, SocketAddr, SocketAddrV6};
     use std::str::FromStr;
 
     #[test]
@@ -442,7 +442,7 @@ mod test {
             assert!(TargetHandle::try_from(info).is_err());
         }
         {
-            let socket = SocketAddr::new(IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1)), 8080);
+            let socket = std_socket_addr!("127.0.0.1:8080");
             let addr = TargetAddr::from(socket);
             let addr_info: ffx::TargetAddrInfo = addr.into();
             let info = ffx::TargetInfo {
@@ -460,7 +460,7 @@ mod test {
             );
         }
         {
-            let socket = SocketAddr::new(IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1)), 8080);
+            let socket = std_socket_addr!("127.0.0.1:8080");
             let addr = TargetIpAddr::from(socket);
             let addr_info: ffx::TargetAddrInfo = addr.into();
             let info = ffx::TargetInfo {
@@ -482,7 +482,7 @@ mod test {
             );
         }
         {
-            let socket = SocketAddr::new(IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1)), 8080);
+            let socket = std_socket_addr!("127.0.0.1:8080");
             let addr = TargetIpAddr::from(socket);
             let addr_info: ffx::TargetAddrInfo = addr.into();
             let info = ffx::TargetInfo {
@@ -504,7 +504,7 @@ mod test {
             );
         }
         {
-            let socket = SocketAddr::new(IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1)), 8080);
+            let socket = std_socket_addr!("127.0.0.1:8080");
             let addr = TargetAddr::from(socket);
             let addr_info: ffx::TargetAddrInfo = addr.into();
             let info = ffx::TargetInfo {
@@ -533,7 +533,7 @@ mod test {
         // This test may be for behavior that isn't intended to be supported. This is originally
         // to address (b/438248466) but this may be covering up a more specific issue.
 
-        let socket = SocketAddr::new(IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1)), 8080);
+        let socket = std_socket_addr!("127.0.0.1:8080");
         let addr = TargetIpAddr::from(socket);
         let target_addr = TargetAddr::from(socket);
         let addr_info: ffx::TargetAddrInfo = addr.into();
@@ -698,7 +698,7 @@ mod test {
             assert!(TargetEvent::try_from(mdns_event).is_err());
         }
         {
-            let socket = SocketAddr::new(IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1)), 8080);
+            let socket = std_socket_addr!("127.0.0.1:8080");
             let addr = TargetAddr::from(socket);
             let addr_info: ffx::TargetAddrInfo = addr.into();
             let info = ffx::TargetInfo {
@@ -717,7 +717,7 @@ mod test {
             );
         }
         {
-            let socket = SocketAddr::new(IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1)), 8080);
+            let socket = std_socket_addr!("127.0.0.1:8080");
             let addr = TargetAddr::from(socket);
             let addr_info: ffx::TargetAddrInfo = addr.into();
             let info = ffx::TargetInfo {
@@ -740,7 +740,7 @@ mod test {
             );
         }
         {
-            let socket = SocketAddr::new(IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1)), 8080);
+            let socket = std_socket_addr!("127.0.0.1:8080");
             let addr = TargetAddr::from(socket);
             let addr_info: ffx::TargetAddrInfo = addr.into();
             let info = ffx::TargetInfo {
@@ -759,7 +759,7 @@ mod test {
             );
         }
         {
-            let socket = SocketAddr::new(IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1)), 8080);
+            let socket = std_socket_addr!("127.0.0.1:8080");
             let addr = TargetAddr::from(socket);
             let addr_info: ffx::TargetAddrInfo = addr.into();
             let info = ffx::TargetInfo {
@@ -823,7 +823,7 @@ mod test {
     #[test]
     fn test_from_manual_target_event_for_target_event() -> Result<()> {
         {
-            let addr = SocketAddr::new(IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1)), 8080);
+            let addr = std_socket_addr!("127.0.0.1:8080");
             let lifetime = None;
             let manual_target_event = ManualTargetEvent::Discovered(
                 ManualTarget::new(addr, lifetime),
@@ -839,12 +839,7 @@ mod test {
             );
         }
         {
-            let addr = SocketAddr::V6(SocketAddrV6::new(
-                Ipv6Addr::new(0, 0, 0, 0, 0, 0, 0, 1),
-                8023,
-                0,
-                0,
-            ));
+            let addr = std_socket_addr!("[::1]:8032");
             let lifetime = None;
             let manual_target_event = ManualTargetEvent::Discovered(
                 ManualTarget::new(addr, lifetime),
@@ -853,14 +848,14 @@ mod test {
             assert_eq!(
                 TargetEvent::from(manual_target_event),
                 TargetEvent::Added(TargetHandle {
-                    node_name: Some("[::1]:8023".to_string()),
+                    node_name: Some("[::1]:8032".to_string()),
                     state: TargetState::Product { addrs: vec![addr.into()], serial: None },
                     manual: true,
                 })
             );
         }
         {
-            let addr = SocketAddr::new(IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1)), 8080);
+            let addr = std_socket_addr!("127.0.0.1:8080");
             let lifetime = None;
             let manual_target_event = ManualTargetEvent::Discovered(
                 ManualTarget::new(addr, lifetime),
@@ -879,7 +874,7 @@ mod test {
             );
         }
         {
-            let addr = SocketAddr::new(IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1)), 8080);
+            let addr = std_socket_addr!("127.0.0.1:8080");
             let lifetime = None;
             let manual_target_event = ManualTargetEvent::Lost(ManualTarget::new(addr, lifetime));
             assert_eq!(
