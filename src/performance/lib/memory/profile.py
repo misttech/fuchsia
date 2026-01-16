@@ -49,6 +49,7 @@ def capture(
                 "json",
                 "profile",
                 "memory",
+                "--buckets",
                 "--backend",
                 "memory_monitor_2",
             ],
