@@ -73,7 +73,7 @@ if (current_cpu == "arm64") {
     allow_eng_platform_bundle_use = true
     bazel_product_bundle_target = "//products/workbench:product_bundle_eng.vim3"
     bazel_product_image_target = "//products/workbench:assembly_eng.vim3"
-    bazel_recovery_image_target = "//products/zedboot:vim3"
+    bazel_recovery_image_target = "//products/zedboot:vim3_recovery"
     bazel_elf_sizes_target = "//products/workbench:elf_sizes.vim3"
     bazel_inputs_from_gn = [
       "//build/images/flash:esp.bazel_input",

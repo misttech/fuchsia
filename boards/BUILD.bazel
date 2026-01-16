@@ -36,6 +36,11 @@ alias(
     actual = "//boards/vim3:reduced_perf_variation",
 )
 
+alias(
+    name = "vim3_recovery",
+    actual = "//boards/vim3:vim3_recovery",
+)
+
 fuchsia_prebuilt_board_configuration(
     name = "riscv64",
     directory = "@gn_targets//boards/riscv64",

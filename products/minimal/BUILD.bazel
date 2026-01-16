@@ -100,7 +100,7 @@ fuchsia_product_bundle(
     main = ":image.vim3",
     product_bundle_name = "minimal.vim3",
     product_bundle_version = build_info_version,
-    recovery = "//products/zedboot:vim3",
+    recovery = "//products/zedboot:vim3_recovery",
     repository_keys = "//src/sys/pkg/repositories/devhost/keys",
     update_epoch = "1",
     update_version_file = "//build/info:version",

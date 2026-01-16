@@ -42,8 +42,7 @@ fuchsia_product_configuration(
     "x64_reduced_perf_variation",
     "arm64",
     "qemu-arm64",
-    "vim3",
-    "vim3_reduced_perf_variation",
+    "vim3_recovery",
     "riscv64",
 ]]
 
@@ -56,6 +55,6 @@ fuchsia_product_configuration(
 ) for board in [
     "x64",
     "arm64",
-    "vim3",
+    "vim3_recovery",
     "riscv64",
 ]]

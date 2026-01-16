@@ -56,7 +56,7 @@ fuchsia_product_bundle(
     main = ":assembly_eng.vim3",
     product_bundle_name = "workbench_eng.vim3",
     product_bundle_version = build_info_version,
-    recovery = "//products/zedboot:vim3",
+    recovery = "//products/zedboot:vim3_recovery",
     repository_keys = "//src/sys/pkg/repositories/devhost/keys",
     update_epoch = "1",
     update_version_file = "//build/info:version",

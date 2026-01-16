@@ -167,7 +167,7 @@ if (target_cpu == "arm64") {
     allow_eng_platform_bundle_use = true
     bazel_product_bundle_target = ":product_bundle.vim3"
     bazel_product_image_target = ":image.vim3"
-    bazel_recovery_image_target = "//products/zedboot:vim3"
+    bazel_recovery_image_target = "//products/zedboot:vim3_recovery"
     bazel_elf_sizes_target = ":elf_sizes.vim3"
     bazel_inputs_from_gn =
         common_bazel_inputs + [ "//boards/vim3:bazel_inputs" ]
@@ -179,8 +179,7 @@ if (target_cpu == "arm64") {
     allow_eng_platform_bundle_use = true
     bazel_product_bundle_target = ":product_bundle.vim3_reduced_perf_variation"
     bazel_product_image_target = ":image.vim3_reduced_perf_variation"
-    bazel_recovery_image_target =
-        "//products/zedboot:vim3_reduced_perf_variation"
+    bazel_recovery_image_target = "//products/zedboot:vim3_recovery"
     bazel_elf_sizes_target = ":elf_sizes.vim3_reduced_perf_variation"
     bazel_inputs_from_gn =
         common_bazel_inputs + [ "//boards/vim3:bazel_inputs" ]
@@ -218,7 +217,7 @@ if (target_cpu == "arm64") {
     allow_eng_platform_bundle_use = true
     bazel_product_bundle_target = ":product_bundle_with_netstack2.vim3"
     bazel_product_image_target = ":image_with_netstack2.vim3"
-    bazel_recovery_image_target = "//products/zedboot:vim3"
+    bazel_recovery_image_target = "//products/zedboot:vim3_recovery"
     bazel_elf_sizes_target = ":elf_sizes_with_netstack2.vim3"
     bazel_inputs_from_gn =
         common_bazel_inputs + [ "//boards/vim3:bazel_inputs" ]
@@ -233,8 +232,7 @@ if (target_cpu == "arm64") {
         ":product_bundle_with_netstack2.vim3_reduced_perf_variation"
     bazel_product_image_target =
         ":image_with_netstack2.vim3_reduced_perf_variation"
-    bazel_recovery_image_target =
-        "//products/zedboot:vim3_reduced_perf_variation"
+    bazel_recovery_image_target = "//products/zedboot:vim3_recovery"
     bazel_elf_sizes_target =
         ":elf_sizes_with_netstack2.vim3_reduced_perf_variation"
     bazel_inputs_from_gn =
