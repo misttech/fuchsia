@@ -490,6 +490,10 @@ template("python_mobly_test") {
   #
   # Define the Mobly host_test().
   #
+  _python_exe_data_target = "${_test_name}_python_exe_data"
+  host_test_data(_python_exe_data_target) {
+    sources = [ python_exe_src ]
+  }
   host_test(_test_name) {
     forward_variables_from(invoker,
                            [
@@ -500,10 +504,12 @@ template("python_mobly_test") {
                              "visibility",
                            ])
 
-    binary_path = python_exe_src
+    binary_path = get_label_info("//tools/mobly_test_parser", "root_out_dir") +
+                  "/mobly_test_parser"
 
     # Disable Python's output buffering when launching Mobly Driver.
     args = [
+             rebase_path(python_exe_src, root_build_dir),
              "-u",
              rebase_path("${_md_test_data_dir}/test_data/mobly_driver.pyz",
                          root_build_dir),
@@ -515,9 +521,11 @@ template("python_mobly_test") {
     deps =
         [
           ":${_mobly_test_data_target}",
+          ":${_python_exe_data_target}",
           ":${_ssh_binary_test_data_target}",
           "//build/python:interpreter",
           "//src/testing/end_to_end/mobly_driver:mobly_driver_test_data_target",
+          "//tools/mobly_test_parser",
         ] + _additional_deps
     if (defined(invoker.test_data_deps)) {
       deps += invoker.test_data_deps
@@ -678,10 +686,12 @@ template("python_mobly_test") {
                                "timeout_secs",
                              ])
 
-      binary_path = python_exe_src
+      binary_path = get_label_info("//tools/mobly_test_parser",
+                                   "root_out_dir") + "/mobly_test_parser"
 
       # Disable Python's output buffering when launching Mobly Driver.
       args = [
+               rebase_path(python_exe_src, root_build_dir),
                "-u",
                rebase_path("${_md_test_data_dir}/test_data/mobly_driver.pyz",
                            root_build_dir),
@@ -694,9 +704,11 @@ template("python_mobly_test") {
 
       deps = [
                ":${_hermetic_mobly_test_data_target}",
+               ":${_python_exe_data_target}",
                ":${_ssh_binary_test_data_target}",
                "//build/python:interpreter",
                "//src/testing/end_to_end/mobly_driver:mobly_driver_test_data_target",
+               "//tools/mobly_test_parser",
              ] + _additional_deps
       if (defined(invoker.test_data_deps)) {
         deps += invoker.test_data_deps
