@@ -93,6 +93,7 @@ if (is_host) {
 
     include_dirs = [
       "//third_party/android/platform/system/tools/aidl",
+      "//third_party/android/platform/system/tools/aidl/include",
       "generated-files",
       "//third_party/googletest/src/googletest/include",
       "//third_party/googletest/src/googletest",
