@@ -237,27 +237,29 @@ async fn ns_persist_tags_under_size_limits<N: Netstack>(name: &str) {
 async fn ns_persist_root_inspect_nodes_for_selectors<N: Netstack>(name: &str) {
     test_persistence::<N, _>(name, |inspect_payload, _tag, tag_config| {
         for selector in tag_config.selectors.iter() {
-            // Retrieve the root inspect node name from the diagnostics selector.
-            let root_node_name = extract_node_subtree_selector(selector)
-                .split("/")
-                .next()
-                .expect("empty node subtree selector");
+            // Retrieve the root Inspect node from the diagnostics selector.
+            let root_node = match &selector.tree_selector {
+                Some(fidl_fuchsia_diagnostics::TreeSelector::SubtreeSelector(
+                    fidl_fuchsia_diagnostics::SubtreeSelector { node_path },
+                )) => node_path.first().unwrap(),
+                Some(fidl_fuchsia_diagnostics::TreeSelector::PropertySelector(
+                    fidl_fuchsia_diagnostics::PropertySelector { node_path, target_properties: _ },
+                )) => node_path.first().unwrap(),
+                None => panic!("empty TreeSelector"),
+                _ => panic!("unknown TreeSelector variant {:?}", selector.tree_selector),
+            };
+
+            let root_node_name = match root_node {
+                fidl_fuchsia_diagnostics::StringSelector::StringPattern(s) => s,
+                fidl_fuchsia_diagnostics::StringSelector::ExactMatch(s) => s,
+                _ => panic!("unknown StringSelector variant {:?}", root_node),
+            };
 
             // Assert payload has the node name specified in the selector.
-            assert_eq!(
-                root_node_name,
-                &selectors::sanitize_string_for_selectors(&inspect_payload.name)
-            );
+            assert_eq!(root_node_name, &inspect_payload.name);
         }
     })
     .await
-}
-
-fn extract_node_subtree_selector(selector: &str) -> &str {
-    // Raw selector strings have the schema
-    // <type>:<component>:<node_subtree>:<property>. Split the selector into its
-    // constituent parts and skip to the node subtree selector.
-    selector.split(":").skip(2).next().expect("raw selector does not follow schema")
 }
 
 fn persistence_tag_to_ns2_diagnostics_dir(tag: &persistence_config::Tag) -> Cow<'static, str> {
@@ -312,12 +314,25 @@ where
             // <type>:<component>:<subtree>:<property>. Extract the subtree portion
             // of the selector, and combine it with a test realm specific component
             // selector.
-            .map(|v| {
-                selectors::parse_selector::<selectors::VerboseError>(&format!(
-                    "{SANDBOX_MONIKER}/{realm_moniker}/{NETSTACK_MONIKER}:{}",
-                    extract_node_subtree_selector(v),
-                ))
-                .unwrap()
+            .map(|selector| {
+                fidl_fuchsia_diagnostics::Selector {
+                    component_selector: Some(fidl_fuchsia_diagnostics::ComponentSelector {
+                        moniker_segments: Some(vec![
+                            fidl_fuchsia_diagnostics::StringSelector::ExactMatch(
+                                SANDBOX_MONIKER.to_string(),
+                            ),
+                            fidl_fuchsia_diagnostics::StringSelector::ExactMatch(
+                                realm_moniker.to_string(),
+                            ),
+                            fidl_fuchsia_diagnostics::StringSelector::ExactMatch(
+                                NETSTACK_MONIKER.to_string(),
+                            ),
+                        ]),
+                        ..Default::default()
+                    }),
+                    ..selector.clone().into()
+                }
+                .into()
             });
 
         let inspect_payload = match N::VERSION {

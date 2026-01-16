@@ -13,7 +13,6 @@ rustc_library("inspect-fetcher") {
   visibility = [
     "//src/diagnostics/detect/*",
     "//src/diagnostics/lib/inspect-fetcher/*",
-    "//src/diagnostics/persistence/*",
   ]
 
   deps = [

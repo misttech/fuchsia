@@ -34,6 +34,7 @@ rustc_test("integration-bin") {
     "//src/sys/lib/cm_rust",
     "//src/sys/lib/component-events",
     "//third_party/rust_crates:anyhow",
+    "//third_party/rust_crates:assert_matches",
     "//third_party/rust_crates:futures",
     "//third_party/rust_crates:log",
     "//third_party/rust_crates:pretty_assertions",
@@ -52,7 +53,14 @@ rustc_test("integration-bin") {
     "test_topology.rs",
   ]
 
-  inputs = [ "test_data/config/test_config.persist" ]
+  inputs = [
+    "test_data/config/empty.persist",
+    "test_data/config/never_fetch.persist",
+    "test_data/config/persist_across_boot.persist",
+    "test_data/config/single_tag.persist",
+    "test_data/config/too_big.persist",
+    "test_data/config/two_tags.persist",
+  ]
 
   configs += [ "//build/config/rust/lints:clippy_warn_all" ]
 }
@@ -60,11 +68,6 @@ rustc_test("integration-bin") {
 fuchsia_unittest_component("persistence-integration-test") {
   manifest = "meta/integration-test.cml"
   deps = [ ":integration-bin" ]
-}
-
-fuchsia_component("test_root") {
-  testonly = true
-  manifest = "meta/test_root.cml"
 }
 
 # Rules defining the Persistence component.
@@ -86,7 +89,6 @@ fuchsia_test_package("persistence-integration-tests") {
   ]
   deps = [
     ":persistence-component-for-test",
-    ":test_root",
     "//src/diagnostics/sampler/tests/test_component:single_counter_test_component",
     "//src/sys/component_manager:component-manager-realm-builder-debug-cmp",
   ]

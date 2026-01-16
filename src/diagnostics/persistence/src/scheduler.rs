@@ -2,261 +2,234 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use crate::fetcher;
-use fuchsia_sync::Mutex;
+use crate::fetcher::{PersistenceData, ServiceData, TagData};
+use crate::file_handler::{self, Timestamps};
+use anyhow::{Context, anyhow, bail};
+use fidl::endpoints::ControlHandle;
+use futures::{StreamExt, TryStreamExt};
+use hashbrown::HashMap;
+use itertools::Itertools;
 use log::{error, warn};
-use persistence_config::{Config, ServiceName, Tag, TagConfig};
-use std::collections::{BTreeMap, HashMap};
+use persistence_config::{Config, ServiceName, Tag};
+use std::collections::VecDeque;
 use std::sync::Arc;
-use {
-    fidl_fuchsia_diagnostics as fdiagnostics, fidl_fuchsia_diagnostics_persist as fpersist,
-    fuchsia_async as fasync,
-};
+use {fidl_fuchsia_diagnostics as fdiagnostics, fuchsia_async as fasync};
 
 // This contains the logic to decide which tags to fetch at what times. It contains the state of
 // each tag (when last fetched, whether currently queued). When a request arrives via FIDL, it's
 // sent here and results in requests queued to the Fetcher.
 
-// Selectors for Inspect data must start with this exact string.
-const INSPECT_PREFIX: &str = "INSPECT:";
-
 /// Tracks when each tag was persisted last, as necessary for implementing
 /// debounce on [`TagConfig`]'s `min_seconds_between_fetch`.
 #[derive(Clone)]
-pub(crate) struct Scheduler {
-    scope: fasync::ScopeHandle,
-
-    /// Registry of all tags with additional metadata necessary for scheduling
-    /// fetches from Inspect.
-    ///
-    /// TODO(https://fxbug.dev/437989316): Save memory using Vec instead.
-    service_state: Arc<HashMap<ServiceName, HashMap<Tag, TagState>>>,
-
-    /// Collection of which tags are scheduled to be fetched from Inspect.
-    fetch_schedule: Arc<Mutex<BTreeMap<zx::MonotonicInstant, ServiceTags>>>,
-}
-
-type ServiceTags = Vec<(ServiceName, Tag)>;
-
-/// Compilation of [`TagConfig`] with additional tracking when this tag was last
-/// persisted.
-pub(crate) struct TagState {
-    pub selectors: Vec<fdiagnostics::Selector>,
-    pub max_bytes: usize,
-    backoff: zx::MonotonicDuration,
-    state: Mutex<TagFetchState>,
-}
-
-impl TryFrom<&TagConfig> for TagState {
-    type Error = selectors::Error;
-    fn try_from(value: &TagConfig) -> Result<Self, Self::Error> {
-        Ok(Self {
-            selectors: value
-                .selectors
-                .iter()
-                .filter_map(strip_inspect_prefix)
-                .map(selectors::parse_verbose)
-                .collect::<Result<Vec<_>, _>>()?,
-            max_bytes: value.max_bytes,
-            backoff: zx::MonotonicDuration::from_seconds(value.min_seconds_between_fetch),
-            state: Mutex::new(TagFetchState::ReadyAfter(zx::MonotonicInstant::INFINITE_PAST)),
-        })
-    }
-}
-
-fn strip_inspect_prefix(selector: &String) -> Option<&str> {
-    if &selector[..INSPECT_PREFIX.len()] == INSPECT_PREFIX {
-        Some(&selector[INSPECT_PREFIX.len()..])
-    } else {
-        warn!("Selector does not begin with \"INSPECT:\": {selector}");
-        None
-    }
-}
+pub(crate) struct Scheduler;
 
 /// Scheduler error.
 #[derive(thiserror::Error, Debug)]
 pub(crate) enum Error {
-    #[error("unknown service name \"{0}\"")]
-    UnknownService(ServiceName),
-    #[error("unknown tag name \"{tag}\" for service \"{service}\"")]
-    UnknownTag { service: ServiceName, tag: Tag },
-    #[error("invalid tag name \"{0}\" must match [a-z][a-z-]*")]
-    InvalidTag(String),
     #[error("invalid selector")]
     InvalidSelector(#[from] selectors::Error),
-}
-
-impl From<Error> for fpersist::PersistResult {
-    fn from(value: Error) -> Self {
-        match value {
-            Error::UnknownService(_) => Self::BadName,
-            Error::UnknownTag { .. } => Self::BadName,
-            Error::InvalidTag(_) => Self::BadName,
-            Error::InvalidSelector(_) => Self::InternalError,
-        }
-    }
+    #[error("fidl error: {0:?}")]
+    Fidl(#[from] fidl::Error),
+    #[error("unable to configure Archivist sampling: {0:?}")]
+    UnableToSample(#[from] anyhow::Error),
 }
 
 impl Scheduler {
-    pub(crate) fn new(scope: fasync::ScopeHandle, config: &Config) -> Result<Self, Error> {
-        let mut service_state = HashMap::with_capacity(config.len());
-        for (service, tags) in config {
-            let mut tag_state = HashMap::with_capacity(tags.len());
-            for (tag, tag_config) in tags {
-                tag_state.insert(tag.clone(), tag_config.try_into()?);
-            }
-            service_state.insert(service.clone(), tag_state);
+    pub(crate) async fn spawn(scope: fasync::ScopeHandle, config: &Config) -> Result<(), Error> {
+        if config.is_empty() {
+            warn!("No config specified; skipping subscription to fuchsia.diagnostics.Sample");
+            return Ok(());
         }
-        Ok(Scheduler {
-            scope,
-            service_state: Arc::new(service_state),
-            fetch_schedule: Default::default(),
-        })
-    }
 
-    /// Gets a service name and a list of valid tags, and queues any fetches that are not already
-    /// pending. Updates the last-fetched time on any tag it queues, setting it equal to the later
-    /// of the current time and the time the fetch becomes possible.
-    pub(crate) fn schedule(
-        &self,
-        service: &ServiceName,
-        tags: impl IntoIterator<Item = String>,
-    ) -> Vec<Result<(), Error>> {
-        // Every tag we process should use the same Now
-        let now = zx::MonotonicInstant::get();
-        let Some(tag_states) = self.service_state.get(service) else {
-            return tags.into_iter().map(|_| Err(Error::UnknownService(service.clone()))).collect();
-        };
-
-        // Filter tags that need to be fetch now from those that need to be
-        // fetched later. Group later tags by their next_fetch time using a
-        // b-tree, making it efficient to iterate over these batches in
-        // order of next_fetch time.
-        let (response, now_tags) = {
-            let mut now_tags = Vec::new();
-            let mut schedule = self.fetch_schedule.lock();
-            let response: Vec<Result<(), Error>> = tags
-                .into_iter()
-                .map(|tag_raw| {
-                    let tag = Tag::new(tag_raw.clone()).map_err(|_| Error::InvalidTag(tag_raw))?;
-                    tag_states
-                        .get(&tag)
-                        .ok_or_else(|| Error::UnknownTag {
-                            service: service.clone(),
-                            tag: tag.clone(),
-                        })
-                        .map(|tag_state| {
-                            let mut state = tag_state.state.lock();
-                            match *state {
-                                TagFetchState::ReadyAfter(wait_until) => {
-                                    if wait_until <= now {
-                                        // Debounce period has elapsed; fetch this tag immediately.
-                                        now_tags.push(tag);
-                                        *state = TagFetchState::ReadyAfter(now + tag_state.backoff);
-                                    } else {
-                                        // Debounce is still active; schedule this tag for later fetch.
-                                        schedule
-                                            .entry(wait_until)
-                                            .or_default()
-                                            .push((service.clone(), tag));
-                                        *state = TagFetchState::Scheduled;
-                                    }
-                                }
-                                TagFetchState::Scheduled => {
-                                    // This tag has already been scheduled; no action required.
-                                }
-                            }
-                        })
+        let sample_datums = config
+            .values()
+            .flat_map(|tags| {
+                tags.values().flat_map(|tag| {
+                    tag.selectors
+                        .clone()
+                        .into_iter()
+                        .map(|selector| (selector, tag.min_seconds_between_fetch))
                 })
-                .collect();
-            (response, now_tags)
-        };
+            })
+            // Convert to SampleDatums.
+            .map(|(selector, min_seconds_between_fetch)| fdiagnostics::SampleDatum {
+                selector: Some(fdiagnostics::SelectorArgument::StructuredSelector(selector)),
+                strategy: Some(fdiagnostics::SampleStrategy::OnDiff),
+                interval_secs: Some(min_seconds_between_fetch),
+                ..Default::default()
+            })
+            .collect::<Vec<_>>();
 
-        if !now_tags.is_empty() {
-            let service_state = self.service_state.clone();
-            let service = service.clone();
-            self.scope.spawn(async move {
-                let pending = [(&service, &now_tags)];
-                if let Err(e) = fetcher::fetch_and_save(&service_state, pending).await {
-                    error!("Failed to fetch inspect: {e:?}");
-                }
-            });
+        if sample_datums.is_empty() {
+            warn!("No tags configured; skipping subscription to fuchsia.diagnostics.Sample");
+            return Ok(());
         }
 
-        self.schedule_next_batch();
+        let sample =
+            fuchsia_component::client::connect_to_protocol::<fdiagnostics::SampleMarker>()?;
 
-        response
-    }
+        for chunk in sample_datums.chunks(fdiagnostics::MAX_SAMPLE_PARAMETERS_PER_SET as usize) {
+            sample.set(&fdiagnostics::SampleParameters {
+                data: Some(chunk.to_vec()),
+                ..Default::default()
+            })?;
+        }
 
-    /// Spawn a task to check if there are any pending fetches.
-    fn schedule_next_batch(&self) {
-        let Some(next_fetch) = self.fetch_schedule.lock().first_entry().map(|e| *e.key()) else {
-            // No pending fetches; nothing to do.
-            return;
-        };
+        let (client_end, sample_sink_stream) =
+            fidl::endpoints::create_request_stream::<fdiagnostics::SampleSinkMarker>();
 
-        // Schedule a task to fetch them all at the same time.
-        let schedule = self.fetch_schedule.clone();
-        let service_state = self.service_state.clone();
-        self.scope.spawn(async move {
-            let wait = next_fetch - zx::MonotonicInstant::get();
-            fasync::Timer::new(wait).await;
+        // Start the SampleSink server before committing Sample configuration.
+        // Dropping the JoinHandle will detach it.
+        let config = config.clone();
+        scope.spawn(async move {
+            let lookup = config
+                .into_iter()
+                .flat_map(|(service, tags)| {
+                    tags.into_iter().map(move |(tag, config)| QuickTagInfo {
+                        service: service.clone(),
+                        tag,
+                        max_bytes: config.max_bytes,
+                        selectors: config.selectors,
+                    })
+                })
+                .collect::<Vec<_>>();
 
-            // Collect pending tags to fetch from Inspect.
-            let pending = {
-                let mut pending: HashMap<ServiceName, Vec<Tag>> = HashMap::new();
-                let mut schedule = schedule.lock();
-                let now = zx::MonotonicInstant::get();
-                while let Some(entry) = schedule.first_entry() {
-                    if *entry.key() > now {
-                        break;
-                    }
-                    for (service, tag) in entry.remove().into_iter() {
-                        let TagState { state, backoff, .. } = service_state
-                            .get(&service)
-                            // SAFETY: Config cannot change during runtime.
-                            .expect("Missing service")
-                            .get(&tag)
-                            // SAFETY: Config cannot change during runtime.
-                            .expect("Missing tag");
-                        *state.lock() = TagFetchState::ReadyAfter(now + *backoff);
-                        pending.entry(service).or_default().push(tag);
-                    }
-                }
-                pending
-            };
-
-            if pending.is_empty() {
-                return;
-            }
-
-            if let Err(e) = fetcher::fetch_and_save(&service_state, &pending).await {
-                error!("Failed to fetch pending tags from Inspect: {e:?}");
+            if let Err(e) = Self::handle_sample_sink(sample_sink_stream, &lookup).await {
+                error!("Error serving SampleSink: {e:?}");
             }
         });
+
+        sample
+            .commit(client_end)
+            .await?
+            .map_err(|e| anyhow!("failed to commit fuchsia.diagnostics.Sample config: {e:?}"))?;
+
+        Ok(())
+    }
+
+    async fn handle_sample_sink(
+        mut stream: fdiagnostics::SampleSinkRequestStream,
+        lookup: &Vec<QuickTagInfo>,
+    ) -> Result<(), anyhow::Error> {
+        while let Some(req) =
+            stream.try_next().await.context("FIDL error receiving SampleSinkRequest")?
+        {
+            match req {
+                fdiagnostics::SampleSinkRequest::OnSampleReadied { event, control_handle } => {
+                    match event {
+                        fdiagnostics::SampleSinkResult::Ready(fdiagnostics::SampleReady {
+                            batch_iter,
+                            seconds_since_start: _,
+                            __source_breaking: _,
+                        }) => {
+                            if let Some(iter) = batch_iter {
+                                if let Err(e) = Scheduler::handle_sample_ready(iter, lookup).await {
+                                    warn!("Failed to process Sample: {e:?}");
+                                }
+                            } else {
+                                control_handle.shutdown();
+                                bail!("expected BatchIterator, got None");
+                            }
+                        }
+                        fdiagnostics::SampleSinkResult::Error(err) => {
+                            control_handle.shutdown();
+                            bail!("failed receiving samples: {err:?}")
+                        }
+                        fdiagnostics::SampleSinkResult::__SourceBreaking { unknown_ordinal } => {
+                            control_handle.shutdown();
+                            bail!("unknown ordinal: {unknown_ordinal}")
+                        }
+                    }
+                }
+                fdiagnostics::SampleSinkRequest::_UnknownMethod {
+                    ordinal,
+                    control_handle,
+                    method_type,
+                    ..
+                } => {
+                    control_handle.shutdown();
+                    bail!("unknown ordinal {ordinal} (method type {method_type:?})");
+                }
+            }
+        }
+        Ok(())
+    }
+
+    async fn handle_sample_ready(
+        iter: fidl::endpoints::ClientEnd<fdiagnostics::BatchIteratorMarker>,
+        lookup: &Vec<QuickTagInfo>,
+    ) -> Result<(), anyhow::Error> {
+        let timestamps = file_handler::Timestamps {
+            last_sample_boot: zx::BootInstant::get(),
+            last_sample_utc: fuchsia_runtime::utc_time(),
+        };
+
+        let proxy = Arc::new(iter.into_proxy());
+        let (snapshot, errs): (Vec<_>, Vec<_>) =
+            diagnostics_reader::drain_batch_iterator::<diagnostics_data::InspectData>(proxy)
+                .collect::<Vec<_>>()
+                .await
+                .into_iter()
+                .partition_result();
+        if !errs.is_empty() {
+            if snapshot.is_empty() {
+                bail!("failed reading all Inspect data: {errs:?}")
+            } else {
+                warn!("failed reading some Inspect data: {errs:?}")
+            }
+        }
+
+        let mut current_data = file_handler::current_data()?.unwrap_or_default();
+
+        for tag_info in lookup {
+            for data in snapshot.clone() {
+                match data.filter(&tag_info.selectors) {
+                    Ok(Some(data)) => {
+                        modify_tag_data(&mut current_data, tag_info, &timestamps, |tag_data| {
+                            tag_data.merge(timestamps.clone(), data)
+                        })
+                    }
+                    Ok(None) => {}
+                    Err(e) => {
+                        modify_tag_data(&mut current_data, tag_info, &timestamps, |tag_data| {
+                            tag_data.add_error(e.to_string())
+                        })
+                    }
+                }
+            }
+        }
+
+        file_handler::write_current_data(&current_data)
+            .context("Failed to write current data to disk")
     }
 }
 
-/// Tracks when a tag is ready to be fetched again.
-enum TagFetchState {
-    /// Tag is ready to be fetched after this time.
-    ReadyAfter(zx::MonotonicInstant),
-    /// Tag is scheduled to be fetched.
-    Scheduled,
+fn modify_tag_data<'a>(
+    data: &'a mut PersistenceData,
+    lookup: &'a QuickTagInfo,
+    timestamps: &Timestamps,
+    modify_fn: impl FnOnce(&mut TagData),
+) {
+    let QuickTagInfo { service, tag, max_bytes, selectors } = lookup;
+
+    let service_data = data.entry_ref(service).or_insert_with(ServiceData::default);
+    let tag_data = service_data.entry_ref(tag).or_insert_with(|| TagData {
+        max_bytes: *max_bytes,
+        total_bytes: 0,
+        timestamps: timestamps.clone(),
+        selectors: selectors.clone(),
+        data: HashMap::new(),
+        errors: VecDeque::new(),
+    });
+
+    modify_fn(tag_data)
 }
 
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[fuchsia::test]
-    fn test_selector_stripping() {
-        assert_eq!(
-            ["INSPECT:foo".to_string(), "oops:bar".to_string(), "INSPECT:baz".to_string()]
-                .iter()
-                .filter_map(strip_inspect_prefix)
-                .collect::<Vec<_>>(),
-            ["foo".to_string(), "baz".to_string()]
-        )
-    }
+/// Minimal set of information to perform quick lookups of tags.
+struct QuickTagInfo {
+    service: ServiceName,
+    tag: Tag,
+    max_bytes: usize,
+    selectors: Vec<fidl_fuchsia_diagnostics::Selector>,
 }

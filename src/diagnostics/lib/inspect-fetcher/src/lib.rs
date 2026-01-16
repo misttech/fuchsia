@@ -60,15 +60,19 @@ impl InspectFetcher {
     }
 
     fn process_selectors(selectors: Vec<String>) -> Result<Vec<String>, Error> {
-        let get_inspect = |s: String| -> Option<std::string::String> {
-            if &s[..INSPECT_PREFIX.len()] == INSPECT_PREFIX {
-                Some(s[INSPECT_PREFIX.len()..].to_string())
-            } else {
-                warn!("All selectors should begin with 'INSPECT:' - '{}'", s);
-                None
-            }
-        };
-        Ok(selectors.into_iter().filter_map(get_inspect).collect())
+        Ok(selectors.into_iter().filter_map(remove_inspect_prefix).collect())
+    }
+}
+
+/// Remove the "INSPECT:" prefix from selectors. Returns None if the Inspect
+/// prefix is not found.
+pub fn remove_inspect_prefix(mut s: String) -> Option<String> {
+    if s.len() >= INSPECT_PREFIX.len() && s[..INSPECT_PREFIX.len()] == *INSPECT_PREFIX {
+        s.replace_range(0..INSPECT_PREFIX.len(), "");
+        Some(s)
+    } else {
+        warn!("All Inspect selectors should begin with 'INSPECT:' - '{}'", s);
+        None
     }
 }
 

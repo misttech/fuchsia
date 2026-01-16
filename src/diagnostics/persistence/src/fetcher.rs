@@ -2,437 +2,361 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use crate::file_handler::{self, PersistData, PersistPayload, PersistSchema, Timestamps};
-use crate::scheduler::TagState;
-use anyhow::{Context, Error, bail};
-use diagnostics_data::{Data, DiagnosticsHierarchy, ExtendedMoniker, Inspect};
-use diagnostics_reader::{ArchiveReader, RetryConfig};
-use fidl_fuchsia_diagnostics as fdiagnostics;
-use log::*;
+use crate::file_handler::Timestamps;
+use diagnostics_data::{Data, Inspect};
+use hashbrown::HashMap;
 use persistence_config::{ServiceName, Tag};
-use serde::ser::SerializeMap;
-use serde::{Serialize, Serializer};
-use serde_json::{Map, Value};
-use std::collections::HashMap;
-use std::collections::hash_map::Entry;
+use serde::{Deserialize, Deserializer, Serialize, Serializer};
+use std::collections::VecDeque;
+use std::io;
+use std::ops::{Deref, DerefMut};
 
-// The capability name for the Inspect reader
-const INSPECT_SERVICE_PATH: &str = "/svc/fuchsia.diagnostics.ArchiveAccessor.feedback";
+/// Maximum number of errors to keep for each tag.
+pub(crate) const MAX_TAG_ERRORS: usize = 5;
+/// Maximum string length of an error stored on disk.
+const MAX_ERROR_LEN: usize = 50;
 
-fn extract_json_map(hierarchy: DiagnosticsHierarchy) -> Option<Map<String, Value>> {
-    let Ok(Value::Object(mut map)) = serde_json::to_value(hierarchy) else {
-        return None;
-    };
-    if map.len() != 1 || !map.contains_key("root") {
-        return Some(map);
-    }
-    if let Value::Object(map) = map.remove("root").unwrap() {
-        return Some(map);
-    }
-    None
-}
+#[derive(Default, Debug, Serialize, Deserialize)]
+pub(crate) struct PersistenceData(pub HashMap<ServiceName, ServiceData>);
 
-#[derive(Debug, Eq, PartialEq)]
-struct DataMap(HashMap<ExtendedMoniker, Value>);
-
-impl Serialize for DataMap {
-    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
-    where
-        S: Serializer,
-    {
-        let mut map = serializer.serialize_map(Some(self.0.len()))?;
-        for (moniker, value) in &self.0 {
-            map.serialize_entry(&moniker.to_string(), &value)?;
-        }
-        map.end()
-    }
-}
-
-impl std::ops::Deref for DataMap {
-    type Target = HashMap<ExtendedMoniker, Value>;
+impl Deref for PersistenceData {
+    type Target = HashMap<ServiceName, ServiceData>;
 
     fn deref(&self) -> &Self::Target {
         &self.0
     }
 }
 
-fn condensed_map_of_data(items: impl IntoIterator<Item = Data<Inspect>>) -> DataMap {
-    DataMap(items.into_iter().fold(HashMap::new(), |mut entries, item| {
-        let Data { payload, moniker, .. } = item;
-        if let Some(new_map) = payload.and_then(extract_json_map) {
-            match entries.entry(moniker) {
-                Entry::Occupied(mut o) => {
-                    let existing_payload = o.get_mut();
-                    if let Value::Object(existing_payload_map) = existing_payload {
-                        existing_payload_map.extend(new_map);
-                    }
+impl DerefMut for PersistenceData {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        &mut self.0
+    }
+}
+
+#[derive(Default, Debug, Serialize, Deserialize)]
+pub(crate) struct ServiceData(pub HashMap<Tag, TagData>);
+
+impl Deref for ServiceData {
+    type Target = HashMap<Tag, TagData>;
+
+    fn deref(&self) -> &Self::Target {
+        &self.0
+    }
+}
+
+impl DerefMut for ServiceData {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        &mut self.0
+    }
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+pub(crate) struct TagData {
+    pub data: HashMap<ExtendedMoniker, Data<Inspect>>,
+    pub errors: VecDeque<String>,
+    pub timestamps: Timestamps,
+    pub total_bytes: usize,
+    pub max_bytes: usize,
+    #[serde(with = "selectors_ext::inspect")]
+    pub selectors: Vec<fidl_fuchsia_diagnostics::Selector>,
+}
+
+impl TagData {
+    pub fn merge(&mut self, timestamps: Timestamps, data: Data<Inspect>) {
+        if self.total_bytes > self.max_bytes {
+            // Merging is an additive operation and this tag already went over
+            // its size quota. Do nothing.
+            return;
+        }
+
+        self.timestamps.merge(timestamps);
+
+        let moniker = ExtendedMoniker(data.moniker.clone());
+        if let Some(existing) = self.data.get_mut(&moniker) {
+            existing.merge(data);
+        } else {
+            self.data.insert(moniker, data);
+        }
+
+        self.calculate_total_bytes();
+    }
+
+    fn calculate_total_bytes(&mut self) {
+        self.total_bytes = 0;
+
+        for data in self.data.values() {
+            let data_len = data
+                .payload
+                .as_ref()
+                .and_then(|d| if d.name == "root" { d.children.first() } else { Some(d) })
+                .map(|d| {
+                    let mut counter = ByteCounter::default();
+                    serde_json::to_writer(&mut counter, d).map(|()| counter.count)
+                })
+                .unwrap_or(Ok(0));
+
+            self.total_bytes += match data_len {
+                Ok(len) => len,
+                Err(e) => {
+                    self.data.clear();
+                    self.add_error(format!("Unexpected serialize error: {e}"));
+                    return;
                 }
-                Entry::Vacant(v) => {
-                    v.insert(Value::Object(new_map));
-                }
-            }
+            };
         }
-        entries
-    }))
-}
 
-fn save_data_for_tag(
-    inspect_data: Vec<Data<Inspect>>,
-    timestamps: Timestamps,
-    tag: &Tag,
-    selectors: &[fdiagnostics::Selector],
-    max_bytes: usize,
-) -> PersistSchema {
-    let mut filtered_datas = vec![];
-    for data in inspect_data {
-        match data.filter(selectors) {
-            Ok(Some(data)) => filtered_datas.push(data),
-            Ok(None) => {}
-            Err(e) => return PersistSchema::error(timestamps, format!("Filter error: {e}")),
+        if self.total_bytes > self.max_bytes {
+            self.data.clear();
+            self.add_error(format!(
+                "Data too big: {} > max length {}",
+                self.total_bytes, self.max_bytes
+            ));
         }
     }
 
-    if filtered_datas.is_empty() {
-        return PersistSchema::error(timestamps, format!("No data available for tag '{tag}'"));
-    }
-    // We may have multiple entries with the same moniker. Fold those together into a single entry.
-    let entries = condensed_map_of_data(filtered_datas);
-    let data_length = match serde_json::to_string(&entries) {
-        Ok(string) => string.len(),
-        Err(e) => {
-            return PersistSchema::error(timestamps, format!("Unexpected serialize error: {e}"));
-        }
-    };
-    if data_length > max_bytes {
-        let error_description = format!("Data too big: {data_length} > max length {max_bytes}");
-        return PersistSchema::error(timestamps, error_description);
-    }
-    PersistSchema {
-        timestamps,
-        payload: PersistPayload::Data(PersistData { data_length, entries: entries.0 }),
+    /// Add an error to the queue with safeguards to prevent error spam from
+    /// filling up the disk.
+    pub fn add_error(&mut self, mut e: String) {
+        e.truncate(MAX_ERROR_LEN);
+        self.errors.push_front(e);
+        self.errors.truncate(MAX_TAG_ERRORS);
     }
 }
 
-fn utc_now() -> i64 {
-    let now_utc = chrono::prelude::Utc::now(); // Consider using SystemTime::now()?
-    now_utc.timestamp() * 1_000_000_000 + now_utc.timestamp_subsec_nanos() as i64
+#[derive(Eq, Ord, PartialOrd, PartialEq, Debug, Clone, Hash)]
+pub(crate) struct ExtendedMoniker(diagnostics_data::ExtendedMoniker);
+
+impl From<diagnostics_data::ExtendedMoniker> for ExtendedMoniker {
+    fn from(value: diagnostics_data::ExtendedMoniker) -> Self {
+        Self(value)
+    }
 }
 
-pub(crate) async fn fetch_and_save<'a, P>(
-    services_state: &'a HashMap<ServiceName, HashMap<Tag, TagState>>,
-    pending: P,
-) -> Result<(), Error>
-where
-    P: IntoIterator<Item = (&'a ServiceName, &'a Vec<Tag>)>,
-    P::IntoIter: Clone,
-{
-    let pending_services = pending.into_iter().filter_map(|(service, tags)| {
-        services_state
-            .get(service)
-            .or_else(|| {
-                warn!("Skipping fetch request for unknown service \"{service}\"");
-                None
-            })
-            .map(move |service_state| {
-                let tag_states = tags.iter().filter_map(move |tag| {
-                    service_state.get(tag).or_else(|| {
-                        warn!("Skipping fetch request for unknown tag \"{tag}\" (service \"{service}\")");
-                        None
-                    }).map(|state| (tag, state))
-                });
-                (service, tag_states)
-            })
-    });
+impl Deref for ExtendedMoniker {
+    type Target = diagnostics_data::ExtendedMoniker;
 
-    let selectors: Vec<fdiagnostics::Selector> = pending_services
-        .clone()
-        .flat_map(|(_, tags)| tags)
-        .flat_map(|(_, tag_state)| tag_state.selectors.clone())
-        // TODO(https://fxbug.dev/438817180): Use `.peekable()` to avoid unnecessary allocations.
-        .collect();
-
-    if selectors.is_empty() {
-        bail!("Nothing to fetch! This shouldn't ever happen; please file a bug");
+    fn deref(&self) -> &Self::Target {
+        &self.0
     }
+}
 
-    let proxy = fuchsia_component::client::connect_to_protocol_at_path::<
-        fdiagnostics::ArchiveAccessorMarker,
-    >(INSPECT_SERVICE_PATH)?;
-    let mut source = ArchiveReader::inspect();
-    source
-        .with_archive(proxy.clone())
-        .retry(RetryConfig::never())
-        .add_selectors(selectors.into_iter());
-
-    // Do the fetch and record the timestamps.
-    let before_utc = utc_now();
-    let before_monotonic = zx::MonotonicInstant::get().into_nanos();
-    let data = source.snapshot().await.context("Failed to fetch Inspect data")?;
-    let after_utc = utc_now();
-    let after_monotonic = zx::MonotonicInstant::get().into_nanos();
-    let timestamps = Timestamps { before_utc, before_monotonic, after_utc, after_monotonic };
-
-    // Process the data for each tag
-    for (service, pending_tags) in pending_services {
-        for (tag, state) in pending_tags {
-            let data_to_save = save_data_for_tag(
-                data.clone(),
-                timestamps.clone(),
-                tag,
-                &state.selectors,
-                state.max_bytes,
-            );
-            file_handler::write(service, tag, &data_to_save);
-        }
+impl Serialize for ExtendedMoniker {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        serializer.collect_str(&self.0)
     }
+}
 
-    Ok(())
+impl<'de> Deserialize<'de> for ExtendedMoniker {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        let moniker_str = String::deserialize(deserializer)?;
+        diagnostics_data::ExtendedMoniker::parse_str(&moniker_str)
+            .map(Self)
+            .map_err(serde::de::Error::custom)
+    }
+}
+
+/// ByteCounter is a no-op writer that counts the number of bytes written to it.
+#[derive(Default)]
+struct ByteCounter {
+    count: usize,
+}
+
+impl io::Write for ByteCounter {
+    fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
+        self.count = self
+            .count
+            .checked_add(buf.len())
+            .ok_or_else::<io::Error, _>(|| io::Error::from(io::ErrorKind::FileTooLarge))?;
+        Ok(buf.len())
+    }
+    fn flush(&mut self) -> io::Result<()> {
+        Ok(())
+    }
 }
 
 #[cfg(test)]
-mod tests {
+mod test {
     use super::*;
-    use diagnostics_data::{InspectDataBuilder, InspectHandleName, Timestamp};
-    use diagnostics_hierarchy::hierarchy;
-    use serde_json::json;
+    use diagnostics_data::{InspectDataBuilder, Timestamp, hierarchy};
+    use hashbrown::HashMap;
+    use std::collections::VecDeque;
 
-    #[fuchsia::test]
-    fn test_condense_empty() {
-        let empty_data = InspectDataBuilder::new(
-            "a/b/c/d".try_into().unwrap(),
-            "fuchsia-pkg://test",
-            Timestamp::from_nanos(123456i64),
-        )
-        .with_name(InspectHandleName::filename("test_file_plz_ignore.inspect"))
-        .build();
-        let empty_data_result = condensed_map_of_data([empty_data]);
-        let empty_vec_result = condensed_map_of_data([]);
-
-        let expected_map = HashMap::new();
-
-        pretty_assertions::assert_eq!(*empty_data_result, expected_map, "golden diff failed.");
-        pretty_assertions::assert_eq!(*empty_vec_result, expected_map, "golden diff failed.");
+    fn make_tag_data(max_bytes: usize) -> TagData {
+        TagData {
+            data: HashMap::new(),
+            errors: VecDeque::new(),
+            timestamps: make_timestamps(0),
+            total_bytes: 0,
+            max_bytes,
+            selectors: vec![],
+        }
     }
 
-    fn make_data(mut hierarchy: DiagnosticsHierarchy, moniker: &str) -> Data<Inspect> {
-        hierarchy.sort();
-        InspectDataBuilder::new(
-            moniker.try_into().unwrap(),
-            "fuchsia-pkg://test",
-            Timestamp::from_nanos(123456i64),
-        )
-        .with_hierarchy(hierarchy)
-        .with_name(InspectHandleName::filename("test_file_plz_ignore.inspect"))
-        .build()
+    fn make_timestamps(nanos: i64) -> Timestamps {
+        Timestamps {
+            last_sample_boot: zx::BootInstant::from_nanos(nanos),
+            last_sample_utc: fuchsia_runtime::UtcInstant::from_nanos(nanos),
+        }
     }
 
     #[fuchsia::test]
-    fn test_condense_one() {
-        let data = make_data(
-            hierarchy! {
-                root: {
-                    "x": "foo",
-                    "y": "bar",
-                }
-            },
-            "a/b/c/d",
+    fn test_tag_data_merge_ignores_when_full() {
+        let mut tag_data = make_tag_data(10); // Small limit to trigger overflow easily
+
+        let moniker = diagnostics_data::ExtendedMoniker::parse_str("moniker").unwrap();
+        tag_data.merge(
+            make_timestamps(100),
+            InspectDataBuilder::new(moniker.clone(), "url", Timestamp::from_nanos(100))
+                .with_hierarchy(hierarchy! { root: { child: { x: 1 } } }) // Size will be > 10
+                .build(),
         );
 
-        let expected_json = json!({
-            "a/b/c/d": {
-                "x": "foo",
-                "y": "bar",
-            }
-        });
+        assert!(tag_data.total_bytes > tag_data.max_bytes);
+        assert_eq!(tag_data.data, HashMap::new());
+        assert!(!tag_data.errors.is_empty());
 
-        let result = condensed_map_of_data([data]);
+        let initial_errors_count = tag_data.errors.len();
 
-        pretty_assertions::assert_eq!(
-            serde_json::to_value(&result).unwrap(),
-            expected_json,
-            "golden diff failed."
-        );
+        // Second merge should be ignored
+        let data_ignored =
+            InspectDataBuilder::new(moniker.clone(), "url", Timestamp::from_nanos(200))
+                .with_hierarchy(hierarchy! { root: { child: { x: 2 } } })
+                .build();
+
+        // Even with newer timestamp, it should be ignored
+        tag_data.merge(make_timestamps(200), data_ignored);
+
+        // State should be unchanged; check timestamp wasn't updated
+        assert_eq!(tag_data.timestamps.last_sample_boot.into_nanos(), 100);
+        // Errors count shouldn't change since no new error were added
+        assert_eq!(tag_data.errors.len(), initial_errors_count);
     }
 
     #[fuchsia::test]
-    fn test_condense_several_with_merge() {
-        let data_abcd = make_data(
-            hierarchy! {
-                root: {
-                    "x": "foo",
-                    "y": "bar",
-                }
-            },
-            "a/b/c/d",
-        );
-        let data_efgh = make_data(
-            hierarchy! {
-                root: {
-                    "x": "ex",
-                    "y": "why",
-                }
-            },
-            "e/f/g/h",
-        );
-        let data_abcd2 = make_data(
-            hierarchy! {
-                root: {
-                    "x": "X",
-                    "z": "zebra",
-                }
-            },
-            "a/b/c/d",
+    fn test_tag_data_merge_distinct_monikers() {
+        let mut tag_data = make_tag_data(1000);
+
+        let moniker1 = diagnostics_data::ExtendedMoniker::parse_str("moniker1").unwrap();
+        let data1 = InspectDataBuilder::new(moniker1.clone(), "url", Timestamp::from_nanos(100))
+            .with_hierarchy(hierarchy! { root: { child: { x: 1 } } })
+            .build();
+
+        let moniker2 = diagnostics_data::ExtendedMoniker::parse_str("moniker2").unwrap();
+        let data2 = InspectDataBuilder::new(moniker2.clone(), "url", Timestamp::from_nanos(100))
+            .with_hierarchy(hierarchy! { root: { child: { x: 2 } } })
+            .build();
+
+        tag_data.merge(make_timestamps(100), data1.clone());
+        let size_1 = tag_data.total_bytes;
+        assert!(size_1 > 0);
+        assert_eq!(
+            tag_data.data,
+            HashMap::from([(ExtendedMoniker(moniker1.clone()), data1.clone())])
         );
 
-        let expected_json = json!({
-            "a/b/c/d": {
-                "x": "X",
-                "y": "bar",
-                "z": "zebra",
-            },
-            "e/f/g/h": {
-                "x": "ex",
-                "y": "why"
-            }
-        });
-
-        let result = condensed_map_of_data(vec![data_abcd, data_efgh, data_abcd2]);
-
-        pretty_assertions::assert_eq!(
-            serde_json::to_value(&result).unwrap(),
-            expected_json,
-            "golden diff failed."
-        );
-    }
-
-    const TIMESTAMPS: Timestamps =
-        Timestamps { after_monotonic: 200, after_utc: 111, before_monotonic: 100, before_utc: 110 };
-
-    fn parse_selectors(selectors: &'static [&'static str]) -> Vec<fdiagnostics::Selector> {
-        selectors
-            .iter()
-            .map(|s| selectors::parse_selector::<selectors::VerboseError>(s))
-            .collect::<Result<Vec<_>, _>>()
-            .unwrap()
-    }
-
-    #[fuchsia::test]
-    fn save_data_no_data() {
-        let tag = Tag::new("tag".to_string()).unwrap();
-        let result = save_data_for_tag(
-            vec![],
-            TIMESTAMPS.clone(),
-            &tag,
-            &parse_selectors(&["moniker:path:property"]),
-            1000,
-        );
+        tag_data.merge(make_timestamps(100), data2.clone());
 
         assert_eq!(
-            serde_json::to_value(&result).unwrap(),
-            json!({
-                "@timestamps": {
-                    "after_monotonic": 200,
-                    "after_utc": 111,
-                    "before_monotonic": 100,
-                    "before_utc": 110,
-                },
-                ":error": {
-                    "description": "No data available for tag 'tag'",
-                },
-            })
+            tag_data.data,
+            HashMap::from([
+                (ExtendedMoniker(moniker1.clone()), data1),
+                (ExtendedMoniker(moniker2), data2)
+            ])
         );
+        assert!(tag_data.total_bytes > size_1);
     }
 
     #[fuchsia::test]
-    fn save_data_too_big() {
-        let tag = Tag::new("tag".to_string()).unwrap();
-        let data_abcd = make_data(
-            hierarchy! {
-                root: {
-                    "x": "foo",
-                    "y": "bar",
-                }
-            },
-            "a/b/c/d",
-        );
+    fn test_tag_data_merges_data_for_same_moniker() {
+        use diagnostics_data::{InspectDataBuilder, Timestamp, hierarchy};
 
-        let result = save_data_for_tag(
-            vec![data_abcd],
-            TIMESTAMPS.clone(),
-            &tag,
-            &parse_selectors(&["a/b/c/d:root:y"]),
-            20,
-        );
+        let mut tag_data = make_tag_data(1000);
 
-        assert_eq!(
-            serde_json::to_value(&result).unwrap(),
-            json!({
-                "@timestamps": {
-                    "after_monotonic": 200,
-                    "after_utc": 111,
-                    "before_monotonic": 100,
-                    "before_utc": 110,
-                },
-                ":error": {
-                    "description": "Data too big: 23 > max length 20",
-                },
-            })
-        );
+        let moniker = diagnostics_data::ExtendedMoniker::parse_str("moniker").unwrap();
+        let data1 = InspectDataBuilder::new(moniker.clone(), "url", Timestamp::from_nanos(100))
+            .with_hierarchy(hierarchy! { root: { child: { x: 1 } } })
+            .build();
+
+        tag_data.merge(make_timestamps(100), data1);
+
+        let data2 = InspectDataBuilder::new(moniker.clone(), "url", Timestamp::from_nanos(200))
+            .with_hierarchy(hierarchy! { root: { child: { x: 2, y: 3 } } })
+            .build();
+
+        tag_data.merge(make_timestamps(200), data2);
+
+        // Verify that data was merged (x updated to 2, y added)
+        let expected_data =
+            InspectDataBuilder::new(moniker.clone(), "url", Timestamp::from_nanos(200))
+                .with_hierarchy(hierarchy! { root: { child: { x: 2, y: 3 } } })
+                .build();
+
+        assert_eq!(tag_data.data, HashMap::from([(ExtendedMoniker(moniker), expected_data)]));
+
+        assert_eq!(tag_data.timestamps.last_sample_boot.into_nanos(), 200);
+        assert!(tag_data.total_bytes > 0);
     }
 
     #[fuchsia::test]
-    fn save_string_with_data() {
-        let tag = Tag::new("tag".to_string()).unwrap();
-        let data_abcd = make_data(
-            hierarchy! {
-                root: {
-                    "x": "foo",
-                    "y": "bar",
-                }
-            },
-            "a/b/c/d",
-        );
-        let data_efgh = make_data(
-            hierarchy! {
-                root: {
-                    "x": "ex",
-                    "y": "why",
-                }
-            },
-            "e/f/g/h",
-        );
-        let data_abcd2 = make_data(
-            hierarchy! {
-                root: {
-                    "x": "X",
-                    "z": "zebra",
-                }
-            },
-            "a/b/c/d",
-        );
+    fn test_tag_data_calculate_total_bytes() {
+        let mut tag_data = make_tag_data(1000);
 
-        let result = save_data_for_tag(
-            vec![data_abcd, data_efgh, data_abcd2],
-            TIMESTAMPS.clone(),
-            &tag,
-            &parse_selectors(&["a/b/c/d:root:y"]),
-            1000,
-        );
+        let moniker = diagnostics_data::ExtendedMoniker::parse_str("moniker").unwrap();
+        let data = InspectDataBuilder::new(moniker.clone(), "url", Timestamp::from_nanos(100))
+            .with_hierarchy(hierarchy! { root: { child: { x: 1 } } })
+            .build();
 
-        assert_eq!(
-            serde_json::to_value(&result).unwrap(),
-            json!({
-                "@timestamps": {
-                    "after_monotonic": 200,
-                    "after_utc": 111,
-                    "before_monotonic": 100,
-                    "before_utc": 110,
-                },
-                "@persist_size": 23,
-                "a/b/c/d": {
-                    "y": "bar",
-                },
-            })
-        );
+        tag_data.data.insert(ExtendedMoniker(moniker), data);
+        tag_data.calculate_total_bytes();
+
+        let initial_bytes = tag_data.total_bytes;
+        assert!(initial_bytes > 0);
+        assert!(tag_data.errors.is_empty());
+
+        // Now reduce max_bytes to force overflow
+        tag_data.max_bytes = initial_bytes - 1;
+        tag_data.calculate_total_bytes();
+
+        assert_eq!(tag_data.total_bytes, initial_bytes);
+        assert_eq!(tag_data.data, HashMap::new());
+        let expected_errors = VecDeque::from([format!(
+            "Data too big: {} > max length {}",
+            initial_bytes, tag_data.max_bytes
+        )]);
+        assert_eq!(tag_data.errors, expected_errors);
+    }
+
+    #[fuchsia::test]
+    fn test_tag_data_max_errors() {
+        let mut tag_data = make_tag_data(1000);
+
+        for i in 0..10 {
+            tag_data.add_error(format!("Error {}", i));
+        }
+
+        let expected_errors = VecDeque::from([
+            "Error 9".to_string(),
+            "Error 8".to_string(),
+            "Error 7".to_string(),
+            "Error 6".to_string(),
+            "Error 5".to_string(),
+        ]);
+        assert_eq!(tag_data.errors, expected_errors);
+    }
+
+    #[fuchsia::test]
+    fn test_tag_data_error_truncation() {
+        let mut tag_data = make_tag_data(1000);
+
+        // Test truncation of long error
+        let long_error = "a".repeat(MAX_ERROR_LEN + 10);
+        tag_data.add_error(long_error);
+        assert_eq!(tag_data.errors[0].len(), MAX_ERROR_LEN);
     }
 }

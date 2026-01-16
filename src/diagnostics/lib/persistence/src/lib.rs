@@ -4,6 +4,7 @@
 use anyhow::{Error, bail};
 use glob::glob;
 use regex::Regex;
+use serde::Serialize;
 use serde_derive::Deserialize;
 use std::borrow::Borrow;
 use std::collections::HashMap;
@@ -22,13 +23,23 @@ struct TaggedPersist {
     /// The Inspect data defined here will be published under this tag.
     /// Tags must not be duplicated within a service, even between files.
     /// Tags must conform to /[a-z][a-z-]*/.
-    pub tag: String,
+    tag: String,
     /// Each tag will only be requestable via a named service. Multiple tags can use the
     /// same service name, which will be published and routed as DataPersistence_{service_name}.
     /// Service names must conform to /[a-z][a-z-]*/.
-    pub service_name: String,
+    service_name: String,
+    #[serde(flatten)]
+    tag_config: TagConfig,
+}
+
+/// Configuration for a single tag for a single service.
+///
+/// See [`TaggedPersist`] for the meaning of corresponding fields.
+#[derive(Clone, Default, Debug, PartialEq, Serialize, Deserialize)]
+pub struct TagConfig {
     /// These selectors will be fetched and stored for publication on the next boot.
-    pub selectors: Vec<String>,
+    #[serde(with = "selectors_ext::inspect")]
+    pub selectors: Vec<fidl_fuchsia_diagnostics::Selector>,
     /// This is the max size of the file saved, which is the JSON-serialized version
     /// of the selectors' data.
     pub max_bytes: usize,
@@ -39,30 +50,33 @@ struct TaggedPersist {
     pub persist_across_boot: bool,
 }
 
-/// Configuration for a single tag for a single service.
-///
-/// See [`TaggedPersist`] for the meaning of corresponding fields.
-#[derive(Debug, Eq, PartialEq)]
-pub struct TagConfig {
-    pub selectors: Vec<String>,
-    pub max_bytes: usize,
-    pub min_seconds_between_fetch: i64,
-    pub persist_across_boot: bool,
-}
-
 /// Wrapper class for a valid tag name.
 ///
 /// This is a witness class that can only be constructed from a `String` that
 /// matches [`NAME_PATTERN`].
-#[derive(Clone, Debug, Eq, Hash, PartialEq)]
+#[derive(Clone, Debug, Eq, Hash, PartialEq, Serialize, Deserialize)]
 pub struct Tag(String);
+
+// Necessary to support the hashbrown::HashMap::entry_ref API.
+impl From<&Tag> for Tag {
+    fn from(value: &Self) -> Self {
+        value.clone()
+    }
+}
 
 /// Wrapper class for a valid service name.
 ///
 /// This is a witness class that can only be constructed from a `String` that
 /// matches [`NAME_PATTERN`].
-#[derive(Clone, Debug, Eq, Hash, PartialEq)]
+#[derive(Clone, Debug, Eq, Hash, PartialEq, Serialize, Deserialize)]
 pub struct ServiceName(String);
+
+// Necessary to support the hashbrown::HashMap::entry_ref API.
+impl From<&ServiceName> for ServiceName {
+    fn from(value: &Self) -> Self {
+        value.clone()
+    }
+}
 
 /// A regular expression corresponding to a valid tag or service name.
 const NAME_PATTERN: &str = r"^[a-z][a-z-]*$";
@@ -157,24 +171,53 @@ const CONFIG_GLOB: &str = "/config/data/*.persist";
 fn try_insert_items(config: &mut Config, config_text: &str) -> Result<(), Error> {
     let items: Vec<TaggedPersist> = serde_json5::from_str(config_text)?;
     for item in items {
-        let TaggedPersist {
-            tag,
-            service_name,
-            selectors,
-            max_bytes,
-            min_seconds_between_fetch,
-            persist_across_boot,
-        } = item;
+        let TaggedPersist { tag, service_name, mut tag_config } = item;
         let tag = Tag::new(tag)?;
         let name = ServiceName::new(service_name)?;
-        if let Some(existing) = config.entry(name.clone()).or_default().insert(
-            tag,
-            TagConfig { selectors, max_bytes, min_seconds_between_fetch, persist_across_boot },
-        ) {
+        let mut name_filter = SameTreeNameFilter::default();
+        tag_config.selectors.retain(|s| name_filter.check(s));
+        if let Some(existing) = config.entry(name.clone()).or_default().insert(tag, tag_config) {
             bail!("Duplicate TagConfig found: {:?}", existing);
         }
     }
     Ok(())
+}
+
+/// A stateful filter that verifies selectors have the same tree name.
+#[derive(Default)]
+struct SameTreeNameFilter {
+    tree_names: Option<Option<fidl_fuchsia_diagnostics::TreeNames>>,
+}
+
+impl SameTreeNameFilter {
+    fn check(&mut self, s: &fidl_fuchsia_diagnostics::Selector) -> bool {
+        let tree_names = match &self.tree_names {
+            Some(names) => names,
+            None => {
+                self.tree_names = Some(s.tree_names.clone());
+                return true;
+            }
+        };
+        match (tree_names, &s.tree_names) {
+            (None, None) => true,
+            (
+                Some(fidl_fuchsia_diagnostics::TreeNames::All(_)),
+                Some(fidl_fuchsia_diagnostics::TreeNames::All(_)),
+            ) => true,
+            (
+                Some(fidl_fuchsia_diagnostics::TreeNames::Some(a)),
+                Some(fidl_fuchsia_diagnostics::TreeNames::Some(b)),
+            ) if a == b => true,
+            _ => {
+                log::warn!(
+                    "Only selectors targeting the same tree are allowed: \"{}\"",
+                    selectors::selector_to_string(s, selectors::SelectorDisplayOptions::default())
+                        .unwrap_or_else(|e| format!("<INVALID: {e}>"))
+                );
+                false
+            }
+        }
+    }
 }
 
 pub fn load_configuration_files() -> Result<Config, Error> {
@@ -191,83 +234,163 @@ pub fn load_configuration_files_from(path: &str) -> Result<Config, Error> {
 
 #[cfg(test)]
 mod test {
-    use super::*;
+    use assert_matches::assert_matches;
 
-    impl From<TaggedPersist> for TagConfig {
-        fn from(
-            TaggedPersist {
-                tag: _,
-                service_name: _,
-                selectors,
-                max_bytes,
-                min_seconds_between_fetch,
-                persist_across_boot,
-            }: TaggedPersist,
-        ) -> Self {
-            Self { selectors, max_bytes, min_seconds_between_fetch, persist_across_boot }
-        }
-    }
+    use super::*;
+    use test_case::test_case;
 
     #[fuchsia::test]
     fn verify_insert_logic() {
         let mut config = HashMap::new();
-        let taga_servab = "[{tag: 'tag-a', service_name: 'serv-a', max_bytes: 10, \
-                           min_seconds_between_fetch: 31, selectors: ['foo', 'bar']}, \
-                           {tag: 'tag-a', service_name: 'serv-b', max_bytes: 20, \
-                           min_seconds_between_fetch: 32, selectors: ['baz'], \
-                           persist_across_boot: true }]";
-        let tagb_servb = "[{tag: 'tag-b', service_name: 'serv-b', max_bytes: 30, \
-                          min_seconds_between_fetch: 33, selectors: ['quux']}]";
-        // Numbers not allowed in names
-        let bad_tag = "[{tag: 'tag-b1', service_name: 'serv-b', max_bytes: 30, \
-                       min_seconds_between_fetch: 33, selectors: ['quux']}]";
-        // Underscores not allowed in names
-        let bad_serv = "[{tag: 'tag-b', service_name: 'serv_b', max_bytes: 30, \
-                        min_seconds_between_fetch: 33, selectors: ['quux']}]";
-        let persist_aa = TaggedPersist {
-            tag: "tag-a".to_string(),
-            service_name: "serv-a".to_string(),
-            max_bytes: 10,
-            min_seconds_between_fetch: 31,
-            selectors: vec!["foo".to_string(), "bar".to_string()],
-            persist_across_boot: false,
-        };
-        let persist_ba = TaggedPersist {
-            tag: "tag-a".to_string(),
-            service_name: "serv-b".to_string(),
-            max_bytes: 20,
-            min_seconds_between_fetch: 32,
-            selectors: vec!["baz".to_string()],
-            persist_across_boot: true,
-        };
-        let persist_bb = TaggedPersist {
-            tag: "tag-b".to_string(),
-            service_name: "serv-b".to_string(),
-            max_bytes: 30,
-            min_seconds_between_fetch: 33,
-            selectors: vec!["quux".to_string()],
-            persist_across_boot: false,
-        };
+        let taga_servab = r#"[
+            {
+                service_name: 'serv-a',
+                tag: 'tag-a',
+                max_bytes: 10,
+                min_seconds_between_fetch: 31,
+                selectors: ['INSPECT:a:b', 'INSPECT:b:c']
+            },
+            {
+                service_name: 'serv-b',
+                tag: 'tag-a',
+                max_bytes: 20,
+                min_seconds_between_fetch: 32,
+                selectors: ['INSPECT:c:d'],
+                persist_across_boot: true
+            }
+        ]"#;
 
-        try_insert_items(&mut config, taga_servab).unwrap();
-        try_insert_items(&mut config, tagb_servb).unwrap();
-        assert_eq!(config.len(), 2);
-        let service_a = config.get("serv-a").unwrap();
-        assert_eq!(service_a.len(), 1);
-        assert_eq!(service_a.get("tag-a"), Some(&persist_aa.clone().into()));
-        let service_b = config.get("serv-b").unwrap();
-        assert_eq!(service_b.len(), 2);
-        assert_eq!(service_b.get("tag-a"), Some(&persist_ba.clone().into()));
-        assert_eq!(service_b.get("tag-b"), Some(&persist_bb.clone().into()));
+        let tagb_servb = r#"[
+            {
+                service_name: 'serv-b',
+                tag: 'tag-b',
+                max_bytes: 30,
+                min_seconds_between_fetch: 33,
+                selectors: ['INSPECT:d:e']
+            }
+        ]"#;
 
-        assert!(try_insert_items(&mut config, bad_tag).is_err());
-        assert!(try_insert_items(&mut config, bad_serv).is_err());
+        assert_matches!(try_insert_items(&mut config, taga_servab), Ok(()));
+        assert_matches!(try_insert_items(&mut config, tagb_servb), Ok(()));
+
+        assert_eq!(
+            config,
+            HashMap::from([
+                (
+                    ServiceName("serv-a".to_string()),
+                    HashMap::from([(
+                        Tag("tag-a".to_string()),
+                        TagConfig {
+                            max_bytes: 10,
+                            min_seconds_between_fetch: 31,
+                            selectors: vec![
+                                selectors::parse_verbose("a:b").unwrap(),
+                                selectors::parse_verbose("b:c").unwrap(),
+                            ],
+                            persist_across_boot: false,
+                        }
+                    )])
+                ),
+                (
+                    ServiceName("serv-b".to_string()),
+                    HashMap::from([
+                        (
+                            Tag("tag-a".to_string()),
+                            TagConfig {
+                                max_bytes: 20,
+                                min_seconds_between_fetch: 32,
+                                selectors: vec![selectors::parse_verbose("c:d").unwrap()],
+                                persist_across_boot: true,
+                            }
+                        ),
+                        (
+                            Tag("tag-b".to_string()),
+                            TagConfig {
+                                max_bytes: 30,
+                                min_seconds_between_fetch: 33,
+                                selectors: vec![selectors::parse_verbose("d:e").unwrap()],
+                                persist_across_boot: false,
+                            }
+                        )
+                    ])
+                )
+            ])
+        );
+
         // Can't duplicate tags in the same service
-        assert!(try_insert_items(&mut config, tagb_servb).is_err());
+        assert_matches!(try_insert_items(&mut config, tagb_servb), Err(_));
     }
 
-    #[test]
+    #[fuchsia::test]
     fn test_tag_equals_str() {
         assert_eq!(&Tag::new("foo").unwrap(), "foo");
+    }
+
+    #[test_case(
+        r#"[{
+            tag: 'tag',
+            service_name: 'bad-service-1',
+            max_bytes: 10,
+            min_seconds_between_fetch: 10,
+            selectors: ['INSPECT:a:b']
+        }]"#
+        ; "numbers_in_name"
+    )]
+    #[test_case(
+        r#"[{
+            tag: 'tag',
+            service_name: 'bad_service',
+            max_bytes: 10,
+            min_seconds_between_fetch: 10,
+            selectors: ['INSPECT:a:b']
+        }]"#
+        ; "underscores_in_name"
+    )]
+    #[test_case(
+        r#"[{
+            tag: 'tag',
+            service_name: 'service',
+            max_bytes: 10,
+            min_seconds_between_fetch: 10,
+            selectors: ['a:b']
+        }]"#
+        ; "selector_source_not_specified"
+    )]
+    #[test_case(
+        r#"[{
+            tag: 'tag',
+            service_name: 'service',
+            max_bytes: 10,
+            min_seconds_between_fetch: 10,
+            selectors: [
+                'INSPECT:a:b'
+                'INSPECT:a:[name=custom_tree]c'
+            ]
+        }]"#
+        ; "different_tree_names"
+    )]
+    #[fuchsia::test]
+    fn rejects_invalid_config(config_text: &str) {
+        let mut config = HashMap::new();
+        assert_matches!(try_insert_items(&mut config, config_text), Err(_));
+    }
+
+    #[test_case(
+        r#"[{
+            tag: 'tag',
+            service_name: 'service',
+            max_bytes: 10,
+            min_seconds_between_fetch: 10,
+            selectors: [
+                'INSPECT:a:[name=custom_tree]b',
+                'INSPECT:a:[name=custom_tree]c'
+            ]
+        }]"#
+        ; "same_custom_tree_names"
+    )]
+    #[fuchsia::test]
+    fn valid_config(config_text: &str) {
+        let mut config = HashMap::new();
+        assert_matches!(try_insert_items(&mut config, config_text), Ok(()));
     }
 }

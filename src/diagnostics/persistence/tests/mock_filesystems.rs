@@ -11,11 +11,13 @@ use tempfile::TempDir;
 use vfs::file::vmo::read_only;
 use vfs::pseudo_directory;
 
-pub(crate) async fn create_config_data(builder: &RealmBuilder) -> Result<ChildRef, Error> {
+pub(crate) async fn create_config_data(
+    builder: &RealmBuilder,
+    config: &'static str,
+) -> Result<ChildRef, Error> {
     let config_data_dir = pseudo_directory! {
         "data" => pseudo_directory! {
-            "test_config.persist" =>
-                read_only(include_str!("test_data/config/test_config.persist")),
+            "test_config.persist" => read_only(config),
         }
     };
 

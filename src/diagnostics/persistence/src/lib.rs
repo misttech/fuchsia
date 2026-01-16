@@ -77,16 +77,14 @@ pub async fn main(_args: CommandLine) -> Result<(), Error> {
     let _inspect_server_task =
         inspect_runtime::publish(inspector, inspect_runtime::PublishOptions::default());
 
-    file_handler::forget_old_data(&config);
-
-    let scope = fasync::Scope::new();
-    let scheduler =
-        Scheduler::new(scope.to_handle(), &config).context("Error creating scheduler")?;
+    file_handler::forget_old_data(&config)?;
 
     // Add a persistence fidl service for each service defined in the config files.
     let scope = fasync::Scope::new();
+    Scheduler::spawn(scope.to_handle(), &config).await.context("Error creating scheduler")?;
+
     let (outgoing_dir_task, service_scope) =
-        spawn_persist_services(&config, scheduler).await.expect("Error spawning persist services");
+        spawn_persist_services(&config).await.expect("Error spawning persist services");
 
     // Before serving previous data, wait until the post-boot system update check has finished.
     // Note: We're already accepting persist requests. If we receive a request, store
@@ -101,7 +99,9 @@ pub async fn main(_args: CommandLine) -> Result<(), Error> {
         }
 
         inspector.root().record_child(PERSIST_NODE_NAME, |node| {
-            inspect_server::serve_persisted_data(node);
+            if let Err(e) = inspect_server::serve_persisted_data(node) {
+                error!("Failed to serve persisted data: {e}");
+            }
             health.set_ok();
             info!("Diagnostics Persistence Service ready");
         });
@@ -174,7 +174,6 @@ enum IncomingRequest {
 // a dynamic dictionary.
 async fn spawn_persist_services(
     config: &Config,
-    scheduler: Scheduler,
 ) -> Result<(impl Future<Output = ()>, fasync::Scope), Error> {
     let store = client::connect_to_protocol::<fsandbox::CapabilityStoreMarker>().unwrap();
     let id_gen = sandbox::CapabilityIdGenerator::new();
@@ -216,12 +215,7 @@ async fn spawn_persist_services(
                 )
             })?;
 
-        PersistServer::spawn(
-            service_name.clone(),
-            scheduler.clone(),
-            service_scope.to_handle(),
-            receiver_stream,
-        );
+        PersistServer::spawn(service_scope.to_handle(), receiver_stream);
     }
 
     // Expose the dynamic dictionary.

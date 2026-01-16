@@ -1,0 +1,27 @@
+// Copyright 2025 The Fuchsia Authors. All rights reserved.
+// Use of this source code is governed by a BSD-style license that can be
+// found in the LICENSE file.
+[
+    {
+        tag: 'test-component-metric-a',
+        service_name: 'test-service',
+        max_bytes: 10000,
+        min_seconds_between_fetch: 1,
+        selectors: [
+            'INSPECT:realm*/single_counter:root/samples:optional',
+            'INSPECT:realm*/single_counter:root/samples:integer_1',
+        ],
+    },
+
+    // Second tag defines one common selector and one unique selector.
+    {
+        tag: 'test-component-metric-b',
+        service_name: 'test-service',
+        max_bytes: 10000,
+        min_seconds_between_fetch: 1,
+        selectors: [
+            'INSPECT:realm*/single_counter:root/samples:optional',
+            'INSPECT:realm*/single_counter:root/samples:integer_2',
+        ],
+    },
+]

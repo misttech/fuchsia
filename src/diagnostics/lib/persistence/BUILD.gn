@@ -11,8 +11,12 @@ rustc_library("lib") {
   with_unit_tests = true
 
   deps = [
+    "//sdk/fidl/fuchsia.diagnostics:fuchsia.diagnostics_rust",
+    "//src/lib/diagnostics/selectors",
+    "//src/lib/diagnostics/selectors-ext",
     "//third_party/rust_crates:anyhow",
     "//third_party/rust_crates:glob",
+    "//third_party/rust_crates:log",
     "//third_party/rust_crates:regex",
     "//third_party/rust_crates:serde",
     "//third_party/rust_crates:serde_derive",
@@ -21,7 +25,11 @@ rustc_library("lib") {
 
   sources = [ "src/lib.rs" ]
 
-  test_deps = [ "//src/lib/fuchsia" ]
+  test_deps = [
+    "//src/lib/fuchsia",
+    "//third_party/rust_crates:assert_matches",
+    "//third_party/rust_crates:test-case",
+  ]
 
   configs += [ "//build/config/rust/lints:clippy_warn_all" ]
 }

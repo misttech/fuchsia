@@ -2,462 +2,438 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+use assert_matches::assert_matches;
 use component_events::events::*;
 use component_events::matcher::*;
-use diagnostics_reader::{ArchiveReader, RetryConfig};
+use diagnostics_reader::{ArchiveReader, Inspect, RetryConfig, ToSelectorArguments};
 use fidl_fuchsia_component::BinderMarker;
 use fidl_fuchsia_diagnostics_persist::{DataPersistenceProxy, PersistResult};
 use fidl_fuchsia_samplertestcontroller::SamplerTestControllerProxy;
 use fidl_test_persistence_factory::ControllerProxy;
 use fuchsia_async as fasync;
-use fuchsia_component_test::{RealmBuilder, RealmBuilderParams, RealmInstance};
+use fuchsia_component_test::RealmInstance;
 use futures::{FutureExt, select};
-use log::*;
-use pretty_assertions::{StrComparison, assert_eq};
+use log::warn;
+use pretty_assertions::StrComparison;
+
 use serde_json::Value;
 use std::fs::File;
-use std::io::Read;
-use std::{thread, time};
+use std::io::ErrorKind;
 use zx::{MonotonicDuration, MonotonicInstant};
 
 mod mock_fidl;
 mod mock_filesystems;
 mod test_topology;
 
-// When to give up on polling for a change and fail the test. DNS if less than 120 sec.
-static GIVE_UP_POLLING_SECS: i64 = 120;
+/// Name of the service defined in all test_data configs.
+const SERVICE: &str = "test-service";
 
-static METADATA_KEY: &str = "metadata";
-static TIMESTAMP_METADATA_KEY: &str = "timestamp";
+/// Name of the tag defined in all test_data configs.
+const TAG: &str = "test-component-metric";
+
+// When to give up on polling for a change and fail the test.
+//
+// For development it may be convenient to set this to 5. For production, slow
+// virtual devices may cause test flakes even with surprisingly long timeouts.
+const GIVE_UP_POLLING_SECS: i64 = 120;
+
+const METADATA_KEY: &str = "metadata";
+const TIMESTAMP_METADATA_KEY: &str = "timestamp";
 
 // Each persisted tag contains a "@timestamps" object with four timestamps that need to be zeroed.
-static PAYLOAD_KEY: &str = "payload";
-static ROOT_KEY: &str = "root";
-static PERSIST_KEY: &str = "persist";
-static TIMESTAMP_STRUCT_KEY: &str = "@timestamps";
-static BEFORE_MONOTONIC_KEY: &str = "before_monotonic";
-static AFTER_MONOTONIC_KEY: &str = "after_monotonic";
-static PUBLISHED_TIME_KEY: &str = "published";
-static TIMESTAMP_STRUCT_ENTRIES: [&str; 4] =
-    ["before_utc", BEFORE_MONOTONIC_KEY, "after_utc", AFTER_MONOTONIC_KEY];
-/// If the "single_counter" Inspect source is publishing Inspect data, the stringified JSON
+const PAYLOAD_KEY: &str = "payload";
+const ROOT_KEY: &str = "root";
+const PERSIST_KEY: &str = "persist";
+const TIMESTAMP_STRUCT_KEY: &str = "@timestamps";
+const PUBLISHED_TIME_KEY: &str = "published";
+const TIMESTAMP_STRUCT_ENTRIES: [&str; 2] = ["last_sample_boot", "last_sample_utc"];
+/// If the "samples" Inspect source is publishing Inspect data, the stringified JSON
 /// version of that data should include this string. Waiting for it to appear avoids a race
 /// condition.
-static KEY_FROM_INSPECT_SOURCE: &str = "integer_1";
+const KEY_FROM_INSPECT_SOURCE: &str = "samples";
 
-enum Published<'a> {
+enum Published {
+    /// No Inspect data is available.
     Waiting,
+    /// Inspect data is available but it's empty.
     Empty,
-    Int(&'a str, i32),
-    SizeError,
-}
-
-#[derive(PartialEq)]
-enum FileState {
-    None,
-    NoInt,
-    Int(i32),
-    TooBig,
-}
-
-struct FileChange<'a> {
-    old: FileState,
-    after: Option<MonotonicInstant>,
-    new: FileState,
-    file_name: &'a str,
+    /// Inspect data is available and populated with the default state of
+    /// single_counter_test_component.
+    Default,
+    /// Custom Inspect data of single_counter_test_component has been set with a
+    /// specific integer.
+    Int(i64),
+    /// Inspect data is available and equal to the specified JSON content.
+    /// `persist_size` needs to be calculated manually when using this.
+    Content(String),
+    /// Publishing failed due to the size of the persisted data exceeded the
+    /// configured maximum.
+    SizeError(i64),
 }
 
 struct TestRealm {
-    name: String,
-    fs: mock_filesystems::TestFs,
+    options: TestRealmOptions,
     instance: RealmInstance,
     persistence: DataPersistenceProxy,
     inspect: SamplerTestControllerProxy,
     controller: ControllerProxy,
-    skip_update_check: bool,
 }
 
-/// Persistence requests with an invalid tag should return BadName.
+/// Calls to DataPersistence should noop and return PersistResult::Queued.
+// TODO(https://fxbug.dev/460853191): Remove with DataPersistence.
 #[fuchsia::test]
-async fn invalid_tag() {
-    let realm = TestRealm::new().await;
-
-    const TAG_CORRECT: &str = "test-component-metric";
-    const TAG_WRONG: &str = "wrong_component_metric";
-    let path_correct = format!("{}/current/test-service/{TAG_CORRECT}", realm.cache());
-
-    realm.set_inspect(Some(19i64)).await;
-    wait_for_inspect_source(&realm.instance).await;
-    assert_eq!(realm.request_persistence(TAG_WRONG).await, PersistResult::BadName);
-
-    expect_file_change(
-        &realm.instance,
-        FileChange {
-            old: FileState::None,
-            new: FileState::None,
-            file_name: &path_correct,
-            after: None,
-        },
-    );
-}
-
-/// Verify that the backoff mechanism works by observing the time between first
-/// and second persistence to verify that the change doesn't happen too soon.
-/// backoff_time should be the same as "min_seconds_between_fetch" in
-/// TEST_CONFIG_CONTENTS.
-#[fuchsia::test]
-async fn min_seconds_between_fetch() {
-    let realm = TestRealm::new().await;
-
-    const TAG: &str = "test-component-metric";
-    let path = format!("{}/current/test-service/{TAG}", realm.cache());
-
-    // Verify that the backoff mechanism works by observing the time between first and second
-    // persistence to verify that the change doesn't happen too soon.
-    // backoff_time should be the same as "min_seconds_between_fetch" in
-    // TEST_CONFIG_CONTENTS.
-    let backoff_time = MonotonicInstant::get() + MonotonicDuration::from_seconds(1);
-
-    // For development it may be convenient to set this to 5. For production, slow virtual devices
-    // may cause test flakes even with surprisingly long timeouts.
-    assert!(GIVE_UP_POLLING_SECS >= 120);
-
-    realm.set_inspect(Some(19i64)).await;
-    wait_for_inspect_source(&realm.instance).await;
-    assert_eq!(realm.request_persistence(TAG).await, PersistResult::Queued);
-
-    expect_file_change(
-        &realm.instance,
-        FileChange { old: FileState::None, new: FileState::Int(19), file_name: &path, after: None },
-    );
-
-    realm.set_inspect(Some(20i64)).await;
-    assert_eq!(realm.request_persistence(TAG).await, PersistResult::Queued);
-    expect_file_change(
-        &realm.instance,
-        FileChange {
-            old: FileState::Int(19),
-            new: FileState::Int(20),
-            file_name: &path,
-            after: Some(backoff_time),
-        },
-    );
-}
-
-/// Valid data can be replaced by missing data and vice-versa.
-#[fuchsia::test]
-async fn replace_data() {
-    let realm = TestRealm::new().await;
-
-    const TAG: &str = "test-component-metric";
-    let path = format!("{}/current/test-service/{TAG}", realm.cache());
-
-    realm.set_inspect(Some(19i64)).await;
-    wait_for_inspect_source(&realm.instance).await;
-    assert_eq!(realm.request_persistence(TAG).await, PersistResult::Queued);
-    expect_file_change(
-        &realm.instance,
-        FileChange { old: FileState::None, new: FileState::Int(19), file_name: &path, after: None },
-    );
-
-    realm.set_inspect(None).await;
-    assert_eq!(realm.request_persistence(TAG).await, PersistResult::Queued);
-    expect_file_change(
-        &realm.instance,
-        FileChange {
-            old: FileState::Int(19),
-            new: FileState::NoInt,
-            file_name: &path,
-            after: None,
-        },
-    );
-
-    realm.set_inspect(Some(42i64)).await;
-    assert_eq!(realm.request_persistence(TAG).await, PersistResult::Queued);
-    expect_file_change(
-        &realm.instance,
-        FileChange {
-            old: FileState::NoInt,
-            new: FileState::Int(42),
-            file_name: &path,
-            after: None,
-        },
-    );
-}
-
-#[fuchsia::test]
-async fn publish_data_without_waiting_for_checker() {
-    let realm = TestRealm::new_with_options(TestRealmOptions {
-        skip_update_check: true,
-        name: TestRealm::name(),
-    })
+async fn data_persistence_noop() {
+    let realm = TestRealm::new(
+        TestRealmOptions::new(include_str!("test_data/config/empty.persist"))
+            .with_data_persistence(),
+    )
     .await;
 
-    const TAG: &str = "test-component-metric";
-    let path = format!("{}/current/test-service/{TAG}", realm.cache());
+    wait_for_inspect_source(&realm.instance).await;
+    realm.start_persistence().await;
 
+    const WRONG_TAG: &str = "wrong-component-metric";
+
+    assert_matches!(realm.persistence.persist(TAG).await, Ok(PersistResult::Queued));
+    assert_matches!(realm.persistence.persist(WRONG_TAG).await, Ok(PersistResult::Queued));
+    assert_matches!(
+        realm.persistence
+            .persist_tags(&[
+                TAG.to_string(),
+                WRONG_TAG.to_string(),
+            ])
+            .await,
+        Ok(res) if res == vec![PersistResult::Queued, PersistResult::Queued]
+    );
+
+    // Duplicate tags
+    assert_matches!(
+        realm.persistence
+            .persist_tags(&[
+                TAG.to_string(),
+                TAG.to_string(),
+            ])
+            .await,
+        Ok(res) if res == vec![PersistResult::Queued, PersistResult::Queued]
+    );
+}
+
+/// Inspect data should be persisted through the current boot then published on
+/// the next boot.
+#[fuchsia::test]
+async fn persist_simple() {
+    let realm =
+        TestRealm::new(TestRealmOptions::new(include_str!("test_data/config/single_tag.persist")))
+            .await;
+
+    // Persistence should fetch Inspect state immediately after starting.
     realm.set_inspect(Some(19i64)).await;
     wait_for_inspect_source(&realm.instance).await;
+    realm.start_persistence().await;
+    realm.wait_for_disk_write();
 
-    expect_file_change(
-        &realm.instance,
-        FileChange { old: FileState::None, new: FileState::None, file_name: &path, after: None },
-    );
-
-    assert_eq!(realm.request_persistence(TAG).await, PersistResult::Queued);
-
-    expect_file_change(
-        &realm.instance,
-        FileChange { old: FileState::None, new: FileState::Int(19), file_name: &path, after: None },
-    );
-
+    // Persistence should publish the Inspect state.
     let realm = realm.restart().await;
-    verify_diagnostics_persistence_publication(&realm, Published::Int(TAG, 19)).await;
-    expect_file_change(
-        &realm.instance,
-        FileChange { old: FileState::None, new: FileState::None, file_name: &path, after: None },
-    );
+    realm.start_persistence().await;
+    realm.set_update_completed().await;
+    realm.verify_diagnostics_persistence_publication(Published::Int(19)).await;
+}
+
+/// A component overwriting their Inspect data with new values MUST reflect in
+/// persisted data.
+#[fuchsia::test]
+async fn overwrite_with_some() {
+    let realm =
+        TestRealm::new(TestRealmOptions::new(include_str!("test_data/config/single_tag.persist")))
+            .await;
+
+    // Persistence should fetch Inspect state immediately after starting.
+    realm.set_inspect(Some(19i64)).await;
+    wait_for_inspect_source(&realm.instance).await;
+    realm.start_persistence().await;
+    realm.wait_for_disk_write();
+
+    // Wait at least one sample period.
+    zx::MonotonicDuration::from_seconds(2).sleep();
+
+    // Persistence should overwrite persisted data with the new state after the
+    // sample period.
+    realm.set_inspect(Some(20i64)).await;
+    zx::MonotonicDuration::from_seconds(1).sleep();
+
+    // Persistence should publish the Inspect state.
+    let realm = realm.restart().await;
+    realm.start_persistence().await;
+    realm.set_update_completed().await;
+    realm.verify_diagnostics_persistence_publication(Published::Int(20)).await;
+}
+
+/// A component un-publishing its Inspect data MUST NOT remove previously
+/// persisted data. If a component crashes, its persisted Inspect state needs to
+/// remain for debugging.
+#[fuchsia::test]
+async fn overwrite_with_none() {
+    let realm =
+        TestRealm::new(TestRealmOptions::new(include_str!("test_data/config/single_tag.persist")))
+            .await;
+
+    // Persistence should fetch Inspect state immediately after starting.
+    realm.set_inspect(Some(19i64)).await;
+    wait_for_inspect_source(&realm.instance).await;
+    realm.start_persistence().await;
+    realm.wait_for_disk_write();
+
+    // Wait at least one sample period.
+    zx::MonotonicDuration::from_seconds(2).sleep();
+
+    // Persistence should not remove existing persisted data if not found.
+    realm.set_inspect(None).await;
+    zx::MonotonicDuration::from_seconds(2).sleep();
+
+    // Persistence should publish the Inspect state.
+    let realm = realm.restart().await;
+    realm.start_persistence().await;
+    realm.set_update_completed().await;
+    realm.verify_diagnostics_persistence_publication(Published::Int(19)).await;
+}
+
+/// Tags are updated independently from one another. Updates to one should not
+/// affect others, unless they contain overlapping selectors.
+#[fuchsia::test]
+async fn two_tags() {
+    let realm =
+        TestRealm::new(TestRealmOptions::new(include_str!("test_data/config/two_tags.persist")))
+            .await;
+
+    // Persistence should fetch Inspect state immediately after starting.
+    realm.set_inspect(Some(100i64)).await;
+    realm.increment_integer_counter(1).await;
+    wait_for_inspect_source(&realm.instance).await;
+    realm.start_persistence().await;
+    realm.wait_for_disk_write();
+
+    // Wait at least one sample period. integer_1 should be updated to 11.
+    zx::MonotonicDuration::from_seconds(2).sleep();
+    realm.increment_integer_counter(2).await;
+    realm.increment_integer_counter(2).await;
+
+    // Wait at least another sample period. integer_2 should be updated to be 12.
+    zx::MonotonicDuration::from_seconds(2).sleep();
+
+    // Persistence should publish the Inspect state.
+    let realm = realm.restart().await;
+    realm.start_persistence().await;
+    realm.set_update_completed().await;
+
+    let realm_name = realm.instance.root.child_name();
+    realm
+        .verify_diagnostics_persistence_publication(Published::Content(format!(
+            r#"
+        "{SERVICE}": {{
+            "test-component-metric-a": {{
+                "@errors": [],
+                "@persist_size": 43,
+                "@timestamps": {{
+                    "last_sample_boot": 0,
+                    "last_sample_utc": 0
+                }},
+                "realm_builder:{realm_name}/single_counter": {{
+                    "samples": {{
+                        "optional": 100,
+                        "integer_1": 11
+                    }}
+                }}
+            }},
+            "test-component-metric-b": {{
+                "@errors": [],
+                "@persist_size": 43,
+                "@timestamps": {{
+                    "last_sample_boot": 0,
+                    "last_sample_utc": 0
+                }},
+                "realm_builder:{realm_name}/single_counter": {{
+                    "samples": {{
+                        "optional": 100,
+                        "integer_2": 22
+                    }}
+                }}
+            }}
+        }}
+    "#
+        )))
+        .await;
+}
+
+/// Configuring `min_seconds_between_fetch` should limit Persistence from
+/// persisting new Inspect state too often.
+#[fuchsia::test]
+async fn waits_sample_period() {
+    let realm =
+        TestRealm::new(TestRealmOptions::new(include_str!("test_data/config/never_fetch.persist")))
+            .await;
+
+    // Persistence should fetch Inspect state immediately after starting.
+    realm.set_inspect(Some(19i64)).await;
+    wait_for_inspect_source(&realm.instance).await;
+    realm.start_persistence().await;
+    realm.wait_for_disk_write();
+
+    // Persistence should NOT fetch the new state immediately; it should still
+    // be waiting for `min_seconds_between_fetch` to elapse.
+    realm.set_inspect(Some(20i64)).await;
+    realm.verify_diagnostics_persistence_publication(Published::Waiting).await;
+
+    // Persistence should publish the older Inspect state.
+    let realm = realm.restart().await;
+    realm.start_persistence().await;
+    realm.set_update_completed().await;
+    realm.verify_diagnostics_persistence_publication(Published::Int(19)).await;
 }
 
 /// Persisted data shouldn't be published until Persistence is killed and
 /// restarted, and the update has completed.
 #[fuchsia::test]
-async fn publish_data() {
-    let realm = TestRealm::new().await;
+async fn waits_to_publish_data() {
+    let realm =
+        TestRealm::new(TestRealmOptions::new(include_str!("test_data/config/single_tag.persist")))
+            .await;
 
-    const TAG: &str = "test-component-metric";
-    let path = format!("{}/current/test-service/{TAG}", realm.cache());
-
+    // Persistence should fetch Inspect state immediately after starting.
     realm.set_inspect(Some(19i64)).await;
     wait_for_inspect_source(&realm.instance).await;
+    realm.start_persistence().await;
+    realm.wait_for_disk_write();
+    zx::MonotonicDuration::from_seconds(2).sleep(); // Wait at least 1 sample period.
+    realm.verify_diagnostics_persistence_publication(Published::Waiting).await;
 
-    expect_file_change(
-        &realm.instance,
-        FileChange { old: FileState::None, new: FileState::None, file_name: &path, after: None },
-    );
-
-    assert_eq!(realm.request_persistence(TAG).await, PersistResult::Queued);
-
-    expect_file_change(
-        &realm.instance,
-        FileChange { old: FileState::None, new: FileState::Int(19), file_name: &path, after: None },
-    );
-
-    verify_diagnostics_persistence_publication(&realm, Published::Waiting).await;
-
+    // Persistence should not publish without the update check.
     let realm = realm.restart().await;
-    verify_diagnostics_persistence_publication(&realm, Published::Waiting).await;
+    realm.start_persistence().await;
+    realm.wait_for_disk_write();
+    zx::MonotonicDuration::from_seconds(2).sleep(); // Wait at least 1 sample period.
+    realm.verify_diagnostics_persistence_publication(Published::Waiting).await;
+
+    // A successful update check will trigger publishing of persisted data.
     realm.set_update_completed().await;
-    verify_diagnostics_persistence_publication(&realm, Published::Int(TAG, 19)).await;
-    expect_file_change(
-        &realm.instance,
-        FileChange { old: FileState::None, new: FileState::None, file_name: &path, after: None },
-    );
+    realm.verify_diagnostics_persistence_publication(Published::Int(19)).await;
 
     // After another restart, data for tags without "persist_across_boot"
     // shouldn't be published before nor after update is completed.
     let realm = realm.restart().await;
-    verify_diagnostics_persistence_publication(&realm, Published::Waiting).await;
+    realm.start_persistence().await;
     realm.set_update_completed().await;
-    verify_diagnostics_persistence_publication(&realm, Published::Empty).await;
+    realm.verify_diagnostics_persistence_publication(Published::Default).await;
 }
 
-/// Persisting data larger than max_bytes should return TooBig.
+/// When `skip_update_check` is enabled, Persistence shouldn't wait for a
+/// successful update check before publishing.
+#[fuchsia::test]
+async fn skip_update_check() {
+    let realm = TestRealm::new(
+        TestRealmOptions::new(include_str!("test_data/config/single_tag.persist"))
+            .skip_update_check(),
+    )
+    .await;
+
+    realm.set_inspect(Some(19i64)).await;
+    wait_for_inspect_source(&realm.instance).await;
+    realm.start_persistence().await;
+    realm.wait_for_disk_write();
+
+    let realm = realm.restart().await;
+    realm.start_persistence().await;
+    realm.verify_diagnostics_persistence_publication(Published::Int(19)).await;
+}
+
+/// Persisting data larger than max_bytes should abort the operation, instead
+/// inserting an error into the persisted data.
 #[fuchsia::test]
 async fn too_big() {
-    let realm = TestRealm::new().await;
-
-    const TAG: &str = "test-component-too-big";
-    let path = format!("{}/current/test-service/{TAG}", realm.cache());
+    let realm =
+        TestRealm::new(TestRealmOptions::new(include_str!("test_data/config/too_big.persist")))
+            .await;
 
     realm.set_inspect(Some(9i64)).await;
     wait_for_inspect_source(&realm.instance).await;
-    assert_eq!(realm.request_persistence(TAG).await, PersistResult::Queued);
-    expect_file_change(
-        &realm.instance,
-        FileChange { old: FileState::None, new: FileState::TooBig, file_name: &path, after: None },
-    );
+    realm.start_persistence().await;
+    realm.wait_for_disk_write();
+    zx::MonotonicDuration::from_seconds(2).sleep(); // Wait at least 1 sample period.
 
     let realm = realm.restart().await;
+    realm.start_persistence().await;
     realm.set_update_completed().await;
-    verify_diagnostics_persistence_publication(&realm, Published::SizeError).await;
-}
-
-/// Persistence should work when specifying multiple tags at a time.
-#[fuchsia::test]
-async fn multiple_tags() {
-    let realm = TestRealm::new().await;
-
-    const TAG_1: &str = "test-component-metric";
-    const TAG_2: &str = "test-component-metric-two";
-
-    let path_1 = format!("{}/current/test-service/{TAG_1}", realm.cache());
-    let path_2 = format!("{}/current/test-service/{TAG_2}", realm.cache());
-
-    // An empty vector should be allowed and cause no change.
-    assert_eq!(realm.request_persist_tags(&[]).await, vec![]);
-    expect_file_change(
-        &realm.instance,
-        FileChange { old: FileState::None, new: FileState::None, file_name: &path_1, after: None },
-    );
-    expect_file_change(
-        &realm.instance,
-        FileChange { old: FileState::None, new: FileState::None, file_name: &path_2, after: None },
-    );
-
-    // One tag should report correctly and save correctly.
-    realm.set_inspect(Some(1i64)).await;
-    wait_for_inspect_source(&realm.instance).await;
-    assert_eq!(realm.request_persist_tags(&[TAG_2]).await, vec![PersistResult::Queued]);
-    expect_file_change(
-        &realm.instance,
-        FileChange {
-            old: FileState::None,
-            new: FileState::Int(1),
-            file_name: &path_2,
-            after: None,
-        },
-    );
-
-    // Two tags should report correctly and save correctly.
-    realm.set_inspect(Some(2i64)).await;
-    assert_eq!(
-        realm.request_persist_tags(&[TAG_1, TAG_2]).await,
-        vec![PersistResult::Queued, PersistResult::Queued]
-    );
-    expect_file_change(
-        &realm.instance,
-        FileChange {
-            old: FileState::None,
-            new: FileState::Int(2),
-            file_name: &path_1,
-            after: None,
-        },
-    );
-    expect_file_change(
-        &realm.instance,
-        FileChange {
-            old: FileState::Int(1),
-            new: FileState::Int(2),
-            file_name: &path_2,
-            after: None,
-        },
-    );
-}
-
-/// Multiple tags with an invalid tag should return BadName for the invalid tag.
-#[fuchsia::test]
-async fn multiple_tags_with_invalid() {
-    let realm = TestRealm::new().await;
-
-    const TAG_CORRECT: &str = "test-component-metric";
-    const TAG_WRONG: &str = "wrong_component_metric";
-    let path_correct = format!("{}/current/test-service/{TAG_CORRECT}", realm.cache());
-
-    realm.set_inspect(Some(4i64)).await;
-    wait_for_inspect_source(&realm.instance).await;
-    assert_eq!(
-        realm.request_persist_tags(&[TAG_WRONG, TAG_CORRECT]).await,
-        vec![PersistResult::BadName, PersistResult::Queued]
-    );
-    expect_file_change(
-        &realm.instance,
-        FileChange {
-            old: FileState::None,
-            new: FileState::Int(4),
-            file_name: &path_correct,
-            after: None,
-        },
-    );
-}
-
-/// Duplicate tags aren't recommended, but we might as well handle them.
-#[fuchsia::test]
-async fn multiple_tags_duplicate() {
-    let realm = TestRealm::new().await;
-
-    const TAG: &str = "test-component-metric";
-    let path = format!("{}/current/test-service/{TAG}", realm.cache());
-
-    realm.set_inspect(Some(6i64)).await;
-    wait_for_inspect_source(&realm.instance).await;
-    assert_eq!(
-        realm.request_persist_tags(&[TAG, TAG]).await,
-        vec![PersistResult::Queued, PersistResult::Queued]
-    );
-    expect_file_change(
-        &realm.instance,
-        FileChange { old: FileState::None, new: FileState::Int(6), file_name: &path, after: None },
-    );
+    realm.verify_diagnostics_persistence_publication(Published::SizeError(9i64)).await;
 }
 
 /// Tags with persist_across_boot should remain after restart.
 #[fuchsia::test]
 async fn persist_across_boot() {
-    let realm = TestRealm::new().await;
+    let realm = TestRealm::new(TestRealmOptions::new(include_str!(
+        "test_data/config/persist_across_boot.persist"
+    )))
+    .await;
 
-    const TAG_PERSISTED: &str = "test-component-metric-across-boot";
-    let tag_persisted_path = format!("{}/current/test-service/{TAG_PERSISTED}", realm.cache());
-
+    // Set the Inspect field to a custom value. This value won't publish till
+    // the next reboot.
     realm.set_inspect(Some(8i64)).await;
     wait_for_inspect_source(&realm.instance).await;
-    assert_eq!(
-        File::open(&tag_persisted_path).map(|_| ()).map_err(|e| e.kind()),
-        Err(std::io::ErrorKind::NotFound)
-    );
-    assert_eq!(realm.request_persistence(TAG_PERSISTED).await, PersistResult::Queued);
-    expect_file_change(
-        &realm.instance,
-        FileChange {
-            old: FileState::None,
-            new: FileState::Int(8),
-            file_name: &tag_persisted_path,
-            after: None,
-        },
-    );
-
-    let realm = realm.restart().await;
-    expect_file_change(
-        &realm.instance,
-        FileChange {
-            old: FileState::None,
-            new: FileState::Int(8),
-            file_name: &tag_persisted_path,
-            after: None,
-        },
-    );
-    verify_diagnostics_persistence_publication(&realm, Published::Waiting).await;
+    realm.start_persistence().await;
+    realm.wait_for_disk_write();
+    realm.verify_diagnostics_persistence_publication(Published::Waiting).await;
     realm.set_update_completed().await;
-    verify_diagnostics_persistence_publication(&realm, Published::Int(TAG_PERSISTED, 8)).await;
+    realm.verify_diagnostics_persistence_publication(Published::Empty).await;
+
+    // After the first reboot, we should see the custom value. It should also
+    // persist this value to the current persisted data.
+    let realm = realm.restart().await;
+    realm.start_persistence().await;
+    realm.set_update_completed().await;
+    realm.verify_diagnostics_persistence_publication(Published::Int(8)).await;
+
+    // The next boot should continue to have the custom value since this tag is
+    // marked with "persist_across_reboot".
+    let realm = realm.restart().await;
+    realm.start_persistence().await;
+    realm.set_update_completed().await;
+    realm.verify_diagnostics_persistence_publication(Published::Int(8)).await;
+
+    // Once more for good measure.
+    let realm = realm.restart().await;
+    realm.start_persistence().await;
+    realm.set_update_completed().await;
+    realm.verify_diagnostics_persistence_publication(Published::Int(8)).await;
 }
 
 /// Verify Persistence starts and never stops.
 #[fuchsia::test]
 async fn never_idles() {
-    let builder = RealmBuilder::with_params(
-        RealmBuilderParams::new().from_relative_url("#meta/test_root.cm"),
-    )
-    .await
-    .unwrap();
-
+    let realm =
+        TestRealm::new(TestRealmOptions::new(include_str!("test_data/config/single_tag.persist")))
+            .await;
     let mut event_stream = EventStream::open().await.unwrap();
-    let instance = builder.build().await.unwrap();
+    realm.start_persistence().await;
 
-    // Wait for the start event.
-    let moniker = format!(".*{}.*persistence$", instance.root.child_name());
+    // Listen for the start event.
+    let moniker = format!(".*{}.*persistence$", realm.instance.root.child_name());
     EventMatcher::ok()
         .moniker_regex(moniker.clone())
         .wait::<Started>(&mut event_stream)
         .await
         .unwrap();
 
-    // Wait for the absence of the stop event.
+    // Allow Persistence to publish to Inspect.
+    realm.wait_for_disk_write();
+    realm.verify_diagnostics_persistence_publication(Published::Waiting).await;
+    realm.set_update_completed().await;
+    realm.verify_diagnostics_persistence_publication(Published::Empty).await;
+
+    // Listen for the stop event. There shouldn't be one.
     let mut stop_event = Box::pin(
         EventMatcher::ok().moniker_regex(moniker.clone()).wait::<Stopped>(&mut event_stream).fuse(),
     );
     select! {
         event = &mut stop_event => panic!("Unexpected stop event {event:?}"),
-        _ = fasync::Timer::new(MonotonicDuration::from_seconds(1)).fuse() => {},
+        _ = fasync::Timer::new(MonotonicDuration::from_seconds(5)).fuse() => {},
     };
 }
 
@@ -486,54 +462,107 @@ async fn wait_for_inspect_source(realm: &RealmInstance) {
         if published_inspect.contains(KEY_FROM_INSPECT_SOURCE) {
             return;
         }
-        thread::sleep(time::Duration::from_millis(100));
+        fasync::Timer::new(MonotonicDuration::from_millis(100)).await;
     }
 }
 
-#[derive(Default)]
-struct TestRealmOptions {
-    skip_update_check: bool,
+pub(crate) struct TestRealmOptions {
     name: String,
+    config: &'static str,
+    filesystem: mock_filesystems::TestFs,
+    skip_update_check: bool,
+    // TODO(https://fxbug.dev/460853191): Remove with DataPersistence.
+    with_data_persistence: bool,
+}
+
+impl TestRealmOptions {
+    fn new(config: &'static str) -> Self {
+        // Generate a unique name for each test realm to prevent conflicts
+        // between test runs.
+        let name = {
+            let id: u64 = rand::random();
+            format!("auto-{id:x}")
+        };
+        Self {
+            name,
+            config,
+            filesystem: mock_filesystems::TestFs::new(),
+            skip_update_check: false,
+            with_data_persistence: false,
+        }
+    }
+    fn skip_update_check(self) -> Self {
+        Self { skip_update_check: true, ..self }
+    }
+    fn with_data_persistence(self) -> Self {
+        Self { with_data_persistence: true, ..self }
+    }
 }
 
 impl TestRealm {
-    async fn new() -> Self {
-        Self::new_with_options(TestRealmOptions { name: Self::name(), ..Default::default() }).await
-    }
-
-    fn name() -> String {
-        let id: u64 = rand::random();
-        format!("auto-{id:x}")
-    }
-
-    async fn new_with_options(opts: TestRealmOptions) -> Self {
-        let fs = mock_filesystems::TestFs::new();
-        TestRealm::new_with_fs(opts, fs).await
-    }
-
-    async fn new_with_fs(opts: TestRealmOptions, fs: mock_filesystems::TestFs) -> TestRealm {
-        let TestRealmOptions { name, skip_update_check } = opts;
-        let instance = test_topology::create(&name, &fs, skip_update_check).await;
-        // Start up the Persistence component during realm creation - as happens during startup
-        // in a real system - so that it can publish the previous boot's stored data, if any.
-        let _persistence_binder = instance
-            .root
-            .connect_to_named_protocol_at_exposed_dir::<BinderMarker>(
-                "fuchsia.component.PersistenceBinder",
-            )
-            .unwrap();
+    async fn new(options: TestRealmOptions) -> Self {
+        let instance = test_topology::create(&options).await;
         // `inspect` is the source of Inspect data that Persistence will read and persist.
         let inspect = instance.root.connect_to_protocol_at_exposed_dir().unwrap();
         // `persistence` is the connection to ask for new data to be read and persisted.
         let persistence = instance.root.connect_to_protocol_at_exposed_dir().unwrap();
         // `controller` is the connection to send control signals to the test's update-checker mock.
         let controller = instance.root.connect_to_protocol_at_exposed_dir().unwrap();
-        TestRealm { name, fs, instance, persistence, inspect, controller, skip_update_check }
+        TestRealm { options, instance, inspect, persistence, controller }
     }
 
-    /// Returns the path to the cache directory.
-    fn cache(&self) -> &str {
-        self.fs.cache()
+    async fn start_persistence(&self) {
+        // Start up the Persistence component by sending a request to one of its
+        // served FIDLs.
+        let _persistence_binder = self
+            .instance
+            .root
+            .connect_to_named_protocol_at_exposed_dir::<BinderMarker>(
+                "fuchsia.component.PersistenceBinder",
+            )
+            .unwrap();
+
+        // These test are single threaded and will deadlock while loading
+        // Persistence configs unless sleeps are added to allow
+        // config-data-server to serve requests. This could also be fixed by
+        // setting threads=2 in the fuchsia_test macro.
+        if self.options.skip_update_check {
+            let inspector = self.archive_reader_with_selector(format!(
+                "realm_builder\\:{}/persistence:root/fuchsia.inspect.Health:status",
+                self.instance.root.child_name()
+            ));
+
+            loop {
+                fasync::Timer::new(MonotonicDuration::from_millis(100)).await;
+                let snapshot = inspector.snapshot().await.unwrap();
+                if let Some(hierarchy) = snapshot.into_iter().next().and_then(|d| d.payload)
+                    && let Some(status) = hierarchy
+                        .get_property_by_path(&["fuchsia.inspect.Health", "status"])
+                        .and_then(|p| p.string())
+                    && status == "OK"
+                {
+                    break;
+                }
+            }
+        } else {
+            self.verify_diagnostics_persistence_publication(Published::Waiting).await;
+        }
+    }
+
+    // Wait for Persistence to finish writing current data to disk.
+    fn wait_for_disk_write(&self) {
+        let current_data_path = format!("{}/current.json", self.options.filesystem.cache());
+        loop {
+            match File::open(&current_data_path) {
+                Ok(_) => break,
+                Err(e)
+                    if e.kind() == ErrorKind::NotFound || e.kind() == ErrorKind::ResourceBusy =>
+                {
+                    MonotonicDuration::from_millis(100).sleep();
+                }
+                Err(e) => panic!("Unexpected error {e}"),
+            }
+        }
     }
 
     async fn set_update_completed(&self) {
@@ -550,55 +579,85 @@ impl TestRealm {
         };
     }
 
-    /// Ask for a tag's associated data to be persisted.
-    async fn request_persistence(&self, tag: &str) -> PersistResult {
-        self.persistence
-            .persist(tag)
-            .await
-            .unwrap_or_else(|e| panic!("Failed to persist tag {tag:?}: {e:?}"))
-    }
-
-    /// Ask for a tag's associated data to be persisted.
-    async fn request_persist_tags(&self, tags: &[&str]) -> Vec<PersistResult> {
-        self.persistence
-            .persist_tags(&tags.iter().map(|t| t.to_string()).collect::<Vec<String>>())
-            .await
-            .unwrap_or_else(|e| panic!("Failed to persist tags {tags:?}: {e:?}"))
+    /// Increment an "integer_*" counter in single-counter-test-component by ID.
+    ///
+    /// The test component contains 3 integer properties:
+    ///  - integer_1
+    ///  - integer_2
+    ///  - integer_3
+    async fn increment_integer_counter(&self, counter: u16) {
+        // Integer properties are included into the map at a +1 offset.
+        self.inspect.increment_int(counter + 1).await.expect("Incrementing counter failed")
     }
 
     /// Tear down the realm to make sure everything is gone before you restart it.
     /// Then create and return a new realm.
     async fn restart(self) -> TestRealm {
         let Self {
-            name,
-            fs,
+            options,
             instance,
-            skip_update_check,
-            persistence: _persistence,
             inspect: _inspect,
+            persistence: _persistence,
             controller: _controller,
         } = self;
         instance.destroy().await.expect("destroy should work");
-        TestRealm::new_with_fs(TestRealmOptions { name, skip_update_check }, fs).await
+        TestRealm::new(options).await
+    }
+
+    /// Create an ArchiveReader scoped to this test realm.
+    fn archive_reader_with_selector(&self, selector: impl ToSelectorArguments) -> ArchiveReader<Inspect> {
+        let accessor_proxy = self
+            .instance
+            .root
+            .connect_to_protocol_at_exposed_dir()
+            .expect("Failed to connect to ArchiveAccessor");
+        let mut reader = ArchiveReader::inspect();
+        reader.with_archive(accessor_proxy).retry(RetryConfig::never()).add_selector(selector);
+        reader
+    }
+
+    /// Verify that the expected data is published by Persistence in its Inspect hierarchy.
+    async fn verify_diagnostics_persistence_publication(&self, published: Published) {
+        let inspect_fetcher = self.archive_reader_with_selector(format!(
+            "realm_builder\\:{}/persistence:root",
+            self.instance.root.child_name()
+        ));
+
+        loop {
+            fasync::Timer::new(MonotonicDuration::from_millis(100)).await;
+            let published_inspect =
+                inspect_fetcher.snapshot_raw::<serde_json::Value>().await.unwrap();
+            let published_inspect = serde_json::to_string_pretty(&published_inspect).unwrap();
+            if matches!(published, Published::Waiting) && published_inspect.contains("STARTING_UP")
+            {
+                break;
+            } else if published_inspect.contains(PUBLISHED_TIME_KEY) {
+                assert!(json_strings_match(
+                    &clean_component_url(unbrittle_too_big_message(zero_and_test_timestamps(
+                        &published_inspect
+                    ))),
+                    &expected_diagnostics_persistence_inspect(
+                        self.instance.root.child_name(),
+                        &self.options,
+                        published
+                    ),
+                    "persistence publication"
+                ));
+                break;
+            }
+        }
     }
 }
 
 /// Given a mut map from a JSON object that's presumably sourced from Inspect, if it contains a
-/// timestamp record entry, this function validates that "before" <= "after", then zeros them.
+/// timestamp record entry, this function validates fields exist and zeros them.
 fn clean_and_test_timestamps(map: &mut serde_json::Map<String, Value>) {
     if let Some(Value::Object(map)) = map.get_mut(TIMESTAMP_STRUCT_KEY) {
-        if let (Some(Value::Number(before)), Some(Value::Number(after))) =
-            (map.get(BEFORE_MONOTONIC_KEY), map.get(AFTER_MONOTONIC_KEY))
-        {
-            assert!(before.as_u64() <= after.as_u64(), "Monotonic timestamps must increase");
-        } else {
-            panic!("Timestamp map must contain before/after monotonic values");
-        }
         for key in TIMESTAMP_STRUCT_ENTRIES.iter() {
-            let key = key.to_string();
-            if let Some(Value::Number(_)) = map.get_mut(&key) {
-                map.insert(key, serde_json::json!(0));
-            }
+            assert_matches!(
+                map.insert(key.to_string(), serde_json::json!(0)),
+                Some(Value::Number(_))
+            );
         }
     }
 }
@@ -616,94 +675,6 @@ fn clean_component_url(contents: String) -> String {
     matcher.replace_all(&contents, "realm-builder/persistence").to_string()
 }
 
-// Verifies that the file changes from the old state to the new state within the specified time
-// window. This involves polling; the granularity for retries is 100 msec.
-fn expect_file_change(realm: &RealmInstance, rules: FileChange<'_>) {
-    // Returns None if the file isn't there. If the file is there but contains "[]" then it tries
-    // again (this avoids a file-writing race condition). Any other string will be returned.
-    fn file_contents(persisted_data_path: &str) -> Option<String> {
-        loop {
-            let file = File::open(persisted_data_path);
-            if file.is_err() {
-                return None;
-            }
-            let mut contents = String::new();
-            file.unwrap().read_to_string(&mut contents).unwrap();
-            // Just because the file was present doesn't mean we persisted. Creation and
-            // writing isn't atomic, and we sometimes flake as we race between the creation and write.
-            if contents == "[]" {
-                warn!("No data has been written to the persisted file (yet)");
-                thread::sleep(time::Duration::from_millis(100));
-                continue;
-            }
-            let parse_result: Result<Value, serde_json::Error> = serde_json::from_str(&contents);
-            if parse_result.is_err() {
-                warn!("Bad JSON data in the file. Partial writes happen sometimes. Retrying.");
-                thread::sleep(time::Duration::from_millis(100));
-                continue;
-            }
-            return Some(contents);
-        }
-    }
-
-    fn zero_file_timestamps(contents: String) -> String {
-        let mut obj: Value = serde_json::from_str(&contents).expect("parsing json failed.");
-        if let Value::Object(ref mut map) = obj {
-            clean_and_test_timestamps(map);
-        }
-        obj.to_string()
-    }
-
-    fn expected_string(realm: &RealmInstance, state: &FileState) -> Option<String> {
-        match state {
-            FileState::None => None,
-            FileState::NoInt => Some(expected_stored_data(realm, None)),
-            FileState::Int(i) => Some(expected_stored_data(realm, Some(*i))),
-            FileState::TooBig => Some(expected_size_error()),
-        }
-    }
-
-    fn strings_match(left: &Option<String>, right: &Option<String>, context: &str) -> bool {
-        match (left, right) {
-            (None, None) => true,
-            (Some(left), Some(right)) => json_strings_match(left, right, context),
-            _ => false,
-        }
-    }
-
-    let start_time = MonotonicInstant::get();
-    let old_string = expected_string(realm, &rules.old);
-    let new_string = expected_string(realm, &rules.new);
-
-    loop {
-        assert!(
-            start_time + MonotonicDuration::from_seconds(GIVE_UP_POLLING_SECS)
-                > MonotonicInstant::get()
-        );
-        let contents = file_contents(rules.file_name)
-            .map(zero_file_timestamps)
-            .map(unbrittle_too_big_message)
-            .map(unbrittle_too_big_message)
-            .map(clean_component_url);
-
-        if rules.old != rules.new && strings_match(&contents, &old_string, "old file (likely OK)") {
-            thread::sleep(time::Duration::from_millis(100));
-            continue;
-        }
-        if strings_match(&contents, &new_string, "new file check") {
-            if let Some(after) = rules.after {
-                assert!(MonotonicInstant::get() > after);
-            }
-            return;
-        }
-        error!("Old : {:?}", old_string);
-        error!("New : {:?}", new_string);
-        error!("File: {:?}", contents);
-        panic!("File contents don't match old or new target.");
-    }
-}
-
-#[track_caller]
 fn json_strings_match(observed: &str, expected: &str, context: &str) -> bool {
     let mut observed_json: Value = serde_json::from_str(observed)
         .unwrap_or_else(|e| panic!("Error parsing observed json in {context}: {e:?}"));
@@ -778,146 +749,145 @@ fn zero_and_test_timestamps(contents: &str) -> String {
     format!("[{}]", string_result_array.join(","))
 }
 
-/// Verify that the expected data is published by Persistence in its Inspect hierarchy.
-async fn verify_diagnostics_persistence_publication<'a>(
-    realm: &TestRealm,
-    published: Published<'a>,
-) {
-    let accessor_proxy = realm
-        .instance
-        .root
-        .connect_to_protocol_at_exposed_dir()
-        .expect("Failed to connect to ArchiveAccessor");
-    let mut inspect_fetcher = ArchiveReader::inspect();
-    inspect_fetcher.with_archive(accessor_proxy).retry(RetryConfig::never()).add_selector(format!(
-        "realm_builder\\:{}/persistence:root",
-        realm.instance.root.child_name()
-    ));
-    loop {
-        thread::sleep(time::Duration::from_millis(100));
-        let published_inspect = inspect_fetcher.snapshot_raw::<serde_json::Value>().await.unwrap();
-        let published_inspect = serde_json::to_string_pretty(&published_inspect).unwrap();
-        if matches!(published, Published::Waiting) && published_inspect.contains("STARTING_UP") {
-            break;
-        } else if published_inspect.contains(PUBLISHED_TIME_KEY) {
-            assert!(json_strings_match(
-                &clean_component_url(unbrittle_too_big_message(zero_and_test_timestamps(
-                    &published_inspect
-                ))),
-                &expected_diagnostics_persistence_inspect(realm, published),
-                "persistence publication"
-            ));
-            break;
-        }
-    }
-}
-
-fn expected_stored_data(realm: &RealmInstance, number: Option<i32>) -> String {
-    let base_size: usize = 62 + realm.root.child_name().len();
-
-    let (persist_size, variant) = match number {
-        None => (base_size, "".to_string()),
-        Some(number) => {
-            let variant = format!("\"optional\": {number},");
-            (base_size + variant.len() - 1, variant)
-        }
-    };
-    r#"
-  {"realm_builder:%REALM_NAME%/single_counter": { "samples" : { %VARIANT% "integer_1": 10 } },
-   "@persist_size": %PERSIST_SIZE%,
-   "@timestamps": {"before_utc":0, "after_utc":0, "before_monotonic":0, "after_monotonic":0}
-  }
-    "#
-    .replace("%VARIANT%", &variant)
-    .replace("%PERSIST_SIZE%", &persist_size.to_string())
-    .replace("%REALM_NAME%", realm.root.child_name())
-}
-
-fn expected_size_error() -> String {
-    // unbrittle_too_big_message() will replace a 2-digit number after "big: " with __
-    r#"{
-        ":error": {
-            "description": "Data too big: __ > max length 10"
-        },
-        "@timestamps": {
-            "before_utc":0, "after_utc":0, "before_monotonic":0, "after_monotonic":0
-        }
-    }"#
-    .to_string()
-}
-
-fn expected_diagnostics_persistence_inspect<'a>(
-    realm: &TestRealm,
-    published: Published<'a>,
+fn expected_diagnostics_persistence_inspect(
+    realm_name: &str,
+    options: &TestRealmOptions,
+    published: Published,
 ) -> String {
-    let variant = match published {
-        Published::Waiting => r#""config": {"skip_update_check": %SKIP_UPDATE_CHECK%}"#
-            .replace("%SKIP_UPDATE_CHECK%", &format!("{}", realm.skip_update_check)),
-        Published::Empty => {
-            r#""published":0,"config": {"skip_update_check": %SKIP_UPDATE_CHECK%},"persist":{}"#
-                .replace("%SKIP_UPDATE_CHECK%", &format!("{}", realm.skip_update_check))
-        }
-        Published::SizeError => r#"
-            "published":0,
-            "config": {"skip_update_check": %SKIP_UPDATE_CHECK%},
-            "persist": {
-                "test-service": {
-                    "test-component-too-big": %SIZE_ERROR%
+    let content = match published {
+        Published::Waiting | Published::Empty | Published::Content(_) => "".to_string(),
+        Published::Default => r#"
+            {
+                "samples": {
+                    "integer_1": 10
                 }
             }
-            "#
-        .replace("%SIZE_ERROR%", &expected_size_error())
-        .replace("%SKIP_UPDATE_CHECK%", &format!("{}", realm.skip_update_check)),
-        Published::Int(tag, number) => {
-            let number_str = number.to_string();
-            let persist_size = 74 + realm.instance.root.child_name().len() + number_str.len();
+        "#
+        .to_string(),
+        Published::SizeError(number) => format!(
             r#"
-                "published":0,
-                "config": {"skip_update_check": %SKIP_UPDATE_CHECK%},
-                "persist": {
-                    "test-service": {
-                        "%TAG%": {
-                            "@timestamps": {
-                                "before_utc":0,
-                                "after_utc":0,
-                                "before_monotonic":0,
-                                "after_monotonic":0
-                            },
-                            "@persist_size": %PERSIST_SIZE%,
-                            "realm_builder:%REALM_NAME%/single_counter": {
-                                "samples": {
-                                    "optional": %NUMBER%,
-                                    "integer_1": 10
-                                }
-                            }
-                        }
-                    }
-                }
+                {{
+                    "samples": {{
+                        "optional": {number},
+                        "integer_1": 10
+                    }}
+                }}
             "#
-            .replace("%TAG%", tag)
-            .replace("%PERSIST_SIZE%", &persist_size.to_string())
-            .replace("%NUMBER%", &number_str)
-            .replace("%REALM_NAME%", realm.instance.root.child_name())
-            .replace("%SKIP_UPDATE_CHECK%", &format!("{}", realm.skip_update_check))
-        }
+        ),
+        Published::Int(number) => format!(
+            r#"
+                {{
+                    "samples": {{
+                        "optional": {number},
+                        "integer_1": 10
+                    }}
+                }}
+            "#
+        ),
     };
-    r#"[
-  {
-    "data_source": "Inspect",
-    "metadata": {
-      "component_url": "realm-builder/persistence",
-      "name": "root",
-      "timestamp": 0
-    },
-    "moniker": "realm_builder:%REALM_NAME%/persistence",
-    "payload": {
-      "root": {
-        %VARIANT%
-      }
-    },
-    "version": 1
-  }
-    ]"#
-    .replace("%VARIANT%", &variant)
-    .replace("%REALM_NAME%", realm.instance.root.child_name())
+
+    let persist_size = if content.is_empty() {
+        0
+    } else {
+        let value = serde_json::from_str::<serde_json::Value>(&content).unwrap();
+        let content = serde_json::to_string(&value).unwrap();
+        content.len()
+    };
+
+    let skip_update_check = options.skip_update_check;
+
+    let config = format!(
+        r#"
+            "config": {{
+                "skip_update_check": {skip_update_check}
+            }}
+        "#
+    );
+
+    let variant = match published {
+        Published::Waiting => format!(
+            r#"
+                {config}
+            "#
+        ),
+        Published::Empty => format!(
+            r#"
+                {config},
+                "persist": {{}},
+                "published": 0
+            "#
+        ),
+        Published::Content(content) => format!(
+            r#"
+                {config},
+                "persist": {{
+                    {content}
+                }},
+                "published": 0
+            "#
+        ),
+        Published::Default | Published::Int(_) => format!(
+            r#"
+                {config},
+                "persist": {{
+                    "{SERVICE}": {{
+                        "{TAG}": {{
+                            "@errors": [],
+                            "@persist_size": {persist_size},
+                            "@timestamps": {{
+                                "last_sample_boot": 0,
+                                "last_sample_utc": 0
+                            }},
+                            "realm_builder:{realm_name}/single_counter": {content}
+                        }}
+                    }}
+                }},
+                "published": 0
+            "#
+        ),
+        // unbrittle_too_big_message() will replace a 2-digit number after
+        // "big: " with "__"
+        Published::SizeError(_) => format!(
+            r#"
+                {config},
+                "persist": {{
+                    "{SERVICE}": {{
+                        "{TAG}": {{
+                            "@errors": [
+                                "Data too big: __ > max length 10"
+                            ],
+                            "@persist_size": {persist_size},
+                            "@timestamps": {{
+                                "last_sample_boot": 0,
+                                "last_sample_utc": 0
+                            }}
+                        }}
+                    }}
+                }},
+                "published": 0
+            "#
+        ),
+    };
+
+    format!(
+        r#"
+        [
+            {{
+                "data_source": "Inspect",
+                "metadata": {{
+                    "component_url": "realm-builder/persistence",
+                    "name": "root",
+                    "timestamp": 0
+                }},
+                "moniker": "realm_builder:{realm_name}/persistence",
+                "payload": {{
+                    "root": {{
+                        {variant}
+                    }}
+                }},
+                "version": 1
+            }}
+        ]
+    "#
+    )
 }

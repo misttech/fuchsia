@@ -25,7 +25,7 @@
             to: "#persistence",
         },
         {
-            protocol: [ "fuchsia.diagnostics.ArchiveAccessor.feedback" ],
+            protocol: [ "fuchsia.diagnostics.Sample" ],
             from: "parent/diagnostics-accessors",
             to: [ "#persistence" ],
         },

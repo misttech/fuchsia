@@ -2,9 +2,9 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use crate::mock_filesystems::TestFs;
+use crate::TestRealmOptions;
 use fidl_fuchsia_component_sandbox as fsandbox;
-use fidl_fuchsia_diagnostics::ArchiveAccessorMarker;
+use fidl_fuchsia_diagnostics::{ArchiveAccessorMarker, SampleMarker};
 use fidl_fuchsia_inspect::InspectSinkMarker;
 use fidl_fuchsia_logger::LogSinkMarker;
 use fidl_fuchsia_update::ListenerMarker;
@@ -17,7 +17,10 @@ const ARCHIVIST_URL: &str = "archivist-for-embedding#meta/archivist-for-embeddin
 const SINGLE_COUNTER_URL: &str = "#meta/single_counter_test_component.cm";
 const PERSISTENCE_URL: &str = "#meta/persistence.cm";
 
-pub async fn create(name: &str, fs: &TestFs, skip_update_check: bool) -> RealmInstance {
+pub async fn create(options: &TestRealmOptions) -> RealmInstance {
+    let TestRealmOptions { name, config, filesystem, skip_update_check, with_data_persistence } =
+        options;
+
     let builder = RealmBuilder::with_params(RealmBuilderParams::new().realm_name(name))
         .await
         .expect("Failed to create realm builder");
@@ -30,7 +33,7 @@ pub async fn create(name: &str, fs: &TestFs, skip_update_check: bool) -> RealmIn
         .add_child("persistence", PERSISTENCE_URL, ChildOptions::new())
         .await
         .expect("Failed to create persistence");
-    let config_server = crate::mock_filesystems::create_config_data(&builder)
+    let config_server = crate::mock_filesystems::create_config_data(&builder, config)
         .await
         .expect("Failed to create filesystem from config");
     builder
@@ -51,7 +54,7 @@ pub async fn create(name: &str, fs: &TestFs, skip_update_check: bool) -> RealmIn
         .add_capability(cm_rust::CapabilityDecl::Config(cm_rust::ConfigurationDecl {
             name: "fuchsia.diagnostics.PersistenceSkipUpdateCheck".parse().unwrap(),
             value: cm_rust::ConfigValue::Single(cm_rust::ConfigSingleValue::Bool(
-                skip_update_check,
+                *skip_update_check,
             )),
         }))
         .await
@@ -69,7 +72,8 @@ pub async fn create(name: &str, fs: &TestFs, skip_update_check: bool) -> RealmIn
         .await
         .expect("Failed to add config capability for skipping update check");
 
-    let cache_server = fs.serve_cache(&builder).await.expect("Failed to create cache server");
+    let cache_server =
+        filesystem.serve_cache(&builder).await.expect("Failed to create cache server");
     builder
         .add_route(
             Route::new()
@@ -118,30 +122,35 @@ pub async fn create(name: &str, fs: &TestFs, skip_update_check: bool) -> RealmIn
         .await
         .expect("Failed to add route for fuchsia.samplertestcontroller.SamplerTestController");
 
-    builder
-        .add_route(
-            Route::new()
-                .capability(
-                    Capability::protocol_by_name(
-                        "fuchsia.diagnostics.persist.DataPersistence-test-service",
+    // TODO(https://fxbug.dev/460853191): Remove with DataPersistence.
+    if *with_data_persistence {
+        builder
+            .add_route(
+                Route::new()
+                    .capability(
+                        Capability::protocol_by_name(
+                            "fuchsia.diagnostics.persist.DataPersistence-test-service",
+                        )
+                        .as_("fuchsia.diagnostics.persist.DataPersistence"),
                     )
-                    .as_("fuchsia.diagnostics.persist.DataPersistence"),
-                )
-                .from(Ref::dictionary(&persistence, "diagnostics-persist-capabilities"))
-                .to(Ref::parent()),
-        )
-        .await
-        .expect("Failed to add route for fuchsia.diagnostics.persist.DataPersistence-test-service");
+                    .from(Ref::dictionary(&persistence, "diagnostics-persist-capabilities"))
+                    .to(Ref::parent()),
+            )
+            .await
+            .expect(
+                "Failed to add route for fuchsia.diagnostics.persist.DataPersistence-test-service",
+            );
 
-    builder
-        .add_route(
-            Route::new()
-                .capability(Capability::protocol::<fsandbox::CapabilityStoreMarker>())
-                .from(Ref::framework())
-                .to(&persistence),
-        )
-        .await
-        .expect("Failed to add fuchsia.component.sandbox routes");
+        builder
+            .add_route(
+                Route::new()
+                    .capability(Capability::protocol::<fsandbox::CapabilityStoreMarker>())
+                    .from(Ref::framework())
+                    .to(&persistence),
+            )
+            .await
+            .expect("Failed to add fuchsia.component.sandbox routes");
+    }
 
     let archivist = builder
         .add_child("archivist", ARCHIVIST_URL, ChildOptions::new().eager())
@@ -165,6 +174,7 @@ pub async fn create(name: &str, fs: &TestFs, skip_update_check: bool) -> RealmIn
         .add_route(
             Route::new()
                 .capability(Capability::protocol::<ArchiveAccessorMarker>())
+                .capability(Capability::protocol::<SampleMarker>())
                 .from(Ref::dictionary(&archivist, "diagnostics-accessors"))
                 .to(Ref::parent()),
         )
@@ -178,11 +188,12 @@ pub async fn create(name: &str, fs: &TestFs, skip_update_check: bool) -> RealmIn
                     Capability::protocol::<ArchiveAccessorMarker>()
                         .as_("fuchsia.diagnostics.ArchiveAccessor.feedback"),
                 )
+                .capability(Capability::protocol::<SampleMarker>())
                 .from(Ref::dictionary(&archivist, "diagnostics-accessors"))
                 .to(&persistence),
         )
         .await
-        .expect("Failed to add route for fuchsia.diagnostics.ArchiveAccessor");
+        .expect("Failed to add route for fuchsia.diagnostics protocols");
 
     // Override the diagnostics dictionary which normally provides InspectSink
     // and LogSink capabilities from the top-level archivist.

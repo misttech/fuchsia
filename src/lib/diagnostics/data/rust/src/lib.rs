@@ -506,7 +506,10 @@ where
 
     /// Uses a set of Selectors to filter self's payload and returns the resulting
     /// Data. If the resulting payload is empty, it returns Ok(None).
-    pub fn filter(mut self, selectors: &[Selector]) -> Result<Option<Self>, Error> {
+    pub fn filter<'a>(
+        mut self,
+        selectors: impl IntoIterator<Item = &'a Selector>,
+    ) -> Result<Option<Self>, Error> {
         let Some(hierarchy) = self.payload else {
             return Ok(None);
         };
@@ -520,12 +523,8 @@ where
             };
 
         // TODO(https://fxbug.dev/300319116): Cache the `HierarchyMatcher`s
-        let matcher: HierarchyMatcher = match matching_selectors.try_into() {
-            Ok(hierarchy_matcher) => hierarchy_matcher,
-            Err(e) => {
-                return Err(Error::Internal(e.into()));
-            }
-        };
+        let matcher: HierarchyMatcher =
+            matching_selectors.try_into().map_err(|e| Error::Internal(anyhow::Error::from(e)))?;
 
         self.payload = match diagnostics_hierarchy::filter_hierarchy(hierarchy, &matcher) {
             Some(hierarchy) => Some(hierarchy),
