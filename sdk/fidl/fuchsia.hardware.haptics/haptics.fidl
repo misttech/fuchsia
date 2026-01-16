@@ -6,19 +6,86 @@ library fuchsia.hardware.haptics;
 
 using zx;
 
+type Effect = flexible enum {
+    /// A sharp, crisp click.
+    CLICK = 0;
+
+    /// Two sharp, crisp clicks in quick succession.
+    DOUBLE_CLICK = 1;
+
+    /// A short, light tap.
+    TICK = 2;
+
+    /// A dull, heavy impact.
+    THUD = 3;
+
+    /// A sudden, percussive sensation.
+    POP = 4;
+
+    /// A more intense version of CLICK.
+    HEAVY_CLICK = 5;
+
+    /// The ringtone effects are vendor-specific variations. A method to query these may be added in
+    /// the future if needed.
+    RINGTONE_1 = 6;
+    RINGTONE_2 = 7;
+    RINGTONE_3 = 8;
+    RINGTONE_4 = 9;
+    RINGTONE_5 = 10;
+    RINGTONE_6 = 11;
+    RINGTONE_7 = 12;
+    RINGTONE_8 = 13;
+    RINGTONE_9 = 14;
+    RINGTONE_10 = 15;
+    RINGTONE_11 = 16;
+    RINGTONE_12 = 17;
+    RINGTONE_13 = 18;
+    RINGTONE_14 = 19;
+    RINGTONE_15 = 20;
+
+    /// A tick with a textured feel.
+    TEXTURE_TICK = 21;
+};
+
+type EffectStrength = flexible enum {
+    LIGHT = 0;
+    MEDIUM = 1;
+    STRONG = 2;
+};
+
+/// Effect that the haptics device can play.
+type SupportedEffect = struct {
+    /// Effect that the haptics device can play.
+    effect Effect;
+
+    /// Duration of |effect| when played by the haptics device.
+    duration zx.Duration;
+};
+
 @discoverable(client="platform", server="external")
 open protocol Device {
     /// Deprecated. Do not use.
     /// TODO(b/419629139): Remove once no longer used.
     flexible StartVibration() -> () error zx.Status;
 
-    /// Play a constant vibration for a period of time. Returns an error if a vibration is currently
-    /// playing.
+    /// Play a constant vibration for a period of time. Returns `zx.Status.ZX_ERR_BAD_STATE` if a
+    /// vibration is currently playing.
     ///
     /// Function does not return until the vibration has completed.
     flexible PlayVibration(struct {
         /// Duration of the vibration.
         duration zx.Duration;
+    }) -> () error zx.Status;
+
+    /// Play an effect. Returns `zx.Status.ZX_ERR_BAD_STATE` if a vibration is currently playing.
+    ///
+    /// Function does not return until the vibration has completed.
+    flexible PlayEffect(struct {
+        /// Effect to be played.
+        effect Effect;
+
+        /// The strength of the effect |effect|.
+        strength EffectStrength;
     }) -> () error zx.Status;
 
     /// Stops the vibration that is currently playing. Does nothing if there isn't a vibration
@@ -38,12 +105,14 @@ open protocol Device {
 
     /// Returns the haptics-related properties of the haptics device.
     flexible GetProperties() -> (struct {
-        /// The fundamental resonant frequency (F0) (in hertz) of the haptics device. Also known as
-        /// F0.
+        /// The fundamental resonant frequency (F0) (in hertz) of the haptics device. Also known as F0.
         fundamental_resonant_frequency_hz float32;
 
         /// The quality factor of the haptics device. Also known as the Q factor.
         quality_factor float32;
+
+        /// List of effects that the haptics device can play.
+        supported_effects vector<SupportedEffect>:MAX;
     }) error zx.Status;
 };
 

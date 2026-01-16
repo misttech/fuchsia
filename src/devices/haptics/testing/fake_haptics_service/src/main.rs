@@ -6,7 +6,9 @@
 //! fuchsia.hardware.haptics.Service` FIDL service instance.
 
 use anyhow::Context;
-use fidl_fuchsia_hardware_haptics::{DeviceRequest, DeviceRequestStream, ServiceRequest};
+use fidl_fuchsia_hardware_haptics::{
+    DeviceRequest, DeviceRequestStream, Effect, ServiceRequest, SupportedEffect,
+};
 use fuchsia_component::server::ServiceFs;
 use futures::{StreamExt, TryFutureExt, TryStreamExt};
 use log::error;
@@ -18,6 +20,9 @@ async fn handle_device_requests(mut requests: DeviceRequestStream) -> anyhow::Re
                 responder.send(Ok(())).context("Failed to send response")?;
             }
             DeviceRequest::PlayVibration { duration: _, responder } => {
+                responder.send(Ok(())).context("Failed to send response")?;
+            }
+            DeviceRequest::PlayEffect { effect: _, strength: _, responder } => {
                 responder.send(Ok(())).context("Failed to send response")?;
             }
             DeviceRequest::StopVibration { responder } => {
@@ -40,8 +45,37 @@ async fn handle_device_requests(mut requests: DeviceRequestStream) -> anyhow::Re
                 // Value must be greater than 0 in order to pass tests.
                 const QUALITY_FACTOR: f32 = 789.0;
 
+                const SUPPORTED_EFFECTS: [SupportedEffect; 22] = [
+                    SupportedEffect { effect: Effect::Click, duration: 0 },
+                    SupportedEffect { effect: Effect::DoubleClick, duration: 0 },
+                    SupportedEffect { effect: Effect::Tick, duration: 0 },
+                    SupportedEffect { effect: Effect::Thud, duration: 0 },
+                    SupportedEffect { effect: Effect::Pop, duration: 0 },
+                    SupportedEffect { effect: Effect::HeavyClick, duration: 0 },
+                    SupportedEffect { effect: Effect::Ringtone1, duration: 0 },
+                    SupportedEffect { effect: Effect::Ringtone2, duration: 0 },
+                    SupportedEffect { effect: Effect::Ringtone3, duration: 0 },
+                    SupportedEffect { effect: Effect::Ringtone4, duration: 0 },
+                    SupportedEffect { effect: Effect::Ringtone5, duration: 0 },
+                    SupportedEffect { effect: Effect::Ringtone6, duration: 0 },
+                    SupportedEffect { effect: Effect::Ringtone7, duration: 0 },
+                    SupportedEffect { effect: Effect::Ringtone8, duration: 0 },
+                    SupportedEffect { effect: Effect::Ringtone9, duration: 0 },
+                    SupportedEffect { effect: Effect::Ringtone10, duration: 0 },
+                    SupportedEffect { effect: Effect::Ringtone11, duration: 0 },
+                    SupportedEffect { effect: Effect::Ringtone12, duration: 0 },
+                    SupportedEffect { effect: Effect::Ringtone13, duration: 0 },
+                    SupportedEffect { effect: Effect::Ringtone14, duration: 0 },
+                    SupportedEffect { effect: Effect::Ringtone15, duration: 0 },
+                    SupportedEffect { effect: Effect::TextureTick, duration: 0 },
+                ];
+
                 responder
-                    .send(Ok((QUALITY_FACTOR, FUNDAMENTAL_RESONANT_FREQUENCY_HZ)))
+                    .send(Ok((
+                        FUNDAMENTAL_RESONANT_FREQUENCY_HZ,
+                        QUALITY_FACTOR,
+                        &SUPPORTED_EFFECTS,
+                    )))
                     .context("Failed to send response")?;
             }
             DeviceRequest::_UnknownMethod { ordinal, .. } => {
