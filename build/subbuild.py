@@ -208,6 +208,13 @@ def main() -> int:
         help="RBE exec strategy for Rust compilation.",
     )
     parser.add_argument(
+        "--upload-build-events",
+        type=str,
+        choices=["no", "resultstore", "resultstore_infra"],  # No Sponge yet
+        default="no",
+        help="Upload results metadata to the ResultStore service",
+    )
+    parser.add_argument(
         "--parallelism",
         type=int,
         default=multiprocessing.cpu_count(),
@@ -278,9 +285,18 @@ def main() -> int:
         logger.error(f"Missing gn prebuilt binary: {gn_path}")
         return 1
 
-    ninja_path = (
-        fuchsia_dir / "prebuilt" / "third_party" / "ninja" / host_tag / "ninja"
-    )
+    if args.upload_build_events in {"resultstore", "resultstore_infra"}:
+        # Use a drop-in replacement for ninja that enables ResultStore.
+        ninja_path = fuchsia_dir / "build" / "resultstore" / "rs-sub-ninja.sh"
+    else:
+        ninja_path = (
+            fuchsia_dir
+            / "prebuilt"
+            / "third_party"
+            / "ninja"
+            / host_tag
+            / "ninja"
+        )
     if not ninja_path.exists():
         logger.error(f"Missing ninja prebuilt binary: {ninja_path}")
         return 1

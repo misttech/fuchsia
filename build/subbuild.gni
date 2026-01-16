@@ -7,6 +7,7 @@ import("//build/config/fuchsia/platform_version.gni")
 import("//build/config/jobserver.gni")
 import("//build/sdk/config.gni")
 import("//build/testing/config.gni")
+import("//build/toolchain/resultstore.gni")
 import("//build/tracer/tracer.gni")
 import("//sdk/config.gni")
 
@@ -155,6 +156,9 @@ template("subbuild") {
         "--rust-exec-strategy",
         rust_rbe_exec_strategy,
       ]
+    }
+    if (ninja_upload_build_events != "") {
+      args += [ "--upload-build-events=" + ninja_upload_build_events ]
     }
     if (defined(invoker.api_level_path)) {
       args += [
