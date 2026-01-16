@@ -9,7 +9,7 @@ use fuchsia_async::WakeupTime;
 use fuchsia_inspect::{ArrayProperty, Node, StringProperty};
 use fuchsia_inspect_contrib::nodes::BoundedListNode;
 use fuchsia_trace::duration;
-use futures::{TryFutureExt, try_join};
+use futures::{TryFutureExt, join, try_join};
 use humansize::{BINARY, FormatSizeOptions, format_size};
 use stalls::StallProvider;
 use traces::CATEGORY_MEMORY_CAPTURE;
@@ -85,7 +85,12 @@ pub async fn periodic_monitoring(
                 &inspect_root,
             )?;
         }
-        zx::MonotonicDuration::from_minutes(5).into_timer().await;
+        join!(
+            fuchsia_async::Task::local(async {
+                let _ = scudo::mallopt(scudo::M_PURGE_ALL, 0);
+            }),
+            zx::MonotonicDuration::from_minutes(5).into_timer()
+        );
     }
 }
 

@@ -22,6 +22,7 @@ rustc_library("rust") {
     "//src/devices/bin/driver-host/*",
 
     # Depends on this crate for mallopt binding
+    "//src/performance/memory/attribution/monitor/*",
     "//src/sys/component_manager/*",
   ]
   edition = "2024"

@@ -87,6 +87,15 @@ impl AttributionSnapshot {
     }
 }
 
+impl Drop for AttributionSnapshot {
+    fn drop(&mut self) {
+        fuchsia_async::Task::local(async {
+            let _ = scudo::mallopt(scudo::M_PURGE_ALL, 0);
+        })
+        .detach();
+    }
+}
+
 #[cfg(test)]
 pub mod tests {
     // use super::*;
