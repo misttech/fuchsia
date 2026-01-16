@@ -6,8 +6,8 @@ use crate::helpers;
 use anyhow::Error;
 use fidl::endpoints::create_proxy;
 use fidl_fuchsia_test::{self as ftest, Result_ as TestResult};
-use futures::AsyncBufReadExt;
 use futures::io::BufReader;
+use futures::{AsyncBufReadExt, AsyncWriteExt as _};
 use zx::Socket;
 use {
     fidl_fuchsia_component_runner as frunner, fidl_fuchsia_data as fdata, fuchsia_async as fasync,
@@ -23,20 +23,35 @@ pub async fn run_selinux_test_suite_cases(
         // `test_name` corresponds to the test name as listed in the `tests/Makefile`'s
         // `SUBDIRS` variable in the SELinux test suite.
         let test_name = test.name.as_ref().expect("No test name");
+        let mut start_info = frunner::ComponentStartInfo {
+            program: Some(get_program_dictionary(&mut start_info, &test_name)),
+            ..helpers::clone_start_info(&mut start_info)?
+        };
 
+        // Create the numbered handles table to pass to the component, and consume the client stdout
+        // handle for use by parse_test_output(), replacing it with a new stream for the parsed
+        // lines to be mirrored to, so that they appear in the top-level report.
         let (numbered_handles, mut std_handles) = helpers::create_numbered_handles();
-        let (stdout_reader, stdout_writer) = zx::Socket::create_stream();
+        let (stdout_writer, stdout_reader) = zx::Socket::create_stream();
         let test_stdout = std_handles.out.take().unwrap();
         std_handles.out = Some(stdout_reader);
 
-        let start_info = frunner::ComponentStartInfo {
-            program: Some(get_program_dictionary(&mut start_info, &test_name)),
-            numbered_handles: Some(numbered_handles),
-            ..helpers::clone_start_info(&mut start_info)?
-        };
-        let _ = helpers::start_test_component(start_info, component_runner)?;
+        // Start a top-level report through which to provide the whole of the test suite output.
+        let top_level_report_proxy = helpers::start_top_level_report(
+            &mut start_info,
+            run_listener_proxy,
+            numbered_handles,
+            std_handles,
+        )?;
 
+        // Run the test component and parse out the individual test results.
+        let _ = helpers::start_test_component(start_info, component_runner)?;
         parse_test_output(test, test_stdout, stdout_writer, run_listener_proxy).await?;
+
+        // Always report the test-suite as passing; failures will be reported by parse_test_output
+        // for individual cases.
+        top_level_report_proxy
+            .finished(&TestResult { status: Some(ftest::Status::Passed), ..Default::default() })?;
     }
 
     Ok(())
@@ -85,10 +100,11 @@ async fn parse_test_output(
 ) -> Result<(), Error> {
     let mut reader: BufReader<fidl::AsyncSocket> =
         BufReader::new(fasync::Socket::from_socket(test_stdout));
+    let mut writer = fasync::Socket::from_socket(stdout);
     let mut line = String::new();
     while reader.read_line(&mut line).await? > 0 {
         // Copy output to test's stdout.
-        stdout.write(line.as_bytes())?;
+        writer.write_all(line.as_bytes()).await?;
         // The SELinux test suite reports the passed / failed tests starting with the prefix
         // "ok {index}" or "not ok {index}" correspondingly.
         let (status, index_str) = if let Some(index_str) = line.strip_prefix("ok ") {
