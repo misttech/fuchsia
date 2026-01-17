@@ -2720,7 +2720,7 @@ impl<I: Instant + 'static, R: ReceiveBuffer, S: SendBuffer, ActiveOpen: Debug>
             //      does implement PAWS).
             //
             // Future readers may find this email thread from the RFC's authors
-            // useful for understanding the rational behind this RFC text:
+            // useful for understanding the rationale behind this RFC text:
             // https://mailarchive.ietf.org/arch/msg/tcpm/a9WVwj7s8jR0zCOFgKWQLzHZpGw/
             // TODO(https://fxbug.dev/438961717): Revisit this decision when
             // implementing PAWS.
