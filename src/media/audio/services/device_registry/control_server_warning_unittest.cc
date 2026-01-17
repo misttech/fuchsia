@@ -1167,15 +1167,15 @@ TEST_F(ControlServerCompositeWarningTest, CreateRingBufferBadChannelCount) {
 }
 
 TEST_F(ControlServerCompositeWarningTest, CreateRingBufferMissingFramesPerSecond) {
-  TestCreateRingBufferBadOptions(
-      fad::RingBufferOptions{{
-          .format = fuchsia_audio::Format{{
-              .sample_type = fuchsia_audio::SampleType::kInt16, .channel_count = 2,
-              // missing frames_per_second
-          }},
-          .ring_buffer_min_bytes = 8192,
-      }},
-      fad::ControlCreateRingBufferError::kInvalidFormat);
+  TestCreateRingBufferBadOptions(fad::RingBufferOptions{{
+                                     .format = fuchsia_audio::Format{{
+                                         .sample_type = fuchsia_audio::SampleType::kInt16,
+                                         .channel_count = 2,
+                                         // missing frames_per_second
+                                     }},
+                                     .ring_buffer_min_bytes = 8192,
+                                 }},
+                                 fad::ControlCreateRingBufferError::kInvalidFormat);
 }
 
 TEST_F(ControlServerCompositeWarningTest, CreateRingBufferBadFramesPerSecond) {

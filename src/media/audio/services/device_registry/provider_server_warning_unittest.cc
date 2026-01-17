@@ -114,7 +114,8 @@ TEST_F(ProviderServerCodecWarningTest, MissingDriverClient) {
 
   provider->client()
       ->AddDevice({{
-          .device_name = "Test device name", .device_type = fad::DeviceType::kCodec,
+          .device_name = "Test device name",
+          .device_type = fad::DeviceType::kCodec,
           // missing .driver_client
       }})
       .Then([&received_callback](fidl::Result<fad::Provider::AddDevice>& result) {
@@ -282,7 +283,8 @@ TEST_F(ProviderServerCompositeWarningTest, MissingDriverClient) {
 
   provider->client()
       ->AddDevice({{
-          .device_name = "Test device name", .device_type = fad::DeviceType::kComposite,
+          .device_name = "Test device name",
+          .device_type = fad::DeviceType::kComposite,
           // missing .driver_client
       }})
       .Then([&received_callback](fidl::Result<fad::Provider::AddDevice>& result) {
