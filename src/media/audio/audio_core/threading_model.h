@@ -29,9 +29,10 @@ namespace media::audio {
 // class does not do any actual locking.
 struct __TA_CAPABILITY("role") ThreadToken {};
 
-class __TA_SCOPED_CAPABILITY ScopedThreadToken{
-  public : explicit ScopedThreadToken(const ThreadToken& token)
-      __TA_ACQUIRE(token){} ~ScopedThreadToken() __TA_RELEASE(){}
+class __TA_SCOPED_CAPABILITY ScopedThreadToken {
+ public:
+  explicit ScopedThreadToken(const ThreadToken& token) __TA_ACQUIRE(token) {}
+  ~ScopedThreadToken() __TA_RELEASE() {}
 };
 
 #define OBTAIN_EXECUTION_DOMAIN_TOKEN(_sym_name, _exe_domain) \
