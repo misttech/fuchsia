@@ -41,8 +41,8 @@ class Subtask {
     zx::duration cpu_time;                     // see zx_info_task_runtime.cpu_time
     zx::duration queue_time;                   // see zx_info_task_runtime.queue_time
     zx::duration page_fault_time;              // see zx_info_task_runtime.page_fault_time
-    zx::duration kernel_lock_contention_time;  // see zx_info_task_runtime.kernel_lock_contention_time
-
+    zx::duration
+        kernel_lock_contention_time;  // see zx_info_task_runtime.kernel_lock_contention_time
   };
 
   // Creates a new task.

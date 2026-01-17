@@ -495,7 +495,7 @@ void VirtualAudioUtil::RegisterKeyWaiter() {
 
 bool VirtualAudioUtil::WaitForKey() {
   printf("\tPress Q to cancel, or any other key to continue...\n");
-  setvbuf(stdin, nullptr, _IONBF, 0); // Turn off buffering; immediately receive keypresses.
+  setvbuf(stdin, nullptr, _IONBF, 0);  // Turn off buffering; immediately receive keypresses.
   RegisterKeyWaiter();
 
   while (RunForDuration(zx::sec(1))) {

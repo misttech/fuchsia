@@ -3,7 +3,6 @@
 // found in the LICENSE file.
 
 #include <lib/media/cpp/timeline_rate.h>
-
 #include <zircon/assert.h>
 
 #include <limits>
