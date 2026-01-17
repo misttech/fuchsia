@@ -54,6 +54,7 @@ if (is_host) {
       "//sdk/fidl/fuchsia.images2:verify_bazel2gn",
       "//sdk/fidl/fuchsia.math:verify_bazel2gn",
       "//sdk/lib/fit:verify_bazel2gn",
+      "//sdk/lib/fit-promise:verify_bazel2gn",
       "//sdk/lib/magma_common:verify_bazel2gn",
       "//sdk/lib/media/cpp:verify_bazel2gn",
       "//sdk/lib/memory_barriers:verify_bazel2gn",
