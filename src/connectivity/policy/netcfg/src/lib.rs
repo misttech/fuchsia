@@ -2096,9 +2096,19 @@ impl<'a> NetCfg<'a> {
                                 &current_properties,
                             ) {
                                 Some(true) => {
+                                    info!(
+                                        "Interface {} (id={}) is now eligible to be \
+                                        added to the socket-proxy, attempting addition",
+                                        name, id
+                                    );
                                     state.handle_interface_new_candidate(&current_properties).await
                                 }
                                 Some(false) => {
+                                    info!(
+                                        "Interface {} (id={}) is no longer eligible to be \
+                                        in the socket-proxy, attempting removal",
+                                        name, id
+                                    );
                                     state
                                         .handle_interface_no_longer_candidate(InterfaceId(*id))
                                         .await
