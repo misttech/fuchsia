@@ -60,11 +60,10 @@ zx_status_t RealtekCodec::ProcessSolicitedResponse(const CodecResponse& resp) {
 
   waiting_for_impl_id_ = false;
 
-  // TODO(https://fxbug.dev/42152137): Generic HDA codec graph traversal such that we don't base this
-  // setup behavior on exact matches in the implementation ID register.
-  // We should have a generic driver which depends mostly on codec VID/DID and
-  // BIOS provided configuration hints to make the majority of configuration
-  // decisions, and to rely on the impl ID as little as possible.
+  // TODO(https://fxbug.dev/42152137): Generic HDA codec graph traversal such that we don't base
+  // this setup behavior on exact matches in the implementation ID register. We should have a
+  // generic driver which depends mostly on codec VID/DID and BIOS provided configuration hints to
+  // make the majority of configuration decisions, and to rely on the impl ID as little as possible.
   //
   // At the very least, we should break this field down into its sub-fields
   // (mfr ID, board SKU, assembly ID) and match based on those.  I'm willing

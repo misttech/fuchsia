@@ -5,10 +5,10 @@
 use crate::codec::CodecInterface;
 use crate::configurator::Configurator;
 use crate::dai::DaiInterface;
-use anyhow::{anyhow, Error};
+use anyhow::{Error, anyhow};
 use fidl_fuchsia_io as fio;
-use futures::lock::Mutex;
 use futures::TryStreamExt;
+use futures::lock::Mutex;
 use std::path::Path;
 use std::sync::Arc;
 
@@ -112,7 +112,7 @@ pub async fn find_dais<T: Configurator>(
 mod tests {
     use super::*;
     use crate::config::Config;
-    use crate::testing::tests::{get_dev_proxy, NullConfigurator};
+    use crate::testing::tests::{NullConfigurator, get_dev_proxy};
     use anyhow::Result;
 
     #[fuchsia_async::run_singlethreaded(test)]

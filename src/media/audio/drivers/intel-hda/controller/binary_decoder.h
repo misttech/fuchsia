@@ -104,7 +104,7 @@ class BinaryDecoder {
   //
   // |T::length_field| must be castable to size_t.
   template <typename T, typename F>
-  zx::result<std::tuple<T, cpp20::span<const uint8_t>>> VariableLengthRead(F T::*length_field) {
+  zx::result<std::tuple<T, cpp20::span<const uint8_t>>> VariableLengthRead(F T::* length_field) {
     cpp20::span<const uint8_t> orig_buffer = buffer_;
 
     // Read header.
@@ -150,7 +150,7 @@ fbl::String ParseUnpaddedString(const char (&s)[BufferSize]) {
 }
 template <size_t BufferSize>
 fbl::String ParseUnpaddedString(const uint8_t (&s)[BufferSize]) {
-  return ParseUnpaddedString(reinterpret_cast<const char(&)[BufferSize]>(s));
+  return ParseUnpaddedString(reinterpret_cast<const char (&)[BufferSize]>(s));
 }
 
 }  // namespace audio::intel_hda

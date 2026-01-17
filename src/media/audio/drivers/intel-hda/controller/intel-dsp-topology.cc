@@ -537,8 +537,8 @@ zx::result<> IntelDsp::CreateAndStartStreams() {
 
   // Setup the pipelines.
   zx::result<std::vector<DspStream>> streams;
-  // TODO(https://fxbug.dev/42165099): Remove this hardcoded topology decisions for Atlas or Eve and add a
-  // topology loading infrastructure that would render this unnecessary.
+  // TODO(https://fxbug.dev/42165099): Remove this hardcoded topology decisions for Atlas or Eve and
+  // add a topology loading infrastructure that would render this unnecessary.
   if (nhlt_->IsOemMatch("GOOGLE", "ATLASMAX")) {
     streams = SetUpPixelbookAtlasPipelines(*nhlt_, module_controller_.get());
     if (!streams.is_ok()) {

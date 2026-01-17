@@ -272,7 +272,7 @@ void UsbAudioDevice::Probe() {
 
         break;
       }  // case
-    }    // switch
+    }  // switch
   }
 
   if ((control_ifc == nullptr) && !aud_stream_ifcs.is_empty()) {
