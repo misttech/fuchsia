@@ -239,25 +239,24 @@ zx::result<> profiler::KernelSampler::Stop() {
   };
   trace::TraceReader reader{std::move(consume_record), std::move(handle_error)};
 
-  for (uint32_t i = 0; i < info.region_count; ++i) {
-    zx_vaddr_t ptr;
-    zx_status_t res =
-        zx::vmar::root_self()->map_iob(ZX_VM_PERM_READ, 0, buffers, i, 0, buffer_size_bytes_, &ptr);
+  // Query to get the size we need to allocate.
+  size_t max_size;
+  if (zx_status_t status = zx_sampler_read(buffers.get(), nullptr, 0, &max_size); status != ZX_OK) {
+    return zx::error(status);
+  }
 
-    if (res != ZX_OK) {
-      FX_PLOGS(INFO, res) << "Failed to map region";
-      return zx::error(res);
-    }
-    trace::Chunk data{reinterpret_cast<uint64_t*>(ptr), buffer_size_bytes_ / 8};
-    if (!reader.ReadRecords(data)) {
-      FX_LOGS(ERROR) << "Buffer " << i << " corrupted";
-      encountered_error = ZX_ERR_BAD_STATE;
-    }
-    if (zx_status_t status = zx::vmar::root_self()->unmap(ptr, buffer_size_bytes_);
-        status != ZX_OK) {
-      FX_PLOGS(ERROR, status) << "Failed to unmap buffer " << i;
-      return zx::error(status);
-    }
+  std::vector<uint8_t> data(max_size);
+
+  size_t bytes_read;
+  if (zx_status_t status = zx_sampler_read(buffers.get(), data.data(), max_size, &bytes_read);
+      status != ZX_OK) {
+    return zx::error(status);
+  }
+
+  trace::Chunk chunk{reinterpret_cast<uint64_t*>(data.data()), bytes_read / 8};
+  if (!reader.ReadRecords(chunk)) {
+    FX_LOGS(ERROR) << "Buffer data corrupted";
+    encountered_error = ZX_ERR_BAD_STATE;
   }
 
   return zx::make_result(encountered_error);
