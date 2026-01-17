@@ -7,6 +7,7 @@ group("tests") {
   deps = [
     "devfs:tests",
     "driver_host:tests",
+    "node:tests",
     "shutdown:tests",
     "types:tests",
     "utils:tests",
