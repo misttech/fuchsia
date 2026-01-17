@@ -456,59 +456,42 @@ The following describes the values from the example:
 
 ### Using Services with DriverTestRealm {:#using-services-with-dtr}
 
-Test clients using the DriverTestRealm require a few extra steps to route the
-service capability from the driver under test to the test code.
+Test clients using the DriverTestRealm use the following steps to route the
+service capability from the driver under test out to the test code.
 
- 1. Before calling realm.Build(), you need to call `AddDtrExposes`:
+ 1. Setup the driver test realm with `driver_exposes` in your options:
 
     *  {C++}
 
         ```cpp
-        auto realm_builder = component_testing::RealmBuilder::Create();
-        driver_test_realm::Setup(realm_builder);
         async::Loop loop(&kAsyncLoopConfigNeverAttachToThread);
         std::vector<fuchsia_component_test::Capability> exposes = { {
             fuchsia_component_test::Capability::WithService(
                 fuchsia_component_test::Service{ {.name = fuchsia_examples::EchoService::Name}}),
         }};
-        driver_test_realm::AddDtrExposes(realm_builder, exposes);
+        auto realm_builder = component_testing::RealmBuilder::Create();
+        driver_test_realm::Setup(realm_builder,
+            loop.dispatcher(),
+            driver_test_realm::OptionsBuilder().driver_exposes(exposes).Build(),
+            {});
         auto realm = realm_builder.Build(loop.dispatcher());
         ```
 
     *  {Rust}
 
         ```rust
+        let echo_capability = fuchsia_component_test::Capability::service::<fuchsia_examples::EchoServiceMarker>().into();
+        let exposed_capabilities = vec![echo_capability];
+
         // Create the RealmBuilder.
         let builder = RealmBuilder::new().await?;
-        builder.driver_test_realm_setup().await?;
+        builder.driver_test_realm_setup(Options::new().driver_exposes(exposed_capabilities), {}).await?;
 
-        let expose = fuchsia_component_test::Capability::service::<fuchsia_examples::EchoServiceMarker>().into();
-        let dtr_exposes = vec![expose];
-
-        builder.driver_test_realm_add_dtr_exposes(&dtr_exposes).await?;
         // Build the Realm.
         let realm = builder.build().await?;
         ```
 
- 2. Then you need to add the exposes into the realm start args:
-
-    *  {C++}
-
-        ```cpp
-        fuchsia_driver_test::RealmArgs realm_args{ {.dtr_exposes = std::move(exposes)}};
-        fidl::Result result = fidl::Call(*client)->Start(std::move(realm_args));
-        ```
-
-    *  {Rust}
-
-        ```rust
-        // Start the DriverTestRealm.
-        let realm_args = RealmArgs { dtr_exposes: Some(dtr_exposes), ..Default::default() };
-        realm.driver_test_realm_start(realm_args).await?;
-        ```
-
- 3. Finally, you will need to connect to the realm's `exposed()` directory to wait for
-    a service instance:
+ 2. Connect to the realm's `exposed()` directory to wait for a service instance:
 
     *  {C++}
 
