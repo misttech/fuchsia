@@ -123,3 +123,25 @@ zx_status_t sys_sampler_stop(zx_handle_t iobuffer) {
 
   return sampler::ThreadSamplerDispatcher::Stop(thread_sampler).status_value();
 }
+
+// zx_status_t zx_sampler_read
+zx_status_t sys_sampler_read(zx_handle_t iobuffer, user_out_ptr<void> data, size_t len,
+                             user_out_ptr<size_t> actual) {
+  if constexpr (!kSamplerEnabled) {
+    return ZX_ERR_NOT_SUPPORTED;
+  }
+
+  if (!BootOptions::Get()->enable_debugging_syscalls) {
+    return ZX_ERR_NOT_SUPPORTED;
+  }
+
+  fbl::RefPtr<IoBufferDispatcher> thread_sampler;
+  auto up = ProcessDispatcher::GetCurrent();
+  if (zx_status_t status = up->handle_table().GetDispatcherWithRights(
+          *up, iobuffer, ZX_RIGHT_APPLY_PROFILE, &thread_sampler);
+      status != ZX_OK) {
+    return status;
+  }
+
+  return ZX_ERR_NOT_SUPPORTED;
+}

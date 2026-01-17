@@ -52,6 +52,11 @@ _ZX_SYSCALL_DECL(sampler_create, zx_status_t, /* no attributes */, 4,
                   const zx_sampler_config_t* config,
                   _ZX_SYSCALL_ANNO(acquire_handle("Fuchsia")) zx_handle_t* per_cpu_buffers))
 
+_ZX_SYSCALL_DECL(sampler_read, zx_status_t, /* no attributes */, 4,
+                 (iobuffer, data, data_size, actual),
+                 (_ZX_SYSCALL_ANNO(use_handle("Fuchsia")) zx_handle_t iobuffer, void* data,
+                  size_t data_size, size_t* actual))
+
 _ZX_SYSCALL_DECL(sampler_start, zx_status_t, /* no attributes */, 1, (iobuffer),
                  (_ZX_SYSCALL_ANNO(use_handle("Fuchsia")) zx_handle_t iobuffer))
 

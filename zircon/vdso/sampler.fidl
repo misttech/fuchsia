@@ -222,4 +222,63 @@ closed protocol Sampler {
     strict Stop(resource struct {
         iobuffer Handle;
     }) -> () error Status;
+
+    /// ## Summary
+    ///
+    /// Read out available samples.
+    ///
+    /// ## Declaration
+    ///
+    /// ```c
+    /// #include <zircon/syscalls.h>
+    ///
+    /// zx_status_t zx_sampler_read(zx_handle_t sampler,
+    ///                             void* data,
+    ///                             size_t data_size,
+    ///                             size_t* actual);
+    /// ```
+    ///
+    /// ## Description
+    ///
+    /// Read data written during the most recent sampling session. The provided
+    /// buffer must be large enough to read all available data. This size can be
+    /// queried by calling with `data` set to nullptr. The required minimum size
+    /// will be written to actual.
+    ///
+    /// On a successful read, returns ZX_OK and sets `actual` to the number of
+    /// bytes actually read.
+    ///
+    /// Additionally, on a ZX_ERR return code, a partial read may have still
+    /// occurred, and the number of bytes written to `data` will be returned in
+    /// `actual`.
+    ///
+    /// ## Errors
+    ///
+    /// `ZX_ERR_NOT_SUPPORTED`  `kernel.enable-debugging-syscalls` is not set to `true`
+    /// on the kernel command line or the experimental_thread_sampler_enabled
+    /// build param is not set to true.
+    ///
+    /// `ZX_ERR_PERMISION_DENIED` *sampler* is not a sampler returned by zx_sampler_create.
+    ///
+    /// `ZX_ERR_BAD_STATE` the sampler is currently active
+    ///
+    /// ## See also
+    ///
+    ///  - [`zx_sampler_create()`]
+    ///  - [`zx_sampler_start()`]
+    ///  - [`zx_sampler_stop()`]
+    ///
+    /// [`zx_sampler_create()`]: sampler_create.md
+    /// [`zx_sampler_start()`]: sampler_start.md
+    /// [`zx_sampler_stop()`]: sampler_stop.md
+    @next
+    strict Read(resource struct {
+        iobuffer Handle;
+        @out
+        @voidptr
+        data experimental_pointer<byte>;
+        data_size usize64;
+    }) -> (struct {
+        actual usize64;
+    }) error Status;
 };

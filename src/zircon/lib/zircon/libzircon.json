@@ -123,6 +123,7 @@
     "zx_restricted_kick",
     "zx_restricted_unbind_state",
     "zx_sampler_create",
+    "zx_sampler_read",
     "zx_sampler_start",
     "zx_sampler_stop",
     "zx_smc_call",
