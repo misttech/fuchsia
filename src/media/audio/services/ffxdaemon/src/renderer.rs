@@ -5,7 +5,7 @@
 use crate::clock::create_reference_clock;
 use crate::error::ControllerError;
 use crate::wav_socket::WavSocket;
-use anyhow::{anyhow, Context, Error};
+use anyhow::{Context, Error, anyhow};
 use fidl::endpoints::create_proxy;
 use fuchsia_audio::Format;
 use fuchsia_component::client::connect_to_protocol;

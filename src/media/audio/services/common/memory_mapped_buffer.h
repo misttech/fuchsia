@@ -2,8 +2,8 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#ifndef SRC_MEDIA_AUDIO_SERVICES_MIXER_COMMON_MEMORY_MAPPED_BUFFER_H_
-#define SRC_MEDIA_AUDIO_SERVICES_MIXER_COMMON_MEMORY_MAPPED_BUFFER_H_
+#ifndef SRC_MEDIA_AUDIO_SERVICES_COMMON_MEMORY_MAPPED_BUFFER_H_
+#define SRC_MEDIA_AUDIO_SERVICES_COMMON_MEMORY_MAPPED_BUFFER_H_
 
 #include <lib/fpromise/result.h>
 #include <lib/fzl/vmo-mapper.h>
@@ -60,4 +60,4 @@ class MemoryMappedBuffer {
 
 }  // namespace media_audio
 
-#endif  // SRC_MEDIA_AUDIO_SERVICES_MIXER_COMMON_MEMORY_MAPPED_BUFFER_H_
+#endif  // SRC_MEDIA_AUDIO_SERVICES_COMMON_MEMORY_MAPPED_BUFFER_H_

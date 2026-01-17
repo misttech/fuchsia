@@ -160,7 +160,7 @@ class PipelineMixThread : public PipelineThread {
     WakeFromIdle,
     Running,
   };
-  TA_GUARDED(checker()) State state_{State::Idle};
+  TA_GUARDED(checker()) State state_ { State::Idle };
 };
 
 }  // namespace media_audio

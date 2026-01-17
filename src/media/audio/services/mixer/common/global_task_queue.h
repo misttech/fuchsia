@@ -2,8 +2,8 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#ifndef SRC_MEDIA_AUDIO_SERVICES_MIXER_COMMON_GLOBAL_WORK_QUEUE_H_
-#define SRC_MEDIA_AUDIO_SERVICES_MIXER_COMMON_GLOBAL_WORK_QUEUE_H_
+#ifndef SRC_MEDIA_AUDIO_SERVICES_MIXER_COMMON_GLOBAL_TASK_QUEUE_H_
+#define SRC_MEDIA_AUDIO_SERVICES_MIXER_COMMON_GLOBAL_TASK_QUEUE_H_
 
 #include <lib/fit/function.h>
 #include <lib/zircon-internal/thread_annotations.h>
@@ -66,4 +66,4 @@ class GlobalTaskQueue {
 
 }  // namespace media_audio
 
-#endif  // SRC_MEDIA_AUDIO_SERVICES_MIXER_COMMON_GLOBAL_WORK_QUEUE_H_
+#endif  // SRC_MEDIA_AUDIO_SERVICES_MIXER_COMMON_GLOBAL_TASK_QUEUE_H_

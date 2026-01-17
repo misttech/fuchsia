@@ -84,9 +84,9 @@ class ClockRegistry {
   // * ZX_ERR_NOT_FOUND if a clock with the same koid does not exist.
   zx::result<std::shared_ptr<Clock>> Find(const zx::clock& handle);
 
-  // TODO(https://fxbug.dev/42066186): Consider adding `CreateSynchronizer(source_clock, dest_clock)` and
-  // `RemoveSynchronizer(source_clock, dest_clock)` to be able to reuse `ClockSynchronizer`s with
-  // the same source and destination clocks.
+  // TODO(https://fxbug.dev/42066186): Consider adding `CreateSynchronizer(source_clock,
+  // dest_clock)` and `RemoveSynchronizer(source_clock, dest_clock)` to be able to reuse
+  // `ClockSynchronizer`s with the same source and destination clocks.
 
  private:
   std::unordered_map<zx_koid_t, std::weak_ptr<Clock>> clocks_;

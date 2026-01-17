@@ -15,10 +15,10 @@ use device::{Device, DeviceControlConnector};
 use renderer::Renderer;
 use wav_socket::WavSocket;
 
-use anyhow::{anyhow, Context, Error};
+use anyhow::{Context, Error, anyhow};
 use error::ControllerError;
-use fuchsia_audio::device::Selector;
 use fuchsia_audio::Format;
+use fuchsia_audio::device::Selector;
 use fuchsia_component::server::ServiceFs;
 use fuchsia_inspect::component;
 use fuchsia_inspect::health::Reporter;

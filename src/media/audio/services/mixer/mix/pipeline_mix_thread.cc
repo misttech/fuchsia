@@ -154,8 +154,9 @@ void PipelineMixThread::RunLoop() {
 
     // An "event" means tasks are available in the global task queue.
     if (wake_reason.event_set) {
-      // TODO(https://fxbug.dev/42065692): Measure the amount of time spent running these tasks per mix period
-      // (this can be recorded as a "MixJobSubtask" in RunMixJobs) and protect against "task spam".
+      // TODO(https://fxbug.dev/42065692): Measure the amount of time spent running these tasks per
+      // mix period (this can be recorded as a "MixJobSubtask" in RunMixJobs) and protect against
+      // "task spam".
       global_task_queue_->RunForThread(id());
 
       // Check if we are being asked to start running mix jobs after an idle period.

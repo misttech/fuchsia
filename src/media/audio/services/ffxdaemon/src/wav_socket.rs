@@ -4,7 +4,7 @@
 
 //! Helper newtype for reading and writing a wav file to and from a socket.
 
-use anyhow::{anyhow, Error};
+use anyhow::{Error, anyhow};
 use byteorder::ByteOrder;
 use fuchsia_audio::Format;
 use futures::{AsyncReadExt, AsyncWriteExt};

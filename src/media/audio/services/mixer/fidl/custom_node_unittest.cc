@@ -319,7 +319,8 @@ TEST_F(CustomNodeTest, CreateEdgeDisallowed) {
 
 TEST_F(CustomNodeTest, CreateFailsMissingConfig) {
   auto custom_node = CustomNode::Create({
-      .reference_clock = DefaultClock(), .pipeline_direction = PipelineDirection::kOutput,
+      .reference_clock = DefaultClock(),
+      .pipeline_direction = PipelineDirection::kOutput,
       // no .config
   });
   EXPECT_EQ(custom_node, nullptr);

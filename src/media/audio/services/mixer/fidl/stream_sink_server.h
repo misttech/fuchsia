@@ -73,7 +73,7 @@ class StreamSinkServer
 
   // The frame timestamp for the first frame in the next continuous packet.
   // Defaults to 0 for the first packet.
-  TA_GUARDED(thread().checker()) Fixed next_continuous_frame_{0};
+  TA_GUARDED(thread().checker()) Fixed next_continuous_frame_ { 0 };
 
   // Current segment ID.
   TA_GUARDED(thread().checker()) int64_t segment_id_;

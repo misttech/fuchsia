@@ -5,9 +5,9 @@
 use crate::clock::create_reference_clock;
 use crate::error::ControllerError;
 use crate::wav_socket::WavSocket;
-use anyhow::{anyhow, Context, Error};
-use fidl::endpoints::{create_proxy, ServerEnd};
-use fuchsia_audio::{stop_listener, Format};
+use anyhow::{Context, Error, anyhow};
+use fidl::endpoints::{ServerEnd, create_proxy};
+use fuchsia_audio::{Format, stop_listener};
 use fuchsia_component::client::connect_to_protocol;
 use futures::{AsyncWriteExt, TryStreamExt};
 use std::sync::atomic::{AtomicBool, Ordering};

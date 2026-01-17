@@ -55,7 +55,7 @@ class ConsumerNode : public Node {
 
   // Starts this consumer.
   //
-  // Returns false if there is already a pending Start or Stop command. Otherwise, returns true. 
+  // Returns false if there is already a pending Start or Stop command. Otherwise, returns true.
   bool Start(ConsumerStage::StartCommand cmd) const;
 
   // Stops this consumer.

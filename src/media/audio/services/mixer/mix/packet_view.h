@@ -2,8 +2,8 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#ifndef SRC_MEDIA_AUDIO_SERVICES_MIXER_MIX_PACKET_H_
-#define SRC_MEDIA_AUDIO_SERVICES_MIXER_MIX_PACKET_H_
+#ifndef SRC_MEDIA_AUDIO_SERVICES_MIXER_MIX_PACKET_VIEW_H_
+#define SRC_MEDIA_AUDIO_SERVICES_MIXER_MIX_PACKET_VIEW_H_
 
 #include <ostream>
 
@@ -107,4 +107,4 @@ std::ostream& operator<<(std::ostream& out, const PacketView& packet);
 
 }  // namespace media_audio
 
-#endif  // SRC_MEDIA_AUDIO_SERVICES_MIXER_MIX_PACKET_H_
+#endif  // SRC_MEDIA_AUDIO_SERVICES_MIXER_MIX_PACKET_VIEW_H_
