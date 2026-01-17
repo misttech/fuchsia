@@ -60,11 +60,12 @@ def _fake_download_output(
         remotetool.RemoteTool,
         Path,
         bool,
+        bool,
     ],
 ) -> Tuple[Path, cl_utils.SubprocessResult]:
     # For mocking remote_action._download_output_for_mp.
     # defined because multiprocessing cannot serialize mocks
-    stub_info, downloader, working_dir_abs, verbose = packed_args
+    stub_info, downloader, working_dir_abs, verbose, use_xattr = packed_args
     # Don't actually try to download.
     return (stub_info.path, cl_utils.SubprocessResult(0))
 
@@ -75,11 +76,12 @@ def _fake_download_output_fail(
         remotetool.RemoteTool,
         Path,
         bool,
+        bool,
     ],
 ) -> Tuple[Path, cl_utils.SubprocessResult]:
     # For mocking remote_action._download_output_for_mp.
     # defined because multiprocessing cannot serialize mocks
-    stub_info, downloader, working_dir_abs, verbose = packed_args
+    stub_info, downloader, working_dir_abs, verbose, use_xattr = packed_args
     # Don't actually try to download.
     return (stub_info.path, cl_utils.SubprocessResult(1))
 
@@ -90,11 +92,12 @@ def _fake_download_input(
         remotetool.RemoteTool,
         Path,
         bool,
+        bool,
     ],
 ) -> Tuple[Path, cl_utils.SubprocessResult]:
     # For mocking remote_action._download_input_for_mp.
     # defined because multiprocessing cannot serialize mocks
-    stub_path, downloader, working_dir_abs, verbose = packed_args
+    stub_path, downloader, working_dir_abs, verbose, use_xattr = packed_args
     # Don't actually try to download.
     return (stub_path, cl_utils.SubprocessResult(0))
 
@@ -105,11 +108,12 @@ def _fake_download_input_fail(
         remotetool.RemoteTool,
         Path,
         bool,
+        bool,
     ],
 ) -> Tuple[Path, cl_utils.SubprocessResult]:
     # For mocking remote_action._download_input_for_mp.
     # defined because multiprocessing cannot serialize mocks
-    stub_path, downloader, working_dir_abs, verbose = packed_args
+    stub_path, downloader, working_dir_abs, verbose, use_xattr = packed_args
     # Don't actually try to download.
     return (stub_path, cl_utils.SubprocessResult(1))
 
@@ -134,7 +138,7 @@ class PathToDownloadStubTests(unittest.TestCase):
             ) as mock_read_stub:
                 stub = remote_action.path_to_download_stub(path)
         self.assertEqual(stub, fake_stub_info)
-        mock_check_stub.assert_called_once_with(path)
+        mock_check_stub.assert_called_once_with(path, use_xattr=True)
         mock_read_stub.assert_called_once_with(path)
 
     def test_not_stub(self) -> None:
@@ -145,7 +149,7 @@ class PathToDownloadStubTests(unittest.TestCase):
             stub = remote_action.path_to_download_stub(path)
 
         self.assertIsNone(stub)
-        mock_check_stub.assert_called_once_with(path)
+        mock_check_stub.assert_called_once_with(path, use_xattr=True)
 
 
 class DownloadFileToPathTests(unittest.TestCase):
@@ -166,7 +170,9 @@ class DownloadFileToPathTests(unittest.TestCase):
                 )
         self.assertEqual(dl_result.returncode, 0)
         mock_download.assert_called_once_with(
-            downloader=_FAKE_DOWNLOADER, working_dir_abs=curdir
+            downloader=_FAKE_DOWNLOADER,
+            working_dir_abs=curdir,
+            use_xattr=True,
         )
         mock_mkdir.assert_called_once_with(parents=True, exist_ok=True)
 
@@ -216,6 +222,7 @@ class DownloadFromStubPathTests(unittest.TestCase):
                 downloader=_FAKE_DOWNLOADER,
                 working_dir_abs=tdp,
                 dest=stub_path,
+                use_xattr=True,
             )
         self.assertEqual(subprocess_result.returncode, 0)
 
@@ -3599,7 +3606,9 @@ remote_metadata: {{
             ) as mock_create_stub:
                 action._update_stub(new_stub_info)
 
-            mock_create_stub.assert_called_with(self.working_dir)
+            mock_create_stub.assert_called_with(
+                self.working_dir, use_xattr=True
+            )
 
     def test_update_stub_preserve_unchanged_output_mtime_existing_file_matches_digest_with_backup_stub(
         self,
@@ -3709,7 +3718,9 @@ remote_metadata: {{
 
             # old file is replaced with new stub, old stub is removed
             mock_remove.assert_called_with()
-            mock_create_stub.assert_called_with(self.working_dir)
+            mock_create_stub.assert_called_with(
+                self.working_dir, use_xattr=True
+            )
 
     def test_update_stub_preserve_unchanged_output_mtime_existing_file_mismatches_digest_without_backup_stub(
         self,
@@ -3735,7 +3746,9 @@ remote_metadata: {{
 
             # old file is replaced with new stub
             mock_remove.assert_called_with()
-            mock_create_stub.assert_called_with(self.working_dir)
+            mock_create_stub.assert_called_with(
+                self.working_dir, use_xattr=True
+            )
 
 
 class RbeDiagnosticsTests(unittest.TestCase):

@@ -29,6 +29,12 @@ declare_args() {
   # in order of appearance.  Settings in later files in this list take
   # precedence over those earlier in the list.
   rbe_extra_reproxy_configs = []
+
+  # By default our RBE wrappers record the digest of remote action outputs
+  # in an xattr to save tools from having to re-hashing these files.
+  # In circumstances where xattr cannot be used (e.g. FUSE limitations),
+  # set this to True to disable use of xattr.
+  disable_xattr_for_rbe = false
 }
 
 rbe_common_configs = [

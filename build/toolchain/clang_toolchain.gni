@@ -156,6 +156,9 @@ template("clang_toolchain") {
         _cxx_concurrent_jobs = concurrent_jobs.local
       } else {
         compiler_prefix_list += RBE_EXEC_STRATEGY_MAP[cxx_rbe_exec_strategy]
+        if (disable_xattr_for_rbe) {
+          compiler_prefix_list += [ "--disable-xattr" ]
+        }
         if (!cxx_rbe_download_obj_files) {  # download everything except the
                                             # object file
           compiler_prefix_list += [ "--download_regex='-.*\\.o\$\$'" ]
@@ -294,6 +297,9 @@ template("clang_toolchain") {
         if (restat_rust) {
           # re-client has built-in support for write-if-changed behavior
           _rewrapper_flags += [ "--preserve_unchanged_output_mtime" ]
+        }
+        if (disable_xattr_for_rbe) {
+          _rewrapper_flags += [ "--disable-xattr" ]
         }
         _rustc_remote_wrapper_path =
             rebase_path(rustc_remote_wrapper, root_build_dir)
@@ -561,6 +567,9 @@ template("clang_toolchain") {
             "\"$outfile\"",
             "--preserve_unchanged_output_mtime",
           ]
+          if (disable_xattr_for_rbe) {
+            _remote_strip_prefix_common += [ "--disable-xattr" ]
+          }
           if (rust_rbe_enable) {
             _exec_strategy_flags = []
             if (rust_rbe_check == "none") {

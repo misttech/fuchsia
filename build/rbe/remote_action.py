@@ -58,7 +58,7 @@ _REMOTE_PROJECT_ROOT = Path("/b/f/w")
 # Extended attributes can be used to tell reproxy (filemetadata cache)
 # that an artifact already exists in the CAS.
 # TODO(https://fxbug.dev/42074138): use 'xattr' for greater portability.
-_HAVE_XATTR = hasattr(os, "setxattr")
+_CAN_HAVE_XATTR = hasattr(os, "setxattr")
 
 # Wrapper script to capture remote stdout/stderr, co-located with this script.
 _REMOTE_LOG_SCRIPT = Path("build", "rbe", "log-it.sh")
@@ -736,7 +736,12 @@ class DownloadStubInfo(object):
         ]
         _write_lines_to_file(output_abspath, lines)
 
-    def create(self, working_dir_abs: Path, dest: Path | None = None) -> None:
+    def create(
+        self,
+        working_dir_abs: Path,
+        dest: Path | None = None,
+        use_xattr: bool = _CAN_HAVE_XATTR,
+    ) -> None:
         """Create a download stub file.
 
         The stub file will be backed-up to PATH.dl-stub when it is 'downloaded'.
@@ -746,13 +751,14 @@ class DownloadStubInfo(object):
             all referenced paths are relative.  This is passed so that
             this operation does not depend on os.curdir.
           dest: (optional) alternate location to write download stub.
+          use_xattr: if true, set extended attributes on the stub file.
         """
         assert working_dir_abs.is_absolute()
         path = working_dir_abs / (dest or self.path)
         path.parent.mkdir(parents=True, exist_ok=True)
         self._write(path)
 
-        if _HAVE_XATTR:
+        if use_xattr:
             # Signal to the next reproxy invocation that the object already
             # exists in the CAS and does not need to be uploaded.
             os.setxattr(
@@ -791,6 +797,7 @@ class DownloadStubInfo(object):
         downloader: remotetool.RemoteTool,
         working_dir_abs: Path,
         dest: Path | None = None,
+        use_xattr: bool = _CAN_HAVE_XATTR,
     ) -> cl_utils.SubprocessResult:
         """Retrieves the file or dir referenced by the stub.
 
@@ -832,7 +839,7 @@ class DownloadStubInfo(object):
             # Reflect the mode/permissions from stub to the real file.
             temp_dl.chmod(dest_abs.stat().st_mode)
 
-            if is_download_stub_file(dest_abs):
+            if is_download_stub_file(dest_abs, use_xattr=use_xattr):
                 # Backup the download stub.  This preserves the xattr.
                 dest_abs.rename(download_stub_backup_location(dest_abs))
 
@@ -847,15 +854,17 @@ def _file_starts_with(path: Path, text: str) -> bool:
         return os.pread(f.fileno(), len(text), 0) == text.encode()
 
 
-def is_download_stub_file(path: Path) -> bool:
+def is_download_stub_file(
+    path: Path, use_xattr: bool = _CAN_HAVE_XATTR
+) -> bool:
     """Returns true if the path points to a download stub."""
-    if _HAVE_XATTR:
+    if use_xattr:
         return _RBE_XATTR_IS_STUB in os.listxattr(path)
     else:
         return _file_starts_with(path, _RBE_DOWNLOAD_STUB_IDENTIFIER)
 
 
-def undownload(path: Path) -> bool:
+def undownload(path: Path, use_xattr: bool = _CAN_HAVE_XATTR) -> bool:
     """If a backup download stub exists, restore it (for debugging).
 
     Args:
@@ -866,14 +875,18 @@ def undownload(path: Path) -> bool:
       True if a stub was moved back.
     """
     stub_path = download_stub_backup_location(path)
-    if stub_path.exists() and is_download_stub_file(stub_path):
+    if stub_path.exists() and is_download_stub_file(
+        stub_path, use_xattr=use_xattr
+    ):
         stub_path.rename(path)
         return True
     return False
 
 
-def path_to_download_stub(stub_path: Path) -> DownloadStubInfo | None:
-    if not is_download_stub_file(stub_path):
+def path_to_download_stub(
+    stub_path: Path, use_xattr: bool = _CAN_HAVE_XATTR
+) -> DownloadStubInfo | None:
+    if not is_download_stub_file(stub_path, use_xattr=use_xattr):
         return None
 
     return DownloadStubInfo.read_from_file(stub_path)
@@ -885,6 +898,7 @@ def download_file_to_path(
     path: Path,
     blob_digest: str,
     action_digest: str | None = None,
+    use_xattr: bool = _CAN_HAVE_XATTR,
 ) -> cl_utils.SubprocessResult:
     dl_stub_info = DownloadStubInfo(
         path=path,
@@ -897,6 +911,7 @@ def download_file_to_path(
     return dl_stub_info.download(
         downloader=downloader,
         working_dir_abs=working_dir_abs,
+        use_xattr=use_xattr,
     )
 
 
@@ -905,6 +920,7 @@ def download_from_stub_path(
     downloader: remotetool.RemoteTool,
     working_dir_abs: Path,
     verbose: bool = False,
+    use_xattr: bool = _CAN_HAVE_XATTR,
 ) -> cl_utils.SubprocessResult:
     """Possibly downloads a file over a stub link.
 
@@ -939,7 +955,7 @@ def download_from_stub_path(
             msg(f"Ignoring request to download nonexistent stub: {stub_path}")
             return ok_result
 
-        stub_info = path_to_download_stub(stub_path)
+        stub_info = path_to_download_stub(stub_path, use_xattr=use_xattr)
         if not stub_info:
             if verbose:
                 msg(
@@ -954,6 +970,7 @@ def download_from_stub_path(
             downloader=downloader,
             working_dir_abs=working_dir_abs,
             dest=stub_path,
+            use_xattr=use_xattr,
         )
 
 
@@ -1000,6 +1017,7 @@ class RemoteAction(object):
         miscomparison_export_dir: Path | None = None,
         post_remote_run_success_action: Callable[[], int] | None = None,
         remote_debug_command: Sequence[str] | None = None,
+        use_xattr: bool = _CAN_HAVE_XATTR,
     ):
         """RemoteAction constructor.
 
@@ -1059,6 +1077,7 @@ class RemoteAction(object):
             a cause of error.
           remote_debug_command: if True, run different command remotely instead of
             the original command, for debugging the remote inputs setup.
+          use_xattr: if True, use xattrs to record artifact digests.
         """
         self._rewrapper = rewrapper
         self._config = cfg  # can be None
@@ -1084,6 +1103,7 @@ class RemoteAction(object):
         self._options = options or []
         self._post_remote_run_success_action = post_remote_run_success_action
         self._remote_debug_command = remote_debug_command or []
+        self._use_xattr = use_xattr
 
         # When comparing local vs. remote, force exec_strategy=remote
         # to eliminate any unintended local execution cases.
@@ -1778,6 +1798,7 @@ exec "${{cmd[@]}}"
                 stub_paths=stub_paths,
                 working_dir_abs=self.working_dir,
                 verbose=self.verbose,
+                use_xattr=self._use_xattr,
             )
         finally:
             self.vmsg(
@@ -1791,7 +1812,7 @@ exec "${{cmd[@]}}"
         if self.preserve_unchanged_output_mtime and path.exists():
             # Consider the cases where the existing output is or is not
             # a download stub.
-            if is_download_stub_file(path):
+            if is_download_stub_file(path, use_xattr=self._use_xattr):
                 # What if the local file is itself a download stub (w/ xattr)?
                 # If a download was skipped because the local and remote results
                 # already match, the blob_digests already matches, however, the
@@ -1816,7 +1837,9 @@ exec "${{cmd[@]}}"
                 # The blob_digest is all that matters for being able to download
                 # later.
                 if old_stub_info.blob_digest != stub_info.blob_digest:
-                    stub_info.create(self.working_dir)  # overwrite the old stub
+                    stub_info.create(
+                        self.working_dir, use_xattr=self._use_xattr
+                    )  # overwrite the old stub
                 # otherwise, just leave the old stub as-is.
                 return
 
@@ -1852,13 +1875,15 @@ exec "${{cmd[@]}}"
                         stub_backup_path.unlink()
 
                     stub_info.path.unlink()
-                    stub_info.create(self.working_dir)
+                    stub_info.create(
+                        self.working_dir, use_xattr=self._use_xattr
+                    )
                 # else blob_digests match, leave the old stub as-is.
                 return
 
         # When we are *not* preserving timestamps of unchanged local
         # artifacts, always writing the download stub is valid.
-        stub_info.create(self.working_dir)
+        stub_info.create(self.working_dir, use_xattr=self._use_xattr)
 
     def downloader(self) -> remotetool.RemoteTool:
         cfg = self.exec_root / _REPROXY_CFG
@@ -1915,7 +1940,7 @@ exec "${{cmd[@]}}"
         if self.skipping_some_download:
             self._process_download_stubs()
 
-        if _HAVE_XATTR:
+        if self._use_xattr:
             for output_file in self.output_files_relative_to_working_dir:
                 if output_file.suffix != ".d" and output_file.exists():
                     # Declared outputs are not guaranteed to be produced
@@ -2219,6 +2244,7 @@ exec "${{cmd[@]}}"
                 path=path,
                 blob_digest=blob_digest,
                 action_digest=action_log.action_digest,
+                use_xattr=self._use_xattr,
             )
             return dl_result.verbose_returncode(f"download {path}")
         else:
@@ -2408,13 +2434,15 @@ exec "${{cmd[@]}}"
 # Module-scope functions are serializable.
 # Arguments are packed into a tuple to be map()-able.
 def _download_input_for_mp(
-    packed_args: Tuple[Path, remotetool.RemoteTool, Path, bool],
+    packed_args: Tuple[Path, remotetool.RemoteTool, Path, bool, bool],
 ) -> Tuple[Path, cl_utils.SubprocessResult]:
-    path, downloader, working_dir_abs, verbose = packed_args
+    path, downloader, working_dir_abs, verbose, use_xattr = packed_args
     if verbose:
         msg(f"  Considering input {path}")
 
-    status = download_from_stub_path(path, downloader, working_dir_abs, verbose)
+    status = download_from_stub_path(
+        path, downloader, working_dir_abs, verbose, use_xattr=use_xattr
+    )
     if status.returncode != 0:  # alert, but do not fail
         msg(f"Unable to download input {path}.")
 
@@ -2424,14 +2452,18 @@ def _download_input_for_mp(
 
 
 def _download_output_for_mp(
-    packed_args: Tuple[DownloadStubInfo, remotetool.RemoteTool, Path, bool],
+    packed_args: Tuple[
+        DownloadStubInfo, remotetool.RemoteTool, Path, bool, bool
+    ],
 ) -> Tuple[Path, cl_utils.SubprocessResult]:
-    stub_info, downloader, working_dir_abs, verbose = packed_args
+    stub_info, downloader, working_dir_abs, verbose, use_xattr = packed_args
     path = stub_info.path
     if verbose:
         msg(f"  Downloading output {path}")
     status = stub_info.download(
-        downloader=downloader, working_dir_abs=working_dir_abs
+        downloader=downloader,
+        working_dir_abs=working_dir_abs,
+        use_xattr=use_xattr,
     )
 
     if status.returncode != 0:  # alert, but do not fail
@@ -2448,6 +2480,7 @@ def download_input_stub_paths_batch(
     working_dir_abs: Path,
     parallel: bool = True,
     verbose: bool = False,
+    use_xattr: bool = _CAN_HAVE_XATTR,
 ) -> Dict[Path, cl_utils.SubprocessResult]:
     """Downloads artifacts from a collection of stubs in parallel.
 
@@ -2459,7 +2492,7 @@ def download_input_stub_paths_batch(
         msg(f"Downloading potentially {len(stub_paths)} artifacts")
     download_args = [
         # args for _download_input_for_mp
-        (stub_path, downloader, working_dir_abs, verbose)
+        (stub_path, downloader, working_dir_abs, verbose, use_xattr)
         for stub_path in stub_paths
     ]
     if not download_args:
@@ -2494,11 +2527,12 @@ def download_output_stub_infos_batch(
     working_dir_abs: Path,
     parallel: bool = True,
     verbose: bool = False,
+    use_xattr: bool = _CAN_HAVE_XATTR,
 ) -> Dict[Path, cl_utils.SubprocessResult]:
     """Downloads artifacts from a collection of stubs in parallel."""
     download_args = [
         # args for _download_output_for_mp
-        (stub_info, downloader, working_dir_abs, verbose)
+        (stub_info, downloader, working_dir_abs, verbose, use_xattr)
         for stub_info in stub_infos
     ]
     if not download_args:
@@ -2649,6 +2683,12 @@ def inherit_main_arg_parser_flags(
         action="store_true",
         default=False,
         help="Disable remote execution, run the original command locally.",
+    )
+    main_group.add_argument(
+        "--disable-xattr",
+        action="store_true",
+        default=False,
+        help="Disable recording remote action output digests in xattrs.",
     )
     main_group.add_argument(
         "--dry-run",
@@ -2943,6 +2983,8 @@ def main(argv: Sequence[str]) -> int:
         main_argv
     )
 
+    use_xattr = _CAN_HAVE_XATTR and not main_args.disable_xattr
+
     # Re-launch self with reproxy if needed.
     auto_relaunch_with_reproxy(
         script=Path(__file__),
@@ -2955,6 +2997,7 @@ def main(argv: Sequence[str]) -> int:
         main_args=main_args,
         remote_options=other_remote_options,
         command=filtered_command,
+        use_xattr=use_xattr,
     )
     with cl_utils.timer_cm("RemoteAction.run_with_main_args()"):
         return remote_action.run_with_main_args(main_args)
