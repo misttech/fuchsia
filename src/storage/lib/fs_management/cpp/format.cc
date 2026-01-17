@@ -209,8 +209,6 @@ __EXPORT std::string_view DiskFormatString(DiskFormat fs_type) {
       return "block verity";
     case kDiskFormatVbmeta:
       return "vbmeta";
-    case kDiskFormatBootpart:
-      return "bootpart";
     case kDiskFormatFxfs:
       return "fxfs";
     case kDiskFormatF2fs:
@@ -230,10 +228,10 @@ __EXPORT std::string_view DiskFormatString(DiskFormat fs_type) {
 __EXPORT DiskFormat DiskFormatFromString(std::string_view str) {
   static auto* formats = [] {
     auto* formats = new std::unordered_map<std::string_view, DiskFormat>();
-    for (auto format : {kDiskFormatGpt, kDiskFormatMbr, kDiskFormatMinfs, kDiskFormatFat,
-                        kDiskFormatBlobfs, kDiskFormatFvm, kDiskFormatZxcrypt, kDiskFormatFactoryfs,
-                        kDiskFormatBlockVerity, kDiskFormatVbmeta, kDiskFormatBootpart,
-                        kDiskFormatFxfs, kDiskFormatF2fs, kDiskFormatNandBroker}) {
+    for (auto format :
+         {kDiskFormatGpt, kDiskFormatMbr, kDiskFormatMinfs, kDiskFormatFat, kDiskFormatBlobfs,
+          kDiskFormatFvm, kDiskFormatZxcrypt, kDiskFormatFactoryfs, kDiskFormatBlockVerity,
+          kDiskFormatVbmeta, kDiskFormatFxfs, kDiskFormatF2fs, kDiskFormatNandBroker}) {
       formats->emplace(DiskFormatString(format), format);
     }
     return formats;
@@ -267,7 +265,6 @@ __EXPORT std::string_view DiskFormatComponentUrl(DiskFormat fs_type) {
     case kDiskFormatFactoryfs:
     case kDiskFormatBlockVerity:
     case kDiskFormatVbmeta:
-    case kDiskFormatBootpart:
     case kDiskFormatNandBroker:
       break;
   }

@@ -85,7 +85,6 @@
 //src/devices/block/drivers/aml-sdmmc:aml-sdmmc-driver
 //src/devices/block/drivers/aml-sdmmc:aml-sdmmc-no-banjo-bazel-package.bazel_build
 //src/devices/block/drivers/block-verity:block-verity-driver
-//src/devices/block/drivers/bootpart:bootpart-driver
 //src/devices/block/drivers/core:core-driver
 //src/devices/block/drivers/ftl:ftl-driver
 //src/devices/block/drivers/gpt:gpt-driver

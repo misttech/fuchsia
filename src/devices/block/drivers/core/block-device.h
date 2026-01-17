@@ -115,9 +115,6 @@ class BlockDevice : public BlockDeviceType,
   // parent device's op size
   size_t parent_op_size_ = 0;
 
-  // True if we have metadata for a ZBI partition map.
-  bool has_bootpart_ = false;
-
   std::mutex io_lock_;
   zx::vmo io_vmo_ TA_GUARDED(io_lock_);
   zx_status_t io_status_ = ZX_OK;

@@ -9,7 +9,6 @@ group("tests") {
     "ahci:tests",
     "aml-sdmmc:tests",
     "block-verity:tests",
-    "bootpart:tests",
     "core:tests",
     "cqhci:tests",
     "ftl:tests",

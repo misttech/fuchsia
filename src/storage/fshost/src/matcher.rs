@@ -3,8 +3,8 @@
 // found in the LICENSE file.
 
 use crate::device::constants::{
-    BLOBFS_PARTITION_LABEL, BOOTPART_DRIVER_PATH, DATA_PARTITION_LABEL, GPT_DRIVER_PATH,
-    LEGACY_DATA_PARTITION_LABEL, LEGACY_FVM_TYPE_GUID, MBR_DRIVER_PATH,
+    BLOBFS_PARTITION_LABEL, DATA_PARTITION_LABEL, GPT_DRIVER_PATH, LEGACY_DATA_PARTITION_LABEL,
+    LEGACY_FVM_TYPE_GUID, MBR_DRIVER_PATH,
 };
 use crate::device::{Device, DeviceTag, Parent};
 use crate::environment::Environment;
@@ -60,16 +60,12 @@ impl Matchers {
         config: &fshost_config::Config,
         mut extra_matchers: Vec<Box<dyn Matcher>>,
     ) -> Self {
-        let mut matchers = Vec::<Box<dyn Matcher>>::new();
-
         // NB: Order is important here!
         // Generally speaking, we want to have more specific matchers first, and more general
         // matchers later.  For example, the GptMatcher needs to come after most others because it
         // will bind to *any* non-removable device, but will only bind once.  It will in turn
         // publish more devices, which will be matched by our other matchers.
-        if config.bootpart {
-            matchers.push(Box::new(BootpartMatcher::new()));
-        }
+        let mut matchers = Vec::<Box<dyn Matcher>>::new();
 
         // Match the system container.
         // On a regular system, we'll mount the container and its inner volumes.
@@ -195,38 +191,6 @@ impl Matcher for PublisherMatcher {
         log::info!("Publishing {} to /block/{}", device.path(), index);
         env.publish_device(device, &index)?;
         self.block_index += 1;
-        Ok(None)
-    }
-}
-
-// Matches Bootpart devices.
-struct BootpartMatcher();
-
-impl BootpartMatcher {
-    fn new() -> Self {
-        BootpartMatcher()
-    }
-}
-
-#[async_trait]
-impl Matcher for BootpartMatcher {
-    fn matcher_name(&self) -> &str {
-        "Bootpart"
-    }
-
-    async fn match_device(&self, device: &mut dyn Device) -> bool {
-        device
-            .get_block_info()
-            .await
-            .map_or(false, |info| info.flags.contains(BlockDeviceFlag::BOOTPART))
-    }
-
-    async fn process_device(
-        &mut self,
-        device: &mut dyn Device,
-        env: &mut dyn Environment,
-    ) -> Result<Option<DeviceTag>, Error> {
-        env.attach_driver(device, BOOTPART_DRIVER_PATH).await?;
         Ok(None)
     }
 }
@@ -737,8 +701,8 @@ mod tests {
     use super::{Device, DiskFormat, Environment, Matchers};
     use crate::config::default_test_config;
     use crate::device::constants::{
-        BLOBFS_PARTITION_LABEL, BOOTPART_DRIVER_PATH, DATA_PARTITION_LABEL, GPT_DRIVER_PATH,
-        LEGACY_DATA_PARTITION_LABEL, LEGACY_FVM_TYPE_GUID,
+        BLOBFS_PARTITION_LABEL, DATA_PARTITION_LABEL, GPT_DRIVER_PATH, LEGACY_DATA_PARTITION_LABEL,
+        LEGACY_FVM_TYPE_GUID,
     };
     use crate::device::{DeviceTag, Parent, RegisteredDevices};
     use crate::environment::{Filesystem, PartitionInfo, SinglePublisher};
@@ -757,7 +721,6 @@ mod tests {
 
     #[derive(Clone)]
     struct MockDevice {
-        block_flags: DeviceFlag,
         content_format: DiskFormat,
         topological_path: String,
         partition_label: Option<String>,
@@ -769,7 +732,6 @@ mod tests {
     impl MockDevice {
         fn new() -> Self {
             MockDevice {
-                block_flags: DeviceFlag::empty(),
                 content_format: DiskFormat::Unknown,
                 topological_path: "mock_device".to_string(),
                 partition_label: None,
@@ -779,10 +741,6 @@ mod tests {
                 // matcher unless we are testing it.
                 parent: Parent::SystemPartitionTable,
             }
-        }
-        fn set_block_flags(mut self, flags: DeviceFlag) -> Self {
-            self.block_flags = flags;
-            self
         }
         fn set_content_format(mut self, format: DiskFormat) -> Self {
             self.content_format = format;
@@ -817,7 +775,7 @@ mod tests {
                 block_count: 0,
                 block_size: 0,
                 max_transfer_size: 0,
-                flags: self.block_flags,
+                flags: DeviceFlag::empty(),
             })
         }
         fn is_nand(&self) -> bool {
@@ -1171,33 +1129,6 @@ mod tests {
             assert!(!*self.expect_register_system_gpt.lock());
             assert!(!*self.expect_register_filesystem.lock());
         }
-    }
-
-    #[fuchsia::test]
-    async fn test_bootpart_matcher() {
-        let mock_device = MockDevice::new().set_block_flags(DeviceFlag::BOOTPART);
-
-        // Check no match when disabled in config.
-        assert!(
-            !Matchers::new(&fshost_config::Config {
-                bootpart: false,
-                gpt: false,
-                ..default_test_config()
-            },)
-            .match_device(Box::new(mock_device.clone()), &mut MockEnv::new())
-            .await
-            .expect("match_device failed")
-        );
-
-        assert!(
-            Matchers::new(&default_test_config())
-                .match_device(
-                    Box::new(mock_device),
-                    &mut MockEnv::new().expect_attach_driver(BOOTPART_DRIVER_PATH)
-                )
-                .await
-                .expect("match_device failed")
-        );
     }
 
     #[fuchsia::test]

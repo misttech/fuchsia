@@ -75,7 +75,6 @@ shared_library("driver") {
     "//src/devices/acpi/drivers/intel-thermal:*",
     "//src/devices/bin/driver_manager:*",
     "//src/devices/block/drivers/block-verity:*",
-    "//src/devices/block/drivers/bootpart:*",
     "//src/devices/block/drivers/core:*",
     "//src/devices/block/drivers/ftl:*",
     "//src/devices/block/drivers/gpt:*",

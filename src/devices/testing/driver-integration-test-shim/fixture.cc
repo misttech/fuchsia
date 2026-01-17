@@ -128,7 +128,6 @@ zx_status_t IsolatedDevmgr::Create(Args* args, IsolatedDevmgr* out) {
       Config{.name = "fuchsia.fshost.BlobfsInitialInodes"},
       Config{.name = "fuchsia.fshost.BlobMaxBytes"},
       Config{.name = "fuchsia.fshost.BlobfsUseDeprecatedPaddedFormat"},
-      Config{.name = "fuchsia.fshost.BootPart"},
       Config{.name = "fuchsia.fshost.CheckFilesystems"},
       Config{.name = "fuchsia.fshost.Data"},
       Config{.name = "fuchsia.fshost.DataFilesystemFormat"},

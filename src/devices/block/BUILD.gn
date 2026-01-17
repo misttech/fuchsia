@@ -8,7 +8,6 @@ group("drivers") {
     "drivers/aml-sdmmc",
     "drivers/aml-sdmmc:aml-sdmmc-no-banjo-bazel-package",
     "drivers/block-verity",
-    "drivers/bootpart",
     "drivers/core",
     "drivers/ftl",
     "drivers/gpt",

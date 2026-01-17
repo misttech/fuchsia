@@ -125,9 +125,6 @@ int cmd_list_blk() {
     if (block_info.flags & fuchsia_block::wire::DeviceFlag::kRemovable) {
       strlcat(flags, "RE ", sizeof(flags));
     }
-    if (block_info.flags & fuchsia_block::wire::DeviceFlag::kBootpart) {
-      strlcat(flags, "BP ", sizeof(flags));
-    }
     printf("%-3s %4s %-16s %-20s %-6s %s\n", de->d_name, sizestr, type.c_str(), label.c_str(),
            flags, source.c_str());
   }

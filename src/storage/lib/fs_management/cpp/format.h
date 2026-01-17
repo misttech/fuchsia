@@ -33,10 +33,9 @@ enum DiskFormat {
   kDiskFormatFactoryfs = 8,
   kDiskFormatBlockVerity = 9,
   kDiskFormatVbmeta = 10,
-  kDiskFormatBootpart = 11,
-  kDiskFormatFxfs = 12,
-  kDiskFormatF2fs = 13,
-  kDiskFormatNandBroker = 14,
+  kDiskFormatFxfs = 11,
+  kDiskFormatF2fs = 12,
+  kDiskFormatNandBroker = 13,
   kDiskFormatCount,
 };
 

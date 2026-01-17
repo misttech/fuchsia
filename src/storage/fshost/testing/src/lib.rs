@@ -162,7 +162,6 @@ impl FshostBuilder {
             ("format_data_on_corruption", "fuchsia.fshost.FormatDataOnCorruption"),
             ("data_filesystem_format", "fuchsia.fshost.DataFilesystemFormat"),
             ("blobfs", "fuchsia.fshost.Blobfs"),
-            ("bootpart", "fuchsia.fshost.BootPart"),
             ("factory", "fuchsia.fshost.Factory"),
             ("fvm", "fuchsia.fshost.Fvm"),
             ("gpt", "fuchsia.fshost.Gpt"),

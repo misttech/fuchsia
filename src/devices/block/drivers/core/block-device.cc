@@ -121,12 +121,6 @@ void BlockDevice::GetInfo(GetInfoCompleter::Sync& completer) {
   static_assert(sizeof(info) == sizeof(block_info_t));
   size_t block_op_size;
   parent_protocol_.Query(reinterpret_cast<block_info_t*>(&info), &block_op_size);
-  // Set or clear fuchsia.storage.block/Flag.BOOTPART appropriately.
-  if (has_bootpart_) {
-    info.flags |= fuchsia_storage_block::wire::DeviceFlag::kBootpart;
-  } else {
-    info.flags &= ~fuchsia_storage_block::wire::DeviceFlag::kBootpart;
-  }
   completer.ReplySuccess(info);
 }
 
@@ -362,16 +356,6 @@ zx_status_t BlockDevice::Bind(void* ctx, zx_device_t* dev) {
   if ((block_size < 512) || (block_size & (block_size - 1))) {
     zxlogf(ERROR, "block device: invalid block size: %zu", block_size);
     return ZX_ERR_NOT_SUPPORTED;
-  }
-
-  // Check to see if we have a ZBI partition map.
-  zx::result partition_map = ddk::GetMetadataIfExists<fuchsia_boot_metadata::PartitionMap>(dev);
-  if (partition_map.is_error()) {
-    zxlogf(ERROR, "Failed to get partition map: %s", partition_map.status_string());
-    return partition_map.status_value();
-  }
-  if (partition_map.value().has_value()) {
-    bdev->has_bootpart_ = true;
   }
 
   // We implement |ZX_PROTOCOL_BLOCK|, not |ZX_PROTOCOL_BLOCK_IMPL|. This is the

@@ -106,9 +106,6 @@ type DeviceFlag = strict bits : uint32 {
     /// The block device may be removed from the device during operation.
     REMOVABLE = 0x00000002;
 
-    /// The device has a bootdata partition map.
-    BOOTPART = 0x00000004;
-
     /// The device provides trim support.
     TRIM_SUPPORT = 0x00000008;
 

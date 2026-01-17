@@ -276,7 +276,6 @@ impl DefineSubsystemConfiguration<(&StorageConfig, &StorageToolsConfig, &Recover
         let configs = [
             ("fuchsia.fshost.Blobfs", Config::new_bool(true)),
             ("fuchsia.fshost.BlobMaxBytes", Config::new_uint64(blob_max_bytes)),
-            ("fuchsia.fshost.BootPart", Config::new_bool(true)),
             ("fuchsia.fshost.CheckFilesystems", Config::new_bool(true)),
             ("fuchsia.fshost.Data", Config::new_bool(true)),
             ("fuchsia.fshost.DataMaxBytes", Config::new_uint64(data_max_bytes)),

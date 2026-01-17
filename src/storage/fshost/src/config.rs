@@ -9,7 +9,6 @@ pub fn default_test_config() -> fshost_config::Config {
         blobfs_initial_inodes: 0,
         blob_max_bytes: 0,
         blobfs_use_deprecated_padded_format: false,
-        bootpart: true,
         data: true,
         data_filesystem_format: String::new(),
         data_max_bytes: 0,

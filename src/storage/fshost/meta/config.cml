@@ -65,12 +65,6 @@
             type: "bool",
         },
         {
-            // Enables bootpart partitions.
-            config: "fuchsia.fshost.BootPart",
-            key: "bootpart",
-            type: "bool",
-        },
-        {
             // Enables the factory partition (small partition of settings set
             // in the factory and never written to otherwise).
             config: "fuchsia.fshost.Factory",
