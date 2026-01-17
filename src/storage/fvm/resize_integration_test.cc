@@ -5,7 +5,6 @@
 #include <fidl/fuchsia.driver.test/cpp/wire.h>
 #include <lib/async-loop/cpp/loop.h>
 #include <lib/async-loop/default.h>
-#include <lib/driver_test_realm/realm_builder/cpp/lib.h>
 #include <lib/fdio/fd.h>
 
 #include <vector>

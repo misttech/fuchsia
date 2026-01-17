@@ -60,24 +60,22 @@ void DriverFvmInstance::SetUp() {
   loop_->StartThread();
 
   auto realm_builder = component_testing::RealmBuilder::Create();
-  driver_test_realm::Setup(realm_builder);
+  driver_test_realm::Setup(
+      realm_builder, loop_->dispatcher(), driver_test_realm::OptionsBuilder().Build(),
+      fuchsia_driver_test::RealmArgs{
+          {.root_driver = "fuchsia-boot:///platform-bus#meta/platform-bus.cm",
+           .software_devices = std::vector{
+               fuchsia_driver_test::SoftwareDevice{{
+                   .device_name = "ram-disk",
+                   .device_id = bind_fuchsia_platform::BIND_PLATFORM_DEV_DID_RAM_DISK,
+               }},
+           }}});
   realm_ = std::make_unique<component_testing::RealmRoot>(realm_builder.Build(loop_->dispatcher()));
 
-  zx::result dtr = realm_->component().Connect<fuchsia_driver_test::Realm>();
-  ASSERT_OK(dtr);
-  fidl::Arena arena;
-  auto args_builder = fuchsia_driver_test::wire::RealmArgs::Builder(arena);
-  args_builder.root_driver("fuchsia-boot:///platform-bus#meta/platform-bus.cm");
-  args_builder.software_devices(std::vector{
-      fuchsia_driver_test::wire::SoftwareDevice{
-          .device_name = "ram-disk",
-          .device_id = bind_fuchsia_platform::BIND_PLATFORM_DEV_DID_RAM_DISK,
-      },
-  });
-  fidl::WireResult result = fidl::WireCall(*dtr)->Start(args_builder.Build());
-  ASSERT_OK(result.status());
-  ASSERT_TRUE(result.value().is_ok());
+  zx::result<> boot_result = driver_test_realm::WaitForBootup(*realm_);
+  ASSERT_EQ(ZX_OK, boot_result.status_value());
 
+  // TODO(https://fxbug.dev/377735979): Connect using a different mechanism.
   auto [devfs_client, server] = fidl::Endpoints<fuchsia_io::Node>::Create();
   fidl::UnownedClientEnd<fuchsia_io::Directory> exposed(
       realm_->component().exposed().unowned_channel());
@@ -87,11 +85,14 @@ void DriverFvmInstance::SetUp() {
   ASSERT_OK(
       fdio_fd_create(devfs_client.TakeChannel().release(), devfs_root_.reset_and_get_address()));
 
-  ASSERT_OK(
-      device_watcher::RecursiveWaitForFile(devfs_root().get(), "sys/platform/ram-disk/ramctl"));
+  auto node = driver_test_realm::WaitForNode(*realm_, "ram-disk.ramctl");
+  ASSERT_TRUE(node.is_ok());
 }
 
-void DriverFvmInstance::TearDown() { ramdisk_.Reset(); }
+void DriverFvmInstance::TearDown() {
+  ramdisk_.Reset();
+  driver_test_realm::ShutdownRealm(*realm_);
+}
 
 void DriverFvmInstance::CreateRamdisk(uint64_t block_size, uint64_t block_count) {
   if (ramdisk_.is_valid()) {

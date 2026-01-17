@@ -8,7 +8,7 @@
 #include <fidl/fuchsia.device/cpp/wire.h>
 #include <fidl/fuchsia.storage.block/cpp/wire.h>
 #include <lib/async-loop/cpp/loop.h>
-#include <lib/driver_test_realm/realm_builder/cpp/lib.h>
+#include <lib/driver_test_realm/realm_builder/cpp/builder.h>
 #include <lib/zx/result.h>
 
 #include <memory>
