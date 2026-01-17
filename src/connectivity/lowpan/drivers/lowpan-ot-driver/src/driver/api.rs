@@ -620,6 +620,12 @@ where
                 last_rssi_in: Some(x.last_rssi() as i32),
                 avg_rssi_in: Some(x.average_rssi()),
                 lqi_in: Some(x.lqi_in()),
+                conntime: Some(
+                    fuchsia_async::MonotonicDuration::from_seconds(x.conntime().into())
+                        .into_nanos()
+                        .try_into()
+                        .unwrap(),
+                ),
                 ..Default::default()
             })
             .collect::<Vec<_>>())

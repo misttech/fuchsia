@@ -653,6 +653,14 @@ async fn monitor_device(name: String, iface_tree: Arc<IfaceTreeHolder>) -> Resul
                                         "queued_messages",
                                         neighbor_info_clone.queued_messages.unwrap_or(0).into(),
                                     );
+                                    inspector.root().record_uint(
+                                        "conntime",
+                                        neighbor_info_clone
+                                            .conntime
+                                            .unwrap_or(0)
+                                            .try_into()
+                                            .unwrap_or(0),
+                                    );
                                     Ok(inspector)
                                 }
                                 .boxed()
@@ -1463,6 +1471,7 @@ mod tests {
                         "rssi": AnyProperty,
                         "short_address": AnyProperty,
                         "thread_mode": AnyProperty,
+                        "conntime": AnyProperty,
                     }
                 },
                 "telemetry": contains {},

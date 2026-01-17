@@ -73,4 +73,10 @@ impl NeighborInfo {
     pub fn rloc16(&self) -> ShortAddress {
         self.0.mRloc16
     }
+
+    /// Returns seconds since link establishment with this neighbor
+    /// (requires OPENTHREAD_CONFIG_UPTIME_ENABLE).
+    pub fn conntime(&self) -> u32 {
+        self.0.mConnectionTime
+    }
 }

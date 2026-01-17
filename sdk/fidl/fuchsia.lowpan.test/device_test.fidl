@@ -248,4 +248,7 @@ type NeighborInfo = table {
 
     /// MLE version for the neighbor.
     17: thread_mle_version uint8;
+
+    /// Nanoseconds since link establishment with this neighbor.
+    18: conntime zx.Duration;
 };
