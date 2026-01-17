@@ -25,6 +25,31 @@
 
 namespace sampler {
 
+// A helper type to ensure we always call our Read functions in the order of PrepareRead,
+// ReadUserImpl, then FinishRead.
+//
+// The only way to get a token is through PrepareRead. Calling ReadUserImpl requires a token, and
+// the only way to "disarm" the token (prevent an assert on destruction), is to pass it to
+// FinishRead.
+struct ReadToken {
+ public:
+  ReadToken(const ReadToken&) = delete;
+  ReadToken& operator=(const ReadToken&) = delete;
+  ReadToken(ReadToken&& other) : disarmed(other.disarmed) { other.disarmed = true; }
+  ReadToken& operator=(ReadToken&& other) {
+    disarmed = other.disarmed;
+    other.disarmed = true;
+    return *this;
+  }
+  ~ReadToken() { DEBUG_ASSERT_MSG(disarmed, "FinishRead was not called after Reading"); }
+
+ private:
+  ReadToken() = default;
+
+  bool disarmed = false;
+  friend class ThreadSamplerDispatcher;
+};
+
 // A ThreadSampler is really just an IOBuffer with some added control methods on top to start and
 // stop sampling.
 class ThreadSamplerDispatcher : public IoBufferDispatcher {
@@ -42,6 +67,8 @@ class ThreadSamplerDispatcher : public IoBufferDispatcher {
   enum class SamplingState : uint8_t {
     Configured,
     Running,
+    Reading,
+    Destroying,
     Destroyed,
   };
 
@@ -69,6 +96,15 @@ class ThreadSamplerDispatcher : public IoBufferDispatcher {
   static zx::result<> SampleThread(zx_koid_t pid, zx_koid_t tid, GeneralRegsSource source,
                                    void* gregs);
 
+  // Read out the data contained in the sampler buffers into `ptr` return the number of bytes
+  // written. The Sampling state must be Stopped before calling this function.
+  //
+  // `len` _must_ be at least equal to the total size of the sampler buffers, which can be queried
+  // by passing a nullptr `ptr`. In this case, no data will be written and the return value will be
+  // the required minimum size of the buffer to write to.
+  static ktl::pair<zx_status_t, size_t> ReadUser(const fbl::RefPtr<IoBufferDispatcher>& disp,
+                                                 user_out_ptr<void> ptr, size_t len);
+
  protected:
   internal::PerCpuState& GetPerCpuState(size_t i) const { return per_cpu_state_[i]; }
 
@@ -92,6 +128,15 @@ class ThreadSamplerDispatcher : public IoBufferDispatcher {
 
  private:
   void StopLocked() TA_REQ(get_lock());
+
+  zx::result<ReadToken> PrepareRead() TA_REQ(ThreadSamplerLock::Get());
+  void FinishRead(ReadToken&& token) TA_REQ(ThreadSamplerLock::Get());
+
+  // ReadUser calls into VmObject::ReadUser. As we could be copying to pager backed user memory, we
+  // must not hold any locks.
+  ktl::pair<zx_status_t, size_t> ReadUserImpl(const ReadToken& token, user_out_ptr<void> ptr,
+                                              size_t len)
+      TA_EXCL(ThreadSamplerLock::Get(), get_lock());
 
   SamplingState state_ TA_GUARDED(get_lock()){SamplingState::Configured};
   fbl::Array<internal::PerCpuState> per_cpu_state_;

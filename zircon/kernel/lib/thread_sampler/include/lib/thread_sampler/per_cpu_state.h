@@ -79,6 +79,7 @@ class PerCpuState {
   // Reserve space in the assigned pinned memory. The AllocatedRecord will ensure the underlying
   // buffers live long enough to write to.
   zx::result<AllocatedRecord> Reserve(uint64_t header) { return writer.Reserve(header); }
+  size_t AvailableBytes() const { return writer.AvailableBytes(); }
 
  private:
   BufferWriter writer;

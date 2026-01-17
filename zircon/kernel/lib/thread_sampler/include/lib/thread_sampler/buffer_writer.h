@@ -48,10 +48,11 @@ class BufferWriter {
   constexpr BufferWriter() = default;
   BufferWriter(vaddr_t ptr, vaddr_t end, fbl::RefPtr<VmMapping> mapping,
                PinnedVmObject pinned_buffer)
-      : ptr_(ptr),
+      : begin_(ptr),
+        ptr_(ptr),
         end_(end),
-        buffer_mapping_(std::move(mapping)),
-        pinned_buffer_(std::move(pinned_buffer)) {}
+        buffer_mapping_(ktl::move(mapping)),
+        pinned_buffer_(ktl::move(pinned_buffer)) {}
 
   BufferWriter(BufferWriter&&) = default;
   BufferWriter& operator=(BufferWriter&&) = default;
@@ -60,8 +61,10 @@ class BufferWriter {
 
   // Implement an FXT serializer that writes to the pinned+mapped buffer
   zx::result<AllocatedRecord> Reserve(uint64_t header);
+  size_t AvailableBytes() const { return ptr_ - begin_; }
 
  private:
+  vaddr_t begin_ = 0;
   vaddr_t ptr_ = 0;
   vaddr_t end_ = 0;
   fbl::RefPtr<VmMapping> buffer_mapping_;

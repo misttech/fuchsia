@@ -345,6 +345,11 @@ void sampler::ThreadSamplerDispatcher::OnPeerZeroHandlesLocked() {
   // don't need the logic here. Userspace will never see a ZX_IOB_PEER_CLOSED as we will not close
   // the endpoint the kernel holds until after userspace closes the last handle to their endpoint.
   // When that happens, we end up here and are going to destroy our state anyways.
+  if (state_ == SamplingState::Reading) {
+    // There's a read in flight, we can't destroy our buffers yet. We set the state to Destroying,
+    // and when the read finishes, it will also clean up the buffers.
+    state_ = SamplingState::Destroying;
+  }
 
   // The userspace end of the iobuffer has closed. Time to clean up our state
   if (state_ == SamplingState::Running) {
@@ -442,4 +447,134 @@ zx::result<> sampler::ThreadSamplerDispatcher::SampleThread(zx_koid_t pid, zx_ko
   }
 
   return sampler_ref->SampleThreadImpl(pid, tid, source, gregs);
+}
+
+ktl::pair<zx_status_t, size_t> sampler::ThreadSamplerDispatcher::ReadUser(
+    const fbl::RefPtr<IoBufferDispatcher>& disp, user_out_ptr<void> ptr, size_t len) {
+  // We unfortunately run into some complexity here: while the buffer our samples in is created by
+  // the kernel and is safe to read from, the user memory we are writing to could be pager-backed.
+  // This means that when we attempt to write to it as part of the VmObjectPaged::ReadUser call, we
+  // cannot be holding locks. So we need to obtain the lock to set up the copy, drop the lock, do
+  // the copy, then grab the lock again to make sure everything went well.
+  //
+  // During the copy, we'd need to prevent:
+  //   1) The sampler from writing new data
+  //   2) The buffers being destroyed due to the read handle being zx_handle_close'd
+  //   3) A new sampler from being created.
+  //
+  // We do this by:
+  //    1) Setting our state to SamplingState::Reading which disallows starting a new session (and
+  //       thus destroying the old one).
+  //    2) If OnPeerZeroHandlesLocked is triggered while in `Reading` mode, we delay actually
+  //       destroying the buffers and destroy them after the copy is completed instead.
+
+  fbl::RefPtr<sampler::ThreadSamplerDispatcher> sampler_ref;
+  ktl::optional<sampler::ReadToken> token;
+  {
+    Guard<Mutex> guard(ThreadSamplerLock::Get());
+    // For now, as we don't yet support concurrent reads and writes, we must not be in an
+    // active session when we are reading data.
+    if (gThreadSampler_.dispatcher() == nullptr ||
+        gThreadSampler_.dispatcher()->State() !=
+            sampler::ThreadSamplerDispatcher::SamplingState::Configured) {
+      return {ZX_ERR_BAD_STATE, 0};
+    }
+
+    if (disp->get_koid() != gThreadSampler_.dispatcher()->get_related_koid()) {
+      return {ZX_ERR_BAD_HANDLE, 0};
+    }
+    sampler_ref = gThreadSampler_.dispatcher();
+    zx::result<sampler::ReadToken> prepare_result = sampler_ref->PrepareRead();
+    if (prepare_result.is_error()) {
+      return {prepare_result.error_value(), 0};
+    }
+    token.emplace(ktl::move(prepare_result.value()));
+  }
+
+  auto [status, read] = sampler_ref->ReadUserImpl(token.value(), ptr, len);
+  {
+    // We now need to ensure that the user side handle hasn't been dropped. If it has been, then we
+    // need to clean it up.
+    Guard<Mutex> guard(ThreadSamplerLock::Get());
+    DEBUG_ASSERT(gThreadSampler_.dispatcher() != nullptr);
+    gThreadSampler_.dispatcher()->FinishRead(ktl::move(token.value()));
+  }
+
+  return {status, read};
+}
+
+zx::result<sampler::ReadToken> sampler::ThreadSamplerDispatcher::PrepareRead() {
+  Guard<CriticalMutex> guard(get_lock());
+  if (state_ != SamplingState::Configured) {
+    return zx::error(ZX_ERR_BAD_STATE);
+  }
+  state_ = SamplingState::Reading;
+  return zx::ok(ReadToken{});
+}
+
+void sampler::ThreadSamplerDispatcher::FinishRead(ReadToken&& token) {
+  Guard<CriticalMutex> guard(get_lock());
+  DEBUG_ASSERT(state_ == SamplingState::Reading || state_ == SamplingState::Destroying);
+  if (state_ == SamplingState::Destroying) {
+    // Our peer was destroyed while we dropped to the lock to do the read. We were reading, so we
+    // delayed destroying the buffers as to not corrupt the read. However, now we're responsible for
+    // the remaining buffer clean up.
+    per_cpu_state_.reset();
+    state_ = SamplingState::Destroyed;
+  } else {
+    // No additional action is needed.
+    state_ = SamplingState::Configured;
+  }
+  token.disarmed = true;
+}
+
+ktl::pair<zx_status_t, size_t> sampler::ThreadSamplerDispatcher::ReadUserImpl(
+    const sampler::ReadToken&, user_out_ptr<void> ptr, size_t len) {
+  // We're going to call into VmObject::ReadUser which could be copying to pager backed user memory.
+  // We can't be holding any locks.
+  lockdep::AssertNoLocksHeld();
+
+  const size_t num_buffers = RegionCount();
+
+  // If the per-CPU buffers have not been initialized, there's nothing to do, so return early.
+  if (num_buffers == 0) {
+    return {ZX_OK, 0};
+  }
+
+  // Once we're initialized, the underlying data allocations (num_buffers) and the views into them
+  // (per_cpu_state_) better agree on the number of regions we have, or something has gone terribly
+  // wrong.
+  DEBUG_ASSERT(per_cpu_state_.size() == num_buffers);
+
+  // All buffers are the same size.
+  const size_t buffer_size = GetRegion(0).size;
+
+  // The caller can query the required buffer size by passing in a nulltpr.
+  if (!ptr) {
+    return {ZX_OK, buffer_size * num_buffers};
+  }
+
+  // Eventually, this should support users passing in buffers smaller than the sum of the size of
+  // all per-CPU buffers, but for now we do not allow this.
+  if (len < (buffer_size * num_buffers)) {
+    return {ZX_ERR_INVALID_ARGS, 0};
+  }
+
+  // Iterate through each per-CPU buffer and read its contents.
+  size_t bytes_read = 0;
+  user_out_ptr<char> byte_ptr = ptr.reinterpret<char>();
+
+  for (uint32_t i = 0; i < num_buffers; i++) {
+    const fbl::RefPtr<VmObject>& buffer = GetVmo(i);
+    size_t available_bytes = per_cpu_state_[i].AvailableBytes();
+    auto [status, copied] = buffer->ReadUser(byte_ptr.byte_offset(bytes_read), 0, available_bytes,
+                                             VmObjectReadWriteOptions::None);
+    if (status != ZX_OK) {
+      // If we copied some data from a previous buffer, we have to return the fact that we did so
+      // here. Otherwise, that data will be lost.
+      return {status, bytes_read};
+    }
+    bytes_read += copied;
+  }
+  return {ZX_OK, bytes_read};
 }

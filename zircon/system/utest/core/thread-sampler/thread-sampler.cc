@@ -2,7 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#include <lib/fit/defer.h>
+#include <lib/fit/function.h>
 #include <lib/fxt/fields.h>
 #include <lib/standalone-test/standalone.h>
 #include <lib/zx/event.h>
@@ -62,78 +62,69 @@ void TestFn(zx::unowned_event event) {
   }
 }
 
+// Call f for each record read from the sampler.
+zx::result<> ForEachRecord(const zx::iob& sampler, size_t buffer_size,
+                           fit::function<void(std::span<uint64_t>)> f) {
+  size_t max_size;
+  if (zx_status_t status = zx_sampler_read(sampler.get(), nullptr, 0, &max_size); status != ZX_OK) {
+    return zx::error(status);
+  }
+
+  size_t actual;
+  std::vector<uint64_t> data(max_size / 8);
+  if (zx_status_t status = zx_sampler_read(sampler.get(), data.data(), max_size, &actual);
+      status != ZX_OK) {
+    return zx::error(status);
+  }
+
+  size_t offset = 0;
+  while (offset < actual) {
+    uint64_t* header = data.data() + offset;
+    if (*header == 0) {
+      break;
+    }
+    size_t record_words = fxt::RecordFields::RecordSize::Get<size_t>(*header);
+    if (record_words == 0) {
+      return zx::error(ZX_ERR_OUT_OF_RANGE);
+    }
+    std::span<uint64_t> record{header, record_words};
+    f(record);
+    offset += record_words;
+  }
+  return zx::ok();
+}
+
 zx::result<size_t> CountRecords(const zx::iob& sampler, size_t buffer_size) {
-  zx_info_iob_t info;
-  zx_status_t res = sampler.get_info(ZX_INFO_IOB, &info, sizeof(info), nullptr, nullptr);
-  if (res != ZX_OK) {
-    return zx::error(res);
-  }
   size_t record_count{0};
-  for (uint32_t i = 0; i < info.region_count; i++) {
-    zx_vaddr_t addr;
-    size_t offset = 0;
-    res = zx::vmar::root_self()->map_iob(ZX_VM_PERM_READ, 0, sampler, i, 0, buffer_size, &addr);
-    if (res != ZX_OK) {
-      return zx::error(res);
-    }
-    auto d = fit::defer([buffer_size, addr]() { zx::vmar::root_self()->unmap(addr, buffer_size); });
-    while (offset < buffer_size) {
-      uint64_t header = *reinterpret_cast<uint64_t*>(addr + offset);
-      if (header == 0) {
-        break;
-      }
-      size_t record_words = fxt::RecordFields::RecordSize::Get<size_t>(header);
-      if (record_words == 0) {
-        return zx::error(ZX_ERR_OUT_OF_RANGE);
-      }
-      record_count += 1;
-      offset += record_words * 8;
-    }
+  if (zx::result res = ForEachRecord(sampler, buffer_size,
+                                     [&record_count](std::span<uint64_t>) { record_count += 1; });
+      res.is_error()) {
+    return res.take_error();
   }
+
   return zx::ok(record_count);
 }
 
 zx::result<size_t> CountRecordsContainingTid(const zx::iob& sampler, size_t buffer_size,
                                              zx_koid_t desired_tid) {
-  zx_info_iob_t info;
-  zx_status_t res = sampler.get_info(ZX_INFO_IOB, &info, sizeof(info), nullptr, nullptr);
-  if (res != ZX_OK) {
-    return zx::error(res);
-  }
   size_t record_count{0};
-  for (uint32_t i = 0; i < info.region_count; i++) {
-    zx_vaddr_t addr;
-    size_t offset = 0;
-    res = zx::vmar::root_self()->map_iob(ZX_VM_PERM_READ, 0, sampler, i, 0, buffer_size, &addr);
-    if (res != ZX_OK) {
-      return zx::error(res);
+  auto f = [&record_count, desired_tid](std::span<uint64_t> record_data) {
+    ZX_ASSERT(fxt::RecordFields::Type::Get<size_t>(record_data[0]) ==
+              static_cast<size_t>(fxt::RecordType::kLargeRecord));
+    ZX_ASSERT(record_data.size() >= 4);
+    // Record format looks like
+    // 0-7  : header
+    // 8-15 : metadata
+    // 16-23: ts
+    // 24-31: pid
+    // 32-40: tid
+    zx_koid_t tid = record_data[4];
+    if (tid == desired_tid) {
+      record_count += 1;
     }
-    auto d = fit::defer([buffer_size, addr]() { zx::vmar::root_self()->unmap(addr, buffer_size); });
-    while (offset < buffer_size) {
-      uint64_t header = *reinterpret_cast<uint64_t*>(addr + offset);
-      if (header == 0) {
-        break;
-      }
-      size_t record_words = fxt::RecordFields::RecordSize::Get<size_t>(header);
-      if (record_words == 0) {
-        return zx::error(ZX_ERR_OUT_OF_RANGE);
-      }
-      ZX_ASSERT(fxt::RecordFields::Type::Get<size_t>(header) ==
-                static_cast<size_t>(fxt::RecordType::kLargeRecord));
-      ZX_ASSERT(record_words >= 4);
-      // Record format looks like
-      // 0-7  : header
-      // 8-15 : metadata
-      // 16-23: ts
-      // 24-31: pid
-      // 32-40: tid
-      zx_koid_t tid = *reinterpret_cast<zx_koid_t*>(addr + offset + 32);
-      if (tid == desired_tid) {
-        record_count += 1;
-      }
-
-      offset += record_words * 8;
-    }
+  };
+  if (zx::result res = ForEachRecord(sampler, buffer_size, f); res.is_error()) {
+    return res.take_error();
   }
   return zx::ok(record_count);
 }
@@ -384,81 +375,6 @@ TEST(ThreadSampler, NoRights) {
   EXPECT_OK(zx_sampler_stop(sampler.get()));
   ASSERT_OK(event.signal(0, ZX_USER_SIGNAL_1));
   sample_thread.join();
-}
-
-TEST(ThreadSampler, ClosedHandleReadBuffers) {
-  NEEDS_NEXT_SKIP(zx_sampler_create);
-
-  // Even after we close the handle, buffers we mapped from the iob should still be readable
-  size_t buffer_size = zx_system_get_page_size();
-  zx_sampler_config_t config{
-      .period = zx::msec(1).get(),
-      .buffer_size = buffer_size,
-  };
-  zx::iob sampler;
-
-  zx::unowned_resource system_resource = standalone::GetSystemResource();
-  zx::result<zx::resource> result =
-      standalone::GetSystemResourceWithBase(system_resource, ZX_RSRC_SYSTEM_SAMPLING_BASE);
-  ASSERT_OK(result.status_value());
-  zx::resource sampling_resource = std::move(result.value());
-
-  zx_status_t create_res =
-      zx_sampler_create(sampling_resource.get(), 0, &config, sampler.reset_and_get_address());
-  if constexpr (!sampler_enabled) {
-    ASSERT_EQ(create_res, ZX_ERR_NOT_SUPPORTED);
-    return;
-  }
-
-  ASSERT_OK(create_res);
-
-  zx::event event;
-  ASSERT_EQ(zx::event::create(0, &event), ZX_OK);
-
-  // Create a thread
-  std::thread sample_thread{TestFn, event.borrow()};
-
-  ASSERT_OK(event.wait_one(ZX_USER_SIGNAL_0, zx::time::infinite(), nullptr));
-  ASSERT_OK(zx_sampler_start(sampler.get()));
-  zx::nanosleep(zx::deadline_after(zx::sec(1)));
-  ASSERT_OK(zx_sampler_stop(sampler.get()));
-  ASSERT_OK(event.signal(0, ZX_USER_SIGNAL_1));
-  sample_thread.join();
-
-  zx_info_iob_t info;
-  ASSERT_OK(sampler.get_info(ZX_INFO_IOB, &info, sizeof(info), nullptr, nullptr));
-  size_t record_count{0};
-  zx_vaddr_t addrs[info.region_count];
-  // Map the iob regions to hold onto our references
-  for (uint32_t i = 0; i < info.region_count; i++) {
-    ASSERT_OK(
-        zx::vmar::root_self()->map_iob(ZX_VM_PERM_READ, 0, sampler, i, 0, buffer_size, &addrs[i]));
-  }
-
-  // Reset our sampler
-  sampler.reset();
-  create_res =
-      zx_sampler_create(sampling_resource.get(), 0, &config, sampler.reset_and_get_address());
-  ASSERT_OK(create_res);
-  ASSERT_OK(zx_sampler_start(sampler.get()));
-  ASSERT_OK(zx_sampler_stop(sampler.get()));
-
-  // The buffers we mapped should still be readable even after creating and using a new sampler
-  for (uint32_t i = 0; i < info.region_count; i++) {
-    size_t offset = 0;
-    while (offset < buffer_size) {
-      uint64_t header = *reinterpret_cast<uint64_t*>(addrs[i] + offset);
-      if (header == 0) {
-        break;
-      }
-      record_count += 1;
-      size_t record_words = fxt::RecordFields::RecordSize::Get<size_t>(header);
-      ASSERT_TRUE(record_words > 0);
-      offset += record_words * 8;
-    }
-    zx::vmar::root_self()->unmap(addrs[i], buffer_size);
-  }
-  ASSERT_GE(record_count, 10);
 }
 
 // We should be able to attach to a started but not running thread. If we do, we should be able to

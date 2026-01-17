@@ -143,5 +143,12 @@ zx_status_t sys_sampler_read(zx_handle_t iobuffer, user_out_ptr<void> data, size
     return status;
   }
 
-  return ZX_ERR_NOT_SUPPORTED;
+  auto [status, bytes_copied] =
+      sampler::ThreadSamplerDispatcher::ReadUser(thread_sampler, data, len);
+  // We may have a partial read: some bytes were copied, but we received an error later on.
+  // We provide the caller with how many bytes we copied, but also the error we ran into.
+  if (zx_status_t copy_status = actual.copy_to_user(bytes_copied); copy_status != ZX_OK) {
+    return copy_status;
+  }
+  return status;
 }
