@@ -6,17 +6,15 @@
 "Run a Bazel command from Ninja. See bazel_action.gni for details."
 
 import argparse
-import errno
-import filecmp
 import json
 import os
 import shlex
 import shutil
-import stat
 import sys
 import typing as T
 from pathlib import Path
 
+# LINT.IfChange(imports)
 _SCRIPT_DIR = os.path.dirname(__file__)
 sys.path.insert(0, _SCRIPT_DIR)
 import bazel_compdb_utils
@@ -25,6 +23,12 @@ import build_utils
 import stdio_redirection
 import thread_pool_helpers
 import workspace_utils
+from bazel_action_file_copy_utils import (
+    check_if_need_to_copy_file,
+    copy_directory_if_changed,
+    hardlink_or_copy_writable,
+    write_file_if_changed,
+)
 from bazel_action_utils import (
     BazelGlobalArguments,
     BazelRbeSettings,
@@ -45,6 +49,9 @@ from debug_symbols import (
     DebugSymbolExporter,
     DebugSymbolsManifestParser,
 )
+
+# LINT.ThenChange(//build/bazel/bazel_action.gni:imports)
+
 
 _BUILD_BAZEL_DIR = os.path.dirname(_SCRIPT_DIR)
 
@@ -366,195 +373,6 @@ def get_input_starlark_file_path(filename: FilePath) -> str:
     return result
 
 
-def make_writable(p: FilePath) -> None:
-    file_mode = os.stat(p).st_mode
-    is_readonly = file_mode & stat.S_IWUSR == 0
-    if is_readonly:
-        os.chmod(p, file_mode | stat.S_IWUSR)
-
-
-def copy_writable(src: FilePath, dst: FilePath) -> None:
-    os.makedirs(os.path.dirname(dst), exist_ok=True)
-    shutil.copy2(src, dst)
-    make_writable(dst)
-
-
-def hardlink_or_copy_writable(
-    src_path: str, dst_path: str, bazel_output_base_dir: str
-) -> None:
-    # Use lexists to make sure broken symlinks are removed as well.
-    if os.path.lexists(dst_path):
-        os.remove(dst_path)
-
-    # See https://fxbug.dev/42072059 for context. This logic is kept here
-    # to avoid incremental failures when performing copies across
-    # different revisions of the Fuchsia checkout (e.g. when bisecting
-    # or simply in CQ).
-    #
-    # If the file is writable, and not a directory, try to hard-link it
-    # directly. Otherwise, or if hard-linking fails due to a cross-device
-    # link, do a simple copy.
-    do_copy = True
-    file_mode = os.stat(src_path).st_mode
-    is_src_readonly = file_mode & stat.S_IWUSR == 0
-    if not is_src_readonly:
-        try:
-            os.makedirs(os.path.dirname(dst_path), exist_ok=True)
-
-            # Get realpath of src_path to avoid symlink chains, which
-            # os.link does not handle properly even follow_symlinks=True.
-            #
-            # NOTE: it is important to link to the final real file because
-            # intermediate links can be temporary. For example, the
-            # gn_targets repository is repopulated in every bazel_action, so
-            # any links pointing to symlinks in gn_targets can be
-            # invalidated during the build.
-            os.link(os.path.realpath(src_path), dst_path)
-
-            # Update timestamp to avoid Ninja no-op failures that can
-            # happen because Bazel does not maintain consistent timestamps
-            # in the execroot when sandboxing or remote builds are enabled.
-            if os.path.realpath(src_path).startswith(
-                os.path.abspath(bazel_output_base_dir)
-            ):
-                os.utime(dst_path)
-            do_copy = False
-        except OSError as e:
-            if e.errno != errno.EXDEV:
-                raise
-
-    if do_copy:
-        copy_writable(src_path, dst_path)
-
-
-def copy_directory_if_changed(
-    src_dir: FilePath, dst_dir: FilePath, tracked_files: list[FilePath]
-) -> None:
-    """Copy directory from |src_path| to |dst_path| if |tracked_files| have different mtimes.
-
-    NOTE this function deliberately uses __mtime__, instead of content, of
-    tracked_files to determine whether directories need a re-copy. This follows
-    the convention many tools used in the build are using, where they use mtime
-    of a file as a proxy for the freshness of a directory, because Ninja only
-    understands timestamps.
-
-    See http://b/365838961 for details.
-    """
-    assert os.path.isdir(
-        src_dir
-    ), "{} is not a dir, but copy dir is called.".format(src_dir)
-
-    def all_tracked_files_unchanged(
-        src_dir: FilePath, dst_dir: FilePath, tracked_files: list[FilePath]
-    ) -> bool:
-        """Use __mtime__ to determine whether any tracke file has changed.
-
-        Returns true iff mtimes of tracked files are identical in src_dir and
-        dst_dir.
-        """
-        for tracked_file in tracked_files:
-            dst_tracked_file = os.path.join(dst_dir, tracked_file)
-            if not os.path.exists(dst_tracked_file):
-                return False
-            src_tracked_file = os.path.join(src_dir, tracked_file)
-            if os.path.getmtime(src_tracked_file) != os.path.getmtime(
-                dst_tracked_file
-            ):
-                return False
-        return True
-
-    if all_tracked_files_unchanged(src_dir, dst_dir, tracked_files):
-        return
-
-    if os.path.lexists(dst_dir):
-        rmtree_threaded(dst_dir)
-
-    copy_directory_threaded(src_dir, dst_dir)
-
-
-def rmtree_threaded(dirname: FilePath) -> None:
-    """Uses a threadpool to delete all the files in a directory tree faster than shutil.rmtree().
-
-    This is about 2x faster than using shutil.rmtree() on its own.
-    """
-
-    # Find all the files in the tree, from the bottom up so that the directories are emptied from
-    # the bottom-up (the order they'll be deleted in.)
-    files: list[str] = []
-    for root, _, filenames in os.walk(dirname, topdown=False):
-        files.extend([os.path.join(root, filename) for filename in filenames])
-
-    # Delete all the files in one big threadpool
-    thread_pool_helpers.map_threaded(os.remove, files)
-
-    # Now delete all the (empty) direcctories
-    shutil.rmtree(dirname)
-
-
-def copy_directory_threaded(src_dir: FilePath, dst_dir: FilePath) -> None:
-    directories: list[str] = []
-    files: list[tuple[str, str]] = []
-    for root, dirnames, filenames in os.walk(src_dir):
-        relroot = os.path.relpath(root, src_dir)
-        if relroot != ".":
-            directories.append(os.path.join(dst_dir, relroot))
-        files.extend(
-            [
-                (
-                    os.path.join(src_dir, relroot, filename),
-                    os.path.join(dst_dir, relroot, filename),
-                )
-                for filename in filenames
-            ]
-        )
-
-    # Benchmarking confirmed that it's faster to create all the directories that are
-    # needed, first, and then perform a multi-threaded copying of files, than it is
-    # to use a thread pool copy per directory.
-    thread_pool_helpers.map_threaded(os.makedirs, directories)
-    thread_pool_helpers.starmap_threaded(copy_writable, files)
-
-
-# filecmp uses a tiny buffer for comparisons, forcing it to a larger size will
-# reduce the number of I/O operations and drastically speed it up (as much as 10x)
-setattr(filecmp, "BUFSIZE", 256 * 1024)
-
-
-def check_if_need_to_copy_file(args: tuple[Path, Path]) -> bool:
-    """Check if the file copy given as a src,dst tuple needs to be performed.
-
-    This compares the files and returns true if they need to be copied.
-    """
-    src_path, dst_path = args
-    assert os.path.isfile(
-        src_path
-    ), "{} is not a file, but copy file is called.".format(src_path)
-
-    # NOTE: For some reason, filecmp.cmp() will return True if
-    # dst_path does not exist, even if src_path is not empty!?
-    if os.path.exists(dst_path) and filecmp.cmp(
-        src_path, dst_path, shallow=False
-    ):
-        return False
-    return True
-
-
-def write_file_if_changed(dst_path: FilePath, content: str) -> None:
-    if os.path.exists(dst_path):
-        with open(dst_path, "rt") as f:
-            current_content = f.read()
-        if current_content == content:
-            return
-
-    # Use lexists to make sure broken symlinks are removed as well.
-    if os.path.lexists(dst_path):
-        os.remove(dst_path)
-
-    os.makedirs(os.path.dirname(dst_path), exist_ok=True)
-    with open(dst_path, "wt") as f:
-        f.write(content)
-
-
 def depfile_quote(path: FilePath) -> str:
     """Quote a path properly for depfiles, if necessary.
 
@@ -833,7 +651,6 @@ def verify_unknown_gn_targets(
     """
     missing_ninja_outputs = set()
     missing_ninja_packages = set()
-    build_dirs: set[str] = set()
     for error_line in build_files_error:
         if not ("ERROR: " in error_line and "@gn_targets" in error_line):
             continue
@@ -1071,20 +888,6 @@ def copy_debug_symbols_to_build_dir(
     )
 
 
-def list_to_pairs(l: T.Iterable[T.Any]) -> T.Iterable[tuple[T.Any, T.Any]]:
-    is_first = True
-    for val in l:
-        if is_first:
-            last_val = val
-            is_first = False
-        else:
-            yield (
-                last_val,  # pyright: ignore[reportPossiblyUnboundVariable]
-                val,
-            )
-            is_first = True
-
-
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
 
@@ -1302,55 +1105,6 @@ def main() -> int:
     query_cache = build_utils.BazelQueryCache(
         workspace_dir / "fuchsia_build_generated/bazel_query_cache"
     )
-
-    def run_bazel_query(
-        query_cmd: str, query_args: list[str]
-    ) -> T.Optional[list[str]]:
-        """Run a Bazel query, return output as list of lines.
-
-        Args:
-            query_cmd: Query command ("query", "cquery" or "aquery").
-            query_args: Query arguments.
-        Returns:
-            On success, a list of output lines. On failure return None.
-        """
-        return query_cache.get_query_output(
-            query_cmd,
-            query_args,
-            bazel_launcher,
-            log=lambda m: (
-                print(f"DEBUG: {m}", file=sys.stderr)
-                if _DEBUG_BAZEL_QUERIES
-                else None
-            ),
-        )
-
-    def run_starlark_cquery(
-        query_targets: list[str], starlark_filename: str
-    ) -> list[str]:
-        """Run a Bazel cquery and process its output with a starlark file.
-
-        Args:
-            query_targets: A list of Bazel targets to run the query over.
-            starlark_filename: Name of starlark file from //build/bazel/starlark.
-        Returns:
-            A list of output lines.
-        Raises:
-            AssertionError in case of failure.
-        """
-        result = run_bazel_query(
-            "cquery",
-            [
-                "--config=quiet",
-                "--output=starlark",
-                "--starlark:file",
-                get_input_starlark_file_path(starlark_filename),
-            ]
-            + configured_args
-            + ["set(%s)" % " ".join(query_targets)],
-        )
-        assert result is not None
-        return result
 
     # Construct the configured_args from the Bazel platform configuration and any
     # passed-in extra arguments.
@@ -1632,6 +1386,8 @@ def main() -> int:
         #  //build/bazel/examples/hello_world:hello_world (null)
         #
         bazel_source_files = run_bazel_query(
+            query_cache,
+            bazel_launcher,
             "cquery",
             [
                 "--config=quiet",
@@ -1693,6 +1449,9 @@ def main() -> int:
         # embed the target labels so that they can be matched with the ninja
         # output paths.
         query_result = run_starlark_cquery(
+            query_cache,
+            bazel_launcher,
+            configured_args,
             [entry.package_label for entry in package_outputs],
             "FuchsiaPackageInfo_archive.cquery",
         )
@@ -1982,6 +1741,66 @@ track all input files that the repository rule may access when it is run.
 
     # Done!
     return 0
+
+
+def run_starlark_cquery(
+    query_cache: build_utils.BazelQueryCache,
+    bazel_launcher: build_utils.BazelLauncher,
+    configured_args: list[str],
+    query_targets: list[str],
+    starlark_filename: str,
+) -> list[str]:
+    """Run a Bazel cquery and process its output with a starlark file.
+
+    Args:
+        query_targets: A list of Bazel targets to run the query over.
+        starlark_filename: Name of starlark file from //build/bazel/starlark.
+    Returns:
+        A list of output lines.
+    Raises:
+        AssertionError in case of failure.
+    """
+    result = run_bazel_query(
+        query_cache,
+        bazel_launcher,
+        "cquery",
+        [
+            "--config=quiet",
+            "--output=starlark",
+            "--starlark:file",
+            get_input_starlark_file_path(starlark_filename),
+        ]
+        + configured_args
+        + ["set(%s)" % " ".join(query_targets)],
+    )
+    assert result is not None
+    return result
+
+
+def run_bazel_query(
+    query_cache: build_utils.BazelQueryCache,
+    bazel_launcher: build_utils.BazelLauncher,
+    query_cmd: str,
+    query_args: list[str],
+) -> T.Optional[list[str]]:
+    """Run a Bazel query, return output as list of lines.
+
+    Args:
+        query_cmd: Query command ("query", "cquery" or "aquery").
+        query_args: Query arguments.
+    Returns:
+        On success, a list of output lines. On failure return None.
+    """
+    return query_cache.get_query_output(
+        query_cmd,
+        query_args,
+        bazel_launcher,
+        log=lambda m: (
+            print(f"DEBUG: {m}", file=sys.stderr)
+            if _DEBUG_BAZEL_QUERIES
+            else None
+        ),
+    )
 
 
 if __name__ == "__main__":
