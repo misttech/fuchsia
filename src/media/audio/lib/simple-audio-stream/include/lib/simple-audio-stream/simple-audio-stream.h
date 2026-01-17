@@ -42,9 +42,10 @@ namespace audio_fidl = fuchsia_hardware_audio;
 // Any code that acquires the token makes the claim that it is running on the (single)
 // correct thread, and hence it is safe to access the annotated data and execute the annotated code.
 struct __TA_CAPABILITY("role") Token {};
-class __TA_SCOPED_CAPABILITY ScopedToken{
-  public : explicit ScopedToken(const Token& token) __TA_ACQUIRE(token){} ~ScopedToken()
-      __TA_RELEASE(){}
+class __TA_SCOPED_CAPABILITY ScopedToken {
+ public:
+  explicit ScopedToken(const Token& token) __TA_ACQUIRE(token) {}
+  ~ScopedToken() __TA_RELEASE() {}
 };
 
 struct SimpleAudioStreamProtocol : public ddk::internal::base_protocol {

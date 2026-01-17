@@ -407,7 +407,8 @@ TEST(StreamConverterTest, ClipInfinitiesFloat32) {
 }
 
 // Currently, StreamConverter makes no explicit effort to detect and prevent NAN output.
-// TODO(https://fxbug.dev/42165029): Consider a mode where we eliminate NANs (presumably emitting 0 instead).
+// TODO(https://fxbug.dev/42165029): Consider a mode where we eliminate NANs (presumably emitting 0
+// instead).
 TEST(StreamConverterTest, DISABLED_NanFloat32) {
   auto format = Format::CreateOrDie({
       .sample_type = kFloat32,
