@@ -515,7 +515,6 @@ group("deprecated_zx_wrapper_allowlist") {
     "//zircon/kernel/lib/arch/host:*",
     "//zircon/kernel/lib/arch/x86:*",
     "//zircon/kernel/lib/boot-options:*",
-    "//zircon/kernel/lib/counters:*",
     "//zircon/kernel/lib/devicetree:*",
     "//zircon/kernel/lib/efi:*",
     "//zircon/kernel/lib/special-sections:*",
