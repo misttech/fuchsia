@@ -8,6 +8,7 @@ group("tests") {
     "bind:tests",
     "composite:tests",
     "core:tests",
+    "development:tests",
     "devfs:tests",
     "driver_host:tests",
     "node:tests",

@@ -13,23 +13,23 @@ use vfs::{ObjectRequestRef, immutable_attributes, pseudo_directory};
 use zx::Status;
 use {fidl_fuchsia_driver_host as fdh, fidl_fuchsia_io as fio};
 
-pub struct ProcessInfo {
-    pub job_koid: zx::Koid,
-    pub process_koid: zx::Koid,
-    pub main_thread_koid: zx::Koid,
+pub(crate) struct ProcessInfo {
+    job_koid: zx::Koid,
+    pub(crate) process_koid: zx::Koid,
+    pub(crate) main_thread_koid: zx::Koid,
 }
 
-pub struct CachedProcessInfo {
+pub(crate) struct CachedProcessInfo {
     cell: OnceCell<ProcessInfo>,
     driver_host: fdh::DriverHostProxy,
 }
 
 impl CachedProcessInfo {
-    pub fn new(driver_host: fdh::DriverHostProxy) -> Self {
+    pub(crate) fn new(driver_host: fdh::DriverHostProxy) -> Self {
         Self { cell: OnceCell::new(), driver_host }
     }
 
-    pub async fn get(&self) -> Result<&ProcessInfo, zx::Status> {
+    pub(crate) async fn get(&self) -> Result<&ProcessInfo, zx::Status> {
         self.cell
             .get_or_try_init(|| async {
                 match self.driver_host.get_process_info().await {
@@ -164,7 +164,7 @@ impl FileLike for ElfFile {
 /// Creates the runtime directory that is served to the driver host.
 /// This directory contains information about the driver host process that can be used by debugging
 /// tools like zxdb.
-pub fn create_runtime_dir(process_info: Arc<CachedProcessInfo>) -> Arc<Simple> {
+pub(crate) fn create_runtime_dir(process_info: Arc<CachedProcessInfo>) -> Arc<Simple> {
     let now = zx::MonotonicInstant::get().into_nanos().to_string();
     let process_start_time = read_only(now.into_bytes());
 
