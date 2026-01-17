@@ -271,7 +271,7 @@ impl<L: AssetLoader> AssetCollection<L> {
                     // TODO(https://fxbug.dev/42170337): Implement async fetching and notification
                     _ => Err(AssetCollectionError::UncachedEphemeral {
                         file_name: file_name.to_string(),
-                        package_locator: package_locator.clone(),
+                        package_locator: Box::new(package_locator.clone()),
                     }),
                 }
             }
@@ -324,9 +324,9 @@ pub enum AssetCollectionError {
         /// Name of the file
         file_name: String,
         /// Package that we're trying to read
-        package_locator: v2::PackageLocator,
+        package_locator: Box<v2::PackageLocator>,
         #[source]
-        cause: Error,
+        cause: Box<Error>,
     },
 
     /// The client requested an empty response if the asset wasn't cached, and the asset is indeed
@@ -337,7 +337,7 @@ pub enum AssetCollectionError {
         /// Name of the file
         file_name: String,
         /// Package that we want to read
-        package_locator: v2::PackageLocator,
+        package_locator: Box<v2::PackageLocator>,
     },
 }
 

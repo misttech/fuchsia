@@ -109,8 +109,8 @@ impl AssetLoader for AssetLoaderImpl {
 
         let packaged_file_error = |cause: Error| AssetCollectionError::PackagedFileError {
             file_name: file_name.to_string(),
-            package_locator: package_locator.clone(),
-            cause,
+            package_locator: Box::new(package_locator.clone()),
+            cause: Box::new(cause),
         };
 
         let file_proxy =
