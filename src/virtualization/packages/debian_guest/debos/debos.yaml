@@ -38,12 +38,13 @@ actions:
         - procps
         - socat
         - sudo
+        - zstd
         # Packages for network and automatic tests of network.
         - iproute2
         - iputils-ping
         - isc-dhcp-server
         - netbase
-        - netcat
+        - netcat-traditional
         - net-tools
         - network-manager
         - openssh-client
@@ -97,7 +98,7 @@ actions:
   # Copy out the vmlinuz and initrd files.
   - action: run
     script: extract_vmlinuz_initrd.sh
-    label: extact_vmlinuz_initrd
+    label: extract_vmlinuz_initrd
 
   # Create a qcow2 image file from the single data partition.
   - action: run
