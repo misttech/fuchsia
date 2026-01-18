@@ -85,6 +85,8 @@ type PerCpuStats = table {
     1: cpu_number uint32;
     2: flags uint32;
     3: idle_time zx.Duration;
+    @available(added=HEAD)
+    16: normalized_busy_time zx.Duration;
     4: reschedules uint64;
     5: context_switches uint64;
     6: irq_preempts uint64;
@@ -97,6 +99,10 @@ type PerCpuStats = table {
     13: syscalls uint64;
     14: reschedule_ipis uint64;
     15: generic_ipis uint64;
+    @available(added=HEAD)
+    17: active_energy_consumption_nj uint64;
+    @available(added=HEAD)
+    18: idle_energy_consumption_nj uint64;
 };
 
 type CpuStats = struct {

@@ -145,6 +145,7 @@ impl KernelStats {
                             syscalls: Some(cpu_stat.syscalls),
                             reschedule_ipis: Some(cpu_stat.reschedule_ipis),
                             generic_ipis: Some(cpu_stat.generic_ipis),
+                            normalized_busy_time: Some(cpu_stat.normalized_busy_time),
                             ..Default::default()
                         });
                     }
@@ -194,8 +195,8 @@ fn calculate_cpu_loads(
         .iter()
         .zip(end_stats.iter())
         .map(|(start, end)| {
-            let busy_time = elapsed_time - (end.idle_time - start.idle_time);
-            let load_pct = busy_time as f64 / elapsed_time as f64 * 100.0;
+            let normalized_busy_time = end.normalized_busy_time - start.normalized_busy_time;
+            let load_pct = normalized_busy_time as f64 / elapsed_time as f64 * 100.0;
             load_pct as f32
         })
         .collect::<Vec<f32>>()
@@ -319,8 +320,8 @@ mod tests {
         let (start_stats, end_stats) = std::iter::repeat(zx::PerCpuStats::default())
             .zip(cpu_loads.into_iter().map(|load| {
                 let end_time_f32 = end_time.into_nanos() as f32;
-                let idle_time = (end_time_f32 - (load / 100.0 * end_time_f32)) as i64;
-                zx::PerCpuStats { idle_time, ..zx::PerCpuStats::default() }
+                let normalized_busy_time = (load / 100.0 * end_time_f32) as i64;
+                zx::PerCpuStats { normalized_busy_time, ..zx::PerCpuStats::default() }
             }))
             .unzip();
 
