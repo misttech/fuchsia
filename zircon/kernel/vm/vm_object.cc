@@ -61,11 +61,18 @@ void VmObject::RemoveFromGlobalList() {
 
 void VmObject::get_name(char* out_name, size_t len) const {
   canary_.Assert();
+  Guard<CriticalMutex> guard{lock()};
+  name_.get(len, out_name);
+}
+
+void VmObject::get_name_locked(char* out_name, size_t len) const {
+  canary_.Assert();
   name_.get(len, out_name);
 }
 
 zx_status_t VmObject::set_name(const char* name, size_t len) {
   canary_.Assert();
+  Guard<CriticalMutex> guard{lock()};
   return name_.set(name, len);
 }
 
