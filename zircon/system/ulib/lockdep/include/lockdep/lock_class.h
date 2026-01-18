@@ -234,7 +234,7 @@ class __TA_CAPABILITY("mutex") Lock {
 
     constexpr LockClassId id() const { return kInvalidLockClassId; }
 
-    LockType lock_;
+    [[no_unique_address]] LockType lock_;
   };
 
   // Selects which state type to use based on whether metadata or validation is
@@ -243,7 +243,7 @@ class __TA_CAPABILITY("mutex") Lock {
 
   // State instance holding the underlying lock and, when validation is enabled,
   // the lock class id.
-  State state_;
+  [[no_unique_address]] State state_;
 };
 
 // Specialization of Lock<LockType> that wraps a static/global raw lock. This
