@@ -611,13 +611,13 @@
     },
     {
         "package": "fuchsia/third_party/rust-analyzer/linux-amd64",
-        "version": "git_revision:3364710ebbeb56b8376f7220aa4e21023d42e816",
-        "instance_id": "9CnDDM_1ucFsVoEoJNo3VZi2128TaWHr-g4ORKcv-yMC"
+        "version": "git_revision:adbff8baedae53f9955fe60c0d470ecd77b4f548",
+        "instance_id": "jZt2qpHbTDKuC2u_jxm8xZYTN99K5tae-LK1zdTRaDUC"
     },
     {
         "package": "fuchsia/third_party/rust-analyzer/mac-amd64",
-        "version": "git_revision:3364710ebbeb56b8376f7220aa4e21023d42e816",
-        "instance_id": "XrIgFhbs86iDzy80FIexLL-swzICA8zb5Zh69B71GukC"
+        "version": "git_revision:adbff8baedae53f9955fe60c0d470ecd77b4f548",
+        "instance_id": "MAy0EjUPJjiQ9GP-hfYGql56ypJ2ikOsqwGXJx05pJ4C"
     },
     {
         "package": "fuchsia/third_party/rust/host/linux-amd64",
