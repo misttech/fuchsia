@@ -41,8 +41,8 @@ use sandbox::{
 use std::collections::HashMap;
 use std::sync::Arc;
 use {
-    fidl_fuchsia_component as fcomponent, fidl_fuchsia_component_sandbox as fsandbox,
-    fidl_fuchsia_io as fio, fidl_fuchsia_sys2 as fsys,
+    fidl_fuchsia_component as fcomponent, fidl_fuchsia_component_runtime as fruntime,
+    fidl_fuchsia_component_sandbox as fsandbox, fidl_fuchsia_io as fio, fidl_fuchsia_sys2 as fsys,
 };
 
 fn new_debug_only_specific_router<T>(source: CapabilitySource) -> Router<T>
@@ -246,6 +246,7 @@ impl Routable<Dict> for FrameworkRouter {
             fcomponent::IntrospectorMarker::PROTOCOL_NAME,
             fcomponent::NamespaceMarker::PROTOCOL_NAME,
             fcomponent::RealmMarker::PROTOCOL_NAME,
+            fruntime::CapabilitiesMarker::PROTOCOL_NAME,
             fsys::ConfigOverrideMarker::PROTOCOL_NAME,
             fsys::LifecycleControllerMarker::PROTOCOL_NAME,
             fsys::RealmQueryMarker::PROTOCOL_NAME,
