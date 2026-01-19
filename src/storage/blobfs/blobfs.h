@@ -42,7 +42,6 @@
 #include "src/storage/blobfs/cache_policy.h"
 #include "src/storage/blobfs/common.h"
 #include "src/storage/blobfs/compression/external_decompressor.h"
-#include "src/storage/blobfs/compression_settings.h"
 #include "src/storage/blobfs/format.h"
 #include "src/storage/blobfs/iterator/block_iterator.h"
 #include "src/storage/blobfs/iterator/block_iterator_provider.h"
@@ -76,7 +75,7 @@ class Blobfs : public TransactionManager, public BlockIteratorProvider {
  public:
   DISALLOW_COPY_ASSIGN_AND_MOVE(Blobfs);
 
-  // Creates a blobfs object with the default compression algorithm.
+  // Creates a blobfs object.
   //
   // The dispatcher should be for the current thread that blobfs is running on. The vfs is required
   // for paging but can be null in host configurations.
@@ -147,8 +146,6 @@ class Blobfs : public TransactionManager, public BlockIteratorProvider {
   // Returns the dispatcher for the current thread that blobfs uses.
   async_dispatcher_t* dispatcher() { return dispatcher_; }
 
-  const CompressionSettings& write_compression_settings() { return write_compression_settings_; }
-
   bool CheckBlocksAllocated(uint64_t start_block, uint64_t end_block,
                             uint64_t* first_unset = nullptr) const {
     return allocator_->CheckBlocksAllocated(start_block, end_block, first_unset);
@@ -188,10 +185,6 @@ class Blobfs : public TransactionManager, public BlockIteratorProvider {
   // Adds reserved blocks to allocated bitmap and writes the bitmap out to disk.
   void PersistBlocks(const ReservedExtent& reserved_extent, BlobTransaction& transaction);
 
-  bool ShouldCompress() const {
-    return write_compression_settings_.compression_algorithm != CompressionAlgorithm::kUncompressed;
-  }
-
   BlobLoader& loader() { return *loader_; }
   PageLoader& page_loader() { return *page_loader_; }
 
@@ -230,7 +223,6 @@ class Blobfs : public TransactionManager, public BlockIteratorProvider {
 
   Blobfs(async_dispatcher_t* dispatcher, std::unique_ptr<BlockDevice> device, fs::PagedVfs* vfs,
          const Superblock* info, Writability writable,
-         CompressionSettings write_compression_settings,
          std::optional<CachePolicy> pager_backed_cache_policy,
          DecompressorCreatorConnector* decompression_connector);
 
@@ -314,7 +306,6 @@ class Blobfs : public TransactionManager, public BlockIteratorProvider {
   std::unique_ptr<BlockDevice> block_device_;
   fuchsia_storage_block::wire::BlockInfo block_info_ = {};
   Writability writability_;
-  const CompressionSettings write_compression_settings_;
 
   std::unique_ptr<Allocator> allocator_;
 

@@ -21,6 +21,7 @@
 #include <vector>
 
 #include <fbl/array.h>
+#include <fbl/ref_ptr.h>
 #include <safemath/checked_math.h>
 
 #include "src/lib/chunked-compression/chunked-archive.h"
@@ -29,9 +30,9 @@
 #include "src/storage/blobfs/allocator/extent_reserver.h"
 #include "src/storage/blobfs/allocator/node_reserver.h"
 #include "src/storage/blobfs/blob.h"
+#include "src/storage/blobfs/blob_data_producer.h"
 #include "src/storage/blobfs/blob_layout.h"
 #include "src/storage/blobfs/blobfs.h"
-#include "src/storage/blobfs/compression/blob_compressor.h"
 #include "src/storage/blobfs/compression/streaming_chunked_decompressor.h"
 #include "src/storage/blobfs/compression_settings.h"
 #include "src/storage/blobfs/delivery_blob.h"
@@ -46,9 +47,9 @@ namespace blobfs {
 // moved into an error state and removed from the cache so that a client may attempt another write.
 class Blob::Writer {
  public:
-  // Construct a new blob writer. `blob` must outlive this object. If `is_delivery_blob` is set,
-  // data being written must conform to the format specified by RFC 0207.
-  explicit Writer(const Blob& blob, bool is_delivery_blob);
+  // Construct a new blob writer. `blob` must outlive this object. Data being written must conform
+  // to the format specified by RFC 0207.
+  explicit Writer(const Blob& blob);
 
   // Not copyable or movable because merkle_tree_creator_ has a pointer to digest.
   Writer(const Writer&) = delete;
@@ -65,8 +66,8 @@ class Blob::Writer {
   zx::result<> Prepare(Blob& blob, uint64_t data_size);
 
   // Write blob data into memory (or stream to disk) and update Merkle tree. When all data has been
-  // written, a transaction is scheduled, and information to move `blob` into a readable state.
-  // `blob` should be the same object this writer was created using.
+  // written, a transaction is scheduled, and returns information to move `blob` into a readable
+  // state. `blob` should be the same object this writer was created using.
   //
   // *WARNING*: Upon failures of this function the associated blob should be evicted from the cache.
   // The failure reason can be obtained again by calling `status()`.
@@ -92,7 +93,7 @@ class Blob::Writer {
   // Amount of data written into this writer so far.
   uint64_t total_written() const { return total_written_; }
 
-  // Save a reference to a blob being overwritten.
+  // Saves a reference to a blob being overwritten.
   void SetBlobToOverwrite(fbl::RefPtr<Blob> to_overwrite);
 
  private:
@@ -101,8 +102,8 @@ class Blob::Writer {
   // the blob layout can be recalculated without affecting the existing Merkle tree.
   zx::result<> Initialize(uint64_t blob_size, uint64_t data_size);
 
-  // Initialize seek table and decompressor when streaming precompressed blobs. If not enough data
-  // is buffered to decode the seek table, returns ZX_ERR_BUFFER_TOO_SMALL.
+  // Initializes the seek table and decompressor. If not enough data is buffered to decode the seek
+  // table, returns ZX_ERR_BUFFER_TOO_SMALL.
   zx::result<> InitializeDecompressor();
 
   // If successful, allocates Blob Node and Blocks (in-memory) and sets `allocated_space_` to true.
@@ -155,9 +156,7 @@ class Blob::Writer {
   }
 
   // Size of the payload to be persisted on disk.
-  size_t payload_length() const {
-    return is_delivery_blob_ ? metadata_.payload_length : data_size_;
-  }
+  size_t payload_length() const { return metadata_.payload_length; }
 
   // Amount of the payload written into `Write()` so far.
   size_t payload_written() const {
@@ -191,8 +190,9 @@ class Blob::Writer {
   // The nodes we reserved for this blob from the filesystem's allocator.
   std::vector<ReservedNode> node_indices_;
 
-  // If true, indicates we are streaming the current blob to disk as written. Streaming writes are
-  // only supported when compression is disabled or we are writing a pre-compressed delivery blob.
+  // If true, indicates we are streaming the current blob to disk as written. Streaming is only
+  // disabled when storing a pre-compressed delivery blob uncompressed. This is only done for blobs
+  // that are smaller than a single block.
   bool streaming_write_ = true;
 
   // Block iterator used when writing data to disk.
@@ -241,17 +241,10 @@ class Blob::Writer {
   // Decompressor to use on incoming data if `data_format_` is CompressionAlgorithm::kChunked.
   std::unique_ptr<StreamingChunkedDecompressor> streaming_decompressor_ = nullptr;
 
-  // Optional compressor used when performing dynamic compression. Only used when compression is
-  // enabled and incoming data is uncompressed.
-  std::optional<BlobCompressor> compressor_ = std::nullopt;
-
   // Status of the writer, used to latch any write errors. See `error()` for details.
   zx::result<> status_ = zx::ok();
 
   // Delivery Blob (RFC 0207) Related Fields
-
-  // True if this is a delivery blob in the format specified by RFC 0207, false otherwise.
-  const bool is_delivery_blob_;
 
   // True if `header_` and `metadata_` have been decoded, false otherwise.
   bool header_complete_ = false;

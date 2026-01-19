@@ -8,14 +8,12 @@
 #include <fidl/fuchsia.io/cpp/wire.h>
 #include <fidl/fuchsia.process.lifecycle/cpp/wire.h>
 #include <lib/fidl/cpp/wire/channel.h>
-#include <lib/zx/resource.h>
 #include <lib/zx/result.h>
 
 #include <optional>
 
 #include "src/storage/blobfs/cache_policy.h"
 #include "src/storage/blobfs/compression/external_decompressor.h"
-#include "src/storage/blobfs/compression_settings.h"
 
 namespace blobfs {
 
@@ -37,8 +35,6 @@ struct MountOptions {
 
   // Optional overriden cache policy for pager-backed blobs.
   std::optional<CachePolicy> pager_backed_cache_policy = std::nullopt;
-
-  CompressionSettings compression_settings{};
 
   // Used to establish fidl connections to the DecompressorCreator instead of the default
   // implementation that will perform an |fdio_service_connect| with the given channel.

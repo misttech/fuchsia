@@ -38,7 +38,6 @@ class BlobfsMultithreadedSmokeTest : public FdioTest, public testing::WithParamI
   BlobfsMultithreadedSmokeTest() {
     MountOptions options;
     options.paging_threads = NumThreads();
-    options.compression_settings = {CompressionAlgorithm::kChunked, 2};
     set_mount_options(options);
   }
 

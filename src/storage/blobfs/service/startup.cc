@@ -23,7 +23,6 @@
 #include "src/storage/blobfs/blob_layout.h"
 #include "src/storage/blobfs/cache_policy.h"
 #include "src/storage/blobfs/common.h"
-#include "src/storage/blobfs/compression_settings.h"
 #include "src/storage/blobfs/fsck.h"
 #include "src/storage/blobfs/mkfs.h"
 #include "src/storage/blobfs/mount.h"
@@ -40,23 +39,6 @@ MountOptions ParseMountOptions(fuchsia_fs_startup::wire::StartOptions start_opti
 
   if (start_options.has_read_only() && start_options.read_only()) {
     options.writability = Writability::ReadOnlyFilesystem;
-  }
-  if (start_options.has_write_compression_level() && start_options.write_compression_level() >= 0) {
-    options.compression_settings.compression_level = start_options.write_compression_level();
-  }
-
-  if (start_options.has_write_compression_algorithm()) {
-    switch (start_options.write_compression_algorithm()) {
-      case fuchsia_fs_startup::wire::CompressionAlgorithm::kZstdChunked:
-        options.compression_settings.compression_algorithm = CompressionAlgorithm::kChunked;
-        break;
-      case fuchsia_fs_startup::wire::CompressionAlgorithm::kUncompressed:
-        options.compression_settings.compression_algorithm = CompressionAlgorithm::kUncompressed;
-        break;
-      default:
-        ZX_PANIC("Unknown compression algorithm: %d",
-                 static_cast<uint32_t>(start_options.write_compression_algorithm()));
-    }
   }
 
   if (start_options.has_cache_eviction_policy_override()) {

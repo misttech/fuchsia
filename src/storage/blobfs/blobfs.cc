@@ -182,9 +182,9 @@ zx::result<std::unique_ptr<Blobfs>> Blobfs::Create(async_dispatcher_t* dispatche
 
   // Construct the Blobfs object, without intensive validation, since it
   // may require upgrades / journal replays to become valid.
-  auto fs = std::unique_ptr<Blobfs>(new Blobfs(
-      dispatcher, std::move(device), vfs, superblock, options.writability,
-      options.compression_settings, options.pager_backed_cache_policy, decompression_connector));
+  auto fs = std::unique_ptr<Blobfs>(
+      new Blobfs(dispatcher, std::move(device), vfs, superblock, options.writability,
+                 options.pager_backed_cache_policy, decompression_connector));
   fs->block_info_ = block_info;
 
   auto fs_ptr = fs.get();
@@ -226,13 +226,6 @@ zx::result<std::unique_ptr<Blobfs>> Blobfs::Create(async_dispatcher_t* dispatche
     if (zx_status_t status = fs->ReloadSuperblock(); status != ZX_OK) {
       FX_LOGS(ERROR) << "Failed to re-load superblock";
       return zx::error(status);
-    }
-    if ((fs->Info().major_version >= kBlobfsCompactMerkleTreeVersion ||
-         fs->Info().oldest_minor_version >= kBlobfsMinorVersionNoOldCompressionFormats) &&
-        options.compression_settings.compression_algorithm != CompressionAlgorithm::kChunked &&
-        options.compression_settings.compression_algorithm != CompressionAlgorithm::kUncompressed) {
-      FX_LOGS(ERROR) << "Unsupported compression algorithm";
-      return zx::error(ZX_ERR_INVALID_ARGS);
     }
   }
 
@@ -364,14 +357,6 @@ zx::result<std::unique_ptr<Blobfs>> Blobfs::Create(async_dispatcher_t* dispatche
     }
     fs->WriteInfo(transaction, write_backup);
     transaction.Commit(*fs->GetJournal());
-  }
-
-  FX_LOGS(INFO) << "Using compression "
-                << CompressionAlgorithmToString(
-                       fs->write_compression_settings_.compression_algorithm);
-  if (fs->write_compression_settings_.compression_level) {
-    FX_LOGS(INFO) << "Using overridden compression level "
-                  << *(fs->write_compression_settings_.compression_level);
   }
 
   if (zx_status_t status = fs->Migrate(); status != ZX_OK) {
@@ -871,7 +856,6 @@ void Blobfs::Sync(SyncCallback cb) {
 
 Blobfs::Blobfs(async_dispatcher_t* dispatcher, std::unique_ptr<BlockDevice> device,
                fs::PagedVfs* vfs, const Superblock* info, Writability writable,
-               CompressionSettings write_compression_settings,
                std::optional<CachePolicy> pager_backed_cache_policy,
                DecompressorCreatorConnector* decompression_connector)
     : vfs_(vfs),
@@ -879,7 +863,6 @@ Blobfs::Blobfs(async_dispatcher_t* dispatcher, std::unique_ptr<BlockDevice> devi
       dispatcher_(dispatcher),
       block_device_(std::move(device)),
       writability_(writable),
-      write_compression_settings_(write_compression_settings),
       metrics_(CreateBlobfsMetrics(inspect_tree_.inspector())),
       pager_backed_cache_policy_(pager_backed_cache_policy),
       decompression_connector_(decompression_connector) {

@@ -66,7 +66,7 @@ uint64_t Blob::FileSize() const {
 
 Blob::Blob(Blobfs& blobfs, const Digest& digest)
     : CacheNode(*blobfs.vfs(), digest), blobfs_(blobfs) {
-  writer_ = std::make_unique<Blob::Writer>(*this, /*is_delivery_blob=*/true);
+  writer_ = std::make_unique<Blob::Writer>(*this);
 }
 
 Blob::Blob(Blobfs& blobfs, uint32_t node_index, const Inode& inode)

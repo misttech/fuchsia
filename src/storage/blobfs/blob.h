@@ -41,7 +41,6 @@
 namespace blobfs {
 
 class Blobfs;
-class BlobDataProducer;
 class BlobWriter;
 
 enum class BlobState : uint8_t {

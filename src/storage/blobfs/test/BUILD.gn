@@ -59,6 +59,7 @@ test("blobfs_unittest") {
     "unit/allocator_test.cc",
     "unit/base_allocator_test.cc",
     "unit/blob_cache_test.cc",
+    "unit/blob_data_producer_test.cc",
     "unit/blob_layout_test.cc",
     "unit/blob_loader_test.cc",
     "unit/blob_test.cc",

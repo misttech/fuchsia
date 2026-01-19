@@ -27,7 +27,6 @@
 #include <span>
 #include <type_traits>
 #include <utility>
-#include <variant>
 #include <vector>
 
 #include <fbl/algorithm.h>
@@ -86,8 +85,7 @@ const size_t kSystemPageSize = zx_system_get_page_size();
 
 }  // namespace
 
-Blob::Writer::Writer(const Blob& blob, bool is_delivery_blob)
-    : blob_(blob), is_delivery_blob_(is_delivery_blob) {}
+Blob::Writer::Writer(const Blob& blob) : blob_(blob) {}
 
 Blob::Writer::~Writer() {
   if (to_overwrite_.has_value()) {
@@ -142,13 +140,12 @@ zx::result<> Blob::Writer::Prepare(Blob& blob, uint64_t data_size) {
   ZX_DEBUG_ASSERT(&blob_ == &blob);
   ZX_DEBUG_ASSERT_MSG(data_size > 0, "Use `WriteNullBlob` if data_size is zero!");
 
-  if (is_delivery_blob_ && data_size < kDeliveryBlobHeaderLength) {
+  if (data_size < kDeliveryBlobHeaderLength) {
     FX_LOGS(ERROR) << "Size too small for delivery blob!";
     return zx::error(ZX_ERR_INVALID_ARGS);
   }
 
-  const uint64_t header_size = is_delivery_blob_ ? kDeliveryBlobHeaderLength : 0;
-  const uint64_t payload_size = data_size - header_size;
+  const uint64_t payload_size = data_size - kDeliveryBlobHeaderLength;
 
   // Fail early if the buffer size will overflow when padding the payload to ensure block alignment.
   if (payload_size % block_size_ != 0) {
@@ -158,29 +155,12 @@ zx::result<> Blob::Writer::Prepare(Blob& blob, uint64_t data_size) {
     }
   }
 
-  // Only compress if this isn't a delivery blob, compression is enabled, and it's large enough.
-  const bool compress = !is_delivery_blob_ &&
-                        (blobfs().ShouldCompress() && data_size > kCompressionSizeThresholdBytes);
-
-  // Initialize write buffers. For compressed blobs, we only write into the compression buffer.
-  // For uncompressed or pre-compressed blobs, we write into the data vmo.
-  if (compress) {
-    compressor_ = BlobCompressor::Create(blobfs().write_compression_settings(), data_size);
-    if (!compressor_) {
-      // TODO(https://fxbug.dev/42149591): Make `BlobCompressor::Create()` return the actual error
-      // instead. Replace `ZX_ERR_INTERNAL` with the correct error once https://fxbug.dev/42149591
-      // is fixed.
-      FX_LOGS(ERROR) << "Failed to initialize compressor: " << ZX_ERR_INTERNAL;
-      return zx::error(ZX_ERR_INTERNAL);
-    }
-  } else {
-    VmoNameBuffer name = FormatWritingBlobDataVmoName(blob_.digest());
-    const uint64_t buffer_size = header_size + fbl::round_up(payload_size, block_size_);
-    if (zx_status_t status = buffer_.CreateAndMap(buffer_size, name.c_str()); status != ZX_OK) {
-      FX_LOGS(ERROR) << "Failed to create vmo for writing blob " << blob_.digest()
-                     << " (vmo size = " << buffer_size << "): " << zx_status_get_string(status);
-      return zx::error(status);
-    }
+  VmoNameBuffer name = FormatWritingBlobDataVmoName(blob_.digest());
+  const uint64_t buffer_size = kDeliveryBlobHeaderLength + fbl::round_up(payload_size, block_size_);
+  if (zx_status_t status = buffer_.CreateAndMap(buffer_size, name.c_str()); status != ZX_OK) {
+    FX_PLOGS(ERROR, status) << "Failed to create vmo for writing blob " << blob_.digest()
+                            << " (vmo size = " << buffer_size << ")";
+    return zx::error(status);
   }
 
   // Reserve a node for blob's inode. We might need more nodes for extents later.
@@ -189,19 +169,10 @@ zx::result<> Blob::Writer::Prepare(Blob& blob, uint64_t data_size) {
     return zx::error(status);
   }
 
-  // Initialize blob layout and Merkle tree buffers if we already know the size of the blob.
-  if (!is_delivery_blob_) {
-    if (zx::result status = Initialize(/*blob_size*/ data_size, data_size); status.is_error()) {
-      return status.take_error();
-    }
-  }
-
   data_size_ = data_size;
   map_index_ = node_indices_[0].index();
   streamer_ =
       std::make_unique<fs::DataStreamer>(blobfs().GetJournal(), Blobfs::WriteBufferBlockCount());
-  // Streaming writes are only supported when we're not doing dynamic compression.
-  streaming_write_ = !compress;
 
   return zx::ok();
 }
@@ -233,8 +204,8 @@ zx::result<> Blob::Writer::SpaceAllocate() {
   if (status != ZX_OK) {
     static OutOfSpaceLogSite site;
     if (site.ShouldLog()) {
-      FX_LOGS(ERROR) << "Failed to allocate " << blob_layout_->TotalBlockCount()
-                     << " blocks for blob: " << zx_status_get_string(status);
+      FX_PLOGS(ERROR, status) << "Failed to allocate " << blob_layout_->TotalBlockCount()
+                              << " blocks for blob";
     }
     return zx::error(status);
   }
@@ -249,8 +220,7 @@ zx::result<> Blob::Writer::SpaceAllocate() {
   size_t node_count = NodePopulator::NodeCountForExtents(extents.size()) - 1;
   status = blobfs().GetAllocator()->ReserveNodes(node_count, &nodes);
   if (status != ZX_OK) {
-    FX_LOGS(ERROR) << "Failed to reserve " << node_count
-                   << " nodes for blob: " << zx_status_get_string(status);
+    FX_PLOGS(ERROR, status) << "Failed to reserve " << node_count << " nodes for blob";
     return zx::error(status);
   }
 
@@ -333,72 +303,61 @@ zx::result<std::optional<Blob::WrittenBlob>> Blob::Writer::WriteInternal(Blob& b
                                                                          size_t len,
                                                                          size_t* actual) {
   TRACE_DURATION("blobfs", "Blob::Writer::WriteInternal", "data", data, "len", len);
-  size_t bytes_written = std::min(len, data_size_ - total_written_);
-  // If we're doing dynamic compression, write the incoming data into the compressor, otherwise
-  // cache the data in the write buffer VMO.
-  if (compressor_) {
-    if (zx_status_t status = compressor_->Update(data, bytes_written); status != ZX_OK) {
-      return zx::error(status);
-    }
-  } else {
-    if (zx_status_t status = buffer_.vmo().write(data, total_written_, bytes_written);
-        status != ZX_OK) {
-      FX_LOGS(ERROR) << "VMO write failed: " << zx_status_get_string(status);
-      return zx::error(status);
-    }
-  }
-  total_written_ = safemath::CheckAdd(total_written_, bytes_written).ValueOrDie();
+  // The BlobWriter protocol implementation ensures that the client doesn't send more data than they
+  // said they would.
+  ZX_ASSERT_MSG(len <= data_size_ - total_written_, "Received more data than expected");
 
-  // If this is a delivery blob, decode the header + metadata.
+  // Cache the data in the write buffer.
+  memcpy(static_cast<uint8_t*>(buffer_.start()) + total_written_, data, len);
+  total_written_ += len;
+
+  // Decode the header + metadata.
   //
-  // We have carefully track how much data we've consumed, as this `Write()` call might include a
-  // partial or full header, as well as a partial or full data payload.
-  if (is_delivery_blob_) {
-    // Parse the header as per RFC 0207.
-    if (!header_complete_) {
-      if (zx::result status = ParseDeliveryBlob(); status.is_error()) {
-        if (status.error_value() == ZX_ERR_BUFFER_TOO_SMALL) {
-          // We don't have enough data to decode the header, so wait for more.
-          *actual = bytes_written;
-          return zx::ok(std::nullopt);
-        }
-        FX_LOGS(ERROR) << "Failed to parse delivery blob: " << status.status_string();
-        return status.take_error();
+  // We carefully track how much data we've consumed, as this `Write()` call might include a partial
+  // or full header, as well as a partial or full data payload. Parse the header as per RFC 0207.
+  if (!header_complete_) {
+    if (zx::result status = ParseDeliveryBlob(); status.is_error()) {
+      if (status.error_value() == ZX_ERR_BUFFER_TOO_SMALL) {
+        // We don't have enough data to decode the header, so wait for more.
+        *actual = len;
+        return zx::ok(std::nullopt);
       }
-      ZX_DEBUG_ASSERT(header_complete_);
-
-      // Special case: If this is the null blob, finish the write immediately.
-      if (metadata_.payload_length == 0) {
-        *actual = bytes_written;
-        return WriteNullBlob(blob);
-      }
-
-      // If the blob is uncompressed, we can initialize the blob layout/Merkle tree buffers as we
-      // know how large the blob is based on the payload length.
-      if (!metadata_.IsCompressed()) {
-        if (zx::result status = Initialize(/*blob_size*/ metadata_.payload_length,
-                                           /*data_size*/ metadata_.payload_length);
-            status.is_error()) {
-          return status.take_error();
-        }
-      }
+      FX_PLOGS(ERROR, status.status_value()) << "Failed to parse delivery blob";
+      return status.take_error();
     }
     ZX_DEBUG_ASSERT(header_complete_);
 
-    // If blob is pre-compressed, prepare the decompressor to calculate the Merkle tree.
-    if (metadata_.IsCompressed() && !streaming_decompressor_) {
-      if (zx::result status = InitializeDecompressor(); status.is_error()) {
-        if (status.error_value() == ZX_ERR_BUFFER_TOO_SMALL) {
-          *actual = bytes_written;
-          return zx::ok(std::nullopt);  // Not enough data for seek table, wait for more.
-        }
+    // Special case: If this is the null blob, finish the write immediately.
+    if (metadata_.payload_length == 0) {
+      *actual = len;
+      return WriteNullBlob(blob);
+    }
+
+    // If the blob is uncompressed, we can initialize the blob layout/Merkle tree buffers as we
+    // know how large the blob is based on the payload length.
+    if (!metadata_.IsCompressed()) {
+      if (zx::result status = Initialize(/*blob_size*/ metadata_.payload_length,
+                                         /*data_size*/ metadata_.payload_length);
+          status.is_error()) {
         return status.take_error();
       }
-      // Special case: If the archive is empty (i.e. this is the null blob), skip the write phase.
-      if (seek_table_.DecompressedSize() == 0) {
-        *actual = bytes_written;
-        return WriteNullBlob(blob);
+    }
+  }
+  ZX_DEBUG_ASSERT(header_complete_);
+
+  // If blob is pre-compressed, prepare the decompressor to calculate the Merkle tree.
+  if (metadata_.IsCompressed() && !streaming_decompressor_) {
+    if (zx::result status = InitializeDecompressor(); status.is_error()) {
+      if (status.error_value() == ZX_ERR_BUFFER_TOO_SMALL) {
+        *actual = len;
+        return zx::ok(std::nullopt);  // Not enough data for seek table, wait for more.
       }
+      return status.take_error();
+    }
+    // Special case: If the archive is empty (i.e. this is the null blob), skip the write phase.
+    if (seek_table_.DecompressedSize() == 0) {
+      *actual = len;
+      return WriteNullBlob(blob);
     }
   }
 
@@ -412,18 +371,17 @@ zx::result<std::optional<Blob::WrittenBlob>> Blob::Writer::WriteInternal(Blob& b
     zx::result status = streaming_decompressor_->Update(
         {payload() + payload_processed_, payload_written() - payload_processed_});
     if (status.is_error()) {
-      FX_LOGS(ERROR) << "Failed to decompress blob data: " << status.status_string();
+      FX_PLOGS(ERROR, status.status_value()) << "Failed to decompress blob data";
       return status.take_error();
     }
   } else {
     // We have to update the Merkle tree before calling `StreamBufferedData()` otherwise we may
     // decommit pages from `payload()` causing an incorrect digest.
-    const uint8_t* buff =
-        compressor_ ? static_cast<const uint8_t*>(data) : (payload() + payload_processed_);
+    const uint8_t* buff = payload() + payload_processed_;
     if (zx_status_t status =
             merkle_tree_creator_.Append(buff, payload_written() - payload_processed_);
         status != ZX_OK) {
-      FX_LOGS(ERROR) << "MerkleTreeCreator::Append failed: " << zx_status_get_string(status);
+      FX_PLOGS(ERROR, status) << "MerkleTreeCreator::Append failed";
       return zx::error(status);
     }
   }
@@ -435,9 +393,9 @@ zx::result<std::optional<Blob::WrittenBlob>> Blob::Writer::WriteInternal(Blob& b
       if (status.status_value() == ZX_ERR_NO_SPACE) {
         static OutOfSpaceLogSite site;
         if (site.ShouldLog())
-          FX_LOGS(ERROR) << "Failed to perform streaming write: " << status.status_string();
+          FX_PLOGS(ERROR, status.status_value()) << "Failed to perform streaming write";
       } else {
-        FX_LOGS(ERROR) << "Failed to perform streaming write: " << status.status_string();
+        FX_PLOGS(ERROR, status.status_value()) << "Failed to perform streaming write";
       }
       return status.take_error();
     }
@@ -447,7 +405,7 @@ zx::result<std::optional<Blob::WrittenBlob>> Blob::Writer::WriteInternal(Blob& b
 
   // More data to write.
   if (total_written_ < data_size_) {
-    *actual = bytes_written;
+    *actual = len;
     return zx::ok(std::nullopt);
   }
 
@@ -455,7 +413,7 @@ zx::result<std::optional<Blob::WrittenBlob>> Blob::Writer::WriteInternal(Blob& b
     return status.take_error();
   }
 
-  *actual = bytes_written;
+  *actual = len;
   return zx::ok(WrittenBlob{.map_index = map_index_, .layout = std::move(blob_layout_)});
 }
 
@@ -463,30 +421,6 @@ zx::result<> Blob::Writer::Commit(Blob& blob) {
   if (blob_.digest() != digest_) {
     FX_LOGS(ERROR) << "downloaded blob did not match provided digest " << blob_.digest();
     return zx::error(ZX_ERR_IO_DATA_INTEGRITY);
-  }
-
-  const uint64_t blob_size = blob_layout_->FileSize();
-  const size_t merkle_size = merkle_tree_creator_.GetTreeLength();
-
-  bool compress = false;
-  // If we're doing dynamic compression, only use the compressed result if we saved space.
-  if (compressor_.has_value()) {
-    if (zx_status_t status = compressor_->End(); status != ZX_OK) {
-      return zx::error(status);
-    }
-    // Compare compressed vs. decompressed sizes including the Merkle tree and block alignment.
-    const uint64_t compressed_size = fbl::round_up(compressor_->Size() + merkle_size, block_size_);
-    const uint64_t decompressed_size = fbl::round_up(blob_size + merkle_size, block_size_);
-    if (compressed_size < decompressed_size) {
-      compress = true;
-      // Re-initialize payload and blob layout with the correct data size. The Merkle tree is still
-      // valid but the blob layout must change to account for the size difference.
-      if (zx::result status = Initialize(blob_size, /*data_size*/ compressor_->Size());
-          status.is_error()) {
-        return status.take_error();
-      }
-      data_format_ = compressor_->algorithm();
-    }
   }
 
   fs::Duration generation_time;
@@ -498,75 +432,62 @@ zx::result<> Blob::Writer::Commit(Blob& blob) {
     }
   }
 
-  std::variant<std::monostate, DecompressBlobDataProducer, SimpleBlobDataProducer> data;
-  BlobDataProducer* data_ptr = nullptr;
+  // There are several situations to consider to finish writing out the blob.
+  //  - If the blob is larger than 8KiB then the merkle tree won't be empty and needs to be written
+  //    out.
+  //    - If the blob is being stored in the deprecated padded format then the merkle tree is stored
+  //      before the blob and is block aligned. All of the data will have already been written out
+  //      so only the merkle tree needs to be written.
+  //    - If the blob is being stored in the compact format then the merkle tree is stored at the
+  //      end of the blob and might share the last block of the blob. All of the whole data blocks
+  //      may not have been written yet either.
+  //  - If the blob is less than 8KiB and was compressed in the delivery blob then the uncompressed
+  //    blob should be written out of the |decompressed_data_| buffer.
 
-  if (compress) {
-    // The data comes from the compressor's buffer.
-    data_ptr = &data.emplace<SimpleBlobDataProducer>(
-        std::span(static_cast<const uint8_t*>(compressor_->Data()), compressor_->Size()));
-  } else if (compressor_) {
-    // Compression didn't save space, so the data must be decompressed from the compressor's buffer.
-    zx::result producer_or =
-        DecompressBlobDataProducer::Create(*compressor_, blob_layout_->FileSize());
-    if (producer_or.is_error()) {
-      return producer_or.take_error();
-    }
-    data_ptr = &data.emplace<DecompressBlobDataProducer>(std::move(producer_or).value());
-  } else if (!decompressed_data_.empty()) {
-    // We decompressed the data in the write buffer as it would not save any on-disk storage space.
-    data_ptr = &data.emplace<SimpleBlobDataProducer>(
-        std::span(decompressed_data_.data(), decompressed_data_.size()));
-  } else {
-    // The data comes from the write buffer.
-    data_ptr = &data.emplace<SimpleBlobDataProducer>(
-        std::span(payload() + payload_persisted_, payload_length() - payload_persisted_));
-  }
-
-  SimpleBlobDataProducer merkle(std::span(merkle_tree(), merkle_size));
-
-  MergeBlobDataProducer producer = [&, &blob_layout = *blob_layout_]() {
-    switch (blob_layout.Format()) {
-      case BlobLayoutFormat::kDeprecatedPaddedMerkleTreeAtStart:
-        // Write the merkle data first followed by the data. The merkle data should be a multiple
-        // of the block size so we don't need any padding.
-        ZX_ASSERT_MSG(merkle.GetRemainingBytes() % block_size_ == 0,
-                      "Merkle data size :%lu not a multiple of blobfs block size %lu",
-                      merkle.GetRemainingBytes(), block_size_);
-        return MergeBlobDataProducer(merkle, *data_ptr, /*padding=*/0);
-      case BlobLayoutFormat::kCompactMerkleTreeAtEnd:
-        // Write the data followed by the merkle tree. There might be some padding between the
-        // data and the merkle tree.
-        const size_t padding =
-            safemath::CheckSub(blob_layout.MerkleTreeOffset(), blob_layout.DataSizeUpperBound())
-                .ValueOrDie();
-        ZX_DEBUG_ASSERT(padding < block_size_);
-        return MergeBlobDataProducer(*data_ptr, merkle, padding);
-    }
-  }();
-
-  // Calculate outstanding amount of data to write, and where, in terms of blocks.
-  uint64_t block_count = blob_layout_->TotalBlockCount();
-  uint64_t block_offset = 0;
-  // If we already streamed some data to disk, update `block_count` and `block_offset` accordingly.
-  if (payload_persisted_ > 0) {
-    if (payload_persisted_ < payload_length()) {
-      // Continue writing data from last position, which should have be block aligned.
-      ZX_DEBUG_ASSERT((payload_persisted_ % block_size_) == 0);
-      block_offset = payload_persisted_ / block_size_;
-      block_count = blob_layout_->TotalBlockCount() - block_offset;
-    } else {
-      // Already streamed blob data to disk, only the Merkle tree remains.
-      block_count = blob_layout_->MerkleTreeBlockCount();
-      block_offset = blob_layout_->MerkleTreeBlockOffset();
-    }
-  }
-
-  // Write remaining data to disk, if any.
-  if (block_count > 0) {
-    if (zx::result status = WriteDataBlocks(block_count, block_offset, producer);
+  const size_t merkle_size = merkle_tree_creator_.GetTreeLength();
+  std::span<uint8_t> merkle_data(merkle_tree(), merkle_size);
+  uint64_t block_count = 0;
+  if (!decompressed_data_.empty()) {
+    // The |decompressed_data_| is only used when the blob is less than or equal to 8KiB which also
+    // means that there is no merkle tree.
+    ZX_ASSERT(merkle_data.empty());
+    ZX_ASSERT(blob_layout_->TotalBlockCount() == 1);
+    SimpleBlobDataProducer data_producer(decompressed_data_);
+    block_count = 1;
+    if (zx::result status = WriteDataBlocks(block_count, /*block_offset=*/0, data_producer);
         status.is_error()) {
       return status.take_error();
+    }
+  } else if (blob_layout_->Format() == BlobLayoutFormat::kDeprecatedPaddedMerkleTreeAtStart) {
+    // |StreamBufferedData| writes out all data blocks when the padded format is used. Only the
+    // merkle tree needs to be written at the start of the blob. The merkle tree is always a
+    // multiple of the |kBlobfsBlockSize| in the deprecated padded format.
+    ZX_ASSERT(payload_persisted_ == payload_length());
+    ZX_ASSERT(merkle_size % block_size_ == 0);
+    if (!merkle_data.empty()) {
+      SimpleBlobDataProducer merkle_producer(merkle_data);
+      block_count = blob_layout_->MerkleTreeBlockCount();
+      if (zx::result status =
+              WriteDataBlocks(block_count, blob_layout_->MerkleTreeBlockOffset(), merkle_producer);
+          status.is_error()) {
+        return status.take_error();
+      }
+    }
+  } else {
+    // The end of the payload needs to be merged with the merkle tree.
+    const size_t padding =
+        safemath::CheckSub(blob_layout_->MerkleTreeOffset(), blob_layout_->DataSizeUpperBound())
+            .ValueOrDie();
+    MergeBlobDataProducer producer(
+        std::span(payload() + payload_persisted_, payload_length() - payload_persisted_), padding,
+        merkle_data);
+    uint64_t block_offset = payload_persisted_ / block_size_;
+    block_count = blob_layout_->TotalBlockCount() - block_offset;
+    if (block_count > 0) {
+      if (zx::result status = WriteDataBlocks(block_count, block_offset, producer);
+          status.is_error()) {
+        return status.take_error();
+      }
     }
   }
 
@@ -603,7 +524,6 @@ zx::result<> Blob::Writer::FlushData(Blob& blob) {
   merkle_tree_buffer_.reset();
   streaming_decompressor_.reset();
   decompressed_data_.reset();
-  compressor_.reset();
 
   // FreePagedVmo() will return the reference that keeps this object alive on behalf of the paging
   // system so we can free it outside the lock. However, when a Blob is being written it can't be
@@ -653,8 +573,7 @@ zx::result<> Blob::Writer::FlushData(Blob& blob) {
 zx::result<> Blob::Writer::WriteDataBlocks(uint64_t block_count, uint64_t block_offset,
                                            BlobDataProducer& producer) {
   if (zx_status_t status = IterateToBlock(&block_iter_, block_offset); status != ZX_OK) {
-    FX_LOGS(ERROR) << "Failed to iterate to block offset " << block_offset << ": "
-                   << zx_status_get_string(status);
+    FX_PLOGS(ERROR, status) << "Failed to iterate to block offset " << block_offset;
     return zx::error(status);
   }
   const uint64_t data_start = DataStartBlock(blobfs().Info());
@@ -662,27 +581,14 @@ zx::result<> Blob::Writer::WriteDataBlocks(uint64_t block_count, uint64_t block_
       &block_iter_, block_count,
       [&](uint64_t vmo_offset, uint64_t dev_offset, uint64_t block_count) {
         while (block_count) {
-          if (producer.NeedsFlush()) {
-            // Queued operations might point at buffers that are about to be invalidated, so we have
-            // to force those operations to be issued which will cause them to be copied.
-            streamer_->IssueOperations();
-          }
           auto data = producer.Consume(block_count * block_size_);
-          if (data.is_error())
-            return data.error_value();
-          ZX_ASSERT_MSG(!data->empty(), "Data span for writing should not be empty.");
-          storage::UnbufferedOperation op = {.data = data->data(),
+          ZX_ASSERT_MSG(!data.empty(), "Data span for writing should not be empty.");
+          storage::UnbufferedOperation op = {.data = data.data(),
                                              .op = {
                                                  .type = storage::OperationType::kWrite,
                                                  .dev_offset = dev_offset + data_start,
-                                                 .length = data->size() / block_size_,
+                                                 .length = data.size() / block_size_,
                                              }};
-          // Pad if necessary.
-          const size_t alignment = data->size() % block_size_;
-          if (alignment > 0) {
-            memset(const_cast<uint8_t*>(data->data() + data->size()), 0, block_size_ - alignment);
-            ++op.op.length;
-          }
           block_count -= op.op.length;
           dev_offset += op.op.length;
           streamer_->StreamData(std::move(op));
@@ -699,7 +605,7 @@ zx::result<> Blob::Writer::Initialize(uint64_t blob_size, uint64_t data_size) {
   zx::result blob_layout =
       BlobLayout::CreateFromSizes(blobfs().BlobWriteFormat(), blob_size, data_size, block_size_);
   if (blob_layout.is_error()) {
-    FX_LOGS(ERROR) << "Failed to create blob layout: " << blob_layout.status_string();
+    FX_PLOGS(ERROR, blob_layout.status_value()) << "Failed to create blob layout";
     return blob_layout.take_error();
   }
 
@@ -708,17 +614,19 @@ zx::result<> Blob::Writer::Initialize(uint64_t blob_size, uint64_t data_size) {
         ShouldUseCompactMerkleTreeFormat(blob_layout->Format()));
     zx_status_t status = merkle_tree_creator_.SetDataLength(blob_size);
     if (status != ZX_OK) {
-      FX_LOGS(ERROR) << "Failed to set Merkle tree data length to " << blob_size
-                     << " bytes: " << zx_status_get_string(status);
+      FX_PLOGS(ERROR, status) << "Failed to set Merkle tree data length to " << blob_size
+                              << " bytes";
       return zx::error(status);
     }
     const size_t tree_len = merkle_tree_creator_.GetTreeLength();
-    // Allow for zero padding before and after.
+    // Allow for other data before the tree. In the compact merkle tree format, the merkle tree may
+    // not be a multiple of the block size and is aligned to the end of a block. Blob data and zeros
+    // may be added at the start of the first merkle tree to achieve this alignment.
     merkle_tree_buffer_ = fbl::MakeArray<uint8_t>(tree_len + block_size_);
     status = merkle_tree_creator_.SetTree(merkle_tree(), tree_len, &digest_, sizeof digest_);
     if (status != ZX_OK) {
-      FX_LOGS(ERROR) << "Failed to set Merkle tree data length to " << blob_size
-                     << " bytes: " << zx_status_get_string(status);
+      FX_PLOGS(ERROR, status) << "Failed to set Merkle tree data length to " << blob_size
+                              << " bytes";
       return zx::error(status);
     }
   }
@@ -745,7 +653,7 @@ zx::result<> Blob::Writer::StreamBufferedData() {
     SimpleBlobDataProducer data({payload() + payload_persisted_, write_amount});
     if (zx::result status = WriteDataBlocks(write_amount / block_size_, start_block, data);
         status.is_error()) {
-      FX_LOGS(ERROR) << "Failed to stream blob data to disk: " << status.status_string();
+      FX_PLOGS(ERROR, status.status_value()) << "Failed to stream blob data to disk";
       return status;
     }
     // Ensure data is copied into writeback cache so we can decommit those pages from the buffer.
@@ -787,7 +695,7 @@ zx::result<> Blob::Writer::WriteRemainingDataForDeprecatedFormat() {
     // The data buffer is already padded to ensure it's a multiple of the block size.
     SimpleBlobDataProducer data({payload() + payload_persisted_, remaining_aligned});
     if (zx::result status = WriteDataBlocks(block_count, block_offset, data); status.is_error()) {
-      FX_LOGS(ERROR) << "Failed to write final block to disk: " << status.status_string();
+      FX_PLOGS(ERROR, status.status_value()) << "Failed to write final block to disk";
       return status.take_error();
     }
     payload_persisted_ += remaining;
@@ -809,7 +717,6 @@ zx::result<> Blob::Writer::InitializeDecompressor() {
 
   // Try to load the seek table and initialize the decompressor.
   chunked_compression::HeaderReader reader;
-  // We don't know the size of the file yet, so we have to pass the max value of a size_t.
   // We validate the maximum chunk size below to prevent any potential memory exhaustion.
   const chunked_compression::Status status =
       reader.Parse(payload(), payload_written(), payload_length(), &seek_table_);
@@ -852,10 +759,10 @@ zx::result<> Blob::Writer::InitializeDecompressor() {
       (seek_table_.DecompressedSize() <= kCompressionSizeThresholdBytes);
   if (write_uncompressed) {
     streaming_write_ = false;
-    // The buffer must be block aligned for any required zero padding when writing to disk.
+    // The buffer must be block aligned for writing to disk.
     decompressed_data_ =
-        fbl::Array<uint8_t>(new uint8_t[fbl::round_up(seek_table_.DecompressedSize(), block_size_)],
-                            seek_table_.DecompressedSize());
+        fbl::MakeArray<uint8_t>(fbl::round_up(seek_table_.DecompressedSize(), block_size_));
+    memset(decompressed_data_.data(), 0, decompressed_data_.size());
     data_format_ = CompressionAlgorithm::kUncompressed;
   }
   // Initialize blob layout and Merkle tree buffers now that we know the amount of data to persist.
@@ -880,7 +787,7 @@ zx::result<> Blob::Writer::InitializeDecompressor() {
        last_offset = size_t{0}](std::span<const uint8_t> data) mutable -> zx::result<> {
         if (zx_status_t status = merkle_tree_creator_.Append(data.data(), data.size());
             status != ZX_OK) {
-          FX_LOGS(ERROR) << "MerkleTreeCreator::Append failed: " << zx_status_get_string(status);
+          FX_PLOGS(ERROR, status) << "MerkleTreeCreator::Append failed";
           return zx::error(status);
         }
         if (write_uncompressed) {
