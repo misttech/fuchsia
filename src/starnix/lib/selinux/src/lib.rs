@@ -107,6 +107,8 @@ enumerable_enum! {
         File,
         /// The SELinux "filesystem" object class.
         FileSystem,
+        /// "icmp_socket" class enabled via the "extended_socket_class" policy capability.
+        IcmpSocket,
         /// The SELinux "key_socket" object class.
         KeySocket,
         /// The SELinux "lnk_file" object class.
@@ -163,6 +165,8 @@ enumerable_enum! {
         QipcrtrSocket,
         /// The SELinux "rawip_socket" object class.
         RawIpSocket,
+        /// "sctp_socket" class enabled via the "extended_socket_class" policy capability.
+        SctpSocket,
         /// The SELinux "security" object class.
         Security,
         /// The SELinux "sock_file" object class.
@@ -181,7 +185,7 @@ enumerable_enum! {
         UnixDgramSocket,
         /// The SELinux "unix_stream_socket" object class.
         UnixStreamSocket,
-        /// The SELinux "vsock_socket" object class.
+        /// "vsock_socket" class enabled via the "extended_socket_class" policy capability.
         VSockSocket,
         // keep-sorted end
     }
@@ -204,6 +208,7 @@ impl KernelClass {
             Self::Fifo => "fifo_file",
             Self::File => "file",
             Self::FileSystem => "filesystem",
+            Self::IcmpSocket => "icmp_socket",
             Self::KeySocket => "key_socket",
             Self::Link => "lnk_file",
             Self::MemFdFile => "memfd_file",
@@ -232,6 +237,7 @@ impl KernelClass {
             Self::Process2 => "process2",
             Self::QipcrtrSocket => "qipcrtr_socket",
             Self::RawIpSocket => "rawip_socket",
+            Self::SctpSocket => "sctp_socket",
             Self::Security => "security",
             Self::SockFile => "sock_file",
             Self::Socket => "socket",
@@ -356,6 +362,7 @@ enumerable_enum! {
     #[derive(Copy, Clone, Debug, Eq, Hash, PartialEq)]
     SocketClass {
         // keep-sorted start
+        Icmp,
         Key,
         Netlink,
         NetlinkAudit,
@@ -379,6 +386,7 @@ enumerable_enum! {
         Packet,
         Qipcrtr,
         RawIp,
+        Sctp,
         /// Generic socket class applied to all socket-like objects for which no more specific
         /// class is defined.
         Socket,
@@ -396,6 +404,7 @@ impl From<SocketClass> for KernelClass {
     fn from(socket_class: SocketClass) -> Self {
         match socket_class {
             // keep-sorted start
+            SocketClass::Icmp => Self::IcmpSocket,
             SocketClass::Key => Self::KeySocket,
             SocketClass::Netlink => Self::NetlinkSocket,
             SocketClass::NetlinkAudit => Self::NetlinkAuditSocket,
@@ -419,6 +428,7 @@ impl From<SocketClass> for KernelClass {
             SocketClass::Packet => Self::PacketSocket,
             SocketClass::Qipcrtr => Self::QipcrtrSocket,
             SocketClass::RawIp => Self::RawIpSocket,
+            SocketClass::Sctp => Self::SctpSocket,
             SocketClass::Socket => Self::Socket,
             SocketClass::Tcp => Self::TcpSocket,
             SocketClass::Tun => Self::TunSocket,
@@ -533,6 +543,8 @@ permission_enum! {
         File(FilePermission),
         /// Permissions for the well-known SELinux "filesystem" object class.
         FileSystem(FileSystemPermission),
+        /// "icmp_socket" class permissions, enabled by "extended_socket_class" policy capability.
+        IcmpSocket(IcmpSocketPermission),
         /// Permissions for the well-known SELinux "packet_socket" object class.
         KeySocket(KeySocketPermission),
         /// Permissions for the well-known SELinux "lnk_file" file-like object class.
@@ -589,6 +601,8 @@ permission_enum! {
         QipcrtrSocket(QipcrtrSocketPermission),
         /// Permissions for the well-known SELinux "rawip_socket" object class.
         RawIpSocket(RawIpSocketPermission),
+        /// "sctp_socket" class permissions, enabled by "extended_socket_class" policy capability.
+        SctpSocket(SctpSocketPermission),
         /// Permissions for access to parts of the "selinuxfs" used to administer and query SELinux.
         Security(SecurityPermission),
         /// Permissions for the well-known SELinux "sock_file" file-like object class.
@@ -607,7 +621,7 @@ permission_enum! {
         UnixDgramSocket(UnixDgramSocketPermission),
         /// Permissions for the well-known SELinux "unix_stream_socket" object class.
         UnixStreamSocket(UnixStreamSocketPermission),
-        /// Permissions for the well-known SELinux "vsock_socket" object class.
+        /// "vsock_socket" class permissions, enabled by "extended_socket_class" policy capability.
         VSockSocket(VsockSocketPermission),
         // keep-sorted end
     }
@@ -894,6 +908,7 @@ impl ForClass<SocketClass> for CommonSocketPermission {
             SocketClass::Packet => PacketSocketPermission::Common(self.clone()).into(),
             SocketClass::Qipcrtr => QipcrtrSocketPermission::Common(self.clone()).into(),
             SocketClass::RawIp => RawIpSocketPermission::Common(self.clone()).into(),
+            SocketClass::Sctp => SctpSocketPermission::Common(self.clone()).into(),
             SocketClass::Socket => SocketPermission::Common(self.clone()).into(),
             SocketClass::Tcp => TcpSocketPermission::Common(self.clone()).into(),
             SocketClass::Tun => TunSocketPermission::Common(self.clone()).into(),
@@ -901,6 +916,7 @@ impl ForClass<SocketClass> for CommonSocketPermission {
             SocketClass::UnixDgram => UnixDgramSocketPermission::Common(self.clone()).into(),
             SocketClass::UnixStream => UnixStreamSocketPermission::Common(self.clone()).into(),
             SocketClass::Vsock => VsockSocketPermission::Common(self.clone()).into(),
+            SocketClass::Icmp => IcmpSocketPermission::Common(self.clone()).into(),
         }
     }
 }
@@ -1127,6 +1143,22 @@ class_permission_enum! {
 }
 
 class_permission_enum! {
+    /// A well-known "sctp_socket" class permission in SELinux policy that has a particular meaning in
+    /// policy enforcement hooks.
+    #[derive(Clone, Debug, Eq, Hash, PartialEq)]
+    SctpSocketPermission extends CommonSocketPermission {
+        // keep-sorted start
+        /// Permission to create an SCTP association.
+        Associate("associate"),
+        /// Permission to `connect()` or `connectx()` an SCTP socket.
+        NameConnect("name_connect"),
+        /// Permission to `bind()` or `bindx()` an SCTP socket.
+        NodeBind("node_bind"),
+        // keep-sorted end
+    }
+}
+
+class_permission_enum! {
     /// A well-known "socket" class permission in SELinux policy that has a particular meaning in
     /// policy enforcement hooks.
     #[derive(Clone, Debug, Eq, Hash, PartialEq)]
@@ -1183,6 +1215,18 @@ class_permission_enum! {
     /// policy enforcement hooks.
     #[derive(Clone, Debug, Eq, Hash, PartialEq)]
     VsockSocketPermission extends CommonSocketPermission {
+    }
+}
+
+class_permission_enum! {
+    /// A well-known "icmp_socket" class permission in SELinux policy that has a particular meaning in
+    /// policy enforcement hooks.
+    #[derive(Clone, Debug, Eq, Hash, PartialEq)]
+    IcmpSocketPermission extends CommonSocketPermission {
+        // keep-sorted start
+        /// Permission to `bind()` an ICMP socket.
+        NodeBind("node_bind"),
+        // keep-sorted end
     }
 }
 

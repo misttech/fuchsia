@@ -181,10 +181,12 @@ pub struct SocketProtocol(u32);
 
 impl SocketProtocol {
     pub const UDP: SocketProtocol = SocketProtocol(uapi::IPPROTO_UDP);
+    pub const UDPLITE: SocketProtocol = SocketProtocol(uapi::IPPROTO_UDPLITE);
     pub const TCP: SocketProtocol = SocketProtocol(uapi::IPPROTO_TCP);
     pub const IP: SocketProtocol = SocketProtocol(uapi::IPPROTO_IP);
     pub const ICMP: SocketProtocol = SocketProtocol(uapi::IPPROTO_ICMP);
     pub const ICMPV6: SocketProtocol = SocketProtocol(uapi::IPPROTO_ICMPV6);
+    pub const SCTP: SocketProtocol = SocketProtocol(uapi::IPPROTO_SCTP);
 
     pub fn from_raw(protocol: u32) -> Self {
         SocketProtocol(protocol)

@@ -55,7 +55,7 @@ impl SocketFile {
             FsNodeInfo::new(mode, current_task.current_fscred()),
         );
         socket.set_fs_node(&node);
-        security::socket_post_create(&socket);
+        security::socket_post_create(current_task, &socket);
         Ok(FileObject::new_anonymous(
             locked,
             current_task,

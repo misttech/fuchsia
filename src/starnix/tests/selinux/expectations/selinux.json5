@@ -23,11 +23,7 @@
                 "cgroupfs_label/001", // TODO: https://fxbug.dev/398662840
                 "cgroupfs_label/002",
                 "checkreqprot/001", // TODO: https://fxbug.dev/398662842
-                "extended_socket_class/001", // TODO: https://fxbug.dev/398699131
-                "extended_socket_class/002",
-                "extended_socket_class/003",
-                "extended_socket_class/004",
-                "extended_socket_class/005",
+                "extended_socket_class/005", // TODO: https://fxbug.dev/398699131
                 "file/008", // TODO: https://fxbug.dev/398696731
                 "filesystem/005",
                 "filesystem/006",

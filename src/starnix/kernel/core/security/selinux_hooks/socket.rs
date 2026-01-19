@@ -16,7 +16,8 @@ use crate::vfs::{Anon, DowncastedFile, FsNode};
 use selinux::permission_check::PermissionCheck;
 use selinux::{
     CommonFsNodePermission, CommonSocketPermission, ForClass, FsNodeClass, InitialSid,
-    KernelPermission, SecurityId, SecurityServer, SocketClass, UnixStreamSocketPermission,
+    KernelPermission, PolicyCap, SecurityId, SecurityServer, SocketClass,
+    UnixStreamSocketPermission,
 };
 use starnix_logging::track_stub;
 use starnix_sync::{FileOpsCore, LockEqualOrBefore, Locked};
@@ -80,33 +81,55 @@ fn has_socket_permission_for_sid(
 
 /// Computes the socket security class for `domain`, `socket_type` and `protocol`.
 fn compute_socket_security_class(
+    security_server: &SecurityServer,
     domain: SocketDomain,
     socket_type: SocketType,
     protocol: SocketProtocol,
 ) -> SocketClass {
+    let use_extended_classes =
+        || security_server.is_policycap_enabled(PolicyCap::ExtendedSocketClass);
     match domain {
         SocketDomain::Unix => match socket_type {
             SocketType::Stream | SocketType::SeqPacket => SocketClass::UnixStream,
-            SocketType::Datagram => SocketClass::UnixDgram,
-            SocketType::Raw | SocketType::Rdm | SocketType::Dccp | SocketType::Packet => {
-                SocketClass::Socket
-            }
+            SocketType::Raw | SocketType::Datagram => SocketClass::UnixDgram,
+
+            // This combination of domain & type has no unique security class.
+            SocketType::Rdm | SocketType::Dccp | SocketType::Packet => SocketClass::Socket,
         },
-        SocketDomain::Vsock => SocketClass::Vsock,
         SocketDomain::Inet | SocketDomain::Inet6 => match socket_type {
             SocketType::Stream => match protocol {
                 SocketProtocol::IP | SocketProtocol::TCP => SocketClass::Tcp,
+
+                // Protocols other than TCP receive a dedicated security class if extended socket
+                // classes are enabled in the policy.
+                SocketProtocol::SCTP if use_extended_classes() => SocketClass::Sctp,
+
+                // Otherwise allow protocols to be treated "rawip_socket", pending a dedicated
+                // security class being introduced.
                 _ => SocketClass::RawIp,
             },
             SocketType::Datagram => match protocol {
-                SocketProtocol::IP | SocketProtocol::UDP => SocketClass::Udp,
+                SocketProtocol::IP | SocketProtocol::UDP | SocketProtocol::UDPLITE => {
+                    SocketClass::Udp
+                }
+
+                // Protocols other than UDP & UDP-Lite receive a dedicated security class if
+                // extended socket classes are enabled in the policy.
+                SocketProtocol::ICMP | SocketProtocol::ICMPV6 if use_extended_classes() => {
+                    SocketClass::Icmp
+                }
+
+                // Otherwise allow protocols to be treated "rawip_socket", pending a dedicated
+                // security class being introduced.
                 _ => SocketClass::RawIp,
             },
-            SocketType::Raw
-            | SocketType::Rdm
-            | SocketType::SeqPacket
-            | SocketType::Dccp
-            | SocketType::Packet => SocketClass::RawIp,
+            SocketType::Raw => SocketClass::RawIp,
+
+            // This combination of domain & type has no unique security class, so default to the
+            // "rawip_socket" class until/unless some more specific class is introduced.
+            SocketType::SeqPacket | SocketType::Rdm | SocketType::Dccp | SocketType::Packet => {
+                SocketClass::RawIp
+            }
         },
         SocketDomain::Netlink => match NetlinkFamily::from_raw(protocol.as_raw()) {
             NetlinkFamily::Route => SocketClass::NetlinkRoute,
@@ -127,14 +150,17 @@ fn compute_socket_security_class(
             NetlinkFamily::Scsitransport => SocketClass::NetlinkScsitransport,
             NetlinkFamily::Rdma => SocketClass::NetlinkRdma,
             NetlinkFamily::Crypto => SocketClass::NetlinkCrypto,
+
             // No specific netlink security class equivalent.
             NetlinkFamily::Ecryptfs
             | NetlinkFamily::Smc
             | NetlinkFamily::Usersock
             | NetlinkFamily::Invalid => SocketClass::Netlink,
         },
+        SocketDomain::Vsock if use_extended_classes() => SocketClass::Vsock,
+        SocketDomain::Qipcrtr if use_extended_classes() => SocketClass::Qipcrtr,
+        SocketDomain::Vsock | SocketDomain::Qipcrtr => SocketClass::Socket,
         SocketDomain::Packet => SocketClass::Packet,
-        SocketDomain::Qipcrtr => SocketClass::Qipcrtr,
         SocketDomain::Key => SocketClass::Key,
     }
 }
@@ -164,7 +190,8 @@ where
     superblock::file_system_resolve_security(locked, security_server, &current_task, &sockfs)
         .expect("resolve fs security");
     let current_sid = current_task_state(current_task).lock().current_sid;
-    let new_socket_class = compute_socket_security_class(domain, socket_type, protocol);
+    let new_socket_class =
+        compute_socket_security_class(security_server, domain, socket_type, protocol);
     let new_socket_sid = if let Some(fs_label) = sockfs.security_state.state.label() {
         compute_new_fs_node_sid(
             security_server,
@@ -202,10 +229,15 @@ pub(in crate::security) fn socket_socketpair(
 }
 
 /// Computes and sets the security class for `socket`.
-pub(in crate::security) fn socket_post_create(socket: &Socket) {
+pub(in crate::security) fn socket_post_create(security_server: &SecurityServer, socket: &Socket) {
     let socket_node = socket.fs_node().expect("socket_post_create without FsNode");
-    socket_node.security_state.lock().class =
-        compute_socket_security_class(socket.domain, socket.socket_type, socket.protocol).into();
+    socket_node.security_state.lock().class = compute_socket_security_class(
+        security_server,
+        socket.domain,
+        socket.socket_type,
+        socket.protocol,
+    )
+    .into();
 }
 
 /// Checks that `current_task` has the right permissions to perform a bind operation on
