@@ -23,7 +23,6 @@ rustc_binary("bootfs_launching_benchmark") {
   deps = [
     "//examples/components/routing/fidl:echo_rust",
     "//sdk/fidl/fuchsia.component:fuchsia.component_rust",
-    "//sdk/fidl/fuchsia.component.sandbox:fuchsia.component.sandbox_rust",
     "//sdk/fidl/fuchsia.process:fuchsia.process_rust",
     "//sdk/rust/zx",
     "//src/developer/fuchsia-criterion",

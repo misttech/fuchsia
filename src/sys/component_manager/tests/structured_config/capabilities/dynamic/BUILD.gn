@@ -13,7 +13,7 @@ executable("bin") {
     ":config_lib",
     ":test.config_cpp",
     "//sdk/fidl/fuchsia.component:fuchsia.component_cpp",
-    "//sdk/fidl/fuchsia.component.sandbox:fuchsia.component.sandbox_cpp",
+    "//sdk/fidl/fuchsia.component.runtime:fuchsia.component.runtime_cpp",
     "//sdk/lib/async:async-cpp",
     "//sdk/lib/async-loop:async-loop-cpp",
     "//sdk/lib/async-loop:async-loop-default",

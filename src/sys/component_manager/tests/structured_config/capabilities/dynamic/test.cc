@@ -2,7 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#include <fidl/fuchsia.component.sandbox/cpp/fidl.h>
+#include <fidl/fuchsia.component.runtime/cpp/fidl.h>
 #include <fidl/fuchsia.component/cpp/fidl.h>
 #include <fidl/test.config/cpp/fidl.h>
 #include <lib/async-loop/cpp/loop.h>
@@ -57,19 +57,28 @@ void AddChildComponent(component_testing::RealmBuilder& builder) {
   });
 }
 
-void AddToDictionary(
-    const fidl::SyncClient<fuchsia_component_sandbox::CapabilityStore>& capability_store,
-    uint64_t dict_id, uint64_t cap_id, const fuchsia_component_decl::ConfigValue& value,
-    std::string key) {
+void AddToDictionary(const fidl::SyncClient<fuchsia_component_runtime::Capabilities>& capabilities,
+                     zx::eventpair* dictionary, const fuchsia_component_decl::ConfigValue& value,
+                     std::string key) {
+  zx::eventpair e1;
+  zx::eventpair e2;
+  zx_status_t status = zx::eventpair::create(0, &e1, &e2);
+  ZX_ASSERT(status == ZX_OK);
   auto data = fidl::Persist(value);
-  capability_store->Import({
-      cap_id,
-      fuchsia_component_sandbox::Capability::WithData(
-          fuchsia_component_sandbox::Data::WithBytes(std::move(data.value()))),
+  fidl::Result result = capabilities->DataCreate({
+      std::move(e1),
+      fuchsia_component_runtime::Data::WithBytes(std::move(data.value())),
   });
-  fidl::Result result = capability_store->DictionaryInsert(
-      {dict_id, fuchsia_component_sandbox::DictionaryItem{std::move(key), cap_id}});
   ASSERT_TRUE(result.is_ok());
+  zx::eventpair dictionary_duplicate;
+  zx_status_t status_2 = dictionary->duplicate(ZX_RIGHT_SAME_RIGHTS, &dictionary_duplicate);
+  ZX_ASSERT(status_2 == ZX_OK);
+  fidl::Result result_2 = capabilities->DictionaryInsert({
+      std::move(dictionary_duplicate),
+      std::move(key),
+      std::move(e2),
+  });
+  ASSERT_TRUE(result_2.is_ok());
 }
 
 struct DictionaryConfigEntry {
@@ -77,15 +86,17 @@ struct DictionaryConfigEntry {
   fuchsia_component_decl::ConfigValue value;
 };
 
-void CreateDictionaryWithConfig(
-    const fidl::SyncClient<fuchsia_component_sandbox::CapabilityStore>& capability_store,
-    uint64_t dict_id, uint64_t& next_id, std::vector<DictionaryConfigEntry> entries) {
-  fidl::Result dict_result = capability_store->DictionaryCreate({dict_id});
-  ASSERT_FALSE(dict_result.is_error());
+zx::eventpair CreateDictionaryWithConfig(
+    const fidl::SyncClient<fuchsia_component_runtime::Capabilities>& capabilities,
+    std::vector<DictionaryConfigEntry> entries) {
+  zx::eventpair dictionary;
+  zx::eventpair dictionary_other_end;
+  zx::eventpair::create(0, &dictionary, &dictionary_other_end);
+  capabilities->DictionaryCreate({std::move(dictionary_other_end)});
   for (DictionaryConfigEntry& entry : entries) {
-    ASSERT_NO_FATAL_FAILURE(
-        AddToDictionary(capability_store, dict_id, next_id++, entry.value, std::move(entry.key)));
+    AddToDictionary(capabilities, &dictionary, entry.value, std::move(entry.key));
   }
+  return dictionary;
 }
 
 TEST(ScTest, CheckValuesVoidOptional) {
@@ -275,41 +286,36 @@ TEST(ScTest, BadValueType) {
 }
 
 TEST(Collection, CreateChild) {
-  zx::result capability_client = component::Connect<fuchsia_component_sandbox::CapabilityStore>();
-  ASSERT_OK(capability_client);
-  fidl::SyncClient capability_store = fidl::SyncClient(std::move(capability_client.value()));
-  uint64_t next_id = 1;
-  uint64_t dict_id = next_id++;
+  zx::result capabilities_client = component::Connect<fuchsia_component_runtime::Capabilities>();
+  ASSERT_OK(capabilities_client);
+  fidl::SyncClient capabilities = fidl::SyncClient(std::move(capabilities_client.value()));
 
-  CreateDictionaryWithConfig(
-      capability_store, dict_id, next_id,
-      {
-          {
-              .key = "fuchsia.config.MyFlag",
-              .value = fuchsia_component_decl::ConfigValue::WithSingle(
-                  fuchsia_component_decl::ConfigSingleValue::WithBool_(false)),
-          },
-          {
-              .key = "fuchsia.config.MyInt",
-              .value = fuchsia_component_decl::ConfigValue::WithSingle(
-                  fuchsia_component_decl::ConfigSingleValue::WithUint8(10)),
-          },
-          {
-              .key = "fuchsia.config.MyTransitional",
-              .value = fuchsia_component_decl::ConfigValue::WithSingle(
-                  fuchsia_component_decl::ConfigSingleValue::WithUint8(10)),
-          },
-      });
+  zx::eventpair dictionary = CreateDictionaryWithConfig(
+      capabilities, {
+                        {
+                            .key = "fuchsia.config.MyFlag",
+                            .value = fuchsia_component_decl::ConfigValue::WithSingle(
+                                fuchsia_component_decl::ConfigSingleValue::WithBool_(false)),
+                        },
+                        {
+                            .key = "fuchsia.config.MyInt",
+                            .value = fuchsia_component_decl::ConfigValue::WithSingle(
+                                fuchsia_component_decl::ConfigSingleValue::WithUint8(10)),
+                        },
+                        {
+                            .key = "fuchsia.config.MyTransitional",
+                            .value = fuchsia_component_decl::ConfigValue::WithSingle(
+                                fuchsia_component_decl::ConfigSingleValue::WithUint8(10)),
+                        },
+                    });
   ASSERT_NO_FATAL_FAILURE();
-
-  auto dict = capability_store->Export({dict_id});
 
   zx::result client_end = component::Connect<fuchsia_component::Realm>();
   ASSERT_OK(client_end);
   fidl::SyncClient client = fidl::SyncClient(std::move(client_end.value()));
 
   fuchsia_component::CreateChildArgs args = fuchsia_component::CreateChildArgs();
-  args.dictionary(std::move(dict->capability().dictionary()->token()));
+  args.additional_inputs(std::move(dictionary));
 
   fidl::Result result = client->CreateChild({{
       .collection = fuchsia_component_decl::CollectionRef().name("collection"),
@@ -352,10 +358,9 @@ TEST(Collection, CreateChild) {
 }
 
 TEST(Collection, CreateSameChildTwice) {
-  zx::result capability_client = component::Connect<fuchsia_component_sandbox::CapabilityStore>();
-  ASSERT_OK(capability_client);
-  fidl::SyncClient capability_store = fidl::SyncClient(std::move(capability_client.value()));
-  uint64_t next_id = 1;
+  zx::result capabilities_client = component::Connect<fuchsia_component_runtime::Capabilities>();
+  ASSERT_OK(capabilities_client);
+  fidl::SyncClient capabilities = fidl::SyncClient(std::move(capabilities_client.value()));
 
   zx::result client_end = component::Connect<fuchsia_component::Realm>();
   ASSERT_OK(client_end);
@@ -363,32 +368,28 @@ TEST(Collection, CreateSameChildTwice) {
 
   // Create the child once.
   {
-    uint64_t dict_id = next_id++;
-    CreateDictionaryWithConfig(
-        capability_store, dict_id, next_id,
-        {
-            {
-                .key = "fuchsia.config.MyFlag",
-                .value = fuchsia_component_decl::ConfigValue::WithSingle(
-                    fuchsia_component_decl::ConfigSingleValue::WithBool_(false)),
-            },
-            {
-                .key = "fuchsia.config.MyInt",
-                .value = fuchsia_component_decl::ConfigValue::WithSingle(
-                    fuchsia_component_decl::ConfigSingleValue::WithUint8(0)),
-            },
-            {
-                .key = "fuchsia.config.MyTransitional",
-                .value = fuchsia_component_decl::ConfigValue::WithSingle(
-                    fuchsia_component_decl::ConfigSingleValue::WithUint8(0)),
-            },
-        });
+    zx::eventpair dictionary = CreateDictionaryWithConfig(
+        capabilities, {
+                          {
+                              .key = "fuchsia.config.MyFlag",
+                              .value = fuchsia_component_decl::ConfigValue::WithSingle(
+                                  fuchsia_component_decl::ConfigSingleValue::WithBool_(false)),
+                          },
+                          {
+                              .key = "fuchsia.config.MyInt",
+                              .value = fuchsia_component_decl::ConfigValue::WithSingle(
+                                  fuchsia_component_decl::ConfigSingleValue::WithUint8(0)),
+                          },
+                          {
+                              .key = "fuchsia.config.MyTransitional",
+                              .value = fuchsia_component_decl::ConfigValue::WithSingle(
+                                  fuchsia_component_decl::ConfigSingleValue::WithUint8(0)),
+                          },
+                      });
     ASSERT_NO_FATAL_FAILURE();
 
-    auto dict = capability_store->Export({dict_id});
-
     fuchsia_component::CreateChildArgs args = fuchsia_component::CreateChildArgs();
-    args.dictionary(std::move(dict->capability().dictionary()->token()));
+    args.additional_inputs(std::move(dictionary));
 
     fidl::Result result = client->CreateChild({{
         .collection = fuchsia_component_decl::CollectionRef().name("collection"),
@@ -417,31 +418,28 @@ TEST(Collection, CreateSameChildTwice) {
 
   // Create the child again.
   {
-    uint64_t dict_id = next_id++;
-    CreateDictionaryWithConfig(
-        capability_store, dict_id, next_id,
-        {
-            {
-                .key = "fuchsia.config.MyFlag",
-                .value = fuchsia_component_decl::ConfigValue::WithSingle(
-                    fuchsia_component_decl::ConfigSingleValue::WithBool_(false)),
-            },
-            {
-                .key = "fuchsia.config.MyInt",
-                .value = fuchsia_component_decl::ConfigValue::WithSingle(
-                    fuchsia_component_decl::ConfigSingleValue::WithUint8(10)),
-            },
-            {
-                .key = "fuchsia.config.MyTransitional",
-                .value = fuchsia_component_decl::ConfigValue::WithSingle(
-                    fuchsia_component_decl::ConfigSingleValue::WithUint8(10)),
-            },
-        });
+    zx::eventpair dictionary = CreateDictionaryWithConfig(
+        capabilities, {
+                          {
+                              .key = "fuchsia.config.MyFlag",
+                              .value = fuchsia_component_decl::ConfigValue::WithSingle(
+                                  fuchsia_component_decl::ConfigSingleValue::WithBool_(false)),
+                          },
+                          {
+                              .key = "fuchsia.config.MyInt",
+                              .value = fuchsia_component_decl::ConfigValue::WithSingle(
+                                  fuchsia_component_decl::ConfigSingleValue::WithUint8(10)),
+                          },
+                          {
+                              .key = "fuchsia.config.MyTransitional",
+                              .value = fuchsia_component_decl::ConfigValue::WithSingle(
+                                  fuchsia_component_decl::ConfigSingleValue::WithUint8(10)),
+                          },
+                      });
     ASSERT_NO_FATAL_FAILURE();
 
-    auto dict = capability_store->Export({dict_id});
     fuchsia_component::CreateChildArgs args = fuchsia_component::CreateChildArgs();
-    args.dictionary(std::move(dict->capability().dictionary()->token()));
+    args.additional_inputs(std::move(dictionary));
 
     fidl::Result result = client->CreateChild({{
         .collection = fuchsia_component_decl::CollectionRef().name("collection"),

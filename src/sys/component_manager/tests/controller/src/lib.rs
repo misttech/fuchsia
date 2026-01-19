@@ -4,7 +4,7 @@
 
 use assert_matches::assert_matches;
 use cm_rust::{ComponentDecl, FidlIntoNative, push_box};
-use fidl::endpoints::{ProtocolMarker, Proxy, ServerEnd, create_proxy, create_request_stream};
+use fidl::endpoints::{ProtocolMarker, Proxy, ServerEnd, create_proxy};
 use fuchsia_component::client::connect_to_protocol_at_dir_root;
 use fuchsia_component::runtime;
 use fuchsia_component_test::{
@@ -23,8 +23,7 @@ use zx::HandleBased;
 use {
     fidl_fidl_examples_routing_echo as fecho, fidl_fuchsia_component as fcomponent,
     fidl_fuchsia_component_decl as fcdecl, fidl_fuchsia_component_runtime as fruntime,
-    fidl_fuchsia_component_sandbox as fsandbox, fidl_fuchsia_io as fio,
-    fidl_fuchsia_process as fprocess, fuchsia_async as fasync,
+    fidl_fuchsia_io as fio, fidl_fuchsia_process as fprocess, fuchsia_async as fasync,
 };
 
 const COLLECTION_NAME: &'static str = "col";
@@ -125,7 +124,7 @@ async fn launch_child_in_a_collection_in_nested_component_manager(
     builder
         .add_route(
             Route::new()
-                .capability(Capability::protocol::<fsandbox::CapabilityStoreMarker>())
+                .capability(Capability::protocol::<fruntime::CapabilitiesMarker>())
                 .from(Ref::framework())
                 .to(&realm_user)
                 .to(Ref::parent()),
@@ -437,18 +436,18 @@ async fn start_with_numbered_handles() {
 async fn start_with_dict() {
     let mut spawned_child = spawn_local_child_controller_from_create_child().await;
 
-    let store: fsandbox::CapabilityStoreProxy =
+    let capabilities_proxy: fruntime::CapabilitiesProxy =
         spawned_child.cm_realm_instance.root.connect_to_protocol_at_exposed_dir().unwrap();
     // StartChild dictionary entries must be Sender capabilities.
-    let (receiver_client, mut receiver_stream) =
-        create_request_stream::<fsandbox::ReceiverMarker>();
+    let (connector, mut receiver) =
+        runtime::Connector::new_with_proxy(capabilities_proxy.clone()).await;
 
     // Serve the `fidl.examples.routing.echo.Echo` protocol on the Sender.
     let task_group = Mutex::new(fasync::TaskGroup::new());
     let _task = fasync::Task::spawn(async move {
         loop {
-            match receiver_stream.try_next().await.unwrap() {
-                Some(fsandbox::ReceiverRequest::Receive { channel, control_handle: _ }) => {
+            match receiver.next().await {
+                Some(channel) => {
                     let mut task_group = task_group.lock();
                     task_group.spawn(async move {
                         let server_end = ServerEnd::<fecho::EchoMarker>::new(channel);
@@ -466,44 +465,21 @@ async fn start_with_dict() {
     });
 
     // Create a sender from our receiver.
-    let connector_id = 10;
-    store.connector_create(connector_id, receiver_client).await.unwrap().unwrap();
 
-    let svc_dict_id = 1;
-    store.dictionary_create(svc_dict_id).await.unwrap().unwrap();
-    store
-        .dictionary_insert(
-            svc_dict_id,
-            &fsandbox::DictionaryItem {
-                key: "fidl.examples.routing.echo.Echo".into(),
-                value: connector_id,
-            },
-        )
-        .await
-        .unwrap()
-        .unwrap();
-    let dict_id = 2;
-    store.dictionary_create(dict_id).await.unwrap().unwrap();
-    store
-        .dictionary_insert(
-            dict_id,
-            &fsandbox::DictionaryItem { key: "svc".into(), value: svc_dict_id },
-        )
-        .await
-        .unwrap()
-        .unwrap();
-    let fsandbox::Capability::Dictionary(dictionary_ref) =
-        store.export(dict_id).await.unwrap().unwrap()
-    else {
-        unreachable!();
-    };
+    let svc_dictionary = runtime::Dictionary::new_with_proxy(capabilities_proxy.clone()).await;
+    svc_dictionary.insert("fidl.examples.routing.echo.Echo", connector).await;
+    let dictionary = runtime::Dictionary::new_with_proxy(capabilities_proxy.clone()).await;
+    dictionary.insert("svc", svc_dictionary).await;
 
     let (_execution_controller_proxy, execution_controller_server_end) =
         create_proxy::<fcomponent::ExecutionControllerMarker>();
     spawned_child
         .controller_proxy
         .start(
-            fcomponent::StartChildArgs { dictionary: Some(dictionary_ref), ..Default::default() },
+            fcomponent::StartChildArgs {
+                additional_inputs: Some(dictionary.handle),
+                ..Default::default()
+            },
             execution_controller_server_end,
         )
         .await
@@ -648,24 +624,14 @@ async fn start_when_already_started(spawn_child_future: BoxFuture<'static, Spawn
 async fn get_exposed_dictionary() {
     let (controller_proxy, _child_ref, instance) =
         spawn_child_with_url("#meta/echo_server.cm").await;
-    let exposed_dict = controller_proxy.get_exposed_dictionary().await.unwrap().unwrap();
-    let store: fsandbox::CapabilityStoreProxy =
+    let handle = controller_proxy.get_output_dictionary().await.unwrap().unwrap();
+    let capabilities_proxy: fruntime::CapabilitiesProxy =
         instance.root.connect_to_protocol_at_exposed_dir().unwrap();
-    let exposed_dict_id = 1;
-    store
-        .import(exposed_dict_id, fsandbox::Capability::Dictionary(exposed_dict))
-        .await
-        .unwrap()
-        .unwrap();
-    let dest_id = 2;
-    store
-        .dictionary_get(exposed_dict_id, fecho::EchoMarker::DEBUG_NAME, dest_id)
-        .await
-        .unwrap()
-        .unwrap();
-    let echo_cap = store.export(dest_id).await.unwrap().unwrap();
-
-    assert_matches!(echo_cap, fsandbox::Capability::ConnectorRouter(_));
+    let output_dictionary = runtime::Dictionary { handle, capabilities_proxy };
+    assert_matches!(
+        output_dictionary.get(fecho::EchoMarker::DEBUG_NAME).await,
+        Some(runtime::Capability::ConnectorRouter(_))
+    );
 }
 
 #[fuchsia::test]

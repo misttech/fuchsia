@@ -3,8 +3,7 @@
 // found in the LICENSE file.
 
 use fidl::endpoints::{self, DiscoverableProtocolMarker};
-use fsandbox::DictionaryRef;
-use fuchsia_component::client;
+use fuchsia_component::runtime;
 use fuchsia_component_test::ScopedInstance;
 use fuchsia_criterion::{FuchsiaCriterion, criterion};
 use fuchsia_runtime::{HandleInfo, HandleType};
@@ -16,8 +15,7 @@ use std::time::Duration;
 use zx::{self as zx, HandleBased};
 use {
     fidl_fidl_examples_routing_echo as fecho, fidl_fuchsia_component as fcomponent,
-    fidl_fuchsia_component_sandbox as fsandbox, fidl_fuchsia_process as fprocess,
-    fuchsia_async as fasync,
+    fidl_fuchsia_process as fprocess, fuchsia_async as fasync,
 };
 
 const ZBI_PATH: &str = "/pkg/data/tests/uncompressed_bootfs";
@@ -58,7 +56,7 @@ fn main() {
 struct ElfComponentLaunchTest {
     numbered_handles: Vec<fprocess::HandleInfo>,
     receiver_task: fasync::Task<PendingResponses>,
-    dict_ref: DictionaryRef,
+    dictionary: runtime::Dictionary,
     instance: ScopedInstance,
     executor: fasync::LocalExecutor,
 }
@@ -83,20 +81,20 @@ impl ElfComponentLaunchTest {
             ScopedInstance::new("coll".into(), cm_url).await.unwrap()
         });
 
-        let (dict_ref, echo_receiver_stream) = executor.run_singlethreaded(build_echo_dictionary());
+        let (dictionary, receiver) = executor.run_singlethreaded(build_echo_dictionary());
 
         let receiver_task = fasync::Task::local(async move {
-            handle_receiver(echo_receiver_stream, number_of_echo_connections).await
+            handle_receiver(receiver, number_of_echo_connections).await
         });
 
-        Self { numbered_handles, receiver_task, dict_ref, instance, executor }
+        Self { numbered_handles, receiver_task, dictionary, instance, executor }
     }
 
     fn run(mut self) -> FinishedElfComponentLaunchTest {
         // Start component_manager.
         let args = fcomponent::StartChildArgs {
             numbered_handles: Some(self.numbered_handles),
-            dictionary: Some(self.dict_ref),
+            additional_inputs: Some(self.dictionary.handle),
             ..Default::default()
         };
 
@@ -133,44 +131,13 @@ impl Drop for FinishedElfComponentLaunchTest {
 
 /// Build a dictionary with an echo protocol capability and return the receiver stream
 /// to handle connection requests.
-async fn build_echo_dictionary() -> (fsandbox::DictionaryRef, fsandbox::ReceiverRequestStream) {
-    let store = client::connect_to_protocol::<fsandbox::CapabilityStoreMarker>().unwrap();
-    let svc_dict_id = 1;
-    store.dictionary_create(svc_dict_id).await.unwrap().unwrap();
-
-    let (echo_receiver_client, echo_receiver_stream) =
-        endpoints::create_request_stream::<fsandbox::ReceiverMarker>();
-    let connector_id = 100;
-    store.connector_create(connector_id, echo_receiver_client).await.unwrap().unwrap();
-    store
-        .dictionary_insert(
-            svc_dict_id,
-            &fsandbox::DictionaryItem {
-                key: fecho::EchoMarker::PROTOCOL_NAME.into(),
-                value: connector_id,
-            },
-        )
-        .await
-        .unwrap()
-        .unwrap();
-
-    let dict_id = 2;
-    store.dictionary_create(dict_id).await.unwrap().unwrap();
-    store
-        .dictionary_insert(
-            dict_id,
-            &fsandbox::DictionaryItem { key: "svc".into(), value: svc_dict_id },
-        )
-        .await
-        .unwrap()
-        .unwrap();
-
-    let dict_ref = match store.export(dict_id).await.unwrap().unwrap() {
-        fsandbox::Capability::Dictionary(dict_ref) => dict_ref,
-        cap @ _ => panic!("Unexpected {cap:?}"),
-    };
-
-    (dict_ref, echo_receiver_stream)
+async fn build_echo_dictionary() -> (runtime::Dictionary, runtime::ConnectorReceiver) {
+    let (connector, receiver) = runtime::Connector::new().await;
+    let svc_dictionary = runtime::Dictionary::new().await;
+    svc_dictionary.insert(fecho::EchoMarker::PROTOCOL_NAME, connector).await;
+    let dictionary = runtime::Dictionary::new().await;
+    dictionary.insert("svc", svc_dictionary).await;
+    (dictionary, receiver)
 }
 
 struct PendingResponses {
@@ -192,21 +159,16 @@ impl Drop for PendingResponses {
 /// number_of_echo_connections: How many Echo protocol connection do we expect to wait for.
 ///
 async fn handle_receiver(
-    receiver_stream: fsandbox::ReceiverRequestStream,
+    receiver: runtime::ConnectorReceiver,
     number_of_echo_connections: usize,
 ) -> PendingResponses {
     // Read `number_of_echo_connections` echo connection requests while handling them concurrently.
-    let mut receiver_stream = receiver_stream.take(number_of_echo_connections);
+    let mut receiver_stream = receiver.take(number_of_echo_connections);
     let futures = FuturesUnordered::new();
-    while let Some(request) = receiver_stream.try_next().await.unwrap() {
-        match request {
-            fsandbox::ReceiverRequest::Receive { channel, control_handle: _ } => {
-                let server_end = endpoints::ServerEnd::<fecho::EchoMarker>::new(channel.into());
-                let stream = server_end.into_stream();
-                futures.push(fasync::Task::spawn(run_echo_service(stream)));
-            }
-            fsandbox::ReceiverRequest::_UnknownMethod { .. } => unimplemented!(),
-        }
+    while let Some(channel) = receiver_stream.next().await {
+        let server_end = endpoints::ServerEnd::<fecho::EchoMarker>::new(channel.into());
+        let stream = server_end.into_stream();
+        futures.push(fasync::Task::spawn(run_echo_service(stream)));
     }
 
     // Wait to receive the first request in those connections.
