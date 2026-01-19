@@ -268,11 +268,15 @@ impl FxFile {
                 .map_err(map_to_status)?
                 .get(FSCRYPT_KEY_ID)
             {
-                if let EncryptionKey::Fxfs(fxfs_key) = key {
-                    return Ok(Some(fxfs_key.wrapping_key_id));
-                } else {
-                    error!("Unexpected key type: {:?}", key);
-                    return Ok(None);
+                match key {
+                    EncryptionKey::Fxfs(fxfs_key) => return Ok(Some(fxfs_key.wrapping_key_id)),
+                    EncryptionKey::FscryptInoLblk32File { key_identifier } => {
+                        return Ok(Some(*key_identifier));
+                    }
+                    _ => {
+                        error!("Unexpected key type: {:?}", key);
+                        return Ok(None);
+                    }
                 }
             }
         }

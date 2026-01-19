@@ -7,7 +7,9 @@
 #[cfg(test)]
 mod tests {
     use crate::component::new_block_client;
+    use crate::file::FxFile;
     use crate::fuchsia::RemoteCrypt;
+    use crate::fuchsia::volume::FxVolume;
     use fidl_fuchsia_fxfs::{CryptMarker, KeyPurpose};
     use fidl_fuchsia_hardware_inlineencryption::{DeviceMarker, DeviceSynchronousProxy};
     use fidl_fuchsia_io as fio;
@@ -18,12 +20,14 @@ mod tests {
     use fxfs::object_store::directory::Directory;
     use fxfs::object_store::transaction::{LockKey, Options};
     use fxfs::object_store::volume::root_volume;
-    use fxfs::object_store::{NewChildStoreOptions, ObjectStore, StoreOptions};
+    use fxfs::object_store::{HandleOptions, NewChildStoreOptions, ObjectStore, StoreOptions};
     use fxfs_crypto::Crypt;
-    use std::sync::Arc;
+    use refaults_vmo::PageRefaultCounter;
+    use std::sync::{Arc, Weak};
     use storage_device::DeviceHolder;
     use storage_device::block_device::BlockDevice;
     use test_case::test_case;
+    use vfs::node::Node;
     use vmo_backed_block_server::{
         InitialContents, VmoBackedServerOptions, VmoBackedServerTestingExt,
     };
@@ -414,6 +418,146 @@ mod tests {
         let mut buf = handle.allocate_buffer(2 * TEST_DEVICE_BLOCK_SIZE as usize).await;
         handle.read(0, buf.as_mut()).await.expect("read failed");
         assert_eq!(buf.as_slice(), vec![0xbb; 2 * TEST_DEVICE_BLOCK_SIZE as usize]);
+
+        filesystem.close().await.expect("close failed");
+    }
+
+    #[test_case(KeyIdentifierDerivationAlgorithm::Lblk32;
+        "derive key identifiers with lblk32 fscrypt mode")]
+    #[test_case(KeyIdentifierDerivationAlgorithm::FuchsiaSpecific;
+        "derive key identifiers with Fuchsia-specific algorithm")]
+    #[fuchsia::test]
+    async fn test_get_attribute_of_inline_encrypted_files(
+        key_identifier_derivation_algorithm: KeyIdentifierDerivationAlgorithm,
+    ) {
+        let block_server = Arc::new(
+            VmoBackedServerOptions {
+                block_size: TEST_DEVICE_BLOCK_SIZE,
+                initial_contents: InitialContents::FromCapacity(393216),
+                ..Default::default()
+            }
+            .build()
+            .expect("build from VmoBackedServerOptions failed"),
+        );
+
+        let filesystem = FxFilesystemBuilder::new()
+            .format(true)
+            .inline_crypto_enabled(true)
+            .barriers_enabled(true)
+            .open(DeviceHolder::new(
+                BlockDevice::new(
+                    new_block_client(block_server.connect())
+                        .await
+                        .expect("failed to create new block client"),
+                    false,
+                )
+                .await
+                .expect("failed to create block device"),
+            ))
+            .await
+            .expect("failed to open filesystem");
+
+        let block_server_clone = block_server.clone();
+        let (insecure_inline_crypto_proxy, server) =
+            fidl::endpoints::create_sync_proxy::<DeviceMarker>();
+        Task::spawn(async move {
+            block_server_clone
+                .connect_insecure_inline_encryption_server(server.into_channel().into(), TEST_UUID)
+                .await;
+        })
+        .detach();
+
+        // Use Starnix CryptService which supports creating and storing keys in the format expected
+        // for inline encryption.
+        let (starnix_vol, crypt_service) = create_vol_with_starnix_crypt(
+            filesystem.clone(),
+            insecure_inline_crypto_proxy,
+            key_identifier_derivation_algorithm,
+            "starnix",
+        )
+        .await;
+
+        let starnix_vol_root_dir =
+            Directory::open(&starnix_vol, starnix_vol.root_directory_object_id())
+                .await
+                .expect("open failed");
+
+        // Create a directory that has a wrapping key identifier.
+        let mut transaction = filesystem
+            .clone()
+            .new_transaction(
+                lock_keys![LockKey::object(
+                    starnix_vol.store_object_id(),
+                    starnix_vol.root_directory_object_id()
+                )],
+                Options::default(),
+            )
+            .await
+            .expect("new_transaction failed");
+        let dir = starnix_vol_root_dir
+            .create_child_dir(&mut transaction, "dir")
+            .await
+            .expect("create_child_dir failed");
+        transaction.commit().await.expect("transaction commit failed");
+        // `crypt_service` uses the (sync) crypt proxy to add wrapping keys. Wrap this with
+        // `fuchsia_async::unblock` so that the test thread will not block on this operation.
+        let key_identifier = fuchsia_async::unblock(move || {
+            crypt_service.add_wrapping_key(&[0xab; 32], 0).expect("add_wrapping_key failed")
+        })
+        .await;
+        let transaction = filesystem
+            .clone()
+            .new_transaction(
+                lock_keys![LockKey::object(starnix_vol.store_object_id(), dir.object_id())],
+                Options::default(),
+            )
+            .await
+            .expect("new transaction failed");
+        dir.update_attributes(
+            transaction,
+            Some(&fio::MutableNodeAttributes {
+                wrapping_key_id: Some(key_identifier),
+                ..Default::default()
+            }),
+            0,
+            None,
+        )
+        .await
+        .expect("update attributes failed");
+
+        let mut transaction = filesystem
+            .clone()
+            .new_transaction(
+                lock_keys![LockKey::object(starnix_vol.store_object_id(), dir.object_id())],
+                Options::default(),
+            )
+            .await
+            .expect("new_transaction failed");
+        let file_object = dir
+            .create_child_file(&mut transaction, "file")
+            .await
+            .expect("create_child_file failed");
+        transaction.commit().await.expect("commit failed");
+
+        let vol = Arc::new(
+            FxVolume::new(
+                Weak::new(),
+                starnix_vol.clone(),
+                starnix_vol.store_object_id(),
+                Arc::new(PageRefaultCounter::new().expect("PageRefaultCounter::new failed")),
+            )
+            .expect("FxVolume::new failed"),
+        );
+        let file = FxFile::new(
+            ObjectStore::open_object(&vol, file_object.object_id(), HandleOptions::default(), None)
+                .await
+                .expect("open_object failed"),
+        );
+        let attributes = file
+            .get_attributes(fio::NodeAttributesQuery::WRAPPING_KEY_ID)
+            .await
+            .expect("get_attributes failed");
+        assert_eq!(attributes.mutable_attributes.wrapping_key_id, Some(key_identifier));
 
         filesystem.close().await.expect("close failed");
     }
