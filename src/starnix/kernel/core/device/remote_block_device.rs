@@ -6,15 +6,18 @@ use crate::device::DeviceMode;
 use crate::device::kobject::DeviceMetadata;
 use crate::fs::sysfs::{BlockDeviceInfo, build_block_device_directory};
 use crate::mm::MemoryAccessorExt;
-use crate::task::CurrentTask;
+use crate::task::dynamic_thread_spawner::SpawnRequestBuilder;
+use crate::task::{CurrentTask, KernelThreads, LockedAndTask};
 use crate::vfs::buffers::{InputBuffer, OutputBuffer};
 use crate::vfs::{
     FileObject, FileOps, FsString, NamespaceNode, SeekTarget, default_ioctl, default_seek,
 };
 use anyhow::{Context as _, Error};
-use block_client::{BufferSlice, MutableBufferSlice, RemoteBlockClientSync};
+use block_client::{BlockClient, BufferSlice, MutableBufferSlice, RemoteBlockClient};
 use fidl::endpoints::ClientEnd;
 use fidl_fuchsia_storage_block::BlockMarker;
+use futures::channel::oneshot;
+use futures::executor::block_on;
 use starnix_sync::{FileOpsCore, LockEqualOrBefore, Locked, Mutex, Unlocked};
 use starnix_syscalls::{SUCCESS, SyscallArg, SyscallResult};
 use starnix_uapi::device_type::{BLOCK_EXTENDED_MAJOR, DeviceType};
@@ -28,7 +31,7 @@ use std::sync::atomic::{AtomicU32, Ordering};
 
 /// A block device, backed by a partition hosted by Fuchsia.
 pub struct RemoteBlockDevice {
-    block_client: Arc<RemoteBlockClientSync>,
+    block_client: Arc<SyncBlockClient>,
 }
 
 impl RemoteBlockDevice {
@@ -52,9 +55,8 @@ impl RemoteBlockDevice {
         let registry = &kernel.device_registry;
         let device_name = FsString::from(name);
         let virtual_block_class = registry.objects.virtual_block_class();
-        let block_client = RemoteBlockClientSync::new(block.into_channel().into())
-            .map_err(|status| from_status_like_fdio!(status))?;
-        let device = Arc::new(Self { block_client: Arc::new(block_client) });
+        let block_client = SyncBlockClient::new(&kernel.kthreads, block)?;
+        let device = Arc::new(Self { block_client });
         let device_weak = Arc::<RemoteBlockDevice>::downgrade(&device);
         registry.add_device(
             locked,
@@ -84,8 +86,98 @@ impl BlockDeviceInfo for RemoteBlockDevice {
     }
 }
 
+pub struct SyncBlockClient {
+    client: Arc<RemoteBlockClient>,
+    terminate_tx: Option<oneshot::Sender<()>>,
+}
+
+impl SyncBlockClient {
+    fn new(kthreads: &KernelThreads, block: ClientEnd<BlockMarker>) -> Result<Arc<Self>, Errno> {
+        let (init_tx, init_rx) = std::sync::mpsc::channel();
+        let (terminate_tx, terminate_rx) = oneshot::channel();
+
+        // Spawn a thread to run the executor.
+        let closure = move |_: LockedAndTask<'_>| async move {
+            let proxy = block.into_proxy();
+            match RemoteBlockClient::new(proxy).await {
+                Ok(client) => {
+                    let _ = init_tx.send(Ok(Arc::new(Self {
+                        client: Arc::new(client),
+                        terminate_tx: Some(terminate_tx),
+                    })));
+                }
+                Err(e) => {
+                    let _ = init_tx.send(Err(e));
+                    return;
+                }
+            }
+            // RemoteBlockClient::new() spawns a future on this closure's executor to handle the
+            // block fifo. This keeps the executor alive and handling the fifo until the client is
+            // dropped.
+            let _ = terminate_rx.await;
+        };
+
+        let req = SpawnRequestBuilder::new()
+            .with_debug_name("remote-block-client")
+            .with_async_closure(closure)
+            .build();
+        kthreads.spawner().spawn_from_request(req);
+
+        match init_rx.recv() {
+            Ok(Ok(client)) => Ok(client),
+            Ok(Err(status)) => Err(from_status_like_fdio!(status)),
+            Err(_) => Err(errno!(EINVAL)),
+        }
+    }
+
+    fn block_size(&self) -> u32 {
+        self.client.block_size()
+    }
+
+    fn block_count(&self) -> u64 {
+        self.client.block_count()
+    }
+
+    fn read_at(
+        &self,
+        buffer_slice: MutableBufferSlice<'_>,
+        device_offset: u64,
+    ) -> Result<(), zx::Status> {
+        // TODO(https://fxbug.dev/475530917): block_on is uninterruptible. Once there is an
+        // interruptible block_on, switch to that. For now this is okay because we expect the block
+        // to be brief in most cases.
+        block_on(self.client.read_at(buffer_slice, device_offset))
+    }
+
+    fn write_at(
+        &self,
+        buffer_slice: BufferSlice<'_>,
+        device_offset: u64,
+    ) -> Result<(), zx::Status> {
+        // TODO(https://fxbug.dev/475530917): block_on is uninterruptible. Once there is an
+        // interruptible block_on, switch to that. For now this is okay because we expect the block
+        // to be brief in most cases.
+        block_on(self.client.write_at(buffer_slice, device_offset))
+    }
+
+    fn flush(&self) -> Result<(), zx::Status> {
+        // TODO(https://fxbug.dev/475530917): block_on is uninterruptible. Once there is an
+        // interruptible block_on, switch to that. For now this is okay because we expect the block
+        // to be brief in most cases.
+        block_on(self.client.flush())
+    }
+}
+
+impl Drop for SyncBlockClient {
+    fn drop(&mut self) {
+        if let Some(tx) = self.terminate_tx.take() {
+            let _ = tx.send(());
+        }
+    }
+}
+
 struct RemoteBlockDeviceFile {
-    block_client: Arc<RemoteBlockClientSync>,
+    block_client: Arc<SyncBlockClient>,
 }
 
 impl RemoteBlockDeviceFile {
