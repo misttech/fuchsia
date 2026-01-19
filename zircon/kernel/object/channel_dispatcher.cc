@@ -650,6 +650,9 @@ ChannelDispatcher::MessageWaiter::~MessageWaiter() {
   if (unlikely(channel_)) {
     channel_->RemoveWaiter(this);
   }
+#if EXPERIMENTAL_CHANNEL_CALL_PROPAGATION_ENABLED
+  wait_queue_.ResetOwnerIfNoWaiters();
+#endif
   DEBUG_ASSERT(!InContainer());
 }
 
@@ -661,30 +664,105 @@ zx_status_t ChannelDispatcher::MessageWaiter::BeginWait(fbl::RefPtr<ChannelDispa
 
   status_ = ZX_ERR_TIMED_OUT;
   channel_ = ktl::move(channel);
+#if EXPERIMENTAL_CHANNEL_CALL_PROPAGATION_ENABLED
+  const auto do_transaction =
+      [&]() TA_REQ(chainlock_transaction_token) -> ChainLockTransaction::Result<> {
+    ChainLockGuard guard(wait_queue_.get_lock());
+    signaled_ = false;
+    return ChainLockTransaction::Done;
+  };
+  ChainLockTransaction::UntilDone(
+      IrqSaveOption, CLT_TAG("ChannelDispatcher::MessageWaiter::BeginWait"), do_transaction);
+#else
   event_.Unsignal();
+#endif
   return ZX_OK;
 }
+
+#if EXPERIMENTAL_CHANNEL_CALL_PROPAGATION_ENABLED
+void ChannelDispatcher::MessageWaiter::Signal() {
+  // TODO(https://fxbug.dev/477068635): Consider merging this logic back into OwnedWaitQueue.
+  auto& wake_hooks = OwnedWaitQueue::default_wake_hooks();
+  const auto do_transaction = [&]()
+                                  TA_REQ(chainlock_transaction_token,
+                                         preempt_disabled_token) -> ChainLockTransaction::Result<> {
+    if (Thread::UnblockList threads;
+        wait_queue_.LockForWakeOperationOrBackoff(UINT32_MAX, wake_hooks, threads)) {
+      ChainLockTransaction::Finalize();
+      signaled_ = true;
+      wait_queue_.WakeThreadsLocked(ktl::move(threads), wake_hooks,
+                                    OwnedWaitQueue::WakeOption::AssignOwner);
+      wait_queue_.get_lock().Release();
+      return ChainLockTransaction::Done;
+    }
+    return ChainLockTransaction::Action::Backoff;
+  };
+  ChainLockTransaction::UntilDone(PreemptDisableAndIrqSaveOption,
+                                  CLT_TAG("ChannelDispatcher::MessageWaiter::Signal"),
+                                  do_transaction);
+}
+#endif
 
 void ChannelDispatcher::MessageWaiter::Deliver(MessagePacketPtr msg) {
   DEBUG_ASSERT(channel_);
 
   msg_ = ktl::move(msg);
   status_ = ZX_OK;
+#if EXPERIMENTAL_CHANNEL_CALL_PROPAGATION_ENABLED
+  Signal();
+#else
   event_.Signal(ZX_OK);
+#endif
 }
 
 void ChannelDispatcher::MessageWaiter::Cancel(zx_status_t status) {
   DEBUG_ASSERT(!InContainer());
   DEBUG_ASSERT(channel_);
   status_ = status;
+#if EXPERIMENTAL_CHANNEL_CALL_PROPAGATION_ENABLED
+  Signal();
+#else
   event_.Signal(status);
+#endif
 }
 
 zx_status_t ChannelDispatcher::MessageWaiter::Wait(const Deadline& deadline) {
   if (unlikely(!channel_)) {
     return ZX_ERR_BAD_STATE;
   }
+#if EXPERIMENTAL_CHANNEL_CALL_PROPAGATION_ENABLED
+  // TODO(https://fxbug.dev/477068635): Consider merging this logic back into OwnedWaitQueue.
+  Thread* current_thread = Thread::Current::Get();
+  const auto do_transaction =
+      [&]() TA_REQ(chainlock_transaction_token,
+                   preempt_disabled_token) -> ChainLockTransaction::Result<zx_status_t> {
+    wait_queue_.get_lock().AcquireFirstInChain();
+    if (signaled_) {
+      wait_queue_.get_lock().Release();
+      return ZX_OK;
+    }
+    Thread* new_owner = wait_queue_.owner();
+    if (OwnedWaitQueue::BAAOLockingDetails details;
+        wait_queue_.TryLockForBAAOOperationLocked(current_thread, new_owner, details)) {
+      ChainLockTransaction::Finalize();
+      const zx_status_t result = wait_queue_.BlockAndAssignOwnerLocked(
+          current_thread, deadline, details, ResourceOwnership::Normal, Interruptible::Yes);
+      current_thread->get_lock().Release();
+      return result;
+    }
+    wait_queue_.get_lock().Release();
+    return ChainLockTransaction::Action::Backoff;
+  };
+  zx_status_t status = ChainLockTransaction::UntilDone(
+      PreemptDisableAndIrqSaveOption, CLT_TAG("ChannelDispatcher::MessageWaiter::Wait"),
+      do_transaction);
+  if (status != ZX_OK) {
+    return status;
+  }
+  return status_;
+#else
   return event_.Wait(deadline);
+#endif
 }
 
 // Returns any delivered message via out and the status.

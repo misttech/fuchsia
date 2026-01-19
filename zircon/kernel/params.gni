@@ -127,6 +127,9 @@ declare_args() {
   # Support streaming ktrace data out of the kernel.
   experimental_ktrace_streaming_enabled = true
 
+  # Propagate bandwidth and enable run queue promotion for threads making channel calls.
+  experimental_channel_call_propagation_enabled = false
+
   # Force new scheduler wakeup accounting to be enabled, ignoring the boot
   # option value. This is used to force the feature on at the individual try bot
   # level, where gn arguments can be set but boot options cannot.
