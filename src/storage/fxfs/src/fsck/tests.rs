@@ -2429,7 +2429,13 @@ async fn test_orphaned_keys() {
         .await
         .expect_err("Fsck should fail");
 
-    assert_matches!(&test.errors()[..], [FsckIssue::Warning(FsckWarning::OrphanedKeys(sid, 1000))] if *sid == store_id);
+    assert_matches!(
+        &test.errors()[..],
+        [
+            FsckIssue::Warning(FsckWarning::OrphanedKeys(sid, 1000)),
+            FsckIssue::Error(FsckError::BadLastObjectId(_, _))
+        ] if *sid == store_id
+    );
 }
 
 #[fuchsia::test]
@@ -4391,4 +4397,64 @@ async fn test_bad_casefold_hash() {
         .await
         .expect_err("Fsck should fail");
     assert_matches!(test.errors()[..], [FsckIssue::Error(FsckError::BadCasefoldHash(..)), ..]);
+}
+
+#[fuchsia::test]
+async fn test_bad_last_object_id() {
+    let mut test = FsckTest::new().await;
+
+    let store_id = {
+        let fs = test.filesystem();
+        let root_volume = root_volume(fs.clone()).await.unwrap();
+        let store = root_volume
+            .new_volume(
+                "vol",
+                NewChildStoreOptions {
+                    options: StoreOptions {
+                        crypt: Some(test.get_crypt()),
+                        ..StoreOptions::default()
+                    },
+                    ..NewChildStoreOptions::default()
+                },
+            )
+            .await
+            .unwrap();
+        let root_directory =
+            Directory::open(&store, store.root_directory_object_id()).await.expect("open failed");
+
+        let mut transaction = fs
+            .clone()
+            .new_transaction(
+                lock_keys![LockKey::object(store.store_object_id(), root_directory.object_id())],
+                Options::default(),
+            )
+            .await
+            .expect("new_transaction failed");
+        for i in 0..10 {
+            root_directory
+                .create_child_file(&mut transaction, &format!("child_file {i}"))
+                .await
+                .expect("create_child_file failed");
+        }
+        transaction.commit().await.expect("commit failed");
+
+        store.test_set_last_object_id(1);
+
+        // This ensures the last object ID gets written to StoreInfo.
+        fs.journal().compact().await.unwrap();
+
+        store.store_object_id()
+    };
+
+    test.remount().await.expect("Remount failed");
+    test.run(TestOptions { volume_store_id: Some(store_id), ..TestOptions::default() })
+        .await
+        .expect_err("Fsck should fail");
+    assert_matches!(
+        test.errors()[..],
+        [
+            FsckIssue::Error(FsckError::NextObjectIdInUse(_, _)),
+            FsckIssue::Error(FsckError::BadLastObjectId(_, _)),
+        ]
+    );
 }

@@ -225,6 +225,7 @@ pub enum FsckError {
     AllocationMismatch(Allocation, Allocation),
     BadCasefoldHash(u64, u64, u64),
     BadGraveyardValue(u64, u64),
+    BadLastObjectId(u64, u64),
     CasefoldInconsistency(u64, u64, u64),
     ChildEncryptedWithDifferentWrappingKeyThanParent(u64, u64, u64, WrappingKeyId, WrappingKeyId),
     ConflictingTypeForLink(u64, u64, Value, Value),
@@ -299,6 +300,9 @@ impl FsckError {
                     "Bad casefold hash code for store {store_id}, directory {parent_id}, child \
                      {child_id}",
                 )
+            }
+            FsckError::BadLastObjectId(highest, last_object_id) => {
+                format!("Last object ID {last_object_id} is less than highest found {highest}")
             }
             FsckError::CasefoldInconsistency(store_id, parent_id, child_id) => {
                 format!(
@@ -560,6 +564,9 @@ impl FsckError {
             }
             FsckError::BadCasefoldHash(store_id, parent_id, child_id) => {
                 error!(store_id, parent_id, child_id; "Bad casefold hash code");
+            }
+            FsckError::BadLastObjectId(highest, last_object_id) => {
+                error!(highest, last_object_id; "Last object ID is less than highest found");
             }
             FsckError::CasefoldInconsistency(store_id, parent_id, child_id) => {
                 error!(store_id:?, parent_id:?, child_id:?; "CasefoldChild inconsistent");

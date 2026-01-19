@@ -1333,6 +1333,10 @@ pub(super) async fn scan_store(
     let mut merger = layer_set.merger();
     let mut iter = merger.query(Query::FullScan).await?;
     let mut last_item: Option<Item<ObjectKey, ObjectValue>> = None;
+
+    let mut last_object_id = INVALID_OBJECT_ID;
+    let mut highest_object_id = INVALID_OBJECT_ID;
+
     while let Some(item) = iter.get() {
         if let Some(last_item) = last_item {
             if last_item.key >= *item.key {
@@ -1346,13 +1350,21 @@ pub(super) async fn scan_store(
                 item.value.into(),
             ))?;
         }
-        if next_object_id != INVALID_OBJECT_ID && item.key.object_id == next_object_id {
-            fsck.error(FsckError::NextObjectIdInUse(store_id, next_object_id))?;
-        }
         if let Some(current_file) = &scanned.current_object {
             if item.key.object_id != current_file.object_id {
                 scanned.finish_file()?;
             }
+        }
+        if item.key.object_id != last_object_id {
+            if item.key.object_id == next_object_id {
+                fsck.error(FsckError::NextObjectIdInUse(store_id, next_object_id))?;
+            }
+            if let Some(id) = store.to_unencrypted_object_id(item.key.object_id)
+                && id > highest_object_id
+            {
+                highest_object_id = id;
+            }
+            last_object_id = item.key.object_id;
         }
         scanned.process(item.key, item.value)?;
         last_item = Some(item.cloned());
@@ -1587,6 +1599,10 @@ pub(super) async fn scan_store(
     }
     if num_objects != store.object_count() {
         fsck.error(FsckError::ObjectCountMismatch(store_id, num_objects, store.object_count()))?;
+    }
+    let last_object_id = store.unencrypted_last_object_id();
+    if last_object_id != INVALID_OBJECT_ID && last_object_id < highest_object_id {
+        fsck.error(FsckError::BadLastObjectId(highest_object_id, last_object_id))?;
     }
     fsck.verbose(format!(
         "Store {store_id} has {files} files, {directories} dirs, {symlinks} symlinks, \

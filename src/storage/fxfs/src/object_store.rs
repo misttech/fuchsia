@@ -490,6 +490,7 @@ enum LastObjectId {
     Unencrypted {
         id: u64,
     },
+
     Encrypted {
         // The *unencrypted* value of the last object ID.
         id: u64,
@@ -1027,6 +1028,11 @@ impl ObjectStore {
 
     pub fn object_count(&self) -> u64 {
         self.store_info.lock().as_ref().unwrap().object_count
+    }
+
+    /// Returns INVALID_OBJECT_ID for algorithms that don't use the last ID.
+    pub(crate) fn unencrypted_last_object_id(&self) -> u64 {
+        self.last_object_id.lock().id()
     }
 
     pub fn key_manager(&self) -> &KeyManager {
@@ -2371,6 +2377,23 @@ impl ObjectStore {
         }
     }
 
+    /// If possible, converts the given object ID to its unencrypted value.  Returns None if it is
+    /// not possible to convert to its unencrypted value because the key is unavailable.
+    pub fn to_unencrypted_object_id(&self, object_id: u64) -> Option<u64> {
+        let last_object_id = self.last_object_id.lock();
+        match &*last_object_id {
+            LastObjectId::Pending => None,
+            LastObjectId::Unencrypted { .. } | LastObjectId::Low32Bit { .. } => Some(object_id),
+            LastObjectId::Encrypted { id, cipher } => {
+                if id & OBJECT_ID_HI_MASK != object_id & OBJECT_ID_HI_MASK {
+                    None
+                } else {
+                    Some(object_id & OBJECT_ID_HI_MASK | cipher.decrypt(object_id as u32) as u64)
+                }
+            }
+        }
+    }
+
     /// Adds the specified object to the graveyard.
     pub fn add_to_graveyard(&self, transaction: &mut Transaction<'_>, object_id: u64) {
         let graveyard_id = self.graveyard_directory_object_id();
@@ -2625,6 +2648,14 @@ impl ObjectStore {
 
     pub fn mark_deleted(&self) {
         *self.lock_state.lock() = LockState::Deleted;
+    }
+
+    #[cfg(test)]
+    pub(crate) fn test_set_last_object_id(&self, object_id: u64) {
+        match &mut *self.last_object_id.lock() {
+            LastObjectId::Encrypted { id, .. } => *id = object_id,
+            _ => unreachable!(),
+        }
     }
 }
 
