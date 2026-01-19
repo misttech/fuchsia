@@ -338,7 +338,7 @@ async fn create_fxblob_image() -> zx::Vmo {
             let blob = fxblob.generate_blob(data.to_vec()).unwrap();
             fxblob.install_blob(&blob).await.unwrap();
         }
-        fxblob.finalize().await.unwrap()
+        fxblob.finalize().await.unwrap().1
     };
     // Truncate the VMO to the size of the image.
     fxblob_vmo.set_stream_size(image_size).unwrap();

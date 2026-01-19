@@ -109,7 +109,7 @@ pub async fn make_blob_image(
             e
         }
     })?;
-    let actual_size = fxblob.finalize().await?;
+    let actual_size = fxblob.finalize().await?.1;
 
     if target_size == 0 {
         // Apply a default heuristic of 2x the actual image size.  This is necessary to use the
@@ -196,11 +196,12 @@ impl FxBlobBuilder {
     }
 
     /// Finalizes building the FxBlob instance this builder represents. The filesystem will not be
-    /// usable unless this is called. Returns the last offset in bytes which was used on the device.
-    pub async fn finalize(self) -> Result<u64, Error> {
+    /// usable unless this is called. Returns the filesystem's DeviceHolder and the last offset in
+    /// bytes which was used on the device.
+    pub async fn finalize(self) -> Result<(DeviceHolder, u64), Error> {
         self.filesystem.close().await?;
         let actual_size = self.filesystem.allocator().maximum_offset();
-        Ok(actual_size)
+        Ok((self.filesystem.take_device().await, actual_size))
     }
 
     /// Installs the given `blob` into the filesystem, returning a handle to the new object.

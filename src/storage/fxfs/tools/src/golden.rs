@@ -5,11 +5,14 @@
 use crate::ops;
 use anyhow::{Context, Error, bail, ensure};
 use chrono::Local;
-use fxfs::filesystem::{FxFilesystem, OpenFxFilesystem, SyncOptions, mkfs_with_volume};
+use fxfs::filesystem::{FxFilesystem, OpenFxFilesystem, SyncOptions};
 use fxfs::object_store::{NO_OWNER, ObjectStore};
 use fxfs::serialized_types::{LATEST_VERSION, Version};
 use fxfs_crypto::{Crypt, WrappingKeyId};
 use fxfs_insecure_crypto::new_insecure_crypt;
+use fxfs_make_blob_image::FxBlobBuilder;
+use rand::rngs::SmallRng;
+use rand::{Rng, SeedableRng};
 use std::io::Write;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
@@ -26,6 +29,7 @@ const FXFS_GOLDEN_IMAGE_MANIFEST: &str = "golden_image_manifest.json";
 const PROJECT_ID: u64 = 4;
 const DEFAULT_VOLUME: &str = "default";
 const UNENCRYPTED_VOLUME: &str = "unencrypted";
+const BLOB_LIST_PATH: &str = "blob_list";
 const CHECK_FILE_PATH: &str = "some/test_file.txt";
 const CHECK_FILE_CONTENT: &[u8; 6] = &[0, 1, 2, 3, 4, 5];
 const SECOND_VOLUME_VERSION: Version = Version { major: 38, minor: 0 };
@@ -112,27 +116,73 @@ async fn activity_in_volume(fs: &OpenFxFilesystem, vol: &Arc<ObjectStore>) -> Re
 
     Ok(())
 }
+pub async fn install_blobs(builder: &FxBlobBuilder) -> Result<Vec<[u8; 32]>, Error> {
+    let mut blob_names = Vec::new();
+
+    // A large and easily compressed blob, since compression is enabled. Aim to exceed a single
+    // compression chunk.
+    {
+        let blob_info =
+            builder.generate_blob(vec![42; 200000]).context("Generate compressible blob")?;
+        builder.install_blob(&blob_info).await.context("Install compressible blob")?;
+        blob_names.push(blob_info.hash().as_array::<32>().unwrap().clone());
+    }
+
+    // A random blob, big enough to have a merkle tree.
+    {
+        let mut rng = SmallRng::seed_from_u64(42);
+        let mut data = Vec::new();
+        data.resize_with(32000, || rng.random());
+        let blob_info = builder.generate_blob(data).context("Generate random blob")?;
+        builder.install_blob(&blob_info).await.context("Install random blob")?;
+        blob_names.push(blob_info.hash().as_array::<32>().unwrap().clone());
+    }
+
+    // A smaller blob, small enough to not have a merkle tree.
+    {
+        let blob_info = builder.generate_blob(vec![42; 100]).context("Generate small blob")?;
+        builder.install_blob(&blob_info).await.context("Install small blob")?;
+        blob_names.push(blob_info.hash().as_array::<32>().unwrap().clone());
+    }
+
+    Ok(blob_names)
+}
 
 /// Create a new golden image (at the current version).
 pub async fn create_image() -> Result<(), Error> {
     let path = golden_image_dir()?.join(latest_image_filename());
 
+    let (device, blob_names) = {
+        let blob_image_builder = FxBlobBuilder::new(
+            DeviceHolder::new(FakeDevice::new(IMAGE_BLOCKS, IMAGE_BLOCK_SIZE)),
+            true,
+        )
+        .await
+        .context("Creating blob image builder")?;
+        let blob_names = install_blobs(&blob_image_builder).await?;
+        (blob_image_builder.finalize().await.context("Finalize blob image")?.0, blob_names)
+    };
+    device.ensure_unique();
+    device.reopen(false);
+    let fs = FxFilesystem::open(device).await?;
+
     let insecure_crypt = new_insecure_crypt();
     insecure_crypt.add_wrapping_key(WRAPPING_KEY_ID, [1; 32].into()).expect("Failed to add key");
     let crypt: Arc<dyn Crypt> = Arc::new(insecure_crypt);
-    {
-        let device = mkfs_with_volume(
-            DeviceHolder::new(FakeDevice::new(IMAGE_BLOCKS, IMAGE_BLOCK_SIZE)),
-            DEFAULT_VOLUME,
-            Some(crypt.clone()),
-        )
-        .await?;
-        save_device(device, path.as_path()).await?;
-    }
-    let device = DeviceHolder::new(load_device(&path)?);
-    let fs = FxFilesystem::open(device).await?;
-    let default_vol = ops::open_volume(&fs, DEFAULT_VOLUME, NO_OWNER, Some(crypt.clone())).await?;
+    let default_vol = ops::create_volume(&fs, DEFAULT_VOLUME, Some(crypt.clone())).await?;
+
     let unencrypted_vol = ops::create_volume(&fs, UNENCRYPTED_VOLUME, None).await?;
+
+    // Write the blob names that need to be verified into the unencrypted volume.
+    ops::put(
+        &fs,
+        &unencrypted_vol,
+        &Path::new(BLOB_LIST_PATH),
+        blob_names.iter().flatten().cloned().collect(),
+    )
+    .await
+    .context("Writing blob list")?;
+
     for (vol, msg) in [(&default_vol, "default volume"), (&unencrypted_vol, "unencrypted volume")] {
         activity_in_volume(&fs, vol).await.context(msg)?;
     }
