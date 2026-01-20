@@ -4352,20 +4352,24 @@ ktl::pair<zx_status_t, uint64_t> VmCowPages::ZeroPagesNoDirectPageSourceLocked(
           return ZX_ERR_NEXT;
         }
 
-        // All of the below cases change the page list, which requires us to invalidate the mappings
-        // of the affected pages.
+        if (slot->IsReference() && !is_root_source_user_pager_backed()) {
+          // We have a reference in an anonymous hierarchy, so we can just free it. Since a
+          // compressed reference wasn't mapped in the first place, we don't have to do an unmap
+          // here.
+          DEBUG_ASSERT(node_has_parent_content_markers());
+          FreeReference(slot->ReleaseReference());
+          zeroed_len += kPageSize;
+          return ZX_ERR_NEXT;
+        }
+
+        // All of the below cases require us to invalidate the mappings of the affected pages.
         do_unmap();
 
-        if (slot->IsPageOrRef() && !is_root_source_user_pager_backed()) {
-          // We have a page or a reference in an anonymous hierarchy, so we can just remove the
-          // content.
+        if (slot->IsPage() && !is_root_source_user_pager_backed()) {
+          // We have a page in an anonymous hierarchy, so we can just remove the content.
           DEBUG_ASSERT(node_has_parent_content_markers());
-          if (slot->IsPage()) {
-            vm_page_t* page = slot->ReleasePage();
-            RemovePageLocked(page, deferred);
-          } else if (slot->IsReference()) {
-            FreeReference(slot->ReleaseReference());
-          }
+          vm_page_t* page = slot->ReleasePage();
+          RemovePageLocked(page, deferred);
           zeroed_len += kPageSize;
           return ZX_ERR_NEXT;
         }
