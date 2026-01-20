@@ -349,14 +349,6 @@ template("zx_library") {
       }
     }
 
-    # Remove references to a libzircon dependency, as it is provided by the
-    # sysroot in the present build.
-
-    lib_libs = []
-    if (defined(invoker.libs)) {
-      lib_libs = invoker.libs
-    }
-
     if (!is_fuchsia) {
       lib_public_deps += [ "//zircon/system/public" ]
     }
@@ -370,13 +362,11 @@ template("zx_library") {
                              "*",
                              unforwarded_params + [
                                    "deps",
-                                   "libs",
                                    "public_deps",
                                  ])
       forward_variables_from(extra_target_args, "*")
 
       deps = lib_deps
-      libs = lib_libs
       public_deps = lib_public_deps
 
       if (sdkable && sdk_category == "partner") {
