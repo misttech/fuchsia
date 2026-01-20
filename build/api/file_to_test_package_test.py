@@ -3,25 +3,60 @@
 # found in the LICENSE file.
 
 import json
+import os
+import sys
+import tempfile
+import time
 import unittest
 from pathlib import Path
 from unittest import mock
 
+_SCRIPT_DIR = os.path.dirname(__file__)
+sys.path.insert(0, os.path.join(_SCRIPT_DIR, "../bazel/scripts"))
+import build_utils
 import file_to_test_package
 
 
 class TestFileToTestPackageFinder(unittest.TestCase):
     def setUp(self):
-        self.build_dir = Path("/build/dir")
-        self.fuchsia_dir = Path("/fuchsia/dir")
+        self.tmp_dir = tempfile.TemporaryDirectory()
+        self.build_dir = Path(self.tmp_dir.name)
+        self.fuchsia_dir = self.build_dir / "fuchsia"
+        self.fuchsia_dir.mkdir()
+
         self.mock_outputs = mock.Mock()
         self.mock_log = mock.Mock()
+        self.mock_runner = build_utils.MockCommandRunner()
         self.finder = file_to_test_package.FileToTestPackageFinder(
             self.build_dir,
             self.fuchsia_dir,
             self.mock_outputs,
             self.mock_log,
+            host_tag="linux-x64",
+            command_runner=self.mock_runner,
         )
+
+        self.run_gn_refs_patcher = mock.patch.object(
+            self.finder, "_run_gn_refs"
+        )
+        self.mock_run_gn_refs = self.run_gn_refs_patcher.start()
+
+        def gn_refs_side_effect(target):
+            if target == "//src:lib":
+                return {"//src:lib_test", "//src:pkg"}
+            if target == "//src:foo":
+                return {"//src:foo_test"}
+            if target == "//src:complex":
+                return {"//src:complex_test"}
+            if target == "//src:multi":
+                return {"//src:multi_test"}
+            return set()
+
+        self.mock_run_gn_refs.side_effect = gn_refs_side_effect
+        self.addCleanup(self.run_gn_refs_patcher.stop)
+
+    def tearDown(self):
+        self.tmp_dir.cleanup()
 
     @mock.patch("builtins.open")
     @mock.patch("pathlib.Path.exists", autospec=True)
@@ -36,17 +71,21 @@ class TestFileToTestPackageFinder(unittest.TestCase):
                 return True
             return False
 
-        mock_exists.return_value = (
-            True  # everything exists unless we say otherwise
-        )
-        mock_exists.side_effect = None
+        mock_exists.side_effect = exists_side_effect
 
+        # Two crates for same file: lib and lib_test
         rust_content = {
             "crates": [
                 {
                     "root_module": str(abs_source),
                     "label": "//src:lib",
-                }
+                    "cfg": ["feature=default"],
+                },
+                {
+                    "root_module": str(abs_source),
+                    "label": "//src:lib_test",
+                    "cfg": ["test", "feature=default"],
+                },
             ]
         }
         tests_content = [
@@ -57,26 +96,51 @@ class TestFileToTestPackageFinder(unittest.TestCase):
             }
         ]
 
+        def open_side_effect(path, *args, **kwargs):
+            p = str(path)
+            m = mock.MagicMock()
+            if "rust-project.json" in p:
+                return m
+            if "tests.json" in p:
+                return m
+            if "cache" in p:
+                raise OSError("Cache missing")
+            return m
+
+        mock_open.side_effect = open_side_effect
+
         mock_file = mock.Mock()
         mock_open.return_value.__enter__.return_value = mock_file
 
         with mock.patch("json.load") as mock_json_load:
+            mock_json_load.side_effect = [rust_content, tests_content]
 
-            def json_side_effect(f):
-                call_args = mock_open.call_args[0]
-                path = call_args[0]
-                if str(path).endswith("rust-project.json"):
-                    return rust_content
-                if str(path).endswith("tests.json"):
-                    return tests_content
-                return {}
+            # Mock gn refs to return dependents of only the used target
+            # If we picked //src:lib, we might see //src:lib_test and //src:other
+            # If we picked //src:lib_test, we might see //src:pkg
 
-            mock_json_load.side_effect = json_side_effect
+            self.mock_run_gn_refs.side_effect = None
+
+            def gn_refs_side_effect(target):
+                if target == "//src:lib_test":
+                    return {"//src:lib_test_pkg", "//src:lib_test"}
+                if target == "//src:lib":
+                    return {
+                        "//src:lib_test",
+                        "//src:lib_pkg",
+                    }  # Should not happen if preference works
+                return set()
+
+            self.mock_run_gn_refs.side_effect = gn_refs_side_effect
+
             result = self.finder.find_test_packages_fast(source_path)
+
+            # We expect it to find //src:lib_test (test crate), run gn refs on it, and find //src:lib_test
+            # Assuming tests.json has //src:lib_test
             self.assertEqual(result, {"//src:lib_test"})
-            self.mock_log.assert_any_call(
-                "Found 1 candidate tests in same directories."
-            )
+
+            # Verify _run_gn_refs called with //src:lib_test
+            self.mock_run_gn_refs.assert_called_with("//src:lib_test")
 
     @mock.patch("json.load")
     @mock.patch("builtins.open")
@@ -95,6 +159,8 @@ class TestFileToTestPackageFinder(unittest.TestCase):
                 return True
             if "tests.json" in p:
                 return True
+            if "cache" in p:
+                return False  # Cache doesn't exist
             return False
 
         mock_exists.side_effect = exists_side_effect
@@ -115,6 +181,8 @@ class TestFileToTestPackageFinder(unittest.TestCase):
         def open_side_effect(path, *args, **kwargs):
             p = str(path)
             m = mock.MagicMock()
+            if "cache" in p:
+                raise OSError
             for k, v in path_map.items():
                 if p.endswith(k):
                     m.__enter__.return_value.tagged_content = v
@@ -123,16 +191,13 @@ class TestFileToTestPackageFinder(unittest.TestCase):
 
         mock_open.side_effect = open_side_effect
 
-        def json_load_side_effect(f):
-            return getattr(f, "tagged_content", {})
-
-        mock_json_load.side_effect = json_load_side_effect
+        # cc -> tests
+        mock_json_load.side_effect = [cc_content, tests_content]
 
         self.mock_outputs.path_to_gn_label.return_value = "//src:foo"
 
         result = self.finder.find_test_packages_fast(source_path)
 
-        self.assertEqual(result, {"//src:foo_test"})
         self.assertEqual(result, {"//src:foo_test"})
         self.mock_outputs.path_to_gn_label.assert_called_with("obj/src/foo.o")
 
@@ -145,7 +210,19 @@ class TestFileToTestPackageFinder(unittest.TestCase):
         source_path = "src/complex.cc"
         abs_source = self.fuchsia_dir / source_path
 
-        mock_exists.return_value = True
+        def exists_side_effect(path):
+            p = str(path)
+            if "rust-project.json" in p:
+                return False
+            if "compile_commands.json" in p:
+                return True
+            if "tests.json" in p:
+                return True
+            if "cache" in p:
+                return False
+            return False
+
+        mock_exists.side_effect = exists_side_effect
 
         cc_content = [
             {
@@ -159,16 +236,16 @@ class TestFileToTestPackageFinder(unittest.TestCase):
         mock_file = mock.MagicMock()
         mock_open.return_value.__enter__.return_value = mock_file
 
-        def json_load_side_effect(f):
-            call_args = mock_open.call_args[0]
-            path = str(call_args[0])
-            if path.endswith("compile_commands.json"):
-                return cc_content
-            if path.endswith("tests.json"):
-                return tests_content
-            return {"crates": []}
+        # cc -> tests
+        mock_json_load.side_effect = [cc_content, tests_content]
 
-        mock_json_load.side_effect = json_load_side_effect
+        # Handle cache open failure
+        def open_se(path, *args, **kwargs):
+            if "cache" in str(path):
+                raise OSError
+            return mock_file
+
+        mock_open.side_effect = open_se
 
         self.mock_outputs.path_to_gn_label.return_value = "//src:complex"
 
@@ -187,7 +264,19 @@ class TestFileToTestPackageFinder(unittest.TestCase):
         source_path = "src/multi.cc"
         abs_source = self.fuchsia_dir / source_path
 
-        mock_exists.return_value = True
+        def exists_side_effect(path):
+            p = str(path)
+            if "rust-project.json" in p:
+                return False
+            if "compile_commands.json" in p:
+                return True
+            if "tests.json" in p:
+                return True
+            if "cache" in p:
+                return False
+            return False
+
+        mock_exists.side_effect = exists_side_effect
 
         cc_content = [
             {
@@ -201,16 +290,14 @@ class TestFileToTestPackageFinder(unittest.TestCase):
         mock_file = mock.MagicMock()
         mock_open.return_value.__enter__.return_value = mock_file
 
-        def json_load_side_effect(f):
-            call_args = mock_open.call_args[0]
-            path = str(call_args[0])
-            if path.endswith("compile_commands.json"):
-                return cc_content
-            if path.endswith("tests.json"):
-                return tests_content
-            return {"crates": []}
+        mock_json_load.side_effect = [cc_content, tests_content]
 
-        mock_json_load.side_effect = json_load_side_effect
+        def open_se(path, *args, **kwargs):
+            if "cache" in str(path):
+                raise OSError
+            return mock_file
+
+        mock_open.side_effect = open_se
 
         self.mock_outputs.path_to_gn_label.return_value = "//src:multi"
 
@@ -252,7 +339,7 @@ class TestFileToTestPackageFinder(unittest.TestCase):
             ]
         }
 
-        mock_open.side_effect = [mock.MagicMock()]  # rust-project.json
+        mock_open.side_effect = [mock.MagicMock()]
         mock_json_load.return_value = rust_content
 
         result = self.finder.find_test_packages_fast(source_path)
@@ -281,10 +368,17 @@ class TestFileToTestPackageFinder(unittest.TestCase):
             ]
         }
 
+        # open rust-project, open tests.json. Cache NOT loaded because tests.json load fails first.
+        # 1. get gn_labels
+        # 2. check tests_json.exists()
+        # 3. try json.load(tests_json). If fail -> return gn_labels.
+        # So cache logic is unreachable if tests.json is corrupted.
         mock_json_load.side_effect = [
             rust_content,
             json.JSONDecodeError("Expecting value", "doc", 0),
         ]
+
+        mock_open.return_value.__enter__.return_value = mock.MagicMock()
 
         result = self.finder.find_test_packages_fast(source_path)
 
@@ -336,6 +430,209 @@ class TestFileToTestPackageFinder(unittest.TestCase):
         self.assertTrue(
             found_error, "Did not find expected rust-project.json failure log"
         )
+
+    def test_gn_refs_integration(self):
+        # We want to test the actual _run_gn_refs method, so stop the patcher that mocks it
+        self.run_gn_refs_patcher.stop()
+
+        source_path = "src/lib.rs"
+        abs_source = self.fuchsia_dir / source_path
+
+        # Create files
+        rust_path = self.build_dir / "rust-project.json"
+        rust_content = {
+            "crates": [
+                {
+                    "root_module": str(abs_source),
+                    "label": "//src:lib",
+                }
+            ]
+        }
+        with open(rust_path, "w") as f:
+            json.dump(rust_content, f)
+
+        tests_path = self.build_dir / "tests.json"
+        tests_content = [
+            {"test": {"label": "//src:lib_test", "package_label": "//src:pkg"}}
+        ]
+        with open(tests_path, "w") as f:
+            json.dump(tests_content, f)
+
+        # gn refs output
+        # Matches the test label
+        self.mock_runner.push_result(
+            stdout="//src:pkg\n//src:lib_test\n", returncode=0
+        )
+
+        result = self.finder.find_test_packages_fast(source_path)
+
+        self.assertEqual(result, {"//src:lib_test"})
+
+        # Verify gn refs called
+        self.assertEqual(len(self.mock_runner.commands), 1)
+        cmd = self.mock_runner.commands[0]
+        self.assertIn("refs", cmd)
+        self.assertIn("//src:lib", cmd)
+
+        # Verify cache saved
+        cache_path = self.build_dir / "file_to_test_package_cache.json"
+        self.assertTrue(cache_path.exists())
+        with open(cache_path) as f:
+            data = json.load(f)
+        self.assertIn("mapping", data)
+        self.assertEqual(data["mapping"]["//src:lib"], ["//src:lib_test"])
+
+    def test_heuristic_prefers_local(self):
+        # We want to test the actual _run_gn_refs method, so stop the patcher that mocks it
+        self.run_gn_refs_patcher.stop()
+
+        source_path = "src/foo/lib.rs"
+        abs_source = self.fuchsia_dir / source_path
+
+        # Create files
+        rust_path = self.build_dir / "rust-project.json"
+        rust_content = {
+            "crates": [
+                {
+                    "root_module": str(abs_source),
+                    "label": "//src/foo:lib",
+                }
+            ]
+        }
+        with open(rust_path, "w") as f:
+            json.dump(rust_content, f)
+
+        tests_path = self.build_dir / "tests.json"
+        tests_content = [
+            {
+                "test": {
+                    "label": "//src/foo:lib_test",
+                    "package_label": "//src/foo:pkg",
+                }
+            },
+            {
+                "test": {
+                    "label": "//src/other:integration_test",
+                    "package_label": "//src/other:pkg",
+                }
+            },
+        ]
+        with open(tests_path, "w") as f:
+            json.dump(tests_content, f)
+
+        # gn refs returns BOTH
+        self.mock_runner.push_result(
+            stdout="//src/foo:pkg\n//src/other:pkg\n//src/foo:lib_test\n//src/other:integration_test\n",
+            returncode=0,
+        )
+
+        result = self.finder.find_test_packages_fast(source_path)
+
+        # Verify mostly local test is returned
+        self.assertEqual(result, {"//src/foo:lib_test"})
+
+    def test_cache_hit(self):
+        source_path = "src/lib.rs"
+        (self.fuchsia_dir / "src").mkdir(parents=True, exist_ok=True)
+        (self.fuchsia_dir / source_path).touch()
+
+        # Create dependencies with OLD timestamp
+        dep_mtime = time.time() - 100
+
+        rust_path = self.build_dir / "rust-project.json"
+        # We need mapping source to //src:lib
+        abs_source = self.fuchsia_dir / source_path
+        # os.path.realpath is used in the implementation, so we must match it
+        real_abs_source = os.path.realpath(abs_source)
+
+        rust_content = {
+            "crates": [
+                {
+                    "root_module": str(real_abs_source),
+                    "label": "//src:lib",
+                }
+            ]
+        }
+        with open(rust_path, "w") as f:
+            json.dump(rust_content, f)
+        os.utime(rust_path, (dep_mtime, dep_mtime))
+
+        tests_path = self.build_dir / "tests.json"
+        with open(tests_path, "w") as f:
+            json.dump([], f)
+        os.utime(tests_path, (dep_mtime, dep_mtime))
+
+        # Other deps
+        for dep in ["compile_commands.json", "args.gn"]:
+            p = self.build_dir / dep
+            p.touch()
+            os.utime(p, (dep_mtime, dep_mtime))
+
+        # Create cache with NEWER timestamp
+        cache_mtime = time.time()
+        cache_content = {
+            "mapping": {"//src:lib": ["//src:cached_test"]},
+        }
+        cache_path = self.build_dir / "file_to_test_package_cache.json"
+        with open(cache_path, "w") as f:
+            json.dump(cache_content, f)
+        os.utime(cache_path, (cache_mtime, cache_mtime))
+
+        result = self.finder.find_test_packages_fast(abs_source)
+
+        self.assertEqual(result, {"//src:cached_test"})
+        # Verify no commands run (gn refs mocked)
+        self.assertEqual(len(self.mock_runner.commands), 0)
+
+    def test_heuristic_prefers_local_implicit_target(self):
+        """Test that heuristic works for targets like //src/foo (no colon)."""
+        # We want to test the actual _run_gn_refs method, so stop the patcher that mocks it
+        self.run_gn_refs_patcher.stop()
+
+        source_path = "src/foo/lib.rs"
+        abs_source = self.fuchsia_dir / source_path
+
+        # Create files
+        rust_path = self.build_dir / "rust-project.json"
+        rust_content = {
+            "crates": [
+                {
+                    "root_module": str(abs_source),
+                    "label": "//src/foo",  # implicit colon
+                }
+            ]
+        }
+        with open(rust_path, "w") as f:
+            json.dump(rust_content, f)
+
+        tests_path = self.build_dir / "tests.json"
+        tests_content = [
+            {
+                "test": {
+                    "label": "//src/foo:lib_test",
+                    "package_label": "//src/foo:pkg",
+                }
+            },
+            {
+                "test": {
+                    "label": "//src/other:integration_test",
+                    "package_label": "//src/other:pkg",
+                }
+            },
+        ]
+        with open(tests_path, "w") as f:
+            json.dump(tests_content, f)
+
+        # gn refs returns BOTH
+        self.mock_runner.push_result(
+            stdout="//src/foo:pkg\n//src/other:pkg\n//src/foo:lib_test\n//src/other:integration_test\n",
+            returncode=0,
+        )
+
+        result = self.finder.find_test_packages_fast(abs_source)
+
+        # Verify mostly local test is returned (//src/foo:lib_test)
+        self.assertEqual(result, {"//src/foo:lib_test"})
 
 
 if __name__ == "__main__":

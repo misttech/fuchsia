@@ -1170,6 +1170,7 @@ class FileToTestPackageCommand(CommandBase):
             args.fuchsia_dir,
             outputs,
             _log,
+            host_tag=args.host_tag,
         )
 
         try:
