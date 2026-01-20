@@ -79,67 +79,6 @@ std::optional<T> GetConfig(const std::string& schema_str,
   return config;
 }
 
-const char kBuildTypeConfigSchema[] = R"({
-  "type": "object",
-  "properties": {
-    "crash_report_upload_policy": {
-      "type": "string",
-      "enum": [
-        "disabled",
-        "enabled",
-        "read_from_privacy_settings"
-      ]
-    },
-    "daily_per_product_crash_report_quota": {
-      "type": "number"
-    },
-    "enable_data_redaction": {
-      "type": "boolean"
-    },
-    "enable_hourly_snapshots": {
-      "type": "boolean"
-    },
-    "enable_limit_inspect_data": {
-      "type": "boolean"
-    }
-  },
-  "required": [
-    "crash_report_upload_policy",
-    "daily_per_product_crash_report_quota",
-    "enable_data_redaction",
-    "enable_hourly_snapshots",
-    "enable_limit_inspect_data"
-  ],
-  "additionalProperties": false
-})";
-
-std::optional<BuildTypeConfig> ParseBuildTypeConfig(const rapidjson::Document& json) {
-  BuildTypeConfig config{
-      .enable_data_redaction = json[kEnableDataRedactionKey].GetBool(),
-      .enable_hourly_snapshots = json[kEnableHourlySnapshotsKey].GetBool(),
-      .enable_limit_inspect_data = json[kEnableLimitInspectDataKey].GetBool(),
-  };
-
-  if (const std::string policy = json[kCrashReportUploadPolicyKey].GetString();
-      policy == "disabled") {
-    config.crash_report_upload_policy = CrashReportUploadPolicy::kDisabled;
-  } else if (policy == "enabled") {
-    config.crash_report_upload_policy = CrashReportUploadPolicy::kEnabled;
-  } else if (policy == "read_from_privacy_settings") {
-    config.crash_report_upload_policy = CrashReportUploadPolicy::kReadFromPrivacySettings;
-  } else {
-    FX_LOGS(FATAL) << "Upload policy '" << policy << "' not permitted by schema";
-  }
-
-  if (const int64_t quota = json[kDailyPerProductCrashReportQuotaKey].GetInt64(); quota > 0) {
-    config.daily_per_product_crash_report_quota = quota;
-  } else {
-    config.daily_per_product_crash_report_quota = std::nullopt;
-  }
-
-  return config;
-}
-
 constexpr char kSnapshotConfigSchema[] = R"({
   "type": "object",
   "properties": {
@@ -232,6 +171,26 @@ constexpr char kFeedbackConfigSchema[] = R"({
         "brief_power_loss",
         "hard_reset"
       ]
+    },
+    "crash_report_upload_policy": {
+      "type": "string",
+      "enum": [
+        "disabled",
+        "enabled",
+        "read_from_privacy_settings"
+      ]
+    },
+    "daily_per_product_crash_report_quota": {
+      "type": "number"
+    },
+    "enable_data_redaction": {
+      "type": "boolean"
+    },
+    "enable_hourly_snapshots": {
+      "type": "boolean"
+    },
+    "enable_limit_inspect_data": {
+      "type": "boolean"
     }
   },
   "required": [
@@ -239,7 +198,12 @@ constexpr char kFeedbackConfigSchema[] = R"({
     "report_persistence_max_tmp_size_kib",
     "snapshot_persistence_max_cache_size_mib",
     "snapshot_persistence_max_tmp_size_mib",
-    "spontaneous_reboot_reason"
+    "spontaneous_reboot_reason",
+    "crash_report_upload_policy",
+    "daily_per_product_crash_report_quota",
+    "enable_data_redaction",
+    "enable_hourly_snapshots",
+    "enable_limit_inspect_data"
   ],
   "additionalProperties": false
 })";
@@ -279,16 +243,32 @@ std::optional<FeedbackConfig> ParseFeedbackConfig(const rapidjson::Document& jso
     config.spontaneous_reboot_reason = SpontaneousRebootReason::kHardReset;
   }
 
+  config.build_type_config.enable_data_redaction = json[kEnableDataRedactionKey].GetBool();
+  config.build_type_config.enable_hourly_snapshots = json[kEnableHourlySnapshotsKey].GetBool();
+  config.build_type_config.enable_limit_inspect_data = json[kEnableLimitInspectDataKey].GetBool();
+
+  if (const std::string policy = json[kCrashReportUploadPolicyKey].GetString();
+      policy == "disabled") {
+    config.build_type_config.crash_report_upload_policy = CrashReportUploadPolicy::kDisabled;
+  } else if (policy == "enabled") {
+    config.build_type_config.crash_report_upload_policy = CrashReportUploadPolicy::kEnabled;
+  } else if (policy == "read_from_privacy_settings") {
+    config.build_type_config.crash_report_upload_policy =
+        CrashReportUploadPolicy::kReadFromPrivacySettings;
+  } else {
+    FX_LOGS(FATAL) << "Upload policy '" << policy << "' not permitted by schema";
+  }
+
+  if (const int64_t quota = json[kDailyPerProductCrashReportQuotaKey].GetInt64(); quota > 0) {
+    config.build_type_config.daily_per_product_crash_report_quota = quota;
+  } else {
+    config.build_type_config.daily_per_product_crash_report_quota = std::nullopt;
+  }
+
   return config;
 }
 
 }  // namespace
-
-std::optional<BuildTypeConfig> GetBuildTypeConfig(const std::string& default_path,
-                                                  const std::string& override_path) {
-  return GetConfig<BuildTypeConfig>(kBuildTypeConfigSchema, ParseBuildTypeConfig, "build type",
-                                    default_path, override_path);
-}
 
 std::optional<SnapshotConfig> GetSnapshotConfig(const std::string& default_path) {
   return GetConfig<SnapshotConfig>(kSnapshotConfigSchema, ParseSnapshotConfig, "snapshot",
@@ -306,11 +286,10 @@ std::optional<FeedbackConfig> GetFeedbackConfig(const std::string& path) {
                                    std::nullopt);
 }
 
-void ExposeConfig(inspect::Node& inspect_root, const BuildTypeConfig& build_type_config,
-                  const FeedbackConfig& feedback_config) {
+void ExposeConfig(inspect::Node& inspect_root, const FeedbackConfig& feedback_config) {
   const std::string crash_report_quota =
-      build_type_config.daily_per_product_crash_report_quota.has_value()
-          ? std::to_string(*build_type_config.daily_per_product_crash_report_quota)
+      feedback_config.build_type_config.daily_per_product_crash_report_quota.has_value()
+          ? std::to_string(*feedback_config.build_type_config.daily_per_product_crash_report_quota)
           : "none";
 
   const std::string snapshot_persistence_tmp_size =
@@ -324,14 +303,17 @@ void ExposeConfig(inspect::Node& inspect_root, const BuildTypeConfig& build_type
           : "none";
 
   inspect_root.RecordChild(
-      kInspectConfigKey, [&build_type_config, &crash_report_quota, &snapshot_persistence_tmp_size,
+      kInspectConfigKey, [&feedback_config, &crash_report_quota, &snapshot_persistence_tmp_size,
                           &snapshot_persistence_cache_size](inspect::Node& node) {
         node.RecordString(kCrashReportUploadPolicyKey,
-                          ToString(build_type_config.crash_report_upload_policy));
+                          ToString(feedback_config.build_type_config.crash_report_upload_policy));
         node.RecordString(kDailyPerProductCrashReportQuotaKey, crash_report_quota);
-        node.RecordBool(kEnableDataRedactionKey, build_type_config.enable_data_redaction);
-        node.RecordBool(kEnableHourlySnapshotsKey, build_type_config.enable_hourly_snapshots);
-        node.RecordBool(kEnableLimitInspectDataKey, build_type_config.enable_limit_inspect_data);
+        node.RecordBool(kEnableDataRedactionKey,
+                        feedback_config.build_type_config.enable_data_redaction);
+        node.RecordBool(kEnableHourlySnapshotsKey,
+                        feedback_config.build_type_config.enable_hourly_snapshots);
+        node.RecordBool(kEnableLimitInspectDataKey,
+                        feedback_config.build_type_config.enable_limit_inspect_data);
 
         node.RecordString(kSnapshotPersistenceMaxTmpSizeKey, snapshot_persistence_tmp_size);
         node.RecordString(kSnapshotPersistenceMaxCacheSizeKey, snapshot_persistence_cache_size);

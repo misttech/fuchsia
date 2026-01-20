@@ -348,8 +348,6 @@ user_platform_aib_names =
       # Forensics
       "no_remote_feedback_id",
       "feedback_remote_device_id_provider",
-      "feedback_user_config",
-      "feedback_userdebug_config",
       "cobalt_user_config",
 
       # Kernel Reclamation
@@ -499,7 +497,6 @@ eng_only_platform_aib_names =
       "bluetooth_pandora",
 
       # Forensics
-      "feedback_upload_config",
       "cobalt_default_config",
 
       # Memory profiling

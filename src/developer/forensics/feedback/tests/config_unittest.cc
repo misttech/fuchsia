@@ -54,13 +54,6 @@ class ConfigTest : public testing::Test {
   files::ScopedTempDir temp_dir_;
 };
 
-class BuildTypeConfigTest : public ConfigTest {
- protected:
-  std::optional<BuildTypeConfig> ParseConfig(const std::string& config) {
-    return GetBuildTypeConfig(WriteConfig(config));
-  }
-};
-
 class SnapshotConfigTest : public ConfigTest {
  protected:
   std::optional<SnapshotConfig> ParseConfig(const std::string& config) {
@@ -84,338 +77,403 @@ class FeedbackConfigTest : public ConfigTest {
 
 using InspectConfigTest = UnitTestFixture;
 
-TEST_F(BuildTypeConfigTest, MissingCrashReportUploadPolicy) {
-  const std::optional<BuildTypeConfig> config = ParseConfig(R"({
-  "daily_per_product_crash_report_quota": -1,
-  "enable_data_redaction": false,
-  "enable_hourly_snapshots": false,
-  "enable_limit_inspect_data": false
+TEST_F(FeedbackConfigTest, MissingCrashReportUploadPolicy) {
+  const std::optional<FeedbackConfig> config = ParseConfig(R"({
+    "report_persistence_max_cache_size_kib": 1,
+    "report_persistence_max_tmp_size_kib": 1,
+    "snapshot_persistence_max_cache_size_mib": 1,
+    "snapshot_persistence_max_tmp_size_mib": 1,
+    "spontaneous_reboot_reason": "spontaneous",
+    "daily_per_product_crash_report_quota": -1,
+    "enable_data_redaction": false,
+    "enable_hourly_snapshots": false,
+    "enable_limit_inspect_data": false
 })");
 
   EXPECT_FALSE(config.has_value());
 }
 
-TEST_F(BuildTypeConfigTest, MissingDailyPerProductCrashReportQuota) {
-  const std::optional<BuildTypeConfig> config = ParseConfig(R"({
-  "crash_report_upload_policy": "disabled",
-  "enable_data_redaction": false,
-  "enable_hourly_snapshots": false,
-  "enable_limit_inspect_data": false
+TEST_F(FeedbackConfigTest, MissingDailyPerProductCrashReportQuota) {
+  const std::optional<FeedbackConfig> config = ParseConfig(R"({
+    "report_persistence_max_cache_size_kib": 1,
+    "report_persistence_max_tmp_size_kib": 1,
+    "snapshot_persistence_max_cache_size_mib": 1,
+    "snapshot_persistence_max_tmp_size_mib": 1,
+    "spontaneous_reboot_reason": "spontaneous",
+    "crash_report_upload_policy": "disabled",
+    "enable_data_redaction": false,
+    "enable_hourly_snapshots": false,
+    "enable_limit_inspect_data": false
 })");
 
   EXPECT_FALSE(config.has_value());
 }
 
-TEST_F(BuildTypeConfigTest, MissingEnableDataRedaction) {
-  const std::optional<BuildTypeConfig> config = ParseConfig(R"({
-  "crash_report_upload_policy": "disabled",
-  "daily_per_product_crash_report_quota": -1,
-  "enable_hourly_snapshots": false,
-  "enable_limit_inspect_data": false
+TEST_F(FeedbackConfigTest, MissingEnableDataRedaction) {
+  const std::optional<FeedbackConfig> config = ParseConfig(R"({
+    "report_persistence_max_cache_size_kib": 1,
+    "report_persistence_max_tmp_size_kib": 1,
+    "snapshot_persistence_max_cache_size_mib": 1,
+    "snapshot_persistence_max_tmp_size_mib": 1,
+    "spontaneous_reboot_reason": "spontaneous",
+    "crash_report_upload_policy": "disabled",
+    "daily_per_product_crash_report_quota": -1,
+    "enable_hourly_snapshots": false,
+    "enable_limit_inspect_data": false
 })");
 
   EXPECT_FALSE(config.has_value());
 }
 
-TEST_F(BuildTypeConfigTest, MissingEnableHourlySnapshots) {
-  const std::optional<BuildTypeConfig> config = ParseConfig(R"({
-  "crash_report_upload_policy": "disabled",
-  "daily_per_product_crash_report_quota": -1,
-  "enable_data_redaction": false,
-  "enable_limit_inspect_data": false
+TEST_F(FeedbackConfigTest, MissingEnableHourlySnapshots) {
+  const std::optional<FeedbackConfig> config = ParseConfig(R"({
+    "report_persistence_max_cache_size_kib": 1,
+    "report_persistence_max_tmp_size_kib": 1,
+    "snapshot_persistence_max_cache_size_mib": 1,
+    "snapshot_persistence_max_tmp_size_mib": 1,
+    "spontaneous_reboot_reason": "spontaneous",
+    "crash_report_upload_policy": "disabled",
+    "daily_per_product_crash_report_quota": -1,
+    "enable_data_redaction": false,
+    "enable_limit_inspect_data": false
 })");
 
   EXPECT_FALSE(config.has_value());
 }
 
-TEST_F(BuildTypeConfigTest, MissingEnableLimitInspectData) {
-  const std::optional<BuildTypeConfig> config = ParseConfig(R"({
-  "crash_report_upload_policy": "disabled",
-  "daily_per_product_crash_report_quota": -1,
-  "enable_data_redaction": false,
-  "enable_hourly_snapshots": false
+TEST_F(FeedbackConfigTest, MissingEnableLimitInspectData) {
+  const std::optional<FeedbackConfig> config = ParseConfig(R"({
+    "report_persistence_max_cache_size_kib": 1,
+    "report_persistence_max_tmp_size_kib": 1,
+    "snapshot_persistence_max_cache_size_mib": 1,
+    "snapshot_persistence_max_tmp_size_mib": 1,
+    "spontaneous_reboot_reason": "spontaneous",
+    "crash_report_upload_policy": "disabled",
+    "daily_per_product_crash_report_quota": -1,
+    "enable_data_redaction": false,
+    "enable_hourly_snapshots": false
 })");
 
   EXPECT_FALSE(config.has_value());
 }
 
-TEST_F(BuildTypeConfigTest, SpuriousField) {
-  const std::optional<BuildTypeConfig> config = ParseConfig(R"({
-  "crash_report_upload_policy": "disabled",
-  "daily_per_product_crash_report_quota": -1,
-  "enable_data_redaction": false,
-  "enable_hourly_snapshots": false,
-  "enable_limit_inspect_data": false,
-  "spurious": ""
+TEST_F(FeedbackConfigTest, CrashReportUploadPolicyDisabled) {
+  const std::optional<FeedbackConfig> config = ParseConfig(R"({
+    "report_persistence_max_cache_size_kib": 1,
+    "report_persistence_max_tmp_size_kib": 1,
+    "snapshot_persistence_max_cache_size_mib": 1,
+    "snapshot_persistence_max_tmp_size_mib": 1,
+    "spontaneous_reboot_reason": "spontaneous",
+    "crash_report_upload_policy": "disabled",
+    "daily_per_product_crash_report_quota": -1,
+    "enable_data_redaction": false,
+    "enable_hourly_snapshots": false,
+    "enable_limit_inspect_data": false
+})");
+
+  ASSERT_TRUE(config.has_value());
+  EXPECT_EQ(config->build_type_config.crash_report_upload_policy,
+            CrashReportUploadPolicy::kDisabled);
+}
+
+TEST_F(FeedbackConfigTest, CrashReportUploadPolicyEnabled) {
+  const std::optional<FeedbackConfig> config = ParseConfig(R"({
+    "report_persistence_max_cache_size_kib": 1,
+    "report_persistence_max_tmp_size_kib": 1,
+    "snapshot_persistence_max_cache_size_mib": 1,
+    "snapshot_persistence_max_tmp_size_mib": 1,
+    "spontaneous_reboot_reason": "spontaneous",
+    "crash_report_upload_policy": "enabled",
+    "daily_per_product_crash_report_quota": -1,
+    "enable_data_redaction": false,
+    "enable_hourly_snapshots": false,
+    "enable_limit_inspect_data": false
+})");
+
+  ASSERT_TRUE(config.has_value());
+  EXPECT_EQ(config->build_type_config.crash_report_upload_policy,
+            CrashReportUploadPolicy::kEnabled);
+}
+
+TEST_F(FeedbackConfigTest, CrashReportUploadPolicyReadFromPrivacySettings) {
+  const std::optional<FeedbackConfig> config = ParseConfig(R"({
+    "report_persistence_max_cache_size_kib": 1,
+    "report_persistence_max_tmp_size_kib": 1,
+    "snapshot_persistence_max_cache_size_mib": 1,
+    "snapshot_persistence_max_tmp_size_mib": 1,
+    "spontaneous_reboot_reason": "spontaneous",
+    "crash_report_upload_policy": "read_from_privacy_settings",
+    "daily_per_product_crash_report_quota": -1,
+    "enable_data_redaction": false,
+    "enable_hourly_snapshots": false,
+    "enable_limit_inspect_data": false
+})");
+
+  ASSERT_TRUE(config.has_value());
+  EXPECT_EQ(config->build_type_config.crash_report_upload_policy,
+            CrashReportUploadPolicy::kReadFromPrivacySettings);
+}
+
+TEST_F(FeedbackConfigTest, CrashReportUploadPolicyNotAllowedValue) {
+  const std::optional<FeedbackConfig> config = ParseConfig(R"({
+    "report_persistence_max_cache_size_kib": 1,
+    "report_persistence_max_tmp_size_kib": 1,
+    "snapshot_persistence_max_cache_size_mib": 1,
+    "snapshot_persistence_max_tmp_size_mib": 1,
+    "spontaneous_reboot_reason": "spontaneous",
+    "crash_report_upload_policy": "not_allowed",
+    "daily_per_product_crash_report_quota": -1,
+    "enable_data_redaction": false,
+    "enable_hourly_snapshots": false,
+    "enable_limit_inspect_data": false
 })");
 
   EXPECT_FALSE(config.has_value());
 }
 
-TEST_F(BuildTypeConfigTest, CrashReportUploadPolicyDisabled) {
-  const std::optional<BuildTypeConfig> config = ParseConfig(R"({
-  "crash_report_upload_policy": "disabled",
-  "daily_per_product_crash_report_quota": -1,
-  "enable_data_redaction": false,
-  "enable_hourly_snapshots": false,
-  "enable_limit_inspect_data": false
-})");
-
-  ASSERT_TRUE(config.has_value());
-  EXPECT_EQ(config->crash_report_upload_policy, CrashReportUploadPolicy::kDisabled);
-}
-
-TEST_F(BuildTypeConfigTest, CrashReportUploadPolicyEnabled) {
-  const std::optional<BuildTypeConfig> config = ParseConfig(R"({
-  "crash_report_upload_policy": "enabled",
-  "daily_per_product_crash_report_quota": -1,
-  "enable_data_redaction": false,
-  "enable_hourly_snapshots": false,
-  "enable_limit_inspect_data": false
-})");
-
-  ASSERT_TRUE(config.has_value());
-  EXPECT_EQ(config->crash_report_upload_policy, CrashReportUploadPolicy::kEnabled);
-}
-
-TEST_F(BuildTypeConfigTest, CrashReportUploadPolicyReadFromPrivacySettings) {
-  const std::optional<BuildTypeConfig> config = ParseConfig(R"({
-  "crash_report_upload_policy": "read_from_privacy_settings",
-  "daily_per_product_crash_report_quota": -1,
-  "enable_data_redaction": false,
-  "enable_hourly_snapshots": false,
-  "enable_limit_inspect_data": false
-})");
-
-  ASSERT_TRUE(config.has_value());
-  EXPECT_EQ(config->crash_report_upload_policy, CrashReportUploadPolicy::kReadFromPrivacySettings);
-}
-
-TEST_F(BuildTypeConfigTest, CrashReportUploadPolicyNotAllowedValue) {
-  const std::optional<BuildTypeConfig> config = ParseConfig(R"({
-  "crash_report_upload_policy": "not_allowed",
-  "daily_per_product_crash_report_quota": -1,
-  "enable_data_redaction": false,
-  "enable_hourly_snapshots": false,
-  "enable_limit_inspect_data": false
+TEST_F(FeedbackConfigTest, CrashReportUploadPolicyNotString) {
+  const std::optional<FeedbackConfig> config = ParseConfig(R"({
+    "report_persistence_max_cache_size_kib": 1,
+    "report_persistence_max_tmp_size_kib": 1,
+    "snapshot_persistence_max_cache_size_mib": 1,
+    "snapshot_persistence_max_tmp_size_mib": 1,
+    "spontaneous_reboot_reason": "spontaneous",
+    "crash_report_upload_policy": 0,
+    "daily_per_product_crash_report_quota": -1,
+    "enable_data_redaction": false,
+    "enable_hourly_snapshots": false,
+    "enable_limit_inspect_data": false
 })");
 
   EXPECT_FALSE(config.has_value());
 }
 
-TEST_F(BuildTypeConfigTest, CrashReportUploadPolicyNotString) {
-  const std::optional<BuildTypeConfig> config = ParseConfig(R"({
-  "crash_report_upload_policy": 0,
-  "daily_per_product_crash_report_quota": -1,
-  "enable_data_redaction": false,
-  "enable_hourly_snapshots": false,
-  "enable_limit_inspect_data": false
+TEST_F(FeedbackConfigTest, DailyPerProductCrashReportQuotaNegative) {
+  const std::optional<FeedbackConfig> config = ParseConfig(R"({
+    "report_persistence_max_cache_size_kib": 1,
+    "report_persistence_max_tmp_size_kib": 1,
+    "snapshot_persistence_max_cache_size_mib": 1,
+    "snapshot_persistence_max_tmp_size_mib": 1,
+    "spontaneous_reboot_reason": "spontaneous",
+    "crash_report_upload_policy": "disabled",
+    "daily_per_product_crash_report_quota": -1,
+    "enable_data_redaction": false,
+    "enable_hourly_snapshots": false,
+    "enable_limit_inspect_data": false
+})");
+
+  ASSERT_TRUE(config.has_value());
+  EXPECT_EQ(config->build_type_config.daily_per_product_crash_report_quota, std::nullopt);
+}
+
+TEST_F(FeedbackConfigTest, DailyPerProductCrashReportQuotaZero) {
+  const std::optional<FeedbackConfig> config = ParseConfig(R"({
+    "report_persistence_max_cache_size_kib": 1,
+    "report_persistence_max_tmp_size_kib": 1,
+    "snapshot_persistence_max_cache_size_mib": 1,
+    "snapshot_persistence_max_tmp_size_mib": 1,
+    "spontaneous_reboot_reason": "spontaneous",
+    "crash_report_upload_policy": "disabled",
+    "daily_per_product_crash_report_quota": 0,
+    "enable_data_redaction": false,
+    "enable_hourly_snapshots": false,
+    "enable_limit_inspect_data": false
+})");
+
+  ASSERT_TRUE(config.has_value());
+  EXPECT_EQ(config->build_type_config.daily_per_product_crash_report_quota, std::nullopt);
+}
+
+TEST_F(FeedbackConfigTest, DailyPerProductCrashReportQuotaPositive) {
+  const std::optional<FeedbackConfig> config = ParseConfig(R"({
+    "report_persistence_max_cache_size_kib": 1,
+    "report_persistence_max_tmp_size_kib": 1,
+    "snapshot_persistence_max_cache_size_mib": 1,
+    "snapshot_persistence_max_tmp_size_mib": 1,
+    "spontaneous_reboot_reason": "spontaneous",
+    "crash_report_upload_policy": "disabled",
+    "daily_per_product_crash_report_quota": 100,
+    "enable_data_redaction": false,
+    "enable_hourly_snapshots": false,
+    "enable_limit_inspect_data": false
+})");
+
+  ASSERT_TRUE(config.has_value());
+  EXPECT_EQ(config->build_type_config.daily_per_product_crash_report_quota, 100);
+}
+
+TEST_F(FeedbackConfigTest, DailyPerProductCrashReportQuotaNotNumber) {
+  const std::optional<FeedbackConfig> config = ParseConfig(R"({
+    "report_persistence_max_cache_size_kib": 1,
+    "report_persistence_max_tmp_size_kib": 1,
+    "snapshot_persistence_max_cache_size_mib": 1,
+    "snapshot_persistence_max_tmp_size_mib": 1,
+    "spontaneous_reboot_reason": "spontaneous",
+    "crash_report_upload_policy": "disabled",
+    "daily_per_product_crash_report_quota": "",
+    "enable_data_redaction": false,
+    "enable_hourly_snapshots": false,
+    "enable_limit_inspect_data": false
 })");
 
   EXPECT_FALSE(config.has_value());
 }
 
-TEST_F(BuildTypeConfigTest, DailyPerProductCrashReportQuotaNegative) {
-  const std::optional<BuildTypeConfig> config = ParseConfig(R"({
-  "crash_report_upload_policy": "disabled",
-  "daily_per_product_crash_report_quota": -1,
-  "enable_data_redaction": false,
-  "enable_hourly_snapshots": false,
-  "enable_limit_inspect_data": false
+TEST_F(FeedbackConfigTest, EnableDataRedactionTrue) {
+  const std::optional<FeedbackConfig> config = ParseConfig(R"({
+    "report_persistence_max_cache_size_kib": 1,
+    "report_persistence_max_tmp_size_kib": 1,
+    "snapshot_persistence_max_cache_size_mib": 1,
+    "snapshot_persistence_max_tmp_size_mib": 1,
+    "spontaneous_reboot_reason": "spontaneous",
+    "crash_report_upload_policy": "disabled",
+    "daily_per_product_crash_report_quota": -1,
+    "enable_data_redaction": true,
+    "enable_hourly_snapshots": false,
+    "enable_limit_inspect_data": false
 })");
 
   ASSERT_TRUE(config.has_value());
-  EXPECT_EQ(config->daily_per_product_crash_report_quota, std::nullopt);
+  EXPECT_TRUE(config->build_type_config.enable_data_redaction);
 }
 
-TEST_F(BuildTypeConfigTest, DailyPerProductCrashReportQuotaZero) {
-  const std::optional<BuildTypeConfig> config = ParseConfig(R"({
-  "crash_report_upload_policy": "disabled",
-  "daily_per_product_crash_report_quota": 0,
-  "enable_data_redaction": false,
-  "enable_hourly_snapshots": false,
-  "enable_limit_inspect_data": false
+TEST_F(FeedbackConfigTest, EnableDataRedactionFalse) {
+  const std::optional<FeedbackConfig> config = ParseConfig(R"({
+    "report_persistence_max_cache_size_kib": 1,
+    "report_persistence_max_tmp_size_kib": 1,
+    "snapshot_persistence_max_cache_size_mib": 1,
+    "snapshot_persistence_max_tmp_size_mib": 1,
+    "spontaneous_reboot_reason": "spontaneous",
+    "crash_report_upload_policy": "disabled",
+    "daily_per_product_crash_report_quota": -1,
+    "enable_data_redaction": false,
+    "enable_hourly_snapshots": false,
+    "enable_limit_inspect_data": false
 })");
 
   ASSERT_TRUE(config.has_value());
-  EXPECT_EQ(config->daily_per_product_crash_report_quota, std::nullopt);
+  EXPECT_FALSE(config->build_type_config.enable_data_redaction);
 }
 
-TEST_F(BuildTypeConfigTest, DailyPerProductCrashReportQuotaPositive) {
-  const std::optional<BuildTypeConfig> config = ParseConfig(R"({
-  "crash_report_upload_policy": "disabled",
-  "daily_per_product_crash_report_quota": 100,
-  "enable_data_redaction": false,
-  "enable_hourly_snapshots": false,
-  "enable_limit_inspect_data": false
-})");
-
-  ASSERT_TRUE(config.has_value());
-  EXPECT_EQ(config->daily_per_product_crash_report_quota, 100);
-}
-
-TEST_F(BuildTypeConfigTest, DailyPerProductCrashReportQuotaNotNumber) {
-  const std::optional<BuildTypeConfig> config = ParseConfig(R"({
-  "crash_report_upload_policy": "disabled",
-  "daily_per_product_crash_report_quota": "",
-  "enable_data_redaction": false,
-  "enable_hourly_snapshots": false,
-  "enable_limit_inspect_data": false
+TEST_F(FeedbackConfigTest, EnableDataRedactionNotBoolean) {
+  const std::optional<FeedbackConfig> config = ParseConfig(R"({
+    "report_persistence_max_cache_size_kib": 1,
+    "report_persistence_max_tmp_size_kib": 1,
+    "snapshot_persistence_max_cache_size_mib": 1,
+    "snapshot_persistence_max_tmp_size_mib": 1,
+    "spontaneous_reboot_reason": "spontaneous",
+    "crash_report_upload_policy": "disabled",
+    "daily_per_product_crash_report_quota": -1,
+    "enable_data_redaction": "",
+    "enable_hourly_snapshots": false,
+    "enable_limit_inspect_data": false
 })");
 
   EXPECT_FALSE(config.has_value());
 }
 
-TEST_F(BuildTypeConfigTest, EnableDataRedactionTrue) {
-  const std::optional<BuildTypeConfig> config = ParseConfig(R"({
-  "crash_report_upload_policy": "disabled",
-  "daily_per_product_crash_report_quota": -1,
-  "enable_data_redaction": true,
-  "enable_hourly_snapshots": false,
-  "enable_limit_inspect_data": false
+TEST_F(FeedbackConfigTest, EnableHourlySnapshotsTrue) {
+  const std::optional<FeedbackConfig> config = ParseConfig(R"({
+    "report_persistence_max_cache_size_kib": 1,
+    "report_persistence_max_tmp_size_kib": 1,
+    "snapshot_persistence_max_cache_size_mib": 1,
+    "snapshot_persistence_max_tmp_size_mib": 1,
+    "spontaneous_reboot_reason": "spontaneous",
+    "crash_report_upload_policy": "disabled",
+    "daily_per_product_crash_report_quota": -1,
+    "enable_data_redaction": false,
+    "enable_hourly_snapshots": true,
+    "enable_limit_inspect_data": false
 })");
 
   ASSERT_TRUE(config.has_value());
-  EXPECT_TRUE(config->enable_data_redaction);
+  EXPECT_TRUE(config->build_type_config.enable_hourly_snapshots);
 }
 
-TEST_F(BuildTypeConfigTest, EnableDataRedactionFalse) {
-  const std::optional<BuildTypeConfig> config = ParseConfig(R"({
-  "crash_report_upload_policy": "disabled",
-  "daily_per_product_crash_report_quota": -1,
-  "enable_data_redaction": false,
-  "enable_hourly_snapshots": false,
-  "enable_limit_inspect_data": false
+TEST_F(FeedbackConfigTest, EnableHourlySnapshotsFalse) {
+  const std::optional<FeedbackConfig> config = ParseConfig(R"({
+    "report_persistence_max_cache_size_kib": 1,
+    "report_persistence_max_tmp_size_kib": 1,
+    "snapshot_persistence_max_cache_size_mib": 1,
+    "snapshot_persistence_max_tmp_size_mib": 1,
+    "spontaneous_reboot_reason": "spontaneous",
+    "crash_report_upload_policy": "disabled",
+    "daily_per_product_crash_report_quota": -1,
+    "enable_data_redaction": false,
+    "enable_hourly_snapshots": false,
+    "enable_limit_inspect_data": false
 })");
 
   ASSERT_TRUE(config.has_value());
-  EXPECT_FALSE(config->enable_data_redaction);
+  EXPECT_FALSE(config->build_type_config.enable_hourly_snapshots);
 }
 
-TEST_F(BuildTypeConfigTest, EnableDataRedactionNotBoolean) {
-  const std::optional<BuildTypeConfig> config = ParseConfig(R"({
-  "crash_report_upload_policy": "disabled",
-  "daily_per_product_crash_report_quota": -1,
-  "enable_data_redaction": "",
-  "enable_hourly_snapshots": false,
-  "enable_limit_inspect_data": false
+TEST_F(FeedbackConfigTest, EnableHourlySnapshotsNotBoolean) {
+  const std::optional<FeedbackConfig> config = ParseConfig(R"({
+    "report_persistence_max_cache_size_kib": 1,
+    "report_persistence_max_tmp_size_kib": 1,
+    "snapshot_persistence_max_cache_size_mib": 1,
+    "snapshot_persistence_max_tmp_size_mib": 1,
+    "spontaneous_reboot_reason": "spontaneous",
+    "crash_report_upload_policy": "disabled",
+    "daily_per_product_crash_report_quota": -1,
+    "enable_data_redaction": false,
+    "enable_hourly_snapshots": "",
+    "enable_limit_inspect_data": false
 })");
 
   EXPECT_FALSE(config.has_value());
 }
 
-TEST_F(BuildTypeConfigTest, EnableHourlySnapshotsTrue) {
-  const std::optional<BuildTypeConfig> config = ParseConfig(R"({
-  "crash_report_upload_policy": "disabled",
-  "daily_per_product_crash_report_quota": -1,
-  "enable_data_redaction": false,
-  "enable_hourly_snapshots": true,
-  "enable_limit_inspect_data": false
+TEST_F(FeedbackConfigTest, EnableLimitInspectDataTrue) {
+  const std::optional<FeedbackConfig> config = ParseConfig(R"({
+    "report_persistence_max_cache_size_kib": 1,
+    "report_persistence_max_tmp_size_kib": 1,
+    "snapshot_persistence_max_cache_size_mib": 1,
+    "snapshot_persistence_max_tmp_size_mib": 1,
+    "spontaneous_reboot_reason": "spontaneous",
+    "crash_report_upload_policy": "disabled",
+    "daily_per_product_crash_report_quota": -1,
+    "enable_data_redaction": false,
+    "enable_hourly_snapshots": false,
+    "enable_limit_inspect_data": true
 })");
 
   ASSERT_TRUE(config.has_value());
-  EXPECT_TRUE(config->enable_hourly_snapshots);
+  EXPECT_TRUE(config->build_type_config.enable_limit_inspect_data);
 }
 
-TEST_F(BuildTypeConfigTest, EnableHourlySnapshotsFalse) {
-  const std::optional<BuildTypeConfig> config = ParseConfig(R"({
-  "crash_report_upload_policy": "disabled",
-  "daily_per_product_crash_report_quota": -1,
-  "enable_data_redaction": false,
-  "enable_hourly_snapshots": false,
-  "enable_limit_inspect_data": false
+TEST_F(FeedbackConfigTest, EnableLimitInspectDataFalse) {
+  const std::optional<FeedbackConfig> config = ParseConfig(R"({
+    "report_persistence_max_cache_size_kib": 1,
+    "report_persistence_max_tmp_size_kib": 1,
+    "snapshot_persistence_max_cache_size_mib": 1,
+    "snapshot_persistence_max_tmp_size_mib": 1,
+    "spontaneous_reboot_reason": "spontaneous",
+    "crash_report_upload_policy": "disabled",
+    "daily_per_product_crash_report_quota": -1,
+    "enable_data_redaction": false,
+    "enable_hourly_snapshots": false,
+    "enable_limit_inspect_data": false
 })");
 
   ASSERT_TRUE(config.has_value());
-  EXPECT_FALSE(config->enable_hourly_snapshots);
+  EXPECT_FALSE(config->build_type_config.enable_limit_inspect_data);
 }
 
-TEST_F(BuildTypeConfigTest, EnableHourlySnapshotsNotBoolean) {
-  const std::optional<BuildTypeConfig> config = ParseConfig(R"({
-  "crash_report_upload_policy": "disabled",
-  "daily_per_product_crash_report_quota": -1,
-  "enable_data_redaction": false,
-  "enable_hourly_snapshots": "",
-  "enable_limit_inspect_data": false
+TEST_F(FeedbackConfigTest, EnableLimitInspectDataNotBoolean) {
+  const std::optional<FeedbackConfig> config = ParseConfig(R"({
+    "report_persistence_max_cache_size_kib": 1,
+    "report_persistence_max_tmp_size_kib": 1,
+    "snapshot_persistence_max_cache_size_mib": 1,
+    "snapshot_persistence_max_tmp_size_mib": 1,
+    "spontaneous_reboot_reason": "spontaneous",
+    "crash_report_upload_policy": "disabled",
+    "daily_per_product_crash_report_quota": -1,
+    "enable_data_redaction": false,
+    "enable_hourly_snapshots": false,
+    "enable_limit_inspect_data": ""
 })");
-
-  EXPECT_FALSE(config.has_value());
-}
-
-TEST_F(BuildTypeConfigTest, EnableLimitInspectDataTrue) {
-  const std::optional<BuildTypeConfig> config = ParseConfig(R"({
-  "crash_report_upload_policy": "disabled",
-  "daily_per_product_crash_report_quota": -1,
-  "enable_data_redaction": false,
-  "enable_hourly_snapshots": false,
-  "enable_limit_inspect_data": true
-})");
-
-  ASSERT_TRUE(config.has_value());
-  EXPECT_TRUE(config->enable_limit_inspect_data);
-}
-
-TEST_F(BuildTypeConfigTest, EnableLimitInspectDataFalse) {
-  const std::optional<BuildTypeConfig> config = ParseConfig(R"({
-  "crash_report_upload_policy": "disabled",
-  "daily_per_product_crash_report_quota": -1,
-  "enable_data_redaction": false,
-  "enable_hourly_snapshots": false,
-  "enable_limit_inspect_data": false
-})");
-
-  ASSERT_TRUE(config.has_value());
-  EXPECT_FALSE(config->enable_limit_inspect_data);
-}
-
-TEST_F(BuildTypeConfigTest, EnableLimitInspectDataNotBoolean) {
-  const std::optional<BuildTypeConfig> config = ParseConfig(R"({
-  "crash_report_upload_policy": "disabled",
-  "daily_per_product_crash_report_quota": -1,
-  "enable_data_redaction": false,
-  "enable_hourly_snapshots": false,
-  "enable_limit_inspect_data": ""
-})");
-
-  EXPECT_FALSE(config.has_value());
-}
-
-TEST_F(BuildTypeConfigTest, UseOverrideBuildTypeConfig) {
-  const std::string override_path = WriteConfig(R"({
-  "crash_report_upload_policy": "disabled",
-  "daily_per_product_crash_report_quota": -1,
-  "enable_data_redaction": true,
-  "enable_hourly_snapshots": true,
-  "enable_limit_inspect_data": true
-})");
-
-  const std::optional<BuildTypeConfig> config = GetBuildTypeConfig(override_path, "/bad/path");
-
-  ASSERT_TRUE(config.has_value());
-  EXPECT_TRUE(config->enable_data_redaction);
-  EXPECT_TRUE(config->enable_hourly_snapshots);
-  EXPECT_TRUE(config->enable_limit_inspect_data);
-}
-
-TEST_F(BuildTypeConfigTest, UseDefaultBuildTypeConfig) {
-  const std::string default_path = WriteConfig(R"({
-  "crash_report_upload_policy": "disabled",
-  "daily_per_product_crash_report_quota": -1,
-  "enable_data_redaction": true,
-  "enable_hourly_snapshots": true,
-  "enable_limit_inspect_data": true
-})");
-
-  const std::optional<BuildTypeConfig> config = GetBuildTypeConfig("/bad/path", default_path);
-
-  ASSERT_TRUE(config.has_value());
-  EXPECT_TRUE(config->enable_data_redaction);
-  EXPECT_TRUE(config->enable_hourly_snapshots);
-  EXPECT_TRUE(config->enable_limit_inspect_data);
-}
-
-TEST_F(BuildTypeConfigTest, MissingOverrideAndDefaultBuildTypeConfigs) {
-  const std::optional<BuildTypeConfig> config = GetBuildTypeConfig("/bad/path", "/bad/path");
 
   EXPECT_FALSE(config.has_value());
 }
@@ -609,7 +667,12 @@ TEST_F(FeedbackConfigTest, MissingReportPersistenceMaxCacheSizeKib) {
     "report_persistence_max_tmp_size_kib": 1,
     "snapshot_persistence_max_cache_size_mib": 1,
     "snapshot_persistence_max_tmp_size_mib": 1,
-    "spontaneous_reboot_reason": "spontaneous"
+    "spontaneous_reboot_reason": "spontaneous",
+    "crash_report_upload_policy": "disabled",
+    "daily_per_product_crash_report_quota": -1,
+    "enable_data_redaction": false,
+    "enable_hourly_snapshots": false,
+    "enable_limit_inspect_data": false
 })");
 
   EXPECT_FALSE(config.has_value());
@@ -620,7 +683,12 @@ TEST_F(FeedbackConfigTest, MissingReportPersistenceMaxTmpSizeKib) {
     "report_persistence_max_cache_size_kib": 1,
     "snapshot_persistence_max_cache_size_mib": 1,
     "snapshot_persistence_max_tmp_size_mib": 1,
-    "spontaneous_reboot_reason": "spontaneous"
+    "spontaneous_reboot_reason": "spontaneous",
+    "crash_report_upload_policy": "disabled",
+    "daily_per_product_crash_report_quota": -1,
+    "enable_data_redaction": false,
+    "enable_hourly_snapshots": false,
+    "enable_limit_inspect_data": false
 })");
 
   EXPECT_FALSE(config.has_value());
@@ -631,7 +699,12 @@ TEST_F(FeedbackConfigTest, MissingSnapshotPersistenceMaxCacheSizeMib) {
     "report_persistence_max_cache_size_kib": 1,
     "report_persistence_max_tmp_size_kib": 1,
     "snapshot_persistence_max_tmp_size_mib": 1,
-    "spontaneous_reboot_reason": "spontaneous"
+    "spontaneous_reboot_reason": "spontaneous",
+    "crash_report_upload_policy": "disabled",
+    "daily_per_product_crash_report_quota": -1,
+    "enable_data_redaction": false,
+    "enable_hourly_snapshots": false,
+    "enable_limit_inspect_data": false
 })");
 
   EXPECT_FALSE(config.has_value());
@@ -642,7 +715,12 @@ TEST_F(FeedbackConfigTest, MissingSnapshotPersistenceMaxTmpSizeMib) {
     "report_persistence_max_cache_size_kib": 1,
     "report_persistence_max_tmp_size_kib": 1,
     "snapshot_persistence_max_cache_size_mib": 1,
-    "spontaneous_reboot_reason": "spontaneous"
+    "spontaneous_reboot_reason": "spontaneous",
+    "crash_report_upload_policy": "disabled",
+    "daily_per_product_crash_report_quota": -1,
+    "enable_data_redaction": false,
+    "enable_hourly_snapshots": false,
+    "enable_limit_inspect_data": false
 })");
 
   EXPECT_FALSE(config.has_value());
@@ -653,7 +731,12 @@ TEST_F(FeedbackConfigTest, MissingSpontaneousRebootReason) {
     "report_persistence_max_cache_size_kib": 1,
     "report_persistence_max_tmp_size_kib": 1,
     "snapshot_persistence_max_cache_size_mib": 1,
-    "snapshot_persistence_max_tmp_size_mib": 1
+    "snapshot_persistence_max_tmp_size_mib": 1,
+    "crash_report_upload_policy": "disabled",
+    "daily_per_product_crash_report_quota": -1,
+    "enable_data_redaction": false,
+    "enable_hourly_snapshots": false,
+    "enable_limit_inspect_data": false
 })");
 
   EXPECT_FALSE(config.has_value());
@@ -666,6 +749,11 @@ TEST_F(FeedbackConfigTest, SpuriousField) {
     "snapshot_persistence_max_cache_size_mib": 1,
     "snapshot_persistence_max_tmp_size_mib": 1,
     "spontaneous_reboot_reason": "spontaneous",
+    "crash_report_upload_policy": "disabled",
+    "daily_per_product_crash_report_quota": -1,
+    "enable_data_redaction": false,
+    "enable_hourly_snapshots": false,
+    "enable_limit_inspect_data": false,
     "spurious": ""
 })");
 
@@ -678,7 +766,12 @@ TEST_F(FeedbackConfigTest, ReportPersistenceMaxCacheSizeMibPositive) {
     "report_persistence_max_tmp_size_kib": 1,
     "snapshot_persistence_max_cache_size_mib": 1,
     "snapshot_persistence_max_tmp_size_mib": 1,
-    "spontaneous_reboot_reason": "spontaneous"
+    "spontaneous_reboot_reason": "spontaneous",
+    "crash_report_upload_policy": "disabled",
+    "daily_per_product_crash_report_quota": -1,
+    "enable_data_redaction": false,
+    "enable_hourly_snapshots": false,
+    "enable_limit_inspect_data": false
 })");
 
   EXPECT_EQ(config->report_persistence_max_cache_size, StorageSize::Kilobytes(1));
@@ -690,7 +783,12 @@ TEST_F(FeedbackConfigTest, ReportPersistenceMaxCacheSizeKibZero) {
     "report_persistence_max_tmp_size_kib": 1,
     "snapshot_persistence_max_cache_size_mib": 1,
     "snapshot_persistence_max_tmp_size_mib": 1,
-    "spontaneous_reboot_reason": "spontaneous"
+    "spontaneous_reboot_reason": "spontaneous",
+    "crash_report_upload_policy": "disabled",
+    "daily_per_product_crash_report_quota": -1,
+    "enable_data_redaction": false,
+    "enable_hourly_snapshots": false,
+    "enable_limit_inspect_data": false
 })");
 
   EXPECT_FALSE(config.has_value());
@@ -702,7 +800,12 @@ TEST_F(FeedbackConfigTest, ReportPersistenceMaxCacheSizeKibNegative) {
     "report_persistence_max_tmp_size_kib": 1,
     "snapshot_persistence_max_cache_size_mib": 1,
     "snapshot_persistence_max_tmp_size_mib": 1,
-    "spontaneous_reboot_reason": "spontaneous"
+    "spontaneous_reboot_reason": "spontaneous",
+    "crash_report_upload_policy": "disabled",
+    "daily_per_product_crash_report_quota": -1,
+    "enable_data_redaction": false,
+    "enable_hourly_snapshots": false,
+    "enable_limit_inspect_data": false
 })");
 
   EXPECT_FALSE(config.has_value());
@@ -714,7 +817,12 @@ TEST_F(FeedbackConfigTest, ReportPersistenceMaxCacheSizeKibNotNumber) {
     "report_persistence_max_tmp_size_kib": 1,
     "snapshot_persistence_max_cache_size_mib": 1,
     "snapshot_persistence_max_tmp_size_mib": 1,
-    "spontaneous_reboot_reason": "spontaneous"
+    "spontaneous_reboot_reason": "spontaneous",
+    "crash_report_upload_policy": "disabled",
+    "daily_per_product_crash_report_quota": -1,
+    "enable_data_redaction": false,
+    "enable_hourly_snapshots": false,
+    "enable_limit_inspect_data": false
 })");
 
   EXPECT_FALSE(config.has_value());
@@ -726,7 +834,12 @@ TEST_F(FeedbackConfigTest, ReportPersistenceMaxTmpSizeMibPositive) {
     "report_persistence_max_tmp_size_kib": 1,
     "snapshot_persistence_max_cache_size_mib": 1,
     "snapshot_persistence_max_tmp_size_mib": 1,
-    "spontaneous_reboot_reason": "spontaneous"
+    "spontaneous_reboot_reason": "spontaneous",
+    "crash_report_upload_policy": "disabled",
+    "daily_per_product_crash_report_quota": -1,
+    "enable_data_redaction": false,
+    "enable_hourly_snapshots": false,
+    "enable_limit_inspect_data": false
 })");
 
   EXPECT_EQ(config->report_persistence_max_tmp_size, StorageSize::Kilobytes(1));
@@ -738,7 +851,12 @@ TEST_F(FeedbackConfigTest, ReportPersistenceMaxTmpSizeKibZero) {
     "report_persistence_max_tmp_size_kib": 0,
     "snapshot_persistence_max_cache_size_mib": 1,
     "snapshot_persistence_max_tmp_size_mib": 1,
-    "spontaneous_reboot_reason": "spontaneous"
+    "spontaneous_reboot_reason": "spontaneous",
+    "crash_report_upload_policy": "disabled",
+    "daily_per_product_crash_report_quota": -1,
+    "enable_data_redaction": false,
+    "enable_hourly_snapshots": false,
+    "enable_limit_inspect_data": false
 })");
 
   EXPECT_FALSE(config.has_value());
@@ -750,7 +868,12 @@ TEST_F(FeedbackConfigTest, ReportPersistenceMaxTmpSizeKibNegative) {
     "report_persistence_max_tmp_size_kib": -1,
     "snapshot_persistence_max_cache_size_mib": 1,
     "snapshot_persistence_max_tmp_size_mib": 1,
-    "spontaneous_reboot_reason": "spontaneous"
+    "spontaneous_reboot_reason": "spontaneous",
+    "crash_report_upload_policy": "disabled",
+    "daily_per_product_crash_report_quota": -1,
+    "enable_data_redaction": false,
+    "enable_hourly_snapshots": false,
+    "enable_limit_inspect_data": false
 })");
 
   EXPECT_FALSE(config.has_value());
@@ -762,7 +885,12 @@ TEST_F(FeedbackConfigTest, ReportPersistenceMaxTmpSizeKibNotNumber) {
     "report_persistence_max_tmp_size_kib": "",
     "snapshot_persistence_max_cache_size_mib": 1,
     "snapshot_persistence_max_tmp_size_mib": 1,
-    "spontaneous_reboot_reason": "spontaneous"
+    "spontaneous_reboot_reason": "spontaneous",
+    "crash_report_upload_policy": "disabled",
+    "daily_per_product_crash_report_quota": -1,
+    "enable_data_redaction": false,
+    "enable_hourly_snapshots": false,
+    "enable_limit_inspect_data": false
 })");
 
   EXPECT_FALSE(config.has_value());
@@ -774,7 +902,12 @@ TEST_F(FeedbackConfigTest, SnapshotPersistenceMaxCacheSizeMibPositive) {
     "report_persistence_max_tmp_size_kib": 1,
     "snapshot_persistence_max_cache_size_mib": 1,
     "snapshot_persistence_max_tmp_size_mib": 1,
-    "spontaneous_reboot_reason": "spontaneous"
+    "spontaneous_reboot_reason": "spontaneous",
+    "crash_report_upload_policy": "disabled",
+    "daily_per_product_crash_report_quota": -1,
+    "enable_data_redaction": false,
+    "enable_hourly_snapshots": false,
+    "enable_limit_inspect_data": false
 })");
 
   ASSERT_TRUE(config.has_value());
@@ -787,7 +920,12 @@ TEST_F(FeedbackConfigTest, SnapshotPersistenceMaxCacheSizeMibZero) {
     "report_persistence_max_tmp_size_kib": 1,
     "snapshot_persistence_max_cache_size_mib": 0,
     "snapshot_persistence_max_tmp_size_mib": 1,
-    "spontaneous_reboot_reason": "spontaneous"
+    "spontaneous_reboot_reason": "spontaneous",
+    "crash_report_upload_policy": "disabled",
+    "daily_per_product_crash_report_quota": -1,
+    "enable_data_redaction": false,
+    "enable_hourly_snapshots": false,
+    "enable_limit_inspect_data": false
 })");
 
   ASSERT_TRUE(config.has_value());
@@ -800,7 +938,12 @@ TEST_F(FeedbackConfigTest, SnapshotPersistenceMaxCacheSizeMibNegative) {
     "report_persistence_max_tmp_size_kib": 1,
     "snapshot_persistence_max_cache_size_mib": -1,
     "snapshot_persistence_max_tmp_size_mib": 1,
-    "spontaneous_reboot_reason": "spontaneous"
+    "spontaneous_reboot_reason": "spontaneous",
+    "crash_report_upload_policy": "disabled",
+    "daily_per_product_crash_report_quota": -1,
+    "enable_data_redaction": false,
+    "enable_hourly_snapshots": false,
+    "enable_limit_inspect_data": false
 })");
 
   ASSERT_TRUE(config.has_value());
@@ -813,7 +956,12 @@ TEST_F(FeedbackConfigTest, SnapshotPersistenceMaxCacheSizeMibNotNumber) {
     "report_persistence_max_tmp_size_kib": 1,
     "snapshot_persistence_max_cache_size_mib": "",
     "snapshot_persistence_max_tmp_size_mib": 1,
-    "spontaneous_reboot_reason": "spontaneous"
+    "spontaneous_reboot_reason": "spontaneous",
+    "crash_report_upload_policy": "disabled",
+    "daily_per_product_crash_report_quota": -1,
+    "enable_data_redaction": false,
+    "enable_hourly_snapshots": false,
+    "enable_limit_inspect_data": false
 })");
 
   EXPECT_FALSE(config.has_value());
@@ -825,7 +973,12 @@ TEST_F(FeedbackConfigTest, SnapshotPersistenceMaxTmpSizeMibPositive) {
     "report_persistence_max_tmp_size_kib": 1,
     "snapshot_persistence_max_cache_size_mib": 1,
     "snapshot_persistence_max_tmp_size_mib": 1,
-    "spontaneous_reboot_reason": "spontaneous"
+    "spontaneous_reboot_reason": "spontaneous",
+    "crash_report_upload_policy": "disabled",
+    "daily_per_product_crash_report_quota": -1,
+    "enable_data_redaction": false,
+    "enable_hourly_snapshots": false,
+    "enable_limit_inspect_data": false
 })");
 
   ASSERT_TRUE(config.has_value());
@@ -838,7 +991,12 @@ TEST_F(FeedbackConfigTest, SnapshotPersistenceMaxTmpSizeMibZero) {
     "report_persistence_max_tmp_size_kib": 1,
     "snapshot_persistence_max_cache_size_mib": 1,
     "snapshot_persistence_max_tmp_size_mib": 0,
-    "spontaneous_reboot_reason": "spontaneous"
+    "spontaneous_reboot_reason": "spontaneous",
+    "crash_report_upload_policy": "disabled",
+    "daily_per_product_crash_report_quota": -1,
+    "enable_data_redaction": false,
+    "enable_hourly_snapshots": false,
+    "enable_limit_inspect_data": false
 })");
 
   ASSERT_TRUE(config.has_value());
@@ -851,7 +1009,12 @@ TEST_F(FeedbackConfigTest, SnapshotPersistenceMaxTmpSizeMibNegative) {
     "report_persistence_max_tmp_size_kib": 1,
     "snapshot_persistence_max_cache_size_mib": 1,
     "snapshot_persistence_max_tmp_size_mib": -1,
-    "spontaneous_reboot_reason": "spontaneous"
+    "spontaneous_reboot_reason": "spontaneous",
+    "crash_report_upload_policy": "disabled",
+    "daily_per_product_crash_report_quota": -1,
+    "enable_data_redaction": false,
+    "enable_hourly_snapshots": false,
+    "enable_limit_inspect_data": false
 })");
 
   ASSERT_TRUE(config.has_value());
@@ -864,7 +1027,12 @@ TEST_F(FeedbackConfigTest, SnapshotPersistenceMaxTmpSizeMibNotNumber) {
     "report_persistence_max_tmp_size_kib": 1,
     "snapshot_persistence_max_cache_size_mib": 1,
     "snapshot_persistence_max_tmp_size_mib": "",
-    "spontaneous_reboot_reason": "spontaneous"
+    "spontaneous_reboot_reason": "spontaneous",
+    "crash_report_upload_policy": "disabled",
+    "daily_per_product_crash_report_quota": -1,
+    "enable_data_redaction": false,
+    "enable_hourly_snapshots": false,
+    "enable_limit_inspect_data": false
 })");
 
   EXPECT_FALSE(config.has_value());
@@ -876,7 +1044,12 @@ TEST_F(FeedbackConfigTest, SpontaneousRebootReasonNotAllowedValue) {
     "report_persistence_max_tmp_size_kib": 1,
     "snapshot_persistence_max_cache_size_mib": 1,
     "snapshot_persistence_max_tmp_size_mib": 1,
-    "spontaneous_reboot_reason": "not_allowed"
+    "spontaneous_reboot_reason": "not_allowed",
+    "crash_report_upload_policy": "disabled",
+    "daily_per_product_crash_report_quota": -1,
+    "enable_data_redaction": false,
+    "enable_hourly_snapshots": false,
+    "enable_limit_inspect_data": false
 })");
 
   EXPECT_FALSE(config.has_value());
@@ -888,7 +1061,12 @@ TEST_F(FeedbackConfigTest, SpontaneousRebootReasonNotString) {
     "report_persistence_max_tmp_size_kib": 1,
     "snapshot_persistence_max_cache_size_mib": 1,
     "snapshot_persistence_max_tmp_size_mib": 1,
-    "spontaneous_reboot_reason": 0
+    "spontaneous_reboot_reason": 0,
+    "crash_report_upload_policy": "disabled",
+    "daily_per_product_crash_report_quota": -1,
+    "enable_data_redaction": false,
+    "enable_hourly_snapshots": false,
+    "enable_limit_inspect_data": false
 })");
 
   EXPECT_FALSE(config.has_value());
@@ -900,7 +1078,12 @@ TEST_F(FeedbackConfigTest, SpontaneousRebootReasonSpontaneous) {
     "report_persistence_max_tmp_size_kib": 1,
     "snapshot_persistence_max_cache_size_mib": 1,
     "snapshot_persistence_max_tmp_size_mib": 1,
-    "spontaneous_reboot_reason": "spontaneous"
+    "spontaneous_reboot_reason": "spontaneous",
+    "crash_report_upload_policy": "disabled",
+    "daily_per_product_crash_report_quota": -1,
+    "enable_data_redaction": false,
+    "enable_hourly_snapshots": false,
+    "enable_limit_inspect_data": false
 })");
 
   ASSERT_TRUE(config.has_value());
@@ -913,7 +1096,12 @@ TEST_F(FeedbackConfigTest, SpontaneousRebootReasonBriefPowerLoss) {
     "report_persistence_max_tmp_size_kib": 1,
     "snapshot_persistence_max_cache_size_mib": 1,
     "snapshot_persistence_max_tmp_size_mib": 1,
-    "spontaneous_reboot_reason": "brief_power_loss"
+    "spontaneous_reboot_reason": "brief_power_loss",
+    "crash_report_upload_policy": "disabled",
+    "daily_per_product_crash_report_quota": -1,
+    "enable_data_redaction": false,
+    "enable_hourly_snapshots": false,
+    "enable_limit_inspect_data": false
 })");
 
   ASSERT_TRUE(config.has_value());
@@ -926,7 +1114,12 @@ TEST_F(FeedbackConfigTest, SpontaneousRebootReasonHardReset) {
     "report_persistence_max_tmp_size_kib": 1,
     "snapshot_persistence_max_cache_size_mib": 1,
     "snapshot_persistence_max_tmp_size_mib": 1,
-    "spontaneous_reboot_reason": "hard_reset"
+    "spontaneous_reboot_reason": "hard_reset",
+    "crash_report_upload_policy": "disabled",
+    "daily_per_product_crash_report_quota": -1,
+    "enable_data_redaction": false,
+    "enable_hourly_snapshots": false,
+    "enable_limit_inspect_data": false
 })");
 
   ASSERT_TRUE(config.has_value());
@@ -934,11 +1127,12 @@ TEST_F(FeedbackConfigTest, SpontaneousRebootReasonHardReset) {
 }
 
 TEST_F(InspectConfigTest, ExposeConfig_UploadDisabled) {
-  ExposeConfig(InspectRoot(),
-               BuildTypeConfig{
-                   .crash_report_upload_policy = kConfigDisabled,
-               },
-               {});
+  ExposeConfig(InspectRoot(), FeedbackConfig{
+                                  .build_type_config =
+                                      BuildTypeConfig{
+                                          .crash_report_upload_policy = kConfigDisabled,
+                                      },
+                              });
 
   EXPECT_THAT(
       InspectTree(),
@@ -946,11 +1140,12 @@ TEST_F(InspectConfigTest, ExposeConfig_UploadDisabled) {
 }
 
 TEST_F(InspectConfigTest, ExposeConfig_UploadEnabled) {
-  ExposeConfig(InspectRoot(),
-               BuildTypeConfig{
-                   .crash_report_upload_policy = kConfigEnabled,
-               },
-               {});
+  ExposeConfig(InspectRoot(), FeedbackConfig{
+                                  .build_type_config =
+                                      BuildTypeConfig{
+                                          .crash_report_upload_policy = kConfigEnabled,
+                                      },
+                              });
 
   EXPECT_THAT(
       InspectTree(),
@@ -959,10 +1154,12 @@ TEST_F(InspectConfigTest, ExposeConfig_UploadEnabled) {
 
 TEST_F(InspectConfigTest, ExposeConfig_UploadReadFromPrivacySettings) {
   ExposeConfig(InspectRoot(),
-               BuildTypeConfig{
-                   .crash_report_upload_policy = kConfigReadFromPrivacySettings,
-               },
-               {});
+               FeedbackConfig{
+                   .build_type_config =
+                       BuildTypeConfig{
+                           .crash_report_upload_policy = kConfigReadFromPrivacySettings,
+                       },
+               });
 
   EXPECT_THAT(InspectTree(),
               BuildConfigMatcher({StringIs(kCrashReportUploadPolicyKey,
@@ -970,97 +1167,106 @@ TEST_F(InspectConfigTest, ExposeConfig_UploadReadFromPrivacySettings) {
 }
 
 TEST_F(InspectConfigTest, ExposeConfig_DailyPerProductCrashReportQuotaNone) {
-  ExposeConfig(InspectRoot(),
-               BuildTypeConfig{
-                   .daily_per_product_crash_report_quota = std::nullopt,
-               },
-               {});
+  ExposeConfig(InspectRoot(), FeedbackConfig{
+                                  .build_type_config =
+                                      BuildTypeConfig{
+                                          .daily_per_product_crash_report_quota = std::nullopt,
+                                      },
+                              });
 
   EXPECT_THAT(InspectTree(),
               BuildConfigMatcher({StringIs(kDailyPerProductCrashReportQuotaKey, "none")}));
 }
 
 TEST_F(InspectConfigTest, ExposeConfig_DailyPerProductCrashReportQuotaPositive) {
-  ExposeConfig(InspectRoot(),
-               BuildTypeConfig{
-                   .daily_per_product_crash_report_quota = 1,
-               },
-               {});
+  ExposeConfig(InspectRoot(), FeedbackConfig{
+                                  .build_type_config =
+                                      BuildTypeConfig{
+                                          .daily_per_product_crash_report_quota = 1,
+                                      },
+                              });
 
   EXPECT_THAT(InspectTree(),
               BuildConfigMatcher({StringIs(kDailyPerProductCrashReportQuotaKey, "1")}));
 }
 
 TEST_F(InspectConfigTest, ExposeConfig_EnableDataRedactionFalse) {
-  ExposeConfig(InspectRoot(),
-               BuildTypeConfig{
-                   .enable_data_redaction = false,
-               },
-               {});
+  ExposeConfig(InspectRoot(), FeedbackConfig{
+                                  .build_type_config =
+                                      BuildTypeConfig{
+                                          .enable_data_redaction = false,
+                                      },
+                              });
 
   EXPECT_THAT(InspectTree(), BuildConfigMatcher({BoolIs(kEnableDataRedactionKey, false)}));
 }
 
 TEST_F(InspectConfigTest, ExposeConfig_EnableDataRedactionTrue) {
-  ExposeConfig(InspectRoot(),
-               BuildTypeConfig{
-                   .enable_data_redaction = true,
-               },
-               {});
+  ExposeConfig(InspectRoot(), FeedbackConfig{
+                                  .build_type_config =
+                                      BuildTypeConfig{
+                                          .enable_data_redaction = true,
+                                      },
+                              });
 
   EXPECT_THAT(InspectTree(), BuildConfigMatcher({BoolIs(kEnableDataRedactionKey, true)}));
 }
 
 TEST_F(InspectConfigTest, ExposeConfig_EnableHourlySnapshotsFalse) {
-  ExposeConfig(InspectRoot(),
-               BuildTypeConfig{
-                   .enable_hourly_snapshots = false,
-               },
-               {});
+  ExposeConfig(InspectRoot(), FeedbackConfig{
+                                  .build_type_config =
+                                      BuildTypeConfig{
+                                          .enable_hourly_snapshots = false,
+                                      },
+                              });
 
   EXPECT_THAT(InspectTree(), BuildConfigMatcher({BoolIs(kEnableHourlySnapshotsKey, false)}));
 }
 
 TEST_F(InspectConfigTest, ExposeConfig_EnableHourlySnapshotsTrue) {
-  ExposeConfig(InspectRoot(),
-               BuildTypeConfig{
-                   .enable_hourly_snapshots = true,
-               },
-               {});
+  ExposeConfig(InspectRoot(), FeedbackConfig{
+                                  .build_type_config =
+                                      BuildTypeConfig{
+                                          .enable_hourly_snapshots = true,
+                                      },
+                              });
 
   EXPECT_THAT(InspectTree(), BuildConfigMatcher({BoolIs(kEnableHourlySnapshotsKey, true)}));
 }
 
 TEST_F(InspectConfigTest, ExposeConfig_EnableLimitInspectDataFalse) {
-  ExposeConfig(InspectRoot(),
-               BuildTypeConfig{
-                   .enable_limit_inspect_data = false,
-               },
-               {});
+  ExposeConfig(InspectRoot(), FeedbackConfig{
+                                  .build_type_config =
+                                      BuildTypeConfig{
+                                          .enable_limit_inspect_data = false,
+                                      },
+                              });
 
   EXPECT_THAT(InspectTree(), BuildConfigMatcher({BoolIs(kEnableLimitInspectDataKey, false)}));
 }
 
 TEST_F(InspectConfigTest, ExposeConfig_EnableLimitInspectDataTrue) {
-  ExposeConfig(InspectRoot(),
-               BuildTypeConfig{
-                   .enable_limit_inspect_data = true,
-               },
-               {});
+  ExposeConfig(InspectRoot(), FeedbackConfig{
+                                  .build_type_config =
+                                      BuildTypeConfig{
+                                          .enable_limit_inspect_data = true,
+                                      },
+                              });
 
   EXPECT_THAT(InspectTree(), BuildConfigMatcher({BoolIs(kEnableLimitInspectDataKey, true)}));
 }
 
 TEST_F(InspectConfigTest, ExposeConfig_BuildTypeEnableAll) {
-  ExposeConfig(InspectRoot(),
-               BuildTypeConfig{
-                   .crash_report_upload_policy = kConfigEnabled,
-                   .daily_per_product_crash_report_quota = 1,
-                   .enable_data_redaction = true,
-                   .enable_hourly_snapshots = true,
-                   .enable_limit_inspect_data = true,
-               },
-               {});
+  ExposeConfig(InspectRoot(), FeedbackConfig{
+                                  .build_type_config =
+                                      BuildTypeConfig{
+                                          .crash_report_upload_policy = kConfigEnabled,
+                                          .daily_per_product_crash_report_quota = 1,
+                                          .enable_data_redaction = true,
+                                          .enable_hourly_snapshots = true,
+                                          .enable_limit_inspect_data = true,
+                                      },
+                              });
 
   EXPECT_THAT(InspectTree(), BuildConfigMatcher({
                                  StringIs(kCrashReportUploadPolicyKey, ToString(kConfigEnabled)),
@@ -1072,51 +1278,46 @@ TEST_F(InspectConfigTest, ExposeConfig_BuildTypeEnableAll) {
 }
 
 TEST_F(InspectConfigTest, ExposeConfig_SnapshotPersistenceMaxTmpSizeNone) {
-  ExposeConfig(InspectRoot(), {},
-               FeedbackConfig{
-                   .snapshot_persistence_max_tmp_size = std::nullopt,
-               });
+  ExposeConfig(InspectRoot(), FeedbackConfig{
+                                  .snapshot_persistence_max_tmp_size = std::nullopt,
+                              });
 
   EXPECT_THAT(InspectTree(),
               BuildConfigMatcher({StringIs(kSnapshotPersistenceMaxTmpSizeKey, "none")}));
 }
 
 TEST_F(InspectConfigTest, ExposeConfig_SnapshotPersistenceMaxTmpSizePositive) {
-  ExposeConfig(InspectRoot(), {},
-               FeedbackConfig{
-                   .snapshot_persistence_max_tmp_size = StorageSize::Megabytes(1),
-               });
+  ExposeConfig(InspectRoot(), FeedbackConfig{
+                                  .snapshot_persistence_max_tmp_size = StorageSize::Megabytes(1),
+                              });
 
   EXPECT_THAT(InspectTree(),
               BuildConfigMatcher({StringIs(kSnapshotPersistenceMaxTmpSizeKey, "1")}));
 }
 
 TEST_F(InspectConfigTest, ExposeConfig_SnapshotPersistenceMaxCacheSizeNone) {
-  ExposeConfig(InspectRoot(), {},
-               FeedbackConfig{
-                   .snapshot_persistence_max_cache_size = std::nullopt,
-               });
+  ExposeConfig(InspectRoot(), FeedbackConfig{
+                                  .snapshot_persistence_max_cache_size = std::nullopt,
+                              });
 
   EXPECT_THAT(InspectTree(),
               BuildConfigMatcher({StringIs(kSnapshotPersistenceMaxCacheSizeKey, "none")}));
 }
 
 TEST_F(InspectConfigTest, ExposeConfig_SnapshotPersistenceMaxCacheSizePositive) {
-  ExposeConfig(InspectRoot(), {},
-               FeedbackConfig{
-                   .snapshot_persistence_max_cache_size = StorageSize::Megabytes(1),
-               });
+  ExposeConfig(InspectRoot(), FeedbackConfig{
+                                  .snapshot_persistence_max_cache_size = StorageSize::Megabytes(1),
+                              });
 
   EXPECT_THAT(InspectTree(),
               BuildConfigMatcher({StringIs(kSnapshotPersistenceMaxCacheSizeKey, "1")}));
 }
 
 TEST_F(InspectConfigTest, ExposeConfig_FeedbackConfigEnableAll) {
-  ExposeConfig(InspectRoot(), {},
-               FeedbackConfig{
-                   .snapshot_persistence_max_cache_size = StorageSize::Megabytes(1),
-                   .snapshot_persistence_max_tmp_size = StorageSize::Megabytes(1),
-               });
+  ExposeConfig(InspectRoot(), FeedbackConfig{
+                                  .snapshot_persistence_max_cache_size = StorageSize::Megabytes(1),
+                                  .snapshot_persistence_max_tmp_size = StorageSize::Megabytes(1),
+                              });
 
   EXPECT_THAT(InspectTree(), BuildConfigMatcher({
                                  StringIs(kSnapshotPersistenceMaxTmpSizeKey, "1"),
@@ -1125,18 +1326,18 @@ TEST_F(InspectConfigTest, ExposeConfig_FeedbackConfigEnableAll) {
 }
 
 TEST_F(InspectConfigTest, ExposeConfig_EnableAll) {
-  ExposeConfig(InspectRoot(),
-               BuildTypeConfig{
-                   .crash_report_upload_policy = kConfigEnabled,
-                   .daily_per_product_crash_report_quota = 1,
-                   .enable_data_redaction = true,
-                   .enable_hourly_snapshots = true,
-                   .enable_limit_inspect_data = true,
-               },
-               FeedbackConfig{
-                   .snapshot_persistence_max_cache_size = StorageSize::Megabytes(1),
-                   .snapshot_persistence_max_tmp_size = StorageSize::Megabytes(1),
-               });
+  ExposeConfig(InspectRoot(), FeedbackConfig{
+                                  .snapshot_persistence_max_cache_size = StorageSize::Megabytes(1),
+                                  .snapshot_persistence_max_tmp_size = StorageSize::Megabytes(1),
+                                  .build_type_config =
+                                      BuildTypeConfig{
+                                          .crash_report_upload_policy = kConfigEnabled,
+                                          .daily_per_product_crash_report_quota = 1,
+                                          .enable_data_redaction = true,
+                                          .enable_hourly_snapshots = true,
+                                          .enable_limit_inspect_data = true,
+                                      },
+                              });
 
   EXPECT_THAT(InspectTree(), BuildConfigMatcher({
                                  StringIs(kCrashReportUploadPolicyKey, ToString(kConfigEnabled)),

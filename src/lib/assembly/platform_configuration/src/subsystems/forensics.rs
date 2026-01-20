@@ -56,30 +56,26 @@ impl DefineSubsystemConfiguration<(&ForensicsConfig, &PlatformSessionConfig)>
             anyhow::bail!("Feedback build type overrides only supported in eng build-types");
         }
 
-        match context.build_type {
-            // The userdebug/user configs are platform bundles that add an override config.
-            BuildType::User => builder.platform_bundle("feedback_user_config"),
-            BuildType::UserDebug => builder.platform_bundle("feedback_userdebug_config"),
-            // The eng config is actually an absent override config. Apply override if specified.
+        let build_type_config = match context.build_type {
+            BuildType::User => BuildTypeConfig::user(),
+            BuildType::UserDebug => BuildTypeConfig::userdebug(),
             BuildType::Eng => {
                 if let Some(DeveloperOnlyOptions { forensics_options, .. }) =
                     context.developer_only_options
                 {
                     match forensics_options.build_type_override {
                         Some(FeedbackBuildTypeConfig::EngWithUpload) => {
-                            builder.platform_bundle("feedback_upload_config")
+                            BuildTypeConfig::eng_with_upload()
                         }
-                        Some(FeedbackBuildTypeConfig::UserDebug) => {
-                            builder.platform_bundle("feedback_userdebug_config")
-                        }
-                        Some(FeedbackBuildTypeConfig::User) => {
-                            builder.platform_bundle("feedback_user_config")
-                        }
-                        None => (),
+                        Some(FeedbackBuildTypeConfig::UserDebug) => BuildTypeConfig::userdebug(),
+                        Some(FeedbackBuildTypeConfig::User) => BuildTypeConfig::user(),
+                        None => BuildTypeConfig::default_eng(),
                     }
+                } else {
+                    BuildTypeConfig::default_eng()
                 }
             }
-        }
+        };
 
         // Cobalt and Feedback may be added to anything utility and higher.
         if matches!(context.feature_set_level, FeatureSetLevel::Standard | FeatureSetLevel::Utility)
@@ -117,6 +113,13 @@ impl DefineSubsystemConfiguration<(&ForensicsConfig, &PlatformSessionConfig)>
                 snapshot_persistence_max_cache_size_mib: snapshot_storage_size_mib,
                 snapshot_persistence_max_tmp_size_mib: snapshot_storage_size_mib,
                 spontaneous_reboot_reason: config.feedback.spontaneous_reboot_reason,
+                crash_report_upload_policy: build_type_config.crash_report_upload_policy,
+                daily_per_product_crash_report_quota: build_type_config
+                    .daily_per_product_crash_report_quota
+                    .map_or(-1, |q| q as i64),
+                enable_data_redaction: build_type_config.enable_data_redaction,
+                enable_hourly_snapshots: build_type_config.enable_hourly_snapshots,
+                enable_limit_inspect_data: build_type_config.enable_limit_inspect_data,
             };
 
             config_dir.entry_from_contents(
@@ -167,6 +170,71 @@ impl DefineSubsystemConfiguration<(&ForensicsConfig, &PlatformSessionConfig)>
     }
 }
 
+struct BuildTypeConfig {
+    pub crash_report_upload_policy: CrashReportUploadPolicy,
+    pub daily_per_product_crash_report_quota: Option<u64>,
+    pub enable_data_redaction: bool,
+    pub enable_hourly_snapshots: bool,
+    pub enable_limit_inspect_data: bool,
+}
+
+impl BuildTypeConfig {
+    fn default_eng() -> Self {
+        Self {
+            crash_report_upload_policy: CrashReportUploadPolicy::Disabled,
+            daily_per_product_crash_report_quota: None,
+            enable_data_redaction: false,
+            enable_hourly_snapshots: false,
+            enable_limit_inspect_data: false,
+        }
+    }
+
+    fn user() -> Self {
+        Self {
+            crash_report_upload_policy: CrashReportUploadPolicy::ReadFromPrivacySettings,
+            daily_per_product_crash_report_quota: Some(100),
+            enable_data_redaction: true,
+            enable_hourly_snapshots: false,
+            enable_limit_inspect_data: true,
+        }
+    }
+
+    fn userdebug() -> Self {
+        Self {
+            crash_report_upload_policy: CrashReportUploadPolicy::ReadFromPrivacySettings,
+            daily_per_product_crash_report_quota: None,
+            enable_data_redaction: false,
+            enable_hourly_snapshots: true,
+            enable_limit_inspect_data: false,
+        }
+    }
+
+    fn eng_with_upload() -> Self {
+        Self {
+            crash_report_upload_policy: CrashReportUploadPolicy::Enabled,
+            daily_per_product_crash_report_quota: None,
+            enable_data_redaction: false,
+            enable_hourly_snapshots: true,
+            enable_limit_inspect_data: false,
+        }
+    }
+}
+
+// LINT.IfChange
+#[derive(Debug, Default, Deserialize, Serialize, PartialEq)]
+#[serde(rename_all = "snake_case")]
+enum CrashReportUploadPolicy {
+    #[default]
+    // Crash reports will not be uploaded.
+    Disabled,
+
+    // The upload policy will be read from the privacy settings.
+    ReadFromPrivacySettings,
+
+    // Crash reports will be uploaded.
+    Enabled,
+}
+
 /// The config that the Feedback component will actually consume. This is different than
 /// FeedbackConfig because product owners don't need fine-grained control over some of the
 /// fields.
@@ -175,7 +243,6 @@ impl DefineSubsystemConfiguration<(&ForensicsConfig, &PlatformSessionConfig)>
 #[derive(Debug, Default, Deserialize, Serialize, PartialEq)]
 #[serde(default, deny_unknown_fields)]
 struct FeedbackInternalConfig {
-    // LINT.IfChange
     // The non-snapshot portions of reports, like annotations and the minidump, are stored on disk
     // under /cache if upload fails. Once full, reports will continue to be stored in memory-backed
     // /tmp. These values MUST be greater than 0.
@@ -189,8 +256,14 @@ struct FeedbackInternalConfig {
     pub snapshot_persistence_max_tmp_size_mib: i64,
 
     pub spontaneous_reboot_reason: SpontaneousRebootReason,
-    // LINT.ThenChange(//src/developer/forensics/feedback/config.cc)
+
+    pub crash_report_upload_policy: CrashReportUploadPolicy,
+    pub daily_per_product_crash_report_quota: i64,
+    pub enable_data_redaction: bool,
+    pub enable_hourly_snapshots: bool,
+    pub enable_limit_inspect_data: bool,
 }
+// LINT.ThenChange(//src/developer/forensics/feedback/config.cc)
 
 #[cfg(test)]
 mod test {
@@ -202,25 +275,20 @@ mod test {
     use crate::subsystems::ConfigurationBuilderImpl;
     use crate::{DomainConfig, DomainConfigDirectory, FileOrContents};
 
-    #[test]
-    fn test_build_type_override() {
-        let developer_only_options = DeveloperOnlyOptions {
-            forensics_options: ForensicsOptions {
-                build_type_override: Some(FeedbackBuildTypeConfig::UserDebug),
-            },
-            ..Default::default()
-        };
-
+    fn get_feedback_config(
+        build_type: BuildType,
+        forensics_config: ForensicsConfig,
+        developer_only_options: Option<&DeveloperOnlyOptions>,
+    ) -> FeedbackInternalConfig {
         let context = ConfigurationContext {
             feature_set_level: &FeatureSetLevel::Standard,
-            build_type: &BuildType::Eng,
+            build_type: &build_type,
             board_config: &Default::default(),
             gendir: Default::default(),
             resource_dir: Default::default(),
-            developer_only_options: Some(&developer_only_options),
+            developer_only_options,
         };
 
-        let forensics_config: ForensicsConfig = Default::default();
         let session_config: PlatformSessionConfig = Default::default();
         let mut builder: ConfigurationBuilderImpl = Default::default();
         let result = ForensicsSubsystem::define_configuration(
@@ -229,7 +297,136 @@ mod test {
             &mut builder,
         );
         assert!(result.is_ok());
-        assert!(builder.build().bundles.contains("feedback_userdebug_config"));
+
+        let config = builder.build();
+        let domain_config: &DomainConfig = config
+            .domain_configs
+            .entries
+            .get(&PackageSetDestination::Blob(PackageDestination::FeedbackConfig))
+            .unwrap();
+
+        let domain_config_directory: &DomainConfigDirectory =
+            domain_config.directories.entries.get(FEEDBACK_CONFIG_DIRECTORY).unwrap();
+        let feedback_config: &FileOrContents =
+            domain_config_directory.entries.get(FEEDBACK_CONFIG_FILENAME).unwrap();
+        let string_contents: &String = match &feedback_config {
+            FileOrContents::Contents(string_contents) => string_contents,
+            _ => panic!("FileOrContents::Contents expected"),
+        };
+
+        serde_json::from_str::<FeedbackInternalConfig>(string_contents).unwrap()
+    }
+
+    #[test]
+    fn test_build_type_user() {
+        let config =
+            get_feedback_config(BuildType::User, ForensicsConfig::default(), Default::default());
+
+        assert_eq!(
+            config.crash_report_upload_policy,
+            CrashReportUploadPolicy::ReadFromPrivacySettings
+        );
+        assert_eq!(config.daily_per_product_crash_report_quota, 100);
+        assert!(config.enable_data_redaction);
+        assert!(!config.enable_hourly_snapshots);
+        assert!(config.enable_limit_inspect_data);
+    }
+
+    #[test]
+    fn test_build_type_userdebug() {
+        let config = get_feedback_config(
+            BuildType::UserDebug,
+            ForensicsConfig::default(),
+            Default::default(),
+        );
+        assert_eq!(
+            config.crash_report_upload_policy,
+            CrashReportUploadPolicy::ReadFromPrivacySettings
+        );
+        assert_eq!(config.daily_per_product_crash_report_quota, -1);
+        assert!(!config.enable_data_redaction);
+        assert!(config.enable_hourly_snapshots);
+        assert!(!config.enable_limit_inspect_data);
+    }
+
+    #[test]
+    fn test_build_type_eng() {
+        let config =
+            get_feedback_config(BuildType::Eng, ForensicsConfig::default(), Default::default());
+        assert_eq!(config.crash_report_upload_policy, CrashReportUploadPolicy::Disabled);
+        assert_eq!(config.daily_per_product_crash_report_quota, -1);
+        assert!(!config.enable_data_redaction);
+        assert!(!config.enable_hourly_snapshots);
+        assert!(!config.enable_limit_inspect_data);
+    }
+
+    #[test]
+    fn test_build_type_eng_override_user() {
+        let developer_only_options = DeveloperOnlyOptions {
+            forensics_options: ForensicsOptions {
+                build_type_override: Some(FeedbackBuildTypeConfig::User),
+            },
+            ..Default::default()
+        };
+        let config = get_feedback_config(
+            BuildType::Eng,
+            ForensicsConfig::default(),
+            Some(&developer_only_options),
+        );
+
+        assert_eq!(
+            config.crash_report_upload_policy,
+            CrashReportUploadPolicy::ReadFromPrivacySettings
+        );
+        assert_eq!(config.daily_per_product_crash_report_quota, 100);
+        assert!(config.enable_data_redaction);
+        assert!(!config.enable_hourly_snapshots);
+        assert!(config.enable_limit_inspect_data);
+    }
+
+    #[test]
+    fn test_build_type_eng_override_userdebug() {
+        let developer_only_options = DeveloperOnlyOptions {
+            forensics_options: ForensicsOptions {
+                build_type_override: Some(FeedbackBuildTypeConfig::UserDebug),
+            },
+            ..Default::default()
+        };
+        let config = get_feedback_config(
+            BuildType::Eng,
+            ForensicsConfig::default(),
+            Some(&developer_only_options),
+        );
+
+        assert_eq!(
+            config.crash_report_upload_policy,
+            CrashReportUploadPolicy::ReadFromPrivacySettings
+        );
+        assert_eq!(config.daily_per_product_crash_report_quota, -1);
+        assert!(!config.enable_data_redaction);
+        assert!(config.enable_hourly_snapshots);
+        assert!(!config.enable_limit_inspect_data);
+    }
+
+    #[test]
+    fn test_build_type_eng_override_eng_with_upload() {
+        let developer_only_options = DeveloperOnlyOptions {
+            forensics_options: ForensicsOptions {
+                build_type_override: Some(FeedbackBuildTypeConfig::EngWithUpload),
+            },
+            ..Default::default()
+        };
+        let config = get_feedback_config(
+            BuildType::Eng,
+            ForensicsConfig::default(),
+            Some(&developer_only_options),
+        );
+
+        assert_eq!(config.crash_report_upload_policy, CrashReportUploadPolicy::Enabled);
+        assert_eq!(config.daily_per_product_crash_report_quota, -1);
+        assert!(!config.enable_data_redaction);
+        assert!(config.enable_hourly_snapshots);
+        assert!(!config.enable_limit_inspect_data);
     }
 
     #[test]
@@ -380,56 +577,13 @@ mod test {
 
     #[test]
     fn feedback_config_default_spontaneous_reboot_reason() {
-        let context = ConfigurationContext {
-            feature_set_level: &FeatureSetLevel::Standard,
-            build_type: &BuildType::Eng,
-            board_config: &Default::default(),
-            gendir: Default::default(),
-            resource_dir: Default::default(),
-            developer_only_options: Default::default(),
-        };
-
-        let forensics_config: ForensicsConfig = Default::default();
-        let session_config: PlatformSessionConfig = Default::default();
-        let mut builder: ConfigurationBuilderImpl = Default::default();
-        let result = ForensicsSubsystem::define_configuration(
-            &context,
-            &(&forensics_config, &session_config),
-            &mut builder,
-        );
-        assert!(result.is_ok());
-
-        let config = builder.build();
-        let domain_config: &DomainConfig = config
-            .domain_configs
-            .entries
-            .get(&PackageSetDestination::Blob(PackageDestination::FeedbackConfig))
-            .unwrap();
-
-        let domain_config_directory: &DomainConfigDirectory =
-            domain_config.directories.entries.get(FEEDBACK_CONFIG_DIRECTORY).unwrap();
-        let feedback_config: &FileOrContents =
-            domain_config_directory.entries.get(FEEDBACK_CONFIG_FILENAME).unwrap();
-        let string_contents: &String = match &feedback_config {
-            FileOrContents::Contents(string_contents) => string_contents,
-            _ => panic!("FileOrContents::Contents expected"),
-        };
-
-        let config = serde_json::from_str::<FeedbackInternalConfig>(string_contents).unwrap();
+        let config =
+            get_feedback_config(BuildType::Eng, ForensicsConfig::default(), Default::default());
         assert_eq!(config.spontaneous_reboot_reason, SpontaneousRebootReason::Spontaneous);
     }
 
     #[test]
     fn feedback_config_nondefault_spontaneous_reboot_reason() {
-        let context = ConfigurationContext {
-            feature_set_level: &FeatureSetLevel::Standard,
-            build_type: &BuildType::Eng,
-            board_config: &Default::default(),
-            gendir: Default::default(),
-            resource_dir: Default::default(),
-            developer_only_options: Default::default(),
-        };
-
         let forensics_config = ForensicsConfig {
             feedback: FeedbackConfig {
                 spontaneous_reboot_reason: SpontaneousRebootReason::BriefPowerLoss,
@@ -437,73 +591,16 @@ mod test {
             },
             ..Default::default()
         };
-        let session_config: PlatformSessionConfig = Default::default();
-        let mut builder: ConfigurationBuilderImpl = Default::default();
-        let result = ForensicsSubsystem::define_configuration(
-            &context,
-            &(&forensics_config, &session_config),
-            &mut builder,
-        );
-        assert!(result.is_ok());
 
-        let config = builder.build();
-        let domain_config: &DomainConfig = config
-            .domain_configs
-            .entries
-            .get(&PackageSetDestination::Blob(PackageDestination::FeedbackConfig))
-            .unwrap();
-
-        let domain_config_directory: &DomainConfigDirectory =
-            domain_config.directories.entries.get(FEEDBACK_CONFIG_DIRECTORY).unwrap();
-        let feedback_config: &FileOrContents =
-            domain_config_directory.entries.get(FEEDBACK_CONFIG_FILENAME).unwrap();
-        let string_contents: &String = match &feedback_config {
-            FileOrContents::Contents(string_contents) => string_contents,
-            _ => panic!("FileOrContents::Contents expected"),
-        };
-
-        let config = serde_json::from_str::<FeedbackInternalConfig>(string_contents).unwrap();
+        let config = get_feedback_config(BuildType::Eng, forensics_config, Default::default());
         assert_eq!(config.spontaneous_reboot_reason, SpontaneousRebootReason::BriefPowerLoss);
     }
 
     #[test]
     fn feedback_config_default_disk_size() {
-        let context = ConfigurationContext {
-            feature_set_level: &FeatureSetLevel::Standard,
-            build_type: &BuildType::Eng,
-            board_config: &Default::default(),
-            gendir: Default::default(),
-            resource_dir: Default::default(),
-            developer_only_options: Default::default(),
-        };
+        let config =
+            get_feedback_config(BuildType::Eng, ForensicsConfig::default(), Default::default());
 
-        let forensics_config: ForensicsConfig = Default::default();
-        let session_config: PlatformSessionConfig = Default::default();
-        let mut builder: ConfigurationBuilderImpl = Default::default();
-        let result = ForensicsSubsystem::define_configuration(
-            &context,
-            &(&forensics_config, &session_config),
-            &mut builder,
-        );
-        assert!(result.is_ok());
-
-        let config = builder.build();
-        let domain_config: &DomainConfig = config
-            .domain_configs
-            .entries
-            .get(&PackageSetDestination::Blob(PackageDestination::FeedbackConfig))
-            .unwrap();
-
-        let domain_config_directory: &DomainConfigDirectory =
-            domain_config.directories.entries.get(FEEDBACK_CONFIG_DIRECTORY).unwrap();
-        let feedback_config: &FileOrContents =
-            domain_config_directory.entries.get(FEEDBACK_CONFIG_FILENAME).unwrap();
-        let string_contents: &String = match &feedback_config {
-            FileOrContents::Contents(string_contents) => string_contents,
-            _ => panic!("FileOrContents::Contents expected"),
-        };
-
-        let config = serde_json::from_str::<FeedbackInternalConfig>(string_contents).unwrap();
         assert_eq!(config.report_persistence_max_cache_size_kib, DEFAULT_REPORT_CACHE_SIZE_KIB);
         assert_eq!(config.report_persistence_max_tmp_size_kib, DEFAULT_REPORT_TMP_SIZE_KIB);
         assert_eq!(
@@ -515,45 +612,12 @@ mod test {
 
     #[test]
     fn feedback_config_large_disk() {
-        let context = ConfigurationContext {
-            feature_set_level: &FeatureSetLevel::Standard,
-            build_type: &BuildType::Eng,
-            board_config: &Default::default(),
-            gendir: Default::default(),
-            resource_dir: Default::default(),
-            developer_only_options: Default::default(),
-        };
-
         let forensics_config = ForensicsConfig {
             feedback: FeedbackConfig { large_disk: true, ..Default::default() },
             ..Default::default()
         };
-        let session_config: PlatformSessionConfig = Default::default();
-        let mut builder: ConfigurationBuilderImpl = Default::default();
-        let result = ForensicsSubsystem::define_configuration(
-            &context,
-            &(&forensics_config, &session_config),
-            &mut builder,
-        );
-        assert!(result.is_ok());
+        let config = get_feedback_config(BuildType::Eng, forensics_config, Default::default());
 
-        let config = builder.build();
-        let domain_config: &DomainConfig = config
-            .domain_configs
-            .entries
-            .get(&PackageSetDestination::Blob(PackageDestination::FeedbackConfig))
-            .unwrap();
-
-        let domain_config_directory: &DomainConfigDirectory =
-            domain_config.directories.entries.get(FEEDBACK_CONFIG_DIRECTORY).unwrap();
-        let feedback_config: &FileOrContents =
-            domain_config_directory.entries.get(FEEDBACK_CONFIG_FILENAME).unwrap();
-        let string_contents: &String = match &feedback_config {
-            FileOrContents::Contents(string_contents) => string_contents,
-            _ => panic!("FileOrContents::Contents expected"),
-        };
-
-        let config = serde_json::from_str::<FeedbackInternalConfig>(string_contents).unwrap();
         assert_eq!(config.report_persistence_max_cache_size_kib, LARGE_DISK_REPORT_CACHE_SIZE_KIB);
         assert_eq!(config.report_persistence_max_tmp_size_kib, LARGE_DISK_REPORT_TMP_SIZE_KIB);
         assert_eq!(

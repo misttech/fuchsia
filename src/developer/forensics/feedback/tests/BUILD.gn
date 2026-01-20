@@ -551,15 +551,6 @@ cc_test_executable("ui_state_provider_unittest_exe") {
 ###############################################################################
 # RESOURCES
 ###############################################################################
-resource("prod_build_type_configs") {
-  sources = [
-    "//src/developer/forensics/feedback/configs/build_type/default.json",
-    "//src/developer/forensics/feedback/configs/build_type/user.json",
-    "//src/developer/forensics/feedback/configs/build_type/userdebug.json",
-  ]
-
-  outputs = [ "data/build_type/configs/{{source_file_part}}" ]
-}
 
 resource("prod_snapshot_configs") {
   sources =
@@ -692,7 +683,6 @@ fuchsia_unittest_component("namespace_init_unittest") {
 
 fuchsia_unittest_component("prod_configs_unittest") {
   deps = [
-    ":prod_build_type_configs",
     ":prod_configs_unittest_exe",
     ":prod_snapshot_configs",
   ]

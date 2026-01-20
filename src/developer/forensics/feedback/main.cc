@@ -54,12 +54,6 @@ int main() {
     return EXIT_FAILURE;
   }
 
-  const std::optional<BuildTypeConfig> build_type_config = GetBuildTypeConfig();
-  if (!build_type_config) {
-    FX_LOGS(FATAL) << "Failed to get config for build type";
-    return EXIT_FAILURE;
-  }
-
   std::unique_ptr<cobalt::Logger> cobalt = std::make_unique<cobalt::Logger>(
       component.Dispatcher(), component.Services(), component.Clock());
 
@@ -86,7 +80,7 @@ int main() {
     }
   }
 
-  ExposeConfig(*component.InspectRoot(), *build_type_config, *feedback_config);
+  ExposeConfig(*component.InspectRoot(), *feedback_config);
 
   RebootLog reboot_log =
       RebootLog::ParseRebootLog("/boot/log/last-panic.txt", kPreviousGracefulShutdownInfoFile,
@@ -115,7 +109,8 @@ int main() {
       fidl::InterfaceRequest<fuchsia::process::lifecycle::Lifecycle>(std::move(lifecycle_channel)),
       dlog,
       MainService::Options{
-          *build_type_config, local_device_id_path, kCurrentGracefulShutdownInfoFile,
+          feedback_config->build_type_config, local_device_id_path,
+          kCurrentGracefulShutdownInfoFile,
           LastReboot::Options{
               .is_first_instance = component.IsFirstInstance(),
               .reboot_log = std::move(reboot_log),
@@ -123,7 +118,7 @@ int main() {
               .spontaneous_reboot_reason = feedback_config->spontaneous_reboot_reason,
           },
           CrashReports::Options{
-              .build_type_config = *build_type_config,
+              .build_type_config = feedback_config->build_type_config,
               .report_persistence_max_tmp_size = feedback_config->report_persistence_max_tmp_size,
               .report_persistence_max_cache_size =
                   feedback_config->report_persistence_max_cache_size,
@@ -138,7 +133,7 @@ int main() {
               .snapshot_config = *snapshot_config,
               .snapshot_exclusion_config = *snapshot_exclusion_config,
               .is_first_instance = component.IsFirstInstance(),
-              .limit_inspect_data = build_type_config->enable_limit_inspect_data,
+              .limit_inspect_data = feedback_config->build_type_config.enable_limit_inspect_data,
               .delete_previous_boot_logs_time = delete_previous_boot_logs_time,
           }});
 

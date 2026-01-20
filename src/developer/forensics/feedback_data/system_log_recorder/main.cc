@@ -43,9 +43,9 @@ int main() {
     return EXIT_FAILURE;
   }
 
-  const std::optional<feedback::BuildTypeConfig> build_type_config = feedback::GetBuildTypeConfig();
-  if (!build_type_config.has_value()) {
-    FX_LOGS(FATAL) << "Failed to read build type config";
+  const std::optional<feedback::FeedbackConfig> feedback_config = feedback::GetFeedbackConfig();
+  if (!feedback_config.has_value()) {
+    FX_LOGS(FATAL) << "Failed to read feedback config";
     return EXIT_FAILURE;
   }
 
@@ -70,7 +70,7 @@ int main() {
       },
       // Don't set up Inspect because all messages in the previous boot log
       // are in the current boot log and counted in Inspect.
-      feedback::RedactorFromConfig(nullptr /*no inspect*/, *build_type_config),
+      feedback::RedactorFromConfig(nullptr /*no inspect*/, feedback_config->build_type_config),
       std::unique_ptr<Encoder>(new ProductionEncoder()));
 
   // Set up the controller to shut down or flush the buffers of the system log recorder when it gets

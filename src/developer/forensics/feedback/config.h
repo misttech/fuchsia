@@ -61,11 +61,8 @@ struct FeedbackConfig {
   std::optional<StorageSize> snapshot_persistence_max_cache_size;
   std::optional<StorageSize> snapshot_persistence_max_tmp_size;
   SpontaneousRebootReason spontaneous_reboot_reason;
+  BuildTypeConfig build_type_config;
 };
-
-std::optional<BuildTypeConfig> GetBuildTypeConfig(
-    const std::string& default_path = kDefaultBuildTypeConfigPath,
-    const std::string& override_path = kOverrideBuildTypeConfigPath);
 
 std::optional<SnapshotConfig> GetSnapshotConfig(
     const std::string& path = kDefaultSnapshotConfigPath);
@@ -76,8 +73,7 @@ std::optional<SnapshotExclusionConfig> GetSnapshotExclusionConfig(
 std::optional<FeedbackConfig> GetFeedbackConfig(const std::string& path = kFeedbackConfigPath);
 
 // Exposes the static configuration based on build type and product.
-void ExposeConfig(inspect::Node& inspect_root, const BuildTypeConfig& build_type_config,
-                  const FeedbackConfig& feedback_config);
+void ExposeConfig(inspect::Node& inspect_root, const FeedbackConfig& feedback_config);
 
 // Returns the string version of the enum.
 std::string ToString(CrashReportUploadPolicy upload_policy);

@@ -19,47 +19,10 @@ using testing::UnorderedElementsAreArray;
 
 class ProdConfigTest : public testing::Test {
  public:
-  static std::optional<BuildTypeConfig> ReadBuildTypeConfig(const std::string& config_filename) {
-    return GetBuildTypeConfig(files::JoinPath("/pkg/data/build_type/configs", config_filename));
-  }
-
   static std::optional<SnapshotConfig> ReadSnapshotConfig(const std::string& config_filename) {
     return GetSnapshotConfig(files::JoinPath("/pkg/data/snapshot/configs", config_filename));
   }
 };
-
-TEST_F(ProdConfigTest, DefaultBuildType) {
-  const std::optional<BuildTypeConfig> config = ReadBuildTypeConfig("default.json");
-  ASSERT_TRUE(config.has_value());
-
-  EXPECT_EQ(config->crash_report_upload_policy, CrashReportUploadPolicy::kDisabled);
-  EXPECT_EQ(config->daily_per_product_crash_report_quota, std::nullopt);
-  EXPECT_FALSE(config->enable_data_redaction);
-  EXPECT_FALSE(config->enable_hourly_snapshots);
-  EXPECT_FALSE(config->enable_limit_inspect_data);
-}
-
-TEST_F(ProdConfigTest, User) {
-  const std::optional<BuildTypeConfig> config = ReadBuildTypeConfig("user.json");
-  ASSERT_TRUE(config.has_value());
-
-  EXPECT_EQ(config->crash_report_upload_policy, CrashReportUploadPolicy::kReadFromPrivacySettings);
-  EXPECT_EQ(config->daily_per_product_crash_report_quota, 100);
-  EXPECT_TRUE(config->enable_data_redaction);
-  EXPECT_FALSE(config->enable_hourly_snapshots);
-  EXPECT_TRUE(config->enable_limit_inspect_data);
-}
-
-TEST_F(ProdConfigTest, Userdebug) {
-  const std::optional<BuildTypeConfig> config = ReadBuildTypeConfig("userdebug.json");
-  ASSERT_TRUE(config.has_value());
-
-  EXPECT_EQ(config->crash_report_upload_policy, CrashReportUploadPolicy::kReadFromPrivacySettings);
-  EXPECT_EQ(config->daily_per_product_crash_report_quota, std::nullopt);
-  EXPECT_FALSE(config->enable_data_redaction);
-  EXPECT_TRUE(config->enable_hourly_snapshots);
-  EXPECT_FALSE(config->enable_limit_inspect_data);
-}
 
 TEST_F(ProdConfigTest, DefaultSnapshot) {
   const std::optional<SnapshotConfig> config = ReadSnapshotConfig("default.json");
