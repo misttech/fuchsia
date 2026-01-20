@@ -6,6 +6,7 @@ use crate::events::{SagEvent, SagEventLogger};
 use crate::power_observability::{WakeSourceObservability, WakeSourceReport};
 
 use anyhow::Result;
+use async_lock::OnceCell as AsyncOnceCell;
 use async_trait::async_trait;
 use fidl::endpoints::ServerEnd;
 use fidl_fuchsia_power_system::CpuLevel;
@@ -173,7 +174,7 @@ struct CpuManagerInner {
     /// The context used to manage the CPU power element.
     cpu: Rc<PowerElementContext>,
     /// The FIDL proxy to the device used to trigger system suspend.
-    suspender: Option<fhsuspend::SuspenderProxy>,
+    suspender: Rc<AsyncOnceCell<Option<fhsuspend::SuspenderProxy>>>,
     /// The suspend state index that will be passed to the suspender when system suspend is
     /// triggered.
     suspend_state_index: u64,
@@ -201,7 +202,7 @@ impl CpuManager {
     /// Creates a new CpuManager.
     pub fn new(
         cpu: Rc<PowerElementContext>,
-        suspender: Option<fhsuspend::SuspenderProxy>,
+        suspender: Rc<AsyncOnceCell<Option<fhsuspend::SuspenderProxy>>>,
         sag_event_logger: SagEventLogger,
         observability: WakeSourceObservability,
     ) -> Self {
@@ -285,8 +286,20 @@ impl CpuManager {
         let listener = self.suspend_resume_listener.get().unwrap();
         let mut suspend_failed = false;
         {
-            log::debug!("trigger_suspend: acquiring inner lock");
             let inner = self.inner.lock().await;
+            let suspender = inner.suspender.clone();
+
+            // Drop the lock while we're waiting for the cell to be set
+            let (inner, suspender_proxy) = if !suspender.is_initialized() {
+                drop(inner);
+                let suspender_proxy = suspender.wait().await.as_ref();
+                log::debug!("trigger_suspend: acquiring inner lock");
+
+                (self.inner.lock().await, suspender_proxy)
+            } else {
+                (inner, suspender.wait_blocking().as_ref())
+            };
+
             if !inner.cpu_element_is_inactive {
                 log::info!("Suspend not allowed because CPU element is not inactive");
                 self.sag_event_logger.log(SagEvent::SuspendAttemptBlocked);
@@ -307,7 +320,7 @@ impl CpuManager {
             log::info!("Suspending");
             // LINT.ThenChange(//src/testing/end_to_end/honeydew/honeydew/affordances/starnix/system_power_state_controller.py)
 
-            let response = if let Some(suspender) = inner.suspender.as_ref() {
+            let response = if let Some(suspender) = suspender_proxy {
                 // LINT.IfChange
                 fuchsia_trace::duration!("power", "system-activity-governor:suspend");
                 // LINT.ThenChange(

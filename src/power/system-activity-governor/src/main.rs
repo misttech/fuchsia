@@ -12,6 +12,7 @@ use crate::cpu_element_manager::{CpuElementManager, SystemActivityGovernorFactor
 use crate::events::SagEventLogger;
 use crate::system_activity_governor::SystemActivityGovernor;
 use anyhow::{Context, Result};
+use async_lock::OnceCell;
 use fuchsia_async::{DurationExt, TimeoutExt};
 use fuchsia_component::client::{Service, connect_to_protocol};
 use fuchsia_component::server::ServiceFs;
@@ -26,7 +27,7 @@ use zx::MonotonicDuration;
 use {
     fidl_fuchsia_hardware_platform_bus as ffhpb, fidl_fuchsia_hardware_power_suspend as fhsuspend,
     fidl_fuchsia_power_broker as fbroker, fidl_fuchsia_power_suspend as fsuspend,
-    fidl_fuchsia_power_system as fsystem,
+    fidl_fuchsia_power_system as fsystem, fuchsia_async as fasync,
 };
 
 const SUSPEND_DEVICE_TIMEOUT: MonotonicDuration = MonotonicDuration::from_seconds(10);
@@ -143,25 +144,36 @@ async fn main() -> Result<()> {
     // Set up the SystemActivityGovernor.
     log::info!(config:?; "config");
 
-    let suspender = if config.use_suspender {
-        loop {
-            log::info!("Attempting to connect to suspender...");
-            match connect_to_suspender().await {
-                Ok(s) => {
-                    log::info!("Connected to suspender");
-                    break Some(s);
+    let suspender: Rc<OnceCell<Option<fhsuspend::SuspenderProxy>>> = Rc::new(OnceCell::new());
+    let suspender_copy = suspender.clone();
+    if config.use_suspender {
+        fasync::Task::local(async move {
+            loop {
+                log::info!("Attempting to connect to suspender...");
+                match connect_to_suspender().await {
+                    Ok(s) => {
+                        log::info!("Connected to suspender");
+                        suspender_copy
+                            .set(Some(s))
+                            .await
+                            .expect("suspender unexpectedly set twice");
+                        break;
+                    }
+                    Err(e) => {
+                        log::error!("Unable to connect to suspender protocol: {e:?}");
+                    }
                 }
-                Err(e) => {
-                    log::error!("Unable to connect to suspender protocol: {e:?}");
-                }
+                // Delay retry for some time to reduce log spam.
+                fuchsia_async::Timer::new(SUSPENDER_CONNECT_RETRY_DELAY).await;
             }
-            // Delay retry for some time to reduce log spam.
-            fuchsia_async::Timer::new(SUSPENDER_CONNECT_RETRY_DELAY).await;
-        }
+        })
+        .detach();
     } else {
-        log::info!("Skipping connecting to suspender.");
-        None
-    };
+        suspender
+            .set(None)
+            .await
+            .expect("Suspender unexpectedly already set, this should be impossible");
+    }
 
     let topology = connect_to_protocol::<fbroker::TopologyMarker>()?;
     let sag_event_logger = SagEventLogger::new(inspector.root());
@@ -194,8 +206,10 @@ async fn main() -> Result<()> {
             log::warn!("no interrupt attributor, wake vectors will not be resolved: {err:?}")
         })
         .ok();
-    let observer =
-        power_observability::WakeSourceObservability::new(interrupt_attributor, sag_event_logger_obs);
+    let observer = power_observability::WakeSourceObservability::new(
+        interrupt_attributor,
+        sag_event_logger_obs,
+    );
 
     let cpu_service = if config.wait_for_suspending_token {
         CpuElementManager::new_wait_for_suspending_token(

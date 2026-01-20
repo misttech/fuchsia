@@ -60,7 +60,7 @@ where
         topology: &fbroker::TopologyProxy,
         inspect_root: INode,
         sag_event_logger: SagEventLogger,
-        suspender: Option<fhsuspend::SuspenderProxy>,
+        suspender: Rc<OnceCell<Option<fhsuspend::SuspenderProxy>>>,
         sag_factory: F,
         observability: crate::power_observability::WakeSourceObservability,
     ) -> Rc<Self> {
@@ -88,7 +88,6 @@ where
 
         let cpu_manager =
             Rc::new(CpuManager::new(cpu.clone(), suspender, sag_event_logger, observability));
-
         cpu_manager.run(element_runner, &power_elements_node2);
 
         log::info!("Leasing CPU power element");
@@ -138,7 +137,7 @@ where
         topology: &fbroker::TopologyProxy,
         inspect_root: INode,
         sag_event_logger: SagEventLogger,
-        suspender: Option<fhsuspend::SuspenderProxy>,
+        suspender: Rc<OnceCell<Option<fhsuspend::SuspenderProxy>>>,
         sag_factory: F,
         observability: crate::power_observability::WakeSourceObservability,
     ) -> Rc<Self> {
