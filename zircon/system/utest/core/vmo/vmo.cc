@@ -993,7 +993,7 @@ TEST(VmoTestCase, ContiguousRequireAlignedSize) {
   zx::bti bti;
   auto final_bti_check = vmo_test::CreateDeferredBtiCheck(bti);
 
-  zx_iommu_desc_dummy_t desc;
+  zx_iommu_desc_stub_t desc;
   zx::iommu iommu;
   ASSERT_OK(zx_iommu_create(iommu_resource.get(), ZX_IOMMU_TYPE_DUMMY, &desc, sizeof(desc),
                             iommu.reset_and_get_address()));
@@ -1020,7 +1020,7 @@ TEST(VmoTestCase, ContiguousRequireNonzeroSize) {
   zx::bti bti;
   auto final_bti_check = vmo_test::CreateDeferredBtiCheck(bti);
 
-  zx_iommu_desc_dummy_t desc;
+  zx_iommu_desc_stub_t desc;
   zx::iommu iommu;
   ASSERT_OK(zx_iommu_create(iommu_resource.get(), ZX_IOMMU_TYPE_DUMMY, &desc, sizeof(desc),
                             iommu.reset_and_get_address()));
