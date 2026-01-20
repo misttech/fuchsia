@@ -744,19 +744,11 @@ template("generate_cpu-renderer-integration-test-suite") {
                            "test_info",
                            "fidl_coverage",
                          ])
-  fuchsia_package_with_test(target_name) {
-    test_component =
-        "//src/ui/scenic/tests:cpu-renderer-integration-test-component"
-    test_component_name = "cpu-renderer-integration-test.cm"
-    subpackages = [
-      test_info.target_label,
-      "//src/ui/testing/scenic_realm_factory:pkg",
-    ]
-    test_specs = {
-      log_settings = {
-        max_severity = "ERROR"
-      }
-    }
+  not_needed([
+               "test_info",
+               "fidl_coverage",
+             ])
+  group(target_name) {
   }
 }
 

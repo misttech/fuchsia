@@ -174,11 +174,6 @@
     "package_name": "singleton-display-integration-test-suite"
   },
   {
-    "archive_gn_label": "//src/ui/scenic/tests:cpu-renderer-integration-test-suite_archive_copy",
-    "archive_name": "cpu-renderer-integration-test-suite",
-    "package_name": "cpu-renderer-integration-test-suite"
-  },
-  {
     "archive_gn_label": "//src/ui/tests/conformance_input_tests:focus-test-suite_archive_copy",
     "archive_name": "focus-test-suite",
     "package_name": "focus-test-suite"

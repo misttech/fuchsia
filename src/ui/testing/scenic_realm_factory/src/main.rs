@@ -167,7 +167,6 @@ async fn assemble_realm(
         .expect("Failed to route config capabilities.");
 
     let renderer_type = match renderer {
-        Some(ui_test_context::RendererType::Cpu) => "cpu".to_string(),
         Some(ui_test_context::RendererType::Null) => "null".to_string(),
         Some(ui_test_context::RendererType::Vulkan) => "vulkan".to_string(),
         _ => "vulkan".to_string(),

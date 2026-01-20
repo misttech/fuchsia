@@ -34,12 +34,6 @@ group("tests") {
     ":trusted-flatland-factory-integration-test",
     ":vsync-source-integration-test",
   ]
-
-  # TODO(https://fxbug.dev/42075218): Re-enable this test once zx_cache_flush is implemented on
-  # riscv64.
-  if (target_cpu != "riscv64") {
-    public_deps += [ ":cpu-renderer-integration-test" ]
-  }
 }
 
 group("ctf-tests") {
@@ -70,12 +64,6 @@ group("ctf-tests") {
     ":screen-capture-integration-test-suite_archive",
     ":singleton-display-integration-test-suite_archive",
   ]
-
-  # TODO(https://fxbug.dev/42075218): Re-enable this test once zx_cache_flush is implemented on
-  # riscv64.
-  if (target_cpu != "riscv64") {
-    deps += [ ":cpu-renderer-integration-test-suite_archive" ]
-  }
 }
 
 source_set("common-deps-zxtest") {
@@ -307,19 +295,6 @@ executable("flatland-view-integration-test-validator-bin") {
   ]
 }
 
-executable("cpu-renderer-integration-test-validator-bin") {
-  testonly = true
-  sources = [ "flatland_integration_tests/cpu_renderer_integration_test.cc" ]
-  output_name = "cpu-renderer-integration-test-validator"
-  deps = [
-    ":common-deps-zxtest",
-    "//sdk/fidl/fuchsia.sysmem:fuchsia.sysmem_hlcpp",
-    "//sdk/fidl/fuchsia.ui.composition:fuchsia.ui.composition_hlcpp",
-    "//src/ui/scenic/lib/utils",
-    "//src/ui/testing/util:buffers_helper",
-  ]
-}
-
 executable("null-renderer-integration-test-validator-bin") {
   testonly = true
   sources = [ "flatland_integration_tests/null_renderer_integration_test.cc" ]
@@ -501,15 +476,6 @@ ctf_components_packages("flatland-view-integration-test") {
   bin = ":flatland-view-integration-test-validator-bin"
   test_specs = {
     environments = vulkan_envs
-    log_settings = {
-      max_severity = "ERROR"
-    }
-  }
-}
-
-ctf_components_packages("cpu-renderer-integration-test") {
-  bin = ":cpu-renderer-integration-test-validator-bin"
-  test_specs = {
     log_settings = {
       max_severity = "ERROR"
     }
