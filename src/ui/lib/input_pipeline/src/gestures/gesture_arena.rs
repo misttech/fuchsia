@@ -1025,6 +1025,7 @@ impl InputHandler for GestureArena {
         self: std::rc::Rc<Self>,
         input_event: input_device::InputEvent,
     ) -> Vec<input_device::InputEvent> {
+        fuchsia_trace::duration!("input", "gesture_arena");
         match input_event {
             input_device::InputEvent {
                 device_event: input_device::InputDeviceEvent::Touchpad(ref touchpad_event),
@@ -1034,6 +1035,7 @@ impl InputHandler for GestureArena {
                 handled: input_device::Handled::No,
                 ..
             } => {
+                fuchsia_trace::duration!("input", "gesture_arena[processing]");
                 self.inspect_status.count_received_event(&event_time);
                 match self.handle_touchpad_event(event_time, touchpad_event, touchpad_descriptor) {
                     Ok(r) => r,
@@ -1048,6 +1050,7 @@ impl InputHandler for GestureArena {
                 event_time,
                 ..
             } => {
+                fuchsia_trace::duration!("input", "gesture_arena[processing]");
                 self.inspect_log.borrow_mut().add_entry(|node| {
                     log_keyboard_event_timestamp(node, event_time);
                 });

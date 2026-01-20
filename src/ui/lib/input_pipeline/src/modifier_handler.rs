@@ -129,6 +129,7 @@ impl UnhandledInputHandler for ModifierMeaningHandler {
         self: Rc<Self>,
         unhandled_input_event: UnhandledInputEvent,
     ) -> Vec<InputEvent> {
+        fuchsia_trace::duration!("input", "modifier_meaning_handler");
         match unhandled_input_event {
             UnhandledInputEvent {
                 device_event: InputDeviceEvent::Keyboard(mut event),
@@ -138,6 +139,14 @@ impl UnhandledInputHandler for ModifierMeaningHandler {
             } if event.get_key_meaning()
                 == Some(KeyMeaning::NonPrintableKey(NonPrintableKey::AltGraph)) =>
             {
+                fuchsia_trace::duration!("input", "modifier_meaning_handler[processing]");
+                if let Some(trace_id) = trace_id {
+                    fuchsia_trace::flow_step!(
+                        c"input",
+                        c"event_in_input_pipeline",
+                        trace_id.into()
+                    );
+                }
                 self.inspect_status.count_received_event(&event_time);
                 // The "obvious" rewrite of this if and the match guard above is
                 // unstable, so doing it this way.
