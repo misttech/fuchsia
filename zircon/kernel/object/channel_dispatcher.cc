@@ -670,8 +670,9 @@ zx_status_t ChannelDispatcher::MessageWaiter::BeginWait(fbl::RefPtr<ChannelDispa
     signaled_ = false;
     return ChainLockTransaction::Done;
   };
-  ChainLockTransaction::UntilDone(
-      IrqSaveOption, CLT_TAG("ChannelDispatcher::MessageWaiter::BeginWait"), do_transaction);
+  ChainLockTransaction::UntilDone(EagerReschedDisableAndIrqSaveOption,
+                                  CLT_TAG("ChannelDispatcher::MessageWaiter::BeginWait"),
+                                  do_transaction);
 #else
   event_.Unsignal();
 #endif
@@ -690,13 +691,13 @@ void ChannelDispatcher::MessageWaiter::Signal() {
       ChainLockTransaction::Finalize();
       signaled_ = true;
       wait_queue_.WakeThreadsLocked(ktl::move(threads), wake_hooks,
-                                    OwnedWaitQueue::WakeOption::AssignOwner);
+                                    OwnedWaitQueue::WakeOption::AssignOwner, ForceInheritance::Yes);
       wait_queue_.get_lock().Release();
       return ChainLockTransaction::Done;
     }
     return ChainLockTransaction::Action::Backoff;
   };
-  ChainLockTransaction::UntilDone(PreemptDisableAndIrqSaveOption,
+  ChainLockTransaction::UntilDone(EagerReschedDisableAndIrqSaveOption,
                                   CLT_TAG("ChannelDispatcher::MessageWaiter::Signal"),
                                   do_transaction);
 }
@@ -745,7 +746,8 @@ zx_status_t ChannelDispatcher::MessageWaiter::Wait(const Deadline& deadline) {
         wait_queue_.TryLockForBAAOOperationLocked(current_thread, new_owner, details)) {
       ChainLockTransaction::Finalize();
       const zx_status_t result = wait_queue_.BlockAndAssignOwnerLocked(
-          current_thread, deadline, details, ResourceOwnership::Normal, Interruptible::Yes);
+          current_thread, deadline, details, ResourceOwnership::Normal, Interruptible::Yes,
+          ForceInheritance::Yes);
       current_thread->get_lock().Release();
       return result;
     }
@@ -753,7 +755,7 @@ zx_status_t ChannelDispatcher::MessageWaiter::Wait(const Deadline& deadline) {
     return ChainLockTransaction::Action::Backoff;
   };
   zx_status_t status = ChainLockTransaction::UntilDone(
-      PreemptDisableAndIrqSaveOption, CLT_TAG("ChannelDispatcher::MessageWaiter::Wait"),
+      EagerReschedDisableAndIrqSaveOption, CLT_TAG("ChannelDispatcher::MessageWaiter::Wait"),
       do_transaction);
   if (status != ZX_OK) {
     return status;

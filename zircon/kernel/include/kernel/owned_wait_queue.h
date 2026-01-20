@@ -257,7 +257,8 @@ class OwnedWaitQueue : protected WaitQueue, public fbl::DoublyLinkedListable<Own
   zx_status_t BlockAndAssignOwnerLocked(Thread* current_thread, const Deadline& deadline,
                                         const BAAOLockingDetails& details,
                                         ResourceOwnership resource_ownership,
-                                        Interruptible interruptible)
+                                        Interruptible interruptible,
+                                        ForceInheritance force_inheritance = ForceInheritance::No)
       TA_REQ(chainlock_transaction_token, current_thread->get_lock(), preempt_disabled_token)
           TA_REL(get_lock());
 
@@ -294,7 +295,8 @@ class OwnedWaitQueue : protected WaitQueue, public fbl::DoublyLinkedListable<Own
       TA_EXCL(chainlock_transaction_token, get_lock());
 
   WakeThreadsResult WakeThreadsLocked(Thread::UnblockList threads, IWakeRequeueHook& wake_hooks,
-                                      WakeOption option = WakeOption::None)
+                                      WakeOption option = WakeOption::None,
+                                      ForceInheritance force_inheritance = ForceInheritance::No)
       TA_REQ(chainlock_transaction_token, get_lock(), preempt_disabled_token);
 
   // Obtain all of the locks needed for a WakeThreads operation.
@@ -419,7 +421,8 @@ class OwnedWaitQueue : protected WaitQueue, public fbl::DoublyLinkedListable<Own
   // operations.  Snapshots and returns the combination of a thread's currently
   // inherited profile values along with its base profile, which should be the
   // profile pressure it is transmitting to the next node in the graph.
-  static SchedulerState::InheritedProfileValues SnapshotThreadIpv(Thread& thread)
+  static SchedulerState::InheritedProfileValues SnapshotThreadIpv(
+      Thread& thread, ForceInheritance force_inheritance = ForceInheritance::No)
       TA_REQ(thread.get_lock());
 
   // Apply a change in IPV to a thread.  When non-null, |old_ipv| points to the
@@ -458,7 +461,8 @@ class OwnedWaitQueue : protected WaitQueue, public fbl::DoublyLinkedListable<Own
   // be released during the operation (the thread will remain locked).
   template <PropagateOp Op>
   static void BeginPropagate(Thread& upstream_node, OwnedWaitQueue& downstream_node,
-                             PropagateOpTag<Op>)
+                             PropagateOpTag<Op>,
+                             ForceInheritance force_inheritance = ForceInheritance::No)
       TA_REQ(chainlock_transaction_token, preempt_disabled_token, upstream_node.get_lock(),
              downstream_node.get_lock());
 

@@ -252,7 +252,6 @@ class Scheduler {
   // 2) Place the thread into that scheduler's run queue.
   // 3) Drop the thread's lock.
   // 4) Reschedule if needed/permitted.
-  //
   static void Unblock(Thread* thread) TA_REQ(chainlock_transaction_token)
       TA_REL(thread->get_lock());
 
@@ -260,6 +259,11 @@ class Scheduler {
   // locks are currently held.  It will drop each thread's lock after
   // successfully assigning it to a scheduler.
   static void Unblock(Thread::UnblockList thread_list) TA_REQ(chainlock_transaction_token);
+
+  // Unblock a thread, but do not reschedule for the thread. A reschedule may
+  // still be issued for power level changes.
+  static void UnblockSynchronous(Thread* thread) TA_REQ(chainlock_transaction_token)
+      TA_REL(thread->get_lock());
 
   // UnblockIdle is used in the process of creation of the idle thread.  It
   // simply asserts that the thread is (in fact) flagged as the idle thread, and
@@ -687,6 +691,20 @@ class Scheduler {
   bool IsSchedulerActiveLocked() const TA_REQ(queue_lock_) { return PeekIsActive(this_cpu_); }
 
   using EndTraceCallback = fit::inline_function<void(), sizeof(void*)>;
+
+  // CPUs to reschedule after changes to active schedulers.
+  struct RescheduleTargets {
+    // The CPU that the thread was scheduled on.
+    cpu_num_t target_cpu;
+    // Other CPUs that should be rescheduled. This is typically due to power
+    // level changes.
+    cpu_mask_t cpus_to_reschedule;
+
+    cpu_mask_t Mask() const { return cpu_num_to_mask(target_cpu) | cpus_to_reschedule; }
+  };
+  // Common logic for unblock API.
+  static RescheduleTargets UnblockCommon(Thread* thread, SchedTime now)
+      TA_REQ(chainlock_transaction_token, thread->get_lock());
 
   // Common logic for reschedule API.
   void RescheduleCommon(Thread* current_thread, EndTraceCallback end_outer_trace = nullptr)

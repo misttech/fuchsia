@@ -88,10 +88,8 @@ static inline fbl::NullLock is_current_thread_token;
 // Whether a block or a sleep can be interrupted.
 enum class Interruptible : bool { No, Yes };
 
-// When signaling to a wait queue that the priority of one of its blocked
-// threads has changed, this enum is used as a signal indicating whether or not
-// the priority change should be propagated down the PI chain (if any) or not.
-enum class PropagatePI : bool { No = false, Yes };
+// Whether to force base profile inheritance.
+enum class ForceInheritance : bool { No, Yes };
 
 // A WaitQueueCollection is the data structure which holds a collection of
 // threads which are currently blocked in a wait queue.  The data structure

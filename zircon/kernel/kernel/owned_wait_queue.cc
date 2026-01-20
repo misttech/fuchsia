@@ -212,9 +212,9 @@ void OwnedWaitQueue::DisownAllQueues(Thread* t) {
                                   do_transaction);
 }
 
-OwnedWaitQueue::WakeThreadsResult OwnedWaitQueue::WakeThreadsLocked(Thread::UnblockList threads,
-                                                                    IWakeRequeueHook& wake_hooks,
-                                                                    WakeOption option) {
+OwnedWaitQueue::WakeThreadsResult OwnedWaitQueue::WakeThreadsLocked(
+    Thread::UnblockList threads, IWakeRequeueHook& wake_hooks, WakeOption option,
+    ForceInheritance force_inheritance) {
   DEBUG_ASSERT(magic() == kOwnedMagic);
   uint32_t woken{0};
 
@@ -243,7 +243,7 @@ OwnedWaitQueue::WakeThreadsResult OwnedWaitQueue::WakeThreadsLocked(Thread::Unbl
     // collection in the process.
     DequeueThread(t, ZX_OK);
     UpdateSchedStateStorageThreadRemoved(*t);
-    BeginPropagate(*t, *this, RemoveSingleEdgeOp);
+    BeginPropagate(*t, *this, RemoveSingleEdgeOp, force_inheritance);
 
     // If we still have blocked threads, and we are supposed to make this thread
     // our owner, do so now.  We removed our existing owner at the start of this
@@ -293,12 +293,13 @@ void OwnedWaitQueue::ValidateSchedStateStorageUnconditional() {
   }
 }
 
-SchedulerState::InheritedProfileValues OwnedWaitQueue::SnapshotThreadIpv(Thread& thread) {
+SchedulerState::InheritedProfileValues OwnedWaitQueue::SnapshotThreadIpv(
+    Thread& thread, ForceInheritance force_inheritance) {
   const SchedulerState& tss = thread.scheduler_state();
   SchedulerState::InheritedProfileValues ret = tss.inherited_profile_values_;
   const SchedulerState::BaseProfile& bp = tss.base_profile_;
 
-  if (bp.inheritable) {
+  if (bp.inheritable || force_inheritance == ForceInheritance::Yes) {
     if (bp.discipline == SchedDiscipline::Fair) {
       ret.total_weight += bp.fair.weight;
     } else {
@@ -416,7 +417,7 @@ void OwnedWaitQueue::ApplyIpvDeltaToOwq(const SchedulerState::InheritedProfileVa
 
 template <OwnedWaitQueue::PropagateOp OpType>
 void OwnedWaitQueue::BeginPropagate(Thread& upstream_node, OwnedWaitQueue& downstream_node,
-                                    PropagateOpTag<OpType> op) {
+                                    PropagateOpTag<OpType> op, ForceInheritance force_inheritance) {
   // When needed, base profile changes will directly call FinishPropagate.
   static_assert(OpType != PropagateOp::BaseProfileChanged);
   SchedulerState::InheritedProfileValues ipv_snapshot;
@@ -431,7 +432,7 @@ void OwnedWaitQueue::BeginPropagate(Thread& upstream_node, OwnedWaitQueue& downs
     }
   }
 
-  ipv_snapshot = SnapshotThreadIpv(upstream_node);
+  ipv_snapshot = SnapshotThreadIpv(upstream_node, force_inheritance);
 
   if constexpr (OpType == PropagateOp::RemoveSingleEdge) {
     FinishPropagate(upstream_node, downstream_node, nullptr, &ipv_snapshot, op);
@@ -1803,7 +1804,8 @@ zx_status_t OwnedWaitQueue::BlockAndAssignOwnerLocked(Thread* const current_thre
                                                       const Deadline& deadline,
                                                       const BAAOLockingDetails& details,
                                                       ResourceOwnership resource_ownership,
-                                                      Interruptible interruptible) {
+                                                      Interruptible interruptible,
+                                                      ForceInheritance force_inheritance) {
   DEBUG_ASSERT(current_thread == Thread::Current::Get());
   DEBUG_ASSERT(magic() == kOwnedMagic);
   DEBUG_ASSERT(current_thread->state() == THREAD_RUNNING);
@@ -1909,7 +1911,7 @@ zx_status_t OwnedWaitQueue::BlockAndAssignOwnerLocked(Thread* const current_thre
   // update the scheduler state storage location if needed, then propagate the
   // effects down the chain.
   UpdateSchedStateStorageThreadAdded(*current_thread);
-  BeginPropagate(*current_thread, *this, AddSingleEdgeOp);
+  BeginPropagate(*current_thread, *this, AddSingleEdgeOp, force_inheritance);
 
   // If we have an new_owner, we need to do one of two things.
   //
@@ -2180,7 +2182,8 @@ OwnedWaitQueue::WakeThreadsResult OwnedWaitQueue::WakeAndRequeueInternal(
 
 // Explicit instantiation of a variant of the generic BeginPropagate method used in
 // wait.cc during thread unblock operations.
-template void OwnedWaitQueue::BeginPropagate(Thread&, OwnedWaitQueue&, RemoveSingleEdgeTag);
+template void OwnedWaitQueue::BeginPropagate(Thread&, OwnedWaitQueue&, RemoveSingleEdgeTag,
+                                             ForceInheritance);
 
 // Explicit instantiation of the common lock/unlock routines.
 template ktl::variant<ChainLock::Result, const void*>

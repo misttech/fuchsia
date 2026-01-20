@@ -89,6 +89,29 @@ void Semaphore::Post(OwnedWaitQueue* queue_to_own) {
       return ChainLockTransaction::Action::Backoff;
     }
 
+    // If we have a queue_to_own, we will perform a few operations with the following actors and
+    // objects:
+    //
+    //    P_c: Current thread
+    //    P_w: Woken thread
+    //    Q_o: Queue to own
+    //    Q_w: Queue to wake from
+    //
+    //    Starting state:
+    //    P_c  AND   P_w -> Q_w
+    //
+    //    Intermediate state:
+    //    Q_w   AND   Q_o -> P_w   AND   P_c
+    //
+    //    Target state:
+    //    Q_w  AND   P_c -> Q_o -> P_w
+    //
+    // We begin at the starting state, and with this function, transition to the intermediate
+    // state. AssignOwnerLocked performs the "Q_o -> P_w" join, and DequeueThread performs the
+    // "P_w -> Q_w" split.
+    //
+    // To reach the target state, BlockAndAssignOwnerLocked must perform the "P_c -> Q_o -> P_w"
+    // join. This occurs when in ChannelDispatcher::MessageWaiter::Wait.
     if (queue_to_own != nullptr) {
       if (queue_to_own->AssignOwnerLocked(thread) != ZX_OK) {
         thread->get_lock().Release();
@@ -113,10 +136,16 @@ void Semaphore::Post(OwnedWaitQueue* queue_to_own) {
 
     guard.Release();
     ChainLockTransaction::Finalize();
-    Scheduler::Unblock(thread);
+    if (queue_to_own != nullptr) {
+      // The new owner of the queue will unblock synchronously. This causes us to defer rescheduling
+      // until we block in ChannelDispatcher::MessageWaiter::Wait.
+      Scheduler::UnblockSynchronous(thread);
+    } else {
+      Scheduler::Unblock(thread);
+    }
     return ChainLockTransaction::Done;
   };
-  ChainLockTransaction::UntilDone(PreemptDisableAndIrqSaveOption, CLT_TAG("Semaphore::Post"),
+  ChainLockTransaction::UntilDone(EagerReschedDisableAndIrqSaveOption, CLT_TAG("Semaphore::Post"),
                                   do_transaction);
 }
 

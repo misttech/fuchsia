@@ -2654,15 +2654,11 @@ void Scheduler::Block(Thread* const current_thread) {
   Scheduler::Get()->RescheduleCommon(current_thread, trace.Completer());
 }
 
-void Scheduler::Unblock(Thread* thread) {
-  ktrace::Scope trace = LOCAL_KTRACE_BEGIN_SCOPE(COMMON, "sched_unblock");
-  ChainLockTransaction::ActiveRef().AssertFinalized();
-
+Scheduler::RescheduleTargets Scheduler::UnblockCommon(Thread* thread, SchedTime now) {
   thread->canary().Assert();
 
-  const SchedTime now = CurrentTime();
   cpu_num_t target_cpu = INVALID_CPU;
-  cpu_mask_t additional_cpus_to_reschedule = 0;
+  cpu_mask_t cpus_to_reschedule = 0;
   while (true) {
     // TODO(rudymathu): This target_cpu should be stashed in the thread prior to
     // adding it to the save_state_list_, as that would allow us to bypass CPU
@@ -2693,7 +2689,7 @@ void Scheduler::Unblock(Thread* thread) {
         // handle it immediately with the fast path and update any affected
         // CPUs. If the fast path is not supported, the request will be left
         // pending on the target CPU and flushed during its reschedule.
-        additional_cpus_to_reschedule =
+        cpus_to_reschedule =
             target->power_level_control_.SendPendingPowerLevelRequestFastPath(target_queue_guard);
       }
       break;
@@ -2701,72 +2697,51 @@ void Scheduler::Unblock(Thread* thread) {
 
     IncFindTargetCpuRetriesKcounter();
   }
+  return {.target_cpu = target_cpu, .cpus_to_reschedule = cpus_to_reschedule};
+}
 
-  trace.End();
+void Scheduler::Unblock(Thread* thread) {
+  ktrace::Scope trace = LOCAL_KTRACE_BEGIN_SCOPE(COMMON, "sched_unblock");
+  ChainLockTransaction::ActiveRef().AssertFinalized();
+  const SchedTime now = CurrentTime();
+  RescheduleTargets targets = UnblockCommon(thread, now);
   thread->get_lock().Release();
-  RescheduleMask(cpu_num_to_mask(target_cpu) | additional_cpus_to_reschedule);
+  trace.End();
+
+  RescheduleMask(targets.Mask());
 }
 
 void Scheduler::Unblock(Thread::UnblockList list) {
   ktrace::Scope trace = LOCAL_KTRACE_BEGIN_SCOPE(COMMON, "sched_unblock_list");
   ChainLockTransaction::ActiveRef().AssertFinalized();
-
+  cpu_mask_t reschedule_mask = 0;
   const SchedTime now = CurrentTime();
-  cpu_mask_t cpus_to_reschedule_mask = 0;
-
   Thread* thread;
   while ((thread = list.pop_back()) != nullptr) {
-    thread->canary().Assert();
     DEBUG_ASSERT(!thread->IsIdle());
     thread->get_lock().AssertAcquired();
-
-    cpu_num_t target_cpu = INVALID_CPU;
-    while (true) {
-      // TODO(rudymathu): This target_cpu should be stashed in the thread prior
-      // to adding it to the save_state_list_, as that would allow us to bypass
-      // CPU selection when processing the list so long as the CPU is still
-      // online.
-      target_cpu = FindTargetCpu(thread);
-      const cpu_num_t last_cpu = thread->scheduler_state().last_cpu();
-      const bool needs_migration = (last_cpu != INVALID_CPU && target_cpu != last_cpu &&
-                                    thread->has_migrate_fn() && !thread->migrate_pending());
-      if (needs_migration) {
-        target_cpu = last_cpu;
-      }
-      Scheduler* const target = Get(target_cpu);
-      Guard<MonitoredSpinLock, NoIrqSave> target_queue_guard{&target->queue_lock_, SOURCE_TAG};
-
-      if (target->IsSchedulerActiveLocked()) {
-        TraceWakeup(thread, target_cpu);
-        thread->set_ready();
-        thread->UpdateRuntimeStats(thread->state());
-        if (needs_migration) {
-          MarkHasOwnedThreadAccess(*thread);
-          target->save_state_list_.push_front(thread);
-        } else {
-          thread->scheduler_state().curr_cpu_ = target_cpu;
-          target->AssertInScheduler(*thread);
-          target->Insert(now, thread);
-
-          // If a power level change was requested during insertion, attempt to
-          // handle it immediately with the fast path and update any affected
-          // CPUs. If the fast path is not supported, the request will be left
-          // pending on the target CPU and flushed during its reschedule.
-          cpus_to_reschedule_mask |=
-              target->power_level_control_.SendPendingPowerLevelRequestFastPath(target_queue_guard);
-        }
-        break;
-      }
-
-      IncFindTargetCpuRetriesKcounter();
-    }
-
-    cpus_to_reschedule_mask |= cpu_num_to_mask(target_cpu);
+    RescheduleTargets targets = UnblockCommon(thread, now);
+    reschedule_mask |= targets.Mask();
     thread->get_lock().Release();
   }
-
   trace.End();
-  RescheduleMask(cpus_to_reschedule_mask);
+
+  RescheduleMask(reschedule_mask);
+}
+
+void Scheduler::UnblockSynchronous(Thread* thread) {
+  ktrace::Scope trace = LOCAL_KTRACE_BEGIN_SCOPE(COMMON, "sched_unblock_sync");
+  ChainLockTransaction::ActiveRef().AssertFinalized();
+  const SchedTime now = CurrentTime();
+  RescheduleTargets targets = UnblockCommon(thread, now);
+  thread->get_lock().Release();
+  trace.End();
+
+  // If there was a power level change we need to account for, reschedule those CPUs. But do not
+  // reschedule the target CPU.
+  if (targets.cpus_to_reschedule != 0) {
+    RescheduleMask(targets.cpus_to_reschedule);
+  }
 }
 
 void Scheduler::UnblockIdle(Thread* thread) {

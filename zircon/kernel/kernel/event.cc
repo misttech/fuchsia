@@ -160,6 +160,29 @@ void Event::Signal(zx_status_t wait_result, OwnedWaitQueue* queue_to_own) {
     }
 
     if (has_threads_to_wake) {
+      // If we have a queue_to_own, we will perform a few operations with the following actors and
+      // objects:
+      //
+      //    P_c: Current thread
+      //    P_w: Woken thread
+      //    Q_o: Queue to own
+      //    Q_w: Queue to wake from
+      //
+      //    Starting state:
+      //    P_c  AND   P_w -> Q_w
+      //
+      //    Intermediate state:
+      //    Q_w   AND   Q_o -> P_w   AND   P_c
+      //
+      //    Target state:
+      //    Q_w  AND   P_c -> Q_o -> P_w
+      //
+      // We begin at the starting state, and with this function, transition to the intermediate
+      // state. AssignOwnerLocked performs the "Q_o -> P_w" join, and DequeueThread performs the
+      // "P_w -> Q_w" split.
+      //
+      // To reach the target state, BlockAndAssignOwnerLocked must perform the "P_c -> Q_o -> P_w"
+      // join. This occurs when in ChannelDispatcher::MessageWaiter::Wait.
       if (queue_to_own != nullptr) {
         // There's a few things occurring here, all are required to perform an
         // ownership assignment:
@@ -188,8 +211,18 @@ void Event::Signal(zx_status_t wait_result, OwnedWaitQueue* queue_to_own) {
       guard.Release();
       ChainLockTransaction::Finalize();
 
+      if (queue_to_own != nullptr) {
+        Thread* thread = maybe_unblock_list->pop_front();
+        thread->get_lock().AssertAcquired();
+        // The new owner of the queue will unblock synchronously. This causes us to defer
+        // rescheduling until we block in ChannelDispatcher::MessageWaiter::Wait.
+        Scheduler::UnblockSynchronous(thread);
+      }
+
       // We have all of our locks now, time to proceed with the wake operations.
-      Scheduler::Unblock(ktl::move(maybe_unblock_list).value());
+      if (!maybe_unblock_list->is_empty()) {
+        Scheduler::Unblock(ktl::move(maybe_unblock_list).value());
+      }
     }
     return ChainLockTransaction::Done;
   };
