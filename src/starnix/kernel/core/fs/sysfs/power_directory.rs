@@ -12,7 +12,11 @@ use crate::vfs::pseudo::simple_file::create_bytes_file_with_handler;
 use starnix_uapi::file_mode::mode;
 
 pub fn build_power_directory(kernel: &Kernel, dir: &SimpleDirectoryMutator) {
-    dir.entry("wakeup_count", PowerWakeupCountFile::new_node(), mode!(IFREG, 0o644));
+    dir.entry(
+        "wakeup_count",
+        PowerWakeupCountFile::new_node(kernel.suspend_resume_manager.clone()),
+        mode!(IFREG, 0o644),
+    );
     dir.entry("wake_lock", PowerWakeLockFile::new_node(), mode!(IFREG, 0o660));
     dir.entry("wake_unlock", PowerWakeUnlockFile::new_node(), mode!(IFREG, 0o660));
     dir.entry("state", PowerStateFile::new_node(), mode!(IFREG, 0o644));

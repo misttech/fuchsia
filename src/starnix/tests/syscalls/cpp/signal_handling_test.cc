@@ -3,6 +3,7 @@
 // found in the LICENSE file.
 
 #include <fcntl.h> /* Definition of O_* constants */
+#include <poll.h>
 #include <sched.h>
 #include <signal.h>
 #include <stdint.h>

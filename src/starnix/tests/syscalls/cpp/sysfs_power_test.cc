@@ -11,6 +11,7 @@
 #include <cstdint>
 #include <format>
 #include <regex>
+#include <sstream>
 #include <string>
 
 #include <gmock/gmock.h>
@@ -24,6 +25,20 @@ using testing::IsSupersetOf;
 
 namespace {
 
+bool ReadFileToStringNonBlocking(const std::string& path, std::string* content) {
+  int fd = open(path.c_str(), O_RDONLY | O_NONBLOCK);
+  if (fd < 0)
+    return false;
+  char buf[4096];
+  ssize_t res = read(fd, buf, sizeof(buf) - 1);
+  close(fd);
+  if (res < 0)
+    return false;
+  buf[res] = '\0';
+  *content = std::string(buf);
+  return true;
+}
+
 void VerifyReadOutOfBound(const std::string& path) {
   constexpr int kOffset = 100;
   constexpr int kSize = 10;
@@ -34,9 +49,9 @@ void VerifyReadOutOfBound(const std::string& path) {
           .iov_len = kSize,
       },
   };
-  int fd = openat(AT_FDCWD, path.c_str(), O_RDONLY);
+  int fd = openat(AT_FDCWD, path.c_str(), O_RDONLY | O_NONBLOCK);
   EXPECT_NE(-1, fd);
-  EXPECT_EQ(0, preadv(fd, iov, std::size(iov), kOffset));
+  EXPECT_EQ(0, preadv(fd, iov, std::size(iov), kOffset)) << "preadv failed: " << errno;
 }
 
 bool attempt_suspend(const std::string& suspend_type) {
@@ -81,6 +96,17 @@ class SysfsPowerTest : public ::testing::Test {
     if (!test_helper::IsStarnix() && access("/sys/power", F_OK) == -1 &&
         access("/sys/kernel/wakeup_reasons", F_OK) == -1) {
       GTEST_SKIP() << "/sys/power not available, skipping...";
+    }
+  }
+
+  void TearDown() override {
+    std::string wake_locks_str;
+    if (files::ReadFileToString("/sys/power/wake_lock", &wake_locks_str)) {
+      std::stringstream ss(wake_locks_str);
+      std::string lock;
+      while (ss >> lock) {
+        files::WriteFile("/sys/power/wake_unlock", lock);
+      }
     }
   }
 };
@@ -205,7 +231,8 @@ TEST_F(SysfsPowerTest, SuspendStatsFilesContainDefaultsLastFailedErrno) {
 
 TEST_F(SysfsPowerTest, WakeupCountFileContainsExpectedContents) {
   std::string wakeup_count_str;
-  EXPECT_TRUE(files::ReadFileToString("/sys/power/wakeup_count", &wakeup_count_str));
+  // Use non-blocking read to avoid hanging if the system has active wake locks.
+  EXPECT_TRUE(ReadFileToStringNonBlocking("/sys/power/wakeup_count", &wakeup_count_str));
   EXPECT_TRUE(std::regex_match(wakeup_count_str, std::regex("^[0-9]+\n$")));
 }
 
@@ -218,7 +245,8 @@ TEST_F(SysfsPowerTest, WakeupCountFileWrite) {
   EXPECT_FALSE(files::WriteFile("/sys/power/wakeup_count", std::to_string(INT_MAX)));
 
   std::string wakeup_count_str;
-  EXPECT_TRUE(files::ReadFileToString("/sys/power/wakeup_count", &wakeup_count_str));
+  // Use non-blocking read to avoid hanging if the system has active wake locks.
+  EXPECT_TRUE(ReadFileToStringNonBlocking("/sys/power/wakeup_count", &wakeup_count_str));
   EXPECT_TRUE(files::WriteFile("/sys/power/wakeup_count", wakeup_count_str));
 }
 
@@ -529,4 +557,55 @@ TEST_F(SysfsPowerTest, WakeLockFileWrite) {
   EXPECT_TRUE(files::ReadFileToString("/sys/power/wake_lock", &wake_locks_str));
   // Ensure there is no active wake lock.
   EXPECT_TRUE(std::ranges::all_of(wake_locks_str, isspace));
+}
+
+TEST_F(SysfsPowerTest, WakeupCountBehavior) {
+  if (access("/sys/power/wakeup_count", F_OK) != 0) {
+    GTEST_SKIP() << "/sys/power/wakeup_count not available, skipping...";
+  }
+  if (access("/sys/power/wake_lock", W_OK) != 0) {
+    GTEST_SKIP() << "/sys/power/wake_lock not writable, skipping...";
+  }
+
+  const char* kLockName = "WakeupCountTestLock";
+
+  // Open with O_NONBLOCK to check initial state
+  int fd = open("/sys/power/wakeup_count", O_RDONLY | O_NONBLOCK);
+  ASSERT_NE(fd, -1);
+
+  char buf[64];
+  ssize_t res = read(fd, buf, sizeof(buf) - 1);
+  ASSERT_NE(res, -1);
+  buf[res] = '\0';
+  uint64_t initial_count = std::stoull(buf);
+
+  // Acquire lock
+  ASSERT_TRUE(files::WriteFile("/sys/power/wake_lock", kLockName));
+
+  // Re-read should now fail with EAGAIN
+  lseek(fd, 0, SEEK_SET);
+  uint64_t val;
+  EXPECT_EQ(read(fd, &val, sizeof(val)), -1);
+  EXPECT_EQ(errno, EAGAIN);
+
+  // Release lock
+  ASSERT_TRUE(files::WriteFile("/sys/power/wake_unlock", kLockName));
+
+  // Wait for readability (poll)
+  struct pollfd pfd = {fd, POLLIN, 0};
+  int poll_res = poll(&pfd, 1, 5000);
+  EXPECT_EQ(poll_res, 1);
+  EXPECT_TRUE(pfd.revents & POLLIN);
+
+  // Read should succeed
+  lseek(fd, 0, SEEK_SET);
+  res = read(fd, buf, sizeof(buf) - 1);
+  ASSERT_GT(res, 0);
+  buf[res] = '\0';
+  uint64_t final_count = std::stoull(buf);
+
+  // Count should have incremented
+  EXPECT_EQ(final_count, initial_count + 1);
+
+  close(fd);
 }

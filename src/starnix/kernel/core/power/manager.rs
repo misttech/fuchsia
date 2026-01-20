@@ -139,6 +139,9 @@ const INSPECT_RING_BUFFER_CAPACITY: usize = 128;
 impl Default for SuspendResumeManagerInner {
     fn default() -> Self {
         let (active_lock_reader, active_lock_writer) = zx::EventPair::create();
+        active_lock_writer
+            .signal_peer(zx::Signals::empty(), zx::Signals::USER_0)
+            .expect("Failed to signal peer");
         Self {
             suspend_stats: Default::default(),
             sync_on_suspend_enabled: false,
@@ -154,7 +157,7 @@ impl Default for SuspendResumeManagerInner {
 
 impl SuspendResumeManagerInner {
     // Returns true if there are no wake locks preventing suspension.
-    fn can_suspend(&self) -> bool {
+    pub fn can_suspend(&self) -> bool {
         self.active_wakeup_source_count == 0
     }
 
@@ -193,9 +196,9 @@ impl SuspendResumeManagerInner {
     /// Signals whether or not there are currently any active wake locks in the kernel.
     fn signal_wake_events(&mut self) {
         let (clear_mask, set_mask) = if self.active_wakeup_source_count == 0 {
-            (zx::Signals::EVENT_SIGNALED, zx::Signals::empty())
+            (zx::Signals::EVENT_SIGNALED, zx::Signals::USER_0)
         } else {
-            (zx::Signals::empty(), zx::Signals::EVENT_SIGNALED)
+            (zx::Signals::USER_0, zx::Signals::EVENT_SIGNALED)
         };
         self.active_lock_writer.signal_peer(clear_mask, set_mask).expect("Failed to signal peer");
     }
@@ -359,8 +362,8 @@ impl SuspendResumeManager {
         };
         if did_activate {
             state.active_wakeup_source_count += 1;
+            state.signal_wake_events();
         }
-        state.signal_wake_events();
         did_activate
     }
 
@@ -394,8 +397,8 @@ impl SuspendResumeManager {
         if removed {
             state.active_wakeup_source_count -= 1;
             state.total_wakeup_source_event_count += 1;
+            state.signal_wake_events();
         }
-        state.signal_wake_events();
         removed
     }
 
@@ -433,6 +436,11 @@ impl SuspendResumeManager {
     /// Gets the suspend statistics.
     pub fn suspend_stats(&self) -> SuspendStats {
         self.lock().suspend_stats.clone()
+    }
+
+    pub fn total_wakeup_events(&self) -> u64 {
+        let state = self.lock();
+        state.total_wakeup_source_event_count + state.suspend_stats.success_count
     }
 
     /// Get the contents of the power "sync_on_suspend" file in the power
