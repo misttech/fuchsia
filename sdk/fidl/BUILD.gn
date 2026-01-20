@@ -486,6 +486,7 @@ group("tests") {
   deps = [ ":compatibility_tests" ]
 }
 
+# LINT.IfChange(compatibility_tests)
 # Runs the build-time FIDL compatibility tests and category compatibility checks
 # for all FIDL libraries that need them.
 # This includes all libraries in the Fuchsia IDK plus others that are not in the
@@ -508,6 +509,8 @@ group("compatibility_tests") {
     ":fidl_category_check_collection",
   ]
 }
+
+# LINT.ThenChange(//sdk/updating_golden_files.md:fidl)
 
 group("all_fidl_libraries_with_categories") {
   visibility = [ ":*" ]

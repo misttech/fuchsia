@@ -119,7 +119,10 @@ if (!sdk_inside_sub_build) {
 }
 
 if (current_toolchain == default_toolchain) {
-  # Generates compatibility testing goldens for FIDL libraries in the IDK.
+  # LINT.IfChange(generate_compatibility_goldens)
+  # Generates compatibility testing goldens for FIDL libraries in the IDK and
+  # API level-independent golden files for other libraries built for the IDK in
+  # the main build.
   # TODO(https://fxbug.dev/324656719): Ensure this covers APIs, libraries, etc.
   # that are not present at all levels, especially "PLATFORM".
   group("generate_compatibility_goldens") {
@@ -130,6 +133,7 @@ if (current_toolchain == default_toolchain) {
     testonly = true
     deps = _all_idk_atoms_affecting_compatibility
   }
+  # LINT.ThenChange(//sdk/updating_golden_files.md:generate_compatibility_goldens)
 }
 
 # Contains the list of all plasa fragment files, which have a dump of the
