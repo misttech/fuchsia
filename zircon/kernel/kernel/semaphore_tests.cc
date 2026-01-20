@@ -94,7 +94,7 @@ static bool thread_is_blocked(const Thread* t) {
   return (t->state() == THREAD_BLOCKED);
 }
 
-enum class Signal { kPost, kKill, kSuspend };
+enum class Signal { kPost, kPostQueue, kKill, kSuspend };
 
 template <Signal signal>
 static bool signal_test() {
@@ -126,6 +126,15 @@ static bool signal_test() {
       expected_count = 0;
       break;
 
+    case Signal::kPostQueue: {
+      OwnedWaitQueue queue;
+      sema.Post(&queue);
+      queue.ResetOwnerIfNoWaiters();
+      expected_error = ZX_OK;
+      expected_count = 0;
+      break;
+    }
+
     case Signal::kKill:
       thread->Kill();
       expected_error = ZX_ERR_INTERNAL_INTR_KILLED;
@@ -152,6 +161,7 @@ UNITTEST_START_TESTCASE(semaphore_tests)
 UNITTEST("smoke_test", smoke_test)
 UNITTEST("timeout_test", timeout_test)
 UNITTEST("post_signal_test", signal_test<Signal::kPost>)
+UNITTEST("post_queue_signal_test", signal_test<Signal::kPostQueue>)
 UNITTEST("kill_signal_test", signal_test<Signal::kKill>)
 UNITTEST("suspend_signal_test", signal_test<Signal::kSuspend>)
 UNITTEST_END_TESTCASE(semaphore_tests, "semaphore", "Semaphore tests")

@@ -83,13 +83,22 @@ void Semaphore::Post(OwnedWaitQueue* queue_to_own) {
     //
     // Try to wake one of the threads in the queue, but be ready for it to fail
     // because of a backoff error.
-    ktl::optional<bool> wake_result = waitq_.WakeOneLocked(ZX_OK);
-    if (!wake_result.has_value()) {
+    Thread* const thread = waitq_.Peek(current_mono_time());
+    DEBUG_ASSERT(thread != nullptr);
+    if (!thread->get_lock().AcquireOrBackoff()) {
       return ChainLockTransaction::Action::Backoff;
     }
-    DEBUG_ASSERT(wake_result.value());
 
-    // If we just woke the last thread from the queue, set the negative count
+    if (queue_to_own != nullptr) {
+      if (queue_to_own->AssignOwnerLocked(thread) != ZX_OK) {
+        thread->get_lock().Release();
+        return ChainLockTransaction::Action::Backoff;
+      }
+    }
+
+    waitq_.DequeueThread(thread, ZX_OK);
+
+    // If we are waking the last thread from the queue, set the negative count
     // back to zero.  We know that this is safe because we are still holding the
     // queue's lock.  Signaling threads cannot increment the count because it is
     // currently negative, and they cannot transition from negative to
@@ -101,6 +110,10 @@ void Semaphore::Post(OwnedWaitQueue* queue_to_own) {
     if (num_in_queue == 1) {
       count_.store(0, ktl::memory_order_release);
     }
+
+    guard.Release();
+    ChainLockTransaction::Finalize();
+    Scheduler::Unblock(thread);
     return ChainLockTransaction::Done;
   };
   ChainLockTransaction::UntilDone(PreemptDisableAndIrqSaveOption, CLT_TAG("Semaphore::Post"),
