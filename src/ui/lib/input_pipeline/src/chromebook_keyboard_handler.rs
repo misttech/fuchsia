@@ -115,7 +115,7 @@ impl UnhandledInputHandler for ChromebookKeyboardHandler {
         input_event: UnhandledInputEvent,
     ) -> Vec<InputEvent> {
         fuchsia_trace::duration!("input", "chromebook_keyboard_handler");
-        match input_event.clone() {
+        match input_event {
             // Decorate a keyboard event with key meaning.
             UnhandledInputEvent {
                 device_event: InputDeviceEvent::Keyboard(event),

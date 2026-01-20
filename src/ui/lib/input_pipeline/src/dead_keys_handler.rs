@@ -347,7 +347,7 @@ impl DeadKeysHandler {
         unhandled_input_event: UnhandledInputEvent,
     ) -> Vec<InputEvent> {
         fuchsia_trace::duration!("input", "dead_keys_handler");
-        match unhandled_input_event.clone() {
+        match unhandled_input_event {
             UnhandledInputEvent {
                 device_event: InputDeviceEvent::Keyboard(event),
                 device_descriptor,
@@ -356,11 +356,7 @@ impl DeadKeysHandler {
             } => {
                 fuchsia_trace::duration!("input", "dead_keys_handler[processing]");
                 if let Some(trace_id) = trace_id {
-                    fuchsia_trace::flow_step!(
-                        "input",
-                        "event_in_input_pipeline",
-                        trace_id.into()
-                    );
+                    fuchsia_trace::flow_step!("input", "event_in_input_pipeline", trace_id.into());
                 }
 
                 self.inspect_status.count_received_event(&event_time);

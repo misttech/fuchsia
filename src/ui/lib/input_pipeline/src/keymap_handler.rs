@@ -40,7 +40,7 @@ impl UnhandledInputHandler for KeymapHandler {
         input_event: input_device::UnhandledInputEvent,
     ) -> Vec<input_device::InputEvent> {
         fuchsia_trace::duration!("input", "keymap_handler");
-        match input_event.clone() {
+        match input_event {
             // Decorate a keyboard event with key meaning.
             input_device::UnhandledInputEvent {
                 device_event: input_device::InputDeviceEvent::Keyboard(event),

@@ -35,7 +35,7 @@ impl UnhandledInputHandler for PointerDisplayScaleHandler {
         unhandled_input_event: input_device::UnhandledInputEvent,
     ) -> Vec<input_device::InputEvent> {
         fuchsia_trace::duration!("input", "pointer_display_scale_handler");
-        match unhandled_input_event.clone() {
+        match unhandled_input_event {
             input_device::UnhandledInputEvent {
                 device_event:
                     input_device::InputDeviceEvent::Mouse(mouse_binding::MouseEvent {
