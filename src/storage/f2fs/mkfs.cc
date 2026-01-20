@@ -182,8 +182,9 @@ zx_status_t MkfsWorker::PrepareSuperblock() {
       CpuToLe((params_.total_sectors * params_.sector_size) / blk_size_bytes);
 
   uint64_t zone_align_start_offset =
-      (params_.start_sector * params_.sector_size + 2 * kBlockSize + zone_size_bytes - 1) /
-          zone_size_bytes * zone_size_bytes -
+      CheckedDivRoundUp(params_.start_sector * params_.sector_size + 2 * kBlockSize,
+                        zone_size_bytes) *
+          zone_size_bytes -
       params_.start_sector * params_.sector_size;
 
   if (params_.start_sector % params_.sectors_per_blk) {
@@ -246,12 +247,12 @@ zx_status_t MkfsWorker::PrepareSuperblock() {
   uint32_t max_sit_bitmap_size = std::min(sit_bitmap_size, kMaxSitBitmapSize);
 
   uint32_t max_nat_bitmap_size;
-  if (max_sit_bitmap_size >
-      kChecksumOffset - sizeof(Checkpoint) + 1 + (kDefaultBlocksPerSegment >> kShiftForBitSize)) {
-    max_nat_bitmap_size = kChecksumOffset - sizeof(Checkpoint) + 1;
-    super_block_.cp_payload = (max_sit_bitmap_size + kBlockSize - 1) / kBlockSize;
+  if (max_sit_bitmap_size > kChecksumOffset - Checkpoint::GetHeaderByteSize() +
+                                (kDefaultBlocksPerSegment >> kShiftForBitSize)) {
+    max_nat_bitmap_size = kChecksumOffset - Checkpoint::GetHeaderByteSize();
+    super_block_.cp_payload = CheckedDivRoundUp(max_sit_bitmap_size, kBlockSize);
   } else {
-    max_nat_bitmap_size = kChecksumOffset - sizeof(Checkpoint) + 1 - max_sit_bitmap_size;
+    max_nat_bitmap_size = kChecksumOffset - Checkpoint::GetHeaderByteSize() - max_sit_bitmap_size;
     super_block_.cp_payload = 0;
   }
 

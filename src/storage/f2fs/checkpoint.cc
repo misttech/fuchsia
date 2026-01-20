@@ -130,10 +130,8 @@ void F2fs::WriteOrphanInodes(block_t start_blk) {
   LockedPage page;
   uint32_t nentries = 0;
   uint16_t index = 1;
-  uint16_t orphan_blocks;
-
-  orphan_blocks = static_cast<uint16_t>(
-      (GetVnodeSetSize(VnodeSet::kOrphan) + (kOrphansPerBlock - 1)) / kOrphansPerBlock);
+  uint16_t orphan_blocks = CheckedDivRoundUp(
+      safemath::checked_cast<uint16_t>(GetVnodeSetSize(VnodeSet::kOrphan)), kOrphansPerBlock);
 
   ForAllVnodeSet(VnodeSet::kOrphan, [&](nid_t ino) {
     if (nentries == kOrphansPerBlock) {
@@ -390,8 +388,8 @@ zx_status_t F2fs::DoCheckpoint(bool is_umount) {
   }
 
   block_t num_cp_payload = superblock_info.GetNumCpPayload();
-  uint32_t orphan_blocks = static_cast<uint32_t>(
-      (GetVnodeSetSize(VnodeSet::kOrphan) + kOrphansPerBlock - 1) / kOrphansPerBlock);
+  uint16_t orphan_blocks = CheckedDivRoundUp(
+      safemath::checked_cast<uint16_t>(GetVnodeSetSize(VnodeSet::kOrphan)), kOrphansPerBlock);
   uint32_t cp_pack_total_block_count = 2 + data_sum_blocks + orphan_blocks + num_cp_payload;
   if (is_umount) {
     superblock_info.SetCpFlags(CpFlag::kCpUmountFlag);

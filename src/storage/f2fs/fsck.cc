@@ -576,7 +576,7 @@ zx_status_t FsckWorker::CheckDentries(uint32_t &child_count, uint32_t &child_fil
       return ret.error_value();
     }
 
-    i += (LeToCpu(dentries[i].name_len) + kDentrySlotLen - 1) / kDentrySlotLen;
+    i += CheckedDivRoundUp<uint32_t>(LeToCpu(dentries[i].name_len), kDentrySlotLen);
     ++child_files;
   }
 

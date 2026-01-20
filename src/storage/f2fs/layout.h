@@ -152,12 +152,13 @@ struct Checkpoint {
   // allocation type of current segment
   uint8_t alloc_type[kMaxActiveLogs];
 
-  // SIT and NAT version bitmap
+  // SIT/NAT version bitmap
   uint8_t sit_nat_version_bitmap[1];
+  static constexpr uint32_t GetHeaderByteSize() { return sizeof(Checkpoint) - 1; }
 } __attribute__((packed));
 
 // For orphan inode management
-constexpr uint32_t kOrphansPerBlock = 1020;
+constexpr uint16_t kOrphansPerBlock = 1020;
 
 struct OrphanBlock {
   uint32_t ino[kOrphansPerBlock];  // inode numbers
