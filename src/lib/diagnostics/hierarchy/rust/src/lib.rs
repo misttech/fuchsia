@@ -69,6 +69,7 @@ pub enum ArrayFormat {
 impl ArrayFormat {
     /// Return index of the underflow bucket for histograms, or 0 if not a
     /// histogram.
+    #[inline(always)]
     pub const fn underflow_bucket_index(self) -> usize {
         match self {
             ArrayFormat::Default => 0,
@@ -79,6 +80,7 @@ impl ArrayFormat {
 
     /// Return index of the overflow bucket for histograms, or 0 if not a
     /// histogram. Depends on the number of buckets.
+    #[inline(always)]
     pub const fn overflow_bucket_index(self, buckets: usize) -> usize {
         match self {
             ArrayFormat::Default => 0,
@@ -89,6 +91,7 @@ impl ArrayFormat {
 
     /// Return count of extra slots needed for storing parameters and
     /// underflow/overflow slots.
+    #[inline(always)]
     pub const fn extra_slots(self) -> usize {
         match self {
             // 0 parameters + 0 extra buckets
