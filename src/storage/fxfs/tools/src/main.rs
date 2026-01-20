@@ -42,7 +42,6 @@ struct TopLevel {
 enum SubCommand {
     ImageEdit(ImageEditCommand),
     CreateGolden(CreateGoldenSubCommand),
-    CheckGolden(CheckGoldenSubCommand),
     #[cfg(target_os = "linux")]
     RunInMemoryFuse(InMemoryFuseSubCommand),
     #[cfg(target_os = "linux")]
@@ -187,15 +186,6 @@ struct OpenFileFuseSubCommand {
     device_path: String,
 }
 
-#[derive(FromArgs, PartialEq, Debug)]
-/// Check all golden images at current filesystem version.
-#[argh(subcommand, name = "check_golden")]
-struct CheckGoldenSubCommand {
-    #[argh(option)]
-    /// path to golden images directory. derived from FUCHSIA_DIR if not set.
-    images_dir: Option<String>,
-}
-
 #[fuchsia::main(threads = 2)]
 async fn main() -> Result<(), Error> {
     log::debug!("fxfs {:?}", std::env::args());
@@ -309,8 +299,7 @@ async fn main() -> Result<(), Error> {
                 }
             }
         }
-        SubCommand::CreateGolden(_) => tools::golden::create_image().await,
-        SubCommand::CheckGolden(args) => tools::golden::check_images(args.images_dir).await,
+        SubCommand::CreateGolden(_) => tools::golden_generate::create_image().await,
         #[cfg(target_os = "linux")]
         SubCommand::RunInMemoryFuse(args) => run_in_memory_fuse(args.path).await,
         #[cfg(target_os = "linux")]

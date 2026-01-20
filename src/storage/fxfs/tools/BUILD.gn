@@ -2,10 +2,12 @@
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
+import("//build/components/fuchsia_test_package.gni")
+import("//build/components/fuchsia_unittest_component.gni")
 import("//build/host.gni")
 import("//build/rust/rustc_binary.gni")
 import("//build/rust/rustc_library.gni")
-import("//build/testing/host_test.gni")
+import("//build/rust/rustc_test.gni")
 
 if (is_host) {
   rustc_library("lib") {
@@ -22,7 +24,6 @@ if (is_host) {
       "//third_party/rust_crates:anyhow",
       "//third_party/rust_crates:chrono",
       "//third_party/rust_crates:rand",
-      "//third_party/rust_crates:serde_json",
       "//third_party/rust_crates:zstd",
       "//third_party/zstd",
     ]
@@ -44,7 +45,8 @@ if (is_host) {
       "src/fuse_errors.rs",
       "src/fuse_fs.rs",
       "src/fuse_vfs.rs",
-      "src/golden.rs",
+      "src/golden_common.rs",
+      "src/golden_generate.rs",
       "src/lib.rs",
       "src/ops.rs",
     ]
@@ -78,19 +80,46 @@ if (is_host) {
     ]
     output_name = "fxfs"
   }
-
-  host_test("fxfs_golden_image_test") {
-    binary_path = "${root_out_dir}/fxfs"
+} else {
+  rustc_test("fxfs_golden_image_test_bin") {
+    edition = "2024"
+    source_root = "src/golden_test.rs"
+    sources = [
+      "src/golden_common.rs",
+      "src/golden_test.rs",
+    ]
     deps = [
-      ":fxfs_tool($host_toolchain)",
+      "//sdk/fidl/fuchsia.io:fuchsia.io_rust",
+      "//sdk/rust/zx",
+      "//src/lib/fidl/rust/fidl",
+      "//src/lib/fuchsia",
+      "//src/lib/fuchsia-fs",
+      "//src/performance/memory/attribution/refaults_vmo",
+      "//src/storage/fxfs:lib",
+      "//src/storage/fxfs/crypto",
+      "//src/storage/fxfs/crypto/insecure",
+      "//src/storage/fxfs/make-blob-image",
+      "//src/storage/fxfs/platform",
+      "//src/storage/lib/storage_device",
+      "//src/sys/pkg/lib/fuchsia-hash",
+      "//third_party/rust_crates:anyhow",
+      "//third_party/rust_crates:serde_json",
+      "//third_party/rust_crates:zstd",
+      "//third_party/zstd",
+    ]
+    data_deps = [
       "//src/storage/fxfs/testdata:golden_image_manifest",
       "//src/storage/fxfs/testdata:golden_images",
     ]
-    args = [
-      "check_golden",
-      "--images-dir",
-      "fxfs_golden_images",
-    ]
+  }
+
+  fuchsia_unittest_component("fxfs-golden-image-test") {
+    deps = [ ":fxfs_golden_image_test_bin" ]
+    manifest = "meta/golden_test.cml"
+  }
+
+  fuchsia_test_package("fxfs_golden_image_test") {
+    test_components = [ ":fxfs-golden-image-test" ]
   }
 }
 
@@ -102,7 +131,7 @@ install_host_tools("tools") {
 group("tests") {
   testonly = true
   deps = [
-    ":fxfs_golden_image_test($host_toolchain)",
+    ":fxfs_golden_image_test",
     ":lib_test($host_toolchain)",
   ]
 }

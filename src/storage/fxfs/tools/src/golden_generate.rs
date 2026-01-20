@@ -2,13 +2,17 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+use crate::golden_common::{
+    BLOB_LIST_PATH, DEFAULT_VOLUME, DELETED_FILE_PATH, EXPECTED_FILE_CONTENT, IMAGE_BLOCK_SIZE,
+    REGULAR_FILE_PATH, UNENCRYPTED_VOLUME, VERITY_FILE_PATH, WRAPPING_KEY_ID,
+    latest_image_filename,
+};
 use crate::ops;
-use anyhow::{Context, Error, bail, ensure};
+use anyhow::{Context, Error, bail};
 use chrono::Local;
 use fxfs::filesystem::{FxFilesystem, OpenFxFilesystem, SyncOptions};
-use fxfs::object_store::{NO_OWNER, ObjectStore};
-use fxfs::serialized_types::{LATEST_VERSION, Version};
-use fxfs_crypto::{Crypt, WrappingKeyId};
+use fxfs::object_store::ObjectStore;
+use fxfs_crypto::Crypt;
 use fxfs_insecure_crypto::new_insecure_crypt;
 use fxfs_make_blob_image::FxBlobBuilder;
 use rand::rngs::SmallRng;
@@ -19,21 +23,10 @@ use std::sync::Arc;
 use storage_device::DeviceHolder;
 use storage_device::fake_device::FakeDevice;
 
-const IMAGE_BLOCKS: u64 = 8192;
-// Version of first image with a verified file included in `create_image()`
-const FSCRYPT_VERSION_START: u32 = 47;
-const IMAGE_BLOCK_SIZE: u32 = 1024;
-const EXPECTED_FILE_CONTENT: &[u8; 8] = b"content.";
+const FSCRYPT_UNICODE_FILE_PATH: &str = "fscrypt/Straße.txt";
 const FXFS_GOLDEN_IMAGE_DIR: &str = "src/storage/fxfs/testdata";
-const FXFS_GOLDEN_IMAGE_MANIFEST: &str = "golden_image_manifest.json";
+const IMAGE_BLOCKS: u64 = 8192;
 const PROJECT_ID: u64 = 4;
-const DEFAULT_VOLUME: &str = "default";
-const UNENCRYPTED_VOLUME: &str = "unencrypted";
-const BLOB_LIST_PATH: &str = "blob_list";
-const CHECK_FILE_PATH: &str = "some/test_file.txt";
-const CHECK_FILE_CONTENT: &[u8; 6] = &[0, 1, 2, 3, 4, 5];
-const SECOND_VOLUME_VERSION: Version = Version { major: 38, minor: 0 };
-const WRAPPING_KEY_ID: WrappingKeyId = u128::to_le_bytes(2);
 
 /// Uses FUCHSIA_DIR environment variable to generate a path to the expected location of golden
 /// images. Note that we do this largely for ergonomics because this binary is typically invoked
@@ -45,17 +38,6 @@ fn golden_image_dir() -> Result<PathBuf, Error> {
     }
     let (_, fuchsia_dir) = fuchsia_dir.unwrap();
     Ok(PathBuf::from(fuchsia_dir).join(FXFS_GOLDEN_IMAGE_DIR))
-}
-
-/// Generates the filename where we expect to find a golden image for the current version of the
-/// filesystem.
-fn latest_image_filename() -> String {
-    format!("fxfs_golden.{}.{}.img.zstd", LATEST_VERSION.major, LATEST_VERSION.minor)
-}
-
-/// Decompresses a zstd compressed local image into a RAM backed FakeDevice.
-fn load_device(path: &Path) -> Result<FakeDevice, Error> {
-    Ok(FakeDevice::from_image(zstd::Decoder::new(std::fs::File::open(path)?)?, IMAGE_BLOCK_SIZE)?)
 }
 
 /// Compresses contents of a device into a zstd compressed local image.
@@ -73,33 +55,39 @@ async fn save_device(device: DeviceHolder, path: &Path) -> Result<(), Error> {
     Ok(())
 }
 
+/// Takes a path, removing the file at the end.
+fn drop_file_from_path(original: &str) -> PathBuf {
+    Path::new(original).parent().map(Path::to_path_buf).unwrap_or_else(PathBuf::new)
+}
+
 async fn activity_in_volume(fs: &OpenFxFilesystem, vol: &Arc<ObjectStore>) -> Result<(), Error> {
-    ops::mkdir(fs, vol, Path::new("some")).await?;
+    let regular_dir_path = drop_file_from_path(REGULAR_FILE_PATH);
+    ops::mkdir(fs, vol, regular_dir_path.as_path()).await?;
     // Apply limit to project id and apply that both to the "some" directory to have it get applied
     // everywhere else.
     ops::set_project_limit(vol, PROJECT_ID, 102400, 1024).await?;
-    ops::set_project_for_node(vol, PROJECT_ID, &Path::new("some")).await?;
+    ops::set_project_for_node(vol, PROJECT_ID, regular_dir_path.as_path()).await?;
 
-    ops::put(fs, vol, &Path::new("some/file.txt"), EXPECTED_FILE_CONTENT.to_vec()).await?;
-    ops::put(fs, vol, &Path::new("some/deleted.txt"), EXPECTED_FILE_CONTENT.to_vec()).await?;
+    ops::put(fs, vol, &Path::new(REGULAR_FILE_PATH), EXPECTED_FILE_CONTENT.to_vec()).await?;
+    ops::put(fs, vol, &Path::new(DELETED_FILE_PATH), EXPECTED_FILE_CONTENT.to_vec()).await?;
     // Compact here and below so that there are some persistent files added.
     fs.journal().compact().await?;
-    ops::unlink(fs, vol, &Path::new("some/deleted.txt")).await?;
-    ops::put(fs, vol, &Path::new("some/fsverity.txt"), EXPECTED_FILE_CONTENT.to_vec()).await?;
-    ops::enable_verity(vol, &Path::new("some/fsverity.txt")).await?;
+    ops::unlink(fs, vol, &Path::new(DELETED_FILE_PATH)).await?;
+    ops::put(fs, vol, &Path::new(VERITY_FILE_PATH), EXPECTED_FILE_CONTENT.to_vec()).await?;
+    ops::enable_verity(vol, &Path::new(VERITY_FILE_PATH)).await?;
 
     fs.journal().compact().await?;
 
     ops::set_extended_attribute_for_node(
         vol,
-        &Path::new("some"),
+        &Path::new(regular_dir_path.as_path()),
         b"security.selinux",
         b"test value",
     )
     .await?;
     ops::set_extended_attribute_for_node(
         vol,
-        &Path::new("some/file.txt"),
+        &Path::new(REGULAR_FILE_PATH),
         b"user.hash",
         b"different value",
     )
@@ -107,15 +95,17 @@ async fn activity_in_volume(fs: &OpenFxFilesystem, vol: &Arc<ObjectStore>) -> Re
 
     // Exercise fscrypt and casefold with unicode filenames.
     if vol.crypt().is_some() {
-        ops::mkdir(fs, vol, &Path::new("/fscrypt")).await?;
-        ops::enable_fscrypt(fs, vol, &Path::new("/fscrypt"), WRAPPING_KEY_ID).await?;
-        ops::enable_casefold(vol, &Path::new("/fscrypt")).await?;
-        ops::put(fs, vol, &Path::new("/fscrypt/Straße.txt"), EXPECTED_FILE_CONTENT.to_vec())
+        let fscrypt_dir_path = drop_file_from_path(FSCRYPT_UNICODE_FILE_PATH);
+        ops::mkdir(fs, vol, fscrypt_dir_path.as_path()).await?;
+        ops::enable_fscrypt(fs, vol, fscrypt_dir_path.as_path(), WRAPPING_KEY_ID).await?;
+        ops::enable_casefold(vol, fscrypt_dir_path.as_path()).await?;
+        ops::put(fs, vol, &Path::new(FSCRYPT_UNICODE_FILE_PATH), EXPECTED_FILE_CONTENT.to_vec())
             .await?;
     }
 
     Ok(())
 }
+
 pub async fn install_blobs(builder: &FxBlobBuilder) -> Result<Vec<[u8; 32]>, Error> {
     let mut blob_names = Vec::new();
 
@@ -226,123 +216,5 @@ pub async fn create_image() -> Result<(), Error> {
         file.write_all(format!("  \"{}\",\n", file_name.to_str().unwrap()).as_bytes())?;
     }
     file.write_all(b"]\n")?;
-    Ok(())
-}
-
-async fn check_volume(
-    fs: &OpenFxFilesystem,
-    vol: &Arc<ObjectStore>,
-    version: &Version,
-) -> Result<(), Error> {
-    if ops::get(&vol, &Path::new("some/file.txt")).await? != EXPECTED_FILE_CONTENT.to_vec() {
-        bail!("Expected file content incorrect.");
-    }
-    if ops::get(&vol, &Path::new("some/fsverity.txt")).await? != EXPECTED_FILE_CONTENT.to_vec() {
-        bail!("Expected fsverity content incorrect.");
-    }
-    if ops::get(&vol, &Path::new("some/deleted.txt")).await.is_ok() {
-        bail!("Found deleted file.");
-    }
-
-    if version.major >= FSCRYPT_VERSION_START && vol.crypt().is_some() {
-        // Check fscrypt file read with a casefolded unicode filename.
-        assert_eq!(
-            ops::get(&vol, &Path::new("/fscrypt/Strasse.txt")).await?,
-            EXPECTED_FILE_CONTENT
-        );
-    }
-
-    // Make sure after writing a new file (using the latest format), the filesystem remains
-    // valid.
-    let mut content = vec![0u8; 6];
-    content.copy_from_slice(CHECK_FILE_CONTENT);
-    ops::put(&fs, &vol, &Path::new(CHECK_FILE_PATH), content).await?;
-    Ok(())
-}
-
-/// Validates an image by looking for expected data and performing an fsck.
-async fn check_image(path: &Path) -> Result<(), Error> {
-    let insecure_crypt = new_insecure_crypt();
-    insecure_crypt.add_wrapping_key(WRAPPING_KEY_ID, [1; 32].into()).expect("Failed to add key");
-    let crypt: Arc<dyn Crypt> = Arc::new(insecure_crypt);
-    let version = {
-        let device = DeviceHolder::new(load_device(path)?);
-        let fs = FxFilesystem::open(device).await?;
-        ops::fsck(&fs, true).await.context("fsck failed")?;
-        fs.journal().super_block_header().earliest_version
-    };
-
-    let device = DeviceHolder::new(load_device(path)?);
-    let fs = FxFilesystem::open(device).await?;
-    let mut volumes = vec![(DEFAULT_VOLUME, Some(crypt.clone()))];
-    if version >= SECOND_VOLUME_VERSION {
-        volumes.push((UNENCRYPTED_VOLUME, None));
-    }
-    for (vol_name, vol_crypt) in volumes.clone() {
-        let vol = ops::open_volume(&fs, vol_name, NO_OWNER, vol_crypt)
-            .await
-            .context(format!("Opening {}", vol_name))?;
-        check_volume(&fs, &vol, &version).await.context(format!("Checking {}", vol_name))?;
-    }
-    fs.close().await?;
-
-    let device = fs.take_device().await;
-    device.reopen(false);
-    let fs = FxFilesystem::open(device).await?;
-    ops::fsck(&fs, true).await.context("fsck failed")?;
-    for (vol_name, vol_crypt) in volumes {
-        let vol = ops::open_volume(&fs, vol_name, NO_OWNER, vol_crypt).await.context(vol_name)?;
-        if &ops::get(&vol, &Path::new(CHECK_FILE_PATH)).await?.as_slice()
-            != &CHECK_FILE_CONTENT.as_slice()
-        {
-            bail!("Unexpected file content in new file");
-        }
-    }
-
-    fs.journal().compact().await?;
-    assert_eq!(fs.journal().super_block_header().earliest_version, LATEST_VERSION);
-    fs.close().await
-}
-
-pub async fn check_images(image_root: Option<String>) -> Result<(), Error> {
-    let image_root = match image_root {
-        Some(path) => std::env::current_exe()?.parent().unwrap().join(path),
-        None => golden_image_dir()?,
-    };
-
-    let mut golden_files: Vec<String> = {
-        let manifest_path = image_root.clone().join(FXFS_GOLDEN_IMAGE_MANIFEST);
-        let manifest_contents =
-            std::fs::read_to_string(manifest_path.clone()).with_context(|| {
-                format!("Failed to read golden manifest: {}", manifest_path.display())
-            })?;
-        serde_json::from_str(&manifest_contents).with_context(|| {
-            format!("Failed to parse manifest json: {}", manifest_path.display())
-        })?
-    };
-
-    // First check that there exists an image for the latest version.
-    ensure!(
-        golden_files.contains(&latest_image_filename()),
-        "Golden image is missing for version {} ({}). Please run 'fx fxfs create_golden'",
-        LATEST_VERSION,
-        latest_image_filename()
-    );
-
-    // Next ensure that we can parse all golden images and validate expected content.
-    golden_files.sort();
-    for golden_file in golden_files {
-        let path_buf = image_root.clone().join(golden_file);
-        println!("------------------------------------------------------------------------");
-        println!("Validating golden image: {}", path_buf.file_name().unwrap().to_str().unwrap());
-        println!("------------------------------------------------------------------------");
-        if let Err(e) = check_image(path_buf.as_path()).await {
-            bail!(
-                "Failed to validate golden image {} with the latest code: {:?}",
-                path_buf.display(),
-                e
-            )
-        }
-    }
     Ok(())
 }
