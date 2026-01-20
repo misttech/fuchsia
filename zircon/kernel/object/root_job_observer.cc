@@ -87,7 +87,7 @@ RootJobObserver::RootJobObserver(fbl::RefPtr<JobDispatcher> root_job, Handle* ro
 
 RootJobObserver::~RootJobObserver() { root_job_->RemoveObserver(this); }
 
-void RootJobObserver::OnMatch(zx_signals_t signals) {
+void RootJobObserver::OnMatch(zx_signals_t signals, OwnedWaitQueue* queue_to_own) {
   // Remember, the |root_job_|'s Dispatcher lock is held for the duration of
   // this method.  Take care to avoid calling anything that might attempt to
   // acquire that lock.

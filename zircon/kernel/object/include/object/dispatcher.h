@@ -261,7 +261,7 @@ class Dispatcher : private fbl::RefCountedUpgradeable<Dispatcher>,
   // Notify the observers waiting on one or more |signals|.
   //
   // unlike UpdateState and UpdateStateLocked, this method does not modify the stored signal state.
-  void NotifyObserversLocked(zx_signals_t signals) TA_REQ(get_lock());
+  void NotifyObserversLocked(zx_signals_t signals, OwnedWaitQueue* queue_to_own) TA_REQ(get_lock());
 
   // Returns the stored signal state.
   zx_signals_t GetSignalsStateLocked() const TA_REQ(get_lock()) {

@@ -56,12 +56,12 @@ zx_signals_t WaitSignalObserver::End() {
   return signals;
 }
 
-void WaitSignalObserver::OnMatch(zx_signals_t signals) {
+void WaitSignalObserver::OnMatch(zx_signals_t signals, OwnedWaitQueue* queue_to_own) {
   canary_.Assert();
 
   // Save the signal state, and wake our waiter.
   final_signal_state_.store(signals, ktl::memory_order_release);
-  event_->Signal();
+  event_->Signal(ZX_OK, queue_to_own);
 }
 
 void WaitSignalObserver::OnCancel(zx_signals_t signals) {

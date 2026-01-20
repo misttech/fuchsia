@@ -44,7 +44,7 @@ class TestSignalObserver final : public SignalObserver {
   bool called() { return match_called_ || cancel_called_; }
 
  private:
-  void OnMatch(zx_signals_t signals) final {
+  void OnMatch(zx_signals_t signals, OwnedWaitQueue* queue_to_own) final {
     // Ensure we are not called twice.
     ZX_ASSERT(!cancel_called_);
     ZX_ASSERT(!match_called_);

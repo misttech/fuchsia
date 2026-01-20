@@ -18,6 +18,7 @@
 
 #include <fbl/alloc_checker.h>
 #include <kernel/event.h>
+#include <ktl/algorithm.h>
 #include <object/handle.h>
 #include <object/message_packet.h>
 #include <object/process_dispatcher.h>
@@ -147,7 +148,7 @@ inline void TraceMessage(const MessagePacket& msg, const ChannelDispatcher* chan
   if constexpr (CHANNEL_MESSAGE_BODY_TRACING_ENABLED) {
     zx_info_handle_basic_t handle_info[kMaxTraceHandles];
     const auto get_handle_info = [&handle_info, &msg]() -> ktl::span<const uint8_t> {
-      size_t num_handles = std::min(msg.num_handles(), kMaxTraceHandles);
+      size_t num_handles = ktl::min(msg.num_handles(), kMaxTraceHandles);
       for (size_t i = 0; i < num_handles; ++i) {
         const auto& handle = msg.handles()[i];
         handle_info[i] = {
@@ -403,7 +404,7 @@ zx_status_t ChannelDispatcher::Write(zx_koid_t owner, MessagePacketPtr msg) {
     return ZX_OK;
   }
 
-  peer()->WriteSelf(ktl::move(msg));
+  peer()->WriteSelf(ktl::move(msg), nullptr);
 
   return ZX_OK;
 }
@@ -503,7 +504,7 @@ zx_status_t ChannelDispatcher::Call(zx_koid_t owner, MessagePacketPtr msg,
 
     // (1) Write outbound message to opposing endpoint.
     AssertHeld(*peer()->get_lock());
-    peer()->WriteSelf(ktl::move(msg));
+    peer()->WriteSelf(ktl::move(msg), waiter->get_wait_queue());
   }
 
   auto process = ProcessDispatcher::GetCurrent();
@@ -588,7 +589,7 @@ bool ChannelDispatcher::TryWriteToMessageWaiter(MessagePacketPtr& msg) {
   return false;
 }
 
-void ChannelDispatcher::WriteSelf(MessagePacketPtr msg) {
+void ChannelDispatcher::WriteSelf(MessagePacketPtr msg, OwnedWaitQueue* queue_to_own) {
   canary_.Assert();
 
   // Once we've acquired the channel_lock_ we're going to make a copy of the previously active
@@ -614,9 +615,7 @@ void ChannelDispatcher::WriteSelf(MessagePacketPtr msg) {
     messages_.push_back(ktl::move(msg));
     previous_signals = RaiseSignalsLocked(ZX_CHANNEL_READABLE);
     const size_t size = messages_.size();
-    if (size > max_message_count_) {
-      max_message_count_ = size;
-    }
+    max_message_count_ = ktl::max(size, max_message_count_);
     // TODO(cpu): Remove this hack. See comment in kMaxPendingMessageCount definition.
     if (size >= kWarnPendingMessageCount) {
       if (size == kWarnPendingMessageCount) {
@@ -642,7 +641,7 @@ void ChannelDispatcher::WriteSelf(MessagePacketPtr msg) {
 
   // Don't bother waking observers if ZX_CHANNEL_READABLE was already active.
   if ((previous_signals & ZX_CHANNEL_READABLE) == 0) {
-    NotifyObserversLocked(previous_signals | ZX_CHANNEL_READABLE);
+    NotifyObserversLocked(previous_signals | ZX_CHANNEL_READABLE, queue_to_own);
   }
 }
 

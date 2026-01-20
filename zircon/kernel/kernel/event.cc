@@ -118,7 +118,7 @@ zx_status_t Event::WaitWorker(const Deadline& deadline, Interruptible interrupti
  * @param wait_result What status a wait call will return to the
  *                    thread or threads that are woken up.
  */
-void Event::Signal(zx_status_t wait_result) {
+void Event::Signal(zx_status_t wait_result, OwnedWaitQueue* queue_to_own) {
   DEBUG_ASSERT(magic_ == kMagic);
   DEBUG_ASSERT(wait_result != kNotSignaled);
 
@@ -157,7 +157,7 @@ void Event::Signal(zx_status_t wait_result) {
 
     // Success.  If we not an auto-reset event, or we failed to find anyone to
     // wake, make sure to set the event to the signaled state.
-    const bool has_threads_to_wake = !maybe_unblock_list.value().is_empty();
+    const bool has_threads_to_wake = !maybe_unblock_list->is_empty();
     if (!(flags_ & Event::AUTOUNSIGNAL) || !has_threads_to_wake) {
       result_.store(wait_result, ktl::memory_order_relaxed);
     }

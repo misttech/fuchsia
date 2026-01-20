@@ -22,7 +22,7 @@
 //   - unblocked one thread and
 //     - left an empty queue with a count of zero or
 //     - left a non-empty queue with negative count
-void Semaphore::Post() {
+void Semaphore::Post(OwnedWaitQueue* queue_to_own) {
   // When calling post, we know we cannot be holding any chain locks (since we
   // demand that there be no transaction in process). In addition, if they are
   // holding any spinlocks, they need to have disabled local preemption outside

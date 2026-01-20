@@ -74,7 +74,16 @@ class Event {
     return WaitWorker(Deadline::no_slack(deadline), interruptible, 0);
   }
 
-  void Signal(zx_status_t wait_result = ZX_OK) TA_EXCL(chainlock_transaction_token);
+  // Signals an event.
+  //
+  // All waiting threads are allowed to proceed until such time as Unsignal() is called.
+  //
+  // |wait_result| is the value to return for Wait(), if the wait was successful.
+  // |queue_to_own| is the OwnedWaitQueue that the first unblocked thread will take ownership of. If
+  // this is not-null, then we will perform an assign-owner operation on the queue. If there is no
+  // thread waiting, then no assign-owner operation will occur.
+  void Signal(zx_status_t wait_result = ZX_OK, OwnedWaitQueue* queue_to_own = nullptr)
+      TA_EXCL(chainlock_transaction_token);
   zx_status_t Unsignal();
   bool is_signaled() const { return result_.load(ktl::memory_order_relaxed) != kNotSignaled; }
 
@@ -102,6 +111,7 @@ class Event {
   WaitQueue wait_;
 };
 
+// Only one waiting thread is allowed to proceed.
 class AutounsignalEvent : public Event {
  public:
   constexpr explicit AutounsignalEvent(bool initial = false)

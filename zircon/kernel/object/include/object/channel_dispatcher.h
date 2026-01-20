@@ -146,7 +146,7 @@ class ChannelDispatcher final
   // Returns true and takes ownership of |msg| iff the message was delivered.
   bool TryWriteToMessageWaiter(MessagePacketPtr& msg) TA_REQ(get_lock());
 
-  void WriteSelf(MessagePacketPtr msg) TA_REQ(get_lock());
+  void WriteSelf(MessagePacketPtr msg, OwnedWaitQueue* queue_to_own) TA_REQ(get_lock());
 
   // Generate a unique txid to be used in a channel call.
   zx_txid_t GenerateTxid() TA_REQ(get_lock());

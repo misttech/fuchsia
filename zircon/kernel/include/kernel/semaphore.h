@@ -44,7 +44,12 @@ class Semaphore {
   // may return without blocking.
   //
   // |Post| has release memory order semantics and synchronizes with |Wait|.
-  void Post() TA_EXCL(chainlock_transaction_token);
+  //
+  // |queue_to_own| is the OwnedWaitQueue that the unblocked thread will take
+  // ownership of. If this is not-null, then we will perform an assign-owner
+  // operation on the queue. If there is no thread waiting, then no
+  // assign-owner operation will occur.
+  void Post(OwnedWaitQueue* queue_to_own = nullptr) TA_EXCL(chainlock_transaction_token);
 
   // If the count is positive, decrement the count and return ZX_OK.  Otherwise,
   // decrement the count and wait until some other thread wakes us via |Post|,
@@ -65,7 +70,7 @@ class Semaphore {
   //
   // This should only be used for testing/diagnostic purposes.
   uint64_t num_waiters() const TA_EXCL(chainlock_transaction_token, waitq_.get_lock()) {
-    SingleChainLockGuard guard{IrqSaveOption, waitq_.get_lock(), CLT_TAG("Semaphore:num_waiters")};
+    SingleChainLockGuard guard{IrqSaveOption, waitq_.get_lock(), CLT_TAG("Semaphore::num_waiters")};
     return waitq_.Count();
   }
 

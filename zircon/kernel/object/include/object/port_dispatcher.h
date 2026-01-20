@@ -193,7 +193,7 @@ class PortObserver final : public SignalObserver {
   PortObserver& operator=(const PortObserver&) = delete;
 
   // |SignalObserver| implementation.
-  void OnMatch(zx_signals_t signals) final;
+  void OnMatch(zx_signals_t signals, OwnedWaitQueue* queue_to_own) final;
   void OnCancel(zx_signals_t signals) final;
   bool MatchesKey(const void* port, uint64_t key) final;
 
@@ -247,7 +247,8 @@ class PortDispatcher final : public SoloDispatcher<PortDispatcher, ZX_DEFAULT_PO
   // Queues a packet based on a signal observation and deregisters the observer from the port.
   // If |observer| is non-null, also removes it from the observer list.
   zx_status_t QueueAndRemoveObserver(PortPacket* port_packet, zx_signals_t observed,
-                                     PortObserver* observer);
+                                     PortObserver* observer = nullptr,
+                                     OwnedWaitQueue* queue_to_own = nullptr);
 
   // Queues a user packet.
   zx_status_t QueueUser(const zx_port_packet_t& packet);

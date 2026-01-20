@@ -122,7 +122,7 @@ PortObserver::PortObserver(uint32_t options, const Handle* handle, fbl::RefPtr<P
   packet.signal.trigger = signals;
 }
 
-void PortObserver::OnMatch(zx_signals_t signals) {
+void PortObserver::OnMatch(zx_signals_t signals, OwnedWaitQueue* queue_to_own) {
   if (options_ & ZX_WAIT_ASYNC_TIMESTAMP) {
     // Getting the current time can be somewhat expensive.
     packet_.packet.signal.timestamp = current_mono_time();
@@ -137,7 +137,8 @@ void PortObserver::OnMatch(zx_signals_t signals) {
   // until it returns.
   fbl::RefPtr<PortDispatcher> port_ref(port_);
 
-  const zx_status_t status = port_ref->QueueAndRemoveObserver(&packet_, signals, this);
+  const zx_status_t status =
+      port_ref->QueueAndRemoveObserver(&packet_, signals, this, queue_to_own);
   // The |QueueAndRemoveObserver| call may have deleted |this|, so it is not safe to access any
   // members now.
 
@@ -283,11 +284,12 @@ bool PortDispatcher::QueueInterruptPacket(PortInterruptPacket* port_packet,
 }
 
 zx_status_t PortDispatcher::Queue(PortPacket* port_packet) {
-  return QueueAndRemoveObserver(port_packet, ZX_SIGNAL_NONE, nullptr);
+  return QueueAndRemoveObserver(port_packet, ZX_SIGNAL_NONE);
 }
 
 zx_status_t PortDispatcher::QueueAndRemoveObserver(PortPacket* port_packet, zx_signals_t observed,
-                                                   PortObserver* observer) {
+                                                   PortObserver* observer,
+                                                   OwnedWaitQueue* queue_to_own) {
   canary_.Assert();
 
   // This pointer is declared before the guard because we want the destructor to execute
@@ -313,7 +315,7 @@ zx_status_t PortDispatcher::QueueAndRemoveObserver(PortPacket* port_packet, zx_s
 
   // If |Post| unblocks a thread, that thread will attempt to acquire the lock. We drop the lock
   // before calling |Post| to allow the unblocked thread to acquire the lock without blocking.
-  sema_.Post();
+  sema_.Post(queue_to_own);
   return ZX_OK;
 }
 

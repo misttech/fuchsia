@@ -13,6 +13,7 @@
 #include <fbl/intrusive_double_list.h>
 
 class Handle;
+class OwnedWaitQueue;
 
 // SignalObserver implementations may register to be called when
 // a signal becomes active on a particular Dispatcher.
@@ -28,7 +29,7 @@ class SignalObserver : public fbl::DoublyLinkedListable<SignalObserver*> {
   // caller will not interact with it again.
   //
   // WARNING: This is called under Dispatcher's lock
-  virtual void OnMatch(zx_signals_t signals) = 0;
+  virtual void OnMatch(zx_signals_t signals, OwnedWaitQueue* queue_to_own = nullptr) = 0;
 
   // Called when the registered handle (which refers to a handle to the
   // Dispatcher object) is being destroyed/"closed"/transferred. (The

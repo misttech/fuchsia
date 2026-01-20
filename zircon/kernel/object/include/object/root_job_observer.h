@@ -43,7 +43,7 @@ class RootJobObserver final : public SignalObserver {
 
  private:
   // |SignalObserver| implementation.
-  void OnMatch(zx_signals_t signals) final;
+  void OnMatch(zx_signals_t signals, OwnedWaitQueue* queue_to_own) final;
   void OnCancel(zx_signals_t signals) final;
 
   fbl::RefPtr<JobDispatcher> root_job_;

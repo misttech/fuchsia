@@ -22,7 +22,7 @@ class Event;
 // Helper class for Waiting on the wait_one and wait_many syscalls.
 class WaitSignalObserver final : public SignalObserver {
  public:
-  WaitSignalObserver() : SignalObserver() {}
+  WaitSignalObserver() = default;
   ~WaitSignalObserver() final;
 
   // This should be called under the handle table lock. If this succeeds, End() must be called
@@ -37,7 +37,7 @@ class WaitSignalObserver final : public SignalObserver {
   WaitSignalObserver& operator=(const WaitSignalObserver&) = delete;
 
   // |SignalObserver| implementation.
-  void OnMatch(zx_signals_t signals) final;
+  void OnMatch(zx_signals_t signals, OwnedWaitQueue* queue_to_own) final;
   void OnCancel(zx_signals_t signals) final;
 
   fbl::Canary<fbl::magic("WTSO")> canary_;

@@ -188,7 +188,7 @@ void Dispatcher::UpdateState(zx_signals_t clear_mask, zx_signals_t set_mask,
   UpdateStateLocked(clear_mask, set_mask, strobe_mask);
 }
 
-void Dispatcher::NotifyObserversLocked(zx_signals_t signals) {
+void Dispatcher::NotifyObserversLocked(zx_signals_t signals, OwnedWaitQueue* queue_to_own) {
   for (auto it = observers_.begin(); it != observers_.end(); /* nothing */) {
     // Ignore observers that don't need to be notified.
     if ((it->triggering_signals_ & signals) == 0) {
@@ -199,7 +199,7 @@ void Dispatcher::NotifyObserversLocked(zx_signals_t signals) {
     auto to_remove = it;
     ++it;
     observers_.erase(to_remove);
-    to_remove->OnMatch(signals);
+    to_remove->OnMatch(signals, queue_to_own);
   }
 }
 
@@ -222,7 +222,7 @@ void Dispatcher::UpdateStateLocked(zx_signals_t clear_mask, zx_signals_t set_mas
     return;
   }
 
-  NotifyObserversLocked(updated | strobe_mask);
+  NotifyObserversLocked(updated | strobe_mask, nullptr);
 }
 
 zx_signals_t Dispatcher::PollSignals() const {

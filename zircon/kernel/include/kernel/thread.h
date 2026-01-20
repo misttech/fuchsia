@@ -443,6 +443,11 @@ class WaitQueue : public ChainLockable {
   ktl::optional<uint32_t> WakeAllLocked(zx_status_t wait_queue_error)
       TA_REQ(chainlock_transaction_token, get_lock(), preempt_disabled_token);
 
+  // Dequeue the specified thread and set its blocked_status.  Do not actually
+  // schedule the thread to run.
+  void DequeueThread(Thread* t, zx_status_t wait_queue_error)
+      TA_REQ(get_lock(), ChainLockable::GetLock(*t));
+
   // Whether the wait queue is currently empty.
   bool IsEmpty() const TA_REQ_SHARED(get_lock()) { return collection_.IsEmpty(); }
   uint32_t Count() const TA_REQ_SHARED(get_lock()) { return collection_.Count(); }
@@ -480,11 +485,6 @@ class WaitQueue : public ChainLockable {
   inline zx_status_t BlockEtcPostamble(Thread* current_thread, const Deadline& deadline)
       TA_EXCL(get_lock())
           TA_REQ(chainlock_transaction_token, ChainLockable::GetLock(*current_thread));
-
-  // Dequeue the specified thread and set its blocked_status.  Do not actually
-  // schedule the thread to run.
-  void DequeueThread(Thread* t, zx_status_t wait_queue_error)
-      TA_REQ(get_lock(), ChainLockable::GetLock(*t));
 
   // Move the specified thread from the source wait queue to the dest wait queue.
   static void MoveThread(WaitQueue* source, WaitQueue* dest, Thread* t)
