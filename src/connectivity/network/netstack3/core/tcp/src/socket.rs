@@ -1458,15 +1458,30 @@ impl<I: DualStackIpExt, D: WeakDeviceIdentifier, BT: TcpBindingsTypes>
         socketmap: &SocketMap<AddrVec<I, D, TcpPortSpec>, Bound<Self>>,
     ) -> Result<(), InsertError> {
         // We need to make sure there are no present sockets that have the same
-        // 4-tuple with the to-be-added socket.
-        let addr = AddrVec::Conn(ConnAddr { device: None, ..*addr });
-        if let Some(_) = socketmap.get(&addr) {
+        // 5-tuple with the to-be-added socket.
+        let addr_vec = AddrVec::Conn(addr.clone());
+        if socketmap.get(&addr_vec).is_some() {
             return Err(InsertError::Exists);
         }
-        // No shadower exists, i.e., no sockets with the same 4-tuple but with
-        // a device bound.
-        if socketmap.descendant_counts(&addr).len() > 0 {
-            return Err(InsertError::ShadowerExists);
+
+        match &addr.device {
+            // If the new connection does not have a device bound, check if
+            // there is already another connection with the same 4-tuple but
+            // a device bound. Otherwise the other connection will get all
+            // traffic from us.
+            None => {
+                if socketmap.descendant_counts(&addr_vec).len() > 0 {
+                    return Err(InsertError::ShadowerExists);
+                }
+            }
+            // If the new connection has a device bound, check if there is
+            // a different connection with the same 4-tuple but without a
+            // device bound. Otherwise we will get all traffic from them.
+            Some(_device) => {
+                if socketmap.get(&AddrVec::Conn(ConnAddr { device: None, ip: addr.ip })).is_some() {
+                    return Err(InsertError::ShadowAddrExists);
+                }
+            }
         }
         // Otherwise, connections don't conflict with existing listeners.
         Ok(())
@@ -5848,6 +5863,7 @@ mod tests {
     use core::cell::RefCell;
     use core::num::NonZeroU16;
     use core::time::Duration;
+    use core::u16;
 
     use ip_test_macro::ip_test;
     use net_declare::net_ip_v6;
@@ -5878,13 +5894,13 @@ mod tests {
     use netstack3_ip::{
         BaseTransportIpContext, HopLimits, IpTransportContext, LocalDeliveryPacketInfo,
     };
-    use packet::{Buf, BufferMut, ParseBuffer as _};
+    use packet::{Buf, BufferMut, PacketBuilder as _, ParseBuffer as _, Serializer as _};
     use packet_formats::icmp::{
         IcmpDestUnreachable, Icmpv4DestUnreachableCode, Icmpv4ParameterProblemCode,
         Icmpv4TimeExceededCode, Icmpv6DestUnreachableCode, Icmpv6ParameterProblemCode,
         Icmpv6TimeExceededCode,
     };
-    use packet_formats::tcp::{TcpParseArgs, TcpSegment};
+    use packet_formats::tcp::{TcpParseArgs, TcpSegment, TcpSegmentBuilder};
     use rand::Rng as _;
     use test_case::test_case;
     use test_util::assert_gt;
@@ -10030,5 +10046,58 @@ mod tests {
         // NB: This matches the linux behavior. Whenever errors are reported
         // from the connect call, they're not observable from SO_ERROR later.
         assert_eq!(api.get_socket_error(&socket), None);
+    }
+
+    // Regression test for https://issues.fuchsia.dev/475191687.
+    #[test]
+    fn conflict_with_same_link_local_addr_on_different_interfaces() {
+        set_logger_for_test();
+        const LOCAL_IP: Ipv6Addr = net_ip_v6!("fe80::1");
+        const REMOTE_IP: Ipv6Addr = net_ip_v6!("fe80::2");
+        const LOCAL_PORT: NonZeroU16 = NonZeroU16::new(12345).unwrap();
+        const REMOTE_PORT: NonZeroU16 = NonZeroU16::new(54321).unwrap();
+
+        let mut ctx = TcpCtx::with_core_ctx(TcpCoreCtx::with_ip_socket_ctx_state(
+            FakeDualStackIpSocketCtx::new(MultipleDevicesId::all().into_iter().map(|device| {
+                FakeDeviceConfig {
+                    device,
+                    local_ips: vec![SpecifiedAddr::new(LOCAL_IP).unwrap()],
+                    remote_ips: vec![SpecifiedAddr::new(REMOTE_IP).unwrap()],
+                }
+            })),
+        ));
+        let mut api = ctx.tcp_api::<Ipv6>();
+        let socket = api.create(Default::default());
+        api.bind(&socket, None, Some(LOCAL_PORT)).expect("bind should succeed");
+
+        api.listen(&socket, NonZeroUsize::new(5).unwrap()).unwrap();
+
+        let mut builder =
+            TcpSegmentBuilder::new(REMOTE_IP, LOCAL_IP, REMOTE_PORT, LOCAL_PORT, 1, None, u16::MAX);
+        builder.syn(true);
+        let syn =
+            builder.wrap_body(Buf::new(vec![], ..)).serialize_vec_outer().unwrap().into_inner();
+
+        <TcpIpTransportContext as IpTransportContext<Ipv6, _, _>>::receive_ip_packet(
+            &mut ctx.core_ctx,
+            &mut ctx.bindings_ctx,
+            &MultipleDevicesId::A,
+            Ipv6::recv_src_addr(REMOTE_IP),
+            SpecifiedAddr::new(LOCAL_IP).unwrap(),
+            syn.clone(),
+            &Default::default(),
+        )
+        .expect("failed to deliver bytes");
+
+        <TcpIpTransportContext as IpTransportContext<Ipv6, _, _>>::receive_ip_packet(
+            &mut ctx.core_ctx,
+            &mut ctx.bindings_ctx,
+            &MultipleDevicesId::B,
+            Ipv6::recv_src_addr(REMOTE_IP),
+            SpecifiedAddr::new(LOCAL_IP).unwrap(),
+            syn,
+            &Default::default(),
+        )
+        .expect("failed to deliver bytes");
     }
 }
