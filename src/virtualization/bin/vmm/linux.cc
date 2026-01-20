@@ -90,6 +90,7 @@ enum Bp32 : uintptr_t {
   RAMDISK_SIZE              = 0x021c,   // RAM disk image size
   COMMAND_LINE              = 0x0228,   // Pointer to command line args string
   KERNEL_ALIGN              = 0x0230,   // Kernel alignment
+  INIT_SIZE                 = 0x0260,   // Linear memory required during initialization
 };
 
 enum Bp64 : uintptr_t {
@@ -197,16 +198,32 @@ static zx_status_t read_fd(const int fd, const PhysMem& phys_mem, const uintptr_
   return ZX_OK;
 }
 
+static size_t GetKernelMemorySize(const PhysMem& phys_mem, size_t file_size) {
+  // Modern x86 kernels report the amount of memory they need for initialization.
+  if (is_boot_params(phys_mem) && read_bp(phys_mem, VERSION) >= 0x210) {
+    return read_bp(phys_mem, INIT_SIZE);
+  }
+
+  // ARM64 kernels store the effective image size in the header.
+  Arm64ImageHeader image_header = phys_mem.read<Arm64ImageHeader>(kKernelOffset);
+  if (is_arm64_image(&image_header)) {
+    return image_header.kernel_len;
+  }
+
+  return file_size;
+}
+
 zx_status_t load_kernel(fbl::unique_fd kernel_fd, const PhysMem& phys_mem,
                         const uintptr_t kernel_off) {
-  size_t kernel_size;
-  zx_status_t status = read_fd(kernel_fd.get(), phys_mem, kernel_off, &kernel_size);
+  size_t file_size;
+  zx_status_t status = read_fd(kernel_fd.get(), phys_mem, kernel_off, &file_size);
   if (status != ZX_OK) {
     FX_LOGS(ERROR) << "Failed to read kernel image";
     return status;
   }
-  if (is_within(DtbOffset(), kernel_off, kernel_size)) {
-    FX_LOGS(ERROR) << "Kernel location overlaps DTB location";
+  size_t kernel_size = GetKernelMemorySize(phys_mem, file_size);
+  if (is_within(DtbOverlayOffset(), kernel_off, kernel_size)) {
+    FX_LOGS(ERROR) << "Kernel size would clobber DTB memory, consider adjusting offsets.";
     return ZX_ERR_OUT_OF_RANGE;
   }
   return ZX_OK;
