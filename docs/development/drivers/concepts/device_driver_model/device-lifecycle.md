@@ -105,14 +105,6 @@ This is an optional hook. If it is not implemented, it is treated as `device_unb
 was called immediately. When device_unbind_reply is called,
 all FIDL connections will be terminated.
 
-Since a child device may have work in progress when its `unbind()` method is
-called, it's possible that the parent device (which already completed
-unbinding) could continue to receive device method calls or protocol method
-calls on behalf of that child. It is advisable that before completing unbinding,
-the parent device should arrange for these methods to return errors, so that
-calls from a child before the child removal is completed do not start more
-work or cause unexpected interactions.
-
 The `release()` method is only called after the creating driver has completed
 unbinding, all open instances of that device have been closed,
 and all children of that device have been unbound and released. This
@@ -126,7 +118,7 @@ likely result in a crash.
 
 To explain how the `unbind()` and `release()` work during the tear-down process,
 below is an example of how a USB WLAN driver would usually handle it. In short,
-the `unbind()` call sequence is top-down while the `release()` sequence is bottom-up.
+the `unbind()` and `release()` call sequence is bottom-up.
 
 Note that this is just an example. This might not match what exactly the real WLAN driver
 is doing.
@@ -153,45 +145,18 @@ Now, we unplug this USB WLAN device.
 
 * The USB XHCI detects the removal and calls `device_async_remove(usb_device)`.
 
-* This will lead to the USB device's `unbind()` being called.
-  Once it completes unbinding, it would call `device_unbind_reply()`.
-
-```c
-    usb_device_unbind(void* ctx) {
-        // Stop interrupt or anything to prevent incoming requests.
-        ...
-
-        device_unbind_reply(usb_dev);
-    }
-```
-
-* When the USB device completes unbinding, the WLAN PHY's `unbind()` is called.
-  Once it completes unbinding, it would call `device_unbind_reply()`.
-
-```c
-    wlan_phy_unbind(void* ctx) {
-        // Stop interrupt or anything to prevent incoming requests.
-        ...
-
-        device_unbind_reply(wlan_phy);
-    }
-```
-
-* When wlan_phy completes unbinding, unbind() will be called on all of its children
-  (wlan_mac_0, wlan_mac_1).
+* unbind() will be called on all of its leaf descendants (wlan_mac_0, wlan_mac_1).
 
 ```c
     wlan_mac_unbind(void* ctx) {
-        // Stop accepting new requests, and notify clients that this device is offline (often just
-        // by returning a ZX_ERR_IO_NOT_PRESENT to any requests that happen after unbind).
+        // Cancel any outstanding requests.
         ...
 
         device_unbind_reply(iface_mac_X);
     }
 ```
 
-* Once all the clients of a device have been removed, and that device has no children,
-  its refcount will reach zero and its release() method will be called.
+* Once unbind for a device completes, its release() method will be called.
 
 * WLAN MAC 0 and 1's `release()` are called.
 
@@ -205,9 +170,19 @@ Now, we unplug this USB WLAN device.
     }
 ```
 
-* The wlan_phy has no open connections, but still has child devices (wlan_mac_0 and wlan_mac_1).
-  Once they have both been released, its refcount finally reaches zero and its release()
-  method is invoked.
+* When it's children have been removed, the WLAN PHY's `unbind()` is called.
+  Once it completes unbinding, it would call `device_unbind_reply()`.
+
+```c
+    wlan_phy_unbind(void* ctx) {
+        // Stop interrupt and cancel any outstanding work.
+        ...
+
+        device_unbind_reply(wlan_phy);
+    }
+```
+
+* Once it's unbind routine has completed WLAN PHY's `release()`  is called.
 
 ```c
     wlan_phy_release(void* ctx) {
@@ -219,4 +194,16 @@ Now, we unplug this USB WLAN device.
     }
 ```
 
-* Once the USB device now has no child devices or open connections, its `release()` would be called.
+* This will lead to the USB device's `unbind()` being called.
+  Once it completes unbinding, it would call `device_unbind_reply()`.
+
+```c
+    usb_device_unbind(void* ctx) {
+        // Stop interrupt cancel any outstanding work.
+        ...
+
+        device_unbind_reply(usb_dev);
+    }
+```
+
+* Finally the USB device's `release()` would be called.
