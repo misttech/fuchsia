@@ -37,7 +37,7 @@ idk_cc_source_library(
     api_file_path = "different_file_name.api",
     category = "partner",
     fuchsia_deps = [
-        # This target defines `RequiredFunction()`. ":test_executable" would
+        # This target defines `RequiredFunction()`. The test executable would
         # fail to link if this dependency is not included in the `cc_library()`.
         ":test_source_set_dependency",
     ],
@@ -69,7 +69,7 @@ idk_cc_shared_library(
     api_file_path = "different_file_name_shared_library.api",
     category = "partner",
     fuchsia_deps = [
-        # This target defines `RequiredFunction()`. ":test_executable" would
+        # This target defines `RequiredFunction()`. This library would
         # fail to link if this dependency is not included in the `cc_library()`.
         ":test_source_set_dependency",
     ],
@@ -99,7 +99,7 @@ idk_cc_static_library(
     api_file_path = "different_file_name_static_library.api",
     category = "partner",
     fuchsia_deps = [
-        # This target defines `RequiredFunction()`. ":test_executable" would
+        # This target defines `RequiredFunction()`. The test executable would
         # fail to link if this dependency is not included in the `cc_library()`.
         ":test_source_set_dependency",
     ],
@@ -173,12 +173,20 @@ idk_cc_source_library_zx(
     api_area = "Developer",
     category = "partner",
     fuchsia_deps = [
-        ":test_source_set_dependency_zx",
+        # Test conversion of `foo:foo.headers` to `foo:foo` for `idk_deps` in `fuchsia_deps`.
+        ":test_source_set_dependency_zx.headers",
     ],
     idk_name = "test_source_set_zx",
+    implementation_deps = [
+        # This target needs the full dependency to link (in the non-Fuchsia and
+        # Zircon toolchain cases).
+        # This also tests handling of duplicate dependencies when the headers targets are converted.
+        ":test_source_set_dependency_zx",
+    ],
     stable = True,
     deps = [
-        "//build/bazel/bazel_idk/tests",
+        # Test conversion of `foo:headers` to `foo:foo` for `idk_deps` in `deps`.
+        ":headers",
     ],
 )
 
@@ -282,6 +290,13 @@ cc_binary(
     deps = [":test-static-library"],
 )
 
+cc_binary(
+    name = "test_executable_using_cc_source_library_zx",
+    testonly = True,
+    srcs = ["test_executable.cc"],
+    deps = [":test_source_set_zx"],
+)
+
 filegroup(
     name = "build_only_tests",
     testonly = True,
@@ -290,6 +305,7 @@ filegroup(
         ":test_executable_using_cc_shared_library",
         ":test_executable_using_cc_source_library",
         ":test_executable_using_cc_static_library",
+        ":test_executable_using_cc_source_library_zx",
 
         # Build all the migrated atoms for the main platform build.
         "//sdk:fuchsia_idk_atoms_produced_by_main_platform_build",
@@ -318,9 +334,20 @@ filegroup(
 # Builds the targets listed in `tools` on the host toolchain.
 genrule(
     name = "build_only_tests_on_host_toolchain",
+    testonly = True,
     outs = ["build_only_tests_on_host_toolchain.stamp"],
     cmd = "touch $@",
     tools = [
+        # Test linking on the host toolchain where possible.
+        ":test_executable_using_cc_source_library_zx",
+
+        # These libraries have Fuchsia-only dependencies and thus cannot be
+        # linked into the executable on the host toolchain.
+        ":test-shared-library",
+        ":test-source-set",
+        ":test-static-library",
+
+        # Other libraries.
         "//sdk/lib/stdcompat",
         "//sdk/lib/utf-utils",
     ],

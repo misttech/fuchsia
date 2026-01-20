@@ -21,6 +21,7 @@ load(
     "select_for",
     "select_for_fuchsia",
 )
+load("//build/bazel/rules:zx_library.bzl", "apply_common_zx_library_modifications")
 
 visibility(["//build/bazel/bazel_idk/..."])
 
@@ -552,26 +553,29 @@ GN note: Unlike the GN template, this list does not include `hdrs_for_internal_u
 
 def _idk_cc_shared_library_zx_impl(
         name,
-        category,
-        hdrs,
         **kwargs):
     """Implementation for the idk_cc_shared_library_zx() macro."""
 
-    # LINT.IfChange
-    if "sdk_headers" in kwargs:
-        fail('`sdk_headers` is not supported. Headers for the IDK must be specified in `public`. Note that "include/" must be included in the paths in `public`.')
-
-    # LINT.ThenChange(//build/zircon/zx_library.gni)
+    kwargs = apply_common_zx_library_modifications(kwargs)
 
     idk_cc_shared_library(
         name = name,
-        category = category,
-        hdrs = hdrs,
         **kwargs
     )
 
 idk_cc_shared_library_zx = macro(
-    doc = "Defines a C++ shared library that can be exported to an IDK and will be a zx_library() in GN.",
+    doc = """Defines a C++ shared library that can be exported to an IDK and will be a zx_library() in GN.
+
+When not using a Zircon-specific toolchain, any ":headers" or
+":<library>.headers" targets that appear in public dependencies will be
+rewritten into a dependency on the library itself. For example:
+
+    deps = [ "//zircon/system/ulib/foo:headers", "//zircon/system/ulib/bar:bar.headers" ]
+
+will be replaced by:
+
+    deps = [ "//zircon/system/ulib/foo", "//zircon/system/ulib/bar" ]
+""",
     inherit_attrs = idk_cc_shared_library,
     implementation = _idk_cc_shared_library_zx_impl,
     attrs = {
@@ -590,6 +594,13 @@ GN note: Unlike the GN template, the "include/" part of the path must be specifi
             mandatory = True,
             configurable = False,
         ),
+        # Override the inherited version to make it non-configurable.
+        "implementation_deps": attr.label_list(
+            doc = """List of labels this element depends on at build time.
+GN equivalent: `deps`.""",
+            default = [],
+            configurable = False,
+        ),
         # zx libraries always use "include" (the default) as the include base. Do not inherit.
         "include_base": None,
     },
@@ -597,30 +608,29 @@ GN note: Unlike the GN template, the "include/" part of the path must be specifi
 
 def _idk_cc_static_library_zx_impl(
         name,
-        idk_name,
-        category,
-        api_area,
-        hdrs,
         **kwargs):
     """Implementation for the idk_cc_static_library_zx() macro."""
 
-    # LINT.IfChange
-    if "sdk_headers" in kwargs:
-        fail('`sdk_headers` is not supported. Headers for the IDK must be specified in `public`. Note that "include/" must be included in the paths in `public`.')
-
-    # LINT.ThenChange(//build/zircon/zx_library.gni)
+    kwargs = apply_common_zx_library_modifications(kwargs)
 
     idk_cc_static_library(
         name = name,
-        idk_name = idk_name,
-        category = category,
-        api_area = api_area,
-        hdrs = hdrs,
         **kwargs
     )
 
 idk_cc_static_library_zx = macro(
-    doc = "Defines a C++ static library that can be exported to an IDK and will be a zx_library() in GN.",
+    doc = """Defines a C++ static library that can be exported to an IDK and will be a zx_library() in GN.
+
+When not using a Zircon-specific toolchain, any ":headers" or
+":<library>.headers" targets that appear in public dependencies will be
+rewritten into a dependency on the library itself. For example:
+
+    deps = [ "//zircon/system/ulib/foo:headers", "//zircon/system/ulib/bar:bar.headers" ]
+
+will be replaced by:
+
+    deps = [ "//zircon/system/ulib/foo", "//zircon/system/ulib/bar" ]
+""",
     inherit_attrs = idk_cc_static_library,
     implementation = _idk_cc_static_library_zx_impl,
     attrs = {
@@ -637,6 +647,13 @@ GN equivalent: `sdk_headers`
 GN note: Unlike the GN template, the "include/" part of the path must be specified.""",
             allow_files = True,
             mandatory = True,
+            configurable = False,
+        ),
+        # Override the inherited version to make it non-configurable.
+        "implementation_deps": attr.label_list(
+            doc = """List of labels this element depends on at build time.
+GN equivalent: `deps`.""",
+            default = [],
             configurable = False,
         ),
         # zx libraries always use "include" (the default) as the include base. Do not inherit.

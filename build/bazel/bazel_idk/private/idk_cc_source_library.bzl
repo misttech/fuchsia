@@ -21,6 +21,7 @@ load(
     "select_for",
     "select_for_fuchsia",
 )
+load("//build/bazel/rules:zx_library.bzl", "apply_common_zx_library_modifications")
 
 visibility(["//build/bazel/bazel_idk/..."])
 
@@ -358,7 +359,7 @@ Not allowed when `stable` is false.""",
         ),
         # Rumtime dependencies are not supported for source libraries. Do not inherit.
         "data": None,
-        # Do not inherit as we will specify this attributed to `cc_library()` in the implementation.
+        # Do not inherit as this attribute is specified to `cc_library()` in the implementation.
         "includes": None,
     },
 )
@@ -367,26 +368,31 @@ Not allowed when `stable` is false.""",
 
 def _idk_cc_source_library_zx_impl(
         name,
-        category,
-        hdrs,
         **kwargs):
     """Implementation for the idk_cc_source_library_zx() macro."""
 
-    # LINT.IfChange
-    if "sdk_headers" in kwargs:
-        fail('`sdk_headers` is not supported. Headers for the IDK must be specified in `public`. Note that "include/" must be included in the paths in `public`.')
-
-    # LINT.ThenChange(//build/zircon/zx_library.gni)
+    kwargs = apply_common_zx_library_modifications(kwargs)
 
     idk_cc_source_library(
         name = name,
-        category = category,
-        hdrs = hdrs,
         **kwargs
     )
 
 idk_cc_source_library_zx = macro(
-    doc = "Defines a C++ source library that can be exported to an IDK and will be a zx_library() in GN.",
+    doc = """Defines a C++ source library that can be exported to an IDK and will be a zx_library() in GN.
+
+Bazel may create a static library as it does not have a concept of source libraries.
+
+When not using a Zircon-specific toolchain, any ":headers" or
+":<library>.headers" targets that appear in public dependencies will be
+rewritten into a dependency on the library itself. For example:
+
+    deps = [ "//zircon/system/ulib/foo:headers", "//zircon/system/ulib/bar:bar.headers" ]
+
+will be replaced by:
+
+    deps = [ "//zircon/system/ulib/foo", "//zircon/system/ulib/bar" ]
+""",
     inherit_attrs = idk_cc_source_library,
     implementation = _idk_cc_source_library_zx_impl,
     attrs = {

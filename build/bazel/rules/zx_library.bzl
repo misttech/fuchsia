@@ -13,11 +13,92 @@ are currently just thin wrappers around the built-in C++ rules.
 load("@rules_cc//cc:defs.bzl", "cc_library")
 
 visibility([
+    "//build/bazel/bazel_idk/private/...",  # Uses helper functions defined here.
     "//src/devices/...",
     "//src/firmware/lib/...",
     "//src/media/audio/...",
     "//zircon/...",
 ])
+
+def _get_main_target_for(target_label):
+    if target_label.name == "headers":
+        return Label("//" + target_label.package)
+    if target_label.name.endswith(".headers"):
+        return Label("//" + target_label.package + ":" + target_label.name[:-len(".headers")])
+    return target_label
+
+def _get_main_targets_for(target_labels, exclude_labels = []):
+    """Converts any header targets to their library targets.
+
+For example, a target "//zircon/system/ulib/foo:headers" will be converted to
+"//zircon/system/ulib/foo", and a target "//zircon/system/ulib/bar:bar.headers"
+will be converted to "//zircon/system/ulib/bar:bar". Other targets will be
+unmodified.
+
+    Args:
+        target_labels: A list of target labels, some of which may be header targets.
+        exclude_labels: A list of targets to exclude from the result if they
+            were converted from a header target. This can be used to avoid
+            adding a conflicting duplicate target while still allowing other
+            conflicts to be caught.
+
+    Returns:
+        A new list of target labels with header targets replaced by their
+        library targets.
+    """
+
+    # The deps lists can sometimes be None rather than empty.
+    if target_labels == None:
+        return None
+    if exclude_labels == None:
+        exclude_labels = []
+
+    # The labels for the main targets of labels in `target_labels`.
+    main_target_labels = []
+
+    for target_label in target_labels:
+        main_target_label = _get_main_target_for(target_label)
+        if main_target_label != target_label and main_target_label in exclude_labels:
+            # It was a header target and the new label is in the exclude list. Skip it.
+            continue
+        main_target_labels.append(main_target_label)
+
+    return main_target_labels
+
+# LINT.IfChange
+def apply_common_zx_library_modifications(kwargs):
+    """
+    Apply common modifications for zx_libraries.
+
+    Modifies the dependencies, etc. as appropriate. The modifications are based
+    on the implementation of the GN template `zx_library()`.
+
+    When not using a Zircon-specific toolchain, any ":headers" or
+    ":<library>.headers" targets that appear in public dependencies will be
+    rewritten into a dependency on the library itself. For example:
+        deps = [ "//zircon/system/ulib/foo:headers", "//zircon/system/ulib/bar:bar.headers" ]
+    will be replaced by:
+        deps = [ "//zircon/system/ulib/foo", "//zircon/system/ulib/bar" ]
+
+    Args:
+        kwargs: The keyword arguments to modify.
+
+    Returns:
+        The modified keyword arguments.
+    """
+
+    # Convert any ":headers" or ":<library>.headers" targets in the public deps
+    # to the library target.
+    # Unlike other deps, "fuchsia_deps" is not supported by all of the macros.
+    # TODO(https://fxbug.dev/456186319): When adding support for building
+    # Zircon, do not convert when using a Zircon-specific toolchain.
+    kwargs["deps"] = _get_main_targets_for(kwargs["deps"], kwargs["implementation_deps"])
+    if "fuchsia_deps" in kwargs:
+        kwargs["fuchsia_deps"] = _get_main_targets_for(kwargs["fuchsia_deps"], kwargs["implementation_deps"])
+
+    return kwargs
+
+# LINT.ThenChange(//build/zircon/zx_library.gni)
 
 def _cc_shared_library_zx_impl(
         name,
@@ -26,12 +107,13 @@ def _cc_shared_library_zx_impl(
     """Implementation for the cc_shared_library_zx() macro."""
 
     # LINT.IfChange
-
     # `zx_library()` assumes headers files are under `include/`.
     if includes != ["include"]:
         fail('`includes` must be `["include"]`.')
 
     # LINT.ThenChange(//build/zircon/zx_library.gni)
+
+    kwargs = apply_common_zx_library_modifications(kwargs)
 
     cc_library(
         name = name,
@@ -62,12 +144,13 @@ def _cc_source_library_zx_impl(
     """Implementation for the cc_source_library_zx() macro."""
 
     # LINT.IfChange
-
     # `zx_library()` assumes headers files are under `include/`.
     if includes != ["include"]:
         fail('`includes` must be `["include"]`.')
 
     # LINT.ThenChange(//build/zircon/zx_library.gni)
+
+    kwargs = apply_common_zx_library_modifications(kwargs)
 
     cc_library(
         name = name,
@@ -99,12 +182,13 @@ def _cc_static_library_zx_impl(
     """Implementation for the cc_static_library_zx() macro."""
 
     # LINT.IfChange
-
     # `zx_library()` assumes headers files are under `include/`.
     if includes != ["include"]:
         fail('`includes` must be `["include"]`.')
 
     # LINT.ThenChange(//build/zircon/zx_library.gni)
+
+    kwargs = apply_common_zx_library_modifications(kwargs)
 
     cc_library(
         name = name,
