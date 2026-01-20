@@ -1264,10 +1264,6 @@ def main() -> int:
 
     time_profile.stop()
 
-    # Drop tracked_files from dir_copies so it can be concatenated with
-    # file_copies later.
-    all_copies = file_copies + [(src, dst) for src, dst, _ in dir_copies]
-
     success, debug_symbols_manifest = merge_debug_symbol_manifests(
         debug_symbol_manifest_paths,
         bazel_execroot=bazel_execroot,
@@ -1304,8 +1300,14 @@ def main() -> int:
         )
         all_sources = mapper.get_sources_for_labels(build_files + source_files)
 
+        # Gather all the output paths of copied files, and the paths of the tracked files in
+        # the copied output directories, as the tracked outputs for ninja's depfile tracking.
+        all_output_files = [str(dst) for _, dst in file_copies]
+        for dst, _, tracked_files in dir_copies:
+            all_output_files.extend([str(dst / file) for file in tracked_files])
+
         depfile_content = "%s: %s\n" % (
-            " ".join(depfile_quote(c) for _, c in all_copies),
+            " ".join(depfile_quote(c) for c in all_output_files),
             " ".join(depfile_quote(c) for c in sorted(all_sources)),
         )
 
