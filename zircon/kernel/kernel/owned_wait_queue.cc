@@ -946,7 +946,8 @@ bool OwnedWaitQueue::TryLockForBAAOOperationLocked(
 
 ktl::variant<ChainLock::Result, OwnedWaitQueue::ReplaceOwnerLockingDetails>
 OwnedWaitQueue::LockForOwnerReplacement(Thread* _new_owner, const Thread* blocking_thread,
-                                        bool propagate_new_owner_cycle_error) {
+                                        bool propagate_new_owner_cycle_error,
+                                        bool new_owner_is_locked) {
   // We are holding the queue lock, and we have a proposed new owner.  We need
   // to hold all of appropriate locks, and potentially nak the new owner
   // proposal.
@@ -1029,6 +1030,11 @@ OwnedWaitQueue::LockForOwnerReplacement(Thread* _new_owner, const Thread* blocki
     if (old_owner == nullptr) {
       return res;
     }
+    // If the new owner is locked, then we are done.
+    if (new_owner_is_locked) {
+      new_owner->get_lock().AssertHeld();
+      return res;
+    }
 
     // Lock the chain starting from the current owner.  This is case 1 where the old
     // owner and proposed new owner are the same.  Since the new owner cannot be
@@ -1089,7 +1095,9 @@ OwnedWaitQueue::LockForOwnerReplacement(Thread* _new_owner, const Thread* blocki
   if (new_owner != nullptr) {
     // Start by attempting to lock the new owner path.
     const ChainLock::Result new_owner_lock_res =
-        ktl::get<ChainLock::Result>(LockPiChainCommon<LockingBehavior::RefuseCycle>(*new_owner));
+        !new_owner_is_locked ? ktl::get<ChainLock::Result>(
+                                   LockPiChainCommon<LockingBehavior::RefuseCycle>(*new_owner))
+                             : ChainLock::Result::Ok;
 
     if (new_owner_lock_res == ChainLock::Result::Ok) {
       // Things went well and we got the locks.  Check to make sure that our new
@@ -1098,12 +1106,13 @@ OwnedWaitQueue::LockForOwnerReplacement(Thread* _new_owner, const Thread* blocki
         new_owner->get_lock().AssertHeld();
         return new_owner->can_own_wait_queues_;
       }();
-
       if (can_own_wait_queues == false) {
         // Our new owner is not allowed to own queues.  Unlock it, and reject the
         // proposal.
-        new_owner->get_lock().MarkNeedsRelease();
-        UnlockPiChainCommon(*new_owner);
+        if (!new_owner_is_locked) {
+          new_owner->get_lock().MarkNeedsRelease();
+          UnlockPiChainCommon(*new_owner);
+        }
         new_owner = nullptr;
         if (old_owner == nullptr) {
           return res;
@@ -1156,8 +1165,10 @@ OwnedWaitQueue::LockForOwnerReplacement(Thread* _new_owner, const Thread* blocki
           // Need to back off and try again.  Drop the locks we were holding
           // before restarting.
           DEBUG_ASSERT(old_owner_lock_res == ChainLock::Result::Backoff);
-          new_owner->get_lock().AssertAcquired();
-          UnlockPiChainCommon(*new_owner);
+          if (!new_owner_is_locked) {
+            new_owner->get_lock().AssertAcquired();
+            UnlockPiChainCommon(*new_owner);
+          }
           return old_owner_lock_res;
         } else {
           // Success (although our paths intersect in some way).  Record our
@@ -1634,60 +1645,82 @@ void OwnedWaitQueue::SetThreadBaseProfileAndPropagate(Thread& thread,
                                   do_transaction);
 }
 
+ChainLockTransaction::Result<zx_status_t> OwnedWaitQueue::AssignOwnerCommon(
+    Thread* new_owner, bool new_owner_is_locked) {
+  // If the owner is not changing, we are already done.
+  if (owner_ == new_owner) {
+    return ZX_OK;
+  }
+
+  // Obtain the locks needed to change owner.  If, while obtaining locks, we
+  // detect that the new owner proposal would generate a cycle, we nak the
+  // entire operation with a BAD_STATE error and change nothing.
+  const auto variant_res = LockForOwnerReplacement(new_owner, nullptr, true, new_owner_is_locked);
+  if (ktl::holds_alternative<ChainLock::Result>(variant_res)) {
+    const ChainLock::Result lock_res = ktl::get<ChainLock::Result>(variant_res);
+    if (lock_res == ChainLock::Result::Cycle) {
+      return ZX_ERR_BAD_STATE;
+    }
+
+    // The only other option here is that we are supposed to back off and try
+    // again.  If we had succeeded, we would have gotten back locking details
+    // instead.
+    DEBUG_ASSERT(lock_res == ChainLock::Result::Backoff);
+    return ChainLockTransaction::Action::Backoff;
+  }
+
+  // Go ahead and perform the assignment.  Start by removing any current
+  // owner we have, dropping the locks along that path immediately after we
+  // are done.
+  const auto& details = ktl::get<ReplaceOwnerLockingDetails>(variant_res);
+  if (Thread* const old_owner = owner_; old_owner != nullptr) {
+    old_owner->get_lock().AssertHeld();
+    BeginPropagate(*this, *old_owner, RemoveSingleEdgeOp);
+    UnlockPiChainCommon(*old_owner, details.stop_point);
+  }
+
+  // Now, if we have a new owner to assign, perform the assignment, then
+  // drop the locks along the new owner path.
+  DEBUG_ASSERT(details.new_owner == new_owner);
+  if (new_owner != nullptr) {
+    new_owner->get_lock().AssertHeld();
+    BeginPropagate(*this, *new_owner, AddSingleEdgeOp);
+    if (!new_owner_is_locked) {
+      UnlockPiChainCommon(*new_owner);
+    }
+  }
+
+  // We are finished.  We will drop our queue lock and re-enable preemption as
+  // we unwind.
+  return ZX_OK;
+}
+
 zx_status_t OwnedWaitQueue::AssignOwner(Thread* new_owner) {
   DEBUG_ASSERT(magic() == kOwnedMagic);
   const auto do_transaction =
       [&]() TA_REQ(chainlock_transaction_token,
                    preempt_disabled_token) -> ChainLockTransaction::Result<zx_status_t> {
     ChainLockGuard guard{get_lock()};
-
-    // If the owner is not changing, we are already done.
-    if (owner_ == new_owner) {
-      return ZX_OK;
-    }
-
-    // Obtain the locks needed to change owner.  If, while obtaining locks, we
-    // detect that the new owner proposal would generate a cycle, we nak the
-    // entire operation with a BAD_STATE error and change nothing.
-    const auto variant_res = LockForOwnerReplacement(new_owner, nullptr, true);
-    if (ktl::holds_alternative<ChainLock::Result>(variant_res)) {
-      const ChainLock::Result lock_res = ktl::get<ChainLock::Result>(variant_res);
-      if (lock_res == ChainLock::Result::Cycle) {
-        return ZX_ERR_BAD_STATE;
-      }
-
-      // The only other option here is that we are supposed to back off and try
-      // again.  If we had succeeded, we would have gotten back locking details
-      // instead.
-      DEBUG_ASSERT(lock_res == ChainLock::Result::Backoff);
-      return ChainLockTransaction::Action::Backoff;
-    }
-
-    // Go ahead and perform the assignment.  Start by removing any current
-    // owner we have, dropping the locks along that path immediately after we
-    // are done.
-    const auto& details = ktl::get<ReplaceOwnerLockingDetails>(variant_res);
-    if (Thread* const old_owner = owner_; old_owner != nullptr) {
-      old_owner->get_lock().AssertHeld();
-      BeginPropagate(*this, *old_owner, RemoveSingleEdgeOp);
-      UnlockPiChainCommon(*old_owner, details.stop_point);
-    }
-
-    // Now, if we have a new owner to assign, perform the assignment, then
-    // drop the locks along the new owner path.
-    DEBUG_ASSERT(details.new_owner == new_owner);
-    if (new_owner != nullptr) {
-      new_owner->get_lock().AssertHeld();
-      BeginPropagate(*this, *new_owner, AddSingleEdgeOp);
-      UnlockPiChainCommon(*new_owner);
-    }
-
-    // We are finished.  We will drop our queue lock and re-enable preemption as
-    // we unwind.
-    return ZX_OK;
+    return AssignOwnerCommon(new_owner);
   };
   return ChainLockTransaction::UntilDone(EagerReschedDisableAndIrqSaveOption,
                                          CLT_TAG("OwnedWaitQueue::AssignOwner"), do_transaction);
+}
+
+zx_status_t OwnedWaitQueue::AssignOwnerLocked(Thread* new_owner) {
+  ChainLockGuard guard(get_lock(), ChainLockGuard::Defer);
+  if (!guard.AcquireOrBackoff()) {
+    return ZX_ERR_SHOULD_WAIT;
+  }
+  auto result = AssignOwnerCommon(new_owner, /*new_owner_is_locked=*/true);
+  if (result.is_action()) {
+    // If there is an action to perform, we expect to be Backoff.
+    DEBUG_ASSERT(result.action() == ChainLockTransaction::Action::Backoff);
+    return ZX_ERR_SHOULD_WAIT;
+  }
+  // If there is a value, we expect ZX_OK. Anything else suggests a cycle was detected.
+  DEBUG_ASSERT(result.take_value() == ZX_OK);
+  return result.take_value();
 }
 
 void OwnedWaitQueue::ResetOwnerIfNoWaiters() {

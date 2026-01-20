@@ -235,6 +235,11 @@ class OwnedWaitQueue : protected WaitQueue, public fbl::DoublyLinkedListable<Own
   // otherwise.
   zx_status_t AssignOwner(Thread* new_owner) TA_EXCL(chainlock_transaction_token, get_lock());
 
+  // Returns ZX_ERR_SHOULD_WAIT if a back-off is required, and ZX_OK otherwise.
+  zx_status_t AssignOwnerLocked(Thread* new_owner)
+      TA_REQ(chainlock_transaction_token, new_owner->get_lock(), preempt_disabled_token)
+          TA_EXCL(get_lock());
+
   void ResetOwnerIfNoWaiters() TA_EXCL(chainlock_transaction_token, get_lock());
 
   // Block the current thread on this wait queue, and re-assign ownership to
@@ -344,6 +349,11 @@ class OwnedWaitQueue : protected WaitQueue, public fbl::DoublyLinkedListable<Own
       TA_REQ(t.get_lock()) TA_ASSERT_SHARED(owq.get_lock()) {
     [&]() TA_NO_THREAD_SAFETY_ANALYSIS { DEBUG_ASSERT(owq.owner_ == &t); }();
   }
+
+  // Common logic for AssignOwner and AssignOwnerLocked.
+  ChainLockTransaction::Result<zx_status_t> AssignOwnerCommon(Thread* new_owner,
+                                                              bool new_owner_is_locked = false)
+      TA_REQ(chainlock_transaction_token, preempt_disabled_token, get_lock());
 
   // Note that the locks for the entire PI chain starting from this OWQ, as well
   // as from the one starting from the new owner, need to be held at this point.
@@ -514,7 +524,8 @@ class OwnedWaitQueue : protected WaitQueue, public fbl::DoublyLinkedListable<Own
 
   ktl::variant<ChainLock::Result, ReplaceOwnerLockingDetails> LockForOwnerReplacement(
       Thread* new_owner, const Thread* blocking_thread = nullptr,
-      bool propagate_new_owner_cycle_error = false) TA_REQ(chainlock_transaction_token, get_lock());
+      bool propagate_new_owner_cycle_error = false, bool new_owner_is_locked = false)
+      TA_REQ(chainlock_transaction_token, get_lock());
 
   ktl::optional<Thread::UnblockList> LockAndMakeWaiterListLocked(zx_instant_mono_t now,
                                                                  uint32_t max_count,
