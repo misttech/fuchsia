@@ -5,7 +5,8 @@
 use crate::device::terminal::{Terminal, TerminalController};
 use crate::mutable_state::{state_accessor, state_implementation};
 use crate::ptrace::{
-    PtraceAllowedPtracers, PtraceEvent, PtraceOptions, PtraceStatus, ZombiePtracees, ptrace_detach,
+    AtomicStopState, PtraceAllowedPtracers, PtraceEvent, PtraceOptions, PtraceStatus, StopState,
+    ZombiePtracees, ptrace_detach,
 };
 use crate::security;
 use crate::signals::syscalls::{WaitingOptions, read_siginfo};
@@ -15,8 +16,8 @@ use crate::signals::{
 };
 use crate::task::memory_attribution::MemoryAttributionLifecycleEvent;
 use crate::task::{
-    AtomicStopState, ControllingTerminal, CurrentTask, ExitStatus, Kernel, PidTable, ProcessGroup,
-    Session, StopState, Task, TaskFlags, TaskMutableState, TaskPersistentInfo, TypedWaitQueue,
+    ControllingTerminal, CurrentTask, ExitStatus, Kernel, PidTable, ProcessGroup, Session, Task,
+    TaskFlags, TaskMutableState, TaskPersistentInfo, TypedWaitQueue,
 };
 use crate::time::{IntervalTimerHandle, TimerTable};
 use itertools::Itertools;

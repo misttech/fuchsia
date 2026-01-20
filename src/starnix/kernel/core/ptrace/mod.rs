@@ -3,5 +3,7 @@
 // found in the LICENSE file.
 
 mod ptrace;
+mod stop_state;
 
 pub use ptrace::*;
+pub use stop_state::*;

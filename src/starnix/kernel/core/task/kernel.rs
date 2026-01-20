@@ -8,6 +8,7 @@ use crate::device::{DeviceMode, DeviceRegistry};
 use crate::execution::CrashReporter;
 use crate::mm::{FutexTable, MappingSummary, MlockPinFlavor, SharedFutexKey};
 use crate::power::SuspendResumeManagerHandle;
+use crate::ptrace::StopState;
 use crate::security::{self, AuditLogger};
 use crate::task::container_namespace::ContainerNamespace;
 use crate::task::limits::SystemLimits;
@@ -16,8 +17,8 @@ use crate::task::net::NetstackDevices;
 use crate::task::tracing::PidToKoidMap;
 use crate::task::{
     AbstractUnixSocketNamespace, AbstractVsockSocketNamespace, CurrentTask, DelayedReleaser,
-    IpTables, KernelCgroups, KernelStats, KernelThreads, PidTable, SchedulerManager, StopState,
-    Syslog, ThreadGroup, UtsNamespace, UtsNamespaceHandle,
+    IpTables, KernelCgroups, KernelStats, KernelThreads, PidTable, SchedulerManager, Syslog,
+    ThreadGroup, UtsNamespace, UtsNamespaceHandle,
 };
 use crate::time::{HrTimerManager, HrTimerManagerHandle};
 use crate::vdso::vdso_loader::Vdso;

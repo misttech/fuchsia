@@ -197,8 +197,8 @@ unsafe extern "C" {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::ptrace::StopState;
     use crate::signals::SignalInfo;
-    use crate::task::StopState;
     use crate::testing::*;
     use starnix_uapi::signals::{SIGCONT, SIGSTOP};
 

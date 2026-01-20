@@ -5,13 +5,13 @@
 use crate::arch::task::{decode_page_fault_exception_report, get_signal_for_general_exception};
 use crate::execution::{TaskInfo, create_zircon_process};
 use crate::mm::{DumpPolicy, MemoryAccessor, MemoryAccessorExt, TaskMemoryAccessor};
-use crate::ptrace::{PtraceCoreState, PtraceEvent, PtraceEventData, PtraceOptions};
+use crate::ptrace::{PtraceCoreState, PtraceEvent, PtraceEventData, PtraceOptions, StopState};
 use crate::security;
 use crate::signals::{RunState, SignalInfo, send_signal_first, send_standard_signal};
 use crate::task::loader::{ResolvedElf, load_executable, resolve_executable};
 use crate::task::{
     ExitStatus, RobustListHeadPtr, SeccompFilter, SeccompFilterContainer, SeccompNotifierHandle,
-    SeccompState, SeccompStateValue, StopState, Task, TaskFlags, Waiter,
+    SeccompState, SeccompStateValue, Task, TaskFlags, Waiter,
 };
 use crate::vfs::{
     CheckAccessReason, FdFlags, FdNumber, FileHandle, FsStr, LookupContext, MAX_SYMLINK_FOLLOWS,

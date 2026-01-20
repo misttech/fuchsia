@@ -91,6 +91,7 @@ _starnix_core_sources = [
   "power/wakeup_count.rs",
   "ptrace/mod.rs",
   "ptrace/ptrace.rs",
+  "ptrace/stop_state.rs",
   "security/audit.rs",
   "security/common_cap.rs",
   "security/hooks.rs",

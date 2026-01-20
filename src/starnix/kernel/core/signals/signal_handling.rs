@@ -6,10 +6,9 @@ use crate::arch::signal_handling::{
     RED_ZONE_SIZE, SIG_STACK_SIZE, SignalStackFrame, align_stack_pointer, restore_registers,
 };
 use crate::mm::{MemoryAccessor, MemoryAccessorExt};
+use crate::ptrace::StopState;
 use crate::signals::{KernelSignal, KernelSignalInfo, SignalDetail, SignalInfo, SignalState};
-use crate::task::{
-    CurrentTask, ExitStatus, StopState, Task, TaskFlags, TaskWriteGuard, ThreadState, Waiter,
-};
+use crate::task::{CurrentTask, ExitStatus, Task, TaskFlags, TaskWriteGuard, ThreadState, Waiter};
 use extended_pstate::ExtendedPstateState;
 use starnix_logging::{log_info, log_trace, log_warn};
 use starnix_registers::{RegisterState, RegisterStorageEnum};

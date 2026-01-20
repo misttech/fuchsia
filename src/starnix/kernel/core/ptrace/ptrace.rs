@@ -4,6 +4,7 @@
 
 use crate::arch::execution::new_syscall_from_state;
 use crate::mm::{IOVecPtr, MemoryAccessor, MemoryAccessorExt};
+use crate::ptrace::StopState;
 use crate::security;
 use crate::signals::syscalls::WaitingOptions;
 use crate::signals::{
@@ -11,8 +12,8 @@ use crate::signals::{
     send_standard_signal,
 };
 use crate::task::{
-    CurrentTask, PidTable, ProcessSelector, StopState, Task, TaskMutableState, ThreadGroup,
-    ThreadState, WaitQueue, ZombieProcess,
+    CurrentTask, PidTable, ProcessSelector, Task, TaskMutableState, ThreadGroup, ThreadState,
+    WaitQueue, ZombieProcess,
 };
 use bitflags::bitflags;
 use starnix_logging::track_stub;
