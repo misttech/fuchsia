@@ -179,10 +179,13 @@ idk_cc_source_library_zx(
     srcs = [
         "internal/helper.cc",
         "some_library.cc",
+        "zx_source.cc",
     ],
     hdrs = ["include/lib/test_lib/test_header.h"],
     api_area = "Developer",
     category = "partner",
+    # Test appending "_ALL_SOURCE" to an existing list of defines.
+    defines = ["SOME_DEFINE"],
     fuchsia_deps = [
         # Test conversion of `foo:foo.headers` to `foo:foo` for `idk_deps` in `fuchsia_deps`.
         ":test_source_set_dependency_zx.headers",
@@ -210,10 +213,12 @@ idk_cc_shared_library_zx(
     srcs = [
         "internal/helper.cc",
         "some_library.cc",
+        "zx_source.cc",
     ],
     hdrs = ["include/lib/test_lib/test_header.h"],
     api_area = "Developer",
     category = "partner",
+    # `defines` is intentionally not set to test adding "_ALL_SOURCE" to no list.
     fuchsia_deps = [
         # Test conversion of `foo:foo.headers` to `foo:foo` for `idk_deps` in `fuchsia_deps`.
         # The full target defines `RequiredFunction()`. This library would
@@ -238,6 +243,7 @@ idk_cc_static_library_zx(
     srcs = [
         "internal/helper.cc",
         "some_library.cc",
+        "zx_source.cc",
     ],
     hdrs = ["include/lib/test_lib/test_header.h"],
     api_area = "Developer",

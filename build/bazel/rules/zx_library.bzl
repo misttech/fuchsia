@@ -103,23 +103,24 @@ def apply_common_zx_library_modifications(kwargs):
     """
     Apply common modifications for zx_libraries.
 
-    Modifies the dependencies, etc. as appropriate. The modifications are based
-    on the implementation of the GN template `zx_library()`.
+    Modifies the dependencies and defines as appropriate. The modifications are
+    based on the implementation of the GN template `zx_library()`.
 
-    When not using a Zircon-specific toolchain:
+    When not using a Zircon-specific toolchain, the following modifications are made:
     * Any ":headers" or ":<library>.headers" targets that appear in public
     dependencies will be rewritten into a dependency on the library itself.
     For example:
             deps = [ "//zircon/system/ulib/foo:headers", "//zircon/system/ulib/bar:bar.headers" ]
         will be replaced by:
             deps = [ "//zircon/system/ulib/foo", "//zircon/system/ulib/bar" ]
-
     * Any ":<library>.as-needed" targets that appear in private dependencies
     will be rewritten into a dependency on the library itself.
     For example:
             implementation_deps = [ "//zircon/system/ulib/bar:bar.as-needed" ]
         will be replaced by:
             implementation_deps = [ "//zircon/system/ulib/bar" ]
+    * When not Fuchsia, add a public dependency on "//zircon/system/public".
+    * Define "_ALL_SOURCE".
 
     Args:
         kwargs: The keyword arguments to modify.
@@ -129,7 +130,7 @@ def apply_common_zx_library_modifications(kwargs):
     """
 
     # TODO(https://fxbug.dev/456186319): When adding support for building
-    # Zircon, do not convert dependencies when using a Zircon-specific toolchain.
+    # Zircon, do apply these modifications when using a Zircon-specific toolchain.
 
     # Convert any ":<library>.as-needed" targets in the private deps to the
     # library target.
@@ -141,6 +142,13 @@ def apply_common_zx_library_modifications(kwargs):
     kwargs["deps"] = _get_main_targets_for_headers(kwargs["deps"], kwargs["implementation_deps"])
     if "fuchsia_deps" in kwargs:
         kwargs["fuchsia_deps"] = _get_main_targets_for_headers(kwargs["fuchsia_deps"], kwargs["implementation_deps"])
+
+    # TODO(https://fxbug.dev/429377203): Add "//zircon/system/public" to
+    # kwargs["deps"] when not Fuchsia.
+
+    if kwargs["defines"] == None:
+        kwargs["defines"] = []
+    kwargs["defines"] += ["_ALL_SOURCE"]
 
     return kwargs
 
