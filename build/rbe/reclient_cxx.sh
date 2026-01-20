@@ -189,6 +189,7 @@ do
 
     --output_directories=*) remote_output_dirs+=( "$optarg" ) ; keep_opt=0 ;;
     --output_directories) prev_opt_append=remote_output_dirs ; keep_opt=0 ;;
+    --disable-xattr) use_py_wrapper=1 ;;
 
     --) shift; break ;;
   esac

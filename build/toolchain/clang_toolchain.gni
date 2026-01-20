@@ -129,6 +129,11 @@ template("clang_toolchain") {
           _cxx_remote_wrapper_path,
         ]
       }
+
+      if (disable_xattr_for_rbe) {
+        compiler_prefix_list += [ "--disable-xattr" ]
+      }
+
       if (cxx_rbe_check == "consistency") {
         # Compare local vs. remote build.
         # Allow caching.
@@ -156,9 +161,6 @@ template("clang_toolchain") {
         _cxx_concurrent_jobs = concurrent_jobs.local
       } else {
         compiler_prefix_list += RBE_EXEC_STRATEGY_MAP[cxx_rbe_exec_strategy]
-        if (disable_xattr_for_rbe) {
-          compiler_prefix_list += [ "--disable-xattr" ]
-        }
         if (!cxx_rbe_download_obj_files) {  # download everything except the
                                             # object file
           compiler_prefix_list += [ "--download_regex='-.*\\.o\$\$'" ]
@@ -198,8 +200,10 @@ template("clang_toolchain") {
     compiler_prefix = string_join(" ", compiler_prefix_list) + " "
 
     if (_link_rbe_enable) {
-      _link_rbe_exec_strategy_flags =
-          RBE_EXEC_STRATEGY_MAP[link_rbe_exec_strategy]
+      _rbe_flags = RBE_EXEC_STRATEGY_MAP[link_rbe_exec_strategy]
+      if (disable_xattr_for_rbe) {
+        _rbe_flags += [ "--disable-xattr" ]
+      }
     }
 
     # Configure builds to be restat-friendly by preserving timestamps of
@@ -581,10 +585,9 @@ template("clang_toolchain") {
                                 [ "-- " ])
           }
           if (_link_rbe_enable) {
-            cxx_link_remote_strip_prefix =
-                string_join(" ",
-                            _remote_strip_prefix_common +
-                                _link_rbe_exec_strategy_flags + [ "-- " ])
+            cxx_link_remote_strip_prefix = string_join(
+                    " ",
+                    _remote_strip_prefix_common + _rbe_flags + [ "-- " ])
           }
         }
 
@@ -620,10 +623,9 @@ template("clang_toolchain") {
             "--preserve_unchanged_output_mtime",
           ]
           if (_link_rbe_enable) {
-            cxx_link_remote_dump_syms_prefix =
-                string_join(" ",
-                            _remote_dump_syms_prefix_list +
-                                _link_rbe_exec_strategy_flags + [ "-- " ])
+            cxx_link_remote_dump_syms_prefix = string_join(
+                    " ",
+                    _remote_dump_syms_prefix_list + _rbe_flags + [ "-- " ])
           }
           if (rust_rbe_enable) {
             _exec_strategy_flags = []
@@ -1013,7 +1015,7 @@ template("clang_toolchain") {
         } else if (link_rbe_check == "consistency") {
           _linker_prefix_list += [ "--compare" ]
         } else if (link_rbe_check == "none") {
-          _linker_prefix_list += _link_rbe_exec_strategy_flags
+          _linker_prefix_list += _rbe_flags
           _link_concurrent_jobs = concurrent_jobs.remote
         }
         _linker_input_args = [ "\"$rspfile\"" ]
@@ -1095,13 +1097,13 @@ template("clang_toolchain") {
             "--local",
             "--check-determinism",
           ]
-          not_needed([ "_link_rbe_exec_strategy_flags" ])
+          not_needed([ "_rbe_flags" ])
         } else if (link_rbe_check == "consistency") {
           _linker_prefix_list += [ "--compare" ]
-          not_needed([ "_link_rbe_exec_strategy_flags" ])
+          not_needed([ "_rbe_flags" ])
         } else if (link_rbe_check == "none") {
           _link_concurrent_jobs = concurrent_jobs.remote
-          _linker_prefix_list += _link_rbe_exec_strategy_flags
+          _linker_prefix_list += _rbe_flags
         }
         if (!link_rbe_download_unstripped_outputs) {
           _linker_prefix_list += [
@@ -1278,7 +1280,7 @@ template("clang_toolchain") {
                 "\"$depend_output,$link_output\"",
                 "--preserve_unchanged_output_mtime",  # only overwrite if
                                                       # changed
-              ] + _link_rbe_exec_strategy_flags + [ "--" ]
+              ] + _rbe_flags + [ "--" ]
           _remote_ifs_prefix = string_join(" ", _remote_ifs_prefix_list)
         }
         command += " && $_remote_ifs_prefix ${prefix}/llvm-ifs --write-if-changed --output-ifs=$depend_output --output-elf=$link_output $unstripped_output"

@@ -177,8 +177,10 @@ template("zircon_toolchain") {
   _restat_link = _link_rbe_enable
 
   if (link_rbe_enable) {
-    _link_rbe_exec_strategy_flags =
-        RBE_EXEC_STRATEGY_MAP[link_rbe_exec_strategy]
+    _rbe_flags = RBE_EXEC_STRATEGY_MAP[link_rbe_exec_strategy]
+    if (disable_xattr_for_rbe) {
+      _rbe_flags += [ "--disable-xattr" ]
+    }
   }
 
   _restat_cc_prefix_list = []
@@ -221,6 +223,9 @@ template("zircon_toolchain") {
         "-S",
         rebase_path(cxx_remote_wrapper, root_build_dir),
       ]
+    }
+    if (disable_xattr_for_rbe) {
+      compiler_prefix_list += [ "--disable-xattr" ]
     }
     if (cxx_rbe_check == "consistency") {
       # Compare local vs. remote build.
@@ -530,7 +535,7 @@ template("zircon_toolchain") {
               rebase_path(python_exe_src, root_build_dir),
               "-S",
               rebase_path(prebuilt_tool_remote_wrapper, root_build_dir),
-            ] + _link_rbe_exec_strategy_flags +
+            ] + _rbe_flags +
             [
               "--inputs",
               "\"$unstripped_outfile\"",
@@ -582,17 +587,20 @@ template("zircon_toolchain") {
         "-S",
         rebase_path(cxx_link_remote_wrapper, root_build_dir),
       ]
+      if (disable_xattr_for_rbe) {
+        _linker_prefix_list += [ "--disable-xattr" ]
+      }
       if (link_rbe_check == "determinism") {
         _linker_prefix_list += [
           "--local",
           "--check-determinism",
         ]
-        not_needed([ "_link_rbe_exec_strategy_flags" ])
+        not_needed([ "_rbe_flags" ])
       } else if (link_rbe_check == "consistency") {
         _linker_prefix_list += [ "--compare" ]
-        not_needed([ "_link_rbe_exec_strategy_flags" ])
+        not_needed([ "_rbe_flags" ])
       } else if (link_rbe_check == "none") {
-        _linker_prefix_list += _link_rbe_exec_strategy_flags
+        _linker_prefix_list += _rbe_flags
         _link_concurrent_jobs = concurrent_jobs.remote
       }
       if (!link_rbe_download_unstripped_outputs) {
@@ -656,7 +664,7 @@ template("zircon_toolchain") {
               rebase_path(python_exe_src, root_build_dir),
               "-S",
               rebase_path(prebuilt_tool_remote_wrapper, root_build_dir),
-            ] + _link_rbe_exec_strategy_flags +
+            ] + _rbe_flags +
             [
               "--label_toolname=$breakpad_dump_syms",
               "--inputs",  # specify executable, due to log_it wrapper
@@ -755,7 +763,7 @@ template("zircon_toolchain") {
         } else if (link_rbe_check == "consistency") {
           _linker_prefix_list += [ "--compare" ]
         } else if (link_rbe_check == "none") {
-          _linker_prefix_list += _link_rbe_exec_strategy_flags
+          _linker_prefix_list += _rbe_flags
           _link_concurrent_jobs = concurrent_jobs.remote
         }
         _linker_input_args = [ "\"$rspfile\"" ]
@@ -862,7 +870,7 @@ template("zircon_toolchain") {
                   "\"$depend_output,$link_output\"",
                   "--preserve_unchanged_output_mtime",  # only overwrite if
                                                         # changed
-                ] + _link_rbe_exec_strategy_flags + [ "--" ]
+                ] + _rbe_flags + [ "--" ]
             _remote_ifs_prefix = string_join(" ", _remote_ifs_prefix_list)
           }
           command += " && $_remote_ifs_prefix $llvm_ifs --write-if-changed --output-ifs=$depend_output --output-elf=$link_output $unstripped_output"

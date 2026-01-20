@@ -2852,6 +2852,7 @@ def remote_action_from_args(
         fsatrace_path=main_args.fsatrace_path,
         diagnose_nonzero=main_args.diagnose_nonzero,
         remote_debug_command=main_args.remote_debug_command,
+        use_xattr=_CAN_HAVE_XATTR and not main_args.disable_xattr,
         **kwargs,
     )
 
@@ -2983,8 +2984,6 @@ def main(argv: Sequence[str]) -> int:
         main_argv
     )
 
-    use_xattr = _CAN_HAVE_XATTR and not main_args.disable_xattr
-
     # Re-launch self with reproxy if needed.
     auto_relaunch_with_reproxy(
         script=Path(__file__),
@@ -2997,7 +2996,6 @@ def main(argv: Sequence[str]) -> int:
         main_args=main_args,
         remote_options=other_remote_options,
         command=filtered_command,
-        use_xattr=use_xattr,
     )
     with cl_utils.timer_cm("RemoteAction.run_with_main_args()"):
         return remote_action.run_with_main_args(main_args)
