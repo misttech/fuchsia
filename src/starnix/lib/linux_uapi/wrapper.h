@@ -27,6 +27,7 @@
 #include <linux/dm-ioctl.h>
 #include <linux/dma-buf.h>
 #include <linux/dma-heap.h>
+#include <linux/elf.h>
 #include <linux/errno.h>
 #include <linux/eventpoll.h>
 #include <linux/fadvise.h>
