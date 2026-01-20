@@ -2,10 +2,11 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use crate::power::LockSource;
+use crate::power::WakeupSourceOrigin;
 use crate::task::CurrentTask;
 use crate::vfs::FsNodeOps;
 use crate::vfs::pseudo::simple_file::{BytesFile, BytesFileOps};
+use itertools::Itertools;
 use starnix_uapi::errors::Errno;
 use starnix_uapi::{errno, error};
 use std::borrow::Cow;
@@ -50,7 +51,7 @@ impl BytesFileOps for PowerWakeLockFile {
         current_task
             .kernel()
             .suspend_resume_manager
-            .add_lock(clean_lock_str, LockSource::WakeLockFile);
+            .activate_wakeup_source(WakeupSourceOrigin::WakeLock(clean_lock_str.to_owned()));
 
         // Set a timer to disable the wake lock when expired.
         if let Some(target_monotonic) = target_monotonic {
@@ -58,7 +59,9 @@ impl BytesFileOps for PowerWakeLockFile {
             let clean_lock_string = clean_lock_str.to_string();
             current_task.kernel().kthreads.spawn_future(async move || {
                 fuchsia_async::Timer::new(target_monotonic).await;
-                kernel_ref.suspend_resume_manager.remove_lock(&clean_lock_string);
+                kernel_ref
+                    .suspend_resume_manager
+                    .timeout_wakeup_source(&WakeupSourceOrigin::WakeLock(clean_lock_string));
             });
         }
 
@@ -67,7 +70,7 @@ impl BytesFileOps for PowerWakeLockFile {
 
     fn read(&self, current_task: &CurrentTask) -> Result<Cow<'_, [u8]>, Errno> {
         let wake_locks = current_task.kernel().suspend_resume_manager.lock().active_wake_locks();
-        let content = wake_locks.join(" ") + "\n";
+        let content = wake_locks.iter().map(|o| o.to_string()).join(" ") + "\n";
         Ok(content.as_bytes().to_owned().into())
     }
 }
@@ -84,8 +87,12 @@ impl BytesFileOps for PowerWakeUnlockFile {
     /// Writing a string to this file deactivates the wakeup source with that name.
     fn write(&self, current_task: &CurrentTask, data: Vec<u8>) -> Result<(), Errno> {
         let lock_str = std::str::from_utf8(&data).map_err(|_| errno!(EINVAL))?;
-        let clean_lock_str = lock_str.trim_end_matches('\n');
-        if !current_task.kernel().suspend_resume_manager.remove_lock(clean_lock_str) {
+        let clean_lock_str = lock_str.trim_end_matches('\n').to_string();
+        if !current_task
+            .kernel()
+            .suspend_resume_manager
+            .deactivate_wakeup_source(&WakeupSourceOrigin::WakeLock(clean_lock_str))
+        {
             return error!(EPERM);
         }
         Ok(())
@@ -95,7 +102,7 @@ impl BytesFileOps for PowerWakeUnlockFile {
     /// via `PowerWakeLockFile`.
     fn read(&self, current_task: &CurrentTask) -> Result<Cow<'_, [u8]>, Errno> {
         let wake_locks = current_task.kernel().suspend_resume_manager.lock().inactive_wake_locks();
-        let content = wake_locks.join(" ") + "\n";
+        let content = wake_locks.iter().map(|o| o.to_string()).join(" ") + "\n";
         Ok(content.as_bytes().to_owned().into())
     }
 }

@@ -4,7 +4,7 @@
 
 use crate::mm::memory::MemoryObject;
 use crate::mm::{DesiredAddress, MappingName, MappingOptions, MemoryAccessorExt, ProtectionFlags};
-use crate::power::OnWakeOps;
+use crate::power::{OnWakeOps, WakeupSourceOrigin};
 use crate::security;
 use crate::task::{
     CurrentTask, CurrentTaskAndLocked, EventHandler, Task, ThreadGroupKey, WaitCallback,
@@ -18,7 +18,7 @@ use crate::vfs::fsverity::{
 use crate::vfs::{
     ActiveNamespaceNode, DirentSink, EpollFileObject, EpollKey, FallocMode, FdTableId,
     FileSystemHandle, FileWriteGuardMode, FsNodeHandle, FsString, NamespaceNode, RecordLockCommand,
-    RecordLockOwner,
+    RecordLockOwner, wakeup_source_name_for_epoll,
 };
 use starnix_crypt::EncryptionKeyId;
 use starnix_lifecycle::{ObjectReleaser, ReleaserAction};
@@ -2211,10 +2211,12 @@ impl Releasable for FileObject {
         for (_, file) in self.epoll_files.lock().drain() {
             if let Some(file) = file.upgrade() {
                 if let Some(epoll_object) = file.downcast_file::<EpollFileObject>() {
-                    current_task
-                        .kernel()
-                        .suspend_resume_manager
-                        .remove_epoll(self.id.as_epoll_key());
+                    current_task.kernel().suspend_resume_manager.deactivate_wakeup_source(
+                        &WakeupSourceOrigin::Epoll(wakeup_source_name_for_epoll(
+                            current_task,
+                            self.id.as_epoll_key(),
+                        )),
+                    );
                     let _ = epoll_object.delete(&self);
                 }
             }

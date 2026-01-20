@@ -4,9 +4,7 @@
 
 use crate::power::{SuspendState, SuspendStats};
 use crate::task::CurrentTask;
-use crate::vfs::EpollKey;
 
-use std::cmp::min;
 use std::collections::{HashMap, HashSet};
 use std::future::Future;
 use std::sync::{Arc, Weak};
@@ -17,13 +15,11 @@ use fuchsia_component::client::connect_to_protocol_sync;
 use fuchsia_inspect::ArrayProperty;
 use futures::stream::{FusedStream, Next};
 use futures::{FutureExt, StreamExt};
-use itertools::Itertools;
 use starnix_logging::{log_info, log_warn};
 use starnix_sync::{
     EbpfSuspendLock, FileOpsCore, LockBefore, Locked, Mutex, MutexGuard, OrderedRwLock,
     RwLockReadGuard,
 };
-use starnix_task_command::TaskCommand;
 use starnix_uapi::arc_key::WeakKey;
 use starnix_uapi::errors::Errno;
 use starnix_uapi::{errno, error};
@@ -35,68 +31,54 @@ use {
     fidl_fuchsia_starnix_runner as frunner, fuchsia_inspect as inspect,
 };
 
-// Remember at most this many past durations.
-const MAX_PAST_DURATIONS_COUNT: usize = 10;
+/// Wake source persistent info, exposed in inspect diagnostics.
+#[derive(Debug, Default)]
+pub struct WakeupSource {
+    /// The number of times the wakeup source has been activated.
+    active_count: u64,
 
-/// Epoll persistent info, exposed in inspect diagnostics.
-#[derive(Debug, Hash)]
-struct EpollInfo {
-    // The name of the command that this epoll was created for.
-    command: TaskCommand,
-    // When this epoll was created, used for detecting long-running epolls.
-    added_timestamp: Option<zx::BootInstant>,
-    // Records a limited number of past durations for this epoll.
-    past_durations: VecDeque<zx::BootDuration>,
+    /// The number of events signaled to this source. Similar to active_count but can track
+    /// internal events causing the activation.
+    event_count: u64,
+
+    /// The number of times this source prevented suspension of the system, or woke the system from
+    /// a suspended state.
+    ///
+    /// Right now there is no way for wake locks to wake the Starnix container, because the
+    /// mechanism used for waking the container is not integrated into the wake source machinery.
+    wakeup_count: u64,
+
+    /// The number of times the timeout associated with this source expired.
+    expire_count: u64,
+
+    /// The timestamp relative to the monotonic clock when the lock became active. If 0, the lock
+    /// is currently inactive.
+    active_since: zx::MonotonicInstant,
+
+    /// The total duration this source has been held active since the system booted.
+    total_time: zx::MonotonicDuration,
+
+    /// The longest single duration this source was held active.
+    max_time: zx::MonotonicDuration,
+
+    /// The last time this source was either acquired or released.
+    last_change: zx::MonotonicInstant,
 }
 
-impl EpollInfo {
-    fn new(
-        command: TaskCommand,
-        added_timestamp: zx::BootInstant,
-        past_durations: Option<VecDeque<zx::BootDuration>>,
-    ) -> Self {
-        Self {
-            command,
-            added_timestamp: Some(added_timestamp),
-            past_durations: past_durations
-                .unwrap_or_else(|| VecDeque::with_capacity(MAX_PAST_DURATIONS_COUNT)),
-        }
-    }
+#[derive(Debug, Clone, Eq, PartialEq, Hash)]
+pub enum WakeupSourceOrigin {
+    WakeLock(String),
+    Epoll(String),
+    HAL(String),
+}
 
-    /// Moves the current epoll duration into past durations, computed based off
-    /// of the provided epoll end timestamp.
-    fn update_lifecycle(self, end_timestamp: zx::BootInstant) -> Self {
-        let past_durations = if let Some(start_timestamp) = self.added_timestamp {
-            let duration = end_timestamp - start_timestamp;
-            let mut past_durations = self.past_durations;
-            past_durations.push_front(duration);
-            past_durations.into_iter().take(MAX_PAST_DURATIONS_COUNT).collect()
-        } else {
-            VecDeque::with_capacity(MAX_PAST_DURATIONS_COUNT)
-        };
-        Self { added_timestamp: None, past_durations, ..self }
-    }
-
-    /// Records the contents of this `EpollInfo` into the provided inspect `node`. The
-    /// current epoll is terminated at `stop_timestamp`.
-    fn record_into(&self, node: &inspect::Node, stop_timestamp: zx::BootInstant) {
-        let this_node = node.create_child(&self.command.to_string());
-        if let Some(added_timestamp) = self.added_timestamp {
-            this_node.record_int("created_timestamp_ns", added_timestamp.into_nanos());
-            let duration = stop_timestamp - added_timestamp;
-            this_node.record_int("this_duration_ns", duration.into_nanos());
+impl std::string::ToString for WakeupSourceOrigin {
+    fn to_string(&self) -> String {
+        match self {
+            WakeupSourceOrigin::WakeLock(lock) => lock.clone(),
+            WakeupSourceOrigin::Epoll(lock) => format!("[epoll] {}", lock),
+            WakeupSourceOrigin::HAL(lock) => format!("[HAL] {}", lock),
         }
-        let len = std::cmp::min(self.past_durations.len(), MAX_PAST_DURATIONS_COUNT);
-        let past_durations_node = this_node.create_int_array("past_durations_ns", len);
-        let _ = self
-            .past_durations
-            .iter()
-            .take(len)
-            .enumerate()
-            .map(|(i, d)| past_durations_node.set(i, d.into_nanos()))
-            .collect::<Vec<_>>();
-        this_node.record(past_durations_node);
-        node.record(this_node);
     }
 }
 
@@ -109,10 +91,11 @@ pub struct SuspendResumeManager {
     /// via a lazy node.
     message_counters: Arc<Mutex<HashSet<WeakKey<OwnedMessageCounter>>>>,
 
-    // The lock used to to avoid suspension while holding eBPF locks.
+    /// The lock used to to avoid suspension while holding eBPF locks.
     ebpf_suspend_lock: OrderedRwLock<(), EbpfSuspendLock>,
 }
 
+/// Manager for suspend and resume.
 /// Manager for suspend and resume.
 pub struct SuspendResumeManagerInner {
     /// The suspend counters and gauges.
@@ -121,17 +104,8 @@ pub struct SuspendResumeManagerInner {
 
     suspend_events: VecDeque<SuspendEvent>,
 
-    /// The currently active wake locks in the system. If non-empty, this prevents
-    /// the container from suspending.
-    active_locks: HashMap<String, LockSource>,
-    inactive_locks: HashSet<String>,
-
-    /// The currently active EPOLLWAKEUPs in the system. If non-empty, this prevents
-    /// the container from suspending.
-    active_epolls: HashMap<EpollKey, EpollInfo>,
-
-    /// Previous, but now inactive epolls.
-    inactive_epolls: HashMap<EpollKey, EpollInfo>,
+    /// The wake sources in the system, both active and inactive.
+    wakeup_sources: HashMap<WakeupSourceOrigin, WakeupSource>,
 
     /// The event pair that is passed to the Starnix runner so it can observe whether
     /// or not any wake locks are active before completing a suspend operation.
@@ -141,53 +115,39 @@ pub struct SuspendResumeManagerInner {
     /// active wake locks in the container. Note that the peer of the writer is the
     /// object that is signaled.
     active_lock_writer: zx::EventPair,
+
+    /// The number of currently active wakeup sources.
+    active_wakeup_source_count: u64,
+
+    /// The total number of activate-deactivated cycles that have been seen across all wakeup
+    /// sources.
+    total_wakeup_source_event_count: u64,
 }
 
 pub type EbpfSuspendGuard<'a> = RwLockReadGuard<'a, ()>;
 
-/// The source of a wake lock.
-pub enum LockSource {
-    WakeLockFile,
-    ContainerPowerController,
-}
-
 #[derive(Clone, Debug)]
 pub enum SuspendEvent {
-    Attempt {
-        time: zx::BootInstant,
-        state: String,
-    },
-    Resume {
-        time: zx::BootInstant,
-        reason: String,
-    },
-    Fail {
-        time: zx::BootInstant,
-        wake_locks: Option<Vec<String>>,
-        epolls: Option<Vec<TaskCommand>>,
-    },
+    Attempt { time: zx::BootInstant, state: String },
+    Resume { time: zx::BootInstant, reason: String },
+    Fail { time: zx::BootInstant, wakeup_sources: Option<Vec<String>> },
 }
 
 /// The inspect node ring buffer will keep at most this many entries.
 const INSPECT_RING_BUFFER_CAPACITY: usize = 128;
 
-/// The inspect wakelock nodes will keep at most this many entries.
-const INSPECT_MAX_WAKE_LOCK_NAMES: usize = 64;
-const INSPECT_MAX_EPOLLS: usize = 64;
-
 impl Default for SuspendResumeManagerInner {
     fn default() -> Self {
         let (active_lock_reader, active_lock_writer) = zx::EventPair::create();
         Self {
-            suspend_events: VecDeque::with_capacity(INSPECT_RING_BUFFER_CAPACITY),
             suspend_stats: Default::default(),
-            sync_on_suspend_enabled: Default::default(),
-            active_locks: Default::default(),
-            inactive_locks: Default::default(),
-            active_epolls: Default::default(),
-            inactive_epolls: Default::default(),
+            sync_on_suspend_enabled: false,
+            suspend_events: VecDeque::with_capacity(INSPECT_RING_BUFFER_CAPACITY),
+            wakeup_sources: Default::default(),
             active_lock_reader,
             active_lock_writer,
+            active_wakeup_source_count: 0,
+            total_wakeup_source_event_count: 0,
         }
     }
 }
@@ -195,19 +155,49 @@ impl Default for SuspendResumeManagerInner {
 impl SuspendResumeManagerInner {
     // Returns true if there are no wake locks preventing suspension.
     fn can_suspend(&self) -> bool {
-        self.active_locks.is_empty() && self.active_epolls.is_empty()
+        self.active_wakeup_source_count == 0
     }
 
-    pub fn active_wake_locks(&self) -> Vec<String> {
-        Vec::from_iter(self.active_locks.keys().cloned())
+    pub fn active_wake_locks(&self) -> Vec<WakeupSourceOrigin> {
+        self.wakeup_sources
+            .iter()
+            .filter_map(|(name, source)| match name {
+                WakeupSourceOrigin::WakeLock(_) => {
+                    if source.active_since > zx::MonotonicInstant::ZERO {
+                        Some(name.clone())
+                    } else {
+                        None
+                    }
+                }
+                _ => None,
+            })
+            .collect()
     }
 
-    pub fn inactive_wake_locks(&self) -> Vec<String> {
-        Vec::from_iter(self.inactive_locks.clone())
+    pub fn inactive_wake_locks(&self) -> Vec<WakeupSourceOrigin> {
+        self.wakeup_sources
+            .iter()
+            .filter_map(|(name, source)| match name {
+                WakeupSourceOrigin::WakeLock(_) => {
+                    if source.active_since == zx::MonotonicInstant::ZERO {
+                        Some(name.clone())
+                    } else {
+                        None
+                    }
+                }
+                _ => None,
+            })
+            .collect()
     }
 
-    fn active_epolls(&self) -> Vec<TaskCommand> {
-        Vec::from_iter(self.active_epolls.values().map(|e| &e.command).cloned())
+    /// Signals whether or not there are currently any active wake locks in the kernel.
+    fn signal_wake_events(&mut self) {
+        let (clear_mask, set_mask) = if self.active_wakeup_source_count == 0 {
+            (zx::Signals::EVENT_SIGNALED, zx::Signals::empty())
+        } else {
+            (zx::Signals::empty(), zx::Signals::EVENT_SIGNALED)
+        };
+        self.active_lock_writer.signal_peer(clear_mask, set_mask).expect("Failed to signal peer");
     }
 
     fn update_suspend_stats<UpdateFn>(&mut self, update: UpdateFn)
@@ -215,63 +205,6 @@ impl SuspendResumeManagerInner {
         UpdateFn: FnOnce(&mut SuspendStats),
     {
         update(&mut self.suspend_stats);
-    }
-
-    /// Signals whether or not there are currently any active wake locks in the kernel.
-    fn signal_wake_events(&mut self) {
-        let (clear_mask, set_mask) =
-            if self.active_locks.is_empty() && self.active_epolls.is_empty() {
-                (zx::Signals::EVENT_SIGNALED, zx::Signals::empty())
-            } else {
-                (zx::Signals::empty(), zx::Signals::EVENT_SIGNALED)
-            };
-        self.active_lock_writer.signal_peer(clear_mask, set_mask).expect("Failed to signal peer");
-    }
-
-    fn record_active_locks(&self, node: &inspect::Node) {
-        let active_locks = &self.active_locks;
-        let len = min(active_locks.len(), INSPECT_MAX_WAKE_LOCK_NAMES);
-        let active_wake_locks = node.create_string_array(fobs::ACTIVE_WAKE_LOCK_NAMES, len);
-        for (i, name) in active_locks.keys().sorted().take(len).enumerate() {
-            if let Some(src) = active_locks.get(name) {
-                active_wake_locks.set(i, format!("{} (source {})", name, src));
-            }
-        }
-        node.record(active_wake_locks);
-    }
-
-    fn record_inactive_locks(&self, node: &inspect::Node) {
-        let inactive_locks = &self.inactive_locks;
-        let len = min(inactive_locks.len(), INSPECT_MAX_WAKE_LOCK_NAMES);
-        let inactive_wake_locks = node.create_string_array(fobs::INACTIVE_WAKE_LOCK_NAMES, len);
-        for (i, name) in inactive_locks.iter().sorted().take(len).enumerate() {
-            inactive_wake_locks.set(i, name);
-        }
-        node.record(inactive_wake_locks);
-    }
-
-    fn record_active_epolls(&self, node: &inspect::Node) {
-        let active_epolls = &self.active_epolls;
-        let len = min(active_epolls.len(), INSPECT_MAX_EPOLLS);
-        let active_epolls_node = node.create_child(fobs::ACTIVE_EPOLLS);
-        let now = zx::BootInstant::get();
-        for key in active_epolls.keys().take(len) {
-            if let Some(epoll_info) = active_epolls.get(key) {
-                epoll_info.record_into(&active_epolls_node, now);
-            }
-        }
-        node.record(active_epolls_node);
-    }
-
-    fn record_inactive_epolls(&self, node: &inspect::Node) {
-        let inactive_epolls = &self.inactive_epolls;
-        let len = min(inactive_epolls.len(), INSPECT_MAX_WAKE_LOCK_NAMES);
-        let inactive_epolls_node = node.create_child(fobs::INACTIVE_EPOLLS);
-        let now = zx::BootInstant::get();
-        for epoll in inactive_epolls.values().take(len) {
-            epoll.record_into(&inactive_epolls_node, now);
-        }
-        node.record(inactive_epolls_node);
     }
 
     fn add_suspend_event(&mut self, event: SuspendEvent) {
@@ -294,29 +227,38 @@ impl SuspendResumeManagerInner {
                     child.record_int(fobs::SUSPEND_RESUMED_AT, time.into_nanos());
                     child.record_string(fobs::SUSPEND_RESUME_REASON, reason);
                 }
-                SuspendEvent::Fail { time, wake_locks, epolls } => {
+                SuspendEvent::Fail { time, wakeup_sources } => {
                     child.record_int(fobs::SUSPEND_FAILED_AT, time.into_nanos());
-                    if let Some(names) = wake_locks {
+                    if let Some(names) = wakeup_sources {
                         let names_array =
-                            child.create_string_array(fobs::ACTIVE_WAKE_LOCK_NAMES, names.len());
+                            child.create_string_array(fobs::WAKEUP_SOURCES_NAME, names.len());
                         for (i, name) in names.iter().enumerate() {
                             names_array.set(i, name);
                         }
                         child.record(names_array);
-                    }
-                    if let Some(epolls) = epolls {
-                        let epolls_array =
-                            child.create_string_array(fobs::ACTIVE_EPOLLS, epolls.len());
-                        for (i, command) in epolls.iter().enumerate() {
-                            epolls_array.set(i, command.to_string());
-                        }
-                        child.record(epolls_array);
                     }
                 }
             }
             events_node.record(child);
         }
         node.record(events_node);
+    }
+
+    fn record_wakeup_sources(&self, node: &inspect::Node) {
+        let wakeup_node = node.create_child("wakeup_sources");
+        for (name, source) in self.wakeup_sources.iter() {
+            let child = wakeup_node.create_child(name.to_string());
+            child.record_uint("active_count", source.active_count);
+            child.record_uint("event_count", source.event_count);
+            child.record_uint("wakeup_count", source.wakeup_count);
+            child.record_uint("expire_count", source.expire_count);
+            child.record_int("active_since (ns)", source.active_since.into_nanos());
+            child.record_int("total_time (ms)", source.total_time.into_millis());
+            child.record_int("max_time (ms)", source.max_time.into_millis());
+            child.record_int("last_change (ns)", source.last_change.into_nanos());
+            wakeup_node.record(child);
+        }
+        node.record(wakeup_node);
     }
 }
 
@@ -348,18 +290,15 @@ impl Default for SuspendResumeManager {
         });
         let inner = Arc::new(Mutex::new(SuspendResumeManagerInner::default()));
         let inner_clone = inner.clone();
-        root.record_lazy_child("wake_locks", move || {
+        root.record_lazy_child("wakeup_sources", move || {
             let inner = inner_clone.clone();
             async move {
                 let inspector = fuchsia_inspect::Inspector::default();
                 let root = inspector.root();
                 let state = inner.lock();
 
-                state.record_active_locks(root);
-                state.record_inactive_locks(root);
-                state.record_active_epolls(root);
-                state.record_inactive_epolls(root);
                 state.record_suspend_events(root);
+                state.record_wakeup_sources(root);
 
                 Ok(inspector)
             }
@@ -403,46 +342,61 @@ impl SuspendResumeManager {
         Ok(())
     }
 
-    /// Adds a wake lock `name` to the active wake locks.
-    pub fn add_lock(&self, name: &str, src: LockSource) -> bool {
+    pub fn activate_wakeup_source(&self, origin: WakeupSourceOrigin) -> bool {
         let mut state = self.lock();
-        let res = state.active_locks.insert(String::from(name), src);
-        state.signal_wake_events();
-        res.is_none()
-    }
-
-    /// Removes a wake lock `name` from the active wake locks.
-    pub fn remove_lock(&self, name: &str) -> bool {
-        let mut state = self.lock();
-        let res = state.active_locks.remove(name);
-        if res.is_none() {
-            return false;
-        }
-
-        state.inactive_locks.insert(String::from(name));
-        state.signal_wake_events();
-        true
-    }
-
-    /// Adds a wake lock `key` to the active epoll wake locks.
-    pub fn add_epoll(&self, current_task: &CurrentTask, key: EpollKey) {
-        let mut state = self.lock();
-        let past_durations = state.inactive_epolls.remove(&key).map(|info| info.past_durations);
-        let epoll_info = state.active_epolls.remove(&key).unwrap_or_else(|| {
-            EpollInfo::new(current_task.command(), zx::BootInstant::get(), past_durations)
-        });
-        state.active_epolls.insert(key, epoll_info);
-        state.signal_wake_events();
-    }
-
-    /// Removes a wake lock `key` from the active epoll wake locks.
-    pub fn remove_epoll(&self, key: EpollKey) {
-        let mut state = self.lock();
-        let epoll_info = state.active_epolls.remove(&key);
-        if let Some(epoll_info) = epoll_info {
-            state.inactive_epolls.insert(key, epoll_info.update_lifecycle(zx::BootInstant::get()));
+        let did_activate = {
+            let entry = state.wakeup_sources.entry(origin).or_default();
+            let now = zx::MonotonicInstant::get();
+            entry.active_count += 1;
+            entry.event_count += 1;
+            entry.last_change = now;
+            if entry.active_since == zx::MonotonicInstant::ZERO {
+                entry.active_since = now;
+                true
+            } else {
+                false
+            }
+        };
+        if did_activate {
+            state.active_wakeup_source_count += 1;
         }
         state.signal_wake_events();
+        did_activate
+    }
+
+    pub fn deactivate_wakeup_source(&self, origin: &WakeupSourceOrigin) -> bool {
+        self.remove_wakeup_source(origin, false)
+    }
+
+    pub fn timeout_wakeup_source(&self, origin: &WakeupSourceOrigin) -> bool {
+        self.remove_wakeup_source(origin, true)
+    }
+
+    fn remove_wakeup_source(&self, origin: &WakeupSourceOrigin, timed_out: bool) -> bool {
+        let mut state = self.lock();
+        let removed = match state.wakeup_sources.get_mut(origin) {
+            Some(entry) if entry.active_since != zx::MonotonicInstant::ZERO => {
+                if timed_out {
+                    entry.expire_count += 1;
+                }
+
+                let now = zx::MonotonicInstant::get();
+                let duration = now - entry.active_since;
+                entry.total_time += duration;
+                entry.max_time = std::cmp::max(duration, entry.max_time);
+                entry.last_change = now;
+                entry.active_since = zx::MonotonicInstant::ZERO;
+
+                true
+            }
+            _ => false,
+        };
+        if removed {
+            state.active_wakeup_source_count -= 1;
+            state.total_wakeup_source_event_count += 1;
+        }
+        state.signal_wake_events();
+        removed
     }
 
     pub fn add_message_counter(
@@ -596,25 +550,32 @@ impl SuspendResumeManager {
             suspend_stats.last_resume_reason = None;
         });
 
-        let wake_lock_names = state.active_wake_locks();
-        let epoll_names = state.active_epolls();
-        let last_resume_reason =
-            format!("Abort: {}", wake_lock_names.join(" ") + &epoll_names.iter().join(" "));
+        let wakeup_sources: Vec<String> = state
+            .wakeup_sources
+            .iter_mut()
+            .filter_map(|(origin, source)| {
+                if source.active_since > zx::MonotonicInstant::ZERO {
+                    source.wakeup_count += 1;
+                    Some(origin.to_string())
+                } else {
+                    None
+                }
+            })
+            .collect();
+        let last_resume_reason = format!("Abort: {}", wakeup_sources.join(" "));
         state.update_suspend_stats(|suspend_stats| {
             // Power analysis tools require `Abort: ` in the case of failed suspends
             suspend_stats.last_resume_reason = Some(last_resume_reason);
         });
 
         log_warn!(
-            "Suspend failed due to {:?}. Here are the active wake locks: {:?}, and epolls: {:?}",
+            "Suspend failed due to {:?}. Here are the active wakeup sources: {:?}",
             failure_reason,
-            wake_lock_names,
-            epoll_names
+            wakeup_sources,
         );
         state.add_suspend_event(SuspendEvent::Fail {
             time: wake_time,
-            wake_locks: Some(wake_lock_names),
-            epolls: Some(epoll_names),
+            wakeup_sources: Some(wakeup_sources),
         });
         fuchsia_trace::instant!("power", "suspend_container:error", fuchsia_trace::Scope::Process);
     }
@@ -627,15 +588,6 @@ impl SuspendResumeManager {
         L: LockBefore<EbpfSuspendLock>,
     {
         self.ebpf_suspend_lock.read(locked)
-    }
-}
-
-impl fmt::Display for LockSource {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            LockSource::WakeLockFile => write!(f, "wake lock file"),
-            LockSource::ContainerPowerController => write!(f, "container power controller"),
-        }
     }
 }
 

@@ -14,7 +14,7 @@ use futures::{Future, Stream, StreamExt, TryStreamExt, pin_mut, select};
 use starnix_core::device::{DeviceMode, DeviceOps};
 use starnix_core::mm::memory::MemoryObject;
 use starnix_core::mm::{DesiredAddress, MappingOptions, MemoryAccessorExt, ProtectionFlags};
-use starnix_core::power::{ContainerWakingStream, LockSource, OwnedMessageCounterHandle};
+use starnix_core::power::{ContainerWakingStream, OwnedMessageCounterHandle, WakeupSourceOrigin};
 use starnix_core::task::dynamic_thread_spawner::SpawnRequestBuilder;
 use starnix_core::task::{CurrentTask, Kernel, LockedAndTask, ThreadGroup, WaitQueue, Waiter};
 use starnix_core::vfs::buffers::{InputBuffer, OutputBuffer};
@@ -630,9 +630,9 @@ impl<F: RemoteControllerConnector> RemoteBinderHandle<F> {
             match event {
                 fbinder::ContainerPowerControllerRequest::Wake { payload, .. } => {
                     if let Some(wake_lock) = payload.wake_lock {
-                        kernel
-                            .suspend_resume_manager
-                            .add_lock(wake_lock_name, LockSource::ContainerPowerController);
+                        kernel.suspend_resume_manager.activate_wakeup_source(
+                            WakeupSourceOrigin::HAL(wake_lock_name.to_string()),
+                        );
                         // The client is responsible for lowering this signal if it reuses the same
                         // event pair across calls.
                         let _ =
@@ -643,7 +643,9 @@ impl<F: RemoteControllerConnector> RemoteBinderHandle<F> {
                             fasync::OnSignals::new(&wake_lock, zx::Signals::EVENTPAIR_PEER_CLOSED)
                                 .await
                                 .unwrap();
-                            kernel_clone.suspend_resume_manager.remove_lock(&wake_lock_name);
+                            kernel_clone
+                                .suspend_resume_manager
+                                .deactivate_wakeup_source(&WakeupSourceOrigin::HAL(wake_lock_name));
                         });
                     }
 
@@ -1084,7 +1086,7 @@ mod tests {
     use fidl::endpoints::{Proxy, create_endpoints, create_proxy};
     use rand::distr::{Alphanumeric, SampleString};
     use starnix_core::mm::MemoryAccessor;
-    use starnix_core::power::{LockSource, OwnedMessageCounter};
+    use starnix_core::power::{OwnedMessageCounter, WakeupSourceOrigin};
     use starnix_core::testing::*;
     use starnix_core::vfs::{FileSystemOptions, WhatToMount};
     use starnix_task_command::TaskCommand;
@@ -1423,7 +1425,9 @@ mod tests {
 
         // Check that we already have the lock.
         assert!(
-            !kernel.suspend_resume_manager.add_lock("test", LockSource::ContainerPowerController)
+            !kernel
+                .suspend_resume_manager
+                .activate_wakeup_source(WakeupSourceOrigin::HAL("test".to_string()))
         );
 
         // Drop our lock, run the executor, and check that the lock dropped.
@@ -1431,7 +1435,9 @@ mod tests {
 
         let _ = exec.run_until_stalled(&mut futures::future::pending::<()>());
         assert!(
-            kernel.suspend_resume_manager.add_lock("test", LockSource::ContainerPowerController)
+            kernel
+                .suspend_resume_manager
+                .activate_wakeup_source(WakeupSourceOrigin::HAL("test".to_string()))
         );
     }
 }
