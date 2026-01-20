@@ -22,7 +22,7 @@ use fuchsia_runtime::HandleType;
 use fuchsia_sync::Mutex;
 use futures::StreamExt;
 use fxfs::errors::FxfsError;
-use fxfs::filesystem::FxFilesystem;
+use fxfs::filesystem::FxFilesystemBuilder;
 use fxfs::object_store::volume::root_volume;
 use fxfs_crypto::Crypt;
 use fxfs_platform::component::new_block_client;
@@ -274,16 +274,22 @@ async fn main() -> Result<(), Error> {
         .build()
         .expect("failed to build vmo block server"),
     );
-    let filesystem = FxFilesystem::new_empty(DeviceHolder::new(
-        BlockDevice::new(
-            new_block_client(block_server.connect()).await.expect("failed to create block client"),
-            false,
-        )
+
+    let filesystem = FxFilesystemBuilder::new()
+        .format(true)
+        .barriers_enabled(true)
+        .open(DeviceHolder::new(
+            BlockDevice::new(
+                new_block_client(block_server.connect())
+                    .await
+                    .expect("failed to create new block client"),
+                false,
+            )
+            .await
+            .expect("failed to create block device"),
+        ))
         .await
-        .unwrap(),
-    ))
-    .await
-    .expect("FxFilesystem::new_empty failed");
+        .expect("failed to open filesystem");
 
     let inspector = fuchsia_inspect::component::inspector();
     let _inspect_server_task =
