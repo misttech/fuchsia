@@ -521,6 +521,8 @@ impl Interface for Data {
                     cipher
                         .decrypt(&mut data, opts.inline_crypto.dun as u128)
                         .map_err(|_| zx::Status::IO)?;
+                } else {
+                    return Err(zx::Status::IO);
                 }
             }
             vmo.write(&data[..], vmo_offset)
@@ -571,6 +573,8 @@ impl Interface for Data {
                     cipher
                         .encrypt(&mut data, opts.inline_crypto.dun as u128)
                         .map_err(|_| zx::Status::IO)?;
+                } else {
+                    return Err(zx::Status::IO);
                 }
             }
             self.data.write(&data[..], device_block_offset * self.block_size as u64)?;
@@ -653,7 +657,16 @@ mod tests {
         server.evict_key_slot(slot).expect("evict_key_slot failed");
         assert_eq!(server.evict_key_slot(slot), Err(zx::Status::INVALID_ARGS));
 
-        // TODO(https://fxbug.dev/475970808): we should fail to read when key has been evicted.
+        // Writing and reading from file after the key has been evicted should fail.
+        assert_eq!(
+            block_interface.read(0, 1, &vmo_read, 0, read_opts, None).await,
+            Err(zx::Status::IO)
+        );
+
+        assert_eq!(
+            block_interface.write(0, 1, &vmo, 0, write_opts, None).await,
+            Err(zx::Status::IO)
+        );
     }
 
     #[fuchsia::test]

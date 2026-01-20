@@ -253,6 +253,21 @@ mod tests {
         handle.read(0, buf.as_mut()).await.expect("read failed");
         assert_eq!(buf.as_slice(), vec![0xaa; 2 * TEST_DEVICE_BLOCK_SIZE as usize]);
 
+        // If the keyslots are removed, reading from and writing to the file should now fail.
+        // Cheat: Only one keyslot was programmed in this test, and VmoBackedServer programs keys to
+        // the next available keyslot. The keyslot that we want to evict is 0.
+        block_server.evict_key_slot(0).expect("evict_key_slot failed");
+
+        let mut buf = handle.allocate_buffer(2 * TEST_DEVICE_BLOCK_SIZE as usize).await;
+        handle.read(0, buf.as_mut()).await.expect_err("read passed unexpectedly");
+
+        // Write with an aligned buffer to avoid reading from vmo when creating a new aligned
+        // buffer. We already know that reading from vmo will fail, we want to check that writing
+        // fails as well.
+        let mut buf = handle.allocate_buffer(handle.block_size() as usize).await;
+        buf.as_mut_slice().fill(0xcc);
+        handle.write_or_append(Some(0), buf.as_ref()).await.expect_err("write passed unexpectedly");
+
         filesystem.close().await.expect("close failed");
     }
 
