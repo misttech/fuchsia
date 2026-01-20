@@ -1211,11 +1211,18 @@ class SoftwareBreakpointTest : public ::testing::Test {
     ASSERT_NE(child_pid_, 0);
   }
 
-  void WaitForChildStop(int expected_status) {
+  void WaitForChildStop(int expected_status) const {
     int status;
     ASSERT_EQ(SAFE_SYSCALL(waitpid(child_pid_, &status, 0)), child_pid_);
     ASSERT_TRUE(WIFSTOPPED(status));
     ASSERT_EQ(WSTOPSIG(status), expected_status);
+  }
+
+  void CheckSignalInfo(int signal, int code) const {
+    siginfo_t info;
+    SAFE_SYSCALL(ptrace(PTRACE_GETSIGINFO, child_pid_, nullptr, &info));
+    EXPECT_EQ(info.si_signo, signal);
+    EXPECT_EQ(info.si_code, code);
   }
 
   pid_t ChildPid() const { return child_pid_; }
@@ -1305,10 +1312,14 @@ TEST_F(SoftwareBreakpointTest, Waitpid) {
   // Wait for initial SIGSTOP.
   WaitForChildStop(SIGSTOP);
 
+  CheckSignalInfo(SIGSTOP, SI_TKILL);
+
   SetBreakpointAndContinue();
 
   // Wait for breakpoint.
   WaitForChildStop(SIGTRAP);
+
+  CheckSignalInfo(SIGTRAP, SI_KERNEL);
 }
 
 TEST_F(SoftwareBreakpointTest, SignalHandlerWithPipe) {
@@ -1324,6 +1335,8 @@ TEST_F(SoftwareBreakpointTest, SignalHandlerWithPipe) {
   EXPECT_EQ(signal_code_, CLD_TRAPPED);
   EXPECT_EQ(signal_status_, SIGSTOP);
 
+  CheckSignalInfo(SIGSTOP, SI_TKILL);
+
   ResetSignalReceived();
 
   SetBreakpointAndContinue();
@@ -1334,6 +1347,8 @@ TEST_F(SoftwareBreakpointTest, SignalHandlerWithPipe) {
 
   EXPECT_EQ(signal_code_, CLD_TRAPPED);
   EXPECT_EQ(signal_status_, SIGTRAP);
+
+  CheckSignalInfo(SIGTRAP, SI_KERNEL);
 }
 
 // Similar to SignalHandlerWithPipe, but waits on a ppoll of the pipe, instead of a blocking read.
@@ -1355,6 +1370,8 @@ TEST_F(SoftwareBreakpointTest, SignalHandlerWithPoll) {
   EXPECT_EQ(signal_code_, CLD_TRAPPED);
   EXPECT_EQ(signal_status_, SIGSTOP);
 
+  CheckSignalInfo(SIGSTOP, SI_TKILL);
+
   ResetSignalReceived();
 
   SetBreakpointAndContinue();
@@ -1368,6 +1385,8 @@ TEST_F(SoftwareBreakpointTest, SignalHandlerWithPoll) {
 
   EXPECT_EQ(signal_code_, CLD_TRAPPED);
   EXPECT_EQ(signal_status_, SIGTRAP);
+
+  CheckSignalInfo(SIGTRAP, SI_KERNEL);
 }
 
 TEST_F(SoftwareBreakpointTest, Signalfd) {
@@ -1386,6 +1405,8 @@ TEST_F(SoftwareBreakpointTest, Signalfd) {
   EXPECT_EQ(ssi.ssi_code, CLD_TRAPPED);
   EXPECT_EQ(ssi.ssi_status, SIGSTOP);
 
+  CheckSignalInfo(SIGSTOP, SI_TKILL);
+
   SetBreakpointAndContinue();
 
   // Wait for breakpoint.
@@ -1397,6 +1418,8 @@ TEST_F(SoftwareBreakpointTest, Signalfd) {
   EXPECT_EQ(ssi.ssi_pid, static_cast<uint32_t>(ChildPid()));
   EXPECT_EQ(ssi.ssi_code, CLD_TRAPPED);
   EXPECT_EQ(ssi.ssi_status, SIGTRAP);
+
+  CheckSignalInfo(SIGTRAP, SI_KERNEL);
 
   close(sfd);
 }
