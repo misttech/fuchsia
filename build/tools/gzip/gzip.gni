@@ -25,7 +25,7 @@ template("gzip") {
                              "visibility",
                              "deps",
                            ])
-    binary_label = "//src/starnix/lib/gzip"
+    binary_label = "//build/tools/gzip"
     sources = [ invoker.input ]
     outputs = [ invoker.output ]
     args = [

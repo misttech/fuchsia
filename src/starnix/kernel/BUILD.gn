@@ -4,8 +4,8 @@
 
 import("//build/components.gni")
 import("//build/rust/rustc_binary.gni")
+import("//build/tools/gzip/gzip.gni")
 import("//src/starnix/build/args.gni")
-import("//src/starnix/lib/gzip/gzip.gni")
 
 group("kernel") {
   deps = [ ":starnix_kernel_package" ]
