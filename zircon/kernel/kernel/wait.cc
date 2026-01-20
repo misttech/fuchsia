@@ -462,7 +462,7 @@ void WaitQueue::WakeAll(zx_status_t wait_queue_error) {
     }
 
     ktl::optional<Thread::UnblockList> maybe_unblock_list =
-        WaitQueueLockOps::LockForWakeAll(*this, wait_queue_error);
+        WaitQueueLockOps::LockForWakeAllInQueue(*this, wait_queue_error);
     // Whether we locked our threads and got a list back or not, we can drop the queue lock.  We are
     // going to either unblock our threads, or loop back around to try again.
     get_lock().Release();
@@ -497,7 +497,7 @@ ktl::optional<uint32_t> WaitQueue::WakeAllLocked(zx_status_t wait_queue_error) {
 
   const uint32_t count = collection_.Count();
   ktl::optional<Thread::UnblockList> maybe_unblock_list =
-      WaitQueueLockOps::LockForWakeAll(*this, wait_queue_error);
+      WaitQueueLockOps::LockForWakeAllInQueue(*this, wait_queue_error);
   if (maybe_unblock_list.has_value()) {
     // Now that we have all of the threads locked, we are committed to the
     // WakeAll operation and can unblock our threads. Unlike the standard
@@ -693,8 +693,7 @@ ktl::optional<BrwLockOps::LockForWakeResult> BrwLockOps::LockForWake(WaitQueue& 
   return result;
 }
 
-ktl::optional<Thread::UnblockList> WaitQueueLockOps::LockForWakeAll(WaitQueue& queue,
-                                                                    zx_status_t wait_queue_error) {
+ktl::optional<Thread::UnblockList> WaitQueueLockOps::LockForWakeAllInPlace(WaitQueue& queue) {
   DEBUG_ASSERT_MAGIC_AND_NOT_OWQ(&queue);
 
   // Try to lock all of the threads, backing off if we have to.
@@ -704,34 +703,46 @@ ktl::optional<Thread::UnblockList> WaitQueueLockOps::LockForWakeAll(WaitQueue& q
   }
 
   // Now that we have all of the threads locked, we are committed to the
-  // WakeAll operation, and we can move the threads over to an UnblockList.
+  // WakeAll operation, and we can add the threads to an UnblockList.
   //
-  // TODO(johngro): Optimize this.  By removing all of the elements of the
-  // collection one at a time, we are paying a rebalancing price we really
-  // should not have to pay, since we are going to eventually remove all of
-  // the elements, so maintaining balance is not really important.
+  // TODO(https://fxbug.dev/473385363): The in-place operations prevent us from collapsing the
+  // storage requirements of an UnblockList and WaitQueueCollection.
   Thread::UnblockList unblock_list;
-  while (!queue.collection_.IsEmpty()) {
-    Thread* const t = queue.collection_.PeekFront();
-    t->get_lock().AssertHeld();
-    queue.Dequeue(t, wait_queue_error);
-    unblock_list.push_back(t);
+  for (Thread& t : queue.collection_.threads()) {
+    t.get_lock().AssertHeld();
+    unblock_list.push_back(&t);
   }
 
   return unblock_list;
 }
 
-ktl::optional<Thread::UnblockList> WaitQueueLockOps::LockForWakeOne(WaitQueue& queue,
-                                                                    zx_status_t wait_queue_error) {
+ktl::optional<Thread::UnblockList> WaitQueueLockOps::LockForWakeAllInQueue(
+    WaitQueue& queue, zx_status_t wait_queue_error) {
+  // TODO(johngro): Optimize this.  By removing all of the elements of the
+  // collection one at a time, we are paying a rebalancing price we really
+  // should not have to pay, since we are going to eventually remove all of
+  // the elements, so maintaining balance is not really important.
+  ktl::optional<Thread::UnblockList> unblock_list = LockForWakeAllInPlace(queue);
+  if (unblock_list.has_value()) {
+    for (Thread& t : *unblock_list) {
+      t.get_lock().AssertHeld();
+      queue.Dequeue(&t, wait_queue_error);
+    }
+  }
+  return unblock_list;
+}
+
+ktl::optional<Thread::UnblockList> WaitQueueLockOps::LockForWakeOneInPlace(WaitQueue& queue) {
   DEBUG_ASSERT_MAGIC_AND_NOT_OWQ(&queue);
 
-  if (Thread* t = queue.collection_.Peek(current_mono_time()); t != nullptr) {
+  if (Thread* t = queue.collection_.PeekFront(); t != nullptr) {
     if (!t->get_lock().AcquireOrBackoff()) {
       return ktl::nullopt;
     }
 
+    // TODO(https://fxbug.dev/473385363): The in-place operations prevent us from collapsing the
+    // storage requirements of an UnblockList and WaitQueueCollection.
     Thread::UnblockList unblock_list;
-    queue.Dequeue(t, wait_queue_error);
     unblock_list.push_back(t);
     t->get_lock().MarkReleased();
 

@@ -144,16 +144,13 @@ void Event::Signal(zx_status_t wait_result, OwnedWaitQueue* queue_to_own) {
 
     // Try to lock with one or all of the threads for wake.
     ktl::optional<Thread::UnblockList> maybe_unblock_list =
-        (flags_ & Event::AUTOUNSIGNAL) ? WaitQueueLockOps::LockForWakeOne(wait_, wait_result)
-                                       : WaitQueueLockOps::LockForWakeAll(wait_, wait_result);
+        (flags_ & Event::AUTOUNSIGNAL) ? WaitQueueLockOps::LockForWakeOneInPlace(wait_)
+                                       : WaitQueueLockOps::LockForWakeAllInPlace(wait_);
 
     // If we failed to lock, we need to drop the queue lock, then try again.
     if (!maybe_unblock_list.has_value()) {
       return ChainLockTransaction::Action::Backoff;
     }
-
-    // We have all of our locks now, time to proceed with the wake operations (if any)
-    ChainLockTransaction::Finalize();
 
     // Success.  If we not an auto-reset event, or we failed to find anyone to
     // wake, make sure to set the event to the signaled state.
@@ -162,10 +159,36 @@ void Event::Signal(zx_status_t wait_result, OwnedWaitQueue* queue_to_own) {
       result_.store(wait_result, ktl::memory_order_relaxed);
     }
 
-    // We've finished our bookkeeping.  Go ahead and drop the queue lock, then
-    // unblock all of the threads.
-    guard.Release();
     if (has_threads_to_wake) {
+      if (queue_to_own != nullptr) {
+        // There's a few things occurring here, all are required to perform an
+        // ownership assignment:
+        // 1. We grab the first thread from maybe_unblock_list, and assert that
+        //    its lock is held, to convince static analysis.
+        // 2. We disable preemption, so that we can perform the ownership
+        //    assignment.
+        Thread* thread = &maybe_unblock_list->front();
+        thread->get_lock().AssertHeld();
+        // TODO(https://fxbug.dev/473600952): Once spinlocks imply disabling of preemption,
+        // modify the transaction to use EagerReschedDisableAndIrqSaveOption and remove
+        // AnnotatedAutoPreemptDisabler.
+        if (AnnotatedAutoPreemptDisabler preempt_disabler;
+            queue_to_own->AssignOwnerLocked(thread) != ZX_OK) {
+          while ((thread = maybe_unblock_list->pop_front()) != nullptr) {
+            thread->get_lock().Release();
+          }
+          return ChainLockTransaction::Action::Backoff;
+        }
+      }
+
+      for (Thread& thread : *maybe_unblock_list) {
+        thread.get_lock().AssertHeld();
+        wait_.DequeueThread(&thread, wait_result);
+      }
+      guard.Release();
+      ChainLockTransaction::Finalize();
+
+      // We have all of our locks now, time to proceed with the wake operations.
       Scheduler::Unblock(ktl::move(maybe_unblock_list).value());
     }
     return ChainLockTransaction::Done;

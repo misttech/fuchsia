@@ -318,8 +318,9 @@ class WaitQueueCollection {
   // it is critical that the caller (eventually) drops all of the locks.
   ChainLock::Result LockAll() TA_REQ(chainlock_transaction_token);
 
-  // Const accessor used in some debug/validation code.
+  // Accessor for the underlying thread collection.
   const auto& threads() const { return threads_; }
+  auto& threads() { return threads_; }
 
   // Disallow copying and moving.
   WaitQueueCollection(const WaitQueueCollection&) = delete;
@@ -2135,11 +2136,16 @@ struct WaitQueueLockOps {
   // lock, and finally waking the threads using Scheduler::Unblock.
   //
   // Returns std::nullopt in the case that a backoff condition is encountered.
-  static ktl::optional<Thread::UnblockList> LockForWakeAll(WaitQueue& queue,
-                                                           zx_status_t wait_queue_error)
+  static ktl::optional<Thread::UnblockList> LockForWakeAllInQueue(WaitQueue& queue,
+                                                                  zx_status_t wait_queue_error)
       TA_REQ(chainlock_transaction_token, queue.get_lock());
-  static ktl::optional<Thread::UnblockList> LockForWakeOne(WaitQueue& queue,
-                                                           zx_status_t wait_queue_error)
+
+  // Same as LockForWakeAllInQueue(), but does not dequeue the threads from the wait queue.
+  static ktl::optional<Thread::UnblockList> LockForWakeAllInPlace(WaitQueue& queue)
+      TA_REQ(chainlock_transaction_token, queue.get_lock());
+
+  // Same as LockForWakeAllInPlace(), but only locks the first thread.
+  static ktl::optional<Thread::UnblockList> LockForWakeOneInPlace(WaitQueue& queue)
       TA_REQ(chainlock_transaction_token, queue.get_lock());
 };
 

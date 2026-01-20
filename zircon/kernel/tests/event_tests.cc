@@ -40,8 +40,11 @@ static int event_waiter_thread(void* arg) {
   return 0;
 }
 
+enum class Signal { Only, Queue };
+
 // This tests that the result in an SignalEtc call is propagated to the waiter
 // when the waiter enters a blocking state before the event is signaled.
+template <Signal signal>
 static bool event_signal_result_after_wait_test() {
   BEGIN_TEST;
 
@@ -71,7 +74,13 @@ static bool event_signal_result_after_wait_test() {
     wait_duration *= 2;
   }
 
-  event.Signal(signal_result);
+  if constexpr (signal == Signal::Queue) {
+    OwnedWaitQueue queue;
+    event.Signal(signal_result, &queue);
+    queue.ResetOwnerIfNoWaiters();
+  } else {
+    event.Signal(signal_result);
+  }
 
   int thread_retcode = 0;
   waiter->Join(&thread_retcode, ZX_TIME_INFINITE);
@@ -142,6 +151,9 @@ static bool event_signal_spinlock_test() {
 
 UNITTEST_START_TESTCASE(event_tests)
 UNITTEST("test signaling event with result before waiting", event_signal_result_before_wait_test)
-UNITTEST("test signaling event with result after waiting", event_signal_result_after_wait_test)
+UNITTEST("test signaling event with result after waiting",
+         event_signal_result_after_wait_test<Signal::Only>)
+UNITTEST("test signaling event with result after waiting (using OwnedWaitQueue)",
+         event_signal_result_after_wait_test<Signal::Queue>)
 UNITTEST("test signaling event while holding spinlock", event_signal_spinlock_test)
 UNITTEST_END_TESTCASE(event_tests, "event", "Tests for events")
