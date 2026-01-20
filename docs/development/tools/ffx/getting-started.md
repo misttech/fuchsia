@@ -335,7 +335,7 @@ $ ffx component list
 ...
 ```
 
-You can use the `component select capability` command to search for components that use/expose
+You can use the `component capability` command to search for components that use/expose
 a capability with a given name.
 
 The following command will display all components that use/expose the `diagnostics` capability:
@@ -384,7 +384,18 @@ $ ffx component show dhcpd
                 Job ID:  28641
             Process ID:  28690
  Outgoing Capabilities:  fuchsia.net.dhcp.Server
+
+### Exploring a component
+
+You can use the `component explore` command to interactively explore the namespace of a component.
+This allows you to see exactly what capabilities are available to the component at runtime.
+
+```posix-terminal
+ffx component explore /core/network/dhcpd
 ```
+
+Inside the shell, you can use `ls` to browse the `/svc` directory (and other
+namespace entries) to verify that expected capabilities are available.
 
 ### Verifying capability routes
 

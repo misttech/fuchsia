@@ -668,6 +668,25 @@ Do the following to check if a routing failure was the cause of channel closure:
     ffx component route echo_client.cm
     ```
 
+*   Use `ffx component capability` to find all components that use or expose a
+    specific capability. This helps you verify if a capability is available in
+    the component topology.
+
+    ```posix-terminal
+    ffx component capability fuchsia.example.Echo
+    ```
+
+*   Use `ffx component explore` to open an interactive shell inside your
+    component's namespace. You can list the contents of `/svc` (or other
+    routed directories) to see if the capability is actually available in the
+    namespace.
+
+    From the interactive shell, you can check for the capability:
+
+    ```posix-terminal
+    ls /svc
+    ```
+
 *   Check the component logs with `ffx log` for a message beginning with `Failed
     to route` that explains where the routing chain failed. For example:
 
