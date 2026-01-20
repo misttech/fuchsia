@@ -29,7 +29,7 @@ rustc_binary("starnix_runner_bin") {
     "//src/lib/fuchsia",
     "//src/lib/fuchsia-component",
     "//src/lib/trace/rust:trace-provider",
-    "//src/starnix/lib/kernel_manager",
+    "//src/starnix/runner/lib/kernel_manager",
     "//third_party/rust_crates:anyhow",
     "//third_party/rust_crates:async-channel",
     "//third_party/rust_crates:futures",
@@ -75,5 +75,8 @@ fuchsia_unittest_package("starnix_runner_bin-tests") {
 
 group("tests") {
   testonly = true
-  deps = [ ":starnix_runner_bin-tests" ]
+  deps = [
+    ":starnix_runner_bin-tests",
+    "lib/kernel_manager:tests",
+  ]
 }
