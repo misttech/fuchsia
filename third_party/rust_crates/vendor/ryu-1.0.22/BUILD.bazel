@@ -20,22 +20,22 @@ package(
 
 package_info(
     name = "package_info",
-    package_name = "csv",
-    package_url = "https://github.com/BurntSushi/rust-csv",
-    package_version = "1.4.0",
+    package_name = "ryu",
+    package_url = "https://github.com/dtolnay/ryu",
+    package_version = "1.0.22",
 )
 
 license(
     name = "license",
     license_kinds = [
-        "@rules_license//licenses/spdx:MIT",
-        "@rules_license//licenses/spdx:Unlicense",
+        "@rules_license//licenses/spdx:Apache-2.0",
+        "@rules_license//licenses/spdx:BSL-1.0",
     ],
-    license_text = "LICENSE-MIT",
+    license_text = "LICENSE-APACHE",
 )
 
 rust_library(
-    name = "csv",
+    name = "ryu",
     srcs = glob(
         include = ["**/*.rs"],
         allow_empty = False,
@@ -59,7 +59,7 @@ rust_library(
     ],
     tags = [
         "cargo-bazel",
-        "crate-name=csv",
+        "crate-name=ryu",
         "manual",
         "noclippy",
         "norustfmt",
@@ -72,11 +72,5 @@ rust_library(
         "@rules_rust//rust/platform:x86_64-unknown-linux-gnu": [],
         "//conditions:default": ["@platforms//:incompatible"],
     }),
-    version = "1.4.0",
-    deps = [
-        "//third_party/rust_crates/ask2patch/csv-core:csv_core",
-        "//third_party/rust_crates/vendor/itoa-1.0.15:itoa",
-        "//third_party/rust_crates/vendor/ryu-1.0.22:ryu",
-        "//third_party/rust_crates/vendor/serde_core-1.0.228:serde_core",
-    ],
+    version = "1.0.22",
 )

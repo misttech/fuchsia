@@ -5189,7 +5189,7 @@ rustc_library("csv-v1_4_0") {
   deps = []
   deps += [ ":csv-core-v0_1_12" ]
   deps += [ ":itoa-v1_0_15" ]
-  deps += [ ":ryu-v1_0_3" ]
+  deps += [ ":ryu-v1_0_22" ]
   deps += [ ":serde_core-v1_0_228" ]
 
   rustenv = []
@@ -16107,19 +16107,19 @@ rustc_library("rutabaga_gfx-v0_1_3") {
   applicable_licenses = [ ":rutabaga_gfx-v0_1_3.license" ]
 }
 
-license("ryu-v1_0_3.license") {
+license("ryu-v1_0_22.license") {
   public_package_name = "ryu"
   license_files = [
-    "//third_party/rust_crates/vendor/ryu-1.0.3/LICENSE-APACHE",
-    "//third_party/rust_crates/vendor/ryu-1.0.3/LICENSE-BOOST",
+    "//third_party/rust_crates/vendor/ryu-1.0.22/LICENSE-APACHE",
+    "//third_party/rust_crates/vendor/ryu-1.0.22/LICENSE-BOOST",
   ]
 }
 
-rustc_library("ryu-v1_0_3") {
+rustc_library("ryu-v1_0_22") {
   crate_name = "ryu"
-  source_root = "//third_party/rust_crates/vendor/ryu-1.0.3/src/lib.rs"
-  output_name = "ryu-892abe88d9705b75"
-  edition = "2015"
+  source_root = "//third_party/rust_crates/vendor/ryu-1.0.22/src/lib.rs"
+  output_name = "ryu-67a0791f1df5e03"
+  edition = "2021"
   disable_clippy = true
   enforce_source_listing = false
   configs -= [ "//build/config/rust:2018_idioms" ]
@@ -16130,16 +16130,13 @@ rustc_library("ryu-v1_0_3") {
 
   rustflags = [
     "--cap-lints=allow",
-    "-Cmetadata=892abe88d9705b75",
-    "-Cextra-filename=-892abe88d9705b75",
-    "--cfg=integer128",
-    "--cfg=must_use_return",
-    "--cfg=maybe_uninit",
+    "-Cmetadata=67a0791f1df5e03",
+    "-Cextra-filename=-67a0791f1df5e03",
   ]
 
   visibility = [ ":*" ]
 
-  applicable_licenses = [ ":ryu-v1_0_3.license" ]
+  applicable_licenses = [ ":ryu-v1_0_22.license" ]
 }
 
 license("same-file-v1_0_6.license") {
@@ -16809,7 +16806,7 @@ rustc_library("serde_json-v1_0_145") {
   deps = []
   deps += [ ":memchr-v2_7_6" ]
   deps += [ ":itoa-v1_0_15" ]
-  deps += [ ":ryu-v1_0_3" ]
+  deps += [ ":ryu-v1_0_22" ]
   deps += [ ":serde_core-v1_0_228" ]
   if (true) {
     deps += [ ":serde-v1_0_228" ]
@@ -16960,7 +16957,7 @@ rustc_library("serde_yaml-v0_9_14") {
   deps = []
   deps += [ ":indexmap-v1_9_2" ]
   deps += [ ":itoa-v1_0_15" ]
-  deps += [ ":ryu-v1_0_3" ]
+  deps += [ ":ryu-v1_0_22" ]
   deps += [ ":serde-v1_0_228" ]
   deps += [ ":unsafe-libyaml-v0_2_4" ]
 
