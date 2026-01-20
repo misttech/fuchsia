@@ -60,16 +60,19 @@ impl TryFrom<SecurityContext> for fidl_security::Authentication {
             Protection::Unknown | Protection::Wpa2Enterprise | Protection::Wpa3Enterprise => {
                 Err(SecurityError::Unsupported)
             }
-            Protection::Open => {
-                if unparsed_credential_bytes.len() == 0 {
-                    Ok(fidl_security::Authentication {
-                        protocol: fidl_security::Protocol::Open,
-                        credentials: None,
-                    })
-                } else {
-                    Err(SecurityError::Incompatible)
-                }
+            Protection::Open | Protection::Owe | Protection::OpenOweTransition
+                if unparsed_credential_bytes.len() > 0 =>
+            {
+                Err(SecurityError::Incompatible)
             }
+            Protection::Open | Protection::OpenOweTransition => Ok(fidl_security::Authentication {
+                protocol: fidl_security::Protocol::Open,
+                credentials: None,
+            }),
+            Protection::Owe => Ok(fidl_security::Authentication {
+                protocol: fidl_security::Protocol::Owe,
+                credentials: None,
+            }),
             Protection::Wep => WepKey::parse(unparsed_credential_bytes.as_slice())
                 .map(|key| fidl_security::Authentication {
                     protocol: fidl_security::Protocol::Wep,

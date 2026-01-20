@@ -166,6 +166,8 @@ impl ClientConfig {
         // secure to least secure, though the APIs that expose this data provide no such guarantee.
         match bss.protection() {
             BssProtection::Open => vec![SecurityDescriptor::OPEN],
+            BssProtection::OpenOweTransition => vec![SecurityDescriptor::OPEN],
+            BssProtection::Owe => vec![SecurityDescriptor::OWE],
             BssProtection::Wep if has_wep_support() => vec![SecurityDescriptor::WEP],
             BssProtection::Wep => vec![],
             BssProtection::Wpa1 if has_wpa1_support() => vec![SecurityDescriptor::WPA1],
@@ -225,6 +227,8 @@ impl ClientConfig {
 
         let bss_security_protocols = match bss.protection() {
             BssProtection::Open => &[SecurityDescriptor::OPEN][..],
+            BssProtection::OpenOweTransition => &[SecurityDescriptor::OPEN][..],
+            BssProtection::Owe => &[SecurityDescriptor::OWE][..],
             BssProtection::Wep => &[SecurityDescriptor::WEP][..],
             BssProtection::Wpa1 => &[SecurityDescriptor::WPA1][..],
             BssProtection::Wpa1Wpa2PersonalTkipOnly | BssProtection::Wpa1Wpa2Personal => {

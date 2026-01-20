@@ -562,6 +562,8 @@ fn security_protocols_from_protection(
 
     match protection {
         Open => vec![fidl_common_security::Protocol::Open],
+        OpenOweTransition => vec![fidl_common_security::Protocol::Open],
+        Owe => vec![fidl_common_security::Protocol::Owe],
         Wep => vec![fidl_common_security::Protocol::Wep],
         Wpa1 => vec![fidl_common_security::Protocol::Wpa1],
         Wpa1Wpa2PersonalTkipOnly | Wpa1Wpa2Personal => {

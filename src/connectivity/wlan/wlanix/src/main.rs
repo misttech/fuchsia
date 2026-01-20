@@ -845,6 +845,9 @@ async fn handle_supplicant_sta_network_request<I: IfaceManager>(
                 sta_network_state.lock().ssid.replace(ssid);
             }
         }
+        fidl_wlanix::SupplicantStaNetworkRequest::SetKeyMgmt { .. } => {
+            info!("fidl_wlanix::SupplicantStaNetworkRequest::SetKeyMgmt");
+        }
         fidl_wlanix::SupplicantStaNetworkRequest::SetPskPassphrase { payload, .. } => {
             let _ = get_iface_and_log(
                 "fidl_wlanix::SupplicantStaNetworkRequest::SetPskPassphrase",

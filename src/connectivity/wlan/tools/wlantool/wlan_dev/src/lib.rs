@@ -89,13 +89,18 @@ impl TryFrom<SecurityContext> for fidl_security::Authentication {
             Protection::Unknown | Protection::Wpa2Enterprise | Protection::Wpa3Enterprise => {
                 Err(SecurityError::Unsupported)
             }
-            Protection::Open => match (unparsed_password_text, unparsed_psk_text) {
-                (None, None) => Ok(fidl_security::Authentication {
-                    protocol: fidl_security::Protocol::Open,
-                    credentials: None,
-                }),
-                _ => Err(SecurityError::Incompatible),
-            },
+            Protection::Open | Protection::OpenOweTransition | Protection::Owe => {
+                match (unparsed_password_text, unparsed_psk_text) {
+                    (None, None) => {
+                        let protocol = match bss.protection() {
+                            Protection::Owe => fidl_security::Protocol::Owe,
+                            _ => fidl_security::Protocol::Open,
+                        };
+                        Ok(fidl_security::Authentication { protocol, credentials: None })
+                    }
+                    _ => Err(SecurityError::Incompatible),
+                }
+            }
             Protection::Wep => unparsed_password_text
                 .ok_or(SecurityError::Incompatible)
                 .and_then(|unparsed_password_text| {

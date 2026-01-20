@@ -68,3 +68,8 @@ type TxPowerScenario = flexible enum {
     BODY_CELL_ON = 5;
     BODY_BT_ACTIVE = 6;
 };
+
+type OwePublicKey = struct {
+    group uint16;
+    key vector<uint8>:MAX;
+};

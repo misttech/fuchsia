@@ -25,6 +25,9 @@ type Protection = strict enum {
     WPA3_PERSONAL = 9;
     WPA2_ENTERPRISE = 10;
     WPA3_ENTERPRISE = 11;
+    OWE = 12;
+    /// Describes an open BSS with OWE transition element.
+    OPEN_OWE_TRANSITION = 13;
 };
 
 type UserDisconnectReason = strict enum {

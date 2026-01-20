@@ -46,6 +46,11 @@ type SaeFrame = table {
     4: sae_fields vector<uint8>:MAX;
 };
 
+type WlanFullmacOwePublicKey = table {
+    1: group uint16;
+    2: key vector<uint8>:MAX;
+};
+
 type WlanScanResult = flexible enum : uint8 {
     SUCCESS = 0;
     NOT_SUPPORTED = 1;
@@ -445,6 +450,10 @@ open protocol WlanFullmacImpl {
         /// WEP key used in the authentication exchange.
         /// This is only populated for the WEP security type, otherwise this field is empty.
         7: wep_key_desc ieee80211.SetKeyDescriptor;
+
+        /// OWE public key used for Diffie Hellman exchange during association.
+        /// This is only populated for the OWE security type, otherwise this field is empty.
+        8: owe_public_key WlanFullmacOwePublicKey;
     }) -> ();
     strict Reconnect(table {
         1: peer_sta_address ieee80211.MacAddr;

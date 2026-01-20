@@ -1466,6 +1466,7 @@ mod tests {
             sae_password: vec![],
             wep_key: None,
             security_ie: vec![],
+            owe_public_key: None,
         })
         .await
         .expect("valid ConnectRequest should be handled successfully");
@@ -1484,6 +1485,7 @@ mod tests {
             sae_password: vec![],
             wep_key: None,
             security_ie: vec![],
+            owe_public_key: None,
         };
 
         req.selected_bss.channel.cbw = fidl_fuchsia_wlan_ieee80211::ChannelBandwidth::unknown();
@@ -1505,6 +1507,7 @@ mod tests {
             sae_password: vec![],
             wep_key: None,
             security_ie: vec![],
+            owe_public_key: None,
         })
         .await
         .expect("valid ConnectRequest should be handled successfully");
@@ -1524,6 +1527,7 @@ mod tests {
             sae_password: vec![],
             wep_key: None,
             security_ie: vec![],
+            owe_public_key: None,
         })
         .await
         .expect("valid ConnectRequest should be handled successfully");
@@ -1543,6 +1547,7 @@ mod tests {
             sae_password: vec![],
             wep_key: None,
             security_ie: vec![],
+            owe_public_key: None,
         })
         .await
         .expect("valid ConnectRequest should be handled successfully");
@@ -2634,6 +2639,7 @@ mod tests {
             sae_password: vec![],
             wep_key: None,
             security_ie: vec![],
+            owe_public_key: None,
         };
         me.handle_mlme_req(wlan_sme::MlmeRequest::Connect(connect_req))
             .await
@@ -2799,6 +2805,7 @@ mod tests {
                 1, 0, 0x00, 0x0F, 0xAC, 4, // 1 Pairwise Cipher: CCMP-128
                 1, 0, 0x00, 0x0F, 0xAC, 2, // 1 AKM: PSK
             ],
+            owe_public_key: None,
         };
         me.handle_mlme_req(wlan_sme::MlmeRequest::Connect(connect_req))
             .await
@@ -2986,6 +2993,7 @@ mod tests {
             sae_password: vec![],
             wep_key: None,
             security_ie: vec![],
+            owe_public_key: None,
         };
         me.handle_mlme_req(wlan_sme::MlmeRequest::Connect(connect_req))
             .await
@@ -3063,6 +3071,7 @@ mod tests {
             sae_password: vec![],
             wep_key: None,
             security_ie: vec![],
+            owe_public_key: None,
         };
         me.handle_mlme_req(wlan_sme::MlmeRequest::Connect(connect_req))
             .await

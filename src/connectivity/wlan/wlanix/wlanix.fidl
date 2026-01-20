@@ -243,6 +243,33 @@ type StaIfaceCallbackState = flexible enum : uint32 {
     COMPLETED = 9;
 };
 
+// Note: values of these bits should match the ones from the original HAL
+type KeyMgmtMask = flexible bits : uint32 {
+    WPA_EAP = 1;
+    WPA_PSK = 2;
+    NONE = 4;
+    IEEE8021X = 8;
+    FT_EAP = 32;
+    FT_PSK = 64;
+    OSEN = 32768;
+    WPA_EAP_SHA256 = 128;
+    WPA_PSK_SHA256 = 256;
+    SAE = 1024;
+    // WPA3-Enterprise Suite-B Key management
+    SUITE_B_192 = 131072;
+    OWE = 4194304;
+    // Easy Connect (DPP) Key management
+    DPP = 8388608;
+    WAPI_PSK = 4096;
+    WAPI_CERT = 8192;
+    // FILS shared key authentication with sha-256
+    FILS_SHA256 = 262144;
+    // FILS shared key authentication with sha-384
+    FILS_SHA384 = 524288;
+    // Pre-Association Security Negotiation (PASN) Key management
+    PASN = 33554432;
+};
+
 open protocol SupplicantStaNetwork {
     flexible SetBssid(table {
         1: bssid fuchsia.wlan.ieee80211.MacAddr;
@@ -250,6 +277,9 @@ open protocol SupplicantStaNetwork {
     flexible ClearBssid();
     flexible SetSsid(table {
         1: ssid fuchsia.wlan.ieee80211.Ssid;
+    });
+    flexible SetKeyMgmt(table {
+        1: key_mgmt_mask KeyMgmtMask;
     });
     flexible SetPskPassphrase(table {
         1: passphrase vector<uint8>:MAX;

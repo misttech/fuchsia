@@ -2,7 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use anyhow::{bail, Result};
+use anyhow::{Result, bail};
 use fidl_fuchsia_wlan_ieee80211::MAX_SSID_BYTE_LEN;
 use {
     fidl_fuchsia_wlan_common as fidl_common, fidl_fuchsia_wlan_fullmac as fidl_fullmac,
@@ -51,6 +51,11 @@ pub fn convert_connect_request(
         wep_key: req.wep_key.clone().map(|key| convert_set_key_descriptor_legacy(&key)),
         security_ie: Some(req.security_ie),
         wep_key_desc: req.wep_key.map(|key| convert_set_key_descriptor(&key)),
+        owe_public_key: req.owe_public_key.map(|key| fidl_fullmac::WlanFullmacOwePublicKey {
+            group: Some(key.group),
+            key: Some(key.key),
+            ..Default::default()
+        }),
         ..Default::default()
     }
 }
@@ -313,7 +318,7 @@ fn convert_key_type_legacy(mlme_key_type: fidl_mlme::KeyType) -> fidl_common::Wl
 #[cfg(test)]
 mod tests {
     use super::*;
-    use fidl_fuchsia_wlan_common as fidl_common;
+    use {fidl_fuchsia_wlan_common as fidl_common, fidl_fuchsia_wlan_internal as fidl_internal};
 
     fn fake_bss_description() -> fidl_common::BssDescription {
         fidl_common::BssDescription {
@@ -394,6 +399,10 @@ mod tests {
             sae_password: vec![10, 11, 12, 13, 14],
             wep_key: None,
             security_ie: vec![44, 55, 66],
+            owe_public_key: Some(Box::new(fidl_internal::OwePublicKey {
+                group: 77,
+                key: vec![88, 99],
+            })),
         };
 
         assert_eq!(
@@ -404,6 +413,11 @@ mod tests {
                 auth_type: Some(fidl_fullmac::WlanAuthType::OpenSystem),
                 sae_password: Some(vec![10, 11, 12, 13, 14]),
                 security_ie: Some(vec![44, 55, 66]),
+                owe_public_key: Some(fidl_fullmac::WlanFullmacOwePublicKey {
+                    group: Some(77),
+                    key: Some(vec![88, 99]),
+                    ..Default::default()
+                }),
                 ..Default::default()
             }
         );
@@ -418,6 +432,7 @@ mod tests {
             sae_password: vec![],
             wep_key: None,
             security_ie: vec![],
+            owe_public_key: None,
         };
 
         assert_eq!(

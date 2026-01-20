@@ -3,7 +3,7 @@
 // found in the LICENSE file.
 
 use crate::client::types;
-use anyhow::{format_err, Error};
+use anyhow::{Error, format_err};
 use fidl::prelude::*;
 use futures::stream::TryStreamExt;
 use ieee80211::MacAddrBytes;
@@ -36,6 +36,9 @@ fn fidl_security_from_sme_protection(
         | Wpa1Wpa2PersonalTkipOnly => Some(SecurityType::Wpa2),
         Wpa1 => Some(SecurityType::Wpa),
         Wep => Some(SecurityType::Wep),
+        // TODO(https://fxbug.dev/462514157): Map Owe and OpenOweTransition to correct security types
+        Owe => Some(SecurityType::None),
+        OpenOweTransition => Some(SecurityType::None),
         Open => Some(SecurityType::None),
         Unknown => None,
     }
@@ -255,7 +258,9 @@ mod tests {
 
         // Validate size is possible
         if result_sizes.iter().any(|size| size < &minimal_result_size || !size.is_multiple_of(8)) {
-            panic!("Invalid size. Requested size must be larger than {minimal_result_size} minimum bytes and divisible into octets (by 8)");
+            panic!(
+                "Invalid size. Requested size must be larger than {minimal_result_size} minimum bytes and divisible into octets (by 8)"
+            );
         }
 
         let mut fidl_scan_results = vec![];
@@ -306,6 +311,10 @@ mod tests {
             (Protection::Wpa1Wpa2PersonalTkipOnly, wpa3_supported, Some(SecurityType::Wpa2)),
             (Protection::Wpa1, wpa3_supported, Some(SecurityType::Wpa)),
             (Protection::Wep, wpa3_supported, Some(SecurityType::Wep)),
+            // TODO(https://fxbug.dev/462514157): Map Owe and OpenOweTransition to correct security
+            // types.
+            (Protection::Owe, wpa3_supported, Some(SecurityType::None)),
+            (Protection::OpenOweTransition, wpa3_supported, Some(SecurityType::None)),
             (Protection::Open, wpa3_supported, Some(SecurityType::None)),
             (Protection::Unknown, wpa3_supported, None),
             // Below are pairs when WPA3 is not supported.
@@ -319,6 +328,10 @@ mod tests {
             (Protection::Wpa1Wpa2PersonalTkipOnly, wpa3_not_supported, Some(SecurityType::Wpa2)),
             (Protection::Wpa1, wpa3_not_supported, Some(SecurityType::Wpa)),
             (Protection::Wep, wpa3_not_supported, Some(SecurityType::Wep)),
+            // TODO(https://fxbug.dev/462514157): Map Owe and OpenOweTransition to correct security
+            // types.
+            (Protection::Owe, wpa3_not_supported, Some(SecurityType::None)),
+            (Protection::OpenOweTransition, wpa3_not_supported, Some(SecurityType::None)),
             (Protection::Open, wpa3_not_supported, Some(SecurityType::None)),
             (Protection::Unknown, wpa3_not_supported, None),
         ];

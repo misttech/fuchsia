@@ -47,7 +47,8 @@ pub fn convert_security_type(
 ) -> metrics::SuccessfulConnectBreakdownBySecurityTypeMetricDimensionSecurityType {
     use metrics::SuccessfulConnectBreakdownBySecurityTypeMetricDimensionSecurityType::*;
     match protection {
-        BssProtection::Unknown => Unknown,
+        // TODO(https://fxbug.dev/462512152): Log OpenOweTransition and Owe to appropriate dimensions
+        BssProtection::Unknown | BssProtection::OpenOweTransition | BssProtection::Owe => Unknown,
         BssProtection::Open => Open,
         BssProtection::Wep => Wep,
         BssProtection::Wpa1 => Wpa1,

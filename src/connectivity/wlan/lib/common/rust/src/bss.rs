@@ -25,6 +25,8 @@ use {
 pub enum Protection {
     Unknown,
     Open,
+    OpenOweTransition,
+    Owe,
     Wep,
     Wpa1,
     Wpa1Wpa2PersonalTkipOnly,
@@ -45,6 +47,8 @@ impl From<Protection> for fidl_sme::Protection {
         match protection {
             Protection::Unknown => fidl_sme::Protection::Unknown,
             Protection::Open => fidl_sme::Protection::Open,
+            Protection::OpenOweTransition => fidl_sme::Protection::OpenOweTransition,
+            Protection::Owe => fidl_sme::Protection::Owe,
             Protection::Wep => fidl_sme::Protection::Wep,
             Protection::Wpa1 => fidl_sme::Protection::Wpa1,
             Protection::Wpa1Wpa2PersonalTkipOnly => fidl_sme::Protection::Wpa1Wpa2PersonalTkipOnly,
@@ -64,6 +68,8 @@ impl From<fidl_sme::Protection> for Protection {
         match protection {
             fidl_sme::Protection::Unknown => Protection::Unknown,
             fidl_sme::Protection::Open => Protection::Open,
+            fidl_sme::Protection::OpenOweTransition => Protection::OpenOweTransition,
+            fidl_sme::Protection::Owe => Protection::Owe,
             fidl_sme::Protection::Wep => Protection::Wep,
             fidl_sme::Protection::Wpa1 => Protection::Wpa1,
             fidl_sme::Protection::Wpa1Wpa2PersonalTkipOnly => Protection::Wpa1Wpa2PersonalTkipOnly,
@@ -83,6 +89,8 @@ impl fmt::Display for Protection {
         match self {
             Protection::Unknown => write!(f, "{}", "Unknown"),
             Protection::Open => write!(f, "{}", "Open"),
+            Protection::OpenOweTransition => write!(f, "{}", "Open OWE Transition"),
+            Protection::Owe => write!(f, "{}", "OWE"),
             Protection::Wep => write!(f, "{}", "WEP"),
             Protection::Wpa1 => write!(f, "{}", "WPA1"),
             Protection::Wpa1Wpa2PersonalTkipOnly => write!(f, "{}", "WPA1/2 PSK TKIP"),

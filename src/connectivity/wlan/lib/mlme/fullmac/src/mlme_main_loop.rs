@@ -370,7 +370,10 @@ mod handle_mlme_request_tests {
     use std::sync::Arc;
     use test_case::test_case;
     use wlan_common::sink::UnboundedSink;
-    use {fidl_fuchsia_wlan_fullmac as fidl_fullmac, fidl_fuchsia_wlan_stats as fidl_stats};
+    use {
+        fidl_fuchsia_wlan_fullmac as fidl_fullmac, fidl_fuchsia_wlan_internal as fidl_internal,
+        fidl_fuchsia_wlan_stats as fidl_stats,
+    };
 
     #[test]
     fn test_scan_request() {
@@ -472,6 +475,10 @@ mod handle_mlme_request_tests {
                 ),
             })),
             security_ie: vec![12u8, 13],
+            owe_public_key: Some(Box::new(fidl_internal::OwePublicKey {
+                group: 14,
+                key: vec![15u8, 16, 17],
+            })),
         });
 
         h.mlme.handle_mlme_request(fidl_req).unwrap();
@@ -516,6 +523,11 @@ mod handle_mlme_request_tests {
             assert_eq!(wep_key_desc.cipher_type, fidl_ieee80211::CipherSuiteType::from_primitive(11));
 
             assert_eq!(req.security_ie, Some(vec![12u8, 13]));
+            assert_eq!(req.owe_public_key, Some(fidl_fullmac::WlanFullmacOwePublicKey {
+                group: Some(14),
+                key: Some(vec![15u8, 16, 17]),
+                ..Default::default()
+            }));
         });
     }
 
@@ -1120,6 +1132,7 @@ mod handle_driver_event_tests {
             sae_password: vec![2u8, 3, 4],
             wep_key: None,
             security_ie,
+            owe_public_key: None,
         })
     }
 

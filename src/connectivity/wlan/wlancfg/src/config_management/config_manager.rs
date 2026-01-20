@@ -611,6 +611,9 @@ pub fn compatible_policy_securities(
         | Wpa1Wpa2PersonalTkipOnly => vec![SecurityType::Wpa, SecurityType::Wpa2],
         Wpa1 => vec![SecurityType::Wpa],
         Wep => vec![SecurityType::Wep],
+        // TODO(https://fxbug.dev/462514157): Map Owe and OpenOweTransition to correct security types
+        Owe => vec![SecurityType::None],
+        OpenOweTransition => vec![SecurityType::None],
         Open => vec![SecurityType::None],
         Unknown => vec![],
     }

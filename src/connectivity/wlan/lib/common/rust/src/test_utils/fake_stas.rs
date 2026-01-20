@@ -7,7 +7,7 @@ use crate::ie::fake_ies::fake_wmm_param;
 use crate::ie::{self, IeType, write_rsnxe, write_wmm_param};
 use crate::mac;
 use crate::test_utils::fake_frames::{
-    fake_eap_rsne, fake_wpa1_ie, fake_wpa2_enterprise_rsne, fake_wpa2_rsne,
+    fake_eap_rsne, fake_owe_rsne, fake_wpa1_ie, fake_wpa2_enterprise_rsne, fake_wpa2_rsne,
     fake_wpa2_tkip_ccmp_rsne, fake_wpa2_tkip_only_rsne, fake_wpa2_wpa3_rsne,
     fake_wpa3_enterprise_192_bit_rsne, fake_wpa3_rsne, fake_wpa3_transition_rsne,
 };
@@ -217,11 +217,13 @@ enum IeOverride {
     SetRaw(Vec<u8>),
 }
 
-const LAST_FAKE_PROTECTION_CFG_VALUE: isize = 14;
+const LAST_FAKE_PROTECTION_CFG_VALUE: isize = 16;
 
 #[derive(Debug, FromPrimitive, Copy, Clone, PartialEq)]
 pub enum FakeProtectionCfg {
     Open = 0,
+    Owe,
+    OpenOweTransition,
     Wep,
     Wpa1,
     Wpa1Enhanced,
@@ -252,6 +254,8 @@ impl From<fidl_sme::Protection> for FakeProtectionCfg {
         match protection {
             fidl_sme::Protection::Unknown => panic!("unknown protection"),
             fidl_sme::Protection::Open => FakeProtectionCfg::Open,
+            fidl_sme::Protection::Owe => FakeProtectionCfg::Owe,
+            fidl_sme::Protection::OpenOweTransition => FakeProtectionCfg::OpenOweTransition,
             fidl_sme::Protection::Wep => FakeProtectionCfg::Wep,
             fidl_sme::Protection::Wpa1 => FakeProtectionCfg::Wpa1,
             fidl_sme::Protection::Wpa1Wpa2PersonalTkipOnly => FakeProtectionCfg::Wpa1Wpa2TkipOnly,
@@ -414,6 +418,7 @@ fn derive_rsne(protection_cfg: FakeProtectionCfg) -> Option<Vec<u8>> {
         }
         FakeProtectionCfg::Wpa1Wpa2 | FakeProtectionCfg::Wpa2 => Some(fake_wpa2_rsne()),
         FakeProtectionCfg::Eap => Some(fake_eap_rsne()),
+        FakeProtectionCfg::Owe => Some(fake_owe_rsne()),
         _ => None,
     }
 }

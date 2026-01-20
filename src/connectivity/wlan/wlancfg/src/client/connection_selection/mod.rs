@@ -515,6 +515,8 @@ impl types::ScannedCandidate {
         match self.security_type_detailed {
             SecurityTypeDetailed::Unknown => "unknown",
             SecurityTypeDetailed::Open => "open",
+            SecurityTypeDetailed::OpenOweTransition => "Open OWE Transition",
+            SecurityTypeDetailed::Owe => "OWE",
             SecurityTypeDetailed::Wep => "WEP",
             SecurityTypeDetailed::Wpa1 => "WPA1",
             SecurityTypeDetailed::Wpa1Wpa2PersonalTkipOnly => "WPA1/2Tk",

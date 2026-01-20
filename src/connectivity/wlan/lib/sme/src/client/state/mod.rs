@@ -256,6 +256,8 @@ impl Idle {
             sae_password,
             wep_key: wep_key.map(Box::new),
             security_ie,
+            // TODO(https://fxbug.dev/312485949): Plumb OWE public key if it's OWE network
+            owe_public_key: None,
         }));
         context.att_id += 1;
 
@@ -2197,6 +2199,7 @@ mod tests {
                 sae_password: vec![],
                 wep_key: None,
                 security_ie: vec![],
+                owe_public_key: None,
             });
         });
 
@@ -2258,6 +2261,7 @@ mod tests {
                     1, 0, 0x00, 0x0F, 0xAC, 4, // 1 Pairwise Cipher: CCMP-128
                     1, 0, 0x00, 0x0F, 0xAC, 2, // 1 AKM: PSK
                 ],
+                owe_public_key: None,
             });
         });
 
@@ -2352,6 +2356,7 @@ mod tests {
                     0x01, 0x00, 0x00, 0x50, 0xf2, 0x02, // 1 unicast cipher
                     0x01, 0x00, 0x00, 0x50, 0xf2, 0x02, // 1 AKM: PSK
                 ],
+                owe_public_key: None,
             });
         });
 
@@ -2446,6 +2451,7 @@ mod tests {
                     rsc: 0,
                 })),
                 security_ie: vec![],
+                owe_public_key: None,
             });
         });
 

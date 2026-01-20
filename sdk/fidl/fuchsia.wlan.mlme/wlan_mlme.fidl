@@ -129,6 +129,9 @@ type ConnectRequest = struct {
 
     /// Additional parameters specific to the association exchange.
     security_ie vector<uint8>:ieee80211.WLAN_IE_MAX_LEN;
+    /// OWE public key used for Diffie Hellman exchange during association.
+    /// Only included for OWE security type.
+    owe_public_key box<internal.OwePublicKey>;
 };
 
 type ConnectConfirm = struct {
