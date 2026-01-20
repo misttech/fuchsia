@@ -5,9 +5,12 @@
 #include <fidl/fuchsia.storage.block/cpp/wire.h>
 #include <unistd.h>
 
+#include <condition_variable>
+#include <mutex>
+#include <queue>
 #include <span>
+#include <thread>
 #include <unordered_set>
-#include <vector>
 
 #include <gtest/gtest.h>
 
@@ -28,12 +31,33 @@ using RequestHook = std::function<zx::result<>(const Request&)>;
 
 class TestInterface : public Interface {
  public:
-  explicit TestInterface(const block_server::PartitionInfo& info) { server_.emplace(info, this); }
+  explicit TestInterface(const block_server::PartitionInfo& info) {
+    server_.emplace(info, this);
+    // We process requests on a different thread to make sure we support that.
+    request_thread_ = std::jthread([this](const std::stop_token& stop_token) {
+      while (!stop_token.stop_requested()) {
+        Request request;
+        {
+          std::unique_lock lock(mutex_);
+          requests_cv_.wait(mutex_, stop_token, [this] { return !requests_.empty(); });
+          if (stop_token.stop_requested()) {
+            return;
+          }
+          request = requests_.front();
+          requests_.pop();
+        }
+        HandleRequest(request);
+      }
+    });
+  }
 
   block_server::BlockServer TakeServer() { return *std::move(server_); }
 
   BlockServer& server() { return *server_; }
   int threads_running() const { return threads_running_; }
+
+  // Sets a callback `hook` to be invoked before each request is handled. `hook` will be invoked
+  // on a dedicated background thread.
   void SetHook(RequestHook hook) { hook_ = std::move(hook); }
 
   void StartThread(Thread thread) override {
@@ -63,47 +87,56 @@ class TestInterface : public Interface {
   }
 
   void OnRequests(std::span<Request> requests) override {
-    // Process the requests on a different thread to make sure we support that.
-    std::vector<Request> reqs(requests.begin(), requests.end());
-    std::thread([this, requests = std::move(reqs)] {
+    {
+      std::scoped_lock lock(mutex_);
       for (const Request& request : requests) {
-        if (hook_) {
-          if (zx::result status = (*hook_)(request); status.is_error()) {
-            server_->SendReply(request.request_id, status);
-            continue;
-          }
-        }
-        switch (request.operation.tag) {
-          case Operation::Tag::Read:
-            EXPECT_EQ(
-                request.vmo->write(&data_[request.operation.read.device_block_offset * kBlockSize],
-                                   request.operation.read.vmo_offset,
-                                   request.operation.read.block_count * kBlockSize),
-                ZX_OK);
-            break;
-
-          case Operation::Tag::Write:
-            EXPECT_EQ(
-                request.vmo->read(&data_[request.operation.write.device_block_offset * kBlockSize],
-                                  request.operation.write.vmo_offset,
-                                  request.operation.write.block_count * kBlockSize),
-                ZX_OK);
-            break;
-          case Operation::Tag::Flush:
-            break;
-          default:
-            ZX_PANIC("Unexpected operation");
-        }
-        server_->SendReply(request.request_id, zx::ok());
+        requests_.push(request);
       }
-    }).detach();
+    }
+    requests_cv_.notify_all();
   }
 
  private:
+  void HandleRequest(const Request& request) {
+    if (hook_) {
+      if (zx::result status = (*hook_)(request); status.is_error()) {
+        server_->SendReply(request.request_id, status);
+        return;
+      }
+    }
+    switch (request.operation.tag) {
+      case Operation::Tag::Read:
+        EXPECT_EQ(
+            request.vmo->write(&data_[request.operation.read.device_block_offset * kBlockSize],
+                               request.operation.read.vmo_offset,
+                               request.operation.read.block_count * kBlockSize),
+            ZX_OK);
+        break;
+
+      case Operation::Tag::Write:
+        EXPECT_EQ(
+            request.vmo->read(&data_[request.operation.write.device_block_offset * kBlockSize],
+                              request.operation.write.vmo_offset,
+                              request.operation.write.block_count * kBlockSize),
+            ZX_OK);
+        break;
+      case Operation::Tag::Flush:
+        break;
+      default:
+        ZX_PANIC("Unexpected operation");
+    }
+    server_->SendReply(request.request_id, zx::ok());
+  }
+
   std::optional<BlockServer> server_;
   std::atomic<int> threads_running_ = 0;
   std::unique_ptr<uint8_t[]> data_ = std::make_unique<uint8_t[]>(kBlockSize * kBlocks);
   std::optional<RequestHook> hook_;
+
+  std::mutex mutex_;
+  std::condition_variable_any requests_cv_;
+  std::queue<Request> requests_;
+  std::jthread request_thread_;
 };
 
 TEST(BlockServer, Basic) {
@@ -657,9 +690,8 @@ TEST(BlockServer, GroupWithSimulatedFua) {
       .flags = 0,
       .max_transfer_size = 0,
   });
-  std::optional<Request> last_write;
-  bool flushed = false;
-  test_interface.SetHook([&](const Request& request) -> zx::result<> {
+  test_interface.SetHook([&, flushed = false, last_write = std::optional<Request>()](
+                             const Request& request) mutable -> zx::result<> {
     if (request.operation.tag == Operation::Tag::Write) {
       last_write = request;
     } else if (request.operation.tag == Operation::Tag::Flush) {
