@@ -41,13 +41,23 @@ def bug_urls(ctx):
                     continue
                 bug_number = match.groups[-1]
                 repl = correct_format + bug_number
+                end_offset = match.offset + len(match.groups[0])
+
+                # Ignore invalid shortlinks if they're wrapped in square
+                # brackets, which likely indicates markdown formatting where the
+                # text is a link title rather than the link itself.
+                if (match.offset > 0 and line[match.offset - 1] == "[") and (
+                    end_offset < len(line) and line[end_offset] == "]"
+                ):
+                    continue
+
                 ctx.emit.finding(
                     level = "warning",
                     message = "Bug links should use the form %s." % repl,
                     filepath = f,
                     line = num,
                     col = match.offset + 1,
-                    end_col = match.offset + 1 + len(match.groups[0]),
+                    end_col = end_offset + 1,
                     replacements = [repl],
                 )
 
