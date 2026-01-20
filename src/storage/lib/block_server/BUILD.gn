@@ -47,6 +47,7 @@ rustc_library("block_server") {
 }
 
 rustc_library("vmo_backed_block_server") {
+  with_unit_tests = true
   assert_no_deps = [ ":vmo_backed_block_server_testing" ]
   edition = "2024"
   sources = [ "src/vmo_backed_server.rs" ]
@@ -60,6 +61,7 @@ rustc_library("vmo_backed_block_server") {
     "//src/lib/fuchsia-async",
     "//src/lib/fuchsia-sync",
     "//src/storage/fxfs/crypto",
+    "//src/storage/lib/block_protocol",
     "//src/storage/lib/fs_management/rust:fs_management",
     "//src/storage/lib/fscrypt",
     "//third_party/rust_crates:anyhow",
@@ -67,6 +69,11 @@ rustc_library("vmo_backed_block_server") {
     "//third_party/rust_crates:log",
     "//third_party/rust_crates:rand",
   ]
+  test_deps = [ "//src/lib/fuchsia" ]
+}
+
+fuchsia_unittest_package("vmo_backed_block_server_tests") {
+  deps = [ ":vmo_backed_block_server_test" ]
 }
 
 fuchsia_unittest_package("block_server_tests") {
@@ -124,6 +131,7 @@ group("tests") {
   deps = [
     ":block_server_cc_tests_package",
     ":block_server_tests",
+    ":vmo_backed_block_server_tests",
     "integration:tests",
   ]
 }

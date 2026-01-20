@@ -3,6 +3,7 @@
 // found in the LICENSE file.
 
 use anyhow::{Error, anyhow};
+use block_protocol::SENTINEL_SLOT_VALUE;
 use block_server::async_interface::{Interface, SessionManager};
 use block_server::{BlockInfo, BlockServer, DeviceInfo, ReadOptions, WriteFlags, WriteOptions};
 use fidl::endpoints::{ClientEnd, FromClient, RequestStream, ServerEnd, create_endpoints};
@@ -14,7 +15,7 @@ use futures::stream::StreamExt;
 use fxfs_crypto::{FscryptSoftwareInoLblk32FileCipher, UnwrappedKey};
 use rand::Rng as _;
 use std::borrow::Cow;
-use std::collections::HashMap;
+use std::collections::BTreeMap;
 use std::num::NonZero;
 use std::sync::Arc;
 use std::time::Duration;
@@ -58,16 +59,11 @@ pub trait Observer: Send + Sync {
     fn trim(&self, _device_block_offset: u64, _block_count: u32) {}
 }
 
-pub struct FscryptInfo {
-    // Maps keyslots to lblk32 software ciphers used to encrypt/decrypt file contents.
-    fscrypt_keys: HashMap<u8, FscryptSoftwareInoLblk32FileCipher>,
-    next_key_slot: u8,
-}
-
 /// A local server backed by a VMO.
 pub struct VmoBackedServer {
     server: BlockServer<SessionManager<Data>>,
-    fscrypt_info: Arc<Mutex<FscryptInfo>>,
+    // Maps keyslots to lblk32 software ciphers used to encrypt/decrypt file contents.
+    fscrypt_keys: Arc<Mutex<BTreeMap<u8, FscryptSoftwareInoLblk32FileCipher>>>,
 }
 
 /// The initial contents of the VMO.  This also determines the size of the block device.
@@ -162,8 +158,7 @@ impl VmoBackedServerOptions<'_> {
                 DeviceInfo::Partition(info)
             }
         };
-        let fscrypt_info =
-            Arc::new(Mutex::new(FscryptInfo { fscrypt_keys: HashMap::new(), next_key_slot: 0 }));
+        let fscrypt_keys = Arc::new(Mutex::new(BTreeMap::new()));
         Ok(VmoBackedServer {
             server: BlockServer::new(
                 self.block_size,
@@ -177,11 +172,11 @@ impl VmoBackedServerOptions<'_> {
                     } else {
                         None
                     },
-                    fscrypt_info: fscrypt_info.clone(),
+                    fscrypt_keys: fscrypt_keys.clone(),
                     max_jitter_usec: self.max_jitter_usec,
                 }),
             ),
-            fscrypt_info,
+            fscrypt_keys,
         })
     }
 }
@@ -194,19 +189,22 @@ impl VmoBackedServer {
         res
     }
 
-    /// Implements software-fallback for fuchsia_hardware_inlineencryption.ProgramKey. There is no
-    /// limit on keyslots with the software fallback. As such, there is no mapping between keyslots
-    /// and FIDL connections or key eviction.
+    /// Implements software-fallback for fuchsia_hardware_inlineencryption.ProgramKey. There is a
+    /// maximum of 255 keyslots. Insert keyslot at the next available slot.
     ///
     /// *WARNING*: This is only intended for testing and is not considered secure.
-    fn program_key(&self, xts_key: &[u8; 64]) -> u8 {
+    fn program_key(&self, xts_key: &[u8; 64]) -> Result<u8, zx::Status> {
         let unwrapped_key = UnwrappedKey::new(xts_key.to_vec());
         let cipher = FscryptSoftwareInoLblk32FileCipher::new(&unwrapped_key);
-        let mut fscrypt_info = self.fscrypt_info.lock();
-        let slot = fscrypt_info.next_key_slot;
-        fscrypt_info.fscrypt_keys.insert(slot, cipher);
-        fscrypt_info.next_key_slot += 1;
-        slot
+        let mut fscrypt_keys = self.fscrypt_keys.lock();
+        // Find the first keyslot that is not in use. Note that SENTINEL_SLOT_VALUE is reserved.
+        let mut possible_slots = 0..SENTINEL_SLOT_VALUE;
+        let slot = possible_slots
+            .find(|&slot| !fscrypt_keys.contains_key(&slot))
+            .ok_or(zx::Status::NO_RESOURCES)?;
+
+        fscrypt_keys.insert(slot, cipher);
+        Ok(slot)
     }
 
     async fn serve_insecure_inline_encryption_device_requests(
@@ -218,7 +216,10 @@ impl VmoBackedServer {
             match request {
                 DeviceRequest::ProgramKey { wrapped_key, data_unit_size: _, responder } => {
                     responder
-                        .send(Ok(self.program_key(&fscrypt::to_xts_key(&wrapped_key, uuid))))
+                        .send(
+                            self.program_key(&fscrypt::to_xts_key(&wrapped_key, uuid))
+                                .map_err(zx::Status::into_raw),
+                        )
                         .unwrap_or_else(|e| {
                             log::error!("failed to send ProgramKey response. error: {:?}", e);
                         });
@@ -376,6 +377,8 @@ pub trait VmoBackedServerTestingExt {
         server: ServerEnd<DeviceMarker>,
         uuid: [u8; 16],
     ) -> impl Future<Output = ()> + Send;
+    /// Evicts the key slots from `fscrypt_keys`.
+    fn evict_key_slot(&self, slot: u8) -> Result<(), zx::Status>;
 }
 
 pub trait BlockClient: FromClient {}
@@ -432,6 +435,15 @@ impl VmoBackedServerTestingExt for VmoBackedServer {
             this.serve_insecure_inline_encryption_device_requests(server.into_stream(), uuid).await;
         }
     }
+
+    /// Evict key slot for software ciphers.
+    fn evict_key_slot(&self, slot: u8) -> Result<(), zx::Status> {
+        let mut fscrypt_keys = self.fscrypt_keys.lock();
+        match fscrypt_keys.remove(&slot) {
+            Some(_) => Ok(()),
+            None => Err(zx::Status::INVALID_ARGS),
+        }
+    }
 }
 
 struct Data {
@@ -440,7 +452,7 @@ struct Data {
     data: zx::Vmo,
     observer: Option<Box<dyn Observer>>,
     write_cache: Option<Mutex<WriteCache>>,
-    fscrypt_info: Arc<Mutex<FscryptInfo>>,
+    fscrypt_keys: Arc<Mutex<BTreeMap<u8, FscryptSoftwareInoLblk32FileCipher>>>,
     max_jitter_usec: Option<u64>,
 }
 
@@ -504,8 +516,8 @@ impl Interface for Data {
             };
 
             if opts.inline_crypto.is_enabled() {
-                let fscrypt_info = self.fscrypt_info.lock();
-                if let Some(cipher) = fscrypt_info.fscrypt_keys.get(&opts.inline_crypto.slot) {
+                let fscrypt_keys = self.fscrypt_keys.lock();
+                if let Some(cipher) = fscrypt_keys.get(&opts.inline_crypto.slot) {
                     cipher
                         .decrypt(&mut data, opts.inline_crypto.dun as u128)
                         .map_err(|_| zx::Status::IO)?;
@@ -554,8 +566,8 @@ impl Interface for Data {
                 tracking.lock().insert(device_block_offset, &data[..]);
             }
             if opts.inline_crypto.is_enabled() {
-                let fscrypt_info = self.fscrypt_info.lock();
-                if let Some(cipher) = fscrypt_info.fscrypt_keys.get(&opts.inline_crypto.slot) {
+                let fscrypt_keys = self.fscrypt_keys.lock();
+                if let Some(cipher) = fscrypt_keys.get(&opts.inline_crypto.slot) {
                     cipher
                         .encrypt(&mut data, opts.inline_crypto.dun as u128)
                         .map_err(|_| zx::Status::IO)?;
@@ -597,5 +609,62 @@ impl Interface for Data {
         } else {
             Ok(())
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use block_protocol::InlineCryptoOptions;
+
+    use super::*;
+
+    #[fuchsia::test]
+    async fn test_program_and_evict_key_slot() {
+        let block_size = 4096;
+        let server = Arc::new(VmoBackedServer::new(100, block_size, &[]));
+
+        let key = [0xaa; 64];
+        let slot = server.program_key(&key).expect("program_key failed");
+        assert_eq!(slot, 0);
+
+        // Use the internal interface to avoid FIDL complexity for this test.
+        let block_interface = server.server.session_manager().interface();
+        // Verify that we can write and read using the programmed key.
+        let vmo = Arc::new(zx::Vmo::create(block_size as u64).expect("Vmo::create failed"));
+        let original_data = vec![0xbb; block_size as usize];
+        vmo.write(&original_data, 0).expect("Vmo::write failed");
+        let write_opts = WriteOptions {
+            inline_crypto: InlineCryptoOptions { slot, dun: 0 },
+            ..Default::default()
+        };
+        block_interface.write(0, 1, &vmo, 0, write_opts, None).await.expect("write failed");
+
+        // Verify we can read it back.
+        let vmo_read = Arc::new(zx::Vmo::create(block_size as u64).expect("Vmo::create failed"));
+        let read_opts = ReadOptions {
+            inline_crypto: InlineCryptoOptions { slot, dun: 0 },
+            ..Default::default()
+        };
+        block_interface.read(0, 1, &vmo_read, 0, read_opts, None).await.expect("read failed");
+        let mut read_data = vec![0u8; block_size as usize];
+        vmo_read.read(&mut read_data, 0).expect("Vmo::read failed");
+        assert_eq!(read_data, original_data);
+
+        server.evict_key_slot(slot).expect("evict_key_slot failed");
+        assert_eq!(server.evict_key_slot(slot), Err(zx::Status::INVALID_ARGS));
+
+        // TODO(https://fxbug.dev/475970808): we should fail to read when key has been evicted.
+    }
+
+    #[fuchsia::test]
+    async fn test_program_key_out_of_slots() {
+        let server = Arc::new(VmoBackedServer::new(100, 512, &[]));
+
+        let key = [0xaa; 64];
+        for expected_slot in 0..SENTINEL_SLOT_VALUE {
+            let slot = server.program_key(&key).expect("program_key failed");
+            assert_eq!(slot, expected_slot);
+        }
+        assert_eq!(server.program_key(&key), Err(zx::Status::NO_RESOURCES));
     }
 }
