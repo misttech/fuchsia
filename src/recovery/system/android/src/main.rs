@@ -29,6 +29,7 @@ use std::sync::Arc;
 use {fidl_fuchsia_io as fio, fuchsia_async as fasync};
 
 mod bootloader;
+use bootloader::BootloaderMessage;
 mod menu;
 use menu::Menu;
 mod fdr;
@@ -50,8 +51,7 @@ struct RecoveryAppAssistant {
     sideload_request_receiver: Arc<Mutex<mpsc::Receiver<UpdaterRequest>>>,
     exposed_dir: Arc<vfs::directory::simple::Simple>,
     svc_dir: Arc<vfs::directory::simple::Simple>,
-    /// If true, will enqueue a message to start the FDR flow when view assistant is constructed.
-    wipe_data: bool,
+    bootloader_message: BootloaderMessage,
 }
 
 impl RecoveryAppAssistant {
@@ -60,14 +60,14 @@ impl RecoveryAppAssistant {
         sideload_request_receiver: mpsc::Receiver<UpdaterRequest>,
         exposed_dir: Arc<vfs::directory::simple::Simple>,
         svc_dir: Arc<vfs::directory::simple::Simple>,
-        wipe_data: bool,
+        bootloader_message: BootloaderMessage,
     ) -> Self {
         Self {
             display_rotation,
             sideload_request_receiver: Arc::new(Mutex::new(sideload_request_receiver)),
             exposed_dir,
             svc_dir,
-            wipe_data,
+            bootloader_message,
         }
     }
 }
@@ -87,7 +87,7 @@ impl AppAssistant for RecoveryAppAssistant {
             Arc::clone(&self.sideload_request_receiver),
             Arc::clone(&self.exposed_dir),
             Arc::clone(&self.svc_dir),
-            self.wipe_data,
+            self.bootloader_message.clone(),
         )?))
     }
 
@@ -122,12 +122,9 @@ impl RecoveryViewAssistant {
         sideload_request_receiver: Arc<Mutex<mpsc::Receiver<UpdaterRequest>>>,
         exposed_dir: Arc<vfs::directory::simple::Simple>,
         svc_dir: Arc<vfs::directory::simple::Simple>,
-        wipe_data: bool,
+        bootloader_message: BootloaderMessage,
     ) -> Result<RecoveryViewAssistant, Error> {
         let view_sender = ViewSender::new(app_sender, view_key);
-        if wipe_data {
-            view_sender.queue_message(RecoveryMessages::WipeData);
-        }
         let font_face = recovery_ui::font::get_default_font_face().clone();
         let logo_file = load_rive(LOGO_IMAGE_PATH).ok();
         let product = std::fs::read_to_string("/config/build-info/product").unwrap_or_default();
@@ -139,7 +136,7 @@ impl RecoveryViewAssistant {
         let build_info = format!("{product}/{board}:{product_version}/{platform_version}");
         let menu = Menu::new(menu::MAIN_MENU);
 
-        Ok(RecoveryViewAssistant {
+        let mut assistant = RecoveryViewAssistant {
             view_sender,
             font_face,
             logo_file,
@@ -154,7 +151,18 @@ impl RecoveryViewAssistant {
             sideload_request_receiver,
             exposed_dir,
             svc_dir,
-        })
+        };
+        for arg in bootloader_message.recovery_args() {
+            match arg {
+                "--wipe_data" => {
+                    assistant.handle_message(carnelian::make_message(RecoveryMessages::WipeData))
+                }
+                "--sideload" => assistant.on_select_sideload(false),
+                "--sideload_auto_reboot" => assistant.on_select_sideload(true),
+                _ => {}
+            }
+        }
+        Ok(assistant)
     }
 
     fn log(&mut self, log: impl Into<String>) {
@@ -182,8 +190,7 @@ impl RecoveryViewAssistant {
                 self.view_sender.queue_message(RecoveryMessages::RebootBootloader);
             }
             menu::MenuItem::Sideload => {
-                self.log("Now send the package you want to apply to the device with \"adb sideload <filename>\"...");
-                self.view_sender.queue_message(RecoveryMessages::Sideload);
+                self.on_select_sideload(false);
             }
             menu::MenuItem::PowerOff => {
                 self.log("Powering off...");
@@ -203,6 +210,15 @@ impl RecoveryViewAssistant {
                 self.view_sender.queue_message(RecoveryMessages::WipeData);
             }
         }
+    }
+
+    fn on_select_sideload(&mut self, auto_reboot: bool) {
+        self.log("Now send the package you want to apply to the device with \"adb sideload <filename>\"...");
+        self.view_sender.queue_message(if auto_reboot {
+            RecoveryMessages::SideloadAutoReboot
+        } else {
+            RecoveryMessages::Sideload
+        });
     }
 }
 
@@ -563,7 +579,8 @@ impl ViewAssistant for RecoveryViewAssistant {
                 })
                 .detach();
             }
-            RecoveryMessages::Sideload => {
+            recovery_message @ (RecoveryMessages::Sideload
+            | RecoveryMessages::SideloadAutoReboot) => {
                 let view_sender = self.view_sender.clone();
                 let sideload_request_receiver = Arc::clone(&self.sideload_request_receiver);
                 let exposed_dir = Arc::clone(&self.exposed_dir);
@@ -593,7 +610,13 @@ impl ViewAssistant for RecoveryViewAssistant {
                     if let Err(e) = responder.send() {
                         log::error!("Error sending response for Update: {e:?}");
                     }
-                    view_sender.queue_message(RecoveryMessages::TaskDone);
+                    view_sender.queue_message(
+                        if recovery_message == RecoveryMessages::SideloadAutoReboot {
+                            RecoveryMessages::Reboot
+                        } else {
+                            RecoveryMessages::TaskDone
+                        },
+                    );
                 })
                 .detach();
             }
@@ -626,6 +649,7 @@ impl ViewAssistant for RecoveryViewAssistant {
     }
 }
 
+#[derive(PartialEq, Eq)]
 enum RecoveryMessages {
     Log(String),
     ReplaceLastLog(String),
@@ -633,6 +657,7 @@ enum RecoveryMessages {
     Reboot,
     RebootBootloader,
     Sideload,
+    SideloadAutoReboot,
     PowerOff,
     WipeData,
 }
@@ -647,8 +672,8 @@ async fn run_updater_service(
     Ok(())
 }
 
-/// Reads and clears the BCB in the /misc partition. Returns true if the --wipe_data flag was set.
-async fn process_bootloader_message() -> Result<bool, Error> {
+/// Reads and clears the BCB in the /misc partition. Returns the bootloader message.
+async fn process_bootloader_message() -> Result<BootloaderMessage, Error> {
     let store = bootloader::BootloaderMessageStore::new()
         .await
         .context("unable to initialize bootloader message store")?;
@@ -661,8 +686,7 @@ async fn process_bootloader_message() -> Result<bool, Error> {
     // we will boot-loop back into the recovery image indefinitely.
     store.clear().await.context("unable to clear bootloader message")?;
     log::info!("cleared bootloader message in /misc");
-    // Check if we got any recovery-specific arguments and act on them.
-    return Ok(message?.recovery_args().any(|arg| arg == "--wipe_data"));
+    return message;
 }
 
 #[fuchsia::main]
@@ -684,11 +708,11 @@ fn main() -> Result<(), Error> {
 
     App::run(Box::new(move |_| {
         Box::pin(async move {
-            let wipe_data = match process_bootloader_message().await {
-                Ok(wipe_data) => wipe_data,
+            let bootloader_message = match process_bootloader_message().await {
+                Ok(bootloader_message) => bootloader_message,
                 Err(error) => {
                     log::error!(error:?; "error processing bootloader message");
-                    false
+                    BootloaderMessage::default()
                 }
             };
 
@@ -723,7 +747,7 @@ fn main() -> Result<(), Error> {
                 sideload_request_receiver,
                 exposed_dir,
                 svc_dir,
-                wipe_data,
+                bootloader_message,
             ));
             Ok::<AppAssistantPtr, Error>(assistant)
         })

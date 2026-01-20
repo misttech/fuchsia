@@ -35,7 +35,7 @@ impl Default for BootloaderMessageRaw {
 }
 
 /// Processed bootloader message.
-#[derive(Debug)]
+#[derive(Debug, Clone, Default)]
 pub struct BootloaderMessage {
     command: String,
     status: String,
