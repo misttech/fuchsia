@@ -13,6 +13,7 @@ performance_testing_environments = [
   nuc7_env,
   nuc11_env,
   sherlock_env,
+  sorrel_env,
   vim3_env,
 ]
 
