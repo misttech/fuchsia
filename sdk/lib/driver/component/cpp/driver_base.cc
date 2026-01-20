@@ -2,6 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+#include <fidl/fuchsia.power.broker/cpp/fidl.h>
 #include <lib/driver/component/cpp/driver_base.h>
 #include <lib/driver/component/cpp/internal/start_args.h>
 #include <lib/driver/logging/cpp/logger.h>
@@ -58,6 +59,40 @@ zx::result<> DriverBase::RunInitMethods() {
   }
   return zx::ok();
 }
+
+#if FUCHSIA_API_LEVEL_AT_LEAST(HEAD)
+std::optional<fidl::ServerEnd<fuchsia_power_broker::ElementRunner>>
+DriverBase::take_power_element_runner() {
+  if (!start_args_.power_element_args().has_value()) {
+    return std::nullopt;
+  }
+
+  return fidl::ServerEnd<fuchsia_power_broker::ElementRunner>(
+      start_args_.power_element_args()->runner_server()->TakeChannel());
+}
+
+std::optional<fidl::ClientEnd<fuchsia_power_broker::Lessor>>
+DriverBase::take_power_element_lessor() {
+  if (!start_args_.power_element_args().has_value()) {
+    return std::nullopt;
+  }
+
+  return fidl::ClientEnd<fuchsia_power_broker::Lessor>(
+      std::move(start_args_.power_element_args()->lessor_client().value()));
+}
+
+std::optional<fuchsia_power_broker::DependencyToken> DriverBase::power_element_token() {
+  if (!start_args_.power_element_args().has_value()) {
+    return std::nullopt;
+  }
+
+  zx::event copy;
+  ZX_ASSERT(start_args_.power_element_args()->token()->duplicate(ZX_RIGHT_SAME_RIGHTS, &copy) !=
+            ZX_OK);
+
+  return fuchsia_power_broker::DependencyToken(std::move(copy));
+}
+#endif
 
 void DriverBase::InitializeAndServe(
     Namespace incoming, fidl::ServerEnd<fuchsia_io::Directory> outgoing_directory_request) {
