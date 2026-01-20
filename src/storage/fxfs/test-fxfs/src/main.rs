@@ -16,6 +16,7 @@ use fidl_fuchsia_io::{self as fio, DirectoryMarker};
 use fidl_fuchsia_test_fxfs::{
     StarnixVolumeAdminMarker, StarnixVolumeAdminRequest, StarnixVolumeAdminRequestStream,
 };
+use fuchsia_async::Task;
 use fuchsia_component_client::connect_to_protocol;
 use fuchsia_runtime::HandleType;
 use fuchsia_sync::Mutex;
@@ -24,14 +25,18 @@ use fxfs::errors::FxfsError;
 use fxfs::filesystem::FxFilesystem;
 use fxfs::object_store::volume::root_volume;
 use fxfs_crypto::Crypt;
+use fxfs_platform::component::new_block_client;
 use fxfs_platform::fuchsia::RemoteCrypt;
 use fxfs_platform::volumes_directory::VolumesDirectory;
 use refaults_vmo::PageRefaultCounter;
 use std::sync::{Arc, Weak};
 use storage_device::DeviceHolder;
-use storage_device::fake_device::FakeDevice;
+use storage_device::block_device::BlockDevice;
 use vfs::directory::helper::DirectlyMutable;
 use vfs::execution_scope::ExecutionScope;
+use vmo_backed_block_server::{
+    InitialContents, VmoBackedServer, VmoBackedServerOptions, VmoBackedServerTestingExt,
+};
 
 const BLOCK_SIZE: u32 = 4096; // 4KiB
 const USER_VOLUME_NAME: &str = "test_fxfs_user_volume";
@@ -44,6 +49,8 @@ pub const METADATA_KEY: [u8; 32] = [
     0xff, 0xfe, 0xfd, 0xfc, 0xfb, 0xfa, 0xf9, 0xf8, 0xf7, 0xf6, 0xf5, 0xf4, 0xf3, 0xf2, 0xf1, 0xf0,
     0xef, 0xee, 0xed, 0xec, 0xeb, 0xea, 0xe9, 0xe8, 0xe7, 0xe6, 0xe5, 0xe4, 0xe3, 0xe2, 0xe1, 0xe0,
 ];
+pub const UUID: [u8; 16] =
+    [75, 146, 230, 48, 132, 165, 68, 97, 141, 247, 22, 242, 153, 171, 153, 38];
 
 struct MountedVolume {
     store_id: u64,
@@ -209,6 +216,7 @@ async fn handle_starnix_volume_provider_requests(
     mut stream: StarnixVolumeProviderRequestStream,
     volumes_directory: Arc<VolumesDirectory>,
     mounted_volume: Arc<Mutex<Option<MountedVolume>>>,
+    block_server: Arc<VmoBackedServer>,
 ) {
     while let Some(Ok(request)) = stream.next().await {
         match request {
@@ -235,6 +243,20 @@ async fn handle_starnix_volume_provider_requests(
                     log::error!(error:?; "failed to send Mount response");
                 });
             }
+            StarnixVolumeProviderRequest::ConnectToInlineEncryption { server_end, responder } => {
+                log::info!("volume provider connect to inline encryption");
+                // TODO(https://fxbug.dev/477087647): Configurable use of inline encryption.
+                let block_server_clone = block_server.clone();
+                Task::spawn(async move {
+                    block_server_clone
+                        .connect_insecure_inline_encryption_server(server_end, UUID)
+                        .await;
+                })
+                .detach();
+                responder.send(Ok(())).unwrap_or_else(|error| {
+                    log::error!(error:?; "failed to send ConnectToInlineCrypto response");
+                });
+            }
         }
     }
 }
@@ -242,9 +264,26 @@ async fn handle_starnix_volume_provider_requests(
 #[fuchsia::main]
 async fn main() -> Result<(), Error> {
     // Android's bionic unit tests will fail with a smaller disk.
-    // TODO(https://fxbug.dev/378744012): Make the size of FakeDevice configurable.
-    let device = DeviceHolder::new(FakeDevice::new(393216, BLOCK_SIZE));
-    let filesystem = FxFilesystem::new_empty(device).await.unwrap();
+    // TODO(https://fxbug.dev/378744012): Make the size of VmoBackedServer configurable.
+    let block_server = Arc::new(
+        VmoBackedServerOptions {
+            block_size: BLOCK_SIZE,
+            initial_contents: InitialContents::FromCapacity(393216),
+            ..Default::default()
+        }
+        .build()
+        .expect("failed to build vmo block server"),
+    );
+    let filesystem = FxFilesystem::new_empty(DeviceHolder::new(
+        BlockDevice::new(
+            new_block_client(block_server.connect()).await.expect("failed to create block client"),
+            false,
+        )
+        .await
+        .unwrap(),
+    ))
+    .await
+    .expect("FxFilesystem::new_empty failed");
 
     let inspector = fuchsia_inspect::component::inspector();
     let _inspect_server_task =
@@ -314,6 +353,7 @@ async fn main() -> Result<(), Error> {
                         stream,
                         volumes_directory.clone(),
                         mounted_volume.clone(),
+                        block_server.clone(),
                     )
                 }
             }),

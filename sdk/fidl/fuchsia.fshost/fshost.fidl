@@ -8,6 +8,7 @@ using zx;
 using fuchsia.fxfs;
 using fuchsia.io;
 using fuchsia.storage.partitions;
+using fuchsia.hardware.inlineencryption;
 
 type MountOptions = resource table {
     1: read_only bool;
@@ -141,4 +142,12 @@ closed protocol StarnixVolumeProvider {
     }) -> (struct {
         guid array<uint8, 16>;
     }) error zx.Status;
+
+    /// Connects to the inline encryption service if the device containing the Starnix volume
+    /// supports it.
+    ///
+    /// Returns ZX_ERR_NOT_SUPPORTED if device does not support inline encryption.
+    strict ConnectToInlineEncryption(resource struct {
+        server_end server_end:fuchsia.hardware.inlineencryption.Device;
+    }) -> () error zx.Status;
 };

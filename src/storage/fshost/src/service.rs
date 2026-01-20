@@ -592,6 +592,17 @@ pub fn fshost_volume_provider(
                             log::error!(error:?; "failed to send fidl response");
                         });
                     }
+                    Ok(fshost::StarnixVolumeProviderRequest::ConnectToInlineEncryption {
+                        server_end: _,
+                        responder,
+                    }) => {
+                        // TODO(https://fxbug.dev/393196849): Add support when ready.
+                        responder.send(Err(zx::Status::NOT_SUPPORTED.into_raw())).unwrap_or_else(
+                            |error| {
+                                log::error!(error:?; "failed to send fidl response");
+                            },
+                        );
+                    }
                     Err(e) => {
                         log::error!("volume provider server failed: {:?}", e);
                         return;

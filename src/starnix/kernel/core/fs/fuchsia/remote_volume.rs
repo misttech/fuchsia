@@ -295,8 +295,37 @@ pub fn new_remote_vol(
 
     let (keys, created_key_file) = VolumeKeys::get_or_create(&key_location_proxy, KEY_FILE_PATH)?;
 
-    let crypt_service =
-        Arc::new(CryptService::new(&keys.metadata, &keys.data, keys.use_lblk32_identifiers, None));
+    // Attempt to connect to the inline encryption device.
+    let inline_encryption_provider = {
+        let (inline_encryption_provider, inline_encryption_server) =
+            fidl::endpoints::create_sync_proxy();
+        match volume_provider
+            .connect_to_inline_encryption(inline_encryption_server, zx::MonotonicInstant::INFINITE)
+            .map_err(|e| {
+                log_error!(
+                    "FIDL transport error on StarnixVolumeProvider.ConnectToInlineEncryption {:?}",
+                    e
+                );
+                errno!(EIO)
+            })? {
+            Ok(()) => {
+                log_info!("Inline encryption enabled");
+                Some(inline_encryption_provider)
+            }
+            Err(e) if e == zx::Status::NOT_SUPPORTED.into_raw() => None,
+            Err(e) => {
+                let error = from_status_like_fdio!(zx::Status::from_raw(e));
+                log_error!(error:?; "Error while handling connecting to inline encryption");
+                return Err(error);
+            }
+        }
+    };
+    let crypt_service = Arc::new(CryptService::new(
+        &keys.metadata,
+        &keys.data,
+        keys.use_lblk32_identifiers,
+        inline_encryption_provider,
+    ));
 
     let (exposed_dir_client_end, exposed_dir_server) =
         fidl::endpoints::create_endpoints::<fio::DirectoryMarker>();
