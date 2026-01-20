@@ -287,18 +287,14 @@ class WaitQueueCollection {
   // The current minimum inheritable relative deadline of the set of blocked threads.
   SchedDuration MinInheritableRelativeDeadline() const;
 
-  // Peek at the first Thread in the collection.
-  Thread* Peek(zx_instant_mono_t now);
-  const Thread* Peek(zx_instant_mono_t now) const {
-    return const_cast<WaitQueueCollection*>(this)->Peek(now);
-  }
-
   Thread& PeekOnlyThread() {
     DEBUG_ASSERT_MSG(threads_.size() == 1, "Expected size 1, not %zu", threads_.size());
     return threads_.front();
   }
 
+  // Peek at the first Thread in the collection.
   Thread* PeekFront() { return threads_.is_empty() ? nullptr : &threads_.front(); }
+  const Thread* PeekFront() const { return const_cast<WaitQueueCollection*>(this)->PeekFront(); }
 
   inline SchedulerState::WaitQueueInheritedSchedulerState* FindInheritedSchedulerStateStorage();
 
@@ -407,10 +403,8 @@ class WaitQueue : public ChainLockable {
 
   // Returns the current highest priority blocked thread on this wait queue, or
   // nullptr if no threads are blocked.
-  Thread* Peek(zx_instant_mono_t now) TA_REQ(get_lock()) { return collection_.Peek(now); }
-  const Thread* Peek(zx_instant_mono_t now) const TA_REQ(get_lock()) {
-    return collection_.Peek(now);
-  }
+  Thread* PeekFront() TA_REQ(get_lock()) { return collection_.PeekFront(); }
+  const Thread* PeekFront() const TA_REQ(get_lock()) { return collection_.PeekFront(); }
 
   // Release one or more threads from the wait queue.
   // wait_queue_error = what WaitQueue::Block() should return for the blocking thread.

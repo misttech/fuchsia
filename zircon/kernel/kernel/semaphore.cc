@@ -83,7 +83,7 @@ void Semaphore::Post(OwnedWaitQueue* queue_to_own) {
     //
     // Try to wake one of the threads in the queue, but be ready for it to fail
     // because of a backoff error.
-    Thread* const thread = waitq_.Peek(current_mono_time());
+    Thread* const thread = waitq_.PeekFront();
     DEBUG_ASSERT(thread != nullptr);
     if (!thread->get_lock().AcquireOrBackoff()) {
       return ChainLockTransaction::Action::Backoff;

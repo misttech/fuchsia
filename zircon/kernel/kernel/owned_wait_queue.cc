@@ -1364,7 +1364,7 @@ ktl::optional<Thread::UnblockList> OwnedWaitQueue::TryLockAndMakeWaiterListLocke
   // more than one thread.
   //
   for (uint32_t count = 0; count < max_count; ++count) {
-    Thread* t = Peek(now);
+    Thread* t = PeekFront();
     if (t == nullptr) {
       break;
     }

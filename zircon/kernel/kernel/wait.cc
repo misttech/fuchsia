@@ -168,10 +168,6 @@ SchedDuration WaitQueueCollection::MinInheritableRelativeDeadline() const {
   return root_thread.wait_queue_state().subtree_min_deadline_;
 }
 
-Thread* WaitQueueCollection::Peek(zx_instant_mono_t signed_now) {
-  return !threads_.is_empty() ? &threads_.front() : nullptr;
-}
-
 void WaitQueueCollection::Insert(Thread* thread) {
   WqTraceDepth(this, Count() + 1);
 
@@ -337,7 +333,7 @@ bool WaitQueue::WakeOne(zx_status_t wait_queue_error) {
     // Now that we are holding the queue lock, attempt to lock the thread's pi
     // lock.  Be prepared to drop all locks and retry the operation if we
     // fail.
-    Thread* t = Peek(current_mono_time());
+    Thread* t = PeekFront();
     if (t) {
       if (!t->get_lock().AcquireOrBackoff()) {
         return ChainLockTransaction::Action::Backoff;
@@ -378,7 +374,7 @@ ktl::optional<bool> WaitQueue::WakeOneLocked(zx_status_t wait_queue_error) {
   }
 
   // Check to see if there is a thread we want to wake.
-  if (Thread* t = Peek(current_mono_time()); t != nullptr) {
+  if (Thread* t = PeekFront(); t != nullptr) {
     // There is!  Try to lock it so we can actually wake it up.  If we can't, we
     // will need to unwind to allow the caller to release our lock before trying
     // again.
@@ -639,7 +635,7 @@ ktl::optional<BrwLockOps::LockForWakeResult> BrwLockOps::LockForWake(WaitQueue& 
   LockForWakeResult result;
   Thread* t;
 
-  while ((t = queue.collection_.Peek(now)) != nullptr) {
+  while ((t = queue.collection_.PeekFront()) != nullptr) {
     // Figure out of this thread a reader or a writer.  Note; the odd use of a
     // lambda here is to work around issues with the static analyzer.  We cannot
     // assert that we have read access to a capability in a function, and later
