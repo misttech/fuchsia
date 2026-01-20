@@ -380,6 +380,8 @@ func StringInLogsChecks() []FailureModeCheck {
 // device rather than from infrastructure host tools.
 func fuchsiaLogChecks() []FailureModeCheck {
 	ret := []FailureModeCheck{
+		// Image too large causes booting to fail.
+		&stringInLogCheck{String: "too large for partition", Type: serialLogType},
 		// For https://fxbug.dev/42135406.
 		// Hardware watchdog tripped, should not happen.
 		// This string is specified in u-boot.
