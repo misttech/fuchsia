@@ -2,7 +2,14 @@
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
-"""Helper classes to deal with @gn_targets dependencies in the Fuchsia workspace."""
+"""Helper classes for running Bazel actions and reading configuration set by GN.
+
+- @gn_targets dependencies
+- Overall Bazel configuration
+  - script feature enablement
+  - RBE configuration
+
+"""
 
 import dataclasses
 import json
