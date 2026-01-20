@@ -135,8 +135,8 @@ void WebAppBase::SetupWebPage(const std::string& js_code) {
   RunLoopUntil(
       [&] { return nav_listener_.loaded_about_blank_ && nav_listener_.is_main_document_loaded_; });
 
-  ZX_ASSERT_OK(
-      web_frame_->ExecuteJavaScript({{.origins = {"*"}, .script = BufferFromString(js_code)}}));
+  ZX_ASSERT_OK(web_frame_->ExecuteJavaScript(
+      {{.origins = {"*"}, .script = BufferFromString(kWaitForElementJS + js_code)}}));
 
   auto [message_port_client_end, message_port_server_end] =
       fidl::Endpoints<fuchsia_web::MessagePort>::Create();

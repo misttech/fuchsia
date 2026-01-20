@@ -19,6 +19,47 @@
 
 namespace integration_tests {
 
+static constexpr auto kWaitForElementJS = R"JS(
+/**
+ * Waits for an element to be present in the DOM, have dimensions, and be visible.
+ * Designed to handle Chrome 145's stricter render batching.
+ *
+ * @param {string} elementId - The ID of the element to wait for
+ * @returns {Promise<HTMLElement>} - Resolves with the element when visible.
+ */
+function waitForVisible(elementId) {
+  return new Promise((resolve, reject) => {
+    function check() {
+      const element = document.getElementById(elementId);
+
+      if (element) {
+        // 1. Force a Layout Check (Reflow)
+        // Reading offsetWidth forces Chrome to calculate layout immediately,
+        // bypassing the lazy render batching that causes failures in Chrome 145.
+        const hasDimensions = element.offsetWidth > 0 && element.offsetHeight > 0;
+
+        // 2. Force a Style Recalc
+        // We must check computed styles because an element can have dimensions
+        // but still be 'visibility: hidden' or inside a hidden container.
+        const style = window.getComputedStyle(element);
+        const isVisible = style.visibility === 'visible';
+
+        if (hasDimensions && isVisible) {
+          resolve(element);
+          return;
+        }
+      }
+
+      // 3. Schedule next check aligned with the display refresh rate (V-Sync)
+      requestAnimationFrame(check);
+    }
+
+    // Start the loop
+    requestAnimationFrame(check);
+  });
+}
+)JS";
+
 // Parse buffer to string.
 std::string StringFromBuffer(const fuchsia_mem::Buffer& buffer);
 

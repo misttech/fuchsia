@@ -31,6 +31,9 @@ class WebApp : public integration_tests::WebAppBase {
   }
 
   void Run() {
+    FX_LOGS(INFO) << "Wait for input_ready";
+    RunLoopUntil([&] { return nav_listener_.title_.find("input_ready") != std::string::npos; });
+
     FX_LOGS(INFO) << "Requesting input position";
     auto [input_position_port_client_end, input_position_port_server_end] =
         fidl::Endpoints<fuchsia_web::MessagePort>::Create();
@@ -130,6 +133,10 @@ class WebApp : public integration_tests::WebAppBase {
       }
     };
     window.addEventListener('message', receiveMessage, false);
+
+    waitForVisible("textbox").then((element) => {
+      document.title = [document.title, 'input_ready'].join(' ');
+    });
     )JS";
 };
 

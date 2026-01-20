@@ -30,6 +30,9 @@ class WebApp : public integration_tests::WebAppBase {
   }
 
   void RunLoopForKeyEvents() {
+    FX_LOGS(INFO) << "Wait for input_ready";
+    RunLoopUntil([&] { return nav_listener_.title_.find("input_ready") != std::string::npos; });
+
     auto test_app_status_listener_connect =
         component::Connect<fuchsia_ui_test_input::TestAppStatusListener>();
     ZX_ASSERT_OK(test_app_status_listener_connect);
@@ -98,6 +101,7 @@ class WebApp : public integration_tests::WebAppBase {
 
     function sendMessageEvent(messageObj) {
       let message = JSON.stringify(messageObj);
+      console.info('sendMessageEvent: ' + message);
       port.postMessage(message);
     }
 
@@ -105,6 +109,7 @@ class WebApp : public integration_tests::WebAppBase {
     <style>
       body {
         height: 100%;
+        width: 100%;
         background-color: #000077; /* dark blue */
         color: white;
       }
@@ -119,34 +124,34 @@ class WebApp : public integration_tests::WebAppBase {
 
     // Installs a large text field. The text field occupies most of the
     // screen for easy navigation.
-    const bodyHtml = `
-    <p id='some-text'>Some text below:</p>
-    <textarea id="text-input" rows="3" cols="20"></textarea>
-    `;
-
     document.head.innerHTML += headHtml;
-    document.body.innerHTML = bodyHtml;
+    document.body.innerHTML = `<textarea id="text-input" rows="3" cols="20"></textarea>`;
 
     /** @type HTMLInputElement */
-    let $input = document.querySelector("#text-input");
+    let input_element = document.querySelector("#text-input");
 
     // Every time a keyup event happens on input, relay the key to the web app.
     // "keyup" is selected instead of "keydown" because "keydown" will show us
     // the *previous* state of the text area.
-    $input.addEventListener("keyup", function (e) {
+    input_element.addEventListener("keyup", function (e) {
       sendMessageEvent({
-        text: $input.value,
+        text: input_element.value,
       });
     });
 
     // Sends a signal that the text area is focused, when that happens. The
     // easiest way to do that is to change the document title. There is a
     // navigation listener which will get notified of the title change.
-    $input.addEventListener('focus', function (e) {
+    input_element.addEventListener('focus', function (e) {
       document.title = [document.title, 'text_input_focused'].join(' ');
     });
 
     window.addEventListener('message', receiveMessage, false);
+
+    waitForVisible("text-input").then((element) => {
+      document.title = [document.title, 'input_ready'].join(' ');
+    });
+
     console.info('JS loaded');
   )JS";
 };

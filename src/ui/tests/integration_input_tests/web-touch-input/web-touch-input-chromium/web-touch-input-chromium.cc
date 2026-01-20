@@ -22,6 +22,9 @@ class WebApp : public integration_tests::WebAppBase {
   WebApp() { Setup("web-touch-input-chromium", kAppCode); }
 
   void RunLoopForTouchReponse() {
+    FX_LOGS(INFO) << "Wait for input_ready";
+    RunLoopUntil([&] { return nav_listener_.title_.find("input_ready") != std::string::npos; });
+
     auto test_app_status_listener_connect =
         component::Connect<fuchsia_ui_test_input::TestAppStatusListener>();
     ZX_ASSERT_OK(test_app_status_listener_connect);
@@ -78,9 +81,12 @@ class WebApp : public integration_tests::WebAppBase {
  private:
   static constexpr auto kAppCode = R"JS(
     let port;
-    document.body.style.backgroundColor='#ff00ff';
-    document.body.onclick = function(event) {
-      document.body.style.backgroundColor='#40e0d0';
+    // Add element for touching.
+    document.body.innerHTML = '<div id="click-target" style="width: 100%; height: 100%; background-color: #ff00ff;"></div>';
+    let target = document.getElementById("click-target");
+
+    target.onclick = function(event) {
+      target.style.backgroundColor='#40e0d0';
       console.assert(port != null);
       let response = JSON.stringify({
         epoch_msec: Date.now(),
@@ -112,6 +118,10 @@ class WebApp : public integration_tests::WebAppBase {
       }
     };
     window.addEventListener('message', receiveMessage, false);
+
+    waitForVisible("click-target").then((element) => {
+      document.title = [document.title, 'input_ready'].join(' ');
+    });
     )JS";
 };
 }  // namespace
