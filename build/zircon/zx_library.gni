@@ -45,6 +45,15 @@ import("//build/toolchain/toolchain_environment.gni")
 #   than specifying one of the other SDK categories. See
 #   https://fxbug.dev/333125197 for details.
 #
+#   Any ":<library>.as-needed" sub-targets that appear in `deps` will be
+#   rewritten into a dependency to the library itself, e.g.:
+#
+#     deps = [ "//zircon/system/ulib/foo:foo.as-needed" ]
+#
+#   will be replaced by:
+#
+#     deps = [ "//zircon/system/ulib/foo:foo" ]
+#
 #   Any ":headers" or ":<library>.headers" sub-targets that appear in
 #   `public_deps` will be rewritten into a dependency to the library itself,
 #   e.g.:
@@ -303,7 +312,21 @@ template("zx_library") {
       not_needed(invoker, [ "includes" ])
     }
 
-    # IMPORTANT: Rewrite header dependencies in public_deps
+    # IMPORTANT: Rewrite dependencies
+
+    # ** Rewrite as-needed dependencies in `deps` **
+    #
+    # Rewrite private dependencies on ".as-needed" targets into regular
+    # dependencies into the libraries themselves. For example:
+    #
+    #   deps = [ "//src/zircon/lib/zircon:zircon.as-needed" ]
+    #
+    # will be replaced by:
+    #
+    #   deps = [ "//src/zircon/lib/zircon:zircon(<same-toolchain>)" ]
+    #
+    #
+    # ** Rewrite header dependencies in `public_deps` **
     #
     # For each zx_library(), the Zircon build used to produce a 'headers'
     # group that adds a 'headers.config' public config. This is done to allow

@@ -20,14 +20,14 @@ visibility([
     "//zircon/...",
 ])
 
-def _get_main_target_for(target_label):
+def _get_main_target_for_headers(target_label):
     if target_label.name == "headers":
         return Label("//" + target_label.package)
     if target_label.name.endswith(".headers"):
         return Label("//" + target_label.package + ":" + target_label.name[:-len(".headers")])
     return target_label
 
-def _get_main_targets_for(target_labels, exclude_labels = []):
+def _get_main_targets_for_headers(target_labels, exclude_labels = []):
     """Converts any header targets to their library targets.
 
 For example, a target "//zircon/system/ulib/foo:headers" will be converted to
@@ -57,10 +57,43 @@ unmodified.
     main_target_labels = []
 
     for target_label in target_labels:
-        main_target_label = _get_main_target_for(target_label)
+        main_target_label = _get_main_target_for_headers(target_label)
         if main_target_label != target_label and main_target_label in exclude_labels:
             # It was a header target and the new label is in the exclude list. Skip it.
             continue
+        main_target_labels.append(main_target_label)
+
+    return main_target_labels
+
+def _get_main_target_for_as_needed(target_label):
+    if target_label.name.endswith(".as-needed"):
+        return Label("//" + target_label.package + ":" + target_label.name[:-len(".as-needed")])
+    return target_label
+
+def _get_main_targets_for_as_needed(target_labels):
+    """Converts any as-needed targets to their library targets.
+
+For example, a target "//zircon/system/ulib/bar:bar.as-needed"
+will be converted to "//zircon/system/ulib/bar:bar". Other targets will be
+unmodified.
+
+    Args:
+        target_labels: A list of target labels, some of which may be as-needed targets.
+
+    Returns:
+        A new list of target labels with as-needed targets replaced by their
+        library targets.
+    """
+
+    # The deps lists can sometimes be None rather than empty.
+    if target_labels == None:
+        return None
+
+    # The labels for the main targets of labels in `target_labels`.
+    main_target_labels = []
+
+    for target_label in target_labels:
+        main_target_label = _get_main_target_for_as_needed(target_label)
         main_target_labels.append(main_target_label)
 
     return main_target_labels
@@ -73,12 +106,20 @@ def apply_common_zx_library_modifications(kwargs):
     Modifies the dependencies, etc. as appropriate. The modifications are based
     on the implementation of the GN template `zx_library()`.
 
-    When not using a Zircon-specific toolchain, any ":headers" or
-    ":<library>.headers" targets that appear in public dependencies will be
-    rewritten into a dependency on the library itself. For example:
-        deps = [ "//zircon/system/ulib/foo:headers", "//zircon/system/ulib/bar:bar.headers" ]
-    will be replaced by:
-        deps = [ "//zircon/system/ulib/foo", "//zircon/system/ulib/bar" ]
+    When not using a Zircon-specific toolchain:
+    * Any ":headers" or ":<library>.headers" targets that appear in public
+    dependencies will be rewritten into a dependency on the library itself.
+    For example:
+            deps = [ "//zircon/system/ulib/foo:headers", "//zircon/system/ulib/bar:bar.headers" ]
+        will be replaced by:
+            deps = [ "//zircon/system/ulib/foo", "//zircon/system/ulib/bar" ]
+
+    * Any ":<library>.as-needed" targets that appear in private dependencies
+    will be rewritten into a dependency on the library itself.
+    For example:
+            implementation_deps = [ "//zircon/system/ulib/bar:bar.as-needed" ]
+        will be replaced by:
+            implementation_deps = [ "//zircon/system/ulib/bar" ]
 
     Args:
         kwargs: The keyword arguments to modify.
@@ -87,14 +128,19 @@ def apply_common_zx_library_modifications(kwargs):
         The modified keyword arguments.
     """
 
+    # TODO(https://fxbug.dev/456186319): When adding support for building
+    # Zircon, do not convert dependencies when using a Zircon-specific toolchain.
+
+    # Convert any ":<library>.as-needed" targets in the private deps to the
+    # library target.
+    kwargs["implementation_deps"] = _get_main_targets_for_as_needed(kwargs["implementation_deps"])
+
     # Convert any ":headers" or ":<library>.headers" targets in the public deps
     # to the library target.
     # Unlike other deps, "fuchsia_deps" is not supported by all of the macros.
-    # TODO(https://fxbug.dev/456186319): When adding support for building
-    # Zircon, do not convert when using a Zircon-specific toolchain.
-    kwargs["deps"] = _get_main_targets_for(kwargs["deps"], kwargs["implementation_deps"])
+    kwargs["deps"] = _get_main_targets_for_headers(kwargs["deps"], kwargs["implementation_deps"])
     if "fuchsia_deps" in kwargs:
-        kwargs["fuchsia_deps"] = _get_main_targets_for(kwargs["fuchsia_deps"], kwargs["implementation_deps"])
+        kwargs["fuchsia_deps"] = _get_main_targets_for_headers(kwargs["fuchsia_deps"], kwargs["implementation_deps"])
 
     return kwargs
 
@@ -122,8 +168,25 @@ def _cc_shared_library_zx_impl(
     )
 
 cc_shared_library_zx = macro(
-    doc = "Defines a Zircon C++ shared library that will be a `zx_library()` in GN. " +
-          "This macro is for libraries not in the IDK. For IDK libraries, use `idk_cc_shared_library_zx()`.",
+    doc = """Defines a Zircon C++ shared library that will be a `zx_library()` in GN.
+
+This macro is for libraries not in the IDK. For IDK libraries, use `idk_cc_shared_library_zx()`.
+
+When not using a Zircon-specific toolchain:
+ * Any ":headers" or ":<library>.headers" targets that appear in public
+   dependencies will be rewritten into a dependency on the library itself.
+   For example:
+        deps = [ "//zircon/system/ulib/foo:headers", "//zircon/system/ulib/bar:bar.headers" ]
+    will be replaced by:
+        deps = [ "//zircon/system/ulib/foo", "//zircon/system/ulib/bar" ]
+
+ * Any ":<library>.as-needed" targets that appear in private dependencies
+   will be rewritten into a dependency on the library itself.
+   For example:
+        implementation_deps = [ "//zircon/system/ulib/bar:bar.as-needed" ]
+    will be replaced by:
+        implementation_deps = [ "//zircon/system/ulib/bar" ]
+""",
     # TODO(https://fxbug.dev/446694542): Remove `native.` once the
     # `cc_library()` wrapper is a symbolic macro.
     inherit_attrs = native.cc_library,
@@ -159,9 +222,27 @@ def _cc_source_library_zx_impl(
     )
 
 cc_source_library_zx = macro(
-    doc = "Defines a Zircon C++ source library that will be a `zx_library()` in GN. " +
-          "Bazel may create a static library as it does not have a concept of source libraries. " +
-          "This macro is for libraries not in the IDK. For IDK libraries, use `idk_cc_source_library_zx()`.",
+    doc = """Defines a Zircon C++ source library that will be a `zx_library()` in GN.
+
+Bazel may create a static library as it does not have a concept of source libraries.
+
+This macro is for libraries not in the IDK. For IDK libraries, use `idk_cc_source_library_zx()`.
+
+When not using a Zircon-specific toolchain:
+ * Any ":headers" or ":<library>.headers" targets that appear in public
+   dependencies will be rewritten into a dependency on the library itself.
+   For example:
+        deps = [ "//zircon/system/ulib/foo:headers", "//zircon/system/ulib/bar:bar.headers" ]
+    will be replaced by:
+        deps = [ "//zircon/system/ulib/foo", "//zircon/system/ulib/bar" ]
+
+ * Any ":<library>.as-needed" targets that appear in private dependencies
+   will be rewritten into a dependency on the library itself.
+   For example:
+        implementation_deps = [ "//zircon/system/ulib/bar:bar.as-needed" ]
+    will be replaced by:
+        implementation_deps = [ "//zircon/system/ulib/bar" ]
+""",
     # TODO(https://fxbug.dev/446694542): Remove `native.` once the
     # `cc_library()` wrapper is a symbolic macro.
     inherit_attrs = native.cc_library,
@@ -178,6 +259,7 @@ cc_source_library_zx = macro(
 def _cc_static_library_zx_impl(
         name,
         includes,
+        implementation_deps,
         **kwargs):
     """Implementation for the cc_static_library_zx() macro."""
 
@@ -193,12 +275,30 @@ def _cc_static_library_zx_impl(
     cc_library(
         name = name,
         includes = includes,
+        implementation_deps = implementation_deps,
         **kwargs
     )
 
 cc_static_library_zx = macro(
-    doc = "Defines a Zircon C++ static library that will be a `zx_library()` in GN. " +
-          "This macro is for libraries not in the IDK. For IDK libraries, use `idk_cc_static_library_zx()`.",
+    doc = """Defines a Zircon C++ static library that will be a `zx_library()` in GN.
+
+This macro is for libraries not in the IDK. For IDK libraries, use `idk_cc_static_library_zx()`.
+
+When not using a Zircon-specific toolchain:
+ * Any ":headers" or ":<library>.headers" targets that appear in public
+   dependencies will be rewritten into a dependency on the library itself.
+   For example:
+        deps = [ "//zircon/system/ulib/foo:headers", "//zircon/system/ulib/bar:bar.headers" ]
+    will be replaced by:
+        deps = [ "//zircon/system/ulib/foo", "//zircon/system/ulib/bar" ]
+
+ * Any ":<library>.as-needed" targets that appear in private dependencies
+   will be rewritten into a dependency on the library itself.
+   For example:
+        implementation_deps = [ "//zircon/system/ulib/bar:bar.as-needed" ]
+    will be replaced by:
+        implementation_deps = [ "//zircon/system/ulib/bar" ]
+""",
     # TODO(https://fxbug.dev/446694542): Remove `native.` once the
     # `cc_library()` wrapper is a symbolic macro.
     inherit_attrs = native.cc_library,

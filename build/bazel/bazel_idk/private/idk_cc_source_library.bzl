@@ -383,15 +383,20 @@ idk_cc_source_library_zx = macro(
 
 Bazel may create a static library as it does not have a concept of source libraries.
 
-When not using a Zircon-specific toolchain, any ":headers" or
-":<library>.headers" targets that appear in public dependencies will be
-rewritten into a dependency on the library itself. For example:
+When not using a Zircon-specific toolchain:
+ * Any ":headers" or ":<library>.headers" targets that appear in public
+   dependencies will be rewritten into a dependency on the library itself.
+   For example:
+        deps = [ "//zircon/system/ulib/foo:headers", "//zircon/system/ulib/bar:bar.headers" ]
+    will be replaced by:
+        deps = [ "//zircon/system/ulib/foo", "//zircon/system/ulib/bar" ]
 
-    deps = [ "//zircon/system/ulib/foo:headers", "//zircon/system/ulib/bar:bar.headers" ]
-
-will be replaced by:
-
-    deps = [ "//zircon/system/ulib/foo", "//zircon/system/ulib/bar" ]
+ * Any ":<library>.as-needed" targets that appear in private dependencies
+   will be rewritten into a dependency on the library itself.
+   For example:
+        implementation_deps = [ "//zircon/system/ulib/bar:bar.as-needed" ]
+    will be replaced by:
+        implementation_deps = [ "//zircon/system/ulib/bar" ]
 """,
     inherit_attrs = idk_cc_source_library,
     implementation = _idk_cc_source_library_zx_impl,

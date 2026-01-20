@@ -5,7 +5,18 @@
 # The following are example uses of the IDK atom rules that can be built and
 # analyzed with cquery.
 load("@rules_cc//cc:defs.bzl", "cc_binary", "cc_library")
-load("//build/bazel/bazel_idk:defs.bzl", "create_idk_atom_for_test", "idk_cc_shared_library", "idk_cc_source_library", "idk_cc_source_library_zx", "idk_cc_static_library", "idk_molecule", "idk_noop_atom")
+load(
+    "//build/bazel/bazel_idk:defs.bzl",
+    "create_idk_atom_for_test",
+    "idk_cc_shared_library",
+    "idk_cc_shared_library_zx",
+    "idk_cc_source_library",
+    "idk_cc_source_library_zx",
+    "idk_cc_static_library",
+    "idk_cc_static_library_zx",
+    "idk_molecule",
+    "idk_noop_atom",
+)
 load("//build/bazel/bazel_idk/private:idk_transitions.bzl", "build_idk_combinations")
 
 create_idk_atom_for_test(
@@ -182,8 +193,67 @@ idk_cc_source_library_zx(
         # Zircon toolchain cases).
         # This also tests handling of duplicate dependencies when the headers targets are converted.
         ":test_source_set_dependency_zx",
+
+        # Test conversion of `foo:foo.as-needed` to `foo:foo` for `idk_deps` in `implementation_deps`.
+        ":test_source_set_dependency2_zx.as-needed",
     ],
     stable = True,
+    deps = [
+        # Test conversion of `foo:headers` to `foo:foo` for `idk_deps` in `deps`.
+        ":headers",
+    ],
+)
+
+idk_cc_shared_library_zx(
+    name = "test_shared_library_zx",
+    testonly = True,
+    srcs = [
+        "internal/helper.cc",
+        "some_library.cc",
+    ],
+    hdrs = ["include/lib/test_lib/test_header.h"],
+    api_area = "Developer",
+    category = "partner",
+    fuchsia_deps = [
+        # Test conversion of `foo:foo.headers` to `foo:foo` for `idk_deps` in `fuchsia_deps`.
+        # The full target defines `RequiredFunction()`. This library would
+        # fail to link if this dependency is not included in the `cc_library()`,
+        # which is the case for the non-Fuchsia and Zircon toolchain cases.
+        ":test_source_set_dependency_zx.headers",
+    ],
+    idk_name = "test_shared_library_zx",
+    implementation_deps = [
+        # Test conversion of `foo:foo.as-needed` to `foo:foo` in `implementation_deps`.
+        ":test_source_set_dependency2_zx.as-needed",
+    ],
+    deps = [
+        # Test conversion of `foo:headers` to `foo:foo` for `idk_deps` in `deps`.
+        ":headers",
+    ],
+)
+
+idk_cc_static_library_zx(
+    name = "test_static_library_zx",
+    testonly = True,
+    srcs = [
+        "internal/helper.cc",
+        "some_library.cc",
+    ],
+    hdrs = ["include/lib/test_lib/test_header.h"],
+    api_area = "Developer",
+    category = "partner",
+    fuchsia_deps = [
+        # Test conversion of `foo:foo.headers` to `foo:foo` for `idk_deps` in `fuchsia_deps`.
+        # The full target defines `RequiredFunction()`. The test executable would
+        # fail to link if this dependency is not included in the `cc_library()`,
+        # which is the case for the non-Fuchsia and Zircon toolchain cases.
+        ":test_source_set_dependency_zx.headers",
+    ],
+    idk_name = "test_static_library_zx",
+    implementation_deps = [
+        # Test conversion of `foo:foo.as-needed` to `foo:foo` in `implementation_deps`.
+        ":test_source_set_dependency2_zx.as-needed",
+    ],
     deps = [
         # Test conversion of `foo:headers` to `foo:foo` for `idk_deps` in `deps`.
         ":headers",
@@ -199,6 +269,17 @@ idk_cc_source_library_zx(
     category = "partner",
     hdrs_for_internal_use = ["include/another_header.h"],
     idk_name = "test_source_set_dependency_zx",
+    stable = True,
+)
+
+idk_cc_source_library_zx(
+    name = "test_source_set_dependency2_zx",
+    testonly = True,
+    hdrs = ["include/dependency.h"],
+    api_area = "Developer",
+    category = "partner",
+    hdrs_for_internal_use = ["include/another_header.h"],
+    idk_name = "test_source_set_dependency2_zx",
     stable = True,
 )
 
@@ -244,7 +325,9 @@ idk_molecule(
         ":test-source-set_idk",
         ":test-static-library_idk",
         ":test_atom_idk",
+        ":test_shared_library_zx_idk",
         ":test_source_set_zx_idk",
+        ":test_static_library_zx_idk",
         ":tests_idk",
     ],
 )
@@ -291,10 +374,24 @@ cc_binary(
 )
 
 cc_binary(
+    name = "test_executable_using_cc_shared_library_zx",
+    testonly = True,
+    srcs = ["test_executable.cc"],
+    deps = [":test_shared_library_zx"],
+)
+
+cc_binary(
     name = "test_executable_using_cc_source_library_zx",
     testonly = True,
     srcs = ["test_executable.cc"],
     deps = [":test_source_set_zx"],
+)
+
+cc_binary(
+    name = "test_executable_using_cc_static_library_zx",
+    testonly = True,
+    srcs = ["test_executable.cc"],
+    deps = [":test_static_library_zx"],
 )
 
 filegroup(
@@ -305,7 +402,9 @@ filegroup(
         ":test_executable_using_cc_shared_library",
         ":test_executable_using_cc_source_library",
         ":test_executable_using_cc_static_library",
+        ":test_executable_using_cc_shared_library_zx",
         ":test_executable_using_cc_source_library_zx",
+        ":test_executable_using_cc_static_library_zx",
 
         # Build all the migrated atoms for the main platform build.
         "//sdk:fuchsia_idk_atoms_produced_by_main_platform_build",
@@ -346,6 +445,8 @@ genrule(
         ":test-shared-library",
         ":test-source-set",
         ":test-static-library",
+        ":test_shared_library_zx",
+        ":test_static_library_zx",
 
         # Other libraries.
         "//sdk/lib/stdcompat",
@@ -362,8 +463,11 @@ exports_files([
     "source_dependency_2.api",
     "source_subdependency.api",
     "tests_dependency.api",
+    "test_shared_library_zx.api",
     "test_source_set_dependency_zx.api",
+    "test_source_set_dependency2_zx.api",
     "test_source_set_zx.api",
+    "test_static_library_zx.api",
 ])
 
 build_idk_combinations(
