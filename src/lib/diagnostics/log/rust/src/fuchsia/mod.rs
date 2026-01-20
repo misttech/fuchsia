@@ -572,11 +572,12 @@ macro_rules! log_every_n_seconds {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use assert_matches::assert_matches;
     use diagnostics_reader::ArchiveReader;
     use fidl_fuchsia_diagnostics_crasher::{CrasherMarker, CrasherProxy};
     use fuchsia_async::TimeoutExt;
     use fuchsia_component_test::{Capability, ChildOptions, RealmBuilder, Ref, Route};
-    use futures::{StreamExt, future};
+    use futures::{FutureExt, StreamExt, future};
     use log::{debug, error, info};
     use moniker::ExtendedMoniker;
 
@@ -658,7 +659,7 @@ mod tests {
     #[fuchsia::test]
     async fn log_macro_logs_are_recorded() {
         let reader = ArchiveReader::logs();
-        let (logs, _) = reader.snapshot_then_subscribe().unwrap().split_streams();
+        let (logs, mut errors) = reader.snapshot_then_subscribe().unwrap().split_streams();
 
         let total_threads = 10;
 
@@ -668,10 +669,16 @@ mod tests {
             });
         }
 
+        let mut filtered = 0;
         let mut results = logs
             .filter(|data| {
                 future::ready(
-                    data.tags().unwrap().iter().any(|t| t == "log_macro_logs_are_recorded"),
+                    if data.tags().unwrap().iter().any(|t| t == "log_macro_logs_are_recorded") {
+                        true
+                    } else {
+                        filtered += 1;
+                        false
+                    },
                 )
             })
             .take(total_threads);
@@ -692,7 +699,10 @@ mod tests {
             seen.push(thread_id as usize);
             assert_eq!(log.msg().unwrap(), format!("log from thread {thread_id}"));
         }
+
+        assert_matches!(errors.next().now_or_never(), None);
+
         seen.sort();
-        assert_eq!(seen, (0..total_threads).collect::<Vec<_>>());
+        assert_eq!(seen, (0..total_threads).collect::<Vec<_>>(), "filtered={filtered}");
     }
 }

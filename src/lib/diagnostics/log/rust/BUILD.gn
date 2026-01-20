@@ -88,6 +88,7 @@ rustc_test("diagnostics_log_lib_test") {
       "//src/lib/fuchsia-component-test",
       "//src/lib/test_util",
       "//src/sys/lib/moniker",
+      "//third_party/rust_crates:assert_matches",
       "//third_party/rust_crates:futures",
     ]
   }
