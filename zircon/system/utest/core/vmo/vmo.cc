@@ -995,7 +995,7 @@ TEST(VmoTestCase, ContiguousRequireAlignedSize) {
 
   zx_iommu_desc_stub_t desc;
   zx::iommu iommu;
-  ASSERT_OK(zx_iommu_create(iommu_resource.get(), ZX_IOMMU_TYPE_DUMMY, &desc, sizeof(desc),
+  ASSERT_OK(zx_iommu_create(iommu_resource.get(), ZX_IOMMU_TYPE_STUB, &desc, sizeof(desc),
                             iommu.reset_and_get_address()));
   bti = vmo_test::CreateNamedBti(iommu, 0, 0xdeadbeef, "VmoTestCase::ContiguousRequireAlignedSize");
 
@@ -1022,7 +1022,7 @@ TEST(VmoTestCase, ContiguousRequireNonzeroSize) {
 
   zx_iommu_desc_stub_t desc;
   zx::iommu iommu;
-  ASSERT_OK(zx_iommu_create(iommu_resource.get(), ZX_IOMMU_TYPE_DUMMY, &desc, sizeof(desc),
+  ASSERT_OK(zx_iommu_create(iommu_resource.get(), ZX_IOMMU_TYPE_STUB, &desc, sizeof(desc),
                             iommu.reset_and_get_address()));
   bti = vmo_test::CreateNamedBti(iommu, 0, 0xdeadbeef, "VmoTestCase::ContiguousRequireAlignedSize");
 
