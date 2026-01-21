@@ -19,6 +19,7 @@ ffx_plugin("ffx_target_get_time") {
   sources = [ "src/lib.rs" ]
   deps = [
     "//src/developer/ffx/lib/fho:lib",
+    "//src/developer/ffx/lib/target/behavior:lib",
     "//src/developer/ffx/lib/target/holders:lib",
     "//src/developer/ffx/lib/writer:lib",
     "//third_party/rust_crates:async-trait",
