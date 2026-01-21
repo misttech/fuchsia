@@ -31,14 +31,19 @@ struct TestFDomain(FDomainCodec, Arc<Mutex<FaultInjectorState>>);
 
 impl TestFDomain {
     fn new_client() -> (Arc<Client>, FaultInjector) {
+        let (client, fault_injector, fut) = TestFDomain::new_client_and_fut();
+        fuchsia_async::Task::spawn(fut).detach();
+        (client, fault_injector)
+    }
+
+    fn new_client_and_fut() -> (Arc<Client>, FaultInjector, impl std::future::Future<Output = ()>) {
         let fault_injector =
             FaultInjector(Arc::new(Mutex::new(FaultInjectorState::SendBadMessages(Vec::new()))));
         let (client, fut) = Client::new(TestFDomain(
             FDomainCodec::new(FDomain::new_empty()),
             Arc::clone(&fault_injector.0),
         ));
-        fuchsia_async::Task::spawn(fut).detach();
-        (client, fault_injector)
+        (client, fault_injector, fut)
     }
 }
 
@@ -420,7 +425,8 @@ async fn channel_async_shutdown() {
 
 #[fuchsia::test]
 async fn bad_tx() {
-    let (client, fault_injector) = TestFDomain::new_client();
+    let (client, fault_injector, fut) = TestFDomain::new_client_and_fut();
+    let task = fuchsia_async::Task::spawn(fut);
 
     let (a, b) = client.create_channel();
     let test_str_a = b"Feral Cats Move In Mysterious Ways";
@@ -429,6 +435,8 @@ async fn bad_tx() {
     let err = b.recv_msg().await.unwrap_err();
     let err2 = b.recv_msg().await.unwrap_err();
     assert_eq!(err.to_string(), err2.to_string());
+    // Make sure the task exits once the transport dies.
+    task.await;
 }
 
 #[fuchsia::test]

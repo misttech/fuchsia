@@ -525,11 +525,15 @@ impl ClientInner {
     /// Polls the underlying transport to ensure any incoming or outgoing
     /// messages are processed as far as possible. If a failure occurs, puts the
     /// transport into an error state and fails all pending transactions.
-    fn poll_transport(&mut self, ctx: &mut Context<'_>) {
+    fn poll_transport(&mut self, ctx: &mut Context<'_>) -> Poll<()> {
         if let Poll::Ready(Err(e)) = self.try_poll_transport(ctx) {
             for (_, v) in std::mem::take(&mut self.transactions) {
                 let _ = v.handle(self, Err(e.clone()));
             }
+
+            Poll::Ready(())
+        } else {
+            Poll::Pending
         }
     }
 
@@ -636,8 +640,7 @@ impl Client {
                 return Poll::Ready(());
             };
 
-            client.0.lock().poll_transport(ctx);
-            Poll::Pending
+            client.0.lock().poll_transport(ctx)
         });
 
         (ret, fut)
