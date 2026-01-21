@@ -4,6 +4,7 @@
 
 use crate::display_ownership::DisplayOwnership;
 use crate::focus_listener::FocusListener;
+use crate::input_handler::UnhandledInputHandler;
 use crate::{input_device, input_handler, metrics};
 use anyhow::{Context, Error, format_err};
 use focus_chain_provider::FocusChainProviderPublisher;
@@ -11,6 +12,7 @@ use fuchsia_fs::directory::{WatchEvent, Watcher};
 use fuchsia_inspect::NumericProperty;
 use fuchsia_inspect::health::Reporter;
 use futures::channel::mpsc::{self, UnboundedReceiver, UnboundedSender};
+use futures::future::LocalBoxFuture;
 use futures::lock::Mutex;
 use futures::{StreamExt, TryStreamExt};
 use itertools::Itertools;
@@ -69,6 +71,12 @@ pub struct InputPipelineAssembly {
     /// get the tasks.  See [run] for a canned way to start these tasks.
     tasks: Vec<fuchsia_async::Task<()>>,
 
+    /// The display ownership watcher task.
+    display_ownership_fut: Option<LocalBoxFuture<'static, ()>>,
+
+    /// The focus listener task.
+    focus_listener_fut: Option<LocalBoxFuture<'static, ()>>,
+
     /// The metrics logger.
     metrics_logger: metrics::MetricsLogger,
 }
@@ -79,14 +87,28 @@ impl InputPipelineAssembly {
     pub fn new(metrics_logger: metrics::MetricsLogger) -> Self {
         let (sender, receiver) = mpsc::unbounded();
         let tasks = vec![];
-        InputPipelineAssembly { sender, receiver, tasks, metrics_logger }
+        InputPipelineAssembly {
+            sender,
+            receiver,
+            tasks,
+            metrics_logger,
+            display_ownership_fut: None,
+            focus_listener_fut: None,
+        }
     }
 
     /// Adds another [input_handler::InputHandler] into the [InputPipelineAssembly]. The handlers
     /// are invoked in the order they are added, and successive handlers are glued together using
     /// unbounded queues.  Returns `Self` for chaining.
     pub fn add_handler(self, handler: Rc<dyn input_handler::InputHandler>) -> Self {
-        let (sender, mut receiver, mut tasks, metrics_logger) = self.into_components();
+        let (
+            sender,
+            mut receiver,
+            mut tasks,
+            metrics_logger,
+            display_ownership_fut,
+            focus_listener_fut,
+        ) = self.into_components();
         let metrics_logger_clone = metrics_logger.clone();
         let (next_sender, next_receiver) = mpsc::unbounded();
         let handler_name = handler.get_name();
@@ -122,7 +144,14 @@ impl InputPipelineAssembly {
             panic!("receive loop is not supposed to terminate for handler: {:?}", handler_name);
         }));
         receiver = next_receiver;
-        InputPipelineAssembly { sender, receiver, tasks, metrics_logger }
+        InputPipelineAssembly {
+            sender,
+            receiver,
+            tasks,
+            metrics_logger,
+            display_ownership_fut,
+            focus_listener_fut,
+        }
     }
 
     /// Adds all handlers into the assembly in the order they appear in `handlers`.
@@ -140,23 +169,35 @@ impl InputPipelineAssembly {
         display_ownership_event: zx::Event,
         input_handlers_node: &fuchsia_inspect::Node,
     ) -> InputPipelineAssembly {
-        let (sender, autorepeat_receiver, mut tasks, metrics_logger) = self.into_components();
-        let (autorepeat_sender, receiver) = mpsc::unbounded();
+        let (sender, receiver, tasks, metrics_logger, _, focus_listener_fut) =
+            self.into_components();
         let h = DisplayOwnership::new(display_ownership_event, input_handlers_node);
         let metrics_logger_clone = metrics_logger.clone();
-        tasks.push(fasync::Task::local(async move {
-            h.clone().set_handler_healthy();
-            h.clone().handle_input_events(autorepeat_receiver, autorepeat_sender)
+        let h_clone = h.clone();
+        let sender_clone = sender.clone();
+        let display_ownership_fut = Box::pin(async move {
+            h_clone.clone().set_handler_healthy();
+            h_clone.clone()
+                .handle_ownership_change(sender_clone)
                 .await
                 .map_err(|e| {
                     metrics_logger_clone.log_error(
                         InputPipelineErrorMetricDimensionEvent::InputPipelineDisplayOwnershipIsNotSupposedToTerminate,
                         std::format!(
                             "display ownership is not supposed to terminate - this is likely a problem: {:?}", e));
-                }).unwrap();
-            h.set_handler_unhealthy("Receive loop terminated for handler: DisplayOwnership");
-        }));
-        InputPipelineAssembly { sender, receiver, tasks, metrics_logger }
+                        })
+                        .unwrap();
+            h_clone.set_handler_unhealthy("Receive loop terminated for handler: DisplayOwnership");
+        });
+        let assembly = InputPipelineAssembly {
+            sender,
+            receiver,
+            tasks,
+            metrics_logger,
+            display_ownership_fut: Some(display_ownership_fut),
+            focus_listener_fut,
+        };
+        assembly.add_handler(h)
     }
 
     /// Deconstructs the assembly into constituent components, used when constructing
@@ -171,8 +212,17 @@ impl InputPipelineAssembly {
         UnboundedReceiver<input_device::InputEvent>,
         Vec<fuchsia_async::Task<()>>,
         metrics::MetricsLogger,
+        Option<LocalBoxFuture<'static, ()>>,
+        Option<LocalBoxFuture<'static, ()>>,
     ) {
-        (self.sender, self.receiver, self.tasks, self.metrics_logger)
+        (
+            self.sender,
+            self.receiver,
+            self.tasks,
+            self.metrics_logger,
+            self.display_ownership_fut,
+            self.focus_listener_fut,
+        )
     }
 
     /// Adds a focus listener task into the input pipeline assembly.  The focus
@@ -188,9 +238,10 @@ impl InputPipelineAssembly {
     /// * `fuchsia.ui.views.FocusChainListenerRegistry`: to register for updates.
     /// * `fuchsia.ui.keyboard.focus.Controller`: to forward to text_manager.
     pub fn add_focus_listener(self, focus_chain_publisher: FocusChainProviderPublisher) -> Self {
-        let (sender, receiver, mut tasks, metrics_logger) = self.into_components();
+        let (sender, receiver, tasks, metrics_logger, display_ownership_fut, _) =
+            self.into_components();
         let metrics_logger_clone = metrics_logger.clone();
-        tasks.push(fasync::Task::local(async move {
+        let focus_listener_fut = Box::pin(async move {
             if let Ok(mut focus_listener) =
                 FocusListener::new(focus_chain_publisher, metrics_logger_clone).map_err(|e| {
                     log::warn!(
@@ -211,8 +262,15 @@ impl InputPipelineAssembly {
                         panic!("could not dispatch focus changes, this is a fatal error: {:?}", e)
                     });
             }
-        }));
-        InputPipelineAssembly { sender, receiver, tasks, metrics_logger }
+        });
+        InputPipelineAssembly {
+            sender,
+            receiver,
+            tasks,
+            metrics_logger,
+            display_ownership_fut,
+            focus_listener_fut: Some(focus_listener_fut),
+        }
     }
 }
 
@@ -278,12 +336,32 @@ impl InputPipeline {
         assembly: InputPipelineAssembly,
         inspect_node: fuchsia_inspect::Node,
     ) -> Self {
-        let (pipeline_sender, receiver, tasks, metrics_logger) = assembly.into_components();
+        let (
+            pipeline_sender,
+            receiver,
+            tasks,
+            metrics_logger,
+            display_ownership_fut,
+            focus_listener_fut,
+        ) = assembly.into_components();
+
+        let mut handlers_count = tasks.len();
+        // TODO: b/469745447 - should use futures::select! instead of Task::local().detach().
+        if let Some(fut) = display_ownership_fut {
+            fasync::Task::local(fut).detach();
+            handlers_count += 1;
+        }
+
+        // TODO: b/469745447 - should use futures::select! instead of Task::local().detach().
+        if let Some(fut) = focus_listener_fut {
+            fasync::Task::local(fut).detach();
+            handlers_count += 1;
+        }
 
         // Add properties to inspect node
         inspect_node.record_string("supported_input_devices", input_device_types.iter().join(", "));
-        inspect_node.record_uint("handlers_registered", tasks.len() as u64);
-        inspect_node.record_uint("handlers_healthy", tasks.len() as u64);
+        inspect_node.record_uint("handlers_registered", handlers_count as u64);
+        inspect_node.record_uint("handlers_healthy", handlers_count as u64);
 
         // Add a stage that catches events which drop all the way down through the pipeline
         // and logs them.
@@ -838,7 +916,7 @@ mod tests {
         );
 
         // Build the input pipeline.
-        let (sender, receiver, tasks, _) =
+        let (sender, receiver, tasks, _, _, _) =
             InputPipelineAssembly::new(metrics::MetricsLogger::default())
                 .add_handler(input_handler)
                 .into_components();
@@ -897,7 +975,7 @@ mod tests {
             );
 
         // Build the input pipeline.
-        let (sender, receiver, tasks, _) =
+        let (sender, receiver, tasks, _, _, _) =
             InputPipelineAssembly::new(metrics::MetricsLogger::default())
                 .add_handler(first_input_handler)
                 .add_handler(second_input_handler)

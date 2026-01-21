@@ -2,16 +2,17 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use crate::input_device::{self, InputEvent};
-use crate::input_handler::InputHandlerStatus;
+use crate::input_device::{self, InputEvent, UnhandledInputEvent};
+use crate::input_handler::{InputHandlerStatus, UnhandledInputHandler};
 use crate::keyboard_binding::{KeyboardDeviceDescriptor, KeyboardEvent};
 use anyhow::{Context, Result};
+use async_trait::async_trait;
 use fidl_fuchsia_ui_composition_internal as fcomp;
 use fidl_fuchsia_ui_input3::KeyEventType;
 use fuchsia_async::{OnSignals, Task};
 use fuchsia_inspect::health::Reporter;
+use futures::StreamExt;
 use futures::channel::mpsc::{self, UnboundedReceiver, UnboundedSender};
-use futures::{StreamExt, select};
 use keymaps::KeyState;
 use std::cell::RefCell;
 use std::rc::Rc;
@@ -81,6 +82,18 @@ impl Ownership {
 /// from the product (e.g. terminal) into virtual console.
 ///
 /// See the `README.md` file in this crate for details.
+///
+/// # Safety and Concurrency
+///
+/// This struct uses `RefCell` to manage internal state. While `DisplayOwnership`
+/// logic is split between multiple tasks (`handle_ownership_change` and
+/// `handle_unhandled_input_event`), safety is maintained because:
+/// 1. The pipeline runs on a single-threaded `LocalExecutor`.
+/// 2. Borrows of `RefCell`s (like `ownership` and `key_state`) are never held
+///    across `await` points.
+///
+/// If asynchronous calls are added to critical sections in the future,
+/// ensure that all borrows are dropped before the `await`.
 pub struct DisplayOwnership {
     /// The current view of the display ownership.  It is mutated by the
     /// display ownership task when appropriate signals arrive.
@@ -90,7 +103,7 @@ pub struct DisplayOwnership {
     key_state: RefCell<KeyState>,
 
     /// The source of ownership change events for the main loop.
-    display_ownership_change_receiver: RefCell<UnboundedReceiver<Ownership>>,
+    display_ownership_change_receiver: RefCell<Option<UnboundedReceiver<Ownership>>>,
 
     /// A background task that watches for display ownership changes.  We keep
     /// it alive to ensure that it keeps running.
@@ -181,7 +194,7 @@ impl DisplayOwnership {
         Rc::new(Self {
             ownership,
             key_state: RefCell::new(KeyState::new()),
-            display_ownership_change_receiver: RefCell::new(ownership_receiver),
+            display_ownership_change_receiver: RefCell::new(Some(ownership_receiver)),
             _display_ownership_task: display_ownership_task,
             inspect_status,
             #[cfg(test)]
@@ -194,73 +207,88 @@ impl DisplayOwnership {
         self.ownership.borrow().is_display_ownership_lost()
     }
 
-    /// Run this function in an executor to handle events.
-    pub async fn handle_input_events(
+    /// Watches for display ownership changes and sends cancel/sync events.
+    ///
+    /// NOTE: RefCell safety relies on the single-threaded nature of the executor.
+    /// No borrows of `ownership` or `key_state` must be held across the `await`
+    /// below to avoid panics if `handle_unhandled_input_event` runs while this
+    /// task is suspended.
+    pub async fn handle_ownership_change(
         self: &Rc<Self>,
-        mut input: UnboundedReceiver<InputEvent>,
         output: UnboundedSender<InputEvent>,
     ) -> Result<()> {
-        loop {
-            let mut ownership_source = self.display_ownership_change_receiver.borrow_mut();
-            select! {
-                // Display ownership changed.
-                new_ownership = ownership_source.select_next_some() => {
-                    let is_display_ownership_lost = new_ownership.is_display_ownership_lost();
-                    // When the ownership is modified, float a set of cancel or sync
-                    // events to scoop up stale keyboard state, treating it the same
-                    // as loss of focus.
-                    let event_type = match is_display_ownership_lost {
-                        true => KeyEventType::Cancel,
-                        false => KeyEventType::Sync,
-                    };
-                    let keys = self.key_state.borrow().get_set();
-                    let mut event_time = MonotonicInstant::get();
-                    for key in keys.into_iter() {
-                        let key_event = KeyboardEvent::new(key, event_type);
-                        output.unbounded_send(into_input_event(key_event, event_time))
-                            .context("unable to send display updates")?;
-                        event_time = event_time + MonotonicDuration::from_nanos(1);
-                    }
-                    *(self.ownership.borrow_mut()) = new_ownership;
-                },
-
-                // An input event arrived.
-                event = input.select_next_some() => {
-                    fuchsia_trace::duration!("input", "display_ownership");
-                    if event.is_handled() {
-                        // Forward handled events unmodified.
-                        output.unbounded_send(event).context("unable to send handled event")?;
-                        continue;
-                    }
-                    self.inspect_status.count_received_event(&event.event_time);
-                    match event.device_event {
-                        input_device::InputDeviceEvent::Keyboard(ref e) => {
-                            self.key_state.borrow_mut().update(e.get_event_type(), e.get_key());
-                        },
-                        _ => {},
-                    }
-                    let is_display_ownership_lost = self.is_display_ownership_lost();
-                    if is_display_ownership_lost {
-                        self.inspect_status.count_handled_event();
-                    }
-                    output.unbounded_send(
-                        input_device::InputEvent::from(event)
-                            .into_handled_if(is_display_ownership_lost)
-                    ).context("unable to send input event updates")?;
-                },
+        let mut ownership_source = self
+            .display_ownership_change_receiver
+            .borrow_mut()
+            .take()
+            .context("display_ownership_change_receiver already taken")?;
+        while let Some(new_ownership) = ownership_source.next().await {
+            let is_display_ownership_lost = new_ownership.is_display_ownership_lost();
+            // When the ownership is modified, float a set of cancel or sync
+            // events to scoop up stale keyboard state, treating it the same
+            // as loss of focus.
+            let event_type = match is_display_ownership_lost {
+                true => KeyEventType::Cancel,
+                false => KeyEventType::Sync,
             };
+            let keys = self.key_state.borrow().get_set();
+            let mut event_time = MonotonicInstant::get();
+            for key in keys.into_iter() {
+                let key_event = KeyboardEvent::new(key, event_type);
+                output
+                    .unbounded_send(into_input_event(key_event, event_time))
+                    .context("unable to send display updates")?;
+                event_time = event_time + MonotonicDuration::from_nanos(1);
+            }
+            *(self.ownership.borrow_mut()) = new_ownership;
             #[cfg(test)]
             {
-                self.loop_done.borrow_mut().as_ref().unwrap().unbounded_send(()).unwrap();
+                if let Some(loop_done) = self.loop_done.borrow().as_ref() {
+                    loop_done.unbounded_send(()).unwrap();
+                }
             }
         }
+        Ok(())
+    }
+}
+
+#[async_trait(?Send)]
+impl UnhandledInputHandler for DisplayOwnership {
+    async fn handle_unhandled_input_event(
+        self: Rc<Self>,
+        unhandled_input_event: UnhandledInputEvent,
+    ) -> Vec<input_device::InputEvent> {
+        fuchsia_trace::duration!("input", "display_ownership");
+        self.inspect_status.count_received_event(&unhandled_input_event.event_time);
+        match unhandled_input_event.device_event {
+            input_device::InputDeviceEvent::Keyboard(ref e) => {
+                self.key_state.borrow_mut().update(e.get_event_type(), e.get_key());
+            }
+            _ => {}
+        }
+        let is_display_ownership_lost = self.is_display_ownership_lost();
+        if is_display_ownership_lost {
+            self.inspect_status.count_handled_event();
+        }
+
+        #[cfg(test)]
+        {
+            if let Some(loop_done) = self.loop_done.borrow().as_ref() {
+                loop_done.unbounded_send(()).unwrap();
+            }
+        }
+
+        vec![
+            input_device::InputEvent::from(unhandled_input_event)
+                .into_handled_if(is_display_ownership_lost),
+        ]
     }
 
-    pub fn set_handler_healthy(self: std::rc::Rc<Self>) {
+    fn set_handler_healthy(self: std::rc::Rc<Self>) {
         self.inspect_status.health_node.borrow_mut().set_ok();
     }
 
-    pub fn set_handler_unhealthy(self: std::rc::Rc<Self>, msg: &str) {
+    fn set_handler_unhealthy(self: std::rc::Rc<Self>, msg: &str) {
         self.inspect_status.health_node.borrow_mut().set_unhealthy(msg);
     }
 }
@@ -302,6 +330,7 @@ mod tests {
     use fidl_fuchsia_input::Key;
     use fuchsia_async as fasync;
     use pretty_assertions::assert_eq;
+    use std::convert::TryFrom as _;
     use zx::{EventPair, Peered};
 
     // Manages losing and regaining display, since manual management is error-prone:
@@ -357,8 +386,23 @@ mod tests {
         let mut wrangler = DisplayWrangler::new(test_event);
         let handler = DisplayOwnership::new_for_test(handler_event, loop_done_sender);
 
+        let handler_clone = handler.clone();
+        let handler_sender_clone = handler_sender.clone();
         let _task = fasync::Task::local(async move {
-            handler.handle_input_events(handler_receiver, handler_sender).await.unwrap();
+            handler_clone.handle_ownership_change(handler_sender_clone).await.unwrap();
+        });
+
+        let handler_clone_2 = handler.clone();
+        let _input_task = fasync::Task::local(async move {
+            let mut receiver = handler_receiver;
+            while let Some(event) = receiver.next().await {
+                let unhandled_event = UnhandledInputEvent::try_from(event).unwrap();
+                let out_events =
+                    handler_clone_2.clone().handle_unhandled_input_event(unhandled_event).await;
+                for out_event in out_events {
+                    handler_sender.unbounded_send(out_event).unwrap();
+                }
+            }
         });
 
         let fake_time = MonotonicInstant::from_nanos(42);
@@ -425,8 +469,24 @@ mod tests {
         let (loop_done_sender, mut loop_done) = mpsc::unbounded::<()>();
         let mut wrangler = DisplayWrangler::new(test_event);
         let handler = DisplayOwnership::new_for_test(handler_event, loop_done_sender);
+
+        let handler_clone = handler.clone();
+        let handler_sender_clone = handler_sender.clone();
         let _task = fasync::Task::local(async move {
-            handler.handle_input_events(handler_receiver, handler_sender).await.unwrap();
+            handler_clone.handle_ownership_change(handler_sender_clone).await.unwrap();
+        });
+
+        let handler_clone_2 = handler.clone();
+        let _input_task = fasync::Task::local(async move {
+            let mut receiver = handler_receiver;
+            while let Some(event) = receiver.next().await {
+                let unhandled_event = UnhandledInputEvent::try_from(event).unwrap();
+                let out_events =
+                    handler_clone_2.clone().handle_unhandled_input_event(unhandled_event).await;
+                for out_event in out_events {
+                    handler_sender.unbounded_send(out_event).unwrap();
+                }
+            }
         });
 
         let fake_time = MonotonicInstant::from_nanos(42);
@@ -477,8 +537,24 @@ mod tests {
         let (loop_done_sender, mut loop_done) = mpsc::unbounded::<()>();
         let mut wrangler = DisplayWrangler::new(test_event);
         let handler = DisplayOwnership::new_for_test(handler_event, loop_done_sender);
+
+        let handler_clone = handler.clone();
+        let handler_sender_clone = handler_sender.clone();
         let _task = fasync::Task::local(async move {
-            handler.handle_input_events(handler_receiver, handler_sender).await.unwrap();
+            handler_clone.handle_ownership_change(handler_sender_clone).await.unwrap();
+        });
+
+        let handler_clone_2 = handler.clone();
+        let _input_task = fasync::Task::local(async move {
+            let mut receiver = handler_receiver;
+            while let Some(event) = receiver.next().await {
+                let unhandled_event = UnhandledInputEvent::try_from(event).unwrap();
+                let out_events =
+                    handler_clone_2.clone().handle_unhandled_input_event(unhandled_event).await;
+                for out_event in out_events {
+                    handler_sender.unbounded_send(out_event).unwrap();
+                }
+            }
         });
 
         let fake_time = MonotonicInstant::from_nanos(42);
@@ -591,8 +667,23 @@ mod tests {
             Some(loop_done_sender),
             &fake_handlers_node,
         );
+        let handler_clone = handler.clone();
+        let handler_sender_clone = handler_sender.clone();
         let _task = fasync::Task::local(async move {
-            handler.handle_input_events(handler_receiver, handler_sender).await.unwrap();
+            handler_clone.handle_ownership_change(handler_sender_clone).await.unwrap();
+        });
+
+        let handler_clone_2 = handler.clone();
+        let _input_task = fasync::Task::local(async move {
+            let mut receiver = handler_receiver;
+            while let Some(event) = receiver.next().await {
+                let unhandled_event = UnhandledInputEvent::try_from(event).unwrap();
+                let out_events =
+                    handler_clone_2.clone().handle_unhandled_input_event(unhandled_event).await;
+                for out_event in out_events {
+                    handler_sender.unbounded_send(out_event).unwrap();
+                }
+            }
         });
 
         // Gain the display, and press a key.
