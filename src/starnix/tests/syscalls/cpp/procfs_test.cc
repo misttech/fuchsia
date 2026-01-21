@@ -157,7 +157,7 @@ class ProcSysNetTest : public ProcTestBase,
 };
 
 TEST_P(ProcSysNetTest, Write) {
-  constexpr uint8_t kWriteBuf = 127;
+  constexpr char kWriteBuf[] = "1";
   ASSERT_EQ(write(fd_.get(), &kWriteBuf, sizeof(kWriteBuf)),
             static_cast<ssize_t>(sizeof(kWriteBuf)))
       << strerror(errno);

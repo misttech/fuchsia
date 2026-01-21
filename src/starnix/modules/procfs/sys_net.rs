@@ -4,6 +4,8 @@
 
 use std::sync::atomic::Ordering;
 
+use fidl::endpoints::DiscoverableProtocolMarker as _;
+use fuchsia_component::client::connect_to_protocol_sync;
 use netlink::{SysctlError, SysctlInterfaceSelector};
 use starnix_core::task::CurrentTask;
 use starnix_core::vfs::pseudo::simple_directory::SimpleDirectory;
@@ -16,7 +18,7 @@ use starnix_core::vfs::{
     emit_dotdot, fileops_impl_directory, fileops_impl_noop_sync, fileops_impl_unbounded_seek,
     fs_node_impl_dir_readonly,
 };
-use starnix_logging::{bug_ref, log_error};
+use starnix_logging::{bug_ref, log_error, log_warn};
 use starnix_sync::{FileOpsCore, Locked};
 use starnix_uapi::errors::Errno;
 use starnix_uapi::file_mode::{FileMode, mode};
@@ -24,6 +26,10 @@ use starnix_uapi::open_flags::OpenFlags;
 use starnix_uapi::vfs::FdEvents;
 use starnix_uapi::{errno, error};
 use std::borrow::Cow;
+use {
+    fidl_fuchsia_net_interfaces_admin as fnet_interfaces_admin, fidl_fuchsia_net_root as fnet_root,
+    fidl_fuchsia_net_settings as fnet_settings,
+};
 
 const FILE_MODE: FileMode = mode!(IFREG, 0o644);
 
@@ -105,6 +111,8 @@ fn get_netstack_device(
     current_task: &CurrentTask,
     name: &FsStr,
 ) -> Option<SysctlInterfaceSelector> {
+    // Kick off the initialization of netlink worker.
+    let _ = current_task.kernel().network_netlink();
     // Per https://www.kernel.org/doc/Documentation/networking/ip-sysctl.txt,
     //
     //   conf/default/*:
@@ -314,7 +322,7 @@ impl FsNodeOps for ProcSysNetIpv6Conf {
                 );
                 dir.entry(
                     "disable_ipv6",
-                    StubBytesFile::new_node(bug_ref!("https://fxbug.dev/423645469")),
+                    new_interface_config_file_node::<DisableIpv6>(interface),
                     FILE_MODE,
                 );
                 dir.entry(
@@ -511,5 +519,218 @@ impl BytesFileOps for PingGroupRangeFile {
     fn read(&self, current_task: &CurrentTask) -> Result<Cow<'_, [u8]>, Errno> {
         let range = current_task.kernel().system_limits.socket.icmp_ping_gids.lock().clone();
         Ok(format!("{}\t{}\n", range.start, range.end - 1).into_bytes().into())
+    }
+}
+
+trait InterfaceConfig: Sync + Send + 'static {
+    fn try_from_i32(value: i32) -> Result<fidl_fuchsia_net_interfaces_admin::Configuration, Errno>;
+    fn try_into_i32(config: fidl_fuchsia_net_interfaces_admin::Configuration)
+    -> Result<i32, Errno>;
+}
+
+fn new_interface_config_file_node<Config>(selector: SysctlInterfaceSelector) -> impl FsNodeOps
+where
+    Config: InterfaceConfig,
+{
+    SimpleFileNode::new(move || {
+        Ok(BytesFile::new(InterfaceConfigFile {
+            selector,
+            _marker: std::marker::PhantomData::<Config>,
+        }))
+    })
+}
+
+struct InterfaceConfigFile<Config> {
+    selector: SysctlInterfaceSelector,
+    _marker: std::marker::PhantomData<Config>,
+}
+
+impl<Config> BytesFileOps for InterfaceConfigFile<Config>
+where
+    Config: InterfaceConfig,
+{
+    fn write(&self, _current_task: &CurrentTask, data: Vec<u8>) -> Result<(), Errno> {
+        let config = Config::try_from_i32(parse_i32_file(&data)?)?;
+        set_interface_config(self.selector, &config)?;
+        Ok(())
+    }
+    fn read(&self, _current_task: &CurrentTask) -> Result<Cow<'_, [u8]>, Errno> {
+        let config = Config::try_into_i32(get_interface_config(self.selector)?)?;
+        Ok(serialize_for_file::<i32>(config).into())
+    }
+}
+
+fn set_interface_config(
+    selector: SysctlInterfaceSelector,
+    config: &fidl_fuchsia_net_interfaces_admin::Configuration,
+) -> Result<(), Errno> {
+    match selector {
+        SysctlInterfaceSelector::All => {
+            log_warn!("setting config for all network interfaces is ignored");
+            Ok(())
+        }
+        SysctlInterfaceSelector::Default => {
+            let control =
+                connect_to_protocol_sync::<fnet_settings::ControlMarker>().map_err(|err| {
+                    log_error!(
+                        "failed to connect to {}: {:?}",
+                        fnet_settings::ControlMarker::PROTOCOL_NAME,
+                        err
+                    );
+                    errno!(EIO)
+                })?;
+            control
+                .update_interface_defaults(config, zx::MonotonicInstant::INFINITE)
+                .map_err(|err| {
+                    log_error!("failed to set network interface config: {:?}", err);
+                    errno!(EIO)
+                })?
+                .map_err(|err| match err {
+                    fnet_settings::UpdateError::IllegalZeroValue
+                    | fnet_settings::UpdateError::IllegalNegativeValue => {
+                        errno!(EINVAL)
+                    }
+                    fnet_settings::UpdateError::OutOfRange => errno!(ERANGE),
+                    fnet_settings::UpdateError::NotSupported => errno!(ENOTSUP),
+                    fnet_settings::UpdateError::__SourceBreaking { unknown_ordinal } => {
+                        log_error!("unknown error with ordinal: {unknown_ordinal}");
+                        errno!(EIO)
+                    }
+                })?;
+            Ok(())
+        }
+        SysctlInterfaceSelector::Id(id) => {
+            let root =
+                connect_to_protocol_sync::<fnet_root::InterfacesMarker>().map_err(|err| {
+                    log_error!(
+                        "failed to connect to {}: {:?}",
+                        fnet_root::InterfacesMarker::PROTOCOL_NAME,
+                        err
+                    );
+                    errno!(EIO)
+                })?;
+            let (control, server) = fidl::endpoints::create_sync_proxy();
+            root.get_admin(id.get(), server).map_err(|err| {
+                log_error!("failed to get network interface: {:?}", err);
+                errno!(EIO)
+            })?;
+            let _prev = control
+                .set_configuration(config, zx::MonotonicInstant::INFINITE)
+                .map_err(|err| {
+                    if err.is_closed() {
+                        log_error!("network interface {} went away", id);
+                        errno!(ENODEV)
+                    } else {
+                        log_error!("failed to set network interface config: {:?}", err);
+                        errno!(EIO)
+                    }
+                })?
+                .map_err(|err| {
+                    use fnet_interfaces_admin::ControlSetConfigurationError;
+                    match err {
+                        ControlSetConfigurationError::Ipv4ForwardingUnsupported
+                        | ControlSetConfigurationError::Ipv4MulticastForwardingUnsupported
+                        | ControlSetConfigurationError::Ipv4IgmpVersionUnsupported
+                        | ControlSetConfigurationError::Ipv6ForwardingUnsupported
+                        | ControlSetConfigurationError::Ipv6MulticastForwardingUnsupported
+                        | ControlSetConfigurationError::Ipv6MldVersionUnsupported
+                        | ControlSetConfigurationError::ArpNotSupported
+                        | ControlSetConfigurationError::NdpNotSupported => errno!(ENOTSUP),
+                        ControlSetConfigurationError::IllegalZeroValue
+                        | ControlSetConfigurationError::IllegalNegativeValue => errno!(EINVAL),
+                        ControlSetConfigurationError::__SourceBreaking { unknown_ordinal } => {
+                            log_error!("unknown error with ordinal: {unknown_ordinal}");
+                            errno!(EIO)
+                        }
+                    }
+                });
+            Ok(())
+        }
+    }
+}
+
+fn get_interface_config(
+    selector: SysctlInterfaceSelector,
+) -> Result<fidl_fuchsia_net_interfaces_admin::Configuration, Errno> {
+    match selector {
+        SysctlInterfaceSelector::All => {
+            log_warn!("getting config for all network interfaces is not supported");
+            Ok(Default::default())
+        }
+        SysctlInterfaceSelector::Default => {
+            let state =
+                connect_to_protocol_sync::<fnet_settings::StateMarker>().map_err(|err| {
+                    log_error!(
+                        "failed to connect to {}: {:?}",
+                        fnet_settings::StateMarker::PROTOCOL_NAME,
+                        err
+                    );
+                    errno!(EIO)
+                })?;
+            let config =
+                state.get_interface_defaults(zx::MonotonicInstant::INFINITE).map_err(|err| {
+                    log_error!("failed to get network interface defaults: {:?}", err);
+                    if err.is_closed() { errno!(ENODEV) } else { errno!(EIO) }
+                })?;
+            Ok(config)
+        }
+        SysctlInterfaceSelector::Id(id) => {
+            let root =
+                connect_to_protocol_sync::<fnet_root::InterfacesMarker>().map_err(|err| {
+                    log_error!(
+                        "failed to connect to {}: {:?}",
+                        fnet_root::InterfacesMarker::PROTOCOL_NAME,
+                        err
+                    );
+                    errno!(EIO)
+                })?;
+            let (control, server) = fidl::endpoints::create_sync_proxy();
+            root.get_admin(id.get(), server).map_err(|err| {
+                log_error!("failed to get network interface: {:?}", err);
+                errno!(EIO)
+            })?;
+            let config = control
+                .get_configuration(zx::MonotonicInstant::INFINITE)
+                .map_err(|err| {
+                    log_error!("failed to get network interface config: {:?}", err);
+                    if err.is_closed() { errno!(ENODEV) } else { errno!(EIO) }
+                })?
+                .map_err(|err| match err {
+                    fnet_interfaces_admin::ControlGetConfigurationError::__SourceBreaking {
+                        unknown_ordinal,
+                    } => {
+                        log_error!("unknown error with ordinal: {unknown_ordinal}");
+                        errno!(EIO)
+                    }
+                })?;
+            Ok(config)
+        }
+    }
+}
+
+struct DisableIpv6;
+
+impl InterfaceConfig for DisableIpv6 {
+    fn try_from_i32(value: i32) -> Result<fidl_fuchsia_net_interfaces_admin::Configuration, Errno> {
+        Ok(fidl_fuchsia_net_interfaces_admin::Configuration {
+            ipv6: Some(fidl_fuchsia_net_interfaces_admin::Ipv6Configuration {
+                enabled: Some(value == 0),
+                ..Default::default()
+            }),
+            ..Default::default()
+        })
+    }
+    fn try_into_i32(
+        config: fidl_fuchsia_net_interfaces_admin::Configuration,
+    ) -> Result<i32, Errno> {
+        let ipv6 = config.ipv6.ok_or_else(|| {
+            log_error!("network interface config missing ipv6");
+            errno!(EIO)
+        })?;
+        let enabled = ipv6.enabled.ok_or_else(|| {
+            log_error!("network interface config missing ipv6 enabled");
+            errno!(EIO)
+        })?;
+        Ok(i32::from(!enabled))
     }
 }

@@ -177,6 +177,7 @@
                 // TODO(https://fxbug.dev/436986890): Reliant on a missing TUN / TAP interface.
                 "TunTap/TunTapTest.CreateTunTapDevice/0",
                 "TunTap/TunTapTest.CreateTunTapDevice/1",
+                "SysctlTest.DisableIpv6Default",
 
                 // TODO(https://fxbug.dev/437171876): Machina is missing /sys/devices/ interfaces.
                 "UdevTest.AddDevMapper",
