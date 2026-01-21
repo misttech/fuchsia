@@ -17,6 +17,8 @@ group("tests") {
   deps = [
     ":starnix_kernel_bin-tests",
     "core:tests",
+    "runner:tests",
+    "syscall_loop:tests",
   ]
 }
 
@@ -50,8 +52,8 @@ rustc_binary("starnix_kernel_bin") {
     "//src/lib/trace/rust:trace",
     "//src/lib/trace/rust:trace-provider",
     "//src/starnix/kernel/core",
+    "//src/starnix/kernel/runner:starnix_kernel_runner",
     "//src/starnix/lib/extended_pstate:lib",
-    "//src/starnix/lib/starnix_kernel_runner",
     "//src/starnix/lib/starnix_logging",
     "//third_party/rust_crates:anyhow",
     "//third_party/rust_crates:async-lock",

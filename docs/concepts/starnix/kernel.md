@@ -159,7 +159,7 @@ programs.
 [starnix-lib]: /src/starnix/lib/
 [starnix-syscalls]: /docs/concepts/starnix/syscalls.md
 [starnix-syscall-tests]: /src/starnix/tests/syscalls/cpp/
-[starnix-syscall-loop]: /src/starnix/lib/starnix_syscall_loop/
+[starnix-syscall-loop]: /src/starnix/kernel/syscall_loop/
 [starnix-uapi]: /src/starnix/lib/starnix_uapi/
 [starnix-vfs]: /docs/concepts/starnix/vfs.md
 [starnix-container]: /docs/concepts/starnix/containers.md

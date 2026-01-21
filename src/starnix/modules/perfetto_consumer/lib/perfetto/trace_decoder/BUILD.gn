@@ -10,8 +10,8 @@ rustc_library("trace_decoder") {
   sources = [ "src/lib.rs" ]
 
   deps = [
-    "//src/starnix/lib/perfetto:perfetto_protos",
-    "//src/starnix/lib/perfetto:perfetto_trace_protos",
+    "//src/starnix/modules/perfetto_consumer/lib/perfetto:perfetto_protos",
+    "//src/starnix/modules/perfetto_consumer/lib/perfetto:perfetto_trace_protos",
     "//third_party/rust_crates:prost",
   ]
 }
