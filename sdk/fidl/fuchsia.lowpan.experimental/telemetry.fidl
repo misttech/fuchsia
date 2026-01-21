@@ -6,6 +6,7 @@ library fuchsia.lowpan.experimental;
 
 using fuchsia.lowpan.device;
 using fuchsia.lowpan;
+using fuchsia.net;
 using zx;
 
 /// Protocol for connecting to [`TelemetryProvider`] on a LoWPAN interface.
@@ -129,6 +130,188 @@ type BorderRoutingCounters = table {
     18: outbound_internet_bytes uint64;
 };
 
+/// The peer BR's info found in Network Data entries.
+type BorderRoutingPeer = table {
+    /// IEEE 802.15.4 short address of neighbor.
+    ///
+    /// Required.
+    1: thread_rloc uint16;
+
+    /// The age of this entry in the neighbor table.
+    ///
+    /// Required.
+    2: age zx.Duration;
+};
+
+/// The discovered routers by Border Routing Manager on the infrastructure link.
+type BorderRoutingRouter = table {
+    /// IPv6 address string of the router.
+    ///
+    /// Required.
+    1: address string:64;
+
+    /// Duration since last update (any message rx) from this router.
+    ///
+    /// Required.
+    2: duration_since_last_update zx.Duration;
+
+    /// The router's age (duration since its first discovery).
+    ///
+    /// Required.
+    3: age zx.Duration;
+
+    /// The router's Managed Address Config flag (`M` flag).
+    ///
+    /// Required.
+    4: managed_address_config_flag bool;
+
+    /// The router's Other Config flag (`O` flag).
+    ///
+    /// Required.
+    5: other_config_flag bool;
+
+    /// The router's SNAC Router flag (`S` flag).
+    ///
+    /// Required.
+    6: snac_router_flag bool;
+
+    /// This router is the local device (this BR).
+    ///
+    /// Required.
+    7: is_local_device bool;
+
+    /// This router is reachable.
+    ///
+    /// Required.
+    8: is_reachable bool;
+
+    /// This router is (likely) a peer BR.
+    ///
+    /// Required.
+    9: is_peer_br bool;
+};
+
+/// Represents the Thread Security Policy.
+type SecurityPolicy = table {
+    /// Key Rotation time value, in uints of hours.
+    ///
+    /// Required.
+    1: rotation_time uint16;
+
+    /// Whether Obtaining the Network Key for out-of-band commissioning is enabled.
+    ///
+    /// Required.
+    2: obtain_network_key_enabled bool;
+
+    /// Whether Native Commissioning using PSKc is allowed.
+    ///
+    /// Required.
+    3: native_commissioning_enabled bool;
+
+    /// Whether Thread 1.0/1.1.x Routers are enabled.
+    ///
+    /// Required.
+    4: routers_enabled bool;
+
+    /// Whether External Commissioner authentication is allowed.
+    ///
+    /// Required.
+    5: external_commissioning_enabled bool;
+
+    /// Whether Autonomous Enrollment is enabled.
+    ///
+    /// Required.
+    6: autonomous_enrollment_enabled bool;
+
+    /// Whether Network Key Provisioning is enabled.
+    ///
+    /// Required.
+    7: network_key_provisioning_enabled bool;
+
+    /// Whether ToBLE link is enabled.
+    ///
+    /// Required.
+    8: toble_link_enabled bool;
+
+    /// Whether Non-CCM Routers enabled.
+    ///
+    /// Required.
+    9: nonccm_routers_enabled bool;
+
+    /// The Version-threshold for Routing.
+    ///
+    /// Required.
+    10: version_threshold_for_routing uint8;
+};
+
+/// Represents an Thread Active or Pending Operational Dataset.
+type OperationalDataset = table {
+    /// Active Timestamp.
+    ///
+    /// Required.
+    1: active_timestamp zx.Time;
+
+    /// Pending Timestamp.
+    ///
+    /// Required.
+    2: pending_timestamp zx.Time;
+
+    /// Network Key.
+    ///
+    /// Required.
+    3: network_key vector<uint8>:16;
+
+    /// Network Name.
+    ///
+    /// Required.
+    4: network_name vector<uint8>:17;
+
+    /// Extended PAN ID.
+    ///
+    /// Required.
+    5: extended_pan_id vector<uint8>:8;
+
+    /// Mesh Local Prefix.
+    ///
+    /// Required.
+    6: mesh_local_prefix vector<uint8>:8;
+
+    /// Delay Timer.
+    ///
+    /// Required.
+    7: delay uint32;
+
+    /// PAN ID.
+    ///
+    /// Required.
+    8: pan_id uint16;
+
+    /// Channel.
+    ///
+    /// Required.
+    9: channel uint16;
+
+    /// Wake-up Channel.
+    ///
+    /// Required.
+    10: wakeup_channel uint16;
+
+    /// PSKc.
+    ///
+    /// Required.
+    11: pskc vector<uint8>:16;
+
+    /// Security Policy.
+    ///
+    /// Required.
+    12: security_policy SecurityPolicy;
+
+    /// Channel Mask.
+    ///
+    /// Required.
+    13: channel_mask uint32;
+};
+
 /// Represents the count of queries, responses, failures handled by upstream DNS server
 ///
 /// Derived from `otUpstreamDnsCounters`(https://openthread.io/reference/group/api-dnssd-server)
@@ -225,6 +408,110 @@ type SrpServerRegistration = table {
     6: remaining_key_lease_time_total zx.Duration;
 };
 
+/// Represents a SRP service host.
+type SrpServerHost = table {
+    /// The full name of host.
+    ///
+    /// Required.
+    1: name string:255;
+
+    /// Whether the SRP service host has been deleted.
+    ///
+    /// Required.
+    2: deleted bool;
+
+    /// The IPv6 addresses of the SPR service host.
+    ///
+    /// Required.
+    3: addresses vector<fuchsia.net.Ipv6Address>:16;
+};
+
+/// Represents a TXT record entry representing a key/value pair (RFC 6763 - section 6.3).
+type DnsTxtEntry = table {
+    /// The key string of the TXT record.
+    ///
+    /// Maximum length of TXT key string supported by `otDnsTxtEntryIterator` is 64,
+    /// see OT_DNS_TXT_KEY_ITER_MAX_LENGTH.
+    ///
+    /// Required.
+    1: key string:64;
+
+    /// The value of the TXT record.
+    ///
+    /// The overall key-value pair encoded length (including the key and "=") must be 255
+    /// bytes or less.
+    ///
+    /// Required.
+    2: value vector<uint8>:253;
+};
+
+/// Represents a SRP service.
+type SrpServerService = table {
+    /// The full service instance name of the service.
+    ///
+    /// Required.
+    1: instance_name string:255;
+
+    /// Whether the SRP service host has been deleted.
+    ///
+    /// Required.
+    2: deleted bool;
+
+    /// The sub-type service name (full name) of the service.
+    ///
+    /// The maximum number of service subtype labels in the SRP service is 6,
+    /// see OPENTHREAD_CONFIG_SRP_CLIENT_BUFFERS_SERVICE_MAX_SUB_TYPES.
+    ///
+    /// The maximum length for a single DNS label (sub-type) is 63 characters.
+    ///
+    /// Required.
+    3: subtypes vector<string:63>:6;
+
+    /// The port of the service instance.
+    ///
+    /// Required.
+    4: port uint16;
+
+    /// The priority of the service instance.
+    ///
+    /// Required.
+    5: priority uint16;
+
+    /// The weight of the service instance.
+    ///
+    /// Required.
+    6: weight uint16;
+
+    /// The TTL of the service instance.
+    ///
+    /// Required.
+    7: ttl zx.Duration;
+
+    /// The lease time of a service.
+    ///
+    /// Required.
+    8: lease zx.Duration;
+
+    /// The key lease time of a host/service.
+    ///
+    /// Required.
+    9: key_lease zx.Duration;
+
+    /// The TXT record data.
+    ///
+    /// Required.
+    10: txt_data vector<DnsTxtEntry>:MAX;
+
+    /// The information of a service host.
+    ///
+    /// Required.
+    11: host SrpServerHost;
+};
+
+/// The maximum number of SRP hosts and services included in the inspect dump.
+/// This limit prevents the inspect tree from becoming excessively large.
+const MAX_SRP_INSPECT_ENTRIES uint32 = 64;
+
 /// State information about the SRP server.
 type SrpServerInfo = table {
     /// The operational state of the SRP server.
@@ -298,8 +585,17 @@ type SrpServerInfo = table {
     ///
     /// Required.
     6: services_registration SrpServerRegistration;
-};
 
+    /// The detailed registration information of SRP hosts.
+    ///
+    /// Required.
+    7: hosts vector<SrpServerHost>:MAX_SRP_INSPECT_ENTRIES;
+
+    /// The detailed registration information of SRP services.
+    ///
+    /// Required.
+    8: services vector<SrpServerService>:MAX_SRP_INSPECT_ENTRIES;
+};
 
 /// Node information for Thread network leaders.
 type LeaderData = table {
@@ -522,6 +818,10 @@ type LinkMetricsEntry = table {
     2: rssi int8;
 };
 
+/// The maximum number of entries allowed in the neighbor-related inspect
+/// dump. This prevents the inspect tree from becoming excessively large.
+const MAX_NEIGHBOR_INSPECT_ENTRIES uint32 = 64;
+
 /// LoWPAN Interface Telemetry Information.
 ///
 /// The fields in this table are used for providing low-level telemetry and information about the
@@ -639,7 +939,7 @@ type Telemetry = table {
     /// Link Metrics Manager related info, if available.
     ///
     /// Only present on Thread networks.
-    24: link_metrics_entries vector<LinkMetricsEntry>:64;
+    24: link_metrics_entries vector<LinkMetricsEntry>:MAX_NEIGHBOR_INSPECT_ENTRIES;
 
     /// Counters related to border agent functionality.
     ///
@@ -656,4 +956,19 @@ type Telemetry = table {
     ///
     /// Only present on Thread networks.
     27: extended_pan_id uint64;
+
+    /// Thread Border Routing peers information.
+    ///
+    /// Only present on Thread networks.
+    28: border_routing_peers vector<BorderRoutingPeer>:MAX_NEIGHBOR_INSPECT_ENTRIES;
+
+    /// Thread Border Routing discovered routers by Border Routing Manager on the infrastructure link.
+    ///
+    /// Only present on Thread networks.
+    29: border_routing_routers vector<BorderRoutingRouter>:MAX_NEIGHBOR_INSPECT_ENTRIES;
+
+    /// Thread Active Operational Dataset.
+    ///
+    /// Only present on Thread networks.
+    30: active_dataset OperationalDataset;
 };
