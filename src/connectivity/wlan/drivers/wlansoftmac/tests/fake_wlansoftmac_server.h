@@ -163,6 +163,7 @@ class BasicWlanSoftmacServer : public UnimplementedWlanSoftmacServer {
                      .sme_handler_supported(true)
                      .hash_to_element_supported(false));
     response.mfp(fuchsia_wlan_common::MfpFeature().supported(false));
+    response.owe(fuchsia_wlan_common::OweFeature().supported(false));
     completer.Reply(fit::ok(response));
   }
 

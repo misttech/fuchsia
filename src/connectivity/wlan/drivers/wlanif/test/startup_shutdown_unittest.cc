@@ -74,6 +74,7 @@ struct BaseWlanFullmacServerForStartup
                     .sme_handler_supported(true)
                     .hash_to_element_supported(false));
     support.mfp(fuchsia_wlan_common::MfpFeature().supported(false));
+    support.owe(fuchsia_wlan_common::OweFeature().supported(false));
 
     response.resp(support);
 

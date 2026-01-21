@@ -87,6 +87,7 @@ pub fn default_security_support() -> fidl_common::SecuritySupport {
             ..Default::default()
         }),
         mfp: Some(fidl_common::MfpFeature { supported: Some(true), ..Default::default() }),
+        owe: Some(fidl_common::OweFeature { supported: Some(true), ..Default::default() }),
         ..Default::default()
     }
 }

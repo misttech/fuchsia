@@ -1033,6 +1033,10 @@ pub mod test_utils {
                         hash_to_element_supported: Some(false),
                         ..Default::default()
                     }),
+                    owe: Some(fidl_common::OweFeature {
+                        supported: Some(false),
+                        ..Default::default()
+                    }),
                     ..Default::default()
                 }),
             }
@@ -1457,6 +1461,7 @@ mod tests {
                     hash_to_element_supported: Some(false),
                     ..Default::default()
                 }),
+                owe: Some(fidl_common::OweFeature { supported: Some(false), ..Default::default() }),
                 ..Default::default()
             }
         );

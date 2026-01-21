@@ -108,11 +108,21 @@ type MfpFeature = table {
     1: supported bool;
 };
 
+/// Opportunistic Wireless Encryption.
+/// See RFC 8110.
+/// This is a security feature, usable for fullmac or softmac.
+@available(added=NEXT)
+type OweFeature = table {
+    1: supported bool;
+};
+
 /// Features related to security / access control and data confidentiality.
 /// See IEEE 802.11-2016 4.5.4 and 802.11-2016 12.
 type SecuritySupport = table {
     1: sae SaeFeature;
     2: mfp MfpFeature;
+    @available(added=NEXT)
+    3: owe OweFeature;
 };
 
 /// Dynamic Frequency Selection.

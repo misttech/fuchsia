@@ -26,6 +26,7 @@ static EMPTY_SECURITY_SUPPORT: LazyLock<fidl_common::SecuritySupport> =
             hash_to_element_supported: Some(true),
             ..Default::default()
         }),
+        owe: Some(fidl_common::OweFeature { supported: Some(false), ..Default::default() }),
         ..Default::default()
     });
 

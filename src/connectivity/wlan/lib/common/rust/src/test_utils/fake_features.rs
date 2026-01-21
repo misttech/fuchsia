@@ -28,6 +28,7 @@ pub fn fake_security_support() -> fidl_common::SecuritySupport {
     let mut support = fake_security_support_empty();
     support.mfp.as_mut().unwrap().supported = Some(true);
     support.sae.as_mut().unwrap().sme_handler_supported = Some(true);
+    support.owe.as_mut().unwrap().supported = Some(true);
     support
 }
 
@@ -40,6 +41,7 @@ pub fn fake_security_support_empty() -> fidl_common::SecuritySupport {
             hash_to_element_supported: Some(false),
             ..Default::default()
         }),
+        owe: Some(fidl_common::OweFeature { supported: Some(false), ..Default::default() }),
         ..Default::default()
     }
 }

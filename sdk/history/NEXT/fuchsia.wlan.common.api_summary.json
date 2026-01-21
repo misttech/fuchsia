@@ -215,6 +215,16 @@
         "name": "fuchsia.wlan.common/MfpFeature"
     },
     {
+        "kind": "table/member",
+        "name": "fuchsia.wlan.common/OweFeature.supported",
+        "ordinal": "1",
+        "type": "bool"
+    },
+    {
+        "kind": "table",
+        "name": "fuchsia.wlan.common/OweFeature"
+    },
+    {
         "kind": "enum/member",
         "name": "fuchsia.wlan.common/PowerSaveType.PS_MODE_BALANCED",
         "value": "2"
@@ -319,6 +329,12 @@
         "name": "fuchsia.wlan.common/SecuritySupport.mfp",
         "ordinal": "2",
         "type": "fuchsia.wlan.common/MfpFeature"
+    },
+    {
+        "kind": "table/member",
+        "name": "fuchsia.wlan.common/SecuritySupport.owe",
+        "ordinal": "3",
+        "type": "fuchsia.wlan.common/OweFeature"
     },
     {
         "kind": "table/member",

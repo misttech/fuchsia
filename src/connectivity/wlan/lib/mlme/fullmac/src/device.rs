@@ -377,6 +377,10 @@ pub mod test_utils {
                             supported: Some(false),
                             ..Default::default()
                         }),
+                        owe: Some(fidl_common::OweFeature {
+                            supported: Some(false),
+                            ..Default::default()
+                        }),
                         ..Default::default()
                     }),
                     query_spectrum_management_support_mock: Some(

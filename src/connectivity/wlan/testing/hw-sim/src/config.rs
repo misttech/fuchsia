@@ -69,6 +69,7 @@ pub(crate) fn create_wlantap_config(
                 ..Default::default()
             }),
             mfp: Some(fidl_common::MfpFeature { supported: Some(true), ..Default::default() }),
+            owe: Some(fidl_common::OweFeature { supported: Some(true), ..Default::default() }),
             ..Default::default()
         },
         spectrum_management_support: fidl_common::SpectrumManagementSupport {
