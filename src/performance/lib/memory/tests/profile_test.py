@@ -6,7 +6,6 @@
 import unittest
 from unittest.mock import Mock
 
-from honeydew.transports.ffx import errors as ffx_errors
 from memory import profile
 from reporting import metrics
 
@@ -35,35 +34,36 @@ MM2_OUTPUT = """
                     "populated_total": 1436753920,
                     "attributor": "root",
                     "processes": [
-                    "fxfs.cm (13934)"
+                        "fxfs.cm (13934)"
                     ],
                     "vmos": {
-                    "[blobs]": {
-                        "count": 1827,
-                        "committed_private": 0,
-                        "committed_scaled": 411303842.98151606,
-                        "committed_total": 1385910272,
-                        "populated_private": 0,
-                        "populated_scaled": 411303842.98151606,
-                        "populated_total": 1385910272
-                    }
+                        "[blobs]": {
+                            "count": 1827,
+                            "committed_private": 0,
+                            "committed_scaled": 411303842.98151606,
+                            "committed_total": 1385910272,
+                            "populated_private": 0,
+                            "populated_scaled": 411303842.98151606,
+                            "populated_total": 1385910272
+                        }
                     }
                 }
             ],
-            "undigested": 0
+            "undigested": 0,
             "digest": {
                 "buckets": [
                     {
-                    "name": "ZBI Buffer",
-                    "size": 0
+                        "name": "ZBI Buffer",
+                        "size": 0
                     },
                     {
-                    "name": "Graphics",
-                    "size": 49152
+                        "name": "[Addl]Graphics",
+                        "size": 49152
                     }
                 ]
             }
         }
+    }
 """
 
 
@@ -74,16 +74,16 @@ class ProfileTest(unittest.TestCase):
 
         dut = Mock()
         dut.ffx.run.side_effect = ffx_run_fake_implementation
-        report = profile.capture(dut, buckets_metrics="Graphics")
+        report = profile.capture(dut, buckets_metrics=".*Graphics")
 
         self.assertEqual(
             report.structured,
             [
                 metrics.TestCaseResult(
-                    label="Memory/Bucket/Graphics/CommittedBytes",
+                    label="Memory/Bucket/AddlGraphics/CommittedBytes",
                     unit=metrics.Unit.bytes,
                     values=(49152,),
-                    doc="TTotal committed bytes in the bucket: Graphics",
+                    doc="Total committed bytes in the bucket: [Addl]Graphics",
                 )
             ],
         )
@@ -92,7 +92,7 @@ class ProfileTest(unittest.TestCase):
         def ffx_run_fake_implementation(args: list[str]) -> str:
             backend = args[args.index("--backend") + 1]
             if backend == "memory_monitor_1":
-                raise ffx_errors.FfxCommandError("Boom")
+                raise RuntimeError("Boom")
             return MM2_OUTPUT
 
         dut = Mock()
@@ -111,6 +111,7 @@ class ProfileTest(unittest.TestCase):
                 )
             ],
         )
+        self.maxDiff = None
         self.assertEqual(
             report.freeform,
             {
@@ -152,6 +153,12 @@ class ProfileTest(unittest.TestCase):
                         }
                     ],
                     "undigested": 0,
+                    "digest": {
+                        "buckets": [
+                            {"name": "ZBI Buffer", "size": 0},
+                            {"name": "[Addl]Graphics", "size": 49152},
+                        ]
+                    },
                 }
             },
         )

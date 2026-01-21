@@ -16,11 +16,10 @@ python_library("memory") {
     "//src/developer/ffx/plugins/profile:ffx_profile_tool_test_data",
     "//src/performance/lib/reporting",
     "//src/performance/lib/trace_processing",
-    "//src/testing/end_to_end/honeydew",
   ]
 }
 
 group("tests") {
   testonly = true
-  public_deps = [ "tests" ]
+  public_deps = [ "tests($host_toolchain)" ]
 }

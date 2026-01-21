@@ -8,14 +8,13 @@ import json
 import re
 from typing import Any, Mapping, cast
 
-from honeydew.fuchsia_device.fuchsia_device import FuchsiaDevice
 from reporting import metrics
 
 _DESCRIPTION_BASE = "Total populated bytes for private uncompressed memory VMOs"
 
 
 def capture(
-    dut: FuchsiaDevice,
+    dut: Any,
     principal_groups: Mapping[str, str] | None = None,
     buckets_metrics: str | None = None,
 ) -> metrics.Report:
@@ -87,7 +86,7 @@ def process_component_profile(
             if re.match(buckets_metrics, bucket["name"]):
                 results.append(
                     metrics.TestCaseResult(
-                        label=f"Memory/Bucket/{bucket['name']}/CommittedBytes",
+                        label=f"Memory/Bucket/{cleanup_bucket_name(bucket['name'])}/CommittedBytes",
                         unit=metrics.Unit.bytes,
                         values=[bucket["size"]],
                         doc=f"Total committed bytes in the bucket: {bucket['name']}",
@@ -110,6 +109,15 @@ def process_component_profile(
             )
         )
     return results
+
+
+def cleanup_bucket_name(name: str) -> str:
+    """Makes buckets compliant with metric system naming conventions.
+
+    Refer to src/performance/lib/perf_publish/publish.py for more details.
+    """
+    result, _count = re.subn(r"\W", "", name)
+    return result
 
 
 def _simplify_name_to_vmo_memory(
