@@ -1211,9 +1211,10 @@ void AdminTest::ValidateElementTopologyClosure() {
         }
       } else {
         ASSERT_TRUE(source_element_type == fhasp::ElementType::DAI_INTERCONNECT ||
-                    source_element_type == fhasp::ElementType::RING_BUFFER)
+                    source_element_type == fhasp::ElementType::RING_BUFFER ||
+                    source_element_type == fhasp::ElementType::PACKET_STREAM)
             << "Element " << source_id << " is a terminal (source) endpoint in topology "
-            << topology.id() << ", but is neither DAI_INTERCONNECT nor RING_BUFFER";
+            << topology.id() << ", but is neither DAI_INTERCONNECT, RING_BUFFER, nor PACKET_STREAM";
       }
     }
     for (const auto& [dest_id, _count] : edge_dest_id_counts) {
@@ -1224,9 +1225,10 @@ void AdminTest::ValidateElementTopologyClosure() {
         }
       }
       ASSERT_TRUE(dest_element_type == fhasp::ElementType::DAI_INTERCONNECT ||
-                  dest_element_type == fhasp::ElementType::RING_BUFFER)
+                  dest_element_type == fhasp::ElementType::RING_BUFFER ||
+                  dest_element_type == fhasp::ElementType::PACKET_STREAM)
           << "Element " << dest_id << " is a terminal (destination) endpoint in topology "
-          << topology.id() << ", but is neither DAI_INTERCONNECT nor RING_BUFFER";
+          << topology.id() << ", but is neither DAI_INTERCONNECT, RING_BUFFER, nor PACKET_STREAM";
     }
   }
   ASSERT_TRUE(unused_element_ids.empty())
