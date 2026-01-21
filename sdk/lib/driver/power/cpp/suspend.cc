@@ -2,6 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+#include <lib/driver/component/cpp/driver_base.h>
 #include <lib/driver/power/cpp/suspend.h>
 #include <lib/fidl/cpp/channel.h>
 
@@ -39,6 +40,7 @@ zx::result<fidl::ServerEnd<fps::SuspendBlocker>> RegisterSuspendHooks(fdf::Names
 
   return zx::ok(std::move(server_end));
 }
+
 }  // namespace internal
 
 }  // namespace fdf_power

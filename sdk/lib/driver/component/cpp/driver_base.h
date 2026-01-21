@@ -142,6 +142,32 @@ class DriverBase {
   // Runs methods registered. Meant to be invoked prior to the start hook.
   zx::result<> RunInitMethods();
 
+#if FUCHSIA_API_LEVEL_AT_LEAST(HEAD)
+  // Takes the `fuchsia.power.broker/ElementRunner` channel for this driver's power element. The
+  // caller is expected to run the power element.
+  //
+  // Returns std::nullopt if the driver did not specify `suspend_enabled` in its manifest's program
+  // section, this is not a suspend enabled platform, or the channel was not provided to the driver
+  // host.
+  std::optional<fidl::ServerEnd<fuchsia_power_broker::ElementRunner>> take_power_element_runner();
+
+  // Takes the `fuchsia.power.broker/Lessor` channel. This allows the caller to lease the power
+  // element.
+  //
+  // Returns std::nullopt if the driver did not specify `suspend_enabled` in its manifest's program
+  // section, this is not a suspend enabled platform, or the channel was not provided to the driver
+  // host.
+  std::optional<fidl::ClientEnd<fuchsia_power_broker::Lessor>> take_power_element_lessor();
+
+  // Returns a copy of the power element token for the driver's power element. This can be called
+  // repeatedly.
+  //
+  // Returns std::nullopt if the driver did not specify `suspend_enabled` in its manifest's program
+  // section, this is not a suspend enabled platform, or the token was not provided by the driver
+  // host.
+  std::optional<fuchsia_power_broker::DependencyToken> power_element_token();
+#endif
+
  protected:
   // The logger can't be private because the logging macros rely on it.
   // NOLINTNEXTLINE(misc-non-private-member-variables-in-classes)
@@ -286,32 +312,6 @@ class DriverBase {
   // and requires that the dispatcher allow sync calls.
   zx::result<OwnedChildNode> AddOwnedChild(std::string_view node_name,
                                            fuchsia_driver_framework::DevfsAddArgs& devfs_args);
-
-#if FUCHSIA_API_LEVEL_AT_LEAST(HEAD)
-  // Take the `fuchsia.power.broker/ElementRunner` channel for this driver's power element. The
-  // caller is expected to run the power element.
-  //
-  // Returns std::nullopt if the driver did not specify `suspend_enabled` in its manifest's program
-  // section, this is not a suspend enabled platform, or the channel was not provided to the driver
-  // host.
-  std::optional<fidl::ServerEnd<fuchsia_power_broker::ElementRunner>> take_power_element_runner();
-
-  // Take the `fuchsia.power.broker/Lessor` channel. This allows the caller to lease the power
-  // element.
-  //
-  // Returns std::nullopt if the driver did not specify `suspend_enabled` in its manifest's program
-  // section, this is not a suspend enabled platform, or the channel was not provided to the driver
-  // host.
-  std::optional<fidl::ClientEnd<fuchsia_power_broker::Lessor>> take_power_element_lessor();
-
-  // Returns a copy of the power element token for the driver's power element. This can be called
-  // repeatedly.
-  //
-  // Returns std::nullopt if the driver did not specify `suspend_enabled` in its manifest's program
-  // section, this is not a suspend enabled platform, or the token was not provided by the driver
-  // host.
-  std::optional<fuchsia_power_broker::DependencyToken> power_element_token();
-#endif
 
   // Creates a child node with devfs support and the given offers and properties on the node that
   // the driver is bound to. The driver framework will try to match and bind a driver to this child.
