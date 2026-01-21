@@ -17,7 +17,7 @@
     },
     capabilities: [
         {
-            service: [ "fuchsia.hardware.trippoint.TripPointService" ],
+            service: [ "fuchsia.hardware.temperature.Service" ],
         },
     ],
     use: [
@@ -26,7 +26,7 @@
     ],
     expose: [
         {
-            service: [ "fuchsia.hardware.trippoint.TripPointService" ],
+            service: [ "fuchsia.hardware.temperature.Service" ],
             from: "self",
         },
     ],

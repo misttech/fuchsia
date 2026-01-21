@@ -5,6 +5,7 @@
 #ifndef SRC_POWER_TESTING_FAKE_TRIPPOINT_TRIPPOINT_DRIVER_H_
 #define SRC_POWER_TESTING_FAKE_TRIPPOINT_TRIPPOINT_DRIVER_H_
 
+#include <fidl/fuchsia.hardware.temperature/cpp/fidl.h>
 #include <fidl/fuchsia.hardware.trippoint/cpp/fidl.h>
 #include <fidl/test.trippoint/cpp/fidl.h>
 #include <lib/driver/component/cpp/driver_base.h>
@@ -13,6 +14,7 @@
 namespace fake_trippoint {
 
 class TrippointDriver : public fdf::DriverBase,
+                        public fidl::WireServer<fuchsia_hardware_temperature::Device>,
                         public fidl::WireServer<fuchsia_hardware_trippoint::TripPoint>,
                         public fidl::WireServer<test_trippoint::Control> {
  public:
@@ -39,6 +41,7 @@ class TrippointDriver : public fdf::DriverBase,
       fidl::UnknownMethodCompleter::Sync& completer) override;
 
  private:
+  fidl::ServerBindingGroup<fuchsia_hardware_temperature::Device> temperature_bindings_;
   fidl::ServerBindingGroup<fuchsia_hardware_trippoint::TripPoint> trippoint_bindings_;
   fidl::ServerBindingGroup<test_trippoint::Control> control_bindings_;
 

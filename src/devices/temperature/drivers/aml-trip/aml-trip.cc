@@ -95,15 +95,18 @@ zx::result<> AmlTrip::Start() {
     device_->SetRebootTemperatureCelsius(*critical_temperature);
   }
 
-  auto result = outgoing()->AddService<fuchsia_hardware_trippoint::TripPointService>(
-      fuchsia_hardware_trippoint::TripPointService::InstanceHandler({
+  auto result = outgoing()->AddService<fuchsia_hardware_temperature::Service>(
+      fuchsia_hardware_temperature::Service::InstanceHandler({
+          .device = temperature_bindings_.CreateHandler(
+              device_.get(), fdf::Dispatcher::GetCurrent()->async_dispatcher(),
+              fidl::kIgnoreBindingClosure),
           .trippoint = trippoint_bindings_.CreateHandler(
               device_.get(), fdf::Dispatcher::GetCurrent()->async_dispatcher(),
               fidl::kIgnoreBindingClosure),
       }),
       kChildNodeName);
   if (result.is_error()) {
-    FDF_LOG(ERROR, "Failed to add Device service %s", result.status_string());
+    FDF_LOG(ERROR, "Failed to add service %s", result.status_string());
     return result.take_error();
   }
 

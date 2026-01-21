@@ -5,11 +5,8 @@
 #ifndef SRC_DEVICES_TEMPERATURE_DRIVERS_AML_TRIP_AML_TRIP_DEVICE_H_
 #define SRC_DEVICES_TEMPERATURE_DRIVERS_AML_TRIP_AML_TRIP_DEVICE_H_
 
-#include <fidl/fuchsia.hardware.trippoint/cpp/common_types.h>
+#include <fidl/fuchsia.hardware.temperature/cpp/wire.h>
 #include <fidl/fuchsia.hardware.trippoint/cpp/driver/wire.h>
-#include <fidl/fuchsia.hardware.trippoint/cpp/markers.h>
-#include <fidl/fuchsia.hardware.trippoint/cpp/wire.h>
-#include <fidl/fuchsia.hardware.trippoint/cpp/wire_types.h>
 #include <lib/async/cpp/irq.h>
 #include <lib/async/dispatcher.h>
 #include <lib/driver/mmio/cpp/mmio-buffer.h>
@@ -33,7 +30,8 @@ typedef struct configured_trip_point {
   TemperatureCelsius temperature;
 } configured_trip_point_t;
 
-class AmlTripDevice : public fidl::WireServer<fuchsia_hardware_trippoint::TripPoint> {
+class AmlTripDevice : public fidl::WireServer<fuchsia_hardware_trippoint::TripPoint>,
+                      public fidl::WireServer<fuchsia_hardware_temperature::Device> {
  public:
   AmlTripDevice(async_dispatcher_t* dispatcher, uint32_t trim, std::string name,
                 fdf::MmioBuffer sensor_mmio, zx::interrupt irq)

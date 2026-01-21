@@ -9,7 +9,10 @@ fidl("fuchsia.hardware.temperature") {
   stable = true
   sdk_area = "Drivers"
   sources = [ "temperature.fidl" ]
-  public_deps = [ "//zircon/vdso/zx" ]
+  public_deps = [
+    "//sdk/fidl/fuchsia.hardware.trippoint",
+    "//zircon/vdso/zx",
+  ]
 
   enable_hlcpp = true
 }

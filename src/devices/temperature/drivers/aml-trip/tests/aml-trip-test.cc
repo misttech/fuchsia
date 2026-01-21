@@ -120,17 +120,24 @@ class AmlTripTest : public ::testing::Test {
   void SetUp() override {
     driver_test_.RunInEnvironmentTypeContext([](auto& env) { env.Init(std::string{kTestName}); });
     ASSERT_OK(driver_test_.StartDriver());
-    zx::result client =
-        driver_test_.Connect<fuchsia_hardware_trippoint::TripPointService::Trippoint>(
-            AmlTrip::kChildNodeName);
-    ASSERT_OK(client);
-    client_.Bind(std::move(client.value()));
   }
 
   void TearDown() override { ASSERT_OK(driver_test_.StopDriver()); }
 
  protected:
-  fidl::WireSyncClient<fuchsia_hardware_trippoint::TripPoint>& client() { return client_; }
+  fidl::ClientEnd<fuchsia_hardware_trippoint::TripPoint> trippoint_client() {
+    zx::result client = driver_test_.Connect<fuchsia_hardware_temperature::Service::Trippoint>(
+        AmlTrip::kChildNodeName);
+    EXPECT_TRUE(client.is_ok());
+    return std::move(client.value());
+  }
+
+  fidl::ClientEnd<fuchsia_hardware_temperature::Device> temperature_client() {
+    zx::result client = driver_test_.Connect<fuchsia_hardware_temperature::Service::Device>(
+        AmlTrip::kChildNodeName);
+    EXPECT_TRUE(client.is_ok());
+    return std::move(client.value());
+  }
 
   void TriggerIrq() {
     driver_test_.RunInEnvironmentTypeContext(
@@ -144,11 +151,10 @@ class AmlTripTest : public ::testing::Test {
 
  private:
   fdf_testing::BackgroundDriverTest<FixtureConfig> driver_test_;
-  fidl::WireSyncClient<fuchsia_hardware_trippoint::TripPoint> client_;
 };
 
 TEST_F(AmlTripTest, TestReadTemperature) {
-  auto result = client()->GetTemperatureCelsius();
+  auto result = fidl::WireCall(temperature_client())->GetTemperatureCelsius();
 
   ASSERT_TRUE(result.ok());
 
@@ -158,7 +164,7 @@ TEST_F(AmlTripTest, TestReadTemperature) {
 }
 
 TEST_F(AmlTripTest, TestGetSensorName) {
-  auto result = client()->GetSensorName();
+  auto result = fidl::WireCall(temperature_client())->GetSensorName();
 
   ASSERT_TRUE(result.ok());
 
@@ -168,7 +174,7 @@ TEST_F(AmlTripTest, TestGetSensorName) {
 }
 
 TEST_F(AmlTripTest, TestGetTripPointDescriptors) {
-  auto result = client()->GetTripPointDescriptors();
+  auto result = fidl::WireCall(trippoint_client())->GetTripPointDescriptors();
 
   ASSERT_TRUE(result.ok());
 
@@ -198,13 +204,14 @@ TEST_F(AmlTripTest, TestSetTripBadIndex) {
   auto descs_view =
       fidl::VectorView<fuchsia_hardware_trippoint::wire::TripPointDescriptor>::FromExternal(descs);
 
-  auto set_result = client()->SetTripPoints(descs_view);
+  auto set_result = fidl::WireCall(trippoint_client())->SetTripPoints(descs_view);
   EXPECT_TRUE(set_result.ok());
   EXPECT_TRUE(set_result->is_error());
 }
 
 TEST_F(AmlTripTest, TestSetTripBadType) {
-  auto result = client()->GetTripPointDescriptors();
+  fidl::WireSyncClient<fuchsia_hardware_trippoint::TripPoint> client(trippoint_client());
+  auto result = client->GetTripPointDescriptors();
 
   ASSERT_TRUE(result.ok());
 
@@ -233,13 +240,14 @@ TEST_F(AmlTripTest, TestSetTripBadType) {
   auto set_desc_view =
       fidl::VectorView<fuchsia_hardware_trippoint::wire::TripPointDescriptor>::FromExternal(descs);
 
-  auto set_result = client()->SetTripPoints(set_desc_view);
+  auto set_result = client->SetTripPoints(set_desc_view);
   EXPECT_TRUE(set_result.ok());
   EXPECT_TRUE(set_result->is_error());
 }
 
 TEST_F(AmlTripTest, TestSetCriticalTempInfinity) {
-  auto result = client()->GetTripPointDescriptors();
+  fidl::WireSyncClient<fuchsia_hardware_trippoint::TripPoint> client(trippoint_client());
+  auto result = client->GetTripPointDescriptors();
 
   ASSERT_TRUE(result.ok());
 
@@ -267,13 +275,14 @@ TEST_F(AmlTripTest, TestSetCriticalTempInfinity) {
   auto set_desc_view =
       fidl::VectorView<fuchsia_hardware_trippoint::wire::TripPointDescriptor>::FromExternal(descs);
 
-  auto set_result = client()->SetTripPoints(set_desc_view);
+  auto set_result = client->SetTripPoints(set_desc_view);
   EXPECT_TRUE(set_result.ok());
   EXPECT_TRUE(set_result->is_error());
 }
 
 TEST_F(AmlTripTest, TestTypeConfigMismatch) {
-  auto result = client()->GetTripPointDescriptors();
+  fidl::WireSyncClient<fuchsia_hardware_trippoint::TripPoint> client(trippoint_client());
+  auto result = client->GetTripPointDescriptors();
 
   ASSERT_TRUE(result.ok());
 
@@ -302,13 +311,14 @@ TEST_F(AmlTripTest, TestTypeConfigMismatch) {
   auto set_desc_view =
       fidl::VectorView<fuchsia_hardware_trippoint::wire::TripPointDescriptor>::FromExternal(descs);
 
-  auto set_result = client()->SetTripPoints(set_desc_view);
+  auto set_result = client->SetTripPoints(set_desc_view);
   EXPECT_TRUE(set_result.ok());
   EXPECT_TRUE(set_result->is_error());
 }
 
 TEST_F(AmlTripTest, TestTripPointSuccess) {
-  auto result = client()->GetTripPointDescriptors();
+  fidl::WireSyncClient<fuchsia_hardware_trippoint::TripPoint> client(trippoint_client());
+  auto result = client->GetTripPointDescriptors();
 
   ASSERT_TRUE(result.ok());
 
@@ -334,11 +344,11 @@ TEST_F(AmlTripTest, TestTripPointSuccess) {
   auto set_desc_view =
       fidl::VectorView<fuchsia_hardware_trippoint::wire::TripPointDescriptor>::FromExternal(descs);
 
-  auto set_result = client()->SetTripPoints(set_desc_view);
+  auto set_result = client->SetTripPoints(set_desc_view);
   EXPECT_TRUE(set_result.ok());
   EXPECT_TRUE(set_result->is_ok());
 
-  auto get_result = client()->GetTripPointDescriptors();
+  auto get_result = client->GetTripPointDescriptors();
   ASSERT_TRUE(get_result.ok());
 
   // Trigger an interrupt and set the registers to make it look like an
@@ -347,14 +357,15 @@ TEST_F(AmlTripTest, TestTripPointSuccess) {
 
   TriggerIrq();
 
-  auto wait_result = client()->WaitForAnyTripPoint();
+  auto wait_result = client->WaitForAnyTripPoint();
 
   EXPECT_TRUE(wait_result.ok());
   EXPECT_TRUE(wait_result->is_ok());
 }
 
 TEST_F(AmlTripTest, TestTwoTripPointSuccess) {
-  auto result = client()->GetTripPointDescriptors();
+  fidl::WireSyncClient<fuchsia_hardware_trippoint::TripPoint> client(trippoint_client());
+  auto result = client->GetTripPointDescriptors();
 
   ASSERT_TRUE(result.ok());
 
@@ -394,7 +405,7 @@ TEST_F(AmlTripTest, TestTwoTripPointSuccess) {
   auto set_desc_view =
       fidl::VectorView<fuchsia_hardware_trippoint::wire::TripPointDescriptor>::FromExternal(descs);
 
-  auto set_result = client()->SetTripPoints(set_desc_view);
+  auto set_result = client->SetTripPoints(set_desc_view);
   EXPECT_TRUE(set_result.ok());
   EXPECT_TRUE(set_result->is_ok());
 
@@ -405,17 +416,17 @@ TEST_F(AmlTripTest, TestTwoTripPointSuccess) {
 
   TriggerIrq();
 
-  auto first_result = client()->WaitForAnyTripPoint();
+  auto first_result = client->WaitForAnyTripPoint();
   EXPECT_TRUE(first_result.ok());
   EXPECT_TRUE(first_result->is_ok());
 
-  auto second_result = client()->WaitForAnyTripPoint();
+  auto second_result = client->WaitForAnyTripPoint();
   EXPECT_TRUE(second_result.ok());
   EXPECT_TRUE(second_result->is_ok());
 }
 
 TEST_F(AmlTripTest, TestWaitNoConfigured) {
-  auto wait_result = client()->WaitForAnyTripPoint();
+  auto wait_result = fidl::WireCall(trippoint_client())->WaitForAnyTripPoint();
 
   // Waiting without configuring any trips is an error.
   EXPECT_TRUE(wait_result.ok());
@@ -423,7 +434,8 @@ TEST_F(AmlTripTest, TestWaitNoConfigured) {
 }
 
 TEST_F(AmlTripTest, TestClearTripPointAfterFire) {
-  auto result = client()->GetTripPointDescriptors();
+  fidl::WireSyncClient<fuchsia_hardware_trippoint::TripPoint> client(trippoint_client());
+  auto result = client->GetTripPointDescriptors();
 
   ASSERT_TRUE(result.ok());
 
@@ -449,7 +461,7 @@ TEST_F(AmlTripTest, TestClearTripPointAfterFire) {
   auto set_desc_view =
       fidl::VectorView<fuchsia_hardware_trippoint::wire::TripPointDescriptor>::FromExternal(descs);
 
-  auto set_result = client()->SetTripPoints(set_desc_view);
+  auto set_result = client->SetTripPoints(set_desc_view);
   EXPECT_TRUE(set_result.ok());
   EXPECT_TRUE(set_result->is_ok());
 
@@ -463,11 +475,11 @@ TEST_F(AmlTripTest, TestClearTripPointAfterFire) {
   fuchsia_hardware_trippoint::wire::ClearedTripPoint cleared;
   descs.at(0).configuration =
       fuchsia_hardware_trippoint::wire::TripPointValue::WithClearedTripPoint(cleared);
-  auto set_clear_result = client()->SetTripPoints(set_desc_view);
+  auto set_clear_result = client->SetTripPoints(set_desc_view);
   EXPECT_TRUE(set_clear_result.ok());
   EXPECT_TRUE(set_clear_result->is_ok());
 
-  auto wait_result = client()->WaitForAnyTripPoint();
+  auto wait_result = client->WaitForAnyTripPoint();
 
   EXPECT_TRUE(wait_result.ok());
   EXPECT_FALSE(wait_result->is_ok());  // No trip points should be configured.

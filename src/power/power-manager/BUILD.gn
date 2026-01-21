@@ -27,7 +27,6 @@ power_manager_deps = [
   "//sdk/fidl/fuchsia.feedback:fuchsia.feedback_rust",
   "//sdk/fidl/fuchsia.hardware.power.statecontrol:fuchsia.hardware.power.statecontrol_rust",
   "//sdk/fidl/fuchsia.hardware.temperature:fuchsia.hardware.temperature_rust",
-  "//sdk/fidl/fuchsia.hardware.trippoint:fuchsia.hardware.trippoint_rust",
   "//sdk/fidl/fuchsia.metrics:fuchsia.metrics_rust",
   "//sdk/fidl/fuchsia.power.clientlevel:fuchsia.power.clientlevel_rust",
   "//sdk/fidl/fuchsia.power.manager.debug:fuchsia.power.manager.debug_rust",

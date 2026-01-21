@@ -19,16 +19,17 @@ TrippointDriver::TrippointDriver(fdf::DriverStartArgs start_args,
 
 zx::result<> TrippointDriver::Start() {
   fdf::info("Starting fake trippoint driver");
-  fuchsia_hardware_trippoint::TripPointService::InstanceHandler trippoint_handler({
+  fuchsia_hardware_temperature::Service::InstanceHandler temperature_handler({
+      .device =
+          temperature_bindings_.CreateHandler(this, dispatcher(), fidl::kIgnoreBindingClosure),
       .trippoint =
           trippoint_bindings_.CreateHandler(this, dispatcher(), fidl::kIgnoreBindingClosure),
   });
-  zx::result<> trippoint_result =
-      outgoing()->AddService<fuchsia_hardware_trippoint::TripPointService>(
-          std::move(trippoint_handler));
-  if (trippoint_result.is_error()) {
-    fdf::error("Failed to add service: %s", trippoint_result.status_string());
-    return trippoint_result.take_error();
+  zx::result<> temperature_result =
+      outgoing()->AddService<fuchsia_hardware_temperature::Service>(std::move(temperature_handler));
+  if (temperature_result.is_error()) {
+    fdf::error("Failed to add service: %s", temperature_result.status_string());
+    return temperature_result.take_error();
   }
 
   test_trippoint::Service::InstanceHandler control_handler({

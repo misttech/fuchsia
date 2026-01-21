@@ -4,7 +4,6 @@
 @available(added=HEAD)
 library fuchsia.hardware.trippoint;
 
-using fuchsia.hardware.temperature;
 using zx;
 
 @serializable
@@ -77,8 +76,6 @@ type TripPointDescriptor = struct {
 /// If a second client attempts to configure trip points while a client is
 /// already connected, the server should return ZX_ERR_ALREADY_BOUND to indicate
 /// that it is busy.
-/// The server _may_ allow multiple clients to access the
-//// fuchsia.hardware.temperature protocol.
 open protocol TripPoint {
     /// Returns N descriptors. Each descriptor describes one trip point
     /// supported by the hardware.
@@ -109,8 +106,6 @@ open protocol TripPoint {
     flexible WaitForAnyTripPoint() -> (struct {
         result TripPointResult;
     }) error zx.Status;
-
-    compose fuchsia.hardware.temperature.Device;
 };
 
 service TripPointService {

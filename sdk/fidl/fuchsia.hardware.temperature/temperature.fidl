@@ -4,6 +4,7 @@
 @available(added=11)
 library fuchsia.hardware.temperature;
 
+using fuchsia.hardware.trippoint;
 using zx;
 
 @available(added=14)
@@ -28,4 +29,7 @@ closed protocol Device {
 // Added to allow service connection to replace devfs
 service Service {
     device client_end:Device;
+
+    @available(added=HEAD)
+    trippoint client_end:fuchsia.hardware.trippoint.TripPoint;
 };

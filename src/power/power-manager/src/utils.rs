@@ -3,16 +3,12 @@
 // found in the LICENSE file.
 
 use anyhow::Error;
-use fidl::endpoints::Proxy;
+use fidl_fuchsia_hardware_temperature as ftemperature;
 use fuchsia_async::{DurationExt, TimeoutExt};
 use fuchsia_component::client as fclient;
 use futures::stream::FuturesUnordered;
 use futures::{StreamExt, TryFutureExt, TryStreamExt};
 use zx::MonotonicDuration;
-use {
-    fidl_fuchsia_hardware_temperature as ftemperature,
-    fidl_fuchsia_hardware_trippoint as ftrippoint,
-};
 
 /// Logs an error message if the provided `cond` evaluates to false. Also passes the same expression
 /// and message into `debug_assert!`, which will panic if debug assertions are enabled.
@@ -139,7 +135,7 @@ pub async fn get_temperature_driver_proxy(
             Err(err) => debug_messages.push(err),
         };
     }
-    match get_temperature_driver_proxy_from_trippoint_svc(sensor_name).await {
+    match get_temperature_driver_proxy_from_svc(sensor_name).await {
         Ok(proxy) => return Ok(proxy),
         // It is ok that a driver directory listed above doesn't exist or timeout waiting for
         // `sensor_name` to show up. Cache the error.
@@ -207,10 +203,10 @@ async fn get_temperature_driver_proxy_from_dir(
     }
 }
 
-async fn get_temperature_driver_proxy_from_trippoint_svc(
+async fn get_temperature_driver_proxy_from_svc(
     required_sensor_name: &str,
 ) -> Result<ftemperature::DeviceProxy, Error> {
-    let mut watcher = fclient::Service::open(ftrippoint::TripPointServiceMarker)?.watch().await?;
+    let mut watcher = fclient::Service::open(ftemperature::ServiceMarker)?.watch().await?;
 
     loop {
         let next = watcher
@@ -222,19 +218,16 @@ async fn get_temperature_driver_proxy_from_trippoint_svc(
             .await?;
 
         if let Some(instance) = next {
-            let proxy: ftemperature::DeviceProxy = ftemperature::DeviceProxy::new(
-                instance.connect_to_trippoint()?.into_channel().map_err(|e| {
-                    anyhow::anyhow!(
-                        "Mapping trippoint proxy to temperature proxy failed with err: {:?}",
-                        e
-                    )
-                })?,
-            );
+            let proxy: ftemperature::DeviceProxy = instance.connect_to_device()?;
             let sensor_name = proxy
                 .get_sensor_name()
                 .await
                 .map_err(|e| anyhow::anyhow!("GetSensorName failed with err: {:?}", e))?;
-            log::debug!("Trippoint driver detected: {} {}", instance.instance_name(), sensor_name);
+            log::debug!(
+                "Temperature driver detected: {} {}",
+                instance.instance_name(),
+                sensor_name
+            );
 
             if required_sensor_name == sensor_name {
                 return Ok(proxy);
