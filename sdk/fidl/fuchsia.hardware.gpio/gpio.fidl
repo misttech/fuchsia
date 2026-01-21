@@ -58,7 +58,8 @@ open protocol Gpio {
 
     /// Gets an interrupt object pertaining to a particular GPIO pin. Only one interrupt may
     /// be outstanding per pin, and it must be released by calling `ReleaseInterrupt()` before the
-    /// next call to `GetInterrupt()` will succeed.
+    /// next call to `GetInterrupt()` will succeed. The interrupt is unmasked prior to being
+    /// returned to the caller.
     ///
     /// Returns `ZX_ERR_ALREADY_EXISTS` if `GetInterrupt()` has already been called without a
     /// subsequent call to `ReleaseInterrupt()`, `ZX_ERR_INVALID_ARGS` if `options` is invalid, or
@@ -81,7 +82,7 @@ open protocol Gpio {
 
     /// Releases the interrupt, allowing `GetInterrupt()` to be called again or by another
     /// client. A client's interrupt is automatically released when it disconnects from the
-    /// server.
+    /// server. The interrupt is masked upon release.
     ///
     /// Returns `ZX_ERR_NOT_FOUND` if the interrupt has already been released, or if
     /// `GetInterrupt()` has not been called. Returns `ZX_ERR_ACCESS_DENIED` if another client has

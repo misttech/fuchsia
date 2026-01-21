@@ -38,6 +38,8 @@ open protocol PinImpl {
     }) -> () error zx.Status;
 
     /// The PinImpl server should create a new interrupt object for each call to `GetInterrupt()`.
+    /// The interrupt corresponding to `pin` should be unmasked prior to being returned to the
+    /// caller.
     strict GetInterrupt(struct {
         pin uint32;
         options fuchsia.hardware.gpio.InterruptOptions;
@@ -45,6 +47,7 @@ open protocol PinImpl {
         interrupt zx.Handle:INTERRUPT;
     }) error zx.Status;
 
+    /// The PinImpl server should mask the interrupt corresponding to `pin`.
     strict ReleaseInterrupt(struct {
         pin uint32;
     }) -> () error zx.Status;
