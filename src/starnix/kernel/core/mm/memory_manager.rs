@@ -14,11 +14,12 @@ use crate::mm::{
 };
 use crate::security;
 use crate::signals::{SignalDetail, SignalInfo};
-use crate::task::{CurrentTask, ExceptionResult, PageFaultExceptionReport, Task};
+use crate::task::{CurrentTask, ExceptionResult, PageFaultExceptionReport, Task, get_mm_weak};
 use crate::vfs::aio::AioContext;
 use crate::vfs::pseudo::dynamic_file::{
     DynamicFile, DynamicFileBuf, DynamicFileSource, SequenceFileSource,
 };
+use crate::vfs::pseudo::simple_file::SimpleFileNode;
 use crate::vfs::{FsNodeOps, FsString, NamespaceNode};
 use anyhow::{Error, anyhow};
 use bitflags::bitflags;
@@ -4091,10 +4092,17 @@ pub struct MemoryStats {
 
 /// Implements `/proc/self/maps`.
 #[derive(Clone)]
-pub struct ProcMapsFile(WeakRef<Task>);
+pub struct ProcMapsFile {
+    mm: Weak<MemoryManager>,
+    task: WeakRef<Task>,
+}
 impl ProcMapsFile {
     pub fn new_node(task: WeakRef<Task>) -> impl FsNodeOps {
-        DynamicFile::new_node(Self(task))
+        SimpleFileNode::new(move || {
+            let task = task.clone();
+            let mm = get_mm_weak(&task).unwrap_or_default();
+            Ok(DynamicFile::new(Self { mm, task }))
+        })
     }
 }
 
@@ -4107,8 +4115,9 @@ impl SequenceFileSource for ProcMapsFile {
         cursor: UserAddress,
         sink: &mut DynamicFileBuf,
     ) -> Result<Option<UserAddress>, Errno> {
-        let task = Task::from_weak(&self.0)?;
-        let Ok(mm) = task.mm() else {
+        let task = Task::from_weak(&self.task)?;
+        // /proc/<pid>/maps is empty for kthreads and tasks whose memory manager has changed.
+        let Some(mm) = self.mm.upgrade() else {
             return Ok(None);
         };
         let state = mm.state.read();
@@ -4121,19 +4130,26 @@ impl SequenceFileSource for ProcMapsFile {
 }
 
 #[derive(Clone)]
-pub struct ProcSmapsFile(WeakRef<Task>);
+pub struct ProcSmapsFile {
+    mm: Weak<MemoryManager>,
+    task: WeakRef<Task>,
+}
 impl ProcSmapsFile {
     pub fn new_node(task: WeakRef<Task>) -> impl FsNodeOps {
-        DynamicFile::new_node(Self(task))
+        SimpleFileNode::new(move || {
+            let task = task.clone();
+            let mm = get_mm_weak(&task).unwrap_or_default();
+            Ok(DynamicFile::new(Self { mm, task }))
+        })
     }
 }
 
 impl DynamicFileSource for ProcSmapsFile {
     fn generate(&self, current_task: &CurrentTask, sink: &mut DynamicFileBuf) -> Result<(), Errno> {
         let page_size_kb = *PAGE_SIZE / 1024;
-        let task = Task::from_weak(&self.0)?;
-        // /proc/<pid>/smaps is empty for kthreads
-        let Ok(mm) = task.mm() else {
+        let task = Task::from_weak(&self.task)?;
+        // /proc/<pid>/smaps is empty for kthreads and tasks whose memory manager has changed.
+        let Some(mm) = self.mm.upgrade() else {
             return Ok(());
         };
         let state = mm.state.read();

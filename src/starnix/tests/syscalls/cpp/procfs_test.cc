@@ -23,6 +23,7 @@
 
 #include "src/lib/files/directory.h"
 #include "src/lib/files/file.h"
+#include "src/lib/files/path.h"
 #include "src/lib/fxl/strings/string_printf.h"
 #include "src/starnix/tests/syscalls/cpp/capabilities_helper.h"
 #include "src/starnix/tests/syscalls/cpp/proc_test_base.h"
@@ -40,6 +41,18 @@ void AssertFsuidInProcfsStatus(uid_t fsuid) {
   ASSERT_TRUE(files::ReadFileToString("/proc/self/status", &status_string));
   ASSERT_THAT(status_string,
               testing::ContainsRegex(std::format("Uid:\t[0-9]+\t[0-9]+\t[0-9]+\t{}\n", fsuid)));
+}
+
+std::string GetExecChildBinaryPath() {
+  std::string test_binary = "data/tests/deps/procfs_test_exec_child";
+  if (!files::IsFile(test_binary)) {
+    // We're running on host
+    char self_path[PATH_MAX];
+    realpath("/proc/self/exe", self_path);
+
+    test_binary = files::JoinPath(files::GetDirectoryName(self_path), "procfs_test_exec_child");
+  }
+  return test_binary;
 }
 
 class ProcUptimeTest : public ProcTestBase {
@@ -897,5 +910,72 @@ TEST_F(ProcSelfFdTest, PerfEventFdName) {
 
   EXPECT_EQ(read_fd_link(perf_event_fd.get()), "anon_inode:[perf_event]");
 }
+
+class ProcMmTest : public ProcTestBase, public ::testing::WithParamInterface<const char*> {};
+
+TEST_P(ProcMmTest, ReadBeforeAfterExec) {
+  if (!test_helper::HasSysAdmin()) {
+    GTEST_SKIP() << "Not running with sysadmin capabilities, skipping.";
+  }
+
+  test_helper::ForkHelper fork_helper;
+  test_helper::ScopedPipe child_stdout;
+  test_helper::ScopedPipe child_stdin;
+  test_helper::Rendezvous fork_ready = test_helper::MakeRendezvous();
+  test_helper::Rendezvous exec_ready = test_helper::MakeRendezvous();
+  pid_t child_pid = fork_helper.RunInForkedProcess(
+      [child_stdout = &child_stdout.WriteSide(), child_stdin = &child_stdin.ReadSide(),
+       fork_ready = std::move(fork_ready.poker),
+       exec_ready = std::move(exec_ready.holder)]() mutable {
+        // Inform the test that the fork succeeded.
+        fork_ready.poke();
+
+        // Use the pipes for stdin & stdout. Stderr remains unchanged, to allow error output.
+        SAFE_SYSCALL(dup2(child_stdin->get(), STDIN_FILENO));
+        child_stdin->reset();
+        SAFE_SYSCALL(dup2(child_stdout->get(), STDOUT_FILENO));
+        child_stdout->reset();
+
+        // Wait for the test to indicate that it's ready for the child to exec.
+        exec_ready.hold();
+
+        // exec the test binary.
+        std::string binary_path = GetExecChildBinaryPath();
+        char* const argv[] = {const_cast<char*>(binary_path.c_str()), nullptr};
+        SAFE_SYSCALL(execve(binary_path.c_str(), argv, nullptr));
+        _exit(EXIT_FAILURE);
+      });
+
+  // Wait for the child to indicate that it was forked.
+  fork_ready.holder.hold();
+
+  // Check that file is not empty before exec.
+  std::string path = fxl::StringPrintf("/proc/%d/%s", child_pid, GetParam());
+  std::string initial_contents;
+  EXPECT_TRUE(files::ReadFileToString(path, &initial_contents));
+  EXPECT_THAT(initial_contents.size(), testing::Gt(0));
+
+  // Open the file, keeping it open until after exec.
+  fbl::unique_fd fd(SAFE_SYSCALL(open(path.c_str(), O_RDONLY)));
+  ASSERT_TRUE(fd.is_valid());
+
+  // Trigger the exec and wait for the child to indicate that it's ready.
+  exec_ready.poker.poke();
+  test_helper::Rendezvous child_ready = test_helper::MakeRendezvous(std::move(child_stdout));
+  child_ready.holder.hold();
+
+  // Check that the existing file descriptor is empty.
+  char buf[1];
+  EXPECT_EQ(read(fd.get(), buf, sizeof buf), 0);
+  fd.reset();
+
+  // Let the child exit.
+  test_helper::Rendezvous child_exit = test_helper::MakeRendezvous(std::move(child_stdin));
+  child_exit.poker.poke();
+
+  ASSERT_TRUE(fork_helper.WaitForChildren());
+}
+
+INSTANTIATE_TEST_SUITE_P(MmDependentFiles, ProcMmTest, ::testing::Values("maps", "smaps"));
 
 }  // namespace

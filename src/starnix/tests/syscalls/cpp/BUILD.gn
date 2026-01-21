@@ -32,6 +32,7 @@ syscall_tests_executables = [
   # go/keep-sorted start
 
   ":extended_pstate_initial_state_child",
+  ":procfs_test_exec_child",
   ":ptrace_test_exec_child",
   ":signal_handling_test_exec_child",
   ":suid_test_exec_child",
@@ -389,6 +390,19 @@ if (is_linux) {
       "//build/config/linux:default-pie",
       "//build/config/linux:implicit-host-libs",
     ]
+  }
+
+  executable("procfs_test_exec_child") {
+    testonly = true
+    emit_tool_path = false
+    sources = [ "procfs_test_exec_child.cc" ]
+
+    # TODO(https://fxbug.dev/297293167) enable ASan instrumentation for Linux binaries in Starnix
+    exclude_toolchain_tags = [
+      "asan",
+      "coverage",
+    ]
+    deps = [ ":test_utils" ]
   }
 
   executable("ptrace_test_exec_child") {

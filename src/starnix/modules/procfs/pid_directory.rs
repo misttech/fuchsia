@@ -9,7 +9,7 @@ use starnix_core::mm::{
 };
 use starnix_core::security;
 use starnix_core::task::{
-    CurrentTask, Task, TaskPersistentInfo, TaskStateCode, ThreadGroup, ThreadGroupKey,
+    CurrentTask, Task, TaskPersistentInfo, TaskStateCode, ThreadGroup, ThreadGroupKey, get_mm_weak,
     path_from_root,
 };
 use starnix_core::vfs::buffers::{InputBuffer, OutputBuffer};
@@ -728,10 +728,12 @@ fn fill_buf_from_addr_range(
 
 /// `CmdlineFile` implements `proc/<pid>/cmdline` file.
 #[derive(Clone)]
-pub struct CmdlineFile(WeakRef<Task>);
+pub struct CmdlineFile {
+    task: WeakRef<Task>,
+}
 impl CmdlineFile {
     pub fn new_node(task: WeakRef<Task>) -> impl FsNodeOps {
-        DynamicFile::new_node(Self(task))
+        DynamicFile::new_node(Self { task })
     }
 }
 impl DynamicFileSource for CmdlineFile {
@@ -741,12 +743,10 @@ impl DynamicFileSource for CmdlineFile {
         sink: &mut DynamicFileBuf,
     ) -> Result<(), Errno> {
         // Opened cmdline file should still be functional once the task is a zombie.
-        let task = if let Some(task) = self.0.upgrade() {
-            task
-        } else {
+        let Some(task) = self.task.upgrade() else {
             return Ok(());
         };
-        // /proc/<pid>/cmdline doesn't contain anything for kthreads
+        // /proc/<pid>/cmdline is empty for kthreads.
         let Ok(mm) = task.mm() else {
             return Ok(());
         };
@@ -760,10 +760,12 @@ impl DynamicFileSource for CmdlineFile {
 
 /// `EnvironFile` implements `proc/<pid>/environ` file.
 #[derive(Clone)]
-pub struct EnvironFile(WeakRef<Task>);
+pub struct EnvironFile {
+    task: WeakRef<Task>,
+}
 impl EnvironFile {
     pub fn new_node(task: WeakRef<Task>) -> impl FsNodeOps {
-        DynamicFile::new_node(Self(task))
+        DynamicFile::new_node(Self { task })
     }
 }
 impl DynamicFileSource for EnvironFile {
@@ -772,8 +774,8 @@ impl DynamicFileSource for EnvironFile {
         _current_task: &CurrentTask,
         sink: &mut DynamicFileBuf,
     ) -> Result<(), Errno> {
-        let task = Task::from_weak(&self.0)?;
-        // /proc/<pid>/environ doesn't contain anything for kthreads
+        let task = Task::from_weak(&self.task)?;
+        // /proc/<pid>/environ is empty for kthreads.
         let Ok(mm) = task.mm() else {
             return Ok(());
         };
@@ -787,10 +789,12 @@ impl DynamicFileSource for EnvironFile {
 
 /// `AuxvFile` implements `proc/<pid>/auxv` file.
 #[derive(Clone)]
-pub struct AuxvFile(WeakRef<Task>);
+pub struct AuxvFile {
+    task: WeakRef<Task>,
+}
 impl AuxvFile {
     pub fn new_node(task: WeakRef<Task>) -> impl FsNodeOps {
-        DynamicFile::new_node(Self(task))
+        DynamicFile::new_node(Self { task })
     }
 }
 impl DynamicFileSource for AuxvFile {
@@ -799,8 +803,8 @@ impl DynamicFileSource for AuxvFile {
         _current_task: &CurrentTask,
         sink: &mut DynamicFileBuf,
     ) -> Result<(), Errno> {
-        let task = Task::from_weak(&self.0)?;
-        // /proc/<pid>/auxv doesn't contain anything for kthreads
+        let task = Task::from_weak(&self.task)?;
+        // /proc/<pid>/auxv is empty for kthreads.
         let Ok(mm) = task.mm() else {
             return Ok(());
         };
@@ -950,12 +954,7 @@ impl MemFile {
     pub fn new_node(task: WeakRef<Task>) -> impl FsNodeOps {
         SimpleFileNode::new(move || {
             let task = task.clone();
-            let mm = task
-                .upgrade()
-                .and_then(|t| t.mm().ok())
-                .as_ref()
-                .map(Arc::downgrade)
-                .unwrap_or_default();
+            let mm = get_mm_weak(&task).unwrap_or_default();
             Ok(Self { mm, task })
         })
     }
@@ -1179,18 +1178,21 @@ impl DynamicFileSource for StatFile {
 }
 
 #[derive(Clone)]
-pub struct StatmFile(WeakRef<Task>);
+pub struct StatmFile {
+    task: WeakRef<Task>,
+}
 impl StatmFile {
     pub fn new_node(task: WeakRef<Task>) -> impl FsNodeOps {
-        DynamicFile::new_node(Self(task))
+        DynamicFile::new_node(Self { task })
     }
 }
 impl DynamicFileSource for StatmFile {
     fn generate(&self, current_task: &CurrentTask, sink: &mut DynamicFileBuf) -> Result<(), Errno> {
-        let mem_stats = if let Ok(mm) = Task::from_weak(&self.0)?.mm() {
-            mm.get_stats(current_task)
-        } else {
-            Default::default()
+        // /proc/<pid>/statm reports zeroes for kthreads.
+        let task = Task::from_weak(&self.task)?;
+        let mem_stats = match task.mm() {
+            Ok(mm) => mm.get_stats(current_task),
+            Err(_) => Default::default(),
         };
         let page_size = *PAGE_SIZE as usize;
 
