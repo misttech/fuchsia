@@ -4,6 +4,7 @@
 
 #![cfg(test)]
 
+use super::creds_with_fscreate_sid;
 use crate::security::SecurityServer;
 use crate::task::CurrentTask;
 use crate::testing::spawn_kernel_with_selinux_and_run;
@@ -89,22 +90,20 @@ pub(in crate::security) fn create_test_executable(
     let security_server = &current_task.kernel().security_state.state.as_ref().unwrap().server;
     let fscreate_sid = security_server.security_context_to_sid(security_context.into()).unwrap();
 
-    current_task.override_creds(
-        |creds| creds.security_state.lock().fscreate_sid = Some(fscreate_sid),
-        || {
-            current_task
-                .fs()
-                .root()
-                .create_node(
-                    locked,
-                    &current_task,
-                    "executable".into(),
-                    FileMode::IFREG,
-                    DeviceType::NONE,
-                )
-                .expect("create_node(file)")
-        },
-    )
+    let creds = creds_with_fscreate_sid(current_task, fscreate_sid);
+    current_task.override_creds(creds, || {
+        current_task
+            .fs()
+            .root()
+            .create_node(
+                locked,
+                &current_task,
+                "executable".into(),
+                FileMode::IFREG,
+                DeviceType::NONE,
+            )
+            .expect("create_node(file)")
+    })
 }
 
 #[cfg(test)]

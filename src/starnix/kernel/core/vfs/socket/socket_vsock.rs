@@ -163,10 +163,9 @@ impl SocketOps for VsockSocket {
                 _ => return error!(EBADF),
             }
         };
-        let bytes_read = current_task.override_creds(
-            |creds| *creds = FullCredentials::for_kernel(),
-            || file.read(locked, current_task, data),
-        )?;
+        let bytes_read = current_task.override_creds(FullCredentials::for_kernel(), || {
+            file.read(locked, current_task, data)
+        })?;
         Ok(MessageReadInfo {
             bytes_read,
             message_length: bytes_read,
@@ -191,10 +190,9 @@ impl SocketOps for VsockSocket {
                 _ => return error!(EBADF),
             }
         };
-        current_task.override_creds(
-            |creds| *creds = FullCredentials::for_kernel(),
-            || file.write(locked, current_task, data),
-        )
+        current_task.override_creds(FullCredentials::for_kernel(), || {
+            file.write(locked, current_task, data)
+        })
     }
 
     fn wait_async(
@@ -336,10 +334,10 @@ impl VsockSocketInner {
     {
         Ok(match &self.state {
             VsockSocketState::Disconnected => FdEvents::empty(),
-            VsockSocketState::Connected { file, .. } => current_task.override_creds(
-                |creds| *creds = FullCredentials::for_kernel(),
-                || file.query_events(locked, current_task),
-            )?,
+            VsockSocketState::Connected { file, .. } => current_task
+                .override_creds(FullCredentials::for_kernel(), || {
+                    file.query_events(locked, current_task)
+                })?,
             VsockSocketState::Listening(queue) => {
                 if !queue.sockets.is_empty() {
                     FdEvents::POLLIN

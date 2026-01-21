@@ -2114,9 +2114,11 @@ pub fn selinuxfs_check_access(
 
 /// Marks the credentials as being used for an internal operation. All SELinux permission checks
 /// will be skipped on this task.
-pub fn creds_start_internal_operation(creds: &mut FullCredentials) {
+pub fn creds_start_internal_operation(current_task: &CurrentTask) -> FullCredentials {
     track_hook_duration!("security.hooks.creds_start_internal_operation");
+    let creds = current_task.full_current_creds();
     creds.security_state.lock().internal_operation = true;
+    creds
 }
 
 pub mod testing {

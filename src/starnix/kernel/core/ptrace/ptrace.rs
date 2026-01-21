@@ -1432,7 +1432,7 @@ mod tests {
             );
 
             let mut not_tracer = create_task(locked, &kernel, "not-tracer");
-            not_tracer.set_creds(tracer.real_creds());
+            not_tracer.set_creds(tracer.real_creds().clone());
             assert_eq!(
                 ptrace_attach(
                     locked,

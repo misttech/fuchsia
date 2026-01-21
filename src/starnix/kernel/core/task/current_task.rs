@@ -55,7 +55,7 @@ use starnix_uapi::{
     SECCOMP_FILTER_FLAG_TSYNC, SECCOMP_FILTER_FLAG_TSYNC_ESRCH, SI_KERNEL, clone_args, errno,
     error, from_status_like_fdio, pid_t, sock_filter, ucred,
 };
-use std::cell::RefCell;
+use std::cell::{Ref, RefCell};
 use std::collections::VecDeque;
 use std::ffi::CString;
 use std::fmt;
@@ -124,7 +124,7 @@ impl std::ops::Deref for TaskBuilder {
 ///  security state.
 #[derive(Debug, Clone)]
 pub struct FullCredentials {
-    pub creds: Credentials,
+    pub creds: Arc<Credentials>,
     pub security_state: security::TaskState,
 }
 
@@ -152,12 +152,34 @@ pub struct CurrentTask {
 
     pub thread_state: ThreadState<RegisterStorageEnum>,
 
+    /// The current subjective credentials of the task.
     // TODO(https://fxbug.dev/433548348): Avoid interior mutability here by passing a
     // &mut CurrentTask around instead of &CurrentTask.
-    pub overridden_creds: RefCell<Option<FullCredentials>>,
+    pub current_creds: RefCell<CurrentCreds>,
 
     /// Makes CurrentTask neither Sync not Send.
     _local_marker: PhantomData<*mut u8>,
+}
+
+/// Represents the current state of the task's subjective credentials.
+pub enum CurrentCreds {
+    /// The task does not have overridden credentials, the subjective creds are identical to the
+    /// objective creds. Since credentials are often accessed from the current task, we hold a
+    /// reference here that does not necessitate going through the Rcu machinery to read.
+    /// The subjective security state is stored on the Task.
+    Cached(Arc<Credentials>),
+    /// The task has overridden credentials, with the given credentials and security state.
+    // TODO(https://fxbug.dev/433463756): TaskState will soon move into Credentials.
+    Overridden(Arc<Credentials>, security::TaskState),
+}
+
+impl CurrentCreds {
+    fn creds(&self) -> &Arc<Credentials> {
+        match self {
+            CurrentCreds::Cached(creds) => creds,
+            CurrentCreds::Overridden(creds, _) => creds,
+        }
+    }
 }
 
 /// The thread related information of a `CurrentTask`. The information should never be used  outside
@@ -289,56 +311,38 @@ impl fmt::Debug for CurrentTask {
 
 impl CurrentTask {
     pub fn new(task: OwnedRef<Task>, thread_state: ThreadState<RegisterStorageEnum>) -> Self {
-        Self {
-            task,
-            thread_state,
-            overridden_creds: RefCell::new(None),
-            _local_marker: Default::default(),
-        }
+        let current_creds = RefCell::new(CurrentCreds::Cached(task.clone_creds()));
+        Self { task, thread_state, current_creds, _local_marker: Default::default() }
     }
 
     /// Returns the current subjective credentials of the task.
     ///
     /// The subjective credentials are the credentials that are used to check permissions for
     /// actions performed by the task.
-    pub fn current_creds(&self) -> Credentials {
-        match self.overridden_creds.borrow().as_ref() {
-            Some(full_creds) => full_creds.creds.clone(),
-            None => self.real_creds(),
-        }
-    }
-
-    pub fn with_current_creds<B, F>(&self, f: F) -> B
-    where
-        F: FnOnce(&Credentials) -> B,
-    {
-        match self.overridden_creds.borrow().as_ref() {
-            Some(x) => f(&x.creds),
-            None => self.with_real_creds(f),
-        }
+    pub fn current_creds(&self) -> Ref<'_, Arc<Credentials>> {
+        Ref::map(self.current_creds.borrow(), CurrentCreds::creds)
     }
 
     /// Returns the current subjective credentials of the task, including the security state.
     pub fn full_current_creds(&self) -> FullCredentials {
-        match self.overridden_creds.borrow().as_ref() {
-            Some(full_creds) => full_creds.clone(),
-            None => FullCredentials {
-                creds: self.real_creds(),
+        match *self.current_creds.borrow() {
+            CurrentCreds::Cached(ref creds) => FullCredentials {
+                creds: creds.clone(),
                 security_state: self.security_state.clone(),
             },
+            CurrentCreds::Overridden(ref creds, ref security_state) => {
+                FullCredentials { creds: creds.clone(), security_state: security_state.clone() }
+            }
         }
     }
 
     pub fn current_fscred(&self) -> FsCred {
-        self.with_current_creds(|creds| creds.as_fscred())
+        self.current_creds().as_fscred()
     }
 
     pub fn current_ucred(&self) -> ucred {
-        self.with_current_creds(|creds| ucred {
-            pid: self.get_pid(),
-            uid: creds.uid,
-            gid: creds.gid,
-        })
+        let creds = self.current_creds();
+        ucred { pid: self.get_pid(), uid: creds.uid, gid: creds.gid }
     }
 
     /// Save the current creds and security state, alter them by calling `alter_creds`, then call
@@ -351,22 +355,14 @@ impl CurrentTask {
     /// externally visible.
     pub async fn override_creds_async<R>(
         &self,
-        alter_creds: impl FnOnce(&mut FullCredentials),
+        new_creds: FullCredentials,
         callback: impl AsyncFnOnce() -> R,
     ) -> R {
-        let saved = self.overridden_creds.take();
-        let mut new_creds = saved.clone().unwrap_or_else(|| FullCredentials {
-            creds: self.real_creds(),
-            security_state: self.security_state.clone(),
-        });
-        alter_creds(&mut new_creds);
-
-        self.overridden_creds.replace(Some(new_creds));
-
+        let saved = self
+            .current_creds
+            .replace(CurrentCreds::Overridden(new_creds.creds, new_creds.security_state));
         let result = callback().await;
-
-        self.overridden_creds.replace(saved);
-
+        self.current_creds.replace(saved);
         result
     }
 
@@ -378,18 +374,14 @@ impl CurrentTask {
     ///  state, accessed through `Task::real_creds()` by other tasks and used to check permissions
     /// for actions performed on the task, is not altered, and changes to the credentials are not
     /// externally visible.
-    pub fn override_creds<R>(
-        &self,
-        alter_creds: impl FnOnce(&mut FullCredentials),
-        callback: impl FnOnce() -> R,
-    ) -> R {
-        self.override_creds_async(alter_creds, async move || callback())
+    pub fn override_creds<R>(&self, new_creds: FullCredentials, callback: impl FnOnce() -> R) -> R {
+        self.override_creds_async(new_creds, async move || callback())
             .now_or_never()
             .expect("Future should be ready")
     }
 
     pub fn has_overridden_creds(&self) -> bool {
-        self.overridden_creds.borrow().is_some()
+        matches!(*self.current_creds.borrow(), CurrentCreds::Overridden(_, _))
     }
 
     pub fn trigger_delayed_releaser<L>(&self, locked: &mut Locked<L>)
@@ -411,15 +403,15 @@ impl CurrentTask {
     /// Change the current and real creds of the task. This is invalid to call while temporary
     /// credentials are present.
     pub fn set_creds(&self, creds: Credentials) {
-        let overridden_creds = self.overridden_creds.borrow();
-        assert!(overridden_creds.is_none());
-        #[allow(
-            clippy::undocumented_unsafe_blocks,
-            reason = "Force documented unsafe blocks in Starnix"
-        )]
+        assert!(!self.has_overridden_creds());
+
+        let creds = Arc::new(creds);
+        let mut current_creds = self.current_creds.borrow_mut();
+        *current_creds = CurrentCreds::Cached(creds.clone());
+
+        // SAFETY: this is allowed because we are the CurrentTask.
         unsafe {
-            // SAFETY: this is allowed because we are the CurrentTask.
-            *self.persistent_info.creds_mut() = creds;
+            self.persistent_info.write_creds().update(creds);
         }
         // The /proc/pid directory's ownership is updated when the task's euid
         // or egid changes. See proc(5).
@@ -1202,14 +1194,10 @@ impl CurrentTask {
                 if maybe_set_id.is_none() { DumpPolicy::User } else { DumpPolicy::Disable };
             *mm.dumpable.lock(locked) = dumpable;
 
-            #[allow(
-                clippy::undocumented_unsafe_blocks,
-                reason = "Force documented unsafe blocks in Starnix"
-            )]
-            let mut creds = unsafe {
-                // SAFETY: this is allowed because we are the CurrentTask.
-                self.persistent_info.creds_mut()
-            };
+            // TODO(https://fxbug.dev/433463756): Figure out whether this is the right place to
+            // take the lock.
+            // SAFETY: this is allowed because we are the CurrentTask.
+            let mut writable_creds = unsafe { self.persistent_info.write_creds() };
             state.set_sigaltstack(None);
             state.robust_list_head = RobustListHeadPtr::null(self);
 
@@ -1224,7 +1212,11 @@ impl CurrentTask {
 
             // TODO(tbodt): Check whether capability xattrs are set on the file, and grant/limit
             // capabilities accordingly.
-            creds.exec(maybe_set_id);
+            let mut new_creds = Credentials::clone(&self.current_creds());
+            new_creds.exec(maybe_set_id);
+            let new_creds = Arc::new(new_creds);
+            writable_creds.update(new_creds.clone());
+            *self.current_creds.borrow_mut() = CurrentCreds::Cached(new_creds);
         }
 
         let security_state = resolved_elf.security_state.clone();
@@ -1704,7 +1696,7 @@ impl CurrentTask {
 
             pid = pids.allocate_pid();
             command = self.command();
-            creds = self.current_creds();
+            creds = self.current_creds().clone();
             scheduler_state = state.scheduler_state.fork();
             timerslack_ns = state.timerslack_ns;
 
@@ -2095,16 +2087,15 @@ impl CurrentTask {
         //      next step.  (Most APIs that check the caller's UID and GID
         //      use the effective IDs.  For historical reasons, the
         //      PTRACE_MODE_REALCREDS check uses the real IDs instead.)
-        let (uid, gid) = self.with_current_creds(|creds| {
-            if mode.contains(PTRACE_MODE_FSCREDS) {
-                let fscred = creds.as_fscred();
-                (fscred.uid, fscred.gid)
-            } else if mode.contains(PTRACE_MODE_REALCREDS) {
-                (creds.uid, creds.gid)
-            } else {
-                unreachable!();
-            }
-        });
+        let (uid, gid) = if mode.contains(PTRACE_MODE_FSCREDS) {
+            let fscred = self.current_creds().as_fscred();
+            (fscred.uid, fscred.gid)
+        } else if mode.contains(PTRACE_MODE_REALCREDS) {
+            let creds = self.current_creds();
+            (creds.uid, creds.gid)
+        } else {
+            unreachable!();
+        };
 
         // (3)  Deny access if neither of the following is true:
         //
@@ -2157,23 +2148,22 @@ impl CurrentTask {
             return Ok(());
         }
 
-        let (target_uid, target_saved_uid) =
-            target.with_real_creds(|creds| (creds.uid, creds.saved_uid));
-        if self.with_current_creds(|creds| {
-            // From https://man7.org/linux/man-pages/man2/kill.2.html:
-            //
-            // > For a process to have permission to send a signal, it must either be
-            // > privileged (under Linux: have the CAP_KILL capability in the user
-            // > namespace of the target process), or the real or effective user ID of
-            // > the sending process must equal the real or saved set- user-ID of the
-            // > target process.
-            //
-            // Returns true if the credentials are considered to have the same user ID.
-            creds.euid == target_saved_uid
-                || creds.euid == target_uid
-                || creds.uid == target_uid
-                || creds.uid == target_saved_uid
-        }) {
+        let self_creds = self.current_creds();
+        let target_creds = target.real_creds();
+        // From https://man7.org/linux/man-pages/man2/kill.2.html:
+        //
+        // > For a process to have permission to send a signal, it must either be
+        // > privileged (under Linux: have the CAP_KILL capability in the user
+        // > namespace of the target process), or the real or effective user ID of
+        // > the sending process must equal the real or saved set- user-ID of the
+        // > target process.
+        //
+        // Returns true if the credentials are considered to have the same user ID.
+        if self_creds.euid == target_creds.saved_uid
+            || self_creds.euid == target_creds.uid
+            || self_creds.uid == target_creds.uid
+            || self_creds.uid == target_creds.saved_uid
+        {
             return Ok(());
         }
 
@@ -2249,6 +2239,7 @@ pub enum ExceptionResult {
 
 #[cfg(test)]
 mod tests {
+    use crate::task::FullCredentials;
     use crate::testing::spawn_kernel_and_run;
 
     // This test will run `override_creds` and check it doesn't crash. This ensures that the
@@ -2256,7 +2247,7 @@ mod tests {
     #[::fuchsia::test]
     async fn test_override_creds_can_delegate_to_async_version() {
         spawn_kernel_and_run(async move |_, current_task| {
-            assert_eq!(current_task.override_creds(|_| {}, || 0), 0);
+            assert_eq!(current_task.override_creds(FullCredentials::for_kernel(), || 0), 0);
         })
         .await;
     }

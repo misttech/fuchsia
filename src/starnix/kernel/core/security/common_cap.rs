@@ -24,7 +24,8 @@ pub(super) fn capable(
     capability: starnix_uapi::auth::Capabilities,
 ) -> Result<(), Errno> {
     current_task
-        .with_current_creds(|creds| creds.has_capability(capability))
+        .current_creds()
+        .has_capability(capability)
         .then_some(())
         .ok_or_else(|| errno!(EPERM))
 }
@@ -79,18 +80,17 @@ fn check_ptrace_access(tracer: &Task, tracee: &Task, mode: PtraceAccessMode) -> 
     // TODO: https://fxbug.dev/322893829 - User namespaces are not yet supported in Starnix.
     let same_user_namespace = true;
 
-    tracer.with_real_creds(|tracer_creds| {
-        let tracee_has_lesser_caps = same_user_namespace && {
-            let tracer_caps =
-                if use_effective { tracer_creds.cap_effective } else { tracer_creds.cap_permitted };
-            tracer_caps.contains(tracee.real_creds().cap_permitted)
-        };
-        if !tracee_has_lesser_caps && !tracer_creds.has_capability(CAP_SYS_PTRACE) {
-            error!(EPERM)
-        } else {
-            Ok(())
-        }
-    })
+    let tracer_creds = tracer.real_creds();
+    let tracee_has_lesser_caps = same_user_namespace && {
+        let tracer_caps =
+            if use_effective { tracer_creds.cap_effective } else { tracer_creds.cap_permitted };
+        tracer_caps.contains(tracee.real_creds().cap_permitted)
+    };
+    if !tracee_has_lesser_caps && !tracer_creds.has_capability(CAP_SYS_PTRACE) {
+        error!(EPERM)
+    } else {
+        Ok(())
+    }
 }
 
 /// Corresponds to the `ptrace_access_check()` LSM hook.

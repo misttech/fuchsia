@@ -8,6 +8,7 @@ use crate::errors::{Errno, error};
 use crate::{gid_t, uapi, uid_t};
 use bitflags::bitflags;
 use std::ops;
+use std::sync::{Arc, LazyLock};
 
 // We don't use bitflags for this because capability sets can have bits set that don't have defined
 // meaning as capabilities. init has all 64 bits set, even though only 40 of them are valid.
@@ -338,10 +339,13 @@ bitflags! {
     }
 }
 
+static ROOT_CREDENTIALS: LazyLock<Arc<Credentials>> =
+    LazyLock::new(|| Arc::new(Credentials::with_ids(0, 0)));
+
 impl Credentials {
     /// Creates a set of credentials with all possible permissions and capabilities.
-    pub fn root() -> Self {
-        Self::with_ids(0, 0)
+    pub fn root() -> Arc<Self> {
+        ROOT_CREDENTIALS.clone()
     }
 
     /// Creates a set of credentials with the given uid and gid. If the uid is 0, the credentials

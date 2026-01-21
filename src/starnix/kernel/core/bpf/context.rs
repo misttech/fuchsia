@@ -56,7 +56,8 @@ impl<'a> MapsContext<'a> for EbpfRunContextImpl<'a> {
 
 impl<'a> CurrentTaskContext for EbpfRunContextImpl<'a> {
     fn get_uid_gid(&self) -> (uid_t, gid_t) {
-        self.current_task.with_current_creds(|creds| (creds.uid, creds.gid))
+        let creds = self.current_task.current_creds();
+        (creds.uid, creds.gid)
     }
 
     fn get_tid_tgid(&self) -> (pid_t, pid_t) {

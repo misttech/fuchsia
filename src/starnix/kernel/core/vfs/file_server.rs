@@ -156,28 +156,24 @@ async fn handle_file(
     // Run with the correct credentials
     locked_and_task
         .current_task()
-        .override_creds_async(
-            |temp_creds| *temp_creds = credentials,
-            async || {
-                // Reopen file object to not share state with the given FileObject.
-                let file = match file.name.open(
-                    &mut locked_and_task.unlocked(),
-                    locked_and_task.current_task(),
-                    file.flags(),
-                    AccessCheck::skip(),
-                ) {
-                    Ok(file) => file,
-                    Err(e) => {
-                        log_error!("Unable to reopen file: {e:?}");
-                        return;
-                    }
-                };
-                while let Ok(w) = receiver.recv() {
-                    w.run(&mut locked_and_task.unlocked(), locked_and_task.current_task(), &file)
-                        .await;
+        .override_creds_async(credentials.clone(), async || {
+            // Reopen file object to not share state with the given FileObject.
+            let file = match file.name.open(
+                &mut locked_and_task.unlocked(),
+                locked_and_task.current_task(),
+                file.flags(),
+                AccessCheck::skip(),
+            ) {
+                Ok(file) => file,
+                Err(e) => {
+                    log_error!("Unable to reopen file: {e:?}");
+                    return;
                 }
-            },
-        )
+            };
+            while let Ok(w) = receiver.recv() {
+                w.run(&mut locked_and_task.unlocked(), locked_and_task.current_task(), &file).await;
+            }
+        })
         .await;
 }
 
@@ -834,7 +830,7 @@ mod tests {
     use crate::fs::tmpfs::TmpFs;
     use crate::testing::*;
     use crate::vfs::{FsString, Namespace};
-    use starnix_uapi::auth::Capabilities;
+    use starnix_uapi::auth::{Capabilities, Credentials};
     use std::collections::HashSet;
     use syncio::{Zxio, ZxioOpenOptions, zxio_node_attr_has_t};
 
@@ -1101,8 +1097,10 @@ mod tests {
                 .expect("open_create_node failed");
 
             let mut user_credentials = FullCredentials::for_kernel();
-            user_credentials.creds.fsuid = 1;
-            user_credentials.creds.cap_effective = Capabilities::empty();
+            let mut creds = Credentials::with_ids(0, 0);
+            creds.fsuid = 1;
+            creds.cap_effective = Capabilities::empty();
+            user_credentials.creds = creds.into();
 
             let (root_handle, scope) =
                 serve_file(current_task, file, user_credentials).expect("serve_file failed");

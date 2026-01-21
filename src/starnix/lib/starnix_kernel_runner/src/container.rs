@@ -1023,31 +1023,30 @@ async fn wait_for_init_file(
     loop {
         fasync::Timer::new(fasync::MonotonicDuration::from_millis(100).after_now()).await;
 
-        if let Some(result) =
-            current_task.override_creds(security::creds_start_internal_operation, || {
-                let root = current_task.fs().root();
-                let mut context = LookupContext::default();
+        let creds = security::creds_start_internal_operation(current_task);
+        if let Some(result) = current_task.override_creds(creds, || {
+            let root = current_task.fs().root();
+            let mut context = LookupContext::default();
 
-                match current_task.lookup_path(
-                    current_task.kernel().kthreads.unlocked_for_async().deref_mut(),
-                    &mut context,
-                    root,
-                    startup_file_path.into(),
-                ) {
-                    Ok(_) => return Some(Ok(())),
-                    Err(error) if error == ENOENT => {}
-                    Err(error) => return Some(Err(anyhow::Error::from(error))),
-                };
+            match current_task.lookup_path(
+                current_task.kernel().kthreads.unlocked_for_async().deref_mut(),
+                &mut context,
+                root,
+                startup_file_path.into(),
+            ) {
+                Ok(_) => return Some(Ok(())),
+                Err(error) if error == ENOENT => {}
+                Err(error) => return Some(Err(anyhow::Error::from(error))),
+            };
 
-                if current_task.get_task(init_tid).upgrade().is_none() {
-                    return Some(Err(anyhow!(
-                        "Init task terminated before startup_file_path was ready"
-                    )));
-                }
+            if current_task.get_task(init_tid).upgrade().is_none() {
+                return Some(Err(anyhow!(
+                    "Init task terminated before startup_file_path was ready"
+                )));
+            }
 
-                None
-            })
-        {
+            None
+        }) {
             return result;
         }
     }

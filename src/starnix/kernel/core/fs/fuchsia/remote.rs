@@ -2030,13 +2030,8 @@ mod test {
         // Simulate a first run of starnix.
         spawn_kernel_and_run(async move |locked, current_task| {
             let kernel = current_task.kernel();
-            current_task.set_creds(Credentials {
-                euid: 1,
-                fsuid: 1,
-                egid: 2,
-                fsgid: 2,
-                ..current_task.current_creds()
-            });
+            let creds = Credentials::clone(&current_task.current_creds());
+            current_task.set_creds(Credentials { euid: 1, fsuid: 1, egid: 2, fsgid: 2, ..creds });
             let rights = fio::PERM_READABLE | fio::PERM_WRITABLE;
             let fs = RemoteFs::new_fs(
                 locked,

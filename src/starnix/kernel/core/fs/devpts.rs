@@ -206,8 +206,9 @@ impl FileSystemOps for DevPtsFs {
 
 impl DevPtsFs {
     fn pty_creds_for(&self, current_task: &CurrentTask) -> FsCred {
-        let uid = self.uid.unwrap_or_else(|| current_task.with_current_creds(|creds| creds.uid));
-        let gid = self.gid.unwrap_or_else(|| current_task.with_current_creds(|creds| creds.gid));
+        let creds = current_task.current_creds();
+        let uid = self.uid.unwrap_or_else(|| creds.uid);
+        let gid = self.gid.unwrap_or_else(|| creds.gid);
         FsCred { uid, gid }
     }
 }

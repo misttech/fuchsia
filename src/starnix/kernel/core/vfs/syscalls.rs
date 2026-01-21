@@ -34,7 +34,7 @@ use starnix_types::time::{
 };
 use starnix_types::user_buffer::UserBuffer;
 use starnix_uapi::auth::{
-    CAP_BLOCK_SUSPEND, CAP_DAC_READ_SEARCH, CAP_LEASE, CAP_SYS_ADMIN, CAP_WAKE_ALARM,
+    CAP_BLOCK_SUSPEND, CAP_DAC_READ_SEARCH, CAP_LEASE, CAP_SYS_ADMIN, CAP_WAKE_ALARM, Credentials,
     PTRACE_MODE_ATTACH_REALCREDS,
 };
 use starnix_uapi::device_type::DeviceType;
@@ -454,7 +454,7 @@ pub fn sys_fcntl(
             Ok(state.get_seals()?.into())
         }
         F_SETLEASE => {
-            let fsuid = current_task.with_current_creds(|creds| creds.fsuid);
+            let fsuid = current_task.current_creds().fsuid;
             if fsuid != file.node().info().uid {
                 security::check_task_capable(current_task, CAP_LEASE)?;
             }
@@ -947,21 +947,21 @@ pub fn sys_faccessat2(
     mode: u32,
     flags: u32,
 ) -> Result<(), Errno> {
-    current_task.override_creds(
-        |creds| {
-            // Unless `AT_ACCESS` is set, perform lookup & access-checking using real UID & GID.
-            if flags & AT_EACCESS == 0 {
-                creds.creds.fsuid = creds.creds.uid;
-                creds.creds.fsgid = creds.creds.gid;
-            }
-        },
-        || {
-            let mode = Access::try_from(mode)?;
-            let lookup_flags = LookupFlags::from_bits(flags, AT_SYMLINK_NOFOLLOW | AT_EACCESS)?;
-            let name = lookup_at(locked, current_task, dir_fd, user_path, lookup_flags)?;
-            name.check_access(locked, current_task, mode, CheckAccessReason::Access)
-        },
-    )
+    let mut full_creds = current_task.full_current_creds();
+
+    // Unless `AT_ACCESS` is set, perform lookup & access-checking using real UID & GID.
+    if flags & AT_EACCESS == 0 {
+        let mut creds = Credentials::clone(&full_creds.creds);
+        creds.fsuid = creds.uid;
+        creds.fsgid = creds.gid;
+        full_creds.creds = creds.into();
+    }
+    current_task.override_creds(full_creds, || {
+        let mode = Access::try_from(mode)?;
+        let lookup_flags = LookupFlags::from_bits(flags, AT_SYMLINK_NOFOLLOW | AT_EACCESS)?;
+        let name = lookup_at(locked, current_task, dir_fd, user_path, lookup_flags)?;
+        name.check_access(locked, current_task, mode, CheckAccessReason::Access)
+    })
 }
 
 pub fn sys_getdents64(
@@ -3232,8 +3232,7 @@ pub fn sys_io_uring_setup(
         1 => {
             let io_uring_group = limits.io_uring_group.load(atomic::Ordering::Relaxed).try_into();
             if io_uring_group.is_err()
-                || !current_task
-                    .with_current_creds(|creds| creds.is_in_group(io_uring_group.unwrap()))
+                || !current_task.current_creds().is_in_group(io_uring_group.unwrap())
             {
                 security::check_task_capable(current_task, CAP_SYS_ADMIN)?;
             }

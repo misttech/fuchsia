@@ -445,7 +445,7 @@ where
             code: si_code,
             detail: SignalDetail::Kill {
                 pid: current_task.thread_group().leader,
-                uid: current_task.with_current_creds(|creds| creds.uid),
+                uid: current_task.current_creds().uid,
             },
             ..SignalInfo::default(signal)
         },
@@ -2398,7 +2398,7 @@ mod tests {
     #[::fuchsia::test]
     async fn test_sigqueue() {
         spawn_kernel_and_run(async |locked, current_task| {
-            let current_uid = current_task.with_current_creds(|creds| creds.uid);
+            let current_uid = current_task.current_creds().uid;
             let current_pid = current_task.get_pid();
 
             const TEST_VALUE: u64 = 101;
@@ -2446,7 +2446,7 @@ mod tests {
                 code: SI_USER as i32,
                 detail: SignalDetail::Kill {
                     pid: current_task.thread_group().leader,
-                    uid: current_task.with_current_creds(|creds| creds.uid),
+                    uid: current_task.current_creds().uid,
                 },
                 ..SignalInfo::default(SIGIO)
             };

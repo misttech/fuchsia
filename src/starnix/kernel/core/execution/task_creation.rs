@@ -333,7 +333,7 @@ fn create_task_with_pid<F, L>(
     initial_name: TaskCommand,
     root_fs: Arc<FsContext>,
     task_info_factory: F,
-    creds: Credentials,
+    creds: Arc<Credentials>,
     rlimits: &[(Resource, u64)],
     security_state: security::TaskState,
 ) -> Result<TaskBuilder, Errno>
@@ -433,7 +433,7 @@ where
         FdTable::default(),
         system_task.mm().ok(),
         system_task.fs(),
-        system_task.real_creds(),
+        system_task.clone_creds(),
         Arc::clone(&system_task.abstract_socket_namespace),
         Arc::clone(&system_task.abstract_vsock_namespace),
         Default::default(),

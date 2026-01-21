@@ -19,7 +19,9 @@ use crate::task::{
 };
 use crate::vfs::{FdTable, FsContext, FsNodeHandle, FsString};
 use bitflags::bitflags;
+use fuchsia_rcu::rcu_arc::RcuArc;
 use fuchsia_rcu::rcu_option_arc::RcuOptionArc;
+use fuchsia_rcu::rcu_ptr::RcuReadGuard;
 use macro_rules_attribute::apply;
 use starnix_logging::{log_warn, set_zx_name};
 use starnix_registers::{HeapRegs, RegisterStorageEnum};
@@ -44,6 +46,7 @@ use starnix_uapi::{
 };
 use std::collections::VecDeque;
 use std::mem::MaybeUninit;
+use std::ops::Deref;
 use std::sync::atomic::{AtomicBool, AtomicU8, Ordering};
 use std::sync::{Arc, Weak};
 use std::{cmp, fmt};
@@ -749,7 +752,38 @@ pub struct TaskPersistentInfoState {
 
     /// The security credentials for this task. These are only set when the task is the CurrentTask,
     /// or on task creation.
-    creds: RwLock<Credentials>,
+    creds: RcuArc<Credentials>,
+
+    // A lock for the security credentials. Writers must take the lock, readers that need to ensure
+    // that the task state does not change may take the lock.
+    creds_lock: RwLock<()>,
+}
+
+/// Guard for reading locked credentials.
+pub struct CredentialsReadGuard<'a> {
+    _lock: RwLockReadGuard<'a, ()>,
+    creds: RcuReadGuard<Credentials>,
+}
+
+impl<'a> Deref for CredentialsReadGuard<'a> {
+    type Target = Credentials;
+
+    fn deref(&self) -> &Self::Target {
+        self.creds.deref()
+    }
+}
+
+/// Guard for writing credentials. No `CredentialsReadGuard` to the same task can concurrently
+///  exist.
+pub struct CredentialsWriteGuard<'a> {
+    _lock: RwLockWriteGuard<'a, ()>,
+    creds: &'a RcuArc<Credentials>,
+}
+
+impl<'a> CredentialsWriteGuard<'a> {
+    pub fn update(&mut self, creds: Arc<Credentials>) {
+        self.creds.update(creds);
+    }
 }
 
 impl TaskPersistentInfoState {
@@ -757,13 +791,14 @@ impl TaskPersistentInfoState {
         tid: tid_t,
         thread_group_key: ThreadGroupKey,
         command: TaskCommand,
-        creds: Credentials,
+        creds: Arc<Credentials>,
     ) -> TaskPersistentInfo {
         Arc::new(Self {
             tid,
             thread_group_key,
             command: Mutex::new(command),
-            creds: RwLock::new(creds),
+            creds: RcuArc::new(creds),
+            creds_lock: RwLock::new(()),
         })
     }
 
@@ -779,14 +814,30 @@ impl TaskPersistentInfoState {
         self.command.lock()
     }
 
-    pub fn real_creds(&self) -> RwLockReadGuard<'_, Credentials> {
+    /// Snapshots the credentials, returning a short-lived RCU-guarded reference.
+    pub fn real_creds(&self) -> RcuReadGuard<Credentials> {
         self.creds.read()
     }
 
-    /// SAFETY: Only use from CurrentTask. Changing credentials outside of the CurrentTask may
-    /// introduce TOCTOU issues in access checks.
-    pub(in crate::task) unsafe fn creds_mut(&self) -> RwLockWriteGuard<'_, Credentials> {
-        self.creds.write()
+    /// Snapshots the credentials, returning a new reference. Use this if you need to stash the
+    /// credentials somewhere.
+    pub fn clone_creds(&self) -> Arc<Credentials> {
+        self.creds.to_arc()
+    }
+
+    /// Returns a read lock on the credentials. This is appropriate if you need to guarantee that
+    ///  the Task's credentials will not change during a security-sensitive operation.
+    pub fn lock_creds(&self) -> CredentialsReadGuard<'_> {
+        let lock = self.creds_lock.read();
+        CredentialsReadGuard { _lock: lock, creds: self.creds.read() }
+    }
+
+    /// Locks the credentials for writing.
+    /// SAFETY: Only use from CurrentTask, and keep the subjective credentials stored in CurrentTask
+    /// in sync.
+    pub(in crate::task) unsafe fn write_creds(&self) -> CredentialsWriteGuard<'_> {
+        let lock = self.creds_lock.write();
+        CredentialsWriteGuard { _lock: lock, creds: &self.creds }
     }
 }
 
@@ -952,7 +1003,7 @@ impl Task {
                     starnix_logging::log_error!("Exiting without an exit code.");
                     ExitStatus::Exit(u8::MAX)
                 });
-                let uid = self.persistent_info.real_creds().uid;
+                let uid = self.real_creds().uid;
                 let exit_info = ProcessExitInfo { status: exit_status, exit_signal };
                 let zombie = ZombieProcess {
                     thread_group_key: self.thread_group_key.clone(),
@@ -1017,7 +1068,7 @@ impl Task {
         // The only case where fs should be None if when building the initial task that is the
         // used to build the initial FsContext.
         fs: Arc<FsContext>,
-        creds: Credentials,
+        creds: Arc<Credentials>,
         abstract_socket_namespace: Arc<AbstractUnixSocketNamespace>,
         abstract_vsock_namespace: Arc<AbstractVsockSocketNamespace>,
         signal_mask: SigSet,
@@ -1082,7 +1133,7 @@ impl Task {
             {
                 // Note that `Kernel::pids` is already locked by the caller of `Task::new()`.
                 let _l1 = task.read();
-                let _l2 = task.persistent_info.real_creds();
+                let _l2 = task.persistent_info.lock_creds();
                 let _l3 = task.persistent_info.command_guard();
             }
             task
@@ -1091,18 +1142,20 @@ impl Task {
 
     state_accessor!(Task, mutable_state);
 
-    /// Returns the real credentials of the task. These credentials are used to check permissions
-    /// for actions performed on the task. If the task itself is performing an action, use
-    /// `CurrentTask::current_creds` instead.
-    pub fn real_creds(&self) -> Credentials {
-        self.persistent_info.real_creds().clone()
+    /// Returns the real credentials of the task as a short-lived RCU-guarded reference. These
+    /// credentials are used to check permissions for actions performed on the task. If the task
+    /// itself is performing an action, use `CurrentTask::current_creds` instead. This does not
+    /// lock the credentials.
+    pub fn real_creds(&self) -> RcuReadGuard<Credentials> {
+        self.persistent_info.real_creds()
     }
 
-    pub fn with_real_creds<B, F>(&self, f: F) -> B
-    where
-        F: FnOnce(&Credentials) -> B,
-    {
-        f(&self.persistent_info.real_creds())
+    /// Returns a new long-lived reference to the real credentials of the task.  These credentials
+    /// are used to check permissions for actions performed on the task. If the task itself is
+    /// performing an action, use `CurrentTask::current_creds` instead. This does not lock the
+    /// credentials.
+    pub fn clone_creds(&self) -> Arc<Credentials> {
+        self.persistent_info.clone_creds()
     }
 
     pub fn ptracer_task(&self) -> WeakRef<Task> {
@@ -1312,7 +1365,7 @@ impl Task {
     }
 
     pub fn real_fscred(&self) -> FsCred {
-        self.with_real_creds(|creds| creds.as_fscred())
+        self.real_creds().as_fscred()
     }
 
     /// Interrupts the current task.

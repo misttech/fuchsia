@@ -522,7 +522,8 @@ pub fn start_perfetto_consumer_thread(kernel: &Kernel, socket_path: FsString) ->
 
             // TODO: https://fxbug.dev/457381697 - Revise how this kernel-internal work is security-
             // checked.
-            current_task.override_creds(security::creds_start_internal_operation, || {
+            let creds = security::creds_start_internal_operation(current_task);
+            current_task.override_creds(creds, || {
                 callback_state.on_state_change(locked, state, current_task).unwrap_or_else(|e| {
                     log_error!("perfetto_consumer callback error: {:?}", e);
                 })

@@ -74,7 +74,7 @@ impl RemoteUnixDomainSocket {
     where
         F: FnOnce() -> Result<R, Errno>,
     {
-        current_task.override_creds(|temp_creds| *temp_creds = self.remote_creds.clone(), f)
+        current_task.override_creds(self.remote_creds.clone(), f)
     }
 }
 

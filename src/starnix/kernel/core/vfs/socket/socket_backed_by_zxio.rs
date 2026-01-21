@@ -128,7 +128,7 @@ impl ZxioBackedSocket {
     ) -> Result<ZxioBackedSocket, Errno> {
         let marks = &mut [
             ZxioSocketMark::so_mark(0),
-            ZxioSocketMark::uid(current_task.with_current_creds(|creds| creds.uid)),
+            ZxioSocketMark::uid(current_task.current_creds().uid),
         ];
 
         match (domain, socket_type, protocol) {
@@ -136,9 +136,9 @@ impl ZxioBackedSocket {
             | (SocketDomain::Inet6, SocketType::Datagram, SocketProtocol::ICMPV6) => {
                 let gid_range =
                     current_task.kernel().system_limits.socket.icmp_ping_gids.lock().clone();
-                current_task.with_current_creds(|creds| {
-                    gid_range.contains(&creds.egid).then_some(()).ok_or_else(|| errno!(EACCES))
-                })?;
+                if !gid_range.contains(&current_task.current_creds().egid) {
+                    return error!(EACCES);
+                }
             }
             _ => (),
         };

@@ -949,17 +949,12 @@ impl<'a> AccessControl<FullCredentials> for NetlinkAccessControl<'a> {
             return Ok(());
         }
 
-        self.current_task.override_creds(
-            |overridden_creds| {
-                *overridden_creds = creds.clone();
-            },
-            || {
-                security::check_task_capable(self.current_task, CAP_NET_ADMIN).map_err(|error| {
-                    netlink::Errno::new(error.code.error_code() as i32)
-                        .expect("Errno::error_code() is expected to be in range [1..max_i32]")
-                })
-            },
-        )
+        self.current_task.override_creds(creds.clone(), || {
+            security::check_task_capable(self.current_task, CAP_NET_ADMIN).map_err(|error| {
+                netlink::Errno::new(error.code.error_code() as i32)
+                    .expect("Errno::error_code() is expected to be in range [1..max_i32]")
+            })
+        })
     }
 }
 pub struct NetlinkContextImpl;

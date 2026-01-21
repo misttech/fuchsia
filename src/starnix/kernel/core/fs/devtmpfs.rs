@@ -89,7 +89,7 @@ pub fn devtmpfs_create_device(
     event: Option<Arc<InterruptibleEvent>>,
 ) {
     let closure = move |locked: &mut Locked<Unlocked>, current_task: &CurrentTask| {
-        current_task.override_creds(security::creds_start_internal_operation, || {
+        current_task.override_creds(security::creds_start_internal_operation(current_task), || {
             if let Err(e) = devtmpfs_create_device_internal(locked, current_task, &device_metadata)
             {
                 log_warn!("Cannot add device {device_metadata:?} in devtmpfs ({e:?})");

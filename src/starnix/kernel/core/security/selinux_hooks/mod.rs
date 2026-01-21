@@ -19,7 +19,7 @@ pub(super) mod task;
 pub(super) mod testing;
 
 use super::{PermissionFlags, TaskState};
-use crate::task::{CurrentTask, FullCredentials};
+use crate::task::{CurrentCreds, CurrentTask, FullCredentials};
 use crate::vfs::{
     Anon, DirEntry, FileHandle, FileObject, FileSystem, FileSystemOps, FsNode, OutputBuffer,
 };
@@ -612,7 +612,7 @@ impl TaskAttrs {
 
 pub(super) enum CurrentTaskStateHolder<'a> {
     TaskState(&'a TaskState),
-    OverriddenTaskState(Ref<'a, Option<FullCredentials>>),
+    OverriddenTaskState(Ref<'a, TaskState>),
 }
 
 impl Deref for CurrentTaskStateHolder<'_> {
@@ -621,7 +621,7 @@ impl Deref for CurrentTaskStateHolder<'_> {
         match self {
             CurrentTaskStateHolder::TaskState(task_attrs) => &task_attrs,
             CurrentTaskStateHolder::OverriddenTaskState(overridden_creds) => {
-                &overridden_creds.as_ref().unwrap().security_state
+                overridden_creds.deref()
             }
         }
     }
@@ -631,7 +631,13 @@ pub(in crate::security) fn current_task_state(
     current_task: &CurrentTask,
 ) -> CurrentTaskStateHolder<'_> {
     if current_task.has_overridden_creds() {
-        CurrentTaskStateHolder::OverriddenTaskState(current_task.overridden_creds.borrow())
+        CurrentTaskStateHolder::OverriddenTaskState(Ref::map(
+            current_task.current_creds.borrow(),
+            |creds| match creds {
+                CurrentCreds::Overridden(_, security_state) => security_state,
+                CurrentCreds::Cached(_) => unreachable!("Inconsistent state"),
+            },
+        ))
     } else {
         CurrentTaskStateHolder::TaskState(&current_task.security_state)
     }
@@ -643,6 +649,16 @@ pub(in crate::security) fn task_consistent_attrs(
 ) -> MutexGuard<'_, TaskAttrs> {
     assert!(!current_task.has_overridden_creds());
     current_task.security_state.lock()
+}
+
+/// Creates a copy of the credentials with the given `fscreate_sid`.
+pub fn creds_with_fscreate_sid(
+    current_task: &CurrentTask,
+    fscreate_sid: SecurityId,
+) -> FullCredentials {
+    let creds = current_task.full_current_creds();
+    creds.security_state.lock().fscreate_sid = Some(fscreate_sid);
+    creds
 }
 
 /// Security state for a [`crate::vfs::FileObject`] instance. This currently just holds the SID

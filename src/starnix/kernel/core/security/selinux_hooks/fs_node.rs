@@ -7,8 +7,9 @@
 
 use super::{
     Auditable, FsNodeLabel, FsNodeSidAndClass, PermissionFlags, TaskAttrs, check_permission,
-    current_task_state, fs_node_effective_sid_and_class, fs_node_ensure_class,
-    fs_node_set_label_with_task, has_fs_node_permissions, permissions_from_flags, set_cached_sid,
+    creds_with_fscreate_sid, current_task_state, fs_node_effective_sid_and_class,
+    fs_node_ensure_class, fs_node_set_label_with_task, has_fs_node_permissions,
+    permissions_from_flags, set_cached_sid,
 };
 use crate::security::selinux_hooks::has_fs_node_permissions_dontaudit;
 use crate::security::{FsNodeSecurityXattr, check_task_capable};
@@ -1317,12 +1318,8 @@ pub(in crate::security) fn fs_node_copy_up<R>(
     do_copy_up: impl FnOnce() -> R,
 ) -> R {
     let new_sid = fs_node_effective_sid_and_class(fs_node).sid;
-    current_task.override_creds(
-        |creds| {
-            creds.security_state.lock().fscreate_sid = Some(new_sid);
-        },
-        do_copy_up,
-    )
+    let temporary_creds = creds_with_fscreate_sid(current_task, new_sid);
+    current_task.override_creds(temporary_creds, do_copy_up)
 }
 
 #[cfg(test)]

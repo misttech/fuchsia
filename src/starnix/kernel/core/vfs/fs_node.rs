@@ -1659,7 +1659,6 @@ impl FsNode {
         // https://man7.org/linux/man-pages/man5/proc.5.html for details of the security
         // vulnerabilities.
         //
-        let fsuid = current_task.with_current_creds(|creds| creds.fsuid);
         let (child_uid, mode) = {
             let info = child.info();
             (info.uid, info.mode)
@@ -1667,7 +1666,9 @@ impl FsNode {
         // Check that the the filesystem UID of the calling process (`current_task`) is the same as
         // the UID of the existing file. The check can be bypassed if the calling process has
         // `CAP_FOWNER` capability.
-        if child_uid != fsuid && !security::is_task_capable_noaudit(current_task, CAP_FOWNER) {
+        if child_uid != current_task.current_creds().fsuid
+            && !security::is_task_capable_noaudit(current_task, CAP_FOWNER)
+        {
             // If current_task is not the user of the existing file, it needs to have read and write
             // access to the existing file.
             child
@@ -1930,10 +1931,9 @@ impl FsNode {
             //
             // We need to check whether the current task has permission to create such a file.
             // See a similar check in `FsNode::chmod`.
-            let (fsgid, is_in_group) = current_task
-                .with_current_creds(|creds| (creds.fsgid, creds.is_in_group(owner.gid)));
-            if owner.gid != fsgid
-                && !is_in_group
+            let current_creds = current_task.current_creds();
+            if owner.gid != current_creds.fsgid
+                && !current_creds.is_in_group(owner.gid)
                 && !security::is_task_capable_noaudit(current_task, CAP_FOWNER)
             {
                 *mode &= !FileMode::ISGID;
@@ -1943,8 +1943,6 @@ impl FsNode {
 
     /// Checks if O_NOATIME is allowed,
     pub fn check_o_noatime_allowed(&self, current_task: &CurrentTask) -> Result<(), Errno> {
-        let fsuid = current_task.with_current_creds(|creds| creds.fsuid);
-
         // Per open(2),
         //
         //   O_NOATIME (since Linux 2.6.8)
@@ -1959,7 +1957,7 @@ impl FsNode {
         //      *  The calling process has the CAP_FOWNER capability in
         //         its user namespace and the owner UID of the file has a
         //         mapping in the namespace.
-        if fsuid != self.info().uid {
+        if current_task.current_creds().fsuid != self.info().uid {
             security::check_task_capable(current_task, CAP_FOWNER)?;
         }
         Ok(())
@@ -1980,8 +1978,7 @@ impl FsNode {
             // the file, be the file owner, or hold the CAP_DAC_OVERRIDE or CAP_FOWNER capability.
             // To set the timestamps to other values the caller must either be the file owner or hold
             // the CAP_FOWNER capability.
-            let fsuid = current_task.with_current_creds(|creds| creds.fsuid);
-            if fsuid == node_uid {
+            if current_task.current_creds().fsuid == node_uid {
                 return Ok(());
             }
             if now {
@@ -2041,8 +2038,9 @@ impl FsNode {
         current_task: &CurrentTask,
         child: &FsNodeHandle,
     ) -> Result<(), Errno> {
-        let fsuid = current_task.with_current_creds(|creds| creds.fsuid);
-        if self.info().mode.contains(FileMode::ISVTX) && child.info().uid != fsuid {
+        if self.info().mode.contains(FileMode::ISVTX)
+            && child.info().uid != current_task.current_creds().fsuid
+        {
             security::check_task_capable(current_task, CAP_FOWNER)?;
         }
         Ok(())
@@ -2144,12 +2142,11 @@ impl FsNode {
     {
         mount.check_readonly_filesystem()?;
         self.update_attributes(locked, current_task, |info| {
-            let (euid, egid, in_group) = current_task
-                .with_current_creds(|creds| (creds.euid, creds.egid, creds.is_in_group(info.gid)));
-            if info.uid != euid {
+            let current_creds = current_task.current_creds();
+            if info.uid != current_creds.euid {
                 security::check_task_capable(current_task, CAP_FOWNER)?;
-            } else if info.gid != egid
-                && !in_group
+            } else if info.gid != current_creds.egid
+                && !current_creds.is_in_group(info.gid)
                 && mode.intersects(FileMode::ISGID)
                 && !security::is_task_capable_noaudit(current_task, CAP_FOWNER)
             {
@@ -2186,8 +2183,10 @@ impl FsNode {
                 }
             }
 
-            let (euid, is_in_group) = current_task
-                .with_current_creds(|creds| (creds.euid, group.map(|gid| creds.is_in_group(gid))));
+            let (euid, is_in_group) = {
+                let current_creds = current_task.current_creds();
+                (current_creds.euid, group.map(|gid| current_creds.is_in_group(gid)))
+            };
 
             // The owner can change the group.
             if info.uid == euid {
@@ -2779,8 +2778,10 @@ fn check_access(
     mode: FileMode,
 ) -> Result<(), Errno> {
     // Determine which of the access bits apply to the `current_task`.
-    let (fsuid, is_in_group) =
-        current_task.with_current_creds(|creds| (creds.fsuid, creds.is_in_group(node_gid)));
+    let (fsuid, is_in_group) = {
+        let current_creds = current_task.current_creds();
+        (current_creds.fsuid, current_creds.is_in_group(node_gid))
+    };
     let granted = if fsuid == node_uid {
         mode.user_access()
     } else if is_in_group {
@@ -3125,7 +3126,7 @@ mod tests {
 
             // Only give read access to the root and give root access to the current task.
             node.update_info(|info| info.mode = mode!(IFREG, 0o100));
-            current_task.set_creds(Credentials::root());
+            current_task.set_creds(Credentials::with_ids(0, 0));
 
             // Setting the label should succeed even without write access to the file.
             assert_eq!(
