@@ -178,7 +178,6 @@ pub struct BrightnessManager {
 #[derive(Clone, Debug, Default, Deserialize, Serialize, PartialEq, JsonSchema)]
 #[serde(rename_all = "lowercase", deny_unknown_fields)]
 pub enum RendererType {
-    Cpu,
     Null,
     #[default]
     Vulkan,
