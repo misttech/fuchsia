@@ -212,6 +212,8 @@ zx_info_cpu_stats_t GetCPUStats(uint32_t cpu_num) {
   stats.syscalls = cpu_stats.syscalls;
   stats.reschedule_ipis = cpu_stats.reschedule_ipis;
   stats.generic_ipis = cpu_stats.generic_ipis;
+  stats.active_energy_consumption_nj = cpu_stats.active_energy_consumption_nj;
+  stats.idle_energy_consumption_nj = cpu_stats.idle_energy_consumption_nj;
 
   return stats;
 }

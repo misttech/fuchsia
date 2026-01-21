@@ -148,9 +148,11 @@ static zx_status_t cpustats(zx_handle_t info_resource, zx_duration_t delay) {
       " sched (cs ylds pmpts irq_pmpts)"
       " excep"
       " pagef"
-      "  sysc"
+      "    sysc"
       " ints (hw  tmr tmr_cb)"
-      " ipi (rs  gen)\n");
+      " ipi (rs  gen)"
+      "     watts"
+      "\n");
   for (size_t i = 0; i < actual; i++) {
     zx_duration_t idle_time = stats[i].idle_time;
     zx_duration_t delta_time = zx_duration_sub_duration(idle_time, last_idle_time[i]);
@@ -170,6 +172,26 @@ static zx_status_t cpustats(zx_handle_t info_resource, zx_duration_t delay) {
     }
     unsigned long load = zx_duration_mul_int64(delta_normalized_busy_time, 10000) / delay;
 
+    const uint64_t active_energy_delta_nj =
+        stats[i].active_energy_consumption_nj - old_stats[i].active_energy_consumption_nj;
+    const uint64_t idle_energy_delta_nj =
+        stats[i].idle_energy_consumption_nj - old_stats[i].idle_energy_consumption_nj;
+
+    // Calculate the total estimated power over the sampling interval using:
+    //
+    // 1 nJ = 1,000,000 uW-nS
+    // P uW = dE nJ * 1,000,000 uW-nS / nJ / dT nS
+    //
+    // Round up to the next whole microwatt using ceil(A / B) = (A + B - 1) // B.
+    //
+    // This will avoid 64bit overflow when P uW <= 2**64 / dT nS.
+    //
+    const uint64_t total_energy_delta_nj = active_energy_delta_nj + idle_energy_delta_nj;
+    const uint64_t microwatt_ns_per_nj = 1000000;
+    const uint64_t total_energy_delta_uw_ns = total_energy_delta_nj * microwatt_ns_per_nj;
+    const uint64_t total_power_uw = (total_energy_delta_uw_ns + delay - 1) / delay;
+    const uint64_t microwatts_per_watt = 1000000;
+
     printf(
         "%3zu"
         " %3lu.%02lu%%"
@@ -177,9 +199,10 @@ static zx_status_t cpustats(zx_handle_t info_resource, zx_duration_t delay) {
         " %9lu %4lu %5lu %9lu"
         " %6lu"
         " %5lu"
-        " %5lu"
+        " %7lu"
         " %8lu %4lu %6lu"
         " %8lu %4lu"
+        " %3u.%06u"
         "\n",
         i, load / 100, load % 100, busypercent / 100, busypercent % 100,
         stats[i].context_switches - old_stats[i].context_switches,
@@ -190,7 +213,9 @@ static zx_status_t cpustats(zx_handle_t info_resource, zx_duration_t delay) {
         stats[i].ints - old_stats[i].ints, stats[i].timer_ints - old_stats[i].timer_ints,
         stats[i].timers - old_stats[i].timers,
         stats[i].reschedule_ipis - old_stats[i].reschedule_ipis,
-        stats[i].generic_ipis - old_stats[i].generic_ipis);
+        stats[i].generic_ipis - old_stats[i].generic_ipis,
+        (unsigned int)(total_power_uw / microwatts_per_watt),
+        (unsigned int)(total_power_uw % microwatts_per_watt));
 
     old_stats[i] = stats[i];
     last_normalized_busy_time[i] = normalized_busy_time;
