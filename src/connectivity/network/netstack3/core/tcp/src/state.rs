@@ -554,6 +554,7 @@ impl<I: Instant + 'static, ActiveOpen> SynSent<I, ActiveOpen> {
                                     congestion_control: CongestionControl::cubic_with_mss(smss),
                                     wnd_scale: snd_wnd_scale,
                                     wnd_max: seg_wnd << WindowScale::default(),
+                                    last_data_sent: None,
                                 }
                                 .into(),
                                 rcv: Recv {
@@ -778,6 +779,7 @@ pub(crate) struct Send<I, S, const FIN_QUEUED: bool> {
     timer: Option<SendTimer<I>>,
     #[derivative(PartialEq = "ignore")]
     congestion_control: CongestionControl<I>,
+    last_data_sent: Option<I>,
     buffer: S,
 }
 
@@ -797,6 +799,7 @@ impl<I> Send<I, (), false> {
             rtt_estimator,
             timer,
             congestion_control,
+            last_data_sent,
             buffer: _,
         } = self;
         Send {
@@ -813,6 +816,7 @@ impl<I> Send<I, (), false> {
             rtt_estimator,
             timer,
             congestion_control,
+            last_data_sent,
             buffer,
         }
     }
@@ -1550,6 +1554,7 @@ impl<I: Instant, S: SendBuffer, const FIN_QUEUED: bool> Send<I, S, FIN_QUEUED> {
             congestion_control,
             wnd_scale: _,
             wnd_max: snd_wnd_max,
+            last_data_sent,
         } = self;
         let BufferLimits { capacity: _, len: readable_bytes } = buffer.limits();
         let mss = congestion_control.mss();
@@ -1785,6 +1790,9 @@ impl<I: Instant, S: SendBuffer, const FIN_QUEUED: bool> Send<I, S, FIN_QUEUED> {
                 let periodic_push =
                     next_seg.after_or_eq(*last_push + snd_wnd_max.halved().max(WindowSize::ONE));
                 let push = no_more_data_to_send || periodic_push;
+                if bytes_to_send > 0 {
+                    *last_data_sent = Some(now);
+                }
                 let (seg, discarded) = Segment::new(
                     SegmentHeader {
                         seq: next_seg,
@@ -1908,6 +1916,7 @@ impl<I: Instant, S: SendBuffer, const FIN_QUEUED: bool> Send<I, S, FIN_QUEUED> {
             timer,
             congestion_control,
             wnd_scale,
+            last_data_sent: _,
         } = self;
         let seg_wnd = seg_wnd << *wnd_scale;
         match timer {
@@ -2164,6 +2173,7 @@ impl<I: Instant, S: SendBuffer> Send<I, S, { FinQueued::NO }> {
             congestion_control,
             wnd_scale,
             wnd_max,
+            last_data_sent,
         } = self;
         Send {
             nxt,
@@ -2180,6 +2190,7 @@ impl<I: Instant, S: SendBuffer> Send<I, S, { FinQueued::NO }> {
             congestion_control,
             wnd_scale,
             wnd_max,
+            last_data_sent,
         }
     }
 }
@@ -2894,6 +2905,7 @@ impl<I: Instant + 'static, R: ReceiveBuffer, S: SendBuffer, ActiveOpen: Debug>
                                     congestion_control: CongestionControl::cubic_with_mss(*smss),
                                     wnd_scale: snd_wnd_scale,
                                     wnd_max: seg_wnd << snd_wnd_scale,
+                                    last_data_sent: None,
                                 }
                                 .into(),
                                 rcv: Recv {
@@ -3599,6 +3611,7 @@ impl<I: Instant + 'static, R: ReceiveBuffer, S: SendBuffer, ActiveOpen: Debug>
                         congestion_control: CongestionControl::cubic_with_mss(*smss),
                         wnd_scale: snd_wnd_scale,
                         wnd_max: WindowSize::DEFAULT,
+                        last_data_sent: None,
                     }
                     .into(),
                     rcv: Recv {
@@ -4290,6 +4303,7 @@ mod test {
                     MssSizeLimiters { timestamp_enabled: true },
                 )),
                 wnd_scale: WindowScale::default(),
+                last_data_sent: None,
             }
         }
 
@@ -9888,5 +9902,83 @@ mod test {
             }),
             TEST_BYTES.len()
         );
+    }
+
+    #[test]
+    fn last_data_sent_update() {
+        let get_last_data_sent = |state: &State<_, _, _, _>| {
+            assert_matches!(state, State::Established(Established {
+                snd: Takeable(Some(Send { last_data_sent, .. })),
+                ..
+            }) => *last_data_sent)
+        };
+
+        let mut clock = FakeInstantCtx::default();
+        let counters = FakeTcpCounters::default();
+        let start_time = clock.now();
+
+        let mut connection = State::Established(Established {
+            snd: Send::default_for_test(RingBuffer::new(BUFFER_SIZE)).into(),
+            rcv: Recv::default_for_test(RingBuffer::new(BUFFER_SIZE)).into(),
+        });
+        assert_eq!(get_last_data_sent(&connection), None);
+
+        // A plain ACK shouldn't update last_data_sent...
+        let (_seg, _) = connection.on_segment_with_default_options::<_, ClientlessBufferProvider>(
+            Segment::<()>::ack(
+                TEST_ISS + 1,
+                TEST_IRS + 1,
+                UnscaledWindowSize::from(1000u16),
+                DEFAULT_SEGMENT_OPTIONS,
+            ),
+            clock.now(),
+            &counters.refs(),
+        );
+        assert_eq!(get_last_data_sent(&connection), None);
+
+        // ... But a real send will.
+        assert_eq!(
+            connection
+                .buffers_mut()
+                .into_send_buffer()
+                .expect("should have a send buffer")
+                .enqueue_data(TEST_BYTES),
+            TEST_BYTES.len()
+        );
+        let _seg = connection
+            .poll_send(
+                &FakeStateMachineDebugId::default(),
+                &counters.refs(),
+                clock.now(),
+                &SocketOptions::default_for_state_tests(),
+            )
+            .expect("should send segment");
+
+        let first_send_time = get_last_data_sent(&connection);
+        assert_eq!(first_send_time, Some(start_time));
+
+        // Advance time and send again.
+        clock.sleep(Duration::from_secs(1));
+        let time_after_sleep = clock.now();
+
+        assert_eq!(
+            connection
+                .buffers_mut()
+                .into_send_buffer()
+                .expect("should have a send buffer")
+                .enqueue_data(TEST_BYTES),
+            TEST_BYTES.len()
+        );
+        let _seg = connection
+            .poll_send(
+                &FakeStateMachineDebugId::default(),
+                &counters.refs(),
+                clock.now(),
+                &SocketOptions::default_for_state_tests(),
+            )
+            .expect("should send segment");
+
+        let second_send_time = get_last_data_sent(&connection);
+        assert_eq!(second_send_time, Some(time_after_sleep));
     }
 }
