@@ -28,15 +28,10 @@ class FfxDirectTest(ffxtestcase.FfxTestCase):
     """FFX host tool E2E test for Direct connections."""
 
     def setup_class(self) -> None:
-        # This just gets some things out of the way before we start turning
-        # the daemon off and on again.
+        # This just gets some things out of the way in case the daemon gets
+        # turned on and off again.
         super().setup_class()
         self.dut_ssh_address = self.dut.ffx.get_target_ssh_address()
-
-    def setup_test(self) -> None:
-        """Each test must run without the daemon."""
-        super().setup_test()
-        self.dut.ffx.run(["daemon", "stop"])
 
     def teardown_test(self) -> None:
         # Verify that we did not start the daemon
@@ -59,7 +54,7 @@ class FfxDirectTest(ffxtestcase.FfxTestCase):
         return json.loads(self.run_ffx(all_args))
 
     def test_direct_target_echo(self) -> None:
-        """Test `ffx --direct target echo` does not affect daemon state."""
+        """Test `ffx --direct target echo` works."""
         out = self._run_ffx_direct(
             [
                 "target",
@@ -72,7 +67,7 @@ class FfxDirectTest(ffxtestcase.FfxTestCase):
         asserts.assert_equal(out["message"], "From a Test")
 
     def test_direct_target_list(self) -> None:
-        """Test `ffx --direct target list` does not affect daemon state."""
+        """Test `ffx --direct target list` works."""
         out = self._run_ffx_direct(
             [
                 "target",
@@ -97,7 +92,7 @@ class FfxDirectTest(ffxtestcase.FfxTestCase):
     # This tests that an arbitrary tool using RCS, that was not specifically
     # modified to support direct mode, does on fact work in direct mode.
     def test_component_list(self) -> None:
-        """Test `ffx --direct component list` does not query the daemon."""
+        """Test `ffx --direct component list` works."""
         out = self._run_ffx_direct(
             [
                 "component",
@@ -109,7 +104,7 @@ class FfxDirectTest(ffxtestcase.FfxTestCase):
 
     # This tests that a tool that uses non-RCS proxies works in direct mode.
     def test_repo_list(self) -> None:
-        """Test `ffx --direct target repository list` does not query the daemon."""
+        """Test `ffx --direct target repository list` works."""
         out = self._run_ffx_direct(
             [
                 "target",
@@ -125,7 +120,7 @@ class FfxDirectTest(ffxtestcase.FfxTestCase):
     # This tests that a tool that uses a non-standard target connection flow
     # works in direct mode.
     def test_ffx_log(self) -> None:
-        """Test `ffx --direct log` does not query the daemon."""
+        """Test `ffx --direct log` works."""
         # Can't run with _run_ffx_direct() because the output is not
         # valid JSON; instead each line is a JSON object.
         out = self.run_ffx(

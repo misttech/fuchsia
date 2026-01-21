@@ -43,11 +43,6 @@ class FfxStrictTest(ffxtestcase.FfxTestCase):
         self.dut_name = self.dut.ffx.get_target_name()
         self.ssh_private_key: Optional[str] = None
 
-    def setup_test(self) -> None:
-        """Each test must run without the daemon."""
-        super().setup_test()
-        self.dut.ffx.run(["daemon", "stop"])
-
     # Return list of ["key=val"]
     def _get_configs(self, keys: List[str]) -> List[str]:
         outputs = []

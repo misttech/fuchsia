@@ -16,9 +16,9 @@ _LOGGER: logging.Logger = logging.getLogger(__name__)
 # break. This is important when users set connectivity.direct to true;
 # that should just mean that they want the daemon not be used when talking
 # to the target, not that all daemon-related commands should fail.
-# All we are doing is ensuring that the commands don't exist with a non-
+# All we are doing is ensuring that the commands don't exit with a non-
 # zero return code.
-# These tests use `self.run_ffx()` unstead of `self.dut.ffx.run()` to
+# These tests use `self.run_ffx()` instead of `self.dut.ffx.run()` to
 # ensure that we have specific control of exactly the arguments we need
 # when invoking these commands.
 class FfxDirectDaemonTest(ffxtestcase.FfxTestCase):
