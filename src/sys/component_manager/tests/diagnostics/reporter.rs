@@ -167,6 +167,7 @@ async fn main() {
             utilization_per_ten_k: AnyProperty,
         },
         component_id_index: contains {},
+        routing_errors: contains {},
     });
 
     assert_component_data(hierarchy, "root/archivist", archivist_job_koid);

@@ -4,4 +4,5 @@
 
 pub mod escrow;
 pub mod lifecycle;
+pub mod routing;
 pub mod task_metrics;

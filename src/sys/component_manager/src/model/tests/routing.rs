@@ -42,7 +42,7 @@ use {
     cm_types::RelativePath,
     errors::{ActionErrorKind, ModelError, ResolveActionError, StartActionError},
     fasync::TestExecutor,
-    fidl::endpoints::{ProtocolMarker, ServerEnd},
+    fidl::endpoints::{ProtocolMarker, Proxy, ServerEnd},
     fidl_fidl_examples_routing_echo as echo, fidl_fuchsia_component as fcomponent,
     fidl_fuchsia_component_decl as fdecl, fidl_fuchsia_component_resolution as fresolution,
     fidl_fuchsia_component_runner as fcrunner, fidl_fuchsia_io as fio, fidl_fuchsia_mem as fmem,
@@ -4051,4 +4051,40 @@ async fn injected_capability(test_shadowing: bool) {
     // Unresolve b. This should drop the request from `a` and avoid the "receivers must not outlive
     // their executor" panic on return.
     b.unresolve().await.unwrap();
+}
+
+#[fuchsia::test]
+async fn routing_error_appears_in_inspect() {
+    use diagnostics_assertions::{AnyProperty, assert_data_tree};
+
+    let components = vec![
+        ("a", ComponentDeclBuilder::new().child_default("b").build()),
+        ("b", ComponentDeclBuilder::new().use_(UseBuilder::protocol().name("foo")).build()),
+    ];
+    let test = RoutingTest::new("a", components).await;
+
+    let namespace = test.bind_and_get_namespace(["b"].try_into().unwrap()).await;
+    // Connect to `foo`, which should fail as it's not offered.
+    let client: fcomponent::BinderProxy = capability_util::connect_to_svc_in_namespace::<
+        fcomponent::BinderMarker,
+    >(&namespace, &"/svc/foo".parse().unwrap())
+    .await;
+
+    fasync::OnSignals::new(client.as_channel(), zx::Signals::CHANNEL_PEER_CLOSED).await.unwrap();
+
+    let root = test.model.root();
+    let inspector = root.context.inspector();
+
+    assert_data_tree!(inspector, root: contains {
+        routing_errors: {
+            errors: {
+                "0": {
+                    moniker: "b",
+                    capability_name: "protocol `foo`",
+                    error: AnyProperty,
+                    availability: "Required",
+                }
+            }
+        }
+    });
 }

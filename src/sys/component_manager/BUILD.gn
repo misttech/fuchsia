@@ -325,6 +325,7 @@ rustc_test("src_model_tests") {
   test_deps += [
     "//sdk/fidl/fuchsia.component:fuchsia.component_rust",
     "//src/lib/diagnostics/hierarchy/rust",
+    "//src/lib/diagnostics/testing/diagnostics-assertions/rust:diagnostics-assertions",
   ]
   assert_no_deps += [
     # For tracing support, :bin_with_tracing is required

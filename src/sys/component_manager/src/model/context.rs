@@ -4,6 +4,7 @@
 
 use crate::framework::capabilities::RemotedRuntimeCapabilities;
 use crate::model::token::InstanceRegistry;
+use ::diagnostics::routing::RoutingErrors;
 use ::routing::policy::GlobalPolicyChecker;
 use cm_config::{AbiRevisionPolicy, RuntimeConfig};
 use errors::ModelError;
@@ -27,6 +28,8 @@ pub struct ModelContext {
     remote_capabilities: Arc<RemotedRuntimeCapabilities>,
     #[cfg(test)]
     pub extra_framework_capabilities: Mutex<HashMap<cm_types::Name, sandbox::Capability>>,
+    /// Inspect routing errors.
+    pub routing_errors: Arc<RoutingErrors>,
     inspector: Inspector,
 }
 
@@ -43,17 +46,24 @@ impl ModelContext {
         let scope_factory = Box::new(|| ExecutionScope::new());
         #[cfg(test)]
         let scope_factory = scope_factory.unwrap_or_else(|| Box::new(|| ExecutionScope::new()));
+
+        let component_id_index = match &runtime_config.component_id_index_path {
+            Some(path) => component_id_index::Index::from_fidl_file(&path)?,
+            None => component_id_index::Index::default(),
+        };
+        let policy_checker = GlobalPolicyChecker::new(runtime_config.security_policy.clone());
+        let routing_errors =
+            Arc::new(RoutingErrors::new(inspector.root().create_child("routing_errors")));
+
         Ok(Self {
-            component_id_index: match &runtime_config.component_id_index_path {
-                Some(path) => component_id_index::Index::from_fidl_file(&path)?,
-                None => component_id_index::Index::default(),
-            },
-            policy_checker: GlobalPolicyChecker::new(runtime_config.security_policy.clone()),
+            component_id_index,
+            policy_checker,
             runtime_config,
             instance_registry,
             config_developer_overrides: Mutex::new(HashMap::new()),
             scope_factory,
             remote_capabilities: Arc::new(RemotedRuntimeCapabilities::new()),
+            routing_errors,
             #[cfg(test)]
             extra_framework_capabilities: Mutex::new(HashMap::new()),
             inspector,
@@ -94,6 +104,10 @@ impl ModelContext {
 
     pub fn remote_capabilities(&self) -> &Arc<RemotedRuntimeCapabilities> {
         &self.remote_capabilities
+    }
+
+    pub fn routing_errors(&self) -> &Arc<RoutingErrors> {
+        &self.routing_errors
     }
 
     pub fn inspector(&self) -> &Inspector {

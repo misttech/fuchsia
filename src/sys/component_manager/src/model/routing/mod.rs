@@ -188,6 +188,12 @@ pub async fn report_routing_failure(
     match availability {
         Availability::Required => {
             // TODO(https://fxbug.dev/42060474): consider changing this to `error!()`
+            target.context.routing_errors().record(
+                &target.moniker,
+                &capability_requested.to_string(),
+                &err.to_string(),
+                Availability::Required,
+            );
             target
                 .log(
                     log::Level::Warn,
@@ -211,6 +217,12 @@ pub async fn report_routing_failure(
             // TODO(https://fxbug.dev/42060474): if we change the log for
             // `Required` capabilities to `error!()`, consider also
             // changing this log for `Optional` to `warn!()`.
+            target.context.routing_errors().record(
+                &target.moniker,
+                &capability_requested.to_string(),
+                &err.to_string(),
+                availability,
+            );
             target.log(
                 log::Level::Info,
                 format!(
