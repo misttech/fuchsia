@@ -2,18 +2,50 @@
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
-# LINT.IfChange
 load("//build/bazel/bazel_idk:defs.bzl", "idk_cc_source_library_zx")
 
-# This is only a partial implementation of this target. It is sufficient to
-# allow utf-utils targets to be built on the Fuchsia toolchain by
-#`build/bazel/bazel_idk/tests:build_only_tests`. Neither target is currently
-# used from Bazel on the Fuchsia toolchain.
-# TODO(https://fxbug.dev/429377203): Implement this library.
+# LINT.IfChange
+
 idk_cc_source_library_zx(
     name = "zx",
-    # Specify all the headers so that .api file matches.
+    # TODO(https://fxbug.dev/417305295): Only include these when building Fuchsia.
+    # TODO(https://fxbug.dev/456186319): When adding support for building
+    # Zircon, only include the following when `!is_kernel`.
+    srcs = [
+        "bti.cc",
+        "channel.cc",
+        "counter.cc",
+        "debuglog.cc",
+        "event.cc",
+        "eventpair.cc",
+        "fifo.cc",
+        "guest.cc",
+        "interrupt.cc",
+        "iob.cc",
+        "iommu.cc",
+        "job.cc",
+        "msi.cc",
+        "pager.cc",
+        "port.cc",
+        "process.cc",
+        "profile.cc",
+        "resource.cc",
+        "socket.cc",
+        "status_string.cc",
+        "stream.cc",
+        "thread.cc",
+        "time.cc",
+        "timer.cc",
+        "vcpu.cc",
+        "vmar.cc",
+        "vmo.cc",
+    ],
     hdrs = [
+        "include/lib/zx/result.h",
+
+        # TODO(https://fxbug.dev/417305295): Only include these when building Fuchsia.
+        # TODO(https://fxbug.dev/456186319): When adding support for building
+        # Zircon, only include the following when `!is_kernel`.
         "include/lib/zx/bti.h",
         "include/lib/zx/channel.h",
         "include/lib/zx/clock.h",
@@ -38,7 +70,6 @@ idk_cc_source_library_zx(
         "include/lib/zx/process.h",
         "include/lib/zx/profile.h",
         "include/lib/zx/resource.h",
-        "include/lib/zx/result.h",
         "include/lib/zx/socket.h",
         "include/lib/zx/stream.h",
         "include/lib/zx/suspend_token.h",
@@ -54,14 +85,22 @@ idk_cc_source_library_zx(
     api_file_path = "//sdk/lib/zx:zx.api",
     category = "partner",
     idk_name = "zx",
+    implementation_deps = [
+        # TODO(https://fxbug.dev/456186321): Explain why this .as-needed target
+        # is needed, similar to the comment in BUILD.gn.
+        "//src/zircon/lib/zircon:zircon.as-needed",
+    ],
     stable = True,
 
-    # The current definition contains headers only applicable to Fuchsia.
-    # TODO(https://fxbug.dev/429377203): Provide an implementation appropriate for host toolchain.
+    # The current definition contains headers and sources only applicable to Fuchsia.
+    # TODO(https://fxbug.dev/417305295): Remove this once Fuchsia-only headers
+    # and sources are supported and this implementation is updated.
     target_compatible_with = ["@platforms//os:fuchsia"],
-
-    # Only allow the stub to be used as described above.
-    # Do not modify this until the stub is replaced with a real implementation.
-    visibility = ["//sdk/lib/utf-utils:__pkg__"],
+    visibility = ["//visibility:public"],
+    deps = [
+        "//sdk/lib/fit",
+        "//sdk/lib/stdcompat",
+        "//src/zircon/lib/zircon:headers",
+    ],
 )
 # LINT.ThenChange(BUILD.gn)

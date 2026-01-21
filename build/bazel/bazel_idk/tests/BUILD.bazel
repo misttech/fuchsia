@@ -427,6 +427,7 @@ filegroup(
         "//sdk/lib/stdcompat",
         "//sdk/lib/utf-utils",
         "//src/zircon/lib/zircon",
+        "//zircon/system/ulib/zx",
 
         # Build some of the underlying libraries on the host toolchain.
         ":build_only_tests_on_host_toolchain",
@@ -459,6 +460,9 @@ genrule(
         "//sdk/lib/stdcompat",
         "//sdk/lib/utf-utils",
         "//src/zircon/lib/zircon",
+        # TODO(https://fxbug.dev/417305295): Uncomment when Fuchsia-only headers
+        # are supported and this library can be built for host.
+        # "//zircon/system/ulib/zx",
     ],
 )
 
