@@ -255,6 +255,13 @@ fn local_ssh_key_dirs(ctx: &EnvironmentContext) -> fho::Result<Vec<PathBuf>> {
         .build()
         .get::<Vec<PathBuf>>(ctx)
         .user_message("Could not load ssh.pub file from config")?;
+    // For certain setups no public key will be set, only the private key location.
+    configured_dirs.extend(
+        ctx.query(SSH_PRIVATE_KEY)
+            .build()
+            .get::<Vec<PathBuf>>(ctx)
+            .user_message("Could not load ssh.priv file from config")?,
+    );
     // Look for the directory for each entry, not the file.
     for d in configured_dirs.iter_mut() {
         d.pop();
@@ -1892,5 +1899,41 @@ mod test {
                 .decode("AAAAC3NzaC1lZDI1NTE5AAAAIH5Tm3xmV3LGi0pNDiovSVpsoLEZiNSFMJN2wxnj8DnN")
                 .unwrap()
         );
+    }
+
+    #[fuchsia::test]
+    fn test_find_key_dirs_pub_and_private() {
+        let env = test_init().expect("test env init");
+        // These key locations don't really make sense since one is a directory and one is a file
+        // if we expect these values to be true, but we're going to just ignore that. We pop one
+        // element to ensure we have the directory.
+        env.context
+            .query(SSH_PUB_KEY)
+            .level(Some(ConfigLevel::User))
+            .build()
+            .set(
+                &env.context,
+                json!(["$ENV_PATH_THAT_IS_NOT_SET", "/expected/default", "/someother/thing"]),
+            )
+            .expect("set ssh.pub");
+        env.context
+            .query(SSH_PRIVATE_KEY)
+            .level(Some(ConfigLevel::User))
+            .build()
+            .set(
+                &env.context,
+                json!([
+                    "$ENV_PATH_THAT_IS_NOT_SET_2",
+                    "/expected/default/private",
+                    "someother/place"
+                ]),
+            )
+            .expect("set ssh.priv");
+
+        let dirs = local_ssh_key_dirs(&env.context).unwrap();
+        assert!(dirs.iter().any(|d| d.display().to_string() == "/expected/default"));
+        assert!(dirs.iter().any(|d| d.display().to_string() == "/expected"));
+        assert!(dirs.iter().any(|d| d.display().to_string() == "/someother"));
+        assert!(dirs.iter().any(|d| d.display().to_string() == "someother"));
     }
 }
