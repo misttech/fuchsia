@@ -4,6 +4,6 @@
   "pkg/driver_runtime/include/lib/fdf/channel_read.h": "bf8b8208688504e7afc4933c63dff99d",
   "pkg/driver_runtime/include/lib/fdf/dispatcher.h": "d18febd1c27bfb1277c9d9ca8a923de5",
   "pkg/driver_runtime/include/lib/fdf/handle.h": "e65b336168a82638dbd9ef49c274b235",
-  "pkg/driver_runtime/include/lib/fdf/token.h": "57798200796814df159982ab5b6fd3a0",
+  "pkg/driver_runtime/include/lib/fdf/token.h": "0c7008083962a60ac89164b4461ffc82",
   "pkg/driver_runtime/include/lib/fdf/types.h": "19cfebfa5cec0396299c648ce63094a0"
 }

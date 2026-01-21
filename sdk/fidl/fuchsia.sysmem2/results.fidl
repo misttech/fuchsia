@@ -204,6 +204,6 @@ type BufferMemorySettings = table {
     /// `size_bytes` rounded up to a page size boundary or said participant can
     /// use raw_vmo_size, but for that participant, using `size_bytes` rounded
     /// up to the page size can avoid mapping a few pages.
-    @available(added=NEXT)
+    @available(added=30)
     6: raw_vmo_size uint64;
 };

@@ -91,7 +91,7 @@ struct fdf_token {
 // has already been registered.
 zx_status_t fdf_token_register(zx_handle_t token, fdf_dispatcher_t* dispatcher,
                                fdf_token_t* handler)
-    ZX_REMOVED_SINCE(1, NEXT, NEXT, "Use fdf_token_receive instead of fdf_token_register");
+    ZX_REMOVED_SINCE(1, 30, 30, "Use fdf_token_receive instead of fdf_token_register");
 
 // Receives the corresponding driver handle for |token| if it has been transferred.
 //

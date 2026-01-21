@@ -15,7 +15,7 @@ ServiceValidator::ServiceValidator(const std::vector<fuchsia_driver_framework::O
     } else if (offer.Which() == fuchsia_driver_framework::Offer::Tag::kZirconTransport) {
       inner_offer = &offer.zircon_transport().value();
     }
-#if FUCHSIA_API_LEVEL_AT_LEAST(NEXT)
+#if FUCHSIA_API_LEVEL_AT_LEAST(30)
     else if (offer.Which() == fuchsia_driver_framework::Offer::Tag::kDictionaryOffer) {
       inner_offer = &offer.dictionary_offer().value();
     }
@@ -53,7 +53,7 @@ ServiceValidator::ServiceValidator(const std::vector<fuchsia_driver_framework::O
       } else if (offer.Which() == fuchsia_driver_framework::Offer::Tag::kZirconTransport) {
         target_map = &instance_to_zircon_service_mapping_;
       }
-#if FUCHSIA_API_LEVEL_AT_LEAST(NEXT)
+#if FUCHSIA_API_LEVEL_AT_LEAST(30)
       else if (offer.Which() == fuchsia_driver_framework::Offer::Tag::kDictionaryOffer) {
         target_map = &instance_to_zircon_service_mapping_;
       }

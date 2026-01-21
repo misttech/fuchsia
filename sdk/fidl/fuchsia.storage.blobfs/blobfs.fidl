@@ -3,7 +3,7 @@
 // found in the LICENSE file.
 
 /// Provides control of the blobfs overwrite preference to the product.
-@available(added=NEXT)
+@available(added=30)
 library fuchsia.storage.blobfs;
 
 using zx;

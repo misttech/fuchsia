@@ -110,7 +110,7 @@ type CreateError = flexible enum {
     // The specified collection does not allow numbered handles.
     NUMBERED_HANDLES_FORBIDDEN = 10;
     // Cannot set both `dictionary` and `additional_inputs`.
-    @available(added=NEXT)
+    @available(added=30)
     DICTIONARY_AND_ADDITIONAL_INPUTS_SET = 11;
 };
 

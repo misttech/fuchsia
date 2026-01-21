@@ -1697,7 +1697,7 @@ bool ImageFormatCompatibleWithProtectedMemory(
 
 #endif  // FUCHSIA_API_LEVEL_AT_LEAST(19)
 
-#if FUCHSIA_API_LEVEL_AT_LEAST(NEXT)
+#if FUCHSIA_API_LEVEL_AT_LEAST(30)
 bool ImageFormatIsNonTiledSinglePlane(const PixelFormatAndModifier& pixel_format_and_modifier) {
   for (auto& format_set : kImageFormats) {
     if (format_set->IsSupported(pixel_format_and_modifier)) {
@@ -1706,4 +1706,4 @@ bool ImageFormatIsNonTiledSinglePlane(const PixelFormatAndModifier& pixel_format
   }
   return false;
 }
-#endif  // FUCHSIA_API_LEVEL_AT_LEAST(NEXT)
+#endif  // FUCHSIA_API_LEVEL_AT_LEAST(30)

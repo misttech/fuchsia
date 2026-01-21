@@ -45,7 +45,7 @@ alias NodeName = string:MAX_NODE_NAME_LENGTH;
 @available(added=26)
 alias NodeProperties = vector<NodeProperty2>:MAX_PROPERTY_COUNT;
 
-@available(added=NEXT)
+@available(added=30)
 const MAX_DRIVER_HOST_LENGTH uint8 = 128;
 
 /// Definition of a symbol provided by a driver for a node. A symbol is local to
@@ -95,7 +95,7 @@ type Offer = flexible union {
     2: driver_transport fuchsia.component.decl.Offer;
     /// An offer that lives in the |offers_dictionary|. This is equivalent to a |zircon_transport|
     /// offer for all other purposes (eg. bind property generation).
-    @available(added=NEXT)
+    @available(added=30)
     3: dictionary_offer fuchsia.component.decl.Offer;
 };
 
@@ -248,7 +248,7 @@ type NodeAddArgs = resource table {
     /// to. Only respected if the driver binds directly to this node. If a composite binds to this
     /// node, then this field will be ignored as it should be expressed in the composite node spec
     /// instead.
-    @available(added=NEXT)
+    @available(added=30)
     10: driver_host string:MAX_DRIVER_HOST_LENGTH;
 };
 

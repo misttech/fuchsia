@@ -657,7 +657,7 @@ which is almost certainly a mistake: {}",
                 fn capability_id_to_type(id: &CapabilityId<'_>) -> Option<NodeType> {
                     match id {
                         CapabilityId::UsedConfiguration(_) => None,
-                        #[cfg(fuchsia_api_level_at_least = "NEXT")]
+                        #[cfg(fuchsia_api_level_at_least = "30")]
                         CapabilityId::UsedDictionary(_) => Some(NodeType::Dictionary),
                         CapabilityId::UsedDirectory(_) => Some(NodeType::Directory),
                         CapabilityId::UsedEventStream(_) => Some(NodeType::Service),
@@ -2332,7 +2332,7 @@ which is almost certainly a mistake: {}",
                 fn capability_id_to_type(id: &CapabilityId<'_>) -> Option<NodeType> {
                     match id {
                         CapabilityId::UsedConfiguration(_) => None,
-                        #[cfg(fuchsia_api_level_at_least = "NEXT")]
+                        #[cfg(fuchsia_api_level_at_least = "30")]
                         CapabilityId::UsedDictionary(_) => Some(NodeType::Dictionary),
                         CapabilityId::UsedDirectory(_) => Some(NodeType::Directory),
                         CapabilityId::UsedEventStream(_) => Some(NodeType::Service),

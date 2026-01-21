@@ -869,7 +869,7 @@ type ImageFormatConstraints = table {
     ///   * `min_size.height` - any participant setting a value greater than 1
     ///   * `size_alignment.height` - any participant setting to a value greater
     ///     than 1
-    @available(added=NEXT)
+    @available(added=30)
     19: pad_for_block_size fuchsia.math.SizeU;
 
     /// pad_beyond_image_size_bytes ensures that there will be at least this
@@ -899,6 +899,6 @@ type ImageFormatConstraints = table {
     ///
     /// Do not write to these bytes outside time intervals during which
     /// writing to pixel data is permitted.
-    @available(added=NEXT)
+    @available(added=30)
     20: pad_beyond_image_size_bytes uint64;
 };

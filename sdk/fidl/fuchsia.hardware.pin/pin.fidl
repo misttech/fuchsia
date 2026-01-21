@@ -15,7 +15,7 @@ type Pull = strict enum {
     DOWN = 0;
     UP = 1;
     NONE = 2;
-    @available(added=NEXT)
+    @available(added=30)
     BUS_HOLD = 3;
 };
 
@@ -38,11 +38,11 @@ type Configuration = table {
     /// Selects the power source. Interpretation is controller dependent.
     5: power_source uint64;
     /// Determines whether the interrupt is wakeable or not.
-    @available(added=NEXT)
+    @available(added=30)
     6: wake_vector bool;
     /// Configures how quickly the pin can transition between high and low states. The
     /// interpretation of `slew_rate` is controller dependent.
-    @available(added=NEXT)
+    @available(added=30)
     7: slew_rate uint64;
 };
 

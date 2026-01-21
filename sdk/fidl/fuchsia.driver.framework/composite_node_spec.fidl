@@ -83,7 +83,7 @@ type CompositeNodeSpec = table {
     /// in. All drivers which specify the same identifier will be colocated into the same driver
     /// host. If the driver host hasn't been started, it will be started upon the time the node is
     /// bound to. 
-    @available(added=NEXT)
+    @available(added=30)
     4: driver_host string:MAX_DRIVER_HOST_LENGTH;
 };
 

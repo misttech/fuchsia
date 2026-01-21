@@ -135,7 +135,7 @@ type RebootReason = strict(removed=9) flexible(added=9) enum : uint16 {
     ANDROID_UNEXPECTED_REASON = 21;
 
     /// An Android-initiated shutdown that Starnix doesn't know the reason for.
-    @available(added=NEXT)
+    @available(added=30)
     ANDROID_NO_REASON = 25;
 
     /// The device rebooted because Android called for the "RescueParty".

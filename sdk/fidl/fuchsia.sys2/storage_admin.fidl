@@ -9,11 +9,11 @@ using fuchsia.io;
 /// The maximum length of a storage instance ID.
 /// A storage instance ID is a 256-bit UUID, which when encoded
 /// in hex notation is 64 characters long.
-@available(removed=NEXT)
+@available(removed=30)
 const MAX_STORAGE_ID_LENGTH uint32 = 64;
 
 @strict_audit(bug="https://fxbug.dev/467128242", state="PENDING_REVIEW")
-@available(removed=NEXT)
+@available(removed=30)
 type StatusError = strict enum {
     /// The storage provider returned an error to a request or the connection
     /// to the provider unexpectedly closed.
@@ -31,7 +31,7 @@ type StatusError = strict enum {
 };
 
 @strict_audit(bug="https://fxbug.dev/467128242", state="PENDING_REVIEW")
-@available(removed=NEXT)
+@available(removed=30)
 type DeletionError = strict enum {
     /// There was an error sending a request to the storage provider.
     CONNECTION = 1;
@@ -47,7 +47,7 @@ type DeletionError = strict enum {
     UNSUPPORTED = 4;
 };
 
-@available(removed=NEXT)
+@available(removed=30)
 @discoverable(server="platform")
 closed protocol StorageAdmin {
     /// Opens the isolated directory for the given component. The open request will provision
@@ -105,7 +105,7 @@ closed protocol StorageAdmin {
 
 /// An iterator protocol for returning a set of components using a storage capability. See
 /// |StorageAdmin.ListStorageInRealm| for more information.
-@available(removed=NEXT)
+@available(removed=30)
 closed protocol StorageIterator {
     /// Retrieve the next set of components using the storage capability. The returned monikers
     /// are relative to the component that declares the storage capability. Returns an empty
@@ -116,7 +116,7 @@ closed protocol StorageIterator {
 };
 
 /// Metadata about status of the storage
-@available(removed=NEXT)
+@available(removed=30)
 type StorageStatus = table {
     1: total_size uint64;
     2: used_size uint64;

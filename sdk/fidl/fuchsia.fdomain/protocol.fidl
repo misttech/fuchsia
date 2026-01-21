@@ -182,7 +182,7 @@ open protocol FDomain {
     }) error Error;
 
     // Return the kernel object ID (koid) of the handle.
-    @available(added=NEXT)
+    @available(added=30)
     flexible GetKoid(struct {
         handle HandleId;
     }) -> (struct {

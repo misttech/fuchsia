@@ -30,7 +30,7 @@ extern "C" {
 /// \param va Arguments used in the format string
 ///
 MAGMA_EXPORT void magma_log(magma_log_severity_t severity, const char* tag, const char* file,
-                            int line, const char* format, va_list va) MAGMA_AVAILABLE_SINCE(NEXT);
+                            int line, const char* format, va_list va) MAGMA_AVAILABLE_SINCE(30);
 
 ///
 /// \brief Logs a message using Fuchsia structured logs
@@ -43,7 +43,7 @@ MAGMA_EXPORT void magma_log(magma_log_severity_t severity, const char* tag, cons
 ///
 MAGMA_EXPORT void magma_fuchsia_log(int8_t severity, const char* tag, const char* file, int line,
                                     const char* format, va_list va)
-    MAGMA_DEPRECATED_SINCE(1, NEXT, "use magma_log");
+    MAGMA_DEPRECATED_SINCE(1, 30, "use magma_log");
 
 #if defined(__cplusplus)
 }

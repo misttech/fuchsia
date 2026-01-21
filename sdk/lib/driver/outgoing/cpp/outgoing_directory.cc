@@ -19,7 +19,7 @@ OutgoingDirectory& OutgoingDirectory::operator=(OutgoingDirectory&& other) noexc
 }
 
 void OutgoingDirectory::RegisterRuntimeToken(zx::channel token, AnyHandler handler) {
-#if FUCHSIA_API_LEVEL_LESS_THAN(NEXT)
+#if FUCHSIA_API_LEVEL_LESS_THAN(30)
   auto token_connect_handler = [handler = std::move(handler)](
                                    fdf_dispatcher_t* dispatcher, fdf::Protocol* protocol,
                                    zx_status_t status, fdf::Channel channel) mutable {

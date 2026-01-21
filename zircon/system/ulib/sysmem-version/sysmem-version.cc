@@ -1380,7 +1380,7 @@ fpromise::result<fuchsia_sysmem::ImageFormatConstraints> V1CopyFromV2ImageFormat
   }
 #endif
 
-#if FUCHSIA_API_LEVEL_AT_LEAST(NEXT)
+#if FUCHSIA_API_LEVEL_AT_LEAST(30)
   if (v2.pad_beyond_image_size_bytes().has_value()) {
     uint64_t pad_beyond_image_size_bytes = *v2.pad_beyond_image_size_bytes();
     if (pad_beyond_image_size_bytes != 0) {
@@ -1399,7 +1399,7 @@ fpromise::result<fuchsia_sysmem::ImageFormatConstraints> V1CopyFromV2ImageFormat
       return fpromise::error();
     }
   }
-#endif  // FUCHSIA_API_LEVEL_AT_LEAST(NEXT)
+#endif  // FUCHSIA_API_LEVEL_AT_LEAST(30)
 
   // V2 doesn't have these fields.  A similar constraint, though not exactly the same, can be
   // achieved with required_min_size.width, required_max_size_list[n].width.

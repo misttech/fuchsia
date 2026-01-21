@@ -106,7 +106,7 @@ type BondingData = table {
     8: bredr_bond BredrBondData;
 
     /// The device class of the peer, if known.
-    @available(added=NEXT)
+    @available(added=30)
     9: device_class bt.DeviceClass;
 };
 

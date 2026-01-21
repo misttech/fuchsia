@@ -494,7 +494,7 @@ impl From<&fdecl::Use> for DeclType {
     fn from(use_: &fdecl::Use) -> Self {
         match use_ {
             fdecl::Use::Config(_) => DeclType::UseConfiguration,
-            #[cfg(fuchsia_api_level_at_least = "NEXT")]
+            #[cfg(fuchsia_api_level_at_least = "30")]
             fdecl::Use::Dictionary(_) => DeclType::UseDictionary,
             fdecl::Use::Directory(_) => DeclType::UseDirectory,
             fdecl::Use::EventStream(_) => DeclType::UseEventStream,
