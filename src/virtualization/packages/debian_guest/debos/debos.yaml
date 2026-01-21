@@ -19,9 +19,9 @@ actions:
   # from scratch.
   {{ if not $use_rootfs -}}
 
-  # Install a base image from Debian "Bullseye".
+  # Install a base image from Debian "Bookworm".
   - action: debootstrap
-    suite: "bullseye"
+    suite: "bookworm"
     components:
       - main
     mirror: https://deb.debian.org/debian
