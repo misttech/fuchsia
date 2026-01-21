@@ -33,6 +33,10 @@ use zerocopy::FromBytes;
 
 pub const DEFAULT_LISTEN_BACKLOG: usize = 1024;
 
+/// TODO(https://fxbug.dev/477273398"): These come from Android, and are currently stubbed out.
+const SO_ANDROID_DROP_REASON: u32 = 0xAD01D01;
+const ANDROID_DROP_REASON_NONE: u64 = 0;
+
 pub trait SocketOps: Send + Sync + AsAny {
     /// Returns the domain, type and protocol of the socket. This is only used for socket that are
     /// build without previous knowledge of this information, and can be ignored if all sockets are
@@ -590,6 +594,13 @@ impl Socket {
                     let duration = self.send_timeout().unwrap_or_default();
                     TimeValPtr::into_bytes(current_task, timeval_from_duration(duration))
                         .map_err(|_| errno!(EINVAL))?
+                }
+                SO_ANDROID_DROP_REASON => {
+                    track_stub!(
+                        TODO("https://fxbug.dev/477273398"),
+                        "Faking SO_ANDROID_DROP_REASON"
+                    );
+                    ANDROID_DROP_REASON_NONE.to_ne_bytes().to_vec()
                 }
                 _ => self.ops.getsockopt(locked, self, current_task, level, optname, optlen)?,
             },
