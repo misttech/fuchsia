@@ -848,6 +848,8 @@ void VkRenderer::Render(const ImageMetadata& render_target,
 
   std::vector<escher::TexturePtr> textures;
   std::vector<escher::RectangleCompositor::ColorData> color_data;
+  textures.reserve(images.size());
+  color_data.reserve(images.size());
   for (const auto& image : images) {
     auto texture_ptr = local_texture_map.at(image.identifier);
 

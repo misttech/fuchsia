@@ -584,7 +584,7 @@ void DisplayCompositor::ApplyLayerColor(const display::LayerId& layer_id,
 // however, not all hardware supports images with sizes that differ from the destination size of
 // the rect. So implementing that solution on the display path as well is problematic.
 #if 0
-  const auto [src, dst] = DisplaySrcDstFrames::New(rectangle, image);
+  const auto [src, dst] = DisplaySrcDstFrames::New(rectangle);
 
   // TODO(https://fxbug.dev/42056054): `fidl::HLCPPToNatural()` doesn't work with const arguments.
   const fuchsia_ui_composition::Orientation orientation = fidl::HLCPPToNatural(
@@ -607,7 +607,7 @@ void DisplayCompositor::ApplyLayerImage(const display::LayerId& layer_id,
   FX_DCHECK(main_dispatcher_ == async_get_default_dispatcher());
   FX_DCHECK(display_coordinator_.is_valid());
 
-  const auto [src, dst] = DisplaySrcDstFrames::New(rectangle, image);
+  const auto [src, dst] = DisplaySrcDstFrames::New(rectangle);
   FX_DCHECK(src.width() && src.height()) << "Source frame cannot be empty.";
   FX_DCHECK(dst.width() && dst.height()) << "Destination frame cannot be empty.";
 

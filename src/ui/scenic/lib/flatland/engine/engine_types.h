@@ -56,7 +56,7 @@ struct DisplaySrcDstFrames {
   // Rectangle2D struct and ImageMetadata struct, so we just need to convert that over to
   // the proper display controller readable format. The input rectangle contains both the
   // source and destination information.
-  static DisplaySrcDstFrames New(ImageRect rectangle, allocation::ImageMetadata image);
+  static DisplaySrcDstFrames New(ImageRect rectangle);
 };
 
 }  // namespace flatland

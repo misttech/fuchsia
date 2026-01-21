@@ -16,7 +16,7 @@ using fuchsia_ui_composition::ImageFlip;
 }  // namespace
 namespace flatland {
 
-DisplaySrcDstFrames DisplaySrcDstFrames::New(ImageRect rectangle, allocation::ImageMetadata image) {
+DisplaySrcDstFrames DisplaySrcDstFrames::New(ImageRect rectangle) {
   types::Rectangle image_source({
       .x = rectangle.texel_uvs[0].x,
       .y = rectangle.texel_uvs[0].y,
