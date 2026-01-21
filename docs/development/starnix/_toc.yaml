@@ -1,4 +1,6 @@
 toc:
+- title: "Always be documenting"
+  path: /docs/development/starnix/always_be_documenting.md
 - title: "Common coding patterns in Starnix"
   path: /docs/development/starnix/common-coding-patterns-in-starnix.md
 - title: "IPC patterns in Starnix"
