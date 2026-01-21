@@ -9,14 +9,8 @@ sdk_source_set("cpp") {
   # TODO(https://fxbug.dev/376105715): Promote to "partner" with devicetree.
   category = "internal"
   sdk_name = "driver_test_realm_builder"
-  sources = [
-    "builder.cc",
-    "lib.cc",
-  ]
-  public = [
-    "builder.h",
-    "lib.h",
-  ]
+  sources = [ "builder.cc" ]
+  public = [ "builder.h" ]
   include_base = "//sdk"
 
   non_sdk_public_deps = [

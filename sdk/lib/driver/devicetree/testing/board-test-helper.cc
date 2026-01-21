@@ -9,7 +9,6 @@
 #include <fidl/fuchsia.io/cpp/fidl.h>
 #include <lib/device-watcher/cpp/device-watcher.h>
 #include <lib/driver_test_realm/realm_builder/cpp/builder.h>
-#include <lib/driver_test_realm/realm_builder/cpp/lib.h>
 #include <lib/fdio/directory.h>
 #include <lib/fdio/fd.h>
 #include <lib/fdio/io.h>
@@ -55,51 +54,10 @@ BoardTestHelper::~BoardTestHelper() {
 void BoardTestHelper::SetupRealm() {
   auto realm_builder = component_testing::RealmBuilder::Create();
   realm_builder_ = std::make_unique<component_testing::RealmBuilder>(std::move(realm_builder));
-  if (dtr_v2_) {
-    zx::result dtb = LoadDevicetreeBlob(dtb_path_.c_str());
-    ZX_ASSERT_MSG(dtb.is_ok(), "Failed to open dtb");
-
-    fidl::Arena arena;
-    auto args = fdt::wire::RealmArgs::Builder(arena)
-                    .root_driver("fuchsia-boot:///platform-bus#meta/platform-bus.cm")
-                    .devicetree(std::move(*dtb))
-                    .platform_vid(platform_id_.vid)
-                    .platform_pid(platform_id_.pid)
-                    .board_name(platform_id_.board_name)
-                    .Build();
-
-    driver_test_realm::Setup(*realm_builder_, dispatcher_,
-                             driver_test_realm::OptionsBuilder().using_subpackage(true).Build(),
-                             fidl::ToNatural(args));
-  } else {
-    driver_test_realm::Setup(*realm_builder_);
-  }
-}
-
-zx::result<> BoardTestHelper::StartRealm() {
-  realm_ = std::make_unique<component_testing::RealmRoot>(realm_builder_->Build(dispatcher_));
-
-  if (dtr_v2_) {
-    zx::result<> bootup_result = driver_test_realm::WaitForBootup(*realm_);
-    if (bootup_result.is_error()) {
-      FX_LOGS(ERROR) << "Failed to wait for bootup : " << bootup_result.status_string();
-    }
-    return zx::ok();
-  }
-
-  auto client = realm_->component().Connect<fdt::Realm>();
-  if (client.is_error()) {
-    FX_LOGS(ERROR) << "Failed to connect to driver test realm : " << client.status_string();
-    return client.take_error();
-  }
-
+  ZX_ASSERT(dtr_v2_);
   zx::result dtb = LoadDevicetreeBlob(dtb_path_.c_str());
-  if (dtb.is_error()) {
-    FX_LOGS(ERROR) << "Failed to open dtb : " << dtb.status_string();
-    return dtb.take_error();
-  }
+  ZX_ASSERT_MSG(dtb.is_ok(), "Failed to open dtb");
 
-  fidl::WireSyncClient driver_test_realm{std::move(*client)};
   fidl::Arena arena;
   auto args = fdt::wire::RealmArgs::Builder(arena)
                   .root_driver("fuchsia-boot:///platform-bus#meta/platform-bus.cm")
@@ -109,17 +67,19 @@ zx::result<> BoardTestHelper::StartRealm() {
                   .board_name(platform_id_.board_name)
                   .Build();
 
-  auto start_result = driver_test_realm->Start(args);
-  if (start_result.status() != ZX_OK) {
-    FX_LOGS(ERROR) << "Failed to start driver test realm : " << start_result.status_string();
-    return zx::error(start_result.status());
-  }
+  driver_test_realm::Setup(*realm_builder_, dispatcher_,
+                           driver_test_realm::OptionsBuilder().using_subpackage(true).Build(),
+                           fidl::ToNatural(args));
+}
 
-  if (start_result->is_error()) {
-    FX_LOGS(ERROR) << "Failed to start driver test realm : " << start_result.error();
-    return start_result->take_error();
-  }
+zx::result<> BoardTestHelper::StartRealm() {
+  realm_ = std::make_unique<component_testing::RealmRoot>(realm_builder_->Build(dispatcher_));
 
+  ZX_ASSERT(dtr_v2_);
+  zx::result<> bootup_result = driver_test_realm::WaitForBootup(*realm_);
+  if (bootup_result.is_error()) {
+    FX_LOGS(ERROR) << "Failed to wait for bootup : " << bootup_result.status_string();
+  }
   return zx::ok();
 }
 
