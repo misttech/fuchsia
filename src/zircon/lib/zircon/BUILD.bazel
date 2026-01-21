@@ -1,0 +1,71 @@
+# Copyright 2025 The Fuchsia Authors. All rights reserved.
+# Use of this source code is governed by a BSD-style license that can be
+# found in the LICENSE file.
+
+load("@rules_cc//cc:defs.bzl", "cc_library")
+load("//build/bazel/bazel_idk:defs.bzl", "idk_noop_atom")
+
+# LINT.IfChange
+
+# The vDSO ABI is provided at link time by a stub.  The actual runtime image
+# comes from the kernel and is not part of the build or SDK for userland at
+# all.  The kernel's internal build of the vDSO verifies that the ABI matches.
+# TODO(https://fxbug.dev/457449319): Implement using ifs_shared_library() when
+# available and use that for Fuchsia and these two for host.
+# TODO(https://fxbug.dev/456186319): When adding support for building
+# Zircon, only use the ifs_shared_library() implementation when
+# `is_fuchsia && toolchain_base_environment != "kernel"`.
+cc_library(
+    name = "zircon",
+    visibility = ["//visibility:public"],
+    deps = [":headers"],
+)
+
+cc_library(
+    name = "zircon.as-needed",
+    visibility = ["//visibility:public"],
+    deps = [":headers"],
+)
+
+cc_library(
+    name = "headers",
+    visibility = ["//visibility:public"],
+    deps = [":zircon-headers"] +
+           select({
+               # TODO(https://fxbug.dev/457448700): Uncomment when available.
+               # "@platforms//os:fuchsia": ["//zircon/vdso:public"],
+               "//conditions:default": [],
+           }) +
+           select({
+               "@platforms//os:fuchsia": [],
+               # TODO(https://fxbug.dev/456186319): When adding support for
+               # building Zircon, also select `[]` when `!is_fuchsia && is_kernel`.
+               "//conditions:default": ["//zircon/system/public"],
+           }),
+)
+
+cc_library(
+    name = "zircon-headers",
+    hdrs = [
+        "include/zircon/exception.h",
+        "include/zircon/status.h",
+    ],
+    includes = ["include"],
+)
+
+# The zircon library is not a real IDK atom since it is provided
+# directly as part of the IDK sysroot.
+idk_noop_atom(
+    name = "zircon_idk",
+    api_area = "kernel",
+    category = "partner",
+    id = "sdk://zircon",
+    idk_name = "zircon",
+    stable = True,
+    visibility = ["//visibility:public"],
+)
+
+# TODO(https://fxbug.dev/457449319): Implement the metadata in the GN
+# "hermetic_source_set-underscores-rewrite" target if necessary.
+
+# LINT.ThenChange(BUILD.gn)

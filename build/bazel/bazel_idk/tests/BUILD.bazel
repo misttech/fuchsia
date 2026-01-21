@@ -426,6 +426,7 @@ filegroup(
         "//sdk/lib/memory_barriers",
         "//sdk/lib/stdcompat",
         "//sdk/lib/utf-utils",
+        "//src/zircon/lib/zircon",
 
         # Build some of the underlying libraries on the host toolchain.
         ":build_only_tests_on_host_toolchain",
@@ -457,6 +458,7 @@ genrule(
         # Other libraries.
         "//sdk/lib/stdcompat",
         "//sdk/lib/utf-utils",
+        "//src/zircon/lib/zircon",
     ],
 )
 

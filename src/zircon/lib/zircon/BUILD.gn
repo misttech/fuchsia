@@ -7,6 +7,8 @@ import("//build/toolchain/ifs_shared_library.gni")
 import("//build/toolchain/toolchain_environment.gni")
 import("libzircon.gni")
 
+# LINT.IfChange
+
 # The vDSO ABI is provided at link time by a stub.  The actual runtime image
 # comes from the kernel and is not part of the build or SDK for userland at
 # all.  The kernel's internal build of the vDSO verifies that the ABI matches.
@@ -82,3 +84,4 @@ group("hermetic_source_set-underscores-rewrite") {
     }
   }
 }
+# LINT.ThenChange(BUILD.bazel)
