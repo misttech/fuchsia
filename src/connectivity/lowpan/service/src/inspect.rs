@@ -1329,6 +1329,32 @@ async fn monitor_device(name: String, iface_tree: Arc<IfaceTreeHolder>) -> Resul
                         if let Some(x) = telemetry_data.extended_pan_id {
                             inspector.root().record_uint("extended_pan_id", x.into());
                         }
+                        if let Some(x) = telemetry_data.border_routing_peers {
+                            inspector.root().record_child(
+                                "border_routing_peers",
+                                |br_peers_child| {
+                                    for (index, br_peer) in x.iter().enumerate() {
+                                        br_peers_child.record_child(
+                                            format!("peer_{}", index),
+                                            |br_peer_node| {
+                                                br_peer_node.record_uint(
+                                                    "thread_rloc",
+                                                    br_peer.thread_rloc.unwrap_or(0).into(),
+                                                );
+                                                br_peer_node.record_uint(
+                                                    "age",
+                                                    br_peer
+                                                        .age
+                                                        .unwrap_or(0)
+                                                        .try_into()
+                                                        .unwrap_or(0),
+                                                );
+                                            },
+                                        );
+                                    }
+                                },
+                            )
+                        }
                     }
                     Err(e) => {
                         warn!("Error in logging telemetry. Error: {}", e);

@@ -1054,6 +1054,22 @@ where
         // Get the extended pan id of current Thread network.
         let extended_pan_id = u64::from_ne_bytes(ot.get_extended_pan_id().into_array());
 
+        // Get the list of peer BRs found in Network Data entries.
+        let border_routing_peers = ot
+            .border_routing_peer_get_iterator()
+            .take(64) // Limit the number of peers to 64 per the FIDL definition.
+            .map(|peer| fidl_fuchsia_lowpan_experimental::BorderRoutingPeer {
+                thread_rloc: Some(peer.rloc16().into()),
+                age: Some(
+                    fuchsia_async::MonotonicDuration::from_seconds(peer.age().into())
+                        .into_nanos()
+                        .try_into()
+                        .unwrap(),
+                ),
+                ..Default::default()
+            })
+            .collect::<Vec<_>>();
+
         Ok(Telemetry {
             rssi: Some(ot.get_rssi()),
             partition_id: Some(ot.get_partition_id()),
@@ -1107,6 +1123,7 @@ where
             border_agent_counters,
             multi_ail_detected: Some(multi_ail_detected),
             extended_pan_id: Some(extended_pan_id),
+            border_routing_peers: Some(border_routing_peers),
             ..Default::default()
         })
     }

@@ -38,6 +38,20 @@ impl<T: ?Sized + BorderRouter> Iterator for LocalOnMeshPrefixIterator<'_, T> {
     }
 }
 
+/// Iterator type for border routing peer border router.
+#[allow(missing_debug_implementations)]
+pub struct BorderRoutingPeerIterator<'a, T: ?Sized> {
+    ot_instance: &'a T,
+    ot_iter: otBorderRoutingPrefixTableIterator,
+}
+
+impl<T: ?Sized + BorderRouter> Iterator for BorderRoutingPeerIterator<'_, T> {
+    type Item = BorderRoutingPeer;
+    fn next(&mut self) -> Option<Self::Item> {
+        self.ot_instance.iter_next_border_routing_peer(&mut self.ot_iter)
+    }
+}
+
 /// Methods from the [OpenThread "Border Router" Module][1].
 ///
 /// [1]: https://openthread.io/reference/group/api-border-router
@@ -113,6 +127,20 @@ pub trait BorderRouter {
     fn border_routing_is_multi_ail_detected(&self) -> bool;
 
     /// Functional equivalent of
+    /// [`otsys::otBorderRoutingPrefixTableInitIterator`](crate::otsys::otBorderRoutingPrefixTableInitIterator).
+    fn border_routing_prefix_table_init_iterator(
+        &self,
+        iter: &mut otBorderRoutingPrefixTableIterator,
+    );
+
+    /// Get the border routing peer iterator instance.
+    fn border_routing_peer_get_iterator(&self) -> BorderRoutingPeerIterator<'_, Self> {
+        let mut ot_iter = otBorderRoutingPrefixTableIterator::default();
+        self.border_routing_prefix_table_init_iterator(&mut ot_iter);
+        BorderRoutingPeerIterator { ot_instance: self, ot_iter }
+    }
+
+    /// Functional equivalent of
     /// [`otsys::otBorderRouterGetNextRoute`](crate::otsys::otBorderRouterGetNextRoute).
     // TODO: Determine if the underlying implementation of
     //       this method has undefined behavior when network data
@@ -135,6 +163,13 @@ pub trait BorderRouter {
         &self,
         ot_iter: &mut otNetworkDataIterator,
     ) -> Option<BorderRouterConfig>;
+
+    /// Functional equivalent of
+    /// [`otsys::otBorderRoutingGetNextPeerBrEntry`](crate::otsys::otBorderRoutingGetNextPeerBrEntry).
+    fn iter_next_border_routing_peer(
+        &self,
+        ot_iter: &mut otBorderRoutingPrefixTableIterator,
+    ) -> Option<BorderRoutingPeer>;
 
     /// Returns an iterator for iterating over external routes.
     fn iter_local_external_routes(&self) -> LocalExternalRouteIterator<'_, Self> {
@@ -221,6 +256,13 @@ impl<T: BorderRouter + Boxable> BorderRouter for ot::Box<T> {
         self.as_ref().border_routing_is_multi_ail_detected()
     }
 
+    fn border_routing_prefix_table_init_iterator(
+        &self,
+        iter: &mut otBorderRoutingPrefixTableIterator,
+    ) {
+        self.as_ref().border_routing_prefix_table_init_iterator(iter)
+    }
+
     fn iter_next_local_external_route(
         &self,
         ot_iter: &mut otNetworkDataIterator,
@@ -233,6 +275,13 @@ impl<T: BorderRouter + Boxable> BorderRouter for ot::Box<T> {
         ot_iter: &mut otNetworkDataIterator,
     ) -> Option<BorderRouterConfig> {
         self.as_ref().iter_next_local_on_mesh_prefix(ot_iter)
+    }
+
+    fn iter_next_border_routing_peer(
+        &self,
+        ot_iter: &mut otBorderRoutingPrefixTableIterator,
+    ) -> Option<BorderRoutingPeer> {
+        self.as_ref().iter_next_border_routing_peer(ot_iter)
     }
 }
 
@@ -398,6 +447,13 @@ impl BorderRouter for Instance {
         unsafe { otBorderRoutingIsMultiAilDetected(self.as_ot_ptr()) }
     }
 
+    fn border_routing_prefix_table_init_iterator(
+        &self,
+        iter: &mut otBorderRoutingPrefixTableIterator,
+    ) {
+        unsafe { otBorderRoutingPrefixTableInitIterator(self.as_ot_ptr(), iter) }
+    }
+
     fn iter_next_local_external_route(
         &self,
         ot_iter: &mut otNetworkDataIterator,
@@ -430,6 +486,24 @@ impl BorderRouter for Instance {
                 Error::NotFound => None,
                 Error::None => Some(ret),
                 err => panic!("Unexpected error from otBorderRouterGetNextOnMeshPrefix: {err:?}"),
+            }
+        }
+    }
+
+    fn iter_next_border_routing_peer(
+        &self,
+        ot_iter: &mut otBorderRoutingPrefixTableIterator,
+    ) -> Option<BorderRoutingPeer> {
+        unsafe {
+            let mut ret = BorderRoutingPeer::default();
+            match Error::from(otBorderRoutingGetNextPeerBrEntry(
+                self.as_ot_ptr(),
+                ot_iter as *mut otBorderRoutingPrefixTableIterator,
+                ret.as_ot_mut_ptr(),
+            )) {
+                Error::NotFound => None,
+                Error::None => Some(ret),
+                err => panic!("Unexpected error from otBorderRoutingGetNextPeerBrEntry: {err:?}"),
             }
         }
     }
