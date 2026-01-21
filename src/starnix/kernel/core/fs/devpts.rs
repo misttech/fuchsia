@@ -114,8 +114,8 @@ pub fn create_main_and_replica(
     let pty = pty_file.downcast_file::<DevPtmxFile>().ok_or_else(|| errno!(ENOTTY))?;
     {
         let mut terminal = pty.terminal.write();
-        terminal.locked = false;
-        terminal.window_size = window_size;
+        terminal.line_discipline.locked = false;
+        terminal.line_discipline.window_size = window_size;
     }
     let pts_path = FsString::from(format!("/dev/pts/{}", pty.terminal.id));
     let pts_file = current_task.open_file(locked, pts_path.as_ref(), OpenFlags::RDWR)?;
@@ -357,7 +357,7 @@ fn open_dev_pts_device(
                 .get(&pts_id)
                 .and_then(Weak::upgrade)
                 .ok_or_else(|| errno!(EIO))?;
-            if terminal.read().locked {
+            if terminal.read().line_discipline.locked {
                 return error!(EIO);
             }
             if !flags.contains(OpenFlags::NOCTTY) {
@@ -475,14 +475,14 @@ impl FileOps for DevPtmxFile {
             }
             TIOCGPTLCK => {
                 // Get the lock status.
-                let value = i32::from(self.terminal.read().locked);
+                let value = i32::from(self.terminal.read().line_discipline.locked);
                 current_task.write_object(UserRef::<i32>::new(user_addr), &value)?;
                 Ok(SUCCESS)
             }
             TIOCSPTLCK => {
                 // Lock/Unlock the terminal.
                 let value = current_task.read_object(UserRef::<i32>::new(user_addr))?;
-                self.terminal.write().locked = value != 0;
+                self.terminal.write().line_discipline.locked = value != 0;
                 Ok(SUCCESS)
             }
             _ => shared_ioctl(locked, &self.terminal, true, _file, current_task, request, arg),
@@ -674,13 +674,13 @@ where
             // Get the window size
             current_task.write_object(
                 UserRef::<uapi::winsize>::new(user_addr),
-                &terminal.read().window_size,
+                &terminal.read().line_discipline.window_size,
             )?;
             Ok(SUCCESS)
         }
         TIOCSWINSZ => {
             // Set the window size
-            terminal.write().window_size =
+            terminal.write().line_discipline.window_size =
                 current_task.read_object(UserRef::<uapi::winsize>::new(user_addr))?;
 
             // Send a SIGWINCH signal to the foreground process group.
