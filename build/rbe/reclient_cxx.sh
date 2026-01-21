@@ -145,6 +145,7 @@ remote_output_dirs=()
 
 prev_opt=
 prev_opt_append=
+py_wrapper_only_flags=()
 for opt
 do
   if [[ -n "$prev_opt" ]]
@@ -189,7 +190,7 @@ do
 
     --output_directories=*) remote_output_dirs+=( "$optarg" ) ; keep_opt=0 ;;
     --output_directories) prev_opt_append=remote_output_dirs ; keep_opt=0 ;;
-    --disable-xattr) use_py_wrapper=1 ;;
+    --disable-xattr) py_wrapper_only_flags+=( "$opt" ) ; keep_opt=0 ;;
 
     --) shift; break ;;
   esac
@@ -226,7 +227,7 @@ done
 if [[ "$use_py_wrapper" == 1 ]]
 then
   readonly python="$exec_root_rel"/prebuilt/third_party/python3/"${HOST_PLATFORM}"/bin/python3
-  exec "$python" -S "$script_dir"/cxx_remote_wrapper.py "${rewrapper_opts[@]+"${rewrapper_opts[@]}"}" -- "${local_compile_cmd[@]}"
+  exec "$python" -S "$script_dir"/cxx_remote_wrapper.py "${rewrapper_opts[@]+"${rewrapper_opts[@]}"}" "${py_wrapper_only_flags[@]+"${py_wrapper_only_flags[@]}"}" -- "${local_compile_cmd[@]}"
   # no return
 fi
 
