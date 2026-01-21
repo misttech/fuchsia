@@ -11,8 +11,8 @@ use net_types::ip::{Ip, IpMarked, Ipv4, Ipv4Addr, Ipv4SourceAddr, Ipv6, Ipv6Addr
 use net_types::{MulticastAddr, SpecifiedAddr};
 use netstack3_base::socket::SocketIpAddr;
 use netstack3_base::{
-    CounterContext, Icmpv4ErrorCode, Icmpv6ErrorCode, Marks, ResourceCounterContext, TokenBucket,
-    WeakDeviceIdentifier,
+    CounterContext, FrameDestination, Icmpv4ErrorCode, Icmpv6ErrorCode, Marks,
+    ResourceCounterContext, TokenBucket, WeakDeviceIdentifier,
 };
 use netstack3_datagram as datagram;
 use netstack3_device::{BaseDeviceId, DeviceId, DeviceStateSpec, WeakDeviceId, for_any_device_id};
@@ -40,8 +40,8 @@ use netstack3_ip::{
 };
 use netstack3_sync::rc::Primary;
 use netstack3_tcp::TcpIpTransportContext;
-use netstack3_udp::UdpIpTransportContext;
-use packet::BufferMut;
+use netstack3_udp::{DualStackUdpSocketId, UdpBindingsTypes, UdpIpTransportContext};
+use packet::{BufferMut, ParseBuffer};
 use packet_formats::ip::{IpProto, Ipv4Proto, Ipv6Proto};
 
 use crate::context::WrapLockLevel;
@@ -394,9 +394,70 @@ where
     }
 }
 
+pub enum EarlyDemuxSocket<I, D, BT>
+where
+    I: netstack3_datagram::IpExt,
+    D: WeakDeviceIdentifier,
+    BT: UdpBindingsTypes,
+{
+    UdpSocket(DualStackUdpSocketId<I, D, BT>),
+}
+
+impl<I, D, BT> EarlyDemuxSocket<I, D, BT>
+where
+    I: netstack3_datagram::IpExt,
+    D: WeakDeviceIdentifier,
+    BT: UdpBindingsTypes,
+{
+    fn into_udp(self) -> DualStackUdpSocketId<I, D, BT> {
+        match self {
+            EarlyDemuxSocket::UdpSocket(id) => id,
+        }
+    }
+}
+
 impl<BC: BindingsContext, L: LockBefore<crate::lock_ordering::IcmpAllSocketsSet<Ipv4>>>
     IpTransportDispatchContext<Ipv4, BC> for CoreCtx<'_, BC, L>
 {
+    type EarlyDemuxSocket = EarlyDemuxSocket<Ipv4, Self::WeakDeviceId, BC>;
+
+    fn early_demux<B: ParseBuffer>(
+        &mut self,
+        device: &Self::DeviceId,
+        frame_dst: Option<FrameDestination>,
+        src_ip: Ipv4Addr,
+        dst_ip: Ipv4Addr,
+        proto: Ipv4Proto,
+        body: B,
+    ) -> Option<Self::EarlyDemuxSocket> {
+        // Only unicast packets are demuxed early.
+        // TODO(https://fxbug.com/476450053): Consider early demuxing multicast
+        // packets as well.
+        match frame_dst {
+            Some(FrameDestination::Individual { local: _ }) => (),
+            Some(FrameDestination::Broadcast) | Some(FrameDestination::Multicast) | None => {
+                return None;
+            }
+        };
+
+        match proto {
+            Ipv4Proto::Proto(IpProto::Udp) => {
+                <UdpIpTransportContext as IpTransportContext<Ipv4, _, _>>::early_demux(
+                    self, device, src_ip, dst_ip, body,
+                )
+                .map(EarlyDemuxSocket::UdpSocket)
+            }
+            Ipv4Proto::Proto(IpProto::Tcp) => {
+                // TODO(https://fxbug.dev/473819144) Implement early demux for TCP.
+                None
+            }
+            Ipv4Proto::Icmp
+            | Ipv4Proto::Igmp
+            | Ipv4Proto::Proto(IpProto::Reserved)
+            | Ipv4Proto::Other(_) => None,
+        }
+    }
+
     fn dispatch_receive_ip_packet<B: BufferMut, H: IpHeaderInfo<Ipv4>>(
         &mut self,
         bindings_ctx: &mut BC,
@@ -406,6 +467,7 @@ impl<BC: BindingsContext, L: LockBefore<crate::lock_ordering::IcmpAllSocketsSet<
         proto: Ipv4Proto,
         body: B,
         info: &LocalDeliveryPacketInfo<Ipv4, H>,
+        early_demux_socket: Option<Self::EarlyDemuxSocket>,
     ) -> Result<(), TransportReceiveError> {
         match proto {
             Ipv4Proto::Icmp => {
@@ -417,6 +479,7 @@ impl<BC: BindingsContext, L: LockBefore<crate::lock_ordering::IcmpAllSocketsSet<
                     dst_ip,
                     body,
                     info,
+                    None,
                 )
                 .map_err(|(_body, err)| err)
             }
@@ -425,6 +488,8 @@ impl<BC: BindingsContext, L: LockBefore<crate::lock_ordering::IcmpAllSocketsSet<
                 Ok(())
             }
             Ipv4Proto::Proto(IpProto::Udp) => {
+                let early_demux_socket = early_demux_socket.map(EarlyDemuxSocket::into_udp);
+
                 <UdpIpTransportContext as IpTransportContext<Ipv4, _, _>>::receive_ip_packet(
                     self,
                     bindings_ctx,
@@ -433,6 +498,7 @@ impl<BC: BindingsContext, L: LockBefore<crate::lock_ordering::IcmpAllSocketsSet<
                     dst_ip,
                     body,
                     info,
+                    early_demux_socket,
                 )
                 .map_err(|(_body, err)| err)
             }
@@ -445,12 +511,13 @@ impl<BC: BindingsContext, L: LockBefore<crate::lock_ordering::IcmpAllSocketsSet<
                     dst_ip,
                     body,
                     info,
+                    None,
                 )
                 .map_err(|(_body, err)| err)
             }
-            // TODO(joshlf): Once all IP protocol numbers are covered, remove
-            // this default case.
-            _ => Err(TransportReceiveError::ProtocolUnsupported),
+            Ipv4Proto::Proto(IpProto::Reserved) | Ipv4Proto::Other(_) => {
+                Err(TransportReceiveError::ProtocolUnsupported)
+            }
         }
     }
 }
@@ -458,6 +525,45 @@ impl<BC: BindingsContext, L: LockBefore<crate::lock_ordering::IcmpAllSocketsSet<
 impl<BC: BindingsContext, L: LockBefore<crate::lock_ordering::IcmpAllSocketsSet<Ipv6>>>
     IpTransportDispatchContext<Ipv6, BC> for CoreCtx<'_, BC, L>
 {
+    type EarlyDemuxSocket = EarlyDemuxSocket<Ipv6, Self::WeakDeviceId, BC>;
+
+    fn early_demux<B: ParseBuffer>(
+        &mut self,
+        device: &Self::DeviceId,
+        frame_dst: Option<FrameDestination>,
+        src_ip: Ipv6Addr,
+        dst_ip: Ipv6Addr,
+        proto: Ipv6Proto,
+        body: B,
+    ) -> Option<Self::EarlyDemuxSocket> {
+        // Only unicast packets are demuxed early.
+        // TODO(https://fxbug.com/476450053): Consider early demuxing multicast
+        // packets as well.
+        match frame_dst {
+            Some(FrameDestination::Individual { local: _ }) => (),
+            Some(FrameDestination::Broadcast) | Some(FrameDestination::Multicast) | None => {
+                return None;
+            }
+        };
+
+        match proto {
+            Ipv6Proto::Proto(IpProto::Udp) => {
+                <UdpIpTransportContext as IpTransportContext<Ipv6, _, _>>::early_demux(
+                    self, device, src_ip, dst_ip, body,
+                )
+                .map(EarlyDemuxSocket::UdpSocket)
+            }
+            Ipv6Proto::Proto(IpProto::Tcp) => {
+                // TODO(https://fxbug.dev/473819144) Implement early demux for TCP.
+                None
+            }
+            Ipv6Proto::Icmpv6
+            | Ipv6Proto::NoNextHeader
+            | Ipv6Proto::Proto(IpProto::Reserved)
+            | Ipv6Proto::Other(_) => None,
+        }
+    }
+
     fn dispatch_receive_ip_packet<B: BufferMut, H: IpHeaderInfo<Ipv6>>(
         &mut self,
         bindings_ctx: &mut BC,
@@ -467,6 +573,7 @@ impl<BC: BindingsContext, L: LockBefore<crate::lock_ordering::IcmpAllSocketsSet<
         proto: Ipv6Proto,
         body: B,
         info: &LocalDeliveryPacketInfo<Ipv6, H>,
+        early_demux_socket: Option<Self::EarlyDemuxSocket>,
     ) -> Result<(), TransportReceiveError> {
         match proto {
             Ipv6Proto::Icmpv6 => {
@@ -478,6 +585,7 @@ impl<BC: BindingsContext, L: LockBefore<crate::lock_ordering::IcmpAllSocketsSet<
                     dst_ip,
                     body,
                     info,
+                    None,
                 )
                 .map_err(|(_body, err)| err)
             }
@@ -494,10 +602,13 @@ impl<BC: BindingsContext, L: LockBefore<crate::lock_ordering::IcmpAllSocketsSet<
                     dst_ip,
                     body,
                     info,
+                    None,
                 )
                 .map_err(|(_body, err)| err)
             }
             Ipv6Proto::Proto(IpProto::Udp) => {
+                let early_demux_socket = early_demux_socket.map(EarlyDemuxSocket::into_udp);
+
                 <UdpIpTransportContext as IpTransportContext<Ipv6, _, _>>::receive_ip_packet(
                     self,
                     bindings_ctx,
@@ -506,12 +617,13 @@ impl<BC: BindingsContext, L: LockBefore<crate::lock_ordering::IcmpAllSocketsSet<
                     dst_ip,
                     body,
                     info,
+                    early_demux_socket,
                 )
                 .map_err(|(_body, err)| err)
             }
-            // TODO(joshlf): Once all IP Next Header numbers are covered, remove
-            // this default case.
-            _ => Err(TransportReceiveError::ProtocolUnsupported),
+            Ipv6Proto::Proto(IpProto::Reserved) | Ipv6Proto::Other(_) => {
+                Err(TransportReceiveError::ProtocolUnsupported)
+            }
         }
     }
 }

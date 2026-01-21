@@ -39,13 +39,14 @@ use netstack3_base::{
 use netstack3_filter::{
     self as filter, ConnectionDirection, ConntrackConnection, FilterBindingsContext,
     FilterBindingsTypes, FilterHandler as _, FilterIpContext, FilterIpExt, FilterIpMetadata,
-    FilterIpPacket, FilterPacketMetadata, FilterTimerId, ForwardedPacket, IngressVerdict,
-    MarkAction, TransportPacketSerializer, Tuple, WeakConnectionError, WeakConntrackConnection,
+    FilterIpPacket, FilterPacketMetadata, FilterTimerId, ForwardedPacket, IngressVerdict, IpPacket,
+    MarkAction, MaybeTransportPacket as _, TransportPacketSerializer, Tuple, WeakConnectionError,
+    WeakConntrackConnection,
 };
 use netstack3_hashmap::HashMap;
 use packet::{
     Buf, BufferMut, GrowBuffer, LayoutBufferAlloc, PacketBuilder as _, PacketConstraints,
-    ParseBufferMut, ParseMetadata, SerializeError, Serializer as _,
+    ParseBuffer, ParseBufferMut, ParseMetadata, SerializeError, Serializer as _,
 };
 use packet_formats::error::IpParseError;
 use packet_formats::ip::{DscpAndEcn, IpPacket as _, IpPacketBuilder as _};
@@ -396,6 +397,27 @@ impl From<SendFrameErrorReason> for IpSendFrameErrorReason {
 /// An implementation for `()` is provided which indicates that a particular
 /// transport layer protocol is unsupported.
 pub trait IpTransportContext<I: IpExt, BC, CC: DeviceIdContext<AnyDevice> + ?Sized> {
+    /// Type used to identify sockets for early demux.
+    type EarlyDemuxSocket;
+
+    /// Performs early demux.
+    ///
+    /// Tries to match the packet with a connected socket that will receive the
+    /// packet. If a match is found, the socket information is passed to
+    /// `LOCAL_INGRESS` filters. The socket is also passed to
+    /// `receive_ip_packet` to avoid demuxing the packet twice.
+    ///
+    /// The socket may be invalidated if the source address is changed by SNAT.
+    /// In that case, `receive_ip_packet` is called with `early_demux_socket`
+    /// set to `None`.
+    fn early_demux<B: ParseBuffer>(
+        core_ctx: &mut CC,
+        device: &CC::DeviceId,
+        src_ip: I::Addr,
+        dst_ip: I::Addr,
+        buffer: B,
+    ) -> Option<Self::EarlyDemuxSocket>;
+
     /// Receive an ICMP error message.
     ///
     /// All arguments beginning with `original_` are fields from the IP packet
@@ -432,10 +454,23 @@ pub trait IpTransportContext<I: IpExt, BC, CC: DeviceIdContext<AnyDevice> + ?Siz
         dst_ip: SpecifiedAddr<I::Addr>,
         buffer: B,
         info: &LocalDeliveryPacketInfo<I, H>,
+        early_demux_socket: Option<Self::EarlyDemuxSocket>,
     ) -> Result<(), (B, TransportReceiveError)>;
 }
 
 impl<I: IpExt, BC, CC: DeviceIdContext<AnyDevice> + ?Sized> IpTransportContext<I, BC, CC> for () {
+    type EarlyDemuxSocket = Never;
+
+    fn early_demux<B: ParseBuffer>(
+        _core_ctx: &mut CC,
+        _device: &CC::DeviceId,
+        _src_ip: I::Addr,
+        _dst_ip: I::Addr,
+        _buffer: B,
+    ) -> Option<Self::EarlyDemuxSocket> {
+        None
+    }
+
     fn receive_icmp_error(
         _core_ctx: &mut CC,
         _bindings_ctx: &mut BC,
@@ -459,6 +494,7 @@ impl<I: IpExt, BC, CC: DeviceIdContext<AnyDevice> + ?Sized> IpTransportContext<I
         _dst_ip: SpecifiedAddr<I::Addr>,
         buffer: B,
         _info: &LocalDeliveryPacketInfo<I, H>,
+        _early_demux_socket: Option<Never>,
     ) -> Result<(), (B, TransportReceiveError)> {
         Err((buffer, TransportReceiveError::ProtocolUnsupported))
     }
@@ -1701,6 +1737,20 @@ impl<
 /// This trait acts like a demux on the transport protocol for ingress IP
 /// packets.
 pub trait IpTransportDispatchContext<I: IpLayerIpExt, BC>: DeviceIdContext<AnyDevice> {
+    /// Early Demux result.
+    type EarlyDemuxSocket;
+
+    /// Performs early demux result.
+    fn early_demux<B: ParseBuffer>(
+        &mut self,
+        device: &Self::DeviceId,
+        frame_dst: Option<FrameDestination>,
+        src_ip: I::Addr,
+        dst_ip: I::Addr,
+        proto: I::Proto,
+        body: B,
+    ) -> Option<Self::EarlyDemuxSocket>;
+
     /// Dispatches a received incoming IP packet to the appropriate protocol.
     fn dispatch_receive_ip_packet<B: BufferMut, H: IpHeaderInfo<I>>(
         &mut self,
@@ -1711,6 +1761,7 @@ pub trait IpTransportDispatchContext<I: IpLayerIpExt, BC>: DeviceIdContext<AnyDe
         proto: I::Proto,
         body: B,
         info: &LocalDeliveryPacketInfo<I, H>,
+        early_demux_socket: Option<Self::EarlyDemuxSocket>,
     ) -> Result<(), TransportReceiveError>;
 }
 
@@ -2368,6 +2419,33 @@ impl<'a, I: IcmpHandlerIpExt, D> IcmpErrorSender<'a, I, D> {
     }
 }
 
+// Early demux results may be invalidated by SNAT in the LOCAL_INGRESS hook.
+// This struct is used to check if the early demux result is still valid.
+//
+// TODO(https://fxbug.dev/476507679): Add tests to ensure this works properly
+// once SNAT is fully implemented.
+#[derive(PartialEq, Eq)]
+struct EarlyDemuxResult<I: Ip, S> {
+    socket: S,
+    src_addr: I::Addr,
+    src_port: Option<u16>,
+}
+
+impl<I: FilterIpExt, S> EarlyDemuxResult<I, S> {
+    fn new<P: IpPacket<I>>(socket: S, packet: &P) -> Self {
+        let src_port =
+            packet.maybe_transport_packet().transport_packet_data().map(|t| t.src_port());
+        Self { socket, src_addr: packet.src_addr(), src_port }
+    }
+
+    // Returns the socket if it's still the right socket to handle the packet.
+    fn take_socket<P: IpPacket<I>>(self, packet: &P) -> Option<S> {
+        let src_port =
+            packet.maybe_transport_packet().transport_packet_data().map(|t| t.src_port());
+        (self.src_addr == packet.src_addr() && self.src_port == src_port).then_some(self.socket)
+    }
+}
+
 // TODO(joshlf): Once we support multiple extension headers in IPv6, we will
 // need to verify that the callers of this function are still sound. In
 // particular, they may accidentally pass a parse_metadata argument which
@@ -2412,7 +2490,24 @@ fn dispatch_receive_ipv4_packet<
         | Some(FrameDestination::Multicast)
         | Some(FrameDestination::Broadcast)
         | None => (),
-    }
+    };
+
+    // Skip early demux if the packet was redirected to a TPROXY.
+    // TODO(https://fxbug.dev/475851987): Handle TPROXY in early_demux.
+    let early_demux_socket = if receive_meta.transparent_override.is_some() {
+        None
+    } else {
+        core_ctx
+            .early_demux(
+                device,
+                frame_dst,
+                packet.src_ip(),
+                packet.dst_ip(),
+                packet.proto(),
+                packet.body(),
+            )
+            .map(|socket| EarlyDemuxResult::new(socket, &packet))
+    };
 
     let proto = packet.proto();
 
@@ -2454,6 +2549,9 @@ fn dispatch_receive_ipv4_packet<
 
     core_ctx.deliver_packet_to_raw_ip_sockets(bindings_ctx, &packet, &device);
 
+    // Check if the early demux result is still valid.
+    let early_demux_socket = early_demux_socket.and_then(|result| result.take_socket(&packet));
+
     let (prefix, options, body) = packet.parts_with_body_mut();
     let buffer = Buf::new(body, ..);
     let header_info = Ipv4HeaderInfo { prefix, options: options.as_ref() };
@@ -2468,6 +2566,7 @@ fn dispatch_receive_ipv4_packet<
             proto,
             buffer,
             &receive_info,
+            early_demux_socket,
         )
         .or_else(|err| {
             if let Ipv4SourceAddr::Specified(src_ip) = src_ip {
@@ -2523,6 +2622,23 @@ fn dispatch_receive_ipv6_packet<
         | None => (),
     }
 
+    // Skip early demux if the packet was redirected to a TPROXY.
+    // TODO(https://fxbug.dev/475851987): Handle TPROXY in early_demux.
+    let early_demux_result = if meta.transparent_override.is_some() {
+        None
+    } else {
+        core_ctx
+            .early_demux(
+                device,
+                frame_dst,
+                packet.src_ip(),
+                packet.dst_ip(),
+                packet.proto(),
+                packet.body(),
+            )
+            .map(|socket| EarlyDemuxResult::new(socket, &packet))
+    };
+
     let proto = packet.proto();
 
     match core_ctx.filter_handler().local_ingress_hook(
@@ -2562,6 +2678,9 @@ fn dispatch_receive_ipv6_packet<
 
     core_ctx.deliver_packet_to_raw_ip_sockets(bindings_ctx, &packet, &device);
 
+    // Check if the early demux result is still valid.
+    let early_demux_socket = early_demux_result.and_then(|result| result.take_socket(&packet));
+
     let (fixed, extension, body) = packet.parts_with_body_mut();
     let buffer = Buf::new(body, ..);
     let header_info = Ipv6HeaderInfo { fixed, extension };
@@ -2576,6 +2695,7 @@ fn dispatch_receive_ipv6_packet<
             proto,
             buffer,
             &receive_info,
+            early_demux_socket,
         )
         .or_else(|err| {
             if let Ipv6SourceAddr::Unicast(src_ip) = src_ip {

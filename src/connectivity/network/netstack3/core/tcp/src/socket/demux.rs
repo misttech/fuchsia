@@ -5,6 +5,7 @@
 //! Defines the entry point of TCP packets, by directing them into the correct
 //! state machine.
 
+use core::convert::Infallible as Never;
 use core::fmt::Debug;
 use core::num::NonZeroU16;
 
@@ -33,6 +34,7 @@ use netstack3_ip::{
 use netstack3_trace::trace_duration;
 use packet::{
     BufferMut, BufferView as _, EmptyBuf, FragmentedByteSlice, InnerPacketBuilder, PacketBuilder,
+    ParseBuffer,
 };
 use packet_formats::error::ParseError;
 use packet_formats::ip::IpProto;
@@ -82,6 +84,19 @@ where
         >,
     CC: TcpContext<I, BC> + TcpContext<I::OtherVersion, BC>,
 {
+    // TODO(https://fxbug.dev/473819144) Implement early demux for TCP.
+    type EarlyDemuxSocket = Never;
+
+    fn early_demux<B: ParseBuffer>(
+        _core_ctx: &mut CC,
+        _device: &CC::DeviceId,
+        _src_ip: I::Addr,
+        _dst_ip: I::Addr,
+        _buffer: B,
+    ) -> Option<Self::EarlyDemuxSocket> {
+        None
+    }
+
     fn receive_icmp_error(
         core_ctx: &mut CC,
         bindings_ctx: &mut BC,
@@ -120,6 +135,7 @@ where
         local_ip: SpecifiedAddr<I::Addr>,
         mut buffer: B,
         info: &LocalDeliveryPacketInfo<I, H>,
+        _early_demux_socket: Option<Never>,
     ) -> Result<(), (B, TransportReceiveError)> {
         let LocalDeliveryPacketInfo { meta, header_info, marks } = info;
         let ReceiveIpPacketMeta { broadcast, transparent_override } = meta;

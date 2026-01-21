@@ -5,7 +5,7 @@
 //! The Internet Control Message Protocol (ICMP).
 
 use alloc::boxed::Box;
-use core::convert::TryInto as _;
+use core::convert::{Infallible as Never, TryInto as _};
 use core::num::{NonZeroU8, NonZeroU16};
 
 use lock_order::lock::{OrderedLockAccess, OrderedLockRef};
@@ -806,6 +806,18 @@ impl<
         + CounterContext<IcmpTxCounters<Ipv4>>,
 > IpTransportContext<Ipv4, BC, CC> for IcmpIpTransportContext
 {
+    type EarlyDemuxSocket = Never;
+
+    fn early_demux<B: ParseBuffer>(
+        _core_ctx: &mut CC,
+        _device: &CC::DeviceId,
+        _src_ip: Ipv4Addr,
+        _dst_ip: Ipv4Addr,
+        _buffer: B,
+    ) -> Option<Self::EarlyDemuxSocket> {
+        None
+    }
+
     fn receive_icmp_error(
         core_ctx: &mut CC,
         bindings_ctx: &mut BC,
@@ -834,6 +846,7 @@ impl<
         dst_ip: SpecifiedAddr<Ipv4Addr>,
         mut buffer: B,
         info: &LocalDeliveryPacketInfo<Ipv4, H>,
+        _early_demux_socket: Option<Never>,
     ) -> Result<(), (B, TransportReceiveError)> {
         let LocalDeliveryPacketInfo { meta, header_info: _, marks } = info;
         let ReceiveIpPacketMeta { broadcast: _, transparent_override } = meta;
@@ -904,6 +917,7 @@ impl<
                         dst_ip,
                         buffer,
                         info,
+                        None,
                 );
             }
             Icmpv4Packet::TimestampRequest(timestamp_request) => {
@@ -1799,6 +1813,18 @@ impl<
         + CounterContext<NdpCounters>,
 > IpTransportContext<Ipv6, BC, CC> for IcmpIpTransportContext
 {
+    type EarlyDemuxSocket = Never;
+
+    fn early_demux<B: ParseBuffer>(
+        _core_ctx: &mut CC,
+        _device: &CC::DeviceId,
+        _src_ip: Ipv6Addr,
+        _dst_ip: Ipv6Addr,
+        _buffer: B,
+    ) -> Option<Self::EarlyDemuxSocket> {
+        None
+    }
+
     fn receive_icmp_error(
         core_ctx: &mut CC,
         bindings_ctx: &mut BC,
@@ -1827,6 +1853,7 @@ impl<
         dst_ip: SpecifiedAddr<Ipv6Addr>,
         mut buffer: B,
         info: &LocalDeliveryPacketInfo<Ipv6, H>,
+        _early_demux_socket: Option<Never>,
     ) -> Result<(), (B, TransportReceiveError)> {
         let LocalDeliveryPacketInfo { meta, header_info, marks } = info;
         let ReceiveIpPacketMeta { broadcast: _, transparent_override } = meta;
@@ -1909,7 +1936,8 @@ impl<
                         src_ip,
                         dst_ip,
                         buffer,
-                        info
+                        info,
+                        None
                 );
             }
             Icmpv6Packet::Ndp(packet) => receive_ndp_packet(
@@ -3362,6 +3390,18 @@ mod tests {
     impl<I: IpExt> IpTransportContext<I, FakeIcmpBindingsCtx<I>, FakeIcmpCoreCtx<I>>
         for FakeEchoIpTransportContext
     {
+        type EarlyDemuxSocket = Never;
+
+        fn early_demux<B: ParseBuffer>(
+            _core_ctx: &mut FakeIcmpCoreCtx<I>,
+            _device: &FakeDeviceId,
+            _src_ip: I::Addr,
+            _dst_ip: I::Addr,
+            _buffer: B,
+        ) -> Option<Self::EarlyDemuxSocket> {
+            None
+        }
+
         fn receive_icmp_error(
             core_ctx: &mut FakeIcmpCoreCtx<I>,
             _bindings_ctx: &mut FakeIcmpBindingsCtx<I>,
@@ -3382,6 +3422,7 @@ mod tests {
             _dst_ip: SpecifiedAddr<I::Addr>,
             _buffer: B,
             _info: &LocalDeliveryPacketInfo<I, H>,
+            _early_demux_socket: Option<Never>,
         ) -> Result<(), (B, TransportReceiveError)> {
             unimplemented!()
         }
@@ -3922,6 +3963,7 @@ mod tests {
                     .serialize_vec_outer()
                     .unwrap(),
                 &LocalDeliveryPacketInfo::default(),
+                None,
             )
             .unwrap();
             f(&ctx);
@@ -4164,6 +4206,7 @@ mod tests {
                     .serialize_vec_outer()
                     .unwrap(),
                 &LocalDeliveryPacketInfo::default(),
+                None,
             )
             .unwrap();
             f(&ctx);

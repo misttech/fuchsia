@@ -44,7 +44,7 @@ use netstack3_ip::{
     IpHeaderInfo, IpTransportContext, LocalDeliveryPacketInfo, MulticastMembershipHandler,
     ReceiveIpPacketMeta, TransportIpContext, TransportReceiveError,
 };
-use packet::{BufferMut, PacketBuilder, ParsablePacket as _, ParseBuffer as _};
+use packet::{BufferMut, PacketBuilder, ParsablePacket as _, ParseBuffer};
 use packet_formats::icmp::{IcmpEchoReply, IcmpEchoRequest, IcmpPacketBuilder, IcmpPacketRaw};
 use packet_formats::ip::{IpProtoExt, Ipv4Proto, Ipv6Proto};
 
@@ -1050,6 +1050,18 @@ impl EchoTransportContextMarker for IcmpEchoIpTransportContext {}
 impl<I: IpExt, BC: IcmpEchoBindingsContext<I, CC::DeviceId>, CC: IcmpEchoBoundStateContext<I, BC>>
     IpTransportContext<I, BC, CC> for IcmpEchoIpTransportContext
 {
+    type EarlyDemuxSocket = Never;
+
+    fn early_demux<B: ParseBuffer>(
+        _core_ctx: &mut CC,
+        _device: &CC::DeviceId,
+        _src_ip: I::Addr,
+        _dst_ip: I::Addr,
+        _buffer: B,
+    ) -> Option<Self::EarlyDemuxSocket> {
+        None
+    }
+
     fn receive_icmp_error(
         core_ctx: &mut CC,
         _bindings_ctx: &mut BC,
@@ -1127,6 +1139,7 @@ impl<I: IpExt, BC: IcmpEchoBindingsContext<I, CC::DeviceId>, CC: IcmpEchoBoundSt
         dst_ip: SpecifiedAddr<I::Addr>,
         mut buffer: B,
         info: &LocalDeliveryPacketInfo<I, H>,
+        _early_demux_socket: Option<Never>,
     ) -> Result<(), (B, TransportReceiveError)> {
         let LocalDeliveryPacketInfo { meta, header_info: _, marks: _ } = info;
         let ReceiveIpPacketMeta { broadcast: _, transparent_override } = meta;
@@ -1601,6 +1614,7 @@ mod tests {
             dst_ip,
             reply.clone(),
             &LocalDeliveryPacketInfo::default(),
+            None,
         )
         .unwrap();
 
@@ -1651,6 +1665,7 @@ mod tests {
             I::TEST_ADDRS.local_ip,
             reply,
             &LocalDeliveryPacketInfo::default(),
+            None,
         )
         .unwrap();
         assert_matches!(&bindings_ctx.state.received[..], []);
@@ -1689,6 +1704,7 @@ mod tests {
             dst_ip,
             reply,
             &LocalDeliveryPacketInfo::default(),
+            None,
         )
         .unwrap();
 

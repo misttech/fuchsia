@@ -29,11 +29,11 @@ pub use internal::counters::{
 };
 
 pub use internal::base::{
-    BoundSockets, BoundStateContext, DualStackBoundStateContext, NonDualStackBoundStateContext,
-    ReceiveUdpError, SendError, SendToError, Sockets, StateContext, UdpApi, UdpBindingsContext,
-    UdpBindingsTypes, UdpIpTransportContext, UdpPacketMeta, UdpReceiveBindingsContext,
-    UdpRemotePort, UdpSocketId, UdpSocketSet, UdpSocketState, UdpSocketTxMetadata, UdpState,
-    UdpStateContext, UseUdpIpTransportContextBlanket,
+    BoundSockets, BoundStateContext, DualStackBoundStateContext, DualStackUdpSocketId,
+    NonDualStackBoundStateContext, ReceiveUdpError, SendError, SendToError, Sockets, StateContext,
+    UdpApi, UdpBindingsContext, UdpBindingsTypes, UdpIpTransportContext, UdpPacketMeta,
+    UdpReceiveBindingsContext, UdpRemotePort, UdpSocketId, UdpSocketSet, UdpSocketState,
+    UdpSocketTxMetadata, UdpState, UdpStateContext, UseUdpIpTransportContextBlanket,
 };
 
 pub use internal::diagnostics::{UdpSocketDiagnosticTuple, UdpSocketDiagnostics};

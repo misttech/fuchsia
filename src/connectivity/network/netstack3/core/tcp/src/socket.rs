@@ -6042,6 +6042,7 @@ mod tests {
                             marks: core_ctx.recv_packet_marks,
                             ..Default::default()
                         },
+                        None,
                     )
                     .expect("failed to deliver bytes");
                 }
@@ -6057,6 +6058,7 @@ mod tests {
                             marks: core_ctx.recv_packet_marks,
                             ..Default::default()
                         },
+                        None,
                     )
                     .expect("failed to deliver bytes");
                 }
@@ -10086,6 +10088,7 @@ mod tests {
             SpecifiedAddr::new(LOCAL_IP).unwrap(),
             syn.clone(),
             &Default::default(),
+            None,
         )
         .expect("failed to deliver bytes");
 
@@ -10097,6 +10100,7 @@ mod tests {
             SpecifiedAddr::new(LOCAL_IP).unwrap(),
             syn,
             &Default::default(),
+            None,
         )
         .expect("failed to deliver bytes");
     }

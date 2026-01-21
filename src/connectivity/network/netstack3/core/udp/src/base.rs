@@ -42,7 +42,7 @@ use netstack3_datagram::{
     ConnInfo, ConnectError, DatagramApi, DatagramBindingsTypes, DatagramBoundStateContext,
     DatagramFlowId, DatagramIpSpecificSocketOptions, DatagramSocketMapSpec, DatagramSocketSet,
     DatagramSocketSpec, DatagramSpecBoundStateContext, DatagramSpecStateContext,
-    DatagramStateContext, DualStackConnState, DualStackConverter,
+    DatagramStateContext, DualStackBaseIpExt, DualStackConnState, DualStackConverter,
     DualStackDatagramBoundStateContext, DualStackDatagramSpecBoundStateContext, DualStackIpExt,
     EitherIpSocket, ExpectedConnError, ExpectedUnboundError, InUseError, IpExt, IpOptions,
     ListenerInfo, MulticastMembershipInterfaceSelector, NonDualStackConverter,
@@ -62,9 +62,9 @@ use netstack3_ip::{
     TransportReceiveError,
 };
 use netstack3_trace::trace_duration;
-use packet::{BufferMut, FragmentedByteSlice, Nested, PacketBuilder, ParsablePacket};
+use packet::{BufferMut, FragmentedByteSlice, Nested, PacketBuilder, ParsablePacket, ParseBuffer};
 use packet_formats::ip::{DscpAndEcn, IpProto, IpProtoExt};
-use packet_formats::udp::{UdpPacket, UdpPacketBuilder, UdpParseArgs};
+use packet_formats::udp::{UdpPacket, UdpPacketBuilder, UdpPacketRaw, UdpParseArgs};
 use thiserror::Error;
 
 use crate::internal::counters::{
@@ -1357,6 +1357,63 @@ pub trait NonDualStackBoundStateContext<I: IpExt, BC: UdpBindingsContext<I, Self
 /// An implementation of [`IpTransportContext`] for UDP.
 pub enum UdpIpTransportContext {}
 
+fn early_demux_ip_packet<
+    I: IpExt,
+    B: ParseBuffer,
+    BC: UdpBindingsContext<I, CC::DeviceId> + UdpBindingsContext<I::OtherVersion, CC::DeviceId>,
+    CC: StateContext<I, BC>
+        + StateContext<I::OtherVersion, BC>
+        + UdpCounterContext<I, CC::WeakDeviceId, BC>
+        + UdpCounterContext<I::OtherVersion, CC::WeakDeviceId, BC>,
+>(
+    core_ctx: &mut CC,
+    device: &CC::DeviceId,
+    src_ip: I::Addr,
+    dst_ip: I::Addr,
+    mut buffer: B,
+) -> Option<I::DualStackBoundSocketId<CC::WeakDeviceId, Udp<BC>>> {
+    trace_duration!(c"udp::early_demux");
+
+    let Ok(packet) = buffer.parse_with::<_, UdpPacketRaw<_>>(I::VERSION_MARKER) else {
+        // If we fail to parse the packet then just return None. Invalid
+        // packets are handled later.
+        return None;
+    };
+
+    let src_ip = SocketIpAddr::new(src_ip)?;
+    let dst_ip = SocketIpAddr::new(dst_ip)?;
+    let src_port = packet.src_port()?;
+    let dst_port = packet.dst_port()?;
+
+    // Find a connected socket matching the packet.
+    // TODO(https://fxbug.dev/473819144): Optimize this to lookup only connected sockets.
+    StateContext::<I, _>::with_bound_state_context(core_ctx, |core_ctx| {
+        let device_weak = device.downgrade();
+        DatagramBoundStateContext::<_, _, Udp<_>>::with_bound_sockets(
+            core_ctx,
+            |_core_ctx, bound_sockets| match bound_sockets.iter_receivers(
+                (Some(src_ip), Some(src_port.into())),
+                (dst_ip, dst_port),
+                device_weak,
+                None,
+            ) {
+                Some(FoundSockets::Single(AddrEntry::Conn(state, _addr))) => {
+                    let selector = SocketSelectorParams::<I, SpecifiedAddr<I::Addr>> {
+                        src_ip: src_ip.addr(),
+                        dst_ip: dst_ip.into(),
+                        src_port: src_port.get(),
+                        dst_port: dst_port.get(),
+                        _ip: IpVersionMarker::default(),
+                    };
+                    Some(state.select_receiver(selector).clone())
+                }
+                Some(FoundSockets::Single(AddrEntry::Listen(_, _))) => None,
+                Some(FoundSockets::Multicast(_)) => None,
+                None => None,
+            },
+        )
+    })
+}
 fn receive_ip_packet<
     I: IpExt,
     B: BufferMut,
@@ -1374,6 +1431,7 @@ fn receive_ip_packet<
     dst_ip: SpecifiedAddr<I::Addr>,
     mut buffer: B,
     info: &LocalDeliveryPacketInfo<I, H>,
+    early_demux_socket: Option<DualStackUdpSocketId<I, CC::WeakDeviceId, BC>>,
 ) -> Result<(), (B, TransportReceiveError)> {
     let LocalDeliveryPacketInfo { meta, header_info, marks: _ } = info;
     let ReceiveIpPacketMeta { broadcast, transparent_override } = meta;
@@ -1440,26 +1498,30 @@ fn receive_ip_packet<
     /// [`MAX_EXPECTED_IDS`], this will spill and allocate on the heap.
     type Recipients<Id> = smallvec::SmallVec<[Id; MAX_EXPECTED_IDS]>;
 
-    let recipients = StateContext::<I, _>::with_bound_state_context(core_ctx, |core_ctx| {
-        let device_weak = device.downgrade();
-        DatagramBoundStateContext::<_, _, Udp<_>>::with_bound_sockets(
-            core_ctx,
-            |_core_ctx, bound_sockets| {
-                lookup(
-                    bound_sockets,
-                    (src_ip, src_port),
-                    (delivery_ip, delivery_port),
-                    device_weak,
-                    *broadcast,
-                )
-                .map(|result| match result {
-                    LookupResult::Conn(id, _) | LookupResult::Listener(id, _) => id.clone(),
-                })
-                // Collect into an array on the stack.
-                .collect::<Recipients<_>>()
-            },
-        )
-    });
+    let recipients = if let Some(socket) = early_demux_socket {
+        Recipients::from_iter([socket])
+    } else {
+        StateContext::<I, _>::with_bound_state_context(core_ctx, |core_ctx| {
+            let device_weak = device.downgrade();
+            DatagramBoundStateContext::<_, _, Udp<_>>::with_bound_sockets(
+                core_ctx,
+                |_core_ctx, bound_sockets| {
+                    lookup(
+                        bound_sockets,
+                        (src_ip, src_port),
+                        (delivery_ip, delivery_port),
+                        device_weak,
+                        *broadcast,
+                    )
+                    .map(|result| match result {
+                        LookupResult::Conn(id, _) | LookupResult::Listener(id, _) => id.clone(),
+                    })
+                    // Collect into an array on the stack.
+                    .collect::<Recipients<_>>()
+                },
+            )
+        })
+    };
 
     let meta = UdpPacketMeta {
         src_ip: src_ip.map_or(I::UNSPECIFIED_ADDRESS, SocketIpAddr::addr),
@@ -1669,6 +1731,10 @@ fn try_dual_stack_deliver<
 // type is pulled into the UDP crate and the trait is exported.
 pub trait UseUdpIpTransportContextBlanket {}
 
+/// Alias for a SocketId that can reference either V4 or V6 socket.
+pub type DualStackUdpSocketId<I, D, BT> =
+    <I as DualStackBaseIpExt>::DualStackBoundSocketId<D, Udp<BT>>;
+
 impl<
     I: IpExt,
     BC: UdpBindingsContext<I, CC::DeviceId> + UdpBindingsContext<I::OtherVersion, CC::DeviceId>,
@@ -1679,6 +1745,18 @@ impl<
         + UdpCounterContext<I::OtherVersion, CC::WeakDeviceId, BC>,
 > IpTransportContext<I, BC, CC> for UdpIpTransportContext
 {
+    type EarlyDemuxSocket = DualStackUdpSocketId<I, CC::WeakDeviceId, BC>;
+
+    fn early_demux<B: ParseBuffer>(
+        core_ctx: &mut CC,
+        device: &CC::DeviceId,
+        src_ip: I::Addr,
+        dst_ip: I::Addr,
+        buffer: B,
+    ) -> Option<Self::EarlyDemuxSocket> {
+        early_demux_ip_packet::<I, _, _, _>(core_ctx, device, src_ip, dst_ip, buffer)
+    }
+
     fn receive_icmp_error(
         core_ctx: &mut CC,
         _bindings_ctx: &mut BC,
@@ -1706,6 +1784,7 @@ impl<
         dst_ip: SpecifiedAddr<I::Addr>,
         buffer: B,
         info: &LocalDeliveryPacketInfo<I, H>,
+        early_demux_socket: Option<Self::EarlyDemuxSocket>,
     ) -> Result<(), (B, TransportReceiveError)> {
         receive_ip_packet::<I, _, _, _, _>(
             core_ctx,
@@ -1715,6 +1794,7 @@ impl<
             dst_ip,
             buffer,
             info,
+            early_demux_socket,
         )
     }
 }
@@ -3307,6 +3387,18 @@ pub(crate) mod testutils {
     impl<I: IpExt + IpDeviceStateIpExt + TestIpExt, D: FakeStrongDeviceId>
         IpTransportContext<I, FakeUdpBindingsCtx<D>, FakeUdpCoreCtx<D>> for UdpIpTransportContext
     {
+        type EarlyDemuxSocket = DualStackUdpSocketId<I, D::Weak, FakeUdpBindingsCtx<D>>;
+
+        fn early_demux<B: ParseBuffer>(
+            core_ctx: &mut FakeUdpCoreCtx<D>,
+            device: &D,
+            src_ip: I::Addr,
+            dst_ip: I::Addr,
+            buffer: B,
+        ) -> Option<Self::EarlyDemuxSocket> {
+            early_demux_ip_packet::<I, _, _, _>(core_ctx, device, src_ip, dst_ip, buffer)
+        }
+
         fn receive_icmp_error(
             _core_ctx: &mut FakeUdpCoreCtx<D>,
             _bindings_ctx: &mut FakeUdpBindingsCtx<D>,
@@ -3327,6 +3419,7 @@ pub(crate) mod testutils {
             dst_ip: SpecifiedAddr<I::Addr>,
             buffer: B,
             info: &LocalDeliveryPacketInfo<I, H>,
+            early_demux_socket: Option<Self::EarlyDemuxSocket>,
         ) -> Result<(), (B, TransportReceiveError)> {
             receive_ip_packet::<I, _, _, _, _>(
                 core_ctx,
@@ -3336,6 +3429,7 @@ pub(crate) mod testutils {
                 dst_ip,
                 buffer,
                 info,
+                early_demux_socket,
             )
         }
     }
@@ -3499,6 +3593,13 @@ mod tests {
     };
     use super::*;
 
+    #[derive(Debug, PartialEq, Eq, Copy, Clone)]
+    enum EarlyDemuxMode {
+        Enabled,
+        Disabled,
+    }
+    use EarlyDemuxMode::{Disabled as NoEarlyDemux, Enabled as WithEarlyDemux};
+
     /// Helper function to inject an UDP packet with the provided parameters.
     fn receive_udp_packet<
         I: TestIpExt,
@@ -3510,6 +3611,7 @@ mod tests {
         device: D,
         meta: UdpPacketMeta<I>,
         body: &[u8],
+        early_demux_mode: EarlyDemuxMode,
     ) -> Result<(), TransportReceiveError>
     where
         UdpIpTransportContext: IpTransportContext<I, FakeUdpBindingsCtx<D>, CC>,
@@ -3522,6 +3624,20 @@ mod tests {
             .serialize_vec_outer()
             .unwrap()
             .into_inner();
+
+        let early_demux_socket = match early_demux_mode {
+            EarlyDemuxMode::Enabled => {
+                <UdpIpTransportContext as IpTransportContext<I, _, _>>::early_demux(
+                    core_ctx,
+                    &device,
+                    src_ip,
+                    dst_ip,
+                    buffer.as_ref(),
+                )
+            }
+            EarlyDemuxMode::Disabled => None,
+        };
+
         <UdpIpTransportContext as IpTransportContext<I, _, _>>::receive_ip_packet(
             core_ctx,
             bindings_ctx,
@@ -3533,6 +3649,7 @@ mod tests {
                 header_info: FakeIpHeaderInfo { dscp_and_ecn, ..Default::default() },
                 ..Default::default()
             },
+            early_demux_socket,
         )
         .map_err(|(_buffer, e)| e)
     }
@@ -3678,8 +3795,15 @@ mod tests {
             dst_port: LOCAL_PORT,
             dscp_and_ecn: DscpAndEcn::default(),
         };
-        receive_udp_packet(core_ctx, bindings_ctx, FakeDeviceId, meta.clone(), &body[..])
-            .expect("receive udp packet should succeed");
+        receive_udp_packet(
+            core_ctx,
+            bindings_ctx,
+            FakeDeviceId,
+            meta.clone(),
+            &body[..],
+            WithEarlyDemux,
+        )
+        .expect("receive udp packet should succeed");
 
         assert_eq!(
             bindings_ctx.state.received::<I>(),
@@ -3769,7 +3893,7 @@ mod tests {
             dst_port: LOCAL_PORT,
             dscp_and_ecn: DscpAndEcn::default(),
         };
-        receive_udp_packet(core_ctx, bindings_ctx, FakeDeviceId, meta, &body[..])
+        receive_udp_packet(core_ctx, bindings_ctx, FakeDeviceId, meta, &body[..], WithEarlyDemux)
             .expect("receive udp packet should succeed");
 
         assert_counters(
@@ -3812,7 +3936,14 @@ mod tests {
         };
         let body = [1, 2, 3, 4, 5];
         assert_matches!(
-            receive_udp_packet(&mut core_ctx, &mut bindings_ctx, FakeDeviceId, meta, &body[..]),
+            receive_udp_packet(
+                &mut core_ctx,
+                &mut bindings_ctx,
+                FakeDeviceId,
+                meta,
+                &body[..],
+                WithEarlyDemux,
+            ),
             Err(TransportReceiveError::PortUnreachable)
         );
         assert_eq!(&bindings_ctx.state.socket_data::<I>(), &HashMap::new());
@@ -3823,7 +3954,9 @@ mod tests {
     ///
     /// Only tests with specified local port and address bounds.
     #[ip_test(I)]
-    fn test_udp_conn_basic<I: TestIpExt>() {
+    #[test_case(EarlyDemuxMode::Enabled; "with early demux")]
+    #[test_case(EarlyDemuxMode::Disabled; "without early demux")]
+    fn test_udp_conn_basic<I: TestIpExt>(early_demux_mode: EarlyDemuxMode) {
         set_logger_for_test();
         let mut ctx = UdpFakeDeviceCtx::with_core_ctx(UdpFakeDeviceCoreCtx::new_fake_device::<I>());
         let mut api = UdpApi::<I, _>::new(ctx.as_mut());
@@ -3846,7 +3979,7 @@ mod tests {
         };
         let body = [1, 2, 3, 4, 5];
         let (core_ctx, bindings_ctx) = api.contexts();
-        receive_udp_packet(core_ctx, bindings_ctx, FakeDeviceId, meta, &body[..])
+        receive_udp_packet(core_ctx, bindings_ctx, FakeDeviceId, meta, &body[..], early_demux_mode)
             .expect("receive udp packet should succeed");
 
         assert_eq!(
@@ -4358,9 +4491,14 @@ mod tests {
     }
 
     #[ip_test(I)]
-    #[test_case(ShutdownType::Receive; "receive")]
-    #[test_case(ShutdownType::SendAndReceive; "both")]
-    fn test_marked_for_receive_shutdown<I: TestIpExt>(which: ShutdownType) {
+    #[test_case::test_matrix(
+        [ShutdownType::Receive, ShutdownType::SendAndReceive],
+        [EarlyDemuxMode::Enabled, EarlyDemuxMode::Disabled]
+    )]
+    fn test_marked_for_receive_shutdown<I: TestIpExt>(
+        which: ShutdownType,
+        early_demux_mode: EarlyDemuxMode,
+    ) {
         set_logger_for_test();
 
         let mut ctx = UdpFakeDeviceCtx::with_core_ctx(UdpFakeDeviceCoreCtx::new_fake_device::<I>());
@@ -4385,8 +4523,15 @@ mod tests {
         let packet = [1, 1, 1, 1];
         let (core_ctx, bindings_ctx) = api.contexts();
 
-        receive_udp_packet(core_ctx, bindings_ctx, FakeDeviceId, meta.clone(), &packet[..])
-            .expect("receive udp packet should succeed");
+        receive_udp_packet(
+            core_ctx,
+            bindings_ctx,
+            FakeDeviceId,
+            meta.clone(),
+            &packet[..],
+            early_demux_mode,
+        )
+        .expect("receive udp packet should succeed");
 
         assert_eq!(
             bindings_ctx.state.socket_data(),
@@ -4395,7 +4540,14 @@ mod tests {
         api.shutdown(&socket, which).expect("is connected");
         let (core_ctx, bindings_ctx) = api.contexts();
         assert_matches!(
-            receive_udp_packet(core_ctx, bindings_ctx, FakeDeviceId, meta.clone(), &packet[..]),
+            receive_udp_packet(
+                core_ctx,
+                bindings_ctx,
+                FakeDeviceId,
+                meta.clone(),
+                &packet[..],
+                early_demux_mode
+            ),
             Err(TransportReceiveError::PortUnreachable)
         );
         assert_eq!(
@@ -4407,7 +4559,14 @@ mod tests {
         api.shutdown(&socket, ShutdownType::Send).expect("is connected");
         let (core_ctx, bindings_ctx) = api.contexts();
         assert_matches!(
-            receive_udp_packet(core_ctx, bindings_ctx, FakeDeviceId, meta, &packet[..]),
+            receive_udp_packet(
+                core_ctx,
+                bindings_ctx,
+                FakeDeviceId,
+                meta,
+                &packet[..],
+                early_demux_mode
+            ),
             Err(TransportReceiveError::PortUnreachable)
         );
         assert_eq!(
@@ -4419,7 +4578,9 @@ mod tests {
     /// Tests that if we have multiple listeners and connections, demuxing the
     /// flows is performed correctly.
     #[ip_test(I)]
-    fn test_udp_demux<I: TestIpExt>() {
+    #[test_case(WithEarlyDemux; "with early demux")]
+    #[test_case(NoEarlyDemux; "without early demux")]
+    fn test_udp_demux<I: TestIpExt>(early_demux_mode: EarlyDemuxMode) {
         set_logger_for_test();
         let local_ip = local_ip::<I>();
         let remote_ip_a = I::get_other_ip_address(70);
@@ -4472,8 +4633,15 @@ mod tests {
         };
         let body_conn1 = [1, 1, 1, 1];
         let (core_ctx, bindings_ctx) = api.contexts();
-        receive_udp_packet(core_ctx, bindings_ctx, FakeDeviceId, meta.clone(), &body_conn1[..])
-            .expect("receive udp packet should succeed");
+        receive_udp_packet(
+            core_ctx,
+            bindings_ctx,
+            FakeDeviceId,
+            meta.clone(),
+            &body_conn1[..],
+            early_demux_mode,
+        )
+        .expect("receive udp packet should succeed");
         expectations
             .entry(conn1.downgrade())
             .or_default()
@@ -4489,8 +4657,15 @@ mod tests {
             dscp_and_ecn: DscpAndEcn::default(),
         };
         let body_conn2 = [2, 2, 2, 2];
-        receive_udp_packet(core_ctx, bindings_ctx, FakeDeviceId, meta.clone(), &body_conn2[..])
-            .expect("receive udp packet should succeed");
+        receive_udp_packet(
+            core_ctx,
+            bindings_ctx,
+            FakeDeviceId,
+            meta.clone(),
+            &body_conn2[..],
+            early_demux_mode,
+        )
+        .expect("receive udp packet should succeed");
         expectations
             .entry(conn2.downgrade())
             .or_default()
@@ -4506,8 +4681,15 @@ mod tests {
             dscp_and_ecn: DscpAndEcn::default(),
         };
         let body_list1 = [3, 3, 3, 3];
-        receive_udp_packet(core_ctx, bindings_ctx, FakeDeviceId, meta.clone(), &body_list1[..])
-            .expect("receive udp packet should succeed");
+        receive_udp_packet(
+            core_ctx,
+            bindings_ctx,
+            FakeDeviceId,
+            meta.clone(),
+            &body_list1[..],
+            early_demux_mode,
+        )
+        .expect("receive udp packet should succeed");
         expectations
             .entry(list1.downgrade())
             .or_default()
@@ -4523,8 +4705,15 @@ mod tests {
             dscp_and_ecn: DscpAndEcn::default(),
         };
         let body_list2 = [4, 4, 4, 4];
-        receive_udp_packet(core_ctx, bindings_ctx, FakeDeviceId, meta.clone(), &body_list2[..])
-            .expect("receive udp packet should succeed");
+        receive_udp_packet(
+            core_ctx,
+            bindings_ctx,
+            FakeDeviceId,
+            meta.clone(),
+            &body_list2[..],
+            early_demux_mode,
+        )
+        .expect("receive udp packet should succeed");
         expectations
             .entry(list2.downgrade())
             .or_default()
@@ -4546,6 +4735,7 @@ mod tests {
             FakeDeviceId,
             meta.clone(),
             &body_wildcard_list[..],
+            early_demux_mode,
         )
         .expect("receive udp packet should succeed");
         expectations
@@ -4558,7 +4748,9 @@ mod tests {
 
     /// Tests UDP wildcard listeners for different IP versions.
     #[ip_test(I)]
-    fn test_wildcard_listeners<I: TestIpExt>() {
+    #[test_case(WithEarlyDemux; "with early demux")]
+    #[test_case(NoEarlyDemux; "without early demux")]
+    fn test_wildcard_listeners<I: TestIpExt>(early_demux_mode: EarlyDemuxMode) {
         set_logger_for_test();
         let mut ctx = UdpFakeDeviceCtx::with_core_ctx(UdpFakeDeviceCoreCtx::new_fake_device::<I>());
         let mut api = UdpApi::<I, _>::new(ctx.as_mut());
@@ -4578,8 +4770,15 @@ mod tests {
             dst_port: LOCAL_PORT,
             dscp_and_ecn: DscpAndEcn::default(),
         };
-        receive_udp_packet(core_ctx, bindings_ctx, FakeDeviceId, meta_1.clone(), &body[..])
-            .expect("receive udp packet should succeed");
+        receive_udp_packet(
+            core_ctx,
+            bindings_ctx,
+            FakeDeviceId,
+            meta_1.clone(),
+            &body[..],
+            early_demux_mode,
+        )
+        .expect("receive udp packet should succeed");
 
         // Receive into a different local IP.
         let meta_2 = UdpPacketMeta {
@@ -4589,8 +4788,15 @@ mod tests {
             dst_port: LOCAL_PORT,
             dscp_and_ecn: DscpAndEcn::default(),
         };
-        receive_udp_packet(core_ctx, bindings_ctx, FakeDeviceId, meta_2.clone(), &body[..])
-            .expect("receive udp packet should succeed");
+        receive_udp_packet(
+            core_ctx,
+            bindings_ctx,
+            FakeDeviceId,
+            meta_2.clone(),
+            &body[..],
+            early_demux_mode,
+        )
+        .expect("receive udp packet should succeed");
 
         // Check that we received both packets for the listener.
         assert_eq!(
@@ -4609,7 +4815,9 @@ mod tests {
     }
 
     #[ip_test(I)]
-    fn test_receive_source_port_zero_on_listener<I: TestIpExt>() {
+    #[test_case(WithEarlyDemux; "with early demux")]
+    #[test_case(NoEarlyDemux; "without early demux")]
+    fn test_receive_source_port_zero_on_listener<I: TestIpExt>(early_demux_mode: EarlyDemuxMode) {
         set_logger_for_test();
         let mut ctx = UdpFakeDeviceCtx::with_core_ctx(UdpFakeDeviceCoreCtx::new_fake_device::<I>());
         let mut api = UdpApi::<I, _>::new(ctx.as_mut());
@@ -4626,8 +4834,15 @@ mod tests {
         };
 
         let (core_ctx, bindings_ctx) = api.contexts();
-        receive_udp_packet(core_ctx, bindings_ctx, FakeDeviceId, meta.clone(), &body[..])
-            .expect("receive udp packet should succeed");
+        receive_udp_packet(
+            core_ctx,
+            bindings_ctx,
+            FakeDeviceId,
+            meta.clone(),
+            &body[..],
+            early_demux_mode,
+        )
+        .expect("receive udp packet should succeed");
         // Check that we received both packets for the listener.
         assert_eq!(
             bindings_ctx.state.received(),
@@ -4642,7 +4857,11 @@ mod tests {
     }
 
     #[ip_test(I)]
-    fn test_receive_source_addr_unspecified_on_listener<I: TestIpExt>() {
+    #[test_case(WithEarlyDemux; "with early demux")]
+    #[test_case(NoEarlyDemux; "without early demux")]
+    fn test_receive_source_addr_unspecified_on_listener<I: TestIpExt>(
+        early_demux_mode: EarlyDemuxMode,
+    ) {
         set_logger_for_test();
         let mut ctx = UdpFakeDeviceCtx::with_core_ctx(UdpFakeDeviceCoreCtx::new_fake_device::<I>());
         let mut api = UdpApi::<I, _>::new(ctx.as_mut());
@@ -4658,7 +4877,7 @@ mod tests {
         };
         let body = [];
         let (core_ctx, bindings_ctx) = api.contexts();
-        receive_udp_packet(core_ctx, bindings_ctx, FakeDeviceId, meta, &body[..])
+        receive_udp_packet(core_ctx, bindings_ctx, FakeDeviceId, meta, &body[..], early_demux_mode)
             .expect("receive udp packet should succeed");
         // Check that we received the packet on the listener.
         assert_eq!(
@@ -4702,7 +4921,9 @@ mod tests {
     }
 
     #[ip_test(I)]
-    fn test_receive_multicast_packet<I: TestIpExt>() {
+    #[test_case(WithEarlyDemux; "with early demux")]
+    #[test_case(NoEarlyDemux; "without early demux")]
+    fn test_receive_multicast_packet<I: TestIpExt>(early_demux_mode: EarlyDemuxMode) {
         set_logger_for_test();
         let local_ip = local_ip::<I>();
         let remote_ip = I::get_other_ip_address(70);
@@ -4749,7 +4970,7 @@ mod tests {
                 dscp_and_ecn: DscpAndEcn::default(),
             };
             let body = [body];
-            receive_udp_packet(core_ctx, bindings_ctx, FakeDeviceId, meta, &body)
+            receive_udp_packet(core_ctx, bindings_ctx, FakeDeviceId, meta, &body, early_demux_mode)
                 .expect("receive udp packet should succeed")
         };
 
@@ -4819,7 +5040,9 @@ mod tests {
     /// Tests that if sockets are bound to devices, they will only receive
     /// packets that are received on those devices.
     #[ip_test(I)]
-    fn test_bound_to_device_receive<I: TestIpExt>() {
+    #[test_case(WithEarlyDemux; "with early demux")]
+    #[test_case(NoEarlyDemux; "without early demux")]
+    fn test_bound_to_device_receive<I: TestIpExt>(early_demux_mode: EarlyDemuxMode) {
         set_logger_for_test();
         let mut ctx = UdpMultipleDevicesCtx::with_core_ctx(
             UdpMultipleDevicesCoreCtx::new_multiple_devices::<I>(),
@@ -4856,13 +5079,27 @@ mod tests {
         };
         let body = [1, 2, 3, 4, 5];
         let (core_ctx, bindings_ctx) = api.contexts();
-        receive_udp_packet(core_ctx, bindings_ctx, MultipleDevicesId::A, meta.clone(), &body[..])
-            .expect("receive udp packet should succeed");
+        receive_udp_packet(
+            core_ctx,
+            bindings_ctx,
+            MultipleDevicesId::A,
+            meta.clone(),
+            &body[..],
+            early_demux_mode,
+        )
+        .expect("receive udp packet should succeed");
 
         // A second packet received on `MultipleDevicesId::B` will go to the
         // second socket.
-        receive_udp_packet(core_ctx, bindings_ctx, MultipleDevicesId::B, meta, &body[..])
-            .expect("receive udp packet should succeed");
+        receive_udp_packet(
+            core_ctx,
+            bindings_ctx,
+            MultipleDevicesId::B,
+            meta,
+            &body[..],
+            early_demux_mode,
+        )
+        .expect("receive udp packet should succeed");
         assert_eq!(
             bindings_ctx.state.socket_data(),
             HashMap::from([
@@ -4930,6 +5167,7 @@ mod tests {
         core_ctx: &mut UdpMultipleDevicesCoreCtx,
         bindings_ctx: &mut UdpMultipleDevicesBindingsCtx,
         device: MultipleDevicesId,
+        early_demux_mode: EarlyDemuxMode,
     ) -> Result<(), TransportReceiveError> {
         let meta = UdpPacketMeta::<I> {
             src_ip: I::get_other_remote_ip_address(1).get(),
@@ -4939,12 +5177,14 @@ mod tests {
             dscp_and_ecn: DscpAndEcn::default(),
         };
         const BODY: [u8; 5] = [1, 2, 3, 4, 5];
-        receive_udp_packet(core_ctx, bindings_ctx, device, meta, &BODY[..])
+        receive_udp_packet(core_ctx, bindings_ctx, device, meta, &BODY[..], early_demux_mode)
     }
 
     /// Check that sockets can be bound to and unbound from devices.
     #[ip_test(I)]
-    fn test_bind_unbind_device<I: TestIpExt>() {
+    #[test_case(WithEarlyDemux; "with early demux")]
+    #[test_case(NoEarlyDemux; "without early demux")]
+    fn test_bind_unbind_device<I: TestIpExt>(early_demux_mode: EarlyDemuxMode) {
         set_logger_for_test();
         let mut ctx = UdpMultipleDevicesCtx::with_core_ctx(
             UdpMultipleDevicesCoreCtx::new_multiple_devices::<I>(),
@@ -4959,7 +5199,7 @@ mod tests {
         // Since it is bound, it does not receive a packet from another device.
         let (core_ctx, bindings_ctx) = api.contexts();
         assert_matches!(
-            receive_packet_on::<I>(core_ctx, bindings_ctx, MultipleDevicesId::B),
+            receive_packet_on::<I>(core_ctx, bindings_ctx, MultipleDevicesId::B, early_demux_mode),
             Err(TransportReceiveError::PortUnreachable)
         );
         let received = &bindings_ctx.state.socket_data::<I>();
@@ -4968,7 +5208,7 @@ mod tests {
         // When unbound, the socket can receive packets on the other device.
         api.set_device(&socket, None).expect("clearing bound device failed");
         let (core_ctx, bindings_ctx) = api.contexts();
-        receive_packet_on::<I>(core_ctx, bindings_ctx, MultipleDevicesId::B)
+        receive_packet_on::<I>(core_ctx, bindings_ctx, MultipleDevicesId::B, early_demux_mode)
             .expect("receive udp packet should succeed");
         let received = bindings_ctx.state.received::<I>().iter().collect::<Vec<_>>();
         let (rx_socket, socket_received) =
@@ -5047,7 +5287,9 @@ mod tests {
     }
 
     #[ip_test(I)]
-    fn test_bound_device_receive_multicast_packet<I: TestIpExt>() {
+    #[test_case(WithEarlyDemux; "with early demux")]
+    #[test_case(NoEarlyDemux; "without early demux")]
+    fn test_bound_device_receive_multicast_packet<I: TestIpExt>(early_demux_mode: EarlyDemuxMode) {
         set_logger_for_test();
         let remote_ip = I::get_other_ip_address(1);
         let multicast_addr = I::get_multicast_addr(0);
@@ -5095,7 +5337,7 @@ mod tests {
                 dscp_and_ecn: DscpAndEcn::default(),
             };
             let body = vec![index_for_device(device)];
-            receive_udp_packet(core_ctx, bindings_ctx, device, meta, &body)
+            receive_udp_packet(core_ctx, bindings_ctx, device, meta, &body, early_demux_mode)
                 .expect("receive udp packet should succeed")
         };
 
@@ -6577,10 +6819,11 @@ mod tests {
         }
     }
 
-    #[test_case(DualStackBindAddr::Any; "dual-stack")]
-    #[test_case(DualStackBindAddr::V4Any; "v4 any")]
-    #[test_case(DualStackBindAddr::V4Specific; "v4 specific")]
-    fn dual_stack_delivery(bind_addr: DualStackBindAddr) {
+    #[test_case::test_matrix(
+        [DualStackBindAddr::Any, DualStackBindAddr::V4Any, DualStackBindAddr::V4Specific],
+        [WithEarlyDemux, NoEarlyDemux]
+    )]
+    fn dual_stack_delivery(bind_addr: DualStackBindAddr, early_demux_mode: EarlyDemuxMode) {
         const REMOTE_IP: Ipv4Addr = ip_v4!("8.8.8.8");
         const REMOTE_IP_MAPPED: Ipv6Addr = net_ip_v6!("::ffff:8.8.8.8");
         let bind_addr = bind_addr.v6_addr().unwrap_or(V4_LOCAL_IP_MAPPED);
@@ -6612,6 +6855,7 @@ mod tests {
                 dscp_and_ecn: DscpAndEcn::default(),
             },
             BODY,
+            early_demux_mode,
         )
         .expect("receive udp packet should succeed");
 
@@ -7594,5 +7838,52 @@ mod tests {
         // We can set and get back the mark.
         api.set_mark(&socket, domain, mark);
         assert_eq!(api.get_mark(&socket, domain), mark);
+    }
+
+    #[ip_test(I)]
+    fn udp_early_demux<I: TestIpExt>() {
+        set_logger_for_test();
+        let mut ctx = FakeUdpCtx::with_core_ctx(FakeUdpCoreCtx::new_fake_device::<I>());
+        let mut api = UdpApi::<I, _>::new(ctx.as_mut());
+
+        let local_ip = local_ip::<I>();
+        let remote_ip = remote_ip::<I>();
+        let socket = api.create();
+
+        api.listen(&socket, Some(ZonedAddr::Unzoned(local_ip)), Some(LOCAL_PORT))
+            .expect("Initial call to listen_udp was expected to succeed");
+
+        let builder =
+            UdpPacketBuilder::new(remote_ip.get(), local_ip.get(), Some(REMOTE_PORT), LOCAL_PORT);
+
+        let buffer = builder
+            .wrap_body(Buf::new(vec![1, 2, 3, 4], ..))
+            .serialize_vec_outer()
+            .unwrap()
+            .into_inner();
+
+        // Early demux should find only connected sockets.
+        let early_demux_socket =
+            <UdpIpTransportContext as IpTransportContext<I, _, _>>::early_demux(
+                api.core_ctx(),
+                &FakeDeviceId,
+                remote_ip.get(),
+                local_ip.get(),
+                buffer.as_ref(),
+            );
+        assert_eq!(early_demux_socket, None);
+
+        api.connect(&socket, Some(ZonedAddr::Unzoned(remote_ip)), REMOTE_PORT.into())
+            .expect("connect should succeed");
+
+        let early_demux_socket =
+            <UdpIpTransportContext as IpTransportContext<I, _, _>>::early_demux(
+                api.core_ctx(),
+                &FakeDeviceId,
+                remote_ip.get(),
+                local_ip.get(),
+                buffer.as_ref(),
+            );
+        assert_matches!(early_demux_socket, Some(_));
     }
 }
