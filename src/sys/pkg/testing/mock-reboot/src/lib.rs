@@ -4,43 +4,11 @@
 
 use anyhow::Error;
 use fidl_fuchsia_hardware_power_statecontrol::{
-    AdminProxy, AdminRequest, AdminRequestStream, AdminShutdownResult, RebootOptions,
-    RebootReason2, ShutdownAction, ShutdownOptions, ShutdownReason,
+    AdminProxy, AdminRequest, AdminRequestStream, AdminShutdownResult, ShutdownOptions,
 };
 use fuchsia_async as fasync;
 use futures::{TryFutureExt, TryStreamExt};
 use std::sync::Arc;
-
-// TODO(https://fxbug.dev/465530639): remove once clients are migrated from PerformReboot to
-// Shutdown.
-fn reboot_reason_to_shutdown_reason(reason: RebootReason2) -> Option<ShutdownReason> {
-    match reason {
-        RebootReason2::UserRequest => Some(ShutdownReason::UserRequest),
-        RebootReason2::DeveloperRequest => Some(ShutdownReason::DeveloperRequest),
-        RebootReason2::SystemUpdate => Some(ShutdownReason::SystemUpdate),
-        RebootReason2::RetrySystemUpdate => Some(ShutdownReason::RetrySystemUpdate),
-        RebootReason2::HighTemperature => Some(ShutdownReason::HighTemperature),
-        RebootReason2::FactoryDataReset => Some(ShutdownReason::FactoryDataReset),
-        RebootReason2::SessionFailure => Some(ShutdownReason::SessionFailure),
-        RebootReason2::CriticalComponentFailure => Some(ShutdownReason::CriticalComponentFailure),
-        RebootReason2::ZbiSwap => Some(ShutdownReason::ZbiSwap),
-        RebootReason2::OutOfMemory => Some(ShutdownReason::OutOfMemory),
-        RebootReason2::NetstackMigration => Some(ShutdownReason::NetstackMigration),
-        RebootReason2::AndroidUnexpectedReason => Some(ShutdownReason::AndroidUnexpectedReason),
-        RebootReason2::AndroidRescueParty => Some(ShutdownReason::AndroidRescueParty),
-        RebootReason2::AndroidCriticalProcessFailure => {
-            Some(ShutdownReason::AndroidCriticalProcessFailure)
-        }
-        _ => None,
-    }
-}
-
-fn reboot_options_to_shutdown_options(options: RebootOptions) -> ShutdownOptions {
-    let reasons = options
-        .reasons
-        .map(|reasons| reasons.into_iter().filter_map(reboot_reason_to_shutdown_reason).collect());
-    ShutdownOptions { action: Some(ShutdownAction::Reboot), reasons, ..Default::default() }
-}
 
 pub struct MockRebootService {
     call_hook: Box<dyn Fn(ShutdownOptions) -> AdminShutdownResult + Send + Sync>,
@@ -64,10 +32,6 @@ impl MockRebootService {
     ) -> Result<(), Error> {
         while let Some(event) = stream.try_next().await.expect("received request") {
             match event {
-                AdminRequest::PerformReboot { options, responder } => {
-                    let result = (self.call_hook)(reboot_options_to_shutdown_options(options));
-                    responder.send(result)?;
-                }
                 AdminRequest::Shutdown { options, responder } => {
                     let result = if options.action.is_none() {
                         Err(zx::Status::INVALID_ARGS.into_raw())
@@ -104,7 +68,7 @@ impl MockRebootService {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use fidl_fuchsia_hardware_power_statecontrol::{RebootReason2, ShutdownAction};
+    use fidl_fuchsia_hardware_power_statecontrol::{ShutdownAction, ShutdownReason};
     use fuchsia_async as fasync;
     use std::sync::atomic::{AtomicU32, Ordering};
 
@@ -116,13 +80,14 @@ mod tests {
         let proxy = reboot_service_clone.spawn_reboot_service();
 
         proxy
-            .perform_reboot(&RebootOptions {
-                reasons: Some(vec![RebootReason2::SystemUpdate]),
+            .shutdown(&ShutdownOptions {
+                action: Some(ShutdownAction::Reboot),
+                reasons: Some(vec![ShutdownReason::SystemUpdate]),
                 ..Default::default()
             })
             .await
-            .expect("made reboot call")
-            .expect("reboot call succeeded");
+            .expect("made shutdown call")
+            .expect("shutdown call succeeded");
     }
 
     #[fasync::run_singlethreaded(test)]
@@ -133,14 +98,15 @@ mod tests {
         let reboot_service_clone = Arc::clone(&reboot_service);
         let proxy = reboot_service_clone.spawn_reboot_service();
 
-        let reboot_result = proxy
-            .perform_reboot(&RebootOptions {
-                reasons: Some(vec![RebootReason2::SystemUpdate]),
+        let shutdown_result = proxy
+            .shutdown(&ShutdownOptions {
+                action: Some(ShutdownAction::Reboot),
+                reasons: Some(vec![ShutdownReason::SystemUpdate]),
                 ..Default::default()
             })
             .await
-            .expect("made reboot call");
-        assert_eq!(reboot_result, Err(zx::Status::INTERNAL.into_raw()));
+            .expect("made shutdown call");
+        assert_eq!(shutdown_result, Err(zx::Status::INTERNAL.into_raw()));
     }
 
     #[fasync::run_singlethreaded(test)]
@@ -176,26 +142,6 @@ mod tests {
         let reboot_service_clone = Arc::clone(&reboot_service);
         let proxy = reboot_service_clone.spawn_reboot_service();
 
-        // Succeed when given expected reboot reason.
-        let () = proxy
-            .perform_reboot(&RebootOptions {
-                reasons: Some(vec![RebootReason2::DeveloperRequest]),
-                ..Default::default()
-            })
-            .await
-            .expect("made reboot call")
-            .expect("reboot call succeeded");
-
-        // Error when given unexpected reboot reason.
-        let error_reboot_result = proxy
-            .perform_reboot(&RebootOptions {
-                reasons: Some(vec![RebootReason2::SystemUpdate]),
-                ..Default::default()
-            })
-            .await
-            .expect("made reboot call");
-        assert_eq!(error_reboot_result, Err(zx::Status::NOT_SUPPORTED.into_raw()));
-
         // Succeed when given expected shutdown reason.
         let () = proxy
             .shutdown(&ShutdownOptions {
@@ -206,6 +152,17 @@ mod tests {
             .await
             .expect("made shutdown call")
             .expect("shutdown call succeeded");
+
+        // Error when given unexpected shutdown reason.
+        let error_reboot_result = proxy
+            .shutdown(&ShutdownOptions {
+                action: Some(ShutdownAction::Reboot),
+                reasons: Some(vec![ShutdownReason::SystemUpdate]),
+                ..Default::default()
+            })
+            .await
+            .expect("made shutdown call");
+        assert_eq!(error_reboot_result, Err(zx::Status::NOT_SUPPORTED.into_raw()));
     }
 
     #[fasync::run_singlethreaded(test)]
@@ -221,12 +178,13 @@ mod tests {
         let proxy = reboot_service_clone.spawn_reboot_service();
 
         proxy
-            .perform_reboot(&RebootOptions {
-                reasons: Some(vec![RebootReason2::SystemUpdate]),
+            .shutdown(&ShutdownOptions {
+                action: Some(ShutdownAction::Reboot),
+                reasons: Some(vec![ShutdownReason::SystemUpdate]),
                 ..Default::default()
             })
             .await
-            .expect("made reboot call")
+            .expect("made shutdown call")
             .expect("shutdown call succeeded");
         assert_eq!(called.load(Ordering::SeqCst), 1);
     }
