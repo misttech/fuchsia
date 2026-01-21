@@ -120,72 +120,72 @@ class Flatland : public fidl::Server<fuchsia_ui_composition::Flatland>,
   // |fuchsia_ui_composition::Flatland|
   void CreateTransform(CreateTransformRequest& request,
                        CreateTransformCompleter::Sync& completer) override;
-  void CreateTransform(TransformId transform_id);
+  void CreateTransform(TransformId2 transform_id);
 
   // |fuchsia_ui_composition::Flatland|
   void SetTranslation(SetTranslationRequest& request,
                       SetTranslationCompleter::Sync& completer) override;
-  void SetTranslation(TransformId transform_id, fuchsia_math::Vec translation);
+  void SetTranslation(TransformId2 transform_id, fuchsia_math::Vec translation);
 
   // |fuchsia_ui_composition::Flatland|
   void SetOrientation(SetOrientationRequest& request,
                       SetOrientationCompleter::Sync& completer) override;
-  void SetOrientation(TransformId transform_id, fuchsia_ui_composition::Orientation orientation);
+  void SetOrientation(TransformId2 transform_id, fuchsia_ui_composition::Orientation orientation);
 
   // |fuchsia_ui_composition::Flatland|
   void SetScale(SetScaleRequest& request, SetScaleCompleter::Sync& completer) override;
-  void SetScale(TransformId transform_id, fuchsia_math::VecF scale);
+  void SetScale(TransformId2 transform_id, fuchsia_math::VecF scale);
 
   // |fuchsia_ui_composition::Flatland|
   void SetOpacity(SetOpacityRequest& request, SetOpacityCompleter::Sync& completer) override;
-  void SetOpacity(TransformId transform_id, float value);
+  void SetOpacity(TransformId2 transform_id, float value);
 
   // |fuchsia_ui_composition::Flatland|
   void SetClipBoundary(SetClipBoundaryRequest& request,
                        SetClipBoundaryCompleter::Sync& completer) override;
-  void SetClipBoundary(TransformId transform_id, fidl::Box<fuchsia_math::Rect> bounds);
+  void SetClipBoundary(TransformId2 transform_id, fidl::Box<fuchsia_math::Rect> bounds);
 
   // |fuchsia_ui_composition::Flatland|
   void AddChild(AddChildRequest& request, AddChildCompleter::Sync& completer) override;
-  void AddChild(TransformId parent_transform_id, TransformId child_transform_id);
+  void AddChild(TransformId2 parent_transform_id, TransformId2 child_transform_id);
 
   // |fuchsia_ui_composition::Flatland|
   void RemoveChild(RemoveChildRequest& request, RemoveChildCompleter::Sync& completer) override;
-  void RemoveChild(TransformId parent_transform_id, TransformId child_transform_id);
+  void RemoveChild(TransformId2 parent_transform_id, TransformId2 child_transform_id);
 
   // |fuchsia_ui_composition::Flatland|
   void ReplaceChildren(ReplaceChildrenRequest& request,
                        ReplaceChildrenCompleter::Sync& completer) override;
-  void ReplaceChildren(TransformId parent_transform_id,
-                       const std::vector<TransformId>& new_child_transform_ids);
+  void ReplaceChildren(TransformId2 parent_transform_id,
+                       const std::vector<TransformId2>& new_child_transform_ids);
 
   // |fuchsia_ui_composition::Flatland|
   void SetRootTransform(SetRootTransformRequest& request,
                         SetRootTransformCompleter::Sync& completer) override;
-  void SetRootTransform(TransformId transform_id);
+  void SetRootTransform(TransformId2 transform_id);
 
   // |fuchsia_ui_composition::Flatland|
   void CreateViewport(CreateViewportRequest& request,
                       CreateViewportCompleter::Sync& completer) override;
-  void CreateViewport(ContentId viewport_id, fuchsia_ui_views::ViewportCreationToken token,
+  void CreateViewport(ContentId2 viewport_id, fuchsia_ui_views::ViewportCreationToken token,
                       fuchsia_ui_composition::ViewportProperties properties,
                       fidl::ServerEnd<fuchsia_ui_composition::ChildViewWatcher> child_view_watcher);
 
   // |fuchsia_ui_composition::Flatland|
   void CreateImage(CreateImageRequest& request, CreateImageCompleter::Sync& completer) override;
-  void CreateImage(ContentId image_id,
+  void CreateImage(ContentId2 image_id,
                    fuchsia_ui_composition::BufferCollectionImportToken import_token,
                    uint32_t vmo_index, fuchsia_ui_composition::ImageProperties properties);
 
   // |fuchsia_ui_composition::Flatland|
   void SetImageSampleRegion(SetImageSampleRegionRequest& request,
                             SetImageSampleRegionCompleter::Sync& completer) override;
-  void SetImageSampleRegion(ContentId image_id, types::RectangleF rect);
+  void SetImageSampleRegion(ContentId2 image_id, types::RectangleF rect);
 
   // |fuchsia_ui_composition::Flatland|
   void SetImageDestinationSize(SetImageDestinationSizeRequest& request,
                                SetImageDestinationSizeCompleter::Sync& completer) override;
-  void SetImageDestinationSize(ContentId image_id, fuchsia_math::SizeU size);
+  void SetImageDestinationSize(ContentId2 image_id, fuchsia_math::SizeU size);
 
   // |fuchsia_ui_composition::Flatland|
   void SetImageBlendingFunction(SetImageBlendingFunctionRequest& request,
@@ -194,68 +194,68 @@ class Flatland : public fidl::Server<fuchsia_ui_composition::Flatland>,
   // |fuchsia_ui_composition::Flatland|
   void SetImageBlendMode(SetImageBlendModeRequest& request,
                          SetImageBlendModeCompleter::Sync& completer) override;
-  void SetImageBlendMode(ContentId image_id, BlendMode blend_mode);
+  void SetImageBlendMode(ContentId2 image_id, BlendMode blend_mode);
 
   // |fuchsia_ui_composition::Flatland|
   void SetImageFlip(SetImageFlipRequest& request, SetImageFlipCompleter::Sync& completer) override;
-  void SetImageFlip(ContentId image_id, fuchsia_ui_composition::ImageFlip flip);
+  void SetImageFlip(ContentId2 image_id, fuchsia_ui_composition::ImageFlip flip);
 
   // |fuchsia_ui_composition::Flatland|
   void CreateFilledRect(CreateFilledRectRequest& request,
                         CreateFilledRectCompleter::Sync& completer) override;
-  void CreateFilledRect(ContentId rect_id);
+  void CreateFilledRect(ContentId2 rect_id);
 
   // |fuchsia_ui_composition::Flatland|
   void SetSolidFill(SetSolidFillRequest& request, SetSolidFillCompleter::Sync& completer) override;
-  void SetSolidFill(ContentId rect_id, fuchsia_ui_composition::ColorRgba color,
+  void SetSolidFill(ContentId2 rect_id, fuchsia_ui_composition::ColorRgba color,
                     fuchsia_math::SizeU size);
 
   // |fuchsia_ui_composition::Flatland|
   void ReleaseFilledRect(ReleaseFilledRectRequest& request,
                          ReleaseFilledRectCompleter::Sync& completer) override;
-  void ReleaseFilledRect(ContentId rect_id);
+  void ReleaseFilledRect(ContentId2 rect_id);
 
   // |fuchsia_ui_composition::Flatland|
   void SetImageOpacity(SetImageOpacityRequest& request,
                        SetImageOpacityCompleter::Sync& completer) override;
-  void SetImageOpacity(ContentId image_id, float opacity);
+  void SetImageOpacity(ContentId2 image_id, float opacity);
 
   // |fuchsia_ui_composition::Flatland|
   void SetHitRegions(SetHitRegionsRequest& request,
                      SetHitRegionsCompleter::Sync& completer) override;
-  void SetHitRegions(TransformId transform_id,
+  void SetHitRegions(TransformId2 transform_id,
                      std::vector<fuchsia_ui_composition::HitRegion> regions);
 
   // |fuchsia_ui_composition::Flatland|
   void SetInfiniteHitRegion(SetInfiniteHitRegionRequest& request,
                             SetInfiniteHitRegionCompleter::Sync& completer) override;
-  void SetInfiniteHitRegion(TransformId transform_id,
+  void SetInfiniteHitRegion(TransformId2 transform_id,
                             fuchsia_ui_composition::HitTestInteraction hit_test);
 
   // |fuchsia_ui_composition::Flatland|
   void SetContent(SetContentRequest& request, SetContentCompleter::Sync& completer) override;
-  void SetContent(TransformId transform_id, ContentId content_id);
+  void SetContent(TransformId2 transform_id, ContentId2 content_id);
 
   // |fuchsia_ui_composition::Flatland|
   void SetViewportProperties(SetViewportPropertiesRequest& request,
                              SetViewportPropertiesCompleter::Sync& completer) override;
-  void SetViewportProperties(ContentId viewport_id,
+  void SetViewportProperties(ContentId2 viewport_id,
                              fuchsia_ui_composition::ViewportProperties properties);
 
   // |fuchsia_ui_composition::Flatland|
   void ReleaseTransform(ReleaseTransformRequest& request,
                         ReleaseTransformCompleter::Sync& completer) override;
-  void ReleaseTransform(TransformId transform_id);
+  void ReleaseTransform(TransformId2 transform_id);
 
   // |fuchsia_ui_composition::Flatland|
   void ReleaseViewport(ReleaseViewportRequest& request,
                        ReleaseViewportCompleter::Sync& completer) override;
-  void ReleaseViewport(ContentId viewport_id,
+  void ReleaseViewport(ContentId2 viewport_id,
                        fit::function<void(fuchsia_ui_views::ViewportCreationToken)> completer);
 
   // |fuchsia_ui_composition::Flatland|
   void ReleaseImage(ReleaseImageRequest& request, ReleaseImageCompleter::Sync& completer) override;
-  void ReleaseImage(ContentId image_id);
+  void ReleaseImage(ContentId2 image_id);
 
   // |fuchsia_ui_composition::Flatland|
   void SetDebugName(SetDebugNameRequest& request, SetDebugNameCompleter::Sync& completer) override;
@@ -279,11 +279,11 @@ class Flatland : public fidl::Server<fuchsia_ui_composition::Flatland>,
 
   // For validating properties associated with content in tests only. If |content_id| does not
   // exist for this Flatland instance, returns std::nullopt.
-  std::optional<TransformHandle> GetContentHandle(ContentId content_id) const;
+  std::optional<TransformHandle> GetContentHandle(ContentId2 content_id) const;
 
   // For validating properties associated with transforms in tests only. If |transform_id| does not
   // exist for this Flatland instance, returns std::nullopt.
-  std::optional<TransformHandle> GetTransformHandle(TransformId transform_id) const;
+  std::optional<TransformHandle> GetTransformHandle(TransformId2 transform_id) const;
 
   // For validating logs in tests only.
   void SetErrorReporter(std::unique_ptr<scenic_impl::ErrorReporter> error_reporter);
@@ -350,9 +350,6 @@ class Flatland : public fidl::Server<fuchsia_ui_composition::Flatland>,
   async_dispatcher_t* dispatcher() const { return dispatcher_holder_->dispatcher(); }
   std::shared_ptr<utils::DispatcherHolder> dispatcher_holder_;
 
-  // Users are not allowed to use zero as a TransformId or ContentId.
-  static constexpr uint64_t kInvalidId = 0;
-
   // The unique SessionId for this Flatland session. Used to schedule Presents and register
   // UberStructs with the UberStructSystem.
   const scheduling::SessionId session_id_;
@@ -392,7 +389,7 @@ class Flatland : public fidl::Server<fuchsia_ui_composition::Flatland>,
   // A map from user-generated ID to global handle. This map constitutes the set of transforms that
   // can be referenced by the user through method calls. Keep in mind that additional transforms may
   // be kept alive through child references.
-  std::unordered_map<uint64_t, TransformHandle> transforms_;
+  std::unordered_map<TransformId2, TransformHandle> transforms_;
 
   // A graph representing this flatland instance's local transforms and their relationships.
   TransformGraph transform_graph_;
@@ -411,7 +408,7 @@ class Flatland : public fidl::Server<fuchsia_ui_composition::Flatland>,
   // A mapping from user-generated ID to the TransformHandle that owns that piece of Content.
   // Attaching Content to a Transform consists of setting one of these "Content Handles" as the
   // priority child of the Transform.
-  std::unordered_map<uint64_t, TransformHandle> content_handles_;
+  std::unordered_map<ContentId2, TransformHandle> content_handles_;
 
   // The set of link operations that are pending a call to Present(). Unlike other operations,
   // whose effects are only visible when a new UberStruct is published, Link destruction operations

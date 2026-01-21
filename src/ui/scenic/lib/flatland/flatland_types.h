@@ -5,6 +5,7 @@
 #ifndef SRC_UI_SCENIC_LIB_FLATLAND_FLATLAND_TYPES_H_
 #define SRC_UI_SCENIC_LIB_FLATLAND_FLATLAND_TYPES_H_
 
+#include <fidl/fuchsia.ui.composition/cpp/fidl.h>
 #include <fuchsia/math/cpp/fidl.h>
 #include <fuchsia/ui/composition/cpp/fidl.h>
 
@@ -12,6 +13,7 @@
 #include <optional>
 
 #include "src/ui/scenic/lib/types/blend_mode.h"
+#include "src/ui/scenic/lib/types/id_type.h"
 #include "src/ui/scenic/lib/types/rectangle.h"
 #include "src/ui/scenic/lib/types/rectangle_f.h"
 #include "src/ui/scenic/lib/types/view_ref.h"
@@ -19,6 +21,19 @@
 #include <glm/glm.hpp>
 
 namespace flatland {
+
+namespace internal {
+using ContentIdTraits =
+    types::DefaultIdTypeTraitsForNaturalFidl<uint64_t, fuchsia_ui_composition::ContentId>;
+using TransformIdTraits =
+    types::DefaultIdTypeTraitsForNaturalFidl<uint64_t, fuchsia_ui_composition::TransformId>;
+}  // namespace internal
+
+using ContentId2 = types::IdType<::flatland::internal::ContentIdTraits>;
+using TransformId2 = types::IdType<::flatland::internal::TransformIdTraits>;
+
+constexpr ContentId2 kInvalidContentId = ContentId2(0);
+constexpr TransformId2 kInvalidTransformId = TransformId2(0);
 
 // The sample region to use for an image when texturing a rectangle.
 using ImageSampleRegion = types::RectangleF;

@@ -13,13 +13,13 @@
 
 namespace display::internal {
 
-using types::DefaultIdTypeTraits;
+using types::DefaultIdTypeTraitsForWireFidl;
 
-using BufferCollectionIdTraits = DefaultIdTypeTraits<uint64_t, WireBufferCollectionId>;
-using DisplayIdTraits = DefaultIdTypeTraits<uint64_t, WireDisplayId>;
-using EventIdTraits = DefaultIdTypeTraits<uint64_t, WireEventId>;
-using ImageIdTraits = DefaultIdTypeTraits<uint64_t, WireImageId>;
-using LayerIdTraits = DefaultIdTypeTraits<uint64_t, WireLayerId>;
+using BufferCollectionIdTraits = DefaultIdTypeTraitsForWireFidl<uint64_t, WireBufferCollectionId>;
+using DisplayIdTraits = DefaultIdTypeTraitsForWireFidl<uint64_t, WireDisplayId>;
+using EventIdTraits = DefaultIdTypeTraitsForWireFidl<uint64_t, WireEventId>;
+using ImageIdTraits = DefaultIdTypeTraitsForWireFidl<uint64_t, WireImageId>;
+using LayerIdTraits = DefaultIdTypeTraitsForWireFidl<uint64_t, WireLayerId>;
 
 }  // namespace display::internal
 

@@ -111,7 +111,7 @@ void FlatlandScreenshot::AllocateBuffers() {
   bind_shared_request.set_buffer_collection_request(buffer_collection.NewRequest());
   sysmem_allocator_->BindSharedCollection(std::move(bind_shared_request));
 
-  // We only need 1 buffer since it gets re-used on every Take() call.
+  // We only need 1 buffer since it gets reused on every Take() call.
   fuchsia::sysmem2::BufferCollectionSetConstraintsRequest set_constraints_request;
   set_constraints_request.set_constraints(
       utils::CreateDefaultConstraints(/*buffer_count=*/1, display_size_.width, display_size_.height,

@@ -24,7 +24,7 @@ namespace {
 class IdTypeTest : public ::testing::Test {
  protected:
   using TestDisplayIdTraits =
-      DefaultIdTypeTraits<uint64_t, fuchsia_hardware_display_types::wire::DisplayId>;
+      DefaultIdTypeTraitsForWireFidl<uint64_t, fuchsia_hardware_display_types::wire::DisplayId>;
   using TestDisplayId = IdType<TestDisplayIdTraits>;
 
   static_assert(std::is_standard_layout_v<TestDisplayId>);

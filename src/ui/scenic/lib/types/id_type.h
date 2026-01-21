@@ -7,31 +7,10 @@
 
 #include <format>
 #include <functional>
+#include <ostream>
 #include <type_traits>
 
 namespace types {
-
-// `IdType` traits implementation that works for most display types.
-//
-// `ValueT` is the underlying type for the integer ID. Only C++ integer types are
-// supported.
-//
-// `FidlT` is the FIDL type used to represent IDs. It must be a wire type for a
-// FIDL struct whose `value` member is the same integer type as `ValueT`.
-template <typename ValueT, typename FidlT>
-struct DefaultIdTypeTraits {
-  // The ID's underlying type.
-  using ValueType = ValueT;
-
-  // The corresponding FIDL wire type.
-  using FidlType = FidlT;
-
-  // Converts from the FIDL wire type to the underlying type.
-  static constexpr ValueType FromFidl(const FidlType& fidl_value) noexcept;
-
-  // Converts from the underlying type to the FIDL wire type.
-  static constexpr FidlType ToFidl(const ValueType& value) noexcept;
-};
 
 // Newtype pattern implementation for integer identifiers.
 //
@@ -50,7 +29,7 @@ struct DefaultIdTypeTraits {
 // overhead associated with it.
 //
 // `IdTraits` must be a traits structure with the same type aliases and static
-// methods as `DefaultIdTraits`.
+// methods as `DefaultIdTraitsForWireFidl` and `DefaultIdTraitsForWireFidl`, see below.
 template <typename IdTraits>
 class IdType {
  public:
@@ -91,6 +70,60 @@ class IdType {
 
  private:
   ValueType value_;
+};
+
+// `IdType` traits implementation that works for most display types.
+//
+// `ValueT` is the underlying type for the integer ID. Only C++ integer types are
+// supported.
+//
+// `FidlT` is the FIDL type used to represent IDs. It must be a wire type for a
+// FIDL struct whose `value` member is the same integer type as `ValueT`.
+template <typename ValueT, typename FidlT>
+struct DefaultIdTypeTraitsForWireFidl {
+  // The ID's underlying type.
+  using ValueType = ValueT;
+
+  // The corresponding FIDL wire type.
+  using FidlType = FidlT;
+
+  // Converts from the FIDL wire type to the underlying type.
+  static constexpr ValueType FromFidl(const FidlType& fidl_value) noexcept {
+    static_assert(std::is_same_v<decltype(FidlT::value), ValueT>,
+                  "If the FIDL struct's value type does not match the underlying integer type, use "
+                  "custom traits, override FromFidl(), and document the safety of a static_cast");
+
+    return fidl_value.value;
+  }
+
+  // Converts from the underlying type to the FIDL wire type.
+  static constexpr FidlType ToFidl(const ValueType& value) noexcept {
+    static_assert(std::is_same_v<decltype(FidlT::value), ValueT>,
+                  "If the FIDL struct's value type does not match the underlying integer type, use "
+                  "custom traits, override ToFidl(), and document the safety of a static_cast");
+
+    return FidlT{.value = value};
+  }
+};
+
+template <typename ValueT, typename FidlT>
+struct DefaultIdTypeTraitsForNaturalFidl {
+  using ValueType = ValueT;
+  using FidlType = FidlT;
+
+  static constexpr ValueType FromFidl(const FidlType& fidl_value) noexcept {
+    static_assert(std::is_same_v<std::decay_t<decltype(fidl_value.value())>, ValueT>,
+                  "If the FIDL struct's value type does not match the underlying integer type, use "
+                  "custom traits, override FromFidl(), and document the safety of a static_cast");
+    return fidl_value.value();
+  }
+
+  static constexpr FidlType ToFidl(const ValueType& value) noexcept {
+    static_assert(std::is_same_v<std::decay_t<decltype(std::declval<FidlType>().value())>, ValueT>,
+                  "If the FIDL struct's value type does not match the underlying integer type, use "
+                  "custom traits, override ToFidl(), and document the safety of a static_cast");
+    return FidlType(value);
+  }
 };
 
 // Equality comparison can be defaulted when C++20 is required.
@@ -134,22 +167,9 @@ constexpr IdType<IdTraits> IdType<IdTraits>::operator++(int) {
   return return_value;
 }
 
-template <typename ValueT, typename FidlT>
-constexpr ValueT DefaultIdTypeTraits<ValueT, FidlT>::FromFidl(const FidlT& fidl_value) noexcept {
-  static_assert(std::is_same_v<decltype(FidlT::value), ValueT>,
-                "If the FIDL struct's value type does not match the underlying integer type, use "
-                "custom traits, override FromFidl(), and document the safety of a static_cast");
-
-  return fidl_value.value;
-}
-
-template <typename ValueT, typename FidlT>
-constexpr FidlT DefaultIdTypeTraits<ValueT, FidlT>::ToFidl(const ValueT& value) noexcept {
-  static_assert(std::is_same_v<decltype(FidlT::value), ValueT>,
-                "If the FIDL struct's value type does not match the underlying integer type, use "
-                "custom traits, override ToFidl(), and document the safety of a static_cast");
-
-  return FidlT{.value = value};
+template <typename IdTraits>
+std::ostream& operator<<(std::ostream& os, const IdType<IdTraits>& id) {
+  return os << id.value();
 }
 
 }  // namespace types
