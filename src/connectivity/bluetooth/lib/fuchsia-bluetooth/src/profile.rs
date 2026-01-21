@@ -2,8 +2,6 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-pub mod avrcp;
-
 use fidl_fuchsia_bluetooth as fidl_bt;
 use fidl_fuchsia_bluetooth_bredr::{
     self as fidl_bredr, ATTR_BLUETOOTH_PROFILE_DESCRIPTOR_LIST, ATTR_SERVICE_CLASS_ID_LIST,
@@ -21,6 +19,9 @@ use crate::assigned_numbers::AssignedNumber;
 use crate::assigned_numbers::constants::SERVICE_CLASS_UUIDS;
 use crate::error::Error;
 use crate::types::Uuid;
+
+/// BR/EDR types for the AVRCP profile.
+pub mod avrcp;
 
 /// The Protocol and Service Multiplexer (PSM) for L2cap connections.
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
@@ -135,6 +136,53 @@ pub fn psm_from_protocol(protocol: &Vec<ProtocolDescriptor>) -> Option<Psm> {
         }
     }
     None
+}
+
+/// Returns the RFCOMM or L2CAP channel number from the provided `protocol`.
+/// Returns an Error if the protocol is not a valid L2CAP or RFCOMM service.
+pub fn channel_number_from_protocol(
+    protocol: &Vec<fidl_bredr::ProtocolDescriptor>,
+) -> Result<i32, Error> {
+    for prot in protocol {
+        let Some(params) = prot.params.as_ref() else {
+            return Err(Error::profile("Invalid service definition"));
+        };
+        if prot.protocol == Some(fidl_bredr::ProtocolIdentifier::L2Cap) {
+            // Get the L2CAP PSM from the protocol descriptor. May be empty if the service
+            // requests RFCOMM. If so, we can skip to the next entry in the protocol list.
+            let [fidl_bredr::DataElement::Uint16(l2cap_port)] = params[..] else {
+                continue;
+            };
+            return Ok(l2cap_port.into());
+        }
+
+        if prot.protocol == Some(fidl_bredr::ProtocolIdentifier::Rfcomm) {
+            // If RFCOMM is specified, then the RFCOMM port must be populated.
+            let [fidl_bredr::DataElement::Uint8(rfcomm_port)] = params[..] else {
+                return Err(Error::profile("Invalid RFCOMM service definition"));
+            };
+            return Ok(rfcomm_port.into());
+        }
+    }
+    Err(Error::profile("ProtocolDescriptor missing channel number"))
+}
+
+/// Returns the L2CAP or RFCOMM channel number from the BR/EDR connection parameters.
+/// Returns Error if the provided `parameters` are invalid.
+pub fn channel_number_from_parameters(
+    parameters: &fidl_bredr::ConnectParameters,
+) -> Result<i32, Error> {
+    match parameters {
+        fidl_bredr::ConnectParameters::Rfcomm(fidl_bredr::RfcommParameters {
+            channel: Some(port),
+            ..
+        }) => Ok((*port).into()),
+        fidl_bredr::ConnectParameters::L2cap(fidl_bredr::L2capParameters {
+            psm: Some(psm),
+            ..
+        }) => Ok((*psm).into()),
+        _ => Err(Error::profile(format!("Invalid parameters: {parameters:?}"))),
+    }
 }
 
 /// Search for Service Class UUIDs of well known services from a list of attributes (such as returned via Service Search)
@@ -1633,5 +1681,103 @@ mod tests {
 
         let result = find_all_service_classes(&[attribute]);
         assert_eq!(vec![uuid1, uuid2], result);
+    }
+
+    #[test]
+    fn test_channel_number_from_protocol() {
+        // L2CAP service with valid PSM
+        let l2cap_only = vec![fidl_bredr::ProtocolDescriptor {
+            protocol: Some(fidl_bredr::ProtocolIdentifier::L2Cap),
+            params: Some(vec![fidl_bredr::DataElement::Uint16(42)]),
+            ..Default::default()
+        }];
+        assert_eq!(channel_number_from_protocol(&l2cap_only).unwrap(), 42);
+
+        // RFCOMM with valid server channel number
+        let rfcomm = vec![
+            fidl_bredr::ProtocolDescriptor {
+                protocol: Some(fidl_bredr::ProtocolIdentifier::L2Cap),
+                params: Some(vec![]), // No PSM for RFCOMM
+                ..Default::default()
+            },
+            fidl_bredr::ProtocolDescriptor {
+                protocol: Some(fidl_bredr::ProtocolIdentifier::Rfcomm),
+                params: Some(vec![fidl_bredr::DataElement::Uint8(5)]),
+                ..Default::default()
+            },
+        ];
+        assert_eq!(channel_number_from_protocol(&rfcomm).unwrap(), 5);
+
+        // L2CAP with invalid params (empty) is an error
+        let l2cap_invalid = vec![fidl_bredr::ProtocolDescriptor {
+            protocol: Some(fidl_bredr::ProtocolIdentifier::L2Cap),
+            params: Some(vec![]),
+            ..Default::default()
+        }];
+        assert!(channel_number_from_protocol(&l2cap_invalid).is_err());
+
+        // RFCOMM service with missing channel number is an error
+        let rfcomm_invalid = vec![
+            fidl_bredr::ProtocolDescriptor {
+                protocol: Some(fidl_bredr::ProtocolIdentifier::L2Cap),
+                params: Some(vec![]),
+                ..Default::default()
+            },
+            fidl_bredr::ProtocolDescriptor {
+                protocol: Some(fidl_bredr::ProtocolIdentifier::Rfcomm),
+                params: Some(vec![]),
+                ..Default::default()
+            },
+        ];
+        assert!(channel_number_from_protocol(&rfcomm_invalid).is_err());
+
+        // RFCOMM invalid channel type
+        let rfcomm_wrong_type = vec![
+            fidl_bredr::ProtocolDescriptor {
+                protocol: Some(fidl_bredr::ProtocolIdentifier::L2Cap),
+                params: Some(vec![]),
+                ..Default::default()
+            },
+            fidl_bredr::ProtocolDescriptor {
+                protocol: Some(fidl_bredr::ProtocolIdentifier::Rfcomm),
+                params: Some(vec![fidl_bredr::DataElement::Uint16(5)]),
+                ..Default::default()
+            },
+        ];
+        assert!(channel_number_from_protocol(&rfcomm_wrong_type).is_err());
+
+        // Empty service is an error
+        assert!(channel_number_from_protocol(&vec![]).is_err());
+    }
+
+    #[test]
+    fn test_channel_number_from_parameters() {
+        // RFCOMM with valid channel
+        let rfcomm = fidl_bredr::ConnectParameters::Rfcomm(fidl_bredr::RfcommParameters {
+            channel: Some(7),
+            ..Default::default()
+        });
+        assert_eq!(channel_number_from_parameters(&rfcomm).unwrap(), 7);
+
+        // L2CAP with valid PSM
+        let l2cap = fidl_bredr::ConnectParameters::L2cap(fidl_bredr::L2capParameters {
+            psm: Some(42),
+            ..Default::default()
+        });
+        assert_eq!(channel_number_from_parameters(&l2cap).unwrap(), 42);
+
+        // RFCOMM missing channel
+        let rfcomm_invalid = fidl_bredr::ConnectParameters::Rfcomm(fidl_bredr::RfcommParameters {
+            channel: None,
+            ..Default::default()
+        });
+        assert!(channel_number_from_parameters(&rfcomm_invalid).is_err());
+
+        // L2CAP missing PSM
+        let l2cap_invalid = fidl_bredr::ConnectParameters::L2cap(fidl_bredr::L2capParameters {
+            psm: None,
+            ..Default::default()
+        });
+        assert!(channel_number_from_parameters(&l2cap_invalid).is_err());
     }
 }
