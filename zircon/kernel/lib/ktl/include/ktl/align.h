@@ -11,11 +11,7 @@
 
 namespace ktl {
 
-// This is not really likely to be used in kernel code.  But it's used by some
-// kernel-compatible library code and libc++'s header implementation fails to
-// inline it for some reason, so we need to provide a definition.
 using std::align;
-
 using std::align_val_t;
 
 }  // namespace ktl

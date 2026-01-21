@@ -29,7 +29,6 @@ static_library("ktl") {
 
   if (is_kernel) {
     sources = [
-      "align.cc",
       "popcount.cc",
       "stub-new.cc",
     ]
