@@ -41,7 +41,7 @@ struct GlobalTopologyData {
     view_refs = std::move(other.view_refs);
     root_transforms = std::move(other.root_transforms);
     debug_names = std::move(other.debug_names);
-    clip_regions = std::move(other.clip_regions);
+    local_clip_regions = std::move(other.local_clip_regions);
 
     return *this;
   }
@@ -85,7 +85,7 @@ struct GlobalTopologyData {
   std::unordered_map<TransformHandle, std::string> debug_names;
 
   // TransformClipRegion for each transform handle.
-  std::unordered_map<TransformHandle, TransformClipRegion> clip_regions;
+  std::unordered_map<TransformHandle, TransformClipRegion> local_clip_regions;
 
   // Clear all fields without freeing memory, so that it avoid reallocation when reused.
   void Clear();

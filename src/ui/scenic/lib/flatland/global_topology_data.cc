@@ -317,7 +317,7 @@ ViewTreeData ComputeViewTree(
     const GlobalTopologyData::ParentIndexVector& parent_indices,
     const GlobalTopologyData::ViewRefMap& view_refs,
     const std::unordered_map<TransformHandle, std::string>& debug_names,
-    const std::unordered_map<TransformHandle, TransformClipRegion>& global_clip_regions,
+    const std::unordered_map<TransformHandle, TransformClipRegion>& local_clip_regions,
     const std::vector<glm::mat3>& global_matrix_vector,
     const std::unordered_map<TransformHandle, TransformHandle>&
         link_child_to_parent_transform_map) {
@@ -351,7 +351,7 @@ ViewTreeData ComputeViewTree(
     const zx_koid_t parent_koid =
         FindParentView(i, view_ref->koid(), root, topology_vector, parent_indices, view_refs);
     const view_tree::BoundingBox bounding_box = ComputeBoundingBox(
-        transform_handle, global_clip_regions, link_child_to_parent_transform_map);
+        transform_handle, local_clip_regions, link_child_to_parent_transform_map);
 
     output.view_tree.emplace(
         view_ref->koid(), view_tree::ViewNode{.parent = parent_koid,
@@ -390,14 +390,14 @@ void GlobalTopologyData::Clear() {
     view_refs.clear();
     root_transforms.clear();
     debug_names.clear();
-    clip_regions.clear();
+    local_clip_regions.clear();
   }
 }
 
 bool GlobalTopologyData::IsCleared() const {
   return topology_vector.empty() && child_counts.empty() && parent_indices.empty() &&
          live_handles.empty() && view_refs.empty() && root_transforms.empty() &&
-         debug_names.empty() && clip_regions.empty();
+         debug_names.empty() && local_clip_regions.empty();
 }
 
 // static
@@ -444,7 +444,7 @@ void GlobalTopologyData::ComputeGlobalTopologyData(GlobalTopologyData& output,
   std::vector<ParentChildIterator> parent_counts;
 
   auto& [topology_vector, child_counts, parent_indices, live_handles, view_refs, root_transforms,
-         debug_names, clip_regions] = output;
+         debug_names, local_clip_regions] = output;
 
   // For the root of each local topology (i.e. the View), save the ViewRef, whether they're
   // currently attached to the scene or not.
@@ -470,7 +470,7 @@ void GlobalTopologyData::ComputeGlobalTopologyData(GlobalTopologyData& output,
       continue;
     }
 
-    const auto& current_entry = vector[iterator_index];
+    const TransformGraph::TopologyEntry& current_entry = vector[iterator_index];
 
     FLATLAND_VERBOSE_LOG << "GlobalTopologyData processing current_entry=" << current_entry.handle
                          << "  child-count=" << current_entry.child_count;
@@ -580,7 +580,7 @@ void GlobalTopologyData::ComputeGlobalTopologyData(GlobalTopologyData& output,
     // For each node in the local topology, save the TransformClipRegion of its child instances.
     for (auto& [child_handle, child_clip_region] :
          uber_structs.at(current_entry.handle.GetInstanceId())->local_clip_regions) {
-      clip_regions.try_emplace(child_handle, child_clip_region);
+      local_clip_regions.try_emplace(child_handle, child_clip_region);
     }
 
     // If this entry was the last child for the previous parent, pop that off the stack.
@@ -635,8 +635,8 @@ std::unique_ptr<view_tree::SubtreeSnapshot> GlobalTopologyData::GenerateViewTree
   root = root_koid;
   auto [view_tree_temp, implicitly_anonymous_views] =
       ComputeViewTree(root_koid, root_index, data.topology_vector, data.parent_indices,
-                      data.view_refs, data.debug_names, data.clip_regions, global_matrix_vector,
-                      link_child_to_parent_transform_map);
+                      data.view_refs, data.debug_names, data.local_clip_regions,
+                      global_matrix_vector, link_child_to_parent_transform_map);
   view_tree = std::move(view_tree_temp);
 
   // Unconnected_views = all non-anonymous views (those with ViewRefs) not in the ViewTree.
