@@ -9,6 +9,27 @@
 
 namespace dwc3 {
 
+static constexpr uint32_t kEarlyLoopExitCount = 100000;
+
+// Spin wait for a command to complete with an early exit if stuck.
+void Dwc3::WaitForCmdAct(const char* caller_name, const uint8_t ep_num) {
+  TRACE_DURATION("dwc3", "Dwc3::WaitForCmdAct", "caller", caller_name);
+  auto* mmio = get_mmio();
+  uint32_t loop_count = 0;
+
+  while (true) {
+    loop_count++;
+    if (loop_count >= kEarlyLoopExitCount) {
+      fdf::warn("Dwc3::WaitForCmdAct() Forced exit from spin loop for {:s} for ep{}", caller_name,
+                ep_num);
+      break;
+    }
+    if (!DEPCMD::Get(ep_num).ReadFrom(mmio).CMDACT()) {
+      break;
+    }
+  }
+}
+
 void Dwc3::CmdStartNewConfig(const Endpoint& ep, uint32_t rsrc_id) {
   TRACE_DURATION("dwc3", "Dwc3::CmdStartNewConfig", "ep_num", ep.ep_num, "rsrc_id", rsrc_id);
   auto* mmio = get_mmio();
@@ -24,11 +45,7 @@ void Dwc3::CmdStartNewConfig(const Endpoint& ep, uint32_t rsrc_id) {
       .set_CMDACT(1)
       .WriteTo(mmio);
 
-  while (true) {
-    if (!DEPCMD::Get(ep_num).ReadFrom(mmio).CMDACT()) {
-      break;
-    }
-  }
+  WaitForCmdAct(__func__, ep_num);
 }
 
 void Dwc3::CmdEpSetConfig(const Endpoint& ep, bool modify) {
@@ -59,11 +76,7 @@ void Dwc3::CmdEpSetConfig(const Endpoint& ep, bool modify) {
   DEPCMDPAR2::Get(ep_num).FromValue(0).WriteTo(mmio);
   DEPCMD::Get(ep_num).FromValue(0).set_CMDTYP(DEPCMD::DEPCFG).set_CMDACT(1).WriteTo(mmio);
 
-  while (true) {
-    if (!DEPCMD::Get(ep_num).ReadFrom(mmio).CMDACT()) {
-      break;
-    }
-  }
+  WaitForCmdAct(__func__, ep_num);
 }
 
 void Dwc3::CmdEpTransferConfig(const Endpoint& ep) {
@@ -76,11 +89,7 @@ void Dwc3::CmdEpTransferConfig(const Endpoint& ep) {
   DEPCMDPAR2::Get(ep_num).FromValue(0).WriteTo(mmio);
   DEPCMD::Get(ep_num).FromValue(0).set_CMDTYP(DEPCMD::DEPXFERCFG).set_CMDACT(1).WriteTo(mmio);
 
-  while (true) {
-    if (!DEPCMD::Get(ep_num).ReadFrom(mmio).CMDACT()) {
-      break;
-    }
-  }
+  WaitForCmdAct(__func__, ep_num);
 }
 
 void Dwc3::CmdEpStartTransfer(const Endpoint& ep, zx_paddr_t trb_phys) {
@@ -101,11 +110,7 @@ void Dwc3::CmdEpStartTransfer(const Endpoint& ep, zx_paddr_t trb_phys) {
       .set_CMDIOC(1)
       .WriteTo(mmio);
 
-  while (true) {
-    if (!DEPCMD::Get(ep_num).ReadFrom(mmio).CMDACT()) {
-      break;
-    }
-  }
+  WaitForCmdAct(__func__, ep_num);
 }
 
 void Dwc3::CmdEpEndTransfer(const Endpoint& ep) {
@@ -131,11 +136,7 @@ void Dwc3::CmdEpEndTransfer(const Endpoint& ep) {
       .set_HIPRI_FORCERM(1)
       .WriteTo(mmio);
 
-  while (true) {
-    if (!DEPCMD::Get(ep_num).ReadFrom(mmio).CMDACT()) {
-      break;
-    }
-  }
+  WaitForCmdAct(__func__, ep_num);
 }
 
 void Dwc3::CmdEpSetStall(const Endpoint& ep) {
@@ -154,11 +155,7 @@ void Dwc3::CmdEpSetStall(const Endpoint& ep) {
       .set_CMDIOC(1)
       .WriteTo(mmio);
 
-  while (true) {
-    if (!DEPCMD::Get(ep_num).ReadFrom(mmio).CMDACT()) {
-      break;
-    }
-  }
+  WaitForCmdAct(__func__, ep_num);
 }
 
 void Dwc3::CmdEpClearStall(const Endpoint& ep) {
@@ -177,11 +174,7 @@ void Dwc3::CmdEpClearStall(const Endpoint& ep) {
       .set_CMDIOC(1)
       .WriteTo(mmio);
 
-  while (true) {
-    if (!DEPCMD::Get(ep_num).ReadFrom(mmio).CMDACT()) {
-      break;
-    }
-  }
+  WaitForCmdAct(__func__, ep_num);
 }
 
 }  // namespace dwc3

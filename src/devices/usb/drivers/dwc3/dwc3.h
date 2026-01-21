@@ -398,6 +398,8 @@ class Dwc3 : public fdf::DriverBase,
   //     driver code.
   inspect::LazyNode dwc3_root_;
   Dwc3Metrics metrics_;
+
+  void WaitForCmdAct(const char* caller_name, const uint8_t ep_num);
 };
 
 }  // namespace dwc3
