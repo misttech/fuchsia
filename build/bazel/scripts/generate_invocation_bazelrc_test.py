@@ -15,23 +15,15 @@ sys.path.insert(0, _SCRIPT_DIR)
 import generate_invocation_bazelrc as gen
 
 
-class SiblingBuildsLinkTest(unittest.TestCase):
-    def test_link(self):
-        link = gen.sibling_builds_link(
-            "http://go/fake-test/", "TEST_ID", "feed-face"
-        )
-        self.assertEqual(link, "http://go/fake-test/?q=TEST_ID:feed-face")
-
-
-class ParentBuildLinkTest(unittest.TestCase):
+class BBIDLinkTest(unittest.TestCase):
     def test_led_link(self):
-        link = gen.parent_build_link("infra/led/01234")
+        link = gen.bbid_link("infra/led/01234")
         self.assertEqual(
             link, "http://go/lucibuild/infra/led/01234/+/build.proto"
         )
 
     def test_regular_link(self):
-        link = gen.parent_build_link("87654321")
+        link = gen.bbid_link("87654321")
         self.assertEqual(link, "http://go/bbid/87654321")
 
 
@@ -53,24 +45,75 @@ class MetadataBazelrcTest(unittest.TestCase):
             for line in gen.metadata_bazelrc(dict()):
                 pass
 
-    def test_uuid(self):
-        rc = set(gen.metadata_bazelrc({"FX_BUILD_UUID": "uuid-6767"}))
+    def test_uuid_top_build(self):
+        uuid = "uuid-6767"
+        rc = set(gen.metadata_bazelrc({"FX_BUILD_UUID": uuid}))
         self.assertEqual(
             rc,
             {
-                "build:sponge --build_metadata=SIBLING_BUILDS_LINK=http://sponge/invocations/?q=FX_BUILD_UUID:uuid-6767",
-                "build:resultstore --build_metadata=SIBLING_BUILDS_LINK=http://go/fxbtx/?q=FX_BUILD_UUID:uuid-6767",
+                f"build:_bes_common --build_metadata=FX_BUILD_UUID={uuid}",
             },
         )
 
-    def test_bbid(self):
-        rc = set(gen.metadata_bazelrc({"BUILDBUCKET_ID": "8888"}))
+    def test_uuid_sub_build(self):
+        uuid = "uuid-5678"
+        parent_id = "dada"
+        parent_link = f"go/to/{parent_id}"
+        siblings_link = f"go/search_for/?q=PARENT={parent_id}"
+        rc = set(
+            gen.metadata_bazelrc(
+                {
+                    "FX_BUILD_UUID": uuid,
+                    "RESULTSTORE_PARENT_BUILD_ID": parent_id,
+                    "RESULTSTORE_PARENT_BUILD_LINK": parent_link,
+                    "RESULTSTORE_SIBLING_BUILDS_LINK": siblings_link,
+                }
+            )
+        )
         self.assertEqual(
             rc,
             {
-                "build:_bes_common --build_metadata=PARENT_BUILD_LINK=http://go/bbid/8888",
-                "build:sponge_infra --build_metadata=SIBLING_BUILDS_LINK=http://sponge/invocations/?q=BUILDBUCKET_ID:8888",
-                "build:resultstore_infra --build_metadata=SIBLING_BUILDS_LINK=http://go/fxbtx/?q=BUILDBUCKET_ID:8888",
+                f"build:_bes_common --build_metadata=FX_BUILD_UUID={uuid}",
+                f"build:_bes_common --build_metadata=PARENT_BUILD_ID={parent_id}",
+                f"build:_bes_common --build_metadata=PARENT_BUILD_LINK={parent_link}",
+                f"build:_bes_common --build_metadata=SIBLING_BUILDS_LINK={siblings_link}",
+            },
+        )
+
+    def test_bbid_top_build(self):
+        bbid = "9988"
+        rc = set(gen.metadata_bazelrc({"BUILDBUCKET_ID": bbid}))
+        self.assertEqual(
+            rc,
+            {
+                f"build:_bes_common --build_metadata=BUILDBUCKET_ID={bbid}",
+                f"build:_bes_common --build_metadata=PARENT_BUILD_ID={bbid}",
+                f"build:_bes_common --build_metadata=PARENT_BUILD_LINK=http://go/bbid/{bbid}",
+            },
+        )
+
+    def test_bbid_sub_build(self):
+        bbid = "8877"
+        parent_id = "baba"
+        parent_link = f"go/to/{parent_id}"
+        siblings_link = f"go/search_for/?q=PARENT={parent_id}"
+        rc = set(
+            gen.metadata_bazelrc(
+                {
+                    "BUILDBUCKET_ID": bbid,
+                    "RESULTSTORE_PARENT_BUILD_ID": parent_id,
+                    "RESULTSTORE_PARENT_BUILD_LINK": parent_link,
+                    "RESULTSTORE_SIBLING_BUILDS_LINK": siblings_link,
+                }
+            )
+        )
+        self.assertEqual(
+            rc,
+            {
+                f"build:_bes_common --build_metadata=BUILDBUCKET_ID={bbid}",
+                f"build:_bes_common --build_metadata=PARENT_BUILD_ID={parent_id}",
+                f"build:_bes_common --build_metadata=PARENT_BUILD_LINK={parent_link}",
+                f"build:_bes_common --build_metadata=SIBLING_BUILDS_LINK={siblings_link}",
             },
         )
 

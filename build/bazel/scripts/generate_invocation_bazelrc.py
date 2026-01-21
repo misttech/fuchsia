@@ -12,22 +12,15 @@ definitions.
 This script is intended to work for both developer (fx) and infra builds.
 """
 
+import argparse
 import os
 import sys
 from typing import Iterable
 
 _SCRIPT_DIR = os.path.dirname(__file__)
 
-_SPONGE_LINK = "http://sponge/invocations/"
-_RESULTSTORE_LINK = "http://go/fxbtx/"
 
-
-def sibling_builds_link(link_template: str, key: str, id: str) -> str:
-    """Return a URL of a search query for finding related invocations."""
-    return f"{link_template}?q={key}:{id}"
-
-
-def parent_build_link(bbid: str) -> str:
+def bbid_link(bbid: str) -> str:
     # Builds launched directly by the 'led' tool look different
     # from other infra builds.
     if "/led/" in bbid:
@@ -54,45 +47,65 @@ def metadata_bazelrc(env: dict[str, str]) -> Iterable[str]:
             "Expecting either FX_BUILD_UUID or BUILDBUCKET_ID in environment, but got neither."
         )
 
-    # Establish build metadata for linking related related invocations.
     if uuid:
-        # There is no parent-build-link for fx-build (yet).
-        # Once ninja+resultstore is integrated, then there will be
-        # a single top-level build invocation we can point to.
-        yield build_config_option(
-            "sponge",
-            metadata_option(
-                "SIBLING_BUILDS_LINK",
-                sibling_builds_link(_SPONGE_LINK, "FX_BUILD_UUID", uuid),
-            ),
-        )
-        yield build_config_option(
-            "resultstore",
-            metadata_option(
-                "SIBLING_BUILDS_LINK",
-                sibling_builds_link(_RESULTSTORE_LINK, "FX_BUILD_UUID", uuid),
-            ),
-        )
-
-    elif bbid:
+        # Link all invocations directly to the top-level FX_BUILD_UUID.
         yield build_config_option(
             "_bes_common",
-            metadata_option("PARENT_BUILD_LINK", parent_build_link(bbid)),
+            metadata_option("FX_BUILD_UUID", uuid),
         )
+
+    if bbid:
+        # Link all invocations directly to the top-level buildbucket.
         yield build_config_option(
-            "sponge_infra",
-            metadata_option(
-                "SIBLING_BUILDS_LINK",
-                sibling_builds_link(_SPONGE_LINK, "BUILDBUCKET_ID", bbid),
-            ),
+            "_bes_common",
+            metadata_option("BUILDBUCKET_ID", bbid),
         )
+
+    # LINT.IfChange(related_invocations_env_vars)
+    parent_build_id = env.get("RESULTSTORE_PARENT_BUILD_ID")
+    if not parent_build_id:
+        # This is a top-level build invocation.
+        # For infra builds, reference the bbid (buildbucket).
+        if bbid:
+            yield build_config_option(
+                "_bes_common",
+                metadata_option("PARENT_BUILD_ID", bbid),
+            )
+            yield build_config_option(
+                "_bes_common",
+                metadata_option("PARENT_BUILD_LINK", bbid_link(bbid)),
+            )
+
+        # For fx-builds, leave PARENT_BUILD_ID, PARENT_BUILD_LINK,
+        # and SIBLING_BUILDS_LINK unset.
+
+    else:
+        # This is a sub-build.
+        # Take the values provided by the environment from a parent build.
         yield build_config_option(
-            "resultstore_infra",
-            metadata_option(
-                "SIBLING_BUILDS_LINK",
-                sibling_builds_link(_RESULTSTORE_LINK, "BUILDBUCKET_ID", bbid),
-            ),
+            "_bes_common",
+            metadata_option("PARENT_BUILD_ID", parent_build_id),
         )
+        # URLs are already based on whether sponge/resultstore is used,
+        # so there is no need to select here.
+        parent_link = env.get("RESULTSTORE_PARENT_BUILD_LINK")
+        if parent_link:
+            yield build_config_option(
+                "_bes_common",
+                metadata_option("PARENT_BUILD_LINK", parent_link),
+            )
+
+        siblings_link = env.get("RESULTSTORE_SIBLING_BUILDS_LINK")
+        if siblings_link:
+            yield build_config_option(
+                "_bes_common",
+                metadata_option("SIBLING_BUILDS_LINK", siblings_link),
+            )
+
+    # LINT.ThenChange(
+    #   //build/bazel/wrapper.bazel.sh:related_invocations_env_vars,
+    #   //build/bazel/scripts/rsninja.sh:related_invocations_env_vars
+    # )
 
 
 def service_proxies_bazelrc(env: dict[str, str]) -> Iterable[str]:
@@ -118,21 +131,39 @@ def service_proxies_bazelrc(env: dict[str, str]) -> Iterable[str]:
         )
 
 
-def generate_bazelrc(env: dict[str, str]) -> Iterable[str]:
+def generate_bazelrc(
+    sub_builds_link: str, env: dict[str, str]
+) -> Iterable[str]:
     header = [
         "# This bazelrc file contains ephemeral options that are not intended",
         "# to persist across build invocations.",
         "# AUTO-GENERATED - DO NOT EDIT!",
     ]
     yield from header
+
+    if sub_builds_link:
+        yield build_config_option(
+            "_bes_common",
+            metadata_option("SUB_BUILDS_LINK", sub_builds_link),
+        )
+
     yield from metadata_bazelrc(env)
+
     yield from service_proxies_bazelrc(env)
 
 
-def main():
-    for line in generate_bazelrc(os.environ):
+def main(argv):
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument(
+        "--sub_builds_link",
+        type=str,
+        default="",
+        help="The URL to a search query that finds sub-builds of this invocation.",
+    )
+    args = parser.parse_args(argv)
+    for line in generate_bazelrc(args.sub_builds_link, os.environ):
         print(line)
 
 
 if __name__ == "__main__":
-    sys.exit(main())
+    sys.exit(main(sys.argv[1:]))

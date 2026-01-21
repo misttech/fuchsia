@@ -77,6 +77,9 @@ export BAZEL_FUCHSIA_NINJA_PREBUILT="${_NINJA_PREBUILT}"
 # do not expose the system-installed one.
 export PATH="${_PREBUILT_PYTHON_DIR}/bin:${PATH}"
 
+# Provide a direct path to the prebuilt Python3 executable as well.
+readonly PREBUILT_PYTHON3="${_PREBUILT_PYTHON_DIR}/bin/python3"
+
 # An undocumented, but widely used, environment variable that tells Bazel to
 # not auto-detect the host C++ installation. This makes workspace setup faster
 # and ensures this can be used on containers where GCC or Clang are not
@@ -167,6 +170,11 @@ case "${_BAZEL_COMMAND}" in
       ;;
 esac
 
+# This is for ResultStore.
+# TODO: depend on GN arg bazel_upload_build_events = {"sponge", "resultstore"}
+readonly RESULTSTORE_URL="http://go/fxbtx"
+readonly RESULTSTORE_SUB_BUILDS_LINK="$RESULTSTORE_URL/?q=PARENT_BUILD_ID:$RESULTSTORE_invocation_id"
+
 # A list of extra Bazel arguments that must appear after the
 # command.
 _BAZEL_EXTRA_ARGS=()
@@ -183,7 +191,9 @@ _BAZEL_EXTRA_ARGS=()
 # manifest in the short-lived 'invocation.bazelrc'.
 # Delete after use.
 trap "rm -f ${_INVOCATION_BAZELRC}" EXIT
-"${_GENERATE_INVOCATION_BAZELRC}" > "${_INVOCATION_BAZELRC}"
+"${_GENERATE_INVOCATION_BAZELRC}" \
+  --sub_builds_link="$RESULTSTORE_SUB_BUILDS_LINK" \
+  > "${_INVOCATION_BAZELRC}"
 
 # Save a copy of the invocation.bazelrc to the build log dir.
 # Bazel invocations occur in the same workspace, so invocations
@@ -223,7 +233,13 @@ use_gcert_auth=()
   unset GOOGLE_APPLICATION_CREDENTIALS
 }
 
+# We generate our own invocation id, to make it easier to propagate its value
+# to sub-build invocations.
+readonly RESULTSTORE_invocation_id="$("${PREBUILT_PYTHON3}" -S -c 'import uuid; print(uuid.uuid4())')"
+_BAZEL_EXTRA_ARGS+=( --invocation_id="$RESULTSTORE_invocation_id" )
+
 _BAZEL_PRE_COMMAND_ARGS+=(
+
   # Do not parse $HOME/.bazelrc
   --nohome_rc
 
@@ -272,8 +288,24 @@ _BAZEL_PRE_COMMAND_ARGS+=(
 # and credential helpers will work, e.g. go/bazel-google-sso.
 _user="${USER:-unused-bazel-build-user}"
 
-_bazel_command=(
+_bazel_env=(
     env USER="${_user}"
+
+    # Inform sub-builds of this bazel invocation where to find related builds.
+    # These environment variables are read by generate_invocation_bazelrc.py
+    # and rsninja.sh, but do not impact actions from this bazel invocation.
+    # LINT.IfChange(related_invocations_env_vars)
+    RESULTSTORE_PARENT_BUILD_ID="$RESULTSTORE_invocation_id"
+    RESULTSTORE_PARENT_BUILD_LINK="$RESULTSTORE_URL/$RESULTSTORE_invocation_id"
+    RESULTSTORE_SIBLING_BUILDS_LINK="$RESULTSTORE_SUB_BUILDS_LINK"
+    # LINT.ThenChange(
+    #   //build/bazel/scripts/generate_invocation_bazelrc.py:related_invocations_env_vars,
+    #   //build/bazel/scripts/rsninja.sh:related_invocations_env_vars
+    # )
+)
+
+_bazel_command=(
+    "${_bazel_env[@]}"
     "${_BAZEL_BIN}"
     "${_BAZEL_PRE_COMMAND_ARGS[@]}"
 )
