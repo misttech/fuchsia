@@ -3157,9 +3157,7 @@ zx_status_t VmCowPages::PrepareForWriteLocked(VmCowRange range, LazyPageRequest*
   // failures requesting the dirty transition.
   if (paged_ref_) {
     vmo_debug_info.vmo_id = paged_ref_->user_id();
-    AssertHeld(paged_ref_->lock_ref());
-    paged_ref_->self_locked()->get_name_locked(vmo_debug_info.vmo_name,
-                                               sizeof(vmo_debug_info.vmo_name));
+    paged_ref_->get_name(vmo_debug_info.vmo_name, sizeof(vmo_debug_info.vmo_name));
   }
   status = page_source_->RequestDirtyTransition(page_request->get(), start_offset,
                                                 pages_to_dirty_len, vmo_debug_info);
@@ -3376,10 +3374,10 @@ zx_status_t VmCowPages::LookupCursor::ReadRequest(uint max_request_pages,
   // could have been destroyed. We could be looking up a page via a lookup in a child after
   // the parent VmObjectPaged has gone away, so paged_ref_ could be null. Let the page source
   // handle any failures requesting the pages.
-  if (VmObjectPaged* paged = owner_info_.owner.locked_or(target_).paged_ref_; paged) {
-    vmo_debug_info.vmo_id = paged->user_id();
-    AssertHeld(paged->lock_ref());
-    paged->self_locked()->get_name_locked(vmo_debug_info.vmo_name, sizeof(vmo_debug_info.vmo_name));
+  if (owner_info_.owner.locked_or(target_).paged_ref_) {
+    vmo_debug_info.vmo_id = owner_info_.owner.locked_or(target_).paged_ref_->user_id();
+    owner_info_.owner.locked_or(target_).paged_ref_->get_name(vmo_debug_info.vmo_name,
+                                                              sizeof(vmo_debug_info.vmo_name));
   }
 
   // Try and batch more pages up to |max_request_pages|.
@@ -6933,10 +6931,10 @@ VmCowReclaimResult VmCowPages::ReclaimPageForEviction(vm_page_t* page, uint64_t 
 
   char vmo_name[ZX_MAX_NAME_LEN] __UNINITIALIZED = "\0";
   // Lambda so that vmo_name is only filled out if tracing is enabled.
-  auto get_vmo_name = [&]() TA_REQ(lock()) __ALWAYS_INLINE {
+  auto get_vmo_name = [&]() __ALWAYS_INLINE {
+    AssertHeld(lock_);
     if (paged_ref_) {
-      AssertHeld(paged_ref_->lock_ref());
-      paged_ref_->self_locked()->get_name_locked(vmo_name, sizeof(vmo_name));
+      paged_ref_->get_name(vmo_name, sizeof(vmo_name));
     }
     return vmo_name;
   };
