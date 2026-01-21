@@ -8,6 +8,7 @@ Updates the Fuchsia platform version.
 
 import argparse
 import fileinput
+import glob
 import json
 import os
 import pathlib
@@ -114,6 +115,32 @@ Did you run this script from the root of the source tree?""",
         return False
 
 
+def create_sdk_history(root_source_dir: str, new_level: int) -> None:
+    level_dir_path = os.path.join(
+        root_source_dir, "sdk", "history", str(new_level)
+    )
+
+    try:
+        os.makedirs(level_dir_path, exist_ok=True)
+    except Exception as e:
+        print(f"Failed to create directory for new level: {e}")
+        sys.exit(1)
+
+    _create_owners_file(level_dir_path)
+
+    ifs_files = glob.glob(
+        "*.ifs",
+        root_dir=os.path.join(root_source_dir, "sdk", "history", "NEXT"),
+    )
+
+    # The .ifs files cannot be generated from scratch because they are also used as source files.
+    # This creates empty files based on the contents of NEXT allowing the build to succeed and write the files with the correct contents.
+    for ifs_file in ifs_files:
+        # make an empty file
+        with open(os.path.join(level_dir_path, ifs_file), "w"):
+            pass
+
+
 SDK_VERSION_HISTORY_PATH = "sdk/version_history.json"
 AVAILABILITY_LEVELS_INC_PATH = (
     "zircon/system/public/zircon/availability_levels.inc"
@@ -134,17 +161,7 @@ def main() -> int:
     ):
         return 1
 
-    level_dir_path = os.path.join(
-        args.root_source_dir, "sdk", "history", str(new_level)
-    )
-
-    try:
-        os.makedirs(level_dir_path, exist_ok=True)
-    except Exception as e:
-        print(f"Failed to create directory for new level: {e}")
-        return 1
-
-    _create_owners_file(level_dir_path)
+    create_sdk_history(args.root_source_dir, new_level)
 
     # TODO(https://fxbug.dev/349622444): Enable building with
     # `FUCHSIA_INTERNAL_LEVEL_NEXT_()` undefined to ensure there are no stray
