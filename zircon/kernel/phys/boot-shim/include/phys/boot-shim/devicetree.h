@@ -20,8 +20,9 @@
 #include <lib/zbi-format/memory.h>
 #include <lib/zbitl/view.h>
 
-#include <ktl/align.h>
 #include <ktl/bit.h>
+#include <ktl/memory.h>
+#include <ktl/new.h>
 #include <ktl/optional.h>
 #include <ktl/string_view.h>
 #include <ktl/type_traits.h>

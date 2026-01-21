@@ -30,6 +30,7 @@
 #include <ktl/algorithm.h>
 #include <ktl/iterator.h>
 #include <ktl/limits.h>
+#include <ktl/new.h>
 #include <ktl/unique_ptr.h>
 #include <object/handle.h>
 #include <object/pci_device_dispatcher.h>

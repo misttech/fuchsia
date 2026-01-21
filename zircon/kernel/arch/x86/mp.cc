@@ -41,7 +41,7 @@
 #include <kernel/cpu.h>
 #include <kernel/timer.h>
 #include <ktl/algorithm.h>
-#include <ktl/align.h>
+#include <ktl/memory.h>
 
 // Enable/disable ktraces local to this file.
 #define LOCAL_KTRACE_ENABLE 0

@@ -14,15 +14,14 @@
 #include <zircon/errors.h>
 #include <zircon/types.h>
 
-#include <new>
-
 #include <arch/x86.h>
 #include <fbl/alloc_checker.h>
 #include <fbl/macros.h>
 #include <kernel/cpu.h>
 #include <ktl/algorithm.h>
-#include <ktl/align.h>
 #include <ktl/atomic.h>
+#include <ktl/memory.h>
+#include <ktl/new.h>
 #include <ktl/type_traits.h>
 
 // MwaitMonitor is used to perform MWAIT/MONITOR signaling.

@@ -20,8 +20,8 @@
 #include <arch/riscv64/feature.h>
 #include <arch/riscv64/vector.h>
 #include <kernel/thread.h>
-#include <ktl/align.h>
 #include <ktl/bit.h>
+#include <ktl/memory.h>
 
 #include <ktl/enforce.h>
 
