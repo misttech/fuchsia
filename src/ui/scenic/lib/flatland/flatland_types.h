@@ -29,11 +29,11 @@ using TransformIdTraits =
     types::DefaultIdTypeTraitsForNaturalFidl<uint64_t, fuchsia_ui_composition::TransformId>;
 }  // namespace internal
 
-using ContentId2 = types::IdType<::flatland::internal::ContentIdTraits>;
-using TransformId2 = types::IdType<::flatland::internal::TransformIdTraits>;
+using ContentId = types::IdType<::flatland::internal::ContentIdTraits>;
+using TransformId = types::IdType<::flatland::internal::TransformIdTraits>;
 
-constexpr ContentId2 kInvalidContentId = ContentId2(0);
-constexpr TransformId2 kInvalidTransformId = TransformId2(0);
+constexpr ContentId kInvalidContentId = ContentId(0);
+constexpr TransformId kInvalidTransformId = TransformId(0);
 
 // The sample region to use for an image when texturing a rectangle.
 using ImageSampleRegion = types::RectangleF;
