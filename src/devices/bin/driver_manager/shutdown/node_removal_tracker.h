@@ -12,6 +12,7 @@
 #include <unordered_map>
 #include <unordered_set>
 
+#include "src/devices/bin/driver_manager/driver_host.h"
 #include "src/devices/bin/driver_manager/node_types.h"
 
 namespace driver_manager {
@@ -23,6 +24,7 @@ struct NodeInfo {
   std::string driver_url;
   Collection collection;
   NodeState state;
+  DriverHost* host;
 };
 
 class NodeRemovalTracker {

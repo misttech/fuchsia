@@ -34,6 +34,7 @@ _bin_common = {
     "//sdk/lib/scheduler/rust",
     "//sdk/rust/zx",
     "//src/devices/lib/driver-host-passive-abi",
+    "//src/lib/debug/rust",
     "//src/lib/diagnostics/inspect/runtime/rust",
     "//src/lib/diagnostics/inspect/rust",
     "//src/lib/driver_symbols:driver_symbols_rust",

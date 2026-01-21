@@ -2344,6 +2344,7 @@ NodeInfo Node::GetRemovalTrackerInfo() {
       .driver_url = driver_url(),
       .collection = collection_,
       .state = GetNodeState(),
+      .host = driver_host(),
   };
 }
 

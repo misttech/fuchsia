@@ -89,6 +89,11 @@ void NodeRemovalTracker::OnRemovalTimeout() {
     if (node.state == NodeState::kDestroyed || node.state == NodeState::kPrestop) {
       continue;
     }
+
+    if (node.state == NodeState::kWaitingOnDriver) {
+      node.host->TriggerStackTrace();
+    }
+
     // This log message is load-bearing server-side as it's used to identify the hanging driver.
     // Please notify //src/developer/forensics/OWNERS upon changing.
     fdf_log::info("  '{}' ('{}'): {}", node.name, node.driver_url,

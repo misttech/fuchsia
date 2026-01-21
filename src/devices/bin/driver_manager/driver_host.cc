@@ -352,6 +352,14 @@ zx::result<uint64_t> DriverHostComponent::GetProcessKoid() const {
   return zx::ok(result->process_koid());
 }
 
+void DriverHostComponent::TriggerStackTrace() const {
+  if (!(*server_connected_)) {
+    return;
+  }
+
+  std::ignore = driver_host_->TriggerStackTrace();
+}
+
 zx::result<> DriverHostComponent::InstallLoader(
     fidl::ClientEnd<fuchsia_ldsvc::Loader> loader_client) const {
   auto result = driver_host_->InstallLoader(std::move(loader_client));

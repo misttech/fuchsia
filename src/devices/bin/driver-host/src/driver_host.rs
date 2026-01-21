@@ -19,7 +19,7 @@ use std::sync::{Arc, Weak};
 use zx::Status;
 use {
     fidl_fuchsia_driver_framework as fidl_fdf, fidl_fuchsia_driver_host as fdh,
-    fidl_fuchsia_ldsvc as fldsvc, fidl_fuchsia_system_state as fss,
+    fidl_fuchsia_ldsvc as fldsvc, fidl_fuchsia_system_state as fss, fuchsia_async as fasync,
 };
 
 /// Any stored data is removed after this amount of time
@@ -118,6 +118,12 @@ impl DriverHost {
                         }
                         fdh::DriverHostRequest::InstallLoader { loader, .. } => {
                             install_loader(loader);
+                        }
+                        fdh::DriverHostRequest::TriggerStackTrace { .. } => {
+                            fasync::unblock(|| {
+                                debug::backtrace_request_all_threads();
+                            })
+                            .await;
                         }
                         fdh::DriverHostRequest::FindDriverCrashInfoByThreadKoid {
                             thread_koid,

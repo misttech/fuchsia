@@ -92,6 +92,8 @@ class DriverHost {
   virtual zx::result<uint64_t> GetProcessKoid() const = 0;
 
   virtual bool IsDynamicLinkingEnabled() const { return false; }
+
+  virtual void TriggerStackTrace() const {}
 };
 
 class DriverHostComponent final
@@ -128,6 +130,8 @@ class DriverHostComponent final
   zx::result<uint64_t> GetMainThreadKoid() const override;
   zx::result<uint64_t> GetProcessKoid() const override;
   zx::result<uint64_t> GetJobKoid() const;
+
+  void TriggerStackTrace() const override;
 
   zx::result<> InstallLoader(fidl::ClientEnd<fuchsia_ldsvc::Loader> loader_client) const;
 

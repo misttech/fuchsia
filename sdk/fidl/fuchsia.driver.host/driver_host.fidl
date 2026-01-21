@@ -89,6 +89,8 @@ closed protocol DriverHost {
         loader client_end:fuchsia.ldsvc.Loader;
     });
 
+    strict TriggerStackTrace();
+
     /// Returns the driver crash information if the thread specified by |thread_koid|
     /// exists in this driver host and it has ran into an exception.
     /// Otherwise returns ZX_ERR_NOT_FOUND.
