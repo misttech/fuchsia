@@ -1187,26 +1187,34 @@ impl Operation {
                         vmo_offset,
                         _unused,
                         options,
-                    } => Operation::Read {
-                        device_block_offset: orig_offset + max,
-                        block_count: rem,
-                        vmo_offset: *vmo_offset + max * block_size as u64,
-                        _unused: *_unused,
-                        options: *options,
-                    },
+                    } => {
+                        let mut options = *options;
+                        options.inline_crypto.dun += max as u32;
+                        Operation::Read {
+                            device_block_offset: orig_offset + max,
+                            block_count: rem,
+                            vmo_offset: *vmo_offset + max * block_size as u64,
+                            _unused: *_unused,
+                            options: options,
+                        }
+                    }
                     Operation::Write {
                         device_block_offset: _,
                         block_count: _,
                         _unused,
                         vmo_offset,
                         options,
-                    } => Operation::Write {
-                        device_block_offset: orig_offset + max,
-                        block_count: rem,
-                        _unused: *_unused,
-                        vmo_offset: *vmo_offset + max * block_size as u64,
-                        options: *options,
-                    },
+                    } => {
+                        let mut options = *options;
+                        options.inline_crypto.dun += max as u32;
+                        Operation::Write {
+                            device_block_offset: orig_offset + max,
+                            block_count: rem,
+                            _unused: *_unused,
+                            vmo_offset: *vmo_offset + max * block_size as u64,
+                            options: options,
+                        }
+                    }
                     Operation::Trim { device_block_offset: _, block_count: _ } => {
                         Operation::Trim { device_block_offset: orig_offset + max, block_count: rem }
                     }
@@ -1265,8 +1273,8 @@ mod tests {
     };
     use assert_matches::assert_matches;
     use block_protocol::{
-        BlockFifoCommand, BlockFifoRequest, BlockFifoResponse, ReadOptions, WriteFlags,
-        WriteOptions,
+        BlockFifoCommand, BlockFifoRequest, BlockFifoResponse, InlineCryptoOptions, ReadOptions,
+        WriteFlags, WriteOptions,
     };
     use fidl_fuchsia_storage_block::{BlockIoFlag, BlockOpcode};
     use fuchsia_sync::Mutex;
@@ -2879,6 +2887,9 @@ mod tests {
 
     #[fuchsia::test]
     fn operation_map() {
+        const BLOCK_SIZE: u32 = 512;
+
+        #[track_caller]
         fn expect_map_result(
             mut operation: Operation,
             mapping: Option<BlockOffsetMapping>,
@@ -2886,7 +2897,9 @@ mod tests {
             expected_operations: Vec<Operation>,
         ) {
             let mut ops = vec![];
-            while let Some(remainder) = operation.map(mapping.as_ref(), max_blocks.clone(), 512) {
+            while let Some(remainder) =
+                operation.map(mapping.as_ref(), max_blocks.clone(), BLOCK_SIZE)
+            {
                 ops.push(operation);
                 operation = remainder;
             }
@@ -2901,7 +2914,7 @@ mod tests {
                 block_count: 200,
                 _unused: 0,
                 vmo_offset: 0,
-                options: ReadOptions::default(),
+                options: ReadOptions { inline_crypto: InlineCryptoOptions { dun: 1000, slot: 1 } },
             },
             None,
             None,
@@ -2910,7 +2923,7 @@ mod tests {
                 block_count: 200,
                 _unused: 0,
                 vmo_offset: 0,
-                options: ReadOptions::default(),
+                options: ReadOptions { inline_crypto: InlineCryptoOptions { dun: 1000, slot: 1 } },
             }],
         );
 
@@ -2921,7 +2934,7 @@ mod tests {
                 block_count: 200,
                 _unused: 0,
                 vmo_offset: 0,
-                options: ReadOptions::default(),
+                options: ReadOptions { inline_crypto: InlineCryptoOptions { dun: 1000, slot: 1 } },
             },
             None,
             NonZero::new(120),
@@ -2931,14 +2944,19 @@ mod tests {
                     block_count: 120,
                     _unused: 0,
                     vmo_offset: 0,
-                    options: ReadOptions::default(),
+                    options: ReadOptions {
+                        inline_crypto: InlineCryptoOptions { dun: 1000, slot: 1 },
+                    },
                 },
                 Operation::Read {
                     device_block_offset: 130,
                     block_count: 80,
                     _unused: 0,
-                    vmo_offset: 120 * 512,
-                    options: ReadOptions::default(),
+                    vmo_offset: 120 * BLOCK_SIZE as u64,
+                    options: ReadOptions {
+                        // The DUN should be offset by the number of blocks in the first request.
+                        inline_crypto: InlineCryptoOptions { dun: 1000 + 120, slot: 1 },
+                    },
                 },
             ],
         );
@@ -2956,7 +2974,7 @@ mod tests {
                 block_count: 200,
                 _unused: 0,
                 vmo_offset: 0,
-                options: ReadOptions::default(),
+                options: ReadOptions { inline_crypto: InlineCryptoOptions { dun: 1000, slot: 1 } },
             },
             Some(BlockOffsetMapping {
                 source_block_offset: 10,
@@ -2970,14 +2988,18 @@ mod tests {
                     block_count: 120,
                     _unused: 0,
                     vmo_offset: 0,
-                    options: ReadOptions::default(),
+                    options: ReadOptions {
+                        inline_crypto: InlineCryptoOptions { dun: 1000, slot: 1 },
+                    },
                 },
                 Operation::Read {
                     device_block_offset: 220,
                     block_count: 80,
                     _unused: 0,
-                    vmo_offset: 120 * 512,
-                    options: ReadOptions::default(),
+                    vmo_offset: 120 * BLOCK_SIZE as u64,
+                    options: ReadOptions {
+                        inline_crypto: InlineCryptoOptions { dun: 1000 + 120, slot: 1 },
+                    },
                 },
             ],
         );
