@@ -32,7 +32,7 @@ const MAX_ROLLBACKS_PER_EPOCH: u8 = 3;
 ///
 /// Pragmatically the intention is to increment this number every time a Fuchsia
 /// Release is cut that contains a known fix to a Netstack3 bug.
-const CURRENT_EPOCH: u32 = 1;
+const CURRENT_EPOCH: u32 = 2;
 
 /// The number of failed healthchecks at which we begin generating crash
 /// reports.

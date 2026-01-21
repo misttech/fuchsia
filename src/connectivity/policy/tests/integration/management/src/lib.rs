@@ -635,27 +635,24 @@ async fn test_oir_interface_name_conflict_uninstall_existing<M: Manager, N: Nets
         panic!("add virtual device1 {}: {:?}", endpoint_mount_path.display(), e)
     });
 
-    let (id1, name1) = assert_matches!(
+    let (orig_id, orig_name) = assert_matches!(
         interfaces_stream.select_next_some().await,
         InterfaceWatcherEvent::Added { id, name } => (id, name)
     );
     assert_eq!(
-        &name1, "ethx7",
+        &orig_name, "ethx7",
         "first interface should use a stable name based on its MAC address"
     );
 
-    // Add another device from the network manager with the same MAC address and wait for it
-    // to be added to the netstack. Since the device has the same naming identifier, the
-    // first interface should be removed prior to adding the second interface. The second
-    // interface should have the same name as the first.
-    let if2 = sandbox
-        .create_endpoint_with("ep2", netemul::new_endpoint_config(netemul::DEFAULT_MTU, mac()))
-        .await
-        .expect("create ethx7");
-    let endpoint_mount_path = netemul::devfs_device_path("ep2");
+    // Re add the same device (same MAC address and topological path) and wait
+    // for it to be added to the netstack. Since the device has the same naming
+    // identifier, the first interface should be removed prior to adding the
+    // second interface. The second interface should have the same name as the
+    // first.
+    let endpoint_mount_path = netemul::devfs_device_path("ep1-re-mounted");
     let endpoint_mount_path = endpoint_mount_path.as_path();
-    realm.add_virtual_device(&if2, endpoint_mount_path).await.unwrap_or_else(|e| {
-        panic!("add virtual device2 {}: {:?}", endpoint_mount_path.display(), e)
+    realm.add_virtual_device(&if1, endpoint_mount_path).await.unwrap_or_else(|e| {
+        panic!("readd virtual device1 {}: {:?}", endpoint_mount_path.display(), e)
     });
 
     let id_removed = assert_matches!(
@@ -663,18 +660,37 @@ async fn test_oir_interface_name_conflict_uninstall_existing<M: Manager, N: Nets
         InterfaceWatcherEvent::Removed { id } => id
     );
     assert_eq!(
-        id_removed, id1,
+        id_removed, orig_id,
         "the initial interface should be removed prior to adding the second interface"
     );
 
-    let (_id2, name2) = assert_matches!(
+    let (_new_id, new_name) = assert_matches!(
         interfaces_stream.select_next_some().await,
         InterfaceWatcherEvent::Added { id, name } => (id, name)
     );
     assert_eq!(
-        &name1, &name2,
+        &orig_name, &new_name,
         "second interface should use the same name as the initial interface"
     );
+
+    // Add another device from the network manager with the same MAC address,
+    // but a different topological path. It shouldn't conflict with the existing
+    // interface and should get added alongside it (with a different name).
+    let if2 = sandbox
+        .create_endpoint_with("ep2", netemul::new_endpoint_config(netemul::DEFAULT_MTU, mac()))
+        .await
+        .expect("create ethx8");
+    let endpoint_mount_path = netemul::devfs_device_path("ep2");
+    let endpoint_mount_path = endpoint_mount_path.as_path();
+    realm.add_virtual_device(&if2, endpoint_mount_path).await.unwrap_or_else(|e| {
+        panic!("add virtual device2 {}: {:?}", endpoint_mount_path.display(), e)
+    });
+
+    let (_new_id, new_name) = assert_matches!(
+        interfaces_stream.select_next_some().await,
+        InterfaceWatcherEvent::Added { id, name } => (id, name)
+    );
+    assert_ne!(&orig_name, &new_name, "third interface should use a different name");
 
     // Wait for orderly shutdown of the test realm to complete before allowing
     // test interfaces to be cleaned up.

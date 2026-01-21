@@ -2479,7 +2479,7 @@ impl<'a> NetCfg<'a> {
         // should result in 0 or 1 interface to exist with the
         // provided identifier.
         match self.interface_states.iter().find_map(|(_id, state)| {
-            // A device with the same PersistentId is considered to be
+            // A device with the same InterfaceNamingId is considered to be
             // the same logical interface.
             if state.interface_naming_id() == Some(&interface_naming_id) {
                 Some(state)
@@ -3603,10 +3603,10 @@ impl<'a> NetCfg<'a> {
                 errors::Error::NonFatal(e) | errors::Error::Fatal(e) => e,
             })?;
 
-        let DeviceInfo { mac, port_class: _, topological_path: _ } = &device_info;
+        let DeviceInfo { mac, port_class: _, topological_path } = &device_info;
         let mac = mac.ok_or_else(|| anyhow!("devices without mac not supported"))?;
 
-        Ok(interface::generate_identifier(&mac))
+        Ok(interface::generate_identifier(&mac, topological_path))
     }
 }
 
@@ -4144,9 +4144,10 @@ mod tests {
     }
 
     const TEST_MAC: fidl_fuchsia_net::MacAddress = fidl_mac!("00:01:02:03:04:05");
+    const TEST_TOPOLOGICAL_PATH: &'static str = "/dev/foo/bar/network-device";
 
     fn test_interface_naming_id() -> interface::InterfaceNamingIdentifier {
-        interface::generate_identifier(&TEST_MAC.into())
+        interface::generate_identifier(&TEST_MAC.into(), TEST_TOPOLOGICAL_PATH)
     }
 
     async fn expect_get_interface_auth(control: &mut fnet_interfaces_admin::ControlRequestStream) {

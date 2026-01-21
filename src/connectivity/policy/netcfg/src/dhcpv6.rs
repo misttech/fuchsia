@@ -400,6 +400,8 @@ mod tests {
         valid_until: zx::MonotonicInstant::from_nanos(888_000_000_000),
     };
 
+    const FAKE_TOPOLOGICAL_PATH: &'static str = "/dev/foo/bar/network-device";
+
     impl InterfaceState {
         fn new_host_with_state(
             interface_naming_id: InterfaceNamingIdentifier,
@@ -538,9 +540,12 @@ mod tests {
                     fidl_fuchsia_net_interfaces_ext::admin::Control::create_endpoints()
                         .expect("create endpoints");
                 InterfaceState::new_host_with_state(
-                    generate_identifier(&fidl_fuchsia_net_ext::MacAddress {
-                        octets: [0x1, 0x2, 0x3, 0x4, 0x5, 0x6],
-                    }),
+                    generate_identifier(
+                        &fidl_fuchsia_net_ext::MacAddress {
+                            octets: [0x1, 0x2, 0x3, 0x4, 0x5, 0x6],
+                        },
+                        FAKE_TOPOLOGICAL_PATH,
+                    ),
                     control,
                     device_class,
                     None,

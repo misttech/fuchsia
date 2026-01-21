@@ -16,15 +16,23 @@ const INTERFACE_PREFIX_ETHERNET: &str = "eth";
 const INTERFACE_PREFIX_AP: &str = "ap";
 const INTERFACE_PREFIX_BLACKHOLE: &str = "blackhole";
 
+// Interfaces with different InterfaceNamingIdentifiers are expected to have
+// different names.
+//
+// If two interfaces have the same MAC, they are expected to produce a different
+// name in two possible ways: 1) have a different port class, or 2) use the
+// NormalizedMac naming scheme (which avoids conflicts via retries).
 #[derive(PartialEq, Eq, Debug, Clone, Hash)]
 pub(crate) struct InterfaceNamingIdentifier {
     pub(crate) mac: fidl_fuchsia_net_ext::MacAddress,
+    pub(crate) topological_path: String,
 }
 
 pub(crate) fn generate_identifier(
     mac_address: &fidl_fuchsia_net_ext::MacAddress,
+    topological_path: &str,
 ) -> InterfaceNamingIdentifier {
-    InterfaceNamingIdentifier { mac: *mac_address }
+    InterfaceNamingIdentifier { mac: *mac_address, topological_path: topological_path.to_string() }
 }
 
 // Get the NormalizedMac using the last octet of the MAC address. The offset
@@ -112,7 +120,7 @@ impl InterfaceNamingConfig {
         mac: &fidl_fuchsia_net_ext::MacAddress,
         device_class: DeviceClass,
     ) -> Result<(&str, InterfaceNamingIdentifier), NameGenerationError> {
-        let interface_naming_id = generate_identifier(mac);
+        let interface_naming_id = generate_identifier(mac, topological_path);
         let info = DeviceInfoRef { topological_path, mac, device_class };
 
         // Interfaces that are named using the NormalizedMac naming rule are
@@ -615,11 +623,7 @@ pub(crate) fn find_provisioning_action_from_provisioning_rules(
     provisioning_rules
         .iter()
         .find_map(|rule| {
-            if rule.does_interface_match(&info, &interface_name) {
-                Some(rule.action)
-            } else {
-                None
-            }
+            if rule.does_interface_match(&info, &interface_name) { Some(rule.action) } else { None }
         })
         .unwrap_or_default()
 }
@@ -834,7 +838,7 @@ mod tests {
             let octets = [n, 0x01, 0x01, 0x01, 0x01, 00];
 
             let interface_naming_id =
-                generate_identifier(&fidl_fuchsia_net_ext::MacAddress { octets });
+                generate_identifier(&fidl_fuchsia_net_ext::MacAddress { octets }, topo_usb);
 
             let name = config
                 .generate_name(&DeviceInfoRef {
@@ -850,13 +854,17 @@ mod tests {
         }
 
         let octets = [0x00, 0x00, 0x01, 0x01, 0x01, 00];
-        assert!(config
-            .generate_name(&DeviceInfoRef {
-                device_class: device_class_from_interface_type(crate::InterfaceType::WlanClient),
-                mac: &fidl_fuchsia_net_ext::MacAddress { octets },
-                topological_path: topo_usb
-            },)
-            .is_err());
+        assert!(
+            config
+                .generate_name(&DeviceInfoRef {
+                    device_class: device_class_from_interface_type(
+                        crate::InterfaceType::WlanClient
+                    ),
+                    mac: &fidl_fuchsia_net_ext::MacAddress { octets },
+                    topological_path: topo_usb
+                },)
+                .is_err()
+        );
     }
 
     #[test]
@@ -876,7 +884,7 @@ mod tests {
         for n in 0u8..255u8 {
             let octets = [n, 0x01, 0x01, 0x01, 0x01, 00];
             let interface_naming_id =
-                generate_identifier(&fidl_fuchsia_net_ext::MacAddress { octets });
+                generate_identifier(&fidl_fuchsia_net_ext::MacAddress { octets }, topo_usb);
 
             let info = DeviceInfoRef {
                 device_class: DeviceClass::Ethernet,
@@ -893,13 +901,15 @@ mod tests {
         }
 
         let octets = [0x00, 0x00, 0x01, 0x01, 0x01, 00];
-        assert!(config
-            .generate_name(&DeviceInfoRef {
-                device_class: DeviceClass::Ethernet,
-                mac: &fidl_fuchsia_net_ext::MacAddress { octets },
-                topological_path: topo_usb
-            })
-            .is_err());
+        assert!(
+            config
+                .generate_name(&DeviceInfoRef {
+                    device_class: DeviceClass::Ethernet,
+                    mac: &fidl_fuchsia_net_ext::MacAddress { octets },
+                    topological_path: topo_usb
+                })
+                .is_err()
+        );
     }
 
     // Arbitrary values for devices::DeviceInfo for cases where DeviceInfo has
@@ -1425,6 +1435,8 @@ mod tests {
 
     #[test]
     fn test_generate_name_from_naming_rule_interface_name_exists_no_reattempt() {
+        let topo_usb = "/dev/pci-00:14.0-fidl/xhci/usb/004/004/ifc-000/ax88179/ethernet";
+
         let shared_interface_name = "x".to_owned();
         let mut interfaces = HashMap::new();
         assert_matches!(
@@ -1433,6 +1445,7 @@ mod tests {
                     mac: fidl_fuchsia_net_ext::MacAddress {
                         octets: [0x1, 0x1, 0x1, 0x1, 0x1, 0x1]
                     },
+                    topological_path: topo_usb.to_string()
                 },
                 shared_interface_name.clone(),
             ),
@@ -1470,7 +1483,7 @@ mod tests {
         for n in 0u8..255u8 {
             let octets = [0x01, 0x01, 0x01, 0x01, 0x01, n];
             let interface_naming_id =
-                generate_identifier(&fidl_fuchsia_net_ext::MacAddress { octets });
+                generate_identifier(&fidl_fuchsia_net_ext::MacAddress { octets }, topo_usb);
             let info = DeviceInfoRef {
                 device_class: DeviceClass::Ethernet,
                 mac: &fidl_fuchsia_net_ext::MacAddress { octets },
@@ -1493,7 +1506,7 @@ mod tests {
         let info = DeviceInfoRef {
             device_class: DeviceClass::Ethernet,
             mac: &fidl_fuchsia_net_ext::MacAddress { octets: [0x1, 0x1, 0x1, 0x1, 0x1, 0x1] },
-            topological_path: "/dev/sys/platform/pt/PCI0/bus/00:14.0/00:14.0/xhci/usb/004/004/ifc-000/ax88179/ethernet"
+            topological_path: "/dev/sys/platform/pt/PCI0/bus/00:14.0/00:14.0/xhci/usb/004/004/ifc-000/ax88179/ethernet",
         };
         let name = generate_name_from_naming_rules(
             &[
