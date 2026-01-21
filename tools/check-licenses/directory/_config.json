@@ -4,6 +4,14 @@
         "skips": [
             {
                 "notes": [
+                    "Unblock landing of android/platform/frameworks/native. b/477373903"
+                ],
+                "paths": [
+                    "third_party/android/platform/frameworks/native/aidl"
+                ]
+            },
+            {
+                "notes": [
                     "Licenses for the curl repo are verified elsewhere in the build."
                 ],
                 "paths": [
