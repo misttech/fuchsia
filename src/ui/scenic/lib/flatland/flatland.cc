@@ -17,6 +17,7 @@
 #include <limits.h>
 #include <zircon/errors.h>
 
+#include <array>
 #include <cstdint>
 #include <functional>
 #include <memory>
@@ -1076,17 +1077,22 @@ void Flatland::RemoveChild(TransformId2 parent_transform_id, TransformId2 child_
 
 void Flatland::ReplaceChildren(ReplaceChildrenRequest& request,
                                ReplaceChildrenCompleter::Sync& completer) {
-  // TODO(https://fxbug.dev/446975761): avoid this heap allocation.  Maybe alloca() and std::span?
-  std::vector<TransformId2> new_children;
-  new_children.reserve(request.new_child_transform_ids().size());
-  for (auto& child : request.new_child_transform_ids()) {
-    new_children.push_back(TransformId2(child));
+  size_t count = request.new_child_transform_ids().size();
+  if (count > fuchsia_ui_composition::kMaxChildTransforms) {
+    error_reporter_->ERROR() << "ReplaceChildren failed, too many children: " << count;
+    CloseConnection(FlatlandError::kBadOperation);
+    return;
   }
-  ReplaceChildren(TransformId2(request.parent_transform_id()), new_children);
+  std::array<TransformId2, fuchsia_ui_composition::kMaxChildTransforms> new_children;
+  for (size_t i = 0; i < count; ++i) {
+    new_children[i] = TransformId2(request.new_child_transform_ids()[i]);
+  }
+  ReplaceChildren(TransformId2(request.parent_transform_id()),
+                  std::span(new_children.data(), count));
 }
 
 void Flatland::ReplaceChildren(TransformId2 parent_transform_id,
-                               const std::vector<TransformId2>& new_child_transform_ids) {
+                               std::span<const TransformId2> new_child_transform_ids) {
   if (parent_transform_id == kInvalidTransformId) {
     error_reporter_->ERROR() << "ReplaceChildren failed, parent transform_id "
                              << parent_transform_id << " not found";
@@ -1102,9 +1108,20 @@ void Flatland::ReplaceChildren(TransformId2 parent_transform_id,
     return;
   }
 
-  std::vector<TransformHandle> children;
-  children.reserve(new_child_transform_ids.size());
-  for (auto child_transform_id : new_child_transform_ids) {
+  size_t count = new_child_transform_ids.size();
+  if (count > fuchsia_ui_composition::kMaxChildTransforms) {
+    error_reporter_->ERROR() << "ReplaceChildren failed, too many children: " << count;
+    CloseConnection(FlatlandError::kBadOperation);
+    return;
+  }
+
+  // Look up the TransformHandle corresponding to the client-visible TransformId.  Use a std::array
+  // to avoid heap allocations; benchmarking showed this to be slightly faster (and significantly
+  // lower-variance) for 3 children.  Additional microoptimization opportunity: remove the default
+  // field initialization, so it doesn't default-initialize all `kMaxChildTransforms` elements.
+  std::array<TransformHandle, fuchsia_ui_composition::kMaxChildTransforms> children;
+  for (size_t i = 0; i < count; ++i) {
+    auto child_transform_id = new_child_transform_ids[i];
     if (child_transform_id == kInvalidTransformId) {
       error_reporter_->ERROR() << "ReplaceChildren failed, child transform_id "
                                << child_transform_id << " not found";
@@ -1119,10 +1136,11 @@ void Flatland::ReplaceChildren(TransformId2 parent_transform_id,
       CloseConnection(FlatlandError::kBadOperation);
       return;
     }
-    children.push_back(child_global_kv->second);
+    children[i] = child_global_kv->second;
   }
 
-  bool replaced = transform_graph_.ReplaceChildren(parent_global_kv->second, children);
+  bool replaced =
+      transform_graph_.ReplaceChildren(parent_global_kv->second, std::span(children.data(), count));
   if (!replaced) {
     error_reporter_->ERROR()
         << "ReplaceChildren failed, cannot add duplicate children to the same parent: "

@@ -6,6 +6,7 @@
 #define SRC_UI_SCENIC_LIB_FLATLAND_TRANSFORM_GRAPH_H_
 
 #include <map>
+#include <span>
 #include <unordered_set>
 #include <vector>
 
@@ -81,7 +82,7 @@ class TransformGraph {
   // Removes all child edges from the parent transform, replacing them with transforms from
   // new_children. The parent transform should be an unreleased transform created by calling
   // CreateTransform() on this object, but this is only enforced by DCHECK.
-  bool ReplaceChildren(TransformHandle parent, const std::vector<TransformHandle>& new_children);
+  bool ReplaceChildren(TransformHandle parent, std::span<const TransformHandle> new_children);
 
   // Removes all child edges from the parent transform. This function does not remove priority
   // children.

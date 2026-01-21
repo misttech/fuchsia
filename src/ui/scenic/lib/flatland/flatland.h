@@ -15,6 +15,7 @@
 
 #include <map>
 #include <memory>
+#include <span>
 #include <string>
 #include <unordered_map>
 #include <unordered_set>
@@ -46,9 +47,7 @@ class Flatland : public fidl::Server<fuchsia_ui_composition::Flatland>,
                  public std::enable_shared_from_this<Flatland> {
  public:
   using BufferCollectionId = uint64_t;
-  using ContentId = fuchsia_ui_composition::ContentId;
   using FuturePresentationInfos = std::vector<fuchsia_scenic_scheduling::PresentationInfo>;
-  using TransformId = fuchsia_ui_composition::TransformId;
 
   // Instantiates a new Flatland object and binds it to serve the Flatland protocol over the
   // `server_end` channel.  Method invocations received on this channel will be serviced on
@@ -157,7 +156,12 @@ class Flatland : public fidl::Server<fuchsia_ui_composition::Flatland>,
   void ReplaceChildren(ReplaceChildrenRequest& request,
                        ReplaceChildrenCompleter::Sync& completer) override;
   void ReplaceChildren(TransformId2 parent_transform_id,
-                       const std::vector<TransformId2>& new_child_transform_ids);
+                       std::span<const TransformId2> new_child_transform_ids);
+  void ReplaceChildren(TransformId2 parent_transform_id,
+                       std::initializer_list<TransformId2> new_child_transform_ids) {
+    ReplaceChildren(parent_transform_id,
+                    std::span(new_child_transform_ids.begin(), new_child_transform_ids.size()));
+  }
 
   // |fuchsia_ui_composition::Flatland|
   void SetRootTransform(SetRootTransformRequest& request,

@@ -88,7 +88,7 @@ bool TransformGraph::RemoveChild(TransformHandle parent, TransformHandle child) 
 }
 
 bool TransformGraph::ReplaceChildren(TransformHandle parent,
-                                     const std::vector<TransformHandle>& new_children) {
+                                     std::span<const TransformHandle> new_children) {
   FX_DCHECK(is_valid_);
   FX_DCHECK(working_set_.contains(parent));
 

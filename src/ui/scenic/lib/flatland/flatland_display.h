@@ -29,8 +29,6 @@ namespace flatland {
 class FlatlandDisplay : public fuchsia::ui::composition::FlatlandDisplay,
                         public std::enable_shared_from_this<FlatlandDisplay> {
  public:
-  using TransformId = fuchsia::ui::composition::TransformId;
-
   static std::shared_ptr<FlatlandDisplay> New(
       std::shared_ptr<utils::DispatcherHolder> dispatcher_holder,
       fidl::InterfaceRequest<fuchsia::ui::composition::FlatlandDisplay> request,
