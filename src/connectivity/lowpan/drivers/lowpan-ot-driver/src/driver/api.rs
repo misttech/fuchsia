@@ -11,6 +11,7 @@ use lowpan_driver_common::lowpan_fidl::*;
 use lowpan_driver_common::{AsyncConditionWait, Driver as LowpanDriver};
 use openthread::ot::SrpServerLeaseInfo;
 use otsys::OT_BORDER_AGENT_MAX_EPHEMERAL_KEY_TIMEOUT;
+use std::net::Ipv6Addr;
 
 const EPSKC_PORT: u16 = 61632;
 
@@ -1070,6 +1071,36 @@ where
             })
             .collect::<Vec<_>>();
 
+        // Get the list of discovered routers by Border Routing Manager on the infrastructure link.
+        let border_routing_routers = ot
+            .border_routing_router_get_iterator()
+            .take(64) // Limit the number of routers to 64 per the FIDL definition.
+            .map(|router| fidl_fuchsia_lowpan_experimental::BorderRoutingRouter {
+                address: Some(Ipv6Addr::from(router.address().octets()).to_string()),
+                duration_since_last_update: Some(
+                    fuchsia_async::MonotonicDuration::from_millis(
+                        router.msec_since_last_update().into(),
+                    )
+                    .into_nanos()
+                    .try_into()
+                    .unwrap(),
+                ),
+                age: Some(
+                    fuchsia_async::MonotonicDuration::from_seconds(router.age().into())
+                        .into_nanos()
+                        .try_into()
+                        .unwrap(),
+                ),
+                managed_address_config_flag: Some(router.managed_address_config_flag()),
+                other_config_flag: Some(router.other_config_flag()),
+                snac_router_flag: Some(router.snac_router_flag()),
+                is_local_device: Some(router.is_local_device()),
+                is_reachable: Some(router.is_reachable()),
+                is_peer_br: Some(router.is_peer_br()),
+                ..Default::default()
+            })
+            .collect::<Vec<_>>();
+
         Ok(Telemetry {
             rssi: Some(ot.get_rssi()),
             partition_id: Some(ot.get_partition_id()),
@@ -1124,6 +1155,7 @@ where
             multi_ail_detected: Some(multi_ail_detected),
             extended_pan_id: Some(extended_pan_id),
             border_routing_peers: Some(border_routing_peers),
+            border_routing_routers: Some(border_routing_routers),
             ..Default::default()
         })
     }

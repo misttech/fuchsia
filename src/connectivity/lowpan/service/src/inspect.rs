@@ -1355,6 +1355,69 @@ async fn monitor_device(name: String, iface_tree: Arc<IfaceTreeHolder>) -> Resul
                                 },
                             )
                         }
+                        if let Some(x) = telemetry_data.border_routing_routers {
+                            inspector.root().record_child(
+                                "border_routing_routers",
+                                |br_routers_child| {
+                                    for (index, br_router) in x.iter().enumerate() {
+                                        br_routers_child.record_child(
+                                            format!("router_{}", index),
+                                            |br_router_node| {
+                                                br_router_node.record_string(
+                                                    "address",
+                                                    br_router
+                                                        .address
+                                                        .as_deref()
+                                                        .unwrap_or("unknown"),
+                                                );
+                                                br_router_node.record_uint(
+                                                    "duration_since_last_update",
+                                                    br_router
+                                                        .duration_since_last_update
+                                                        .unwrap_or(0)
+                                                        .try_into()
+                                                        .unwrap_or(0),
+                                                );
+                                                br_router_node.record_uint(
+                                                    "age",
+                                                    br_router
+                                                        .age
+                                                        .unwrap_or(0)
+                                                        .try_into()
+                                                        .unwrap_or(0),
+                                                );
+                                                br_router_node.record_bool(
+                                                    "managed_address_config_flag",
+                                                    br_router
+                                                        .managed_address_config_flag
+                                                        .unwrap_or(false),
+                                                );
+                                                br_router_node.record_bool(
+                                                    "other_config_flag",
+                                                    br_router.other_config_flag.unwrap_or(false),
+                                                );
+                                                br_router_node.record_bool(
+                                                    "snac_router_flag",
+                                                    br_router.snac_router_flag.unwrap_or(false),
+                                                );
+                                                br_router_node.record_bool(
+                                                    "is_local_device",
+                                                    br_router.is_local_device.unwrap_or(false),
+                                                );
+                                                br_router_node.record_bool(
+                                                    "is_reachable",
+                                                    br_router.is_reachable.unwrap_or(false),
+                                                );
+                                                br_router_node.record_bool(
+                                                    "is_peer_br",
+                                                    br_router.is_peer_br.unwrap_or(false),
+                                                );
+                                            },
+                                        );
+                                    }
+                                },
+                            )
+                        }
                     }
                     Err(e) => {
                         warn!("Error in logging telemetry. Error: {}", e);
