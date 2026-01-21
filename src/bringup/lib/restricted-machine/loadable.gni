@@ -7,7 +7,7 @@
 # It also exports if an additional cpu is available, e.g., arm for arm64.
 
 additional_restricted_cpu = ""
-if (current_cpu == "arm64" && !is_asan) {
+if (current_cpu == "arm64") {
   additional_restricted_cpu = "arm"
 }
 
