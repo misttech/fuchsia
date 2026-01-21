@@ -12,6 +12,7 @@
 
 #include <algorithm>
 #include <iterator>
+#include <set>
 #include <string>
 
 #include <gpt/gpt.h>
@@ -29,12 +30,20 @@ using uuid::Uuid;
 
 }  // namespace
 
+const std::set<std::string> kSupportedBoards{
+    "kola", "sorrel", "lilac", "kudzu", "maple",
+};
+
 zx::result<std::unique_ptr<DevicePartitioner>> MoonflowerPartitioner::Initialize(
     const PaverConfig& config, const BlockDevices& devices,
     fidl::UnownedClientEnd<fuchsia_io::Directory> svc_root,
     fidl::ClientEnd<fuchsia_device::Controller> block_device) {
-  if (IsBoard(svc_root, "kola").is_error() && IsBoard(svc_root, "sorrel").is_error() &&
-      IsBoard(svc_root, "lilac").is_error()) {
+  zx::result<std::string> board_name = GetBoardName(svc_root);
+  if (board_name.is_error()) {
+    return board_name.take_error();
+  }
+
+  if (!kSupportedBoards.contains(board_name.value())) {
     return zx::error(ZX_ERR_NOT_SUPPORTED);
   }
 
