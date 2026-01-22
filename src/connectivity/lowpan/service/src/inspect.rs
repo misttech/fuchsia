@@ -14,6 +14,7 @@ use fuchsia_inspect_contrib::inspect_log;
 use fuchsia_inspect_contrib::nodes::{BoundedListNode, MonotonicTimeProperty, NodeTimeExt};
 use fuchsia_sync::Mutex;
 use std::collections::{HashMap, HashSet};
+use std::net::Ipv6Addr;
 
 type IfaceId = String;
 
@@ -1412,6 +1413,138 @@ async fn monitor_device(name: String, iface_tree: Arc<IfaceTreeHolder>) -> Resul
                                                     "is_peer_br",
                                                     br_router.is_peer_br.unwrap_or(false),
                                                 );
+                                            },
+                                        );
+                                    }
+                                },
+                            )
+                        }
+                        if let Some(x) = telemetry_data.active_dataset {
+                            inspector.root().record_child(
+                                "active_dataset",
+                                |active_dataset_child| {
+                                    if let Some(y) = x.active_timestamp {
+                                        active_dataset_child.record_uint(
+                                            "active_timestamp",
+                                            y.try_into().unwrap_or(0),
+                                        );
+                                    }
+                                    if let Some(y) = x.pending_timestamp {
+                                        active_dataset_child.record_uint(
+                                            "pending_timestamp",
+                                            y.try_into().unwrap_or(0),
+                                        );
+                                    }
+                                    if let Some(y) = x.network_key {
+                                        active_dataset_child.record_string(
+                                            "network_key",
+                                            y.iter()
+                                                .map(|b| format!("{:02x}", b))
+                                                .collect::<String>(),
+                                        );
+                                    }
+                                    if let Some(y) = x.network_name {
+                                        active_dataset_child.record_string(
+                                            "network_name",
+                                            String::from_utf8(y)
+                                                .expect("Found invalid UTF-8")
+                                                .trim_matches(char::from(0)),
+                                        );
+                                    }
+                                    if let Some(y) = x.extended_pan_id {
+                                        active_dataset_child.record_string(
+                                            "extended_pan_id",
+                                            y.iter()
+                                                .map(|b| format!("{:02x}", b))
+                                                .collect::<String>(),
+                                        );
+                                    }
+                                    if let Some(y) = x.mesh_local_prefix {
+                                        let mut prefix = [0u8; 16];
+                                        prefix[..8].copy_from_slice(&y[..8]);
+                                        active_dataset_child.record_string(
+                                            "mesh_local_prefix",
+                                            format!("{}/64", Ipv6Addr::from(prefix)),
+                                        );
+                                    }
+                                    if let Some(y) = x.pan_id {
+                                        active_dataset_child.record_uint("pan_id", y.into());
+                                    }
+                                    if let Some(y) = x.channel {
+                                        active_dataset_child.record_uint("channel", y.into());
+                                    }
+                                    if let Some(y) = x.channel_mask {
+                                        active_dataset_child.record_uint("channel_mask", y.into());
+                                    }
+                                    if let Some(y) = x.pskc {
+                                        active_dataset_child.record_string(
+                                            "pskc",
+                                            y.iter()
+                                                .map(|b| format!("{:02x}", b))
+                                                .collect::<String>(),
+                                        );
+                                    }
+                                    if let Some(y) = x.security_policy {
+                                        active_dataset_child.record_child(
+                                            "security_policy",
+                                            |security_policy_child| {
+                                                if let Some(z) = y.rotation_time {
+                                                    security_policy_child
+                                                        .record_uint("rotation_time", z.into());
+                                                }
+                                                if let Some(z) = y.obtain_network_key_enabled {
+                                                    security_policy_child.record_bool(
+                                                        "obtain_network_key_enabled",
+                                                        z.into(),
+                                                    );
+                                                }
+                                                if let Some(z) = y.native_commissioning_enabled {
+                                                    security_policy_child.record_bool(
+                                                        "native_commissioning_enabled",
+                                                        z.into(),
+                                                    );
+                                                }
+                                                if let Some(z) = y.routers_enabled {
+                                                    security_policy_child
+                                                        .record_bool("routers_enabled", z.into());
+                                                }
+                                                if let Some(z) = y.external_commissioning_enabled {
+                                                    security_policy_child.record_bool(
+                                                        "external_commissioning_enabled",
+                                                        z.into(),
+                                                    );
+                                                }
+                                                if let Some(z) = y.autonomous_enrollment_enabled {
+                                                    security_policy_child.record_bool(
+                                                        "autonomous_enrollment_enabled",
+                                                        z.into(),
+                                                    );
+                                                }
+                                                if let Some(z) = y.network_key_provisioning_enabled
+                                                {
+                                                    security_policy_child.record_bool(
+                                                        "network_key_provisioning_enabled",
+                                                        z.into(),
+                                                    );
+                                                }
+                                                if let Some(z) = y.toble_link_enabled {
+                                                    security_policy_child.record_bool(
+                                                        "toble_link_enabled",
+                                                        z.into(),
+                                                    );
+                                                }
+                                                if let Some(z) = y.nonccm_routers_enabled {
+                                                    security_policy_child.record_bool(
+                                                        "nonccm_routers_enabled",
+                                                        z.into(),
+                                                    );
+                                                }
+                                                if let Some(z) = y.version_threshold_for_routing {
+                                                    security_policy_child.record_uint(
+                                                        "version_threshold_for_routing",
+                                                        z.into(),
+                                                    );
+                                                }
                                             },
                                         );
                                     }

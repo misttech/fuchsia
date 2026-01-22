@@ -1101,6 +1101,79 @@ where
             })
             .collect::<Vec<_>>();
 
+        // Get the active dataset.
+        let mut active_dataset = fidl_fuchsia_lowpan_experimental::OperationalDataset::default();
+        let mut operational_dataset = Default::default();
+        match ot.dataset_get_active(&mut operational_dataset) {
+            Ok(_) => {
+                if let Some(x) = operational_dataset.get_active_timestamp() {
+                    active_dataset.active_timestamp = Some(
+                        fuchsia_async::MonotonicDuration::from_seconds(x.as_secs() as i64)
+                            .into_nanos()
+                            .try_into()
+                            .unwrap(),
+                    );
+                }
+                if let Some(x) = operational_dataset.get_pending_timestamp() {
+                    active_dataset.pending_timestamp = Some(
+                        fuchsia_async::MonotonicDuration::from_seconds(x.as_secs() as i64)
+                            .into_nanos()
+                            .try_into()
+                            .unwrap(),
+                    );
+                }
+                if let Some(x) = operational_dataset.get_network_key() {
+                    active_dataset.network_key = Some(x.to_vec());
+                }
+                if let Some(x) = operational_dataset.get_network_name() {
+                    active_dataset.network_name = Some(x.to_vec());
+                }
+                if let Some(x) = operational_dataset.get_extended_pan_id() {
+                    active_dataset.extended_pan_id = Some(x.to_vec());
+                }
+                if let Some(x) = operational_dataset.get_mesh_local_prefix() {
+                    active_dataset.mesh_local_prefix = Some(x.octets().to_vec());
+                }
+                if let Some(x) = operational_dataset.get_delay() {
+                    active_dataset.delay = Some(x.into());
+                }
+                if let Some(x) = operational_dataset.get_pan_id() {
+                    active_dataset.pan_id = Some(x.into());
+                }
+                if let Some(x) = operational_dataset.get_channel() {
+                    active_dataset.channel = Some(x.into());
+                }
+                if let Some(x) = operational_dataset.get_channel_mask() {
+                    active_dataset.channel_mask = Some(x.into());
+                }
+                if let Some(x) = operational_dataset.get_pskc() {
+                    active_dataset.pskc = Some(x.to_vec());
+                }
+                if let Some(x) = operational_dataset.get_security_policy() {
+                    let mut policy = fidl_fuchsia_lowpan_experimental::SecurityPolicy::default();
+                    policy.rotation_time = Some(x.get_rotation_time_in_hours());
+                    policy.obtain_network_key_enabled = Some(x.is_obtain_network_key_enabled());
+                    policy.native_commissioning_enabled = Some(x.is_native_commissioning_enabled());
+                    policy.routers_enabled = Some(x.is_routers_enabled());
+                    policy.external_commissioning_enabled =
+                        Some(x.is_external_commissioning_enabled());
+                    policy.autonomous_enrollment_enabled =
+                        Some(x.is_autonomous_enrollment_enabled());
+                    policy.network_key_provisioning_enabled =
+                        Some(x.is_network_key_provisioning_enabled());
+                    policy.toble_link_enabled = Some(x.is_toble_link_enabled());
+                    policy.nonccm_routers_enabled = Some(x.is_non_ccm_routers_enabled());
+                    policy.version_threshold_for_routing =
+                        Some(x.get_version_threshold_for_routing());
+                    active_dataset.security_policy = Some(policy);
+                }
+                // TODO: implement the "Wake-up channel".
+            }
+            Err(e) => {
+                warn!("Could not retrieve active dataset: {:?}", e);
+            }
+        }
+
         Ok(Telemetry {
             rssi: Some(ot.get_rssi()),
             partition_id: Some(ot.get_partition_id()),
@@ -1156,6 +1229,7 @@ where
             extended_pan_id: Some(extended_pan_id),
             border_routing_peers: Some(border_routing_peers),
             border_routing_routers: Some(border_routing_routers),
+            active_dataset: Some(active_dataset),
             ..Default::default()
         })
     }
