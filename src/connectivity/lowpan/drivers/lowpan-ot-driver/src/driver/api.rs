@@ -917,6 +917,7 @@ where
             remaining_key_lease_time_total: Some(0),
             ..Default::default()
         };
+        let mut srp_server_hosts: Vec<fidl_fuchsia_lowpan_experimental::SrpServerHost> = Vec::new();
         for srp_host in ot.srp_server_hosts() {
             if srp_host.is_deleted() {
                 *hosts_registration.deleted_count.get_or_insert(0) += 1;
@@ -933,6 +934,31 @@ where
                 *hosts_registration.remaining_key_lease_time_total.get_or_insert(0) +=
                     lease_info.remaining_key_lease().into_nanos();
             }
+            // SRP host dump info.
+            let host = fidl_fuchsia_lowpan_experimental::SrpServerHost {
+                name: Some(match srp_host.full_name_cstr().to_str() {
+                    Ok(name) => name.to_string(),
+                    Err(e) => {
+                        warn!(tag = "api"; "fail to convert the UTF-8 host name {:?}.", e);
+                        format!("invalid host name: {:?}", srp_host.full_name_cstr())
+                    }
+                }),
+                deleted: Some(srp_host.is_deleted()),
+                addresses: Some(
+                    srp_host
+                        .addresses()
+                        .iter()
+                        .take(16) // Limit the number of address to 16 per the FIDL definition.
+                        .map(|addr| fidl_fuchsia_net::Ipv6Address { addr: addr.octets() })
+                        .collect::<Vec<_>>(),
+                ),
+                ..Default::default()
+            };
+            // Ensure the number of registered host dump entries does not exceed the limit (64).
+            if srp_server_hosts.len() < 64 {
+                srp_server_hosts.push(host.clone());
+            }
+
             for srp_service in srp_host.services() {
                 if srp_service.is_deleted() {
                     *services_registration.deleted_count.get_or_insert(0) += 1;
@@ -1199,6 +1225,7 @@ where
                 response_counters: Some(ot.srp_server_get_response_counters().into_ext()),
                 hosts_registration: Some(hosts_registration),
                 services_registration: Some(services_registration),
+                hosts: Some(srp_server_hosts),
                 ..Default::default()
             }),
             dnssd_counters: Some(ot.dnssd_get_counters().into_ext()),

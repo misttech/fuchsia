@@ -990,6 +990,46 @@ async fn monitor_device(name: String, iface_tree: Arc<IfaceTreeHolder>) -> Resul
                                         },
                                     );
                                 }
+                                if let Some(y) = x.hosts {
+                                    srp_server_info_child.record_child(
+                                        "hosts",
+                                        |srp_server_hosts_child| {
+                                            for (index, host) in y.iter().enumerate() {
+                                                srp_server_hosts_child.record_child(
+                                                    format!("host_{}", index),
+                                                    |host_node| {
+                                                        if let Some(z) = &host.name {
+                                                            host_node.record_string("name", z);
+                                                        }
+                                                        if let Some(z) = host.deleted {
+                                                            host_node
+                                                                .record_bool("deleted", z.into());
+                                                        }
+                                                        if let Some(z) = &host.addresses {
+                                                            let address_string = if z.is_empty() {
+                                                                "none".to_string()
+                                                            } else {
+                                                                z.iter()
+                                                                    .map(|a| {
+                                                                        format!(
+                                                                            "{}",
+                                                                            Ipv6Addr::from(a.addr)
+                                                                        )
+                                                                    })
+                                                                    .collect::<Vec<_>>()
+                                                                    .join(", ")
+                                                            };
+                                                            host_node.record_string(
+                                                                "addresses",
+                                                                address_string,
+                                                            );
+                                                        };
+                                                    },
+                                                );
+                                            }
+                                        },
+                                    );
+                                }
                             });
                         }
                         if let Some(x) = telemetry_data.leader_data {
