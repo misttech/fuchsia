@@ -18,7 +18,7 @@ use fidl_fuchsia_metrics::{
 use fuchsia_inspect::NumericProperty;
 use log::{error, warn};
 use sampler_config::runtime::{MetricConfig, ProjectConfig};
-use sampler_config::{MetricId, MetricType};
+use sampler_config::{EventCode, MetricId, MetricType};
 use selectors::SelectorExt;
 use std::cell::RefCell;
 use std::collections::HashMap;
@@ -38,7 +38,7 @@ pub struct Project<'a> {
     // between threads. Since it does not serve a protocol and need to spawn
     // handlers, access is always sequential when a new event arrives on the
     // single SampleSinkServer stream.
-    cache: RefCell<HashMap<MetricId, Property>>,
+    cache: RefCell<HashMap<(MetricId, Vec<EventCode>), Property>>,
     interval: zx::MonotonicDuration,
     stats: Option<&'a ProjectStats>,
 }
@@ -123,7 +123,15 @@ impl<'a> Project<'a> {
         let (upload_once_values, filtered_metrics) =
             original_metrics.into_iter().partition(|metric| {
                 metric.upload_once
-                    && metric_events.iter().any(|me| me.metric_id == *metric.metric_id)
+                    && metric_events.iter().any(|me| {
+                        me.metric_id == *metric.metric_id
+                            && me
+                                .event_codes
+                                .iter()
+                                .copied()
+                                .map(EventCode)
+                                .eq(metric.event_codes.iter().copied())
+                    })
             });
 
         self.metrics = filtered_metrics;
@@ -144,7 +152,11 @@ impl<'a> Project<'a> {
 
                 let new_value = Self::extract_occurrence(&prop[0])?;
 
-                let cached_value = match self.cache.borrow_mut().entry(metric.metric_id) {
+                let cached_value = match self
+                    .cache
+                    .borrow_mut()
+                    .entry((metric.metric_id, metric.event_codes.clone()))
+                {
                     Entry::Occupied(mut v) => {
                         let old = Self::extract_occurrence(v.get())?;
                         if old == new_value {
@@ -214,7 +226,11 @@ impl<'a> Project<'a> {
                     return Err(Error::InvalidSelectResult(item));
                 };
 
-                let Some(payload) = (match self.cache.borrow_mut().entry(metric.metric_id) {
+                let Some(payload) = (match self
+                    .cache
+                    .borrow_mut()
+                    .entry((metric.metric_id, metric.event_codes.clone()))
+                {
                     Entry::Occupied(mut v) => {
                         let payload = Self::process_int_histogram(&prop[0], Some(v.get()))?;
                         // only update the cache if the histogram is valid
@@ -562,7 +578,7 @@ mod test {
     use fuchsia_sync::Mutex;
     use futures::StreamExt;
     use sampler_config::runtime::MetricConfig;
-    use sampler_config::{MetricId, MetricType, *};
+    use sampler_config::{MetricId, MetricType};
     use selectors::parse_verbose;
     use std::borrow::Cow;
     use std::cell::RefCell;
@@ -590,6 +606,42 @@ mod test {
             interval: zx::MonotonicDuration::from_seconds(1),
             stats: None,
         }
+    }
+
+    fn test_data(timestamp_nanos: i64, hierarchy: DiagnosticsHierarchy) -> Vec<InspectData> {
+        vec![
+            InspectDataBuilder::new(
+                "moniker/for/test".try_into().unwrap(),
+                "fuchsia-pkg://test",
+                Timestamp::from_nanos(timestamp_nanos),
+            )
+            .with_hierarchy(hierarchy)
+            .build(),
+        ]
+    }
+
+    fn histogram_hierarchy(counts: Vec<i64>) -> DiagnosticsHierarchy {
+        DiagnosticsHierarchy::new(
+            "root",
+            vec![Property::IntArray(
+                "foo".to_string(),
+                ArrayContent::LinearHistogram(LinearHistogram {
+                    floor: 0i64,
+                    step: 1,
+                    counts,
+                    indexes: None,
+                    size: 2,
+                }),
+            )],
+            vec![],
+        )
+    }
+
+    async fn wait_for_data(data_sink: &Arc<Mutex<Vec<MetricEvent>>>) -> Vec<MetricEvent> {
+        while data_sink.lock().is_empty() {
+            fuchsia_async::Timer::new(zx::MonotonicDuration::from_seconds(1)).await;
+        }
+        data_sink.lock().clone()
     }
 
     async fn serve_mock_cobalt_logger(
@@ -630,37 +682,11 @@ mod test {
         scope.spawn(serve_mock_cobalt_logger(data_sink.clone(), logger_server));
 
         {
-            let data = vec![
-                InspectDataBuilder::new(
-                    "moniker/for/test".try_into().unwrap(),
-                    "fuchsia-pkg://test",
-                    Timestamp::from_nanos(0i64),
-                )
-                .with_hierarchy(DiagnosticsHierarchy::new(
-                    "root",
-                    vec![Property::IntArray(
-                        "foo".to_string(),
-                        ArrayContent::LinearHistogram(LinearHistogram {
-                            floor: 0i64,
-                            step: 1,
-                            counts: vec![1, 0],
-                            indexes: None,
-                            size: 2,
-                        }),
-                    )],
-                    vec![],
-                ))
-                .build(),
-            ];
-
+            let data = test_data(0, histogram_hierarchy(vec![1, 0]));
             let upload_once =
                 project.log(&data, Some(zx::MonotonicDuration::from_seconds(0))).await.unwrap();
 
-            while data_sink.lock().is_empty() {
-                println!("check 1");
-                fuchsia_async::Timer::new(zx::MonotonicDuration::from_seconds(1)).await;
-            }
-
+            let events = wait_for_data(&data_sink).await;
             let expected = vec![MetricEvent {
                 metric_id: 0,
                 payload: MetricEventPayload::Histogram(vec![HistogramBucket {
@@ -671,42 +697,16 @@ mod test {
             }];
 
             assert!(upload_once.is_empty());
-            assert_eq!(expected, *data_sink.lock());
+            assert_eq!(expected, events);
             data_sink.lock().clear();
         }
 
         {
-            let data = vec![
-                InspectDataBuilder::new(
-                    "moniker/for/test".try_into().unwrap(),
-                    "fuchsia-pkg://test",
-                    Timestamp::from_nanos(1i64),
-                )
-                .with_hierarchy(DiagnosticsHierarchy::new(
-                    "root",
-                    vec![Property::IntArray(
-                        "foo".to_string(),
-                        ArrayContent::LinearHistogram(LinearHistogram {
-                            floor: 0i64,
-                            step: 1,
-                            counts: vec![2, 0],
-                            indexes: None,
-                            size: 2,
-                        }),
-                    )],
-                    vec![],
-                ))
-                .build(),
-            ];
-
+            let data = test_data(1, histogram_hierarchy(vec![2, 0]));
             let upload_once =
                 project.log(&data, Some(zx::MonotonicDuration::from_seconds(1))).await.unwrap();
 
-            while data_sink.lock().is_empty() {
-                println!("check 2");
-                fuchsia_async::Timer::new(zx::MonotonicDuration::from_seconds(1)).await;
-            }
-
+            let events = wait_for_data(&data_sink).await;
             let expected = vec![MetricEvent {
                 metric_id: 0,
                 payload: MetricEventPayload::Histogram(vec![HistogramBucket {
@@ -717,42 +717,16 @@ mod test {
             }];
 
             assert!(upload_once.is_empty());
-            assert_eq!(expected, *data_sink.lock());
+            assert_eq!(expected, events);
             data_sink.lock().clear();
         }
 
         {
-            let data = vec![
-                InspectDataBuilder::new(
-                    "moniker/for/test".try_into().unwrap(),
-                    "fuchsia-pkg://test",
-                    Timestamp::from_nanos(1i64),
-                )
-                .with_hierarchy(DiagnosticsHierarchy::new(
-                    "root",
-                    vec![Property::IntArray(
-                        "foo".to_string(),
-                        ArrayContent::LinearHistogram(LinearHistogram {
-                            floor: 0i64,
-                            step: 1,
-                            counts: vec![2, 1],
-                            indexes: None,
-                            size: 2,
-                        }),
-                    )],
-                    vec![],
-                ))
-                .build(),
-            ];
-
+            let data = test_data(1, histogram_hierarchy(vec![2, 1]));
             let upload_once =
                 project.log(&data, Some(zx::MonotonicDuration::from_seconds(1))).await.unwrap();
 
-            while data_sink.lock().is_empty() {
-                println!("check 3");
-                fuchsia_async::Timer::new(zx::MonotonicDuration::from_seconds(1)).await;
-            }
-
+            let events = wait_for_data(&data_sink).await;
             let expected = vec![MetricEvent {
                 metric_id: 0,
                 payload: MetricEventPayload::Histogram(vec![HistogramBucket {
@@ -763,42 +737,16 @@ mod test {
             }];
 
             assert!(upload_once.is_empty());
-            assert_eq!(expected, *data_sink.lock());
+            assert_eq!(expected, events);
             data_sink.lock().clear();
         }
 
         {
-            let data = vec![
-                InspectDataBuilder::new(
-                    "moniker/for/test".try_into().unwrap(),
-                    "fuchsia-pkg://test",
-                    Timestamp::from_nanos(1i64),
-                )
-                .with_hierarchy(DiagnosticsHierarchy::new(
-                    "root",
-                    vec![Property::IntArray(
-                        "foo".to_string(),
-                        ArrayContent::LinearHistogram(LinearHistogram {
-                            floor: 0i64,
-                            step: 1,
-                            counts: vec![3, 2],
-                            indexes: None,
-                            size: 2,
-                        }),
-                    )],
-                    vec![],
-                ))
-                .build(),
-            ];
-
+            let data = test_data(1, histogram_hierarchy(vec![3, 2]));
             let upload_once =
                 project.log(&data, Some(zx::MonotonicDuration::from_seconds(1))).await.unwrap();
 
-            while data_sink.lock().is_empty() {
-                println!("check 4");
-                fuchsia_async::Timer::new(zx::MonotonicDuration::from_seconds(1)).await;
-            }
-
+            let events = wait_for_data(&data_sink).await;
             let expected = vec![MetricEvent {
                 metric_id: 0,
                 payload: MetricEventPayload::Histogram(vec![
@@ -809,7 +757,7 @@ mod test {
             }];
 
             assert!(upload_once.is_empty());
-            assert_eq!(expected, *data_sink.lock());
+            assert_eq!(expected, events);
             data_sink.lock().clear();
         }
 
@@ -858,27 +806,19 @@ mod test {
         scope.spawn(serve_mock_cobalt_logger(data_sink.clone(), logger_server));
 
         {
-            let data = vec![
-                InspectDataBuilder::new(
-                    "moniker/for/test".try_into().unwrap(),
-                    "fuchsia-pkg://test",
-                    Timestamp::from_nanos(0i64),
-                )
-                .with_hierarchy(hierarchy! {
+            let data = test_data(
+                0,
+                hierarchy! {
                     root: {
                         foo: "hello",
                     }
-                })
-                .build(),
-            ];
+                },
+            );
 
             let upload_once =
                 project.log(&data, Some(zx::MonotonicDuration::from_seconds(0))).await.unwrap();
 
-            while data_sink.lock().is_empty() {
-                fuchsia_async::Timer::new(zx::MonotonicDuration::from_seconds(1)).await;
-            }
-
+            let events = wait_for_data(&data_sink).await;
             let expected = vec![MetricEvent {
                 metric_id: 0,
                 payload: MetricEventPayload::StringValue("hello".to_string()),
@@ -886,32 +826,24 @@ mod test {
             }];
 
             assert!(upload_once.is_empty());
-            assert_eq!(expected, *data_sink.lock());
+            assert_eq!(expected, events);
             data_sink.lock().clear();
         }
 
         {
-            let data = vec![
-                InspectDataBuilder::new(
-                    "moniker/for/test".try_into().unwrap(),
-                    "fuchsia-pkg://test",
-                    Timestamp::from_nanos(1i64),
-                )
-                .with_hierarchy(hierarchy! {
+            let data = test_data(
+                1,
+                hierarchy! {
                     root: {
                         foo: "world",
                     }
-                })
-                .build(),
-            ];
+                },
+            );
 
             let upload_once =
                 project.log(&data, Some(zx::MonotonicDuration::from_seconds(1))).await.unwrap();
 
-            while data_sink.lock().is_empty() {
-                fuchsia_async::Timer::new(zx::MonotonicDuration::from_seconds(1)).await;
-            }
-
+            let events = wait_for_data(&data_sink).await;
             let expected = vec![MetricEvent {
                 metric_id: 0,
                 payload: MetricEventPayload::StringValue("world".to_string()),
@@ -919,32 +851,24 @@ mod test {
             }];
 
             assert!(upload_once.is_empty());
-            assert_eq!(expected, *data_sink.lock());
+            assert_eq!(expected, events);
             data_sink.lock().clear();
         }
 
         {
-            let data = vec![
-                InspectDataBuilder::new(
-                    "moniker/for/test".try_into().unwrap(),
-                    "fuchsia-pkg://test",
-                    Timestamp::from_nanos(1i64),
-                )
-                .with_hierarchy(hierarchy! {
+            let data = test_data(
+                1,
+                hierarchy! {
                     root: {
                         foo: "world",
                     }
-                })
-                .build(),
-            ];
+                },
+            );
 
             let upload_once =
                 project.log(&data, Some(zx::MonotonicDuration::from_seconds(1))).await.unwrap();
 
-            while data_sink.lock().is_empty() {
-                fuchsia_async::Timer::new(zx::MonotonicDuration::from_seconds(1)).await;
-            }
-
+            let events = wait_for_data(&data_sink).await;
             let expected = vec![MetricEvent {
                 metric_id: 0,
                 payload: MetricEventPayload::StringValue("world".to_string()),
@@ -952,7 +876,7 @@ mod test {
             }];
 
             assert!(upload_once.is_empty());
-            assert_eq!(expected, *data_sink.lock());
+            assert_eq!(expected, events);
             data_sink.lock().clear();
         }
     }
@@ -980,27 +904,19 @@ mod test {
         scope.spawn(serve_mock_cobalt_logger(data_sink.clone(), logger_server));
 
         {
-            let data = vec![
-                InspectDataBuilder::new(
-                    "moniker/for/test".try_into().unwrap(),
-                    "fuchsia-pkg://test",
-                    Timestamp::from_nanos(0i64),
-                )
-                .with_hierarchy(hierarchy! {
+            let data = test_data(
+                0,
+                hierarchy! {
                     root: {
                         foo: 1i64,
                     }
-                })
-                .build(),
-            ];
+                },
+            );
 
             let upload_once =
                 project.log(&data, Some(zx::MonotonicDuration::from_seconds(0))).await.unwrap();
 
-            while data_sink.lock().is_empty() {
-                fuchsia_async::Timer::new(zx::MonotonicDuration::from_seconds(1)).await;
-            }
-
+            let events = wait_for_data(&data_sink).await;
             let expected = vec![MetricEvent {
                 metric_id: 0,
                 payload: MetricEventPayload::IntegerValue(1),
@@ -1008,32 +924,24 @@ mod test {
             }];
 
             assert!(upload_once.is_empty());
-            assert_eq!(expected, *data_sink.lock());
+            assert_eq!(expected, events);
             data_sink.lock().clear();
         }
 
         {
-            let data = vec![
-                InspectDataBuilder::new(
-                    "moniker/for/test".try_into().unwrap(),
-                    "fuchsia-pkg://test",
-                    Timestamp::from_nanos(1i64),
-                )
-                .with_hierarchy(hierarchy! {
+            let data = test_data(
+                1,
+                hierarchy! {
                     root: {
                         foo: 10i64,
                     }
-                })
-                .build(),
-            ];
+                },
+            );
 
             let upload_once =
                 project.log(&data, Some(zx::MonotonicDuration::from_seconds(1))).await.unwrap();
 
-            while data_sink.lock().is_empty() {
-                fuchsia_async::Timer::new(zx::MonotonicDuration::from_seconds(1)).await;
-            }
-
+            let events = wait_for_data(&data_sink).await;
             let expected = vec![MetricEvent {
                 metric_id: 0,
                 payload: MetricEventPayload::IntegerValue(10),
@@ -1041,32 +949,24 @@ mod test {
             }];
 
             assert!(upload_once.is_empty());
-            assert_eq!(expected, *data_sink.lock());
+            assert_eq!(expected, events);
             data_sink.lock().clear();
         }
 
         {
-            let data = vec![
-                InspectDataBuilder::new(
-                    "moniker/for/test".try_into().unwrap(),
-                    "fuchsia-pkg://test",
-                    Timestamp::from_nanos(1i64),
-                )
-                .with_hierarchy(hierarchy! {
+            let data = test_data(
+                1,
+                hierarchy! {
                     root: {
                         foo: 10i64,
                     }
-                })
-                .build(),
-            ];
+                },
+            );
 
             let upload_once =
                 project.log(&data, Some(zx::MonotonicDuration::from_seconds(1))).await.unwrap();
 
-            while data_sink.lock().is_empty() {
-                fuchsia_async::Timer::new(zx::MonotonicDuration::from_seconds(1)).await;
-            }
-
+            let events = wait_for_data(&data_sink).await;
             let expected = vec![MetricEvent {
                 metric_id: 0,
                 payload: MetricEventPayload::IntegerValue(10),
@@ -1074,32 +974,24 @@ mod test {
             }];
 
             assert!(upload_once.is_empty());
-            assert_eq!(expected, *data_sink.lock());
+            assert_eq!(expected, events);
             data_sink.lock().clear();
         }
 
         {
-            let data = vec![
-                InspectDataBuilder::new(
-                    "moniker/for/test".try_into().unwrap(),
-                    "fuchsia-pkg://test",
-                    Timestamp::from_nanos(1i64),
-                )
-                .with_hierarchy(hierarchy! {
+            let data = test_data(
+                1,
+                hierarchy! {
                     root: {
                         foo: 9i64,
                     }
-                })
-                .build(),
-            ];
+                },
+            );
 
             let upload_once =
                 project.log(&data, Some(zx::MonotonicDuration::from_seconds(1))).await.unwrap();
 
-            while data_sink.lock().is_empty() {
-                fuchsia_async::Timer::new(zx::MonotonicDuration::from_seconds(1)).await;
-            }
-
+            let events = wait_for_data(&data_sink).await;
             let expected = vec![MetricEvent {
                 metric_id: 0,
                 payload: MetricEventPayload::IntegerValue(9),
@@ -1107,32 +999,24 @@ mod test {
             }];
 
             assert!(upload_once.is_empty());
-            assert_eq!(expected, *data_sink.lock());
+            assert_eq!(expected, events);
             data_sink.lock().clear();
         }
 
         {
-            let data = vec![
-                InspectDataBuilder::new(
-                    "moniker/for/test".try_into().unwrap(),
-                    "fuchsia-pkg://test",
-                    Timestamp::from_nanos(1i64),
-                )
-                .with_hierarchy(hierarchy! {
+            let data = test_data(
+                1,
+                hierarchy! {
                     root: {
                         foo: -9i64,
                     }
-                })
-                .build(),
-            ];
+                },
+            );
 
             let upload_once =
                 project.log(&data, Some(zx::MonotonicDuration::from_seconds(1))).await.unwrap();
 
-            while data_sink.lock().is_empty() {
-                fuchsia_async::Timer::new(zx::MonotonicDuration::from_seconds(1)).await;
-            }
-
+            let events = wait_for_data(&data_sink).await;
             let expected = vec![MetricEvent {
                 metric_id: 0,
                 payload: MetricEventPayload::IntegerValue(-9),
@@ -1140,7 +1024,7 @@ mod test {
             }];
 
             assert!(upload_once.is_empty());
-            assert_eq!(expected, *data_sink.lock());
+            assert_eq!(expected, events);
             data_sink.lock().clear();
         }
     }
@@ -1168,27 +1052,19 @@ mod test {
         scope.spawn(serve_mock_cobalt_logger(data_sink.clone(), logger_server));
 
         {
-            let data = vec![
-                InspectDataBuilder::new(
-                    "moniker/for/test".try_into().unwrap(),
-                    "fuchsia-pkg://test",
-                    Timestamp::from_nanos(0i64),
-                )
-                .with_hierarchy(hierarchy! {
+            let data = test_data(
+                0,
+                hierarchy! {
                     root: {
                         foo: 1i64,
                     }
-                })
-                .build(),
-            ];
+                },
+            );
 
             let upload_once =
                 project.log(&data, Some(zx::MonotonicDuration::from_seconds(0))).await.unwrap();
 
-            while data_sink.lock().is_empty() {
-                fuchsia_async::Timer::new(zx::MonotonicDuration::from_seconds(1)).await;
-            }
-
+            let events = wait_for_data(&data_sink).await;
             let expected = vec![MetricEvent {
                 metric_id: 0,
                 payload: MetricEventPayload::Count(1),
@@ -1196,32 +1072,24 @@ mod test {
             }];
 
             assert!(upload_once.is_empty());
-            assert_eq!(expected, *data_sink.lock());
+            assert_eq!(expected, events);
             data_sink.lock().clear();
         }
 
         {
-            let data = vec![
-                InspectDataBuilder::new(
-                    "moniker/for/test".try_into().unwrap(),
-                    "fuchsia-pkg://test",
-                    Timestamp::from_nanos(1i64),
-                )
-                .with_hierarchy(hierarchy! {
+            let data = test_data(
+                1,
+                hierarchy! {
                     root: {
                         foo: 10i64,
                     }
-                })
-                .build(),
-            ];
+                },
+            );
 
             let upload_once =
                 project.log(&data, Some(zx::MonotonicDuration::from_seconds(1))).await.unwrap();
 
-            while data_sink.lock().is_empty() {
-                fuchsia_async::Timer::new(zx::MonotonicDuration::from_seconds(1)).await;
-            }
-
+            let events = wait_for_data(&data_sink).await;
             let expected = vec![MetricEvent {
                 metric_id: 0,
                 payload: MetricEventPayload::Count(9),
@@ -1229,24 +1097,19 @@ mod test {
             }];
 
             assert!(upload_once.is_empty());
-            assert_eq!(expected, *data_sink.lock());
+            assert_eq!(expected, events);
             data_sink.lock().clear();
         }
 
         {
-            let data = vec![
-                InspectDataBuilder::new(
-                    "moniker/for/test".try_into().unwrap(),
-                    "fuchsia-pkg://test",
-                    Timestamp::from_nanos(1i64),
-                )
-                .with_hierarchy(hierarchy! {
+            let data = test_data(
+                1,
+                hierarchy! {
                     root: {
                         foo: 10i64,
                     }
-                })
-                .build(),
-            ];
+                },
+            );
 
             let upload_once =
                 project.log(&data, Some(zx::MonotonicDuration::from_seconds(1))).await.unwrap();
@@ -1934,5 +1797,262 @@ mod test {
         let item = SelectResult::Properties(vec![Cow::Borrowed(&updated_hist_prop)]);
         let metric_event = project.convert_to_metric(item, &metric_config).unwrap();
         assert!(metric_event.is_none());
+    }
+
+    #[fuchsia::test]
+    async fn cache_multiple_metrics() {
+        let project = create_empty_project().await;
+        let mut metric_1 = create_metric_config(1, MetricType::Occurrence);
+        metric_1.event_codes = vec![EventCode(0), EventCode(0)];
+
+        let mut metric_2 = create_metric_config(1, MetricType::Occurrence);
+        metric_2.event_codes = vec![EventCode(0), EventCode(1)];
+
+        let prop1 = Property::Int("value".to_string(), 10);
+        let item1 = SelectResult::Properties(vec![Cow::Borrowed(&prop1)]);
+
+        let prop2 = Property::Int("value-2".to_string(), 0);
+        let item2 = SelectResult::Properties(vec![Cow::Borrowed(&prop2)]);
+
+        // First time, should be the full value.
+        let metric_event = project.convert_to_metric(item1, &metric_1).unwrap().unwrap();
+        assert_eq!(metric_event.metric_id, 1);
+        assert_eq!(metric_event.payload, MetricEventPayload::Count(10));
+        assert_eq!(metric_event.event_codes, vec![0, 0]);
+
+        let metric_event = project.convert_to_metric(item2, &metric_2).unwrap().unwrap();
+        assert_eq!(metric_event.metric_id, 1);
+        assert_eq!(metric_event.payload, MetricEventPayload::Count(0));
+        assert_eq!(metric_event.event_codes, vec![0, 1]);
+
+        // Second time, with a new value, should be the diff.
+        let prop1 = Property::Int("value".to_string(), 15);
+        let item1 = SelectResult::Properties(vec![Cow::Borrowed(&prop1)]);
+        let metric_event = project.convert_to_metric(item1, &metric_1).unwrap().unwrap();
+        assert_eq!(metric_event.metric_id, 1);
+        assert_eq!(metric_event.payload, MetricEventPayload::Count(5));
+        assert_eq!(metric_event.event_codes, vec![0, 0]);
+
+        let prop2 = Property::Int("value-2".to_string(), 15);
+        let item2 = SelectResult::Properties(vec![Cow::Borrowed(&prop2)]);
+        let metric_event = project.convert_to_metric(item2, &metric_2).unwrap().unwrap();
+        assert_eq!(metric_event.metric_id, 1);
+        assert_eq!(metric_event.payload, MetricEventPayload::Count(15));
+        assert_eq!(metric_event.event_codes, vec![0, 1]);
+
+        // Third time, with same value, should be None.
+        let item1 = SelectResult::Properties(vec![Cow::Borrowed(&prop1)]);
+        let metric_event = project.convert_to_metric(item1, &metric_1).unwrap();
+        assert!(metric_event.is_none());
+
+        let item2 = SelectResult::Properties(vec![Cow::Borrowed(&prop2)]);
+        let metric_event = project.convert_to_metric(item2, &metric_2).unwrap();
+        assert!(metric_event.is_none());
+    }
+
+    #[fuchsia::test]
+    async fn test_upload_once() {
+        let (logger, logger_server) = create_proxy_and_stream::<MetricEventLoggerMarker>();
+        let mut project = Project {
+            logger,
+            metrics: vec![
+                MetricConfig {
+                    selectors: vec![parse_verbose("moniker/for/test:root:foo").unwrap()],
+                    metric_id: MetricId(0),
+                    metric_type: MetricType::Integer,
+                    event_codes: vec![EventCode(1), EventCode(2), EventCode(3)],
+                    upload_once: false,
+                    project_id: None,
+                },
+                MetricConfig {
+                    selectors: vec![parse_verbose("moniker/for/test:root:upload_once").unwrap()],
+                    metric_id: MetricId(0),
+                    metric_type: MetricType::Integer,
+                    event_codes: vec![EventCode(1), EventCode(2), EventCode(0)],
+                    upload_once: true,
+                    project_id: None,
+                },
+                MetricConfig {
+                    selectors: vec![
+                        parse_verbose("moniker/for/test:root:upload_once_later").unwrap(),
+                    ],
+                    metric_id: MetricId(0),
+                    metric_type: MetricType::Integer,
+                    event_codes: vec![EventCode(1), EventCode(0), EventCode(0)],
+                    upload_once: true,
+                    project_id: None,
+                },
+            ],
+            cache: RefCell::new(HashMap::new()),
+            interval: zx::MonotonicDuration::from_seconds(1),
+            stats: None,
+        };
+
+        let data_sink = Arc::new(Mutex::new(vec![]));
+        let scope = Scope::new();
+        scope.spawn(serve_mock_cobalt_logger(data_sink.clone(), logger_server));
+
+        {
+            let data = test_data(
+                0,
+                hierarchy! {
+                    root: {
+                        foo: 1i64,
+                        upload_once: 10i64,
+                    }
+                },
+            );
+
+            let upload_once =
+                project.log(&data, Some(zx::MonotonicDuration::from_seconds(0))).await.unwrap();
+
+            let events = wait_for_data(&data_sink).await;
+            let expected = vec![
+                MetricEvent {
+                    metric_id: 0,
+                    payload: MetricEventPayload::IntegerValue(1),
+                    event_codes: vec![1, 2, 3],
+                },
+                MetricEvent {
+                    metric_id: 0,
+                    payload: MetricEventPayload::IntegerValue(10),
+                    event_codes: vec![1, 2, 0],
+                },
+            ];
+
+            assert_eq!(
+                upload_once,
+                vec![MetricConfig {
+                    selectors: vec![parse_verbose("moniker/for/test:root:upload_once").unwrap()],
+                    metric_id: MetricId(0),
+                    metric_type: MetricType::Integer,
+                    event_codes: vec![EventCode(1), EventCode(2), EventCode(0)],
+                    upload_once: true,
+                    project_id: None,
+                },]
+            );
+            assert_eq!(expected, events);
+            data_sink.lock().clear();
+        }
+
+        {
+            let data = test_data(
+                1,
+                hierarchy! {
+                    root: {
+                        foo: 10i64,
+                        upload_once_later: 0i64,
+                    }
+                },
+            );
+
+            let upload_once =
+                project.log(&data, Some(zx::MonotonicDuration::from_seconds(1))).await.unwrap();
+
+            let events = wait_for_data(&data_sink).await;
+            let expected = vec![
+                MetricEvent {
+                    metric_id: 0,
+                    payload: MetricEventPayload::IntegerValue(10),
+                    event_codes: vec![1, 2, 3],
+                },
+                MetricEvent {
+                    metric_id: 0,
+                    payload: MetricEventPayload::IntegerValue(0),
+                    event_codes: vec![1, 0, 0],
+                },
+            ];
+
+            assert_eq!(
+                upload_once,
+                vec![MetricConfig {
+                    selectors: vec![
+                        parse_verbose("moniker/for/test:root:upload_once_later").unwrap()
+                    ],
+                    metric_id: MetricId(0),
+                    metric_type: MetricType::Integer,
+                    event_codes: vec![EventCode(1), EventCode(0), EventCode(0)],
+                    upload_once: true,
+                    project_id: None,
+                },]
+            );
+            assert_eq!(expected, events);
+            data_sink.lock().clear();
+        }
+
+        {
+            let data = test_data(
+                1,
+                hierarchy! {
+                    root: {
+                        foo: 10i64,
+                    }
+                },
+            );
+
+            let upload_once =
+                project.log(&data, Some(zx::MonotonicDuration::from_seconds(1))).await.unwrap();
+
+            let events = wait_for_data(&data_sink).await;
+            let expected = vec![MetricEvent {
+                metric_id: 0,
+                payload: MetricEventPayload::IntegerValue(10),
+                event_codes: vec![1, 2, 3],
+            }];
+
+            assert!(upload_once.is_empty());
+            assert_eq!(expected, events);
+            data_sink.lock().clear();
+        }
+
+        {
+            let data = test_data(
+                1,
+                hierarchy! {
+                    root: {
+                        foo: 9i64,
+                    }
+                },
+            );
+
+            let upload_once =
+                project.log(&data, Some(zx::MonotonicDuration::from_seconds(1))).await.unwrap();
+
+            let events = wait_for_data(&data_sink).await;
+            let expected = vec![MetricEvent {
+                metric_id: 0,
+                payload: MetricEventPayload::IntegerValue(9),
+                event_codes: vec![1, 2, 3],
+            }];
+
+            assert!(upload_once.is_empty());
+            assert_eq!(expected, events);
+            data_sink.lock().clear();
+        }
+
+        {
+            let data = test_data(
+                1,
+                hierarchy! {
+                    root: {
+                        foo: -9i64,
+                    }
+                },
+            );
+
+            let upload_once =
+                project.log(&data, Some(zx::MonotonicDuration::from_seconds(1))).await.unwrap();
+
+            let events = wait_for_data(&data_sink).await;
+            let expected = vec![MetricEvent {
+                metric_id: 0,
+                payload: MetricEventPayload::IntegerValue(-9),
+                event_codes: vec![1, 2, 3],
+            }];
+
+            assert!(upload_once.is_empty());
+            assert_eq!(expected, events);
+            data_sink.lock().clear();
+        }
     }
 }
