@@ -9,6 +9,10 @@ import("linux_test_initramfs.gni")
 # Defines a boot test that runs under pKVM, specifically that provided by
 # Android's GKI Linux prebuilt within QEMU TCG.
 #
+# If /bin/firmware is present in the initramfs, it will be treated as pKVM
+# firmware (e.g., pvmfw). If /data/dtbo is present, it will be used as a
+# devicetree overlay.
+#
 # Parameters:
 #
 #  * init:
@@ -25,6 +29,10 @@ import("linux_test_initramfs.gni")
 #      which the test will source its boot shim and ZBI to run under crosvm.
 #      In particular, this may be another boot_test() target.
 #    - Type: label
+#
+#  * deps
+#    - Optional: Additional resources to assemble into the initramfs.
+#    - Type: list(label)
 #
 #  * visibility
 #    - Optional: The usual GN meanings.
@@ -44,13 +52,17 @@ template("gki_pkvm_boot_test") {
   linux_test_initramfs(initramfs_target) {
     forward_variables_from(invoker,
                            [
-                             "visibility",
+                             "deps",
                              "init_mode",
+                             "visibility",
                            ])
     if (defined(visibility)) {
       visibility += [ ":*" ]
     }
-    deps = [
+    if (!defined(deps)) {
+      deps = []
+    }
+    deps += [
       "//src/microfuchsia/testing:crosvm",
       "//src/microfuchsia/testing:linux-runtime-sysroot",
       invoker.init,

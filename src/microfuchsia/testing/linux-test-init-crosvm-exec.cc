@@ -16,6 +16,10 @@
 #include <sys/sysmacros.h>
 #include <unistd.h>
 
+#include <filesystem>
+#include <string>
+#include <vector>
+
 #ifndef __linux__
 #error "Intended for Linux only!"
 #endif
@@ -74,15 +78,12 @@ int main(int argc, char *argv[]) {
     Fail("failed to create /dev/kvm");
   }
 
-  Log("attempting to exec crosvm...");
-  const char *crosvm_argv[] = {
+  std::vector<std::string> crosvm_args = {
       "/bin/crosvm",
       "--extended-status",
       "--log-level=debug",
       "run",
       "--disable-sandbox",
-      // TODO(joshuaseaton): Parameterize for use with pvmfw when available.
-      "--protected-vm-without-firmware",
       "--mem",
       "8192",
       "--cpus",
@@ -92,11 +93,31 @@ int main(int argc, char *argv[]) {
       "--initrd",
       "/data/ramdisk",
       "/data/kernel",
-      NULL,
   };
 
+  if (std::filesystem::exists({"/bin/firmware"})) {
+    crosvm_args.push_back("--protected-vm-with-firmware");
+    crosvm_args.push_back("/bin/firmware");
+  } else {
+    crosvm_args.push_back("--protected-vm-without-firmware");
+  }
+
+  if (std::filesystem::exists("/data/dtbo")) {
+    crosvm_args.push_back("--device-tree-overlay");
+    crosvm_args.push_back("/data/dtbo");
+  }
+
+  // Translate into an argv-friendly form.
+  std::vector<char *> crosvm_argv;
+  crosvm_argv.reserve(crosvm_args.size() + 1);  // + NUL
+  for (auto &arg : crosvm_args) {
+    crosvm_argv.push_back(arg.data());
+  }
+  crosvm_argv.push_back(nullptr);
+
   // Replace the current process (PID 1) with crosvm
-  execv("/bin/crosvm", const_cast<char **>(crosvm_argv));
+  Log("attempting to exec crosvm...");
+  execv("/bin/crosvm", crosvm_argv.data());
 
   Fail("failed to execv crosvm: %s", strerror(errno));
 }
