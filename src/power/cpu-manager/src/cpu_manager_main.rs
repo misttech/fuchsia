@@ -43,6 +43,7 @@ use {fidl_fuchsia_power_cpu as fcpu, fidl_fuchsia_thermal as fthermal, serde_jso
 ///     - GetOperatingPoint
 ///     - SetCpuPerformanceInfo
 ///     - SetOperatingPoint
+///     - SetMinimumOperatingPointLimit
 ///
 /// FIDL dependencies: No direct dependencies
 
@@ -421,7 +422,6 @@ struct ThermalStateConfig {
 struct Config {
     sustainable_power: f64,
     power_gain: f64,
-    min_power_for_boost: f64,
     clusters: Vec<ClusterConfig>,
     thermal_states: Vec<ThermalStateConfig>,
 }
@@ -443,7 +443,6 @@ struct JsonData {
 pub struct CpuManagerMainBuilder<'a> {
     sustainable_power: Watts,
     power_gain: Watts,
-    min_power_for_boost: Watts,
     cluster_configs: Vec<ClusterConfig>,
 
     /// Parallel to `cluster_configs`; contains one `CpuDeviceHandler` node (or equivalent) for each
@@ -472,7 +471,6 @@ impl<'a> CpuManagerMainBuilder<'a> {
         Self::new(
             Watts(data.config.sustainable_power),
             Watts(data.config.power_gain),
-            Watts(data.config.min_power_for_boost),
             data.config.clusters,
             cluster_handlers,
             data.config.thermal_states,
@@ -484,7 +482,6 @@ impl<'a> CpuManagerMainBuilder<'a> {
     fn new(
         sustainable_power: Watts,
         power_gain: Watts,
-        min_power_for_boost: Watts,
         cluster_configs: Vec<ClusterConfig>,
         cluster_handlers: Vec<Rc<dyn Node>>,
         thermal_state_configs: Vec<ThermalStateConfig>,
@@ -494,7 +491,6 @@ impl<'a> CpuManagerMainBuilder<'a> {
         Self {
             sustainable_power,
             power_gain,
-            min_power_for_boost,
             cluster_configs,
             cluster_handlers,
             thermal_state_configs,
@@ -538,8 +534,6 @@ impl<'a> CpuManagerMainBuilder<'a> {
             clusters: Vec::new(),
             thermal_state_configs: Some(self.thermal_state_configs),
             thermal_states: Vec::new(),
-            boost_enabled: false,
-            available_power: self.sustainable_power,
             throttling_state_recorder,
         };
 
@@ -549,7 +543,6 @@ impl<'a> CpuManagerMainBuilder<'a> {
             init_done: AsyncEvent::new(),
             cpu_stats_handler: self.cpu_stats_handler,
             syscall_handler: self.syscall_handler,
-            min_power_for_boost: self.min_power_for_boost,
             inspect,
             mutable_inner: Mutex::new(mutable_inner),
         }))
@@ -584,9 +577,6 @@ pub struct CpuManagerMain {
     cpu_stats_handler: Rc<dyn Node>,
 
     inspect: InspectData,
-
-    /// Minimum available power to boost cpu clusters to the maximum.
-    min_power_for_boost: Watts,
 
     /// Mutable inner state. This must be guarded with a Mutex rather than a RefCell because CPU
     /// boost requests can overlap with thermal updates.
@@ -672,7 +662,7 @@ impl CpuManagerMain {
 
         if let Some(current_index) = inner.current_thermal_state {
             // Return early if no update is required. We're assuming that opps have not changed.
-            if current_index == index && !inner.boost_enabled {
+            if current_index == index {
                 return Ok(());
             }
             // A positive index indicates a throttled state. So the first condition describes
@@ -765,7 +755,6 @@ impl CpuManagerMain {
         self.init_done.wait().await;
 
         self.inspect.available_power.set(available_power.0);
-        self.mutable_inner.lock().await.available_power = available_power.clone();
 
         // Gather CPU loads over the last time interval. In the unlikely event of an error, use the
         // worst-case CPU load of 1.0 for all CPUs and throttle accordingly.
@@ -851,16 +840,37 @@ impl CpuManagerMain {
             c"CpuManagerMain::handle_set_boost",
             "enable" => enable
         );
-        let mut inner = self.mutable_inner.lock().await;
-        inner.boost_enabled = enable;
-        fuchsia_trace::counter!(
-            c"cpu_manager",
-            c"CpuManagerMain boost_enabled",
-            0,
-            "value" => enable
-        );
+
         self.inspect.boost_enabled.set(enable);
-        self.update_cluster_opps(&inner, 0).await?;
+
+        let inner = self.mutable_inner.lock().await;
+        let messages: Vec<_> = inner
+            .clusters
+            .iter()
+            .map(|cluster| {
+                let min_opp = if enable { BOOST_OPP } else { cluster.opps.len() - 1 };
+                Message::SetMinimumOperatingPointLimit(min_opp as u32)
+            })
+            .collect();
+
+        let futures: Vec<_> = inner
+            .clusters
+            .iter()
+            .zip(messages.iter())
+            .map(|(cluster, msg)| cluster.handler.handle_message(msg))
+            .collect();
+
+        let results = futures::future::join_all(futures).await;
+        let errors: Vec<_> = results.into_iter().filter_map(|r| r.err()).collect();
+
+        if !errors.is_empty() {
+            return Err(CpuManagerError::GenericError(anyhow!(
+                "Failed to set minimum operating points for boost={:?}: {:?}",
+                enable,
+                errors
+            )));
+        }
+
         Ok(MessageReturn::SetBoost)
     }
 
@@ -954,17 +964,8 @@ impl CpuManagerMain {
             c"CpuManagerMain::update_cluster_opps",
             "thermal_state" => thermal_state as u32,
         );
-        if inner.boost_enabled && inner.throttling_active() {
-            // Do nothing if boost is enabled while throttling.
-            return Ok(());
-        }
 
-        let opp_indices =
-            if inner.boost_enabled && self.min_power_for_boost <= inner.available_power {
-                vec![BOOST_OPP; inner.clusters.len()]
-            } else {
-                inner.thermal_states[thermal_state].cluster_opps.clone()
-            };
+        let opp_indices = inner.thermal_states[thermal_state].cluster_opps.clone();
 
         let cluster_update_futures: Vec<_> = inner
             .clusters
@@ -1032,21 +1033,8 @@ struct MutableInner {
     /// state during `init()`.
     current_thermal_state: Option<usize>,
 
-    /// Whether cpu boost is enabled.
-    boost_enabled: bool,
-
-    /// The available power considering the thermal load
-    available_power: Watts,
-
     /// Records throttling state to Inspect and trace
     throttling_state_recorder: state_recorder::EnumStateRecorder<ThrottlingState>,
-}
-
-impl MutableInner {
-    /// Throttling is active iff current_thermal_state > 0
-    fn throttling_active(&self) -> bool {
-        self.current_thermal_state.map_or_else(|| false, |state| state > 0)
-    }
 }
 
 #[async_trait(?Send)]
@@ -1298,7 +1286,6 @@ mod tests {
     // They determine the correlation between thermal load and available power.
     static DEFAULT_SUSTAINABLE_POWER: Watts = Watts(6.22);
     static DEFAULT_POWER_GAIN: Watts = Watts(0.0622046);
-    static DEFAULT_MIN_POWER_FOR_BOOST: Watts = Watts(0.0);
 
     fn make_default_cluster_configs() -> Vec<ClusterConfig> {
         vec![
@@ -1437,7 +1424,6 @@ mod tests {
             "config": {
                 "sustainable_power": DEFAULT_SUSTAINABLE_POWER.0,
                 "power_gain": DEFAULT_POWER_GAIN.0,
-                "min_power_for_boost": DEFAULT_MIN_POWER_FOR_BOOST.0,
                 "clusters": [
                       {
                           "name": "big_cluster",
@@ -1539,7 +1525,6 @@ mod tests {
         let builder = CpuManagerMainBuilder::new(
             DEFAULT_SUSTAINABLE_POWER,
             DEFAULT_POWER_GAIN,
-            DEFAULT_MIN_POWER_FOR_BOOST,
             cluster_configs.clone(),
             vec![handlers.big_cluster.clone(), handlers.little_cluster.clone()],
             thermal_state_configs.clone(),
@@ -1567,7 +1552,6 @@ mod tests {
         let builder = CpuManagerMainBuilder::new(
             DEFAULT_SUSTAINABLE_POWER,
             DEFAULT_POWER_GAIN,
-            DEFAULT_MIN_POWER_FOR_BOOST,
             cluster_configs.clone(),
             vec![handlers.big_cluster.clone(), handlers.little_cluster.clone()],
             thermal_state_configs,
@@ -1596,7 +1580,6 @@ mod tests {
         let builder = CpuManagerMainBuilder::new(
             DEFAULT_SUSTAINABLE_POWER,
             DEFAULT_POWER_GAIN,
-            DEFAULT_MIN_POWER_FOR_BOOST,
             cluster_configs.clone(),
             vec![handlers.big_cluster.clone(), handlers.little_cluster.clone()],
             thermal_state_configs.clone(),
@@ -1625,7 +1608,6 @@ mod tests {
         let builder = CpuManagerMainBuilder::new(
             DEFAULT_SUSTAINABLE_POWER,
             DEFAULT_POWER_GAIN,
-            DEFAULT_MIN_POWER_FOR_BOOST,
             cluster_configs.clone(),
             vec![handlers.big_cluster.clone(), handlers.little_cluster.clone()],
             thermal_state_configs.clone(),
@@ -1663,7 +1645,6 @@ mod tests {
         let builder = CpuManagerMainBuilder::new(
             DEFAULT_SUSTAINABLE_POWER,
             DEFAULT_POWER_GAIN,
-            DEFAULT_MIN_POWER_FOR_BOOST,
             make_default_cluster_configs(),
             vec![big_cluster_handler, little_cluster_handler],
             thermal_state_configs,
@@ -1702,7 +1683,6 @@ mod tests {
         let node = CpuManagerMainBuilder::new(
             DEFAULT_SUSTAINABLE_POWER,
             DEFAULT_POWER_GAIN,
-            DEFAULT_MIN_POWER_FOR_BOOST,
             make_default_cluster_configs(),
             vec![handlers.big_cluster.clone(), handlers.little_cluster.clone()],
             thermal_state_configs,
@@ -1793,7 +1773,6 @@ mod tests {
         let node = CpuManagerMainBuilder::new(
             DEFAULT_SUSTAINABLE_POWER,
             DEFAULT_POWER_GAIN,
-            DEFAULT_MIN_POWER_FOR_BOOST,
             make_default_cluster_configs(),
             vec![handlers.big_cluster.clone(), handlers.little_cluster.clone()],
             thermal_state_configs.clone(),
@@ -1856,7 +1835,6 @@ mod tests {
         let builder = CpuManagerMainBuilder::new(
             DEFAULT_SUSTAINABLE_POWER,
             DEFAULT_POWER_GAIN,
-            DEFAULT_MIN_POWER_FOR_BOOST,
             make_default_cluster_configs(),
             vec![handlers.big_cluster.clone(), handlers.little_cluster.clone()],
             thermal_states,
@@ -1918,71 +1896,19 @@ mod tests {
     }
 
     #[fasync::run_singlethreaded(test)]
-    async fn test_throttling_active() {
-        let mut inner = MutableInner {
-            num_cpus: 0,
-            cluster_configs: None,
-            cluster_handlers: None,
-            clusters: Vec::new(),
-            thermal_state_configs: None,
-            thermal_states: Vec::new(),
-            current_thermal_state: None,
-            boost_enabled: false,
-            available_power: DEFAULT_SUSTAINABLE_POWER,
-            throttling_state_recorder: EnumStateRecorder::new(
-                "cpu_throttling_state".into(),
-                c"thermal",
-                RecorderOptions {
-                    capacity: 1,
-                    lazy_record: true,
-                    manager: None,
-                    ..Default::default()
-                },
-            )
-            .unwrap(),
-        };
-
-        // Initially None, so not throttling.
-        assert!(!inner.throttling_active());
-
-        // State 0, not throttling.
-        inner.current_thermal_state = Some(0);
-        assert!(!inner.throttling_active());
-
-        // State > 0, throttling.
-        inner.current_thermal_state = Some(1);
-        assert!(inner.throttling_active());
-    }
-
-    #[fasync::run_singlethreaded(test)]
     async fn test_set_boost() {
         let handlers = Handlers::new_with_highest_opp([1, 1]);
 
-        let thermal_state_configs = vec![
-            ThermalStateConfig {
-                cluster_opps: vec![1, 1],
-                min_performance_normperfs: 0.0,
-                static_power_w: 1.5,
-                dynamic_power_per_normperf_w: 0.0,
-            },
-            ThermalStateConfig {
-                cluster_opps: vec![2, 2],
-                min_performance_normperfs: 0.0,
-                static_power_w: 1.0,
-                dynamic_power_per_normperf_w: 0.0,
-            },
-        ];
-
-        let thermal_load_acceptable_for_boost = 10_u32;
-        let min_power_for_boost = Watts(
-            DEFAULT_SUSTAINABLE_POWER.0
-                - (DEFAULT_POWER_GAIN.0 * thermal_load_acceptable_for_boost as f64),
-        );
+        let thermal_state_configs = vec![ThermalStateConfig {
+            cluster_opps: vec![1, 1],
+            min_performance_normperfs: 0.0,
+            static_power_w: 1.5,
+            dynamic_power_per_normperf_w: 0.0,
+        }];
 
         let node = CpuManagerMainBuilder::new(
             DEFAULT_SUSTAINABLE_POWER,
             DEFAULT_POWER_GAIN,
-            min_power_for_boost,
             make_default_cluster_configs(),
             vec![handlers.big_cluster.clone(), handlers.little_cluster.clone()],
             thermal_state_configs.clone(),
@@ -1992,46 +1918,27 @@ mod tests {
         .build_and_init()
         .await;
 
-        // SetBoost should succeed when no active throttling
-        assert!(!node.mutable_inner.lock().await.throttling_active());
-        handlers.expect_big_opp(0);
-        handlers.expect_little_opp(0);
+        // Enabling boost should take effect immediately
+        handlers.big_cluster.add_msg_response_pair((
+            msg_eq!(SetMinimumOperatingPointLimit(0)),
+            msg_ok_return!(SetMinimumOperatingPointLimit),
+        ));
+        handlers.little_cluster.add_msg_response_pair((
+            msg_eq!(SetMinimumOperatingPointLimit(0)),
+            msg_ok_return!(SetMinimumOperatingPointLimit),
+        ));
         let mut result = node.handle_message(&Message::SetBoost(true)).await;
         result.unwrap();
-        handlers.expect_big_opp(1);
-        handlers.expect_little_opp(1);
-        result = node.handle_message(&Message::SetBoost(false)).await;
-        result.unwrap();
 
-        // Now activate throttling and SetBoost should do nothing on the opps
-        handlers.enqueue_cpu_loads(vec![0.1; 4]);
-        handlers.expect_big_opp(2);
-        handlers.expect_little_opp(2);
-        result = node.handle_message(&Message::UpdateThermalLoad(ThermalLoad(85))).await;
-        result.unwrap();
-        // No incoming msgs of any cluster.
-        result = node.handle_message(&Message::SetBoost(true)).await;
-        result.unwrap();
-
-        // Deactivate the throttling to pick up regular thermal state.
-        handlers.enqueue_cpu_loads(vec![1.0; 4]);
-        handlers.expect_big_opp(1);
-        handlers.expect_little_opp(1);
-        result = node
-            .handle_message(&Message::UpdateThermalLoad(ThermalLoad(
-                thermal_load_acceptable_for_boost + 3,
-            )))
-            .await;
-        result.unwrap();
-        // Release any thermal load to pick up the boost opps.
-        handlers.enqueue_cpu_loads(vec![1.0; 4]);
-        handlers.expect_big_opp(0);
-        handlers.expect_little_opp(0);
-        result = node.handle_message(&Message::UpdateThermalLoad(ThermalLoad(0))).await;
-        result.unwrap();
-
-        handlers.expect_big_opp(1);
-        handlers.expect_little_opp(1);
+        // Disabling boost should also take effect immediately
+        handlers.big_cluster.add_msg_response_pair((
+            msg_eq!(SetMinimumOperatingPointLimit(2)),
+            msg_ok_return!(SetMinimumOperatingPointLimit),
+        ));
+        handlers.little_cluster.add_msg_response_pair((
+            msg_eq!(SetMinimumOperatingPointLimit(2)),
+            msg_ok_return!(SetMinimumOperatingPointLimit),
+        ));
         result = node.handle_message(&Message::SetBoost(false)).await;
         result.unwrap();
     }
@@ -2050,7 +1957,6 @@ mod tests {
         let node = CpuManagerMainBuilder::new(
             DEFAULT_SUSTAINABLE_POWER,
             DEFAULT_POWER_GAIN,
-            DEFAULT_MIN_POWER_FOR_BOOST,
             make_default_cluster_configs(),
             vec![handlers.big_cluster.clone(), handlers.little_cluster.clone()],
             thermal_state_configs,
@@ -2110,7 +2016,6 @@ mod tests {
         let node = CpuManagerMainBuilder::new(
             DEFAULT_SUSTAINABLE_POWER,
             DEFAULT_POWER_GAIN,
-            DEFAULT_MIN_POWER_FOR_BOOST,
             make_default_cluster_configs(),
             vec![handlers.big_cluster.clone(), handlers.little_cluster.clone()],
             thermal_state_configs.clone(),
@@ -2192,5 +2097,60 @@ mod tests {
         handlers.expect_little_opp(0);
         handlers.enqueue_cpu_loads(vec![0.0; 4]);
         node.handle_message(&Message::UpdateThermalLoad(ThermalLoad(0))).await.unwrap();
+    }
+
+    #[fasync::run_singlethreaded(test)]
+    async fn test_boost_and_thermal_throttling() {
+        let handlers = Handlers::new();
+
+        let thermal_state_configs = vec![
+            ThermalStateConfig {
+                cluster_opps: vec![0, 0],
+                min_performance_normperfs: 0.0,
+                static_power_w: 1.0,
+                dynamic_power_per_normperf_w: 0.5,
+            },
+            ThermalStateConfig {
+                cluster_opps: vec![1, 1],
+                min_performance_normperfs: 0.0,
+                static_power_w: 0.5,
+                dynamic_power_per_normperf_w: 0.1,
+            },
+        ];
+
+        let node = CpuManagerMainBuilder::new(
+            DEFAULT_SUSTAINABLE_POWER,
+            DEFAULT_POWER_GAIN,
+            make_default_cluster_configs(),
+            vec![handlers.big_cluster.clone(), handlers.little_cluster.clone()],
+            thermal_state_configs,
+            handlers.syscall.clone(),
+            handlers.cpu_stats.clone(),
+        )
+        .build_and_init()
+        .await;
+
+        // 1. Enable boosting.
+        // It should send SetMinimumOperatingPointLimit(0) to both clusters.
+        handlers.big_cluster.add_msg_response_pair((
+            msg_eq!(SetMinimumOperatingPointLimit(0)),
+            msg_ok_return!(SetMinimumOperatingPointLimit),
+        ));
+        handlers.little_cluster.add_msg_response_pair((
+            msg_eq!(SetMinimumOperatingPointLimit(0)),
+            msg_ok_return!(SetMinimumOperatingPointLimit),
+        ));
+        node.handle_message(&Message::SetBoost(true)).await.unwrap();
+
+        // 2. Trigger thermal throttling.
+        // available_power = 6.22 - 50 * 0.0622046 = 3.11W
+        // state 0 power at saturation: 1.0 + 0.5 * 5.0 = 3.5W
+        // state 1 power at saturation: 0.5 + 0.1 * 4.7 = 0.97W
+        // Since state 0 power (3.5W) > available_power (3.11W), it should pick state 1.
+        handlers.enqueue_cpu_loads(vec![1.0; 4]);
+        handlers.expect_big_opp(1);
+        handlers.expect_little_opp(1);
+
+        node.handle_message(&Message::UpdateThermalLoad(ThermalLoad(50))).await.unwrap();
     }
 }

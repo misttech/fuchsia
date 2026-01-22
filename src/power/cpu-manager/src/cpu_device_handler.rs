@@ -8,7 +8,7 @@ use crate::message::{Message, MessageReturn};
 use crate::node::Node;
 use crate::types::{Hertz, OperatingPoint, Volts};
 use crate::utils::get_cpu_ctrl_proxy;
-use anyhow::{format_err, Context as _, Error};
+use anyhow::{Context as _, Error, format_err};
 use async_trait::async_trait;
 use async_utils::event::Event as AsyncEvent;
 use fuchsia_inspect::{self as inspect, NumericProperty, Property};
@@ -16,7 +16,7 @@ use serde_derive::Deserialize;
 use std::cell::RefCell;
 use std::collections::HashMap;
 use std::rc::Rc;
-use {fidl_fuchsia_hardware_cpu_ctrl as fcpu_ctrl, serde_json as json};
+use {fidl_fuchsia_hardware_cpu_ctrl as fcpu_ctrl, serde_json as json, zx};
 
 /// Node: CpuDeviceHandler
 ///
@@ -29,6 +29,7 @@ use {fidl_fuchsia_hardware_cpu_ctrl as fcpu_ctrl, serde_json as json};
 ///     - GetOperatingPoint
 ///     - SetOperatingPoint
 ///     - GetCpuOperatingPoints
+///     - SetMinimumOperatingPointLimit
 ///
 /// FIDL dependencies:
 ///     - fuchsia.hardware.cpu.ctrl.Device: used to query descriptions of CPU operating points
@@ -229,6 +230,35 @@ impl CpuDeviceHandler {
         }
     }
 
+    async fn handle_set_minimum_operating_point_limit(
+        &self,
+        opp: u32,
+    ) -> Result<MessageReturn, CpuManagerError> {
+        fuchsia_trace::duration!(
+            c"cpu_manager",
+            c"CpuDeviceHandler::handle_set_minimum_operating_point_limit",
+            "perf_rank" => self.perf_rank as u32,
+            "opp" => opp
+        );
+
+        self.init_done.wait().await;
+
+        let result = self.set_minimum_operating_point_limit(opp).await;
+        log_if_err!(result, "Failed to set minimum operating point limit");
+        fuchsia_trace::instant!(
+            c"cpu_manager",
+            c"CpuDeviceHandler::set_minimum_operating_point_limit_result",
+            fuchsia_trace::Scope::Thread,
+            "perf_rank" => self.perf_rank as u32,
+            "result" => format!("{:?}", result).as_str()
+        );
+
+        match result {
+            Ok(_) => Ok(MessageReturn::SetMinimumOperatingPointLimit),
+            Err(e) => Err(CpuManagerError::GenericError(e)),
+        }
+    }
+
     async fn set_operating_point(&self, in_opp: u32) -> Result<(), Error> {
         let proxy = &self.mutable_inner.borrow().cpu_ctrl_proxy;
 
@@ -250,6 +280,28 @@ impl CpuDeviceHandler {
                 )
             })?;
 
+        Ok(())
+    }
+
+    async fn set_minimum_operating_point_limit(&self, opp: u32) -> Result<(), Error> {
+        let proxy = &self.mutable_inner.borrow().cpu_ctrl_proxy;
+
+        proxy
+            .as_ref()
+            .ok_or_else(|| format_err!("Missing driver_proxy"))
+            .or_debug_panic()?
+            .set_minimum_operating_point_limit(opp)
+            .await
+            .map_err(|e| {
+                format_err!("{}: set_minimum_operating_point_limit IPC failed: {}", self.name(), e)
+            })?
+            .map_err(|e| {
+                format_err!(
+                    "{}: set_minimum_operating_point_limit driver returned error: {}",
+                    self.name(),
+                    zx::Status::from_raw(e)
+                )
+            })?;
         Ok(())
     }
 }
@@ -302,6 +354,9 @@ impl Node for CpuDeviceHandler {
         match msg {
             Message::GetOperatingPoint => self.handle_get_operating_point().await,
             Message::SetOperatingPoint(opp) => self.handle_set_operating_point(*opp).await,
+            Message::SetMinimumOperatingPointLimit(opp) => {
+                self.handle_set_minimum_operating_point_limit(*opp).await
+            }
             Message::GetCpuOperatingPoints => self.handle_get_cpu_operating_points().await,
             _ => Err(CpuManagerError::Unsupported),
         }

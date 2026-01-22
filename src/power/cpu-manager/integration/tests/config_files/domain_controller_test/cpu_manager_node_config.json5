@@ -27,7 +27,6 @@
         config: {
             sustainable_power: 100.0,
             power_gain: 1.0,
-            min_power_for_boost: 100.0, // no boost
             clusters: [
                 {
                     name: "cluster0",
