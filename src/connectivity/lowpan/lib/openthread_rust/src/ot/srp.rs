@@ -234,6 +234,7 @@ impl std::fmt::Debug for SrpServerService {
                 .field("priority", &self.priority())
                 .field("weight", &self.weight())
                 .field("subtypes", &self.subtypes())
+                .field("ttl", &self.ttl())
                 .finish()
         }
     }
@@ -324,27 +325,14 @@ impl SrpServerService {
     pub fn instance_label_cstr(&self) -> &CStr {
         unsafe { CStr::from_ptr(otSrpServerServiceGetInstanceLabel(self.as_ot_ptr())) }
     }
-}
 
-/// Functional equivalent of
-/// [`otsys::otSrpServerParseSubTypeServiceName`](crate::otsys::otSrpServerParseSubTypeServiceName).
-pub fn parse_label_from_subtype_service_name(
-    subtype_service_name: &CStr,
-) -> Result<CString, Error> {
-    let mut bytes = [0 as c_char; 256];
-
-    // SAFETY: We are passing in valid pointers with a length one less than the array size.
-    Error::from(unsafe {
-        otSrpServerParseSubTypeServiceName(
-            subtype_service_name.as_ptr(),
-            (&mut bytes) as *mut c_char,
-            255,
-        )
-    })
-    .into_result()?;
-
-    // SAFETY: `bytes` is guaranteed to be zero terminated because of the size of the array.
-    Ok(unsafe { CStr::from_ptr(&bytes as *const c_char) }.to_owned())
+    /// Functional equivalent of
+    /// [`otsys::otSrpServerServiceGetTtl`](crate::otsys::otSrpServerServiceGetTtl).
+    pub fn ttl(&self) -> zx::MonotonicDuration {
+        unsafe {
+            zx::MonotonicDuration::from_seconds(otSrpServerServiceGetTtl(self.as_ot_ptr()).into())
+        }
+    }
 }
 
 /// The ID of a SRP service update transaction on the SRP Server.
@@ -433,6 +421,13 @@ pub trait SrpServer {
     fn srp_server_set_service_update_fn<'a, F>(&'a self, f: Option<F>)
     where
         F: FnMut(&'a ot::Instance, SrpServerServiceUpdateId, &'a SrpServerHost, u32) + 'a;
+
+    /// Functional equivalent of
+    /// [`otsys::otSrpServerParseSubTypeServiceName`](crate::otsys::otSrpServerParseSubTypeServiceName).
+    fn parse_label_from_subtype_service_name(
+        &self,
+        subtype_service_name: &CStr,
+    ) -> Result<CString, Error>;
 }
 
 impl<T: SrpServer + Boxable> SrpServer for ot::Box<T> {
@@ -500,6 +495,13 @@ impl<T: SrpServer + Boxable> SrpServer for ot::Box<T> {
         F: FnMut(&'a ot::Instance, SrpServerServiceUpdateId, &'a SrpServerHost, u32) + 'a,
     {
         self.as_ref().srp_server_set_service_update_fn(f)
+    }
+
+    fn parse_label_from_subtype_service_name(
+        &self,
+        subtype_service_name: &CStr,
+    ) -> Result<CString, Error> {
+        self.as_ref().parse_label_from_subtype_service_name(subtype_service_name)
     }
 }
 
@@ -672,5 +674,25 @@ impl SrpServer for Instance {
                 Option<Box<dyn FnMut(SrpServerServiceUpdateId, &ot::SrpServerHost, u32) + 'static>>,
             >(fn_box));
         }
+    }
+
+    fn parse_label_from_subtype_service_name(
+        &self,
+        subtype_service_name: &CStr,
+    ) -> Result<CString, Error> {
+        let mut bytes = [0 as c_char; 256];
+
+        // SAFETY: We are passing in valid pointers with a length one less than the array size.
+        Error::from(unsafe {
+            otSrpServerParseSubTypeServiceName(
+                subtype_service_name.as_ptr(),
+                (&mut bytes) as *mut c_char,
+                255,
+            )
+        })
+        .into_result()?;
+
+        // SAFETY: `bytes` is guaranteed to be zero terminated because of the size of the array.
+        Ok(unsafe { CStr::from_ptr(&bytes as *const c_char) }.to_owned())
     }
 }

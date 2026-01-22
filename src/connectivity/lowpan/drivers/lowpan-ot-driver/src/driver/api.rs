@@ -917,6 +917,8 @@ where
             remaining_key_lease_time_total: Some(0),
             ..Default::default()
         };
+        let mut srp_server_services: Vec<fidl_fuchsia_lowpan_experimental::SrpServerService> =
+            Vec::new();
         let mut srp_server_hosts: Vec<fidl_fuchsia_lowpan_experimental::SrpServerHost> = Vec::new();
         for srp_host in ot.srp_server_hosts() {
             if srp_host.is_deleted() {
@@ -960,8 +962,10 @@ where
             }
 
             for srp_service in srp_host.services() {
+                let mut service = fidl_fuchsia_lowpan_experimental::SrpServerService::default();
                 if srp_service.is_deleted() {
                     *services_registration.deleted_count.get_or_insert(0) += 1;
+                    service.deleted = Some(true);
                 } else {
                     *services_registration.fresh_count.get_or_insert(0) += 1;
                     let mut lease_info = SrpServerLeaseInfo::default();
@@ -974,7 +978,83 @@ where
                         lease_info.remaining_lease().into_nanos();
                     *services_registration.remaining_key_lease_time_total.get_or_insert(0) +=
                         lease_info.remaining_key_lease().into_nanos();
+                    // SRP service dump info.
+                    service.instance_name = Some(match srp_service.instance_name_cstr().to_str() {
+                        Ok(name) => name.to_string(),
+                        Err(e) => {
+                            warn!(tag = "api"; "fail to convert the UTF-8 instance name {:?}.", e);
+                            format!("invalid instance name: {:?}", srp_service.instance_name_cstr())
+                        }
+                    });
+                    service.deleted = Some(false);
+                    service.subtypes = Some(
+                        srp_service
+                            .subtypes()
+                            .take(6) // Limit the number of subtypes to 6 per the FIDL definition.
+                            .filter_map(|service_name| {
+                                match ot.parse_label_from_subtype_service_name(service_name) {
+                                    Ok(label) => match label.to_str() {
+                                        Ok(s) => Some(s.to_string()),
+                                        Err(e) => {
+                                            warn!(
+                                                "Parsed subtype label is not valid UTF-8: {:?}",
+                                                e
+                                            );
+                                            Some(format!("invalid subtype: {:?}", label))
+                                        }
+                                    },
+                                    Err(e) => {
+                                        warn!(
+                                            "Failed to parse subtype label from {:?}: {:?}",
+                                            service_name, e
+                                        );
+                                        None
+                                    }
+                                }
+                            })
+                            .collect(),
+                    );
+                    service.port = Some(srp_service.port());
+                    service.priority = Some(srp_service.priority());
+                    service.weight = Some(srp_service.weight());
+                    service.ttl = Some(srp_service.ttl().into_nanos());
+                    service.lease = Some(lease_info.lease().into_nanos());
+                    service.key_lease = Some(lease_info.key_lease().into_nanos());
+                    service.txt_data = Some(
+                        srp_service
+                            .txt_entries()
+                            .filter_map(|entry| {
+                                let txt = match entry {
+                                    Ok(e) => e,
+                                    Err(err) => {
+                                        warn!("Error iterating TXT entries: {:?}", err);
+                                        return None;
+                                    }
+                                };
+                                let key = txt.key()?;
+                                let value = txt.value()?;
+                                // Ensure the key length does not exceed 64 bytes and the value
+                                // length does not exceed 253 bytes (DNS-SD/SRP limits).
+                                if key.len() <= 64 && value.len() <= 253 {
+                                    Some(fidl_fuchsia_lowpan_experimental::DnsTxtEntry {
+                                        key: Some(key.to_string()),
+                                        value: Some(value.to_vec()),
+                                        ..Default::default()
+                                    })
+                                } else {
+                                    warn!(
+                                        "Skipping TXT entry: key length ({}) or value length ({}) exceeds limits.",
+                                        key.len(),
+                                        value.len()
+                                    );
+                                    None
+                                }
+                            })
+                            .collect(),
+                    );
+                    service.host = Some(host.clone());
                 }
+                srp_server_services.push(service);
             }
         }
 
@@ -1226,6 +1306,7 @@ where
                 hosts_registration: Some(hosts_registration),
                 services_registration: Some(services_registration),
                 hosts: Some(srp_server_hosts),
+                services: Some(srp_server_services),
                 ..Default::default()
             }),
             dnssd_counters: Some(ot.dnssd_get_counters().into_ext()),

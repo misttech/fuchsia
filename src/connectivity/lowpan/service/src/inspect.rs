@@ -1030,6 +1030,96 @@ async fn monitor_device(name: String, iface_tree: Arc<IfaceTreeHolder>) -> Resul
                                         },
                                     );
                                 }
+                                if let Some(y) = x.services {
+                                    srp_server_info_child.record_child(
+                                        "services",
+                                        |srp_server_services_child| {
+                                            for (index, service) in y.iter().enumerate() {
+                                                srp_server_services_child.record_child(
+                                                    format!("service_{}", index),
+                                                    |service_node| {
+                                                        if let Some(z) = &service.instance_name {
+                                                            service_node.record_string("instance_name", z);
+                                                        }
+                                                        if let Some(z) = service.deleted {
+                                                            service_node
+                                                                .record_bool("deleted", z.into());
+                                                        }
+                                                        if let Some(z) = &service.subtypes {
+                                                            let sub_types_string = if z.is_empty() {
+                                                                "none".to_string()
+                                                            } else {
+                                                                z.join(", ")
+                                                            };
+                                                            service_node.record_string(
+                                                                "subtypes", sub_types_string);
+                                                        };
+                                                        if let Some(z) = service.port {
+                                                            service_node.record_uint("port", z.into());
+                                                        }
+                                                        if let Some(z) = service.priority {
+                                                            service_node.record_uint("priority", z.into());
+                                                        }
+                                                        if let Some(z) = service.weight {
+                                                            service_node.record_uint("weight", z.into());
+                                                        }
+                                                        if let Some(z) = service.ttl {
+                                                            service_node.record_uint("ttl", z.try_into().unwrap_or(0));
+                                                        }
+                                                        if let Some(z) = service.lease {
+                                                            service_node.record_uint("lease", z.try_into().unwrap_or(0));
+                                                        }
+                                                        if let Some(z) = service.key_lease {
+                                                            service_node.record_uint("key_lease", z.try_into().unwrap_or(0));
+                                                        }
+                                                        if let Some(z) = &service.txt_data {
+                                                            let txt_data_string = if z.is_empty() {
+                                                                "none".to_string()
+                                                            } else {
+                                                                z.iter()
+                                                                    .filter_map(|entry| {
+                                                                        let key = entry.key.as_ref()?;
+                                                                        let val_bytes = entry.value.as_ref()?;
+                                                                        let value = val_bytes.iter().map(|b| format!("{:02x}", b)).collect::<String>();
+                                                                        Some(format!("{}={}", key, value))
+                                                                    })
+                                                                    .collect::<Vec<_>>()
+                                                                    .join(", ")
+                                                            };
+                                                            service_node.record_string("txt_data", txt_data_string);
+                                                        }
+                                                        if let Some(z) = &service.host {
+                                                            service_node.record_child("host", |host_child| {
+                                                                if let Some(w) = &z.name {
+                                                                    host_child.record_string("name", w);
+                                                                }
+                                                                if let Some(w) = z.deleted {
+                                                                    host_child.record_bool("deleted", w.into());
+                                                                }
+                                                                if let Some(w) = &z.addresses {
+                                                                    let address_string = if w.is_empty() {
+                                                                        "none".to_string()
+                                                                    } else {
+                                                                        w.iter()
+                                                                            .map(|a| {
+                                                                                format!(
+                                                                                    "{}",
+                                                                                    Ipv6Addr::from(a.addr)
+                                                                                )
+                                                                            })
+                                                                            .collect::<Vec<_>>()
+                                                                            .join(", ")
+                                                                    };
+                                                                    host_child.record_string("addresses", address_string);
+                                                                }
+                                                            },
+                                                        );
+                                                    }
+                                                });
+                                            }
+                                        }
+                                    );
+                                }
                             });
                         }
                         if let Some(x) = telemetry_data.leader_data {
