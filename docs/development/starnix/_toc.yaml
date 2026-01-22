@@ -5,5 +5,7 @@ toc:
   path: /docs/development/starnix/common-coding-patterns-in-starnix.md
 - title: "IPC patterns in Starnix"
   path: /docs/development/starnix/ipc_patterns_in_starnix.md
+- title: "Rubric for writing Starnix syscalls"
+  path: /docs/development/starnix/rubric_for_writing_starnix_syscalls.md
 - title: "Troubleshooting ADB connections to Starnix"
   path: /docs/development/starnix/troubleshooting_ffx_starnix_adb_connect.md
