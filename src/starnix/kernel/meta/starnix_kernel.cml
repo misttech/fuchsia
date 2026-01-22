@@ -189,6 +189,7 @@
                 "fuchsia.tracing.provider.Registry",
                 "fuchsia.ui.composition.Allocator",
                 "fuchsia.ui.composition.Flatland",
+                "fuchsia.ui.display.singleton.DisplayPower",
                 "fuchsia.ui.display.singleton.Info",
                 "fuchsia.ui.input3.Keyboard",
                 "fuchsia.ui.policy.DeviceListenerRegistry",

@@ -231,6 +231,16 @@ type FbFixScreeninfoPtr =
 type FbVarScreeninfoPtr =
     MultiArchUserRef<uapi::fb_var_screeninfo, uapi::arch32::fb_var_screeninfo>;
 
+fn set_display_power(mode: fuidisplay::PowerMode) -> Result<(), Errno> {
+    let singleton_display_power =
+        connect_to_protocol_sync::<fuidisplay::DisplayPowerMarker>().map_err(|_| errno!(ENOENT))?;
+    singleton_display_power
+        .set_power_mode(mode, zx::MonotonicInstant::INFINITE)
+        .map_err(|_| errno!(EIO))?
+        .map_err(|_| errno!(EINVAL))?;
+    Ok(())
+}
+
 impl DeviceOps for FramebufferDevice {
     fn open(
         &self,
@@ -306,17 +316,11 @@ impl FileOps for Framebuffer {
                 let arg = u32::from(arg);
                 match arg {
                     FB_BLANK_POWERDOWN => {
-                        // TODO(https://fxbug.dev/475633434): power off display. As placeholder behavior make the screen dark grey.
-                        let memory = self.get_memory()?;
-                        let memory_len = self.memory_len();
-                        memory.write(&vec![0x40; memory_len], 0).map_err(|_| errno!(EIO))?;
+                        set_display_power(fuidisplay::PowerMode::Off)?;
                         Ok(SUCCESS)
                     }
                     FB_BLANK_UNBLANK => {
-                        // TODO(https://fxbug.dev/475633434): power on display. As placeholder behavior make the screen light grey.
-                        let memory = self.get_memory()?;
-                        let memory_len = self.memory_len();
-                        memory.write(&vec![0xc0; memory_len], 0).map_err(|_| errno!(EIO))?;
+                        set_display_power(fuidisplay::PowerMode::On)?;
                         Ok(SUCCESS)
                     }
                     _ => {
