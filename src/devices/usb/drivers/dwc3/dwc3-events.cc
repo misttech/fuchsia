@@ -28,7 +28,11 @@ void Dwc3::HandleEpEvent(uint32_t event) {
       fdf::debug("ep[{}] DEPEVT_XFER_IN_PROGRESS: status {}", ep_num, status);
       break;
     case DEPEVT_XFER_NOT_READY:
-      fdf::debug("ep[{}] DEPEVT_XFER_NOT_READY", ep_num);
+      fdf::debug("ep[{}] DEPEVT_XFER_NOT_READY reason {:s}", ep_num,
+                 (event & DEPEVT_XFER_NOT_READY_REASON) ? "XferActive" : "XferNotActive");
+      if (ep_num == 0 && (event & DEPEVT_XFER_NOT_READY_REASON)) {
+        fdf::warn("ep0 DEPEVT_XFER_NOT_READY XferActive");
+      }
       HandleEpTransferNotReadyEvent(ep_num, DEPEVT_XFER_NOT_READY_STAGE(event));
       break;
     case DEPEVT_STREAM_EVT:
