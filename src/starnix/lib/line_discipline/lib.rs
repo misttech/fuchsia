@@ -951,3 +951,6 @@ mod tests {
         assert_eq!(compute_next_character_size(array, &termios), 1);
     }
 }
+
+#[cfg(test)]
+mod replayer;
