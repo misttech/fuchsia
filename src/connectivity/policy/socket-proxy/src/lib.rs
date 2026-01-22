@@ -76,7 +76,9 @@ struct SocketProxy {
 impl SocketProxy {
     fn new() -> Result<Self, anyhow::Error> {
         let mark = Arc::new(Mutex::new(SocketMarks::default()));
-        let (dns_tx, dns_rx) = mpsc::channel(1);
+        // TODO(https://fxbug.dev/477682527): Remove this workaround and return the channel
+        // size to 1.
+        let (dns_tx, dns_rx) = mpsc::channel(10);
         Ok(Self {
             registry: registry::Registry::new(mark.clone(), dns_tx)
                 .context("while creating registry")?,
