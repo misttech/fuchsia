@@ -153,6 +153,8 @@ class ResponseState {
     return events_received_;
   }
 
+  void ClearEvents() { events_received_.clear(); }
+
  private:
   friend class ResponseListenerServer;
   std::vector<fuchsia_ui_test_input::TouchInputListenerReportTouchInputRequest> events_received_;
@@ -243,6 +245,27 @@ class WebEngineTest : public ui_testing::PortableUITest,
 
     FX_LOGS(INFO) << "Wait for Chromium send out ready";
     RunLoopUntil([this]() { return *(ready_to_inject_); });
+
+    // TODO(b/477639582): Repeating the tap may not be necessary, but adding
+    // it for now to stable the test after chromium 145.0.7622.0 roll.
+    const int kMaxRetries = 10;
+    FX_LOGS(INFO) << "Waiting on app to be ready for input";
+    for (int i = 0; i < kMaxRetries; i++) {
+      FX_LOGS(INFO) << "Tapping: " << i + 1 << "/" << kMaxRetries;
+      // Not quite exactly the location of the text area under test, but since the
+      // text area occupies all the screen, it's very likely within the text area.
+      InjectTap(display_width() / 2, display_height() / 2);
+
+      RunLoopWithTimeoutOrUntil([&] { return response_state()->events_received().size() >= 1; },
+                                zx::sec(1));
+      if (response_state()->events_received().size() >= 1) {
+        FX_LOGS(INFO) << "App is ready for input events: tapped " << i + 1 << " times";
+        break;
+      }
+    }
+    // After 10 taps, the app should be ready for key events.
+    ASSERT_TRUE(response_state()->events_received().size() >= 1);
+    response_state()->ClearEvents();
   }
 
   std::vector<std::pair<ChildName, std::string>> GetEagerTestComponents() override {

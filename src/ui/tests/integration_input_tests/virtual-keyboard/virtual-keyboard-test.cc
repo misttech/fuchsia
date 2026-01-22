@@ -208,8 +208,12 @@ class VirtualKeyboardTest : public ui_testing::PortableUITest {
             .source = ParentRef(),
             .targets =
                 {
-                    target, ChildRef{kFontsProvider}, ChildRef{kMemoryPressureSignaler},
-                    ChildRef{kBuildInfoProvider}, ChildRef{kWebContextProvider}, ChildRef{kIntl},
+                    target,
+                    ChildRef{kFontsProvider},
+                    ChildRef{kMemoryPressureSignaler},
+                    ChildRef{kBuildInfoProvider},
+                    ChildRef{kWebContextProvider},
+                    ChildRef{kIntl},
                     ChildRef{kFakeCobalt},
                     // Not including kNetstack here, since it emits spurious
                     // FATAL errors.
@@ -357,12 +361,25 @@ TEST_F(VirtualKeyboardTest, ShowAndHideKeyboard) {
   auto input_pos = *input_position_state()->input_position();
   int32_t input_center_x_local = static_cast<int32_t>((input_pos.x0() + input_pos.x1()) / 2);
   int32_t input_center_y_local = static_cast<int32_t>((input_pos.y0() + input_pos.y1()) / 2);
-  InjectTap(input_center_x_local, input_center_y_local);
 
-  FX_LOGS(INFO) << "Waiting for keyboard to be visible";
+  // TODO(b/477639582): Repeating the tap may not be necessary, but adding
+  // it for now to stable the test after chromium 145.0.7622.0 roll.
   virtualkeyboard_manager->WatchTypeAndVisibility().Then(
       [&is_keyboard_visible](auto& res) { is_keyboard_visible = res->is_visible(); });
-  RunLoopUntil([&]() { return is_keyboard_visible.has_value(); });
+
+  const int kMaxRetries = 10;
+
+  for (int i = 0; i < kMaxRetries; i++) {
+    FX_LOGS(INFO) << "Tapping: " << i + 1 << "/" << kMaxRetries;
+    InjectTap(input_center_x_local, input_center_y_local);
+    FX_LOGS(INFO) << "Waiting for keyboard to be visible";
+    RunLoopWithTimeoutOrUntil([&]() { return is_keyboard_visible.has_value(); }, zx::sec(1));
+    if (is_keyboard_visible.has_value()) {
+      FX_LOGS(INFO) << "Keyboard is visible: tapped " << i + 1 << " times";
+      break;
+    }
+  }
+
   EXPECT_TRUE(is_keyboard_visible.value());
   is_keyboard_visible.reset();
 
