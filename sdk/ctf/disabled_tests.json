@@ -53,5 +53,16 @@
             }
         ],
         "compact_name": "fx/cpu-renderer-integration-test-suite_ctf28#meta/cpu-renderer-integration-test.cm"
+    },
+    {
+        "name": "fuchsia-pkg://fuchsia.com/archivist_integration_test_cases_ctf29#meta/test_root.cm",
+        "cases": [
+            {
+                "name": "accessor_truncation_test",
+                "disabled": true,
+                "bug": "408055548"
+            }
+        ],
+        "compact_name": "fx/archivist_integration_test_cases_ctf29#meta/test_root.cm"
     }
 ]
