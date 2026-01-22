@@ -11,6 +11,7 @@ load("//fuchsia/constraints:target_compatibility.bzl", "COMPATIBILITY")
 load("//fuchsia/private:fuchsia_package.bzl", "get_driver_component_manifests")
 load("//fuchsia/private:fuchsia_toolchains.bzl", "FUCHSIA_TOOLCHAIN_DEFINITION", "get_fuchsia_sdk_toolchain")
 load("//fuchsia/private:providers.bzl", "FuchsiaPackageInfo")
+load(":utils.bzl", "create_pkg_detail")
 load(
     ":providers.bzl",
     "FuchsiaAssembledPackageInfo",
@@ -43,31 +44,6 @@ INPUT_DEVICE_TYPE = struct(
     TOUCHSCREEN = "touchscreen",
 )
 
-def _create_pkg_detail(dep):
-    package_manifest_path = None
-    configs = None
-
-    # Find the package manifest and configs from the input depending on the provider.
-    if FuchsiaPackageInfo in dep:
-        package_manifest_path = dep[FuchsiaPackageInfo].package_manifest.path
-    else:
-        package_manifest_path = dep[FuchsiaAssembledPackageInfo].package.package_manifest.path
-        configs = dep[FuchsiaAssembledPackageInfo].configs
-
-    # If we have configs, return them.
-    if configs:
-        config_data = []
-        for config in configs:
-            config_data.append(
-                {
-                    "destination": config.destination,
-                    "source": config.source.path,
-                },
-            )
-        return {"manifest": package_manifest_path, "config_data": config_data}
-    else:
-        return {"manifest": package_manifest_path}
-
 def _collect_file_deps(dep):
     if FuchsiaPackageInfo in dep:
         return dep[FuchsiaPackageInfo].files
@@ -96,7 +72,7 @@ def _fuchsia_product_configuration_impl(ctx):
     build_id_dirs = []
     bootfs_pkg_details = []
     for dep in ctx.attr.bootfs_packages:
-        bootfs_pkg_details.append(_create_pkg_detail(dep))
+        bootfs_pkg_details.append(create_pkg_detail(dep))
         input_files += _collect_file_deps(dep)
         build_id_dirs += _collect_debug_symbols(dep)
     if bootfs_pkg_details:
@@ -104,14 +80,14 @@ def _fuchsia_product_configuration_impl(ctx):
 
     base_pkg_details = []
     for dep in ctx.attr.base_packages:
-        base_pkg_details.append(_create_pkg_detail(dep))
+        base_pkg_details.append(create_pkg_detail(dep))
         input_files += _collect_file_deps(dep)
         build_id_dirs += _collect_debug_symbols(dep)
     packages["base"] = base_pkg_details
 
     cache_pkg_details = []
     for dep in ctx.attr.cache_packages:
-        cache_pkg_details.append(_create_pkg_detail(dep))
+        cache_pkg_details.append(create_pkg_detail(dep))
         input_files += _collect_file_deps(dep)
         build_id_dirs += _collect_debug_symbols(dep)
     packages["cache"] = cache_pkg_details
@@ -119,7 +95,7 @@ def _fuchsia_product_configuration_impl(ctx):
 
     base_driver_details = []
     for dep in ctx.attr.base_driver_packages:
-        package_detail = _create_pkg_detail(dep)
+        package_detail = create_pkg_detail(dep)
         base_driver_details.append(
             {
                 "package": package_detail["manifest"],
@@ -131,7 +107,27 @@ def _fuchsia_product_configuration_impl(ctx):
 
     starnix_containers = []
     for container in ctx.attr.starnix_containers:
-        starnix_containers.append(container[FuchsiaStarnixContainerInfo])
+        container_detail = container[FuchsiaStarnixContainerInfo]
+
+        images = {
+            "system": container_detail.system,
+        }
+        if container_detail.vendor:
+            images["vendor"] = container_detail.vendor
+        if container_detail.ramdisk:
+            images["ramdisk"] = container_detail.ramdisk
+        starnix_containers.append(
+            {
+                "name": container_detail.name,
+                "fstab": container_detail.fstab,
+                "init": container_detail.init,
+                "hals": container_detail.hals,
+                "skip_subpackages": container_detail.skip_subpackages,
+                "images_or_package": {
+                    "images": images,
+                },
+            },
+        )
 
     if len(starnix_containers) > 0:
         product["starnix_containers"] = starnix_containers
@@ -197,7 +193,7 @@ def _fuchsia_product_configuration_impl(ctx):
     ctx.actions.run(
         executable = sdk.assembly_config,
         arguments = args,
-        inputs = input_files + ctx.files.product_config_labels + ctx.files.product_input_bundles + ctx.files.deps,
+        inputs = input_files + ctx.files.product_config_labels + ctx.files.product_input_bundles + ctx.files.deps + ctx.files.starnix_containers,
         outputs = [product_config_dir],
         progress_message = "Creating product config for %s" % ctx.label.name,
         mnemonic = "FuchsiaProductConfig",

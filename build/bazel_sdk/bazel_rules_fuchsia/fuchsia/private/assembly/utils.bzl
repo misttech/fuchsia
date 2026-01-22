@@ -5,6 +5,11 @@
 """Utility functions used by multiple bazel rules and macros."""
 
 load("@bazel_skylib//lib:paths.bzl", "paths")
+load(
+    ":providers.bzl",
+    "FuchsiaAssembledPackageInfo",
+)
+load("//fuchsia/private:providers.bzl", "FuchsiaPackageInfo")
 load("//fuchsia/private:utils.bzl", _LOCAL_ONLY_ACTION_KWARGS = "LOCAL_ONLY_ACTION_KWARGS")
 
 LOCAL_ONLY_ACTION_KWARGS = _LOCAL_ONLY_ACTION_KWARGS
@@ -206,3 +211,45 @@ def _walk_json(json_dict, visit_node_funcs):
             _enqueue_dictionary_children(node.value)
         if type(node.value) == "list":
             _enqueue_array(node.value)
+
+def create_pkg_detail(dep):
+    """Creates a dictionary with package details from a dependency.
+
+    This function extracts the package manifest path and any associated
+    configuration data from a dependency target. It handles dependencies
+    with either `FuchsiaPackageInfo` or `FuchsiaAssembledPackageInfo` providers.
+
+    Args:
+        dep: A dependency target that has either a `FuchsiaPackageInfo` or
+            `FuchsiaAssembledPackageInfo` provider.
+
+    Returns:
+        A dictionary containing the package manifest path. If the dependency has
+        configuration data, the dictionary will also include a 'config_data'
+        key with a list of configuration objects.
+    """
+    package_manifest_path = None
+    configs = None
+
+    # Find the package manifest and configs from the input depending on the provider.
+    if FuchsiaPackageInfo in dep:
+        package_manifest_path = dep[FuchsiaPackageInfo].package_manifest.path
+    elif FuchsiaAssembledPackageInfo in dep:
+        package_manifest_path = dep[FuchsiaAssembledPackageInfo].package.package_manifest.path
+        configs = dep[FuchsiaAssembledPackageInfo].configs
+    else:
+        fail("Dependency {} does not have FuchsiaPackageInfo or FuchsiaAssembledPackageInfo provider".format(dep.label))
+
+    # If we have configs, return them.
+    if configs:
+        config_data = []
+        for config in configs:
+            config_data.append(
+                {
+                    "destination": config.destination,
+                    "source": config.source.path,
+                },
+            )
+        return {"manifest": package_manifest_path, "config_data": config_data}
+    else:
+        return {"manifest": package_manifest_path}

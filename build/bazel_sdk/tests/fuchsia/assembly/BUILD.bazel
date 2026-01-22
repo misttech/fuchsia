@@ -25,6 +25,7 @@ load(
     "fuchsia_prebuilt_product_configuration_extract_package",
     "fuchsia_product_configuration",
     "fuchsia_product_ota_config",
+    "fuchsia_starnix_container",
     "fuchsia_virtual_device",
     "ota_realm",
     "tuf_repo",
@@ -270,6 +271,19 @@ _testing_product_config_json = {
     },
 }
 
+fuchsia_starnix_container(
+    name = "starnix_container_for_test",
+    fstab = None,
+    hals = [
+        ":prebuilt_ams_light",
+    ],
+    init = [],
+    ramdisk = "test_data/ext4.img",
+    skip_subpackages = True,
+    system = "test_data/ext4.img",
+    vendor = "test_data/ext4.img",
+)
+
 # buildifier: leave-alone
 fuchsia_product_configuration(
     name = "testing_product_config",
@@ -282,6 +296,9 @@ fuchsia_product_configuration(
         ":prebuilt_driver",
     ],
     product_config_json = _testing_product_config_json,
+    starnix_containers = [
+        ":starnix_container_for_test",
+    ],
 )
 
 fuchsia_product_configuration_test(

@@ -76,7 +76,8 @@ pub struct ProductSettings {
     /// Release information about this assembly container artifact.
     pub release_info: ProductReleaseInfo,
 
-    /// Inputs for generating Starnix Container
+    /// Inputs for generating Starnix Containers
+    #[walk_paths]
     #[serde(skip_serializing_if = "Vec::is_empty")]
     pub starnix_containers: Vec<StarnixContainerConfig>,
 }
@@ -130,55 +131,88 @@ struct ProductPackagesConfigDeserializeHelper {
     pub bootfs: MapOrVecOfPackages,
 }
 
-#[derive(Debug, Default, Deserialize, Serialize, JsonSchema, PartialEq)]
+#[derive(Debug, Default, Deserialize, Serialize, JsonSchema, PartialEq, WalkPaths)]
 #[serde(default, deny_unknown_fields)]
 pub struct StarnixContainerConfig {
     /// Name of the starnix container
     pub name: String,
     /// Config for HAL packages
-    #[schemars(schema_with = "path_schema")]
+    #[walk_paths]
+    #[serde(skip_serializing_if = "Vec::is_empty")]
     pub hals: Vec<StarnixHalConfig>,
     /// Whether to skip including HALs as subpackages.
     pub skip_subpackages: bool,
-    /// File system images to include in the container
-    #[serde(skip_serializing_if = "Vec::is_empty")]
-    pub images: Vec<StarnixImage>,
     /// Path to fstab, will go in /odm which overrides the one in /vendor
+    #[walk_paths]
     #[schemars(schema_with = "path_schema")]
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub fstab: Option<Utf8PathBuf>,
     /// Path to extra init scripts, will go in /odm/etc/init. Can be passed more than once.
+    #[walk_paths]
     #[schemars(schema_with = "path_schema")]
+    #[serde(skip_serializing_if = "Vec::is_empty")]
     pub init: Vec<Utf8PathBuf>,
+    /// Initially, we have images, but at some point we have converted it
+    /// to a package, and we should track that for hybrid assembly.
+    ///
+    /// The fields above are whatever we need for either container generation
+    /// or hybrid container generation. If there is something we only need
+    /// for container generation, we could consider moving it into StarnixImages.
+    #[walk_paths]
+    pub images_or_package: StarnixImagesOrPackage,
 }
 
-/// The type of a Starnix image.
-#[derive(Debug, Deserialize, Serialize, JsonSchema, PartialEq)]
-#[serde(rename_all = "snake_case")]
-pub enum StarnixImageType {
-    /// The Android system image.
-    System,
-    /// The Android vendor partition image.
-    Vendor,
+#[derive(Debug, Deserialize, Serialize, JsonSchema, PartialEq, WalkPaths)]
+#[serde(deny_unknown_fields, rename_all = "lowercase")]
+pub enum StarnixImagesOrPackage {
+    #[walk_paths]
+    Images(StarnixImages),
+    #[walk_paths]
+    #[schemars(schema_with = "crate::common::path_schema")]
+    Package(Utf8PathBuf),
 }
 
-/// A Starnix image with its type and path.
-#[derive(Debug, Deserialize, Serialize, JsonSchema, PartialEq)]
-pub struct StarnixImage {
-    /// The type of the image.
-    pub image_type: StarnixImageType,
-    /// Path to the image file.
+impl Default for StarnixImagesOrPackage {
+    fn default() -> Self {
+        Self::Images(StarnixImages::default())
+    }
+}
+
+#[derive(Debug, Default, Deserialize, Serialize, JsonSchema, WalkPaths, PartialEq)]
+#[serde(default, deny_unknown_fields)]
+pub struct StarnixImages {
+    /// Path to an Android system image
+    #[walk_paths]
     #[schemars(schema_with = "path_schema")]
-    pub path: Utf8PathBuf,
+    pub system: Utf8PathBuf,
+    /// Path to an Android vendor partition image
+    #[walk_paths]
+    #[schemars(schema_with = "path_schema")]
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub vendor: Option<Utf8PathBuf>,
+    /// Path to the ramdisk image
+    #[walk_paths]
+    #[schemars(schema_with = "path_schema")]
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub ramdisk: Option<Utf8PathBuf>,
 }
 
 #[derive(Debug, Default, Deserialize, Serialize, JsonSchema, PartialEq)]
 #[serde(default, deny_unknown_fields)]
 pub struct StarnixHalConfig {
-    /// Name of the hal
-    pub name: String,
     /// Path to the hal package
     #[schemars(schema_with = "path_schema")]
-    pub path: Utf8PathBuf,
+    pub manifest: Utf8PathBuf,
+}
+
+impl WalkPaths for StarnixHalConfig {
+    fn walk_paths_with_dest<F: WalkPathsFn>(
+        &mut self,
+        found: &mut F,
+        dest: Utf8PathBuf,
+    ) -> anyhow::Result<()> {
+        found(&mut self.manifest, dest, FileType::PackageManifest)
+    }
 }
 
 #[derive(Debug, Deserialize)]
@@ -758,6 +792,22 @@ mod tests {
     }
 
     #[test]
+    fn test_starnix_hal_config_walk_paths() {
+        let mut hal_config = StarnixHalConfig { manifest: "path/to/manifest.json".into() };
+        let mut paths = Vec::new();
+        let mut callback = |path: &mut Utf8PathBuf, dest: Utf8PathBuf, file_type: FileType| {
+            paths.push((path.clone(), dest, file_type));
+            Ok(())
+        };
+        hal_config.walk_paths_with_dest(&mut callback, "dest".into()).unwrap();
+
+        assert_eq!(
+            paths,
+            vec![("path/to/manifest.json".into(), "dest".into(), FileType::PackageManifest)]
+        );
+    }
+
+    #[test]
     fn product_tee_serialization() {
         let product_config = ProductSettings { tee: Tee::Undefined, ..Default::default() };
         let serialized = serde_json::to_value(product_config).unwrap();
@@ -886,5 +936,41 @@ mod tests {
         let mut cursor = std::io::Cursor::new(json5);
         let product_config: ProductSettings = util::from_reader(&mut cursor).unwrap();
         assert_eq!(product_config, expected);
+    }
+
+    #[test]
+    fn test_starnix_images_or_package_walk_paths() {
+        // Test `Images` variant.
+        let mut images_or_package = StarnixImagesOrPackage::Images(StarnixImages {
+            system: "path/to/system".into(),
+            vendor: Some("path/to/vendor".into()),
+            ramdisk: Some("path/to/ramdisk".into()),
+        });
+        let mut paths: Vec<(Utf8PathBuf, Utf8PathBuf, FileType)> = Vec::new();
+        let mut callback = |path: &mut Utf8PathBuf, dest: Utf8PathBuf, file_type: FileType| {
+            paths.push((path.clone(), dest, file_type));
+            Ok(())
+        };
+        images_or_package.walk_paths_with_dest(&mut callback, "dest".into()).unwrap();
+
+        let expected_images: Vec<(Utf8PathBuf, Utf8PathBuf, FileType)> = vec![
+            ("path/to/system".into(), "dest/Images/system".into(), FileType::Unknown),
+            ("path/to/vendor".into(), "dest/Images/vendor".into(), FileType::Unknown),
+            ("path/to/ramdisk".into(), "dest/Images/ramdisk".into(), FileType::Unknown),
+        ];
+        assert_eq!(paths, expected_images);
+
+        // Test `Package` variant.
+        let mut images_or_package = StarnixImagesOrPackage::Package("path/to/package".into());
+        let mut paths: Vec<(Utf8PathBuf, Utf8PathBuf, FileType)> = Vec::new();
+        let mut callback = |path: &mut Utf8PathBuf, dest: Utf8PathBuf, file_type: FileType| {
+            paths.push((path.clone(), dest, file_type));
+            Ok(())
+        };
+        images_or_package.walk_paths_with_dest(&mut callback, "dest".into()).unwrap();
+
+        let expected_package: Vec<(Utf8PathBuf, Utf8PathBuf, FileType)> =
+            vec![("path/to/package".into(), "dest/Package".into(), FileType::Unknown)];
+        assert_eq!(paths, expected_package);
     }
 }

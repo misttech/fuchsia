@@ -62,8 +62,8 @@ mod tests {
     };
     use crate::platform_settings::{BuildType, FeatureSetLevel};
     use crate::product_settings::{
-        ProductPackageDetails, StarnixContainerConfig, StarnixHalConfig, StarnixImage,
-        StarnixImageType,
+        ProductPackageDetails, StarnixContainerConfig, StarnixHalConfig, StarnixImages,
+        StarnixImagesOrPackage,
     };
     use assembly_constants::FileEntry;
     use assembly_file_relative_path::FileRelativePathBuf;
@@ -191,25 +191,21 @@ mod tests {
                   name: "wear_os",
                   hals: [
                     {
-                      name: "hal_a",
-                      path: "path/to/hal_a"
+                      manifest: "path/to/hal_a"
                     },
                     {
-                      name: "hal_b",
-                      path: "path/to/hal_b"
+                      manifest: "path/to/hal_b"
                     },
                   ],
                   skip_subpackages: true,
-                  images: [
+                  images_or_package:
                     {
-                      image_type: "system",
-                      path: "path/to/system.img",
+                      images: {
+                        system: "path/to/system.img",
+                        vendor: "path/to/vendor.img",
+                        ramdisk: "path/to/ramdisk.img",
                       },
-                    {
-                      image_type: "vendor",
-                      path: "path/to/vendor.img",
                     },
-                  ],
                   fstab: "",
                   init: [],
                 }
@@ -258,22 +254,17 @@ mod tests {
             vec![StarnixContainerConfig {
                 name: "wear_os".to_string(),
                 skip_subpackages: true,
-                images: vec![
-                    StarnixImage {
-                        image_type: StarnixImageType::System,
-                        path: "path/to/system.img".into(),
-                    },
-                    StarnixImage {
-                        image_type: StarnixImageType::Vendor,
-                        path: "path/to/vendor.img".into(),
-                    },
-                ],
                 fstab: Some("".into()),
                 init: vec![],
                 hals: vec![
-                    StarnixHalConfig { name: "hal_a".into(), path: "path/to/hal_a".into() },
-                    StarnixHalConfig { name: "hal_b".into(), path: "path/to/hal_b".into() },
-                ]
+                    StarnixHalConfig { manifest: "path/to/hal_a".into() },
+                    StarnixHalConfig { manifest: "path/to/hal_b".into() },
+                ],
+                images_or_package: StarnixImagesOrPackage::Images(StarnixImages {
+                    system: "path/to/system.img".into(),
+                    vendor: Some("path/to/vendor.img".into()),
+                    ramdisk: Some("path/to/ramdisk.img".into()),
+                })
             }]
         )
     }

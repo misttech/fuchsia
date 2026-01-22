@@ -138,6 +138,10 @@ load(
     _fuchsia_virtual_device = "fuchsia_virtual_device",
 )
 load(
+    "//fuchsia/private/assembly:fuchsia_starnix_container.bzl",
+    _fuchsia_starnix_container = "fuchsia_starnix_container",
+)
+load(
     "//fuchsia/private/workflows:fuchsia_task_flash.bzl",
     _fuchsia_task_flash = "fuchsia_task_flash",
 )
@@ -179,6 +183,7 @@ fuchsia_update_package = _fuchsia_update_package
 fuchsia_repository_keys = _fuchsia_repository_keys
 fuchsia_task_flash = _fuchsia_task_flash
 fuchsia_scrutiny_config = _fuchsia_scrutiny_config
+fuchsia_starnix_container = _fuchsia_starnix_container
 
 fuchsia_bootstrap_partition = _fuchsia_bootstrap_partition
 fuchsia_bootloader_partition = _fuchsia_bootloader_partition
