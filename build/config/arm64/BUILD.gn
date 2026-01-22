@@ -20,6 +20,9 @@ config("arm64") {
     "-Ctarget-feature=+crc,+aes,+sha2",
     "-Zsanitizer=shadow-call-stack",
   ]
+
+  # TODO(https://fxbug.dev/477985653): Remove the suppression below after a toolchain w/ the correct ABI flags rolls
+  rustflags += [ "-Cunsafe-allow-abi-mismatch=fixed-x18" ]
 }
 
 config("cortex-a53") {
