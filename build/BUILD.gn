@@ -53,6 +53,7 @@ if (is_host) {
       "//sdk/fidl/fuchsia.hardware.spi.businfo:verify_bazel2gn",
       "//sdk/fidl/fuchsia.images2:verify_bazel2gn",
       "//sdk/fidl/fuchsia.math:verify_bazel2gn",
+      "//sdk/lib/async:verify_bazel2gn",
       "//sdk/lib/fit:verify_bazel2gn",
       "//sdk/lib/fit-promise:verify_bazel2gn",
       "//sdk/lib/magma_common:verify_bazel2gn",

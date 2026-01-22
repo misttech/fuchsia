@@ -31,6 +31,8 @@ idk_molecule(
 idk_molecule(
     name = "cc_source_libraries",
     deps = [
+        "//sdk/lib/async:async-cpp_idk",
+        "//sdk/lib/async:async_idk",
         "//sdk/lib/fit:fit_idk",
         "//sdk/lib/fit-promise:fit-promise_idk",
         "//sdk/lib/magma_common:magma_common_idk",

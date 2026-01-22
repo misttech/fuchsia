@@ -421,6 +421,7 @@ filegroup(
         ":test_source_set_dependency",
         ":test_source_set_zx",
         ":tests",
+        "//sdk/lib/async:async-cpp",
         "//sdk/lib/magma_common",
         "//sdk/lib/media/cpp:no_converters",
         "//sdk/lib/memory_barriers",
