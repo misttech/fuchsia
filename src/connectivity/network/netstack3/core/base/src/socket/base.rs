@@ -1160,6 +1160,29 @@ where
             A,
         >,
 {
+    /// Looks up a connected socket.
+    ///
+    /// This is a lightweight version of `iter_receivers()` that doesn't try to
+    /// lookup listening sockets. It is used for early demux, which applies only
+    /// to connected sockets.
+    pub fn lookup_connected(
+        &self,
+        (src_ip, src_port): (SocketIpAddr<I::Addr>, A::RemoteIdentifier),
+        (dst_ip, dst_port): (SocketIpAddr<I::Addr>, A::LocalIdentifier),
+        device: D,
+    ) -> Option<&'_ S::ConnAddrState> {
+        let mut addr = ConnAddr {
+            ip: ConnIpAddr { local: (dst_ip, dst_port), remote: (src_ip, src_port) },
+            device: Some(device),
+        };
+        let entry = self.conns().get_by_addr(&addr);
+        if entry.is_some() {
+            return entry;
+        }
+        addr.device = None;
+        self.conns().get_by_addr(&addr)
+    }
+
     /// Finds the socket(s) that should receive an incoming packet.
     ///
     /// Uses the provided addresses and receiving device to look up sockets that
@@ -1426,13 +1449,37 @@ mod tests {
     #[derive(Copy, Clone, Eq, PartialEq, Debug, Hash)]
     struct Listener(usize);
 
+    #[derive(PartialEq, Eq, Debug, Copy, Clone)]
+    struct SharingState {
+        tag: char,
+        shared: bool,
+    }
+
+    impl SharingState {
+        fn exclusive(tag: char) -> Self {
+            Self { tag, shared: false }
+        }
+
+        fn shared(tag: char) -> Self {
+            Self { tag, shared: true }
+        }
+    }
+
+    impl SharingState {
+        fn can_share_with(&self, other: &Self) -> bool {
+            self.tag == other.tag && self.shared && other.shared
+        }
+    }
+
     #[derive(PartialEq, Eq, Debug)]
-    struct Multiple<T>(char, Vec<T>);
+    struct Multiple<T> {
+        sharing_state: SharingState,
+        entries: Vec<T>,
+    }
 
     impl<T> Multiple<T> {
-        fn tag(&self) -> char {
-            let Multiple(c, _) = self;
-            *c
+        fn new_exclusive(tag: char, entries: Vec<T>) -> Self {
+            Self { sharing_state: SharingState { tag, shared: false }, entries }
         }
     }
 
@@ -1447,23 +1494,23 @@ mod tests {
     }
 
     impl SocketMapStateSpec for FakeSpec {
-        type AddrVecTag = char;
+        type AddrVecTag = SharingState;
 
         type ListenerId = Listener;
         type ConnId = Conn;
 
-        type ListenerSharingState = char;
-        type ConnSharingState = char;
+        type ListenerSharingState = SharingState;
+        type ConnSharingState = SharingState;
 
         type ListenerAddrState = Multiple<Listener>;
         type ConnAddrState = Multiple<Conn>;
 
         fn listener_tag(_: ListenerAddrInfo, state: &Self::ListenerAddrState) -> Self::AddrVecTag {
-            state.tag()
+            state.sharing_state
         }
 
         fn connected_tag(_has_device: bool, state: &Self::ConnAddrState) -> Self::AddrVecTag {
-            state.tag()
+            state.sharing_state
         }
     }
 
@@ -1487,71 +1534,82 @@ mod tests {
 
     impl<I: Eq> SocketMapAddrStateSpec for Multiple<I> {
         type Id = I;
-        type SharingState = char;
+        type SharingState = SharingState;
         type Inserter<'a>
             = &'a mut Vec<I>
         where
             I: 'a;
 
-        fn new(new_sharing_state: &char, id: I) -> Self {
-            Self(*new_sharing_state, vec![id])
+        fn new(sharing_state: &SharingState, id: I) -> Self {
+            Self { sharing_state: *sharing_state, entries: vec![id] }
         }
 
         fn contains_id(&self, id: &Self::Id) -> bool {
-            self.1.contains(id)
+            self.entries.contains(id)
         }
 
         fn try_get_inserter<'a, 'b>(
             &'b mut self,
-            new_state: &'a char,
+            new_sharing_state: &'a SharingState,
         ) -> Result<Self::Inserter<'b>, IncompatibleError> {
-            let Self(c, v) = self;
-            (new_state == c).then_some(v).ok_or(IncompatibleError)
+            (self.sharing_state == *new_sharing_state)
+                .then_some(&mut self.entries)
+                .ok_or(IncompatibleError)
         }
 
-        fn could_insert(
-            &self,
-            new_sharing_state: &Self::SharingState,
-        ) -> Result<(), IncompatibleError> {
-            let Self(c, _) = self;
-            (new_sharing_state == c).then_some(()).ok_or(IncompatibleError)
+        fn could_insert(&self, new_sharing_state: &SharingState) -> Result<(), IncompatibleError> {
+            (self.sharing_state == *new_sharing_state).then_some(()).ok_or(IncompatibleError)
         }
 
         fn remove_by_id(&mut self, id: I) -> RemoveResult {
-            let Self(_, v) = self;
-            let index = v.iter().position(|i| i == &id).expect("did not find id");
-            let _: I = v.swap_remove(index);
-            if v.is_empty() { RemoveResult::IsLast } else { RemoveResult::Success }
+            let index = self.entries.iter().position(|i| i == &id).expect("did not find id");
+            let _: I = self.entries.swap_remove(index);
+            if self.entries.is_empty() { RemoveResult::IsLast } else { RemoveResult::Success }
         }
     }
 
     impl<A: Into<AddrVec<Ipv4, FakeWeakDeviceId<FakeDeviceId>, FakeAddrSpec>> + Clone>
-        SocketMapConflictPolicy<A, char, Ipv4, FakeWeakDeviceId<FakeDeviceId>, FakeAddrSpec>
+        SocketMapConflictPolicy<A, SharingState, Ipv4, FakeWeakDeviceId<FakeDeviceId>, FakeAddrSpec>
         for FakeSpec
     {
         fn check_insert_conflicts(
-            new_state: &char,
+            new_sharing_state: &SharingState,
             addr: &A,
             socketmap: &SocketMap<
                 AddrVec<Ipv4, FakeWeakDeviceId<FakeDeviceId>, FakeAddrSpec>,
                 Bound<FakeSpec>,
             >,
         ) -> Result<(), InsertError> {
-            let dest = addr.clone().into();
-            if dest.iter_shadows().any(|a| socketmap.get(&a).is_some()) {
+            let dest: AddrVec<_, _, _> = addr.clone().into();
+            if dest.iter_shadows().any(|a| {
+                let entry = socketmap.get(&a);
+                match entry {
+                    Some(Bound::Listen(Multiple { sharing_state, .. }))
+                    | Some(Bound::Conn(Multiple { sharing_state, .. })) => {
+                        !sharing_state.can_share_with(new_sharing_state)
+                    }
+                    None => false,
+                }
+            }) {
                 return Err(InsertError::ShadowAddrExists);
             }
+
             match socketmap.get(&dest) {
-                Some(Bound::Listen(Multiple(c, _))) | Some(Bound::Conn(Multiple(c, _))) => {
+                Some(Bound::Listen(Multiple { sharing_state, .. }))
+                | Some(Bound::Conn(Multiple { sharing_state, .. })) => {
                     // Require that all sockets inserted in a `Multiple` entry
                     // have the same sharing state.
-                    if c != new_state {
+                    if sharing_state != new_sharing_state {
                         return Err(InsertError::Exists);
                     }
                 }
                 None => (),
             }
-            if socketmap.descendant_counts(&dest).len() != 0 {
+
+            if socketmap
+                .descendant_counts(&dest)
+                .any(|(sharing_state, _count)| !sharing_state.can_share_with(new_sharing_state))
+            {
                 Err(InsertError::ShadowerExists)
             } else {
                 Ok(())
@@ -1565,8 +1623,7 @@ mod tests {
             id: Self::Id,
             new_sharing_state: &Self::SharingState,
         ) -> Result<(), IncompatibleError> {
-            let Self(sharing, v) = self;
-            if new_sharing_state == sharing {
+            if self.sharing_state == *new_sharing_state {
                 return Ok(());
             }
 
@@ -1574,18 +1631,23 @@ mod tests {
             // entry have the same sharing state. That means we can't change
             // the sharing state of all the sockets at the address unless there
             // is exactly one!
-            if v.len() != 1 {
+            if self.entries.len() != 1 {
                 return Err(IncompatibleError);
             }
-            assert!(v.contains(&id));
-            *sharing = *new_sharing_state;
+            assert!(self.entries.contains(&id));
+            self.sharing_state = *new_sharing_state;
             Ok(())
         }
     }
 
     impl<A: Into<AddrVec<Ipv4, FakeWeakDeviceId<FakeDeviceId>, FakeAddrSpec>> + Clone>
-        SocketMapUpdateSharingPolicy<A, char, Ipv4, FakeWeakDeviceId<FakeDeviceId>, FakeAddrSpec>
-        for FakeSpec
+        SocketMapUpdateSharingPolicy<
+            A,
+            SharingState,
+            Ipv4,
+            FakeWeakDeviceId<FakeDeviceId>,
+            FakeAddrSpec,
+        > for FakeSpec
     {
         fn allows_sharing_update(
             _socketmap: &SocketMap<
@@ -1593,8 +1655,8 @@ mod tests {
                 Bound<Self>,
             >,
             _addr: &A,
-            _old_sharing: &char,
-            _new_sharing_state: &char,
+            _old_sharing: &SharingState,
+            _new_sharing_state: &SharingState,
         ) -> Result<(), UpdateSharingError> {
             Ok(())
         }
@@ -1634,13 +1696,18 @@ mod tests {
         let addr = LISTENER_ADDR;
 
         let id = {
-            let entry =
-                bound.listeners_mut().try_insert(addr, 'v', Listener(fake_id_gen.next())).unwrap();
+            let entry = bound
+                .listeners_mut()
+                .try_insert(addr, SharingState::exclusive('v'), Listener(fake_id_gen.next()))
+                .unwrap();
             assert_eq!(entry.get_addr(), &addr);
             entry.id().clone()
         };
 
-        assert_eq!(bound.listeners().get_by_addr(&addr), Some(&Multiple('v', vec![id])));
+        assert_eq!(
+            bound.listeners().get_by_addr(&addr),
+            Some(&Multiple::new_exclusive('v', vec![id]))
+        );
 
         assert_eq!(bound.listeners_mut().remove(&id, &addr), Ok(()));
         assert_eq!(bound.listeners().get_by_addr(&addr), None);
@@ -1655,12 +1722,15 @@ mod tests {
         let addr = CONN_ADDR;
 
         let id = {
-            let entry = bound.conns_mut().try_insert(addr, 'v', Conn(fake_id_gen.next())).unwrap();
+            let entry = bound
+                .conns_mut()
+                .try_insert(addr, SharingState::exclusive('v'), Conn(fake_id_gen.next()))
+                .unwrap();
             assert_eq!(entry.get_addr(), &addr);
             entry.id().clone()
         };
 
-        assert_eq!(bound.conns().get_by_addr(&addr), Some(&Multiple('v', vec![id])));
+        assert_eq!(bound.conns().get_by_addr(&addr), Some(&Multiple::new_exclusive('v', vec![id])));
 
         assert_eq!(bound.conns_mut().remove(&id, &addr), Ok(()));
         assert_eq!(bound.conns().get_by_addr(&addr), None);
@@ -1701,11 +1771,16 @@ mod tests {
         });
 
         for addr in listener_addrs.iter().cloned() {
-            let _entry =
-                bound.listeners_mut().try_insert(addr, 'a', Listener(fake_id_gen.next())).unwrap();
+            let _entry = bound
+                .listeners_mut()
+                .try_insert(addr, SharingState::exclusive('a'), Listener(fake_id_gen.next()))
+                .unwrap();
         }
         for addr in conn_addrs.iter().cloned() {
-            let _entry = bound.conns_mut().try_insert(addr, 'a', Conn(fake_id_gen.next())).unwrap();
+            let _entry = bound
+                .conns_mut()
+                .try_insert(addr, SharingState::exclusive('a'), Conn(fake_id_gen.next()))
+                .unwrap();
         }
         let expected_addrs = listener_addrs
             .into_iter()
@@ -1725,7 +1800,11 @@ mod tests {
         let addr = LISTENER_ADDR;
 
         // Insert a listener so that future calls can conflict.
-        let _: &Listener = bound.listeners_mut().try_insert(addr, 'a', Listener(0)).unwrap().id();
+        let _: &Listener = bound
+            .listeners_mut()
+            .try_insert(addr, SharingState::exclusive('a'), Listener(0))
+            .unwrap()
+            .id();
 
         // All of the below try_insert_with calls should fail, but more
         // importantly, they should not call the `make_id` callback (because it
@@ -1735,13 +1814,17 @@ mod tests {
         }
 
         assert_matches!(
-            bound.listeners_mut().try_insert_with(addr, 'b', is_never_called),
-            Err((InsertError::Exists, _))
+            bound.listeners_mut().try_insert_with(
+                addr,
+                SharingState::exclusive('b'),
+                is_never_called
+            ),
+            Err((InsertError::Exists, SharingState { .. }))
         );
         assert_matches!(
             bound.listeners_mut().try_insert_with(
                 ListenerAddr { device: Some(FakeWeakDeviceId(FakeDeviceId)), ..addr },
-                'b',
+                SharingState::exclusive('b'),
                 is_never_called
             ),
             Err((InsertError::ShadowAddrExists, _))
@@ -1755,7 +1838,7 @@ mod tests {
                         remote: (SocketIpAddr::new(net_ip_v4!("1.1.1.1")).unwrap(), ()),
                     },
                 },
-                'b',
+                SharingState::exclusive('b'),
                 is_never_called,
             ),
             Err((InsertError::ShadowAddrExists, _))
@@ -1769,11 +1852,18 @@ mod tests {
         let mut fake_id_gen = FakeSocketIdGen::default();
         let addr = LISTENER_ADDR;
 
-        let _: &Listener =
-            bound.listeners_mut().try_insert(addr, 'a', Listener(fake_id_gen.next())).unwrap().id();
+        let _: &Listener = bound
+            .listeners_mut()
+            .try_insert(addr, SharingState::exclusive('a'), Listener(fake_id_gen.next()))
+            .unwrap()
+            .id();
         assert_matches!(
-            bound.listeners_mut().try_insert(addr, 'b', Listener(fake_id_gen.next())),
-            Err((InsertError::Exists, 'b'))
+            bound.listeners_mut().try_insert(
+                addr,
+                SharingState::exclusive('b'),
+                Listener(fake_id_gen.next())
+            ),
+            Err((InsertError::Exists, SharingState { tag: 'b', .. }))
         );
     }
 
@@ -1788,11 +1878,18 @@ mod tests {
             ListenerAddr { device: Some(FakeWeakDeviceId(FakeDeviceId)), ..addr }
         };
 
-        let _: &Listener =
-            bound.listeners_mut().try_insert(addr, 'a', Listener(fake_id_gen.next())).unwrap().id();
+        let _: &Listener = bound
+            .listeners_mut()
+            .try_insert(addr, SharingState::exclusive('a'), Listener(fake_id_gen.next()))
+            .unwrap()
+            .id();
         assert_matches!(
-            bound.listeners_mut().try_insert(shadows_addr, 'b', Listener(fake_id_gen.next())),
-            Err((InsertError::ShadowAddrExists, 'b'))
+            bound.listeners_mut().try_insert(
+                shadows_addr,
+                SharingState::exclusive('b'),
+                Listener(fake_id_gen.next())
+            ),
+            Err((InsertError::ShadowAddrExists, SharingState { tag: 'b', .. }))
         );
     }
 
@@ -1810,11 +1907,18 @@ mod tests {
             },
         };
 
-        let _: &Listener =
-            bound.listeners_mut().try_insert(addr, 'a', Listener(fake_id_gen.next())).unwrap().id();
+        let _: &Listener = bound
+            .listeners_mut()
+            .try_insert(addr, SharingState::exclusive('a'), Listener(fake_id_gen.next()))
+            .unwrap()
+            .id();
         assert_matches!(
-            bound.conns_mut().try_insert(shadows_addr, 'b', Conn(fake_id_gen.next())),
-            Err((InsertError::ShadowAddrExists, 'b'))
+            bound.conns_mut().try_insert(
+                shadows_addr,
+                SharingState::exclusive('b'),
+                Conn(fake_id_gen.next())
+            ),
+            Err((InsertError::ShadowAddrExists, SharingState { tag: 'b', .. }))
         );
     }
 
@@ -1827,20 +1931,23 @@ mod tests {
 
         let a = bound
             .listeners_mut()
-            .try_insert(addr, 'x', Listener(fake_id_gen.next()))
+            .try_insert(addr, SharingState::exclusive('x'), Listener(fake_id_gen.next()))
             .unwrap()
             .id()
             .clone();
         let b = bound
             .listeners_mut()
-            .try_insert(addr, 'x', Listener(fake_id_gen.next()))
+            .try_insert(addr, SharingState::exclusive('x'), Listener(fake_id_gen.next()))
             .unwrap()
             .id()
             .clone();
         assert_ne!(a, b);
 
         assert_eq!(bound.listeners_mut().remove(&a, &addr), Ok(()));
-        assert_eq!(bound.listeners().get_by_addr(&addr), Some(&Multiple('x', vec![b])));
+        assert_eq!(
+            bound.listeners().get_by_addr(&addr),
+            Some(&Multiple::new_exclusive('x', vec![b]))
+        );
     }
 
     #[test]
@@ -1850,14 +1957,22 @@ mod tests {
         let mut fake_id_gen = FakeSocketIdGen::default();
         let addr = CONN_ADDR;
 
-        let a =
-            bound.conns_mut().try_insert(addr, 'x', Conn(fake_id_gen.next())).unwrap().id().clone();
-        let b =
-            bound.conns_mut().try_insert(addr, 'x', Conn(fake_id_gen.next())).unwrap().id().clone();
+        let a = bound
+            .conns_mut()
+            .try_insert(addr, SharingState::exclusive('x'), Conn(fake_id_gen.next()))
+            .unwrap()
+            .id()
+            .clone();
+        let b = bound
+            .conns_mut()
+            .try_insert(addr, SharingState::exclusive('x'), Conn(fake_id_gen.next()))
+            .unwrap()
+            .id()
+            .clone();
         assert_ne!(a, b);
 
         assert_eq!(bound.conns_mut().remove(&a, &addr), Ok(()));
-        assert_eq!(bound.conns().get_by_addr(&addr), Some(&Multiple('x', vec![b])));
+        assert_eq!(bound.conns().get_by_addr(&addr), Some(&Multiple::new_exclusive('x', vec![b])));
     }
 
     #[test]
@@ -1880,13 +1995,13 @@ mod tests {
 
         let first = bound
             .listeners_mut()
-            .try_insert(first_addr, 'a', Listener(fake_id_gen.next()))
+            .try_insert(first_addr, SharingState::exclusive('a'), Listener(fake_id_gen.next()))
             .unwrap()
             .id()
             .clone();
         let second = bound
             .listeners_mut()
-            .try_insert(second_addr, 'b', Listener(fake_id_gen.next()))
+            .try_insert(second_addr, SharingState::exclusive('b'), Listener(fake_id_gen.next()))
             .unwrap()
             .id()
             .clone();
@@ -1920,7 +2035,7 @@ mod tests {
         let addr = CONN_ADDR;
         let conn_id = map
             .conns_mut()
-            .try_insert(addr.clone(), 'a', Conn(fake_id_gen.next()))
+            .try_insert(addr.clone(), SharingState::exclusive('a'), Conn(fake_id_gen.next()))
             .expect("failed to insert")
             .id()
             .clone();
@@ -1936,16 +2051,56 @@ mod tests {
         let addr = CONN_ADDR;
         let mut entry = map
             .conns_mut()
-            .try_insert(addr.clone(), 'a', Conn(fake_id_gen.next()))
+            .try_insert(addr.clone(), SharingState::exclusive('a'), Conn(fake_id_gen.next()))
             .expect("failed to insert");
 
-        entry.try_update_sharing(&'a', 'd').expect("worked");
+        entry
+            .try_update_sharing(&SharingState::exclusive('a'), SharingState::exclusive('d'))
+            .expect("worked");
         // Updating sharing is only allowed if there are no other occupants at
         // the address.
         let mut second_conn = map
             .conns_mut()
-            .try_insert(addr.clone(), 'd', Conn(fake_id_gen.next()))
+            .try_insert(addr.clone(), SharingState::exclusive('d'), Conn(fake_id_gen.next()))
             .expect("can insert");
-        assert_matches!(second_conn.try_update_sharing(&'d', 'e'), Err(UpdateSharingError));
+        assert_matches!(
+            second_conn
+                .try_update_sharing(&SharingState::exclusive('d'), SharingState::exclusive('e')),
+            Err(UpdateSharingError)
+        );
+    }
+
+    #[test]
+    fn lookup_connected() {
+        let mut map = FakeBoundSocketMap::default();
+        let mut fake_id_gen = FakeSocketIdGen::default();
+
+        let sharing_state = SharingState::shared('a');
+
+        let device_id = FakeWeakDeviceId(FakeDeviceId);
+        let entry1 = map
+            .conns_mut()
+            .try_insert(CONN_ADDR, sharing_state, Conn(fake_id_gen.next()))
+            .expect("failed to insert")
+            .id()
+            .clone();
+        let conn = map
+            .lookup_connected(CONN_ADDR.ip.remote, CONN_ADDR.ip.local, device_id)
+            .expect("lookup should succeed");
+        assert!(conn.contains_id(&entry1));
+
+        // Add a second entry with a device ID. This one should be preferred
+        // over the first one.
+        let addr_with_device = ConnAddr { device: Some(device_id), ..CONN_ADDR };
+        let entry2 = map
+            .conns_mut()
+            .try_insert(addr_with_device, sharing_state, Conn(fake_id_gen.next()))
+            .expect("failed to insert")
+            .id()
+            .clone();
+        let conn = map
+            .lookup_connected(CONN_ADDR.ip.remote, CONN_ADDR.ip.local, device_id)
+            .expect("lookup should succeed");
+        assert!(conn.contains_id(&entry2));
     }
 }

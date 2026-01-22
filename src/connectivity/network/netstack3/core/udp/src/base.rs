@@ -825,6 +825,19 @@ impl<T> AddrState<T> {
         }
     }
 
+    fn first(&self) -> &T {
+        match self {
+            AddrState::Exclusive(id) => id,
+            AddrState::Shared { priority, load_balanced } => {
+                if let Some(id) = priority.last() {
+                    id
+                } else {
+                    &load_balanced[0].id
+                }
+            }
+        }
+    }
+
     fn collect_all_ids(&self) -> impl Iterator<Item = &'_ T> {
         match self {
             AddrState::Exclusive(id) => Either::Left(core::iter::once(id)),
@@ -856,18 +869,25 @@ fn lookup<'s, I: IpExt, D: WeakDeviceIdentifier, BT: UdpBindingsTypes>(
     match matching_entries {
         None => Either::Left(None),
         Some(FoundSockets::Single(entry)) => {
-            let selector = SocketSelectorParams::<I, SpecifiedAddr<I::Addr>> {
-                src_ip: src_ip.map_or(I::UNSPECIFIED_ADDRESS, SocketIpAddr::addr),
-                dst_ip: dst_ip.into(),
-                src_port: src_port.map_or(0, NonZeroU16::get),
-                dst_port: dst_port.get(),
-                _ip: IpVersionMarker::default(),
-            };
             Either::Left(Some(match entry {
                 AddrEntry::Listen(state, l) => {
+                    let selector = SocketSelectorParams::<I, SpecifiedAddr<I::Addr>> {
+                        src_ip: src_ip.map_or(I::UNSPECIFIED_ADDRESS, SocketIpAddr::addr),
+                        dst_ip: dst_ip.into(),
+                        src_port: src_port.map_or(0, NonZeroU16::get),
+                        dst_port: dst_port.get(),
+                        _ip: IpVersionMarker::default(),
+                    };
                     LookupResult::Listener(state.select_receiver(selector), l)
                 }
-                AddrEntry::Conn(state, c) => LookupResult::Conn(state.select_receiver(selector), c),
+                AddrEntry::Conn(state, c) => {
+                    // Always take the first socket when there are multiple
+                    // connected sockets. We cannot load-balance between
+                    // connected sockets because the source address is always
+                    // the same. This also ensures that we return a result
+                    // consistent with `early_demux_ip_packet()`.
+                    LookupResult::Conn(state.first(), c)
+                }
             }))
         }
 
@@ -1388,30 +1408,14 @@ fn early_demux_ip_packet<
     let dst_port = packet.dst_port()?;
 
     // Find a connected socket matching the packet.
-    // TODO(https://fxbug.dev/473819144): Optimize this to lookup only connected sockets.
     StateContext::<I, _>::with_bound_state_context(core_ctx, |core_ctx| {
         let device_weak = device.downgrade();
         DatagramBoundStateContext::<_, _, Udp<_>>::with_bound_sockets(
             core_ctx,
-            |_core_ctx, bound_sockets| match bound_sockets.iter_receivers(
-                (Some(src_ip), Some(src_port.into())),
-                (dst_ip, dst_port),
-                device_weak,
-                None,
-            ) {
-                Some(FoundSockets::Single(AddrEntry::Conn(state, _addr))) => {
-                    let selector = SocketSelectorParams::<I, SpecifiedAddr<I::Addr>> {
-                        src_ip: src_ip.addr(),
-                        dst_ip: dst_ip.into(),
-                        src_port: src_port.get(),
-                        dst_port: dst_port.get(),
-                        _ip: IpVersionMarker::default(),
-                    };
-                    Some(state.select_receiver(selector).clone())
-                }
-                Some(FoundSockets::Single(AddrEntry::Listen(_, _))) => None,
-                Some(FoundSockets::Multicast(_)) => None,
-                None => None,
+            |_core_ctx, bound_sockets| {
+                bound_sockets
+                    .lookup_connected((src_ip, src_port.into()), (dst_ip, dst_port), device_weak)
+                    .map(|entry| entry.first().clone())
             },
         )
     })
