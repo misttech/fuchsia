@@ -286,6 +286,21 @@ fuchsia_unittest_component("bootup-tracker-test") {
   deps = [ ":bootup_tracker_test" ]
 }
 
+test("firmware_crash_test") {
+  sources = [ "firmware_crash_test.cc" ]
+
+  deps = [
+    "//sdk/lib/component/incoming/cpp",
+    "//src/devices/bin/driver_manager/firmware_crash",
+    "//src/lib/fxl/test:gtest_main",
+    "//src/lib/testing/loop_fixture",
+  ]
+}
+
+fuchsia_unittest_component("firmware-crash-test") {
+  deps = [ ":firmware_crash_test" ]
+}
+
 fuchsia_test_package("driver-manager-tests") {
   test_specs = {
     log_settings = {
@@ -298,6 +313,7 @@ fuchsia_test_package("driver-manager-tests") {
     ":bootup-tracker-test",
     ":driver-host-loader-service-test",
     ":driver-manager-devfs-test",
+    ":firmware-crash-test",
   ]
 }
 

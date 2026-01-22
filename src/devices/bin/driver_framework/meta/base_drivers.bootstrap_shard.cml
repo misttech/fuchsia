@@ -49,7 +49,10 @@
             to: "#base-drivers",
         },
         {
-            protocol: [ "fuchsia.driver.framework.CompositeNodeManager" ],
+            protocol: [
+                "fuchsia.driver.framework.CompositeNodeManager",
+                "fuchsia.firmware.crash.Reporter",
+            ],
             from: "#driver_manager",
             to: "#base-drivers",
         },

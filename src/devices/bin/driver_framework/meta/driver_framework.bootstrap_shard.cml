@@ -257,7 +257,10 @@
             source_availability: "unknown",
         },
         {
-            protocol: [ "fuchsia.driver.framework.CompositeNodeManager" ],
+            protocol: [
+                "fuchsia.driver.framework.CompositeNodeManager",
+                "fuchsia.firmware.crash.Reporter",
+            ],
             from: "#driver_manager",
             to: "#boot-drivers",
         },
@@ -480,11 +483,11 @@
             from: "self",
         },
         {
-            protocol: [ "fuchsia.driver.development.Manager" ],
-            from: "#driver_manager",
-        },
-        {
-            protocol: "fuchsia.driver.crash.CrashIntrospect",
+            protocol: [
+                "fuchsia.driver.crash.CrashIntrospect",
+                "fuchsia.driver.development.Manager",
+                "fuchsia.firmware.crash.Watcher",
+            ],
             from: "#driver_manager",
         },
         {

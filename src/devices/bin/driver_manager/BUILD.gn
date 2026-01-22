@@ -175,6 +175,7 @@ _driver_manager_common = {
     ":driver_host_loader_service",
     ":driver_manager_config",
     ":driver_runner",
+    "firmware_crash",
     "//src/devices/lib/log",
     "//src/sys/lib/stdout-to-debuglog/cpp",
   ]

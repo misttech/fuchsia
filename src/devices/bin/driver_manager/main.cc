@@ -42,6 +42,7 @@
 #include "src/devices/bin/driver_manager/driver_host_loader_service.h"
 #include "src/devices/bin/driver_manager/driver_manager_config.h"
 #include "src/devices/bin/driver_manager/driver_runner.h"
+#include "src/devices/bin/driver_manager/firmware_crash/firmware_crash_service.h"
 #include "src/devices/bin/driver_manager/offer_injection.h"
 #include "src/devices/bin/driver_manager/shutdown/shutdown_manager.h"
 #include "src/devices/lib/log/log.h"
@@ -174,6 +175,9 @@ int main(int argc, char** argv) {
                                                                       loop.dispatcher());
   driver_development_service.Publish(outgoing);
   driver_runner.TryBindAllAvailable();
+
+  driver_manager::FirmwareCrashService firmware_crash_service(loop.dispatcher());
+  firmware_crash_service.Publish(outgoing);
 
   driver_manager::ShutdownManager shutdown_manager(&driver_runner, loop.dispatcher());
   shutdown_manager.Publish(outgoing);
