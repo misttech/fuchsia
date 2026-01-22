@@ -191,12 +191,36 @@ TEST_F(SysctlTest, DisableIpv6) {
   const char kDisableIpv6[] = "/proc/sys/net/ipv6/conf/lo/disable_ipv6";
   ASSERT_TRUE(files::WriteFile(kDisableIpv6, "1"));
 
+  // IP configurations are applied synchronously at netstack, but netlink
+  // watches for changes and updates addresses asynchronously. So we add some
+  // retry to avoid flakiness. The maximum delay is 100 * 100ms = 10s.
+  constexpr int kMaxAttempts = 100;
+  constexpr std::chrono::milliseconds kRetryTimeout(100);
+
   // Verify ::1 is gone.
-  ASSERT_FALSE(HasLoopbackAddress(AF_INET6, "::1"));
+  bool removed = false;
+  for (int trial = 0; trial < kMaxAttempts; trial++) {
+    if (!HasLoopbackAddress(AF_INET6, "::1")) {
+      removed = true;
+      break;
+    }
+    std::this_thread::sleep_for(kRetryTimeout);
+  }
+  ASSERT_TRUE(removed) << "::1 is not gone after "
+                       << kMaxAttempts * kRetryTimeout / std::chrono::seconds(1) << "s";
 
   // Re-enable it and assert ::1 is back.
   ASSERT_TRUE(files::WriteFile(kDisableIpv6, "0"));
-  ASSERT_TRUE(HasLoopbackAddress(AF_INET6, "::1"));
+  bool added = false;
+  for (int trial = 0; trial < kMaxAttempts; trial++) {
+    if (HasLoopbackAddress(AF_INET6, "::1")) {
+      added = true;
+      break;
+    }
+    std::this_thread::sleep_for(kRetryTimeout);
+  }
+  ASSERT_TRUE(added) << "::1 is not back after "
+                     << kMaxAttempts * kRetryTimeout / std::chrono::seconds(1) << "s";
 }
 
 TEST_F(SysctlTest, DisableIpv6Default) {
