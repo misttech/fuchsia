@@ -166,12 +166,12 @@ class DiagnosticStateWrapper {
         state_name_function_(std::move(state_name_function)),
         vthread_id_(GetNextVthreadID()) {
     TRACE_VTHREAD_DURATION_BEGIN("media", state_name_function_(state_value_), "Decoder",
-                                 vthread_id_, zx_ticks_get());
+                                 vthread_id_, zx_ticks_get_boot());
   }
 
   ~DiagnosticStateWrapper() {
     TRACE_VTHREAD_DURATION_END("media", state_name_function_(state_value_), "Decoder", vthread_id_,
-                               zx_ticks_get());
+                               zx_ticks_get_boot());
   }
 
   // Wrapper assignment operator. When a different state is assigned, end the current trace for
@@ -181,10 +181,10 @@ class DiagnosticStateWrapper {
     // Only process updates if the state has changed
     if (state_value_ != new_statue) {
       TRACE_VTHREAD_DURATION_END("media", state_name_function_(state_value_), "Decoder",
-                                 vthread_id_, zx_ticks_get());
+                                 vthread_id_, zx_ticks_get_boot());
       state_value_ = new_statue;
       TRACE_VTHREAD_DURATION_BEGIN("media", state_name_function_(state_value_), "Decoder",
-                                   vthread_id_, zx_ticks_get());
+                                   vthread_id_, zx_ticks_get_boot());
       update_diagnostics_function_();
     }
 

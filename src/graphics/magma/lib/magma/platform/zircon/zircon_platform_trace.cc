@@ -8,6 +8,6 @@
 namespace magma {
 
 // static
-uint64_t PlatformTrace::GetCurrentTicks() { return zx_ticks_get(); }
+uint64_t PlatformTrace::GetCurrentTicks() { return zx_ticks_get_boot(); }
 
 }  // namespace magma

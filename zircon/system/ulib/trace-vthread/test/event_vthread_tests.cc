@@ -64,9 +64,11 @@ TEST(EventThreadTests, TestVthreadDurationBegin) {
 
   ASSERT_TRUE(fixture.StartTracing());
 
-  TRACE_VTHREAD_DURATION_BEGIN("+enabled", "name", "virtual-thread", 1u, zx_ticks_get());
-  TRACE_VTHREAD_DURATION_BEGIN("+enabled", "name", "virtual-thread", 1u, zx_ticks_get(), STR_ARGS1);
-  TRACE_VTHREAD_DURATION_BEGIN("+enabled", "name", "virtual-thread", 1u, zx_ticks_get(), STR_ARGS4);
+  TRACE_VTHREAD_DURATION_BEGIN("+enabled", "name", "virtual-thread", 1u, zx_ticks_get_boot());
+  TRACE_VTHREAD_DURATION_BEGIN("+enabled", "name", "virtual-thread", 1u, zx_ticks_get_boot(),
+                               STR_ARGS1);
+  TRACE_VTHREAD_DURATION_BEGIN("+enabled", "name", "virtual-thread", 1u, zx_ticks_get_boot(),
+                               STR_ARGS4);
 
   ASSERT_TRUE(fixture.StopTracing());
 
@@ -92,9 +94,11 @@ TEST(EventThreadTests, TestVthreadDurationEnd) {
 
   ASSERT_TRUE(fixture.StartTracing());
 
-  TRACE_VTHREAD_DURATION_END("+enabled", "name", "virtual-thread", 1u, zx_ticks_get());
-  TRACE_VTHREAD_DURATION_END("+enabled", "name", "virtual-thread", 1u, zx_ticks_get(), STR_ARGS1);
-  TRACE_VTHREAD_DURATION_END("+enabled", "name", "virtual-thread", 1u, zx_ticks_get(), STR_ARGS4);
+  TRACE_VTHREAD_DURATION_END("+enabled", "name", "virtual-thread", 1u, zx_ticks_get_boot());
+  TRACE_VTHREAD_DURATION_END("+enabled", "name", "virtual-thread", 1u, zx_ticks_get_boot(),
+                             STR_ARGS1);
+  TRACE_VTHREAD_DURATION_END("+enabled", "name", "virtual-thread", 1u, zx_ticks_get_boot(),
+                             STR_ARGS4);
 
   ASSERT_TRUE(fixture.StopTracing());
 
@@ -120,9 +124,11 @@ TEST(EventThreadTests, TestVthreadFlowBegin) {
 
   ASSERT_TRUE(fixture.StartTracing());
 
-  TRACE_VTHREAD_FLOW_BEGIN("+enabled", "name", "virtual-thread", 1u, 2u, zx_ticks_get());
-  TRACE_VTHREAD_FLOW_BEGIN("+enabled", "name", "virtual-thread", 1u, 2u, zx_ticks_get(), STR_ARGS1);
-  TRACE_VTHREAD_FLOW_BEGIN("+enabled", "name", "virtual-thread", 1u, 2u, zx_ticks_get(), STR_ARGS4);
+  TRACE_VTHREAD_FLOW_BEGIN("+enabled", "name", "virtual-thread", 1u, 2u, zx_ticks_get_boot());
+  TRACE_VTHREAD_FLOW_BEGIN("+enabled", "name", "virtual-thread", 1u, 2u, zx_ticks_get_boot(),
+                           STR_ARGS1);
+  TRACE_VTHREAD_FLOW_BEGIN("+enabled", "name", "virtual-thread", 1u, 2u, zx_ticks_get_boot(),
+                           STR_ARGS4);
 
   ASSERT_TRUE(fixture.StopTracing());
 
@@ -148,9 +154,11 @@ TEST(EventThreadTests, TestVthreadFlowStep) {
 
   ASSERT_TRUE(fixture.StartTracing());
 
-  TRACE_VTHREAD_FLOW_STEP("+enabled", "name", "virtual-thread", 1u, 2u, zx_ticks_get());
-  TRACE_VTHREAD_FLOW_STEP("+enabled", "name", "virtual-thread", 1u, 2u, zx_ticks_get(), STR_ARGS1);
-  TRACE_VTHREAD_FLOW_STEP("+enabled", "name", "virtual-thread", 1u, 2u, zx_ticks_get(), STR_ARGS4);
+  TRACE_VTHREAD_FLOW_STEP("+enabled", "name", "virtual-thread", 1u, 2u, zx_ticks_get_boot());
+  TRACE_VTHREAD_FLOW_STEP("+enabled", "name", "virtual-thread", 1u, 2u, zx_ticks_get_boot(),
+                          STR_ARGS1);
+  TRACE_VTHREAD_FLOW_STEP("+enabled", "name", "virtual-thread", 1u, 2u, zx_ticks_get_boot(),
+                          STR_ARGS4);
 
   ASSERT_TRUE(fixture.StopTracing());
 
@@ -176,9 +184,11 @@ TEST(EventThreadTests, TestVthreadFlowEnd) {
 
   ASSERT_TRUE(fixture.StartTracing());
 
-  TRACE_VTHREAD_FLOW_END("+enabled", "name", "virtual-thread", 1u, 2u, zx_ticks_get());
-  TRACE_VTHREAD_FLOW_END("+enabled", "name", "virtual-thread", 1u, 2u, zx_ticks_get(), STR_ARGS1);
-  TRACE_VTHREAD_FLOW_END("+enabled", "name", "virtual-thread", 1u, 2u, zx_ticks_get(), STR_ARGS4);
+  TRACE_VTHREAD_FLOW_END("+enabled", "name", "virtual-thread", 1u, 2u, zx_ticks_get_boot());
+  TRACE_VTHREAD_FLOW_END("+enabled", "name", "virtual-thread", 1u, 2u, zx_ticks_get_boot(),
+                         STR_ARGS1);
+  TRACE_VTHREAD_FLOW_END("+enabled", "name", "virtual-thread", 1u, 2u, zx_ticks_get_boot(),
+                         STR_ARGS4);
 
   ASSERT_TRUE(fixture.StopTracing());
 
@@ -204,9 +214,11 @@ TEST(EventThreadTests, TestVthreadCounter) {
 
   ASSERT_TRUE(fixture.StartTracing());
 
-  TRACE_VTHREAD_COUNTER("+enabled", "name", "virtual-thread", 1u, 2u, zx_ticks_get());
-  TRACE_VTHREAD_COUNTER("+enabled", "name", "virtual-thread", 1u, 2u, zx_ticks_get(), I32_ARGS1);
-  TRACE_VTHREAD_COUNTER("+enabled", "name", "virtual-thread", 1u, 2u, zx_ticks_get(), I32_ARGS4);
+  TRACE_VTHREAD_COUNTER("+enabled", "name", "virtual-thread", 1u, 2u, zx_ticks_get_boot());
+  TRACE_VTHREAD_COUNTER("+enabled", "name", "virtual-thread", 1u, 2u, zx_ticks_get_boot(),
+                        I32_ARGS1);
+  TRACE_VTHREAD_COUNTER("+enabled", "name", "virtual-thread", 1u, 2u, zx_ticks_get_boot(),
+                        I32_ARGS4);
 
   ASSERT_TRUE(fixture.StopTracing());
 
