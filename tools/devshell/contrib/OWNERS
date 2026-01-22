@@ -62,3 +62,4 @@ per-file update-rustc-third-party = file: /scripts/rust/OWNERS
 per-file zedmon=claridge@google.com
 per-file lib/count-ninja-actions.py = file: /src/lib/analytics/OWNERS
 per-file lib/count-ninja-actions.py = file: /build/OWNERS
+per-file build-zbi = diserovich@google.com
