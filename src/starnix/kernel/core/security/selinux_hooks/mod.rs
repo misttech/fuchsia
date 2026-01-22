@@ -37,9 +37,9 @@ use smallvec;
 use starnix_logging::{BugRef, CATEGORY_STARNIX_SECURITY, bug_ref, trace_duration, track_stub};
 use starnix_sync::{Mutex, MutexGuard};
 use starnix_uapi::arc_key::WeakKey;
-use starnix_uapi::error;
 use starnix_uapi::errors::Errno;
 use starnix_uapi::file_mode::FileMode;
+use starnix_uapi::{errno, error};
 use std::cell::Ref;
 use std::ops::Deref;
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
@@ -217,7 +217,7 @@ fn check_permission_and_xperms(
         );
     }
 
-    result.permit.then_some(Ok(())).unwrap_or_else(|| error!(EACCES))
+    result.permit.then_some(()).ok_or_else(|| errno!(EACCES))
 }
 
 /// Checks that `current_task` has the specified `permissions` to the `node`, without auditing.
@@ -458,7 +458,7 @@ fn check_permission<P: ClassPermission + Into<KernelPermission> + Clone + 'stati
         );
     };
 
-    result.permit.then_some(Ok(())).unwrap_or_else(|| error!(EACCES))
+    result.permit.then_some(()).ok_or_else(|| errno!(EACCES))
 }
 
 /// Checks that `subject_sid` has the specified process `permission` on `self`.

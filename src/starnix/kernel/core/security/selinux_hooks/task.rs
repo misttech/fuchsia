@@ -18,7 +18,7 @@ use selinux::{
 };
 use starnix_sync::{LockBefore, Locked, ThreadGroupLimits, Unlocked};
 use starnix_types::ownership::TempRef;
-use starnix_uapi::auth::PtraceAccessMode;
+use starnix_uapi::auth::{PTRACE_MODE_NOAUDIT, PtraceAccessMode};
 use starnix_uapi::errors::Errno;
 use starnix_uapi::mount_flags::MountFlags;
 use starnix_uapi::resource_limits::Resource;
@@ -903,11 +903,16 @@ pub(in crate::security) fn ptrace_access_check(
     permission_check: &PermissionCheck<'_>,
     current_task: &CurrentTask,
     target: &Task,
-    _mode: PtraceAccessMode,
+    mode: PtraceAccessMode,
 ) -> Result<(), Errno> {
     let audit_context = current_task.into();
     let tracer_sid = current_task_state(current_task).lock().current_sid;
     let tracee_sid = target.security_state.lock().current_sid;
+    if mode.contains(PTRACE_MODE_NOAUDIT) {
+        let result =
+            permission_check.has_permission(tracer_sid, tracee_sid, ProcessPermission::Ptrace);
+        return result.permit.then_some(()).ok_or_else(|| errno!(EACCES));
+    }
     check_permission(
         permission_check,
         current_task,
