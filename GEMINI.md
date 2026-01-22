@@ -75,6 +75,12 @@ investigation of the existing codebase *before* writing new code.
     your changes compile correctly. This is a final verification step, not a
     tool for initial API discovery.
 
+    If you author new targets in BUILD.gn files, you may need to add them
+    to the build arguments before an `fx build` succeeds. To do this,
+    call `fx add-test <path/to/your/new:target>`. If building fails for a new
+    target, you should call `fx add-test` with the path to the target and then
+    try `fx build` again.
+
 For language-specific guidance, see the relevant sections below or in the
 `.gemini/extensions/` directory.
 
@@ -114,6 +120,12 @@ tools to analyze the code before making changes.
     navigate to its header file.
 *   **Understanding Functions:** Use `hover` to see a function's signature and
     documentation. Use `definition` to inspect its implementation.
+
+### Rust Development
+
+When working with Rust (`.rs`), a common pitfall is specifying the wrong
+"edition" in new targets defined in `BUILD.gn` files. The current correct
+edition is "2024".
 
 ## Finding or moving a FIDL method
 
@@ -187,6 +199,13 @@ for iteration. It is usually a bit faster than running `fx build`.
 
 When running `fx test` give your shell command tool longer wait intervals than
 the default. Consider waiting 2+ minutes at minimum each time you test.
+
+If `fx test` fails because there are no devices, prompt the user to
+either attach a device or start an emulator. Verify that the device is
+connected using `fx ffx target list`.
+
+If more than one device is present, you can choose the correct one by name as
+the first argument to `fx`: `fx -t <device name> test ...`.
 
 # Code reviews
 
