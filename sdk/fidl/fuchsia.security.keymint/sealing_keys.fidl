@@ -81,8 +81,18 @@ closed protocol SealingKeys {
     ///   * The key info has to match the one supplied when generating the sealing key.
     ///   * The key blob has to match the blob returned when generating the sealing key.
     ///
-    /// Note that the client is responsible for discarding the input `key_blob` and using, instead,
-    /// the output `key_blob` for all operations involving the upgraded sealing key.
+    /// Note that after upgrading a key, both the old key and new key will be occupying limited key
+    /// storage in keymint. This means that clients can unintentionally exhaust key storage in two
+    /// ways:
+    /// * Upgrading a key and failing to delete the old key after upgrade.
+    /// * Successfully upgrading a key, failing to persist the new key, and later (e.g., after a
+    ///   reboot) upgrading the key again.
+    ///
+    /// Both of the above missteps on the part of the client will "waste" one key slot in keymint,
+    /// and repeated missteps (e.g., a boot loop that upgrades a key, fails to persist the new key,
+    /// then reboots) can exhaust available key storage. Clients are responsible for old (upgraded)
+    /// keys and persisting new (result of a successful key upgrade) to ensure that key slots are
+    /// not wasted.
     ///
     ///  Returns
     ///   * The upgraded key blob if everything worked.
@@ -93,6 +103,17 @@ closed protocol SealingKeys {
     }) -> (struct {
         key_blob vector<uint8>:MAX;
     }) error UpgradeError;
+
+    /// Deletes a sealing key from keymint.
+    ///
+    /// This operation should be used to delete old (upgraded) keys.
+    ///
+    /// Returns
+    ///  * Nothing if everything worked.
+    ///  * FAILED_DELETE if deletion failed.
+    strict DeleteSealingKey(struct {
+        key_blob vector<uint8>:MAX;
+    }) -> () error DeleteError;
 };
 
 type CreateError = flexible enum {

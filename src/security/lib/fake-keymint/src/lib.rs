@@ -12,7 +12,7 @@ use aes_gcm_siv::{Aes128GcmSiv, Key, KeyInit as _, Nonce};
 use anyhow::{anyhow, bail};
 use fidl::endpoints::{ClientEnd, create_request_stream};
 use fidl_fuchsia_security_keymint::{
-    AdminMarker, AdminRequest, AdminRequestStream, SealError, SealingKeysMarker,
+    AdminMarker, AdminRequest, AdminRequestStream, DeleteError, SealError, SealingKeysMarker,
     SealingKeysRequest, SealingKeysRequestStream, UnsealError, UpgradeError,
 };
 use fuchsia_sync::Mutex;
@@ -118,6 +118,19 @@ impl Inner {
         // does not require an upgrade.
         Ok(vec![])
     }
+
+    fn handle_delete_request(&mut self, key_blob: Vec<u8>) -> anyhow::Result<()> {
+        let initial_len = self.sealing_keys.len();
+        self.sealing_keys.retain(|_info, sealing_key| &sealing_key.key_blob != &key_blob);
+        let modified_len = self.sealing_keys.len();
+        if initial_len == modified_len {
+            bail!("Failed to locate matching key for deletion");
+        }
+        if modified_len < initial_len - 1 {
+            bail!("Key blob matched multiple key entries");
+        }
+        Ok(())
+    }
 }
 
 /// A fake (insecure) implementation of the Keymint FIDL.
@@ -166,6 +179,15 @@ impl FakeKeymint {
                             Err(err) => {
                                 warn!(err:?; "Failed to upgrade key");
                                 responder.send(Err(UpgradeError::FailedUpgrade))?
+                            }
+                        }
+                    }
+                    SealingKeysRequest::DeleteSealingKey { key_blob, responder } => {
+                        match self.inner.lock().handle_delete_request(key_blob) {
+                            Ok(()) => responder.send(Ok(()))?,
+                            Err(err) => {
+                                warn!(err:?; "Failed to delete key");
+                                responder.send(Err(DeleteError::FailedDelete))?
                             }
                         }
                     }
@@ -343,6 +365,48 @@ mod tests {
                 .await
                 .expect("FIDL error")
                 .expect_err("seal should fail");
+            Ok(())
+        })
+        .await
+        .unwrap();
+    }
+
+    #[fuchsia::test]
+    async fn delete_keys_succeeds() {
+        with_keymint_service(|keymint, _admin| async {
+            let keymint = keymint.into_proxy();
+            const KEY_INFO: [u8; 16] = [1u8; 16];
+            let key_blob = keymint
+                .create_sealing_key(&KEY_INFO[..])
+                .await
+                .expect("FIDL error")
+                .expect("create error");
+
+            keymint.delete_sealing_key(&key_blob).await.expect("FIDL error").expect("delete error");
+            Ok(())
+        })
+        .await
+        .unwrap();
+    }
+
+    #[fuchsia::test]
+    async fn delete_keys_fails_bad_key_blob() {
+        with_keymint_service(|keymint, _admin| async {
+            let keymint = keymint.into_proxy();
+            const KEY_INFO: [u8; 16] = [1u8; 16];
+            let mut key_blob = keymint
+                .create_sealing_key(&KEY_INFO[..])
+                .await
+                .expect("FIDL error")
+                .expect("create error");
+
+            key_blob[0] ^= 0xffu8;
+
+            keymint
+                .delete_sealing_key(&key_blob)
+                .await
+                .expect("FIDL error")
+                .expect_err("delete success");
             Ok(())
         })
         .await

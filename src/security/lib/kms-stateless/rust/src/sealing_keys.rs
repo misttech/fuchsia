@@ -114,6 +114,16 @@ pub async fn upgrade_sealing_key(
         .map_err(Into::into)
 }
 
+/// Convenience wrapper around fuchsia.security.keymint/SealingKeys::DeleteSealingKey()
+///
+/// See //sdk/fidl/fuchsia.security.keymint/sealing_keys.fidl for more details.
+pub async fn delete_sealing_key(key_blob: &[u8]) -> Result<(), SealingKeysError> {
+    client::connect_to_protocol::<fidl_fuchsia_security_keymint::SealingKeysMarker>()?
+        .delete_sealing_key(key_blob)
+        .await?
+        .map_err(Into::into)
+}
+
 /// Convenience wrapper around fuchsia.security.keymint.Admin/DeleteAllKeys()
 ///
 /// See //sdk/fidl/fuchsia.security.keymint/admin.fidl for more details.
