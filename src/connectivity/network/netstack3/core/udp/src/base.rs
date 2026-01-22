@@ -813,6 +813,8 @@ impl<T> AddrState<T> {
             AddrState::Shared { priority, load_balanced } => {
                 if let Some(id) = priority.last() {
                     id
+                } else if load_balanced.len() == 1 {
+                    &load_balanced[0].id
                 } else {
                     let mut hasher = DefaultHasher::new();
                     selector.hash(&mut hasher);
