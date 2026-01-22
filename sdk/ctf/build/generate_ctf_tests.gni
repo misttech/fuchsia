@@ -45,6 +45,16 @@ import("//sdk/ctf/build/internal/fuchsia_package_with_test.gni")
 import("//sdk/ctf/build/internal/generate_ctf_packages.gni")
 import("//src/lib/vulkan/vulkan.gni")
 
+# Tests in this list are not inflated into a real test, even if they are
+# present in a CTF download.
+IGNORED_CTF_TESTS = [
+  "flatland-auto-focus-integration-test-suite",
+  "flatland-child-focus-integration-test-suite",
+  "flatland-transformed-touch-integration-test-suite",
+  "flatland-mouse-hit-integration-test-suite",
+  "flatland-mouse-wheel-integration-test-suite",
+]
+
 # This template has the same input as other generate_* templates,
 # but it handles the common operation of treating an input
 # package + test_component_names as a group of pre-packaged tests.
@@ -1029,6 +1039,23 @@ template("generate_trusted-flatland-factory-integration-test-suite") {
   }
 }
 
+# Expands to an empty test suite for tests that were removed from CTF testing, but for which
+# binaries are still present in CIPD.
+template("generate_disabled-ctf-test-suite") {
+  forward_variables_from(invoker,
+                         [
+                           "test_info",
+                           "fidl_coverage",
+                         ])
+  not_needed([
+               "test_info",
+               "fidl_coverage",
+             ])
+  group(target_name) {
+    deps = []
+  }
+}
+
 # Expands a prebuilt CTF test into a runnable fuchsia package.
 #
 # This template is called several times with every combination of ctf_test and
@@ -1062,7 +1089,13 @@ template("generate_ctf_test") {
     }
   }
 
-  target("generate_${prebuilt_package.package_name}", target_name) {
+  target_for_downloaded_test = "generate_${prebuilt_package.package_name}"
+  if (IGNORED_CTF_TESTS + [ prebuilt_package.package_name ] -
+      [ prebuilt_package.package_name ] != IGNORED_CTF_TESTS) {
+    target_for_downloaded_test = "generate_disabled-ctf-test-suite"
+  }
+
+  target(target_for_downloaded_test, target_name) {
     # fidl_coverage will be forwarded in each "generate_foo" target defined above.
     # It can be un-forwarded to disable it for a specific test, or set to false
     # here to disable it for all tests.
