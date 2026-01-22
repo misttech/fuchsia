@@ -1084,11 +1084,13 @@ type TcpState = strict enum {
     CLOSING = 11;
 };
 
+/// TCP state machine state.
 @available(added=29)
 alias TcpState = fuchsia.net.tcp.State;
 
 /// TCP congestion control state machine state.
 @strict_audit(bug="https://fxbug.dev/467128725", state="PENDING_REVIEW")
+@available(added=11, replaced=NEXT)
 type TcpCongestionControlState = strict enum {
     OPEN = 0;
     DISORDER = 1;
@@ -1097,7 +1099,12 @@ type TcpCongestionControlState = strict enum {
     LOSS = 4;
 };
 
+/// TCP congestion control state machine state.
+@available(added=NEXT)
+alias TcpCongestionControlState = fuchsia.net.tcp.CongestionControlState;
+
 /// TCP protocol state.
+@available(added=11, replaced=NEXT)
 type TcpInfo = table {
     1: state TcpState;
     2: ca_state TcpCongestionControlState;
@@ -1156,6 +1163,10 @@ type TcpInfo = table {
     // 55: tcpi_rcv_ooopack uint32;
     // 56: tcpi_snd_wnd uint32;
 };
+
+/// TCP protocol state.
+@available(added=NEXT)
+alias TcpInfo = fuchsia.net.tcp.Info;
 
 /// Holds information about an interface and its addresses.
 type InterfaceAddresses = table {

@@ -5557,7 +5557,7 @@
         "kind": "struct/member",
         "name": "fuchsia.posix.socket/StreamSocket_GetTcpInfo_Response.info",
         "ordinal": "1",
-        "type": "fuchsia.posix.socket/TcpInfo"
+        "type": "fuchsia.net.tcp/Info"
     },
     {
         "kind": "struct",
@@ -6574,89 +6574,6 @@
         "name": "fuchsia.posix.socket/TcpCongestionControl",
         "strictness": "strict",
         "type": "uint32"
-    },
-    {
-        "kind": "enum/member",
-        "name": "fuchsia.posix.socket/TcpCongestionControlState.CONGESTION_WINDOW_REDUCED",
-        "value": "2"
-    },
-    {
-        "kind": "enum/member",
-        "name": "fuchsia.posix.socket/TcpCongestionControlState.DISORDER",
-        "value": "1"
-    },
-    {
-        "kind": "enum/member",
-        "name": "fuchsia.posix.socket/TcpCongestionControlState.LOSS",
-        "value": "4"
-    },
-    {
-        "kind": "enum/member",
-        "name": "fuchsia.posix.socket/TcpCongestionControlState.OPEN",
-        "value": "0"
-    },
-    {
-        "kind": "enum/member",
-        "name": "fuchsia.posix.socket/TcpCongestionControlState.RECOVERY",
-        "value": "3"
-    },
-    {
-        "kind": "enum",
-        "name": "fuchsia.posix.socket/TcpCongestionControlState",
-        "strictness": "strict",
-        "type": "uint32"
-    },
-    {
-        "kind": "table/member",
-        "name": "fuchsia.posix.socket/TcpInfo.ca_state",
-        "ordinal": "2",
-        "type": "fuchsia.posix.socket/TcpCongestionControlState"
-    },
-    {
-        "kind": "table/member",
-        "name": "fuchsia.posix.socket/TcpInfo.reorder_seen",
-        "ordinal": "54",
-        "type": "bool"
-    },
-    {
-        "kind": "table/member",
-        "name": "fuchsia.posix.socket/TcpInfo.rto_usec",
-        "ordinal": "11",
-        "type": "uint32"
-    },
-    {
-        "kind": "table/member",
-        "name": "fuchsia.posix.socket/TcpInfo.rtt_usec",
-        "ordinal": "26",
-        "type": "uint32"
-    },
-    {
-        "kind": "table/member",
-        "name": "fuchsia.posix.socket/TcpInfo.rtt_var_usec",
-        "ordinal": "27",
-        "type": "uint32"
-    },
-    {
-        "kind": "table/member",
-        "name": "fuchsia.posix.socket/TcpInfo.snd_cwnd",
-        "ordinal": "29",
-        "type": "uint32"
-    },
-    {
-        "kind": "table/member",
-        "name": "fuchsia.posix.socket/TcpInfo.snd_ssthresh",
-        "ordinal": "28",
-        "type": "uint32"
-    },
-    {
-        "kind": "table/member",
-        "name": "fuchsia.posix.socket/TcpInfo.state",
-        "ordinal": "1",
-        "type": "fuchsia.net.tcp/State"
-    },
-    {
-        "kind": "table",
-        "name": "fuchsia.posix.socket/TcpInfo"
     },
     {
         "kind": "struct/member",

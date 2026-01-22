@@ -3937,13 +3937,13 @@ func (s *streamSocketImpl) GetTcpInfo(fidl.Context) (socket.StreamSocketGetTcpIn
 	info.SetCaState(func() socket.TcpCongestionControlState {
 		switch state := value.CcState; state {
 		case tcpip.Open:
-			return socket.TcpCongestionControlStateOpen
+			return fnettcp.CongestionControlStateOpen
 		case tcpip.RTORecovery:
-			return socket.TcpCongestionControlStateLoss
+			return fnettcp.CongestionControlStateLoss
 		case tcpip.FastRecovery, tcpip.SACKRecovery:
-			return socket.TcpCongestionControlStateRecovery
+			return fnettcp.CongestionControlStateRecovery
 		case tcpip.Disorder:
-			return socket.TcpCongestionControlStateDisorder
+			return fnettcp.CongestionControlStateDisorder
 		default:
 			panic(fmt.Sprintf("unknown congestion control state: %d", state))
 		}
