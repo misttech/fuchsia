@@ -301,10 +301,10 @@ impl<D: Parse + HasMetadata + Walk> HashedArrayView<D>
 where
     D::Metadata: Eq + PartialEq + Hash + Debug,
 {
-    /// Looks up the entry with the specified metadata `key`, and parsed & returns the value.
+    /// Looks up the entry with the specified metadata `key`, and parses and returns the value.
     /// This method is only appropriate to call when expecting to find at most one entry for
     /// `key`; if there is a possibility of more than one element in the underlying
-    /// `policy_data` being associated with `key`, call `iterate` instead.
+    /// `policy_data` being associated with `key`, call `find_all` instead.
     pub fn find(&self, key: D::Metadata, policy_data: &PolicyData) -> Option<D> {
         let key_hash = Self::metadata_hash(&key);
         let offset = self.index.find(key_hash, |&offset| {
@@ -315,9 +315,9 @@ where
         Some(element.parse(policy_data))
     }
 
-    /// Looks up all entries with the specified metadata `key` and parses and emits those
-    /// values.
-    pub(super) fn iterate(
+    /// Returns an iterator over the entries with the specified metadata `key` and parses and
+    /// emits those values.
+    pub(super) fn find_all(
         &self,
         key: D::Metadata,
         policy_data: &PolicyData,
@@ -336,8 +336,8 @@ where
         .map(|element| element.parse(policy_data))
     }
 
-    /// Emits a view for each reachable element.
-    pub(super) fn iterate_all(&self, policy_data: &PolicyData) -> impl Iterator<Item = View<D>> {
+    /// Returns an iterator that emits a view for each reachable element.
+    pub(super) fn iter(&self, policy_data: &PolicyData) -> impl Iterator<Item = View<D>> {
         self.index
             .iter()
             .map(|offset| {

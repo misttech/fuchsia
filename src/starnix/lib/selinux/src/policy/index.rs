@@ -259,7 +259,7 @@ impl PolicyIndex {
         };
 
         let type_ = override_type.unwrap_or_else(|| {
-            match self.parsed_policy.find_access_vector_rule(
+            match self.parsed_policy.access_vector_rules_find(
                 source.type_(),
                 target.type_(),
                 policy_class.id(),

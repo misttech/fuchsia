@@ -169,7 +169,7 @@ impl ParsedPolicy {
             for target_bit_index in target_attribute_bitmap.indices_of_set_bits() {
                 let target_id = TypeId(NonZeroU32::new(target_bit_index + 1).unwrap());
 
-                if let Some(allow_rule) = self.find_access_vector_rule(
+                if let Some(allow_rule) = self.access_vector_rules_find(
                     source_id,
                     target_id,
                     target_class_id,
@@ -178,7 +178,7 @@ impl ParsedPolicy {
                     // `access_vector` has bits set for each permission allowed by this rule.
                     computed_access_vector |= allow_rule.access_vector().unwrap();
                 }
-                if let Some(auditallow_rule) = self.find_access_vector_rule(
+                if let Some(auditallow_rule) = self.access_vector_rules_find(
                     source_id,
                     target_id,
                     target_class_id,
@@ -187,7 +187,7 @@ impl ParsedPolicy {
                     // `access_vector` has bits set for each permission to audit when allowed.
                     computed_audit_allow |= auditallow_rule.access_vector().unwrap();
                 }
-                if let Some(dontaudit_rule) = self.find_access_vector_rule(
+                if let Some(dontaudit_rule) = self.access_vector_rules_find(
                     source_id,
                     target_id,
                     target_class_id,
@@ -283,7 +283,7 @@ impl ParsedPolicy {
             for target_bit_index in target_attribute_bitmap.indices_of_set_bits() {
                 let target_id = TypeId(NonZeroU32::new(target_bit_index + 1).unwrap());
 
-                for xperms_allow_rule in self.iterate_access_vector_rules(
+                for xperms_allow_rule in self.access_vector_rules_find_all(
                     source_id,
                     target_id,
                     target_class_id,
@@ -304,7 +304,7 @@ impl ParsedPolicy {
                     }
                 }
 
-                for xperms_auditallow_rule in self.iterate_access_vector_rules(
+                for xperms_auditallow_rule in self.access_vector_rules_find_all(
                     source_id,
                     target_id,
                     target_class_id,
@@ -317,7 +317,7 @@ impl ParsedPolicy {
                     }
                 }
 
-                for xperms_dontaudit_rule in self.iterate_access_vector_rules(
+                for xperms_dontaudit_rule in self.access_vector_rules_find_all(
                     source_id,
                     target_id,
                     target_class_id,
@@ -435,7 +435,7 @@ impl ParsedPolicy {
         &self.range_transitions.data
     }
 
-    pub(super) fn find_access_vector_rule(
+    pub(super) fn access_vector_rules_find(
         &self,
         source: TypeId,
         target: TypeId,
@@ -446,7 +446,7 @@ impl ParsedPolicy {
         self.access_vector_rules.find(query, &self.data)
     }
 
-    pub(super) fn iterate_access_vector_rules(
+    pub(super) fn access_vector_rules_find_all(
         &self,
         source: TypeId,
         target: TypeId,
@@ -454,7 +454,7 @@ impl ParsedPolicy {
         rule_type: u16,
     ) -> impl Iterator<Item = AccessVectorRule> {
         let query = AccessVectorRuleMetadata::for_query(source, target, class, rule_type);
-        self.access_vector_rules.iterate(query, &self.data)
+        self.access_vector_rules.find_all(query, &self.data)
     }
 
     #[cfg(test)]
@@ -465,7 +465,7 @@ impl ParsedPolicy {
         use itertools::Itertools;
 
         self.access_vector_rules
-            .iterate_all(&self.data)
+            .iter(&self.data)
             .map(|view| view.parse(&self.data))
             .sorted_by(access_vector_rule_ordering)
     }
@@ -948,7 +948,7 @@ impl ParsedPolicy {
         }
 
         // Validate that types output by access vector rules are defined.
-        for access_vector_rule_view in self.access_vector_rules.iterate_all(&self.data) {
+        for access_vector_rule_view in self.access_vector_rules.iter(&self.data) {
             let access_vector_rule = access_vector_rule_view.parse(&self.data);
             if let Some(type_id) = access_vector_rule.new_type() {
                 validate_id(&type_ids, type_id, "new_type")?;
