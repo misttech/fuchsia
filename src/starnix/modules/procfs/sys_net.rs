@@ -428,7 +428,7 @@ struct NetworkNetlinkSysctlFile {
 
 impl NetworkNetlinkSysctlFile {
     fn new_node(interface: SysctlInterfaceSelector) -> impl FsNodeOps {
-        SimpleFileNode::new(move || Ok(BytesFile::new(Self { interface })))
+        SimpleFileNode::new(move |_, _| Ok(BytesFile::new(Self { interface })))
     }
 }
 
@@ -532,7 +532,7 @@ fn new_interface_config_file_node<Config>(selector: SysctlInterfaceSelector) -> 
 where
     Config: InterfaceConfig,
 {
-    SimpleFileNode::new(move || {
+    SimpleFileNode::new(move |_, _| {
         Ok(BytesFile::new(InterfaceConfigFile {
             selector,
             _marker: std::marker::PhantomData::<Config>,

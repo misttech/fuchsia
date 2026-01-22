@@ -178,7 +178,7 @@ impl<Source: SequenceFileSource> DynamicFile<Source> {
 
 impl<Source: SequenceFileSource + Clone> DynamicFile<Source> {
     pub fn new_node(source: Source) -> impl FsNodeOps {
-        SimpleFileNode::new(move || Ok(DynamicFile::new(source.clone())))
+        SimpleFileNode::new(move |_, _| Ok(DynamicFile::new(source.clone())))
     }
 }
 
@@ -415,7 +415,7 @@ impl DynamicFileSource for ConstFileSource {
 impl ConstFile {
     /// Create a file with the given contents.
     pub fn new_node(data: Vec<u8>) -> impl FsNodeOps {
-        SimpleFileNode::new(move || {
+        SimpleFileNode::new(move |_, _| {
             Ok(Self(DynamicFile::new(ConstFileSource { data: data.clone() })))
         })
     }

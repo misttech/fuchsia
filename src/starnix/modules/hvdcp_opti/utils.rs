@@ -63,7 +63,7 @@ pub struct InvalidFile;
 
 impl InvalidFile {
     pub fn new_node() -> impl FsNodeOps {
-        SimpleFileNode::new(move || Ok(InvalidFile))
+        SimpleFileNode::new(move |_, _| Ok(InvalidFile))
     }
 }
 

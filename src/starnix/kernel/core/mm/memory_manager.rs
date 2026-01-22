@@ -14,13 +14,12 @@ use crate::mm::{
 };
 use crate::security;
 use crate::signals::{SignalDetail, SignalInfo};
-use crate::task::{CurrentTask, ExceptionResult, PageFaultExceptionReport, Task, get_mm_weak};
+use crate::task::{CurrentTask, ExceptionResult, PageFaultExceptionReport, Task};
 use crate::vfs::aio::AioContext;
 use crate::vfs::pseudo::dynamic_file::{
     DynamicFile, DynamicFileBuf, DynamicFileSource, SequenceFileSource,
 };
-use crate::vfs::pseudo::simple_file::SimpleFileNode;
-use crate::vfs::{FsNodeOps, FsString, NamespaceNode};
+use crate::vfs::{FsString, NamespaceNode};
 use anyhow::{Error, anyhow};
 use bitflags::bitflags;
 use flyweights::FlyByteStr;
@@ -39,7 +38,7 @@ use starnix_sync::{
 use starnix_types::arch::ArchWidth;
 use starnix_types::futex_address::FutexAddress;
 use starnix_types::math::{round_down_to_system_page_size, round_up_to_system_page_size};
-use starnix_types::ownership::WeakRef;
+use starnix_types::ownership::{TempRef, WeakRef};
 use starnix_types::user_buffer::{UserBuffer, UserBuffers};
 use starnix_uapi::auth::CAP_IPC_LOCK;
 use starnix_uapi::errors::Errno;
@@ -4097,12 +4096,11 @@ pub struct ProcMapsFile {
     task: WeakRef<Task>,
 }
 impl ProcMapsFile {
-    pub fn new_node(task: WeakRef<Task>) -> impl FsNodeOps {
-        SimpleFileNode::new(move || {
-            let task = task.clone();
-            let mm = get_mm_weak(&task).unwrap_or_default();
-            Ok(DynamicFile::new(Self { mm, task }))
-        })
+    pub fn new(task: TempRef<'_, Task>) -> DynamicFile<Self> {
+        // "maps" is empty for kthreads, rather than inaccessible.
+        let mm = task.mm().map_or_else(|_| Weak::default(), |mm| Arc::downgrade(&mm));
+        let task = task.into();
+        DynamicFile::new(Self { mm, task })
     }
 }
 
@@ -4135,12 +4133,10 @@ pub struct ProcSmapsFile {
     task: WeakRef<Task>,
 }
 impl ProcSmapsFile {
-    pub fn new_node(task: WeakRef<Task>) -> impl FsNodeOps {
-        SimpleFileNode::new(move || {
-            let task = task.clone();
-            let mm = get_mm_weak(&task).unwrap_or_default();
-            Ok(DynamicFile::new(Self { mm, task }))
-        })
+    pub fn new(task: TempRef<'_, Task>) -> DynamicFile<Self> {
+        // "smaps" is empty for kthreads, rather than inaccessible.
+        let mm = task.mm().map_or_else(|_| Weak::default(), |mm| Arc::downgrade(&mm));
+        DynamicFile::new(Self { mm, task: task.into() })
     }
 }
 

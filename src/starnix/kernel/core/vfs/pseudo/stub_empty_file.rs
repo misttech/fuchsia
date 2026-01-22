@@ -20,9 +20,14 @@ pub struct StubEmptyFile {
 impl StubEmptyFile {
     #[track_caller]
     pub fn new_node(bug: BugRef) -> impl FsNodeOps {
+        SimpleFileNode::new(move |_, _| Ok(StubEmptyFile::new(bug)))
+    }
+
+    #[track_caller]
+    pub fn new(bug: BugRef) -> Self {
         // This ensures the caller of this fn is recorded instead of the location of the closure.
         let location = Location::caller();
-        SimpleFileNode::new(move || Ok(StubEmptyFile { bug, location }))
+        Self { bug, location }
     }
 }
 
