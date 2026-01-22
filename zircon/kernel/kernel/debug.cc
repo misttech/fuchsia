@@ -151,7 +151,7 @@ RecurringCallback g_threadload_callback([]() {
 
   printf(
       "cpu    load"
-      " sched (cs ylds pmpts irq_pmpts)"
+      " sched (cs ylds pmpts)"
       "   sysc"
       " ints (hw  tmr tmr_cb)"
       " ipi (rs  gen)"
@@ -214,7 +214,7 @@ RecurringCallback g_threadload_callback([]() {
     printf(
         "%3u"
         " %3u.%02u%%"
-        " %9lu %4lu %5lu %9lu"
+        " %9lu %4lu %5lu"
         " %7lu"
         " %8lu %4lu %6lu"
         " %8lu %4lu"
@@ -222,10 +222,9 @@ RecurringCallback g_threadload_callback([]() {
         "\n",
         i, static_cast<uint>(busypercent / 100), static_cast<uint>(busypercent % 100),
         stats.context_switches - old_stats[i].context_switches, stats.yields - old_stats[i].yields,
-        stats.preempts - old_stats[i].preempts, stats.irq_preempts - old_stats[i].irq_preempts,
-        stats.syscalls - old_stats[i].syscalls, stats.interrupts - old_stats[i].interrupts,
-        stats.timer_ints - old_stats[i].timer_ints, stats.timers - old_stats[i].timers,
-        stats.reschedule_ipis - old_stats[i].reschedule_ipis,
+        stats.preempts - old_stats[i].preempts, stats.syscalls - old_stats[i].syscalls,
+        stats.interrupts - old_stats[i].interrupts, stats.timer_ints - old_stats[i].timer_ints,
+        stats.timers - old_stats[i].timers, stats.reschedule_ipis - old_stats[i].reschedule_ipis,
         stats.generic_ipis - old_stats[i].generic_ipis, static_cast<uint>(total_power_uw / 1000000),
         static_cast<uint>(total_power_uw % 1000000));
 

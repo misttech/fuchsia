@@ -1635,7 +1635,7 @@ void Thread::Current::Preempt() {
 
   if (!current_thread->IsIdle()) {
     // only track when a meaningful preempt happens
-    CPU_STATS_INC(irq_preempts);
+    CPU_STATS_INC(preempts);
   }
 
   Scheduler::Preempt();

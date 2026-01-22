@@ -145,8 +145,7 @@ static zx_status_t cpustats(zx_handle_t info_resource, zx_duration_t delay) {
 
   printf(
       "cpu    load    busy"
-      " sched (cs ylds pmpts irq_pmpts)"
-      " excep"
+      " sched (cs ylds pmpts)"
       " pagef"
       "    sysc"
       " ints (hw  tmr tmr_cb)"
@@ -196,9 +195,8 @@ static zx_status_t cpustats(zx_handle_t info_resource, zx_duration_t delay) {
         "%3zu"
         " %3lu.%02lu%%"
         " %3lu.%02lu%%"
-        " %9lu %4lu %5lu %9lu"
+        " %9lu %4lu %5lu"
         " %6lu"
-        " %5lu"
         " %7lu"
         " %8lu %4lu %6lu"
         " %8lu %4lu"
@@ -207,8 +205,6 @@ static zx_status_t cpustats(zx_handle_t info_resource, zx_duration_t delay) {
         i, load / 100, load % 100, busypercent / 100, busypercent % 100,
         stats[i].context_switches - old_stats[i].context_switches,
         stats[i].yields - old_stats[i].yields, stats[i].preempts - old_stats[i].preempts,
-        stats[i].irq_preempts - old_stats[i].irq_preempts,
-        stats[i].exceptions - old_stats[i].exceptions,
         stats[i].page_faults - old_stats[i].page_faults, stats[i].syscalls - old_stats[i].syscalls,
         stats[i].ints - old_stats[i].ints, stats[i].timer_ints - old_stats[i].timer_ints,
         stats[i].timers - old_stats[i].timers,

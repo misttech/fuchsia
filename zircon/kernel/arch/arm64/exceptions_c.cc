@@ -486,10 +486,12 @@ extern "C" void arm64_sync_exception(iframe_t* iframe, uint exception_flags, uin
       break;
     case ESRExceptionClass::kInstructionAbortLowerEl:
     case ESRExceptionClass::kInstructionAbortSameEl:
+      CPU_STATS_INC(page_faults);
       arm64_instruction_abort_handler(iframe, exception_flags, esr);
       break;
     case ESRExceptionClass::kDataAbortLowerEl:
     case ESRExceptionClass::kDataAbortSameEl:
+      CPU_STATS_INC(page_faults);
       arm64_data_abort_handler(iframe, exception_flags, esr);
       break;
     case ESRExceptionClass::kBreakpointLowerEl:

@@ -14,14 +14,14 @@
 struct guest_stats {
   ulong vm_entries;
   ulong vm_exits;
-#ifdef __aarch64__
+#if defined(__aarch64__)
   ulong wfi_wfe_instructions;
   ulong instruction_aborts;
   ulong data_aborts;
   ulong system_instructions;
   ulong smc_instructions;
   ulong interrupts;
-#else
+#elif defined(__x86_64__)
   ulong interrupts;
   ulong interrupt_windows;
   ulong cpuid_instructions;
@@ -45,7 +45,6 @@ struct cpu_stats {
   zx_duration_mono_t idle_time;
   ulong reschedules;
   ulong context_switches;
-  ulong irq_preempts;
   ulong preempts;
   ulong yields;
 

@@ -201,7 +201,7 @@ zx_info_cpu_stats_t GetCPUStats(uint32_t cpu_num) {
   stats.normalized_busy_time = cpu_stats.normalized_busy_time;
   stats.reschedules = cpu_stats.reschedules;
   stats.context_switches = cpu_stats.context_switches;
-  stats.irq_preempts = cpu_stats.irq_preempts;
+  stats.irq_preempts = 0;  // deprecated, not tracking different types of preemptions.
   stats.preempts = cpu_stats.preempts;
   stats.yields = cpu_stats.yields;
   stats.ints = cpu_stats.interrupts;
