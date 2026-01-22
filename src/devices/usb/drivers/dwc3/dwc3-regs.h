@@ -50,6 +50,50 @@ class GSTS : public hwreg::RegisterBase<GSTS, uint32_t> {
   static auto Get() { return hwreg::RegisterAddr<GSTS>(0xc118); }
 };
 
+// Global User Control Register 1
+class GUCTL1 : public hwreg::RegisterBase<GUCTL1, uint32_t> {
+ public:
+  DEF_BIT(31, DEV_DECOUPLE_L1L2_EVT);
+  DEF_BIT(30, DS_RXDET_MAX_TOUT_CTRL);
+  DEF_BIT(29, FILTER_SE0_FSLS_EOP);
+  DEF_BIT(28, TX_IPGAP_LINECHECK_DIS);
+  DEF_BIT(27, DEV_TRB_OUT_SPR_IND);
+  DEF_BIT(26, DEV_FORCE_20_CLK_FOR_30_CLK);
+  DEF_BIT(25, P3_IN_U2);
+  DEF_BIT(24, DEV_L1_EXIT_BY_HW);
+  DEF_FIELD(23, 21, IP_GAP_ADD_ON);
+  DEF_BIT(20, DEV_LSP_TAIL_LOCK_DIS);
+  DEF_BIT(19, NAK_PER_ENH_FS);
+  DEF_BIT(18, NAK_PER_ENH_HS);
+  DEF_BIT(17, PARKMODE_DISABLE_SS);
+  DEF_BIT(16, PARKMODE_DISABLE_HS);
+  DEF_BIT(15, PARKMODE_DISABLE_FSLS);
+  DEF_BIT(12, DisUSB2RefClkGtng);
+  DEF_BIT(11, DisRefClkGtng);
+  DEF_BIT(10, RESUME_OPMODE_HS_HOST);
+  DEF_BIT(9, DEV_HS_NYET_BULK_SPR);
+  DEF_BIT(8, L1_SUSP_THRLD_EN_FOR_HOST);
+  DEF_FIELD(7, 4, L1_SUSP_THRLD_FOR_HOST);
+  DEF_BIT(3, HC_ERRATA_ENABLE);
+  DEF_BIT(2, HC_PARCHK_DISABLE);
+  DEF_BIT(1, OVRLD_L1_SUSP_COM);
+  DEF_BIT(0, LOA_FILTER_EN);
+  static auto Get() { return hwreg::RegisterAddr<GUCTL1>(0xc11c); }
+};
+
+// Global User Control Register 2
+class GUCTL2 : public hwreg::RegisterBase<GUCTL2, uint32_t> {
+ public:
+  DEF_FIELD(25, 19, EN_HP_PM_TIMER);
+  DEF_FIELD(18, 15, NOLOWPWRDUR);
+  DEF_BIT(14, Rst_actbitlater);
+  DEF_BIT(12, EnableEpCacheEvict);
+  DEF_BIT(11, DisableCFC);
+  DEF_FIELD(10, 5, RxPingDuration);
+  DEF_FIELD(4, 0, TxPingDuration);
+  static auto Get() { return hwreg::RegisterAddr<GUCTL2>(0xc19c); }
+};
+
 // Global USB2 PHY Configuration Register
 class GUSB2PHYCFG : public hwreg::RegisterBase<GUSB2PHYCFG, uint32_t> {
  public:
