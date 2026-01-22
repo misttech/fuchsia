@@ -37,6 +37,10 @@ config("printf-options") {
 
     # Don't support %m since it uses problematic llvm-libc internals.
     "LIBC_COPT_PRINTF_DISABLE_STRERROR",
+
+    # Don't support %lc since it's not used anywhere in the internal uses,
+    # and this implementation is not yet used for public printf.
+    "LIBC_COPT_PRINTF_DISABLE_WIDE",
   ]
 
   # Don't support FP types if the toolchain doesn't.
@@ -54,7 +58,6 @@ libc_source_set("wrapper") {
   public_configs = [ ":wrapper.config" ]
 
   sources = [ "wrapper.cc" ]
-  configs = [ ":printf-options" ]
   deps = [ ":printf_core" ]
 }
 
