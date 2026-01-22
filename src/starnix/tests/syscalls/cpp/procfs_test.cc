@@ -976,6 +976,112 @@ TEST_P(ProcMmTest, ReadBeforeAfterExec) {
   ASSERT_TRUE(fork_helper.WaitForChildren());
 }
 
-INSTANTIATE_TEST_SUITE_P(MmDependentFiles, ProcMmTest, ::testing::Values("maps", "smaps"));
+INSTANTIATE_TEST_SUITE_P(ProcMmTest, ProcMmTest, ::testing::Values("maps", "smaps"),
+                         [](const auto& info) { return info.param; });
+
+class ProcfsAccessTest : public ProcTestBase, public ::testing::WithParamInterface<const char*> {};
+
+// Verify that an unprivileged process cannot read sensitive files of another process.
+// This reproduces the bug where Starnix allows access without proper checks.
+TEST_P(ProcfsAccessTest, AccessDeniedToNonOwner) {
+  if (getuid() != 0) {
+    GTEST_SKIP() << "Not running as root, skipping.";
+  }
+
+  pid_t parent_pid = getpid();
+  test_helper::ForkHelper helper;
+  helper.RunInForkedProcess([&] {
+    // Switch to a different UID so we are not the owner of the parent process.
+    SAFE_SYSCALL(setgid(65534));
+    SAFE_SYSCALL(setuid(65534));
+
+    ASSERT_NE(getuid(), 0u);
+
+    std::string path = fxl::StringPrintf("/proc/%d/%s", parent_pid, GetParam());
+
+    // Access to the file should be denied, either via permissions, or lack of CAP_SYS_PTRACE.
+    EXPECT_THAT(open(path.c_str(), O_RDONLY), SyscallFailsWithErrno(EACCES));
+  });
+
+  ASSERT_TRUE(helper.WaitForChildren());
+}
+
+TEST_P(ProcfsAccessTest, AccessDeniedToNonOwnerWithoutCapPtrace) {
+  if (!test_helper::HasSysAdmin()) {
+    GTEST_SKIP() << "Not running with sysadmin capabilities, skipping.";
+  }
+  if (getuid() != 0) {
+    GTEST_SKIP() << "Not running as root, skipping.";
+  }
+
+  pid_t parent_pid = getpid();
+  test_helper::ForkHelper helper;
+  helper.RunInForkedProcess([&] {
+    // Keep capabilities after setuid to verify access with CAP_SYS_PTRACE.
+    SAFE_SYSCALL(prctl(PR_SET_KEEPCAPS, 1));
+
+    SAFE_SYSCALL(setgid(65534));
+    SAFE_SYSCALL(setuid(65534));
+
+    // On standard Linux, CAP_SYS_PTRACE alone might not be enough to bypass
+    // file permission checks (DAC) for /proc/<pid>/environ if it's 0400 owned by root.
+    // We add DAC overrides to ensure we are testing the ptrace check, not DAC.
+    test_helper::SetCapabilityEffective(CAP_DAC_OVERRIDE);
+    test_helper::SetCapabilityEffective(CAP_DAC_READ_SEARCH);
+
+    ASSERT_FALSE(test_helper::HasCapabilityEffective(CAP_SYS_PTRACE));
+    ASSERT_NE(getuid(), 0u);
+
+    // Without CAP_SYS_PTRACE access should be denied, even with CAP_DAC_* available.
+    std::string path = fxl::StringPrintf("/proc/%d/%s", parent_pid, GetParam());
+    EXPECT_THAT(open(path.c_str(), O_RDONLY), SyscallFailsWithErrno(EACCES));
+  });
+  ASSERT_TRUE(helper.WaitForChildren());
+}
+
+TEST_P(ProcfsAccessTest, AccessGrantedWithCapPtrace) {
+  if (!test_helper::HasSysAdmin()) {
+    GTEST_SKIP() << "Not running with sysadmin capabilities, skipping.";
+  }
+  if (getuid() != 0) {
+    GTEST_SKIP() << "Not running as root, skipping.";
+  }
+
+  pid_t parent_pid = getpid();
+  test_helper::ForkHelper helper;
+  helper.RunInForkedProcess([&] {
+    // Keep capabilities after setuid to verify access with CAP_SYS_PTRACE.
+    SAFE_SYSCALL(prctl(PR_SET_KEEPCAPS, 1));
+
+    SAFE_SYSCALL(setgid(65534));
+    SAFE_SYSCALL(setuid(65534));
+
+    // Explicitly set CAP_SYS_PTRACE effective again (if permitted).
+    test_helper::SetCapabilityEffective(CAP_SYS_PTRACE);
+
+    // On standard Linux, CAP_SYS_PTRACE alone might not be enough to bypass
+    // file permission checks (DAC) for /proc/<pid>/environ if it's 0400 owned by root.
+    // We add DAC overrides to ensure we are testing the ptrace check, not DAC.
+    test_helper::SetCapabilityEffective(CAP_DAC_OVERRIDE);
+    test_helper::SetCapabilityEffective(CAP_DAC_READ_SEARCH);
+
+    ASSERT_TRUE(test_helper::HasCapabilityEffective(CAP_SYS_PTRACE));
+    ASSERT_NE(getuid(), 0u);
+
+    // With CAP_SYS_PTRACE, CAP_DAC_OVERRIDE and CAP_DAC_READ_SEARCH, access should be granted.
+    std::string path = fxl::StringPrintf("/proc/%d/%s", parent_pid, GetParam());
+    EXPECT_THAT(open(path.c_str(), O_RDONLY), SyscallSucceeds());
+  });
+  ASSERT_TRUE(helper.WaitForChildren());
+}
+
+TEST_P(ProcfsAccessTest, AccessGrantedToSelf) {
+  std::string path = fxl::StringPrintf("/proc/self/%s", GetParam());
+  EXPECT_THAT(open(path.c_str(), O_RDONLY), SyscallSucceeds());
+}
+
+INSTANTIATE_TEST_SUITE_P(ProcfsAccessTest, ProcfsAccessTest,
+                         ::testing::Values("auxv", "environ", "maps", "mem", "pagemap", "smaps"),
+                         [](const auto& info) { return info.param; });
 
 }  // namespace
