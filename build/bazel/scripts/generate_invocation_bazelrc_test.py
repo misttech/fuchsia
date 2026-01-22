@@ -41,9 +41,7 @@ class BuildConfigOptionTest(unittest.TestCase):
 
 class MetadataBazelrcTest(unittest.TestCase):
     def test_no_id(self):
-        with self.assertRaises(KeyError):
-            for line in gen.metadata_bazelrc(dict()):
-                pass
+        self.assertEqual(list(gen.metadata_bazelrc(dict())), [])
 
     def test_uuid_top_build(self):
         uuid = "uuid-6767"

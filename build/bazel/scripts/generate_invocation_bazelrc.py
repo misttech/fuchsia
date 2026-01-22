@@ -40,12 +40,11 @@ def build_config_option(config: str, options: str) -> str:
 
 
 def metadata_bazelrc(env: dict[str, str]) -> Iterable[str]:
-    uuid = env.get("FX_BUILD_UUID")
-    bbid = env.get("BUILDBUCKET_ID")
+    uuid = env.get("FX_BUILD_UUID")  # set by 'fx build'
+    bbid = env.get("BUILDBUCKET_ID")  # set by infra builds
     if not uuid and not bbid:
-        raise KeyError(
-            "Expecting either FX_BUILD_UUID or BUILDBUCKET_ID in environment, but got neither."
-        )
+        # This is an out-of-build invocation that we don't care to record.
+        return
 
     if uuid:
         # Link all invocations directly to the top-level FX_BUILD_UUID.
