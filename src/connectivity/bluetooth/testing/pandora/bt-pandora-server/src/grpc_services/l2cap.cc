@@ -28,7 +28,7 @@ grpc::Status L2capService::Connect(::grpc::ServerContext* context,
                                             const ::pandora::l2cap::WaitConnectionRequest* request,
                                             ::pandora::l2cap::WaitConnectionResponse* response) {
   // PSM must match `TSPX_psm` IXIT value to pass PTS tests.
-  uint64_t maybe_peer_id = advertise_service(/*psm=*/29, /*timeout=*/3 /*seconds*/);
+  uint64_t maybe_peer_id = advertise_service(/*psm=*/29, /*timeout=*/5 /*seconds*/);
   if (!maybe_peer_id) {
     return Status(StatusCode::INTERNAL, "Error in Rust affordances (check logs)");
   }
