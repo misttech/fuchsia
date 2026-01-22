@@ -14,7 +14,7 @@ use fidl::encoding::ProxyChannelBox as _;
 use fidl::endpoints::RequestStream as _;
 use fidl_fuchsia_posix::Errno;
 use futures::TryStreamExt as _;
-use log::debug;
+use log::warn;
 use net_types::ip::{Ip, IpAddress, Ipv4, Ipv4Addr, Ipv6, Ipv6Addr};
 use net_types::{ScopeableAddress, SpecifiedAddr, Witness, ZonedAddr};
 use netstack3_core::device::DeviceId;
@@ -46,7 +46,7 @@ fn log_not_supported(name: &str) {
     let location = Location::caller();
     // TODO(https://fxbug.dev/343992493): don't embed location in the log
     // message when better track_caller support is available.
-    debug!("{location}: {} not supported", name);
+    warn!("{location}: {} not supported", name);
 }
 
 macro_rules! respond_not_supported {

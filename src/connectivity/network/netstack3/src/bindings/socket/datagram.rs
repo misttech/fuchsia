@@ -1570,7 +1570,7 @@ where
                 responder.send(Err(fposix::Errno::Enoprotoopt)).unwrap_or_log("failed to respond");
             }
             Request::GetError { responder } => {
-                debug!("syncudp::GetError is not implemented, returning Ok");
+                warn!("syncudp::GetError is not implemented, returning Ok");
                 // Pretend that we don't have any errors to report.
                 // TODO(https://fxbug.dev/322214321): Actually implement SO_ERROR.
                 responder.send(Ok(())).unwrap_or_log("failed to respond");
@@ -1686,7 +1686,7 @@ where
                 respond_not_supported!("syncudp::SetLinger", responder)
             }
             Request::GetLinger { responder } => {
-                debug!("syncudp::GetLinger is not supported, returning Ok((false, 0))");
+                warn!("syncudp::GetLinger is not supported, returning Ok((false, 0))");
                 responder.send(Ok((false, 0))).unwrap_or_log("failed to respond")
             }
             Request::SetOutOfBandInline { value: _, responder } => {
@@ -1896,7 +1896,7 @@ where
                     .unwrap_or_log("failed to respond");
             }
             Request::SetIpv6ReceiveHopLimit { value, responder } => {
-                debug!("syncudp::SetIpv6ReceiveHopLimit({value}) is not implemented, returning Ok");
+                warn!("syncudp::SetIpv6ReceiveHopLimit({value}) is not implemented, returning Ok");
                 responder.send(Ok(())).unwrap_or_log("failed to respond");
             }
             Request::GetIpv6ReceiveHopLimit { responder } => {
@@ -1931,7 +1931,7 @@ where
                 respond_not_supported!("syncudp::GetIpReceiveTtl", responder)
             }
             Request::SetIpPacketInfo { value: _, responder } => {
-                debug!("syncudp::SetIpPacketInfo is not supported, returning Ok(())");
+                warn!("syncudp::SetIpPacketInfo is not supported, returning Ok(())");
                 responder.send(Ok(())).unwrap_or_log("failed to respond");
             }
             Request::GetIpPacketInfo { responder } => {

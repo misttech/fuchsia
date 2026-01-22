@@ -997,7 +997,7 @@ impl<I: IpSockAddrExt + IpExt> RequestHandler<'_, I> {
                 respond_not_supported!("stream::SetLinger", responder);
             }
             fposix_socket::StreamSocketRequest::GetLinger { responder } => {
-                debug!("stream::GetLinger is not supported, returning Ok((false, 0))");
+                warn!("stream::GetLinger is not supported, returning Ok((false, 0))");
                 responder.send(Ok((false, 0))).unwrap_or_log("failed to respond")
             }
             fposix_socket::StreamSocketRequest::SetReusePort { value: _, responder } => {
@@ -1063,11 +1063,11 @@ impl<I: IpSockAddrExt + IpExt> RequestHandler<'_, I> {
                     .unwrap_or_log("failed to respond");
             }
             fposix_socket::StreamSocketRequest::SetIpTypeOfService { value: _, responder } => {
-                debug!("stream::SetIpTypeOfService is not supported, returning Ok(())");
+                warn!("stream::SetIpTypeOfService is not supported, returning Ok(())");
                 responder.send(Ok(())).unwrap_or_log("failed to respond");
             }
             fposix_socket::StreamSocketRequest::GetIpTypeOfService { responder } => {
-                debug!("stream::GetIpTypeOfService is not supported, returning Ok(0)");
+                warn!("stream::GetIpTypeOfService is not supported, returning Ok(0)");
                 responder.send(Ok(0)).unwrap_or_log("failed to respond");
             }
             fposix_socket::StreamSocketRequest::SetIpTtl { value: _, responder } => {
@@ -1223,7 +1223,7 @@ impl<I: IpSockAddrExt + IpExt> RequestHandler<'_, I> {
                 let result = match I::VERSION {
                     IpVersion::V4 => Err(fposix::Errno::Eopnotsupp),
                     IpVersion::V6 => {
-                        debug!("stream::SetIpv6TrafficClass is not supported, returning Ok(())");
+                        warn!("stream::SetIpv6TrafficClass is not supported, returning Ok(())");
                         Ok(())
                     }
                 };
@@ -1233,7 +1233,7 @@ impl<I: IpSockAddrExt + IpExt> RequestHandler<'_, I> {
                 let result = match I::VERSION {
                     IpVersion::V4 => Err(fposix::Errno::Eopnotsupp),
                     IpVersion::V6 => {
-                        debug!("stream::GetIpv6TrafficClass is not supported, returning Ok(0)");
+                        warn!("stream::GetIpv6TrafficClass is not supported, returning Ok(0)");
                         Ok(0)
                     }
                 };
@@ -1272,7 +1272,7 @@ impl<I: IpSockAddrExt + IpExt> RequestHandler<'_, I> {
                 responder.send(Ok(!nagle_enabled)).unwrap_or_log("failed to respond");
             }
             fposix_socket::StreamSocketRequest::SetTcpMaxSegment { value_bytes: _, responder } => {
-                debug!("stream::SetTcpMaxSegment is not supported, returning Ok(())");
+                warn!("stream::SetTcpMaxSegment is not supported, returning Ok(())");
                 responder.send(Ok(())).unwrap_or_log("failed to respond");
             }
             fposix_socket::StreamSocketRequest::GetTcpMaxSegment { responder } => {
@@ -1400,7 +1400,7 @@ impl<I: IpSockAddrExt + IpExt> RequestHandler<'_, I> {
                 respond_not_supported!("stream::GetTcpWindowClamp", responder);
             }
             fposix_socket::StreamSocketRequest::GetTcpInfo { responder } => {
-                debug!(
+                warn!(
                     "stream::GetTcpInfo is not supported, \
                      returning fposix_socket::TcpInfo::default()"
                 );
