@@ -1220,14 +1220,6 @@ where
                             .unwrap(),
                     );
                 }
-                if let Some(x) = operational_dataset.get_pending_timestamp() {
-                    active_dataset.pending_timestamp = Some(
-                        fuchsia_async::MonotonicDuration::from_seconds(x.as_secs() as i64)
-                            .into_nanos()
-                            .try_into()
-                            .unwrap(),
-                    );
-                }
                 if let Some(x) = operational_dataset.get_network_key() {
                     active_dataset.network_key = Some(x.to_vec());
                 }
@@ -1239,9 +1231,6 @@ where
                 }
                 if let Some(x) = operational_dataset.get_mesh_local_prefix() {
                     active_dataset.mesh_local_prefix = Some(x.octets().to_vec());
-                }
-                if let Some(x) = operational_dataset.get_delay() {
-                    active_dataset.delay = Some(x.into());
                 }
                 if let Some(x) = operational_dataset.get_pan_id() {
                     active_dataset.pan_id = Some(x.into());

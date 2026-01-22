@@ -1559,12 +1559,6 @@ async fn monitor_device(name: String, iface_tree: Arc<IfaceTreeHolder>) -> Resul
                                             y.try_into().unwrap_or(0),
                                         );
                                     }
-                                    if let Some(y) = x.pending_timestamp {
-                                        active_dataset_child.record_uint(
-                                            "pending_timestamp",
-                                            y.try_into().unwrap_or(0),
-                                        );
-                                    }
                                     if let Some(y) = x.network_key {
                                         active_dataset_child.record_string(
                                             "network_key",
