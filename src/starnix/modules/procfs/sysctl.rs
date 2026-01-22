@@ -15,7 +15,7 @@ use starnix_core::vfs::pseudo::simple_file::{BytesFile, BytesFileOps, parse_unsi
 use starnix_core::vfs::pseudo::stub_bytes_file::StubBytesFile;
 use starnix_core::vfs::{FileSystemHandle, FsNodeHandle, FsNodeOps, FsString, fs_args, inotify};
 use starnix_logging::bug_ref;
-use starnix_uapi::auth::{CAP_LAST_CAP, CAP_NET_ADMIN, CAP_SYS_ADMIN, CAP_SYS_RESOURCE};
+use starnix_uapi::auth::{CAP_LAST_CAP, CAP_SYS_ADMIN, CAP_SYS_RESOURCE};
 use starnix_uapi::errors::Errno;
 use starnix_uapi::file_mode::mode;
 use starnix_uapi::version::{KERNEL_RELEASE, KERNEL_VERSION};
@@ -457,18 +457,12 @@ fn sysctl_net_diretory(dir: &SimpleDirectoryMutator) {
     dir.subdir("core", 0o555, |dir| {
         dir.entry(
             "bpf_jit_enable",
-            StubBytesFile::new_node_with_capabilities(
-                bug_ref!("https://fxbug.dev/322874627"),
-                CAP_NET_ADMIN,
-            ),
+            StubBytesFile::new_node(bug_ref!("https://fxbug.dev/322874627")),
             file_mode,
         );
         dir.entry(
             "bpf_jit_kallsyms",
-            StubBytesFile::new_node_with_capabilities(
-                bug_ref!("https://fxbug.dev/322874163"),
-                CAP_NET_ADMIN,
-            ),
+            StubBytesFile::new_node(bug_ref!("https://fxbug.dev/322874163")),
             file_mode,
         );
         dir.entry(

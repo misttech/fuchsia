@@ -2,18 +2,16 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use crate::security;
 use crate::task::{CurrentTask, Kernel};
 use crate::vfs::buffers::{InputBuffer, OutputBuffer};
 use crate::vfs::{
-    AppendLockGuard, CheckAccessReason, FileObject, FileOps, FsNode, FsNodeInfo, FsNodeOps,
+    AppendLockGuard, FileObject, FileOps, FsNode,  FsNodeOps,
     fileops_impl_seekable, fs_node_impl_not_dir,
 };
 
 use crate::vfs::fileops_impl_noop_sync;
-use starnix_sync::{FileOpsCore, Locked, RwLock};
+use starnix_sync::{FileOpsCore, Locked};
 use starnix_uapi::as_any::AsAny;
-use starnix_uapi::auth::Capabilities;
 use starnix_uapi::errors::Errno;
 use starnix_uapi::open_flags::OpenFlags;
 use starnix_uapi::{errno, error};
@@ -27,9 +25,6 @@ where
     O: FileOps,
 {
     create_file_ops: F,
-
-    /// Capabilities that should cause `check_access` to always pass.
-    capabilities: Capabilities,
 }
 
 impl<F, O> SimpleFileNode<F, O>
@@ -38,14 +33,7 @@ where
     O: FileOps,
 {
     pub fn new(create_file_ops: F) -> SimpleFileNode<F, O> {
-        SimpleFileNode { create_file_ops, capabilities: Capabilities::empty() }
-    }
-
-    pub fn new_with_capabilities(
-        create_file_ops: F,
-        capabilities: Capabilities,
-    ) -> SimpleFileNode<F, O> {
-        SimpleFileNode { create_file_ops, capabilities }
+        SimpleFileNode { create_file_ops }
     }
 }
 
@@ -55,31 +43,6 @@ where
     O: FileOps,
 {
     fs_node_impl_not_dir!();
-
-    fn check_access(
-        &self,
-        _locked: &mut Locked<FileOpsCore>,
-        node: &FsNode,
-        current_task: &CurrentTask,
-        permission_flags: security::PermissionFlags,
-        info: &RwLock<FsNodeInfo>,
-        reason: CheckAccessReason,
-        audit_context: security::Auditable<'_>,
-    ) -> Result<(), Errno> {
-        if self.capabilities != Capabilities::empty()
-            && security::is_task_capable_noaudit(current_task, self.capabilities)
-        {
-            Ok(())
-        } else {
-            node.default_check_access_impl(
-                current_task,
-                permission_flags,
-                reason,
-                info.read(),
-                audit_context,
-            )
-        }
-    }
 
     fn create_file_ops(
         &self,

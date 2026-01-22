@@ -8,7 +8,6 @@ use crate::vfs::{FileObject, FsNodeOps};
 use bstr::ByteSlice;
 use starnix_logging::BugRef;
 use starnix_sync::{FileOpsCore, Locked, Mutex};
-use starnix_uapi::auth::Capabilities;
 use starnix_uapi::errors::Errno;
 use std::borrow::Cow;
 use std::panic::Location;
@@ -36,14 +35,6 @@ impl StubBytesFile {
             location,
         });
         SimpleFileNode::new(move || Ok(file.clone()))
-    }
-
-    #[track_caller]
-    pub fn new_node_with_capabilities(bug: BugRef, capabilities: Capabilities) -> impl FsNodeOps {
-        let location = Location::caller();
-        let file =
-            BytesFile::new(StubBytesFile { data: Arc::new(Mutex::new(vec![])), bug, location });
-        SimpleFileNode::new_with_capabilities(move || Ok(file.clone()), capabilities)
     }
 }
 
