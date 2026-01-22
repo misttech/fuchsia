@@ -26,6 +26,7 @@ class PrevOption(enum.StrEnum):
     ARTIFACT_PATH = "artifact-path"
     FAILED_TESTS = "failed-tests"
     HELP = "help"
+    STATS = "stats"
 
     def help(self) -> str:
         """Get the help string for this option.
@@ -48,6 +49,8 @@ class PrevOption(enum.StrEnum):
             return "Print the previously failed tests and how to run them."
         elif self is PrevOption.HELP:
             return "Print this help output."
+        elif self is PrevOption.STATS:
+            return "Print statistics from the previous run"
         else:
             raise RuntimeError("BUG: Invalid prev option")
 

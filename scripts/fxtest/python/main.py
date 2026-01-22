@@ -264,6 +264,26 @@ def do_process_previous(flags: args.Flags) -> int:
                 + "\n"
             )
         return 0
+    elif flags.previous is args.PrevOption.STATS:
+        env = environment.ExecutionEnvironment.initialize_from_args(
+            flags, create_log_file=False
+        )
+        stats = log.compute_stats(log.LogSource.from_env(env))
+        print("\nLongest operations:")
+        print("-------------------")
+        for item in stats.top_n:
+            print(f"{item.duration:8.3f}s    {item.label}")
+
+        print("\nSummary:")
+        print("--------")
+        for category, data in sorted(
+            stats.summary.items(), key=lambda x: x[1].sum, reverse=True
+        ):
+            line = f"{category.value:<14}{data.sum:8.3f}s / {data.count:>3}"
+            if data.count > 1:
+                line += f"       mean {data.mean:.3f}s (SD {data.std:.3f})"
+            print(line)
+        return 0
     else:
         print(f"Unknown --previous option {flags.previous}")
         return 1

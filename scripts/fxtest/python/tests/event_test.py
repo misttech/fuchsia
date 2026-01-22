@@ -205,3 +205,75 @@ class TestEvents(unittest.IsolatedAsyncioTestCase):
             event.Event.from_dict(e.to_dict()) for e in events  # type:ignore
         ]
         self.assertListEqual(events, round_trip_events)
+
+
+class TestEventSpan(unittest.IsolatedAsyncioTestCase):
+    def _create_event_span(
+        self, payload: event.EventPayloadUnion | None
+    ) -> event.EventSpan:
+        e = event.Event(
+            id=event.Id(1), timestamp=0, starting=True, payload=payload
+        )
+        return event.EventSpan(start_time=0, start_event=e)
+
+    def test_classify_event_payload(self) -> None:
+        """Test the classify function can correctly classify event with payloads"""
+        payload = event.EventPayloadUnion(
+            parsing_file=event.FileParsingPayload("name", "path")
+        )
+        self.assertEqual(
+            self._create_event_span(payload).category,
+            event.EventStatCategory.PARSING,
+        )
+
+        payload = event.EventPayloadUnion(
+            program_execution=event.ProgramExecutionPayload(
+                "cmd", ["--flag", "dldist"], {}
+            )
+        )
+        self.assertEqual(
+            self._create_event_span(payload).category,
+            event.EventStatCategory.SEARCHING,
+        )
+
+        payload = event.EventPayloadUnion(
+            test_suite_started=event.TestSuiteStartedPayload("testsuiteA")
+        )
+        self.assertEqual(
+            self._create_event_span(payload).category,
+            event.EventStatCategory.TESTING,
+        )
+
+        payload = event.EventPayloadUnion(build_targets=["//foo"])
+        self.assertEqual(
+            self._create_event_span(payload).category,
+            event.EventStatCategory.BUILDING,
+        )
+
+        payload = event.EventPayloadUnion(
+            program_execution=event.ProgramExecutionPayload(
+                "cmd", ["--flag"], {}
+            )
+        )
+        self.assertEqual(
+            self._create_event_span(payload).category,
+            event.EventStatCategory.OTHERS,
+        )
+        self.assertEqual(
+            self._create_event_span(None).category,
+            event.EventStatCategory.OTHERS,
+        )
+
+        payload = event.EventPayloadUnion(
+            event_group=event.EventGroupPayload("group")
+        )
+        self.assertEqual(
+            self._create_event_span(payload).category,
+            event.EventStatCategory.IGNORE,
+        )
+
+        payload = event.EventPayloadUnion(test_group=event.TestGroupPayload(1))
+        self.assertEqual(
+            self._create_event_span(payload).category,
+            event.EventStatCategory.IGNORE,
+        )

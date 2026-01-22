@@ -314,6 +314,58 @@ class EventPayloadUnion:
                 + str(fields_present)
             )
 
+    def __str__(self) -> str:
+        if self.start_timestamp is not None:
+            return "Starting Run"
+        elif self.load_config is not None:
+            return "Loaded config: " + str(self.load_config)
+        elif self.parse_flags is not None:
+            return "Parsed flags: " + str(self.parse_flags)
+        elif self.process_env is not None:
+            return "Processed environment: " + str(self.process_env)
+        elif self.user_message is not None:
+            # Include the user message, except for VERBATIM payloads. In that
+            # case, simply print the number of characters. This avoids duplication
+            # of verbose command outputs.
+            value = self.user_message.value
+            level = self.user_message.level
+            value_print = (
+                value.strip()
+                if level != MessageLevel.VERBATIM
+                else (f"<{len(value)} characters of verbatim output>")
+            )
+            return f"Display user message: [{level}] {value_print}"
+        elif self.parsing_file is not None:
+            return (
+                f"Parsing {self.parsing_file.name} at {self.parsing_file.path}"
+            )
+        elif self.program_execution is not None:
+            return f"Running `{self.program_execution.command} {' '.join(self.program_execution.flags)}`"
+        elif self.program_output is not None:
+            return f"Got {len(self.program_output.data)} characters from {self.program_output.stream}"
+        elif self.program_termination is not None:
+            return f"Terminated with return_code = {self.program_termination.return_code}"
+        elif self.test_selections is not None:
+            return f"Selected {len(self.test_selections.selected)} tests"
+        elif self.test_file_loaded is not None:
+            return f"Loaded {len(self.test_file_loaded.test_entries)} tests from {self.test_file_loaded.file_path}"
+        elif self.event_group is not None:
+            return f"Starting group {self.event_group.name}"
+        elif self.build_targets is not None:
+            return f"Building {len(self.build_targets)} targets"
+        elif self.test_group is not None:
+            return f"Starting test group {self.test_group.name}"
+        elif self.test_suite_started is not None:
+            return f"Starting test suite {self.test_suite_started.name}"
+        elif self.test_suite_ended is not None:
+            end_msg = self.test_suite_ended.message
+            suffix = "" if not end_msg else f": {end_msg}"
+            return f"Ending test suite with state {self.test_suite_ended.status}{suffix}"
+        elif self.enumerate_test_cases is not None:
+            return f"Enumerated {len(self.enumerate_test_cases.test_case_names)} cases for {self.enumerate_test_cases.test_name}"
+        else:
+            return "BUG: UNKNOWN EVENT PAYLOAD " + str(self.__dict__)
+
     # If set, this event denotes the start time of the run.
     # Payload is the actual timestamp of the run start as a UNIX timestamp.
     #
@@ -437,6 +489,52 @@ class Event:
     # Optional payload for the event. See EventPayloadUnion
     # documentation for details.
     payload: EventPayloadUnion | None = None
+
+
+class EventStatCategory(enum.Enum):
+    BUILDING = "Building"
+    PARSING = "Parsing"
+    TESTING = "Testing"
+    SEARCHING = "Searching"
+    OTHERS = "Others"
+    IGNORE = "Ignore"
+
+
+@dataclass
+class EventSpan:
+    start_time: float
+    start_event: Event
+    category: EventStatCategory | None = None
+    duration: float | None = None
+
+    def __post_init__(self) -> None:
+        if self.category is None:
+            self.category = self.classify()
+
+    def classify(self) -> EventStatCategory:
+        """
+        We use heuristics to classify events based on their payload. For
+        event_group and test_group, since they are just containers for other
+        events, we classify them as IGNORE and their duration
+        will be covered by their child events
+        """
+        payload = self.start_event.payload
+        if payload is None:
+            return EventStatCategory.OTHERS
+        elif payload.test_group is not None or payload.event_group is not None:
+            return EventStatCategory.IGNORE
+        elif payload.parsing_file is not None:
+            return EventStatCategory.PARSING
+        elif (
+            payload.program_execution is not None
+            and "dldist" in payload.program_execution.flags
+        ):
+            return EventStatCategory.SEARCHING
+        elif payload.test_suite_started is not None:
+            return EventStatCategory.TESTING
+        elif payload.build_targets is not None:
+            return EventStatCategory.BUILDING
+        return EventStatCategory.OTHERS
 
 
 class EventRecorder:
@@ -606,54 +704,7 @@ class EventRecorder:
         Returns:
             str: String representation of the event payload.
         """
-        if payload is None:
-            return ""
-        if payload.start_timestamp is not None:
-            return "Starting Run"
-        elif payload.load_config is not None:
-            return "Loaded config: " + str(payload.load_config)
-        elif payload.parse_flags is not None:
-            return "Parsed flags: " + str(payload.parse_flags)
-        elif payload.process_env is not None:
-            return "Processed environment: " + str(payload.process_env)
-        elif payload.user_message is not None:
-            # Include the user message, except for VERBATIM payloads. In that
-            # case, simply print the number of characters. This avoids dupication
-            # of verbose command outputs.
-            value = payload.user_message.value
-            level = payload.user_message.level
-            value_print = (
-                value.strip()
-                if level != MessageLevel.VERBATIM
-                else (f"<{len(value)} characters of verbatim output>")
-            )
-            return f"Display user message: [{level}] {value_print}"
-        elif payload.parsing_file is not None:
-            return f"Parsing {payload.parsing_file.name} at {payload.parsing_file.path}"
-        elif payload.program_execution is not None:
-            return f"Running `{payload.program_execution.command} {' '.join(payload.program_execution.flags)}`"
-        elif payload.program_output is not None:
-            return f"Got {len(payload.program_output.data)} characters from {payload.program_output.stream}"
-        elif payload.program_termination is not None:
-            return f"Terminated with return_code = {payload.program_termination.return_code}"
-        elif payload.test_selections is not None:
-            return f"Selected {len(payload.test_selections.selected)} tests"
-        elif payload.test_file_loaded is not None:
-            return f"Loaded {len(payload.test_file_loaded.test_entries)} tests from {payload.test_file_loaded.file_path}"
-        elif payload.event_group is not None:
-            return f"Starting group {payload.event_group.name}"
-        elif payload.build_targets is not None:
-            return f"Building {len(payload.build_targets)} targets"
-        elif payload.test_group is not None:
-            return f"Starting test group {payload.test_group.name}"
-        elif payload.test_suite_started is not None:
-            return f"Starting test suite {payload.test_suite_started.name}"
-        elif payload.test_suite_ended is not None:
-            end_msg = payload.test_suite_ended.message
-            suffix = "" if not end_msg else f": {end_msg}"
-            return f"Ending test suite with state {payload.test_suite_ended.status}{suffix}"
-        else:
-            return "BUG: UNKNOWN EVENT PAYLOAD " + str(payload.__dict__)
+        return str(payload) if payload is not None else ""
 
     def emit_init(self) -> None:
         """Emit the initial event.

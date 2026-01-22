@@ -8,12 +8,16 @@ from dataclasses import dataclass
 import gzip
 import json
 import math
+import statistics
 import sys
 import typing
 import zlib
 
 import environment
 import event
+
+_SUMMARY_TOP_N_MAX_COUNT = 5
+_SUMMARY_TOP_N_CUTOFF_SECONDS = 1.0
 
 
 async def writer(
@@ -189,3 +193,117 @@ def pretty_print(
             print(line.strip())
         print(f"[END {name}]\n")
     return True
+
+
+@dataclass
+class TopNEvent:
+    label: str
+    duration: float
+    category: event.EventStatCategory | None
+
+
+@dataclass
+class CategoryStats:
+    sum: float
+    count: int
+    mean: float
+    std: float
+
+
+@dataclass
+class ExecutionStats:
+    top_n: list[TopNEvent]
+    summary: dict[event.EventStatCategory, CategoryStats]
+
+
+def compute_stats(log_source: LogSource) -> ExecutionStats:
+    """Calculate and return statistics from the log source.
+
+    This function processes the event stream to compute durations for various operations.
+    It filters out container events (like groups) and child events whose parents are
+    already accounted for to provide a meaningful summary of where time was spent.
+
+    Args:
+        log_source (LogSource): The source of log events to analyze.
+
+    Returns:
+        ExecutionStats: A dataclass containing top N events and summary stats.
+    """
+    event_dict: dict[event.Id, event.EventSpan] = dict()
+    for element in log_source.read_log():
+        if element.log_event is None or element.log_event.id is None:
+            continue
+        event_id = element.log_event.id
+        if event_id == event.GLOBAL_RUN_ID:
+            continue
+        if element.log_event.starting:
+            event_dict[event_id] = event.EventSpan(
+                start_time=element.log_event.timestamp,
+                start_event=element.log_event,
+            )
+        elif element.log_event.ending and event_id in event_dict:
+            event_dict[event_id].duration = (
+                element.log_event.timestamp - event_dict[event_id].start_time
+            )
+
+    # Drop Ignore and incomplete events
+    filtered_events = {
+        event_id: span
+        for event_id, span in event_dict.items()
+        if span.duration is not None
+        and span.category != event.EventStatCategory.IGNORE
+    }
+
+    # Drop children of existing parents
+    final_events = [
+        span
+        for span in filtered_events.values()
+        if span.start_event.parent not in filtered_events
+    ]
+
+    categorized_events: dict[
+        event.EventStatCategory, list[event.EventSpan]
+    ] = collections.defaultdict(list)
+    for span in final_events:
+        if span.category:
+            categorized_events[span.category].append(span)
+
+    filtered_and_sorted_events = sorted(
+        [
+            e
+            for e in final_events
+            if e.duration is not None
+            and e.duration >= _SUMMARY_TOP_N_CUTOFF_SECONDS
+        ],
+        key=lambda x: x.duration or 0.0,
+        reverse=True,
+    )
+
+    top_n_list: list[TopNEvent] = []
+    for event_stat in filtered_and_sorted_events[:_SUMMARY_TOP_N_MAX_COUNT]:
+        top_n_list.append(
+            TopNEvent(
+                label=str(event_stat.start_event.payload),
+                duration=event_stat.duration or 0.0,
+                category=event_stat.category,
+            )
+        )
+
+    summary_dict: dict[event.EventStatCategory, CategoryStats] = {}
+    for category, events in categorized_events.items():
+        durations = [x.duration for x in events if x.duration is not None]
+        count = len(durations)
+        if count == 0:
+            continue
+        total_duration = sum(durations)
+        mean = 0.0
+        std = 0.0
+        if count > 1:
+            mean = statistics.mean(durations)
+            std = statistics.stdev(durations)
+
+        summary_dict[category] = CategoryStats(
+            sum=total_duration, count=count, mean=mean, std=std
+        )
+
+    return ExecutionStats(top_n=top_n_list, summary=summary_dict)
