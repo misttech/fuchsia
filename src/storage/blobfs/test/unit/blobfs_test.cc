@@ -6,8 +6,10 @@
 
 #include <fidl/fuchsia.fxfs/cpp/markers.h>
 #include <fidl/fuchsia.io/cpp/markers.h>
+#include <fidl/fuchsia.storage.blobfs/cpp/wire.h>
 #include <fidl/fuchsia.storage.block/cpp/wire.h>
 #include <fuchsia/hardware/block/driver/c/banjo.h>
+#include <lib/component/incoming/cpp/protocol.h>
 #include <lib/fidl/cpp/wire/channel.h>
 #include <lib/fidl/cpp/wire/connect_service.h>
 #include <lib/sync/completion.h>
@@ -43,6 +45,7 @@
 #include "src/storage/blobfs/format.h"
 #include "src/storage/blobfs/mkfs.h"
 #include "src/storage/blobfs/mount.h"
+#include "src/storage/blobfs/service/overwrite_configuration.h"
 #include "src/storage/blobfs/test/blob_utils.h"
 #include "src/storage/blobfs/test/blobfs_test_setup.h"
 #include "src/storage/blobfs/transaction.h"
@@ -239,21 +242,43 @@ TEST_F(BlobfsOverwriteStatusTest, ChangeOverwriteConfig) {
   auto svc_dir = fbl::MakeRefCounted<fs::PseudoDir>();
   svc_dir->AddEntry(fidl::DiscoverableProtocolName<fuchsia_fxfs::BlobCreator>,
                     fbl::MakeRefCounted<BlobCreator>(*blobfs()));
+  svc_dir->AddEntry(
+      fidl::DiscoverableProtocolName<fuchsia_storage_blobfs::OverwriteConfiguration>,
+      fbl::MakeRefCounted<OverwriteConfigurationService>(loop().dispatcher(), *blobfs()));
+
   auto svc_endpoints = fidl::CreateEndpoints<fuchsia_io::Directory>();
   ASSERT_OK(vfs()->ServeDirectory(std::move(svc_dir), std::move(svc_endpoints->server)));
   BlobCreatorWrapper creator = BlobCreatorWrapper::Connect(svc_endpoints->client.borrow());
+  auto client_end =
+      component::ConnectAt<fuchsia_storage_blobfs::OverwriteConfiguration>(svc_endpoints->client);
+  ASSERT_OK(client_end);
+  fidl::WireSyncClient client(std::move(*client_end));
 
-  blobfs()->SetOverwriteConfig(BlobOverwriteConfig::kOverwriteToCompact);
+  {
+    auto result = client->Set(fuchsia_storage_blobfs::wire::OverwriteFormat::kOverwriteToCompact);
+    ASSERT_OK(result.status());
+    ASSERT_TRUE(result->is_ok());
+  }
   ASSERT_EQ(blobfs()->BlobWriteFormat(), BlobLayoutFormat::kCompactMerkleTreeAtEnd);
   TestDeliveryBlob blob = TestDeliveryBlob::CreateUncompressed(16000, 7);
   ASSERT_OK(creator.CreateAndWriteBlob(blob));
 
   ASSERT_FALSE(creator.NeedsOverwrite(blob.digest()).value());
-  blobfs()->SetOverwriteConfig(BlobOverwriteConfig::kNoOverwrite);
+  {
+    auto result = client->Set(fuchsia_storage_blobfs::wire::OverwriteFormat::kNoOverwrite);
+    ASSERT_OK(result.status());
+    ASSERT_TRUE(result->is_ok());
+  }
+  ASSERT_EQ(blobfs()->OverwriteConfig(), BlobOverwriteConfig::kNoOverwrite);
   ASSERT_FALSE(creator.NeedsOverwrite(blob.digest()).value());
 
   // Shift to padded format. Now wants an overwrite.
-  blobfs()->SetOverwriteConfig(BlobOverwriteConfig::kOverwriteToPadded);
+  {
+    auto result = client->Set(fuchsia_storage_blobfs::wire::OverwriteFormat::kOverwriteToPadded);
+    ASSERT_OK(result.status());
+    ASSERT_TRUE(result->is_ok());
+  }
+  ASSERT_EQ(blobfs()->OverwriteConfig(), BlobOverwriteConfig::kOverwriteToPadded);
   ASSERT_TRUE(creator.NeedsOverwrite(blob.digest()).value());
   {
     BlobWriterWrapper writer = creator.CreateExisting(blob.digest()).value();
@@ -261,11 +286,22 @@ TEST_F(BlobfsOverwriteStatusTest, ChangeOverwriteConfig) {
   }
 
   ASSERT_FALSE(creator.NeedsOverwrite(blob.digest()).value());
-  blobfs()->SetOverwriteConfig(BlobOverwriteConfig::kNoOverwrite);
+  // No overwrite never wants and overwrite.
+  {
+    auto result = client->Set(fuchsia_storage_blobfs::wire::OverwriteFormat::kNoOverwrite);
+    ASSERT_OK(result.status());
+    ASSERT_TRUE(result->is_ok());
+  }
+  ASSERT_EQ(blobfs()->OverwriteConfig(), BlobOverwriteConfig::kNoOverwrite);
   ASSERT_FALSE(creator.NeedsOverwrite(blob.digest()).value());
 
   // Shift back to compact format, now it wants an overwrite.
-  blobfs()->SetOverwriteConfig(BlobOverwriteConfig::kOverwriteToCompact);
+  {
+    auto result = client->Set(fuchsia_storage_blobfs::wire::OverwriteFormat::kOverwriteToCompact);
+    ASSERT_OK(result.status());
+    ASSERT_TRUE(result->is_ok());
+  }
+  ASSERT_EQ(blobfs()->BlobWriteFormat(), BlobLayoutFormat::kCompactMerkleTreeAtEnd);
   ASSERT_TRUE(creator.NeedsOverwrite(blob.digest()).value());
 }
 

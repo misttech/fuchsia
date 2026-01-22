@@ -9,6 +9,7 @@
 #include <fidl/fuchsia.fxfs/cpp/markers.h>
 #include <fidl/fuchsia.io/cpp/markers.h>
 #include <fidl/fuchsia.process.lifecycle/cpp/markers.h>
+#include <fidl/fuchsia.storage.blobfs/cpp/wire.h>
 #include <fidl/fuchsia.update.verify/cpp/wire.h>
 #include <lib/async-loop/cpp/loop.h>
 #include <lib/async/cpp/task.h>
@@ -36,6 +37,7 @@
 #include "src/storage/blobfs/service/admin.h"
 #include "src/storage/blobfs/service/lifecycle.h"
 #include "src/storage/blobfs/service/ota_health_check.h"
+#include "src/storage/blobfs/service/overwrite_configuration.h"
 #include "src/storage/blobfs/service/startup.h"
 #include "src/storage/lib/trace/trace.h"
 #include "src/storage/lib/vfs/cpp/fuchsia_vfs.h"
@@ -226,6 +228,10 @@ zx::result<> ComponentRunner::Configure(std::unique_ptr<BlockDevice> device,
 
   svc_dir->AddEntry(fidl::DiscoverableProtocolName<fuchsia_fxfs::BlobCreator>,
                     fbl::MakeRefCounted<BlobCreator>(*blobfs_));
+
+  svc_dir->AddEntry(
+      fidl::DiscoverableProtocolName<fuchsia_storage_blobfs::OverwriteConfiguration>,
+      fbl::MakeRefCounted<OverwriteConfigurationService>(loop_.dispatcher(), *blobfs_));
 
   status = ServeDirectory(std::move(svc_dir), std::move(svc_server_end_));
   if (status != ZX_OK) {
