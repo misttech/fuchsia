@@ -24,15 +24,6 @@ typedef struct zx_iommu_desc_stub {
   uint8_t reserved;
 } zx_iommu_desc_stub_t;
 
-// DEPRECATED - DO NOT USE
-//
-// These names have been deprecated and will eventually be removed entirely.
-// Please use the "Stub" names instead.
-//
-#define ZX_IOMMU_TYPE_DUMMY ZX_IOMMU_TYPE_STUB
-typedef zx_iommu_desc_stub_t zx_iommu_desc_dummy_t;
-// END DEPRECATED
-
 // Data structures for creating an Intel IOMMU instance
 
 // This scope represents a single PCI endpoint device
