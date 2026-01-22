@@ -1220,9 +1220,6 @@ where
                             .unwrap(),
                     );
                 }
-                if let Some(x) = operational_dataset.get_network_key() {
-                    active_dataset.network_key = Some(x.to_vec());
-                }
                 if let Some(x) = operational_dataset.get_network_name() {
                     active_dataset.network_name = Some(x.to_vec());
                 }
@@ -1240,9 +1237,6 @@ where
                 }
                 if let Some(x) = operational_dataset.get_channel_mask() {
                     active_dataset.channel_mask = Some(x.into());
-                }
-                if let Some(x) = operational_dataset.get_pskc() {
-                    active_dataset.pskc = Some(x.to_vec());
                 }
                 if let Some(x) = operational_dataset.get_security_policy() {
                     let mut policy = fidl_fuchsia_lowpan_experimental::SecurityPolicy::default();

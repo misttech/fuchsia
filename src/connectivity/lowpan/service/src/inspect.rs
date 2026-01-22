@@ -1559,14 +1559,6 @@ async fn monitor_device(name: String, iface_tree: Arc<IfaceTreeHolder>) -> Resul
                                             y.try_into().unwrap_or(0),
                                         );
                                     }
-                                    if let Some(y) = x.network_key {
-                                        active_dataset_child.record_string(
-                                            "network_key",
-                                            y.iter()
-                                                .map(|b| format!("{:02x}", b))
-                                                .collect::<String>(),
-                                        );
-                                    }
                                     if let Some(y) = x.network_name {
                                         active_dataset_child.record_string(
                                             "network_name",
@@ -1599,14 +1591,6 @@ async fn monitor_device(name: String, iface_tree: Arc<IfaceTreeHolder>) -> Resul
                                     }
                                     if let Some(y) = x.channel_mask {
                                         active_dataset_child.record_uint("channel_mask", y.into());
-                                    }
-                                    if let Some(y) = x.pskc {
-                                        active_dataset_child.record_string(
-                                            "pskc",
-                                            y.iter()
-                                                .map(|b| format!("{:02x}", b))
-                                                .collect::<String>(),
-                                        );
                                     }
                                     if let Some(y) = x.security_policy {
                                         active_dataset_child.record_child(
