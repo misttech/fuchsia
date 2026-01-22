@@ -2,7 +2,7 @@ toc:
 - title: "Always be documenting"
   path: /docs/development/starnix/always_be_documenting.md
 - title: "Common coding patterns in Starnix"
-  path: /docs/development/starnix/common-coding-patterns-in-starnix.md
+  path: /docs/development/starnix/common_coding_patterns_in_starnix.md
 - title: "IPC patterns in Starnix"
   path: /docs/development/starnix/ipc_patterns_in_starnix.md
 - title: "Rubric for writing Starnix syscalls"

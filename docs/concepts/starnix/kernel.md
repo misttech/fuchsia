@@ -168,4 +168,4 @@ programs.
 [bug-470456509]: https://fxbug.dev/470456509
 [shared-address-space]: /docs/concepts/starnix/syscalls.md#shared-starnix-instance
 [restricted-address-space]: /docs/concepts/starnix/syscalls.md#running-a-linux-program-in-restricted-mode
-[spawning-threads-in-starnix]:/docs/development/starnix/common-coding-patterns-in-starnix.md#spawning-threads-in-starnix
+[spawning-threads-in-starnix]:/docs/development/starnix/common_coding_patterns_in_starnix.md#spawning-threads-in-starnix

@@ -37,4 +37,4 @@ appropriate Fuchsia subsystems.
 [making-linux-syscalls]: /docs/concepts/starnix/syscalls.md
 [starnix-container]: /docs/concepts/starnix/containers.md
 [starnix-vfs]: /docs/concepts/starnix/vfs.md
-[starnix-development]: /docs/development/starnix/common-coding-patterns-in-starnix.md
+[starnix-development]: /docs/development/starnix/common_coding_patterns_in_starnix.md
