@@ -64,7 +64,7 @@ struct AsConstElement {
 constexpr auto DerefElementsView = std::views::transform(DerefElement());
 constexpr auto AsConstElementsView = std::views::transform(AsConstElement());
 
-// TODO(https://fxbug.dev/324136831): comment on how RuntimeModule relates to
+// TODO(https://fxbug.dev/478041736): comment on how RuntimeModule relates to
 // startup modules when the latter is supported.
 // TODO(https://fxbug.dev/328135195): comment on the reference counting when
 // that gets implemented.
