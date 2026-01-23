@@ -11,10 +11,12 @@
 
 #include <iostream>
 #include <map>
-#include <unordered_set>
+#include <unordered_map>
 
 #include <fbl/string_printf.h>
 #include <fbl/vector.h>
+
+#include "src/lib/fsl/io/device_watcher.h"
 
 namespace device_enumeration {
 
@@ -46,10 +48,15 @@ void WaitForClassDeviceCount(const std::string& path_in_devfs, size_t count) {
 
 }  // namespace device_enumeration
 
-void DeviceEnumerationTest::VerifyNodes(cpp20::span<const char*> node_monikers) {
+void DeviceEnumerationTest::VerifyNodes(cpp20::span<const char*> node_monikers,
+                                        bool fail_on_unexpected_nodes) {
   std::vector<std::string> missing_nodes;
+  std::unordered_map<std::string, fuchsia_driver_development::NodeInfo> leftover_nodes{node_info_};
+
   for (const char* moniker : node_monikers) {
-    if (node_info_.find(moniker) == node_info_.end()) {
+    if (node_info_.contains(moniker)) {
+      leftover_nodes.erase(moniker);
+    } else {
       missing_nodes.push_back(moniker);
     }
   }
@@ -61,14 +68,24 @@ void DeviceEnumerationTest::VerifyNodes(cpp20::span<const char*> node_monikers) 
     }
   }
 
+  if (!leftover_nodes.empty()) {
+    fprintf(stderr, "Found unexpected node(s):\n");
+    for (auto& [moniker, node] : leftover_nodes) {
+      fprintf(stderr, "     %s:\n", moniker.c_str());
+    }
+  }
+
   ASSERT_TRUE(missing_nodes.empty());
+  if (fail_on_unexpected_nodes) {
+    ASSERT_TRUE(leftover_nodes.empty());
+  }
 }
 
 void DeviceEnumerationTest::VerifyOneOf(cpp20::span<const char*> node_monikers) {
   std::vector<std::string> missing_nodes;
   bool found_node = false;
   for (const char* moniker : node_monikers) {
-    if (node_info_.find(moniker) != node_info_.end()) {
+    if (node_info_.contains(moniker)) {
       found_node = true;
       break;
     }
@@ -100,7 +117,7 @@ void DeviceEnumerationTest::RetrieveNodeInfo() {
     ASSERT_OK(result.status());
 
     // NB: this uses iostream (rather than printf) because FIDL strings aren't null-terminated.
-    std::cout << "BEGIN printing all node monikers:" << std::endl;
+    std::cout << "BEGIN printing all node monikers:" << '\n';
     while (true) {
       const fidl::WireResult result = fidl::WireCall(client)->GetNext();
       ASSERT_OK(result.status());
@@ -112,13 +129,13 @@ void DeviceEnumerationTest::RetrieveNodeInfo() {
         ASSERT_TRUE(info.has_moniker());
         if (info.has_quarantined() && info.quarantined()) {
           std::cerr << info.moniker().get() << " exists but has failed to start successfully."
-                    << std::endl;
+                    << '\n';
         } else {
-          std::cout << info.moniker().get() << std::endl;
+          std::cout << info.moniker().get() << '\n';
           node_info_[std::string(info.moniker().get())] = fidl::ToNatural(info);
         }
       }
     }
-    std::cout << "END printing all node monikers." << std::endl;
+    std::cout << "END printing all node monikers." << '\n';
   }
 }

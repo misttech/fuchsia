@@ -7,11 +7,10 @@
 
 #include <fidl/fuchsia.driver.development/cpp/fidl.h>
 
+#include <string>
 #include <unordered_map>
 
 #include <zxtest/zxtest.h>
-
-#include "src/lib/fsl/io/device_watcher.h"
 
 namespace device_enumeration {
 
@@ -23,7 +22,7 @@ class DeviceEnumerationTest : public zxtest::Test {
   void SetUp() override { ASSERT_NO_FATAL_FAILURE(RetrieveNodeInfo()); }
 
  protected:
-  void VerifyNodes(cpp20::span<const char*> node_monikers);
+  void VerifyNodes(cpp20::span<const char*> node_monikers, bool fail_on_unexpected_nodes = false);
   void VerifyOneOf(cpp20::span<const char*> node_monikers);
 
  private:
