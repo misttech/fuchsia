@@ -1554,6 +1554,9 @@ group("tool_paths.metadata") {
 
     rbe_metrics_summary_script,
 
+    # drop-in replacement for ninja that is wrapped with rsproxy for ResultStore
+    "//build/resultstore/rs-sub-ninja.sh",
+
     # reclient is using fairly generic names (bootstrap, dumpstats). We may
     # need to move these into their own group() at some point to namespace
     # them.
