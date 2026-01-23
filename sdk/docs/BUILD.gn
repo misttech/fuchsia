@@ -5,7 +5,6 @@
 import("//build/sdk/sdk_documentation.gni")
 
 docs = [
-  "bootserver",
   "compilation",
   "debugger",
   "devices",

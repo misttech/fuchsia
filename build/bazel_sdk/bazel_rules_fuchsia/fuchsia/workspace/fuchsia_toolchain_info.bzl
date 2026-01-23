@@ -11,7 +11,6 @@ def _fuchsia_toolchain_info_impl(ctx):
         name = ctx.label.name,
         aemu_runfiles = ctx.runfiles(ctx.files.aemu_runfiles),
         assembly_config = ctx.executable.assembly_config,
-        bootserver = ctx.executable.bootserver,
         blobfs = ctx.executable.blobfs,
         blobfs_manifest = ctx.file.blobfs_manifest,
         bindc = ctx.executable.bindc or None,
@@ -78,13 +77,6 @@ included in the Fuchsia IDK.
         ),
         "assembly_config": attr.label(
             doc = "assembly_config tool executable.",
-            mandatory = True,
-            cfg = "exec",
-            executable = True,
-            allow_single_file = True,
-        ),
-        "bootserver": attr.label(
-            doc = "bootserver executable",
             mandatory = True,
             cfg = "exec",
             executable = True,

@@ -32,8 +32,6 @@ toc:
     path: /reference/tools/sdk/zxdb.md
 - title: "Device management commands"
   section:
-  - title: "bootserver"
-    path: /reference/tools/sdk/bootserver.md
   - title: "funnel"
     path: /reference/tools/sdk/funnel.md
   - title: "minfs"

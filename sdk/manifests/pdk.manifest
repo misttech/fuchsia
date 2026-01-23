@@ -54,7 +54,6 @@ host_tool://tools/arm64/assembly_config
 host_tool://tools/arm64/bindc
 host_tool://tools/arm64/blobfs-compression
 host_tool://tools/arm64/blobfs_do_not_depend
-host_tool://tools/arm64/bootserver
 host_tool://tools/arm64/cmc
 host_tool://tools/arm64/configc
 host_tool://tools/arm64/device-finder
@@ -82,7 +81,6 @@ host_tool://tools/x64/assembly_config
 host_tool://tools/x64/bindc
 host_tool://tools/x64/blobfs-compression
 host_tool://tools/x64/blobfs_do_not_depend
-host_tool://tools/x64/bootserver
 host_tool://tools/x64/cmc
 host_tool://tools/x64/configc
 host_tool://tools/x64/device-finder

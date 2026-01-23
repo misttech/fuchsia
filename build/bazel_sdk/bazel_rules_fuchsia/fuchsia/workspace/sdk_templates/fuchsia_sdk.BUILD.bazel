@@ -78,7 +78,6 @@ fuchsia_toolchain_info(
     bindc = "//tools:{{HOST_CPU}}/bindc",
     blobfs = "//tools:{{HOST_CPU}}/blobfs_do_not_depend",
     blobfs_manifest = "//tools:{{HOST_CPU}}/blobfs_do_not_depend-meta.json",
-    bootserver = "//tools:{{HOST_CPU}}/bootserver",
     configc = "//tools:{{HOST_CPU}}/configc",
     cmc = "//tools:{{HOST_CPU}}/cmc",
     cmc_includes = select({

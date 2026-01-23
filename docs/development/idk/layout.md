@@ -75,7 +75,6 @@ etc...
 Some information about how to use these tools can be found under `//docs`.
 Specifically:
 
-* [bootserver](documentation/bootserver.md)
 * [zxdb](documentation/debugger.md)
 * [ssh](documentation/ssh.md)
 * [logging and symbolizer](documentation/logging.md)

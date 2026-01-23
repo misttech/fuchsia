@@ -10,11 +10,6 @@ SSH is the protocol for communications over that link, as described in
 
 Getting the Fuchsia device address can be done using [ffx](https://fuchsia.dev/reference/tools/sdk/ffx.md).
 
-## Flashing a device
-
-In order to flash a device, start a [bootserver](bootserver.md) on the host and
-restart the device into its bootloader.
-
 ## Installing software onto a device
 
 The unit of installation on Fuchsia is a package.

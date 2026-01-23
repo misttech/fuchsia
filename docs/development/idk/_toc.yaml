@@ -22,8 +22,6 @@ toc:
       path: /docs/development/idk/understanding_metadata.md
     - title: "\"Core\" IDK Documentation"
       path: /docs/development/idk/documentation/README.md
-    - title: "Bootserver"
-      path: /docs/development/idk/documentation/bootserver.md
     - title: "Compilation"
       path: /docs/development/idk/documentation/compilation.md
     - title: "Debugger"

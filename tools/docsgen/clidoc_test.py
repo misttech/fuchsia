@@ -17,7 +17,6 @@ WANT_NAMES = [
     "clidoc/_toc.yaml",
     "clidoc/bindc.md",
     "clidoc/blobfs-compression.md",
-    "clidoc/bootserver.md",
     "clidoc/cmc.md",
     "clidoc/configc.md",
     "clidoc/ffx.md",

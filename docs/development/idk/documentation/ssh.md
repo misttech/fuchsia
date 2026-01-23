@@ -18,14 +18,6 @@ You can add your own key, if desired, to the path displayed from
 
 There are two options for installing the public key onto the target.
 
-### By installing it during paving (preferred)
-
-Follow the instruction for [paving](bootserver.md) the target device, and add an
-extra argument to the `bootserver` call pointing to the public key:
-```
-$ bootserver --authorized-keys $PUBLIC_KEY <other args>
-```
-
 ### By modifying the Fuchsia image directly
 
 The `fuchsia.zbi` image may be modified to include the public key using the

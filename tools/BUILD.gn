@@ -9,7 +9,6 @@ group("tools") {
     "//build/bazel/host:bazel_root_host_tools.pretty_serial.host_tool($host_toolchain)",
     "//tools/auto_owners($host_toolchain)",
     "//tools/bindc:host($host_toolchain)",
-    "//tools/bootserver_old:host($host_toolchain)",
     "//tools/build($host_toolchain)",
     "//tools/bundle_fetcher($host_toolchain)",
     "//tools/clidoc:clidoc($host_toolchain)",
@@ -71,11 +70,6 @@ group("e2e_tests") {
   testonly = true
 
   deps = []
-
-  # TODO(https://fxbug.dev/42142554): Temporarily disable bootserver_old tests on coverage builders.
-  if (!is_coverage) {
-    deps += [ "//tools/bootserver_old/tests($host_toolchain)" ]
-  }
 }
 
 group("host_tests") {
@@ -92,7 +86,6 @@ group("tests_no_e2e") {
     "//tools/artifactory:tests",
     "//tools/auto_owners:tests($host_toolchain)",
     "//tools/bindc:tests",
-    "//tools/bootserver:tests($host_toolchain)",
     "//tools/botanist:tests($host_toolchain)",
     "//tools/build:tests($host_toolchain)",
     "//tools/bundle_fetcher:tests",

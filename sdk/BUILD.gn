@@ -494,7 +494,6 @@ if (is_host) {
       "//src/developer/ffx/plugins/product:sdk",
       "//src/developer/ffx/plugins/test:sdk",
       "//src/developer/ffx/tools/driver:sdk",
-      "//tools/bootserver_old:bootserver_sdk",
       "//tools/funnel:funnel_sdk",
       "//tools/sdk-tools/fssh:fssh_sdk",
       "//tools/symbolizer:sdk",
