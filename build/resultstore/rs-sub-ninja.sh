@@ -99,6 +99,11 @@ wrap_options=(
 # Otherwise, if FX_BUILD_LOGDIR isn't set, this is probably being invoked
 # outside of 'fx build', so just fallback to using some temp dir.
 
+# Ensure that the prebuilt python3 is in the PATH (needed in infra environment).
+# rsproxy-wrap.sh uses python3 as an alternative means for mkfifo.
+readonly py3_bindir="${PREBUILT_PYTHON3%/*}"  # dirname
+export PATH="$py3_bindir:$PATH"
+
 full_cmd=(
   "$proxy_wrap"
   "${wrap_options[@]}"
