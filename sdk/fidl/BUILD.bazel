@@ -14,6 +14,7 @@ _partner_idk_stable_fidl_libraries_targets_list = [
     # keep-sorted: begin
     "//sdk/fidl/fuchsia.images2:fuchsia.images2",
     "//sdk/fidl/fuchsia.math:fuchsia.math",
+    "//zircon/vdso/zx:zx",
     # keep-sorted: end
 ]
 
@@ -44,6 +45,7 @@ filegroup(
         "//build/bazel/bazel_idk/tests:__pkg__",
         "//sdk/fidl/fuchsia.images2:__pkg__",
         "//sdk/fidl/fuchsia.math:__pkg__",
+        "//zircon/vdso/zx:__pkg__",
 
         # TODO(https://fxbug.dev/446911800): Remove when the issue is resolved.
         "//build/bazel/bazel_idk/private:__pkg__",

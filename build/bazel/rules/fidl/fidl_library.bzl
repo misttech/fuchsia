@@ -319,7 +319,7 @@ def _fidl_library_impl(
 
     if enable_banjo:
         # TODO(https://fxbug.dev/428285014): Implement Banjo bindings if necessary.
-        fail("Banjo bindings are not yet supported.")
+        print("Banjo bindings are not yet supported (%s)." % library_name)
 
     if enable_zither:
         zither_library(

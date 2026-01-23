@@ -1,0 +1,14 @@
+# Copyright 2025 The Fuchsia Authors. All rights reserved.
+# Use of this source code is governed by a BSD-style license that can be
+# found in the LICENSE file.
+
+# Expose the .api file to the definition of the library.
+exports_files(
+    ["zx.api"],
+    visibility = [
+        "//zircon/vdso/zx:__subpackages__",
+
+        # TODO(https://fxbug.dev/446911800): Remove when the issue is resolved.
+        "//build/bazel/bazel_idk/private:__pkg__",
+    ],
+)
