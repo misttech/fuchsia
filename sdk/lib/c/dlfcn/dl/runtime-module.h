@@ -5,13 +5,6 @@
 #ifndef LIB_C_DLFCN_DL_RUNTIME_MODULE_H_
 #define LIB_C_DLFCN_DL_RUNTIME_MODULE_H_
 
-// Avoid symbol conflict between <ld/abi/abi.h> and <link.h>
-#pragma push_macro("_r_debug")
-#undef _r_debug
-#define _r_debug not_using_system_r_debug
-#include <link.h>
-#pragma pop_macro("_r_debug")
-
 #include <lib/elfldltl/alloc-checker-container.h>
 #include <lib/elfldltl/layout.h>
 #include <lib/elfldltl/soname.h>
@@ -27,6 +20,7 @@
 #include <fbl/intrusive_double_list.h>
 #include <fbl/vector.h>
 
+#include "../dl_phdr_info.h"
 #include "diagnostics.h"
 #include "tls-desc-resolver.h"
 
