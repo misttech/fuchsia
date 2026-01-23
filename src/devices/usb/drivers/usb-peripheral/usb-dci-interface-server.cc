@@ -5,6 +5,7 @@
 #include "usb-dci-interface-server.h"
 
 #include <fidl/fuchsia.hardware.usb.dci/cpp/wire.h>
+#include <lib/trace/event.h>
 
 #include "src/devices/usb/drivers/usb-peripheral/usb-peripheral.h"
 
@@ -15,6 +16,7 @@
 namespace usb_peripheral {
 
 void UsbDciInterfaceServer::Control(ControlRequestView req, ControlCompleter::Sync& completer) {
+  TRACE_DURATION("usb-peripheral", __func__);
   fidl::Arena arena;
   fidl::VectorView<uint8_t> read_data(arena, req->setup.w_length);  // May be 0.
 
@@ -47,11 +49,13 @@ void UsbDciInterfaceServer::Control(ControlRequestView req, ControlCompleter::Sy
 
 void UsbDciInterfaceServer::SetConnected(SetConnectedRequestView req,
                                          SetConnectedCompleter::Sync& completer) {
+  TRACE_DURATION("usb-peripheral", __func__);
   drv_->CommonSetConnected(req->is_connected);
   completer.ReplySuccess();
 }
 
 void UsbDciInterfaceServer::SetSpeed(SetSpeedRequestView req, SetSpeedCompleter::Sync& completer) {
+  TRACE_DURATION("usb-peripheral", __func__);
   drv_->speed_ = static_cast<usb_speed_t>(req->speed);
   completer.ReplySuccess();
 }

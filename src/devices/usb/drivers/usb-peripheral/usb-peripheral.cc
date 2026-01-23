@@ -12,6 +12,7 @@
 #include <lib/driver/metadata/cpp/metadata.h>
 #include <lib/fit/defer.h>
 #include <lib/stdcompat/span.h>
+#include <lib/trace/event.h>
 #include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -37,6 +38,7 @@
 namespace usb_peripheral {
 
 zx_status_t UsbPeripheral::UsbDciCancelAll(uint8_t ep_address) {
+  TRACE_DURATION("usb-peripheral", __func__, "ep_address", ep_address);
   fidl::Arena arena;
   auto result = dci_new_.buffer(arena)->CancelAll(ep_address);
 
@@ -55,6 +57,7 @@ zx_status_t UsbPeripheral::UsbDciCancelAll(uint8_t ep_address) {
 }
 
 void UsbPeripheral::RequestComplete(usb_request_t* req) {
+  TRACE_DURATION("usb-peripheral", __func__);
   fbl::AutoLock l(&pending_requests_lock_);
   usb::BorrowedRequest<void> request(req, dci_.GetRequestSize());
 
@@ -66,6 +69,7 @@ void UsbPeripheral::RequestComplete(usb_request_t* req) {
 
 void UsbPeripheral::UsbPeripheralRequestQueue(usb_request_t* usb_request,
                                               const usb_request_complete_callback_t* complete_cb) {
+  TRACE_DURATION("usb-peripheral", __func__);
   if (shutting_down_) {
     usb_request_complete(usb_request, ZX_ERR_IO_NOT_PRESENT, 0, complete_cb);
     return;
@@ -84,6 +88,7 @@ void UsbPeripheral::UsbPeripheralRequestQueue(usb_request_t* usb_request,
 }
 
 zx::result<> UsbPeripheral::Start() {
+  TRACE_DURATION("usb-peripheral", __func__);
   zx::result dci_fidl = incoming()->Connect<fuchsia_hardware_usb_dci::UsbDciService::Device>();
   if (dci_fidl.is_error()) {
     fdf::error("Failed to connect dci fidl protocol: {}", dci_fidl);
@@ -210,6 +215,7 @@ zx::result<> UsbPeripheral::Start() {
 }
 
 zx::result<std::string> UsbPeripheral::GetSerialNumber() {
+  TRACE_DURATION("usb-peripheral", __func__);
   zx::result serial_number_result =
       fdf_metadata::GetMetadataIfExists<fuchsia_boot_metadata::SerialNumberMetadata>(incoming());
   if (serial_number_result.is_error()) {
@@ -252,6 +258,7 @@ zx::result<std::string> UsbPeripheral::GetSerialNumber() {
 }
 
 zx_status_t UsbPeripheral::AllocStringDesc(std::string desc, uint8_t* out_index) {
+  TRACE_DURATION("usb-peripheral", __func__);
   fbl::AutoLock lock(&lock_);
 
   if (strings_.size() >= MAX_STRINGS) {
@@ -268,6 +275,7 @@ zx_status_t UsbPeripheral::AllocStringDesc(std::string desc, uint8_t* out_index)
 
 zx_status_t UsbPeripheral::ValidateFunction(size_t function_index, void* descriptors, size_t length,
                                             uint8_t* out_num_interfaces) {
+  TRACE_DURATION("usb-peripheral", __func__, "function_index", function_index);
   auto* intf_desc = static_cast<usb_interface_descriptor_t*>(descriptors);
   if (intf_desc->b_descriptor_type == USB_DT_INTERFACE) {
     if (intf_desc->b_length != sizeof(usb_interface_descriptor_t)) {
@@ -328,6 +336,7 @@ zx_status_t UsbPeripheral::ValidateFunction(size_t function_index, void* descrip
 }
 
 bool UsbPeripheral::AllFunctionsRegistered() const {
+  TRACE_DURATION("usb-peripheral", __func__);
   if (!lock_functions_) {
     return false;
   }
@@ -344,6 +353,7 @@ bool UsbPeripheral::AllFunctionsRegistered() const {
 }
 
 zx_status_t UsbPeripheral::FunctionRegistered() {
+  TRACE_DURATION("usb-peripheral", __func__);
   fbl::AutoLock lock(&lock_);
   // Check to see if we have all our functions registered.
   // If so, we can build our configuration descriptor and tell the DCI driver we are ready.
@@ -403,6 +413,7 @@ zx_status_t UsbPeripheral::FunctionRegistered() {
 }
 
 zx_status_t UsbPeripheral::StartController() {
+  TRACE_DURATION("usb-peripheral", __func__);
   fidl::Arena arena;
   auto result = dci_new_.buffer(arena)->StartController();
   if (!result.ok()) {
@@ -417,6 +428,7 @@ zx_status_t UsbPeripheral::StartController() {
 }
 
 zx_status_t UsbPeripheral::StopController() {
+  TRACE_DURATION("usb-peripheral", __func__);
   // If the driver is stopping, drivers bound to child nodes have already stopped. This guards
   // against upstream function drivers that forgot to call SetInterface(nullptr, nullptr) in their
   // teardown logic.
@@ -451,6 +463,7 @@ zx_status_t UsbPeripheral::StopController() {
 }
 
 zx_status_t UsbPeripheral::AllocInterface(size_t function_index, uint8_t* out_intf_num) {
+  TRACE_DURATION("usb-peripheral", __func__, "function_index", function_index);
   fbl::AutoLock lock(&lock_);
   auto& function = GetFunction(function_index);
   ZX_ASSERT(function.configuration() < configurations_.size());
@@ -469,6 +482,8 @@ zx_status_t UsbPeripheral::AllocInterface(size_t function_index, uint8_t* out_in
 
 zx_status_t UsbPeripheral::AllocEndpoint(size_t function_index, uint8_t direction,
                                          uint8_t* out_address) {
+  TRACE_DURATION("usb-peripheral", __func__, "function_index", function_index, "direction",
+                 direction);
   uint8_t start, end;
 
   if (direction == USB_DIR_OUT) {
@@ -497,6 +512,8 @@ zx_status_t UsbPeripheral::AllocEndpoint(size_t function_index, uint8_t directio
 
 zx_status_t UsbPeripheral::GetDescriptor(uint8_t request_type, uint16_t value, uint16_t index,
                                          void* buffer, size_t length, size_t* out_actual) {
+  TRACE_DURATION("usb-peripheral", __func__, "request_type", request_type, "value", value, "index",
+                 index);
   uint8_t type = request_type & USB_TYPE_MASK;
 
   if (type != USB_TYPE_STANDARD) {
@@ -600,6 +617,7 @@ zx_status_t UsbPeripheral::GetDescriptor(uint8_t request_type, uint16_t value, u
 }
 
 zx_status_t UsbPeripheral::SetConfiguration(uint8_t configuration) {
+  TRACE_DURATION("usb-peripheral", __func__, "configuration", configuration);
   bool configured = configuration > 0;
   // TODO(b/355271738): Logs added to debug b/355271738. Remove when fixed.
   fdf::info("Configuration {}", configuration);
@@ -621,6 +639,7 @@ zx_status_t UsbPeripheral::SetConfiguration(uint8_t configuration) {
 }
 
 zx_status_t UsbPeripheral::SetInterface(uint8_t interface, uint8_t alt_setting) {
+  TRACE_DURATION("usb-peripheral", __func__, "interface", interface, "alt_setting", alt_setting);
   const auto& configuration = configurations_[configuration_ - 1];
   if (interface >= std::size(configuration.interface_map)) {
     fdf::error("Invalid interface index: {}", interface);
@@ -638,6 +657,7 @@ zx_status_t UsbPeripheral::SetInterface(uint8_t interface, uint8_t alt_setting) 
 }
 
 zx::result<size_t> UsbPeripheral::AddFunction(UsbConfiguration& config, FunctionDescriptor desc) {
+  TRACE_DURATION("usb-peripheral", __func__);
   fbl::AutoLock lock(&lock_);
   if (lock_functions_) {
     fdf::error("Functions are already bound");
@@ -654,6 +674,7 @@ zx::result<size_t> UsbPeripheral::AddFunction(UsbConfiguration& config, Function
 }
 
 void UsbPeripheral::ClearFunctions() {
+  TRACE_DURATION("usb-peripheral", __func__);
   fdf::debug("{}", __func__);
   {
     fbl::AutoLock lock(&lock_);
@@ -693,6 +714,7 @@ void UsbPeripheral::ClearFunctions() {
 }
 
 zx_status_t UsbPeripheral::AddFunctionDevices() {
+  TRACE_DURATION("usb-peripheral", __func__);
   fdf::debug("{}", __func__);
   int func_index = 0;
   for (const auto& configuration : configurations_) {
@@ -714,11 +736,13 @@ zx_status_t UsbPeripheral::AddFunctionDevices() {
 }
 
 zx_status_t UsbPeripheral::DeviceStateChanged() {
+  TRACE_DURATION("usb-peripheral", __func__);
   fbl::AutoLock _(&lock_);
   return DeviceStateChangedLocked();
 }
 
 zx_status_t UsbPeripheral::DeviceStateChangedLocked() {
+  TRACE_DURATION("usb-peripheral", __func__);
   fdf::info("cur_usb_mode={}, parent_usb_mode={}", cur_usb_mode_, parent_usb_mode_);
 
   std::optional<bool> stop = std::nullopt;
@@ -770,6 +794,9 @@ zx_status_t UsbPeripheral::CommonControl(const usb_setup_t* setup, const uint8_t
   uint16_t value = le16toh(setup->w_value);
   uint16_t index = le16toh(setup->w_index);
   uint16_t length = le16toh(setup->w_length);
+
+  TRACE_DURATION("usb-peripheral", __func__, "request_type", request_type, "value", value, "index",
+                 index);
 
   if (direction == USB_DIR_IN && length > read_size) {
     return ZX_ERR_BUFFER_TOO_SMALL;
@@ -872,6 +899,7 @@ zx_status_t UsbPeripheral::CommonControl(const usb_setup_t* setup, const uint8_t
 }
 
 void UsbPeripheral::CommonSetConnected(bool connected) {
+  TRACE_DURATION("usb-peripheral", __func__);
   bool was_connected = connected;
   {
     fbl::AutoLock lock(&lock_);
@@ -895,6 +923,8 @@ void UsbPeripheral::CommonSetConnected(bool connected) {
 
 void UsbPeripheral::SetConfiguration(SetConfigurationRequestView request,
                                      SetConfigurationCompleter::Sync& completer) {
+  TRACE_DURATION("usb-peripheral", __func__);
+
   {
     fbl::AutoLock _(&lock_);
     if (lock_functions_) {
@@ -944,6 +974,8 @@ void UsbPeripheral::SetConfiguration(SetConfigurationRequestView request,
 }
 
 zx_status_t UsbPeripheral::SetDeviceDescriptor(DeviceDescriptor desc) {
+  TRACE_DURATION("usb-peripheral", __func__);
+
   if (desc.b_num_configurations == 0) {
     fdf::error("bNumConfigurations must be non-zero");
     return ZX_ERR_INVALID_ARGS;
@@ -980,6 +1012,8 @@ zx_status_t UsbPeripheral::SetDeviceDescriptor(DeviceDescriptor desc) {
 }
 
 void UsbPeripheral::ClearFunctions(ClearFunctionsCompleter::Sync& completer) {
+  TRACE_DURATION("usb-peripheral", __func__);
+
   fdf::debug("{}", __func__);
   ClearFunctions();
   completer.Reply();
@@ -987,11 +1021,15 @@ void UsbPeripheral::ClearFunctions(ClearFunctionsCompleter::Sync& completer) {
 
 void UsbPeripheral::SetStateChangeListener(SetStateChangeListenerRequestView request,
                                            SetStateChangeListenerCompleter::Sync& completer) {
+  TRACE_DURATION("usb-peripheral", __func__);
+
   // No safety checks. Test should know when it's safe to set listener.
   listener_ = std::move(request->listener);
 }
 
 void UsbPeripheral::PrepareStop(fdf::PrepareStopCompleter completer) {
+  TRACE_DURATION("usb-peripheral", __func__);
+
   stopping_driver_ = true;
   ClearFunctions();
   usb_monitor_.Stop();
@@ -1005,6 +1043,8 @@ void UsbPeripheral::PrepareStop(fdf::PrepareStopCompleter completer) {
 }
 
 zx_status_t UsbPeripheral::SetDefaultConfig(std::vector<FunctionDescriptor>& functions) {
+  TRACE_DURATION("usb-peripheral", __func__);
+
   {
     fbl::AutoLock _(&lock_);
     if (lock_functions_) {
@@ -1041,6 +1081,8 @@ zx_status_t UsbPeripheral::SetDefaultConfig(std::vector<FunctionDescriptor>& fun
 }
 
 UsbFunction& UsbPeripheral::GetFunction(size_t index) {
+  TRACE_DURATION("usb-peripheral", __func__, "index", index);
+
   ZX_ASSERT_MSG(index < functions_.size(), "Function %lu does not exist", index);
   auto& function = functions_[index];
   ZX_ASSERT(function != nullptr);
@@ -1048,6 +1090,8 @@ UsbFunction& UsbPeripheral::GetFunction(size_t index) {
 }
 
 const UsbFunction& UsbPeripheral::GetFunction(size_t index) const {
+  TRACE_DURATION("usb-peripheral", __func__);
+
   ZX_ASSERT_MSG(index < functions_.size(), "Function %lu does not exist", index);
   const auto& function = functions_[index];
   ZX_ASSERT(function != nullptr);

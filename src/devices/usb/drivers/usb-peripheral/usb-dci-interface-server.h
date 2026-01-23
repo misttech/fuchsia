@@ -9,6 +9,7 @@
 #include <lib/async/cpp/task.h>
 #include <lib/fdf/cpp/dispatcher.h>
 #include <lib/sync/cpp/completion.h>
+#include <lib/trace/event.h>
 
 namespace usb_peripheral {
 
@@ -30,10 +31,12 @@ class UsbDciInterfaceServer : public fidl::WireServer<fuchsia_hardware_usb_dci::
   void handle_unknown_method(
       fidl::UnknownMethodMetadata<fuchsia_hardware_usb_dci::UsbDciInterface> metadata,
       fidl::UnknownMethodCompleter::Sync& completer) override {
+    TRACE_DURATION("usb-peripheral", __func__);
     completer.Close(ZX_ERR_NOT_SUPPORTED);
   }
 
   fidl::ClientEnd<fuchsia_hardware_usb_dci::UsbDciInterface> AddBinding() {
+    TRACE_DURATION("usb-peripheral", __func__);
     libsync::Completion wait;
     auto eps = fidl::Endpoints<fuchsia_hardware_usb_dci::UsbDciInterface>::Create();
     async::PostTask(dispatcher_.async_dispatcher(), [this, &eps, &wait]() {

@@ -11,6 +11,7 @@
 #include <fuchsia/hardware/usb/function/cpp/banjo.h>
 #include <lib/driver/component/cpp/driver_base.h>
 #include <lib/driver/devfs/cpp/connector.h>
+#include <lib/trace/event.h>
 #include <lib/zx/channel.h>
 #include <zircon/errors.h>
 
@@ -131,6 +132,8 @@ class UsbPeripheral : public fdf::DriverBase,
 
   zx_status_t ConnectToEndpoint(uint8_t ep_address,
                                 fidl::ServerEnd<fuchsia_hardware_usb_endpoint::Endpoint> ep) {
+    TRACE_DURATION("usb-peripheral", __func__, "ep_address", ep_address);
+
     auto result = dci_new_->ConnectToEndpoint(ep_address, std::move(ep));
     if (!result.ok()) {
       return ZX_ERR_INTERNAL;  // framework error.
@@ -196,6 +199,7 @@ class UsbPeripheral : public fdf::DriverBase,
   const UsbFunction& GetFunction(size_t index) const;
 
   void Connect(fidl::ServerEnd<fuchsia_hardware_usb_peripheral::Device> request) {
+    TRACE_DURATION("usb-peripheral", __func__);
     bindings_.AddBinding(dispatcher(), std::move(request), this, fidl::kIgnoreBindingClosure);
   }
 

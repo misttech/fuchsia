@@ -5,6 +5,7 @@
 #include "src/devices/usb/drivers/usb-peripheral/config-parser.h"
 
 #include <lib/driver/logging/cpp/logger.h>
+#include <lib/trace/event.h>
 #include <zircon/errors.h>
 #include <zircon/types.h>
 
@@ -72,6 +73,8 @@ const std::map<std::string_view, FunctionDefinition> all_functions = {
 }  // namespace
 
 zx_status_t PeripheralConfigParser::AddFunctions(const std::vector<std::string>& functions) {
+  TRACE_DURATION("usb-peripheral", __func__);
+
   if (functions.empty()) {
     fdf::info("No functions found");
     return ZX_OK;
@@ -114,6 +117,7 @@ zx_status_t PeripheralConfigParser::AddFunctions(const std::vector<std::string>&
 
 zx_status_t PeripheralConfigParser::SetCompositeProductDescription(uint8_t tag_mask,
                                                                    const std::string_view& desc) {
+  TRACE_DURATION("usb-peripheral", __func__);
   if (tag_ & tag_mask) {
     fdf::error("Duplicate function for {}", desc);
     return ZX_ERR_WRONG_TYPE;

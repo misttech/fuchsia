@@ -13,6 +13,7 @@
 #include <lib/component/outgoing/cpp/outgoing_directory.h>
 #include <lib/driver/compat/cpp/compat.h>
 #include <lib/driver/metadata/cpp/metadata_server.h>
+#include <lib/trace/event.h>
 #include <threads.h>
 
 #include <fbl/array.h>

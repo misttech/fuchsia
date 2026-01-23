@@ -63,6 +63,7 @@ source_set("common") {
     "//src/devices/usb/lib/usb-monitor-util:usb-monitor-util-dfv2",
     "//zircon/system/ulib/fbl",
     "//zircon/system/ulib/sync:sync-cpp",
+    "//zircon/system/ulib/trace",
   ]
 }
 

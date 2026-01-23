@@ -6,6 +6,7 @@
 
 #include <fidl/fuchsia.hardware.usb.endpoint/cpp/wire.h>
 #include <lib/ddk/metadata.h>
+#include <lib/trace/event.h>
 
 #include <bind/fuchsia/cpp/bind.h>
 #include <bind/fuchsia/usb/cpp/bind.h>
@@ -22,6 +23,7 @@ zx::result<> UsbFunction::AddChild(fidl::UnownedClientEnd<fuchsia_driver_framewo
                                    const std::string& child_node_name,
                                    const std::shared_ptr<fdf::Namespace>& incoming,
                                    const std::shared_ptr<fdf::OutgoingDirectory>& outgoing) {
+  TRACE_DURATION("usb-peripheral", __func__);
   if (child_.is_valid()) {
     return zx::error(ZX_ERR_ALREADY_BOUND);
   }
@@ -106,6 +108,7 @@ zx::result<> UsbFunction::AddChild(fidl::UnownedClientEnd<fuchsia_driver_framewo
 // UsbFunctionProtocol implementation.
 zx_status_t UsbFunction::UsbFunctionSetInterface(
     const usb_function_interface_protocol_t* function_intf) {
+  TRACE_DURATION("usb-peripheral", __func__);
   auto func_intf = ddk::UsbFunctionInterfaceProtocolClient(function_intf);
   if (!func_intf.is_valid()) {
     bool was_valid = function_intf_.is_valid();
@@ -150,19 +153,23 @@ zx_status_t UsbFunction::UsbFunctionSetInterface(
 }
 
 zx_status_t UsbFunction::UsbFunctionCancelAll(uint8_t ep_address) {
+  TRACE_DURATION("usb-peripheral", __func__);
   return peripheral_->UsbDciCancelAll(ep_address);
 }
 
 zx_status_t UsbFunction::UsbFunctionAllocInterface(uint8_t* out_intf_num) {
+  TRACE_DURATION("usb-peripheral", __func__);
   return peripheral_->AllocInterface(index_, out_intf_num);
 }
 
 zx_status_t UsbFunction::UsbFunctionAllocEp(uint8_t direction, uint8_t* out_address) {
+  TRACE_DURATION("usb-peripheral", __func__);
   return peripheral_->AllocEndpoint(index_, direction, out_address);
 }
 
 zx_status_t UsbFunction::UsbFunctionConfigEp(const usb_endpoint_descriptor_t* ep_desc,
                                              const usb_ss_ep_comp_descriptor_t* ss_comp_desc) {
+  TRACE_DURATION("usb-peripheral", __func__);
   fidl::Arena arena;
 
   fdescriptor::wire::UsbEndpointDescriptor fep_desc;
@@ -201,6 +208,7 @@ zx_status_t UsbFunction::UsbFunctionConfigEp(const usb_endpoint_descriptor_t* ep
 }
 
 zx_status_t UsbFunction::UsbFunctionDisableEp(uint8_t address) {
+  TRACE_DURATION("usb-peripheral", __func__);
   fidl::Arena arena;
   auto result = peripheral_->dci_new().buffer(arena)->DisableEndpoint(address);
 
@@ -219,15 +227,18 @@ zx_status_t UsbFunction::UsbFunctionDisableEp(uint8_t address) {
 }
 
 zx_status_t UsbFunction::UsbFunctionAllocStringDesc(const char* str, uint8_t* out_index) {
+  TRACE_DURATION("usb-peripheral", __func__);
   return peripheral_->AllocStringDesc(str, out_index);
 }
 
 void UsbFunction::UsbFunctionRequestQueue(usb_request_t* usb_request,
                                           const usb_request_complete_callback_t* complete_cb) {
+  TRACE_DURATION("usb-peripheral", __func__);
   peripheral_->UsbPeripheralRequestQueue(usb_request, complete_cb);
 }
 
 zx_status_t UsbFunction::UsbFunctionEpSetStall(uint8_t ep_address) {
+  TRACE_DURATION("usb-peripheral", __func__, "ep_address", ep_address);
   fidl::Arena arena;
   auto result = peripheral_->dci_new().buffer(arena)->EndpointSetStall(ep_address);
 
@@ -246,6 +257,7 @@ zx_status_t UsbFunction::UsbFunctionEpSetStall(uint8_t ep_address) {
 }
 
 zx_status_t UsbFunction::UsbFunctionEpClearStall(uint8_t ep_address) {
+  TRACE_DURATION("usb-peripheral", __func__, "ep_address", ep_address);
   fidl::Arena arena;
   auto result = peripheral_->dci_new().buffer(arena)->EndpointClearStall(ep_address);
 
@@ -263,10 +275,14 @@ zx_status_t UsbFunction::UsbFunctionEpClearStall(uint8_t ep_address) {
   return peripheral_->dci().EpClearStall(ep_address);
 }
 
-size_t UsbFunction::UsbFunctionGetRequestSize() { return peripheral_->ParentRequestSize(); }
+size_t UsbFunction::UsbFunctionGetRequestSize() {
+  TRACE_DURATION("usb-peripheral", __func__);
+  return peripheral_->ParentRequestSize();
+}
 
 void UsbFunction::ConnectToEndpoint(ConnectToEndpointRequest& request,
                                     ConnectToEndpointCompleter::Sync& completer) {
+  TRACE_DURATION("usb-peripheral", __func__);
   auto status = peripheral_->ConnectToEndpoint(request.ep_addr(), std::move(request.ep()));
   if (status != ZX_OK) {
     completer.Reply(fit::as_error(status));
@@ -276,6 +292,7 @@ void UsbFunction::ConnectToEndpoint(ConnectToEndpointRequest& request,
 }
 
 zx_status_t UsbFunction::SetConfigured(bool configured, usb_speed_t speed) {
+  TRACE_DURATION("usb-peripheral", __func__);
   if (function_intf_.is_valid()) {
     return function_intf_.SetConfigured(configured, speed);
   }
@@ -284,6 +301,7 @@ zx_status_t UsbFunction::SetConfigured(bool configured, usb_speed_t speed) {
 }
 
 zx_status_t UsbFunction::SetInterface(uint8_t interface, uint8_t alt_setting) {
+  TRACE_DURATION("usb-peripheral", __func__);
   if (function_intf_.is_valid()) {
     return function_intf_.SetInterface(interface, alt_setting);
   }
@@ -294,6 +312,7 @@ zx_status_t UsbFunction::SetInterface(uint8_t interface, uint8_t alt_setting) {
 zx_status_t UsbFunction::Control(const usb_setup_t* setup, const void* write_buffer,
                                  size_t write_size, void* read_buffer, size_t read_size,
                                  size_t* out_read_actual) {
+  TRACE_DURATION("usb-peripheral", __func__);
   if (function_intf_.is_valid()) {
     return function_intf_.Control(setup, reinterpret_cast<const uint8_t*>(write_buffer), write_size,
                                   reinterpret_cast<uint8_t*>(read_buffer), read_size,
