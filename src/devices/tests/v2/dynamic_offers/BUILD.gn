@@ -11,6 +11,7 @@ group("tests") {
   deps = [
     ":dynamic_offers_leaf_bind_test",
     ":dynamic_offers_test",
+    ":dynamic_offers_test-rust",
   ]
 }
 
@@ -85,7 +86,7 @@ rustc_test("bin") {
   deps = [
     ":fuchsia.offers.test_rust",
     "//sdk/fidl/fuchsia.driver.test:fuchsia.driver.test_rust",
-    "//sdk/lib/driver_test_realm/realm_builder/rust",
+    "//sdk/lib/driver_test_realm/realm_builder/rust:rust_no_driver_manager",
     "//src/lib/fuchsia-async",
     "//src/lib/fuchsia-component",
     "//src/lib/fuchsia-component-test",
@@ -104,6 +105,23 @@ fuchsia_unittest_package("dynamic_offers_test") {
     ":bin",
     ":leaf",
     ":root",
+    "//sdk/lib/driver_test_realm:driver_manager_test",
+    "//sdk/lib/driver_test_realm:driver_test_realm_component",
+  ]
+}
+
+fuchsia_unittest_package("dynamic_offers_test-rust") {
+  package_name = "dynamic_offers_test-rustdm"
+  test_specs = {
+    log_settings = {
+      max_severity = "ERROR"
+    }
+  }
+  deps = [
+    ":bin",
+    ":leaf",
+    ":root",
+    "//sdk/lib/driver_test_realm:driver_manager_test_rust",
     "//sdk/lib/driver_test_realm:driver_test_realm_component",
   ]
 }

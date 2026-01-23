@@ -48,6 +48,22 @@ group("driver_test_realm") {
   ]
 }
 
+# Use in tests to try both rust and c++ driver manager.
+group("driver_test_realm_no_driver_manager") {
+  deps = [
+    ":driver_test_realm_component",
+    ":dtr_support_component",
+    ":fake_resolver",
+    ":manifest_provider",
+    ":test_realm_manifest",
+    "//src/devices/bin/devfs:component-for-test",
+    "//src/devices/bin/driver-host:component",
+    "//src/devices/bin/driver-index:component",
+    "//src/devices/bin/driver_manager:driver_shared_libraries",
+    "//src/devices/bin/driver_manager/devfs:component",
+  ]
+}
+
 group("tests") {
   testonly = true
   deps = [
@@ -227,8 +243,27 @@ fuchsia_component_manifest("driver_manager_manifest") {
   manifest = "meta/driver_manager_test.cml"
 }
 
+fuchsia_component_manifest("driver_manager_manifest_rust") {
+  component_name = "driver_manager_test"
+  manifest = "meta/driver_manager_test_rust.cml"
+}
+
 fuchsia_structured_config_values("test_config") {
   cm_label = ":driver_manager_manifest"
+  values = {
+    set_root_driver_host_critical = false
+    delay_fallback_until_base_drivers_indexed = true
+    suspend_timeout_fallback = true
+    verbose = false
+    root_driver = "fuchsia-boot:///dtr#meta/test-parent-sys.cm"
+    enable_test_shutdown_delays = false
+    power_inject_offer = false
+    power_suspend_enabled = false
+  }
+}
+
+fuchsia_structured_config_values("test_config_rust") {
+  cm_label = ":driver_manager_manifest_rust"
   values = {
     set_root_driver_host_critical = false
     delay_fallback_until_base_drivers_indexed = true
@@ -246,6 +281,15 @@ fuchsia_component("driver_manager_test") {
   deps = [
     ":test_config",
     "//src/devices/bin/driver_manager",
+  ]
+}
+
+fuchsia_component("driver_manager_test_rust") {
+  component_name = "driver_manager_test"
+  cm_label = ":driver_manager_manifest_rust"
+  deps = [
+    ":test_config_rust",
+    "//src/devices/bin/driver_manager_rust",
   ]
 }
 

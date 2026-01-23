@@ -9,7 +9,10 @@ import("//build/test.gni")
 
 group("tests") {
   testonly = true
-  deps = [ ":package" ]
+  deps = [
+    ":package",
+    ":package-rust",
+  ]
 }
 
 group("drivers") {
@@ -34,7 +37,7 @@ rustc_test("compat-node-group-test") {
   deps = [
     ":fuchsia.compat.nodegroup.test_rust",
     "//sdk/fidl/fuchsia.driver.test:fuchsia.driver.test_rust",
-    "//sdk/lib/driver_test_realm/realm_builder/rust",
+    "//sdk/lib/driver_test_realm/realm_builder/rust:rust_no_driver_manager",
     "//sdk/rust/zx",
     "//src/lib/fuchsia-async",
     "//src/lib/fuchsia-component",
@@ -49,6 +52,19 @@ fuchsia_unittest_package("package") {
     ":compat-node-group-test",
     "node-group:component",
     "root:component",
+    "//sdk/lib/driver_test_realm:driver_manager_test",
+    "//sdk/lib/driver_test_realm:driver_test_realm_component",
+    "//src/devices/misc/drivers/test-parent",
+  ]
+}
+
+fuchsia_unittest_package("package-rust") {
+  package_name = "compat-node-group-test-rustdm"
+  deps = [
+    ":compat-node-group-test",
+    "node-group:component",
+    "root:component",
+    "//sdk/lib/driver_test_realm:driver_manager_test_rust",
     "//sdk/lib/driver_test_realm:driver_test_realm_component",
     "//src/devices/misc/drivers/test-parent",
   ]

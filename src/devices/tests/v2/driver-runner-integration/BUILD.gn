@@ -9,7 +9,10 @@ import("//build/test.gni")
 
 group("tests") {
   testonly = true
-  deps = [ ":package" ]
+  deps = [
+    ":package",
+    ":package-rust",
+  ]
 }
 
 rustc_test("driver_runner_integration_test") {
@@ -19,7 +22,7 @@ rustc_test("driver_runner_integration_test") {
   sources = [ "driver_runner_integration_test.rs" ]
   deps = [
     "//sdk/fidl/fuchsia.driver.test:fuchsia.driver.test_rust",
-    "//sdk/lib/driver_test_realm/realm_builder/rust",
+    "//sdk/lib/driver_test_realm/realm_builder/rust:rust_no_driver_manager",
     "//src/lib/diagnostics/reader/rust",
     "//src/lib/diagnostics/testing/diagnostics-assertions/rust:diagnostics-assertions",
     "//src/lib/fuchsia-async",
@@ -47,5 +50,24 @@ fuchsia_test_package("package") {
       max_severity = "ERROR"
     }
   }
-  deps = [ "//src/devices/misc/drivers/packaged:component" ]
+  deps = [
+    "//sdk/lib/driver_test_realm:driver_manager_test",
+    "//src/devices/misc/drivers/packaged:component",
+  ]
+}
+
+fuchsia_test_package("package-rust") {
+  package_name = "driver_runner_integration_test-rustdm"
+  test_components = [ ":component" ]
+
+  # TODO(fxdebug.dev/80878): Make ERROR logs fail the test.
+  test_specs = {
+    log_settings = {
+      max_severity = "ERROR"
+    }
+  }
+  deps = [
+    "//sdk/lib/driver_test_realm:driver_manager_test_rust",
+    "//src/devices/misc/drivers/packaged:component",
+  ]
 }

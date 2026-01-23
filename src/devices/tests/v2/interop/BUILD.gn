@@ -11,6 +11,7 @@ group("tests") {
   deps = [
     ":interop_leaf_bind_test",
     ":interop_test",
+    ":interop_test-rust",
     ":interop_v1_bind_test",
   ]
 }
@@ -118,7 +119,7 @@ rustc_test("bin") {
     ":fuchsia.interop.test_rust",
     "//sdk/fidl/fuchsia.driver.test:fuchsia.driver.test_rust",
     "//sdk/lib/device-watcher/rust",
-    "//sdk/lib/driver_test_realm/realm_builder/rust",
+    "//sdk/lib/driver_test_realm/realm_builder/rust:rust_no_driver_manager",
     "//src/lib/fuchsia-async",
     "//src/lib/fuchsia-component",
     "//src/lib/fuchsia-component-test",
@@ -138,6 +139,24 @@ fuchsia_unittest_package("interop_test") {
     ":leaf",
     ":root",
     ":v1",
+    "//sdk/lib/driver_test_realm:driver_manager_test",
+    "//sdk/lib/driver_test_realm:driver_test_realm_component",
+  ]
+}
+
+fuchsia_unittest_package("interop_test-rust") {
+  package_name = "interop_test-rustdm"
+  test_specs = {
+    log_settings = {
+      max_severity = "ERROR"
+    }
+  }
+  deps = [
+    ":bin",
+    ":leaf",
+    ":root",
+    ":v1",
+    "//sdk/lib/driver_test_realm:driver_manager_test_rust",
     "//sdk/lib/driver_test_realm:driver_test_realm_component",
   ]
 }

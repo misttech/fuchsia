@@ -8,7 +8,10 @@ import("//build/rust/rustc_test.gni")
 
 group("tests") {
   testonly = true
-  deps = [ ":reloaddriver_test" ]
+  deps = [
+    ":reloaddriver_test",
+    ":reloaddriver_test-rust",
+  ]
 }
 
 group("drivers") {
@@ -60,7 +63,7 @@ rustc_test("bin") {
     "fidl:fuchsia.reloaddriver.test_rust",
     "//sdk/fidl/fuchsia.driver.development:fuchsia.driver.development_rust",
     "//sdk/fidl/fuchsia.driver.test:fuchsia.driver.test_rust",
-    "//sdk/lib/driver_test_realm/realm_builder/rust",
+    "//sdk/lib/driver_test_realm/realm_builder/rust:rust_no_driver_manager",
     "//sdk/rust/zx",
     "//src/lib/fidl/rust/fidl",
     "//src/lib/fuchsia-async",
@@ -86,6 +89,28 @@ fuchsia_unittest_package("reloaddriver_test") {
     "root:component",
     "target-1:component",
     "target-2:component",
+    "//sdk/lib/driver_test_realm:driver_manager_test",
+    "//sdk/lib/driver_test_realm:driver_test_realm_component",
+  ]
+}
+
+fuchsia_unittest_package("reloaddriver_test-rust") {
+  package_name = "reloaddriver_test-rustdm"
+  test_specs = {
+    log_settings = {
+      max_severity = "ERROR"
+    }
+  }
+  deps = [
+    ":bin",
+    "composite:component",
+    "leaf:component",
+    "left-parent:component",
+    "right-parent:component",
+    "root:component",
+    "target-1:component",
+    "target-2:component",
+    "//sdk/lib/driver_test_realm:driver_manager_test_rust",
     "//sdk/lib/driver_test_realm:driver_test_realm_component",
   ]
 }

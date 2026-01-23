@@ -62,7 +62,10 @@ fuchsia_driver_component("replacement-component") {
 
 group("tests") {
   testonly = true
-  deps = [ ":replacefaileddriver_test" ]
+  deps = [
+    ":replacefaileddriver_test",
+    ":replacefaileddriver_test-rust",
+  ]
 }
 
 group("drivers") {
@@ -83,7 +86,7 @@ rustc_test("bin") {
     "//sdk/fidl/fuchsia.driver.development:fuchsia.driver.development_rust",
     "//sdk/fidl/fuchsia.driver.registrar:fuchsia.driver.registrar_rust",
     "//sdk/fidl/fuchsia.driver.test:fuchsia.driver.test_rust",
-    "//sdk/lib/driver_test_realm/realm_builder/rust",
+    "//sdk/lib/driver_test_realm/realm_builder/rust:rust_no_driver_manager",
     "//src/lib/fidl/rust/fidl",
     "//src/lib/fuchsia-async",
     "//src/lib/fuchsia-component-test",
@@ -101,6 +104,23 @@ fuchsia_unittest_package("replacefaileddriver_test") {
     ":bin",
     ":component",
     ":replacement-component",
+    "//sdk/lib/driver_test_realm:driver_manager_test",
+    "//src/devices/misc/drivers/test-parent",
+  ]
+}
+
+fuchsia_unittest_package("replacefaileddriver_test-rust") {
+  package_name = "replacefaileddriver_test-rustdm"
+  test_specs = {
+    log_settings = {
+      max_severity = "ERROR"
+    }
+  }
+  deps = [
+    ":bin",
+    ":component",
+    ":replacement-component",
+    "//sdk/lib/driver_test_realm:driver_manager_test_rust",
     "//src/devices/misc/drivers/test-parent",
   ]
 }

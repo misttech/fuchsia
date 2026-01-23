@@ -10,6 +10,7 @@ group("tests") {
   testonly = true
   deps = [
     ":compat-runtime-test",
+    ":compat-runtime-test-rust",
     ":compat-runtime-v1-bind_test",
   ]
 }
@@ -105,7 +106,7 @@ rustc_test("bin") {
     ":fuchsia.compat.runtime.test_rust",
     "//sdk/fidl/fuchsia.driver.test:fuchsia.driver.test_rust",
     "//sdk/lib/device-watcher/rust",
-    "//sdk/lib/driver_test_realm/realm_builder/rust",
+    "//sdk/lib/driver_test_realm/realm_builder/rust:rust_no_driver_manager",
     "//src/lib/fuchsia-async",
     "//src/lib/fuchsia-component-test",
     "//third_party/rust_crates:anyhow",
@@ -122,6 +123,23 @@ fuchsia_unittest_package("compat-runtime-test") {
     ":bin",
     ":root",
     ":v1",
+    "//sdk/lib/driver_test_realm:driver_manager_test",
+    "//sdk/lib/driver_test_realm:driver_test_realm_component",
+  ]
+}
+
+fuchsia_unittest_package("compat-runtime-test-rust") {
+  package_name = "compat-runtime-test-rustdm"
+  test_specs = {
+    log_settings = {
+      max_severity = "ERROR"
+    }
+  }
+  deps = [
+    ":bin",
+    ":root",
+    ":v1",
+    "//sdk/lib/driver_test_realm:driver_manager_test_rust",
     "//sdk/lib/driver_test_realm:driver_test_realm_component",
   ]
 }

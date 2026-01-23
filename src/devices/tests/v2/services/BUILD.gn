@@ -8,7 +8,10 @@ import("//build/rust/rustc_test.gni")
 
 group("tests") {
   testonly = true
-  deps = [ ":services_test" ]
+  deps = [
+    ":services_test",
+    ":services_test-rust",
+  ]
 }
 
 fidl("fuchsia.services.test") {
@@ -82,7 +85,7 @@ rustc_test("bin") {
   deps = [
     ":fuchsia.services.test_rust",
     "//sdk/fidl/fuchsia.driver.test:fuchsia.driver.test_rust",
-    "//sdk/lib/driver_test_realm/realm_builder/rust",
+    "//sdk/lib/driver_test_realm/realm_builder/rust:rust_no_driver_manager",
     "//src/lib/fuchsia-async",
     "//src/lib/fuchsia-component",
     "//src/lib/fuchsia-component-test",
@@ -95,6 +98,18 @@ fuchsia_unittest_package("services_test") {
     ":bin",
     ":root",
     ":v1_driver_component",
+    "//sdk/lib/driver_test_realm:driver_manager_test",
+    "//sdk/lib/driver_test_realm:driver_test_realm_component",
+  ]
+}
+
+fuchsia_unittest_package("services_test-rust") {
+  package_name = "services_test-rustdm"
+  deps = [
+    ":bin",
+    ":root",
+    ":v1_driver_component",
+    "//sdk/lib/driver_test_realm:driver_manager_test_rust",
     "//sdk/lib/driver_test_realm:driver_test_realm_component",
   ]
 }

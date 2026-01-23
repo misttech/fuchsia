@@ -8,7 +8,10 @@ import("//build/rust/rustc_test.gni")
 
 group("tests") {
   testonly = true
-  deps = [ ":reloaddriver_nested_composite_test" ]
+  deps = [
+    ":reloaddriver_nested_composite_test",
+    ":reloaddriver_nested_composite_test-rust",
+  ]
 }
 
 group("drivers") {
@@ -30,7 +33,7 @@ rustc_test("bin") {
   deps = [
     "//sdk/fidl/fuchsia.driver.development:fuchsia.driver.development_rust",
     "//sdk/fidl/fuchsia.driver.test:fuchsia.driver.test_rust",
-    "//sdk/lib/driver_test_realm/realm_builder/rust",
+    "//sdk/lib/driver_test_realm/realm_builder/rust:rust_no_driver_manager",
     "//sdk/rust/zx",
     "//src/devices/tests/v2/reload-driver:reloadtest_tools",
     "//src/devices/tests/v2/reload-driver/fidl:fuchsia.reloaddriver.test_rust",
@@ -53,6 +56,22 @@ fuchsia_unittest_package("reloaddriver_nested_composite_test") {
   deps = [
     ":bin",
     ":drivers",
+    "//sdk/lib/driver_test_realm:driver_manager_test",
+    "//sdk/lib/driver_test_realm:driver_test_realm_component",
+  ]
+}
+
+fuchsia_unittest_package("reloaddriver_nested_composite_test-rust") {
+  package_name = "reloaddriver_nested_composite_test-rustdm"
+  test_specs = {
+    log_settings = {
+      max_severity = "ERROR"
+    }
+  }
+  deps = [
+    ":bin",
+    ":drivers",
+    "//sdk/lib/driver_test_realm:driver_manager_test_rust",
     "//sdk/lib/driver_test_realm:driver_test_realm_component",
   ]
 }

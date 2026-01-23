@@ -48,7 +48,14 @@ void FidlOpenValidator(const fidl::ClientEnd<fio::Directory>& directory, const c
 
   EventHandler event_handler;
   zx_status_t status = event_handler.HandleOneEvent(client).status();
-  ASSERT_EQ(status, expected.status_value()) << zx_status_get_string(status);
+  if (expected.status_value() == ZX_ERR_NOT_DIR) {
+    // Rust vfs and c++ return a different error for not directory.
+    ASSERT_TRUE(status == expected.status_value() || status == ZX_ERR_NOT_SUPPORTED)
+        << zx_status_get_string(status);
+  } else {
+    ASSERT_EQ(status, expected.status_value()) << zx_status_get_string(status);
+  }
+
   if (expected.is_ok()) {
     ASSERT_EQ(event_handler.tag(), *expected);
   }
@@ -65,7 +72,7 @@ TEST(FidlTestCase, OpenDev) {
   FidlOpenValidator(endpoints.client, "this-path-better-not-actually-exist",
                     zx::error(ZX_ERR_NOT_FOUND));
   FidlOpenValidator(endpoints.client, "zero/this-path-better-not-actually-exist",
-                    zx::error(ZX_ERR_NOT_SUPPORTED));
+                    zx::error(ZX_ERR_NOT_DIR));
 }
 
 TEST(FidlTestCase, OpenPkg) {

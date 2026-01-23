@@ -66,6 +66,15 @@ rustc_binary("driver_manager_rust") {
     "//third_party/rust_crates:futures",
     "//third_party/rust_crates:log",
   ]
+
+  if (toolchain_variant.libprefix != "") {
+    # The libprefix always ends with a / but that's not part of the
+    # "config" string in the loader-service protocol.
+    ldsvc_config =
+        get_path_info("${toolchain_variant.libprefix}libfoo.so", "dir")
+    assert(ldsvc_config != "" && ldsvc_config != ".")
+    rustenv = [ "DRIVERHOST_LDSVC_CONFIG=${ldsvc_config}" ]
+  }
 }
 
 fuchsia_unittest_package("driver-manager-rust-unittests") {

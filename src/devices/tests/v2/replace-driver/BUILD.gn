@@ -16,7 +16,10 @@ fuchsia_driver_component("component") {
 
 group("tests") {
   testonly = true
-  deps = [ ":replacedriver_test" ]
+  deps = [
+    ":replacedriver_test",
+    ":replacedriver_test-rust",
+  ]
 }
 
 group("drivers") {
@@ -40,7 +43,7 @@ rustc_test("bin") {
     "//sdk/fidl/fuchsia.driver.development:fuchsia.driver.development_rust",
     "//sdk/fidl/fuchsia.driver.registrar:fuchsia.driver.registrar_rust",
     "//sdk/fidl/fuchsia.driver.test:fuchsia.driver.test_rust",
-    "//sdk/lib/driver_test_realm/realm_builder/rust",
+    "//sdk/lib/driver_test_realm/realm_builder/rust:rust_no_driver_manager",
     "//sdk/rust/zx",
     "//src/devices/tests/v2/reload-driver:reloadtest_tools",
     "//src/devices/tests/v2/reload-driver/fidl:fuchsia.reloaddriver.test_rust",
@@ -65,6 +68,31 @@ fuchsia_unittest_package("replacedriver_test") {
     "composite-replacement:component",
     "target-1-replacement:component",
     "target-2-replacement:component",
+    "//sdk/lib/driver_test_realm:driver_manager_test",
+    "//sdk/lib/driver_test_realm:driver_test_realm_component",
+    "//src/devices/tests/v2/reload-driver/composite:component",
+    "//src/devices/tests/v2/reload-driver/leaf:component",
+    "//src/devices/tests/v2/reload-driver/left-parent:component",
+    "//src/devices/tests/v2/reload-driver/right-parent:component",
+    "//src/devices/tests/v2/reload-driver/root:component",
+    "//src/devices/tests/v2/reload-driver/target-2:component",
+  ]
+}
+
+fuchsia_unittest_package("replacedriver_test-rust") {
+  package_name = "replacedriver_test-rustdm"
+  test_specs = {
+    log_settings = {
+      max_severity = "ERROR"
+    }
+  }
+  deps = [
+    ":bin",
+    ":component",  # target 1 with colocate = false
+    "composite-replacement:component",
+    "target-1-replacement:component",
+    "target-2-replacement:component",
+    "//sdk/lib/driver_test_realm:driver_manager_test_rust",
     "//sdk/lib/driver_test_realm:driver_test_realm_component",
     "//src/devices/tests/v2/reload-driver/composite:component",
     "//src/devices/tests/v2/reload-driver/leaf:component",

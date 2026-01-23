@@ -9,7 +9,10 @@ import("//build/test.gni")
 
 group("tests") {
   testonly = true
-  deps = [ ":package" ]
+  deps = [
+    ":package",
+    ":package-rust",
+  ]
 }
 
 group("drivers") {
@@ -36,7 +39,7 @@ rustc_test("compat-shim-globals-test") {
     ":fuchsia.hardware.compat_rust",
     "//sdk/fidl/fuchsia.driver.test:fuchsia.driver.test_rust",
     "//sdk/lib/device-watcher/rust",
-    "//sdk/lib/driver_test_realm/realm_builder/rust",
+    "//sdk/lib/driver_test_realm/realm_builder/rust:rust_no_driver_manager",
     "//sdk/rust/zx",
     "//src/lib/fuchsia-async",
     "//src/lib/fuchsia-component-test",
@@ -50,6 +53,18 @@ fuchsia_unittest_package("package") {
     ":compat-shim-globals-test",
     "leaf:component",
     "root:component",
+    "//sdk/lib/driver_test_realm:driver_manager_test",
+    "//src/devices/misc/drivers/test-parent",
+  ]
+}
+
+fuchsia_unittest_package("package-rust") {
+  package_name = "compat-driver-globals-test-rustdm"
+  deps = [
+    ":compat-shim-globals-test",
+    "leaf:component",
+    "root:component",
+    "//sdk/lib/driver_test_realm:driver_manager_test_rust",
     "//src/devices/misc/drivers/test-parent",
   ]
 }
