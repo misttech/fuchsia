@@ -221,7 +221,7 @@ impl FsNodeOps for ProcSysNetIpv4Neigh {
                 );
                 dir.entry(
                     "mcast_resolicit",
-                    StubBytesFile::new_node(bug_ref!("https://fxbug.dev/423645992")),
+                    new_interface_config_file_node::<McastResolicit<Ipv4>>(interface),
                     FILE_MODE,
                 );
                 dir.entry(
@@ -400,7 +400,7 @@ impl FsNodeOps for ProcSysNetIpv6Neigh {
                 );
                 dir.entry(
                     "mcast_resolicit",
-                    StubBytesFile::new_node(bug_ref!("https://fxbug.dev/423645992")),
+                    new_interface_config_file_node::<McastResolicit<Ipv6>>(interface),
                     FILE_MODE,
                 );
                 dir.entry(
@@ -797,5 +797,69 @@ impl<I: Ip> InterfaceConfig for UcastSolicit<I> {
                 })?,
         };
         Ok(i32::from(max_unicast_solicitations))
+    }
+}
+
+struct McastResolicit<I: Ip> {
+    _marker: core::marker::PhantomData<I>,
+}
+
+impl<I: Ip> InterfaceConfig for McastResolicit<I> {
+    fn try_from_i32(value: i32) -> Result<fnet_interfaces_admin::Configuration, Errno> {
+        let max_multicast_solicitations = u16::try_from(value).map_err(|_| errno!(EINVAL))?;
+        let nud_config = fnet_interfaces_admin::NudConfiguration {
+            max_multicast_solicitations: Some(max_multicast_solicitations),
+            ..Default::default()
+        };
+        let mut config = fnet_interfaces_admin::Configuration::default();
+        match I::VERSION {
+            IpVersion::V4 => {
+                config.ipv4 = Some(fidl_fuchsia_net_interfaces_admin::Ipv4Configuration {
+                    arp: Some(fnet_interfaces_admin::ArpConfiguration {
+                        nud: Some(nud_config),
+                        ..Default::default()
+                    }),
+                    ..Default::default()
+                })
+            }
+            IpVersion::V6 => {
+                config.ipv6 = Some(fidl_fuchsia_net_interfaces_admin::Ipv6Configuration {
+                    ndp: Some(fnet_interfaces_admin::NdpConfiguration {
+                        nud: Some(nud_config),
+                        ..Default::default()
+                    }),
+                    ..Default::default()
+                })
+            }
+        }
+        Ok(config)
+    }
+
+    fn try_into_i32(config: fnet_interfaces_admin::Configuration) -> Result<i32, Errno> {
+        let max_multicast_solicitations = match I::VERSION {
+            IpVersion::V4 => config
+                .ipv4
+                .and_then(|ipv4| ipv4.arp)
+                .and_then(|arp| arp.nud)
+                .and_then(|nud| nud.max_multicast_solicitations)
+                .ok_or_else(|| {
+                    log_error!(
+                        "network interface config missing ipv4 arp max_multicast_solicitations"
+                    );
+                    errno!(EIO)
+                })?,
+            IpVersion::V6 => config
+                .ipv6
+                .and_then(|ipv6| ipv6.ndp)
+                .and_then(|ndp| ndp.nud)
+                .and_then(|nud| nud.max_multicast_solicitations)
+                .ok_or_else(|| {
+                    log_error!(
+                        "network interface config missing ipv6 ndp max_multicast_solicitations"
+                    );
+                    errno!(EIO)
+                })?,
+        };
+        Ok(i32::from(max_multicast_solicitations))
     }
 }

@@ -255,4 +255,6 @@ TEST_P(SysctlTestReadBack, ReadBack) {
 
 INSTANTIATE_TEST_SUITE_P(SysctlTest, SysctlTestReadBack,
                          ::testing::Values("/proc/sys/net/ipv6/neigh/default/ucast_solicit",
-                                           "/proc/sys/net/ipv4/neigh/default/ucast_solicit"));
+                                           "/proc/sys/net/ipv4/neigh/default/ucast_solicit",
+                                           "/proc/sys/net/ipv6/neigh/default/mcast_resolicit",
+                                           "/proc/sys/net/ipv4/neigh/default/mcast_resolicit"));
