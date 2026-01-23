@@ -180,6 +180,15 @@ with `#`.
 
 ## Workflow shell commands
 
+`fx` is a shell wrapper around many common Fuchsia workflows which is specific
+to the Fuchsia source tree. `ffx` is the Fuchsia command line tool for
+interacting with Fuchsia devices and is available both inside of Fuchsia and for
+SDK customers.
+
+Nearly all Fuchsia workflow commands support either a `-h` or `--help` flag that
+you can use to discover more information about the command. This includes ffx
+subcommands at various levels of its hierarchy.
+
 ### Building
 
 `fx build` wraps GN, Bazel, and Ninja to build Fuchsia.
@@ -206,6 +215,59 @@ connected using `fx ffx target list`.
 
 If more than one device is present, you can choose the correct one by name as
 the first argument to `fx`: `fx -t <device name> test ...`.
+
+### Targets
+
+`ffx target list` will show you if any running Fuchsia development devices are
+detected.
+
+`ffx target show` will show you the current default target along with some
+diagnostic information.
+
+`ffx target echo` ensures ffx can communicate with the default target device.
+
+`fx get-device` will tell you what default device the user has configured for
+the current build directory.
+
+`ffx emu start` will start an emulator using whatever image has been built.
+You'll need to run `fx build` to generate a fresh image. The `--headless` flag
+may be necessary for some environments where a graphical desktop is unavailable.
+
+`ffx emu stop` will stop the emulator.
+
+`ffx doctor` can tell you if the development environment is configured
+correctly.
+
+### Components
+
+`ffx component list` will show you all of the components on the target.
+
+`ffx component explore` will let you run shell commands inside of a component's
+sandbox.
+
+### Diagnostics
+
+`ffx log dump` will dump the system log from the target.
+
+`ffx inspect show` will dump inspect data from components on the device.
+
+### Kernel boot tests
+
+`fx run-boot-test` runs kernel boot tests and provides more control over the
+test environment than `fx test`. It is useful to run Zircon's core tests.
+
+Note that by default Zircon drops into a panic shell if the kernel panics, but
+this may be difficult for your shell command harness. Unless you explicitly
+intend to interact with the panic shell, consider passing
+`--cmdline kernel.halt-on-panic=true` to get a failing exit code if Zircon
+panics.
+
+### Debugging
+
+`ffx debug symbolize` renders backtrace markup into readable symbol names.
+You can recognize backtrace markup in logs as lines with triple curly brackets
+like `{{{bt:6:0xffffffff003033cb:ra}}}`. Pipe the original text into its stdin
+and it will print the symbolized text to stdout.
 
 # Code reviews
 
