@@ -110,6 +110,9 @@ async fn main() -> Result<(), Error> {
     // Serve devfs from outgoing directory.
     fs.add_remote("dev", driver_runner.devfs.as_ref().serve());
 
+    #[cfg(feature = "heapdump")]
+    heapdump::bind_with_fdio();
+
     fs.take_and_serve_directory_handle()?;
 
     let driver_runner_clone = driver_runner.clone();

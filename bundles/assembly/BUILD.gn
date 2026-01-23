@@ -2100,6 +2100,33 @@ assembly_input_bundle("driver_framework_common") {
   bootstrap_shards = [ "//src/devices/bin/driver_framework/meta/driver_framework.bootstrap_shard.cml" ]
 }
 
+# Rust Driver Framework Support
+#
+# feature_set_levels: all
+# build-types: all
+#
+assembly_input_bundle("driver_framework_rust") {
+  bootfs_packages = [
+    "//src/devices/bin/driver_manager_rust:package",
+    "//src/devices/bin/driver-host:package",
+  ]
+}
+
+# Rust Driver Framework Support. Linked with the Heapdump instrumentation library
+# for memory profiling.
+#
+# feature_set_levels: all
+# build-types: eng
+#
+assembly_input_bundle("driver_framework_rust_with_heapdump") {
+  bootfs_packages = [
+    "//src/devices/bin/driver_manager_rust:package_with_heapdump",
+    "//src/devices/bin/driver-host:package_with_heapdump",
+  ]
+  bootstrap_shards =
+      [ "//src/devices/bin/driver_framework/meta/heapdump.bootstrap_shard.cml" ]
+}
+
 # Driver Framework Support
 #
 # feature_set_levels: minimal
@@ -2112,7 +2139,7 @@ assembly_input_bundle("driver_framework_no_instrumentation") {
   ]
 }
 
-# This AIB contains Driver Manager and Driver Host linked with with the Heapdump
+# This AIB contains Driver Manager and Driver Host linked with the Heapdump
 # instrumentation library for memory profiling.
 #
 # feature_set_levels: standard

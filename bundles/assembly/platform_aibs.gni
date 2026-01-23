@@ -31,6 +31,7 @@ bootstrap_user_platform_aib_names = [
 
   # Driver Framework
   "driver_framework_common",
+  "driver_framework_rust",
   "driver_framework_no_instrumentation",
 
   # Power
@@ -475,6 +476,7 @@ eng_only_platform_aib_names =
       "topology_test_daemon",
 
       # Driver development support
+      "driver_framework_rust_with_heapdump",
       "driver_framework_with_heapdump",
       "full_drivers",
 
@@ -513,6 +515,7 @@ required_user_aib_names = [
   "core_realm",
   "core_realm_user_and_userdebug",
   "driver_framework_common",
+  "driver_framework_rust",
   "driver_framework_no_instrumentation",
   "legacy_power_framework",
   "zircon",

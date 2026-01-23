@@ -44,9 +44,24 @@ impl
                 &[FeatureSetLevel::Standard],
                 "enable_heapdump_instrumentation",
             )?;
-            builder.platform_bundle("driver_framework_with_heapdump");
-        } else {
-            builder.platform_bundle("driver_framework_no_instrumentation");
+        }
+
+        let rust_driver_manager =
+            context.board_config.provides_feature("fuchsia::rust_driver_manager");
+        let heapdump = development_support.heapdump.driver_framework;
+        match (rust_driver_manager, heapdump) {
+            (true, true) => {
+                builder.platform_bundle("driver_framework_rust_with_heapdump");
+            }
+            (true, false) => {
+                builder.platform_bundle("driver_framework_rust");
+            }
+            (false, true) => {
+                builder.platform_bundle("driver_framework_with_heapdump");
+            }
+            (false, false) => {
+                builder.platform_bundle("driver_framework_no_instrumentation");
+            }
         }
 
         let enable_ephemeral_drivers = match (context.build_type, context.feature_set_level) {

@@ -23,8 +23,14 @@ group("tests") {
 }
 
 fuchsia_component_manifest("manifest") {
-  component_name = "driver_manager_rust"
+  component_name = "driver_manager"
   manifest = "meta/driver_manager_rust.cml"
+  restricted_features = [ "allow_long_names" ]
+}
+
+fuchsia_component_manifest("manifest_with_heapdump") {
+  component_name = "driver_manager"
+  manifest = "meta/driver_manager_rust_with_heapdump.cml"
   restricted_features = [ "allow_long_names" ]
 }
 
@@ -32,12 +38,15 @@ fuchsia_structured_config_rust_lib("driver_manager_config") {
   cm_label = ":manifest"
 }
 
-rustc_binary("driver_manager_rust") {
+_driver_manager_common = {
   with_unit_tests = true
   edition = "2024"
-  configs += [ "//build/config/rust:bootfs" ]
-  configs += [ "//build/config/rust/lints:clippy_warn_all" ]
-  configs += [ "//build/config/fuchsia:static_cpp_standard_library" ]
+
+  configs_to_add = [
+    "//build/config/rust:bootfs",
+    "//build/config/rust/lints:clippy_warn_all",
+    "//build/config/fuchsia:static_cpp_standard_library",
+  ]
 
   sources = [ "src/main.rs" ]
 
@@ -77,6 +86,18 @@ rustc_binary("driver_manager_rust") {
   }
 }
 
+rustc_binary("driver_manager_rust") {
+  forward_variables_from(_driver_manager_common, "*")
+  configs += configs_to_add
+}
+
+rustc_binary("driver_manager_rust_with_heapdump") {
+  forward_variables_from(_driver_manager_common, "*")
+  configs += configs_to_add
+  features = [ "heapdump" ]
+  deps += [ "//src/performance/memory/heapdump/instrumentation:rust" ]
+}
+
 fuchsia_unittest_package("driver-manager-rust-unittests") {
   deps = [ ":driver_manager_rust_test" ]
 }
@@ -84,6 +105,11 @@ fuchsia_unittest_package("driver-manager-rust-unittests") {
 fuchsia_component("component") {
   cm_label = ":manifest"
   deps = [ ":driver_manager_rust" ]
+}
+
+fuchsia_component("component_with_heapdump") {
+  cm_label = ":manifest_with_heapdump"
+  deps = [ ":driver_manager_rust_with_heapdump" ]
 }
 
 fuchsia_structured_config_values("driver_manager_config_default") {
@@ -101,9 +127,18 @@ fuchsia_structured_config_values("driver_manager_config_default") {
 }
 
 fuchsia_package("package") {
-  package_name = "driver_manager_rust"
+  package_name = "driver_manager"
   deps = [
     ":component",
+    ":driver_manager_config_default",
+    "//src/devices/bin/driver_manager:driver_shared_libraries",
+  ]
+}
+
+fuchsia_package("package_with_heapdump") {
+  package_name = "driver_manager"
+  deps = [
+    ":component_with_heapdump",
     ":driver_manager_config_default",
     "//src/devices/bin/driver_manager:driver_shared_libraries",
   ]
