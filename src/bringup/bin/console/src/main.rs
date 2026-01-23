@@ -56,6 +56,8 @@ fn debug_reader_thread(
     fifo: Arc<fifo::Fifo>,
     console_service: Arc<ConsoleService>,
 ) {
+    let mut logged_write_failure = false;
+
     loop {
         let mut buf = [0u8; 16];
         let mut actual: usize = 0;
@@ -83,8 +85,14 @@ fn debug_reader_thread(
                             .unwrap();
                         continue;
                     }
-                    if let Err(e) = fifo.write(&buf[i..=i]) {
-                        println!("console: failed to write to fifo: {}", e);
+                    if let Err(e) = fifo.write(&buf[i..=i])
+                        && !logged_write_failure
+                    {
+                        println!(
+                            "console: failed to write to fifo: {}, silencing future failures",
+                            e
+                        );
+                        logged_write_failure = true;
                     }
                 }
             }
