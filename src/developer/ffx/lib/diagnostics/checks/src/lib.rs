@@ -492,20 +492,17 @@ where
         _output: &Self::Output,
         notifier: &mut Self::Notifier,
     ) -> anyhow::Result<()> {
-        let files = self
-            .found_keys
-            .as_ref()
-            .expect("success should have set some found keys")
-            .iter()
-            .map(|k| &k.sources)
-            .fold(Vec::new(), |mut acc, x| {
+        if let Some(files) = self.found_keys.as_ref() {
+            let files = files.iter().map(|k| &k.sources).fold(Vec::new(), |mut acc, x| {
                 acc.extend(x.iter());
                 acc
             });
-        notifier.on_success(format!(
-            "Found local ssh keys matching those expected on the device: {:?}",
-            files
-        ))
+            notifier.on_success(format!(
+                "Found local ssh keys matching those expected on the device: {:?}",
+                files
+            ))?;
+        }
+        Ok(())
     }
 
     fn check<'a>(
@@ -514,8 +511,14 @@ where
         notifier: &'a mut Self::Notifier,
     ) -> CheckFut<'a, Self::Output> {
         Box::pin(async {
-            self.found_keys =
-                Some(self.verifier.verify_keys(self.context, &input, notifier).await?);
+            self.found_keys = match self.verifier.verify_keys(self.context, &input, notifier).await
+            {
+                Ok(k) => Some(k),
+                Err(e) => {
+                    notifier.warn(format!("{e}"))?;
+                    None
+                }
+            };
             Ok(input)
         })
     }
@@ -1332,8 +1335,8 @@ mod test {
         };
         let mut notifier = ffx_diagnostics::StringNotifier::new();
         let res = check.check_with_notifier(handle.clone(), &mut notifier).await;
-        assert!(res.is_err());
-        let err = res.unwrap_err();
+        assert!(res.is_ok());
+        let err: String = notifier.into();
         assert!(err.to_string().contains("key verification failed"));
     }
 }

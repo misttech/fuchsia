@@ -90,7 +90,7 @@ async fn query_device_authorized_keys(
     if status != hyper::StatusCode::OK {
         let body = String::from_utf8_lossy(&body_bytes);
         fho::return_user_error!(
-            "{context_string} received an HTTP error from the {addr}: {status}. Body: \"{body}\""
+            "{context_string} received an HTTP error from {addr}: {status}. Body: \"{body}\""
         );
     }
     let body_str = String::from_utf8_lossy(body_bytes.chunk());
@@ -1702,7 +1702,7 @@ mod test {
         assert!(result.is_err());
         let err = result.unwrap_err();
         let expected_err_msg = format!(
-            "While querying device for SSH authorized_keys, received an HTTP error from the {}: 500 Internal Server Error. Body: \"{}\"",
+            "While querying device for SSH authorized_keys, received an HTTP error from {}: 500 Internal Server Error. Body: \"{}\"",
             server_addr, ERROR_BODY
         );
         assert_eq!(err.to_string(), expected_err_msg);
