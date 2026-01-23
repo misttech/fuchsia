@@ -115,13 +115,22 @@ fn run_task(
         clippy::undocumented_unsafe_blocks,
         reason = "Force documented unsafe blocks in Starnix"
     )]
-    unsafe {
+    let restricted_enter_status = zx::Status::from_raw(unsafe {
         restricted_enter_loop(
             RESTRICTED_ENTER_OPTIONS,
             restricted_exit_callback_c,
             &mut restricted_enter_context,
             restricted_state_ptr,
             extended_pstate_ptr,
+        )
+    });
+    if restricted_enter_status != zx::Status::OK {
+        // If restricted_enter_loop failed, it means that we failed to satisfy
+        // a prerequisite of zx_restricted_enter which should never happen.
+        log_error!(
+            "restricted_enter_loop failed: {}, register state: {:?}",
+            restricted_enter_status,
+            restricted_enter_context.current_task.thread_state.registers
         );
     }
     restricted_enter_context.exit_status
