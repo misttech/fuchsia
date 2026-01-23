@@ -409,7 +409,7 @@ class PowerWellControl : public hwreg::RegisterBase<PowerWellControl, uint32_t> 
   }
 
  private:
-  constexpr static size_t kMiscIoBitsOffset = 0;
+  static constexpr size_t kMiscIoBitsOffset = 0;
 };
 
 // PWR_WELL_CTL_AUX2 (Power Well Control AUX2)

@@ -98,7 +98,7 @@ class HdmiTransmitterTest : public testing::Test {
  protected:
   fdf_testing::ScopedGlobalLogger logger_;
 
-  constexpr static int kTopLevelMmioRangeSize = 0x8000;
+  static constexpr int kTopLevelMmioRangeSize = 0x8000;
   mock_mmio::GloballyOrderedRegion top_level_mmio_range_{
       kTopLevelMmioRangeSize, mock_mmio::GloballyOrderedRegion::Size::k32};
 

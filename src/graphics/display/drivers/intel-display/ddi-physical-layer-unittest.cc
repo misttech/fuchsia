@@ -54,7 +54,7 @@ class TypeCDdiTigerLakeTest : public ::testing::Test {
   TypeCDdiTigerLakeTest() = default;
 
  protected:
-  constexpr static int kMmioRangeSize = 0x200000;
+  static constexpr int kMmioRangeSize = 0x200000;
   fdf_testing::ScopedGlobalLogger logger_;
   mock_mmio::GloballyOrderedRegion mmio_range_{kMmioRangeSize,
                                                mock_mmio::GloballyOrderedRegion::Size::k32};
@@ -1000,7 +1000,7 @@ class ComboDdiTigerLakeTest : public ::testing::Test {
   void TearDown() override { mmio_range_.CheckAllAccessesReplayed(); }
 
  protected:
-  constexpr static int kMmioRangeSize = 0x200000;
+  static constexpr int kMmioRangeSize = 0x200000;
   fdf_testing::ScopedGlobalLogger logger_;
   mock_mmio::GloballyOrderedRegion mmio_range_{kMmioRangeSize,
                                                mock_mmio::GloballyOrderedRegion::Size::k32};

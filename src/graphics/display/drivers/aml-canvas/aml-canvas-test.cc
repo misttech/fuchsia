@@ -206,7 +206,7 @@ class AmlCanvasTest : public testing::Test {
 
   std::vector<uint8_t> canvas_indices_;
 
-  constexpr static int kMmioRangeSize = 0x100;
+  static constexpr int kMmioRangeSize = 0x100;
   mock_mmio::GloballyOrderedRegion mmio_range_{kMmioRangeSize,
                                                mock_mmio::GloballyOrderedRegion::Size::k32};
 

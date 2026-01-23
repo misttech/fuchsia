@@ -15,7 +15,7 @@ namespace intel_display {
 
 class RegisterTypeCTest : public ::testing::Test {
  protected:
-  constexpr static int kMmioRangeSize = 0x100000;
+  static constexpr int kMmioRangeSize = 0x100000;
   mock_mmio::GloballyOrderedRegion mmio_range_{kMmioRangeSize,
                                                mock_mmio::GloballyOrderedRegion::Size::k32};
   fdf::MmioBuffer mmio_buffer_{mmio_range_.GetMmioBuffer()};

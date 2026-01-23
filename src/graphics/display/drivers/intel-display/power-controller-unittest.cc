@@ -64,15 +64,15 @@ class PowerControllerTest : public ::testing::Test {
  protected:
   // Ensures that the tests don't time out due to external factors (such as
   // being pre-empted by the scheduler) while replaying MMIO access lists.
-  constexpr static int kLargeTimeout = 1'000'000'000;
+  static constexpr int kLargeTimeout = 1'000'000'000;
 
   // Large enough (1 second) that having the test pre-empted by the scheduler
   // for a bit won't cause the request retry loop to be completely skipped.
   // Small enough so the tests don't become a significant burden on the
   // continuous integration systems.
-  constexpr static int kRealClockTestTimeout = 1'000'000;
+  static constexpr int kRealClockTestTimeout = 1'000'000;
 
-  constexpr static int kMmioRangeSize = 0x140000;
+  static constexpr int kMmioRangeSize = 0x140000;
 
   fdf_testing::ScopedGlobalLogger logger_;
   mock_mmio::GloballyOrderedRegion mmio_range_{kMmioRangeSize,

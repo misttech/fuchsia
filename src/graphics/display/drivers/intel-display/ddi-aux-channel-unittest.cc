@@ -58,7 +58,7 @@ class DdiAuxChannelTest : public ::testing::Test {
   void TearDown() override { mmio_range_.CheckAllAccessesReplayed(); }
 
  protected:
-  constexpr static int kMmioRangeSize = 0x100000;
+  static constexpr int kMmioRangeSize = 0x100000;
   fdf_testing::ScopedGlobalLogger logger_;
   mock_mmio::GloballyOrderedRegion mmio_range_{kMmioRangeSize,
                                                mock_mmio::GloballyOrderedRegion::Size::k32};

@@ -238,7 +238,7 @@ TEST_F(DdiManagerTigerLakeTest, ParseVbtTable_Dell5420) {
   // - DDI_TC_1: Type-C DDI with Type-C port
   // - DDI_TC_2:Type-C DDI with Type-C port
 
-  constexpr static int kMmioRangeSize = 0x200000;
+  static constexpr int kMmioRangeSize = 0x200000;
   mock_mmio::GloballyOrderedRegion mmio_range{kMmioRangeSize,
                                               mock_mmio::GloballyOrderedRegion::Size::k32};
   fdf::MmioBuffer mmio_buffer{mmio_range.GetMmioBuffer()};
@@ -342,7 +342,7 @@ TEST_F(DdiManagerTigerLakeTest, ParseVbtTable_NUC11PAHi5) {
   // - DDI_TC_4: Type-C DDI with built-in DisplayPort
   // - DDI_TC_6: Type-C DDI with Type-C port
 
-  constexpr static int kMmioRangeSize = 0x200000;
+  static constexpr int kMmioRangeSize = 0x200000;
   mock_mmio::GloballyOrderedRegion mmio_range{kMmioRangeSize,
                                               mock_mmio::GloballyOrderedRegion::Size::k32};
   fdf::MmioBuffer mmio_buffer{mmio_range.GetMmioBuffer()};

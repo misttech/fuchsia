@@ -38,9 +38,9 @@ class DisplayPllTigerLakeTest : public ::testing::Test {
  protected:
   // Ensures that the tests don't time out due to external factors (such as
   // being pre-empted by the scheduler) while replaying MMIO access lists.
-  constexpr static int kLargeTimeout = 1'000'000'000;
+  static constexpr int kLargeTimeout = 1'000'000'000;
 
-  constexpr static int kMmioRangeSize = 0x140000;
+  static constexpr int kMmioRangeSize = 0x140000;
 
   fdf_testing::ScopedGlobalLogger logger_;
   mock_mmio::GloballyOrderedRegion mmio_range_{kMmioRangeSize,

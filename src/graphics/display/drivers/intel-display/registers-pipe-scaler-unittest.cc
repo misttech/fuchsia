@@ -503,7 +503,7 @@ TEST(PipeScalerCoefficients, Write) {
     expected_access_list.push_back({.address = 0x6819C, .value = value, .write = true});
   }
 
-  constexpr static int kMmioRangeSize = 0x140000;
+  static constexpr int kMmioRangeSize = 0x140000;
   mock_mmio::GloballyOrderedRegion mmio_range{kMmioRangeSize,
                                               mock_mmio::GloballyOrderedRegion::Size::k32};
   mmio_range.Expect(expected_access_list);
@@ -534,7 +534,7 @@ TEST(PipeScalerCoefficients, Read) {
     expected_access_list.push_back({.address = 0x6819C, .value = value});
   }
 
-  constexpr static int kMmioRangeSize = 0x140000;
+  static constexpr int kMmioRangeSize = 0x140000;
   mock_mmio::GloballyOrderedRegion mmio_range{kMmioRangeSize,
                                               mock_mmio::GloballyOrderedRegion::Size::k32};
   mmio_range.Expect(expected_access_list);

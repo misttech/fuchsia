@@ -73,7 +73,7 @@ class TestDpllManager : public DisplayPllManager {
   }
 
  private:
-  constexpr static auto kDplls = {PllId::DPLL_0, PllId::DPLL_1, PllId::DPLL_2};
+  static constexpr auto kDplls = {PllId::DPLL_0, PllId::DPLL_1, PllId::DPLL_2};
 
   bool SetDdiClockSource(DdiId ddi_id, PllId pll_id) final { return true; }
   bool ResetDdiClockSource(DdiId ddi_id) final { return true; }

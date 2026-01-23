@@ -40,7 +40,7 @@ class PipeTest : public ::testing::Test {
   void TearDown() override {}
 
  protected:
-  constexpr static uint32_t kMinimumRegCount = 0xd0000 / sizeof(uint32_t);
+  static constexpr uint32_t kMinimumRegCount = 0xd0000 / sizeof(uint32_t);
   fdf_testing::ScopedGlobalLogger logger_;
   fake_mmio::FakeMmioRegRegion reg_region_{sizeof(uint32_t), kMinimumRegCount};
   std::optional<fdf::MmioBuffer> mmio_buffer_;

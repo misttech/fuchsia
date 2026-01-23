@@ -55,7 +55,7 @@ class SciExitParam : public hwreg::RegisterBase<SciExitParam, uint32_t> {
   DEF_RSVDZ_FIELD(4, 1);
   DEF_BIT(0, swsci_indicator);
 
-  constexpr static uint32_t kResultOk = 1;
+  static constexpr uint32_t kResultOk = 1;
 
   static auto Get() { return hwreg::RegisterAddr<SciExitParam>(0); }
 };

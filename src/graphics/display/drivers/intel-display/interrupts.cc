@@ -31,7 +31,7 @@ namespace intel_display {
 namespace {
 
 struct HotplugDetectionResult {
-  constexpr static size_t kMaxAllowedDdis = 32;
+  static constexpr size_t kMaxAllowedDdis = 32;
   std::bitset<kMaxAllowedDdis> detected;
   std::bitset<kMaxAllowedDdis> long_pulse;
 };
