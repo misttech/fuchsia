@@ -1217,6 +1217,7 @@ void Dwc3::EpReset(Endpoint& ep) {
   EpSetStall(ep, false);
   EpSetConfig(ep, false);
   ep.got_not_ready = false;
+  ep.rsrc_id = Endpoint::kInvalidResourceId;
 }
 
 void Dwc3::UserEpReset(UserEndpoint& uep) {

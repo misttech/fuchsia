@@ -164,7 +164,8 @@ class Dwc3 : public fdf::DriverBase,
     bool IsOutput() const { return IsOutput(ep_num); }
     bool IsInput() const { return IsInput(ep_num); }
 
-    uint32_t rsrc_id{0};  // resource ID for current_req
+    static inline constexpr uint32_t kInvalidResourceId = UINT32_MAX;
+    uint32_t rsrc_id{kInvalidResourceId};  // resource ID for current_req
 
     const uint8_t ep_num{0};
     uint8_t type{0};  // control, bulk, interrupt or isochronous

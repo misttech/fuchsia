@@ -33,6 +33,14 @@ void Dwc3::WaitForCmdAct(const char* caller_name, const uint8_t ep_num) {
 void Dwc3::CmdStartNewConfig(const Endpoint& ep, uint32_t rsrc_id_base) {
   TRACE_DURATION("dwc3", "Dwc3::CmdStartNewConfig", "ep_num", ep.ep_num, "rsrc_id_base",
                  rsrc_id_base);
+
+  // The Start New Configuration specification expects this function to
+  // only be called with '0', when setting up EP0 and EP1. After these endpoints
+  // are configured and Start Configuration is called, we expect this function
+  // to be called with '2', for setting up EP2 and above.
+  ZX_DEBUG_ASSERT_MSG(rsrc_id_base == 0 || rsrc_id_base == 2, "%s: rsrc_id_base = %u != {0, 2}",
+                      __func__, rsrc_id_base);
+
   auto* mmio = get_mmio();
   const uint8_t ep_num = ep.ep_num;
 
@@ -124,6 +132,9 @@ void Dwc3::CmdEpEndTransfer(const Endpoint& ep) {
 
   const uint32_t ep_num = ep.ep_num;
   const uint32_t rsrc_id = ep.rsrc_id;
+
+  ZX_DEBUG_ASSERT_MSG(rsrc_id != Endpoint::kInvalidResourceId,
+                      "%s: Called before rsrc_id was initialized with a valid value", __func__);
 
   DEPCMDPAR0::Get(ep_num).FromValue(0).WriteTo(mmio);
   DEPCMDPAR1::Get(ep_num).FromValue(0).WriteTo(mmio);
