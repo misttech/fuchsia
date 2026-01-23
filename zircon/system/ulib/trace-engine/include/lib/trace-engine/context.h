@@ -212,14 +212,24 @@ void trace_context_register_current_thread(trace_context_t* context, trace_threa
 // |context| must be a valid trace context reference.
 // |process_koid| is the koid of the process which contains the thread.
 //   If ZX_KOID_INVALID is passed, the koid of the current process is used.
-// |vthread_literal| must be a null-terminated static string constant.
+// |vthread_name| is the name of the vthread. An inline string ref will be created
+//   for it.
 // |vthread_id| is the id of the virtual thread to register.
 // |out_ref| points to where the registered thread reference should be returned.
 //
 // This function is thread-safe.
 void trace_context_register_vthread(trace_context_t* context, zx_koid_t process_koid,
-                                    const char* vthread_literal, trace_vthread_id_t vthread_id,
+                                    const char* vthread_name, trace_vthread_id_t vthread_id,
                                     trace_thread_ref_t* out_ref);
+
+// Like trace_context_register_vthread, but takes a string ref for the vthread name instead of a
+// const char*.
+#if FUCHSIA_API_LEVEL_AT_LEAST(NEXT)
+void trace_context_register_vthread_by_ref(trace_context_t* context, zx_koid_t process_koid,
+                                           const trace_string_ref_t* name_ref,
+                                           trace_vthread_id_t vthread_id,
+                                           trace_thread_ref_t* out_ref) ZX_AVAILABLE_SINCE(NEXT);
+#endif
 
 // Registers the specified thread into the thread table.
 //

@@ -19,19 +19,6 @@
 
 namespace power_observability::internal {
 
-// Placing this function in an anonymous namespace results in an unneeded-internal-declaration
-// warning.
-zx_koid_t GetPid() {
-  static const zx_koid_t pid = []() {
-    zx_info_handle_basic_t info;
-    zx_status_t status =
-        zx::process::self()->get_info(ZX_INFO_HANDLE_BASIC, &info, sizeof(info), nullptr, nullptr);
-    ZX_ASSERT_MSG(status == ZX_OK, "Failed to retrieve PID");
-    return info.koid;
-  }();
-  return pid;
-}
-
 // Stores a state name as both a std::string (for Inspect) and trace_string_ref_t (for trace);
 struct StateName {
   // Use a unique_ptr to guarantee address stability, so the ref in `trace_name` remains valid on

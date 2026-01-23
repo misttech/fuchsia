@@ -110,6 +110,13 @@ pub extern "C" fn rs_test_duration_begin_end_macros_str_and_string() {
 }
 
 #[unsafe(no_mangle)]
+pub extern "C" fn rs_test_vthread_duration_begin_end_macros() {
+    trace::vthread_duration_begin!(c"+enabled", c"name", "vthread_name", 12u64, "x" => 5);
+    trace::instant!(c"+enabled", c"name", trace::Scope::Process, "arg" => 10);
+    trace::vthread_duration_end!(c"+enabled", c"name", "vthread_name", 12u64, "y" => "foo");
+}
+
+#[unsafe(no_mangle)]
 pub extern "C" fn rs_test_blob_macro_cstr() {
     trace::blob!(c"+enabled", c"name", "blob contents".as_bytes().to_vec().as_slice(), "x" => 5);
 }

@@ -814,6 +814,41 @@ macro_rules! duration_begin {
     };
 }
 
+/// Convenience macro for the `vthread_duration_begin` function, which writes events to a track
+/// specified by `vthread_name` and `vthread_id`.
+///
+/// Examples:
+///
+/// ```rust
+/// vthread_duration_begin!("foo", "bar", "my_vthread", 123, "x" => 5, "y" => "boo");
+/// ```
+///
+/// ```rust
+/// const FOO: &'static str = "foo";
+/// const BAR: &'static str = "bar";
+/// const VTHREAD_NAME: &'static str = "my_vthread";
+/// vthread_duration_begin!(FOO, BAR, VTHREAD_NAME, 123, "x" => 5, "y" => "boo");
+/// ```
+#[cfg(fuchsia_api_level_at_least = "NEXT")]
+#[macro_export]
+macro_rules! vthread_duration_begin {
+    ($category:expr, $name:expr, $vthread_name:expr, $vthread_id:expr $(, $key:expr => $val:expr)* $(,)?) => {
+        {
+            static CACHE: $crate::trace_site_t = $crate::trace_site_t::new(0);
+            let vthread = $crate::VThread::new($vthread_name, $vthread_id);
+            use $crate::AsTraceStrRef;
+            if let Some(context) = $crate::TraceCategoryContext::acquire_cached($category, &CACHE) {
+                $crate::vthread_duration_begin(
+                    &context,
+                    $name,
+                    &vthread,
+                    &[$($crate::ArgValue::of_registered($key.as_trace_str_ref(&context), $val)),*]
+                )
+            }
+        }
+    };
+}
+
 /// Convenience macro for the `duration_end` function.
 ///
 /// Examples:
@@ -840,6 +875,41 @@ macro_rules! duration_end {
     };
 }
 
+/// Convenience function for the `vthread_duration_end` function, which writes events to a track
+/// specified by `vthread_name` and `vthread_id`.
+///
+/// Examples:
+///
+/// ```rust
+/// vthread_duration_end!("foo", "bar", "my_vthread", 123, "x" => 5, "y" => "boo")
+/// ```
+///
+/// ```rust
+/// const FOO: &'static str = "foo";
+/// const BAR: &'static str = "bar";
+/// const VTHREAD_NAME: &'static str = "my_vthread";
+/// vthread_duration_end!(FOO, BAR, VTHREAD_NAME, 123, "x" => 5, "y" => "boo");
+/// ```
+#[cfg(fuchsia_api_level_at_least = "NEXT")]
+#[macro_export]
+macro_rules! vthread_duration_end {
+    ($category:expr, $name:expr, $vthread_name:expr, $vthread_id:expr $(, $key:expr => $val:expr)* $(,)?) => {
+        {
+            static CACHE: $crate::trace_site_t = $crate::trace_site_t::new(0);
+            let vthread = $crate::VThread::new($vthread_name, $vthread_id);
+            use $crate::AsTraceStrRef;
+            if let Some(context) = $crate::TraceCategoryContext::acquire_cached($category, &CACHE) {
+                $crate::vthread_duration_end(
+                    &context,
+                    $name,
+                    &vthread,
+                    &[$($crate::ArgValue::of_registered($key.as_trace_str_ref(&context), $val)),*]
+                )
+            }
+        }
+    };
+}
+
 /// Writes a duration begin event only.
 /// This event must be matched by a duration end event with the same category and name.
 ///
@@ -858,6 +928,43 @@ pub fn duration_begin<S: AsTraceStrRef>(context: &TraceCategoryContext, name: S,
     context.write_duration_begin(ticks, name_ref, args);
 }
 
+#[cfg(fuchsia_api_level_at_least = "NEXT")]
+pub struct VThread<S: AsTraceStrRef = &'static str> {
+    name: S,
+    id: sys::trace_vthread_id_t,
+    process_koid: zx::sys::zx_koid_t,
+}
+
+#[cfg(fuchsia_api_level_at_least = "NEXT")]
+impl<S: AsTraceStrRef> VThread<S> {
+    pub fn new(name: S, id: sys::trace_vthread_id_t) -> Self {
+        Self { name, id, process_koid: zx::sys::ZX_KOID_INVALID }
+    }
+
+    pub fn new_with_process_koid(
+        name: S,
+        id: sys::trace_vthread_id_t,
+        process_koid: zx::sys::zx_koid_t,
+    ) -> Self {
+        Self { name, id, process_koid }
+    }
+}
+
+/// Like `duration_begin`, but writes the event to a vthread track.
+#[cfg(fuchsia_api_level_at_least = "NEXT")]
+pub fn vthread_duration_begin<S1: AsTraceStrRef, S2: AsTraceStrRef>(
+    context: &TraceCategoryContext,
+    name: S1,
+    vthread: &VThread<S2>,
+    args: &[Arg<'_>],
+) {
+    let ticks = zx::BootTicks::get();
+    assert!(args.len() <= 15, "no more than 15 trace arguments are supported");
+
+    let name_ref = name.as_trace_str_ref(context);
+    context.write_vthread_duration_begin(ticks, name_ref, vthread, args);
+}
+
 /// Writes a duration end event only.
 ///
 /// Durations describe work which is happening synchronously on one thread.
@@ -873,6 +980,21 @@ pub fn duration_end<S: AsTraceStrRef>(context: &TraceCategoryContext, name: S, a
 
     let name_ref = name.as_trace_str_ref(&context);
     context.write_duration_end(ticks, name_ref, args);
+}
+
+/// Like `duration_end`, but writes the event to a vthread track.
+#[cfg(fuchsia_api_level_at_least = "NEXT")]
+pub fn vthread_duration_end<S1: AsTraceStrRef, S2: AsTraceStrRef>(
+    context: &TraceCategoryContext,
+    name: S1,
+    vthread: &VThread<S2>,
+    args: &[Arg<'_>],
+) {
+    let ticks = zx::BootTicks::get();
+    assert!(args.len() <= 15, "no more than 15 trace arguments are supported");
+
+    let name_ref = name.as_trace_str_ref(context);
+    context.write_vthread_duration_end(ticks, name_ref, vthread, args);
 }
 
 /// AsyncScope maintains state around the context of async events generated via the
@@ -1576,6 +1698,28 @@ impl TraceCategoryContext {
         }
     }
 
+    #[cfg(fuchsia_api_level_at_least = "NEXT")]
+    #[inline]
+    fn register_vthread<S: AsTraceStrRef>(
+        &self,
+        name: &S,
+        id: sys::trace_vthread_id_t,
+        process_koid: zx::sys::zx_koid_t,
+    ) -> sys::trace_thread_ref_t {
+        let name_ref = name.as_trace_str_ref(self);
+        unsafe {
+            let mut thread_ref = mem::MaybeUninit::<sys::trace_thread_ref_t>::uninit();
+            sys::trace_context_register_vthread_by_ref(
+                self.context.raw,
+                process_koid,
+                &name_ref,
+                id,
+                thread_ref.as_mut_ptr(),
+            );
+            thread_ref.assume_init()
+        }
+    }
+
     #[inline]
     pub fn write_instant(&self, name_ref: sys::trace_string_ref_t, scope: Scope, args: &[Arg<'_>]) {
         let ticks = zx::BootTicks::get();
@@ -1673,6 +1817,28 @@ impl TraceCategoryContext {
         }
     }
 
+    #[cfg(fuchsia_api_level_at_least = "NEXT")]
+    fn write_vthread_duration_begin<S: AsTraceStrRef>(
+        &self,
+        ticks: zx::BootTicks,
+        name_ref: sys::trace_string_ref_t,
+        vthread: &VThread<S>,
+        args: &[Arg<'_>],
+    ) {
+        let thread_ref = self.register_vthread(&vthread.name, vthread.id, vthread.process_koid);
+        unsafe {
+            sys::trace_context_write_duration_begin_event_record(
+                self.context.raw,
+                ticks.into_raw(),
+                &thread_ref,
+                &self.category_ref,
+                &name_ref,
+                args.as_ptr() as *const sys::trace_arg_t,
+                args.len(),
+            );
+        }
+    }
+
     pub fn write_duration_begin_with_inline_name(&self, name: &str, args: &[Arg<'_>]) {
         let name_ref = trace_make_inline_string_ref(name);
         self.write_duration_begin(zx::BootTicks::get(), name_ref, args);
@@ -1685,6 +1851,28 @@ impl TraceCategoryContext {
         args: &[Arg<'_>],
     ) {
         let thread_ref = self.register_current_thread();
+        unsafe {
+            sys::trace_context_write_duration_end_event_record(
+                self.context.raw,
+                ticks.into_raw(),
+                &thread_ref,
+                &self.category_ref,
+                &name_ref,
+                args.as_ptr() as *const sys::trace_arg_t,
+                args.len(),
+            );
+        }
+    }
+
+    #[cfg(fuchsia_api_level_at_least = "NEXT")]
+    fn write_vthread_duration_end<S: AsTraceStrRef>(
+        &self,
+        ticks: zx::BootTicks,
+        name_ref: sys::trace_string_ref_t,
+        vthread: &VThread<S>,
+        args: &[Arg<'_>],
+    ) {
+        let thread_ref = self.register_vthread(&vthread.name, vthread.id, vthread.process_koid);
         unsafe {
             sys::trace_context_write_duration_end_event_record(
                 self.context.raw,
@@ -1940,6 +2128,7 @@ mod sys {
     pub type trace_counter_id_t = u64;
     pub type trace_async_id_t = u64;
     pub type trace_flow_id_t = u64;
+    pub type trace_vthread_id_t = u64;
     pub type trace_thread_state_t = u32;
     pub type trace_cpu_number_t = u32;
     pub type trace_string_index_t = u32;
@@ -2106,6 +2295,15 @@ mod sys {
             context: *const trace_context_t,
             process_koid: zx_koid_t,
             thread_koid: zx_koid_t,
+            out_ref: *mut trace_thread_ref_t,
+        );
+
+        #[cfg(fuchsia_api_level_at_least = "NEXT")]
+        pub fn trace_context_register_vthread_by_ref(
+            context: *const trace_context_t,
+            process_koid: zx_koid_t,
+            vthread_name: *const trace_string_ref_t,
+            vthread_id: trace_vthread_id_t,
             out_ref: *mut trace_thread_ref_t,
         );
 

@@ -7,7 +7,7 @@ libraries](//sdk/lib/power/state_recorder/README.md).
 
 First, build and set up an emulator and server as follows:
 ```
-fx set workbench_eng.x64 --with-test //sdk/lib/power/state_recorder:tests
+fx set workbench_eng.x64 --with //examples/power/state_recorder
 fx build
 ffx emu start --headless
 fx serve --background

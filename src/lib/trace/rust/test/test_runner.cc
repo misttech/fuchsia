@@ -291,6 +291,33 @@ TEST(TEST_SUITE, test_duration_granular_str_and_string) {
       "string(\"foo\")})\n");
 }
 
+TEST(TEST_SUITE, test_vthread_duration_granular) {
+  BEGIN_TRACE_TEST;
+
+  fixture_initialize_and_start_tracing();
+
+  rs_test_vthread_duration_begin_end_macros();
+
+  ASSERT_RECORDS(
+      "String(index: 1, \"+enabled\")\n"
+      "String(index: 2, \"x\")\n"
+      "String(index: 3, \"name\")\n"
+      "String(index: 4, \"vthread_name\")\n"
+      "String(index: 5, \"process\")\n"
+      "KernelObject(koid: <>, type: thread, name: \"vthread_name\", {process: koid(<>)})\n"
+      "Thread(index: 1, <>)\n"
+      "Event(ts: <>, pt: <>, category: \"+enabled\", name: \"name\", DurationBegin, {x: "
+      "int32(5)})\n"
+      "String(index: 6, \"arg\")\n"
+      "KernelObject(koid: <>, type: thread, name: \"initial-thread\", {process: koid(<>)})\n"
+      "Thread(index: 2, <>)\n"
+      "Event(ts: <>, pt: <>, category: \"+enabled\", name: \"name\", Instant(scope: process), "
+      "{arg: int32(10)})\n"
+      "String(index: 7, \"y\")\n"
+      "Event(ts: <>, pt: <>, category: \"+enabled\", name: \"name\", DurationEnd, {y: "
+      "string(\"foo\")})\n");
+}
+
 TEST(TEST_SUITE, test_blob_cstr) {
   BEGIN_TRACE_TEST;
 

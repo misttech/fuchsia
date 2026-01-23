@@ -29,7 +29,6 @@ use std::path::Path;
 use std::str::FromStr;
 use std::sync::{Arc, LazyLock};
 use strum::IntoEnumIterator;
-
 use {fuchsia_inspect as inspect, fuchsia_trace as ftrace, zx};
 
 static CSTR_POOL: LazyLock<Mutex<HashMap<String, &'static CStr>>> =
@@ -74,12 +73,6 @@ static SINGLETON_MANAGER: LazyLock<Arc<Mutex<StateRecorderManager>>> =
 pub fn manager() -> Arc<Mutex<StateRecorderManager>> {
     SINGLETON_MANAGER.clone()
 }
-
-// Record this process's PID for use in trace track names.
-static PID: LazyLock<u64> = LazyLock::new(|| {
-    let process = fuchsia_runtime::process_self();
-    process.koid().expect("failed to get koid").raw_koid()
-});
 
 #[derive(thiserror::Error, Debug)]
 pub enum StateRecorderError {
@@ -243,6 +236,7 @@ impl<T: Copy + Debug + Display + Eq + Hash + IntoEnumIterator + Into<u64> + Send
 
 // To simplify lookups, StateRecorder stores each state name as both CStr (for tracing) and
 // String (for Inspect).
+#[derive(Clone)]
 struct StateName {
     trace_name: &'static CStr,
     // This is wrapped in an Arc so that StateRecorder can clone a reference to it that is separated
@@ -264,9 +258,8 @@ pub struct NamedU64StateRecorder {
     history: RecorderHistory<u64>,
     persistence: Option<PersistenceHandler<u64>>,
     _root_node: inspect::Node,
-    trace_id: ftrace::Id,
-    trace_track_name: &'static CStr,
-    trace_state_event: Option<ftrace::AsyncScope<&'static CStr, &'static CStr>>,
+    vthread: ftrace::VThread<String>,
+    current_state_trace_name: Option<&'static CStr>,
 }
 
 impl std::fmt::Debug for NamedU64StateRecorder {
@@ -336,9 +329,7 @@ impl NamedU64StateRecorder {
 
         let (history, persistence) = setup_recording_backend(&node, &options, record_item)?;
 
-        let trace_id = ftrace::Id::random();
-        let trace_id_u64: u64 = trace_id.into();
-        let trace_track_name = lazy_static_cstr(&format!("{} {} {}", name, *PID, trace_id_u64))?;
+        let vthread = ftrace::VThread::new(name.clone(), ftrace::Id::random().into());
 
         Ok(Self {
             manager,
@@ -348,35 +339,35 @@ impl NamedU64StateRecorder {
             history,
             persistence,
             _root_node: node,
-            trace_id,
-            trace_track_name,
-            trace_state_event: None,
+            vthread,
+            current_state_trace_name: None,
         })
     }
 
-    fn state_name(&self, val: u64) -> &StateName {
+    fn get_state_name(&self, val: u64) -> StateName {
         static UNKNOWN_NAME: LazyLock<StateName> = LazyLock::new(|| StateName {
             trace_name: c"<Unknown>",
             inspect_name: Arc::new("<Unknown>".to_string()),
         });
-        self.state_names.get(&val).unwrap_or(&UNKNOWN_NAME)
+        self.state_names.get(&val).unwrap_or(&UNKNOWN_NAME).clone()
     }
 
     pub fn record(&mut self, val: u64) {
-        // Clear the trace state event to end the current slice, if one exists.
-        self.trace_state_event.take();
+        static CACHE: ftrace::trace_site_t = ftrace::trace_site_t::new(0);
+        let context = ftrace::TraceCategoryContext::acquire_cached(self.trace_category, &CACHE);
 
-        // Clone `inspect_name` so this borrow of `self` can end before the mutable borrows used
-        // to modify self.trace_state_event and self.history below.
-        let state_name = self.state_name(val);
-        let inspect_name = state_name.inspect_name.clone();
+        if let Some(context) = context.as_ref() {
+            if let Some(name) = self.current_state_trace_name {
+                ftrace::vthread_duration_end(context, &name, &self.vthread, &[]);
+            }
+        }
 
-        // The async instant must be emitted before the async event begins to name the track
-        // according to self.name.
-        ftrace::async_instant!(self.trace_id, self.trace_category, self.trace_track_name);
+        let StateName { inspect_name, trace_name } = self.get_state_name(val);
+        self.current_state_trace_name = Some(trace_name);
 
-        self.trace_state_event =
-            ftrace::async_enter!(self.trace_id, self.trace_category, state_name.trace_name);
+        if let Some(context) = context.as_ref() {
+            ftrace::vthread_duration_begin(context, &trace_name, &self.vthread, &[]);
+        }
 
         let timestamp = zx::BootInstant::get().into_nanos();
 

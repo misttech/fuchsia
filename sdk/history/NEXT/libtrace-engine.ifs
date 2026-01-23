@@ -21,6 +21,7 @@ Symbols:
   - { Name: trace_context_register_string_literal, Type: Func }
   - { Name: trace_context_register_thread, Type: Func }
   - { Name: trace_context_register_vthread, Type: Func }
+  - { Name: trace_context_register_vthread_by_ref, Type: Func }
   - { Name: trace_context_send_alert, Type: Func }
   - { Name: trace_context_send_alert_bytestring, Type: Func }
   - { Name: trace_context_snapshot_buffer_header_internal, Type: Func }

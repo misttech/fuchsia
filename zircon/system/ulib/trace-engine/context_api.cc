@@ -14,6 +14,7 @@
 #include <algorithm>
 #include <memory>
 #include <span>
+#include <variant>
 
 #include "context_impl.h"
 #include "hash_table.h"
@@ -637,6 +638,58 @@ bool RegisterByteString(trace_context_t* context, std::span<const unsigned char>
 }
 #endif
 
+struct VThreadRegistered {
+  trace_thread_ref_t thread_ref;
+};
+
+struct VThreadNeedsRegistration {
+  zx_koid_t vthread_koid;
+  ThreadEntry* entry;
+};
+
+// Returns a variant describing whether a vthread is already registered or
+// needs to be registered.
+std::variant<VThreadRegistered, VThreadNeedsRegistration> LookUpVThread(
+    trace_context_t* context, trace_vthread_id_t vthread_id) {
+  zx_koid_t vthread_koid = MakeArtificialKoid(vthread_id);
+  ThreadEntry* entry = CacheThreadEntry(context->generation(), vthread_koid);
+  if (likely(entry && !trace_is_unknown_thread_ref(&entry->thread_ref))) {
+    // Fast path: the thread is already registered.
+    return VThreadRegistered{.thread_ref = entry->thread_ref};
+  }
+  return VThreadNeedsRegistration{.vthread_koid = vthread_koid, .entry = entry};
+}
+
+// Registers a vthread, after determining that registration is needed via LookUpVThread.
+void RegisterVThread(trace_context_t* context, zx_koid_t process_koid,
+                     VThreadNeedsRegistration needs_registration,
+                     const trace_string_ref_t* name_ref, trace_vthread_id_t vthread_id,
+                     trace_thread_ref_t* out_ref) {
+  if (process_koid == ZX_KOID_INVALID) {
+    process_koid = trace::GetCurrentProcessKoid();
+  }
+
+  auto [vthread_koid, entry] = needs_registration;
+  trace_context_write_thread_info_record(context, process_koid, vthread_koid, name_ref);
+  if (likely(entry)) {
+    trace_thread_index_t index;
+    // If allocating an index succeeds but writing the record fails,
+    // toss the index and return an inline reference. The index is lost
+    // anyway, but the result won't be half-complete. The subsequent
+    // write of the inlined reference will likely also fail, but that's ok.
+    if (likely(context->AllocThreadIndex(&index) &&
+               trace::WriteThreadRecord(context, index, process_koid, vthread_koid))) {
+      entry->thread_ref = trace_make_indexed_thread_ref(index);
+    } else {
+      entry->thread_ref = trace_make_inline_thread_ref(process_koid, vthread_koid);
+    }
+    *out_ref = entry->thread_ref;
+    return;
+  }
+
+  *out_ref = trace_make_inline_thread_ref(process_koid, needs_registration.vthread_koid);
+}
+
 }  // namespace
 }  // namespace trace
 
@@ -763,43 +816,35 @@ EXPORT_NO_DDK void trace_context_register_thread(trace_context_t* context, zx_ko
 }
 
 EXPORT void trace_context_register_vthread(trace_context_t* context, zx_koid_t process_koid,
-                                           const char* vthread_literal,
-                                           trace_vthread_id_t vthread_id,
+                                           const char* vthread_name, trace_vthread_id_t vthread_id,
                                            trace_thread_ref_t* out_ref) {
-  zx_koid_t vthread_koid = trace::MakeArtificialKoid(vthread_id);
-
-  trace::ThreadEntry* entry = trace::CacheThreadEntry(context->generation(), vthread_koid);
-  if (likely(entry && !trace_is_unknown_thread_ref(&entry->thread_ref))) {
-    // Fast path: the thread is already registered.
-    *out_ref = entry->thread_ref;
+  auto result = trace::LookUpVThread(context, vthread_id);
+  if (auto* registered = std::get_if<trace::VThreadRegistered>(&result)) {
+    *out_ref = registered->thread_ref;
     return;
   }
 
-  if (process_koid == ZX_KOID_INVALID) {
-    process_koid = trace::GetCurrentProcessKoid();
-  }
-
-  trace_string_ref name_ref = trace_make_inline_c_string_ref(vthread_literal);
-  trace_context_write_thread_info_record(context, process_koid, vthread_koid, &name_ref);
-
-  if (likely(entry)) {
-    trace_thread_index_t index;
-    // If allocating an index succeeds but writing the record fails,
-    // toss the index and return an inline reference. The index is lost
-    // anyway, but the result won't be half-complete. The subsequent
-    // write of the inlined reference will likely also fail, but that's ok.
-    if (likely(context->AllocThreadIndex(&index) &&
-               trace::WriteThreadRecord(context, index, process_koid, vthread_koid))) {
-      entry->thread_ref = trace_make_indexed_thread_ref(index);
-    } else {
-      entry->thread_ref = trace_make_inline_thread_ref(process_koid, vthread_koid);
-    }
-    *out_ref = entry->thread_ref;
-    return;
-  }
-
-  *out_ref = trace_make_inline_thread_ref(process_koid, vthread_koid);
+  auto& needs_registration = std::get<trace::VThreadNeedsRegistration>(result);
+  trace_string_ref name_ref = trace_make_inline_c_string_ref(vthread_name);
+  trace::RegisterVThread(context, process_koid, needs_registration, &name_ref, vthread_id, out_ref);
 }
+
+#if FUCHSIA_API_LEVEL_AT_LEAST(NEXT)
+EXPORT void trace_context_register_vthread_by_ref(trace_context_t* context, zx_koid_t process_koid,
+                                                  const trace_string_ref_t* name_ref,
+                                                  trace_vthread_id_t vthread_id,
+                                                  trace_thread_ref_t* out_ref)
+    ZX_AVAILABLE_SINCE(NEXT) {
+  auto result = trace::LookUpVThread(context, vthread_id);
+  if (auto* registered = std::get_if<trace::VThreadRegistered>(&result)) {
+    *out_ref = registered->thread_ref;
+    return;
+  }
+
+  auto& needs_registration = std::get<trace::VThreadNeedsRegistration>(result);
+  trace::RegisterVThread(context, process_koid, needs_registration, name_ref, vthread_id, out_ref);
+}
+#endif
 
 EXPORT void* trace_context_begin_write_blob_record(trace_context_t* context, trace_blob_type_t type,
                                                    const trace_string_ref_t* name_ref,

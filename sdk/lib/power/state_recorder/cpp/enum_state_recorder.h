@@ -114,8 +114,7 @@ class EnumStateRecorder final {
                                      : History(inspect::BoundedListNode(
                                            root_node_.CreateChild("history"), options.capacity))),
         trace_id_(TRACE_NONCE()),
-        trace_name_(std::make_unique<std::string>(
-            std::format("{} {} {}", name_, internal::GetPid(), trace_id_))),
+        trace_name_(std::make_unique<std::string>(name_)),
         trace_name_ref_(trace_make_inline_string_ref(trace_name_->c_str(), trace_name_->length())),
         manager_(&manager) {
     // In the eager case, record nominal reset info for symmetry with the lazy case.
@@ -207,25 +206,21 @@ void EnumStateRecorder<T>::Record(T state_enum, std::optional<zx::time_boot> eve
   trace_thread_ref_t thread_ref;
 
   if (unlikely(trace_context)) {
-    trace_context_register_current_thread(trace_context, &thread_ref);
+    trace_context_register_vthread_by_ref(trace_context, ZX_KOID_INVALID, &trace_name_ref_,
+                                          trace_id_, &thread_ref);
     if (current_state_name_.has_value()) {
-      trace_context_write_async_end_event_record(
+      trace_context_write_duration_end_event_record(
           trace_context, zx_ticks_get_boot(), &thread_ref, &trace_category_ref,
-          &(current_state_name_.value()->trace_name), trace_id_, nullptr, 0);
+          &(current_state_name_.value()->trace_name), nullptr, 0);
     }
   }
 
   current_state_name_ = name_lookup_->GetStateName(state_enum);
 
   if (unlikely(trace_context)) {
-    // The instant is emitted before the duration event to establish the name of the track.
-    trace_context_write_async_instant_event_record(trace_context, zx_ticks_get_boot(), &thread_ref,
-                                                   &trace_category_ref, &trace_name_ref_, trace_id_,
-                                                   nullptr, 0);
-
-    trace_context_write_async_begin_event_record(
+    trace_context_write_duration_begin_event_record(
         trace_context, zx_ticks_get_boot(), &thread_ref, &trace_category_ref,
-        &(current_state_name_.value()->trace_name), trace_id_, nullptr, 0);
+        &(current_state_name_.value()->trace_name), nullptr, 0);
     trace_release_context(trace_context);
   }
 
