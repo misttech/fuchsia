@@ -2,9 +2,11 @@
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
+# LINT.IfChange(library_headers)
+
 # library_headers() is used to define the set of public headers for a given
 # source_set(), static_library(), shared_library() or loadable_module(), and
-# their eventual dependencies.
+# its eventual dependencies.
 #
 # Other targets can depend on a library_headers() target directly if they do
 # not need to link to the library itself, e.g. if they include the headers
@@ -24,7 +26,7 @@
 #     it (e.g. //some/dir/foo:foo), use //some/dir/foo:headers as the label
 #     for the headers target as in:
 #
-#        # in //some/dir/foo/BUILD.gn
+#        # In //some/dir/foo/BUILD.gn:
 #        library_headers("headers") { ... }
 #
 #        source_set("foo") { ... }
@@ -34,7 +36,7 @@
 #   - If this is not the case (e.g. //some/dir/foo:bar), then use the
 #     //some/dir/foo:bar.headers label instead, as in:
 #
-#     # In //some/dir/foo/BUILD.gn
+#     # In //some/dir/foo/BUILD.gn:
 #     library_headers("bar.headers")
 #
 #     static_library("bar") { ... }
@@ -65,14 +67,14 @@
 # - Dependencies:
 #
 #   It is important to always depend on a library_headers() target through
-#   public_deps, and _not_ deps, as it ensures dependents will use the right
+#   `public_deps`, and _not_ `deps`, as it ensures dependents will use the right
 #   include directory in their search path.
 #
-#   As such, a library_headers() target should nearly never use 'deps',
+#   As such, a library_headers() target should nearly never use `deps`,
 #   except when absolutely needed (i.e. when headers are auto-generated).
 #
-#   This means that the library which owns the headers from the target should
-#   depend on the library_headers() target through public_deps, to ensure that
+#   This means that the library that owns the headers from the target should
+#   depend on the library_headers() target through `public_deps`, to ensure that
 #   anything that depends on it will be able to include the headers properly,
 #   as in:
 #
@@ -94,24 +96,33 @@
 #     [path] Path to the top-level include directory that contains the header
 #     files for this library. Defaults to 'include'.
 #
-#   headers (required)
-#     [list of paths] A list of header file paths, relative to the include_dir
+#   headers (optional)
+#     [list of paths] A list of header file paths, relative to the `include_dir`
 #     for this target.
+#     It or `public` is required.
+#
+#   public (optional)
+#     [list of paths] A list of header file paths, relative to the this target.
+#     It or `headers` is required.
+#     This is primarily used by bazel2gn-generated targets.
 #
 #   public_deps (optional)
-#     [list of GN labels] If defined a set of public dependencies for the
-#     headers. This is useful when the headers include the public headers
+#     [list of GN labels] A set of public dependencies for the
+#     headers. This is useful when the headers include public headers
 #     from another library
 #
 #   deps (optional)
 #     [list of GN labels] Avoid using this to depend on other headers targets.
 #     Using `deps` might be necessary in the case where the headers are
-#     auto-generated though.
+#     auto-generated, though.
 #
 #  defines, public_configs, testonly, visibility (optional)
 #     Usual GN meaning.
 #
 template("library_headers") {
+  assert(defined(invoker.headers) != defined(invoker.public),
+         "Exactly one of `headers` and `public` must be specified.")
+
   _include_dir = "include"
   if (defined(invoker.include_dir)) {
     _include_dir = invoker.include_dir
@@ -129,14 +140,19 @@ template("library_headers") {
     forward_variables_from(invoker,
                            [
                              "deps",
+                             "public",
                              "public_configs",
                              "public_deps",
                              "testonly",
                              "visibility",
                            ])
-    public = []
-    foreach(header, invoker.headers) {
-      public += [ "${_include_dir}/$header" ]
+
+    # If `public` is not defined, use the paths in `headers` after adjustment.
+    if (!defined(public)) {
+      public = []
+      foreach(header, invoker.headers) {
+        public += [ "${_include_dir}/$header" ]
+      }
     }
 
     # There are no sources here, so configs should not matter.  Make sure no
@@ -157,3 +173,4 @@ template("library_headers") {
     }
   }
 }
+# LINT.ThenChange(//build/bazel/rules/cc/library_headers.bzl:library_headers)

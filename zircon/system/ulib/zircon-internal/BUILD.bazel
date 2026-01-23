@@ -2,11 +2,10 @@
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
-# LINT.IfChange
-
 load("@rules_cc//cc:defs.bzl", "cc_library")
+load("//build/bazel/rules/cc:defs.bzl", "cc_library_headers")
 
-cc_library(
+cc_library_headers(
     name = "headers",
     hdrs = [
         "include/lib/zircon-internal/align.h",
@@ -35,8 +34,6 @@ cc_library(
     visibility = ["//visibility:public"],
     deps = [":headers"],
 )
-
-# LINT.ThenChange(BUILD.gn)
 
 # TODO(https://fxbug.dev/456186321): Migrate the tests, which are only built in
 # the non-kernel case.

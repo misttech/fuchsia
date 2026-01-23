@@ -115,6 +115,7 @@ if (is_host) {
       "//tools/pretty_serial:verify_bazel2gn",
       "//tools/update_crates:verify_bazel2gn",
       "//zircon/system/ulib/cmdline:verify_bazel2gn",
+      "//zircon/system/ulib/zircon-internal:verify_bazel2gn",
       "//zircon/vdso/zx:verify_bazel2gn",
     ]
   }
