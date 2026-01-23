@@ -24,6 +24,34 @@ Install (or update) the following packages:
 sudo apt install curl file git unzip
 ```
 
+Optionally, you can also do the following:
+
+* [Enable KVM acceleration](#enable-kvm-acceleration)
+* [Configure emulator networking](#configure-emulator-networking)
+
+### Enable KVM acceleration (Optional) {#enable-kvm-acceleration}
+
+Note: This step is only for Linux.
+
+If KVM is available on your machine, add yourself to the `kvm` group:
+
+```posix-terminal
+sudo usermod -a -G kvm ${USER}
+```
+
+You may need to log out and log back in for this change to take effect.
+
+### Configure emulator networking (Optional) {#configure-emulator-networking}
+
+Note: This step is only for Linux.
+
+To allow the emulator to access the network, set up `tuntap`:
+
+```posix-terminal
+sudo ip tuntap add dev qemu mode tap user $USER
+sudo ip link set qemu up
+```
+
 ## 2. Perform a preflight check {#perform-a-preflight-check}
 
 Fuchsia provides a preflight check tool

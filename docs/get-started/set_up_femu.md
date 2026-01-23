@@ -46,14 +46,8 @@ For more information on supported boards and products, see the
 (**Linux only**) Most Linux machines support VM acceleration through
 KVM, which greatly improves the performance and usability of the emulator.
 
-1. If KVM is available on your machine, add yourself to the `kvm` group
-   on your machine:
-
-   ```posix-terminal
-   sudo usermod -a -G kvm ${USER}
-   ```
-
-1. Log out of all desktop sessions to your machine and then log in again.
+Note: If you followed the [Install prerequisite packages][get-fuchsia-source-prerequisites] section
+in the download guide, you should already have enabled KVM acceleration.
 
 1. To verify that KVM is configured correctly, run the following command:
 
@@ -67,8 +61,9 @@ KVM, which greatly improves the performance and usability of the emulator.
    KVM is working
    ```
 
-   If you see `KVM not working`, you may need to reboot your machine for
-   the permission change to take effect.
+   If you see `KVM not working`, you may not have added yourself to the `kvm` group
+   or need to reboot your machine. See [Enable KVM acceleration][enable-kvm-acceleration]
+   for instructions.
 
 ## 4. Start FEMU {#start-femu}
 
@@ -217,27 +212,11 @@ To stop FEMU, run the following `ffx` command:
 ffx emu stop
 ```
 
-### Configure IPv6 network {#configure-ipv6-network}
+### Configure emulator networking {#configure-emulator-networking}
 
-This section provides instructions on how to configure an IPv6 network
-for FEMU on Linux machine using [TUN/TAP][tuntap]{: .external}.
-
-Note: You only need to do this once per machine.
-
-To enable networking in FEMU using
-[tap networking][tap-networking]{: .external}, do the following:
-
-1. Set up `tuntap`:
-
-   ```posix-terminal
-   sudo ip tuntap add dev qemu mode tap user $USER
-   ```
-
-1. Enable the network for `qemu`:
-
-   ```posix-terminal
-   sudo ip link set qemu up
-   ```
+Note: If you followed the [Install prerequisite packages][get-fuchsia-source-prerequisites] section
+in the download guide, you should already have configured emulator networking.
+See [Configure emulator networking][configure-emulator-networking] for instructions.
 
 ### Specify GPU mode for FEMU (Experimental)
 
@@ -286,4 +265,7 @@ failures or emulator crashes when using these two modes.
 [tuntap]: https://en.wikipedia.org/wiki/TUN/TAP
 [tap-networking]: https://wiki.qemu.org/Documentation/Networking#Tap
 [slirp]: https://wiki.qemu.org/Documentation/Networking#User_Networking_.28SLIRP.29
+[enable-kvm-acceleration]: /docs/get-started/get_fuchsia_source.md#enable-kvm-acceleration
+[configure-emulator-networking]: /docs/get-started/get_fuchsia_source.md#configure-emulator-networking
+[get-fuchsia-source-prerequisites]: /docs/get-started/get_fuchsia_source.md#install-prerequisite-packages
 
