@@ -12,7 +12,7 @@ using dl::testing::TestSym;
 
 using dl::testing::DlSystemTests;
 
-// TODO(https://fxbug.dev/356458230): These tests are only testing DlSystemTests
+// TODO(https://fxbug.dev/478035413): These tests are only testing DlSystemTests
 // implementations to verify their behavior, but to do so DlSystemsTests fixture
 // is modified to keep track of dlerror state. Consider an alternative to using
 // the DlSystemTests fixture for these tests and just invoke the system dl
