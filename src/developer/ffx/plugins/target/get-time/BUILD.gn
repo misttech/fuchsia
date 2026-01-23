@@ -25,7 +25,8 @@ ffx_plugin("ffx_target_get_time") {
     "//third_party/rust_crates:async-trait",
   ]
   test_deps = [
-    "//sdk/fidl/fuchsia.developer.remotecontrol:fuchsia.developer.remotecontrol_rust",
+    "//sdk/fidl/fuchsia.developer.remotecontrol:fuchsia.developer.remotecontrol_rust_fdomain",
+    "//src/lib/fdomain/local",
     "//src/lib/fidl/rust/fidl",
     "//src/lib/fuchsia",
   ]

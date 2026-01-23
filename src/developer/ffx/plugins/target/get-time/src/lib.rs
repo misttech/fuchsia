@@ -6,7 +6,7 @@ use async_trait::async_trait;
 use ffx_target_get_time_args::GetTimeCommand;
 use ffx_writer::SimpleWriter;
 use fho::{FfxContext, FfxMain, FfxTool};
-use target_holders::RemoteControlProxyHolder;
+use target_holders::fdomain::RemoteControlProxyHolder;
 
 #[derive(FfxTool)]
 #[target(direct)]
@@ -46,11 +46,13 @@ where
 #[cfg(test)]
 mod test {
     use super::*;
-    use fidl_fuchsia_developer_remotecontrol as rcs;
-    use target_holders::fake_proxy;
+    use fdomain_fuchsia_developer_remotecontrol as rcs;
+    use fdomain_local::local_client;
+    use target_holders::fdomain::fake_proxy;
 
     fn setup_fake_time_server_proxy() -> rcs::RemoteControlProxy {
-        fake_proxy(move |req| match req {
+        let client = local_client(|| Err(fidl::Status::NOT_SUPPORTED));
+        fake_proxy(client, move |req| match req {
             rcs::RemoteControlRequest::GetTime { responder } => {
                 responder.send(fidl::MonotonicInstant::from_nanos(123456789)).unwrap();
             }
