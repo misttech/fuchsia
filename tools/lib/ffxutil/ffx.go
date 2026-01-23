@@ -184,7 +184,10 @@ func (b *strictFfxCmdBuilder) commandWithConfigs(ffxPath string, supportsStrict 
 	}
 	// Commands that support strict always need a machine argument. If none is supplied,
 	// default to "json".
-	if !slices.Contains(args, "--machine") && supportsStrict {
+	// TODO(https://fxbug.dev/478137751): ffx usb-driver currently doesn't support using --machine
+	// but botanist requires ffx to be run in strict mode. Remove this exception once usb-driver
+	// support --machine.
+	if !slices.Contains(args, "--machine") && supportsStrict && !slices.Contains(args, "usb-driver") {
 		cmd = append(cmd, "--machine", "json")
 	}
 
@@ -528,6 +531,10 @@ func (f *FFXInstance) SetTarget(target string) {
 	f.target = target
 }
 
+func (f *FFXInstance) GetTarget() string {
+	return f.target
+}
+
 func (f *FFXInstance) Stdout() io.Writer {
 	return f.stdout
 }
@@ -869,6 +876,11 @@ func (f *FFXInstance) EmuStart(args ...string) *ffxInvoker {
 
 func (f *FFXInstance) EmuStop(ctx context.Context, args ...string) error {
 	return f.invoker(append([]string{"emu", "stop"}, args...)).setStrict().run(ctx)
+}
+
+// USBDriver starts up a USB driver to talk to the device associated with the provided serialNum.
+func (f *FFXInstance) USBDriver(ctx context.Context, serialNum, logDir string) error {
+	return f.invoker([]string{"usb-driver", "--log-dir", logDir, "--serial", serialNum}).setStrict().setMachineFormat(MachineNone).setTimeout(0).run(ctx)
 }
 
 // TestRun runs a test suite.

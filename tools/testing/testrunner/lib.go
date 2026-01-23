@@ -296,7 +296,7 @@ func execute(
 	}
 
 	var finalError error
-	cleanup, err := runAndOutputTests(ctx, tests, testerForTest, outputs, outDir, fuchsiaTester, reconnectSSH, opts.FuchsiaTarget)
+	cleanup, err := runAndOutputTests(ctx, tests, testerForTest, outputs, outDir, fuchsiaTester, reconnectSSH, opts.FuchsiaTarget, opts.Experiments)
 	if err != nil {
 		finalError = err
 	}
@@ -339,7 +339,8 @@ func execute(
 
 	// If we lose the SSH connection after the last test, we should try to reconnect
 	// so that we can run the final steps.
-	if _, ok := fuchsiaTester.(*FFXTester); ok && sshKeyFile != "" && !opts.FuchsiaTarget.SSHControlMasterRunning() {
+	useFFXUSB := againstDevice() && opts.Experiments.Contains(botanist.ForceFFXUSB)
+	if _, ok := fuchsiaTester.(*FFXTester); ok && !useFFXUSB && sshKeyFile != "" && !opts.FuchsiaTarget.SSHControlMasterRunning() {
 		cleanup()
 		cleanup, err = restartSSHControlMaster(ctx, opts.FuchsiaTarget, fuchsiaTester, sshKeyFile)
 		if err != nil && finalError == nil {
@@ -444,6 +445,7 @@ func runAndOutputTests(
 	fuchsiaTester Tester,
 	reconnectSSH func() (func(), error),
 	target targets.FuchsiaTarget,
+	experiments botanist.Experiments,
 ) (func(), error) {
 	cleanup := func() {}
 	// Since only a single goroutine writes to and reads from the queue it would
@@ -473,8 +475,8 @@ func runAndOutputTests(
 			}
 			shouldRunHealthCheck = false
 		}
-
-		if _, ok := fuchsiaTester.(*FFXTester); ok && !target.SSHControlMasterRunning() {
+		useFFXUSB := againstDevice() && experiments.Contains(botanist.ForceFFXUSB)
+		if _, ok := fuchsiaTester.(*FFXTester); ok && !useFFXUSB && !target.SSHControlMasterRunning() {
 			cleanup()
 			var err error
 			if cleanup, err = reconnectSSH(); err != nil {

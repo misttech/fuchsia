@@ -63,6 +63,9 @@ type Base interface {
 type FuchsiaTarget interface {
 	Base
 
+	// AddFFXPackageRepository adds a given package repository to the target using ffx.
+	AddFFXPackageRepository(ctx context.Context, pkgRepoName string, pkgSrvPort int, useForward bool) (func(), error)
+
 	// AddPackageRepository adds a given package repository to the target.
 	AddPackageRepository(client *sshutil.Client, repoURL, blobURL string) error
 
@@ -459,6 +462,44 @@ func (t *genericFuchsiaTarget) SetupSSHControlMaster(ctx context.Context, sshKey
 			logger.Errorf(ctx, "failed to remove ssh controlmaster socket: %s", err)
 		}
 	}, nil
+}
+
+// AddFFXPackageRepository adds a package repository to the target using ffx.
+func (t *genericFuchsiaTarget) AddFFXPackageRepository(ctx context.Context, repoName string, pkgSrvPort int, useForward bool) (func(), error) {
+	cleanup := func() {}
+	var overrideAddr string
+	if useForward {
+		var forwardOutput bytes.Buffer
+		t.GetFFX().SetStdoutStderr(io.MultiWriter(os.Stdout, &forwardOutput), os.Stderr)
+		cleanup = botanist.WaitForProcess(ctx, func(processCtx context.Context) error {
+			return t.GetFFX().Forward(processCtx, pkgSrvPort)
+		}, "ffx forward")
+		if err := retry.Retry(ctx, retry.WithMaxDuration(retry.NewConstantBackoff(time.Second), 5*time.Second), func() error {
+			line, err := (&forwardOutput).ReadString('\n')
+			if err != nil {
+				return err
+			}
+			var output struct {
+				Forwarding []struct {
+					Target map[string]string `json:"target"`
+				} `json:"forwarding"`
+			}
+			if err := json.Unmarshal([]byte(line), &output); err != nil {
+				return err
+			}
+			overrideAddr = output.Forwarding[0].Target["Tcp"]
+			return nil
+		}, nil); err != nil {
+			return cleanup, err
+		}
+		t.GetFFX().SetStdoutStderr(os.Stdout, os.Stderr)
+	}
+	if err := t.GetFFX().RegisterRepository(ctx, repoName, pkgSrvPort, overrideAddr); err != nil {
+		logger.Errorf(ctx, "failed to register repository: %s", err)
+		return cleanup, err
+	}
+	logger.Debugf(ctx, "added package repo to target %s", t.nodename)
+	return cleanup, nil
 }
 
 // AddPackageRepository adds the given package repository to the target.

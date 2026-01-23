@@ -61,13 +61,24 @@ func (f *FFXInstance) ListPackageServer(ctx context.Context) ([]string, error) {
 	return servers, err
 }
 
+// Forward forwards connections between the host and the target.
+func (f *FFXInstance) Forward(ctx context.Context, port int) error {
+	if f.target == "" {
+		return fmt.Errorf("no target is set")
+	}
+	return f.invoker([]string{"forward", fmt.Sprintf("%d<=0", port)}).setStrict().setTarget(f.target).setTimeout(0).run(ctx)
+}
+
 // RegisterRepository registers the given package repository server with the target.
-func (f *FFXInstance) RegisterRepository(ctx context.Context, repoName string, port int) error {
+func (f *FFXInstance) RegisterRepository(ctx context.Context, repoName string, port int, overrideAddr string) error {
 	if f.target == "" {
 		return fmt.Errorf("no target is set")
 	}
 	args := []string{"target", "repository", "register", "--repository", repoName, "--port", strconv.Itoa(port),
 		"--alias", "fuchsia.com", "--alias", "chromium.org",
 		"--alias-conflict-mode", "replace"}
+	if overrideAddr != "" {
+		args = append(args, "--address-override", overrideAddr)
+	}
 	return f.invoker(args).setStrict().setTarget(f.target).run(ctx)
 }

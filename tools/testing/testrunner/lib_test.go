@@ -936,7 +936,7 @@ func TestRunAndOutputTests(t *testing.T) {
 			}()
 			connectionErrorRetryBackoff = &retry.ZeroBackoff{}
 
-			cleanup, err := runAndOutputTests(ctx, tc.tests, testerForTest, outputs, resultsDir, nil, nil, nil)
+			cleanup, err := runAndOutputTests(ctx, tc.tests, testerForTest, outputs, resultsDir, nil, nil, nil, botanist.Experiments{})
 			cleanup()
 			if tc.wantErr != (err != nil) {
 				t.Errorf("want err: %t, got %s", tc.wantErr, err)

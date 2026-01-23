@@ -153,15 +153,6 @@ func (r *RunCommand) setupFFX(ctx context.Context, invokeMode ffxutil.FFXInvokeM
 		},
 	}
 
-	if experiments.Contains(botanist.ForceFFXUSB) {
-		extraConfigs.Settings["connectivity.enable_usb"] = true
-		extraConfigs.Settings["connectivity.enable_network"] = false
-	} else {
-		// Make this explicit in case the tools team wants to change the default
-		// for users at their desks.
-		extraConfigs.Settings["connectivity.enable_usb"] = false
-	}
-
 	// By default, the ssh.priv and ssh.pub values are in $HOME, which had earlier been configured to be a tmpdir.
 	// But in case we're in strict mode, let's be explicit about the path. If there is no pub key, when we will
 	// let the FFXInstance specify the default
@@ -274,6 +265,28 @@ func (r *RunCommand) setupPackageServer(ctx context.Context) (*botanist.PackageS
 	return pkgSrv, nil
 }
 
+func (r *RunCommand) setupFFXUSBDriver(ctx context.Context, ffx *targets.FFXInstance, serialNum string) (func(), error) {
+	cleanup := func() {}
+	socketPath := filepath.Join(os.Getenv(testrunnerconstants.TestOutDirEnvKey), "ffx_usb_driver_socketpath")
+	logDir := filepath.Join(os.Getenv(testrunnerconstants.TestOutDirEnvKey), "ffx_usb_driver_logs")
+	if err := os.MkdirAll(logDir, os.ModePerm); err != nil {
+		return cleanup, fmt.Errorf("failed to create ffx usb driver log dir: %w", err)
+	}
+	if err := ffx.ConfigSet(ctx, "connectivity.usb_socket_path", socketPath); err != nil {
+		return cleanup, fmt.Errorf("failed to set connectivity.usb_socket_path to %s: %w", socketPath, err)
+	}
+	cleanup = botanist.WaitForProcess(ctx, func(processCtx context.Context) error {
+		logger.Debugf(ctx, "starting ffx usb driver")
+		return ffx.USBDriver(processCtx, serialNum, logDir)
+	}, "ffx usb-driver")
+	return func() {
+		cleanup()
+		if err := os.Remove(socketPath); err != nil && !os.IsNotExist(err) {
+			logger.Errorf(ctx, "failed to remove ffx usb driver socket path: %s", err)
+		}
+	}, nil
+}
+
 func (r *RunCommand) dispatchTests(ctx context.Context, cancel context.CancelFunc, eg *errgroup.Group, baseTargets []targets.Base, fuchsiaTargets []targets.FuchsiaTarget, primaryTarget targets.FuchsiaTarget, pkgSrv *botanist.PackageServer, testsPath string, experiments botanist.Experiments) {
 	// Log any failures after running tests.
 	for _, t := range fuchsiaTargets {
@@ -345,7 +358,19 @@ func (r *RunCommand) dispatchTests(ctx context.Context, cancel context.CancelFun
 				if err != nil {
 					return err
 				}
-				t.GetFFX().SetTarget(addr.String())
+				forceFFXUSB := false
+				if _, ok := t.(*targets.Device); !ok || !experiments.Contains(botanist.ForceFFXUSB) {
+					t.GetFFX().SetTarget(addr.String())
+				} else {
+					forceFFXUSB = true
+					// For devices, the ffx target has been set to the serial number
+					// already so use that.
+					cleanupUSBDriver, err := r.setupFFXUSBDriver(ctx, t.GetFFX(), strings.TrimPrefix(t.GetFFX().GetTarget(), "serial:"))
+					if err != nil {
+						return fmt.Errorf("failed to set up ffx usb driver: %w", err)
+					}
+					defer cleanupUSBDriver()
+				}
 				if experiments.Contains(botanist.UseFFXRepository) {
 					repoName := "fuchsia-package-server"
 					pkgSrvPort, cleanupPkgServer, err := r.setupFFXPackageServer(ctx, t.GetFFX(), repoName)
@@ -364,22 +389,25 @@ func (r *RunCommand) dispatchTests(ctx context.Context, cancel context.CancelFun
 						}, nil); err != nil {
 							return err
 						}
-						if err := t.GetFFX().RegisterRepository(ctx, repoName, pkgSrvPort); err != nil {
+						cleanupForward, err := t.AddFFXPackageRepository(ctx, repoName, pkgSrvPort, forceFFXUSB)
+						if err != nil {
 							return err
 						}
-						logger.Debugf(ctx, "added package repo to target %s", t.Nodename())
+						defer cleanupForward()
 					}
 				}
-				cleanupControlMaster, err := t.SetupSSHControlMaster(ctx, t.SSHKey(), addr.String())
-				if err != nil {
-					return fmt.Errorf("failed to set up ssh controlmaster: %w", err)
-				}
-				defer cleanupControlMaster()
-				if err := t.GetFFX().ConfigSet(ctx, "ssh.controlmaster.mode", "explicit"); err != nil {
-					return fmt.Errorf("failed to set ssh.controlmaster.mode to explicit: %w", err)
-				}
-				if err := t.GetFFX().ConfigSet(ctx, "ssh.controlmaster.path", t.SSHControlMasterPath()); err != nil {
-					return fmt.Errorf("failed to set ssh.controlmaster.path to %s: %w", t.SSHControlMasterPath(), err)
+				if !forceFFXUSB {
+					cleanupControlMaster, err := t.SetupSSHControlMaster(ctx, t.SSHKey(), addr.String())
+					if err != nil {
+						return fmt.Errorf("failed to set up ssh controlmaster: %w", err)
+					}
+					defer cleanupControlMaster()
+					if err := t.GetFFX().ConfigSet(ctx, "ssh.controlmaster.mode", "explicit"); err != nil {
+						return fmt.Errorf("failed to set ssh.controlmaster.mode to explicit: %w", err)
+					}
+					if err := t.GetFFX().ConfigSet(ctx, "ssh.controlmaster.path", t.SSHControlMasterPath()); err != nil {
+						return fmt.Errorf("failed to set ssh.controlmaster.path to %s: %w", t.SSHControlMasterPath(), err)
+					}
 				}
 				if r.syslogDir != "" {
 					if _, err := os.Stat(r.syslogDir); errors.Is(err, os.ErrNotExist) {
@@ -499,6 +527,14 @@ func (r *RunCommand) execute(ctx context.Context, args []string) error {
 		// will be set after starting the target, so that we can resolve the IP address.
 		ffxForTarget := ffxutil.FFXWithTarget(ffx, "")
 		t.SetFFX(&targets.FFXInstance{ffxForTarget, experiments}, ffx.Env())
+		if _, ok := t.(*targets.Device); ok && experiments.Contains(botanist.ForceFFXUSB) {
+			t.GetFFX().ConfigSet(ctx, "connectivity.enable_usb", "true")
+			t.GetFFX().ConfigSet(ctx, "connectivity.enable_network", "false")
+		} else {
+			// Make this explicit in case the tools team wants to change the default
+			// for users at their desks.
+			t.GetFFX().ConfigSet(ctx, "connectivity.enable_usb", "false")
+		}
 	}
 
 	eg, ctx := errgroup.WithContext(ctx)

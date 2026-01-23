@@ -293,6 +293,7 @@ func (t *Device) Start(ctx context.Context, args []string, pbPath string, isBoot
 		} else {
 			target = "serial:" + target
 		}
+		t.ffx.SetTarget(target)
 		for attempt := 1; attempt <= maxAllowedAttempts; attempt++ {
 			logger.Debugf(ctx, "Starting flash attempt %d/%d", attempt, maxAllowedAttempts)
 			bootCtx, cancel := context.WithTimeout(ctx, 10*time.Minute)
