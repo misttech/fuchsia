@@ -70,7 +70,9 @@ TEST(LoggerTest, CreateAndLog) {
 
   auto logger = fdf::Logger::Create2(*ns, loop.dispatcher(), kName, FUCHSIA_LOG_INFO);
   ASSERT_FALSE(logger->IsNoOp());
-  loop.RunUntilIdle();
+  while (!log_sink) {
+    loop.RunUntilIdle();
+  }
 
   // Check initial state of logger.
   ASSERT_TRUE(log_sink);
@@ -156,7 +158,9 @@ TEST(LoggerTest, SetSeverity) {
 
   auto logger = fdf::Logger::Create2(*ns, loop.dispatcher(), kName, FUCHSIA_LOG_INFO);
   ASSERT_FALSE(logger->IsNoOp());
-  loop.RunUntilIdle();
+  while (!log_sink) {
+    loop.RunUntilIdle();
+  }
 
   // Check initial state of logger.
   ASSERT_TRUE(log_sink);
