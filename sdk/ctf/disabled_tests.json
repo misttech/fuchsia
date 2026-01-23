@@ -58,7 +58,7 @@
         "name": "fuchsia-pkg://fuchsia.com/archivist_integration_test_cases_ctf29#meta/test_root.cm",
         "cases": [
             {
-                "name": "accessor_truncation_test",
+                "name": "inspect::truncation::accessor_truncation_test",
                 "disabled": true,
                 "bug": "408055548"
             }
