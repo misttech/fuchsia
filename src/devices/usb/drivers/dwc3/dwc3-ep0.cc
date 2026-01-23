@@ -57,11 +57,10 @@ void Dwc3::Ep0StartEndpoints() {
   ep0_.in.interval = 0;
   CmdEpSetConfig(ep0_.in, true);
 
-  // TODO(johngro): Why do we pass a hardcoded value of 2 for the resource ID
-  // here?  Eventually, it is going to end up in the Params field of the DEPCMD
-  // (Device EndPoint Command) register, where according to DWC docs (Table
-  // 1-102), it will be ignored by the Start New Configuration command we are
-  // sending.
+  // The hard-coded value of '2' here is required by specification, see 'Start
+  // New Configuration (DEPSTARTCFG)' in the programming guide. We call this
+  // function upon receiving a SetConfiguration call, prior to setting up
+  // endpoints > 1.
   CmdStartNewConfig(ep0_.out, 2);
 }
 
