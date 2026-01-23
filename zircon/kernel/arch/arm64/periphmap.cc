@@ -3,10 +3,12 @@
 // Use of this source code is governed by a MIT-style
 // license that can be found in the LICENSE file or at
 // https://opensource.org/licenses/MIT
+
 #include "arch/arm64/periphmap.h"
 
 #include <debug.h>
 #include <lib/console.h>
+#include <lib/mmio-ptr/mmio-ptr.h>
 #include <stdint.h>
 
 #include <ktl/algorithm.h>
@@ -85,12 +87,13 @@ using Virt2Phys = PeriphUtil<Virt2PhysTrait>;
 
 template <typename T>
 uint64_t rd_reg(vaddr_t addr) {
-  return static_cast<uint64_t>(reinterpret_cast<volatile T*>(addr)[0]);
+  return MmioRead(reinterpret_cast<const MMIO_PTR volatile T*>(static_cast<uintptr_t>(addr)));
 }
 
 template <typename T>
 void wr_reg(vaddr_t addr, uint64_t val) {
-  reinterpret_cast<volatile T*>(addr)[0] = static_cast<T>(val);
+  MmioWrite(static_cast<T>(val),
+            reinterpret_cast<MMIO_PTR volatile T*>(static_cast<uintptr_t>(addr)));
 }
 
 // Note; the choice of these values must also align with the definitions in the
