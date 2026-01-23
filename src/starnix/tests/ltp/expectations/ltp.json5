@@ -17,6 +17,15 @@
                 "adjtimex01",
                 "adjtimex02",
                 "adjtimex03",
+
+                // This test checks that you cannot trick the kernel into chmoding a symlink node
+                // directly by opening a O_NOFOLLOW fd, and then chmoding that fd via a path in /proc.
+                //
+                // Right now Starnix actually chmods the underlying file, because it ends up following
+                // the entire symlink chain even when chmoding through proc. However, the test also
+                // verifies that the underlying file was not chmod'ed, in addition to the symlink, so it
+                // still fails.
+                "chmod09",
                 "clock_adjtime01",
                 "clock_adjtime02",
                 "clock_settime01",
@@ -188,6 +197,10 @@
                 "statx04",
                 "statx06",
                 "statx11",
+
+                // This test fails because we do not limit the amount of swap files according to the
+                // size mount flag.
+                "swapon03",
                 "sync01",
                 "time-schedule01",
 
