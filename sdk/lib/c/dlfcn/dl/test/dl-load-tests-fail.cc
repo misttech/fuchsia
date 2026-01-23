@@ -73,7 +73,7 @@ TYPED_TEST(DlTests, MissingSymbol) {
               IsUndefinedSymbolErrMsg(TestSym("missing_sym"), kMissingSymFile));
 }
 
-// TODO(https://fxbug.dev/3313662773): Test simple case of transitive missing
+// TODO(https://fxbug.dev/339662473): Test simple case of transitive missing
 // symbol.
 // dlopen missing-transitive-symbol:
 //  - missing-transitive-sym
