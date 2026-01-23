@@ -71,6 +71,7 @@ pub async fn run_http_server() -> Result<(), Error> {
         });
     }
     task_group.join().await;
+    log::info!("Closing server");
     Ok(())
 }
 

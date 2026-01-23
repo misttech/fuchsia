@@ -83,14 +83,16 @@ async fn query_device_authorized_keys(
         .map_err(|e| {
             fho::user_error!("{context_string} failed to send HTTP request to {addr}: {e:?}")
         })?;
-    if response.status() != hyper::StatusCode::OK {
-        fho::return_user_error!(
-            "{context_string} received an HTTP error from the {addr}: {response:?}"
-        );
-    }
+    let status = response.status();
     let body_bytes = hyper::body::to_bytes(response.body_mut())
         .await
         .user_message("failed to read http body")?;
+    if status != hyper::StatusCode::OK {
+        let body = String::from_utf8_lossy(&body_bytes);
+        fho::return_user_error!(
+            "{context_string} received an HTTP error from the {addr}: {status}. Body: \"{body}\""
+        );
+    }
     let body_str = String::from_utf8_lossy(body_bytes.chunk());
     if body_str.is_empty() {
         fho::return_user_error!(
@@ -1670,13 +1672,17 @@ mod test {
     }
 
     // Helper to create a simple HTTP server.
-    fn start_test_server(body: &'static str) -> std::net::SocketAddr {
+    fn start_test_server(status: hyper::StatusCode, body: &'static str) -> std::net::SocketAddr {
         let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
         let addr = listener.local_addr().unwrap();
         std::thread::spawn(move || {
             if let Ok((mut stream, _)) = listener.accept() {
-                let response =
-                    format!("HTTP/1.1 200 OK\r\nContent-Length: {}\r\n\r\n{}", body.len(), body);
+                let response = format!(
+                    "HTTP/1.1 {}\r\nContent-Length: {}\r\n\r\n{}",
+                    status,
+                    body.len(),
+                    body
+                );
                 stream.write_all(response.as_bytes()).unwrap();
                 stream.shutdown(std::net::Shutdown::Write).unwrap();
                 let mut buf = [0; 128];
@@ -1688,10 +1694,25 @@ mod test {
     }
 
     #[fuchsia::test]
+    async fn test_query_device_authorized_keys_error_response() {
+        const ERROR_BODY: &str = "Something went wrong";
+        let server_addr = start_test_server(hyper::StatusCode::INTERNAL_SERVER_ERROR, ERROR_BODY);
+
+        let result = query_device_authorized_keys(server_addr, server_addr.port()).await;
+        assert!(result.is_err());
+        let err = result.unwrap_err();
+        let expected_err_msg = format!(
+            "While querying device for SSH authorized_keys, received an HTTP error from the {}: 500 Internal Server Error. Body: \"{}\"",
+            server_addr, ERROR_BODY
+        );
+        assert_eq!(err.to_string(), expected_err_msg);
+    }
+
+    #[fuchsia::test]
     async fn test_query_device_authorized_keys_success() {
         const FAKE_KEYS: &str = "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAID/PA/k3f5aSU/22c9LPn/4A3f/g/2Yj/2c/8A3/g/2Y test1@fuchsia\n\
                                  ssh-ed25519 AAAA1234 test2@fuchsia";
-        let server_addr = start_test_server(FAKE_KEYS);
+        let server_addr = start_test_server(hyper::StatusCode::OK, FAKE_KEYS);
 
         let keys = query_device_authorized_keys(server_addr, server_addr.port()).await.unwrap();
 
@@ -1716,7 +1737,7 @@ mod test {
 
     #[fuchsia::test]
     async fn test_query_device_authorized_keys_empty_response() {
-        let server_addr = start_test_server("");
+        let server_addr = start_test_server(hyper::StatusCode::OK, "");
 
         let result = query_device_authorized_keys(server_addr, server_addr.port()).await;
         assert!(result.is_err());
@@ -1728,7 +1749,7 @@ mod test {
     async fn test_find_matching_ssh_keys_impl_success() {
         const DEVICE_KEYS: &str = "ssh-ed25519 akeyondeviceandlocal comment1\n\
                                    ssh-ed25519 localonlykey comment2";
-        let server_addr = start_test_server(DEVICE_KEYS);
+        let server_addr = start_test_server(hyper::StatusCode::OK, DEVICE_KEYS);
 
         let mut local_keys = HashSet::new();
         let matching_key = SshKey {
@@ -1766,7 +1787,7 @@ mod test {
     #[fuchsia::test]
     async fn test_find_matching_ssh_keys_impl_no_match() {
         const DEVICE_KEYS: &str = "ssh-ed25519 AAAA1234 comment1";
-        let server_addr = start_test_server(DEVICE_KEYS);
+        let server_addr = start_test_server(hyper::StatusCode::OK, DEVICE_KEYS);
 
         let mut local_keys = HashSet::new();
         let non_matching_key = SshKey {
