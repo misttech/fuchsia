@@ -217,6 +217,7 @@ group("driver_shared_libraries") {
     "//sdk/lib/fdio",
     "//sdk/lib/svc",
     "//sdk/lib/syslog/cpp:backend_fuchsia_globals",
+    "//sdk/lib/vfs/internal:vfs_internal",
     "//src/devices/bin/driver_runtime",
     "//src/devices/lib/driver",
     "//src/security/lib/tee/tee-client-api",

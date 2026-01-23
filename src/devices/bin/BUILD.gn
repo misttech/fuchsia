@@ -8,6 +8,7 @@ group("bin") {
     "driver-host",
     "driver-index",
     "driver_manager",
+    "driver_manager_rust",
     "driver_runtime",
   ]
 }

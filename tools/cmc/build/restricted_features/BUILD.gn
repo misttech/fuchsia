@@ -39,6 +39,7 @@ group("allow_long_names") {
     # driver collections
     "//sdk/lib/driver_test_realm/*",
     "//src/devices/bin/driver_manager/*",
+    "//src/devices/bin/driver_manager_rust/*",
     "//src/sys/bootstrap/*",
     "//tools/cmc:*",
   ]

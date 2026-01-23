@@ -24,6 +24,9 @@ rustc_library("rust") {
     # Depends on this crate for mallopt binding
     "//src/performance/memory/attribution/monitor/*",
     "//src/sys/component_manager/*",
+
+    # Purges memory after all drivers that can be loaded are loaded on boot-up.
+    "//src/devices/bin/driver_manager_rust/*",
   ]
   edition = "2024"
   with_unit_tests = false

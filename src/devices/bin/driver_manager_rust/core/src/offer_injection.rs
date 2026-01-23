@@ -39,7 +39,7 @@ impl OfferInjector {
                 fdecl::Availability::Required,
             )
         } else {
-            (fdecl::Ref::Self_(fdecl::SelfRef {}), fdecl::Availability::Optional)
+            (fdecl::Ref::VoidType(fdecl::VoidRef {}), fdecl::Availability::Optional)
         };
 
         let (broker_source, broker_availability) = if self.power_config.power_suspend_enabled {
@@ -51,7 +51,7 @@ impl OfferInjector {
                 fdecl::Availability::Required,
             )
         } else {
-            (fdecl::Ref::Self_(fdecl::SelfRef {}), fdecl::Availability::Optional)
+            (fdecl::Ref::VoidType(fdecl::VoidRef {}), fdecl::Availability::Optional)
         };
 
         let mut offset = 0;

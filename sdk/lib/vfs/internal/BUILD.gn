@@ -55,6 +55,12 @@ sdk_shared_library("vfs_internal") {
     "//build/sdk:partner_idk_versioned_shared_libraries",
     "//sdk:core_cc_prebuilt_libraries",
     "//sdk/lib/vfs/cpp:*",
+
+    # Drivers load this shared library through the driver manager for ABI reasons.
+    # Therefore even though the driver manager might not use the C++ VFS source set, it needs
+    # to bring in this shared library, through the "driver_shared_libraries" group. For more info
+    # See https://fuchsia-review.googlesource.com/c/fuchsia/+/1448640/comment/faeba132_4fe87785/
+    "//src/devices/bin/driver_manager:driver_shared_libraries",
   ]
 }
 
