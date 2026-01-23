@@ -5,27 +5,45 @@
 #ifndef LIB_DRIVER_LOGGING_CPP_LOGGER_H_
 #define LIB_DRIVER_LOGGING_CPP_LOGGER_H_
 
+#include <lib/stdcompat/span.h>
+#include <lib/syslog/structured_backend/fuchsia_syslog.h>
+#include <lib/zx/result.h>
+
+#include <atomic>
+#include <memory>
+#include <string>
+#include <string_view>
+
+#if defined(__Fuchsia__)
+#define HOST_LOGGING 0
+#else  // defined(__Fuchsia__)
+#define HOST_LOGGING 1
+#endif  // defined(__Fuchsia__)
+
+#if !HOST_LOGGING
 #include <fidl/fuchsia.logger/cpp/markers.h>
 #include <fidl/fuchsia.logger/cpp/wire_types.h>
 #include <lib/driver/incoming/cpp/namespace.h>
 #include <lib/syslog/structured_backend/cpp/log_buffer.h>
 #include <lib/syslog/structured_backend/cpp/logger.h>
-#include <lib/syslog/structured_backend/fuchsia_syslog.h>
 #include <lib/zx/socket.h>
+#endif  // !HOST_LOGGING
 
-#if FUCHSIA_API_LEVEL_AT_LEAST(HEAD) && __cplusplus >= 202002L
+#include <zircon/availability.h>
+
+#if (FUCHSIA_API_LEVEL_AT_LEAST(HEAD) || HOST_LOGGING) && __cplusplus >= 202002L
 #include <format>
 #include <source_location>
 
 #include "internal/panic.h"
-#endif
+#endif  // (FUCHSIA_API_LEVEL_AT_LEAST(HEAD) || HOST_LOGGING) && __cplusplus >= 202002L
 
 #define FDF_LOGL(severity, logger, msg...) \
   (logger).logf((FUCHSIA_LOG_##severity), nullptr, __FILE__, __LINE__, msg)
 
 #define FDF_LOG(severity, msg...) FDF_LOGL(severity, *fdf::Logger::GlobalInstance(), msg)
 
-#if FUCHSIA_API_LEVEL_AT_LEAST(HEAD) && __cplusplus >= 202002L
+#if (FUCHSIA_API_LEVEL_AT_LEAST(HEAD) || HOST_LOGGING) && __cplusplus >= 202002L
 
 #define FDF_ASSERT(x)                                                     \
   do {                                                                    \
@@ -44,7 +62,7 @@
       fdf::panic("ASSERT FAILED at ({}:{}): {}" msg, __FILE__, __LINE__, #x, ##msgargs); \
     }                                                                                    \
   } while (0)
-#endif
+#endif  // (FUCHSIA_API_LEVEL_AT_LEAST(HEAD) || HOST_LOGGING) && __cplusplus >= 202002L
 
 namespace fdf {
 
@@ -67,13 +85,14 @@ class Logger final {
   // the |dispatcher|.
   //
   // If we fail to connect to LogSink, or if there's any error the returned logger will be no-op.
+#if !HOST_LOGGING
   static std::unique_ptr<Logger> Create2(const Namespace& ns, async_dispatcher_t* dispatcher,
                                          std::string_view name,
                                          FuchsiaLogSeverity min_severity = FUCHSIA_LOG_INFO
 #if FUCHSIA_API_LEVEL_LESS_THAN(29)
                                          ,
                                          bool wait_for_initial_interest = true
-#endif
+#endif  // FUCHSIA_API_LEVEL_LESS_THAN(29)
   );
 
   static zx::result<std::unique_ptr<Logger>> Create(
@@ -82,9 +101,10 @@ class Logger final {
 #if FUCHSIA_API_LEVEL_LESS_THAN(29)
       ,
       bool wait_for_initial_interest = true
-#endif
+#endif  // FUCHSIA_API_LEVEL_LESS_THAN(29)
       )
       ZX_DEPRECATED_SINCE(1, 24, "Use Create2 which will return a no-op logger instead of failing");
+#endif  // !HOST_LOGGING
 
   static Logger* GlobalInstance();
   static void SetGlobalInstance(Logger*);
@@ -93,6 +113,7 @@ class Logger final {
   // A no-op logger.
   Logger() = default;
 
+#if !HOST_LOGGING
 #if FUCHSIA_API_LEVEL_LESS_THAN(29)
   Logger(std::string_view name, FuchsiaLogSeverity min_severity, zx::socket socket,
          fidl::WireClient<fuchsia_logger::LogSink> log_sink)
@@ -101,9 +122,13 @@ class Logger final {
         default_severity_(min_severity),
         severity_(min_severity),
         log_sink_(std::move(log_sink)) {}
-#else
+#else   // FUCHSIA_API_LEVEL_LESS_THAN(29)
   explicit Logger(fuchsia_logging::Logger logger) : logger_(std::move(logger)) {}
-#endif
+#endif  // FUCHSIA_API_LEVEL_LESS_THAN(29)
+#else   // !HOST_LOGGING
+  Logger(std::string_view name, FuchsiaLogSeverity min_severity)
+      : tag_(name), severity_(min_severity) {}
+#endif  // !HOST_LOGGING
 
   ~Logger();
 
@@ -123,7 +148,7 @@ class Logger final {
   void logvf(FuchsiaLogSeverity severity, cpp20::span<std::string> tags, const char* file, int line,
              const char* msg, va_list args);
 
-#if FUCHSIA_API_LEVEL_AT_LEAST(HEAD) && __cplusplus >= 202002L
+#if (FUCHSIA_API_LEVEL_AT_LEAST(HEAD) || HOST_LOGGING) && __cplusplus >= 202002L
   struct SeverityAndSourceLocation {
     FuchsiaLogSeverity severity;
     std::source_location loc;
@@ -155,6 +180,7 @@ class Logger final {
             std::string_view fmt, std::format_args args);
 #endif
 
+#if !HOST_LOGGING
   // Begins a structured logging record. You probably don't want to call
   // this directly.
   void BeginRecord(fuchsia_logging::LogBuffer& buffer, FuchsiaLogSeverity severity,
@@ -171,50 +197,62 @@ class Logger final {
 #else
   bool IsNoOp() const { return !logger_.IsValid(); }
 #endif
+#else   // !HOST_LOGGING
+  static bool IsNoOp() { return false; }
+#endif  // !HOST_LOGGING
 
  private:
   Logger(const Logger& other) = delete;
   Logger& operator=(const Logger& other) = delete;
 
+#if !HOST_LOGGING
   static zx::result<std::unique_ptr<Logger>> MaybeCreate(
       const Namespace& ns, async_dispatcher_t* dispatcher, std::string_view name,
       FuchsiaLogSeverity min_severity = FUCHSIA_LOG_INFO
 #if FUCHSIA_API_LEVEL_LESS_THAN(29)
       ,
       bool wait_for_initial_interest = true
-#endif
+#endif  // FUCHSIA_API_LEVEL_LESS_THAN(29)
   );
+#endif  // !HOST_LOGGING
 
   static std::unique_ptr<Logger> NoOp();
 
+#if !HOST_LOGGING
 #if FUCHSIA_API_LEVEL_LESS_THAN(29)
 #if FUCHSIA_API_LEVEL_AT_LEAST(27)
   void HandleInterest(fuchsia_diagnostics_types::wire::Interest interest);
-#else
+#else   // FUCHSIA_API_LEVEL_AT_LEAST(27)
   void HandleInterest(fuchsia_diagnostics::wire::Interest interest);
-#endif
+#endif  // FUCHSIA_API_LEVEL_AT_LEAST(27)
 
   void OnInterestChange(
       fidl::WireUnownedResult<fuchsia_logger::LogSink::WaitForInterestChange>& result);
 
   // For thread-safety these members should be read-only.
   const std::string tag_;
+#if !HOST_LOGGING
   const zx::socket socket_;
   const FuchsiaLogSeverity default_severity_ = FUCHSIA_LOG_INFO;
+#endif  // !HOST_LOGGING
   // Messages below this won't be logged. This field is thread-safe.
   std::atomic<FuchsiaLogSeverity> severity_ = FUCHSIA_LOG_INFO;
 
   // Used to learn about changes in severity.
   fidl::WireClient<fuchsia_logger::LogSink> log_sink_;
-#else
+#else   // FUCHSIA_API_LEVEL_AT_LEAST(29)
   const fuchsia_logging::Logger logger_;
-#endif
+#endif  // FUCHSIA_API_LEVEL_AT_LEAST(29)
+#else   // !HOST_LOGGING
+  const std::string tag_;
+  std::atomic<FuchsiaLogSeverity> severity_ = FUCHSIA_LOG_INFO;
+#endif  // !HOST_LOGGING
 
   // Dropped log count. This is thread-safe and is reset on success.
   std::atomic<uint32_t> dropped_logs_ = 0;
 };
 
-#if FUCHSIA_API_LEVEL_AT_LEAST(HEAD) && __cplusplus >= 202002L
+#if (FUCHSIA_API_LEVEL_AT_LEAST(HEAD) || HOST_LOGGING) && __cplusplus >= 202002L
 // Use template type deduction to allow us to get source location while using variadic templates.
 template <typename... Args>
 struct trace {

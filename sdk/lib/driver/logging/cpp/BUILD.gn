@@ -18,12 +18,22 @@ sdk_source_set("cpp") {
     "structured_logger.h",
   ]
 
-  public_deps = [
-    "//sdk/fidl/fuchsia.logger:fuchsia.logger_cpp",
-    "//sdk/lib/driver/incoming/cpp",
-    "//sdk/lib/fdio",
-    "//sdk/lib/syslog/structured_backend",
-  ]
+  if (is_fuchsia) {
+    public_deps = [
+      "//sdk/fidl/fuchsia.logger:fuchsia.logger_cpp",
+      "//sdk/lib/driver/incoming/cpp",
+      "//sdk/lib/fdio",
+      "//sdk/lib/stdcompat",
+      "//sdk/lib/syslog/structured_backend",
+      "//zircon/system/ulib/zx",
+    ]
+  } else {
+    public_deps = [
+      "//sdk/lib/stdcompat",
+      "//sdk/lib/syslog/cpp",
+      "//zircon/system/ulib/zx",
+    ]
+  }
 
   public_configs = [ "//sdk/config" ]
 }

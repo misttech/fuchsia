@@ -70,6 +70,7 @@ target(target_type, "cpp") {
       "host/log_buffer.h",
       "host/logging_backend.cc",
     ]
+    public_deps += [ "//sdk/lib/syslog/structured_backend:host_cpp" ]
   }
   public_configs = [ "//sdk/config" ]
 }

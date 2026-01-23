@@ -35,3 +35,7 @@ sdk_source_set("structured_backend") {
 
   public_configs = [ "//sdk/config" ]
 }
+
+source_set("host_cpp") {
+  sources = [ "fuchsia_syslog.h" ]
+}

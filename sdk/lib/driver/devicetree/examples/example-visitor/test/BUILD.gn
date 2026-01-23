@@ -1,0 +1,18 @@
+# Copyright 2026 The Fuchsia Authors. All rights reserved.
+# Use of this source code is governed by a BSD-style license that can be
+# found in the LICENSE file.
+
+import("//build/test.gni")
+
+test("example-visitor-test") {
+  # TODO(puneetha): This is intentionally a incomplete test at the moment and only includes
+  # functionality that can be built on host. This is primarily to verify that devicetree
+  # visitors can be built and run on host. Eventually it will be updated to include all the
+  # functionality of the example visitor.
+  sources = [ "test.cc" ]
+  deps = [
+    "//sdk/lib/driver/logging/cpp",
+    "//src/lib/fxl/test:gtest_main",
+    "//third_party/googletest:gtest",
+  ]
+}

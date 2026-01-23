@@ -2,12 +2,27 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#include <fidl/fuchsia.logger/cpp/wire_messaging.h>
 #include <lib/driver/logging/cpp/logger.h>
+
+#if !HOST_LOGGING
+#include <fidl/fuchsia.logger/cpp/wire_messaging.h>
 #include <lib/fdio/directory.h>
 #include <zircon/process.h>
+#else  // !HOST_LOGGING
+// Host includes
+#include <lib/syslog/cpp/host/log_buffer.h>
+#include <lib/syslog/cpp/log_message_impl.h>  // nogncheck
+#include <zircon/assert.h>
 
+#include <cstdio>
+#include <iostream>
+#include <vector>
+#endif  // !HOST_LOGGING
+
+#include <algorithm>
+#include <array>
 #include <cstdarg>
+#include <iterator>
 
 namespace flog = ::fuchsia_logging;
 
@@ -16,15 +31,14 @@ namespace fdf {
 namespace {
 std::atomic<Logger*> g_instance = nullptr;
 
+#if !HOST_LOGGING
 #if FUCHSIA_API_LEVEL_AT_LEAST(27)
 using FidlSeverity = fuchsia_diagnostics_types::wire::Severity;
 using FidlInterest = fuchsia_diagnostics_types::wire::Interest;
-#else
+#else   // FUCHSIA_API_LEVEL_AT_LEAST(27)
 using FidlSeverity = fuchsia_diagnostics::wire::Severity;
 using FidlInterest = fuchsia_diagnostics::wire::Interest;
-#endif
-
-}  // namespace
+#endif  // FUCHSIA_API_LEVEL_AT_LEAST(27)
 
 zx_koid_t GetKoid(zx_handle_t handle) {
   zx_info_handle_basic_t info;
@@ -32,19 +46,23 @@ zx_koid_t GetKoid(zx_handle_t handle) {
       zx_object_get_info(handle, ZX_INFO_HANDLE_BASIC, &info, sizeof(info), nullptr, nullptr);
   return status == ZX_OK ? info.koid : ZX_KOID_INVALID;
 }
+#endif  // !HOST_LOGGING
 
+}  // namespace
+
+#if !HOST_LOGGING
 bool Logger::FlushRecord(flog::LogBuffer& buffer, uint32_t dropped) {
 #if FUCHSIA_API_LEVEL_LESS_THAN(29)
   if (!buffer.FlushRecord()) {
     dropped_logs_.fetch_add(dropped + 1, std::memory_order_relaxed);
     return false;
   }
-#else
+#else   // FUCHSIA_API_LEVEL_LESS_THAN(29)
   if (logger_.FlushBuffer(buffer).is_error()) {
     dropped_logs_.fetch_add(dropped + 1, std::memory_order_relaxed);
     return false;
   }
-#endif
+#endif  // FUCHSIA_API_LEVEL_LESS_THAN(29)
   return true;
 }
 
@@ -57,25 +75,23 @@ void Logger::BeginRecord(flog::LogBuffer& buffer, FuchsiaLogSeverity severity,
   buffer.BeginRecord(severity, file_name, line, message, socket_.borrow(), dropped, pid, tid);
   buffer.WriteKeyValue("tag", "driver");
   buffer.WriteKeyValue("tag", tag_);
-#else
+#else   // FUCHSIA_API_LEVEL_LESS_THAN(29)
   buffer.BeginRecord(severity, file_name, line, message, dropped, pid, tid);
-#endif
+#endif  // FUCHSIA_API_LEVEL_LESS_THAN(29)
 }
-
-std::unique_ptr<Logger> Logger::NoOp() { return std::make_unique<Logger>(); }
 
 std::unique_ptr<Logger> Logger::Create2(const Namespace& ns, async_dispatcher_t* dispatcher,
                                         std::string_view name, FuchsiaLogSeverity min_severity
 #if FUCHSIA_API_LEVEL_LESS_THAN(29)
                                         ,
                                         bool wait_for_initial_interest
-#endif
+#endif  // FUCHSIA_API_LEVEL_LESS_THAN(29)
 ) {
   auto result = Logger::MaybeCreate(ns, dispatcher, name, min_severity
 #if FUCHSIA_API_LEVEL_LESS_THAN(29)
                                     ,
                                     wait_for_initial_interest
-#endif
+#endif  // FUCHSIA_API_LEVEL_LESS_THAN(29)
   );
   if (!result.is_ok()) {
     return Logger::NoOp();
@@ -90,13 +106,13 @@ zx::result<std::unique_ptr<Logger>> Logger::Create(const Namespace& ns,
 #if FUCHSIA_API_LEVEL_LESS_THAN(29)
                                                    ,
                                                    bool wait_for_initial_interest
-#endif
+#endif  // FUCHSIA_API_LEVEL_LESS_THAN(29)
 ) {
   auto result = Logger::MaybeCreate(ns, dispatcher, name, min_severity
 #if FUCHSIA_API_LEVEL_LESS_THAN(29)
                                     ,
                                     wait_for_initial_interest
-#endif
+#endif  // FUCHSIA_API_LEVEL_LESS_THAN(29)
   );
   if (!result.is_ok()) {
     return zx::ok(Logger::NoOp());
@@ -111,7 +127,7 @@ zx::result<std::unique_ptr<Logger>> Logger::MaybeCreate(const Namespace& ns,
 #if FUCHSIA_API_LEVEL_LESS_THAN(29)
                                                         ,
                                                         bool wait_for_initial_interest
-#endif
+#endif  // FUCHSIA_API_LEVEL_LESS_THAN(29)
 ) {
   auto ns_result = ns.Connect<fuchsia_logger::LogSink>();
   if (ns_result.is_error()) {
@@ -147,10 +163,10 @@ zx::result<std::unique_ptr<Logger>> Logger::MaybeCreate(const Namespace& ns,
       fit::bind_member(logger.get(), &Logger::OnInterestChange));
 
   return zx::ok(std::move(logger));
-#else
+#else   // FUCHSIA_API_LEVEL_LESS_THAN(29)
   std::string name_str(name);
   const char* tags[] = {"driver", name_str.c_str()};
-  if (auto logger = fuchsia_logging::Logger::Create(fuchsia_logging::RawLogSettings{
+  if (auto logger = flog::Logger::Create(flog::RawLogSettings{
           .min_log_level = min_severity,
           .log_sink = ns_result->TakeChannel().release(),
           .tags = tags,
@@ -162,19 +178,8 @@ zx::result<std::unique_ptr<Logger>> Logger::MaybeCreate(const Namespace& ns,
   } else {
     return zx::ok(std::make_unique<Logger>(*std::move(logger)));
   }
-#endif
+#endif  // FUCHSIA_API_LEVEL_LESS_THAN(29)
 }
-
-Logger* Logger::GlobalInstance() {
-  ZX_DEBUG_ASSERT(HasGlobalInstance());
-  return g_instance.load();
-}
-
-void Logger::SetGlobalInstance(Logger* logger) { g_instance = logger; }
-
-bool Logger::HasGlobalInstance() { return g_instance != nullptr; }
-
-Logger::~Logger() = default;
 
 #if FUCHSIA_API_LEVEL_LESS_THAN(29)
 void Logger::HandleInterest(FidlInterest interest) {
@@ -202,7 +207,7 @@ void Logger::HandleInterest(FidlInterest interest) {
       default:
         severity_ = FUCHSIA_LOG_INFO;
         return;
-#endif
+#endif  // FUCHSIA_API_LEVEL_AT_LEAST(27)
     }
   } else {
     severity_ = default_severity_;
@@ -216,23 +221,37 @@ void Logger::OnInterestChange(
     log_sink_->WaitForInterestChange().Then(fit::bind_member(this, &Logger::OnInterestChange));
   }
 }
-#endif
+#endif  // FUCHSIA_API_LEVEL_LESS_THAN(29)
+#endif  // !HOST_LOGGING
+
+std::unique_ptr<Logger> Logger::NoOp() { return std::make_unique<Logger>(); }
+
+Logger* Logger::GlobalInstance() {
+  ZX_DEBUG_ASSERT(HasGlobalInstance());
+  return g_instance.load();
+}
+
+void Logger::SetGlobalInstance(Logger* logger) { g_instance = logger; }
+
+bool Logger::HasGlobalInstance() { return g_instance != nullptr; }
+
+Logger::~Logger() = default;
 
 uint32_t Logger::GetAndResetDropped() {
   return dropped_logs_.exchange(0, std::memory_order_relaxed);
 }
 
 FuchsiaLogSeverity Logger::GetSeverity() {
-#if FUCHSIA_API_LEVEL_LESS_THAN(29)
+#if FUCHSIA_API_LEVEL_LESS_THAN(29) || HOST_LOGGING
   return severity_.load(std::memory_order_relaxed);
 #else
   return logger_.GetMinSeverity();
-#endif
+#endif  // FUCHSIA_API_LEVEL_LESS_THAN(29) || HOST_LOGGING
 }
 
-#if FUCHSIA_API_LEVEL_LESS_THAN(29)
+#if FUCHSIA_API_LEVEL_LESS_THAN(29) || HOST_LOGGING
 void Logger::SetSeverity(FuchsiaLogSeverity severity) { severity_.store(severity); }
-#endif
+#endif  // FUCHSIA_API_LEVEL_LESS_THAN(29) || HOST_LOGGING
 
 void Logger::logf(FuchsiaLogSeverity severity, const char* tag, const char* file, int line,
                   const char* msg, ...) {
@@ -254,9 +273,8 @@ const char* StripPath(const char* path) {
   auto p = strrchr(path, '/');
   if (p) {
     return p + 1;
-  } else {
-    return path;
   }
+  return path;
 }
 
 const char* StripFile(const char* file, FuchsiaLogSeverity severity) {
@@ -274,6 +292,7 @@ void Logger::logvf(FuchsiaLogSeverity severity, const char* tag, const char* fil
   }
 }
 
+#if !HOST_LOGGING
 void Logger::logvf(FuchsiaLogSeverity severity, cpp20::span<std::string> tags, const char* file,
                    int line, const char* msg, va_list args) {
   if (!file || line <= 0) {
@@ -317,8 +336,50 @@ void Logger::logvf(FuchsiaLogSeverity severity, cpp20::span<std::string> tags, c
     abort();
   }
 }
+#else   // !HOST_LOGGING
+void Logger::logvf(FuchsiaLogSeverity severity, cpp20::span<std::string> tags, const char* file,
+                   int line, const char* msg, va_list args) {
+  if (!file || line <= 0) {
+    return;
+  }
+  if (severity < GetSeverity()) {
+    return;
+  }
 
-#if FUCHSIA_API_LEVEL_AT_LEAST(HEAD) && __cplusplus >= 202002L
+  constexpr size_t kFormatStringLength = 1024;
+  char fmt_string[kFormatStringLength];
+  fmt_string[kFormatStringLength - 1] = 0;
+  int n = kFormatStringLength;
+  int count = vsnprintf(fmt_string, n, msg, args) + 1;
+  if (count < 0) {
+    return;
+  }
+
+  if (count >= n) {
+    // truncated
+    constexpr char kEllipsis[] = "...";
+    constexpr size_t kEllipsisSize = sizeof(kEllipsis);
+    snprintf(fmt_string + kFormatStringLength - 1 - kEllipsisSize, kEllipsisSize, kEllipsis);
+  }
+
+  file = StripFile(file, severity);
+
+  flog::LogBufferBuilder builder(severity);
+  builder.WithFile(file, line);
+  builder.WithMsg(fmt_string);
+  auto buffer = builder.Build();
+  for (const auto& tag : tags) {
+    buffer.WriteKeyValue("tag", tag);
+  }
+  (void)flog::FlushToGlobalLogger(buffer);
+
+  if (severity == FUCHSIA_LOG_FATAL) {
+    abort();
+  }
+}
+#endif  // !HOST_LOGGING
+
+#if (FUCHSIA_API_LEVEL_AT_LEAST(HEAD) || HOST_LOGGING) && __cplusplus >= 202002L
 namespace {
 template <typename T, std::size_t N>
 class array_output_iterator {
@@ -385,7 +446,9 @@ void Logger::vlog(FuchsiaLogSeverity severity, const char* tag, const char* file
     return;
   }
 
+#if !HOST_LOGGING
   uint32_t dropped = dropped_logs_.exchange(0, std::memory_order_relaxed);
+#endif
 
   if (actual_size >= kFormatStringLength) {
     // truncated
@@ -396,6 +459,8 @@ void Logger::vlog(FuchsiaLogSeverity severity, const char* tag, const char* file
   fmt_buffer[kFormatStringLength - 1] = 0;
 
   file = StripFile(file, severity);
+
+#if !HOST_LOGGING
   flog::LogBuffer buffer;
   BeginRecord(buffer, severity, file, line,
               std::string_view(fmt_buffer.data(), std::min(actual_size, kFormatStringLength)),
@@ -404,11 +469,24 @@ void Logger::vlog(FuchsiaLogSeverity severity, const char* tag, const char* file
     buffer.WriteKeyValue("tag", tag);
   }
   FlushRecord(buffer, dropped);
+#else   // !HOST_LOGGING
+  // On Host, we use the syslog cpp backend which provides a compatible LogBuffer.
+  // We don't support dropped log count on host yet.
+  flog::LogBufferBuilder builder(severity);
+  builder.WithFile(file, line);
+  builder.WithMsg(std::string_view(fmt_buffer.data(), std::min(actual_size, kFormatStringLength)));
+  auto buffer = builder.Build();
+
+  if (tag) {
+    buffer.WriteKeyValue("tag", tag);
+  }
+  (void)flog::FlushToGlobalLogger(buffer);
+#endif  // !HOST_LOGGING
 
   if (severity == FUCHSIA_LOG_FATAL) {
     abort();
   }
 }
-#endif
+#endif  // (FUCHSIA_API_LEVEL_AT_LEAST(HEAD) || HOST_LOGGING) && __cplusplus >= 202002L
 
 }  // namespace fdf
