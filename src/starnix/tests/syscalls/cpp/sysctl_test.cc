@@ -238,3 +238,21 @@ TEST_F(SysctlTest, DisableIpv6Default) {
   }
   ASSERT_STREQ(disable_ipv6_str.c_str(), "1\n");
 }
+
+class SysctlTestReadBack : public SysctlTest, public ::testing::WithParamInterface<std::string> {};
+
+TEST_P(SysctlTestReadBack, ReadBack) {
+  if (!test_helper::HasCapability(CAP_NET_ADMIN)) {
+    GTEST_SKIP() << "Need CAP_NET_ADMIN to run SysctlTest";
+  }
+  const std::string& path = GetParam();
+  const char* toWrite = "10\n";
+  std::string toRead;
+  ASSERT_TRUE(files::WriteFile(path, toWrite)) << strerror(errno);
+  ASSERT_TRUE(files::ReadFileToString(path, &toRead)) << strerror(errno);
+  ASSERT_STREQ(toRead.c_str(), toWrite);
+}
+
+INSTANTIATE_TEST_SUITE_P(SysctlTest, SysctlTestReadBack,
+                         ::testing::Values("/proc/sys/net/ipv6/neigh/default/ucast_solicit",
+                                           "/proc/sys/net/ipv4/neigh/default/ucast_solicit"));
