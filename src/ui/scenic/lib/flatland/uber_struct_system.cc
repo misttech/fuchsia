@@ -50,10 +50,14 @@ UberStructSystem::UpdateResults UberStructSystem::UpdateInstances(
                        << " sessions.";
   UpdateResults results;
   for (const auto& [session_id, present_id] : instances_to_update) {
-    // Find the queue associated with this SessonId. It may not exist if the SessionId is
-    // associated with a GFX session instead of a Flatland one.
+    // Find the queue associated with this SessionId.  It may not exist if the session was destroyed
+    // after a frame was scheduled (or for other unknown reasons).
     auto queue_kv = pending_structs_queues_.find(session_id);
     if (queue_kv == pending_structs_queues_.end()) {
+      // TODO(https://fxbug.dev/467350358): consider cleaning up destroyed sessions more thoroughly
+      // so that we can make this a DCHECK.
+      FX_LOGS(WARNING) << "No UberStructQueue found for session_id=" << session_id
+                       << " (maybe it was destroyed?)";
       continue;
     }
 
