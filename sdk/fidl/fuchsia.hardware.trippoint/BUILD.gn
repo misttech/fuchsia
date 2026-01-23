@@ -8,7 +8,10 @@ fidl("fuchsia.hardware.trippoint") {
   sdk_category = "partner"
   stable = false
   sdk_area = "Drivers"
-  sources = [ "trippoint.fidl" ]
+  sources = [
+    "debug.fidl",
+    "trippoint.fidl",
+  ]
   public_deps = [ "//zircon/vdso/zx" ]
   enable_hlcpp = true
   contains_drivers = true
