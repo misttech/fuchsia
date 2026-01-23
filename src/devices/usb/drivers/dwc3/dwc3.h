@@ -333,7 +333,7 @@ class Dwc3 : public fdf::DriverBase,
   void ResetEndpoints();
 
   // Commands
-  void CmdStartNewConfig(const Endpoint& ep, uint32_t rsrc_id);
+  void CmdStartNewConfig(const Endpoint& ep, uint32_t rsrc_id_base);
   void CmdEpSetConfig(const Endpoint& ep, bool modify);
   void CmdEpTransferConfig(const Endpoint& ep);
   void CmdEpStartTransfer(const Endpoint& ep, zx_paddr_t trb_phys);

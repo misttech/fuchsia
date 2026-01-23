@@ -30,8 +30,9 @@ void Dwc3::WaitForCmdAct(const char* caller_name, const uint8_t ep_num) {
   }
 }
 
-void Dwc3::CmdStartNewConfig(const Endpoint& ep, uint32_t rsrc_id) {
-  TRACE_DURATION("dwc3", "Dwc3::CmdStartNewConfig", "ep_num", ep.ep_num, "rsrc_id", rsrc_id);
+void Dwc3::CmdStartNewConfig(const Endpoint& ep, uint32_t rsrc_id_base) {
+  TRACE_DURATION("dwc3", "Dwc3::CmdStartNewConfig", "ep_num", ep.ep_num, "rsrc_id_base",
+                 rsrc_id_base);
   auto* mmio = get_mmio();
   const uint8_t ep_num = ep.ep_num;
 
@@ -41,7 +42,7 @@ void Dwc3::CmdStartNewConfig(const Endpoint& ep, uint32_t rsrc_id) {
   DEPCMD::Get(ep_num)
       .FromValue(0)
       .set_CMDTYP(DEPCMD::DEPSTARTCFG)
-      .set_COMMANDPARAM(rsrc_id)
+      .set_COMMANDPARAM(rsrc_id_base)
       .set_CMDACT(1)
       .WriteTo(mmio);
 
