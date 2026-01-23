@@ -4,25 +4,28 @@
 
 import("//build/cpp/library_headers.gni")
 
+# TODO(https://fxbug.dev/456186321): Use bazel2gn once `library_headers()` is supported.
+# LINT.IfChange
+
 library_headers("headers") {
   headers = [
     "lib/zircon-internal/align.h",
     "lib/zircon-internal/default_stack_size.h",
-    "lib/zircon-internal/device/cpu-trace/intel-pm-events.inc",
+    "lib/zircon-internal/device/cpu-trace/goldmont-pm-events.inc",
     "lib/zircon-internal/device/cpu-trace/intel-pm.h",
+    "lib/zircon-internal/device/cpu-trace/intel-pm-events.inc",
     "lib/zircon-internal/device/cpu-trace/perf-mon.h",
     "lib/zircon-internal/device/cpu-trace/skylake-misc-events.inc",
     "lib/zircon-internal/device/cpu-trace/skylake-pm-events.inc",
-    "lib/zircon-internal/device/cpu-trace/goldmont-pm-events.inc",
     "lib/zircon-internal/e820.h",
     "lib/zircon-internal/fnv1hash.h",
     "lib/zircon-internal/ktrace.h",
     "lib/zircon-internal/macros.h",
     "lib/zircon-internal/mtrace.h",
     "lib/zircon-internal/paths.h",
+    "lib/zircon-internal/thread_annotations.h",
     "lib/zircon-internal/unique-backtrace.h",
     "lib/zircon-internal/xorshiftrand.h",
-    "lib/zircon-internal/thread_annotations.h",
   ]
 }
 
@@ -30,6 +33,8 @@ source_set("zircon-internal") {
   sources = []
   public_deps = [ ":headers" ]
 }
+
+# LINT.ThenChange(BUILD.bazel)
 
 if (!is_kernel) {
   import("//build/components.gni")

@@ -437,6 +437,10 @@ filegroup(
         # Exercise FIDL.
         # TODO(https://fxbug.dev/428285014): Remove once we are building elsewhere.
         "//examples/fidl/fuchsia.examples.docs:versioning",
+
+        # Non-IDK targets.
+        # TODO(https://fxbug.dev/428229472): Remove once there are other dependencies on them.
+        "//zircon/system/ulib/zircon-internal",
     ],
 )
 
