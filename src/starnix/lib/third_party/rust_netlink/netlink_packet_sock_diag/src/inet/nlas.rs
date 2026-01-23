@@ -225,10 +225,7 @@ pub enum Nla {
     // ref: https://patchwork.ozlabs.org/patch/154816/
     LegacyMemInfo(LegacyMemInfo),
     /// the TCP information
-    #[cfg(feature = "rich_nlas")]
     TcpInfo(TcpInfo),
-    #[cfg(not(feature = "rich_nlas"))]
-    TcpInfo(Vec<u8>),
     /// the congestion control algorithm used
     Congestion(String),
     /// the TOS of the socket.
@@ -256,10 +253,7 @@ impl nla::Nla for Nla {
         use self::Nla::*;
         match *self {
             LegacyMemInfo(_) => LEGACY_MEM_INFO_LEN,
-            #[cfg(feature = "rich_nlas")]
             TcpInfo(_) => TCP_INFO_LEN,
-            #[cfg(not(feature = "rich_nlas"))]
-            TcpInfo(ref bytes) => bytes.len(),
             // +1 because we need to append a null byte
             Congestion(ref s) => s.as_bytes().len() + 1,
             Tos(_) | Tc(_) | Shutdown(_) | Protocol(_) | SkV6Only(_) => 1,
@@ -291,10 +285,7 @@ impl nla::Nla for Nla {
         use self::Nla::*;
         match *self {
             LegacyMemInfo(ref value) => value.emit(buffer),
-            #[cfg(feature = "rich_nlas")]
             TcpInfo(ref value) => value.emit(buffer),
-            #[cfg(not(feature = "rich_nlas"))]
-            TcpInfo(ref bytes) => buffer[..bytes.len()].copy_from_slice(&bytes[..]),
             Congestion(ref s) => {
                 buffer[..s.len()].copy_from_slice(s.as_bytes());
                 buffer[s.len()] = 0;
@@ -318,14 +309,11 @@ impl<'a, T: AsRef<[u8]> + ?Sized> Parseable<NlaBuffer<&'a T>> for Nla {
                 let buf = LegacyMemInfoBuffer::new(payload).context(err)?;
                 Self::LegacyMemInfo(LegacyMemInfo::parse(&buf).context(err)?)
             }
-            #[cfg(feature = "rich_nlas")]
             INET_DIAG_INFO => {
                 let err = "invalid INET_DIAG_INFO value";
                 let buf = TcpInfoBuffer::new(payload).context(err)?;
                 Self::TcpInfo(TcpInfo::parse(&buf).context(err)?)
             }
-            #[cfg(not(feature = "rich_nlas"))]
-            INET_DIAG_INFO => Self::TcpInfo(payload.to_vec()),
             INET_DIAG_CONG => {
                 Self::Congestion(parse_string(payload).context("invalid INET_DIAG_CONG value")?)
             }
@@ -360,10 +348,8 @@ impl<'a, T: AsRef<[u8]> + ?Sized> Parseable<NlaBuffer<&'a T>> for Nla {
     }
 }
 
-#[cfg(feature = "rich_nlas")]
 pub const TCP_INFO_LEN: usize = 232;
 
-#[cfg(feature = "rich_nlas")]
 buffer!(TcpInfoBuffer(TCP_INFO_LEN) {
     // State of the TCP connection. This should be set to one of the
     // `TCP_*` constants: `TCP_ESTABLISHED`, `TCP_SYN_SENT`, etc. This
@@ -451,7 +437,6 @@ buffer!(TcpInfoBuffer(TCP_INFO_LEN) {
 
 // https://unix.stackexchange.com/questions/542712/detailed-output-of-ss-command
 
-#[cfg(feature = "rich_nlas")]
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct TcpInfo {
     /// State of the TCP connection: one of `TCP_ESTABLISHED`,
@@ -565,8 +550,8 @@ pub struct TcpInfo {
     pub snd_wnd: u32,
 }
 
-#[cfg(feature = "rich_nlas")]
 impl<T: AsRef<[u8]>> Parseable<TcpInfoBuffer<T>> for TcpInfo {
+    type Error = DecodeError;
     fn parse(buf: &TcpInfoBuffer<T>) -> Result<Self, DecodeError> {
         Ok(Self {
             state: buf.state(),
@@ -627,14 +612,13 @@ impl<T: AsRef<[u8]>> Parseable<TcpInfoBuffer<T>> for TcpInfo {
     }
 }
 
-#[cfg(feature = "rich_nlas")]
 impl Emitable for TcpInfo {
     fn buffer_len(&self) -> usize {
         TCP_INFO_LEN
     }
 
     fn emit(&self, buf: &mut [u8]) {
-        let mut buf = TcpInfoBuffer::new(buf);
+        let mut buf = TcpInfoBuffer::new(buf).expect("buffer too small");
         buf.set_state(self.state);
         buf.set_congestion_avoidance_state(self.ca_state);
         buf.set_retransmits(self.retransmits);
