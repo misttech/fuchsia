@@ -1779,7 +1779,6 @@ void Node::StartDriver(
   zx::event clone;
   ZX_ASSERT_MSG(power_element_token_.duplicate(ZX_RIGHT_SAME_RIGHTS, &clone) == ZX_OK,
                 "Event duplication failed while collecting power element dependencies");
-  std::span<fuchsia_power_broker::DependencyToken> deps_span(deps);
 
   auto [lessor_client, lessor_server] = fidl::Endpoints<fuchsia_power_broker::Lessor>::Create();
   auto [element_control_client, element_control_server] =
@@ -1800,9 +1799,9 @@ void Node::StartDriver(
 
   (*node_manager_)
       ->CreatePowerElement(
-          name_, std::move(clone), deps_span, std::move(element_control_server),
-          std::move(element_runner_client), std::move(lessor_server),
-          [weak_self = weak_from_this(), handles_ptr = std::move(handles_ptr), cb = std::move(cb),
+          name_, std::move(clone), std::move(deps), std::move(element_control_server),
+          std::move(element_runner_client), std::move(lessor_server), collection(),
+          [weak_self = weak_from_this(), handles_ptr = handles_ptr, cb = std::move(cb),
            use_dynamic_linker = use_dynamic_linker, url = url_str,
            found_driver_host = found_driver_host,
            dynamic_linker_start_args = std::move(dynamic_linker_start_args),

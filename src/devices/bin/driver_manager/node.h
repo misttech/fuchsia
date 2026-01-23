@@ -159,10 +159,11 @@ class NodeManager {
   //   - `zx::error` if an error happens creating the element on a suspend-enabled platform.
   virtual void CreatePowerElement(std::string_view name,
                                   fuchsia_power_broker::DependencyToken element_token,
-                                  std::span<fuchsia_power_broker::DependencyToken>& deps,
+                                  std::vector<fuchsia_power_broker::DependencyToken> deps,
                                   fidl::ServerEnd<fuchsia_power_broker::ElementControl> control,
                                   fidl::ClientEnd<fuchsia_power_broker::ElementRunner> runner,
                                   fidl::ServerEnd<fuchsia_power_broker::Lessor> lessor,
+                                  Collection for_collection,
                                   fit::callback<void(zx::result<bool>)> cb) {
     cb(zx::error(ZX_ERR_NOT_SUPPORTED));
   }
@@ -174,7 +175,13 @@ class NodeManager {
   }
 
   virtual DictionaryUtil& dictionary_util() { ZX_PANIC("Unimplemented dictionary_util"); }
+
   virtual bool SuspendEnabled() { ZX_PANIC("Unimplemented SuspendEnabled"); }
+
+  virtual std::optional<fuchsia_power_broker::DependencyToken> StorageElementToken() {
+    return std::nullopt;
+  }
+
   virtual MemoryAttributor& memory_attributor() { ZX_PANIC("Unimplemented memory_attributor"); }
 };
 

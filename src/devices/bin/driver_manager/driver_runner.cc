@@ -19,11 +19,14 @@
 #include <zircon/status.h>
 
 #include <forward_list>
+#include <memory>
+#include <optional>
 #include <queue>
 #include <random>
 #include <stack>
 #include <utility>
 
+#include "fidl/fuchsia.power.broker/cpp/natural_types.h"
 #include "src/devices/bin/driver_manager/async_sharder.h"
 #include "src/devices/bin/driver_manager/composite/composite_node_spec.h"
 #include "src/devices/bin/driver_manager/node_property_conversion.h"
@@ -285,10 +288,6 @@ DriverRunner::DriverRunner(
 
   bootup_tracker_ = std::make_shared<BootupTracker>(&bind_manager_, dispatcher);
   runner_.SetBootupTracker(bootup_tracker_);
-  if (topology_client.is_valid()) {
-    power_topology_ =
-        fidl::Client<fuchsia_power_broker::Topology>(std::move(topology_client), dispatcher);
-  }
 
   // Setup the driver notifier.
   auto [notifier_client, notifier_server] =
@@ -299,6 +298,119 @@ DriverRunner::DriverRunner(
   if (!status.ok()) {
     fdf_log::warn("Failed to set the driver notifier: {}", status.status_string());
   }
+
+  if (topology_client.is_valid()) {
+    power_topology_ =
+        fidl::Client<fuchsia_power_broker::Topology>(std::move(topology_client), dispatcher);
+  }
+}
+
+void DriverRunner::CreateStoragePowerElement() {
+  // We omit the check for `topology_` since this should only be called if topology is valid
+
+  // Make a storage token.
+  zx::event storage_token;
+  ZX_ASSERT_MSG(zx::event::create(0, &storage_token) == ZX_OK, "Failure creating storage token");
+
+  // Create a duplicate of the token that we can send to register with power broker.
+  std::unique_ptr<zx::event> token_copy = std::make_unique<zx::event>();
+  ZX_ASSERT_MSG(storage_token.duplicate(ZX_RIGHT_SAME_RIGHTS, token_copy.get()) == ZX_OK,
+                "Duplication of storage token failed.");
+
+  // Create the element schema. In a future change the schema will have a dependency on a power
+  // element supplied to us by the storage driver.
+  auto [lessor_client, lessor_server] = fidl::Endpoints<fuchsia_power_broker::Lessor>::Create();
+  auto [element_control_client, element_control_server] =
+      fidl::Endpoints<fuchsia_power_broker::ElementControl>::Create();
+  auto [element_runner_client, element_runner_server] =
+      fidl::Endpoints<fuchsia_power_broker::ElementRunner>::Create();
+  std::unique_ptr<fidl::ServerEnd<fuchsia_power_broker::ElementRunner>> runner_server =
+      std::make_unique<fidl::ServerEnd<fuchsia_power_broker::ElementRunner>>(
+          std::move(element_runner_server));
+
+  fuchsia_power_broker::ElementSchema schema;
+  schema.element_name() = "DF-Storage";
+  schema.initial_current_level() = static_cast<fuchsia_power_broker::wire::PowerLevel>(1);
+  schema.valid_levels() = std::vector<fuchsia_power_broker::wire::PowerLevel>{
+      static_cast<fuchsia_power_broker::wire::PowerLevel>(0),
+      static_cast<fuchsia_power_broker::wire::PowerLevel>(1)};
+  schema.lessor_channel() = std::move(lessor_server);
+  schema.element_control() = std::move(element_control_server);
+  schema.element_runner() = std::move(element_runner_client);
+
+  storage_control_ = fidl::Client<fuchsia_power_broker::ElementControl>(
+      std::move(element_control_client), dispatcher_);
+
+  // We create the request even before we pass the server end of the channel to power broker.
+  storage_control_
+      ->RegisterDependencyToken(
+          {{.token = fuchsia_power_broker::DependencyToken{std::move(storage_token)}}})
+      .Then([this, token = std::move(token_copy), runner_server = std::move(runner_server)](
+                fidl::Result<fuchsia_power_broker::ElementControl::RegisterDependencyToken>
+                    result) mutable {
+        if (result.is_error() && result.error_value().is_framework_error()) {
+          storage_lessor_.reset();
+          fdf_log::error(" Could not register dependency token, FIDL error: {} ",
+                         result.error_value().FormatDescription());
+        } else if (result.is_error()) {
+          fdf_log::error("Could not register dependency token, protocol error: {}",
+                         static_cast<uint32_t>(result.error_value().domain_error()));
+        }
+
+        ZX_ASSERT(result.is_ok());
+
+        storage_element_runner_.AddBinding(dispatcher_,
+                                           fidl::ServerEnd<fuchsia_power_broker::ElementRunner>(
+                                               zx::channel(runner_server->channel().release())),
+                                           this, fidl::kIgnoreBindingClosure);
+
+        // Now that we have the storage token, run any driver creation callbacks which we deferred.
+        auto after_storage_callbacks =
+            std::move(std::get<std::vector<fit::callback<void()>>>(storage_callbacks_or_token_));
+        storage_callbacks_or_token_ = std::move(*token);
+        for (auto& cb : after_storage_callbacks) {
+          cb();
+        }
+      });
+
+  power_topology_->AddElement(std::move(schema))
+      .Then([](fidl::Result<fuchsia_power_broker::Topology::AddElement> add_result) mutable {
+        if (add_result.is_error() && add_result.error_value().is_framework_error()) {
+          fdf_log::error("Could not create storage power element, FIDL error: {}",
+                         add_result.error_value().FormatDescription());
+        } else if (add_result.is_error()) {
+          fdf_log::error("Could not create storage power element, protocol error: ",
+                         static_cast<uint32_t>(add_result.error_value().domain_error()));
+        }
+
+        // If we're a power-enabled platform, it is an error for creation of the storage element to
+        // fail.
+        ZX_ASSERT(add_result.is_ok());
+      });
+}
+
+void DriverRunner::SetLevel(SetLevelRequestView request, SetLevelCompleter::Sync& completer) {
+  // This is the SetLevel call for the storage element. The storage element exists only so in
+  // driver manager we can make drivers loaded out of storage depend on the storage element they
+  // otherwise would not. Therefore, there is not work to do when level change requests arrive.
+  completer.Reply();
+}
+
+void DriverRunner::handle_unknown_method(
+    fidl::UnknownMethodMetadata<fuchsia_power_broker::ElementRunner> metadata,
+    fidl::UnknownMethodCompleter::Sync& completer) {
+  std::string method_type;
+  switch (metadata.unknown_method_type) {
+    case fidl::UnknownMethodType::kOneWay:
+      method_type = "one-way";
+      break;
+    case fidl::UnknownMethodType::kTwoWay:
+      method_type = "two-way";
+      break;
+  };
+
+  fdf_log::warn("ElementRunner received unknown {} method. Ordinal: {}", method_type,
+                metadata.method_ordinal);
 }
 
 void DriverRunner::BindNodesForCompositeNodeSpec() { TryBindAllAvailable(); }
@@ -817,17 +929,40 @@ zx::result<BindSpecResult> DriverRunner::BindToParentSpec(fidl::AnyArena& arena,
 
 void DriverRunner::CreatePowerElement(std::string_view name,
                                       fuchsia_power_broker::DependencyToken element_token,
-                                      std::span<fuchsia_power_broker::DependencyToken>& deps,
+                                      std::vector<fuchsia_power_broker::DependencyToken> deps,
                                       fidl::ServerEnd<fuchsia_power_broker::ElementControl> control,
                                       fidl::ClientEnd<fuchsia_power_broker::ElementRunner> runner,
                                       fidl::ServerEnd<fuchsia_power_broker::Lessor> lessor,
+                                      Collection for_collection,
                                       fit::callback<void(zx::result<bool>)> cb) {
   if (!power_topology_.is_valid()) {
     cb(zx::ok(false));
     return;
   }
 
-  fidl::Arena arena;
+  // If this is not a boot driver and we don't have the storage token yet, create a callback to
+  // re-invoked this method later.
+  // This might happen because creation of the storage power element has multiple async operations,
+  // therefore it is possible that a driver from storage loads before the element is created.
+  if (for_collection != Collection::kBoot &&
+      storage_callbacks_or_token_.index() == kCallbacksIndex) {
+    std::get<std::vector<fit::callback<void()>>>(storage_callbacks_or_token_)
+        .push_back([weak_self = weak_from_this(), name, element_token = std::move(element_token),
+                    deps = std::move(deps), control = std::move(control),
+                    runner = std::move(runner), lessor = std::move(lessor), for_collection,
+                    cb = std::move(cb)]() mutable {
+          auto self = weak_self.lock();
+          if (!self) {
+            return;
+          }
+
+          self->CreatePowerElement(name, std::move(element_token), std::move(deps),
+                                   std::move(control), std::move(runner), std::move(lessor),
+                                   for_collection, std::move(cb));
+        });
+    return;
+  }
+
   std::vector<fuchsia_power_broker::LevelDependency> level_deps;
   for (fuchsia_power_broker::DependencyToken& dep : deps) {
     fuchsia_power_broker::DependencyToken clone;
@@ -846,6 +981,28 @@ void DriverRunner::CreatePowerElement(std::string_view name,
     level_dep.requires_token() = std::move(clone),
     level_dep.requires_level_by_preference() = reqs_by_pref;
 
+    level_deps.push_back(std::move(level_dep));
+  }
+
+  // Any drivers that aren't from bootfs have a dependency on storage.
+  if (for_collection != Collection::kBoot) {
+    ZX_ASSERT_MSG(storage_callbacks_or_token_.index() == kStorageTokenIndex,
+                  "No storage token on power-enabled platform, is there a race?");
+    fuchsia_power_broker::DependencyToken clone;
+
+    ZX_ASSERT_MSG(std::get<fuchsia_power_broker::DependencyToken>(storage_callbacks_or_token_)
+                          .duplicate(ZX_RIGHT_SAME_RIGHTS, &clone) == ZX_OK,
+                  "Failed duplicating storage token");
+
+    std::vector<fuchsia_power_broker::PowerLevel> reqs_by_pref;
+    reqs_by_pref.push_back(static_cast<fuchsia_power_broker::PowerLevel>(1));
+
+    fuchsia_power_broker::LevelDependency level_dep;
+
+    level_dep.dependency_type() = fuchsia_power_broker::wire::DependencyType::kAssertive;
+    level_dep.dependent_level() = static_cast<fuchsia_power_broker::wire::PowerLevel>(1);
+    level_dep.requires_token() = std::move(clone);
+    level_dep.requires_level_by_preference() = reqs_by_pref;
     level_deps.push_back(std::move(level_dep));
   }
 
@@ -887,6 +1044,17 @@ void DriverRunner::CreatePowerElement(std::string_view name,
 }
 
 void DriverRunner::OnBootupComplete() { leases_.clear(); }
+
+std::optional<fuchsia_power_broker::DependencyToken> DriverRunner::StorageElementToken() {
+  if (storage_callbacks_or_token_.index() != kStorageTokenIndex) {
+    return std::nullopt;
+  }
+
+  zx::event copy;
+  ZX_ASSERT(std::get<fuchsia_power_broker::DependencyToken>(storage_callbacks_or_token_)
+                .duplicate(ZX_RIGHT_SAME_RIGHTS, &copy) == ZX_OK);
+  return fuchsia_power_broker::DependencyToken(std::move(copy));
+}
 
 void DriverRunner::RequestMatchFromDriverIndex(
     fuchsia_driver_index::wire::MatchDriverArgs args,

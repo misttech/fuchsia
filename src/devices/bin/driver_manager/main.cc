@@ -131,55 +131,64 @@ int main(int argc, char** argv) {
 
   auto loader_service =
       driver_manager::DriverHostLoaderService::Create(loader_loop.dispatcher(), std::move(lib_fd));
-  driver_manager::DriverRunner driver_runner(
-      std::move(realm_result.value()), std::move(introspector_result.value()),
-      std::move(capability_store_result.value()), std::move(driver_index_result.value()), inspector,
-      [loader_service]() -> zx::result<fidl::ClientEnd<fuchsia_ldsvc::Loader>> {
-        zx::result client = loader_service->Connect();
-        if (client.is_error()) {
-          return client.take_error();
-        }
+  std::shared_ptr<driver_manager::DriverRunner> driver_runner =
+      std::make_shared<driver_manager::DriverRunner>(
+          std::move(realm_result.value()), std::move(introspector_result.value()),
+          std::move(capability_store_result.value()), std::move(driver_index_result.value()),
+          inspector,
+          [loader_service]() -> zx::result<fidl::ClientEnd<fuchsia_ldsvc::Loader>> {
+            zx::result client = loader_service->Connect();
+            if (client.is_error()) {
+              return client.take_error();
+            }
     // TODO(https://fxbug.dev/42076026): Find a better way to set this config.
 #ifdef DRIVERHOST_LDSVC_CONFIG
-        // Inform the loader service to look for libraries of the right variant.
-        fidl::WireResult result = fidl::WireCall(client.value())->Config(DRIVERHOST_LDSVC_CONFIG);
-        if (!result.ok()) {
-          return zx::error(result.status());
-        }
-        if (result->rv != ZX_OK) {
-          return zx::error(result->rv);
-        }
+            // Inform the loader service to look for libraries of the right variant.
+            fidl::WireResult result =
+                fidl::WireCall(client.value())->Config(DRIVERHOST_LDSVC_CONFIG);
+            if (!result.ok()) {
+              return zx::error(result.status());
+            }
+            if (result->rv != ZX_OK) {
+              return zx::error(result->rv);
+            }
 #endif
-        return client;
-      },
-      loop.dispatcher(), config.enable_test_shutdown_delays(),
-      driver_manager::OfferInjector{{
-          .power_inject_offer = config.power_inject_offer(),
-          .power_suspend_enabled = config.power_suspend_enabled(),
-      }},
-      std::move(topology_client), std::nullopt);
+            return client;
+          },
+          loop.dispatcher(), config.enable_test_shutdown_delays(),
+          driver_manager::OfferInjector{{
+              .power_inject_offer = config.power_inject_offer(),
+              .power_suspend_enabled = config.power_suspend_enabled(),
+          }},
+          std::move(topology_client), std::nullopt);
 
   // Setup devfs.
   std::shared_ptr<driver_manager::Devfs> devfs;
-  driver_runner.root_node()->SetupDevfsForRootNode(devfs);
-  driver_runner.PublishComponentRunner(outgoing);
-  driver_runner.StartDevfsDriver(devfs);
+  driver_runner->root_node()->SetupDevfsForRootNode(devfs);
+  driver_runner->PublishComponentRunner(outgoing);
+  driver_runner->StartDevfsDriver(devfs);
+
+  if (config.power_suspend_enabled()) {
+    // TODO(jmatt) Once we're serving fuchsia.power.system/CpuElementManager, have the driver runner
+    // initialize this once it gets the token.
+    driver_runner->CreateStoragePowerElement();
+  }
 
   // Find and load v2 Drivers.
   fdf_log::info("Starting DriverRunner with root driver URL: {}", config.root_driver());
-  if (auto start = driver_runner.StartRootDriver(config.root_driver()); start.is_error()) {
+  if (auto start = driver_runner->StartRootDriver(config.root_driver()); start.is_error()) {
     return start.error_value();
   }
 
-  driver_manager::DriverDevelopmentService driver_development_service(driver_runner,
+  driver_manager::DriverDevelopmentService driver_development_service(*driver_runner,
                                                                       loop.dispatcher());
   driver_development_service.Publish(outgoing);
-  driver_runner.TryBindAllAvailable();
+  driver_runner->TryBindAllAvailable();
 
   driver_manager::FirmwareCrashService firmware_crash_service(loop.dispatcher());
   firmware_crash_service.Publish(outgoing);
 
-  driver_manager::ShutdownManager shutdown_manager(&driver_runner, loop.dispatcher());
+  driver_manager::ShutdownManager shutdown_manager(driver_runner.get(), loop.dispatcher());
   shutdown_manager.Publish(outgoing);
 
   fs::SynchronousVfs vfs(loop.dispatcher());
@@ -199,7 +208,7 @@ int main(int argc, char** argv) {
 
   async::PostTask(loop.dispatcher(), [] { fdf_log::info("driver_manager main loop is running"); });
 
-  driver_runner.WaitForBootup([dispatcher = loop.dispatcher()]() {
+  driver_runner->WaitForBootup([dispatcher = loop.dispatcher()]() {
     // Once bootup is complete we can free some heap memory.
     async::PostTask(dispatcher, []() { mallopt(M_PURGE, 0); });
   });
