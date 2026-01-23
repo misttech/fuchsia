@@ -292,7 +292,7 @@ group("digest") {
 }
 
 group("downcast-rs") {
-  public_deps = [ ":downcast-rs-v2_0_1" ]
+  public_deps = [ ":downcast-rs-v2_0_2" ]
 }
 
 group("dyn-clone") {
@@ -6013,18 +6013,18 @@ rustc_library("downcast-v0_11_0") {
   applicable_licenses = [ ":downcast-v0_11_0.license" ]
 }
 
-license("downcast-rs-v2_0_1.license") {
+license("downcast-rs-v2_0_2.license") {
   public_package_name = "downcast_rs"
   license_files = [
-    "//third_party/rust_crates/vendor/downcast-rs-2.0.1/LICENSE-APACHE",
-    "//third_party/rust_crates/vendor/downcast-rs-2.0.1/LICENSE-MIT",
+    "//third_party/rust_crates/vendor/downcast-rs-2.0.2/LICENSE-APACHE",
+    "//third_party/rust_crates/vendor/downcast-rs-2.0.2/LICENSE-MIT",
   ]
 }
 
-rustc_library("downcast-rs-v2_0_1") {
+rustc_library("downcast-rs-v2_0_2") {
   crate_name = "downcast_rs"
-  source_root = "//third_party/rust_crates/vendor/downcast-rs-2.0.1/src/lib.rs"
-  output_name = "downcast_rs-149f4f3679de38d3"
+  source_root = "//third_party/rust_crates/vendor/downcast-rs-2.0.2/src/lib.rs"
+  output_name = "downcast_rs-eafc9fb56d51acb"
   edition = "2021"
   disable_clippy = true
   enforce_source_listing = false
@@ -6036,8 +6036,8 @@ rustc_library("downcast-rs-v2_0_1") {
 
   rustflags = [
     "--cap-lints=allow",
-    "-Cmetadata=149f4f3679de38d3",
-    "-Cextra-filename=-149f4f3679de38d3",
+    "-Cmetadata=eafc9fb56d51acb",
+    "-Cextra-filename=-eafc9fb56d51acb",
     "--cfg=feature=\"default\"",
     "--cfg=feature=\"std\"",
     "--cfg=feature=\"sync\"",
@@ -6045,7 +6045,7 @@ rustc_library("downcast-rs-v2_0_1") {
 
   visibility = [ ":*" ]
 
-  applicable_licenses = [ ":downcast-rs-v2_0_1.license" ]
+  applicable_licenses = [ ":downcast-rs-v2_0_2.license" ]
 }
 
 license("dyn-clone-v1_0_19.license") {

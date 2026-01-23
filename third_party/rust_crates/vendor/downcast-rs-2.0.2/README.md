@@ -29,24 +29,18 @@ This crate is `no_std` compatible. To use it without `std`:
 downcast-rs = { version = "2.0.1", default-features = false }
 ```
 
-To make a trait downcastable, make it extend either `downcast::Downcast` or
-`downcast::DowncastSync` and invoke `impl_downcast!` on it as in the examples
-below.
+To make a trait downcastable, make it extend either `Downcast` or `DowncastSync`
+and invoke `impl_downcast!` on it as in the examples below.
 
 Since 2.0.0, the minimum supported Rust version is 1.56.
 
 ```rust
-# use downcast_rs::{Downcast, impl_downcast};
-# #[cfg(feature = "sync")]
-# use downcast_rs::DowncastSync;
 trait Trait: Downcast {}
 impl_downcast!(Trait);
 
 // Also supports downcasting `Arc`-ed trait objects by extending `DowncastSync`
 // and starting `impl_downcast!` with `sync`.
-# #[cfg(feature = "sync")]
 trait TraitSync: DowncastSync {}
-# #[cfg(feature = "sync")]
 impl_downcast!(sync TraitSync);
 
 // With type parameters.
@@ -69,30 +63,16 @@ impl_downcast!(concrete TraitConcrete1<u32>);
 
 trait TraitConcrete2<T: Copy>: Downcast { type H; }
 impl_downcast!(concrete TraitConcrete2<u32> assoc H=f64);
-# fn main() {}
 ```
 
 ## Example without generics
 
 ```rust
-# use std::rc::Rc;
-# #[cfg(feature = "sync")]
-# use std::sync::Arc;
-# use downcast_rs::impl_downcast;
-# #[cfg(not(feature = "sync"))]
-# use downcast_rs::Downcast;
-# #[cfg(feature = "sync")]
 use downcast_rs::DowncastSync;
 
 // To create a trait with downcasting methods, extend `Downcast` or `DowncastSync`
 // and run `impl_downcast!()` on the trait.
-# #[cfg(not(feature = "sync"))]
-# trait Base: Downcast {}
-# #[cfg(not(feature = "sync"))]
-# impl_downcast!(Base);
-# #[cfg(feature = "sync")]
 trait Base: DowncastSync {}
-# #[cfg(feature = "sync")]
 impl_downcast!(sync Base);  // `sync` => also produce `Arc` downcasts.
 
 // Concrete types implementing Base.

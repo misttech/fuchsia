@@ -29,12 +29,12 @@
 //! downcast-rs = { version = "2.0.1", default-features = false }
 //! ```
 //!
-//! To make a trait downcastable, make it extend either `Downcast` or `DowncastSync` and invoke
-//! `impl_downcast!` on it as in the examples below.
+//! To make a trait downcastable, make it extend either `Downcast` or `DowncastSync`
+//! and invoke `impl_downcast!` on it as in the examples below.
 //!
 //! Since 2.0.0, the minimum supported Rust version is 1.56.
 //!
-//! ```rust
+//! ```
 //! # use downcast_rs::{Downcast, impl_downcast};
 //! # #[cfg(feature = "sync")]
 //! # use downcast_rs::DowncastSync;
@@ -73,7 +73,7 @@
 //!
 //! # Example without generics
 //!
-//! ```rust
+//! ```
 //! # use std::rc::Rc;
 //! # #[cfg(feature = "sync")]
 //! # use std::sync::Arc;
@@ -136,7 +136,7 @@
 //!
 //! # Example with a generic trait with associated types and constraints
 //!
-//! ```rust
+//! ```
 //! use downcast_rs::{Downcast, impl_downcast};
 //!
 //! // To create a trait with downcasting methods, extend `Downcast` or `DowncastSync`

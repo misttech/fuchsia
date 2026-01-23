@@ -100,7 +100,7 @@ derivative = { version = "2.2.0", features = ["use_core"] }
 derive_builder = "0.20.2"
 difference = "2.0.0"
 digest = "0.10.7"
-downcast-rs = "2.0.1"
+downcast-rs = "2.0.2"
 dyn-clone = "1.0.19"
 ecb = "0.1.2"
 ecdsa = { version = "0.14.3", features = ["pkcs8"] }
