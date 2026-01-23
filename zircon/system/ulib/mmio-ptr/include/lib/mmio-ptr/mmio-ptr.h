@@ -100,9 +100,23 @@ static inline uint16_t MmioRead16(MMIO_PTR const volatile uint16_t* buffer) {
 
 __NONNULL((1))
 static inline uint32_t MmioRead32(MMIO_PTR const volatile uint32_t* buffer) {
-  uint32_t data;
+  // This is actually a 32-bit load by dint of using the w<n> register name in
+  // the instruction via the %w modifier.  That instruction _should_ always
+  // clear the high bits.  However, some buggy "hardware" (really, buggy
+  // hypervisor or secure monitor implementations) has been observed to leave
+  // the high bits in the register.  The compiler expects the norm that a
+  // 32-bit register operand w<n> means the corresponding x<n> is then known to
+  // have all-zero high bits (a uint32_t-typed lvalue means a 32-bit operand).
+  // So with `uint32_t` here, it might then elide any widening to uint64_t in a
+  // caller's use of the value.  By using `uint64_t` here the compiler thinks
+  // the full 64-bit x<n> register might contain any unknown value, even though
+  // the %w prefix means the 32-bit w<n> register is what's actually used in
+  // the assembly instruction.  Then the explicit cast in the return requires
+  // the compiler to do the narrowing that masks off the high bits; this is
+  // likely free just by doing a later mov from w<n> instead of x<n>.
+  uint64_t data;
   __asm__ volatile("ldr %w0, %1" : "=r"(data) : "m"(*(volatile uint32_t*)buffer) : "memory");
-  return data;
+  return static_cast<uint32_t>(data);
 }
 
 __NONNULL((1))
