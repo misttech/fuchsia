@@ -2169,12 +2169,15 @@ mod tests {
         CheckOptions, CreateOptions, MountOptions, StartOptions, StartupMarker, VolumeMarker,
         VolumesMarker,
     };
+    use fidl_fuchsia_fxfs::{CryptMarker, CryptRequest};
     use fidl_fuchsia_storage_block::BlockMarker;
     use fs_management::DATA_TYPE_GUID;
+    use fs_management::format::constants::ZXCRYPT_MAGIC;
     use fuchsia_component::client::{
         connect_to_named_protocol_at_dir_root, connect_to_protocol_at_dir_svc,
     };
     use fuchsia_fs::directory::{open_directory, readdir};
+    use futures::TryStreamExt as _;
     use std::collections::HashSet;
     use std::sync::Arc;
     use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
@@ -3731,5 +3734,110 @@ mod tests {
         assert!(info_small_disk.slice_count <= info_small_disk.maximum_slice_count);
         assert!(info_small_disk.maximum_slice_count <= info_small_disk.max_virtual_slice);
         assert_eq!(info_small_disk.max_virtual_slice, super::MAX_SLICE_COUNT);
+    }
+    struct MockCrypt;
+
+    impl MockCrypt {
+        fn new() -> fidl::endpoints::ClientEnd<CryptMarker> {
+            let (client, mut stream) = fidl::endpoints::create_request_stream::<CryptMarker>();
+            fasync::Task::spawn(async move {
+                while let Some(request) = stream.try_next().await.unwrap() {
+                    match request {
+                        CryptRequest::CreateKey { responder, .. } => {
+                            // ZxcryptHeaderAndKey size is 16 + 16 + 4 + 96 = 132
+                            let mut wrapped = vec![0; 132];
+                            // Magic
+                            wrapped[0..16].copy_from_slice(&ZXCRYPT_MAGIC);
+                            // Guid (offset 16, 16 bytes) - leave as 0
+                            // Version (offset 32, 4 bytes)
+                            wrapped[32..36].copy_from_slice(&0x01000000_u32.to_le_bytes());
+
+                            let unwrapped = vec![0; 80];
+                            // Return status 0, wrapped key, unwrapped key
+                            responder.send(Ok((&[0u8; 16], &wrapped, &unwrapped))).unwrap();
+                        }
+                        CryptRequest::UnwrapKey { responder, .. } => {
+                            let unwrapped = vec![0; 80];
+                            responder.send(Ok(&unwrapped)).unwrap();
+                        }
+                        _ => panic!("Unexpected request"),
+                    }
+                }
+            })
+            .detach();
+            client
+        }
+    }
+
+    #[fuchsia::test]
+    async fn test_fragmented_encrypted_io() {
+        // Regression test for https://fxbug.dev/478029520.
+        let fixture = Fixture::new(100 * SLICE_SIZE).await;
+
+        let volumes_proxy =
+            connect_to_protocol_at_dir_svc::<VolumesMarker>(&fixture.outgoing_dir).unwrap();
+
+        let (dir_proxy, dir_server_end) = fidl::endpoints::create_proxy::<fio::DirectoryMarker>();
+        let crypt_client = MockCrypt::new();
+
+        volumes_proxy
+            .create(
+                "target",
+                dir_server_end,
+                CreateOptions { type_guid: Some([1; 16]), ..CreateOptions::default() },
+                MountOptions { crypt: Some(crypt_client), ..MountOptions::default() },
+            )
+            .await
+            .expect("create failed (FIDL)")
+            .expect("create failed");
+
+        let target_block =
+            connect_to_protocol_at_dir_svc::<fblock::BlockMarker>(&dir_proxy).unwrap();
+
+        // Extend target by 31 slices, bringing its total to 32.
+        assert_eq!(target_block.extend(1, 31).await.expect("extend FIDL"), zx::sys::ZX_OK);
+
+        // Create other volume to occupy next physical slice.
+        let (_dir_proxy, dir_server_end) = fidl::endpoints::create_proxy::<fio::DirectoryMarker>();
+        volumes_proxy
+            .create(
+                "other",
+                dir_server_end,
+                CreateOptions { type_guid: Some([2; 16]), ..CreateOptions::default() },
+                MountOptions::default(),
+            )
+            .await
+            .unwrap()
+            .unwrap();
+
+        // Extend target by 1 more slice.
+        assert_eq!(target_block.extend(32, 1).await.expect("extend FIDL"), zx::sys::ZX_OK);
+
+        let client = RemoteBlockClient::new(target_block).await.unwrap();
+        let vmo = zx::Vmo::create(33 * SLICE_SIZE as u64).unwrap();
+        let vmo_id = client.attach_vmo(&vmo).await.unwrap();
+
+        // Check both reads and writes.
+        // Due to a logic bug, reads and writes returned ZX_ERR_INVALID_ARGS, which this is a
+        // regression test for.
+        client
+            .read_at(
+                MutableBufferSlice::VmoId {
+                    vmo_id: &vmo_id,
+                    offset: 0,
+                    length: 33 * SLICE_SIZE as u64,
+                },
+                0,
+            )
+            .await
+            .expect("read failed");
+        client
+            .write_at(
+                BufferSlice::VmoId { vmo_id: &vmo_id, offset: 0, length: 33 * SLICE_SIZE as u64 },
+                0,
+            )
+            .await
+            .expect("write failed");
+        client.detach_vmo(vmo_id).await.unwrap();
     }
 }

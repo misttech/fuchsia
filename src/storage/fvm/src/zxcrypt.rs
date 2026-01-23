@@ -176,7 +176,9 @@ impl IoTrait for EncryptedRead<'_> {
             if space >= len {
                 break;
             }
-            self.ops.push(Op { offset, len: space, trace_flow_id });
+            if space > 0 {
+                self.ops.push(Op { offset, len: space, trace_flow_id });
+            }
             self.queued_len += space;
             self.flush().await?;
             offset += space;
@@ -274,7 +276,9 @@ impl IoTrait for EncryptedWrite<'_> {
             if space >= len {
                 break;
             }
-            self.ops.push(Op { offset, len: space, trace_flow_id });
+            if space > 0 {
+                self.ops.push(Op { offset, len: space, trace_flow_id });
+            }
             self.queued_len += space;
             self.flush().await?;
             offset += space;
