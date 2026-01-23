@@ -52,5 +52,7 @@ TEST_F(DriverTestRealmTest, DriversExist) {
       fidl::WireCall(client)->EchoString(fidl::StringView::FromExternal(sent_string));
   ASSERT_EQ(ZX_OK, result.status());
   ASSERT_EQ(sent_string, result.value().response.get());
+
+  driver_test_realm::ShutdownRealm(realm);
 }
 // [END example]
