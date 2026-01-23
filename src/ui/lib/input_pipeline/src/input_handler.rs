@@ -59,16 +59,7 @@ pub trait InputHandler: AsRcAny {
     fn set_handler_unhealthy(self: std::rc::Rc<Self>, msg: &str);
 
     /// Returns the name of the input handler.
-    ///
-    /// The default implementation returns the name of the struct implementing
-    /// the trait.
-    fn get_name(&self) -> &'static str {
-        let full_name = std::any::type_name::<Self>();
-        match full_name.rmatch_indices("::").nth(0) {
-            Some((i, _matched_substr)) => &full_name[i + 2..],
-            None => full_name,
-        }
-    }
+    fn get_name(&self) -> &'static str;
 }
 
 /// An [`UnhandledInputHandler`] is like an [`InputHandler`], but only deals in unhandled events.
@@ -92,6 +83,8 @@ pub trait UnhandledInputHandler: AsRcAny {
     fn set_handler_healthy(self: std::rc::Rc<Self>);
 
     fn set_handler_unhealthy(self: std::rc::Rc<Self>, msg: &str);
+
+    fn get_name(&self) -> &'static str;
 }
 
 #[async_trait(?Send)]
@@ -126,6 +119,10 @@ where
 
     fn set_handler_unhealthy(self: std::rc::Rc<Self>, msg: &str) {
         T::set_handler_unhealthy(self, msg);
+    }
+
+    fn get_name(&self) -> &'static str {
+        T::get_name(self)
     }
 }
 
@@ -231,6 +228,10 @@ mod tests {
 
         fn set_handler_unhealthy(self: std::rc::Rc<Self>, _msg: &str) {
             // No inspect data on FakeUnhandledInputHandler. Do nothing.
+        }
+
+        fn get_name(&self) -> &'static str {
+            "FakeUnhandledInputHandler"
         }
     }
 
@@ -356,6 +357,10 @@ mod tests {
 
             fn set_handler_unhealthy(self: std::rc::Rc<Self>, _msg: &str) {
                 unimplemented!()
+            }
+
+            fn get_name(&self) -> &'static str {
+                "NeuralInputHandler"
             }
         }
 

@@ -94,6 +94,10 @@ impl UnhandledInputHandler for MediaButtonsHandler {
     fn set_handler_unhealthy(self: std::rc::Rc<Self>, msg: &str) {
         self.inspect_status.health_node.borrow_mut().set_unhealthy(msg);
     }
+
+    fn get_name(&self) -> &'static str {
+        "MediaButtonsHandler"
+    }
 }
 
 impl MediaButtonsHandler {

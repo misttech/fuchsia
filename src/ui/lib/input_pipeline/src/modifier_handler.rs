@@ -82,6 +82,10 @@ impl UnhandledInputHandler for ModifierHandler {
     fn set_handler_unhealthy(self: std::rc::Rc<Self>, msg: &str) {
         self.inspect_status.health_node.borrow_mut().set_unhealthy(msg);
     }
+
+    fn get_name(&self) -> &'static str {
+        "ModifierHandler"
+    }
 }
 
 impl ModifierHandler {
@@ -178,6 +182,10 @@ impl UnhandledInputHandler for ModifierMeaningHandler {
 
     fn set_handler_unhealthy(self: std::rc::Rc<Self>, msg: &str) {
         self.inspect_status.health_node.borrow_mut().set_unhealthy(msg);
+    }
+
+    fn get_name(&self) -> &'static str {
+        "ModifierHandler"
     }
 }
 

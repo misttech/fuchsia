@@ -1069,6 +1069,10 @@ impl InputHandler for GestureArena {
     fn set_handler_unhealthy(self: std::rc::Rc<Self>, msg: &str) {
         self.inspect_status.health_node.borrow_mut().set_unhealthy(msg);
     }
+
+    fn get_name(&self) -> &'static str {
+        "GestureArena"
+    }
 }
 
 /// Returns the multiplier to translate position data for the device described by

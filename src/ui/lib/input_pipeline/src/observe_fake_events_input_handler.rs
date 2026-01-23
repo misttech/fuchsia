@@ -50,4 +50,8 @@ impl input_handler::InputHandler for ObserveFakeEventsInputHandler {
     fn set_handler_unhealthy(self: std::rc::Rc<Self>, _msg: &str) {
         // No inspect data on ObserveFakeEventsInputHandler. Do nothing.
     }
+
+    fn get_name(&self) -> &'static str {
+        "ObserveFakeEventsInputHandler"
+    }
 }

@@ -257,6 +257,10 @@ impl<F: FnMut() -> zx::MonotonicInstant + 'static> InputHandler for InspectHandl
     fn set_handler_unhealthy(self: std::rc::Rc<Self>, msg: &str) {
         self.health_node.borrow_mut().set_unhealthy(msg);
     }
+
+    fn get_name(&self) -> &'static str {
+        "InspectHandler"
+    }
 }
 
 /// Creates a new inspect handler instance.
