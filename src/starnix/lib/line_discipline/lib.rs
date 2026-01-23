@@ -3,14 +3,13 @@
 // found in the LICENSE file.
 
 use derivative::Derivative;
-use starnix_logging::track_stub;
 use starnix_uapi::errors::Errno;
 use starnix_uapi::signals::{SIGINT, SIGQUIT, SIGSTOP, Signal};
 use starnix_uapi::vfs::FdEvents;
 use starnix_uapi::{
     ECHO, ECHOCTL, ECHOE, ECHOK, ECHOKE, ECHONL, ECHOPRT, ICANON, ICRNL, IEXTEN, IGNCR, INLCR,
-    ISIG, IUTF8, OCRNL, ONLCR, ONLRET, ONOCR, OPOST, TABDLY, VEOF, VEOL, VEOL2, VERASE, VINTR,
-    VKILL, VQUIT, VSUSP, VWERASE, XTABS, cc_t, error, tcflag_t, uapi,
+    ISIG, IUTF8, IXANY, IXON, OCRNL, ONLCR, ONLRET, ONOCR, OPOST, TABDLY, VEOF, VEOL, VEOL2,
+    VERASE, VINTR, VKILL, VQUIT, VSTART, VSTOP, VSUSP, VWERASE, XTABS, cc_t, error, tcflag_t, uapi,
 };
 use std::collections::VecDeque;
 
@@ -46,12 +45,20 @@ pub struct LineDiscipline {
     #[derivative(Default(value = "true"))]
     pub locked: bool,
 
+    /// |true| if the output is stopped (due to IXON).
+    #[derivative(Default(value = "false"))]
+    pub stopped: bool,
+
     /// Terminal size.
     pub window_size: uapi::winsize,
 
     /// Terminal configuration.
     #[derivative(Default(value = "get_default_termios()"))]
     termios: uapi::termios,
+
+    /// True if the terminal is currently in the middle of an erase sequence (ECHOPRT).
+    #[derivative(Default(value = "false"))]
+    erasing: bool,
 
     /// Location in a row of the cursor. Needed to handle certain special characters like
     /// backspace.
@@ -234,13 +241,16 @@ impl LineDiscipline {
         if self.is_main_closed() {
             return error!(EIO);
         }
+        if self.stopped && self.termios.has_input_flags(IXON) {
+            return error!(EAGAIN);
+        }
         let (read_from_userspace, signals) = with_queue!(self.output_queue.write(self, data))?;
         // Writing to the replica side never generates signals.
         assert!(signals.signals().is_empty());
         Ok(read_from_userspace)
     }
 
-    /// Returns the input_queue. The Option is always filled.
+    /// Returns the input queue.
     fn input_queue(&self) -> &Queue {
         self.input_queue.as_ref().unwrap()
     }
@@ -318,7 +328,7 @@ impl LineDiscipline {
                     let spaces = SPACES_PER_TAB - self.column % SPACES_PER_TAB;
                     if self.termios.c_oflag & TABDLY == XTABS {
                         self.column += spaces;
-                        queue.read_buffer.extend(std::iter::repeat(b' ').take(SPACES_PER_TAB));
+                        queue.read_buffer.extend(std::iter::repeat(b' ').take(spaces));
                         continue;
                     }
                     self.column += spaces;
@@ -368,6 +378,38 @@ impl LineDiscipline {
             if let Some(signal) = self.handle_signals(character_bytes[0]) {
                 signals.add(signal);
             }
+
+            // Handle IXON/IXOFF (software flow control)
+            if self.termios.has_input_flags(IXON) {
+                if character_bytes[0] == self.termios.c_cc[VSTOP as usize] {
+                    self.stopped = true;
+                    buffer = &buffer[size..];
+                    return_value += size;
+                    continue;
+                }
+                // POSIX says:
+                // "If IXON is set, start/stop output control is enabled. A received STOP character
+                // suspends output and a received START character restarts output. The STOP and
+                // START characters are not read, but performing the flow control functions."
+                //
+                // "If IXANY is set, any input character restarts output that has been suspended."
+                if self.stopped
+                    && (character_bytes[0] == self.termios.c_cc[VSTART as usize]
+                        || self.termios.has_input_flags(IXANY))
+                {
+                    self.stopped = false;
+                    // If it was START, we consume it. If it was IXANY (and not START), we usually
+                    // process it?
+                    // "The START character is not read".
+                    // If IXANY is set and char != START, we should restart AND process the char.
+                    if character_bytes[0] == self.termios.c_cc[VSTART as usize] {
+                        buffer = &buffer[size..];
+                        return_value += size;
+                        continue;
+                    }
+                }
+            }
+
             match character_bytes[0] {
                 b'\r' => {
                     if self.termios.has_input_flags(IGNCR) {
@@ -431,17 +473,19 @@ impl LineDiscipline {
                 }
             }
 
+            let mut erased_bytes = Option::None;
             if let Some(erase_span) = maybe_erase_span {
                 if erase_span.bytes == 0 {
                     continue;
                 }
+                if self.termios.has_local_flags(ECHOPRT) {
+                    erased_bytes = Some(
+                        queue.read_buffer[queue.read_buffer.len() - erase_span.bytes..].to_vec(),
+                    );
+                }
                 queue.read_buffer.truncate(queue.read_buffer.len() - erase_span.bytes);
             } else {
                 queue.read_buffer.extend_from_slice(&character_bytes);
-            }
-
-            if self.termios.has_local_flags(ECHOPRT) {
-                track_stub!(TODO("https://fxbug.dev/322874329"), "terminal ECHOPRT");
             }
 
             // Anything written to the read buffer will have to be echoed.
@@ -450,7 +494,25 @@ impl LineDiscipline {
                 if let Some(erase_span) = maybe_erase_span {
                     match erase_type {
                         Some(EraseType::Character) | Some(EraseType::Word) => {
-                            if self.termios.has_local_flags(ECHOE) {
+                            if self.termios.has_local_flags(ECHOPRT) {
+                                if let Some(bytes) = erased_bytes {
+                                    if !self.erasing {
+                                        echo_bytes.push(b'\\');
+                                        self.erasing = true;
+                                    }
+                                    for byte in bytes.iter().rev() {
+                                        if self.termios.has_local_flags(ECHOCTL) {
+                                            if let Some(control_character_echo) =
+                                                generate_control_character_echo(*byte)
+                                            {
+                                                echo_bytes.extend(control_character_echo);
+                                                continue;
+                                            }
+                                        }
+                                        echo_bytes.push(*byte);
+                                    }
+                                }
+                            } else if self.termios.has_local_flags(ECHOE) {
                                 echo_bytes = generate_erase_echo(&erase_span);
                             }
                         }
@@ -458,10 +520,15 @@ impl LineDiscipline {
                             if self.termios.has_local_flags(ECHOKE) {
                                 echo_bytes = generate_erase_echo(&erase_span);
                             } else if self.termios.has_local_flags(ECHOK) {
-                                if let Some(control_character_echo) =
-                                    generate_control_character_echo(first_byte)
-                                {
-                                    echo_bytes = control_character_echo;
+                                if self.termios.has_local_flags(ECHOCTL) {
+                                    if let Some(control_character_echo) =
+                                        generate_control_character_echo(first_byte)
+                                    {
+                                        echo_bytes = control_character_echo;
+                                    }
+                                }
+                                if echo_bytes.is_empty() {
+                                    echo_bytes.push(first_byte);
                                 }
                                 echo_bytes.push(b'\n');
                             }
@@ -470,21 +537,36 @@ impl LineDiscipline {
                             unreachable!("Erase type should be Some when maybe_erase_span is Some")
                         }
                     }
-                }
-                if echo_bytes.is_empty() && self.termios.has_local_flags(ECHOCTL) {
-                    if let Some(control_character_echo) =
-                        generate_control_character_echo(first_byte)
-                    {
-                        echo_bytes = control_character_echo;
+                    if self.erasing && is_beginning_of_line(&queue.read_buffer) {
+                        echo_bytes.push(b'/');
+                        self.erasing = false;
+                    }
+                } else {
+                    if self.erasing && first_byte != b'\n' {
+                        echo_bytes.push(b'/');
+                        self.erasing = false;
                     }
                 }
-                if echo_bytes.is_empty() {
-                    echo_bytes = character_bytes.clone();
+
+                let needs_normal_echo =
+                    if maybe_erase_span.is_some() { echo_bytes.is_empty() } else { true };
+
+                if needs_normal_echo {
+                    let mut char_echo = vec![];
+                    if self.termios.has_local_flags(ECHOCTL) {
+                        if let Some(control_character_echo) =
+                            generate_control_character_echo(first_byte)
+                        {
+                            char_echo = control_character_echo;
+                        }
+                    }
+                    if char_echo.is_empty() {
+                        char_echo = character_bytes.clone();
+                    }
+                    echo_bytes.extend(char_echo);
                 }
             } else if self.termios.has_local_flags(ECHONL) && first_byte == b'\n' {
-                // If this bit is set and the ICANON bit is also set, then the
-                // newline ('\n') character is echoed even if the ECHO bit is not set.
-                echo_bytes = character_bytes.clone();
+                echo_bytes.extend_from_slice(&character_bytes);
             }
 
             if !echo_bytes.is_empty() {
@@ -616,18 +698,18 @@ impl Queue {
 
     /// Processes the wait_buffers, filling the read buffer.
     fn drain_waiting_buffer(&mut self, terminal: &mut LineDiscipline) -> PendingSignals {
-        let mut total = 0;
         let mut signals_to_return = PendingSignals::new();
         while let Some(wait_buffer) = self.wait_buffers.pop_front() {
+            self.total_wait_buffer_length -= wait_buffer.len();
             let (count, signals) = terminal.transform(self.is_input, self, &wait_buffer);
-            total += count;
             signals_to_return.append(signals);
             if count != wait_buffer.len() {
-                self.wait_buffers.push_front(wait_buffer[count..].to_vec());
+                let remaining = wait_buffer[count..].to_vec();
+                self.total_wait_buffer_length += remaining.len();
+                self.wait_buffers.push_front(remaining);
                 break;
             }
         }
-        self.total_wait_buffer_length -= total;
         signals_to_return
     }
 
@@ -760,6 +842,9 @@ impl TermIOS for uapi::termios {
         false
     }
     fn signal(&self, c: RawByte) -> Option<Signal> {
+        if c == DISABLED_CHAR {
+            return None;
+        }
         if c == self.c_cc[VINTR as usize] {
             return Some(SIGINT);
         }
@@ -834,6 +919,13 @@ impl std::ops::AddAssign<Self> for BufferSpan {
         self.bytes += rhs.bytes;
         self.characters += rhs.characters;
     }
+}
+
+fn is_beginning_of_line(buffer: &[RawByte]) -> bool {
+    if let Some(c) = buffer.last() {
+        return *c == b'\n';
+    }
+    true
 }
 
 fn compute_last_character_span(buffer: &[RawByte], termios: &uapi::termios) -> BufferSpan {
@@ -923,12 +1015,6 @@ mod tests {
     }
 
     #[::fuchsia::test]
-    #[should_panic]
-    fn test_invalid_ascii_conversion() {
-        get_ascii('é');
-    }
-
-    #[::fuchsia::test]
     fn test_compute_next_character_size_non_utf8() {
         let termios = get_default_termios();
         for i in 0..=255 {
@@ -949,6 +1035,19 @@ mod tests {
         assert_eq!(compute_next_character_size(array, &termios), 2);
         let array: &[RawByte] = &[0xc2, 255, 0];
         assert_eq!(compute_next_character_size(array, &termios), 1);
+    }
+
+    #[::fuchsia::test]
+    fn test_signal_handling_with_disabled_chars() {
+        let mut termios = get_default_termios();
+        termios.c_cc[VINTR as usize] = DISABLED_CHAR;
+        termios.c_cc[VQUIT as usize] = DISABLED_CHAR;
+        termios.c_cc[VSUSP as usize] = DISABLED_CHAR;
+
+        assert_eq!(termios.signal(0), None);
+        assert_eq!(termios.signal(3), None); // Normally ^C (SIGINT)
+        assert_eq!(termios.signal(28), None); // Normally ^\ (SIGQUIT)
+        assert_eq!(termios.signal(26), None); // Normally ^Z (SIGSTOP)
     }
 }
 

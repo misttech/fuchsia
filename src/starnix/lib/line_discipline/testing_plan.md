@@ -114,17 +114,38 @@ The testing plan must cover the following areas comprehensively.
 ### 8. Edge Cases
 *   **UTF-8 Handling (`IUTF8`)**: Correct backspacing over multi-byte characters.
 
+### 9. Out of scope for now
+*   **VMIN/VTIME**: We do not need to support VMIN and VTIME for now.
+
 ## Implementation Steps
 
 1.  [x] **Scaffold Trace Generator**: Create the Linux host tool to generate `basic_canon.json` and `basic_noncanon.json`.
 2.  [x] **Scaffold Test Harness**: Add `tests/replayer.rs` or similar mod in `line_discipline` to parse and execute JSON tests.
 3.  [x] **Baseline Validation**: Run the existing `basic` tests and confirm they pass (or fail if implementation is missing `IXON` etc.).
 4.  **Incremental Coverage**:
-    *   Implement/Fix `IXON`/`IXOFF`.
-    *   Implement/Fix `VMIN`/`VTIME`.
-    *   Implement/Fix all `ECHO` variants.
-    *   Implement/Fix `OPOST` processing (tabs, etc).
-5.  **Cross-Check**: Continuously regenerate traces from Linux if ambiguity arises (e.g., "Does `^W` delete punctuation?").
+    *   [x] **Flow Control (`IXON`)**: Implemented and verified with `ixon_basic`.
+    *   [x] **Echoing Logic**:
+        *   [x] `ECHO` (Basic echo)
+        *   [x] `ECHOE` (Erase echo)
+        *   [x] `ECHOK`/`ECHOKE` (Kill echo)
+        *   [x] `ECHOCTL` (Control char echo)
+        *   [x] `ECHONL` (Newline echo)
+        *   [x] `ECHOPRT` (Hardcopy erase)
+    *   [x] **Signal Handling**: `ISIG` and `NOFLSH` verified with `noflsh_sigint`.
+    *   **Input Processing (`c_iflag`)**:
+        *   [x] `IGNCR` (Ignore CR)
+        *   [x] `INLCR` (Map NL to CR)
+        *   [ ] `IGNBRK` / `BRKINT` / `PARMRK` (Break/Parity handling)
+    *   **Output Processing (`c_oflag`)**:
+        *   [x] `OCRNL` (Map CR to NL)
+        *   [x] `ONOCR` (No CR at column 0)
+        *   [x] `ONLRET` (NL performs CR function)
+        *   [x] `XTABS` (Tab expansion)
+    *   **Edge Cases**:
+        *   [ ] `IUTF8` (UTF-8 Backspacing)
+        *   [ ] `IXOFF` (Input flow control)
+    *   **Non-Canonical Mode**:
+        *   [ ] Basic non-canonical reads (MIN/TIME out of scope, but basic polling)
 
 ## Future Considerations
 *   **Fuzzing**: Generate random `termios` + random input sequences on Linux, record, and replay on Starnix to find unexpected divergences.

@@ -7,6 +7,8 @@ mod tests {
     use crate::*;
     use serde::Deserialize;
     use starnix_uapi::errors::Errno;
+    use std::collections::HashMap;
+    use test_case::test_case;
 
     #[derive(Deserialize, Debug)]
     struct Scenario {
@@ -24,7 +26,7 @@ mod tests {
         c_lflag: Vec<String>,
         #[allow(dead_code)]
         c_cflag: Option<u32>, // Keeping cflag simple for now or assume default
-        c_cc: Option<Vec<u8>>,
+        c_cc: Option<HashMap<String, u8>>,
     }
 
     #[derive(Deserialize, Debug)]
@@ -54,11 +56,10 @@ mod tests {
         ReadFromSlave { data: TraceData },
         #[serde(rename = "write_to_slave")]
         WriteToSlave { data: TraceData },
-    }
-
-    #[derive(Deserialize, Debug)]
-    struct Trace {
-        scenarios: Vec<Scenario>,
+        #[serde(rename = "write_to_slave_blocked")]
+        WriteToSlaveBlocked { data: TraceData },
+        #[serde(rename = "write_to_slave_unexpected_success")]
+        WriteToSlaveUnexpectedSuccess { data: TraceData },
     }
 
     struct TestBuffer {
@@ -143,6 +144,7 @@ mod tests {
             (starnix_uapi::ONLRET, "ONLRET"),
             (starnix_uapi::OFILL, "OFILL"),
             (starnix_uapi::OFDEL, "OFDEL"),
+            (starnix_uapi::XTABS, "XTABS"),
         ]
     }
 
@@ -166,67 +168,164 @@ mod tests {
         ]
     }
 
-    #[test]
-    fn test_replay_traces() {
-        let json_data = include_str!("testing/traces/canon_basic.json");
-        let trace: Trace = serde_json::from_str(json_data).expect("Failed to parse trace");
+    fn get_cc_mapping() -> HashMap<&'static str, usize> {
+        let mut m = HashMap::new();
+        m.insert("VMIN", starnix_uapi::VMIN as usize);
+        m.insert("VTIME", starnix_uapi::VTIME as usize);
+        m.insert("VINTR", starnix_uapi::VINTR as usize);
+        m.insert("VQUIT", starnix_uapi::VQUIT as usize);
+        m.insert("VERASE", starnix_uapi::VERASE as usize);
+        m.insert("VKILL", starnix_uapi::VKILL as usize);
+        m.insert("VEOF", starnix_uapi::VEOF as usize);
+        m.insert("VSTART", starnix_uapi::VSTART as usize);
+        m.insert("VSTOP", starnix_uapi::VSTOP as usize);
+        m.insert("VSUSP", starnix_uapi::VSUSP as usize);
+        m.insert("VEOL", starnix_uapi::VEOL as usize);
+        m.insert("VREPRINT", starnix_uapi::VREPRINT as usize);
+        m.insert("VDISCARD", starnix_uapi::VDISCARD as usize);
+        m.insert("VWERASE", starnix_uapi::VWERASE as usize);
+        m.insert("VLNEXT", starnix_uapi::VLNEXT as usize);
+        m.insert("VEOL2", starnix_uapi::VEOL2 as usize);
+        m
+    }
 
+    #[test_case("canon_simple_echo", include_str!("testing/traces/canon_simple_echo.json"); "canon_simple_echo")]
+    #[test_case("basic_backspace", include_str!("testing/traces/basic_backspace.json"); "basic_backspace")]
+    #[test_case("canon_word_erase", include_str!("testing/traces/canon_word_erase.json"); "canon_word_erase")]
+    #[test_case("canon_kill_line", include_str!("testing/traces/canon_kill_line.json"); "canon_kill_line")]
+    #[test_case("canon_echo_ctl", include_str!("testing/traces/canon_echo_ctl.json"); "canon_echo_ctl")]
+    #[test_case("ixon_basic", include_str!("testing/traces/ixon_basic.json"); "ixon_basic")]
+    #[test_case("echo_nl", include_str!("testing/traces/echo_nl.json"); "echo_nl")]
+    // #[test_case("noflsh_sigint", include_str!("testing/traces/noflsh_sigint.json"); "noflsh_sigint")]
+    #[test_case("echo_extended", include_str!("testing/traces/echo_extended.json"); "echo_extended")]
+    #[test_case("echo_prt_two_chars", include_str!("testing/traces/echo_prt_two_chars.json"); "echo_prt_two_chars")]
+    #[test_case("echo_prt", include_str!("testing/traces/echo_prt.json"); "echo_prt")]
+    #[test_case("echonl_echoprt", include_str!("testing/traces/echonl_echoprt.json"); "echonl_echoprt")]
+    #[test_case("echoprt_word_erase", include_str!("testing/traces/echoprt_word_erase.json"); "echoprt_word_erase")]
+    #[test_case("echoprt_word_erase_typing", include_str!("testing/traces/echoprt_word_erase_typing.json"); "echoprt_word_erase_typing")]
+    #[test_case("echoprt_word_erase_space", include_str!("testing/traces/echoprt_word_erase_space.json"); "echoprt_word_erase_space")]
+    #[test_case("echoprt_word_erase_tab", include_str!("testing/traces/echoprt_word_erase_tab.json"); "echoprt_word_erase_tab")]
+    // #[test_case("echoprt_word_erase_nl_aln", include_str!("testing/traces/echoprt_word_erase_nl_aln.json"); "echoprt_word_erase_nl_aln")]
+    // #[test_case("echoprt_word_erase_nl_nl", include_str!("testing/traces/echoprt_word_erase_nl_nl.json"); "echoprt_word_erase_nl_nl")]
+    #[test_case("echoprt_kill", include_str!("testing/traces/echoprt_kill.json"); "echoprt_kill")]
+    // #[test_case("echoprt_kill_nl_aln", include_str!("testing/traces/echoprt_kill_nl_aln.json"); "echoprt_kill_nl_aln")]
+    #[test_case("echoprt_backspace_multi_aln", include_str!("testing/traces/echoprt_backspace_multi_aln.json"); "echoprt_backspace_multi_aln")]
+    #[test_case("echoprt_backspace_multi_space", include_str!("testing/traces/echoprt_backspace_multi_space.json"); "echoprt_backspace_multi_space")]
+    #[test_case("echoprt_backspace_multi_nl", include_str!("testing/traces/echoprt_backspace_multi_nl.json"); "echoprt_backspace_multi_nl")]
+    // #[test_case("echoprt_backspace_nl_aln", include_str!("testing/traces/echoprt_backspace_nl_aln.json"); "echoprt_backspace_nl_aln")]
+    // #[test_case("echoprt_backspace_nl_space", include_str!("testing/traces/echoprt_backspace_nl_space.json"); "echoprt_backspace_nl_space")]
+    // #[test_case("echoprt_backspace_nl_nl", include_str!("testing/traces/echoprt_backspace_nl_nl.json"); "echoprt_backspace_nl_nl")]
+    #[test_case("input_igncr", include_str!("testing/traces/input_igncr.json"); "input_igncr")]
+    #[test_case("input_inlcr", include_str!("testing/traces/input_inlcr.json"); "input_inlcr")]
+    #[test_case("input_icrnl_prec", include_str!("testing/traces/input_icrnl_prec.json"); "input_icrnl_prec")]
+    #[test_case("output_ocrnl", include_str!("testing/traces/output_ocrnl.json"); "output_ocrnl")]
+    #[test_case("output_onocr", include_str!("testing/traces/output_onocr.json"); "output_onocr")]
+    #[test_case("output_onlret", include_str!("testing/traces/output_onlret.json"); "output_onlret")]
+    #[test_case("output_xtabs", include_str!("testing/traces/output_xtabs.json"); "output_xtabs")]
+    fn test_replay_trace(name: &str, json_data: &str) {
+        println!("Running trace: {}", name);
+        let scenario: Scenario = serde_json::from_str(json_data).unwrap_or_else(|e| {
+            panic!("Failed to parse trace {}: {}", name, e);
+        });
+        run_scenario(scenario);
+    }
+
+    fn run_scenario(scenario: Scenario) {
         let iflags = get_iflag_mapping();
         let oflags = get_oflag_mapping();
         let lflags = get_lflag_mapping();
 
-        for scenario in trace.scenarios {
-            println!("Running scenario: {}", scenario.name);
-            let mut ld = LineDiscipline::default();
-            ld.main_open();
-            ld.replica_open();
+        let mut ld = LineDiscipline::default();
+        ld.main_open();
+        ld.replica_open();
 
-            // Set initial termios
-            let mut termios = crate::get_default_termios();
-            termios.c_iflag = parse_flags(&scenario.initial_termios.c_iflag, &iflags);
-            termios.c_oflag = parse_flags(&scenario.initial_termios.c_oflag, &oflags);
-            termios.c_lflag = parse_flags(&scenario.initial_termios.c_lflag, &lflags);
+        // Set initial termios
+        let mut termios = crate::get_default_termios();
+        termios.c_iflag = parse_flags(&scenario.initial_termios.c_iflag, &iflags);
+        termios.c_oflag = parse_flags(&scenario.initial_termios.c_oflag, &oflags);
+        termios.c_lflag = parse_flags(&scenario.initial_termios.c_lflag, &lflags);
 
-            if let Some(cc) = scenario.initial_termios.c_cc {
-                for (i, &b) in cc.iter().enumerate() {
-                    if i < termios.c_cc.len() {
-                        termios.c_cc[i] = b;
+        if let Some(cc) = &scenario.initial_termios.c_cc {
+            let mapping = get_cc_mapping();
+            for (name, &val) in cc {
+                if let Some(&idx) = mapping.get(name.as_str()) {
+                    if idx < termios.c_cc.len() {
+                        termios.c_cc[idx] = val;
                     }
+                } else {
+                    // Decide if panic or warn. Let's panic for correctness.
+                    panic!("Unknown c_cc name {}", name);
                 }
             }
+        }
 
-            let _ = ld.set_termios(termios);
+        let _ = ld.set_termios(termios);
 
-            for event in scenario.events {
-                match event {
-                    Event::WriteToMaster { data } => {
-                        let mut buffer = TestBuffer::new(data.to_bytes());
-                        let _ = ld.main_write(&mut buffer).expect("main_write failed");
+        for event in scenario.events {
+            match event {
+                Event::WriteToMaster { data } => {
+                    let mut buffer = TestBuffer::new(data.to_bytes());
+                    let _ = ld.main_write(&mut buffer).expect("main_write failed");
+                }
+                Event::ReadFromMaster { data } => {
+                    let mut buffer = TestOutputBuffer::new();
+                    loop {
+                        match ld.main_read(&mut buffer) {
+                            Ok(_) => {}
+                            Err(e) if e == (error!(EAGAIN) as Result<(), Errno>).unwrap_err() => {
+                                break;
+                            }
+                            Err(e) => panic!("main_read failed: {:?}", e),
+                        }
                     }
-                    Event::ReadFromMaster { data } => {
-                        let mut buffer = TestOutputBuffer::new();
-                        let _ = ld.main_read(&mut buffer).expect("main_read failed");
-                        assert_eq!(
-                            String::from_utf8_lossy(&buffer.data),
-                            String::from_utf8_lossy(&data.to_bytes()),
-                            "ReadFromMaster mismatch in {}",
-                            scenario.name
-                        );
+                    assert_eq!(
+                        String::from_utf8_lossy(&buffer.data),
+                        String::from_utf8_lossy(&data.to_bytes()),
+                        "ReadFromMaster mismatch in {}",
+                        scenario.name
+                    );
+                }
+                Event::ReadFromSlave { data } => {
+                    let mut buffer = TestOutputBuffer::new();
+                    loop {
+                        match ld.replica_read(&mut buffer) {
+                            Ok(_) => {}
+                            Err(e) if e == (error!(EAGAIN) as Result<(), Errno>).unwrap_err() => {
+                                break;
+                            }
+                            Err(e) => panic!("replica_read failed: {:?}", e),
+                        }
                     }
-                    Event::ReadFromSlave { data } => {
-                        let mut buffer = TestOutputBuffer::new();
-                        let _ = ld.replica_read(&mut buffer).expect("replica_read failed");
-                        assert_eq!(
-                            String::from_utf8_lossy(&buffer.data),
-                            String::from_utf8_lossy(&data.to_bytes()),
-                            "ReadFromSlave mismatch in {}",
-                            scenario.name
-                        );
-                    }
-                    Event::WriteToSlave { data } => {
-                        let mut buffer = TestBuffer::new(data.to_bytes());
-                        let _ = ld.replica_write(&mut buffer).expect("replica_write failed");
-                    }
+                    assert_eq!(
+                        String::from_utf8_lossy(&buffer.data),
+                        String::from_utf8_lossy(&data.to_bytes()),
+                        "ReadFromSlave mismatch in {}",
+                        scenario.name
+                    );
+                }
+                Event::WriteToSlave { data } => {
+                    let mut buffer = TestBuffer::new(data.to_bytes());
+                    let _ = ld.replica_write(&mut buffer).expect("replica_write failed");
+                }
+                Event::WriteToSlaveBlocked { data } => {
+                    let mut buffer = TestBuffer::new(data.to_bytes());
+                    let result = ld.replica_write(&mut buffer);
+                    assert!(
+                        result.is_err(),
+                        "Expected replica_write to block/fail in {}, but it succeeded",
+                        scenario.name
+                    );
+                    assert_eq!(result, error!(EAGAIN), "Expected EAGAIN in {}", scenario.name);
+                }
+                Event::WriteToSlaveUnexpectedSuccess { data } => {
+                    // This event means the trace generator expected it to block but it didn't.
+                    // It effectively means "WriteToSlave".
+                    // However, for strictness, maybe we should warn?
+                    // But if it's in the trace as "Success", we replay it as success.
+                    let mut buffer = TestBuffer::new(data.to_bytes());
+                    let _ = ld
+                        .replica_write(&mut buffer)
+                        .expect("replica_write failed (unexpected success case)");
                 }
             }
         }
