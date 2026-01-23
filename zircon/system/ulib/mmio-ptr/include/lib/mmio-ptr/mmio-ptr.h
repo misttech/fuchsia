@@ -7,6 +7,7 @@
 
 #include <stddef.h>
 #include <stdint.h>
+#include <string.h>
 #include <zircon/compiler.h>
 
 // Low level API for reading and writing to Memory-Mapped I/O buffers.
@@ -43,8 +44,8 @@
 // meaningful except for a few reserved values for LLVM on specific machines.
 // Address spaces 256, 257, and 258 are examples of reserved address spaces in
 // LLVM for X86.
-// TODO(https://fxbug.dev/42101561): It would be better if the compiler could accept string arguments
-// to address_space since the number is arbitrary and just needs to be unique.
+// TODO(https://fxbug.dev/42101561): It would be better if the compiler could accept string
+// arguments to address_space since the number is arbitrary and just needs to be unique.
 #define MMIO_PTR __attribute__((noderef, address_space(100)))
 #else
 // On other compilers, the qualifier has no effect and prohibited accesses are not
@@ -245,9 +246,13 @@ static inline void MmioWriteBuffer(MMIO_PTR volatile void* mmio, const void* sou
   }
   while (size >= kMaxSize) {
 #ifdef _LP64
-    MmioWrite64(*((const uint64_t*)source_ptr), (MMIO_PTR volatile uint64_t*)mmio_ptr);
+    uint64_t tmp;
+    memcpy(&tmp, (const void*)source_ptr, sizeof(uint64_t));
+    MmioWrite64(tmp, (MMIO_PTR volatile uint64_t*)mmio_ptr);
 #else
-    MmioWrite32(*((const uint32_t*)source_ptr), (MMIO_PTR volatile uint32_t*)mmio_ptr);
+    uint32_t tmp;
+    memcpy(&tmp, (const void*)source_ptr, sizeof(uint32_t));
+    MmioWrite32(tmp, (MMIO_PTR volatile uint32_t*)mmio_ptr);
 #endif
     size -= kMaxSize;
     mmio_ptr += kMaxSize;
