@@ -43,21 +43,6 @@ using ModuleList = fbl::DoublyLinkedList<std::unique_ptr<RuntimeModule>, fbl::De
 template <typename T>
 using Vector = elfldltl::AllocCheckerContainer<fbl::Vector>::Container<T>;
 
-// A list of valid non-owning references to RuntimeModules.
-using ModuleRefList = Vector<const RuntimeModule*>;
-
-// These are helpers to allow specific ways to access an element.
-struct DerefElement {
-  constexpr decltype(auto) operator()(auto&& ptr) const { return *ptr; }
-};
-
-struct AsConstElement {
-  constexpr decltype(auto) operator()(const auto& elt) const { return elt; }
-};
-
-constexpr auto DerefElementsView = std::views::transform(DerefElement());
-constexpr auto AsConstElementsView = std::views::transform(AsConstElement());
-
 // TODO(https://fxbug.dev/478041736): comment on how RuntimeModule relates to
 // startup modules when the latter is supported.
 // TODO(https://fxbug.dev/328135195): comment on the reference counting when
@@ -187,31 +172,27 @@ class RuntimeModule : public fbl::DoublyLinkedListable<std::unique_ptr<RuntimeMo
     return fit::ok(name.Lookup(symbol_info()));
   }
 
-  // Return a view of `list` with all of its elements dereferenced and made
-  // constant (i.e. Vector<const RuntimeModule*> -> View<const RuntimeModule&>).
-  static constexpr auto const_derefed_element_view(const ModuleRefList& list) {
-    return AsConstElementsView(DerefElementsView(list));
-  }
-
   // This is a list of module pointers to this module's DT_NEEDEDs, i.e. the
   // first level of dependencies in this module's module tree. If this list is
   // empty, the module does not have any dependencies.
-  constexpr ModuleRefList& direct_deps() { return direct_deps_; }
-  // Return a view of const references to each direct_deps module.
-  constexpr auto GetDirectDeps() const { return const_derefed_element_view(direct_deps_); }
+  constexpr auto& direct_deps() { return direct_deps_; }
 
   // This is the breadth-first ordered list of module references, representing
-  // this module's tree of modules. A reference to this module (the root) is
-  // always the first in this list. The other modules in this list are
+  // this module's tree of modules.  A reference to this module (the root) is
+  // always the first in this list.  The other modules in this list are
   // non-owning references to modules that were explicitly linked with this
-  // module; global modules that may have been used for relocations, but are not
-  // a DT_NEEDED of any dependency, are not included in this list.
-  // This list is set when dlopen() is called on this module.
-  constexpr auto module_tree() const {
-    // RuntimeModule::ReifyModuleTree should have ben called before any callers
-    // call this accessor.
+  // module; global modules that may have been used for relocations, but are
+  // not a DT_NEEDED of any dependency, are not included in this list.  This
+  // list is set when dlopen() is called on this module.
+  constexpr auto module_tree() const {  // Returns a constant view.
+    // RuntimeModule::ReifyModuleTree should have been called before any
+    // callers call this accessor.
     assert(!module_tree_.is_empty());
-    return const_derefed_element_view(module_tree_);
+    return std::views::transform(module_tree_, Deref<const RuntimeModule>{});
+  }
+  constexpr auto module_tree() {  // Returns the mutable view.
+    assert(!module_tree_.is_empty());
+    return std::views::transform(module_tree_, Deref<RuntimeModule>{});
   }
 
   // Constructs this module's `module_tree` if it has not been set yet.
@@ -249,6 +230,11 @@ class RuntimeModule : public fbl::DoublyLinkedListable<std::unique_ptr<RuntimeMo
   }
 
  private:
+  template <typename T>
+  struct Deref {
+    constexpr T& operator()(auto&& ptr) const { return *ptr; }
+  };
+
   // A RuntimeModule can only be created with Module::Create...).
   RuntimeModule() = default;
 
@@ -257,16 +243,20 @@ class RuntimeModule : public fbl::DoublyLinkedListable<std::unique_ptr<RuntimeMo
   Soname name_;
   AbiModule abi_module_;
   TlsModule tls_module_;
-  ModuleRefList direct_deps_;
-  ModuleRefList module_tree_;
+  Vector<RuntimeModule*> direct_deps_, module_tree_;
   size_type static_tls_bias_ = 0;
   bool no_delete_ = false;
   bool initialized_ = false;
   TlsdescIndirectList tls_desc_indirect_list_;
 };
 
-// This is the module tree view type returned by RuntimeModule::module_tree.
+// This is the module tree view type returned by RuntimeModule::module_tree().
 using ModuleTree = decltype(std::declval<RuntimeModule>().module_tree());
+using ConstModuleTree = decltype(std::declval<const RuntimeModule>().module_tree());
+static_assert(std::ranges::forward_range<ModuleTree>);
+static_assert(std::ranges::forward_range<ConstModuleTree>);
+static_assert(std::same_as<RuntimeModule&, std::ranges::range_reference_t<ModuleTree>>);
+static_assert(std::same_as<const RuntimeModule&, std::ranges::range_reference_t<ConstModuleTree>>);
 
 }  // namespace dl
 

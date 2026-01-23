@@ -207,7 +207,7 @@ class RuntimeDynamicLinker {
   // `module_tree`. When a module is promoted to global, its load order in the
   // dynamic linker's modules_ list changes: it is moved to the back of the
   // list, as if it was just loaded with RTLD_GLOBAL.
-  void MakeGlobal(const ModuleTree& module_tree);
+  void MakeGlobal(ModuleTree module_tree);
 
   // Create RuntimeModule data structures from the passive ABI and add them to
   // the dynamic linker's modules_ list. The caller is required to pass an
@@ -222,8 +222,8 @@ class RuntimeDynamicLinker {
   // Return a pointer to the beginning of a module's static or dynamic TLS block.
   void* TlsBlock(const RuntimeModule& module) const;
 
-  // The RuntimeDynamicLinker owns the list of all 'live' modules that have been
-  // loaded into the system image.
+  // The RuntimeDynamicLinker owns the list of all 'live' modules that have
+  // been loaded into the system image.
   ModuleList modules_;
 
   // The maximum static TLS module id is taken from the ld::abi::Abi<> at

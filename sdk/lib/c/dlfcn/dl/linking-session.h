@@ -48,7 +48,7 @@ class LinkingSession {
   // A LinkingSession is provided a reference to the dynamic linker's list of
   // already loaded modules to refer to during the linking procedure, and the
   // max static TLS module id from the passive ABI to use for TLS resolution.
-  explicit LinkingSession(const ModuleList& loaded_modules, size_type max_static_tls_modid,
+  explicit LinkingSession(ModuleList& loaded_modules, size_type max_static_tls_modid,
                           size_type max_tls_modid)
       : loaded_modules_(loaded_modules),
         max_static_tls_modid_(max_static_tls_modid),
@@ -127,7 +127,7 @@ class LinkingSession {
           if (std::ranges::any_of(session_modules_, name.equal_to())) {
             return true;
           }
-          if (const RuntimeModule* dep = EnqueueModule(diag, name)) {
+          if (RuntimeModule* dep = EnqueueModule(diag, name)) {
             return parent_list.push_back(diag, "direct dependency container", dep);
           }
           return false;
@@ -166,7 +166,7 @@ class LinkingSession {
   // this LinkingSession's bookkeeping lists. If a module with `soname` has
   // already been loaded, then a reference to the loaded module is returned
   // instead.
-  const RuntimeModule* EnqueueModule(Diagnostics& diag, Soname soname) {
+  RuntimeModule* EnqueueModule(Diagnostics& diag, Soname soname) {
     if (auto it = std::ranges::find_if(loaded_modules_, soname.equal_to());
         it != loaded_modules_.end()) {
       // Return a reference to the module if it was already loaded at startup or
@@ -196,7 +196,7 @@ class LinkingSession {
 
   // Perform relocations on all pending modules to be loaded. Return a boolean
   // if relocations succeeded on all modules.
-  bool Relocate(Diagnostics& diag, const auto& session_modules) {
+  bool Relocate(Diagnostics& diag, auto&& session_modules) {
     if (session_modules.empty()) {
       return false;
     }
@@ -206,6 +206,10 @@ class LinkingSession {
     // followed by the non-global modules being loaded by this session.
     auto loaded_global = std::views::filter(loaded_modules_, &RuntimeModule::is_global);
     auto session_local = std::views::filter(session_modules, &RuntimeModule::is_local);
+    static_assert(
+        std::same_as<RuntimeModule&, std::ranges::range_reference_t<decltype(loaded_global)>>);
+    static_assert(
+        std::same_as<RuntimeModule&, std::ranges::range_reference_t<decltype(session_local)>>);
     auto relocate_and_relro =
         // The concat_view created here will be used as const since the lambda
         // is not mutable--anyway RuntimeModule::Relocate et al take the module
@@ -249,7 +253,7 @@ class LinkingSession {
 
   // The set of loaded modules at the time this LinkingSession instance was
   // created.
-  const ModuleList& loaded_modules_;
+  ModuleList& loaded_modules_;
 
   // This is the maximum static TLS modid received by the dynamic linker at the
   // time of this linking session. This value is passed to SessionModule.Relocate

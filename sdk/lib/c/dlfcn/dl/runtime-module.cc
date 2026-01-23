@@ -16,30 +16,29 @@ bool RuntimeModule::ReifyModuleTree(Diagnostics& diag) {
     return true;
   }
 
-  auto enqueue = [this, &diag](const RuntimeModule& module) -> bool {
-    return module_tree_.push_back(diag, "module dependencies list", &module);
+  auto enqueue = [this, &diag](RuntimeModule* module) -> bool {
+    return module_tree_.push_back(diag, "module dependencies list", module);
   };
 
   // This module is the root and always the first entry in the module tree.
-  if (!enqueue(*this)) {
+  if (!enqueue(this)) {
     return false;
   }
 
   auto on_queue = [this](const RuntimeModule& module) -> bool {
-    return std::ranges::any_of(module_tree_, module.name().equal_to(), DerefElement{});
+    return std::ranges::any_of(module_tree(), module.name().equal_to());
   };
 
   // Skip if the module has already been enqueued, preventing circular deps.
-  auto enqueue_unique = [enqueue, on_queue](const RuntimeModule& module) {
-    return on_queue(module) || enqueue(module);
+  auto enqueue_unique = [enqueue, on_queue](RuntimeModule* module) {
+    return on_queue(*module) || enqueue(module);
   };
 
   // Build the BFS-ordered queue: this uses an indexed-for-loop to iterate
   // over the list since it can't be invalidated as modules are enqueued.
   for (size_t i = 0; i < module_tree_.size(); ++i) {
-    const RuntimeModule& module = *module_tree_[i];
     // Enqueue the first-level dependencies of the current module.
-    if (!std::ranges::all_of(module.GetDirectDeps(), enqueue_unique)) {
+    if (!std::ranges::all_of(module_tree_[i]->direct_deps(), enqueue_unique)) {
       return false;
     }
   }
@@ -58,10 +57,7 @@ void RuntimeModule::InitializeModuleTree() {
   // Initializers are run in reverse-order of the dependency tree, so that init
   // funcs for dependencies are run before the init funcs of dependent modules.
   // The init functions for this module will be run last.
-  for (const RuntimeModule& module : std::ranges::reverse_view(module_tree())) {
-    // TODO(https://fxbug.dev/374810148): Introduce non-const version of ModuleTree.
-    const_cast<RuntimeModule&>(module).Initialize();
-  }
+  std::ranges::for_each(std::ranges::reverse_view(module_tree()), &RuntimeModule::Initialize);
 }
 
 void RuntimeModule::Initialize() {

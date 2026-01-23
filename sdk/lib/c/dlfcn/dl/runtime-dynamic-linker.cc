@@ -64,23 +64,22 @@ fit::result<Error, void*> RuntimeDynamicLinker::LookupSymbol(const RuntimeModule
   return diag.take_error();
 }
 
-void RuntimeDynamicLinker::MakeGlobal(const ModuleTree& module_tree) {
-  // This iterates through the `module_tree`, promoting any modules that are not
-  // already global. When a module is promoted, it is looked up in the dynamic
-  // linker's `modules_` list and moved to the back of that doubly-linked list.
-  // Note, that this loop does not change the ordering of the `module_tree`.
-  for (const RuntimeModule& loaded_module : module_tree) {
+void RuntimeDynamicLinker::MakeGlobal(ModuleTree module_tree) {
+  // This iterates through the `module_tree`, promoting any modules that are
+  // not already global.  When a module is promoted, it is looked up in the
+  // dynamic linker's `modules_` list and moved to the back of that
+  // doubly-linked list.  Note, that this loop does not change the ordering of
+  // the `module_tree`.
+  for (RuntimeModule& loaded_module : module_tree) {
     // If the loaded module is already global, then its load order does not
     // change in modules_.
     if (loaded_module.is_global()) {
       continue;
     }
-    // TODO(https://fxbug.dev/374810148): Introduce non-const version of ModuleTree.
-    RuntimeModule& promoted = const_cast<RuntimeModule&>(loaded_module);
-    promoted.set_global();
+    loaded_module.set_global();
     // Move the promoted module to the back of the dynamic linker's modules_
     // list.
-    modules_.push_back(modules_.erase(promoted));
+    modules_.push_back(modules_.erase(loaded_module));
   }
 }
 
