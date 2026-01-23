@@ -13,12 +13,14 @@
 #include <lib/fidl/cpp/wire/channel.h>
 #include <lib/fzl/owned-vmo-mapper.h>
 #include <lib/fzl/vmo-mapper.h>
+#include <lib/syslog/cpp/macros.h>
 #include <lib/zx/result.h>
 #include <lib/zx/vmo.h>
 #include <stdio.h>
 #include <sys/stat.h>
 #include <sys/types.h>
 #include <unistd.h>
+#include <zircon/assert.h>
 #include <zircon/errors.h>
 #include <zircon/types.h>
 
@@ -113,7 +115,8 @@ class WearSimulator {
   // Bring up the system by reading the image and wear_info into their vmos, and then rebooting.
   void InitFromImage(std::string image_path, std::string wear_info_path);
 
-  // Simulates a number of operations or "cycles" in minfs.
+  // Simulates a number of operations or "cycles" in minfs. Returns false if operations on the
+  // filesystem fail.
   void SimulateMinfs(int cycles);
 
   // Fills Blobfs with randomly sized blobs to target the required space.
@@ -139,6 +142,8 @@ class WearSimulator {
   void ExportImage();
 
  private:
+  bool SimulateMinfsImpl(int cycles);
+
   zx::vmo vmo_;
   zx::vmo wear_vmo_;
   SystemConfig config_;
@@ -333,12 +338,19 @@ void WearSimulator::InitFromImage(std::string image_path, std::string wear_info_
 }
 
 void WearSimulator::SimulateMinfs(int cycles) {
+  if (!SimulateMinfsImpl(cycles)) {
+    ExportImage();
+    ZX_PANIC("Minfs failure. Image dumped.");
+  }
+}
+
+bool WearSimulator::SimulateMinfsImpl(int cycles) {
   constexpr size_t kMaxWritePages = 64ul;
   constexpr size_t kMaxWriteSize = kMaxWritePages * kPageSize;
   constexpr size_t kMaxCacheGrowth = 8 * kPageSize;
   constexpr size_t kNumCacheFiles = 128;
 
-  ASSERT_TRUE(mount_) << "Wear simulator not initialized";
+  ZX_ASSERT_MSG(mount_, "Wear simulator not initialized");
   const char* root_path = mount_->minfs_binding.path().c_str();
 
   char path_buf[255];
@@ -357,8 +369,14 @@ void WearSimulator::SimulateMinfs(int cycles) {
         size_t size = cycle_files_[index];
 
         fbl::unique_fd f(open(temp_path_buf, O_WRONLY | O_CREAT));
-        ASSERT_TRUE(f.is_valid()) << "Failed to open tmp file: " << errno;
-        ASSERT_EQ(write(f.get(), write_buf.get(), size), static_cast<ssize_t>(size));
+        if (!f.is_valid()) {
+          FX_LOGS(ERROR) << "Failed to open tmp file: " << errno;
+          return false;
+        }
+        if (write(f.get(), write_buf.get(), size) != static_cast<ssize_t>(size)) {
+          FX_LOGS(ERROR) << "Failed to write expected size with error: " << errno;
+          return false;
+        }
 
         std::filesystem::rename(temp_path_buf, path_buf);
       } break;
@@ -366,14 +384,20 @@ void WearSimulator::SimulateMinfs(int cycles) {
         // Add to a cache file.
         sprintf(path_buf, "%s/cache/%lu", root_path, rand() % kNumCacheFiles);
         fbl::unique_fd f(open(path_buf, O_WRONLY | O_CREAT | O_APPEND));
-        ASSERT_TRUE(f.is_valid());
+        if (!f.is_valid()) {
+          FX_LOGS(ERROR) << "Failed to open cache file: " << errno;
+          return false;
+        }
         size_t size = (rand() % (kMaxCacheGrowth - 1) + 1);
-        ASSERT_EQ(write(f.get(), write_buf.get(), size), static_cast<ssize_t>(size));
+        if (write(f.get(), write_buf.get(), size) != static_cast<ssize_t>(size)) {
+          FX_LOGS(ERROR) << "Failed to write expected size with error: " << errno;
+          return false;
+        }
       }
 
       break;
       default:
-        ASSERT_TRUE(false) << "Didn't cover all cases!";
+        ZX_PANIC("Didn't cover all cases!");
     }
 
     // Check if space is full and we need to purge cache.
@@ -382,10 +406,15 @@ void WearSimulator::SimulateMinfs(int cycles) {
       // Less than 5% left. Wipe the cache.
       sprintf(path_buf, "%s/cache", root_path);
       for (const auto& entry : std::filesystem::directory_iterator(path_buf)) {
-        ASSERT_EQ(unlink(entry.path().c_str()), 0) << path_buf << ": " << errno;
+        if (unlink(entry.path().c_str()) != 0) {
+          FX_LOGS(ERROR) << "Failed unlinking " << path_buf << ": " << errno;
+          return false;
+        }
       }
     }
   }
+
+  return true;
 }
 
 void WearSimulator::FillBlobfs(size_t space) {

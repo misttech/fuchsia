@@ -51,6 +51,7 @@ source_set("ftl-workload-fuzzer") {
 test("ftl-wear-simulator-test") {
   sources = [ "wear_simulator.cc" ]
   deps = [
+    "//sdk/lib/syslog/cpp",
     "//src/lib/files",
     "//src/lib/fxl/test:gtest_main",
     "//src/storage/blobfs",
