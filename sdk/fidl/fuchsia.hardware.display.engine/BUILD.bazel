@@ -1,0 +1,23 @@
+# Copyright 2025 The Fuchsia Authors. All rights reserved.
+# Use of this source code is governed by a BSD-style license that can be
+# found in the LICENSE file.
+
+load("//build/bazel/rules/fidl:fidl_library.bzl", "fidl_library")
+
+fidl_library(
+    name = "fuchsia.hardware.display.engine",
+    srcs = [
+        "engine.fidl",
+        "ids.fidl",
+        "overview.fidl",
+    ],
+    api_area = "Graphics",
+    contains_drivers = True,
+    visibility = ["//visibility:public"],
+    deps = [
+        "//sdk/fidl/fuchsia.hardware.display.types",
+        "//sdk/fidl/fuchsia.images2",
+        "//sdk/fidl/fuchsia.sysmem2",
+        "//zircon/vdso/zx",
+    ],
+)

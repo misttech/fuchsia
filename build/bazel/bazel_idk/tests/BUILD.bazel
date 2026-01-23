@@ -437,6 +437,8 @@ filegroup(
         # Exercise FIDL.
         # TODO(https://fxbug.dev/428285014): Remove once we are building elsewhere.
         "//examples/fidl/fuchsia.examples.docs:versioning",
+        # This tests indirect FIDL library dependencies.
+        "//sdk/fidl/fuchsia.hardware.display.engine",
 
         # Non-IDK targets.
         # TODO(https://fxbug.dev/428229472): Remove once there are other dependencies on them.
@@ -493,7 +495,6 @@ build_idk_combinations(
     testonly = True,
     deps = [
         ":test_atom_idk",
-        "//sdk:fuchsia_idk_atoms_produced_by_main_platform_build",
         "//sdk/lib/magma_common:magma_common_idk",
         "//sdk/lib/media/cpp:no_converters_idk",
         "//sdk/lib/memory_barriers:memory_barriers_idk",
@@ -523,7 +524,7 @@ build_idk_combinations(
         # TODO(https://fxbug.dev/443762519): Remove these once FIDL bindings are
         # being used in API level configurations.
         "//examples/fidl/fuchsia.examples.docs:versioning",
-        # This tests direct FIDL library dependencies.
-        "//sdk/fidl/fuchsia.images2",
+        # This tests indirect FIDL library dependencies.
+        "//sdk/fidl/fuchsia.hardware.display.engine",
     ],
 )
