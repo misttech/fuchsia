@@ -20,10 +20,7 @@ zx_library("sync") {
     "condition.cc",
     "mutex.c",
   ]
-  deps = [
-    "//src/zircon/lib/zircon:zircon.as-needed",
-    "//zircon/system/ulib/zircon-internal",
-  ]
+  deps = [ "//src/zircon/lib/zircon:zircon.as-needed" ]
 }
 
 sdk_source_set("sync-cpp") {

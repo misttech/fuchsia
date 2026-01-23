@@ -131,7 +131,6 @@ if (is_fuzzer) {
       "//sdk/lib/zxio",
       "//sdk/lib/zxio:inception",
       "//zircon/system/ulib/fbl",
-      "//zircon/system/ulib/zircon-internal",
       "//zircon/system/ulib/zx",
       "//zircon/third_party/ulib/musl:getifaddrs-internal",
       "//zircon/third_party/ulib/safemath",
