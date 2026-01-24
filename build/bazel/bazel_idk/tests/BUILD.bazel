@@ -436,6 +436,7 @@ filegroup(
 
         # Exercise FIDL.
         # TODO(https://fxbug.dev/428285014): Remove once we are building elsewhere.
+        "//examples/fidl/fuchsia.examples.docs",
         "//examples/fidl/fuchsia.examples.docs:versioning",
         # This tests indirect FIDL library dependencies.
         "//sdk/fidl/fuchsia.hardware.display.engine",
@@ -523,6 +524,7 @@ build_idk_combinations(
         # Exercise FIDL.
         # TODO(https://fxbug.dev/443762519): Remove these once FIDL bindings are
         # being used in API level configurations.
+        "//examples/fidl/fuchsia.examples.docs",
         "//examples/fidl/fuchsia.examples.docs:versioning",
         # This tests indirect FIDL library dependencies.
         "//sdk/fidl/fuchsia.hardware.display.engine",

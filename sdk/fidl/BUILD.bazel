@@ -14,6 +14,7 @@ _partner_idk_stable_fidl_libraries_targets_list = [
     # keep-sorted: begin
     "//sdk/fidl/fuchsia.images2:fuchsia.images2",
     "//sdk/fidl/fuchsia.math:fuchsia.math",
+    "//sdk/fidl/fuchsia.mem:fuchsia.mem",
     "//sdk/fidl/fuchsia.sysmem2:fuchsia.sysmem2",
     "//zircon/vdso/zx:zx",
     # keep-sorted: end
@@ -46,6 +47,7 @@ filegroup(
         "//build/bazel/bazel_idk/tests:__pkg__",
         "//sdk/fidl/fuchsia.images2:__pkg__",
         "//sdk/fidl/fuchsia.math:__pkg__",
+        "//sdk/fidl/fuchsia.mem:__pkg__",
         "//sdk/fidl/fuchsia.sysmem2:__pkg__",
         "//zircon/vdso/zx:__pkg__",
 

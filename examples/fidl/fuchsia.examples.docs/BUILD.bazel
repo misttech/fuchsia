@@ -4,6 +4,9 @@
 
 load("//build/bazel/rules/fidl:fidl_library.bzl", "fidl_library")
 
+# TODO(https://fxbug.dev/428285014): Remove once we are building these libraries elsehwere.
+package(default_visibility = ["//build/bazel/bazel_idk/tests:__subpackages__"])
+
 # Define a target for our FIDL library by passing it the FIDL source files
 # that make up the library.
 fidl_library(
@@ -46,8 +49,4 @@ fidl_library(
     # "unversioned" behavior for test-only libraries.
     versioned = "fuchsia",
     available = ["fuchsia:HEAD"],
-
-    # TODO(https://fxbug.dev/428285014): Change to private once we are building
-    # other libraries in the IDK tests.
-    visibility = ["//build/bazel/bazel_idk/tests:__subpackages__"],
 )
