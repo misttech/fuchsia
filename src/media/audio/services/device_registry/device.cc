@@ -816,6 +816,13 @@ void Device::RetrieveCodecProperties() {
     codec_properties_ = result->properties();
     SanitizeCodecPropertiesStrings(codec_properties_);
 
+    inspect()->RecordProperties(codec_properties_->is_input(), codec_properties_->manufacturer(),
+                                codec_properties_->product(),
+                                codec_properties_->unique_id().has_value()
+                                    ? std::optional(UidToString(codec_properties_->unique_id()))
+                                    : std::nullopt,
+                                /* clock_domain */ std::nullopt);
+
     OnInitializationResponse();
   });
 }
@@ -842,6 +849,14 @@ void Device::RetrieveCompositeProperties() {
         SanitizeCompositePropertiesStrings(composite_properties_);
         // We have our clock domain now. Create the device clock.
         CreateDeviceClock();
+
+        inspect()->RecordProperties(
+            /* is_input */ std::nullopt, composite_properties_->manufacturer(),
+            composite_properties_->product(),
+            composite_properties_->unique_id().has_value()
+                ? std::optional(UidToString(composite_properties_->unique_id()))
+                : std::nullopt,
+            composite_properties_->clock_domain());
 
         OnInitializationResponse();
       });
@@ -1663,12 +1678,6 @@ fad::Info Device::CreateDeviceInfo() {
         // Required for Composite; absent for Codec:
         .clock_domain(composite_properties_->clock_domain());
   }
-
-  inspect()->RecordProperties(info.is_input(), info.manufacturer(), info.product(),
-                              info.unique_instance_id().has_value()
-                                  ? std::optional(UidToString(info.unique_instance_id()))
-                                  : std::nullopt,
-                              info.clock_domain());
 
   return info;
 }
