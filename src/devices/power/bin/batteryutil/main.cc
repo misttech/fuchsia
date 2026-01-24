@@ -11,7 +11,7 @@
 
 static void usage() {
   printf(
-      "Usage: batteryutil <device_path> <command>\n\n"
+      "Usage: batteryutil [device_path] <command>\n\n"
       "Get battery information.\n\n"
       "Commands:\n"
       "  get             Get the current battery info.\n"
@@ -19,24 +19,37 @@ static void usage() {
       "  help | h        Print this help text.\n\n"
       "Examples:\n"
       "  Get battery info:\n"
+      "  $ batteryutil get\n"
       "  $ batteryutil /svc/fuchsia.power.battery.InfoService/... get\n\n"
       "  Enable the charger:\n"
+      "  $ batteryutil enable 1\n"
       "  $ batteryutil /svc/fuchsia.power.battery.ChargerService/... enable 1\n");
 }
 
 int main(int argc, char** argv) {
   auto print_usage = fit::defer([]() { usage(); });
 
-  zx::result func = ParseArgs(argc, argv);
-  if (func.is_error()) {
-    fprintf(stderr, "Unable to parse arguments! %s\n\n", func.status_string());
+  zx::result<CmdArgs> args_result = ParseArgs(argc, argv);
+  if (args_result.is_error()) {
+    fprintf(stderr, "Unable to parse arguments! %s\n\n", args_result.status_string());
     return 1;
   }
+  CmdArgs args = args_result.value();
 
-  switch (*func) {
+  // Cancel usage printing for runtime errors to avoid spamming usage when arguments were parsed
+  // correctly.
+  print_usage.cancel();
+
+  zx::result<std::string> path_result = ResolveServicePath(args.path, args.func);
+  if (path_result.is_error()) {
+    return 1;
+  }
+  std::string device_path = path_result.value() + "/device";
+
+  switch (args.func) {
     case BatteryFunc::kGet: {
-      zx::result client_end = component::Connect<fuchsia_power_battery::BatteryInfoProvider>(
-          std::string(argv[1]) + "/device");
+      zx::result client_end =
+          component::Connect<fuchsia_power_battery::BatteryInfoProvider>(device_path);
       if (client_end.is_error()) {
         fprintf(stderr, "Could not connect to BatteryInfoProvider: %s\n",
                 client_end.status_string());
@@ -53,14 +66,13 @@ int main(int argc, char** argv) {
       break;
     }
     case BatteryFunc::kEnableCharger: {
-      zx::result client_end =
-          component::Connect<fuchsia_power_battery::Charger>(std::string(argv[1]) + "/device");
+      zx::result client_end = component::Connect<fuchsia_power_battery::Charger>(device_path);
       if (client_end.is_error()) {
         fprintf(stderr, "Could not connect to Charger: %s\n", client_end.status_string());
         return 1;
       }
 
-      std::string_view arg = argv[3];
+      std::string_view arg = args.value;
       auto result = fidl::WireCall(client_end.value())->Enable(arg == "1");
       if (!result.ok()) {
         fprintf(stderr, "Call to enable charger failed: %s\n", result.FormatDescription().c_str());
@@ -76,6 +88,5 @@ int main(int argc, char** argv) {
       fprintf(stderr, "Invalid function\n");
       return 1;
   }
-  print_usage.cancel();
   return 0;
 }
