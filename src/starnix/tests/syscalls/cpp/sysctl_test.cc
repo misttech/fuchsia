@@ -247,14 +247,22 @@ TEST_P(SysctlTestReadBack, ReadBack) {
   }
   const std::string& path = GetParam();
   const char* toWrite = "10\n";
+  // Linux internally translates milliseconds to jiffies, if the value is too
+  // small, then precision will get lost when scaling up and down.
+  if (path.ends_with("_ms")) {
+    toWrite = "1000\n";
+  }
   std::string toRead;
   ASSERT_TRUE(files::WriteFile(path, toWrite)) << strerror(errno);
   ASSERT_TRUE(files::ReadFileToString(path, &toRead)) << strerror(errno);
   ASSERT_STREQ(toRead.c_str(), toWrite);
 }
 
-INSTANTIATE_TEST_SUITE_P(SysctlTest, SysctlTestReadBack,
-                         ::testing::Values("/proc/sys/net/ipv6/neigh/default/ucast_solicit",
-                                           "/proc/sys/net/ipv4/neigh/default/ucast_solicit",
-                                           "/proc/sys/net/ipv6/neigh/default/mcast_resolicit",
-                                           "/proc/sys/net/ipv4/neigh/default/mcast_resolicit"));
+INSTANTIATE_TEST_SUITE_P(
+    SysctlTest, SysctlTestReadBack,
+    ::testing::Values("/proc/sys/net/ipv6/neigh/default/ucast_solicit",
+                      "/proc/sys/net/ipv4/neigh/default/ucast_solicit",
+                      "/proc/sys/net/ipv6/neigh/default/mcast_resolicit",
+                      "/proc/sys/net/ipv4/neigh/default/mcast_resolicit",
+                      "/proc/sys/net/ipv6/neigh/default/base_reachable_time_ms",
+                      "/proc/sys/net/ipv4/neigh/default/base_reachable_time_ms"));

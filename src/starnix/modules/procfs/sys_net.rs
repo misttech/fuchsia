@@ -226,7 +226,7 @@ impl FsNodeOps for ProcSysNetIpv4Neigh {
                 );
                 dir.entry(
                     "base_reachable_time_ms",
-                    StubBytesFile::new_node(bug_ref!("https://fxbug.dev/423645348")),
+                    new_interface_config_file_node::<BaseReachableTimeMs<Ipv4>>(interface),
                     FILE_MODE,
                 );
             });
@@ -405,7 +405,7 @@ impl FsNodeOps for ProcSysNetIpv6Neigh {
                 );
                 dir.entry(
                     "base_reachable_time_ms",
-                    StubBytesFile::new_node(bug_ref!("https://fxbug.dev/423645348")),
+                    new_interface_config_file_node::<BaseReachableTimeMs<Ipv6>>(interface),
                     FILE_MODE,
                 );
             });
@@ -861,5 +861,68 @@ impl<I: Ip> InterfaceConfig for McastResolicit<I> {
                 })?,
         };
         Ok(i32::from(max_multicast_solicitations))
+    }
+}
+
+struct BaseReachableTimeMs<I: Ip> {
+    _marker: core::marker::PhantomData<I>,
+}
+
+impl<I: Ip> InterfaceConfig for BaseReachableTimeMs<I> {
+    fn try_from_i32(value: i32) -> Result<fnet_interfaces_admin::Configuration, Errno> {
+        let base_reachable_time = zx::Duration::<zx::BootTimeline>::from_millis(i64::from(value));
+        let nud_config = fnet_interfaces_admin::NudConfiguration {
+            base_reachable_time: Some(base_reachable_time.into_nanos()),
+            ..Default::default()
+        };
+        let mut config = fnet_interfaces_admin::Configuration::default();
+        match I::VERSION {
+            IpVersion::V4 => {
+                config.ipv4 = Some(fnet_interfaces_admin::Ipv4Configuration {
+                    arp: Some(fnet_interfaces_admin::ArpConfiguration {
+                        nud: Some(nud_config),
+                        ..Default::default()
+                    }),
+                    ..Default::default()
+                })
+            }
+            IpVersion::V6 => {
+                config.ipv6 = Some(fnet_interfaces_admin::Ipv6Configuration {
+                    ndp: Some(fnet_interfaces_admin::NdpConfiguration {
+                        nud: Some(nud_config),
+                        ..Default::default()
+                    }),
+                    ..Default::default()
+                })
+            }
+        }
+        Ok(config)
+    }
+
+    fn try_into_i32(config: fnet_interfaces_admin::Configuration) -> Result<i32, Errno> {
+        let base_reachable_time_ns = match I::VERSION {
+            IpVersion::V4 => config
+                .ipv4
+                .and_then(|ipv4| ipv4.arp)
+                .and_then(|arp| arp.nud)
+                .and_then(|nud| nud.base_reachable_time)
+                .ok_or_else(|| {
+                    log_error!("network interface config missing ipv4 arp base_reachable_time");
+                    errno!(EIO)
+                })?,
+            IpVersion::V6 => config
+                .ipv6
+                .and_then(|ipv6| ipv6.ndp)
+                .and_then(|ndp| ndp.nud)
+                .and_then(|nud| nud.base_reachable_time)
+                .ok_or_else(|| {
+                    log_error!("network interface config missing ipv6 ndp base_reachable_time");
+                    errno!(EIO)
+                })?,
+        };
+        Ok(i32::try_from(
+            zx::Duration::<zx::BootTimeline>::from_nanos(base_reachable_time_ns).into_millis(),
+        )
+        .map_err(|_| errno!(EIO))?)
     }
 }
