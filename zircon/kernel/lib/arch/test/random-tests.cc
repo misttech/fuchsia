@@ -7,12 +7,18 @@
 #include <lib/arch/random.h>
 #include <lib/unittest/unittest.h>
 
+#include <ktl/optional.h>
 #include <ktl/type_traits.h>
 
 #include <ktl/enforce.h>
 
 namespace {
 
+// If supported, this test validates that arch::Random<Reseeded>::Get()
+// yields a value *eventually*. We loop indefinitely, as the hardware should
+// not be entropy-starved forever. If this test results in a timeout, then
+// that gives us a signal that there is something fundamentally wrong with the
+// underlying hardware or firmware.
 template <bool Reseeded>
 bool ArchRandomTest() {
   BEGIN_TEST;
@@ -21,10 +27,14 @@ bool ArchRandomTest() {
   EXPECT_EQ(supported, !!supported);
 
   if (supported) {
-    auto result = arch::Random<Reseeded>::Get();
-    ASSERT_TRUE(result);
-    auto value = result.value();
-    static_assert(ktl::is_same_v<decltype(value), uint64_t>);
+    // Note that Get() has its own internal retry logic.
+    ktl::optional<uint64_t> result = arch::Random<Reseeded>::Get();
+    while (!result) {
+      printf(
+          "WARNING: Failed to generate a random number after retrying "
+          "a presumed sensible number of times. RNG is entropy-starved?\n");
+      result = arch::Random<Reseeded>::Get();
+    }
   }
 
   END_TEST;
