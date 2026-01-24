@@ -2337,6 +2337,11 @@ zx_status_t arm64_mmu_translate(vaddr_t va, paddr_t* pa, bool user, bool write) 
       }
     }
 
+    // Explicitly synchronize before reading from the PAR register, as documented as a
+    // general requirement after modifying a control register that affects the result
+    // of another one.
+    __isb(ARM_MB_SY);
+
     par = __arm_rsr64("par_el1");
   }
 
