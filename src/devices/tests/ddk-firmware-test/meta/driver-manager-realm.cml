@@ -58,18 +58,12 @@
         {
             protocol: "fuchsia.component.resolution.Resolver-base",
             from: "parent",
-            to: [
-                "#driver-index",
-                "#driver-manager",
-            ],
+            to: "#driver-index",
         },
         {
             protocol: "fuchsia.component.resolution.Resolver-boot",
             from: "parent",
-            to: [
-                "#driver-index",
-                "#driver-manager",
-            ],
+            to: "#driver-index",
         },
         {
             protocol: "fuchsia.driver.test.DriverLists",

@@ -245,10 +245,7 @@
                 "fuchsia.component.resolution.Resolver-full",
             ],
             from: "#fake_resolver",
-            to: [
-                "#driver_index",
-                "#driver_manager",
-            ],
+            to: "#driver_index",
         },
 
         // These protocols are not actually used but exist to increase the lifetime

@@ -247,10 +247,7 @@
                 "fuchsia.component.resolution.Resolver-full",
             ],
             from: "#fake-resolver",
-            to: [
-                "#driver-index",
-                "#driver_manager",
-            ],
+            to: "#driver-index",
         },
     ],
     expose: [

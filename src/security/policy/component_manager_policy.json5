@@ -257,7 +257,6 @@
                 capability: "protocol",
                 target_monikers: [
                     "/bootstrap/driver_index",
-                    "/bootstrap/driver_manager",
                 ],
             },
             {
@@ -387,7 +386,6 @@
                 capability: "protocol",
                 target_monikers: [
                     "/bootstrap/driver_index",
-                    "/bootstrap/driver_manager",
                     "/core/full-resolver",
                 ],
             },
@@ -400,7 +398,6 @@
                 capability: "protocol",
                 target_monikers: [
                     "/bootstrap/driver_index",
-                    "/bootstrap/driver_manager",
                 ],
             },
             {

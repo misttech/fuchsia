@@ -82,7 +82,6 @@
                     "/bootstrap",
                     "/bootstrap/pkg-cache",
                     "/bootstrap/driver_index",
-                    "/bootstrap/driver_manager",
                 ],
             },
         ],

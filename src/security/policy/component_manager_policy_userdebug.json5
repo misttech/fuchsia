@@ -315,7 +315,6 @@
                     "/bootstrap",
                     "/bootstrap/base_resolver",
                     "/bootstrap/driver_index",
-                    "/bootstrap/driver_manager",
                 ],
             },
             {

@@ -145,10 +145,7 @@
             protocol: "fuchsia.component.resolution.Resolver",
             from: "parent",
             as: "fuchsia.component.resolution.Resolver-boot",
-            to: [
-                "#driver_index",
-                "#driver_manager",
-            ],
+            to: "#driver_index",
         },
         {
             // This is only used when the #driver_index |enable_ephemeral_drivers| config
@@ -161,10 +158,7 @@
             protocol: "fuchsia.component.resolution.Resolver",
             from: "#full_resolver",
             as: "fuchsia.component.resolution.Resolver-full",
-            to: [
-                "#driver_index",
-                "#driver_manager",
-            ],
+            to: "#driver_index",
             dependency: "weak",
             source_availability: "unknown",
         },
