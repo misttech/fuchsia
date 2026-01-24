@@ -307,6 +307,7 @@
                 "fuchsia.hardware.rpmb.Service",
                 "fuchsia.hardware.sockettunnel.Service",
                 "fuchsia.hardware.spmi.DebugService",
+                "fuchsia.hardware.trippoint.TripPointDebugService",
                 "fuchsia.hardware.vsock.Service",
                 "fuchsia.power.broker.ElementInfoProviderService",
                 "fuchsia.storage.ftl.Service",

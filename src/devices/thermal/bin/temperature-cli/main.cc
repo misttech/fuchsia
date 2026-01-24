@@ -21,6 +21,7 @@ constexpr char kUsageMessage[] = R"""(Usage: temperature-cli <device> <command>
                 configuration can be a float, interpreted as temperature in celsius, or "cleared".
     wait - Wait for a trippoint to be triggered
     name - Get sensor name (for temperature class device)
+    trip - Use debug service to trip a trippoint
 
     Example:
     temperature-cli /svc/fuchsia.hardware.temperature/<instance_name>/<ServiceMemberName>
@@ -33,6 +34,8 @@ constexpr char kUsageMessage[] = R"""(Usage: temperature-cli <device> <command>
     temperature-cli /svc/fuchsia.hardware.trippoint.TripPointService/<instance_name>/<ServiceMemberName> trippoint 0:below,4.2 1:above,50.1 2:above,cleared
     temperature-cli /svc/fuchsia.hardware.trippoint.TripPointService/<instance_name>/<ServiceMemberName> wait
     temperature-cli /svc/fuchsia.hardware.trippoint.TripPointService/<instance_name>/<ServiceMemberName> name
+    - or -
+    temperature-cli /svc/fuchsia.hardware.trippoint.TripPointDebugService/<instance_name>/<ServiceMemberName> trip 1
 )""";
 
 namespace FidlTemperature = fuchsia_hardware_temperature;
@@ -41,9 +44,9 @@ namespace FidlTrippoint = fuchsia_hardware_trippoint;
 
 std::string ToString(const FidlTrippoint::wire::TripPointType& type) {
   switch (type) {
-    case fuchsia_hardware_trippoint::TripPointType::kOneshotTempAbove:
+    case FidlTrippoint::TripPointType::kOneshotTempAbove:
       return "OneshotTempAbove";
-    case fuchsia_hardware_trippoint::TripPointType::kOneshotTempBelow:
+    case FidlTrippoint::TripPointType::kOneshotTempBelow:
       return "OneshotTempBelow";
     default:
       return "Unknown";
@@ -52,13 +55,13 @@ std::string ToString(const FidlTrippoint::wire::TripPointType& type) {
 
 std::string ToString(const FidlTrippoint::wire::TripPointValue& value) {
   switch (value.Which()) {
-    case fuchsia_hardware_trippoint::wire::TripPointValue::Tag::kClearedTripPoint:
+    case FidlTrippoint::wire::TripPointValue::Tag::kClearedTripPoint:
       return "ClearedTripPoint";
-    case fuchsia_hardware_trippoint::wire::TripPointValue::Tag::kOneshotTempAboveTripPoint:
+    case FidlTrippoint::wire::TripPointValue::Tag::kOneshotTempAboveTripPoint:
       return "OneshotTempAboveTripPoint(" +
              std::to_string(value.oneshot_temp_above_trip_point().critical_temperature_celsius) +
              ")";
-    case fuchsia_hardware_trippoint::wire::TripPointValue::Tag::kOneshotTempBelowTripPoint:
+    case FidlTrippoint::wire::TripPointValue::Tag::kOneshotTempBelowTripPoint:
       return "OneshotTempBelowTripPoint(" +
              std::to_string(value.oneshot_temp_below_trip_point().critical_temperature_celsius) +
              ")";
@@ -260,6 +263,14 @@ int main(int argc, char** argv) {
                std::string(response->name.data(), response->name.size()).c_str());
       } else {
         printf("GetSensorName fidl call failed: status = %d\n", response.status());
+      }
+    } else if (strcmp(argv[2], "trip") == 0) {
+      fidl::WireSyncClient<FidlTrippoint::Debug> client(
+          fidl::ClientEnd<FidlTrippoint::Debug>(std::move(local)));
+
+      auto response = client->Trip(atoi(argv[3]));
+      if (!response.ok()) {
+        printf("Trip fidl call failed: status = %d\n", response.status());
       }
     } else {
       printf("%s", kUsageMessage);

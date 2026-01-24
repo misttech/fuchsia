@@ -242,6 +242,14 @@
             availability: "optional",
         },
         {
+            service: "fuchsia.hardware.trippoint.TripPointService",
+            availability: "optional",
+        },
+        {
+            service: "fuchsia.hardware.trippoint.TripPointDebugService",
+            availability: "optional",
+        },
+        {
             service: "fuchsia.hardware.spmi.DebugService",
             availability: "optional",
         },
