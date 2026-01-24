@@ -7,15 +7,6 @@
         },
         capability_policy: [
             {
-                source_moniker: "<component_manager>",
-                source: "component",
-                source_name: "fuchsia.kernel.VmexResource",
-                capability: "protocol",
-                target_monikers: [
-                    "/bootstrap/base_resolver",
-                ],
-            },
-            {
                 source_moniker: "/bootstrap/fshost",
                 source: "component",
                 source_name: "bin",
@@ -33,15 +24,6 @@
                 target_monikers: [
                     "/bootstrap/netsvc",
                     "/core",
-                ],
-            },
-            {
-                source_moniker: "/bootstrap/fshost/blobfs",
-                source: "component",
-                source_name: "blob-exec",
-                capability: "directory",
-                target_monikers: [
-                    "/bootstrap/base_resolver",
                 ],
             },
             {

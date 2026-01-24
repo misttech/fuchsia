@@ -292,7 +292,6 @@
                 capability: "directory",
                 target_monikers: [
                     "/core/remote-control",
-                    "/bootstrap/base_resolver",
                     "/core/sshd-host",
                     "/toolbox",
 
