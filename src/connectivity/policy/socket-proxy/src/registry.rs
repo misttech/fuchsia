@@ -584,6 +584,7 @@ impl Registry {
             return Ok(());
         };
         let request = request.into();
+        info!("forwarding Starnix NetworkRegistry change to netcfg: {request:?}");
         match request {
             NetworkRegistryRequest::SetDefault { network_id } => {
                 let _: Result<(), fnp_socketproxy::NetworkRegistrySetDefaultError> = registry
