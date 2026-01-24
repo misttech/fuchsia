@@ -14,7 +14,10 @@ use zx::NullableHandle;
 use zx::sys::zx_handle_t;
 
 macro_rules! define_wire_handle_types {
-    ($($wire:ident($wire_optional:ident): $natural:ident),* $(,)?) => { $(
+    ($(
+        $wire:ident($wire_optional:ident):
+            $natural:ident $(<$($generics:ident $(: $bound:path)?),+>)?
+    ),* $(,)?) => { $(
         #[doc = concat!("A Zircon ", stringify!($natural), ".")]
         #[derive(Debug)]
         #[repr(transparent)]
@@ -52,7 +55,11 @@ macro_rules! define_wire_handle_types {
         }
 
         unsafe impl<D: HandleDecoder + ?Sized> Decode<D> for $wire {
-            fn decode(mut slot: Slot<'_, Self>, decoder: &mut D, constraint:  <Self as Constrained>::Constraint) -> Result<(), DecodeError> {
+            fn decode(
+                mut slot: Slot<'_, Self>,
+                decoder: &mut D,
+                constraint: <Self as Constrained>::Constraint,
+            ) -> Result<(), DecodeError> {
                 munge!(let Self { handle } = slot.as_mut());
                 WireHandle::decode(handle, decoder, constraint)
             }
@@ -106,13 +113,19 @@ macro_rules! define_wire_handle_types {
         }
 
         unsafe impl<D: HandleDecoder + ?Sized> Decode<D> for $wire_optional {
-            fn decode(mut slot: Slot<'_, Self>, decoder: &mut D, constraint:  <Self as Constrained>::Constraint) -> Result<(), DecodeError> {
+            fn decode(
+                mut slot: Slot<'_, Self>,
+                decoder: &mut D, constraint: <Self as Constrained>::Constraint,
+            ) -> Result<(), DecodeError> {
                 munge!(let Self { handle } = slot.as_mut());
                 WireOptionalHandle::decode(handle, decoder, constraint)
             }
         }
 
-        unsafe impl<E: HandleEncoder + ?Sized> Encode<$wire, E> for zx::$natural {
+        unsafe impl<
+            E: HandleEncoder + ?Sized,
+            $($($generics $(: $bound)?,)+)?
+        > Encode<$wire, E> for zx::$natural $(<$($generics,)+>)? {
             fn encode(
                 self,
                 encoder: &mut E,
@@ -124,7 +137,9 @@ macro_rules! define_wire_handle_types {
             }
         }
 
-        impl FromWire<$wire> for zx::$natural {
+        impl $(<$($generics $(: $bound)?,)+>)? FromWire<$wire>
+            for zx::$natural $(<$($generics,)+>)?
+        {
             fn from_wire(wire: $wire) -> Self {
                 NullableHandle::from_wire(wire.handle).into()
             }
@@ -134,7 +149,10 @@ macro_rules! define_wire_handle_types {
             type Natural = zx::$natural;
         }
 
-        unsafe impl<E: HandleEncoder + ?Sized> EncodeOption<$wire_optional, E> for zx::$natural {
+        unsafe impl<
+            E: HandleEncoder + ?Sized,
+            $($($generics $(: $bound)?,)+)?
+        > EncodeOption<$wire_optional, E> for zx::$natural $(<$($generics,)+>)? {
             fn encode_option(
                 this: Option<Self>,
                 encoder: &mut E,
@@ -146,7 +164,9 @@ macro_rules! define_wire_handle_types {
             }
         }
 
-        impl FromWireOption<$wire_optional> for zx::$natural {
+        impl $(<$($generics $(: $bound)?,)+>)? FromWireOption<$wire_optional>
+            for zx::$natural $(<$($generics,)+>)?
+        {
             fn from_wire_option(wire: $wire_optional) -> Option<Self> {
                 NullableHandle::from_wire_option(wire.handle).map(zx::$natural::from)
             }
@@ -169,7 +189,7 @@ define_wire_handle_types! {
     WireChannel(WireOptionalChannel): Channel,
     WireEvent(WireOptionalEvent): Event,
     WirePort(WireOptionalPort): Port,
-    WireInterrupt(WireOptionalInterrupt): Interrupt,
+    WireInterrupt(WireOptionalInterrupt): Interrupt<K: zx::InterruptKind, T: zx::Timeline>,
     // WirePciDevice(WireOptionalPciDevice): PciDevice,
     WireDebugLog(WireOptionalDebugLog): DebugLog,
     WireSocket(WireOptionalSocket): Socket,
@@ -177,10 +197,10 @@ define_wire_handle_types! {
     WireEventPair(WireOptionalEventPair): EventPair,
     WireJob(WireOptionalJob): Job,
     WireVmar(WireOptionalVmar): Vmar,
-    WireFifo(WireOptionalFifo): Fifo,
+    WireFifo(WireOptionalFifo): Fifo<R, W>,
     WireGuest(WireOptionalGuest): Guest,
     WireVcpu(WireOptionalVcpu): Vcpu,
-    WireTimer(WireOptionalTimer): Timer,
+    WireTimer(WireOptionalTimer): Timer<T: zx::Timeline>,
     WireIommu(WireOptionalIommu): Iommu,
     WireBti(WireOptionalBti): Bti,
     WireProfile(WireOptionalProfile): Profile,
@@ -188,7 +208,7 @@ define_wire_handle_types! {
     // WireSuspendToken(WireOptionalSuspendToken): SuspendToken,
     WirePager(WireOptionalPager): Pager,
     WireException(WireOptionalException): Exception,
-    WireClock(WireOptionalClock): Clock,
+    WireClock(WireOptionalClock): Clock<Reference: zx::Timeline, Output: zx::Timeline>,
     WireStream(WireOptionalStream): Stream,
     // WireMsi(WireOptionalMsi): Msi,
     WireIob(WireOptionalIob): Iob,
