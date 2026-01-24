@@ -112,3 +112,9 @@ type ReferencesType = table {
 
 alias ReferencesTypeAndValue = vector<Type>:VALUE;
 // [END references]
+
+// [START strict-to-flexible]
+type Color2 = strict(removed=NEXT) flexible(added=NEXT) enum {
+    RED = 1;
+};
+// [END strict-to-flexible]

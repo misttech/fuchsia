@@ -802,13 +802,30 @@ transition later on. This situation is rare: experience has shown that most
 messages do not contain resources, and passing resources in protocols requires
 care and upfront planning.
 
-### Should I use `strict` or `flexible` on types?
+### Should I use `strict` or `flexible` on types? {#strict-flexible-type}
 
 Marking a type as [`flexible`][flexible-lang] makes it possible to handle data
-that is unknown to the current FIDL schema, and is recommended for types that
-may add or remove members in the future (e.g., configs, metadata, or errors). It
-is always possible to [soft transition][flexible-transition] between `strict`
-and `flexible` for an existing type.
+that is unknown to the current FIDL schema, but requires the user to account for
+that possibility. Concretely, a user cannot perform exhaustive pattern matching
+on a flexible bits, enum, or union. `strict` types are often easier to use and
+reason about, but they do not allow for future extensions.
+
+Ask yourself these questions when choosing between `strict` and `flexible`:
+
+* Is it likely I'll need to add members to this type in the future? If so, use
+  `flexible`.
+* In the unlikely event that I _do_ end up needing to add members to this
+  type in the future, would it be better to just introduce a new type instead of
+  adding members to this type? If so, use `strict`.
+
+Types can transition from `strict` to `flexible`, but it's a slow process - new
+members cannot be added to the type until all API levels at which that type was
+`strict` have been retired. To begin this transition, indicate that as of
+`NEXT`, the type is no longer `strict` and is now `flexible`:
+
+```fidl
+{% includecode gerrit_repo="fuchsia/fuchsia" gerrit_path="examples/fidl/fuchsia.examples.docs/versioning.test.fidl" region_tag="strict-to-flexible" %}
+```
 
 It is
 [stylish](/docs/development/languages/fidl/guides/style.md#explicit-strict-flexible)
