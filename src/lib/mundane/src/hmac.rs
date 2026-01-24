@@ -105,8 +105,8 @@ pub fn hmac<H: Hasher>(key: &[u8], bytes: &[u8]) -> H::Digest {
 pub(crate) mod insecure_hmac {
     #[allow(deprecated)]
     use hash::{
-        insecure_md5_digest::InsecureMd5Digest, insecure_sha1_digest::InsecureSha1Digest,
-        InsecureMd5, InsecureSha1,
+        InsecureMd5, InsecureSha1, insecure_md5_digest::InsecureMd5Digest,
+        insecure_sha1_digest::InsecureSha1Digest,
     };
     use hmac::Hmac;
 
@@ -224,6 +224,7 @@ mod tests {
     #[allow(deprecated)]
     use super::insecure_hmac::{InsecureHmacMd5, InsecureHmacSha1};
     use super::*;
+    use hash::inner::Digest;
     #[cfg(feature = "insecure")]
     #[allow(deprecated)]
     use hash::insecure_md5_digest::InsecureMd5Digest;
