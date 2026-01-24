@@ -8,7 +8,32 @@ use core::task::{Context, Poll};
 
 use fidl_next_codec::{Decoder, Encoder};
 
-/// A transport layer which can send and receive messages.
+/// A transport backend which can send and receive messages.
+///
+/// # Terminology
+///
+/// Note that this trait does not correspond directly with the FIDL notion of a
+/// transport. For clarity, implementors of this trait should be called
+/// "transport backends", as they are specific implementations of the more
+/// general notion of a "transport" in FIDL.
+///
+/// In FIDL, protocols can be assigned a "transport" such as "Channel" or
+/// "Driver". The choice of transport for a protocol controls the concrete types
+/// used for client ends and server ends of that protocol. A protocol with
+/// "Channel" transport will have client and server ends that are Zircon
+/// channels; a protocol with "Driver" transport will have client and server
+/// ends that are Driver channels.
+///
+/// All transport backends must be able to send and receive buffers of bytes. In
+/// addition to those bytes, transport backends may also support sending and
+/// receiving resource types like Zircon and Driver handles with those bytes.
+/// The additional resource types a transport backend supports defines which
+/// protocols can be run over that transport backend: a protocol can be run over
+/// a transport backend if all of the resource types its messages may contain
+/// can be sent and received using that transport backend. This may or may not
+/// have a correlation with the FIDL transport of that protocol.
+///
+/// # Implementation
 ///
 /// The futures provided by this trait should be cancel-safe, which constrains
 /// their behavior:
@@ -17,19 +42,21 @@ use fidl_next_codec::{Decoder, Encoder};
 /// - Operations should only complete during polling.
 ///
 /// `SendFuture` should return `Poll::Ready` with an error when polled after the
-/// transport is closed.
+/// transport backend is closed.
 pub trait Transport {
-    /// The error type for the transport.
+    /// The error type for the transport backend.
     type Error: Clone + Error + Send + Sync + 'static;
 
-    /// Splits the transport into shared and exclusive pieces.
+    /// Splits the transport backend into shared and exclusive pieces.
     fn split(self) -> (Self::Shared, Self::Exclusive);
 
-    /// The shared part of the transport. It is provided by shared reference
-    /// while sending and receiving. For an MPSC, this would contain a sender.
+    /// The shared part of the transport backend. It is provided by shared
+    /// reference while sending and receiving. For an MPSC, this would contain a
+    /// sender.
     type Shared: Send + Sync;
-    /// The exclusive part of the transport. It is provided by mutable reference
-    /// only while receiving. For an MPSC, this would contain a receiver.
+    /// The exclusive part of the transport backend. It is provided by mutable
+    /// reference only while receiving. For an MPSC, this would contain a
+    /// receiver.
     type Exclusive: Send;
 
     /// The buffer type for sending.
@@ -37,16 +64,16 @@ pub trait Transport {
     /// The future state for send operations.
     type SendFutureState: Send;
 
-    /// Acquires an empty send buffer for the transport.
+    /// Acquires an empty send buffer for the transport backend.
     fn acquire(shared: &Self::Shared) -> Self::SendBuffer;
 
-    /// Begins sending a `SendBuffer` over this transport.
+    /// Begins sending a `SendBuffer` over this transport backend.
     ///
     /// Returns the state for a future which can be polled with `poll_send`.
     fn begin_send(shared: &Self::Shared, buffer: Self::SendBuffer) -> Self::SendFutureState;
 
     /// Polls a `SendFutureState` for completion with the shared part of the
-    /// transport.
+    /// transport backend.
     ///
     /// When ready, polling returns one of three values:
     /// - `Ok(())` if the buffer was successfully sent.
@@ -64,7 +91,7 @@ pub trait Transport {
     /// The buffer type for receivers.
     type RecvBuffer: Decoder + Send;
 
-    /// Begins receiving a `RecvBuffer` over this transport.
+    /// Begins receiving a `RecvBuffer` over this transport backend.
     ///
     /// Returns the state for a future which can be polled with `poll_recv`.
     fn begin_recv(shared: &Self::Shared, exclusive: &mut Self::Exclusive) -> Self::RecvFutureState;
@@ -84,17 +111,17 @@ pub trait Transport {
     ) -> Poll<Result<Self::RecvBuffer, Option<Self::Error>>>;
 }
 
-/// A transport layer which can send messages without blocking.
+/// A transport backend which can send messages without blocking.
 ///
 /// Because failed sends return immediately without waiting for an epitaph to be
-/// read, `send_immediately` may observe transport closure prematurely.
+/// read, `send_immediately` may observe transport backend closure prematurely.
 ///
 /// Non-blocking send operations cannot apply backpressure, which can cause
 /// memory exhaustion across the system. `NonBlockingTransport` is intended for
 /// use only while porting existing code.
 pub trait NonBlockingTransport: Transport {
     /// Completes a `SendFutureState` with the shared part of the transport
-    /// without blocking.
+    /// backend without blocking.
     fn send_immediately(
         future_state: &mut Self::SendFutureState,
         shared: &Self::Shared,
