@@ -9,6 +9,7 @@ rustc_binary("bin") {
   edition = "2024"
   output_name = "test-fxfs"
   deps = [
+    ":test_fxfs_config",
     "//sdk/fidl/fuchsia.fshost:fuchsia.fshost_rust",
     "//sdk/fidl/fuchsia.io:fuchsia.io_rust",
     "//sdk/rust/zx",
@@ -38,9 +39,19 @@ rustc_binary("bin") {
   testonly = true
 }
 
-fuchsia_component("test-fxfs") {
+fuchsia_component_manifest("test-fxfs-manifest") {
+  component_name = "test-fxfs"
   manifest = "meta/test-fxfs.cml"
+}
+
+fuchsia_component("test-fxfs") {
+  cm_label = ":test-fxfs-manifest"
   deps = [ ":bin" ]
+  testonly = true
+}
+
+fuchsia_structured_config_rust_lib("test_fxfs_config") {
+  cm_label = ":test-fxfs-manifest"
   testonly = true
 }
 

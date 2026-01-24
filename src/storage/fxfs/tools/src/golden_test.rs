@@ -22,7 +22,7 @@ use fxfs_crypto::Crypt;
 use fxfs_insecure_crypto::new_insecure_crypt;
 use fxfs_make_blob_image::BLOB_VOLUME_NAME;
 use fxfs_platform::fuchsia::fxblob::BlobDirectory;
-use fxfs_platform::fuchsia::volume::FxVolumeAndRoot;
+use fxfs_platform::fuchsia::volume::{FxVolumeAndRoot, MemoryPressureConfig};
 use fxfs_platform::fuchsia::volumes_directory::VolumesDirectory;
 use refaults_vmo::PageRefaultCounter;
 use std::path::Path;
@@ -136,6 +136,7 @@ async fn check_image(path: &Path) -> Result<(), Error> {
             Weak::new(),
             None,
             Arc::new(PageRefaultCounter::new().expect("Failed to create PageRefaultCounter")),
+            MemoryPressureConfig::default(),
         )
         .await
         .context("VolumesDirectory creation")?;
@@ -197,6 +198,7 @@ async fn check_image(path: &Path) -> Result<(), Error> {
             Weak::new(),
             None,
             Arc::new(PageRefaultCounter::new().expect("Failed to create PageRefaultCounter")),
+            MemoryPressureConfig::default(),
         )
         .await
         .context("VolumesDirectory recreation")?;

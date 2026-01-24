@@ -1201,7 +1201,7 @@ mod tests {
     use crate::fuchsia::testing::{
         TestFixture, TestFixtureOptions, close_dir_checked, close_file_checked, open_file_checked,
     };
-    use crate::fuchsia::volume::FxVolumeAndRoot;
+    use crate::fuchsia::volume::{FxVolumeAndRoot, MemoryPressureConfig};
     use anyhow::bail;
     use assert_matches::assert_matches;
     use fidl::endpoints::create_proxy;
@@ -1270,6 +1270,7 @@ mod tests {
             store,
             store_object_id,
             Arc::new(PageRefaultCounter::new().unwrap()),
+            MemoryPressureConfig::default(),
         )
         .await
         .unwrap();

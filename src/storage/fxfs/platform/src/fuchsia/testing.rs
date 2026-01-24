@@ -7,7 +7,7 @@ use crate::fuchsia::file::FxFile;
 use crate::fuchsia::fxblob::BlobDirectory;
 use crate::fuchsia::memory_pressure::MemoryPressureMonitor;
 use crate::fuchsia::pager::PagerBacked;
-use crate::fuchsia::volume::FxVolumeAndRoot;
+use crate::fuchsia::volume::{FxVolumeAndRoot, MemoryPressureConfig};
 use crate::fuchsia::volumes_directory::VolumesDirectory;
 use anyhow::{Context, Error};
 use fidl::endpoints::create_proxy;
@@ -130,6 +130,7 @@ impl TestFixture {
                 Weak::new(),
                 Some(mem_pressure),
                 blob_resupplied_count.clone(),
+                MemoryPressureConfig::default(),
             )
             .await
             .unwrap();
@@ -139,6 +140,7 @@ impl TestFixture {
                     store,
                     store_object_id,
                     blob_resupplied_count.clone(),
+                    *volumes_directory.memory_pressure_config(),
                 )
                 .await
                 .unwrap()
@@ -148,6 +150,7 @@ impl TestFixture {
                     store,
                     store_object_id,
                     blob_resupplied_count.clone(),
+                    *volumes_directory.memory_pressure_config(),
                 )
                 .await
                 .unwrap()
@@ -172,6 +175,7 @@ impl TestFixture {
                 Weak::new(),
                 Some(mem_pressure),
                 blob_resupplied_count.clone(),
+                MemoryPressureConfig::default(),
             )
             .await
             .unwrap();
@@ -181,6 +185,7 @@ impl TestFixture {
                     store,
                     store_object_id,
                     blob_resupplied_count.clone(),
+                    *volumes_directory.memory_pressure_config(),
                 )
                 .await
                 .unwrap()
@@ -190,6 +195,7 @@ impl TestFixture {
                     store,
                     store_object_id,
                     blob_resupplied_count.clone(),
+                    *volumes_directory.memory_pressure_config(),
                 )
                 .await
                 .unwrap()

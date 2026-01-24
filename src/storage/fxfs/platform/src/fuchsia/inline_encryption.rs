@@ -10,6 +10,7 @@ mod tests {
     use crate::file::FxFile;
     use crate::fuchsia::RemoteCrypt;
     use crate::fuchsia::volume::FxVolume;
+    use crate::fuchsia::volume::MemoryPressureConfig;
     use fidl_fuchsia_fxfs::{CryptMarker, KeyPurpose};
     use fidl_fuchsia_hardware_inlineencryption::DeviceMarker;
     use fidl_fuchsia_io as fio;
@@ -511,6 +512,7 @@ mod tests {
                 starnix_vol.clone(),
                 starnix_vol.store_object_id(),
                 Arc::new(PageRefaultCounter::new().expect("PageRefaultCounter::new failed")),
+                MemoryPressureConfig::default(),
             )
             .expect("FxVolume::new failed"),
         );

@@ -67,6 +67,9 @@ pub struct VolumesDirectory {
     // A callback to invoke when a volume is added.  When the volume is removed, this is called
     // again with `None` as the second parameter.
     on_volume_added: OnceLock<Box<dyn Fn(&str, Option<Arc<ObjectStore>>) + Send + Sync>>,
+
+    /// The cache configuration to use under different memory pressure levels.
+    memory_pressure_config: MemoryPressureConfig,
 }
 
 /// Operations on VolumesDirectory that cannot be performed concurrently (i.e. most
@@ -129,9 +132,19 @@ impl MountedVolumesGuard<'_> {
         );
 
         let volume = if as_blob {
-            self.mount_store::<BlobDirectory>(name, store, MemoryPressureConfig::default()).await?
+            self.mount_store::<BlobDirectory>(
+                name,
+                store,
+                self.volumes_directory.memory_pressure_config,
+            )
+            .await?
         } else {
-            self.mount_store::<FxDirectory>(name, store, MemoryPressureConfig::default()).await?
+            self.mount_store::<FxDirectory>(
+                name,
+                store,
+                self.volumes_directory.memory_pressure_config,
+            )
+            .await?
         };
         // If there is an ongoing profile activity, we should apply it to the mounted volume.
         if let Some((profile_name, _)) = &(*self.volumes_directory.profiling_state.lock().await) {
@@ -167,6 +180,7 @@ impl MountedVolumesGuard<'_> {
             store,
             unique_id.koid().unwrap().raw_koid(),
             self.volumes_directory.blob_resupplied_count.clone(),
+            self.volumes_directory.memory_pressure_config,
         )
         .await?;
         volume
@@ -327,6 +341,7 @@ impl VolumesDirectory {
         inspect_tree: Weak<FsInspectTree>,
         mem_monitor: Option<MemoryPressureMonitor>,
         blob_resupplied_count: Arc<PageRefaultCounter>,
+        memory_pressure_config: MemoryPressureConfig,
     ) -> Result<Arc<Self>, Error> {
         let layer_set = root_volume.volume_directory().store().tree().layer_set();
         let mut merger = layer_set.merger();
@@ -341,6 +356,7 @@ impl VolumesDirectory {
             pager_dirty_bytes_count: AtomicU64::new(0),
             max_dirty_bytes_when_critical: AtomicU64::new(zx::system_get_physmem() / 100),
             on_volume_added: OnceLock::new(),
+            memory_pressure_config,
         });
         let mut iter = me.root_volume.volume_directory().iter(&mut merger).await?;
         while let Some((name, store_id, object_descriptor)) = iter.get() {
@@ -700,6 +716,10 @@ impl VolumesDirectory {
         Ok(())
     }
 
+    pub fn memory_pressure_config(&self) -> &MemoryPressureConfig {
+        &self.memory_pressure_config
+    }
+
     fn is_flush_required_to_dirty(&self, byte_count: u64) -> bool {
         let mem_pressure = self
             .mem_monitor
@@ -932,10 +952,12 @@ impl StoreOwner for VolumesDirectory {
 
 #[cfg(test)]
 mod tests {
+    use super::Mode;
     use crate::fuchsia::RemoteCrypt;
     use crate::fuchsia::memory_pressure::MemoryPressureLevel;
     use crate::fuchsia::testing::{self, TestFixture, open_dir_checked, open_file_checked};
-    use crate::fuchsia::volumes_directory::{Mode, VolumesDirectory};
+    use crate::fuchsia::volume::MemoryPressureConfig;
+    use crate::fuchsia::volumes_directory::VolumesDirectory;
     use crate::testing::TestFixtureOptions;
     use fidl::endpoints::{DiscoverableProtocolMarker, create_proxy, create_request_stream};
     use fidl_fuchsia_fs::AdminMarker;
@@ -1009,6 +1031,7 @@ mod tests {
             Weak::new(),
             None,
             blob_resupplied_count,
+            MemoryPressureConfig::default(),
         )
         .await
         .unwrap();
@@ -1035,6 +1058,7 @@ mod tests {
             Weak::new(),
             None,
             blob_resupplied_count,
+            MemoryPressureConfig::default(),
         )
         .await
         .unwrap();
@@ -1058,6 +1082,7 @@ mod tests {
             Weak::new(),
             None,
             blob_resupplied_count,
+            MemoryPressureConfig::default(),
         )
         .await
         .unwrap();
@@ -1106,6 +1131,7 @@ mod tests {
             Weak::new(),
             None,
             blob_resupplied_count,
+            MemoryPressureConfig::default(),
         )
         .await
         .unwrap();
@@ -1132,6 +1158,7 @@ mod tests {
             Weak::new(),
             None,
             blob_resupplied_count,
+            MemoryPressureConfig::default(),
         )
         .await
         .unwrap();
@@ -1160,6 +1187,7 @@ mod tests {
             Weak::new(),
             None,
             blob_resupplied_count,
+            MemoryPressureConfig::default(),
         )
         .await
         .unwrap();
@@ -1185,6 +1213,7 @@ mod tests {
             Weak::new(),
             None,
             blob_resupplied_count,
+            MemoryPressureConfig::default(),
         )
         .await
         .unwrap();
@@ -1212,6 +1241,7 @@ mod tests {
             Weak::new(),
             None,
             blob_resupplied_count,
+            MemoryPressureConfig::default(),
         )
         .await
         .unwrap();
@@ -1237,6 +1267,7 @@ mod tests {
             Weak::new(),
             None,
             blob_resupplied_count,
+            MemoryPressureConfig::default(),
         )
         .await
         .unwrap();
@@ -1265,6 +1296,7 @@ mod tests {
             Weak::new(),
             None,
             blob_resupplied_count,
+            MemoryPressureConfig::default(),
         )
         .await
         .unwrap();
@@ -1299,6 +1331,7 @@ mod tests {
             Weak::new(),
             None,
             blob_resupplied_count,
+            MemoryPressureConfig::default(),
         )
         .await
         .unwrap();
@@ -1341,10 +1374,15 @@ mod tests {
         let root_volume = root_volume(filesystem.clone()).await.unwrap();
         let blob_resupplied_count =
             Arc::new(PageRefaultCounter::new().expect("Failed to create PageRefaultCounter"));
-        let volumes_directory =
-            VolumesDirectory::new(root_volume, Weak::new(), None, blob_resupplied_count)
-                .await
-                .unwrap();
+        let volumes_directory = VolumesDirectory::new(
+            root_volume,
+            Weak::new(),
+            None,
+            blob_resupplied_count,
+            MemoryPressureConfig::default(),
+        )
+        .await
+        .unwrap();
 
         let vol = volumes_directory
             .create_and_mount_volume("vol", None, false, None)
@@ -1387,6 +1425,7 @@ mod tests {
             Weak::new(),
             None,
             blob_resupplied_count,
+            MemoryPressureConfig::default(),
         )
         .await
         .unwrap();
@@ -1420,6 +1459,7 @@ mod tests {
             Weak::new(),
             None,
             blob_resupplied_count,
+            MemoryPressureConfig::default(),
         )
         .await
         .unwrap();
@@ -1540,6 +1580,7 @@ mod tests {
             Weak::new(),
             None,
             blob_resupplied_count,
+            MemoryPressureConfig::default(),
         )
         .await
         .unwrap();
@@ -1702,6 +1743,7 @@ mod tests {
             Weak::new(),
             None,
             blob_resupplied_count,
+            MemoryPressureConfig::default(),
         )
         .await
         .unwrap();
@@ -1739,6 +1781,7 @@ mod tests {
                 Weak::new(),
                 None,
                 blob_resupplied_count,
+                MemoryPressureConfig::default(),
             )
             .await
             .unwrap();
@@ -1789,6 +1832,7 @@ mod tests {
                 Weak::new(),
                 None,
                 blob_resupplied_count,
+                MemoryPressureConfig::default(),
             )
             .await
             .unwrap();
@@ -1882,6 +1926,7 @@ mod tests {
             Weak::new(),
             None,
             blob_resupplied_count,
+            MemoryPressureConfig::default(),
         )
         .await
         .unwrap();
@@ -1974,6 +2019,7 @@ mod tests {
             Weak::new(),
             None,
             blob_resupplied_count,
+            MemoryPressureConfig::default(),
         )
         .await
         .unwrap();
@@ -2090,6 +2136,7 @@ mod tests {
                 Weak::new(),
                 None,
                 blob_resupplied_count,
+                MemoryPressureConfig::default(),
             )
             .await
             .unwrap();
@@ -2124,6 +2171,7 @@ mod tests {
                 Weak::new(),
                 None,
                 blob_resupplied_count,
+                MemoryPressureConfig::default(),
             )
             .await
             .unwrap();
@@ -2174,6 +2222,7 @@ mod tests {
                 Weak::new(),
                 None,
                 blob_resupplied_count,
+                MemoryPressureConfig::default(),
             )
             .await
             .unwrap();
@@ -2228,6 +2277,7 @@ mod tests {
             Weak::new(),
             None,
             blob_resupplied_count,
+            MemoryPressureConfig::default(),
         )
         .await
         .unwrap();
@@ -2263,6 +2313,7 @@ mod tests {
             Weak::new(),
             None,
             blob_resupplied_count,
+            MemoryPressureConfig::default(),
         )
         .await
         .unwrap();
@@ -2321,6 +2372,7 @@ mod tests {
             Weak::new(),
             None,
             blob_resupplied_count,
+            MemoryPressureConfig::default(),
         )
         .await
         .unwrap();
@@ -2479,6 +2531,7 @@ mod tests {
                 Weak::new(),
                 None,
                 blob_resupplied_count,
+                MemoryPressureConfig::default(),
             )
             .await
             .unwrap();
@@ -2707,6 +2760,7 @@ mod tests {
                 Weak::new(),
                 None,
                 blob_resupplied_count,
+                MemoryPressureConfig::default(),
             )
             .await
             .unwrap();
@@ -2763,6 +2817,7 @@ mod tests {
             Weak::new(),
             None,
             blob_resupplied_count,
+            MemoryPressureConfig::default(),
         )
         .await
         .unwrap();
@@ -2815,6 +2870,7 @@ mod tests {
             Weak::new(),
             None,
             blob_resupplied_count,
+            MemoryPressureConfig::default(),
         )
         .await
         .unwrap();

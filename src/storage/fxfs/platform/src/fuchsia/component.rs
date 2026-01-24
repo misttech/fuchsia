@@ -5,6 +5,7 @@
 use crate::fuchsia::debug::{FxfsDebug, handle_debug_request};
 use crate::fuchsia::errors::map_to_status;
 use crate::fuchsia::memory_pressure::MemoryPressureMonitor;
+use crate::fuchsia::volume::MemoryPressureConfig;
 use crate::fuchsia::volumes_directory::VolumesDirectory;
 use anyhow::{Context, Error, bail};
 use async_trait::async_trait;
@@ -320,6 +321,7 @@ impl Component {
             Arc::downgrade(&inspect_tree),
             mem_monitor,
             blob_resupplied_count,
+            MemoryPressureConfig::default(),
         )
         .await?;
 

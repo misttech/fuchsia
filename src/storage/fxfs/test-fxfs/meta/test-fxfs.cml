@@ -31,6 +31,16 @@
             ],
         },
     ],
+    use: [
+        {
+            config: "fuchsia.test.fxfs.DirentCacheSize",
+            key: "dirent_cache_limit",
+            type: "uint64",
+            default: 2000,
+            // Transitional is what's needed for component starts to not fail if not offered.
+            availability: "transitional",
+        },
+    ],
     expose: [
         {
             directory: "data",

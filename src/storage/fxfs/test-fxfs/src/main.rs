@@ -27,11 +27,13 @@ use fxfs::object_store::volume::root_volume;
 use fxfs_crypto::Crypt;
 use fxfs_platform::component::new_block_client;
 use fxfs_platform::fuchsia::RemoteCrypt;
+use fxfs_platform::volume::MemoryPressureConfig;
 use fxfs_platform::volumes_directory::VolumesDirectory;
 use refaults_vmo::PageRefaultCounter;
 use std::sync::{Arc, Weak};
 use storage_device::DeviceHolder;
 use storage_device::block_device::BlockDevice;
+use test_fxfs_config::Config;
 use vfs::directory::helper::DirectlyMutable;
 use vfs::execution_scope::ExecutionScope;
 use vmo_backed_block_server::{
@@ -263,6 +265,8 @@ async fn handle_starnix_volume_provider_requests(
 
 #[fuchsia::main]
 async fn main() -> Result<(), Error> {
+    let config = Config::take_from_startup_handle();
+
     // Android's bionic unit tests will fail with a smaller disk.
     // TODO(https://fxbug.dev/378744012): Make the size of VmoBackedServer configurable.
     let block_server = Arc::new(
@@ -332,11 +336,18 @@ async fn main() -> Result<(), Error> {
 
     let blob_resupplied_count =
         Arc::new(PageRefaultCounter::new().expect("Failed to create PageRefaultCounter"));
+
+    let mut mp_config = MemoryPressureConfig::default();
+    mp_config.mem_normal.cache_size_limit = config.dirent_cache_limit as usize;
+    mp_config.mem_warning.cache_size_limit = config.dirent_cache_limit as usize;
+    mp_config.mem_critical.cache_size_limit = config.dirent_cache_limit as usize;
+
     let volumes_directory = VolumesDirectory::new(
         root_volume(filesystem.clone()).await.context("root_volume failed")?,
         Weak::new(),
         None,
         blob_resupplied_count,
+        mp_config,
     )
     .await
     .context("failed to create the VolumesDirectory")?;

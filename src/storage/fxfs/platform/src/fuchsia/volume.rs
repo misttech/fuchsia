@@ -58,7 +58,7 @@ pub const MAX_READ_AHEAD_SIZE: u64 = BASE_READ_AHEAD_SIZE * 4;
 
 const PROFILE_DIRECTORY: &str = "profiles";
 
-#[derive(Clone)]
+#[derive(Clone, Copy, Debug)]
 pub struct MemoryPressureLevelConfig {
     /// The period to wait between flushes, as well as perform other background maintenance tasks
     /// (e.g. purging caches).
@@ -88,7 +88,7 @@ impl Default for MemoryPressureLevelConfig {
     }
 }
 
-#[derive(Clone)]
+#[derive(Clone, Copy, Debug)]
 pub struct MemoryPressureConfig {
     /// The configuration to use at [`MemoryPressureLevel::Normal`].
     pub mem_normal: MemoryPressureLevelConfig,
@@ -175,6 +175,7 @@ impl FxVolume {
         store: Arc<ObjectStore>,
         fs_id: u64,
         blob_resupplied_count: Arc<PageRefaultCounter>,
+        memory_pressure_config: MemoryPressureConfig,
     ) -> Result<Self, Error> {
         let scope = ExecutionScope::new();
         Ok(Self {
@@ -186,11 +187,9 @@ impl FxVolume {
             background_task: Mutex::new(None),
             fs_id,
             scope,
-            dirent_cache: DirentCache::new(DIRENT_CACHE_LIMIT),
+            dirent_cache: DirentCache::new(memory_pressure_config.mem_normal.cache_size_limit),
             profile_state: Mutex::new(None),
-            read_ahead_size: AtomicU64::new(
-                MemoryPressureConfig::default().mem_normal.read_ahead_size,
-            ),
+            read_ahead_size: AtomicU64::new(memory_pressure_config.mem_normal.read_ahead_size),
             #[cfg(any(test, feature = "testing"))]
             poisoned: AtomicBool::new(false),
             blob_resupplied_count,
@@ -893,9 +892,15 @@ impl FxVolumeAndRoot {
         store: Arc<ObjectStore>,
         unique_id: u64,
         blob_resupplied_count: Arc<PageRefaultCounter>,
+        memory_pressure_config: MemoryPressureConfig,
     ) -> Result<Self, Error> {
-        let volume =
-            Arc::new(FxVolume::new(parent, store, unique_id, blob_resupplied_count.clone())?);
+        let volume = Arc::new(FxVolume::new(
+            parent,
+            store,
+            unique_id,
+            blob_resupplied_count.clone(),
+            memory_pressure_config,
+        )?);
         let root_object_id = volume.store().root_directory_object_id();
         let root_dir = Directory::open(&volume, root_object_id).await?;
         let root = Arc::<T>::new(root_dir.into()) as Arc<dyn RootDir>;
@@ -1625,6 +1630,7 @@ mod tests {
                 Weak::new(),
                 None,
                 blob_resupplied_count,
+                MemoryPressureConfig::default(),
             )
             .await
             .unwrap();
@@ -1737,6 +1743,7 @@ mod tests {
                 Weak::new(),
                 None,
                 blob_resupplied_count,
+                MemoryPressureConfig::default(),
             )
             .await
             .unwrap();
@@ -1818,6 +1825,7 @@ mod tests {
             Weak::new(),
             None,
             blob_resupplied_count,
+            MemoryPressureConfig::default(),
         )
         .await
         .unwrap();
@@ -1861,6 +1869,7 @@ mod tests {
                 Weak::new(),
                 None,
                 blob_resupplied_count,
+                MemoryPressureConfig::default(),
             )
             .await
             .unwrap();
@@ -1994,6 +2003,7 @@ mod tests {
                 Weak::new(),
                 None,
                 blob_resupplied_count,
+                MemoryPressureConfig::default(),
             )
             .await
             .unwrap();
@@ -2157,6 +2167,7 @@ mod tests {
                 Weak::new(),
                 None,
                 blob_resupplied_count,
+                MemoryPressureConfig::default(),
             )
             .await
             .unwrap();
@@ -2334,6 +2345,7 @@ mod tests {
                 Weak::new(),
                 None,
                 blob_resupplied_count,
+                MemoryPressureConfig::default(),
             )
             .await
             .unwrap();
@@ -2950,8 +2962,14 @@ mod tests {
             let unique_id = store.store_object_id();
             let blob_resupplied_count =
                 Arc::new(PageRefaultCounter::new().expect("Failed to create PageRefaultCounter"));
-            let volume =
-                FxVolume::new(Weak::new(), store, unique_id, blob_resupplied_count).unwrap();
+            let volume = FxVolume::new(
+                Weak::new(),
+                store,
+                unique_id,
+                blob_resupplied_count,
+                MemoryPressureConfig::default(),
+            )
+            .unwrap();
             volume.terminate().await;
         }
         // Close the filesystem, and make sure we don't have any dangling references.
@@ -2986,8 +3004,14 @@ mod tests {
             let unique_id = store.store_object_id();
             let blob_resupplied_count =
                 Arc::new(PageRefaultCounter::new().expect("Failed to create PageRefaultCounter"));
-            let volume =
-                FxVolume::new(Weak::new(), store, unique_id, blob_resupplied_count).unwrap();
+            let volume = FxVolume::new(
+                Weak::new(),
+                store,
+                unique_id,
+                blob_resupplied_count,
+                MemoryPressureConfig::default(),
+            )
+            .unwrap();
             volume.terminate().await;
         }
         // Close the filesystem, and make sure we don't have any dangling references.
