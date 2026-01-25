@@ -21,12 +21,12 @@ extern "C" {
 
 syscall_result wrapper_{{ $syscallName }}(
 {{- range .Parameters -}}
-SafeSyscallArgument<{{ ParameterType . }}>::RawType {{ LowerCaseWithUnderscores . }},
+SafeSyscallArgument<{{ ParameterType . }}>::RawType arg_{{ LowerCaseWithUnderscores . }},
 {{- end -}}
 uint64_t pc);
 syscall_result wrapper_{{ $syscallName }}(
 {{- range .Parameters -}}
-SafeSyscallArgument<{{ ParameterType . }}>::RawType {{ LowerCaseWithUnderscores . }},
+SafeSyscallArgument<{{ ParameterType . }}>::RawType arg_{{ LowerCaseWithUnderscores . }},
 {{- end -}}
 uint64_t pc) {
     return do_syscall(
@@ -41,7 +41,7 @@ uint64_t pc) {
 {{- range $i, $param := .Parameters }}
 {{- $paramName := LowerCaseWithUnderscores $param }}
 {{- $paramType := ParameterType $param }}
-{{- $arg := printf "SafeSyscallArgument<%s>::Sanitize(%s)" $paramType $paramName }}
+{{- $arg := printf "SafeSyscallArgument<%s>::Sanitize(arg_%s)" $paramType $paramName }}
 {{- if PassedAsPointer $param }}
     {{- if IsUserOutHandle $param }}
         {{- $arg = printf "&out_handle_%s" $paramName }}
@@ -61,7 +61,7 @@ uint64_t pc) {
         return result;
 {{- end }}
 {{- range $userOutHandles }}
-    result = make_user_out_ptr(SafeSyscallArgument<{{ ParameterType . }}>::Sanitize({{ LowerCaseWithUnderscores . }})).copy_to_user(out_handle_{{ LowerCaseWithUnderscores . }});
+    result = make_user_out_ptr(SafeSyscallArgument<{{ ParameterType . }}>::Sanitize(arg_{{ LowerCaseWithUnderscores . }})).copy_to_user(out_handle_{{ LowerCaseWithUnderscores . }});
     if (result != ZX_OK) {
         Thread::Current::SignalPolicyException(ZX_EXCP_POLICY_CODE_HANDLE_LEAK, 0u);
     }
