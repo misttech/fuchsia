@@ -117,6 +117,27 @@ pub async fn get_driver_info(
 }
 
 /// Combines pagination results into a single vector.
+pub async fn get_driver_host_info(service: &fdd::ManagerProxy) -> Result<Vec<fdd::DriverHostInfo>> {
+    let (iterator, iterator_server) =
+        fidl::endpoints::create_proxy::<fdd::DriverHostInfoIteratorMarker>();
+
+    service
+        .get_driver_host_info(iterator_server)
+        .context("FIDL call to get driver host info failed")?;
+
+    let mut info_result = Vec::new();
+    loop {
+        let mut info =
+            iterator.get_next().await.context("FIDL call to get driver host info failed")?;
+        if info.is_empty() {
+            break;
+        }
+        info_result.append(&mut info)
+    }
+    Ok(info_result)
+}
+
+/// Combines pagination results into a single vector.
 pub async fn get_composite_node_specs(
     service: &fdd::ManagerProxy,
     name_filter: Option<String>,

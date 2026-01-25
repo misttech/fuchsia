@@ -27,6 +27,15 @@ void DeviceInfoIterator::GetNext(GetNextCompleter::Sync& completer) {
       fidl::VectorView<fdd::wire::NodeInfo>::FromExternal(result.data(), result.size()));
 }
 
+void DriverHostInfoIterator::GetNext(GetNextCompleter::Sync& completer) {
+  std::vector<fdd::DriverHostInfo> result;
+  constexpr size_t kMaxEntries = 50;
+  std::ranges::move(list_ | std::views::take(kMaxEntries), std::back_inserter(result));
+  list_.erase(list_.begin(), list_.begin() + std::min<size_t>(kMaxEntries, list_.size()));
+
+  completer.Reply(std::move(result));
+}
+
 void CompositeInfoIterator::GetNext(GetNextCompleter::Sync& completer) {
   if (offset_ >= list_.size()) {
     completer.Reply(fidl::VectorView<fdd::wire::CompositeNodeInfo>{});

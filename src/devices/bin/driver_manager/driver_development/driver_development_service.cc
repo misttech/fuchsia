@@ -265,7 +265,56 @@ void DriverDevelopmentService::GetCompositeNodeSpecs(
 }
 
 void DriverDevelopmentService::GetDriverHostInfo(GetDriverHostInfoRequestView request,
-                                                 GetDriverHostInfoCompleter::Sync& completer) {}
+                                                 GetDriverHostInfoCompleter::Sync& completer) {
+  std::deque<fdd::DriverHostInfo> info;
+  for (const auto& driver_host : driver_runner_.driver_hosts()) {
+    zx::result process_info = driver_host.GetProcessInfo();
+    if (process_info.is_error()) {
+      continue;
+    }
+    std::vector<fdd::ThreadInfo> threads;
+    for (const auto& thread : process_info->threads()) {
+      threads.emplace_back(fdd::ThreadInfo{{
+          .koid = thread.koid(),
+          .name = thread.name(),
+          .scheduler_role = thread.scheduler_role(),
+      }});
+    }
+    std::vector<fdd::DispatcherInfo> dispatchers;
+    for (const auto& dispatcher : process_info->dispatchers()) {
+      dispatchers.emplace_back(fdd::DispatcherInfo{{
+          .driver = dispatcher.driver(),
+          .name = dispatcher.name(),
+          .options = dispatcher.options(),
+          .scheduler_role = dispatcher.scheduler_role(),
+      }});
+    }
+    info.emplace_back(fdd::DriverHostInfo{{
+        .process_koid = process_info->process_koid(),
+        .threads = std::move(threads),
+        .drivers = {},
+        .dispatchers = std::move(dispatchers),
+        .name = std::string(driver_host.name_for_colocation()),
+    }});
+  }
+
+  auto iterator = std::make_unique<driver_development::DriverHostInfoIterator>(std::move(info));
+  fidl::BindServer(this->dispatcher_, std::move(request->iterator), std::move(iterator),
+                   [](auto* self, fidl::UnbindInfo info,
+                      fidl::ServerEnd<fdd::DriverHostInfoIterator> server_end) {
+                     if (info.is_user_initiated()) {
+                       return;
+                     }
+                     if (info.is_peer_closed()) {
+                       // For this development protocol, the client is free to disconnect
+                       // at any time.
+                       return;
+                     }
+                     fdf_log::error("Error serving '{}': {}",
+                                    fidl::DiscoverableProtocolName<fdd::Manager>,
+                                    info.FormatDescription());
+                   });
+}
 
 void DriverDevelopmentService::DisableDriver(DisableDriverRequestView request,
                                              DisableDriverCompleter::Sync& completer) {

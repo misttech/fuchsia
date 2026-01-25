@@ -116,6 +116,10 @@ type DriverHostInfo = table {
     /// The process KOID of the driver host.
     1: process_koid zx.Koid;
 
+    /// Optional name of the driver host.
+    @available(added=NEXT)
+    5: name string:MAX;
+
     /// The list of threads of the driver host.
     2: threads vector<ThreadInfo>:MAX;
 

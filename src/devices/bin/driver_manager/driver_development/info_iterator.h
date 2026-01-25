@@ -5,7 +5,9 @@
 #ifndef SRC_DEVICES_BIN_DRIVER_MANAGER_DRIVER_DEVELOPMENT_INFO_ITERATOR_H_
 #define SRC_DEVICES_BIN_DRIVER_MANAGER_DRIVER_DEVELOPMENT_INFO_ITERATOR_H_
 
-#include <fidl/fuchsia.driver.development/cpp/wire.h>
+#include <fidl/fuchsia.driver.development/cpp/fidl.h>
+
+#include <deque>
 
 namespace driver_development {
 
@@ -21,6 +23,18 @@ class DeviceInfoIterator : public fidl::WireServer<fuchsia_driver_development::N
   size_t offset_ = 0;
   std::unique_ptr<fidl::Arena<512>> arena_;
   std::vector<fuchsia_driver_development::wire::NodeInfo> list_;
+};
+
+class DriverHostInfoIterator
+    : public fidl::Server<fuchsia_driver_development::DriverHostInfoIterator> {
+ public:
+  explicit DriverHostInfoIterator(std::deque<fuchsia_driver_development::DriverHostInfo> list)
+      : list_(std::move(list)) {}
+
+  void GetNext(GetNextCompleter::Sync& completer) override;
+
+ private:
+  std::deque<fuchsia_driver_development::DriverHostInfo> list_;
 };
 
 class CompositeInfoIterator

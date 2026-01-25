@@ -22,19 +22,36 @@ pub async fn list(
     )
     .await?;
 
-    let mut driver_hosts = BTreeMap::new();
+    let driver_host_info =
+        fuchsia_driver_dev::get_driver_host_info(&driver_development_proxy).await?;
+
+    let mut driver_host_drivers = BTreeMap::new();
 
     for device in device_info {
-        if let Some(koid) = device.driver_host_koid {
-            if let Some(url) = device.bound_driver_url {
-                driver_hosts.entry(koid).or_insert(BTreeSet::new()).insert(url);
-            }
+        if let Some(koid) = device.driver_host_koid
+            && let Some(url) = device.bound_driver_url
+        {
+            driver_host_drivers.entry(koid).or_insert(BTreeSet::new()).insert(url);
         }
     }
 
-    for (koid, drivers) in driver_hosts {
+    let mut driver_hosts_names = BTreeMap::new();
+
+    for host in driver_host_info {
+        if let Some(koid) = host.process_koid
+            && let Some(name) = host.name
+            && !name.is_empty()
+        {
+            driver_hosts_names.insert(koid, name);
+        }
+    }
+
+    for (koid, drivers) in driver_host_drivers {
         if termion::is_tty(&std::io::stdout()) {
             writeln!(w, "Driver Host: {}", koid)?;
+            if let Some(name) = driver_hosts_names.get(&koid) {
+                writeln!(w, "Name: {}", name)?;
+            }
             for driver in drivers {
                 writeln!(w, "{:>4}{}", "", driver)?;
             }
