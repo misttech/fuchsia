@@ -187,7 +187,7 @@ impl LineDiscipline {
         if self.is_replica_closed() && self.output_queue().readable_size() == 0 {
             return FdEvents::POLLOUT | FdEvents::POLLHUP;
         }
-        self.output_queue().read_readyness() | self.input_queue().write_readyness()
+        self.output_queue().read_readiness() | self.input_queue().write_readiness()
     }
 
     /// `read` implementation of the main side of the terminal.
@@ -225,7 +225,7 @@ impl LineDiscipline {
         if self.is_main_closed() {
             return FdEvents::POLLIN | FdEvents::POLLOUT | FdEvents::POLLERR | FdEvents::POLLHUP;
         }
-        self.input_queue().read_readyness() | self.output_queue().write_readyness()
+        self.input_queue().read_readiness() | self.output_queue().write_readiness()
     }
 
     /// `read` implementation of the replica side of the terminal.
@@ -288,10 +288,7 @@ impl LineDiscipline {
         // main termios never has ICANON set.
 
         if !self.termios.has_output_flags(OPOST) {
-            queue.read_buffer.extend_from_slice(buffer);
-            if !queue.read_buffer.is_empty() {
-                queue.readable = true;
-            }
+            queue.read_queue.push_back(buffer.to_vec());
             return buffer.len();
         }
 
@@ -307,7 +304,7 @@ impl LineDiscipline {
                         self.column = 0;
                     }
                     if self.termios.has_output_flags(ONLCR) {
-                        queue.read_buffer.extend_from_slice(&[b'\r', b'\n']);
+                        queue.line_buffer.extend_from_slice(&[b'\r', b'\n']);
                         continue;
                     }
                 }
@@ -328,7 +325,7 @@ impl LineDiscipline {
                     let spaces = SPACES_PER_TAB - self.column % SPACES_PER_TAB;
                     if self.termios.c_oflag & TABDLY == XTABS {
                         self.column += spaces;
-                        queue.read_buffer.extend(std::iter::repeat(b' ').take(spaces));
+                        queue.line_buffer.extend(std::iter::repeat(b' ').take(spaces));
                         continue;
                     }
                     self.column += spaces;
@@ -342,10 +339,10 @@ impl LineDiscipline {
                     self.column += 1;
                 }
             }
-            queue.read_buffer.append(&mut character_bytes);
+            queue.line_buffer.append(&mut character_bytes);
         }
-        if !queue.read_buffer.is_empty() {
-            queue.readable = true;
+        if !queue.line_buffer.is_empty() {
+            queue.flush_line_buffer();
         }
         return_value
     }
@@ -357,12 +354,6 @@ impl LineDiscipline {
     ) -> (usize, PendingSignals) {
         let mut buffer = original_buffer;
 
-        // If there's a line waiting to be read in canonical mode, don't write
-        // anything else to the read buffer.
-        if self.termios.has_local_flags(ICANON) && queue.readable {
-            return (0, PendingSignals::new());
-        }
-
         let max_bytes = if self.termios.has_local_flags(ICANON) {
             CANON_MAX_BYTES
         } else {
@@ -371,7 +362,7 @@ impl LineDiscipline {
 
         let mut return_value = 0;
         let mut signals = PendingSignals::new();
-        while !buffer.is_empty() && queue.read_buffer.len() < CANON_MAX_BYTES {
+        while !buffer.is_empty() && queue.line_buffer.len() < CANON_MAX_BYTES {
             let size = compute_next_character_size(buffer, &self.termios);
             let mut character_bytes = buffer[..size].to_vec();
             // It is guaranteed that character_bytes has at least one element.
@@ -431,7 +422,7 @@ impl LineDiscipline {
             // In canonical mode, we discard non-terminating characters
             // after the first 4095.
             if self.termios.has_local_flags(ICANON)
-                && queue.read_buffer.len() + size >= max_bytes
+                && queue.line_buffer.len() + size >= max_bytes
                 && !self.termios.is_terminating(&character_bytes)
             {
                 buffer = &buffer[size..];
@@ -439,7 +430,7 @@ impl LineDiscipline {
                 continue;
             }
 
-            if queue.read_buffer.len() + size > max_bytes {
+            if queue.line_buffer.len() + size > max_bytes {
                 break;
             }
 
@@ -448,9 +439,12 @@ impl LineDiscipline {
 
             let first_byte = character_bytes[0];
 
-            // If we get EOF, make the buffer available for reading.
+            // If we get EOF, push whatever we have line_buffer to read_queue, then push an empty datagram.
             if self.termios.has_local_flags(ICANON) && self.termios.is_eof(first_byte) {
-                queue.readable = true;
+                if !queue.line_buffer.is_empty() {
+                    queue.flush_line_buffer();
+                }
+                queue.read_queue.push_back(vec![]);
                 break;
             }
 
@@ -459,16 +453,16 @@ impl LineDiscipline {
             if self.termios.has_local_flags(ICANON) {
                 if self.termios.is_erase(first_byte) {
                     maybe_erase_span =
-                        Some(compute_last_character_span(&queue.read_buffer[..], &self.termios));
+                        Some(compute_last_character_span(&queue.line_buffer[..], &self.termios));
                     erase_type = Some(EraseType::Character);
                 } else if self.termios.is_werase(first_byte) {
                     maybe_erase_span =
-                        Some(compute_last_word_span(&queue.read_buffer[..], &self.termios));
+                        Some(compute_last_word_span(&queue.line_buffer[..], &self.termios));
                     erase_type = Some(EraseType::Word);
                 }
                 if self.termios.is_kill(first_byte) {
                     maybe_erase_span =
-                        Some(compute_last_line_span(&queue.read_buffer[..], &self.termios));
+                        Some(compute_last_line_span(&queue.line_buffer[..], &self.termios));
                     erase_type = Some(EraseType::Line);
                 }
             }
@@ -480,12 +474,12 @@ impl LineDiscipline {
                 }
                 if self.termios.has_local_flags(ECHOPRT) {
                     erased_bytes = Some(
-                        queue.read_buffer[queue.read_buffer.len() - erase_span.bytes..].to_vec(),
+                        queue.line_buffer[queue.line_buffer.len() - erase_span.bytes..].to_vec(),
                     );
                 }
-                queue.read_buffer.truncate(queue.read_buffer.len() - erase_span.bytes);
+                queue.line_buffer.truncate(queue.line_buffer.len() - erase_span.bytes);
             } else {
-                queue.read_buffer.extend_from_slice(&character_bytes);
+                queue.line_buffer.extend_from_slice(&character_bytes);
             }
 
             // Anything written to the read buffer will have to be echoed.
@@ -537,7 +531,7 @@ impl LineDiscipline {
                             unreachable!("Erase type should be Some when maybe_erase_span is Some")
                         }
                     }
-                    if self.erasing && is_beginning_of_line(&queue.read_buffer) {
+                    if self.erasing && queue.line_buffer.is_empty() {
                         echo_bytes.push(b'/');
                         self.erasing = false;
                     }
@@ -576,13 +570,12 @@ impl LineDiscipline {
             // If we finish a line, make it available for reading.
             if self.termios.has_local_flags(ICANON) && self.termios.is_terminating(&character_bytes)
             {
-                queue.readable = true;
-                break;
+                queue.flush_line_buffer();
             }
         }
         // In noncanonical mode, everything is readable.
-        if !self.termios.has_local_flags(ICANON) && !queue.read_buffer.is_empty() {
-            queue.readable = true;
+        if !self.termios.has_local_flags(ICANON) && !queue.line_buffer.is_empty() {
+            queue.flush_line_buffer();
         }
 
         (return_value, signals)
@@ -595,8 +588,14 @@ type RawByte = u8;
 
 #[derive(Debug, Default)]
 struct Queue {
-    /// The buffer of data ready to be read when readable is true. This data has been processed.
-    read_buffer: Vec<u8>,
+    /// The queue of data ready to be read. Each element is a "datagram" (line or chunk).
+    /// Empty byte vectors represent EOF markers (read returns 0).
+    read_queue: VecDeque<Vec<u8>>,
+
+    /// The incomplete line/chunk being processed but not yet ready for the read_queue.
+    /// In Canonical mode, this holds the current line being edited.
+    /// In Non-Canonical mode, this holds data until it is pushed to the read_queue.
+    line_buffer: Vec<u8>,
 
     /// Data that can't fit into readBuf. It is put here until it can be loaded into the read
     /// buffer. Contains data that hasn't been processed.
@@ -604,10 +603,6 @@ struct Queue {
 
     /// The length of the data in `wait_buffers`.
     total_wait_buffer_length: usize,
-
-    /// Whether the read buffer can be read from. In canonical mode, there can be an unterminated
-    /// line in the read buffer, so readable must be checked.
-    readable: bool,
 
     /// Whether this queue in the input queue. Needed to know how to transform received data.
     is_input: bool,
@@ -623,7 +618,7 @@ impl Queue {
     }
 
     /// Returns whether the queue is ready to be written to.
-    fn write_readyness(&self) -> FdEvents {
+    fn write_readiness(&self) -> FdEvents {
         if self.total_wait_buffer_length < WAIT_BUFFER_MAX_BYTES {
             FdEvents::POLLOUT
         } else {
@@ -632,13 +627,16 @@ impl Queue {
     }
 
     /// Returns whether the queue is ready to be read from.
-    fn read_readyness(&self) -> FdEvents {
-        if self.readable { FdEvents::POLLIN } else { FdEvents::empty() }
+    fn read_readiness(&self) -> FdEvents {
+        // If there's an empty "datagram" in read_queue, it means EOF, which is "readable" (returns 0).
+        if !self.read_queue.is_empty() { FdEvents::POLLIN } else { FdEvents::empty() }
     }
 
     /// Returns the number of bytes ready to be read.
     fn readable_size(&self) -> usize {
-        if self.readable { self.read_buffer.len() } else { 0 }
+        // We sum up everything in the read_queue.
+        // NOTE: This might over-report if we only return one datagram at a time, but for poll/FIONREAD it's generally answering "how much is there".
+        self.read_queue.iter().map(|v| v.len()).sum()
     }
 
     /// Read from the queue into `data`. Returns the number of bytes copied.
@@ -647,20 +645,52 @@ impl Queue {
         terminal: &mut LineDiscipline,
         data: &mut dyn OutputBuffer,
     ) -> Result<usize, Errno> {
-        if !self.readable {
+        if self.read_queue.is_empty() {
             return error!(EAGAIN);
         }
-        let max_bytes_to_write = std::cmp::min(self.read_buffer.len(), CANON_MAX_BYTES);
-        let written_to_userspace = data.write(&self.read_buffer[..max_bytes_to_write])?;
-        self.read_buffer.drain(0..written_to_userspace);
-        // If everything has been read, this queue is no longer readable.
-        if self.read_buffer.is_empty() {
-            self.readable = false;
+
+        let mut total_written = 0;
+        while let Some(mut packet) = self.read_queue.pop_front() {
+            if packet.is_empty() {
+                if total_written > 0 {
+                    // We've already read some data. We need to complete the read with that data and
+                    // leave the empty datagram in the queue to signal EOF on the next read.
+                    self.read_queue.push_front(packet);
+                }
+                break;
+            }
+
+            match data.write(&packet) {
+                Ok(written) => {
+                    total_written += written;
+                    if written < packet.len() {
+                        // Put back the unread part.
+                        let remaining = packet.split_off(written);
+                        self.read_queue.push_front(remaining);
+                        // Destination full.
+                        break;
+                    }
+
+                    // If we are in canonical input mode, we stop after one packet (one line).
+                    if self.is_input && terminal.termios.has_local_flags(ICANON) {
+                        break;
+                    }
+                }
+                Err(e) => {
+                    // If write failed, push back the whole packet.
+                    self.read_queue.push_front(packet);
+                    if total_written > 0 {
+                        // If we managed to write something before error, return success.
+                        return Ok(total_written);
+                    }
+                    return Err(e);
+                }
+            }
         }
 
         let signals = self.drain_waiting_buffer(terminal);
         assert!(signals.signals().is_empty());
-        Ok(written_to_userspace)
+        Ok(total_written)
     }
 
     /// Writes to the queue from `data`. Returns the number of bytes copied.
@@ -713,11 +743,16 @@ impl Queue {
         signals_to_return
     }
 
+    /// Flushed the line buffer to the read queue.
+    fn flush_line_buffer(&mut self) {
+        self.read_queue.push_back(std::mem::take(&mut self.line_buffer));
+    }
+
     /// Called when the queue is moved from canonical mode, to non canonical mode.
     fn on_canon_disabled(&mut self, terminal: &mut LineDiscipline) -> PendingSignals {
         let signals = self.drain_waiting_buffer(terminal);
-        if !self.read_buffer.is_empty() {
-            self.readable = true;
+        if !self.line_buffer.is_empty() {
+            self.flush_line_buffer();
         }
         signals
     }
@@ -919,13 +954,6 @@ impl std::ops::AddAssign<Self> for BufferSpan {
         self.bytes += rhs.bytes;
         self.characters += rhs.characters;
     }
-}
-
-fn is_beginning_of_line(buffer: &[RawByte]) -> bool {
-    if let Some(c) = buffer.last() {
-        return *c == b'\n';
-    }
-    true
 }
 
 fn compute_last_character_span(buffer: &[RawByte], termios: &uapi::termios) -> BufferSpan {
