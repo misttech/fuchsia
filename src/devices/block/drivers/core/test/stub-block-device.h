@@ -43,11 +43,14 @@ class StubBlockDevice : public ddk::BlockProtocol<StubBlockDevice> {
 
   std::vector<block_command_t>& GetCommandSequence() { return command_sequence_; }
 
+  const std::vector<block_op_t>& GetOperationSequence() const { return operation_sequence_; }
+
  private:
   block_protocol_t proto_{};
   block_info_t info_{};
   Callback callback_;
   std::vector<block_command_t> command_sequence_;
+  std::vector<block_op_t> operation_sequence_;
 };
 
 #endif  // SRC_DEVICES_BLOCK_DRIVERS_CORE_TEST_STUB_BLOCK_DEVICE_H_

@@ -245,6 +245,8 @@ class BlockClient : public block_client::BlockDevice {
       bop->rw.length = requests->length;
       bop->rw.offset_dev = requests->dev_offset;
       bop->rw.offset_vmo = requests->vmo_offset;
+      bop->rw.slot = requests->slot;
+      bop->rw.dun = requests->dun;
     }
 
     struct Context {

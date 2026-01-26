@@ -66,6 +66,10 @@ type BlockIoFlag = strict bits : uint32 {
 
     /// If set, the request is to be decompressed.
     DECOMPRESS_WITH_ZSTD = 0x00000010;
+
+    /// Use the `slot` and `dun` inline encryption (write) or decryption (read) parameters.
+    /// Can only be used if the underlying hardware supports inline encryption.
+    INLINE_ENCRYPTION_ENABLED = 0x00000020;
 };
 
 /// Represents a session with a block device.

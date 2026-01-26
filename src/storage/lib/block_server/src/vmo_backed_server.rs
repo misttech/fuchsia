@@ -3,7 +3,6 @@
 // found in the LICENSE file.
 
 use anyhow::{Error, anyhow};
-use block_protocol::SENTINEL_SLOT_VALUE;
 use block_server::async_interface::{Interface, SessionManager};
 use block_server::{BlockInfo, BlockServer, DeviceInfo, ReadOptions, WriteFlags, WriteOptions};
 use fidl::endpoints::{ClientEnd, FromClient, RequestStream, ServerEnd, create_endpoints};
@@ -190,21 +189,22 @@ impl VmoBackedServer {
     }
 
     /// Implements software-fallback for fuchsia_hardware_inlineencryption.ProgramKey. There is a
-    /// maximum of 255 keyslots. Insert keyslot at the next available slot.
+    /// maximum of 256 keyslots. Insert keyslot at the next available slot.
     ///
     /// *WARNING*: This is only intended for testing and is not considered secure.
     fn program_key(&self, xts_key: &[u8; 64]) -> Result<u8, zx::Status> {
         let unwrapped_key = UnwrappedKey::new(xts_key.to_vec());
         let cipher = FscryptSoftwareInoLblk32FileCipher::new(&unwrapped_key);
         let mut fscrypt_keys = self.fscrypt_keys.lock();
-        // Find the first keyslot that is not in use. Note that SENTINEL_SLOT_VALUE is reserved.
-        let mut possible_slots = 0..SENTINEL_SLOT_VALUE;
-        let slot = possible_slots
-            .find(|&slot| !fscrypt_keys.contains_key(&slot))
-            .ok_or(zx::Status::NO_RESOURCES)?;
-
-        fscrypt_keys.insert(slot, cipher);
-        Ok(slot)
+        // Find the first keyslot that is not in use and use it.
+        for slot in 0..=u8::MAX {
+            if fscrypt_keys.contains_key(&slot) {
+                continue;
+            }
+            fscrypt_keys.insert(slot, cipher);
+            return Ok(slot);
+        }
+        Err(zx::Status::NO_RESOURCES)
     }
 
     async fn serve_insecure_inline_encryption_device_requests(
@@ -515,7 +515,7 @@ impl Interface for Data {
                 )?
             };
 
-            if opts.inline_crypto.is_enabled() {
+            if opts.inline_crypto.is_enabled {
                 let fscrypt_keys = self.fscrypt_keys.lock();
                 if let Some(cipher) = fscrypt_keys.get(&opts.inline_crypto.slot) {
                     cipher
@@ -567,7 +567,7 @@ impl Interface for Data {
             {
                 tracking.lock().insert(device_block_offset, &data[..]);
             }
-            if opts.inline_crypto.is_enabled() {
+            if opts.inline_crypto.is_enabled {
                 let fscrypt_keys = self.fscrypt_keys.lock();
                 if let Some(cipher) = fscrypt_keys.get(&opts.inline_crypto.slot) {
                     cipher
@@ -618,7 +618,7 @@ impl Interface for Data {
 
 #[cfg(test)]
 mod tests {
-    use block_protocol::InlineCryptoOptions;
+    use block_server::InlineCryptoOptions;
 
     use super::*;
 
@@ -638,7 +638,7 @@ mod tests {
         let original_data = vec![0xbb; block_size as usize];
         vmo.write(&original_data, 0).expect("Vmo::write failed");
         let write_opts = WriteOptions {
-            inline_crypto: InlineCryptoOptions { slot, dun: 0 },
+            inline_crypto: InlineCryptoOptions::enabled(slot, 0),
             ..Default::default()
         };
         block_interface.write(0, 1, &vmo, 0, write_opts, None).await.expect("write failed");
@@ -646,7 +646,7 @@ mod tests {
         // Verify we can read it back.
         let vmo_read = Arc::new(zx::Vmo::create(block_size as u64).expect("Vmo::create failed"));
         let read_opts = ReadOptions {
-            inline_crypto: InlineCryptoOptions { slot, dun: 0 },
+            inline_crypto: InlineCryptoOptions::enabled(slot, 0),
             ..Default::default()
         };
         block_interface.read(0, 1, &vmo_read, 0, read_opts, None).await.expect("read failed");
@@ -674,7 +674,7 @@ mod tests {
         let server = Arc::new(VmoBackedServer::new(100, 512, &[]));
 
         let key = [0xaa; 64];
-        for expected_slot in 0..SENTINEL_SLOT_VALUE {
+        for expected_slot in 0..=u8::MAX {
             let slot = server.program_key(&key).expect("program_key failed");
             assert_eq!(slot, expected_slot);
         }

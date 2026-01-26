@@ -485,12 +485,18 @@ impl Common {
         opts: ReadOptions,
         trace_flow_id: u64,
     ) -> Result<(), zx::Status> {
+        let mut flags = BlockIoFlag::empty();
+
+        if opts.inline_crypto.is_enabled {
+            flags |= BlockIoFlag::INLINE_ENCRYPTION_ENABLED;
+        }
+
         match buffer_slice {
             MutableBufferSlice::VmoId { vmo_id, offset, length } => {
                 self.send(BlockFifoRequest {
                     command: BlockFifoCommand {
                         opcode: BlockOpcode::Read.into_primitive(),
-                        flags: 0,
+                        flags: flags.bits(),
                         ..Default::default()
                     },
                     vmoid: vmo_id.id(),
@@ -516,7 +522,7 @@ impl Common {
                     self.send(BlockFifoRequest {
                         command: BlockFifoCommand {
                             opcode: BlockOpcode::Read.into_primitive(),
-                            flags: 0,
+                            flags: flags.bits(),
                             ..Default::default()
                         },
                         vmoid: self.temp_vmo_id.id(),
@@ -556,6 +562,10 @@ impl Common {
 
         if opts.flags.contains(WriteFlags::PRE_BARRIER) {
             flags |= BlockIoFlag::PRE_BARRIER;
+        }
+
+        if opts.inline_crypto.is_enabled {
+            flags |= BlockIoFlag::INLINE_ENCRYPTION_ENABLED;
         }
 
         match buffer_slice {

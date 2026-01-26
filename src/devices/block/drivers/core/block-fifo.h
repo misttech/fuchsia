@@ -9,8 +9,6 @@
 #include <zircon/types.h>
 
 // LINT.IfChange
-constexpr uint8_t SENTINEL_SLOT_VALUE = 0xFF;
-
 using reqid_t = uint32_t;
 using groupid_t = uint16_t;
 using vmoid_t = uint16_t;
@@ -56,11 +54,12 @@ struct BlockFifoRequest {
   uint64_t vmo_offset;
   uint64_t dev_offset;
   uint64_t trace_flow_id;
-  // The tweak used if this request uses inline crypto.
+  // The data unit number used as an inline crypto tweak. Only used if the request flags include
+  // `INLINE_ENCRYPTION_ENABLED`.
   uint32_t dun;
-  // The keyslot for the key used to encrypt/decrypt the request's data. If `slot` is set to
-  // SENTINEL_SLOT_VALUE, this request does not use inline crypto.
-  uint8_t slot = SENTINEL_SLOT_VALUE;
+  // The keyslot for the key used to encrypt/decrypt the request's data if the request flags include
+  // `INLINE_ENCRYPTION_ENABLED`.
+  uint8_t slot;
   uint8_t padding;
 
   // The number of bytes to skip at the beginning (only applicable for the first request in a

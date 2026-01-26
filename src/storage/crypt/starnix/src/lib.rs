@@ -613,7 +613,7 @@ mod tests {
                 0,
                 buf.as_ref(),
                 WriteOptions {
-                    inline_crypto: InlineCryptoOptions { dun: 0, slot: expected_slot },
+                    inline_crypto: InlineCryptoOptions::enabled(expected_slot, 0),
                     ..Default::default()
                 },
             )
@@ -637,9 +637,7 @@ mod tests {
             .read_with_opts(
                 0,
                 read_buf.as_mut(),
-                ReadOptions {
-                    inline_crypto: InlineCryptoOptions { dun: 0, slot: expected_slot + 1 },
-                },
+                ReadOptions { inline_crypto: InlineCryptoOptions::enabled(expected_slot + 1, 0) },
             )
             .await
             .expect("Read failed");
@@ -650,9 +648,7 @@ mod tests {
             .read_with_opts(
                 0,
                 read_buf.as_mut(),
-                ReadOptions {
-                    inline_crypto: InlineCryptoOptions { dun: 0, slot: expected_slot + 2 },
-                },
+                ReadOptions { inline_crypto: InlineCryptoOptions::enabled(expected_slot + 2, 0) },
             )
             .await
             .expect_err("Read passed unexpectedly with unused key slot");
@@ -662,7 +658,7 @@ mod tests {
             .read_with_opts(
                 0,
                 read_buf.as_mut(),
-                ReadOptions { inline_crypto: InlineCryptoOptions { dun: 0, slot: expected_slot } },
+                ReadOptions { inline_crypto: InlineCryptoOptions::enabled(expected_slot, 0) },
             )
             .await
             .expect("Read failed");

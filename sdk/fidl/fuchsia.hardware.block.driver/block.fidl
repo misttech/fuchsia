@@ -102,6 +102,14 @@ type BlockReadWrite = resource struct {
 
     /// VMO offset in blocks.
     offset_vmo uint64;
+
+    /// The keyslot used to encrypt/decrypt the request's data.
+    /// Only used if `INLINE_ENCRYPTION_ENABLED` is set in command flags.
+    slot uint8;
+
+    /// The data unit number (DUN) used as tweak for encrypting/decrypting the request.
+    /// Only used if `INLINE_ENCRYPTION_ENABLED` is set in command flags.
+    dun uint32;
 };
 
 /// `TRIM`
@@ -171,6 +179,9 @@ type BlockCommand = struct {
 
         /// If set, the request is to be decompressed.
         DECOMPRESS_WITH_ZSTD = 0x00000010;
+
+        /// Use the `slot` and `dun` inline encryption (write) or decryption (read) parameters.
+        INLINE_ENCRYPTION_ENABLED = 0x00000020;
     };
 };
 

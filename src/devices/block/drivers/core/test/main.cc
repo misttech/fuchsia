@@ -544,4 +544,101 @@ TEST_F(ServerTest, PostflushMustBeIssuedOnlyAfterGroupLast) {
   ASSERT_EQ(commands[5].flags, 0);
 }
 
+TEST_F(ServerTest, ReadSingleTestWithInlineCrypto) {
+  CreateServer();
+  AttachVmo(/*do_fill=*/true);
+
+  BlockFifoRequest req = {
+      .command = {.opcode = BLOCK_OPCODE_READ, .flags = BLOCK_IO_FLAG_INLINE_ENCRYPTION_ENABLED},
+      .reqid = 0x100,
+      .group = 0,
+      .vmoid = vmoid_,
+      .length = 1,
+      .vmo_offset = 0,
+      .dev_offset = 0,
+      .dun = 50,
+      .slot = 1,
+  };
+  RequestOneAndWaitResponse(req, ZX_OK);
+  auto operations = blkdev_.GetOperationSequence();
+  ASSERT_EQ(operations.size(), 1);
+  ASSERT_EQ(operations[0].command.opcode, BLOCK_OPCODE_READ);
+  ASSERT_EQ(operations[0].command.flags, BLOCK_IO_FLAG_INLINE_ENCRYPTION_ENABLED);
+  ASSERT_EQ(operations[0].rw.slot, 1);
+  ASSERT_EQ(operations[0].rw.dun, 50);
+}
+
+TEST_F(ServerTest, ReadManyBlocksHasOneResponseWithInlineCrypto) {
+  // Restrict max_transfer_size so that the server has to split up our request.
+  block_info_t block_info = {
+      .block_count = kBlockCount, .block_size = kBlockSize, .max_transfer_size = kBlockSize};
+  CreateServer(block_info);
+  AttachVmo(/*do_fill=*/true);
+
+  BlockFifoRequest reqs[2] = {
+      {
+          .command = {.opcode = BLOCK_OPCODE_READ,
+                      .flags = BLOCK_IO_FLAG_INLINE_ENCRYPTION_ENABLED},
+          .reqid = 0x100,
+          .group = 0,
+          .vmoid = vmoid_,
+          .length = 4,
+          .vmo_offset = 0,
+          .dev_offset = 0,
+          .dun = 50,
+          .slot = 1,
+      },
+      {
+          .command = {.opcode = BLOCK_OPCODE_READ,
+                      .flags = BLOCK_IO_FLAG_INLINE_ENCRYPTION_ENABLED},
+          .reqid = 0x101,
+          .group = 0,
+          .vmoid = vmoid_,
+          .length = 1,
+          .vmo_offset = 0,
+          .dev_offset = 0,
+          .dun = 100,
+          .slot = 2,
+      },
+  };
+
+  // Write requests.
+  size_t actual_count = 0;
+  ASSERT_OK(fifo_.write(sizeof(reqs[0]), reqs, 2, &actual_count));
+  ASSERT_EQ(actual_count, 2);
+
+  // Wait for first response.
+  zx_signals_t observed;
+  ASSERT_OK(zx_object_wait_one(fifo_.get(), ZX_FIFO_READABLE, ZX_TIME_INFINITE, &observed));
+
+  BlockFifoResponse res;
+  ASSERT_OK(fifo_.read(sizeof(res), &res, 1, &actual_count));
+  ASSERT_EQ(actual_count, 1);
+  ASSERT_OK(res.status);
+  ASSERT_EQ(reqs[0].reqid, res.reqid);
+  ASSERT_EQ(res.count, 1);
+
+  // Wait for second response.
+  ASSERT_OK(zx_object_wait_one(fifo_.get(), ZX_FIFO_READABLE, ZX_TIME_INFINITE, &observed));
+
+  ASSERT_OK(fifo_.read(sizeof(res), &res, 1, &actual_count));
+  ASSERT_EQ(actual_count, 1);
+  ASSERT_OK(res.status);
+  ASSERT_EQ(reqs[1].reqid, res.reqid);
+  ASSERT_EQ(res.count, 1);
+
+  auto operations = blkdev_.GetOperationSequence();
+  ASSERT_EQ(operations.size(), 5);
+  for (int i = 0; i < 4; ++i) {
+    ASSERT_EQ(operations[i].command.opcode, BLOCK_OPCODE_READ);
+    ASSERT_EQ(operations[i].command.flags, BLOCK_IO_FLAG_INLINE_ENCRYPTION_ENABLED);
+    ASSERT_EQ(operations[i].rw.slot, 1);
+    ASSERT_EQ(operations[i].rw.dun, 50 + i);
+  }
+  ASSERT_EQ(operations[4].command.opcode, BLOCK_OPCODE_READ);
+  ASSERT_EQ(operations[4].command.flags, BLOCK_IO_FLAG_INLINE_ENCRYPTION_ENABLED);
+  ASSERT_EQ(operations[4].rw.slot, 2);
+  ASSERT_EQ(operations[4].rw.dun, 100);
+}
+
 }  // namespace

@@ -43,11 +43,9 @@ use zerocopy::{FromBytes, Immutable, IntoBytes, KnownLayout};"
 "${BINDGEN}" \
   --raw-line "${RAW_LINES}" \
   --with-derive-default \
-  --no-default 'BlockFifoRequest' \
   --with-derive-custom-struct=${ZEROCOPY_SYMS_REGEX}={FromBytes,Immutable,IntoBytes,KnownLayout} \
   --impl-debug \
   --allowlist-type=${ZEROCOPY_SYMS_REGEX} \
-  --allowlist-var 'SENTINEL_SLOT_VALUE' \
   --output "${target_file}" \
   "${source_file}" \
   -- \

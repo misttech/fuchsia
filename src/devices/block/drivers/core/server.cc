@@ -327,6 +327,7 @@ zx_status_t Server::ProcessReadWriteRequest(BlockFifoRequest* request) {
     uint32_t len_remaining = request->length;
     uint64_t vmo_offset = request->vmo_offset;
     uint64_t dev_offset = request->dev_offset;
+    uint32_t dun = request->dun;
     uint32_t sub_txns = fbl::round_up(len_remaining, max_xfer) / max_xfer;
 
     // For groups, we simply add extra (uncounted) messages to the existing MessageGroup,
@@ -397,10 +398,13 @@ zx_status_t Server::ProcessReadWriteRequest(BlockFifoRequest* request) {
                                 .length = length,
                                 .offset_dev = dev_offset,
                                 .offset_vmo = vmo_offset,
+                                .slot = request->slot,
+                                .dun = dun,
                             }};
       Enqueue(std::move(msg));
       vmo_offset += length;
       dev_offset += length;
+      dun += length;
       sub_txn_idx++;
     }
     ZX_DEBUG_ASSERT(len_remaining == 0);
@@ -440,6 +444,8 @@ zx_status_t Server::ProcessReadWriteRequest(BlockFifoRequest* request) {
                               .length = request->length,
                               .offset_dev = request->dev_offset,
                               .offset_vmo = request->vmo_offset,
+                              .slot = request->slot,
+                              .dun = request->dun,
                           }};
     Enqueue(std::move(msg));
   }

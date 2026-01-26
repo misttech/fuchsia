@@ -2,7 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 use anyhow::{Error, anyhow};
-use block_protocol::{BlockFifoRequest, BlockFifoResponse, InlineCryptoOptions};
+use block_protocol::{BlockFifoRequest, BlockFifoResponse};
 use fblock::{BlockIoFlag, BlockOpcode, MAX_TRANSFER_UNBOUNDED};
 use fuchsia_async::epoch::{Epoch, EpochGuard};
 use fuchsia_sync::{MappedMutexGuard, Mutex, MutexGuard};
@@ -716,6 +716,7 @@ impl<SM: SessionManager> SessionHelper<SM> {
                             .ok_or(zx::Status::OUT_OF_RANGE)?,
                         options: ReadOptions {
                             inline_crypto: InlineCryptoOptions {
+                                is_enabled: flags.contains(BlockIoFlag::INLINE_ENCRYPTION_ENABLED),
                                 dun: request.dun,
                                 slot: request.slot,
                             },
@@ -724,6 +725,7 @@ impl<SM: SessionManager> SessionHelper<SM> {
                     BlockOpcode::Write => {
                         let mut options = WriteOptions {
                             inline_crypto: InlineCryptoOptions {
+                                is_enabled: flags.contains(BlockIoFlag::INLINE_ENCRYPTION_ENABLED),
                                 dun: request.dun,
                                 slot: request.slot,
                             },
@@ -1072,6 +1074,7 @@ struct DecodedRequest {
 pub type WriteFlags = block_protocol::WriteFlags;
 pub type WriteOptions = block_protocol::WriteOptions;
 pub type ReadOptions = block_protocol::ReadOptions;
+pub type InlineCryptoOptions = block_protocol::InlineCryptoOptions;
 
 #[repr(C)]
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -2914,7 +2917,7 @@ mod tests {
                 block_count: 200,
                 _unused: 0,
                 vmo_offset: 0,
-                options: ReadOptions { inline_crypto: InlineCryptoOptions { dun: 1000, slot: 1 } },
+                options: ReadOptions { inline_crypto: InlineCryptoOptions::enabled(1, 1000) },
             },
             None,
             None,
@@ -2923,7 +2926,7 @@ mod tests {
                 block_count: 200,
                 _unused: 0,
                 vmo_offset: 0,
-                options: ReadOptions { inline_crypto: InlineCryptoOptions { dun: 1000, slot: 1 } },
+                options: ReadOptions { inline_crypto: InlineCryptoOptions::enabled(1, 1000) },
             }],
         );
 
@@ -2934,7 +2937,7 @@ mod tests {
                 block_count: 200,
                 _unused: 0,
                 vmo_offset: 0,
-                options: ReadOptions { inline_crypto: InlineCryptoOptions { dun: 1000, slot: 1 } },
+                options: ReadOptions { inline_crypto: InlineCryptoOptions::enabled(1, 1000) },
             },
             None,
             NonZero::new(120),
@@ -2944,9 +2947,7 @@ mod tests {
                     block_count: 120,
                     _unused: 0,
                     vmo_offset: 0,
-                    options: ReadOptions {
-                        inline_crypto: InlineCryptoOptions { dun: 1000, slot: 1 },
-                    },
+                    options: ReadOptions { inline_crypto: InlineCryptoOptions::enabled(1, 1000) },
                 },
                 Operation::Read {
                     device_block_offset: 130,
@@ -2955,7 +2956,7 @@ mod tests {
                     vmo_offset: 120 * BLOCK_SIZE as u64,
                     options: ReadOptions {
                         // The DUN should be offset by the number of blocks in the first request.
-                        inline_crypto: InlineCryptoOptions { dun: 1000 + 120, slot: 1 },
+                        inline_crypto: InlineCryptoOptions::enabled(1, 1000 + 120),
                     },
                 },
             ],
@@ -2974,7 +2975,7 @@ mod tests {
                 block_count: 200,
                 _unused: 0,
                 vmo_offset: 0,
-                options: ReadOptions { inline_crypto: InlineCryptoOptions { dun: 1000, slot: 1 } },
+                options: ReadOptions { inline_crypto: InlineCryptoOptions::enabled(1, 1000) },
             },
             Some(BlockOffsetMapping {
                 source_block_offset: 10,
@@ -2988,9 +2989,7 @@ mod tests {
                     block_count: 120,
                     _unused: 0,
                     vmo_offset: 0,
-                    options: ReadOptions {
-                        inline_crypto: InlineCryptoOptions { dun: 1000, slot: 1 },
-                    },
+                    options: ReadOptions { inline_crypto: InlineCryptoOptions::enabled(1, 1000) },
                 },
                 Operation::Read {
                     device_block_offset: 220,
@@ -2998,7 +2997,7 @@ mod tests {
                     _unused: 0,
                     vmo_offset: 120 * BLOCK_SIZE as u64,
                     options: ReadOptions {
-                        inline_crypto: InlineCryptoOptions { dun: 1000 + 120, slot: 1 },
+                        inline_crypto: InlineCryptoOptions::enabled(1, 1000 + 120),
                     },
                 },
             ],

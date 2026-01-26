@@ -61,10 +61,10 @@ struct PartitionInfo {
 
 using RequestId = uintptr_t;
 
-/// InlineCryptoOptions only used if `slot` is not equal to its sentinel value (0xff).
 struct InlineCryptoOptions {
-  uint32_t dun;
+  bool is_enabled;
   uint8_t slot;
+  uint32_t dun;
 };
 
 struct ReadOptions {
@@ -72,8 +72,8 @@ struct ReadOptions {
 };
 
 struct WriteOptions {
-  WriteFlags flags;
   InlineCryptoOptions inline_crypto;
+  WriteFlags flags;
 };
 
 struct Operation {
@@ -125,10 +125,27 @@ struct Request {
 };
 
 struct Callbacks {
+  /// An opaque context object retained by this library.  The library will pass this back into all
+  /// callbacks.  The memory pointed to by `context` must last until [`block_server_delete`] is
+  /// called.
   void *context;
+  /// Starts a thread.  The implementation must call [`block_server_thread`] on this newly created
+  /// thread, providing `arg`.  The implementation must then call [`block_server_thread_delete`]
+  /// after [`block_server_thread`] returns (but before [`block_server_delete`] is called).
   void (*start_thread)(void *context, const void *arg);
+  /// Notifies the implementation of a new session.  The implementation must call
+  /// [`block_server_session_run`] on a separate thread, and must call
+  /// [`block_server_session_release`] after [`block_server_session_run`] (but before
+  /// [`block_server_delete`] is called).
   void (*on_new_session)(void *context, const Session *session);
+  /// Submits a batch of requests to be handled by the implementation.  The implementation must
+  /// not retain references to `requests` after it returns.  The implementation must ensure that
+  /// [`block_server_send_reply`] is called exactly once with the request ID of each entry in
+  /// `requests`, regardless of its status; this call can be asynchronous but must occur before
+  /// [`block_server_delete`] is called.
   void (*on_requests)(void *context, Request *requests, uintptr_t request_count);
+  /// Logs `message` to the implementation's logger.  The implementation must not retain
+  /// references to `message`.
   void (*log)(void *context, const char *message, uintptr_t message_len);
 };
 
