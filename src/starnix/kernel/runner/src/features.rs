@@ -56,8 +56,8 @@ pub struct Features {
     /// Whether to enable a boot notifier device.
     pub boot_notifier: bool,
 
-    /// Whether to boost CPU until boot is notified as complete.
-    pub boot_notifier_cpu_boost: bool,
+    /// Whether to boost CPU for a fixed duration.
+    pub boot_notifier_cpu_boost: Option<zx::MonotonicDuration>,
 
     /// Whether to enable a framebuffer device.
     pub framebuffer: bool,
@@ -188,7 +188,12 @@ impl Features {
                 inspect_node.record_bool("selinux", selinux.enabled);
                 inspect_node.record_bool("ashmem", *ashmem);
                 inspect_node.record_bool("boot_notifier", *boot_notifier);
-                inspect_node.record_bool("boot_notifier_cpu_boost", *boot_notifier_cpu_boost);
+                inspect_node.record_string(
+                    "boot_notifier_cpu_boost",
+                    boot_notifier_cpu_boost
+                        .map(|d| format!("{}s", d.into_seconds()))
+                        .unwrap_or_else(|| "none".to_string()),
+                );
                 inspect_node.record_bool("framebuffer", *framebuffer);
                 inspect_node.record_bool("gralloc", *gralloc);
                 inspect_node.record_bool("kgsl", *kgsl);
@@ -327,7 +332,15 @@ pub fn parse_features(
             (Feature::CustomArtifacts, _) => features.custom_artifacts = true,
             (Feature::Ashmem, _) => features.ashmem = true,
             (Feature::BootNotifier, _) => features.boot_notifier = true,
-            (Feature::BootNotifierCpuBoost, _) => features.boot_notifier_cpu_boost = true,
+            (Feature::BootNotifierCpuBoost, Some(arg)) => {
+                let duration = zx::MonotonicDuration::from_seconds(arg.parse::<i64>()?);
+                features.boot_notifier_cpu_boost = Some(duration);
+            }
+            (Feature::BootNotifierCpuBoost, None) => {
+                return Err(anyhow!(
+                    "boot_notifier_cpu_boost feature must have an argument (e.g. \"boot_notifier_cpu_boost:60\")"
+                ));
+            }
             (Feature::Framebuffer, _) => features.framebuffer = true,
             (Feature::Gralloc, _) => features.gralloc = true,
             (Feature::Kgsl, _) => features.kgsl = true,
@@ -414,7 +427,7 @@ pub fn parse_features(
         };
     }
 
-    if features.boot_notifier_cpu_boost && !features.boot_notifier {
+    if features.boot_notifier_cpu_boost.is_some() && !features.boot_notifier {
         return Err(anyhow!("boot_notifier_cpu_boost feature requires boot_notifier"));
     }
 

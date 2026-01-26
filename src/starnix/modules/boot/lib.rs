@@ -2,8 +2,10 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+#![recursion_limit = "512"]
+
 use anyhow::Context;
-use fidl_fuchsia_power_cpu_manager::{BoostMarker, BoostSynchronousProxy};
+use fidl_fuchsia_power_cpu_manager::BoostMarker;
 use fidl_fuchsia_sys2 as fsys;
 use fuchsia_inspect::Property;
 use starnix_core::device::DeviceOps;
@@ -28,13 +30,13 @@ use zerocopy::IntoBytes;
 pub fn booted_device_init(
     locked: &mut Locked<Unlocked>,
     system_task: &CurrentTask,
-    cpu_boost: bool,
+    cpu_boost_duration: Option<zx::MonotonicDuration>,
 ) {
     let kernel = system_task.kernel();
 
     let (booted_sender, booted_receiver) = channel::<bool>();
     let node = fuchsia_inspect::component::inspector().root().create_child("boot");
-    let device = BootedDevice::new(system_task.kernel(), booted_sender, node, cpu_boost)
+    let device = BootedDevice::new(system_task.kernel(), booted_sender, node, cpu_boost_duration)
         .expect("must be able to initialize booted device");
     device.clone().register(locked, &kernel.kthreads.system_task());
     device.start_relay(&kernel, booted_receiver);
@@ -57,24 +59,38 @@ impl BootedDevice {
         kernel: &Kernel,
         booted_sender: Sender<bool>,
         inspect_node: fuchsia_inspect::Node,
-        cpu_boost: bool,
+        cpu_boost_duration: Option<zx::MonotonicDuration>,
     ) -> Result<Self, anyhow::Error> {
         let boot_timestamp = inspect_node.create_uint(INSPECT_KEY, 0);
 
-        let booster = if cpu_boost {
-            try_boost_cpu(kernel)
-                .inspect_err(|e| log_warn!(e:?; "Failed to enable boot-time CPU boost"))
-                .ok()
-        } else {
-            None
-        };
+        if let Some(duration) = cpu_boost_duration {
+            match kernel.connect_to_protocol_at_container_svc::<BoostMarker>() {
+                Ok(client_end) => {
+                    log_info!("Enabling boot-time CPU boost");
+                    let booster = client_end.into_proxy();
+                    kernel.kthreads.spawn_future(move || async move {
+                        if let Err(e) = booster.set_boost(true).await {
+                            log_warn!(e:?; "Failed to enable boot-time CPU boost");
+                            return;
+                        }
+                        fuchsia_async::Timer::new(zx::MonotonicInstant::after(duration)).await;
+                        log_info!("Disabling boot-time CPU boost");
+                        if let Err(e) = booster.set_boost(false).await {
+                            log_warn!(e:?; "Failed to disable boot-time CPU boost");
+                        }
+                    });
+                }
+                Err(e) => {
+                    log_warn!(e:?; "Failed to connect to cpu boost protocol");
+                }
+            }
+        }
 
         Ok(Self {
             inner: Arc::new(Inner {
                 file: File::new(booted_sender),
                 _inspect_node: inspect_node,
                 boot_timestamp,
-                booster,
             }),
         })
     }
@@ -124,7 +140,6 @@ struct Inner {
     file: Arc<File>,
     _inspect_node: fuchsia_inspect::Node,
     boot_timestamp: fuchsia_inspect::UintProperty,
-    booster: Option<BoostSynchronousProxy>,
 }
 
 impl Inner {
@@ -136,15 +151,6 @@ impl Inner {
         client.notify(zx::MonotonicInstant::INFINITE).context("calling BootController/Notify")?;
         let ts = zx::BootInstant::get().into_nanos() as u64;
         let _ = self.boot_timestamp.set(ts);
-
-        if let Some(booster) = &self.booster {
-            log_info!("Disabling boot-time CPU boost");
-            match booster.set_boost(false, zx::MonotonicInstant::INFINITE) {
-                Ok(Ok(())) => (),
-                Ok(Err(e)) => log_error!(e:?; "Failed to disable boost (logical error)"),
-                Err(e) => log_error!(e:?; "Failed to disable boost (FIDL error)"),
-            }
-        }
 
         Ok(())
     }
@@ -217,17 +223,4 @@ impl DeviceOps for BootedDevice {
         let file = self.inner.file.clone();
         Ok(Box::new(file))
     }
-}
-
-fn try_boost_cpu(kernel: &Kernel) -> Result<BoostSynchronousProxy, anyhow::Error> {
-    log_info!("Enabling boot-time CPU boost");
-    let booster = kernel
-        .connect_to_protocol_at_container_svc::<BoostMarker>()
-        .context("connecting to cpu boost protocol")?
-        .into_sync_proxy();
-    booster
-        .set_boost(true, zx::MonotonicInstant::INFINITE)
-        .context("sending set boost message")?
-        .map_err(|e| anyhow::format_err!("failed setting boost: {e:?}"))?;
-    Ok(booster)
 }
