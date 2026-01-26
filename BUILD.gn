@@ -684,6 +684,7 @@ build_api_module("boards") {
 build_api_module("products") {
   testonly = true
   data_keys = [ "product_configs" ]
+  walk_keys = [ "product_configs_barrier" ]
   deps = assembly_product_configs
 }
 
