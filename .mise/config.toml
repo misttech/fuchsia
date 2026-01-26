@@ -1,0 +1,14 @@
+# Copyright 2026 The Fuchsia Authors. All rights reserved.
+# Use of this source code is governed by a BSD-style license that can be
+# found in the LICENSE file.
+
+[env]
+# Used by most workflow tools.
+FUCHSIA_DIR = "{{ config_root }}"
+
+# This puts fx & ffx in PATH.
+_.path = "{{ config_root }}/.jiri_root/bin"
+
+# Used for symbolizing backtraces. Shell hacks are needed to ensure we pick up any configuration
+# from vendor/ devshell scripts too.
+DEBUGINFOD_URLS = "{{ exec(command=\"source $FUCHSIA_DIR/tools/devshell/lib/vars.sh && echo -n $DEBUGINFOD_URLS\") }}"
