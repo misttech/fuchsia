@@ -15,6 +15,14 @@
   // Restore the stack pointer at the point of the restricted enter wrapper.
   mov  sp,x0
 
+  // Restore the FPU register pointer
+  ldr x0, [sp, #16*6 + 8]
+
+  // Save the FPU register state if we were provided a non-null FPU register pointer
+  cbz x0, .after_store_fpu_registers
+  bl store_fpu_registers
+.after_store_fpu_registers:
+
   // Load the frame pointer and return address from the wrapper.
   .epilogue.fp
 
@@ -47,7 +55,7 @@
   .cfi_same_value x2
 
   // Pop off all the now-restored state.
-  add sp, sp, #16*6
+  add sp, sp, #16*7
 
   // Return the reason code from this function by setting the reason code pointer.
   str  x1, [x2]
@@ -61,8 +69,14 @@
 .function restricted_enter_wrapper, global
   // Args 0 - 1 are already in place in X0 and X1.
 
-  // Make space on the stack for the 12 registers saved below.
-  sub sp, sp, #16*6
+  // Make space on the stack for the 14 registers saved below.
+  sub sp, sp, #16*7
+
+  // Save pointer to the FPU register state and x0
+  stp x0, x3, [sp, #16*6]
+  .cfi_adjust_cfa_offset 16
+  .cfi_rel_offset x0, 0
+  .cfi_rel_offset x3, 8
 
   // Save the reason code pointer and shadow call stack pointer on the stack.
   stp x2, x18, [sp, #16*5]
@@ -94,6 +108,14 @@
   .cfi_rel_offset x27, 8
 
   .prologue.fp
+
+  // If requested, load FPU register state from [x3]
+  cbz x3, .after_load_fpu_registers
+  mov x0, x3
+  bl load_fpu_registers
+  // Restore original x0
+  ldr x0, [sp, #16*7]
+.after_load_fpu_registers:
 
   // Pass the stack pointer as the context argument to the syscall.
   mov x2, sp
@@ -134,7 +156,7 @@
   .cfi_same_value x2
 
   // Pop all the callee saved registers off the stack.
-  add sp, sp, #16*6
+  add sp, sp, #16*7
 
   ret
 .end_function

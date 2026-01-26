@@ -20,8 +20,18 @@
   pop  %rbp
   pop  %rbx
 
+  // pop the FPU register pointer
+  pop  %rax
+
   // pop the reason code return slot
   pop  %rdx
+
+  // If an FPU register pointer was provided, store the FPU register state into it
+  test %rax, %rax
+  je .after_store_fpu_registers
+  mov %rax, %rdi
+  call store_fpu_registers
+.after_store_fpu_registers:
 
   // return the reason code from this function
   mov  %rsi,(%rdx)
@@ -38,6 +48,9 @@
   // save the return code pointer on the stack
   push  %rdx
 
+  // save the FPU register pointer on the stack
+  push  %rcx
+
   // save the callee saved regs since the return from restricted mode
   // will zero out all of the registers except rdi and rsi
   push  %rbx
@@ -48,6 +61,17 @@
   push  %r15
   push  %rsp
 
+  // If an FPU register pointer was provided, load the FPU register state from there
+  test %rcx, %rcx
+  je .after_load_fpu_registers
+  // Save original %rdi
+  push %rdi
+  mov  %rcx, %rdi
+  call load_fpu_registers
+  // Restore original %rdi
+  pop %rdi
+.after_load_fpu_registers:
+
   // save the pointer the stack as the context pointer in the syscall
   mov   %rsp,%rdx
 
@@ -55,7 +79,7 @@
   call  zx_restricted_enter@PLT
 
   // if we got here it must have failed
-  add   $(8*8),%rsp // pop the previous state on the stack
+  add   $(8*9),%rsp // pop the previous state on the stack
   ret
 .end_function
 

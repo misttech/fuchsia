@@ -286,12 +286,11 @@ TEST_P(RestrictedMode, FloatingPointState) {
   // We spawn enough threads to make sure that all CPU's floating point registers are overwritten.
   for (uint32_t i = 0; i < kNumFloatingPointThreads; i++) {
     threads.emplace_back(
-        [this](uint32_t thread_num) {
+        [](uint32_t thread_num) {
           char fpu_buffer[restricted_machine::RegisterState::kFpuBufferSize];
           memset(&fpu_buffer[0], 0x90 + thread_num,
                  restricted_machine::RegisterState::kFpuBufferSize);
-          restricted_machine::RegisterStateFactory::Create(machine())->LoadFpuRegisters(
-              &fpu_buffer[0]);
+          restricted_machine::internal::load_fpu_registers(fpu_buffer);
         },
         i);
   }

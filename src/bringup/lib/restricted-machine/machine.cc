@@ -29,7 +29,8 @@
 namespace restricted_machine {
 
 extern "C" zx_status_t restricted_enter_wrapper(uint32_t options, uintptr_t vector_table,
-                                                zx_restricted_reason_t* reason_code);
+                                                zx_restricted_reason_t* reason_code,
+                                                void* fpu_register_data);
 extern "C" void restricted_exit(uintptr_t context, zx_restricted_reason_t reason_code);
 
 constexpr uint64_t Machine::kDefaultStackBytes = 8192;
@@ -175,18 +176,7 @@ zx::result<uint64_t> Machine::Thunk(uint64_t fn_address, uint64_t arg0, uint64_t
 }
 
 zx::result<uint64_t> Machine::Enter() {
-  // We try to minimize the amount of code run between loading/saving the FPU
-  // registers and entering restricted mode. If any testing or use unreliability
-  // is uncovered, anything that can be done to further reduce the code here
-  // will likely resolve it.
-  zx_status_t status;
-  if (fpu_registers_.size() == RegisterState::kFpuBufferSize) {
-    registers_->LoadFpuRegisters(fpu_registers_.data());
-    status = Continue();
-    registers_->StoreFpuRegisters(fpu_registers_.data());
-  } else {
-    status = Continue();
-  }
+  zx_status_t status = Continue();
   if (status != 0) {
     // Propagate failure.
     return zx::error(status);
@@ -200,8 +190,13 @@ zx::result<uint64_t> Machine::Enter() {
 }
 
 zx_status_t Machine::Continue() {
+  void* fpu_register_data = nullptr;
+  if (fpu_registers_.size() == RegisterState::kFpuBufferSize) {
+    fpu_register_data = fpu_registers_.data();
+  }
+
   return restricted_enter_wrapper(0, reinterpret_cast<uintptr_t>(&restricted_exit),
-                                  &last_reason_code_);
+                                  &last_reason_code_, fpu_register_data);
 }
 
 zx_status_t Machine::Kick(uint32_t options, std::optional<zx_handle_t> thread) {

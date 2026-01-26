@@ -45,10 +45,6 @@ void RegisterState::InitializeFromThreadState(const zx_thread_state_general_regs
   state_.ip = regs.rip;
 }
 
-void RegisterState::LoadFpuRegisters(void* in) { internal::load_fpu_registers(in); }
-
-void RegisterState::StoreFpuRegisters(void* out) { internal::store_fpu_registers(out); }
-
 uintptr_t RegisterState::pc() const { return state_.ip; }
 uint64_t RegisterState::syscall_number() const { return state_.rax; }
 void RegisterState::set_syscall_number(uint64_t number) { state_.rax = number; }

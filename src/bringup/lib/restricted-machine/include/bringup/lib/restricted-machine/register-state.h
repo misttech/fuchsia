@@ -51,14 +51,6 @@ class RegisterState {
   // Initializes the register state from a thread's general purpose registers.
   virtual void InitializeFromThreadState(const zx_thread_state_general_regs_t& regs);
 
-  // Fills the FPU registers with data from |in| which must be at least
-  // |kFpuBufferSize| bytes.
-  virtual void LoadFpuRegisters(void* in);
-
-  // Fills the |out| with data from the FPU registers which must be at least
-  // |kFpuBufferSize| bytes.
-  virtual void StoreFpuRegisters(void* out);
-
   // Returns the program counter.
   virtual uintptr_t pc() const;
 

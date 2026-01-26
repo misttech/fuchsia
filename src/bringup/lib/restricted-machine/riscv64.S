@@ -15,35 +15,43 @@
   // Restore the stack pointer at the point of the restricted enter wrapper.
   mv sp, a0
 
+  // Load FPU register pointer
+  ld a0, 8(sp)
+
+  // If a FPU register pointer was provided, store FPU register state
+  beqz a0, .after_store_fpu_registers
+  call store_fpu_registers
+.after_store_fpu_registers:
+
   // Restore the shadow call stack pointer.
-  ld gp, 8(sp)
+  ld gp, 2*8(sp)
 
   // Restore the callee saved registers.
-  ld s0, 16(sp)
-  ld s1, 24(sp)
-  ld s2, 32(sp)
-  ld s3, 40(sp)
-  ld s4, 48(sp)
-  ld s5, 56(sp)
-  ld s6, 64(sp)
-  ld s7, 72(sp)
-  ld s8, 80(sp)
-  ld s9, 88(sp)
-  ld s10, 96(sp)
-  ld s11, 104(sp)
+  ld s0,  3*8(sp)
+  ld s1,  4*8(sp)
+  ld s2,  5*8(sp)
+  ld s3,  6*8(sp)
+  ld s4,  7*8(sp)
+  ld s5,  8*8(sp)
+  ld s6,  9*8(sp)
+  ld s7,  10*8(sp)
+  ld s8,  11*8(sp)
+  ld s9,  12*8(sp)
+  ld s10, 13*8(sp)
+  ld s11, 14*8(sp)
 
   // Restore the return address.
-  ld ra, 112(sp)
+  ld ra, 15*8(sp)
 
   // Restore the thread pointer.
-  ld tp, 120(sp)
+  ld tp, 16*8(sp)
 
   // Move the reason code into the stored pointer.
   ld t3, (sp)
   sd a1, (t3)
 
   // Pop all the normal mode context off the stack.
-  addi sp, sp, 128
+  addi sp, sp, 18*8
 
   // Return to whatever address was in RA.
   // Make it appear as if the wrapper had returned ZX_OK.
@@ -55,33 +63,46 @@
   // Args 0 - 1 are already in a0 and a1.
 
   // Make space for all of the normal mode context on the stack.
-  addi sp, sp, -128
+  addi sp, sp, -18*8
 
   // Save the reason code pointer.
   sd a2, (sp)
 
+  // Save the FPU register pointer
+  sd a3, 8(sp)
+
   // Save the shadow call stack pointer.
-  sd gp, 8(sp)
+  sd gp, 2*8(sp)
 
   // Save all of the callee saved registers.
-  sd s0, 16(sp)
-  sd s1, 24(sp)
-  sd s2, 32(sp)
-  sd s3, 40(sp)
-  sd s4, 48(sp)
-  sd s5, 56(sp)
-  sd s6, 64(sp)
-  sd s7, 72(sp)
-  sd s8, 80(sp)
-  sd s9, 88(sp)
-  sd s10, 96(sp)
-  sd s11, 104(sp)
+  sd s0, 3*8(sp)
+  sd s1, 4*8(sp)
+  sd s2, 5*8(sp)
+  sd s3, 6*8(sp)
+  sd s4, 7*8(sp)
+  sd s5, 8*8(sp)
+  sd s6, 9*8(sp)
+  sd s7, 10*8(sp)
+  sd s8, 11*8(sp)
+  sd s9, 12*8(sp)
+  sd s10, 13*8(sp)
+  sd s11, 14*8(sp)
 
   // Save the return address.
-  sd ra, 112(sp)
+  sd ra, 15*8(sp)
 
   // Save the thread pointer.
-  sd tp, 120(sp)
+  sd tp, 16*8(sp)
+
+  // If the FPU register pointer is provided, load the FPU registers from it.
+  beqz a3, .after_load_fpu_registers
+  // Save original a0 (options)
+  sd a0, 17*8(sp)
+  mv a0, a3
+  call load_fpu_registers
+  // Restore original a0
+  ld a0, 17*8(sp)
+.after_load_fpu_registers:
 
   // Pass the stack pointer as the context argument to the syscall.
   mv a2, sp
@@ -91,9 +112,9 @@
   // If we got here it must have failed.
   // Restore the return address from prior to the syscall. We have to do this
   // because RA is caller-saved.
-  ld ra, 112(sp)
+  ld ra, 15*8(sp)
   // Reset the stack.
-  addi sp, sp, 128
+  addi sp, sp, 18*8
   ret
 .end_function
 
