@@ -752,7 +752,7 @@ impl SocketOps for ZxioBackedSocket {
                 let mut optval: [u8; size_of::<zxio_socket_mark>()] =
                     zerocopy::try_transmute!(zxio_socket_mark {
                         is_present: false,
-                        domain: ZXIO_SOCKET_MARK_SO_MARK,
+                        domain: fidl_fuchsia_net::MARK_DOMAIN_SO_MARK as u8,
                         value: 0,
                         ..Default::default()
                     })

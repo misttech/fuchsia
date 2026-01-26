@@ -427,7 +427,7 @@ fn mangle_table_with_input_marking(namespace: Namespace) -> Vec<Resource> {
                 ..Default::default()
             },
             action: Action::Mark {
-                domain: fnet::MarkDomain::Mark1,
+                domain: fnet::MARK_DOMAIN_SO_MARK,
                 action: MarkAction::SetMark { clearing_mask: 0x3, mark: 0x1 },
             },
         }),
@@ -577,10 +577,7 @@ async fn create_chain(
 #[test_case(Ip::V6, FILTER_TABLE_WITH_BPF_MATCHER; "filter chain bpf matcher ipv6")]
 #[test_case(Ip::V4, FILTER_TABLE_WITH_BPF_MATCHER; "filter chain bpf matcher ipv4")]
 #[fuchsia::test]
-async fn create_chain_with_bpf_matcher(
-    protocol: Ip,
-    table_spec: &[&'static str],
-) {
+async fn create_chain_with_bpf_matcher(protocol: Ip, table_spec: &[&'static str]) {
     let realm = TestRealm::new().await;
     realm.run_with_input(EBPF_LOADER, &[EBPF_PROGRAM_PIN_PATH]).await;
     realm.run_with_input(protocol.iptables_restore(), table_spec).await;

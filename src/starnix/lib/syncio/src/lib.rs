@@ -24,9 +24,8 @@ use zerocopy::{FromBytes, Immutable, IntoBytes, TryFromBytes};
 use zx::{self as zx, AsHandleRef as _};
 use zxio::{
     ZXIO_SELINUX_CONTEXT_STATE_DATA, ZXIO_SHUTDOWN_OPTIONS_READ, ZXIO_SHUTDOWN_OPTIONS_WRITE,
-    ZXIO_SOCKET_MARK_DOMAIN_1, ZXIO_SOCKET_MARK_DOMAIN_2, msghdr, sockaddr, sockaddr_storage,
-    socklen_t, zx_handle_t, zx_status_t, zxio_object_type_t, zxio_seek_origin_t,
-    zxio_socket_mark_t, zxio_storage_t,
+    msghdr, sockaddr, sockaddr_storage, socklen_t, zx_handle_t, zx_status_t, zxio_object_type_t,
+    zxio_seek_origin_t, zxio_socket_mark_t, zxio_storage_t,
 };
 
 pub mod zxio;
@@ -663,15 +662,6 @@ fn clean_pointer_fields(attrs: &mut zxio_node_attributes_t) {
 
 pub const ZXIO_ROOT_HASH_LENGTH: usize = 64;
 
-/// Linux marks aren't compatible with Fuchsia marks, we store the `SO_MARK`
-/// value in the fuchsia `ZXIO_SOCKET_MARK_DOMAIN_1`. If a mark in this domain
-/// is absent, it will be reported to starnix applications as a `0` since that
-/// is the default mark value on Linux.
-pub const ZXIO_SOCKET_MARK_SO_MARK: u8 = ZXIO_SOCKET_MARK_DOMAIN_1;
-/// Fuchsia does not have uids, we use the `ZXIO_SOCKET_MARK_DOMAIN_2` on the
-/// socket to store the UID for the sockets created by starnix.
-pub const ZXIO_SOCKET_MARK_UID: u8 = ZXIO_SOCKET_MARK_DOMAIN_2;
-
 /// A transparent wrapper around the bindgen type.
 #[repr(transparent)]
 #[derive(IntoBytes, TryFromBytes, Immutable)]
@@ -684,12 +674,12 @@ impl ZxioSocketMark {
 
     /// Creates a new socket mark representing the SO_MARK domain.
     pub fn so_mark(mark: u32) -> Self {
-        Self::new(ZXIO_SOCKET_MARK_SO_MARK, mark)
+        Self::new(fidl_fuchsia_net::MARK_DOMAIN_SO_MARK as u8, mark)
     }
 
     /// Creates a new socket mark representing the uid domain.
     pub fn uid(uid: u32) -> Self {
-        Self::new(ZXIO_SOCKET_MARK_UID, uid)
+        Self::new(fidl_fuchsia_net::MARK_DOMAIN_SOCKET_UID as u8, uid)
     }
 }
 

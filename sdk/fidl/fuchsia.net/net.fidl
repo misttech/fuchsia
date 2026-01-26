@@ -98,6 +98,19 @@ type MarkDomain = strict enum : uint8 {
     MARK_2 = 2;
 };
 
+/// `MARK_1` domain is used to store the `SO_MARK` value set by Starnix
+/// processes. If a mark in this domain is absent, it will be reported to
+/// applications as a `0` since that is the default mark value on Linux.
+@available(added=HEAD)
+const MARK_DOMAIN_SO_MARK MarkDomain = MarkDomain.MARK_1;
+
+/// Fuchsia does not have UIDs, we use the `MARK_2` domain mark to store the
+/// UID of the process that created the sockets when the socket was created
+/// by a process running in Starnix. This mark should be left unset otherwise.
+@available(added=HEAD)
+const MARK_DOMAIN_SOCKET_UID MarkDomain = MarkDomain.MARK_2;
+
+
 /// Includes all the marks the platform supports.
 @available(added=HEAD)
 type Marks = table {

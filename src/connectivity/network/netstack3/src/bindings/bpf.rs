@@ -3,6 +3,7 @@
 // found in the LICENSE file.
 
 use crate::bindings::BindingsCtx;
+use crate::bindings::util::IntoCore;
 use ebpf::{
     BpfProgramContext, BpfValue, CbpfConfig, DataWidth, EbpfInstruction, EbpfProgram,
     EbpfProgramContext, FieldMapping, MapReference, MapSchema, Packet, ProgramArgument, Type,
@@ -22,7 +23,7 @@ use netstack3_core::filter::{
     BindingsPacketMatcher, FilterIpExt, FilterIpPacket, FilterPacketMetadata, Interfaces,
     SocketEgressFilterResult, SocketIngressFilterResult, SocketOpsFilter,
 };
-use netstack3_core::ip::{Mark, MarkDomain, Marks};
+use netstack3_core::ip::{Mark, Marks};
 use netstack3_core::socket::SocketCookie;
 use netstack3_core::sync::{Mutex, RwLock};
 use netstack3_core::trace::trace_duration;
@@ -33,12 +34,9 @@ use std::mem::offset_of;
 use std::sync::{Arc, Weak};
 use zerocopy::FromBytes;
 use {
-    fidl_fuchsia_ebpf as febpf, fidl_fuchsia_net_filter as fnet_filter,
+    fidl_fuchsia_ebpf as febpf, fidl_fuchsia_net as fnet, fidl_fuchsia_net_filter as fnet_filter,
     fidl_fuchsia_posix as fposix,
 };
-
-/// The mark domain used to pass socket UID.
-pub const MARK_DOMAIN_UID: MarkDomain = MarkDomain::Mark2;
 
 // Transmutes `Vec<u64>` to `Vec<EbpfInstruction>`.
 fn code_from_vec(code: Vec<u64>) -> Vec<EbpfInstruction> {
@@ -264,14 +262,15 @@ pub struct SocketInfo {
 
 impl SocketInfo {
     pub fn new(socket_cookie: SocketCookie, marks: &Marks) -> Self {
-        let Mark(socket_uid) = marks.get(MARK_DOMAIN_UID).clone();
+        let Mark(socket_uid) = marks.get(fnet::MARK_DOMAIN_SOCKET_UID.into_core()).clone();
         Self { socket_cookie: socket_cookie.export_value(), socket_uid }
     }
 
     pub fn from_packet_metadata(packet_metadata: &impl FilterPacketMetadata) -> Self {
         let socket_cookie =
             packet_metadata.cookie().map(|cookie| cookie.export_value()).unwrap_or(0);
-        let Mark(socket_uid) = packet_metadata.marks().get(MARK_DOMAIN_UID).clone();
+        let Mark(socket_uid) =
+            packet_metadata.marks().get(fnet::MARK_DOMAIN_SOCKET_UID.into_core()).clone();
         Self { socket_cookie, socket_uid }
     }
 }
@@ -1082,7 +1081,7 @@ mod tests {
         let socket_cookie = SocketCookie::new(socket_resource_token.token());
 
         let mut marks = Marks::default();
-        *marks.get_mut(MARK_DOMAIN_UID) = Mark(Some(UID));
+        *marks.get_mut(fnet::MARK_DOMAIN_SOCKET_UID.into_core()) = Mark(Some(UID));
 
         let device = FakeDeviceId;
 
