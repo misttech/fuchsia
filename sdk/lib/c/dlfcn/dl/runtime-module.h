@@ -240,14 +240,18 @@ class RuntimeModule : public fbl::DoublyLinkedListable<std::unique_ptr<RuntimeMo
 
   static void Unmap(uintptr_t vaddr, size_t len);
 
+  // This name matches abi_module_.link_map.name, not abi_module_.soname.
   Soname name_;
   AbiModule abi_module_;
   TlsModule tls_module_;
-  Vector<RuntimeModule*> direct_deps_, module_tree_;
+
+  Vector<RuntimeModule*> direct_deps_;
+  Vector<RuntimeModule*> module_tree_;  // This is a superset of direct_deps_.
+
+  TlsdescIndirectList tls_desc_indirect_list_;
   size_type static_tls_bias_ = 0;
   bool no_delete_ = false;
   bool initialized_ = false;
-  TlsdescIndirectList tls_desc_indirect_list_;
 };
 
 // This is the module tree view type returned by RuntimeModule::module_tree().

@@ -69,6 +69,7 @@ class RuntimeDynamicLinker {
                                                       fbl::AllocChecker& ac);
 
   constexpr const ModuleList& modules() const { return modules_; }
+  constexpr ModuleList& modules() { return modules_; }
 
   size_t max_static_tls_modid() const { return max_static_tls_modid_; }
 
@@ -132,7 +133,7 @@ class RuntimeDynamicLinker {
 
     // A Module for `file` does not yet exist; create a new LinkingSession
     // to perform the loading and linking of the file and all its dependencies.
-    LinkingSession<Loader> linking_session{modules_, max_static_tls_modid_, max_tls_modid_};
+    LinkingSession<Loader> linking_session{*this};
 
     if (!linking_session.Link(diag, name, std::forward<RetrieveFile>(retrieve_file))) {
       return diag.take_error();
@@ -189,8 +190,10 @@ class RuntimeDynamicLinker {
   // This function will fail if allocation fails.
   [[nodiscard]] fit::result<Error> PrepareTlsBlocksForThread(void* tp) const;
 
+  size_type max_tls_modid() const { return max_tls_modid_; }
+
   // The number of dynamic TLS modules that are loaded.
-  size_t DynamicTlsCount() const { return max_tls_modid_ - max_static_tls_modid_; }
+  size_type DynamicTlsCount() const { return max_tls_modid_ - max_static_tls_modid_; }
 
  private:
   // A The RuntimeDynamicLinker can only be created with RuntimeDynamicLinker::Create...).

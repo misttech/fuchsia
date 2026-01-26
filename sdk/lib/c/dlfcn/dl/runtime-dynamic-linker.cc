@@ -14,6 +14,15 @@
 
 namespace dl {
 
+LinkingSessionBase::LinkingSessionBase(RuntimeDynamicLinker& linker)
+    : linker_{linker}, result_{.max_tls_modid = linker.max_tls_modid()} {}
+
+ModuleList& LinkingSessionBase::loaded_modules() { return linker_.modules(); }
+
+size_type LinkingSessionBase::max_static_tls_modid() const {
+  return linker_.max_static_tls_modid();
+}
+
 void RuntimeDynamicLinker::AddNewModules(ModuleList modules) {
   loaded_ += modules.size();
   modules_.splice(modules_.end(), modules);

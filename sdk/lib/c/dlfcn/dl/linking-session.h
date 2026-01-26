@@ -22,39 +22,68 @@ namespace dl {
 
 using size_type = Elf::size_type;
 
-// This is the result returned by a successful LinkingSession once it has been
-// committed (see LinkingSession::Commit).
+class RuntimeDynamicLinker;  // runtime-dynamic-linker.h
+
+// A LinkingSession encapsulates the decoding, loading, relocation and creation
+// of RuntimeModules from a single dlopen call.  A LinkingSession instance only
+// lives as long as the dlopen call, and a successful LinkingSession will
+// provide the results via the Commit() method, which returns this object.
 struct LinkingResult {
-  // The list of modules loaded by the LinkingSession.
+  // The list of new modules loaded by the LinkingSession, to be appended to
+  // the RuntimeDynamicLinker::modules_ list.
   ModuleList loaded_modules;
+
   // The updated max TLS modid: this value is incremented for every new module
-  // that is loaded and defines a TLS variable. The
+  // that is loaded and defines a TLS variable.  This starts as the max TLS
+  // modid from the RuntimeDynamicLinker when it constructs the new
+  // LinkingSession.  It gets incremented and assigned to each new TLS module
+  // that is loaded as a part of this LinkingSession.  The final new max is
+  // reported back to become the new RuntimeDynamicLinker::max_tls_modid_.
   size_type max_tls_modid;
 };
 
-// A LinkingSession encapsulates the decoding, loading, relocation and creation
-// of RuntimeModules from a single dlopen call. A LinkingSession instance only
-// lives as long as the dlopen call, and a successful LinkingSession will
-// provide the list of RuntimeModules to its caller (see LinkingSession::Commit).
-template <class Loader>
-class LinkingSession {
+// The base class holds the state that's independent of the Loader class used.
+class LinkingSessionBase {
  public:
-  // Not copyable, not movable.
-  LinkingSession(const LinkingSession&) = delete;
-  LinkingSession(LinkingSession&&) = delete;
+  LinkingSessionBase() = delete;
+  LinkingSessionBase(LinkingSessionBase&&) = delete;
 
-  // TODO(https://fxbug.dev/403350238): Have the LinkingSession take a reference
-  // to the RuntimeDynamicLinker instead of separate fields.
-  // A LinkingSession is provided a reference to the dynamic linker's list of
-  // already loaded modules to refer to during the linking procedure, and the
-  // max static TLS module id from the passive ABI to use for TLS resolution.
-  explicit LinkingSession(ModuleList& loaded_modules, size_type max_static_tls_modid,
-                          size_type max_tls_modid)
-      : loaded_modules_(loaded_modules),
-        max_static_tls_modid_(max_static_tls_modid),
-        max_tls_modid_(max_tls_modid) {}
+  // The caller calls Commit() to finalize the LinkingSession after it has
+  // loaded and linked all the modules needed for a single dlopen call. This
+  // will transfer ownership of the RuntimeModules created during this session
+  // and provide an updated max_tls_modid in the LinkingResult returned back to
+  // the caller.
+  LinkingResult Commit() && { return std::move(result_); }
 
-  ~LinkingSession() = default;
+ protected:
+  // The RuntimeDynamicLinker and its modules() list are always treated as
+  // const by LinkingSession methods.  But it needs to be a non-const reference
+  // so that the RuntimeModule pointers drawn from it can be non-const, as the
+  // RuntimeModule lists of pointers into other RuntimeModules need to be
+  // non-const (mostly for MakeGlobal).
+  explicit LinkingSessionBase(RuntimeDynamicLinker& linker);
+
+  ModuleList& loaded_modules();
+
+  size_type max_static_tls_modid() const;
+
+  ModuleList& result_modules() { return result_.loaded_modules; }
+
+  size_type& result_max_tls_modid() { return result_.max_tls_modid; }
+
+ private:
+  RuntimeDynamicLinker& linker_;
+
+  // New (prospective) "permanent" modules are appended here to parallel new
+  // session_modules_ elements, and result_.max_tls_modid is incremented for
+  // each new PT_TLS segment.  Commit() moves this out of a successful session.
+  LinkingResult result_;
+};
+
+template <class Loader>
+class LinkingSession : public LinkingSessionBase {
+ public:
+  explicit LinkingSession(RuntimeDynamicLinker& linker) : LinkingSessionBase{linker} {}
 
   template <typename RetrieveFile>
   bool Link(Diagnostics& diag, Soname soname, RetrieveFile&& retrieve_file) {
@@ -63,17 +92,8 @@ class LinkingSession {
     }
     // The root module for the dlopen-ed file is always the first module
     // enqueued in this list.
-    RuntimeModule& root_module = runtime_modules_.front();
+    RuntimeModule& root_module = result_modules().front();
     return root_module.ReifyModuleTree(diag) && Relocate(diag, root_module.module_tree());
-  }
-
-  // The caller calls Commit() to finalize the LinkingSession after it has
-  // loaded and linked all the modules needed for a single dlopen call. This
-  // will transfer ownership of the RuntimeModules created during this session
-  // and provide an updated max_tls_modid in the LinkingResult returned back to
-  // the caller.
-  LinkingResult Commit() && {
-    return {.loaded_modules = std::move(runtime_modules_), .max_tls_modid = max_tls_modid_};
   }
 
  private:
@@ -117,7 +137,7 @@ class LinkingSession {
         return fit::error(true);
       }
 
-      if (auto dep_names = module.Load(diag, *std::move(file), max_tls_modid_)) {
+      if (auto dep_names = module.Load(diag, *std::move(file), result_max_tls_modid())) {
         // Create and enqueue a module for each dependency, skipping
         // dependencies that have already been enqueued. The (parent) module
         // that was just loaded will also store a reference to its dependencies'
@@ -167,10 +187,11 @@ class LinkingSession {
   // already been loaded, then a reference to the loaded module is returned
   // instead.
   RuntimeModule* EnqueueModule(Diagnostics& diag, Soname soname) {
-    if (auto it = std::ranges::find_if(loaded_modules_, soname.equal_to());
-        it != loaded_modules_.end()) {
-      // Return a reference to the module if it was already loaded at startup or
-      // by a LinkingSession from a previous dlopen() call.
+    auto& known_modules = loaded_modules();
+    if (auto it = std::ranges::find_if(known_modules, soname.equal_to());
+        it != known_modules.end()) {
+      // Return a reference to the module if it was already loaded at startup
+      // or by a LinkingSession from a previous dlopen() call.
       return &*it;
     }
 
@@ -187,11 +208,11 @@ class LinkingSession {
       return nullptr;
     }
 
-    runtime_modules_.push_back(std::move(module));
+    result_modules().push_back(std::move(module));
     session_modules_.push_back(std::move(session_module));
 
-    // Return a pointer to the RuntimeModule that was just created and enqueued.
-    return &runtime_modules_.back();
+    // Return the RuntimeModule pointer that was just created and enqueued.
+    return &result_modules().back();
   }
 
   // Perform relocations on all pending modules to be loaded. Return a boolean
@@ -204,7 +225,7 @@ class LinkingSession {
     // Construct a view of modules that will be used for symbol resolution.
     // This is an ordered list of global modules that have already been loaded,
     // followed by the non-global modules being loaded by this session.
-    auto loaded_global = std::views::filter(loaded_modules_, &RuntimeModule::is_global);
+    auto loaded_global = std::views::filter(loaded_modules(), &RuntimeModule::is_global);
     auto session_local = std::views::filter(session_modules, &RuntimeModule::is_local);
     static_assert(
         std::same_as<RuntimeModule&, std::ranges::range_reference_t<decltype(loaded_global)>>);
@@ -227,7 +248,7 @@ class LinkingSession {
       // name in the scoped diagnostics. Add test for missing transitive symbol
       // and make sure the correct name is used in the error message.
       ld::ScopedModuleDiagnostics root_module_diag{diag, session_module.name().str()};
-      return session_module.Relocate(diag, resolution_modules, max_static_tls_modid_) &&
+      return session_module.Relocate(diag, resolution_modules, max_static_tls_modid()) &&
              session_module.ProtectRelro(diag);
     };
     return std::all_of(std::begin(session_modules_), std::end(session_modules_),
@@ -236,36 +257,13 @@ class LinkingSession {
 
   // The list of "temporary" SessionModules needed to perform loading,
   // decoding, relocations, etc during this LinkingSession.  There is a 1:1
-  // mapping between elements in session_modules_ and runtime_modules_: each
-  // element in this list is responsible for filling out the runtime and ABI
-  // data for the corresponding RuntimeModule located at the same index in
-  // runtime_modules_.  In other words, session_modules_[idx].runtime_module()
-  // is a reference to the runtime module at runtime_modules_[idx]. Unlike
-  // runtime_modules_, this list will live only as long as this LinkingSession
-  // instance.
+  // mapping between elements in session_modules_ and result_.loaded_modules:
+  // each element in this list is responsible for filling out the runtime and
+  // ABI data for the corresponding RuntimeModule located at the same index in
+  // result_.loaded_modules.  IOW, session_modules_[idx].runtime_module() is a
+  // reference to the runtime module at result_.loaded_modules[idx].  Unlike
+  // the result_ list, this list will live only as long as the LinkingSession.
   SessionModuleList session_modules_;
-
-  // The list of "permanent" RuntimeModules created during this LinkingSession.
-  // Its ownership is transferred to the RuntimeDynamicLinker when
-  // LinkingSession::Commit is called, otherwise this list will get gc'ed with
-  // the LinkingSession.
-  ModuleList runtime_modules_;
-
-  // The set of loaded modules at the time this LinkingSession instance was
-  // created.
-  ModuleList& loaded_modules_;
-
-  // This is the maximum static TLS modid received by the dynamic linker at the
-  // time of this linking session. This value is passed to SessionModule.Relocate
-  // during relocations.
-  size_type max_static_tls_modid_ = 0;
-
-  // This is the max TLS modid value provided by the dynamic linker when this
-  // LinkingSession was created. This value gets incremented and assigned to
-  // each new TLS module that is loaded as a part of this LinkingSession. The
-  // updated max_tls_modid_ is returned back to the dynamic linker in the
-  // LinkingResult from the LinkingSession::Commit.
-  size_type max_tls_modid_;
 };
 
 // SessionModule is the temporary data structure created to load a file and
@@ -352,7 +350,7 @@ class LinkingSession<Loader>::SessionModule
   // Apply relro protections. `relro_` cannot be used after this call.
   bool ProtectRelro(Diagnostics& diag) { return std::move(relro_).Commit(diag); }
 
-  constexpr RuntimeModule& runtime_module() const { return runtime_module_; }
+  RuntimeModule& runtime_module() { return runtime_module_; }
 
  private:
   // A SessionModule can only be created with SessionModule::Create...).
