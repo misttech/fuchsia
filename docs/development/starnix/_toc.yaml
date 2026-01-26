@@ -9,3 +9,5 @@ toc:
   path: /docs/development/starnix/rubric_for_writing_starnix_syscalls.md
 - title: "Troubleshooting ADB connections to Starnix"
   path: /docs/development/starnix/troubleshooting_ffx_starnix_adb_connect.md
+- title: "As She Is Spoke"
+  path: /docs/development/starnix/as_she_is_spoke.md
