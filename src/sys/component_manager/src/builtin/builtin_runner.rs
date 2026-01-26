@@ -1145,10 +1145,24 @@ mod tests {
             }))
         );
 
-        // The ELF component controller channel should close (abnormally, because its runner died).
+        // The ELF component controller channel should close.
+        //
+        // Usually, we would expect elf runner to cancel its controller task for the ELF component,
+        // which should ultimately result in it killing its job and rendering an `InstanceDied`
+        // status on the controller channel. However, there is a small chance of a race where the
+        // ELF runner shuts down before it spawns this task, in which case it will just drop the
+        // controller channel with PEER_CLOSED without sending a termination event.
+        //
+        // While it's possible to fix ELF runner to avoid this race, it's not very important
+        // because the only scenario where ELF runner actually shuts down is in tests that have
+        // a hermetic instance, and in those cases dependency order will guarantee that component
+        // manager stops the ELF components before it stops the runner.
         let result = program.on_terminate().await;
-        let instance_died =
-            zx::Status::from_raw(fcomponent::Error::InstanceDied.into_primitive() as i32);
-        assert_eq!(result.termination_status, instance_died);
+        assert_matches!(
+            result.termination_status,
+            s
+            if s == zx::Status::from_raw(fcomponent::Error::InstanceDied.into_primitive() as i32) ||
+               s == zx::Status::PEER_CLOSED
+        );
     }
 }
