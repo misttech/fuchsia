@@ -225,7 +225,7 @@ and it will print the symbolized text to stdout.
 
 ## Fetching Change List (CL) diffs
 
-Fuchsia development happens on Gerrit When the user
+Fuchsia development happens on Gerrit. When the user
 asks for you to read a CL for them, do the following:
 
 1. Parse the change id from the CL URL. If the URL is `fxr/1234`, then
@@ -241,7 +241,6 @@ asks for you to read a CL for them, do the following:
    the user asked for a CL from
    `https://turquoise-internal-review.git.corp.google.com/` or `tqr/`, then use
    `gob-curl https://turquoise-internal-review.googlesource.com/changes<ID>/revisions/current/patch?raw`
-3. Use this diff to answer further questions about the changelist
 
 ## Code review response workflow
 
