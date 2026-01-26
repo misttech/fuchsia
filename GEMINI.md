@@ -49,65 +49,17 @@ as they cause the `gemini-cli` to hang and run out of input tokens.
 If you must glob all source files, it is advised to exclude or separately glob
 the contents of `//out`.
 
-## Code Authoring Workflow
+## Code Authoring Requirements
 
-To ensure code quality and minimize errors, you must follow a strict
-"analyze-first" methodology for all code changes, regardless of the language.
-The primary goal is to prevent compilation and logic errors through proactive
-investigation of the existing codebase *before* writing new code.
-
-**The Mandatory Workflow:**
-
-1.  **Analyze and Plan:** Before writing any code, use the available tools to
-    understand the context.
-    *   Use `hover` on existing variables and function calls to understand their
-        types and read documentation.
-    *   Use `definition` to navigate to the source code of types and functions
-        to understand their complete API and implementation.
-    *   Use `references` to see how existing code uses the APIs you plan to
-        interact with.
-    *   Formulate a clear plan based on your findings.
-
-2.  **Implement and Test:** Write your code according to the plan. Add or update
-    tests to validate your changes.
-
-3.  **Verify with Build:** After implementation, run `fx build` to confirm
-    your changes compile correctly. This is a final verification step, not a
-    tool for initial API discovery.
+1.  **Verify with Build:** After implementation of a change, run `fx build` to
+    confirm your changes compile correctly. This is a final verification step,
+    not a tool for initial API discovery.
 
     If you author new targets in BUILD.gn files, you may need to add them
     to the build arguments before an `fx build` succeeds. To do this,
     call `fx add-test <path/to/your/new:target>`. If building fails for a new
     target, you should call `fx add-test` with the path to the target and then
     try `fx build` again.
-
-For language-specific guidance, see the relevant sections below or in the
-`.gemini/extensions/` directory.
-
-### Coordinate-Based Tool Usage (`hover`, `definition`, etc.)
-
-To prevent errors from using incorrect or "hallucinated" line and
-column numbers, you **must** follow this procedure before using any
-tool that requires coordinates:
-
-1.  **Identify Anchor:** Identify a unique string of text (an
-    "anchor") at the precise location of the symbol you want to
-    investigate. This could be a variable name, function signature,
-    etc.
-
-2.  **Find Line Number:** Use a text-search tool that returns line
-    numbers, such as `grep -n`, to find the exact line number of
-    your anchor in the target file.
-    *   **Command:** `grep -n "your_unique_anchor" /path/to/file`
-
-3.  **Calculate Column Number:** Read the single line of code returned
-    by the search tool. Calculate the column number by finding the
-    starting character position of your anchor within that line.
-
-4.  **Execute Tool:** You may now call the coordinate-based tool
-    (`hover`, `definition`, `references`, `rename_symbol`) using the
-    file path, the line number from the search tool, and the column
-    number you just calculated.
 
 ### C++ Development
 
