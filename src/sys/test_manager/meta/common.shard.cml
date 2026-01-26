@@ -761,6 +761,13 @@
             to: [ "#system-tests" ],
             availability: "same_as_target",
         },
+        {
+            directory: "debug_block",
+            from: "parent",
+            to: "#system-tests",
+            rights: [ "r*" ],
+            availability: "optional",
+        },
     ],
     expose: [
         {

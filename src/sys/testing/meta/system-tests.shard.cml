@@ -470,5 +470,12 @@
             from: "parent",
             to: [ "#system-tests" ],
         },
+        {
+            directory: "debug_block",
+            from: "parent",
+            to: "#system-tests",
+            rights: [ "r*" ],
+            availability: "optional",
+        },
     ],
 }

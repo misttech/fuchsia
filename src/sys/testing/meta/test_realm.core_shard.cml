@@ -734,5 +734,11 @@
             from: "parent",
             to: "#testing",
         },
+        {
+            directory: "debug_block",
+            from: "parent",
+            to: "#testing",
+            availability: "optional",
+        },
     ],
 }

@@ -598,5 +598,11 @@
             to: "self/toolbox",
             target_availability: "unknown",
         },
+        {
+            directory: "debug_block",
+            from: "parent",
+            to: "#test_manager",
+            availability: "optional",
+        },
     ],
 }
