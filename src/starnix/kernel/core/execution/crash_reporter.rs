@@ -3,60 +3,26 @@
 // found in the LICENSE file.
 
 use crate::task::{CurrentTask, ExitStatus};
+use crash_throttling::{CrashThrottler, PendingCrashReport};
 use fidl_fuchsia_feedback::{
     Annotation, CrashReport, CrashReporterProxy, MAX_ANNOTATION_VALUE_LENGTH,
     MAX_CRASH_SIGNATURE_LENGTH, NativeCrashReport, SpecificCrashReport,
 };
-use fuchsia_inspect::{Inspector, Node};
-use futures::FutureExt;
+use fuchsia_inspect::Node;
 use starnix_logging::{
     CATEGORY_STARNIX, CoreDumpInfo, CoreDumpList, TraceScope, log_error, log_info, log_warn,
     trace_instant,
 };
-use starnix_sync::Mutex;
-use std::collections::{HashMap, VecDeque};
-use std::sync::Arc;
-
-/// The maximum number of crashes we allow to happen for a process within the last
-/// CrashReporter.crash_loop_age_out before we consider it to be crash looping. 8 within 8 minutes
-/// was chosen as a balance between "definitely a crash loop" and "still saves system resources."
-pub const CRASH_LOOP_LIMIT: usize = 8;
-
-/// While throttled, we should still occasionally file a report with a higher "weight" that can
-/// represent the rest of the crashes.
-const REPORT_EVERY_X_WHILE_THROTTLED: u32 = 10;
 
 pub struct CrashReporter {
     /// Diagnostics information about crashed tasks.
     core_dumps: CoreDumpList,
 
-    /// Diagnostics information. A mapping from process name -> number of crashes for that process
-    /// that weren't uploaded because of process throttling.
-    throttled_core_dumps: Arc<Mutex<HashMap<String, i64>>>,
-
-    /// Tracks when crashes occurred for each process name.
-    crashes_per_process: Arc<Mutex<HashMap<String, CrashInfo>>>,
+    /// Throttles crash reports to avoid spamming the system.
+    throttler: CrashThrottler,
 
     /// Connection to the feedback stack for reporting crashes.
     proxy: Option<CrashReporterProxy>,
-
-    /// The period before a crash is no longer considered for detecting crash loops.
-    crash_loop_age_out: zx::MonotonicDuration,
-
-    /// Whether excessive crash reports should be throttled.
-    enable_throttling: bool,
-}
-
-pub struct PendingCrashReport {
-    /// The current task's argv.
-    argv: Vec<String>,
-
-    /// The crashed process name.
-    argv0: String,
-
-    /// How many crashes this report represents. For example, a value of 10 would indicate that
-    /// this report will represent 9 other throttled crashes for this process.
-    weight: u32,
 }
 
 impl CrashReporter {
@@ -66,17 +32,11 @@ impl CrashReporter {
         crash_loop_age_out: zx::MonotonicDuration,
         enable_throttling: bool,
     ) -> Self {
-        let crash_reporter = Self {
+        Self {
             core_dumps: CoreDumpList::new(inspect_node.create_child("coredumps")),
-            throttled_core_dumps: Arc::new(Mutex::new(Default::default())),
-            crashes_per_process: Arc::new(Mutex::new(Default::default())),
+            throttler: CrashThrottler::new(inspect_node, crash_loop_age_out, enable_throttling),
             proxy,
-            crash_loop_age_out,
-            enable_throttling,
-        };
-
-        crash_reporter.record_throttling_in_inspect(inspect_node);
-        crash_reporter
+        }
     }
 
     /// Returns a PendingCrashReport if the crash report should be reported. Otherwise, returns
@@ -93,7 +53,7 @@ impl CrashReporter {
         // Get the filename.
         let argv0 = argv0.rsplit_once("/").unwrap_or(("", &argv0)).1.to_string();
 
-        self.report_guard(argv, argv0, zx::MonotonicInstant::get())
+        self.throttler.should_report(argv, argv0, zx::MonotonicInstant::get())
     }
 
     /// Callers should first check whether the crash should be reported via begin_crash_report.
@@ -210,130 +170,6 @@ impl CrashReporter {
             log_info!(crash_report:?; "no crash reporter available for crash");
         }
     }
-
-    /// Locally records that a crash for `process_name` occurred at `runtime` and returns a guard
-    /// for an in-flight report if few enough overall are in-flight, as well as the weight that
-    /// should be assigned to the crash report.
-    ///
-    /// Note: runtime is the total time the device has been on according to the monotonic clock, not
-    /// the amount of time the process was running.
-    fn report_guard(
-        &self,
-        argv: Vec<String>,
-        argv0: String,
-        runtime: zx::MonotonicInstant,
-    ) -> Option<PendingCrashReport> {
-        if !self.enable_throttling {
-            return Some(PendingCrashReport { argv, argv0, weight: 1 });
-        }
-
-        // Locally record that the crash occurred.
-        let mut crashes_per_process = self.crashes_per_process.lock();
-        let crash_info = crashes_per_process.entry(argv0.clone()).or_default();
-        crash_info.crash_runtimes.push_back(runtime);
-
-        crash_info.prune_crash_runtimes(runtime, self.crash_loop_age_out);
-
-        // Even if we're not throttled, we still need to have a weight of 1 so incrementing this
-        // here will let us later use it as the weight.
-        crash_info.num_crashes_while_throttled += 1;
-
-        // Check if this particular process has been filing too many reports.
-        if crash_info.is_throttled_at(runtime, self.crash_loop_age_out)
-            && (crash_info.num_crashes_while_throttled < REPORT_EVERY_X_WHILE_THROTTLED)
-        {
-            log_info!(
-                "Process '{argv0}' is throttled due to suspected crash loop, will fold report into later crash"
-            );
-            *self.throttled_core_dumps.lock().entry(argv0).or_default() += 1;
-            return None;
-        }
-
-        let weight = crash_info.num_crashes_while_throttled;
-        crash_info.num_crashes_while_throttled = 0;
-
-        Some(PendingCrashReport { argv, argv0, weight })
-    }
-
-    fn record_throttling_in_inspect(&self, inspect_node: &Node) {
-        let throttled_core_dumps = self.throttled_core_dumps.clone();
-        let crashes_per_process = self.crashes_per_process.clone();
-        let crash_loop_age_out = self.crash_loop_age_out;
-
-        inspect_node.record_lazy_child("coredumps_throttled", move || {
-            let throttled_core_dumps = throttled_core_dumps.clone();
-            let crashes_per_process = crashes_per_process.clone();
-
-            async move {
-                let inspector = Inspector::default();
-                let mut crashes_per_process = crashes_per_process.lock();
-                let runtime = zx::MonotonicInstant::get();
-
-                for (process, count) in throttled_core_dumps.lock().iter() {
-                    let Some(crash_info) = crashes_per_process.get_mut(process) else {
-                        continue;
-                    };
-
-                    crash_info.prune_crash_runtimes(runtime, crash_loop_age_out);
-
-                    let process_node = inspector.root().create_child(process);
-                    process_node.record_bool(
-                        "currently_throttled",
-                        crash_info.is_throttled_at(runtime, crash_loop_age_out),
-                    );
-                    process_node.record_int("total_throttled_crashes", *count);
-                    if let Some(end) = crash_info.throttling_end(crash_loop_age_out) {
-                        process_node.record_int("throttling_runtime_end_millis", end.into_millis());
-                    }
-
-                    inspector.root().record(process_node);
-                }
-                Ok(inspector)
-            }
-            .boxed()
-        });
-    }
-}
-
-#[derive(Default)]
-struct CrashInfo {
-    /// How many crashes have occurred while throttled. Resets to 0 if the throttling ends or if a
-    /// representative report is uploaded every REPORT_EVERY_X_WHILE_THROTTLED.
-    num_crashes_while_throttled: u32,
-
-    /// When the crashes occurred. Crashes that occurred more than CrashReporter.crash_loop_age_out
-    /// ago may be removed.
-    crash_runtimes: VecDeque<zx::MonotonicInstant>,
-}
-
-impl CrashInfo {
-    /// Whether the process is throttled at a given instant.
-    fn is_throttled_at(
-        &self,
-        runtime: zx::MonotonicInstant,
-        crash_loop_age_out: zx::MonotonicDuration,
-    ) -> bool {
-        self.crash_runtimes.iter().filter(|&&x| (runtime - x) < crash_loop_age_out).count()
-            > CRASH_LOOP_LIMIT
-    }
-
-    /// When a process will no longer be throttled, if it currently is throttled.
-    fn throttling_end(
-        &self,
-        crash_loop_age_out: zx::MonotonicDuration,
-    ) -> Option<zx::MonotonicDuration> {
-        let throttling_end = self.crash_runtimes.iter().nth_back(CRASH_LOOP_LIMIT - 1)?;
-        Some(crash_loop_age_out + zx::Duration::from_nanos(throttling_end.into_nanos()))
-    }
-
-    // Only keeps entries that are within `crash_loop_age_out`.
-    fn prune_crash_runtimes(
-        &mut self,
-        runtime: zx::MonotonicInstant,
-        crash_loop_age_out: zx::MonotonicDuration,
-    ) {
-        self.crash_runtimes.retain(|&x| (runtime - x) < crash_loop_age_out);
-    }
 }
 
 fn truncate_with_ellipsis(s: &mut String, max_len: usize) {
@@ -362,9 +198,6 @@ fn truncate_with_ellipsis(s: &mut String, max_len: usize) {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::testing::spawn_kernel_and_run;
-
-    const CRASH_LOOP_AGE_OUT: zx::MonotonicDuration = zx::Duration::from_minutes(8);
 
     #[test]
     fn truncate_noop_on_max_length_string() {
@@ -391,146 +224,5 @@ mod tests {
         truncate_with_ellipsis(&mut s, 8);
         assert_eq!(s.len(), 7, "may end up shorter than provided max length w/ multi-byte chars");
         assert_eq!(s, "ææ...", "truncate must remove whole characters and add ellipsis");
-    }
-
-    #[test]
-    fn not_throttled() {
-        let crash_reporter = CrashReporter::new(
-            &fuchsia_inspect::Node::default(),
-            /*proxy=*/ None,
-            CRASH_LOOP_AGE_OUT,
-            /*enable_throttling=*/ true,
-        );
-
-        assert!(
-            crash_reporter
-                .report_guard(vec![], "test-process".to_string(), zx::Instant::from_nanos(0))
-                .is_some()
-        );
-    }
-
-    #[test]
-    fn throttled() {
-        let crash_reporter = CrashReporter::new(
-            &fuchsia_inspect::Node::default(),
-            /*proxy=*/ None,
-            CRASH_LOOP_AGE_OUT,
-            /*enable_throttling=*/ true,
-        );
-
-        for _ in 0..CRASH_LOOP_LIMIT {
-            assert!(
-                crash_reporter
-                    .report_guard(vec![], "test-process".to_string(), zx::Instant::from_nanos(0))
-                    .is_some()
-            );
-        }
-        assert!(
-            crash_reporter
-                .report_guard(vec![], "test-process".to_string(), zx::Instant::from_nanos(0))
-                .is_none()
-        );
-    }
-
-    #[test]
-    fn throttling_ages_out() {
-        let crash_reporter = CrashReporter::new(
-            &fuchsia_inspect::Node::default(),
-            /*proxy=*/ None,
-            CRASH_LOOP_AGE_OUT,
-            /*enable_throttling=*/ true,
-        );
-
-        for _ in 0..CRASH_LOOP_LIMIT {
-            assert!(
-                crash_reporter
-                    .report_guard(vec![], "test-process".to_string(), zx::Instant::from_nanos(0))
-                    .is_some()
-            );
-        }
-        assert!(
-            crash_reporter
-                .report_guard(vec![], "test-process".to_string(), zx::Instant::from_nanos(0))
-                .is_none()
-        );
-        assert!(
-            crash_reporter
-                .report_guard(
-                    vec![],
-                    "test-process".to_string(),
-                    zx::Instant::from_nanos(CRASH_LOOP_AGE_OUT.into_nanos())
-                )
-                .is_some()
-        );
-    }
-
-    #[test]
-    fn reports_some_crashes_while_throttled() {
-        const RUNTIME: zx::MonotonicInstant = zx::Instant::from_nanos(0);
-        let crash_reporter = CrashReporter::new(
-            &fuchsia_inspect::Node::default(),
-            /*proxy=*/ None,
-            CRASH_LOOP_AGE_OUT,
-            /*enable_throttling=*/ true,
-        );
-
-        for _ in 0..CRASH_LOOP_LIMIT {
-            assert!(
-                crash_reporter.report_guard(vec![], "test-process".to_string(), RUNTIME).is_some()
-            );
-        }
-
-        for _ in 0..REPORT_EVERY_X_WHILE_THROTTLED - 1 {
-            assert!(
-                crash_reporter.report_guard(vec![], "test-process".to_string(), RUNTIME).is_none()
-            );
-        }
-
-        assert_eq!(
-            crash_reporter
-                .report_guard(vec![], "test-process".to_string(), RUNTIME)
-                .unwrap()
-                .weight,
-            REPORT_EVERY_X_WHILE_THROTTLED
-        );
-    }
-
-    #[test]
-    fn is_throttled_filters() {
-        let mut crash_info: CrashInfo = Default::default();
-
-        crash_info.crash_runtimes.push_back(zx::MonotonicInstant::from_nanos(0));
-        for _ in 0..CRASH_LOOP_LIMIT {
-            crash_info.crash_runtimes.push_back(zx::MonotonicInstant::from_nanos(50));
-        }
-
-        assert!(
-            crash_info.is_throttled_at(zx::MonotonicInstant::from_nanos(0), CRASH_LOOP_AGE_OUT)
-        );
-        assert!(!crash_info.is_throttled_at(
-            zx::MonotonicInstant::from_nanos(CRASH_LOOP_AGE_OUT.into_nanos()),
-            CRASH_LOOP_AGE_OUT
-        ));
-    }
-
-    #[fuchsia::test]
-    async fn begin_crash_report_throttling_ends() {
-        spawn_kernel_and_run(async |_, current_task| {
-            let crash_reporter = CrashReporter::new(
-                &fuchsia_inspect::Node::default(),
-                /*proxy=*/ None,
-                zx::Duration::from_millis(200),
-                /*enable_throttling=*/ true,
-            );
-
-            for _ in 0..CRASH_LOOP_LIMIT {
-                assert!(crash_reporter.begin_crash_report(current_task).is_some());
-            }
-            assert!(crash_reporter.begin_crash_report(current_task).is_none());
-
-            std::thread::sleep(std::time::Duration::from_millis(250));
-            assert!(crash_reporter.begin_crash_report(current_task).is_some());
-        })
-        .await;
     }
 }
