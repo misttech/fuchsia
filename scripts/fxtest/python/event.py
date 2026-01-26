@@ -511,17 +511,32 @@ class EventSpan:
         if self.category is None:
             self.category = self.classify()
 
+    def should_ignore_for_stats(self, payload: EventPayloadUnion) -> bool:
+        # Event groups and test groups are containers for other events. They are
+        # ignored to avoid double-counting durations, as their time is covered
+        # by their children.
+        if payload.test_group is not None or payload.event_group is not None:
+            return True
+        if payload.program_execution is not None:
+            # fx serve is a long-running background process that runs throughout
+            # the entire test execution.
+            if (
+                payload.program_execution.command == "fx"
+                and "serve" in payload.program_execution.flags
+            ):
+                return True
+        return False
+
     def classify(self) -> EventStatCategory:
-        """
-        We use heuristics to classify events based on their payload. For
-        event_group and test_group, since they are just containers for other
-        events, we classify them as IGNORE and their duration
-        will be covered by their child events
+        """Classify the event based on its payload.
+
+        We use heuristics to determine the category. Events that do not represent
+        a distinct operation (like structural containers) are classified as IGNORE.
         """
         payload = self.start_event.payload
         if payload is None:
             return EventStatCategory.OTHERS
-        elif payload.test_group is not None or payload.event_group is not None:
+        elif self.should_ignore_for_stats(payload):
             return EventStatCategory.IGNORE
         elif payload.parsing_file is not None:
             return EventStatCategory.PARSING

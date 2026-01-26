@@ -277,3 +277,13 @@ class TestEventSpan(unittest.IsolatedAsyncioTestCase):
             self._create_event_span(payload).category,
             event.EventStatCategory.IGNORE,
         )
+
+        payload = event.EventPayloadUnion(
+            program_execution=event.ProgramExecutionPayload(
+                "fx", ["--dir", "out/default", "serve"], {}
+            )
+        )
+        self.assertEqual(
+            self._create_event_span(payload).category,
+            event.EventStatCategory.IGNORE,
+        )

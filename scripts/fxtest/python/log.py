@@ -216,6 +216,12 @@ class ExecutionStats:
     summary: dict[event.EventStatCategory, CategoryStats]
 
 
+def _format_top_n_event_label(payload: event.EventPayloadUnion | None) -> str:
+    if payload is not None and payload.test_suite_started is not None:
+        return f"Running TestSuite {payload.test_suite_started.name}"
+    return str(payload)
+
+
 def compute_stats(log_source: LogSource) -> ExecutionStats:
     """Calculate and return statistics from the log source.
 
@@ -283,7 +289,7 @@ def compute_stats(log_source: LogSource) -> ExecutionStats:
     for event_stat in filtered_and_sorted_events[:_SUMMARY_TOP_N_MAX_COUNT]:
         top_n_list.append(
             TopNEvent(
-                label=str(event_stat.start_event.payload),
+                label=_format_top_n_event_label(event_stat.start_event.payload),
                 duration=event_stat.duration or 0.0,
                 category=event_stat.category,
             )

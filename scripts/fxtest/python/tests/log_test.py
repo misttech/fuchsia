@@ -133,11 +133,11 @@ class TestPreviousStats(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(
             top_n_list[2].category, event.EventStatCategory.TESTING
         )
-        self.assertIn("suite_i", top_n_list[1].label)
+        self.assertEqual(top_n_list[1].label, "Running TestSuite suite_i")
         self.assertEqual(
             top_n_list[1].category, event.EventStatCategory.TESTING
         )
-        self.assertIn("suite_g", top_n_list[2].label)
+        self.assertEqual(top_n_list[2].label, "Running TestSuite suite_g")
 
         summary = stats.summary
         self.assertIn(event.EventStatCategory.BUILDING, summary)
