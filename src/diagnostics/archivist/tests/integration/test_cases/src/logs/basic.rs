@@ -60,7 +60,7 @@ async fn listen_for_syslog() {
     let mut logs: Vec<LogMessage> = incoming.take(2).collect().await;
 
     // sort logs to account for out-of-order arrival
-    logs.sort_by(|a, b| a.time.cmp(&b.time));
+    logs.sort_by_key(|a| a.time);
     assert_eq!(2, logs.len());
     assert_eq!(logs[1].tags.len(), 1);
     assert_eq!(logs[0].tags[0], PUPPET_NAME);
