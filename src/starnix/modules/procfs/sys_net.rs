@@ -303,7 +303,7 @@ impl FsNodeOps for ProcSysNetIpv6Conf {
                 );
                 dir.entry(
                     "dad_transmits",
-                    StubBytesFile::new_node(bug_ref!("https://fxbug.dev/423646145")),
+                    new_interface_config_file_node::<Ipv6DadTransmits>(interface),
                     FILE_MODE,
                 );
                 dir.entry(
@@ -924,5 +924,41 @@ impl<I: Ip> InterfaceConfig for BaseReachableTimeMs<I> {
             zx::Duration::<zx::BootTimeline>::from_nanos(base_reachable_time_ns).into_millis(),
         )
         .map_err(|_| errno!(EIO))?)
+    }
+}
+
+struct Ipv6DadTransmits;
+
+impl InterfaceConfig for Ipv6DadTransmits {
+    fn try_from_i32(value: i32) -> Result<fidl_fuchsia_net_interfaces_admin::Configuration, Errno> {
+        let transmits = u16::try_from(value).map_err(|_| errno!(EINVAL))?;
+        Ok(fnet_interfaces_admin::Configuration {
+            ipv6: Some(fnet_interfaces_admin::Ipv6Configuration {
+                ndp: Some(fnet_interfaces_admin::NdpConfiguration {
+                    dad: Some(fnet_interfaces_admin::DadConfiguration {
+                        transmits: Some(transmits),
+                        ..Default::default()
+                    }),
+                    ..Default::default()
+                }),
+                ..Default::default()
+            }),
+            ..Default::default()
+        })
+    }
+
+    fn try_into_i32(
+        config: fidl_fuchsia_net_interfaces_admin::Configuration,
+    ) -> Result<i32, Errno> {
+        config
+            .ipv6
+            .and_then(|ipv6| ipv6.ndp)
+            .and_then(|ndp| ndp.dad)
+            .and_then(|dad| dad.transmits)
+            .map(i32::from)
+            .ok_or_else(|| {
+                log_error!("network interface config missing ipv6 ndp dad transmits");
+                errno!(EIO)
+            })
     }
 }

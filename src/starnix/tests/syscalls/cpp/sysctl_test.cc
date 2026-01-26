@@ -29,7 +29,7 @@ namespace {
 uint32_t GetLoopbackIndex() { return 1; }
 
 // Waits for the address on the loopback device to be added or removed.
-bool HasLoopbackAddress(int family, const char* address_str) {
+bool HasLoopbackAddress(int family, const char *address_str) {
   fbl::unique_fd nl_sock(socket(AF_NETLINK, SOCK_RAW, NETLINK_ROUTE));
   EXPECT_TRUE(nl_sock.is_valid());
 
@@ -59,7 +59,7 @@ bool HasLoopbackAddress(int family, const char* address_str) {
       continue;
     }
     EXPECT_GE(len, 0);
-    for (nlmsghdr* nh = reinterpret_cast<nlmsghdr*>(buf); MY_NLMSG_OK(nh, len);
+    for (nlmsghdr *nh = reinterpret_cast<nlmsghdr *>(buf); MY_NLMSG_OK(nh, len);
          nh = NLMSG_NEXT(nh, len)) {
       if (nh->nlmsg_type == NLMSG_DONE) {
         return false;
@@ -68,12 +68,12 @@ bool HasLoopbackAddress(int family, const char* address_str) {
         continue;
       }
 
-      ifaddrmsg* ifa = reinterpret_cast<ifaddrmsg*>(NLMSG_DATA(nh));
+      ifaddrmsg *ifa = reinterpret_cast<ifaddrmsg *>(NLMSG_DATA(nh));
       if (ifa->ifa_family != family) {
         continue;
       }
 
-      rtattr* rta = IFA_RTA(ifa);
+      rtattr *rta = IFA_RTA(ifa);
       int rta_len = IFA_PAYLOAD(nh);
       for (; RTA_OK(rta, rta_len); rta = RTA_NEXT(rta, rta_len)) {
         if (rta->rta_type != IFA_ADDRESS) {
@@ -96,7 +96,7 @@ bool HasLoopbackAddress(int family, const char* address_str) {
 }
 
 // Creates a new TUN device with the given name.
-fbl::unique_fd NewTunDevice(const char* name) {
+fbl::unique_fd NewTunDevice(const char *name) {
   int tun = open("/dev/tun", O_RDWR);
   if (tun == -1 && errno == ENOENT) {
     tun = open("/dev/net/tun", O_RDWR);
@@ -120,7 +120,7 @@ class SysctlTestWithParam
       public ::testing::WithParamInterface<std::tuple<std::string, std::string>> {};
 
 TEST_P(SysctlTestWithParam, DirectoryContainsInterfaces) {
-  auto const& [version, conf_or_neigh] = GetParam();
+  auto const &[version, conf_or_neigh] = GetParam();
   std::vector<std::string> files;
   EXPECT_TRUE(
       files::ReadDirContents(std::format("/proc/sys/net/{}/{}", version, conf_or_neigh), &files));
@@ -130,7 +130,7 @@ TEST_P(SysctlTestWithParam, DirectoryContainsInterfaces) {
 INSTANTIATE_TEST_SUITE_P(SysctlTest, SysctlTestWithParam,
                          ::testing::Combine(::testing::Values("ipv4", "ipv6"),
                                             ::testing::Values("conf", "neigh")),
-                         [](const ::testing::TestParamInfo<SysctlTestWithParam::ParamType>& info) {
+                         [](const ::testing::TestParamInfo<SysctlTestWithParam::ParamType> &info) {
                            return std::format("{}_{}", std::get<0>(info.param),
                                               std::get<1>(info.param));
                          });
@@ -141,7 +141,7 @@ TEST_F(SysctlTest, AcceptRaRtTable) {
   }
   std::string accept_ra_rt_table_str;
 
-  constexpr const char* kAcceptRaRtTable = "/proc/sys/net/ipv6/conf/{}/accept_ra_rt_table";
+  constexpr const char *kAcceptRaRtTable = "/proc/sys/net/ipv6/conf/{}/accept_ra_rt_table";
   const std::string kDefault = std::format(kAcceptRaRtTable, "default");
   const std::string kLo = std::format(kAcceptRaRtTable, "lo");
 
@@ -149,10 +149,10 @@ TEST_F(SysctlTest, AcceptRaRtTable) {
     GTEST_SKIP() << "The kernel is not compiled with this sysctl";
   }
 
-  const char* kVal1 = "-100\n";
-  const char* kVal2 = "-200\n";
+  const char *kVal1 = "-100\n";
+  const char *kVal2 = "-200\n";
 
-  for (auto const& path : {kDefault, kLo}) {
+  for (auto const &path : {kDefault, kLo}) {
     EXPECT_TRUE(files::ReadFileToString(path, &accept_ra_rt_table_str));
     EXPECT_STREQ(accept_ra_rt_table_str.c_str(), "0\n");
   }
@@ -167,7 +167,7 @@ TEST_F(SysctlTest, AcceptRaRtTable) {
   EXPECT_TRUE(files::ReadFileToString(kDefault, &accept_ra_rt_table_str));
   EXPECT_STREQ(accept_ra_rt_table_str.c_str(), kVal2);
 
-  const char* kTunName = "tun0";
+  const char *kTunName = "tun0";
   auto tun = NewTunDevice(kTunName);
 
   const std::string kTunPath = std::format(kAcceptRaRtTable, kTunName);
@@ -245,8 +245,8 @@ TEST_P(SysctlTestReadBack, ReadBack) {
   if (!test_helper::HasCapability(CAP_NET_ADMIN)) {
     GTEST_SKIP() << "Need CAP_NET_ADMIN to run SysctlTest";
   }
-  const std::string& path = GetParam();
-  const char* toWrite = "10\n";
+  const std::string &path = GetParam();
+  const char *toWrite = "10\n";
   // Linux internally translates milliseconds to jiffies, if the value is too
   // small, then precision will get lost when scaling up and down.
   if (path.ends_with("_ms")) {
@@ -264,5 +264,6 @@ INSTANTIATE_TEST_SUITE_P(
                       "/proc/sys/net/ipv4/neigh/default/ucast_solicit",
                       "/proc/sys/net/ipv6/neigh/default/mcast_resolicit",
                       "/proc/sys/net/ipv4/neigh/default/mcast_resolicit",
+                      "/proc/sys/net/ipv6/conf/default/dad_transmits",
                       "/proc/sys/net/ipv6/neigh/default/base_reachable_time_ms",
                       "/proc/sys/net/ipv4/neigh/default/base_reachable_time_ms"));
