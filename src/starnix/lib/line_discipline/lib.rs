@@ -124,6 +124,12 @@ impl PendingSignals {
         self.signals.append(&mut other.signals);
     }
 
+    /// Returns true if there are no pending signals.
+    fn is_empty(&self) -> bool {
+        self.signals.is_empty()
+    }
+
+    /// Returns a slice of the pending signals.
     pub fn signals(&self) -> &[Signal] {
         &self.signals[..]
     }
@@ -478,7 +484,7 @@ impl LineDiscipline {
                     );
                 }
                 queue.line_buffer.truncate(queue.line_buffer.len() - erase_span.bytes);
-            } else {
+            } else if signals.is_empty() {
                 queue.line_buffer.extend_from_slice(&character_bytes);
             }
 
@@ -1080,4 +1086,4 @@ mod tests {
 }
 
 #[cfg(test)]
-mod replayer;
+mod testing;

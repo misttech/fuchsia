@@ -13,7 +13,7 @@ the behavior of the host's PTY implementation.
 To generate all trace files:
 
 ```bash
-python3 src/starnix/lib/line_discipline/testing/trace_generator.py --out-dir src/starnix/lib/line_discipline/testing/traces/
+python3 src/starnix/lib/line_discipline/testing/trace_generator.py --out-dir src/starnix/lib/line_discipline/testing/
 ```
 
 ### Available Suites

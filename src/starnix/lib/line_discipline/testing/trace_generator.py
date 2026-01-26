@@ -2,14 +2,30 @@
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
+"""
+Generator for Starnix line discipline traces.
+
+This script runs scenarios defined in `scenarios.py` against a PTY pair and records the
+interaction to a JSON file. These traces are then used by the `replayer` test runner
+to verify the Starnix line discipline implementation.
+"""
+
 import argparse
 import fcntl
 import json
+import logging
 import os
 import select
 import struct
 import termios
 import time
+from typing import Any, Dict, List, Optional, Union
+
+import scenarios
+
+# Configure logging
+logging.basicConfig(level=logging.INFO, format="%(message)s")
+logger = logging.getLogger(__name__)
 
 # LFLAGS naming is a bit inconsistent (ICANON, ISIG, ECHO...).
 # Let's just list common ones we care about to avoid noise.
@@ -61,7 +77,8 @@ INTERESTING_LFLAGS = [
 ]
 
 
-def decompose_flags(value, names):
+def decompose_flags(value: int, names: List[str]) -> List[str]:
+    """Decomposes a flag integer into a list of symbolic names."""
     result = []
     for name in names:
         if hasattr(termios, name):
@@ -71,7 +88,8 @@ def decompose_flags(value, names):
     return result
 
 
-def get_termios_dict(fd):
+def get_termios_dict(fd: int) -> Dict[str, Any]:
+    """Reads current termios from fd and returns a dict representation."""
     iflag, oflag, cflag, lflag, ispeed, ospeed, cc = termios.tcgetattr(fd)
 
     return {
@@ -83,7 +101,8 @@ def get_termios_dict(fd):
     }
 
 
-def set_termios(fd, config):
+def set_termios(fd: int, config: Dict[str, Any]) -> None:
+    """Sets termios on fd from a dict representation."""
     iflag = 0
     for name in config.get("c_iflag", []):
         if hasattr(termios, name):
@@ -104,9 +123,9 @@ def set_termios(fd, config):
 
     # Get current to preserve others
     current = termios.tcgetattr(fd)
-    cc = current[6]
+    current_cc = current[6]
     # Make a mutable copy (list)
-    cc = list(cc)
+    cc = list(current_cc)
 
     if "c_cc" in config:
         for name, value in config["c_cc"].items():
@@ -115,9 +134,9 @@ def set_termios(fd, config):
                 if idx < len(cc):
                     cc[idx] = value
                 else:
-                    print(f"Warning: Index {idx} out of range for c_cc")
+                    logger.warning("Index %d out of range for c_cc", idx)
             else:
-                print(f"Warning: Unknown c_cc name {name}")
+                logger.warning("Unknown c_cc name %s", name)
 
     termios.tcsetattr(
         fd,
@@ -126,1007 +145,227 @@ def set_termios(fd, config):
     )
 
 
-def encode_data(data):
+def encode_data(data: Union[str, bytes, List[int]]) -> Union[str, List[int]]:
+    """Encodes data for JSON serialization."""
     # Try to encode as string if valid utf-8, otherwise list of ints
     if isinstance(data, str):
         return data
     try:
+        if isinstance(data, list):
+            # Already a list (e.g. from previous load?), just return or check content
+            return data
         return data.decode("utf-8")
     except UnicodeDecodeError:
         return list(data)
 
 
-def run_scenario_single_process(scenario):
-    master_fd, slave_fd = os.openpty()
+class ScenarioRunner:
+    """Runs a single scenario using a PTY pair."""
 
-    # Set non-blocking
-    fl = fcntl.fcntl(master_fd, fcntl.F_GETFL)
-    fcntl.fcntl(master_fd, fcntl.F_SETFL, fl | os.O_NONBLOCK)
-    fl = fcntl.fcntl(slave_fd, fcntl.F_GETFL)
-    fcntl.fcntl(slave_fd, fcntl.F_SETFL, fl | os.O_NONBLOCK)
+    def __init__(self, scenario: Dict[str, Any]):
+        self.scenario = scenario
+        self.master_fd: Optional[int] = None
+        self.slave_fd: Optional[int] = None
+        self.recorded_events: List[Dict[str, Any]] = []
 
-    if "initial_termios" in scenario:
-        set_termios(slave_fd, scenario["initial_termios"])
+    def run(self) -> Dict[str, Any]:
+        """Runs the scenario and returns the result dict."""
+        self.master_fd, self.slave_fd = os.openpty()
+        try:
+            self._setup_pty()
+            self._run_events()
+            final_termios = get_termios_dict(self.slave_fd)
+        finally:
+            if self.master_fd is not None:
+                os.close(self.master_fd)
+            if self.slave_fd is not None:
+                os.close(self.slave_fd)
 
-    if "window_size" in scenario:
-        ws = scenario["window_size"]
-        winsize = struct.pack(
-            "HHHH", ws.get("ws_row", 24), ws.get("ws_col", 80), 0, 0
+        return {
+            "name": self.scenario["name"],
+            "initial_termios": self.scenario.get("initial_termios", {}),
+            "events": self.recorded_events,
+            "final_termios": final_termios,
+        }
+
+    def _setup_pty(self) -> None:
+        # Set non-blocking
+        for fd in [self.master_fd, self.slave_fd]:
+            fl = fcntl.fcntl(fd, fcntl.F_GETFL)
+            fcntl.fcntl(fd, fcntl.F_SETFL, fl | os.O_NONBLOCK)
+
+        if "initial_termios" in self.scenario:
+            set_termios(self.slave_fd, self.scenario["initial_termios"])
+
+        if "window_size" in self.scenario:
+            ws = self.scenario["window_size"]
+            winsize = struct.pack(
+                "HHHH", ws.get("ws_row", 24), ws.get("ws_col", 80), 0, 0
+            )
+            fcntl.ioctl(self.slave_fd, termios.TIOCSWINSZ, winsize)
+
+    def _run_events(self) -> None:
+        events = self.scenario.get("events", [])
+        for evt in events:
+            action = evt["action"]
+            if action == "write_to_master":
+                self._handle_write(self.master_fd, evt, "write_to_master")
+            elif action == "write_to_slave":
+                self._handle_write(self.slave_fd, evt, "write_to_slave")
+            elif action == "read_from_master":
+                self._handle_read(self.master_fd, evt, "read_from_master")
+            elif action == "read_from_slave":
+                self._handle_read(self.slave_fd, evt, "read_from_slave")
+            elif action == "sleep":
+                time.sleep(evt.get("duration", 0.05))
+
+    def _handle_write(
+        self, fd: int, evt: Dict[str, Any], event_type: str
+    ) -> None:
+        data_in = evt["data"]
+        data_bytes = (
+            data_in.encode("utf-8")
+            if isinstance(data_in, str)
+            else bytes(data_in)
         )
-        fcntl.ioctl(slave_fd, termios.TIOCSWINSZ, winsize)
+        expect_block = evt.get("expect_block", False)
 
-    events = scenario.get("events", [])
-    recorded_events = []
-
-    for evt in events:
-        action = evt["action"]
-
-        if action == "write_to_master":
-            data_in = evt["data"]
-            data_bytes = (
-                data_in.encode("utf-8")
-                if isinstance(data_in, str)
-                else bytes(data_in)
-            )
-            # Retry loop for write
-            start_time = time.time()
-            written = False
-            while True:
-                try:
-                    os.write(master_fd, data_bytes)
-                    written = True
+        start_time = time.time()
+        written = False
+        while True:
+            try:
+                os.write(fd, data_bytes)
+                written = True
+                break
+            except BlockingIOError:
+                if expect_block:
                     break
-                except BlockingIOError:
-                    if time.time() - start_time > 1.0:
-                        break  # Timeout
-                    time.sleep(0.01)
+                if time.time() - start_time > 1.0:
+                    break  # Timeout
+                time.sleep(0.01)
 
-            if not written:
-                # If we expected to block, this is fine? No, master write shouldn't block for us usually.
-                raise BlockingIOError("write_to_master blocked unexpectedly")
-
-            recorded_events.append(
-                {"type": "write_to_master", "data": encode_data(data_bytes)}
-            )
-
-        elif action == "write_to_slave":
-            data_in = evt["data"]
-            data_bytes = (
-                data_in.encode("utf-8")
-                if isinstance(data_in, str)
-                else bytes(data_in)
-            )
-            expect_block = evt.get("expect_block", False)
-
-            start_time = time.time()
-            written = False
-            while True:
-                try:
-                    os.write(slave_fd, data_bytes)
-                    written = True
-                    break
-                except BlockingIOError:
-                    if expect_block:
-                        break
-                    if time.time() - start_time > 1.0:
-                        break
-                    time.sleep(0.01)
-
-            if expect_block:
-                if written:
-                    # It succeeded but we expected block.
-                    # We should probably record that it wrote, but this might fail the test if strict.
-                    # For now, let's treat it as a different event type?
-                    recorded_events.append(
-                        {
-                            "type": "write_to_slave_unexpected_success",
-                            "data": encode_data(data_bytes),
-                        }
-                    )
-                else:
-                    recorded_events.append(
-                        {
-                            "type": "write_to_slave_blocked",
-                            "data": encode_data(data_bytes),
-                        }
-                    )
-            else:
-                if not written:
-                    raise BlockingIOError("write_to_slave blocked unexpectedly")
-                recorded_events.append(
-                    {"type": "write_to_slave", "data": encode_data(data_bytes)}
-                )
-
-        elif action == "drain_master" or action == "read_from_master":
-            # Read everything currently available
-            total_data = b""
-
-            # Wait for data to be available (up to 0.1s to allow propagation)
-            # This replaces the unconditional sleeps after writes.
-            readable, _, _ = select.select([master_fd], [], [], 0.1)
-
-            # ... existing drain logic ...
-            while True:
-                try:
-                    chunk = os.read(master_fd, 4096)
-                    if not chunk:
-                        break
-                    total_data += chunk
-                except BlockingIOError:
-                    break
-
-            # If we expected data but got none?
-            expected_data = evt.get("data")
-            if expected_data and not total_data:
-                # If we explicitly asked to read specific data, and got nothing, maybe we should wait a bit?
-                # The previous loop handles draining what's *currently* there.
-                # Let's add a small poll if we expect data.
-                pass
-
-            if total_data:
-                recorded_events.append(
+        if expect_block:
+            if written:
+                self.recorded_events.append(
                     {
-                        "type": "read_from_master",
-                        "data": encode_data(total_data),
+                        "type": f"{event_type}_unexpected_success",
+                        "data": encode_data(data_bytes),
                     }
                 )
-
-        elif action == "drain_slave" or action == "read_from_slave":
-            # ... existing drain logic ...
-            total_data = b""
-
-            # Wait for data to be available
-            select.select([slave_fd], [], [], 0.1)
-
-            while True:
-                try:
-                    chunk = os.read(slave_fd, 4096)
-                    if not chunk:
-                        break
-                    total_data += chunk
-                except BlockingIOError:
-                    break
-            if total_data:
-                recorded_events.append(
-                    {"type": "read_from_slave", "data": encode_data(total_data)}
+            else:
+                self.recorded_events.append(
+                    {
+                        "type": f"{event_type}_blocked",
+                        "data": encode_data(data_bytes),
+                    }
                 )
+        else:
+            if not written:
+                # Master write shouldn't usually block
+                raise BlockingIOError(f"{event_type} blocked unexpectedly")
+            self.recorded_events.append(
+                {"type": event_type, "data": encode_data(data_bytes)}
+            )
 
-        elif action == "sleep":
-            time.sleep(evt.get("duration", 0.05))
+    def _handle_read(
+        self, fd: int, evt: Dict[str, Any], event_type: str
+    ) -> None:
+        # Wait for data to be available
+        select.select([fd], [], [], 0.1)
 
-    final_termios = get_termios_dict(slave_fd)
+        total_data = b""
+        while True:
+            try:
+                chunk = os.read(fd, 4096)
+                if not chunk:
+                    break
+                total_data += chunk
+            except BlockingIOError:
+                break
 
-    os.close(master_fd)
-    os.close(slave_fd)
+        # If we expected data but got none, check if we should have waited longer?
+        # The original code just passed.
 
-    return {
-        "name": scenario["name"],
-        "initial_termios": scenario.get("initial_termios", {}),
-        "events": recorded_events,
-        "final_termios": final_termios,
-    }
+        if total_data:
+            self.recorded_events.append(
+                {
+                    "type": event_type,
+                    "data": encode_data(total_data),
+                }
+            )
 
 
 def main():
-    scenarios = [
-        {
-            "name": "canon_simple_echo",
-            "initial_termios": {
-                "c_iflag": ["ICRNL", "IXON"],
-                "c_oflag": ["OPOST", "ONLCR"],
-                "c_lflag": [
-                    "ISIG",
-                    "ICANON",
-                    "ECHO",
-                    "ECHOE",
-                    "ECHOK",
-                    "ECHOCTL",
-                    "ECHOKE",
-                    "IEXTEN",
-                ],
-            },
-            "events": [
-                {"action": "write_to_master", "data": "Hello\n"},
-                {"action": "drain_master"},
-                {"action": "drain_slave"},
-            ],
-        },
-        {
-            "name": "basic_backspace",
-            "initial_termios": {
-                "c_iflag": ["ICRNL", "IXON"],
-                "c_oflag": ["OPOST", "ONLCR"],
-                "c_lflag": [
-                    "ISIG",
-                    "ICANON",
-                    "ECHO",
-                    "ECHOE",
-                    "ECHOK",
-                    "ECHOCTL",
-                    "ECHOKE",
-                    "IEXTEN",
-                ],
-            },
-            "events": [
-                {"action": "write_to_master", "data": "He\x7flo\n"},
-                {"action": "drain_master"},
-                {"action": "drain_slave"},
-            ],
-        },
-        {
-            "name": "canon_word_erase",
-            "initial_termios": {
-                "c_iflag": ["ICRNL", "IXON"],
-                "c_oflag": ["OPOST", "ONLCR"],
-                "c_lflag": [
-                    "ISIG",
-                    "ICANON",
-                    "ECHO",
-                    "ECHOE",
-                    "ECHOK",
-                    "ECHOCTL",
-                    "ECHOKE",
-                    "IEXTEN",
-                ],
-            },
-            "events": [
-                {"action": "write_to_master", "data": "hello world\x17\n"},
-                {"action": "drain_master"},
-                {"action": "drain_slave"},
-            ],
-        },
-        {
-            "name": "canon_kill_line",
-            "initial_termios": {
-                "c_iflag": ["ICRNL", "IXON"],
-                "c_oflag": ["OPOST", "ONLCR"],
-                "c_lflag": [
-                    "ISIG",
-                    "ICANON",
-                    "ECHO",
-                    "ECHOE",
-                    "ECHOK",
-                    "ECHOCTL",
-                    "ECHOKE",
-                    "IEXTEN",
-                ],
-            },
-            "events": [
-                {"action": "write_to_master", "data": "ignore me\x15keep\n"},
-                {"action": "drain_master"},
-                {"action": "drain_slave"},
-            ],
-        },
-        {
-            "name": "canon_echo_ctl",
-            "initial_termios": {
-                "c_iflag": ["ICRNL", "IXON"],
-                "c_oflag": ["OPOST", "ONLCR"],
-                "c_lflag": [
-                    "ISIG",
-                    "ICANON",
-                    "ECHO",
-                    "ECHOE",
-                    "ECHOK",
-                    "ECHOCTL",
-                    "ECHOKE",
-                    "IEXTEN",
-                ],
-            },
-            "events": [
-                {"action": "write_to_master", "data": "A\x01B\n"},
-                {"action": "drain_master"},
-                {"action": "drain_slave"},
-            ],
-        },
-        {
-            "name": "ixon_basic",
-            "initial_termios": {
-                "c_iflag": ["ICRNL", "IXON"],
-                "c_oflag": ["OPOST", "ONLCR"],
-                "c_lflag": [
-                    "ISIG",
-                    "ICANON",
-                    "ECHO",
-                    "ECHOE",
-                    "ECHOK",
-                    "ECHOCTL",
-                    "ECHOKE",
-                    "IEXTEN",
-                ],
-            },
-            "events": [
-                {"action": "write_to_slave", "data": "Hello\n"},
-                {"action": "read_from_master", "data": "Hello\r\n"},
-                # Stop output
-                {"action": "write_to_master", "data": "\x13"},
-                {"action": "sleep", "duration": 0.1},
-                # Write more data, should be buffered but not visible.
-                # Linux blocks immediately, so we expect blocking.
-                {
-                    "action": "write_to_slave",
-                    "data": "World\n",
-                    "expect_block": True,
-                },
-                # Resuming output
-                {"action": "write_to_master", "data": "\x11"},
-                # Now write should succeed
-                {"action": "write_to_slave", "data": "World\n"},
-                # And we should read it
-                {"action": "read_from_master", "data": "World\r\n"},
-            ],
-        },
-        {
-            "name": "echo_nl",
-            "initial_termios": {
-                "c_iflag": ["ICRNL"],
-                "c_oflag": ["OPOST", "ONLCR"],
-                "c_lflag": [
-                    "ISIG",
-                    "ICANON",
-                    "ECHONL"
-                    # ECHO is explicitly missing
-                ],
-            },
-            "events": [
-                {"action": "write_to_master", "data": "a\n"},
-                # 'a' is NOT echoed. '\n' IS echoed (as \r\n due to ONLCR).
-                {"action": "read_from_master", "data": "\r\n"},
-                {"action": "read_from_slave", "data": "a\n"},
-            ],
-        },
-        {
-            "name": "noflsh_sigint",
-            "initial_termios": {
-                "c_iflag": ["ICRNL"],
-                "c_oflag": ["OPOST", "ONLCR"],
-                "c_lflag": [
-                    "ISIG",
-                    "ICANON",
-                    "ECHO",
-                    "ECHOE",
-                    "ECHOK",
-                    "NOFLSH",  # prevent flushing
-                    "IEXTEN",
-                ],
-            },
-            "events": [
-                {"action": "write_to_master", "data": "foo"},
-                {"action": "write_to_master", "data": "\x03"},  # ^C (SIGINT)
-                {"action": "write_to_master", "data": "\n"},
-                # 'foo' should be echoed. ^C echoed as ^C. \n echoed.
-                {"action": "read_from_master", "data": "foo^C\r\n"},
-                # 'foo' should NOT be discarded.
-                {"action": "read_from_slave", "data": "foo\n"},
-            ],
-        },
-        {
-            "name": "echo_extended",
-            "initial_termios": {
-                "c_iflag": ["ICRNL", "IXON"],
-                "c_oflag": ["OPOST", "ONLCR"],
-                "c_lflag": [
-                    "ISIG",
-                    "ICANON",
-                    "ECHO",
-                    "ECHOE",
-                    "ECHOK",
-                    "ECHOCTL",
-                    "ECHOKE",
-                    "IEXTEN",
-                ],
-            },
-            "events": [
-                # ECHOCTL behavior
-                {"action": "write_to_master", "data": "Ctl\x01\n"},
-                {
-                    "action": "read_from_master",
-                    "data": "Ctl^A\r\n",
-                },  # \x01 echoed as ^A
-                {"action": "read_from_slave", "data": "Ctl\x01\n"},
-                # ECHOE behavior (already tested in basic_backspace, but double check)
-                {"action": "write_to_master", "data": "Erase\x7f\n"},
-                {
-                    "action": "read_from_master",
-                    "data": "Erase\x08 \x08\r\n",
-                },  # BS SP BS
-                {"action": "read_from_slave", "data": "Eras\n"},
-            ],
-        },
-        {
-            "name": "echo_prt",
-            "initial_termios": {
-                "c_iflag": ["ICRNL"],
-                "c_oflag": ["OPOST", "ONLCR"],
-                "c_lflag": [
-                    "ISIG",
-                    "ICANON",
-                    "ECHO",
-                    # ECHOPRT overrides ECHOE/ECHOKE usually or tries to use it.
-                    "ECHOPRT",
-                    "IEXTEN",
-                ],
-            },
-            "events": [
-                {"action": "write_to_master", "data": "a\x7f\n"},
-                {"action": "drain_master"},
-                {"action": "drain_slave"},
-            ],
-        },
-        {
-            "name": "echo_prt_two_chars",
-            "initial_termios": {
-                "c_iflag": ["ICRNL"],
-                "c_oflag": ["OPOST", "ONLCR"],
-                "c_lflag": [
-                    "ISIG",
-                    "ICANON",
-                    "ECHO",
-                    # ECHOPRT overrides ECHOE/ECHOKE usually or tries to use it.
-                    "ECHOPRT",
-                    "IEXTEN",
-                ],
-            },
-            "events": [
-                {"action": "write_to_master", "data": "aa\x7f\n"},
-                {"action": "drain_master"},
-                {"action": "drain_slave"},
-            ],
-        },
-        {
-            "name": "echoprt_word_erase",
-            "initial_termios": {
-                "c_iflag": ["ICRNL", "IXON"],
-                "c_oflag": ["OPOST", "ONLCR"],
-                "c_lflag": [
-                    "ISIG",
-                    "ICANON",
-                    "ECHO",
-                    "ECHOPRT",
-                    "ECHOK",
-                    "IEXTEN",
-                ],
-            },
-            "events": [
-                {"action": "write_to_master", "data": "hello world\x17\n"},
-                {"action": "drain_master"},
-                {"action": "drain_slave"},
-            ],
-        },
-        {
-            "name": "echoprt_word_erase_typing",
-            "initial_termios": {
-                "c_iflag": ["ICRNL", "IXON"],
-                "c_oflag": ["OPOST", "ONLCR"],
-                "c_lflag": [
-                    "ISIG",
-                    "ICANON",
-                    "ECHO",
-                    "ECHOPRT",
-                    "ECHOK",
-                    "IEXTEN",
-                ],
-            },
-            "events": [
-                {"action": "write_to_master", "data": "abc def\x17ghi\n"},
-                {"action": "drain_master"},
-                {"action": "drain_slave"},
-            ],
-        },
-        {
-            "name": "echoprt_kill",
-            "initial_termios": {
-                "c_iflag": ["ICRNL", "IXON"],
-                "c_oflag": ["OPOST", "ONLCR"],
-                "c_lflag": [
-                    "ISIG",
-                    "ICANON",
-                    "ECHO",
-                    "ECHOPRT",
-                    "ECHOK",
-                    "IEXTEN",
-                ],
-            },
-            "events": [
-                {"action": "write_to_master", "data": "ignore me\x15keep\n"},
-                {"action": "drain_master"},
-                {"action": "drain_slave"},
-            ],
-        },
-        {
-            "name": "echonl_echoprt",
-            "initial_termios": {
-                "c_iflag": ["ICRNL"],
-                "c_oflag": ["OPOST", "ONLCR"],
-                "c_lflag": ["ISIG", "ICANON", "ECHONL", "ECHOPRT", "IEXTEN"],
-            },
-            "events": [
-                {"action": "write_to_master", "data": "a"},
-                {"action": "write_to_master", "data": "\x7f"},
-                {"action": "write_to_master", "data": "b\n"},
-                {"action": "drain_master"},
-                {"action": "drain_slave"},
-            ],
-        },
-        {
-            "name": "echoprt_word_erase_space",
-            "initial_termios": {
-                "c_iflag": ["ICRNL", "IXON"],
-                "c_oflag": ["OPOST", "ONLCR"],
-                "c_lflag": [
-                    "ISIG",
-                    "ICANON",
-                    "ECHO",
-                    "ECHOPRT",
-                    "ECHOK",
-                    "IEXTEN",
-                ],
-            },
-            "events": [
-                {"action": "write_to_master", "data": "hello world"},
-                # Ctrl+W
-                {"action": "write_to_master", "data": "\x17"},
-                # Space
-                {"action": "write_to_master", "data": " "},
-                {"action": "drain_master"},
-                {"action": "drain_slave"},
-            ],
-        },
-        {
-            "name": "echoprt_word_erase_tab",
-            "initial_termios": {
-                "c_iflag": ["ICRNL", "IXON"],
-                "c_oflag": ["OPOST", "ONLCR"],
-                "c_lflag": [
-                    "ISIG",
-                    "ICANON",
-                    "ECHO",
-                    "ECHOPRT",
-                    "ECHOK",
-                    "IEXTEN",
-                ],
-            },
-            "events": [
-                {"action": "write_to_master", "data": "hello world"},
-                # Ctrl+W
-                {"action": "write_to_master", "data": "\x17"},
-                # Tab
-                {"action": "write_to_master", "data": "\t"},
-                {"action": "drain_master"},
-                {"action": "drain_slave"},
-            ],
-        },
-        {
-            "name": "echoprt_word_erase_nl_aln",
-            "initial_termios": {
-                "c_iflag": ["ICRNL", "IXON"],
-                "c_oflag": ["OPOST", "ONLCR"],
-                "c_lflag": [
-                    "ISIG",
-                    "ICANON",
-                    "ECHO",
-                    "ECHOPRT",
-                    "ECHOK",
-                    "IEXTEN",
-                ],
-            },
-            "events": [
-                {"action": "write_to_master", "data": "hello world"},
-                # Ctrl+W
-                {"action": "write_to_master", "data": "\x17"},
-                # Newline + 'a'
-                {"action": "write_to_master", "data": "\na"},
-                {"action": "drain_master"},
-                {"action": "drain_slave"},
-            ],
-        },
-        {
-            "name": "echoprt_word_erase_nl_nl",
-            "initial_termios": {
-                "c_iflag": ["ICRNL", "IXON"],
-                "c_oflag": ["OPOST", "ONLCR"],
-                "c_lflag": [
-                    "ISIG",
-                    "ICANON",
-                    "ECHO",
-                    "ECHOPRT",
-                    "ECHOK",
-                    "IEXTEN",
-                ],
-            },
-            "events": [
-                {"action": "write_to_master", "data": "hello world"},
-                # Ctrl+W
-                {"action": "write_to_master", "data": "\x17"},
-                # Newline + Newline
-                {"action": "write_to_master", "data": "\n\n"},
-                {"action": "drain_master"},
-                {"action": "drain_slave"},
-            ],
-        },
-        {
-            "name": "echoprt_kill_nl_aln",
-            "initial_termios": {
-                "c_iflag": ["ICRNL", "IXON"],
-                "c_oflag": ["OPOST", "ONLCR"],
-                "c_lflag": [
-                    "ISIG",
-                    "ICANON",
-                    "ECHO",
-                    "ECHOPRT",
-                    "ECHOK",
-                    "IEXTEN",
-                ],
-            },
-            "events": [
-                {"action": "write_to_master", "data": "hello world"},
-                # Ctrl+U (KILL)
-                {"action": "write_to_master", "data": "\x15"},
-                # Newline + 'a'
-                {"action": "write_to_master", "data": "\na"},
-                {"action": "drain_master"},
-                {"action": "drain_slave"},
-            ],
-        },
-        {
-            "name": "echoprt_backspace_multi_aln",
-            "initial_termios": {
-                "c_iflag": ["ICRNL", "IXON"],
-                "c_oflag": ["OPOST", "ONLCR"],
-                "c_lflag": [
-                    "ISIG",
-                    "ICANON",
-                    "ECHO",
-                    "ECHOPRT",
-                    "ECHOK",
-                    "IEXTEN",
-                ],
-            },
-            "events": [
-                {"action": "write_to_master", "data": "abcde"},
-                # 3 Backspaces
-                {"action": "write_to_master", "data": "\x7f\x7f\x7f"},
-                # Alphanumeric
-                {"action": "write_to_master", "data": "xy"},
-                {"action": "drain_master"},
-                {"action": "drain_slave"},
-            ],
-        },
-        {
-            "name": "echoprt_backspace_multi_space",
-            "initial_termios": {
-                "c_iflag": ["ICRNL", "IXON"],
-                "c_oflag": ["OPOST", "ONLCR"],
-                "c_lflag": [
-                    "ISIG",
-                    "ICANON",
-                    "ECHO",
-                    "ECHOPRT",
-                    "ECHOK",
-                    "IEXTEN",
-                ],
-            },
-            "events": [
-                {"action": "write_to_master", "data": "abcde"},
-                # 3 Backspaces
-                {"action": "write_to_master", "data": "\x7f\x7f\x7f"},
-                # Space
-                {"action": "write_to_master", "data": " "},
-                {"action": "drain_master"},
-                {"action": "drain_slave"},
-            ],
-        },
-        {
-            "name": "echoprt_backspace_multi_nl",
-            "initial_termios": {
-                "c_iflag": ["ICRNL", "IXON"],
-                "c_oflag": ["OPOST", "ONLCR"],
-                "c_lflag": [
-                    "ISIG",
-                    "ICANON",
-                    "ECHO",
-                    "ECHOPRT",
-                    "ECHOK",
-                    "IEXTEN",
-                ],
-            },
-            "events": [
-                {"action": "write_to_master", "data": "abcde"},
-                # 3 Backspaces
-                {"action": "write_to_master", "data": "\x7f\x7f\x7f"},
-                # Newline
-                {"action": "write_to_master", "data": "\n"},
-                {"action": "drain_master"},
-                {"action": "drain_slave"},
-            ],
-        },
-        {
-            "name": "echoprt_backspace_nl_aln",
-            "initial_termios": {
-                "c_iflag": ["ICRNL", "IXON"],
-                "c_oflag": ["OPOST", "ONLCR"],
-                "c_lflag": [
-                    "ISIG",
-                    "ICANON",
-                    "ECHO",
-                    "ECHOPRT",
-                    "ECHOK",
-                    "IEXTEN",
-                ],
-            },
-            "events": [
-                {"action": "write_to_master", "data": "abcde"},
-                # 3 Backspaces
-                {"action": "write_to_master", "data": "\x7f\x7f\x7f"},
-                # Newline + Alphanumeric
-                {"action": "write_to_master", "data": "\n"},
-                {"action": "write_to_master", "data": "a"},
-                {"action": "drain_master"},
-                {"action": "drain_slave"},
-            ],
-        },
-        {
-            "name": "echoprt_backspace_nl_space",
-            "initial_termios": {
-                "c_iflag": ["ICRNL", "IXON"],
-                "c_oflag": ["OPOST", "ONLCR"],
-                "c_lflag": [
-                    "ISIG",
-                    "ICANON",
-                    "ECHO",
-                    "ECHOPRT",
-                    "ECHOK",
-                    "IEXTEN",
-                ],
-            },
-            "events": [
-                {"action": "write_to_master", "data": "abcde"},
-                # 3 Backspaces
-                {"action": "write_to_master", "data": "\x7f\x7f\x7f"},
-                # Newline + Space
-                {"action": "write_to_master", "data": "\n"},
-                {"action": "write_to_master", "data": " "},
-                {"action": "drain_master"},
-                {"action": "drain_slave"},
-            ],
-        },
-        {
-            "name": "echoprt_backspace_nl_nl",
-            "initial_termios": {
-                "c_iflag": ["ICRNL", "IXON"],
-                "c_oflag": ["OPOST", "ONLCR"],
-                "c_lflag": [
-                    "ISIG",
-                    "ICANON",
-                    "ECHO",
-                    "ECHOPRT",
-                    "ECHOK",
-                    "IEXTEN",
-                ],
-            },
-            "events": [
-                {"action": "write_to_master", "data": "abcde"},
-                # 3 Backspaces
-                {"action": "write_to_master", "data": "\x7f\x7f\x7f"},
-                # Newline + Newline
-                {"action": "write_to_master", "data": "\n\n"},
-                {"action": "drain_master"},
-                {"action": "drain_slave"},
-            ],
-        },
-    ]
-
-    # All scenarios map
-    all_scenarios = {s["name"]: s for s in scenarios}
-
-    # Add new scenarios for input flags
-    input_scenarios = [
-        {
-            "name": "input_igncr",
-            "initial_termios": {
-                "c_iflag": ["IGNCR"],
-                "c_oflag": ["OPOST", "ONLCR"],
-                "c_lflag": ["ICANON", "ECHO"],  # Simplest echo to verify
-            },
-            "events": [
-                {"action": "write_to_master", "data": "a\rb\n"},
-                # \r should be ignored. a, b, \n should be echoed.
-                # \n echoed as \r\n
-                {"action": "drain_master"},
-                {"action": "drain_slave"},
-            ],
-        },
-        {
-            "name": "input_inlcr",
-            "initial_termios": {
-                "c_iflag": ["INLCR"],
-                "c_oflag": ["OPOST"],  # No ONLCR to avoid confusion
-                "c_lflag": ["ICANON", "ECHO"],
-            },
-            "events": [
-                {"action": "write_to_master", "data": "a\nb\n"},
-                {"action": "write_to_master", "data": "\x04"},
-                {"action": "drain_master"},
-                {"action": "drain_slave"},
-            ],
-        },
-        {
-            "name": "input_icrnl_prec",
-            "initial_termios": {
-                "c_iflag": ["IGNCR", "ICRNL"],  # IGNCR should take precedence
-                "c_oflag": ["OPOST", "ONLCR"],
-                "c_lflag": ["ICANON", "ECHO"],
-            },
-            "events": [
-                {"action": "write_to_master", "data": "a\rb\n"},
-                # \r ignored (IGNCR). It does NOT become \n (ICRNL).
-                {"action": "drain_master"},
-                {"action": "drain_slave"},
-            ],
-        },
-    ]
-
-    output_scenarios = [
-        {
-            "name": "output_ocrnl",
-            "initial_termios": {
-                "c_iflag": ["ICRNL"],
-                "c_oflag": ["OPOST", "OCRNL"],
-                # OCRNL: Map CR to NL on output.
-                # NOTE: ONLCR (NL->CRNL) default is usually on.
-                # If ONLCR is ALSO on, then CR -> NL, and NL -> CRNL!
-                # Wait, ONLCR affects NL. OCRNL affects CR.
-                # If I send CR, and OCRNL is set, it becomes NL.
-                # Then if ONLCR is set, does that NL become CRNL?
-                # POSIX says "CR characters are converted to NL."
-                # It does NOT say this NL is then subject to ONLCR. Usually these are separate transformations.
-                # Let's verify Linux behavior.
-                "c_lflag": ["ICANON", "ECHO"],
-            },
-            "events": [
-                {"action": "write_to_master", "data": "a\r"},  # Input CR.
-                # ICRNL: \r -> \n on input.
-                # Echo: \n is echoed.
-                # Output processing of echoed char:
-                # If \n is echoed, ONLCR might apply?
-                # Test logic: write to master -> PTY master -> tty line discipline input -> echo -> output processing -> PTY master read.
-                # Wait, if I write to master it goes to input queue.
-                # Input queue (ICRNL) converts \r to \n.
-                # Echo sees \n.
-                # Output queue sees \n.
-                # ONLCR (if set) converts \n to \r\n.
-                # OCRNL affects *output* CR.
-                # To test OCRNL, we need the *output* stream to contain a CR.
-                # Echoing a \r would do it (if ICRNL is OFF).
-                {"action": "drain_master"},
-                {"action": "drain_slave"},
-            ],
-        },
-        {
-            # Explicit test for OCRNL where we produce a CR in output by avoiding ICRNL
-            "name": "output_ocrnl_explicit",
-            "initial_termios": {
-                "c_iflag": [],  # No ICRNL
-                "c_oflag": ["OPOST", "OCRNL"],  # Map Output CR -> NL
-                "c_lflag": ["ICANON", "ECHO"],
-            },
-            "events": [
-                {"action": "write_to_master", "data": "a\r"},
-                # \r input -> \r echoed.
-                # Output processing: \r -> \n (OCRNL).
-                # Expect 'a', '\n'.
-                {"action": "drain_master"},
-                {"action": "drain_slave"},
-            ],
-        },
-        {
-            "name": "output_onocr",
-            "initial_termios": {
-                "c_iflag": [],
-                "c_oflag": ["OPOST", "ONOCR"],  # Don't output CR at column 0
-                "c_lflag": ["ICANON", "ECHO"],
-            },
-            "events": [
-                # At column 0 (start).
-                {"action": "write_to_master", "data": "\r"},
-                # Should NOT echo anything (suppressed).
-                {"action": "write_to_master", "data": "a\r"},
-                # 'a' (col 1), then \r (goes to col 0). Echoed.
-                {"action": "drain_master"},
-                {"action": "drain_slave"},
-            ],
-        },
-        {
-            "name": "output_onlret",
-            "initial_termios": {
-                "c_iflag": [],
-                "c_oflag": ["OPOST", "ONLRET"],  # NL performs CR function
-                "c_lflag": ["ICANON", "ECHO"],
-            },
-            "events": [
-                # ONLRET means NL is assumed to return to col 0.
-                # This mostly affects column tracking for tabs?
-                # Starnix implementation:
-                # if output_flags & ONLRET: column = 0 (on \n)
-                # Does it affect the *bytes* sent?
-                # "The NL character is assumed to do the carriage-return function; the column pointer will be set to 0. ONLCR is not implemented." (Linux man)
-                # Doesn't change bytes, just state.
-                # To verify state, we need a TAB.
-                # TAB behavior depends on column.
-                {"action": "write_to_master", "data": "a\n"},
-                {"action": "drain_master"},
-                {"action": "drain_slave"},
-                {"action": "write_to_master", "data": "\t"},
-                # 'a' (col 1). '\n' (col 0 because ONLRET).
-                # '\t' should advance to next tab stop (8).
-                # If ONLRET was NOT set, '\n' might not reset column?
-                # Wait, '\n' normally moves down, not left.
-                # So state column would stay at 1?
-                # If column stays at 1, '\t' moves to 8.
-                # If column resets to 0, '\t' moves to 8.
-                # Wait tab stops are fixed (8, 16...).
-                # If col is 1, next tab is 8. Added spaces: 7.
-                # If col is 0, next tab is 8. Added spaces: 8.
-                # SO bytes output will differ!
-                # If ONLRET is set, we expect 8 spaces after \n.
-                # If ONLRET is NOT set (and no ONLCR outputting \r), column remains?
-                # Linux: \n is just LF. Column?
-                # Usually LF doesn't change column.
-                # So 'a' (1) -> LF -> col 1. Tab -> 7 spaces.
-                # With ONLRET: 'a' (1) -> LF -> col 0. Tab -> 8 spaces.
-                # WE need XTABS to see spaces, otherwise we just see \t.
-                {"action": "drain_master"},
-                {"action": "drain_slave"},
-            ],
-        },
-        {
-            "name": "output_xtabs",
-            "initial_termios": {
-                "c_iflag": [],
-                "c_oflag": ["OPOST", "XTABS"],  # Expand tabs to spaces
-                "c_lflag": ["ICANON", "ECHO"],
-            },
-            "events": [
-                {"action": "write_to_master", "data": "\t"},
-                # 8 spaces.
-                {"action": "write_to_master", "data": "a\t"},
-                # 'a' + 7 spaces.
-                {"action": "drain_master"},
-                {"action": "drain_slave"},
-            ],
-        },
-    ]
-
-    for s in input_scenarios:
-        all_scenarios[s["name"]] = s
-    for s in output_scenarios:
-        all_scenarios[s["name"]] = s
-
     parser = argparse.ArgumentParser(
         description="Generate Starnix line discipline traces."
     )
     parser.add_argument(
         "--out-dir",
         required=True,
-        help="Output directory for JSON files",
+        help="Output directory for traces and generated files",
     )
 
     args = parser.parse_args()
 
     if not os.path.exists(args.out_dir):
         os.makedirs(args.out_dir)
+    if not os.path.exists(os.path.join(args.out_dir, "traces")):
+        os.makedirs(os.path.join(args.out_dir, "traces"))
 
-    print(f"Generating traces to {args.out_dir}...")
+    logger.info("Generating traces to %s...", args.out_dir)
 
     # Generate all scenarios
-    for name, scenario in all_scenarios.items():
-        print(f"Generating scenario: {name}")
-        scenario_result = run_scenario_single_process(scenario)
-        out_path = os.path.join(args.out_dir, f"{name}.json")
+    for name, scenario in scenarios.ALL_SCENARIOS.items():
+        logger.info("Generating scenario: %s", name)
+        runner = ScenarioRunner(scenario)
+        scenario_result = runner.run()
+        out_path = os.path.join(args.out_dir, "traces", f"{name}.json")
         with open(out_path, "w") as f:
-            json.dump(scenario_result, f, indent=2)
+            json.dump(scenario_result, f, indent=4)
+            f.write("\n")
 
-    print("Done.")
+    logger.info("Done generating traces.")
+
+    # Generate traces.gni
+    gni_path = os.path.join(os.path.dirname(args.out_dir), "traces.gni")
+    logger.info("Generating %s...", gni_path)
+    with open(gni_path, "w") as f:
+        f.write("# Copyright 2026 The Fuchsia Authors. All rights reserved.\n")
+        f.write(
+            "# Use of this source code is governed by a BSD-style license that can be\n"
+        )
+        f.write("# found in the LICENSE file.\n\n")
+        f.write("# Generated by trace_generator.py. DO NOT EDIT.\n\n")
+        f.write("trace_files = [\n")
+        for name in scenarios.ALL_SCENARIOS.keys():
+            f.write(f'  "testing/traces/{name}.json",\n')
+        f.write("]\n")
+
+    # Generate scenarios.rs
+    rs_path = os.path.join(os.path.dirname(args.out_dir), "scenarios.rs")
+    logger.info("Generating %s...", rs_path)
+    with open(rs_path, "w") as f:
+        f.write("// Copyright 2026 The Fuchsia Authors. All rights reserved.\n")
+        f.write(
+            "// Use of this source code is governed by a BSD-style license that can be\n"
+        )
+        f.write("// found in the LICENSE file.\n\n")
+        f.write("// Generated by trace_generator.py. DO NOT EDIT.\n\n")
+        f.write("#[cfg(test)]\n")
+        f.write("mod tests {\n")
+        f.write("    use test_case::test_case;\n\n")
+        for name in scenarios.ALL_SCENARIOS.keys():
+            f.write(
+                f'    #[test_case("{name}", include_str!("traces/{name}.json"); "{name}")]\n'
+            )
+        f.write("    fn test_replay_trace(name: &str, json_data: &str) {\n")
+        f.write(
+            "        crate::testing::tests::test_replay_trace(name, json_data);\n"
+        )
+        f.write("    }\n")
+        f.write("}\n")
+
+    logger.info("Done.")
 
 
 if __name__ == "__main__":

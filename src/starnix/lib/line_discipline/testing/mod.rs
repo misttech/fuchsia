@@ -2,13 +2,14 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+mod scenarios;
+
 #[cfg(test)]
 mod tests {
     use crate::*;
     use serde::Deserialize;
     use starnix_uapi::errors::Errno;
     use std::collections::HashMap;
-    use test_case::test_case;
 
     #[derive(Deserialize, Debug)]
     struct Scenario {
@@ -189,40 +190,7 @@ mod tests {
         m
     }
 
-    #[test_case("canon_simple_echo", include_str!("testing/traces/canon_simple_echo.json"); "canon_simple_echo")]
-    #[test_case("basic_backspace", include_str!("testing/traces/basic_backspace.json"); "basic_backspace")]
-    #[test_case("canon_word_erase", include_str!("testing/traces/canon_word_erase.json"); "canon_word_erase")]
-    #[test_case("canon_kill_line", include_str!("testing/traces/canon_kill_line.json"); "canon_kill_line")]
-    #[test_case("canon_echo_ctl", include_str!("testing/traces/canon_echo_ctl.json"); "canon_echo_ctl")]
-    #[test_case("ixon_basic", include_str!("testing/traces/ixon_basic.json"); "ixon_basic")]
-    #[test_case("echo_nl", include_str!("testing/traces/echo_nl.json"); "echo_nl")]
-    // #[test_case("noflsh_sigint", include_str!("testing/traces/noflsh_sigint.json"); "noflsh_sigint")]
-    #[test_case("echo_extended", include_str!("testing/traces/echo_extended.json"); "echo_extended")]
-    #[test_case("echo_prt_two_chars", include_str!("testing/traces/echo_prt_two_chars.json"); "echo_prt_two_chars")]
-    #[test_case("echo_prt", include_str!("testing/traces/echo_prt.json"); "echo_prt")]
-    #[test_case("echonl_echoprt", include_str!("testing/traces/echonl_echoprt.json"); "echonl_echoprt")]
-    #[test_case("echoprt_word_erase", include_str!("testing/traces/echoprt_word_erase.json"); "echoprt_word_erase")]
-    #[test_case("echoprt_word_erase_typing", include_str!("testing/traces/echoprt_word_erase_typing.json"); "echoprt_word_erase_typing")]
-    #[test_case("echoprt_word_erase_space", include_str!("testing/traces/echoprt_word_erase_space.json"); "echoprt_word_erase_space")]
-    #[test_case("echoprt_word_erase_tab", include_str!("testing/traces/echoprt_word_erase_tab.json"); "echoprt_word_erase_tab")]
-    #[test_case("echoprt_word_erase_nl_aln", include_str!("testing/traces/echoprt_word_erase_nl_aln.json"); "echoprt_word_erase_nl_aln")]
-    #[test_case("echoprt_word_erase_nl_nl", include_str!("testing/traces/echoprt_word_erase_nl_nl.json"); "echoprt_word_erase_nl_nl")]
-    #[test_case("echoprt_kill", include_str!("testing/traces/echoprt_kill.json"); "echoprt_kill")]
-    #[test_case("echoprt_kill_nl_aln", include_str!("testing/traces/echoprt_kill_nl_aln.json"); "echoprt_kill_nl_aln")]
-    #[test_case("echoprt_backspace_multi_aln", include_str!("testing/traces/echoprt_backspace_multi_aln.json"); "echoprt_backspace_multi_aln")]
-    #[test_case("echoprt_backspace_multi_space", include_str!("testing/traces/echoprt_backspace_multi_space.json"); "echoprt_backspace_multi_space")]
-    #[test_case("echoprt_backspace_multi_nl", include_str!("testing/traces/echoprt_backspace_multi_nl.json"); "echoprt_backspace_multi_nl")]
-    #[test_case("echoprt_backspace_nl_aln", include_str!("testing/traces/echoprt_backspace_nl_aln.json"); "echoprt_backspace_nl_aln")]
-    #[test_case("echoprt_backspace_nl_space", include_str!("testing/traces/echoprt_backspace_nl_space.json"); "echoprt_backspace_nl_space")]
-    #[test_case("echoprt_backspace_nl_nl", include_str!("testing/traces/echoprt_backspace_nl_nl.json"); "echoprt_backspace_nl_nl")]
-    #[test_case("input_igncr", include_str!("testing/traces/input_igncr.json"); "input_igncr")]
-    #[test_case("input_inlcr", include_str!("testing/traces/input_inlcr.json"); "input_inlcr")]
-    #[test_case("input_icrnl_prec", include_str!("testing/traces/input_icrnl_prec.json"); "input_icrnl_prec")]
-    #[test_case("output_ocrnl", include_str!("testing/traces/output_ocrnl.json"); "output_ocrnl")]
-    #[test_case("output_onocr", include_str!("testing/traces/output_onocr.json"); "output_onocr")]
-    #[test_case("output_onlret", include_str!("testing/traces/output_onlret.json"); "output_onlret")]
-    #[test_case("output_xtabs", include_str!("testing/traces/output_xtabs.json"); "output_xtabs")]
-    fn test_replay_trace(name: &str, json_data: &str) {
+    pub fn test_replay_trace(name: &str, json_data: &str) {
         println!("Running trace: {}", name);
         let scenario: Scenario = serde_json::from_str(json_data).unwrap_or_else(|e| {
             panic!("Failed to parse trace {}: {}", name, e);
