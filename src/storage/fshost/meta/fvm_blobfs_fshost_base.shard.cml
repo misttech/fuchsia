@@ -57,5 +57,9 @@
             protocol: "fuchsia.fxfs.BlobReader",
             from: "#blobfs",
         },
+        {
+            protocol: "fuchsia.storage.blobfs.OverwriteConfiguration",
+            from: "#blobfs",
+        },
     ],
 }
