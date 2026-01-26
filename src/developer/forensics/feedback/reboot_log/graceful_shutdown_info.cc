@@ -128,6 +128,86 @@ GracefulShutdownAction GracefulShutdownActionFromString(const std::string_view a
   return GracefulShutdownAction::kNotParseable;
 }
 
+GracefulShutdownReason GracefulShutdownReasonFromString(const std::string_view reason) {
+  if (reason == kReasonUserRequest) {
+    return GracefulShutdownReason::kUserRequest;
+  } else if (reason == kReasonSystemUpdate) {
+    return GracefulShutdownReason::kSystemUpdate;
+  } else if (reason == kReasonRetrySystemUpdate) {
+    return GracefulShutdownReason::kRetrySystemUpdate;
+  } else if (reason == kReasonHighTemperature) {
+    return GracefulShutdownReason::kHighTemperature;
+  } else if (reason == kReasonSessionFailure) {
+    return GracefulShutdownReason::kSessionFailure;
+  } else if (reason == kReasonSysmgrFailure) {
+    return GracefulShutdownReason::kSysmgrFailure;
+  } else if (reason == kReasonCriticalComponentFailure) {
+    return GracefulShutdownReason::kCriticalComponentFailure;
+  } else if (reason == kReasonFdr) {
+    return GracefulShutdownReason::kFdr;
+  } else if (reason == kReasonZbiSwap) {
+    return GracefulShutdownReason::kZbiSwap;
+  } else if (reason == kReasonNetstackMigration) {
+    return GracefulShutdownReason::kNetstackMigration;
+  } else if (reason == kAndroidUnexpectedReason) {
+    return GracefulShutdownReason::kAndroidUnexpectedReason;
+  } else if (reason == kAndroidNoReason) {
+    return GracefulShutdownReason::kAndroidNoReason;
+  } else if (reason == kAndroidRescueParty) {
+    return GracefulShutdownReason::kAndroidRescueParty;
+  } else if (reason == kAndroidCriticalProcessFailure) {
+    return GracefulShutdownReason::kAndroidCriticalProcessFailure;
+  } else if (reason == kDeveloperRequest) {
+    return GracefulShutdownReason::kDeveloperRequest;
+  } else if (reason == kNotSupported) {
+    return GracefulShutdownReason::kNotSupported;
+  } else if (reason == kOutOfMemory) {
+    return GracefulShutdownReason::kOutOfMemory;
+  }
+
+  FX_LOGS(ERROR) << "Invalid persisted graceful shutdown reason: " << reason;
+  return GracefulShutdownReason::kNotParseable;
+}
+
+GracefulShutdownReason FromReason(
+    const fuchsia::hardware::power::statecontrol::ShutdownReason& reason) {
+  using fuchsia::hardware::power::statecontrol::ShutdownReason;
+  switch (reason) {
+    case ShutdownReason::USER_REQUEST:
+      return GracefulShutdownReason::kUserRequest;
+    case ShutdownReason::SYSTEM_UPDATE:
+      return GracefulShutdownReason::kSystemUpdate;
+    case ShutdownReason::RETRY_SYSTEM_UPDATE:
+      return GracefulShutdownReason::kRetrySystemUpdate;
+    case ShutdownReason::HIGH_TEMPERATURE:
+      return GracefulShutdownReason::kHighTemperature;
+    case ShutdownReason::SESSION_FAILURE:
+      return GracefulShutdownReason::kSessionFailure;
+    case ShutdownReason::CRITICAL_COMPONENT_FAILURE:
+      return GracefulShutdownReason::kCriticalComponentFailure;
+    case ShutdownReason::FACTORY_DATA_RESET:
+      return GracefulShutdownReason::kFdr;
+    case ShutdownReason::ZBI_SWAP:
+      return GracefulShutdownReason::kZbiSwap;
+    case ShutdownReason::OUT_OF_MEMORY:
+      return GracefulShutdownReason::kOutOfMemory;
+    case ShutdownReason::NETSTACK_MIGRATION:
+      return GracefulShutdownReason::kNetstackMigration;
+    case ShutdownReason::ANDROID_UNEXPECTED_REASON:
+      return GracefulShutdownReason::kAndroidUnexpectedReason;
+    case ShutdownReason::STARNIX_CONTAINER_NO_REASON:
+      return GracefulShutdownReason::kAndroidNoReason;
+    case ShutdownReason::ANDROID_RESCUE_PARTY:
+      return GracefulShutdownReason::kAndroidRescueParty;
+    case ShutdownReason::ANDROID_CRITICAL_PROCESS_FAILURE:
+      return GracefulShutdownReason::kAndroidCriticalProcessFailure;
+    case ShutdownReason::DEVELOPER_REQUEST:
+      return GracefulShutdownReason::kDeveloperRequest;
+    default:
+      return GracefulShutdownReason::kNotSupported;
+  }
+}
+
 }  // namespace
 
 std::string ToString(const GracefulShutdownAction action) {
@@ -194,47 +274,6 @@ std::string ToString(const GracefulShutdownReason reason) {
   }
 
   return kReasonNotSet;
-}
-
-GracefulShutdownReason GracefulShutdownReasonFromString(const std::string_view reason) {
-  if (reason == kReasonUserRequest) {
-    return GracefulShutdownReason::kUserRequest;
-  } else if (reason == kReasonSystemUpdate) {
-    return GracefulShutdownReason::kSystemUpdate;
-  } else if (reason == kReasonRetrySystemUpdate) {
-    return GracefulShutdownReason::kRetrySystemUpdate;
-  } else if (reason == kReasonHighTemperature) {
-    return GracefulShutdownReason::kHighTemperature;
-  } else if (reason == kReasonSessionFailure) {
-    return GracefulShutdownReason::kSessionFailure;
-  } else if (reason == kReasonSysmgrFailure) {
-    return GracefulShutdownReason::kSysmgrFailure;
-  } else if (reason == kReasonCriticalComponentFailure) {
-    return GracefulShutdownReason::kCriticalComponentFailure;
-  } else if (reason == kReasonFdr) {
-    return GracefulShutdownReason::kFdr;
-  } else if (reason == kReasonZbiSwap) {
-    return GracefulShutdownReason::kZbiSwap;
-  } else if (reason == kReasonNetstackMigration) {
-    return GracefulShutdownReason::kNetstackMigration;
-  } else if (reason == kAndroidUnexpectedReason) {
-    return GracefulShutdownReason::kAndroidUnexpectedReason;
-  } else if (reason == kAndroidNoReason) {
-    return GracefulShutdownReason::kAndroidNoReason;
-  } else if (reason == kAndroidRescueParty) {
-    return GracefulShutdownReason::kAndroidRescueParty;
-  } else if (reason == kAndroidCriticalProcessFailure) {
-    return GracefulShutdownReason::kAndroidCriticalProcessFailure;
-  } else if (reason == kDeveloperRequest) {
-    return GracefulShutdownReason::kDeveloperRequest;
-  } else if (reason == kNotSupported) {
-    return GracefulShutdownReason::kNotSupported;
-  } else if (reason == kOutOfMemory) {
-    return GracefulShutdownReason::kOutOfMemory;
-  }
-
-  FX_LOGS(ERROR) << "Invalid persisted graceful shutdown reason: " << reason;
-  return GracefulShutdownReason::kNotParseable;
 }
 
 // Converts the list of `GracefulShutdownReasonss` into a single string.
@@ -341,13 +380,13 @@ std::string ToRawStrings(const std::vector<GracefulShutdownReason>& reasons) {
 // "Reason 1,Reason 2,Reason 3"
 //
 // If the given string is empty, the returned list will be empty.
-std::vector<GracefulShutdownReason> FromLegacyTxtFile(const std::string reasons) {
-  if (reasons == kNoReasons) {
+std::vector<GracefulShutdownReason> FromLegacyTxtFile(const std::string_view content) {
+  if (content == kNoReasons) {
     return {};
   }
 
   const std::vector<std::string_view> reason_strings =
-      fxl::SplitString(reasons, kDeliminator, fxl::WhiteSpaceHandling::kTrimWhitespace,
+      fxl::SplitString(content, kDeliminator, fxl::WhiteSpaceHandling::kTrimWhitespace,
                        fxl::SplitResult::kSplitWantNonEmpty);
   std::vector<GracefulShutdownReason> graceful_reasons;
   graceful_reasons.reserve(reason_strings.size());
@@ -435,45 +474,6 @@ GracefulShutdownAction ToGracefulShutdownAction(
       return GracefulShutdownAction::kRebootToBootloader;
     default:
       return GracefulShutdownAction::kNotSupported;
-  }
-}
-
-GracefulShutdownReason FromReason(
-    const fuchsia::hardware::power::statecontrol::ShutdownReason& reason) {
-  using fuchsia::hardware::power::statecontrol::ShutdownReason;
-  switch (reason) {
-    case ShutdownReason::USER_REQUEST:
-      return GracefulShutdownReason::kUserRequest;
-    case ShutdownReason::SYSTEM_UPDATE:
-      return GracefulShutdownReason::kSystemUpdate;
-    case ShutdownReason::RETRY_SYSTEM_UPDATE:
-      return GracefulShutdownReason::kRetrySystemUpdate;
-    case ShutdownReason::HIGH_TEMPERATURE:
-      return GracefulShutdownReason::kHighTemperature;
-    case ShutdownReason::SESSION_FAILURE:
-      return GracefulShutdownReason::kSessionFailure;
-    case ShutdownReason::CRITICAL_COMPONENT_FAILURE:
-      return GracefulShutdownReason::kCriticalComponentFailure;
-    case ShutdownReason::FACTORY_DATA_RESET:
-      return GracefulShutdownReason::kFdr;
-    case ShutdownReason::ZBI_SWAP:
-      return GracefulShutdownReason::kZbiSwap;
-    case ShutdownReason::OUT_OF_MEMORY:
-      return GracefulShutdownReason::kOutOfMemory;
-    case ShutdownReason::NETSTACK_MIGRATION:
-      return GracefulShutdownReason::kNetstackMigration;
-    case ShutdownReason::ANDROID_UNEXPECTED_REASON:
-      return GracefulShutdownReason::kAndroidUnexpectedReason;
-    case ShutdownReason::STARNIX_CONTAINER_NO_REASON:
-      return GracefulShutdownReason::kAndroidNoReason;
-    case ShutdownReason::ANDROID_RESCUE_PARTY:
-      return GracefulShutdownReason::kAndroidRescueParty;
-    case ShutdownReason::ANDROID_CRITICAL_PROCESS_FAILURE:
-      return GracefulShutdownReason::kAndroidCriticalProcessFailure;
-    case ShutdownReason::DEVELOPER_REQUEST:
-      return GracefulShutdownReason::kDeveloperRequest;
-    default:
-      return GracefulShutdownReason::kNotSupported;
   }
 }
 

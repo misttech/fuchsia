@@ -74,7 +74,7 @@ std::vector<GracefulShutdownReason> ToGracefulShutdownReasons(
     const fuchsia::hardware::power::statecontrol::ShutdownOptions& options);
 
 // The input is limited to values corresponding to |power::statecontrol::ShutdownReason|.
-std::vector<GracefulShutdownReason> FromLegacyTxtFile(std::string content);
+std::vector<GracefulShutdownReason> FromLegacyTxtFile(std::string_view content);
 
 // Only used for testing legacy functionality. The input is limited to GracefulShutdownReasons that
 // map to |power::statecontrol::ShutdownReason|.
