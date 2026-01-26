@@ -216,11 +216,11 @@ impl FfxCommandLine {
     /// Creates a Vec<String> of full args from the commandline
     /// for use in enhanced analytics.
     pub fn unredacted_args_for_analytics(&self) -> Vec<String> {
-        let mut v: Vec<String> = self.cmd_iter().into_iter().map(|v| v.to_string()).collect();
-        let x: Vec<String> = self.ffx_args_iter().into_iter().map(|v| v.to_string()).collect();
-        v.extend(x);
-        v.extend(self.subcmd_iter().map(|v| v.to_string()));
-        v.into_iter().map(|a| sanitize(&a)).collect()
+        self.cmd_iter()
+            .chain(self.ffx_args_iter())
+            .chain(self.subcmd_iter())
+            .map(sanitize)
+            .collect()
     }
 
     /// Creates the command from the args directly. This is used when building JSON help information
