@@ -8,8 +8,11 @@
 
 #include <cstdio>
 #include <cstdlib>
+#include <filesystem>
 #include <string>
 #include <vector>
+
+namespace fs = std::filesystem;
 
 bool check_sysfs_file(const char* path, const char* expected_value) {
   auto fd = open(path, 'r');
@@ -60,6 +63,24 @@ bool check_sysfs_file(const char* path, const char* expected_value) {
   // Make sure we received the correct string...
   if (content != expected_value) {
     printf("Error: Received incorrect string from %s\n", path);
+    return false;
+  }
+
+  return true;
+}
+
+// Checks is path1 is a symlink to path2.
+// Returns false if the file is not a symlink or links to a different path.
+bool check_symlink_file(const char* path1, const char* path2) {
+  if (fs::is_symlink(path1)) {
+    fs::path res = fs::read_symlink(path1);
+    printf("%s is a symlink to %s", path1, res.c_str());
+    // File is a symlink, but does not link to the correct path.
+    if (res != path2) {
+      return false;
+    }
+  } else {
+    printf("%s is not a symlink", path1);
     return false;
   }
 
@@ -213,13 +234,25 @@ int test_sysfs() {
   if (!check_sysfs_file("/sys/class/display/display_comms/display_select", "0\n")) {
     return 1;
   }
+  if (!check_sysfs_file("/sys/firmware/devicetree/base/mcu/board_type", "starnix\n")) {
+    return 1;
+  }
+
+  return 0;
+}
+
+int test_procfs() {
+  if (!check_symlink_file("/proc/device-tree", "/sys/firmware/devicetree/base")) {
+    return 1;
+  }
 
   return 0;
 }
 
 int main(int argc, char** argv) {
   int test_sysfs_result = test_sysfs();
+  int test_procfs_result = test_procfs();
   int test_datachannel_result = test_datachannel();
 
-  return test_sysfs_result | test_datachannel_result;
+  return test_sysfs_result | test_procfs_result | test_datachannel_result;
 }
