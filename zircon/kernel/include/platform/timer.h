@@ -63,10 +63,12 @@ inline void timer_set_initial_ticks(uint64_t ticks) {
   // Negate the value to yield a signed offset that later be added to an observed counter register
   // value.
   const zx_ticks_t offset = -static_cast<zx_ticks_t>(ticks);
-  printf("timer: initial offset is %ld\n", offset);
-
   internal::mono_ticks_modifier.store(offset, ktl::memory_order_relaxed);
   internal::boot_ticks_offset.store(offset, ktl::memory_order_relaxed);
+
+  // Because |boot_ticks_offset| is used to compute the current time, defer printing until after it
+  // has been set to ensure the resulting log message timestamp makes sense.
+  printf("timer: initial offset is %ld\n", offset);
 }
 
 // Converts a ticks value on the monotonic timeline to a raw hardware ticks value.
