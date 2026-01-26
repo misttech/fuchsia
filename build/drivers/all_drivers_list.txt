@@ -1,3 +1,5 @@
+//examples/drivers/config/cpp:driver
+//examples/drivers/config/rust:driver
 //examples/drivers/driver_test_realm/sample_driver:driver
 //examples/drivers/metadata/forwarder:driver
 //examples/drivers/metadata/retriever:driver

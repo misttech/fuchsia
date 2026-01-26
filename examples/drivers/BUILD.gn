@@ -10,6 +10,7 @@ group("drivers") {
     ":bazel_driver_packages",
     "bind/bindlib_codegen",
     "bind/fidl_bindlib_codegen",
+    "config:drivers",
     "driver_test_realm/sample_driver",
     "metadata:drivers",
     "power:drivers",

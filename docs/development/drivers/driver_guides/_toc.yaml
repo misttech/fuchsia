@@ -32,3 +32,6 @@ toc:
 - title: "SPMI drivers"
   section:
   - include: /docs/development/drivers/driver_guides/spmi/_toc.yaml
+- title: "Configuration for drivers"
+  section:
+  - include: /docs/development/drivers/driver_guides/configuration/_toc.yaml
