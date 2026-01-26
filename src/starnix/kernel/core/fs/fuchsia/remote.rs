@@ -13,12 +13,12 @@ use crate::vfs::buffers::{InputBuffer, OutputBuffer, with_iovec_segments};
 use crate::vfs::fsverity::FsVerityState;
 use crate::vfs::socket::{Socket, SocketFile, ZxioBackedSocket};
 use crate::vfs::{
-    Anon, AppendLockGuard, CacheConfig, CacheMode, DEFAULT_BYTES_PER_BLOCK, DirectoryEntryType,
-    DirentSink, FallocMode, FileHandle, FileObject, FileOps, FileSystem, FileSystemHandle,
-    FileSystemOps, FileSystemOptions, FsNode, FsNodeHandle, FsNodeInfo, FsNodeOps, FsStr, FsString,
-    SeekTarget, SymlinkTarget, XattrOp, XattrStorage, default_ioctl, default_seek,
-    fileops_impl_directory, fileops_impl_nonseekable, fileops_impl_noop_sync,
-    fileops_impl_seekable, fs_node_impl_not_dir, fs_node_impl_symlink, fs_node_impl_xattr_delegate,
+    Anon, AppendLockGuard, CacheMode, DEFAULT_BYTES_PER_BLOCK, DirectoryEntryType, DirentSink,
+    FallocMode, FileHandle, FileObject, FileOps, FileSystem, FileSystemHandle, FileSystemOps,
+    FileSystemOptions, FsNode, FsNodeHandle, FsNodeInfo, FsNodeOps, FsStr, FsString, SeekTarget,
+    SymlinkTarget, XattrOp, XattrStorage, default_ioctl, default_seek, fileops_impl_directory,
+    fileops_impl_nonseekable, fileops_impl_noop_sync, fileops_impl_seekable, fs_node_impl_not_dir,
+    fs_node_impl_symlink, fs_node_impl_xattr_delegate,
 };
 use bstr::ByteSlice;
 use fidl::endpoints::DiscoverableProtocolMarker as _;
@@ -299,7 +299,7 @@ impl RemoteFs {
         let fs = FileSystem::new(
             locked,
             kernel,
-            CacheMode::Cached(CacheConfig::default()),
+            CacheMode::Cached(kernel.fs_cache_config()),
             remotefs,
             options,
         )?;

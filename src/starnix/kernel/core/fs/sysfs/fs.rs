@@ -8,7 +8,7 @@ use crate::vfs::pseudo::simple_directory::SimpleDirectoryMutator;
 use crate::vfs::pseudo::simple_file::BytesFile;
 use crate::vfs::pseudo::stub_empty_file::StubEmptyFile;
 use crate::vfs::{
-    CacheConfig, CacheMode, FileSystem, FileSystemHandle, FileSystemOps, FileSystemOptions, FsStr,
+    CacheMode, FileSystem, FileSystemHandle, FileSystemOps, FileSystemOptions, FsStr,
 };
 use ebpf_api::BPF_PROG_TYPE_FUSE;
 use starnix_logging::bug_ref;
@@ -45,7 +45,7 @@ impl SysFs {
         let fs = FileSystem::new(
             locked,
             kernel,
-            CacheMode::Cached(CacheConfig::default()),
+            CacheMode::Cached(kernel.fs_cache_config()),
             SysFs,
             options,
         )

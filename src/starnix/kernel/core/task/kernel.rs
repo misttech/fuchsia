@@ -27,7 +27,7 @@ use crate::vfs::socket::{
     GenericMessage, GenericNetlink, NetlinkAccessControl, NetlinkContextImpl,
     NetlinkToClientSender, SocketAddress, SocketTokensStore,
 };
-use crate::vfs::{FileOps, FsNodeHandle, FsString, Mounts, NamespaceNode};
+use crate::vfs::{CacheConfig, FileOps, FsNodeHandle, FsString, Mounts, NamespaceNode};
 use bstr::{BString, ByteSlice};
 use devicetree::types::Devicetree;
 use expando::Expando;
@@ -121,6 +121,9 @@ pub struct KernelFeatures {
 
     /// The number of bytes to cache in pages for reading zx::MapInfo from VMARs.
     pub cached_zx_map_info_bytes: u32,
+
+    /// The size of the Dirent LRU cache.
+    pub dirent_cache_size: u32,
 }
 
 impl KernelFeatures {
@@ -909,6 +912,11 @@ impl Kernel {
                 .map(|(name, value)| ArgNameAndValue { name: name, value: Some(value) })
                 .or(Some(ArgNameAndValue { name: arg, value: None }))
         })
+    }
+
+    /// Returns the container-configured CacheConfig.
+    pub fn fs_cache_config(&self) -> CacheConfig {
+        CacheConfig { capacity: self.features.dirent_cache_size as usize }
     }
 }
 

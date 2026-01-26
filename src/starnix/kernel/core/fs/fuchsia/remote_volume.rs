@@ -6,8 +6,7 @@ use crate::fs::fuchsia::{RemoteFs, RemoteNode};
 use crate::task::dynamic_thread_spawner::SpawnRequestBuilder;
 use crate::task::{CurrentTask, LockedAndTask};
 use crate::vfs::{
-    CacheConfig, CacheMode, FileSystem, FileSystemHandle, FileSystemOps, FileSystemOptions,
-    FsNodeHandle, FsStr,
+    CacheMode, FileSystem, FileSystemHandle, FileSystemOps, FileSystemOptions, FsNodeHandle, FsStr,
 };
 use fidl::endpoints::{DiscoverableProtocolMarker, SynchronousProxy, create_sync_proxy};
 use fidl_fuchsia_fshost::StarnixVolumeProviderMarker;
@@ -392,7 +391,7 @@ pub fn new_remote_vol(
     let fs = FileSystem::new(
         locked,
         kernel,
-        CacheMode::Cached(CacheConfig::default()),
+        CacheMode::Cached(kernel.fs_cache_config()),
         remotevol,
         options,
     )?;

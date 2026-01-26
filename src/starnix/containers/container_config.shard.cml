@@ -40,6 +40,13 @@
             availability: "transitional",
         },
         {
+            config: "fuchsia.starnix.config.container.DirentCacheSize",
+            key: "dirent_cache_size",
+            type: "uint32",
+            default: 32,
+            availability: "transitional",
+        },
+        {
             config: "fuchsia.starnix.config.container.SelinuxExceptions",
             key: "selinux_exceptions",
             type: "vector",

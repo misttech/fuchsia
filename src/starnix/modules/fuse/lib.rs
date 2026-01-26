@@ -17,10 +17,10 @@ use starnix_core::vfs::pseudo::simple_directory::SimpleDirectory;
 use starnix_core::vfs::pseudo::simple_file::SimpleFileNode;
 use starnix_core::vfs::pseudo::vec_directory::{VecDirectory, VecDirectoryEntry};
 use starnix_core::vfs::{
-    AppendLockGuard, CacheConfig, CacheMode, CheckAccessReason, DirEntry, DirEntryOps,
-    DirectoryEntryType, DirentSink, FallocMode, FdNumber, FileObject, FileObjectState, FileOps,
-    FileSystem, FileSystemHandle, FileSystemOps, FileSystemOptions, FsNode, FsNodeHandle,
-    FsNodeInfo, FsNodeOps, FsStr, FsString, NamespaceNode, PeekBufferSegmentsCallback, SeekTarget,
+    AppendLockGuard, CacheMode, CheckAccessReason, DirEntry, DirEntryOps, DirectoryEntryType,
+    DirentSink, FallocMode, FdNumber, FileObject, FileObjectState, FileOps, FileSystem,
+    FileSystemHandle, FileSystemOps, FileSystemOptions, FsNode, FsNodeHandle, FsNodeInfo,
+    FsNodeOps, FsStr, FsString, NamespaceNode, PeekBufferSegmentsCallback, SeekTarget,
     SymlinkTarget, ValueOrSize, WeakFileHandle, XattrOp, default_eof_offset, default_fcntl,
     default_ioctl, default_seek, fileops_impl_nonseekable, fileops_impl_noop_sync, fs_args,
     fs_node_impl_dir_readonly,
@@ -230,7 +230,7 @@ pub fn new_fuse_fs(
     let fs = FileSystem::new(
         locked,
         current_task.kernel(),
-        CacheMode::Cached(CacheConfig::default()),
+        CacheMode::Cached(current_task.kernel().fs_cache_config()),
         FuseFs { connection: connection.clone(), default_permissions },
         options,
     )?;

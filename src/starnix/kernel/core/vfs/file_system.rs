@@ -27,8 +27,6 @@ use std::collections::HashSet;
 use std::ops::Range;
 use std::sync::{Arc, OnceLock, Weak};
 
-pub const DEFAULT_LRU_CAPACITY: usize = 32;
-
 /// A file system that can be mounted in a namespace.
 pub struct FileSystem {
     pub kernel: Weak<Kernel>,
@@ -114,12 +112,6 @@ enum DirEntryCache {
 /// Configuration for CacheMode::Cached.
 pub struct CacheConfig {
     pub capacity: usize,
-}
-
-impl Default for CacheConfig {
-    fn default() -> Self {
-        Self { capacity: DEFAULT_LRU_CAPACITY }
-    }
 }
 
 pub enum CacheMode {

@@ -12,8 +12,8 @@ use starnix_core::mm::ProtectionFlags;
 use starnix_core::mm::memory::MemoryObject;
 use starnix_core::task::CurrentTask;
 use starnix_core::vfs::{
-    CacheConfig, CacheMode, DEFAULT_BYTES_PER_BLOCK, DirectoryEntryType, DirentSink, FileObject,
-    FileOps, FileSystem, FileSystemHandle, FileSystemOps, FileSystemOptions, FsNode, FsNodeHandle,
+    CacheMode, DEFAULT_BYTES_PER_BLOCK, DirectoryEntryType, DirentSink, FileObject, FileOps,
+    FileSystem, FileSystemHandle, FileSystemOps, FileSystemOptions, FsNode, FsNodeHandle,
     FsNodeInfo, FsNodeOps, FsStr, FsString, MemoryRegularFile, SeekTarget, SymlinkTarget, XattrOp,
     XattrStorage, default_seek, fileops_impl_directory, fileops_impl_noop_sync,
     fs_node_impl_dir_readonly, fs_node_impl_not_dir, fs_node_impl_symlink,
@@ -102,7 +102,7 @@ impl ExtFilesystem {
         let fs = FileSystem::new(
             locked,
             current_task.kernel(),
-            CacheMode::Cached(CacheConfig::default()),
+            CacheMode::Cached(current_task.kernel().fs_cache_config()),
             fs,
             options,
         )?;

@@ -155,6 +155,7 @@ impl Features {
                         crash_report_throttling,
                         wifi,
                         cached_zx_map_info_bytes,
+                        dirent_cache_size,
                     },
                 system_limits,
                 selinux,
@@ -266,6 +267,7 @@ impl Features {
                     inspect_node.record_bool("wifi", *wifi);
                     inspect_node
                         .record_string("additional_mounts", format!("{:?}", additional_mounts));
+                    inspect_node.record_uint("dirent_cache_size", *dirent_cache_size as u64);
                 });
             }
         });
@@ -289,6 +291,7 @@ pub fn parse_features(
         selinux_exceptions,
         ui_visual_debugging_level,
         additional_mounts,
+        dirent_cache_size,
     } = &start_info.config;
 
     let mut features = Features::default();
@@ -442,6 +445,7 @@ pub fn parse_features(
     features.kernel.mlock_pin_flavor = MlockPinFlavor::parse(mlock_pin_flavor.as_str())?;
     features.kernel.crash_report_throttling = *crash_report_throttling;
     features.kernel.cached_zx_map_info_bytes = *cached_zx_map_info_bytes;
+    features.kernel.dirent_cache_size = *dirent_cache_size;
 
     Ok(features)
 }
