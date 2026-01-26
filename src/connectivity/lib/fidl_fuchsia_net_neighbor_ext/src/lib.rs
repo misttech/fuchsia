@@ -6,6 +6,9 @@
 
 #![deny(missing_docs)]
 
+#[cfg(test)]
+pub mod testutil;
+
 use fidl_table_validation::*;
 use {
     fidl_fuchsia_net as fnet, fidl_fuchsia_net_ext as fnet_ext,
