@@ -4,6 +4,8 @@
 
 //! The Internet Control Message Protocol (ICMP).
 
+pub mod counters;
+
 use alloc::boxed::Box;
 use core::convert::{Infallible as Never, TryInto as _};
 use core::num::{NonZeroU8, NonZeroU16};
@@ -58,6 +60,7 @@ use crate::internal::device::route_discovery::Ipv6DiscoveredRoute;
 use crate::internal::device::{
     IpAddressState, IpDeviceHandler, Ipv6DeviceHandler, Ipv6LinkLayerAddr,
 };
+use crate::internal::icmp::counters::{IcmpCountersIpExt, IcmpRxCounters, IcmpTxCounters};
 use crate::internal::local_delivery::{IpHeaderInfo, LocalDeliveryPacketInfo, ReceiveIpPacketMeta};
 use crate::internal::path_mtu::PmtuHandler;
 use crate::internal::socket::{
@@ -89,7 +92,7 @@ pub const DEFAULT_ERRORS_PER_SECOND: u64 = 1000;
 /// The IP layer's ICMP state.
 #[derive(GenericOverIp)]
 #[generic_over_ip(I, Ip)]
-pub struct IcmpState<I: IpExt, BT: IcmpBindingsTypes> {
+pub struct IcmpState<I: IpExt + IcmpCountersIpExt, BT: IcmpBindingsTypes> {
     error_send_bucket: Mutex<IpMarked<I, TokenBucket<BT::Instant>>>,
     /// ICMP transmit counters.
     pub tx_counters: IcmpTxCounters<I>,
@@ -99,72 +102,13 @@ pub struct IcmpState<I: IpExt, BT: IcmpBindingsTypes> {
 
 impl<I, BT> OrderedLockAccess<IpMarked<I, TokenBucket<BT::Instant>>> for IcmpState<I, BT>
 where
-    I: IpExt,
+    I: IpExt + IcmpCountersIpExt,
     BT: IcmpBindingsTypes,
 {
     type Lock = Mutex<IpMarked<I, TokenBucket<BT::Instant>>>;
     fn ordered_lock_access(&self) -> OrderedLockRef<'_, Self::Lock> {
         OrderedLockRef::new(&self.error_send_bucket)
     }
-}
-
-/// ICMP tx path counters.
-pub type IcmpTxCounters<I> = IpMarked<I, IcmpTxCountersInner>;
-
-/// ICMP tx path counters.
-#[derive(Default)]
-pub struct IcmpTxCountersInner {
-    /// Count of reply messages sent.
-    pub reply: Counter,
-    /// Count of protocol unreachable messages sent.
-    pub protocol_unreachable: Counter,
-    /// Count of host/address unreachable messages sent.
-    pub address_unreachable: Counter,
-    /// Count of port unreachable messages sent.
-    pub port_unreachable: Counter,
-    /// Count of net unreachable messages sent.
-    pub net_unreachable: Counter,
-    /// Count of ttl expired messages sent.
-    pub ttl_expired: Counter,
-    /// Count of packet too big messages sent.
-    pub packet_too_big: Counter,
-    /// Count of parameter problem messages sent.
-    pub parameter_problem: Counter,
-    /// Count of destination unreachable messages sent.
-    pub dest_unreachable: Counter,
-    /// Count of error messages sent.
-    pub error: Counter,
-}
-
-/// ICMP rx path counters.
-pub type IcmpRxCounters<I> = IpMarked<I, IcmpRxCountersInner>;
-
-/// ICMP rx path counters.
-#[derive(Default)]
-pub struct IcmpRxCountersInner {
-    /// Count of error messages received.
-    pub error: Counter,
-    /// Count of error messages delivered to the transport layer.
-    pub error_delivered_to_transport_layer: Counter,
-    /// Count of error messages delivered to a socket.
-    pub error_delivered_to_socket: Counter,
-    /// Count of echo request messages received.
-    pub echo_request: Counter,
-    /// Count of echo reply messages received.
-    pub echo_reply: Counter,
-    /// Count of timestamp request messages received.
-    pub timestamp_request: Counter,
-    /// Count of destination unreachable messages received.
-    pub dest_unreachable: Counter,
-    /// Count of time exceeded messages received.
-    pub time_exceeded: Counter,
-    /// Count of parameter problem messages received.
-    pub parameter_problem: Counter,
-    /// Count of packet too big messages received.
-    pub packet_too_big: Counter,
-    /// Count of ICMP Echo datagrams that could not be delivered to the socket
-    /// because its receive buffer was full.
-    pub queue_full: Counter,
 }
 
 /// Receive NDP counters.
@@ -759,7 +703,7 @@ macro_rules! try_send_error {
 pub enum IcmpIpTransportContext {}
 
 fn receive_ip_transport_icmp_error<
-    I: IpExt + FilterIpExt,
+    I: IpExt + FilterIpExt + IcmpCountersIpExt,
     CC: InnerIcmpContext<I, BC> + CounterContext<IcmpRxCounters<I>>,
     BC: IcmpBindingsContext,
 >(
@@ -1000,7 +944,7 @@ impl<
             Icmpv4Packet::DestUnreachable(dest_unreachable) => {
                 CounterContext::<IcmpRxCounters<Ipv4>>::counters(core_ctx)
                     .dest_unreachable
-                    .increment();
+                    .increment_code(dest_unreachable.code());
                 trace!(
                     "<IcmpIpTransportContext as IpTransportContext<Ipv4>>::receive_ip_packet: \
                     Received a Destination Unreachable message"
@@ -1105,7 +1049,7 @@ impl<
             Icmpv4Packet::TimeExceeded(time_exceeded) => {
                 CounterContext::<IcmpRxCounters<Ipv4>>::counters(core_ctx)
                     .time_exceeded
-                    .increment();
+                    .increment_code(time_exceeded.code());
                 trace!(
                     "<IcmpIpTransportContext as IpTransportContext<Ipv4>>::receive_ip_packet: \
                     Received a Time Exceeded message"
@@ -1129,7 +1073,7 @@ impl<
             Icmpv4Packet::ParameterProblem(parameter_problem) => {
                 CounterContext::<IcmpRxCounters<Ipv4>>::counters(core_ctx)
                     .parameter_problem
-                    .increment();
+                    .increment_code(parameter_problem.code());
                 trace!(
                     "<IcmpIpTransportContext as IpTransportContext<Ipv4>>::receive_ip_packet: \
                     Received a Parameter Problem message"
@@ -1993,27 +1937,42 @@ impl<
                     header_info,
                 );
             }
-            Icmpv6Packet::DestUnreachable(dest_unreachable) => receive_icmpv6_error(
-                core_ctx,
-                bindings_ctx,
-                device,
-                &dest_unreachable,
-                Icmpv6ErrorCode::DestUnreachable(dest_unreachable.code()),
-            ),
-            Icmpv6Packet::TimeExceeded(time_exceeded) => receive_icmpv6_error(
-                core_ctx,
-                bindings_ctx,
-                device,
-                &time_exceeded,
-                Icmpv6ErrorCode::TimeExceeded(time_exceeded.code()),
-            ),
-            Icmpv6Packet::ParameterProblem(parameter_problem) => receive_icmpv6_error(
-                core_ctx,
-                bindings_ctx,
-                device,
-                &parameter_problem,
-                Icmpv6ErrorCode::ParameterProblem(parameter_problem.code()),
-            ),
+            Icmpv6Packet::DestUnreachable(dest_unreachable) => {
+                CounterContext::<IcmpRxCounters<Ipv6>>::counters(core_ctx)
+                    .dest_unreachable
+                    .increment_code(dest_unreachable.code());
+                receive_icmpv6_error(
+                    core_ctx,
+                    bindings_ctx,
+                    device,
+                    &dest_unreachable,
+                    Icmpv6ErrorCode::DestUnreachable(dest_unreachable.code()),
+                )
+            }
+            Icmpv6Packet::TimeExceeded(time_exceeded) => {
+                CounterContext::<IcmpRxCounters<Ipv6>>::counters(core_ctx)
+                    .time_exceeded
+                    .increment_code(time_exceeded.code());
+                receive_icmpv6_error(
+                    core_ctx,
+                    bindings_ctx,
+                    device,
+                    &time_exceeded,
+                    Icmpv6ErrorCode::TimeExceeded(time_exceeded.code()),
+                )
+            }
+            Icmpv6Packet::ParameterProblem(parameter_problem) => {
+                CounterContext::<IcmpRxCounters<Ipv6>>::counters(core_ctx)
+                    .parameter_problem
+                    .increment_code(parameter_problem.code());
+                receive_icmpv6_error(
+                    core_ctx,
+                    bindings_ctx,
+                    device,
+                    &parameter_problem,
+                    Icmpv6ErrorCode::ParameterProblem(parameter_problem.code()),
+                )
+            }
         }
 
         Ok(())
@@ -2053,7 +2012,7 @@ fn send_icmp_reply<I, BC, CC, S, F, O>(
     get_body_from_src_ip: F,
     ip_options: &O,
 ) where
-    I: IpExt + FilterIpExt,
+    I: IpExt + FilterIpExt + IcmpCountersIpExt,
     CC: IpSocketHandler<I, BC> + DeviceIdContext<AnyDevice> + CounterContext<IcmpTxCounters<I>>,
     BC: TxMetadataBindingsTypes,
     S: DynamicTransportSerializer<I>,
@@ -2585,7 +2544,8 @@ pub(crate) fn send_icmpv4_ttl_expired<
     fragment_type: Ipv4FragmentType,
     marks: &Marks,
 ) {
-    core_ctx.counters().ttl_expired.increment();
+    let code = Icmpv4TimeExceededCode::TtlExpired;
+    core_ctx.counters().time_exceeded.increment_code(code);
 
     // Check whether we MUST NOT send an ICMP error message because the original
     // packet was itself an ICMP error message.
@@ -2600,10 +2560,7 @@ pub(crate) fn send_icmpv4_ttl_expired<
         frame_dst,
         src_ip,
         dst_ip,
-        Icmpv4ErrorMessage::TimeExceeded {
-            message: IcmpTimeExceeded::default(),
-            code: Icmpv4TimeExceededCode::TtlExpired,
-        },
+        Icmpv4ErrorMessage::TimeExceeded { message: IcmpTimeExceeded::default(), code },
         original_packet,
         header_len,
         fragment_type,
@@ -2637,7 +2594,8 @@ pub(crate) fn send_icmpv6_ttl_expired<
     header_len: usize,
     marks: &Marks,
 ) {
-    core_ctx.counters().ttl_expired.increment();
+    let code = Icmpv6TimeExceededCode::HopLimitExceeded;
+    core_ctx.counters().time_exceeded.increment_code(code);
 
     // Check whether we MUST NOT send an ICMP error message because the
     // original packet was itself an ICMP error message.
@@ -2652,10 +2610,7 @@ pub(crate) fn send_icmpv6_ttl_expired<
         frame_dst,
         src_ip,
         dst_ip,
-        Icmpv6ErrorMessage::TimeExceeded {
-            message: IcmpTimeExceeded::default(),
-            code: Icmpv6TimeExceededCode::HopLimitExceeded,
-        },
+        Icmpv6ErrorMessage::TimeExceeded { message: IcmpTimeExceeded::default(), code },
         original_packet,
         false, /* allow_dst_multicast */
         marks,
@@ -2748,7 +2703,7 @@ pub(crate) fn send_icmpv4_parameter_problem<
     fragment_type: Ipv4FragmentType,
     marks: &Marks,
 ) {
-    core_ctx.counters().parameter_problem.increment();
+    core_ctx.counters().parameter_problem.increment_code(code);
 
     send_icmpv4_error_message(
         core_ctx,
@@ -2798,7 +2753,7 @@ pub(crate) fn send_icmpv6_parameter_problem<
     // a multicast address.
     assert!(!allow_dst_multicast || code == Icmpv6ParameterProblemCode::UnrecognizedIpv6Option);
 
-    core_ctx.counters().parameter_problem.increment();
+    core_ctx.counters().parameter_problem.increment_code(code);
 
     send_icmpv6_error_message(
         core_ctx,
@@ -2831,7 +2786,7 @@ fn send_icmpv4_dest_unreachable<
     fragment_type: Ipv4FragmentType,
     marks: &Marks,
 ) {
-    core_ctx.counters().dest_unreachable.increment();
+    core_ctx.counters().dest_unreachable.increment_code(code);
     send_icmpv4_error_message(
         core_ctx,
         bindings_ctx,
@@ -2862,6 +2817,7 @@ fn send_icmpv6_dest_unreachable<
     original_packet: B,
     marks: &Marks,
 ) {
+    core_ctx.counters().dest_unreachable.increment_code(code);
     send_icmpv6_error_message(
         core_ctx,
         bindings_ctx,
@@ -3296,6 +3252,14 @@ mod tests {
     };
     use crate::socket::RouteResolutionOptions;
 
+    use test_util::assert_geq;
+
+    pub(super) trait IcmpTestIpExt:
+        TestIpExt + IpExt + FilterIpExt + IcmpCountersIpExt
+    {
+    }
+    impl<I: TestIpExt + IpExt + FilterIpExt + IcmpCountersIpExt> IcmpTestIpExt for I {}
+
     /// The FakeCoreCtx held as the inner state of [`FakeIcmpCoreCtx`].
     type InnerIpSocketCtx<I> = FakeCoreCtx<
         FakeIpSocketCtx<I, FakeDeviceId>,
@@ -3304,7 +3268,7 @@ mod tests {
     >;
 
     /// `FakeCoreCtx` specialized for ICMP.
-    pub(super) struct FakeIcmpCoreCtx<I: IpExt> {
+    pub(super) struct FakeIcmpCoreCtx<I: IcmpTestIpExt> {
         ip_socket_ctx: InnerIpSocketCtx<I>,
         icmp: FakeIcmpCoreCtxState<I>,
     }
@@ -3322,7 +3286,7 @@ mod tests {
     /// This is exposed to super so it can be shared with the socket tests.
     pub(super) type FakeIcmpCtx<I> = CtxPair<FakeIcmpCoreCtx<I>, FakeIcmpBindingsCtx<I>>;
 
-    pub(super) struct FakeIcmpCoreCtxState<I: IpExt> {
+    pub(super) struct FakeIcmpCoreCtxState<I: IcmpTestIpExt> {
         error_send_bucket: TokenBucket<FakeInstant>,
         receive_icmp_error: Vec<I::ErrorCode>,
         rx_counters: IcmpRxCounters<I>,
@@ -3330,7 +3294,7 @@ mod tests {
         ndp_counters: NdpCounters,
     }
 
-    impl<I: TestIpExt + IpExt> FakeIcmpCoreCtx<I> {
+    impl<I: IcmpTestIpExt> FakeIcmpCoreCtx<I> {
         fn with_errors_per_second(errors_per_second: u64) -> Self {
             Self {
                 icmp: FakeIcmpCoreCtxState {
@@ -3351,33 +3315,33 @@ mod tests {
         }
     }
 
-    impl<I: TestIpExt + IpExt> Default for FakeIcmpCoreCtx<I> {
+    impl<I: IcmpTestIpExt> Default for FakeIcmpCoreCtx<I> {
         fn default() -> Self {
             Self::with_errors_per_second(DEFAULT_ERRORS_PER_SECOND)
         }
     }
 
-    impl<I: IpExt> DeviceIdContext<AnyDevice> for FakeIcmpCoreCtx<I> {
+    impl<I: IcmpTestIpExt> DeviceIdContext<AnyDevice> for FakeIcmpCoreCtx<I> {
         type DeviceId = FakeDeviceId;
         type WeakDeviceId = FakeWeakDeviceId<FakeDeviceId>;
     }
 
-    impl<I: IpExt> IcmpStateContext for FakeIcmpCoreCtx<I> {}
-    impl<I: IpExt> IcmpStateContext for InnerIpSocketCtx<I> {}
+    impl<I: IcmpTestIpExt> IcmpStateContext for FakeIcmpCoreCtx<I> {}
+    impl<I: IcmpTestIpExt> IcmpStateContext for InnerIpSocketCtx<I> {}
 
-    impl<I: IpExt> CounterContext<IcmpRxCounters<I>> for FakeIcmpCoreCtx<I> {
+    impl<I: IcmpTestIpExt> CounterContext<IcmpRxCounters<I>> for FakeIcmpCoreCtx<I> {
         fn counters(&self) -> &IcmpRxCounters<I> {
             &self.icmp.rx_counters
         }
     }
 
-    impl<I: IpExt> CounterContext<IcmpTxCounters<I>> for FakeIcmpCoreCtx<I> {
+    impl<I: IcmpTestIpExt> CounterContext<IcmpTxCounters<I>> for FakeIcmpCoreCtx<I> {
         fn counters(&self) -> &IcmpTxCounters<I> {
             &self.icmp.tx_counters
         }
     }
 
-    impl<I: IpExt> CounterContext<NdpCounters> for FakeIcmpCoreCtx<I> {
+    impl<I: IcmpTestIpExt> CounterContext<NdpCounters> for FakeIcmpCoreCtx<I> {
         fn counters(&self) -> &NdpCounters {
             &self.icmp.ndp_counters
         }
@@ -3387,7 +3351,7 @@ mod tests {
 
     impl EchoTransportContextMarker for FakeEchoIpTransportContext {}
 
-    impl<I: IpExt> IpTransportContext<I, FakeIcmpBindingsCtx<I>, FakeIcmpCoreCtx<I>>
+    impl<I: IcmpTestIpExt> IpTransportContext<I, FakeIcmpBindingsCtx<I>, FakeIcmpCoreCtx<I>>
         for FakeEchoIpTransportContext
     {
         type EarlyDemuxSocket = Never;
@@ -3428,7 +3392,7 @@ mod tests {
         }
     }
 
-    impl<I: IpExt + FilterIpExt> InnerIcmpContext<I, FakeIcmpBindingsCtx<I>> for FakeIcmpCoreCtx<I> {
+    impl<I: IcmpTestIpExt> InnerIcmpContext<I, FakeIcmpBindingsCtx<I>> for FakeIcmpCoreCtx<I> {
         type EchoTransportContext = FakeEchoIpTransportContext;
 
         fn receive_icmp_error(
@@ -3718,7 +3682,7 @@ mod tests {
     impl_pmtu_handler!(FakeIcmpCoreCtx<Ipv4>, FakeIcmpBindingsCtx<Ipv4>, Ipv4);
     impl_pmtu_handler!(FakeIcmpCoreCtx<Ipv6>, FakeIcmpBindingsCtx<Ipv6>, Ipv6);
 
-    impl<I: IpExt + FilterIpExt> IpSocketHandler<I, FakeIcmpBindingsCtx<I>> for FakeIcmpCoreCtx<I> {
+    impl<I: IcmpTestIpExt> IpSocketHandler<I, FakeIcmpBindingsCtx<I>> for FakeIcmpCoreCtx<I> {
         fn new_ip_socket<O>(
             &mut self,
             bindings_ctx: &mut FakeIcmpBindingsCtx<I>,
@@ -4004,6 +3968,10 @@ mod tests {
                 assert_eq!(core_ctx.icmp.rx_counters.error.get(), 1);
                 assert_eq!(core_ctx.icmp.rx_counters.error_delivered_to_transport_layer.get(), 1);
                 assert_eq!(core_ctx.icmp.rx_counters.error_delivered_to_socket.get(), 1);
+                assert_eq!(
+                    core_ctx.icmp.rx_counters.dest_unreachable.dest_network_unreachable.get(),
+                    1
+                );
                 let err = Icmpv4ErrorCode::DestUnreachable(
                     Icmpv4DestUnreachableCode::DestNetworkUnreachable,
                     IcmpDestUnreachable::default(),
@@ -4020,6 +3988,7 @@ mod tests {
                 assert_eq!(core_ctx.icmp.rx_counters.error.get(), 1);
                 assert_eq!(core_ctx.icmp.rx_counters.error_delivered_to_transport_layer.get(), 1);
                 assert_eq!(core_ctx.icmp.rx_counters.error_delivered_to_socket.get(), 1);
+                assert_eq!(core_ctx.icmp.rx_counters.time_exceeded.ttl_expired.get(), 1);
                 let err = Icmpv4ErrorCode::TimeExceeded(Icmpv4TimeExceededCode::TtlExpired);
                 assert_eq!(core_ctx.icmp.receive_icmp_error, [err]);
             },
@@ -4033,6 +4002,10 @@ mod tests {
                 assert_eq!(core_ctx.icmp.rx_counters.error.get(), 1);
                 assert_eq!(core_ctx.icmp.rx_counters.error_delivered_to_transport_layer.get(), 1);
                 assert_eq!(core_ctx.icmp.rx_counters.error_delivered_to_socket.get(), 1);
+                assert_eq!(
+                    core_ctx.icmp.rx_counters.parameter_problem.pointer_indicates_error.get(),
+                    1
+                );
                 let err = Icmpv4ErrorCode::ParameterProblem(
                     Icmpv4ParameterProblemCode::PointerIndicatesError,
                 );
@@ -4064,6 +4037,10 @@ mod tests {
                 assert_eq!(core_ctx.icmp.rx_counters.error.get(), 1);
                 assert_eq!(core_ctx.icmp.rx_counters.error_delivered_to_transport_layer.get(), 1);
                 assert_eq!(core_ctx.icmp.rx_counters.error_delivered_to_socket.get(), 0);
+                assert_eq!(
+                    core_ctx.icmp.rx_counters.dest_unreachable.dest_network_unreachable.get(),
+                    1
+                );
                 let err = Icmpv4ErrorCode::DestUnreachable(
                     Icmpv4DestUnreachableCode::DestNetworkUnreachable,
                     IcmpDestUnreachable::default(),
@@ -4080,6 +4057,7 @@ mod tests {
                 assert_eq!(core_ctx.icmp.rx_counters.error.get(), 1);
                 assert_eq!(core_ctx.icmp.rx_counters.error_delivered_to_transport_layer.get(), 1);
                 assert_eq!(core_ctx.icmp.rx_counters.error_delivered_to_socket.get(), 0);
+                assert_eq!(core_ctx.icmp.rx_counters.time_exceeded.ttl_expired.get(), 1);
                 let err = Icmpv4ErrorCode::TimeExceeded(Icmpv4TimeExceededCode::TtlExpired);
                 assert_eq!(core_ctx.icmp.receive_icmp_error, [err]);
             },
@@ -4093,6 +4071,10 @@ mod tests {
                 assert_eq!(core_ctx.icmp.rx_counters.error.get(), 1);
                 assert_eq!(core_ctx.icmp.rx_counters.error_delivered_to_transport_layer.get(), 1);
                 assert_eq!(core_ctx.icmp.rx_counters.error_delivered_to_socket.get(), 0);
+                assert_eq!(
+                    core_ctx.icmp.rx_counters.parameter_problem.pointer_indicates_error.get(),
+                    1
+                );
                 let err = Icmpv4ErrorCode::ParameterProblem(
                     Icmpv4ParameterProblemCode::PointerIndicatesError,
                 );
@@ -4123,6 +4105,10 @@ mod tests {
                 assert_eq!(core_ctx.icmp.rx_counters.error.get(), 1);
                 assert_eq!(core_ctx.icmp.rx_counters.error_delivered_to_transport_layer.get(), 0);
                 assert_eq!(core_ctx.icmp.rx_counters.error_delivered_to_socket.get(), 0);
+                assert_eq!(
+                    core_ctx.icmp.rx_counters.dest_unreachable.dest_network_unreachable.get(),
+                    1
+                );
                 let err = Icmpv4ErrorCode::DestUnreachable(
                     Icmpv4DestUnreachableCode::DestNetworkUnreachable,
                     IcmpDestUnreachable::default(),
@@ -4139,6 +4125,7 @@ mod tests {
                 assert_eq!(core_ctx.icmp.rx_counters.error.get(), 1);
                 assert_eq!(core_ctx.icmp.rx_counters.error_delivered_to_transport_layer.get(), 0);
                 assert_eq!(core_ctx.icmp.rx_counters.error_delivered_to_socket.get(), 0);
+                assert_eq!(core_ctx.icmp.rx_counters.time_exceeded.ttl_expired.get(), 1);
                 let err = Icmpv4ErrorCode::TimeExceeded(Icmpv4TimeExceededCode::TtlExpired);
                 assert_eq!(core_ctx.icmp.receive_icmp_error, [err]);
             },
@@ -4152,6 +4139,10 @@ mod tests {
                 assert_eq!(core_ctx.icmp.rx_counters.error.get(), 1);
                 assert_eq!(core_ctx.icmp.rx_counters.error_delivered_to_transport_layer.get(), 0);
                 assert_eq!(core_ctx.icmp.rx_counters.error_delivered_to_socket.get(), 0);
+                assert_eq!(
+                    core_ctx.icmp.rx_counters.parameter_problem.pointer_indicates_error.get(),
+                    1
+                );
                 let err = Icmpv4ErrorCode::ParameterProblem(
                     Icmpv4ParameterProblemCode::PointerIndicatesError,
                 );
@@ -4247,6 +4238,7 @@ mod tests {
                 assert_eq!(core_ctx.icmp.rx_counters.error.get(), 1);
                 assert_eq!(core_ctx.icmp.rx_counters.error_delivered_to_transport_layer.get(), 1);
                 assert_eq!(core_ctx.icmp.rx_counters.error_delivered_to_socket.get(), 1);
+                assert_eq!(core_ctx.icmp.rx_counters.dest_unreachable.no_route.get(), 1);
                 let err = Icmpv6ErrorCode::DestUnreachable(Icmpv6DestUnreachableCode::NoRoute);
                 assert_eq!(core_ctx.icmp.receive_icmp_error, [err]);
             },
@@ -4260,6 +4252,7 @@ mod tests {
                 assert_eq!(core_ctx.icmp.rx_counters.error.get(), 1);
                 assert_eq!(core_ctx.icmp.rx_counters.error_delivered_to_transport_layer.get(), 1);
                 assert_eq!(core_ctx.icmp.rx_counters.error_delivered_to_socket.get(), 1);
+                assert_eq!(core_ctx.icmp.rx_counters.time_exceeded.hop_limit_exceeded.get(), 1);
                 let err = Icmpv6ErrorCode::TimeExceeded(Icmpv6TimeExceededCode::HopLimitExceeded);
                 assert_eq!(core_ctx.icmp.receive_icmp_error, [err]);
             },
@@ -4273,6 +4266,10 @@ mod tests {
                 assert_eq!(core_ctx.icmp.rx_counters.error.get(), 1);
                 assert_eq!(core_ctx.icmp.rx_counters.error_delivered_to_transport_layer.get(), 1);
                 assert_eq!(core_ctx.icmp.rx_counters.error_delivered_to_socket.get(), 1);
+                assert_eq!(
+                    core_ctx.icmp.rx_counters.parameter_problem.unrecognized_next_header_type.get(),
+                    1
+                );
                 let err = Icmpv6ErrorCode::ParameterProblem(
                     Icmpv6ParameterProblemCode::UnrecognizedNextHeaderType,
                 );
@@ -4304,6 +4301,7 @@ mod tests {
                 assert_eq!(core_ctx.icmp.rx_counters.error.get(), 1);
                 assert_eq!(core_ctx.icmp.rx_counters.error_delivered_to_transport_layer.get(), 1);
                 assert_eq!(core_ctx.icmp.rx_counters.error_delivered_to_socket.get(), 0);
+                assert_eq!(core_ctx.icmp.rx_counters.dest_unreachable.no_route.get(), 1);
                 let err = Icmpv6ErrorCode::DestUnreachable(Icmpv6DestUnreachableCode::NoRoute);
                 assert_eq!(core_ctx.icmp.receive_icmp_error, [err]);
             },
@@ -4317,6 +4315,7 @@ mod tests {
                 assert_eq!(core_ctx.icmp.rx_counters.error.get(), 1);
                 assert_eq!(core_ctx.icmp.rx_counters.error_delivered_to_transport_layer.get(), 1);
                 assert_eq!(core_ctx.icmp.rx_counters.error_delivered_to_socket.get(), 0);
+                assert_eq!(core_ctx.icmp.rx_counters.time_exceeded.hop_limit_exceeded.get(), 1);
                 let err = Icmpv6ErrorCode::TimeExceeded(Icmpv6TimeExceededCode::HopLimitExceeded);
                 assert_eq!(core_ctx.icmp.receive_icmp_error, [err]);
             },
@@ -4330,6 +4329,10 @@ mod tests {
                 assert_eq!(core_ctx.icmp.rx_counters.error.get(), 1);
                 assert_eq!(core_ctx.icmp.rx_counters.error_delivered_to_transport_layer.get(), 1);
                 assert_eq!(core_ctx.icmp.rx_counters.error_delivered_to_socket.get(), 0);
+                assert_eq!(
+                    core_ctx.icmp.rx_counters.parameter_problem.unrecognized_next_header_type.get(),
+                    1
+                );
                 let err = Icmpv6ErrorCode::ParameterProblem(
                     Icmpv6ParameterProblemCode::UnrecognizedNextHeaderType,
                 );
@@ -4360,6 +4363,7 @@ mod tests {
                 assert_eq!(core_ctx.icmp.rx_counters.error.get(), 1);
                 assert_eq!(core_ctx.icmp.rx_counters.error_delivered_to_transport_layer.get(), 0);
                 assert_eq!(core_ctx.icmp.rx_counters.error_delivered_to_socket.get(), 0);
+                assert_eq!(core_ctx.icmp.rx_counters.dest_unreachable.no_route.get(), 1);
                 let err = Icmpv6ErrorCode::DestUnreachable(Icmpv6DestUnreachableCode::NoRoute);
                 assert_eq!(core_ctx.icmp.receive_icmp_error, [err]);
             },
@@ -4373,6 +4377,7 @@ mod tests {
                 assert_eq!(core_ctx.icmp.rx_counters.error.get(), 1);
                 assert_eq!(core_ctx.icmp.rx_counters.error_delivered_to_transport_layer.get(), 0);
                 assert_eq!(core_ctx.icmp.rx_counters.error_delivered_to_socket.get(), 0);
+                assert_eq!(core_ctx.icmp.rx_counters.time_exceeded.hop_limit_exceeded.get(), 1);
                 let err = Icmpv6ErrorCode::TimeExceeded(Icmpv6TimeExceededCode::HopLimitExceeded);
                 assert_eq!(core_ctx.icmp.receive_icmp_error, [err]);
             },
@@ -4386,6 +4391,10 @@ mod tests {
                 assert_eq!(core_ctx.icmp.rx_counters.error.get(), 1);
                 assert_eq!(core_ctx.icmp.rx_counters.error_delivered_to_transport_layer.get(), 0);
                 assert_eq!(core_ctx.icmp.rx_counters.error_delivered_to_socket.get(), 0);
+                assert_eq!(
+                    core_ctx.icmp.rx_counters.parameter_problem.unrecognized_next_header_type.get(),
+                    1
+                );
                 let err = Icmpv6ErrorCode::ParameterProblem(
                     Icmpv6ParameterProblemCode::UnrecognizedNextHeaderType,
                 );
@@ -4415,6 +4424,7 @@ mod tests {
                 Ipv4FragmentType::InitialFragment,
                 &Default::default(),
             );
+            assert_geq!(core_ctx.icmp.tx_counters.time_exceeded.ttl_expired.get(), 1);
         }
 
         /// Call `send_icmpv4_parameter_problem` with fake values.
@@ -4435,6 +4445,10 @@ mod tests {
                 Ipv4FragmentType::InitialFragment,
                 &Default::default(),
             );
+            assert_geq!(
+                core_ctx.icmp.tx_counters.parameter_problem.pointer_indicates_error.get(),
+                1
+            );
         }
 
         /// Call `send_icmpv4_dest_unreachable` with fake values.
@@ -4454,6 +4468,10 @@ mod tests {
                 Ipv4FragmentType::InitialFragment,
                 &Default::default(),
             );
+            assert_geq!(
+                core_ctx.icmp.tx_counters.dest_unreachable.dest_network_unreachable.get(),
+                1
+            );
         }
 
         /// Call `send_icmpv6_ttl_expired` with fake values.
@@ -4472,6 +4490,7 @@ mod tests {
                 0,
                 &Default::default(),
             );
+            assert_geq!(core_ctx.icmp.tx_counters.time_exceeded.hop_limit_exceeded.get(), 1);
         }
 
         /// Call `send_icmpv6_packet_too_big` with fake values.
@@ -4491,6 +4510,7 @@ mod tests {
                 0,
                 &Default::default(),
             );
+            assert_geq!(core_ctx.icmp.tx_counters.packet_too_big.get(), 1);
         }
 
         /// Call `send_icmpv6_parameter_problem` with fake values.
@@ -4510,6 +4530,10 @@ mod tests {
                 false,
                 &Default::default(),
             );
+            assert_geq!(
+                core_ctx.icmp.tx_counters.parameter_problem.erroneous_header_field.get(),
+                1
+            );
         }
 
         /// Call `send_icmpv6_dest_unreachable` with fake values.
@@ -4527,12 +4551,13 @@ mod tests {
                 EmptyBuf,
                 &Default::default(),
             );
+            assert_geq!(core_ctx.icmp.tx_counters.dest_unreachable.no_route.get(), 1);
         }
 
         // Run tests for each function that sends error messages to make sure
         // they're all properly rate limited.
 
-        fn run_test<I: IpExt, W: Fn(u64) -> FakeIcmpCtx<I>, S: Fn(&mut FakeIcmpCtx<I>)>(
+        fn run_test<I: IcmpTestIpExt, W: Fn(u64) -> FakeIcmpCtx<I>, S: Fn(&mut FakeIcmpCtx<I>)>(
             with_errors_per_second: W,
             send: S,
         ) {

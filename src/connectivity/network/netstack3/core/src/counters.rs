@@ -12,8 +12,7 @@ use netstack3_device::{ArpCounters, DeviceCounters};
 use netstack3_ip::IpCounters;
 use netstack3_ip::gmp::{IgmpCounters, MldCounters};
 use netstack3_ip::icmp::{
-    IcmpRxCounters, IcmpRxCountersInner, IcmpTxCounters, IcmpTxCountersInner, NdpCounters,
-    NdpRxCounters, NdpTxCounters,
+    IcmpRxCounters, IcmpTxCounters, NdpCounters, NdpRxCounters, NdpTxCounters,
 };
 use netstack3_ip::multicast_forwarding::MulticastForwardingCounters;
 use netstack3_ip::nud::{NudCounters, NudCountersInner};
@@ -90,22 +89,30 @@ where
         inspector.record_child("ICMP", |inspector| {
             inspector.record_child("V4", |inspector| {
                 inspector.record_child("Rx", |inspector| {
-                    inspect_icmp_rx_counters::<Ipv4>(inspector, self.core_ctx().counters());
+                    inspector.delegate_inspectable(
+                        CounterContext::<IcmpRxCounters<Ipv4>>::counters(self.core_ctx()),
+                    );
                 });
                 inspector.record_child("Tx", |inspector| {
-                    inspect_icmp_tx_counters::<Ipv4>(inspector, self.core_ctx().counters());
+                    inspector.delegate_inspectable(
+                        CounterContext::<IcmpTxCounters<Ipv4>>::counters(self.core_ctx()),
+                    );
                 });
             });
             inspector.record_child("V6", |inspector| {
                 inspector.record_child("Rx", |inspector| {
-                    inspect_icmp_rx_counters::<Ipv6>(inspector, self.core_ctx().counters());
+                    inspector.delegate_inspectable(
+                        CounterContext::<IcmpRxCounters<Ipv6>>::counters(self.core_ctx()),
+                    );
                     inspector.record_child("NDP", |inspector| {
                         let NdpCounters { rx, tx: _ } = self.core_ctx().counters();
                         inspect_ndp_rx_counters(inspector, rx);
                     })
                 });
                 inspector.record_child("Tx", |inspector| {
-                    inspect_icmp_tx_counters::<Ipv6>(inspector, self.core_ctx().counters());
+                    inspector.delegate_inspectable(
+                        CounterContext::<IcmpTxCounters<Ipv6>>::counters(self.core_ctx()),
+                    );
                     inspector.record_child("NDP", |inspector| {
                         let NdpCounters { rx: _, tx } = self.core_ctx().counters();
                         inspect_ndp_tx_counters(inspector, tx);
@@ -237,58 +244,6 @@ fn inspect_arp_counters(inspector: &mut impl Inspector, counters: &ArpCounters) 
         inspector.record_counter("RequestsNonLocalSrcAddr", tx_requests_dropped_no_local_addr);
         inspector.record_counter("Responses", tx_responses);
     });
-}
-
-fn inspect_icmp_rx_counters<I: Ip>(inspector: &mut impl Inspector, counters: &IcmpRxCounters<I>) {
-    let IcmpRxCountersInner {
-        error,
-        error_delivered_to_transport_layer,
-        error_delivered_to_socket,
-        echo_request,
-        echo_reply,
-        timestamp_request,
-        dest_unreachable,
-        time_exceeded,
-        parameter_problem,
-        packet_too_big,
-        queue_full,
-    } = counters.as_ref();
-    inspector.record_counter("EchoRequest", echo_request);
-    inspector.record_counter("EchoReply", echo_reply);
-    inspector.record_counter("TimestampRequest", timestamp_request);
-    inspector.record_counter("DestUnreachable", dest_unreachable);
-    inspector.record_counter("TimeExceeded", time_exceeded);
-    inspector.record_counter("ParameterProblem", parameter_problem);
-    inspector.record_counter("PacketTooBig", packet_too_big);
-    inspector.record_counter("Error", error);
-    inspector.record_counter("ErrorDeliveredToTransportLayer", error_delivered_to_transport_layer);
-    inspector.record_counter("ErrorDeliveredToSocket", error_delivered_to_socket);
-    inspector.record_counter("DroppedQueueFull", queue_full);
-}
-
-fn inspect_icmp_tx_counters<I: Ip>(inspector: &mut impl Inspector, counters: &IcmpTxCounters<I>) {
-    let IcmpTxCountersInner {
-        reply,
-        protocol_unreachable,
-        port_unreachable,
-        address_unreachable,
-        net_unreachable,
-        ttl_expired,
-        packet_too_big,
-        parameter_problem,
-        dest_unreachable,
-        error,
-    } = counters.as_ref();
-    inspector.record_counter("Reply", reply);
-    inspector.record_counter("ProtocolUnreachable", protocol_unreachable);
-    inspector.record_counter("PortUnreachable", port_unreachable);
-    inspector.record_counter("AddressUnreachable", address_unreachable);
-    inspector.record_counter("NetUnreachable", net_unreachable);
-    inspector.record_counter("TtlExpired", ttl_expired);
-    inspector.record_counter("PacketTooBig", packet_too_big);
-    inspector.record_counter("ParameterProblem", parameter_problem);
-    inspector.record_counter("DestUnreachable", dest_unreachable);
-    inspector.record_counter("Error", error);
 }
 
 fn inspect_ndp_tx_counters(inspector: &mut impl Inspector, counters: &NdpTxCounters) {

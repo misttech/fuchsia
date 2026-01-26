@@ -281,8 +281,17 @@ fn test_ipv6_icmp_parameter_problem_non_must() {
         buf,
     );
 
-    assert_eq!(ctx.core_ctx.ipv4().icmp.inner.tx_counters.parameter_problem.get(), 0);
-    assert_eq!(ctx.core_ctx.ipv6().icmp.inner.tx_counters.parameter_problem.get(), 0);
+    assert_eq!(
+        ctx.core_ctx
+            .ipv6()
+            .icmp
+            .inner
+            .tx_counters
+            .parameter_problem
+            .unrecognized_next_header_type
+            .get(),
+        0
+    );
     IpCounterExpectations::<Ipv6> {
         dispatch_receive_ip_packet: 0,
         receive_ip_packet: 1,
@@ -360,7 +369,12 @@ fn test_ipv6_unrecognized_ext_hdr_option() {
     );
     ctx.test_api().receive_ip_packet::<Ipv6, _>(&device, Some(frame_dst), buf);
     assert_eq!(
-        ctx.core_ctx.common_icmp::<Ipv6>().tx_counters.parameter_problem.get(),
+        ctx.core_ctx
+            .common_icmp::<Ipv6>()
+            .tx_counters
+            .parameter_problem
+            .unrecognized_ipv6_option
+            .get(),
         expected_icmps
     );
     IpCounterExpectations::<Ipv6>::expect_dispatched(1).assert_counters(&ctx.core_ctx(), &device);
@@ -376,7 +390,12 @@ fn test_ipv6_unrecognized_ext_hdr_option() {
     );
     ctx.test_api().receive_ip_packet::<Ipv6, _>(&device, Some(frame_dst), buf);
     assert_eq!(
-        ctx.core_ctx.common_icmp::<Ipv6>().tx_counters.parameter_problem.get(),
+        ctx.core_ctx
+            .common_icmp::<Ipv6>()
+            .tx_counters
+            .parameter_problem
+            .unrecognized_ipv6_option
+            .get(),
         expected_icmps
     );
     assert_matches!(ctx.bindings_ctx.take_ethernet_frames()[..], []);
@@ -393,7 +412,12 @@ fn test_ipv6_unrecognized_ext_hdr_option() {
     ctx.test_api().receive_ip_packet::<Ipv6, _>(&device, Some(frame_dst), buf);
     expected_icmps += 1;
     assert_eq!(
-        ctx.core_ctx.common_icmp::<Ipv6>().tx_counters.parameter_problem.get(),
+        ctx.core_ctx
+            .common_icmp::<Ipv6>()
+            .tx_counters
+            .parameter_problem
+            .unrecognized_ipv6_option
+            .get(),
         expected_icmps
     );
     let frames = ctx.bindings_ctx.take_ethernet_frames();
@@ -416,7 +440,12 @@ fn test_ipv6_unrecognized_ext_hdr_option() {
     ctx.test_api().receive_ip_packet::<Ipv6, _>(&device, Some(frame_dst), buf);
     expected_icmps += 1;
     assert_eq!(
-        ctx.core_ctx.common_icmp::<Ipv6>().tx_counters.parameter_problem.get(),
+        ctx.core_ctx
+            .common_icmp::<Ipv6>()
+            .tx_counters
+            .parameter_problem
+            .unrecognized_ipv6_option
+            .get(),
         expected_icmps
     );
 
@@ -440,7 +469,12 @@ fn test_ipv6_unrecognized_ext_hdr_option() {
     ctx.test_api().receive_ip_packet::<Ipv6, _>(&device, Some(frame_dst), buf);
     expected_icmps += 1;
     assert_eq!(
-        ctx.core_ctx.common_icmp::<Ipv6>().tx_counters.parameter_problem.get(),
+        ctx.core_ctx
+            .common_icmp::<Ipv6>()
+            .tx_counters
+            .parameter_problem
+            .unrecognized_ipv6_option
+            .get(),
         expected_icmps
     );
 
@@ -464,15 +498,17 @@ fn test_ipv6_unrecognized_ext_hdr_option() {
     // Do not expect an ICMP response for this packet
     ctx.test_api().receive_ip_packet::<Ipv6, _>(&device, Some(frame_dst), buf);
     assert_eq!(
-        ctx.core_ctx.common_icmp::<Ipv6>().tx_counters.parameter_problem.get(),
+        ctx.core_ctx
+            .common_icmp::<Ipv6>()
+            .tx_counters
+            .parameter_problem
+            .unrecognized_ipv6_option
+            .get(),
         expected_icmps
     );
     assert_matches!(ctx.bindings_ctx.take_ethernet_frames()[..], []);
 
-    // None of our tests should have sent an icmpv4 packet, or dispatched an
-    // IP packet after the first.
-
-    assert_eq!(ctx.core_ctx.common_icmp::<Ipv4>().tx_counters.parameter_problem.get(), 0);
+    // None of our tests should have dispatched an IP packet after the first.
     IpCounterExpectations::<Ipv6> {
         receive_ip_packet: 6,
         dispatch_receive_ip_packet: 1,
@@ -1324,7 +1360,15 @@ fn test_invalid_icmpv6_in_ipv4() {
         ..IpCounterExpectations::expect_dispatched(1)
     }
     .assert_counters(&ctx.core_ctx(), &device);
-    assert_eq!(ctx.core_ctx.common_icmp::<Ipv4>().tx_counters.dest_unreachable.get(), 1);
+    assert_eq!(
+        ctx.core_ctx
+            .common_icmp::<Ipv4>()
+            .tx_counters
+            .dest_unreachable
+            .dest_protocol_unreachable
+            .get(),
+        1
+    );
     let frames = ctx.bindings_ctx.take_ethernet_frames();
     let (_dev, frame) = assert_matches!(&frames[..], [frame] => frame);
     let (_, _, _, _, _, _, code) = parse_icmp_packet_in_ip_packet_in_ethernet_frame::<

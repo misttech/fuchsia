@@ -41,8 +41,8 @@ use netstack3_datagram::{
 use netstack3_ip::icmp::{EchoTransportContextMarker, IcmpRxCounters};
 use netstack3_ip::socket::SocketHopLimits;
 use netstack3_ip::{
-    IpHeaderInfo, IpTransportContext, LocalDeliveryPacketInfo, MulticastMembershipHandler,
-    ReceiveIpPacketMeta, TransportIpContext, TransportReceiveError,
+    IpHeaderInfo, IpLayerIpExt, IpTransportContext, LocalDeliveryPacketInfo,
+    MulticastMembershipHandler, ReceiveIpPacketMeta, TransportIpContext, TransportReceiveError,
 };
 use packet::{BufferMut, PacketBuilder, ParsablePacket as _, ParseBuffer};
 use packet_formats::icmp::{IcmpEchoReply, IcmpEchoRequest, IcmpPacketBuilder, IcmpPacketRaw};
@@ -51,8 +51,8 @@ use packet_formats::ip::{IpProtoExt, Ipv4Proto, Ipv6Proto};
 use crate::internal::settings::IcmpEchoSettings;
 
 /// A marker trait for all IP extensions required by ICMP sockets.
-pub trait IpExt: datagram::IpExt + IcmpIpExt {}
-impl<O: datagram::IpExt + IcmpIpExt> IpExt for O {}
+pub trait IpExt: datagram::IpExt + IcmpIpExt + IpLayerIpExt {}
+impl<O: datagram::IpExt + IcmpIpExt + IpLayerIpExt> IpExt for O {}
 
 /// Holds the stack's ICMP echo sockets.
 #[derive(Derivative, GenericOverIp)]

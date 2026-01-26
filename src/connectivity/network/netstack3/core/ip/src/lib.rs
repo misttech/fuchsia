@@ -124,11 +124,15 @@ pub mod gmp {
 
 /// The Internet Control Message Protocol (ICMP).
 pub mod icmp {
+    pub use crate::internal::icmp::counters::{
+        IcmpCountersIpExt, IcmpRxCounters, IcmpTxCounters, Icmpv4DestUnreachableCounters,
+        Icmpv4ParameterProblemCounters, Icmpv4TimeExceededCounters, Icmpv6DestUnreachableCounters,
+        Icmpv6ParameterProblemCounters, Icmpv6TimeExceededCounters,
+    };
     pub use crate::internal::icmp::{
         EchoTransportContextMarker, IcmpBindingsContext, IcmpBindingsTypes, IcmpIpTransportContext,
-        IcmpRxCounters, IcmpRxCountersInner, IcmpState, IcmpStateContext, IcmpTxCounters,
-        IcmpTxCountersInner, Icmpv4StateBuilder, InnerIcmpContext, InnerIcmpv4Context, NdpCounters,
-        NdpMessage, NdpRxCounters, NdpTxCounters, REQUIRED_NDP_IP_PACKET_HOP_LIMIT,
+        IcmpState, IcmpStateContext, Icmpv4StateBuilder, InnerIcmpContext, InnerIcmpv4Context,
+        NdpCounters, NdpMessage, NdpRxCounters, NdpTxCounters, REQUIRED_NDP_IP_PACKET_HOP_LIMIT,
         send_icmpv4_host_unreachable, send_icmpv6_address_unreachable, send_ndp_packet,
     };
 

@@ -45,7 +45,7 @@ use netstack3_ip::socket::{
     SendOneShotIpPacketError, SendOptions, SocketHopLimits,
 };
 use netstack3_ip::{
-    BaseTransportIpContext, HopLimits, MulticastMembershipHandler, ResolveRouteError,
+    BaseTransportIpContext, HopLimits, IpLayerIpExt, MulticastMembershipHandler, ResolveRouteError,
     TransportIpContext,
 };
 use packet::BufferMut;
@@ -139,11 +139,12 @@ impl<I: IpExt, D: WeakDeviceIdentifier, S: DatagramSocketSpec> DerefMut
 
 /// Marker trait for datagram IP extensions.
 pub trait IpExt:
-    netstack3_base::IpExt + DualStackIpExt + netstack3_base::IcmpIpExt + FilterIpExt
+    netstack3_base::IpExt + DualStackIpExt + netstack3_base::IcmpIpExt + FilterIpExt + IpLayerIpExt
 {
 }
-impl<I: netstack3_base::IpExt + DualStackIpExt + netstack3_base::IcmpIpExt + FilterIpExt> IpExt
-    for I
+impl<
+    I: netstack3_base::IpExt + DualStackIpExt + netstack3_base::IcmpIpExt + FilterIpExt + IpLayerIpExt,
+> IpExt for I
 {
 }
 
@@ -1048,12 +1049,14 @@ pub trait DatagramSocketMapSpec<I: Ip, D: DeviceIdentifier, A: SocketMapAddrSpec
 /// This trait acts as a marker for [`DualStackBaseIpExt`] for both `Self` and
 /// `Self::OtherVersion`.
 pub trait DualStackIpExt:
-    DualStackBaseIpExt + socket::DualStackIpExt<OtherVersion: DualStackBaseIpExt + FilterIpExt>
+    DualStackBaseIpExt
+    + socket::DualStackIpExt<OtherVersion: DualStackBaseIpExt + FilterIpExt + IpLayerIpExt>
 {
 }
 
 impl<I> DualStackIpExt for I where
-    I: DualStackBaseIpExt + socket::DualStackIpExt<OtherVersion: DualStackBaseIpExt + FilterIpExt>
+    I: DualStackBaseIpExt
+        + socket::DualStackIpExt<OtherVersion: DualStackBaseIpExt + FilterIpExt + IpLayerIpExt>
 {
 }
 
@@ -1064,7 +1067,7 @@ impl<I> DualStackIpExt for I where
 /// asymmetric - `DualStackIpExt::Xxx` has a different shape for the [`Ipv4`]
 /// and [`Ipv6`] impls.
 pub trait DualStackBaseIpExt:
-    socket::DualStackIpExt + SocketIpExt + netstack3_base::IpExt + FilterIpExt
+    socket::DualStackIpExt + SocketIpExt + netstack3_base::IpExt + FilterIpExt + IpLayerIpExt
 {
     /// The type of socket that can receive an IP packet.
     ///

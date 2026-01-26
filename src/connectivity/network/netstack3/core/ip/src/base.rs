@@ -68,6 +68,7 @@ use crate::internal::fragmentation::{FragmentableIpSerializer, FragmentationIpEx
 use crate::internal::gmp::GmpQueryHandler;
 use crate::internal::gmp::igmp::IgmpCounters;
 use crate::internal::gmp::mld::MldCounters;
+use crate::internal::icmp::counters::IcmpCountersIpExt;
 use crate::internal::icmp::{
     IcmpBindingsTypes, IcmpErrorHandler, IcmpHandlerIpExt, Icmpv4Error, Icmpv4ErrorKind,
     Icmpv4State, Icmpv4StateBuilder, Icmpv6ErrorKind, Icmpv6State, Icmpv6StateBuilder,
@@ -823,6 +824,7 @@ pub trait IpLayerIpExt:
     + FragmentationIpExt
     + IpDeviceIpExt
     + IpCountersIpExt
+    + IcmpCountersIpExt
     + ReassemblyIpExt
 {
     /// IP Address status.

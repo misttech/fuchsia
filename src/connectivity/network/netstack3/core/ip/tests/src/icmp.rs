@@ -144,10 +144,13 @@ fn test_receive_ip_packet<
             }
             "port_unreachable" => core_ctx.common_icmp::<I>().tx_counters.port_unreachable.get(),
             "net_unreachable" => core_ctx.common_icmp::<I>().tx_counters.net_unreachable.get(),
-            "ttl_expired" => core_ctx.common_icmp::<I>().tx_counters.ttl_expired.get(),
+            "ttl_expired" => {
+                core_ctx.common_icmp::<Ipv4>().tx_counters.time_exceeded.ttl_expired.get()
+            }
+            "hop_limit_exceeded" => {
+                core_ctx.common_icmp::<Ipv6>().tx_counters.time_exceeded.hop_limit_exceeded.get()
+            }
             "packet_too_big" => core_ctx.common_icmp::<I>().tx_counters.packet_too_big.get(),
-            "parameter_problem" => core_ctx.common_icmp::<I>().tx_counters.parameter_problem.get(),
-            "dest_unreachable" => core_ctx.common_icmp::<I>().tx_counters.dest_unreachable.get(),
             "error" => core_ctx.common_icmp::<I>().tx_counters.error.get(),
             c => panic!("unrecognized counter: {c}"),
         };
@@ -438,7 +441,7 @@ fn test_ttl_expired(test_mark_reflection: bool) {
         TEST_ADDRS_V6.remote_ip,
         1,
         IpProto::Udp.into(),
-        &["ttl_expired"],
+        &["hop_limit_exceeded"],
         Some((IcmpTimeExceeded::default(), Icmpv6TimeExceededCode::HopLimitExceeded)),
         // Ensure packet is truncated to the right length.
         |packet| assert_eq!(packet.original_packet().len(), 168),
