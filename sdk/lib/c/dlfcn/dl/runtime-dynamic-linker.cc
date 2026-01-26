@@ -32,7 +32,7 @@ RuntimeModule* RuntimeDynamicLinker::FindModule(Soname name) {
 void* RuntimeDynamicLinker::TlsBlock(const RuntimeModule& module) const {
   assert(module.tls_module_id() > 0);
   if (module.tls_module_id() <= max_static_tls_modid_) {
-    // TODO(https://fxbug.dev/403350238): Have the linker hold a reference to
+    // TODO(https://fxbug.dev/342480690): Have the linker hold a reference to
     // the passive abi so this could pass in ld::InitialExecOffset to
     // ld::TpRelative.
     return ld::TpRelative(static_cast<ptrdiff_t>(module.static_tls_bias()));
@@ -187,7 +187,7 @@ int RuntimeDynamicLinker::IteratePhdrInfo(DlIteratePhdrCallback* callback, void*
     return diag.take_error();
   }
 
-  // TODO(https://fxbug.dev/403350238): this loop needs to be optimized to only
+  // TODO(https://fxbug.dev/342480690): this loop needs to be optimized to only
   // loop through TLS modules while avoiding multiple O(N) scans.
   // Iterate through every `RuntimeModule` with dynamic TLS and copy its TLS
   // data into its respective index in `blocks`.

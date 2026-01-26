@@ -43,7 +43,7 @@ class LinkingSession {
   LinkingSession(const LinkingSession&) = delete;
   LinkingSession(LinkingSession&&) = delete;
 
-  // TODO(https://fxbug.dev/342480690): Have the LinkingSession take a reference
+  // TODO(https://fxbug.dev/403350238): Have the LinkingSession take a reference
   // to the RuntimeDynamicLinker instead of separate fields.
   // A LinkingSession is provided a reference to the dynamic linker's list of
   // already loaded modules to refer to during the linking procedure, and the
