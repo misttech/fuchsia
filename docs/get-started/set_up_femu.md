@@ -21,8 +21,10 @@ Running FEMU requires that you've completed the following guides:
 ## 2. Build Fuchsia for FEMU {#build-fuchsia-for-femu}
 
 To run FEMU, you first need to build a Fuchsia system image that supports
-the emulator environment. This guide uses `x64` for the board
-and `workbench_eng` for the product as an example.
+the emulator environment. This guide uses `x64` for the board and
+`workbench_eng` for the product as an example. (For more information on
+supported boards and products, see the [Fuchsia emulator][femu-overview]
+page.)
 
 To build a FEMU Fuchsia image, do the following:
 
@@ -38,16 +40,19 @@ To build a FEMU Fuchsia image, do the following:
    fx build
    ```
 
-For more information on supported boards and products, see the
-[Fuchsia emulator (FEMU)][femu-overview] overview page.
-
 ## 3. Enable VM acceleration (Optional) {#enable-vm-acceleration}
 
 (**Linux only**) Most Linux machines support VM acceleration through
 KVM, which greatly improves the performance and usability of the emulator.
 
-Note: If you followed the [Install prerequisite packages][get-fuchsia-source-prerequisites] section
-in the download guide, you should already have enabled KVM acceleration.
+1. If KVM is available on your machine, add yourself to the `kvm` group
+   on your machine:
+
+   ```posix-terminal
+   sudo usermod -a -G kvm ${USER}
+   ```
+
+1. Log out of all desktop sessions to your machine and then log in again.
 
 1. To verify that KVM is configured correctly, run the following command:
 
@@ -61,9 +66,8 @@ in the download guide, you should already have enabled KVM acceleration.
    KVM is working
    ```
 
-   If you see `KVM not working`, you may not have added yourself to the `kvm` group
-   or need to reboot your machine. See [Enable KVM acceleration][enable-kvm-acceleration]
-   for instructions.
+   If you see `KVM not working`, you may need to reboot your machine for
+   the permission change to take effect.
 
 ## 4. Start FEMU {#start-femu}
 
@@ -97,9 +101,8 @@ team to see if they have an existing upscript for you to use.
 
 However, even if you're not behind a firewall, there's still some
 configuration needed to enable tun/tap networking. The example
-upscript at
-<code>{{ '<var>' }}FUCHSIA_ROOT{{ '</var>' }}/scripts/start-unsecure-internet.sh</code>
-should work for the majority of non-corporate users.
+upscript at `//scripts/start-unsecure-internet.sh` should work for
+the majority of non-corporate users.
 
 To start the emulator, do the following:
 
@@ -160,24 +163,23 @@ the following ways:
 * `--net tap` and `--net user` allow the device to be discoverable
   when running `ffx target list`.
 
-
-### Add target manually
-
-If no target is found after running `ffx target list`, the target may
-need to be added manually by running `ffx target add`:
-
-```posix-terminal
-ffx target add {{ "<var>" }}device-ip{{ "</var>" }}:{{ "<var>" }}device-port{{ "</var>" }}
-```
-
 ## Next steps
 
 To learn more about Fuchsia device commands and Fuchsia workflows, see
 [Explore Fuchsia][explore-fuchsia].
 
-## Appendices
+## Appendix
 
 This section provides additional FEMU options.
+
+### Add target manually
+
+If no target is found after running `ffx target list`, you may add the
+target manually by running the following `ffx` command:
+
+```posix-terminal
+ffx target add {{ "<var>" }}device-ip{{ "</var>" }}:{{ "<var>" }}device-port{{ "</var>" }}
+```
 
 ### See all available flags
 
@@ -214,9 +216,25 @@ ffx emu stop
 
 ### Configure emulator networking {#configure-emulator-networking}
 
-Note: If you followed the [Install prerequisite packages][get-fuchsia-source-prerequisites] section
-in the download guide, you should already have configured emulator networking.
-See [Configure emulator networking][configure-emulator-networking] for instructions.
+This section provides instructions on how to configure an IPv6 network
+for FEMU on Linux machine using [TUN/TAP][tuntap]{: .external}.
+
+Note: You only need to do this once per machine.
+
+To enable networking in FEMU using
+[tap networking][tap-networking]{: .external}, do the following:
+
+1. Set up `tuntap`:
+
+   ```posix-terminal
+   sudo ip tuntap add dev qemu mode tap user $USER
+   ```
+
+1. Enable the network for `qemu`:
+
+   ```posix-terminal
+   sudo ip link set qemu up
+   ```
 
 ### Specify GPU mode for FEMU (Experimental)
 

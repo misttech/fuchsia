@@ -18,39 +18,18 @@ The steps are:
 Fuchsia requires `curl`, `file`, `unzip`, and `git` to be up to date.
 The version of `git` needs to be 2.31 or higher.
 
-Install (or update) the following packages:
+To install or update these packages, run the following command:
 
 ```posix-terminal
 sudo apt install curl file git unzip
 ```
 
-Optionally, you can also do the following:
+(**Optional**) If you want to run the [Fuchsia emulator (FEMU)][femu],
+consider completing the following additional steps before proceeding
+to the next section:
 
 * [Enable KVM acceleration](#enable-kvm-acceleration)
 * [Configure emulator networking](#configure-emulator-networking)
-
-### Enable KVM acceleration (Optional) {#enable-kvm-acceleration}
-
-Note: This step is only for Linux.
-
-If KVM is available on your machine, add yourself to the `kvm` group:
-
-```posix-terminal
-sudo usermod -a -G kvm ${USER}
-```
-
-You may need to log out and log back in for this change to take effect.
-
-### Configure emulator networking (Optional) {#configure-emulator-networking}
-
-Note: This step is only for Linux.
-
-To allow the emulator to access the network, set up `tuntap`:
-
-```posix-terminal
-sudo ip tuntap add dev qemu mode tap user $USER
-sudo ip link set qemu up
-```
 
 ## 2. Perform a preflight check {#perform-a-preflight-check}
 
@@ -59,9 +38,9 @@ Fuchsia provides a preflight check tool
 that examines your machine and informs you of any issues that may
 affect building Fuchsia from source on the machine.
 
-Note: The preflight tool only works for the x64 architecture.
+Note: The preflight tool works for the `x64` architecture only.
 
-Run the following command:
+To perform a preflight check, run the following command:
 
 ```posix-terminal
 curl -sO https://storage.googleapis.com/fuchsia-ffx/ffx-linux-x64 && chmod +x ffx-linux-x64 && ./ffx-linux-x64 platform preflight
@@ -69,9 +48,8 @@ curl -sO https://storage.googleapis.com/fuchsia-ffx/ffx-linux-x64 && chmod +x ff
 
 ## 3. Download the Fuchsia source code {#download-the-fuchsia-source-code}
 
-Fuchsia provides a [bootstrap script](/scripts/bootstrap) that creates a
-directory named `fuchsia` and downloads the Fuchsia source code in that
-directory.
+The Fuchsia [bootstrap script][bootstrap-script] creates a directory
+named `fuchsia` and downloads the Fuchsia source code.
 
 Downloading the Fuchsia source code requires about 2 GB of space
 on your machine. Depending on your build configuration, you need
@@ -93,7 +71,7 @@ To download the Fuchsia source, do the following:
 1.  Run the bootstrap script:
 
     Note: Depending on your network speed, downloading the Fuchsia source code
-    (which is about 2 GB) can take a while.
+    (about 2 GB) can take a while.
 
     ```posix-terminal
     curl -s "https://fuchsia.googlesource.com/fuchsia/+/HEAD/scripts/bootstrap?format=TEXT" | base64 --decode | bash
@@ -114,7 +92,7 @@ To download the Fuchsia source, do the following:
 
 Note: If you don't wish to update your shell profile, see
 [Work on Fuchsia without updating your PATH](#work-on-fuchsia-without-updating-your-path)
-in Appendices instead.
+in Appendix instead.
 
 To configure the recommended Fuchsia environment variables in your shell profile,
 do the following:
@@ -132,7 +110,7 @@ do the following:
 
 1.  Add the following lines to your `~/.bash_profile` file:
 
-    Note: If your Fuchsia source code is not located in the `~/fuchsia`
+    Note: If your Fuchsia checkout is not located in the `~/fuchsia`
     directory, replace `~/fuchsia` with your Fuchsia directory.
 
     ```sh
@@ -148,7 +126,7 @@ do the following:
         debug Fuchsia. The Fuchsia toolchain requires that `jiri` is available in
         your `PATH`.
 
-    *   The [`fx-env.sh`](/scripts/fx-env.sh) script enables a number of
+    *   The [`fx-env.sh`](https://cs.opensource.google/fuchsia/fuchsia/+/main:/scripts/fx-env.sh) script enables a number of
         useful shell functions in your terminal. For instance, it creates the
         `FUCHSIA_DIR` environment variable and provides the `fd` command for
         navigating directories with auto-completion. (For more information, see
@@ -156,50 +134,50 @@ do the following:
 
 1.  Save the file and exit the text editor.
 
-1.  To update your environment variables, run the following command:
+1.  Update environment variables:
 
     ```posix-terminal
     source ~/.bash_profile
     ```
 
-1.  Verify your environment setup:
+To verify your environment setup, do the following:
 
-    1. Go to your `fuchsia` directory, for example:
+1. Go to your `fuchsia` directory, for example:
 
-       ```posix-terminal
-       cd ~/fuchsia
-       ```
+   ```posix-terminal
+   cd ~/fuchsia
+   ```
 
-    2. Verify that you can run the following commands without errors:
+2. Verify that you can run the following commands without errors:
 
-       ```posix-terminal
-       jiri help
-       ```
+   ```posix-terminal
+   jiri help
+   ```
 
-       ```posix-terminal
-       fx help
-       ```
+   ```posix-terminal
+   fx help
+   ```
 
 ## 5. Configure firewall rules (Optional) {#configure-firewall-rules}
 
-Note: This step is not required for building or running Fuchsia. But it is
+Note: This step is **not required** for building or running Fuchsia. But it is
 recommended to ensure that Fuchsia's emulator instances run smoothly on Linux.
 
-Run the following command to allow Fuchsia-specific traffic on the host machine:
+To allow Fuchsia-specific traffic on the host machine, run the following command:
 
 ```posix-terminal
 fx setup-ufw
 ```
 
 This script requires `sudo` (which asks for your password) to set the appropriate
-firewall rules. (For more information on this script, see [`setup-ufw`][setup-ufw].)
+firewall rules. For more information on this script, see [`setup-ufw`][setup-ufw].
 
 ## Next steps
 
 To build your first Fuchsia system image, see
 [Configure and build Fuchsia](/docs/get-started/build_fuchsia.md).
 
-## Appendices
+## Appendix
 
 ### Authentication error {#authentication-error}
 
@@ -258,8 +236,46 @@ Alternatively, run the `fx` tool directly using its path, for example:
 
 In either case, you need `jiri` in your `PATH`.
 
+### Enable KVM acceleration {#enable-kvm-acceleration}
+
+(**Linux only**) Most Linux machines support VM acceleration through KVM,
+which greatly improves the performance and usability of the emulator.
+
+If KVM is available on your machine, add yourself to the `kvm` group:
+
+```posix-terminal
+sudo usermod -a -G kvm ${USER}
+```
+
+For this change to take effect, you may need to log out and log back in.
+
+### Configure emulator networking {#configure-emulator-networking}
+
+(**Linux only**) To allow the [Fuchsia emulator (FEMU)][femu] to
+access the network, you can configure an IPv6 network using
+[TUN/TAP][tuntap]{: .external}.
+
+To enable networking using [tap networking][tap-networking]{: .external},
+do the following:
+
+1. Set up `tuntap`:
+
+   ```posix-terminal
+   sudo ip tuntap add dev qemu mode tap user $USER
+   ```
+
+1. Enable the network for `qemu`:
+
+   ```posix-terminal
+   sudo ip link set qemu up
+   ```
+
 <!-- Reference links -->
 
+[bootstrap-script]: https://cs.opensource.google/fuchsia/fuchsia/+/main:/scripts/bootstrap
 [ffx-platform-preflight]: https://fuchsia.dev/reference/tools/sdk/ffx#preflight
 [nano]: https://www.nano-editor.org/docs.php
 [setup-ufw]: https://fuchsia.dev/reference/tools/fx/cmd/setup-ufw
+[femu]: set_up_femu.md
+[tuntap]: https://en.wikipedia.org/wiki/TUN/TAP
+[tap-networking]: https://wiki.qemu.org/Documentation/Networking#Tap
