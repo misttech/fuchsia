@@ -45,9 +45,11 @@ pub mod scope;
 pub use scope::{Scope, ScopeHandle};
 
 use futures::prelude::*;
+use futures::task::AtomicWaker;
 use pin_project_lite::pin_project;
 use std::pin::Pin;
-use std::task::{Context, Poll, ready};
+use std::sync::Arc;
+use std::task::{Context, Poll, Wake, ready};
 
 /// An extension trait to provide `after_now` on `zx::MonotonicDuration`.
 pub trait DurationExt {
@@ -127,6 +129,7 @@ pub trait TimeoutExt: Future + Sized {
             future: self,
             timeout,
             on_stalled: Some(on_stalled),
+            waker: Arc::default(),
         }
     }
 }
@@ -178,6 +181,7 @@ pin_project! {
         future: F,
         timeout: std::time::Duration,
         on_stalled: Option<OS>,
+        waker: Arc<OnStalledWaker>,
     }
 }
 
@@ -189,17 +193,38 @@ where
 
     fn poll(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
         let mut this = self.project();
-        if let Poll::Ready(item) = this.future.poll(cx) {
-            return Poll::Ready(item);
-        }
-        match this.timer.as_mut().poll(cx) {
-            Poll::Ready(()) => {}
-            Poll::Pending => {
+        // Use a different waker when polling the future so we know whether it was woken or not.
+        let mut woken = this.waker.original_waker.take().is_none();
+        loop {
+            this.waker.original_waker.register(cx.waker());
+            let waker = this.waker.clone().into();
+            let mut cx2 = Context::from_waker(&waker);
+            if let Poll::Ready(item) = this.future.as_mut().poll(&mut cx2) {
+                return Poll::Ready(item);
+            }
+            if woken || this.timer.as_mut().poll(cx).is_pending() {
                 this.timer.set(this.timeout.into_timer());
                 ready!(this.timer.as_mut().poll(cx));
+                // The timer immediately fired.  See if the future was woken.  If it was, we'll
+                // loop around and poll the future again.
+                woken = this.waker.original_waker.take().is_none();
+            }
+            if !woken {
+                return Poll::Ready((this.on_stalled.take().expect("polled after completion"))());
             }
         }
-        Poll::Ready((this.on_stalled.take().expect("polled after completion"))())
+    }
+}
+
+// A different waker is used so we can tell when the future was woken, rather than the timer.
+#[derive(Debug, Default)]
+struct OnStalledWaker {
+    original_waker: AtomicWaker,
+}
+
+impl Wake for OnStalledWaker {
+    fn wake(self: Arc<Self>) {
+        self.original_waker.wake();
     }
 }
 
