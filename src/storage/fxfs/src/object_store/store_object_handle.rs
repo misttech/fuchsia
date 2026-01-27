@@ -347,7 +347,7 @@ impl<S: HandleOwner> StoreObjectHandle<S> {
         owner: Arc<S>,
         object_id: u64,
         permanent_keys: bool,
-        mut options: HandleOptions,
+        options: HandleOptions,
         trace: bool,
     ) -> Self {
         let encryption = if permanent_keys {
@@ -357,10 +357,6 @@ impl<S: HandleOwner> StoreObjectHandle<S> {
         } else {
             Encryption::None
         };
-        let store: &ObjectStore = owner.as_ref().as_ref();
-        if store.is_encrypted() && store.filesystem().options().inline_crypto_enabled {
-            options.skip_checksums = true;
-        }
         Self { owner, object_id, encryption, options, trace: AtomicBool::new(trace) }
     }
 
@@ -512,32 +508,43 @@ impl<S: HandleOwner> StoreObjectHandle<S> {
             warn!("Write has been stalled for {} seconds", count * 10);
         });
 
-        if self.options.skip_checksums {
-            store
-                .device
-                .write_with_opts(
-                    device_offset as u64,
-                    buf,
-                    crypt_ctx.map_or_else(
-                        || WriteOptions::default(),
-                        |(dun, slot)| WriteOptions {
+        match crypt_ctx {
+            Some((dun, slot)) => {
+                if !store.filesystem().options().barriers_enabled {
+                    return Err(anyhow!(FxfsError::InvalidArgs)
+                        .context("Barriers must be enabled for inline encrypted writes."));
+                }
+                store
+                    .device
+                    .write_with_opts(
+                        device_offset as u64,
+                        buf,
+                        WriteOptions {
                             inline_crypto: InlineCryptoOptions::enabled(slot, dun),
                             ..Default::default()
                         },
-                    ),
-                )
-                .await?;
-            Ok(MaybeChecksums::None)
-        } else {
-            debug_assert!(crypt_ctx.is_none());
-            try_join!(store.device.write(device_offset, buf), async {
-                let block_size = self.block_size();
-                for chunk in buf.as_slice().chunks_exact(block_size as usize) {
-                    checksums.push(fletcher64(chunk, 0));
+                    )
+                    .await?;
+                Ok(MaybeChecksums::None)
+            }
+            None => {
+                if self.options.skip_checksums {
+                    store
+                        .device
+                        .write_with_opts(device_offset as u64, buf, WriteOptions::default())
+                        .await?;
+                    Ok(MaybeChecksums::None)
+                } else {
+                    try_join!(store.device.write(device_offset, buf), async {
+                        let block_size = self.block_size();
+                        for chunk in buf.as_slice().chunks_exact(block_size as usize) {
+                            checksums.push(fletcher64(chunk, 0));
+                        }
+                        Ok(())
+                    })?;
+                    Ok(MaybeChecksums::Fletcher(checksums))
                 }
-                Ok(())
-            })?;
-            Ok(MaybeChecksums::Fletcher(checksums))
+            }
         }
     }
 
@@ -776,7 +783,7 @@ impl<S: HandleOwner> StoreObjectHandle<S> {
         key_id: Option<u64>,
     ) -> Result<(u64, Option<Arc<dyn Cipher>>), Error> {
         let store = self.store();
-        Ok(match self.encryption {
+        let result = match self.encryption {
             Encryption::None => (VOLUME_DATA_KEY_ID, None),
             Encryption::CachedKeys => {
                 if let Some(key_id) = key_id {
@@ -809,7 +816,19 @@ impl<S: HandleOwner> StoreObjectHandle<S> {
             Encryption::PermanentKeys => {
                 (VOLUME_DATA_KEY_ID, Some(store.key_manager.get(self.object_id).await?.unwrap()))
             }
-        })
+        };
+
+        // Ensure that if the key we receive uses inline encryption, barriers should be enabled.
+        if let Some(ref key) = result.1 {
+            if key.crypt_ctx(self.object_id, 0).is_some() {
+                if !store.filesystem().options().barriers_enabled {
+                    return Err(anyhow!(FxfsError::InvalidArgs)
+                        .context("Barriers must be enabled for inline encrypted writes."));
+                }
+            }
+        }
+
+        Ok(result)
     }
 
     /// This will only work for a non-permanent volume data key. This is designed to be used with

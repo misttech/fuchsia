@@ -176,7 +176,12 @@ async fn test_fxfs_migration_at_offset(offset: u64) {
         .unwrap(),
     );
 
-    let fxfs = FxFilesystemBuilder::new().read_only(true).open(device).await.expect("open failed");
+    let fxfs = FxFilesystemBuilder::new()
+        .read_only(true)
+        .barriers_enabled(true)
+        .open(device)
+        .await
+        .expect("open failed");
 
     let root_vol = fxfs_root_volume(fxfs.clone()).await.expect("Opening root volume");
     let vol = root_vol
@@ -331,7 +336,12 @@ async fn test_fxfs_read_lblk32_ino_file() {
         .unwrap(),
     );
 
-    let fxfs = FxFilesystemBuilder::new().read_only(true).open(device).await.expect("open failed");
+    let fxfs = FxFilesystemBuilder::new()
+        .read_only(true)
+        .barriers_enabled(true)
+        .open(device)
+        .await
+        .expect("open failed");
 
     let root_vol = fxfs_root_volume(fxfs.clone()).await.expect("Opening root volume");
     let vol = root_vol
@@ -472,7 +482,12 @@ async fn test_fxfs_verify_encrypted_data() {
         .unwrap(),
     );
 
-    let fxfs = FxFilesystemBuilder::new().read_only(true).open(device).await.expect("open failed");
+    let fxfs = FxFilesystemBuilder::new()
+        .read_only(true)
+        .barriers_enabled(true)
+        .open(device)
+        .await
+        .expect("open failed");
 
     assert_eq!(&uuid, fxfs.super_block_header().guid.0.as_bytes());
 

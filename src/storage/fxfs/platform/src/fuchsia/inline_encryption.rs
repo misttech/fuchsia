@@ -9,8 +9,7 @@ mod tests {
     use crate::component::new_block_client;
     use crate::file::FxFile;
     use crate::fuchsia::RemoteCrypt;
-    use crate::fuchsia::volume::FxVolume;
-    use crate::fuchsia::volume::MemoryPressureConfig;
+    use crate::fuchsia::volume::{FxVolume, MemoryPressureConfig};
     use fidl_fuchsia_fxfs::{CryptMarker, KeyPurpose};
     use fidl_fuchsia_hardware_inlineencryption::DeviceMarker;
     use fidl_fuchsia_io as fio;
@@ -49,7 +48,7 @@ mod tests {
     }
 
     impl TestFixture {
-        async fn new() -> Self {
+        async fn new(inline_crypto_enabled: bool, barriers_enabled: bool) -> Self {
             let block_server = Arc::new(
                 VmoBackedServerOptions {
                     block_size: TEST_DEVICE_BLOCK_SIZE,
@@ -62,8 +61,8 @@ mod tests {
 
             let filesystem = FxFilesystemBuilder::new()
                 .format(true)
-                .inline_crypto_enabled(true)
-                .barriers_enabled(true)
+                .inline_crypto_enabled(inline_crypto_enabled)
+                .barriers_enabled(barriers_enabled)
                 .open(DeviceHolder::new(
                     BlockDevice::new(
                         new_block_client(block_server.connect())
@@ -78,6 +77,11 @@ mod tests {
                 .expect("failed to open filesystem");
 
             Self { block_server, filesystem }
+        }
+
+        // Default is to have inline encryption and barriers enabled
+        async fn new_default() -> Self {
+            Self::new(true, true).await
         }
 
         async fn create_vol_with_starnix_crypt(
@@ -178,6 +182,10 @@ mod tests {
                 .expect("new_volume failed")
         }
 
+        fn take_filesystem(self) -> OpenFxFilesystem {
+            self.filesystem
+        }
+
         async fn close(self) {
             self.filesystem.close().await.expect("close failed");
         }
@@ -191,7 +199,7 @@ mod tests {
     async fn test_write_and_read_inline_encrypted_files(
         key_identifier_derivation_algorithm: KeyIdentifierDerivationAlgorithm,
     ) {
-        let mut fixture = TestFixture::new().await;
+        let mut fixture = TestFixture::new_default().await;
 
         // Use Starnix CryptService which supports creating and storing keys in the format expected
         // for inline encryption.
@@ -294,11 +302,7 @@ mod tests {
 
     #[fuchsia::test]
     async fn test_multiple_volume_different_crypt_services() {
-        let mut fixture = TestFixture::new().await;
-
-        // TODO(https://fxbug.dev/474479747): `inline_crypto_enabled` assumes *all* encrypted stores
-        // uses inline encryption and skips computing checksums. We only want to skip if the
-        // encrypted store uses inline encryption. We need to find a better way of determining this.
+        let mut fixture = TestFixture::new_default().await;
 
         let (starnix_vol, starnix_crypt_service) = fixture
             .create_vol_with_starnix_crypt(KeyIdentifierDerivationAlgorithm::Lblk32, "starnix")
@@ -433,7 +437,7 @@ mod tests {
     async fn test_get_attribute_of_inline_encrypted_files(
         key_identifier_derivation_algorithm: KeyIdentifierDerivationAlgorithm,
     ) {
-        let mut fixture = TestFixture::new().await;
+        let mut fixture = TestFixture::new_default().await;
 
         // Use Starnix CryptService which supports creating and storing keys in the format expected
         // for inline encryption.
@@ -528,5 +532,183 @@ mod tests {
         assert_eq!(attributes.mutable_attributes.wrapping_key_id, Some(key_identifier));
 
         fixture.close().await;
+    }
+
+    #[fuchsia::test]
+    async fn test_write_to_inline_encrypted_file_fails_without_barriers() {
+        // Create inline encrypted file and write to it when barriers are enabled.
+        let mut fixture = TestFixture::new_default().await;
+
+        let (starnix_vol, crypt_service) = fixture
+            .create_vol_with_starnix_crypt(KeyIdentifierDerivationAlgorithm::Lblk32, "starnix")
+            .await;
+
+        let starnix_vol_root_dir =
+            Directory::open(&starnix_vol, starnix_vol.root_directory_object_id())
+                .await
+                .expect("open failed");
+        let mut transaction = fixture
+            .filesystem
+            .clone()
+            .new_transaction(
+                lock_keys![LockKey::object(
+                    starnix_vol.store_object_id(),
+                    starnix_vol.root_directory_object_id()
+                )],
+                Options::default(),
+            )
+            .await
+            .expect("new_transaction failed");
+        let dir = starnix_vol_root_dir
+            .create_child_dir(&mut transaction, "dir")
+            .await
+            .expect("create_child_dir failed");
+        transaction.commit().await.expect("transaction commit failed");
+        let crypt_service_clone = crypt_service.clone();
+        let key_identifier = fuchsia_async::unblock(move || {
+            crypt_service_clone.add_wrapping_key(&[0xab; 32], 0).expect("add_wrapping_key failed")
+        })
+        .await;
+        let transaction = fixture
+            .filesystem
+            .clone()
+            .new_transaction(
+                lock_keys![LockKey::object(starnix_vol.store_object_id(), dir.object_id())],
+                Options::default(),
+            )
+            .await
+            .expect("new transaction failed");
+        dir.update_attributes(
+            transaction,
+            Some(&fio::MutableNodeAttributes {
+                wrapping_key_id: Some(key_identifier),
+                ..Default::default()
+            }),
+            0,
+            None,
+        )
+        .await
+        .expect("update attributes failed");
+
+        // Create an inline encrypted file.
+        let mut transaction = fixture
+            .filesystem
+            .clone()
+            .new_transaction(
+                lock_keys![LockKey::object(starnix_vol.store_object_id(), dir.object_id())],
+                Options::default(),
+            )
+            .await
+            .expect("new_transaction failed");
+        let handle = dir
+            .create_child_file(&mut transaction, "file")
+            .await
+            .expect("create_child_file failed");
+        transaction.commit().await.expect("commit failed");
+
+        let mut buf = handle.allocate_buffer(2 * TEST_DEVICE_BLOCK_SIZE as usize).await;
+        buf.as_mut_slice().fill(0xaa);
+        handle.write_or_append(Some(0), buf.as_ref()).await.expect("write failed");
+
+        let mut buf = handle.allocate_buffer(2 * TEST_DEVICE_BLOCK_SIZE as usize).await;
+        handle.read(0, buf.as_mut()).await.expect("read failed");
+        assert_eq!(buf.as_slice(), vec![0xaa; 2 * TEST_DEVICE_BLOCK_SIZE as usize]);
+
+        // Reopen filesystem and unlock existing inline encrypted volume.
+        let block_server = fixture.block_server.clone();
+        let fs = fixture.take_filesystem();
+        fs.close().await.expect("close failed");
+        // Opening filesystem with `inline_crypto_enabled` but barriers not enabled should fail.
+        let device = DeviceHolder::new(
+            BlockDevice::new(
+                new_block_client(block_server.clone().connect())
+                    .await
+                    .expect("failed to create new block client"),
+                false,
+            )
+            .await
+            .expect("failed to create block device"),
+        );
+        assert!(
+            FxFilesystemBuilder::new()
+                .inline_crypto_enabled(true)
+                .barriers_enabled(false)
+                .open(device)
+                .await
+                .is_err(),
+            "Barriers must be enabled if intending to using inline crypto"
+        );
+        // Even though this is not recommended, users could set `inline_crypto_enabled` to false
+        // with barriers disabled, and attempt to read/write to the inline encrypted file. We expect
+        // this to fail.
+        let device = DeviceHolder::new(
+            BlockDevice::new(
+                new_block_client(block_server.connect())
+                    .await
+                    .expect("failed to create new block client"),
+                false,
+            )
+            .await
+            .expect("failed to create block device"),
+        );
+        let fs = FxFilesystemBuilder::new()
+            .inline_crypto_enabled(false)
+            .barriers_enabled(false)
+            .open(device)
+            .await
+            .expect("open failed");
+        let root_volume = root_volume(fs.clone()).await.expect("root_volume failed");
+        let (crypt_client, crypt_server) = fidl::endpoints::create_endpoints::<CryptMarker>();
+        Task::spawn(async move {
+            crypt_service
+                .handle_connection(crypt_server.into_stream())
+                .await
+                .expect("CryptService failed");
+        })
+        .detach();
+        let crypt = Arc::new(RemoteCrypt::new(crypt_client));
+        let store = root_volume
+            .volume(
+                "starnix",
+                StoreOptions {
+                    crypt: Some(crypt.clone() as Arc<dyn Crypt>),
+                    ..StoreOptions::default()
+                },
+            )
+            .await
+            .expect("opening volume failed");
+
+        let vol = Arc::new(
+            FxVolume::new(
+                Weak::new(),
+                store.clone(),
+                store.store_object_id(),
+                Arc::new(PageRefaultCounter::new().expect("PageRefaultCounter::new failed")),
+                MemoryPressureConfig::default(),
+            )
+            .expect("FxVolume::new failed"),
+        );
+        let root_dir = Directory::open(&store, store.root_directory_object_id())
+            .await
+            .expect("open root dir failed");
+        let (dir_id, _, _) =
+            root_dir.lookup("dir").await.expect("lookup dir failed").expect("dir not found");
+        let dir = Directory::open(&store, dir_id).await.expect("open dir failed");
+        let (file_id, _, _) =
+            dir.lookup("file").await.expect("lookup file failed").expect("file not found");
+        let file = ObjectStore::open_object(&vol, file_id, HandleOptions::default(), None)
+            .await
+            .expect("open_object failed");
+
+        let mut buf = file.allocate_buffer(2 * TEST_DEVICE_BLOCK_SIZE as usize).await;
+        buf.as_mut_slice().fill(0xbb);
+        file.write_or_append(Some(0), buf.as_ref())
+            .await
+            .expect_err("write passed unexpectedly without barriers");
+
+        let mut buf = file.allocate_buffer(2 * TEST_DEVICE_BLOCK_SIZE as usize).await;
+        file.read(0, buf.as_mut()).await.expect_err("read passed unexpectedly without barriers");
+
+        fs.close().await.expect("close failed");
     }
 }
