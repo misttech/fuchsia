@@ -512,6 +512,7 @@ impl TraceTool {
                 verbose: opts.verbose,
                 no_symbolize: opts.no_symbolize,
                 no_verify_trace: opts.no_verify_trace,
+                retain_raw_fidl: opts.retain_raw_fidl,
             },
             writer,
         )?;
@@ -553,7 +554,14 @@ impl TraceTool {
     async fn symbolize(self, opts: &Symbolize, mut writer: Writer) -> fho::Result<()> {
         if let Some(ref trace_file) = opts.fxt {
             let outfile = opts.outfile.as_ref().unwrap_or(trace_file);
-            for warning in process_trace_file(trace_file, &outfile, true, None, &self.context)? {
+            for warning in process_trace_file(
+                trace_file,
+                &outfile,
+                true,
+                opts.retain_raw_fidl,
+                None,
+                &self.context,
+            )? {
                 writer.line(warning)?;
             }
             writer.line(format!("Symbolized traces written to {outfile}"))?;
@@ -599,6 +607,7 @@ fn finalize_trace(
             &trace_data.output_file,
             categories,
             opts.no_symbolize,
+            opts.retain_raw_fidl,
             &mut writer,
         )?;
     }
@@ -617,6 +626,7 @@ fn post_process(
     output_file: &str,
     categories: Option<Vec<String>>,
     skip_symbolization: bool,
+    retain_raw_fidl: bool,
     writer: &mut Writer,
 ) -> Result<()> {
     let expanded_categories =
@@ -625,8 +635,14 @@ fn post_process(
         || !expanded_categories.contains(&"kernel:ipc".to_string())
             && !expanded_categories.contains(&"kernel:*".to_string());
     writer.line("Post Processing Trace...")?;
-    let warnings =
-        process_trace_file(&output_file, &output_file, !skip_symbolization, categories, context)?;
+    let warnings = process_trace_file(
+        &output_file,
+        &output_file,
+        !skip_symbolization,
+        retain_raw_fidl,
+        categories,
+        context,
+    )?;
     for warning in warnings {
         writer.line(format!("{}", warning))?;
     }
@@ -1093,6 +1109,7 @@ mod tests {
             ir_path: vec![fake_ir_path.to_string()],
             fxt: None,
             outfile: None,
+            retain_raw_fidl: false,
         };
 
         let tool = TraceTool {
@@ -1130,6 +1147,7 @@ mod tests {
             no_symbolize: false,
             no_verify_trace: false,
             on_boot: false,
+            retain_raw_fidl: false,
         };
 
         let tool = TraceTool {
@@ -1148,8 +1166,13 @@ mod tests {
         let test_buffers = TestBuffers::default();
         let writer = Writer::new_test(None, &test_buffers);
 
-        let symbolize_opts =
-            Symbolize { ordinal: Some(12345678), ir_path: vec![], fxt: None, outfile: None };
+        let symbolize_opts = Symbolize {
+            ordinal: Some(12345678),
+            ir_path: vec![],
+            fxt: None,
+            outfile: None,
+            retain_raw_fidl: false,
+        };
 
         let tool = TraceTool {
             provisioner: Deferred::from_output(Err(fho::user_error!("not found"))),
@@ -1292,6 +1315,7 @@ mod tests {
             no_symbolize: false,
             no_verify_trace: true,
             on_boot: false,
+            retain_raw_fidl: false,
         };
 
         let tool = TraceTool {
@@ -1357,6 +1381,7 @@ Triggers:
             verbose: false,
             no_symbolize: false,
             no_verify_trace: true,
+            retain_raw_fidl: false,
         };
 
         let tool = TraceTool {
@@ -1391,6 +1416,7 @@ Triggers:
             verbose: false,
             no_symbolize: false,
             no_verify_trace: true,
+            retain_raw_fidl: false,
         };
         let tool = TraceTool {
             provisioner: Deferred::from_output(Err(fho::user_error!("not found"))),
@@ -1425,6 +1451,7 @@ Triggers:
             no_symbolize: false,
             no_verify_trace: true,
             on_boot: false,
+            retain_raw_fidl: false,
         };
         let tool = TraceTool {
             provisioner: Deferred::from_output(Err(fho::user_error!("not found"))),
@@ -1463,6 +1490,7 @@ Triggers:
             verbose: true,
             no_symbolize: false,
             no_verify_trace: true,
+            retain_raw_fidl: false,
         };
         let tool = TraceTool {
             provisioner: Deferred::from_output(Err(fho::user_error!("not found"))),
@@ -1508,6 +1536,7 @@ Triggers:
             no_symbolize: false,
             no_verify_trace: true,
             on_boot: false,
+            retain_raw_fidl: false,
         };
 
         let tool = TraceTool {
@@ -1543,6 +1572,7 @@ Triggers:
             no_symbolize: false,
             no_verify_trace: true,
             on_boot: false,
+            retain_raw_fidl: false,
         };
 
         let tool = TraceTool {
@@ -1580,6 +1610,7 @@ Triggers:
             no_symbolize: false,
             no_verify_trace: true,
             on_boot: false,
+            retain_raw_fidl: false,
         };
 
         let tool = TraceTool {
@@ -1618,6 +1649,7 @@ Triggers:
             no_symbolize: false,
             no_verify_trace: true,
             on_boot: false,
+            retain_raw_fidl: false,
         };
 
         let tool = TraceTool {

@@ -91,6 +91,10 @@ pub struct Symbolize {
     /// files listed in $FUCHSIA_BUILD_DIR/all_fidl_json.txt will be checked.
     #[argh(option)]
     pub ir_path: Vec<String>,
+
+    /// retain raw FIDL-related trace arguments after symbolization. Defaults to false.
+    #[argh(switch)]
+    pub retain_raw_fidl: bool,
 }
 
 #[derive(ArgsInfo, FromArgs, PartialEq, Clone, Debug)]
@@ -121,6 +125,10 @@ pub struct Stop {
     /// If this flag is enabled, trace result analysis will not be triggered.
     #[argh(switch)]
     pub no_verify_trace: bool,
+
+    /// retain raw FIDL-related trace arguments after symbolization. Defaults to false.
+    #[argh(switch)]
+    pub retain_raw_fidl: bool,
 }
 
 #[derive(ArgsInfo, FromArgs, PartialEq, Clone, Debug)]
@@ -266,6 +274,10 @@ pub struct Start {
     /// If this flag is enabled, trace result analysis will not be triggered.
     #[argh(switch)]
     pub no_verify_trace: bool,
+
+    /// retain raw FIDL-related trace arguments after symbolization. Defaults to false.
+    #[argh(switch)]
+    pub retain_raw_fidl: bool,
 }
 
 fn try_string_to_action(s: &str) -> Result<Action, String> {

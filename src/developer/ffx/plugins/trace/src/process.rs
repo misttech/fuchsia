@@ -84,6 +84,7 @@ pub fn process_trace_file(
     trace_file: impl AsRef<Path>,
     outfile: impl AsRef<Path>,
     symbolize: bool,
+    retain_raw_fidl: bool,
     category_check: Option<Vec<String>>,
     context: &EnvironmentContext,
 ) -> Result<Vec<String>> {
@@ -197,6 +198,32 @@ pub fn process_trace_file(
                                 .expect("modifying flow event");
                         }
                         *call_state = call_state.next();
+                    }
+                }
+                if !retain_raw_fidl {
+                    // Find which arguments are for "ordinal", "bytes" and "handles".
+                    let remove_args: Vec<usize> = event_record
+                        .args
+                        .iter()
+                        .enumerate()
+                        .filter_map(|(i, arg)| {
+                            if arg.name == ORDINAL_ARG_NAME
+                                || arg.name == BYTES_ARG_NAME
+                                || arg.name == HANDLES_ARG_NAME
+                            {
+                                Some(i)
+                            } else {
+                                None
+                            }
+                        })
+                        .collect();
+                    if !remove_args.is_empty() {
+                        let (_, mut parsed) = fxt::RawEventRecord::parse(&parsed_bytes)
+                            .expect("Removing raw FIDL-related args");
+                        for i in remove_args.iter().rev() {
+                            parsed.args.remove(*i);
+                        }
+                        parsed_bytes = parsed.serialize().expect("serializing modified record");
                     }
                 }
                 parsed_bytes

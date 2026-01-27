@@ -124,6 +124,14 @@
       "short": null,
       "description": "prevent checking the trace data when stopping tracing. Defaults to false. If this flag is enabled, trace result analysis will not be triggered.",
       "hidden": false
+    },
+    {
+      "kind": "Switch",
+      "optionality": "optional",
+      "long": "--retain-raw-fidl",
+      "short": null,
+      "description": "retain raw FIDL-related trace arguments after symbolization. Defaults to false.",
+      "hidden": false
     }
   ],
   "notes": [
