@@ -51,4 +51,6 @@ trace_files = [
   "testing/traces/input_inlcr_icrnl_swap.json",
   "testing/traces/output_direct_ocrnl.json",
   "testing/traces/output_direct_onlret_onocr.json",
+  "testing/traces/iuclc_simple.json",
+  "testing/traces/olcuc_simple.json",
 ]

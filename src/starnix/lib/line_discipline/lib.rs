@@ -8,9 +8,9 @@ use starnix_uapi::signals::{SIGINT, SIGQUIT, SIGSTOP, Signal};
 use starnix_uapi::vfs::FdEvents;
 use starnix_uapi::{
     ECHO, ECHOCTL, ECHOE, ECHOK, ECHOKE, ECHONL, ECHOPRT, ICANON, ICRNL, IEXTEN, IGNCR, INLCR,
-    ISIG, IUTF8, IXANY, IXON, NOFLSH, OCRNL, ONLCR, ONLRET, ONOCR, OPOST, TABDLY, VEOF, VEOL,
-    VEOL2, VERASE, VINTR, VKILL, VQUIT, VSTART, VSTOP, VSUSP, VWERASE, XTABS, cc_t, error,
-    tcflag_t, uapi,
+    ISIG, IUCLC, IUTF8, IXANY, IXON, NOFLSH, OCRNL, OLCUC, ONLCR, ONLRET, ONOCR, OPOST, TABDLY,
+    VEOF, VEOL, VEOL2, VERASE, VINTR, VKILL, VQUIT, VSTART, VSTOP, VSUSP, VWERASE, XTABS, cc_t,
+    error, tcflag_t, uapi,
 };
 use std::collections::VecDeque;
 
@@ -300,6 +300,10 @@ impl LineDiscipline {
             let mut character_bytes = buffer[..size].to_vec();
             return_value += size;
             buffer = &buffer[size..];
+
+            if self.termios.has_output_flags(OLCUC) {
+                character_bytes[0].make_ascii_uppercase();
+            }
             match character_bytes[0] {
                 b'\n' => {
                     if self.termios.has_output_flags(ONLRET) {
@@ -368,6 +372,10 @@ impl LineDiscipline {
             let size = compute_next_character_size(buffer, &self.termios);
             let mut character_bytes = buffer[..size].to_vec();
             // It is guaranteed that character_bytes has at least one element.
+
+            if self.termios.has_input_flags(IUCLC) && self.termios.has_local_flags(IEXTEN) {
+                character_bytes[0].make_ascii_lowercase();
+            }
             let mut signal_generated = false;
             if let Some(signal) = self.handle_signals(character_bytes[0]) {
                 signals.add(signal);

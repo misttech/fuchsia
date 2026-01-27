@@ -54,6 +54,8 @@ mod tests {
     #[test_case("input_inlcr_icrnl_swap", include_str!("traces/input_inlcr_icrnl_swap.json"); "input_inlcr_icrnl_swap")]
     #[test_case("output_direct_ocrnl", include_str!("traces/output_direct_ocrnl.json"); "output_direct_ocrnl")]
     #[test_case("output_direct_onlret_onocr", include_str!("traces/output_direct_onlret_onocr.json"); "output_direct_onlret_onocr")]
+    #[test_case("iuclc_simple", include_str!("traces/iuclc_simple.json"); "iuclc_simple")]
+    #[test_case("olcuc_simple", include_str!("traces/olcuc_simple.json"); "olcuc_simple")]
     fn test_replay_trace(name: &str, json_data: &str) {
         crate::testing::tests::test_replay_trace(name, json_data);
     }
