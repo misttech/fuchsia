@@ -19,9 +19,6 @@
                 // TODO(https://fxbug.dev/436916082): Crashes on Machina.
                 "CgroupTest.*",
 
-                // TODO(https://fxbug.dev/449810907): Times out on infrastructure specifically, possibly due to missing fake-hrtimer.
-                "EpollTest.*",
-
                 // TODO(https://fxbug.dev/448145721): Flaking in the FUSE server setup / handling.
                 "Fuse*",
 
