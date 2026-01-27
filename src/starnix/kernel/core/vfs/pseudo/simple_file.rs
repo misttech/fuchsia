@@ -5,8 +5,8 @@
 use crate::task::{CurrentTask, Kernel};
 use crate::vfs::buffers::{InputBuffer, OutputBuffer};
 use crate::vfs::{
-    AppendLockGuard, FileObject, FileOps, FsNode,  FsNodeOps,
-    fileops_impl_seekable, fs_node_impl_not_dir,
+    AppendLockGuard, FileObject, FileOps, FsNode, FsNodeOps, fileops_impl_seekable,
+    fs_node_impl_not_dir,
 };
 
 use crate::vfs::fileops_impl_noop_sync;
@@ -21,7 +21,7 @@ use std::sync::{Arc, Weak};
 
 pub struct SimpleFileNode<F, O>
 where
-    F: Fn() -> Result<O, Errno>,
+    F: Fn(&mut Locked<FileOpsCore>, &CurrentTask) -> Result<O, Errno>,
     O: FileOps,
 {
     create_file_ops: F,
@@ -29,29 +29,29 @@ where
 
 impl<F, O> SimpleFileNode<F, O>
 where
-    F: Fn() -> Result<O, Errno> + Send + Sync,
+    F: Fn(&mut Locked<FileOpsCore>, &CurrentTask) -> Result<O, Errno> + Send + Sync + 'static,
     O: FileOps,
 {
-    pub fn new(create_file_ops: F) -> SimpleFileNode<F, O> {
-        SimpleFileNode { create_file_ops }
+    pub fn new(create_file_ops: F) -> Self {
+        Self { create_file_ops }
     }
 }
 
 impl<F, O> FsNodeOps for SimpleFileNode<F, O>
 where
-    F: Fn() -> Result<O, Errno> + Send + Sync + 'static,
+    F: Fn(&mut Locked<FileOpsCore>, &CurrentTask) -> Result<O, Errno> + Send + Sync + 'static,
     O: FileOps,
 {
     fs_node_impl_not_dir!();
 
     fn create_file_ops(
         &self,
-        _locked: &mut Locked<FileOpsCore>,
+        locked: &mut Locked<FileOpsCore>,
         _node: &FsNode,
-        _current_task: &CurrentTask,
+        current_task: &CurrentTask,
         _flags: OpenFlags,
     ) -> Result<Box<dyn FileOps>, Errno> {
-        Ok(Box::new((self.create_file_ops)()?))
+        Ok(Box::new((self.create_file_ops)(locked, current_task)?))
     }
 
     fn truncate(
@@ -97,7 +97,7 @@ impl<Ops: BytesFileOps> BytesFile<Ops> {
 
     pub fn new_node(data: Ops) -> impl FsNodeOps {
         let data = Arc::new(data);
-        SimpleFileNode::new(move || Ok(BytesFile(Arc::clone(&data))))
+        SimpleFileNode::new(move |_, _| Ok(BytesFile(Arc::clone(&data))))
     }
 }
 

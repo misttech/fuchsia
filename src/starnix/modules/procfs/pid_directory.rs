@@ -397,7 +397,7 @@ struct AttrNode {
 
 impl AttrNode {
     fn new(task: WeakRef<Task>, attr: security::ProcAttr) -> impl FsNodeOps {
-        SimpleFileNode::new(move || Ok(AttrNode { attr, task: task.clone() }))
+        SimpleFileNode::new(move |_, _| Ok(AttrNode { attr, task: task.clone() }))
     }
 }
 
@@ -823,7 +823,7 @@ pub struct CommFile {
 }
 impl CommFile {
     pub fn new_node(task: WeakRef<Task>, info: TaskPersistentInfo) -> impl FsNodeOps {
-        SimpleFileNode::new(move || {
+        SimpleFileNode::new(move |_, _| {
             Ok(CommFile {
                 task: task.clone(),
                 dynamic_file: DynamicFile::new(CommFileSource(info.clone())),
@@ -952,7 +952,7 @@ pub struct MemFile {
 
 impl MemFile {
     pub fn new_node(task: WeakRef<Task>) -> impl FsNodeOps {
-        SimpleFileNode::new(move || {
+        SimpleFileNode::new(move |_, _| {
             let task = task.clone();
             let mm = get_mm_weak(&task).unwrap_or_default();
             Ok(Self { mm, task })

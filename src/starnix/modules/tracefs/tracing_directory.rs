@@ -19,7 +19,7 @@ pub struct TraceMarkerFile {
 
 impl TraceMarkerFile {
     pub fn new_node(queue: Arc<TraceEventQueue>) -> impl FsNodeOps {
-        SimpleFileNode::new(move || Ok(Self { queue: queue.clone() }))
+        SimpleFileNode::new(move |_, _| Ok(Self { queue: queue.clone() }))
     }
 }
 

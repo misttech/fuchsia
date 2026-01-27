@@ -767,7 +767,7 @@ pub struct ProcMountsFile {
 
 impl ProcMountsFile {
     pub fn new_node(task: WeakRef<Task>) -> impl FsNodeOps {
-        SimpleFileNode::new(move || {
+        SimpleFileNode::new(move |_, _| {
             Ok(Self { dynamic_file: DynamicFile::new(ProcMountsFileSource(task.clone())) })
         })
     }

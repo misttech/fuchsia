@@ -4098,7 +4098,7 @@ pub struct ProcMapsFile {
 }
 impl ProcMapsFile {
     pub fn new_node(task: WeakRef<Task>) -> impl FsNodeOps {
-        SimpleFileNode::new(move || {
+        SimpleFileNode::new(move |_, _| {
             let task = task.clone();
             let mm = get_mm_weak(&task).unwrap_or_default();
             Ok(DynamicFile::new(Self { mm, task }))
@@ -4136,7 +4136,7 @@ pub struct ProcSmapsFile {
 }
 impl ProcSmapsFile {
     pub fn new_node(task: WeakRef<Task>) -> impl FsNodeOps {
-        SimpleFileNode::new(move || {
+        SimpleFileNode::new(move |_, _| {
             let task = task.clone();
             let mm = get_mm_weak(&task).unwrap_or_default();
             Ok(DynamicFile::new(Self { mm, task }))
