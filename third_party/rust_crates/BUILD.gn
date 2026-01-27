@@ -333,10 +333,6 @@ group("event-listener") {
   public_deps = [ ":event-listener-v5_4_1" ]
 }
 
-group("fancy-regex") {
-  public_deps = [ ":fancy-regex-v0_8_0" ]
-}
-
 group("fatfs") {
   public_deps = [ ":fatfs-v0_3_6" ]
 }
@@ -2825,41 +2821,6 @@ rustc_library("bincode-v1_3_3") {
   applicable_licenses = [ ":bincode-v1_3_3.license" ]
 }
 
-license("bit-set-v0_5_3.license") {
-  public_package_name = "bit_set"
-  license_files = [
-    "//third_party/rust_crates/vendor/bit-set-0.5.3/LICENSE-APACHE",
-    "//third_party/rust_crates/vendor/bit-set-0.5.3/LICENSE-MIT",
-  ]
-}
-
-rustc_library("bit-set-v0_5_3") {
-  crate_name = "bit_set"
-  source_root = "//third_party/rust_crates/vendor/bit-set-0.5.3/src/lib.rs"
-  output_name = "bit_set-1bfda5d01e22a6bd"
-  edition = "2015"
-  disable_clippy = true
-  enforce_source_listing = false
-  configs -= [ "//build/config/rust:2018_idioms" ]
-
-  deps = []
-  deps += [ ":bit-vec-v0_6_3" ]
-
-  rustenv = []
-
-  rustflags = [
-    "--cap-lints=allow",
-    "-Cmetadata=1bfda5d01e22a6bd",
-    "-Cextra-filename=-1bfda5d01e22a6bd",
-    "--cfg=feature=\"default\"",
-    "--cfg=feature=\"std\"",
-  ]
-
-  visibility = [ ":*" ]
-
-  applicable_licenses = [ ":bit-set-v0_5_3.license" ]
-}
-
 license("bit-set-v0_8_0.license") {
   public_package_name = "bit_set"
   license_files = [
@@ -2893,39 +2854,6 @@ rustc_library("bit-set-v0_8_0") {
   visibility = [ ":*" ]
 
   applicable_licenses = [ ":bit-set-v0_8_0.license" ]
-}
-
-license("bit-vec-v0_6_3.license") {
-  public_package_name = "bit_vec"
-  license_files = [
-    "//third_party/rust_crates/vendor/bit-vec-0.6.3/LICENSE-APACHE",
-    "//third_party/rust_crates/vendor/bit-vec-0.6.3/LICENSE-MIT",
-  ]
-}
-
-rustc_library("bit-vec-v0_6_3") {
-  crate_name = "bit_vec"
-  source_root = "//third_party/rust_crates/vendor/bit-vec-0.6.3/src/lib.rs"
-  output_name = "bit_vec-ef0910eab7e0b593"
-  edition = "2015"
-  disable_clippy = true
-  enforce_source_listing = false
-  configs -= [ "//build/config/rust:2018_idioms" ]
-
-  deps = []
-
-  rustenv = []
-
-  rustflags = [
-    "--cap-lints=allow",
-    "-Cmetadata=ef0910eab7e0b593",
-    "-Cextra-filename=-ef0910eab7e0b593",
-    "--cfg=feature=\"std\"",
-  ]
-
-  visibility = [ ":*" ]
-
-  applicable_licenses = [ ":bit-vec-v0_6_3.license" ]
 }
 
 license("bit-vec-v0_8_0.license") {
@@ -6545,42 +6473,6 @@ rustc_library("event-listener-strategy-v0_5_4") {
   visibility = [ ":*" ]
 
   applicable_licenses = [ ":event-listener-strategy-v0_5_4.license" ]
-}
-
-license("fancy-regex-v0_8_0.license") {
-  public_package_name = "fancy_regex"
-  license_files =
-      [ "//third_party/rust_crates/vendor/fancy-regex-0.8.0/LICENSE" ]
-}
-
-rustc_library("fancy-regex-v0_8_0") {
-  crate_name = "fancy_regex"
-  source_root = "//third_party/rust_crates/vendor/fancy-regex-0.8.0/src/lib.rs"
-  output_name = "fancy_regex-b9fd63eddc01ef4b"
-  edition = "2018"
-  disable_clippy = true
-  enforce_source_listing = false
-  configs -= [ "//build/config/rust:2018_idioms" ]
-
-  deps = []
-  deps += [ ":bit-set-v0_5_3" ]
-  deps += [ ":regex-v1_7_3" ]
-
-  rustenv = []
-
-  rustflags = [
-    "--cap-lints=allow",
-    "-Cmetadata=b9fd63eddc01ef4b",
-    "-Cextra-filename=-b9fd63eddc01ef4b",
-    "--cfg=feature=\"default\"",
-    "--cfg=feature=\"perf\"",
-    "--cfg=feature=\"unicode\"",
-  ]
-
-  visibility = []
-  visibility += [ ":*" ]
-
-  applicable_licenses = [ ":fancy-regex-v0_8_0.license" ]
 }
 
 license("fastrand-v1_9_0.license") {

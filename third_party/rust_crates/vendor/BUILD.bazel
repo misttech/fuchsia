@@ -835,18 +835,6 @@ alias(
 )
 
 alias(
-    name = "fancy-regex-0.8.0",
-    actual = "//third_party/rust_crates/vendor/fancy-regex-0.8.0:fancy_regex",
-    tags = ["manual"],
-)
-
-alias(
-    name = "fancy-regex",
-    actual = "//third_party/rust_crates/vendor/fancy-regex-0.8.0:fancy_regex",
-    tags = ["manual"],
-)
-
-alias(
     name = "flagset-0.4.7",
     actual = "//third_party/rust_crates/vendor/flagset-0.4.7:flagset",
     tags = ["manual"],

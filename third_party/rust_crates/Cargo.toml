@@ -109,10 +109,6 @@ elliptic-curve = { version = "0.12.3", features = [ "ecdh" ] }
 enumn = "0.1.14"
 eui48 = { version = "1.1.0", default-features = false, features = ["serde", "disp_hexstring"] }
 event-listener = "5.4.1"
-# TODO(https://fxbug.dev/112722): We're importing this explicitly for now, but eventually
-# it will be imported by valico and the dt-schema tool.
-# Remove this line when valico uses fancy-regex.
-fancy-regex = "0.8"
 fatfs = "0.3.6"
 flate2 = { version = "1.1.5", default-features = false, features = ["rust_backend"] }
 flyweights = { version = "0.1.5", features = ["json_schema", "serde"] }
@@ -604,12 +600,6 @@ rustflags = []
 
 [gn.package.euclid."0.22.11"]
 license_files = ["LICENSE-APACHE"]
-
-[gn.package.fancy-regex."0.8.0"]
-# TODO(https://fxbug.dev/112722): We're importing this explicitly for now, but eventually
-# it will be imported by valico and the dt-schema tool.
-# Remove this line when valico uses fancy-regex.
-visibility = [":*"]
 
 [gn.package.fuchsia-cprng."0.1.1"]
 existing_gn_target = "//src/lib/fuchsia-cprng"
