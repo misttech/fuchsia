@@ -7,14 +7,11 @@ use crate::resolved_driver::ResolvedDriver;
 use crate::serde_ext::CompositeInfoDef;
 use bind::interpreter::decode_bind_rules::DecodedRules;
 use bind::interpreter::match_bind::{DeviceProperties, PropertyKey};
-use regex::Regex;
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 use std::collections::HashMap;
-use zx::sys::zx_status_t;
 use zx::Status;
+use zx::sys::zx_status_t;
 use {fidl_fuchsia_driver_framework as fdf, fidl_fuchsia_driver_index as fdi};
-
-const NAME_REGEX: &'static str = r"^[a-zA-Z0-9\-_]*$";
 
 #[derive(Clone, Serialize, Deserialize)]
 pub struct CompositeParentRef {
@@ -111,6 +108,13 @@ pub struct CompositeNodeSpecManager {
     pub spec_list: HashMap<String, fdf::CompositeInfo>,
 }
 
+/// Checks if name follows `^[A-Za-z0-9-_]*$` regex pattern;
+fn is_name_valid(name: &str) -> bool {
+    name.as_bytes()
+        .iter()
+        .all(|&b| matches!(b, b'a'..=b'z' | b'A'..=b'Z' | b'0'..=b'9' | b'-' | b'_'))
+}
+
 impl CompositeNodeSpecManager {
     pub fn new() -> Self {
         CompositeNodeSpecManager { parent_refs: HashMap::new(), spec_list: HashMap::new() }
@@ -123,13 +127,9 @@ impl CompositeNodeSpecManager {
     ) -> Result<(), i32> {
         // Get and validate the name.
         let name = spec.name.clone().ok_or_else(|| Status::INVALID_ARGS.into_raw())?;
-        if let Ok(name_regex) = Regex::new(NAME_REGEX) {
-            if !name_regex.is_match(&name) {
-                log::error!("Invalid spec name. Name can only contain [A-Za-z0-9-_] characters");
-                return Err(Status::INVALID_ARGS.into_raw());
-            }
-        } else {
-            log::warn!("Regex failure. Unable to validate spec name");
+        if !is_name_valid(&name) {
+            log::error!("Invalid spec name. Name can only contain [A-Za-z0-9-_] characters");
+            return Err(Status::INVALID_ARGS.into_raw());
         }
 
         let parents = match (spec.parents.take(), spec.parents2.take()) {
@@ -1907,9 +1907,11 @@ mod tests {
             vec![],
             vec![],
         );
-        assert!(composite_node_spec_manager
-            .rebind("test_spec".to_string(), vec![&rebind_driver])
-            .is_ok());
+        assert!(
+            composite_node_spec_manager
+                .rebind("test_spec".to_string(), vec![&rebind_driver])
+                .is_ok()
+        );
         assert_eq!(
             fdf::CompositeDriverInfo {
                 composite_name: Some("rebind_composite".to_string()),
@@ -1975,9 +1977,11 @@ mod tests {
             vec![],
             vec![],
         );
-        assert!(composite_node_spec_manager
-            .rebind("test_spec".to_string(), vec![&rebind_driver])
-            .is_ok());
+        assert!(
+            composite_node_spec_manager
+                .rebind("test_spec".to_string(), vec![&rebind_driver])
+                .is_ok()
+        );
         assert_eq!(
             None,
             composite_node_spec_manager.spec_list.get("test_spec").unwrap().matched_driver
