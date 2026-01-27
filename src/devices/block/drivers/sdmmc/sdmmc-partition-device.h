@@ -6,6 +6,7 @@
 #define SRC_DEVICES_BLOCK_DRIVERS_SDMMC_SDMMC_PARTITION_DEVICE_H_
 
 #include <fidl/fuchsia.hardware.block.volume/cpp/wire.h>
+#include <fidl/fuchsia.hardware.inlineencryption/cpp/wire.h>
 #include <fuchsia/hardware/block/driver/cpp/banjo.h>
 #include <fuchsia/hardware/block/partition/cpp/banjo.h>
 #include <lib/driver/compat/cpp/compat.h>
@@ -73,6 +74,7 @@ class PartitionDevice : public ddk::BlockImplProtocol<PartitionDevice>,
   fidl::WireSyncClient<fuchsia_driver_framework::NodeController> controller_;
   fidl::WireSyncClient<fuchsia_driver_framework::Node> node_;
   fidl::ServerBindingGroup<fuchsia_hardware_block_volume::Node> node_bindings_;
+  fidl::ServerBindingGroup<fuchsia_hardware_inlineencryption::Device> ice_bindings_;
 
   fbl::Mutex lock_;
   std::optional<block_server::BlockServer> block_server_ TA_GUARDED(lock_);

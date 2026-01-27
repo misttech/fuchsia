@@ -6,6 +6,7 @@ library fuchsia.hardware.block.volume;
 
 using fuchsia.driver.framework;
 using fuchsia.storage.block;
+using fuchsia.hardware.inlineencryption;
 
 closed protocol Node {
     /// Adds a child node to this node.
@@ -19,5 +20,6 @@ closed protocol Node {
 
 service Service {
     volume client_end:fuchsia.storage.block.Block;
+    inline_encryption client_end:fuchsia.hardware.inlineencryption.Device;
     node client_end:Node;
 };

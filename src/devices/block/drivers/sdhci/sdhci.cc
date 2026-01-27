@@ -1561,7 +1561,18 @@ zx::result<> Sdhci::Start() {
   fuchsia_hardware_sdmmc::SdmmcService::InstanceHandler handler({
       .sdmmc = bindings_.CreateHandler(this, fdf::Dispatcher::GetCurrent()->get(),
                                        fidl::kIgnoreBindingClosure),
+      .inline_crypto =
+          [this](fdf::ServerEnd<fuchsia_hardware_sdhci::Service::InlineCrypto::ProtocolType>
+                     server_end) {
+            zx::result result = incoming()->Connect<fuchsia_hardware_sdhci::Service::InlineCrypto>(
+                std::move(server_end));
+            if (result.is_error()) {
+              FDF_LOG(WARNING, "Failed to connect to inline encryption service: %s",
+                      result.status_string());
+            }
+          },
   });
+
   if (zx::result<> result =
           outgoing()->AddService<fuchsia_hardware_sdmmc::SdmmcService>(std::move(handler));
       result.is_error()) {

@@ -42,6 +42,7 @@ source_set("sdmmc-driver-source") {
     "sdmmc-rpmb-device.h",
   ]
   deps = [
+    "//sdk/fidl/fuchsia.hardware.inlineencryption:fuchsia.hardware.inlineencryption_cpp",
     "//sdk/fidl/fuchsia.io:fuchsia.io_cpp",
     "//sdk/fidl/fuchsia.power.system:fuchsia.power.system_cpp",
     "//sdk/fidl/fuchsia.storage.block:fuchsia.storage.block_cpp",

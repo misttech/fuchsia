@@ -45,6 +45,9 @@ closed protocol Device {
     }) error zx.Status;
 };
 
-service Service {
-    device client_end:Device;
+/// A driver transport variant of the `Device` protocol.
+@discoverable
+@transport("Driver")
+closed protocol DriverDevice {
+    compose Device;
 };

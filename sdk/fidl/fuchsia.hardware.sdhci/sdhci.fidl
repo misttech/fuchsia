@@ -4,6 +4,7 @@
 @available(added=HEAD)
 library fuchsia.hardware.sdhci;
 
+using fuchsia.hardware.inlineencryption;
 using fuchsia.hardware.sdmmc;
 using zx;
 
@@ -120,4 +121,5 @@ closed protocol Device {
 
 service Service {
     device client_end:Device;
+    inline_crypto client_end:fuchsia.hardware.inlineencryption.DriverDevice;
 };

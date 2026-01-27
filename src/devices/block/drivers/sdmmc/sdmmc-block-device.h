@@ -5,6 +5,7 @@
 #ifndef SRC_DEVICES_BLOCK_DRIVERS_SDMMC_SDMMC_BLOCK_DEVICE_H_
 #define SRC_DEVICES_BLOCK_DRIVERS_SDMMC_SDMMC_BLOCK_DEVICE_H_
 
+#include <fidl/fuchsia.hardware.inlineencryption/cpp/wire.h>
 #include <fidl/fuchsia.hardware.sdmmc/cpp/wire.h>
 #include <fidl/fuchsia.power.broker/cpp/fidl.h>
 #include <fuchsia/hardware/block/driver/cpp/banjo.h>
@@ -103,7 +104,8 @@ struct ReadWriteMetadata {
   SdmmcBlockDevice* const block_device;
 };
 
-class SdmmcBlockDevice : public fidl::Server<fuchsia_power_broker::ElementRunner> {
+class SdmmcBlockDevice : public fidl::Server<fuchsia_power_broker::ElementRunner>,
+                         public fidl::WireServer<fuchsia_hardware_inlineencryption::Device> {
  public:
   static constexpr char kHardwarePowerElementName[] = "sdmmc-hardware";
 
@@ -165,6 +167,7 @@ class SdmmcBlockDevice : public fidl::Server<fuchsia_power_broker::ElementRunner
   std::string_view block_name() const { return block_name_; }
   SdmmcRootDevice* parent() { return parent_; }
   void OnRequests(PartitionDevice& partition, cpp20::span<block_server::Request> requests);
+  bool SupportsInlineEncryption() const { return inline_encryption_client_.is_valid(); }
 
   // Visible for testing.
   void SetBlockInfo(uint32_t block_size, uint64_t block_count);
@@ -177,7 +180,13 @@ class SdmmcBlockDevice : public fidl::Server<fuchsia_power_broker::ElementRunner
 
   fdf::Logger& logger() const;
 
+  // fuchsia.hardware.inlineencryption.Device
+  void ProgramKey(ProgramKeyRequestView request, ProgramKeyCompleter::Sync& completer) override;
+  void DeriveRawSecret(DeriveRawSecretRequestView request,
+                       DeriveRawSecretCompleter::Sync& completer) override;
+
  private:
+  static constexpr fdf_arena_tag_t kArenaTag = 'SBLK';
   // An arbitrary limit to prevent RPMB clients from flooding us with requests.
   static constexpr size_t kMaxOutstandingRpmbRequests = 16;
 
@@ -347,6 +356,7 @@ class SdmmcBlockDevice : public fidl::Server<fuchsia_power_broker::ElementRunner
   bool vccq_off_with_controller_off_ = false;
 
   fuchsia_hardware_sdmmc::SdmmcMetadata metadata_;
+  fdf::WireSyncClient<fuchsia_hardware_inlineencryption::DriverDevice> inline_encryption_client_;
 };
 
 }  // namespace sdmmc

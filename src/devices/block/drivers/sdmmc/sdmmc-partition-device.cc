@@ -110,22 +110,28 @@ zx_status_t PartitionDevice::AddDevice() {
     return result.status();
   }
 
-  if (zx::result result =
-          sdmmc_parent_->parent()
-              ->driver_outgoing()
-              ->AddService<fuchsia_hardware_block_volume::Service>(
-                  fuchsia_hardware_block_volume::Service::InstanceHandler({
-                      .volume =
-                          [this](fidl::ServerEnd<fuchsia_storage_block::Block> server_end) {
-                            fbl::AutoLock lock(&lock_);
-                            if (block_server_)
-                              block_server_->Serve(std::move(server_end));
-                          },
-                      .node = node_bindings_.CreateHandler(
-                          this, fdf::Dispatcher::GetCurrent()->async_dispatcher(),
-                          fidl::kIgnoreBindingClosure),
-                  }),
-                  partition_name_);
+  auto handlers = fuchsia_hardware_block_volume::Service::InstanceHandler({
+      .volume =
+          [this](fidl::ServerEnd<fuchsia_storage_block::Block> server_end) {
+            fbl::AutoLock lock(&lock_);
+            if (block_server_)
+              block_server_->Serve(std::move(server_end));
+          },
+      .node = node_bindings_.CreateHandler(this, fdf::Dispatcher::GetCurrent()->async_dispatcher(),
+                                           fidl::kIgnoreBindingClosure),
+  });
+
+  if (sdmmc_parent_->SupportsInlineEncryption()) {
+    zx::result result = handlers.add_inline_encryption(ice_bindings_.CreateHandler(
+        sdmmc_parent_, fdf::Dispatcher::GetCurrent()->async_dispatcher(),
+        fidl::kIgnoreBindingClosure));
+    ZX_ASSERT(result.is_ok());
+  }
+
+  if (zx::result result = sdmmc_parent_->parent()
+                              ->driver_outgoing()
+                              ->AddService<fuchsia_hardware_block_volume::Service>(
+                                  std::move(handlers), partition_name_);
       result.is_error()) {
     FDF_LOGL(ERROR, logger(), "Failed to add service instance for '%s': %s", partition_name_,
              result.status_string());

@@ -174,6 +174,12 @@ zx_status_t SdmmcBlockDevice::AddDevice() {
   const auto args =
       fuchsia_driver_framework::wire::NodeAddArgs::Builder(arena).name(arena, block_name_).Build();
 
+  auto inline_crypto_client =
+      parent_->driver_incoming()->Connect<fuchsia_hardware_sdmmc::SdmmcService::InlineCrypto>();
+  if (inline_crypto_client.is_ok()) {
+    inline_encryption_client_ = fdf::WireSyncClient(std::move(*inline_crypto_client));
+  }
+
   auto result = parent_->root_node()->AddChild(args, std::move(controller_server_end),
                                                std::move(node_server_end));
   if (!result.ok()) {
@@ -1531,6 +1537,43 @@ void SdmmcBlockDevice::OnRequests(PartitionDevice& partition,
 
   unused_result = read_packer.Flush();
   unused_result = write_packer.Flush();
+}
+
+void SdmmcBlockDevice::ProgramKey(ProgramKeyRequestView request,
+                                  ProgramKeyCompleter::Sync& completer) {
+  fdf::Arena arena(kArenaTag);
+  auto result = inline_encryption_client_.buffer(arena)->ProgramKey(request->wrapped_key,
+                                                                    request->data_unit_size);
+  if (!result.ok()) {
+    FDF_LOGL(ERROR, logger(), "Transport error when sending ProgramKey: %s",
+             result.status_string());
+    completer.ReplyError(result.status());
+    return;
+  }
+  if (result->is_error()) {
+    FDF_LOGL(ERROR, logger(), "ProgramKey failed: %s", zx_status_get_string(result->error_value()));
+    completer.ReplyError(result->error_value());
+    return;
+  }
+  completer.ReplySuccess(result->value()->slot);
+}
+void SdmmcBlockDevice::DeriveRawSecret(DeriveRawSecretRequestView request,
+                                       DeriveRawSecretCompleter::Sync& completer) {
+  fdf::Arena arena(kArenaTag);
+  auto result = inline_encryption_client_.buffer(arena)->DeriveRawSecret(request->wrapped_key);
+  if (!result.ok()) {
+    FDF_LOGL(ERROR, logger(), "Transport error when sending DeriveRawSecret: %s",
+             result.status_string());
+    completer.ReplyError(result.status());
+    return;
+  }
+  if (result->is_error()) {
+    FDF_LOGL(ERROR, logger(), "DeriveRawSecret failed: %s",
+             zx_status_get_string(result->error_value()));
+    completer.ReplyError(result->error_value());
+    return;
+  }
+  completer.ReplySuccess(result->value()->secret);
 }
 
 }  // namespace sdmmc

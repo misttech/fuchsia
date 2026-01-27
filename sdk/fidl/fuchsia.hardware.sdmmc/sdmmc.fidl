@@ -8,6 +8,7 @@
 library fuchsia.hardware.sdmmc;
 
 using zx;
+using fuchsia.hardware.inlineencryption;
 
 /// The max value of client_id fields below. There is no known need for more than eight clients at
 /// the moment, however if that changes later this value will be increased.
@@ -220,4 +221,5 @@ closed protocol Sdmmc {
 
 service SdmmcService {
     sdmmc client_end:Sdmmc;
+    inline_crypto client_end:fuchsia.hardware.inlineencryption.DriverDevice;
 };

@@ -10,4 +10,5 @@ fidl("fuchsia.hardware.inlineencryption") {
   stable = false
   sdk_area = "Storage"
   public_deps = [ "//zircon/vdso/zx" ]
+  contains_drivers = true
 }
