@@ -51,6 +51,31 @@ pub enum ShutdownState {
     Destroyed,
 }
 
+impl fmt::Display for ShutdownState {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(
+            f,
+            "{}",
+            match self {
+                ShutdownState::WaitingOnDriverBind => "waiting for driver to finish binding",
+                ShutdownState::Running => "in normal running state",
+                ShutdownState::Prestop => "in running state, but flagged for removal soon.",
+                ShutdownState::WaitingOnChildren => "waiting for children to complete shutdown",
+                // This message is load-bearing server-side as it's used to identify the hanging driver.
+                // Please notify //src/developer/forensics/OWNERS upon changing.
+                ShutdownState::WaitingOnDriver => {
+                    "waiting for driver's Stop() function and destructor finish running"
+                }
+                ShutdownState::WaitingOnDriverComponent =>
+                    "waiting for the driver component to stop",
+                ShutdownState::Stopped => "node component instance stop is completed",
+                ShutdownState::WaitingOnDestroy => "waiting for the component to be destroyed.",
+                ShutdownState::Destroyed => "node shutdown is completed",
+            },
+        )
+    }
+}
+
 #[derive(Clone, Debug)]
 pub enum OfferTransport {
     DriverTransport,

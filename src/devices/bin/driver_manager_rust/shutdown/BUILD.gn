@@ -23,6 +23,7 @@ rustc_library("driver_manager_shutdown") {
     "//sdk/fidl/fuchsia.process.lifecycle:fuchsia.process.lifecycle_rust",
     "//sdk/fidl/fuchsia.system.state:fuchsia.system.state_rust",
     "//sdk/rust/zx",
+    "//src/devices/bin/driver_manager_rust/driver_host:driver_manager_driver_host",
     "//src/devices/bin/driver_manager_rust/types:driver_manager_types",
     "//src/devices/lib/mexec_boot",
     "//src/lib/fidl/rust/fidl",

@@ -5,6 +5,7 @@
 use crate::node::Node;
 use crate::types::{DriverState, NodeState, NodeTypeVariant};
 use async_trait::async_trait;
+use driver_manager_driver_host::DriverHost;
 use driver_manager_shutdown::{
     NodeInfo, NodeShutdownBridge, NodeShutdownCoordinator, ShutdownIntent, ShutdownNode,
 };
@@ -59,6 +60,7 @@ impl NodeShutdownBridge for NodeBridge {
                 driver_url,
                 collection: node.collection(),
                 state: shutdown_state,
+                host: node.driver_host(),
             }
         } else {
             // Should not happen
@@ -67,6 +69,7 @@ impl NodeShutdownBridge for NodeBridge {
                 driver_url: "".to_string(),
                 collection: Collection::None,
                 state: ShutdownState::Stopped,
+                host: None,
             }
         }
     }
@@ -119,6 +122,10 @@ impl NodeShutdownBridge for NodeBridge {
         } else {
             false
         }
+    }
+    fn get_driver_host(&self) -> Option<Rc<dyn DriverHost>> {
+        let node = self.0.upgrade()?;
+        node.driver_host()
     }
     fn collection(&self) -> Collection {
         if let Some(node) = self.0.upgrade() { node.collection() } else { Collection::None }

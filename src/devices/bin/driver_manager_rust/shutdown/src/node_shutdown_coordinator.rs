@@ -5,6 +5,7 @@
 use crate::node_removal_tracker::{NodeId, NodeInfo, NodeRemovalTracker};
 use crate::shutdown_node::ShutdownNode;
 use async_trait::async_trait;
+use driver_manager_driver_host::DriverHost;
 use driver_manager_types::{Collection, ShutdownState};
 use fuchsia_async as fasync;
 use log::debug;
@@ -44,6 +45,7 @@ pub trait NodeShutdownBridge {
     fn get_weak_node(&self) -> Weak<dyn ShutdownNode>;
     fn has_driver_component_controller(&self) -> bool;
     fn maybe_destroy_driver_component(&self, intent: ShutdownIntent) -> bool;
+    fn get_driver_host(&self) -> Option<Rc<dyn DriverHost>>;
 }
 
 pub struct NodeShutdownCoordinator {

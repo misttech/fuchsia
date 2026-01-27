@@ -186,6 +186,8 @@ pub trait DriverHost {
         thread_koid: zx::Koid,
     ) -> Result<fdh::DriverCrashInfo, zx::Status>;
 
+    fn trigger_stack_trace(&self);
+
     fn name_for_colocation(&self) -> &str;
 }
 
@@ -344,6 +346,10 @@ impl DriverHost for DriverHostComponent {
 
     fn name_for_colocation(&self) -> &str {
         &self.name_for_colocation
+    }
+
+    fn trigger_stack_trace(&self) {
+        let _ = self.driver_host.trigger_stack_trace();
     }
 }
 

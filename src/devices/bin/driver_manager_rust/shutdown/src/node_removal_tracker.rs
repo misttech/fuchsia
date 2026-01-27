@@ -2,6 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+use driver_manager_driver_host::DriverHost;
 use driver_manager_types::{Collection, ShutdownState};
 use fuchsia_async as fasync;
 use futures::channel::oneshot;
@@ -18,6 +19,7 @@ pub struct NodeInfo {
     pub driver_url: String,
     pub collection: Collection,
     pub state: ShutdownState,
+    pub host: Option<Rc<dyn DriverHost>>,
 }
 
 const REMOVAL_TIMEOUT_DURATION: zx::MonotonicDuration = zx::MonotonicDuration::from_seconds(15);
@@ -128,7 +130,12 @@ impl NodeRemovalTracker {
         );
         for node in self.nodes.values() {
             if node.state != ShutdownState::Destroyed && node.state != ShutdownState::Prestop {
-                warn!("  '{}' ('{}'): state {:?}", node.name, node.driver_url, node.state);
+                if node.state == ShutdownState::WaitingOnDriver
+                    && let Some(host) = &node.host
+                {
+                    host.trigger_stack_trace();
+                }
+                warn!("  '{}' ('{}'): {}", node.name, node.driver_url, node.state);
             }
         }
         if self.timeout_count >= 3
