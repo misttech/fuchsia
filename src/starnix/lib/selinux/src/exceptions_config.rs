@@ -159,7 +159,7 @@ fn bug_ref_to_id(bug_ref: &str) -> Result<NonZeroU64, anyhow::Error> {
 /// Returns the `KernelClass` corresponding to the supplied `name`, if any.
 /// `None` is returned if no such kernel object class exists in the Starnix implementation.
 fn object_class_by_name(name: &str) -> Option<KernelClass> {
-    KernelClass::all_variants().into_iter().find(|class| class.name() == name)
+    KernelClass::all_variants().find(|class| class.name() == name)
 }
 
 #[cfg(test)]

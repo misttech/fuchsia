@@ -642,17 +642,8 @@ impl Parse for TypeSet {
 /// Locates a class named `name` among `classes`. Returns the first such class found, though policy
 /// validation should ensure that only one such class exists.
 pub(super) fn find_class_by_name<'a>(classes: &'a Classes, name: &str) -> Option<&'a Class> {
-    find_class_by_name_bytes(classes, name.as_bytes())
-}
-
-fn find_class_by_name_bytes<'a>(classes: &'a Classes, name_bytes: &[u8]) -> Option<&'a Class> {
-    for cls in classes.into_iter() {
-        if cls.name_bytes() == name_bytes {
-            return Some(cls);
-        }
-    }
-
-    None
+    let name_bytes = name.as_bytes();
+    classes.iter().find(|class| class.name_bytes() == name_bytes)
 }
 
 /// Locates a symbol named `name_bytes` among `common_symbols`. Returns
@@ -662,13 +653,7 @@ pub(super) fn find_common_symbol_by_name_bytes<'a>(
     common_symbols: &'a CommonSymbols,
     name_bytes: &[u8],
 ) -> Option<&'a CommonSymbol> {
-    for common_symbol in common_symbols.into_iter() {
-        if common_symbol.name_bytes() == name_bytes {
-            return Some(common_symbol);
-        }
-    }
-
-    None
+    common_symbols.iter().find(|common_symbol| common_symbol.name_bytes() == name_bytes)
 }
 
 impl Validate for [Class] {
