@@ -39,4 +39,12 @@ trace_files = [
   "testing/traces/output_onocr.json",
   "testing/traces/output_onlret.json",
   "testing/traces/output_xtabs.json",
+  "testing/traces/flush_sigint.json",
+  "testing/traces/flush_sigint_after_newline.json",
+  "testing/traces/flush_sigint_after_newline_separate_writes.json",
+  "testing/traces/noflsh_sigquit.json",
+  "testing/traces/flush_sigquit.json",
+  "testing/traces/noflsh_sigsusp.json",
+  "testing/traces/flush_sigsusp.json",
+  "testing/traces/noflsh_echoctl_mixed.json",
 ]

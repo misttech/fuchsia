@@ -42,6 +42,14 @@ mod tests {
     #[test_case("output_onocr", include_str!("traces/output_onocr.json"); "output_onocr")]
     #[test_case("output_onlret", include_str!("traces/output_onlret.json"); "output_onlret")]
     #[test_case("output_xtabs", include_str!("traces/output_xtabs.json"); "output_xtabs")]
+    #[test_case("flush_sigint", include_str!("traces/flush_sigint.json"); "flush_sigint")]
+    #[test_case("flush_sigint_after_newline", include_str!("traces/flush_sigint_after_newline.json"); "flush_sigint_after_newline")]
+    #[test_case("flush_sigint_after_newline_separate_writes", include_str!("traces/flush_sigint_after_newline_separate_writes.json"); "flush_sigint_after_newline_separate_writes")]
+    #[test_case("noflsh_sigquit", include_str!("traces/noflsh_sigquit.json"); "noflsh_sigquit")]
+    #[test_case("flush_sigquit", include_str!("traces/flush_sigquit.json"); "flush_sigquit")]
+    #[test_case("noflsh_sigsusp", include_str!("traces/noflsh_sigsusp.json"); "noflsh_sigsusp")]
+    #[test_case("flush_sigsusp", include_str!("traces/flush_sigsusp.json"); "flush_sigsusp")]
+    #[test_case("noflsh_echoctl_mixed", include_str!("traces/noflsh_echoctl_mixed.json"); "noflsh_echoctl_mixed")]
     fn test_replay_trace(name: &str, json_data: &str) {
         crate::testing::tests::test_replay_trace(name, json_data);
     }

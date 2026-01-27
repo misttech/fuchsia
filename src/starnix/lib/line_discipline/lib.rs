@@ -8,8 +8,9 @@ use starnix_uapi::signals::{SIGINT, SIGQUIT, SIGSTOP, Signal};
 use starnix_uapi::vfs::FdEvents;
 use starnix_uapi::{
     ECHO, ECHOCTL, ECHOE, ECHOK, ECHOKE, ECHONL, ECHOPRT, ICANON, ICRNL, IEXTEN, IGNCR, INLCR,
-    ISIG, IUTF8, IXANY, IXON, OCRNL, ONLCR, ONLRET, ONOCR, OPOST, TABDLY, VEOF, VEOL, VEOL2,
-    VERASE, VINTR, VKILL, VQUIT, VSTART, VSTOP, VSUSP, VWERASE, XTABS, cc_t, error, tcflag_t, uapi,
+    ISIG, IUTF8, IXANY, IXON, NOFLSH, OCRNL, ONLCR, ONLRET, ONOCR, OPOST, TABDLY, VEOF, VEOL,
+    VEOL2, VERASE, VINTR, VKILL, VQUIT, VSTART, VSTOP, VSUSP, VWERASE, XTABS, cc_t, error,
+    tcflag_t, uapi,
 };
 use std::collections::VecDeque;
 
@@ -122,11 +123,6 @@ impl PendingSignals {
     /// Append all pending signals in `other` to `self`.
     fn append(&mut self, mut other: Self) {
         self.signals.append(&mut other.signals);
-    }
-
-    /// Returns true if there are no pending signals.
-    fn is_empty(&self) -> bool {
-        self.signals.is_empty()
     }
 
     /// Returns a slice of the pending signals.
@@ -372,8 +368,16 @@ impl LineDiscipline {
             let size = compute_next_character_size(buffer, &self.termios);
             let mut character_bytes = buffer[..size].to_vec();
             // It is guaranteed that character_bytes has at least one element.
+            let mut signal_generated = false;
             if let Some(signal) = self.handle_signals(character_bytes[0]) {
                 signals.add(signal);
+                signal_generated = true;
+                if !self.termios.has_local_flags(NOFLSH) {
+                    queue.flush();
+                    if let Some(ref mut output_queue) = self.output_queue {
+                        output_queue.flush();
+                    }
+                }
             }
 
             // Handle IXON/IXOFF (software flow control)
@@ -484,7 +488,7 @@ impl LineDiscipline {
                     );
                 }
                 queue.line_buffer.truncate(queue.line_buffer.len() - erase_span.bytes);
-            } else if signals.is_empty() {
+            } else if !signal_generated {
                 queue.line_buffer.extend_from_slice(&character_bytes);
             }
 
@@ -752,6 +756,14 @@ impl Queue {
     /// Flushed the line buffer to the read queue.
     fn flush_line_buffer(&mut self) {
         self.read_queue.push_back(std::mem::take(&mut self.line_buffer));
+    }
+
+    /// Flush the content of the queue.
+    fn flush(&mut self) {
+        self.read_queue.clear();
+        self.line_buffer.clear();
+        self.wait_buffers.clear();
+        self.total_wait_buffer_length = 0;
     }
 
     /// Called when the queue is moved from canonical mode, to non canonical mode.
