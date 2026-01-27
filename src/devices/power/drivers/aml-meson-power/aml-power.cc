@@ -215,7 +215,11 @@ zx_status_t AmlPower::GetTargetIndex(const fidl::WireSyncClient<fuchsia_hardware
     return ZX_ERR_NOT_SUPPORTED;
   }
 
-  *target_index = (u_volts - min_voltage_uv) / params.value()->step_size_uv;
+  if (params.value()->step_size_uv == 0) {
+    *target_index = 0;
+  } else {
+    *target_index = (u_volts - min_voltage_uv) / params.value()->step_size_uv;
+  }
   ZX_ASSERT(*target_index <= params.value()->num_steps);
 
   return ZX_OK;
