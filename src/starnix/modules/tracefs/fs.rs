@@ -154,7 +154,7 @@ struct TraceBytesFile {
 impl TraceBytesFile {
     #[track_caller]
     fn new_node() -> impl FsNodeOps {
-        SimpleFileNode::new(move |_, _| Ok(BytesFile::new(Self::default())))
+        SimpleFileNode::new(move || Ok(BytesFile::new(Self::default())))
     }
 }
 
@@ -176,7 +176,7 @@ struct TraceRawFile {
 
 impl TraceRawFile {
     pub fn new_node(queue: Arc<TraceEventQueue>) -> impl FsNodeOps {
-        SimpleFileNode::new(move |_, _| Ok(Self { queue: queue.clone() }))
+        SimpleFileNode::new(move || Ok(Self { queue: queue.clone() }))
     }
 }
 
@@ -214,7 +214,7 @@ struct EmptyFile {}
 impl EmptyFile {
     #[track_caller]
     fn new_node() -> impl FsNodeOps {
-        SimpleFileNode::new(move |_, _| Ok(BytesFile::new(Self::default())))
+        SimpleFileNode::new(move || Ok(BytesFile::new(Self::default())))
     }
 }
 

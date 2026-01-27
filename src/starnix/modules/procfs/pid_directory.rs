@@ -9,7 +9,7 @@ use starnix_core::mm::{
 };
 use starnix_core::security;
 use starnix_core::task::{
-    CurrentTask, Task, TaskPersistentInfo, TaskStateCode, ThreadGroup, ThreadGroupKey,
+    CurrentTask, Task, TaskPersistentInfo, TaskStateCode, ThreadGroup, ThreadGroupKey, get_mm_weak,
     path_from_root,
 };
 use starnix_core::vfs::buffers::{InputBuffer, OutputBuffer};
@@ -33,10 +33,7 @@ use starnix_sync::{FileOpsCore, Locked};
 use starnix_task_command::TaskCommand;
 use starnix_types::ownership::{TempRef, WeakRef};
 use starnix_types::time::duration_to_scheduler_clock;
-use starnix_uapi::auth::{
-    CAP_SYS_NICE, CAP_SYS_RESOURCE, PTRACE_MODE_ATTACH_REALCREDS, PTRACE_MODE_NOAUDIT,
-    PTRACE_MODE_READ_FSCREDS, PtraceAccessMode,
-};
+use starnix_uapi::auth::{CAP_SYS_NICE, CAP_SYS_RESOURCE};
 use starnix_uapi::device_type::DeviceType;
 use starnix_uapi::errors::Errno;
 use starnix_uapi::file_mode::{Access, FileMode, mode};
@@ -195,11 +192,7 @@ impl FsNodeOps for TaskDirectoryNode {
             b"fdinfo" => Box::new(FdInfoDirectory::new(task_weak)),
             b"io" => Box::new(IoFile::new_node()),
             b"limits" => Box::new(LimitsFile::new_node(task_weak)),
-            b"maps" => Box::new(PtraceCheckedNode::new_node(
-                task_weak,
-                PTRACE_MODE_READ_FSCREDS,
-                |_, _, task| Ok(ProcMapsFile::new(task)),
-            )),
+            b"maps" => Box::new(ProcMapsFile::new_node(task_weak)),
             b"mem" => Box::new(MemFile::new_node(task_weak)),
             b"root" => Box::new(CallbackSymlinkNode::new({
                 move || Ok(SymlinkTarget::Node(Task::from_weak(&task_weak)?.fs().root()))
@@ -208,11 +201,7 @@ impl FsNodeOps for TaskDirectoryNode {
             b"schedstat" => {
                 Box::new(StubEmptyFile::new_node(bug_ref!("https://fxbug.dev/322894256")))
             }
-            b"smaps" => Box::new(PtraceCheckedNode::new_node(
-                task_weak,
-                PTRACE_MODE_READ_FSCREDS,
-                |_, _, task| Ok(ProcSmapsFile::new(task)),
-            )),
+            b"smaps" => Box::new(ProcSmapsFile::new_node(task_weak)),
             b"stat" => Box::new(StatFile::new_node(task_weak, self.scope)),
             b"statm" => Box::new(StatmFile::new_node(task_weak)),
             b"status" => Box::new(StatusFile::new_node(task_weak)),
@@ -260,11 +249,9 @@ impl FsNodeOps for TaskDirectoryNode {
             b"timerslack_ns" => Box::new(TimerslackNsFile::new_node(task_weak)),
             b"wchan" => Box::new(BytesFile::new_node(b"0".to_vec())),
             b"clear_refs" => Box::new(ClearRefsFile::new_node(task_weak)),
-            b"pagemap" => Box::new(PtraceCheckedNode::new_node(
-                task_weak,
-                PTRACE_MODE_READ_FSCREDS,
-                |_, _, _| Ok(StubEmptyFile::new(bug_ref!("https://fxbug.dev/452096300"))),
-            )),
+            b"pagemap" => {
+                Box::new(StubEmptyFile::new_node(bug_ref!("https://fxbug.dev/452096300")))
+            }
             b"task" => {
                 let task = self.task_weak.upgrade().ok_or_else(|| errno!(ESRCH))?;
                 Box::new(TaskListDirectory { thread_group: Arc::downgrade(&task.thread_group()) })
@@ -410,7 +397,7 @@ struct AttrNode {
 
 impl AttrNode {
     fn new(task: WeakRef<Task>, attr: security::ProcAttr) -> impl FsNodeOps {
-        SimpleFileNode::new(move |_, _| Ok(AttrNode { attr, task: task.clone() }))
+        SimpleFileNode::new(move || Ok(AttrNode { attr, task: task.clone() }))
     }
 }
 
@@ -771,34 +758,6 @@ impl DynamicFileSource for CmdlineFile {
     }
 }
 
-struct PtraceCheckedNode {}
-
-impl PtraceCheckedNode {
-    pub fn new_node<F, O>(
-        task: WeakRef<Task>,
-        mode: PtraceAccessMode,
-        create_ops: F,
-    ) -> impl FsNodeOps
-    where
-        F: Fn(&mut Locked<FileOpsCore>, &CurrentTask, TempRef<'_, Task>) -> Result<O, Errno>
-            + Send
-            + Sync
-            + 'static,
-        O: FileOps,
-    {
-        SimpleFileNode::new(move |locked, current_task: &CurrentTask| {
-            let task = Task::from_weak(&task)?;
-            // proc-pid nodes for kthreads do not require ptrace access checks.
-            if task.mm().is_ok() {
-                current_task
-                    .check_ptrace_access_mode(locked, mode, &task)
-                    .map_err(|_| errno!(EACCES))?;
-            }
-            create_ops(locked, current_task, task)
-        })
-    }
-}
-
 /// `EnvironFile` implements `proc/<pid>/environ` file.
 #[derive(Clone)]
 pub struct EnvironFile {
@@ -806,9 +765,7 @@ pub struct EnvironFile {
 }
 impl EnvironFile {
     pub fn new_node(task: WeakRef<Task>) -> impl FsNodeOps {
-        PtraceCheckedNode::new_node(task, PTRACE_MODE_READ_FSCREDS, |_, _, task| {
-            Ok(DynamicFile::new(Self { task: task.into() }))
-        })
+        DynamicFile::new_node(Self { task })
     }
 }
 impl DynamicFileSource for EnvironFile {
@@ -837,9 +794,7 @@ pub struct AuxvFile {
 }
 impl AuxvFile {
     pub fn new_node(task: WeakRef<Task>) -> impl FsNodeOps {
-        PtraceCheckedNode::new_node(task, PTRACE_MODE_READ_FSCREDS, |_, _, task| {
-            Ok(DynamicFile::new(Self { task: task.into() }))
-        })
+        DynamicFile::new_node(Self { task })
     }
 }
 impl DynamicFileSource for AuxvFile {
@@ -868,7 +823,7 @@ pub struct CommFile {
 }
 impl CommFile {
     pub fn new_node(task: WeakRef<Task>, info: TaskPersistentInfo) -> impl FsNodeOps {
-        SimpleFileNode::new(move |_, _| {
+        SimpleFileNode::new(move || {
             Ok(CommFile {
                 task: task.clone(),
                 dynamic_file: DynamicFile::new(CommFileSource(info.clone())),
@@ -997,9 +952,10 @@ pub struct MemFile {
 
 impl MemFile {
     pub fn new_node(task: WeakRef<Task>) -> impl FsNodeOps {
-        PtraceCheckedNode::new_node(task, PTRACE_MODE_ATTACH_REALCREDS, |_, _, task| {
-            let mm = task.mm().ok().as_ref().map(Arc::downgrade).unwrap_or_default();
-            Ok(Self { mm, task: task.into() })
+        SimpleFileNode::new(move || {
+            let task = task.clone();
+            let mm = get_mm_weak(&task).unwrap_or_default();
+            Ok(Self { mm, task })
         })
     }
 }
@@ -1089,22 +1045,7 @@ pub struct StatFile {
 
 impl StatFile {
     pub fn new_node(task: WeakRef<Task>, scope: TaskEntryScope) -> impl FsNodeOps {
-        SimpleFileNode::new(move |locked, current_task: &CurrentTask| {
-            let task = Task::from_weak(&task)?;
-            if task.mm().is_ok() {
-                if !current_task
-                    .check_ptrace_access_mode(
-                        locked,
-                        PTRACE_MODE_READ_FSCREDS | PTRACE_MODE_NOAUDIT,
-                        &task,
-                    )
-                    .is_ok()
-                {
-                    return Ok(DynamicFile::new(Self { task: WeakRef::default(), scope }));
-                }
-            }
-            Ok(DynamicFile::new(Self { task: task.into(), scope }))
-        })
+        DynamicFile::new_node(Self { task, scope })
     }
 }
 impl DynamicFileSource for StatFile {

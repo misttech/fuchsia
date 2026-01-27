@@ -125,7 +125,7 @@ struct MemoryPressureFile {
 
 impl MemoryPressureFile {
     pub fn new_node(psi_provider: Arc<PsiProvider>) -> impl FsNodeOps {
-        SimpleFileNode::new(move |_, _| {
+        SimpleFileNode::new(move || {
             Ok(Self {
                 source: DynamicFile::new(MemoryPressureFileSource {
                     psi_provider: psi_provider.clone(),
@@ -462,7 +462,7 @@ struct StubPressureFile {
 
 impl StubPressureFile {
     pub fn new_node(kind: StubPressureFileKind) -> impl FsNodeOps {
-        SimpleFileNode::new(move |_, _| {
+        SimpleFileNode::new(move || {
             Ok(Self { kind, source: DynamicFile::new(StubPressureFileSource) })
         })
     }

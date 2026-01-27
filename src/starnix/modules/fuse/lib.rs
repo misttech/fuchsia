@@ -499,7 +499,7 @@ struct AbortFile {
 
 impl AbortFile {
     fn new_node(connection: Arc<FuseConnection>) -> impl FsNodeOps {
-        SimpleFileNode::new(move |_, _| Ok(Self { connection: connection.clone() }))
+        SimpleFileNode::new(move || Ok(Self { connection: connection.clone() }))
     }
 }
 

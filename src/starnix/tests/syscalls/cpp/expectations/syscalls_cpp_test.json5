@@ -142,6 +142,13 @@
                 // TODO(https://fxbug.dev/365540067)
                 "ZombieProcTest.ZombieStatus",
                 "ZombieProcTest.ZombieMapsEmpty",
+
+                // TODO(https://fxbug.dev/467438310)
+                // TODO(https://fxbug.dev/438161520)
+                // TODO(https://fxbug.dev/475912243)
+                "ProcfsAccessTest/ProcfsAccessTest.AccessDeniedToNonOwner/maps",
+                "ProcfsAccessTest/ProcfsAccessTest.AccessDeniedToNonOwner/smaps",
+                "ProcfsAccessTest/ProcfsAccessTest.AccessDeniedToNonOwnerWithoutCapPtrace/*",
             ],
         },
     ],

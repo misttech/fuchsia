@@ -1610,6 +1610,11 @@ impl cmp::PartialEq for Task {
 
 impl cmp::Eq for Task {}
 
+/// Get a weak reference to the `MemoryManager` for a `WeakRef<Task>`, if it exists.
+pub fn get_mm_weak(task: &WeakRef<Task>) -> Option<Weak<MemoryManager>> {
+    task.upgrade().and_then(|t| t.mm().ok()).as_ref().map(Arc::downgrade)
+}
+
 #[cfg(test)]
 mod test {
     use super::*;

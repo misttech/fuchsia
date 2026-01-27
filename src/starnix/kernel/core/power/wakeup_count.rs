@@ -29,7 +29,7 @@ pub struct PowerWakeupCountFile {
 
 impl PowerWakeupCountFile {
     pub fn new_node(suspend_resume_manager: Arc<SuspendResumeManager>) -> impl FsNodeOps {
-        SimpleFileNode::new(move |_, _| {
+        SimpleFileNode::new(move || {
             Ok(Self {
                 suspend_resume_manager: suspend_resume_manager.clone(),
                 blocking_event: suspend_resume_manager.duplicate_lock_event(),

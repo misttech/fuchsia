@@ -89,7 +89,7 @@ impl ProcDirectory {
             "device-tree".into() => symlink_file(fs, DeviceTreeSymlink::new_node()),
             "diskstats".into() => stub_file(fs, bug_ref!("https://fxbug.dev/322893370")),
             "filesystems".into() => read_only_file(fs, FilesystemsFile::new_node(&kernel.expando.get::<FsRegistry>())),
-            "kallsyms".into() => read_only_file(fs, SimpleFileNode::new(|_,_| {
+            "kallsyms".into() => read_only_file(fs, SimpleFileNode::new(|| {
                 track_stub!(TODO("https://fxbug.dev/369067922"), "Provide a real /proc/kallsyms");
                 Ok(BytesFile::new(b"0000000000000000 T security_inode_copy_up".to_vec()))
             })),

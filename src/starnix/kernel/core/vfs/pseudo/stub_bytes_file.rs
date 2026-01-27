@@ -34,7 +34,7 @@ impl StubBytesFile {
             bug,
             location,
         });
-        SimpleFileNode::new(move |_, _| Ok(file.clone()))
+        SimpleFileNode::new(move || Ok(file.clone()))
     }
 }
 

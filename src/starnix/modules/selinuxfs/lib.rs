@@ -292,7 +292,7 @@ struct PolicyFile {
 
 impl PolicyFile {
     fn new_node(security_server: Arc<SecurityServer>) -> impl FsNodeOps {
-        SimpleFileNode::new(move |_, _| Ok(Self { security_server: security_server.clone() }))
+        SimpleFileNode::new(move || Ok(Self { security_server: security_server.clone() }))
     }
 }
 
@@ -1149,7 +1149,7 @@ impl<T: SeLinuxApiOps + Sync + Send + 'static> SeLinuxApi<T> {
     where
         F: Fn() -> Result<T, Errno> + Send + Sync + 'static,
     {
-        SimpleFileNode::new(move |_, _| create_ops().map(|ops| SeLinuxApi { ops }))
+        SimpleFileNode::new(move || create_ops().map(|ops| SeLinuxApi { ops }))
     }
 }
 

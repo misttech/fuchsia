@@ -28,7 +28,7 @@ pub struct EventsFile {
 
 impl EventsFile {
     pub fn new_node(cgroup: Weak<dyn CgroupOps>) -> impl FsNodeOps {
-        SimpleFileNode::new(move |_, _| Ok(Self { cgroup: cgroup.clone() }))
+        SimpleFileNode::new(move || Ok(Self { cgroup: cgroup.clone() }))
     }
 
     fn cgroup(&self) -> Result<Arc<dyn CgroupOps>, Errno> {
