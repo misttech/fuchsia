@@ -1029,8 +1029,19 @@ a:b:c
 ",
             )
             .expect("writing test file");
+        File::create(tempdir.path().join("d.txt"))
+            .expect("create file")
+            .write_all(
+                b"foo:bar
+// This is a multi line comment.
+//
+// The blank comment line above is allowed.
+foo:baz
+",
+            )
+            .expect("writing test file");
 
-        assert!(parse_selectors::<VerboseError>(tempdir.path()).is_ok());
+        assert_matches::assert_matches!(parse_selectors::<VerboseError>(tempdir.path()), Ok(_));
     }
 
     #[fuchsia::test]

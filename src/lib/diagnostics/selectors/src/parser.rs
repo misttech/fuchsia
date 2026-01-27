@@ -7,7 +7,7 @@ use crate::ir::*;
 use crate::validate::{ValidateComponentSelectorExt, ValidateExt, ValidateTreeSelectorExt};
 use bitflags::bitflags;
 use nom::branch::alt;
-use nom::bytes::complete::{escaped, is_not, tag, take_while};
+use nom::bytes::complete::{escaped, tag, take_while};
 use nom::character::complete::{alphanumeric1, multispace0, none_of, one_of};
 use nom::combinator::{all_consuming, complete, cond, map, opt, peek, recognize, verify};
 use nom::error::{ErrorKind, ParseError as NomParseError};
@@ -224,7 +224,8 @@ fn comment<'a, E>(input: &'a str) -> IResult<&'a str, &'a str, E>
 where
     E: NomParseError<&'a str>,
 {
-    let (rest, comment) = spaced(preceded(tag("//"), is_not("\n\r"))).parse(input)?;
+    let (rest, comment) =
+        spaced(preceded(tag("//"), take_while(|c| c != '\n' && c != '\r'))).parse(input)?;
     if !rest.is_empty() {
         let (rest, _) = one_of("\n\r").parse(rest)?; // consume the newline character
         return Ok((rest, comment));
