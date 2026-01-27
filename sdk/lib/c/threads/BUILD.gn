@@ -8,6 +8,7 @@ llvm_libc_source_set("threads") {
   functions = [
     "thrd_create",
     "thrd_create_with_name",
+    "thrd_detach",
     "thrd_exit",
     "thrd_join",
   ]
@@ -288,5 +289,21 @@ libc_source_set("thread-create") {
 }
 
 libc_test("thread-create.unittests") {
+  sources = []
+}
+
+libc_source_set("thread-detach") {
+  visibility = [ ":*" ]
+
+  public_deps = [ ":thread" ]
+
+  sources = [ "thread-detach.cc" ]
+  libc_deps = [
+    ":thread-list",
+    ":thread-storage",
+  ]
+}
+
+libc_test("thread-detach.unittests") {
   sources = []
 }

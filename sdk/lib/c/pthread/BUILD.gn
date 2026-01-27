@@ -7,6 +7,7 @@ import("../libc.gni")
 llvm_libc_source_set("pthread") {
   functions = [
     "pthread_create",
+    "pthread_detach",
     "pthread_exit",
     "pthread_join",
   ]
@@ -17,6 +18,7 @@ llvm_libc_source_set("pthread") {
   deps = [
     ":attr",
     ":name",
+    "../threads:thread-detach",
     "../threads:thread-exit",
     "../threads:thread-join",
   ]

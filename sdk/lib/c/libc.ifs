@@ -944,7 +944,7 @@ Symbols:
   - { Name: pthread_condattr_init, Type: Func }
   - { Name: pthread_condattr_setclock, Type: Func }
   - { Name: pthread_create, Type: Func }
-  - { Name: pthread_detach, Type: Func, Weak: true }
+  - { Name: pthread_detach, Type: Func }
   - { Name: pthread_equal, Type: Func, Weak: true }
   - { Name: pthread_exit, Type: Func }
   - { Name: pthread_getaffinity_np, Type: Func }

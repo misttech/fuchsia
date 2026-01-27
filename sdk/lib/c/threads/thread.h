@@ -144,6 +144,11 @@ decltype(Status(std::declval<zx_status_t>())) ThreadCreateAndStart(
 // to ThreadExit().
 zx::result<intptr_t> ThreadJoin(Thread& thread);
 
+// This underlies thrd_detach() and pthread_detach().  As soon as it returns
+// success, the Thread reference is no longer safe to use in any way because
+// the thread can exit and free the storage itself at any time.
+zx::result<> ThreadDetach(Thread& thread);
+
 // Convert Zircon error to C11 <threads.h> return value.
 constexpr int C11ThreadError(zx_status_t status) {
   switch (status) {
@@ -163,13 +168,17 @@ constexpr int PthreadError(zx_status_t status) {
   switch (status) {
     case ZX_OK:
       return 0;
+    case ZX_ERR_INVALID_ARGS:
+      return EINVAL;
     case ZX_ERR_ACCESS_DENIED:
       return EPERM;
     case ZX_ERR_TIMED_OUT:
       return ETIMEDOUT;
     case ZX_ERR_NO_MEMORY:
       return EAGAIN;
-    case ZX_ERR_BAD_HANDLE:  // Possible via thrd_set_zx_process.
+    case ZX_ERR_NOT_FOUND:
+      // These two are possible in pthread_create due to thrd_set_zx_process.
+    case ZX_ERR_BAD_HANDLE:
     case ZX_ERR_WRONG_TYPE:
       return ESRCH;
     default:

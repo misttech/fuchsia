@@ -25,7 +25,6 @@ source_set("pthread") {
     "pthread_condattr_destroy.c",
     "pthread_condattr_init.c",
     "pthread_condattr_setclock.c",
-    "pthread_detach.c",
     "pthread_equal.c",
     "pthread_getattr_np.c",
     "pthread_getconcurrency.c",

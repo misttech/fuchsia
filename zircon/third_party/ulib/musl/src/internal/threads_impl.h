@@ -305,8 +305,6 @@ static inline pid_t __thread_get_tid_for_filelock(void) {
   return __thread_handle_to_filelock_tid((int)__pthread_self()->zxr_thread.handle);
 }
 
-int __pthread_detach(pthread_t t) ATTR_LIBC_VISIBILITY;
-
 // Signal n (or all, for -1) threads on a pthread_cond_t or cnd_t.
 void __private_cond_signal(void* condvar, int n) ATTR_LIBC_VISIBILITY;
 
