@@ -74,8 +74,8 @@ impl BlockStatistics {
             self.data_bytes += data_bytes;
         }
         self.total_bytes += total_bytes;
-        if self.total_bytes > 0 {
-            self.data_percent = (self.data_bytes * 100 / self.total_bytes) as u64;
+        if let Some(data_percent) = (self.data_bytes * 100).checked_div(self.total_bytes) {
+            self.data_percent = data_percent as u64;
         }
     }
 }
