@@ -707,6 +707,14 @@ impl Client {
         (client_end.into_proxy(), server_end.into_stream())
     }
 
+    /// Creates a client end and a server request stream connected by a channel.
+    pub fn create_request_stream<F: crate::fidl::ProtocolMarker>(
+        self: &Arc<Self>,
+    ) -> (crate::fidl::ClientEnd<F>, F::RequestStream) {
+        let (client_end, server_end) = self.create_endpoints::<F>();
+        (client_end, server_end.into_stream())
+    }
+
     /// Create a new socket in the connected FDomain.
     fn create_socket(self: &Arc<Self>, options: proto::SocketType) -> (Socket, Socket) {
         let id_a = self.new_hid();
