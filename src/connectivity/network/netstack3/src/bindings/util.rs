@@ -1241,6 +1241,7 @@ impl TryFromFidl<fnet_interfaces_admin::NudConfiguration> for NudUserConfigUpdat
             max_multicast_solicitations,
             max_unicast_solicitations,
             base_reachable_time,
+            retrans_timer,
             __source_breaking,
         } = fidl;
         Ok(NudUserConfigUpdate {
@@ -1251,6 +1252,7 @@ impl TryFromFidl<fnet_interfaces_admin::NudConfiguration> for NudUserConfigUpdat
                 .map(TryIntoCore::try_into_core)
                 .transpose()?,
             base_reachable_time: base_reachable_time.map(TryIntoCore::try_into_core).transpose()?,
+            retrans_timer: retrans_timer.map(TryIntoCore::try_into_core).transpose()?,
             ..Default::default()
         })
     }
@@ -1302,6 +1304,7 @@ impl IntoFidl<fnet_interfaces_admin::NudConfiguration> for NudUserConfigUpdate {
             max_unicast_solicitations,
             max_multicast_solicitations,
             base_reachable_time,
+            retrans_timer,
         } = self;
         fnet_interfaces_admin::NudConfiguration {
             max_multicast_solicitations: max_multicast_solicitations.map(|c| c.get()),
@@ -1311,6 +1314,14 @@ impl IntoFidl<fnet_interfaces_admin::NudConfiguration> for NudUserConfigUpdate {
                 // always fit in an `i64` because it is either set via FIDL
                 // (stored as a `zx_duration_t`, i.e. `i64`) or learnt via
                 // the Reachable Time field in RA messages which is a 32-bit
+                // value in milliseconds.
+                c.get().as_nanos().try_into().unwrap()
+            }),
+            retrans_timer: retrans_timer.map(|c| {
+                // Even though `as_nanos` returns a `u128`, the value will
+                // always fit in an `i64` because it is either set via FIDL
+                // (stored as a `zx_duration_t`, i.e. `i64`) or learnt via
+                // the RetransTimer field in RA messages which is a 32-bit
                 // value in milliseconds.
                 c.get().as_nanos().try_into().unwrap()
             }),
@@ -1326,11 +1337,13 @@ fn nud_user_config_to_update(c: NudUserConfig) -> NudUserConfigUpdate {
         max_multicast_solicitations,
         max_unicast_solicitations,
         base_reachable_time,
+        retrans_timer,
     } = c;
     NudUserConfigUpdate {
         max_unicast_solicitations: Some(max_unicast_solicitations),
         max_multicast_solicitations: Some(max_multicast_solicitations),
         base_reachable_time: Some(base_reachable_time),
+        retrans_timer: Some(retrans_timer),
     }
 }
 

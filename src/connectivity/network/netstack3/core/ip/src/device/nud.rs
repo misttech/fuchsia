@@ -56,6 +56,14 @@ const DEFAULT_MAX_UNICAST_SOLICIT: NonZeroU16 = NonZeroU16::new(3).unwrap();
 /// [RFC 7048 section 4]: https://tools.ietf.org/html/rfc7048#section-4
 const MAX_RETRANS_TIMER: NonZeroDuration = NonZeroDuration::from_secs(60).unwrap();
 
+/// The default value for *RetransTimer* as defined in [RFC 4861 section 10].
+///
+/// Note that both ARP (IPv4) and NDP (IPv6) uses this default value to align
+/// behavior between IPv4 and IPv6 and simplify testing.
+///
+/// [RFC 4861 section 10]: https://tools.ietf.org/html/rfc4861#section-10
+pub const DEFAULT_RETRANS_TIMER: NonZeroDuration = NonZeroDuration::from_secs(1).unwrap();
+
 /// The exponential backoff factor for retransmissions of multicast neighbor
 /// probe messages as defined in [RFC 7048 section 4].
 ///
@@ -1968,6 +1976,12 @@ pub struct NudUserConfig {
     ///
     /// [RFC 4861 section 6.3.2]: https://tools.ietf.org/html/rfc4861#section-6.3.2
     pub base_reachable_time: NonZeroDuration,
+    /// The time between retransmissions of neighbor probe messages to a neighbor
+    /// when resolving the address or when probing the reachability of a neighbor
+    /// as defined in [RFC 4861 section 6.3.2].
+    ///
+    /// [RFC 4861 section 6.3.2]: https://tools.ietf.org/html/rfc4861#section-6.3.2
+    pub retrans_timer: NonZeroDuration,
 }
 
 impl Default for NudUserConfig {
@@ -1976,6 +1990,7 @@ impl Default for NudUserConfig {
             max_unicast_solicitations: DEFAULT_MAX_UNICAST_SOLICIT,
             max_multicast_solicitations: DEFAULT_MAX_MULTICAST_SOLICIT,
             base_reachable_time: DEFAULT_BASE_REACHABLE_TIME,
+            retrans_timer: DEFAULT_RETRANS_TIMER,
         }
     }
 }
@@ -1983,20 +1998,13 @@ impl Default for NudUserConfig {
 /// An update structure for [`NudUserConfig`].
 ///
 /// Only fields with variant `Some` are updated.
+#[allow(missing_docs)]
 #[derive(Clone, Debug, Eq, PartialEq, Default)]
 pub struct NudUserConfigUpdate {
-    /// The maximum number of unicast solicitations as defined in [RFC 4861
-    /// section 10].
     pub max_unicast_solicitations: Option<NonZeroU16>,
-    /// The maximum number of multicast solicitations as defined in [RFC 4861
-    /// section 10].
     pub max_multicast_solicitations: Option<NonZeroU16>,
-    /// The base value used for computing the duration a neighbor is considered
-    /// reachable after receiving a reachability confirmation as defined in
-    /// [RFC 4861 section 6.3.2].
-    ///
-    /// [RFC 4861 section 6.3.2]: https://tools.ietf.org/html/rfc4861#section-6.3.2
     pub base_reachable_time: Option<NonZeroDuration>,
+    pub retrans_timer: Option<NonZeroDuration>,
 }
 
 impl NudUserConfigUpdate {
@@ -2008,11 +2016,16 @@ impl NudUserConfigUpdate {
                 core::mem::swap(opt, target)
             }
         }
-        let Self { max_unicast_solicitations, max_multicast_solicitations, base_reachable_time } =
-            &mut self;
+        let Self {
+            max_unicast_solicitations,
+            max_multicast_solicitations,
+            base_reachable_time,
+            retrans_timer,
+        } = &mut self;
         swap_if_set(max_unicast_solicitations, &mut config.max_unicast_solicitations);
         swap_if_set(max_multicast_solicitations, &mut config.max_multicast_solicitations);
         swap_if_set(base_reachable_time, &mut config.base_reachable_time);
+        swap_if_set(retrans_timer, &mut config.retrans_timer);
 
         self
     }
@@ -2896,6 +2909,7 @@ mod tests {
                         max_unicast_solicitations: NonZeroU16::new(4).unwrap(),
                         max_multicast_solicitations: NonZeroU16::new(5).unwrap(),
                         base_reachable_time: NonZeroDuration::from_secs(23).unwrap(),
+                        retrans_timer: NonZeroDuration::from_secs(3).unwrap(),
                     },
                 }),
             }

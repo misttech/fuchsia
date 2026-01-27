@@ -208,11 +208,13 @@ impl InterfaceConfig<DeviceNeighborConfig> {
                 max_unicast_solicitations,
                 max_multicast_solicitations,
                 base_reachable_time,
+                retrans_timer,
             } = nud;
             NudUserConfigUpdate {
                 max_unicast_solicitations: Some(*max_unicast_solicitations),
                 max_multicast_solicitations: Some(*max_multicast_solicitations),
                 base_reachable_time: Some(*base_reachable_time),
+                retrans_timer: Some(*retrans_timer),
             }
         };
 
@@ -338,6 +340,7 @@ impl InterfaceConfig<DeviceNeighborConfig> {
             max_unicast_solicitations,
             max_multicast_solicitations,
             base_reachable_time,
+            retrans_timer,
         } = update;
         NudUserConfigUpdate {
             max_unicast_solicitations: update_and_take_prev(
@@ -352,6 +355,7 @@ impl InterfaceConfig<DeviceNeighborConfig> {
                 &mut config.base_reachable_time,
                 base_reachable_time,
             ),
+            retrans_timer: update_and_take_prev(&mut config.retrans_timer, retrans_timer),
         }
     }
 

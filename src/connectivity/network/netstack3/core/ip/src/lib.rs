@@ -159,7 +159,7 @@ pub mod nud {
         NeighborApi, NeighborRemovalError, StaticNeighborInsertionError,
     };
     pub use crate::internal::device::nud::{
-        ConfirmationFlags, Delay, DelegateNudContext, DynamicNeighborState,
+        ConfirmationFlags, DEFAULT_RETRANS_TIMER, Delay, DelegateNudContext, DynamicNeighborState,
         DynamicNeighborUpdateSource, Event, EventDynamicState, EventKind, EventState, Incomplete,
         LinkResolutionContext, LinkResolutionNotifier, LinkResolutionResult, MAX_ENTRIES,
         NeighborState, NudBindingsContext, NudBindingsTypes, NudConfigContext, NudContext,
@@ -167,7 +167,6 @@ pub mod nud {
         NudState, NudTimerId, NudUserConfig, NudUserConfigUpdate, Reachable, Stale,
         UseDelegateNudContext, confirm_reachable,
     };
-    pub use crate::internal::device::state::IPV6_RETRANS_TIMER_DEFAULT;
 
     /// NUD test utilities.
     #[cfg(any(test, feature = "testutils"))]

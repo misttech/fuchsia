@@ -263,10 +263,10 @@ impl<'a, BC: BindingsContext, L: LockBefore<crate::lock_ordering::Ipv6DeviceLear
         let mut state = integration::device_state(core_ctx, device_id);
         let mut state = state.cast();
         // NB: This assignment is satisfying borrow checking on state.
-        let x = state
-            .read_lock::<crate::lock_ordering::Ipv6DeviceLearnedParams>()
-            .retrans_timer_or_default();
-        x
+        let x = state.read_lock::<crate::lock_ordering::Ipv6DeviceLearnedParams>().retrans_timer();
+        x.unwrap_or_else(|| {
+            NudConfigContext::<Ipv6>::with_nud_user_config(self, |c| c.retrans_timer)
+        })
     }
 
     fn with_nud_user_config<O, F: FnOnce(&NudUserConfig) -> O>(&mut self, cb: F) -> O {

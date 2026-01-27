@@ -43,6 +43,7 @@ async fn interface_defaults(name: &str) {
             max_multicast_solicitations,
             max_unicast_solicitations,
             base_reachable_time,
+            retrans_timer,
             __source_breaking,
         } = nud;
         fnet_interfaces_admin::NudConfiguration {
@@ -55,6 +56,7 @@ async fn interface_defaults(name: &str) {
             base_reachable_time: Some(
                 base_reachable_time.expect("missing base reachable time") + 1000,
             ),
+            retrans_timer: Some(retrans_timer.expect("missing retrans timer") + 1000),
             __source_breaking,
         }
     };

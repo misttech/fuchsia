@@ -35,6 +35,22 @@ type NudConfiguration = table {
     ///
     /// Must be greater than 0.
     3: base_reachable_time zx.Duration;
+    /// The time between retransmissions of neighbor probes (Neighbor
+    /// Solicitations for IPv6 and ARP requests for IPv4) to a neighbor when
+    /// resolving the address or when probing the reachability of a neighbor
+    /// as defined in [RFC 4861 section 6.3.2].
+    ///
+    /// Referred to as "RetransTimer" by RFC 4861.
+    ///
+    /// For IPv6, this value will not be used if the router has provided an
+    /// override as per [RFC 4861 section 6.3.2]:
+    ///  The RetransTimer variable SHOULD be copied from the Retrans Timer
+    ///  field, if the received value is non-zero.
+    /// Usually networks don't advertise a non-zero RetransTimer, so this value
+    /// will be used in those environments.
+    ///
+    /// Must be greater than 0.
+    4: retrans_timer zx.Duration;
 };
 
 /// DAD (Duplicate Address Detection) configuration for an interface.

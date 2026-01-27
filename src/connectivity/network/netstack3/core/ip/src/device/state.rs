@@ -38,11 +38,6 @@ use crate::internal::gmp::mld::{MldConfig, MldCounters, MldTimerId, MldTypeLayou
 use crate::internal::gmp::{GmpGroupState, GmpState, GmpTimerId, GmpTypeLayout, MulticastGroupSet};
 use crate::internal::types::RawMetric;
 
-/// The default value for *RetransTimer* as defined in [RFC 4861 section 10].
-///
-/// [RFC 4861 section 10]: https://tools.ietf.org/html/rfc4861#section-10
-pub const IPV6_RETRANS_TIMER_DEFAULT: NonZeroDuration = NonZeroDuration::from_secs(1).unwrap();
-
 /// The default value for the default hop limit to be used when sending IP
 /// packets.
 const DEFAULT_HOP_LIMIT: NonZeroU8 = NonZeroU8::new(64).unwrap();
@@ -640,10 +635,10 @@ pub struct Ipv6NetworkLearnedParameters {
 }
 
 impl Ipv6NetworkLearnedParameters {
-    /// Returns the learned retransmission timer or the default stack value if a
-    /// network-learned one isn't available.
-    pub fn retrans_timer_or_default(&self) -> NonZeroDuration {
-        self.retrans_timer.clone().unwrap_or(IPV6_RETRANS_TIMER_DEFAULT)
+    /// Returns the learned retransmission timer if a network-learned one is
+    /// available.
+    pub fn retrans_timer(&self) -> Option<NonZeroDuration> {
+        self.retrans_timer.clone()
     }
 
     /// Forgets any learned network parameters, resetting to the default values.

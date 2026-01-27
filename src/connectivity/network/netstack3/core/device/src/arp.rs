@@ -5,7 +5,6 @@
 //! The Address Resolution Protocol (ARP).
 
 use alloc::fmt::Debug;
-use core::time::Duration;
 
 use log::{debug, trace, warn};
 use net_types::ip::{Ip, Ipv4, Ipv4Addr};
@@ -208,7 +207,7 @@ pub trait ArpConfigContext {
     ///
     /// Provided implementation always return the default RFC period.
     fn retransmit_timeout(&mut self) -> NonZeroDuration {
-        NonZeroDuration::new(DEFAULT_ARP_REQUEST_PERIOD).unwrap()
+        self.with_nud_user_config(|c| c.retrans_timer)
     }
 
     /// Calls the callback with an immutable reference to NUD configurations.
@@ -610,15 +609,6 @@ fn handle_packet<
         },
     }
 }
-
-// Use the same default retransmit timeout that is defined for NDP in
-// [RFC 4861 section 10], to align behavior between IPv4 and IPv6 and simplify
-// testing.
-//
-// TODO(https://fxbug.dev/42075782): allow this default to be overridden.
-//
-// [RFC 4861 section 10]: https://tools.ietf.org/html/rfc4861#section-10
-const DEFAULT_ARP_REQUEST_PERIOD: Duration = nud::IPV6_RETRANS_TIMER_DEFAULT.get();
 
 /// Sends an Arp Request for the provided lookup_addr.
 ///

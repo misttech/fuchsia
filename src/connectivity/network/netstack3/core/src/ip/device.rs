@@ -53,6 +53,7 @@ use packet::{EmptyBuf, InnerPacketBuilder, PartialSerializer, Serializer};
 use packet_formats::icmp::IcmpZeroCode;
 use packet_formats::icmp::ndp::options::{NdpNonce, NdpOptionBuilder};
 use packet_formats::icmp::ndp::{OptionSequenceBuilder, RouterSolicitation};
+use packet_formats::utils::NonZeroDuration;
 
 use crate::context::WrapLockLevel;
 use crate::context::prelude::*;
@@ -650,16 +651,7 @@ impl<'a, Config: Borrow<Ipv6DeviceConfiguration>, BC: BindingsContext> SlaacCont
         cb: F,
     ) -> O {
         let Self { config, core_ctx } = self;
-        let retrans_timer = device::Ipv6DeviceContext::with_network_learned_parameters(
-            core_ctx,
-            device_id,
-            |params| {
-                // NB: We currently only change the retransmission timer from
-                // learning it from the network. We might need to consider user
-                // settings once we allow users to override the value.
-                params.retrans_timer_or_default().get()
-            },
-        );
+        let retrans_timer = get_retrans_timer(core_ctx, device_id).get();
         // We use the link-layer address to derive opaque IIDs for the interface, rather
         // than the interface ID or name, because it is more stable. This does imply
         // that we do not generate SLAAC addresses for interfaces without a link-layer
@@ -849,6 +841,12 @@ impl<
 
         cb(DadStateRef {
             state: DadAddressStateRef { dad_state: dad_state.deref_mut(), core_ctx: &mut core_ctx },
+            // We don't honor the user-provided retrans-timer value for IPv4 DAD,
+            // as per https://datatracker.ietf.org/doc/html/rfc5227#section-1.1:
+            //
+            //  Note that the values listed here are fixed constants; they
+            //  are not intended to be modifiable by implementers, operators, or end
+            //  users.
             retrans_timer_data: &(),
             max_dad_transmits: &config.ip_config.dad_transmits,
         })
@@ -895,6 +893,29 @@ impl<
     }
 }
 
+fn get_retrans_timer<
+    'a,
+    BC: BindingsContext,
+    L: LockBefore<crate::lock_ordering::IpDeviceAddresses<Ipv6>>,
+>(
+    core_ctx: &mut CoreCtx<'a, BC, L>,
+    device_id: &DeviceId<BC>,
+) -> NonZeroDuration {
+    device::Ipv6DeviceContext::<BC>::with_network_learned_parameters(core_ctx, device_id, |p| {
+        p.retrans_timer()
+    })
+    .unwrap_or_else(|| match device_id {
+        DeviceId::Ethernet(base_device_id) => {
+            crate::device::integration::device_state(core_ctx, base_device_id)
+                .read_lock::<crate::lock_ordering::NudConfig<Ipv6>>()
+                .retrans_timer
+        }
+        DeviceId::Loopback(_) | DeviceId::PureIp(_) | DeviceId::Blackhole(_) => {
+            nud::DEFAULT_RETRANS_TIMER
+        }
+    })
+}
+
 impl<
     'a,
     Config: Borrow<Ipv6DeviceConfiguration>,
@@ -916,16 +937,7 @@ impl<
         cb: F,
     ) -> O {
         let Self { config, core_ctx } = self;
-        let retrans_timer = device::Ipv6DeviceContext::<BC>::with_network_learned_parameters(
-            core_ctx,
-            device_id,
-            |p| {
-                // NB: We currently only change the retransmission timer from
-                // learning it from the network. We might need to consider user
-                // settings once we allow users to override the value.
-                p.retrans_timer_or_default()
-            },
-        );
+        let retrans_timer = get_retrans_timer(core_ctx, device_id);
 
         let mut core_ctx = core_ctx.adopt(addr.deref());
         let config = Borrow::borrow(&*config);
