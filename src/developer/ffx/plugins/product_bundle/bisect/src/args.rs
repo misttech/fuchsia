@@ -11,9 +11,9 @@ use pbms::AuthFlowChoice;
 #[derive(Debug, PartialEq, Clone, Copy, Default)]
 pub enum Strategy {
     /// Bisect the longest dimension in the search space.
-    #[default]
     LongestDimension,
     /// Bisect all dimensions in the search space simultaneously.
+    #[default]
     AllDimensions,
 }
 

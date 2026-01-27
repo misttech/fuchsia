@@ -42,25 +42,44 @@ impl VersionedArtifactSet {
 
         // Iterate through the vector exactly once.
         for id in ids {
+            // TODO(https://fxbug.dev/477979932): Temporary fix to handle duplicate artifacts returned from MOS.
+            if id.name.contains("recovery") {
+                continue;
+            }
+
             match id.artifact_type {
                 ArtifactType::Platform => {
                     if accumulator.platform.is_some() {
-                        bail!("Found a duplicate platform artifact: {:?}", id);
+                        bail!(
+                            "Found a duplicate platform artifact:\n\t{:?}\n\t{:?}",
+                            accumulator.platform.unwrap(),
+                            id
+                        );
                     }
                     accumulator.platform = Some(id);
                 }
                 ArtifactType::Product => {
                     if accumulator.product.is_some() {
-                        bail!("Found a duplicate product artifact: {:?}", id);
+                        bail!(
+                            "Found a duplicate product artifact:\n\t{:?}\n\t{:?}",
+                            accumulator.product.unwrap(),
+                            id
+                        );
                     }
                     accumulator.product = Some(id);
                 }
                 ArtifactType::Board => {
                     if accumulator.board.is_some() {
-                        bail!("Found a duplicate board artifact: {:?}", id);
+                        bail!(
+                            "Found a duplicate board artifact:\n\t{:?},\n\t{:?}",
+                            accumulator.board.unwrap(),
+                            id
+                        );
                     }
                     accumulator.board = Some(id);
                 }
+                // TODO(https://fxbug.dev/477620714): Bisect across PIBs
+                ArtifactType::ProductInputBundle => {}
             }
         }
 

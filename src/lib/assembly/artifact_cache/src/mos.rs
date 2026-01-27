@@ -74,21 +74,8 @@ pub async fn get_cipd_package_from_mos_artifact(
     }
 }
 
-#[derive(Debug, Deserialize)]
-#[serde(rename_all = "camelCase")]
-struct GetArtifactResponse {
-    name: String,
-    cipd_uri: Option<String>,
-}
-
-#[derive(Debug, Deserialize)]
-#[serde(rename_all = "camelCase")]
-struct ProductBundleArtifactsResponse {
-    product_bundle_artifacts: Option<Vec<String>>,
-}
-
 /// Create a new MOSIdentifier instance from a path string from MOS.
-fn new_identifier_from_path(path: &str) -> Result<MOSIdentifier> {
+fn parse_identifier_from_path(path: &str) -> Result<MOSIdentifier> {
     // Split the path into its components based on the '/' delimiter.
     // "artifactRepositories/{repo}/versions/{version}/productBundleArtifacts/{type}_{name}"
     let parts: Vec<&str> = path.split('/').collect();
@@ -104,35 +91,44 @@ fn new_identifier_from_path(path: &str) -> Result<MOSIdentifier> {
         .last()
         .ok_or_else(|| anyhow!("Could not extract final component from path: {}", path))?;
 
-    let type_and_name: Vec<&str> = last_part.splitn(2, '_').collect();
-    if type_and_name.len() < 2 {
-        return Err(anyhow!(
-            "Final component '{}' does not contain type and name separated by '_'",
-            last_part
-        ));
-    }
-    let artifact_type = type_and_name.get(0).ok_or_else(|| {
-        anyhow!("Could not extract artifact type from final component: {}", last_part)
-    })?;
-    let name = type_and_name
-        .get(1)
-        .ok_or_else(|| anyhow!("Could not extract name from final component: {}", last_part))?;
+    // last_part should be of the form "{type}_{name}".
+    // Split last_part at the first "_" character for Product, Board and Platform artifacts.
+    // PIBs need to be handled differently since their "type" includes underscore characters.
+    let (artifact_type, name) = if last_part.starts_with("product_input_bundles_") {
+        ("product_input_bundles", &last_part["product_input_bundles_".len()..])
+    } else {
+        let type_and_name: Vec<&str> = last_part.splitn(2, '_').collect();
+        if type_and_name.len() < 2 {
+            return Err(anyhow!(
+                "Final component '{}' does not contain type and name separated by '_'",
+                last_part
+            ));
+        }
+        (type_and_name[0], type_and_name[1])
+    };
 
     Ok(MOSIdentifier {
         repository: repository.to_string(),
         version: version.to_string(),
         name: name.to_string(),
-        artifact_type: artifact_type
-            .parse()
-            .map_err(|_| anyhow!("Failed to parse artifact type"))?,
+        artifact_type: artifact_type.parse().map_err(|_| {
+            anyhow!("Failed to parse artifact type '{}' in '{}'", artifact_type, path)
+        })?,
         cipd: None,
     })
 }
 
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct GetArtifactResponse {
+    name: String,
+    cipd_uri: Option<String>,
+}
+
 /// Create a new MOSIdentifier instance from an http response from MOS.
-fn new_identifier_from_http_response(response: &str) -> Result<MOSIdentifier> {
+fn parse_identifier_from_response(response: &str) -> Result<MOSIdentifier> {
     let response: GetArtifactResponse = serde_json::from_str(response)?;
-    let mut mos_id = new_identifier_from_path(&response.name)?;
+    let mut mos_id = parse_identifier_from_path(&response.name)?;
 
     let cipd = if let Some(cipd_uri) = response.cipd_uri {
         let cipd_url = format!("cipd://{}", cipd_uri);
@@ -148,16 +144,33 @@ fn new_identifier_from_http_response(response: &str) -> Result<MOSIdentifier> {
     Ok(mos_id)
 }
 
-/// Create a new vector of MOSIdentifier instances from an http response from MOS.
-/// This is used for product bundles and the interpolation API.
-fn new_identifier_vec_from_http_response(response: String) -> Result<Vec<MOSIdentifier>> {
-    let parsed: ProductBundleArtifactsResponse = serde_json::from_str(&response)?;
-    parsed
-        .product_bundle_artifacts
-        .unwrap_or_default()
-        .iter()
-        .map(|path| new_identifier_from_path(path))
-        .collect()
+/// Response from the `productBundles:search` MOS API.
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct ProductBundleSearchResponse {
+    /// The list of product bundles that match the search criteria.
+    product_bundles: Option<Vec<ProductBundle>>,
+}
+
+/// A product bundle resource from MOS.
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct ProductBundle {
+    /// The list of artifact resource paths associated with this product bundle.
+    artifacts: Option<Vec<String>>,
+}
+
+/// Response from the artifact interpolation MOS API.
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct InterpolateResponse {
+    /// The list of artifact resource paths found between the two versions.
+    product_bundle_artifacts: Option<Vec<String>>,
+}
+
+/// Create a new vector of MOSIdentifier instances from a list of MOS artifact paths.
+fn parse_identifiers_from_paths(paths: Vec<String>) -> Result<Vec<MOSIdentifier>> {
+    paths.iter().map(|path| parse_identifier_from_path(path)).collect()
 }
 
 /// `MOSClient` provides functions to call the MOS artifactRepository API.
@@ -212,7 +225,7 @@ impl MOSClient {
             id.repository, id.version, id.artifact_type, id.name
         );
         let response = self.get(name).await.context("Failed to call getArtifact MOS API")?;
-        let mos_id = new_identifier_from_http_response(&response)?;
+        let mos_id = parse_identifier_from_response(&response)?;
         if mos_id.cipd.is_none() {
             bail!("MOS response for artifact {:?} did not contain CIPD information", id);
         }
@@ -229,7 +242,24 @@ impl MOSClient {
         let data = json!({ "criteria": {"product_name": name.clone(), "version": version.clone()}})
             .to_string();
         let response = self.post(uri.clone(), data).await?;
-        let identifiers = new_identifier_vec_from_http_response(response)?;
+
+        // Deserialize the search response and extract the artifact paths.
+        let parsed: ProductBundleSearchResponse = serde_json::from_str(&response)
+            .context("Failed to parse ProductBundleSearchResponse")?;
+        let mut artifact_paths = Vec::new();
+
+        if let Some(bundles) = parsed.product_bundles {
+            if bundles.len() > 1 {
+                bail!("Expected at most 1 product bundle, but got {}", bundles.len());
+            }
+            if let Some(bundle) = bundles.get(0) {
+                if let Some(artifacts) = &bundle.artifacts {
+                    artifact_paths.extend(artifacts.clone());
+                }
+            }
+        }
+
+        let identifiers = parse_identifiers_from_paths(artifact_paths)?;
         if identifiers.is_empty() {
             bail!("MOS returned no artifact information for product bundle {}.{}", name, version);
         }
@@ -259,7 +289,13 @@ impl MOSClient {
         );
         let response =
             self.post(uri.clone(), data).await.context("Failed to call interpolate API")?;
-        let identifiers = new_identifier_vec_from_http_response(response)?;
+
+        // Deserialize the interpolation response and convert the paths to identifiers.
+        let parsed: InterpolateResponse =
+            serde_json::from_str(&response).context("Failed to parse InterpolateResponse")?;
+        let artifact_paths = parsed.product_bundle_artifacts.unwrap_or_default();
+
+        let identifiers = parse_identifiers_from_paths(artifact_paths)?;
         if identifiers.is_empty() {
             bail!(
                 "MOS returned no results for the interpolation from {} to {}.",

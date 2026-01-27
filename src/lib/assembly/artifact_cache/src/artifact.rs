@@ -30,6 +30,8 @@ pub enum ArtifactType {
     Product,
     /// Board
     Board,
+    /// Product Input Bundle
+    ProductInputBundle,
 }
 
 impl FromStr for ArtifactType {
@@ -40,6 +42,7 @@ impl FromStr for ArtifactType {
             "platform" => Ok(ArtifactType::Platform),
             "products" => Ok(ArtifactType::Product),
             "boards" => Ok(ArtifactType::Board),
+            "product_input_bundles" => Ok(ArtifactType::ProductInputBundle),
             _ => Err(()), // Return an error for any other string
         }
     }
@@ -51,6 +54,7 @@ impl fmt::Display for ArtifactType {
             ArtifactType::Platform => write!(f, "platform"),
             ArtifactType::Product => write!(f, "products"),
             ArtifactType::Board => write!(f, "boards"),
+            ArtifactType::ProductInputBundle => write!(f, "product_input_bundles"),
         }
     }
 }
