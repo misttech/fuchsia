@@ -56,8 +56,8 @@ class EmptyService final {
 
     InstanceHandler() = default;
 
-    // Construct an instance handler for a FIDL service. It is expected that every member
-    // contained in |members| is initialized with a handler.
+    // Construct an instance handler for a FIDL service. Protocol handlers not present in |members|
+    // will not be registered.
     InstanceHandler(Members members) {
       // This should always be ZX_OK. That's because the only possible
       // error is ZX_ERR_ALREADY_EXISTS which is impossible to occur as fidlc

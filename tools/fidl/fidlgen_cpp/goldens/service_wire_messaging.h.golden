@@ -458,8 +458,8 @@ class EmptyService final {
 
     InstanceHandler() = default;
 
-    // Construct an instance handler for a FIDL service. It is expected that every member
-    // contained in |members| is initialized with a handler.
+    // Construct an instance handler for a FIDL service. Protocol handlers not present in |members|
+    // will not be registered.
     InstanceHandler(Members members) {
       // This should always be ZX_OK. That's because the only possible
       // error is ZX_ERR_ALREADY_EXISTS which is impossible to occur as fidlc
@@ -549,13 +549,15 @@ class SingleMemberService final {
 
     InstanceHandler() = default;
 
-    // Construct an instance handler for a FIDL service. It is expected that every member
-    // contained in |members| is initialized with a handler.
+    // Construct an instance handler for a FIDL service. Protocol handlers not present in |members|
+    // will not be registered.
     InstanceHandler(Members members) {
       // This should always be ZX_OK. That's because the only possible
       // error is ZX_ERR_ALREADY_EXISTS which is impossible to occur as fidlc
       // won't allow service declarations with duplicated names.
-      ZX_ASSERT(add_single_member(std::move(members.single_member)).status_value() == ZX_OK);
+      if (members.single_member) {
+        ZX_ASSERT(add_single_member(std::move(members.single_member)).status_value() == ZX_OK);
+      }
     }
 
     // Adds member "single_member" to the service instance. |handler| will be
@@ -564,6 +566,7 @@ class SingleMemberService final {
     // # Errors
     //
     // Returns ZX_ERR_ALREADY_EXISTS if the member was already added.
+    // Returns ZX_ERR_INVALID_ARGS if |handler| is not initialized.
     ::zx::result<> add_single_member(
         MemberHandler<::test_service::FirstProtocol> handler) {
       return this->AddMember<::test_service::FirstProtocol>(std::move(handler), "single_member");
@@ -702,14 +705,18 @@ class MultiHeterogeneousMemberService final {
 
     InstanceHandler() = default;
 
-    // Construct an instance handler for a FIDL service. It is expected that every member
-    // contained in |members| is initialized with a handler.
+    // Construct an instance handler for a FIDL service. Protocol handlers not present in |members|
+    // will not be registered.
     InstanceHandler(Members members) {
       // This should always be ZX_OK. That's because the only possible
       // error is ZX_ERR_ALREADY_EXISTS which is impossible to occur as fidlc
       // won't allow service declarations with duplicated names.
-      ZX_ASSERT(add_first_member(std::move(members.first_member)).status_value() == ZX_OK);
-      ZX_ASSERT(add_second_member(std::move(members.second_member)).status_value() == ZX_OK);
+      if (members.first_member) {
+        ZX_ASSERT(add_first_member(std::move(members.first_member)).status_value() == ZX_OK);
+      }
+      if (members.second_member) {
+        ZX_ASSERT(add_second_member(std::move(members.second_member)).status_value() == ZX_OK);
+      }
     }
 
     // Adds member "first_member" to the service instance. |handler| will be
@@ -718,6 +725,7 @@ class MultiHeterogeneousMemberService final {
     // # Errors
     //
     // Returns ZX_ERR_ALREADY_EXISTS if the member was already added.
+    // Returns ZX_ERR_INVALID_ARGS if |handler| is not initialized.
     ::zx::result<> add_first_member(
         MemberHandler<::test_service::FirstProtocol> handler) {
       return this->AddMember<::test_service::FirstProtocol>(std::move(handler), "first_member");
@@ -729,6 +737,7 @@ class MultiHeterogeneousMemberService final {
     // # Errors
     //
     // Returns ZX_ERR_ALREADY_EXISTS if the member was already added.
+    // Returns ZX_ERR_INVALID_ARGS if |handler| is not initialized.
     ::zx::result<> add_second_member(
         MemberHandler<::test_service::SecondProtocol> handler) {
       return this->AddMember<::test_service::SecondProtocol>(std::move(handler), "second_member");
@@ -867,14 +876,18 @@ class MultiHomogeneousMemberService final {
 
     InstanceHandler() = default;
 
-    // Construct an instance handler for a FIDL service. It is expected that every member
-    // contained in |members| is initialized with a handler.
+    // Construct an instance handler for a FIDL service. Protocol handlers not present in |members|
+    // will not be registered.
     InstanceHandler(Members members) {
       // This should always be ZX_OK. That's because the only possible
       // error is ZX_ERR_ALREADY_EXISTS which is impossible to occur as fidlc
       // won't allow service declarations with duplicated names.
-      ZX_ASSERT(add_first_member(std::move(members.first_member)).status_value() == ZX_OK);
-      ZX_ASSERT(add_second_member(std::move(members.second_member)).status_value() == ZX_OK);
+      if (members.first_member) {
+        ZX_ASSERT(add_first_member(std::move(members.first_member)).status_value() == ZX_OK);
+      }
+      if (members.second_member) {
+        ZX_ASSERT(add_second_member(std::move(members.second_member)).status_value() == ZX_OK);
+      }
     }
 
     // Adds member "first_member" to the service instance. |handler| will be
@@ -883,6 +896,7 @@ class MultiHomogeneousMemberService final {
     // # Errors
     //
     // Returns ZX_ERR_ALREADY_EXISTS if the member was already added.
+    // Returns ZX_ERR_INVALID_ARGS if |handler| is not initialized.
     ::zx::result<> add_first_member(
         MemberHandler<::test_service::FirstProtocol> handler) {
       return this->AddMember<::test_service::FirstProtocol>(std::move(handler), "first_member");
@@ -894,6 +908,7 @@ class MultiHomogeneousMemberService final {
     // # Errors
     //
     // Returns ZX_ERR_ALREADY_EXISTS if the member was already added.
+    // Returns ZX_ERR_INVALID_ARGS if |handler| is not initialized.
     ::zx::result<> add_second_member(
         MemberHandler<::test_service::FirstProtocol> handler) {
       return this->AddMember<::test_service::FirstProtocol>(std::move(handler), "second_member");

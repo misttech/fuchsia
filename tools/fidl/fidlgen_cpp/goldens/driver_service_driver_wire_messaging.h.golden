@@ -188,13 +188,15 @@ class DriverOnlyService final {
 
     InstanceHandler() = default;
 
-    // Construct an instance handler for a FIDL service. It is expected that every member
-    // contained in |members| is initialized with a handler.
+    // Construct an instance handler for a FIDL service. Protocol handlers not present in |members|
+    // will not be registered.
     InstanceHandler(Members members) {
       // This should always be ZX_OK. That's because the only possible
       // error is ZX_ERR_ALREADY_EXISTS which is impossible to occur as fidlc
       // won't allow service declarations with duplicated names.
-      ZX_ASSERT(add_member(std::move(members.member)).status_value() == ZX_OK);
+      if (members.member) {
+        ZX_ASSERT(add_member(std::move(members.member)).status_value() == ZX_OK);
+      }
     }
 
     // Adds member "member" to the service instance. |handler| will be
@@ -203,6 +205,7 @@ class DriverOnlyService final {
     // # Errors
     //
     // Returns ZX_ERR_ALREADY_EXISTS if the member was already added.
+    // Returns ZX_ERR_INVALID_ARGS if |handler| is not initialized.
     ::zx::result<> add_member(
         MemberHandler<::test_driverservice::SomeDriverProtocol> handler) {
       return this->AddMember<::test_driverservice::SomeDriverProtocol>(std::move(handler), "member");

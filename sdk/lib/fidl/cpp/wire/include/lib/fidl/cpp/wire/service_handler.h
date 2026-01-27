@@ -63,12 +63,15 @@ class ServiceInstanceHandler {
   // # Errors
   //
   // ZX_ERR_ALREADY_EXISTS: The member already exists.
+  // ZX_ERR_INVALID_ARGS: |handler| is null.
   template <typename Protocol>
   zx::result<> AddMember(MemberHandler<Protocol> handler, std::string_view member) {
+    if (!handler) {
+      return zx::error(ZX_ERR_INVALID_ARGS);
+    }
     auto bridge_func = [handler = std::move(handler)](TransportType channel) {
       return handler(fidl::internal::ServerEndType<Protocol>(std::move(channel)));
     };
-
     return AddAnyMember(std::move(bridge_func), member);
   }
 
@@ -80,10 +83,14 @@ class ServiceInstanceHandler {
   // # Errors
   //
   // ZX_ERR_ALREADY_EXISTS: The member already exists.
+  // ZX_ERR_INVALID_ARGS: |handler| is null.
   zx::result<> AddAnyMember(AnyMemberHandler handler, std::string_view member) {
+    if (!handler) {
+      return zx::error(ZX_ERR_INVALID_ARGS);
+    }
     std::string owned_member = std::string(member);
     if (handlers_.count(owned_member) != 0) {
-      return zx::make_result(ZX_ERR_ALREADY_EXISTS);
+      return zx::error(ZX_ERR_ALREADY_EXISTS);
     }
     handlers_[owned_member] = std::move(handler);
     return zx::ok();
