@@ -312,6 +312,9 @@ impl UnhandledInputHandler for InteractionStateHandler {
         unhandled_input_event: input_device::UnhandledInputEvent,
     ) -> Vec<input_device::InputEvent> {
         fuchsia_trace::duration!("input", "interaction_state_handler");
+        let trace_id = unhandled_input_event.trace_id.unwrap_or_else(|| 0.into());
+        fuchsia_trace::flow_step!("input", "event_in_input_pipeline", trace_id);
+
         match unhandled_input_event.device_event {
             input_device::InputDeviceEvent::ConsumerControls(ref consumer_controls_event) => {
                 if self.enable_button_baton_passing {

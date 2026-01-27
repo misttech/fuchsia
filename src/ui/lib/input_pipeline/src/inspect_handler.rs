@@ -233,6 +233,9 @@ impl<F: FnMut() -> zx::MonotonicInstant + 'static> Debug for InspectHandler<F> {
 impl<F: FnMut() -> zx::MonotonicInstant + 'static> InputHandler for InspectHandler<F> {
     async fn handle_input_event(self: Rc<Self>, input_event: InputEvent) -> Vec<InputEvent> {
         fuchsia_trace::duration!("input", "inspect_handler");
+        let tracing_id = input_event.trace_id.unwrap_or_else(|| 0.into());
+        fuchsia_trace::flow_step!("input", "event_in_input_pipeline", tracing_id);
+
         let event_time = input_event.event_time;
         let now = (self.now.borrow_mut())();
         self.events_count.add(1);
