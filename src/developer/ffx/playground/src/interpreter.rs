@@ -2,7 +2,6 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use fancy_regex::Regex;
 use fdomain_client::HandleBased as _;
 use fdomain_client::fidl::{DiscoverableProtocolMarker, Proxy};
 use fdomain_fuchsia_io as fio;
@@ -11,6 +10,7 @@ use futures::channel::mpsc::{UnboundedSender, unbounded as unbounded_channel};
 use futures::channel::oneshot::{Sender as OneshotSender, channel as oneshot_channel};
 use futures::future::BoxFuture;
 use futures::{Future, FutureExt, Stream, StreamExt};
+use regex::Regex;
 use std::collections::HashMap;
 use std::fmt::Write;
 use std::sync::atomic::{AtomicU32, Ordering};
@@ -1157,14 +1157,14 @@ pub fn canonicalize_path_dont_check_pwd(path: String, pwd: &str) -> String {
     static DOUBLE_DOT_ELIMINATION: OnceLock<Regex> = OnceLock::new();
 
     let multiple_slashes = MULTIPLE_SLASHES.get_or_init(|| Regex::new(r"/{2,}").unwrap());
-    let single_dot = SINGLE_DOT.get_or_init(|| Regex::new(r"/\.(?=/|$)").unwrap());
+    let single_dot = SINGLE_DOT.get_or_init(|| Regex::new(r"(?:/\.)+(/|$)").unwrap());
     let double_dot_elimination =
         DOUBLE_DOT_ELIMINATION.get_or_init(|| Regex::new(r"(^|[^/]+)/\.\.(/|$)").unwrap());
 
     let sep = if pwd.ends_with("/") { "" } else { "/" };
     let path = if path.starts_with("/") { path } else { format!("{pwd}{sep}{path}") };
     let path = multiple_slashes.replace_all(&path, "/");
-    let mut path = single_dot.replace_all(&path, "").to_string();
+    let mut path = single_dot.replace_all(&path, "${1}").to_string();
     let mut path_len = path.len();
     loop {
         let new_path = double_dot_elimination.replace(&path, "");
