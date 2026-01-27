@@ -53,7 +53,7 @@ pub trait FfxTool: FfxMain {
             Err(e) => Err(e),
         };
         let should_format = match FfxCommandLine::from_env() {
-            Ok(cli) => cli.global.machine.is_some(),
+            Ok(cli) => cli.global.should_format(),
             Err(e) => {
                 log::warn!("Received error getting command line: {}", e);
                 match e {

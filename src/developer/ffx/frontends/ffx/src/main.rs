@@ -286,7 +286,7 @@ async fn main() {
         Err(e) => Err(e),
     };
     let should_format = match FfxCommandLine::from_env() {
-        Ok(cli) => cli.global.machine.is_some(),
+        Ok(cli) => cli.global.should_format(),
         Err(_e) => true,
     };
     ffx_command::exit(env_context, result, should_format).await

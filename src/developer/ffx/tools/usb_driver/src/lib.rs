@@ -41,7 +41,7 @@ pub async fn run() {
         Err(e) => Err(e),
     };
     let should_format = match fho::FfxCommandLine::from_env() {
-        Ok(cli) => cli.global.machine.is_some(),
+        Ok(cli) => cli.global.should_format(),
         Err(e) => {
             if logging_enabled {
                 log::warn!("Received error getting command line: {}", e);

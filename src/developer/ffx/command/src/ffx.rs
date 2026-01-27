@@ -661,6 +661,16 @@ impl Ffx {
 
         Ok(return_val)
     }
+
+    /// Returns true if output should be formatted as a machine-readable
+    /// serialized object
+    pub fn should_format(&self) -> bool {
+        match self.machine {
+            None => false,
+            Some(MachineFormat::Raw) => false,
+            _ => true,
+        }
+    }
 }
 
 #[cfg(test)]
@@ -1212,5 +1222,17 @@ mod test {
         let context = cmd_line.global.load_context(ExecutableKind::Test).expect("load_context");
         let direct: bool = context.get(DIRECT_CONNECTIONS).expect("config get");
         assert!(direct);
+    }
+
+    #[test]
+    fn should_format() {
+        let ffx = Ffx { machine: None, ..Default::default() };
+        assert!(!ffx.should_format());
+        let ffx = Ffx { machine: Some(MachineFormat::Raw), ..Default::default() };
+        assert!(!ffx.should_format());
+        let ffx = Ffx { machine: Some(MachineFormat::Json), ..Default::default() };
+        assert!(ffx.should_format());
+        let ffx = Ffx { machine: Some(MachineFormat::JsonPretty), ..Default::default() };
+        assert!(ffx.should_format());
     }
 }
