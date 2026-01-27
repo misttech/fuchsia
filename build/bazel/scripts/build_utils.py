@@ -533,7 +533,7 @@ class TimeProfile(object):
         self._close_last_step()
         if short_step_threshold:
             print(
-                "Timing results for regeneration steps slower than %.1f seconds:"
+                "Timing results for regeneration steps slower than %.3f seconds:"
                 % short_step_threshold
             )
         else:
@@ -543,7 +543,7 @@ class TimeProfile(object):
             duration = end_time - start_time
             if duration < short_step_threshold:
                 continue
-            print("%5.2fs   %s" % (end_time - start_time, name))
+            print("%5.3fs   %s" % (end_time - start_time, name))
 
 
 def log_stderr(msg: str) -> None:

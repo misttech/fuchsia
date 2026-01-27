@@ -249,6 +249,9 @@ _DEBUG_SYMBOL_EXPORT = _DEBUG
 # Set this to True to debug the bazel query cache.
 _DEBUG_BAZEL_QUERIES = _DEBUG
 
+# Set this to True to enable debug printing of the action's timing profiles
+_DEBUG_TIME_PROFILE = _DEBUG
+
 # Set this to True to assert when non-symlink repository files are found.
 # This is useful to find them when performing expensive builds on CQ
 _ASSERT_ON_IGNORED_FILES = True
@@ -1321,7 +1324,7 @@ def main() -> int:
             stamp_file.write_text("")
 
     time_profile.stop()
-    if _DEBUG:
+    if _DEBUG_TIME_PROFILE:
         time_profile.print(0.001)
 
     if args.timings_file:
