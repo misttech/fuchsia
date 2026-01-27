@@ -136,3 +136,8 @@ startup --unix_digest_hash_attribute_name="user.fuchsia.bazel.digest.sha256"
 common --strip=never
 common --@io_bazel_rules_go//go/config:debug=True
 # LINT.ThenChange(//build/bazel/debug_symbols/README.md)
+
+# Enable cc_static_library().
+# TODO(https://fxbug.dev/478896119): Remove when updating to Bazel 8.4 where
+# it is enabled by default.
+common --experimental_cc_static_library=True

@@ -4,7 +4,7 @@
 
 # The following are example uses of the IDK atom rules that can be built and
 # analyzed with cquery.
-load("@rules_cc//cc:defs.bzl", "cc_binary", "cc_library")
+load("@rules_cc//cc:defs.bzl", "cc_binary", "cc_import", "cc_library")
 load(
     "//build/bazel/bazel_idk:defs.bzl",
     "create_idk_atom_for_test",
@@ -401,6 +401,24 @@ cc_binary(
     deps = [":test_static_library_zx"],
 )
 
+cc_import(
+    name = "imported-test-static-library",
+    testonly = True,
+    hdrs = ["include/lib/test_lib/test_header.h"],
+    # Bazel 8 does not automatically make the include path relative to the
+    # source root - see https://fxbug.dev/478970857 so we must do so manually.
+    # TODO(https://fxbug.dev/478896548): Make this `"include"` when updating to Bazel 9.
+    includes = ["build/bazel/bazel_idk/tests/include"],
+    static_library = ":test-static-library_export",
+)
+
+cc_binary(
+    name = "test_executable_using_imported_cc_static_library",
+    testonly = True,
+    srcs = ["test_executable.cc"],
+    deps = [":imported-test-static-library"],
+)
+
 filegroup(
     name = "build_only_tests",
     testonly = True,
@@ -412,6 +430,7 @@ filegroup(
         ":test_executable_using_cc_shared_library_zx",
         ":test_executable_using_cc_source_library_zx",
         ":test_executable_using_cc_static_library_zx",
+        ":test_executable_using_imported_cc_static_library",
 
         # Build all the migrated atoms for the main platform build.
         "//sdk:fuchsia_idk_atoms_produced_by_main_platform_build",

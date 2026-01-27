@@ -148,12 +148,18 @@ def _idk_cc_prebuilt_library_impl(
     else:
         fail("`libcxx_linkage` ('%s') must be 'none' or 'static'." % libcxx_linkage)
 
-    cc_library_name = "%s_impl" % name
-
-    # TODO(https://fxbug.dev/450004374): Remove  once `cc_static_library()`
-    # is no longer an experimental rule and is used below.
-    if prebuilt_library_type == "static":
+    if prebuilt_library_type == "shared":
+        # In-tree code should depend on the imported `cc_shared_library` rather
+        # than the `cc_library()`, which will not be a shared library.
+        # Give the `cc_library()` a different name to discourage use and make
+        # the base name available for the imported library.
+        cc_library_name = "%s_impl" % name
+    elif prebuilt_library_type == "static":
+        # In-tree code should depend on the `cc_library` rather than importing
+        # the `cc_static_library`, which is meant to be self-contained.
         cc_library_name = name
+    else:
+        fail("Unrecognized `prebuilt_library_type` '%s'." % prebuilt_library_type)
 
     # TODO(https://fxbug.dev/421888626): Apply the equivalent of GN's
     # `default_common_binary_configs` for "static" and
@@ -179,10 +185,13 @@ def _idk_cc_prebuilt_library_impl(
         **kwargs
     )
 
+    # The library included in the IDK is defined by a different rule that allows
+    # it to be exported.
+    underlying_library_for_idk_target_name = name + "_export"
+
     if prebuilt_library_type == "shared":
         # Create the exportable shared library. This generates the `.so` file
         # that will be included in the IDK.
-        underlying_library_for_idk_target_name = name + "_export"
         cc_shared_library(
             name = underlying_library_for_idk_target_name,
             shared_lib_name = "lib%s.so" % output_name,
@@ -198,10 +207,9 @@ def _idk_cc_prebuilt_library_impl(
         # transparent to in-tree users, the import's name is `name`.
         # This target has no impact on the IDK.
 
-        # Despite what the documentation says, `includes` results in `-I`
-        # instead of `-isystem`. Unlike `-isystem`, Bazel does not automatically
-        # make the include path relative to the source root. Thus, we must do so
-        # manually.
+        # Bazel 8 does not automatically make the include path relative to the
+        # source root - see https://fxbug.dev/478970857 so we must do so manually.
+        # TODO(https://fxbug.dev/478896548): Make this `include_base` when updating to Bazel 9.
         import_include_path = native.package_name() + "/" + include_base
 
         cc_import(
@@ -212,18 +220,16 @@ def _idk_cc_prebuilt_library_impl(
             testonly = testonly,
             visibility = visibility,
         )
-
     elif prebuilt_library_type == "static":
-        # TODO(https://fxbug.dev/450004374): Uncomment once
-        # `cc_static_library()` is no longer an experimental rule.
-        # native.cc_static_library(
-        #     name = name,
-        #     deps = [":%s" % cc_library_name],
-        #     testonly = testonly,
-        #     visibility = visibility,
-        # )
-
-        underlying_library_for_idk_target_name = name
+        # Create the exportable static library. This generates the `.a` file
+        # that will be included in the IDK.
+        # TODO(https://fxbug.dev/450004374): Remove `native.` once rules_cc supports it.
+        native.cc_static_library(
+            name = underlying_library_for_idk_target_name,
+            deps = [":%s" % cc_library_name],
+            testonly = testonly,
+            visibility = visibility,
+        )
     else:
         fail("Unrecognized `prebuilt_library_type` '%s'." % prebuilt_library_type)
 
