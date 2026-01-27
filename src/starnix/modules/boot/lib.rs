@@ -69,15 +69,16 @@ impl BootedDevice {
                     log_info!("Enabling boot-time CPU boost");
                     let booster = client_end.into_proxy();
                     kernel.kthreads.spawn_future(move || async move {
-                        if let Err(e) = booster.set_boost(true).await {
-                            log_warn!(e:?; "Failed to enable boot-time CPU boost");
-                            return;
-                        }
+                        let token = match booster.boost().await {
+                            Ok(Ok(token)) => token,
+                            e => {
+                                log_warn!(e:?; "Failed to enable boot-time CPU boost");
+                                return;
+                            }
+                        };
                         fuchsia_async::Timer::new(zx::MonotonicInstant::after(duration)).await;
                         log_info!("Disabling boot-time CPU boost");
-                        if let Err(e) = booster.set_boost(false).await {
-                            log_warn!(e:?; "Failed to disable boot-time CPU boost");
-                        }
+                        drop(token);
                     });
                 }
                 Err(e) => {

@@ -13,7 +13,9 @@ use futures::stream::{FuturesUnordered, StreamExt, TryStreamExt};
 use log::*;
 use std::collections::HashMap;
 use std::rc::Rc;
-use {fidl_fuchsia_power_cpu_manager as fcpumanager, fuchsia_async as fasync, serde_json as json};
+use {
+    fidl_fuchsia_power_cpu_manager as fcpumanager, fuchsia_async as fasync, serde_json as json, zx,
+};
 
 // nodes
 use crate::{
@@ -217,12 +219,56 @@ impl CpuManager {
                         responder.send(Err(fcpumanager::SetBoostError::NotSupported))?;
                         continue;
                     }
-                    let msg = Message::SetBoost(enable);
+                    let msg = Message::SetBoost(enable, 0);
                     if let Some(handler) = &handler {
                         match handler.handle_message(&msg).await {
                             Ok(MessageReturn::SetBoost) => {
                                 // success
                                 responder.send(Ok(()))?;
+                            }
+                            res => {
+                                log::error!("Failed to set boost: {:?}", res);
+                                responder.send(Err(fcpumanager::SetBoostError::Internal))?;
+                            }
+                        }
+                    } else {
+                        log::error!("No handler for the manger fidl");
+                        responder.send(Err(fcpumanager::SetBoostError::Internal))?;
+                    }
+                }
+                fcpumanager::BoostRequest::Boost { responder } => {
+                    if !boost_supported {
+                        log::error!("SetBoost is not supported");
+                        responder.send(Err(fcpumanager::SetBoostError::NotSupported))?;
+                        continue;
+                    }
+
+                    let (token, remote_token) = zx::EventPair::create();
+                    let koid = token.koid().unwrap().raw_koid();
+                    let msg = Message::SetBoost(true, koid);
+
+                    if let Some(handler) = &handler {
+                        match handler.handle_message(&msg).await {
+                            Ok(MessageReturn::SetBoost) => {
+                                // success
+                                let handler = handler.clone();
+                                fasync::Task::local(async move {
+                                    let _ = fasync::OnSignals::new(
+                                        &token,
+                                        zx::Signals::EVENTPAIR_PEER_CLOSED,
+                                    )
+                                    .await;
+                                    let msg = Message::SetBoost(false, koid);
+                                    if let Err(e) = handler.handle_message(&msg).await {
+                                        log::error!(
+                                            "Failed to disable boost after token drop: {:?}",
+                                            e
+                                        );
+                                    }
+                                })
+                                .detach();
+
+                                responder.send(Ok(remote_token))?;
                             }
                             res => {
                                 log::error!("Failed to set boost: {:?}", res);

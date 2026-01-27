@@ -6,5 +6,5 @@ import("//build/fidl/fidl.gni")
 
 fidl("fuchsia.power.cpu.manager") {
   sources = [ "boost.fidl" ]
-  public_deps = []
+  public_deps = [ "//zircon/vdso/zx" ]
 }

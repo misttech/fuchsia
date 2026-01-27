@@ -47,8 +47,11 @@ pub enum Message {
     /// Communicate a thermal load value
     UpdateThermalLoad(ThermalLoad),
 
-    /// Whether or not to enable cpu boost
-    SetBoost(bool),
+    /// Whether or not to enable cpu boost.
+    /// Args:
+    ///     - enable: true to enable boost, false to disable.
+    ///     - id: unique identifier for the boost request.
+    SetBoost(bool, u64),
 
     /// Get info about all power domains, i.e. CPU clusters.
     GetDomainInfos,

@@ -4,6 +4,8 @@
 @available(added=HEAD)
 library fuchsia.power.cpu.manager;
 
+using zx;
+
 type SetBoostError = strict enum : uint32 {
     NOT_SUPPORTED = 0;
     INTERNAL = 1;
@@ -14,4 +16,13 @@ protocol Boost {
     SetBoost(struct {
         enable bool;
     }) -> () error SetBoostError;
+
+    /// Boost the system to a higher performance state. Signal the end of boost by closing the
+    /// returned eventpair.
+    ///
+    /// This call is ref-counted. If there are multiple boost sources, the system will return to
+    /// normal performance when the last boost source is removed.
+    Boost() -> (resource struct {
+        token zx.Handle:EVENTPAIR;
+    }) error SetBoostError;
 };
