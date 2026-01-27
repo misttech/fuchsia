@@ -16,9 +16,12 @@ impl ObexString {
     }
 
     pub fn to_be_bytes(&self) -> Vec<u8> {
-        let mut encoded_buf: Vec<u16> = self.0.encode_utf16().collect();
-        encoded_buf.push(0); // Add the null terminator
-        encoded_buf.into_iter().map(|v| v.to_be_bytes()).flatten().collect()
+        self.0
+            .encode_utf16()
+            .chain([0]) // Add the null terminator
+            .map(|v| v.to_be_bytes())
+            .flatten()
+            .collect()
     }
 }
 
