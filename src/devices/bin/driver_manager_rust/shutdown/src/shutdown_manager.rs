@@ -130,8 +130,8 @@ impl ShutdownManager {
             .inspect_err(|e| error!("Failed to connect to LogFlusher: {}", e))
             .ok();
 
-        Rc::new(Self {
-            node_remover,
+        let shutdown_manager = Rc::new(Self {
+            node_remover: node_remover.clone(),
             internal_state: RefCell::new(ShutdownManagerState {
                 state: State::Running,
                 received_boot_shutdown_signal: false,
@@ -143,7 +143,20 @@ impl ShutdownManager {
             mexec_resource,
             log_flush,
             scope: fasync::Scope::new_with_name("shutdown_manager"),
-        })
+        });
+
+        let weak_manager = Rc::downgrade(&shutdown_manager);
+        node_remover.set_on_removal_timeout_callback(Box::new(move || {
+            if let Some(strong_manager) = weak_manager.upgrade() {
+                info!("Driver timed out during shutdown, issuing syscall to reboot/shutdown");
+                let strong_manager_clone = strong_manager.clone();
+                strong_manager.scope.spawn_local(async move {
+                    strong_manager_clone.system_execute().await;
+                });
+            }
+        }));
+
+        shutdown_manager
     }
 
     pub fn publish<'a>(self: &Rc<Self>, fs: &mut ServiceFs<ServiceObjLocal<'a, ()>>) {

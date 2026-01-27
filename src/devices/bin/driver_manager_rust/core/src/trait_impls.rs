@@ -37,6 +37,10 @@ impl NodeRemover for DriverRunner {
         self.removal_tracker.borrow_mut().finish_enumeration(Rc::downgrade(&self.removal_tracker));
         let _ = rx.await;
     }
+
+    fn set_on_removal_timeout_callback(&self, callback: Box<dyn Fn()>) {
+        self.removal_tracker.borrow_mut().set_on_removal_timeout_callback(callback);
+    }
 }
 
 #[async_trait(?Send)]

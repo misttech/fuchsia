@@ -30,6 +30,8 @@ pub struct NodeRemovalTracker {
     nodes: HashMap<NodeId, NodeInfo>,
     pkg_callback: Option<oneshot::Sender<()>>,
     all_callback: Option<oneshot::Sender<()>>,
+    on_removal_timeout_callback: Option<Box<dyn Fn()>>,
+    timeout_count: u32,
     timeout_task: Option<fasync::Task<()>>,
 }
 
@@ -43,6 +45,8 @@ impl NodeRemovalTracker {
             nodes: HashMap::new(),
             pkg_callback: None,
             all_callback: None,
+            on_removal_timeout_callback: None,
+            timeout_count: 0,
             timeout_task: None,
         }))
     }
@@ -111,7 +115,12 @@ impl NodeRemovalTracker {
         self.all_callback = Some(callback);
     }
 
+    pub fn set_on_removal_timeout_callback(&mut self, callback: Box<dyn Fn()>) {
+        self.on_removal_timeout_callback = Some(callback);
+    }
+
     fn on_removal_timeout(&mut self, weak_self: Weak<RefCell<Self>>) {
+        self.timeout_count += 1;
         warn!(
             "Removal hanging, nodes remaining: {} pkg, {} pkg+boot",
             self.remaining_pkg_nodes.len(),
@@ -121,6 +130,11 @@ impl NodeRemovalTracker {
             if node.state != ShutdownState::Destroyed && node.state != ShutdownState::Prestop {
                 warn!("  '{}' ('{}'): state {:?}", node.name, node.driver_url, node.state);
             }
+        }
+        if self.timeout_count >= 3
+            && let Some(callback) = &self.on_removal_timeout_callback
+        {
+            callback();
         }
         self.start_timeout_task(weak_self);
     }
