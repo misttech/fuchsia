@@ -7,6 +7,7 @@ use driver_manager_config::Config;
 use driver_manager_core::{DriverRunner, OfferInjector, PowerOffersConfig};
 use driver_manager_development::DriverDevelopmentService;
 use driver_manager_devfs::{Devfs, OutgoingDirectoryMsg};
+use driver_manager_firmware_crash::FirmwareCrashService;
 use driver_manager_shutdown::ShutdownManager;
 use driver_manager_utils::DictionaryUtil;
 use fidl::endpoints::{Proxy, create_endpoints};
@@ -103,6 +104,9 @@ async fn main() -> Result<(), Error> {
 
     let dds = Rc::new(DriverDevelopmentService::new(driver_runner.clone()));
     dds.publish(&mut fs);
+
+    let firmware_crash_service = Rc::new(FirmwareCrashService::default());
+    firmware_crash_service.publish(&mut fs);
 
     let shutdown_manager = ShutdownManager::new(driver_runner.clone());
     shutdown_manager.publish(&mut fs);
