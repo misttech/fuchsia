@@ -20,6 +20,7 @@ use log::warn;
 use moniker::{ExtendedMoniker, Moniker};
 use router_error::{Explain, RouterError};
 use sandbox::{Capability, RouterResponse};
+use std::iter;
 use std::sync::Arc;
 use {
     fidl_fuchsia_component as fcomponent, fidl_fuchsia_component_decl as fdecl,
@@ -184,6 +185,7 @@ fn generate_route_requests(
                 (target, request)
             })
             .collect();
+
         // `program.runner`, if set, is equivalent to a `use`.
         if let Some(runner) = resolved.decl().program.as_ref().and_then(|d| d.runner.as_ref()) {
             let target =
@@ -202,6 +204,7 @@ fn generate_route_requests(
             let request = RouteRequest::from_expose_decls(e).unwrap();
             (target, request)
         }));
+
         Ok(requests)
     } else {
         // Return results that fuzzy match (substring match) `target.name`.
@@ -213,31 +216,29 @@ fn generate_route_requests(
                     use_target.decl_type = fsys::DeclType::Use;
                     let mut expose_target = target;
                     expose_target.decl_type = fsys::DeclType::Expose;
-                    vec![use_target, expose_target].into_iter()
+                    Either::Left([use_target, expose_target].into_iter())
                 }
-                _ => vec![target].into_iter(),
+                _ => Either::Right(iter::once(target)),
             })
             .flatten();
-        targets
-            .map(|target| match target.decl_type {
+
+        let mut requests = vec![];
+        for target in targets {
+            match target.decl_type {
                 fsys::DeclType::Use => {
-                    let mut matching_requests: Vec<_> = resolved
-                        .decl()
-                        .uses
-                        .iter()
-                        .filter_map(|u| {
-                            if !u.source_name().as_str().contains(&target.name) {
-                                return None;
-                            }
-                            // This could be a fuzzy match so update the capability name.
-                            let target = fsys::RouteTarget {
-                                name: u.source_name().to_string(),
-                                decl_type: target.decl_type,
-                            };
-                            let request = RouteRequest::try_from(u.clone()).unwrap();
-                            Some(Ok((target, request)))
-                        })
-                        .collect();
+                    requests.extend(resolved.decl().uses.iter().filter_map(|u| {
+                        if !u.source_name().as_str().contains(&target.name) {
+                            return None;
+                        }
+                        // This could be a fuzzy match so update the capability name.
+                        let target = fsys::RouteTarget {
+                            name: u.source_name().to_string(),
+                            decl_type: target.decl_type,
+                        };
+                        let request = RouteRequest::try_from(u.clone()).unwrap();
+                        Some((target, request))
+                    }));
+
                     // `program.runner`, if set, is equivalent to a `use`.
                     if let Some(runner) = resolved
                         .decl()
@@ -252,18 +253,15 @@ fn generate_route_requests(
                         };
                         let u = use_for_runner(runner);
                         let request = RouteRequest::try_from(u).unwrap();
-                        matching_requests.push(Ok((target, request)));
-                    }
 
-                    matching_requests.into_iter()
+                        requests.push((target, request));
+                    }
                 }
                 fsys::DeclType::Expose => {
                     let exposes = routing::aggregate_exposes(resolved.decl().exposes.iter());
 
-                    #[allow(clippy::needless_collect)] // aligns the iterator type w/ above
-                    let matching_requests: Vec<_> = exposes
-                        .into_iter()
-                        .filter_map(|((target_name, _target), e)| {
+                    requests.extend(exposes.into_iter().filter_map(
+                        move |((target_name, _target), e)| {
                             if !target_name.as_str().contains(&target.name) {
                                 return None;
                             }
@@ -273,18 +271,38 @@ fn generate_route_requests(
                                 decl_type: target.decl_type,
                             };
                             let request = RouteRequest::from_expose_decls(e).unwrap();
-                            Some(Ok((target, request)))
-                        })
-                        .collect();
-                    matching_requests.into_iter()
+                            Some((target, request))
+                        },
+                    ));
                 }
                 fsys::DeclType::Any => unreachable!("Any was expanded"),
                 fsys::DeclTypeUnknown!() => {
-                    vec![Err(fsys::RouteValidatorError::InvalidArguments)].into_iter()
+                    return Err(fsys::RouteValidatorError::InvalidArguments);
                 }
-            })
-            .flatten()
-            .collect()
+            }
+        }
+
+        Ok(requests)
+    }
+}
+
+/// Either is an iterator over two variant iterators.
+///
+/// Similar to `itertools::Either`, but this avoids pulling in a large dependency for a small
+/// iterator type.
+enum Either<T, L: Iterator<Item = T>, R: Iterator<Item = T>> {
+    Left(L),
+    Right(R),
+}
+
+impl<T, L: Iterator<Item = T>, R: Iterator<Item = T>> Iterator for Either<T, L, R> {
+    type Item = T;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        match self {
+            Self::Left(iter) => iter.next(),
+            Self::Right(iter) => iter.next(),
+        }
     }
 }
 
