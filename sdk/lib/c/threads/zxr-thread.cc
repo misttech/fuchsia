@@ -76,28 +76,6 @@ static zx_futex_t* state_futex(zxr_thread_t* thread) {
   CRASH_WITH_UNIQUE_BACKTRACE();
 }
 
-[[noreturn]] static void thread_trampoline(uintptr_t ctx, uintptr_t arg) {
-  zxr_thread_t* thread = reinterpret_cast<zxr_thread_t*>(ctx);
-
-  thread->entry(reinterpret_cast<void*>(arg));
-
-  const int old_state = begin_exit(thread);
-  switch (old_state) {
-    case JOINABLE:
-      // Nobody's watching right now, but they might start watching as we
-      // exit.  Just in case, behave as if we've been joined and wake the
-      // futex on our way out.
-    case JOINED:
-      // Somebody loves us!  Or at least intends to inherit when we die.
-      exit_non_detached(thread);
-      break;
-  }
-
-  // Cannot be in DONE, EXITING, or DETACHED and reach here.  For DETACHED, it
-  // is the responsibility of a higher layer to ensure this is not reached.
-  CRASH_WITH_UNIQUE_BACKTRACE();
-}
-
 [[noreturn]] void zxr_thread_exit_unmap_if_detached(zxr_thread_t* thread,
                                                     void (*if_detached)(void*),
                                                     void* if_detached_arg,
@@ -146,24 +124,6 @@ zx_status_t zxr_thread_create(zx_handle_t process, const char* name, bool detach
   const size_t name_length = local_strlen(name) + 1;
 
   return _zx_thread_create(process, name, name_length, 0, &thread->handle);
-}
-
-zx_status_t zxr_thread_start(zxr_thread_t* thread, uintptr_t stack_addr, size_t stack_size,
-                             zxr_thread_entry_t entry, void* arg) {
-  thread->entry = entry;
-
-  // compute the starting address of the stack
-  const uintptr_t sp = elfldltl::AbiTraits<>::InitialStackPointer(stack_addr, stack_size);
-
-  // kick off the new thread
-  const zx_status_t status =
-      _zx_thread_start(thread->handle, reinterpret_cast<uintptr_t>(thread_trampoline), sp,
-                       reinterpret_cast<uintptr_t>(thread), reinterpret_cast<uintptr_t>(arg));
-  if (status != ZX_OK) {
-    zx::thread{std::exchange(thread->handle, ZX_HANDLE_INVALID)}.reset();
-  }
-
-  return status;
 }
 
 static void wait_for_done(zxr_thread_t* thread, int32_t old_state) {

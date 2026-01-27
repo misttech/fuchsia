@@ -72,3 +72,8 @@ source_set("zx-name") {
   public = [ "zx-name.h" ]
   public_deps = [ "//zircon/system/ulib/zx" ]
 }
+
+libc_source_set("zx-name.printf") {
+  public_deps = [ ":zx-name" ]
+  sources = [ "zx-name.cc" ]
+}

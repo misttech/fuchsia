@@ -11,7 +11,6 @@ source_set("thread") {
   sources = [
     "__timedwait.c",
     "__wait.c",
-    "allocate.c",
     "call_once.c",
     "cnd_broadcast.c",
     "cnd_destroy.c",
@@ -26,10 +25,7 @@ source_set("thread") {
     "mtx_trylock.c",
     "mtx_unlock.c",
     "safestack.c",
-    "thrd_create.c",
     "thrd_detach.c",
-    "thrd_exit.c",
-    "thrd_join.c",
     "thrd_sleep.c",
     "thrd_yield.c",
     "tss.c",
@@ -37,9 +33,6 @@ source_set("thread") {
   ]
 
   configs -= [ "//build/config:symbol_visibility_hidden" ]
-
-  # This is needed by allocate.c for "hwasan-stubs.h".
-  include_dirs = [ "//sdk/lib/c/sanitizers" ]
 }
 
 source_set("tls_get_addr") {

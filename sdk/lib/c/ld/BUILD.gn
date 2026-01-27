@@ -64,7 +64,7 @@ libc_source_set("ld-tls") {
     "_ld_abi",
   ]
   sources = [ "ld-tls.cc" ]
-  libc_deps = [ ":log-panic" ]
+  non_test_deps = [ ":log-panic" ]
   deps = [
     "../threads:thread-storage",
     "//sdk/lib/ld:headers",
@@ -143,8 +143,8 @@ libc_source_set("sanitizer-log-write") {
 # printfs used by various assert macros and such.
 libc_source_set("log-panic") {
   sources = [ "log-panic.cc" ]
-  deps = [
-    ":log.headers",
+  deps = [ ":log.headers" ]
+  libc_deps = [
     "../stdio/printf_core:wrapper",
     "../stdlib:abort",
   ]

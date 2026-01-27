@@ -33,6 +33,7 @@ libc_components = [
   "startup",
   "stdio",
   "stdlib",
+  "threads",
   "wchar",
   "zircon",
 ]
@@ -41,7 +42,6 @@ libc_testonly_components = [
   "dlfcn",
   "ld",
   "link",
-  "threads",
 ]
 
 if (use_llvm_libc_string_functions) {

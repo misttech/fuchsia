@@ -15,6 +15,8 @@
 #include <type_traits>
 
 #include "../asm-linkage.h"
+#include "../dlfcn/dlfcn-abi.h"
+#include "../weak.h"
 #include "mutex.h"
 #include "src/__support/macros/config.h"
 #include "threads_impl.h"
@@ -23,11 +25,38 @@ namespace LIBC_NAMESPACE_DECL {
 
 using Thread = ::__pthread;
 
+// This lock guards specifically the list of "all" threads: that is, both the
+// gAllThreads variable itself; and also the `next` and `prev` members of every
+// Thread reachable from it.  A thread being on this list means it's considered
+// "live" for most purposes.  That can include threads that haven't actually
+// been started (or even fully created) yet; and threads that have exited or
+// are exiting but haven't been joined.  This lock is always held as briefly as
+// possible, only while manipulating the _list itself_.  Any thread exit, join,
+// or detach needs this lock, not only something costlier like thread creation.
+//
 // TODO(https://fxbug.dev/342469121): asm-linkage only needed for basic_abi
 // musl glue.
 extern Mutex gAllThreadsLock LIBC_ASM_LINKAGE_DECLARE(gAllThreadsLock) __LOCAL;
 extern Thread* gAllThreads LIBC_ASM_LINKAGE_DECLARE(gAllThreads) __LOCAL
     __TA_GUARDED(gAllThreadsLock);
+
+// This lock is used to exclude, and synchronize with, changes to the dynamic
+// linker data structures consulted by ThreadStorage::GetTlsLayout() and
+// ThreadStorage::InitializeTls().  The behavior of these methods must not
+// change from the time that ThreadStorage uses them both (one before doing the
+// costly allocation VM syscalls and one after), until the new Thread is
+// entered onto the gAllThreads list.  Thereafter, the dlopen code paths that
+// change their results must safely retrofit every thread on that list while
+// holding this lock.  As thread creation is usually both more common and more
+// performance-sensitive than dlopen, this uses a reader-writer lock with
+// thread creation as "reader" and dlopen (affecting TLS layout) as "writer".
+//
+// TODO(https://fxbug.dev/342469121): This is only needed in this form while
+// using the legacy musl dynamic linker.  The new libdl's implementation of
+// dlopen needs some analogous locking, but it can be done at finer grain.
+__TA_ACQUIRED_AFTER(kDlfcnLock)        //
+__TA_ACQUIRED_BEFORE(gAllThreadsLock)  //
+inline constexpr WeakLock<__thread_allocation_inhibit, __thread_allocation_release> kStaticTlsLock;
 
 template <typename IncrementFunction, typename ValueType>
 concept Incrementer =

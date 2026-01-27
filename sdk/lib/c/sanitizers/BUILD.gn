@@ -61,6 +61,7 @@ libc_source_set("memory-snapshot") {
     "../threads:thread-list",
     "../threads:zxr-thread",
     "//zircon/system/ulib/zx",
+    "//zircon/third_party/ulib/musl:musl_internal",
   ]
 }
 

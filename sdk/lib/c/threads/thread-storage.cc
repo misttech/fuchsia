@@ -27,7 +27,7 @@ void ThreadStorage::FreeStacks() {
 }
 
 // Translate from the legacy C struct representation for ownership.
-ThreadStorage ThreadStorage::FromThread(Thread& thread, zx::unowned_vmar vmar) {
+ThreadStorage ThreadStorage::FromThread(Thread& thread, bool take_thread_block) {
   using Sizes = std::array<size_t, 2>;  // Stack size, guard size.
   constexpr auto infer_sizes = [](iovec stack, iovec region, bool grows_up = false) -> Sizes {
     assert(PageRoundedSize{stack.iov_len}.get() == stack.iov_len);
@@ -53,12 +53,17 @@ ThreadStorage ThreadStorage::FromThread(Thread& thread, zx::unowned_vmar vmar) {
   Sizes stack_sizes = infer_sizes(thread.safe_stack, thread.safe_stack_region);
   assert(infer_sizes(thread.unsafe_stack, thread.unsafe_stack_region) == stack_sizes);
 #if HAVE_SHADOW_CALL_STACK
-  assert(infer_sizes(thread.shadow_call_stack, thread.shadow_call_stack_region) == stack_sizes);
+  assert(infer_sizes(thread.shadow_call_stack, thread.shadow_call_stack_region, true) ==
+         stack_sizes);
 #endif
 
+  const zx::unowned_vmar vmar{thread.storage_vmar};
   assert(*vmar);
   ThreadStorage result;
-  result.thread_block_ = {std::exchange(thread.tcb_region, {}), vmar->borrow()};
+  result.thread_block_ = GuardedPageBlock{
+      take_thread_block ? std::exchange(thread.tcb_region, {}) : iovec{},
+      vmar->borrow(),
+  };
   std::tie(result.stack_size_.rounded_size_, result.guard_size_.rounded_size_) = stack_sizes;
   result.machine_stack_ = take_stack(thread.safe_stack, thread.safe_stack_region);
   result.unsafe_stack_ = take_stack(thread.unsafe_stack, thread.unsafe_stack_region);
@@ -85,6 +90,9 @@ void ThreadStorage::ToThread(Thread& thread) && {
     };
     base = 0;
   };
+
+  // Copy the (unowned) VMAR handle from thread_block_ before it's moved-from.
+  thread.storage_vmar = vmar().get();
 
   thread.tcb_region = std::move(thread_block_).TakeIovec();
 

@@ -81,10 +81,10 @@ class ThreadStorage {
   //    TODO(https://fxbug.dev/397084454): The new //sdk/lib/dl TLS runtime
   //    does not require a bespoke ABI contract for a DTV.
   //
-  // The name should match the ZX_PROP_NAME used for the zx::thread.  The VMAR
-  // handle is saved and used for destruction, so it must remain valid for the
-  // lifetime of the object (it's just the long-lived primary allocation / root
-  // VMAR handle, except in tests).
+  // The name string will become the ZX_PROP_NAME used for the VMO, and must
+  // not be empty.  The VMAR handle is saved and used for destruction, so it
+  // must remain valid for the lifetime of the object (it's just the long-lived
+  // primary allocation / root VMAR handle, except in tests).
   //
   // The returned Thread* points somewhere inside the thread area block owned
   // by this ThreadStorage object, which also contains the static TLS area
@@ -94,7 +94,7 @@ class ThreadStorage {
   // consider the Fuchsia Compiler ABI <zircon/tls.h> fixed slots, as well as
   // the $tp->self pointer on x86, to be part of the TCB--at one end of it or
   // the other--though nothing else about the TCB is part of any public ABI.)
-  zx::result<Thread*> Allocate(zx::unowned_vmar allocate_from, std::string_view thread_name,
+  zx::result<Thread*> Allocate(zx::unowned_vmar allocate_from, std::string_view vmo_name,
                                PageRoundedSize stack, PageRoundedSize guard);
 
   // This frees just the blocks for all the stacks, leaving the thread block
@@ -105,7 +105,8 @@ class ThreadStorage {
   // possible to destroy the Thread before destroying the ThreadStorage makes
   // its memory inaccessible.  (When Thread becomes a true C++ type, this will
   // be replaced with plain move-construction from its ThreadStorage member.)
-  static ThreadStorage FromThread(Thread& thread, zx::unowned_vmar vmar);
+  // If take_thread_block is false, leave the thread block intact.
+  static ThreadStorage FromThread(Thread& thread, bool take_thread_block);
 
   // This moves ownership from this ThreadStorage into the Thread.  (When
   // Thread becomes a true C++ type, this will be replaced with plain
@@ -131,6 +132,14 @@ class ThreadStorage {
   PageRoundedSize stack_size() const { return stack_size_; }
   PageRoundedSize guard_size() const { return guard_size_; }
 
+  // A handy stash of the unowned AllocationVmar() value passed to Allocate().
+  const zx::vmar& vmar() const { return thread_block_.vmar(); }
+
+  // The thread block is implicitly destroyed last.  **NOTE:** The Thread
+  // object itself resides inside the thread block, so the block must not be
+  // reclaimed until the ThreadStorage has been moved out of the Thread!
+  // FreeStacks() can be called first to free up most of the storage while the
+  // Thread object needs to stay alive (until join or detached final-exit).
   ~ThreadStorage() { FreeStacks(); }
 
   // This takes a pointer-to-data-member and all the members are private.  It's

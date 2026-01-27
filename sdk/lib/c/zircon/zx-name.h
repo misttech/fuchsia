@@ -23,10 +23,16 @@ class ZxName {
   constexpr ZxName() = default;
   constexpr ZxName(const ZxName&) = default;
 
+  [[gnu::format(printf, 1, 2)]] static ZxName Printf(const char* fmt, ...);
+
   constexpr explicit ZxName(std::string_view name) {
     // name_.back() and any earlier unused chars are already '\0'.
     name.copy(name_.data(), name_.size() - 1);
   }
+
+  constexpr ZxName& operator=(const ZxName&) = default;
+
+  constexpr bool empty() const { return name_.front() == '\0'; }
 
   constexpr std::string_view str() const {
     std::string_view name{name_.data(), name_.size() - 1};

@@ -77,6 +77,12 @@ if (is_ubsan) {
   ]
 }
 
+if (is_gcc) {
+  # GNU ld sometimes produces a spurious undefined symbol for this even when
+  # it's not used in any relocations.
+  libc_hermetic_undefs += [ "_GLOBAL_OFFSET_TABLE_" ]
+}
+
 # Flipping this and then doing a failing build with -k0 is a handy way to see
 # what specific vDSO references are made from basic_abi libc_source_set()s.
 _diagnose_libzircon_refs = false  # true
@@ -696,7 +702,8 @@ template("llvm_libc_source_set") {
     }
 
     foreach(function, invoker.functions) {
-      if (asm_functions + [ function ] - [ function ] != asm_functions) {
+      if (preempt_header_functions + [ function ] - [ function ] !=
+          preempt_header_functions) {
         public += [ "$libc/include-preempt/src/$source_dir/$function.h" ]
       } else {
         public += [ "$function.h" ]

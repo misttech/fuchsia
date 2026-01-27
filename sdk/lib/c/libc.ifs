@@ -943,17 +943,17 @@ Symbols:
   - { Name: pthread_condattr_getclock, Type: Func }
   - { Name: pthread_condattr_init, Type: Func }
   - { Name: pthread_condattr_setclock, Type: Func }
-  - { Name: pthread_create, Type: Func, Weak: true }
+  - { Name: pthread_create, Type: Func }
   - { Name: pthread_detach, Type: Func, Weak: true }
   - { Name: pthread_equal, Type: Func, Weak: true }
-  - { Name: pthread_exit, Type: Func, Weak: true }
+  - { Name: pthread_exit, Type: Func }
   - { Name: pthread_getaffinity_np, Type: Func }
   - { Name: pthread_getattr_np, Type: Func }
   - { Name: pthread_getconcurrency, Type: Func }
   - { Name: pthread_getcpuclockid, Type: Func }
   - { Name: pthread_getname_np, Type: Func }
   - { Name: pthread_getspecific, Type: Func, Weak: true }
-  - { Name: pthread_join, Type: Func, Weak: true }
+  - { Name: pthread_join, Type: Func }
   - { Name: pthread_key_create, Type: Func }
   - { Name: pthread_key_delete, Type: Func }
   - { Name: pthread_kill, Type: Func }

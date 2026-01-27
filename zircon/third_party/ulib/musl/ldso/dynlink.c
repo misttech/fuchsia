@@ -1327,7 +1327,7 @@ LIBC_NO_SAFESTACK static void do_tls_layout(struct dso* p, char* tls_buffer, int
   if (tls_tail)
     tls_tail->next = &p->tls;
   else
-    libc.tls_head = &p->tls;
+    tls_layout.tls_head = &p->tls;
   tls_tail = &p->tls;
 }
 
@@ -1697,7 +1697,7 @@ __attribute__((__visibility__("hidden"))) void* __tls_get_new(size_t offset, siz
 }
 
 LIBC_NO_SAFESTACK static void update_tls_size(void) {
-  libc.tls_cnt = tls_cnt;
+  tls_layout.tls_cnt = tls_cnt;
   tls_layout.align = tls_align;
   tls_layout.size =
       ZX_ALIGN((1 + tls_cnt) * sizeof(void*) + tls_offset + sizeof(struct pthread) + tls_align * 2,
@@ -1881,7 +1881,7 @@ LIBC_NO_SAFESTACK static void* dls3(zx_handle_t exec_vmo, zx_handle_t vmar, cons
   app.l_map.l_name = (char*)argv0;
 
   if (app.tls.size) {
-    libc.tls_head = tls_tail = &app.tls;
+    tls_layout.tls_head = tls_tail = &app.tls;
     app.tls_id = tls_cnt = 1;
 #ifdef TLS_ABOVE_TP
     app.tls.offset = (tls_offset + app.tls.align - 1) & -app.tls.align;
@@ -2369,7 +2369,7 @@ static void* dlopen_internal(zx_handle_t vmo, zx_handle_t vmar, const char* file
     for (p = dso_next(orig_tail); p; p = dso_next(p))
       unmap_library(p);
     if (!orig_tls_tail)
-      libc.tls_head = 0;
+      tls_layout.tls_head = 0;
     tls_tail = orig_tls_tail;
     tls_cnt = orig_tls_cnt;
     tls_offset = orig_tls_offset;

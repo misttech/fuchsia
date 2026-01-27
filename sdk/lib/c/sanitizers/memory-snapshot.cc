@@ -19,7 +19,7 @@
 #include "../ld/writable-segments.h"
 #include "../threads/thread-list.h"
 #include "../threads/zxr-thread.h"
-#include "../weak.h"
+#include "libc.h"
 #include "threads_impl.h"
 
 namespace LIBC_NAMESPACE_DECL {
@@ -62,8 +62,6 @@ class PrimeSyscallsBeforeTakingLocks {
     zx_handle_close(vmo);
   }
 };
-
-constexpr WeakLock<__thread_allocation_inhibit, __thread_allocation_release> kAllocationLock;
 
 // This is a simple container similar to std::vector but using only whole-page
 // allocations in a private VMO to avoid interactions with any normal memory
@@ -187,7 +185,7 @@ using SuspendedThreadVector = RelocatingPageAllocatedVector<SuspendedThread>;
 
 class __TA_SCOPED_CAPABILITY ThreadSuspender {
  public:
-  ThreadSuspender() __TA_ACQUIRE(kDlfcnLock, kAllocationLock, gAllThreadsLock) = default;
+  ThreadSuspender() __TA_ACQUIRE(kDlfcnLock, kStaticTlsLock, gAllThreadsLock) = default;
   ~ThreadSuspender() __TA_RELEASE() = default;
 
   zx_status_t Collect(SuspendedThreadVector& threads) {
@@ -349,7 +347,7 @@ class __TA_SCOPED_CAPABILITY ThreadSuspender {
   // the looping logic in Collect, below.  Also, nothing prevents racing
   // with other direct zx_thread_create calls in the process that don't use
   // the libc facilities.
-  std::lock_guard<decltype(kAllocationLock)> lock_allocation_{kAllocationLock};
+  std::lock_guard<decltype(kStaticTlsLock)> lock_allocation_{kStaticTlsLock};
 
   // Importantly, this lock protects consistency of the global list of
   // all threads so that it can be traversed safely below.
@@ -500,7 +498,7 @@ class MemorySnapshot {
     // Report each DTV element with its segment's precise address range.
     const size_t gen = (size_t)tcb->head.dtv[0];
     size_t modid = 0;
-    for (auto* mod = __libc.tls_head; mod && ++modid <= gen; mod = mod->next) {
+    for (auto* mod = _dl_tls_layout().tls_head; mod && ++modid <= gen; mod = mod->next) {
       callback(tcb->head.dtv[modid], mod->size, callback_arg_);
     }
   }
@@ -517,13 +515,11 @@ class MemorySnapshot {
       return AllThreadsLocked();
     };
     for (auto tcb : unlocked_all_threads()) {
-      void* ptrs[] = {
-          // Report the thread's starting argument which may only be available in the internal
-          // pthread, or the thread's result join value which may be set once the thread
-          // completes.
-          tcb->start_arg_or_result,
-      };
-      callback(ptrs, sizeof(ptrs), callback_arg_);
+      // Report the value that pthread_join() will return for this thread if
+      // it's already exited.  There is no concern for any exit races here: if
+      // the thread is in the middle of exiting but hasn't set its join_value
+      // yet, then the value will be in the thread's live stack or registers.
+      callback(&tcb->join_value, sizeof(tcb->join_value), callback_arg_);
     }
   }
 };

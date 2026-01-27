@@ -3,7 +3,6 @@
 // found in the LICENSE file.
 
 #include <lib/elfldltl/machine.h>
-#include <zircon/assert.h>
 
 #include <cassert>
 #include <concepts>
@@ -17,9 +16,6 @@ namespace LIBC_NAMESPACE_DECL {
 namespace {
 
 using TlsLayout = elfldltl::TlsLayout<>;
-
-// If the thread's ZX_PROP_NAME is empty, the VMO will use this name instead.
-constexpr std::string_view kVmoName = "thread-stacks+TLS";
 
 // Each of the blocks owned by ThreadStorage is represented by a Block
 // specialization for some &ThreadStorage::member_.  Each class below meets
@@ -299,14 +295,11 @@ ThreadBlockSize ComputeThreadBlockSize(TlsLayout static_tls_layout) {
 }  // namespace
 
 zx::result<Thread*> ThreadStorage::Allocate(zx::unowned_vmar allocate_from,
-                                            std::string_view thread_name, PageRoundedSize stack,
+                                            std::string_view vmo_name, PageRoundedSize stack,
                                             PageRoundedSize guard) {
-  ZX_DEBUG_ASSERT(*allocate_from);
-  ZX_DEBUG_ASSERT(stack);
-
-  if (thread_name.empty()) {
-    thread_name = kVmoName;
-  }
+  assert(*allocate_from);
+  assert(stack);
+  assert(!vmo_name.empty());
 
   // The thread block size is a complex calculation, while the others depend
   // only on the stack and guard sizes.
@@ -361,9 +354,9 @@ zx::result<Thread*> ThreadStorage::Allocate(zx::unowned_vmar allocate_from,
     tcb.Commit(*this);
     (stacks.Commit(*this), ...);
 
-    // Name the VMO to match the thread.
-    return zx::make_result(
-        vmo->vmo.set_property(ZX_PROP_NAME, thread_name.data(), thread_name.size()));
+    // Set the VMO's name to ease debugging.  The (only) VMO handle is dropped
+    // after on return, so there won't be any way to change the name later.
+    return zx::make_result(vmo->vmo.set_property(ZX_PROP_NAME, vmo_name.data(), vmo_name.size()));
   };
 
   // Allocate all the blocks together in a single VMO and map each separately.

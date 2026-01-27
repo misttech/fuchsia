@@ -65,9 +65,12 @@ struct pthread {
   struct pthread* next;
   struct pthread** prevp;
 
-  // The process handle that is used to create new threads in
-  // pthread_create.
+  // The _unowned_ process handle that is used to create new threads in
+  // ThreadCreate.
   zx_handle_t process_handle;
+
+  // The _unowned_ VMAR handle used to unmap the stack and TCB regions.
+  zx_handle_t storage_vmar;
 
   // The *_region fields describe whole memory regions reserved,
   // including guard pages (for deallocation).  safe_stack and
@@ -90,10 +93,8 @@ struct pthread {
 
   void* sanitizer_hook;
 
-  // This initially holds the argument passed to a pthread on starting, but since we clear this
-  // before entering `start`, we can also reuse this to store the join value.
-  void* start_arg_or_result;
-  void* (*start)(void*);
+  intptr_t join_value;
+
   locale_t locale;
   char* dlerror_buf;
   int dlerror_flag;
@@ -304,11 +305,7 @@ static inline pid_t __thread_get_tid_for_filelock(void) {
   return __thread_handle_to_filelock_tid((int)__pthread_self()->zxr_thread.handle);
 }
 
-int __pthread_create(pthread_t* __restrict, const pthread_attr_t* __restrict, void* (*)(void*),
-                     void* __restrict) ATTR_LIBC_VISIBILITY;
 int __pthread_detach(pthread_t t) ATTR_LIBC_VISIBILITY;
-_Noreturn void __pthread_exit(void* result) ATTR_LIBC_VISIBILITY;
-int __pthread_join(pthread_t t, void** result) ATTR_LIBC_VISIBILITY;
 
 // Signal n (or all, for -1) threads on a pthread_cond_t or cnd_t.
 void __private_cond_signal(void* condvar, int n) ATTR_LIBC_VISIBILITY;
@@ -336,12 +333,6 @@ void __thread_tsd_run_dtors(void) ATTR_LIBC_VISIBILITY;
       ._a_stacksize = _dl_stack_size(),           \
       ._a_guardsize = _zx_system_get_page_size(), \
   })
-
-thrd_t __allocate_thread(size_t guard_size, size_t stack_size, const char* thread_name,
-                         char default_name[ZX_MAX_NAME_LEN])
-    __attribute__((nonnull(3))) ATTR_LIBC_VISIBILITY;
-struct pthread* _dl_copy_tls(unsigned char* mem, size_t alloc)
-    __attribute__((nonnull(1))) ATTR_LIBC_VISIBILITY;
 
 int __clock_gettime(clockid_t, struct timespec*) ATTR_LIBC_VISIBILITY;
 

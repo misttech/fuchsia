@@ -55,7 +55,9 @@ libc_source_set("wrapper") {
   visibility = [ "//sdk/lib/ld/*" ]
 
   public = [ "wrapper.h" ]
-  public_configs = [ ":wrapper.config" ]
+  non_test_vars = {
+    public_configs = [ ":wrapper.config" ]
+  }
 
   sources = [ "wrapper.cc" ]
   deps = [ ":printf_core" ]

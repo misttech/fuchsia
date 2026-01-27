@@ -19,10 +19,7 @@ using std::atomic_int;
 
 __BEGIN_CDECLS
 
-typedef void (*zxr_thread_entry_t)(void*);
-
 typedef struct {
-  zxr_thread_entry_t entry;
   zx_handle_t handle;
   atomic_int state;  // Actually an enum private to zxr-thread.cc
 } zxr_thread_t;
@@ -45,14 +42,6 @@ zx_status_t zxr_thread_create(zx_handle_t proc_self, const char* name, bool deta
 // Fill in the given zxr_thread_t to describe a thread given its handle.
 // This takes ownership of the given thread handle.
 zx_status_t zxr_thread_adopt(zx_handle_t handle, zxr_thread_t* thread);
-
-// Start the thread with the given stack, entrypoint, and
-// argument. stack_addr is taken to be the low address of the stack
-// mapping, and should be page aligned. The size of the stack should
-// be a multiple of PAGE_SIZE. When started, the thread will call
-// entry(arg).
-zx_status_t zxr_thread_start(zxr_thread_t* thread, uintptr_t stack_addr, size_t stack_size,
-                             zxr_thread_entry_t entry, void* arg);
 
 // Once started, threads can be either joined or detached. It is undefined
 // behavior to join a thread multiple times or to join a detached thread.

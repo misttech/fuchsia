@@ -32,12 +32,12 @@ struct tls_module {
 
 struct tls_layout {
   size_t size, align;
+  struct tls_module* tls_head;
+  size_t tls_cnt;
 };
 
 struct __libc {
   atomic_int thread_count;
-  struct tls_module* tls_head;
-  size_t tls_cnt;
   struct __locale_struct global_locale;
 };
 

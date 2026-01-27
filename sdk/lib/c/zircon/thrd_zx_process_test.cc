@@ -3,6 +3,7 @@
 // found in the LICENSE file.
 
 #include <lib/fit/defer.h>
+#include <pthread.h>
 #include <zircon/process.h>
 #include <zircon/threads.h>
 
@@ -34,6 +35,17 @@ TEST(ThrdSetZxProcessTest, SetInvalidAndCreate) {
   zx_handle_t previous = thrd_set_zx_process(ZX_HANDLE_INVALID);
   auto reset_handle = fit::defer([previous]() { thrd_set_zx_process(previous); });
 
+  constexpr auto nop_thrd = [](void* arg) -> int { return 0; };
+  constexpr auto nop_pthread = [](void* arg) -> void* { return nullptr; };
+
+  // ESRCH indicates zx_thread_create failed due to a bad process handle.
+  // POSIX does not specify an ESRCH case, but it implicitly allows one for
+  // this case that's induced only using a Zircon-specific API.
+  pthread_t pth;
+  ASSERT_EQ(pthread_create(&pth, nullptr, nop_pthread, nullptr), ESRCH);
+
+  // The C11 API has only thrd_error to return for anything that's not a
+  // resource shortage per se where thrd_nomem best applies.
   thrd_t t2;
-  ASSERT_EQ(thrd_create(&t2, [](void* arg) { return 0; }, nullptr), thrd_nomem);
+  ASSERT_EQ(thrd_create(&t2, nop_thrd, nullptr), thrd_error);
 }

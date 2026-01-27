@@ -75,7 +75,7 @@ class LibcThreadTests : public ::zxtest::Test {
   PageRoundedSize test_vmar_size_;
 };
 
-constexpr std::string_view kThreadName = "thread-storage-test";
+constexpr std::string_view kVmoName = "thread-storage-test";
 
 const PageRoundedSize kOnePage{1};
 const PageRoundedSize kManyPages = kOnePage * 256;
@@ -270,29 +270,12 @@ TEST_F(LibcThreadTests, ThreadStorage) {
   EXPECT_EQ(storage.shadow_call_sp(), nullptr);
 
   // Allocate the most basic layout: one-page stacks, one-page guards.
-  auto result = storage.Allocate(TestVmar(), kThreadName, kOnePage, kOnePage);
+  auto result = storage.Allocate(TestVmar(), kVmoName, kOnePage, kOnePage);
   ASSERT_TRUE(result.is_ok()) << result.status_string();
 
-  CheckVmoName(TestVmar(), kThreadName, reinterpret_cast<uintptr_t>(*result));
+  CheckVmoName(TestVmar(), kVmoName, reinterpret_cast<uintptr_t>(*result));
 
   CheckStorage(kOnePage, kOnePage, storage, *result);
-}
-
-TEST_F(LibcThreadTests, ThreadStorageDefaultName) {
-  ThreadStorage storage;
-
-  // Empty when constructed.
-  EXPECT_EQ(storage.stack_size().get(), 0u);
-  EXPECT_EQ(storage.guard_size().get(), 0u);
-  EXPECT_EQ(storage.machine_sp(), nullptr);
-  EXPECT_EQ(storage.unsafe_sp(), nullptr);
-  EXPECT_EQ(storage.shadow_call_sp(), nullptr);
-
-  // Use an empty thread name so the non-empty default is used instead.
-  auto result = storage.Allocate(TestVmar(), "", kOnePage, kOnePage);
-  ASSERT_TRUE(result.is_ok()) << result.status_string();
-
-  CheckVmoName(TestVmar(), "thread-stacks+TLS", reinterpret_cast<uintptr_t>(*result));
 }
 
 TEST_F(LibcThreadTests, ThreadStorageTooBig) {
@@ -300,7 +283,7 @@ TEST_F(LibcThreadTests, ThreadStorageTooBig) {
 
   // Use a stack size so big that they can't all be mapped in.
   const PageRoundedSize stack{kTestVmarSize / 2};
-  auto result = storage.Allocate(TestVmar(), kThreadName, stack, kOnePage);
+  auto result = storage.Allocate(TestVmar(), kVmoName, stack, kOnePage);
   ASSERT_TRUE(result.is_error());
   EXPECT_EQ(result.error_value(), ZX_ERR_NO_RESOURCES);
 }
@@ -308,7 +291,7 @@ TEST_F(LibcThreadTests, ThreadStorageTooBig) {
 TEST_F(LibcThreadTests, ThreadStorageBigStack) {
   ThreadStorage storage;
 
-  auto result = storage.Allocate(TestVmar(), kThreadName, kManyPages, kOnePage);
+  auto result = storage.Allocate(TestVmar(), kVmoName, kManyPages, kOnePage);
   ASSERT_TRUE(result.is_ok()) << result.status_string();
   CheckStorage(kManyPages, kOnePage, storage, *result);
 }
@@ -316,7 +299,7 @@ TEST_F(LibcThreadTests, ThreadStorageBigStack) {
 TEST_F(LibcThreadTests, ThreadStorageBigGuard) {
   ThreadStorage storage;
 
-  auto result = storage.Allocate(TestVmar(), kThreadName, kOnePage, kManyPages);
+  auto result = storage.Allocate(TestVmar(), kVmoName, kOnePage, kManyPages);
   ASSERT_TRUE(result.is_ok()) << result.status_string();
   CheckStorage(kOnePage, kManyPages, storage, *result);
 }
@@ -331,7 +314,7 @@ TEST_F(LibcThreadTests, ThreadStorageNoGuard) {
   // page with no guards.  The thread block always gets two one-page guards, so
   // the minimal one is three pages.
   const PageRoundedSize vmar_size = (kOnePage * kStackCount) + (kOnePage * 3);
-  auto result = storage.Allocate(TestVmar(vmar_size), kThreadName, kOnePage, kNoGuard);
+  auto result = storage.Allocate(TestVmar(vmar_size), kVmoName, kOnePage, kNoGuard);
   ASSERT_TRUE(result.is_ok()) << result.status_string();
 }
 
@@ -365,7 +348,7 @@ TEST_F(LibcThreadTests, ThreadStorageTls) {
   };
 
   ThreadStorage storage;
-  auto result = storage.Allocate(TestVmar(), kThreadName, kOnePage, kOnePage);
+  auto result = storage.Allocate(TestVmar(), kVmoName, kOnePage, kOnePage);
   ASSERT_TRUE(result.is_ok()) << result.status_string();
   CheckStorage(kOnePage, kOnePage, storage, *result);
 
@@ -401,7 +384,7 @@ TEST_F(LibcThreadTests, ThreadStorageTlsAlignment) {
   };
 
   ThreadStorage storage;
-  auto result = storage.Allocate(TestVmar(), kThreadName, kOnePage, kOnePage);
+  auto result = storage.Allocate(TestVmar(), kVmoName, kOnePage, kOnePage);
   ASSERT_TRUE(result.is_ok()) << result.status_string();
   CheckStorage(kOnePage, kOnePage, storage, *result);
 }
@@ -431,7 +414,7 @@ TEST_F(LibcThreadTests, ThreadStorageTlsReal) {
     ASSERT_GE(gTlsLayout.size_bytes(), std::abs(kIeOffset) + sizeof(uint32_t));
 
     ThreadStorage storage;
-    auto result = storage.Allocate(TestVmar(), kThreadName, kOnePage, kOnePage);
+    auto result = storage.Allocate(TestVmar(), kVmoName, kOnePage, kOnePage);
     ASSERT_TRUE(result.is_ok()) << result.status_string();
     CheckStorage(kOnePage, kOnePage, storage, *result);
 

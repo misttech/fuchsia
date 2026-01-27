@@ -4,17 +4,30 @@
 
 import("../libc.gni")
 
-# This is only included in the new implementation.
-libc_source_set("threads") {
-  sources = []
-  libc_deps = [
-    ":thread-storage-allocate",
-
-    # TODO(https://fxbug.dev/342469121): This is still needed by the musl
-    # threads code post-startup.  When thread creation uses ThreadStorage
-    # too, this can be removed.
-    ":thread-list.musl-glue",
+llvm_libc_source_set("threads") {
+  functions = [
+    "thrd_create",
+    "thrd_create_with_name",
+    "thrd_exit",
+    "thrd_join",
   ]
+  os_functions = functions
+  no_test_functions = functions
+
+  # This is a Fuchsia extension, so llvm-libc doesn't have an internal header.
+  preempt_header_functions = [ "thrd_create_with_name" ]
+
+  deps = [
+    ":thread-create",
+    ":thread-exit",
+    ":thread-join",
+  ]
+
+  # Used by thrd_create*.
+  non_test_deps = [ "../zircon:zx-name.printf" ]
+  testonly_deps = [ "../zircon:zx-name.printf.testonly" ]
+
+  test_deps = [ ":thread-storage-tests" ]
 }
 
 # This doesn't need to be libc_source_set() because it's just a header.
@@ -22,6 +35,17 @@ source_set("stack-abi") {
   public = [ "stack-abi.h" ]
   public_deps = [ "//zircon/kernel/lib/arch" ]
   sources = []
+}
+
+source_set("thread") {
+  public = [ "thread.h" ]
+  public_deps = [
+    "..:asm-linkage",
+    "../startup:headers",
+    "../zircon:vmar.headers",
+    "../zircon:zx-name",
+    "//zircon/system/ulib/zx",
+  ]
 }
 
 # This reaches only the self-contained code involved in the ThreadStorage
@@ -51,11 +75,6 @@ libc_source_set("thread-storage-allocate") {
     ":thread-storage",
     "//zircon/third_party/ulib/musl:musl_internal",
   ]
-}
-
-group("unittests") {
-  testonly = true
-  deps = [ ":thread-storage-tests" ]
 }
 
 libc_test("thread-storage-tests") {
@@ -92,6 +111,8 @@ source_set("thread-list.headers") {
   public = [ "thread-list.h" ]
   public_deps = [
     ":mutex",
+    "..:weak",
+    "../dlfcn:dlfcn-abi",
     "//zircon/third_party/ulib/musl:musl_internal",
   ]
   deps = [ "..:asm-linkage" ]
@@ -122,17 +143,14 @@ libc_source_set("musl-tls") {
   ]
   undefined_symbols = [
     "${libc_namespace}_gLog",
-    "__libc",
     "_dl_tls_layout",
     "_dl_copy_tls",
   ]
 
   sources = [ "musl-tls.cc" ]
-  deps = [
-    "../ld:log-panic",
-    "//zircon/third_party/ulib/musl:musl_internal",
-  ]
+  deps = [ "//zircon/third_party/ulib/musl:musl_internal" ]
   libc_deps = [ ":thread-storage" ]
+  non_test_deps = [ "../ld:log-panic" ]
 }
 
 libc_source_set("thread-list.musl-glue") {
@@ -154,9 +172,9 @@ libc_source_set("thread-list.musl-glue") {
   sources = [ "musl-thread-list.cc" ]
   deps = [
     ":thread-list.headers",
-    "../ld:log-panic",
     "//zircon/third_party/ulib/musl:musl_internal",
   ]
+  non_test_deps = [ "../ld:log-panic" ]
 }
 
 source_set("zxr-tls") {
@@ -194,4 +212,81 @@ libc_source_set("zxr-thread") {
   # user-visible thread backtraces are consistent across collection methods.
   remove_configs = [ "//build/config:default_frame_pointers" ]
   configs += [ "//build/config:frame_pointers" ]
+}
+
+libc_source_set("thread-exit") {
+  visibility = [ ":*" ]
+
+  public_deps = [ ":thread" ]
+
+  sources = [ "thread-exit.cc" ]
+  libc_deps = [
+    ":thread-exit-finish",
+    ":thread-list",
+    ":thread-storage",
+    "../stdlib:exit",
+  ]
+}
+
+libc_test("thread-exit.unittests") {
+  sources = []
+}
+
+libc_source_set("thread-exit-finish") {
+  visibility = [ ":*" ]
+
+  public_deps = [ ":thread" ]
+  basic_abi = true
+  global_symbols = [ "${libc_namespace}_ThreadExitFinish" ]
+  undefined_symbols = [
+    "${libc_namespace}_gLog",
+    "__sanitizer_thread_exit_hook",
+    "__thread_list_erase",
+  ]
+  undefined_symbols += libzircon_linkage_names
+
+  sources = [ "thread-exit-finish.cc" ]
+  deps = [ "//src/lib/elfldltl:headers" ]
+  libc_deps = [
+    ":thread-list",
+    ":thread-storage",
+    ":zxr-thread",
+  ]
+  non_test_deps = [ "../ld:log-panic" ]
+}
+
+libc_source_set("thread-join") {
+  visibility = [ ":*" ]
+
+  public_deps = [ ":thread" ]
+  sources = [ "thread-join.cc" ]
+  libc_deps = [ ":thread-storage" ]
+}
+
+libc_test("thread-join.unittests") {
+  sources = []
+}
+
+libc_source_set("thread-create") {
+  visibility = [ ":*" ]
+
+  public_deps = [ ":thread" ]
+
+  sources = [
+    "thread-create.cc",
+    "thread-start.cc",
+  ]
+  deps = [
+    ":thread-list.headers",
+    "..:weak",
+  ]
+  libc_deps = [
+    ":thread-exit",
+    ":thread-storage",
+    ":thread-storage-allocate",
+  ]
+}
+
+libc_test("thread-create.unittests") {
+  sources = []
 }
