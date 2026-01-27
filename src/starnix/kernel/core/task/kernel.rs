@@ -639,6 +639,11 @@ impl Kernel {
                         continue;
                     }
                 };
+                log_debug!(
+                    pid:?,
+                    name:? = handle.get_name();
+                    "waiting on process terminated signal"
+                );
                 terminated_signals
                     .push(fuchsia_async::OnSignals::new(handle, zx::Signals::PROCESS_TERMINATED));
             }
