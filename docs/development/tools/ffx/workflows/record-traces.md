@@ -416,13 +416,14 @@ The options are:
 
   The `streaming` option provides additional buffer space with the
   trade-off of some overhead due to occasional IPCs for sending the
-  events to the trace manager.
+  events to the trace manager. For capturing large traces, this mode is
+  generally recommended instead of using a very large buffer.
 
-The command below runs a trace with the largest available buffer
-size (64 MB) and overwrites old events with new ones:
+The command below runs a trace with a 32 MB buffer that overwrites old events
+with new ones:
 
 ```none {:.devsite-disable-click-to-copy}
-$ ffx trace start --buffer-size 64 --buffering-mode circular
+$ ffx trace start --buffer-size 32 --buffering-mode circular
 ```
 
 Similar to the [interactive mode](#run-a-trace-interactively),
@@ -433,7 +434,7 @@ buffer and stops the trace
 [when the event happens](#run-a-trace-in-the-background-with-a-trigger):
 
 ```none {:.devsite-disable-click-to-copy}
-$ ffx trace start --buffer-size 64 --buffering-mode circular --trigger 'myexample:terminate'
+$ ffx trace start --buffer-size 32 --buffering-mode circular --trigger 'myexample:terminate'
 ```
 
 For the command above to work, the traced code must already be set up
