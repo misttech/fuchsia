@@ -2,14 +2,14 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use anyhow::{bail, Context};
+use anyhow::{Context, bail};
 use argh::FromArgs;
 use serde::Deserialize;
 use std::collections::BTreeSet;
 use std::path::{Path, PathBuf};
 use std::str::FromStr;
 use std::{env, iter};
-use toml_edit::{decorated, Document, Item, Value};
+use toml_edit::{DocumentMut, Item, Value};
 
 /// update outdated crates in the provided manifest
 #[derive(Debug, FromArgs)]
@@ -37,7 +37,7 @@ pub fn update_crates(
     manifest_path: PathBuf,
     UpdateOptions { outdated_dir, cargo, config_path, offline }: UpdateOptions,
 ) -> anyhow::Result<()> {
-    let mut cargo_toml = toml_edit::Document::from_str(
+    let mut cargo_toml = toml_edit::DocumentMut::from_str(
         &std::fs::read_to_string(&manifest_path).context("reading cargo.toml")?,
     )
     .context("parsing cargo.toml")?;
@@ -55,7 +55,7 @@ pub fn update_crates(
         set_dep_version_to(to_update.get_dep_spec(&mut cargo_toml), &to_update.latest);
     }
 
-    let updated_contents = cargo_toml.to_string_in_original_order();
+    let updated_contents = cargo_toml.to_string();
     std::fs::write(&manifest_path, updated_contents).context("writing updated contents")?;
 
     Ok(())
@@ -188,7 +188,7 @@ impl OutdatedCrate {
     }
 
     /// Finds the version string for `self` within `cargo_toml`.
-    fn get_dep_spec<'d>(&self, cargo_toml: &'d mut Document) -> &'d mut Value {
+    fn get_dep_spec<'d>(&self, cargo_toml: &'d mut DocumentMut) -> &'d mut Value {
         let dependencies = if let Some(platform) = &self.platform {
             // cargo-outdated thinks this dep is in a table like `[target.'cfg(...)'.dependencies]`
             if let Some(plat) = cargo_toml["target"][platform].as_table_mut() {
@@ -226,7 +226,9 @@ fn set_dep_version_to(spec: &mut Value, to: &str) {
         set_dep_version_to(&mut version, to);
     } else {
         assert!(spec.is_str(), "Dependency specs must be strings or tables.");
+        let prefix = spec.decor().prefix().unwrap().clone();
+        let suffix = spec.decor().suffix().unwrap().clone();
         // just a plain swap is fine here, there are no features to preserve
-        *spec = decorated(Value::from(to.to_owned()), spec.decor().prefix(), spec.decor().suffix());
+        *spec = Value::from(to.to_owned()).decorated(prefix, suffix);
     }
 }

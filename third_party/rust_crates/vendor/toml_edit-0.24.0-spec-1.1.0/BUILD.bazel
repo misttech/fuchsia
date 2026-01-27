@@ -20,19 +20,22 @@ package(
 
 package_info(
     name = "package_info",
-    package_name = "winnow",
-    package_url = "https://github.com/winnow-rs/winnow",
-    package_version = "0.7.13",
+    package_name = "toml_edit",
+    package_url = "https://github.com/toml-rs/toml",
+    package_version = "0.24.0+spec-1.1.0",
 )
 
 license(
     name = "license",
-    license_kinds = ["@rules_license//licenses/spdx:MIT"],
-    license_text = "LICENSE-MIT",
+    license_kinds = [
+        "@rules_license//licenses/spdx:Apache-2.0",
+        "@rules_license//licenses/spdx:MIT",
+    ],
+    license_text = "LICENSE-APACHE",
 )
 
 rust_library(
-    name = "winnow",
+    name = "toml_edit",
     srcs = glob(
         include = ["**/*.rs"],
         allow_empty = False,
@@ -50,9 +53,9 @@ rust_library(
         ],
     ),
     crate_features = [
-        "alloc",
         "default",
-        "std",
+        "display",
+        "parse",
     ],
     crate_root = "src/lib.rs",
     edition = "2021",
@@ -61,7 +64,7 @@ rust_library(
     ],
     tags = [
         "cargo-bazel",
-        "crate-name=winnow",
+        "crate-name=toml_edit",
         "manual",
         "noclippy",
         "norustfmt",
@@ -74,5 +77,12 @@ rust_library(
         "@rules_rust//rust/platform:x86_64-unknown-linux-gnu": [],
         "//conditions:default": ["@platforms//:incompatible"],
     }),
-    version = "0.7.13",
+    version = "0.24.0+spec-1.1.0",
+    deps = [
+        "//third_party/rust_crates/vendor/indexmap-2.12.1:indexmap",
+        "//third_party/rust_crates/vendor/toml_datetime-0.7.5-spec-1.1.0:toml_datetime",
+        "//third_party/rust_crates/vendor/toml_parser-1.0.6-spec-1.1.0:toml_parser",
+        "//third_party/rust_crates/vendor/toml_writer-1.0.6-spec-1.1.0:toml_writer",
+        "//third_party/rust_crates/vendor/winnow-0.7.13:winnow",
+    ],
 )

@@ -1152,7 +1152,7 @@ group("toml") {
 }
 
 group("toml_edit") {
-  public_deps = [ ":toml_edit-v0_2_1" ]
+  public_deps = [ ":toml_edit-v0_24_0+spec-1_1_0" ]
 }
 
 group("tracing") {
@@ -4342,41 +4342,6 @@ rustc_library("cmac-v0_7_2") {
   visibility = [ ":*" ]
 
   applicable_licenses = [ ":cmac-v0_7_2.license" ]
-}
-
-license("combine-v4_6_7.license") {
-  public_package_name = "combine"
-  license_files = [ "//third_party/rust_crates/vendor/combine-4.6.7/LICENSE" ]
-}
-
-rustc_library("combine-v4_6_7") {
-  crate_name = "combine"
-  source_root = "//third_party/rust_crates/vendor/combine-4.6.7/src/lib.rs"
-  output_name = "combine-dfa2132adab9c82"
-  edition = "2018"
-  disable_clippy = true
-  enforce_source_listing = false
-  configs -= [ "//build/config/rust:2018_idioms" ]
-
-  deps = []
-  deps += [ ":memchr-v2_7_6" ]
-  deps += [ ":bytes-v1_11_0" ]
-
-  rustenv = []
-
-  rustflags = [
-    "--cap-lints=allow",
-    "-Cmetadata=dfa2132adab9c82",
-    "-Cextra-filename=-dfa2132adab9c82",
-    "--cfg=feature=\"alloc\"",
-    "--cfg=feature=\"bytes\"",
-    "--cfg=feature=\"default\"",
-    "--cfg=feature=\"std\"",
-  ]
-
-  visibility = [ ":*" ]
-
-  applicable_licenses = [ ":combine-v4_6_7.license" ]
 }
 
 license("concurrent-queue-v2_5_0.license") {
@@ -19325,6 +19290,7 @@ rustc_library("toml_datetime-v0_7_5+spec-1_1_0") {
     "-Cmetadata=e9f113904943c48",
     "-Cextra-filename=-e9f113904943c48",
     "--cfg=feature=\"alloc\"",
+    "--cfg=feature=\"default\"",
     "--cfg=feature=\"serde\"",
     "--cfg=feature=\"std\"",
   ]
@@ -19334,39 +19300,45 @@ rustc_library("toml_datetime-v0_7_5+spec-1_1_0") {
   applicable_licenses = [ ":toml_datetime-v0_7_5+spec-1_1_0.license" ]
 }
 
-license("toml_edit-v0_2_1.license") {
+license("toml_edit-v0_24_0+spec-1_1_0.license") {
   public_package_name = "toml_edit"
   license_files = [
-    "//third_party/rust_crates/vendor/toml_edit-0.2.1/LICENSE-APACHE",
-    "//third_party/rust_crates/vendor/toml_edit-0.2.1/LICENSE-MIT",
+    "//third_party/rust_crates/vendor/toml_edit-0.24.0-spec-1.1.0/LICENSE-APACHE",
+    "//third_party/rust_crates/vendor/toml_edit-0.24.0-spec-1.1.0/LICENSE-MIT",
   ]
 }
 
-rustc_library("toml_edit-v0_2_1") {
+rustc_library("toml_edit-v0_24_0+spec-1_1_0") {
   crate_name = "toml_edit"
-  source_root = "//third_party/rust_crates/vendor/toml_edit-0.2.1/src/lib.rs"
-  output_name = "toml_edit-21fcacc5489f3304"
-  edition = "2018"
+  source_root =
+      "//third_party/rust_crates/vendor/toml_edit-0.24.0-spec-1.1.0/src/lib.rs"
+  output_name = "toml_edit-6b4c7a47d2295c16"
+  edition = "2021"
   disable_clippy = true
   enforce_source_listing = false
   configs -= [ "//build/config/rust:2018_idioms" ]
 
   deps = []
-  deps += [ ":chrono-v0_4_42" ]
-  deps += [ ":combine-v4_6_7" ]
-  deps += [ ":linked-hash-map-v0_5_6" ]
+  deps += [ ":indexmap-v2_12_1" ]
+  deps += [ ":toml_datetime-v0_7_5+spec-1_1_0" ]
+  deps += [ ":toml_parser-v1_0_6+spec-1_1_0" ]
+  deps += [ ":toml_writer-v1_0_6+spec-1_1_0" ]
+  deps += [ ":winnow-v0_7_13" ]
 
   rustenv = []
 
   rustflags = [
     "--cap-lints=allow",
-    "-Cmetadata=21fcacc5489f3304",
-    "-Cextra-filename=-21fcacc5489f3304",
+    "-Cmetadata=6b4c7a47d2295c16",
+    "-Cextra-filename=-6b4c7a47d2295c16",
+    "--cfg=feature=\"default\"",
+    "--cfg=feature=\"display\"",
+    "--cfg=feature=\"parse\"",
   ]
 
   visibility = [ ":*" ]
 
-  applicable_licenses = [ ":toml_edit-v0_2_1.license" ]
+  applicable_licenses = [ ":toml_edit-v0_24_0+spec-1_1_0.license" ]
 }
 
 license("toml_parser-v1_0_6+spec-1_1_0.license") {
@@ -19397,6 +19369,7 @@ rustc_library("toml_parser-v1_0_6+spec-1_1_0") {
     "-Cmetadata=fe42a5be3800d966",
     "-Cextra-filename=-fe42a5be3800d966",
     "--cfg=feature=\"alloc\"",
+    "--cfg=feature=\"default\"",
     "--cfg=feature=\"std\"",
   ]
 
@@ -19432,6 +19405,7 @@ rustc_library("toml_writer-v1_0_6+spec-1_1_0") {
     "-Cmetadata=102c32e8c9692ec5",
     "-Cextra-filename=-102c32e8c9692ec5",
     "--cfg=feature=\"alloc\"",
+    "--cfg=feature=\"default\"",
     "--cfg=feature=\"std\"",
   ]
 
