@@ -1027,14 +1027,14 @@ alias(
 )
 
 alias(
-    name = "glob-0.3.2",
-    actual = "//third_party/rust_crates/vendor/glob-0.3.2:glob",
+    name = "glob-0.3.3",
+    actual = "//third_party/rust_crates/vendor/glob-0.3.3:glob",
     tags = ["manual"],
 )
 
 alias(
     name = "glob",
-    actual = "//third_party/rust_crates/vendor/glob-0.3.2:glob",
+    actual = "//third_party/rust_crates/vendor/glob-0.3.3:glob",
     tags = ["manual"],
 )
 
