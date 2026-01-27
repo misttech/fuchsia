@@ -98,8 +98,8 @@ class Prebuilts:
 
     def is_jiri_bootstrapped(self) -> bool:
         """Checks if jiri is bootstrapped."""
-        jiri_root = self.cartfs_directory / ".jiri_root"
-        jiri_manifest = self.cartfs_directory / ".jiri_manifest"
+        jiri_root = self.cartfs_fuchsia_dir / ".jiri_root"
+        jiri_manifest = self.cartfs_fuchsia_dir / ".jiri_manifest"
         return jiri_root.is_dir() and jiri_manifest.exists()
 
     def bootstrap_jiri(self) -> None:
@@ -123,6 +123,7 @@ class Prebuilts:
                 ["git", "reset", "--hard"],
                 cwd=cartfs_fuchsia_dir,
                 check=True,
+                stdout=subprocess.DEVNULL,
             )
 
         subprocess.run(
@@ -168,6 +169,7 @@ class Prebuilts:
                         ],
                         cwd=integration_directory,
                         check=True,
+                        stdout=subprocess.DEVNULL,
                     )
 
                 # pull latest changes from the remote
@@ -180,6 +182,8 @@ class Prebuilts:
                     ],
                     cwd=integration_directory,
                     check=True,
+                    stdout=subprocess.DEVNULL,
+                    stderr=subprocess.DEVNULL,
                 )
 
         # Clone the integration repository
@@ -194,6 +198,8 @@ class Prebuilts:
                 ],
                 cwd=self.cartfs_directory,
                 check=True,
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
             )
 
         # Determine the fuchsia repo commit hash.
@@ -249,7 +255,7 @@ class Prebuilts:
 
         if not integration_repo_commit_hash:
             logger.log_info(
-                "Fuchsia commit is not rolled to integration repo yet. We will"
+                "Fuchsia commit is not rolled to integration repo yet. We will "
                 "use the latest integration repo commit hash."
             )
             return
@@ -270,7 +276,6 @@ class Prebuilts:
 
     def create_symlinks(self) -> None:
         """Creates symlinks for the prebuilts."""
-        logger.log_info("Creating symlinks for the prebuilts.")
         # Link the paths in the repo to cartfs
         (self.cartfs_fuchsia_dir / ".jiri_root" / "bin").mkdir(
             exist_ok=True, parents=True
