@@ -24,7 +24,7 @@ const MEMORY_ROLE: &str = "fuchsia.starnix.pinned_memory";
 #[derive(Debug)]
 pub struct ShadowProcess {
     // Keep the process alive but we're never going to start it.
-    _process: zx::Process,
+    process: zx::Process,
     vmar: Arc<zx::Vmar>,
 }
 
@@ -42,7 +42,7 @@ impl ShadowProcess {
         name: zx::Name,
         role_manager: RoleManagerSynchronousProxy,
     ) -> Result<Self, zx::Status> {
-        let (_process, vmar) =
+        let (process, vmar) =
             zx::Process::create(&fuchsia_runtime::job_default(), name, Default::default())?;
         let vmar_dupe = vmar.duplicate_handle(zx::Rights::SAME_RIGHTS)?;
         if let Err(e) = role_manager.set_role(
@@ -56,7 +56,7 @@ impl ShadowProcess {
             log_warn!(e:%, name:%; "Unable to set role for memory pin shadow process' vmar.");
         }
 
-        Ok(Self { _process, vmar: Arc::new(vmar) })
+        Ok(Self { process, vmar: Arc::new(vmar) })
     }
 
     /// Pin the provided range of the provided VMO to ensure those pages stay resident under
@@ -77,6 +77,15 @@ impl ShadowProcess {
     /// Return a handle to the VMAR where all mappings are pinned.
     pub fn vmar(&self) -> Arc<zx::Vmar> {
         self.vmar.clone()
+    }
+}
+
+impl Drop for ShadowProcess {
+    fn drop(&mut self) {
+        use zx::Task;
+
+        // Ensure the process exits so that it doesn't confuse the kernel's shutdown logic.
+        self.process.kill().expect("must be able to kill process we created");
     }
 }
 
