@@ -290,7 +290,7 @@ impl JsonConvertible for fplugin::PrincipalType {
         let Some(obj) = value.as_str() else { return None };
         match obj {
             "runnable" => Some(fplugin::PrincipalType::Runnable),
-            "part" => Some(fplugin::PrincipalType::Runnable),
+            "part" => Some(fplugin::PrincipalType::Part),
             _ => None,
         }
     }
@@ -559,7 +559,7 @@ mod tests {
                 fplugin::Principal {
                     identifier: Some(fplugin::PrincipalIdentifier { id: 1 }),
                     description: Some(fplugin::Description::Component("runner".to_owned())),
-                    principal_type: Some(fplugin::PrincipalType::Runnable),
+                    principal_type: Some(fplugin::PrincipalType::Part),
                     parent: Some(fplugin::PrincipalIdentifier { id: 0 }),
                     ..Default::default()
                 },
@@ -898,7 +898,7 @@ mod tests {
                         {
                             "component": "runner"
                         },
-                        "runnable",
+                        "part",
                         0
                     ],
                     [
