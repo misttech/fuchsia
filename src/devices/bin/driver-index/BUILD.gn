@@ -79,7 +79,7 @@ rustc_binary("bin") {
     "//third_party/rust_crates:log",
     "//third_party/rust_crates:rand",
     "//third_party/rust_crates:serde",
-    "//third_party/rust_crates:zstd",
+    "//zircon/third_party/ulib/lz4/rust:lz4",
   ]
 
   test_deps = [

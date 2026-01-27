@@ -253,8 +253,7 @@ async fn compress_and_save_to_dictionary_vmo(
     )
     .await?;
 
-    let compressed = zstd::bulk::compress(data.as_slice(), 0)
-        .map_err(|e| anyhow!("Failed to compress data: {:?}", e))?;
+    let compressed = lz4::compress(data.as_slice());
     save_to_dictionary_vmo(compressed, capability_store, id_gen, dict_id, key).await
 }
 
@@ -332,7 +331,7 @@ async fn read_vmo_and_decompress_from_dictionary(
     )
     .await?;
 
-    zstd::bulk::decompress(bytes.as_slice(), size)
+    lz4::decompress(bytes.as_slice(), size)
         .map_err(|e| anyhow!("Failed to decompress {} {:?}", key, e))
 }
 
