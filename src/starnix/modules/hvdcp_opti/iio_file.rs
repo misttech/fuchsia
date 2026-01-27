@@ -50,6 +50,11 @@ pub fn build_iio0_directory(
         BytesFile::new_node(b"0\n".to_vec()),
         mode!(IFREG, 0o444),
     );
+    dir.entry(
+        "in_resistance_esr_actual_input",
+        IioFile::new_node(proxy.clone(), "esr_actual"),
+        mode!(IFREG, 0o444),
+    );
 }
 
 pub fn build_iio1_directory(
