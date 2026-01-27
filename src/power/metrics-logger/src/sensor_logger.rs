@@ -7,7 +7,6 @@ use crate::driver_utils::{Driver, connect_proxy, list_drivers};
 use anyhow::{Error, Result, format_err};
 use async_trait::async_trait;
 use diagnostics_hierarchy::LinearHistogramParams;
-use fidl::endpoints::Proxy;
 use fuchsia_component::client as fclient;
 use fuchsia_inspect::{
     self as inspect, ArrayProperty, HistogramProperty, IntLinearHistogramProperty, Property,
@@ -17,12 +16,11 @@ use futures::stream::FuturesUnordered;
 use log::{error, info, warn};
 use std::cell::Cell;
 use std::cmp::Ordering;
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::rc::Rc;
 use {
     fidl_fuchsia_hardware_power_sensor as fpower,
-    fidl_fuchsia_hardware_temperature as ftemperature,
-    fidl_fuchsia_hardware_trippoint as ftrippoint, fidl_fuchsia_power_metrics as fmetrics,
+    fidl_fuchsia_hardware_temperature as ftemperature, fidl_fuchsia_power_metrics as fmetrics,
     fidl_fuchsia_ui_activity as factivity, fuchsia_async as fasync,
 };
 
@@ -47,6 +45,7 @@ pub async fn generate_temperature_drivers(
     driver_aliases: HashMap<String, String>,
 ) -> Result<Vec<Driver<ftemperature::DeviceProxy>>> {
     let mut drivers = Vec::new();
+    let mut sensor_names: HashSet<String> = HashSet::new();
     // For each driver path, create a proxy for the service.
     for dir_path in TEMPERATURE_SERVICE_DIRS {
         let listed_drivers = list_drivers(dir_path).await;
@@ -55,24 +54,19 @@ pub async fn generate_temperature_drivers(
             let proxy = connect_proxy::<ftemperature::DeviceMarker>(&class_path)?;
             let sensor_name = proxy.get_sensor_name().await?;
             let alias = driver_aliases.get(&sensor_name);
-            drivers.push(Driver { sensor_name, proxy, alias: alias.cloned() });
+            drivers.push(Driver { sensor_name: sensor_name.clone(), proxy, alias: alias.cloned() });
+
+            sensor_names.insert(sensor_name);
         }
     }
 
-    for trippoint_proxy in
-        fclient::Service::open(ftrippoint::TripPointServiceMarker)?.enumerate().await?
-    {
-        let temperature_proxy = ftemperature::DeviceProxy::new(
-            trippoint_proxy.connect_to_trippoint()?.into_channel().map_err(|e| {
-                anyhow::anyhow!(
-                    "Mapping trippoint proxy to temperature proxy failed with err: {:?}",
-                    e
-                )
-            })?,
-        );
+    for instance in fclient::Service::open(ftemperature::ServiceMarker)?.enumerate().await? {
+        let temperature_proxy = instance.connect_to_device()?;
         let sensor_name = temperature_proxy.get_sensor_name().await?;
-        let alias = driver_aliases.get(&sensor_name);
-        drivers.push(Driver { sensor_name, proxy: temperature_proxy, alias: alias.cloned() });
+        if !sensor_names.contains(&sensor_name) {
+            let alias = driver_aliases.get(&sensor_name);
+            drivers.push(Driver { sensor_name, proxy: temperature_proxy, alias: alias.cloned() });
+        }
     }
     Ok(drivers)
 }
