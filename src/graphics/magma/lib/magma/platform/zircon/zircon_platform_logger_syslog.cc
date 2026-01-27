@@ -65,7 +65,7 @@ bool PlatformLoggerProvider::Initialize(std::unique_ptr<PlatformHandle> channel)
   auto zircon_handle = static_cast<ZirconPlatformHandle*>(channel.get());
   constexpr const char* kTags[] = {"magma"};
   if (auto logger = fuchsia_logging::Logger::Create(fuchsia_logging::RawLogSettings{
-          .log_sink = zircon_handle->get(),
+          .log_sink = zircon_handle->release(),
           .tags = kTags,
           .tags_count = std::size(kTags),
       });
