@@ -328,12 +328,6 @@ void __thread_allocation_release(void) ATTR_LIBC_VISIBILITY;
 
 void __thread_tsd_run_dtors(void) ATTR_LIBC_VISIBILITY;
 
-#define DEFAULT_PTHREAD_ATTR                      \
-  ((pthread_attr_t){                              \
-      ._a_stacksize = _dl_stack_size(),           \
-      ._a_guardsize = _zx_system_get_page_size(), \
-  })
-
 int __clock_gettime(clockid_t, struct timespec*) ATTR_LIBC_VISIBILITY;
 
 // Adds a new thread to the list, taking the lock.

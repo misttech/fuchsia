@@ -5,9 +5,7 @@
 source_set("pthread") {
   sources = [
     "pthread_atfork.c",
-    "pthread_attr_destroy.c",
     "pthread_attr_get.c",
-    "pthread_attr_init.c",
     "pthread_attr_setdetachstate.c",
     "pthread_attr_setguardsize.c",
     "pthread_attr_setschedparam.c",

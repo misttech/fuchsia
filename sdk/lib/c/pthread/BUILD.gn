@@ -13,7 +13,9 @@ llvm_libc_source_set("pthread") {
   os_functions = functions
   no_test_functions = functions
 
+  local_deps = [ ":attr.header" ]
   deps = [
+    ":attr",
     ":name",
     "../threads:thread-exit",
     "../threads:thread-join",
@@ -22,6 +24,25 @@ llvm_libc_source_set("pthread") {
   # Used by pthread_create.
   non_test_deps = [ "../zircon:zx-name.printf" ]
   testonly_deps = [ "../zircon:zx-name.printf.testonly" ]
+}
+
+source_set("attr.header") {
+  public = [ "attr.h" ]
+  public_deps = [
+    "../threads:thread",
+    "//zircon/third_party/ulib/musl:musl_internal",
+  ]
+}
+
+llvm_libc_source_set("attr") {
+  functions = [
+    "pthread_attr_destroy",
+    "pthread_attr_init",
+  ]
+  os_functions = [ "pthread_attr_init" ]
+  no_test_functions = functions
+
+  local_deps = [ ":attr.header" ]
 }
 
 llvm_libc_source_set("name") {
