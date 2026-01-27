@@ -50,8 +50,17 @@
                 // TODO(https://fxbug.dev/448196787): This is flakey.
                 "SocketMarkSockOpt/SocketMarkSockOpt.RawCapability/*",
 
-                // TODO(https://fxbug.dev/436916785): Fails with a timeout (> 180s) while running.
-                "SysfsPowerTest.*",
+                // TODO(https://fxbug.dev/436916785): These tests actually suspend the system,
+                // and in Machina this results in the tests timing out after 180s.
+                "SysfsPowerTest.SuspendStatsFilesUpdateAfterSuccessfulSuspend",
+                "SysfsPowerTest.SuspendStatsFilesUpdateAfterFailedSuspend",
+                "SysfsPowerTest.SuspendStateFileWrite",
+                "SysfsPowerTest.SuspendStateFileWriteFailsWaitAgain",
+                "SysfsPowerTest.SuspendStateFileWriteFailsCloseFD",
+                "SysfsPowerTest.SuspendStateFileWriteFailsCloseEpollFD",
+                "SysfsPowerTest.SuspendStateFileWriteFailsEpollDelete",
+                "SysfsPowerTest.SuspendStateFileWriteInvalidFails",
+                "SysfsPowerTest.WakeLockBlocksSuspend",
 
                 // TODO(https://fxbug.dev/342416456): Not Machina-specific. Rework the test to take
                 // into account logs from the system. Skipped since it's flakey.
@@ -161,6 +170,15 @@
                 "SysfsKernelTest.WakeupReasonsDirectoryContainDefaultsLastSuspendTime",
                 "SysfsKernelTest.WakeupReasonsDirectoryContainsExpectedContents",
                 "SysfsKernelTest.KernelDirectoryContainsExpectedContents",
+
+                // TODO(https://fxbug.dev/478981256): These expectations don't match the Machina system.
+                "SysfsPowerTest.PowerDirectoryContainsExpectedContents",
+                "SysfsPowerTest.LastResumeReasonFileContainsExpectedContents",
+                "SysfsPowerTest.WakeupReasonsDirectoryContainsExpectedContents",
+                "SysfsPowerTest.AddAndRemoveWakeLock",
+                "SysfsPowerTest.LastSuspendTimeFileContainsExpectedContents",
+                "SysfsPowerTest.WakeLockWithTimeout",
+                "SysfsPowerTest.WakeLockFileWrite",
 
                 // TODO(https://fxbug.dev/436914573): Reliant on an Android-specific kernel feature.
                 "TouchStandbyTest.WriteTouchStandbyState",
