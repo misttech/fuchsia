@@ -127,7 +127,7 @@ void SetSchedulerRole(const std::string& sched_role_name) {
   ASSERT_OK(fuchsia_scheduler::SetRoleForThisThread(sched_role_name));
 }
 
-typedef void (*ThreadFunc)(std::vector<zx::handle>&& handles);
+using ThreadFunc = void (*)(std::vector<zx::handle> handles);
 ThreadFunc GetThreadFunc(const char* name);
 
 enum MultiProc {
@@ -228,7 +228,7 @@ class BasicChannelTest {
     ASSERT_OK(client_.write(0, &args_, sizeof(args_), nullptr, 0));
   }
 
-  static void ThreadFunc(std::vector<zx::handle>&& handles) {
+  static void ThreadFunc(std::vector<zx::handle> handles) {
     FX_CHECK(handles.size() == 1);
     zx::channel channel(std::move(handles[0]));
     Args args;
@@ -289,7 +289,7 @@ class ChannelPortTest {
     return true;
   }
 
-  static void ThreadFunc(std::vector<zx::handle>&& handles) {
+  static void ThreadFunc(std::vector<zx::handle> handles) {
     FX_CHECK(handles.size() == 1);
     zx::channel channel(std::move(handles[0]));
 
@@ -338,7 +338,7 @@ class ChannelCallTest {
     args_.rd_num_handles = 0;
   }
 
-  static void ThreadFunc(std::vector<zx::handle>&& handles) {
+  static void ThreadFunc(std::vector<zx::handle> handles) {
     FX_CHECK(handles.size() == 1);
     zx::channel channel(std::move(handles[0]));
     ChannelServe(channel, /* count= */ 1, /* size= */ 4);
@@ -384,7 +384,7 @@ class PortTest {
     ASSERT_OK(ports_[0].queue(&packet));
   }
 
-  static void ThreadFunc(std::vector<zx::handle>&& ports) {
+  static void ThreadFunc(std::vector<zx::handle> ports) {
     FX_CHECK(ports.size() == 2);
     for (;;) {
       zx_port_packet_t packet;
@@ -454,11 +454,11 @@ class EventPortTest {
                               params);
   }
 
-  static void ThreadFunc(std::vector<zx::handle>&& handles) {
+  static void ThreadFunc(std::vector<zx::handle> handles) {
     FX_CHECK(handles.size() == 1);
 
     EventPortSignaler signaler;
-    signaler.set_event(zx::eventpair(handles[0].get()));
+    signaler.set_event(zx::eventpair(std::move(handles[0])));
     while (signaler.Wait()) {
       signaler.Signal();
     }
@@ -527,11 +527,11 @@ class SocketPortTest {
                               params);
   }
 
-  static void ThreadFunc(std::vector<zx::handle>&& handles) {
+  static void ThreadFunc(std::vector<zx::handle> handles) {
     FX_CHECK(handles.size() == 1);
 
     SocketPortSignaler signaler;
-    signaler.set_socket(zx::socket(handles[0].get()));
+    signaler.set_socket(zx::socket(std::move(handles[0])));
     while (signaler.Wait()) {
       signaler.Signal();
     }
@@ -565,7 +565,7 @@ class FidlTest {
     thread_or_process_.Launch("FidlTest::ThreadFunc", MakeHandleVector(server), params);
   }
 
-  static void ThreadFunc(std::vector<zx::handle>&& handles) {
+  static void ThreadFunc(std::vector<zx::handle> handles) {
     FX_CHECK(handles.size() == 1);
     zx::channel channel(std::move(handles[0]));
 
