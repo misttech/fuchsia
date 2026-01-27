@@ -218,33 +218,10 @@ impl CpuManager {
     ) -> Result<(), Error> {
         while let Some(request) = stream.try_next().await? {
             match request {
-                fcpumanager::BoostRequest::SetBoost { enable, responder } => {
-                    if !boost_supported {
-                        log::error!("SetBoost is not supported, enable: {}", enable);
-                        responder.send(Err(fcpumanager::SetBoostError::NotSupported))?;
-                        continue;
-                    }
-                    let msg = Message::SetBoost(enable, 0);
-                    if let Some(handler) = &handler {
-                        match handler.handle_message(&msg).await {
-                            Ok(MessageReturn::SetBoost) => {
-                                // success
-                                responder.send(Ok(()))?;
-                            }
-                            res => {
-                                log::error!("Failed to set boost: {:?}", res);
-                                responder.send(Err(fcpumanager::SetBoostError::Internal))?;
-                            }
-                        }
-                    } else {
-                        log::error!("No handler for the manger fidl");
-                        responder.send(Err(fcpumanager::SetBoostError::Internal))?;
-                    }
-                }
                 fcpumanager::BoostRequest::Boost { responder } => {
                     if !boost_supported {
-                        log::error!("SetBoost is not supported");
-                        responder.send(Err(fcpumanager::SetBoostError::NotSupported))?;
+                        log::error!("Boost is not supported");
+                        responder.send(Err(fcpumanager::BoostError::NotSupported))?;
                         continue;
                     }
 
@@ -277,12 +254,12 @@ impl CpuManager {
                             }
                             res => {
                                 log::error!("Failed to set boost: {:?}", res);
-                                responder.send(Err(fcpumanager::SetBoostError::Internal))?;
+                                responder.send(Err(fcpumanager::BoostError::Internal))?;
                             }
                         }
                     } else {
                         log::error!("No handler for the manger fidl");
-                        responder.send(Err(fcpumanager::SetBoostError::Internal))?;
+                        responder.send(Err(fcpumanager::BoostError::Internal))?;
                     }
                 }
                 fcpumanager::BoostRequest::_UnknownMethod { .. } => {
