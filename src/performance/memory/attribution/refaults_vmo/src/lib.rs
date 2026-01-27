@@ -27,6 +27,7 @@ impl PageRefaultCounter {
     /// Creates a new read-write PageRefaultCounter.
     pub fn new() -> Result<Self, zx::Status> {
         let vmo = zx::Vmo::create(size_of::<AtomicU64>().try_into().unwrap())?;
+        vmo.set_name(&zx::Name::new_lossy("page_refault_counter"))?;
 
         // SAFETY: all accesses to [storage] are synchronized (through an Atomic).
         let mut storage: MemoryMappedVmo = unsafe { MemoryMappedVmo::new_readwrite(&vmo)? };

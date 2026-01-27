@@ -120,6 +120,32 @@ class MemoryMonitor2EndToEndTest(fuchsia_base_test.FuchsiaBaseTest):
         asserts.assert_in("processes", mm2)
         asserts.assert_in("vmos", mm2)
 
+    def test_memory_monitor_unnamed_vmos_should_not_increase(self) -> None:
+        # The number of unnamed VMOs should not increase.
+        # If this test breaks because there are more unnamed VMOs, you should fix your code to
+        # always name your VMOs, as this greatly helps analyzing memory in general.
+        # If this test breaks because there are less unnamed VMOs, this is great! Change the test to
+        # check the new, lower number and send us the change for review.
+
+        cmd_output = self.dut.ffx.run(
+            ["--machine", "json-pretty", "profile", "memory", "components"],
+            log_output=False,
+        )
+
+        profile = json.loads(cmd_output)
+        (mm2,) = [
+            p
+            for p in profile["Summary"]["principals"]
+            if p["name"] == "core/memory_monitor2"
+        ]
+
+        asserts.assert_in("vmos", mm2)
+
+        # 2 is the current number of unnamed VMOs in memory_monitor2.
+        asserts.assert_in("[unnamed]", mm2["vmos"])
+        asserts.assert_in("count", mm2["vmos"]["[unnamed]"])
+        asserts.assert_equal(2, mm2["vmos"]["[unnamed]"]["count"])
+
     def test_ffx_profile_memory_component_with_debug_json_output(self) -> None:
         cmd_output = self.dut.ffx.run(
             ["profile", "memory", "components", "--debug-json"],
