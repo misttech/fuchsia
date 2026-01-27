@@ -29,11 +29,21 @@ pub trait NodeManager {
     ) -> Result<(), zx::Status> {
         Err(zx::Status::NOT_SUPPORTED)
     }
+    fn get_driver_host(
+        &self,
+        _driver_host_name_for_colocation: &str,
+    ) -> Option<Rc<dyn DriverHost>> {
+        None
+    }
     async fn create_driver_host(
         &self,
         use_next_vdso: bool,
+        driver_host_name_for_colocation: String,
     ) -> Result<Rc<dyn DriverHost>, zx::Status>;
-    async fn create_driver_host_dynamic_linker(&self) -> Result<Rc<dyn DriverHost>, zx::Status>;
+    async fn create_driver_host_dynamic_linker(
+        &self,
+        driver_host_name_for_colocation: String,
+    ) -> Result<Rc<dyn DriverHost>, zx::Status>;
     fn is_test_shutdown_delay_enabled(&self) -> bool;
     fn get_shutdown_test_rng(&self) -> Weak<RefCell<rand::rngs::StdRng>>;
     async fn wait_for_bootup(&self);

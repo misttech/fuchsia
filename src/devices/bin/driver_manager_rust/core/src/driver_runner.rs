@@ -137,6 +137,23 @@ impl DriverRunner {
         self.composite_node_spec_manager.get_composite_info()
     }
 
+    pub fn get_driver_host(
+        &self,
+        driver_host_name_for_colocation: &str,
+    ) -> Option<Rc<dyn DriverHost>> {
+        if driver_host_name_for_colocation.is_empty() {
+            return None;
+        }
+        for host_weak in self.driver_hosts.borrow().iter() {
+            if let Some(host) = host_weak.upgrade()
+                && host.name_for_colocation() == driver_host_name_for_colocation
+            {
+                return Some(host);
+            }
+        }
+        None
+    }
+
     pub async fn start_root_driver(self: &Rc<Self>, url: String) -> Result<(), zx::Status> {
         self.bootup_tracker.start();
         let package_type = if url.starts_with("fuchsia-boot://") {
@@ -264,6 +281,7 @@ impl DriverRunner {
     pub async fn create_driver_host(
         &self,
         use_next_vdso: bool,
+        driver_host_name_for_colocation: String,
     ) -> Result<Rc<dyn DriverHost>, zx::Status> {
         let (exposed_dir_client, exposed_dir_server) = create_endpoints::<fio::DirectoryMarker>();
         let name = format!("driver-host-{}", self.driver_hosts.borrow().len());
@@ -281,8 +299,12 @@ impl DriverRunner {
             zx::Status::INTERNAL
         })??;
 
-        let driver_host: Rc<dyn DriverHost> =
-            Rc::new(DriverHostComponent::new(driver_host_proxy, None, ExecutionScope::new()));
+        let driver_host: Rc<dyn DriverHost> = Rc::new(DriverHostComponent::new(
+            driver_host_proxy,
+            None,
+            ExecutionScope::new(),
+            driver_host_name_for_colocation,
+        ));
         driver_host.install_loader(loader_service_client)?;
 
         self.driver_hosts.borrow_mut().push(Rc::downgrade(&driver_host));
@@ -292,6 +314,7 @@ impl DriverRunner {
 
     pub async fn create_driver_host_dynamic_linker(
         self: &Rc<Self>,
+        driver_host_name_for_colocation: String,
     ) -> Result<Rc<dyn DriverHost>, zx::Status> {
         let driver_host_runner = self.driver_host_runner.clone();
         let launcher = self.launcher.clone().unwrap();
@@ -311,6 +334,7 @@ impl DriverRunner {
             driver_host_client,
             Some(loader_client.into_proxy()),
             ExecutionScope::new(),
+            driver_host_name_for_colocation,
         ));
         self.driver_hosts.borrow_mut().push(Rc::downgrade(&driver_host));
         Ok(driver_host)
@@ -452,10 +476,13 @@ impl DriverRunner {
             unreachable!();
         };
 
+        let driver_host_name_for_colocation = spec.driver_host.clone().unwrap_or_default();
+
         let spec_for_manager = CompositeNodeSpec::new(
             name,
             parents2,
             Box::new(DriverRunnerBridge(Rc::downgrade(self))),
+            driver_host_name_for_colocation,
         );
 
         self.composite_node_spec_manager.add_spec(spec, spec_for_manager).await

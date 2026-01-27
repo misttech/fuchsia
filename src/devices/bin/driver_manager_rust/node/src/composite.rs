@@ -63,6 +63,7 @@ impl Node {
                 bus_info: RefCell::new(None),
                 composite_rebind_completer: RefCell::new(None),
                 restart_driver_url_suffix: RefCell::new(None),
+                driver_host_name_for_colocation: RefCell::new(String::new()),
                 can_multibind_composites: true,
                 node_controller_server_binding: RefCell::new(None),
                 pending_bind_completer: RefCell::new(None),
@@ -154,6 +155,7 @@ impl Node {
         parents_names: Vec<String>,
         parent_properties: &[fdf::NodePropertyEntry2],
         node_manager: Box<dyn NodeManager>,
+        driver_host_name_for_colocation: String,
         primary_index: u32,
     ) -> Result<Rc<Self>, zx::Status> {
         if parents.is_empty() {
@@ -188,6 +190,8 @@ impl Node {
 
         let composite =
             Self::new_composite(node_name, parents, parents_names, primary_index, node_manager);
+
+        *composite.driver_host_name_for_colocation.borrow_mut() = driver_host_name_for_colocation;
 
         Self::set_composite_parent_properties(&composite, parent_properties);
 

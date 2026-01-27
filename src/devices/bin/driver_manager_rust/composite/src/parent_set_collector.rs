@@ -14,6 +14,7 @@ pub(crate) struct ParentSetCollector {
     parent_properties: Vec<fdf::NodePropertyEntry2>,
     primary_index: u32,
     completed_composite_node: Option<Weak<Node>>,
+    driver_host_name_for_colocation: String,
 }
 
 impl ParentSetCollector {
@@ -21,6 +22,7 @@ impl ParentSetCollector {
         composite_name: String,
         parent_names: Vec<String>,
         primary_index: u32,
+        driver_host_name_for_colocation: String,
     ) -> Self {
         let num_parents = parent_names.len();
         Self {
@@ -42,6 +44,7 @@ impl ParentSetCollector {
             ],
             primary_index,
             completed_composite_node: None,
+            driver_host_name_for_colocation,
         }
     }
 
@@ -99,6 +102,7 @@ impl ParentSetCollector {
             self.parent_names.clone(),
             &self.parent_properties,
             node_manager,
+            self.driver_host_name_for_colocation.clone(),
             self.primary_index,
         );
 

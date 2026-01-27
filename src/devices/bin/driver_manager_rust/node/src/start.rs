@@ -133,33 +133,56 @@ impl Node {
         self.host_restart_on_crash.set(host_restart_on_crash);
 
         let driver_host = self.driver_host.borrow().clone();
-        let driver_host = match (driver_host, colocate, use_dynamic_linker) {
-            (Some(driver_host), true, _) => driver_host,
-            (None, true, _) => {
-                error!(
-                    "Failed to start driver '{}', driver is colocated but does not have a parent with a driver host",
-                    url
-                );
-                return Err(zx::Status::INVALID_ARGS);
+        let mut found_driver_host = colocate;
+        let driver_host = if found_driver_host {
+            match driver_host {
+                Some(dh) => dh,
+                None => {
+                    error!(
+                        "Failed to start driver '{}', driver is colocated but does not have a parent with a driver host",
+                        url
+                    );
+                    return Err(zx::Status::INVALID_ARGS);
+                }
             }
-            (_, false, true) => {
-                let driver_host = self.node_manager.create_driver_host_dynamic_linker().await?;
-                *self.driver_host.borrow_mut() = Some(driver_host.clone());
-                driver_host
-            }
-            (_, false, false) => {
-                debug!("Creating driver host for node '{}' driver url '{}'", self.name(), url);
-                let driver_host =
-                    self.node_manager.create_driver_host(use_next_vdso).await.map_err(|e| {
-                        error!("Failed to start driver '{url}': {e:?}");
-                        zx::Status::INTERNAL
-                    })?;
-                *self.driver_host.borrow_mut() = Some(driver_host.clone());
-                driver_host
+        } else {
+            let driver_host_name = self.driver_host_name_for_colocation.borrow().clone();
+            match self.node_manager.get_driver_host(&driver_host_name) {
+                Some(dh) => {
+                    found_driver_host = true;
+                    *self.driver_host.borrow_mut() = Some(dh.clone());
+                    dh
+                }
+                None => {
+                    if use_dynamic_linker {
+                        let driver_host = self
+                            .node_manager
+                            .create_driver_host_dynamic_linker(driver_host_name)
+                            .await?;
+                        *self.driver_host.borrow_mut() = Some(driver_host.clone());
+                        driver_host
+                    } else {
+                        debug!(
+                            "Creating driver host for node '{}' driver url '{}'",
+                            self.name(),
+                            url
+                        );
+                        let driver_host = self
+                            .node_manager
+                            .create_driver_host(use_next_vdso, driver_host_name)
+                            .await
+                            .map_err(|e| {
+                                error!("Failed to start driver '{url}': {e:?}");
+                                zx::Status::INTERNAL
+                            })?;
+                        *self.driver_host.borrow_mut() = Some(driver_host.clone());
+                        driver_host
+                    }
+                }
             }
         };
 
-        if colocate {
+        if found_driver_host {
             // Whether dynamic linking is enabled for a driver host is determined by the first driver in the
             // host. Otherwise for colocated drivers, we need to match what has been set for the driver
             // host.

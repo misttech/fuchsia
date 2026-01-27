@@ -88,20 +88,29 @@ impl NodeManager for DriverRunnerBridge {
         }
     }
 
+    fn get_driver_host(&self, driver_host_name_for_colocation: &str) -> Option<Rc<dyn DriverHost>> {
+        let runner = self.0.upgrade()?;
+        runner.get_driver_host(driver_host_name_for_colocation)
+    }
+
     async fn create_driver_host(
         &self,
         use_next_vdso: bool,
+        driver_host_name_for_colocation: String,
     ) -> Result<Rc<dyn DriverHost>, zx::Status> {
         if let Some(runner) = self.0.upgrade() {
-            runner.create_driver_host(use_next_vdso).await
+            runner.create_driver_host(use_next_vdso, driver_host_name_for_colocation).await
         } else {
             Err(zx::Status::UNAVAILABLE)
         }
     }
 
-    async fn create_driver_host_dynamic_linker(&self) -> Result<Rc<dyn DriverHost>, zx::Status> {
+    async fn create_driver_host_dynamic_linker(
+        &self,
+        driver_host_name_for_colocation: String,
+    ) -> Result<Rc<dyn DriverHost>, zx::Status> {
         if let Some(runner) = self.0.upgrade() {
-            runner.create_driver_host_dynamic_linker().await
+            runner.create_driver_host_dynamic_linker(driver_host_name_for_colocation).await
         } else {
             Err(zx::Status::UNAVAILABLE)
         }

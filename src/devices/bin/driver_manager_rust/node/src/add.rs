@@ -82,6 +82,10 @@ impl Node {
 
         child.set_non_composite_properties(properties);
 
+        if let Some(driver_host) = args.driver_host {
+            *child.driver_host_name_for_colocation.borrow_mut() = driver_host;
+        }
+
         if let Some(symbols) = args.symbols {
             let mut names = HashSet::new();
             for symbol in &symbols {

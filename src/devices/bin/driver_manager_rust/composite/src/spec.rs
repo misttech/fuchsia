@@ -17,6 +17,7 @@ pub struct CompositeNodeSpec {
     driver_url: String,
     node_manager: Box<dyn NodeManager>,
     composite_info: Option<fdf::CompositeInfo>,
+    driver_host_name_for_colocation: String,
 }
 
 impl CompositeNodeSpec {
@@ -24,6 +25,7 @@ impl CompositeNodeSpec {
         name: String,
         parent_specs: Vec<fdf::ParentSpec2>,
         node_manager: Box<dyn NodeManager>,
+        driver_host_name_for_colocation: String,
     ) -> Self {
         let parent_nodes = vec![None; parent_specs.len()];
         Self {
@@ -34,6 +36,7 @@ impl CompositeNodeSpec {
             driver_url: String::new(),
             node_manager,
             composite_info: None,
+            driver_host_name_for_colocation,
         }
     }
 
@@ -61,6 +64,7 @@ impl CompositeNodeSpec {
                 spec_name.clone(),
                 parent_names.clone(),
                 primary_index,
+                self.driver_host_name_for_colocation.clone(),
             ));
             self.driver_url = url.clone();
         }

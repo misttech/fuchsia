@@ -185,6 +185,8 @@ pub trait DriverHost {
         &self,
         thread_koid: zx::Koid,
     ) -> Result<fdh::DriverCrashInfo, zx::Status>;
+
+    fn name_for_colocation(&self) -> &str;
 }
 
 pub struct DriverHostComponent {
@@ -193,6 +195,7 @@ pub struct DriverHostComponent {
     scope: ExecutionScope,
     process_info: Arc<CachedProcessInfo>,
     runtime_dir: Arc<Simple>,
+    name_for_colocation: String,
 }
 
 impl DriverHostComponent {
@@ -200,10 +203,18 @@ impl DriverHostComponent {
         driver_host: fdh::DriverHostProxy,
         dynamic_linker_driver_loader: Option<floader::DriverHostProxy>,
         scope: ExecutionScope,
+        name_for_colocation: String,
     ) -> Self {
         let process_info = Arc::new(CachedProcessInfo::new(driver_host.clone()));
         let runtime_dir = create_runtime_dir(process_info.clone());
-        Self { driver_host, dynamic_linker_driver_loader, scope, process_info, runtime_dir }
+        Self {
+            driver_host,
+            dynamic_linker_driver_loader,
+            scope,
+            process_info,
+            runtime_dir,
+            name_for_colocation,
+        }
     }
 }
 
@@ -329,6 +340,10 @@ impl DriverHost for DriverHostComponent {
                 zx::Status::INTERNAL
             })?
             .map_err(zx::Status::from_raw)
+    }
+
+    fn name_for_colocation(&self) -> &str {
+        &self.name_for_colocation
     }
 }
 
