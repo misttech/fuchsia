@@ -229,6 +229,11 @@ impl LogsRepository {
         merged
     }
 
+    /// Returns a log container.
+    ///
+    /// NOTE: This function does nothing to stop the container from being removed, so this is
+    /// currently only suitable for test code.
+    #[cfg(test)]
     pub fn get_log_container(
         self: &Arc<Self>,
         identity: Arc<ComponentIdentity>,
@@ -308,7 +313,13 @@ impl EventConsumer for LogsRepository {
                 request_stream,
             }) => {
                 debug!(identity:% = component; "LogSink requested.");
-                let container = self.get_log_container(component);
+                // NOTE: It is important that we hold the lock whilst we call
+                // `Container::handle_log_sink` because otherwise the container could be removed by
+                // `on_container_inactive`.  After calling `handle_log_sink`, the container cannot
+                // be removed until after the `LogSink` channel is closed.
+                let mut mutable_state = self.mutable_state.lock();
+                let container =
+                    mutable_state.get_log_container(component, &self.shared_buffer, &self);
                 container.handle_log_sink(request_stream, self.scope_handle.clone());
             }
             _ => unreachable!("Archivist state just subscribes to log sink requested"),
