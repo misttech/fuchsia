@@ -31,7 +31,6 @@
 #include <limits>
 #include <memory>
 #include <mutex>
-#include <optional>
 #include <shared_mutex>
 #include <utility>
 #include <vector>
@@ -55,10 +54,8 @@
 #include "src/storage/blobfs/blobfs_inspect_tree.h"
 #include "src/storage/blobfs/blobfs_metrics.h"
 #include "src/storage/blobfs/cache_node.h"
-#include "src/storage/blobfs/cache_policy.h"
 #include "src/storage/blobfs/common.h"
 #include "src/storage/blobfs/compression/external_decompressor.h"
-#include "src/storage/blobfs/compression_settings.h"
 #include "src/storage/blobfs/directory.h"
 #include "src/storage/blobfs/format.h"
 #include "src/storage/blobfs/fsck.h"
@@ -98,15 +95,6 @@ struct DirectoryCookie {
   size_t index;       // Index into node map
   uint64_t reserved;  // Unused
 };
-
-const char* CachePolicyToString(CachePolicy policy) {
-  switch (policy) {
-    case CachePolicy::NeverEvict:
-      return "NEVER_EVICT";
-    case CachePolicy::EvictImmediately:
-      return "EVICT_IMMEDIATELY";
-  }
-}
 
 zx_status_t LoadSuperblock(const fuchsia_storage_block::wire::BlockInfo& block_info,
                            int block_offset, BlockDevice& device, char block[kBlobfsBlockSize]) {
@@ -182,9 +170,8 @@ zx::result<std::unique_ptr<Blobfs>> Blobfs::Create(async_dispatcher_t* dispatche
 
   // Construct the Blobfs object, without intensive validation, since it
   // may require upgrades / journal replays to become valid.
-  auto fs = std::unique_ptr<Blobfs>(
-      new Blobfs(dispatcher, std::move(device), vfs, superblock, options.writability,
-                 options.pager_backed_cache_policy, decompression_connector));
+  auto fs = std::unique_ptr<Blobfs>(new Blobfs(dispatcher, std::move(device), vfs, superblock,
+                                               options.writability, decompression_connector));
   fs->block_info_ = block_info;
 
   auto fs_ptr = fs.get();
@@ -266,13 +253,6 @@ zx::result<std::unique_ptr<Blobfs>> Blobfs::Create(async_dispatcher_t* dispatche
     FX_LOGS(ERROR) << "FVM info check failed";
     return zx::error(status);
   }
-
-  FX_LOGS(INFO) << "Using eviction policy " << CachePolicyToString(options.cache_policy);
-  if (options.pager_backed_cache_policy) {
-    FX_LOGS(INFO) << "Using overridden pager eviction policy "
-                  << CachePolicyToString(*options.pager_backed_cache_policy);
-  }
-  fs->GetCache().SetCachePolicy(options.cache_policy);
 
   RawBitmap block_map;
   // Keep the block_map aligned to a block multiple
@@ -856,7 +836,6 @@ void Blobfs::Sync(SyncCallback cb) {
 
 Blobfs::Blobfs(async_dispatcher_t* dispatcher, std::unique_ptr<BlockDevice> device,
                fs::PagedVfs* vfs, const Superblock* info, Writability writable,
-               std::optional<CachePolicy> pager_backed_cache_policy,
                DecompressorCreatorConnector* decompression_connector)
     : vfs_(vfs),
       info_(*info),
@@ -864,7 +843,6 @@ Blobfs::Blobfs(async_dispatcher_t* dispatcher, std::unique_ptr<BlockDevice> devi
       block_device_(std::move(device)),
       writability_(writable),
       metrics_(CreateBlobfsMetrics(inspect_tree_.inspector())),
-      pager_backed_cache_policy_(pager_backed_cache_policy),
       decompression_connector_(decompression_connector) {
   ZX_ASSERT(vfs_);
 

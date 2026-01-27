@@ -11,17 +11,13 @@
 #include <lib/fidl/cpp/wire/channel.h>
 #include <lib/syslog/cpp/macros.h>
 #include <lib/zx/result.h>
-#include <zircon/assert.h>
 #include <zircon/errors.h>
 #include <zircon/types.h>
 
 #include <algorithm>
-#include <cstdint>
-#include <optional>
 #include <utility>
 
 #include "src/storage/blobfs/blob_layout.h"
-#include "src/storage/blobfs/cache_policy.h"
 #include "src/storage/blobfs/common.h"
 #include "src/storage/blobfs/fsck.h"
 #include "src/storage/blobfs/mkfs.h"
@@ -39,23 +35,6 @@ MountOptions ParseMountOptions(fuchsia_fs_startup::wire::StartOptions start_opti
 
   if (start_options.has_read_only() && start_options.read_only()) {
     options.writability = Writability::ReadOnlyFilesystem;
-  }
-
-  if (start_options.has_cache_eviction_policy_override()) {
-    switch (start_options.cache_eviction_policy_override()) {
-      case fuchsia_fs_startup::wire::EvictionPolicyOverride::kNone:
-        options.pager_backed_cache_policy = std::nullopt;
-        break;
-      case fuchsia_fs_startup::wire::EvictionPolicyOverride::kNeverEvict:
-        options.pager_backed_cache_policy = CachePolicy::NeverEvict;
-        break;
-      case fuchsia_fs_startup::wire::EvictionPolicyOverride::kEvictImmediately:
-        options.pager_backed_cache_policy = CachePolicy::EvictImmediately;
-        break;
-      default:
-        ZX_PANIC("Unknown cache eviction policy override: %d",
-                 static_cast<uint32_t>(start_options.cache_eviction_policy_override()));
-    }
   }
 
   return options;

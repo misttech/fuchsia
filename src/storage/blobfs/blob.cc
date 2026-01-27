@@ -32,7 +32,6 @@
 #include "src/storage/blobfs/blob_writer.h"
 #include "src/storage/blobfs/blobfs.h"
 #include "src/storage/blobfs/cache_node.h"
-#include "src/storage/blobfs/cache_policy.h"
 #include "src/storage/blobfs/common.h"
 #include "src/storage/blobfs/format.h"
 #include "src/storage/blobfs/loader_info.h"
@@ -98,13 +97,6 @@ zx_status_t Blob::LoadPagedVmosFromDisk() {
   // metadata that is corrupted and we may start taking unexpected paths.
   if (is_corrupt_) {
     return ZX_ERR_IO_DATA_INTEGRITY;
-  }
-
-  // If there is an overridden cache policy for pager-backed blobs, apply it now. Otherwise the
-  // system-wide default will be used.
-  std::optional<CachePolicy> cache_policy = blobfs_.pager_backed_cache_policy();
-  if (cache_policy) {
-    set_overridden_cache_policy(*cache_policy);
   }
 
   zx::result<LoaderInfo> load_info_or = blobfs_.loader().LoadBlob(map_index_);
@@ -216,33 +208,15 @@ bool Blob::ShouldCache() const {
   return state_ == BlobState::kReadable;
 }
 
-void Blob::ActivateLowMemory() {
-  // The reference returned by FreePagedVmo() needs to be released outside of the lock since it
-  // could be keeping this class in scope.
-  fbl::RefPtr<fs::Vnode> pager_reference;
-  {
-    std::lock_guard lock(mutex_);
-
-    // We shouldn't be putting the blob into a low-memory state while it is still mapped.
-    //
-    // It is common for tests to trigger this assert during Blobfs tear-down. This will happen when
-    // the "no clones" message was not delivered before destruction. This can happen if the test
-    // code kept a vmo reference, but can also happen when there are no clones because the delivery
-    // of this message depends on running the message loop which is easy to skip in a test.
-    //
-    // Often, the solution is to call RunUntilIdle() on the loop after the test code has cleaned up
-    // its mappings but before deleting Blobfs. This will allow the pending notifications to be
-    // delivered.
-    ZX_ASSERT_MSG(!has_clones(), "Cannot put blob in low memory state as its mapped via clones.");
-
-    pager_reference = FreePagedVmo();
-
-    loader_info_ = LoaderInfo();  // Release the verifiers and associated Merkle data.
-  }
-  // When the pager_reference goes out of scope here, it could delete |this|.
+Blob::~Blob() {
+  // The PagedVfs holds a strong reference to the vnode when there are outstanding VMO clones and a
+  // weak reference when there are no clones. Since this is the destructor, the PagedVfs shouldn't
+  // be holding a strong reference.
+  //
+  // When Blobfs is shutting down, it calls |WillTeardownFilesystem| which will remove the strong
+  // reference from the PagedVfs if VMO clones did still exist.
+  ZX_ASSERT(FreePagedVmo() == nullptr);
 }
-
-Blob::~Blob() { ActivateLowMemory(); }
 
 fuchsia_io::NodeProtocolKinds Blob::GetProtocols() const {
   return fuchsia_io::NodeProtocolKinds::kFile;

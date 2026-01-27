@@ -23,7 +23,6 @@
 #include <cstddef>
 #include <cstdint>
 #include <memory>
-#include <optional>
 #include <shared_mutex>
 #include <vector>
 
@@ -39,7 +38,6 @@
 #include "src/storage/blobfs/blob_loader.h"
 #include "src/storage/blobfs/blobfs_inspect_tree.h"
 #include "src/storage/blobfs/blobfs_metrics.h"
-#include "src/storage/blobfs/cache_policy.h"
 #include "src/storage/blobfs/common.h"
 #include "src/storage/blobfs/compression/external_decompressor.h"
 #include "src/storage/blobfs/format.h"
@@ -190,12 +188,6 @@ class Blobfs : public TransactionManager, public BlockIteratorProvider {
 
   zx_status_t RunRequests(const std::vector<storage::BufferedOperation>& operations) override;
 
-  // Returns an optional overriden cache policy to apply for pager-backed blobs. If unset, the
-  // default cache policy should be used.
-  std::optional<CachePolicy> pager_backed_cache_policy() const {
-    return pager_backed_cache_policy_;
-  }
-
   zx::result<std::unique_ptr<Superblock>> ReadBackupSuperblock();
 
   // Updates fragmentation metric properties in |out_metrics|. The calculated statistics can also be
@@ -223,7 +215,6 @@ class Blobfs : public TransactionManager, public BlockIteratorProvider {
 
   Blobfs(async_dispatcher_t* dispatcher, std::unique_ptr<BlockDevice> device, fs::PagedVfs* vfs,
          const Superblock* info, Writability writable,
-         std::optional<CachePolicy> pager_backed_cache_policy,
          DecompressorCreatorConnector* decompression_connector);
 
   static zx::result<std::unique_ptr<fs::Journal>> InitializeJournal(
@@ -324,7 +315,6 @@ class Blobfs : public TransactionManager, public BlockIteratorProvider {
   void InitializeInspectTree();
 
   std::unique_ptr<PageLoader> page_loader_;  // Guaranteed non-null after Create() succeeds.
-  std::optional<CachePolicy> pager_backed_cache_policy_;
 
   std::unique_ptr<BlobLoader> loader_;
   std::shared_mutex fsck_at_end_of_transaction_mutex_;

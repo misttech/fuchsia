@@ -15,7 +15,6 @@
 #include <fbl/ref_ptr.h>
 
 #include "src/storage/blobfs/cache_node.h"
-#include "src/storage/blobfs/cache_policy.h"
 #include "src/storage/blobfs/format.h"
 #include "src/storage/lib/trace/trace.h"
 
@@ -227,19 +226,6 @@ void BlobCache::Downgrade(CacheNode* raw_vnode) {
   ZX_ASSERT_MSG(open_hash_.erase(*raw_vnode) != nullptr, "Vnode present in open hash.");
   release_cvar_.Broadcast();
   ZX_ASSERT_MSG(closed_hash_.insert_or_find(vnode.get()), "Vnode absent in closed hashmap.");
-
-  CachePolicy policy = vnode->overriden_cache_policy().value_or(cache_policy_);
-  // While in the closed cache, the blob may either be destroyed or in an inactive state. The
-  // toggles here make tradeoffs between memory usage and performance.
-  switch (policy) {
-    case CachePolicy::EvictImmediately:
-      vnode->ActivateLowMemory();
-      break;
-    case CachePolicy::NeverEvict:
-      break;
-    default:
-      ZX_ASSERT_MSG(false, "Unexpected cache policy");
-  }
 
   // To exist in the closed_hash_, this RefPtr must be leaked. See the complement of this leak in
   // UpgradeLocked.

@@ -173,7 +173,6 @@ class Blob final : public CacheNode, fbl::Recyclable<Blob> {
   // blobfs::CacheNode implementation:
   BlobCache& GetCache() final;
   bool ShouldCache() const final __TA_EXCLUDES(mutex_);
-  void ActivateLowMemory() final __TA_EXCLUDES(mutex_);
 
   // Returns a clone of the blobfs VMO.
   //
@@ -257,7 +256,7 @@ class Blob final : public CacheNode, fbl::Recyclable<Blob> {
   // in-flight overwrites.
   Blob* overwritten_by_ __TA_GUARDED(mutex_) = nullptr;
 
-  // Data used exclusively during writeback. Only used by Write()/Append().
+  // Data used exclusively during writeback. Only used by Write()/Truncate().
   class Writer;
   std::unique_ptr<Writer> writer_ __TA_GUARDED(mutex_);
 

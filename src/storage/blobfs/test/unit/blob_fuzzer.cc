@@ -10,7 +10,6 @@
 #include <lib/component/incoming/cpp/directory.h>
 #include <lib/fdio/fd.h>
 #include <lib/fidl/cpp/wire/channel.h>
-#include <lib/zx/resource.h>
 #include <unistd.h>
 #include <zircon/assert.h>
 #include <zircon/errors.h>
@@ -24,7 +23,6 @@
 #include <fbl/unique_fd.h>
 #include <fuzzer/FuzzedDataProvider.h>
 
-#include "src/storage/blobfs/cache_policy.h"
 #include "src/storage/blobfs/common.h"
 #include "src/storage/blobfs/component_runner.h"
 #include "src/storage/blobfs/mkfs.h"
@@ -74,7 +72,6 @@ class BlobfsInstance {
     ZX_ASSERT(runner_
                   .Configure(std::move(device),
                              MountOptions{
-                                 .cache_policy = CachePolicy::EvictImmediately,
                                  .decompression_connector =
                                      &local_decompressor_creator_->GetDecompressorConnector(),
                                  .paging_threads = 1,

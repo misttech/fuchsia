@@ -10,9 +10,6 @@
 #include <lib/fidl/cpp/wire/channel.h>
 #include <lib/zx/result.h>
 
-#include <optional>
-
-#include "src/storage/blobfs/cache_policy.h"
 #include "src/storage/blobfs/compression/external_decompressor.h"
 
 namespace blobfs {
@@ -31,10 +28,6 @@ enum class Writability {
 struct MountOptions {
   Writability writability = Writability::Writable;
   bool verbose = false;
-  CachePolicy cache_policy = CachePolicy::NeverEvict;
-
-  // Optional overriden cache policy for pager-backed blobs.
-  std::optional<CachePolicy> pager_backed_cache_policy = std::nullopt;
 
   // Used to establish fidl connections to the DecompressorCreator instead of the default
   // implementation that will perform an |fdio_service_connect| with the given channel.

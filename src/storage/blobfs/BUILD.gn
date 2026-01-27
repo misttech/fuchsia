@@ -24,7 +24,6 @@ static_library("blobfs") {
   ]
   public = [
     "blob_layout.h",
-    "cache_policy.h",
     "common.h",
     "compression_settings.h",
     "delivery_blob.h",

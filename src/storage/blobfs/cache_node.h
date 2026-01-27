@@ -9,12 +9,9 @@
 #error Fuchsia-only Header
 #endif
 
-#include <optional>
-
 #include <fbl/intrusive_wavl_tree.h>
 #include <fbl/recycler.h>
 
-#include "src/storage/blobfs/cache_policy.h"
 #include "src/storage/blobfs/format.h"
 #include "src/storage/lib/vfs/cpp/paged_vfs.h"
 #include "src/storage/lib/vfs/cpp/paged_vnode.h"
@@ -30,8 +27,7 @@ class CacheNode : public fs::PagedVnode,
                   private fbl::Recyclable<CacheNode>,
                   public fbl::WAVLTreeContainable<CacheNode*> {
  public:
-  explicit CacheNode(fs::PagedVfs& vfs, Digest digest,
-                     std::optional<CachePolicy> override_cache_policy = std::nullopt);
+  explicit CacheNode(fs::PagedVfs& vfs, Digest digest);
   virtual ~CacheNode() = default;
 
   const Digest& digest() const { return digest_; }
@@ -58,25 +54,12 @@ class CacheNode : public fs::PagedVnode,
   // implementation of this method must not attempt to acquire a reference to |this|.
   virtual bool ShouldCache() const = 0;
 
-  // Places the Vnode into a low-memory state. This function may be invoked when migrating the node
-  // from a "live cache" to a "closed cache".
-  //
-  // The implementation of this method must not invoke any other CacheNode methods. The
-  // implementation of this method must not attempt to acquire a reference to |this|.
-  virtual void ActivateLowMemory() = 0;
-
-  // If the node should have a specific cache discipline, this method returns it. Otherwise, the
-  // system-wide policy is applied.
-  std::optional<CachePolicy> overriden_cache_policy() const { return overriden_cache_policy_; }
-  void set_overridden_cache_policy(CachePolicy policy) { overriden_cache_policy_ = policy; }
-
  protected:
   // Vnode memory management function called when the reference count reaches 0.
   void RecycleNode() override;
 
  private:
   Digest digest_;
-  std::optional<CachePolicy> overriden_cache_policy_;
 };
 
 }  // namespace blobfs

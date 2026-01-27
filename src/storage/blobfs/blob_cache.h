@@ -20,7 +20,6 @@
 #include <fbl/ref_ptr.h>
 
 #include "src/storage/blobfs/cache_node.h"
-#include "src/storage/blobfs/cache_policy.h"
 #include "src/storage/blobfs/format.h"
 
 namespace blobfs {
@@ -32,8 +31,7 @@ namespace blobfs {
 //
 // Internally, the BlobCache contains a "live set" and "closed set" of vnodes. The "live set"
 // contains all Vnodes with a strong reference. The "closed set" contains references to Vnodes which
-// are not used, but which exist on-disk. These Vnodes may be stored in a "low-memory" state until
-// they are requested.
+// are not used, but which exist on-disk.
 //
 // This class is thread-safe.
 class BlobCache {
@@ -44,11 +42,6 @@ class BlobCache {
 
   // Empties the cache, evicting all open nodes and deleting all closed nodes.
   void Reset();
-
-  // Sets the internal cache policy dealing with blob eviction.
-  //
-  // Refer to the declaration of |CachePolicy| for more information.
-  void SetCachePolicy(CachePolicy policy) { cache_policy_ = policy; }
 
   // Iterates over all non-evicted cached nodes with strong references, invoking |callback| on each
   // one.
@@ -77,12 +70,11 @@ class BlobCache {
   // key already exists in the cache.
   zx_status_t Add(const fbl::RefPtr<CacheNode>& vnode) __WARN_UNUSED_RESULT;
 
-  // Deletes a blob from the cache. When the last strong reference is removed, it is put into a
-  // low-memory state, but not placed into the "closed set" of the cache. Future calls to "Lookup"
-  // will not be able to observe this node.
+  // Deletes a blob from the cache. When the last strong reference is removed, it is not placed into
+  // the "closed set" of the cache. Future calls to "Lookup" will not be able to observe this node.
   //
-  // Returns ZX_OK if the node was evicted from the cache.
-  // Returns ZX_ERR_NOT_FOUND if the node was not in the cache.
+  // Returns ZX_OK if the node was evicted from the cache. Returns ZX_ERR_NOT_FOUND if the node was
+  // not in the cache.
   zx_status_t Evict(const fbl::RefPtr<CacheNode>& vnode) __WARN_UNUSED_RESULT;
 
  private:
@@ -133,8 +125,6 @@ class BlobCache {
   // CacheNodes exist in the WAVLTree as long as one or more reference exists; when the Vnode is
   // deleted, it is immediately removed from the WAVL tree.
   using WAVLTreeByMerkle = fbl::WAVLTree<const Digest&, CacheNode*, MerkleRootTraits>;
-
-  CachePolicy cache_policy_ = CachePolicy::EvictImmediately;
 
   fbl::Mutex hash_lock_;
 

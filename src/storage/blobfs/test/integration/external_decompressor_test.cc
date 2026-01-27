@@ -25,12 +25,10 @@
 #include <gtest/gtest.h>
 
 #include "src/lib/testing/predicates/status.h"
-#include "src/storage/blobfs/cache_policy.h"
 #include "src/storage/blobfs/compression/chunked.h"
 #include "src/storage/blobfs/compression/compressor.h"
 #include "src/storage/blobfs/compression/seekable_decompressor.h"
 #include "src/storage/blobfs/compression_settings.h"
-#include "src/storage/blobfs/mount.h"
 #include "src/storage/blobfs/test/blob_utils.h"
 #include "src/storage/blobfs/test/integration/fdio_test.h"
 
@@ -171,15 +169,7 @@ TEST_F(ExternalDecompressorTest, ChunkedPartialDecompression) {
   }
 }
 
-class ExternalDecompressorE2ePagedTest : public FdioTest {
- public:
-  ExternalDecompressorE2ePagedTest() {
-    MountOptions options;
-    // Chunked files will be paged in.
-    options.pager_backed_cache_policy = CachePolicy::EvictImmediately;
-    set_mount_options(options);
-  }
-};
+using ExternalDecompressorE2ePagedTest = FdioTest;
 
 TEST_F(ExternalDecompressorE2ePagedTest, VerifyRemoteDecompression) {
   // Create a new blob on the mounted filesystem.
