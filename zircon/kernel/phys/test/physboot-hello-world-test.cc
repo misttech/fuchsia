@@ -91,7 +91,7 @@ void CheckBootConstants() {
       [alignment] "i"(alignof(BootConstants)), [size] "i"(sizeof(BootConstants)), [fill] "i"(0xbb));
 
   uart::all::KernelDriver<uart::BasicIoProvider, uart::UnsynchronizedPolicy, uart::NullIrqProvider>(
-      handoff->boot_options->serial)
+      kBootConstants.boot_options->serial)
       .Visit([](auto& uart) {
         uart.Write("Hello world!\n");
         CodePatchingNopTest();

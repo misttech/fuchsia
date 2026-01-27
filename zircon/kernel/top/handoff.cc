@@ -83,8 +83,6 @@ constinit volatile bool gDebugBootSpinReady = false;
 
 namespace {
 
-const BootOptions* gBootOptions;
-
 // When using physboot, other samples are available in the handoff data too.
 //
 // **NOTE** Each sample here is represented in the userland test code in
@@ -213,7 +211,7 @@ HandoffEnd::Elf CreatePhysElf(const PhysElfImage& image) {
 
 }  // namespace
 
-const BootOptions* BootOptions::Get() { return gBootOptions; }
+const BootOptions* BootOptions::Get() { return kBootConstants.boot_options.get(); }
 
 // This function is called first thing on kernel entry, so it should be
 // careful on what it assumes is present.
@@ -258,8 +256,6 @@ void PostHandoffBootstrap(PhysHandoff* handoff) {
 
   ZX_DEBUG_ASSERT(handoff);
   gPhysHandoff = handoff;
-
-  gBootOptions = gPhysHandoff->boot_options.get();
 
   ZX_DEBUG_ASSERT(KernelPhysicalAddressOf<__executable_start>() ==
                   kBootConstants.kernel_physical_load_address);

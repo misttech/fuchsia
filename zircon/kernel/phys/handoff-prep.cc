@@ -323,7 +323,7 @@ void HandoffPrep::SetMemory() {
 
 BootOptions& HandoffPrep::SetBootOptions(const BootOptions& boot_options) {
   fbl::AllocChecker ac;
-  BootOptions* handoff_options = New(handoff()->boot_options, ac, *BootOptions::Get());
+  BootOptions* handoff_options = New(boot_constants_->boot_options, ac, boot_options);
   ZX_ASSERT_MSG(ac.check(), "cannot allocate handoff BootOptions!");
 
   if (handoff_options->test_ram_reserve) {

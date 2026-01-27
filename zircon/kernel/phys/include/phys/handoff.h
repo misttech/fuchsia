@@ -337,8 +337,6 @@ struct PhysHandoff {
 
   const uint64_t magic = kMagic;
 
-  PhysHandoffPermanentPtr<const BootOptions> boot_options;
-
   PhysBootTimes times;
   static_assert(std::is_default_constructible_v<PhysBootTimes>);
 

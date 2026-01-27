@@ -69,7 +69,7 @@ void lk_main(PhysHandoff* handoff) {
 
 #if LK_DEBUGLEVEL >= 2
   // Check this even before PostHandoffBootstrap, but after the time sample.
-  if (handoff->boot_options->debug_boot_spin) [[unlikely]] {
+  if (BootOptions::Get()->debug_boot_spin) [[unlikely]] {
     // Wait for gDebugBootSpin to be changed magically from outside (e.g. by
     // the kernel developer using the debugger interface to the emulator).
     while (!gDebugBootSpinReady) {

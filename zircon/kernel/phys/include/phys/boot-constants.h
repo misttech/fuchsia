@@ -14,6 +14,8 @@
 
 #include "handoff-ptr.h"
 
+struct BootOptions;  // <lib/boot-options/boot-options.h>
+
 // This file provides what are constants as far as the kernel is concerned.
 // But physboot fills them in as variables as boot time.  These constants are
 // found directly in RODATA by kernel code without indirection and without
@@ -34,6 +36,10 @@ struct BootConstants {
   // The physical address at which the kernel was loaded.
   // The virtual address __executable_start / __ehdr_start is mapped to this.
   uintptr_t kernel_physical_load_address = 0;
+
+  // Boot options as parsed (modulo redacted kernel.entropy-mixin).  In the
+  // kernel proper, BootOptions::Get() just returns boot_options.get().
+  PhysHandoffPermanentPtr<const BootOptions> boot_options;
 
   // ZBI_TYPE_HW_REBOOT_REASON payload (or as initialized if no ZBI item).
   zbi_hw_reboot_reason_t hw_reboot_reason = ZBI_HW_REBOOT_REASON_UNDEFINED;
