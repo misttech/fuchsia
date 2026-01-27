@@ -115,6 +115,11 @@ class Prebuilts:
         cartfs_fuchsia_dir = self.cartfs_fuchsia_dir
         if (cartfs_fuchsia_dir / ".git").exists():
             subprocess.run(
+                ["git", "add", "."],
+                cwd=cartfs_fuchsia_dir,
+                check=True,
+            )
+            subprocess.run(
                 ["git", "reset", "--hard"],
                 cwd=cartfs_fuchsia_dir,
                 check=True,
@@ -133,19 +138,63 @@ class Prebuilts:
 
         # Setup the integration repository
         if integration_directory.exists():
-            shutil.rmtree(integration_directory, ignore_errors=True)
+            if not (integration_directory / ".git").exists():
+                shutil.rmtree(integration_directory, ignore_errors=True)
+            else:
+                # check remote is fuchsia.googlesource.com/integration
+                remote = subprocess.run(
+                    [
+                        "git",
+                        "remote",
+                        "get-url",
+                        "origin",
+                    ],
+                    cwd=integration_directory,
+                    check=True,
+                    capture_output=True,
+                )
+                if (
+                    remote.stdout.decode("utf-8").strip()
+                    != "https://fuchsia.googlesource.com/integration"
+                ):
+                    # Set remote to fuchsia.googlesource.com/integration
+                    subprocess.run(
+                        [
+                            "git",
+                            "remote",
+                            "set-url",
+                            "origin",
+                            "https://fuchsia.googlesource.com/integration",
+                        ],
+                        cwd=integration_directory,
+                        check=True,
+                    )
 
-        subprocess.run(
-            [
-                "git",
-                "clone",
-                "https://fuchsia.googlesource.com/integration",
-                "--depth",
-                "100",
-            ],
-            cwd=self.cartfs_directory,
-            check=True,
-        )
+                # pull latest changes from the remote
+                subprocess.run(
+                    [
+                        "git",
+                        "pull",
+                        "origin",
+                        "main",
+                    ],
+                    cwd=integration_directory,
+                    check=True,
+                )
+
+        # Clone the integration repository
+        if not integration_directory.exists():
+            subprocess.run(
+                [
+                    "git",
+                    "clone",
+                    "https://fuchsia.googlesource.com/integration",
+                    "--depth",
+                    "100",
+                ],
+                cwd=self.cartfs_directory,
+                check=True,
+            )
 
         # Determine the fuchsia repo commit hash.
         fuchsia_repo_states = (
