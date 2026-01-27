@@ -11,7 +11,7 @@ from unittest import mock
 
 from parameterized import param, parameterized
 
-from honeydew import errors
+from honeydew import affordances_capable, errors
 from honeydew.transports.ffx import errors as ffx_errors
 from honeydew.transports.ffx import ffx
 from honeydew.transports.sl4f import errors as sl4f_errors
@@ -114,6 +114,10 @@ class Sl4fImplTests(unittest.TestCase):
 
         self.ffx_obj = mock.MagicMock(spec=ffx.FFX)
 
+        self.device_ip_change = mock.MagicMock(
+            spec=affordances_capable.FuchsiaDeviceIpChange
+        )
+
         with mock.patch.object(
             sl4f_impl.Sl4fImpl, "start_server", autospec=True
         ) as mock_sl4f_start_server:
@@ -126,12 +130,14 @@ class Sl4fImplTests(unittest.TestCase):
                 device_name=_INPUT_ARGS["device_name"],
                 device_ip=_INPUT_ARGS["device_ip_v4"],
                 ffx_transport=self.ffx_obj,
+                device_ip_change=self.device_ip_change,
             )
 
             self.sl4f_obj_with_ipv6 = sl4f_impl.Sl4fImpl(
                 device_name=_INPUT_ARGS["device_name"],
                 device_ip=_INPUT_ARGS["device_ip_v6"],
                 ffx_transport=self.ffx_obj,
+                device_ip_change=self.device_ip_change,
             )
 
             self.assertEqual(mock_sl4f_start_server.call_count, 3)

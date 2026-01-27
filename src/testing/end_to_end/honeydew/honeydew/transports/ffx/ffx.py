@@ -114,6 +114,7 @@ class FFX(abc.ABC):
         capture_output: bool = True,
         log_output: bool = True,
         include_target: bool = True,
+        include_target_name: bool = False,
         machine: ffx_types.MachineFormat | None = None,
     ) -> str:
         """Runs an FFX command.
@@ -131,6 +132,8 @@ class FFX(abc.ABC):
                 or spammy output.
             include_target: If set to True, `ffx -t {target} {cmd}` will be run.
                 Otherwise, `ffx {cmd}` will be run.
+            include_target_name: If set to True, `ffx -t {target-name} {cmd}` will be run.
+                Otherwise, `ffx -t {target-ip} {cmd}` will be run.
             machine: If set, `ffx --machine {machine} {cmd}` will be run.
 
         Returns:
@@ -258,6 +261,7 @@ class FFX(abc.ABC):
         self,
         cmd: list[str],
         include_target: bool = True,
+        include_target_name: bool = False,
         machine: ffx_types.MachineFormat | None = None,
     ) -> list[str]:
         """Generates the FFX command that need to be run.
@@ -265,6 +269,8 @@ class FFX(abc.ABC):
         Args:
             cmd: FFX command.
             include_target: True to include "-t <target_name>", False otherwise.
+            include_target_name: If set to True, `ffx -t {target-name} {cmd}` will be run.
+                Otherwise, `ffx -t {target-ip} {cmd}` will be run.
             machine: If set, `--machine {machine} {cmd}` will be added.
 
         Returns:

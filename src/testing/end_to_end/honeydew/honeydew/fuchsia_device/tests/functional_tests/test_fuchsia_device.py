@@ -34,6 +34,13 @@ _LOGGER: logging.Logger = logging.getLogger(__name__)
 
 # Note - `register_for_on_device_boot()` has been fully tested using unit test
 
+# Note - To properly test `resolve_device_ip()`, call it after fuchsia device IP address is changed.
+# However, in infra it is guaranteed to have the device ip address same through out the test
+# execution. So functional test for this currently checks that calling this method (even when
+# ip address is not changed) will not break anything from host-target communication perspective.
+# Proper test for this method will be called by OTA test (that is run on emulator which results in
+# changing the IP address of the device).
+
 
 # pylint: disable=pointless-statement
 class FuchsiaDeviceTests(fuchsia_base_test.FuchsiaBaseTest):
@@ -220,6 +227,10 @@ class FuchsiaDeviceTests(fuchsia_base_test.FuchsiaBaseTest):
     def test_wait_for_online(self) -> None:
         """Test case for wait_for_online()"""
         self.device.wait_for_online()
+
+    def test_resolve_device_ip(self) -> None:
+        """Test case for resolve_device_ip()"""
+        self.device.resolve_device_ip()
 
 
 if __name__ == "__main__":

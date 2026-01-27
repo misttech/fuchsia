@@ -10,6 +10,7 @@ from collections.abc import Iterable
 from typing import Any
 
 from honeydew import errors
+from honeydew.affordances_capable import FuchsiaDeviceIpChange
 from honeydew.transports.ffx import ffx as ffx_interface
 from honeydew.transports.sl4f import errors as sl4f_errors
 from honeydew.transports.sl4f import sl4f as sl4f_interface
@@ -41,6 +42,8 @@ class Sl4fImpl(sl4f_interface.SL4F):
         device_name: Fuchsia device name.
         ffx_transport: Object to FFX transport interface implementation.
         device_ip: Fuchsia device IP Address.
+        device_ip_change: Object that implements FuchsiaDeviceIpChange to handle Fuchsia device
+            IP changes.
 
     Raises:
         Sl4fError: Failed to instantiate.
@@ -51,11 +54,24 @@ class Sl4fImpl(sl4f_interface.SL4F):
         device_name: str,
         ffx_transport: ffx_interface.FFX,
         device_ip: ipaddress.IPv4Address | ipaddress.IPv6Address | None = None,
+        device_ip_change: FuchsiaDeviceIpChange | None = None,
     ) -> None:
         self._name: str = device_name
+
         self._ip_address: (
             ipaddress.IPv4Address | ipaddress.IPv6Address | None
         ) = device_ip
+
+        if device_ip is not None and device_ip_change is None:
+            raise ValueError(
+                "Pass 'device_ip_change' argument also when 'device_ip' arg is passed"
+            )
+        self._device_ip_change: FuchsiaDeviceIpChange | None = device_ip_change
+        if self._device_ip_change:
+            self._device_ip_change.register_for_on_device_ip_change(
+                fn=self._on_device_ip_change
+            )
+
         self._ffx_transport: ffx_interface.FFX = ffx_transport
 
         self.start_server()
@@ -226,3 +242,12 @@ class Sl4fImpl(sl4f_interface.SL4F):
             sl4f_port = _SL4F_PORT["REMOTE"]
 
         return custom_types.Sl4fServerAddress(ip=sl4f_server_ip, port=sl4f_port)
+
+    def _on_device_ip_change(self, target_ip_port: custom_types.IpPort) -> None:
+        """Callback method that gets invoked when device ip address changes.
+
+        Args:
+            target_ip_port: New IP address of the device.
+        """
+        self._ip_address = target_ip_port.ip
+        self.start_server()

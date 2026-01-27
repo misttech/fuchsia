@@ -69,6 +69,21 @@ class FuchsiaDeviceClose(abc.ABC):
         """
 
 
+class FuchsiaDeviceIpChange(abc.ABC):
+    """Abstract base class which contains methods that let you register to run any custom logic
+    when device IP address is changed."""
+
+    @abc.abstractmethod
+    def register_for_on_device_ip_change(
+        self, fn: Callable[[custom_types.IpPort], None]
+    ) -> None:
+        """Register a function that will be called when an IP address is changed.
+
+        Args:
+            fn: Function that need to be called when an IP address is changed.
+        """
+
+
 class InspectCapableDevice(abc.ABC):
     """Abstract base class to be implemented by a device which supports the
     inspect operation."""

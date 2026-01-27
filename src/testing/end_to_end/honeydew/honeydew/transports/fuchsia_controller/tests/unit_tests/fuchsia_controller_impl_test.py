@@ -10,6 +10,7 @@ from unittest import mock
 
 import fuchsia_controller_py as fuchsia_controller
 
+from honeydew import affordances_capable
 from honeydew.transports.ffx import config as ffx_config
 from honeydew.transports.fuchsia_controller import errors as fc_errors
 from honeydew.transports.fuchsia_controller import fuchsia_controller_impl
@@ -76,11 +77,16 @@ class FuchsiaControllerTests(unittest.TestCase):
                 autospec=True,
             ) as mock_target_wait,
         ):
+            self.device_ip_change = mock.MagicMock(
+                spec=affordances_capable.FuchsiaDeviceIpChange
+            )
+
             self.fuchsia_controller_obj_with_device_ip = (
                 fuchsia_controller_impl.FuchsiaControllerImpl(
                     target_name=_INPUT_ARGS["target_name"],
                     target_ip_port=_INPUT_ARGS["target_ip_port"],
                     ffx_config_data=_MOCK_ARGS["ffx_config_data"],
+                    device_ip_change=self.device_ip_change,
                 )
             )
         mock_target_wait.assert_called()

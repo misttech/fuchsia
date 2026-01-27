@@ -4,6 +4,7 @@
 """FuchsiaDevice abstract base class implementation."""
 
 import asyncio
+import dataclasses
 import ipaddress
 import json
 import logging
@@ -116,6 +117,17 @@ _FC_PROXIES: dict[str, custom_types.FidlEndpoint] = {
     ),
 }
 
+_FFX_CMDS: dict[str, list[str]] = {
+    "RESOLVE_IP": [
+        "target",
+        "list",
+        "--format",
+        "addresses",
+        "--no-usb",  # do not do USB discovery
+        "--no-probe",  # do not connect to targets
+    ],
+}
+
 _LOG_SEVERITIES: dict[custom_types.LEVEL, f_diagnostics_types.Severity] = {
     custom_types.LEVEL.INFO: f_diagnostics_types.Severity.INFO,
     custom_types.LEVEL.WARNING: f_diagnostics_types.Severity.WARN,
@@ -131,6 +143,7 @@ class FuchsiaDeviceImpl(
     affordances_capable.FuchsiaDeviceLogger,
     affordances_capable.FuchsiaDeviceClose,
     affordances_capable.InspectCapableDevice,
+    affordances_capable.FuchsiaDeviceIpChange,
 ):
     """FuchsiaDevice abstract base class implementation using
     Fuchsia-Controller.
@@ -193,6 +206,9 @@ class FuchsiaDeviceImpl(
 
         self._on_device_boot_fns: list[Callable[[], None]] = []
         self._on_device_close_fns: list[Callable[[], None]] = []
+        self._on_device_ip_change_fns: list[
+            Callable[[custom_types.IpPort], None]
+        ] = []
 
         self._config: dict[str, Any] | None = config
         self._created_context = False
@@ -338,6 +354,7 @@ class FuchsiaDeviceImpl(
             target_ip_port=self._device_info.ip_port,
             use_monitor_state=use_monitor_state,
             shared_data=shared_data,
+            device_ip_change=self,
         )
         return ffx_obj
 
@@ -359,6 +376,7 @@ class FuchsiaDeviceImpl(
             target_name=self.device_name,
             ffx_config_data=self._ffx_config_data,
             target_ip_port=self._device_info.ip_port,
+            device_ip_change=self,
         )
         return fuchsia_controller_obj
 
@@ -419,6 +437,7 @@ class FuchsiaDeviceImpl(
             device_name=self.device_name,
             device_ip=device_ip,
             ffx_transport=self.ffx,
+            device_ip_change=self,
         )
         return sl4f_obj
 
@@ -907,6 +926,71 @@ class FuchsiaDeviceImpl(
             fn: Function that need to be called during FuchsiaDevice cleanup.
         """
         self._on_device_close_fns.append(fn)
+
+    def resolve_device_ip(self) -> None:
+        """Resolves the IP address of Fuchsia device."""
+        # Step #1 - Get the IP address of the Fuchsia device.
+        if self._device_info.ip_port is not None:
+            _LOGGER.info(
+                "'%s' is the IP address of '%s', prior to resolving device ip",
+                self._device_info.ip_port,
+                self.device_name,
+            )
+        try:
+            cmd: list[str] = _FFX_CMDS["RESOLVE_IP"]
+            output: str = self.ffx.run(
+                cmd=cmd,
+                include_target_name=True,
+            )
+
+            # in '[fe80::6a47:a931:1e84:5077%qemu]:22', ":22" is SSH port.
+            # Ports can be 1-5 chars, clip off everything after the last ':'.
+            ssh_info: list[str] = output.rsplit(":", 1)
+            ssh_ip: str = ssh_info[0].replace("[", "").replace("]", "")
+            ssh_port: int = int(ssh_info[1])
+
+            ip_port: custom_types.IpPort = custom_types.IpPort(
+                ip=ipaddress.ip_address(ssh_ip),
+                port=ssh_port,
+            )
+
+            self._device_info = dataclasses.replace(
+                self._device_info,
+                ip_port=ip_port,
+            )
+        except Exception as err:
+            raise errors.FuchsiaDeviceError(
+                f"Failed to resolve IP for '{self.device_name}'"
+            ) from err
+        if self._device_info.ip_port is not None:
+            _LOGGER.info(
+                "'%s' is the IP address of '%s', after resolving device ip",
+                self._device_info.ip_port,
+                self.device_name,
+            )
+
+        # Step #2 - Call all of the callback functions that were registered for IP address change.
+        for on_device_ip_change_fns in self._on_device_ip_change_fns:
+            print(on_device_ip_change_fns)
+            _LOGGER.info(
+                "Calling %s with arg %s",
+                on_device_ip_change_fns.__qualname__,
+                ip_port,
+            )
+            on_device_ip_change_fns(ip_port)
+
+        # Step #3 - Ensure device is healthy
+        self.health_check()
+
+    def register_for_on_device_ip_change(
+        self, fn: Callable[[custom_types.IpPort], None]
+    ) -> None:
+        """Register a function that will be called when an IP address is changed.
+
+        Args:
+            fn: Function that need to be called when an IP address is changed.
+        """
+        self._on_device_ip_change_fns.append(fn)
 
     def snapshot(
         self,

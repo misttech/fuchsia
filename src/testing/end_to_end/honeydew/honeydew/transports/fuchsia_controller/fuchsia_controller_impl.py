@@ -7,6 +7,7 @@ import logging
 
 import fuchsia_controller_py as fuchsia_controller
 
+from honeydew.affordances_capable import FuchsiaDeviceIpChange
 from honeydew.transports.ffx import config as ffx_config
 from honeydew.transports.fuchsia_controller import errors as fc_errors
 from honeydew.transports.fuchsia_controller import (
@@ -23,8 +24,10 @@ class FuchsiaControllerImpl(fuchsia_controller_interface.FuchsiaController):
 
     Args:
         target_name: Fuchsia device name.
-        config: Configuration associated with FuchsiaController, FFX.
-        device_ip: Fuchsia device IP Address.
+        ffx_config_data: Configuration associated with FuchsiaController, FFX.
+        target_ip_port: Fuchsia device IP Address.
+        device_ip_change: Object that implements FuchsiaDeviceIpChange to handle Fuchsia device
+            IP changes.
 
     Raises:
         FuchsiaControllerConnectionError: If target is not ready.
@@ -36,11 +39,22 @@ class FuchsiaControllerImpl(fuchsia_controller_interface.FuchsiaController):
         target_name: str,
         ffx_config_data: ffx_config.FfxConfigData,
         target_ip_port: custom_types.IpPort | None = None,
+        device_ip_change: FuchsiaDeviceIpChange | None = None,
     ) -> None:
         self._target_name: str = target_name
+
         self._ffx_config_data: ffx_config.FfxConfigData = ffx_config_data
 
         self._target_ip_port: custom_types.IpPort | None = target_ip_port
+        if target_ip_port is not None and device_ip_change is None:
+            raise ValueError(
+                "Pass 'device_ip_change' argument also when 'target_ip_port' arg is passed"
+            )
+        self._device_ip_change: FuchsiaDeviceIpChange | None = device_ip_change
+        if self._device_ip_change:
+            self._device_ip_change.register_for_on_device_ip_change(
+                fn=self._on_device_ip_change
+            )
 
         self._target: str
         if self._target_ip_port:
@@ -141,3 +155,15 @@ class FuchsiaControllerImpl(fuchsia_controller_interface.FuchsiaController):
             raise fc_errors.FuchsiaControllerError(
                 "Fuchsia Controller FIDL Error"
             ) from status
+
+    def _on_device_ip_change(self, target_ip_port: custom_types.IpPort) -> None:
+        """Callback method that gets invoked when device ip address changes.
+
+        Args:
+            target_ip_port: New IP address of the device.
+        """
+        self._target_ip_port = target_ip_port
+        self._target = str(self._target_ip_port)
+
+        self.create_context()
+        self.check_connection()

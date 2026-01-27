@@ -12,6 +12,7 @@ from pathlib import Path
 from typing import Any
 
 from honeydew import errors
+from honeydew.affordances_capable import FuchsiaDeviceIpChange
 from honeydew.transports.ffx import config as ffx_config
 from honeydew.transports.ffx import errors as ffx_errors
 from honeydew.transports.ffx import ffx as ffx_interface
@@ -52,13 +53,15 @@ class FfxImpl(ffx_interface.FFX):
 
     Args:
         target_name: Fuchsia device name.
-        config: Configuration associated with FFX.
+        config_data: Configuration associated with FFX.
         target_ip_port: Fuchsia device IP address and port.
-
-        Note: When target_ip is provided, it will be used instead of target_name
-        while running ffx commands (ex: `ffx -t <target_ip> <command>`).
+            Note: When target_ip is provided, it will be used instead of target_name
+            while running ffx commands (ex: `ffx -t <target_ip> <command>`).
         use_monitor_state: True to use ffx monitor for target status, False
             otherwise.
+        shared_data: Shared data (if any) needed while running FFX commands.
+        device_ip_change: Object that implements FuchsiaDeviceIpChange to handle Fuchsia device
+            IP changes.
 
     Raises:
         FfxConnectionError: In case of failed to check FFX connection.
@@ -72,6 +75,7 @@ class FfxImpl(ffx_interface.FFX):
         target_ip_port: custom_types.IpPort | None = None,
         use_monitor_state: bool = False,
         shared_data: str | None = None,
+        device_ip_change: FuchsiaDeviceIpChange | None = None,
     ) -> None:
         invalid_target_name: bool = False
         try:
@@ -89,6 +93,15 @@ class FfxImpl(ffx_interface.FFX):
         self._target_name: str = target_name
 
         self._target_ip_port: custom_types.IpPort | None = target_ip_port
+        if target_ip_port is not None and device_ip_change is None:
+            raise ValueError(
+                "Pass 'device_ip_change' argument also when 'target_ip_port' arg is passed"
+            )
+        self._device_ip_change: FuchsiaDeviceIpChange | None = device_ip_change
+        if self._device_ip_change:
+            self._device_ip_change.register_for_on_device_ip_change(
+                fn=self._on_device_ip_change
+            )
 
         self._target: str
         if self._target_ip_port:
@@ -309,6 +322,7 @@ class FfxImpl(ffx_interface.FFX):
         capture_output: bool = True,
         log_output: bool = True,
         include_target: bool = True,
+        include_target_name: bool = False,
         machine: MachineFormat | None = None,
     ) -> str:
         """Runs an FFX command.
@@ -326,6 +340,8 @@ class FfxImpl(ffx_interface.FFX):
                 or spammy output.
             include_target: If set to True, `ffx -t {target} {cmd}` will be run.
                 Otherwise, `ffx {cmd}` will be run.
+            include_target_name: If set to True, `ffx -t {target-name} {cmd}` will be run.
+                Otherwise, `ffx -t {target-ip} {cmd}` will be run.
             machine: If set, `ffx --machine {machine} {cmd}` will be run.
 
         Returns:
@@ -340,6 +356,7 @@ class FfxImpl(ffx_interface.FFX):
         ffx_cmd: list[str] = self.generate_ffx_cmd(
             cmd=cmd,
             include_target=include_target,
+            include_target_name=include_target_name,
             machine=machine,
         )
         try:
@@ -553,6 +570,7 @@ class FfxImpl(ffx_interface.FFX):
         self,
         cmd: list[str],
         include_target: bool = True,
+        include_target_name: bool = False,
         machine: MachineFormat | None = None,
     ) -> list[str]:
         """Generates the FFX command that need to be run.
@@ -560,6 +578,8 @@ class FfxImpl(ffx_interface.FFX):
         Args:
             cmd: FFX command.
             include_target: True to include "-t <target_name>", False otherwise.
+            include_target_name: If set to True, `ffx -t {target-name} {cmd}` will be run.
+                Otherwise, `ffx -t {target-ip} {cmd}` will be run.
             machine: If set, `--machine {machine} {cmd}` will be added.
 
         Returns:
@@ -568,7 +588,10 @@ class FfxImpl(ffx_interface.FFX):
         ffx_args: list[str] = []
 
         if include_target:
-            ffx_args.extend(["-t", f"{self._target}"])
+            if include_target_name:
+                ffx_args.extend(["-t", f"{self._target_name}"])
+            else:
+                ffx_args.extend(["-t", f"{self._target}"])
 
         # To run FFX in isolation mode
         ffx_args.extend(["--isolate-dir", self.config.isolate_dir.directory()])
@@ -587,3 +610,14 @@ class FfxImpl(ffx_interface.FFX):
         ffx_args.extend(self.config.get_config_args())
 
         return [self.config.binary_path] + ffx_args + cmd
+
+    def _on_device_ip_change(self, target_ip_port: custom_types.IpPort) -> None:
+        """Callback method that gets invoked when device ip address changes.
+
+        Args:
+            target_ip_port: New IP address of the device.
+        """
+        self._target_ip_port = target_ip_port
+        self._target = str(self._target_ip_port)
+
+        self.check_connection()

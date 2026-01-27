@@ -4,6 +4,7 @@
 """Unit tests for honeydew.fuchsia_device.fuchsia_device_impl.py."""
 
 import base64
+import ipaddress
 import os
 import unittest
 from collections.abc import Callable
@@ -128,8 +129,16 @@ _INSPECT_DATA_BAD_VERSION = """
   }
 """
 
+_IPV6: str = "fe80::4fce:3102:ef13:888c%qemu"
+_IPV6_OBJ: ipaddress.IPv6Address = ipaddress.IPv6Address(_IPV6)
+
+_SSH_ADDRESS: ipaddress.IPv6Address = _IPV6_OBJ
+_SSH_PORT = 8022
+_TARGET_SSH_ADDRESS = custom_types.IpPort(ip=_SSH_ADDRESS, port=_SSH_PORT)
+
 _INPUT_ARGS: dict[str, Any] = {
     "device_name": "fuchsia-emulator",
+    "device_ip": _TARGET_SSH_ADDRESS,
     "device_serial_socket": "/tmp/socket",
     "ffx_config_data": ffx_config.FfxConfigData(
         isolate_dir=fuchsia_controller.IsolateDir("/tmp/isolate"),
@@ -149,6 +158,7 @@ _MOCK_ARGS: dict[str, str] = {
     "product": "core",
     "INSPECT_DATA_JSON_TEXT": _INSPECT_DATA_JSON_TEXT,
     "INSPECT_DATA_BAD_VERSION": _INSPECT_DATA_BAD_VERSION,
+    "ffx_target_ssh_address_output": f"[{_SSH_ADDRESS}]:{_SSH_PORT}",
 }
 
 _BASE64_ENCODED_BYTES: bytes = base64.b64decode("some base64 encoded string==")
@@ -258,7 +268,7 @@ class FuchsiaDeviceImplTests(unittest.TestCase):
             self.fd_fc_obj = fuchsia_device_impl.FuchsiaDeviceImpl(
                 device_info=custom_types.DeviceInfo(
                     name=_INPUT_ARGS["device_name"],
-                    ip_port=None,
+                    ip_port=_INPUT_ARGS["device_ip"],
                     serial_socket=_INPUT_ARGS["device_serial_socket"],
                 ),
                 ffx_config_data=_INPUT_ARGS["ffx_config_data"],
@@ -691,7 +701,7 @@ class FuchsiaDeviceImplTests(unittest.TestCase):
         autospec=True,
     )
     def test_board(self, mock_ffx_get_target_board: mock.Mock) -> None:
-        """Testcase for BaseFuchsiaDevice.board property"""
+        """Testcase for FuchsiaDevice.board property"""
         self.assertEqual(self.fd_fc_obj.board, _MOCK_ARGS["board"])
         mock_ffx_get_target_board.assert_called()
 
@@ -706,7 +716,7 @@ class FuchsiaDeviceImplTests(unittest.TestCase):
         new_callable=mock.PropertyMock,
     )
     def test_manufacturer(self, *unused_args: Any) -> None:
-        """Testcase for BaseFuchsiaDevice.manufacturer property"""
+        """Testcase for FuchsiaDevice.manufacturer property"""
         self.assertEqual(self.fd_fc_obj.manufacturer, "default-manufacturer")
 
     @mock.patch.object(
@@ -720,7 +730,7 @@ class FuchsiaDeviceImplTests(unittest.TestCase):
         new_callable=mock.PropertyMock,
     )
     def test_model(self, *unused_args: Any) -> None:
-        """Testcase for BaseFuchsiaDevice.model property"""
+        """Testcase for FuchsiaDevice.model property"""
         self.assertEqual(self.fd_fc_obj.model, "default-model")
 
     @mock.patch.object(
@@ -730,7 +740,7 @@ class FuchsiaDeviceImplTests(unittest.TestCase):
         autospec=True,
     )
     def test_product(self, mock_ffx_get_target_product: mock.Mock) -> None:
-        """Testcase for BaseFuchsiaDevice.product property"""
+        """Testcase for FuchsiaDevice.product property"""
         self.assertEqual(self.fd_fc_obj.product, _MOCK_ARGS["product"])
         mock_ffx_get_target_product.assert_called()
 
@@ -745,7 +755,7 @@ class FuchsiaDeviceImplTests(unittest.TestCase):
         new_callable=mock.PropertyMock,
     )
     def test_product_name(self, *unused_args: Any) -> None:
-        """Testcase for BaseFuchsiaDevice.product_name property"""
+        """Testcase for FuchsiaDevice.product_name property"""
         self.assertEqual(self.fd_fc_obj.product_name, "default-product-name")
 
     @mock.patch.object(
@@ -757,7 +767,7 @@ class FuchsiaDeviceImplTests(unittest.TestCase):
         new_callable=mock.PropertyMock,
     )
     def test_serial_number(self, *unused_args: Any) -> None:
-        """Testcase for BaseFuchsiaDevice.serial_number property"""
+        """Testcase for FuchsiaDevice.serial_number property"""
         self.assertEqual(self.fd_fc_obj.serial_number, "default-serial-number")
 
     # List all the tests related to dynamic properties
@@ -770,7 +780,7 @@ class FuchsiaDeviceImplTests(unittest.TestCase):
         new_callable=mock.PropertyMock,
     )
     def test_firmware_version(self, *unused_args: Any) -> None:
-        """Testcase for BaseFuchsiaDevice.firmware_version property"""
+        """Testcase for FuchsiaDevice.firmware_version property"""
         self.assertEqual(self.fd_fc_obj.firmware_version, "1.2.3")
 
     @mock.patch.object(
@@ -782,7 +792,7 @@ class FuchsiaDeviceImplTests(unittest.TestCase):
         new_callable=mock.PropertyMock,
     )
     def test_last_reboot_reason(self, *unused_args: Any) -> None:
-        """Testcase for BaseFuchsiaDevice.last_reboot_reason property"""
+        """Testcase for FuchsiaDevice.last_reboot_reason property"""
         self.assertEqual(self.fd_fc_obj.last_reboot_reason, "USER_REQUEST")
 
     # List all the tests related to affordances
@@ -1116,7 +1126,7 @@ class FuchsiaDeviceImplTests(unittest.TestCase):
         parameterized_dict: dict[str, Any],
         mock_send_log_command: mock.Mock,
     ) -> None:
-        """Testcase for BaseFuchsiaDevice.log_message_to_device()"""
+        """Testcase for FuchsiaDevice.log_message_to_device()"""
         self.fd_fc_obj.log_message_to_device(
             level=parameterized_dict["log_level"],
             message=parameterized_dict["log_message"],
@@ -1175,7 +1185,7 @@ class FuchsiaDeviceImplTests(unittest.TestCase):
         mock_fc_create_context: mock.Mock,
         mock_health_check: mock.Mock,
     ) -> None:
-        """Testcase for BaseFuchsiaDevice.on_device_boot() when transport is set to
+        """Testcase for FuchsiaDevice.on_device_boot() when transport is set to
         Fuchsia-Controller"""
         # Reset the `_on_device_boot_fns` variable at the beginning of the test
         self.fd_fc_obj._on_device_boot_fns = []
@@ -1251,7 +1261,7 @@ class FuchsiaDeviceImplTests(unittest.TestCase):
         mock_wait_for_online: mock.Mock,
         mock_on_device_boot: mock.Mock,
     ) -> None:
-        """Testcase for BaseFuchsiaDevice.power_cycle()"""
+        """Testcase for FuchsiaDevice.power_cycle()"""
         power_switch = mock.MagicMock(spec=power_switch_interface.PowerSwitch)
         self.fd_fc_obj.power_cycle(power_switch=power_switch, outlet=5)
 
@@ -1291,7 +1301,7 @@ class FuchsiaDeviceImplTests(unittest.TestCase):
         mock_wait_for_online: mock.Mock,
         mock_on_device_boot: mock.Mock,
     ) -> None:
-        """Testcase for BaseFuchsiaDevice.reboot()"""
+        """Testcase for FuchsiaDevice.reboot()"""
         self.fd_fc_obj.reboot()
 
         self.assertEqual(mock_log_message_to_device.call_count, 2)
@@ -1301,11 +1311,11 @@ class FuchsiaDeviceImplTests(unittest.TestCase):
         mock_on_device_boot.assert_called()
 
     def test_register_for_on_device_boot(self) -> None:
-        """Testcase for BaseFuchsiaDevice.register_for_on_device_boot()"""
+        """Testcase for FuchsiaDevice.register_for_on_device_boot()"""
         self.fd_fc_obj.register_for_on_device_boot(fn=lambda: None)
 
     def test_register_for_on_device_close(self) -> None:
-        """Testcase for BaseFuchsiaDevice.register_for_on_device_close()"""
+        """Testcase for FuchsiaDevice.register_for_on_device_close()"""
         self.fd_fc_obj.register_for_on_device_boot(fn=lambda: None)
         self.fd_fc_obj.close()
 
@@ -1343,7 +1353,7 @@ class FuchsiaDeviceImplTests(unittest.TestCase):
         mock_makedirs: mock.Mock,
         mock_send_snapshot_command: mock.Mock,
     ) -> None:
-        """Testcase for BaseFuchsiaDevice.snapshot()"""
+        """Testcase for FuchsiaDevice.snapshot()"""
         directory: str = parameterized_dict["directory"]
         optional_params: dict[str, Any] = parameterized_dict["optional_params"]
 
@@ -1376,7 +1386,7 @@ class FuchsiaDeviceImplTests(unittest.TestCase):
     def test_wait_for_offline_success(
         self, mock_ffx_wait_for_rcs_disconnection: mock.Mock
     ) -> None:
-        """Testcase for BaseFuchsiaDevice.wait_for_offline() success case"""
+        """Testcase for FuchsiaDevice.wait_for_offline() success case"""
         self.fd_fc_obj.wait_for_offline()
 
         mock_ffx_wait_for_rcs_disconnection.assert_called()
@@ -1390,7 +1400,7 @@ class FuchsiaDeviceImplTests(unittest.TestCase):
     def test_wait_for_offline_fail(
         self, mock_ffx_wait_for_rcs_disconnection: mock.Mock
     ) -> None:
-        """Testcase for BaseFuchsiaDevice.wait_for_offline() failure case"""
+        """Testcase for FuchsiaDevice.wait_for_offline() failure case"""
         with self.assertRaisesRegex(
             errors.FuchsiaDeviceError, "failed to go offline"
         ):
@@ -1406,7 +1416,7 @@ class FuchsiaDeviceImplTests(unittest.TestCase):
     def test_wait_for_online_success(
         self, mock_ffx_wait_for_rcs_connection: mock.Mock
     ) -> None:
-        """Testcase for BaseFuchsiaDevice.wait_for_online() success case"""
+        """Testcase for FuchsiaDevice.wait_for_online() success case"""
         self.fd_fc_obj.wait_for_online()
 
         mock_ffx_wait_for_rcs_connection.assert_called()
@@ -1420,7 +1430,7 @@ class FuchsiaDeviceImplTests(unittest.TestCase):
     def test_wait_for_online_fail(
         self, mock_ffx_wait_for_rcs_connection: mock.Mock
     ) -> None:
-        """Testcase for BaseFuchsiaDevice.wait_for_online() failure case"""
+        """Testcase for FuchsiaDevice.wait_for_online() failure case"""
         with self.assertRaisesRegex(
             errors.FuchsiaDeviceError, "failed to go online"
         ):
@@ -2045,6 +2055,34 @@ class FuchsiaDeviceImplTests(unittest.TestCase):
             self.fd_fc_obj.is_starnix_device()
 
         mock_ffx.assert_called_once()
+
+    def test_register_for_on_device_ip_change(self) -> None:
+        """Testcase for FuchsiaDevice.register_for_on_device_ip_change()"""
+        self.fd_fc_obj.register_for_on_device_ip_change(fn=lambda x: None)
+
+    @mock.patch.object(
+        fuchsia_device_impl.FuchsiaDeviceImpl, "health_check", autospec=True
+    )
+    @mock.patch.object(
+        ffx_impl.FfxImpl,
+        "run",
+        return_value=_MOCK_ARGS["ffx_target_ssh_address_output"],
+        autospec=True,
+    )
+    def test_resolve_device_ip(
+        self,
+        mock_ffx_run: mock.Mock,
+        mock_fuchsia_device_health_check: mock.Mock,
+    ) -> None:
+        """Testcase for FuchsiaDevice.resolve_device_ip()"""
+        with mock.patch.object(self.fd_fc_obj, "_on_device_ip_change_fns"):
+            self.fd_fc_obj.resolve_device_ip()
+        mock_ffx_run.assert_called_once_with(
+            self.fd_fc_obj.ffx,
+            cmd=fuchsia_device_impl._FFX_CMDS["RESOLVE_IP"],
+            include_target_name=True,
+        )
+        mock_fuchsia_device_health_check.assert_called_once()
 
 
 if __name__ == "__main__":

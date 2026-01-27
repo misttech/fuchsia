@@ -436,6 +436,20 @@ class FuchsiaDevice(abc.ABC):
         """
 
     @abc.abstractmethod
+    def register_for_on_device_ip_change(
+        self, fn: Callable[[custom_types.IpPort], None]
+    ) -> None:
+        """Register a function that will be called when an IP address is changed.
+
+        Args:
+            fn: Function that need to be called when an IP address is changed.
+        """
+
+    @abc.abstractmethod
+    def resolve_device_ip(self) -> None:
+        """Resolves the IP address of Fuchsia device."""
+
+    @abc.abstractmethod
     def snapshot(
         self,
         directory: str,

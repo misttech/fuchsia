@@ -14,7 +14,7 @@ from unittest import mock
 import fuchsia_controller_py as fuchsia_controller
 from parameterized import param, parameterized
 
-from honeydew import errors
+from honeydew import affordances_capable, errors
 from honeydew.transports.ffx import config as ffx_config
 from honeydew.transports.ffx import errors as ffx_errors
 from honeydew.transports.ffx import ffx_impl
@@ -187,6 +187,9 @@ class FfxImplTests(unittest.TestCase):
 
         mock_ffx_check_connection.reset_mock()
 
+        self.device_ip_change = mock.MagicMock(
+            spec=affordances_capable.FuchsiaDeviceIpChange
+        )
         with (
             mock.patch.object(
                 ffx_impl.FfxImpl,
@@ -198,6 +201,7 @@ class FfxImplTests(unittest.TestCase):
                 target_name=_INPUT_ARGS["target_name"],
                 target_ip_port=_INPUT_ARGS["target_ip_port"],
                 config_data=_INPUT_ARGS["ffx_config_data"],
+                device_ip_change=self.device_ip_change,
             )
         mock_ffx_check_connection.assert_called()
 
@@ -221,6 +225,7 @@ class FfxImplTests(unittest.TestCase):
                 target_ip_port=_INPUT_ARGS["target_ip_port"],
                 config_data=_INPUT_ARGS["ffx_config_data"],
                 use_monitor_state=True,
+                device_ip_change=self.device_ip_change,
             )
         mock_ffx_check_connection.assert_called()
         mock_ffx_check_running_monitor.assert_called()
