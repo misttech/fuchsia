@@ -116,11 +116,14 @@ config("llvm-libc.config") {
 
   if (cxx_rbe_enable) {
     # Workaround: reclient (for RBE) non-deterministically
-    # fails to include headers in this directory, so force them to be
-    # included as remote inputs.
-    # TODO(b/471248163): revert this workaround when no longer needed
-    cflags +=
-        [ "--remote-inputs=" + rebase_path("include-preempt", root_build_dir) ]
+    # fails to include headers in this directory, and some from llvm-libc,
+    # so force them to be included as remote inputs.
+    # TODO(b/471248163, b/478908349): revert workaround when no longer needed
+    cflags += [
+      "--remote-inputs=" + rebase_path("include-preempt", root_build_dir),
+      "--remote-inputs=" +
+          rebase_path("$llvm_libc/include/llvm-libc-types", root_build_dir),
+    ]
   }
 
   configs = [ "//build/config:Wmissing-declarations" ]
