@@ -1,0 +1,59 @@
+#!/bin/bash
+# Copyright 2026 The Fuchsia Authors. All rights reserved.
+# Use of this source code is governed by a BSD-style license that can be
+# found in the LICENSE file.
+
+#### CATEGORY=Source
+### Run fx commands in the cog workspace.
+## usage: fx cog <args>
+##
+## This is a wrapper around `fx` that runs the commands in the Cog workspace.
+## The script would do some basic setup and then run the commands in the
+## companion CartFS.
+
+source "$(cd "$(dirname "${BASH_SOURCE[0]}")" >/dev/null 2>&1 && pwd)"/lib/vars.sh || exit $?
+set -e
+
+readonly GIT_CITC_PATH="$(which git-citc)"
+
+cartfs_dir=$(readlink -e "${FUCHSIA_DIR}/cartfs-dir")
+if [[ ! -d "${cartfs_dir}" ]]; then
+  echo "This command is only available in Cog workspaces."
+  exit 1
+fi
+
+# Compute the base commit hash
+base_commit_hash=$(${GIT_CITC_PATH} api.get-repo-states fuchsia | grep base_commit_hash | awk '{print $2}' | tr -d '"')
+
+base_commit_hash_in_cartfs=$(cd "${cartfs_dir}/fuchsia" && git rev-parse HEAD)
+
+# if the base commit hash is different from the one in CartFS, then we need to
+# update the CartFS.
+if [[ "${base_commit_hash}" != "${base_commit_hash_in_cartfs}" ]]; then
+  echo "Updating CartFS to base commit hash ${base_commit_hash}..."
+  "${FUCHSIA_DIR}/scripts/cog/setup_cog_workspace.py"
+fi
+
+
+# Get diff between current working copy and base commit hash
+added_or_modified_files=$(${GIT_CITC_PATH} cli.diff ${base_commit_hash} @ | grep '^\[[AM]\]' | awk '{print $2}')
+
+# Copy files to CartFS
+for file in ${added_or_modified_files[@]}; do
+  sha256_cog=$(sha256sum "${file}" | awk '{print $1}')
+  sha256_cartfs=""
+  if [[ -f "${cartfs_dir}/fuchsia/${file}" ]]; then
+    sha256_cartfs=$(sha256sum "${cartfs_dir}/fuchsia/${file}" | awk '{print $1}')
+  fi
+  if [[ "${sha256_cog}" != "${sha256_cartfs}" ]]; then
+    cp "${file}" "${cartfs_dir}/fuchsia/${file}"
+  fi
+done
+
+source "${cartfs_dir}/fuchsia/scripts/fx-env.sh" && fx-update-path
+
+(
+  cd "${cartfs_dir}/fuchsia"
+  .jiri_root/bin/fx "$@"
+)
+

@@ -7,17 +7,14 @@ import("//build/python/python_host_test.gni")
 group("tests") {
   testonly = true
   deps = [
-    ":cartfs_out_directory_test($host_toolchain)",
     ":mock_fs_test($host_toolchain)",
     ":workspace_test($host_toolchain)",
-    "git-polyfill:tests",
   ]
 }
 
 if (is_host) {
   common_sources = [
     "cartfs.py",
-    "cartfs_out_directory.py",
     "logger.py",
     "mock_fs.py",
     "snapshotter.py",
@@ -27,7 +24,6 @@ if (is_host) {
   test_names = [
     "mock_fs",
     "workspace",
-    "cartfs_out_directory",
   ]
 
   foreach(test_name, test_names) {

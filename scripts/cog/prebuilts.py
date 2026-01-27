@@ -14,9 +14,7 @@ import logger
 LOCAL_JIRI_MANIFEST_CONTENT = """
 <manifest>
   <imports>
-    <localimport file="manifests/third_party/all"/>
-    <localimport file="manifests/prebuilts"/>
-    <localimport file="integration/internal/vendor/google/minimal"/>
+    <localimport file="../integration/flower"/>
   </imports>
 </manifest>
 """
@@ -33,6 +31,7 @@ class Prebuilts:
         repo_name: str,
     ):
         self.cartfs_directory = cartfs_directory
+        self.cartfs_fuchsia_dir = self.cartfs_directory / "fuchsia"
         self.workspace_dir = workspace_dir
         self.workspace_name = workspace_name
         self.repo_name = repo_name
@@ -55,6 +54,9 @@ class Prebuilts:
         else:
             link_name.unlink(missing_ok=True)
 
+        if not link_name.parent.is_dir():
+            link_name.parent.mkdir(parents=True, exist_ok=True)
+
         link_name.symlink_to(target)
 
     def _run_bootstrap_jiri_script(self) -> None:
@@ -65,7 +67,7 @@ class Prebuilts:
                 encoded_script = response.read()
                 decoded_script = base64.b64decode(encoded_script)
                 subprocess.run(
-                    ["bash", "-s", self.cartfs_directory],
+                    ["bash", "-s", self.cartfs_fuchsia_dir],
                     input=decoded_script,
                     check=True,
                 )
@@ -76,9 +78,8 @@ class Prebuilts:
     def _write_jiri_manifest(self) -> None:
         """Writes the jiri manifest."""
         self._patch_file(
-            filepath=".jiri_manifest",
+            filepath="fuchsia/.jiri_manifest",
             content=LOCAL_JIRI_MANIFEST_CONTENT,
-            symlink=True,
         )
 
     def _write_jiri_config(self) -> None:
@@ -89,9 +90,9 @@ class Prebuilts:
                 ".jiri_root/bin/jiri",
                 "init",
                 "-analytics-opt=true",
-                self.cartfs_directory,
+                self.cartfs_fuchsia_dir,
             ],
-            cwd=self.cartfs_directory,
+            cwd=self.cartfs_fuchsia_dir,
             check=True,
         )
 
@@ -106,47 +107,45 @@ class Prebuilts:
         logger.log_info("Bootstrapping jiri.")
         self._run_bootstrap_jiri_script()
         self._write_jiri_manifest()
+        self._write_jiri_config()
 
     def fetch_prebuilts(self) -> None:
         """Fetches prebuilts for the given repo."""
         logger.log_info(f"Fetching prebuilts for {self.repo_name}.")
+        cartfs_fuchsia_dir = self.cartfs_fuchsia_dir
+        if (cartfs_fuchsia_dir / ".git").exists():
+            subprocess.run(
+                ["git", "reset", "--hard"],
+                cwd=cartfs_fuchsia_dir,
+                check=True,
+            )
+
         subprocess.run(
             [".jiri_root/bin/jiri", "update"],
-            cwd=self.cartfs_directory,
+            cwd=cartfs_fuchsia_dir,
             check=True,
         )
 
     def create_integration_repository(self) -> None:
         """Creates the integration repository."""
-        logger.log_info("Creating the integration repository.")
+        logger.log_info("Setup the integration repository.")
         integration_directory = self.cartfs_directory / "integration"
 
         # Setup the integration repository
-        if (
-            integration_directory.exists()
-            and (integration_directory / ".git").is_dir()
-        ):
-            subprocess.run(
-                [
-                    "git",
-                    "pull",
-                ],
-                cwd=integration_directory,
-                check=True,
-                stdout=subprocess.DEVNULL,
-                stderr=subprocess.DEVNULL,
-            )
-        else:
+        if integration_directory.exists():
             shutil.rmtree(integration_directory, ignore_errors=True)
-            subprocess.run(
-                [
-                    "git",
-                    "clone",
-                    "sso://turquoise-internal.googlesource.com/integration",
-                ],
-                cwd=self.cartfs_directory,
-                check=True,
-            )
+
+        subprocess.run(
+            [
+                "git",
+                "clone",
+                "https://fuchsia.googlesource.com/integration",
+                "--depth",
+                "100",
+            ],
+            cwd=self.cartfs_directory,
+            check=True,
+        )
 
         # Determine the fuchsia repo commit hash.
         fuchsia_repo_states = (
@@ -220,87 +219,30 @@ class Prebuilts:
             stderr=subprocess.DEVNULL,
         )
 
-    def cartfs_structure_initialization(self) -> None:
-        """Create essential artifacts used by build."""
-        # Create files
-        self._patch_file(filepath="integration/MILESTONE", content="30")
-        self._patch_file(
-            filepath="build/cipd.gni",
-            content="internal_access = false",
-            symlink=True,
-        )
-        self._patch_file(
-            filepath="build/info/jiri_generated/integration_commit_hash.txt",
-            content="20560e50d0a87e8c0093b7ed21ebcaa46e64bb50",
-            symlink=True,
-        )
-        self._patch_file(
-            filepath="build/info/jiri_generated/integration_commit_stamp.txt",
-            content="1762987703",
-            symlink=True,
-        )
-        self._patch_file(
-            filepath="build/info/jiri_generated/integration_daily_commit_hash.txt",
-            content="843090d610fd85d7c7ffc4d1adf3abd01d367ae8",
-            symlink=True,
-        )
-        self._patch_file(
-            filepath="build/info/jiri_generated/integration_daily_commit_stamp.txt",
-            content="1762905105",
-            symlink=True,
-        )
-
-        # Copy manifests directory to CartFS.
-        logger.log_info("Copy manifests directory to CartFS.")
-        shutil.copytree(
-            self.workspace_dir / self.repo_name / "manifests",
-            self.cartfs_directory / "manifests",
-            dirs_exist_ok=True,
-        )
-
-        self._write_jiri_config()
-
-        # Create directories
-        (self.cartfs_directory / ".fx").mkdir(exist_ok=True)
-
-        # Initialize git repository in the submodules
-        submodules = [
-            "third_party/mesa-migrating/src",
-            "third_party/boringssl/src",
-            "third_party/glslang/src",
-            "third_party/go",
-        ]
-        for submodule in submodules:
-            # This would create a .git/HEAD
-            submodule_path = self.workspace_dir / self.repo_name / submodule
-            if (submodule_path / ".git").exists():
-                continue
-            subprocess.run(
-                ["git", "init", "-b", "main"],
-                cwd=submodule_path,
-                check=True,
-            )
-            # This would create a .git/index
-            subprocess.run(
-                ["git", "reset"],
-                cwd=submodule_path,
-                check=True,
-            )
-
     def create_symlinks(self) -> None:
         """Creates symlinks for the prebuilts."""
         logger.log_info("Creating symlinks for the prebuilts.")
         # Link the paths in the repo to cartfs
+        (self.cartfs_fuchsia_dir / ".jiri_root" / "bin").mkdir(
+            exist_ok=True, parents=True
+        )
+        (self.cartfs_fuchsia_dir / ".fx" / "config").mkdir(
+            exist_ok=True, parents=True
+        )
         for path in [
             "prebuilt",
-            ".jiri_root",
-            ".cipd",
+            "build/cipd.gni",
+            ".jiri_root/bin/ffx",
+            ".jiri_root/bin/fuchsia-vendored-python",
+            ".jiri_root/bin/hermetic-env",
+            ".git",
             ".fx",
+            ".fx-build-dir",
             "integration",
-            "vendor",
+            "out",
         ]:
             repo_path = self.workspace_dir / self.repo_name / path
-            cartfs_path = self.cartfs_directory / path
+            cartfs_path = self.cartfs_fuchsia_dir / path
             logger.log_info(
                 f"Creating symlink from {repo_path} to {cartfs_path}"
             )
@@ -309,42 +251,32 @@ class Prebuilts:
                 repo_path,
             )
 
-        # Link .jiri_root/bin/{fx, ffx, hermetic-env, fuchsia-vendored-python}
-        # LINT.IfChange
+        # Symlink in the fx script.
         self.create_symlink(
-            self.workspace_dir / self.repo_name / "scripts/fx",
-            self.cartfs_directory / ".jiri_root/bin/fx",
-        )
-        self.create_symlink(
-            self.workspace_dir
-            / self.repo_name
-            / "src/developer/ffx/scripts/ffx",
-            self.cartfs_directory / ".jiri_root/bin/ffx",
-        )
-        self.create_symlink(
-            self.workspace_dir / self.repo_name / "scripts/hermetic-env",
-            self.cartfs_directory / ".jiri_root/bin/hermetic-env",
-        )
-        self.create_symlink(
-            self.workspace_dir
-            / self.repo_name
-            / "scripts/fuchsia-vendored-python",
-            self.cartfs_directory / ".jiri_root/bin/fuchsia-vendored-python",
-        )
-        # LINT.ThenChange(//scripts/devshell/lib/add_symlink_to_bin.sh)
-
-        # Symlink in cog workspace specific GN arg overrides.
-        (self.workspace_dir / self.repo_name / "local").mkdir(exist_ok=True)
-        self.create_symlink(
-            self.workspace_dir
-            / self.repo_name
-            / "scripts/cog/resources/args.gn",
-            self.workspace_dir / self.repo_name / "local/args.gn",
+            self.workspace_dir / self.repo_name / "scripts/cog/resources/fx",
+            self.workspace_dir / self.repo_name / ".jiri_root/bin/fx",
         )
 
-    def _patch_file(
-        self, filepath: str, content: str, symlink: bool = False
-    ) -> None:
+        # Symlink in CartFS specific GN arg overrides.
+        self.create_symlink(
+            self.cartfs_fuchsia_dir / "scripts/cog/resources/args.gn",
+            self.cartfs_fuchsia_dir / "local/args.gn",
+        )
+
+        # Invoke git status in the fuchsia directory in the background. This
+        # will make the future fx format-code command faster.
+        subprocess.Popen(
+            [
+                "git",
+                "status",
+            ],
+            cwd=self.workspace_dir / self.repo_name,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+            start_new_session=True,
+        )
+
+    def _patch_file(self, filepath: str, content: str) -> None:
         """Patches the file in cartFS."""
         logger.log_info(f"Patching the {filepath} file.")
         full_filepath = self.cartfs_directory / filepath
@@ -361,10 +293,3 @@ class Prebuilts:
                 )
         else:
             logger.log_info(f"File {full_filepath} already exists.")
-
-        # Symlink from workspace if workspace path is specified
-        if symlink:
-            self.create_symlink(
-                full_filepath,
-                self.workspace_dir / self.repo_name / filepath,
-            )

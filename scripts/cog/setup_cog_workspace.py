@@ -13,7 +13,6 @@ import logging
 import sys
 
 import cartfs
-import cartfs_out_directory
 import logger
 import prebuilts
 import workspace
@@ -135,16 +134,8 @@ def main() -> int | None:
         prebuilts_manager.bootstrap_jiri()
 
     prebuilts_manager.create_integration_repository()
-    prebuilts_manager.cartfs_structure_initialization()
     prebuilts_manager.fetch_prebuilts()
     prebuilts_manager.create_symlinks()
-
-    # Install/update cartfs-backed out directory.
-    cartfs_out_directory.CartfsOutDirectory(
-        cog_workspace_dir=workspace_instance.workspace_dir
-        / workspace_instance.repo_name,
-        cartfs_workspace_dir=workspace_instance.cartfs_workspace_dir,
-    ).apply()
 
 
 if __name__ == "__main__":

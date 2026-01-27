@@ -43,12 +43,8 @@ def snapshot_workspace(
     )
 
     copy_subdirs = [
-        "prebuilt",
-        ".cipd",
-        ".jiri_root",
-        "vendor",
         "integration",
-        "third_party",
+        "fuchsia",
     ]
 
     if use_local_mock_cartfs:

@@ -1,0 +1,13 @@
+#!/bin/bash
+# Copyright 2026 The Fuchsia Authors. All rights reserved.
+# Use of this source code is governed by a BSD-style license that can be
+# found in the LICENSE file.
+
+FUCHSIA_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." >/dev/null 2>&1 && pwd)"
+
+command="$1"
+if [[ "$command" =~ ^(set|build|test|add-test|add-host-test|set-main-pb)$ ]]; then
+  exec "${FUCHSIA_DIR}/scripts/fx" cog "$@"
+else
+  exec "${FUCHSIA_DIR}/scripts/fx" "$@"
+fi
