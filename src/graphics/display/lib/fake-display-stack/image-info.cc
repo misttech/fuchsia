@@ -30,7 +30,11 @@ zx::result<SysmemBufferInfo> SysmemBufferInfo::GetSysmemMetadata(
   fidl::WireResult<fuchsia_sysmem2::BufferCollection::CheckAllBuffersAllocated> check_result =
       sysmem_client->CheckAllBuffersAllocated();
   if (!check_result.ok()) {
-    fdf::error("CheckAllBuffersAllocated() FIDL call failed: {}", check_result.status_string());
+    if (check_result.status() == ZX_ERR_PEER_CLOSED) {
+      fdf::warn("CheckAllBuffersAllocated() FIDL call failed: FIDL server is closed");
+    } else {
+      fdf::error("CheckAllBuffersAllocated() FIDL call failed: {}", check_result.status_string());
+    }
     return zx::error(check_result.status());
   }
   const fit::result<fuchsia_sysmem2::wire::Error>& check_response = check_result.value();
@@ -47,7 +51,11 @@ zx::result<SysmemBufferInfo> SysmemBufferInfo::GetSysmemMetadata(
   fidl::WireResult<fuchsia_sysmem2::BufferCollection::WaitForAllBuffersAllocated> wait_result =
       sysmem_client->WaitForAllBuffersAllocated();
   if (!wait_result.ok()) {
-    fdf::error("WaitForAllBuffersAllocated() FIDL call failed: {}", wait_result.status_string());
+    if (wait_result.status() == ZX_ERR_PEER_CLOSED) {
+      fdf::warn("WaitForAllBuffersAllocated() FIDL call failed: FIDL server is closed");
+    } else {
+      fdf::error("WaitForAllBuffersAllocated() FIDL call failed: {}", wait_result.status_string());
+    }
     return zx::error(wait_result.status());
   }
   const fit::result<fuchsia_sysmem2::wire::Error,
