@@ -664,7 +664,7 @@ template("bazel_action") {
       }
 
       mnemonic = "BAZEL"
-      script = "//build/bazel/scripts/bazel_action.py"
+      script = "//build/bazel/scripts/bazel_gn_target_action.py"
 
       inputs = [
                  "//build/bazel/toplevel.MODULE.bazel",
