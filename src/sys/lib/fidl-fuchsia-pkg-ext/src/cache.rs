@@ -274,7 +274,7 @@ impl DeferredOpenBlob {
     fn proxy_cmp_key(&self) -> u32 {
         use fidl::AsHandleRef;
         use fidl::endpoints::Proxy;
-        self.needed_blobs.as_channel().raw_handle()
+        self.needed_blobs.as_channel().as_handle_ref().raw_handle()
     }
 }
 

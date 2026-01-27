@@ -24,7 +24,6 @@ use starnix_uapi::signals::{SIGCHLD, Signal};
 use starnix_uapi::{errno, error, from_status_like_fdio, pid_t, rlimit};
 use std::ffi::CString;
 use std::sync::Arc;
-use zx::AsHandleRef;
 
 /// Result returned when creating new Zircon threads and processes for tasks.
 pub struct TaskInfo {

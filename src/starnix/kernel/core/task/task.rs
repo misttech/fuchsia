@@ -50,7 +50,7 @@ use std::ops::Deref;
 use std::sync::atomic::{AtomicBool, AtomicU8, Ordering};
 use std::sync::{Arc, Weak};
 use std::{cmp, fmt};
-use zx::{AsHandleRef, Signals, Task as _};
+use zx::{Signals, Task as _};
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum ExitStatus {

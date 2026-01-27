@@ -5,7 +5,6 @@
 use fidl_fuchsia_memory_heapdump_client as fheapdump_client;
 use std::ffi::{c_char, c_void};
 use zx::sys::{zx_handle_t, zx_status_t, zx_vaddr_t};
-use zx::{self as zx, AsHandleRef};
 
 #[cfg(target_arch = "aarch64")]
 fn untag_ptr(ptr: u64) -> u64 {

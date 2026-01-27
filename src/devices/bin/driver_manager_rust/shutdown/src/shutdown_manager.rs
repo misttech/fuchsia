@@ -11,7 +11,6 @@ use futures::prelude::*;
 use log::{error, info, warn};
 use std::cell::RefCell;
 use std::rc::Rc;
-use zx::AsHandleRef;
 use {
     fidl_fuchsia_diagnostics as fdiagnostics, fidl_fuchsia_kernel as fkernel,
     fidl_fuchsia_process_lifecycle as flifecycle, fidl_fuchsia_system_state as fsystem_state,

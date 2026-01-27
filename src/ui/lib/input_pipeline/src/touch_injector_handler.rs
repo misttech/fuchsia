@@ -600,7 +600,7 @@ impl TouchInjectorHandler {
         self.mutable_state
             .borrow_mut()
             .listeners
-            .insert(proxy.as_channel().raw_handle(), proxy.clone());
+            .insert(proxy.as_channel().as_handle_ref().raw_handle(), proxy.clone());
 
         // Send the listener the last touch button event.
         if let Some(event) = &self.mutable_state.borrow().last_button_event {

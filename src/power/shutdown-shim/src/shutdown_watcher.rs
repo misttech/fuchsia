@@ -111,12 +111,12 @@ impl ShutdownWatcher {
         fuchsia_trace::duration!(
             c"shutdown-shim",
             c"ShutdownWatcher::add_reboot_watcher",
-            "watcher" => watcher.as_channel().raw_handle()
+            "watcher" => watcher.as_channel().as_handle_ref().raw_handle()
         );
 
         // If the client closes the watcher channel, remove it from our `reboot_watchers` map
         println!("[shutdown-shim] Adding a reboot watcher");
-        let key = watcher.as_channel().raw_handle();
+        let key = watcher.as_channel().as_handle_ref().raw_handle();
         let proxy = watcher.clone();
         let reboot_watchers = self.reboot_watchers.clone();
         let inspect = self.inspect.clone();
@@ -141,12 +141,12 @@ impl ShutdownWatcher {
         fuchsia_trace::duration!(
             c"shutdown-shim",
             c"ShutdownWatcher::add_shutdown_watcher",
-            "watcher" => watcher.as_channel().raw_handle()
+            "watcher" => watcher.as_channel().as_handle_ref().raw_handle()
         );
 
         // If the client closes the watcher channel, remove it from our `shutdown_watchers` map
         println!("[shutdown-shim] Adding a shutdown watcher");
-        let key = watcher.as_channel().raw_handle();
+        let key = watcher.as_channel().as_handle_ref().raw_handle();
         let proxy = watcher.clone();
         let shutdown_watchers = self.shutdown_watchers.clone();
         let inspect = self.inspect.clone();

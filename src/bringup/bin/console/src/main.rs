@@ -11,7 +11,7 @@ use fuchsia_component::server::ServiceFs;
 use futures::prelude::*;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicU32, Ordering};
-use zx::{AsHandleRef, HandleBased};
+use zx::HandleBased;
 use {fidl_fuchsia_kernel as fkernel, fuchsia_async as fasync};
 
 // This should be std::ascii::Char::EndOfText once stabilized.

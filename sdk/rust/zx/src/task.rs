@@ -80,7 +80,7 @@ pub trait Task: AsHandleRef {
     /// syscall.
     // TODO(https://fxbug.dev/42152215): guaranteed to return an error when called on a Thread.
     fn kill(&self) -> Result<(), Status> {
-        ok(unsafe { sys::zx_task_kill(self.raw_handle()) })
+        ok(unsafe { sys::zx_task_kill(self.as_handle_ref().raw_handle()) })
     }
 
     /// Suspend the given task
@@ -92,7 +92,8 @@ pub trait Task: AsHandleRef {
     /// Resume the task by closing the returned handle.
     fn suspend(&self) -> Result<NullableHandle, Status> {
         let mut suspend_token = 0;
-        let status = unsafe { sys::zx_task_suspend(self.raw_handle(), &mut suspend_token) };
+        let status =
+            unsafe { sys::zx_task_suspend(self.as_handle_ref().raw_handle(), &mut suspend_token) };
         ok(status)?;
         unsafe { Ok(NullableHandle::from_raw(suspend_token)) }
     }
@@ -108,7 +109,11 @@ pub trait Task: AsHandleRef {
     ) -> Result<Channel, Status> {
         let mut handle = 0;
         let status = unsafe {
-            sys::zx_task_create_exception_channel(self.raw_handle(), opts.bits(), &mut handle)
+            sys::zx_task_create_exception_channel(
+                self.as_handle_ref().raw_handle(),
+                opts.bits(),
+                &mut handle,
+            )
         };
         ok(status)?;
         unsafe { Ok(Channel::from(NullableHandle::from_raw(handle))) }

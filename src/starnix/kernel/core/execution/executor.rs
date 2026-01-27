@@ -14,7 +14,6 @@ use starnix_uapi::{errno, error};
 use std::os::unix::thread::JoinHandleExt;
 use std::sync::Arc;
 use std::sync::mpsc::sync_channel;
-use zx::AsHandleRef;
 
 pub fn execute_task_with_prerun_result<L, F, R, G>(
     locked: &mut Locked<L>,

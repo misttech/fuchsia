@@ -21,7 +21,6 @@ use std::os::raw::{c_char, c_int, c_uint, c_void};
 use std::pin::Pin;
 use std::sync::Arc;
 use zerocopy::{FromBytes, Immutable, IntoBytes, TryFromBytes};
-use zx::{self as zx, AsHandleRef as _};
 use zxio::{
     ZXIO_SELINUX_CONTEXT_STATE_DATA, ZXIO_SHUTDOWN_OPTIONS_READ, ZXIO_SHUTDOWN_OPTIONS_WRITE,
     msghdr, sockaddr, sockaddr_storage, socklen_t, zx_handle_t, zx_status_t, zxio_object_type_t,

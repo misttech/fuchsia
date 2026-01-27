@@ -52,9 +52,6 @@ use starnix_uapi::{errno, error};
 use std::mem::ManuallyDrop;
 use std::sync::Arc;
 use zerocopy::{FromBytes, Immutable, IntoBytes, KnownLayout};
-use zx::{
-    AsHandleRef, {self as zx},
-};
 
 /// Reads a sequence of objects starting at `addr`, ensuring at least one element is in the returned
 /// Vec.

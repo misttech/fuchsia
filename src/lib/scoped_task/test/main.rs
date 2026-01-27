@@ -8,7 +8,7 @@ use fdio::SpawnOptions;
 use fuchsia_runtime as runtime;
 use std::ffi::{CStr, CString};
 use std::mem::size_of_val;
-use zx::{self as zx, AsHandleRef, Task};
+use zx::Task;
 
 #[test]
 fn zx_singlethreaded() {

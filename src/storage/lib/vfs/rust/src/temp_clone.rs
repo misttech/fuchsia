@@ -49,7 +49,7 @@ impl<T: HandleBased> TempClonable<T> {
     pub fn temp_clone(&self) -> TempClone<T> {
         assert!(!self.is_invalid_handle());
         let mut clones = clones().lock();
-        let raw_handle = self.0.raw_handle();
+        let raw_handle = self.0.as_handle_ref().raw_handle();
         TempClone {
             handle: match clones.entry(raw_handle) {
                 Entry::Occupied(mut o) => {
@@ -79,7 +79,8 @@ impl<T: HandleBased> TempClonable<T> {
 
 impl<T: HandleBased> Drop for TempClonable<T> {
     fn drop(&mut self) {
-        if let Some(handle) = clones().lock().remove(&self.0.raw_handle()).and_then(|c| c.upgrade())
+        if let Some(handle) =
+            clones().lock().remove(&self.0.as_handle_ref().raw_handle()).and_then(|c| c.upgrade())
         {
             // There are still some temporary clones alive, so mark the handle with a tombstone.
 

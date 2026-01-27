@@ -53,6 +53,8 @@ impl<K: InterruptKind, T: Timeline> Interrupt<K, T> {
         let status = unsafe { sys::zx_interrupt_ack(self.raw_handle()) };
         ok(status)
     }
+
+    delegated_concrete_handle_based_impls!(|h| Self(h, PhantomData));
 }
 
 pub trait InterruptTimeline: Timeline {

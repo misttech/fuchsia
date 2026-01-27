@@ -4,7 +4,7 @@
 
 use crate::bindings;
 use std::ffi::{CStr, CString};
-use zx::{AsHandleRef, Status};
+use zx::Status;
 
 pub fn find_restricted_symbols(vmo: &zx::Vmo, driver_url: &str) -> Result<Vec<String>, Status> {
     let mut out_symbols: *mut bindings::restricted_symbols = std::ptr::null_mut();

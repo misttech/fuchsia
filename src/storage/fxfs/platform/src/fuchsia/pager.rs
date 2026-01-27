@@ -23,7 +23,7 @@ use std::sync::{Arc, Weak};
 use storage_device::buffer;
 use vfs::execution_scope::ExecutionScope;
 use zx::sys::zx_page_request_command_t::{ZX_PAGER_VMO_DIRTY, ZX_PAGER_VMO_READ};
-use zx::{self as zx, AsHandleRef, PacketContents, PagerPacket, SignalPacket};
+use zx::{PacketContents, PagerPacket, SignalPacket};
 
 pub static STRONG_FILE_REFS: AtomicU64 = AtomicU64::new(0);
 

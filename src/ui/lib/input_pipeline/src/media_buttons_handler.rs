@@ -234,7 +234,10 @@ impl MediaButtonsHandler {
         self: &Rc<Self>,
         proxy: fidl_ui_policy::MediaButtonsListenerProxy,
     ) {
-        self.inner.borrow_mut().listeners.insert(proxy.as_channel().raw_handle(), proxy.clone());
+        self.inner
+            .borrow_mut()
+            .listeners
+            .insert(proxy.as_channel().as_handle_ref().as_handle_ref().raw_handle(), proxy.clone());
 
         // Send the listener the last media button event.
         if let Some(event) = &self.inner.borrow().last_event {

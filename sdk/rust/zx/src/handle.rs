@@ -345,10 +345,6 @@ impl AsHandleRef for NullableHandle {
             unsafe { Unowned::from_raw_handle(sys::ZX_HANDLE_INVALID) }
         }
     }
-
-    fn raw_handle(&self) -> sys::zx_handle_t {
-        self.0.as_ref().map(|h| h.raw_handle()).unwrap_or(sys::ZX_HANDLE_INVALID)
-    }
 }
 
 impl HandleBased for NullableHandle {
@@ -518,12 +514,7 @@ impl<'a, T: Into<NullableHandle>> ::std::ops::Deref for Unowned<'a, T> {
 
 impl<'a, T: AsHandleRef> AsHandleRef for Unowned<'a, T> {
     fn as_handle_ref(&self) -> HandleRef<'_> {
-        Unowned {
-            // SAFETY: our raw handle is guaranteed to be valid and Unowned promises to not drop it
-            // during its lifetime which is bound to ours.
-            inner: ManuallyDrop::new(unsafe { NullableHandle::from_raw(self.inner.raw_handle()) }),
-            marker: PhantomData,
-        }
+        self.inner.as_handle_ref()
     }
 }
 
@@ -575,7 +566,7 @@ impl<'a, T: HandleBased> Unowned<'a, T> {
 
     /// Returns the raw handle's integer value.
     pub fn raw_handle(&self) -> sys::zx_handle_t {
-        self.inner.raw_handle()
+        NullableHandle::raw_handle(&*self.inner.as_handle_ref())
     }
 }
 
@@ -677,13 +668,6 @@ pub trait AsHandleRef {
     /// Get a reference to the handle. One important use of such a reference is
     /// for `object_wait_many`.
     fn as_handle_ref(&self) -> HandleRef<'_>;
-
-    /// Interpret the reference as a raw handle (an integer type). Two distinct
-    /// handles will have different raw values (so it can perhaps be used as a
-    /// key in a data structure).
-    fn raw_handle(&self) -> sys::zx_handle_t {
-        NullableHandle::raw_handle(&self.as_handle_ref())
-    }
 }
 
 impl<T: AsHandleRef> AsHandleRef for &T {
@@ -759,7 +743,7 @@ pub trait Peered: HandleBased {
     ///
     /// [osp]: https://fuchsia.dev/fuchsia-src/reference/syscalls/object_signal_peer.md
     fn signal_peer(&self, clear_mask: Signals, set_mask: Signals) -> Result<(), Status> {
-        let handle = self.raw_handle();
+        let handle = self.as_handle_ref().raw_handle();
         let status =
             unsafe { sys::zx_object_signal_peer(handle, clear_mask.bits(), set_mask.bits()) };
         ok(status)
@@ -1035,8 +1019,8 @@ mod tests {
     // The unit tests are built with a different crate name, but fuchsia_runtime returns a "real"
     // zx::Vmar that we need to use.
     use zx::{
-        AsHandleRef, Channel, HandleBased, HandleDisposition, HandleInfo, HandleOp, Name,
-        NullableHandle, ObjectType, Rights, Vmo,
+        Channel, HandleBased, HandleDisposition, HandleInfo, HandleOp, Name, NullableHandle,
+        ObjectType, Rights, Vmo,
     };
     use zx_sys as sys;
 

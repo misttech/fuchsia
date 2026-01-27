@@ -28,7 +28,7 @@ pub fn format_for_fvm(block_device: &BlockProxy, fvm_slice_size: usize) -> Resul
     // TODO(https://fxbug.dev/42072917): In order to remove multiplexing, callers of this function
     // should directly pass in a BlockProxy. Callers holding onto a ramdisk should replace as_dir()
     // with a connect_to_device_fidl() call. This requires work downstream.
-    let device_raw = block_device.as_channel().raw_handle();
+    let device_raw = block_device.as_channel().as_handle_ref().raw_handle();
     let status = unsafe { fvm_init(device_raw, fvm_slice_size) };
     zx::ok(status).context("fvm_init failed")
 }

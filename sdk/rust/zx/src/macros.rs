@@ -33,6 +33,11 @@ macro_rules! impl_handle_based {
 
 macro_rules! delegated_concrete_handle_based_impls {
     ($ctor:expr) => {
+        /// Return the handle's integer value.
+        pub fn raw_handle(&self) -> $crate::sys::zx_handle_t {
+            self.0.raw_handle()
+        }
+
         /// Return the raw handle's integer value without closing it when `self` is dropped.
         pub fn into_raw(self) -> $crate::sys::zx_handle_t {
             self.0.into_raw()

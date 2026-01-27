@@ -7,8 +7,6 @@
 //! Fake BTI for testing without access to hardware resources
 
 use std::ops::Deref;
-
-use zx::AsHandleRef;
 use zx::sys::{zx_handle_t, zx_paddr_t};
 
 mod ffi;

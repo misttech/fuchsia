@@ -22,7 +22,7 @@ use std::os::fd::{AsFd, BorrowedFd, OwnedFd};
 use std::os::raw;
 use std::os::unix::io::{AsRawFd, FromRawFd, IntoRawFd, RawFd};
 use std::str::Utf8Error;
-use zx::{self as zx, AsHandleRef as _, HandleBased as _};
+use zx::HandleBased as _;
 
 /// Connects a channel to a named service.
 pub fn service_connect(service_path: &str, channel: zx::Channel) -> Result<(), zx::Status> {
@@ -785,7 +785,7 @@ pub struct NamespaceEntry {
 mod tests {
     use super::*;
     use assert_matches::assert_matches;
-    use zx::{MonotonicInstant, Signals, Status, WaitItem, object_wait_many};
+    use zx::{AsHandleRef, MonotonicInstant, Signals, Status, WaitItem, object_wait_many};
 
     #[test]
     fn namespace_get_installed() {

@@ -41,7 +41,7 @@ mod tests {
     use super::*;
     use fidl::endpoints::create_proxy_and_stream;
     use fuchsia_async as fasync;
-    use zx::{sys, AsHandleRef};
+    use zx::{AsHandleRef, sys};
 
     // Just need a channel to stash.
     async fn get_svc_stash_handle() -> Result<Channel, Error> {
@@ -55,7 +55,7 @@ mod tests {
         let (proxy, stream) = create_proxy_and_stream::<fuchsia_boot::SvcStashProviderMarker>();
         let _task = fasync::Task::spawn(svc_stash_provider.serve(stream));
         let svc_stash = proxy.get().await?;
-        assert_ne!(svc_stash.unwrap().raw_handle(), sys::ZX_HANDLE_INVALID);
+        assert_ne!(svc_stash.unwrap().as_handle_ref().raw_handle(), sys::ZX_HANDLE_INVALID);
 
         // Second call must fail.
         let svc_stash_2 = proxy.get().await?;

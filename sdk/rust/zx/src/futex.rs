@@ -7,7 +7,7 @@ use crate::sys::{
     zx_futex_requeue_single_owner, zx_futex_t, zx_futex_wait, zx_futex_wake,
     zx_futex_wake_handle_close_thread_exit, zx_futex_wake_single_owner,
 };
-use crate::{AsHandleRef, Koid, MonotonicInstant, NullableHandle, Status, Thread};
+use crate::{Koid, MonotonicInstant, NullableHandle, Status, Thread};
 
 /// A safe wrapper around zx_futex_t, generally called as part of higher-level synchronization
 /// primitives.
@@ -163,8 +163,9 @@ mod tests {
         // SAFETY: converting between versions of the same types, the handle is valid
         let main_thread = unsafe {
             Unowned::from_raw_handle(fuchsia_runtime::with_thread_self(|thread| {
+                use zx::AsHandleRef;
                 // Need the raw_handle method from fuchsia_runtime's dependency.
-                zx::AsHandleRef::raw_handle(thread)
+                thread.as_handle_ref().raw_handle()
             }))
         };
         let futex = Futex::new(0);

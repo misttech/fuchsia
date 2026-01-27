@@ -34,7 +34,7 @@ use slab::Slab;
 use std::collections::HashMap;
 use std::sync::{Arc, Weak};
 use std::task::{Context, Poll, Waker};
-use zx::{self as zx, AsHandleRef, MonotonicDuration};
+use zx::{AsHandleRef, MonotonicDuration};
 
 use crate::host_device::{HostDevice, HostDiscoverableSession, HostListener};
 use crate::services::pairing::pairing_dispatcher::{PairingDispatcher, PairingDispatcherHandle};
@@ -1153,7 +1153,7 @@ impl HostDispatcher {
 
         let node = self.state.read().inspect.hosts().create_child(unique_name("device_"));
 
-        let proxy_handle = proxy.as_channel().raw_handle().to_string();
+        let proxy_handle = proxy.as_channel().as_handle_ref().raw_handle().to_string();
         let host_device = init_host(proxy_handle.as_str(), node, proxy).await?;
         info!("Successfully started host device: {:?}", host_device.info());
         self.add_host_device(&host_device).await?;

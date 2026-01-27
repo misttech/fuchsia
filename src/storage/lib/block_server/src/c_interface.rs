@@ -24,7 +24,6 @@ use std::mem::MaybeUninit;
 use std::num::NonZero;
 use std::ops::{Deref, DerefMut};
 use std::sync::{Arc, Weak};
-use zx::{self as zx, AsHandleRef as _};
 
 pub struct SessionManager {
     callbacks: Callbacks,

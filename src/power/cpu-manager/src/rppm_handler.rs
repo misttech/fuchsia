@@ -8,7 +8,6 @@ use crate::node::Node;
 use anyhow::{Error, Result};
 use async_trait::async_trait;
 use energy_model_config::{EnergyModel, PowerLevelDomain};
-use fidl::AsHandleRef;
 use fuchsia_inspect::ArrayProperty;
 use futures::StreamExt;
 use futures::channel::mpsc::{self, UnboundedReceiver, UnboundedSender};

@@ -11,8 +11,7 @@ use energy_model_config::PowerLevelDomain;
 use fuchsia_inspect::{self as inspect, NumericProperty as _, Property as _};
 use serde_derive::Deserialize;
 use std::rc::Rc;
-use zx::prelude::AsHandleRef;
-use zx::{self as zx, sys};
+use zx::sys;
 use {fidl_fuchsia_kernel as fkernel, serde_json as json};
 
 /// Node: SyscallHandler
@@ -293,6 +292,7 @@ mod tests {
     use super::*;
     use diagnostics_assertions::assert_data_tree;
     use fuchsia_async as fasync;
+    use zx::AsHandleRef;
     use zx::sys::zx_processor_power_domain_t;
 
     /// Tests that well-formed configuration JSON does not panic the `new_from_json` function.
