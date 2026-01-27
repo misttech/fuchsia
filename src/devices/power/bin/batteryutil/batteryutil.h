@@ -11,6 +11,7 @@
 enum class BatteryFunc {
   kGet,
   kEnableCharger,
+  kSetPowerSource,
 };
 
 struct CmdArgs {
@@ -22,5 +23,6 @@ struct CmdArgs {
 zx::result<CmdArgs> ParseArgs(int argc, char** argv);
 zx::result<std::string> ResolveServicePath(const std::string& provided_path, BatteryFunc func);
 void PrintBatteryInfo(const fuchsia_power_battery::wire::BatteryInfo& info);
+zx::result<> SetPowerSource(const std::string& source);
 
 #endif  // SRC_DEVICES_POWER_BIN_BATTERYUTIL_BATTERYUTIL_H_

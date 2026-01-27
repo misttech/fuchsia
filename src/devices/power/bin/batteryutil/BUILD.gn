@@ -7,12 +7,13 @@ import("//build/components.gni")
 import("//build/test.gni")
 
 executable("batteryutil") {
-  visibility = [ ":*" ]
+  visibility = [ "*" ]
   sources = [
     "batteryutil.cc",
     "main.cc",
   ]
   deps = [
+    "//sdk/fidl/fuchsia.hardware.spmi:fuchsia.hardware.spmi_cpp",
     "//sdk/fidl/fuchsia.power.battery:fuchsia.power.battery_cpp",
     "//sdk/lib/async-loop:async-loop-cpp",
     "//sdk/lib/async-loop:async-loop-default",

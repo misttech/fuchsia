@@ -4,12 +4,88 @@
 
 #include "batteryutil.h"
 
+#include <fidl/fuchsia.hardware.spmi/cpp/fidl.h>
+#include <lib/component/incoming/cpp/protocol.h>
+
 #include <filesystem>
 #include <iostream>
 #include <string>
 #include <vector>
 
 namespace fs = std::filesystem;
+
+// Constants for SPMI
+constexpr char kSpmiDebugServiceDir[] = "/svc/fuchsia.hardware.spmi.DebugService";
+constexpr uint16_t kUsbInSuspendReg = 0x2954;
+constexpr uint8_t kSuspendUsbValue = 0x01;
+constexpr uint8_t kResumeUsbValue = 0x00;
+
+zx::result<> SetPowerSource(const std::string& source) {
+  bool disconnect = false;
+  if (source == "battery") {
+    disconnect = true;
+  } else if (source == "usb") {
+    disconnect = false;
+  } else {
+    // Also support 1/0 for backward compatibility/ease of use if desired,
+    // but plan said battery/usb. Let's stick to battery/usb.
+    fprintf(stderr, "Invalid power source: '%s'. Supported: battery, usb\n", source.c_str());
+    return zx::error(ZX_ERR_INVALID_ARGS);
+  }
+
+  if (!fs::exists(kSpmiDebugServiceDir)) {
+    fprintf(stderr, "SPMI debug service directory not found: %s\n", kSpmiDebugServiceDir);
+    return zx::error(ZX_ERR_NOT_FOUND);
+  }
+
+  // Find the first available SPMI controller
+  std::string controller_path;
+  for (const auto& entry : fs::directory_iterator(kSpmiDebugServiceDir)) {
+    controller_path = entry.path().string() + "/device";
+    // Just take the first one found
+    break;
+  }
+
+  if (controller_path.empty()) {
+    fprintf(stderr, "No SPMI controller found in %s\n", kSpmiDebugServiceDir);
+    return zx::error(ZX_ERR_NOT_FOUND);
+  }
+
+  zx::result connector = component::Connect<fuchsia_hardware_spmi::Debug>(controller_path);
+  if (connector.is_error()) {
+    fprintf(stderr, "Failed to connect to SPMI controller at %s: %s\n", controller_path.c_str(),
+            connector.status_string());
+    return connector.take_error();
+  }
+
+  auto debug_client = fidl::SyncClient<fuchsia_hardware_spmi::Debug>(std::move(connector.value()));
+
+  // Connect to target 0 (PMIC)
+  auto [device_client, device_server] = fidl::Endpoints<fuchsia_hardware_spmi::Device>::Create();
+  if (auto result = debug_client->ConnectTarget({0, std::move(device_server)}); result.is_error()) {
+    fprintf(stderr, "Failed to connect to SPMI target 0 on controller %s: %s\n",
+            controller_path.c_str(), result.error_value().FormatDescription().c_str());
+    return zx::error(ZX_ERR_INTERNAL);
+  }
+
+  fidl::SyncClient<fuchsia_hardware_spmi::Device> spmi_client(std::move(device_client));
+
+  fuchsia_hardware_spmi::DeviceExtendedRegisterWriteLongRequest request;
+  request.address(kUsbInSuspendReg);
+  request.data({disconnect ? kSuspendUsbValue : kResumeUsbValue});
+
+  auto write_result = spmi_client->ExtendedRegisterWriteLong(std::move(request));
+  if (write_result.is_error()) {
+    fprintf(stderr, "Failed to write to SPMI register 0x%x: %s\n", kUsbInSuspendReg,
+            write_result.error_value().FormatDescription().c_str());
+    return zx::error(ZX_ERR_IO);
+  }
+
+  printf("Successfully set power source to %s (wrote 0x%02x to 0x%04x)\n", source.c_str(),
+         disconnect ? kSuspendUsbValue : kResumeUsbValue, kUsbInSuspendReg);
+
+  return zx::ok();
+}
 
 zx::result<CmdArgs> ParseArgs(int argc, char** argv) {
   if (argc < 2) {
@@ -28,6 +104,10 @@ zx::result<CmdArgs> ParseArgs(int argc, char** argv) {
     args.path = "";
     command_str = argv[1];
     value_idx = 2;
+  } else if (strcmp(argv[1], "power") == 0) {
+    args.path = "";
+    command_str = argv[1];
+    value_idx = 2;
   } else {
     // First argument is path.
     if (argc < 3) {
@@ -36,6 +116,8 @@ zx::result<CmdArgs> ParseArgs(int argc, char** argv) {
     args.path = argv[1];
     command_str = argv[2];
     if (strcmp(argv[2], "enable") == 0) {
+      value_idx = 3;
+    } else if (strcmp(argv[2], "power") == 0) {
       value_idx = 3;
     }
   }
@@ -52,7 +134,17 @@ zx::result<CmdArgs> ParseArgs(int argc, char** argv) {
       }
       args.value = argv[value_idx];
     } else {
-      // This case should not be reached given the checks above.
+      return zx::error(ZX_ERR_INTERNAL);
+    }
+    return zx::ok(args);
+  } else if (command_str == "power") {
+    args.func = BatteryFunc::kSetPowerSource;
+    if (value_idx != -1) {
+      if (argc <= value_idx) {
+        return zx::error(ZX_ERR_INVALID_ARGS);
+      }
+      args.value = argv[value_idx];
+    } else {
       return zx::error(ZX_ERR_INTERNAL);
     }
     return zx::ok(args);
@@ -110,6 +202,25 @@ zx::result<std::string> ResolveServicePath(const std::string& provided_path, Bat
   return zx::ok(instances[selection - 1]);
 }
 
+// Helper to format values with micro-units (uA, uAh, uV)
+std::string FormatUnit(int32_t value, const char* unit_suffix) {
+  double val = static_cast<double>(value);
+  const char* prefix = "u";
+
+  if (std::abs(val) >= 1000000) {
+    val /= 1000000;
+    prefix = "";
+  } else if (std::abs(val) >= 1000) {
+    val /= 1000;
+    prefix = "m";
+  }
+
+  // Use sufficient precision
+  char buffer[64];
+  snprintf(buffer, sizeof(buffer), "%.3f %s%s", val, prefix, unit_suffix);
+  return std::string(buffer);
+}
+
 void PrintBatteryInfo(const fuchsia_power_battery::wire::BatteryInfo& info) {
   if (info.has_status()) {
     switch (info.status()) {
@@ -152,5 +263,9 @@ void PrintBatteryInfo(const fuchsia_power_battery::wire::BatteryInfo& info) {
 
   if (info.has_level_percent()) {
     printf("Level: %f%%\n", info.level_percent());
+  }
+
+  if (info.has_present_charging_current_ua()) {
+    printf("Current Draw: %s\n", FormatUnit(info.present_charging_current_ua(), "A").c_str());
   }
 }

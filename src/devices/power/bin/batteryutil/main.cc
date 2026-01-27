@@ -16,6 +16,7 @@ static void usage() {
       "Commands:\n"
       "  get             Get the current battery info.\n"
       "  enable <1/0>    Enable or disable the charger.\n"
+      "  power <battery|usb>  Set power source (force discharge or allow charging).\n"
       "  help | h        Print this help text.\n\n"
       "Examples:\n"
       "  Get battery info:\n"
@@ -23,7 +24,11 @@ static void usage() {
       "  $ batteryutil /svc/fuchsia.power.battery.InfoService/... get\n\n"
       "  Enable the charger:\n"
       "  $ batteryutil enable 1\n"
-      "  $ batteryutil /svc/fuchsia.power.battery.ChargerService/... enable 1\n");
+      "  $ batteryutil /svc/fuchsia.power.battery.ChargerService/... enable 1\n\n"
+      "  Force battery power (suspend USB input):\n"
+      "  $ batteryutil power battery\n\n"
+      "  Allow USB power (resume USB input):\n"
+      "  $ batteryutil power usb\n");
 }
 
 int main(int argc, char** argv) {
@@ -80,6 +85,12 @@ int main(int argc, char** argv) {
       }
       if (result->is_error()) {
         fprintf(stderr, "Could not enable charger: %d\n", result->error_value());
+        return 1;
+      }
+      break;
+    }
+    case BatteryFunc::kSetPowerSource: {
+      if (auto result = SetPowerSource(args.value); result.is_error()) {
         return 1;
       }
       break;
