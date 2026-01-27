@@ -61,15 +61,8 @@ class InitTests(unittest.TestCase):
         autospec=True,
     )
     @mock.patch("fuchsia_controller_py.Context", autospec=True)
-    @mock.patch.object(
-        ffx_impl.FfxImpl,
-        "_check_running_monitor",
-        return_value=False,
-        autospec=True,
-    )
     def test_create_device_return(
         self,
-        mock_ffx_check_running_monitor: mock.Mock,
         mock_fc_context: mock.Mock,
         mock_ffx_check_connection: mock.Mock,
         mock_fc_check_connection: mock.Mock,
@@ -106,15 +99,8 @@ class InitTests(unittest.TestCase):
         autospec=True,
     )
     @mock.patch("fuchsia_controller_py.Context", autospec=True)
-    @mock.patch.object(
-        ffx_impl.FfxImpl,
-        "_check_running_monitor",
-        return_value=False,
-        autospec=True,
-    )
     def test_create_device_using_device_ip_port(
         self,
-        mock_ffx_check_running_monitor: mock.Mock,
         mock_fc_context: mock.Mock,
         mock_fc_check_connection: mock.Mock,
         mock_ffx_check_connection: mock.Mock,
