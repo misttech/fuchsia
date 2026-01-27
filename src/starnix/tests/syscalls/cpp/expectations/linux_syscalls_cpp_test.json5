@@ -6,9 +6,6 @@
         {
             type: "skip",
             matchers: [
-                // TODO(https://fxbug.dev/449813778): Flaking on infrastructure with a timeout.
-                "*AspaceTest.RangeFault*",
-
                 // TODO(https://fxbug.dev/437183123): Virtually all are failing and/or flaking.
                 // Since the results are flakey, we'll need to skip instead of expecting failure.
                 "BpfTest.*",
