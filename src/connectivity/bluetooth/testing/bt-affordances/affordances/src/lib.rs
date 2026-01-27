@@ -733,7 +733,7 @@ impl Proxies {
                 return Err(anyhow!("fuchsia.bluetooth.sys.Access/StartDiscovery error: {err:?}"));
             }
             // Allow discovery session to activate.
-            Timer::new(second).await;
+            Timer::new(std::time::Duration::from_secs(5)).await;
         }
 
         self.refresh_peer_cache(timeout, peer_cache.clone()).await?;
