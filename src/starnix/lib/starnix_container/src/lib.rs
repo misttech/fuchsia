@@ -4,13 +4,17 @@
 
 use std::collections::HashMap;
 use std::fs::File;
-use std::io::Cursor;
+use std::io::{Cursor, Read};
+use std::path::{Component, Path};
 
 use anyhow::{Context, Result, bail};
 use camino::{Utf8Path, Utf8PathBuf};
 use ext4_extract::ext4_extract;
+use flate2::read::GzDecoder;
 use fuchsia_pkg::{PackageBuilder, PackageManifest};
 use fuchsia_url::RelativePackageUrl;
+
+use ext4_extract::remote_bundle as rb;
 
 mod hal_manifest;
 mod remote_bundle;
@@ -33,6 +37,11 @@ pub struct StarnixContainerGenerator {
     pub depfile: Option<Utf8PathBuf>, //path to a depfile to write
 }
 
+pub const S_IFDIR: u16 = 0x4000;
+pub const S_IFREG: u16 = 0x8000;
+pub const S_IFLNK: u16 = 0xa000;
+pub const S_IFMT: u16 = 0xf000;
+
 impl StarnixContainerGenerator {
     // Build the StarnixContainer
     fn add_ext4_image(
@@ -52,6 +61,112 @@ impl StarnixContainerGenerator {
             .with_context(|| format!("Preparing directory for image files: {}", &image_outdir))?;
         let image_files = ext4_extract(image_path.as_str(), image_outdir.as_str())
             .context("Extracting system files")?;
+        for (dst, src) in &image_files {
+            let dst = format!("data/{}/{}", name, dst);
+            builder
+                .add_file_as_blob(dst, &src)
+                .with_context(|| format!("Adding blob from file: {}", &src))?;
+        }
+
+        Ok(image_files)
+    }
+
+    fn add_ramdisk(
+        self,
+        name: impl AsRef<Utf8Path>,
+        outdir: impl AsRef<Utf8Path>,
+        ramdisk_path: impl AsRef<Utf8Path>,
+        builder: &mut PackageBuilder,
+    ) -> Result<HashMap<String, String>> {
+        let name = name.as_ref();
+        let ramdisk_path = ramdisk_path.as_ref();
+        let outdir = outdir.as_ref();
+
+        let image_outdir = outdir.join(name);
+        std::fs::create_dir_all(&image_outdir)
+            .with_context(|| format!("Preparing directory for image files: {}", &image_outdir))?;
+
+        let file = std::fs::File::open(&ramdisk_path)
+            .with_context(|| format!("Unable to open `{:?}'", ramdisk_path))?;
+
+        let mut ramdisk = GzDecoder::new(file);
+        let mut buf = vec![];
+        ramdisk.read_to_end(&mut buf)?;
+
+        let mut writer = rb::Writer::new(
+            &image_outdir,
+            ext4_metadata::ROOT_INODE_NUM,
+            crate::remote_bundle::DIRECTORY_MODE,
+            rb::Owner::root(),
+            Default::default(),
+        )?;
+
+        loop {
+            let mut reader = cpio::NewcReader::new(&buf[..]).unwrap();
+            let entry = reader.entry();
+
+            if reader.entry().is_trailer() {
+                break;
+            }
+
+            let name_string = entry.name().to_string();
+            let path = Path::new(&name_string);
+            let inode: u64 = entry.ino().into();
+            let mode: u16 = entry.mode().try_into().unwrap();
+            let uid: u16 = entry.uid().try_into().unwrap();
+            let gid: u16 = entry.gid().try_into().unwrap();
+
+            let mut data = Vec::<u8>::new();
+            reader.read_to_end(&mut data)?;
+
+            let components: Vec<&str> = path
+                .components()
+                .filter_map(|c| match c {
+                    Component::Normal(os_str) => os_str.to_str(),
+                    _ => None, // Ignore RootDir ("/"), CurDir ("."), etc.
+                })
+                .collect();
+
+            match mode & S_IFMT {
+                m if m == S_IFREG => {
+                    writer.add_file(
+                        &components,
+                        &mut &data[..],
+                        inode,
+                        mode,
+                        rb::Owner { uid, gid },
+                        Default::default(),
+                    )?;
+                }
+                m if m == S_IFLNK => {
+                    writer
+                        .add_symlink(
+                            &components,
+                            data,
+                            inode,
+                            mode,
+                            rb::Owner { uid, gid },
+                            Default::default(),
+                        )
+                        .unwrap();
+                }
+                m if m == S_IFDIR => {
+                    writer.add_directory(
+                        &components,
+                        inode,
+                        mode,
+                        rb::Owner { uid, gid },
+                        Default::default(),
+                    );
+                }
+                _ => {}
+            }
+
+            // Advance to the next entry
+            buf = reader.finish().expect("Failed to finish reader").to_vec();
+        }
+
+        let image_files = writer.export()?;
         for (dst, src) in &image_files {
             let dst = format!("data/{}/{}", name, dst);
             builder
@@ -116,6 +231,13 @@ impl StarnixContainerGenerator {
         builder.name(&self.name);
         builder.published_name(&self.name);
         builder.manifest_blobs_relative_to(fuchsia_pkg::RelativeTo::File);
+
+        if let Some(ramdisk_path) = &self.ramdisk {
+            let ramdisk_files =
+                self.clone().add_ramdisk("ramdisk", &self.outdir, &ramdisk_path, &mut builder)?;
+            deps.add_input(&ramdisk_path);
+            deps.add_outputs(ramdisk_files.into_values());
+        }
 
         let system_files =
             self.clone().add_ext4_image("system", &self.outdir, &self.system, &mut builder)?;

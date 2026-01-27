@@ -75,6 +75,13 @@ template("android_starnix_container") {
         rebase_path(depfile, root_build_dir),
       ]
 
+      if (defined(invoker.ramdisk)) {
+        args += [
+          "--ramdisk",
+          rebase_path(invoker.ramdisk, root_build_dir),
+        ]
+      }
+
       _base_manifest =
           get_label_info(invoker.base, "target_out_dir") + "/" +
           get_label_info(invoker.base, "name") + "/package_manifest.json"

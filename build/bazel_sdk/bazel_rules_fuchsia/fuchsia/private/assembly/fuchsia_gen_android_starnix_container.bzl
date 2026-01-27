@@ -35,6 +35,7 @@ def _gen_android_starnix_container_impl(ctx):
         ctx.actions.declare_directory("meta", sibling = _container_manifest),
         meta_far,
         ctx.actions.declare_directory("odm", sibling = _container_manifest),
+        ctx.actions.declare_directory("ramdisk", sibling = _container_manifest),
         ctx.actions.declare_directory("system", sibling = _container_manifest),
     ]
 

@@ -14,7 +14,7 @@ const FILE_MODE: u16 = 0o0444 + linux_uapi::S_IFREG as u16;
 const_assert!(linux_uapi::S_IFREG < 2_u32.pow(16)); // catch overflow
 
 /// Read-only and enterable by everyone because `remote_bundle`s are never writeable.
-const DIRECTORY_MODE: u16 = 0o0555 + linux_uapi::S_IFDIR as u16;
+pub const DIRECTORY_MODE: u16 = 0o0555 + linux_uapi::S_IFDIR as u16;
 const_assert!(linux_uapi::S_IFDIR < 2_u32.pow(16)); // catch overflow
 
 type GetExtendedAttributesFn = fn(path: &[&str]) -> ExtendedAttributes;
