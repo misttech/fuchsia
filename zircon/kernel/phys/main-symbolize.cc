@@ -72,7 +72,7 @@ void MainSymbolize::set_self(const ElfImage* self) {
   set_main_module(*self);
 }
 
-MainSymbolize::MainSymbolize(const char* name) : Symbolize(name) {
+MainSymbolize::MainSymbolize(const char* name, FILE* f) : Symbolize(name, f) {
   gSymbolize = this;
 
   InitSelf(*this);

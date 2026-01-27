@@ -207,7 +207,7 @@ class Symbolize {
 // emits symbolization markup context.
 class MainSymbolize : public Symbolize {
  public:
-  explicit MainSymbolize(const char* name);
+  explicit MainSymbolize(const char* name, FILE* f = stdout);
 
   const ElfImage& self() const { return *self_; }
 

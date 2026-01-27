@@ -49,7 +49,11 @@ void LogSerial(FILE* out = stdout) {
   PhysBootTimes times;
   times.Set(PhysBootTimes::kZbiEntry, ticks);
 
-  MainSymbolize symbolize("physload");
+  // Symbolize uses its output for the panic path.  So that should not be
+  // redirected to the log code path.  Instead keep it pointed at a copy of the
+  // current stdout, which is just the console.
+  FILE console = *stdout;
+  MainSymbolize symbolize("physload", &console);
   if (BootOptions::Get()->phys_verbose) {
     symbolize.Context();
     LogSerial();
