@@ -118,7 +118,7 @@ async fn overwrite_with_some() {
     // Persistence should overwrite persisted data with the new state after the
     // sample period.
     realm.set_inspect(Some(20i64)).await;
-    zx::MonotonicDuration::from_seconds(1).sleep();
+    zx::MonotonicDuration::from_seconds(2).sleep();
 
     // Persistence should publish the Inspect state.
     let realm = realm.restart().await;
@@ -545,7 +545,10 @@ impl TestRealm {
     }
 
     /// Create an ArchiveReader scoped to this test realm.
-    fn archive_reader_with_selector(&self, selector: impl ToSelectorArguments) -> ArchiveReader<Inspect> {
+    fn archive_reader_with_selector(
+        &self,
+        selector: impl ToSelectorArguments,
+    ) -> ArchiveReader<Inspect> {
         let accessor_proxy = self
             .instance
             .root
