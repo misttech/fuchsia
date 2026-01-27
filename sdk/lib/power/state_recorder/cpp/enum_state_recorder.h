@@ -8,6 +8,7 @@
 #include <lib/inspect/cpp/bounded_list_node.h>
 #include <lib/inspect/cpp/inspect.h>
 #include <lib/power/state_recorder/cpp/common.h>
+#include <lib/power/state_recorder/cpp/common_internal.h>
 #include <lib/power/state_recorder/cpp/concepts.h>
 #include <lib/power/state_recorder/cpp/enum_state_recorder_internal.h>
 #include <lib/trace-engine/context.h>
@@ -204,13 +205,15 @@ void EnumStateRecorder<T>::Record(T state_enum, std::optional<zx::time_boot> eve
   trace_context_t* trace_context = trace_acquire_context_for_category_cached(
       trace_category_literal_, &trace_site_state, &trace_category_ref);
   trace_thread_ref_t thread_ref;
+  zx_ticks_t trace_ticks = 0;
 
   if (unlikely(trace_context)) {
+    trace_ticks = internal::boot_time_to_ticks(current_timestamp);
     trace_context_register_vthread_by_ref(trace_context, ZX_KOID_INVALID, &trace_name_ref_,
                                           trace_id_, &thread_ref);
     if (current_state_name_.has_value()) {
       trace_context_write_duration_end_event_record(
-          trace_context, zx_ticks_get_boot(), &thread_ref, &trace_category_ref,
+          trace_context, trace_ticks, &thread_ref, &trace_category_ref,
           &(current_state_name_.value()->trace_name), nullptr, 0);
     }
   }
@@ -219,7 +222,7 @@ void EnumStateRecorder<T>::Record(T state_enum, std::optional<zx::time_boot> eve
 
   if (unlikely(trace_context)) {
     trace_context_write_duration_begin_event_record(
-        trace_context, zx_ticks_get_boot(), &thread_ref, &trace_category_ref,
+        trace_context, trace_ticks, &thread_ref, &trace_category_ref,
         &(current_state_name_.value()->trace_name), nullptr, 0);
     trace_release_context(trace_context);
   }

@@ -9,6 +9,7 @@
 #include <lib/inspect/cpp/bounded_list_node.h>
 #include <lib/inspect/cpp/inspect.h>
 #include <lib/power/state_recorder/cpp/common.h>
+#include <lib/power/state_recorder/cpp/common_internal.h>
 #include <lib/power/state_recorder/cpp/concepts.h>
 #include <lib/power/state_recorder/cpp/numeric_state_recorder_internal.h>
 #include <lib/trace-engine/context.h>
@@ -273,8 +274,9 @@ void NumericStateRecorder<T>::Record(T value, std::optional<zx::time_boot> event
       static_assert(!IsRecordableNumericType<T>, "Unsupported type");
     }
 
-    trace_context_write_counter_event_record(context, zx_ticks_get_boot(), &thread_ref,
-                                             &category_ref, &trace_name_ref_, trace_id_, &arg, 1);
+    trace_context_write_counter_event_record(
+        context, internal::boot_time_to_ticks(current_timestamp), &thread_ref, &category_ref,
+        &trace_name_ref_, trace_id_, &arg, 1);
     trace_release_context(context);
   }
 }
