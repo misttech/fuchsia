@@ -3,6 +3,7 @@
 // found in the LICENSE file.
 
 use super::subcommands::list::args::ListCommand;
+use super::subcommands::show::args::ShowCommand;
 use argh::{ArgsInfo, FromArgs};
 
 #[derive(ArgsInfo, FromArgs, Debug, PartialEq)]
@@ -20,4 +21,5 @@ pub struct HostCommand {
 #[argh(subcommand)]
 pub enum HostSubcommand {
     List(ListCommand),
+    Show(ShowCommand),
 }

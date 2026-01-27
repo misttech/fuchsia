@@ -22,6 +22,11 @@ pub async fn host(
                 .await
                 .context("List subcommand failed")?;
         }
+        HostSubcommand::Show(subcmd) => {
+            subcommands::show::show(subcmd, writer, driver_development_proxy)
+                .await
+                .context("Show subcommand failed")?;
+        }
     };
     Ok(())
 }

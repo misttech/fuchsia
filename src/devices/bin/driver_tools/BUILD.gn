@@ -57,6 +57,8 @@ rustc_library("lib") {
     "src/subcommands/host/subcommands/list/args.rs",
     "src/subcommands/host/subcommands/list/mod.rs",
     "src/subcommands/host/subcommands/mod.rs",
+    "src/subcommands/host/subcommands/show/args.rs",
+    "src/subcommands/host/subcommands/show/mod.rs",
     "src/subcommands/list/args.rs",
     "src/subcommands/list/mod.rs",
     "src/subcommands/list_composite_node_specs/args.rs",
