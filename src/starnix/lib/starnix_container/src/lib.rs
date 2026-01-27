@@ -30,7 +30,7 @@ pub struct StarnixContainerGenerator {
     pub hals: Vec<Utf8PathBuf>, //path to hal package archive
     pub skip_subpackages: bool, //whether to skip including HALs as subpackages.
     pub system: Utf8PathBuf, //path to an Android system image
-    pub ramdisk: Option<Utf8PathBuf>, //path to a ramdisk image
+    pub ramdisk: Vec<Utf8PathBuf>, //path to an arbitrary number of ramdisk images which will be concatenated
     pub vendor: Option<Utf8PathBuf>, //path to an Android vendor partition image
     pub fstab: Option<Utf8PathBuf>, //path to fstab, will go in /odm which overrides the one in /vendor
     pub init: Vec<Utf8PathBuf>, //path to extra init scripts, will go in /odm/etc/init. Can be passed more than once.
@@ -71,27 +71,19 @@ impl StarnixContainerGenerator {
         Ok(image_files)
     }
 
-    fn add_ramdisk(
+    fn add_ramdisks(
         self,
         name: impl AsRef<Utf8Path>,
         outdir: impl AsRef<Utf8Path>,
-        ramdisk_path: impl AsRef<Utf8Path>,
+        ramdisk_paths: &[impl AsRef<Utf8Path>],
         builder: &mut PackageBuilder,
     ) -> Result<HashMap<String, String>> {
         let name = name.as_ref();
-        let ramdisk_path = ramdisk_path.as_ref();
         let outdir = outdir.as_ref();
 
         let image_outdir = outdir.join(name);
         std::fs::create_dir_all(&image_outdir)
             .with_context(|| format!("Preparing directory for image files: {}", &image_outdir))?;
-
-        let file = std::fs::File::open(&ramdisk_path)
-            .with_context(|| format!("Unable to open `{:?}'", ramdisk_path))?;
-
-        let mut ramdisk = GzDecoder::new(file);
-        let mut buf = vec![];
-        ramdisk.read_to_end(&mut buf)?;
 
         let mut writer = rb::Writer::new(
             &image_outdir,
@@ -101,69 +93,74 @@ impl StarnixContainerGenerator {
             Default::default(),
         )?;
 
-        loop {
-            let mut reader = cpio::NewcReader::new(&buf[..]).unwrap();
-            let entry = reader.entry();
+        for ramdisk_path in ramdisk_paths {
+            let ramdisk_path = ramdisk_path.as_ref();
+            let file = std::fs::File::open(&ramdisk_path)
+                .with_context(|| format!("Unable to open `{:?}'", ramdisk_path))?;
+            let mut file_reader = GzDecoder::new(file);
+            loop {
+                let mut cpio_reader = cpio::NewcReader::new(file_reader).unwrap();
+                let entry = cpio_reader.entry();
 
-            if reader.entry().is_trailer() {
-                break;
-            }
-
-            let name_string = entry.name().to_string();
-            let path = Path::new(&name_string);
-            let inode: u64 = entry.ino().into();
-            let mode: u16 = entry.mode().try_into().unwrap();
-            let uid: u16 = entry.uid().try_into().unwrap();
-            let gid: u16 = entry.gid().try_into().unwrap();
-
-            let mut data = Vec::<u8>::new();
-            reader.read_to_end(&mut data)?;
-
-            let components: Vec<&str> = path
-                .components()
-                .filter_map(|c| match c {
-                    Component::Normal(os_str) => os_str.to_str(),
-                    _ => None, // Ignore RootDir ("/"), CurDir ("."), etc.
-                })
-                .collect();
-
-            match mode & S_IFMT {
-                m if m == S_IFREG => {
-                    writer.add_file(
-                        &components,
-                        &mut &data[..],
-                        inode,
-                        mode,
-                        rb::Owner { uid, gid },
-                        Default::default(),
-                    )?;
+                if cpio_reader.entry().is_trailer() {
+                    break;
                 }
-                m if m == S_IFLNK => {
-                    writer
-                        .add_symlink(
+
+                let name_string = entry.name().to_string();
+                let path = Path::new(&name_string);
+                let inode: u64 = entry.ino().into();
+                let mode: u16 = entry.mode().try_into().unwrap();
+                let uid: u16 = entry.uid().try_into().unwrap();
+                let gid: u16 = entry.gid().try_into().unwrap();
+
+                let components: Vec<&str> = path
+                    .components()
+                    .filter_map(|c| match c {
+                        Component::Normal(os_str) => os_str.to_str(),
+                        _ => None, // Ignore RootDir ("/"), CurDir ("."), etc.
+                    })
+                    .collect();
+
+                match mode & S_IFMT {
+                    m if m == S_IFREG => {
+                        writer.add_file(
                             &components,
-                            data,
+                            &mut cpio_reader,
                             inode,
                             mode,
                             rb::Owner { uid, gid },
                             Default::default(),
-                        )
-                        .unwrap();
+                        )?;
+                    }
+                    m if m == S_IFLNK => {
+                        let mut data = vec![];
+                        cpio_reader.read_to_end(&mut data)?;
+                        writer
+                            .add_symlink(
+                                &components,
+                                data,
+                                inode,
+                                mode,
+                                rb::Owner { uid, gid },
+                                Default::default(),
+                            )
+                            .unwrap();
+                    }
+                    m if m == S_IFDIR => {
+                        writer.add_directory(
+                            &components,
+                            inode,
+                            mode,
+                            rb::Owner { uid, gid },
+                            Default::default(),
+                        );
+                    }
+                    _ => {}
                 }
-                m if m == S_IFDIR => {
-                    writer.add_directory(
-                        &components,
-                        inode,
-                        mode,
-                        rb::Owner { uid, gid },
-                        Default::default(),
-                    );
-                }
-                _ => {}
-            }
 
-            // Advance to the next entry
-            buf = reader.finish().expect("Failed to finish reader").to_vec();
+                // Advance to the next entry
+                file_reader = cpio_reader.finish().expect("Failed to finish reader");
+            }
         }
 
         let image_files = writer.export()?;
@@ -232,10 +229,10 @@ impl StarnixContainerGenerator {
         builder.published_name(&self.name);
         builder.manifest_blobs_relative_to(fuchsia_pkg::RelativeTo::File);
 
-        if let Some(ramdisk_path) = &self.ramdisk {
+        if !self.ramdisk.is_empty() {
             let ramdisk_files =
-                self.clone().add_ramdisk("ramdisk", &self.outdir, &ramdisk_path, &mut builder)?;
-            deps.add_input(&ramdisk_path);
+                self.clone().add_ramdisks("ramdisk", &self.outdir, &self.ramdisk, &mut builder)?;
+            deps.add_inputs(&self.ramdisk);
             deps.add_outputs(ramdisk_files.into_values());
         }
 
@@ -422,7 +419,7 @@ mod tests {
             base: base_manifest_path,
             system: Utf8PathBuf::from_str(EXT4_IMAGE_PATH).unwrap(),
             vendor: Some(Utf8PathBuf::from_str(EXT4_IMAGE_PATH).unwrap()),
-            ramdisk: None,
+            ramdisk: vec![],
             hals: vec![hal_manifest_path],
             depfile: None,
             fstab: None,
@@ -505,7 +502,7 @@ mod tests {
             base: base_manifest_path,
             system: Utf8PathBuf::from_str(EXT4_IMAGE_PATH).unwrap(),
             vendor: Some(Utf8PathBuf::from_str(EXT4_IMAGE_PATH).unwrap()),
-            ramdisk: None,
+            ramdisk: vec![],
             hals: vec![hal_manifest_path],
             depfile: None,
             fstab: None,
@@ -554,7 +551,7 @@ mod tests {
             base: base_manifest_path,
             system: Utf8PathBuf::from_str(EXT4_IMAGE_PATH).unwrap(),
             vendor: None,
-            ramdisk: None,
+            ramdisk: vec![],
             hals: vec![hal_manifest_path],
             depfile: None,
             fstab: None,
@@ -630,7 +627,7 @@ mod tests {
             base: base_manifest_path,
             system: Utf8PathBuf::from_str(EXT4_IMAGE_PATH).unwrap(),
             vendor: None,
-            ramdisk: None,
+            ramdisk: vec![],
             hals: vec![hal_manifest_path],
             depfile: None,
             fstab: None,
@@ -699,7 +696,7 @@ tmpfs   /data       tmpfs   defaults            wait
             base: base_manifest_path,
             system: Utf8PathBuf::from_str(EXT4_IMAGE_PATH).unwrap(),
             vendor: None,
-            ramdisk: None,
+            ramdisk: vec![],
             hals: vec![],
             depfile: None,
             fstab: Some(fstab_path),
@@ -757,7 +754,7 @@ tmpfs   /data       tmpfs   defaults            wait
             base: base_manifest_path,
             system: Utf8PathBuf::from_str(EXT4_IMAGE_PATH).unwrap(),
             vendor: None,
-            ramdisk: None,
+            ramdisk: vec![],
             hals: vec![],
             depfile: None,
             fstab: None,

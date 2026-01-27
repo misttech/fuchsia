@@ -33,9 +33,9 @@ struct Command {
     #[argh(option)]
     vendor: Option<Utf8PathBuf>,
 
-    /// path to a ramdisk image.
+    /// path to the ramdisk images (which will be concatenated).
     #[argh(option)]
-    ramdisk: Option<Utf8PathBuf>,
+    ramdisk: Vec<Utf8PathBuf>,
 
     /// path to hal package archive.
     #[argh(option)]
