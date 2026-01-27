@@ -537,9 +537,6 @@ func TestGenArgs(t *testing.T) {
 		},
 		{
 			name: "variant",
-			contextSpec: &fintpb.Context{
-				CacheDir: "/cache",
-			},
 			staticSpec: &fintpb.Static{
 				Variants: []string{`thinlto`, `{variant="asan-fuzzer"}`},
 			},
@@ -608,20 +605,6 @@ func TestGenArgs(t *testing.T) {
 			contextSpec: &fintpb.Context{},
 			expectedArgs: []string{
 				`bazel_upload_build_events="resultstore_infra"`,
-			},
-		},
-		{
-			name: "go cache and rust cache",
-			staticSpec: &fintpb.Static{
-				EnableGoCache:   true,
-				EnableRustCache: true,
-			},
-			contextSpec: &fintpb.Context{
-				CacheDir: "/cache",
-			},
-			expectedArgs: []string{
-				`gocache_dir="/cache/go_cache"`,
-				`rust_incremental="/cache/rust_cache"`,
 			},
 		},
 		{

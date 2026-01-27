@@ -346,9 +346,7 @@ func genArgs(
 		vars["pgo_profile_path"] = filepath.Join(contextSpec.PgoProfilePath)
 	}
 
-	if staticSpec.EnableGoCache {
-		vars["gocache_dir"] = filepath.Join(contextSpec.CacheDir, "go_cache")
-	} else if staticSpec.UseTemporaryGoCache {
+	if staticSpec.UseTemporaryGoCache {
 		// We wish to have the go cache directory be deterministic,
 		// because the cache directory winds up in various ninja action
 		// commandlines, so having the cache directory change between
@@ -372,10 +370,6 @@ func genArgs(
 			return nil, err
 		}
 		vars["gocache_dir"] = dir
-	}
-
-	if staticSpec.EnableRustCache {
-		vars["rust_incremental"] = filepath.Join(contextSpec.CacheDir, "rust_cache")
 	}
 
 	var importArgs, varArgs, targetListArgs, testArgs, localArgs, overridesArgs, compileArgs []string
