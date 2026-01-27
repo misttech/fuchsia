@@ -11,6 +11,10 @@ The line discipline is responsible for the intermediate processing of characters
 *   **Signal Generation**: Detecting special control characters (like `^C`, `^\`, `^Z`) and generating corresponding signals (`SIGINT`, `SIGQUIT`, `SIGSTOP`).
 *   **Output Processing**: Transforming output characters (e.g., converting `\n` to `\r\n`).
 
+## Notes on Flow Control
+
+While the `LineDiscipline` struct maintains `IXON` and `IXOFF` flags, automatic input flow control (throttling) via `IXOFF` (sending `VSTOP`/`VSTART` when the input buffer fills/empties) is **not implemented**. This matches the behavior of Linux PTYs, which only apply throttling logic to hardware serial devices, not pseudo-terminals. PTYs rely on producer-consumer backpressure rather than in-band flow control characters.
+
 ## Architecture
 
 This logic was extracted from `starnix_core` to decouple it from the kernel structures and allow for easier testing and potential reusability.

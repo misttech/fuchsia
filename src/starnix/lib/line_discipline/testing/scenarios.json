@@ -233,6 +233,69 @@
         ]
     },
     {
+        "name": "ixany_basic",
+        "initial_termios": {
+            "c_iflag": [
+                "ICRNL",
+                "IXON",
+                "IXANY"
+            ],
+            "c_oflag": [
+                "OPOST",
+                "ONLCR"
+            ],
+            "c_lflag": [
+                "ISIG",
+                "ICANON",
+                "ECHO",
+                "ECHOE",
+                "ECHOK",
+                "ECHOCTL",
+                "ECHOKE",
+                "IEXTEN"
+            ]
+        },
+        "events": [
+            {
+                "action": "write_to_slave",
+                "data": "Hello\n"
+            },
+            {
+                "action": "read_from_master",
+                "data": "Hello\r\n"
+            },
+            {
+                "action": "write_to_master",
+                "data": "\u0013"
+            },
+            {
+                "action": "sleep",
+                "duration": 0.1
+            },
+            {
+                "action": "write_to_slave",
+                "data": "World\n",
+                "expect_block": true
+            },
+            {
+                "action": "write_to_master",
+                "data": "A"
+            },
+            {
+                "action": "write_to_slave",
+                "data": "World\n"
+            },
+            {
+                "action": "read_from_master",
+                "data": "AWorld\r\n"
+            },
+            {
+                "action": "read_from_slave",
+                "data": "A\n"
+            }
+        ]
+    },
+    {
         "name": "echo_nl",
         "initial_termios": {
             "c_iflag": [
@@ -1518,6 +1581,78 @@
             },
             {
                 "action": "read_from_slave"
+            }
+        ]
+    },
+    {
+        "name": "input_inlcr_icrnl_swap",
+        "initial_termios": {
+            "c_iflag": [
+                "INLCR",
+                "ICRNL"
+            ],
+            "c_oflag": [
+                "OPOST",
+                "ONLCR"
+            ],
+            "c_lflag": [
+                "ICANON",
+                "ECHO"
+            ]
+        },
+        "events": [
+            {
+                "action": "write_to_master",
+                "data": "a\nb\r"
+            },
+            {
+                "action": "read_from_master"
+            },
+            {
+                "action": "read_from_slave"
+            }
+        ]
+    },
+    {
+        "name": "output_direct_ocrnl",
+        "initial_termios": {
+            "c_iflag": [],
+            "c_oflag": [
+                "OPOST",
+                "OCRNL"
+            ],
+            "c_lflag": []
+        },
+        "events": [
+            {
+                "action": "write_to_slave",
+                "data": "a\r"
+            },
+            {
+                "action": "read_from_master",
+                "data": "a\n"
+            }
+        ]
+    },
+    {
+        "name": "output_direct_onlret_onocr",
+        "initial_termios": {
+            "c_iflag": [],
+            "c_oflag": [
+                "OPOST",
+                "ONLRET",
+                "ONOCR"
+            ],
+            "c_lflag": []
+        },
+        "events": [
+            {
+                "action": "write_to_slave",
+                "data": "a\n\r"
+            },
+            {
+                "action": "read_from_master",
+                "data": "a\n"
             }
         ]
     }

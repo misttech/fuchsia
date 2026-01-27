@@ -14,6 +14,7 @@ mod tests {
     #[test_case("canon_kill_line", include_str!("traces/canon_kill_line.json"); "canon_kill_line")]
     #[test_case("canon_echo_ctl", include_str!("traces/canon_echo_ctl.json"); "canon_echo_ctl")]
     #[test_case("ixon_basic", include_str!("traces/ixon_basic.json"); "ixon_basic")]
+    #[test_case("ixany_basic", include_str!("traces/ixany_basic.json"); "ixany_basic")]
     #[test_case("echo_nl", include_str!("traces/echo_nl.json"); "echo_nl")]
     #[test_case("noflsh_sigint", include_str!("traces/noflsh_sigint.json"); "noflsh_sigint")]
     #[test_case("echo_extended", include_str!("traces/echo_extended.json"); "echo_extended")]
@@ -50,6 +51,9 @@ mod tests {
     #[test_case("noflsh_sigsusp", include_str!("traces/noflsh_sigsusp.json"); "noflsh_sigsusp")]
     #[test_case("flush_sigsusp", include_str!("traces/flush_sigsusp.json"); "flush_sigsusp")]
     #[test_case("noflsh_echoctl_mixed", include_str!("traces/noflsh_echoctl_mixed.json"); "noflsh_echoctl_mixed")]
+    #[test_case("input_inlcr_icrnl_swap", include_str!("traces/input_inlcr_icrnl_swap.json"); "input_inlcr_icrnl_swap")]
+    #[test_case("output_direct_ocrnl", include_str!("traces/output_direct_ocrnl.json"); "output_direct_ocrnl")]
+    #[test_case("output_direct_onlret_onocr", include_str!("traces/output_direct_onlret_onocr.json"); "output_direct_onlret_onocr")]
     fn test_replay_trace(name: &str, json_data: &str) {
         crate::testing::tests::test_replay_trace(name, json_data);
     }
