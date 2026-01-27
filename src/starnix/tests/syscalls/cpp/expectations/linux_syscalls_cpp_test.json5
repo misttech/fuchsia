@@ -19,9 +19,6 @@
                 // TODO(https://fxbug.dev/448145721): Flaking in the FUSE server setup / handling.
                 "Fuse*",
 
-                // TODO(https://fxbug.dev/436916792): Occasionally crashes on Machina.
-                "FutexTest.*",
-
                 // TODO(https://fxbug.dev/437167254)
                 "IoctlTest.SIOCSIFADDR_Success",
                 "IoctlTest.EVIOCGNAME_Success",
