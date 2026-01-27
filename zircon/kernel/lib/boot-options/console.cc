@@ -4,9 +4,12 @@
 
 #include <lib/boot-options/boot-options.h>
 #include <lib/console.h>
+#include <zircon/assert.h>
 
 #include <ktl/span.h>
 #include <ktl/string_view.h>
+#include <vm/physmap.h>
+#include <vm/vm_aspace.h>
 
 #include <ktl/enforce.h>
 
@@ -19,10 +22,19 @@ int Set(int argc, const cmd_args* argv, uint32_t flags) {
     return -1;
   }
 
-  // BootOptions::Get() returns a pointer-to-const so we must const_cast in
-  // order to set options.  This is inherently dangerous and racy, and should
-  // only be done in a development context.
-  auto* boot_options = const_cast<BootOptions*>(BootOptions::Get());
+  // BootOptions::Get() returns a pointer to const and can actually be a
+  // read-only page mapping.  A mutable pointer is needed to set options, so
+  // find the physical page and use it through the physmap.  Changing the
+  // BootOptions object is inherently dangerous and racy, and should only be
+  // done in a development context.
+  const BootOptions* readonly_boot_options = BootOptions::Get();
+  vaddr_t boot_options_vaddr = reinterpret_cast<uintptr_t>(readonly_boot_options);
+  paddr_t boot_options_paddr;
+  zx_status_t status = VmAspace::kernel_aspace()->arch_aspace().Query(  //
+      boot_options_vaddr, &boot_options_paddr, nullptr);
+  ZX_ASSERT_MSG(status == ZX_OK, "Cannot find BootOptions %p in aspace!  %d",  //
+                readonly_boot_options, status);
+  auto* boot_options = static_cast<BootOptions*>(paddr_to_physmap(boot_options_paddr));
 
   for (const auto& arg : ktl::span(argv, argc).subspan(1)) {
     boot_options->SetMany(arg.str, stdout);
