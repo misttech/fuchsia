@@ -20,7 +20,7 @@ use {
 // nodes
 use crate::{
     cpu_control_handler, cpu_device_handler, cpu_manager_main, cpu_stats_handler,
-    domain_controller, rppm_handler, syscall_handler, thermal_watcher,
+    domain_controller, rppm_handler, syscall_handler, thermal_watcher, trippoint_watcher,
 };
 
 pub struct CpuManager {
@@ -146,6 +146,11 @@ impl CpuManager {
         Ok(match json_data["type"].as_str().unwrap() {
             "ThermalWatcher" => {
                 thermal_watcher::ThermalWatcherBuilder::new_from_json(json_data, &self.nodes)
+                    .build(node_futures)
+                    .await?
+            }
+            "TrippointWatcher" => {
+                trippoint_watcher::TrippointWatcherBuilder::new_from_json(json_data, &self.nodes)
                     .build(node_futures)
                     .await?
             }

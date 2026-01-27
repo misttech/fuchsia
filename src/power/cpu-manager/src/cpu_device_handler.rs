@@ -230,6 +230,35 @@ impl CpuDeviceHandler {
         }
     }
 
+    async fn handle_set_maximum_operating_point_limit(
+        &self,
+        opp: u32,
+    ) -> Result<MessageReturn, CpuManagerError> {
+        fuchsia_trace::duration!(
+            c"cpu_manager",
+            c"CpuDeviceHandler::handle_set_maximum_operating_point_limit",
+            "perf_rank" => self.perf_rank as u32,
+            "opp" => opp
+        );
+
+        self.init_done.wait().await;
+
+        let result = self.set_maximum_operating_point_limit(opp).await;
+        log_if_err!(result, "Failed to set maximum operating point limit");
+        fuchsia_trace::instant!(
+            c"cpu_manager",
+            c"CpuDeviceHandler::set_maximum_operating_point_limit_result",
+            fuchsia_trace::Scope::Thread,
+            "perf_rank" => self.perf_rank as u32,
+            "result" => format!("{:?}", result).as_str()
+        );
+
+        match result {
+            Ok(_) => Ok(MessageReturn::SetMaximumOperatingPointLimit),
+            Err(e) => Err(CpuManagerError::GenericError(e)),
+        }
+    }
+
     async fn handle_set_minimum_operating_point_limit(
         &self,
         opp: u32,
@@ -280,6 +309,28 @@ impl CpuDeviceHandler {
                 )
             })?;
 
+        Ok(())
+    }
+
+    async fn set_maximum_operating_point_limit(&self, opp: u32) -> Result<(), Error> {
+        let proxy = &self.mutable_inner.borrow().cpu_ctrl_proxy;
+
+        proxy
+            .as_ref()
+            .ok_or_else(|| format_err!("Missing driver_proxy"))
+            .or_debug_panic()?
+            .set_maximum_operating_point_limit(opp)
+            .await
+            .map_err(|e| {
+                format_err!("{}: set_maximum_operating_point_limit IPC failed: {}", self.name(), e)
+            })?
+            .map_err(|e| {
+                format_err!(
+                    "{}: set_maximum_operating_point_limit driver returned error: {}",
+                    self.name(),
+                    zx::Status::from_raw(e)
+                )
+            })?;
         Ok(())
     }
 
@@ -354,6 +405,9 @@ impl Node for CpuDeviceHandler {
         match msg {
             Message::GetOperatingPoint => self.handle_get_operating_point().await,
             Message::SetOperatingPoint(opp) => self.handle_set_operating_point(*opp).await,
+            Message::SetMaximumOperatingPointLimit(opp) => {
+                self.handle_set_maximum_operating_point_limit(*opp).await
+            }
             Message::SetMinimumOperatingPointLimit(opp) => {
                 self.handle_set_minimum_operating_point_limit(*opp).await
             }

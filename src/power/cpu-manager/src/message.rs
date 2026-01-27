@@ -41,6 +41,9 @@ pub enum Message {
     /// dev_control_handler crate. An increasing value indicates a lower operating point.
     SetOperatingPoint(u32),
 
+    /// Set the maximum operating point limit.
+    SetMaximumOperatingPointLimit(u32),
+
     /// Set the minimum operating point limit.
     SetMinimumOperatingPointLimit(u32),
 
@@ -98,6 +101,9 @@ pub enum MessageReturn {
 
     /// There is no arg in this MessageReturn type. It only serves as an ACK.
     SetOperatingPoint,
+
+    /// There is no arg in this MessageReturn type. It only serves as an ACK.
+    SetMaximumOperatingPointLimit,
 
     /// There is no arg in this MessageReturn type. It only serves as an ACK.
     SetMinimumOperatingPointLimit,

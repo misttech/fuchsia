@@ -44,13 +44,19 @@
             to: [ "#cpu_manager" ],
         },
         {
-            service: [ "fuchsia.hardware.cpu.ctrl.Service" ],
+            service: [
+                "fuchsia.hardware.cpu.ctrl.Service",
+                "fuchsia.hardware.trippoint.TripPointService",
+            ],
             from: "#boot-drivers",
             to: [ "#cpu_manager" ],
             availability: "optional",
         },
         {
-            service: [ "fuchsia.hardware.cpu.ctrl.Service" ],
+            service: [
+                "fuchsia.hardware.cpu.ctrl.Service",
+                "fuchsia.hardware.trippoint.TripPointService",
+            ],
             from: "#base-drivers",
             to: [ "#cpu_manager" ],
             availability: "optional",

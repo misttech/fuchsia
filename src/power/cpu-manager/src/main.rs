@@ -22,6 +22,7 @@ mod cpu_stats_handler;
 mod rppm_handler;
 mod syscall_handler;
 mod thermal_watcher;
+mod trippoint_watcher;
 mod utils;
 
 #[cfg(test)]
