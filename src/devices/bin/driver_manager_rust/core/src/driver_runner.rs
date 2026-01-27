@@ -137,6 +137,10 @@ impl DriverRunner {
         self.composite_node_spec_manager.get_composite_info()
     }
 
+    pub fn driver_hosts(&self) -> Vec<Rc<dyn DriverHost>> {
+        self.driver_hosts.borrow().iter().filter_map(|w| w.upgrade()).collect()
+    }
+
     pub fn get_driver_host(
         &self,
         driver_host_name_for_colocation: &str,

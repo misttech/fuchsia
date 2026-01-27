@@ -80,7 +80,7 @@ impl DriverDevelopmentService {
                     self.wait_for_bootup(responder).await;
                 }
                 GetDriverHostInfo { iterator, .. } => {
-                    self.get_driver_host_info(iterator);
+                    self.get_driver_host_info(iterator).await;
                 }
                 RestartDriverHosts { driver_url, rematch_flags, responder } => {
                     self.restart_driver_hosts(driver_url, rematch_flags, responder).await;
@@ -271,8 +271,47 @@ impl DriverDevelopmentService {
         let _ = responder.send();
     }
 
-    fn get_driver_host_info(&self, iterator: ServerEnd<fdd::DriverHostInfoIteratorMarker>) {
-        let infos = vec![]; // C++ implementation is empty.
+    async fn get_driver_host_info(&self, iterator: ServerEnd<fdd::DriverHostInfoIteratorMarker>) {
+        let mut infos = vec![];
+        for host in self.driver_runner.driver_hosts() {
+            let process_info = match host.get_process_info_internal().await {
+                Ok(info) => info,
+                Err(_) => continue,
+            };
+
+            let threads = process_info
+                .threads
+                .into_iter()
+                .map(|t| fdd::ThreadInfo {
+                    koid: Some(t.koid),
+                    name: Some(t.name),
+                    scheduler_role: Some(t.scheduler_role),
+                    ..Default::default()
+                })
+                .collect();
+
+            let dispatchers = process_info
+                .dispatchers
+                .into_iter()
+                .map(|d| fdd::DispatcherInfo {
+                    driver: Some(d.driver),
+                    name: Some(d.name),
+                    options: Some(d.options),
+                    scheduler_role: Some(d.scheduler_role),
+                    ..Default::default()
+                })
+                .collect();
+
+            infos.push(fdd::DriverHostInfo {
+                process_koid: Some(process_info.process_koid.raw_koid()),
+                name: Some(host.name_for_colocation().to_string()),
+                threads: Some(threads),
+                dispatchers: Some(dispatchers),
+                drivers: Some(vec![]),
+                ..Default::default()
+            });
+        }
+
         let iterator_stream = iterator.into_stream();
         let driver_host_info_iterator = DriverHostInfoIterator::new(infos);
         self.scope.spawn_local(async move {

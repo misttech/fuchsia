@@ -181,6 +181,10 @@ pub trait DriverHost {
 
     async fn get_process_koid(&self) -> Result<zx::Koid, zx::Status>;
 
+    async fn get_process_info_internal(
+        &self,
+    ) -> Result<crate::runtime_dir::ProcessInfo, zx::Status>;
+
     async fn get_crash_info(
         &self,
         thread_koid: zx::Koid,
@@ -320,6 +324,12 @@ impl DriverHost for DriverHostComponent {
 
     async fn get_process_koid(&self) -> Result<zx::Koid, zx::Status> {
         self.process_info.get().await.map(|info| info.process_koid)
+    }
+
+    async fn get_process_info_internal(
+        &self,
+    ) -> Result<crate::runtime_dir::ProcessInfo, zx::Status> {
+        self.process_info.get().await.cloned()
     }
 
     async fn get_crash_info(

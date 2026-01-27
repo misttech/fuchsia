@@ -13,10 +13,13 @@ use vfs::{ObjectRequestRef, immutable_attributes, pseudo_directory};
 use zx::Status;
 use {fidl_fuchsia_driver_host as fdh, fidl_fuchsia_io as fio};
 
-pub(crate) struct ProcessInfo {
-    job_koid: zx::Koid,
-    pub(crate) process_koid: zx::Koid,
-    pub(crate) main_thread_koid: zx::Koid,
+#[derive(Clone)]
+pub struct ProcessInfo {
+    pub job_koid: zx::Koid,
+    pub process_koid: zx::Koid,
+    pub main_thread_koid: zx::Koid,
+    pub threads: Vec<fdh::ThreadInfo>,
+    pub dispatchers: Vec<fdh::DispatcherInfo>,
 }
 
 pub(crate) struct CachedProcessInfo {
@@ -33,13 +36,20 @@ impl CachedProcessInfo {
         self.cell
             .get_or_try_init(|| async {
                 match self.driver_host.get_process_info().await {
-                    Ok(Ok(info)) => Ok(ProcessInfo {
-                        job_koid: zx::Koid::from_raw(info.0),
-                        process_koid: zx::Koid::from_raw(info.1),
-                        main_thread_koid: zx::Koid::from_raw(info.2),
-                    }),
+                    Ok(Ok((job_koid, process_koid, main_thread_koid, threads, dispatchers))) => {
+                        Ok(ProcessInfo {
+                            job_koid: zx::Koid::from_raw(job_koid),
+                            process_koid: zx::Koid::from_raw(process_koid),
+                            main_thread_koid: zx::Koid::from_raw(main_thread_koid),
+                            threads,
+                            dispatchers,
+                        })
+                    }
                     Ok(Err(e)) => Err(zx::Status::from_raw(e)),
-                    _ => Err(zx::Status::INTERNAL),
+                    Err(e) => {
+                        log::error!("FIDL error GetProcessInfo: {:?}", e);
+                        Err(zx::Status::INTERNAL)
+                    }
                 }
             })
             .await
