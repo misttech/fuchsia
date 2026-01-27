@@ -50,8 +50,6 @@ for file in ${added_or_modified_files[@]}; do
   fi
 done
 
-source "${cartfs_dir}/fuchsia/scripts/fx-env.sh" && fx-update-path
-
 (
   cd "${cartfs_dir}/fuchsia"
   .jiri_root/bin/fx "$@"

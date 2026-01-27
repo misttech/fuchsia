@@ -7,6 +7,14 @@ FUCHSIA_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." >/dev/null 2>&1 && pwd)
 
 command="$1"
 if [[ "$command" =~ ^(set|build|test|add-test|add-host-test|set-main-pb)$ ]]; then
+  if [[ ! -L "${FUCHSIA_DIR}/cartfs-dir" || ! -e "${FUCHSIA_DIR}/cartfs-dir" ]]; then
+    echo "Error: unable to find the cartfs symlink. Run the setup script to fix this."
+    exit 1
+  fi
+  # We need to run this here to make sure that the PATH is updated with the
+  # prebuilts in the CartFS. If we do not do this then we will pick up the wrong
+  # hermetic-env.
+  source "${FUCHSIA_DIR}/cartfs-dir/fuchsia/scripts/fx-env.sh" && fx-update-path
   exec "${FUCHSIA_DIR}/scripts/fx" cog "$@"
 else
   exec "${FUCHSIA_DIR}/scripts/fx" "$@"
