@@ -51,7 +51,7 @@ class BazelActionError(Exception):
 
 @dataclasses.dataclass
 class BazelExtraOutputs(object):
-    """A collection of optional  outputs to write as debugging aids, and the paths to write them at.
+    """A collection of optional outputs to write as debugging aids, and the paths to write them at.
 
     Fields:
 
@@ -68,6 +68,21 @@ class BazelExtraOutputs(object):
     command_file: Path | None = None
     command_profile: Path | None = None
     explain_file: Path | None = None
+
+
+@dataclasses.dataclass
+class BazelActionResult(object):
+    """Wrapper for results of executing a bazel action.
+
+    Fields:
+
+        configured_args:  A list of args usable for bazel queries in the same configuration.
+
+        debug_symbol_manifest_paths:  A list of paths to debug symbol manifests
+    """
+
+    configured_args: list[str]
+    debug_symbol_manifest_paths: list[str]
 
 
 class BazelActionRunner(object):
@@ -97,13 +112,21 @@ class BazelActionRunner(object):
                 else None
             ),
         )
+        self.rbe_settings = (
+            bazel_action_utils.BazelRbeSettings.create_from_build_dir(
+                bazel_paths.ninja_build_dir
+            )
+        )
 
     def run(
         self,
+        command: str,
+        platform_config: str,
+        platform_label: str,
         targets: list[str],
         extra_args: list[str],
         extra_outputs: BazelExtraOutputs,
-    ) -> list[str]:
+    ) -> BazelActionResult:
         """Run a bazel command.
 
         Args:
@@ -119,7 +142,18 @@ class BazelActionRunner(object):
             BazelActionError on any failure.
         """
 
-        cmd_args = [] + extra_args
+        # Calculate the platform configuration needed for the build and subsequent queries.
+        configured_args = calculate_platform_config_args(
+            platform_config,
+            platform_label,
+            self.rbe_settings,
+        )
+
+        cmd_args = [
+            command,
+            *configured_args,
+            *extra_args,
+        ]
 
         # If a build event json file is requested, tell Bazel to create one.
         if extra_outputs.build_event_json_file:
@@ -294,7 +328,51 @@ class BazelActionRunner(object):
             )
             raise BazelActionError()
 
-        return debug_symbol_manifest_paths
+        return BazelActionResult(
+            configured_args=configured_args,
+            debug_symbol_manifest_paths=debug_symbol_manifest_paths,
+        )
+
+
+def calculate_platform_config_args(
+    platform_config: str,
+    platform_label: str,
+    rbe_settings: bazel_action_utils.BazelRbeSettings,
+) -> list[str]:
+    """Constructs the CLI args that define the 'common platform configuration' as needed by the command and any subsequent queries.
+
+    This is an internal helper that creates the cli args, including the RBE
+    settings, so that any post-build queries can use the same platform config
+    as the action itself did.
+
+    Args:
+        platform_config: The name of the bazel config to enable for the platform
+        platform_label: The bazel label of the platform
+        rbe_settings: The global RBE settings for the build
+
+    Returns:
+        List of strings that are the CLI args that together configure Bazel
+        correctly for the build and for any subsequent queries.
+    """
+    platform_config_args = [
+        f"--config={platform_config}",
+        f"--platforms={platform_label}",
+    ]
+
+    # When remote builds are enabled, append the right build arguments.
+    # These must appear on the Bazel command-line otherwise remote builds
+    # will fail on infra (the reason being that the Bazel wrapper script
+    # detects these options to add infra-specific proxy configuration
+    # the the final command-line).
+    #
+    # RBE settings are included in the platform config so that the remote cache can be
+    # utilized for queries.
+    if rbe_settings.enabled:
+        assert rbe_settings.exec_strategy != None
+        # If RBE is enabled, append the chosen RBE config to
+        # the command line.
+        platform_config_args += [f"--config={rbe_settings.exec_strategy}"]
+    return platform_config_args
 
 
 def bazel_debug_line_filter(manifest_paths: list[str], line: bytes) -> bool:

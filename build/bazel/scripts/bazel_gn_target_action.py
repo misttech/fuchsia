@@ -556,6 +556,11 @@ def main() -> int:
                 f"Bazel target not found in bazel_target_infos.json: {target}  keys: {bazel_target_infos._targets.keys()}"
             )
 
+    if not bazel_platform_config:
+        parser.error(
+            "No bazel platform config was found for the Bazel targets."
+        )
+
     # Ensure that all of the target infos we found are using the same gn_target_dir, because we
     # can only have one of those.
     if len(gn_targets_dirs) > 1:
@@ -615,25 +620,6 @@ def main() -> int:
         workspace_dir / "fuchsia_build_generated/bazel_query_cache"
     )
 
-    # Construct the configured_args from the Bazel platform configuration and any
-    # passed-in extra arguments.
-    configured_args = [
-        f"--config={bazel_platform_config}",
-        f"--platforms={args.bazel_platform_label}",
-    ]
-
-    # When remote builds are enabled, append the right build arguments.
-    # These must appear on the Bazel command-line otherwise remote builds
-    # will fail on infra (the reason being that the Bazel wrapper script
-    # detects these options to add infra-specific proxy configuration
-    # the the final command-line).
-    rbe_settings = BazelRbeSettings.create_from_build_dir(args.build_dir)
-    if rbe_settings.enabled:
-        assert rbe_settings.exec_strategy != None
-        # If RBE is enabled, append the chosen RBE config to
-        # the command line.
-        configured_args += [f"--config={rbe_settings.exec_strategy}"]
-
     time_profile.start(
         "buildfiles_genquery", "Generating buildfiles_genquery/BUILD.bazel"
     )
@@ -669,10 +655,7 @@ def main() -> int:
         f"bazel {args.command}", "Invoking Bazel {args.command} command"
     )
 
-    cmd_args = [args.command]
-
-    cmd_args += configured_args
-    cmd_args += ["//buildfiles_genquery:genquery"]
+    cmd_args = ["//buildfiles_genquery:genquery"]
     cmd_args += args.bazel_targets
 
     jobs = None
@@ -680,6 +663,7 @@ def main() -> int:
     # when running jobs locally.  This is different from the reclient config
     # because this controls the _running_ of jobs, not the checking of the
     # cache for jobs.
+    rbe_settings = BazelRbeSettings.create_from_build_dir(args.build_dir)
     if rbe_settings.enabled and rbe_settings.exec_strategy == "remote":
         cpus = os.cpu_count()
         if cpus:
@@ -707,7 +691,10 @@ def main() -> int:
         global_bazel_args,
     )
     try:
-        debug_symbol_manifest_paths = bazel_action_runner.run(
+        action_result = bazel_action_runner.run(
+            args.command,
+            bazel_platform_config,
+            args.bazel_platform_label,
             args.bazel_targets,
             cmd_args,
             bazel_action_impl.BazelExtraOutputs(
@@ -719,6 +706,9 @@ def main() -> int:
         )
     except bazel_action_impl.BazelActionError:
         return 1
+
+    configured_args = action_result.configured_args
+    debug_symbol_manifest_paths = action_result.debug_symbol_manifest_paths
 
     time_profile.stop()
 
