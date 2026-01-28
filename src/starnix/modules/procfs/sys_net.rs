@@ -216,7 +216,7 @@ impl FsNodeOps for ProcSysNetIpv4Neigh {
                 );
                 dir.entry(
                     "retrans_time_ms",
-                    StubBytesFile::new_node(bug_ref!("https://fxbug.dev/423645762")),
+                    new_interface_config_file_node::<RetransTimeMs<Ipv4>>(interface),
                     FILE_MODE,
                 );
                 dir.entry(
@@ -395,7 +395,7 @@ impl FsNodeOps for ProcSysNetIpv6Neigh {
                 );
                 dir.entry(
                     "retrans_time_ms",
-                    StubBytesFile::new_node(bug_ref!("https://fxbug.dev/423645762")),
+                    new_interface_config_file_node::<RetransTimeMs<Ipv6>>(interface),
                     FILE_MODE,
                 );
                 dir.entry(
@@ -960,5 +960,72 @@ impl InterfaceConfig for Ipv6DadTransmits {
                 log_error!("network interface config missing ipv6 ndp dad transmits");
                 errno!(EIO)
             })
+    }
+}
+
+// Note that this has a different behavior than Linux, linux does not tell
+// whether a neighbor host variable is set by user or is learned from network.
+// The Fuchsia behavior is the same if the value is only set once during
+// initialization.
+struct RetransTimeMs<I: Ip> {
+    _marker: core::marker::PhantomData<I>,
+}
+
+impl<I: Ip> InterfaceConfig for RetransTimeMs<I> {
+    fn try_from_i32(value: i32) -> Result<fnet_interfaces_admin::Configuration, Errno> {
+        let retrans_timer = zx::Duration::<zx::BootTimeline>::from_millis(i64::from(value));
+        let nud_config = fnet_interfaces_admin::NudConfiguration {
+            retrans_timer: Some(retrans_timer.into_nanos()),
+            ..Default::default()
+        };
+        let mut config = fnet_interfaces_admin::Configuration::default();
+        match I::VERSION {
+            IpVersion::V4 => {
+                config.ipv4 = Some(fnet_interfaces_admin::Ipv4Configuration {
+                    arp: Some(fnet_interfaces_admin::ArpConfiguration {
+                        nud: Some(nud_config),
+                        ..Default::default()
+                    }),
+                    ..Default::default()
+                })
+            }
+            IpVersion::V6 => {
+                config.ipv6 = Some(fnet_interfaces_admin::Ipv6Configuration {
+                    ndp: Some(fnet_interfaces_admin::NdpConfiguration {
+                        nud: Some(nud_config),
+                        ..Default::default()
+                    }),
+                    ..Default::default()
+                })
+            }
+        }
+        Ok(config)
+    }
+
+    fn try_into_i32(config: fnet_interfaces_admin::Configuration) -> Result<i32, Errno> {
+        let retrans_timer_ns = match I::VERSION {
+            IpVersion::V4 => config
+                .ipv4
+                .and_then(|ipv4| ipv4.arp)
+                .and_then(|arp| arp.nud)
+                .and_then(|nud| nud.retrans_timer)
+                .ok_or_else(|| {
+                    log_error!("network interface config missing ipv4 arp retrans_timer");
+                    errno!(EIO)
+                })?,
+            IpVersion::V6 => config
+                .ipv6
+                .and_then(|ipv6| ipv6.ndp)
+                .and_then(|ndp| ndp.nud)
+                .and_then(|nud| nud.retrans_timer)
+                .ok_or_else(|| {
+                    log_error!("network interface config missing ipv6 ndp retrans_timer");
+                    errno!(EIO)
+                })?,
+        };
+        Ok(i32::try_from(
+            zx::Duration::<zx::BootTimeline>::from_nanos(retrans_timer_ns).into_millis(),
+        )
+        .map_err(|_| errno!(EIO))?)
     }
 }

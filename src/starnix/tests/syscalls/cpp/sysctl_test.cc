@@ -266,4 +266,6 @@ INSTANTIATE_TEST_SUITE_P(
                       "/proc/sys/net/ipv4/neigh/default/mcast_resolicit",
                       "/proc/sys/net/ipv6/conf/default/dad_transmits",
                       "/proc/sys/net/ipv6/neigh/default/base_reachable_time_ms",
-                      "/proc/sys/net/ipv4/neigh/default/base_reachable_time_ms"));
+                      "/proc/sys/net/ipv4/neigh/default/base_reachable_time_ms",
+                      "/proc/sys/net/ipv6/neigh/default/retrans_time_ms",
+                      "/proc/sys/net/ipv4/neigh/default/retrans_time_ms"));
