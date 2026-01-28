@@ -529,36 +529,38 @@ async fn new_blob_volume_is_installed_on_normal_boot() {
 async fn new_blob_volume_is_cleaned_up_on_install_failure() {
     let system_container = build_fxblob().await;
     let fixture = start_recovery_fixture(system_container).await;
-    let image = create_fxblob_image().await;
     let recovery: ffshost::RecoveryProxy =
         fixture.realm.root.connect_to_protocol_at_exposed_dir().unwrap();
 
-    // Write only the first chunk, after which we should fail to install the volume since the image
-    // is incomplete.
+    // Write a truncated version of a valid fxblob image. This should fail to install since we
+    // haven't written the entire image.
     {
+        let truncated_image = {
+            let image = create_fxblob_image().await;
+            image.set_stream_size(2 * BLOCK_SIZE as u64).unwrap();
+            image
+        };
         let (image_file, _mount_token) = recovery
             .get_blob_image_handle()
             .await
             .unwrap()
             .expect("get_blob_image_handle returned error")
             .as_mounted_system_container();
-        copy_image_to_file(&image, &image_file).await;
-        // Truncate the file so the image is invalid.
-        image_file.resize(8192).await.expect("transport error").expect("resize failed");
+        copy_image_to_file(&truncated_image, &image_file).await;
     }
 
-    // Tear down the fixture and explicitly check that we have a new volume containing the corrupt
-    // blob volume image.
+    // Tear down the fixture, and inspect the volumes in the filesystem. We should see an extra
+    // volume containing the truncated blob image that has not yet been installed.
     let system_container = fixture.tear_down().await.unwrap();
     let volumes = list_all_fxfs_volumes(&system_container).await;
     assert!(volumes.len() > expected_fxblob_volumes().len());
 
-    // Now boot up normally and ensure the existing blob volume remains untouched.
+    // Now boot up fshost normally, which should trigger an attempt to install our truncated image.
+    // This should fail, deleting the install volume, and leaving the existing blob volume intact.
     let fixture = new_builder().with_disk_from(system_container).build().await;
+    // Ensure the original system blobs are still present.
     fixture.check_test_blob().await;
-
-    // Now that we booted up normally, tear down the fixture again and ensure the extra volume is
-    // gone without any explicit action on our part.
+    // Ensure the install volume is gone.
     let system_container = fixture.tear_down().await.unwrap();
     let volumes = list_all_fxfs_volumes(&system_container).await;
     assert_eq!(volumes, expected_fxblob_volumes());
