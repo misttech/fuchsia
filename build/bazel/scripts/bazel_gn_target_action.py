@@ -713,21 +713,6 @@ def main() -> int:
     if jobs:
         cmd_args += [f"--jobs={jobs}"]
 
-    quiet = os.environ.get("FX_BUILD_QUIET") == "1"
-    if quiet:
-        cmd_args += ["--config=quiet"]
-    else:
-        # Normal builds always need to print INFO level messages so that
-        # warnings can be emitted from bazel ctx.run_shell() commands,
-        # otherwise any stderr/stdout warnings from tools are eaten by
-        # the build.
-        #
-        #  Known uses:
-        #     - size checker outputs
-        #     - developer overrides warnings for assembly
-        #
-        cmd_args += ["--config=verbose"]
-
     # Save the command.profile.gz data for analysis.
     # Convert '//some/gn:label' into 'obj/some/gn/label.command.profile.gz'
     command_profile_filename = (
@@ -749,7 +734,6 @@ def main() -> int:
                 command_profile=command_profile_filename,
                 explain_file=args.explain_file,
             ),
-            quiet,
         )
     except bazel_action_impl.BazelActionError:
         return 1

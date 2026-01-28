@@ -103,7 +103,6 @@ class BazelActionRunner(object):
         targets: list[str],
         extra_args: list[str],
         extra_outputs: BazelExtraOutputs,
-        quiet: bool,
     ) -> list[str]:
         """Run a bazel command.
 
@@ -112,8 +111,6 @@ class BazelActionRunner(object):
             targets: The list of bazel target labels to build/test/etc.
 
             extra_args: (temporary) list of bazel cli args to append to the command
-
-            quiet: (boolean) Should non-error output from Bazel be silenced or not.
 
         Returns:
             (temporary) A list of debug symbol manifest paths
@@ -150,6 +147,20 @@ class BazelActionRunner(object):
                 self.paths.ninja_build_dir / extra_outputs.command_profile,
             ]
 
+        if self.global_args.quiet:
+            cmd_args += ["--config=quiet"]
+        else:
+            # Normal builds always need to print INFO level messages so that
+            # warnings can be emitted from bazel ctx.run_shell() commands,
+            # otherwise any stderr/stdout warnings from tools are eaten by
+            # the build.
+            #
+            #  Known uses:
+            #     - size checker outputs
+            #     - developer overrides warnings for assembly
+            #
+            cmd_args += ["--config=verbose"]
+
         cmd_args += [
             # Ensure that all debug symbols are properly generated during the build
             # The aspect will also generate extra manifests whose paths will be
@@ -183,7 +194,7 @@ class BazelActionRunner(object):
                 + "\n",
             )
 
-        if quiet:
+        if self.global_args.quiet:
             # Still capture stdout to print its content if there is an error
             # running the build command below.
             stdout_sink = stdio_redirection.BytesOutputSink()
@@ -228,7 +239,7 @@ class BazelActionRunner(object):
                 )
 
         if ret.returncode != 0:
-            if quiet:
+            if self.global_args.quiet:
                 # Assert that the output sinks are the expected types for quiet mode.
                 assert isinstance(
                     stdout_sink, stdio_redirection.BytesOutputSink
