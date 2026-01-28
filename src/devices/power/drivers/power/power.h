@@ -47,14 +47,7 @@ class PowerDomain : public PowerDomainType {
  public:
   PowerDomain(zx_device_t* parent, uint32_t index, const ddk::PowerImplProtocolClient& power_impl,
               fidl::ClientEnd<fuchsia_hardware_power::Device> parent_power, uint32_t min_voltage,
-              uint32_t max_voltage, bool fixed)
-      : PowerDomainType(parent),
-        index_(index),
-        power_impl_(power_impl),
-        parent_power_(std::move(parent_power)),
-        min_voltage_uV_(min_voltage),
-        max_voltage_uV_(max_voltage),
-        fixed_(fixed) {}
+              uint32_t max_voltage, bool fixed);
 
   static zx_status_t Create(void* ctx, zx_device_t* parent,
                             const ddk::PowerImplProtocolClient& power_impl,
@@ -142,6 +135,18 @@ class PowerDomainFragmentChild : public fidl::WireServer<fuchsia_hardware_power:
   uint32_t max_supported_voltage_uV_ = 0;
   bool registered_ = false;
 };
+
+inline PowerDomain::PowerDomain(zx_device_t* parent, uint32_t index,
+                                const ddk::PowerImplProtocolClient& power_impl,
+                                fidl::ClientEnd<fuchsia_hardware_power::Device> parent_power,
+                                uint32_t min_voltage, uint32_t max_voltage, bool fixed)
+    : PowerDomainType(parent),
+      index_(index),
+      power_impl_(power_impl),
+      parent_power_(std::move(parent_power)),
+      min_voltage_uV_(min_voltage),
+      max_voltage_uV_(max_voltage),
+      fixed_(fixed) {}
 
 }  // namespace power
 
