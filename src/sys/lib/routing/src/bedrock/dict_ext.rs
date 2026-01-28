@@ -3,8 +3,6 @@
 // found in the LICENSE file.
 
 use crate::bedrock::request_metadata::Metadata;
-use crate::bedrock::use_dictionary_router::UseDictionaryRouter;
-use crate::capability_source::{CapabilitySource, InternalCapability, VoidSource};
 use crate::error::RoutingError;
 use async_trait::async_trait;
 use cm_rust::CapabilityTypeName;
@@ -266,32 +264,24 @@ impl DictExt for Dict {
                     let sub_dict = {
                         match current_dict.get(current_name) {
                             Ok(Some(Capability::Dictionary(dict))) => dict,
-                            Ok(Some(Capability::DictionaryRouter(router))) => {
-                                let dict = Dict::new();
-
-                                // Create a new DictionaryRouter that merges the
-                                // current one and our new dict.
-                                let merged = UseDictionaryRouter::new(
-                                    "/placeholder1".parse().unwrap(),
-                                    "placeholder2".parse().unwrap(),
-                                    dict.clone(),
-                                    vec![router.clone()],
-                                    CapabilitySource::Void(VoidSource {
-                                        capability: InternalCapability::Dictionary(
-                                            "placeholder3".parse().unwrap(),
-                                        ),
-                                        moniker: "placeholder4".parse().unwrap(),
-                                    }),
-                                );
+                            Ok(Some(Capability::DictionaryRouter(preexisting_router))) => {
+                                let mut path = vec![next_name];
+                                while let Some(name) = segments.next() {
+                                    path.push(name);
+                                }
+                                let path = RelativePath::from(path);
+                                let new_router = Router::new(AdditiveDictionaryRouter {
+                                    preexisting_router,
+                                    path,
+                                    capability,
+                                });
 
                                 // Replace the entry in current_dict.
                                 current_dict.remove(current_name).unwrap();
-                                current_dict.insert(
-                                    current_name.into(),
-                                    Capability::DictionaryRouter(merged),
-                                )?;
+                                current_dict
+                                    .insert(current_name.into(), new_router.into())?;
 
-                                dict
+                                return Ok(());
                             }
                             Ok(None) => {
                                 let dict = Dict::new();
@@ -498,4 +488,29 @@ pub(super) fn request_with_dictionary_replacement(
         let _ = r.metadata.set_metadata(CapabilityTypeName::Dictionary);
         r
     }))
+}
+
+struct AdditiveDictionaryRouter {
+    preexisting_router: Router<Dict>,
+    path: RelativePath,
+    capability: Capability,
+}
+
+#[async_trait]
+impl Routable<Dict> for AdditiveDictionaryRouter {
+    async fn route(
+        &self,
+        request: Option<Request>,
+        debug: bool,
+        target: WeakInstanceToken,
+    ) -> Result<RouterResponse<Dict>, RouterError> {
+        let dictionary = match self.preexisting_router.route(request, debug, target).await {
+            Ok(RouterResponse::<Dict>::Capability(dictionary)) => {
+                dictionary.shallow_copy().unwrap()
+            }
+            other_response => return other_response,
+        };
+        let _ = dictionary.insert_capability(&self.path, self.capability.try_clone().unwrap());
+        Ok(RouterResponse::Capability(dictionary))
+    }
 }
