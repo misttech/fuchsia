@@ -13,7 +13,8 @@ use crate::resource_accessor::{
 };
 use crate::shared_memory::SharedMemory;
 use crate::thread::{
-    BinderThread, BinderThreadState, Command, CommandQueueWithWaitQueue, generate_dead_replies,
+    BinderThread, BinderThreadGuard, Command, CommandQueueWithWaitQueue, RegistrationState,
+    generate_dead_replies,
 };
 use starnix_core::mm::MemoryAccessor;
 use starnix_core::mm::memory::MemoryObject;
@@ -37,6 +38,7 @@ use starnix_uapi::{
 use std::collections::BTreeMap;
 use std::ops::{Deref, DerefMut};
 use std::sync::Arc;
+use std::sync::atomic::Ordering;
 use std::vec::Vec;
 
 #[derive(Debug, Default)]
@@ -869,25 +871,37 @@ pub struct ThreadPool(pub BTreeMap<pid_t, OwnedRef<BinderThread>>);
 
 impl ThreadPool {
     fn has_available_thread(&self) -> bool {
-        self.0.values().any(|t| t.lock().is_available())
+        self.0.values().any(|t| {
+            if t.available.load(Ordering::Acquire) { t.lock().is_available() } else { false }
+        })
     }
 
-    fn get_available_thread(&self) -> Option<MutexGuard<'_, BinderThreadState>> {
+    fn get_available_thread(&self) -> Option<BinderThreadGuard<'_>> {
         self.0.values().find_map(|t| {
-            let thread = t.lock();
-            if thread.is_available() { Some(thread) } else { None }
+            if t.available.load(Ordering::Acquire) {
+                let thread = t.lock();
+                if thread.is_available() {
+                    return Some(thread);
+                }
+            }
+            None
         })
     }
 
     fn notify_all(&self) {
         for t in self.0.values() {
-            t.lock().command_queue.notify_all();
+            t.command_queue_waiters.notify_all();
         }
     }
 
     /// The number of registered thread in the pool. This doesn't count the main thread.
     fn registered_threads(&self) -> usize {
-        self.0.values().filter(|t| t.lock().is_registered()).count()
+        self.0
+            .values()
+            .filter(|t| {
+                t.registration.load(Ordering::Acquire) == RegistrationState::Auxilliary.to_u8()
+            })
+            .count()
     }
 }
 

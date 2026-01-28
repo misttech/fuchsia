@@ -38,6 +38,8 @@ use starnix_uapi::{
     binder_transaction_data, binder_uintptr_t, errno, error, pid_t,
 };
 use std::collections::VecDeque;
+use std::ops::{Deref, DerefMut};
+use std::sync::atomic::{AtomicBool, AtomicU8, Ordering};
 
 use zerocopy::{Immutable, IntoBytes};
 
@@ -158,11 +160,25 @@ pub struct BinderThread {
 
     /// The mutable state of the binder thread, protected by a single lock.
     pub state: Mutex<BinderThreadState>,
+
+    /// A hint as to whether or not the thread is available. This is eventually consistent with the
+    /// state protected by the lock.
+    pub available: AtomicBool,
+
+    /// A hint as to the registration state of the thread. This is eventually consistent with the
+    /// state protected by the lock.
+    pub registration: AtomicU8,
+
+    /// A reference to the wait queue for the command queue. This allows other threads to notify
+    /// this thread without acquiring the lock.
+    pub command_queue_waiters: WaitQueue,
 }
 
 impl BinderThread {
     pub fn new(binder_proc: &BinderProcessGuard<'_>, tid: pid_t) -> OwnedRef<Self> {
-        let state = Mutex::new(BinderThreadState::new(tid, binder_proc.base.identifier));
+        let inner_state = BinderThreadState::new(tid, binder_proc.base.identifier);
+        let command_queue_waiters = inner_state.command_queue.waiters.clone();
+        let state = Mutex::new(inner_state);
         #[cfg(any(test, debug_assertions))]
         {
             // The state must be acquired after the mutable state from the `BinderProcess` and before
@@ -171,19 +187,27 @@ impl BinderThread {
             let _l1 = state.lock();
             let _l2 = binder_proc.base.command_queue.lock();
         }
-        OwnedRef::new_cyclic(|weak_self| Self { weak_self, tid, state })
+        OwnedRef::new_cyclic(|weak_self| Self {
+            weak_self,
+            tid,
+            state,
+            available: AtomicBool::new(false),
+            registration: AtomicU8::new(RegistrationState::Unregistered.to_u8()),
+            command_queue_waiters,
+        })
     }
 
     /// Acquire the lock to the binder thread's mutable state.
-    pub fn lock(&self) -> MutexGuard<'_, BinderThreadState> {
-        self.state.lock()
+    pub fn lock(&self) -> BinderThreadGuard<'_> {
+        BinderThreadGuard { guard: self.state.lock(), thread: self }
     }
 
     pub fn lock_both<'a>(
         t1: &'a Self,
         t2: &'a Self,
-    ) -> (MutexGuard<'a, BinderThreadState>, MutexGuard<'a, BinderThreadState>) {
-        ordered_lock(&t1.state, &t2.state)
+    ) -> (BinderThreadGuard<'a>, BinderThreadGuard<'a>) {
+        let (g1, g2) = ordered_lock(&t1.state, &t2.state);
+        (BinderThreadGuard { guard: g1, thread: t1 }, BinderThreadGuard { guard: g2, thread: t2 })
     }
 }
 
@@ -215,6 +239,32 @@ pub struct BinderThreadState {
     pub request_kick: bool,
 }
 
+pub struct BinderThreadGuard<'a> {
+    guard: MutexGuard<'a, BinderThreadState>,
+    thread: &'a BinderThread,
+}
+
+impl Deref for BinderThreadGuard<'_> {
+    type Target = BinderThreadState;
+
+    fn deref(&self) -> &Self::Target {
+        self.guard.deref()
+    }
+}
+
+impl DerefMut for BinderThreadGuard<'_> {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        self.guard.deref_mut()
+    }
+}
+
+impl Drop for BinderThreadGuard<'_> {
+    fn drop(&mut self) {
+        self.thread.available.store(self.guard.is_available(), Ordering::Release);
+        self.thread.registration.store(self.guard.registration.to_u8(), Ordering::Release);
+    }
+}
+
 impl BinderThreadState {
     pub fn new(tid: pid_t, process_identifier: u64) -> Self {
         Self {
@@ -229,10 +279,6 @@ impl BinderThreadState {
 
     pub fn is_main_or_registered(&self) -> bool {
         self.registration != RegistrationState::Unregistered
-    }
-
-    pub fn is_registered(&self) -> bool {
-        self.registration == RegistrationState::Auxilliary
     }
 
     pub fn is_available(&self) -> bool {
@@ -359,6 +405,16 @@ pub enum RegistrationState {
     Main,
     /// The thread is an auxiliary binder thread.
     Auxilliary,
+}
+
+impl RegistrationState {
+    pub fn to_u8(&self) -> u8 {
+        match self {
+            Self::Unregistered => 0,
+            Self::Main => 1,
+            Self::Auxilliary => 2,
+        }
+    }
 }
 
 impl Default for RegistrationState {

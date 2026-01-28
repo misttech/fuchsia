@@ -891,7 +891,7 @@ impl PartialEq for WaiterRef {
 /// on the thread that triggered the event to notify the waiters that the event
 /// has occurred. The waiters will then wake up on their own thread to handle
 /// the event.
-#[derive(Default, Debug)]
+#[derive(Default, Debug, Clone)]
 pub struct WaitQueue(Arc<Mutex<WaitQueueImpl>>);
 
 #[derive(Debug)]
