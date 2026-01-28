@@ -21,6 +21,8 @@ namespace {
 
 using SanitizerBeforeThreadCreateHook = Weak<__sanitizer_before_thread_create_hook>;
 
+using ThreadState = zxr_thread_t::State;
+
 // TODO(https://fxbug.dev/342469121): This is only needed in this form while
 // using the legacy musl dynamic linker.  The new libdl's implementation of
 // dlopen needs some analogous locking, but it can be done at finer grain.
@@ -54,7 +56,8 @@ extern "C" void __thread_allocation_release() {
 
 zx::result<CreatedThread> ThreadCreate(ThreadAttributes attrs) {
   assert(!attrs.name.empty());
-  std::string_view vmo_name = attrs.name.str();
+  std::string_view thread_name = attrs.name.str();
+  std::string_view vmo_name = thread_name;
 
   // First allocate the storage for the Thread, its stacks, etc.
   CreatedThread thread;
@@ -91,13 +94,18 @@ zx::result<CreatedThread> ThreadCreate(ThreadAttributes attrs) {
   // kernel thread yet, so it's time to create that now.
   Thread& self = *__pthread_self();
   zx::unowned_process process{self.process_handle};
-  zx_status_t status =
-      // TODO(mcgrathr): fold in zxr layer: `zx::thread::create(*process,
-      // name.data(), static_cast<uint32_t>(name.size()), 0, &thread_handle);`
-      zxr_thread_create(process->get(), attrs.name.c_str(), attrs.detached, &thread->zxr_thread);
+  zx::thread thread_handle;
+  zx_status_t status = zx::thread::create(
+      *process, thread_name.data(), static_cast<uint32_t>(thread_name.size()), 0, &thread_handle);
   if (status != ZX_OK) [[unlikely]] {
     return zx::error{status};
   }
+  thread->zxr_thread.handle = thread_handle.release();
+
+  const ThreadState initial_state =  // State must be set before ThreadStart.
+      attrs.detached ? ThreadState::DETACHED : ThreadState::JOINABLE;
+  // The state update is always ordered after the handle update.
+  thread->zxr_thread.state.store(initial_state, std::memory_order_release);
 
   // This is the same in every thread, with the initial thread's slot holding
   // the original source of truth rather than any global location.

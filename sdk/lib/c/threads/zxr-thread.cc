@@ -87,32 +87,6 @@ static zx_futex_t* state_futex(zxr_thread_t* thread) {
   CRASH_WITH_UNIQUE_BACKTRACE();
 }
 
-// Local implementation so libruntime does not depend on libc.
-static size_t local_strlen(const char* s) {
-  size_t len = 0;
-  while (*s++ != '\0') {
-    ++len;
-  }
-  return len;
-}
-
-static void initialize_thread(zxr_thread_t* thread, zx_handle_t handle, bool detached) {
-  thread->handle = handle;
-  thread->state.store(detached ? State::DETACHED : State::JOINABLE, std::memory_order_release);
-}
-
-zx_status_t zxr_thread_create(zx_handle_t process, const char* name, bool detached,
-                              zxr_thread_t* thread) {
-  initialize_thread(thread, ZX_HANDLE_INVALID, detached);
-
-  if (name == nullptr) {
-    name = "";
-  }
-  const size_t name_length = local_strlen(name) + 1;
-
-  return _zx_thread_create(process, name, name_length, 0, &thread->handle);
-}
-
 static void wait_for_done(zxr_thread_t* thread, State old_state) {
   do {
     switch (_zx_futex_wait(state_futex(thread), static_cast<int>(old_state), ZX_HANDLE_INVALID,
