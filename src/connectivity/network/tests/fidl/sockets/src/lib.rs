@@ -4,32 +4,36 @@
 
 #![cfg(test)]
 
-use std::io::{ErrorKind, Read as _};
+use std::io::{ErrorKind, Read as _, Write as _};
 use std::os::fd::AsFd;
+use std::time::Duration;
 
 use assert_matches::assert_matches;
 use fidl::Error::ClientChannelClosed;
 use fidl_fuchsia_net_ext::IntoExt as _;
 use fidl_fuchsia_net_sockets::IpSocketState;
+use futures::TryStreamExt as _;
 use net_declare::std_ip_v6;
 use net_types::ip::{Ip, IpAddress, IpVersion};
 use netemul::RealmUdpSocket as _;
 use netstack_testing_common::realms::{Netstack3, TestSandboxExt as _};
 use netstack_testing_macros::netstack_test;
 use test_case::test_case;
+use test_util::{assert_geq, assert_gt};
 
 use {
     fidl_fuchsia_net as fnet, fidl_fuchsia_net_matchers as fnet_matchers,
     fidl_fuchsia_net_matchers_ext as fnet_matchers_ext, fidl_fuchsia_net_sockets as fnet_sockets,
     fidl_fuchsia_net_sockets_ext as fnet_sockets_ext, fidl_fuchsia_net_tcp as fnet_tcp,
     fidl_fuchsia_net_udp as fnet_udp, fidl_fuchsia_posix_socket as fposix_socket,
-    fuchsia_async as fasync, libc,
+    fuchsia_async as fasync,
 };
 
 const MARK_1: u32 = 100;
 const MARK_2: u32 = 200;
 const LOCAL_PORT: u16 = 1234;
 const IPV6_LOOPBACK: std::net::Ipv6Addr = std_ip_v6!("::1");
+const LISTEN_BACKLOG: i32 = 1;
 
 async fn socket_proxy<F: AsFd>(socket: &F) -> fposix_socket::BaseSocketProxy {
     let channel = fdio::clone_channel(socket).expect("failed to clone channel");
@@ -165,7 +169,7 @@ async fn test_sockets<I: Ip>(name: &str, protocol: Protocol, state: SocketState)
                 .unwrap();
             socket.bind(&local_addr.into()).unwrap();
             match state {
-                SocketState::Listen => socket.listen(1).unwrap(),
+                SocketState::Listen => socket.listen(LISTEN_BACKLOG).unwrap(),
                 // NOTE: This is a self-connected socket so we can avoid
                 // creating other TCP sockets that we'd just have to filter
                 // out.
@@ -410,7 +414,7 @@ async fn control_disconnect_ip_tcp_listener<I: Ip>(name: &str) {
     let listener =
         realm.stream_socket(domain, fposix_socket::StreamSocketProtocol::Tcp).await.unwrap();
     listener.bind(&local_addr.into()).unwrap();
-    listener.listen(1).expect("listen");
+    listener.listen(LISTEN_BACKLOG).expect("listen");
 
     let client =
         realm.stream_socket(domain, fposix_socket::StreamSocketProtocol::Tcp).await.unwrap();
@@ -444,7 +448,7 @@ async fn control_disconnect_ip_tcp_listener<I: Ip>(name: &str) {
     );
 
     // We're able to "resurrect" a listener by calling listen on it again.
-    listener.listen(1).expect("listen");
+    listener.listen(LISTEN_BACKLOG).expect("listen");
     let client =
         realm.stream_socket(domain, fposix_socket::StreamSocketProtocol::Tcp).await.unwrap();
     assert_matches!(client.connect(&local_addr.into()), Ok(_));
@@ -468,7 +472,7 @@ async fn control_disconnect_ip_tcp_listener_with_pending<I: Ip>(name: &str) {
     let listener =
         realm.stream_socket(domain, fposix_socket::StreamSocketProtocol::Tcp).await.unwrap();
     listener.bind(&local_addr.into()).unwrap();
-    listener.listen(1).expect("listen");
+    listener.listen(LISTEN_BACKLOG).expect("listen");
 
     // Connect a client but DO NOT accept to leave it in the accept queue.
     let client =
@@ -519,7 +523,7 @@ async fn control_disconnect_ip_tcp_connected<I: Ip>(name: &str) {
     let listener =
         realm.stream_socket(domain, fposix_socket::StreamSocketProtocol::Tcp).await.unwrap();
     listener.bind(&local_addr.into()).unwrap();
-    listener.listen(1).expect("listen");
+    listener.listen(LISTEN_BACKLOG).expect("listen");
 
     let client =
         realm.stream_socket(domain, fposix_socket::StreamSocketProtocol::Tcp).await.unwrap();
@@ -554,5 +558,160 @@ async fn control_disconnect_ip_tcp_connected<I: Ip>(name: &str) {
     assert_matches!(
         client.read(&mut buf),
         Err(err) => assert_eq!(err.kind(), ErrorKind::ConnectionReset)
+    );
+}
+
+#[netstack_test]
+#[variant(I, Ip)]
+async fn diagnostics_tcp_info<I: Ip>(name: &str) {
+    const SLEEP_MS: u64 = 100;
+
+    let sandbox = netemul::TestSandbox::new().expect("create sandbox");
+    let realm = sandbox.create_netstack_realm::<Netstack3, _>(name).expect("create realm");
+
+    let local_addr = std::net::SocketAddr::new(I::LOOPBACK_ADDRESS.to_ip_addr().into(), 0);
+    let domain = match I::VERSION {
+        IpVersion::V4 => fposix_socket::Domain::Ipv4,
+        IpVersion::V6 => fposix_socket::Domain::Ipv6,
+    };
+
+    let listener =
+        realm.stream_socket(domain, fposix_socket::StreamSocketProtocol::Tcp).await.unwrap();
+    listener.bind(&local_addr.into()).expect("bind");
+    let listener_addr = listener.local_addr().expect("local_addr");
+    listener.listen(LISTEN_BACKLOG).expect("listen");
+
+    let mut client =
+        realm.stream_socket(domain, fposix_socket::StreamSocketProtocol::Tcp).await.unwrap();
+    client.connect(&listener_addr.into()).expect("connect");
+    let client_addr = client.local_addr().expect("local_addr");
+
+    let (mut accepted, _accepted_addr) = listener.accept().expect("accept");
+
+    let payload = b"hello";
+    client.write_all(payload).expect("write_all");
+    let mut buf = [0u8; 5];
+    accepted.read_exact(&mut buf).expect("read_exact");
+    assert_eq!(&buf, payload);
+
+    // Sending data allows us to wait for the network to quiesce.
+    accepted.write_all(payload).expect("write_all server");
+    client.read_exact(&mut buf).expect("read_exact client");
+    assert_eq!(&buf, payload);
+
+    let diagnostics = realm
+        .connect_to_protocol::<fnet_sockets::DiagnosticsMarker>()
+        .expect("connect to protocol");
+
+    let client_addr = client_addr.as_socket().expect("as_socket");
+    let port = client_addr.port();
+    let addr = net_types::ip::IpAddr::from(client_addr.ip());
+    let prefix_len = I::Addr::BYTES * 8;
+
+    let matchers = [
+        fnet_sockets_ext::IpSocketMatcher::Family(I::VERSION),
+        fnet_sockets_ext::IpSocketMatcher::Proto(fnet_matchers_ext::SocketTransportProtocol::Tcp(
+            fnet_matchers_ext::TcpSocket::SrcPort(fnet_matchers_ext::BoundPort::Bound(
+                fnet_matchers_ext::Port::new(port, port, false).unwrap(),
+            )),
+        )),
+        fnet_sockets_ext::IpSocketMatcher::SrcAddr(fnet_matchers_ext::BoundAddress::Bound(
+            fnet_matchers_ext::Address {
+                matcher: fnet_matchers_ext::AddressMatcherType::Subnet(
+                    fnet_matchers_ext::Subnet::try_from(fnet::Subnet {
+                        addr: addr.into_ext(),
+                        prefix_len,
+                    })
+                    .unwrap(),
+                ),
+                invert: false,
+            },
+        )),
+    ];
+
+    let sockets: Vec<fnet_sockets::IpSocketState> = fnet_sockets_ext::iterate_ip(
+        &diagnostics,
+        fnet_sockets::Extensions::TCP_INFO,
+        matchers.clone(),
+    )
+    .await
+    .unwrap()
+    .try_collect()
+    .await
+    .unwrap();
+
+    // Capture last_data_sent and last_ack_recv for comparison after a sleep.
+    let (last_data_sent, last_ack_recv) = assert_matches!(
+        &sockets[..],
+        [fnet_sockets::IpSocketState {
+            transport: Some(fnet_sockets::IpSocketTransportState::Tcp(fnet_sockets::IpSocketTcpState {
+                tcp_info: Some(fnet_tcp::Info {
+                    state: Some(fnet_tcp::State::Established),
+                    ca_state: Some(fnet_tcp::CongestionControlState::Open),
+                    rto_usec: Some(rto),
+                    rtt_usec: Some(rtt),
+                    rtt_var_usec: Some(rtt_var),
+                    snd_ssthresh: Some(ssthresh),
+                    snd_cwnd: Some(cwnd),
+                    tcpi_total_retrans: Some(tcpi_total_retrans),
+                    tcpi_segs_out: Some(segs_out),
+                    tcpi_segs_in: Some(segs_in),
+                    reorder_seen: None,
+                    tcpi_last_data_sent_msec: Some(last_data_sent),
+                    tcpi_last_ack_recv_msec: Some(last_ack_recv),
+                    __source_breaking,
+                }),
+                state: Some(fnet_tcp::State::Established),
+                ..
+            })),
+            ..
+        }] => {
+            // We can't verify exact values for RTT/variances, but we can at least
+            // verify that they're reasonable.
+            assert_gt!(*rto, 0);
+            assert_gt!(*rtt, 0);
+            assert_gt!(*rtt_var, 0);
+            assert_gt!(*ssthresh, 0);
+            assert_gt!(*cwnd, 0);
+            assert_gt!(*segs_out, 0);
+            assert_gt!(*segs_in, 0);
+            assert_eq!(*tcpi_total_retrans, 0);
+            (*last_data_sent, *last_ack_recv)
+        }
+    );
+
+    // Sleep for a bit to ensure the timestamps increase. SLEEP_MS is arbitrary
+    // but plenty long enough to be measurable (1ms granularity).
+    fasync::Timer::new(Duration::from_millis(SLEEP_MS)).await;
+
+    // We don't send any more data, the "time since last X" metrics will increase
+    // by at least the sleep duration.
+
+    let sockets: Vec<fnet_sockets::IpSocketState> =
+        fnet_sockets_ext::iterate_ip(&diagnostics, fnet_sockets::Extensions::TCP_INFO, matchers)
+            .await
+            .unwrap()
+            .try_collect()
+            .await
+            .unwrap();
+
+    assert_matches!(
+        &sockets[..],
+        [fnet_sockets::IpSocketState {
+            transport: Some(fnet_sockets::IpSocketTransportState::Tcp(
+                fnet_sockets::IpSocketTcpState {
+                    tcp_info: Some(fnet_tcp::Info {
+                        tcpi_last_data_sent_msec: Some(new_last_data_sent),
+                        tcpi_last_ack_recv_msec: Some(new_last_ack_recv),
+                        ..
+                    }),
+                    ..
+                }
+            )),
+            ..
+        }] => {
+            assert_geq!(*new_last_data_sent, last_data_sent + u32::try_from(SLEEP_MS).unwrap());
+            assert_geq!(*new_last_ack_recv, last_ack_recv + u32::try_from(SLEEP_MS).unwrap());
+        }
     );
 }

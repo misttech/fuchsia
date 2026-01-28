@@ -703,7 +703,8 @@ where
         && incoming.header().control == Some(Control::SYN)
         && incoming.header().ack.is_none()
     {
-        if let State::TimeWait(TimeWait { last_seq: _, closed_rcv, expiry: _ }) = state {
+        if let State::TimeWait(TimeWait { last_seq: _, closed_rcv, expiry: _, snd_info: _ }) = state
+        {
             if !incoming.header().seq.before(closed_rcv.ack) {
                 return ConnectionIncomingSegmentDisposition::ReuseCandidateForListener;
             }

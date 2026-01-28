@@ -55,6 +55,7 @@ pub use internal::socket::{
     TcpDemuxContext, TcpDualStackContext, TcpIpTransportContext, TcpSocketId, TcpSocketSet,
     TcpSocketState, TcpTimerId, UnboundInfo, WeakTcpSocketId,
 };
+pub use internal::state::info::{CongestionControlState, TcpSocketInfo};
 
 /// TCP test utilities.
 #[cfg(any(test, feature = "testutils"))]

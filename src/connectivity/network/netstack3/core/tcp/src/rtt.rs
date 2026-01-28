@@ -83,6 +83,13 @@ impl Estimator {
             Self::Measured { srtt, rtt_var: _ } => Some(*srtt),
         }
     }
+
+    pub(super) fn rtt_var(&self) -> Option<Duration> {
+        match self {
+            Self::NoSample => None,
+            Self::Measured { srtt: _, rtt_var } => Some(*rtt_var),
+        }
+    }
 }
 
 /// A retransmit timeout value.

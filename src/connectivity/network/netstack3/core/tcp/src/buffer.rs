@@ -512,6 +512,11 @@ pub(crate) mod testutil {
         pub fn new(fake_stream: Arc<Mutex<Vec<u8>>>, ring: RingBuffer) -> TestSendBuffer {
             Self { fake_stream, ring }
         }
+
+        /// Enqueues data into the buffer.
+        pub fn enqueue_data(&mut self, data: &[u8]) {
+            self.fake_stream.lock().extend_from_slice(data);
+        }
     }
 
     impl Buffer for TestSendBuffer {

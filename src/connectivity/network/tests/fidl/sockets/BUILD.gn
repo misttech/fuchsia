@@ -26,7 +26,9 @@ rustc_test("sockets") {
     "//src/lib/network/fidl_fuchsia_net_ext",
     "//src/lib/network/fidl_fuchsia_net_matchers_ext",
     "//src/lib/network/fidl_fuchsia_net_sockets_ext",
+    "//src/lib/test_util",
     "//third_party/rust_crates:assert_matches",
+    "//third_party/rust_crates:futures",
     "//third_party/rust_crates:libc",
     "//third_party/rust_crates:test-case",
   ]

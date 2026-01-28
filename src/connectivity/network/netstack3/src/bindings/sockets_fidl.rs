@@ -11,19 +11,21 @@ use fidl_fuchsia_net_sockets::{self as fnet_sockets};
 use fidl_fuchsia_net_sockets_ext::IpSocketMatcherError;
 use futures::TryStreamExt;
 use net_types::ip::{Ip, IpAddress as _, Ipv4, Ipv6};
-use netstack3_core::MatcherBindingsTypes;
 use netstack3_core::socket::IpSocketMatcher;
 use netstack3_core::tcp::{TcpSocketDiagnostics, TcpSocketState};
 use netstack3_core::udp::{UdpSocketDiagnosticTuple, UdpSocketDiagnostics};
+use netstack3_core::{Instant as _, MatcherBindingsTypes};
 use {
     fidl_fuchsia_net as fnet, fidl_fuchsia_net_sockets_ext as fnet_sockets_ext,
     fidl_fuchsia_net_tcp as fnet_tcp, fidl_fuchsia_net_udp as fnet_udp, fuchsia_async as fasync,
 };
 
+use crate::bindings::time::StackTime;
 use crate::bindings::util::{
     IntoCore as _, IntoFidl as _, IntoFidlExtender, ScopeExt as _, TryFromFidl, TryIntoFidl,
 };
 use crate::bindings::{BindingsCtx, Ctx};
+use netstack3_core::tcp::{CongestionControlState, TcpSocketInfo};
 
 pub(crate) async fn serve_diagnostics(
     mut stream: fnet_sockets::DiagnosticsRequestStream,
@@ -34,12 +36,10 @@ pub(crate) async fn serve_diagnostics(
         match req {
             fidl_fuchsia_net_sockets::DiagnosticsRequest::IterateIp {
                 s,
-                // TODO(https://fxbug.dev/449158649): Add support for the
-                // TCP_INFO extension.
-                extensions: _,
+                extensions,
                 matchers,
                 responder,
-            } => match iterate_ip(&mut ctx, matchers) {
+            } => match iterate_ip(&mut ctx, extensions, matchers) {
                 Ok(results) => {
                     fasync::Scope::current()
                         .spawn_request_stream_handler(s.into_stream(), |requests| {
@@ -57,6 +57,7 @@ pub(crate) async fn serve_diagnostics(
 
 fn iterate_ip(
     ctx: &mut Ctx,
+    extensions: fnet_sockets::Extensions,
     matchers: Vec<fnet_sockets::IpSocketMatcher>,
 ) -> Result<Vec<fnet_sockets::IpSocketState>, fnet_sockets::InvalidMatcher> {
     let matchers = match convert_matchers(matchers) {
@@ -72,13 +73,15 @@ fn iterate_ip(
         }
     };
 
+    let tcp_info = extensions.contains(fnet_sockets::Extensions::TCP_INFO);
+
     // TODO(https://fxbug.dev/452064956): Track which transport
     // protocols and IP versions could be matched and scope the API
     // calls to just those.
     let mut results = IntoFidlExtender::new(Vec::new());
-    ctx.api().tcp::<Ipv4>().bound_sockets_diagnostics(&matchers[..], &mut results);
+    ctx.api().tcp::<Ipv4>().bound_sockets_diagnostics(&matchers[..], &mut results, tcp_info);
     ctx.api().udp::<Ipv4>().bound_sockets_diagnostics(&matchers[..], &mut results);
-    ctx.api().tcp::<Ipv6>().bound_sockets_diagnostics(&matchers[..], &mut results);
+    ctx.api().tcp::<Ipv6>().bound_sockets_diagnostics(&matchers[..], &mut results, tcp_info);
     ctx.api().udp::<Ipv6>().bound_sockets_diagnostics(&matchers[..], &mut results);
 
     Ok(results.into_inner())
@@ -263,11 +266,71 @@ impl TryIntoFidl<fnet_tcp::State> for TcpSocketState {
     }
 }
 
-impl<I: Ip> TryIntoFidl<fnet_sockets::IpSocketState> for TcpSocketDiagnostics<I> {
+impl TryIntoFidl<fnet_tcp::CongestionControlState> for CongestionControlState {
+    type Error = Never;
+    fn try_into_fidl(self) -> Result<fnet_tcp::CongestionControlState, Self::Error> {
+        Ok(match self {
+            CongestionControlState::Open => fnet_tcp::CongestionControlState::Open,
+            CongestionControlState::Disorder => fnet_tcp::CongestionControlState::Disorder,
+            CongestionControlState::CongestionWindowReduced => {
+                fnet_tcp::CongestionControlState::CongestionWindowReduced
+            }
+            CongestionControlState::Recovery => fnet_tcp::CongestionControlState::Recovery,
+            CongestionControlState::Loss => fnet_tcp::CongestionControlState::Loss,
+        })
+    }
+}
+
+impl TryIntoFidl<fnet_tcp::Info> for TcpSocketInfo<StackTime> {
+    type Error = Never;
+    fn try_into_fidl(self) -> Result<fnet_tcp::Info, Self::Error> {
+        let TcpSocketInfo {
+            state,
+            ca_state,
+            rto,
+            rtt,
+            rtt_var,
+            snd_ssthresh,
+            snd_cwnd,
+            retransmits,
+            last_ack_recv,
+            segs_out,
+            segs_in,
+            last_data_sent,
+        } = self;
+
+        let now = StackTime::now();
+
+        Ok(fnet_tcp::Info {
+            state: Some(state.into_fidl()),
+            ca_state: Some(ca_state.try_into_fidl()?),
+            rto_usec: rto.map(|d| d.as_micros().try_into().unwrap_or(u32::MAX)),
+            rtt_usec: rtt.map(|d| d.as_micros().try_into().unwrap_or(u32::MAX)),
+            rtt_var_usec: rtt_var.map(|d| d.as_micros().try_into().unwrap_or(u32::MAX)),
+            snd_ssthresh: Some(snd_ssthresh),
+            snd_cwnd: Some(snd_cwnd),
+            tcpi_total_retrans: Some(retransmits.try_into().unwrap_or(u32::MAX)),
+            tcpi_last_ack_recv_msec: last_ack_recv.and_then(|i| {
+                now.checked_duration_since(i).map(|d| d.as_millis().try_into().unwrap_or(u32::MAX))
+            }),
+            tcpi_segs_out: Some(segs_out),
+            tcpi_segs_in: Some(segs_in),
+            // TODO(https://fxbug.dev/404910001): Netstack2 only reports
+            // reordering when using RACK, which Netstack3 doesn't support.
+            reorder_seen: None,
+            tcpi_last_data_sent_msec: last_data_sent.and_then(|i| {
+                now.checked_duration_since(i).map(|d| d.as_millis().try_into().unwrap_or(u32::MAX))
+            }),
+            __source_breaking: fidl::marker::SourceBreaking,
+        })
+    }
+}
+
+impl<I: Ip> TryIntoFidl<fnet_sockets::IpSocketState> for TcpSocketDiagnostics<I, StackTime> {
     type Error = Never;
 
     fn try_into_fidl(self) -> Result<fnet_sockets::IpSocketState, Self::Error> {
-        let TcpSocketDiagnostics { tuple, state_machine, cookie, marks } = self;
+        let TcpSocketDiagnostics { tuple, state_machine, cookie, marks, tcp_info } = self;
 
         Ok(fnet_sockets::IpSocketState {
             family: Some(I::map_ip_in((), |()| fnet::IpVersion::V4, |()| fnet::IpVersion::V6)),
@@ -280,9 +343,7 @@ impl<I: Ip> TryIntoFidl<fnet_sockets::IpSocketState> for TcpSocketDiagnostics<I>
                     src_port: tuple.src_port().map(|p| p.get()),
                     dst_port: tuple.dst_port().map(|p| p.get()),
                     state: Some(state_machine.into_fidl()),
-                    // TODO(https://fxbug.dev/449158649): Add support for the
-                    // TCP_INFO extension.
-                    tcp_info: None,
+                    tcp_info: tcp_info.map(|i| i.into_fidl()),
                     __source_breaking: fidl::marker::SourceBreaking,
                 },
             )),

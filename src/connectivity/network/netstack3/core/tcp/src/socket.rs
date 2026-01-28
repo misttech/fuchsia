@@ -89,6 +89,7 @@ use crate::internal::socket::demux::tcp_serialize_segment;
 use crate::internal::socket::diagnostics::{TcpSocketDiagnostics, TcpSocketStateForMatching};
 
 use crate::internal::socket::generators::{IsnGenerator, TimestampOffsetGenerator};
+use crate::internal::state::info::TcpSocketInfo;
 use crate::internal::state::{
     CloseError, CloseReason, Closed, Initial, NewlyClosed, ShouldRetransmit, State,
     StateMachineDebugId, Takeable, TakeableRef,
@@ -4495,11 +4496,15 @@ where
     }
 
     /// Get diagnostic information for sockets matching the provided matcher.
-    pub fn bound_sockets_diagnostics<M, E>(&mut self, matcher: &M, results: &mut E)
-    where
+    pub fn bound_sockets_diagnostics<M, E>(
+        &mut self,
+        matcher: &M,
+        results: &mut E,
+        extended_info: bool,
+    ) where
         M: IpSocketPropertiesMatcher<<C::BindingsContext as MatcherBindingsTypes>::DeviceClass>
             + ?Sized,
-        E: Extend<TcpSocketDiagnostics<I>>,
+        E: Extend<TcpSocketDiagnostics<I, <C::BindingsContext as InstantBindingsTypes>::Instant>>,
         <C::CoreContext as DeviceIdContext<AnyDevice>>::DeviceId:
             netstack3_base::InterfaceProperties<
                     <C::BindingsContext as MatcherBindingsTypes>::DeviceClass,
@@ -4512,9 +4517,16 @@ where
 
             // get_diagnostics returns None if the socket is unbound, which
             // we're not returning in order to match Linux's behavior.
-            results.extend(state.get_diagnostics().map(|(tuple, state_machine, marks)| {
-                TcpSocketDiagnostics { tuple, state_machine, cookie: id.socket_cookie(), marks }
-            }));
+            let counters = id.counters();
+            results.extend(state.get_diagnostics(counters, extended_info).map(
+                |(tuple, state_machine, marks, tcp_info)| TcpSocketDiagnostics {
+                    tuple,
+                    state_machine,
+                    cookie: id.socket_cookie(),
+                    marks,
+                    tcp_info,
+                },
+            ));
         });
     }
 
@@ -5850,6 +5862,24 @@ fn send_tcp_segment<'a, WireI, SockI, CC, BC, D>(
                 None => debug!("TCP: failed to send segment: {:?}", err),
             }
         }
+    }
+}
+
+impl<I, C> TcpApi<I, C>
+where
+    I: DualStackIpExt,
+    C: ContextPair,
+    C::CoreContext: TcpContext<I, C::BindingsContext>,
+    C::BindingsContext: TcpBindingsContext<
+        <<C as ContextPair>::CoreContext as DeviceIdContext<AnyDevice>>::DeviceId,
+    >,
+{
+    /// Gets detailed diagnostic information about the TCP socket.
+    pub fn get_tcp_info(
+        &mut self,
+        id: &TcpApiSocketId<I, C>,
+    ) -> TcpSocketInfo<<C::BindingsContext as InstantBindingsTypes>::Instant> {
+        self.core_ctx().with_socket(id, |socket_state| socket_state.tcp_info(id.counters()))
     }
 }
 

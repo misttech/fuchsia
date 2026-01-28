@@ -11,9 +11,10 @@ use netstack3_base::{IpSocketProperties, Marks, Matcher, WeakDeviceIdentifier};
 
 use crate::internal::socket::{
     BoundSocketState, DualStackIpExt, MaybeListener, SocketCookie, TcpBindingsTypes, TcpSocketId,
-    TcpSocketState, TcpSocketStateInner,
+    TcpSocketState, TcpSocketStateInner, Unbound,
 };
 use crate::internal::state::State;
+use crate::internal::state::info::TcpSocketInfo;
 
 /// Required state gathered into one struct for matching a socket, so it's
 /// possible to implement traits against the collection.
@@ -152,7 +153,7 @@ where
 
 /// Publicly-accessible diagnostic information about TCP sockets.
 #[cfg_attr(any(test, feature = "testutils"), derive(Debug, PartialEq, Eq))]
-pub struct TcpSocketDiagnostics<I: Ip> {
+pub struct TcpSocketDiagnostics<I: Ip, Instant> {
     /// The socket's TCP state machine.
     pub state_machine: netstack3_base::TcpSocketState,
     /// The socket's tuple.
@@ -161,6 +162,8 @@ pub struct TcpSocketDiagnostics<I: Ip> {
     pub cookie: SocketCookie,
     /// The socket's marks.
     pub marks: Marks,
+    /// The socket's extended info.
+    pub tcp_info: Option<TcpSocketInfo<Instant>>,
 }
 
 /// The tuple of a TCP socket.
@@ -221,9 +224,35 @@ where
     D: WeakDeviceIdentifier,
     BT: TcpBindingsTypes,
 {
+    pub(crate) fn tcp_info(
+        &self,
+        counters: &crate::internal::counters::TcpCountersWithSocket<I>,
+    ) -> TcpSocketInfo<BT::Instant> {
+        match &self.socket_state {
+            TcpSocketStateInner::Unbound(unbound) => {
+                TcpSocketInfo::from_partial_state(unbound.base_state(), counters.as_ref())
+            }
+            TcpSocketStateInner::Bound(BoundSocketState::Listener((maybe_listener, _, _))) => {
+                TcpSocketInfo::from_partial_state(maybe_listener.base_state(), counters.as_ref())
+            }
+            TcpSocketStateInner::Bound(BoundSocketState::Connected {
+                conn,
+                sharing: _,
+                timer: _,
+            }) => TcpSocketInfo::from_full_state(I::get_state(conn), counters.as_ref()),
+        }
+    }
+
     pub(crate) fn get_diagnostics(
         &self,
-    ) -> Option<(TcpSocketDiagnosticTuple<I>, netstack3_base::TcpSocketState, Marks)> {
+        counters: &crate::internal::counters::TcpCountersWithSocket<I>,
+        extended_info: bool,
+    ) -> Option<(
+        TcpSocketDiagnosticTuple<I>,
+        netstack3_base::TcpSocketState,
+        Marks,
+        Option<TcpSocketInfo<BT::Instant>>,
+    )> {
         let tuple = match &self.socket_state {
             TcpSocketStateInner::Unbound(_) => None,
             TcpSocketStateInner::Bound(BoundSocketState::Listener((_, _, addr))) => {
@@ -244,20 +273,19 @@ where
             }
         }?;
 
-        Some((tuple, self.base_state(), self.socket_options.ip_options.marks))
+        Some((
+            tuple,
+            self.base_state(),
+            self.socket_options.ip_options.marks,
+            extended_info.then(|| self.tcp_info(counters)),
+        ))
     }
 
     pub(crate) fn base_state(&self) -> netstack3_base::TcpSocketState {
         match &self.socket_state {
-            TcpSocketStateInner::Unbound(_) => netstack3_base::TcpSocketState::Close,
+            TcpSocketStateInner::Unbound(unbound) => unbound.base_state(),
             TcpSocketStateInner::Bound(BoundSocketState::Listener((maybe_listener, _, _))) => {
-                match maybe_listener {
-                    MaybeListener::Listener(_) => netstack3_base::TcpSocketState::Listen,
-                    // Despite being in the BoundSocketState::Listener variant,
-                    // this is used for a socket that is bound, but not yet
-                    // either connected or listening.
-                    MaybeListener::Bound(_) => netstack3_base::TcpSocketState::Close,
-                }
+                maybe_listener.base_state()
             }
             TcpSocketStateInner::Bound(BoundSocketState::Connected { conn, .. }) => {
                 match I::get_state(conn) {
@@ -278,6 +306,24 @@ where
     }
 }
 
+impl<I: DualStackIpExt, D: WeakDeviceIdentifier, BT: TcpBindingsTypes> MaybeListener<I, D, BT> {
+    fn base_state(&self) -> netstack3_base::TcpSocketState {
+        match self {
+            MaybeListener::Listener(_) => netstack3_base::TcpSocketState::Listen,
+            // Despite being in the BoundSocketState::Listener variant,
+            // this is used for a socket that is bound, but not yet
+            // either connected or listening.
+            MaybeListener::Bound(_) => netstack3_base::TcpSocketState::Close,
+        }
+    }
+}
+
+impl<D, Extra> Unbound<D, Extra> {
+    fn base_state(&self) -> netstack3_base::TcpSocketState {
+        netstack3_base::TcpSocketState::Close
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use alloc::string::ToString;
@@ -285,17 +331,22 @@ mod tests {
     use alloc::vec::Vec;
     use assert_matches::assert_matches;
     use core::num::NonZeroUsize;
+    use core::time::Duration;
 
     use ip_test_macro::ip_test;
     use net_types::ZonedAddr;
     use net_types::ip::{Ip, Subnet};
-    use netstack3_base::testutil::{FakeDeviceId, FakeNetworkSpec as _, set_logger_for_test};
+    use netstack3_base::testutil::{
+        FakeDeviceId, FakeInstant, FakeNetworkSpec as _, set_logger_for_test,
+    };
     use netstack3_base::{
         AddressMatcher, AddressMatcherEither, AddressMatcherType, BoundAddressMatcherEither,
         BoundInterfaceMatcher, BoundPortMatcher, InterfaceMatcher, IpSocketMatcher, Mark,
         MarkDomain, MarkMatcher, PortMatcher, SocketCookieMatcher, SocketTransportProtocolMatcher,
         StrongDeviceIdentifier, SubnetMatcher, TcpSocketMatcher, TcpStateMatcher, UdpSocketMatcher,
     };
+    use test_case::test_case;
+    use test_util::assert_gt;
 
     use super::*;
     use crate::AcceptError;
@@ -304,6 +355,7 @@ mod tests {
     use crate::internal::socket::tests::{
         FakeTcpNetworkSpec, TcpApiExt, TcpBindingsCtx, TcpCoreCtx, TcpCtx, TcpTestIpExt,
     };
+    use crate::internal::state::info::CongestionControlState;
 
     const LOCAL_PORT_1: NonZeroU16 = NonZeroU16::new(1234).unwrap();
     const LOCAL_PORT_2: NonZeroU16 = NonZeroU16::new(5678).unwrap();
@@ -333,7 +385,7 @@ mod tests {
         api.listen(&s, NonZeroUsize::new(1).unwrap()).expect("listen should succeed");
 
         let mut results = Vec::new();
-        api.bound_sockets_diagnostics(&IpSocketMatcher::Family(I::VERSION), &mut results);
+        api.bound_sockets_diagnostics(&IpSocketMatcher::Family(I::VERSION), &mut results, false);
         assert_eq!(
             results,
             vec![TcpSocketDiagnostics {
@@ -341,6 +393,7 @@ mod tests {
                 tuple: TcpSocketDiagnosticTuple::Bound { src_addr: None, src_port: LOCAL_PORT_1 },
                 cookie: s.socket_cookie(),
                 marks: Marks::default(),
+                tcp_info: None,
             }]
         );
 
@@ -350,6 +403,7 @@ mod tests {
                 <<I as netstack3_base::socket::DualStackIpExt>::OtherVersion as Ip>::VERSION,
             ),
             &mut results,
+            false,
         );
         assert_eq!(results, Vec::new());
     }
@@ -392,7 +446,7 @@ mod tests {
                 }))
             },
         );
-        api.bound_sockets_diagnostics(&IpSocketMatcher::SrcAddr(matcher), &mut results);
+        api.bound_sockets_diagnostics(&IpSocketMatcher::SrcAddr(matcher), &mut results, false);
         assert_eq!(
             results,
             vec![TcpSocketDiagnostics {
@@ -403,6 +457,7 @@ mod tests {
                 },
                 cookie: s.socket_cookie(),
                 marks: Marks::default(),
+                tcp_info: None,
             }]
         );
 
@@ -426,7 +481,7 @@ mod tests {
                 }))
             },
         );
-        api.bound_sockets_diagnostics(&IpSocketMatcher::SrcAddr(matcher), &mut results);
+        api.bound_sockets_diagnostics(&IpSocketMatcher::SrcAddr(matcher), &mut results, false);
         assert_eq!(results, Vec::new());
     }
 
@@ -469,7 +524,7 @@ mod tests {
                 }))
             },
         );
-        api.bound_sockets_diagnostics(&IpSocketMatcher::DstAddr(matcher), &mut results);
+        api.bound_sockets_diagnostics(&IpSocketMatcher::DstAddr(matcher), &mut results, false);
         assert_eq!(
             results,
             vec![TcpSocketDiagnostics {
@@ -482,6 +537,7 @@ mod tests {
                 },
                 cookie: s.socket_cookie(),
                 marks: Marks::default(),
+                tcp_info: None,
             }]
         );
 
@@ -505,7 +561,7 @@ mod tests {
                 }))
             },
         );
-        api.bound_sockets_diagnostics(&IpSocketMatcher::DstAddr(matcher), &mut results);
+        api.bound_sockets_diagnostics(&IpSocketMatcher::DstAddr(matcher), &mut results, false);
         assert_eq!(results, Vec::new());
     }
 
@@ -530,6 +586,7 @@ mod tests {
         api.bound_sockets_diagnostics(
             &IpSocketMatcher::Proto(SocketTransportProtocolMatcher::Tcp(TcpSocketMatcher::Empty)),
             &mut results,
+            false,
         );
         assert_eq!(
             results,
@@ -538,6 +595,7 @@ mod tests {
                 tuple: TcpSocketDiagnosticTuple::Bound { src_addr: None, src_port: LOCAL_PORT_1 },
                 cookie: s.socket_cookie(),
                 marks: Marks::default(),
+                tcp_info: None,
             }]
         );
 
@@ -545,6 +603,7 @@ mod tests {
         api.bound_sockets_diagnostics(
             &IpSocketMatcher::Proto(SocketTransportProtocolMatcher::Udp(UdpSocketMatcher::Empty)),
             &mut results,
+            false,
         );
         assert_eq!(results, Vec::new());
     }
@@ -573,6 +632,7 @@ mod tests {
                 FakeDeviceId::FAKE_NAME.to_string(),
             ))),
             &mut results,
+            false,
         );
         assert_eq!(
             results,
@@ -581,6 +641,7 @@ mod tests {
                 tuple: TcpSocketDiagnosticTuple::Bound { src_addr: None, src_port: LOCAL_PORT_1 },
                 cookie: s.socket_cookie(),
                 marks: Marks::default(),
+                tcp_info: None,
             }]
         );
 
@@ -588,6 +649,7 @@ mod tests {
         api.bound_sockets_diagnostics(
             &IpSocketMatcher::BoundInterface(BoundInterfaceMatcher::Unbound),
             &mut results,
+            false,
         );
         assert_eq!(results, Vec::new());
     }
@@ -620,6 +682,7 @@ mod tests {
                 invert: false,
             }),
             &mut results,
+            false,
         );
         assert_eq!(
             results,
@@ -628,6 +691,7 @@ mod tests {
                 tuple: TcpSocketDiagnosticTuple::Bound { src_addr: None, src_port: LOCAL_PORT_1 },
                 cookie: socket_1.socket_cookie(),
                 marks: Marks::default(),
+                tcp_info: None,
             }]
         );
 
@@ -638,6 +702,7 @@ mod tests {
                 invert: false,
             }),
             &mut results,
+            false,
         );
         assert_eq!(
             results,
@@ -646,6 +711,7 @@ mod tests {
                 tuple: TcpSocketDiagnosticTuple::Bound { src_addr: None, src_port: LOCAL_PORT_2 },
                 cookie: socket_2.socket_cookie(),
                 marks: Marks::default(),
+                tcp_info: None,
             }]
         );
     }
@@ -683,7 +749,7 @@ mod tests {
                 },
             })
         };
-        api.bound_sockets_diagnostics(&matcher(MARK), &mut results);
+        api.bound_sockets_diagnostics(&matcher(MARK), &mut results, false);
         assert_eq!(
             results,
             vec![TcpSocketDiagnostics {
@@ -691,11 +757,12 @@ mod tests {
                 tuple: TcpSocketDiagnosticTuple::Bound { src_addr: None, src_port: LOCAL_PORT_1 },
                 cookie: s.socket_cookie(),
                 marks: netstack3_base::MarkStorage::new([(domain, MARK)]),
+                tcp_info: None,
             }]
         );
 
         results.clear();
-        api.bound_sockets_diagnostics(&matcher(MARK + 1), &mut results);
+        api.bound_sockets_diagnostics(&matcher(MARK + 1), &mut results, false);
         assert_eq!(results, Vec::new());
     }
 
@@ -739,6 +806,7 @@ mod tests {
                 })),
             )),
             &mut results,
+            false,
         );
 
         results.sort_by(|a, b| a.cookie.cmp(&b.cookie));
@@ -753,6 +821,7 @@ mod tests {
                 },
                 cookie: socket_1.socket_cookie(),
                 marks: Marks::default(),
+                tcp_info: None,
             },
             TcpSocketDiagnostics {
                 state_machine: netstack3_base::TcpSocketState::SynSent,
@@ -764,6 +833,7 @@ mod tests {
                 },
                 cookie: socket_2.socket_cookie(),
                 marks: Marks::default(),
+                tcp_info: None,
             },
         ];
         expected.sort_by(|a, b| a.cookie.cmp(&b.cookie));
@@ -778,6 +848,7 @@ mod tests {
                 })),
             )),
             &mut results,
+            false,
         );
         assert_eq!(
             results,
@@ -791,6 +862,7 @@ mod tests {
                 },
                 cookie: socket_3.socket_cookie(),
                 marks: Marks::default(),
+                tcp_info: None,
             }]
         );
     }
@@ -826,6 +898,7 @@ mod tests {
                 })),
             )),
             &mut results,
+            false,
         );
         assert_eq!(
             results,
@@ -837,6 +910,7 @@ mod tests {
                 },
                 cookie: s.socket_cookie(),
                 marks: Marks::default(),
+                tcp_info: None,
             }]
         );
 
@@ -849,6 +923,7 @@ mod tests {
                 })),
             )),
             &mut results,
+            false,
         );
         assert_eq!(results, Vec::new());
     }
@@ -885,6 +960,7 @@ mod tests {
                 })),
             )),
             &mut results,
+            false,
         );
         assert_eq!(
             results,
@@ -898,6 +974,7 @@ mod tests {
                 },
                 cookie: s.socket_cookie(),
                 marks: Marks::default(),
+                tcp_info: None,
             }]
         );
 
@@ -910,6 +987,7 @@ mod tests {
                 })),
             )),
             &mut results,
+            false,
         );
         assert_eq!(results, Vec::new());
     }
@@ -966,6 +1044,7 @@ mod tests {
                 TcpStateMatcher::LISTEN,
             ))),
             &mut results,
+            false,
         );
         assert_eq!(
             results,
@@ -977,6 +1056,7 @@ mod tests {
                 },
                 cookie: listen_socket.socket_cookie(),
                 marks: Marks::default(),
+                tcp_info: None,
             }]
         );
 
@@ -986,6 +1066,7 @@ mod tests {
                 TcpStateMatcher::SYN_SENT,
             ))),
             &mut results,
+            false,
         );
         assert_eq!(
             results,
@@ -999,6 +1080,7 @@ mod tests {
                 },
                 cookie: syn_sent_socket.socket_cookie(),
                 marks: Marks::default(),
+                tcp_info: None,
             }]
         );
 
@@ -1008,6 +1090,7 @@ mod tests {
                 TcpStateMatcher::ESTABLISHED,
             ))),
             &mut results,
+            false,
         );
         assert_eq!(results, Vec::new());
     }
@@ -1042,7 +1125,7 @@ mod tests {
             net_types::ip::IpVersion::V4 => BoundAddressMatcherEither::Unbound,
             net_types::ip::IpVersion::V6 => BoundAddressMatcherEither::Unbound,
         };
-        api.bound_sockets_diagnostics(&IpSocketMatcher::SrcAddr(matcher), &mut results);
+        api.bound_sockets_diagnostics(&IpSocketMatcher::SrcAddr(matcher), &mut results, false);
         assert_eq!(
             results,
             vec![TcpSocketDiagnostics {
@@ -1050,6 +1133,7 @@ mod tests {
                 tuple: TcpSocketDiagnosticTuple::Bound { src_addr: None, src_port: LOCAL_PORT_1 },
                 cookie: s1.socket_cookie(),
                 marks: Marks::default(),
+                tcp_info: None,
             }]
         );
 
@@ -1073,7 +1157,7 @@ mod tests {
                 }))
             },
         );
-        api.bound_sockets_diagnostics(&IpSocketMatcher::SrcAddr(matcher), &mut results);
+        api.bound_sockets_diagnostics(&IpSocketMatcher::SrcAddr(matcher), &mut results, false);
         assert_eq!(
             results,
             vec![TcpSocketDiagnostics {
@@ -1084,6 +1168,7 @@ mod tests {
                 },
                 cookie: s2.socket_cookie(),
                 marks: Marks::default(),
+                tcp_info: None,
             }]
         );
     }
@@ -1120,7 +1205,7 @@ mod tests {
             net_types::ip::IpVersion::V4 => BoundAddressMatcherEither::Unbound,
             net_types::ip::IpVersion::V6 => BoundAddressMatcherEither::Unbound,
         };
-        api.bound_sockets_diagnostics(&IpSocketMatcher::DstAddr(matcher), &mut results);
+        api.bound_sockets_diagnostics(&IpSocketMatcher::DstAddr(matcher), &mut results, false);
         assert_eq!(
             results,
             vec![TcpSocketDiagnostics {
@@ -1131,6 +1216,7 @@ mod tests {
                 },
                 cookie: s1.socket_cookie(),
                 marks: Marks::default(),
+                tcp_info: None,
             }]
         );
 
@@ -1154,7 +1240,7 @@ mod tests {
                 }))
             },
         );
-        api.bound_sockets_diagnostics(&IpSocketMatcher::DstAddr(matcher), &mut results);
+        api.bound_sockets_diagnostics(&IpSocketMatcher::DstAddr(matcher), &mut results, false);
         assert_eq!(
             results,
             vec![TcpSocketDiagnostics {
@@ -1167,6 +1253,7 @@ mod tests {
                 },
                 cookie: s2.socket_cookie(),
                 marks: Marks::default(),
+                tcp_info: None,
             }]
         );
     }
@@ -1196,6 +1283,7 @@ mod tests {
                 TcpSocketMatcher::SrcPort(BoundPortMatcher::Unbound),
             )),
             &mut results,
+            false,
         );
         // All visible TCP sockets have a source port.
         assert_eq!(results, Vec::new());
@@ -1234,6 +1322,7 @@ mod tests {
                 TcpSocketMatcher::DstPort(BoundPortMatcher::Unbound),
             )),
             &mut results,
+            false,
         );
         assert_eq!(
             results,
@@ -1245,6 +1334,7 @@ mod tests {
                 },
                 cookie: s1.socket_cookie(),
                 marks: Marks::default(),
+                tcp_info: None,
             }]
         );
 
@@ -1257,6 +1347,7 @@ mod tests {
                 })),
             )),
             &mut results,
+            false,
         );
         assert_eq!(
             results,
@@ -1270,6 +1361,7 @@ mod tests {
                 },
                 cookie: s2.socket_cookie(),
                 marks: Marks::default(),
+                tcp_info: None,
             }]
         );
     }
@@ -1581,6 +1673,251 @@ mod tests {
             );
             assert_eq!(info.port, LOCAL_PORT_1);
             assert_eq!(info.device, Some(FakeDeviceId.downgrade()));
+        });
+    }
+
+    #[ip_test(I)]
+    fn tcp_info_unbound<I: TcpTestIpExt>()
+    where
+        TcpCoreCtx<FakeDeviceId, TcpBindingsCtx<FakeDeviceId>>: TcpContext<
+                I,
+                TcpBindingsCtx<FakeDeviceId>,
+                SingleStackConverter = I::SingleStackConverter,
+                DualStackConverter = I::DualStackConverter,
+            >,
+    {
+        set_logger_for_test();
+        let mut ctx = TcpCtx::with_core_ctx(TcpCoreCtx::new::<I>(
+            I::TEST_ADDRS.local_ip,
+            I::TEST_ADDRS.remote_ip,
+        ));
+        let mut api = ctx.tcp_api::<I>();
+        let s = api.create(Default::default());
+        let info = api.get_tcp_info(&s);
+        assert_eq!(
+            info,
+            TcpSocketInfo {
+                state: netstack3_base::TcpSocketState::Close,
+                ca_state: CongestionControlState::Open,
+                rto: None,
+                rtt: None,
+                rtt_var: None,
+                snd_ssthresh: 0,
+                snd_cwnd: 0,
+                retransmits: 0,
+                last_ack_recv: None,
+                segs_out: 0,
+                segs_in: 0,
+                last_data_sent: None,
+            }
+        );
+    }
+
+    #[ip_test(I)]
+    #[test_case(true, netstack3_base::TcpSocketState::Listen; "listen")]
+    #[test_case(false, netstack3_base::TcpSocketState::Close; "bound")]
+    fn tcp_info_bound<I: TcpTestIpExt>(
+        should_listen: bool,
+        expected_state: netstack3_base::TcpSocketState,
+    ) where
+        TcpCoreCtx<FakeDeviceId, TcpBindingsCtx<FakeDeviceId>>: TcpContext<
+                I,
+                TcpBindingsCtx<FakeDeviceId>,
+                SingleStackConverter = I::SingleStackConverter,
+                DualStackConverter = I::DualStackConverter,
+            >,
+    {
+        set_logger_for_test();
+        let mut ctx = TcpCtx::with_core_ctx(TcpCoreCtx::new::<I>(
+            I::TEST_ADDRS.local_ip,
+            I::TEST_ADDRS.remote_ip,
+        ));
+        let mut api = ctx.tcp_api::<I>();
+        let s = api.create(Default::default());
+        api.bind(&s, Some(ZonedAddr::Unzoned(I::TEST_ADDRS.local_ip)), Some(LOCAL_PORT_1))
+            .expect("bind should succeed");
+        if should_listen {
+            api.listen(&s, NonZeroUsize::new(1).unwrap()).expect("listen should succeed");
+        }
+
+        let info = api.get_tcp_info(&s);
+        assert_eq!(
+            info,
+            TcpSocketInfo {
+                state: expected_state,
+                ca_state: CongestionControlState::Open,
+                rto: None,
+                rtt: None,
+                rtt_var: None,
+                snd_ssthresh: 0,
+                snd_cwnd: 0,
+                retransmits: 0,
+                last_ack_recv: None,
+                segs_out: 0,
+                segs_in: 0,
+                last_data_sent: None,
+            }
+        );
+    }
+
+    #[ip_test(I)]
+    fn tcp_info_connected<I: TcpTestIpExt>()
+    where
+        TcpCoreCtx<FakeDeviceId, TcpBindingsCtx<FakeDeviceId>>: TcpContext<
+                I,
+                TcpBindingsCtx<FakeDeviceId>,
+                SingleStackConverter = I::SingleStackConverter,
+                DualStackConverter = I::DualStackConverter,
+            >,
+    {
+        set_logger_for_test();
+
+        let mut net = FakeTcpNetworkSpec::new_network(
+            [
+                (
+                    LOCAL,
+                    TcpCtx::with_core_ctx(TcpCoreCtx::new::<I>(
+                        I::TEST_ADDRS.local_ip,
+                        I::TEST_ADDRS.remote_ip,
+                    )),
+                ),
+                (
+                    REMOTE,
+                    TcpCtx::with_core_ctx(TcpCoreCtx::new::<I>(
+                        I::TEST_ADDRS.remote_ip,
+                        I::TEST_ADDRS.local_ip,
+                    )),
+                ),
+            ],
+            |net, meta| {
+                if net == LOCAL {
+                    vec![(REMOTE, meta, Some(Duration::from_millis(100)))]
+                } else {
+                    vec![(LOCAL, meta, Some(Duration::from_millis(100)))]
+                }
+            },
+        );
+
+        let client_socket = net.with_context(LOCAL, |ctx| {
+            let mut api = ctx.tcp_api();
+            let s: TcpSocketId<I, _, _> = api.create(Default::default());
+            s
+        });
+
+        let server_socket = net.with_context(REMOTE, |ctx| {
+            let mut api = ctx.tcp_api::<I>();
+            let s = api.create(Default::default());
+            api.set_device(&s, Some(FakeDeviceId)).expect("set device should succeed");
+            api.bind(&s, Some(ZonedAddr::Unzoned(I::TEST_ADDRS.remote_ip)), Some(REMOTE_PORT_1))
+                .expect("bind should succeed");
+            api.listen(&s, NonZeroUsize::new(1).unwrap()).expect("listen should succeed");
+            s
+        });
+
+        net.with_context(LOCAL, |ctx| {
+            let mut api = ctx.tcp_api();
+            api.connect(
+                &client_socket,
+                Some(ZonedAddr::Unzoned(I::TEST_ADDRS.remote_ip)),
+                REMOTE_PORT_1,
+            )
+            .expect("should connect");
+        });
+
+        net.run_until_idle();
+
+        net.with_context(LOCAL, |ctx| {
+            let mut api = ctx.tcp_api();
+            let data = [1u8; 10];
+            api.with_send_buffer(&client_socket, |buf| {
+                buf.enqueue_data(&data[..]);
+            })
+            .expect("send buffer should be available");
+            api.do_send(&client_socket);
+        });
+
+        net.run_until_idle();
+
+        let accepted_socket = net.with_context(REMOTE, |ctx| {
+            let mut api = ctx.tcp_api();
+            let (accepted, _, _) = api.accept(&server_socket).expect("accept should succeed");
+
+            // Send data back to client to ensure client receives a data segment
+            // (populating last_segment_at/last_ack_recv).
+            let data = [2u8; 10];
+            api.with_send_buffer(&accepted, |buf| {
+                buf.enqueue_data(&data[..]);
+            })
+            .expect("send buffer should be available");
+            api.do_send(&accepted);
+
+            accepted
+        });
+
+        net.run_until_idle();
+
+        net.with_context(LOCAL, |ctx| {
+            let mut api = ctx.tcp_api();
+            let info = api.get_tcp_info(&client_socket);
+
+            assert_matches!(
+                info,
+                TcpSocketInfo {
+                    state: netstack3_base::TcpSocketState::Established,
+                    ca_state: CongestionControlState::Open,
+                    retransmits: 0,
+                    snd_ssthresh: u32::MAX,
+                    segs_out,
+                    segs_in,
+                    snd_cwnd,
+                    rto: Some(rto),
+                    rtt: Some(rtt),
+                    rtt_var: Some(rtt_var),
+                    last_ack_recv: Some(last_ack_recv),
+                    last_data_sent: Some(last_data_sent),
+                } => {
+                    assert_eq!(segs_out, 4);
+                    assert_eq!(segs_in, 3);
+                    assert_gt!(snd_cwnd, 0);
+                    assert_eq!(rto, Duration::from_millis(500));
+                    assert_eq!(rtt, Duration::from_millis(200));
+                    assert_eq!(rtt_var, Duration::from_millis(75));
+                    assert_eq!(last_ack_recv, FakeInstant::from(Duration::from_millis(1800)));
+                    assert_eq!(last_data_sent, FakeInstant::from(Duration::from_millis(1100)));
+                }
+            );
+        });
+
+        net.with_context(REMOTE, |ctx| {
+            let mut api = ctx.tcp_api();
+            let info = api.get_tcp_info(&accepted_socket);
+
+            assert_matches!(
+                info,
+                TcpSocketInfo {
+                    state: netstack3_base::TcpSocketState::Established,
+                    ca_state: CongestionControlState::Open,
+                    retransmits: 0,
+                    snd_ssthresh: u32::MAX,
+                    segs_out,
+                    segs_in,
+                    snd_cwnd,
+                    rto: Some(rto),
+                    rtt: Some(rtt),
+                    rtt_var: Some(rtt_var),
+                    last_ack_recv: Some(last_ack_recv),
+                    last_data_sent: Some(last_data_sent),
+                } => {
+                    assert_eq!(segs_out, 2);
+                    assert_eq!(segs_in, 3);
+                    assert_gt!(snd_cwnd, 0);
+                    assert_eq!(rto, Duration::from_millis(500));
+                    assert_eq!(rtt, Duration::from_millis(200));
+                    assert_eq!(rtt_var, Duration::from_millis(75));
+                    assert_eq!(last_ack_recv, FakeInstant::from(Duration::from_millis(1200)));
+                    assert_eq!(last_data_sent, FakeInstant::from(Duration::from_millis(1700)));
+                }
+            );
         });
     }
 }
