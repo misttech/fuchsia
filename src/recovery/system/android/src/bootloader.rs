@@ -7,85 +7,9 @@
 
 use anyhow::{Context as _, Error, anyhow};
 use block_client::{BlockClient as _, RemoteBlockClient};
-use bstr::ByteSlice as _;
+use bootloader_message::{BootloaderMessage, BootloaderMessageRaw};
 use fidl_fuchsia_storage_block::BlockMarker;
-use zerocopy::{FromBytes, Immutable, IntoBytes, KnownLayout};
-
-// See bootable/recovery/bootloader_message for the canonical format.
-#[repr(C)]
-#[derive(Copy, Clone, KnownLayout, FromBytes, IntoBytes, Immutable)]
-struct BootloaderMessageRaw {
-    command: [u8; 32],
-    status: [u8; 32],
-    recovery: [u8; 768],
-    _stage: [u8; 32],
-    _reserved: [u8; 1184],
-}
-
-impl Default for BootloaderMessageRaw {
-    fn default() -> Self {
-        Self {
-            command: [0; _],
-            status: [0; _],
-            recovery: [0; _],
-            _stage: [0; _],
-            _reserved: [0; _],
-        }
-    }
-}
-
-/// Processed bootloader message.
-#[derive(Debug, Clone, Default)]
-pub struct BootloaderMessage {
-    command: String,
-    status: String,
-    recovery: String,
-}
-
-impl BootloaderMessage {
-    /// Returns an iterator over all arguments specified in the bootloader message's recovery field.
-    /// Arguments are assumed to use a newline character (`\n`) as a delimiter.
-    pub fn recovery_args(&self) -> impl Iterator<Item = &str> {
-        self.recovery.split('\n')
-    }
-}
-
-impl From<BootloaderMessageRaw> for BootloaderMessage {
-    fn from(raw: BootloaderMessageRaw) -> Self {
-        Self {
-            command: bytes_to_string(&raw.command),
-            status: bytes_to_string(&raw.status),
-            recovery: bytes_to_string(&raw.recovery),
-        }
-    }
-}
-
-impl TryFrom<BootloaderMessage> for BootloaderMessageRaw {
-    type Error = Error;
-
-    fn try_from(message: BootloaderMessage) -> Result<Self, Error> {
-        let mut raw = BootloaderMessageRaw::default();
-
-        let BootloaderMessage { command, status, recovery } = message;
-
-        // Ensure fields will fit before copying them.
-        if command.len() > raw.command.len() {
-            return Err(anyhow!("command field exceeds storage size"));
-        }
-        if status.len() > raw.status.len() {
-            return Err(anyhow!("status field exceeds storage size"));
-        }
-        if recovery.len() > raw.recovery.len() {
-            return Err(anyhow!("recovery arguments exceed storage size"));
-        }
-
-        raw.command[0..command.len()].copy_from_slice(command.as_bytes());
-        raw.status[0..status.len()].copy_from_slice(status.as_bytes());
-        raw.recovery[0..recovery.len()].copy_from_slice(recovery.as_bytes());
-
-        Ok(raw)
-    }
-}
+use zerocopy::{FromBytes, IntoBytes};
 
 /// High level interface to operate on the bootloader message.
 pub struct BootloaderMessageStore {
@@ -123,16 +47,5 @@ impl BootloaderMessageStore {
         let raw: BootloaderMessageRaw = message.try_into()?;
         self.client.write_at(raw.as_bytes().into(), 0).await?;
         Ok(())
-    }
-}
-
-/// Converts a byte buffer to a Rust [`String`], where `buf` is *possibly* a null-terminated UTF-8
-/// string. Invalid UTF-8 characters will be emitted as "�" (U+FFFD). Bytes after the first null
-/// character, if present, will be ignored, otherwise all of `buf` is used.
-fn bytes_to_string(buf: &[u8]) -> String {
-    if let Some((contents, _)) = buf.split_once_str(&[0u8]) {
-        contents.as_bstr().to_string()
-    } else {
-        buf.as_bstr().to_string()
     }
 }

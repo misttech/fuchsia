@@ -3,6 +3,7 @@
 // found in the LICENSE file.
 
 use anyhow::{Context as _, Error};
+use bootloader_message::BootloaderMessage;
 use carnelian::app::ViewCreationParameters;
 use carnelian::color::Color;
 use carnelian::drawing::{DisplayRotation, FontFace};
@@ -29,7 +30,6 @@ use std::sync::Arc;
 use {fidl_fuchsia_io as fio, fuchsia_async as fasync};
 
 mod bootloader;
-use bootloader::BootloaderMessage;
 mod menu;
 use menu::Menu;
 mod fdr;

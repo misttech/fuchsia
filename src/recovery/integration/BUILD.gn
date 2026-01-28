@@ -4,5 +4,8 @@
 
 group("tests") {
   testonly = true
-  deps = [ "system:tests" ]
+  deps = [
+    "android:tests",
+    "system:tests",
+  ]
 }
