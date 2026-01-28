@@ -344,6 +344,10 @@ impl RateLimiter {
 
         self.rl_current_level
     }
+
+    fn reset(&mut self) {
+        self.is_initialized = false;
+    }
 }
 
 pub(crate) struct Polisher {
@@ -438,6 +442,10 @@ impl Polisher {
             self.last_post_curve = post_curve;
         }
         info
+    }
+
+    pub fn reset_rate_limiter(&mut self) {
+        self.rate_limiter.reset();
     }
 }
 

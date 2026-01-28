@@ -4,24 +4,223 @@
 
 use anyhow::Error;
 use fidl_fuchsia_power_battery::ChargeStatus;
+use fuchsia_async as fasync;
 use fuchsia_inspect::{self as inspect};
 use fuchsia_inspect_contrib::nodes::BoundedListNode;
 use fuchsia_sync::Mutex;
 use log::{error, warn};
 use state_recorder::{
-    NumericStateRecorder, PersistenceOptions, RecordableNumericType, RecorderOptions, Units, units,
+    EnumStateRecorder, NumericStateRecorder, PersistenceOptions, RecordableNumericType,
+    RecorderOptions, Units, units,
 };
+use std::cell::RefCell;
 use std::collections::VecDeque;
 use std::fmt::Write;
 use std::fs::{self as fs, OpenOptions, read_to_string};
 use std::io::Write as OtherWrite;
+use std::rc::Rc;
 use std::str::FromStr;
+use strum_macros::{Display, EnumIter, FromRepr};
 
 static BATTERY_LEVEL_HEADER: &str = "# BATTERY LEVEL";
 static CHARGE_STATUS_HEADER: &str = "# CHARGE STATUS";
 static BATTERY_HISTORY_FILE_FOR_RENAME: &str = "/data/history_before_rename.txt";
 
 const MAX_POWER_CONSUMPTION_MEASUREMENTS: usize = 20;
+const MAX_FAULT_MEASUREMENTS: usize = 20;
+const STALE_DATA_TIMER: zx::Duration<zx::MonotonicTimeline> = zx::Duration::from_minutes(10);
+
+#[derive(Copy, Clone, Debug, Display, EnumIter, Eq, PartialEq, Hash, FromRepr)]
+#[repr(u8)]
+pub enum FaultState {
+    None = 0,
+    NoUpdate = 1,
+}
+
+impl From<FaultState> for u64 {
+    fn from(value: FaultState) -> Self {
+        value as Self
+    }
+}
+
+#[derive(Debug, PartialEq, Eq)]
+pub enum FaultRecoveryEvent {
+    /// For the transition from NoUpdate to None.
+    Recovered,
+    /// Not a transition from NoUpdate to None.
+    None,
+}
+
+struct FaultDetectorState {
+    /// Monotonic timestamp of the last successful activity from the target.
+    last_activity_time: fasync::MonotonicInstant,
+
+    /// Handle to the currently active watchdog task. Used for cancellation (dropping the old task).
+    watchdog_task: Option<fasync::Task<()>>,
+
+    /// Tracks the current fault state to prevent redundant Inspect writes and report state.
+    current_fault: FaultState,
+
+    /// Inspect recorder for the fault state.
+    fault_state_recorder: EnumStateRecorder<FaultState>,
+
+    /// Store the previous level to detect changes.
+    previous_raw_level: Option<f32>,
+}
+
+struct FaultDetector {
+    /// The maximum allowed duration between activity reports.
+    timeout_duration: zx::Duration<zx::MonotonicTimeline>,
+
+    state: RefCell<FaultDetectorState>,
+}
+
+impl FaultDetector {
+    /// Creates a new FaultDetector.
+    fn new(
+        timeout: zx::Duration<zx::MonotonicTimeline>,
+        test_dirs: Option<PersistenceDirs>,
+    ) -> Rc<Self> {
+        let persistence = match test_dirs {
+            Some(PersistenceDirs { storage_dir, volatile_dir }) => {
+                PersistenceOptions::new("battery_level_fault".to_string())
+                    .storage_dir(&storage_dir)
+                    .volatile_dir(&volatile_dir)
+            }
+            None => PersistenceOptions::new("battery_level_fault".to_string()),
+        };
+
+        let mut fault_state_recorder = EnumStateRecorder::new(
+            "battery_level_fault".into(),
+            c"power",
+            RecorderOptions {
+                capacity: MAX_FAULT_MEASUREMENTS,
+                lazy_record: true,
+                manager: None,
+                persistence: Some(persistence),
+            },
+        )
+        .expect("fault_state_recorder construction failed");
+
+        fault_state_recorder.record(FaultState::None);
+        Rc::new(Self {
+            timeout_duration: timeout,
+            state: RefCell::new(FaultDetectorState {
+                last_activity_time: fasync::MonotonicInstant::now(),
+                watchdog_task: None,
+                current_fault: FaultState::None,
+                fault_state_recorder,
+                previous_raw_level: None,
+            }),
+        })
+    }
+
+    /// Called by the BatteryInfoRecorders when a level update occurs.
+    /// Returns FaultRecoveryEvent(Recovered) if the fault was cleared otherwise None.
+    // TODO(https://fxbug.dev/467405155): Modify the code if driver only report fresh data.
+    // For now, just detect changes of level. When timeout happens with the following conditions:
+    // 1. if Charging and battery level <= 95% (charging is expected to be slow above 95%)
+    // 2. Discharging
+    // then we honor the timeout value and record NoUpdate.
+    fn update(
+        self: &Rc<Self>,
+        new_raw_level: Option<f32>,
+        new_charge_status: Option<ChargeStatus>,
+    ) -> FaultRecoveryEvent {
+        let prev_raw_level = self.state.borrow().previous_raw_level;
+        let mut recovery_event = FaultRecoveryEvent::None;
+
+        match new_charge_status {
+            Some(ChargeStatus::Charging) => {
+                if let Some(level) = new_raw_level {
+                    if level <= 95.0 {
+                        // Only notify if the level is actually new
+                        if new_raw_level != prev_raw_level {
+                            recovery_event = self.notify_level_change();
+                        }
+                    } else {
+                        recovery_event = self.stop();
+                    }
+                }
+            }
+            Some(ChargeStatus::Discharging) => {
+                if new_raw_level.is_some() && new_raw_level != prev_raw_level {
+                    recovery_event = self.notify_level_change();
+                }
+            }
+            Some(ChargeStatus::Full) | Some(ChargeStatus::NotCharging) => {
+                recovery_event = self.stop();
+            }
+            _ => {}
+        }
+        self.state.borrow_mut().previous_raw_level = new_raw_level;
+        recovery_event
+    }
+
+    /// Returns FaultRecoveryEvent.
+    fn notify_level_change(self: &Rc<Self>) -> FaultRecoveryEvent {
+        // 1. Update the "freshness" timestamp
+        self.state.borrow_mut().last_activity_time = fasync::MonotonicInstant::now();
+
+        // 2. Report Fault::None (since we just got an update)
+        let recovery_event = self.record_fault_change(FaultState::None);
+
+        // 3. Reset the watchdog timer
+        self.reset_watchdog();
+
+        recovery_event
+    }
+
+    /// Stops the watchdog. Call this when the battery is FULL or NOT_CHARGING.
+    /// Returns FaultRecoveryEvent.
+    fn stop(self: &Rc<Self>) -> FaultRecoveryEvent {
+        // Dropping the task cancels the internal timer
+        self.state.borrow_mut().watchdog_task = None;
+
+        // Reset our internal fault state back to None
+        self.record_fault_change(FaultState::None)
+    }
+
+    /// Internal function to stop the old timer and start a new one.
+    fn reset_watchdog(self: &Rc<Self>) {
+        let self_clone = Rc::clone(self);
+        let timeout = self.timeout_duration;
+
+        self.state.borrow_mut().watchdog_task = Some(fasync::Task::local(async move {
+            fasync::Timer::new(fasync::MonotonicInstant::after(timeout)).await;
+            let now = fasync::MonotonicInstant::now();
+            let last_update = self_clone.state.borrow().last_activity_time;
+
+            if now - last_update >= timeout {
+                self_clone.record_fault_change(FaultState::NoUpdate);
+                warn!(
+                    "FAULT DETECTED: No battery updates received for more than {:?}. (Last update: {:?}) nanos",
+                    timeout, last_update
+                );
+            }
+        }));
+    }
+
+    /// Synchronous method to update internal state and Inspect recorder only on change.
+    /// Returns FaultRecoveryEvent.
+    fn record_fault_change(&self, new_fault: FaultState) -> FaultRecoveryEvent {
+        let mut state = self.state.borrow_mut();
+        let old_fault = state.current_fault;
+
+        if old_fault != new_fault {
+            state.current_fault = new_fault;
+
+            // Lock the recorder and record the state change synchronously
+            state.fault_state_recorder.record(new_fault);
+        }
+
+        if old_fault == FaultState::NoUpdate && new_fault == FaultState::None {
+            FaultRecoveryEvent::Recovered
+        } else {
+            FaultRecoveryEvent::None
+        }
+    }
+}
 
 #[derive(Clone)]
 pub struct HistoryLoggerConfig {
@@ -49,6 +248,7 @@ pub struct BatteryInfoRecorders {
     remaining_capacity: Mutex<NumericStateRecorder<u32>>,
     present_current: Mutex<NumericStateRecorder<i32>>,
     average_current: Mutex<NumericStateRecorder<i32>>,
+    fault_detector: Rc<FaultDetector>,
 }
 
 impl BatteryInfoRecorders {
@@ -57,6 +257,8 @@ impl BatteryInfoRecorders {
         let mut remaining_capacity_opts = PersistenceOptions::new("remaining_capacity".to_string());
         let mut present_current_opts = PersistenceOptions::new("charge_current".to_string());
         let mut average_current_opts = PersistenceOptions::new("average_current".to_string());
+
+        let fault_detector = FaultDetector::new(STALE_DATA_TIMER, config.persistence_dirs.clone());
 
         // Apply overrides if they exist
         if let Some(PersistenceDirs { storage_dir, volatile_dir }) = &config.persistence_dirs {
@@ -100,6 +302,7 @@ impl BatteryInfoRecorders {
             remaining_capacity: Mutex::new(remaining_capacity_recorder),
             present_current: Mutex::new(present_current_recorder),
             average_current: Mutex::new(average_current_recorder),
+            fault_detector,
         }
     }
     pub fn record_present_voltage(&self, voltage: Option<u32>) {
@@ -148,6 +351,16 @@ impl BatteryInfoRecorders {
             },
         )
         .unwrap_or_else(|_| panic!("{} construction failed", name))
+    }
+
+    /// Public method called by the BatteryManager when a level update occurs.
+    /// Returns FaultRecoveryEvent.
+    pub fn update(
+        &self,
+        new_raw_level: Option<f32>,
+        new_charge_status: Option<ChargeStatus>,
+    ) -> FaultRecoveryEvent {
+        self.fault_detector.update(new_raw_level, new_charge_status)
     }
 }
 
@@ -484,6 +697,203 @@ mod tests {
     use diagnostics_assertions::assert_data_tree;
     use std::fs::write;
     use tempfile::{TempDir, tempdir};
+
+    // Helper to check if the detector is currently in a fault state
+    fn get_fault_state(detector: &FaultDetector) -> FaultState {
+        detector.state.borrow().current_fault
+    }
+
+    fn create_detector(
+        timeout: zx::Duration<zx::MonotonicTimeline>,
+    ) -> (TempDir, Rc<FaultDetector>) {
+        let dir = tempdir().unwrap();
+        let storage_dir = dir.path().join("data");
+        let volatile_dir = dir.path().join("tmp");
+        fs::create_dir(&storage_dir).unwrap();
+        fs::create_dir(&volatile_dir).unwrap();
+        let detector = FaultDetector::new(
+            timeout,
+            Some(PersistenceDirs {
+                storage_dir: storage_dir.to_str().unwrap().to_string(),
+                volatile_dir: volatile_dir.to_str().unwrap().to_string(),
+            }),
+        );
+        (dir, detector)
+    }
+
+    #[fuchsia::test]
+    fn test_fault_detector_trigger_and_recovery() {
+        let mut executor = fasync::TestExecutor::new_with_fake_time();
+        let timeout = zx::Duration::from_minutes(5);
+        let (_dir, detector) = create_detector(timeout);
+
+        // --- PHASE 1: Initial State ---
+        assert_eq!(get_fault_state(&detector), FaultState::None);
+
+        assert_eq!(detector.notify_level_change(), FaultRecoveryEvent::None);
+        assert_eq!(get_fault_state(&detector), FaultState::None);
+
+        // --- PHASE 2: Advance time past timeout ---
+        let deadline = fasync::MonotonicInstant::now() + timeout + zx::Duration::from_seconds(1);
+        let _ = executor.run_until_stalled(&mut futures::future::pending::<()>());
+
+        executor.set_fake_time(deadline.into());
+        let _ = executor.run_until_stalled(&mut futures::future::pending::<()>());
+
+        // Now it should be in NoUpdate state
+        assert_eq!(get_fault_state(&detector), FaultState::NoUpdate);
+
+        // --- PHASE 3: Recovery ---
+        // Sending a new update should immediately clear the fault
+        assert_eq!(detector.notify_level_change(), FaultRecoveryEvent::Recovered);
+        assert_eq!(get_fault_state(&detector), FaultState::None);
+
+        // --- PHASE 4: Stopping ---
+        // Stop the detector (simulating FULL battery)
+        assert_eq!(detector.stop(), FaultRecoveryEvent::None);
+        // Advance time another 10 minutes
+        let future_time = fasync::MonotonicInstant::now() + zx::Duration::from_minutes(10);
+        executor.set_fake_time(future_time);
+        let _ = executor.run_until_stalled(&mut futures::future::pending::<()>());
+
+        // Fault should still be None because the task was canceled by stop()
+        assert_eq!(get_fault_state(&detector), FaultState::None);
+
+        // --- Phase 5: Resume from stopping ---
+        assert_eq!(detector.notify_level_change(), FaultRecoveryEvent::None);
+        let deadline = fasync::MonotonicInstant::now() + timeout + zx::Duration::from_seconds(1);
+        let _ = executor.run_until_stalled(&mut futures::future::pending::<()>());
+
+        executor.set_fake_time(deadline);
+        let _ = executor.run_until_stalled(&mut futures::future::pending::<()>());
+
+        // Should be NoUpdate again
+        assert_eq!(get_fault_state(&detector), FaultState::NoUpdate);
+    }
+
+    #[fuchsia::test]
+    fn test_fault_detector_reset_prevents_fault() {
+        let mut executor = fasync::TestExecutor::new_with_fake_time();
+        let timeout = zx::Duration::from_minutes(5);
+        let (_dir, detector) = create_detector(timeout);
+
+        // --- T = 0 minutes ---
+        assert_eq!(detector.notify_level_change(), FaultRecoveryEvent::None);
+        let _ = executor.run_until_stalled(&mut futures::future::pending::<()>());
+
+        // Advance time to 4 minutes (not yet timed out)
+        let middle_time = fasync::MonotonicInstant::now() + zx::Duration::from_minutes(4);
+        executor.set_fake_time(middle_time);
+        let _ = executor.run_until_stalled(&mut futures::future::pending::<()>());
+
+        // Fault should still be None
+        assert_eq!(get_fault_state(&detector), FaultState::None);
+
+        // --- T = 4 minutes: RESET ---
+        // This cancels the timer that was supposed to fire at 5m
+        // and starts a new timer that will fire at 9m (4m + 5m).
+        assert_eq!(detector.notify_level_change(), FaultRecoveryEvent::None);
+        let _ = executor.run_until_stalled(&mut futures::future::pending::<()>());
+
+        // --- T = 6 minutes ---
+        // Advance time by 2 more minutes.
+        // Total elapsed virtual time is now 6 minutes.
+        let check_time = fasync::MonotonicInstant::now() + zx::Duration::from_minutes(2);
+        executor.set_fake_time(check_time);
+        let _ = executor.run_until_stalled(&mut futures::future::pending::<()>());
+
+        // Fault should still be None because the new deadline (9m) hasn't passed.
+        // If the reset failed, the fault would have triggered at 5m.
+        assert_eq!(get_fault_state(&detector), FaultState::None);
+
+        // --- T = 10 minutes (Final verification) ---
+        // Advance time past the second deadline to prove it still works.
+        let final_time = fasync::MonotonicInstant::now() + zx::Duration::from_minutes(4);
+        executor.set_fake_time(final_time);
+        let _ = executor.run_until_stalled(&mut futures::future::pending::<()>());
+
+        assert_eq!(get_fault_state(&detector), FaultState::NoUpdate);
+    }
+
+    #[fuchsia::test]
+    fn test_fault_detector_thresholds_and_transitions() {
+        let mut executor = fasync::TestExecutor::new_with_fake_time();
+        let timeout = zx::Duration::from_minutes(5);
+        let (_dir, detector) = create_detector(timeout);
+
+        // --- PHASE 1: Normal Charging (<= 95%) ---
+        // Start at 90%
+        assert_eq!(
+            detector.update(Some(90.0), Some(ChargeStatus::Charging)),
+            FaultRecoveryEvent::None
+        );
+        let _ = executor.run_until_stalled(&mut futures::future::pending::<()>());
+        assert_eq!(detector.state.borrow().current_fault, FaultState::None);
+
+        // Advance 6 minutes without level change -> Should Fault
+        executor.set_fake_time(fasync::MonotonicInstant::now() + zx::Duration::from_minutes(6));
+        let _ = executor.run_until_stalled(&mut futures::future::pending::<()>());
+        assert_eq!(detector.state.borrow().current_fault, FaultState::NoUpdate);
+
+        // --- PHASE 2: Crossing the 95% Threshold while Charging ---
+        // Level jumps to 96%. This should call stop() and clear the fault.
+        assert_eq!(
+            detector.update(Some(96.0), Some(ChargeStatus::Charging)),
+            FaultRecoveryEvent::Recovered
+        );
+        let _ = executor.run_until_stalled(&mut futures::future::pending::<()>());
+        assert_eq!(
+            detector.state.borrow().current_fault,
+            FaultState::None,
+            "Fault should clear > 95%"
+        );
+
+        // Advance 1 hour -> should still be None because timer is stopped
+        executor.set_fake_time(fasync::MonotonicInstant::now() + zx::Duration::from_hours(1));
+        let _ = executor.run_until_stalled(&mut futures::future::pending::<()>());
+        assert_eq!(detector.state.borrow().current_fault, FaultState::None);
+
+        assert_eq!(
+            detector.update(Some(97.0), Some(ChargeStatus::Charging)),
+            FaultRecoveryEvent::None
+        );
+        let _ = executor.run_until_stalled(&mut futures::future::pending::<()>());
+        assert_eq!(
+            detector.state.borrow().current_fault,
+            FaultState::None,
+            "Fault should clear > 95%"
+        );
+
+        // Advance 1 hour -> should still be None because timer is stopped
+        executor.set_fake_time(fasync::MonotonicInstant::now() + zx::Duration::from_hours(1));
+        let _ = executor.run_until_stalled(&mut futures::future::pending::<()>());
+        assert_eq!(detector.state.borrow().current_fault, FaultState::None);
+
+        // --- PHASE 3: Discharging at High Level ---
+        // User unplugs at 96%. Discharging should re-enable the watchdog even if > 95%.
+        assert_eq!(
+            detector.update(Some(96.0), Some(ChargeStatus::Discharging)),
+            FaultRecoveryEvent::None
+        );
+        let _ = executor.run_until_stalled(&mut futures::future::pending::<()>());
+
+        // Advance 6 minutes without level change -> Should Fault again
+        executor.set_fake_time(fasync::MonotonicInstant::now() + zx::Duration::from_minutes(6));
+        let _ = executor.run_until_stalled(&mut futures::future::pending::<()>());
+        assert_eq!(
+            detector.state.borrow().current_fault,
+            FaultState::NoUpdate,
+            "Discharge should monitor regardless of level"
+        );
+
+        // --- PHASE 4: Recovery via Discharge Progress ---
+        // Level drops to 95% while discharging -> Should clear fault
+        assert_eq!(
+            detector.update(Some(95.0), Some(ChargeStatus::Discharging)),
+            FaultRecoveryEvent::Recovered
+        );
+        assert_eq!(detector.state.borrow().current_fault, FaultState::None);
+    }
 
     fn create_config(
         dir: &TempDir,

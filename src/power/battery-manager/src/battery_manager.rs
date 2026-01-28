@@ -2,7 +2,9 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use crate::history_logger::{BatteryInfoRecorders, HistoryLogger, RecorderConfig};
+use crate::history_logger::{
+    BatteryInfoRecorders, FaultRecoveryEvent, HistoryLogger, RecorderConfig,
+};
 use crate::polisher::Polisher;
 use anyhow::{Context, Error};
 use fidl::HandleBased;
@@ -230,8 +232,15 @@ impl BatteryManager {
         info: fpower::BatteryInfo,
         sag: Option<fsystem::ActivityGovernorProxy>,
     ) {
+        let raw_level = info.level_percent;
+        let new_charge_status = info.charge_status;
+        let recovery_event = self.info_recorders.update(raw_level, new_charge_status);
+
         let info = {
             let mut data_polisher = self.data_polisher.lock().await;
+            if recovery_event == FaultRecoveryEvent::Recovered {
+                data_polisher.reset_rate_limiter();
+            }
             data_polisher.polish_info(info)
         };
         let new_charge_status = info.charge_status;
@@ -382,6 +391,7 @@ mod tests {
     use futures::future::*;
     use log::info;
     use std::collections::VecDeque;
+    use std::fs;
     use tempfile::{TempDir, tempdir};
 
     fn create_config(
@@ -402,6 +412,10 @@ mod tests {
     pub fn create_manager() -> (TempDir, Arc<BatteryManager>) {
         let inspector = inspect::Inspector::default();
         let dir = tempdir().unwrap();
+        let storage_path = dir.path().join("data");
+        let volatile_path = dir.path().join("tmp");
+        fs::create_dir(&storage_path).unwrap();
+        fs::create_dir(&volatile_path).unwrap();
 
         let config = create_config(&dir, 3, 3, "curr_data.txt", "prev_data.txt");
         let mut logger = HistoryLogger::from_file(inspector.root(), config);
@@ -623,7 +637,7 @@ mod tests {
 
         // The 'server' task: run wait_on_updates in the background
         let battery_clone = battery_manager.clone();
-        let server_task = fasync::Task::spawn(async move {
+        let server_task = fasync::Task::local(async move {
             battery_clone.clone().wait_on_updates(server_end, None).await
         });
 

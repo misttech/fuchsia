@@ -640,6 +640,7 @@ impl PersistenceOptions {
         self.previous_path = format!("{}/{}.csv", dir, self.name);
         self
     }
+
     // Helper to generate paths
     fn paths(&self) -> (&str, &str, &str) {
         (&self.current_path, &self.previous_path, &self.rename_path)
