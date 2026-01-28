@@ -46,9 +46,6 @@
                 "Pty.EchoFlags",
                 "Pty.EchoModes",
 
-                // TODO(https://fxbug.dev/436916082): Crashes on Machina.
-                "RobustFutexTest.*",
-
                 // TODO(https://fxbug.dev/448196787): This is flakey.
                 "SocketMarkSockOpt/SocketMarkSockOpt.RawCapability/*",
 
