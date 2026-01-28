@@ -243,7 +243,6 @@ bazel_product_bundle("my_product.x64") {
   bazel_product_image_target = ":image.x64"
   bazel_inputs_from_gn = [
     "//boards/x64:x64.bazel_input",
-    "//build/images/flash:esp.bazel_input",
   ]
   allow_eng_platform_bundle_use = true
 }

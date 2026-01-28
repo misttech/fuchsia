@@ -67,18 +67,20 @@ fuchsia_partition(
     type = PARTITION_TYPE.FXFS,
 )
 
+# Unused today, will be used when the x64 board is moved into Bazel.
 fuchsia_bootloader_partition(
     name = "fuchsia_esp",
-    image = "@gn_targets//build/images/flash:fuchsia_esp",
+    image = "@gn_targets//src/firmware/gigaboot/cpp:fuchsia_esp",
     partition_name = "fuchsia-esp",
-    # For x64 platform there is only one bootloader and thus there is no need
+    # For arm64 platform there is only one bootloader and thus there is no need
     # for multiple types and default empty string is used.
     type = "",
 )
 
+# Unused today, will be used with the arm64 board is moved into Bazel.
 fuchsia_bootloader_partition(
     name = "bootloader",
-    image = "@gn_targets//build/images/flash:fuchsia_esp",
+    image = "@gn_targets//src/firmware/gigaboot/cpp:fuchsia_esp",
     partition_name = "bootloader",
     # For x64 platform there is only one bootloader and thus there is no need
     # for multiple types and default empty string is used.

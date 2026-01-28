@@ -12,7 +12,6 @@ assert(
 
 common_bazel_inputs = [
   "//src/fonts/asset_providers:open-fonts-collection-bazel",
-  "//build/images/flash:esp.bazel_input",
 
   # Cache packages.
   "//src/ui/bin/terminal:terminal.bazel_input",

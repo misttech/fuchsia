@@ -2,6 +2,7 @@
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
+import("//build/bazel/bazel_inputs.gni")
 import("//build/board.gni")
 import("//build/images/vboot/vboot.gni")
 import("//src/firmware/gigaboot/cpp/backends.gni")
@@ -237,6 +238,12 @@ gigaboot_esp("fuchsia") {
   if (gigaboot_use_gbl) {
     gbl = gigaboot_gbl_efi_app
   }
+}
+
+bazel_input_file("esp.bazel_input") {
+  generator = ":fuchsia"
+  outputs = [ "${root_build_dir}/fuchsia.esp.blk" ]
+  gn_targets_name = "fuchsia_esp"
 }
 
 if (gigaboot_userdebug_permanent_attributes != "") {

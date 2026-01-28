@@ -42,7 +42,6 @@ if (current_cpu == "x64") {
     bazel_elf_sizes_target = "//products/workbench:elf_sizes.x64"
     bazel_inputs_from_gn = [
       "//boards/x64:x64.bazel_input",
-      "//build/images/flash:esp.bazel_input",
       "//products/workbench/workbench_session:workbench_session_bazel_inputs",
     ]
   }
@@ -62,7 +61,6 @@ if (current_cpu == "arm64") {
     bazel_elf_sizes_target = "//products/workbench:elf_sizes.arm64"
     bazel_inputs_from_gn = [
       "//boards/arm64:arm64.bazel_input",
-      "//build/images/flash:esp.bazel_input",
       "//products/workbench/workbench_session:workbench_session_bazel_inputs",
     ]
   }
@@ -76,7 +74,6 @@ if (current_cpu == "arm64") {
     bazel_recovery_image_target = "//products/zedboot:vim3_recovery"
     bazel_elf_sizes_target = "//products/workbench:elf_sizes.vim3"
     bazel_inputs_from_gn = [
-      "//build/images/flash:esp.bazel_input",
       "//products/workbench/workbench_session:workbench_session_bazel_inputs",
       "//boards/vim3:bazel_inputs",
     ]

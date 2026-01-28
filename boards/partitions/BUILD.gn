@@ -22,34 +22,6 @@ _standard_names = {
   fvm = "fvm"
 }
 
-# Gigaboot bootloader that is put to legacy `fuchsia-esp` partition
-# TODO(b/399522436): This should be moved to platform specific build files.
-_gigaboot = {
-  testonly = true
-  bootloader_partitions = [
-    {
-      image = "$root_build_dir/fuchsia.esp.blk"
-      type = ""
-      name = "fuchsia-esp"
-    },
-  ]
-  deps = [ "//build/images/flash:esp" ]
-}
-
-# Gigaboot bootloader that is put to `bootloader` partition.
-# TODO(b/399522436): This should be moved to platform specific build files.
-_gigaboot_bootloader = {
-  testonly = true
-  bootloader_partitions = [
-    {
-      image = "$root_build_dir/fuchsia.esp.blk"
-      type = ""
-      name = "bootloader"
-    },
-  ]
-  deps = [ "//build/images/flash:esp" ]
-}
-
 generated_partitions_config("default") {
   hw_revision = ""
   forward_variables_from(_standard_names, "*")
@@ -62,8 +34,20 @@ if (target_cpu == "x64") {
   }
 
   generated_partitions_config("x64") {
-    forward_variables_from(_gigaboot_bootloader, "*")
+    testonly = true
     forward_variables_from(_standard_names, "*")
+
+    # Gigaboot bootloader that is put to `bootloader` partition.
+    # TODO(b/399522436): This should be moved to platform specific build files.
+    bootloader_partitions = [
+      {
+        image = "$root_build_dir/fuchsia.esp.blk"
+        type = ""
+        name = "bootloader"
+      },
+    ]
+    deps = [ "//src/firmware/gigaboot/cpp:fuchsia" ]
+
     hw_revision = "x64"
 
     # At most one of either a fvm or fxfs will be generated, but the board
@@ -83,8 +67,19 @@ if (target_cpu == "arm64") {
   }
 
   generated_partitions_config("arm64") {
-    forward_variables_from(_gigaboot, "*")
+    testonly = true
     forward_variables_from(_standard_names, "*")
+
+    # Gigaboot bootloader that is put to legacy `fuchsia-esp` partition
+    # TODO(b/399522436): This should be moved to platform specific build files.
+    bootloader_partitions = [
+      {
+        image = "$root_build_dir/fuchsia.esp.blk"
+        type = ""
+        name = "fuchsia-esp"
+      },
+    ]
+    deps = [ "//src/firmware/gigaboot/cpp:fuchsia" ]
     hw_revision = "arm64"
   }
 
@@ -104,10 +99,6 @@ if (target_cpu == "riscv64") {
     hw_revision = "riscv64"
     zbi_r = "zircon_r"
   }
-}
 
-not_needed([
-             "_gigaboot",
-             "_gigaboot_bootloader",
-             "_standard_names",
-           ])
+  not_needed([ "_standard_names" ])
+}
