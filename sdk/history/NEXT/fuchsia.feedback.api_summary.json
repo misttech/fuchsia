@@ -755,6 +755,11 @@
     },
     {
         "kind": "enum/member",
+        "name": "fuchsia.feedback/RebootReason.USER_REQUEST_DEVICE_STUCK",
+        "value": "26"
+    },
+    {
+        "kind": "enum/member",
         "name": "fuchsia.feedback/RebootReason.ZBI_SWAP",
         "value": "18"
     },

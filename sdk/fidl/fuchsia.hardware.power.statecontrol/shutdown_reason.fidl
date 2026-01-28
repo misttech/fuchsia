@@ -13,6 +13,10 @@ type ShutdownReason = flexible enum {
     /// Use DEVELOPER_REQUEST below instead.
     USER_REQUEST = 1;
 
+    /// The end user of the device initiated the shutdown because the device was stuck.
+    @available(added=NEXT)
+    USER_REQUEST_DEVICE_STUCK = 16;
+
     /// The developer initiated the shutdown, typically via a shell command or similar interface,
     /// including within an automated test.
     DEVELOPER_REQUEST = 2;

@@ -69,6 +69,7 @@ impl ShutdownOptionsWrapper {
             .iter()
             .map(|item| match item {
                 ShutdownReason::UserRequest => RebootReason2::UserRequest,
+                ShutdownReason::UserRequestDeviceStuck => RebootReason2::UserRequest,
                 ShutdownReason::DeveloperRequest => RebootReason2::DeveloperRequest,
                 ShutdownReason::SystemUpdate => RebootReason2::SystemUpdate,
                 ShutdownReason::RetrySystemUpdate => RebootReason2::RetrySystemUpdate,

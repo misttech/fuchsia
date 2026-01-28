@@ -57,6 +57,8 @@ std::string LastRebootReasonAnnotation(const FinalShutdownInfo& final_shutdown_i
       return "software watchdog timeout";
     case FuchsiaRebootReason::USER_REQUEST:
       return "user request";
+    case FuchsiaRebootReason::USER_REQUEST_DEVICE_STUCK:
+      return "user request device stuck";
     case FuchsiaRebootReason::SYSTEM_UPDATE:
       return "system update";
     case FuchsiaRebootReason::RETRY_SYSTEM_UPDATE:

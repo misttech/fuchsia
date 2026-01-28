@@ -395,6 +395,11 @@
     },
     {
         "kind": "enum/member",
+        "name": "fuchsia.hardware.power.statecontrol/ShutdownReason.USER_REQUEST_DEVICE_STUCK",
+        "value": "16"
+    },
+    {
+        "kind": "enum/member",
         "name": "fuchsia.hardware.power.statecontrol/ShutdownReason.ZBI_SWAP",
         "value": "9"
     },

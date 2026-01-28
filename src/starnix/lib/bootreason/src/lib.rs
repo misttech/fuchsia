@@ -63,6 +63,7 @@ async fn update_android_bootreason(dir: Option<fio::DirectoryProxy>) -> Result<S
         Some(RebootReason::SoftwareWatchdogTimeout) => "watchdog,sw",
         Some(RebootReason::RootJobTermination) => "kernel_panic",
         Some(RebootReason::UserRequest) => "reboot,userrequested",
+        Some(RebootReason::UserRequestDeviceStuck) => "reboot,userrequested",
         Some(RebootReason::DeveloperRequest) => "reboot,shell",
         Some(RebootReason::RetrySystemUpdate) => "reboot,ota",
         Some(RebootReason::HighTemperature) => "shutdown,thermal",

@@ -101,6 +101,11 @@ type RebootReason = strict(removed=9) flexible(added=9) enum : uint16 {
     /// Use DEVELOPER_REQUEST below instead.
     USER_REQUEST = 9;
 
+    /// The device rebooted because the end user of the device initiated the reboot because the
+    /// device was stuck.
+    @available(added=NEXT)
+    USER_REQUEST_DEVICE_STUCK = 26;
+
     /// The device rebooted because a developer initiated the reboot, typically via a shell command
     /// or similar interface, including within an automated test.
     @available(added=28)

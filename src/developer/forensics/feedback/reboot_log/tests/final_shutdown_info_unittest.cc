@@ -400,6 +400,15 @@ INSTANTIATE_TEST_SUITE_P(WithVariousReasons, FinalGracefulShutdownInfoTest,
                                   fuchsia::feedback::RebootReason::ANDROID_CRITICAL_PROCESS_FAILURE,
                                   "fuchsia-shutdown-android-critical-process-failure",
                                   /*expected_crash_program_name=*/"android",
+                              },
+                              {
+                                  "UserRequestDeviceStuck",
+                                  {GracefulShutdownReason::kUserRequestDeviceStuck},
+                                  /*is_fatal=*/true,
+                                  cobalt::LastRebootReason::kUserRequestDeviceStuck,
+                                  fuchsia::feedback::RebootReason::USER_REQUEST_DEVICE_STUCK,
+                                  "fuchsia-shutdown-user-request-device-stuck",
+                                  /*expected_crash_program_name=*/"system",
                               }})),
                          [](const testing::TestParamInfo<GracefulTestParams>& info) {
                            return info.param.test_name;

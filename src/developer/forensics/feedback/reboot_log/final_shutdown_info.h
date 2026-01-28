@@ -163,6 +163,7 @@ class FinalGracefulShutdownInfo : public FinalShutdownInfo {
     kAndroidRescueParty,
     kAndroidCriticalProcessFailure,
     kDeveloperRequest,
+    kUserRequestDeviceStuck,
   };
 
   FinalGracefulShutdownReason ConsolidateGracefulShutdownReasons(

@@ -80,6 +80,7 @@ bool FinalGracefulShutdownInfo::IsFatal() const {
     case FinalGracefulShutdownReason::kAndroidUnexpectedReason:
     case FinalGracefulShutdownReason::kAndroidRescueParty:
     case FinalGracefulShutdownReason::kAndroidCriticalProcessFailure:
+    case FinalGracefulShutdownReason::kUserRequestDeviceStuck:
       return true;
     case FinalGracefulShutdownReason::kUserRequest:
     case FinalGracefulShutdownReason::kSystemUpdate:
@@ -127,6 +128,7 @@ bool FinalGracefulShutdownInfo::IsCrash() const {
     case FinalGracefulShutdownReason::kAndroidUnexpectedReason:
     case FinalGracefulShutdownReason::kAndroidRescueParty:
     case FinalGracefulShutdownReason::kAndroidCriticalProcessFailure:
+    case FinalGracefulShutdownReason::kUserRequestDeviceStuck:
       return true;
     case FinalGracefulShutdownReason::kUserRequest:
     case FinalGracefulShutdownReason::kSystemUpdate:
@@ -179,6 +181,7 @@ std::optional<bool> FinalGracefulShutdownInfo::OptionallyGraceful() const {
     case FinalGracefulShutdownReason::kAndroidRescueParty:
     case FinalGracefulShutdownReason::kAndroidCriticalProcessFailure:
     case FinalGracefulShutdownReason::kDeveloperRequest:
+    case FinalGracefulShutdownReason::kUserRequestDeviceStuck:
       return true;
     case FinalGracefulShutdownReason::kOutOfMemory:
       return false;
@@ -227,6 +230,7 @@ std::optional<bool> FinalGracefulShutdownInfo::OptionallyPlanned() const {
     case FinalGracefulShutdownReason::kAndroidRescueParty:
     case FinalGracefulShutdownReason::kAndroidCriticalProcessFailure:
     case FinalGracefulShutdownReason::kDeveloperRequest:
+    case FinalGracefulShutdownReason::kUserRequestDeviceStuck:
       return false;
   }
 }
@@ -298,6 +302,8 @@ std::string FinalGracefulShutdownInfo::ToRebootReasonString() const {
       return "ANDROID CRITICAL PROCESS FAILURE";
     case FinalGracefulShutdownReason::kDeveloperRequest:
       return "DEVELOPER REQUEST";
+    case FinalGracefulShutdownReason::kUserRequestDeviceStuck:
+      return "USER REQUEST DEVICE STUCK";
   }
 }
 
@@ -367,6 +373,8 @@ std::optional<fuchsia::feedback::RebootReason> FinalGracefulShutdownInfo::ToFidl
       return fuchsia::feedback::RebootReason::ANDROID_CRITICAL_PROCESS_FAILURE;
     case FinalGracefulShutdownReason::kDeveloperRequest:
       return fuchsia::feedback::RebootReason::DEVELOPER_REQUEST;
+    case FinalGracefulShutdownReason::kUserRequestDeviceStuck:
+      return fuchsia::feedback::RebootReason::USER_REQUEST_DEVICE_STUCK;
   }
 }
 
@@ -436,6 +444,8 @@ cobalt::LastRebootReason FinalGracefulShutdownInfo::ToCobaltLastRebootReason() c
       return cobalt::LastRebootReason::kAndroidCriticalProcessFailure;
     case FinalGracefulShutdownReason::kDeveloperRequest:
       return cobalt::LastRebootReason::kDeveloperRequest;
+    case FinalGracefulShutdownReason::kUserRequestDeviceStuck:
+      return cobalt::LastRebootReason::kUserRequestDeviceStuck;
   }
 }
 
@@ -474,6 +484,7 @@ std::string FinalGracefulShutdownInfo::ToCrashProgramName() const {
     case FinalGracefulShutdownReason::kSysmgrFailure:
     case FinalGracefulShutdownReason::kCriticalComponentFailure:
     case FinalGracefulShutdownReason::kOutOfMemory:
+    case FinalGracefulShutdownReason::kUserRequestDeviceStuck:
       return "system";
     case FinalGracefulShutdownReason::kAndroidUnexpectedReason:
     case FinalGracefulShutdownReason::kAndroidNoReason:
@@ -547,6 +558,8 @@ std::string FinalGracefulShutdownInfo::ToCrashSignature(
       return "fuchsia-shutdown-android-rescue-party";
     case FinalGracefulShutdownReason::kAndroidCriticalProcessFailure:
       return "fuchsia-shutdown-android-critical-process-failure";
+    case FinalGracefulShutdownReason::kUserRequestDeviceStuck:
+      return "fuchsia-shutdown-user-request-device-stuck";
     case FinalGracefulShutdownReason::kGenericGraceful:
       return "fuchsia-shutdown-undetermined-userspace-reason";
     case FinalGracefulShutdownReason::kUnexpectedReasonGraceful:
@@ -612,6 +625,8 @@ FinalGracefulShutdownInfo::ConsolidateGracefulShutdownReasons(
         return FinalGracefulShutdownReason::kAndroidCriticalProcessFailure;
       case GracefulShutdownReason::kDeveloperRequest:
         return FinalGracefulShutdownReason::kDeveloperRequest;
+      case GracefulShutdownReason::kUserRequestDeviceStuck:
+        return FinalGracefulShutdownReason::kUserRequestDeviceStuck;
       case GracefulShutdownReason::kNotSet:
         FX_LOGS(FATAL) << "Graceful shutdown reason must be set";
         return FinalGracefulShutdownReason::kUnexpectedReasonGraceful;

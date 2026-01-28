@@ -105,6 +105,8 @@ enum class LastRebootReason {
       cobalt_registry::LastRebootUptimeMigratedMetricDimensionReason::AndroidCriticalProcessFailure,
   kDeveloperRequest =
       cobalt_registry::LastRebootUptimeMigratedMetricDimensionReason::DeveloperRequest,
+  kUserRequestDeviceStuck =
+      cobalt_registry::LastRebootUptimeMigratedMetricDimensionReason::UserRequestDeviceStuck,
 };
 
 enum class PreviousBootEncodingVersion {
