@@ -11,6 +11,7 @@ from honeydew.affordances.session import errors as session_errors
 from honeydew.affordances.session import session
 from honeydew.transports.ffx import errors as ffx_errors
 from honeydew.transports.ffx import ffx as ffx_transport
+from honeydew.transports.ffx import types as ffx_types
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -56,7 +57,9 @@ class SessionUsingFfx(session.Session):
         _LOGGER.info("start session on device %s", self._name)
 
         try:
-            self._ffx.run(["session", "start"])
+            self._ffx.run(
+                ["session", "start"], machine=ffx_types.MachineFormat.RAW
+            )
         except ffx_errors.FfxCommandError as err:
             raise session_errors.SessionError(err)
 
@@ -78,7 +81,9 @@ class SessionUsingFfx(session.Session):
         """
 
         try:
-            res = self._ffx.run(["session", "show"])
+            res = self._ffx.run(
+                ["session", "show"], machine=ffx_types.MachineFormat.RAW
+            )
             lines = res.splitlines()
             for line in lines:
                 if "Execution State:  Running" in line:
@@ -120,7 +125,9 @@ class SessionUsingFfx(session.Session):
             raise session_errors.SessionError("session is not started.")
 
         try:
-            self._ffx.run(["session", "add", url])
+            self._ffx.run(
+                ["session", "add", url], machine=ffx_types.MachineFormat.RAW
+            )
         except ffx_errors.FfxCommandError as err:
             raise session_errors.SessionError(err)
 
@@ -139,7 +146,9 @@ class SessionUsingFfx(session.Session):
         _LOGGER.info("restart session on device %s", self._name)
 
         try:
-            self._ffx.run(["session", "restart"])
+            self._ffx.run(
+                ["session", "restart"], machine=ffx_types.MachineFormat.RAW
+            )
         except ffx_errors.FfxCommandError as err:
             raise session_errors.SessionError(err)
 
@@ -163,7 +172,9 @@ class SessionUsingFfx(session.Session):
         _LOGGER.info("stop session on device %s", self._name)
 
         try:
-            self._ffx.run(["session", "stop"])
+            self._ffx.run(
+                ["session", "stop"], machine=ffx_types.MachineFormat.RAW
+            )
         except ffx_errors.FfxCommandError as err:
             raise session_errors.SessionError(err)
 
@@ -205,7 +216,10 @@ class SessionUsingFfx(session.Session):
                             self._name,
                             name,
                         )
-                        self._ffx.run(["session", "remove", name])
+                        self._ffx.run(
+                            ["session", "remove", name],
+                            machine=ffx_types.MachineFormat.RAW,
+                        )
         except ffx_errors.FfxCommandError as err:
             # TODO(b/406501041): Handle potential "NotFound" error. If multiple components share the
             # same URL, removing one will implicitly remove all others with that URL. Subsequent
