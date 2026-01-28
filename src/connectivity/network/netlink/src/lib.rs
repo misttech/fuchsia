@@ -17,6 +17,9 @@ pub(crate) mod logging;
 pub mod messaging;
 pub mod multicast_groups;
 mod nduseropt;
+// TODO(https://fxbug.dev/285127384): Remove once used.
+#[cfg(test)]
+pub mod neighbors;
 mod netlink_packet;
 pub mod protocol_family;
 pub(crate) mod route_eventloop;
