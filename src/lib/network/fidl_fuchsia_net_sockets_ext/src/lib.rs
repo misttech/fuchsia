@@ -13,6 +13,7 @@
 )]
 
 use fidl_fuchsia_net_ext::IntoExt;
+use futures::{Stream, TryStreamExt as _};
 use net_types::ip;
 use thiserror::Error;
 use {
@@ -123,14 +124,104 @@ impl From<IpSocketMatcher> for fnet_sockets::IpSocketMatcher {
     }
 }
 
+/// Errors returned by [`iterate_ip`]
+#[derive(Debug, Error)]
+pub enum IterateIpError {
+    /// The specified matcher was the first invalid one.
+    #[error("invalid matcher at position {0}")]
+    InvalidMatcher(usize),
+    /// An unknown response was received on the call to `Diagnostics.IterateIp`
+    #[error("unknown ordinal on Diagnostics.IterateIp call: {0}")]
+    UnknownOrdinal(u64),
+    /// A low-level FIDL error was encountered on the call to
+    /// `Diagnostics.IterateIp`.
+    #[error("fidl error during Diagnostics.IterateIp call: {0}")]
+    Fidl(fidl::Error),
+}
+
+impl From<fidl::Error> for IterateIpError {
+    fn from(e: fidl::Error) -> Self {
+        IterateIpError::Fidl(e)
+    }
+}
+
+/// Errors returned by the stream returned from [`iterate_ip`].
+#[derive(Debug, Error)]
+pub enum IpIteratorError {
+    /// The netstack returned an empty batch of sockets
+    #[error("received empty batch of sockets")]
+    EmptyBatch,
+    /// A low-level FIDL error was encountered on the call to
+    /// `Diagnostics.IterateIp`.
+    #[error("fidl error during Diagnostics.IterateIp call: {0}")]
+    Fidl(fidl::Error),
+}
+
+impl From<fidl::Error> for IpIteratorError {
+    fn from(e: fidl::Error) -> Self {
+        IpIteratorError::Fidl(e)
+    }
+}
+
+/// Send a request to `Diagnostics.IterateIp` and drive the resulting
+/// `IpIterator`.
+///
+/// `IpIterator` returns a series of batches of sockets matching the query, the
+/// returned stream flattens those batches into individual sockets. If an error
+/// is encuontered during iteration, it is returned and iteration halts.
+pub async fn iterate_ip<M, I>(
+    diagnostics: &fnet_sockets::DiagnosticsProxy,
+    extensions: fnet_sockets::Extensions,
+    matchers: M,
+) -> Result<impl Stream<Item = Result<fnet_sockets::IpSocketState, IpIteratorError>>, IterateIpError>
+where
+    M: IntoIterator<Item = I>,
+    I: Into<fnet_sockets::IpSocketMatcher>,
+{
+    let (proxy, server_end) = fidl::endpoints::create_proxy::<fnet_sockets::IpIteratorMarker>();
+    match diagnostics
+        .iterate_ip(
+            server_end,
+            extensions,
+            &matchers.into_iter().map(Into::into).collect::<Vec<_>>()[..],
+        )
+        .await?
+    {
+        fnet_sockets::IterateIpResult::Ok(_empty) => Ok(()),
+        fnet_sockets::IterateIpResult::InvalidMatcher(fnet_sockets::InvalidMatcher { index }) => {
+            Err(IterateIpError::InvalidMatcher(index as usize))
+        }
+        fnet_sockets::IterateIpResult::__SourceBreaking { unknown_ordinal } => {
+            Err(IterateIpError::UnknownOrdinal(unknown_ordinal))
+        }
+    }?;
+
+    Ok(futures::stream::try_unfold((proxy, true), |(proxy, has_more)| async move {
+        if !has_more {
+            return Ok(None);
+        }
+
+        let (batch, has_more) = proxy.next().await?;
+        if batch.is_empty() && has_more {
+            Err(IpIteratorError::EmptyBatch)
+        } else {
+            Ok(Some((futures::stream::iter(batch.into_iter().map(Ok)), (proxy, has_more))))
+        }
+    })
+    .try_flatten())
+}
+
 #[cfg(test)]
 mod tests {
+    use super::*;
+
     use std::num::NonZeroU64;
 
-    use super::*;
-    use fidl_fuchsia_net as fnet;
-    use net_declare::fidl_subnet;
+    use assert_matches::assert_matches;
+    use futures::{FutureExt as _, StreamExt as _, future, pin_mut};
+    use net_declare::{fidl_ip, fidl_subnet};
     use test_case::test_case;
+    use {fidl_fuchsia_net as fnet, fidl_fuchsia_net_tcp as fnet_tcp};
 
     #[test_case(
         fnet_sockets::IpSocketMatcher::Family(fnet::IpVersion::V4),
@@ -337,5 +428,263 @@ mod tests {
         fidl: fnet_sockets::IpSocketMatcher,
     ) -> Result<IpSocketMatcher, IpSocketMatcherError> {
         IpSocketMatcher::try_from(fidl)
+    }
+
+    #[fuchsia_async::run_singlethreaded(test)]
+    async fn iterate_ip_diagnostics_iterate_ip_error() {
+        async fn serve_matcher_error(req: fnet_sockets::DiagnosticsRequest) {
+            match req {
+                fnet_sockets::DiagnosticsRequest::IterateIp {
+                    s: _,
+                    extensions: _,
+                    matchers: _,
+                    responder,
+                } => responder
+                    .send(&fnet_sockets::IterateIpResult::InvalidMatcher(
+                        fnet_sockets::InvalidMatcher { index: 0 },
+                    ))
+                    .unwrap(),
+            };
+        }
+
+        let (diagnostics, diagnostics_server_end) =
+            fidl::endpoints::create_proxy::<fnet_sockets::DiagnosticsMarker>();
+
+        let (mut diagnostics_request_stream, _control_handle) =
+            diagnostics_server_end.into_stream_and_control_handle();
+        let server_fut = diagnostics_request_stream
+            .next()
+            .then(|req| {
+                serve_matcher_error(req.expect("Request stream ended unexpectedly").unwrap())
+            })
+            .fuse();
+        let client_fut = iterate_ip::<[IpSocketMatcher; 0], _>(
+            &diagnostics,
+            fnet_sockets::Extensions::empty(),
+            [],
+        );
+
+        pin_mut!(server_fut);
+        pin_mut!(client_fut);
+
+        let ((), resp) = future::join(server_fut, client_fut).await;
+
+        assert_matches!(
+            // Discard the stream because it can't be formatted.
+            resp.map(|_| ()),
+            Err(IterateIpError::InvalidMatcher(0))
+        );
+    }
+
+    #[fuchsia_async::run_singlethreaded(test)]
+    async fn iterate_ip_next_error() {
+        async fn serve_matcher(req: fnet_sockets::DiagnosticsRequest) {
+            match req {
+                fnet_sockets::DiagnosticsRequest::IterateIp {
+                    s,
+                    extensions: _,
+                    matchers: _,
+                    responder,
+                } => {
+                    s.close_with_epitaph(zx_status::Status::PEER_CLOSED).unwrap();
+                    responder.send(&fnet_sockets::IterateIpResult::Ok(fnet_sockets::Empty)).unwrap()
+                }
+            }
+        }
+
+        let (diagnostics, diagnostics_server_end) =
+            fidl::endpoints::create_proxy::<fnet_sockets::DiagnosticsMarker>();
+
+        let (mut diagnostics_request_stream, _control_handle) =
+            diagnostics_server_end.into_stream_and_control_handle();
+        let server_fut = diagnostics_request_stream
+            .next()
+            .then(|req| serve_matcher(req.expect("Request stream ended unexpectedly").unwrap()))
+            .fuse();
+
+        let client_fut = iterate_ip::<[IpSocketMatcher; 0], _>(
+            &diagnostics,
+            fnet_sockets::Extensions::empty(),
+            [],
+        );
+
+        let ((), resp) = future::join(server_fut, client_fut).await;
+        let stream = resp.unwrap();
+        pin_mut!(stream);
+
+        assert_matches!(
+            stream.try_next().await,
+            Err(IpIteratorError::Fidl(fidl::Error::ClientChannelClosed { .. }))
+        );
+    }
+
+    #[fuchsia_async::run_singlethreaded(test)]
+    async fn iterate_ip_empty_batch() {
+        async fn serve_matcher(req: fnet_sockets::DiagnosticsRequest) {
+            match req {
+                fnet_sockets::DiagnosticsRequest::IterateIp {
+                    s,
+                    extensions: _,
+                    matchers: _,
+                    responder,
+                } => {
+                    responder
+                        .send(&fnet_sockets::IterateIpResult::Ok(fnet_sockets::Empty))
+                        .unwrap();
+
+                    let (mut stream, _control) = s.into_stream_and_control_handle();
+                    match stream.next().await.unwrap().unwrap() {
+                        fidl_fuchsia_net_sockets::IpIteratorRequest::Next { responder } => {
+                            // Send an empty batch but indicate there's more to come.
+                            responder.send(&[], true).unwrap();
+                        }
+                        fidl_fuchsia_net_sockets::IpIteratorRequest::_UnknownMethod { .. } => {
+                            unreachable!()
+                        }
+                    }
+                }
+            }
+        }
+
+        let (diagnostics, diagnostics_server_end) =
+            fidl::endpoints::create_proxy::<fnet_sockets::DiagnosticsMarker>();
+
+        let (mut diagnostics_request_stream, _control_handle) =
+            diagnostics_server_end.into_stream_and_control_handle();
+        let server_fut = diagnostics_request_stream
+            .next()
+            .then(|req| serve_matcher(req.expect("Request stream ended unexpectedly").unwrap()))
+            .fuse();
+
+        let client_fut = async {
+            let stream = iterate_ip::<[IpSocketMatcher; 0], _>(
+                &diagnostics,
+                fnet_sockets::Extensions::empty(),
+                [],
+            )
+            .await
+            .unwrap();
+            pin_mut!(stream);
+            stream.try_next().await
+        };
+
+        let ((), resp) = future::join(server_fut, client_fut).await;
+        assert_matches!(resp, Err(IpIteratorError::EmptyBatch));
+    }
+
+    #[fuchsia_async::run_singlethreaded(test)]
+    async fn iterate_ip_success() {
+        let socket_1 = fnet_sockets::IpSocketState {
+            family: Some(fnet::IpVersion::V4),
+            src_addr: Some(fidl_ip!("192.168.1.1")),
+            dst_addr: Some(fidl_ip!("192.168.1.2")),
+            cookie: Some(1234),
+            marks: None,
+            transport: Some(fnet_sockets::IpSocketTransportState::Tcp(
+                fnet_sockets::IpSocketTcpState {
+                    src_port: Some(1111),
+                    dst_port: Some(2222),
+                    state: Some(fnet_tcp::State::Established),
+                    tcp_info: None,
+                    __source_breaking: fidl::marker::SourceBreaking,
+                },
+            )),
+            __source_breaking: fidl::marker::SourceBreaking,
+        };
+
+        let socket_2 = fnet_sockets::IpSocketState {
+            family: Some(fnet::IpVersion::V4),
+            src_addr: Some(fidl_ip!("192.168.8.1")),
+            dst_addr: Some(fidl_ip!("192.168.8.2")),
+            cookie: Some(9876),
+            marks: None,
+            transport: Some(fnet_sockets::IpSocketTransportState::Tcp(
+                fnet_sockets::IpSocketTcpState {
+                    src_port: Some(3333),
+                    dst_port: Some(4444),
+                    state: Some(fnet_tcp::State::TimeWait),
+                    tcp_info: None,
+                    __source_breaking: fidl::marker::SourceBreaking,
+                },
+            )),
+            __source_breaking: fidl::marker::SourceBreaking,
+        };
+
+        let socket_3 = fnet_sockets::IpSocketState {
+            family: Some(fnet::IpVersion::V6),
+            src_addr: Some(fidl_ip!("2001:db8::1")),
+            dst_addr: Some(fidl_ip!("2001:db8::2")),
+            cookie: Some(5678),
+            marks: None,
+            transport: Some(fnet_sockets::IpSocketTransportState::Tcp(
+                fnet_sockets::IpSocketTcpState {
+                    src_port: Some(5555),
+                    dst_port: Some(6666),
+                    state: Some(fnet_tcp::State::TimeWait),
+                    tcp_info: None,
+                    __source_breaking: fidl::marker::SourceBreaking,
+                },
+            )),
+            __source_breaking: fidl::marker::SourceBreaking,
+        };
+
+        let (diagnostics, diagnostics_server_end) =
+            fidl::endpoints::create_proxy::<fnet_sockets::DiagnosticsMarker>();
+
+        let serve_matcher = async |req: fnet_sockets::DiagnosticsRequest| {
+            let responses = &[vec![socket_1.clone()], vec![socket_2.clone(), socket_3.clone()]];
+
+            match req {
+                fnet_sockets::DiagnosticsRequest::IterateIp {
+                    s,
+                    extensions: _,
+                    matchers: _,
+                    responder,
+                } => {
+                    responder
+                        .send(&fnet_sockets::IterateIpResult::Ok(fnet_sockets::Empty))
+                        .unwrap();
+
+                    let (mut stream, _control) = s.into_stream_and_control_handle();
+                    for (i, resp) in responses.iter().enumerate() {
+                        match stream.next().await.unwrap().unwrap() {
+                            fidl_fuchsia_net_sockets::IpIteratorRequest::Next { responder } => {
+                                let has_more = i < responses.len() - 1;
+                                responder.send(&resp, has_more).unwrap();
+                            }
+                            fidl_fuchsia_net_sockets::IpIteratorRequest::_UnknownMethod {
+                                ..
+                            } => {
+                                unreachable!()
+                            }
+                        }
+                    }
+                }
+            };
+        };
+
+        let (mut diagnostics_request_stream, _control_handle) =
+            diagnostics_server_end.into_stream_and_control_handle();
+
+        let server_fut = diagnostics_request_stream
+            .next()
+            .then(|req| serve_matcher(req.expect("Request stream ended unexpectedly").unwrap()))
+            .fuse();
+
+        let client_fut = async {
+            iterate_ip::<[IpSocketMatcher; 0], _>(
+                &diagnostics,
+                fnet_sockets::Extensions::empty(),
+                [],
+            )
+            .await
+            .unwrap()
+            .try_collect::<Vec<_>>()
+            .await
+            .unwrap()
+        };
+
+        let ((), sockets) = future::join(server_fut, client_fut).await;
+        assert_eq!(sockets, vec![socket_1.clone(), socket_2.clone(), socket_3.clone()]);
     }
 }

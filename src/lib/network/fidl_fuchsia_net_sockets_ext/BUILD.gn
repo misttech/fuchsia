@@ -12,13 +12,19 @@ rustc_library("fidl_fuchsia_net_sockets_ext") {
     "//sdk/fidl/fuchsia.net.matchers:fuchsia.net.matchers_rust",
     "//sdk/fidl/fuchsia.net.sockets:fuchsia.net.sockets_rust",
     "//src/connectivity/lib/net-types",
+    "//src/lib/fidl/rust/fidl",
     "//src/lib/network/fidl_fuchsia_net_ext",
     "//src/lib/network/fidl_fuchsia_net_matchers_ext",
+    "//third_party/rust_crates:futures",
     "//third_party/rust_crates:thiserror",
   ]
   test_deps = [
     "//sdk/fidl/fuchsia.net:fuchsia.net_rust",
+    "//sdk/fidl/fuchsia.net.tcp:fuchsia.net.tcp_rust",
+    "//sdk/rust/zx-status",
     "//src/connectivity/lib/net-declare",
+    "//src/lib/fuchsia-async",
+    "//third_party/rust_crates:assert_matches",
     "//third_party/rust_crates:test-case",
   ]
   sources = [ "src/lib.rs" ]
