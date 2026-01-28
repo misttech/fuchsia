@@ -131,9 +131,6 @@ fuchsia_product_configuration(
                 "vsock_development": True,
                 "include_bin_clock": False,
             },
-            "driver_framework": {
-                "enable_driver_index_stop_on_idle": True,
-            },
             "storage": {
                 "filesystems": {
                     "image_mode": "no_image",

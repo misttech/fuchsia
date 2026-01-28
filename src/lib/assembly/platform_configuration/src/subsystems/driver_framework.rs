@@ -136,23 +136,10 @@ impl
             ),
         )?;
 
-        match driver_framework.enable_driver_index_stop_on_idle {
-            true => {
-                // Explicitly enabled by platform config.
-                // Set to 10 seconds.
-                builder.set_config_capability(
-                    "fuchsia.driver.index.StopOnIdleTimeoutMillis",
-                    Config::new(ConfigValueType::Int64, 10000.into()),
-                )?;
-            }
-            false => {
-                // Explicitly disabled by platform config.
-                builder.set_config_capability(
-                    "fuchsia.driver.index.StopOnIdleTimeoutMillis",
-                    Config::new_void(),
-                )?;
-            }
-        };
+        builder.set_config_capability(
+            "fuchsia.driver.index.StopOnIdleTimeoutMillis",
+            Config::new(ConfigValueType::Int64, 10000.into()),
+        )?;
 
         let mut software_names = Vec::new();
         let mut software_ids = Vec::new();

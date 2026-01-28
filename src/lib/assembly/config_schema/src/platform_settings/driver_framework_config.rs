@@ -36,11 +36,4 @@ pub struct DriverFrameworkConfig {
     /// Fuzzing configuration used for testing.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub test_fuzzing_config: Option<TestFuzzingConfig>,
-
-    /// Whether to enable the driver index's stop_on_idle feature, where it waits until it reaches
-    /// an idle timeout, escrows its state and handles, then exits. If unspecified, this will
-    /// default to `false`.
-    /// See: https://fuchsia.dev/fuchsia-src/development/components/stop_idle
-    #[serde(skip_serializing_if = "crate::common::is_default")]
-    pub enable_driver_index_stop_on_idle: bool,
 }
