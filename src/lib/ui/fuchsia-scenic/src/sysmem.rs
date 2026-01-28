@@ -3,9 +3,8 @@
 // found in the LICENSE file.
 
 use anyhow::Error;
-use fidl::endpoints::{create_endpoints, ClientEnd};
+use fidl::endpoints::{ClientEnd, create_endpoints};
 use fsysmem2::BufferCollectionTokenDuplicateRequest;
-use zx::{self as zx, AsHandleRef};
 use {fidl_fuchsia_sysmem2 as fsysmem2, fidl_fuchsia_ui_composition as fland};
 
 // Pair of tokens to be used with Scenic Allocator FIDL protocol.

@@ -10,7 +10,7 @@ use crate::vfs::timer::{TimelineChangeObserver, TimerOps};
 use starnix_uapi::errors::Errno;
 use starnix_uapi::{error, from_status_like_fdio};
 use std::sync::{Arc, Weak};
-use zx::{self as zx, AsHandleRef, HandleRef};
+use zx::HandleRef;
 
 pub struct MonotonicZxTimer {
     timer: zx::MonotonicTimer,

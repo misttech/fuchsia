@@ -163,7 +163,6 @@ mod tests {
         // SAFETY: converting between versions of the same types, the handle is valid
         let main_thread = unsafe {
             Unowned::from_raw_handle(fuchsia_runtime::with_thread_self(|thread| {
-                use zx::AsHandleRef;
                 // Need the raw_handle method from fuchsia_runtime's dependency.
                 thread.as_handle_ref().raw_handle()
             }))

@@ -12,14 +12,14 @@ use carnelian::render::{
     PreClear, Raster, RenderExt, Style,
 };
 use carnelian::{
-    make_app_assistant, App, AppAssistant, Size, ViewAssistant, ViewAssistantContext,
-    ViewAssistantPtr, ViewKey,
+    App, AppAssistant, Size, ViewAssistant, ViewAssistantContext, ViewAssistantPtr, ViewKey,
+    make_app_assistant,
 };
 use euclid::default::{Point2D, Rect};
 use euclid::{point2, size2};
 use std::collections::BTreeMap;
 use std::fs::File;
-use zx::{AsHandleRef, Event, Signals};
+use zx::{Event, Signals};
 
 const WHITE_COLOR: Color = Color { r: 255, g: 255, b: 255, a: 255 };
 

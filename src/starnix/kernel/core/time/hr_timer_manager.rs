@@ -22,7 +22,7 @@ use starnix_uapi::errors::Errno;
 use starnix_uapi::{errno, from_status_like_fdio};
 use std::collections::{HashMap, VecDeque};
 use std::sync::{Arc, OnceLock, Weak};
-use zx::{AsHandleRef, HandleBased, HandleRef};
+use zx::{HandleBased, HandleRef};
 use {fidl_fuchsia_time_alarms as fta, fuchsia_async as fasync, fuchsia_trace as ftrace};
 
 /// Max value for inspect event history.

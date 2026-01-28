@@ -4,7 +4,7 @@
 
 use anyhow::Error;
 use fidl_fuchsia_ui_views::{ViewRef, ViewRefControl};
-use zx::{AsHandleRef, EventPair, HandleBased, Rights, Status};
+use zx::{EventPair, HandleBased, Rights, Status};
 
 pub struct ViewRefPair {
     pub control_ref: ViewRefControl,

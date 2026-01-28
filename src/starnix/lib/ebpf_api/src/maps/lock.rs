@@ -403,7 +403,6 @@ mod test {
     use std::sync::atomic::AtomicU32;
     use std::sync::{Arc, Barrier};
     use std::thread;
-    use zx::AsHandleRef;
 
     const NUM_THREADS: usize = 10;
     const NUM_ITERATIONS: usize = 100;

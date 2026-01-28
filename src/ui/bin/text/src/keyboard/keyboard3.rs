@@ -9,7 +9,6 @@ use std::collections::{HashMap, HashSet};
 use std::fmt;
 use std::hash::{Hash, Hasher};
 use std::sync::Arc;
-use zx::{self as zx, AsHandleRef};
 use {
     fidl_fuchsia_input as input, fidl_fuchsia_ui_input3 as ui_input3,
     fidl_fuchsia_ui_views as ui_views, fuchsia_scenic as scenic,

@@ -39,7 +39,7 @@ pub fn object_wait_many(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::{AsHandleRef, Duration, Event, WaitResult};
+    use crate::{Duration, Event, WaitResult};
 
     #[test]
     fn wait_and_signal() {

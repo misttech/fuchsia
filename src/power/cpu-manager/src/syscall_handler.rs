@@ -292,7 +292,6 @@ mod tests {
     use super::*;
     use diagnostics_assertions::assert_data_tree;
     use fuchsia_async as fasync;
-    use zx::AsHandleRef;
     use zx::sys::zx_processor_power_domain_t;
 
     /// Tests that well-formed configuration JSON does not panic the `new_from_json` function.

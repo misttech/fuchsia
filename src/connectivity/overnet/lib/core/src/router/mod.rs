@@ -30,7 +30,7 @@ use crate::proxy::{
 };
 use anyhow::{Context as _, Error, bail, format_err};
 use async_utils::mutex_ticket::MutexTicket;
-use fidl::{AsHandleRef, Channel, EventPair, HandleBased, NullableHandle, Socket};
+use fidl::{Channel, EventPair, HandleBased, NullableHandle, Socket};
 use fidl_fuchsia_overnet_protocol::{
     ChannelHandle, EventPairHandle, EventPairRights, SocketHandle, SocketType, StreamId, StreamRef,
     ZirconHandle,

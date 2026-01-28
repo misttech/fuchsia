@@ -46,7 +46,7 @@ use std::mem;
 use std::path::Path;
 use std::sync::Arc;
 use vfs::execution_scope::ExecutionScope;
-use zx::{self as zx, AsHandleRef, HandleBased};
+use zx::HandleBased;
 use {
     fidl_fuchsia_component as fcomp, fidl_fuchsia_component_runner as fcrunner,
     fidl_fuchsia_io as fio, fidl_fuchsia_memory_attribution as fattribution,
@@ -859,7 +859,7 @@ mod tests {
     use runner::component::Controllable;
     use std::str::FromStr;
     use std::task::Poll;
-    use zx::{self as zx, Task};
+    use zx::{AsHandleRef, Task};
     use {
         fidl_fuchsia_component as fcomp, fidl_fuchsia_component_runner as fcrunner,
         fidl_fuchsia_data as fdata, fidl_fuchsia_io as fio, fuchsia_async as fasync,

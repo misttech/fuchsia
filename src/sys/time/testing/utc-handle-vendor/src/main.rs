@@ -12,7 +12,7 @@ use fuchsia_component::server::ServiceFs;
 use fuchsia_runtime::UtcClock;
 use futures::stream::StreamExt;
 use std::rc::Rc;
-use zx::{AsHandleRef, HandleBased};
+use zx::HandleBased;
 use {fidl_fuchsia_time as fftime, fuchsia_runtime as fxr};
 
 enum Protocols {

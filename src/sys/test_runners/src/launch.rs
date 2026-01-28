@@ -11,7 +11,7 @@ use fuchsia_component::client::connect_to_protocol;
 use namespace::Namespace;
 use runtime::{HandleInfo, HandleType};
 use thiserror::Error;
-use zx::{AsHandleRef, HandleBased, Process, Rights, Task};
+use zx::{HandleBased, Process, Rights, Task};
 use {fidl_fuchsia_process as fproc, fuchsia_runtime as runtime};
 
 /// The basic rights to use when creating or duplicating a UTC clock. Restrict these

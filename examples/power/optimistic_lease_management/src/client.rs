@@ -8,7 +8,6 @@ use futures::stream::StreamExt;
 use lease_management::SequenceClient;
 use log::{error, info, warn};
 use std::sync::Arc;
-use zx::{self, AsHandleRef};
 use {fidl_fuchsia_example_power as fexample, fuchsia_async as fasync};
 
 async fn receive_messages(

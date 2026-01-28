@@ -8,7 +8,7 @@ use super::{
 };
 use crate::peer::PeerConnRef;
 use anyhow::{Error, format_err};
-use fidl::{AsHandleRef, HandleBased, Peered, Signals};
+use fidl::{HandleBased, Peered, Signals};
 use std::task::{Context, Poll};
 use zx_status;
 

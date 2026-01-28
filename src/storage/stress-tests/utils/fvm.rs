@@ -9,7 +9,7 @@ use std::path::PathBuf;
 use storage_isolated_driver_manager::{
     BlockDeviceMatcher, create_random_guid, fvm, wait_for_block_device_devfs,
 };
-use zx::{AsHandleRef, Rights, Status, Vmo};
+use zx::{Rights, Status, Vmo};
 
 pub use storage_isolated_driver_manager::Guid;
 

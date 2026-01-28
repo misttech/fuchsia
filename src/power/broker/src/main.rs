@@ -22,7 +22,6 @@ use inspect_format::constants::DEFAULT_VMO_SIZE_BYTES as DEFAULT_INSPECT_VMO;
 use std::cell::RefCell;
 use std::collections::HashMap;
 use std::rc::Rc;
-use zx::AsHandleRef;
 
 use crate::broker::{Broker, CurrentLevelSubscriber, LeaseID};
 use crate::topology::{ElementID, IndexedPowerLevel};

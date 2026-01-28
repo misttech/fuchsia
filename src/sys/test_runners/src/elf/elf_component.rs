@@ -28,7 +28,7 @@ use thiserror::Error;
 use vfs::execution_scope::ExecutionScope;
 use vfs::file::vmo::read_only;
 use vfs::tree_builder::TreeBuilder;
-use zx::{self as zx, AsHandleRef, HandleBased, Task};
+use zx::{HandleBased, Task};
 use {
     fidl_fuchsia_component as fcomponent, fidl_fuchsia_component_runner as fcrunner,
     fidl_fuchsia_io as fio,

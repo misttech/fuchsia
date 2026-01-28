@@ -88,8 +88,6 @@ impl Default for Namespace {
 #[cfg(target_os = "fuchsia")]
 impl Clone for Namespace {
     fn clone(&self) -> Self {
-        use fidl::AsHandleRef;
-
         // TODO(https://fxbug.dev/42083023): The unsafe block can go away if Rust FIDL bindings exposed the
         // feature of calling FIDL methods (e.g. Clone) on a borrowed client endpoint.
         let tree = self.tree.map_ref(|dir| {

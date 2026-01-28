@@ -7,7 +7,6 @@ use crate::fidl::registry::{self, try_from_handle_in_registry};
 use crate::{
     Capability, ConversionError, Dict, RemotableCapability, RemoteError, WeakInstanceToken,
 };
-use fidl::AsHandleRef;
 use fidl_fuchsia_component_sandbox as fsandbox;
 use fuchsia_sync::Mutex;
 use futures::FutureExt;

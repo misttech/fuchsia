@@ -6,7 +6,7 @@ use async_trait::async_trait;
 use fidl_fuchsia_component_runner::{ComponentDiagnostics, Task as DiagnosticsTask, TaskUnknown};
 use futures::channel::oneshot;
 use hooks::RuntimeInfo;
-use zx::{self as zx, sys as zx_sys, AsHandleRef, Task};
+use zx::{Task, sys as zx_sys};
 
 /// Trait that all structs that behave as Task's implement.
 /// Used for simplying testing.

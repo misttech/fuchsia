@@ -39,7 +39,6 @@ use starnix_uapi::{
     statfs,
 };
 use std::sync::Arc;
-use zx::AsHandleRef;
 
 /// A reference to a BPF object that can be stored in either an FD or an entry in the /sys/fs/bpf
 /// filesystem.

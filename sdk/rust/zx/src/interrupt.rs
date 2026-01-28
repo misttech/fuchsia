@@ -116,7 +116,7 @@ impl<K: InterruptKind, T: Timeline> From<Interrupt<K, T>> for NullableHandle {
     }
 }
 
-impl<K: InterruptKind> HandleBased for Interrupt<K> {}
+impl<K: InterruptKind, T: Timeline> HandleBased for Interrupt<K, T> {}
 
 mod private {
     pub trait Sealed {}

@@ -14,7 +14,7 @@
 // can be called, triggering specific rights checks.
 
 use fidl::endpoints::ServerEnd;
-use fidl::{AsHandleRef, Channel, Event};
+use fidl::{Channel, Event};
 use fidl_test_external::{
     EchoHandleProtocolMarker, EchoHandleProtocolProxy, EchoHandleProtocolRequest,
     EchoHandleProtocolSynchronousProxy, ErrorSyntaxProtocolMarker, ErrorSyntaxProtocolProxy,

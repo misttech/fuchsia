@@ -6,7 +6,6 @@ use crate::fidl::{IntoFsandboxCapability, RemotableCapability};
 use crate::{
     Capability, CapabilityBound, Dict, Request, Router, RouterResponse, WeakInstanceToken,
 };
-use fidl::AsHandleRef;
 use router_error::{Explain, RouterError};
 use std::sync::Arc;
 use vfs::directory::entry::{self, DirectoryEntry, DirectoryEntryAsync, EntryInfo, GetEntryInfo};

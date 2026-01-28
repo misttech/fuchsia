@@ -377,6 +377,11 @@ impl Handle {
         self.0
     }
 
+    /// Return a reference to the handle.
+    pub fn as_handle_ref<'a>(&'a self) -> HandleRef<'a> {
+        HandleRef(self.0, std::marker::PhantomData)
+    }
+
     /// Return basic information about the handle.
     pub fn basic_info(&self) -> Result<HandleBasicInfo, Status> {
         self.as_handle_ref().basic_info()
@@ -759,6 +764,11 @@ impl Channel {
         .map_err(|(_handles_to_drop, err)| err)
     }
 
+    /// Return a reference to the handle.
+    pub fn as_handle_ref<'a>(&'a self) -> HandleRef<'a> {
+        HandleRef(self.0, std::marker::PhantomData)
+    }
+
     /// Signal the channel.
     pub fn signal(&self, clear: Signals, set: Signals) -> Result<(), Status> {
         self.as_handle_ref().signal(clear, set)
@@ -1008,6 +1018,11 @@ impl Socket {
         })
     }
 
+    /// Return a reference to the handle.
+    pub fn as_handle_ref<'a>(&'a self) -> HandleRef<'a> {
+        HandleRef(self.0, std::marker::PhantomData)
+    }
+
     /// Signal the socket.
     pub fn signal(&self, clear: Signals, set: Signals) -> Result<(), Status> {
         self.as_handle_ref().signal(clear, set)
@@ -1060,6 +1075,11 @@ impl EventPair {
         Ok((EventPair(left), EventPair(right)))
     }
 
+    /// Return a reference to the handle.
+    pub fn as_handle_ref<'a>(&'a self) -> HandleRef<'a> {
+        HandleRef(self.0, std::marker::PhantomData)
+    }
+
     /// Signal the eventpair.
     pub fn signal(&self, clear: Signals, set: Signals) -> Result<(), Status> {
         self.as_handle_ref().signal(clear, set)
@@ -1101,6 +1121,11 @@ impl Event {
     /// Create an event.
     pub fn create() -> Event {
         Event(new_handle(HdlType::Event, Rights::EVENT_DEFAULT).0)
+    }
+
+    /// Return a reference to the handle.
+    pub fn as_handle_ref<'a>(&'a self) -> HandleRef<'a> {
+        HandleRef(self.0, std::marker::PhantomData)
     }
 
     /// Signal the event.

@@ -5,9 +5,9 @@
 use crate::ProtocolsExt;
 use crate::execution_scope::ExecutionScope;
 use crate::node::{self, Node};
+use fidl::HandleBased;
 use fidl::endpoints::{ControlHandle, ProtocolMarker, RequestStream, ServerEnd};
 use fidl::epitaph::ChannelEpitaphExt;
-use fidl::{AsHandleRef, HandleBased};
 use futures::FutureExt;
 use std::future::Future;
 use std::sync::Arc;

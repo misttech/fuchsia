@@ -555,7 +555,6 @@ impl Heap {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use fidl::AsHandleRef;
     use fuchsia_async as fasync;
     use std::rc::Rc;
     use test_case::test_case;

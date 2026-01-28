@@ -17,7 +17,6 @@
 //! Start by calling [FakeHrtimerServer::new], followed by [FakeHrtimerServer::serve].
 
 use anyhow::{Context, Result};
-use fidl::AsHandleRef;
 use fidl::endpoints::{create_endpoints, create_proxy};
 use fuchsia_component::client::connect_to_protocol;
 use fuchsia_component::server::ServiceFs;

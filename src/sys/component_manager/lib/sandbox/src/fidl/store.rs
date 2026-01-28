@@ -6,7 +6,6 @@ use crate::dict::Key;
 use crate::fidl::{IntoFsandboxCapability, RemotableCapability, registry};
 use crate::{Capability, Connector, Dict, DirConnector, Message, WeakInstanceToken};
 use cm_types::RelativePath;
-use fidl::AsHandleRef;
 use fidl::handle::Signals;
 use futures::{FutureExt, TryStreamExt};
 use log::warn;

@@ -2,7 +2,6 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 use fuchsia_trace::{TraceState, trace_state};
-use zx::AsHandleRef;
 
 /// A waiter that is notified with the tracing state changes.
 ///

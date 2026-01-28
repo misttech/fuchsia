@@ -3,7 +3,7 @@
 // found in the LICENSE file.
 
 use anyhow::{Context, Result};
-use fidl::{AsHandleRef, HandleBased, endpoints};
+use fidl::{HandleBased, endpoints};
 use fidl_fuchsia_metrics_test::{LogMethod, MetricEventLoggerQuerierProxy};
 use fidl_fuchsia_testing::Increment;
 use fidl_fuchsia_time_external::{Status, TimeSample};

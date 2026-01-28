@@ -3,7 +3,6 @@
 // found in the LICENSE file.
 use fidl_fuchsia_power_broker::{DependencyToken, Permissions};
 use std::collections::HashMap;
-use zx::AsHandleRef;
 
 use crate::topology::ElementID;
 

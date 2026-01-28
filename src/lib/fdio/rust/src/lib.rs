@@ -785,7 +785,7 @@ pub struct NamespaceEntry {
 mod tests {
     use super::*;
     use assert_matches::assert_matches;
-    use zx::{AsHandleRef, MonotonicInstant, Signals, Status, WaitItem, object_wait_many};
+    use zx::{MonotonicInstant, Signals, Status, WaitItem, object_wait_many};
 
     #[test]
     fn namespace_get_installed() {

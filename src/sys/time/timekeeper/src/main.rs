@@ -29,7 +29,6 @@ use crate::time_source::{TimeSource, TimeSourceLauncher};
 use crate::time_source_manager::TimeSourceManager;
 use anyhow::{Context as _, Result};
 use chrono::prelude::*;
-use fidl::AsHandleRef;
 use fuchsia_component::server::ServiceFs;
 use fuchsia_inspect::health;
 use fuchsia_inspect::health::Reporter;

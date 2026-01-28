@@ -9,7 +9,7 @@ use fidl_fuchsia_starnix_runner as fstarnixrunner;
 use fuchsia_sync::Mutex;
 use log::warn;
 use std::sync::Arc;
-use zx::{AsHandleRef, Task};
+use zx::Task;
 
 /// The signal that the kernel raises to indicate that it's awake.
 pub const AWAKE_SIGNAL: zx::Signals = zx::Signals::USER_0;

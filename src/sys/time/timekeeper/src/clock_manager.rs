@@ -25,7 +25,6 @@ use std::rc::Rc;
 use std::sync::Arc;
 use time_adjust::Command;
 use time_pretty::{format_duration, format_timer};
-use zx::AsHandleRef;
 use {fidl_fuchsia_time as fft, fuchsia_async as fasync};
 
 /// One million for PPM calculations

@@ -11,7 +11,7 @@ use futures::prelude::*;
 use std::ffi::{CStr, CString};
 use std::{iter, mem};
 use thiserror::Error;
-use zx::{self as zx, AsHandleRef, HandleBased};
+use zx::HandleBased;
 use {fidl_fuchsia_io as fio, fidl_fuchsia_ldsvc as fldsvc};
 
 /// Error type returned by ProcessBuilder methods.

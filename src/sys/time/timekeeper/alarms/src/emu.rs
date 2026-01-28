@@ -115,7 +115,6 @@ mod tests {
     use super::*;
     use crate::clone_handle;
     use assert_matches::assert_matches;
-    use fidl::AsHandleRef;
     use std::task::Poll;
 
     const FAKE_ID: u64 = 42;

@@ -135,7 +135,6 @@ pub enum Error {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use fidl::AsHandleRef as _;
     use fuchsia_async as fasync;
     use std::io::Write as _;
 

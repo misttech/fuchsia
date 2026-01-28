@@ -17,7 +17,7 @@ use starnix_uapi::errors::{EIO, Errno, errno};
 use starnix_uapi::open_flags::OpenFlags;
 use starnix_uapi::vfs::FdEvents;
 use std::sync::Arc;
-use zx::{AsHandleRef, HandleBased, Rights, WaitResult};
+use zx::{HandleBased, Rights, WaitResult};
 use {fidl_fuchsia_hardware_google_nanohub as fnanohub, fidl_fuchsia_starnix_runner as frunner};
 
 use fuchsia_runtime;

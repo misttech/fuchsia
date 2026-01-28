@@ -7,7 +7,6 @@ use crate::{FONTS_MEDIUM_CM, FONTS_SMALL_CM};
 use anyhow::{Context as _, Error, format_err};
 use fidl_fuchsia_fonts as fonts;
 use log::info;
-use zx::AsHandleRef;
 
 macro_rules! assert_buf_eq {
     ($font_info_a:ident, $font_info_b:ident) => {

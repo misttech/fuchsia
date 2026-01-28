@@ -8,7 +8,6 @@
 
 use crate::{PackageSource, dirs_to_test, repeat_by_n};
 use assert_matches::assert_matches;
-use fidl::AsHandleRef;
 use fidl::endpoints::create_proxy;
 use fidl_fuchsia_io as fio;
 use fuchsia_fs::directory::open_file;

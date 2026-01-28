@@ -43,6 +43,16 @@ macro_rules! delegated_concrete_handle_based_impls {
             self.0.into_raw()
         }
 
+        /// Returns an [Unowned] referring to this handle.
+        pub fn unowned(&self) -> $crate::Unowned<'_, Self> {
+            $crate::Unowned::cast(self.as_handle_ref())
+        }
+
+        /// Returns a [HandleRef] referring to this handle.
+        pub fn as_handle_ref(&self) -> HandleRef<'_> {
+            self.0.as_handle_ref()
+        }
+
         // TODO(https://fxbug.dev/384752843) only generate on types that can be duped
         /// Wraps the
         /// [`zx_handle_duplicate`](https://fuchsia.dev/fuchsia-src/reference/syscalls/handle_duplicate)

@@ -12,7 +12,7 @@ use starnix_sync::{Locked, Unlocked};
 use starnix_uapi::file_mode::FileMode;
 use starnix_uapi::open_flags::OpenFlags;
 use std::sync::Arc;
-use zx::{AsHandleRef, HandleBased};
+use zx::HandleBased;
 
 pub struct ImageInfo {
     /// The magma image info associated with the `memory`.

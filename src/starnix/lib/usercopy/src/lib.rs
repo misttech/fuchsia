@@ -6,7 +6,7 @@ use std::mem::MaybeUninit;
 use std::ops::Range;
 
 use zerocopy::FromBytes;
-use zx::{AsHandleRef, HandleBased, Task};
+use zx::{HandleBased, Task};
 
 unsafe extern "C" {
     // This function performs a data copy like `memcpy`.

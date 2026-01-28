@@ -1075,7 +1075,7 @@ mod tests {
     use futures_test::task::new_count_waker;
     use std::future::pending;
     use std::thread;
-    use zx::{AsHandleRef, MessageBufEtc};
+    use zx::MessageBufEtc;
 
     const SEND_ORDINAL_HIGH_BYTE: u8 = 42;
     const SEND_ORDINAL: u64 = 42 << 32;

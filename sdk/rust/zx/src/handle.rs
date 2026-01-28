@@ -386,6 +386,10 @@ impl NullableHandle {
         self.0.map(Handle::into_raw).unwrap_or(sys::ZX_HANDLE_INVALID)
     }
 
+    pub fn as_handle_ref(&self) -> HandleRef<'_> {
+        AsHandleRef::as_handle_ref(self)
+    }
+
     pub const fn is_invalid(&self) -> bool {
         self.0.is_none()
     }

@@ -28,7 +28,6 @@ use sandbox::{
 use std::fmt::Debug;
 use std::sync::Arc;
 use vfs::execution_scope::{ExecutionScope, WeakExecutionScope};
-use zx::AsHandleRef;
 use {fidl_fuchsia_io as fio, fuchsia_async as fasync};
 
 pub fn take_handle_as_stream<P: ProtocolMarker>(channel: zx::Channel) -> P::RequestStream {

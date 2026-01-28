@@ -8,21 +8,21 @@ use super::facets::{
 };
 use super::group::{GroupId, GroupMap, GroupMember, GroupMemberData};
 use super::layout::{ArrangerPtr, Axis, Flex, FlexBuilder, StackBuilder};
-use super::{raster_for_corner_knockouts, BlendMode, FillRule, LayerGroup, Rendering};
+use super::{BlendMode, FillRule, LayerGroup, Rendering, raster_for_corner_knockouts};
 use crate::color::Color;
-use crate::drawing::{path_for_cursor, FontFace};
+use crate::drawing::{FontFace, path_for_cursor};
 use crate::render::generic::{GenericOrder, OrderError};
 use crate::render::{
     Composition, Context as RenderContext, Fill, Layer, Order, PreClear, Raster, RenderExt, Style,
 };
 use crate::{Coord, IntPoint, Point, Rect, Size, ViewAssistantContext};
-use anyhow::{bail, Error};
+use anyhow::{Error, bail};
 use euclid::{size2, vec2};
 use fuchsia_trace::duration;
 use std::any::Any;
 use std::collections::{BTreeMap, HashMap};
 use std::fmt::{self, Debug};
-use zx::{AsHandleRef, Event, Signals};
+use zx::{Event, Signals};
 
 // Maximum order supported by scene. 3 layers are reserved for
 /// scene features such as rounded corners.

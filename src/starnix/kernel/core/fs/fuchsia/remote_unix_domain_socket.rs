@@ -20,7 +20,6 @@ use starnix_uapi::errors::Errno;
 use starnix_uapi::vfs::FdEvents;
 use starnix_uapi::{errno, error, from_status_like_fdio, uapi, ucred};
 use zerocopy::IntoBytes;
-use zx::AsHandleRef;
 use {fidl_fuchsia_io as fio, fidl_fuchsia_starnix_binder as fbinder};
 static READABLE_SIGNAL: zx::Signals =
     zx::Signals::from_bits_retain(fio::FileSignal::READABLE.bits());

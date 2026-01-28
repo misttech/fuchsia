@@ -12,7 +12,6 @@ use std::cell::RefCell;
 use std::mem::MaybeUninit;
 use std::rc::Rc;
 use std::sync::Arc;
-use zx::AsHandleRef;
 
 /// `ChannelProxy` is used to proxy messages on a `zx::Channel` between the Starnix
 /// container and the outside world. This allows the Starnix runner to wake the container

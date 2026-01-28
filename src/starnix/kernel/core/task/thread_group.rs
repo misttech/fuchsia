@@ -48,7 +48,7 @@ use std::collections::BTreeMap;
 use std::fmt;
 use std::sync::atomic::Ordering;
 use std::sync::{Arc, Weak};
-use zx::{AsHandleRef, Koid, Status};
+use zx::{Koid, Status};
 
 /// A weak reference to a thread group that can be used in set and maps.
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]

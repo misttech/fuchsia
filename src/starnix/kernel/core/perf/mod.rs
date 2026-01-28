@@ -14,7 +14,6 @@ use std::sync::atomic::{AtomicPtr, AtomicU64, Ordering};
 use std::sync::{Arc, mpsc as sync_mpsc};
 use std::time::Duration;
 use zerocopy::{Immutable, IntoBytes};
-use zx::AsHandleRef;
 use {fidl_fuchsia_cpu_profiler as profiler, fuchsia_async};
 
 use futures::io::{AsyncReadExt, Cursor};

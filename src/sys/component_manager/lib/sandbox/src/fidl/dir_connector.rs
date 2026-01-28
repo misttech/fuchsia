@@ -9,7 +9,6 @@ use crate::{
     Capability, ConversionError, DirConnector, DirReceiver, RemoteError, WeakInstanceToken,
 };
 use cm_types::{Name, RelativePath};
-use fidl::AsHandleRef;
 use fidl::endpoints::{ClientEnd, ServerEnd};
 use futures::channel::mpsc;
 use std::fmt;

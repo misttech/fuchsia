@@ -16,7 +16,7 @@ use std::ffi::CString;
 use std::fmt::Debug;
 use std::sync::{Arc, LazyLock};
 use thiserror::Error;
-use zx::{self as zx, AsHandleRef, sys};
+use zx::sys;
 
 /// Internal error type for ProcessLauncher which conveniently wraps errors that might
 /// result during process launching and allows for mapping them to an equivalent zx::Status, which

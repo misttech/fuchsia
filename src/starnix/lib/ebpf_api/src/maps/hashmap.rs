@@ -94,7 +94,6 @@ mod internal {
     use static_assertions::const_assert_eq;
     use std::mem::size_of;
     use std::sync::atomic::{AtomicU32, Ordering};
-    use zx::AsHandleRef;
 
     // Value stored in the shared VMO to reference a data entry by index. 0 is
     // equivalent to a null reference. Reference to entry at index N is stored

@@ -14,7 +14,6 @@ use crate::fuchsia::symlink::FxSymlink;
 use crate::fuchsia::volumes_directory::VolumesDirectory;
 use anyhow::{Error, bail, ensure};
 use async_trait::async_trait;
-use fidl::AsHandleRef;
 use fidl::endpoints::ServerEnd;
 use fidl_fuchsia_fxfs::{
     BytesAndNodes, FileBackedVolumeProviderRequest, FileBackedVolumeProviderRequestStream,

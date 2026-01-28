@@ -19,7 +19,7 @@ use runner::component::Controllable;
 use std::ops::DerefMut;
 use std::sync::Arc;
 use vfs::ExecutionScope;
-use zx::{self as zx, AsHandleRef, HandleBased, Process, Task};
+use zx::{HandleBased, Process, Task};
 use {fidl_fuchsia_io as fio, fuchsia_async as fasync};
 
 /// Immutable information about the component.

@@ -27,7 +27,7 @@ use thiserror::Error;
 use vfs::directory::entry::{OpenRequest, serve_directory};
 use vfs::execution_scope::ExecutionScope;
 use vfs::service::endpoint;
-use zx::{AsHandleRef, HandleBased, Task};
+use zx::{HandleBased, Task};
 use {
     fidl_fuchsia_component as fcomponent, fidl_fuchsia_component_runner as fcrunner,
     fidl_fuchsia_io as fio, fidl_fuchsia_memory_attribution as fattribution,

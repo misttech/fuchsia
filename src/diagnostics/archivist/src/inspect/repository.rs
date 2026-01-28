@@ -7,8 +7,8 @@ use crate::inspect::container::{
     InspectArtifactsContainer, InspectHandle, UnpopulatedInspectDataContainer,
 };
 use crate::pipeline::{Pipeline, StaticHierarchyAllowlist};
+use fidl::HandleBased;
 use fidl::endpoints::ClientEnd;
-use fidl::{AsHandleRef, HandleBased};
 use fidl_fuchsia_diagnostics::Selector;
 use flyweights::FlyStr;
 use fuchsia_sync::{RwLock, RwLockWriteGuard};
