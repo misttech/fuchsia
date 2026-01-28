@@ -181,6 +181,9 @@ class BazelActionRunner(object):
         if self.global_args.sandbox_debug:
             cmd_args += ["--sandbox_debug"]
 
+        # Always enable verbose failures
+        cmd_args += ["--verbose_failures"]
+
         # Now that there's a complete command string calculated, print it to debug or the command
         # file output if we have one.
         if _DEBUG:
@@ -284,12 +287,11 @@ class BazelActionRunner(object):
             #
             # Note most build users are not interested in executing bazel directly, so hiding this
             # message bechind a flag.
-            if _DEBUG or self.global_args.verbose_failures:
-                print(
-                    "\nERROR when calling Bazel. To reproduce, run this in the Ninja output directory:\n\n  %s\n"
-                    % " ".join(shlex.quote(c) for c in ret.args),
-                    file=sys.stderr,
-                )
+            print(
+                "\nERROR when calling Bazel. To reproduce, run this in the Ninja output directory:\n\n  %s\n"
+                % " ".join(shlex.quote(c) for c in ret.args),
+                file=sys.stderr,
+            )
             raise BazelActionError()
 
         return debug_symbol_manifest_paths

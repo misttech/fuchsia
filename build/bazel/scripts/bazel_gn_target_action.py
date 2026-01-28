@@ -674,8 +674,6 @@ def main() -> int:
     cmd_args += configured_args
     cmd_args += ["//buildfiles_genquery:genquery"]
     cmd_args += args.bazel_targets
-    if _DEBUG or global_bazel_args.verbose_failures:
-        cmd_args += ["--verbose_failures"]
 
     jobs = None
     # When running jobs remotely, increase the number of allowed jobs to 10x

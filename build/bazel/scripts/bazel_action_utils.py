@@ -227,7 +227,6 @@ class BazelRbeSettings(object):
 
 @dataclasses.dataclass
 class BazelGlobalArguments(object):
-    verbose_failures: bool
     upload_build_events: str | None
     quiet: bool
     sandbox_debug: bool
@@ -247,11 +246,6 @@ class BazelGlobalArguments(object):
         # Load settings specified by GN metadata.
         with (build_dir / "bazel_args" / "global_args.json").open("rb") as f:
             content = json.load(f)
-            verbose_failures = content["verbose_failures"]
-            if not isinstance(verbose_failures, bool):
-                raise ValueError(
-                    f"'verbose_failures' must be a boolean, not: {verbose_failures}"
-                )
             upload_build_events = content["upload_build_events"]
 
         # Get settings from the build environment.
@@ -259,7 +253,6 @@ class BazelGlobalArguments(object):
         sandbox_debug = os.environ.get("FUCHSIA_DEBUG_BAZEL_SANDBOX") == "1"
 
         return BazelGlobalArguments(
-            verbose_failures=verbose_failures,
             upload_build_events=(
                 upload_build_events if upload_build_events != "" else None
             ),
