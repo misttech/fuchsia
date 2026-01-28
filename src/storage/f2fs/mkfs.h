@@ -7,6 +7,7 @@
 
 #include <utility>
 
+#include "src/storage/f2fs/bcache.h"
 #include "src/storage/f2fs/common.h"
 #include "src/storage/f2fs/layout.h"
 
@@ -50,8 +51,7 @@ class BcacheMapper;
 
 class MkfsWorker {
  public:
-  explicit MkfsWorker(std::unique_ptr<BcacheMapper> bc, MkfsOptions options)
-      : bc_(std::move(bc)), mkfs_options_(std::move(options)) {}
+  explicit MkfsWorker(std::unique_ptr<BcacheMapper> bc, MkfsOptions options);
 
   // Not copyable or moveable
   MkfsWorker(const MkfsWorker&) = delete;
@@ -92,6 +92,9 @@ class MkfsWorker {
   zx_status_t CreateRootDir();
   zx_status_t PurgeNodeChain();
 };
+
+inline MkfsWorker::MkfsWorker(std::unique_ptr<BcacheMapper> bc, MkfsOptions options)
+    : bc_(std::move(bc)), mkfs_options_(std::move(options)) {}
 
 zx_status_t ParseOptions(const MkfsOptions& options);
 
