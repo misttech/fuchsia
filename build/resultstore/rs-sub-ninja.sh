@@ -85,17 +85,32 @@ do
   shift
 done
 
+wrap_env=()
 wrap_options=(
   --rsproxy "$rsproxy"
 )
 
-[[ "${FX_BUILD_LOGDIR:-NOT_SET}" == "NOT_SET" ]] || {
+# Handle log dir.
+if [[ "${FX_BUILD_LOGDIR:-NOT_SET}" != "NOT_SET" ]]
+then
   [[ -n "$subbuild_dir" ]] || {
     echo "Error: Expected a ninja -C subdir, but found none."
     exit 1
   }
   wrap_options+=( --log-dir "$FX_BUILD_LOGDIR/rsproxy_logs/$subbuild_dir"  )
-}
+elif [[ "${RS_log_dir:-NOT_SET}" != "NOT_SET" ]]
+then
+  # Infra builds set this to a non-unique path, make it unique
+  # using the basename of the sub-build dir.
+  [[ -n "$subbuild_dir" ]] || {
+    echo "Error: Expected a ninja -C subdir, but found none."
+    exit 1
+  }
+  readonly subbuild_base="${subbuild_dir##*/}"  # basename
+  # Override the environment variable, which take precedence over the flag.
+  # This effectively preserves subdirectory structure of invocations.
+  wrap_env+=( RS_log_dir="$RS_log_dir/$subbuild_base" )
+fi
 # Otherwise, if FX_BUILD_LOGDIR isn't set, this is probably being invoked
 # outside of 'fx build', so just fallback to using some temp dir.
 
@@ -105,6 +120,8 @@ readonly py3_bindir="${PREBUILT_PYTHON3%/*}"  # dirname
 export PATH="$py3_bindir:$PATH"
 
 full_cmd=(
+  env
+  "${wrap_env[@]}"
   "$proxy_wrap"
   "${wrap_options[@]}"
   --rsproxy_options
