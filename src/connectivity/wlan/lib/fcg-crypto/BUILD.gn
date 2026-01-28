@@ -5,7 +5,7 @@
 import("//build/components.gni")
 import("//build/rust/rustc_library.gni")
 
-rustc_library("wlan-sae") {
+rustc_library("wlan-fcg-crypto") {
   with_unit_tests = true
   edition = "2024"
   deps = [
@@ -38,6 +38,6 @@ rustc_library("wlan-sae") {
   ]
 }
 
-fuchsia_unittest_package("wlan-sae-tests") {
-  deps = [ ":wlan-sae_test" ]
+fuchsia_unittest_package("wlan-fcg-crypto-tests") {
+  deps = [ ":wlan-fcg-crypto_test" ]
 }

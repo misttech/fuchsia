@@ -196,24 +196,20 @@ mod tests {
     const TEST_INFO_2: &'static str = "SAE Hash to Element u2 P2";
     const TEST_PRK: &'static str =
         "3bd53fe9223dc0280fbfce17d7a3564064e20f48c6ec72246ce367b5569a22af";
-    const TEST_OKM_1: &'static str =
-        "a5044469ab16f25b6abf1e0e37a36b56f50be73369053df8db87989a6b66fd1a\
+    const TEST_OKM_1: &'static str = "a5044469ab16f25b6abf1e0e37a36b56f50be73369053df8db87989a6b66fd1a\
          491f1cdacbd07931620f83008ffc0ecc";
-    const TEST_OKM_2: &'static str =
-        "9b4e0d5b1879f253c5319615099b05aec5b06fa5e788bcfd1e9ea60d33436927\
+    const TEST_OKM_2: &'static str = "9b4e0d5b1879f253c5319615099b05aec5b06fa5e788bcfd1e9ea60d33436927\
          190814c322a62585c93c577bbaa3d307";
 
     // IEEE Std. 802.11-18/1104r0: "New Test Vectors for SAE"
     // Neither the 802.11-2016 nor the 802.11-2020 specs define a test vector result for the
     // confirm construction.  For this we use the proposed new test vectors in 802.11-18/1104r0.
     const TEST_LABEL_2: &'static str = "SAE KCK and PMK";
-    const TEST_LOCAL_COMMIT: &'static str =
-        "1300eb3bab1964e4a0ab05925ddf3339519138bc65d6cdc0f813dd6fd4344eb4\
+    const TEST_LOCAL_COMMIT: &'static str = "1300eb3bab1964e4a0ab05925ddf3339519138bc65d6cdc0f813dd6fd4344eb4\
          bfe44b5c21597658f4e3eddfb4b99f25b4d6540f32ff1fd5c530c60a79444861\
          0bc6de3d92bdbbd47d935980ca6cf8988ab6630be6764c885ceb9793970f6952\
          17eeff0d2170736b34696e7465726e6574";
-    const TEST_PEER_COMMIT: &'static str =
-        "13005564f045b2ea1e566cf1dd741f70d9be35d2df5b9a5502946ee03cf8dae2\
+    const TEST_PEER_COMMIT: &'static str = "13005564f045b2ea1e566cf1dd741f70d9be35d2df5b9a5502946ee03cf8dae2\
          7e1e05b8430eb7a99e24877ce69baf3dc580e309633d6b385f83ee1c3ec3591f\
          1a5393c06e805ddceb2fde50930dd7cfebb987c6ff9666af164eb5184d8e6662\
          ed6aff0d2170736b34696e7465726e6574";
@@ -221,11 +217,9 @@ mod tests {
         "7457a00754dcc4e3dc2850c124d6bb8fa1699d7fa33bb0667d9c34eeb513deb9";
     const TEST_KCK: &'static str =
         "599d6f1e27548be8499dceed2feccf94818ce1c79f1b4eb3d6a53228a09bf3ed";
-    const TEST_LOCAL_CONFIRM: &'static str =
-        "010012d9d5c78c500526d36c41dbc56aedf2914cedddd7cad4a58c48f83dbde9\
+    const TEST_LOCAL_CONFIRM: &'static str = "010012d9d5c78c500526d36c41dbc56aedf2914cedddd7cad4a58c48f83dbde9\
          fc77";
-    const TEST_PEER_CONFIRM: &'static str =
-        "010002871cf906898b8060ec184143be77b8c08a8019b13eb6d0aef0d8383dfa\
+    const TEST_PEER_CONFIRM: &'static str = "010002871cf906898b8060ec184143be77b8c08a8019b13eb6d0aef0d8383dfa\
          c2fd";
     const TEST_PMK: &'static str =
         "7aead86fba4c3221fc437f5f14d70d854ea5d5aac1690116793081eda4d557c5";

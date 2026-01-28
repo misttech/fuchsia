@@ -2,14 +2,14 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use crate::{prf, Error};
+use crate::{Error, prf};
 use anyhow::ensure;
 use ieee80211::MacAddr;
 use mundane::hash::Sha256;
 use std::cmp::{max, min};
 use wlan_common::ie::rsn::akm::{self, Akm};
 use wlan_common::ie::rsn::cipher::Cipher;
-use wlan_sae::hmac_utils;
+use wlan_fcg_crypto::hmac_utils;
 
 /// A PTK is derived from a PMK and provides access to the PTK's key-hierarchy which yields a KEK,
 /// KCK, and TK, used for EAPOL frame protection, integrity check and unicast frame protection

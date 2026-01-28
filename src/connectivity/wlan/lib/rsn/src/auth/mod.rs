@@ -13,7 +13,7 @@ use fidl_fuchsia_wlan_mlme::SaeFrame;
 use ieee80211::{MacAddr, MacAddrBytes, Ssid};
 use log::warn;
 use wlan_common::ie::rsn::akm::AKM_SAE;
-use wlan_sae as sae;
+use wlan_fcg_crypto as sae;
 use zerocopy::SplitByteSlice;
 
 /// IEEE Std 802.11-2016, 12.4.4.1

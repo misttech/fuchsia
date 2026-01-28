@@ -13,9 +13,9 @@ use std::sync::{Arc, LazyLock};
 use wlan_common::bss::Protection;
 use wlan_common::channel;
 use wlan_common::ie::fake_ies::{fake_ht_cap_bytes, fake_vht_cap_bytes};
+use wlan_fcg_crypto::PweMethod;
 use wlan_rsn::rsna::UpdateSink;
 use wlan_rsn::{Error, auth, format_rsn_err, psk};
-use wlan_sae::PweMethod;
 use {
     fidl_fuchsia_wlan_ieee80211 as fidl_ieee80211, fidl_fuchsia_wlan_internal as fidl_internal,
     fidl_fuchsia_wlan_mlme as fidl_mlme,
