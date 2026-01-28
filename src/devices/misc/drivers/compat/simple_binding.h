@@ -16,7 +16,33 @@
 
 namespace devfs {
 
-class SimpleBinding;
+class ChannelTransaction;
+
+using AnyOnChannelClosedFn = fit::callback<void(fidl::internal::IncomingMessageDispatcher*)>;
+
+class SimpleBinding : private async_wait_t {
+ public:
+  SimpleBinding(async_dispatcher_t* dispatcher, zx::channel channel,
+                fidl::internal::IncomingMessageDispatcher* interface,
+                AnyOnChannelClosedFn on_channel_closed_fn);
+
+  ~SimpleBinding();
+
+  static void MessageHandler(async_dispatcher_t* dispatcher, async_wait_t* wait, zx_status_t status,
+                             const zx_packet_signal_t* signal);
+
+ private:
+  friend ChannelTransaction;
+  friend zx_status_t BeginWait(std::unique_ptr<SimpleBinding>* unique_binding);
+
+  zx::unowned_channel channel() const { return zx::unowned_channel(async_wait_t::object); }
+
+  async_dispatcher_t* dispatcher_;
+  fidl::internal::IncomingMessageDispatcher* interface_;
+  AnyOnChannelClosedFn on_channel_closed_fn_;
+};
+
+zx_status_t BeginWait(std::unique_ptr<SimpleBinding>* unique_binding);
 
 // A basic implementation of |fidl::Transaction|. Designed to work with
 // |fidl::BindSingleInFlightOnly|, which pauses message dispatching when an asynchronous transaction
@@ -66,31 +92,6 @@ class ChannelTransaction final : public fidl::Transaction {
   std::unique_ptr<SimpleBinding> binding_ = {};
 };
 
-using AnyOnChannelClosedFn = fit::callback<void(fidl::internal::IncomingMessageDispatcher*)>;
-
-class SimpleBinding : private async_wait_t {
- public:
-  SimpleBinding(async_dispatcher_t* dispatcher, zx::channel channel,
-                fidl::internal::IncomingMessageDispatcher* interface,
-                AnyOnChannelClosedFn on_channel_closed_fn);
-
-  ~SimpleBinding();
-
-  static void MessageHandler(async_dispatcher_t* dispatcher, async_wait_t* wait, zx_status_t status,
-                             const zx_packet_signal_t* signal);
-
- private:
-  friend ChannelTransaction;
-  friend zx_status_t BeginWait(std::unique_ptr<SimpleBinding>* unique_binding);
-
-  zx::unowned_channel channel() const { return zx::unowned_channel(async_wait_t::object); }
-
-  async_dispatcher_t* dispatcher_;
-  fidl::internal::IncomingMessageDispatcher* interface_;
-  AnyOnChannelClosedFn on_channel_closed_fn_;
-};
-
-zx_status_t BeginWait(std::unique_ptr<SimpleBinding>* unique_binding);
 
 }  // namespace devfs
 
