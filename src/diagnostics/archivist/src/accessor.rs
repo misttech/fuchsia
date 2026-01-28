@@ -10,29 +10,30 @@ use crate::formatter::{
 };
 use crate::inspect::ReaderServer;
 use crate::inspect::repository::InspectRepository;
-use crate::logs::container::CursorItem;
 use crate::logs::repository::LogsRepository;
+use crate::logs::shared_buffer::FxtMessage;
 use crate::pipeline::Pipeline;
 use diagnostics_data::{Data, DiagnosticsData, ExtendedMoniker, Metadata};
 use fidl::endpoints::{ControlHandle, RequestStream};
 use fidl_fuchsia_diagnostics::{
     ArchiveAccessorRequest, ArchiveAccessorRequestStream, BatchIteratorControlHandle,
-    BatchIteratorRequest, BatchIteratorRequestStream, ClientSelectorConfiguration, DataType,
-    Format, FormattedContent, PerformanceConfiguration, Selector, SelectorArgument, StreamMode,
-    StreamParameters, StringSelector, TreeSelector, TreeSelectorUnknown,
+    BatchIteratorRequest, BatchIteratorRequestStream, ClientSelectorConfiguration,
+    ComponentSelector, DataType, Format, FormattedContent, PerformanceConfiguration, Selector,
+    SelectorArgument, StreamMode, StreamParameters, StringSelector, TreeSelector,
+    TreeSelectorUnknown,
 };
 use fidl_fuchsia_mem::Buffer;
 use fuchsia_inspect::NumericProperty;
 use fuchsia_sync::Mutex;
+use futures::StreamExt;
 use futures::future::{Either, select};
 use futures::prelude::*;
 use futures::stream::Peekable;
-use futures::{StreamExt, pin_mut};
 use log::warn;
 use selectors::FastError;
 use serde::Serialize;
 use std::collections::HashMap;
-use std::pin::Pin;
+use std::pin::{Pin, pin};
 use std::sync::Arc;
 use thiserror::Error;
 use {fidl_fuchsia_diagnostics_host as fhost, fuchsia_async as fasync, fuchsia_trace as ftrace};
@@ -92,10 +93,11 @@ fn validate_and_parse_selectors(
 
 fn validate_and_parse_log_selectors(
     selector_args: Vec<SelectorArgument>,
-) -> Result<Vec<Selector>, AccessorError> {
+) -> Result<Vec<ComponentSelector>, AccessorError> {
     // Only accept selectors of the type: `component:root` for logs for now.
     let selectors = validate_and_parse_selectors(selector_args)?;
-    for selector in &selectors {
+    let mut component_selectors = Vec::with_capacity(selectors.len());
+    for selector in selectors {
         // Unwrap safe: Previous validation discards any selector without a node.
         let tree_selector = selector.tree_selector.as_ref().unwrap();
         match tree_selector {
@@ -116,8 +118,9 @@ fn validate_and_parse_log_selectors(
             }
             TreeSelectorUnknown!() => {}
         }
+        component_selectors.push(selector.component_selector.unwrap());
     }
-    Ok(selectors)
+    Ok(component_selectors)
 }
 
 impl ArchiveAccessorServer {
@@ -237,14 +240,14 @@ impl ArchiveAccessorServer {
                 let stats = Arc::new(pipeline.accessor_stats().new_logs_batch_iterator());
                 let selectors = match params.client_selector_configuration {
                     Some(ClientSelectorConfiguration::Selectors(selectors)) => {
-                        Some(validate_and_parse_log_selectors(selectors)?)
+                        validate_and_parse_log_selectors(selectors)?
                     }
-                    Some(ClientSelectorConfiguration::SelectAll(_)) => None,
+                    Some(ClientSelectorConfiguration::SelectAll(_)) => Vec::new(),
                     _ => return Err(AccessorError::InvalidSelectors("unrecognized selectors")),
                 };
                 match format {
                     Format::Fxt => {
-                        let logs = log_repo.logs_cursor_raw(mode, selectors);
+                        let logs = Box::pin(log_repo.logs_cursor_raw(mode, selectors));
                         BatchIterator::new_serving_fxt(
                             logs,
                             requests,
@@ -258,12 +261,7 @@ impl ArchiveAccessorServer {
                         Ok(())
                     }
                     Format::Json => {
-                        let logs = Box::pin(log_repo.logs_cursor(
-                            mode,
-                            selectors.map_or(Vec::new(), |selectors| {
-                                selectors.into_iter().filter_map(|s| s.component_selector).collect()
-                            }),
-                        ));
+                        let logs = Box::pin(log_repo.logs_cursor(mode, selectors));
                         BatchIterator::new_serving_arrays(logs, requests, mode, stats, trace_id)?
                             .run()
                             .await?;
@@ -662,7 +660,7 @@ where
         performance_config: PerformanceConfig,
     ) -> Result<Self, AccessorError>
     where
-        S: Stream<Item = CursorItem> + Send + Unpin + 'static,
+        S: Stream<Item = FxtMessage> + Send + Unpin + 'static,
     {
         let data = FXTPacketSerializer::new(
             Arc::clone(&stats),
@@ -732,9 +730,8 @@ where
                 "trace_id" => u64::from(trace_id)
             );
             let batch = {
-                let wait_for_close = self.requests.wait_for_close();
+                let wait_for_close = pin!(self.requests.wait_for_close());
                 let next_data = self.data.next();
-                pin_mut!(wait_for_close);
                 match select(next_data, wait_for_close).await {
                     // if we get None back, treat that as a terminal batch with an empty vec
                     Either::Left((batch_option, _)) => batch_option.unwrap_or_default(),

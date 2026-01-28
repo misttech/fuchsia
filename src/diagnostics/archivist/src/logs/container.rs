@@ -2,18 +2,16 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use crate::diagnostics::TRACE_CATEGORY;
 use crate::identity::ComponentIdentity;
-use crate::logs::multiplex::PinStream;
-use crate::logs::shared_buffer::{self, ContainerBuffer, LazyItem};
+use crate::logs::shared_buffer::ContainerBuffer;
 use crate::logs::stats::LogStreamStats;
 use crate::logs::stored_message::StoredMessage;
 use derivative::Derivative;
-use diagnostics_data::{BuilderArgs, Data, LogError, Logs, LogsData, LogsDataBuilder};
 use fidl::endpoints::RequestStream;
-use fidl_fuchsia_diagnostics::{LogInterestSelector, StreamMode};
+use fidl_fuchsia_diagnostics::LogInterestSelector;
 use fidl_fuchsia_diagnostics_types::{Interest as FidlInterest, Severity as FidlSeverity};
 use fidl_fuchsia_logger::{LogSinkOnInitRequest, LogSinkRequest, LogSinkRequestStream};
+use fuchsia_async as fasync;
 use fuchsia_async::condition::Condition;
 use futures::future::{Fuse, FusedFuture};
 use futures::prelude::*;
@@ -26,7 +24,6 @@ use std::collections::BTreeMap;
 use std::pin::pin;
 use std::sync::Arc;
 use std::task::Poll;
-use {fuchsia_async as fasync, fuchsia_trace as ftrace};
 
 pub type OnInactive = Box<dyn Fn(&LogsArtifactsContainer) + Send + Sync>;
 
@@ -64,27 +61,6 @@ struct ContainerState {
     is_initializing: bool,
 }
 
-#[derive(Debug, PartialEq)]
-pub struct CursorItem {
-    pub rolled_out: u64,
-    pub message: Arc<StoredMessage>,
-    pub identity: Arc<ComponentIdentity>,
-}
-
-impl Eq for CursorItem {}
-
-impl Ord for CursorItem {
-    fn cmp(&self, other: &Self) -> Ordering {
-        self.message.timestamp().cmp(&other.message.timestamp())
-    }
-}
-
-impl PartialOrd for CursorItem {
-    fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
-        Some(self.cmp(other))
-    }
-}
-
 impl LogsArtifactsContainer {
     pub fn new<'a>(
         identity: Arc<ComponentIdentity>,
@@ -114,101 +90,6 @@ impl LogsArtifactsContainer {
         new.update_interest(interest_selectors, &[]);
 
         new
-    }
-
-    fn create_raw_cursor(
-        &self,
-        buffer_cursor: shared_buffer::Cursor,
-    ) -> impl Stream<Item = CursorItem> + use<> {
-        let identity = Arc::clone(&self.identity);
-        buffer_cursor
-            .enumerate()
-            .scan((zx::BootInstant::ZERO, 0u64), move |(last_timestamp, rolled_out), (i, item)| {
-                futures::future::ready(match item {
-                    LazyItem::Next(message) => {
-                        *last_timestamp = message.timestamp();
-                        Some(Some(CursorItem {
-                            message,
-                            identity: Arc::clone(&identity),
-                            rolled_out: *rolled_out,
-                        }))
-                    }
-                    LazyItem::ItemsRolledOut(rolled_out_count, timestamp) => {
-                        if i > 0 {
-                            *rolled_out += rolled_out_count;
-                        }
-                        *last_timestamp = timestamp;
-                        Some(None)
-                    }
-                })
-            })
-            .filter_map(future::ready)
-    }
-
-    /// Returns a stream of this component's log messages. These are the raw messages in FXT format.
-    ///
-    /// # Rolled out logs
-    ///
-    /// When messages are evicted from our internal buffers before a client can read them, they
-    /// are counted as rolled out messages which gets appended to the metadata of the next message.
-    /// If there is no next message, there is no way to know how many messages were rolled out.
-    pub fn cursor_raw(&self, mode: StreamMode) -> PinStream<CursorItem> {
-        let Some(buffer_cursor) = self.buffer.cursor(mode) else {
-            return Box::pin(futures::stream::empty());
-        };
-        Box::pin(self.create_raw_cursor(buffer_cursor))
-    }
-
-    /// Returns a stream of this component's log messages.
-    ///
-    /// # Rolled out logs
-    ///
-    /// When messages are evicted from our internal buffers before a client can read them, they
-    /// are counted as rolled out messages which gets appended to the metadata of the next message.
-    /// If there is no next message, there is no way to know how many messages were rolled out.
-    pub fn cursor(
-        &self,
-        mode: StreamMode,
-        parent_trace_id: ftrace::Id,
-    ) -> PinStream<Arc<LogsData>> {
-        let Some(buffer_cursor) = self.buffer.cursor(mode) else {
-            return Box::pin(futures::stream::empty());
-        };
-        let mut rolled_out_count = 0;
-        Box::pin(self.create_raw_cursor(buffer_cursor).map(
-            move |CursorItem { message, identity, rolled_out }| {
-                rolled_out_count += rolled_out;
-                let trace_id = ftrace::Id::random();
-                let _trace_guard = ftrace::async_enter!(
-                    trace_id,
-                    TRACE_CATEGORY,
-                    c"LogContainer::cursor.parse_message",
-                    // An async duration cannot have multiple concurrent child async durations
-                    // so we include the nonce as metadata to manually determine relationship.
-                    "parent_trace_id" => u64::from(parent_trace_id),
-                    "trace_id" => u64::from(trace_id)
-                );
-                match message.parse(&identity) {
-                    Ok(m) => Arc::new(maybe_add_rolled_out_error(&mut rolled_out_count, m)),
-                    Err(err) => {
-                        let data = maybe_add_rolled_out_error(
-                            &mut rolled_out_count,
-                            LogsDataBuilder::new(BuilderArgs {
-                                moniker: identity.moniker.clone(),
-                                timestamp: message.timestamp(),
-                                component_url: Some(identity.url.clone()),
-                                severity: diagnostics_data::Severity::Warn,
-                            })
-                            .add_error(diagnostics_data::LogError::FailedToParseRecord(format!(
-                                "{err:?}"
-                            )))
-                            .build(),
-                        );
-                        Arc::new(data)
-                    }
-                }
-            },
-        ))
     }
 
     /// Handle `LogSink` protocol on `stream`. Each socket received from the `LogSink` client is
@@ -410,18 +291,6 @@ impl LogsArtifactsContainer {
     pub fn buffer(&self) -> &ContainerBuffer {
         &self.buffer
     }
-}
-
-fn maybe_add_rolled_out_error(rolled_out_messages: &mut u64, mut msg: Data<Logs>) -> Data<Logs> {
-    if *rolled_out_messages != 0 {
-        // Add rolled out metadata
-        msg.metadata
-            .errors
-            .get_or_insert(vec![])
-            .push(LogError::RolledOutLogs { count: *rolled_out_messages });
-    }
-    *rolled_out_messages = 0;
-    msg
 }
 
 impl ContainerState {

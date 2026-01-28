@@ -4,31 +4,26 @@
 
 mod cursor;
 
-pub use cursor::{FilterCursor, FilterCursorStream};
+pub use cursor::{FilterCursor, FilterCursorStream, FxtMessage};
 
 use crate::identity::ComponentIdentity;
 use crate::logs::repository::ARCHIVIST_MONIKER;
 use crate::logs::stats::LogStreamStats;
-use crate::logs::stored_message::StoredMessage;
 use derivative::Derivative;
 use diagnostics_log_encoding::encode::add_dropped_count;
 use diagnostics_log_encoding::{Header, TRACING_FORMAT_LOG_RECORD_TYPE};
 use fidl_fuchsia_diagnostics::{ComponentSelector, StreamMode};
 use fidl_fuchsia_logger::MAX_DATAGRAM_LEN_BYTES;
 use fuchsia_async as fasync;
-use fuchsia_async::condition::{Condition, ConditionGuard, WakerEntry};
+use fuchsia_async::condition::{Condition, ConditionGuard};
 use fuchsia_sync::Mutex;
-use futures::Stream;
 use futures::channel::oneshot;
 use log::debug;
-use pin_project::{pin_project, pinned_drop};
 use ring_buffer::{self, RingBuffer, ring_buffer_record_len};
 use std::collections::VecDeque;
 use std::mem::ManuallyDrop;
 use std::ops::{Deref, DerefMut, Range};
-use std::pin::Pin;
 use std::sync::{Arc, Weak};
-use std::task::{Context, Poll};
 use std::time::Duration;
 use zerocopy::FromBytes;
 
@@ -83,7 +78,7 @@ pub struct SharedBuffer {
 }
 
 struct InnerGuard<'a> {
-    buffer: &'a SharedBuffer,
+    buffer: &'a Arc<SharedBuffer>,
 
     guard: ManuallyDrop<ConditionGuard<'a, Inner>>,
 
@@ -263,26 +258,10 @@ impl SharedBuffer {
         mode: StreamMode,
         selectors: Vec<ComponentSelector>,
     ) -> FilterCursor {
-        let mut inner = InnerGuard::new(self);
-        let (index, message_id) = match mode {
-            StreamMode::Snapshot => (inner.tail, inner.tail_message_id),
-            StreamMode::Subscribe => {
-                let head = inner.ring_buffer.head();
-                inner.update_message_ids(head);
-                (inner.last_scanned, inner.last_scanned_message_id)
-            }
-            StreamMode::SnapshotThenSubscribe => (inner.tail, inner.tail_message_id),
-        };
-        FilterCursor::new(
-            Arc::clone(self),
-            index,
-            message_id,
-            matches!(mode, StreamMode::Snapshot),
-            selectors,
-        )
+        InnerGuard::new(self).cursor(mode, selectors)
     }
 
-    fn socket_thread(&self, sleep_time: Duration) {
+    fn socket_thread(self: Arc<Self>, sleep_time: Duration) {
         const INTERRUPT_KEY: u64 = u64::MAX;
         let mut sockets_ready = Vec::new();
         let mut iob_peer_closed = Vec::new();
@@ -338,7 +317,7 @@ impl SharedBuffer {
                 deadline = zx::MonotonicInstant::INFINITE_PAST;
             }
 
-            let mut inner = InnerGuard::new(self);
+            let mut inner = InnerGuard::new(&self);
 
             if !iob_peer_closed.is_empty() {
                 // See the comment on `is_active()` for why this is required.
@@ -514,7 +493,7 @@ impl Inner {
 }
 
 impl<'a> InnerGuard<'a> {
-    fn new(buffer: &'a SharedBuffer) -> Self {
+    fn new(buffer: &'a Arc<SharedBuffer>) -> Self {
         Self {
             buffer,
             guard: ManuallyDrop::new(buffer.inner.lock()),
@@ -538,16 +517,13 @@ impl<'a> InnerGuard<'a> {
         // SAFETY: There can be no concurrent writes between `tail..head` and the *only* place
         // we increment the tail index is just before we leave this function.
         let record_len = {
-            let (container_id, message, timestamp) = unsafe { self.parse_message(self.tail..head) };
+            let (container_id, message, _) = unsafe { self.parse_message(self.tail..head) };
             let record_len = ring_buffer_record_len(message.len());
 
             let container = self.containers.get_mut(container_id).unwrap();
 
             container.stats.increment_rolled_out(record_len);
             container.msg_ids.start += 1;
-            if let Some(timestamp) = timestamp {
-                container.last_rolled_out_timestamp = timestamp;
-            }
             if !container.is_active() {
                 if container.should_free() {
                     self.containers.free(container_id);
@@ -683,6 +659,29 @@ impl<'a> InnerGuard<'a> {
             space += amount;
         }
     }
+
+    /// Returns a cursor.
+    fn cursor(&mut self, mode: StreamMode, selectors: Vec<ComponentSelector>) -> FilterCursor {
+        // NOTE: It is not safe to use on_inactive in this function because this function can be
+        // called whilst locks are held which are the same locks that the on_inactive notification
+        // uses.
+        let (index, message_id) = match mode {
+            StreamMode::Snapshot => (self.tail, self.tail_message_id),
+            StreamMode::Subscribe => {
+                let head = self.ring_buffer.head();
+                self.update_message_ids(head);
+                (self.last_scanned, self.last_scanned_message_id)
+            }
+            StreamMode::SnapshotThenSubscribe => (self.tail, self.tail_message_id),
+        };
+        FilterCursor::new(
+            Arc::clone(self.buffer),
+            index,
+            message_id,
+            matches!(mode, StreamMode::Snapshot),
+            selectors,
+        )
+    }
 }
 
 #[derive(Default)]
@@ -727,16 +726,8 @@ impl Containers {
 #[derive(Derivative)]
 #[derivative(Debug)]
 struct ContainerInfo {
-    // The number of references (typically cursors) that prevent this object from being freed.
-    refs: usize,
-
     // The identity of the container.
     identity: Arc<ComponentIdentity>,
-
-    // The first index in the shared buffer for a message for this container. This index
-    // might have been rolled out. This is used as an optimisation to set the starting
-    // cursor position.
-    first_index: u64,
 
     // The first and last message IDs stored in the shared buffer. The last message ID can be out of
     // date if there are concurrent writers.
@@ -748,9 +739,6 @@ struct ContainerInfo {
     // Inspect instrumentation.
     #[derivative(Debug = "ignore")]
     stats: Arc<LogStreamStats>,
-
-    // The timestamp of the message most recently rolled out.
-    last_rolled_out_timestamp: zx::BootInstant,
 
     // The first socket ID for this container.
     first_socket_id: SocketId,
@@ -768,13 +756,10 @@ struct ContainerInfo {
 impl ContainerInfo {
     fn new(identity: Arc<ComponentIdentity>, stats: Arc<LogStreamStats>, iob: zx::Iob) -> Self {
         Self {
-            refs: 0,
             identity,
-            first_index: 0,
             msg_ids: 0..0,
             terminated: false,
             stats,
-            last_rolled_out_timestamp: zx::BootInstant::ZERO,
             first_socket_id: SocketId::NULL,
             iob,
             iob_count: 0,
@@ -783,7 +768,7 @@ impl ContainerInfo {
     }
 
     fn should_free(&self) -> bool {
-        self.terminated && self.refs == 0 && !self.is_active()
+        self.terminated && !self.is_active()
     }
 
     // Returns true if the container is considered active which is the case if it has sockets, io
@@ -861,45 +846,21 @@ impl ContainerBuffer {
         ep0
     }
 
-    /// Returns a cursor.
-    pub fn cursor(&self, mode: StreamMode) -> Option<Cursor> {
+    /// Returns a cursor for messages that only apply to this container.
+    #[cfg(test)]
+    fn cursor(&self, mode: StreamMode) -> Option<FilterCursorStream<FxtMessage>> {
+        use selectors::SelectorExt;
+
         // NOTE: It is not safe to use on_inactive in this function because this function can be
         // called whilst locks are held which are the same locks that the on_inactive notification
         // uses.
         let mut inner = InnerGuard::new(&self.shared_buffer);
-        let Some(mut container) = inner.containers.get_mut(self.container_id) else {
+        let Some(container) = inner.containers.get_mut(self.container_id) else {
             // We've hit a race where the container has terminated.
             return None;
         };
-
-        container.refs += 1;
-        let stats = Arc::clone(&container.stats);
-
-        let (index, next_id, end) = match mode {
-            StreamMode::Snapshot => {
-                (container.first_index, container.msg_ids.start, CursorEnd::Snapshot(None))
-            }
-            StreamMode::Subscribe => {
-                // Call `update_message_ids` so that `msg_ids.end` is up to date.
-                let head = inner.ring_buffer.head();
-                inner.update_message_ids(head);
-                container = inner.containers.get_mut(self.container_id).unwrap();
-                (head, container.msg_ids.end, CursorEnd::Stream)
-            }
-            StreamMode::SnapshotThenSubscribe => {
-                (container.first_index, container.msg_ids.start, CursorEnd::Stream)
-            }
-        };
-
-        Some(Cursor {
-            index,
-            container_id: self.container_id,
-            next_id,
-            end,
-            buffer: Arc::clone(&self.shared_buffer),
-            waker_entry: self.shared_buffer.inner.waker_entry(),
-            stats,
-        })
+        let selectors = vec![container.identity.moniker.clone().into_component_selector()];
+        Some(inner.cursor(mode, selectors).into())
     }
 
     /// Marks the buffer as terminated which will force all cursors to end and close all sockets.
@@ -968,163 +929,6 @@ impl Drop for ContainerBuffer {
     fn drop(&mut self) {
         self.terminate();
     }
-}
-
-#[pin_project(PinnedDrop)]
-#[derive(Derivative)]
-#[derivative(Debug)]
-pub struct Cursor {
-    // Index in the buffer that we should continue searching from.
-    index: u64,
-
-    container_id: ContainerId,
-
-    // The next expected message ID.
-    next_id: u64,
-
-    // The ID, if any, that we should end at (exclusive).
-    end: CursorEnd,
-
-    #[derivative(Debug = "ignore")]
-    buffer: Arc<SharedBuffer>,
-
-    // waker_entry is used to register a waker for subscribing cursors.
-    #[pin]
-    #[derivative(Debug = "ignore")]
-    waker_entry: WakerEntry<Inner>,
-
-    #[derivative(Debug = "ignore")]
-    stats: Arc<LogStreamStats>,
-}
-
-/// The next element in the stream or a marker of the number of items rolled out since last polled.
-#[derive(Debug, PartialEq)]
-pub enum LazyItem<T> {
-    /// The next item in the stream.
-    Next(Arc<T>),
-    /// A count of the items dropped between the last call to poll_next and this one.
-    ItemsRolledOut(u64, zx::BootInstant),
-}
-
-impl Stream for Cursor {
-    type Item = LazyItem<StoredMessage>;
-
-    fn poll_next(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Option<Self::Item>> {
-        let mut this = self.project();
-        let mut inner = InnerGuard::new(this.buffer);
-
-        let mut head = inner.ring_buffer.head();
-        inner.check_space(head);
-
-        let mut container = match inner.containers.get(*this.container_id) {
-            None => return Poll::Ready(None),
-            Some(container) => container,
-        };
-
-        let end_id = match &mut this.end {
-            CursorEnd::Snapshot(None) => {
-                let mut sockets = this.buffer.sockets.lock();
-                // Drain the sockets associated with this container first so that we capture
-                // pending messages. Some tests rely on this.
-                let mut socket_id = container.first_socket_id;
-                while socket_id != SocketId::NULL {
-                    let socket = sockets.get_mut(socket_id.0).unwrap();
-                    let next = socket.next;
-                    // The socket doesn't need to be rearmed here.
-                    inner.read_socket(&mut sockets, socket_id, |_| {});
-                    socket_id = next;
-                }
-
-                // Call `update_message_ids` so that `msg_ids.end` is up to date.
-                head = inner.ring_buffer.head();
-                inner.update_message_ids(head);
-                container = inner.containers.get(*this.container_id).unwrap();
-                *this.end = CursorEnd::Snapshot(Some(container.msg_ids.end));
-                container.msg_ids.end
-            }
-            CursorEnd::Snapshot(Some(end)) => *end,
-            CursorEnd::Stream => u64::MAX,
-        };
-
-        if *this.next_id == end_id {
-            return Poll::Ready(None);
-        }
-
-        // See if messages have been rolled out.
-        if container.msg_ids.start > *this.next_id {
-            let mut next_id = container.msg_ids.start;
-            if end_id < next_id {
-                next_id = end_id;
-            }
-            let rolled_out = next_id - *this.next_id;
-            *this.next_id = next_id;
-            return Poll::Ready(Some(LazyItem::ItemsRolledOut(
-                rolled_out,
-                container.last_rolled_out_timestamp,
-            )));
-        }
-
-        if inner.tail > *this.index {
-            *this.index = inner.tail;
-        }
-
-        // Some optimisations to reduce the amount of searching we might have to do.
-        if container.first_index > *this.index {
-            *this.index = container.first_index;
-        }
-
-        if *this.next_id == container.msg_ids.end && *this.index < inner.last_scanned {
-            *this.index = inner.last_scanned;
-        }
-
-        // Scan forward until we find a record matching this container.
-        while *this.index < head {
-            // SAFETY: `*this.index..head` must be within the written region of the ring-buffer.
-            let (container_id, message, _timestamp) =
-                unsafe { inner.parse_message(*this.index..head) };
-
-            // Move index to the next record.
-            *this.index += ring_buffer_record_len(message.len()) as u64;
-            assert!(*this.index <= head);
-
-            if container_id.0 == this.container_id.0 {
-                *this.next_id += 1;
-                if let Some(msg) = StoredMessage::new(message.into(), this.stats) {
-                    return Poll::Ready(Some(LazyItem::Next(Arc::new(msg))));
-                } else {
-                    // The message is corrupt. Just skip it.
-                }
-            }
-        }
-
-        if container.terminated {
-            Poll::Ready(None)
-        } else {
-            inner.guard.add_waker(this.waker_entry, cx.waker().clone());
-            Poll::Pending
-        }
-    }
-}
-
-#[pinned_drop]
-impl PinnedDrop for Cursor {
-    fn drop(self: Pin<&mut Self>) {
-        let mut inner = self.buffer.inner.lock();
-        if let Some(container) = inner.containers.get_mut(self.container_id) {
-            container.refs -= 1;
-            if container.should_free() {
-                inner.containers.free(self.container_id);
-            }
-        }
-    }
-}
-
-#[derive(Debug)]
-enum CursorEnd {
-    // The id will be None when the cursor is first created and is set after the cursor
-    // is first polled.
-    Snapshot(Option<u64>),
-    Stream,
 }
 
 /// Implements a simple Slab allocator.
@@ -1226,7 +1030,6 @@ struct Socket {
 #[cfg(test)]
 mod tests {
     use super::{SharedBuffer, SharedBufferOptions, Slab, create_ring_buffer};
-    use crate::logs::shared_buffer::LazyItem;
     use crate::logs::stats::LogStreamStats;
     use crate::logs::testing::make_message;
     use assert_matches::assert_matches;
@@ -1236,10 +1039,10 @@ mod tests {
     use fuchsia_async::TimeoutExt;
     use fuchsia_inspect::{Inspector, InspectorConfig};
     use fuchsia_inspect_derive::WithInspect;
+    use futures::FutureExt;
     use futures::channel::mpsc;
     use futures::future::OptionFuture;
     use futures::stream::{FuturesUnordered, StreamExt as _};
-    use futures::{FutureExt, poll};
     use ring_buffer::MAX_MESSAGE_SIZE;
     use std::future::poll_fn;
     use std::iter::repeat_with;
@@ -1277,18 +1080,7 @@ mod tests {
 
         // Make sure the cursor can find it.
         let cursor = container_buffer.cursor(StreamMode::Snapshot).unwrap();
-        assert_eq!(
-            cursor
-                .map(|item| {
-                    match item {
-                        LazyItem::Next(item) => assert_eq!(item.bytes(), msg.bytes()),
-                        _ => panic!("Unexpected item {item:?}"),
-                    }
-                })
-                .count()
-                .await,
-            1
-        );
+        assert_eq!(cursor.map(|item| assert_eq!(item.data(), msg.bytes())).count().await, 1);
     }
 
     #[fuchsia::test]
@@ -1365,20 +1157,15 @@ mod tests {
         let mut cursor = pin!(container_buffer.cursor(StreamMode::Snapshot).unwrap());
 
         let mut j;
-        let mut item = cursor.next().await;
-        // Calling `cursor.next()` can cause messages to be rolled out, so skip those if that has
-        // happened.
-        if let Some(LazyItem::ItemsRolledOut(_, _)) = item {
-            item = cursor.next().await;
-        }
+        let item = cursor.next().await;
         assert_matches!(
             item,
-            Some(LazyItem::Next(item)) => {
+            Some(item) => {
                 j = item.timestamp().into_nanos();
                 let msg = make_message(&format!("{j}"),
                                        None,
                                        item.timestamp());
-                assert_eq!(&*item, &msg);
+                assert_eq!(item.data(), msg.bytes());
             }
         );
 
@@ -1386,16 +1173,16 @@ mod tests {
         while j != i {
             assert_matches!(
                 cursor.next().await,
-                Some(LazyItem::Next(item)) => {
-                    assert_eq!(&*item, &make_message(&format!("{j}"),
-                                                     None,
-                                                     item.timestamp()));
+                Some(item) => {
+                    assert_eq!(item.data(), make_message(&format!("{j}"),
+                                                         None,
+                                                         item.timestamp()).bytes());
                 }
             );
             j += 1;
         }
 
-        assert_eq!(cursor.next().await, None);
+        assert!(cursor.next().await.is_none());
     }
 
     #[fuchsia::test]
@@ -1506,16 +1293,16 @@ mod tests {
             if mode == StreamMode::SnapshotThenSubscribe {
                 assert_matches!(
                     receiver.next().await,
-                    Some(LazyItem::Next(item)) if item.bytes() == msg.bytes()
+                    Some(item) if item.data() == msg.bytes()
                 );
             }
 
             // No message should arrive. We can only use a timeout here.
-            assert_eq!(
+            assert!(
                 OptionFuture::from(Some(receiver.next()))
                     .on_timeout(Duration::from_millis(500), || None)
-                    .await,
-                None
+                    .await
+                    .is_none()
             );
 
             container.push_back(msg.bytes());
@@ -1523,71 +1310,8 @@ mod tests {
             // The message should arrive now.
             assert_matches!(
                 receiver.next().await,
-                Some(LazyItem::Next(item)) if item.bytes() == msg.bytes()
+                Some(item) if item.data() == msg.bytes()
             );
-
-            container.terminate();
-
-            // The cursor should terminate now.
-            assert!(receiver.next().await.is_none());
-        }
-    }
-
-    #[fuchsia::test]
-    async fn cursor_rolled_out() {
-        // On the first pass we roll out before the cursor has started. On the second pass, we roll
-        // out after the cursor has started.
-        for pass in 0..2 {
-            let buffer = SharedBuffer::new(
-                create_ring_buffer(MAX_MESSAGE_SIZE),
-                Box::new(|_| {}),
-                SharedBufferOptions { sleep_time: Duration::ZERO },
-            );
-            let container_a =
-                Arc::new(buffer.new_container_buffer(Arc::new(vec!["a"].into()), Arc::default()));
-            let container_b =
-                Arc::new(buffer.new_container_buffer(Arc::new(vec!["b"].into()), Arc::default()));
-            let container_c =
-                Arc::new(buffer.new_container_buffer(Arc::new(vec!["c"].into()), Arc::default()));
-            let msg = make_message("a", None, zx::BootInstant::from_nanos(1));
-
-            container_a.push_back(msg.bytes());
-            container_a.push_back(msg.bytes());
-            container_b.push_back(msg.bytes());
-
-            const A_MESSAGE_COUNT: usize = 50;
-            for _ in 0..A_MESSAGE_COUNT - 2 {
-                container_a.push_back(msg.bytes());
-            }
-
-            let mut cursor = pin!(container_a.cursor(StreamMode::Snapshot).unwrap());
-
-            let mut expected = A_MESSAGE_COUNT;
-
-            // Get the first stored message on the first pass.
-            if pass == 0 {
-                assert!(cursor.next().await.is_some());
-                expected -= 1;
-            }
-
-            // Roll out messages until container_b is rolled out.
-            while container_b.cursor(StreamMode::Snapshot).unwrap().count().await == 1 {
-                container_c.push_back(msg.bytes());
-
-                // Yield to the executor to allow messages to be rolled out.
-                yield_to_executor().await;
-            }
-
-            // We should have rolled out some messages in container a.
-            assert_matches!(
-                cursor.next().await,
-                Some(LazyItem::ItemsRolledOut(rolled_out, t))
-                    if t == zx::BootInstant::from_nanos(1) && rolled_out > 0
-                    => expected -= rolled_out as usize
-            );
-
-            // And check how many are remaining.
-            assert_eq!(cursor.count().await, expected);
         }
     }
 
@@ -1616,7 +1340,7 @@ mod tests {
         assert!(cursor_b.next().await.is_some());
         assert!(cursor_c.next().await.is_some());
 
-        container.terminate();
+        drop(buffer.terminate());
 
         // All cursors should return the 4 remaining messages.
         assert_eq!(cursor_a.count().await, 4);
@@ -1638,44 +1362,11 @@ mod tests {
         let cursor_b = container.cursor(StreamMode::SnapshotThenSubscribe).unwrap();
         let cursor_c = container.cursor(StreamMode::Snapshot).unwrap();
 
-        container.terminate();
+        drop(buffer.terminate());
 
         assert_eq!(cursor_a.count().await, 0);
         assert_eq!(cursor_b.count().await, 0);
         assert_eq!(cursor_c.count().await, 0);
-    }
-
-    #[fuchsia::test]
-    async fn snapshot_then_subscribe_works_when_only_dropped_notifications_are_returned() {
-        let buffer = SharedBuffer::new(
-            create_ring_buffer(MAX_MESSAGE_SIZE),
-            Box::new(|_| {}),
-            SharedBufferOptions { sleep_time: Duration::ZERO },
-        );
-        let container_a =
-            Arc::new(buffer.new_container_buffer(Arc::new(vec!["a"].into()), Arc::default()));
-        let container_b =
-            Arc::new(buffer.new_container_buffer(Arc::new(vec!["b"].into()), Arc::default()));
-        let msg = make_message("a", None, zx::BootInstant::from_nanos(1));
-        container_a.push_back(msg.bytes());
-        container_a.push_back(msg.bytes());
-        container_a.push_back(msg.bytes());
-        let mut cursor = pin!(container_a.cursor(StreamMode::SnapshotThenSubscribe).unwrap());
-
-        // Roll out all the messages.
-        while container_a.cursor(StreamMode::Snapshot).unwrap().count().await > 0 {
-            container_b.push_back(msg.bytes());
-
-            // Yield to the executor to allow messages to be rolled out.
-            yield_to_executor().await;
-        }
-
-        assert_matches!(cursor.next().await, Some(LazyItem::ItemsRolledOut(3, _)));
-
-        assert!(poll!(cursor.next()).is_pending());
-
-        container_a.terminate();
-        assert_eq!(cursor.count().await, 0);
     }
 
     #[fuchsia::test]
@@ -1691,7 +1382,7 @@ mod tests {
         container_a.push_back(msg.bytes());
 
         let mut cursor = pin!(container_a.cursor(StreamMode::SnapshotThenSubscribe).unwrap());
-        assert_matches!(cursor.next().await, Some(LazyItem::Next(_)));
+        assert_matches!(cursor.next().await, Some(_));
 
         // Roll out all the messages.
         let container_b =
@@ -1711,9 +1402,6 @@ mod tests {
             Arc::new(buffer.new_container_buffer(Arc::new(vec!["c"].into()), Arc::default()));
         container_c.push_back(msg.bytes());
         container_c.push_back(msg.bytes());
-
-        // The original cursor should have finished.
-        assert_matches!(cursor.next().await, None);
     }
 
     #[fuchsia::test]
@@ -1748,18 +1436,7 @@ mod tests {
 
         let cursor_b = pin!(container_a.cursor(StreamMode::Snapshot).unwrap());
 
-        assert_eq!(
-            cursor_b
-                .map(|item| {
-                    match item {
-                        LazyItem::Next(item) => assert_eq!(item.bytes(), msg.bytes()),
-                        _ => panic!("Unexpected item {item:?}"),
-                    }
-                })
-                .count()
-                .await,
-            1
-        );
+        assert_eq!(cursor_b.map(|item| assert_eq!(item.data(), msg.bytes())).count().await, 1);
 
         // If cursor_a wasn't woken, this will hang.
         next.await;
@@ -1843,18 +1520,7 @@ mod tests {
 
         let cursor_b = pin!(container_a.cursor(StreamMode::Snapshot).unwrap());
 
-        assert_eq!(
-            cursor_b
-                .map(|item| {
-                    match item {
-                        LazyItem::Next(item) => assert_eq!(item.bytes(), msg.bytes()),
-                        _ => panic!("Unexpected item {item:?}"),
-                    }
-                })
-                .count()
-                .await,
-            1
-        );
+        assert_eq!(cursor_b.map(|item| assert_eq!(item.data(), msg.bytes())).count().await, 1);
 
         // If cursor_a wasn't woken, this will hang.
         next.await;
@@ -1886,18 +1552,7 @@ mod tests {
 
         let cursor = pin!(container_a.cursor(StreamMode::Snapshot).unwrap());
 
-        assert_eq!(
-            cursor
-                .map(|item| {
-                    match item {
-                        LazyItem::Next(item) => assert_eq!(item.bytes(), msg.bytes()),
-                        _ => panic!("Unexpected item {item:?}"),
-                    }
-                })
-                .count()
-                .await,
-            1
-        );
+        assert_eq!(cursor.map(|item| assert_eq!(item.data(), msg.bytes())).count().await, 1);
 
         // Now roll out a's messages.
         let container_b = buffer.new_container_buffer(Arc::new(vec!["b"].into()), Arc::default());

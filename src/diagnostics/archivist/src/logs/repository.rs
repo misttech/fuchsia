@@ -5,15 +5,14 @@
 use crate::events::router::EventConsumer;
 use crate::events::types::{Event, EventPayload, LogSinkRequestedPayload};
 use crate::identity::ComponentIdentity;
-use crate::logs::container::{CursorItem, LogsArtifactsContainer};
+use crate::logs::container::LogsArtifactsContainer;
 use crate::logs::debuglog::{DebugLog, DebugLogBridge, KERNEL_IDENTITY};
-use crate::logs::multiplex::{Multiplexer, MultiplexerHandleAction};
-use crate::logs::shared_buffer::{FilterCursorStream, SharedBuffer};
+use crate::logs::shared_buffer::{FilterCursorStream, FxtMessage, SharedBuffer};
 use crate::logs::stats::LogStreamStats;
 use anyhow::format_err;
-use diagnostics_data::Severity;
+use diagnostics_data::{LogsData, Severity};
 use fidl_fuchsia_diagnostics::{
-    ComponentSelector, LogInterestSelector, Selector, StreamMode, StringSelector,
+    ComponentSelector, LogInterestSelector, StreamMode, StringSelector,
 };
 use fidl_fuchsia_diagnostics_types::Severity as FidlSeverity;
 use flyweights::FlyStr;
@@ -21,7 +20,6 @@ use fuchsia_inspect_derive::WithInspect;
 use fuchsia_sync::Mutex;
 use fuchsia_url::AbsoluteComponentUrl;
 use fuchsia_url::boot_url::BootUrl;
-use futures::channel::mpsc;
 use futures::prelude::*;
 use log::{LevelFilter, debug, error};
 use moniker::{ExtendedMoniker, Moniker};
@@ -200,17 +198,9 @@ impl LogsRepository {
     pub fn logs_cursor_raw(
         &self,
         mode: StreamMode,
-        selectors: Option<Vec<Selector>>,
-    ) -> impl Stream<Item = CursorItem> + Send + use<> {
-        let mut repo = self.mutable_state.lock();
-        let substreams = repo.logs_data_store.iter().map(|(identity, c)| {
-            let cursor = c.cursor_raw(mode);
-            (Arc::clone(identity), cursor)
-        });
-        let (mut merged, mpx_handle) = Multiplexer::new(selectors, substreams);
-        repo.logs_multiplexers.add(mode, Box::new(mpx_handle));
-        merged.set_on_drop_id_sender(repo.logs_multiplexers.cleanup_sender());
-        merged
+        selectors: Vec<ComponentSelector>,
+    ) -> FilterCursorStream<FxtMessage> {
+        self.shared_buffer.cursor(mode, selectors).into()
     }
 
     /// Returns a log stream filtered to the specified selectors. If `selectors` is empty, all logs
@@ -219,7 +209,7 @@ impl LogsRepository {
         &self,
         mode: StreamMode,
         selectors: Vec<ComponentSelector>,
-    ) -> FilterCursorStream {
+    ) -> FilterCursorStream<LogsData> {
         self.shared_buffer.cursor(mode, selectors).into()
     }
 
@@ -248,11 +238,9 @@ impl LogsRepository {
         // Terminate the shared buffer first so that pending messages are processed before we
         // terminate all the containers.
         self.shared_buffer.terminate().await;
-        let mut repo = self.mutable_state.lock();
-        for container in repo.logs_data_store.values() {
+        for container in self.mutable_state.lock().logs_data_store.values() {
             container.terminate();
         }
-        repo.logs_multiplexers.terminate();
     }
 
     /// Closes the connection in which new logger draining tasks are sent. No more logger tasks
@@ -325,9 +313,6 @@ pub struct LogsRepositoryState {
     logs_data_store: HashMap<Arc<ComponentIdentity>, Arc<LogsArtifactsContainer>>,
     inspect_node: inspect::Node,
 
-    /// BatchIterators for logs need to be made aware of new components starting and their logs.
-    logs_multiplexers: MultiplexerBroker,
-
     /// Interest registrations that we have received through fuchsia.logger.Log/ListWithSelectors
     /// or through fuchsia.logger.LogSettings/SetInterest.
     interest_registrations: BTreeMap<usize, Vec<LogInterestSelector>>,
@@ -351,7 +336,6 @@ impl LogsRepositoryState {
         Self {
             inspect_node: parent.create_child("log_sources"),
             logs_data_store: HashMap::new(),
-            logs_multiplexers: MultiplexerBroker::new(),
             interest_registrations: BTreeMap::new(),
             draining_klog: false,
             initial_interests: initial_interests
@@ -402,7 +386,6 @@ impl LogsRepositoryState {
             })),
         ));
         self.logs_data_store.insert(identity, Arc::clone(&container));
-        self.logs_multiplexers.send(&container);
         container
     }
 
@@ -523,63 +506,6 @@ impl LogsRepositoryState {
     }
 }
 
-type LiveIteratorsMap = HashMap<usize, (StreamMode, Box<dyn MultiplexerHandleAction + Send>)>;
-
-/// Ensures that BatchIterators get access to logs from newly started components.
-pub struct MultiplexerBroker {
-    live_iterators: Arc<Mutex<LiveIteratorsMap>>,
-    cleanup_sender: mpsc::UnboundedSender<usize>,
-    _live_iterators_cleanup_task: fasync::Task<()>,
-}
-
-impl MultiplexerBroker {
-    fn new() -> Self {
-        let (cleanup_sender, mut receiver) = mpsc::unbounded();
-        let live_iterators = Arc::new(Mutex::new(HashMap::new()));
-        let live_iterators_clone = Arc::clone(&live_iterators);
-        Self {
-            live_iterators,
-            cleanup_sender,
-            _live_iterators_cleanup_task: fasync::Task::spawn(async move {
-                while let Some(id) = receiver.next().await {
-                    live_iterators_clone.lock().remove(&id);
-                }
-            }),
-        }
-    }
-
-    fn cleanup_sender(&self) -> mpsc::UnboundedSender<usize> {
-        self.cleanup_sender.clone()
-    }
-
-    /// A new BatchIterator has been created and must be notified when future log containers are
-    /// created.
-    fn add(&mut self, mode: StreamMode, recipient: Box<dyn MultiplexerHandleAction + Send>) {
-        match mode {
-            // snapshot streams only want to know about what's currently available
-            StreamMode::Snapshot => recipient.close(),
-            StreamMode::SnapshotThenSubscribe | StreamMode::Subscribe => {
-                self.live_iterators.lock().insert(recipient.multiplexer_id(), (mode, recipient));
-            }
-        }
-    }
-
-    /// Notify existing BatchIterators of a new logs container so they can include its messages
-    /// in their results.
-    pub fn send(&mut self, container: &Arc<LogsArtifactsContainer>) {
-        self.live_iterators
-            .lock()
-            .retain(|_, (mode, recipient)| recipient.send_cursor_from(*mode, container));
-    }
-
-    /// Notify all multiplexers to terminate their streams once sub streams have terminated.
-    fn terminate(&mut self) {
-        for (_, (_, recipient)) in self.live_iterators.lock().drain() {
-            recipient.close();
-        }
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -589,7 +515,6 @@ mod tests {
 
     use moniker::ExtendedMoniker;
     use selectors::FastError;
-    use std::time::Duration;
 
     #[fuchsia::test]
     async fn data_repo_filters_logs_by_selectors() {
@@ -621,23 +546,6 @@ mod tests {
         let results =
             filtered_stream.map(|value| value.msg().unwrap().to_string()).collect::<Vec<_>>().await;
         assert_eq!(results, vec!["a".to_string(), "c".to_string()]);
-    }
-
-    #[fuchsia::test]
-    async fn multiplexer_broker_cleanup() {
-        let repo = LogsRepository::for_test(fasync::Scope::new());
-        let stream = repo.logs_cursor_raw(StreamMode::SnapshotThenSubscribe, None);
-
-        assert_eq!(repo.mutable_state.lock().logs_multiplexers.live_iterators.lock().len(), 1);
-
-        // When the multiplexer goes away it must be forgotten by the broker.
-        drop(stream);
-        loop {
-            fasync::Timer::new(Duration::from_millis(100)).await;
-            if repo.mutable_state.lock().logs_multiplexers.live_iterators.lock().is_empty() {
-                break;
-            }
-        }
     }
 
     #[fuchsia::test]

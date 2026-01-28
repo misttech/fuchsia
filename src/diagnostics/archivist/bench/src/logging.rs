@@ -3,7 +3,9 @@
 // found in the LICENSE file.
 
 use archivist_lib::identity::ComponentIdentity;
-use archivist_lib::logs::shared_buffer::{LazyItem, SharedBuffer, create_ring_buffer};
+use archivist_lib::logs::shared_buffer::{
+    FilterCursorStream, FxtMessage, SharedBuffer, create_ring_buffer,
+};
 use archivist_lib::logs::stored_message::StoredMessage;
 use diagnostics_log_encoding::encode::{Encoder, EncoderOpts};
 use diagnostics_log_encoding::{Argument, Record};
@@ -108,14 +110,15 @@ fn bench_iterate_concurrent(b: &mut criterion::Bencher, args: IterateArgs) {
 
     // measure how long it takes to read |size| entries from the list
     b.iter(|| {
-        let container = Arc::clone(&container);
+        let cursor = FilterCursorStream::<FxtMessage>::from(
+            buffer.cursor(StreamMode::SnapshotThenSubscribe, Vec::new()),
+        );
         executor.run(async move {
+            let mut cursor = pin!(cursor);
             let mut items_read = 0;
-            let mut cursor = pin!(container.cursor(StreamMode::SnapshotThenSubscribe).unwrap());
             while items_read < args.size {
-                if let LazyItem::Next(_) = cursor.next().await.expect("must have some value") {
-                    items_read += 1;
-                }
+                cursor.next().await.expect("must have some value");
+                items_read += 1;
             }
         });
     });

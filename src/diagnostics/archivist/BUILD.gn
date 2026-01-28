@@ -129,7 +129,6 @@ rustc_library("lib") {
     "src/logs/listener.rs",
     "src/logs/listener/filter.rs",
     "src/logs/mod.rs",
-    "src/logs/multiplex.rs",
     "src/logs/repository.rs",
     "src/logs/serial.rs",
     "src/logs/servers/log.rs",

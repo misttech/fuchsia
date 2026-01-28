@@ -3,8 +3,8 @@
 // found in the LICENSE file.
 use crate::diagnostics::BatchIteratorConnectionStats;
 use crate::error::AccessorError;
-use crate::logs::container::CursorItem;
 use crate::logs::servers::{ExtendRecordOpts, extend_fxt_record};
+use crate::logs::shared_buffer::FxtMessage;
 use fidl_fuchsia_diagnostics::{
     DataType, Format, FormattedContent, MAXIMUM_ENTRIES_PER_BATCH, StreamMode,
 };
@@ -178,11 +178,11 @@ pub struct SerializedVmo {
     format: Format,
 }
 
-fn fxt_to_writer<W: std::io::Write>(mut writer: W, item: &CursorItem) -> Result<(), AccessorError> {
+fn fxt_to_writer<W: std::io::Write>(mut writer: W, item: &FxtMessage) -> Result<(), AccessorError> {
     let value = extend_fxt_record(
-        item.message.bytes(),
-        &item.identity,
-        item.rolled_out,
+        item.data(),
+        item.component_identity(),
+        item.dropped(),
         &ExtendRecordOpts { component_url: true, moniker: true, rolled_out: true },
     );
     Ok(writer.write_all(&value)?)
@@ -257,7 +257,7 @@ pub struct FXTPacketSerializer<I> {
     items: I,
     stats: Option<Arc<BatchIteratorConnectionStats>>,
     max_packet_size: u64,
-    overflow: Option<CursorItem>,
+    overflow: Option<FxtMessage>,
 }
 
 impl<I> FXTPacketSerializer<I> {
@@ -268,7 +268,7 @@ impl<I> FXTPacketSerializer<I> {
 
 impl<I> Stream for FXTPacketSerializer<I>
 where
-    I: Stream<Item = CursorItem> + Unpin,
+    I: Stream<Item = FxtMessage> + Unpin,
 {
     type Item = Result<SerializedVmo, AccessorError>;
 

@@ -3,7 +3,10 @@
 // found in the LICENSE file.
 
 use super::{Inner, InnerGuard, SharedBuffer};
+use crate::identity::ComponentIdentity;
 use diagnostics_data::{LogError, LogsData};
+use diagnostics_log_encoding::parse::ParseError;
+use diagnostics_log_encoding::{Header, TRACING_FORMAT_LOG_RECORD_TYPE};
 use diagnostics_message::error::MessageError;
 use fidl_fuchsia_diagnostics::ComponentSelector;
 use fuchsia_async::condition::{ConditionGuard, WakerEntry};
@@ -14,9 +17,11 @@ use ring_buffer::ring_buffer_record_len;
 use selectors::SelectorExt;
 use std::cmp::Ordering;
 use std::collections::BinaryHeap;
+use std::marker::PhantomData;
 use std::pin::Pin;
 use std::sync::Arc;
 use std::task::{Context, Poll, ready};
+use zerocopy::FromBytes;
 
 /// FilterCursor is a cursor that returns all logs optionally filtered by component selectors.
 #[pin_project]
@@ -151,42 +156,103 @@ pub struct Message<'a> {
     dropped: u64,
 }
 
+impl Message<'_> {
+    /// Returns the component and FXT bytes.  The FXT record is validated to be the correct length
+    /// and type.
+    fn parse(&self) -> Result<(&Arc<ComponentIdentity>, &[u8]), MessageError> {
+        // SAFETY: We hold a lock which prevents the buffer from being drained so
+        // it should be safe to read this range.
+        let (container, data, _) =
+            unsafe { self.inner.parse_message(self.message.index..self.inner.last_scanned) };
+        let (header, _) = Header::read_from_prefix(data)
+            .map_err(|_| MessageError::from(ParseError::InvalidHeader))?;
+        let msg_len = header.size_words() as usize * 8;
+        if msg_len > data.len() || msg_len < 16 {
+            return Err(ParseError::ValueOutOfValidRange.into());
+        }
+        if header.raw_type() != TRACING_FORMAT_LOG_RECORD_TYPE {
+            return Err(ParseError::InvalidRecordType.into());
+        }
+        let container = self.inner.containers.get(container).unwrap();
+        Ok((&container.identity, &data[..msg_len]))
+    }
+}
+
 impl TryFrom<Message<'_>> for LogsData {
     type Error = MessageError;
 
     fn try_from(value: Message<'_>) -> Result<Self, Self::Error> {
-        let Message { inner, message, dropped } = value;
-        let (container, data, _) =
-            unsafe { inner.parse_message(message.index..inner.last_scanned) };
-        let container = inner.containers.get(container).unwrap();
-        let mut data =
-            diagnostics_message::from_structured(container.identity.as_ref().into(), data)?;
-        if dropped > 0 {
+        let (container, data) = value.parse()?;
+        let mut data = diagnostics_message::from_structured(container.as_ref().into(), data)?;
+        if value.dropped > 0 {
             data.metadata
                 .errors
                 .get_or_insert(vec![])
-                .push(LogError::RolledOutLogs { count: dropped });
+                .push(LogError::RolledOutLogs { count: value.dropped });
         }
         Ok(data)
     }
 }
 
-/// Like FilterCursor but returns a stream of LogsData.
-#[pin_project]
-pub struct FilterCursorStream {
-    #[pin]
-    cursor: FilterCursor,
+/// A copy of the raw message.
+#[derive(Debug)]
+pub struct FxtMessage {
+    data: Box<[u8]>,
+    dropped: u64,
+    component_identity: Arc<ComponentIdentity>,
 }
 
-impl Stream for FilterCursorStream {
-    type Item = LogsData;
+impl FxtMessage {
+    pub fn data(&self) -> &[u8] {
+        &self.data
+    }
+
+    pub fn dropped(&self) -> u64 {
+        self.dropped
+    }
+
+    pub fn component_identity(&self) -> &ComponentIdentity {
+        &self.component_identity
+    }
+
+    pub fn timestamp(&self) -> zx::BootInstant {
+        zx::BootInstant::from_nanos(i64::read_from_bytes(&self.data[8..16]).unwrap())
+    }
+}
+
+impl TryFrom<Message<'_>> for FxtMessage {
+    type Error = MessageError;
+
+    fn try_from(value: Message<'_>) -> Result<Self, Self::Error> {
+        let (component, data) = value.parse()?;
+        Ok(FxtMessage {
+            data: data.into(),
+            dropped: value.dropped,
+            component_identity: Arc::clone(component),
+        })
+    }
+}
+
+/// Like FilterCursor but returns a stream of LogsData.
+#[pin_project]
+pub struct FilterCursorStream<T> {
+    #[pin]
+    cursor: FilterCursor,
+    phantom: PhantomData<T>,
+}
+
+impl<T> Stream for FilterCursorStream<T>
+where
+    T: for<'a> TryFrom<Message<'a>>,
+{
+    type Item = T;
 
     fn poll_next(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Option<Self::Item>> {
         let mut this = self.project();
         loop {
             match ready!(this.cursor.as_mut().poll_next(cx)) {
                 Some(item) => {
-                    if let Ok(data) = LogsData::try_from(item) {
+                    if let Ok(data) = T::try_from(item) {
                         return Poll::Ready(Some(data));
                     }
                     // The message is bad, just ignore it.
@@ -197,15 +263,18 @@ impl Stream for FilterCursorStream {
     }
 }
 
-impl FusedStream for FilterCursorStream {
+impl<T> FusedStream for FilterCursorStream<T>
+where
+    T: for<'a> TryFrom<Message<'a>>,
+{
     fn is_terminated(&self) -> bool {
         self.cursor.is_terminated()
     }
 }
 
-impl From<FilterCursor> for FilterCursorStream {
+impl<T> From<FilterCursor> for FilterCursorStream<T> {
     fn from(cursor: FilterCursor) -> Self {
-        Self { cursor }
+        Self { cursor, phantom: PhantomData }
     }
 }
 
@@ -232,7 +301,7 @@ mod tests {
         container.push_back(msg.bytes());
 
         let cursor = buffer.cursor(StreamMode::Snapshot, vec![]);
-        let mut stream = pin!(FilterCursorStream::from(cursor));
+        let mut stream = pin!(FilterCursorStream::<LogsData>::from(cursor));
 
         let item = stream.next().await.unwrap();
         assert_eq!(item.msg().unwrap(), "a");
@@ -251,7 +320,7 @@ mod tests {
 
         let selector = parse_component_selector::<FastError>("a").unwrap();
         let cursor = buffer.cursor(StreamMode::Snapshot, vec![selector]);
-        let mut stream = pin!(FilterCursorStream::from(cursor));
+        let mut stream = pin!(FilterCursorStream::<LogsData>::from(cursor));
 
         let item = stream.next().await.unwrap();
         assert_eq!(item.msg().unwrap(), "msg_a");
@@ -265,7 +334,7 @@ mod tests {
         let container = buffer.new_container_buffer(Arc::new(vec!["a"].into()), Arc::default());
 
         let cursor = buffer.cursor(StreamMode::Subscribe, vec![]);
-        let mut stream = pin!(FilterCursorStream::from(cursor));
+        let mut stream = pin!(FilterCursorStream::<LogsData>::from(cursor));
 
         assert!(futures::poll!(stream.next()).is_pending());
 
@@ -284,7 +353,7 @@ mod tests {
         container.push_back(make_message("msg1", None, zx::BootInstant::from_nanos(1)).bytes());
 
         let cursor = buffer.cursor(StreamMode::SnapshotThenSubscribe, vec![]);
-        let mut stream = pin!(FilterCursorStream::from(cursor));
+        let mut stream = pin!(FilterCursorStream::<LogsData>::from(cursor));
 
         let item = stream.next().await.unwrap();
         assert_eq!(item.msg().unwrap(), "msg1");
@@ -314,14 +383,21 @@ mod tests {
         container_a.push_back(msg.bytes()); // 3
 
         let cursor = buffer.cursor(StreamMode::SnapshotThenSubscribe, vec![]);
-        let mut stream = pin!(FilterCursorStream::from(cursor));
+        let mut stream = pin!(FilterCursorStream::<LogsData>::from(cursor));
 
         // Consume one
         let item = stream.next().await.unwrap();
         assert_eq!(item.msg().unwrap(), "msg");
 
         // Force roll out of remaining A messages
-        while pin!(container_a.cursor(StreamMode::Snapshot).unwrap()).next().await.is_some() {
+        while pin!(FilterCursorStream::<FxtMessage>::from(buffer.cursor(
+            StreamMode::Snapshot,
+            vec![parse_component_selector::<FastError>("a").unwrap()]
+        )))
+        .next()
+        .await
+        .is_some()
+        {
             container_b.push_back(msg.bytes());
             // Force the buffer to pop old messages.
             {
@@ -346,7 +422,7 @@ mod tests {
             Box::new(|_| {}),
             SharedBufferOptions { sleep_time: Duration::from_secs(10) },
         );
-        let cursor = pin!(FilterCursorStream::from(
+        let cursor = pin!(FilterCursorStream::<LogsData>::from(
             buffer.cursor(StreamMode::SnapshotThenSubscribe, vec![])
         ));
         let container = buffer.new_container_buffer(Arc::new(vec!["a"].into()), Arc::default());

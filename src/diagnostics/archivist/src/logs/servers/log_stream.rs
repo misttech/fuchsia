@@ -1,16 +1,16 @@
 // Copyright 2024 The Fuchsia Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
-
 use crate::identity::ComponentIdentity;
-use crate::logs::container::CursorItem;
 use crate::logs::error::LogsError;
 use crate::logs::repository::LogsRepository;
+use crate::logs::shared_buffer::FxtMessage;
 use fidl::endpoints::{ControlHandle, DiscoverableProtocolMarker};
 use fidl_fuchsia_diagnostics::StreamMode;
 use futures::{AsyncWriteExt, Stream, StreamExt};
 use log::warn;
 use std::borrow::Cow;
+use std::pin::pin;
 use std::sync::Arc;
 use {fidl_fuchsia_diagnostics as fdiagnostics, fuchsia_async as fasync};
 
@@ -55,7 +55,7 @@ impl LogStreamServer {
                 fdiagnostics::LogStreamRequest::Connect { socket, opts, .. } => {
                     let logs = logs_repo.logs_cursor_raw(
                         opts.mode.unwrap_or(StreamMode::SnapshotThenSubscribe),
-                        None,
+                        Vec::new(),
                     );
                     let opts = ExtendRecordOpts::from(opts);
                     scope.spawn(Self::stream_logs(fasync::Socket::from_socket(socket), logs, opts));
@@ -76,11 +76,17 @@ impl LogStreamServer {
 
     async fn stream_logs(
         mut socket: fasync::Socket,
-        mut logs: impl Stream<Item = CursorItem> + Unpin,
+        logs: impl Stream<Item = FxtMessage>,
         opts: ExtendRecordOpts,
     ) {
-        while let Some(CursorItem { rolled_out, message, identity }) = logs.next().await {
-            let response = extend_fxt_record(message.bytes(), identity.as_ref(), rolled_out, &opts);
+        let mut logs = pin!(logs);
+        while let Some(message) = logs.next().await {
+            let response = extend_fxt_record(
+                message.data(),
+                message.component_identity(),
+                message.dropped(),
+                &opts,
+            );
             let result = socket.write_all(&response).await;
             if result.is_err() {
                 // Assume an error means the peer closed for now.

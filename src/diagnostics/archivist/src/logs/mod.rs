@@ -6,7 +6,6 @@ pub mod container;
 pub mod debuglog;
 pub mod error;
 pub mod listener;
-pub mod multiplex;
 pub mod repository;
 pub mod serial;
 pub mod servers;
