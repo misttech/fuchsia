@@ -77,13 +77,6 @@
                 // denied on newer kernels. All that said, the CAP_SYS_ADMIN and CAP_SYSLOG are
                 // the greatest common denominator for all the differences in behavior.
                 "SyslogAccessTestAll*_SysAdmin_NoSyslog_*",
-
-                // These will be fixed with the kernel uprev. We'll temporarily skip them while
-                // that image rolls, and then remove these entries.
-                "AccessTest.FsUidIgnoredUnlessEaccess",
-                "AccessTest.EaccessChecksAgainstEffectiveCredsOwner",
-                "AccessTest.EaccessChecksAgainstEffectiveCredsNonOwner",
-                "IcmpPingSocket.SetInvalid",
             ],
         },
         {
