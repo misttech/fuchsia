@@ -24,7 +24,7 @@ use starnix_core::power::{
 use starnix_core::task::dynamic_thread_spawner::SpawnRequestBuilder;
 use starnix_core::task::{Kernel, LockedAndTask};
 use starnix_logging::{
-    log_warn, trace_duration, trace_duration_begin, trace_duration_end, trace_flow_step,
+    log_warn, trace_duration, trace_duration_begin, trace_duration_end, trace_flow_end,
 };
 use starnix_modules_input_event_conversion::button_fuchsia_to_linux::{
     parse_fidl_media_button_event, parse_fidl_touch_button_event,
@@ -338,7 +338,7 @@ impl InputEventsRelay {
         for e in &touch_events {
             match e.trace_flow_id {
                 Some(trace_flow_id) => {
-                    trace_flow_step!("input", "dispatch_event_to_client", trace_flow_id.into());
+                    trace_flow_end!("input", "dispatch_event_to_client", trace_flow_id.into());
                 }
                 None => {
                     log_warn!("touch event has not tracing id");

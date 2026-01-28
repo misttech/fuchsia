@@ -299,10 +299,6 @@ void TouchSourceBase::WatchBase(std::vector<fuchsia::ui::pointer::TouchResponse>
   std::unordered_map<StreamId, std::vector<GestureResponse>> responses_per_stream;
   size_t index = 0;
   for (const auto& response : responses) {
-    if (response.has_trace_flow_id()) {
-      TRACE_FLOW_END("input", "dispatch_event_to_client", response.trace_flow_id());
-    }
-
     const auto [stream_id, expects_response] = return_tickets_.at(index++);
     if (!expects_response || !ongoing_streams_.contains(stream_id)) {
       continue;
