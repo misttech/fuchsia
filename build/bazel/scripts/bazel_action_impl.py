@@ -5,10 +5,12 @@
 
 "Implement the running of a Bazel command from Ninja and copying the outputs back into the ninja outdir."
 
+import dataclasses
 import os
 import shlex
 import sys
 from functools import partial
+from pathlib import Path
 
 _SCRIPT_DIR = os.path.dirname(__file__)
 sys.path.insert(0, _SCRIPT_DIR)
@@ -16,6 +18,7 @@ sys.path.insert(0, _SCRIPT_DIR)
 import bazel_action_utils
 import build_utils
 import stdio_redirection
+from bazel_action_file_copy_utils import write_file_if_changed
 
 # LINT.ThenChange(//build/bazel/bazel_action.gni:bazel_action_impl_imports)
 
@@ -46,6 +49,27 @@ class BazelActionError(Exception):
     """
 
 
+@dataclasses.dataclass
+class BazelExtraOutputs(object):
+    """A collection of optional  outputs to write as debugging aids, and the paths to write them at.
+
+    Fields:
+
+        build_event_json_file: A build event json file from Bazel
+
+        command_file: The Bazel command itself
+
+        command_profile: A command profile tgz file
+
+        explain_file: A file which explains why Bazel re-ran each action
+    """
+
+    build_event_json_file: Path | None = None
+    command_file: Path | None = None
+    command_profile: Path | None = None
+    explain_file: Path | None = None
+
+
 class BazelActionRunner(object):
     """Used to run Bazel actions and copy all the outputs back to the Ninja outdir.
 
@@ -63,7 +87,7 @@ class BazelActionRunner(object):
         bazel_paths: build_utils.BazelPaths,
         global_args: bazel_action_utils.BazelGlobalArguments,
     ) -> None:
-        self.bazel_paths = bazel_paths
+        self.paths = bazel_paths
         self.global_args = global_args
         self.launcher = build_utils.BazelLauncher(
             bazel_paths.launcher,
@@ -78,6 +102,7 @@ class BazelActionRunner(object):
         self,
         targets: list[str],
         extra_args: list[str],
+        extra_outputs: BazelExtraOutputs,
         quiet: bool,
     ) -> list[str]:
         """Run a bazel command.
@@ -99,12 +124,51 @@ class BazelActionRunner(object):
 
         cmd_args = [] + extra_args
 
+        # If a build event json file is requested, tell Bazel to create one.
+        if extra_outputs.build_event_json_file:
+            # Create parent directory to avoid Bazel complaining it cannot
+            # write the events log file.
+            extra_outputs.build_event_json_file.parent.mkdir(
+                parents=True, exist_ok=True
+            )
+            cmd_args += [
+                "--build_event_json_file",
+                str(extra_outputs.build_event_json_file.resolve()),
+            ]
+
+        # If an explain file is requested, tell Bazel to create one.
+        if extra_outputs.explain_file:
+            cmd_args += [
+                "--explain",
+                self.paths.ninja_build_dir / extra_outputs.explain_file,
+            ]
+
+        # If a command profile is requested, tell Bazel to create one.
+        if extra_outputs.command_profile:
+            cmd_args += [
+                "--profile",
+                self.paths.ninja_build_dir / extra_outputs.command_profile,
+            ]
+
+        # Now that there's a complete command string calculated, print it to debug or the command
+        # file output if we have one.
         if _DEBUG:
+            # This is all arguments on one line, so that they can be run via cut/paste.
             debug(
                 "BUILD_CMD: "
                 + build_utils.cmd_args_to_string(
-                    [self.bazel_paths.launcher] + cmd_args
+                    [self.paths.launcher] + cmd_args
                 )
+            )
+        if extra_outputs.command_file:
+            # This file is one argument per line.
+            write_file_if_changed(
+                extra_outputs.command_file,
+                " \\\n  ".join(
+                    shlex.quote(str(c))
+                    for c in [self.paths.launcher] + cmd_args
+                )
+                + "\n",
             )
 
         if quiet:
@@ -178,7 +242,7 @@ class BazelActionRunner(object):
             # NOTE: Path to command.log should be stable, because we explicitly set
             # output_base. See https://bazel.build/run/scripts#command-log.
             if verify_unknown_gn_targets(
-                (self.bazel_paths.output_base / "command.log")
+                (self.paths.output_base / "command.log")
                 .read_text()
                 .splitlines(),
                 targets,

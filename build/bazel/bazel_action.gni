@@ -693,6 +693,7 @@ template("bazel_action") {
 
                  # Imported by bazel_action_impl.py
                  #LINT.IfChange(bazel_action_impl_imports)
+                 "//build/bazel/scripts/bazel_action_file_copy_utils.py",
                  "//build/bazel/scripts/bazel_action_utils.py",
                  "//build/bazel/scripts/build_utils.py",
                  "//build/bazel/scripts/stdio_redirection.py",

@@ -8,7 +8,6 @@
 import argparse
 import json
 import os
-import shlex
 import shutil
 import sys
 import typing as T
@@ -693,16 +692,6 @@ def main() -> int:
 
     cmd_args = [args.command]
 
-    if args.bazel_build_events_log_json:
-        # Create parent directory to avoid Bazel complaining it cannot
-        # write the events log file.
-        args.bazel_build_events_log_json.parent.mkdir(
-            parents=True, exist_ok=True
-        )
-        cmd_args += [
-            f"--build_event_json_file={args.bazel_build_events_log_json.resolve()}"
-        ]
-
     cmd_args += configured_args
     cmd_args += ["//buildfiles_genquery:genquery"]
     cmd_args += args.bazel_targets
@@ -764,23 +753,9 @@ def main() -> int:
     # Save the command.profile.gz data for analysis.
     # Convert '//some/gn:label' into 'obj/some/gn/label.command.profile.gz'
     command_profile_filename = (
-        f"{args.gn_target_label[2:].replace(':', '/')}.command.profile.gz"
+        Path("obj")
+        / f"{args.gn_target_label[2:].replace(':', '/')}.command.profile.gz"
     )
-    cmd_args += [
-        "--profile",
-        f"{build_dir}/obj/{command_profile_filename}",
-        "--explain",
-        build_dir / args.explain_file,
-    ]
-
-    if args.command_file:
-        write_file_if_changed(
-            args.command_file,
-            " \\\n  ".join(
-                shlex.quote(str(c)) for c in [bazel_paths.launcher] + cmd_args
-            )
-            + "\n",
-        )
 
     bazel_action_runner = bazel_action_impl.BazelActionRunner(
         bazel_paths,
@@ -790,6 +765,12 @@ def main() -> int:
         debug_symbol_manifest_paths = bazel_action_runner.run(
             args.bazel_targets,
             cmd_args,
+            bazel_action_impl.BazelExtraOutputs(
+                build_event_json_file=args.bazel_build_events_log_json,
+                command_file=args.command_file,
+                command_profile=command_profile_filename,
+                explain_file=args.explain_file,
+            ),
             quiet,
         )
     except bazel_action_impl.BazelActionError:
