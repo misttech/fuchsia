@@ -117,7 +117,8 @@ func setImpl(
 			TargetArch: strings.ToLower(staticSpec.TargetArch.String()),
 			Variants:   staticSpec.Variants,
 		},
-		BuildEventService: canonicalizeBuildEventService(staticSpec.BuildEventService),
+		BuildEventService:      canonicalizeBuildEventService(staticSpec.BuildEventService),
+		BuildEventServiceNinja: canonicalizeBuildEventService(staticSpec.BuildEventServiceNinja),
 		// True if any toolchain is using RBE and needs reproxy to run.
 		// Note: bazel+RBE doesn't require reproxy.
 		EnableRbe: staticSpec.RustRbeEnable || staticSpec.CxxRbeEnable || staticSpec.LinkRbeEnable,
@@ -277,6 +278,9 @@ func genArgs(
 
 	if staticSpec.BuildEventService != "" {
 		vars["bazel_upload_build_events"] = staticSpec.BuildEventService
+	}
+	if staticSpec.BuildEventServiceNinja != "" {
+		vars["ninja_upload_build_events"] = staticSpec.BuildEventServiceNinja
 	}
 
 	if staticSpec.Product != "" {

@@ -43,7 +43,7 @@ message Static {
   repeated string host_labels = 7;
 
   enum Arch {
-    ARCH_UNSPECIFIED = 0; // See OPTIMIZE_UNSPECIFIED for rationale.
+    ARCH_UNSPECIFIED = 0;  // See OPTIMIZE_UNSPECIFIED for rationale.
     ARM64 = 1;
     X64 = 2;
     RISCV64 = 3;

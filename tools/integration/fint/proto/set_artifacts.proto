@@ -46,4 +46,9 @@ message SetArtifacts {
   // Set to "sponge" or "resultstore" to indicate that bazel will
   // be streaming build events live to the named build event service.
   string build_event_service = 6;
+
+  // Set to "sponge" or "resultstore" to indicate that ninja will
+  // be streaming build events live to the named build event service.
+  // TODO(b/473907403): merge this 'build_event_service' after total roll-out.
+  string build_event_service_ninja = 7;
 }
