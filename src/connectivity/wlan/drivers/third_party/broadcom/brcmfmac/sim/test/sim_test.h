@@ -177,6 +177,8 @@ class SimInterface : public fidl::WireServer<fuchsia_wlan_fullmac::WlanFullmacIm
 
   zx_status_t SetMulticastPromisc(bool enable);
 
+  zx::channel TakeMlme();
+
   simulation::Environment* env_;
 
   fidl::WireSyncClient<fuchsia_wlan_fullmac::WlanFullmacImpl> client_;
@@ -186,8 +188,8 @@ class SimInterface : public fidl::WireServer<fuchsia_wlan_fullmac::WlanFullmacIm
 
   // Handles for SME <=> MLME communication, required but never used for communication (since no
   // SME is present).
-  zx_handle_t ch_sme_ = ZX_HANDLE_INVALID;   // SME-owned side
-  zx_handle_t ch_mlme_ = ZX_HANDLE_INVALID;  // MLME-owned side
+  zx::channel ch_sme_;   // SME-owned side
+  zx::channel ch_mlme_;  // MLME-owned side
 
   // Current state of association
   AssocContext assoc_ctx_ = {};

@@ -34,20 +34,13 @@ const std::vector<uint8_t> SimInterface::kDefaultScanChannels = {
 SimInterface::SimInterface() : test_arena_(fdf::Arena('IFAC')) {}
 
 SimInterface::~SimInterface() {
-  if (ch_sme_ != ZX_HANDLE_INVALID) {
-    zx_handle_close(ch_sme_);
-  }
-  if (ch_mlme_ != ZX_HANDLE_INVALID) {
-    zx_handle_close(ch_mlme_);
-  }
-
   if (server_binding_ != nullptr) {
     Reset();
   }
 }
 
 zx_status_t SimInterface::Init(simulation::Environment* env, wlan_common::WlanMacRole role) {
-  zx_status_t result = zx_channel_create(0, &ch_sme_, &ch_mlme_);
+  zx_status_t result = zx::channel::create(0, &ch_sme_, &ch_mlme_);
   if (result == ZX_OK) {
     env_ = env;
     role_ = role;
@@ -107,13 +100,6 @@ zx_status_t SimInterface::Connect(fidl::ClientEnd<fuchsia_wlan_fullmac::WlanFull
 
   // Only assign the client if Start succeeded, otherwise client_ is assigned but not working.
   client_ = std::move(client);
-
-  // Verify that the channel passed back from start() is the same one we gave to create_iface()
-  if (result->value()->sme_channel().get() != ch_mlme_) {
-    BRCMF_ERR("Channels don't match, sme_channel: %zu, ch_mlme_: %zu",
-              result.value()->sme_channel().get(), ch_mlme_);
-    return ZX_ERR_INTERNAL;
-  }
 
   return ZX_OK;
 }
@@ -528,6 +514,8 @@ void SimInterface::StopSoftAp() {
   ZX_ASSERT(result.ok());
 }
 
+zx::channel SimInterface::TakeMlme() { return std::move(ch_mlme_); }
+
 SimTest::SimTest() : test_arena_(fdf::Arena('T')) {
   env_ = std::make_unique<simulation::Environment>();
   env_->AddStation(this);
@@ -634,11 +622,9 @@ zx_status_t SimTest::StartInterface(wlan_common::WlanMacRole role, SimInterface*
   if ((status = sim_ifc->Init(env_.get(), role)) != ZX_OK) {
     return status;
   }
-  auto ch = zx::channel(sim_ifc->ch_mlme_);
-
   auto builder = fuchsia_wlan_phyimpl::wire::WlanPhyImplCreateIfaceRequest::Builder(test_arena_)
                      .role(role)
-                     .mlme_channel(std::move(ch));
+                     .mlme_channel(std::move(sim_ifc->ch_mlme_));
 
   if (mac_addr) {
     fidl::Array<unsigned char, 6> init_sta_addr;
