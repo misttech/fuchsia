@@ -48,7 +48,7 @@ class Cartfs:
             The mount point if found, None otherwise.
         """
         if use_local_mock_cartfs:
-            local_mock_cartfs_mount_point = Path.home() / "mock_cartfs"
+            local_mock_cartfs_mount_point = Path.home() / ".mock_cartfs"
             local_mock_cartfs_mount_point.mkdir(parents=True, exist_ok=True)
             return local_mock_cartfs_mount_point
 

@@ -2,7 +2,6 @@
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
-import os
 import shutil
 import subprocess
 from pathlib import Path
@@ -14,7 +13,6 @@ def snapshot_workspace(
     workspace_to_snapshot_from: Path,
     workspace_to_snapshot_to: Path,
     cartfs_mount_point: Path,
-    use_local_mock_cartfs: bool,
 ) -> None:
     """Snapshots a workspace.
 
@@ -47,84 +45,42 @@ def snapshot_workspace(
         "fuchsia",
     ]
 
-    if use_local_mock_cartfs:
+    # Placeholders for endpoint and RPC names.
+    cartfs_endpoint = "127.0.0.1:65001"
+    cartfs_rpc_copy_directory = "cartfs.Cartfs.CopyDirectory"
+
+    try:
+        # We need to make the directory first because cartfs.CopyDirectory
+        # does not update the directory immediately and a subsequent write
+        # will fail. If we create the directory first, we can avoid this issue
+        # and still correctly snapshot the workspace.
+        to_path.mkdir(parents=True, exist_ok=True)
+
         for subdir in copy_subdirs:
-            # When copy locally, we need to use the absolute path of the
-            # directories and files to copy.
-            from_path = cartfs_mount_point / workspace_to_snapshot_from / subdir
-            to_path = cartfs_mount_point / workspace_to_snapshot_to / subdir
-            if from_path.is_dir():
-                shutil.copytree(
-                    from_path,
-                    to_path,
-                    dirs_exist_ok=True,
-                    symlinks=True,
-                )
-            else:
-                shutil.copyfile(from_path, to_path)
-    else:
-        # Placeholders for endpoint and RPC names.
-        cartfs_endpoint = "127.0.0.1:65001"
-        cartfs_rpc_copy_directory = "cartfs.Cartfs.CopyDirectory"
-        cogfsd_endpoint = f"unix:///google/cog/status/uds/{os.getuid()}"
-        cogfsd_rpc_forkmtimes = "devtools_srcfs.CogLocalRpcService.ForkMtimes"
+            from_path_rel = workspace_to_snapshot_from / subdir
+            to_path_rel = workspace_to_snapshot_to / subdir
+            from_path_abs = cartfs_mount_point / from_path_rel
+            to_path_abs = cartfs_mount_point / to_path_rel
 
-        try:
-            # We need to make the directory first because cartfs.CopyDirectory
-            # does not update the directory immediately and a subsequent write
-            # will fail. If we create the directory first, we can avoid this issue
-            # and still correctly snapshot the workspace.
-            to_path.mkdir(parents=True, exist_ok=True)
-
-            for subdir in copy_subdirs:
-                from_path_rel = workspace_to_snapshot_from / subdir
-                to_path_rel = workspace_to_snapshot_to / subdir
-                from_path_abs = cartfs_mount_point / from_path_rel
-                to_path_abs = cartfs_mount_point / to_path_rel
-
-                if not from_path_abs.exists():
-                    logger.log_info(
-                        f"Skipping {from_path_rel} because it does not exist."
-                    )
-                    continue
-
-                if not from_path_abs.is_dir():
-                    shutil.copyfile(from_path_abs, to_path_abs)
-                    continue
-
+            if not from_path_abs.exists():
                 logger.log_info(
-                    f"Copying from {from_path_rel} to {to_path_rel}"
+                    f"Skipping {from_path_rel} because it does not exist."
                 )
-                # We need to provide relative paths for the RPC calls.
-                subprocess.run(
-                    [
-                        "grpc_cli",
-                        "call",
-                        cartfs_endpoint,
-                        cartfs_rpc_copy_directory,
-                        f'from_path: "{from_path_rel}"\nto_path: "{to_path_rel}"',
-                        "--channel_creds_type=insecure",
-                    ],
-                    check=True,
-                    capture_output=True,
-                    text=True,
-                )
+                continue
 
-            logger.log_info(
-                f"Forking mtimes from {workspace_to_snapshot_from} to {workspace_to_snapshot_to}"
-            )
+            if not from_path_abs.is_dir():
+                shutil.copyfile(from_path_abs, to_path_abs)
+                continue
+
+            logger.log_info(f"Copying from {from_path_rel} to {to_path_rel}")
+            # We need to provide relative paths for the RPC calls.
             subprocess.run(
                 [
                     "grpc_cli",
                     "call",
-                    cogfsd_endpoint,
-                    cogfsd_rpc_forkmtimes,
-                    "\n".join(
-                        [
-                            f'source_workspace: "{workspace_to_snapshot_from}"',
-                            f'target_workspace: "{workspace_to_snapshot_to}"',
-                        ]
-                    ),
+                    cartfs_endpoint,
+                    cartfs_rpc_copy_directory,
+                    f'from_path: "{from_path_rel}"\nto_path: "{to_path_rel}"',
                     "--channel_creds_type=insecure",
                 ],
                 check=True,
@@ -132,13 +88,13 @@ def snapshot_workspace(
                 text=True,
             )
 
-        except FileNotFoundError:
-            logger.log_error(
-                "Error: grpc_cli not found. Please ensure it is in your PATH."
-            )
-            raise
-        except subprocess.CalledProcessError as e:
-            logger.log_error(f"Error during snapshotting via grpc_cli: {e}")
-            logger.log_error(f"stdout: {e.stdout}")
-            logger.log_error(f"stderr: {e.stderr}")
-            raise
+    except FileNotFoundError:
+        logger.log_error(
+            "Error: grpc_cli not found. Please ensure it is in your PATH."
+        )
+        raise
+    except subprocess.CalledProcessError as e:
+        logger.log_error(f"Error during snapshotting via grpc_cli: {e}")
+        logger.log_error(f"stdout: {e.stdout}")
+        logger.log_error(f"stderr: {e.stderr}")
+        raise

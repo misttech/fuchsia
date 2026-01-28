@@ -55,11 +55,10 @@ def prepare_workspace_instance(
         logger.log_info(
             "Workspace is not linked to cartfs. Attempting to Snapshot from previous instance."
         )
-        cartfs_workspace_dir = (
-            workspace_instance.snapshot_from_previous_instance(
-                use_local_mock_cartfs=use_local_mock_cartfs
+        if not use_local_mock_cartfs:
+            cartfs_workspace_dir = (
+                workspace_instance.snapshot_from_previous_instance()
             )
-        )
         if not cartfs_workspace_dir:
             logger.log_info(
                 "Unable to snapshot from previous instance. Creating a new"
@@ -91,7 +90,7 @@ def _parse_args() -> argparse.Namespace:
         "--local-mock-cartfs",
         dest="use_local_mock_cartfs",
         action="store_true",
-        help="Use a local mock cartfs directory located at ~/mock_cartfs.",
+        help="Use a local mock cartfs directory located at ~/.mock_cartfs.",
     )
     parser.add_argument(
         "-v",

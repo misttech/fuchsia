@@ -1,0 +1,74 @@
+#!/bin/bash
+# Copyright 2026 The Fuchsia Authors. All rights reserved.
+# Use of this source code is governed by a BSD-style license that can be
+# found in the LICENSE file.
+
+#### CATEGORY=Source
+### Clean up the stale CartFS directories.
+## usage: fx cog-clean
+##
+## This is a script to clean up the Cog workspace. When the workspace is deleted,
+## the files are not removed from CartFS. This script will remove the files
+## from CartFS that are no longer in the workspace.
+
+source "$(cd "$(dirname "${BASH_SOURCE[0]}")" >/dev/null 2>&1 && pwd)"/lib/vars.sh || exit $?
+set -e
+
+readonly CARTFS_MOUNT_POINT="/google/cartfs/mount"
+readonly CARTFS_MOUNT_POINT_LOCAL_MOCK="$HOME/.mock_cartfs"
+readonly GIT_CITC_PATH="$(which git-citc)"
+
+# Collect the list of cog workspaces.
+cog_workspaces=$(git-citc list)
+
+# Collect the stale dirs from CartFS.
+stale_dirs=()
+for mount_point in "$CARTFS_MOUNT_POINT" "$CARTFS_MOUNT_POINT_LOCAL_MOCK"; do
+  fx-info "Processing CartFS mount point: $mount_point"
+  if [ ! -d "$mount_point" ]; then
+    continue
+  fi
+  while IFS= read -r cartfs_dir; do
+    if [ -z "$cartfs_dir" ]; then
+      continue
+    fi
+
+    cog_json_path="$mount_point/$cartfs_dir/.cog.json"
+    # If the .cog.json file is not present, skip it.
+    if [ ! -f "$cog_json_path" ]; then
+      continue
+    fi
+
+    workspace_name=$(fx-command-run jq -r .workspace_name "$cog_json_path")
+    # If the workspace name is not in the list of cog workspaces, remove it from CartFS.
+    if ! echo "${cog_workspaces}" | grep -Fxq "${workspace_name}"; then
+      fx-info "Find stale '${cartfs_dir}' from $mount_point"
+      stale_dirs+=("$mount_point/$cartfs_dir")
+    fi
+  done <<< "$(ls -A "$mount_point")"
+done
+
+# Prompt the user to confirm the stale dirs to remove.
+if [ "${#stale_dirs[@]}" -gt 0 ]; then
+  fx-info
+  fx-info "The following stale dirs will be removed:"
+  fx-info
+  for stale_dir in "${stale_dirs[@]}"; do
+    fx-info "    $stale_dir"
+  done
+  echo
+  read -p "Are you sure you want to remove these stale dirs? (y/n): " -n 1 -r
+  echo
+  if [[ $REPLY =~ ^[Yy]$ ]]; then
+    fx-info "Removing stale dirs..."
+    for stale_dir in "${stale_dirs[@]}"; do
+      fx-info "Removing $stale_dir"
+      rm -rf "$stale_dir"
+    done
+  else
+    fx-info "No stale dirs removed."
+  fi
+else
+  fx-info "No stale dirs found."
+fi
+

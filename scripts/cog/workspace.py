@@ -238,9 +238,8 @@ class Workspace:
     def snapshot_from_previous_instance(
         self,
         snapshot_function: Callable[
-            [Path, Path, Path, bool], None
+            [Path, Path, Path], None
         ] = snapshotter.snapshot_workspace,
-        use_local_mock_cartfs: bool = False,
     ) -> Path | None:
         """Snapshots the workspace from the most recent cartfs directory."""
         previous_cartfs_instance_rel_path = self._find_previous_instance()
@@ -257,7 +256,6 @@ class Workspace:
                 previous_cartfs_instance_rel_path,
                 suggested_directory_name,
                 self.cartfs_instance.mount_point,
-                use_local_mock_cartfs,
             )
         except ValueError as e:
             logger.log_error(f"Error during snapshotting: {e}")
