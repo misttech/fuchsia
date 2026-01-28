@@ -294,30 +294,33 @@ pub fn new_remote_vol(
 
     let (keys, created_key_file) = VolumeKeys::get_or_create(&key_location_proxy, KEY_FILE_PATH)?;
 
-    // Attempt to connect to the inline encryption device.
-    let inline_encryption_provider = {
-        let (inline_encryption_provider, inline_encryption_server) =
-            fidl::endpoints::create_sync_proxy();
-        match volume_provider
-            .connect_to_inline_encryption(inline_encryption_server, zx::MonotonicInstant::INFINITE)
-            .map_err(|e| {
-                log_error!(
-                    "FIDL transport error on StarnixVolumeProvider.ConnectToInlineEncryption {:?}",
-                    e
-                );
-                errno!(EIO)
-            })? {
-            Ok(()) => {
-                log_info!("Inline encryption enabled");
-                Some(inline_encryption_provider)
-            }
-            Err(e) if e == zx::Status::NOT_SUPPORTED.into_raw() => None,
-            Err(e) => {
-                let error = from_status_like_fdio!(zx::Status::from_raw(e));
-                log_error!(error:?; "Error while handling connecting to inline encryption");
-                return Err(error);
+    // Attempt to connect to the inline encryption device if mount options specify inline crypt
+    let inline_encryption_provider = match options.params.get(FsStr::new(b"inlinecrypt")) {
+        Some(_) => {
+            let (inline_encryption_provider, inline_encryption_server) =
+                fidl::endpoints::create_sync_proxy();
+            // TODO(https://fxbug.dev/477720373): Use component routing instead.
+            match volume_provider
+                .connect_to_inline_encryption(
+                    inline_encryption_server,
+                    zx::MonotonicInstant::INFINITE,
+                )
+                .map_err(|e| {
+                    log_error!(
+                        "FIDL error on StarnixVolumeProvider.ConnectToInlineEncryption {:?}",
+                        e
+                    );
+                    errno!(EIO)
+                })? {
+                Ok(()) => Some(inline_encryption_provider),
+                Err(e) => {
+                    let error = from_status_like_fdio!(zx::Status::from_raw(e));
+                    log_error!(error:?; "Error while connecting to inline encryption");
+                    return Err(error);
+                }
             }
         }
+        None => None,
     };
     let crypt_service = Arc::new(CryptService::new(
         &keys.metadata,

@@ -147,6 +147,7 @@ closed protocol StarnixVolumeProvider {
     /// supports it.
     ///
     /// Returns ZX_ERR_NOT_SUPPORTED if device does not support inline encryption.
+    // TODO(https://fxbug.dev/477720373): Remove this - use component routing to route service.
     strict ConnectToInlineEncryption(resource struct {
         server_end server_end:fuchsia.hardware.inlineencryption.Device;
     }) -> () error zx.Status;
