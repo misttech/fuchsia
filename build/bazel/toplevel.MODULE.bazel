@@ -68,9 +68,9 @@ local_path_override(
 
 # fuchsia_build_generated/gn_target_dir is a symlink to the content
 # of the @gn_targets repository. At `fx gen` time, it will point to
-# an empty repository, but bazel_action.py will update it just before
-# invoking Bazel to point to a directory whose content matches the
-# current `bazel_action()` target.
+# an empty repository, but bazel_gn_target_action.py will update it
+# just before invoking Bazel to point to a directory whose content
+# matches the current `bazel_action()` target.
 bazel_dep(name = "gn_targets", version = "")
 local_path_override(
     module_name = "gn_targets",

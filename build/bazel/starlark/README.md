@@ -12,6 +12,6 @@ fx bazel cquery <config-options>
     //path/to:target
 ```
 
-They are mostly an implementation detail of the `bazel_action.py`
-script. Their content may change arbitrarily to keep track of internal
-changes within the Bazel SDK rules.
+They are mostly an implementation detail of the `bazel_gn_target_action.py` and
+`bazel_action_impl.py` scripts. Their content may change arbitrarily to keep
+track of internal changes within the Bazel SDK rules.

@@ -158,8 +158,8 @@ class BazelLabelMapper(object):
             If the corresponding repository has a content hash file, return
             its path. Otherwise, return an empty string.
         """
-        # TODO(jayzhuang): Refine the logic for bazel_action.py incremental
-        # builds.
+        # TODO(jayzhuang): Refine the logic for bazel_gn_target_action.py
+        # incremental builds.
         #
         # Use the innermost repository name for finding content hash file.
         #

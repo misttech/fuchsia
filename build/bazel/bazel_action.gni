@@ -576,7 +576,7 @@ template("bazel_action") {
     # Generate a manifest file that references all transitive bazel_input_file()
     # and bazel_input_directory() dependencies from 'deps' or 'bazel_inputs'.
     #
-    # These are passed to bazel_action.py to populate the @gn_targets external
+    # These are passed to bazel_gn_target_action.py to populate the @gn_targets external
     # repository with symlinks and filegroups().
     #
     _gn_targets_repository_manifest =
@@ -623,12 +623,12 @@ template("bazel_action") {
     _gn_targets_repository_path = "${target_out_dir}/${target_name}.gn_targets"
 
     # A file that will receive the exact Bazel command invoked by the
-    # bazel_action.py script.
+    # bazel_gn_targets_action.py script.
     _bazel_command_file = "${target_out_dir}/${target_name}.bazel_command.sh"
     _rebased_bazel_command_file =
         rebase_path(_bazel_command_file, root_build_dir)
 
-    # A file that will receive the explain output from the bazel_action.py script.
+    # A file that will receive the explain output from the bazel_gn_target_action.py script.
     #
     # The output is from dependency checker in Bazel build's execution phase to
     # explain, for each build step, either why it is being executed, or that it is
@@ -676,19 +676,28 @@ template("bazel_action") {
                  # correctly trigger bazel action rebuilds.
                  "//build/bazel/toolchains/rust/rust.BUILD.bazel",
 
-                 # LINT.IfChange(imports)
-                 # Imported by bazel_action.py
+                 # Imported by bazel_gn_target_action.py
+                 # LINT.IfChange(bazel_gn_target_imports)
                  "//build/api/debug_symbols.py",
+                 "//build/bazel/scripts/bazel_action_impl.py",
                  "//build/bazel/scripts/bazel_action_file_copy_utils.py",
+                 "//build/bazel/scripts/bazel_action_utils.py",
                  "//build/bazel/scripts/bazel_compdb_utils.py",
                  "//build/bazel/scripts/bazel_label_mapper.py",
                  "//build/bazel/scripts/bazel_rust_analyzer_utils.py",
                  "//build/bazel/scripts/build_utils.py",
-                 "//build/bazel/scripts/stdio_redirection.py",
                  "//build/bazel/scripts/thread_pool_helpers.py",
                  "//build/bazel/scripts/workspace_utils.py",
 
-                 #LINT.ThenChange(//build/bazel/scripts/bazel_action.py:imports)
+                 #LINT.ThenChange(//build/bazel/scripts/bazel_gn_target_action.py:imports)
+
+                 # Imported by bazel_action_impl.py
+                 #LINT.IfChange(bazel_action_impl_imports)
+                 "//build/bazel/scripts/bazel_action_utils.py",
+                 "//build/bazel/scripts/build_utils.py",
+                 "//build/bazel/scripts/stdio_redirection.py",
+
+                 #LINT.ThenChange(//build/bazel/scripts/bazel_action_impl.py:imports)
 
                  # The shell script used to execute Bazel itself.
                  "//build/bazel/wrapper.bazel.sh",
@@ -708,12 +717,12 @@ template("bazel_action") {
         _timings_file,
       ]
 
-      # bazel_action.py always checks the rbe_settings.json file to see if
+      # bazel_gn_target_action.py always checks the rbe_settings.json file to see if
       # RBE is enabled or not.
       inputs += [ "${root_build_dir}/rbe_settings.json" ]
       deps += [ "//build/rbe:rbe_settings.json" ]
 
-      # bazel_action.pyt always checks global_bazel_args.json for configuration
+      # bazel_gn_target_action.py always checks global_bazel_args.json for configuration
       # of extra global arguments
       inputs += [ "${root_build_dir}/bazel_args/global_args.json" ]
       deps += [ "//build/bazel/config:global_args.json" ]
@@ -918,8 +927,8 @@ template("bazel_action") {
 
               # The gn_targets_dir that needs to be symlinked into the workspace to
               # build the bazel action.  This is transitional until this is setup
-              # on a per-action basis via the bazel_action.py script and more explicit
-              # data about the GN inputs needed by the bazel action.
+              # on a per-action basis via the bazel_gn_target_action.py script and
+              # more explicit data about the GN inputs needed by the bazel action.
               gn_targets_dir =
                   rebase_path(_gn_targets_repository_path, root_build_dir)
             },

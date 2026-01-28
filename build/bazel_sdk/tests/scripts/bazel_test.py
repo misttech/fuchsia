@@ -332,7 +332,7 @@ class BazelRepositoryMap(object):
 
         # These repository overrides are used when converting Bazel labels to actual paths.
         # NOTE: Mapping labels to repository inputs is considerably simpler than
-        # //build/bazel/scripts/bazel_action.py because there are way less edge
+        # //build/bazel/scripts/bazel_gn_target_action.py because there are way less edge
         # cases to consider and because ignoring @prebuilt_python and
         # @fuchsia_clang entirely is safe, since these are already populated
         # by the GN build_fuchsia_sdk_repository target which is an input

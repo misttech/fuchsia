@@ -273,7 +273,7 @@ class BazelBuildInvocation:
     # Optional path to @gn_targets repository content
 
     bazel_action_timings: dict[str, float] | None = None
-    # Optional, dictionary describing the duration of bazel_action.py steps
+    # Optional, dictionary describing the duration of bazel_gn_target_action.py steps
     # keys are step names, values are durations in seconds.
 
     def __post_init__(self) -> None:
@@ -551,7 +551,7 @@ def log_stderr(msg: str) -> None:
     print(msg, file=sys.stderr)
 
 
-def cmd_args_to_string(cmd_args: list[FilePath]) -> str:
+def cmd_args_to_string(cmd_args: T.Sequence[FilePath]) -> str:
     """Convert a list of command arguments to a printable string.
 
     Args:

@@ -219,7 +219,7 @@ def _generate_manifest_impl(target, actx):
     # location.
     # LINT.IfChange(debug_symbols_manifest_prefix)
     print("DEBUG_SYMBOLS_MANIFEST_PATH=%s" % output.path)
-    # LINT.ThenChange(//build/bazel/scripts/bazel_action.py:debug_symbols_manifest_prefix)
+    # LINT.ThenChange(//build/bazel/scripts/bazel_action_impl.py:debug_symbols_manifest_prefix)
 
     return [
         OutputGroupInfo(

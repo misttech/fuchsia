@@ -322,7 +322,7 @@ def should_file_changes_trigger_build(
     #         v
     #     some:bazel_action  -----------> @//some/bazel:target, @//some/other/bazel:target
     #          |
-    #          |                   bazel_action.py invoked from Ninja.
+    #          |                   bazel_gn_target_action.py invoked from Ninja.
     #          |                   - calls `bazel build` to build artifacts
     #          |                   - calls `bazel query` to get list of inputs and build files
     #          |                   - writes the Bazel inputs + build files paths to depfile,

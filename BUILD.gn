@@ -2201,7 +2201,7 @@ build_api_module("nuc11_fastboot_images_location") {
 #
 #   timings_file
 #     - Optional: Path to a file used to describe timings of different steps of the
-#         bazel_action.py script call for this target. Only used for debugging.
+#         bazel_gn_target_action.py script call for this target. Only used for debugging.
 #     - Type: string
 #
 #   build_events_log_json:
@@ -2230,15 +2230,15 @@ generated_file("bazel_build_action_targets") {
 # LINT.IfChange(bazel_target_infos)
 #
 # The bazel_target_infos.json file maps provides the information necessary for Ninja to
-# run a bazel action, by telling the bazel_action.py script how to find all the inputs that
-# need to be symlinked into the workspace for a given action and all the outputs to copy out
+# run a bazel action, by telling the bazel_gn_target_action.py script how to find all the inputs
+# that need to be symlinked into the workspace for a given action and all the outputs to copy out
 # of that action.
 #
 # This will eventually replace the above 'bazel_build_action_targets.json' file, which is oriented
 # around the bazel action build groups, and isn't per-bazel target.
 #
 # This data is structured for ease of generation, and is flattened into a more manageable format by
-# the parsing code used by bazel_action.py.
+# the parsing code used by bazel_gn_target_action.py.
 #
 # Type: list(scope)
 #

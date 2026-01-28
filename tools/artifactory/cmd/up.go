@@ -227,7 +227,7 @@ func (cmd upCommand) execute(ctx context.Context, buildDir string) error {
 			Source:      path.Join(buildDir, ctsPlasaReportName),
 			Destination: path.Join(cmd.namespace, ctsPlasaReportName),
 		},
-		// Used to inspect bazel build invocation and bazel_action.py timings.
+		// Used to inspect bazel build invocations and bazel_gn_target_action.py timings.
 		{
 			Source:      path.Join(buildDir, lastBazelBuildInvocationsName),
 			Destination: path.Join(cmd.namespace, lastBazelBuildInvocationsName),
