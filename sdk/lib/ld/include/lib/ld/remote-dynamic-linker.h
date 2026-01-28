@@ -442,7 +442,7 @@ class RemoteDynamicLinker {
 
     auto check_machine = [machine, &diag](const DecodedModule& decoded) {
       return !machine || decoded.machine() == *machine ||
-             // TODO(mcgrathr): module-prefixed diagnostics here?
+             // TODO(https://fxbug.dev/479505969): module-prefixed diagnostics here?
              diag.FormatError("wrong e_machine for architecture: ", decoded.machine());
     };
 
