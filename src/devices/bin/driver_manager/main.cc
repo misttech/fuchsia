@@ -53,7 +53,7 @@ namespace fio = fuchsia_io;
 
 namespace {
 
-void InitLogging(const driver_manager_config::Config& config) {
+void InitLogging() {
   char process_name[ZX_MAX_NAME_LEN] = "";
 
   zx_status_t name_status =
@@ -63,8 +63,7 @@ void InitLogging(const driver_manager_config::Config& config) {
   }
 
   const char* tags[] = {process_name};
-  fdf_log::InitGlobalLogger(
-      tags, config.verbose() ? std::numeric_limits<FuchsiaLogSeverity>::min() : FUCHSIA_LOG_INFO);
+  fdf_log::InitGlobalLogger(tags, FUCHSIA_LOG_INFO);
 }
 
 }  // namespace
@@ -78,7 +77,7 @@ int main(int argc, char** argv) {
 
   auto config = driver_manager_config::Config::TakeFromStartupHandle();
 
-  InitLogging(config);
+  InitLogging();
 
   async::Loop loop(&kAsyncLoopConfigNeverAttachToThread);
   auto outgoing = component::OutgoingDirectory(loop.dispatcher());

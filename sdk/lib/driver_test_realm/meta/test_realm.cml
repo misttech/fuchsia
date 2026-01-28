@@ -76,6 +76,11 @@
             type: "int64",
             value: 0,
         },
+        {
+            config: "fuchsia.driver.manager.PowerInjectOffer",
+            type: "bool",
+            value: false,
+        },
     ],
     offer: [
         // TODO(b/345827642): Remove once all old CTF prebuilts
@@ -112,11 +117,18 @@
             config: [
                 "fuchsia.driver.DelayFallbackUntilBaseDriversIndexed",
                 "fuchsia.driver.manager.EnableTestShutdownDelays",
+                "fuchsia.driver.manager.SetRootDriverHostCritical",
+                "fuchsia.driver.manager.SuspendTimeoutFallback",
                 "fuchsia.power.SuspendEnabled",
             ],
             from: "void",
             to: "#driver_manager",
             availability: "optional",
+        },
+        {
+            config: [ "fuchsia.driver.manager.PowerInjectOffer" ],
+            from: "self",
+            to: "#driver_manager",
         },
         {
             protocol: [ "fuchsia.device.fs.lifecycle.Lifecycle" ],

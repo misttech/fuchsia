@@ -566,6 +566,24 @@ impl DriverTestRealmBuilder for RealmBuilder {
         realm
             .add_route(
                 Route::new()
+                    .capability(
+                        Capability::configuration(
+                            "fuchsia.driver.manager.SetRootDriverHostCritical",
+                        )
+                        .optional(),
+                    )
+                    .capability(
+                        Capability::configuration("fuchsia.driver.manager.SuspendTimeoutFallback")
+                            .optional(),
+                    )
+                    .from(Ref::void())
+                    .to(&driver_manager),
+            )
+            .await?;
+
+        realm
+            .add_route(
+                Route::new()
                     .capability(Capability::configuration(
                         "fuchsia.driver.testrealm.TunnelBootItems",
                     ))

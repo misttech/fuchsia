@@ -88,11 +88,20 @@
                 "fuchsia.driver.DelayFallbackUntilBaseDriversIndexed",
                 "fuchsia.driver.manager.EnableTestShutdownDelays",
                 "fuchsia.driver.manager.RootDriver",
-                "fuchsia.power.StoragePowerManagementEnabled",
                 "fuchsia.power.SuspendEnabled",
             ],
             from: "parent",
             to: "#driver_manager",
+        },
+        {
+            config: [
+                "fuchsia.driver.manager.PowerInjectOffer",
+                "fuchsia.driver.manager.SetRootDriverHostCritical",
+                "fuchsia.driver.manager.SuspendTimeoutFallback",
+            ],
+            from: "void",
+            to: "#driver_manager",
+            availability: "optional",
         },
         {
             config: [

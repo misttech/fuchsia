@@ -615,6 +615,22 @@ void Setup(RealmBuilder& realm_builder, async_dispatcher_t* dispatcher, Options 
     realm.AddRoute(Route{
         .capabilities =
             {
+                Config{
+                    .name = "fuchsia.driver.manager.SetRootDriverHostCritical",
+                    .availability = fuchsia::component::decl::Availability::OPTIONAL,
+                },
+                Config{
+                    .name = "fuchsia.driver.manager.SuspendTimeoutFallback",
+                    .availability = fuchsia::component::decl::Availability::OPTIONAL,
+                },
+            },
+        .source = VoidRef{},
+        .targets = {driver_manager},
+    });
+
+    realm.AddRoute(Route{
+        .capabilities =
+            {
                 Config{.name = "fuchsia.driver.testrealm.TunnelBootItems"},
                 Config{.name = "fuchsia.driver.testrealm.BoardName"},
                 Config{.name = "fuchsia.driver.testrealm.PlatformVid"},

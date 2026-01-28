@@ -21,20 +21,6 @@ fuchsia_structured_config_cpp_elf_lib("driver_manager_config") {
   cm_label = ":manifest"
 }
 
-fuchsia_structured_config_values("driver_manager_config_default") {
-  cm_label = ":manifest"
-  values = {
-    set_root_driver_host_critical = true
-    delay_fallback_until_base_drivers_indexed = true
-    suspend_timeout_fallback = true
-    verbose = false
-    root_driver = "fuchsia-boot:///platform-bus#meta/platform-bus.cm"
-    enable_test_shutdown_delays = false
-    power_inject_offer = true
-    power_suspend_enabled = false
-  }
-}
-
 source_set("driver_host_loader_service") {
   visibility = [
     ":*",
@@ -238,7 +224,6 @@ fuchsia_package("package") {
   package_name = "driver_manager"
   deps = [
     ":component",
-    ":driver_manager_config_default",
     ":driver_shared_libraries",
   ]
 }
@@ -247,7 +232,6 @@ fuchsia_package("package_with_heapdump") {
   package_name = "driver_manager"
   deps = [
     ":component_with_heapdump",
-    ":driver_manager_config_default",
     ":driver_shared_libraries",
   ]
 }

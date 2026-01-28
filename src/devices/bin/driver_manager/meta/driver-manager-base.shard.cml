@@ -80,19 +80,25 @@
             key: "delay_fallback_until_base_drivers_indexed",
             availability: "optional",
             type: "bool",
+            default: true,
         },
         {
+            // URL for the root driver to load.
             config: "fuchsia.driver.manager.RootDriver",
             key: "root_driver",
-            availability: "optional",
             type: "string",
             max_size: 100,
+            availability: "optional",
+            default: "fuchsia-boot:///platform-bus#meta/platform-bus.cm",
         },
         {
+            // Whether or not fallback drivers should wait until base drivers have been indexed
+            // before bound.
             config: "fuchsia.driver.manager.EnableTestShutdownDelays",
             key: "enable_test_shutdown_delays",
             availability: "optional",
             type: "bool",
+            default: false,
         },
 
         // TODO(https://fxbug.dev/369189827): Not needed when we don't need to have these
@@ -102,6 +108,34 @@
             key: "power_suspend_enabled",
             availability: "optional",
             type: "bool",
+            default: false,
+        },
+        {
+            // Whether to set the root driver host as critical or not.
+            config: "fuchsia.driver.manager.SetRootDriverHostCritical",
+            key: "set_root_driver_host_critical",
+            type: "bool",
+            availability: "optional",
+            default: true,
+        },
+        {
+            // If this option is set, the system invokes kernel fallback to reboot or poweroff
+            // the device when the operation did not finish in 10 seconds.
+            config: "fuchsia.driver.manager.SuspendTimeoutFallback",
+            key: "suspend_timeout_fallback",
+            type: "bool",
+            availability: "optional",
+            default: true,
+        },
+        {
+            // TODO(https://fxbug.dev/369189827): Not needed when we don't need to have these
+            // as dynamic offers.
+            // Used to decide the source of the power dynamic offers.
+            config: "fuchsia.driver.manager.PowerInjectOffer",
+            key: "power_inject_offer",
+            type: "bool",
+            availability: "optional",
+            default: true,
         },
     ],
     expose: [
@@ -136,32 +170,4 @@
             from: "self",
         },
     ],
-    config: {
-        // Whether to set the root driver host as critical or not.
-        set_root_driver_host_critical: { type: "bool" },
-
-        // Whether or not fallback drivers should wait until base drivers have been indexed
-        // before bound.
-        delay_fallback_until_base_drivers_indexed: { type: "bool" },
-
-        // If this option is set, the system invokes kernel fallback to reboot or poweroff
-        // the device when the operation did not finish in 10 seconds.
-        suspend_timeout_fallback: { type: "bool" },
-
-        // If true, set the verbosity level to log all logs.
-        verbose: { type: "bool" },
-
-        // URL for the root driver to load.
-        root_driver: {
-            type: "string",
-            max_size: 100,
-        },
-        enable_test_shutdown_delays: { type: "bool" },
-
-        // TODO(https://fxbug.dev/369189827): Not needed when we don't need to have these
-        // as dynamic offers.
-        // Used to decide the source of the power dynamic offers.
-        power_inject_offer: { type: "bool" },
-        power_suspend_enabled: { type: "bool" },
-    },
 }
