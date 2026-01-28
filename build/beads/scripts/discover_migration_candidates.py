@@ -9,6 +9,12 @@ import pathlib
 import re
 import sys
 
+# Debug flag to enable verbose output.
+_DEBUG = False
+
+# The root directory of the Fuchsia source tree.
+_FUCHSIA_DIR = pathlib.Path(__file__).parent.parent.parent.parent
+
 # Fields that are considered "standard" and easy to convert.
 _STANDARD_FIELDS = {
     "deps",
@@ -25,10 +31,10 @@ _STANDARD_FIELDS = {
 }
 
 # Default complexity scores for non-simple deps.
-_DEFAULT_DEP_COMPLEXITY_SCORE = 1
+_DEFAULT_DEP_COMPLEXITY = 1
 
 # Default complexity scores for non-standard fields.
-_DEFAULT_FIELD_COMPLEXITY_SCORE = 1
+_DEFAULT_FIELD_COMPLEXITY = 1
 
 # Fields that are considered "complex" and require more attention.
 #
@@ -38,6 +44,11 @@ _COMPLEX_FIELDS = {
     "rustc_flags": 2,
     "forward_variables_from": 2,
 }
+
+
+def debug(msg: str):
+    if _DEBUG:
+        print(msg, file=sys.stderr)
 
 
 def find_gn_files(start_dir: pathlib.Path, exclude_dirs: list[str]):
@@ -140,74 +151,135 @@ def targets_from_gn_file(
     return targets
 
 
-def is_simple_dep(dep: str) -> bool:
-    """
-    Determine if a dependency is simple and can be easily mapped to Bazel.
-    """
+class ComplexityCalculator:
+    def __init__(self, root_dir: pathlib.Path):
+        self._root_dir = root_dir.resolve()
 
-    # We have generated Bazel targets for third-party Rust and Go libraries.
-    # These dependencies are simple and can be easily mapped to Bazel.
-    return dep.startswith("//third_party/rust_crates") or dep.startswith(
-        "//third_party/golibs"
-    )
+    def _is_third_party_target(self, label: str) -> bool:
+        """Check if a target is a third-party target.
 
+        We have generated Bazel targets for third-party Rust and Go libraries.
+        These dependencies are simple and can be easily mapped to Bazel.
+        """
+        if not self._is_fully_qualified_label(label):
+            raise ValueError(
+                f"Invalid label: {label}, only fully-qualified labels are supported"
+            )
 
-def complexity_scores_by_file(targets: list[dict]) -> list[dict]:
-    """
-    Analyze the given list of targets and return a dictionary of files and their associated targets.
-    """
+        return label.startswith(
+            "//third_party/rust_crates"
+        ) or label.startswith("//third_party/golibs")
 
-    # TODO(https://fxbug.dev/470222143): Improve the scoring mechanism.
+    def _is_bazel_target(self, label: str) -> bool:
+        if not self._is_fully_qualified_label(label):
+            raise ValueError(
+                f"Invalid label: {label}, only fully-qualified labels are supported"
+            )
 
-    files = {}
-    for target in targets:
+        """Check if a target is already in a BUILD.bazel file in the same directory."""
+        path_part, target_name = label.split(":")
+        path_dir = self._root_dir / path_part.lstrip("/")
+        bazel_file = path_dir / "BUILD.bazel"
+        if not bazel_file.exists():
+            return False
+
+        content = bazel_file.read_text()
+        return (
+            f'name = "{target_name}"' in content
+            or f'name="{target_name}"' in content
+        )
+
+    def _is_fully_qualified_label(self, label: str) -> bool:
+        return label.startswith("//") and ":" in label
+
+    def _to_fully_qualified_label(
+        self, dir_path: pathlib.Path, label: str
+    ) -> str:
+        if self._is_fully_qualified_label(label):
+            return label
+
+        if ":" in label:
+            label_path, target_name = label.split(":")
+            target_path = dir_path / label_path
+        else:
+            target_name = pathlib.Path(label).name
+            target_path = dir_path / label
+        return f"//{target_path}:{target_name}"
+
+    def complexity_for_dep(self, dep_label: str) -> int:
+        """Calculate complexity for a dependency."""
+        if not dep_label.startswith("//"):
+            raise ValueError(
+                f"Invalid dep label: {dep_label}, only fully-qualified labels are supported"
+            )
+
+        return (
+            0
+            if (
+                self._is_third_party_target(dep_label)
+                or self._is_bazel_target(dep_label)
+            )
+            else 1
+        )
+
+    def complexity_for_target(self, target: dict) -> int:
+        """Calculate complexity for a target taking its dependencies and fields into account."""
         filepath = target["path"]
-        if filepath not in files:
-            files[filepath] = {
-                "path": filepath,
-                "targets": [],
-                "total_complexity": 0,
-                "total_targets": 0,
-            }
+        target_name = target["name"]
 
-        simple_deps = [dep for dep in target["deps"] if is_simple_dep(dep)]
-        non_simple_deps = [
-            dep for dep in target["deps"] if not is_simple_dep(dep)
-        ]
+        dir_path = filepath.parent
+        # If target itself is in Bazel already (e.g. bazel2gn targets), complexity is 0.
+        if self._is_bazel_target(f"//{dir_path}:{target_name}"):
+            return 0
+
+        dep_score = 0
+        for dep in target["deps"]:
+            dep_score += self.complexity_for_dep(
+                self._to_fully_qualified_label(dir_path, dep)
+            )
 
         non_standard_fields = [
             f for f in target["fields"] if f not in _STANDARD_FIELDS
         ]
-
-        # Complex score is the sum of the number of non-third-party deps and
-        # the complexity of non-standard fields.
-        #
-        # TODO(https://fxbug.dev/470222143): Further filter out deps that already exist in Bazel.
-        _dep_score = len(non_simple_deps) * _DEFAULT_DEP_COMPLEXITY_SCORE
-        _field_score = sum(
-            _COMPLEX_FIELDS.get(f, _DEFAULT_FIELD_COMPLEXITY_SCORE)
+        field_score = sum(
+            _COMPLEX_FIELDS.get(f, _DEFAULT_FIELD_COMPLEXITY)
             for f in non_standard_fields
         )
-        # TODO(https://fxbug.dev/470222143): Improve the scoring mechanism.
-        complexity_score = _dep_score + _field_score
 
-        target_info = {
-            "name": target["name"],
-            "type": target["type"],
-            "simple_deps": simple_deps,
-            "non_simple_deps": non_simple_deps,
-            "non_standard_fields": non_standard_fields,
-            "complexity_score": complexity_score,
+        return dep_score + field_score
+
+    def complexity_for_file(
+        self, gn_file: pathlib.Path, target_types: list[str]
+    ) -> dict:
+        targets = targets_from_gn_file(gn_file, target_types)
+
+        file_result = {
+            "path": gn_file,
+            "targets": [],
+            "total_complexity": 0,
+            "total_targets": 0,
         }
 
-        files[filepath]["targets"].append(target_info)
-        files[filepath]["total_complexity"] += complexity_score
-        files[filepath]["total_targets"] += 1
+        for target in targets:
+            complexity = self.complexity_for_target(target)
 
-    # Convert to list and sort by total complexity.
-    result_files = list(files.values())
-    result_files.sort(key=lambda x: (x["total_complexity"], x["total_targets"]))
-    return result_files
+            target_info = {
+                "name": target["name"],
+                "type": target["type"],
+                "complexity": complexity,
+                "deps": target["deps"],
+                "fields": target["fields"],
+                # Add extra info for display if needed
+                "non_standard_fields": [
+                    f for f in target["fields"] if f not in _STANDARD_FIELDS
+                ],
+            }
+
+            file_result["targets"].append(target_info)
+            file_result["total_complexity"] += complexity
+            file_result["total_targets"] += 1
+
+        return file_result
 
 
 def bazel_targets_in_dir(directory: pathlib.Path) -> set[str]:
@@ -235,9 +307,7 @@ def print_results(file_results: list[dict], top: int):
         print(f"   Targets ({file_res['total_targets']}):")
         for target in file_res["targets"]:
             print(f"     - {target['name']} ({target['type']})")
-            print(f"       Score: {target['complexity_score']}")
-            if target["non_simple_deps"]:
-                print(f"       Non-simple deps: {target['non_simple_deps']}")
+            print(f"       Complexity: {target['complexity']}")
             if target["non_standard_fields"]:
                 print(
                     f"       Non-standard fields: {target['non_standard_fields']}"
@@ -275,32 +345,39 @@ def main() -> int:
         default=10,
         help="Number of top candidates to show",
     )
+    parser.add_argument(
+        "--fuchsia-dir",
+        type=pathlib.Path,
+        default=_FUCHSIA_DIR,
+        help="Path to the Fuchsia directory",
+    )
+    parser.add_argument(
+        "-v",
+        "--verbose",
+        action="store_true",
+        help="Enable verbose output",
+    )
     args = parser.parse_args()
 
-    print(
+    global _DEBUG
+    _DEBUG = args.verbose
+
+    debug(
         f"Searching for GN files in {args.directory}, excluding {args.exclude_dirs}"
     )
     gn_files = find_gn_files(args.directory, args.exclude_dirs)
-    print(f"Found {len(gn_files)} BUILD.gn files.")
+    debug(f"Found {len(gn_files)} BUILD.gn files.")
 
-    all_targets = []
+    calculator = ComplexityCalculator(args.fuchsia_dir)
+    file_results = []
     for gn_file in gn_files:
-        targets = targets_from_gn_file(gn_file, args.target_types)
+        file_result = calculator.complexity_for_file(gn_file, args.target_types)
+        # Only add files that have targets
+        if file_result["total_targets"] > 0:
+            file_results.append(file_result)
 
-        # Filter targets that already exist in Bazel
-        bazel_targets = bazel_targets_in_dir(gn_file.parent)
-        filtered_targets = []
-        for t in targets:
-            if t["name"] not in bazel_targets:
-                filtered_targets.append(t)
-
-        all_targets.extend(filtered_targets)
-
-    print(
-        f"Found {len(all_targets)} targets of target types {args.target_types} (excluding targets that already exist in Bazel)."
-    )
-
-    file_results = complexity_scores_by_file(all_targets)
+    # Sort by total complexity
+    file_results.sort(key=lambda x: (x["total_complexity"], x["total_targets"]))
     print_results(file_results, args.top)
 
     return 0

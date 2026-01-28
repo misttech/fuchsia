@@ -10,24 +10,141 @@ import discover_migration_candidates
 
 
 class TestDiscoverMigrationCandidates(unittest.TestCase):
-    def test_is_simple_dep(self):
+    def test_complexity_calculator_third_party(self):
+        calc = discover_migration_candidates.ComplexityCalculator(
+            pathlib.Path("/root")
+        )
+
         self.assertTrue(
-            discover_migration_candidates.is_simple_dep(
-                "//third_party/rust_crates/a"
+            calc._is_third_party_target("//third_party/rust_crates:foo")
+        )
+        self.assertTrue(calc._is_third_party_target("//third_party/golibs:bar"))
+        self.assertFalse(calc._is_third_party_target("//src/settings:a"))
+        self.assertFalse(calc._is_third_party_target("//third_party/other:b"))
+        with self.assertRaises(ValueError):
+            calc._is_third_party_target("not/fully/qualified/label")
+
+    def test_complexity_calculator_bazel(self):
+        calc = discover_migration_candidates.ComplexityCalculator(
+            pathlib.Path("/root")
+        )
+
+        with mock.patch.object(
+            pathlib.Path, "exists"
+        ) as mock_exists, mock.patch.object(
+            pathlib.Path, "read_text"
+        ) as mock_read:
+            mock_exists.return_value = True
+            mock_read.return_value = 'rust_library(name = "t1")'
+            self.assertTrue(calc._is_bazel_target("//root/a:t1"))
+            self.assertFalse(calc._is_bazel_target("//root/a:other"))
+            with self.assertRaises(ValueError):
+                calc._is_bazel_target("not/fully/qualified/label")
+
+            mock_exists.return_value = False
+            self.assertFalse(calc._is_bazel_target("//root/a:t1"))
+
+    def test_complexity_for_dep(self):
+        root = pathlib.Path("/root")
+        calc = discover_migration_candidates.ComplexityCalculator(root)
+
+        self.assertEqual(
+            calc.complexity_for_dep("//third_party/rust_crates:a"), 0
+        )
+
+        with mock.patch.object(
+            discover_migration_candidates.ComplexityCalculator,
+            "_is_bazel_target",
+        ) as mock_is_bazel:
+            mock_is_bazel.return_value = True
+            self.assertEqual(calc.complexity_for_dep("//src/foo:bar"), 0)
+
+            mock_is_bazel.return_value = False
+            self.assertEqual(calc.complexity_for_dep("//src/foo:bar"), 1)
+
+    def test_complexity_for_target(self):
+        root = pathlib.Path("/root")
+        calc = discover_migration_candidates.ComplexityCalculator(root)
+
+        target = {
+            "path": root / "BUILD.gn",
+            "name": "t1",
+            "deps": ["//a", "//b"],
+            "fields": ["sources", "configs"],  # configs is complex (2)
+        }
+
+        with mock.patch.object(
+            discover_migration_candidates.ComplexityCalculator,
+            "complexity_for_dep",
+        ) as mock_dep_score:
+            mock_dep_score.return_value = 1
+
+            # 2 deps * 1 + 1 field (sources=0, configs=2) -> 2 + 2 = 4
+            with mock.patch.object(
+                discover_migration_candidates.ComplexityCalculator,
+                "_is_bazel_target",
+                return_value=False,
+            ):
+                self.assertEqual(calc.complexity_for_target(target), 4)
+
+            with mock.patch.object(
+                discover_migration_candidates.ComplexityCalculator,
+                "_is_bazel_target",
+                return_value=True,
+            ):
+                self.assertEqual(calc.complexity_for_target(target), 0)
+
+    def test_complexity_for_file(self):
+        root = pathlib.Path("/root")
+
+        content = """
+        rustc_binary("t1") {
+            deps = ["//foo:bar"]
+        }
+        rustc_binary("t2") {
+            deps = ["//bar:baz"]
+        }
+        cc_binary("t3") {
+            deps = ["//baz:qux"]
+        }
+        """
+        path = root / "BUILD.gn"
+
+        calc = discover_migration_candidates.ComplexityCalculator(root)
+
+        with mock.patch.object(
+            pathlib.Path, "read_text", return_value=content
+        ), mock.patch.object(
+            discover_migration_candidates.ComplexityCalculator,
+            "complexity_for_target",
+        ) as mock_complexity_for_target:
+            mock_complexity_for_target.return_value = 1
+
+            result1 = calc.complexity_for_file(path, ["rustc_binary"])
+            self.assertEqual(result1["total_complexity"], 2)
+            self.assertEqual(len(result1["targets"]), 2)
+            self.assertEqual(result1["targets"][0]["name"], "t1")
+            self.assertEqual(result1["targets"][0]["complexity"], 1)
+            self.assertEqual(result1["targets"][1]["name"], "t2")
+            self.assertEqual(result1["targets"][1]["complexity"], 1)
+
+            result2 = calc.complexity_for_file(path, ["cc_binary"])
+            self.assertEqual(result2["total_complexity"], 1)
+            self.assertEqual(len(result2["targets"]), 1)
+            self.assertEqual(result2["targets"][0]["name"], "t3")
+            self.assertEqual(result2["targets"][0]["complexity"], 1)
+
+            result3 = calc.complexity_for_file(
+                path, ["rustc_binary", "cc_binary"]
             )
-        )
-        self.assertTrue(
-            discover_migration_candidates.is_simple_dep(
-                "//third_party/golibs/a"
-            )
-        )
-        self.assertFalse(
-            discover_migration_candidates.is_simple_dep("//third_party/foo")
-        )
-        self.assertFalse(
-            discover_migration_candidates.is_simple_dep("//src/foo")
-        )
-        self.assertFalse(discover_migration_candidates.is_simple_dep("foo"))
+            self.assertEqual(result3["total_complexity"], 3)
+            self.assertEqual(len(result3["targets"]), 3)
+            self.assertEqual(result3["targets"][0]["name"], "t1")
+            self.assertEqual(result3["targets"][0]["complexity"], 1)
+            self.assertEqual(result3["targets"][1]["name"], "t2")
+            self.assertEqual(result3["targets"][1]["complexity"], 1)
+            self.assertEqual(result3["targets"][2]["name"], "t3")
+            self.assertEqual(result3["targets"][2]["complexity"], 1)
 
     def test_end_pos_for_single_target(self):
         content = 'target("name") { deps = [] }'
@@ -157,91 +274,6 @@ class TestDiscoverMigrationCandidates(unittest.TestCase):
                     },
                 ],
             )
-
-    def test_complexity_scores_by_file(self):
-        targets = [
-            {
-                "path": "BUILD.gn",
-                "name": "t1",
-                "type": "rustc_binary",
-                "deps": ["//third_party/rust_crates/a", "//src/b", "//src/c"],
-                "fields": [
-                    "sources",
-                    "configs",
-                    "deps",
-                    "check_includes",
-                    "metadata",
-                ],
-            },
-            {
-                "path": "BUILD.gn",
-                "name": "t2",
-                "type": "go_binary",
-                "deps": [
-                    "//third_party/golibs/a",
-                    "//third_party/something_else",
-                ],
-                "fields": ["sources", "deps", "assert_no_deps"],
-            },
-            {
-                "path": "another/BUILD.gn",
-                "name": "t3",
-                "type": "shared_library",
-                "deps": ["//src/baz", "//src/qux"],
-                "fields": ["sources", "inputs", "deps", "metadata"],
-            },
-        ]
-        results = discover_migration_candidates.complexity_scores_by_file(
-            targets
-        )
-        self.maxDiff = None
-        self.assertEqual(
-            results,
-            [
-                {
-                    "path": "another/BUILD.gn",
-                    "targets": [
-                        {
-                            "name": "t3",
-                            "non_standard_fields": ["metadata"],
-                            "non_simple_deps": ["//src/baz", "//src/qux"],
-                            "simple_deps": [],
-                            "type": "shared_library",
-                            "complexity_score": 3,
-                        },
-                    ],
-                    "total_complexity": 3,
-                    "total_targets": 1,
-                },
-                {
-                    "path": "BUILD.gn",
-                    "targets": [
-                        {
-                            "name": "t1",
-                            "non_standard_fields": [
-                                "configs",
-                                "check_includes",
-                                "metadata",
-                            ],
-                            "non_simple_deps": ["//src/b", "//src/c"],
-                            "simple_deps": ["//third_party/rust_crates/a"],
-                            "type": "rustc_binary",
-                            "complexity_score": 6,
-                        },
-                        {
-                            "name": "t2",
-                            "non_standard_fields": ["assert_no_deps"],
-                            "non_simple_deps": ["//third_party/something_else"],
-                            "simple_deps": ["//third_party/golibs/a"],
-                            "type": "go_binary",
-                            "complexity_score": 2,
-                        },
-                    ],
-                    "total_complexity": 8,
-                    "total_targets": 2,
-                },
-            ],
-        )
 
     def test_bazel_targets_in_dir(self):
         content = 'cc_library(name = "lib")\ncc_binary(name = "bin")'
