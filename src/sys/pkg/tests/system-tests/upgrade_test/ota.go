@@ -32,7 +32,7 @@ func (o *otaData) String() string {
 func newOtas(
 	ctx context.Context,
 	rand *rand.Rand,
-	ffx *ffx.FFXTool,
+	latestFfx *ffx.FFXTool,
 	builds []artifacts.Build,
 ) ([]*otaData, error) {
 	logger.Infof(ctx, "Preparing OTA packages")
@@ -70,7 +70,7 @@ func newOtas(
 		ota, err := newOta(
 			ctx,
 			rand,
-			ffx,
+			latestFfx,
 			build,
 			name,
 			blobFetchMode,
@@ -87,7 +87,7 @@ func newOtas(
 	ota, err := newOta(
 		ctx,
 		rand,
-		ffx,
+		latestFfx,
 		builds[len(builds)-1],
 		"N-prime",
 		artifacts.LazilyFetchBlobs,
@@ -107,7 +107,7 @@ func newOtas(
 func newOta(
 	ctx context.Context,
 	rand *rand.Rand,
-	ffx *ffx.FFXTool,
+	latestFfx *ffx.FFXTool,
 	build artifacts.Build,
 	name string,
 	blobFetchMode artifacts.BlobFetchMode,
@@ -115,7 +115,7 @@ func newOta(
 ) (*otaData, error) {
 	logger.Debugf(ctx, "Creating OTA %s", name)
 
-	repo, err := build.GetPackageRepository(ctx, blobFetchMode, ffx.IsolateDir())
+	repo, err := build.GetPackageRepository(ctx, blobFetchMode, latestFfx.IsolateDir())
 	if err != nil {
 		return nil, fmt.Errorf("error getting repository: %w", err)
 	}
@@ -123,7 +123,7 @@ func newOta(
 	// Refresh with the latest ffx to make sure the metadata hasn't expired.
 	// FIXME(https://fxbug.dev/336897946): We need to use the latest ffx because
 	// F11's ffx doesn't actually refresh metadata.
-	if err := repo.RefreshMetadataWithFfx(ctx, ffx); err != nil {
+	if err := repo.RefreshMetadataWithFfx(ctx, latestFfx); err != nil {
 		return nil, err
 	}
 

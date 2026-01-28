@@ -27,11 +27,17 @@ func PaveDevice(
 	logger.Infof(ctx, "Starting to pave device")
 	startTime := time.Now()
 
+	// We should use this ffx after we reboot.
+	nextFfx, err := build.GetFfx(ctx, ffx.IsolateDir())
+	if err != nil {
+		return fmt.Errorf("failed to get ffx from build: %w", err)
+	}
+
 	if err := d.Pave(ctx, build, sshPublicKey); err != nil {
 		return fmt.Errorf("device failed to pave: %w", err)
 	}
 
-	if err := d.Reconnect(ctx, ffx); err != nil {
+	if err := d.Reconnect(ctx, nextFfx); err != nil {
 		return fmt.Errorf("device failed to connect after pave: %w", err)
 	}
 
