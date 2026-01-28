@@ -50,7 +50,7 @@ static_assert(sizeof(zxr_thread_t) == 8, "layout snafu");
 // Create a thread, filling in the given zxr_thread_t to describe it.
 // The return value is that of zx_thread_create.
 // On failure, the zxr_thread_t is clobbered and cannot be passed to
-// any functions except zxr_thread_create or zxr_thread_adopt.
+// any functions except zxr_thread_create.
 // If detached is true, then it's as if zxr_thread_detach were called
 // immediately after this returns (but it's more efficient, and can
 // never fail with ZX_ERR_BAD_STATE). If detached is false and create
@@ -59,10 +59,6 @@ static_assert(sizeof(zxr_thread_t) == 8, "layout snafu");
 // after the thread exits.
 zx_status_t zxr_thread_create(zx_handle_t proc_self, const char* name, bool detached,
                               zxr_thread_t* thread);
-
-// Fill in the given zxr_thread_t to describe a thread given its handle.
-// This takes ownership of the given thread handle.
-zx_status_t zxr_thread_adopt(zx_handle_t handle, zxr_thread_t* thread);
 
 // Once started, threads can be either joined or detached. It is undefined
 // behavior to join a thread multiple times or to join a detached thread.

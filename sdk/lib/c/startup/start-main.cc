@@ -116,13 +116,15 @@ void SetStartHandles(zx::process process_self, zx::vmar allocation_vmar, zx::thr
   __zircon_process_self = process_self.release();
   __zircon_vmar_root_self = allocation_vmar.release();
 
-  // Minimally initialize the zxr_thread first, taking ownership of the thread
-  // handle.  The locking code uses _zx_thread_self(), which fetches the handle
-  // stored here.  So this is the bare minimum that must be done before more
-  // normal operation, even taking locks, is possible.
+  // Initialize the zxr_thread first, taking ownership of the thread handle.
+  // The locking code uses _zx_thread_self(), which fetches the handle stored
+  // here.  So this is the bare minimum that must be done before more normal
+  // operation, even taking locks, is possible.
   pthread* self = __pthread_self();
-  [[maybe_unused]] zx_status_t status = zxr_thread_adopt(thread_self.release(), &self->zxr_thread);
-  assert(status == ZX_OK);
+  self->zxr_thread.handle = thread_self.release();
+  // The zero-initialized value is already JOINABLE, so nothing to do there.
+  static_assert(static_cast<int>(zxr_thread_t::State::JOINABLE) == 0);
+  assert(self->zxr_thread.state == zxr_thread_t::State::JOINABLE);
 
   // Initialize the rest of the struct pthread now, since it's simple.
   self->locale = &libc.global_locale;

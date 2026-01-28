@@ -207,8 +207,3 @@ zx_status_t zxr_thread_detach(zxr_thread_t* thread) {
 bool zxr_thread_detached(zxr_thread_t* thread) {
   return thread->state.load(std::memory_order_acquire) == State::DETACHED;
 }
-
-zx_status_t zxr_thread_adopt(zx_handle_t handle, zxr_thread_t* thread) {
-  initialize_thread(thread, handle, false);
-  return handle == ZX_HANDLE_INVALID ? ZX_ERR_BAD_HANDLE : ZX_OK;
-}
