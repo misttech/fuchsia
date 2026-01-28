@@ -6,9 +6,9 @@
 
 #include <tuple>
 
+#include "thread-list.h"
 #include "thread-storage.h"
 #include "thread.h"
-#include "threads_impl.h"
 
 namespace LIBC_NAMESPACE_DECL {
 
@@ -20,7 +20,7 @@ zx::result<intptr_t> ThreadJoin(Thread& thread) {
   }
 
   // Now the Thread object can be removed from the list of all threads.
-  __thread_list_erase(&thread);
+  AllThreads().erase(thread);
 
   // Extract the return value passed to ThreadExit().
   intptr_t value = std::exchange(thread.join_value, 0);

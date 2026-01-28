@@ -83,7 +83,7 @@ zx::result<CreatedThread> ThreadCreate(ThreadAttributes attrs) {
     assert(thread->storage_vmar == allocation_vmar->get());
 
     // With that ownership goes ownership of its place on the all-threads list.
-    __thread_list_add(thread.get());
+    AllThreads().push_front(*thread);
   }
 
   // Hereafter, when this CreatedThread object dies, that will remove it from

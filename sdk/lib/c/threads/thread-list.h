@@ -33,12 +33,10 @@ using Thread = ::__pthread;
 // are exiting but haven't been joined.  This lock is always held as briefly as
 // possible, only while manipulating the _list itself_.  Any thread exit, join,
 // or detach needs this lock, not only something costlier like thread creation.
-//
-// TODO(https://fxbug.dev/342469121): asm-linkage only needed for basic_abi
-// musl glue.
+// The lock must be accessed from ThreadExitFinish(), which is in a basic_abi
+// hermetic_source_set(); so it needs an asm linkage name.
 extern Mutex gAllThreadsLock LIBC_ASM_LINKAGE_DECLARE(gAllThreadsLock) __LOCAL;
-extern Thread* gAllThreads LIBC_ASM_LINKAGE_DECLARE(gAllThreads) __LOCAL
-    __TA_GUARDED(gAllThreadsLock);
+extern Thread* gAllThreads __LOCAL __TA_GUARDED(gAllThreadsLock);
 
 // This lock is used to exclude, and synchronize with, changes to the dynamic
 // linker data structures consulted by ThreadStorage::GetTlsLayout() and
@@ -127,17 +125,38 @@ class __TA_SCOPED_CAPABILITY AllThreads : public ThreadList {
 
   ~AllThreads() __TA_RELEASE() = default;
 
-  Thread* find(Thread* tcb) const {
+  Thread* find(Thread* tcb) const __TA_REQUIRES(gAllThreadsLock) {
     auto it = std::ranges::find(*this, IncrementableThread{tcb});
     return it == end() ? nullptr : (*it).value;
   }
 
-  Thread* FindTp(uintptr_t tp) const { return FindTp(reinterpret_cast<void*>(tp)); }
+  Thread* FindTp(uintptr_t tp) const __TA_REQUIRES(gAllThreadsLock) {
+    return FindTp(reinterpret_cast<void*>(tp));
+  }
 
-  Thread* FindTp(void* tp) const {
+  Thread* FindTp(void* tp) const __TA_REQUIRES(gAllThreadsLock) {
     // In a race with a freshly-created thread setting up its thread
     // pointer, it might still be zero.
     return tp ? find(tp_to_pthread(tp)) : nullptr;
+  }
+
+  void push_front(Thread& tcb) __TA_REQUIRES(gAllThreadsLock) {
+    tcb.prevp = &gAllThreads;
+    tcb.next = gAllThreads;
+    if (tcb.next) {
+      tcb.next->prevp = &tcb.next;
+    }
+    gAllThreads = &tcb;
+  }
+
+  void erase(Thread& tcb) __TA_REQUIRES(gAllThreadsLock) {
+    *tcb.prevp = tcb.next;
+    if (tcb.next) {
+      tcb.next->prevp = tcb.prevp;
+    }
+    // Don't leave old dangling pointers in the soon-to-be-dead Thread.
+    tcb.next = nullptr;
+    tcb.prevp = nullptr;
   }
 
  private:

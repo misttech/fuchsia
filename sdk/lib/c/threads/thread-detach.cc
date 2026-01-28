@@ -30,7 +30,7 @@ zx::result<> ThreadDetach(Thread& thread) {
   }
 
   // Now the Thread object can be removed from the list of all threads.
-  __thread_list_erase(&thread);
+  AllThreads().erase(thread);
 
   // Move the ThreadStorage out of the Thread itself; it's inside that storage.
   // Then immediately let the storage object die, freeing the thread block.

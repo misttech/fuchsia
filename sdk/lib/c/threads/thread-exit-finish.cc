@@ -56,12 +56,17 @@ constexpr uintptr_t kStackAlignment = elfldltl::AbiTraits<>::kStackAlignment<>;
 
   // This deallocates the TCB region too for the detached case.  If not
   // detached, thrd_join / pthread_join will deallocate it.  This always makes
-  // the __thread_list_erase callback before deallocating the TCB.  Hence
+  // the thread-list removal callback before deallocating the TCB.  Hence
   // __sanitizer_memory_snapshot should not consider the thread to be "alive"
   // any more, safely before the memory might be unmapped.
   zxr_thread_exit_unmap_if_detached(  //
-      &self.zxr_thread, __thread_list_erase, &self, unmap_vmar->get(),
-      reinterpret_cast<uintptr_t>(self.tcb_region.iov_base), self.tcb_region.iov_len);
+      &self.zxr_thread,
+      [](void* arg) {
+        Thread& self = *static_cast<Thread*>(arg);
+        AllThreads().erase(self);
+      },
+      &self, unmap_vmar->get(), reinterpret_cast<uintptr_t>(self.tcb_region.iov_base),
+      self.tcb_region.iov_len);
 }
 
 // Switch to a new machine stack and call FinalExit(), which cannot return.

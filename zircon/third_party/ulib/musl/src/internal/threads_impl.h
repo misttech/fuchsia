@@ -328,16 +328,6 @@ void __thread_tsd_run_dtors(void) ATTR_LIBC_VISIBILITY;
 
 int __clock_gettime(clockid_t, struct timespec*) ATTR_LIBC_VISIBILITY;
 
-// Adds a new thread to the list, taking the lock.
-void __thread_list_add(struct pthread*) ATTR_LIBC_VISIBILITY;
-
-// Adds the first thread to the list, before locks are necessary.
-void __thread_list_start(struct pthread*) ATTR_LIBC_VISIBILITY;
-
-// Removes the (dead) thread from the list, taking the lock.
-// The argument type is void* for the zxr_thread_exit_unmap_if_detached API.
-void __thread_list_erase(void* pthread_t_arg) ATTR_LIBC_VISIBILITY;
-
 __END_CDECLS
 
 #endif  // ZIRCON_THIRD_PARTY_ULIB_MUSL_SRC_INTERNAL_THREADS_IMPL_H_

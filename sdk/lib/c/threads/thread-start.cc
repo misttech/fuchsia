@@ -8,6 +8,7 @@
 #include <cstdint>
 
 #include "../weak.h"
+#include "thread-list.h"
 #include "thread-storage.h"
 #include "thread.h"
 #include "threads_impl.h"
@@ -315,7 +316,7 @@ zx::result<Thread*> ThreadStart(CreatedThread thread, ThreadFunction* func, void
 // was never started.  The ThreadStorage is recovered and immediately destroyed
 // to deallocate the stacks and thread block.
 void CreatedThreadDeleter::operator()(Thread* thread) const {
-  __thread_list_erase(thread);
+  AllThreads().erase(*thread);
   zx::thread{thread->zxr_thread.handle}.reset();
   auto storage = ThreadStorage::FromThread(*thread, true);
   thread->~Thread();
