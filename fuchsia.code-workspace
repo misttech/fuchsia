@@ -280,6 +280,13 @@
       ".cache/**": true,
     },
 
+    // Integrate mise with VSCode's terminals so that Antigravity's agent can
+    // find executables it makes available. This script is a no-op if the user
+    // does not have mise installed.
+    "terminal.integrated.env.linux": {
+      "BASH_ENV": "${workspaceFolder}/.mise/agent_hook.sh"
+    },
+
     // Files that are excluded from search and quick open (^P).
     // This significantly speeds up search and avoids polluting results with
     // build output, third party code, and prebuilt binaries.

@@ -11,32 +11,13 @@ See https://mise.jdx.dev/about.html for more information about mise.
 
 See https://mise.jdx.dev/getting-started.html.
 
-Once you can use `fx` without [setting up Fuchsia environment variables][fdev]
+Once you can use `fx` & `ffx` without [setting Fuchsia environment variables][fdev]
 then you're good to go.
 
-## IDE Agent Integration
+## Antigravity integration
 
-If you want mise to also update environment variables for shells launched by
-coding agents in e.g. Antigravity, then you can still convince the
-non-interactive editor terminals to activate mise if you set `BASH_ENV` to a
-script that activates mise.
-
-For example:
-
-```sh
-mkdir -p ~/.config/mise
-echo 'eval "$($HOME/.local/bin/mise activate bash)"' > ~/.config/mise/bash_env
-```
-
-Add the following to your `~/.bashrc` or `~/.profile` *before* either bails
-early for non-interactive shells:
-
-```sh
-export BASH_ENV="$HOME/.config/mise/bash_env"
-```
-
-After you restart your development machine the editor's agent should be able
-to run `fx`, `ffx`, etc. using mise the same way your interactive shells do.
+If you've opened Fuchsia using `fuchsia.code-workspace`, the agent's terminal
+should also be able to run `fx`/`ffx`/etc commands without additional
+modifications.
 
 [fdev]: https://fuchsia.dev/fuchsia-src/get-started/get_fuchsia_source?hl=en#set-up-environment-variables
-[add shims]: https://mise.jdx.dev/ide-integration.html#adding-shims-to-path-default-shell
