@@ -56,6 +56,11 @@ mod tests {
     #[test_case("output_direct_onlret_onocr", include_str!("traces/output_direct_onlret_onocr.json"); "output_direct_onlret_onocr")]
     #[test_case("iuclc_simple", include_str!("traces/iuclc_simple.json"); "iuclc_simple")]
     #[test_case("olcuc_simple", include_str!("traces/olcuc_simple.json"); "olcuc_simple")]
+    #[test_case("vlnext_echoctl", include_str!("traces/vlnext_echoctl.json"); "vlnext_echoctl")]
+    #[test_case("vreprint_basic", include_str!("traces/vreprint_basic.json"); "vreprint_basic")]
+    #[test_case("vdiscard_basic", include_str!("traces/vdiscard_basic.json"); "vdiscard_basic")]
+    #[test_case("vlnext_basic", include_str!("traces/vlnext_basic.json"); "vlnext_basic")]
+    #[test_case("vlnext_no_echoctl", include_str!("traces/vlnext_no_echoctl.json"); "vlnext_no_echoctl")]
     fn test_replay_trace(name: &str, json_data: &str) {
         crate::testing::tests::test_replay_trace(name, json_data);
     }

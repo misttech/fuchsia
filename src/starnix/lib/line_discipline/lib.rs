@@ -9,8 +9,8 @@ use starnix_uapi::vfs::FdEvents;
 use starnix_uapi::{
     ECHO, ECHOCTL, ECHOE, ECHOK, ECHOKE, ECHONL, ECHOPRT, ICANON, ICRNL, IEXTEN, IGNCR, INLCR,
     ISIG, IUCLC, IUTF8, IXANY, IXON, NOFLSH, OCRNL, OLCUC, ONLCR, ONLRET, ONOCR, OPOST, TABDLY,
-    VEOF, VEOL, VEOL2, VERASE, VINTR, VKILL, VQUIT, VSTART, VSTOP, VSUSP, VWERASE, XTABS, cc_t,
-    error, tcflag_t, uapi,
+    VEOF, VEOL, VEOL2, VERASE, VINTR, VKILL, VLNEXT, VQUIT, VREPRINT, VSTART, VSTOP, VSUSP,
+    VWERASE, XTABS, cc_t, error, tcflag_t, uapi,
 };
 use std::collections::VecDeque;
 
@@ -60,6 +60,10 @@ pub struct LineDiscipline {
     /// True if the terminal is currently in the middle of an erase sequence (ECHOPRT).
     #[derivative(Default(value = "false"))]
     erasing: bool,
+
+    /// True if the next character should be treated literally.
+    #[derivative(Default(value = "false"))]
+    lnext: bool,
 
     /// Location in a row of the cursor. Needed to handle certain special characters like
     /// backspace.
@@ -270,6 +274,16 @@ impl LineDiscipline {
         self.termios.signal(byte)
     }
 
+    fn extend_echo_bytes(&self, target: &mut Vec<RawByte>, byte: RawByte) {
+        if self.termios.has_local_flags(ECHOCTL) {
+            if let Some(control_character_echo) = generate_control_character_echo(byte) {
+                target.extend(control_character_echo);
+                return;
+            }
+        }
+        target.push(byte);
+    }
+
     fn transform(
         &mut self,
         is_input: bool,
@@ -373,9 +387,59 @@ impl LineDiscipline {
             let mut character_bytes = buffer[..size].to_vec();
             // It is guaranteed that character_bytes has at least one element.
 
+            if self.lnext {
+                self.lnext = false;
+                if self.termios.has_local_flags(ECHO) {
+                    let mut echo_bytes = vec![];
+                    self.extend_echo_bytes(&mut echo_bytes, character_bytes[0]);
+                    signals.append(with_queue!(self.output_queue.write_bytes(self, &echo_bytes)));
+                }
+
+                queue.line_buffer.extend_from_slice(&character_bytes);
+                buffer = &buffer[size..];
+                return_value += size;
+                continue;
+            }
+
+            if self.termios.has_local_flags(IEXTEN) {
+                // VLNEXT
+                if character_bytes[0] == self.termios.c_cc[VLNEXT as usize]
+                    && self.termios.c_cc[VLNEXT as usize] != DISABLED_CHAR
+                {
+                    self.lnext = true;
+                    if self.termios.has_local_flags(ECHO) && self.termios.has_local_flags(ECHOCTL) {
+                        let echo_bytes = vec![b'^', BACKSPACE_CHAR];
+                        signals
+                            .append(with_queue!(self.output_queue.write_bytes(self, &echo_bytes)));
+                    }
+                    buffer = &buffer[size..];
+                    return_value += size;
+                    continue;
+                }
+                // VREPRINT
+                if character_bytes[0] == self.termios.c_cc[VREPRINT as usize]
+                    && self.termios.c_cc[VREPRINT as usize] != DISABLED_CHAR
+                {
+                    if self.termios.has_local_flags(ECHO) {
+                        let mut echo_bytes = vec![];
+                        self.extend_echo_bytes(&mut echo_bytes, character_bytes[0]);
+                        echo_bytes.push(b'\n');
+                        for byte in &queue.line_buffer {
+                            self.extend_echo_bytes(&mut echo_bytes, *byte);
+                        }
+                        signals
+                            .append(with_queue!(self.output_queue.write_bytes(self, &echo_bytes)));
+                    }
+                    buffer = &buffer[size..];
+                    return_value += size;
+                    continue;
+                }
+            }
+
             if self.termios.has_input_flags(IUCLC) && self.termios.has_local_flags(IEXTEN) {
                 character_bytes[0].make_ascii_lowercase();
             }
+
             let mut signal_generated = false;
             if let Some(signal) = self.handle_signals(character_bytes[0]) {
                 signals.add(signal);
@@ -513,15 +577,7 @@ impl LineDiscipline {
                                         self.erasing = true;
                                     }
                                     for byte in bytes.iter().rev() {
-                                        if self.termios.has_local_flags(ECHOCTL) {
-                                            if let Some(control_character_echo) =
-                                                generate_control_character_echo(*byte)
-                                            {
-                                                echo_bytes.extend(control_character_echo);
-                                                continue;
-                                            }
-                                        }
-                                        echo_bytes.push(*byte);
+                                        self.extend_echo_bytes(&mut echo_bytes, *byte);
                                     }
                                 }
                             } else if self.termios.has_local_flags(ECHOE) {
@@ -532,16 +588,7 @@ impl LineDiscipline {
                             if self.termios.has_local_flags(ECHOKE) {
                                 echo_bytes = generate_erase_echo(&erase_span);
                             } else if self.termios.has_local_flags(ECHOK) {
-                                if self.termios.has_local_flags(ECHOCTL) {
-                                    if let Some(control_character_echo) =
-                                        generate_control_character_echo(first_byte)
-                                    {
-                                        echo_bytes = control_character_echo;
-                                    }
-                                }
-                                if echo_bytes.is_empty() {
-                                    echo_bytes.push(first_byte);
-                                }
+                                self.extend_echo_bytes(&mut echo_bytes, first_byte);
                                 echo_bytes.push(b'\n');
                             }
                         }

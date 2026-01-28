@@ -53,4 +53,9 @@ trace_files = [
   "testing/traces/output_direct_onlret_onocr.json",
   "testing/traces/iuclc_simple.json",
   "testing/traces/olcuc_simple.json",
+  "testing/traces/vlnext_echoctl.json",
+  "testing/traces/vreprint_basic.json",
+  "testing/traces/vdiscard_basic.json",
+  "testing/traces/vlnext_basic.json",
+  "testing/traces/vlnext_no_echoctl.json",
 ]

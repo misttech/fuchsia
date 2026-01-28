@@ -1705,5 +1705,238 @@
                 "data": "HELLO\r\n"
             }
         ]
+    },
+    {
+        "name": "vlnext_echoctl",
+        "initial_termios": {
+            "c_iflag": [
+                "ICRNL",
+                "IXON"
+            ],
+            "c_oflag": [
+                "OPOST",
+                "ONLCR"
+            ],
+            "c_lflag": [
+                "ISIG",
+                "ICANON",
+                "ECHO",
+                "ECHOE",
+                "ECHOK",
+                "ECHOCTL",
+                "ECHOKE",
+                "IEXTEN"
+            ]
+        },
+        "events": [
+            {
+                "action": "write_to_master",
+                "data": "a"
+            },
+            {
+                "action": "write_to_master",
+                "data": "\u0016"
+            },
+            {
+                "action": "write_to_master",
+                "data": "\u0003"
+            },
+            {
+                "action": "write_to_master",
+                "data": "b\n"
+            },
+            {
+                "action": "read_from_master"
+            },
+            {
+                "action": "read_from_slave"
+            }
+        ]
+    },
+    {
+        "name": "vreprint_basic",
+        "initial_termios": {
+            "c_iflag": [
+                "ICRNL",
+                "IXON"
+            ],
+            "c_oflag": [
+                "OPOST",
+                "ONLCR"
+            ],
+            "c_lflag": [
+                "ISIG",
+                "ICANON",
+                "ECHO",
+                "ECHOE",
+                "ECHOK",
+                "ECHOCTL",
+                "ECHOKE",
+                "IEXTEN"
+            ]
+        },
+        "events": [
+            {
+                "action": "write_to_master",
+                "data": "hello"
+            },
+            {
+                "action": "write_to_master",
+                "data": "\u0012"
+            },
+            {
+                "action": "write_to_master",
+                "data": "\n"
+            },
+            {
+                "action": "read_from_master"
+            },
+            {
+                "action": "read_from_slave"
+            }
+        ]
+    },
+    {
+        "name": "vdiscard_basic",
+        "initial_termios": {
+            "c_iflag": [
+                "ICRNL",
+                "IXON"
+            ],
+            "c_oflag": [
+                "OPOST",
+                "ONLCR"
+            ],
+            "c_lflag": [
+                "ISIG",
+                "ICANON",
+                "ECHO",
+                "ECHOE",
+                "ECHOK",
+                "ECHOCTL",
+                "ECHOKE",
+                "IEXTEN"
+            ],
+            "c_cc": {
+                "VDISCARD": 15
+            }
+        },
+        "events": [
+            {
+                "action": "write_to_master",
+                "data": "hello"
+            },
+            {
+                "action": "write_to_master",
+                "data": "\u000f"
+            },
+            {
+                "action": "write_to_master",
+                "data": " hidden"
+            },
+            {
+                "action": "write_to_master",
+                "data": "\u000f"
+            },
+            {
+                "action": "write_to_master",
+                "data": " visible\n"
+            },
+            {
+                "action": "read_from_master"
+            },
+            {
+                "action": "read_from_slave"
+            }
+        ]
+    },
+    {
+        "name": "vlnext_basic",
+        "initial_termios": {
+            "c_iflag": [
+                "ICRNL"
+            ],
+            "c_oflag": [
+                "OPOST",
+                "ONLCR"
+            ],
+            "c_lflag": [
+                "ISIG",
+                "ICANON",
+                "ECHO",
+                "ECHOCTL",
+                "IEXTEN"
+            ]
+        },
+        "events": [
+            {
+                "action": "write_to_master",
+                "data": "\u0016"
+            },
+            {
+                "action": "read_from_master",
+                "data": "^\b"
+            },
+            {
+                "action": "write_to_master",
+                "data": "\u0003"
+            },
+            {
+                "action": "read_from_master",
+                "data": "^C"
+            },
+            {
+                "action": "write_to_master",
+                "data": "\n"
+            },
+            {
+                "action": "read_from_master",
+                "data": "\r\n"
+            },
+            {
+                "action": "read_from_slave",
+                "data": "\u0003\n"
+            }
+        ]
+    },
+    {
+        "name": "vlnext_no_echoctl",
+        "initial_termios": {
+            "c_iflag": [
+                "ICRNL"
+            ],
+            "c_oflag": [
+                "OPOST",
+                "ONLCR"
+            ],
+            "c_lflag": [
+                "ISIG",
+                "ICANON",
+                "ECHO",
+                "IEXTEN"
+            ]
+        },
+        "events": [
+            {
+                "action": "write_to_master",
+                "data": "\u0016"
+            },
+            {
+                "action": "write_to_master",
+                "data": "\u0003"
+            },
+            {
+                "action": "write_to_master",
+                "data": "\n"
+            },
+            {
+                "action": "read_from_master",
+                "data": "\u0003\r\n"
+            },
+            {
+                "action": "read_from_slave",
+                "data": "\u0003\n"
+            }
+        ]
     }
 ]
