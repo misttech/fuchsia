@@ -430,7 +430,7 @@ group("hashbrown") {
 }
 
 group("hashlink") {
-  public_deps = [ ":hashlink-v0_10_0" ]
+  public_deps = [ ":hashlink-v0_11_0" ]
 }
 
 group("heck-0_3") {
@@ -6871,35 +6871,6 @@ rustc_library("fnv-v1_0_7") {
   applicable_licenses = [ ":fnv-v1_0_7.license" ]
 }
 
-license("foldhash-v0_1_5.license") {
-  public_package_name = "foldhash"
-  license_files = [ "//third_party/rust_crates/vendor/foldhash-0.1.5/LICENSE" ]
-}
-
-rustc_library("foldhash-v0_1_5") {
-  crate_name = "foldhash"
-  source_root = "//third_party/rust_crates/vendor/foldhash-0.1.5/src/lib.rs"
-  output_name = "foldhash-a486377aaa9677e9"
-  edition = "2021"
-  disable_clippy = true
-  enforce_source_listing = false
-  configs -= [ "//build/config/rust:2018_idioms" ]
-
-  deps = []
-
-  rustenv = []
-
-  rustflags = [
-    "--cap-lints=allow",
-    "-Cmetadata=a486377aaa9677e9",
-    "-Cextra-filename=-a486377aaa9677e9",
-  ]
-
-  visibility = [ ":*" ]
-
-  applicable_licenses = [ ":foldhash-v0_1_5.license" ]
-}
-
 license("foldhash-v0_2_0.license") {
   public_package_name = "foldhash"
   license_files = [ "//third_party/rust_crates/vendor/foldhash-0.2.0/LICENSE" ]
@@ -8139,41 +8110,6 @@ rustc_library("hashbrown-v0_12_3") {
   applicable_licenses = [ ":hashbrown-v0_12_3.license" ]
 }
 
-license("hashbrown-v0_15_4.license") {
-  public_package_name = "hashbrown"
-  license_files = [
-    "//third_party/rust_crates/vendor/hashbrown-0.15.4/LICENSE-APACHE",
-    "//third_party/rust_crates/vendor/hashbrown-0.15.4/LICENSE-MIT",
-  ]
-}
-
-rustc_library("hashbrown-v0_15_4") {
-  crate_name = "hashbrown"
-  source_root = "//third_party/rust_crates/vendor/hashbrown-0.15.4/src/lib.rs"
-  output_name = "hashbrown-c4194f87b030c456"
-  edition = "2021"
-  disable_clippy = true
-  enforce_source_listing = false
-  configs -= [ "//build/config/rust:2018_idioms" ]
-
-  deps = []
-  deps += [ ":foldhash-v0_1_5" ]
-
-  rustenv = []
-
-  rustflags = [
-    "--cap-lints=allow",
-    "-Cmetadata=c4194f87b030c456",
-    "-Cextra-filename=-c4194f87b030c456",
-    "--cfg=feature=\"default-hasher\"",
-    "--cfg=feature=\"inline-more\"",
-  ]
-
-  visibility = [ ":*" ]
-
-  applicable_licenses = [ ":hashbrown-v0_15_4.license" ]
-}
-
 license("hashbrown-v0_16_1.license") {
   public_package_name = "hashbrown"
   license_files = [
@@ -8214,37 +8150,37 @@ rustc_library("hashbrown-v0_16_1") {
   applicable_licenses = [ ":hashbrown-v0_16_1.license" ]
 }
 
-license("hashlink-v0_10_0.license") {
+license("hashlink-v0_11_0.license") {
   public_package_name = "hashlink"
   license_files = [
-    "//third_party/rust_crates/vendor/hashlink-0.10.0/LICENSE-APACHE",
-    "//third_party/rust_crates/vendor/hashlink-0.10.0/LICENSE-MIT",
+    "//third_party/rust_crates/vendor/hashlink-0.11.0/LICENSE-APACHE",
+    "//third_party/rust_crates/vendor/hashlink-0.11.0/LICENSE-MIT",
   ]
 }
 
-rustc_library("hashlink-v0_10_0") {
+rustc_library("hashlink-v0_11_0") {
   crate_name = "hashlink"
-  source_root = "//third_party/rust_crates/vendor/hashlink-0.10.0/src/lib.rs"
-  output_name = "hashlink-9ba4333fbd7f8cb1"
+  source_root = "//third_party/rust_crates/vendor/hashlink-0.11.0/src/lib.rs"
+  output_name = "hashlink-c4e2a996ff152040"
   edition = "2018"
   disable_clippy = true
   enforce_source_listing = false
   configs -= [ "//build/config/rust:2018_idioms" ]
 
   deps = []
-  deps += [ ":hashbrown-v0_15_4" ]
+  deps += [ ":hashbrown-v0_16_1" ]
 
   rustenv = []
 
   rustflags = [
     "--cap-lints=allow",
-    "-Cmetadata=9ba4333fbd7f8cb1",
-    "-Cextra-filename=-9ba4333fbd7f8cb1",
+    "-Cmetadata=c4e2a996ff152040",
+    "-Cextra-filename=-c4e2a996ff152040",
   ]
 
   visibility = [ ":*" ]
 
-  applicable_licenses = [ ":hashlink-v0_10_0.license" ]
+  applicable_licenses = [ ":hashlink-v0_11_0.license" ]
 }
 
 license("heck-v0_3_1.license") {
