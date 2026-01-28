@@ -244,13 +244,6 @@ _DEBUG_BAZEL_QUERIES = _DEBUG
 # Set this to True to enable debug printing of the action's timing profiles
 _DEBUG_TIME_PROFILE = _DEBUG
 
-# The name of an environment variable that will be checked. If set
-# to "1", this adds `--sandbox_debug` to each `bazel build` invocation
-# in order to allow developers to see the content of sandboxes for
-# failed commands.
-# See https://blog.bazel.build/2016/03/18/sandbox-easier-debug.html
-_ENV_DEBUG_SANDBOX = "FUCHSIA_DEBUG_BAZEL_SANDBOX"
-
 
 def debug(msg: str) -> None:
     # Print debug message to stderr if _DEBUG is True.
@@ -683,11 +676,6 @@ def main() -> int:
     cmd_args += args.bazel_targets
     if _DEBUG or global_bazel_args.verbose_failures:
         cmd_args += ["--verbose_failures"]
-
-    # Add --sandbox_debug if FUCHSIA_DEBUG_BAZEL_SANDBOX=1 is
-    # in the environment.
-    if os.environ.get(_ENV_DEBUG_SANDBOX, "0") == "1":
-        cmd_args.append("--sandbox_debug")
 
     jobs = None
     # When running jobs remotely, increase the number of allowed jobs to 10x

@@ -230,6 +230,7 @@ class BazelGlobalArguments(object):
     verbose_failures: bool
     upload_build_events: str | None
     quiet: bool
+    sandbox_debug: bool
 
     @staticmethod
     def create_from_build_dir(build_dir: Path) -> "BazelGlobalArguments":
@@ -255,6 +256,7 @@ class BazelGlobalArguments(object):
 
         # Get settings from the build environment.
         quiet = os.environ.get("FX_BUILD_QUIET") == "1"
+        sandbox_debug = os.environ.get("FUCHSIA_DEBUG_BAZEL_SANDBOX") == "1"
 
         return BazelGlobalArguments(
             verbose_failures=verbose_failures,
@@ -262,6 +264,7 @@ class BazelGlobalArguments(object):
                 upload_build_events if upload_build_events != "" else None
             ),
             quiet=quiet,
+            sandbox_debug=sandbox_debug,
         )
 
 

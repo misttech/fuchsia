@@ -177,6 +177,10 @@ class BazelActionRunner(object):
             "--aspects=//build/bazel/debug_symbols:aspects.bzl%generate_manifest",
         ]
 
+        # Add --sandbox_debug if enabled in the build environment.
+        if self.global_args.sandbox_debug:
+            cmd_args += ["--sandbox_debug"]
+
         # Now that there's a complete command string calculated, print it to debug or the command
         # file output if we have one.
         if _DEBUG:
