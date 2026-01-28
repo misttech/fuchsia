@@ -3945,7 +3945,7 @@ async fn protocol_as_numbered_handle() {
 /// r (root): expose protocol `foo` from `a`
 /// a: expose protocol `foo` from self
 /// b and c: do NOT use `foo` in their manifest (except in the shadowing test
-/// case, see below); however `foo` is injected in `b`` only.
+/// case, see below); however `foo` is injected in `b` only.
 ///
 /// If shadowing == true, an extra `d` component is created that serves `foo`,
 /// and it is routed to `b`. The test checks that injected `foo` from `a`
@@ -4050,6 +4050,133 @@ async fn injected_capability(test_shadowing: bool) {
 
     // Unresolve b. This should drop the request from `a` and avoid the "receivers must not outlive
     // their executor" panic on return.
+    b.unresolve().await.unwrap();
+}
+
+///   r
+///  / \
+/// a   b
+///
+/// r (root): expose protocol `foo` from self and offer `dict` from `a` to `b`
+/// a: expose `dict` (containing `bar`) from self
+/// b: use `dict` as `/svc` from parent
+///
+/// `foo` is injected in `b` only.
+#[fuchsia::test]
+async fn injected_capability_in_routed_dictionary() {
+    let components = vec![
+        (
+            "r",
+            ComponentDeclBuilder::new()
+                .protocol_default("foo")
+                .expose(ExposeBuilder::protocol().name("foo").source(ExposeSource::Self_))
+                .offer(
+                    OfferBuilder::dictionary()
+                        .name("dict")
+                        .source(offer_source_static_child("a"))
+                        .target_static_child("b"),
+                )
+                .child_default("a")
+                .child_default("b")
+                .build(),
+        ),
+        (
+            "a",
+            ComponentDeclBuilder::new()
+                .protocol_default("bar")
+                .dictionary_default("dict")
+                .offer(
+                    OfferBuilder::protocol()
+                        .name("bar")
+                        .target_capability("dict")
+                        .source(OfferSource::Self_),
+                )
+                .expose(ExposeBuilder::dictionary().name("dict").source(ExposeSource::Self_))
+                .build(),
+        ),
+        (
+            "b",
+            ComponentDeclBuilder::new()
+                .use_(UseBuilder::dictionary().name("dict").path("/svc"))
+                .build(),
+        ),
+    ];
+
+    let test = RoutingTestBuilder::new("r", components)
+        .add_injected_capabilities(cm_config::InjectedCapabilities {
+            components: vec![cm_config::AllowlistEntryBuilder::new().exact("b").build()],
+            use_: vec![cm_config::InjectedUse::Protocol(cm_config::InjectedUseProtocol {
+                source_name: "foo".parse().unwrap(),
+                target_path: "/svc/foo".parse().unwrap(),
+            })],
+        })
+        .build()
+        .await;
+
+    let use_foo_decl = UseBuilder::protocol().name("foo").path("/svc/foo").build();
+    let UseDecl::Protocol(use_foo_decl) = use_foo_decl else {
+        unreachable!();
+    };
+    let use_bar_decl = UseBuilder::protocol().name("bar").path("/svc/bar").build();
+    let UseDecl::Protocol(use_bar_decl) = use_bar_decl else {
+        unreachable!();
+    };
+
+    // Verify that `a` cannot access protocol `foo`.
+    let a = test.model.root().find_and_maybe_resolve(&"a".parse().unwrap()).await.unwrap();
+    let err = RouteRequest::UseProtocol(use_foo_decl.clone()).route(&a).await.unwrap_err();
+    assert_matches!(
+        err,
+        RoutingError::BedrockNotPresentInDictionary { name, moniker }
+        if name == "svc/foo"
+            && moniker == "a".parse().unwrap());
+
+    // Verify that `b` can reach protocol `bar` routed from `a`.
+    let b = test.model.root().find_and_maybe_resolve(&"b".parse().unwrap()).await.unwrap();
+    let source = RouteRequest::UseProtocol(use_bar_decl.clone()).route(&b).await.unwrap();
+    assert_matches!(
+        source,
+        RouteSource {
+            source:
+                CapabilitySource::Component(ComponentSource {
+                    capability: ComponentCapability::Protocol(ProtocolDecl {
+                        name,
+                        source_path: Some(source_path),
+                        ..
+                    }),
+                    moniker,
+                    ..
+                }),
+            relative_path: _,
+        }
+        if name == "bar"
+            && source_path == "/svc/bar".parse().unwrap()
+            && moniker == ["a"].try_into().unwrap());
+
+    // Verify that `b` can reach injected protocol `foo` routed from `r`.
+    let source = RouteRequest::UseProtocol(use_foo_decl.clone()).route(&b).await.unwrap();
+    assert_matches!(
+        source,
+        RouteSource {
+            source:
+                CapabilitySource::Component(ComponentSource {
+                    capability: ComponentCapability::Protocol(ProtocolDecl {
+                        name,
+                        source_path: Some(source_path),
+                        ..
+                    }),
+                    moniker,
+                    ..
+                }),
+            relative_path: _,
+        }
+        if name == "foo"
+            && source_path == "/svc/foo".parse().unwrap()
+            && moniker == [].try_into().unwrap());
+
+    // Unresolve a and b to drop the requests and avoid the "receivers must not
+    // outlive their executor" panic on return.
+    a.unresolve().await.unwrap();
     b.unresolve().await.unwrap();
 }
 

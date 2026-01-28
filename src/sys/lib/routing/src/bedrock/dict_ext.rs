@@ -3,6 +3,8 @@
 // found in the LICENSE file.
 
 use crate::bedrock::request_metadata::Metadata;
+use crate::bedrock::use_dictionary_router::UseDictionaryRouter;
+use crate::capability_source::{CapabilitySource, InternalCapability, VoidSource};
 use crate::error::RoutingError;
 use async_trait::async_trait;
 use cm_rust::CapabilityTypeName;
@@ -263,9 +265,34 @@ impl DictExt for Dict {
                 Some(next_name) => {
                     let sub_dict = {
                         match current_dict.get(current_name) {
-                            Ok(Some(cap)) => cap
-                                .to_dictionary()
-                                .ok_or(fsandbox::CapabilityStoreError::ItemNotFound)?,
+                            Ok(Some(Capability::Dictionary(dict))) => dict,
+                            Ok(Some(Capability::DictionaryRouter(router))) => {
+                                let dict = Dict::new();
+
+                                // Create a new DictionaryRouter that merges the
+                                // current one and our new dict.
+                                let merged = UseDictionaryRouter::new(
+                                    "/placeholder1".parse().unwrap(),
+                                    "placeholder2".parse().unwrap(),
+                                    dict.clone(),
+                                    vec![router.clone()],
+                                    CapabilitySource::Void(VoidSource {
+                                        capability: InternalCapability::Dictionary(
+                                            "placeholder3".parse().unwrap(),
+                                        ),
+                                        moniker: "placeholder4".parse().unwrap(),
+                                    }),
+                                );
+
+                                // Replace the entry in current_dict.
+                                current_dict.remove(current_name).unwrap();
+                                current_dict.insert(
+                                    current_name.into(),
+                                    Capability::DictionaryRouter(merged),
+                                )?;
+
+                                dict
+                            }
                             Ok(None) => {
                                 let dict = Dict::new();
                                 current_dict.insert(
@@ -274,7 +301,7 @@ impl DictExt for Dict {
                                 )?;
                                 dict
                             }
-                            Err(_) => return Err(fsandbox::CapabilityStoreError::ItemNotFound),
+                            _ => return Err(fsandbox::CapabilityStoreError::ItemNotFound),
                         }
                     };
                     current_dict = sub_dict;
