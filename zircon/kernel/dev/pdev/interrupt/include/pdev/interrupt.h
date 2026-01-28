@@ -47,6 +47,10 @@ struct pdev_interrupt_ops {
                                  msi_block_t* out_block);
   void (*msi_free_block)(msi_block_t* block);
   void (*msi_register_handler)(const msi_block_t* block, uint msi_id, interrupt_handler_t handler);
+
+  // Only used by IRQ console commands.
+  zx_status_t (*get_status)(interrupt_vector_t vector, bool& out_pending,
+                            bool& out_enabled) = nullptr;
 };
 
 void pdev_register_interrupts(const struct pdev_interrupt_ops* ops);

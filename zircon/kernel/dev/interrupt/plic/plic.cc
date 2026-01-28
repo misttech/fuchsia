@@ -230,6 +230,10 @@ void plic_msi_register_handler(const msi_block_t* block, uint msi_id, interrupt_
   PANIC_UNIMPLEMENTED;
 }
 
+zx_status_t plic_get_status(interrupt_vector_t vector, bool& out_pending, bool& out_enabled) {
+  return ZX_ERR_NOT_SUPPORTED;
+}
+
 const struct pdev_interrupt_ops plic_ops = {
     .mask = plic_mask_interrupt,
     .unmask = plic_unmask_interrupt,
@@ -255,6 +259,7 @@ const struct pdev_interrupt_ops plic_ops = {
     .msi_alloc_block = plic_msi_alloc_block,
     .msi_free_block = plic_msi_free_block,
     .msi_register_handler = plic_msi_register_handler,
+    .get_status = plic_get_status,
 };
 
 }  //  anonymous namespace

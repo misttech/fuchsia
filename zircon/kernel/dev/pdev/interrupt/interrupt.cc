@@ -5,6 +5,8 @@
 // https://opensource.org/licenses/MIT
 
 #include <lib/arch/intrin.h>
+#include <lib/console.h>
+#include <lib/fit/function.h>
 #include <zircon/errors.h>
 #include <zircon/types.h>
 
@@ -215,4 +217,190 @@ void interrupt_init_percpu_early_hook(uint level) { interrupt_init_percpu_early(
 
 LK_INIT_HOOK_FLAGS(interrupt_init_percpu_early, interrupt_init_percpu_early_hook,
                    LK_INIT_LEVEL_PLATFORM_EARLY, LK_INIT_FLAG_SECONDARY_CPUS)
+
+//
+// Console support
+//
+class IrqInfo {
+ public:
+#if __arm__ || __aarch64__
+  // TODO(johngro): This is not the best of assumptions, but for now, we want
+  // to avoid querying the status of GIC PPIs as they are all CPU dependent,
+  // and we don't provide any way to control which CPU we are on when
+  // querying.
+  static constexpr uint32_t kFirstValidIrq = 32;
+#else
+  static constexpr uint32_t kFirstValidIrq = 0;
+#endif
+  static constexpr uint32_t kLastValidIrq = MAX_INTERRUPTS;
+
+  static bool ValidIrqNum(uint64_t irq_num) {
+    return (irq_num >= kFirstValidIrq) && (irq_num < kLastValidIrq);
+  }
+
+  static IrqInfo Get(uint32_t irq_num) {
+    DEBUG_ASSERT_MSG(ValidIrqNum(irq_num), "Bad IRQ num %u\n", irq_num);
+    IrqInfo ret{};
+
+    interrupt_trigger_mode tm;
+    interrupt_polarity p;
+    if (intr_ops->get_config(irq_num, &tm, &p) == ZX_OK) {
+      ret.trigger_mode_ = tm;
+      ret.polarity_ = p;
+    }
+
+    bool pend, enb;
+    if (intr_ops->get_status && (intr_ops->get_status(irq_num, pend, enb) == ZX_OK)) {
+      ret.pending_ = pend;
+      ret.enabled_ = enb;
+    }
+
+    Guard<SpinLock, IrqSave> guard{pdev_lock::Get()};
+    ret.registered_ = static_cast<bool>(int_handler_table[irq_num].handler);
+    return ret;
+  }
+
+  bool registered() const { return registered_; }
+  ktl::optional<interrupt_trigger_mode> trigger_mode() const { return trigger_mode_; }
+  ktl::optional<interrupt_polarity> polarity() const { return polarity_; }
+  ktl::optional<bool> pending() const { return pending_; }
+  ktl::optional<bool> enabled() const { return enabled_; }
+
+  // If the actual interrupt driver cannot tell us our configuration, we
+  // consider this to be an "invalid" interrupt, and don't display it (even when
+  // -v is passed to "show all").
+  bool is_valid() const { return trigger_mode_.has_value() && polarity_.has_value(); }
+
+  const char* trigger_mode_str() const {
+    if (!trigger_mode_.has_value()) {
+      return "Unknown";
+    }
+
+    switch (trigger_mode_.value()) {
+      case interrupt_trigger_mode::EDGE:
+        return "Edge";
+      case interrupt_trigger_mode::LEVEL:
+        return "Level";
+      default:
+        return "Unknown";
+    }
+  }
+
+  const char* polarity_str() const {
+    if (!trigger_mode_.has_value() || !polarity_.has_value()) {
+      return "Unknown";
+    }
+
+    switch (polarity_.value()) {
+      case interrupt_polarity::HIGH:
+        return trigger_mode_.value() == interrupt_trigger_mode::LEVEL ? "High" : "Rising";
+      case interrupt_polarity::LOW:
+        return trigger_mode_.value() == interrupt_trigger_mode::LEVEL ? "Low" : "Falling";
+      default:
+        return "Unknown";
+    }
+  }
+
+  const char* pending_str() const { return TriStateBoolStr(pending_); }
+  const char* enabled_str() const { return TriStateBoolStr(enabled_); }
+
+ private:
+  static const char* TriStateBoolStr(ktl::optional<bool> val) {
+    if (val.has_value()) {
+      return val.value() ? "True" : "False";
+    }
+    return "Unknown";
+  }
+
+  bool registered_{false};
+  ktl::optional<interrupt_trigger_mode> trigger_mode_;
+  ktl::optional<interrupt_polarity> polarity_;
+  ktl::optional<bool> pending_;
+  ktl::optional<bool> enabled_;
+};
+
+int IrqConsoleCmd(int argc, const cmd_args* argv, uint32_t flags) {
+  auto usage = [](int ret = ZX_ERR_INVALID_ARGS) -> int {
+    printf("Usage: irq <cmd>\n");
+    printf("Valid commands are:\n");
+    printf("  help : show this message\n");
+    printf("  show (all | reg | pending | enabled | <N>)\n");
+    printf("    Shows the status of one or more IRQs, depending on the mandatory argument.\n");
+    printf("      all     : Show the status of all IRQs in the system.\n");
+    printf("      reg     : Show the status of all IRQs which have a registered handler.\n");
+    printf("      pending : Show the status of all IRQs which are currently pending.\n");
+    printf("      enabled : Show the status of all IRQs which are currently enabled.\n");
+    printf("      pendenb : Show the status of all IRQs which are currently pending OR enabled.\n");
+    printf("      <N>     : Show the status IRQ #<N>.\n");
+    return ret;
+  };
+
+  if (argc < 2) {
+    printf("No command specified!\n");
+    return usage();
+  }
+
+  if (!strcmp(argv[1].str, "help")) {
+    return usage(ZX_OK);
+  } else if (!strcmp(argv[1].str, "show")) {
+    if (argc < 3) {
+      printf("No target specified for \"show\"\n");
+      return usage();
+    }
+
+    ktl::optional<uint32_t> maybe_target;
+    fit::inline_function<bool(const IrqInfo&), 0> predicate = [](const IrqInfo&) { return false; };
+
+    if (!strcmp(argv[2].str, "all")) {
+      predicate = [](const IrqInfo&) { return true; };
+    } else if (!strcmp(argv[2].str, "reg")) {
+      predicate = [](const IrqInfo& info) { return info.registered(); };
+    } else if (!strcmp(argv[2].str, "pending")) {
+      predicate = [](const IrqInfo& info) { return info.pending().value_or(false); };
+    } else if (!strcmp(argv[2].str, "enabled")) {
+      predicate = [](const IrqInfo& info) { return info.enabled().value_or(false); };
+    } else if (!strcmp(argv[2].str, "pendenb")) {
+      predicate = [](const IrqInfo& info) {
+        return info.pending().value_or(false) || info.enabled().value_or(false);
+      };
+    } else {
+      if (!IrqInfo::ValidIrqNum(argv[2].u)) {
+        printf("Invalid IRQ target (\"%s\") for \"show\".\n", argv[2].str);
+        return usage();
+      }
+      maybe_target = static_cast<uint32_t>(argv[2].u);
+    }
+
+    if (maybe_target.has_value()) {
+      uint32_t target = maybe_target.value();
+      const IrqInfo info = IrqInfo::Get(target);
+      printf("IRQ          : %u\n", target);
+      printf("State        : %s\n", info.registered() ? "Registered" : "Unregistered");
+      printf("Trigger Mode : %s\n", info.trigger_mode_str());
+      printf("Polarity     : %s\n", info.polarity_str());
+      printf("Pending      : %s\n", info.pending_str());
+      printf("Enabled      : %s\n", info.enabled_str());
+    } else {
+      printf("  ID  | Registered | Trigger Mode | Polarity | Pending | Enabled |\n");
+      printf("------+------------+--------------+----------+---------+---------+\n");
+      for (uint32_t i = IrqInfo::kFirstValidIrq; i < IrqInfo::kLastValidIrq; ++i) {
+        if (const IrqInfo info = IrqInfo::Get(i); info.is_valid() && predicate(info)) {
+          printf(" %4u |        %3s |      %7s |  %7s | %7s | %7s |\n", i,
+                 info.registered() ? "Yes" : "No", info.trigger_mode_str(), info.polarity_str(),
+                 info.pending_str(), info.enabled_str());
+        }
+      }
+    }
+
+    return ZX_OK;
+  } else {
+    printf("Unrecognized command \"%s\"\n", argv[1].str);
+    return usage();
+  }
+}
+
 }  // namespace
+
+STATIC_COMMAND_START
+STATIC_COMMAND("irq", "IRQ related commands", IrqConsoleCmd)
+STATIC_COMMAND_END(smmu)

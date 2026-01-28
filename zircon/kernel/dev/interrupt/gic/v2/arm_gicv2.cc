@@ -436,6 +436,20 @@ zx_status_t gic_suspend_cpu() { return ZX_ERR_NOT_SUPPORTED; }
 
 zx_status_t gic_resume_cpu() { return ZX_ERR_NOT_SUPPORTED; }
 
+zx_status_t gic_get_status(interrupt_vector_t vector, bool& out_pending, bool& out_enabled) {
+  out_pending = out_enabled = false;
+  if (vector >= MAX_INT) {
+    return ZX_ERR_INVALID_ARGS;
+  }
+
+  const uint32_t reg = vector / 32;
+  const uint32_t mask = static_cast<uint32_t>(1ULL << (vector % 32));
+  out_enabled = (arm_gicv2_read32(GICD_ISENABLER(reg)) & mask) != 0;
+  out_pending = (arm_gicv2_read32(GICD_ISPENDR(reg)) & mask) != 0;
+
+  return ZX_OK;
+}
+
 const struct pdev_interrupt_ops gic_ops = {
     .mask = gic_mask_interrupt,
     .unmask = gic_unmask_interrupt,
@@ -461,6 +475,7 @@ const struct pdev_interrupt_ops gic_ops = {
     .msi_alloc_block = arm_gicv2m_msi_alloc_block,
     .msi_free_block = arm_gicv2m_msi_free_block,
     .msi_register_handler = arm_gicv2m_msi_register_handler,
+    .get_status = gic_get_status,
 };
 
 }  // anonymous namespace

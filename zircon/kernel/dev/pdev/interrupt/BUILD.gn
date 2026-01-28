@@ -20,6 +20,7 @@ source_set("interrupt") {
   public_deps = [ ":headers" ]
   deps = [
     "//zircon/kernel/lib/arch",
+    "//zircon/kernel/lib/console",
     "//zircon/kernel/lib/init",
   ]
 }

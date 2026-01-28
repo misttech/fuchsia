@@ -543,6 +543,26 @@ void gic_msi_register_handler(const msi_block_t* block, uint msi_id, interrupt_h
   PANIC_UNIMPLEMENTED;
 }
 
+zx_status_t gic_get_status(interrupt_vector_t vector, bool& out_pending, bool& out_enabled) {
+  out_pending = out_enabled = false;
+  if (vector >= gic_max_int) {
+    return ZX_ERR_INVALID_ARGS;
+  }
+
+  const uint32_t reg = vector / 32;
+  const uint32_t mask = static_cast<uint32_t>(1ULL << (vector % 32));
+  if (vector < 32) {
+    cpu_num_t cpu_id = arch_curr_cpu_num();
+    out_enabled = (arm_gicv3_read32(GICR_ISENABLER0(cpu_id)) & mask) != 0;
+    out_pending = (arm_gicv3_read32(GICR_ISPENDR0(cpu_id)) & mask) != 0;
+  } else {
+    out_enabled = (arm_gicv3_read32(GICD_ISENABLER(reg)) & mask) != 0;
+    out_pending = (arm_gicv3_read32(GICD_ISPENDR(reg)) & mask) != 0;
+  }
+
+  return ZX_OK;
+}
+
 const struct pdev_interrupt_ops gic_ops = {
     .mask = gic_mask_interrupt,
     .unmask = gic_unmask_interrupt,
@@ -568,6 +588,7 @@ const struct pdev_interrupt_ops gic_ops = {
     .msi_alloc_block = gic_msi_alloc_block,
     .msi_free_block = gic_msi_free_block,
     .msi_register_handler = gic_msi_register_handler,
+    .get_status = gic_get_status,
 };
 
 }  // anonymous namespace
