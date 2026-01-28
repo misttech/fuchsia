@@ -20,7 +20,6 @@ use log::{error, warn};
 use sampler_config::runtime::{MetricConfig, ProjectConfig};
 use sampler_config::{EventCode, MetricId, MetricType};
 use selectors::SelectorExt;
-use std::cell::RefCell;
 use std::collections::HashMap;
 use std::collections::hash_map::Entry;
 
@@ -34,11 +33,11 @@ use std::collections::hash_map::Entry;
 pub struct Project<'a> {
     logger: MetricEventLoggerProxy,
     metrics: Vec<MetricConfig>,
-    // This RefCell is safe because Sampler does not share project state
+    // This cache is safe because Sampler does not share project state
     // between threads. Since it does not serve a protocol and need to spawn
     // handlers, access is always sequential when a new event arrives on the
     // single SampleSinkServer stream.
-    cache: RefCell<HashMap<(MetricId, Vec<EventCode>), Property>>,
+    cache: HashMap<(MetricId, Vec<EventCode>), Property>,
     interval: zx::MonotonicDuration,
     stats: Option<&'a ProjectStats>,
 }
@@ -65,7 +64,7 @@ impl<'a> Project<'a> {
         Ok(Project {
             logger,
             metrics,
-            cache: RefCell::new(HashMap::new()),
+            cache: HashMap::new(),
             interval: zx::MonotonicDuration::from_seconds(config.poll_rate_sec),
             stats,
         })
@@ -87,6 +86,7 @@ impl<'a> Project<'a> {
         }
 
         let mut metric_events = vec![];
+        let cache = &mut self.cache;
         for tree in data {
             for metric in &self.metrics {
                 let selectors_for_this_tree = tree
@@ -106,9 +106,9 @@ impl<'a> Project<'a> {
                     continue;
                 };
 
-                match self.convert_to_metric(item, metric) {
+                match Self::convert_to_metric(cache, item, metric) {
                     Ok(Some(m)) => {
-                        if let Some(stats) = self.stats {
+                        if let Some(stats) = &self.stats {
                             stats.events.borrow_mut().add_entry(|n| {
                                 n.record_uint("metric_id", *metric.metric_id as u64);
                                 let ec = n.create_uint_array("ec", metric.event_codes.len());
@@ -152,7 +152,7 @@ impl<'a> Project<'a> {
     }
 
     fn convert_to_metric<'b>(
-        &self,
+        cache: &mut HashMap<(MetricId, Vec<EventCode>), Property>,
         item: SelectResult<'b, String>,
         metric: &MetricConfig,
     ) -> Result<Option<MetricEvent>, Error<'b>> {
@@ -164,10 +164,7 @@ impl<'a> Project<'a> {
 
                 let new_value = Self::extract_occurrence(&prop[0])?;
 
-                let cached_value = match self
-                    .cache
-                    .borrow_mut()
-                    .entry((metric.metric_id, metric.event_codes.clone()))
+                let cached_value = match cache.entry((metric.metric_id, metric.event_codes.clone()))
                 {
                     Entry::Occupied(mut v) => {
                         let old = Self::extract_occurrence(v.get())?;
@@ -238,24 +235,22 @@ impl<'a> Project<'a> {
                     return Err(Error::InvalidSelectResult(item));
                 };
 
-                let Some(payload) = (match self
-                    .cache
-                    .borrow_mut()
-                    .entry((metric.metric_id, metric.event_codes.clone()))
-                {
-                    Entry::Occupied(mut v) => {
-                        let payload = Self::process_int_histogram(&prop[0], Some(v.get()))?;
-                        // only update the cache if the histogram is valid
-                        if payload.is_some() {
-                            v.insert(prop[0].clone().into_owned());
+                let Some(payload) =
+                    (match cache.entry((metric.metric_id, metric.event_codes.clone())) {
+                        Entry::Occupied(mut v) => {
+                            let payload = Self::process_int_histogram(&prop[0], Some(v.get()))?;
+                            // only update the cache if the histogram is valid
+                            if payload.is_some() {
+                                v.insert(prop[0].clone().into_owned());
+                            }
+                            payload
                         }
-                        payload
-                    }
-                    Entry::Vacant(v) => {
-                        v.insert(prop[0].clone().into_owned());
-                        Self::process_int_histogram(&prop[0], None)?
-                    }
-                }) else {
+                        Entry::Vacant(v) => {
+                            v.insert(prop[0].clone().into_owned());
+                            Self::process_int_histogram(&prop[0], None)?
+                        }
+                    })
+                else {
                     return Ok(None);
                 };
 
@@ -593,7 +588,6 @@ mod test {
     use sampler_config::{MetricId, MetricType};
     use selectors::parse_verbose;
     use std::borrow::Cow;
-    use std::cell::RefCell;
     use std::collections::HashMap;
     use std::sync::Arc;
 
@@ -614,7 +608,7 @@ mod test {
         Project {
             logger,
             metrics: vec![],
-            cache: RefCell::new(HashMap::new()),
+            cache: HashMap::new(),
             interval: zx::MonotonicDuration::from_seconds(1),
             stats: None,
         }
@@ -684,7 +678,7 @@ mod test {
                 upload_once: false,
                 project_id: None,
             }],
-            cache: RefCell::new(HashMap::new()),
+            cache: HashMap::new(),
             interval: zx::MonotonicDuration::from_seconds(1),
             stats: None,
         };
@@ -786,8 +780,11 @@ mod test {
                 }),
             );
             let config = &project.metrics[0];
-            let actual =
-                project.convert_to_metric(SelectResult::Properties(vec![Cow::Owned(prop)]), config);
+            let actual = Project::convert_to_metric(
+                &mut project.cache,
+                SelectResult::Properties(vec![Cow::Owned(prop)]),
+                config,
+            );
             assert_matches!(
                 actual,
                 Err(Error::HistogramBucketCountDecreased { index: 1, old_count: 2, new_count: 1 })
@@ -808,7 +805,7 @@ mod test {
                 upload_once: false,
                 project_id: None,
             }],
-            cache: RefCell::new(HashMap::new()),
+            cache: HashMap::new(),
             interval: zx::MonotonicDuration::from_seconds(1),
             stats: None,
         };
@@ -906,7 +903,7 @@ mod test {
                 upload_once: false,
                 project_id: None,
             }],
-            cache: RefCell::new(HashMap::new()),
+            cache: HashMap::new(),
             interval: zx::MonotonicDuration::from_seconds(1),
             stats: None,
         };
@@ -1054,7 +1051,7 @@ mod test {
                 upload_once: false,
                 project_id: None,
             }],
-            cache: RefCell::new(HashMap::new()),
+            cache: HashMap::new(),
             interval: zx::MonotonicDuration::from_seconds(1),
             stats: None,
         };
@@ -1136,8 +1133,11 @@ mod test {
             // decrease from the previous value of 10 which is in the cache
             let int_prop = Property::Int("value".to_string(), 9);
             let config = &project.metrics[0];
-            let actual = project
-                .convert_to_metric(SelectResult::Properties(vec![Cow::Owned(int_prop)]), config);
+            let actual = Project::convert_to_metric(
+                &mut project.cache,
+                SelectResult::Properties(vec![Cow::Owned(int_prop)]),
+                config,
+            );
             assert_matches!(actual, Err(Error::OccurrenceDecreased { prior: 10, current: 9 }));
         }
     }
@@ -1459,62 +1459,69 @@ mod test {
 
     #[fuchsia::test]
     async fn convert_to_metric_occurrence() {
-        let project = create_empty_project().await;
+        let mut project = create_empty_project().await;
         let metric_config = create_metric_config(1, MetricType::Occurrence);
         let prop = Property::Int("value".to_string(), 10);
         let item = SelectResult::Properties(vec![Cow::Borrowed(&prop)]);
 
         // First time, should be the full value.
-        let metric_event = project.convert_to_metric(item, &metric_config).unwrap().unwrap();
+        let metric_event =
+            Project::convert_to_metric(&mut project.cache, item, &metric_config).unwrap().unwrap();
         assert_eq!(metric_event.metric_id, 1);
         assert_eq!(metric_event.payload, MetricEventPayload::Count(10));
 
         // Second time, with a new value, should be the diff.
         let prop = Property::Int("value".to_string(), 15);
         let item = SelectResult::Properties(vec![Cow::Borrowed(&prop)]);
-        let metric_event = project.convert_to_metric(item, &metric_config).unwrap().unwrap();
+        let metric_event =
+            Project::convert_to_metric(&mut project.cache, item, &metric_config).unwrap().unwrap();
         assert_eq!(metric_event.metric_id, 1);
         assert_eq!(metric_event.payload, MetricEventPayload::Count(5));
 
         // Third time, with same value, should be None.
         let item = SelectResult::Properties(vec![Cow::Borrowed(&prop)]);
-        let metric_event = project.convert_to_metric(item, &metric_config).unwrap();
+        let metric_event =
+            Project::convert_to_metric(&mut project.cache, item, &metric_config).unwrap();
         assert!(metric_event.is_none());
     }
 
     #[fuchsia::test]
     async fn convert_to_metric_integer() {
-        let project = create_empty_project().await;
+        let mut project = create_empty_project().await;
         let metric_config = create_metric_config(1, MetricType::Integer);
         let prop = Property::Int("value".to_string(), -50);
         let item = SelectResult::Properties(vec![Cow::Borrowed(&prop)]);
 
-        let metric_event = project.convert_to_metric(item, &metric_config).unwrap().unwrap();
+        let metric_event =
+            Project::convert_to_metric(&mut project.cache, item, &metric_config).unwrap().unwrap();
         assert_eq!(metric_event.metric_id, 1);
         assert_eq!(metric_event.payload, MetricEventPayload::IntegerValue(-50));
 
         // second time should get the same value
         let item = SelectResult::Properties(vec![Cow::Borrowed(&prop)]);
-        let metric_event = project.convert_to_metric(item, &metric_config).unwrap().unwrap();
+        let metric_event =
+            Project::convert_to_metric(&mut project.cache, item, &metric_config).unwrap().unwrap();
         assert_eq!(metric_event.metric_id, 1);
         assert_eq!(metric_event.payload, MetricEventPayload::IntegerValue(-50));
 
         // using a different value should work with no relation to the previous value
         let prop = Property::Int("value".to_string(), 50);
         let item = SelectResult::Properties(vec![Cow::Borrowed(&prop)]);
-        let metric_event = project.convert_to_metric(item, &metric_config).unwrap().unwrap();
+        let metric_event =
+            Project::convert_to_metric(&mut project.cache, item, &metric_config).unwrap().unwrap();
         assert_eq!(metric_event.metric_id, 1);
         assert_eq!(metric_event.payload, MetricEventPayload::IntegerValue(50));
     }
 
     #[fuchsia::test]
     async fn convert_to_metric_string() {
-        let project = create_empty_project().await;
+        let mut project = create_empty_project().await;
         let metric_config = create_metric_config(1, MetricType::String);
         let prop = Property::String("value".to_string(), "test-string".to_string());
         let item = SelectResult::Properties(vec![Cow::Borrowed(&prop)]);
 
-        let metric_event = project.convert_to_metric(item, &metric_config).unwrap().unwrap();
+        let metric_event =
+            Project::convert_to_metric(&mut project.cache, item, &metric_config).unwrap().unwrap();
         assert_eq!(metric_event.metric_id, 1);
         assert_eq!(
             metric_event.payload,
@@ -1522,7 +1529,8 @@ mod test {
         );
 
         let item = SelectResult::Properties(vec![Cow::Borrowed(&prop)]);
-        let metric_event = project.convert_to_metric(item, &metric_config).unwrap().unwrap();
+        let metric_event =
+            Project::convert_to_metric(&mut project.cache, item, &metric_config).unwrap().unwrap();
         assert_eq!(metric_event.metric_id, 1);
         assert_eq!(
             metric_event.payload,
@@ -1531,7 +1539,8 @@ mod test {
 
         let prop = Property::String("value".to_string(), "changed-string".to_string());
         let item = SelectResult::Properties(vec![Cow::Borrowed(&prop)]);
-        let metric_event = project.convert_to_metric(item, &metric_config).unwrap().unwrap();
+        let metric_event =
+            Project::convert_to_metric(&mut project.cache, item, &metric_config).unwrap().unwrap();
         assert_eq!(metric_event.metric_id, 1);
         assert_eq!(
             metric_event.payload,
@@ -1541,7 +1550,7 @@ mod test {
 
     #[fuchsia::test]
     async fn convert_to_metric_int_histogram() {
-        let project = create_empty_project().await;
+        let mut project = create_empty_project().await;
         let metric_config = create_metric_config(1, MetricType::IntHistogram);
         let hist_prop = Property::IntArray(
             "hist".to_string(),
@@ -1556,7 +1565,8 @@ mod test {
         let item = SelectResult::Properties(vec![Cow::Borrowed(&hist_prop)]);
 
         // First time, full histogram.
-        let metric_event = project.convert_to_metric(item, &metric_config).unwrap().unwrap();
+        let metric_event =
+            Project::convert_to_metric(&mut project.cache, item, &metric_config).unwrap().unwrap();
         assert_eq!(metric_event.metric_id, 1);
         match metric_event.payload {
             MetricEventPayload::Histogram(buckets) => {
@@ -1584,7 +1594,8 @@ mod test {
             }),
         );
         let item = SelectResult::Properties(vec![Cow::Borrowed(&updated_hist_prop)]);
-        let metric_event = project.convert_to_metric(item, &metric_config).unwrap().unwrap();
+        let metric_event =
+            Project::convert_to_metric(&mut project.cache, item, &metric_config).unwrap().unwrap();
         assert_eq!(metric_event.metric_id, 1);
         match metric_event.payload {
             MetricEventPayload::Histogram(buckets) => {
@@ -1602,13 +1613,14 @@ mod test {
 
         // Third time, same value, should be None.
         let item = SelectResult::Properties(vec![Cow::Borrowed(&updated_hist_prop)]);
-        let metric_event = project.convert_to_metric(item, &metric_config).unwrap();
+        let metric_event =
+            Project::convert_to_metric(&mut project.cache, item, &metric_config).unwrap();
         assert!(metric_event.is_none());
     }
 
     #[fuchsia::test]
     async fn convert_to_metric_int_exponential_histogram() {
-        let project = create_empty_project().await;
+        let mut project = create_empty_project().await;
         let metric_config = create_metric_config(1, MetricType::IntHistogram);
         let hist_prop = Property::IntArray(
             "hist".to_string(),
@@ -1624,7 +1636,8 @@ mod test {
         let item = SelectResult::Properties(vec![Cow::Borrowed(&hist_prop)]);
 
         // First time, full histogram.
-        let metric_event = project.convert_to_metric(item, &metric_config).unwrap().unwrap();
+        let metric_event =
+            Project::convert_to_metric(&mut project.cache, item, &metric_config).unwrap().unwrap();
         assert_eq!(metric_event.metric_id, 1);
         match metric_event.payload {
             MetricEventPayload::Histogram(buckets) => {
@@ -1653,7 +1666,8 @@ mod test {
             }),
         );
         let item = SelectResult::Properties(vec![Cow::Borrowed(&updated_hist_prop)]);
-        let metric_event = project.convert_to_metric(item, &metric_config).unwrap().unwrap();
+        let metric_event =
+            Project::convert_to_metric(&mut project.cache, item, &metric_config).unwrap().unwrap();
         assert_eq!(metric_event.metric_id, 1);
         match metric_event.payload {
             MetricEventPayload::Histogram(buckets) => {
@@ -1671,13 +1685,14 @@ mod test {
 
         // Third time, same value, should be None.
         let item = SelectResult::Properties(vec![Cow::Borrowed(&updated_hist_prop)]);
-        let metric_event = project.convert_to_metric(item, &metric_config).unwrap();
+        let metric_event =
+            Project::convert_to_metric(&mut project.cache, item, &metric_config).unwrap();
         assert!(metric_event.is_none());
     }
 
     #[fuchsia::test]
     async fn convert_to_metric_uint_linear_histogram() {
-        let project = create_empty_project().await;
+        let mut project = create_empty_project().await;
         let metric_config = create_metric_config(1, MetricType::IntHistogram);
         let hist_prop = Property::UintArray(
             "hist".to_string(),
@@ -1692,7 +1707,8 @@ mod test {
         let item = SelectResult::Properties(vec![Cow::Borrowed(&hist_prop)]);
 
         // First time, full histogram.
-        let metric_event = project.convert_to_metric(item, &metric_config).unwrap().unwrap();
+        let metric_event =
+            Project::convert_to_metric(&mut project.cache, item, &metric_config).unwrap().unwrap();
         assert_eq!(metric_event.metric_id, 1);
         match metric_event.payload {
             MetricEventPayload::Histogram(buckets) => {
@@ -1720,7 +1736,8 @@ mod test {
             }),
         );
         let item = SelectResult::Properties(vec![Cow::Borrowed(&updated_hist_prop)]);
-        let metric_event = project.convert_to_metric(item, &metric_config).unwrap().unwrap();
+        let metric_event =
+            Project::convert_to_metric(&mut project.cache, item, &metric_config).unwrap().unwrap();
         assert_eq!(metric_event.metric_id, 1);
         match metric_event.payload {
             MetricEventPayload::Histogram(buckets) => {
@@ -1738,13 +1755,14 @@ mod test {
 
         // Third time, same value, should be None.
         let item = SelectResult::Properties(vec![Cow::Borrowed(&updated_hist_prop)]);
-        let metric_event = project.convert_to_metric(item, &metric_config).unwrap();
+        let metric_event =
+            Project::convert_to_metric(&mut project.cache, item, &metric_config).unwrap();
         assert!(metric_event.is_none());
     }
 
     #[fuchsia::test]
     async fn convert_to_metric_uint_exponential_histogram() {
-        let project = create_empty_project().await;
+        let mut project = create_empty_project().await;
         let metric_config = create_metric_config(1, MetricType::IntHistogram);
         let hist_prop = Property::UintArray(
             "hist".to_string(),
@@ -1760,7 +1778,8 @@ mod test {
         let item = SelectResult::Properties(vec![Cow::Borrowed(&hist_prop)]);
 
         // First time, full histogram.
-        let metric_event = project.convert_to_metric(item, &metric_config).unwrap().unwrap();
+        let metric_event =
+            Project::convert_to_metric(&mut project.cache, item, &metric_config).unwrap().unwrap();
         assert_eq!(metric_event.metric_id, 1);
         match metric_event.payload {
             MetricEventPayload::Histogram(buckets) => {
@@ -1789,7 +1808,8 @@ mod test {
             }),
         );
         let item = SelectResult::Properties(vec![Cow::Borrowed(&updated_hist_prop)]);
-        let metric_event = project.convert_to_metric(item, &metric_config).unwrap().unwrap();
+        let metric_event =
+            Project::convert_to_metric(&mut project.cache, item, &metric_config).unwrap().unwrap();
         assert_eq!(metric_event.metric_id, 1);
         match metric_event.payload {
             MetricEventPayload::Histogram(buckets) => {
@@ -1807,13 +1827,14 @@ mod test {
 
         // Third time, same value, should be None.
         let item = SelectResult::Properties(vec![Cow::Borrowed(&updated_hist_prop)]);
-        let metric_event = project.convert_to_metric(item, &metric_config).unwrap();
+        let metric_event =
+            Project::convert_to_metric(&mut project.cache, item, &metric_config).unwrap();
         assert!(metric_event.is_none());
     }
 
     #[fuchsia::test]
     async fn cache_multiple_metrics() {
-        let project = create_empty_project().await;
+        let mut project = create_empty_project().await;
         let mut metric_1 = create_metric_config(1, MetricType::Occurrence);
         metric_1.event_codes = vec![EventCode(0), EventCode(0)];
 
@@ -1827,12 +1848,14 @@ mod test {
         let item2 = SelectResult::Properties(vec![Cow::Borrowed(&prop2)]);
 
         // First time, should be the full value.
-        let metric_event = project.convert_to_metric(item1, &metric_1).unwrap().unwrap();
+        let metric_event =
+            Project::convert_to_metric(&mut project.cache, item1, &metric_1).unwrap().unwrap();
         assert_eq!(metric_event.metric_id, 1);
         assert_eq!(metric_event.payload, MetricEventPayload::Count(10));
         assert_eq!(metric_event.event_codes, vec![0, 0]);
 
-        let metric_event = project.convert_to_metric(item2, &metric_2).unwrap().unwrap();
+        let metric_event =
+            Project::convert_to_metric(&mut project.cache, item2, &metric_2).unwrap().unwrap();
         assert_eq!(metric_event.metric_id, 1);
         assert_eq!(metric_event.payload, MetricEventPayload::Count(0));
         assert_eq!(metric_event.event_codes, vec![0, 1]);
@@ -1840,25 +1863,29 @@ mod test {
         // Second time, with a new value, should be the diff.
         let prop1 = Property::Int("value".to_string(), 15);
         let item1 = SelectResult::Properties(vec![Cow::Borrowed(&prop1)]);
-        let metric_event = project.convert_to_metric(item1, &metric_1).unwrap().unwrap();
+        let metric_event =
+            Project::convert_to_metric(&mut project.cache, item1, &metric_1).unwrap().unwrap();
         assert_eq!(metric_event.metric_id, 1);
         assert_eq!(metric_event.payload, MetricEventPayload::Count(5));
         assert_eq!(metric_event.event_codes, vec![0, 0]);
 
         let prop2 = Property::Int("value-2".to_string(), 15);
         let item2 = SelectResult::Properties(vec![Cow::Borrowed(&prop2)]);
-        let metric_event = project.convert_to_metric(item2, &metric_2).unwrap().unwrap();
+        let metric_event =
+            Project::convert_to_metric(&mut project.cache, item2, &metric_2).unwrap().unwrap();
         assert_eq!(metric_event.metric_id, 1);
         assert_eq!(metric_event.payload, MetricEventPayload::Count(15));
         assert_eq!(metric_event.event_codes, vec![0, 1]);
 
         // Third time, with same value, should be None.
         let item1 = SelectResult::Properties(vec![Cow::Borrowed(&prop1)]);
-        let metric_event = project.convert_to_metric(item1, &metric_1).unwrap();
+        let metric_event =
+            Project::convert_to_metric(&mut project.cache, item1, &metric_1).unwrap();
         assert!(metric_event.is_none());
 
         let item2 = SelectResult::Properties(vec![Cow::Borrowed(&prop2)]);
-        let metric_event = project.convert_to_metric(item2, &metric_2).unwrap();
+        let metric_event =
+            Project::convert_to_metric(&mut project.cache, item2, &metric_2).unwrap();
         assert!(metric_event.is_none());
     }
 
@@ -1895,7 +1922,7 @@ mod test {
                     project_id: None,
                 },
             ],
-            cache: RefCell::new(HashMap::new()),
+            cache: HashMap::new(),
             interval: zx::MonotonicDuration::from_seconds(1),
             stats: None,
         };
