@@ -200,9 +200,7 @@ _TEMPLATE_DIR = os.path.join(_BUILD_BAZEL_DIR, "templates")
 #               $BAZEL_TOPDIR/fuchsia_build_generated/foo.hash
 #
 #      3) If the content hash file does not exist, print an error message
-#         or ignore the file (controlled by the _ASSERT_ON_IGNORED_FILES
-#         definition below). Asserting is preferred to detect these cases
-#         as soon as possible, but can be disabled locally during development.
+#         or ignore the file.
 #
 # - Some repository files are symlinks pointing to generated files belonging
 #   to other external repositories, for example:
@@ -237,10 +235,6 @@ _TEMPLATE_DIR = os.path.join(_BUILD_BAZEL_DIR, "templates")
 # due to the stdout/stderr logs being too large.
 _DEBUG = False
 
-# Set this to True to debug .build-id copies from the Bazel output base
-# to the Ninja build directory.
-_DEBUG_BUILD_ID_COPIES = _DEBUG
-
 # Set this to True to debug the export of debug symbols.
 _DEBUG_SYMBOL_EXPORT = _DEBUG
 
@@ -249,10 +243,6 @@ _DEBUG_BAZEL_QUERIES = _DEBUG
 
 # Set this to True to enable debug printing of the action's timing profiles
 _DEBUG_TIME_PROFILE = _DEBUG
-
-# Set this to True to assert when non-symlink repository files are found.
-# This is useful to find them when performing expensive builds on CQ
-_ASSERT_ON_IGNORED_FILES = True
 
 # The name of an environment variable that will be checked. If set
 # to "1", this adds `--sandbox_debug` to each `bazel build` invocation
