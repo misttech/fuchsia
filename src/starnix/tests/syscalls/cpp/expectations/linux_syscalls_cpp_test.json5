@@ -31,8 +31,10 @@
                 // TODO(https://fxbug.dev/436909751): Intermittently failing.
                 "IoUringTest.IoUringReadWrite",
 
-                // TODO(https://fxbug.dev/437191224): PerfEventOpenTest has a variety of flakes, crashes and timeouts.
-                "PerfEventOpenTest.*",
+                // TODO(https://fxbug.dev/479282469)
+                "PerfEventOpenTest.SampleIdIsValid",
+                "PerfEventOpenTest.MmapFirstRecordPageIsValid",
+                "PerfEventOpenTest.MmapMetadataPageIsValid",
 
                 // TODO(https://fxbug.dev/436978535): I believe the test is wrong. Most of these
                 // fail outright, but a couple of the permutations (Write/8 and Write/20) seem to
@@ -133,6 +135,15 @@
 
                 // TODO(https://fxbug.dev/368658840): Not Machina-specific.
                 "OverlayFs/FsMountTest.ChownMinusOneNoPathAccessFails/0",
+
+                // TODO(https://fxbug.dev/437191224)
+                "PerfEventOpenTest.WhenDisabledEventCountShouldBeZero",
+                "PerfEventOpenTest.ValidInputsSucceed",
+                "PerfEventOpenTest.SettingIoctlDisabledCallWorks",
+                "PerfEventOpenTest.WhenEnabledEventCountShouldBeOne",
+                "PerfEventOpenTest.WhenResetAndDisabledEventCountShouldBeZero",
+                "PerfEventOpenTest.SettingIoctlEnabledCallWorks",
+                "PerfEventOpenTest.ReadEventWithBufferTooSmallFails",
 
                 // TODO(https://fxbug.dev/460206055): Machina currently uses a different binary name than Starnix.
                 "PrctlTest.Argv0SniffingIsUndetectableInUserspace",
