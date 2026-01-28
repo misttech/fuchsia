@@ -9,6 +9,7 @@ use fidl_fuchsia_tracing_controller::{
 use futures::TryStreamExt;
 use log::error;
 use std::fs;
+use std::io::Write;
 use std::sync::Arc;
 use std::time::Duration;
 use trace_task::{TraceTask, TracingError};
@@ -165,10 +166,16 @@ impl TracingProtocol {
         let serialized = serde_json::to_string_pretty(&on_boot_config)
             .map_err(|e| TracingError::GeneralError(format!("serialization failed: {e:?}")))?;
 
-        std::fs::write(ON_BOOT_CONFIG_FILE, serialized).map_err(|e| {
+        // Explicitly open, write, and sync to ensure data is written.
+        let mut boot_config_file = fs::File::create(ON_BOOT_CONFIG_FILE).map_err(|e| {
+            TracingError::GeneralError(format!("unable to create {ON_BOOT_CONFIG_FILE}: {e:?}"))
+        })?;
+        boot_config_file.write_all(serialized.as_bytes()).map_err(|e| {
             TracingError::GeneralError(format!("unable to write {ON_BOOT_CONFIG_FILE}: {e:?}"))
         })?;
-
+        boot_config_file.sync_data().map_err(|e| {
+            TracingError::GeneralError(format!("unable to sync {ON_BOOT_CONFIG_FILE}: {e:?}"))
+        })?;
         Ok(())
     }
 
@@ -188,9 +195,14 @@ impl TracingProtocol {
                 Err(error)
             }
         };
-        // Always remove the file.
-        if let Err(e) = std::fs::remove_file(ON_BOOT_CONFIG_FILE) {
-            log::error!("{e:?}");
+        // Remove the on boot config file if present.
+        let config_path = std::path::Path::new(ON_BOOT_CONFIG_FILE);
+        if config_path.exists() {
+            if let Err(e) = std::fs::remove_file(ON_BOOT_CONFIG_FILE) {
+                log::error!("Could not remove {ON_BOOT_CONFIG_FILE}: {e:?}");
+            } else {
+                log::debug!("Removed {ON_BOOT_CONFIG_FILE} after reading");
+            }
         }
 
         if let Some(contents) = data? {
