@@ -893,7 +893,7 @@ class BazelLauncher(object):
 
     def run_bazel_command(
         self,
-        bazel_args: list[FilePath],
+        bazel_args: T.Iterable[FilePath],
         **subprocess_kwargs: T.Any,
     ) -> CommandResult:
         """Run a Bazel command.
@@ -913,9 +913,11 @@ class BazelLauncher(object):
         subprocess_kwargs.setdefault("stdout", subprocess.PIPE)
         subprocess_kwargs.setdefault("stderr", subprocess.PIPE)
 
-        cmd_args: list[FilePath] = (
-            self._prefix_args + [self.script] + bazel_args
-        )
+        cmd_args: list[FilePath] = [
+            *self._prefix_args,
+            self.script,
+            *bazel_args,
+        ]
 
         ret = self._runner.run_command(cmd_args, **subprocess_kwargs)
         if ret.returncode != 0 and self._log_err:
