@@ -71,7 +71,7 @@ zx_status_t JitterentropyCollector::GetInstance(Collector** ptr) {
 
 // TODO(https://fxbug.dev/42105889): Test jitterentropy in different environments (especially on
 // different platforms/architectures, and in multi-threaded mode). Ensure
-// entropy estimate is safe enough.
+// entropy estimate is safe enough. Tune as per go/fuchsia-per-device:jitter.
 
 // Testing with NIST SP800-90B non-iid and restart tests show that, with the
 // default parameters below (bs=64, bc=512, ml=32, ll=1, raw=true), each byte

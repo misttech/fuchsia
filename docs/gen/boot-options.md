@@ -82,7 +82,8 @@ Sets the "memory block size" parameter for jitterentropy. When jitterentropy is
 performing memory operations (to increase variation in CPU timing), the memory
 will be accessed in blocks of this size.
 
-These defaults should generally not be used, and need to be tuned specifically for each CPU.
+These defaults should generally not be used, and need to be tuned specifically
+for each CPU as per go/fuchsia-per-device:jitter.
 
 ### kernel.jitterentropy.bc=\<uint32_t>
 
@@ -92,7 +93,8 @@ Sets the "memory block count" parameter for jitterentropy. When jitterentropy
 is performing memory operations (to increase variation in CPU timing), this
 controls how many blocks (of size `kernel.jitterentropy.bs`) are accessed.
 
-These defaults should generally not be used, and need to be tuned specifically for each CPU.
+These defaults should generally not be used, and need to be tuned specifically
+for each CPU as per go/fuchsia-per-device:jitter.
 
 ### kernel.jitterentropy.ml=\<uint32_t>
 
@@ -105,7 +107,8 @@ is only used when `kernel.jitterentropy.raw` is true. If the value of this
 parameter is `0` or if `kernel.jitterentropy.raw` is `false`, then
 jitterentropy chooses the number of loops is a random-ish way.
 
-These defaults should generally not be used, and need to be tuned specifically for each CPU.
+These defaults should generally not be used, and need to be tuned specifically
+for each CPU as per go/fuchsia-per-device:jitter.
 
 ### kernel.jitterentropy.ll=\<uint32_t>
 
@@ -118,7 +121,8 @@ parameter is only used when `kernel.jitterentropy.raw` is true. If the value of
 this parameter is `0` or if `kernel.jitterentropy.raw` is `false`, then
 jitterentropy chooses the number of loops is a random-ish way.
 
-These defaults should generally not be used, and need to be tuned specifically for each CPU.
+These defaults should generally not be used, and need to be tuned specifically
+for each CPU as per go/fuchsia-per-device:jitter.
 
 ### kernel.jitterentropy.raw=\<bool>
 
@@ -143,7 +147,8 @@ of data contributes approximately 0.5 bit of entropy on astro. A safety
 factor of 0.1 gives us 0.5 * 0.1 * 1000 = 50 bits of entropy for 1000
 bytes of data.
 
-These defaults should generally not be used, and need to be tuned specifically for each CPU.
+These defaults should generally not be used, and need to be tuned specifically
+for each CPU as per go/fuchsia-per-device:jitter.
 
 ### kernel.lockup-detector.critical-section-threshold-ms=\<uint64_t>
 

@@ -89,7 +89,7 @@ pub struct PlatformKernelConfig {
     /// will be accessed in blocks of this size.
     ///
     /// Please tune to specific CPU prior to setting and provide validation data like
-    /// entropy rating to associated CL (similar process to go/fuchsia-jitterentropy-sorrel)
+    /// entropy rating to associated CL (similar process to go/fuchsia-per-device:jitter)
     #[serde(skip_serializing_if = "Option::is_none")]
     pub jitterentropy_bs: Option<u32>,
 
@@ -98,7 +98,7 @@ pub struct PlatformKernelConfig {
     /// controls how many blocks (of size `kernel.jitterentropy.bs`) are accessed.
     ///
     /// Please tune to specific CPU prior to setting and provide validation data like
-    /// entropy rating to associated CL (similar process to go/fuchsia-jitterentropy-sorrel)
+    /// entropy rating to associated CL (similar process to go/fuchsia-per-device:jitter)
     #[serde(skip_serializing_if = "Option::is_none")]
     pub jitterentropy_bc: Option<u32>,
 
@@ -110,7 +110,7 @@ pub struct PlatformKernelConfig {
     /// jitterentropy chooses the number of loops is a random-ish way.
     ///
     /// Please tune to specific CPU prior to setting and provide validation data like
-    /// entropy rating to associated CL (similar process to go/fuchsia-jitterentropy-sorrel)
+    /// entropy rating to associated CL (similar process to go/fuchsia-per-device:jitter)
     #[serde(skip_serializing_if = "Option::is_none")]
     pub jitterentropy_ml: Option<u32>,
 
@@ -122,7 +122,7 @@ pub struct PlatformKernelConfig {
     /// jitterentropy chooses the number of loops is a random-ish way.
     ///
     /// Please tune to specific CPU prior to setting and provide validation data like
-    /// entropy rating to associated CL (similar process to go/fuchsia-jitterentropy-sorrel)
+    /// entropy rating to associated CL (similar process to go/fuchsia-per-device:jitter)
     #[serde(skip_serializing_if = "Option::is_none")]
     pub jitterentropy_ll: Option<u32>,
 
@@ -134,7 +134,7 @@ pub struct PlatformKernelConfig {
     /// 0.1 (safety factor) * <entropy bit per byte> * 1000
     ///
     /// Please tune to specific CPU prior to setting and provide validation data like
-    /// entropy rating to associated CL (similar process to go/fuchsia-jitterentropy-sorrel)
+    /// entropy rating to associated CL (similar process to go/fuchsia-per-device:jitter)
     #[serde(skip_serializing_if = "Option::is_none")]
     pub jitterentropy_entropy_per_1000_bytes: Option<u32>,
 
