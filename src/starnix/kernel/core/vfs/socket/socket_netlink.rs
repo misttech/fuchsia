@@ -16,6 +16,7 @@ use netlink::multicast_groups::{
     InvalidLegacyGroupsError, InvalidModernGroupError, LegacyGroups, ModernGroup,
     NoMappingFromModernToLegacyGroupError, SingleLegacyGroup,
 };
+use netlink::protocol_family::NetlinkClient;
 use netlink::protocol_family::route::NetlinkRouteClient;
 use netlink::{NETLINK_LOG_TAG, NewClientError};
 use netlink_packet_core::{
@@ -968,6 +969,84 @@ impl NetlinkContext for NetlinkContextImpl {
     type AccessControl<'a> = NetlinkAccessControl<'a>;
 }
 
+fn bind_netlink_socket<C: NetlinkClient>(
+    inner: &Arc<Mutex<NetlinkSocketInner>>,
+    client: &C,
+    current_task: &CurrentTask,
+    socket_address: SocketAddress,
+) -> Result<(), Errno> {
+    let multicast_groups = match &socket_address {
+        SocketAddress::Netlink(NetlinkAddress { pid: _, groups }) => *groups,
+        _ => return error!(EINVAL),
+    };
+    let pid = {
+        let mut inner = inner.lock();
+        inner.bind(current_task, socket_address)?;
+        inner.address.as_ref().and_then(|NetlinkAddress { pid, groups: _ }| NonZeroU32::new(*pid))
+    };
+    if let Some(pid) = pid {
+        client.set_pid(pid);
+    }
+    // This "blocks" in order to synchronize with the internal
+    // state of the netlink worker, but we're not blocking on
+    // the completion of any i/o or any expensive computation,
+    // so there's no need to support interrupts here.
+    client
+        .set_legacy_memberships(LegacyGroups(multicast_groups))
+        .map_err(|InvalidLegacyGroupsError {}| errno!(EPERM))?
+        .wait_until_complete();
+    Ok(())
+}
+
+fn send_netlink_message<M>(
+    current_task: &CurrentTask,
+    socket: &Socket,
+    data: &mut dyn InputBuffer,
+    message_sender: &UnboundedSender<
+        NetlinkMessageWithCreds<UnparsedNetlinkMessage<Vec<u8>, M>, FullCredentials>,
+    >,
+) -> Result<usize, Errno>
+where
+    M: Send + 'static,
+{
+    let bytes = data.peek_all()?;
+    let bytes_len = bytes.len();
+
+    // Parse only the netlink header to send it through security check.
+    match NetlinkBuffer::new(&bytes) {
+        Ok(buffer) => {
+            security::check_netlink_send_access(current_task, socket, buffer.message_type())?;
+        }
+        Err(e) => {
+            // If we can't even decode the header of the netlink message,
+            // then return early here as a stronger statement that we're not
+            // going to accidentally operate on it and violate the security
+            // check. The netlink crate would end up dropping this with no
+            // response as well.
+            log_warn!(tag = NETLINK_LOG_TAG;
+                "Failed to parse netlink header {e:?}"
+            );
+            data.drain();
+            return Ok(bytes_len);
+        }
+    }
+
+    let msg = NetlinkMessageWithCreds::new(
+        UnparsedNetlinkMessage::new(bytes),
+        current_task.full_current_creds(),
+    );
+    message_sender.unbounded_send(msg).map_err(|e| {
+        log_warn!(
+            tag = NETLINK_LOG_TAG;
+            "Netlink receiver unexpectedly disconnected for socket: {:?}",
+            e
+        );
+        errno!(EPIPE)
+    })?;
+    data.drain();
+    Ok(bytes_len)
+}
+
 /// Socket implementation for the NETLINK_ROUTE family of netlink sockets.
 struct RouteNetlinkSocket {
     /// The inner Netlink socket implementation
@@ -1045,30 +1124,7 @@ impl SocketOps for RouteNetlinkSocket {
         socket_address: SocketAddress,
     ) -> Result<(), Errno> {
         let RouteNetlinkSocket { inner, client, message_sender: _ } = self;
-        let multicast_groups = match socket_address {
-            SocketAddress::Netlink(NetlinkAddress { pid: _, groups }) => groups,
-            _ => return error!(EINVAL),
-        };
-        let pid = {
-            let mut inner = inner.lock();
-            inner.bind(current_task, socket_address)?;
-            inner
-                .address
-                .as_ref()
-                .and_then(|NetlinkAddress { pid, groups: _ }| NonZeroU32::new(*pid))
-        };
-        if let Some(pid) = pid {
-            client.set_pid(pid);
-        }
-        // This "blocks" in order to synchronize with the internal
-        // state of the rtnetlink worker, but we're not blocking on
-        // the completion of any i/o or any expensive computation,
-        // so there's no need to support interrupts here.
-        client
-            .set_legacy_memberships(LegacyGroups(multicast_groups))
-            .map_err(|InvalidLegacyGroupsError {}| errno!(EPERM))?
-            .wait_until_complete();
-        Ok(())
+        bind_netlink_socket(inner, client, current_task, socket_address)
     }
 
     fn read(
@@ -1093,42 +1149,7 @@ impl SocketOps for RouteNetlinkSocket {
         _ancillary_data: &mut Vec<AncillaryData>,
     ) -> Result<usize, Errno> {
         let RouteNetlinkSocket { inner: _, client: _, message_sender } = self;
-        let bytes = data.peek_all()?;
-        let bytes_len = bytes.len();
-
-        // Parse only the netlink header to send it through security check.
-        match NetlinkBuffer::new(&bytes) {
-            Ok(buffer) => {
-                security::check_netlink_send_access(current_task, socket, buffer.message_type())?;
-            }
-            Err(e) => {
-                // If we can't even decode the header of the netlink message,
-                // then return early here as a stronger statement that we're not
-                // going to accidentally operate on it and violate the security
-                // check. The netlink crate would end up dropping this with no
-                // response as well.
-                log_warn!(tag = NETLINK_LOG_TAG;
-                    "Failed to parse netlink header {e:?}"
-                );
-                data.drain();
-                return Ok(bytes_len);
-            }
-        }
-
-        let msg = NetlinkMessageWithCreds::new(
-            UnparsedNetlinkMessage::new(bytes),
-            current_task.full_current_creds(),
-        );
-        message_sender.unbounded_send(msg).map_err(|e| {
-            log_warn!(
-                tag = NETLINK_LOG_TAG;
-                "Netlink receiver unexpectedly disconnected for socket: {:?}",
-                e
-            );
-            errno!(EPIPE)
-        })?;
-        data.drain();
-        Ok(bytes_len)
+        send_netlink_message(current_task, socket, data, message_sender)
     }
 
     fn wait_async(

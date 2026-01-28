@@ -17,7 +17,7 @@ use std::hash::Hash;
 // https://blog.rust-lang.org/inside-rust/2023/05/03/stabilizing-async-fn-in-trait.html.
 use async_trait::async_trait;
 
-use crate::client::{ExternalClient, InternalClient};
+use crate::client::{AsyncWorkCompletionWaiter, ExternalClient, InternalClient};
 use crate::logging::{log_debug, log_warn};
 use crate::messaging::{MessageWithPermission, Sender};
 use crate::multicast_groups::{
@@ -63,6 +63,18 @@ pub(crate) trait NetlinkFamilyRequestHandler<F: ProtocolFamily, S: Sender<F::Res
         req: NetlinkMessage<F::Request>,
         client: &mut InternalClient<F, S>,
     );
+}
+
+/// A client of a Netlink protocol family that supports common bind operations.
+pub trait NetlinkClient {
+    /// Sets the PID assigned to the client.
+    fn set_pid(&self, pid: std::num::NonZeroU32);
+
+    /// Sets the legacy multicast group memberships.
+    fn set_legacy_memberships(
+        &self,
+        legacy_memberships: LegacyGroups,
+    ) -> Result<AsyncWorkCompletionWaiter, InvalidLegacyGroupsError>;
 }
 
 pub mod route {
@@ -1335,6 +1347,19 @@ pub mod route {
         ) -> Result<AsyncWorkCompletionWaiter, InvalidLegacyGroupsError> {
             let NetlinkRouteClient(client) = self;
             client.set_legacy_memberships(legacy_memberships)
+        }
+    }
+
+    impl NetlinkClient for NetlinkRouteClient {
+        fn set_pid(&self, pid: NonZeroU32) {
+            self.set_pid(pid)
+        }
+
+        fn set_legacy_memberships(
+            &self,
+            legacy_memberships: LegacyGroups,
+        ) -> Result<AsyncWorkCompletionWaiter, InvalidLegacyGroupsError> {
+            self.set_legacy_memberships(legacy_memberships)
         }
     }
 }
