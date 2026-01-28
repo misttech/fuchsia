@@ -5,9 +5,11 @@
 use anyhow::Error;
 use fidl_fuchsia_diagnostics as fdiagnostics;
 use fuchsia_inspect::{Node, NumericProperty, UintProperty};
+use fuchsia_inspect_contrib::nodes::BoundedListNode;
 use sampler_component_config::Config as ComponentConfig;
 use sampler_config::runtime::ProjectConfig;
 use sampler_config::{MetricType, ProjectId};
+use std::cell::RefCell;
 use std::collections::HashMap;
 
 /// Container for all configurations needed to instantiate the Sampler infrastructure.
@@ -26,6 +28,7 @@ pub struct ProjectStats {
     _project_node: Node,
     pub metrics_configured: UintProperty,
     pub cobalt_logs_sent: UintProperty,
+    pub events: RefCell<BoundedListNode>,
 }
 
 #[derive(Default, Debug)]
@@ -61,10 +64,15 @@ impl SamplerConfig {
                         let metrics_configured = project_node
                             .create_uint("metrics_configured", config.metrics.len() as u64);
                         let cobalt_logs_sent = project_node.create_uint("cobalt_logs_sent", 0);
+                        let events = RefCell::new(BoundedListNode::new(
+                            project_node.create_child("events"),
+                            300,
+                        ));
                         ProjectStats {
                             _project_node: project_node,
                             metrics_configured,
                             cobalt_logs_sent,
+                            events,
                         }
                     });
                 Ok(config)

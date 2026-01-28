@@ -289,10 +289,12 @@ async fn sampler_inspect_test() {
                 project_5: {
                     metrics_configured: 4u64,
                     cobalt_logs_sent: AnyProperty,
+                    events: contains {},
                 },
                 project_13: {
                     metrics_configured: 10u64,
                     cobalt_logs_sent: AnyProperty,
+                    events: contains {},
                 },
             },
             "fuchsia.inspect.Health": {

@@ -15,7 +15,7 @@ use fidl_fuchsia_metrics::{
     HistogramBucket, MetricEvent, MetricEventLoggerFactoryProxy, MetricEventLoggerProxy,
     MetricEventPayload, ProjectSpec,
 };
-use fuchsia_inspect::NumericProperty;
+use fuchsia_inspect::{ArrayProperty, NumericProperty};
 use log::{error, warn};
 use sampler_config::runtime::{MetricConfig, ProjectConfig};
 use sampler_config::{EventCode, MetricId, MetricType};
@@ -107,7 +107,19 @@ impl<'a> Project<'a> {
                 };
 
                 match self.convert_to_metric(item, metric) {
-                    Ok(Some(m)) => metric_events.push(m),
+                    Ok(Some(m)) => {
+                        if let Some(stats) = self.stats {
+                            stats.events.borrow_mut().add_entry(|n| {
+                                n.record_uint("metric_id", *metric.metric_id as u64);
+                                let ec = n.create_uint_array("ec", metric.event_codes.len());
+                                for (idx, c) in metric.event_codes.iter().enumerate() {
+                                    ec.set(idx, **c as u64);
+                                }
+                                n.record(ec);
+                            });
+                        }
+                        metric_events.push(m);
+                    }
                     Ok(None) => {}
                     Err(err) => warn!(err:?; "Error converting Inspect to Cobalt metric"),
                 }
