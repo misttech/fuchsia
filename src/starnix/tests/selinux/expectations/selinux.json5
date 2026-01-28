@@ -22,7 +22,6 @@
                 "capable_file/008", // TODO: https://fxbug.dev/398652723
                 "cgroupfs_label/001", // TODO: https://fxbug.dev/398662840
                 "cgroupfs_label/002",
-                "checkreqprot/001", // TODO: https://fxbug.dev/398662842
                 "extended_socket_class/005", // TODO: https://fxbug.dev/398699131
                 "file/008", // TODO: https://fxbug.dev/398696731
                 "filesystem/005",
@@ -179,12 +178,14 @@
                 "memfd/003",
                 "mmap/001", // TODO: https://fxbug.dev/398707795
                 "mmap/013",
-                "mmap/024",
+                "mmap/020",
                 "mmap/026",
                 "mmap/028",
                 "mmap/030",
                 "mmap/032",
                 "mmap/034",
+                "mmap/036",
+                "mmap/038",
                 "msg/001", // TODO: https://fxbug.dev/398663319
                 "msg/002",
                 "msg/003",

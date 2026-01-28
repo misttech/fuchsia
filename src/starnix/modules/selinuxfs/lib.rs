@@ -558,10 +558,14 @@ impl SeLinuxApiOps for CheckReqProtApi {
         SecurityPermission::SetCheckReqProt
     }
 
-    fn api_write(&self, data: Vec<u8>) -> Result<(), Errno> {
-        let _checkreqprot = parse_unsigned_file::<u32>(&data)? != 0;
-        track_stub!(TODO("https://fxbug.dev/322874766"), "selinux checkreqprot");
-        Ok(())
+    fn api_write(&self, _data: Vec<u8>) -> Result<(), Errno> {
+        // Linux v6.4 removed support for enabling "checkreqprot", rendering writes to the node a
+        // no-op.
+        error!(ENOTSUP)
+    }
+
+    fn api_read(&self) -> Result<Cow<'_, [u8]>, Errno> {
+        Ok(b"0".into())
     }
 }
 
