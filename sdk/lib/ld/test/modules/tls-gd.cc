@@ -36,9 +36,9 @@ extern "C" int64_t TestStart() {
       return 4;
     }
 
-    // TODO(mcgrathr): There should ideally be a test here of a weak
-    // undefined symbol referenced with an addend, but I haven't figured out
-    // how to make the compiler generate a reloc with an addend.  }
+    // TODO(https://fxbug.dev/479518504): There should ideally be a test here
+    // of a weak undefined symbol referenced with an addend, but I haven't
+    // figured out how to make the compiler generate a reloc with an addend.  }
   }
 
   for (const auto& module : ld::AbiLoadedModules(ld::abi::_ld_abi)) {

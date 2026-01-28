@@ -36,15 +36,16 @@ extern "C" int64_t TestStart() {
       return 4;
     }
 
-    // TODO(mcgrathr): There should ideally be a test here of a weak undefined
-    // symbol referenced with an addend, but I haven't figured out how to make
-    // the compiler generate a reloc with an addend.  The expected behavior
-    // (consistent with glibc, as above) depends on whether the executable gets
-    // linked using DT_REL or DT_RELA, e.g. via `-z rel` on normally-RELA
-    // machines.  When using DT_REL, the addend is in the unrelocated GOT entry
-    // and so the result for undefined weak will be thread pointer plus addend.
-    // However, when using DT_RELA it would be just thread pointer as in the
-    // test above because the r_addend is in the reloc that wasn't applied.
+    // TODO(https://fxbug.dev/479518504): There should ideally be a test here
+    // of a weak undefined symbol referenced with an addend, but I haven't
+    // figured out how to make the compiler generate a reloc with an addend.
+    // The expected behavior (consistent with glibc, as above) depends on
+    // whether the executable gets linked using DT_REL or DT_RELA, e.g. via `-z
+    // rel` on normally-RELA machines.  When using DT_REL, the addend is in the
+    // unrelocated GOT entry and so the result for undefined weak will be
+    // thread pointer plus addend. However, when using DT_RELA it would be just
+    // thread pointer as in the test above because the r_addend is in the reloc
+    // that wasn't applied.
   }
 
   return 17;
