@@ -12,9 +12,9 @@
 #include <memory>
 
 #include "src/media/audio/services/common/fidl_thread.h"
-#include "src/media/audio/services/device_registry/testing/stub_control_creator_server.h"
-#include "src/media/audio/services/device_registry/testing/stub_provider_server.h"
-#include "src/media/audio/services/device_registry/testing/stub_registry_server.h"
+#include "src/media/audio/services/device_registry/testing/stub_adr/stub_control_creator_server.h"
+#include "src/media/audio/services/device_registry/testing/stub_adr/stub_provider_server.h"
+#include "src/media/audio/services/device_registry/testing/stub_adr/stub_registry_server.h"
 
 namespace media_audio {
 namespace {

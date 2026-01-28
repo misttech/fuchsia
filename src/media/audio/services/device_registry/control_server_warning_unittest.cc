@@ -21,8 +21,8 @@
 #include "src/media/audio/services/device_registry/adr_server_unittest_base.h"
 #include "src/media/audio/services/device_registry/common_unittest.h"
 #include "src/media/audio/services/device_registry/control_server.h"
-#include "src/media/audio/services/device_registry/testing/fake_codec.h"
-#include "src/media/audio/services/device_registry/testing/fake_composite.h"
+#include "src/media/audio/services/device_registry/testing/fakes/fake_codec.h"
+#include "src/media/audio/services/device_registry/testing/fakes/fake_composite.h"
 
 namespace media_audio {
 namespace {

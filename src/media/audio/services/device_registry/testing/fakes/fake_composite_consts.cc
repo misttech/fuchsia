@@ -9,7 +9,7 @@
 
 #include <unordered_map>
 
-#include "src/media/audio/services/device_registry/testing/fake_composite.h"
+#include "src/media/audio/services/device_registry/testing/fakes/fake_composite.h"
 
 namespace media_audio {
 

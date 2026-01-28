@@ -2,7 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#include "src/media/audio/services/device_registry/testing/fake_composite_ring_buffer.h"
+#include "src/media/audio/services/device_registry/testing/fakes/fake_composite_ring_buffer.h"
 
 #include <fidl/fuchsia.hardware.audio/cpp/fidl.h>
 #include <fidl/fuchsia.hardware.audio/cpp/test_base.h>
@@ -17,7 +17,7 @@
 
 #include "src/media/audio/services/device_registry/basic_types.h"
 #include "src/media/audio/services/device_registry/logging.h"
-#include "src/media/audio/services/device_registry/testing/fake_composite.h"
+#include "src/media/audio/services/device_registry/testing/fakes/fake_composite.h"
 
 namespace media_audio {
 

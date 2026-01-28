@@ -2,7 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#include "src/media/audio/services/device_registry/testing/fake_codec.h"
+#include "src/media/audio/services/device_registry/testing/fakes/fake_codec.h"
 
 #include <fidl/fuchsia.hardware.audio.signalprocessing/cpp/markers.h>
 #include <fidl/fuchsia.hardware.audio/cpp/natural_types.h>

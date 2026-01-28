@@ -2,8 +2,8 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#ifndef SRC_MEDIA_AUDIO_SERVICES_DEVICE_REGISTRY_TESTING_FAKE_COMPOSITE_H_
-#define SRC_MEDIA_AUDIO_SERVICES_DEVICE_REGISTRY_TESTING_FAKE_COMPOSITE_H_
+#ifndef SRC_MEDIA_AUDIO_SERVICES_DEVICE_REGISTRY_TESTING_FAKES_FAKE_COMPOSITE_H_
+#define SRC_MEDIA_AUDIO_SERVICES_DEVICE_REGISTRY_TESTING_FAKES_FAKE_COMPOSITE_H_
 
 #include <fidl/fuchsia.hardware.audio.signalprocessing/cpp/fidl.h>
 #include <fidl/fuchsia.hardware.audio.signalprocessing/cpp/test_base.h>
@@ -23,7 +23,7 @@
 
 #include "src/media/audio/services/device_registry/basic_types.h"
 #include "src/media/audio/services/device_registry/logging.h"
-#include "src/media/audio/services/device_registry/testing/fake_composite_ring_buffer.h"
+#include "src/media/audio/services/device_registry/testing/fakes/fake_composite_ring_buffer.h"
 
 namespace media_audio {
 
@@ -391,4 +391,4 @@ class FakeComposite final
 
 }  // namespace media_audio
 
-#endif  // SRC_MEDIA_AUDIO_SERVICES_DEVICE_REGISTRY_TESTING_FAKE_COMPOSITE_H_
+#endif  // SRC_MEDIA_AUDIO_SERVICES_DEVICE_REGISTRY_TESTING_FAKES_FAKE_COMPOSITE_H_

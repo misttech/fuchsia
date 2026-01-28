@@ -26,8 +26,8 @@
 #include "src/media/audio/services/device_registry/observer_server.h"
 #include "src/media/audio/services/device_registry/provider_server.h"
 #include "src/media/audio/services/device_registry/registry_server.h"
-#include "src/media/audio/services/device_registry/testing/fake_codec.h"
-#include "src/media/audio/services/device_registry/testing/fake_composite.h"
+#include "src/media/audio/services/device_registry/testing/fakes/fake_codec.h"
+#include "src/media/audio/services/device_registry/testing/fakes/fake_composite.h"
 #include "src/media/audio/services/device_registry/validate.h"
 
 namespace media_audio {

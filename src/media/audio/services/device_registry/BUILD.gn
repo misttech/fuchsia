@@ -204,7 +204,7 @@ source_set("unittest_base") {
   public_deps = [
     ":common",
     ":device_registry_lib",
-    "testing:fakes",
+    "testing/fakes",
     "//sdk/lib/inspect/testing/cpp",
     "//src/lib/fxl/test:gtest_main",
     "//src/lib/testing/loop_fixture",
