@@ -27,6 +27,7 @@ from mobly import logger, signals
 SESSION_MANAGER_TIMEOUT_SEC = 10
 FUCHSIA_DEFAULT_WLAN_CONFIGURE_RETRIES = 3
 DEFAULT_GET_UPDATE_TIMEOUT = 60
+DEFAULT_TIME_WAIT_FOR_CLIENT_CONNECTIONS_STATE = 5  # seconds
 
 
 class WlanPolicyControllerError(signals.ControllerError):
@@ -65,6 +66,7 @@ class WlanPolicyController:
     def configure_wlan(
         self,
         preserve_saved_networks: bool,
+        restart_client_connections: bool = True,
         retries: int = FUCHSIA_DEFAULT_WLAN_CONFIGURE_RETRIES,
     ) -> None:
         """Sets up wlan policy layer.
@@ -72,6 +74,7 @@ class WlanPolicyController:
         Args:
             preserve_saved_networks: whether to clear existing saved
                 networks and client state, to be restored at test close.
+            restart_client_connections: whether to restart client connections.
             retries: number of times to re-attempt to configure WLAN policy.
         """
 
@@ -102,6 +105,14 @@ class WlanPolicyController:
                     self.preserved_networks_and_client_state = (
                         self.honeydew.wlan_policy.clear_policy_state()
                     )
+                # Optionally restart client connections to start tests in a good state. This should
+                # prevent issues like scans still being in progress when tests start.
+                if restart_client_connections:
+                    self.log.info(
+                        "Restarting client connections to run test in a clean state"
+                    )
+                    self.stop_client_connections_and_wait()
+
                 self.honeydew.wlan_policy.start_client_connections()
                 self.log.info(
                     "ACTS tests now have control of the WLAN policy layer."
@@ -126,6 +137,40 @@ class WlanPolicyController:
     def _deconfigure_wlan(self) -> None:
         self.honeydew.wlan_policy.stop_client_connections()
         self.policy_configured = False
+
+    def stop_client_connections_and_wait(
+        self, wait_time: int = DEFAULT_TIME_WAIT_FOR_CLIENT_CONNECTIONS_STATE
+    ) -> None:
+        """This function stops client connections if client connections are currently enabled,
+        and waits for an update showing that the state has changed.
+        """
+        try:
+            client = self.honeydew.wlan_policy.get_status(
+                timeout=DEFAULT_TIME_WAIT_FOR_CLIENT_CONNECTIONS_STATE
+            )
+            if client.state != WlanClientState.CONNECTIONS_ENABLED:
+                self.log.info(
+                    "Client connections are not enabled, so they will not be disabled."
+                )
+                return
+        except TimeoutError:
+            # This update should basically be immediate because we get a new client state listener
+            # channel, so this is unexpected
+            self.log.warning(
+                "Unexpectedly timed out getting client state. Proceeding to stop client connections"
+            )
+
+        self.honeydew.wlan_policy.stop_client_connections()
+        try:
+            self.wait_for_client_state(
+                expected_state=WlanClientState.CONNECTIONS_DISABLED,
+                timeout_sec=DEFAULT_TIME_WAIT_FOR_CLIENT_CONNECTIONS_STATE,
+            )
+        except TimeoutError:
+            self.log.warning(
+                "Timed out waiting for client connections disabled update. "
+                "Will proceed with the test as normal anyway."
+            )
 
     def clean_up(self) -> None:
         if self.preserved_networks_and_client_state is None:

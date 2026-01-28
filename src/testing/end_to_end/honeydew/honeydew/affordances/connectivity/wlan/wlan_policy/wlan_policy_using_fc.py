@@ -457,6 +457,69 @@ class WlanPolicy(AsyncAdapter, wlan_policy.WlanPolicy):
 
     @asyncmethod
     # pylint: disable-next=invalid-overridden-method
+    async def get_status(
+        self,
+        *,
+        timeout: float
+        | None = wlan_policy.WlanPolicy.DEFAULT_WLAN_POLICY_OPERATION_TIMEOUT,
+    ) -> ClientStateSummary:
+        """Gets the current client listener state immediately.
+
+        This call will get a new, temporary update listener which will return
+        the most recent state immediately. This will not effect the class's
+        existing state listener channel.
+
+        Args:
+            timeout: Timeout in seconds to wait for the get_status command to
+                return.
+
+        Returns:
+            An update of connection status. If there is no error, the result is
+            a WlanPolicyUpdate with a structure that matches the FIDL
+            ClientStateSummary struct given for updates.
+
+        Raises:
+            HoneydewWlanError: Error from WLAN stack.
+            TimeoutError: Reached timeout without any updates.
+        """
+        client_listener_proxy = f_wlan_policy.ClientListenerClient(
+            self._fc_transport.connect_device_proxy(_CLIENT_LISTENER_PROXY)
+        )
+
+        updates: asyncio.Queue[ClientStateSummary] = asyncio.Queue()
+        updates_client, updates_server = Channel.create()
+        client_state_updates_server = ClientStateUpdatesImpl(
+            updates_server, updates
+        )
+        task = self.loop().create_task(client_state_updates_server.serve())
+
+        _LOGGER.debug(
+            "Calling fuchsia.wlan.policy/ClientListener.GetListener() for get_status"
+        )
+        try:
+            client_listener_proxy.get_listener(
+                updates=updates_client.take(),
+            )
+        except ZxStatus as status:
+            task.cancel()
+            raise wlan_errors.HoneydewWlanError(
+                f"ClientListener.GetListener() error {status}"
+            ) from status
+
+        try:
+            # Retrieve the most recent update. This should be sent immediately
+            # after a new listener is registered.
+            return await asyncio.wait_for(updates.get(), timeout)
+        finally:
+            # Clean up the temporary listener task
+            task.cancel()
+            try:
+                await task
+            except asyncio.CancelledError:
+                pass
+
+    @asyncmethod
+    # pylint: disable-next=invalid-overridden-method
     async def get_update(
         self,
         *,
