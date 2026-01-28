@@ -910,7 +910,7 @@ test_shared_library("tls-dep") {
     "//zircon/system/public",
   ]
 
-  # TODO(https://fxbug.dev/42085421): LTO insists on using IE accesses here. Remove this
+  # TODO(https://fxbug.dev/442036680): LTO insists on using IE accesses here. Remove this
   # when the LLVM bug gets fixed and the fixed toolchain rolled into Fuchsia.
   remove_configs = [ "//build/config/lto" ]
   configs += [ "//build/config/lto:no-lto" ]
@@ -2065,7 +2065,7 @@ test_loadable_module("tls-get-addr-global-dynamic-reloc") {
     "//zircon/system/public",
   ]
 
-  # TODO(https://fxbug.dev/42085421): LTO insists on using IE accesses here. Remove this
+  # TODO(https://fxbug.dev/442036680): LTO insists on using IE accesses here. Remove this
   # when the LLVM bug gets fixed and the fixed toolchain rolled into Fuchsia.
   remove_configs = [ "//build/config/lto" ]
   configs = [ "//build/config/lto:no-lto" ]
