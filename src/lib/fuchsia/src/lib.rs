@@ -43,13 +43,6 @@ pub struct LoggingOptions<'a> {
     /// won't be emitted.
     pub interest: Interest,
 
-    /// Whether or not logs will be blocking. By default logs are dropped when they can't be
-    /// written to the socket. However, when this is set, the log statement will block until the
-    /// log can be written to the socket or the socket is closed.
-    ///
-    /// NOTE: this is ignored on `host`.
-    pub blocking: bool,
-
     /// String to include in logged panic messages.
     pub panic_prefix: &'static str,
 
@@ -74,7 +67,6 @@ impl<'a> From<LoggingOptions<'a>> for diagnostics_log::PublishOptions<'a> {
 impl<'a> From<LoggingOptions<'a>> for diagnostics_log::PublishOptions<'a> {
     fn from(logging: LoggingOptions<'a>) -> Self {
         let mut options = diagnostics_log::PublishOptions::default().tags(logging.tags);
-        options = options.blocking(logging.blocking);
         if let Some(severity) = logging.interest.min_severity {
             options = options.minimum_severity(severity);
         }

@@ -47,7 +47,6 @@ pub trait OnInterestChanged {
 /// Options to configure a `Publisher`.
 #[derive(Default)]
 pub struct PublisherOptions<'t> {
-    blocking: bool,
     pub(crate) interest: Interest,
     listen_for_interest_updates: bool,
     log_sink_client: Option<ClientEnd<LogSinkMarker>>,
@@ -104,16 +103,6 @@ macro_rules! publisher_options {
                 pub fn use_log_sink(mut $self, client: ClientEnd<LogSinkMarker>) -> Self {
                     let this = &mut $self$(.$self_arg)*;
                     this.log_sink_client = Some(client);
-                    $self
-                }
-
-                /// When set to true, writes to the log socket will be blocking. This is, we'll
-                /// retry every time the socket buffer is full until we are able to write the log.
-                ///
-                /// Default: false
-                pub fn blocking(mut $self, is_blocking: bool) -> Self {
-                    let this = &mut $self$(.$self_arg)*;
-                    this.blocking = is_blocking;
                     $self
                 }
 

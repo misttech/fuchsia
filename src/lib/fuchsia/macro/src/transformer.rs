@@ -140,7 +140,6 @@ pub struct Transformer {
     sig: Signature,
     block: Box<Block>,
     logging: bool,
-    logging_blocking: bool,
     logging_tags: Punctuated<LitStr, Token![,]>,
     logging_include_file_line: bool,
     panic_prefix: LitStr,
@@ -153,7 +152,6 @@ struct Args {
     thread_role: Option<Expr>,
     allow_stalls: Option<bool>,
     logging: bool,
-    logging_blocking: bool,
     logging_tags: Punctuated<LitStr, Token![,]>,
     logging_include_file_line: bool,
     interest: Interest,
@@ -244,7 +242,6 @@ impl Args {
             thread_role: None,
             allow_stalls: None,
             logging: true,
-            logging_blocking: false,
             logging_tags: Default::default(),
             logging_include_file_line: false,
             panic_prefix: None,
@@ -261,7 +258,6 @@ impl Args {
                 "thread_role" => args.thread_role = Some(get_arg::<Expr>(&meta.input)?),
                 "allow_stalls" => args.allow_stalls = Some(get_bool_arg(&meta.input, true)?),
                 "logging" => args.logging = get_bool_arg(&meta.input, true)?,
-                "logging_blocking" => args.logging_blocking = get_bool_arg(&meta.input, true)?,
                 "logging_tags" => args.logging_tags = get_logging_tags(&meta.input)?,
                 "always_log_file_line" => {
                     args.logging_include_file_line = get_bool_arg(&meta.input, true)?
@@ -355,7 +351,6 @@ impl Transformer {
             sig,
             block,
             logging: args.logging,
-            logging_blocking: args.logging_blocking,
             logging_tags: args.logging_tags,
             logging_include_file_line: args.logging_include_file_line,
             panic_prefix,
@@ -376,7 +371,6 @@ impl Finish for Transformer {
         let asyncness = self.sig.asyncness;
         let block = self.block;
         let inputs = self.sig.inputs;
-        let logging_blocking = self.logging_blocking;
         let always_log_file_line = self.logging_include_file_line;
         let mut logging_tags = self.logging_tags;
         let panic_prefix = self.panic_prefix;
@@ -412,7 +406,6 @@ impl Finish for Transformer {
             logging_tags.insert(0, LitStr::new(&ident.to_string(), ident.span()));
             let logging_options = quote! {
                 ::fuchsia::LoggingOptions {
-                    blocking: #logging_blocking,
                     interest: #interest,
                     always_log_file_line: #always_log_file_line,
                     tags: &[#logging_tags],
@@ -427,7 +420,6 @@ impl Finish for Transformer {
         } else {
             let logging_options = quote! {
                 ::fuchsia::LoggingOptions {
-                    blocking: #logging_blocking,
                     interest: #interest,
                     always_log_file_line: #always_log_file_line,
                     tags: &[#logging_tags],
