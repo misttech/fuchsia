@@ -337,8 +337,8 @@ class RemoteDecodedModule : public RemoteDecodedFile, public RemoteDecodedModule
     auto headers =
         elfldltl::LoadHeadersFromFile<Elf>(diag, mapped_vmo(), kNoPhdrAllocator, std::nullopt);
     if (!headers) [[unlikely]] {
-      // TODO(mcgrathr): LoadHeadersFromFile doesn't propagate Diagnostics
-      // return value on failure.
+      // TODO(https://fxbug.dev/479309616): LoadHeadersFromFile doesn't
+      // propagate Diagnostics return value on failure.
       return false;
     }
 
