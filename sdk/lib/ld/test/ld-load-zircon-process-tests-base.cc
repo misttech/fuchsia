@@ -49,8 +49,8 @@ void LdLoadZirconProcessTestsBase::Start(TestProcessArgs* bootstrap, zx::channel
   uintptr_t sp;
   std::optional<size_t> bootstrap_stack_size = stack_size;
   if (!bootstrap_stack_size) {
-    // TODO(mcgrathr): stack use too big for procargs piddly default
-    // bootstrap_stack_size = bootstrap.GetStackSize();
+    // TODO(https://fxbug.dev/479521328): stack use too big for procargs piddly
+    // default bootstrap_stack_size = bootstrap.GetStackSize();
     bootstrap_stack_size = 64 << 10;
   }
 
