@@ -147,6 +147,10 @@ class BazelActionRunner(object):
                 self.paths.ninja_build_dir / extra_outputs.command_profile,
             ]
 
+        # if build-event uploading is enabled in global args, then append the config for that
+        if self.global_args.upload_build_events:
+            cmd_args += [f"--config={self.global_args.upload_build_events}"]
+
         if self.global_args.quiet:
             cmd_args += ["--config=quiet"]
         else:

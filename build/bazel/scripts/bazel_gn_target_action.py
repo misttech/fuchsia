@@ -641,10 +641,6 @@ def main() -> int:
         # the command line.
         configured_args += [f"--config={rbe_settings.exec_strategy}"]
 
-    # if build-event uploading is enabled in global args, then append the config for that
-    if global_bazel_args.upload_build_events:
-        configured_args += [f"--config={global_bazel_args.upload_build_events}"]
-
     time_profile.start(
         "buildfiles_genquery", "Generating buildfiles_genquery/BUILD.bazel"
     )
