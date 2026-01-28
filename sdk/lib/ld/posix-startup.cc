@@ -63,10 +63,10 @@ std::pair<StartupModule*, size_t> LoadExecutable(Diagnostics& diag, StartupData&
     // The dynamic linker was started directly as a standalone program,
     // rather than via PT_INTERP.
     //
-    // TODO(mcgrathr): The glibc dynamic linker has the useful semantics of
-    // handling command line args for various behavior options and for the name
-    // of an executable to load as if it had been executed with a PT_INTERP
-    // pointing at this dynamic linker.
+    // TODO(https://fxbug.dev/479303931): The glibc dynamic linker has the
+    // useful semantics of handling command line args for various behavior
+    // options and for the name of an executable to load as if it had been
+    // executed with a PT_INTERP pointing at this dynamic linker.
     diag.SystemError("dynamic linker executed directly, not via PT_INTERP");
     __builtin_trap();
   }
