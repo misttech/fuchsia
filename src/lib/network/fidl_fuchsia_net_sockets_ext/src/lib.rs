@@ -2,6 +2,16 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+//! Extensions for the fuchsia.sockets FIDL library.
+
+#![warn(
+    missing_docs,
+    unreachable_patterns,
+    clippy::useless_conversion,
+    clippy::redundant_clone,
+    clippy::precedence
+)]
+
 use fidl_fuchsia_net_ext::IntoExt;
 use net_types::ip;
 use thiserror::Error;
@@ -13,25 +23,41 @@ use {
 /// An extension type for [`fnet_sockets::IpSocketMatcher`].
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum IpSocketMatcher {
+    /// Matches against the IP version of the socket.
     Family(ip::IpVersion),
+    /// Matches against the source address of the socket.
     SrcAddr(fnet_matchers_ext::BoundAddress),
+    /// Matches against the destination address of the socket.
     DstAddr(fnet_matchers_ext::BoundAddress),
+    /// Matches against transport protocol fields of the socket.
     Proto(fnet_matchers_ext::SocketTransportProtocol),
+    /// Matches against the (bound, i.e. SO_BINDTODEVICE) interface of the
+    /// socket.
     BoundInterface(fnet_matchers_ext::BoundInterface),
+    /// Matches against the cookie of the socket (i.e. SO_COOKIE)
     Cookie(fnet_matchers::SocketCookie),
+    /// Matches against one mark of the socket.
     Mark(fnet_matchers_ext::MarkInDomain),
 }
 
+/// Errors returned by the conversion from [`fnet_sockets::IpSocketMatcher`]
+/// to [`IpSocketMatcher`].
 #[derive(Debug, PartialEq, Error)]
 pub enum IpSocketMatcherError {
+    /// A union type was unknown.
     #[error("got unexpected union variant: {0}")]
     UnknownUnionVariant(u64),
+    /// An error was encountered when converting one of the address matchers.
     #[error("address matcher conversion failure: {0}")]
     Address(fnet_matchers_ext::BoundAddressError),
+    /// An error was encountered when converting the transport protocol
+    /// matcher.
     #[error("protocol matcher conversion failure: {0}")]
     TransportProtocol(fnet_matchers_ext::SocketTransportProtocolError),
+    /// An error was encountered while converting the interface matcher.
     #[error("bound interface matcher conversion failure: {0}")]
     BoundInterface(fnet_matchers_ext::BoundInterfaceError),
+    /// An error was encountered when converting one of the mark matchers.
     #[error("mark matcher conversion failure: {0}")]
     Mark(fnet_matchers_ext::MarkInDomainError),
 }
@@ -259,7 +285,7 @@ mod tests {
         F: From<E> + Clone + std::fmt::Debug + PartialEq,
     {
         assert_eq!(fidl_type.clone().try_into(), Ok(local_type.clone()));
-        assert_eq!(<_ as Into<F>>::into(local_type), fidl_type.clone());
+        assert_eq!(<_ as Into<F>>::into(local_type), fidl_type);
     }
 
     #[test_case(
