@@ -93,12 +93,12 @@ class SpawnPlan {
   void Dup2(int from, int to) { dup2_.emplace_back(from, to); }
 
   void Closefrom(int from) {
-    // TODO(mcgrathr): Newer glibc versions have the closefrom() call, but not
-    // the build's current sysroot version. Rather than do the potentially
-    // costly technique of looping up to getdtablesize(), just allow for some
-    // descriptors to leak, and only close the ones we know about.  This is
-    // really just extra surety anyway, since ideally all the extra fds that
-    // were opened had FD_CLOEXEC set.
+    // TODO(https://fxbug.dev/479524197): Newer glibc versions have the
+    // closefrom() call, but not the build's current sysroot version. Rather
+    // than do the potentially costly technique of looping up to
+    // getdtablesize(), just allow for some descriptors to leak, and only close
+    // the ones we know about.  This is really just extra surety anyway, since
+    // ideally all the extra fds that were opened had FD_CLOEXEC set.
     for (auto [dup_from, dup_to] : dup2_) {
       EXPECT_GE(dup_from, from);
       auto is_dup_from = [dup_from = dup_from](const auto& dup) -> bool {
