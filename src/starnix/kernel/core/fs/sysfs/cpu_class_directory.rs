@@ -5,7 +5,7 @@
 use crate::task::CurrentTask;
 use crate::vfs::FsNodeOps;
 use crate::vfs::pseudo::simple_directory::SimpleDirectoryMutator;
-use crate::vfs::pseudo::simple_file::{BytesFile, BytesFileOps};
+use crate::vfs::pseudo::simple_file::{BytesFile, BytesFileOps, SimpleFileNode};
 use crate::vfs::pseudo::stub_empty_file::StubEmptyFile;
 use anyhow::Error;
 use fuchsia_component::client::connect_to_protocol_sync;
@@ -66,44 +66,8 @@ pub fn build_cpu_class_directory(dir: &SimpleDirectoryMutator) {
     });
     dir.subdir("cpufreq", 0o755, |dir| {
         dir.subdir("policy0", 0o755, |dir| {
-            dir.subdir("stats", 0o755, |dir| {
-                dir.entry("reset", CpuFreqStatsResetFile::new_node(), mode!(IFREG, 0o200));
-            });
-
-            let related_cpus = (0..cpu_count).map(|i| i.to_string()).join(" ") + "\n";
-            dir.entry(
-                "related_cpus",
-                BytesFile::new_node(related_cpus.into_bytes()),
-                mode!(IFREG, 0o444),
-            );
-            dir.entry("scaling_cur_freq", ScalingCurFreqFile::new_node(), mode!(IFREG, 0o444));
-            dir.entry(
-                "scaling_min_freq",
-                StubEmptyFile::new_node(bug_ref!("https://fxbug.dev/452096300")),
-                mode!(IFREG, 0o444),
-            );
-            dir.entry(
-                "scaling_max_freq",
-                StubEmptyFile::new_node(bug_ref!("https://fxbug.dev/452096300")),
-                mode!(IFREG, 0o444),
-            );
-            dir.entry(
-                "scaling_available_frequencies",
-                BytesFile::new_node(
-                    get_all_available_frequencies(cpu_domains.as_ref().ok()).into_bytes(),
-                ),
-                mode!(IFREG, 0o444),
-            );
-            dir.entry(
-                "scaling_available_governors",
-                StubEmptyFile::new_node(bug_ref!("https://fxbug.dev/452096300")),
-                mode!(IFREG, 0o444),
-            );
-            dir.entry(
-                "scaling_governor",
-                StubEmptyFile::new_node(bug_ref!("https://fxbug.dev/452096300")),
-                mode!(IFREG, 0o444),
-            );
+            let domains = cpu_domains.as_ref().map(|v| v.as_slice()).unwrap_or_default();
+            build_cpufreq_directory(dir, domains);
         });
     });
     dir.subdir("soc", 0o755, |dir| {
@@ -131,25 +95,18 @@ fn hz_to_khz(hz: u64) -> u64 {
     return hz / 1000;
 }
 
-fn get_all_available_frequencies(domains: Option<&Vec<fcpu::DomainInfo>>) -> String {
-    let Some(domains) = domains else {
-        return "\n".to_string();
-    };
-    let all_frequencies_khz: Vec<_> = domains
+fn get_all_available_frequencies(domains: &[fcpu::DomainInfo]) -> Vec<u64> {
+    domains
         .iter()
         .filter_map(|d| d.available_frequencies_hz.as_ref())
         .flat_map(|freqs| freqs.iter())
         .map(|f| hz_to_khz(*f))
         .sorted()
         .dedup()
-        .collect();
-    all_frequencies_khz.iter().join(" ") + "\n"
+        .collect()
 }
 
 fn build_cpu_directory(dir: &SimpleDirectoryMutator, domain: &fcpu::DomainInfo) {
-    let scaling_available_frequencies =
-        domain.available_frequencies_hz.as_ref().expect("available_frequencies_hz not available");
-    let cpuinfo_max_freq_khz = hz_to_khz(scaling_available_frequencies[0]);
     let cluster_id = domain.id.as_ref().expect("id not available");
 
     dir.entry(
@@ -158,31 +115,7 @@ fn build_cpu_directory(dir: &SimpleDirectoryMutator, domain: &fcpu::DomainInfo) 
         mode!(IFREG, 0o444),
     );
     dir.subdir("cpufreq", 0o755, |dir| {
-        dir.entry(
-            "cpuinfo_max_freq",
-            BytesFile::new_node(format!("{cpuinfo_max_freq_khz}\n").into_bytes()),
-            mode!(IFREG, 0o444),
-        );
-
-        let frequencies_str =
-            scaling_available_frequencies.iter().map(|f| hz_to_khz(*f)).sorted().join(" ");
-        dir.entry(
-            "scaling_available_frequencies",
-            BytesFile::new_node(format!("{frequencies_str}\n").into_bytes()),
-            mode!(IFREG, 0o444),
-        );
-        dir.entry(
-            "scaling_boost_frequencies",
-            StubEmptyFile::new_node(bug_ref!("https://fxbug.dev/452096300")),
-            mode!(IFREG, 0o644),
-        );
-        dir.subdir("stats", 0o755, |dir| {
-            dir.entry(
-                "time_in_state",
-                StubEmptyFile::new_node(bug_ref!("https://fxbug.dev/452096300")),
-                mode!(IFREG, 0o444),
-            );
-        });
+        build_cpufreq_directory(dir, std::slice::from_ref(domain));
     });
     dir.subdir("topology", 0o755, |dir| {
         dir.entry(
@@ -196,6 +129,59 @@ fn build_cpu_directory(dir: &SimpleDirectoryMutator, domain: &fcpu::DomainInfo) 
             mode!(IFREG, 0o444),
         );
     });
+}
+
+fn build_cpufreq_directory(dir: &SimpleDirectoryMutator, domain: &[fcpu::DomainInfo]) {
+    let scaling_available_frequencies = get_all_available_frequencies(domain);
+    let cpu_count = zx::system_get_num_cpus() as usize;
+    dir.subdir("stats", 0o755, |dir| {
+        dir.entry("reset", CpuFreqStatsResetFile::new_node(), mode!(IFREG, 0o200));
+        dir.entry(
+            "time_in_state",
+            StubEmptyFile::new_node(bug_ref!("https://fxbug.dev/452096300")),
+            mode!(IFREG, 0o444),
+        );
+    });
+
+    let related_cpus = (0..cpu_count).map(|i| i.to_string()).join(" ") + "\n";
+    dir.entry("related_cpus", BytesFile::new_node(related_cpus.into_bytes()), mode!(IFREG, 0o444));
+    dir.entry("scaling_cur_freq", create_scaling_cur_freq_file(), mode!(IFREG, 0o444));
+    dir.entry(
+        "scaling_min_freq",
+        StubEmptyFile::new_node(bug_ref!("https://fxbug.dev/452096300")),
+        mode!(IFREG, 0o444),
+    );
+    dir.entry(
+        "scaling_max_freq",
+        StubEmptyFile::new_node(bug_ref!("https://fxbug.dev/452096300")),
+        mode!(IFREG, 0o444),
+    );
+    dir.entry(
+        "scaling_available_frequencies",
+        BytesFile::new_node((scaling_available_frequencies.iter().join(" ") + "\n").into_bytes()),
+        mode!(IFREG, 0o444),
+    );
+    dir.entry(
+        "scaling_available_governors",
+        StubEmptyFile::new_node(bug_ref!("https://fxbug.dev/452096300")),
+        mode!(IFREG, 0o444),
+    );
+    dir.entry(
+        "scaling_governor",
+        StubEmptyFile::new_node(bug_ref!("https://fxbug.dev/452096300")),
+        mode!(IFREG, 0o444),
+    );
+    dir.entry(
+        "cpuinfo_max_freq",
+        BytesFile::new_node(
+            format!(
+                "{}\n",
+                scaling_available_frequencies.last().map(|f| f.to_string()).unwrap_or_default()
+            )
+            .into_bytes(),
+        ),
+        mode!(IFREG, 0o444),
+    );
 }
 
 const VULNERABILITIES: &[(&str, &str)] = &[
@@ -231,14 +217,6 @@ impl BytesFileOps for CpuFreqStatsResetFile {
 
 const CPU_DIRECTORY: &str = "/svc/fuchsia.hardware.cpu.ctrl.Service";
 
-struct ScalingCurFreqFile {}
-
-impl ScalingCurFreqFile {
-    pub fn new_node() -> impl FsNodeOps {
-        BytesFile::new_node(Self {})
-    }
-}
-
 fn connect_to_device() -> Result<fcpuctrl::DeviceSynchronousProxy, Errno> {
     let mut dir = std::fs::read_dir(CPU_DIRECTORY).map_err(|_| errno!(EINVAL))?;
     let Some(Ok(entry)) = dir.next() else {
@@ -251,18 +229,17 @@ fn connect_to_device() -> Result<fcpuctrl::DeviceSynchronousProxy, Errno> {
     Ok(fcpuctrl::DeviceSynchronousProxy::new(client))
 }
 
-impl BytesFileOps for ScalingCurFreqFile {
-    fn read(&self, _current_task: &CurrentTask) -> Result<std::borrow::Cow<'_, [u8]>, Errno> {
-        let cpu_ctrl_proxy = connect_to_device()?;
-        let opp = cpu_ctrl_proxy
-            .get_current_operating_point(zx::Instant::INFINITE)
-            .map_err(|_| errno!(EINVAL))?;
-        let info = cpu_ctrl_proxy
+fn create_scaling_cur_freq_file() -> impl FsNodeOps {
+    SimpleFileNode::new(|_, _| {
+        let proxy = connect_to_device()?;
+        let opp =
+            proxy.get_current_operating_point(zx::Instant::INFINITE).map_err(|_| errno!(EINVAL))?;
+        let info = proxy
             .get_operating_point_info(opp, zx::Instant::INFINITE)
             .map_err(|_| errno!(EINVAL))?;
         let freq_khz = hz_to_khz(
             info.map_err(|e| from_status_like_fdio!(zx::Status::from_raw(e)))?.frequency_hz as u64,
         );
-        Ok(format!("{}\n", freq_khz).into_bytes().into())
-    }
+        Ok(BytesFile::new(format!("{}\n", freq_khz).into_bytes()))
+    })
 }
