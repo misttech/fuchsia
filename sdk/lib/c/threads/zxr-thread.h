@@ -12,17 +12,38 @@
 
 #ifdef __cplusplus
 #include <atomic>
-using std::atomic_int;
-#else
-#include <stdatomic.h>
 #endif
 
 __BEGIN_CDECLS
 
-typedef struct {
+typedef struct zxr_thread {
+#ifdef __cplusplus
+  // A zxr_thread_t starts its life JOINABLE.
+  // - If someone calls zxr_thread_join on it, it transitions to JOINED.
+  // - If someone calls zxr_thread_detach on it, it transitions to DETACHED.
+  // - When it begins exiting, the EXITING state is entered.
+  // - When it is no longer using its memory and handle resources, it transitions
+  //   to DONE.  If the thread was DETACHED prior to EXITING, this transition MAY
+  //   not happen.
+  // No other transitions occur.
+  enum class State : int {
+    JOINABLE,
+    DETACHED,
+    JOINED,
+    EXITING,
+    DONE,
+    FREED,
+  };
+#endif
+
   zx_handle_t handle;
-  atomic_int state;  // Actually an enum private to zxr-thread.cc
+#ifdef __cplusplus
+  std::atomic<State> state;
+#else
+  _Atomic(int) state;
+#endif
 } zxr_thread_t;
+static_assert(sizeof(zxr_thread_t) == 8, "layout snafu");
 
 // TODO(kulakowski) Document the possible zx_status_t values from these.
 
