@@ -16,12 +16,17 @@
 #include <thread>
 
 #include <gtest/gtest.h>
+#include <linux/audit.h>
 #include <linux/filter.h>
 #include <linux/seccomp.h>
 
 #ifndef SECCOMP_FILTER_FLAG_TSYNC_ESRCH
 #define SECCOMP_FILTER_FLAG_TSYNC_ESRCH (1UL << 4)
 #endif  // SECCOMP_FILTER_FLAG_TSYNC_ESRCH
+
+#ifndef SYS_SECCOMP
+#define SYS_SECCOMP 1
+#endif
 
 #include "src/starnix/tests/syscalls/cpp/test_helper.h"
 
@@ -605,6 +610,43 @@ TEST(SeccompTest, UserNotifClose) {
     close(fd);
     EXPECT_EQ(-1, syscall(kFilteredSyscall));
     EXPECT_EQ(ENOSYS, errno);
+  });
+}
+
+volatile unsigned g_sigtrap_si_arch = 0;
+
+static void sigtrap_handler_check_arch(int signo, siginfo_t *info, void *context) {
+  if (signo != SIGSYS || info->si_code != SYS_SECCOMP || info->si_syscall != kFilteredSyscall) {
+    return;
+  }
+
+  g_sigtrap_si_arch = info->si_arch;
+}
+
+TEST(SeccompTest, RetTrapSignalUsesRightArch) {
+  test_helper::ForkHelper helper;
+  helper.RunInForkedProcess([] {
+#if defined(__aarch64__)
+    constexpr unsigned kAuditArch = AUDIT_ARCH_AARCH64;
+#elif defined(__arm__)
+    constexpr unsigned kAuditArch = AUDIT_ARCH_ARM;
+#elif defined(__x86_64__)
+    constexpr unsigned kAuditArch = AUDIT_ARCH_X86_64;
+#elif defined(__riscv)
+    constexpr unsigned kAuditArch = AUDIT_ARCH_RISCV64;
+#else
+#error "Unsupported architecture"
+#endif
+
+    struct sigaction sa{};
+    sa.sa_sigaction = sigtrap_handler_check_arch;
+    sa.sa_flags = SA_SIGINFO;
+    SAFE_SYSCALL(sigaction(SIGSYS, &sa, nullptr));
+
+    install_filter_block(kFilteredSyscall, SECCOMP_RET_TRAP);
+
+    syscall(kFilteredSyscall);
+    EXPECT_EQ(g_sigtrap_si_arch, kAuditArch);
   });
 }
 

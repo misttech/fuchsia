@@ -485,7 +485,8 @@ impl SeccompState {
                 #[cfg(target_arch = "x86_64")]
                 let arch_val = AUDIT_ARCH_X86_64;
                 #[cfg(target_arch = "aarch64")]
-                let arch_val = AUDIT_ARCH_AARCH64;
+                let arch_val =
+                    if current_task.is_arch32() { AUDIT_ARCH_ARM } else { AUDIT_ARCH_AARCH64 };
                 #[cfg(target_arch = "riscv64")]
                 let arch_val = AUDIT_ARCH_RISCV64;
 
