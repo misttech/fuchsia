@@ -15,6 +15,7 @@
 #include <usb/audio.h>
 
 #include "usb-audio-descriptors.h"
+#include "usb-audio-path.h"
 #include "usb-audio.h"
 
 namespace audio {
@@ -184,10 +185,7 @@ class UsbAudioStreamInterface
   };
 
   UsbAudioStreamInterface(UsbAudioDevice* parent, fbl::RefPtr<DescriptorListMemory> desc_list,
-                          uint8_t iid)
-      : parent_(*parent), iid_(iid), desc_list_(std::move(desc_list)) {
-    ZX_DEBUG_ASSERT(parent != nullptr);
-  }
+                          uint8_t iid);
   ~UsbAudioStreamInterface() = default;
 
   // The reference to our parent.  Note, because of this unmanaged reference,
@@ -241,6 +239,13 @@ class UsbAudioStreamInterface
   // alternate interface ID of the interface which supports that format range.
   fbl::Vector<FormatMapEntry> format_map_;
 };
+
+inline UsbAudioStreamInterface::UsbAudioStreamInterface(UsbAudioDevice* parent,
+                                                        fbl::RefPtr<DescriptorListMemory> desc_list,
+                                                        uint8_t iid)
+    : parent_(*parent), iid_(iid), desc_list_(std::move(desc_list)) {
+  ZX_DEBUG_ASSERT(parent != nullptr);
+}
 
 }  // namespace usb
 }  // namespace audio
