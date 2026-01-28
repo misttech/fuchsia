@@ -160,6 +160,12 @@ impl Node {
     async fn finish_shutdown(self: &Rc<Self>) {
         log::debug!("Node: {} finishing shutdown", self.make_component_moniker());
 
+        if let Some(koid) = self.token_koid()
+            && let Some(attributor) = self.node_manager.memory_attributor()
+        {
+            attributor.remove_driver(koid.raw_koid());
+        }
+
         if let Some(binding) = self.node_controller_server_binding.take() {
             binding.close();
         }
@@ -213,6 +219,12 @@ impl Node {
     }
 
     async fn post_shutdown(self: &Rc<Self>, intent: ShutdownIntent) {
+        if let Some(koid) = self.token_koid()
+            && let Some(attributor) = self.node_manager.memory_attributor()
+        {
+            attributor.remove_driver(koid.raw_koid());
+        }
+
         if intent == ShutdownIntent::Restart {
             log::debug!("Node '{}': finishing restart", self.make_component_moniker());
             self.finish_restart().await;

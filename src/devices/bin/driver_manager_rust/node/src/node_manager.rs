@@ -48,4 +48,10 @@ pub trait NodeManager {
     fn get_shutdown_test_rng(&self) -> Weak<RefCell<rand::rngs::StdRng>>;
     async fn wait_for_bootup(&self);
     fn get_dictionary_util(&self) -> Result<Rc<DictionaryUtil>, zx::Status>;
+    fn memory_attributor(&self) -> Option<Rc<dyn MemoryAttributor>>;
+}
+
+pub trait MemoryAttributor {
+    fn add_driver(&self, component_token: zx::Event, id: u64, process_koid: zx::Koid);
+    fn remove_driver(&self, id: u64);
 }

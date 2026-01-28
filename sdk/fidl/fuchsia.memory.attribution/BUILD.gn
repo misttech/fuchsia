@@ -19,6 +19,7 @@ fidl("fuchsia.memory.attribution") {
     "//examples/components/runner/colocated/*",
     "//src/developer/memory/*",
     "//src/devices/bin/driver_manager/*",
+    "//src/devices/bin/driver_manager_rust/*",
     "//src/performance/memory/*",
     "//src/starnix/*",
     "//src/storage/fxfs/*",

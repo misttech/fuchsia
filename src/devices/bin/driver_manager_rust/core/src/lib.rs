@@ -14,6 +14,7 @@ use {fidl_fuchsia_driver_framework as fdf, fidl_fuchsia_ldsvc as fldsvc};
 mod bootup_tracker;
 mod driver_host_runner;
 mod driver_runner;
+mod memory_attribution;
 mod offer_injection;
 mod runner;
 mod trait_impls;

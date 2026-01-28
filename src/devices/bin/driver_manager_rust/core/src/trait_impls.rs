@@ -141,6 +141,11 @@ impl NodeManager for DriverRunnerBridge {
             Err(zx::Status::UNAVAILABLE)
         }
     }
+
+    fn memory_attributor(&self) -> Option<Rc<dyn driver_manager_node::MemoryAttributor>> {
+        let runner = self.0.upgrade()?;
+        Some(runner.memory_attributor.clone())
+    }
 }
 
 #[async_trait(?Send)]

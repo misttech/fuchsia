@@ -4,6 +4,7 @@
 
 use crate::bootup_tracker::BootupTracker;
 use crate::driver_host_runner::DriverHostRunner;
+use crate::memory_attribution::MemoryAttributor;
 use crate::offer_injection::OfferInjector;
 use crate::runner::Runner;
 use crate::{DriverRunnerBridge, LoaderServiceFactory, perform_bfs, to_collection};
@@ -49,6 +50,7 @@ pub struct DriverRunner {
     pub bootup_tracker: Rc<BootupTracker>,
     driver_hosts: RefCell<Vec<Weak<dyn DriverHost>>>,
     pub devfs: Arc<Devfs>,
+    pub(crate) memory_attributor: Rc<MemoryAttributor>,
     launcher: Option<fidl_fuchsia_driver_loader::DriverHostLauncherProxy>,
     pub(crate) enable_test_shutdown_delays: bool,
     pub(crate) shutdown_test_rng: Rc<RefCell<StdRng>>,
@@ -87,6 +89,7 @@ impl DriverRunner {
             let runner = Runner::new(realm.clone(), introspector, offer_injector);
             let driver_host_runner = DriverHostRunner::new(realm);
             let removal_tracker = NodeRemovalTracker::new();
+            let memory_attributor = Rc::new(MemoryAttributor::new());
 
             Self {
                 driver_index,
@@ -101,6 +104,7 @@ impl DriverRunner {
                 bootup_tracker,
                 driver_hosts: RefCell::new(Vec::new()),
                 devfs,
+                memory_attributor,
                 launcher: None,
                 enable_test_shutdown_delays,
                 shutdown_test_rng: Rc::new(RefCell::new(StdRng::from_os_rng())),
@@ -400,6 +404,7 @@ impl DriverRunner {
     pub fn publish(self: &Rc<Self>, fs: &mut ServiceFs<ServiceObjLocal<'_, ()>>) {
         self.runner.publish(fs);
         self.driver_host_runner.publish(fs);
+        self.memory_attributor.publish(fs);
 
         let this = self.clone();
         fs.dir("svc").add_fidl_service(move |stream: fdf::CompositeNodeManagerRequestStream| {

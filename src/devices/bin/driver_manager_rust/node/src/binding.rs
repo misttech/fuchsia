@@ -276,5 +276,20 @@ impl Node {
                 }
             }
         }
+
+        if let NodeState::DriverComponent(driver_component) = &*self.state.borrow() {
+            let node_token = driver_component.duplicate_instance_handle();
+            let koid = driver_component.instance_koid().raw_koid();
+            if let Some(driver_host) = self.driver_host() {
+                let node_manager = self.node_manager.clone_box();
+                self.scope.spawn_local(async move {
+                    if let Ok(process_koid) = driver_host.get_process_koid().await
+                        && let Some(attributor) = node_manager.memory_attributor()
+                    {
+                        attributor.add_driver(node_token, koid, process_koid);
+                    }
+                });
+            }
+        }
     }
 }
