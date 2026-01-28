@@ -252,7 +252,11 @@ func buildImpl(
 	// fail.
 	artifacts.LogFiles = make(map[string]string)
 
-	ninjaPath, err := toolAbsPath(modules, platform, "ninja")
+	ninjaName := "ninja"
+	if staticSpec.BuildEventServiceNinja == "resultstore_infra" {
+		ninjaName = "rs-sub-ninja"
+	}
+	ninjaPath, err := toolAbsPath(modules, platform, ninjaName)
 	if err != nil {
 		return artifacts, err
 	}

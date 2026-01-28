@@ -191,4 +191,11 @@ message Static {
   // If set, points to the label to use as the main product bundle in a
   // multi-product build.
   string main_pb_label = 39;
+
+  // If set, ninja builds will stream build events to a service like
+  // ResultStore.
+  // This value sets the GN arg `ninja_upload_build_events`.
+  // TODO(b/473907403): once this is rolled out 100%, delete this field
+  // and use 'bazel_event_service' above for both bazel and ninja.
+  string build_event_service_ninja = 40;
 }

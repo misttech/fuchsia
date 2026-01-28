@@ -113,7 +113,7 @@ func TestBuild(t *testing.T) {
 		if prog == "ninjatrace_prebuilt" || prog == "buildstats_prebuilt" {
 			return nil
 		}
-		// prog == "ninja"
+		// prog == "ninja" or "rs-sub-ninja"
 		if slices.Contains(cmd, "-t") { // for compdb and graph
 			return nil
 		}
@@ -168,6 +168,19 @@ func TestBuild(t *testing.T) {
 			},
 			expectedArtifacts: &fintpb.BuildArtifacts{},
 			mustRun:           []string{`ninja -C .*out/default --edge_weights_list=ninja_edge_weights\.csv --chrome_trace ninja_build_trace\.json\.gz --jobserver$`},
+		},
+		{
+			name: "use rs-sub-ninja when build_event_service_ninja is resultstore_infra",
+			staticSpec: &fintpb.Static{
+				BuildEventServiceNinja: "resultstore_infra",
+			},
+			modules: fakeBuildModules{
+				tools: makeTools(map[string][]string{
+					"rs-sub-ninja": {"linux", "mac"},
+				}),
+			},
+			expectedArtifacts: &fintpb.BuildArtifacts{},
+			mustRun:           []string{`rs-sub-ninja -C .*out/default --edge_weights_list=ninja_edge_weights\.csv --chrome_trace ninja_build_trace\.json\.gz$`},
 		},
 		{
 			name:       "artifact dir set",
@@ -785,7 +798,8 @@ func TestBuild(t *testing.T) {
 func findNinjaTargets(cmds [][]string) []string {
 	for _, cmd := range cmds {
 		// Ignore non-ninja commands and ninja tool invocations.
-		if filepath.Base(cmd[0]) != "ninja" || slices.Contains(cmd, "-t") {
+		prog := filepath.Base(cmd[0])
+		if (prog != "ninja" && prog != "rs-sub-ninja") || slices.Contains(cmd, "-t") {
 			continue
 		}
 		// Skip over each `-flag value` pair until we reach the list of targets.
