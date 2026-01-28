@@ -63,6 +63,7 @@ core_tests = [
 # TODO(https://fxbug.dev/42170954): Remove this once standalone bootfs tests can access the next vDSO.
 requires_next_vdso = [
   "pager-writeback",
+  "rseq",
   "system-membarrier",
 ]
 

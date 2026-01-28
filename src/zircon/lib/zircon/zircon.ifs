@@ -183,6 +183,7 @@ Symbols:
   - { Name: _zx_thread_legacy_yield, Type: Func }
   - { Name: _zx_thread_raise_exception, Type: Func }
   - { Name: _zx_thread_read_state, Type: Func }
+  - { Name: _zx_thread_set_rseq, Type: Func }
   - { Name: _zx_thread_start, Type: Func }
   - { Name: _zx_thread_write_state, Type: Func }
   - { Name: _zx_ticks_get, Type: Func }
@@ -401,6 +402,7 @@ Symbols:
   - { Name: zx_thread_legacy_yield, Type: Func, Weak: true }
   - { Name: zx_thread_raise_exception, Type: Func, Weak: true }
   - { Name: zx_thread_read_state, Type: Func, Weak: true }
+  - { Name: zx_thread_set_rseq, Type: Func, Weak: true }
   - { Name: zx_thread_start, Type: Func, Weak: true }
   - { Name: zx_thread_write_state, Type: Func, Weak: true }
   - { Name: zx_ticks_get, Type: Func, Weak: true }

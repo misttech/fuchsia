@@ -21,6 +21,7 @@
 #include <zircon/syscalls/debug.h>
 #include <zircon/syscalls/exception.h>
 #include <zircon/syscalls/policy.h>
+#include <zircon/syscalls/rseq.h>
 #include <zircon/types.h>
 
 #include <arch/arch_ops.h>
@@ -200,6 +201,10 @@ zx_status_t sys_thread_raise_exception(uint32_t options, zx_excp_type_t type,
   auto thread = ThreadDispatcher::GetCurrent();
   thread->process()->OnUserExceptionForJobDebugger(thread, &context);
   return ZX_OK;
+}
+
+zx_status_t sys_thread_set_rseq(zx_handle_t vmo, uint64_t offset, uint64_t size) {
+  return ZX_ERR_NOT_SUPPORTED;
 }
 
 // zx_status_t zx_thread_legacy_yield

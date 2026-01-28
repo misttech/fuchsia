@@ -180,6 +180,7 @@
     "zx_thread_legacy_yield",
     "zx_thread_raise_exception",
     "zx_thread_read_state",
+    "zx_thread_set_rseq",
     "zx_thread_start",
     "zx_thread_write_state",
     "zx_ticks_get",

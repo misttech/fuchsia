@@ -511,6 +511,73 @@ closed protocol Thread {
         context ExceptionContext;
     }) -> () error Status;
 
+
+    /// ## Summary
+    ///
+    /// Register a restartable sequence for a thread.
+    ///
+    /// ## Declaration
+    ///
+    /// ```c
+    /// #include <zircon/syscalls.h>
+    ///
+    /// zx_status_t zx_thread_set_rseq(zx_handle_t vmo, uint64_t offset, uint64_t size);
+    ///
+    /// ## Description
+    ///
+    /// `zx_thread_set_rseq()` registers a restartable sequence for the current thread.  The
+    /// restartable sequence is defined by a `zx_rseq_t` structure in the VMO starting at
+    /// *offset* and of length *size*.
+    ///
+    /// Zircon will keep the `cpu_id` field in the `zx_rseq_t` structure up to date with the
+    /// current CPU ID of the thread. If the thread is migrated to a different CPU while the
+    /// instruction pointer is in the restartable sequence defined by the `start_ip` and
+    /// `post_commit_offset` fields, the thread will resume execution at the address
+    /// specified by the `abort_ip` field.
+    ///
+    /// Userspace should use volatile reads and writes to access the `zx_rseq_t` structure because
+    /// the kernel may modify the `cpu_id` field at any time, and the `start_ip`,
+    /// `post_commit_offset`, and `abort_ip` fields may be read by the kernel at any time.
+    ///
+    /// At most one restartable sequence may be registered at a time. If the thread is already
+    /// has a restartable sequence registered, `zx_thread_set_rseq()` will return
+    /// `ZX_ERR_ALREADY_EXISTS`.
+    ///
+    /// The *offset* must be 0 mod `alignof(zx_rseq_t)` and the region of size `sizeof(zx_rseq_t)`
+    /// starting at *offset* must not span a page boundary.
+    ///
+    /// To unregister a restartable sequence, call `zx_thread_set_rseq()` with `ZX_HANDLE_INVALID`
+    /// for the *vmo* argument.
+    ///
+    /// ## Return value
+    ///
+    /// `zx_thread_set_rseq()` returns `ZX_OK` on success.
+    /// In the event of failure, a negative error value is returned.
+    ///
+    /// ## Errors
+    ///
+    /// `ZX_ERR_INVALID_ARGS`  *offset* is not a multiple of `alignof(zx_rseq_t)`,
+    /// *size* is not `sizeof(zx_rseq_t)`, or the region of memory defined by
+    /// *offset* and *size* spans a page boundary.
+    ///
+    /// `ZX_ERR_INVALID_ARGS`  *vmo* is not directly writable, has been
+    ///  marked as uncached, or is backed by a user pager.
+    ///
+    /// `ZX_ERR_ALREADY_EXISTS`  The thread already has a restartable sequence registered.
+    ///
+    /// `ZX_ERR_BAD_HANDLE`  *vmo* is neither a valid handle nor `ZX_HANDLE_INVALID`.
+    ///
+    /// `ZX_ERR_WRONG_TYPE`  *vmo* is not a VMO.
+    ///
+    /// `ZX_ERR_ACCESS_DENIED`  *vmo* is missing `ZX_RIGHT_READ`, `ZX_RIGHT_WRITE`, or
+    /// `ZX_RIGHT_DUPLICATE`.
+    @next
+    strict SetRseq(resource struct {
+        vmo Handle:VMO;
+        offset uint64;
+        size uint64;
+    }) -> () error Status;
+
     /// ## Summary
     ///
     /// Yield the CPU of the current thread back to the scheduler.
