@@ -38,6 +38,12 @@ use {
     fidl_fuchsia_posix as fposix,
 };
 
+fn get_linux_packet_mark(marks: &Marks) -> u32 {
+    let Mark(mark) = marks.get(fnet::MARK_DOMAIN_SO_MARK.into_core());
+    // Default to 0 if the mark is not set.
+    mark.unwrap_or(0)
+}
+
 // Transmutes `Vec<u64>` to `Vec<EbpfInstruction>`.
 fn code_from_vec(code: Vec<u64>) -> Vec<EbpfInstruction> {
     // SAFETY:  This is safe because `EbpfInstruction` is 64 bits.
@@ -77,6 +83,7 @@ impl<'a, C> SkBuff<'a, C> {
         ethertype: Option<u16>,
         packet_len: usize,
         ifindex: u32,
+        mark: u32,
         data: &'a [u8],
         ip_offset: usize,
         default_offset: usize,
@@ -89,6 +96,7 @@ impl<'a, C> SkBuff<'a, C> {
         SkBuff {
             sk_buff: __sk_buff {
                 len: packet_len.try_into().unwrap_or(0),
+                mark,
                 protocol: ethertype.unwrap_or(0).to_be().into(),
                 ifindex,
                 ..__sk_buff::default()
@@ -107,6 +115,7 @@ impl<'a, C> SkBuff<'a, C> {
     fn from_ip_packet<I: FilterIpExt, P: FilterIpPacket<I>>(
         packet: &P,
         ifindex: u32,
+        marks: &Marks,
         data_buffer: &'a mut [u8],
     ) -> Self {
         // TODO(https://fxbug.dev/424212358): Implement lazy packet serialization.
@@ -115,10 +124,11 @@ impl<'a, C> SkBuff<'a, C> {
             .expect("Packet serialization failed");
         let packet_len = serialize_result.total_size;
         let packet_data = &data_buffer[..serialize_result.bytes_written];
-
+        let mark = get_linux_packet_mark(marks);
         SkBuff {
             sk_buff: __sk_buff {
                 len: packet_len.try_into().unwrap_or(0),
+                mark,
                 protocol: u16::from(I::ETHER_TYPE).to_be().into(),
                 ifindex,
                 ..__sk_buff::default()
@@ -400,6 +410,7 @@ where
     ) -> bool {
         trace_duration!(c"ebpf::packet_matcher");
 
+        let marks = socket_info.marks();
         let socket_info = SocketInfo::from_packet_metadata(socket_info);
 
         // `ifindex` field is set to either ingress or ingress interface index
@@ -410,8 +421,12 @@ where
             interfaces.ingress.or(interfaces.egress).map(|d| d.get_ifindex()).unwrap_or(0);
 
         let mut data_buffer = [0u8; SERIALIZED_HEAD_SIZE];
-        let sk_buff =
-            SkBuff::<'_, SocketFilterProgram>::from_ip_packet(packet, ifindex, &mut data_buffer);
+        let sk_buff = SkBuff::<'_, SocketFilterProgram>::from_ip_packet(
+            packet,
+            ifindex,
+            marks,
+            &mut data_buffer,
+        );
 
         match self.run(socket_info, sk_buff) {
             SocketFilterResult::Accept(_) => true,
@@ -777,7 +792,7 @@ impl<D: DeviceIfIndex> SocketOpsFilter<D> for &EbpfManager {
 
         let socket_info = SocketInfo::new(socket_cookie, marks);
         let mut data_buffer = [0u8; SERIALIZED_HEAD_SIZE];
-        let sk_buff = SkBuff::from_ip_packet(packet, device.get_ifindex(), &mut data_buffer);
+        let sk_buff = SkBuff::from_ip_packet(packet, device.get_ifindex(), marks, &mut data_buffer);
 
         let result = prog.run(socket_info, sk_buff);
         if result > CgroupSkbProgram::EGRESS_MAX_RESULT {
@@ -812,6 +827,7 @@ impl<D: DeviceIfIndex> SocketOpsFilter<D> for &EbpfManager {
 
         let socket_info = SocketInfo::new(socket_cookie, marks);
         let ethertype = EtherType::from_ip_version(ip_version);
+        let mark = get_linux_packet_mark(marks);
 
         // TODO(https://fxbug.dev/424212358): Implement lazy packet serialization.
         let mut data = [0u8; SERIALIZED_HEAD_SIZE];
@@ -819,8 +835,15 @@ impl<D: DeviceIfIndex> SocketOpsFilter<D> for &EbpfManager {
         let bytes = std::cmp::min(packet_len, data.len());
         packet.slice(0..bytes).copy_into_slice(&mut data[0..bytes]);
 
-        let skb =
-            SkBuff::new(Some(ethertype.into()), packet_len, device.get_ifindex(), &data, 0, 0);
+        let skb = SkBuff::new(
+            Some(ethertype.into()),
+            packet_len,
+            device.get_ifindex(),
+            mark,
+            &data,
+            /*ip_offset=*/ 0,
+            /*default_offset=*/ 0,
+        );
 
         let result = prog.run(socket_info, skb);
 
@@ -877,7 +900,8 @@ mod tests {
             SkBuff::new(
                 Some(Self::PROTO),
                 Self::BUFFER.len(),
-                2,
+                /*ifindex=*/ 2,
+                /*mark=*/ 0,
                 Self::BUFFER,
                 Self::BODY_POSITION,
                 default_offset,

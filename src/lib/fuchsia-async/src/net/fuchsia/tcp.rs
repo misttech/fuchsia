@@ -13,6 +13,7 @@ use futures::task::{Context, Poll};
 use std::io::{self, Write};
 use std::net::{self, Shutdown, SocketAddr};
 use std::ops::Deref;
+use std::os::fd::{AsRawFd, RawFd};
 use std::os::unix::io::FromRawFd as _;
 use std::pin::Pin;
 
@@ -229,6 +230,12 @@ impl TcpStream {
 
     fn std_mut(&mut self) -> &mut net::TcpStream {
         self.stream.as_mut()
+    }
+}
+
+impl AsRawFd for TcpStream {
+    fn as_raw_fd(&self) -> RawFd {
+        self.stream.as_raw_fd()
     }
 }
 

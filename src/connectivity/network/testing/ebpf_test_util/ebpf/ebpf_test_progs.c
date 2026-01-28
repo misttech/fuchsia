@@ -33,10 +33,11 @@ struct test_result {
   uint32_t uid;
   uint32_t ifindex;
   uint32_t ether_type;
+  uint32_t mark;
   uint16_t src_port;
   uint16_t dst_port;
   uint8_t ip_proto;
-  uint8_t _padding[7];
+  uint8_t _padding[3];
 };
 
 // Struct stored in the `state_array` to pass configuration from the test to
@@ -127,6 +128,7 @@ int skb_test_prog(struct __sk_buff *skb) {
   state->result.cookie = bpf_get_socket_cookie(skb);
   state->result.ether_type = ntohs(skb->protocol);
   state->result.ifindex = skb->ifindex;
+  state->result.mark = skb->mark;
   state->result.ip_proto = get_ip_proto(skb);
 
   return 1;

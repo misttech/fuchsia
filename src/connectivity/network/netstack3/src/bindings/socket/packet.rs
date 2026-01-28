@@ -78,11 +78,14 @@ impl DeviceSocketBindingsContext<DeviceId<Self>> for BindingsCtx {
                     fppacket::Kind::Network => (frame.into_body().len(), frame.body_offset()),
                     fppacket::Kind::Link => (raw.len(), 0),
                 };
+                // TODO(https://fxbug.dev/477940321): Pass actual socket UID
+                // and marks here when eBPF is supported.
                 let socket_info = BpfSocketInfo::new(socket_id.socket_cookie(), &Marks::default());
                 let packet = SocketFilterSkBuff::new(
                     frame.protocol(),
                     packet_size,
                     device.bindings_id().id.get().try_into().unwrap_or(0),
+                    0,
                     raw,
                     frame.body_offset(),
                     default_offset,

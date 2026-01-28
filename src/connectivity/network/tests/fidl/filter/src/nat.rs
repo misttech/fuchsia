@@ -201,10 +201,11 @@ async fn masquerade_remove_and_add_address<I: RouterTestIpExt>(name: &str) {
     let mut client_and_server =
         UdpSocket::connect(client, &mut server, sock_addrs, ExpectedConnectivity::TwoWay, None)
             .await
+            .into_connected()
             .expect("connect client to server");
     UdpSocket::send_and_recv::<I>(
         net.realms(),
-        client_and_server.as_mut(),
+        &mut client_and_server,
         sock_addrs,
         ExpectedConnectivity::TwoWay,
     )
@@ -236,7 +237,7 @@ async fn masquerade_remove_and_add_address<I: RouterTestIpExt>(name: &str) {
     assert!(added);
     UdpSocket::send_and_recv::<I>(
         net.realms(),
-        client_and_server.as_mut(),
+        &mut client_and_server,
         sock_addrs,
         ExpectedConnectivity::None,
     )
@@ -256,7 +257,7 @@ async fn masquerade_remove_and_add_address<I: RouterTestIpExt>(name: &str) {
         .expect("re-add address");
     UdpSocket::send_and_recv::<I>(
         net.realms(),
-        client_and_server.as_mut(),
+        &mut client_and_server,
         sock_addrs,
         ExpectedConnectivity::TwoWay,
     )
@@ -684,10 +685,11 @@ async fn masquerade_rewrite_src_port<I: RouterTestIpExt, S: SocketType>(
     let mut router_and_server =
         S::connect(client, &mut server, sock_addrs, ExpectedConnectivity::TwoWay, None)
             .await
+            .into_connected()
             .expect("router can connect to server");
     let _handles = S::send_and_recv::<I>(
         realms,
-        router_and_server.as_mut(),
+        &mut router_and_server,
         sock_addrs,
         ExpectedConnectivity::TwoWay,
     )
@@ -805,10 +807,11 @@ async fn implicit_snat_ports_of_locally_generated_traffic<I: RouterTestIpExt, S:
     let mut client_and_server =
         S::connect(client, &mut server, sock_addrs, ExpectedConnectivity::TwoWay, None)
             .await
+            .into_connected()
             .expect("client can connect to server");
     S::send_and_recv::<I>(
         net.realms(),
-        client_and_server.as_mut(),
+        &mut client_and_server,
         sock_addrs,
         ExpectedConnectivity::TwoWay,
     )
@@ -840,10 +843,11 @@ async fn implicit_snat_ports_of_locally_generated_traffic<I: RouterTestIpExt, S:
         let mut router_and_server =
             S::connect(new_client, &mut server, sock_addrs, ExpectedConnectivity::TwoWay, None)
                 .await
+                .into_connected()
                 .expect("client can connect to server");
         let _handles = S::send_and_recv::<I>(
             realms,
-            router_and_server.as_mut(),
+            &mut router_and_server,
             sock_addrs,
             ExpectedConnectivity::TwoWay,
         )
@@ -854,7 +858,7 @@ async fn implicit_snat_ports_of_locally_generated_traffic<I: RouterTestIpExt, S:
     // to the server (and back) through the NAT gateway.
     S::send_and_recv::<I>(
         net.realms(),
-        client_and_server.as_mut(),
+        &mut client_and_server,
         sock_addrs,
         ExpectedConnectivity::TwoWay,
     )

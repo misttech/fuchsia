@@ -35,10 +35,11 @@ pub struct TestResult {
     pub uid: u32,
     pub ifindex: u32,
     pub ether_type: u32,
+    pub mark: u32,
     pub src_port: u16,
     pub dst_port: u16,
     pub ip_proto: u8,
-    pub _padding: [u8; 7],
+    pub _padding: [u8; 3],
 }
 
 #[derive(Clone, FromBytes, IntoBytes, Immutable, KnownLayout)]

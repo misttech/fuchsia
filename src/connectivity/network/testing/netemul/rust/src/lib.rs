@@ -2273,6 +2273,13 @@ pub trait RealmUdpSocket: Sized {
         realm: &'a TestRealm<'a>,
         addr: std::net::SocketAddr,
     ) -> futures::future::LocalBoxFuture<'a, Result<Self>>;
+
+    /// Creates a UDP socket in `realm` bound to `addr` with the given options.
+    fn bind_in_realm_with_options<'a>(
+        realm: &'a TestRealm<'a>,
+        addr: std::net::SocketAddr,
+        options: fposix_socket::SocketCreationOptions,
+    ) -> futures::future::LocalBoxFuture<'a, Result<Self>>;
 }
 
 impl RealmUdpSocket for std::net::UdpSocket {
@@ -2295,6 +2302,28 @@ impl RealmUdpSocket for std::net::UdpSocket {
         }
         .boxed_local()
     }
+
+    fn bind_in_realm_with_options<'a>(
+        realm: &'a TestRealm<'a>,
+        addr: std::net::SocketAddr,
+        options: fposix_socket::SocketCreationOptions,
+    ) -> futures::future::LocalBoxFuture<'a, Result<Self>> {
+        async move {
+            let sock = realm
+                .datagram_socket_with_options(
+                    get_socket2_domain(&addr),
+                    fposix_socket::DatagramSocketProtocol::Udp,
+                    options,
+                )
+                .await
+                .context("failed to create socket")?;
+
+            sock.bind(&addr.into()).context("bind failed")?;
+
+            Result::Ok(sock.into())
+        }
+        .boxed_local()
+    }
 }
 
 impl RealmUdpSocket for fuchsia_async::net::UdpSocket {
@@ -2303,6 +2332,21 @@ impl RealmUdpSocket for fuchsia_async::net::UdpSocket {
         addr: std::net::SocketAddr,
     ) -> futures::future::LocalBoxFuture<'a, Result<Self>> {
         std::net::UdpSocket::bind_in_realm(realm, addr)
+            .and_then(|udp| {
+                futures::future::ready(
+                    fuchsia_async::net::UdpSocket::from_socket(udp)
+                        .context("failed to create fuchsia_async socket"),
+                )
+            })
+            .boxed_local()
+    }
+
+    fn bind_in_realm_with_options<'a>(
+        realm: &'a TestRealm<'a>,
+        addr: std::net::SocketAddr,
+        options: fposix_socket::SocketCreationOptions,
+    ) -> futures::future::LocalBoxFuture<'a, Result<Self>> {
+        std::net::UdpSocket::bind_in_realm_with_options(realm, addr, options)
             .and_then(|udp| {
                 futures::future::ready(
                     fuchsia_async::net::UdpSocket::from_socket(udp)

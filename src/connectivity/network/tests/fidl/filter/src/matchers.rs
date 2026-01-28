@@ -24,6 +24,15 @@ pub(crate) trait MatcherState {
     /// parameters.
     fn verify_matched(&self, interface: &TestInterface<'_>, ip_version: IpVersion);
 
+    /// If possible, verifies that the matcher was executed with the specified
+    /// mark, UID, and cookie.
+    fn verify_mark_uid_and_cookie(
+        &self,
+        expected_mark: u32,
+        expected_uid: u32,
+        expected_cookie: u64,
+    );
+
     // If possible, verifies that the matcher was not executed.
     fn verify_not_matched(&self);
 }
@@ -34,6 +43,13 @@ pub(crate) struct NoState;
 
 impl MatcherState for NoState {
     fn verify_matched(&self, _interface: &TestInterface<'_>, _ip_version: IpVersion) {}
+    fn verify_mark_uid_and_cookie(
+        &self,
+        _expected_mark: u32,
+        _expected_uid: u32,
+        _expected_cookie: u64,
+    ) {
+    }
     fn verify_not_matched(&self) {}
 }
 
@@ -575,11 +591,20 @@ impl MatcherState for EbpfMatcherState {
             result.ether_type,
             u32::from(u16::from(packet_formats::ethernet::EtherType::from_ip_version(ip_version)))
         );
-
-        // This may be either UDP or ICMP packet. Just make sure that the field was set.
-        assert_ne!(result.ip_proto, 0);
-
+        assert_eq!(result.ip_proto, u8::from(packet_formats::ip::IpProto::Udp));
         assert_eq!(result.ifindex, u32::try_from(interface.id()).unwrap());
+    }
+
+    fn verify_mark_uid_and_cookie(
+        &self,
+        expected_mark: u32,
+        expected_uid: u32,
+        expected_cookie: u64,
+    ) {
+        let result = self.program.read_test_result();
+        assert_eq!(result.mark, expected_mark);
+        assert_eq!(result.uid, expected_uid);
+        assert_eq!(result.cookie, expected_cookie);
     }
 
     fn verify_not_matched(&self) {

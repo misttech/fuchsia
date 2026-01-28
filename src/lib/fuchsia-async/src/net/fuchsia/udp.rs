@@ -11,6 +11,7 @@ use futures::task::{Context, Poll};
 use std::io;
 use std::net::{self, SocketAddr};
 use std::ops::Deref;
+use std::os::fd::{AsRawFd, RawFd};
 use std::pin::Pin;
 
 fn new_socket_address_conversion_error() -> std::io::Error {
@@ -70,6 +71,14 @@ impl UdpSocket {
             .and_then(|sa| sa.as_socket().ok_or_else(new_socket_address_conversion_error))
     }
 
+    /// Connects the socket to the specified remote address.
+    ///
+    /// See [`std::net::UdpSocket::connect()`].
+    pub fn connect(&self, addr: &SocketAddr) -> io::Result<()> {
+        let addr: socket2::SockAddr = (*addr).into();
+        self.0.as_ref().connect(&addr)
+    }
+
     /// Receive a UDP datagram from the socket.
     ///
     /// Asynchronous version of [`std::net::UdpSocket::recv_from()`].
@@ -77,7 +86,14 @@ impl UdpSocket {
         UdpRecvFrom { socket: self, buf }
     }
 
-    /// Send a UDP datagram via the socket.
+    /// Send a UDP datagram via the socket. Fails if the socket is not connected.
+    ///
+    /// Asynchronous version of [`std::net::UdpSocket::send()`].
+    pub fn send<'a>(&'a self, buf: &'a [u8]) -> SendFuture<'a> {
+        SendFuture { socket: self, buf }
+    }
+
+    /// Send a UDP datagram via the socket to the specified address.
     ///
     /// Asynchronous version of [`std::net::UdpSocket::send_to()`].
     pub fn send_to<'a>(&'a self, buf: &'a [u8], addr: SocketAddr) -> SendTo<'a> {
@@ -91,6 +107,12 @@ impl UdpSocket {
         addr: SocketAddr,
     ) -> SendToVectored<'a> {
         SendToVectored { socket: self, bufs, addr: addr.into() }
+    }
+}
+
+impl AsRawFd for UdpSocket {
+    fn as_raw_fd(&self) -> RawFd {
+        self.0.as_raw_fd()
     }
 }
 
@@ -179,15 +201,12 @@ impl DatagramSocket {
         SendTo { socket: self, buf, addr }
     }
 
-    /// Attempt to send a datagram via the socket without blocking.
-    pub fn async_send_to(
+    fn send_result_to_poll_result(
         &self,
-        buf: &[u8],
-        addr: &socket2::SockAddr,
+        r: io::Result<usize>,
         cx: &mut Context<'_>,
     ) -> Poll<io::Result<usize>> {
-        ready!(EventedFd::poll_writable(&self.0, cx))?;
-        match self.0.as_ref().send_to(buf, addr) {
+        match r {
             Err(e) => {
                 if e.kind() == io::ErrorKind::WouldBlock {
                     self.0.need_write(cx);
@@ -198,6 +217,24 @@ impl DatagramSocket {
             }
             Ok(size) => Poll::Ready(Ok(size)),
         }
+    }
+
+    /// Attempt to send a datagram via the socket without blocking.
+    pub fn async_send(&self, buf: &[u8], cx: &mut Context<'_>) -> Poll<io::Result<usize>> {
+        ready!(EventedFd::poll_writable(&self.0, cx))?;
+        self.send_result_to_poll_result(self.0.as_ref().send(buf), cx)
+    }
+
+    /// Attempt to send a datagram to the specified address via the socket
+    /// without blocking.
+    pub fn async_send_to(
+        &self,
+        buf: &[u8],
+        addr: &socket2::SockAddr,
+        cx: &mut Context<'_>,
+    ) -> Poll<io::Result<usize>> {
+        ready!(EventedFd::poll_writable(&self.0, cx))?;
+        self.send_result_to_poll_result(self.0.as_ref().send_to(buf, addr), cx)
     }
 
     /// Send a datagram (possibly split over multiple buffers) via the socket.
@@ -218,17 +255,7 @@ impl DatagramSocket {
         cx: &mut Context<'_>,
     ) -> Poll<io::Result<usize>> {
         ready!(EventedFd::poll_writable(&self.0, cx))?;
-        match self.0.as_ref().send_to_vectored(bufs, addr) {
-            Err(e) => {
-                if e.kind() == io::ErrorKind::WouldBlock {
-                    self.0.need_write(cx);
-                    Poll::Pending
-                } else {
-                    Poll::Ready(Err(e))
-                }
-            }
-            Ok(size) => Poll::Ready(Ok(size)),
-        }
+        self.send_result_to_poll_result(self.0.as_ref().send_to_vectored(bufs, addr), cx)
     }
 
     /// Sets the value of the `SO_BROADCAST` option for this socket.
@@ -297,6 +324,21 @@ impl<'a> Future for RecvFrom<'a> {
         let this = &mut *self;
         let (received, addr) = ready!(this.socket.async_recv_from(this.buf, cx))?;
         Poll::Ready(Ok((received, addr)))
+    }
+}
+
+/// Future returned by [`DatagramSocket::send()`].
+#[must_use = "futures do nothing unless you `.await` or poll them"]
+pub struct SendFuture<'a> {
+    socket: &'a DatagramSocket,
+    buf: &'a [u8],
+}
+
+impl<'a> Future for SendFuture<'a> {
+    type Output = io::Result<usize>;
+
+    fn poll(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
+        self.socket.async_send(self.buf, cx)
     }
 }
 
