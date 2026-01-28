@@ -23,8 +23,7 @@ class AdbShellImpl;
 class AdbShell : public fidl::WireServer<fuchsia_hardware_adb::Provider> {
  public:
   explicit AdbShell(fidl::ClientEnd<fuchsia_io::Directory> svc, async_dispatcher_t* dispatcher,
-                    adb_shell_config::Config config)
-      : svc_(std::move(svc)), dispatcher_(dispatcher), config_(std::move(config)) {}
+                    adb_shell_config::Config config);
 
   // fuchsia_hardware_adb::Provider methods.
   void ConnectToService(ConnectToServiceRequestView request,
@@ -80,6 +79,11 @@ class AdbShellImpl : public fidl::WireAsyncEventHandler<fuchsia_dash::Launcher> 
   fidl::WireSharedClient<fuchsia_dash::Launcher> dash_client_;
   async_dispatcher_t* dispatcher_;
 };
+
+inline AdbShell::AdbShell(fidl::ClientEnd<fuchsia_io::Directory> svc, async_dispatcher_t* dispatcher,
+                          adb_shell_config::Config config)
+    : svc_(std::move(svc)), dispatcher_(dispatcher), config_(std::move(config)) {}
+
 }  // namespace adb_shell
 
 #endif  // SRC_DEVELOPER_ADB_BIN_ADB_SHELL_ADB_SHELL_H_
