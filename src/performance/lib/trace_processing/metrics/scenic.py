@@ -49,15 +49,19 @@ class ScenicMetricsProcessor(trace_metrics.MetricsProcessor):
     configured to instead report a time series of measurements, one for each event.
     """
 
-    def __init__(self, aggregates_only: bool = True):
+    def __init__(
+        self, aggregates_only: bool = True, include_render_total: bool = True
+    ):
         """Constructor.
 
         Args:
             aggregates_only: When True, generates RenderCpu[Min|Max|Average|P*] and
                 RenderTotal[Min|Max|Average|P*].
                 Otherwise generates RenderCpu and RenderTotal with the raw values.
+            include_render_total: When True, collects RenderTotal metrics.
         """
         self.aggregates_only: bool = aggregates_only
+        self.include_render_total: bool = include_render_total
 
     @property
     def event_patterns(self) -> set[str]:
@@ -133,26 +137,23 @@ class ScenicMetricsProcessor(trace_metrics.MetricsProcessor):
         cpu_render_mean: float = statistics.mean(cpu_render_times)
         _LOGGER.info(f"Average CPU render time: {cpu_render_mean} ms")
 
-        total_render_times: list[float] = []
-        for tracing_event in tracing_events:
-            (
-                tracing_event.vsync_event.start
-                - tracing_event.start_event.start
-            ).to_milliseconds_f()
-            total_render_times.append(
-                (
-                    tracing_event.vsync_event.start
-                    - tracing_event.start_event.start
-                ).to_milliseconds_f()
-            )
-
-        total_render_mean: float = statistics.mean(total_render_times)
-        _LOGGER.info(f"Average Total render time: {total_render_mean} ms")
-
         metrics_list: list[Tuple[str, list[float]]] = [
             ("RenderCpu", cpu_render_times),
-            ("RenderTotal", total_render_times),
         ]
+
+        if self.include_render_total:
+            total_render_times: list[float] = []
+            for tracing_event in tracing_events:
+                total_render_times.append(
+                    (
+                        tracing_event.vsync_event.start
+                        - tracing_event.start_event.start
+                    ).to_milliseconds_f()
+                )
+
+            total_render_mean: float = statistics.mean(total_render_times)
+            _LOGGER.info(f"Average Total render time: {total_render_mean} ms")
+            metrics_list.append(("RenderTotal", total_render_times))
 
         test_case_results: list[metrics.TestCaseResult] = []
         for name, values in metrics_list:

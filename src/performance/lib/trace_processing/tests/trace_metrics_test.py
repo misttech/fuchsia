@@ -179,6 +179,20 @@ class MetricProcessorsTest(unittest.TestCase):
                 ),
             ),
             param(
+                "scenic_no_render_total",
+                processor=scenic_metrics.ScenicMetricsProcessor(
+                    aggregates_only=False, include_render_total=False
+                ),
+                model_file="scenic_metric.json",
+                expected_results=[
+                    TCR(
+                        label="RenderCpu",
+                        unit=U.milliseconds,
+                        values=[0.09, 0.08],
+                    ),
+                ],
+            ),
+            param(
                 "app_render",
                 processor=app_render_metrics.AppRenderLatencyMetricsProcessor(
                     "flatland-view-provider-example",
