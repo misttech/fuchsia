@@ -14,17 +14,16 @@
 #include <optional>
 #include <vector>
 
-namespace spi {
+#include "spi-child.h"
 
-class SpiChild;
+namespace spi {
 
 class SpiDriver : public fdf::DriverBase {
  public:
   static constexpr std::string_view kDriverName = "spi";
   static constexpr std::string_view kChildNodeName = "spi";
 
-  SpiDriver(fdf::DriverStartArgs start_args, fdf::UnownedSynchronizedDispatcher dispatcher)
-      : fdf::DriverBase(kDriverName, std::move(start_args), std::move(dispatcher)) {}
+  SpiDriver(fdf::DriverStartArgs start_args, fdf::UnownedSynchronizedDispatcher dispatcher);
 
   zx::result<> Start() override;
 
@@ -47,6 +46,10 @@ class SpiDriver : public fdf::DriverBase {
 
   fdf::OwnedChildNode child_;
 };
+
+inline SpiDriver::SpiDriver(fdf::DriverStartArgs start_args,
+                            fdf::UnownedSynchronizedDispatcher dispatcher)
+    : fdf::DriverBase(kDriverName, std::move(start_args), std::move(dispatcher)) {}
 
 }  // namespace spi
 
