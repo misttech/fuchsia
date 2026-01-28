@@ -708,7 +708,7 @@ class AsyncMain:
             )
             build_return_code = await run_build_with_suspended_output(
                 exec_env,
-                ["build/images/updates"],
+                ["//build/images/updates"],
                 show_output=not exec_env.log_to_stdout(),
             )
             if build_return_code != 0:
