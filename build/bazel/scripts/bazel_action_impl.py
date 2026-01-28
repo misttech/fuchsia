@@ -150,6 +150,18 @@ class BazelActionRunner(object):
                 self.paths.ninja_build_dir / extra_outputs.command_profile,
             ]
 
+        cmd_args += [
+            # Ensure that all debug symbols are properly generated during the build
+            # The aspect will also generate extra manifests whose paths will be
+            # printed to Bazel's stderr DEBUG lines, which will be filtered
+            # below to retrieve them (and hide the output from the user).
+            #
+            # Doing so avoids doing an extra `bazel build` command to get the
+            # same data. See https://fxbug.dev/452591388
+            "--output_groups=+debug_symbol_files",
+            "--aspects=//build/bazel/debug_symbols:aspects.bzl%generate_manifest",
+        ]
+
         # Now that there's a complete command string calculated, print it to debug or the command
         # file output if we have one.
         if _DEBUG:

@@ -738,18 +738,6 @@ def main() -> int:
         #
         cmd_args += ["--config=verbose"]
 
-    cmd_args += [
-        # Ensure that all debug symbols are properly generated during the build
-        # The aspect will also generate extra manifests whose paths will be
-        # printed to Bazel's stderr DEBUG lines, which will be filtered
-        # below to retrieve them (and hide the output from the user).
-        #
-        # Doing so avoids doing an extra `bazel build` command to get the
-        # same data. See https://fxbug.dev/452591388
-        "--output_groups=+debug_symbol_files",
-        "--aspects=//build/bazel/debug_symbols:aspects.bzl%generate_manifest",
-    ]
-
     # Save the command.profile.gz data for analysis.
     # Convert '//some/gn:label' into 'obj/some/gn/label.command.profile.gz'
     command_profile_filename = (
