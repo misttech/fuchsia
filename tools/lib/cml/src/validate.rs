@@ -2413,6 +2413,18 @@ which is almost certainly a mistake: {}",
                     &AnyRef::Named(name),
                 )?;
             }
+            (
+                Some(UseFromRef::Dictionary(DictionaryRef {
+                    path: _,
+                    root: RootDictionaryRef::Named(name),
+                })),
+                _,
+            ) => {
+                self.validate_component_child_or_capability_ref(
+                    "\"use\" source",
+                    &AnyRef::Named(name),
+                )?;
+            }
             (_, Some(DependencyType::Weak)) => {
                 return Err(Error::validate(format!(
                     "Only `use` from children can have dependency: \"weak\""
@@ -6887,6 +6899,42 @@ mod tests {
                 ],
             }),
             Err(Error::Validate { err, .. }) if &err == "Only `use` from children can have dependency: \"weak\""
+        ),
+        test_cml_use_from_child_weak(
+            json!({
+                "children": [
+                    {
+                        "name": "logger",
+                        "url": "fuchsia-pkg://fuchsia.com/logger/stable#meta/logger.cm"
+                    },
+                ],
+                "use": [
+                    {
+                        "protocol": "fuchsia.child.Protocol",
+                        "from": "#logger",
+                        "dependency": "weak",
+                    },
+                ],
+            }),
+            Ok(())
+        ),
+        test_cml_use_from_child_dictionary_weak(
+            json!({
+                "children": [
+                    {
+                        "name": "logger",
+                        "url": "fuchsia-pkg://fuchsia.com/logger/stable#meta/logger.cm"
+                    },
+                ],
+                "use": [
+                    {
+                        "protocol": "fuchsia.child.Protocol",
+                        "from": "#logger/dictionary",
+                        "dependency": "weak",
+                    },
+                ],
+            }),
+            Ok(())
         ),
         test_cml_use_numbered_handle_not_a_number(
             json!({
