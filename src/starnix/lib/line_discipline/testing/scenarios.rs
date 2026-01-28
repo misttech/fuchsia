@@ -61,6 +61,8 @@ mod tests {
     #[test_case("vdiscard_basic", include_str!("traces/vdiscard_basic.json"); "vdiscard_basic")]
     #[test_case("vlnext_basic", include_str!("traces/vlnext_basic.json"); "vlnext_basic")]
     #[test_case("vlnext_no_echoctl", include_str!("traces/vlnext_no_echoctl.json"); "vlnext_no_echoctl")]
+    #[test_case("iutf8_backspace", include_str!("traces/iutf8_backspace.json"); "iutf8_backspace")]
+    #[test_case("no_iutf8_backspace", include_str!("traces/no_iutf8_backspace.json"); "no_iutf8_backspace")]
     fn test_replay_trace(name: &str, json_data: &str) {
         crate::testing::tests::test_replay_trace(name, json_data);
     }

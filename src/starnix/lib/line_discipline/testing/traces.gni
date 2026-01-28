@@ -58,4 +58,6 @@ trace_files = [
   "testing/traces/vdiscard_basic.json",
   "testing/traces/vlnext_basic.json",
   "testing/traces/vlnext_no_echoctl.json",
+  "testing/traces/iutf8_backspace.json",
+  "testing/traces/no_iutf8_backspace.json",
 ]
