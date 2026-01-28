@@ -458,11 +458,8 @@ impl Finish for Transformer {
 
         // Select executor
         let (run_executor, modified_ret_type) =
-            match (self.executor.is_test(), self.logging, is_nonempty_ret_type) {
-                (_, true, false) | (_, false, false) => (quote!(#tts), quote!(#ret_type)),
-                (_, false, true) => (quote!(#tts), quote!(#ret_type)),
-                (true, _, _) => (quote!(#tts), quote!(#ret_type)),
-                (false, _, _) => (
+            if !self.executor.is_test() && self.logging && is_nonempty_ret_type {
+                (
                     quote! {
                         let result = #tts;
                         match result {
@@ -477,7 +474,9 @@ impl Finish for Transformer {
                         }
                     },
                     quote!(-> std::process::ExitCode),
-                ),
+                )
+            } else {
+                (quote!(#tts), quote!(#ret_type))
             };
 
         // Finally build output.
