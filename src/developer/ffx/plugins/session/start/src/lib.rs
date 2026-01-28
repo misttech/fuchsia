@@ -5,7 +5,7 @@
 use anyhow::{Result, format_err};
 use async_trait::async_trait;
 use ffx_session_start_args::SessionStartCommand;
-use ffx_writer::SimpleWriter;
+use ffx_writer::RawWriter;
 use fho::{FfxMain, FfxTool};
 use fidl_fuchsia_session::{LifecycleProxy, LifecycleStartRequest};
 use target_holders::moniker;
@@ -24,7 +24,8 @@ fho::embedded_plugin!(StartTool);
 
 #[async_trait(?Send)]
 impl FfxMain for StartTool {
-    type Writer = SimpleWriter;
+    // TODO(b/472310565) Support actual "json" output, not just "raw"
+    type Writer = RawWriter;
     async fn main(self, mut writer: Self::Writer) -> fho::Result<()> {
         start_impl(self.lifecycle_proxy, self.cmd, &mut writer).await?;
         Ok(())
