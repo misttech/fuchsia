@@ -8,11 +8,13 @@ use crate::identity::ComponentIdentity;
 use crate::logs::container::{CursorItem, LogsArtifactsContainer};
 use crate::logs::debuglog::{DebugLog, DebugLogBridge, KERNEL_IDENTITY};
 use crate::logs::multiplex::{Multiplexer, MultiplexerHandleAction};
-use crate::logs::shared_buffer::SharedBuffer;
+use crate::logs::shared_buffer::{FilterCursorStream, SharedBuffer};
 use crate::logs::stats::LogStreamStats;
 use anyhow::format_err;
-use diagnostics_data::{LogsData, Severity};
-use fidl_fuchsia_diagnostics::{LogInterestSelector, Selector, StreamMode, StringSelector};
+use diagnostics_data::Severity;
+use fidl_fuchsia_diagnostics::{
+    ComponentSelector, LogInterestSelector, Selector, StreamMode, StringSelector,
+};
 use fidl_fuchsia_diagnostics_types::Severity as FidlSeverity;
 use flyweights::FlyStr;
 use fuchsia_inspect_derive::WithInspect;
@@ -28,7 +30,7 @@ use std::collections::{BTreeMap, HashMap};
 use std::str::FromStr;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::{Arc, OnceLock, Weak};
-use {fuchsia_async as fasync, fuchsia_inspect as inspect, fuchsia_trace as ftrace};
+use {fuchsia_async as fasync, fuchsia_inspect as inspect};
 
 // LINT.IfChange
 #[derive(Ord, PartialOrd, Eq, PartialEq)]
@@ -199,34 +201,26 @@ impl LogsRepository {
         &self,
         mode: StreamMode,
         selectors: Option<Vec<Selector>>,
-        parent_trace_id: ftrace::Id,
     ) -> impl Stream<Item = CursorItem> + Send + use<> {
         let mut repo = self.mutable_state.lock();
         let substreams = repo.logs_data_store.iter().map(|(identity, c)| {
             let cursor = c.cursor_raw(mode);
             (Arc::clone(identity), cursor)
         });
-        let (mut merged, mpx_handle) = Multiplexer::new(parent_trace_id, selectors, substreams);
+        let (mut merged, mpx_handle) = Multiplexer::new(selectors, substreams);
         repo.logs_multiplexers.add(mode, Box::new(mpx_handle));
         merged.set_on_drop_id_sender(repo.logs_multiplexers.cleanup_sender());
         merged
     }
 
+    /// Returns a log stream filtered to the specified selectors. If `selectors` is empty, all logs
+    /// are returned.
     pub fn logs_cursor(
         &self,
         mode: StreamMode,
-        selectors: Option<Vec<Selector>>,
-        parent_trace_id: ftrace::Id,
-    ) -> impl Stream<Item = Arc<LogsData>> + Send + 'static {
-        let mut repo = self.mutable_state.lock();
-        let substreams = repo.logs_data_store.iter().map(|(identity, c)| {
-            let cursor = c.cursor(mode, parent_trace_id);
-            (Arc::clone(identity), cursor)
-        });
-        let (mut merged, mpx_handle) = Multiplexer::new(parent_trace_id, selectors, substreams);
-        repo.logs_multiplexers.add(mode, Box::new(mpx_handle));
-        merged.set_on_drop_id_sender(repo.logs_multiplexers.cleanup_sender());
-        merged
+        selectors: Vec<ComponentSelector>,
+    ) -> FilterCursorStream {
+        self.shared_buffer.cursor(mode, selectors).into()
     }
 
     /// Returns a log container.
@@ -613,7 +607,7 @@ mod tests {
         bar_container.ingest_message(make_message("b", None, zx::BootInstant::from_nanos(2)));
         foo_container.ingest_message(make_message("c", None, zx::BootInstant::from_nanos(3)));
 
-        let stream = repo.logs_cursor(StreamMode::Snapshot, None, ftrace::Id::random());
+        let stream = repo.logs_cursor(StreamMode::Snapshot, Vec::new());
 
         let results =
             stream.map(|value| value.msg().unwrap().to_string()).collect::<Vec<_>>().await;
@@ -621,8 +615,7 @@ mod tests {
 
         let filtered_stream = repo.logs_cursor(
             StreamMode::Snapshot,
-            Some(vec![selectors::parse_selector::<FastError>("foo:root").unwrap()]),
-            ftrace::Id::random(),
+            vec![selectors::parse_component_selector::<FastError>("foo").unwrap()],
         );
 
         let results =
@@ -633,8 +626,7 @@ mod tests {
     #[fuchsia::test]
     async fn multiplexer_broker_cleanup() {
         let repo = LogsRepository::for_test(fasync::Scope::new());
-        let stream =
-            repo.logs_cursor(StreamMode::SnapshotThenSubscribe, None, ftrace::Id::random());
+        let stream = repo.logs_cursor_raw(StreamMode::SnapshotThenSubscribe, None);
 
         assert_eq!(repo.mutable_state.lock().logs_multiplexers.live_iterators.lock().len(), 1);
 

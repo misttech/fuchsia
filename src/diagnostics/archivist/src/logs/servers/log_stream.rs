@@ -12,7 +12,7 @@ use futures::{AsyncWriteExt, Stream, StreamExt};
 use log::warn;
 use std::borrow::Cow;
 use std::sync::Arc;
-use {fidl_fuchsia_diagnostics as fdiagnostics, fuchsia_async as fasync, fuchsia_trace as ftrace};
+use {fidl_fuchsia_diagnostics as fdiagnostics, fuchsia_async as fasync};
 
 pub struct LogStreamServer {
     /// The repository holding the logs.
@@ -56,7 +56,6 @@ impl LogStreamServer {
                     let logs = logs_repo.logs_cursor_raw(
                         opts.mode.unwrap_or(StreamMode::SnapshotThenSubscribe),
                         None,
-                        ftrace::Id::random(),
                     );
                     let opts = ExtendRecordOpts::from(opts);
                     scope.spawn(Self::stream_logs(fasync::Socket::from_socket(socket), logs, opts));

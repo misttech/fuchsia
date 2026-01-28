@@ -9,8 +9,9 @@ use fidl::endpoints::DiscoverableProtocolMarker;
 use fidl_fuchsia_diagnostics::StreamMode;
 use futures::StreamExt;
 use log::warn;
+use std::pin::pin;
 use std::sync::Arc;
-use {fidl_fuchsia_logger as flogger, fuchsia_async as fasync, fuchsia_trace as ftrace};
+use {fidl_fuchsia_logger as flogger, fuchsia_async as fasync};
 
 pub struct LogServer {
     /// The repository holding the logs.
@@ -54,13 +55,11 @@ impl LogServer {
                     Listener::new(log_listener, options)?
                 }
             };
-            // NOTE: The LogListener code path isn't instrumented for tracing at the moment.
-            let logs = logs_repo.logs_cursor(
-                StreamMode::SnapshotThenSubscribe,
-                None,
-                ftrace::Id::random(),
-            );
-            scope.spawn(listener.run(logs));
+            let logs =
+                logs_repo.logs_cursor(StreamMode::SnapshotThenSubscribe, Vec::new()).map(Arc::new);
+            scope.spawn(async move {
+                listener.run(pin!(logs)).await;
+            });
         }
         logs_repo.finish_interest_connection(connection_id);
         Ok(())

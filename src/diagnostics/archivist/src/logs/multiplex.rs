@@ -5,9 +5,7 @@
 use crate::identity::ComponentIdentity;
 use crate::logs::container::{CursorItem, LogsArtifactsContainer};
 use derivative::Derivative;
-use diagnostics_data::{Data, Logs};
 use fidl_fuchsia_diagnostics::{Selector, StreamMode};
-use fuchsia_trace as ftrace;
 use futures::channel::mpsc::{UnboundedReceiver, UnboundedSender};
 use futures::{Stream, StreamExt};
 use log::trace;
@@ -42,7 +40,6 @@ pub struct Multiplexer<I> {
 
 impl<I> Multiplexer<I> {
     pub fn new(
-        parent_trace_id: ftrace::Id,
         selectors: Option<Vec<Selector>>,
         substreams: impl Iterator<Item = (Arc<ComponentIdentity>, PinStream<I>)>,
     ) -> (Self, MultiplexerHandle<I>) {
@@ -61,7 +58,7 @@ impl<I> Multiplexer<I> {
                 id,
                 on_drop_id_sender: None,
             },
-            MultiplexerHandle { sender, id, trace_id: parent_trace_id },
+            MultiplexerHandle { sender, id },
         )
     }
 
@@ -172,28 +169,12 @@ enum IncomingStream<S> {
 
 pub struct MultiplexerHandle<I> {
     id: usize,
-    trace_id: ftrace::Id,
     sender: UnboundedSender<IncomingStream<PinStream<I>>>,
 }
 
 impl<I> MultiplexerHandle<I> {
     fn send(&self, identity: Arc<ComponentIdentity>, stream: PinStream<I>) -> bool {
         self.sender.unbounded_send(IncomingStream::Next { identity, stream }).is_ok()
-    }
-}
-
-impl MultiplexerHandleAction for MultiplexerHandle<Arc<Data<Logs>>> {
-    fn send_cursor_from(&self, mode: StreamMode, container: &Arc<LogsArtifactsContainer>) -> bool {
-        let stream = container.cursor(mode, self.trace_id);
-        self.send(Arc::clone(&container.identity), stream)
-    }
-
-    fn multiplexer_id(&self) -> usize {
-        self.id
-    }
-
-    fn close(&self) {
-        self.sender.unbounded_send(IncomingStream::Done).ok();
     }
 }
 
@@ -292,7 +273,7 @@ mod tests {
 
     #[fuchsia::test]
     async fn empty_multiplexer_terminates() {
-        let (mux, handle) = Multiplexer::<i32>::new(ftrace::Id::random(), None, std::iter::empty());
+        let (mux, handle) = Multiplexer::<i32>::new(None, std::iter::empty());
         handle.close();
         let observed: Vec<i32> = mux.collect().await;
         let expected: Vec<i32> = vec![];
@@ -301,7 +282,7 @@ mod tests {
 
     #[fuchsia::test]
     async fn empty_input_streams_terminate() {
-        let (mux, handle) = Multiplexer::<i32>::new(ftrace::Id::random(), None, std::iter::empty());
+        let (mux, handle) = Multiplexer::<i32>::new(None, std::iter::empty());
 
         handle
             .send(Arc::new(vec!["empty1"].into()), Box::pin(iter2stream(vec![])) as PinStream<i32>);
@@ -318,7 +299,7 @@ mod tests {
 
     #[fuchsia::test]
     async fn outputs_are_ordered() {
-        let (mux, handle) = Multiplexer::<i32>::new(ftrace::Id::random(), None, std::iter::empty());
+        let (mux, handle) = Multiplexer::<i32>::new(None, std::iter::empty());
         handle.send(
             Arc::new(vec!["first"].into()),
             Box::pin(iter2stream(vec![1, 3, 5, 7])) as PinStream<i32>,
@@ -340,7 +321,7 @@ mod tests {
 
     #[fuchsia::test]
     async fn semi_sorted_substream_semi_sorted() {
-        let (mux, handle) = Multiplexer::<i32>::new(ftrace::Id::random(), None, std::iter::empty());
+        let (mux, handle) = Multiplexer::<i32>::new(None, std::iter::empty());
         handle.send(
             Arc::new(vec!["unordered"].into()),
             Box::pin(iter2stream(vec![1, 7, 3, 5])) as PinStream<i32>,
@@ -360,8 +341,7 @@ mod tests {
     #[fuchsia::test]
     async fn single_stream() {
         let (mut send, recv) = futures::channel::mpsc::unbounded();
-        let (mut mux, handle) =
-            Multiplexer::<i32>::new(ftrace::Id::random(), None, std::iter::empty());
+        let (mut mux, handle) = Multiplexer::<i32>::new(None, std::iter::empty());
         handle.send(Arc::new(vec!["recv"].into()), Box::pin(recv) as PinStream<i32>);
 
         assert!(mux.next().now_or_never().is_none());
@@ -385,8 +365,7 @@ mod tests {
     async fn two_streams_merged() {
         let (mut send1, recv1) = futures::channel::mpsc::unbounded();
         let (mut send2, recv2) = futures::channel::mpsc::unbounded();
-        let (mut mux, handle) =
-            Multiplexer::<i32>::new(ftrace::Id::random(), None, std::iter::empty());
+        let (mut mux, handle) = Multiplexer::<i32>::new(None, std::iter::empty());
         handle.send(Arc::new(vec!["recv1"].into()), Box::pin(recv1) as PinStream<i32>);
         handle.send(Arc::new(vec!["recv2"].into()), Box::pin(recv2) as PinStream<i32>);
 
@@ -423,8 +402,7 @@ mod tests {
         let (mut send1, recv1) = futures::channel::mpsc::unbounded();
         let (mut send2, recv2) = futures::channel::mpsc::unbounded();
         let (mut send3, recv3) = futures::channel::mpsc::unbounded();
-        let (mut mux, handle) =
-            Multiplexer::<i32>::new(ftrace::Id::random(), None, std::iter::empty());
+        let (mut mux, handle) = Multiplexer::<i32>::new(None, std::iter::empty());
         handle.send(Arc::new(vec!["recv1"].into()), Box::pin(recv1) as PinStream<i32>);
         handle.send(Arc::new(vec!["recv2"].into()), Box::pin(recv2) as PinStream<i32>);
 
@@ -456,8 +434,7 @@ mod tests {
     async fn snapshot_with_stopped_substream() {
         let (mut send1, recv1) = futures::channel::mpsc::unbounded();
         let (mut send2, recv2) = futures::channel::mpsc::unbounded();
-        let (mut mux, handle) =
-            Multiplexer::<i32>::new(ftrace::Id::random(), None, std::iter::empty());
+        let (mut mux, handle) = Multiplexer::<i32>::new(None, std::iter::empty());
         send1.unbounded_send(1).unwrap();
         send1.disconnect();
         handle.send(Arc::new(vec!["recv1"].into()), Box::pin(recv1));
@@ -482,7 +459,6 @@ mod tests {
         let (mut send1, recv1) = futures::channel::mpsc::unbounded();
         let (send2, recv2) = futures::channel::mpsc::unbounded();
         let (mut mux, handle) = Multiplexer::<i32>::new(
-            ftrace::Id::random(),
             Some(vec![selectors::parse_selector::<FastError>("recv1:root").unwrap()]),
             std::iter::empty(),
         );

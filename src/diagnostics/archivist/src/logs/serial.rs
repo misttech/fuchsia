@@ -4,9 +4,8 @@
 
 use crate::logs::repository::LogsRepository;
 use diagnostics_data::{Data, Logs};
-use fidl_fuchsia_diagnostics::{Selector, StreamMode};
+use fidl_fuchsia_diagnostics::{ComponentSelector, StreamMode};
 use fuchsia_async::OnSignals;
-use fuchsia_trace as ftrace;
 use futures::channel::mpsc::UnboundedReceiver;
 use futures::channel::{mpsc, oneshot};
 use futures::executor::block_on;
@@ -15,6 +14,7 @@ use log::warn;
 use selectors::FastError;
 use std::collections::HashSet;
 use std::io::{self, Write};
+use std::pin::pin;
 use std::sync::Arc;
 use std::{mem, thread};
 use zx::Signals;
@@ -36,13 +36,10 @@ pub async fn launch_serial(
         SerialWriter::new(sink, deny_serial_log_tags.into_iter().map(|s| s.to_string()).collect());
 
     let mut barrier = writer.get_barrier();
-    let mut log_stream = logs_repo
-        .logs_cursor(
-            StreamMode::SnapshotThenSubscribe,
-            Some(selectors_from_tags(allow_serial_log_tags)),
-            ftrace::Id::random(),
-        )
-        .fuse();
+    let mut log_stream = pin!(logs_repo.logs_cursor(
+        StreamMode::SnapshotThenSubscribe,
+        selectors_from_tags(allow_serial_log_tags),
+    ));
     loop {
         select! {
             log = log_stream.next() => {
@@ -89,16 +86,12 @@ pub async fn launch_serial(
     writer.get_barrier().wait().await;
 }
 
-fn selectors_from_tags(tags: impl IntoIterator<Item = impl AsRef<str>>) -> Vec<Selector> {
+fn selectors_from_tags(tags: impl IntoIterator<Item = impl AsRef<str>>) -> Vec<ComponentSelector> {
     tags.into_iter()
         .filter_map(|selector| {
             let selector = selector.as_ref();
             match selectors::parse_component_selector::<FastError>(selector) {
-                Ok(s) => Some(Selector {
-                    component_selector: Some(s),
-                    tree_selector: None,
-                    ..Selector::default()
-                }),
+                Ok(s) => Some(s),
                 Err(err) => {
                     warn!(selector:%, err:?; "Failed to parse component selector");
                     None

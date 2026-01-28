@@ -2,6 +2,10 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+mod cursor;
+
+pub use cursor::{FilterCursor, FilterCursorStream};
+
 use crate::identity::ComponentIdentity;
 use crate::logs::repository::ARCHIVIST_MONIKER;
 use crate::logs::stats::LogStreamStats;
@@ -9,7 +13,7 @@ use crate::logs::stored_message::StoredMessage;
 use derivative::Derivative;
 use diagnostics_log_encoding::encode::add_dropped_count;
 use diagnostics_log_encoding::{Header, TRACING_FORMAT_LOG_RECORD_TYPE};
-use fidl_fuchsia_diagnostics::StreamMode;
+use fidl_fuchsia_diagnostics::{ComponentSelector, StreamMode};
 use fidl_fuchsia_logger::MAX_DATAGRAM_LEN_BYTES;
 use fuchsia_async as fasync;
 use fuchsia_async::condition::{Condition, ConditionGuard, WakerEntry};
@@ -134,11 +138,20 @@ struct Inner {
     // The index in the buffer that we have scanned for messages.
     last_scanned: u64,
 
+    // The ID of the message that was last scanned.
+    last_scanned_message_id: u64,
+
     // A copy of the tail index in the ring buffer.
     tail: u64,
 
+    // The ID of the message at the tail.  This is just a counter that increments one per message.
+    tail_message_id: u64,
+
     // The IOBuffer peers that we must watch.
     iob_peers: Slab<(ContainerId, zx::Iob)>,
+
+    // True, when the buffer has been terminated.
+    terminated: bool,
 }
 
 enum ThreadMessage {
@@ -174,8 +187,11 @@ impl SharedBuffer {
                 containers: Containers::default(),
                 thread_msg_queue: VecDeque::default(),
                 last_scanned: 0,
+                last_scanned_message_id: 0,
                 tail: 0,
+                tail_message_id: 0,
                 iob_peers: Slab::default(),
+                terminated: false,
             }),
             sockets: Mutex::new(Slab::default()),
             on_inactive,
@@ -224,14 +240,46 @@ impl SharedBuffer {
     }
 
     /// Terminates the socket thread. The socket thread will drain the sockets before terminating.
-    pub async fn terminate(&self) {
-        self.inner.lock().thread_msg_queue.push_back(ThreadMessage::Terminate);
+    /// Returns a future that may be awaited if the caller wants to wait for the socket thread to
+    /// terminate.
+    pub fn terminate(self: &Arc<Self>) -> impl Future<Output = ()> {
+        {
+            let mut inner = InnerGuard::new(self);
+            self.flush_sockets(&mut inner);
+            inner.thread_msg_queue.push_back(ThreadMessage::Terminate);
+        }
         self.event.signal(zx::Signals::empty(), zx::Signals::USER_0).unwrap();
         let join_handle = self.socket_thread.lock().take().unwrap();
         fasync::unblock(|| {
             let _ = join_handle.join();
         })
-        .await;
+    }
+
+    /// Returns a cursor that will return messages that match selector. There will be a limited
+    /// attempt to reorder messages by timestamp.  If no selectors are specified, *all* messages
+    /// will be returned.
+    pub fn cursor(
+        self: &Arc<Self>,
+        mode: StreamMode,
+        selectors: Vec<ComponentSelector>,
+    ) -> FilterCursor {
+        let mut inner = InnerGuard::new(self);
+        let (index, message_id) = match mode {
+            StreamMode::Snapshot => (inner.tail, inner.tail_message_id),
+            StreamMode::Subscribe => {
+                let head = inner.ring_buffer.head();
+                inner.update_message_ids(head);
+                (inner.last_scanned, inner.last_scanned_message_id)
+            }
+            StreamMode::SnapshotThenSubscribe => (inner.tail, inner.tail_message_id),
+        };
+        FilterCursor::new(
+            Arc::clone(self),
+            index,
+            message_id,
+            matches!(mode, StreamMode::Snapshot),
+            selectors,
+        )
     }
 
     fn socket_thread(&self, sleep_time: Duration) {
@@ -332,7 +380,11 @@ impl SharedBuffer {
             // Now that we've processed the sockets, we can process the message.
             if let Some(m) = msg.take() {
                 match m {
-                    ThreadMessage::Terminate => return,
+                    ThreadMessage::Terminate => {
+                        inner.terminated = true;
+                        inner.wake = true;
+                        return;
+                    }
                     ThreadMessage::Flush(sender) => {
                         let _ = sender.send(());
                     }
@@ -365,6 +417,20 @@ impl SharedBuffer {
             inner.check_space(head);
             last_head = head;
         }
+    }
+
+    /// Flushes sockets and returns the head index.
+    fn flush_sockets(&self, inner: &mut InnerGuard<'_>) -> u64 {
+        let mut sockets = self.sockets.lock();
+        let mut socket_id = 0;
+        while let Some(next_id) = sockets.next_used(socket_id) {
+            // The socket doesn't need to be rearmed here.
+            inner.read_socket(&mut sockets, SocketId(next_id), |_| {});
+            socket_id = next_id + 1;
+        }
+        let head = inner.ring_buffer.head();
+        inner.update_message_ids(head);
+        head
     }
 }
 
@@ -497,6 +563,7 @@ impl<'a> InnerGuard<'a> {
         // NOTE: This should go last. After incrementing `tail`, the `message` can be overwritten.
         self.ring_buffer.increment_tail(record_len);
         self.tail += record_len as u64;
+        self.tail_message_id += 1;
 
         // The caller should have called `update_message_ids(head)` prior to calling this.
         assert!(self.last_scanned >= self.tail);
@@ -598,6 +665,7 @@ impl<'a> InnerGuard<'a> {
                 container.stats.ingest_message(msg_len, severity);
             }
             self.last_scanned += ring_buffer_record_len(msg_len) as u64;
+            self.last_scanned_message_id += 1;
             self.wake = true;
         }
     }
@@ -1126,6 +1194,18 @@ impl<T> Slab<T> {
             (self.slab.len() - 1) as u32
         }
     }
+
+    /// Returns the next used slot starting from `id` (inclusive).
+    fn next_used(&self, id: u32) -> Option<u32> {
+        let mut id = id as usize;
+        while id < self.slab.len() {
+            if matches!(self.slab[id], Slot::Used(_)) {
+                return Some(id as u32);
+            }
+            id += 1;
+        }
+        None
+    }
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -1145,7 +1225,7 @@ struct Socket {
 
 #[cfg(test)]
 mod tests {
-    use super::{SharedBuffer, SharedBufferOptions, create_ring_buffer};
+    use super::{SharedBuffer, SharedBufferOptions, Slab, create_ring_buffer};
     use crate::logs::shared_buffer::LazyItem;
     use crate::logs::stats::LogStreamStats;
     use crate::logs::testing::make_message;
@@ -1162,6 +1242,7 @@ mod tests {
     use futures::{FutureExt, poll};
     use ring_buffer::MAX_MESSAGE_SIZE;
     use std::future::poll_fn;
+    use std::iter::repeat_with;
     use std::pin::pin;
     use std::sync::Arc;
     use std::sync::atomic::{AtomicU64, Ordering};
@@ -1871,5 +1952,18 @@ mod tests {
 
         // Make sure we can still terminate the buffer.
         buffer.terminate().await;
+    }
+
+    #[fuchsia::test]
+    fn test_slab_next_used() {
+        let mut slab = Slab::default();
+        let mut ids: Vec<_> = repeat_with(|| slab.insert(|_| ())).take(4).collect();
+        ids.sort();
+        slab.free(ids[0]);
+        slab.free(ids[2]);
+        assert_eq!(slab.next_used(0), Some(ids[1]));
+        assert_eq!(slab.next_used(ids[1]), Some(ids[1]));
+        assert_eq!(slab.next_used(ids[1] + 1), Some(ids[3]));
+        assert_eq!(slab.next_used(ids[3] + 1), None);
     }
 }

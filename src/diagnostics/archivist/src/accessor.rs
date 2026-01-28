@@ -244,7 +244,7 @@ impl ArchiveAccessorServer {
                 };
                 match format {
                     Format::Fxt => {
-                        let logs = log_repo.logs_cursor_raw(mode, selectors, trace_id);
+                        let logs = log_repo.logs_cursor_raw(mode, selectors);
                         BatchIterator::new_serving_fxt(
                             logs,
                             requests,
@@ -258,9 +258,12 @@ impl ArchiveAccessorServer {
                         Ok(())
                     }
                     Format::Json => {
-                        let logs = log_repo
-                            .logs_cursor(mode, selectors, trace_id)
-                            .map(move |inner: _| (*inner).clone());
+                        let logs = Box::pin(log_repo.logs_cursor(
+                            mode,
+                            selectors.map_or(Vec::new(), |selectors| {
+                                selectors.into_iter().filter_map(|s| s.component_selector).collect()
+                            }),
+                        ));
                         BatchIterator::new_serving_arrays(logs, requests, mode, stats, trace_id)?
                             .run()
                             .await?;
