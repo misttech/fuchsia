@@ -7,6 +7,7 @@
 
 #include <condition_variable>
 
+#include "src/storage/f2fs/bcache.h"
 #include "src/storage/f2fs/common.h"
 #include "src/storage/f2fs/layout.h"
 #include "src/storage/f2fs/memory_watcher.h"
@@ -60,12 +61,7 @@ class F2fs final {
 
   VnodeCache &GetVCache() { return *vnode_cache_; }
 
-  zx::result<std::unique_ptr<f2fs::BcacheMapper>> TakeBc() {
-    if (!bc_) {
-      return zx::error(ZX_ERR_UNAVAILABLE);
-    }
-    return zx::ok(std::move(bc_));
-  }
+  zx::result<std::unique_ptr<f2fs::BcacheMapper>> TakeBc();
 
   BcacheMapper &GetBc() const {
     ZX_DEBUG_ASSERT(bc_ != nullptr);
@@ -249,6 +245,14 @@ class F2fs final {
   std::unique_ptr<PlatformVfs> vfs_for_tests_;
   size_t num_gc_runs_ = 0;  // # of free sections that gc acquires
 };
+
+inline zx::result<std::unique_ptr<f2fs::BcacheMapper>> F2fs::TakeBc() {
+  if (!bc_) {
+    return zx::error(ZX_ERR_UNAVAILABLE);
+  }
+  return zx::ok(std::move(bc_));
+}
+
 
 }  // namespace f2fs
 
