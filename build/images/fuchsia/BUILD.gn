@@ -95,9 +95,6 @@ if (is_fuchsia) {
         inputs = custom_signing_script_inputs
         deps = [ "//build/images/custom_signing:deps" ]
         generate_signed_zbi = true
-      } else if (use_vboot) {
-        inputs = vboot_action.inputs
-        generate_signed_zbi = true
       }
 
       if (fuchsia_product_assembly_config_label != false) {

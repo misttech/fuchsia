@@ -38,9 +38,6 @@ assembled_system("zedboot_assembly") {
     inputs = custom_signing_script_inputs
     deps = [ "//build/images/custom_signing:deps" ]
     generate_signed_zbi = true
-  } else if (use_vboot) {
-    inputs = vboot_action.inputs
-    generate_signed_zbi = true
   }
 
   image_metadata_overrides = legacy_zedboot_image_metadata_overrides
@@ -69,7 +66,7 @@ assembled_system("zedboot_assembly") {
   }
 }
 
-if (target_cpu != "arm64" && !use_vboot && !use_bazel_images_only) {
+if (target_cpu != "arm64" && !use_bazel_images_only) {
   esp("esp") {
     output_name = "zedboot"
     cmdline = "efi_cmdline.txt"
@@ -94,7 +91,7 @@ if (target_cpu != "arm64" && !use_vboot && !use_bazel_images_only) {
 group("zedboot") {
   if (!use_bazel_images_only) {
     public_deps = [ ":zedboot_assembly" ]
-    if (target_cpu != "arm64" && !use_vboot) {
+    if (target_cpu != "arm64") {
       public_deps += [ ":esp" ]
     }
   }
