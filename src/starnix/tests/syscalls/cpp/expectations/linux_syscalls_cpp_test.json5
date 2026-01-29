@@ -39,9 +39,6 @@
                 "Pty.EchoFlags",
                 "Pty.EchoModes",
 
-                // TODO(https://fxbug.dev/448196787): This is flakey.
-                "SocketMarkSockOpt/SocketMarkSockOpt.RawCapability/*",
-
                 // TODO(https://fxbug.dev/436916785): These tests actually suspend the system,
                 // and in Machina this results in the tests timing out after 180s.
                 "SysfsPowerTest.SuspendStatsFilesUpdateAfterSuccessfulSuspend",
