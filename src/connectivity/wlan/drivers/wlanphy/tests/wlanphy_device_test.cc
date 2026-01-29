@@ -208,6 +208,29 @@ class FakeWlanPhyImpl : public fdf::WireServer<fuchsia_wlan_phyimpl::WlanPhyImpl
     return ZX_OK;
   }
 
+  zx_status_t SendCountryCodeEvent(std::array<uint8_t, 2> country_code) {
+    fidl::Arena fidl_arena;
+
+    auto builder = fuchsia_wlan_phyimpl::wire::WlanPhyImplNotifyOnCountryCodeChangeRequest::Builder(
+        fidl_arena);
+    fidl::Array<uint8_t, 2> fidl_country;
+    std::copy(country_code.begin(), country_code.end(), fidl_country.begin());
+    auto wire_country = fuchsia_wlan_phyimpl::wire::WlanPhyCountry::WithAlpha2(fidl_country);
+    builder.phy_country(wire_country);
+    auto result = phyimpl_notify_client_.buffer(fidl_arena)->OnCountryCodeChange(builder.Build());
+    if (!result.ok()) {
+      return ZX_ERR_INTERNAL;
+    }
+    if (result->is_error()) {
+      auto status = result->error_value();
+      if (status == fuchsia_wlan_phyimpl::WlanPhyImplNotifyError::kShouldWait) {
+        return ZX_ERR_SHOULD_WAIT;
+      }
+      return ZX_ERR_INTERNAL;
+    }
+    return ZX_OK;
+  }
+
   void handle_unknown_method(
       fidl::UnknownMethodMetadata<fuchsia_wlan_phyimpl::WlanPhyImpl> metadata,
       fidl::UnknownMethodCompleter::Sync& completer) override {}
@@ -647,6 +670,46 @@ TEST_F(WlanphyDeviceTest, CriticalErrorNotify) {
   auto result = client_phy_.HandleOneEvent(event_handler);
   ASSERT_TRUE(result.ok());
   ASSERT_EQ(event_handler.GetReceivedMsgCount(), 1);
+}
+
+TEST_F(WlanphyDeviceTest, CountryCodeNotify) {
+  class EventHandler final : public fidl::WireSyncEventHandler<fuchsia_wlan_device::Phy> {
+   public:
+    EventHandler() = default;
+
+    void OnCriticalError(
+        fidl::WireEvent<fuchsia_wlan_device::Phy::OnCriticalError>* event) override {}
+    void OnCountryCodeChange(
+        fidl::WireEvent<fuchsia_wlan_device::Phy::OnCountryCodeChange>* event) override {
+      memcpy(received_ccode_.data(), event->ind.alpha2.data(), received_ccode_.size());
+      msgs_received_++;
+    }
+
+    uint8_t GetReceivedMsgCount() { return msgs_received_; }
+    std::array<uint8_t, 2> GetReceivedCountryCode() { return received_ccode_; }
+
+   private:
+    uint8_t msgs_received_ = 0;
+    std::array<uint8_t, 2> received_ccode_ = {};
+  };
+
+  EventHandler event_handler;
+  // Wait until notify_client is ready.
+  WaitForNotifyClient();
+  // Send a message via the client_phy
+  auto pwr_result = client_phy_->GetPowerState();
+  ASSERT_TRUE(pwr_result.ok());
+  WaitForCommandCompletion();
+  std::array<uint8_t, 2> country_code = {'U', 'S'};
+
+  auto status = driver_test().RunInEnvironmentTypeContext<zx_status_t>([&](TestEnvironment& env) {
+    return env.fake_phyimpl_parent_.SendCountryCodeEvent(country_code);
+  });
+  ASSERT_EQ(status, ZX_OK);
+  auto result = client_phy_.HandleOneEvent(event_handler);
+  ASSERT_TRUE(result.ok());
+  ASSERT_EQ(event_handler.GetReceivedMsgCount(), 1);
+  ASSERT_EQ(country_code, event_handler.GetReceivedCountryCode());
 }
 
 }  // namespace

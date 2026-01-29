@@ -647,7 +647,44 @@ void Device::OnCriticalError(OnCriticalErrorRequestView request,
 
 void Device::OnCountryCodeChange(OnCountryCodeChangeRequestView request,
                                  OnCountryCodeChangeCompleter::Sync& completer) {
-  completer.ReplyError(ConvertToPhyImplNotifyError(ZX_ERR_NOT_SUPPORTED));
+  ldebug_device("sending ccode change event to wlanphy client");
+  if (!request->has_phy_country()) {
+    lerror("Country code not present");
+    completer.ReplyError(ConvertToPhyImplNotifyError(ZX_ERR_INVALID_ARGS));
+    return;
+  }
+  fuchsia_wlan_device::wire::CountryCode country_code{};
+  ldebug_device("Country code changed to: %c%c", request->phy_country().alpha2().data()[0],
+                request->phy_country().alpha2().data()[1]);
+  country_code.alpha2 = request->phy_country().alpha2();
+
+  if (!phy_servers_.size()) {
+    lerror("Cannot forward country code phy server binding not set");
+    completer.ReplyError(ConvertToPhyImplNotifyError(ZX_ERR_SHOULD_WAIT));
+    return;
+  }
+
+  zx_status_t notification_status = ZX_OK;
+
+  phy_servers_.ForEachBinding([&](const fidl::ServerBinding<fuchsia_wlan_device::Phy>& binding) {
+    auto result = fidl::WireSendEvent(binding)->OnCountryCodeChange(country_code);
+    if (!result.ok()) {
+      lerror("Failed to send country code event: %s", result.FormatDescription().c_str());
+      // Note the first failure.
+      if (notification_status == ZX_OK) {
+        notification_status = result.status();
+      }
+    } else {
+      ldebug_device("country code change event forwarded to wlanphy client successfully");
+    }
+  });
+  if (notification_status != ZX_OK) {
+    // If even one client failed, report error to the caller.
+    completer.ReplyError(ConvertToPhyImplNotifyError(notification_status));
+  } else {
+    // All clients were notified successfully.
+    completer.ReplySuccess();
+  }
 }
 
 zx_status_t Device::SendCriticalErrorEvent(fuchsia_wlan_phyimpl::CriticalErrorReason reason) {
