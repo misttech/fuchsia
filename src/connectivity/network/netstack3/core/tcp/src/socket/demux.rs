@@ -49,12 +49,12 @@ use crate::internal::counters::{
 };
 use crate::internal::socket::generators::{IsnGenerator, TimestampOffsetGenerator};
 use crate::internal::socket::{
-    self, AsThisStack as _, BoundSocketState, Connection, CoreTxMetadataContext, DemuxState,
-    DeviceIpSocketHandler, DoSendLimit, DualStackDemuxIdConverter as _, DualStackIpExt,
-    EitherStack, HandshakeStatus, Listener, ListenerAddrState, ListenerSharingState,
-    MaybeDualStack, MaybeListener, PrimaryRc, TcpApi, TcpBindingsContext, TcpBindingsTypes,
-    TcpContext, TcpDemuxContext, TcpDualStackContext, TcpIpTransportContext, TcpPortSpec,
-    TcpSocketId, TcpSocketSetEntry, TcpSocketState, TcpSocketStateInner, TcpSocketTxMetadata,
+    self, AsThisStack as _, Connection, CoreTxMetadataContext, DemuxState, DeviceIpSocketHandler,
+    DoSendLimit, DualStackDemuxIdConverter as _, DualStackIpExt, EitherStack, HandshakeStatus,
+    Listener, ListenerAddrState, MaybeDualStack, PrimaryRc, TcpApi, TcpBindingsContext,
+    TcpBindingsTypes, TcpContext, TcpDemuxContext, TcpDualStackContext, TcpIpTransportContext,
+    TcpPortSpec, TcpSocketId, TcpSocketSetEntry, TcpSocketState, TcpSocketStateInner,
+    TcpSocketTxMetadata,
 };
 use crate::internal::state::{
     BufferProvider, Closed, DataAcked, Initial, NewlyClosed, State, TimeWait,
@@ -561,7 +561,8 @@ where
     H: IpHeaderInfo<WireI>,
 {
     core_ctx.with_socket_mut_transport_demux(conn_id, |core_ctx, socket_state| {
-        let TcpSocketState { socket_state, ip_options: _, socket_options } = socket_state;
+        let TcpSocketState { socket_state, sharing: _, ip_options: _, socket_options } =
+            socket_state;
 
         match run_socket_ingress_filter(
             bindings_ctx,
@@ -579,9 +580,7 @@ where
 
         let (conn_and_addr, timer) = assert_matches!(
             socket_state,
-            TcpSocketStateInner::Bound(BoundSocketState::Connected {
-                 conn, timer, sharing: _
-            }) => (conn , timer),
+            TcpSocketStateInner::Connected { conn, timer } => (conn, timer),
             "invalid socket ID"
         );
         let this_or_other_stack = match core_ctx {
@@ -958,22 +957,18 @@ where
         + CoreTxMetadataContext<TcpSocketTxMetadata<SockI, CC::WeakDeviceId, BC>, BC>,
     H: IpHeaderInfo<WireI>,
 {
-    let (maybe_listener, sharing, listener_addr) = assert_matches!(
-        &socket_state.socket_state,
-        TcpSocketStateInner::Bound(BoundSocketState::Listener(l)) => l,
-        "invalid socket ID"
-    );
+    let Listener { addr: listener_addr, accept_queue, backlog, buffer_sizes } =
+        match &socket_state.socket_state {
+            TcpSocketStateInner::Bound(_) => {
+                // If the socket is only bound, but not listening.
+                return ListenerIncomingSegmentDisposition::NoMatchingSocket;
+            }
+            TcpSocketStateInner::Listener(listener) => listener,
+            _ => panic!("unexpected socket state: {:?}", socket_state.socket_state),
+        };
 
     let ConnIpAddr { local: (local_ip, local_port), remote: (remote_ip, remote_port) } =
         incoming_addrs;
-
-    let Listener { accept_queue, backlog, buffer_sizes } = match maybe_listener {
-        MaybeListener::Bound(_bound) => {
-            // If the socket is only bound, but not listening.
-            return ListenerIncomingSegmentDisposition::NoMatchingSocket;
-        }
-        MaybeListener::Listener(listener) => listener,
-    };
 
     match run_socket_ingress_filter(
         bindings_ctx,
@@ -1091,7 +1086,6 @@ where
 
     let result = if matches!(state, State::SynRcvd(_)) {
         let poll_send_at = state.poll_send_at().expect("no retrans timer");
-        let ListenerSharingState { sharing, listening: _ } = *sharing;
         let bound_device = ip_sock.device().cloned();
 
         let addr = ConnAddr {
@@ -1130,6 +1124,7 @@ where
             let accept_queue_clone = accept_queue.clone();
             let ip_sock = ip_sock.clone();
             let bindings_ctx_moved = &mut *bindings_ctx;
+            let sharing = socket_state.sharing;
             match socketmap.conns_mut().try_insert_with(addr, sharing, move |addr, sharing| {
                 let conn = make_connection(
                     Connection {
@@ -1153,12 +1148,9 @@ where
                             bindings_ctx_moved.schedule_timer_instant(poll_send_at, &mut timer),
                             None
                         );
-                        TcpSocketStateInner::Bound(BoundSocketState::Connected {
-                            conn,
-                            sharing,
-                            timer,
-                        })
+                        TcpSocketStateInner::Connected { conn, timer }
                     },
+                    sharing,
                     socket_options,
                 );
                 (make_demux_id(id.clone()), (primary, id))

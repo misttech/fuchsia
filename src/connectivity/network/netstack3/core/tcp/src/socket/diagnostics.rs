@@ -10,7 +10,7 @@ use net_types::ip::{Ip, IpAddress as _};
 use netstack3_base::{IpSocketProperties, Marks, Matcher, WeakDeviceIdentifier};
 
 use crate::internal::socket::{
-    BoundSocketState, DualStackIpExt, MaybeListener, SocketCookie, TcpBindingsTypes, TcpSocketId,
+    BoundState, DualStackIpExt, Listener, SocketCookie, TcpBindingsTypes, TcpSocketId,
     TcpSocketState, TcpSocketStateInner, Unbound,
 };
 use crate::internal::state::State;
@@ -56,10 +56,11 @@ impl<'a, I: DualStackIpExt, D: netstack3_base::WeakDeviceIdentifier, BT: TcpBind
     fn src_port_matches(&self, matcher: &netstack3_base::BoundPortMatcher) -> bool {
         let src_port = match &self.state.socket_state {
             TcpSocketStateInner::Unbound(_) => None,
-            TcpSocketStateInner::Bound(BoundSocketState::Listener((_, _, addr))) => {
+            TcpSocketStateInner::Bound(BoundState { addr, .. })
+            | TcpSocketStateInner::Listener(Listener { addr, .. }) => {
                 Some(I::get_bound_info(addr).port.get())
             }
-            TcpSocketStateInner::Bound(BoundSocketState::Connected { conn, .. }) => {
+            TcpSocketStateInner::Connected { conn, .. } => {
                 Some(I::get_conn_info(conn).local_addr.port.get())
             }
         };
@@ -70,8 +71,9 @@ impl<'a, I: DualStackIpExt, D: netstack3_base::WeakDeviceIdentifier, BT: TcpBind
     fn dst_port_matches(&self, matcher: &netstack3_base::BoundPortMatcher) -> bool {
         let dst_port = match &self.state.socket_state {
             TcpSocketStateInner::Unbound(_)
-            | TcpSocketStateInner::Bound(BoundSocketState::Listener(_)) => None,
-            TcpSocketStateInner::Bound(BoundSocketState::Connected { conn, .. }) => {
+            | TcpSocketStateInner::Bound(_)
+            | TcpSocketStateInner::Listener(_) => None,
+            TcpSocketStateInner::Connected { conn, .. } => {
                 Some(I::get_conn_info(conn).remote_addr.port.get())
             }
         };
@@ -96,10 +98,11 @@ where
     fn src_addr_matches(&self, addr: &netstack3_base::BoundAddressMatcherEither) -> bool {
         let src_addr = match &self.state.socket_state {
             TcpSocketStateInner::Unbound(_) => None,
-            TcpSocketStateInner::Bound(BoundSocketState::Listener((_, _, addr))) => {
+            TcpSocketStateInner::Bound(BoundState { addr, .. })
+            | TcpSocketStateInner::Listener(Listener { addr, .. }) => {
                 I::get_bound_info(addr).addr.map(|a| a.addr().get())
             }
-            TcpSocketStateInner::Bound(BoundSocketState::Connected { conn, .. }) => {
+            TcpSocketStateInner::Connected { conn, .. } => {
                 Some(I::get_conn_info(conn).local_addr.ip.addr().get())
             }
         };
@@ -110,8 +113,9 @@ where
     fn dst_addr_matches(&self, addr: &netstack3_base::BoundAddressMatcherEither) -> bool {
         let dst_addr = match &self.state.socket_state {
             TcpSocketStateInner::Unbound(_)
-            | TcpSocketStateInner::Bound(BoundSocketState::Listener(_)) => None,
-            TcpSocketStateInner::Bound(BoundSocketState::Connected { conn, .. }) => {
+            | TcpSocketStateInner::Bound(_)
+            | TcpSocketStateInner::Listener(_) => None,
+            TcpSocketStateInner::Connected { conn, .. } => {
                 Some(I::get_conn_info(conn).remote_addr.ip.addr().get())
             }
         };
@@ -132,12 +136,11 @@ where
     ) -> bool {
         let device = match &self.state.socket_state {
             TcpSocketStateInner::Unbound(_) => None,
-            TcpSocketStateInner::Bound(BoundSocketState::Listener((_, _, addr))) => {
+            TcpSocketStateInner::Bound(BoundState { addr, .. })
+            | TcpSocketStateInner::Listener(Listener { addr, .. }) => {
                 I::get_bound_info(addr).device
             }
-            TcpSocketStateInner::Bound(BoundSocketState::Connected { conn, .. }) => {
-                I::get_conn_info(conn).device
-            }
+            TcpSocketStateInner::Connected { conn, .. } => I::get_conn_info(conn).device,
         };
         iface.matches(&device.and_then(|d| d.upgrade()).as_ref())
     }
@@ -232,14 +235,15 @@ where
             TcpSocketStateInner::Unbound(unbound) => {
                 TcpSocketInfo::from_partial_state(unbound.base_state(), counters.as_ref())
             }
-            TcpSocketStateInner::Bound(BoundSocketState::Listener((maybe_listener, _, _))) => {
-                TcpSocketInfo::from_partial_state(maybe_listener.base_state(), counters.as_ref())
+            TcpSocketStateInner::Bound(bound) => {
+                TcpSocketInfo::from_partial_state(bound.base_state(), counters.as_ref())
             }
-            TcpSocketStateInner::Bound(BoundSocketState::Connected {
-                conn,
-                sharing: _,
-                timer: _,
-            }) => TcpSocketInfo::from_full_state(I::get_state(conn), counters.as_ref()),
+            TcpSocketStateInner::Listener(listener) => {
+                TcpSocketInfo::from_partial_state(listener.base_state(), counters.as_ref())
+            }
+            TcpSocketStateInner::Connected { conn, timer: _ } => {
+                TcpSocketInfo::from_full_state(I::get_state(conn), counters.as_ref())
+            }
         }
     }
 
@@ -255,14 +259,15 @@ where
     )> {
         let tuple = match &self.socket_state {
             TcpSocketStateInner::Unbound(_) => None,
-            TcpSocketStateInner::Bound(BoundSocketState::Listener((_, _, addr))) => {
+            TcpSocketStateInner::Bound(BoundState { addr, .. })
+            | TcpSocketStateInner::Listener(Listener { addr, .. }) => {
                 let addr_info = I::get_bound_info(addr);
                 Some(TcpSocketDiagnosticTuple::Bound {
                     src_addr: addr_info.addr.map(|ip| ip.addr().get()),
                     src_port: addr_info.port,
                 })
             }
-            TcpSocketStateInner::Bound(BoundSocketState::Connected { conn, .. }) => {
+            TcpSocketStateInner::Connected { conn, .. } => {
                 let info = I::get_conn_info(conn);
                 Some(TcpSocketDiagnosticTuple::Connected {
                     src_addr: info.local_addr.ip.addr().get(),
@@ -284,36 +289,21 @@ where
     pub(crate) fn base_state(&self) -> netstack3_base::TcpSocketState {
         match &self.socket_state {
             TcpSocketStateInner::Unbound(unbound) => unbound.base_state(),
-            TcpSocketStateInner::Bound(BoundSocketState::Listener((maybe_listener, _, _))) => {
-                maybe_listener.base_state()
-            }
-            TcpSocketStateInner::Bound(BoundSocketState::Connected { conn, .. }) => {
-                match I::get_state(conn) {
-                    State::Closed(_) => netstack3_base::TcpSocketState::Close,
-                    State::Listen(_) => netstack3_base::TcpSocketState::Listen,
-                    State::SynRcvd(_) => netstack3_base::TcpSocketState::SynRecv,
-                    State::SynSent(_) => netstack3_base::TcpSocketState::SynSent,
-                    State::Established(_) => netstack3_base::TcpSocketState::Established,
-                    State::CloseWait(_) => netstack3_base::TcpSocketState::CloseWait,
-                    State::LastAck(_) => netstack3_base::TcpSocketState::LastAck,
-                    State::FinWait1(_) => netstack3_base::TcpSocketState::FinWait1,
-                    State::FinWait2(_) => netstack3_base::TcpSocketState::FinWait2,
-                    State::Closing(_) => netstack3_base::TcpSocketState::Closing,
-                    State::TimeWait(_) => netstack3_base::TcpSocketState::TimeWait,
-                }
-            }
-        }
-    }
-}
-
-impl<I: DualStackIpExt, D: WeakDeviceIdentifier, BT: TcpBindingsTypes> MaybeListener<I, D, BT> {
-    fn base_state(&self) -> netstack3_base::TcpSocketState {
-        match self {
-            MaybeListener::Listener(_) => netstack3_base::TcpSocketState::Listen,
-            // Despite being in the BoundSocketState::Listener variant,
-            // this is used for a socket that is bound, but not yet
-            // either connected or listening.
-            MaybeListener::Bound(_) => netstack3_base::TcpSocketState::Close,
+            TcpSocketStateInner::Bound(bound) => bound.base_state(),
+            TcpSocketStateInner::Listener(listener) => listener.base_state(),
+            TcpSocketStateInner::Connected { conn, .. } => match I::get_state(conn) {
+                State::Closed(_) => netstack3_base::TcpSocketState::Close,
+                State::Listen(_) => netstack3_base::TcpSocketState::Listen,
+                State::SynRcvd(_) => netstack3_base::TcpSocketState::SynRecv,
+                State::SynSent(_) => netstack3_base::TcpSocketState::SynSent,
+                State::Established(_) => netstack3_base::TcpSocketState::Established,
+                State::CloseWait(_) => netstack3_base::TcpSocketState::CloseWait,
+                State::LastAck(_) => netstack3_base::TcpSocketState::LastAck,
+                State::FinWait1(_) => netstack3_base::TcpSocketState::FinWait1,
+                State::FinWait2(_) => netstack3_base::TcpSocketState::FinWait2,
+                State::Closing(_) => netstack3_base::TcpSocketState::Closing,
+                State::TimeWait(_) => netstack3_base::TcpSocketState::TimeWait,
+            },
         }
     }
 }
@@ -321,6 +311,28 @@ impl<I: DualStackIpExt, D: WeakDeviceIdentifier, BT: TcpBindingsTypes> MaybeList
 impl<D, Extra> Unbound<D, Extra> {
     fn base_state(&self) -> netstack3_base::TcpSocketState {
         netstack3_base::TcpSocketState::Close
+    }
+}
+
+impl<I, D, BT> BoundState<I, D, BT>
+where
+    I: DualStackIpExt,
+    D: WeakDeviceIdentifier,
+    BT: TcpBindingsTypes,
+{
+    fn base_state(&self) -> netstack3_base::TcpSocketState {
+        netstack3_base::TcpSocketState::Close
+    }
+}
+
+impl<I, D, BT> Listener<I, D, BT>
+where
+    I: DualStackIpExt,
+    D: WeakDeviceIdentifier,
+    BT: TcpBindingsTypes,
+{
+    fn base_state(&self) -> netstack3_base::TcpSocketState {
+        netstack3_base::TcpSocketState::Listen
     }
 }
 
@@ -1446,7 +1458,7 @@ mod tests {
             ctx.core_ctx.with_socket(&client_socket, |s| {
                 let conn = assert_matches!(
                     &s.socket_state,
-                    TcpSocketStateInner::Bound(BoundSocketState::Connected {conn, ..}) => conn
+                    TcpSocketStateInner::Connected {conn, ..} => conn
                 );
 
                 let info = I::get_conn_info(conn);
@@ -1587,15 +1599,10 @@ mod tests {
             assert_eq!(count, 1);
 
             ctx.core_ctx.with_socket(&server_listener, |s| {
-                let (sharing_state, addr) = assert_matches!(
+                let addr = assert_matches!(
                     &s.socket_state,
-                    TcpSocketStateInner::Bound(BoundSocketState::Listener((
-                        MaybeListener::Bound(_),
-                        sharing_state,
-                        addr,
-                    ))) => (sharing_state, addr)
+                    TcpSocketStateInner::Bound(BoundState { addr, .. }) => addr
                 );
-                assert_eq!(sharing_state.listening, false);
                 let info = I::get_bound_info(addr);
                 assert_eq!(
                     info.addr.expect("address is set").addr().get(),
@@ -1657,15 +1664,10 @@ mod tests {
         assert_eq!(count, 1);
 
         ctx.core_ctx.with_socket(&s, |s| {
-            let (sharing_state, addr) = assert_matches!(
+            let addr = assert_matches!(
                 &s.socket_state,
-                TcpSocketStateInner::Bound(BoundSocketState::Listener((
-                    MaybeListener::Bound(_),
-                    sharing_state,
-                    addr,
-                ))) => (sharing_state, addr)
+                TcpSocketStateInner::Bound(BoundState { addr, .. }) => addr
             );
-            assert_eq!(sharing_state.listening, false);
             let info = I::get_bound_info(addr);
             assert_eq!(
                 info.addr.expect("address is set").addr().get(),
