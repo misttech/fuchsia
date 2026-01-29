@@ -220,6 +220,7 @@
                 "ProcCgroups.ProcfsReportsTasksCgroup",
                 "ProcCgroups.ProcfsRreportsHierarchyID",
                 "ProcCgroups.UnmountRemovesEntries",
+                "ProcDevices.ExpectedLines",
                 "ProcPIDCgroup.Empty",
                 "ProcPIDCgroup.Entries",
                 "ProcPIDCgroup.UnmountRemovesEntries",
@@ -463,6 +464,7 @@
                 "MMapFileTest.MapSecondToLastNegativePage",
                 "MMapTest.ExceedLimitAS",
                 "MMapTest.MprotectHugeLength",
+                "MMapTest.MprotectProtNone",
 
                 // mount_test
                 "MountTest.BindSlaveToShared",
@@ -862,6 +864,7 @@
                 "AllInetTests/UdpSocketTest.Disconnect/*",
                 "AllInetTests/UdpSocketTest.DisconnectAfterBind/*",
                 "AllInetTests/UdpSocketTest.DisconnectAfterBindToAny/*",
+                "AllInetTests/UdpSocketTest.DisconnectAfterConnectAny/*",
                 "AllInetTests/UdpSocketTest.DisconnectAfterConnectAnyWithPort/*",
                 "AllInetTests/UdpSocketTest.DisconnectAfterConnectWithoutBind/*",
                 "AllInetTests/UdpSocketTest.ReceiveAfterDisconnect/*",
