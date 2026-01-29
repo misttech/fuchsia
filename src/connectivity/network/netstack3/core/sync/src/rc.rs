@@ -140,6 +140,7 @@ mod resource_token {
     /// to save memory when the value is wrapped in `Option` (it allows the
     /// compiler to fit `Option<ResourceToken>` in 8 bytes).
     #[cfg_attr(any(test, feature = "testutils"), derive(PartialEq, Eq, PartialOrd, Ord))]
+    #[derive(Clone)]
     pub struct ResourceToken<'a> {
         value: NonZeroU64,
         _marker: PhantomData<&'a ()>,

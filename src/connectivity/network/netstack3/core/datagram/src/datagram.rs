@@ -24,7 +24,7 @@ use netstack3_base::socket::{
     self, BoundSocketMap, ConnAddr, ConnInfoAddr, ConnIpAddr, DualStackConnIpAddr,
     DualStackListenerIpAddr, DualStackLocalIp, DualStackRemoteIp, EitherStack, InsertError,
     ListenerAddr, ListenerIpAddr, MaybeDualStack, NotDualStackCapableError, Shutdown, ShutdownType,
-    SocketDeviceUpdate, SocketDeviceUpdateNotAllowedError, SocketIpAddr, SocketIpExt,
+    SocketCookie, SocketDeviceUpdate, SocketDeviceUpdateNotAllowedError, SocketIpAddr, SocketIpExt,
     SocketMapAddrSpec, SocketMapConflictPolicy, SocketMapStateSpec, SocketWritableListener,
     SocketZonedAddrExt as _, StrictlyZonedAddr,
 };
@@ -46,7 +46,7 @@ use netstack3_ip::socket::{
 };
 use netstack3_ip::{
     BaseTransportIpContext, HopLimits, IpLayerIpExt, MulticastMembershipHandler, ResolveRouteError,
-    TransportIpContext,
+    SocketMetadata, TransportIpContext,
 };
 use packet::BufferMut;
 use packet_formats::ip::{DscpAndEcn, IpProtoExt};
@@ -1137,6 +1137,27 @@ pub trait DualStackBaseIpExt:
 pub enum EitherIpSocket<D: WeakDeviceIdentifier, S: DatagramSocketSpec> {
     V4(S::SocketId<Ipv4, D>),
     V6(S::SocketId<Ipv6, D>),
+}
+
+impl<CC, D, S> SocketMetadata<CC> for EitherIpSocket<D, S>
+where
+    D: WeakDeviceIdentifier,
+    S: DatagramSocketSpec,
+    S::SocketId<Ipv4, D>: SocketMetadata<CC>,
+    S::SocketId<Ipv6, D>: SocketMetadata<CC>,
+{
+    fn socket_cookie(&self, core_ctx: &mut CC) -> SocketCookie {
+        match self {
+            EitherIpSocket::V4(id) => id.socket_cookie(core_ctx),
+            EitherIpSocket::V6(id) => id.socket_cookie(core_ctx),
+        }
+    }
+    fn marks(&self, core_ctx: &mut CC) -> Marks {
+        match self {
+            EitherIpSocket::V4(id) => id.marks(core_ctx),
+            EitherIpSocket::V6(id) => id.marks(core_ctx),
+        }
+    }
 }
 
 impl DualStackBaseIpExt for Ipv4 {

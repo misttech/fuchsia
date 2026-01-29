@@ -28,7 +28,7 @@ use netstack3_base::socketmap::{IterShadows as _, SocketMap};
 use netstack3_base::sync::{RwLock, StrongRc};
 use netstack3_base::{
     AnyDevice, ContextPair, CoreTxMetadataContext, CounterContext, DeviceIdContext, IcmpIpExt,
-    Inspector, InspectorDeviceExt, LocalAddressError, Mark, MarkDomain, PortAllocImpl,
+    Inspector, InspectorDeviceExt, LocalAddressError, Mark, MarkDomain, Marks, PortAllocImpl,
     ReferenceNotifiers, RemoveResourceResultWithContext, RngContext, SettingsContext, SocketError,
     StrongDeviceIdentifier, UninstantiableWrapper, WeakDeviceIdentifier,
 };
@@ -42,7 +42,8 @@ use netstack3_ip::icmp::{EchoTransportContextMarker, IcmpRxCounters};
 use netstack3_ip::socket::SocketHopLimits;
 use netstack3_ip::{
     IpHeaderInfo, IpLayerIpExt, IpTransportContext, LocalDeliveryPacketInfo,
-    MulticastMembershipHandler, ReceiveIpPacketMeta, TransportIpContext, TransportReceiveError,
+    MulticastMembershipHandler, ReceiveIpPacketMeta, SocketMetadata, TransportIpContext,
+    TransportReceiveError,
 };
 use packet::{BufferMut, PacketBuilder, ParsablePacket as _, ParseBuffer};
 use packet_formats::icmp::{IcmpEchoReply, IcmpEchoRequest, IcmpPacketBuilder, IcmpPacketRaw};
@@ -96,6 +97,20 @@ impl<I: IpExt, D: WeakDeviceIdentifier, BT: IcmpEchoBindingsTypes> IcmpSocketId<
     pub fn socket_cookie(&self) -> SocketCookie {
         let Self(inner) = self;
         SocketCookie::new(inner.resource_token())
+    }
+}
+
+impl<CC, I, BT> SocketMetadata<CC> for IcmpSocketId<I, CC::WeakDeviceId, BT>
+where
+    CC: IcmpEchoStateContext<I, BT>,
+    I: IpExt,
+    BT: IcmpEchoBindingsTypes,
+{
+    fn socket_cookie(&self, _core_ctx: &mut CC) -> SocketCookie {
+        self.socket_cookie()
+    }
+    fn marks(&self, core_ctx: &mut CC) -> Marks {
+        core_ctx.with_socket_state(self, |_core_ctx, state| state.options().marks().clone())
     }
 }
 

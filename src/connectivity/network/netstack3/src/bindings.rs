@@ -67,7 +67,7 @@ use rand::rngs::OsRng;
 use rand::{CryptoRng, RngCore, TryRngCore as _};
 use util::{ConversionContext, IntoFidl as _};
 use {
-    fidl_fuchsia_hardware_network as fhardware_network,
+    fidl_fuchsia_hardware_network as fhardware_network, fidl_fuchsia_net as fnet,
     fidl_fuchsia_net_interfaces_admin as fnet_interfaces_admin,
     fidl_fuchsia_net_multicast_admin as fnet_multicast_admin,
     fidl_fuchsia_net_routes as fnet_routes, fidl_fuchsia_net_routes_admin as fnet_routes_admin,
@@ -95,7 +95,7 @@ use crate::bindings::settings::Settings;
 use crate::bindings::socket::queue::NoSpace;
 use crate::bindings::stats_sampler::StatsSampler;
 use crate::bindings::time::{AtomicStackTime, StackTime};
-use crate::bindings::util::ScopeExt as _;
+use crate::bindings::util::{ScopeExt as _, fidl_mark_domain_to_core};
 use net_types::SpecifiedAddr;
 use net_types::ethernet::Mac;
 use net_types::ip::{
@@ -116,7 +116,7 @@ use netstack3_core::inspect::{InspectableValue, Inspector};
 use netstack3_core::ip::{
     AddIpAddrSubnetError, AddressRemovedReason, IpDeviceEvent, IpLayerEvent,
     IpRoutingBindingsTypes, Ipv4DeviceConfigurationUpdate, Ipv6DeviceConfigurationUpdate, Lifetime,
-    RouterAdvertisementEvent,
+    MarkDomain, MarksBindingsContext, RouterAdvertisementEvent,
 };
 use netstack3_core::routes::RawMetric;
 use netstack3_core::sync::RwLock as CoreRwLock;
@@ -903,6 +903,24 @@ impl DeferredResourceRemovalContext for BindingsCtx {
 
 impl IpRoutingBindingsTypes for BindingsCtx {
     type RoutingTableId = u32;
+}
+
+impl MarksBindingsContext for BindingsCtx {
+    fn marks_to_keep_on_egress() -> &'static [MarkDomain] {
+        // When a packet traverses the loopback device, it should keep the
+        // first mark (initially set by the socket) and drop any other marks.
+        // Particularly socket UID is invalidated. This matches Linux behavior.
+        const MARKS: [MarkDomain; 1] = [fidl_mark_domain_to_core(fnet::MARK_DOMAIN_SO_MARK)];
+        &MARKS
+    }
+
+    fn marks_to_set_on_ingress() -> &'static [MarkDomain] {
+        // Set socket UID in the ingress packets, from the socket. This matches
+        // Linux behavior and ensures that `bpf_get_socket_uid()` returns the
+        // correct value when executing LOCAL_INGRESS filters.
+        const MARKS: [MarkDomain; 1] = [fidl_mark_domain_to_core(fnet::MARK_DOMAIN_SOCKET_UID)];
+        &MARKS
+    }
 }
 
 impl Ctx {

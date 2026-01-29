@@ -9,12 +9,12 @@ use lock_order::relation::LockBefore;
 use log::trace;
 use net_types::ip::{Ip, IpMarked, Ipv4, Ipv4Addr, Ipv4SourceAddr, Ipv6, Ipv6Addr, Ipv6SourceAddr};
 use net_types::{MulticastAddr, SpecifiedAddr};
-use netstack3_base::socket::SocketIpAddr;
+use netstack3_base::socket::{SocketCookie, SocketIpAddr};
 use netstack3_base::{
     CounterContext, FrameDestination, Icmpv4ErrorCode, Icmpv6ErrorCode, Marks,
     ResourceCounterContext, TokenBucket, WeakDeviceIdentifier,
 };
-use netstack3_datagram as datagram;
+use netstack3_datagram::{self as datagram};
 use netstack3_device::{BaseDeviceId, DeviceId, DeviceStateSpec, WeakDeviceId, for_any_device_id};
 use netstack3_hashmap::HashMap;
 use netstack3_icmp_echo::{
@@ -36,7 +36,7 @@ use netstack3_ip::{
     IpRouteTablesContext, IpStateContext, IpStateInner, IpTransportContext,
     IpTransportDispatchContext, LocalDeliveryPacketInfo, MulticastMembershipHandler, PmtuCache,
     PmtuContext, ResolveRouteError, ResolvedRoute, RoutingTable, RoutingTableId, RulesTable,
-    TransportReceiveError,
+    SocketMetadata, TransportReceiveError,
 };
 use netstack3_sync::rc::Primary;
 use netstack3_tcp::TcpIpTransportContext;
@@ -412,6 +412,27 @@ where
     fn into_udp(self) -> DualStackUdpSocketId<I, D, BT> {
         match self {
             EarlyDemuxSocket::UdpSocket(id) => id,
+        }
+    }
+}
+
+impl<I, D, BT, CC> SocketMetadata<CC> for EarlyDemuxSocket<I, D, BT>
+where
+    CC: netstack3_base::DeviceIdContext<netstack3_base::AnyDevice, WeakDeviceId = D>,
+    I: netstack3_datagram::IpExt,
+    D: WeakDeviceIdentifier,
+    BT: BindingsTypes,
+    DualStackUdpSocketId<I, D, BT>: SocketMetadata<CC>,
+{
+    fn socket_cookie(&self, core_ctx: &mut CC) -> SocketCookie {
+        match self {
+            Self::UdpSocket(s) => s.socket_cookie(core_ctx),
+        }
+    }
+
+    fn marks(&self, core_ctx: &mut CC) -> Marks {
+        match self {
+            Self::UdpSocket(s) => s.marks(core_ctx),
         }
     }
 }

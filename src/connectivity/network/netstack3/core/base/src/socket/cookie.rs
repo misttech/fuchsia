@@ -8,7 +8,7 @@ use static_assertions::const_assert_eq;
 /// Socket cookie is a unique 64-bit value assigned to a socket.
 ///
 /// Socket implementations set their cookie value based on the `ResourceId`.
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 #[cfg_attr(any(test, feature = "testutils"), derive(PartialEq, Eq, PartialOrd, Ord))]
 pub struct SocketCookie {
     token: ResourceToken<'static>,

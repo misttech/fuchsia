@@ -1258,14 +1258,20 @@ impl TryFromFidl<fnet_interfaces_admin::NudConfiguration> for NudUserConfigUpdat
     }
 }
 
+pub const fn fidl_mark_domain_to_core(
+    fidl: fidl_net::MarkDomain,
+) -> netstack3_core::ip::MarkDomain {
+    match fidl {
+        fidl_net::MarkDomain::Mark1 => netstack3_core::ip::MarkDomain::Mark1,
+        fidl_net::MarkDomain::Mark2 => netstack3_core::ip::MarkDomain::Mark2,
+    }
+}
+
 impl TryFromFidl<fidl_net::MarkDomain> for netstack3_core::ip::MarkDomain {
     type Error = Never;
 
     fn try_from_fidl(fidl: fidl_net::MarkDomain) -> Result<Self, Self::Error> {
-        Ok(match fidl {
-            fidl_net::MarkDomain::Mark1 => netstack3_core::ip::MarkDomain::Mark1,
-            fidl_net::MarkDomain::Mark2 => netstack3_core::ip::MarkDomain::Mark2,
-        })
+        Ok(fidl_mark_domain_to_core(fidl))
     }
 }
 

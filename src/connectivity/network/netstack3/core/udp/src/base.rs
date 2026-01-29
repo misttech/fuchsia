@@ -32,9 +32,9 @@ use netstack3_base::sync::{RwLock, StrongRc};
 use netstack3_base::{
     AnyDevice, BidirectionalConverter, ContextPair, CoreTxMetadataContext, CounterContext,
     DeviceIdContext, Inspector, InspectorDeviceExt, InstantContext, IpSocketPropertiesMatcher,
-    LocalAddressError, Mark, MarkDomain, MatcherBindingsTypes, PortAllocImpl, ReferenceNotifiers,
-    RemoveResourceResultWithContext, ResourceCounterContext as _, RngContext, SettingsContext,
-    SocketError, StrongDeviceIdentifier, WeakDeviceIdentifier, ZonedAddressError,
+    LocalAddressError, Mark, MarkDomain, Marks, MatcherBindingsTypes, PortAllocImpl,
+    ReferenceNotifiers, RemoveResourceResultWithContext, ResourceCounterContext as _, RngContext,
+    SettingsContext, SocketError, StrongDeviceIdentifier, WeakDeviceIdentifier, ZonedAddressError,
 };
 use netstack3_datagram::{
     self as datagram, BoundSocketState as DatagramBoundSocketState,
@@ -58,8 +58,8 @@ use netstack3_ip::socket::{
 };
 use netstack3_ip::{
     HopLimits, IpHeaderInfo, IpTransportContext, LocalDeliveryPacketInfo,
-    MulticastMembershipHandler, ReceiveIpPacketMeta, TransparentLocalDelivery, TransportIpContext,
-    TransportReceiveError,
+    MulticastMembershipHandler, ReceiveIpPacketMeta, SocketMetadata, TransparentLocalDelivery,
+    TransportIpContext, TransportReceiveError,
 };
 use netstack3_trace::trace_duration;
 use packet::{BufferMut, FragmentedByteSlice, Nested, PacketBuilder, ParsablePacket, ParseBuffer};
@@ -969,6 +969,21 @@ impl<I: IpExt, D: WeakDeviceIdentifier, BT: UdpBindingsTypes> UdpSocketId<I, D, 
     pub fn socket_cookie(&self) -> SocketCookie {
         let Self(inner) = self;
         SocketCookie::new(inner.resource_token())
+    }
+}
+
+impl<CC, I, BT> SocketMetadata<CC> for UdpSocketId<I, CC::WeakDeviceId, BT>
+where
+    CC: StateContext<I, BT>,
+    I: IpExt,
+    BT: UdpBindingsContext<I, CC::DeviceId>,
+{
+    fn socket_cookie(&self, _core_ctx: &mut CC) -> SocketCookie {
+        self.socket_cookie()
+    }
+
+    fn marks(&self, core_ctx: &mut CC) -> Marks {
+        core_ctx.with_socket_state(self, |_core_ctx, state| state.options().marks().clone())
     }
 }
 

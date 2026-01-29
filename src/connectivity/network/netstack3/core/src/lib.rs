@@ -174,7 +174,8 @@ pub mod ip {
         IpSockCreateAndSendError, IpSockCreationError, IpSockSendError,
     };
     pub use netstack3_ip::{
-        IpLayerEvent, IpRoutingBindingsTypes, ResolveRouteError, RouterAdvertisementEvent,
+        IpLayerEvent, IpRoutingBindingsTypes, MarksBindingsContext, ResolveRouteError,
+        RouterAdvertisementEvent, SocketMetadata,
     };
 }
 

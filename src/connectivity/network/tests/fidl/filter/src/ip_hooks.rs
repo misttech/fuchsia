@@ -1312,7 +1312,7 @@ where
     // Install a rule that explicitly accepts traffic of a certain type on the
     // incoming hook for both the client and server. This should not change the
     // two-way connectivity because accepting traffic is the default.
-    let ((client_matcher, server_matcher), _sockets) = {
+    let ((client_matcher, server_matcher), sockets) = {
         let matcher = matcher.clone();
         net.run_test_with::<I, M::SocketType, _, _>(
             ExpectedConnectivity::TwoWay,
@@ -1342,10 +1342,14 @@ where
     };
 
     client_matcher.verify_matched(&net.client.interface, I::VERSION);
-
-    // TODO(https://fxbug.dev/473819144): In the case of LOCAL_INGRESS hook, socket
-    // cookie and UID should be set to the values from the early demux socket.
-    client_matcher.verify_mark_uid_and_cookie(0, UNKNOWN_UID, 0);
+    match hook {
+        IncomingHook::Ingress => client_matcher.verify_mark_uid_and_cookie(0, UNKNOWN_UID, 0),
+        IncomingHook::LocalIngress => {
+            let client_socket_cookie =
+                sockets.connect_result.client_cookie().expect("client socket cookie");
+            client_matcher.verify_mark_uid_and_cookie(0, CLIENT_UID, client_socket_cookie)
+        }
+    }
 
     server_matcher.verify_matched(&net.server.interface, I::VERSION);
     server_matcher.verify_mark_uid_and_cookie(0, UNKNOWN_UID, 0);

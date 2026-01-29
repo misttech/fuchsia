@@ -243,10 +243,10 @@ pub use internal::base::{
     IpRouteTableContext, IpRouteTablesContext, IpSendFrameError, IpSendFrameErrorReason,
     IpStateContext, IpStateInner, IpTransportContext, IpTransportDispatchContext,
     Ipv4PresentAddressStatus, Ipv4State, Ipv4StateBuilder, Ipv6PresentAddressStatus, Ipv6State,
-    Ipv6StateBuilder, MulticastMembershipHandler, NdpBindingsContext, ReceivePacketAction,
-    ResolveRouteError, RouterAdvertisementEvent, RoutingTableCookie, RoutingTableId,
-    SendIpPacketMeta, TransportIpContext, TransportReceiveError, gen_ip_packet_id,
-    receive_ipv4_packet, receive_ipv4_packet_action, receive_ipv6_packet,
+    Ipv6StateBuilder, MarksBindingsContext, MulticastMembershipHandler, NdpBindingsContext,
+    ReceivePacketAction, ResolveRouteError, RouterAdvertisementEvent, RoutingTableCookie,
+    RoutingTableId, SendIpPacketMeta, SocketMetadata, TransportIpContext, TransportReceiveError,
+    gen_ip_packet_id, receive_ipv4_packet, receive_ipv4_packet_action, receive_ipv6_packet,
     receive_ipv6_packet_action, resolve_output_route_to_destination,
 };
 pub use internal::counters::{IpCounters, Ipv6RxCounters};

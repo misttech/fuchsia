@@ -171,13 +171,21 @@ pub struct IpLayerPacketMetadata<
 > {
     conntrack_connection_and_direction:
         Option<(ConntrackConnection<I, A, BT>, ConnectionDirection)>,
+
     /// Tx metadata associated with this packet.
     ///
     /// This may be non-default even in the rx path for looped back packets that
     /// are still forcing tx frame ownership for sockets.
     tx_metadata: BT::TxMetadata,
+
     /// Marks attached to the packet that can be acted upon by routing/filtering.
     marks: Marks,
+
+    /// Socket cookie of the associate socket if any. The value should be
+    /// passed to eBPF programs that process the packet, but it should not be
+    /// used as a unique identifier of the resource inside the netstack.
+    socket_cookie: Option<SocketCookie>,
+
     #[cfg(debug_assertions)]
     drop_check: IpLayerPacketMetadataDropCheck,
 }
@@ -265,10 +273,14 @@ impl<
                 None
             }
         };
+
+        let socket_cookie = tx_metadata.socket_cookie();
+
         Self {
             conntrack_connection_and_direction,
             tx_metadata,
             marks,
+            socket_cookie,
             #[cfg(debug_assertions)]
             drop_check: Default::default(),
         }
@@ -279,10 +291,12 @@ impl<I: IpExt, A, BT: FilterBindingsTypes + TxMetadataBindingsTypes>
     IpLayerPacketMetadata<I, A, BT>
 {
     pub(crate) fn from_tx_metadata_and_marks(tx_metadata: BT::TxMetadata, marks: Marks) -> Self {
+        let socket_cookie = tx_metadata.socket_cookie();
         Self {
             conntrack_connection_and_direction: None,
             tx_metadata,
             marks,
+            socket_cookie,
             #[cfg(debug_assertions)]
             drop_check: Default::default(),
         }
@@ -290,11 +304,17 @@ impl<I: IpExt, A, BT: FilterBindingsTypes + TxMetadataBindingsTypes>
 
     pub(crate) fn into_parts(
         self,
-    ) -> (Option<(ConntrackConnection<I, A, BT>, ConnectionDirection)>, BT::TxMetadata, Marks) {
+    ) -> (
+        Option<(ConntrackConnection<I, A, BT>, ConnectionDirection)>,
+        BT::TxMetadata,
+        Marks,
+        Option<SocketCookie>,
+    ) {
         let Self {
             tx_metadata,
             marks,
             conntrack_connection_and_direction,
+            socket_cookie,
             #[cfg(debug_assertions)]
             mut drop_check,
         } = self;
@@ -302,7 +322,7 @@ impl<I: IpExt, A, BT: FilterBindingsTypes + TxMetadataBindingsTypes>
         {
             drop_check.okay_to_drop = true;
         }
-        (conntrack_connection_and_direction, tx_metadata, marks)
+        (conntrack_connection_and_direction, tx_metadata, marks, socket_cookie)
     }
 
     /// Acknowledge that it's okay to drop this packet metadata.
@@ -365,7 +385,7 @@ impl<I: packet_formats::ip::IpExt, A, BT: FilterBindingsTypes + TxMetadataBindin
     }
 
     fn cookie(&self) -> Option<SocketCookie> {
-        self.tx_metadata.socket_cookie()
+        self.socket_cookie.clone()
     }
 
     fn marks(&self) -> &Marks {
@@ -1143,6 +1163,21 @@ impl<DeviceId, BC: EventContext<RouterAdvertisementEvent<DeviceId>>> NdpBindings
 {
 }
 
+/// Defines how socket marks should be handled by the IP layer.
+pub trait MarksBindingsContext {
+    /// Mark domains for marks that should be kept when an egress packet is
+    /// passed from the IP layer to the device. For egress packets that are
+    /// delivered locally through the loopback interface, these marks are
+    /// passed to the ingress path and can be observed by ingress filter hooks.
+    fn marks_to_keep_on_egress() -> &'static [MarkDomain];
+
+    /// Mark domains for marks that should be copied to ingress packets. If
+    /// early demux results in a socket then these marks are copied from the
+    /// socket to the packet and can be observed in `LOCAL_INGRESS` filter
+    /// hook.
+    fn marks_to_set_on_ingress() -> &'static [MarkDomain];
+}
+
 /// The bindings execution context for the IP layer.
 pub trait IpLayerBindingsContext<I: IpLayerIpExt, DeviceId>:
     InstantContext
@@ -1150,6 +1185,7 @@ pub trait IpLayerBindingsContext<I: IpLayerIpExt, DeviceId>:
     + FilterBindingsContext<DeviceId>
     + TxMetadataBindingsTypes
     + IpRoutingBindingsTypes
+    + MarksBindingsContext
 {
 }
 impl<
@@ -1159,7 +1195,8 @@ impl<
         + EventContext<IpLayerEvent<DeviceId, I>>
         + FilterBindingsContext<DeviceId>
         + TxMetadataBindingsTypes
-        + IpRoutingBindingsTypes,
+        + IpRoutingBindingsTypes
+        + MarksBindingsContext,
 > IpLayerBindingsContext<I, DeviceId> for BC
 {
 }
@@ -1734,13 +1771,25 @@ impl<
     }
 }
 
+/// Trait that provides basic socket information for types that carry a socket
+/// ID.
+pub trait SocketMetadata<CC>
+where
+    CC: ?Sized,
+{
+    /// Returns Socket cookie for the socket.
+    fn socket_cookie(&self, core_ctx: &mut CC) -> SocketCookie;
+    /// Returns Socket Marks.
+    fn marks(&self, core_ctx: &mut CC) -> Marks;
+}
+
 /// The IP context providing dispatch to the available transport protocols.
 ///
 /// This trait acts like a demux on the transport protocol for ingress IP
 /// packets.
 pub trait IpTransportDispatchContext<I: IpLayerIpExt, BC>: DeviceIdContext<AnyDevice> {
     /// Early Demux result.
-    type EarlyDemuxSocket;
+    type EarlyDemuxSocket: SocketMetadata<Self>;
 
     /// Performs early demux result.
     fn early_demux<B: ParseBuffer>(
@@ -2446,6 +2495,22 @@ impl<I: FilterIpExt, S> EarlyDemuxResult<I, S> {
             packet.maybe_transport_packet().transport_packet_data().map(|t| t.src_port());
         (self.src_addr == packet.src_addr() && self.src_port == src_port).then_some(self.socket)
     }
+
+    fn update_packet_metadata<CC, BC>(
+        &self,
+        core_ctx: &mut CC,
+        packet_metadata: &mut IpLayerPacketMetadata<I, CC::WeakAddressId, BC>,
+    ) where
+        I: IpLayerIpExt,
+        S: SocketMetadata<CC>,
+        BC: IpLayerBindingsContext<I, CC::DeviceId>,
+        CC: IpLayerIngressContext<I, BC>,
+    {
+        packet_metadata.socket_cookie = Some(self.socket.socket_cookie(core_ctx));
+        for mark in BC::marks_to_set_on_ingress() {
+            *packet_metadata.marks.get_mut(*mark) = self.socket.marks(core_ctx).get(*mark).clone();
+        }
+    }
 }
 
 // TODO(joshlf): Once we support multiple extension headers in IPv6, we will
@@ -2496,11 +2561,11 @@ fn dispatch_receive_ipv4_packet<
 
     // Skip early demux if the packet was redirected to a TPROXY.
     // TODO(https://fxbug.dev/475851987): Handle TPROXY in early_demux.
-    let early_demux_socket = if receive_meta.transparent_override.is_some() {
-        None
-    } else {
-        core_ctx
-            .early_demux(
+    let early_demux_result = receive_meta
+        .transparent_override
+        .is_none()
+        .then(|| {
+            core_ctx.early_demux(
                 device,
                 frame_dst,
                 packet.src_ip(),
@@ -2508,8 +2573,13 @@ fn dispatch_receive_ipv4_packet<
                 packet.proto(),
                 packet.body(),
             )
-            .map(|socket| EarlyDemuxResult::new(socket, &packet))
-    };
+        })
+        .flatten()
+        .map(|socket| {
+            let early_demux_result = EarlyDemuxResult::new(socket, &packet);
+            early_demux_result.update_packet_metadata(core_ctx, &mut packet_metadata);
+            early_demux_result
+        });
 
     let proto = packet.proto();
 
@@ -2552,7 +2622,7 @@ fn dispatch_receive_ipv4_packet<
     core_ctx.deliver_packet_to_raw_ip_sockets(bindings_ctx, &packet, &device);
 
     // Check if the early demux result is still valid.
-    let early_demux_socket = early_demux_socket.and_then(|result| result.take_socket(&packet));
+    let early_demux_socket = early_demux_result.and_then(|result| result.take_socket(&packet));
 
     let (prefix, options, body) = packet.parts_with_body_mut();
     let buffer = Buf::new(body, ..);
@@ -2626,11 +2696,11 @@ fn dispatch_receive_ipv6_packet<
 
     // Skip early demux if the packet was redirected to a TPROXY.
     // TODO(https://fxbug.dev/475851987): Handle TPROXY in early_demux.
-    let early_demux_result = if meta.transparent_override.is_some() {
-        None
-    } else {
-        core_ctx
-            .early_demux(
+    let early_demux_result = meta
+        .transparent_override
+        .is_none()
+        .then(|| {
+            core_ctx.early_demux(
                 device,
                 frame_dst,
                 packet.src_ip(),
@@ -2638,8 +2708,13 @@ fn dispatch_receive_ipv6_packet<
                 packet.proto(),
                 packet.body(),
             )
-            .map(|socket| EarlyDemuxResult::new(socket, &packet))
-    };
+        })
+        .flatten()
+        .map(|socket| {
+            let early_demux_result = EarlyDemuxResult::new(socket, &packet);
+            early_demux_result.update_packet_metadata(core_ctx, &mut packet_metadata);
+            early_demux_result
+        });
 
     let proto = packet.proto();
 
@@ -3040,7 +3115,7 @@ pub(crate) fn send_ip_frame<I, CC, BC, S>(
 ) -> Result<(), IpSendFrameError<S>>
 where
     I: IpLayerIpExt,
-    BC: FilterBindingsContext<CC::DeviceId> + TxMetadataBindingsTypes,
+    BC: FilterBindingsContext<CC::DeviceId> + TxMetadataBindingsTypes + MarksBindingsContext,
     CC: IpLayerEgressContext<I, BC> + IpDeviceMtuContext<I> + IpDeviceAddressIdContext<I>,
     S: FragmentableIpSerializer<I, Buffer: BufferMut> + FilterIpPacket<I>,
 {
@@ -3061,14 +3136,22 @@ where
     // If the packet is leaving through the loopback device, attempt to extract a
     // weak reference to the packet's conntrack entry to plumb that through the
     // device layer so it can be reused on ingress to the IP layer.
-    let (conntrack_connection_and_direction, tx_metadata, marks) = packet_metadata.into_parts();
+    let (conntrack_connection_and_direction, tx_metadata, marks, _socket_cookie) =
+        packet_metadata.into_parts();
     let conntrack_entry = if device.is_loopback() {
         conntrack_connection_and_direction
             .and_then(|(conn, dir)| WeakConntrackConnection::new(&conn).map(|conn| (conn, dir)))
     } else {
         None
     };
-    let device_ip_layer_metadata = DeviceIpLayerMetadata { conntrack_entry, tx_metadata, marks };
+
+    let mut device_layer_marks = Marks::default();
+    for mark in BC::marks_to_keep_on_egress() {
+        *device_layer_marks.get_mut(*mark) = *marks.get(*mark);
+    }
+
+    let device_ip_layer_metadata =
+        DeviceIpLayerMetadata { conntrack_entry, tx_metadata, marks: device_layer_marks };
 
     // The filtering layer may have changed our address. Perform a last moment
     // check to protect against sending loopback addresses on the wire for
@@ -4805,7 +4888,7 @@ pub(crate) fn send_ip_packet_from_device<I, BC, CC, S>(
 ) -> Result<(), IpSendFrameError<S>>
 where
     I: IpLayerIpExt,
-    BC: FilterBindingsContext<CC::DeviceId> + TxMetadataBindingsTypes,
+    BC: FilterBindingsContext<CC::DeviceId> + TxMetadataBindingsTypes + MarksBindingsContext,
     CC: IpLayerEgressContext<I, BC> + IpDeviceEgressStateContext<I> + IpDeviceMtuContext<I>,
     S: TransportPacketSerializer<I>,
     S::Buffer: BufferMut,
@@ -4859,7 +4942,7 @@ pub trait FilterHandlerProvider<I: FilterIpExt, BT: FilterBindingsTypes>:
 pub(crate) mod testutil {
     use super::*;
 
-    use netstack3_base::testutil::{FakeCoreCtx, FakeStrongDeviceId};
+    use netstack3_base::testutil::{FakeBindingsCtx, FakeCoreCtx, FakeStrongDeviceId};
     use netstack3_base::{AssignedAddrIpExt, SendFrameContext, SendFrameError, SendableFrameMeta};
     use packet::Serializer;
 
@@ -4955,6 +5038,20 @@ pub(crate) mod testutil {
 
         fn filter_handler(&mut self) -> Self::Handler<'_> {
             filter::testutil::NoopImpl::default()
+        }
+    }
+
+    impl<TimerId, Event: Debug, State, FrameMeta> MarksBindingsContext
+        for FakeBindingsCtx<TimerId, Event, State, FrameMeta>
+    {
+        fn marks_to_keep_on_egress() -> &'static [MarkDomain] {
+            const MARKS: [MarkDomain; 1] = [MarkDomain::Mark1];
+            &MARKS
+        }
+
+        fn marks_to_set_on_ingress() -> &'static [MarkDomain] {
+            const MARKS: [MarkDomain; 1] = [MarkDomain::Mark2];
+            &MARKS
         }
     }
 }

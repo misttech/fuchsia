@@ -37,9 +37,10 @@ use netstack3_base::testutil::{
 };
 use netstack3_base::{
     AddressResolutionFailed, CtxPair, DeferredResourceRemovalContext, EventContext,
-    FrameDestination, InstantBindingsTypes, InstantContext, IpDeviceAddr, LinkDevice, Marks,
-    MatcherBindingsTypes, NotFoundError, ReferenceNotifiers, RemoveResourceResult, RngContext,
-    TimerBindingsTypes, TimerContext, TimerHandler, TxMetadataBindingsTypes, WorkQueueReport,
+    FrameDestination, InstantBindingsTypes, InstantContext, IpDeviceAddr, LinkDevice, MarkDomain,
+    Marks, MatcherBindingsTypes, NotFoundError, ReferenceNotifiers, RemoveResourceResult,
+    RngContext, TimerBindingsTypes, TimerContext, TimerHandler, TxMetadataBindingsTypes,
+    WorkQueueReport,
 };
 use netstack3_device::ethernet::{
     EthernetCreationProperties, EthernetDeviceEvent, EthernetDeviceId, EthernetLinkDevice,
@@ -72,8 +73,8 @@ use netstack3_ip::raw::{
 };
 use netstack3_ip::{
     self as ip, AddRouteError, AddableEntryEither, AddableMetric, DeviceIpLayerMetadata,
-    IpLayerEvent, IpLayerTimerId, IpRoutingBindingsTypes, RawMetric, ResolveRouteError,
-    ResolvedRoute, RoutableIpAddr, RouterAdvertisementEvent,
+    IpLayerEvent, IpLayerTimerId, IpRoutingBindingsTypes, MarksBindingsContext, RawMetric,
+    ResolveRouteError, ResolvedRoute, RoutableIpAddr, RouterAdvertisementEvent,
 };
 use netstack3_tcp::testutil::{ClientBuffers, ProvidedBuffers, RingBuffer, TestSendBuffer};
 use netstack3_tcp::{BufferSizes, TcpBindingsTypes};
@@ -897,6 +898,18 @@ impl TcpBindingsTypes for FakeBindingsCtx {
 
 impl IpRoutingBindingsTypes for FakeBindingsCtx {
     type RoutingTableId = ();
+}
+
+impl MarksBindingsContext for FakeBindingsCtx {
+    fn marks_to_keep_on_egress() -> &'static [MarkDomain] {
+        const MARKS: [MarkDomain; 1] = [MarkDomain::Mark1];
+        &MARKS
+    }
+
+    fn marks_to_set_on_ingress() -> &'static [MarkDomain] {
+        const MARKS: [MarkDomain; 1] = [MarkDomain::Mark2];
+        &MARKS
+    }
 }
 
 #[cfg(not(loom))]
