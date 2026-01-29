@@ -30,18 +30,15 @@ readonly rsninja="$SCRIPT_DIR/rsninja.sh"
 # Use re-client's credentials helper tool to exchange LOAS for OAuth2 tokens.
 readonly credshelper="${PREBUILT_RECLIENT_DIR}/credshelper"
 
-# TODO(b/473907403): for infra builds, plumb remote service proxy overrides:
-#   BAZEL_resultstore_socket_path -> RS_rs_service
-#   BAZEL_rbe_socket_path -> RS_cas_service
-# These will take precedence over values in .cfg files.
-# All sub-invocations can share the same sockets.
-
 # TODO: scan ninja options for flags that produce extra output files,
 # such as traces.  Convert these into rsproxy invocation artifacts
 # as --post_build_uploads.
 
 rsproxy_options=()
 
+# rsproxy configuration:
+#
+### 'fx build'
 # FX_BUILD_LOAS_TYPE is set by 'fx build' to either "restricted" or
 # "unrestricted", and influences authentication method.
 # Infra builds don't set this, but instead pass environment variables
@@ -63,6 +60,15 @@ rsproxy_options=()
       ;;
   esac
 }
+
+### infra builds
+# Infra builds do not use .cfg files from the source tree;
+# they set various RS_* environment variables to override
+# the corresponding flags, e.g.:
+#   * RS_rs_service
+#   * RS_rs_instance
+#   * RS_cas_service
+#   * RS_cas_instance
 
 # Scan ninja arguments for important options.
 ninja_args=("$@")
