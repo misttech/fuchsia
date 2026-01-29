@@ -252,7 +252,7 @@ class TestSestarnixUserspaceOnLinux(unittest.TestCase):
         except EnvironmentError as e:
             raise unittest.SkipTest(str(e))
 
-        if args.rebuild_tests:
+        if cls.args.rebuild_tests:
             print("Re-building tests...")
             subprocess.run(
                 [
