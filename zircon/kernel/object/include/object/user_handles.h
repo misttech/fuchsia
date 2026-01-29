@@ -36,12 +36,18 @@ zx_status_t RemoveUserHandles(T user_handles, size_t num_handles, ProcessDispatc
     // We process |num_handles| in chunks of |kMaxMessageHandles| because we don't have
     // a limit on how large |num_handles| can be.
     auto chunk_size = ktl::min<size_t>(num_handles - offset, kMaxMessageHandles);
-    status = get_user_handles_to_consume(user_handles, offset, chunk_size, handles);
-    if (status != ZX_OK) {
+    if (const zx_status_t consume_status =
+            get_user_handles_to_consume(user_handles, offset, chunk_size, handles);
+        consume_status != ZX_OK) {
+      status = consume_status;
       break;
     }
 
-    status = process->handle_table().RemoveHandles(*process, ktl::span(handles, chunk_size));
+    if (const zx_status_t remove_status =
+            process->handle_table().RemoveHandles(*process, ktl::span(handles, chunk_size));
+        remove_status != ZX_OK) {
+      status = remove_status;
+    }
     offset += chunk_size;
   }
   return status;
