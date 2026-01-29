@@ -5,10 +5,10 @@
 """Start an emulator using product bundle as a task workflow."""
 
 load("//fuchsia/constraints:target_compatibility.bzl", "COMPATIBILITY")
+load("//fuchsia/private:fuchsia_toolchains.bzl", "FUCHSIA_TOOLCHAIN_DEFINITION", "get_fuchsia_sdk_toolchain")
 load(":fuchsia_shell_task.bzl", "shell_task_rule")
 load(":fuchsia_task_download.bzl", "get_product_bundle_dir")
 load(":providers.bzl", "FuchsiaProductBundleInfo")
-load("//fuchsia/private:fuchsia_toolchains.bzl", "FUCHSIA_TOOLCHAIN_DEFINITION", "get_fuchsia_sdk_toolchain")
 
 def _fuchsia_task_emu_impl(ctx, make_shell_task):
     sdk = get_fuchsia_sdk_toolchain(ctx)

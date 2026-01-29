@@ -148,17 +148,17 @@ load(
     _fuchsia_structured_config_values = "fuchsia_structured_config_values",
 )
 load(
+    "//fuchsia/private:fuchsia_toolchains.bzl",
+    _FUCHSIA_TOOLCHAIN_DEFINITION = "FUCHSIA_TOOLCHAIN_DEFINITION",
+    _get_fuchsia_sdk_toolchain = "get_fuchsia_sdk_toolchain",
+)
+load(
     "//fuchsia/private:legacy_fuchsia_fidl_cc_library.bzl",
     _fuchsia_fidl_hlcpp_library = "fuchsia_fidl_hlcpp_library",  # buildifier: disable=deprecated-function
 )
 load(
     "//fuchsia/workspace:fuchsia_devicetree_toolchain_info.bzl",
     _fuchsia_devicetree_toolchain_info = "fuchsia_devicetree_toolchain_info",
-)
-load(
-    "//fuchsia/private:fuchsia_toolchains.bzl",
-    _FUCHSIA_TOOLCHAIN_DEFINITION = "FUCHSIA_TOOLCHAIN_DEFINITION",
-    _get_fuchsia_sdk_toolchain = "get_fuchsia_sdk_toolchain",
 )
 
 # Workspace-dependent rules.

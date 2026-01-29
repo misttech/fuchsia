@@ -6,9 +6,9 @@
 
 load("@bazel_skylib//lib:paths.bzl", "paths")
 load("//fuchsia/constraints:target_compatibility.bzl", "COMPATIBILITY")
+load("//fuchsia/private:fuchsia_toolchains.bzl", "FUCHSIA_TOOLCHAIN_DEFINITION", "get_fuchsia_sdk_toolchain")
 load(":fuchsia_bind_library.bzl", "fuchsia_bind_library")
 load(":providers.bzl", "FuchsiaFidlLibraryInfo")
-load("//fuchsia/private:fuchsia_toolchains.bzl", "FUCHSIA_TOOLCHAIN_DEFINITION", "get_fuchsia_sdk_toolchain")
 
 def _bindlibgen_impl(ctx):
     sdk = get_fuchsia_sdk_toolchain(ctx)

@@ -87,10 +87,6 @@ load(
     _fuchsia_product_bundle = "fuchsia_product_bundle",
 )
 load(
-    "//fuchsia/private/assembly:fuchsia_test_product_bundle.bzl",
-    _fuchsia_test_product_bundle = "fuchsia_test_product_bundle",
-)
-load(
     "//fuchsia/private/assembly:fuchsia_product_configuration.bzl",
     _BUILD_TYPES = "BUILD_TYPES",
     _INPUT_DEVICE_TYPE = "INPUT_DEVICE_TYPE",
@@ -129,6 +125,14 @@ load(
     _fuchsia_size_report_aggregator = "fuchsia_size_report_aggregator",
 )
 load(
+    "//fuchsia/private/assembly:fuchsia_starnix_container.bzl",
+    _fuchsia_starnix_container = "fuchsia_starnix_container",
+)
+load(
+    "//fuchsia/private/assembly:fuchsia_test_product_bundle.bzl",
+    _fuchsia_test_product_bundle = "fuchsia_test_product_bundle",
+)
+load(
     "//fuchsia/private/assembly:fuchsia_update_package.bzl",
     _fuchsia_update_package = "fuchsia_update_package",
 )
@@ -136,10 +140,6 @@ load(
     "//fuchsia/private/assembly:fuchsia_virtual_device.bzl",
     _ARCH = "ARCH",
     _fuchsia_virtual_device = "fuchsia_virtual_device",
-)
-load(
-    "//fuchsia/private/assembly:fuchsia_starnix_container.bzl",
-    _fuchsia_starnix_container = "fuchsia_starnix_container",
 )
 load(
     "//fuchsia/private/workflows:fuchsia_task_flash.bzl",

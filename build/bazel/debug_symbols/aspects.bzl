@@ -4,9 +4,9 @@
 
 """Aspects related to debug symbols for the Fuchsia build system."""
 
-load("//build/bazel/rules:current_platform_info.bzl", "CurrentPlatformInfo")
 load("@rules_fuchsia//fuchsia/private:providers.bzl", "FuchsiaUnstrippedBinaryInfo")
 load("@rules_rust//rust:rust_common.bzl", "CrateInfo")
+load("//build/bazel/rules:current_platform_info.bzl", "CurrentPlatformInfo")
 
 DebugSymbolManifestEntryInfo = provider(
     doc = "A provider matching a single //:debug_symbols entry.",

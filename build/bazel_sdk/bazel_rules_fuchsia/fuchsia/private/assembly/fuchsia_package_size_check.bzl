@@ -6,10 +6,10 @@
 
 load("//fuchsia/constraints:target_compatibility.bzl", "COMPATIBILITY")
 load("//fuchsia/private:ffx_tool.bzl", "get_ffx_assembly_args", "get_ffx_assembly_inputs")
+load("//fuchsia/private:fuchsia_toolchains.bzl", "FUCHSIA_TOOLCHAIN_DEFINITION", "get_fuchsia_sdk_toolchain")
 load("//fuchsia/private:providers.bzl", "FuchsiaPackageInfo")
 load(":providers.bzl", "FuchsiaSizeCheckerInfo")
 load(":utils.bzl", "LOCAL_ONLY_ACTION_KWARGS")
-load("//fuchsia/private:fuchsia_toolchains.bzl", "FUCHSIA_TOOLCHAIN_DEFINITION", "get_fuchsia_sdk_toolchain")
 
 def _fuchsia_package_size_check_impl(ctx):
     fuchsia_toolchain = get_fuchsia_sdk_toolchain(ctx)

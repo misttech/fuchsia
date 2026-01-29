@@ -5,9 +5,9 @@
 """Publishes packages as a workflow task."""
 
 load("//fuchsia/constraints:target_compatibility.bzl", "COMPATIBILITY")
+load("//fuchsia/private:fuchsia_toolchains.bzl", "FUCHSIA_TOOLCHAIN_DEFINITION", "get_fuchsia_sdk_toolchain")
 load("//fuchsia/private:providers.bzl", "FuchsiaPackageGroupInfo", "FuchsiaPackageInfo")
 load(":fuchsia_task.bzl", "fuchsia_task_rule")
-load("//fuchsia/private:fuchsia_toolchains.bzl", "FUCHSIA_TOOLCHAIN_DEFINITION", "get_fuchsia_sdk_toolchain")
 
 def _fuchsia_task_publish_impl(ctx, make_fuchsia_task):
     sdk = get_fuchsia_sdk_toolchain(ctx)

@@ -5,15 +5,15 @@
 """Rule for declaring a FIDL library"""
 
 load("@bazel_skylib//lib:paths.bzl", "paths")
-load(":fidl_ir.bzl", "fidl_ir")
+load("//build/bazel/bazel_idk/private:idk_atom.bzl", "idk_atom")
 load(
     "//build/bazel/bazel_idk/private:idk_common.bzl",
     "get_allowlist_target",
     "get_idk_deps",
     "json_encode_dict_values",
 )
-load("//build/bazel/bazel_idk/private:idk_atom.bzl", "idk_atom")
 load("//zircon/tools/zither:zither_library.bzl", "zither_library")
+load(":fidl_ir.bzl", "fidl_ir")
 
 # LINT.IfChange(determine_fidlc_versioned_arg)
 def _get_fidlc_versioned_arg(

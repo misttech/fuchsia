@@ -5,9 +5,9 @@
 """Download a product bundle as a task workflow."""
 
 load("//fuchsia/constraints:target_compatibility.bzl", "COMPATIBILITY")
+load("//fuchsia/private:fuchsia_toolchains.bzl", "FUCHSIA_TOOLCHAIN_DEFINITION", "get_fuchsia_sdk_toolchain")
 load(":fuchsia_shell_task.bzl", "shell_task_rule")
 load(":providers.bzl", "FuchsiaProductBundleInfo")
-load("//fuchsia/private:fuchsia_toolchains.bzl", "FUCHSIA_TOOLCHAIN_DEFINITION", "get_fuchsia_sdk_toolchain")
 
 def get_product_bundle_dir(ctx):
     pb = ctx.attr.product_bundle[FuchsiaProductBundleInfo]

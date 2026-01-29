@@ -11,7 +11,6 @@ load("//fuchsia/constraints:target_compatibility.bzl", "COMPATIBILITY")
 load("//fuchsia/private:fuchsia_package.bzl", "get_driver_component_manifests")
 load("//fuchsia/private:fuchsia_toolchains.bzl", "FUCHSIA_TOOLCHAIN_DEFINITION", "get_fuchsia_sdk_toolchain")
 load("//fuchsia/private:providers.bzl", "FuchsiaPackageInfo")
-load(":utils.bzl", "create_pkg_detail")
 load(
     ":providers.bzl",
     "FuchsiaAssembledPackageInfo",
@@ -20,13 +19,7 @@ load(
     "FuchsiaProductInputBundleInfo",
     "FuchsiaStarnixContainerInfo",
 )
-load(
-    ":utils.bzl",
-    "LOCAL_ONLY_ACTION_KWARGS",
-    "extract_labels",
-    "replace_labels_with_files",
-    "select_root_dir_with_file",
-)
+load(":utils.bzl", "LOCAL_ONLY_ACTION_KWARGS", "create_pkg_detail", "extract_labels", "replace_labels_with_files", "select_root_dir_with_file")
 
 # Define build types
 BUILD_TYPES = struct(

@@ -6,6 +6,7 @@
 
 load("@bazel_skylib//lib:paths.bzl", "paths")
 load("@rules_cc//cc:defs.bzl", "cc_import", "cc_library", "cc_shared_library")
+load("//build/bazel/rules:zx_library.bzl", "apply_common_zx_library_modifications")
 load(
     ":cc_verification.bzl",
     "create_verify_no_duplicate_files_target",
@@ -21,7 +22,6 @@ load(
     "select_for",
     "select_for_fuchsia",
 )
-load("//build/bazel/rules:zx_library.bzl", "apply_common_zx_library_modifications")
 
 visibility(["//build/bazel/bazel_idk/..."])
 

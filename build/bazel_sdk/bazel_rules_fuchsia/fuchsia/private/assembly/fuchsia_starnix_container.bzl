@@ -4,12 +4,12 @@
 
 """Rule for declaring a Fuchsia starnix container."""
 
+load("//fuchsia/private:providers.bzl", "FuchsiaPackageInfo")
 load(
     ":providers.bzl",
     "FuchsiaAssembledPackageInfo",
     "FuchsiaStarnixContainerInfo",
 )
-load("//fuchsia/private:providers.bzl", "FuchsiaPackageInfo")
 load(":utils.bzl", "create_pkg_detail")
 
 def _fuchsia_starnix_container_impl(ctx):

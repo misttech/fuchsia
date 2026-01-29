@@ -1,9 +1,9 @@
 """Implementation of cc_bind_rules rule"""
 
 load("//fuchsia/constraints:target_compatibility.bzl", "COMPATIBILITY")
+load("//fuchsia/private:fuchsia_toolchains.bzl", "FUCHSIA_TOOLCHAIN_DEFINITION", "get_fuchsia_sdk_toolchain")
 load(":providers.bzl", "FuchsiaBindLibraryInfo", "FuchsiaPackageResourcesInfo")
 load(":utils.bzl", "make_resource_struct", "wrap_executable")
-load("//fuchsia/private:fuchsia_toolchains.bzl", "FUCHSIA_TOOLCHAIN_DEFINITION", "get_fuchsia_sdk_toolchain")
 
 _COMMON_ATTR = {
     "rules": attr.label(

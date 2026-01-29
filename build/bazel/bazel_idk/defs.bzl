@@ -10,11 +10,6 @@ load(
     _idk_noop_atom = "idk_noop_atom",
 )
 load(
-    "//build/bazel/bazel_idk/private:idk_molecule.bzl",
-    _idk_host_molecule = "idk_host_molecule",
-    _idk_molecule = "idk_molecule",
-)
-load(
     "//build/bazel/bazel_idk/private:idk_cc_prebuilt_library.bzl",
     _idk_cc_shared_library = "idk_cc_shared_library",
     _idk_cc_shared_library_zx = "idk_cc_shared_library_zx",
@@ -31,6 +26,11 @@ load(
     _idk_cc_binary_host_tool = "idk_cc_binary_host_tool",
     _idk_go_binary_host_tool = "idk_go_binary_host_tool",
     _idk_host_tool = "idk_host_tool",
+)
+load(
+    "//build/bazel/bazel_idk/private:idk_molecule.bzl",
+    _idk_host_molecule = "idk_host_molecule",
+    _idk_molecule = "idk_molecule",
 )
 
 idk_host_molecule = _idk_host_molecule

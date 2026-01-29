@@ -59,7 +59,6 @@ local_path_override(
 
 # TODO(https://fxbug.dev/131788): Use //third_party/re2 when it's upgraded to this version.
 bazel_dep(name = "re2", version = "2024-07-02.bcr.1")
-
 bazel_dep(name = "rapidjson", version = "")
 local_path_override(
     module_name = "rapidjson",
@@ -179,9 +178,9 @@ fuchsia_clang_ext = use_extension(
     "fuchsia_clang_ext",
 )
 fuchsia_clang_ext.local(
+    extra_target_compatible_with = ["//build/bazel/platforms:fuchsia_artifacts_build_with_sdk_rules"],
     local_path = "@@fuchsia_sdk_common++fuchsia_build_config_ext+fuchsia_build_config//:host_prebuilts/clang",
     local_version_file = "//:fuchsia_build_generated/content_hashes/fuchsia_clang.hash",
-    extra_target_compatible_with = ["//build/bazel/platforms:fuchsia_artifacts_build_with_sdk_rules"],
 )
 use_repo(fuchsia_clang_ext, "fuchsia_clang")
 

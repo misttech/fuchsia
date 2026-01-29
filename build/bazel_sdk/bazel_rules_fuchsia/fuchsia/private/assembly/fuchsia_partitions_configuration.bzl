@@ -4,13 +4,13 @@
 
 """Rule for creating a partitions configuration."""
 
+load("//fuchsia/private:fuchsia_toolchains.bzl", "FUCHSIA_TOOLCHAIN_DEFINITION", "get_fuchsia_sdk_toolchain")
 load(
     ":providers.bzl",
     "FuchsiaPartitionInfo",
     "FuchsiaPartitionsConfigInfo",
 )
 load(":utils.bzl", "LOCAL_ONLY_ACTION_KWARGS", "select_root_dir_with_file")
-load("//fuchsia/private:fuchsia_toolchains.bzl", "FUCHSIA_TOOLCHAIN_DEFINITION", "get_fuchsia_sdk_toolchain")
 
 def _fuchsia_partitions_configuration(ctx):
     sdk = get_fuchsia_sdk_toolchain(ctx)

@@ -4,8 +4,8 @@
 
 """Defines the fuchsia_prebuilt_lacewing_test build rule."""
 
-load(":utils.bzl", "wrap_executable")
 load("//fuchsia/private:fuchsia_toolchains.bzl", "FUCHSIA_TOOLCHAIN_DEFINITION", "get_fuchsia_sdk_toolchain")
+load(":utils.bzl", "wrap_executable")
 
 def _fuchsia_prebuilt_lacewing_test_impl(ctx):
     sdk = get_fuchsia_sdk_toolchain(ctx)
