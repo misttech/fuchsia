@@ -98,7 +98,7 @@ impl Simple {
         let inner = &mut *guard;
         match inner.entries.entry(name) {
             Entry::Vacant(slot) => {
-                inner.watchers.send_event(&mut SingleNameEventProducer::added(""));
+                inner.watchers.send_event(&mut SingleNameEventProducer::added(slot.key()));
                 slot.insert(f()).clone()
             }
             Entry::Occupied(entry) => entry.get().clone(),
