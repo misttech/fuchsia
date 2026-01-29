@@ -1625,7 +1625,7 @@ symmetrical_enums!(StorageId, fdecl::StorageId, StaticInstanceId, StaticInstance
 
 /// We can't link the fuchsia-runtime crate because it's target side only, but we don't really
 /// need to -- its HandleType is pretty much just a thin wrapper over `u8`.
-#[derive(Debug, Copy, Clone, PartialEq, Eq)]
+#[derive(Debug, Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct HandleType(u8);
 
 impl Serialize for HandleType {
@@ -1661,6 +1661,13 @@ impl From<HandleType> for Name {
         let numbered_handle: u8 = numbered_handle.into();
         let numbered_handle = format!("{numbered_handle:x}");
         Self::new(numbered_handle).expect("numbered_handle is a valid dictionary key")
+    }
+}
+
+impl fmt::Display for HandleType {
+    #[inline]
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "0x{:x}", self.0)
     }
 }
 

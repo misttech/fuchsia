@@ -1089,6 +1089,7 @@ which is almost certainly a mistake: {}",
                             }
                             CapabilityId::UsedService(_)
                             | CapabilityId::UsedProtocol(_)
+                            | CapabilityId::UsedProtocolNumberedHandle(_)
                             | CapabilityId::UsedDirectory(_)
                             | CapabilityId::UsedStorage(_)
                             | CapabilityId::UsedEventStream(_)
@@ -2730,6 +2731,7 @@ which is almost certainly a mistake: {}",
                                 }
                                 CapabilityId::UsedService(_)
                                 | CapabilityId::UsedProtocol(_)
+                                | CapabilityId::UsedProtocolNumberedHandle(_)
                                 | CapabilityId::UsedDirectory(_)
                                 | CapabilityId::UsedStorage(_)
                                 | CapabilityId::UsedEventStream(_)
@@ -6931,6 +6933,24 @@ mod tests {
                         "protocol": "fuchsia.child.Protocol",
                         "from": "#logger/dictionary",
                         "dependency": "weak",
+                    },
+                ],
+            }),
+            Ok(())
+        ),
+        test_cml_use_numbered_handle_from_same_protocol_ok(
+            json!({
+                "use": [
+                    {
+                        "protocol": "foo",
+                    },
+                    {
+                        "protocol": "foo",
+                        "numbered_handle": 0xab,
+                    },
+                    {
+                        "protocol": "foo",
+                        "numbered_handle": 0xac,
                     },
                 ],
             }),

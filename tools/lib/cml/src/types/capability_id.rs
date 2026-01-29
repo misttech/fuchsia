@@ -37,6 +37,8 @@ pub enum CapabilityId<'a> {
     UsedService(Path),
     // A protocol in a `use` declaration has a target path in the component's namespace.
     UsedProtocol(Path),
+    // A protocol in a `use` declaration has a numbered handle in the component's namespace.
+    UsedProtocolNumberedHandle(HandleType),
     // A directory in a `use` declaration has a target path in the component's namespace.
     UsedDirectory(Path),
     // A storage in a `use` declaration has a target path in the component's namespace.
@@ -107,6 +109,7 @@ impl<'a> CapabilityId<'a> {
             CapabilityId::Directory(_) => "directory",
             CapabilityId::UsedService(_) => "service",
             CapabilityId::UsedProtocol(_) => "protocol",
+            CapabilityId::UsedProtocolNumberedHandle(_) => "protocol",
             CapabilityId::UsedDirectory(_) => "directory",
             CapabilityId::UsedStorage(_) => "storage",
             CapabilityId::UsedEventStream(_) => "event_stream",
@@ -166,6 +169,12 @@ impl<'a> CapabilityId<'a> {
                 use_.capability_type().unwrap(),
             )?));
         } else if let Some(n) = use_.protocol() {
+            if let Some(numbered_handle) = use_.numbered_handle {
+                return Ok(n
+                    .iter()
+                    .map(|_| CapabilityId::UsedProtocolNumberedHandle(numbered_handle))
+                    .collect());
+            }
             return Ok(Self::used_protocols_from(Self::get_one_or_many_svc_paths(
                 n,
                 alias,
@@ -912,6 +921,7 @@ impl fmt::Display for CapabilityId<'_> {
             | CapabilityId::UsedStorage(p)
             | CapabilityId::UsedEventStream(p)
             | CapabilityId::UsedDictionary(p) => write!(f, "{}", p),
+            CapabilityId::UsedProtocolNumberedHandle(p) => write!(f, "{}", p),
             CapabilityId::Protocol(p) | CapabilityId::Directory(p) => write!(f, "{}", p),
         }
     }
