@@ -254,6 +254,7 @@ impl WaitCanceler {
                 }) => {
                     let Some(wait_queue) = wait_queue.upgrade() else { return };
                     waiter.remove_callback(&wait_key);
+                    waiter.will_remove_from_wait_queue(&wait_key);
                     let mut wait_queue = wait_queue.lock();
                     let waiters = &mut wait_queue.waiters;
                     if let Some(entry) = waiters.get_mut(key) {
@@ -898,8 +899,8 @@ pub struct WaitQueue(Arc<Mutex<WaitQueueImpl>>);
 struct WaitEntryWithId {
     entry: WaitEntry,
     /// The ID use to uniquely identify this wait entry even if it shares the
-    /// key used in the wait queue's [`DenseMap`] with another wait entry since
-    /// a dense map's keys are recycled.
+    /// key used in the wait queue's [`Slab`] with another wait entry since a
+    /// slab's keys are recycled.
     id: u64,
 }
 
@@ -913,8 +914,8 @@ struct WaitQueueImpl {
     /// Holds the next ID value to use when adding a new `WaitEntry` to the
     /// waiters (dense) map.
     ///
-    /// A [`DenseMap`]s keys are recycled so we use the ID to uniquely identify
-    /// a wait entry.
+    /// A [`Slab`]s keys are recycled so we use the ID to uniquely identify a
+    /// wait entry.
     next_wait_entry_id: u64,
     /// The list of waiters.
     ///
