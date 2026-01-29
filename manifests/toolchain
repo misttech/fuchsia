@@ -222,11 +222,11 @@
              platforms="mac-amd64"
              path="prebuilt/third_party/llvm/mac-x64"/>
     <package name="fuchsia/third_party/llvm/fuchsia-amd64"
-             version="git_revision:5891d2c6e70db348cd7fab759bc03e85939a4601"
+             version="git_revision:5891d2c6e70db348cd7fab759bc03e85939a4601,30.20260127.4.1"
              platforms="linux-amd64,linux-arm64"
              path="prebuilt/third_party/llvm/fuchsia-x64"/>
     <package name="fuchsia/third_party/llvm/fuchsia-arm64"
-             version="git_revision:5891d2c6e70db348cd7fab759bc03e85939a4601"
+             version="git_revision:5891d2c6e70db348cd7fab759bc03e85939a4601,30.20260127.4.1"
              platforms="linux-amd64,linux-arm64"
              path="prebuilt/third_party/llvm/fuchsia-arm64"/>
 
