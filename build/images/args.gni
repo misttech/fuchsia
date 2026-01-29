@@ -40,33 +40,6 @@ declare_args() {
   # epoch increased.
   update_product_epoch = 0
 
-  # List of prebuilt firmware blobs to include in update packages.
-  #
-  # Each entry in the list is a scope containing:
-  #  * `path`: path to the image (see also `firmware_prebuilts_path_suffix`)
-  #  * `type`: firmware type, a device-specific unique identifier
-  #  * `partition` (optional): if specified, the `fastboot flash` partition
-  firmware_prebuilts = []
-
-  # Suffix to append to all `firmware_prebuilts` `path` variables.
-  #
-  # Typically this indicates the hardware revision, and is made available so
-  # that users can easily switch revisions using a single arg.
-  firmware_prebuilts_path_suffix = ""
-
-  # List of files needed to bootstrap the device.
-  #
-  # Flashing a device assumes a certain state; bootstrapping instead allows
-  # initially provisioning a device from unknown state, so may require
-  # additional resources that would not be included in an OTA.
-  #
-  # Each entry in the list is a scope containing:
-  #  * `path`: path to file.
-  #  * `partition` (optional): `fastboot flash` partition.
-  #  * `condition` (optional): a scope with `variable` and `value` keys; file is
-  #    only flashed if `fastboot getvar <variable>` == <value>.
-  bootstrap_files = []
-
   # GUID Partition Table (GPT) image.
   #
   # Typically useful for initially flashing a device from zero-state.

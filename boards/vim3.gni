@@ -40,15 +40,6 @@ bazel_product_bundle_board = "vim3"
 # Items below here are duplicating information assembly, and are used by targets
 # that need to switch using assembly outputs as their source of truth.
 
-firmware_prebuilts_path_suffix = ""
-firmware_prebuilts = [
-  {
-    type = ""
-    path = "//prebuilt/third_party/firmware/vim3/u-boot.bin.unsigned"
-    partition = "bootloader"
-  },
-]
-
 use_gigaboot = false
 use_vbmeta = true
 avb_key = "//src/firmware/avb_keys/vim3/vim3-dev-key/vim3_devkey_atx_psk.pem"
