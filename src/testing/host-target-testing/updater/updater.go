@@ -275,7 +275,7 @@ func updateCheckNow(
 				// ssh might get disconnected before the update command completes.
 				var errExitMissing *ssh.ExitMissingError
 				if errors.As(err, &errExitMissing) {
-					logger.Warningf(ctx, "update monitoringvia /bin/update failed: ssh exited without status or signal")
+					logger.Warningf(ctx, "update monitoring via /bin/update failed: ssh exited without status or signal")
 				} else {
 					logger.Warningf(ctx, "update monitoring via /bin/update failed: %v.", err)
 				}
