@@ -75,7 +75,7 @@ rust_library(
     version = "1.4.0",
     deps = [
         "//third_party/rust_crates/ask2patch/csv-core:csv_core",
-        "//third_party/rust_crates/vendor/itoa-1.0.15:itoa",
+        "//third_party/rust_crates/vendor/itoa-1.0.17:itoa",
         "//third_party/rust_crates/vendor/ryu-1.0.22:ryu",
         "//third_party/rust_crates/vendor/serde_core-1.0.228:serde_core",
     ],
