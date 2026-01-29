@@ -39,49 +39,8 @@ class Allocator : public LoggingMixin {
                             std::optional<ClientDebugInfo> client_debug_info = std::nullopt);
 
  private:
-  struct V1 : public fidl::Server<fuchsia_sysmem::Allocator> {
-    explicit V1(std::unique_ptr<Allocator> allocator) : allocator_(std::move(allocator)) {}
-
-    void AllocateNonSharedCollection(
-        AllocateNonSharedCollectionRequest& request,
-        AllocateNonSharedCollectionCompleter::Sync& completer) override;
-    void AllocateSharedCollection(AllocateSharedCollectionRequest& request,
-                                  AllocateSharedCollectionCompleter::Sync& completer) override;
-    void BindSharedCollection(BindSharedCollectionRequest& request,
-                              BindSharedCollectionCompleter::Sync& completer) override;
-    void ValidateBufferCollectionToken(
-        ValidateBufferCollectionTokenRequest& request,
-        ValidateBufferCollectionTokenCompleter::Sync& completer) override;
-    void SetDebugClientInfo(SetDebugClientInfoRequest& request,
-                            SetDebugClientInfoCompleter::Sync& completer) override;
-    void ConnectToSysmem2Allocator(ConnectToSysmem2AllocatorRequest& request,
-                                   ConnectToSysmem2AllocatorCompleter::Sync& completer) override;
-
-    std::unique_ptr<Allocator> allocator_;
-  };
-
-  struct V2 : public fidl::Server<fuchsia_sysmem2::Allocator> {
-    explicit V2(std::unique_ptr<Allocator> allocator) : allocator_(std::move(allocator)) {}
-
-    void AllocateNonSharedCollection(
-        AllocateNonSharedCollectionRequest& request,
-        AllocateNonSharedCollectionCompleter::Sync& completer) override;
-    void AllocateSharedCollection(AllocateSharedCollectionRequest& request,
-                                  AllocateSharedCollectionCompleter::Sync& completer) override;
-    void BindSharedCollection(BindSharedCollectionRequest& request,
-                              BindSharedCollectionCompleter::Sync& completer) override;
-    void ValidateBufferCollectionToken(
-        ValidateBufferCollectionTokenRequest& request,
-        ValidateBufferCollectionTokenCompleter::Sync& completer) override;
-    void SetDebugClientInfo(SetDebugClientInfoRequest& request,
-                            SetDebugClientInfoCompleter::Sync& completer) override;
-    void GetVmoInfo(GetVmoInfoRequest& request, GetVmoInfoCompleter::Sync& completer) override;
-
-    void handle_unknown_method(fidl::UnknownMethodMetadata<fuchsia_sysmem2::Allocator> metadata,
-                               fidl::UnknownMethodCompleter::Sync& completer) override;
-
-    std::unique_ptr<Allocator> allocator_;
-  };
+  struct V1;
+  struct V2;
 
   Allocator(Sysmem* parent_device);
 
@@ -92,6 +51,48 @@ class Allocator : public LoggingMixin {
   Sysmem* parent_sysmem_ = nullptr;
 
   std::optional<ClientDebugInfo> client_debug_info_;
+};
+
+struct Allocator::V1 : public fidl::Server<fuchsia_sysmem::Allocator> {
+  explicit V1(std::unique_ptr<Allocator> allocator) : allocator_(std::move(allocator)) {}
+
+  void AllocateNonSharedCollection(AllocateNonSharedCollectionRequest& request,
+                                   AllocateNonSharedCollectionCompleter::Sync& completer) override;
+  void AllocateSharedCollection(AllocateSharedCollectionRequest& request,
+                                AllocateSharedCollectionCompleter::Sync& completer) override;
+  void BindSharedCollection(BindSharedCollectionRequest& request,
+                            BindSharedCollectionCompleter::Sync& completer) override;
+  void ValidateBufferCollectionToken(
+      ValidateBufferCollectionTokenRequest& request,
+      ValidateBufferCollectionTokenCompleter::Sync& completer) override;
+  void SetDebugClientInfo(SetDebugClientInfoRequest& request,
+                          SetDebugClientInfoCompleter::Sync& completer) override;
+  void ConnectToSysmem2Allocator(ConnectToSysmem2AllocatorRequest& request,
+                                 ConnectToSysmem2AllocatorCompleter::Sync& completer) override;
+
+  std::unique_ptr<Allocator> allocator_;
+};
+
+struct Allocator::V2 : public fidl::Server<fuchsia_sysmem2::Allocator> {
+  explicit V2(std::unique_ptr<Allocator> allocator) : allocator_(std::move(allocator)) {}
+
+  void AllocateNonSharedCollection(AllocateNonSharedCollectionRequest& request,
+                                   AllocateNonSharedCollectionCompleter::Sync& completer) override;
+  void AllocateSharedCollection(AllocateSharedCollectionRequest& request,
+                                AllocateSharedCollectionCompleter::Sync& completer) override;
+  void BindSharedCollection(BindSharedCollectionRequest& request,
+                            BindSharedCollectionCompleter::Sync& completer) override;
+  void ValidateBufferCollectionToken(
+      ValidateBufferCollectionTokenRequest& request,
+      ValidateBufferCollectionTokenCompleter::Sync& completer) override;
+  void SetDebugClientInfo(SetDebugClientInfoRequest& request,
+                          SetDebugClientInfoCompleter::Sync& completer) override;
+  void GetVmoInfo(GetVmoInfoRequest& request, GetVmoInfoCompleter::Sync& completer) override;
+
+  void handle_unknown_method(fidl::UnknownMethodMetadata<fuchsia_sysmem2::Allocator> metadata,
+                             fidl::UnknownMethodCompleter::Sync& completer) override;
+
+  std::unique_ptr<Allocator> allocator_;
 };
 
 }  // namespace sysmem_service
