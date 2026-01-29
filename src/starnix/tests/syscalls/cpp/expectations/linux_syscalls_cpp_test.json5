@@ -6,13 +6,6 @@
         {
             type: "skip",
             matchers: [
-                // TODO(https://fxbug.dev/437183123): Virtually all are failing and/or flaking.
-                // Since the results are flakey, we'll need to skip instead of expecting failure.
-                "BpfTest.*",
-                "BpfMapTest.*",
-                "BpfCgroupTest.*",
-                "BpfIdTest.*",
-
                 // TODO(https://fxbug.dev/436916082): Crashes on Machina.
                 "CgroupTest.ProcfsCgroup",
 
@@ -83,6 +76,18 @@
             matchers: [
                 // TODO(https://fxbug.dev/317285180): Test needs to run where Binder is available.
                 "BinderWithoutSE*",
+
+                // TODO(https://fxbug.dev/437183123)
+                "BpfMapTest.*",
+                "BpfIdTest.ProgIds",
+                "BpfIdTest.MapIds",
+                "BpfTest.HashMapZeroKeySize",
+                "BpfTest.ArraySizeZero",
+                "BpfTest.HashMapSizeZero",
+                "BpfTest.ArraySizeOverflow",
+                "BpfCgroupTest.BlockConnect",
+                "BpfCgroupTest.BlockBind",
+                "BpfCgroupTest.ProgFdEpoll",
 
                 // TODO(https://fxbug.dev/436918865): Test needs to be reworked.
                 "FsTest.CreateExistingFileInReadonlyFilesystemReturnsEEXIST",
