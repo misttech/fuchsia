@@ -132,8 +132,8 @@ def main() -> int | None:
     if not prebuilts_manager.is_jiri_bootstrapped():
         prebuilts_manager.bootstrap_jiri()
 
-    prebuilts_manager.create_integration_repository()
-    prebuilts_manager.fetch_prebuilts()
+    integration_hash = prebuilts_manager.create_integration_repository()
+    prebuilts_manager.fetch_prebuilts(integration_hash)
     prebuilts_manager.create_symlinks()
 
 

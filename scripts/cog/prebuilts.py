@@ -31,6 +31,7 @@ class Prebuilts:
         repo_name: str,
     ):
         self.cartfs_directory = cartfs_directory
+        self.cartfs_mount_point = cartfs_directory.parent
         self.cartfs_fuchsia_dir = self.cartfs_directory / "fuchsia"
         self.workspace_dir = workspace_dir
         self.workspace_name = workspace_name
@@ -67,7 +68,7 @@ class Prebuilts:
                 encoded_script = response.read()
                 decoded_script = base64.b64decode(encoded_script)
                 subprocess.run(
-                    ["bash", "-s", self.cartfs_fuchsia_dir],
+                    ["bash", "-s", self.cartfs_mount_point],
                     input=decoded_script,
                     check=True,
                 )
@@ -85,6 +86,13 @@ class Prebuilts:
     def _write_jiri_config(self) -> None:
         """Initialize the jiri config."""
         logger.log_info("Initialize the jiri config.")
+        (self.cartfs_fuchsia_dir / ".jiri_root" / "bin").mkdir(
+            exist_ok=True, parents=True
+        )
+        self.create_symlink(
+            self.cartfs_mount_point / ".jiri_root" / "bin" / "jiri",
+            self.cartfs_fuchsia_dir / ".jiri_root" / "bin" / "jiri",
+        )
         subprocess.run(
             [
                 ".jiri_root/bin/jiri",
@@ -98,19 +106,31 @@ class Prebuilts:
 
     def is_jiri_bootstrapped(self) -> bool:
         """Checks if jiri is bootstrapped."""
-        jiri_root = self.cartfs_fuchsia_dir / ".jiri_root"
-        jiri_manifest = self.cartfs_fuchsia_dir / ".jiri_manifest"
-        return jiri_root.is_dir() and jiri_manifest.exists()
+        return (
+            self.cartfs_mount_point / ".jiri_root" / "bin" / "jiri"
+        ).exists()
 
     def bootstrap_jiri(self) -> None:
         """Bootstraps jiri if it is not already bootstrapped."""
         logger.log_info("Bootstrapping jiri.")
         self._run_bootstrap_jiri_script()
+
+    def fetch_prebuilts(self, current_integration_hash: str) -> None:
+        """Fetches prebuilts for the given repo."""
+        integration_hash_file = (
+            self.cartfs_directory / ".integration_commit_hash"
+        )
+        if integration_hash_file.exists():
+            former_integration_hash = integration_hash_file.read_text().strip()
+            if former_integration_hash == current_integration_hash:
+                logger.log_info(
+                    f"Integration repo not changed, skip fetching prebuilts."
+                )
+                return
+
         self._write_jiri_manifest()
         self._write_jiri_config()
 
-    def fetch_prebuilts(self) -> None:
-        """Fetches prebuilts for the given repo."""
         logger.log_info(f"Fetching prebuilts for {self.repo_name}.")
         cartfs_fuchsia_dir = self.cartfs_fuchsia_dir
         if (cartfs_fuchsia_dir / ".git").exists():
@@ -132,7 +152,10 @@ class Prebuilts:
             check=True,
         )
 
-    def create_integration_repository(self) -> None:
+        # Record integration repo commit hash in the fuchsia repo.
+        integration_hash_file.write_text(current_integration_hash)
+
+    def create_integration_repository(self) -> str:
         """Creates the integration repository."""
         logger.log_info("Setup the integration repository.")
         integration_directory = self.cartfs_directory / "integration"
@@ -142,43 +165,28 @@ class Prebuilts:
             if not (integration_directory / ".git").exists():
                 shutil.rmtree(integration_directory, ignore_errors=True)
             else:
-                # check remote is fuchsia.googlesource.com/integration
-                remote = subprocess.run(
+                # Force set remote to fuchsia.googlesource.com/integration
+                subprocess.run(
                     [
                         "git",
                         "remote",
-                        "get-url",
+                        "set-url",
                         "origin",
+                        "https://fuchsia.googlesource.com/integration",
                     ],
                     cwd=integration_directory,
                     check=True,
-                    capture_output=True,
+                    stdout=subprocess.DEVNULL,
                 )
-                if (
-                    remote.stdout.decode("utf-8").strip()
-                    != "https://fuchsia.googlesource.com/integration"
-                ):
-                    # Set remote to fuchsia.googlesource.com/integration
-                    subprocess.run(
-                        [
-                            "git",
-                            "remote",
-                            "set-url",
-                            "origin",
-                            "https://fuchsia.googlesource.com/integration",
-                        ],
-                        cwd=integration_directory,
-                        check=True,
-                        stdout=subprocess.DEVNULL,
-                    )
 
-                # pull latest changes from the remote
+                # Pull latest changes from the remote
                 subprocess.run(
                     [
                         "git",
                         "pull",
                         "origin",
                         "main",
+                        "--depth=100",
                     ],
                     cwd=integration_directory,
                     check=True,
@@ -193,8 +201,7 @@ class Prebuilts:
                     "git",
                     "clone",
                     "https://fuchsia.googlesource.com/integration",
-                    "--depth",
-                    "100",
+                    "--depth=100",
                 ],
                 cwd=self.cartfs_directory,
                 check=True,
@@ -258,28 +265,25 @@ class Prebuilts:
                 "Fuchsia commit is not rolled to integration repo yet. We will "
                 "use the latest integration repo commit hash."
             )
-            return
-
-        # checkout the integration repo based on the fuchsia repo commit hash
-        subprocess.run(
-            [
-                "git",
-                "reset",
-                "--hard",
-                integration_repo_commit_hash,
-            ],
-            cwd=integration_directory,
-            check=True,
-            stdout=subprocess.DEVNULL,
-            stderr=subprocess.DEVNULL,
-        )
+        else:
+            # checkout the integration repo based on the fuchsia repo commit hash
+            subprocess.run(
+                [
+                    "git",
+                    "reset",
+                    "--hard",
+                    integration_repo_commit_hash,
+                ],
+                cwd=integration_directory,
+                check=True,
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+            )
+        return integration_repo_commit_hash
 
     def create_symlinks(self) -> None:
         """Creates symlinks for the prebuilts."""
         # Link the paths in the repo to cartfs
-        (self.cartfs_fuchsia_dir / ".jiri_root" / "bin").mkdir(
-            exist_ok=True, parents=True
-        )
         (self.cartfs_fuchsia_dir / ".fx" / "config").mkdir(
             exist_ok=True, parents=True
         )
