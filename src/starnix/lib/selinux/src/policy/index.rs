@@ -496,26 +496,14 @@ enum PermissionIndex {
 
 fn get_class_index_by_name<'a>(classes: &'a Classes, name: &str) -> Option<usize> {
     let name_bytes = name.as_bytes();
-    for i in 0..classes.len() {
-        if classes[i].name_bytes() == name_bytes {
-            return Some(i);
-        }
-    }
-
-    None
+    classes.iter().position(|class| class.name_bytes() == name_bytes)
 }
 
 fn get_common_symbol_index_by_name_bytes<'a>(
     common_symbols: &'a CommonSymbols,
     name_bytes: &[u8],
 ) -> Option<usize> {
-    for i in 0..common_symbols.len() {
-        if common_symbols[i].name_bytes() == name_bytes {
-            return Some(i);
-        }
-    }
-
-    None
+    common_symbols.iter().position(|common_symbol| common_symbol.name_bytes() == name_bytes)
 }
 
 fn get_permission_index_by_name<'a>(
@@ -541,14 +529,7 @@ fn get_permission_index_by_name<'a>(
 
 fn get_class_permission_index_by_name<'a>(class: &'a Class, name: &str) -> Option<usize> {
     let name_bytes = name.as_bytes();
-    let permissions = class.permissions();
-    for i in 0..permissions.len() {
-        if permissions[i].name_bytes() == name_bytes {
-            return Some(i);
-        }
-    }
-
-    None
+    class.permissions().iter().position(|permission| permission.name_bytes() == name_bytes)
 }
 
 fn get_common_permission_index_by_name<'a>(
@@ -556,12 +537,5 @@ fn get_common_permission_index_by_name<'a>(
     name: &str,
 ) -> Option<usize> {
     let name_bytes = name.as_bytes();
-    let permissions = common_symbol.permissions();
-    for i in 0..permissions.len() {
-        if permissions[i].name_bytes() == name_bytes {
-            return Some(i);
-        }
-    }
-
-    None
+    common_symbol.permissions().iter().position(|permission| permission.name_bytes() == name_bytes)
 }
