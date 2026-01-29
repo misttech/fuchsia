@@ -12,6 +12,7 @@ group("musl_internal") {
   ]
   public_deps = [
     "//sdk/lib/c/include:headers",
+    "//sdk/lib/c/threads:zxr-thread.header",  # Used by "threads_impl.h".
     "//src/zircon/lib/zircon:headers",
     "//zircon/system/public",
     "//zircon/system/ulib/zircon-internal:headers",
