@@ -118,11 +118,11 @@ class VmSlotPageStorage final : public VmCompressedStorage {
 
   CompressedRef AllocToRefLocked(const Allocation* alloc) const TA_REQ(lock_) {
     static_assert(ktl::bit_width(kMaxStorageItems) + CompressedRef::kAlignBits <= 32);
-    return CompressedRef(allocator_.ObjectToId(alloc) << CompressedRef::kAlignBits);
+    return CompressedRef(allocator_.AllocToId(alloc) << CompressedRef::kAlignBits);
   }
   Allocation* RefToAllocLocked(CompressedRef ref) const TA_REQ(lock_) {
     return reinterpret_cast<Allocation*>(
-        allocator_.IdToObject(ref.value() >> CompressedRef::kAlignBits));
+        allocator_.IdToAlloc(ref.value() >> CompressedRef::kAlignBits));
   }
   InternalMemoryUsage GetInternalMemoryUsageLocked() const TA_REQ(lock_);
 
@@ -144,7 +144,7 @@ class VmSlotPageStorage final : public VmCompressedStorage {
   // Still, this should not be sized arbitrarily high, as the doubling of size starts to become
   // meaningful, and is potentially wasting memory if not storing that many items.
   static constexpr size_t kMaxStorageItems = 1ul << 24;
-  IdSlabAllocator<Allocation, kMaxStorageItems> allocator_ TA_GUARDED(lock_);
+  IdSlabAllocator<sizeof(Allocation), kMaxStorageItems> allocator_ TA_GUARDED(lock_);
 
   // Informational counters not required for operation, but used to provide statistics.
   size_t stored_items_ TA_GUARDED(lock_) = 0;

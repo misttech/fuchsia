@@ -6,6 +6,7 @@
 
 #include <lib/page/size.h>
 
+#include <ktl/memory.h>
 #include <vm/physmap.h>
 #include <vm/pmm.h>
 #include <vm/slot_page_storage.h>
@@ -117,10 +118,11 @@ std::pair<ktl::optional<VmCompressedStorage::CompressedRef>, vm_page_t*> VmSlotP
   Guard<CriticalMutex> guard{&lock_};
 
   // Require an |Allocation| for our metadata.
-  Allocation* data = allocator_.New();
+  Allocation* data = allocator_.allocate_object<Allocation>();
   if (!data) {
     return {ktl::nullopt, page};
   }
+  ktl::construct_at(data);
 
   // Allocation cannot fail from here, so update our stats.
   total_compressed_item_size_ += len;
@@ -186,7 +188,8 @@ void VmSlotPageStorage::Free(CompressedRef ref) {
     // |Allocation|.
     uint64_t free_mask = SlotMask(data->slot_start, data->num_slots);
     page->zram.free_block_mask |= free_mask;
-    allocator_.Delete(data);
+    ktl::destroy_at(data);
+    allocator_.deallocate_bytes(data);
 
     // Remove the page from its current list since it's cheaper to potentially re-insert than to
     // work out what list it's currently in.

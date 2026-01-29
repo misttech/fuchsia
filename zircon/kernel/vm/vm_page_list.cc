@@ -13,6 +13,7 @@
 #include <zircon/types.h>
 
 #include <fbl/alloc_checker.h>
+#include <ktl/memory.h>
 #include <ktl/utility.h>
 #include <vm/compression.h>
 #include <vm/page_slab_allocator.h>
@@ -30,7 +31,7 @@ namespace {
 
 DECLARE_SINGLETON_CRITICAL_MUTEX(SlabLock);
 // Slab used for allocating all the page list nodes.
-constinit PageSlabAllocator<VmPageListNode> pln_slab_ TA_GUARDED(SlabLock::Get());
+constinit PageSlabAllocator<sizeof(VmPageListNode)> pln_slab_ TA_GUARDED(SlabLock::Get());
 
 // Assert the size of the page list node to prevent accidental size changes. By virtue of being
 // allocated from from a PageSlabAllocator there is some wastage due to the size of the object not
@@ -44,16 +45,18 @@ static_assert(sizeof(VmPageListNode) == 112);
 }  // namespace
 
 void VmPageListNodeDeleter::operator()(VmPageListNode* node) {
+  ktl::destroy_at(node);
   Guard<CriticalMutex> guard{SlabLock::Get()};
-  pln_slab_.Delete(node);
+  pln_slab_.deallocate_bytes(node);
 }
 
 VmPlnOwner VmPageListNode::Create(uint64_t offset) {
   Guard<CriticalMutex> guard{SlabLock::Get()};
-  VmPageListNode* node = pln_slab_.New(offset);
+  VmPageListNode* node = pln_slab_.allocate_object<VmPageListNode>();
   if (!node) {
     return nullptr;
   }
+  ktl::construct_at(node, offset);
   return VmPlnOwner(node);
 }
 
