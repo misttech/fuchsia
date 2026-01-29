@@ -150,6 +150,10 @@ union error_or_value_type {
   template <typename U>
   constexpr error_or_value_type(value_t, U&& val) : value(std::forward<U>(val)) {}
 
+  template <class... Args>
+  constexpr error_or_value_type(std::in_place_t, value_t, Args&&... args)
+      : value{std::forward<Args>(args)...} {}
+
   ~error_or_value_type() = default;
 
   constexpr void destroy(error_t) {}
@@ -173,6 +177,10 @@ union error_or_value_type<E, T, storage_class_e::non_trivial> {
 
   template <typename U>
   constexpr error_or_value_type(value_t, U&& val) : value(std::forward<U>(val)) {}
+
+  template <class... Args>
+  constexpr error_or_value_type(std::in_place_t, value_t, Args&&... args)
+      : value{std::forward<Args>(args)...} {}
 
   ~error_or_value_type() {}
 
@@ -224,6 +232,11 @@ struct storage_type<storage_class, E, T> {
   ~storage_type() = default;
 
   explicit constexpr storage_type(empty_t) {}
+
+  template <class... Args>
+  explicit constexpr storage_type(std::in_place_t, value_t, Args&&... args)
+      : state{state_e::has_value},
+        error_or_value{std::in_place, value_v, std::forward<Args>(args)...} {}
 
   template <typename F>
   constexpr storage_type(error_t, F&& error)
@@ -301,6 +314,11 @@ struct storage_type<storage_class_e::non_trivial, E, T> {
   }
 
   ~storage_type() { destroy(); }
+
+  template <class... Args>
+  explicit constexpr storage_type(std::in_place_t, value_t, Args&&... args)
+      : state{state_e::has_value},
+        error_or_value{std::in_place, value_v, std::forward<Args>(args)...} {}
 
   explicit constexpr storage_type(empty_t) {}
 

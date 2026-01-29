@@ -52,6 +52,7 @@ test("fit") {
     "inline_any_multi_inheritance_tests.cc",
     "inline_any_tests.cc",
     "nullable_tests.cc",
+    "result_tests.cc",
     "thread_checker_tests.cc",
     "traits_tests.cc",
     "utility_internal_tests.cc",

@@ -245,6 +245,10 @@ class [[nodiscard]] result<E, T> {
   constexpr result(result&&) = default;
   constexpr result& operator=(result&&) = default;
 
+  template <class... Args>
+  constexpr explicit result(std::in_place_t, success<>, Args&&... args)
+      : storage_{std::in_place, ::fit::internal::value_v, std::forward<Args>(args)...} {}
+
   // Implicit conversion from fit::failed. This overload is only enabled when the error type E is
   // fit::failed.
   constexpr result(failed_or_none) : storage_{::fit::internal::error_v, failed{}} {}
