@@ -591,6 +591,18 @@ async fn set_clock_from_rtc<R: Rtc, D: Diagnostics>(
             .record(Event::StartClock { track: Track::Primary, source: StartClockSource::Rtc });
         info!("started UTC clock from RTC at time: {}", rtc_chrono);
 
+        // Refresh the UTC immediately, to ensure that next reboot always
+        // gets a reference from this boot. Otherwise, confusion around
+        // reference will exist.
+        if let Ok(utc_instant) =
+            clock.read().inspect_err(|err| log::error!("could not read UTC: {err:?}"))
+        {
+            let _ = rtc
+                .set(utc_instant)
+                .await
+                .map_err(|err| log::error!("could not reconfirm UTC: {err:?}"));
+        }
+
         if let Err(status) = clock.signal(
             zx::Signals::NONE,
             zx::Signals::from_bits(ftime::SIGNAL_UTC_CLOCK_LOGGING_QUALITY).unwrap(),
@@ -1238,7 +1250,6 @@ mod tests {
         // Checking that the clock has not been updated yet
         let last_value_update_ticks = clock.get_details().unwrap().last_value_update_ticks;
         assert_leq!(initial_update_ticks, last_value_update_ticks);
-        assert_eq!(rtc.last_set(), None);
 
         // Checking that the correct diagnostic events were logged.
         diagnostics.assert_events_prefix(&[
@@ -1293,7 +1304,6 @@ mod tests {
         // Checking that the clock was updated to use the valid RTC time.
         assert!(clock.get_details().unwrap().last_value_update_ticks > initial_update_ticks);
         assert!(clock.read().unwrap() >= VALID_RTC_TIME);
-        assert_eq!(rtc.last_set(), None);
 
         // Checking that the correct diagnostic events were logged.
         diagnostics.assert_events_prefix(&[

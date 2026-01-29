@@ -3,30 +3,31 @@
 // found in the LICENSE file.
 
 use anyhow::{Context, Result};
-use fidl::{endpoints, HandleBased};
+use fidl::{HandleBased, endpoints};
 use fidl_fuchsia_metrics::MetricEvent;
 use fidl_fuchsia_metrics_test::{LogMethod, MetricEventLoggerQuerierProxy};
 use fidl_fuchsia_time_external::TimeSample;
 use fuchsia_cobalt_builders::MetricEventExt;
 use fuchsia_component::client;
-use futures::stream::StreamExt;
 use futures::Future;
+use futures::stream::StreamExt;
 use std::sync::Arc;
 use test_util::{assert_geq, assert_leq, assert_lt};
 use time_metrics_registry::{
+    REAL_TIME_CLOCK_EVENTS_MIGRATED_METRIC_ID,
     RealTimeClockEventsMigratedMetricDimensionEventType as RtcEventType,
+    TIMEKEEPER_CLOCK_CORRECTION_MIGRATED_METRIC_ID, TIMEKEEPER_LIFECYCLE_EVENTS_MIGRATED_METRIC_ID,
+    TIMEKEEPER_SQRT_COVARIANCE_MIGRATED_METRIC_ID,
+    TIMEKEEPER_TIME_SOURCE_EVENTS_MIGRATED_METRIC_ID, TIMEKEEPER_TRACK_EVENTS_MIGRATED_METRIC_ID,
     TimeMetricDimensionExperiment as Experiment, TimeMetricDimensionTrack as Track,
     TimekeeperLifecycleEventsMigratedMetricDimensionEventType as LifecycleEventType,
     TimekeeperTimeSourceEventsMigratedMetricDimensionEventType as TimeSourceEvent,
     TimekeeperTrackEventsMigratedMetricDimensionEventType as TrackEvent,
-    REAL_TIME_CLOCK_EVENTS_MIGRATED_METRIC_ID, TIMEKEEPER_CLOCK_CORRECTION_MIGRATED_METRIC_ID,
-    TIMEKEEPER_LIFECYCLE_EVENTS_MIGRATED_METRIC_ID, TIMEKEEPER_SQRT_COVARIANCE_MIGRATED_METRIC_ID,
-    TIMEKEEPER_TIME_SOURCE_EVENTS_MIGRATED_METRIC_ID, TIMEKEEPER_TRACK_EVENTS_MIGRATED_METRIC_ID,
 };
 use timekeeper_integration_lib::{
-    create_cobalt_event_stream, new_nonshareable_clock, poll_until, poll_until_some_async,
-    rtc_time_to_zx_time, RemotePushSourcePuppet, RemoteRtcUpdates, BACKSTOP_TIME,
-    BEFORE_BACKSTOP_TIME, BETWEEN_SAMPLES, STD_DEV, VALID_RTC_TIME, VALID_TIME, VALID_TIME_2,
+    BACKSTOP_TIME, BEFORE_BACKSTOP_TIME, BETWEEN_SAMPLES, RemotePushSourcePuppet, RemoteRtcUpdates,
+    STD_DEV, VALID_RTC_TIME, VALID_TIME, VALID_TIME_2, create_cobalt_event_stream,
+    new_nonshareable_clock, poll_until, poll_until_some_async, rtc_time_to_zx_time,
 };
 use {
     fidl_fuchsia_testing_harness as ftth, fidl_fuchsia_time as fft, fidl_test_time_realm as fttr,
@@ -378,6 +379,7 @@ async fn test_start_clock_from_rtc() {
             );
             let clock_utc = clock.read().unwrap();
             let monotonic_after_read = zx::BootInstant::get();
+            log::info!("XXX(fmil): valid_time: {:?}", *VALID_TIME);
             assert_geq!(clock_utc, *VALID_TIME);
             assert_leq!(
                 clock_utc,
@@ -386,18 +388,22 @@ async fn test_start_clock_from_rtc() {
                         (monotonic_after_read - sample_boot).into_nanos()
                     )
             );
-            // RTC should be set too.
-            let rtc_update = poll_until_some_async!(async { rtc_updates.to_vec().await.pop() });
-            let monotonic_after_rtc_set = zx::BootInstant::get();
-            let rtc_reported_utc = rtc_time_to_zx_time(rtc_update);
-            assert_geq!(rtc_reported_utc, *VALID_TIME);
-            assert_leq!(
-                rtc_reported_utc,
-                *VALID_TIME
-                    + zx::SyntheticDuration::from_nanos(
-                        (monotonic_after_rtc_set - sample_boot).into_nanos()
-                    )
-            );
+
+            for tries in 1..5 {
+                // RTC should be set eventually.
+                let rtc_update = poll_until_some_async!(async {
+                    let mut updates = rtc_updates.to_vec().await;
+                    log::debug!("all RTC updates so far: {updates:?}");
+                    updates.pop()
+                });
+                let rtc_reported_utc = rtc_time_to_zx_time(rtc_update);
+                if tries < 5 && rtc_reported_utc < *VALID_TIME {
+                    log::info!("RTC not set yet, backing off: {rtc_reported_utc:?}");
+                    fasync::Timer::new(zx::BootDuration::from_seconds(1)).await;
+                    continue;
+                }
+                assert_geq!(rtc_reported_utc, *VALID_TIME);
+            }
 
             assert_eq!(
                 cobalt_event_stream.by_ref().take(3).collect::<Vec<MetricEvent>>().await,

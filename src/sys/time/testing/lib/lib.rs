@@ -585,22 +585,24 @@ async fn setup_rtc(
     rtc_updates
 }
 
+// Emulates the low-level RTC device driver with a fake which gets given the initial
+// reading, and can be set externally.
 async fn serve_fake_rtc(
     initial_time: zx::SyntheticInstant,
     rtc_updates: RtcUpdates,
     mut stream: DeviceRequestStream,
 ) {
+    let mut current = zx_time_to_rtc_time(initial_time);
     while let Some(req) = stream.try_next().await.unwrap() {
         match req {
             DeviceRequest::Get { responder } => {
-                log::debug!("serve_fake_rtc: DeviceRequest::Get");
-                // Since timekeeper only pulls a time off of the RTC device once on startup, we
-                // don't attempt to update the sent time.
-                responder.send(Ok(&zx_time_to_rtc_time(initial_time))).unwrap();
+                log::debug!("serve_fake_rtc: DeviceRequest::Get: {current:?}");
+                responder.send(Ok(&current)).unwrap();
             }
             DeviceRequest::Set2 { rtc, responder } => {
-                log::debug!("serve_fake_rtc: DeviceRequest::Set2");
+                log::debug!("serve_fake_rtc: DeviceRequest::Set2: {rtc:?}");
                 rtc_updates.0.lock().push(rtc);
+                current = rtc;
                 responder.send(Ok(())).unwrap();
             }
             DeviceRequest::_UnknownMethod { .. } => {}

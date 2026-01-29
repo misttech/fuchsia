@@ -30,6 +30,10 @@ pub struct State {
 
     // If set to nonzero, this is the reference instant on the boot timeline
     // used for estimating UTC.
+    //
+    // This reverence value MUST be either from this or the immediately preceding boot.
+    // This means that we must update this value at least once on each boot to
+    // ensure correct handling of the UTC timeline recovery from RTC.
     #[serde(default)]
     reference_boot_instant_ns: i64,
 
@@ -106,7 +110,8 @@ impl State {
             debug!("while deserializing: {:?}", e);
             e
         })?;
-        debug!("read persistent state: {:?}", &state);
+        // TODO(b/478927688): Convert to `debug!` once fix is confirmed.
+        log::info!("read persistent RTC state: {state:?}");
         let mut next = state.clone();
         next.spend_one_reboot_count();
         Self::write_internal(path, &next)?;
@@ -120,7 +125,8 @@ impl State {
 
     pub fn write_internal<P: AsRef<Path>>(path: P, state: &Self) -> Result<()> {
         let path = path.as_ref();
-        debug!("writing persistent state: {:?} to {:?}", state, path);
+        // TODO(b/478927688): Convert to `debug!` once fix is confirmed.
+        log::info!("writing persistent RTC state: {:?} to {:?}", state, path);
         let state_str = serde_json::to_string(state).map_err(|e| {
             error!("while serializing state: {:?}", e);
             e
