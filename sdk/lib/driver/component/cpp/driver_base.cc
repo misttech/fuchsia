@@ -87,7 +87,7 @@ std::optional<fuchsia_power_broker::DependencyToken> DriverBase::power_element_t
   }
 
   zx::event copy;
-  ZX_ASSERT(start_args_.power_element_args()->token()->duplicate(ZX_RIGHT_SAME_RIGHTS, &copy) !=
+  ZX_ASSERT(start_args_.power_element_args()->token()->duplicate(ZX_RIGHT_SAME_RIGHTS, &copy) ==
             ZX_OK);
 
   return fuchsia_power_broker::DependencyToken(std::move(copy));
