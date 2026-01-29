@@ -219,18 +219,10 @@ zx_status_t fdio_namespace::OpenRemoteDeprecated(std::string_view path, fio::wir
                             return status;
                           }
                           fidl::UnownedClientEnd<fio::Directory> directory(borrowed_handle);
-
-#if FUCHSIA_API_LEVEL_AT_LEAST(27)
                           return fidl::WireCall(directory)
                               ->DeprecatedOpen(flags, {}, fidl::StringView::FromExternal(path),
                                                std::move(server_end))
                               .status();
-#else
-                          return fidl::WireCall(directory)
-                              ->Open(flags, {}, fidl::StringView::FromExternal(path),
-                                     std::move(server_end))
-                              .status();
-#endif
                         },
                     },
                     vn->NodeType());
@@ -271,17 +263,10 @@ zx_status_t fdio_namespace::OpenRemote(std::string_view path, fio::Flags flags,
                             return status;
                           }
                           fidl::UnownedClientEnd<fio::Directory> directory(borrowed_handle);
-#if FUCHSIA_API_LEVEL_AT_LEAST(27)
                           return fidl::WireCall(directory)
                               ->Open(fidl::StringView::FromExternal(path), flags, {},
                                      std::move(object))
                               .status();
-#else
-                          return fidl::WireCall(directory)
-                              ->Open3(fidl::StringView::FromExternal(path), flags, {},
-                                      std::move(object))
-                              .status();
-#endif
                         },
                     },
                     vn->NodeType());
