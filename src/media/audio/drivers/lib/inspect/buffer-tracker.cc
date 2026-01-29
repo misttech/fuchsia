@@ -19,43 +19,40 @@ BufferTracker::BufferTracker(inspect::Node node, std::optional<uint32_t> max_buf
       kProcessingTimeAvgUsec, [this]() -> fpromise::promise<inspect::Inspector> {
         std::lock_guard<std::mutex> lock(mutex_);
         inspect::Inspector inspector;
-        inspector.GetRoot().CreateUint(kProcessingTimeAvgUsec,
-                                       total_buffers_processed_ == 0
-                                           ? 0
-                                           : total_processing_time_us_ / total_buffers_processed_,
-                                       &inspector);
+        if (total_buffers_processed_ > 0) {
+          inspector.GetRoot().CreateUint(kProcessingTimeAvgUsec,
+                                         total_processing_time_us_ / total_buffers_processed_,
+                                         &inspector);
+        }
         return fpromise::make_ok_promise(inspector);
       });
   max_processing_time_us_ = node_.CreateUint(kProcessingTimeMaxUsec, 0);
-  total_empty_buffer_duration_us_ = node_.CreateUint(kEmptyBufferCumulativeDurationUsec, 0);
   empty_buffer_episode_count_ = node_.CreateUint(kEmptyBufferEpisodeCount, 0);
-  max_empty_buffer_duration_us_ = node_.CreateUint(kEmptyBufferDurationMaxUsec, 0);
   avg_outstanding_buffer_count_ = node_.CreateLazyValues(
       kCountOutstandingBuffersAvg, [this]() -> fpromise::promise<inspect::Inspector> {
         std::lock_guard<std::mutex> lock(mutex_);
         inspect::Inspector inspector;
-        inspector.GetRoot().CreateUint(
-            kCountOutstandingBuffersAvg,
-            total_buffers_processed_ == 0
-                ? 0
-                : cumulative_outstanding_buffer_count_ / total_buffers_processed_,
-            &inspector);
+        if (total_buffers_processed_ > 0) {
+          inspector.GetRoot().CreateUint(
+              kCountOutstandingBuffersAvg,
+              cumulative_outstanding_buffer_count_ / total_buffers_processed_, &inspector);
+        }
         return fpromise::make_ok_promise(inspector);
       });
   total_buffers_processed_count_ = node_.CreateUint(kCountBuffersProcessed, 0);
   if (max_buffer_count.has_value()) {
-    total_full_buffer_duration_us_ = node_.CreateUint(kFullBufferCumulativeDurationUsec, 0);
     full_buffer_episode_count_ = node_.CreateUint(kFullBufferEpisodeCount, 0);
-    max_full_buffer_duration_us_ = node_.CreateUint(kFullBufferMaxDurationUsec, 0);
   }
   if (per_buffer_duration_.has_value()) {
     total_buffers_processed_duration_us_ = node_.CreateLazyValues(
         kProcessingTimeCumulativeUsec, [this]() -> fpromise::promise<inspect::Inspector> {
           std::lock_guard<std::mutex> lock(mutex_);
           inspect::Inspector inspector;
-          inspector.GetRoot().CreateUint(
-              kProcessingTimeCumulativeUsec,
-              total_buffers_processed_ * per_buffer_duration_->to_usecs(), &inspector);
+          if (total_buffers_processed_ > 0) {
+            inspector.GetRoot().CreateUint(
+                kProcessingTimeCumulativeUsec,
+                total_buffers_processed_ * per_buffer_duration_->to_usecs(), &inspector);
+          }
           return fpromise::make_ok_promise(inspector);
         });
   }
@@ -72,6 +69,10 @@ void BufferTracker::RecordSubmission() {
   if (submission_times_.empty()) {
     if (empty_buffer_start_time_.get() != 0) {
       const zx::duration duration = submission_time - empty_buffer_start_time_;
+      if (!total_empty_buffer_duration_us_) {
+        total_empty_buffer_duration_us_ = node_.CreateUint(kEmptyBufferCumulativeDurationUsec, 0);
+        max_empty_buffer_duration_us_ = node_.CreateUint(kEmptyBufferDurationMaxUsec, 0);
+      }
       total_empty_buffer_duration_us_.Add(duration.to_usecs());
       empty_buffer_episode_count_.Add(1);
       if (duration > max_empty_buffer_duration_) {
@@ -99,6 +100,11 @@ void BufferTracker::RecordCompletion() {
   if (max_buffer_count_.has_value() && submission_times_.size() == max_buffer_count_.value()) {
     if (full_buffer_start_time_.get() != 0) {
       const zx::duration duration = completion_time - full_buffer_start_time_;
+      if (!total_full_buffer_duration_us_) {
+        total_full_buffer_duration_us_ = node_.CreateUint(kFullBufferCumulativeDurationUsec, 0);
+        max_full_buffer_duration_us_ = node_.CreateUint(kFullBufferMaxDurationUsec, 0);
+      }
+
       total_full_buffer_duration_us_->Add(duration.to_usecs());
       full_buffer_episode_count_->Add(1);
       if (duration > max_full_buffer_duration_) {

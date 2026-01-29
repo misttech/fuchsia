@@ -41,8 +41,7 @@ void TaskRecords::UpdateInt(inspect::IntProperty* property, inspect::Node* node,
 }
 
 void TaskRecords::RecordTaskMetrics(const Subtask::Metrics& metrics,
-                                    std::optional<zx::duration> start_to_start,
-                                    std::optional<zx::duration> end_to_end,
+                                    std::optional<InterTaskDurations> inter_task_durations,
                                     std::optional<zx::duration> scheduling_delay) {
   if (task_times_entries_.size() == 0) {
     return;
@@ -56,13 +55,11 @@ void TaskRecords::RecordTaskMetrics(const Subtask::Metrics& metrics,
     task_times.name = metrics.name;
   }
 
-  if (start_to_start.has_value()) {
+  if (inter_task_durations.has_value()) {
     UpdateInt(&task_times.start_to_start_us, &task_times.node, kStartToStartIntervalUsec,
-              start_to_start->to_usecs());
-  }
-  if (end_to_end.has_value()) {
+              inter_task_durations->start_to_start.to_usecs());
     UpdateInt(&task_times.end_to_end_us, &task_times.node, kEndToEndIntervalUsec,
-              end_to_end->to_usecs());
+              inter_task_durations->end_to_end.to_usecs());
   }
   if (scheduling_delay.has_value()) {
     UpdateInt(&task_times.scheduling_delay_us, &task_times.node, kSchedulingDelayUsec,
@@ -77,20 +74,21 @@ void TaskRecords::RecordTaskMetrics(const Subtask::Metrics& metrics,
               metrics.queue_time.to_usecs());
     UpdateInt(&task_times.page_fault_time_us, &task_times.node, kPageFaultTimeUsec,
               metrics.page_fault_time.to_usecs());
-    UpdateInt(&task_times.kernel_lock_contention_time_us, &task_times.node,
-              kKernelLockContentionTimeUsec, metrics.kernel_lock_contention_time.to_usecs());
+    // Don't bother to publish kernel_lock_contention_time to Inspect if it is zero.
+    if (metrics.kernel_lock_contention_time.to_nsecs() > 0) {
+      UpdateInt(&task_times.kernel_lock_contention_time_us, &task_times.node,
+                kKernelLockContentionTimeUsec, metrics.kernel_lock_contention_time.to_usecs());
+    }
   }
 }
 
 AggregateRecords::AggregateRecords(inspect::Node& node, std::string_view name)
     : diagnostics_(node.CreateChild(name)),
       task_records_(diagnostics_.CreateChild(kTaskRecords)),
+      sum_node_(task_records_.CreateChild(kSum)),
       min_task_records_(task_records_.CreateChild(kMin), 1),
       max_task_records_(task_records_.CreateChild(kMax), 1),
-      sum_task_records_(task_records_.CreateChild(kSum), 1),
       avg_task_records_(task_records_.CreateChild(kAvg), 1) {
-  worst_underrun_frames_property_ = diagnostics_.CreateUint(kWorstUnderrunFrames, 0);
-  worst_overrun_frames_property_ = diagnostics_.CreateUint(kWorstOverrunFrames, 0);
   task_count_ = diagnostics_.CreateUint(kCountTasks, 0);
   task_underrun_count_ = diagnostics_.CreateUint(kCountUnderruns, 0);
   task_overrun_count_ = diagnostics_.CreateUint(kCountOverruns, 0);
@@ -109,8 +107,7 @@ AggregateRecords::AggregateRecords(inspect::Node& node, std::string_view name)
 }
 
 void AggregateRecords::RecordTaskMetrics(const Subtask::Metrics& metrics,
-                                         std::optional<zx::duration> start_to_start,
-                                         std::optional<zx::duration> end_to_end) {
+                                         std::optional<InterTaskDurations> inter_task_durations) {
   total_task_count_++;
   task_count_.Set(total_task_count_);
 
@@ -118,73 +115,91 @@ void AggregateRecords::RecordTaskMetrics(const Subtask::Metrics& metrics,
   // If `metrics.got_detailed_thread_metrics` is false, we only get basic wall-clock durations.
   min_metrics_.wall_time = std::min(min_metrics_.wall_time, metrics.wall_time);
   max_metrics_.wall_time = std::max(max_metrics_.wall_time, metrics.wall_time);
+  sum_metrics_.wall_time += metrics.wall_time;
+
   if (metrics.got_detailed_thread_metrics) {
     min_metrics_.cpu_time = std::min(min_metrics_.cpu_time, metrics.cpu_time);
     min_metrics_.queue_time = std::min(min_metrics_.queue_time, metrics.queue_time);
     min_metrics_.page_fault_time = std::min(min_metrics_.page_fault_time, metrics.page_fault_time);
     min_metrics_.kernel_lock_contention_time =
         std::min(min_metrics_.kernel_lock_contention_time, metrics.kernel_lock_contention_time);
+
     max_metrics_.cpu_time = std::max(max_metrics_.cpu_time, metrics.cpu_time);
     max_metrics_.queue_time = std::max(max_metrics_.queue_time, metrics.queue_time);
     max_metrics_.page_fault_time = std::max(max_metrics_.page_fault_time, metrics.page_fault_time);
     max_metrics_.kernel_lock_contention_time =
         std::max(max_metrics_.kernel_lock_contention_time, metrics.kernel_lock_contention_time);
-  }
-  sum_metrics_ += metrics;
 
-  zx::duration avg_start_to_start = zx::duration(0);
-  zx::duration avg_end_to_end = zx::duration(0);
+    // Without this, TaskRecords::RecordTaskMetrics won't cache min/max cpu/queue/page/klock.
+    min_metrics_.got_detailed_thread_metrics = true;
+    max_metrics_.got_detailed_thread_metrics = true;
+    // sum_metrics_.got_detailed_thread_metrics is set implicitly via type conversion
+    sum_metrics_ += metrics;
+  }
+
+  InterTaskDurations avg_inter_task_durations;
   zx::duration avg_scheduling_delay = zx::duration(0);
   bool has_scheduling_delay = false;
-  if (start_to_start.has_value()) {
-    min_start_to_start_ = std::min(min_start_to_start_, start_to_start.value());
-    max_start_to_start_ = std::max(max_start_to_start_, start_to_start.value());
-    sum_start_to_start_ += start_to_start.value();
-    total_start_to_start_count_++;
-    avg_start_to_start = sum_start_to_start_ / total_start_to_start_count_;
+  if (inter_task_durations.has_value()) {
     if (task_schedule_interval_.has_value()) {
-      zx::duration schedule_delay = start_to_start.value() > task_schedule_interval_.value()
-                                        ? start_to_start.value() - task_schedule_interval_.value()
-                                        : zx::duration(0);
+      zx::duration schedule_delay =
+          inter_task_durations->start_to_start > task_schedule_interval_.value()
+              ? inter_task_durations->start_to_start - task_schedule_interval_.value()
+              : zx::duration(0);
       min_schedule_delay_ = std::min(min_schedule_delay_, schedule_delay);
       max_schedule_delay_ = std::max(max_schedule_delay_, schedule_delay);
       sum_schedule_delay_ += schedule_delay;
       total_scheduling_delay_count_++;
-      avg_scheduling_delay = sum_schedule_delay_ / total_scheduling_delay_count_;
+      avg_scheduling_delay =
+          sum_schedule_delay_ / static_cast<int64_t>(total_scheduling_delay_count_);
       has_scheduling_delay = true;
     }
-  }
-  if (end_to_end.has_value()) {
-    min_end_to_end_ = std::min(min_end_to_end_, end_to_end.value());
-    max_end_to_end_ = std::max(max_end_to_end_, end_to_end.value());
-    sum_end_to_end_ += end_to_end.value();
-    total_end_to_end_count_++;
-    avg_end_to_end = sum_end_to_end_ / total_end_to_end_count_;
+
+    min_inter_task_durations_.start_to_start =
+        std::min(min_inter_task_durations_.start_to_start, inter_task_durations->start_to_start);
+    min_inter_task_durations_.end_to_end =
+        std::min(min_inter_task_durations_.end_to_end, inter_task_durations->end_to_end);
+
+    max_inter_task_durations_.start_to_start =
+        std::max(max_inter_task_durations_.start_to_start, inter_task_durations->start_to_start);
+    max_inter_task_durations_.end_to_end =
+        std::max(max_inter_task_durations_.end_to_end, inter_task_durations->end_to_end);
+
+    sum_inter_task_durations_.start_to_start += inter_task_durations->end_to_end;
+    sum_inter_task_durations_.end_to_end += inter_task_durations->end_to_end;
+
+    total_inter_task_durations_count_++;
+    avg_inter_task_durations.start_to_start =
+        sum_inter_task_durations_.start_to_start / total_inter_task_durations_count_;
+    avg_inter_task_durations.end_to_end =
+        sum_inter_task_durations_.end_to_end / total_inter_task_durations_count_;
   }
 
-  min_task_records_.RecordTaskMetrics(
-      min_metrics_, min_start_to_start_, min_end_to_end_,
-      has_scheduling_delay ? std::make_optional(min_schedule_delay_) : std::nullopt);
-  max_task_records_.RecordTaskMetrics(
-      max_metrics_, max_start_to_start_, max_end_to_end_,
-      has_scheduling_delay ? std::make_optional(max_schedule_delay_) : std::nullopt);
-  sum_task_records_.RecordTaskMetrics(
-      sum_metrics_, std::nullopt, std::nullopt,
-      has_scheduling_delay ? std::make_optional(sum_schedule_delay_) : std::nullopt);
-
-  avg_metrics_.wall_time = sum_metrics_.wall_time / total_task_count_;
+  avg_metrics_.wall_time = sum_metrics_.wall_time / static_cast<int64_t>(total_task_count_);
   if (sum_metrics_.got_detailed_thread_metrics) {
     total_thread_metrics_count_++;
     avg_metrics_.cpu_time = sum_metrics_.cpu_time / total_thread_metrics_count_;
     avg_metrics_.queue_time = sum_metrics_.queue_time / total_thread_metrics_count_;
     avg_metrics_.page_fault_time = sum_metrics_.page_fault_time / total_thread_metrics_count_;
-    avg_metrics_.kernel_lock_contention_time =
-        sum_metrics_.kernel_lock_contention_time / total_thread_metrics_count_;
+    // Don't maintain average kernel_lock_contention_time (it will be 0), but record max.
     avg_metrics_.got_detailed_thread_metrics = true;
   }
+  sum_kernel_lock_contention_time_ += metrics.kernel_lock_contention_time;
+
+  // Just record min/wall_time, min_start_to_start_, min_end_to_end_
+  min_task_records_.RecordTaskMetrics(
+      min_metrics_, min_inter_task_durations_,
+      has_scheduling_delay ? std::make_optional(min_schedule_delay_) : std::nullopt);
+
+  max_task_records_.RecordTaskMetrics(
+      max_metrics_, max_inter_task_durations_,
+      has_scheduling_delay ? std::make_optional(max_schedule_delay_) : std::nullopt);
+
+  TaskRecords::UpdateInt(&sum_kernel_lock_time_property_, &sum_node_, kKernelLockContentionTimeUsec,
+                         sum_kernel_lock_contention_time_.to_usecs());
 
   avg_task_records_.RecordTaskMetrics(
-      avg_metrics_, avg_start_to_start, avg_end_to_end,
+      avg_metrics_, avg_inter_task_durations,
       has_scheduling_delay ? std::make_optional(avg_scheduling_delay) : std::nullopt);
 }
 
@@ -235,17 +250,16 @@ void RunningInterval::RecordStopTime(const zx::time& stopped_at) {
 }
 
 void RunningInterval::RecordTaskMetrics(const Subtask::Metrics& metrics,
-                                        std::optional<zx::duration> start_to_start,
-                                        std::optional<zx::duration> end_to_end) {
+                                        std::optional<InterTaskDurations> inter_task_durations) {
   ++record_count_;
   if (record_count_ <= startup_tasks_to_save_ || final_tasks_to_save_ > 0) {
     std::optional<TaskRecords>& task_records =
         record_count_ <= startup_tasks_to_save_ ? startup_task_records_ : final_task_records_;
     if (task_records.has_value()) {
-      task_records->RecordTaskMetrics(metrics, start_to_start, end_to_end);
+      task_records->RecordTaskMetrics(metrics, inter_task_durations);
     }
   }
-  aggregate_records_.RecordTaskMetrics(metrics, start_to_start, end_to_end);
+  aggregate_records_.RecordTaskMetrics(metrics, inter_task_durations);
 }
 
 RingBufferRecorder::RingBufferRecorder(RingBufferSpecification* ring_buffer_spec,
@@ -292,17 +306,19 @@ void RingBufferRecorder::SaveStartupAndFinalTaskMetrics(size_t startup_task_save
 }
 
 void RingBufferRecorder::RecordTaskMetrics(const Subtask::Metrics& metrics) {
-  std::optional<zx::duration> start_to_start, end_to_end;
-  if (prev_start_time_.has_value()) {
-    start_to_start = metrics.start_time - prev_start_time_.value();
-    if (prev_wall_time_.has_value()) {
-      end_to_end = start_to_start.value() + metrics.wall_time - prev_wall_time_.value();
-    }
+  std::optional<InterTaskDurations> it_durations = std::nullopt;
+  if (prev_start_time_.has_value() && prev_wall_time_.has_value()) {
+    zx::duration start_to_start = metrics.start_time - prev_start_time_.value();
+    zx::duration end_to_end = start_to_start + metrics.wall_time - prev_wall_time_.value();
+    it_durations = InterTaskDurations{
+        .start_to_start = start_to_start,
+        .end_to_end = end_to_end,
+    };
   }
 
-  ring_buffer_spec_->aggregate_records().RecordTaskMetrics(metrics, start_to_start, end_to_end);
+  ring_buffer_spec_->aggregate_records().RecordTaskMetrics(metrics, it_durations);
   if (!running_intervals_.empty()) {
-    running_intervals_.back()->RecordTaskMetrics(metrics, start_to_start, end_to_end);
+    running_intervals_.back()->RecordTaskMetrics(metrics, it_durations);
   }
 
   prev_start_time_ = metrics.start_time;
@@ -332,14 +348,14 @@ void RingBufferRecorder::RecordDroppedTransfer() {
 
 void RingBufferRecorder::RecordActiveChannelsCall(uint64_t active_channels_bitmask,
                                                   const zx::time& set_active_channels_called_at,
-                                                  const zx::time& active_channels_time_complete) {
+                                                  const zx::time& active_channels_completed_at) {
   if (!active_channels_calls_root_) {
     active_channels_calls_root_ = instance_node_.CreateChild(kSetActiveChannelsCalls);
   }
 
   ActiveChannelsCall active_channels_call{
       active_channels_calls_root_.CreateChild(std::to_string(active_channels_calls_.size())),
-      active_channels_bitmask, set_active_channels_called_at, active_channels_time_complete};
+      active_channels_bitmask, set_active_channels_called_at, active_channels_completed_at};
   active_channels_calls_.emplace_back(std::move(active_channels_call));
 }
 

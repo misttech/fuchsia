@@ -7,11 +7,11 @@ import("//build/test.gni")
 
 group("tests") {
   testonly = true
-  deps = [ ":audio-inspect-recorder-test" ]
+  deps = [ ":audio_drivers_lib_inspect_unittests" ]
 }
 
-test("recorder_test") {
-  output_name = "audio_inspect_recorder_test"
+test("unittest-bin") {
+  output_name = "audio_drivers_lib_inspect_unittests"
   sources = [
     "buffer-tracker.cc",
     "buffer-tracker.h",
@@ -31,6 +31,6 @@ test("recorder_test") {
   ]
 }
 
-fuchsia_unittest_package("audio-inspect-recorder-test") {
-  deps = [ ":recorder_test" ]
+fuchsia_unittest_package("audio_drivers_lib_inspect_unittests") {
+  deps = [ ":unittest-bin" ]
 }

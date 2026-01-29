@@ -68,15 +68,14 @@ static constexpr std::string_view kCountOutstandingBuffersAvg = "count_outstandi
 static constexpr std::string_view kCountBuffersProcessed = "count_buffers_processed";
 static constexpr std::string_view kProcessingTimeAvgUsec = "processing_time_avg_us";
 static constexpr std::string_view kProcessingTimeMaxUsec = "processing_time_max_us";
-static constexpr std::string_view kProcessingTimeCumulativeUsec = "processing_time_cumulative_us";
+static constexpr std::string_view kProcessingTimeCumulativeUsec = "processing_time_sum_us";
 
 static constexpr std::string_view kEmptyBufferCumulativeDurationUsec =
-    "empty_buffer_cumulative_duration_us";
-static constexpr std::string_view kEmptyBufferEpisodeCount = "empty_buffer_episode_count";
+    "empty_buffer_sum_duration_us";
+static constexpr std::string_view kEmptyBufferEpisodeCount = "empty_buffer_episodes_count";
 static constexpr std::string_view kEmptyBufferDurationMaxUsec = "empty_buffer_max_duration_us";
-static constexpr std::string_view kFullBufferCumulativeDurationUsec =
-    "full_buffer_cumulative_duration_us";
-static constexpr std::string_view kFullBufferEpisodeCount = "full_buffer_episode_count";
+static constexpr std::string_view kFullBufferCumulativeDurationUsec = "full_buffer_sum_duration_us";
+static constexpr std::string_view kFullBufferEpisodeCount = "full_buffer_episodes_count";
 static constexpr std::string_view kFullBufferMaxDurationUsec = "full_buffer_max_duration_us";
 
 static constexpr std::string_view kWorstUnderrunFrames = "worst_underrun_frames";
@@ -123,6 +122,11 @@ class ActiveChannelsCall {
   inspect::IntProperty completed_at_;
 };
 
+struct InterTaskDurations {
+  zx::duration start_to_start;
+  zx::duration end_to_end;
+};
+
 // Record diagnostic info about this streaming session. This includes:
 // - the first 5 data-transport tasks: wall, cpu, queue, page, kernel lock times, plus s2s and e2e;
 // - the last 25 data-transport tasks: same (s2s / e2e are start-to-start / end-to-end durations);
@@ -136,9 +140,11 @@ class TaskRecords {
     task_times_entries_ = std::vector<TaskTimes>(max_entry_count_);
   }
 
+  static void UpdateInt(inspect::IntProperty* property, inspect::Node* node, std::string_view name,
+                        int64_t value);
+
   void RecordTaskMetrics(const Subtask::Metrics& metrics,
-                         std::optional<zx::duration> start_to_start = std::nullopt,
-                         std::optional<zx::duration> end_to_end = std::nullopt,
+                         std::optional<InterTaskDurations> inter_task_durations,
                          std::optional<zx::duration> scheduling_delay = std::nullopt);
 
  private:
@@ -155,9 +161,6 @@ class TaskRecords {
     inspect::IntProperty scheduling_delay_us;
   };
 
-  void UpdateInt(inspect::IntProperty* property, inspect::Node* node, std::string_view name,
-                 const int64_t value);
-
   inspect::Node node_;
   size_t max_entry_count_;
   size_t next_entry_index_ = 0;
@@ -169,19 +172,28 @@ class AggregateRecords {
   AggregateRecords(inspect::Node& node, std::string_view name);
 
   void RecordTaskMetrics(const Subtask::Metrics& metrics,
-                         std::optional<zx::duration> start_to_start = std::nullopt,
-                         std::optional<zx::duration> end_to_end = std::nullopt);
+                         std::optional<InterTaskDurations> inter_task_durations);
 
   void RecordTaskUnderrun(int64_t underrun_frames) {
     task_underrun_count_.Add(1);
     worst_underrun_frames_ = std::max(worst_underrun_frames_, underrun_frames);
-    worst_underrun_frames_property_.Set(worst_underrun_frames_);
+    if (!worst_underrun_frames_property_) {
+      worst_underrun_frames_property_ =
+          diagnostics_.CreateUint(kWorstUnderrunFrames, worst_underrun_frames_);
+    } else {
+      worst_underrun_frames_property_.Set(worst_underrun_frames_);
+    }
   }
 
   void RecordTaskOverrun(int64_t overrun_frames) {
     task_overrun_count_.Add(1);
     worst_overrun_frames_ = std::max(worst_overrun_frames_, overrun_frames);
-    worst_overrun_frames_property_.Set(worst_overrun_frames_);
+    if (!worst_overrun_frames_property_) {
+      worst_overrun_frames_property_ =
+          diagnostics_.CreateUint(kWorstOverrunFrames, worst_overrun_frames_);
+    } else {
+      worst_overrun_frames_property_.Set(worst_overrun_frames_);
+    }
   }
 
   void RecordDroppedTransfer() { dropped_transfer_count_.Add(1); }
@@ -197,9 +209,9 @@ class AggregateRecords {
  private:
   inspect::Node diagnostics_;
   inspect::Node task_records_;
+  inspect::Node sum_node_;
   TaskRecords min_task_records_;
   TaskRecords max_task_records_;
-  TaskRecords sum_task_records_;
   TaskRecords avg_task_records_;
   inspect::UintProperty worst_underrun_frames_property_;
   inspect::UintProperty worst_overrun_frames_property_;
@@ -207,27 +219,27 @@ class AggregateRecords {
   inspect::UintProperty task_underrun_count_;
   inspect::UintProperty task_overrun_count_;
   inspect::UintProperty dropped_transfer_count_;
+  inspect::IntProperty sum_kernel_lock_time_property_;
 
   Subtask::Metrics min_metrics_;
   Subtask::Metrics max_metrics_;
   Subtask::Metrics sum_metrics_;
+  zx::duration sum_kernel_lock_contention_time_;
   Subtask::Metrics avg_metrics_;
-  zx::duration min_start_to_start_ = zx::duration::infinite();
-  zx::duration min_end_to_end_ = zx::duration::infinite();
+  InterTaskDurations min_inter_task_durations_ = {.start_to_start = zx::duration::infinite(),
+                                                  .end_to_end = zx::duration::infinite()};
   zx::duration min_schedule_delay_ = zx::duration::infinite();
-  zx::duration max_start_to_start_ = zx::duration::infinite_past();
-  zx::duration max_end_to_end_ = zx::duration::infinite_past();
+  InterTaskDurations max_inter_task_durations_ = {.start_to_start = zx::duration::infinite_past(),
+                                                  .end_to_end = zx::duration::infinite_past()};
   zx::duration max_schedule_delay_ = zx::duration::infinite_past();
-  zx::duration sum_start_to_start_{0};
-  size_t total_start_to_start_count_ = 0;
-  zx::duration sum_end_to_end_{0};
-  size_t total_end_to_end_count_ = 0;
+  InterTaskDurations sum_inter_task_durations_ = {.start_to_start{0}, .end_to_end{0}};
+  int64_t total_inter_task_durations_count_ = 0;
   zx::duration sum_schedule_delay_{0};
   size_t total_scheduling_delay_count_ = 0;
   int64_t worst_underrun_frames_ = 0;
   int64_t worst_overrun_frames_ = 0;
   size_t total_task_count_ = 0;
-  size_t total_thread_metrics_count_ = 0;
+  int64_t total_thread_metrics_count_ = 0;
   std::unique_ptr<BufferTracker> buffer_tracker_;
   std::optional<zx::duration> task_schedule_interval_;
 };
@@ -241,8 +253,7 @@ class RunningInterval {
   void RecordStopTime(const zx::time& stopped_at);
 
   void RecordTaskMetrics(const Subtask::Metrics& metrics,
-                         std::optional<zx::duration> start_to_start,
-                         std::optional<zx::duration> end_to_end);
+                         std::optional<InterTaskDurations> inter_task_durations);
 
   AggregateRecords& diagnostics() { return aggregate_records_; }
   inspect::Node& node() { return node_; }
@@ -278,8 +289,9 @@ class RingBufferRecorder {
   void RecordTaskOverrun(int64_t overrun_frames);
   void RecordDroppedTransfer();
 
-  void RecordActiveChannelsCall(uint64_t active_channels_bitmask, const zx::time& called_at,
-                                const zx::time& completed_at);
+  void RecordActiveChannelsCall(uint64_t active_channels_bitmask,
+                                const zx::time& set_active_channels_called_at,
+                                const zx::time& active_channels_completed_at);
 
   // On some platforms, the ring buffer might be fed into hardware buffers. These methods enable
   // tracking of metrics associated with such hardware buffers.

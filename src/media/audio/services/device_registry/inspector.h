@@ -58,10 +58,10 @@ static constexpr std::string_view kMinFrequency = "min_frequency";
 static constexpr std::string_view kMaxFrequency = "max_frequency";
 
 static constexpr std::string_view kBufferProps = "buffer";
-static constexpr std::string_view kRequestedBytes = "requested_bytes";
-static constexpr std::string_view kProducerFrames = "producer_frames";
+static constexpr std::string_view kVmoBytes = "allocated_vmo_bytes";
+static constexpr std::string_view kRequestedBytes = "client_request_bytes";
 static constexpr std::string_view kConsumerFrames = "consumer_frames";
-static constexpr std::string_view kVmoBytes = "vmo_bytes";
+static constexpr std::string_view kProducerFrames = "producer_frames";
 
 static constexpr std::string_view kRunningIntervals = "Running_intervals";
 static constexpr std::string_view kStartedAt = "started_at";

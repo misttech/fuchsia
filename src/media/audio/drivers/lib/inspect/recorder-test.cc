@@ -223,9 +223,7 @@ TEST_F(RecorderTest, BufferTracker) {
           UintIs(std::string(kEmptyBufferCumulativeDurationUsec), testing::Ge(200 * 1000)),
           UintIs(std::string(kEmptyBufferEpisodeCount), 1),
           UintIs(std::string(kEmptyBufferDurationMaxUsec), testing::Ge(200 * 1000)),
-          UintIs(std::string(kFullBufferCumulativeDurationUsec), 0),
           UintIs(std::string(kFullBufferEpisodeCount), 0),
-          UintIs(std::string(kFullBufferMaxDurationUsec), 0),
           UintIs(std::string(kCountOutstandingBuffersAvg), 1),
           UintIs(std::string(kProcessingTimeCumulativeUsec), 2 * 10 * 1000)})));
 
@@ -272,7 +270,6 @@ TEST_F(RecorderTest, AvgTaskMetrics) {
                 IntIs(std::string(kCpuTimeUsec), testing::Ge(0)),
                 IntIs(std::string(kQueueTimeUsec), testing::Ge(0)),
                 IntIs(std::string(kPageFaultTimeUsec), testing::Ge(0)),
-                IntIs(std::string(kKernelLockContentionTimeUsec), testing::Ge(0)),
                 IntIs(std::string(kStartToStartIntervalUsec), testing::Ge(1000)),
                 IntIs(std::string(kEndToEndIntervalUsec), testing::Ge(1000)))));
 
