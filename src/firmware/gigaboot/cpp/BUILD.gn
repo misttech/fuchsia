@@ -4,7 +4,7 @@
 
 import("//build/bazel/bazel_inputs.gni")
 import("//build/board.gni")
-import("//build/images/vboot/vboot.gni")
+import("//build/images/vboot/esp.gni")
 import("//src/firmware/gigaboot/cpp/backends.gni")
 import("//zircon/kernel/phys/efi/efi_executable.gni")
 
@@ -213,22 +213,20 @@ template("gigaboot_esp") {
   esp(target_name) {
     output_name = target_name
 
-    if (use_gigaboot) {
-      gigaboot_target = ":$_efi_target($efi_toolchain)"
-      gigaboot_bin = get_label_info("$gigaboot_target", "root_out_dir") + "/" +
-                     get_label_info(gigaboot_target, "name") + ".efi"
-      metadata = {
-        images = [
-          {
-            label = get_label_info(":$target_name", "label_with_toolchain")
-            archive = true
-            fastboot_flash = [ "fuchsia-esp" ]
-            name = "${target_name}.esp"
-            path = "${target_name}.esp.blk"
-            type = "blk"
-          },
-        ]
-      }
+    gigaboot_target = ":$_efi_target($efi_toolchain)"
+    gigaboot_bin = get_label_info("$gigaboot_target", "root_out_dir") + "/" +
+                   get_label_info(gigaboot_target, "name") + ".efi"
+    metadata = {
+      images = [
+        {
+          label = get_label_info(":$target_name", "label_with_toolchain")
+          archive = true
+          fastboot_flash = [ "fuchsia-esp" ]
+          name = "${target_name}.esp"
+          path = "${target_name}.esp.blk"
+          type = "blk"
+        },
+      ]
     }
   }
 }

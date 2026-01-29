@@ -87,10 +87,6 @@ files = {
     }
   }
 
-  if (use_gigaboot) {
-    esp = "${root_out_dir}/fuchsia.esp.blk"
-  }
-
   _image_suffix = "zbi"
   if (sign_zbi) {
     _image_suffix = "zbi.signed"

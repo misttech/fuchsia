@@ -16,9 +16,6 @@ declare_args() {
   # assembly work until that's been addressed.
   recovery_only = false
 
-  # Build the gigaboot bootloader.
-  use_gigaboot = false
-
   # Generate a UEFI disk image
   build_uefi_disk = false
 

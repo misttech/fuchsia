@@ -32,7 +32,6 @@ board_is_emu = true
 
 # Build a UEFI image for virtualized platforms.
 build_uefi_disk = true
-use_gigaboot = true
 use_vbmeta = true
 avb_atx_metadata =
     "//third_party/android/platform/external/avb/test/data/atx_metadata.bin"

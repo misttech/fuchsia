@@ -9,7 +9,7 @@ import("//build/board.gni")
 import("//build/images/args.gni")
 import("//build/images/custom_signing.gni")
 import("//build/images/vbmeta.gni")
-import("//build/images/vboot/vboot.gni")
+import("//build/images/vboot/esp.gni")
 import("//build/product.gni")
 
 assert(current_toolchain == default_toolchain,
@@ -66,7 +66,7 @@ assembled_system("zedboot_assembly") {
   }
 }
 
-if (target_cpu != "arm64" && !use_bazel_images_only) {
+if (target_cpu == "x64" && !use_bazel_images_only) {
   esp("esp") {
     output_name = "zedboot"
     cmdline = "efi_cmdline.txt"
@@ -91,7 +91,7 @@ if (target_cpu != "arm64" && !use_bazel_images_only) {
 group("zedboot") {
   if (!use_bazel_images_only) {
     public_deps = [ ":zedboot_assembly" ]
-    if (target_cpu != "arm64") {
+    if (target_cpu == "x64") {
       public_deps += [ ":esp" ]
     }
   }
