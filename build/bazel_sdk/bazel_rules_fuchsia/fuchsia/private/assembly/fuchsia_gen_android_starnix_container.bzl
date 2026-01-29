@@ -66,11 +66,16 @@ def _gen_android_starnix_container_impl(ctx):
     if ctx.attr.skip_subpackages:
         _args.append("--skip-subpackages")
 
+    _ramdisks = []
     if ctx.file.ramdisk:
-        _package_inputs.append(ctx.file.ramdisk)
+        _ramdisks.append(ctx.file.ramdisk)
+    if ctx.files.ramdisks:
+        _ramdisks.extend(ctx.files.ramdisks)
+    for ramdisk in _ramdisks:
+        _package_inputs.append(ramdisk)
         _args += [
             "--ramdisk",
-            ctx.file.ramdisk.path,
+            ramdisk.path,
         ]
 
     ctx.actions.run(
@@ -121,6 +126,10 @@ fuchsia_gen_android_starnix_container = rule(
         "ramdisk": attr.label(
             doc = "The ramdisk image",
             allow_single_file = True,
+        ),
+        "ramdisks": attr.label_list(
+            doc = "The set of ramdisk images",
+            allow_files = True,
         ),
         "hals": attr.label_list(
             doc = "HALs to include in this container. List of fuchsia_prebuilt_package labels or far files",

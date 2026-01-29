@@ -75,10 +75,17 @@ template("android_starnix_container") {
         rebase_path(depfile, root_build_dir),
       ]
 
+      ramdisks = []
       if (defined(invoker.ramdisk)) {
+        ramdisks += [ invoker.ramdisk ]
+      }
+      if (defined(invoker.ramdisks)) {
+        ramdisks += invoker.ramdisks
+      }
+      foreach(ramdisk, ramdisks) {
         args += [
           "--ramdisk",
-          rebase_path(invoker.ramdisk, root_build_dir),
+          rebase_path(ramdisk, root_build_dir),
         ]
       }
 
