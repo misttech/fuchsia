@@ -6,11 +6,14 @@ use anyhow::format_err;
 use argh::{ArgsInfo, FromArgs, TopLevelCommand};
 use chrono::{DateTime, Local, Utc};
 use chrono_english::{Dialect, parse_date_string};
+#[cfg(not(feature = "fdomain"))]
 use component_debug::query::get_instances_from_query;
+#[cfg(feature = "fdomain")]
+use component_debug_fdomain::query::get_instances_from_query;
 use diagnostics_data::Severity;
 use errors::{FfxError, ffx_bail};
-use fidl_fuchsia_diagnostics::{LogInterestSelector, LogSettingsProxy};
-use fidl_fuchsia_sys2::RealmQueryProxy;
+use flex_fuchsia_diagnostics::{LogInterestSelector, LogSettingsProxy};
+use flex_fuchsia_sys2::RealmQueryProxy;
 pub use log_socket_stream::OneOrMany;
 use moniker::Moniker;
 use selectors::{SelectorExt, sanitize_moniker_for_selectors};
@@ -576,7 +579,7 @@ impl LogCommand {
             };
             log_settings_client
                 .set_component_interest(
-                    &fidl_fuchsia_diagnostics::LogSettingsSetComponentInterestRequest {
+                    &flex_fuchsia_diagnostics::LogSettingsSetComponentInterestRequest {
                         selectors: Some(selectors),
                         persist: Some(persist),
                         ..Default::default()
@@ -597,7 +600,7 @@ impl LogCommand {
             let mut full_moniker = String::new();
             for segment in segments {
                 match segment {
-                    fidl_fuchsia_diagnostics::StringSelector::ExactMatch(segment) => {
+                    flex_fuchsia_diagnostics::StringSelector::ExactMatch(segment) => {
                         if full_moniker.is_empty() {
                             full_moniker.push_str(segment);
                         } else {
@@ -638,7 +641,7 @@ mod test {
     use assert_matches::assert_matches;
     use async_trait::async_trait;
     use fidl::endpoints::create_proxy;
-    use fidl_fuchsia_diagnostics::{LogSettingsMarker, LogSettingsRequest};
+    use flex_fuchsia_diagnostics::{LogSettingsMarker, LogSettingsRequest};
     use futures_util::StreamExt;
     use futures_util::future::Either;
     use futures_util::stream::FuturesUnordered;

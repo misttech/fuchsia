@@ -125,7 +125,7 @@ fn generate_timestamp_message(boot_timestamp: Timestamp) -> LogEntry {
 
 /// Reads logs from a socket and formats them using the given formatter and symbolizer.
 pub async fn dump_logs_from_socket<F, S>(
-    socket: fuchsia_async::Socket,
+    socket: flex_client::AsyncSocket,
     formatter: &mut F,
     symbolizer: &S,
     include_timestamp: bool,
@@ -619,13 +619,9 @@ mod test {
             .write(serde_json::to_string(&target_log).unwrap().as_bytes())
             .expect("failed to write target log");
         drop(sender);
-        dump_logs_from_socket(
-            fuchsia_async::Socket::from_socket(receiver),
-            &mut formatter,
-            &symbolizer,
-        )
-        .await
-        .unwrap();
+        dump_logs_from_socket(flex_client::socket_to_async(receiver), &mut formatter, &symbolizer)
+            .await
+            .unwrap();
         assert_eq!(formatter.logs, vec![LogEntry { data: LogData::TargetLog(target_log) }]);
     }
 
@@ -636,7 +632,7 @@ mod test {
         formatter.set_boot_timestamp(Timestamp::from_nanos(DEFAULT_TS_NANOS as i64));
         let (_, receiver) = zx::Socket::create_stream();
         super::dump_logs_from_socket(
-            fuchsia_async::Socket::from_socket(receiver),
+            flex_client::socket_to_async(receiver),
             &mut formatter,
             &symbolizer,
             true,
@@ -666,7 +662,7 @@ mod test {
         formatter.set_boot_timestamp(Timestamp::from_nanos(DEFAULT_TS_NANOS as i64));
         let (_, receiver) = zx::Socket::create_stream();
         super::dump_logs_from_socket(
-            fuchsia_async::Socket::from_socket(receiver),
+            flex_client::socket_to_async(receiver),
             &mut formatter,
             &symbolizer,
             true,
@@ -703,13 +699,9 @@ mod test {
             .write(serde_json::to_string(&vec![&target_log_0, &target_log_1]).unwrap().as_bytes())
             .expect("failed to write target log");
         drop(sender);
-        dump_logs_from_socket(
-            fuchsia_async::Socket::from_socket(receiver),
-            &mut formatter,
-            &symbolizer,
-        )
-        .await
-        .unwrap();
+        dump_logs_from_socket(flex_client::socket_to_async(receiver), &mut formatter, &symbolizer)
+            .await
+            .unwrap();
         assert_eq!(
             formatter.logs,
             vec![
@@ -794,7 +786,7 @@ mod test {
         drop(sender);
         assert_matches!(
             dump_logs_from_socket(
-                fuchsia_async::Socket::from_socket(receiver),
+                flex_client::socket_to_async(receiver),
                 &mut formatter,
                 &symbolizer,
             )
@@ -854,7 +846,7 @@ mod test {
         drop(sender);
         assert_matches!(
             dump_logs_from_socket(
-                fuchsia_async::Socket::from_socket(receiver),
+                flex_client::socket_to_async(receiver),
                 &mut formatter,
                 &symbolizer,
             )
@@ -970,13 +962,9 @@ mod test {
         *target_log_0.msg_mut().unwrap() = "symbolized log".into();
         *target_log_2.msg_mut().unwrap() = "symbolized log".into();
         *target_log_4.msg_mut().unwrap() = "symbolized log".into();
-        dump_logs_from_socket(
-            fuchsia_async::Socket::from_socket(receiver),
-            &mut formatter,
-            &symbolizer,
-        )
-        .await
-        .unwrap();
+        dump_logs_from_socket(flex_client::socket_to_async(receiver), &mut formatter, &symbolizer)
+            .await
+            .unwrap();
         assert_eq!(
             formatter.logs,
             vec![
@@ -1013,13 +1001,9 @@ mod test {
             .write(serde_json::to_string(&target_log).unwrap().as_bytes())
             .expect("failed to write target log");
         drop(sender);
-        dump_logs_from_socket(
-            fuchsia_async::Socket::from_socket(receiver),
-            &mut formatter,
-            &symbolizer,
-        )
-        .await
-        .unwrap();
+        dump_logs_from_socket(flex_client::socket_to_async(receiver), &mut formatter, &symbolizer)
+            .await
+            .unwrap();
         assert_eq!(buffers.stdout.into_string(), "[00000.000000][1][2][ffx] INFO: Fuchsia\n");
     }
 

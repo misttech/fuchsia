@@ -5,7 +5,7 @@
 use crate::log_formatter::{LogData, LogEntry};
 use crate::{InstanceGetter, LogCommand, LogError};
 use diagnostics_data::{LogsData, Severity};
-use fidl_fuchsia_diagnostics::LogInterestSelector;
+use flex_fuchsia_diagnostics::LogInterestSelector;
 use moniker::{EXTENDED_MONIKER_COMPONENT_MANAGER_STR, ExtendedMoniker};
 use selectors::SelectorExt;
 use std::borrow::Cow;

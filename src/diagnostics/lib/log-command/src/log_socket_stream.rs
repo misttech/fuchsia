@@ -21,7 +21,7 @@ const READ_BUFFER_SIZE: usize = 1000 * 1000 * 2;
 const READ_BUFFER_INCREMENT: usize = 1000 * 256;
 
 fn stream_raw_json<T, const BUFFER_SIZE: usize, const INC: usize>(
-    mut socket: fuchsia_async::Socket,
+    mut socket: flex_client::AsyncSocket,
 ) -> impl Stream<Item = OneOrMany<T>>
 where
     T: DeserializeOwned,
@@ -69,7 +69,7 @@ where
 }
 
 /// Streams JSON logs from a socket
-fn stream_json<T>(socket: fuchsia_async::Socket) -> impl Stream<Item = T>
+fn stream_json<T>(socket: flex_client::AsyncSocket) -> impl Stream<Item = T>
 where
     T: DeserializeOwned,
 {
@@ -85,7 +85,7 @@ pub struct LogsDataStream {
 
 impl LogsDataStream {
     /// Creates a new LogsDataStream from a socket of log messages in JSON format.
-    pub fn new(socket: fuchsia_async::Socket) -> Self {
+    pub fn new(socket: flex_client::AsyncSocket) -> Self {
         Self { inner: Box::pin(stream_json(socket)) }
     }
 }
@@ -195,7 +195,7 @@ mod test {
         // guarantee torn writes and test all the code paths
         // in the decoder.
         let (local, remote) = zx::Socket::create_datagram();
-        let socket = fuchsia_async::Socket::from_socket(remote);
+        let socket = flex_client::socket_to_async(remote);
         let mut decoder = LogsDataStream::new(socket);
         let test_log = LogsDataBuilder::new(BuilderArgs {
             component_url: None,
@@ -222,7 +222,7 @@ mod test {
         // This is intentionally a datagram socket so we can
         // send the entire message as one "packet".
         let (local, remote) = zx::Socket::create_datagram();
-        let socket = fuchsia_async::Socket::from_socket(remote);
+        let socket = flex_client::socket_to_async(remote);
         let mut decoder = LogsDataStream::new(socket);
         let test_log = LogsDataBuilder::new(BuilderArgs {
             component_url: None,
@@ -243,7 +243,7 @@ mod test {
     async fn test_json_decoder_large_message() {
         const MSG_COUNT: usize = 100;
         let (local, remote) = zx::Socket::create_stream();
-        let socket = fuchsia_async::Socket::from_socket(remote);
+        let socket = flex_client::socket_to_async(remote);
         let mut decoder = Box::pin(
             stream_raw_json::<LogsData, 100, 10>(socket).map(futures_util::stream::iter).flatten(),
         );
@@ -260,7 +260,7 @@ mod test {
                 .build()
             })
             .collect::<Vec<_>>();
-        let mut local = fuchsia_async::Socket::from_socket(local);
+        let mut local = flex_client::socket_to_async(local);
         let test_logs_clone = test_logs.clone();
         let _write_task = fuchsia_async::Task::local(async move {
             for log in test_logs {
@@ -279,7 +279,7 @@ mod test {
         // At least 10MB of characters in a single message
         const CHAR_COUNT: usize = 1000 * 1000;
         let (local, remote) = zx::Socket::create_stream();
-        let socket = fuchsia_async::Socket::from_socket(remote);
+        let socket = flex_client::socket_to_async(remote);
         let mut decoder = Box::pin(
             stream_raw_json::<LogsData, 256000, 20000>(socket)
                 .map(futures_util::stream::iter)
@@ -294,7 +294,7 @@ mod test {
         .set_message(format!("Hello world! {}", "h".repeat(CHAR_COUNT)))
         .add_tag("Some tag")
         .build();
-        let mut local = fuchsia_async::Socket::from_socket(local);
+        let mut local = flex_client::socket_to_async(local);
         let test_log_clone = test_log.clone();
         let _write_task = fuchsia_async::Task::local(async move {
             let serialized_log = serde_json::to_string(&test_log).unwrap();
@@ -310,7 +310,7 @@ mod test {
         // guarantee torn writes and test all the code paths
         // in the decoder.
         let (local, remote) = zx::Socket::create_datagram();
-        let socket = fuchsia_async::Socket::from_socket(remote);
+        let socket = flex_client::socket_to_async(remote);
         let mut decoder = LogsDataStream::new(socket);
         let test_log = LogsDataBuilder::new(BuilderArgs {
             component_url: None,
