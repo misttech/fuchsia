@@ -1,26 +1,23 @@
 {
     "audit_failure": [
-        // TODO: https://fxbug.dev/455785957 - Apply "create" check to memfd_create() calls.
-        "MemFdClassTest.MemFdNoPermissions",
-
         // TODO(https://fxbug.dev/409256444) - Check `execmod`.
-        "MProtectExecmod/MProtectExecmod/ExecMod/ExecmodNo_PrivateMapping_Modification_MprotectFailure",
+        "MProtectExecmod/MProtectExecmod.ExecMod/ExecmodNo_PrivateMapping_Modification_MprotectFailure",
 
         // Expect `ENOTSUP` for testcases currently unsupported in Starnix, no audit will be logged.
-        "NetlinkSocketTests/NetlinkSocketTest/CheckNetlinkMsgPermission/28",
-        "NetlinkSocketTests/NetlinkSocketTest/CheckNetlinkMsgPermission/29",
+        "NetlinkSocketTests/NetlinkSocketTest.CheckNetlinkMsgPermission/28",
+        "NetlinkSocketTests/NetlinkSocketTest.CheckNetlinkMsgPermission/29",
 
         // The permission is checked correctly, but Linux adds multiple logs for the same denial.
-        "SyslogTest/ProcKmsgReadDeniedIfDroppedPermission",
+        "SyslogTest.ProcKmsgReadDeniedIfDroppedPermission",
 
         // TUNSETQUEUE is not supported in Starnix.
-        "TunTapTests/TunTapAttachTest/AttachQueue/2",
-        "TunTapTests/TunTapAttachTest/AttachQueue/3",
+        "TunTapTests/TunTapAttachTest.AttachQueue/2",
+        "TunTapTests/TunTapAttachTest.AttachQueue/3",
 
         // TUNSETPERSIST is not supported in Starnix.
-        "TunTapTests/TunTapRelabelTest/Relabel/2",
-        "TunTapTests/TunTapRelabelTest/Relabel/3",
-        "TunTapTests/TunTapRelabelTest/Relabel/4",
-        "TunTapTests/TunTapRelabelTest/Relabel/5"
+        "TunTapTests/TunTapRelabelTest.Relabel/2",
+        "TunTapTests/TunTapRelabelTest.Relabel/3",
+        "TunTapTests/TunTapRelabelTest.Relabel/4",
+        "TunTapTests/TunTapRelabelTest.Relabel/5"
     ]
 }

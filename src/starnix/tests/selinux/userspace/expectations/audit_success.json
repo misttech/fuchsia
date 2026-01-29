@@ -1,255 +1,255 @@
 {
     "audit_success": [
         {
-            "name": "AnonInodeTest/PrivateFdIsUnchecked",
+            "name": "AnonInodeTest.PrivateFdIsUnchecked",
             "audit_expectations": [
                 "avc:  denied  { use } for path=\"anon_inode:[eventfd]\" dev=\"anon_inodefs\" ino=155 scontext=test_u:test_r:anon_inode_no_use_fd:s0 tcontext=test_u:test_r:anon_inode_test_t:s0 tclass=fd permissive=0"
             ]
         },
         {
-            "name": "AnonInodeTest/UserfaultFdRequiresCreate",
+            "name": "AnonInodeTest.UserfaultFdRequiresCreate",
             "audit_expectations": [
                 "avc:  denied  { create } for anonclass=[userfaultfd] scontext=test_u:test_r:anon_inode_test_no_create_t:s0 tcontext=test_u:object_r:anon_inode_test_no_create_t:s0 tclass=anon_inode permissive=0"
             ]
         },
         {
-            "name": "AuditAccessTest/AccessWithDontAudit",
+            "name": "AuditAccessTest.AccessWithDontAudit",
             "audit_expectations": []
         },
         {
-            "name": "AuditAccessTest/AccessWithoutDontAudit",
+            "name": "AuditAccessTest.AccessWithoutDontAudit",
             "audit_expectations": [
                 "avc:  denied  { write } for name=\"proc_test_file_oiTZzV\" dev=\"tmpfs\" ino=2 scontext=test_u:test_r:test_audit_access_t:s0 tcontext=test_u:object_r:test_audit_access_file_t:s0 tclass=file permissive=0",
                 "avc:  denied  { read } for name=\"proc_test_file_oiTZzV\" dev=\"tmpfs\" ino=2 scontext=test_u:test_r:test_audit_access_t:s0 tcontext=test_u:object_r:test_audit_access_file_t:s0 tclass=file permissive=0"
             ]
         },
         {
-            "name": "AuditAccessTest/OpenWithDontAudit",
+            "name": "AuditAccessTest.OpenWithDontAudit",
             "audit_expectations": [
                 "avc:  denied  { read } for name=\"proc_test_file_5OaH6Z\" dev=\"tmpfs\" ino=5 scontext=test_u:test_r:test_audit_access_t:s0 tcontext=test_u:object_r:test_audit_access_noaudit_file_t:s0 tclass=file permissive=0",
                 "avc:  denied  { write } for name=\"proc_test_file_5OaH6Z\" dev=\"tmpfs\" ino=5 scontext=test_u:test_r:test_audit_access_t:s0 tcontext=test_u:object_r:test_audit_access_noaudit_file_t:s0 tclass=file permissive=0"
             ]
         },
         {
-            "name": "AuditAccessTest/OpenWithoutDontAudit",
+            "name": "AuditAccessTest.OpenWithoutDontAudit",
             "audit_expectations": [
                 "avc:  denied  { read } for name=\"proc_test_file_J2CIGW\" dev=\"tmpfs\" ino=3 scontext=test_u:test_r:test_audit_access_t:s0 tcontext=test_u:object_r:test_audit_access_file_t:s0 tclass=file permissive=0",
                 "avc:  denied  { write } for name=\"proc_test_file_J2CIGW\" dev=\"tmpfs\" ino=3 scontext=test_u:test_r:test_audit_access_t:s0 tcontext=test_u:object_r:test_audit_access_file_t:s0 tclass=file permissive=0"
             ]
         },
         {
-            "name": "BinderTest/CallPermission/DoCall/1",
+            "name": "BinderTest/CallPermission.DoCall/1",
             "audit_expectations": [
                 "avc:  denied  { call } for scontext=test_u:test_r:binder_ioctl_no_call_test_t:s0 tcontext=test_u:test_r:binder_context_manager_test_t:s0 tclass=binder permissive=0"
             ]
         },
         {
-            "name": "BinderTest/ContextManagerPermission/BecomeServiceManager/1",
+            "name": "BinderTest/ContextManagerPermission.BecomeServiceManager/1",
             "audit_expectations": [
                 "avc:  denied  { set_context_mgr } for scontext=test_u:test_r:binder_no_context_manager_test_t:s0 tcontext=test_u:test_r:binder_no_context_manager_test_t:s0 tclass=binder permissive=0"
             ]
         },
         {
-            "name": "BinderTest/Impersonation/ImpersonateViaTransition/1",
+            "name": "BinderTest/Impersonation.ImpersonateViaTransition/1",
             "audit_expectations": [
                 "avc:  denied  { impersonate } for scontext=test_u:test_r:binder_impersonation_deny_impersonate_posttransition_t:s0 tcontext=test_u:test_r:binder_impersonation_allow_call_pretransition_t:s0 tclass=binder permissive=0"
             ]
         },
         {
-            "name": "BinderTest/Impersonation/ImpersonateViaTransition/2",
+            "name": "BinderTest/Impersonation.ImpersonateViaTransition/2",
             "audit_expectations": [
                 "avc:  denied  { call } for scontext=test_u:test_r:binder_impersonation_deny_call_pretransition_t:s0 tcontext=test_u:test_r:binder_context_manager_t:s0 tclass=binder permissive=0"
             ]
         },
         {
-            "name": "BinderTest/Impersonation/ImpersonateViaTransition/3",
+            "name": "BinderTest/Impersonation.ImpersonateViaTransition/3",
             "audit_expectations": [
                 "avc:  denied  { impersonate } for scontext=test_u:test_r:binder_impersonation_deny_impersonate_posttransition_t:s0 tcontext=test_u:test_r:binder_impersonation_deny_call_pretransition_t:s0 tclass=binder permissive=0"
             ]
         },
         {
-            "name": "BpfMapTestSuite/BpfMapTest/Map/0",
+            "name": "BpfMapTestSuite/BpfMapTest.Map/0",
             "audit_expectations": [
                 "avc:  denied  { map_read map_write } for scontext=test_u:test_r:bpf_map_none_t:s0 tcontext=system_u:unconfined_r:unconfined_t:s0 tclass=bpf permissive=0"
             ]
         },
         {
-            "name": "BpfMapTestSuite/BpfMapTest/Map/1",
+            "name": "BpfMapTestSuite/BpfMapTest.Map/1",
             "audit_expectations": [
                 "avc:  denied  { map_read map_write } for scontext=test_u:test_r:bpf_map_none_t:s0 tcontext=system_u:unconfined_r:unconfined_t:s0 tclass=bpf permissive=0"
             ]
         },
         {
-            "name": "BpfMapTestSuite/BpfMapTest/Map/10",
+            "name": "BpfMapTestSuite/BpfMapTest.Map/10",
             "audit_expectations": [
                 "avc:  denied  { map_read } for scontext=test_u:test_r:bpf_map_write_t:s0 tcontext=system_u:unconfined_r:unconfined_t:s0 tclass=bpf permissive=0"
             ]
         },
         {
-            "name": "BpfMapTestSuite/BpfMapTest/Map/11",
+            "name": "BpfMapTestSuite/BpfMapTest.Map/11",
             "audit_expectations": [
                 "avc:  denied  { map_read } for scontext=test_u:test_r:bpf_map_write_t:s0 tcontext=system_u:unconfined_r:unconfined_t:s0 tclass=bpf permissive=0"
             ]
         },
         {
-            "name": "BpfMapTestSuite/BpfMapTest/Map/2",
+            "name": "BpfMapTestSuite/BpfMapTest.Map/2",
             "audit_expectations": [
                 "avc:  denied  { map_read map_write } for scontext=test_u:test_r:bpf_map_none_t:s0 tcontext=system_u:unconfined_r:unconfined_t:s0 tclass=bpf permissive=0"
             ]
         },
         {
-            "name": "BpfMapTestSuite/BpfMapTest/Map/3",
+            "name": "BpfMapTestSuite/BpfMapTest.Map/3",
             "audit_expectations": [
                 "avc:  denied  { map_read map_write } for scontext=test_u:test_r:bpf_map_none_t:s0 tcontext=system_u:unconfined_r:unconfined_t:s0 tclass=bpf permissive=0"
             ]
         },
         {
-            "name": "BpfMapTestSuite/BpfMapTest/Map/4",
+            "name": "BpfMapTestSuite/BpfMapTest.Map/4",
             "audit_expectations": [
                 "avc:  denied  { map_write } for scontext=test_u:test_r:bpf_map_read_t:s0 tcontext=system_u:unconfined_r:unconfined_t:s0 tclass=bpf permissive=0"
             ]
         },
         {
-            "name": "BpfMapTestSuite/BpfMapTest/Map/5",
+            "name": "BpfMapTestSuite/BpfMapTest.Map/5",
             "audit_expectations": [
                 "avc:  denied  { map_write } for scontext=test_u:test_r:bpf_map_read_t:s0 tcontext=system_u:unconfined_r:unconfined_t:s0 tclass=bpf permissive=0"
             ]
         },
         {
-            "name": "BpfMapTestSuite/BpfMapTest/Map/6",
+            "name": "BpfMapTestSuite/BpfMapTest.Map/6",
             "audit_expectations": [
                 "avc:  denied  { map_write } for scontext=test_u:test_r:bpf_map_read_t:s0 tcontext=system_u:unconfined_r:unconfined_t:s0 tclass=bpf permissive=0"
             ]
         },
         {
-            "name": "BpfMapTestSuite/BpfMapTest/Map/7",
+            "name": "BpfMapTestSuite/BpfMapTest.Map/7",
             "audit_expectations": [
                 "avc:  denied  { map_write } for scontext=test_u:test_r:bpf_map_read_t:s0 tcontext=system_u:unconfined_r:unconfined_t:s0 tclass=bpf permissive=0"
             ]
         },
         {
-            "name": "BpfMapTestSuite/BpfMapTest/Map/8",
+            "name": "BpfMapTestSuite/BpfMapTest.Map/8",
             "audit_expectations": [
                 "avc:  denied  { map_read } for scontext=test_u:test_r:bpf_map_write_t:s0 tcontext=system_u:unconfined_r:unconfined_t:s0 tclass=bpf permissive=0"
             ]
         },
         {
-            "name": "BpfMapTestSuite/BpfMapTest/Map/9",
+            "name": "BpfMapTestSuite/BpfMapTest.Map/9",
             "audit_expectations": [
                 "avc:  denied  { map_read } for scontext=test_u:test_r:bpf_map_write_t:s0 tcontext=system_u:unconfined_r:unconfined_t:s0 tclass=bpf permissive=0"
             ]
         },
         {
-            "name": "BpfPinTestSuite/BpfPinTest/PinnedMap/0",
+            "name": "BpfPinTestSuite/BpfPinTest.PinnedMap/0",
             "audit_expectations": [
                 "avc:  denied  { read } for scontext=test_u:test_r:bpf_pin_no_read_t:s0 tcontext=system_u:object_r:unconfined_t:s0 tclass=file permissive=0"
             ]
         },
         {
-            "name": "BpfPinTestSuite/BpfPinTest/PinnedMap/10",
+            "name": "BpfPinTestSuite/BpfPinTest.PinnedMap/10",
             "audit_expectations": [
                 "avc:  denied  { map_write } for scontext=test_u:test_r:bpf_pin_no_map_write_t:s0 tcontext=system_u:unconfined_r:unconfined_t:s0 tclass=bpf permissive=0"
             ]
         },
         {
-            "name": "BpfPinTestSuite/BpfPinTest/PinnedMap/11",
+            "name": "BpfPinTestSuite/BpfPinTest.PinnedMap/11",
             "audit_expectations": [
                 "avc:  denied  { map_write } for scontext=test_u:test_r:bpf_pin_no_map_write_t:s0 tcontext=system_u:unconfined_r:unconfined_t:s0 tclass=bpf permissive=0"
             ]
         },
         {
-            "name": "BpfPinTestSuite/BpfPinTest/PinnedMap/2",
+            "name": "BpfPinTestSuite/BpfPinTest.PinnedMap/2",
             "audit_expectations": [
                 "avc:  denied  { read } for scontext=test_u:test_r:bpf_pin_no_read_t:s0 tcontext=system_u:object_r:unconfined_t:s0 tclass=file permissive=0"
             ]
         },
         {
-            "name": "BpfPinTestSuite/BpfPinTest/PinnedMap/4",
+            "name": "BpfPinTestSuite/BpfPinTest.PinnedMap/4",
             "audit_expectations": [
                 "avc:  denied  { write } for scontext=test_u:test_r:bpf_pin_no_write_t:s0 tcontext=system_u:object_r:unconfined_t:s0 tclass=file permissive=0"
             ]
         },
         {
-            "name": "BpfPinTestSuite/BpfPinTest/PinnedMap/5",
+            "name": "BpfPinTestSuite/BpfPinTest.PinnedMap/5",
             "audit_expectations": [
                 "avc:  denied  { write } for scontext=test_u:test_r:bpf_pin_no_write_t:s0 tcontext=system_u:object_r:unconfined_t:s0 tclass=file permissive=0"
             ]
         },
         {
-            "name": "BpfPinTestSuite/BpfPinTest/PinnedMap/6",
+            "name": "BpfPinTestSuite/BpfPinTest.PinnedMap/6",
             "audit_expectations": [
                 "avc:  denied  { map_read } for scontext=test_u:test_r:bpf_pin_no_map_read_t:s0 tcontext=system_u:unconfined_r:unconfined_t:s0 tclass=bpf permissive=0"
             ]
         },
         {
-            "name": "BpfPinTestSuite/BpfPinTest/PinnedMap/8",
+            "name": "BpfPinTestSuite/BpfPinTest.PinnedMap/8",
             "audit_expectations": [
                 "avc:  denied  { map_read } for scontext=test_u:test_r:bpf_pin_no_map_read_t:s0 tcontext=system_u:unconfined_r:unconfined_t:s0 tclass=bpf permissive=0"
             ]
         },
         {
-            "name": "BpfPinTestSuite/BpfPinTest/PinnedProg/0",
+            "name": "BpfPinTestSuite/BpfPinTest.PinnedProg/0",
             "audit_expectations": [
                 "avc:  denied  { read } for scontext=test_u:test_r:bpf_pin_no_read_t:s0 tcontext=system_u:object_r:unconfined_t:s0 tclass=file permissive=0"
             ]
         },
         {
-            "name": "BpfPinTestSuite/BpfPinTest/PinnedProg/12",
+            "name": "BpfPinTestSuite/BpfPinTest.PinnedProg/12",
             "audit_expectations": [
                 "avc:  denied  { prog_run } for scontext=test_u:test_r:bpf_pin_no_prog_run_t:s0 tcontext=system_u:unconfined_r:unconfined_t:s0 tclass=bpf permissive=0"
             ]
         },
         {
-            "name": "BpfPinTestSuite/BpfPinTest/PinnedProg/13",
+            "name": "BpfPinTestSuite/BpfPinTest.PinnedProg/13",
             "audit_expectations": [
                 "avc:  denied  { prog_run } for scontext=test_u:test_r:bpf_pin_no_prog_run_t:s0 tcontext=system_u:unconfined_r:unconfined_t:s0 tclass=bpf permissive=0"
             ]
         },
         {
-            "name": "BpfPinTestSuite/BpfPinTest/PinnedProg/14",
+            "name": "BpfPinTestSuite/BpfPinTest.PinnedProg/14",
             "audit_expectations": [
                 "avc:  denied  { prog_run } for scontext=test_u:test_r:bpf_pin_no_prog_run_t:s0 tcontext=system_u:unconfined_r:unconfined_t:s0 tclass=bpf permissive=0"
             ]
         },
         {
-            "name": "BpfPinTestSuite/BpfPinTest/PinnedProg/2",
+            "name": "BpfPinTestSuite/BpfPinTest.PinnedProg/2",
             "audit_expectations": [
                 "avc:  denied  { read } for scontext=test_u:test_r:bpf_pin_no_read_t:s0 tcontext=system_u:object_r:unconfined_t:s0 tclass=file permissive=0"
             ]
         },
         {
-            "name": "BpfPinTestSuite/BpfPinTest/PinnedProg/4",
+            "name": "BpfPinTestSuite/BpfPinTest.PinnedProg/4",
             "audit_expectations": [
                 "avc:  denied  { write } for scontext=test_u:test_r:bpf_pin_no_write_t:s0 tcontext=system_u:object_r:unconfined_t:s0 tclass=file permissive=0"
             ]
         },
         {
-            "name": "BpfPinTestSuite/BpfPinTest/PinnedProg/5",
+            "name": "BpfPinTestSuite/BpfPinTest.PinnedProg/5",
             "audit_expectations": [
                 "avc:  denied  { write } for scontext=test_u:test_r:bpf_pin_no_write_t:s0 tcontext=system_u:object_r:unconfined_t:s0 tclass=file permissive=0"
             ]
         },
         {
-            "name": "CapabilitiesTest/GetCapDenied",
+            "name": "CapabilitiesTest.GetCapDenied",
             "audit_expectations": [
                 "avc:  denied  { getcap } for scontext=test_u:test_r:test_deny_getcap_self_t:s0 tcontext=test_u:test_r:test_deny_getcap_self_t:s0 tclass=process permissive=0"
             ]
         },
         {
-            "name": "CapabilitiesTest/SetCapDenied",
+            "name": "CapabilitiesTest.SetCapDenied",
             "audit_expectations": [
                 "avc:  denied  { setcap } for scontext=test_u:test_r:test_deny_setcap_self_t:s0 tcontext=test_u:test_r:test_deny_setcap_self_t:s0 tclass=process permissive=0"
             ]
         },
         {
-            "name": "CapabilitiesTest/SetCapDeniedExpandPermittedSet",
+            "name": "CapabilitiesTest.SetCapDeniedExpandPermittedSet",
             "audit_expectations": [
                 "avc:  denied  { getcap } for scontext=test_u:test_r:test_deny_setcap_self_t:s0 tcontext=test_u:test_r:test_deny_setcap_self_t:s0 tclass=process permissive=1",
                 "avc:  denied  { setcap } for scontext=test_u:test_r:test_deny_setcap_self_t:s0 tcontext=test_u:test_r:test_deny_setcap_self_t:s0 tclass=process permissive=1"
             ]
         },
         {
-            "name": "FifoTest/LabeledFromFilesystem",
+            "name": "FifoTest.LabeledFromFilesystem",
             "audit_expectations": [
                 "avc:  denied  { add_name } for name=\"fifo_label_test\" scontext=test_u:test_r:pipe_test_t:s0 tcontext=system_u:object_r:tmpfs_t:s0 tclass=dir permissive=1",
                 "avc:  denied  { create } for name=\"fifo_label_test\" scontext=test_u:test_r:pipe_test_t:s0 tcontext=test_u:object_r:test_fifo_file_t:s0 tclass=fifo_file permissive=1",
@@ -263,7 +263,7 @@
             ]
         },
         {
-            "name": "InheritTest/ExecutableFdRemappedToNull",
+            "name": "InheritTest.ExecutableFdRemappedToNull",
             "audit_expectations": [
                 "avc:  denied  { noatsecure } for scontext=test_u:test_r:test_inherit_parent_t:s0 tcontext=test_u:test_r:test_inherit_child_no_use_fd_t:s0 tclass=process permissive=0",
                 "avc:  denied  { rlimitinh } for scontext=test_u:test_r:test_inherit_parent_t:s0 tcontext=test_u:test_r:test_inherit_child_no_use_fd_t:s0 tclass=process permissive=0",
@@ -272,7 +272,7 @@
             ]
         },
         {
-            "name": "InheritTest/ExecutableFdUseAllowed",
+            "name": "InheritTest.ExecutableFdUseAllowed",
             "audit_expectations": [
                 "avc:  denied  { noatsecure } for scontext=test_u:test_r:test_inherit_parent_t:s0 tcontext=test_u:test_r:test_inherit_child_allow_use_fd_t:s0 tclass=process permissive=0",
                 "avc:  denied  { rlimitinh } for scontext=test_u:test_r:test_inherit_parent_t:s0 tcontext=test_u:test_r:test_inherit_child_allow_use_fd_t:s0 tclass=process permissive=0",
@@ -280,7 +280,7 @@
             ]
         },
         {
-            "name": "InheritTest/FdUseAllowed",
+            "name": "InheritTest.FdUseAllowed",
             "audit_expectations": [
                 "avc:  denied  { noatsecure } for scontext=test_u:test_r:test_inherit_parent_t:s0 tcontext=test_u:test_r:test_inherit_child_allow_use_fd_t:s0 tclass=process permissive=0",
                 "avc:  denied  { rlimitinh } for scontext=test_u:test_r:test_inherit_parent_t:s0 tcontext=test_u:test_r:test_inherit_child_allow_use_fd_t:s0 tclass=process permissive=0",
@@ -288,7 +288,7 @@
             ]
         },
         {
-            "name": "InheritTest/FdUseDeniedFdRemappedToNull",
+            "name": "InheritTest.FdUseDeniedFdRemappedToNull",
             "audit_expectations": [
                 "avc:  denied  { noatsecure } for scontext=test_u:test_r:test_inherit_bridge_t:s0 tcontext=test_u:test_r:test_inherit_child_no_use_fd_t:s0 tclass=process permissive=0",
                 "avc:  denied  { use } for path=\"/tmp/inherit_test_file:Q6dN6A\" dev=\"tmpfs\" ino=2 scontext=test_u:test_r:test_inherit_child_no_use_fd_t:s0 tcontext=test_u:test_r:test_inherit_parent_t:s0 tclass=fd permissive=0",
@@ -297,7 +297,7 @@
             ]
         },
         {
-            "name": "InheritTest/FsNodePermissionDeniedFdRemappedToNull",
+            "name": "InheritTest.FsNodePermissionDeniedFdRemappedToNull",
             "audit_expectations": [
                 "avc:  denied  { noatsecure } for scontext=test_u:test_r:test_inherit_parent_t:s0 tcontext=test_u:test_r:test_inherit_child_no_read_file_t:s0 tclass=process permissive=0",
                 "avc:  denied  { read } for path=\"/tmp/inherit_test_file:IuWkN8\" dev=\"tmpfs\" ino=4 scontext=test_u:test_r:test_inherit_child_no_read_file_t:s0 tcontext=test_u:object_r:tmpfs_t:s0 tclass=file permissive=0",
@@ -306,14 +306,14 @@
             ]
         },
         {
-            "name": "InheritTest/NoAtSecureAllowed",
+            "name": "InheritTest.NoAtSecureAllowed",
             "audit_expectations": [
                 "avc:  denied  { rlimitinh } for scontext=test_u:test_r:test_inherit_parent_t:s0 tcontext=test_u:test_r:test_inherit_child_allow_noatsecure_t:s0 tclass=process permissive=0",
                 "avc:  denied  { siginh } for scontext=test_u:test_r:test_inherit_parent_t:s0 tcontext=test_u:test_r:test_inherit_child_allow_noatsecure_t:s0 tclass=process permissive=0"
             ]
         },
         {
-            "name": "InheritTest/NoAtSecureDenied",
+            "name": "InheritTest.NoAtSecureDenied",
             "audit_expectations": [
                 "avc:  denied  { noatsecure } for scontext=test_u:test_r:test_inherit_parent_t:s0 tcontext=test_u:test_r:test_inherit_child_deny_noatsecure_t:s0 tclass=process permissive=0",
                 "avc:  denied  { rlimitinh } for scontext=test_u:test_r:test_inherit_parent_t:s0 tcontext=test_u:test_r:test_inherit_child_deny_noatsecure_t:s0 tclass=process permissive=0",
@@ -321,11 +321,11 @@
             ]
         },
         {
-            "name": "InheritTest/NoAtSecureDeniedSameDomain",
+            "name": "InheritTest.NoAtSecureDeniedSameDomain",
             "audit_expectations": []
         },
         {
-            "name": "InheritTest/NullFileDescriptorIsDuplicated",
+            "name": "InheritTest.NullFileDescriptorIsDuplicated",
             "audit_expectations": [
                 "avc:  denied  { noatsecure } for scontext=test_u:test_r:test_inherit_bridge_t:s0 tcontext=test_u:test_r:test_inherit_child_no_use_fd_t:s0 tclass=process permissive=0",
                 "avc:  denied  { use } for path=\"/tmp/inherit_test_file:qyA4US\" dev=\"tmpfs\" ino=3 scontext=test_u:test_r:test_inherit_child_no_use_fd_t:s0 tcontext=test_u:test_r:test_inherit_parent_t:s0 tclass=fd permissive=0",
@@ -335,14 +335,14 @@
             ]
         },
         {
-            "name": "InheritTest/RlimitinhAllowedRlimitsInherited",
+            "name": "InheritTest.RlimitinhAllowedRlimitsInherited",
             "audit_expectations": [
                 "avc:  denied  { noatsecure } for scontext=test_u:test_r:test_inherit_parent_t:s0 tcontext=test_u:test_r:test_inherit_child_allow_rlimitinh_t:s0 tclass=process permissive=0",
                 "avc:  denied  { siginh } for scontext=test_u:test_r:test_inherit_parent_t:s0 tcontext=test_u:test_r:test_inherit_child_allow_rlimitinh_t:s0 tclass=process permissive=0"
             ]
         },
         {
-            "name": "InheritTest/RlimitinhDeniedSoftRlimitReset",
+            "name": "InheritTest.RlimitinhDeniedSoftRlimitReset",
             "audit_expectations": [
                 "avc:  denied  { noatsecure } for scontext=test_u:test_r:test_inherit_parent_t:s0 tcontext=test_u:test_r:test_inherit_child_no_rlimitinh_t:s0 tclass=process permissive=0",
                 "avc:  denied  { rlimitinh } for scontext=test_u:test_r:test_inherit_parent_t:s0 tcontext=test_u:test_r:test_inherit_child_no_rlimitinh_t:s0 tclass=process permissive=0",
@@ -350,35 +350,35 @@
             ]
         },
         {
-            "name": "InheritTest/SiginhAllowedIgnoredSignalDispositionsInherited",
+            "name": "InheritTest.SiginhAllowedIgnoredSignalDispositionsInherited",
             "audit_expectations": [
                 "avc:  denied  { noatsecure } for scontext=test_u:test_r:test_inherit_parent_t:s0 tcontext=test_u:test_r:test_inherit_child_allow_siginh_t:s0 tclass=process permissive=0",
                 "avc:  denied  { rlimitinh } for scontext=test_u:test_r:test_inherit_parent_t:s0 tcontext=test_u:test_r:test_inherit_child_allow_siginh_t:s0 tclass=process permissive=0"
             ]
         },
         {
-            "name": "InheritTest/SiginhAllowedItimerRealInherited",
+            "name": "InheritTest.SiginhAllowedItimerRealInherited",
             "audit_expectations": [
                 "avc:  denied  { noatsecure } for scontext=test_u:test_r:test_inherit_parent_t:s0 tcontext=test_u:test_r:test_inherit_child_allow_siginh_t:s0 tclass=process permissive=0",
                 "avc:  denied  { rlimitinh } for scontext=test_u:test_r:test_inherit_parent_t:s0 tcontext=test_u:test_r:test_inherit_child_allow_siginh_t:s0 tclass=process permissive=0"
             ]
         },
         {
-            "name": "InheritTest/SiginhAllowedPendingSignalsInherited",
+            "name": "InheritTest.SiginhAllowedPendingSignalsInherited",
             "audit_expectations": [
                 "avc:  denied  { noatsecure } for scontext=test_u:test_r:test_inherit_parent_t:s0 tcontext=test_u:test_r:test_inherit_child_allow_siginh_t:s0 tclass=process permissive=0",
                 "avc:  denied  { rlimitinh } for scontext=test_u:test_r:test_inherit_parent_t:s0 tcontext=test_u:test_r:test_inherit_child_allow_siginh_t:s0 tclass=process permissive=0"
             ]
         },
         {
-            "name": "InheritTest/SiginhAllowedSignalMaskInherited",
+            "name": "InheritTest.SiginhAllowedSignalMaskInherited",
             "audit_expectations": [
                 "avc:  denied  { noatsecure } for scontext=test_u:test_r:test_inherit_parent_t:s0 tcontext=test_u:test_r:test_inherit_child_allow_siginh_t:s0 tclass=process permissive=0",
                 "avc:  denied  { rlimitinh } for scontext=test_u:test_r:test_inherit_parent_t:s0 tcontext=test_u:test_r:test_inherit_child_allow_siginh_t:s0 tclass=process permissive=0"
             ]
         },
         {
-            "name": "InheritTest/SiginhDeniedItimerRealReset",
+            "name": "InheritTest.SiginhDeniedItimerRealReset",
             "audit_expectations": [
                 "avc:  denied  { noatsecure } for scontext=test_u:test_r:test_inherit_parent_t:s0 tcontext=test_u:test_r:test_inherit_child_no_siginh_t:s0 tclass=process permissive=0",
                 "avc:  denied  { rlimitinh } for scontext=test_u:test_r:test_inherit_parent_t:s0 tcontext=test_u:test_r:test_inherit_child_no_siginh_t:s0 tclass=process permissive=0",
@@ -386,7 +386,7 @@
             ]
         },
         {
-            "name": "InheritTest/SiginhDeniedPendingFatalSignalsCleared",
+            "name": "InheritTest.SiginhDeniedPendingFatalSignalsCleared",
             "audit_expectations": [
                 "avc:  denied  { noatsecure } for scontext=test_u:test_r:test_inherit_parent_t:s0 tcontext=test_u:test_r:test_inherit_child_no_siginh_t:s0 tclass=process permissive=0",
                 "avc:  denied  { rlimitinh } for scontext=test_u:test_r:test_inherit_parent_t:s0 tcontext=test_u:test_r:test_inherit_child_no_siginh_t:s0 tclass=process permissive=0",
@@ -394,7 +394,7 @@
             ]
         },
         {
-            "name": "InheritTest/SiginhDeniedPendingNonFatalSignalsCleared",
+            "name": "InheritTest.SiginhDeniedPendingNonFatalSignalsCleared",
             "audit_expectations": [
                 "avc:  denied  { noatsecure } for scontext=test_u:test_r:test_inherit_parent_t:s0 tcontext=test_u:test_r:test_inherit_child_no_siginh_t:s0 tclass=process permissive=0",
                 "avc:  denied  { rlimitinh } for scontext=test_u:test_r:test_inherit_parent_t:s0 tcontext=test_u:test_r:test_inherit_child_no_siginh_t:s0 tclass=process permissive=0",
@@ -402,7 +402,7 @@
             ]
         },
         {
-            "name": "InheritTest/SiginhDeniedSignalDispositionsReset",
+            "name": "InheritTest.SiginhDeniedSignalDispositionsReset",
             "audit_expectations": [
                 "avc:  denied  { noatsecure } for scontext=test_u:test_r:test_inherit_parent_t:s0 tcontext=test_u:test_r:test_inherit_child_no_siginh_t:s0 tclass=process permissive=0",
                 "avc:  denied  { rlimitinh } for scontext=test_u:test_r:test_inherit_parent_t:s0 tcontext=test_u:test_r:test_inherit_child_no_siginh_t:s0 tclass=process permissive=0",
@@ -410,7 +410,7 @@
             ]
         },
         {
-            "name": "InheritTest/SiginhDeniedSignalMaskReset",
+            "name": "InheritTest.SiginhDeniedSignalMaskReset",
             "audit_expectations": [
                 "avc:  denied  { noatsecure } for scontext=test_u:test_r:test_inherit_parent_t:s0 tcontext=test_u:test_r:test_inherit_child_no_siginh_t:s0 tclass=process permissive=0",
                 "avc:  denied  { rlimitinh } for scontext=test_u:test_r:test_inherit_parent_t:s0 tcontext=test_u:test_r:test_inherit_child_no_siginh_t:s0 tclass=process permissive=0",
@@ -418,55 +418,55 @@
             ]
         },
         {
-            "name": "IoctlTest/BasicCommandDenied",
+            "name": "IoctlTest.BasicCommandDenied",
             "audit_expectations": [
                 "avc:  denied  { ioctl } for path=\"/tmp/ioctl_test_file:IqO4LV\" dev=\"tmpfs\" ino=3 ioctlcmd=0xabcd scontext=test_u:test_r:test_ioctl_denied_t:s0 tcontext=test_u:object_r:test_ioctl_file_t:s0 tclass=file permissive=0"
             ]
         },
         {
-            "name": "IoctlTest/FilteredCommandDenied",
+            "name": "IoctlTest.FilteredCommandDenied",
             "audit_expectations": [
                 "avc:  denied  { ioctl } for path=\"/tmp/ioctl_test_file:35xouX\" dev=\"tmpfs\" ino=7 ioctlcmd=0xabcc scontext=test_u:test_r:test_ioctl_xperms_filtered_t:s0 tcontext=test_u:object_r:test_ioctl_file_t:s0 tclass=file permissive=0"
             ]
         },
         {
-            "name": "IoctlTest/FilteredCommandDeniedByPermission",
+            "name": "IoctlTest.FilteredCommandDeniedByPermission",
             "audit_expectations": [
                 "avc:  denied  { ioctl } for path=\"/tmp/ioctl_test_file:7orHWX\" dev=\"tmpfs\" ino=8 ioctlcmd=0xabcd scontext=test_u:test_r:test_ioctl_xperms_only_t:s0 tcontext=test_u:object_r:test_ioctl_file_t:s0 tclass=file permissive=0"
             ]
         },
         {
-            "name": "IoctlTest/GetAttrCommandDenied",
+            "name": "IoctlTest.GetAttrCommandDenied",
             "audit_expectations": [
                 "avc:  denied  { getattr } for path=\"/tmp/ioctl_test_file:yAHfUV\" dev=\"tmpfs\" ino=5 scontext=test_u:test_r:test_ioctl_figetbsz_denied_t:s0 tcontext=test_u:object_r:test_ioctl_file_t:s0 tclass=file permissive=0"
             ]
         },
         {
-            "name": "MProtectExecmod/MProtectExecmod/ExecMod/ExecmodNo_PrivateMapping_Modification_MprotectFailure",
+            "name": "MProtectExecmod/MProtectExecmod.ExecMod/ExecmodNo_PrivateMapping_Modification_MprotectFailure",
             "audit_expectations": [
                 "avc:  denied  { execmod } for path=\"/tmp/testdirBuRDyf/test_file\" dev=\"tmpfs\" ino=3 scontext=test_u:test_r:mprotect_execmod_no_test_t:s0 tcontext=test_u:object_r:tmpfs_t:s0 tclass=file permissive=0"
             ]
         },
         {
-            "name": "MProtectExecstack/MProtectExecstack/MakeInitialStackExecFromOtherThread/1",
+            "name": "MProtectExecstack/MProtectExecstack.MakeInitialStackExecFromOtherThread/1",
             "audit_expectations": [
                 "avc:  denied  { execstack } for scontext=test_u:test_r:mprotect_execmem_test_t:s0 tcontext=test_u:test_r:mprotect_execmem_test_t:s0 tclass=process permissive=0"
             ]
         },
         {
-            "name": "MProtectTest/ExecStackInSignal",
+            "name": "MProtectTest.ExecStackInSignal",
             "audit_expectations": [
                 "avc:  denied  { execstack } for scontext=test_u:test_r:mprotect_execmem_test_t:s0 tcontext=test_u:test_r:mprotect_execmem_test_t:s0 tclass=process permissive=0"
             ]
         },
         {
-            "name": "MemFdClassTest/MemFdNoPermissions",
+            "name": "MemFdClassTest.MemFdNoPermissions",
             "audit_expectations": [
                 "avc:  denied  { create } for anonclass=[memfd] scontext=test_u:test_r:test_memfd_no_create_permission_t:s0 tcontext=test_u:object_r:test_memfd_no_create_permission_t:s0 tclass=memfd_file permissive=0"
             ]
         },
         {
-            "name": "MountTest/WithContextOption",
+            "name": "MountTest.WithContextOption",
             "audit_expectations": [
                 "avc:  denied  { relabelto } for scontext=system_u:unconfined_r:unconfined_t:s0 tcontext=source_u:object_r:target_t:s0 tclass=filesystem permissive=1",
                 "avc:  denied  { relabelfrom } for scontext=system_u:unconfined_r:unconfined_t:s0 tcontext=source_u:object_r:target_t:s0 tclass=filesystem permissive=1",
@@ -476,43 +476,43 @@
             ]
         },
         {
-            "name": "NetlinkAuditTest/SocketCreateDenied",
+            "name": "NetlinkAuditTest.SocketCreateDenied",
             "audit_expectations": [
                 "avc:  denied  { create } for scontext=test_u:test_r:audit_netlink_restricted_test_t:s0 tcontext=test_u:test_r:audit_netlink_restricted_test_t:s0 tclass=netlink_audit_socket permissive=0"
             ]
         },
         {
-            "name": "NetlinkAuditWriteTestSuite/NetlinkAuditSendTest/Send/0",
+            "name": "NetlinkAuditWriteTestSuite/NetlinkAuditSendTest.Send/0",
             "audit_expectations": [
                 "avc:  denied  { write } for scontext=test_u:test_r:audit_netlink_create_test_t:s0 tcontext=test_u:test_r:audit_netlink_create_test_t:s0 tclass=netlink_audit_socket permissive=0"
             ]
         },
         {
-            "name": "NetlinkAuditWriteTestSuite/NetlinkAuditSendTest/Send/1",
+            "name": "NetlinkAuditWriteTestSuite/NetlinkAuditSendTest.Send/1",
             "audit_expectations": [
                 "avc:  denied  { write } for scontext=test_u:test_r:audit_netlink_read_test_t:s0 tcontext=test_u:test_r:audit_netlink_read_test_t:s0 tclass=netlink_audit_socket permissive=0"
             ]
         },
         {
-            "name": "NetlinkAuditWriteTestSuite/NetlinkAuditSendTest/Send/2",
+            "name": "NetlinkAuditWriteTestSuite/NetlinkAuditSendTest.Send/2",
             "audit_expectations": [
                 "avc:  denied  { nlmsg_relay } for scontext=test_u:test_r:audit_netlink_write_test_t:s0 tcontext=test_u:test_r:audit_netlink_write_test_t:s0 tclass=netlink_audit_socket permissive=0"
             ]
         },
         {
-            "name": "NetlinkAuditWriteTestSuite/NetlinkAuditSendTest/Send/3",
+            "name": "NetlinkAuditWriteTestSuite/NetlinkAuditSendTest.Send/3",
             "audit_expectations": [
                 "avc:  denied  { audit_write } for capability=29  scontext=test_u:test_r:audit_netlink_write_relay_test_t:s0 tcontext=test_u:test_r:audit_netlink_write_relay_test_t:s0 tclass=capability permissive=0"
             ]
         },
         {
-            "name": "NetlinkAuditWriteTestSuite/NetlinkAuditSendTest/Send/4",
+            "name": "NetlinkAuditWriteTestSuite/NetlinkAuditSendTest.Send/4",
             "audit_expectations": [
                 "avc:  denied  { audit_write } for capability=29  scontext=test_u:test_r:audit_netlink_allow_without_write_cap_test_t:s0 tcontext=test_u:test_r:audit_netlink_allow_without_write_cap_test_t:s0 tclass=capability permissive=0"
             ]
         },
         {
-            "name": "NetlinkSocketTests/NetlinkSocketTest/CheckNetlinkMsgPermission/0",
+            "name": "NetlinkSocketTests/NetlinkSocketTest.CheckNetlinkMsgPermission/0",
             "audit_expectations": [
                 "avc:  denied  { create } for scontext=test_u:test_r:socket_test_t:s0 tcontext=test_u:test_r:socket_test_t:s0 tclass=netlink_audit_socket permissive=1",
                 "avc:  denied  { write } for scontext=test_u:test_r:socket_test_t:s0 tcontext=test_u:test_r:socket_test_t:s0 tclass=netlink_audit_socket permissive=1",
@@ -521,7 +521,7 @@
             ]
         },
         {
-            "name": "NetlinkSocketTests/NetlinkSocketTest/CheckNetlinkMsgPermission/1",
+            "name": "NetlinkSocketTests/NetlinkSocketTest.CheckNetlinkMsgPermission/1",
             "audit_expectations": [
                 "avc:  denied  { nlmsg_read } for scontext=test_u:test_r:socket_sendmsg_test_t:s0 tcontext=test_u:test_r:netlink_socket_no_nlmsg_t:s0 tclass=netlink_route_socket permissive=0",
                 "avc:  denied  { create } for scontext=test_u:test_r:socket_test_t:s0 tcontext=test_u:test_r:socket_test_t:s0 tclass=netlink_audit_socket permissive=1",
@@ -531,7 +531,7 @@
             ]
         },
         {
-            "name": "NetlinkSocketTests/NetlinkSocketTest/CheckNetlinkMsgPermission/10",
+            "name": "NetlinkSocketTests/NetlinkSocketTest.CheckNetlinkMsgPermission/10",
             "audit_expectations": [
                 "avc:  denied  { create } for scontext=test_u:test_r:socket_test_t:s0 tcontext=test_u:test_r:socket_test_t:s0 tclass=netlink_audit_socket permissive=1",
                 "avc:  denied  { write } for scontext=test_u:test_r:socket_test_t:s0 tcontext=test_u:test_r:socket_test_t:s0 tclass=netlink_audit_socket permissive=1",
@@ -540,26 +540,7 @@
             ]
         },
         {
-            "name": "NetlinkSocketTests/NetlinkSocketTest/CheckNetlinkMsgPermission/11",
-            "audit_expectations": [
-                "avc:  denied  { nlmsg_read } for scontext=test_u:test_r:socket_sendmsg_test_t:s0 tcontext=test_u:test_r:netlink_socket_no_nlmsg_t:s0 tclass=netlink_audit_socket permissive=0",
-                "avc:  denied  { create } for scontext=test_u:test_r:socket_test_t:s0 tcontext=test_u:test_r:socket_test_t:s0 tclass=netlink_audit_socket permissive=1",
-                "avc:  denied  { write } for scontext=test_u:test_r:socket_test_t:s0 tcontext=test_u:test_r:socket_test_t:s0 tclass=netlink_audit_socket permissive=1",
-                "avc:  denied  { nlmsg_relay } for scontext=test_u:test_r:socket_test_t:s0 tcontext=test_u:test_r:socket_test_t:s0 tclass=netlink_audit_socket permissive=1",
-                "avc:  denied  { audit_write } for capability=29  scontext=test_u:test_r:socket_test_t:s0 tcontext=test_u:test_r:socket_test_t:s0 tclass=capability permissive=1"
-            ]
-        },
-        {
-            "name": "NetlinkSocketTests/NetlinkSocketTest/CheckNetlinkMsgPermission/12",
-            "audit_expectations": [
-                "avc:  denied  { create } for scontext=test_u:test_r:socket_test_t:s0 tcontext=test_u:test_r:socket_test_t:s0 tclass=netlink_audit_socket permissive=1",
-                "avc:  denied  { write } for scontext=test_u:test_r:socket_test_t:s0 tcontext=test_u:test_r:socket_test_t:s0 tclass=netlink_audit_socket permissive=1",
-                "avc:  denied  { nlmsg_relay } for scontext=test_u:test_r:socket_test_t:s0 tcontext=test_u:test_r:socket_test_t:s0 tclass=netlink_audit_socket permissive=1",
-                "avc:  denied  { audit_write } for capability=29  scontext=test_u:test_r:socket_test_t:s0 tcontext=test_u:test_r:socket_test_t:s0 tclass=capability permissive=1"
-            ]
-        },
-        {
-            "name": "NetlinkSocketTests/NetlinkSocketTest/CheckNetlinkMsgPermission/13",
+            "name": "NetlinkSocketTests/NetlinkSocketTest.CheckNetlinkMsgPermission/11",
             "audit_expectations": [
                 "avc:  denied  { nlmsg_read } for scontext=test_u:test_r:socket_sendmsg_test_t:s0 tcontext=test_u:test_r:netlink_socket_no_nlmsg_t:s0 tclass=netlink_audit_socket permissive=0",
                 "avc:  denied  { create } for scontext=test_u:test_r:socket_test_t:s0 tcontext=test_u:test_r:socket_test_t:s0 tclass=netlink_audit_socket permissive=1",
@@ -569,7 +550,7 @@
             ]
         },
         {
-            "name": "NetlinkSocketTests/NetlinkSocketTest/CheckNetlinkMsgPermission/14",
+            "name": "NetlinkSocketTests/NetlinkSocketTest.CheckNetlinkMsgPermission/12",
             "audit_expectations": [
                 "avc:  denied  { create } for scontext=test_u:test_r:socket_test_t:s0 tcontext=test_u:test_r:socket_test_t:s0 tclass=netlink_audit_socket permissive=1",
                 "avc:  denied  { write } for scontext=test_u:test_r:socket_test_t:s0 tcontext=test_u:test_r:socket_test_t:s0 tclass=netlink_audit_socket permissive=1",
@@ -578,7 +559,26 @@
             ]
         },
         {
-            "name": "NetlinkSocketTests/NetlinkSocketTest/CheckNetlinkMsgPermission/15",
+            "name": "NetlinkSocketTests/NetlinkSocketTest.CheckNetlinkMsgPermission/13",
+            "audit_expectations": [
+                "avc:  denied  { nlmsg_read } for scontext=test_u:test_r:socket_sendmsg_test_t:s0 tcontext=test_u:test_r:netlink_socket_no_nlmsg_t:s0 tclass=netlink_audit_socket permissive=0",
+                "avc:  denied  { create } for scontext=test_u:test_r:socket_test_t:s0 tcontext=test_u:test_r:socket_test_t:s0 tclass=netlink_audit_socket permissive=1",
+                "avc:  denied  { write } for scontext=test_u:test_r:socket_test_t:s0 tcontext=test_u:test_r:socket_test_t:s0 tclass=netlink_audit_socket permissive=1",
+                "avc:  denied  { nlmsg_relay } for scontext=test_u:test_r:socket_test_t:s0 tcontext=test_u:test_r:socket_test_t:s0 tclass=netlink_audit_socket permissive=1",
+                "avc:  denied  { audit_write } for capability=29  scontext=test_u:test_r:socket_test_t:s0 tcontext=test_u:test_r:socket_test_t:s0 tclass=capability permissive=1"
+            ]
+        },
+        {
+            "name": "NetlinkSocketTests/NetlinkSocketTest.CheckNetlinkMsgPermission/14",
+            "audit_expectations": [
+                "avc:  denied  { create } for scontext=test_u:test_r:socket_test_t:s0 tcontext=test_u:test_r:socket_test_t:s0 tclass=netlink_audit_socket permissive=1",
+                "avc:  denied  { write } for scontext=test_u:test_r:socket_test_t:s0 tcontext=test_u:test_r:socket_test_t:s0 tclass=netlink_audit_socket permissive=1",
+                "avc:  denied  { nlmsg_relay } for scontext=test_u:test_r:socket_test_t:s0 tcontext=test_u:test_r:socket_test_t:s0 tclass=netlink_audit_socket permissive=1",
+                "avc:  denied  { audit_write } for capability=29  scontext=test_u:test_r:socket_test_t:s0 tcontext=test_u:test_r:socket_test_t:s0 tclass=capability permissive=1"
+            ]
+        },
+        {
+            "name": "NetlinkSocketTests/NetlinkSocketTest.CheckNetlinkMsgPermission/15",
             "audit_expectations": [
                 "avc:  denied  { nlmsg_readpriv } for scontext=test_u:test_r:socket_sendmsg_test_t:s0 tcontext=test_u:test_r:netlink_socket_no_nlmsg_t:s0 tclass=netlink_audit_socket permissive=0",
                 "avc:  denied  { create } for scontext=test_u:test_r:socket_test_t:s0 tcontext=test_u:test_r:socket_test_t:s0 tclass=netlink_audit_socket permissive=1",
@@ -588,7 +588,7 @@
             ]
         },
         {
-            "name": "NetlinkSocketTests/NetlinkSocketTest/CheckNetlinkMsgPermission/16",
+            "name": "NetlinkSocketTests/NetlinkSocketTest.CheckNetlinkMsgPermission/16",
             "audit_expectations": [
                 "avc:  denied  { create } for scontext=test_u:test_r:socket_test_t:s0 tcontext=test_u:test_r:socket_test_t:s0 tclass=netlink_audit_socket permissive=1",
                 "avc:  denied  { write } for scontext=test_u:test_r:socket_test_t:s0 tcontext=test_u:test_r:socket_test_t:s0 tclass=netlink_audit_socket permissive=1",
@@ -597,26 +597,7 @@
             ]
         },
         {
-            "name": "NetlinkSocketTests/NetlinkSocketTest/CheckNetlinkMsgPermission/17",
-            "audit_expectations": [
-                "avc:  denied  { nlmsg_relay } for scontext=test_u:test_r:socket_sendmsg_test_t:s0 tcontext=test_u:test_r:netlink_socket_no_nlmsg_t:s0 tclass=netlink_audit_socket permissive=0",
-                "avc:  denied  { create } for scontext=test_u:test_r:socket_test_t:s0 tcontext=test_u:test_r:socket_test_t:s0 tclass=netlink_audit_socket permissive=1",
-                "avc:  denied  { write } for scontext=test_u:test_r:socket_test_t:s0 tcontext=test_u:test_r:socket_test_t:s0 tclass=netlink_audit_socket permissive=1",
-                "avc:  denied  { nlmsg_relay } for scontext=test_u:test_r:socket_test_t:s0 tcontext=test_u:test_r:socket_test_t:s0 tclass=netlink_audit_socket permissive=1",
-                "avc:  denied  { audit_write } for capability=29  scontext=test_u:test_r:socket_test_t:s0 tcontext=test_u:test_r:socket_test_t:s0 tclass=capability permissive=1"
-            ]
-        },
-        {
-            "name": "NetlinkSocketTests/NetlinkSocketTest/CheckNetlinkMsgPermission/18",
-            "audit_expectations": [
-                "avc:  denied  { create } for scontext=test_u:test_r:socket_test_t:s0 tcontext=test_u:test_r:socket_test_t:s0 tclass=netlink_audit_socket permissive=1",
-                "avc:  denied  { write } for scontext=test_u:test_r:socket_test_t:s0 tcontext=test_u:test_r:socket_test_t:s0 tclass=netlink_audit_socket permissive=1",
-                "avc:  denied  { nlmsg_relay } for scontext=test_u:test_r:socket_test_t:s0 tcontext=test_u:test_r:socket_test_t:s0 tclass=netlink_audit_socket permissive=1",
-                "avc:  denied  { audit_write } for capability=29  scontext=test_u:test_r:socket_test_t:s0 tcontext=test_u:test_r:socket_test_t:s0 tclass=capability permissive=1"
-            ]
-        },
-        {
-            "name": "NetlinkSocketTests/NetlinkSocketTest/CheckNetlinkMsgPermission/19",
+            "name": "NetlinkSocketTests/NetlinkSocketTest.CheckNetlinkMsgPermission/17",
             "audit_expectations": [
                 "avc:  denied  { nlmsg_relay } for scontext=test_u:test_r:socket_sendmsg_test_t:s0 tcontext=test_u:test_r:netlink_socket_no_nlmsg_t:s0 tclass=netlink_audit_socket permissive=0",
                 "avc:  denied  { create } for scontext=test_u:test_r:socket_test_t:s0 tcontext=test_u:test_r:socket_test_t:s0 tclass=netlink_audit_socket permissive=1",
@@ -626,7 +607,7 @@
             ]
         },
         {
-            "name": "NetlinkSocketTests/NetlinkSocketTest/CheckNetlinkMsgPermission/2",
+            "name": "NetlinkSocketTests/NetlinkSocketTest.CheckNetlinkMsgPermission/18",
             "audit_expectations": [
                 "avc:  denied  { create } for scontext=test_u:test_r:socket_test_t:s0 tcontext=test_u:test_r:socket_test_t:s0 tclass=netlink_audit_socket permissive=1",
                 "avc:  denied  { write } for scontext=test_u:test_r:socket_test_t:s0 tcontext=test_u:test_r:socket_test_t:s0 tclass=netlink_audit_socket permissive=1",
@@ -635,16 +616,7 @@
             ]
         },
         {
-            "name": "NetlinkSocketTests/NetlinkSocketTest/CheckNetlinkMsgPermission/20",
-            "audit_expectations": [
-                "avc:  denied  { create } for scontext=test_u:test_r:socket_test_t:s0 tcontext=test_u:test_r:socket_test_t:s0 tclass=netlink_audit_socket permissive=1",
-                "avc:  denied  { write } for scontext=test_u:test_r:socket_test_t:s0 tcontext=test_u:test_r:socket_test_t:s0 tclass=netlink_audit_socket permissive=1",
-                "avc:  denied  { nlmsg_relay } for scontext=test_u:test_r:socket_test_t:s0 tcontext=test_u:test_r:socket_test_t:s0 tclass=netlink_audit_socket permissive=1",
-                "avc:  denied  { audit_write } for capability=29  scontext=test_u:test_r:socket_test_t:s0 tcontext=test_u:test_r:socket_test_t:s0 tclass=capability permissive=1"
-            ]
-        },
-        {
-            "name": "NetlinkSocketTests/NetlinkSocketTest/CheckNetlinkMsgPermission/21",
+            "name": "NetlinkSocketTests/NetlinkSocketTest.CheckNetlinkMsgPermission/19",
             "audit_expectations": [
                 "avc:  denied  { nlmsg_relay } for scontext=test_u:test_r:socket_sendmsg_test_t:s0 tcontext=test_u:test_r:netlink_socket_no_nlmsg_t:s0 tclass=netlink_audit_socket permissive=0",
                 "avc:  denied  { create } for scontext=test_u:test_r:socket_test_t:s0 tcontext=test_u:test_r:socket_test_t:s0 tclass=netlink_audit_socket permissive=1",
@@ -654,7 +626,7 @@
             ]
         },
         {
-            "name": "NetlinkSocketTests/NetlinkSocketTest/CheckNetlinkMsgPermission/22",
+            "name": "NetlinkSocketTests/NetlinkSocketTest.CheckNetlinkMsgPermission/2",
             "audit_expectations": [
                 "avc:  denied  { create } for scontext=test_u:test_r:socket_test_t:s0 tcontext=test_u:test_r:socket_test_t:s0 tclass=netlink_audit_socket permissive=1",
                 "avc:  denied  { write } for scontext=test_u:test_r:socket_test_t:s0 tcontext=test_u:test_r:socket_test_t:s0 tclass=netlink_audit_socket permissive=1",
@@ -663,7 +635,35 @@
             ]
         },
         {
-            "name": "NetlinkSocketTests/NetlinkSocketTest/CheckNetlinkMsgPermission/23",
+            "name": "NetlinkSocketTests/NetlinkSocketTest.CheckNetlinkMsgPermission/20",
+            "audit_expectations": [
+                "avc:  denied  { create } for scontext=test_u:test_r:socket_test_t:s0 tcontext=test_u:test_r:socket_test_t:s0 tclass=netlink_audit_socket permissive=1",
+                "avc:  denied  { write } for scontext=test_u:test_r:socket_test_t:s0 tcontext=test_u:test_r:socket_test_t:s0 tclass=netlink_audit_socket permissive=1",
+                "avc:  denied  { nlmsg_relay } for scontext=test_u:test_r:socket_test_t:s0 tcontext=test_u:test_r:socket_test_t:s0 tclass=netlink_audit_socket permissive=1",
+                "avc:  denied  { audit_write } for capability=29  scontext=test_u:test_r:socket_test_t:s0 tcontext=test_u:test_r:socket_test_t:s0 tclass=capability permissive=1"
+            ]
+        },
+        {
+            "name": "NetlinkSocketTests/NetlinkSocketTest.CheckNetlinkMsgPermission/21",
+            "audit_expectations": [
+                "avc:  denied  { nlmsg_relay } for scontext=test_u:test_r:socket_sendmsg_test_t:s0 tcontext=test_u:test_r:netlink_socket_no_nlmsg_t:s0 tclass=netlink_audit_socket permissive=0",
+                "avc:  denied  { create } for scontext=test_u:test_r:socket_test_t:s0 tcontext=test_u:test_r:socket_test_t:s0 tclass=netlink_audit_socket permissive=1",
+                "avc:  denied  { write } for scontext=test_u:test_r:socket_test_t:s0 tcontext=test_u:test_r:socket_test_t:s0 tclass=netlink_audit_socket permissive=1",
+                "avc:  denied  { nlmsg_relay } for scontext=test_u:test_r:socket_test_t:s0 tcontext=test_u:test_r:socket_test_t:s0 tclass=netlink_audit_socket permissive=1",
+                "avc:  denied  { audit_write } for capability=29  scontext=test_u:test_r:socket_test_t:s0 tcontext=test_u:test_r:socket_test_t:s0 tclass=capability permissive=1"
+            ]
+        },
+        {
+            "name": "NetlinkSocketTests/NetlinkSocketTest.CheckNetlinkMsgPermission/22",
+            "audit_expectations": [
+                "avc:  denied  { create } for scontext=test_u:test_r:socket_test_t:s0 tcontext=test_u:test_r:socket_test_t:s0 tclass=netlink_audit_socket permissive=1",
+                "avc:  denied  { write } for scontext=test_u:test_r:socket_test_t:s0 tcontext=test_u:test_r:socket_test_t:s0 tclass=netlink_audit_socket permissive=1",
+                "avc:  denied  { nlmsg_relay } for scontext=test_u:test_r:socket_test_t:s0 tcontext=test_u:test_r:socket_test_t:s0 tclass=netlink_audit_socket permissive=1",
+                "avc:  denied  { audit_write } for capability=29  scontext=test_u:test_r:socket_test_t:s0 tcontext=test_u:test_r:socket_test_t:s0 tclass=capability permissive=1"
+            ]
+        },
+        {
+            "name": "NetlinkSocketTests/NetlinkSocketTest.CheckNetlinkMsgPermission/23",
             "audit_expectations": [
                 "avc:  denied  { nlmsg_tty_audit } for scontext=test_u:test_r:socket_sendmsg_test_t:s0 tcontext=test_u:test_r:netlink_socket_no_nlmsg_t:s0 tclass=netlink_audit_socket permissive=0",
                 "avc:  denied  { create } for scontext=test_u:test_r:socket_test_t:s0 tcontext=test_u:test_r:socket_test_t:s0 tclass=netlink_audit_socket permissive=1",
@@ -673,7 +673,7 @@
             ]
         },
         {
-            "name": "NetlinkSocketTests/NetlinkSocketTest/CheckNetlinkMsgPermission/25",
+            "name": "NetlinkSocketTests/NetlinkSocketTest.CheckNetlinkMsgPermission/25",
             "audit_expectations": [
                 "avc:  denied  { nlmsg_write } for scontext=test_u:test_r:socket_sendmsg_test_t:s0 tcontext=test_u:test_r:netlink_socket_no_nlmsg_t:s0 tclass=netlink_audit_socket permissive=0",
                 "avc:  denied  { create } for scontext=test_u:test_r:socket_test_t:s0 tcontext=test_u:test_r:socket_test_t:s0 tclass=netlink_audit_socket permissive=1",
@@ -683,7 +683,7 @@
             ]
         },
         {
-            "name": "NetlinkSocketTests/NetlinkSocketTest/CheckNetlinkMsgPermission/26",
+            "name": "NetlinkSocketTests/NetlinkSocketTest.CheckNetlinkMsgPermission/26",
             "audit_expectations": [
                 "avc:  denied  { create } for scontext=test_u:test_r:socket_test_t:s0 tcontext=test_u:test_r:socket_test_t:s0 tclass=netlink_audit_socket permissive=1",
                 "avc:  denied  { write } for scontext=test_u:test_r:socket_test_t:s0 tcontext=test_u:test_r:socket_test_t:s0 tclass=netlink_audit_socket permissive=1",
@@ -692,7 +692,7 @@
             ]
         },
         {
-            "name": "NetlinkSocketTests/NetlinkSocketTest/CheckNetlinkMsgPermission/27",
+            "name": "NetlinkSocketTests/NetlinkSocketTest.CheckNetlinkMsgPermission/27",
             "audit_expectations": [
                 "avc:  denied  { nlmsg_write } for scontext=test_u:test_r:socket_sendmsg_test_t:s0 tcontext=test_u:test_r:netlink_socket_no_nlmsg_t:s0 tclass=netlink_audit_socket permissive=0",
                 "avc:  denied  { create } for scontext=test_u:test_r:socket_test_t:s0 tcontext=test_u:test_r:socket_test_t:s0 tclass=netlink_audit_socket permissive=1",
@@ -702,7 +702,7 @@
             ]
         },
         {
-            "name": "NetlinkSocketTests/NetlinkSocketTest/CheckNetlinkMsgPermission/28",
+            "name": "NetlinkSocketTests/NetlinkSocketTest.CheckNetlinkMsgPermission/28",
             "audit_expectations": [
                 "avc:  denied  { module_request } for kmod=\"net-pf-16-proto-4-type-2\" scontext=test_u:test_r:socket_sendmsg_test_t:s0 tcontext=system_u:unconfined_r:unconfined_t:s0 tclass=system permissive=0",
                 "avc:  denied  { create } for scontext=test_u:test_r:socket_test_t:s0 tcontext=test_u:test_r:socket_test_t:s0 tclass=netlink_audit_socket permissive=1",
@@ -712,7 +712,7 @@
             ]
         },
         {
-            "name": "NetlinkSocketTests/NetlinkSocketTest/CheckNetlinkMsgPermission/29",
+            "name": "NetlinkSocketTests/NetlinkSocketTest.CheckNetlinkMsgPermission/29",
             "audit_expectations": [
                 "avc:  denied  { nlmsg_read } for scontext=test_u:test_r:socket_sendmsg_test_t:s0 tcontext=test_u:test_r:netlink_socket_no_nlmsg_t:s0 tclass=netlink_tcpdiag_socket permissive=0",
                 "avc:  denied  { create } for scontext=test_u:test_r:socket_test_t:s0 tcontext=test_u:test_r:socket_test_t:s0 tclass=netlink_audit_socket permissive=1",
@@ -722,7 +722,7 @@
             ]
         },
         {
-            "name": "NetlinkSocketTests/NetlinkSocketTest/CheckNetlinkMsgPermission/3",
+            "name": "NetlinkSocketTests/NetlinkSocketTest.CheckNetlinkMsgPermission/3",
             "audit_expectations": [
                 "avc:  denied  { nlmsg_read } for scontext=test_u:test_r:socket_sendmsg_test_t:s0 tcontext=test_u:test_r:netlink_socket_no_nlmsg_t:s0 tclass=netlink_route_socket permissive=0",
                 "avc:  denied  { create } for scontext=test_u:test_r:socket_test_t:s0 tcontext=test_u:test_r:socket_test_t:s0 tclass=netlink_audit_socket permissive=1",
@@ -732,7 +732,7 @@
             ]
         },
         {
-            "name": "NetlinkSocketTests/NetlinkSocketTest/CheckNetlinkMsgPermission/4",
+            "name": "NetlinkSocketTests/NetlinkSocketTest.CheckNetlinkMsgPermission/4",
             "audit_expectations": [
                 "avc:  denied  { create } for scontext=test_u:test_r:socket_test_t:s0 tcontext=test_u:test_r:socket_test_t:s0 tclass=netlink_audit_socket permissive=1",
                 "avc:  denied  { write } for scontext=test_u:test_r:socket_test_t:s0 tcontext=test_u:test_r:socket_test_t:s0 tclass=netlink_audit_socket permissive=1",
@@ -741,26 +741,7 @@
             ]
         },
         {
-            "name": "NetlinkSocketTests/NetlinkSocketTest/CheckNetlinkMsgPermission/5",
-            "audit_expectations": [
-                "avc:  denied  { nlmsg_read } for scontext=test_u:test_r:socket_sendmsg_test_t:s0 tcontext=test_u:test_r:netlink_socket_no_nlmsg_t:s0 tclass=netlink_route_socket permissive=0",
-                "avc:  denied  { create } for scontext=test_u:test_r:socket_test_t:s0 tcontext=test_u:test_r:socket_test_t:s0 tclass=netlink_audit_socket permissive=1",
-                "avc:  denied  { write } for scontext=test_u:test_r:socket_test_t:s0 tcontext=test_u:test_r:socket_test_t:s0 tclass=netlink_audit_socket permissive=1",
-                "avc:  denied  { nlmsg_relay } for scontext=test_u:test_r:socket_test_t:s0 tcontext=test_u:test_r:socket_test_t:s0 tclass=netlink_audit_socket permissive=1",
-                "avc:  denied  { audit_write } for capability=29  scontext=test_u:test_r:socket_test_t:s0 tcontext=test_u:test_r:socket_test_t:s0 tclass=capability permissive=1"
-            ]
-        },
-        {
-            "name": "NetlinkSocketTests/NetlinkSocketTest/CheckNetlinkMsgPermission/6",
-            "audit_expectations": [
-                "avc:  denied  { create } for scontext=test_u:test_r:socket_test_t:s0 tcontext=test_u:test_r:socket_test_t:s0 tclass=netlink_audit_socket permissive=1",
-                "avc:  denied  { write } for scontext=test_u:test_r:socket_test_t:s0 tcontext=test_u:test_r:socket_test_t:s0 tclass=netlink_audit_socket permissive=1",
-                "avc:  denied  { nlmsg_relay } for scontext=test_u:test_r:socket_test_t:s0 tcontext=test_u:test_r:socket_test_t:s0 tclass=netlink_audit_socket permissive=1",
-                "avc:  denied  { audit_write } for capability=29  scontext=test_u:test_r:socket_test_t:s0 tcontext=test_u:test_r:socket_test_t:s0 tclass=capability permissive=1"
-            ]
-        },
-        {
-            "name": "NetlinkSocketTests/NetlinkSocketTest/CheckNetlinkMsgPermission/7",
+            "name": "NetlinkSocketTests/NetlinkSocketTest.CheckNetlinkMsgPermission/5",
             "audit_expectations": [
                 "avc:  denied  { nlmsg_read } for scontext=test_u:test_r:socket_sendmsg_test_t:s0 tcontext=test_u:test_r:netlink_socket_no_nlmsg_t:s0 tclass=netlink_route_socket permissive=0",
                 "avc:  denied  { create } for scontext=test_u:test_r:socket_test_t:s0 tcontext=test_u:test_r:socket_test_t:s0 tclass=netlink_audit_socket permissive=1",
@@ -770,7 +751,7 @@
             ]
         },
         {
-            "name": "NetlinkSocketTests/NetlinkSocketTest/CheckNetlinkMsgPermission/8",
+            "name": "NetlinkSocketTests/NetlinkSocketTest.CheckNetlinkMsgPermission/6",
             "audit_expectations": [
                 "avc:  denied  { create } for scontext=test_u:test_r:socket_test_t:s0 tcontext=test_u:test_r:socket_test_t:s0 tclass=netlink_audit_socket permissive=1",
                 "avc:  denied  { write } for scontext=test_u:test_r:socket_test_t:s0 tcontext=test_u:test_r:socket_test_t:s0 tclass=netlink_audit_socket permissive=1",
@@ -779,7 +760,26 @@
             ]
         },
         {
-            "name": "NetlinkSocketTests/NetlinkSocketTest/CheckNetlinkMsgPermission/9",
+            "name": "NetlinkSocketTests/NetlinkSocketTest.CheckNetlinkMsgPermission/7",
+            "audit_expectations": [
+                "avc:  denied  { nlmsg_read } for scontext=test_u:test_r:socket_sendmsg_test_t:s0 tcontext=test_u:test_r:netlink_socket_no_nlmsg_t:s0 tclass=netlink_route_socket permissive=0",
+                "avc:  denied  { create } for scontext=test_u:test_r:socket_test_t:s0 tcontext=test_u:test_r:socket_test_t:s0 tclass=netlink_audit_socket permissive=1",
+                "avc:  denied  { write } for scontext=test_u:test_r:socket_test_t:s0 tcontext=test_u:test_r:socket_test_t:s0 tclass=netlink_audit_socket permissive=1",
+                "avc:  denied  { nlmsg_relay } for scontext=test_u:test_r:socket_test_t:s0 tcontext=test_u:test_r:socket_test_t:s0 tclass=netlink_audit_socket permissive=1",
+                "avc:  denied  { audit_write } for capability=29  scontext=test_u:test_r:socket_test_t:s0 tcontext=test_u:test_r:socket_test_t:s0 tclass=capability permissive=1"
+            ]
+        },
+        {
+            "name": "NetlinkSocketTests/NetlinkSocketTest.CheckNetlinkMsgPermission/8",
+            "audit_expectations": [
+                "avc:  denied  { create } for scontext=test_u:test_r:socket_test_t:s0 tcontext=test_u:test_r:socket_test_t:s0 tclass=netlink_audit_socket permissive=1",
+                "avc:  denied  { write } for scontext=test_u:test_r:socket_test_t:s0 tcontext=test_u:test_r:socket_test_t:s0 tclass=netlink_audit_socket permissive=1",
+                "avc:  denied  { nlmsg_relay } for scontext=test_u:test_r:socket_test_t:s0 tcontext=test_u:test_r:socket_test_t:s0 tclass=netlink_audit_socket permissive=1",
+                "avc:  denied  { audit_write } for capability=29  scontext=test_u:test_r:socket_test_t:s0 tcontext=test_u:test_r:socket_test_t:s0 tclass=capability permissive=1"
+            ]
+        },
+        {
+            "name": "NetlinkSocketTests/NetlinkSocketTest.CheckNetlinkMsgPermission/9",
             "audit_expectations": [
                 "avc:  denied  { nlmsg_write } for scontext=test_u:test_r:socket_sendmsg_test_t:s0 tcontext=test_u:test_r:netlink_socket_no_nlmsg_t:s0 tclass=netlink_route_socket permissive=0",
                 "avc:  denied  { create } for scontext=test_u:test_r:socket_test_t:s0 tcontext=test_u:test_r:socket_test_t:s0 tclass=netlink_audit_socket permissive=1",
@@ -789,70 +789,70 @@
             ]
         },
         {
-            "name": "NetlinkSocketTests/NetlinkSocketXpermsTest/CheckNetlinkMsgXperms/2",
+            "name": "NetlinkSocketTests/NetlinkSocketXpermsTest.CheckNetlinkMsgXperms/2",
             "audit_expectations": [
                 "avc:  denied  { nlmsg } for nl-msgtype=26 scontext=test_u:test_r:nlmsg_xperms_test_t:s0 tcontext=test_u:test_r:nlmsg_xperms_getroute_no_nlmsg_t:s0 tclass=netlink_route_socket permissive=0"
             ]
         },
         {
-            "name": "NetlinkSocketTests/NetlinkSocketXpermsTest/CheckNetlinkMsgXperms/3",
+            "name": "NetlinkSocketTests/NetlinkSocketXpermsTest.CheckNetlinkMsgXperms/3",
             "audit_expectations": [
                 "avc:  denied  { nlmsg } for nl-msgtype=26 scontext=test_u:test_r:nlmsg_xperms_test_t:s0 tcontext=test_u:test_r:nlmsg_xperms_no_getroute_t:s0 tclass=netlink_route_socket permissive=0"
             ]
         },
         {
-            "name": "NetlinkSocketTests/NetlinkSocketXpermsTest/CheckNetlinkMsgXperms/4",
+            "name": "NetlinkSocketTests/NetlinkSocketXpermsTest.CheckNetlinkMsgXperms/4",
             "audit_expectations": [
                 "avc:  denied  { net_admin } for capability=12  scontext=test_u:test_r:nlmsg_xperms_test_t:s0 tcontext=test_u:test_r:nlmsg_xperms_test_t:s0 tclass=capability permissive=0"
             ]
         },
         {
-            "name": "NetlinkSocketTests/NetlinkSocketXpermsTest/CheckNetlinkMsgXperms/5",
+            "name": "NetlinkSocketTests/NetlinkSocketXpermsTest.CheckNetlinkMsgXperms/5",
             "audit_expectations": [
                 "avc:  denied  { nlmsg } for nl-msgtype=24 scontext=test_u:test_r:nlmsg_xperms_test_t:s0 tcontext=test_u:test_r:nlmsg_xperms_newroute_no_t:s0 tclass=netlink_route_socket permissive=0"
             ]
         },
         {
-            "name": "NetlinkSocketTests/NetlinkSocketXpermsTest/CheckNetlinkMsgXperms/6",
+            "name": "NetlinkSocketTests/NetlinkSocketXpermsTest.CheckNetlinkMsgXperms/6",
             "audit_expectations": [
                 "avc:  denied  { audit_control } for capability=30  scontext=test_u:test_r:nlmsg_xperms_test_t:s0 tcontext=test_u:test_r:nlmsg_xperms_test_t:s0 tclass=capability permissive=0"
             ]
         },
         {
-            "name": "NetlinkSocketTests/NetlinkSocketXpermsTest/CheckNetlinkMsgXperms/7",
+            "name": "NetlinkSocketTests/NetlinkSocketXpermsTest.CheckNetlinkMsgXperms/7",
             "audit_expectations": [
                 "avc:  denied  { nlmsg } for nl-msgtype=1001 scontext=test_u:test_r:nlmsg_xperms_test_t:s0 tcontext=test_u:test_r:nlmsg_xperms_audit_set_no_t:s0 tclass=netlink_audit_socket permissive=0"
             ]
         },
         {
-            "name": "PerfEventTest/MmapInvalidArgumentsCheckOrder",
+            "name": "PerfEventTest.MmapInvalidArgumentsCheckOrder",
             "audit_expectations": [
                 "avc:  denied  { read } for scontext=test_u:test_r:test_perf_event_no_read_t:s0 tcontext=test_u:test_r:test_perf_event_no_read_t:s0 tclass=perf_event permissive=0"
             ]
         },
         {
-            "name": "PerfEventTest/OpenEventsBreakpointNoCpu",
+            "name": "PerfEventTest.OpenEventsBreakpointNoCpu",
             "audit_expectations": [
                 "avc:  denied  { cpu } for scontext=test_u:test_r:test_perf_event_no_cpu_t:s0 tcontext=test_u:test_r:test_perf_event_no_cpu_t:s0 tclass=perf_event permissive=0",
                 "avc:  denied  { cpu } for scontext=test_u:test_r:test_perf_event_no_cpu_t:s0 tcontext=test_u:test_r:test_perf_event_no_cpu_t:s0 tclass=perf_event permissive=0"
             ]
         },
         {
-            "name": "PerfEventTest/OpenEventsBreakpointNoKernel",
+            "name": "PerfEventTest.OpenEventsBreakpointNoKernel",
             "audit_expectations": [
                 "avc:  denied  { kernel } for scontext=test_u:test_r:test_perf_event_no_kernel_t:s0 tcontext=test_u:test_r:test_perf_event_no_kernel_t:s0 tclass=perf_event permissive=0",
                 "avc:  denied  { kernel } for scontext=test_u:test_r:test_perf_event_no_kernel_t:s0 tcontext=test_u:test_r:test_perf_event_no_kernel_t:s0 tclass=perf_event permissive=0"
             ]
         },
         {
-            "name": "PerfEventTest/OpenEventsNoPerfmon",
+            "name": "PerfEventTest.OpenEventsNoPerfmon",
             "audit_expectations": [
                 "avc:  denied  { perfmon } for capability=38  scontext=test_u:test_r:test_perf_no_perfmon_t:s0 tcontext=test_u:test_r:test_perf_no_perfmon_t:s0 tclass=capability2 permissive=0",
                 "avc:  denied  { sys_admin } for capability=21  scontext=test_u:test_r:test_perf_no_perfmon_t:s0 tcontext=test_u:test_r:test_perf_no_perfmon_t:s0 tclass=capability permissive=0"
             ]
         },
         {
-            "name": "PerfEventTest/OpenEventsNoTracepoint",
+            "name": "PerfEventTest.OpenEventsNoTracepoint",
             "audit_expectations": [
                 "avc:  denied  { tracepoint } for scontext=test_u:test_r:test_perf_event_no_tracepoint_t:s0 tcontext=test_u:test_r:test_perf_event_no_tracepoint_t:s0 tclass=perf_event permissive=0",
                 "avc:  denied  { tracepoint } for scontext=test_u:test_r:test_perf_event_no_tracepoint_t:s0 tcontext=test_u:test_r:test_perf_event_no_tracepoint_t:s0 tclass=perf_event permissive=0",
@@ -861,545 +861,545 @@
             ]
         },
         {
-            "name": "PerfEventTest/OpenEventsRawNoCpu",
+            "name": "PerfEventTest.OpenEventsRawNoCpu",
             "audit_expectations": [
                 "avc:  denied  { cpu } for scontext=test_u:test_r:test_perf_event_no_cpu_t:s0 tcontext=test_u:test_r:test_perf_event_no_cpu_t:s0 tclass=perf_event permissive=0",
                 "avc:  denied  { cpu } for scontext=test_u:test_r:test_perf_event_no_cpu_t:s0 tcontext=test_u:test_r:test_perf_event_no_cpu_t:s0 tclass=perf_event permissive=0"
             ]
         },
         {
-            "name": "PerfEventTest/OpenEventsRawNoKernel",
+            "name": "PerfEventTest.OpenEventsRawNoKernel",
             "audit_expectations": [
                 "avc:  denied  { kernel } for scontext=test_u:test_r:test_perf_event_no_kernel_t:s0 tcontext=test_u:test_r:test_perf_event_no_kernel_t:s0 tclass=perf_event permissive=0",
                 "avc:  denied  { kernel } for scontext=test_u:test_r:test_perf_event_no_kernel_t:s0 tcontext=test_u:test_r:test_perf_event_no_kernel_t:s0 tclass=perf_event permissive=0"
             ]
         },
         {
-            "name": "PerfEventTest/OpenTypeHWCacheOrTracepoint/OpenEventsNoCpu/0",
+            "name": "PerfEventTest/OpenTypeHWCacheOrTracepoint.OpenEventsNoCpu/0",
             "audit_expectations": [
                 "avc:  denied  { cpu } for scontext=test_u:test_r:test_perf_event_no_cpu_t:s0 tcontext=test_u:test_r:test_perf_event_no_cpu_t:s0 tclass=perf_event permissive=0",
                 "avc:  denied  { cpu } for scontext=test_u:test_r:test_perf_event_no_cpu_t:s0 tcontext=test_u:test_r:test_perf_event_no_cpu_t:s0 tclass=perf_event permissive=0"
             ]
         },
         {
-            "name": "PerfEventTest/OpenTypeHWCacheOrTracepoint/OpenEventsNoCpu/1",
+            "name": "PerfEventTest/OpenTypeHWCacheOrTracepoint.OpenEventsNoCpu/1",
             "audit_expectations": [
                 "avc:  denied  { cpu } for scontext=test_u:test_r:test_perf_event_no_cpu_t:s0 tcontext=test_u:test_r:test_perf_event_no_cpu_t:s0 tclass=perf_event permissive=0",
                 "avc:  denied  { cpu } for scontext=test_u:test_r:test_perf_event_no_cpu_t:s0 tcontext=test_u:test_r:test_perf_event_no_cpu_t:s0 tclass=perf_event permissive=0"
             ]
         },
         {
-            "name": "PerfEventTest/OpenTypeHWCacheOrTracepoint/OpenEventsNoKernel/0",
+            "name": "PerfEventTest/OpenTypeHWCacheOrTracepoint.OpenEventsNoKernel/0",
             "audit_expectations": [
                 "avc:  denied  { kernel } for scontext=test_u:test_r:test_perf_event_no_kernel_t:s0 tcontext=test_u:test_r:test_perf_event_no_kernel_t:s0 tclass=perf_event permissive=0",
                 "avc:  denied  { kernel } for scontext=test_u:test_r:test_perf_event_no_kernel_t:s0 tcontext=test_u:test_r:test_perf_event_no_kernel_t:s0 tclass=perf_event permissive=0"
             ]
         },
         {
-            "name": "PerfEventTest/OpenTypeHWCacheOrTracepoint/OpenEventsNoKernel/1",
+            "name": "PerfEventTest/OpenTypeHWCacheOrTracepoint.OpenEventsNoKernel/1",
             "audit_expectations": [
                 "avc:  denied  { kernel } for scontext=test_u:test_r:test_perf_event_no_kernel_t:s0 tcontext=test_u:test_r:test_perf_event_no_kernel_t:s0 tclass=perf_event permissive=0",
                 "avc:  denied  { kernel } for scontext=test_u:test_r:test_perf_event_no_kernel_t:s0 tcontext=test_u:test_r:test_perf_event_no_kernel_t:s0 tclass=perf_event permissive=0"
             ]
         },
         {
-            "name": "PerfEventTest/OpenTypeHardware/OpenEventsNoKernelFails/0",
+            "name": "PerfEventTest/OpenTypeHardware.OpenEventsNoKernelFails/0",
             "audit_expectations": [
                 "avc:  denied  { kernel } for scontext=test_u:test_r:test_perf_event_no_kernel_t:s0 tcontext=test_u:test_r:test_perf_event_no_kernel_t:s0 tclass=perf_event permissive=0"
             ]
         },
         {
-            "name": "PerfEventTest/OpenTypeHardware/OpenEventsNoKernelFails/1",
+            "name": "PerfEventTest/OpenTypeHardware.OpenEventsNoKernelFails/1",
             "audit_expectations": [
                 "avc:  denied  { kernel } for scontext=test_u:test_r:test_perf_event_no_kernel_t:s0 tcontext=test_u:test_r:test_perf_event_no_kernel_t:s0 tclass=perf_event permissive=0"
             ]
         },
         {
-            "name": "PerfEventTest/OpenTypeHardware/OpenEventsNoKernelFails/10",
+            "name": "PerfEventTest/OpenTypeHardware.OpenEventsNoKernelFails/10",
             "audit_expectations": [
                 "avc:  denied  { kernel } for scontext=test_u:test_r:test_perf_event_no_kernel_t:s0 tcontext=test_u:test_r:test_perf_event_no_kernel_t:s0 tclass=perf_event permissive=0"
             ]
         },
         {
-            "name": "PerfEventTest/OpenTypeHardware/OpenEventsNoKernelFails/11",
+            "name": "PerfEventTest/OpenTypeHardware.OpenEventsNoKernelFails/11",
             "audit_expectations": [
                 "avc:  denied  { kernel } for scontext=test_u:test_r:test_perf_event_no_kernel_t:s0 tcontext=test_u:test_r:test_perf_event_no_kernel_t:s0 tclass=perf_event permissive=0"
             ]
         },
         {
-            "name": "PerfEventTest/OpenTypeHardware/OpenEventsNoKernelFails/12",
+            "name": "PerfEventTest/OpenTypeHardware.OpenEventsNoKernelFails/12",
             "audit_expectations": [
                 "avc:  denied  { kernel } for scontext=test_u:test_r:test_perf_event_no_kernel_t:s0 tcontext=test_u:test_r:test_perf_event_no_kernel_t:s0 tclass=perf_event permissive=0"
             ]
         },
         {
-            "name": "PerfEventTest/OpenTypeHardware/OpenEventsNoKernelFails/13",
+            "name": "PerfEventTest/OpenTypeHardware.OpenEventsNoKernelFails/13",
             "audit_expectations": [
                 "avc:  denied  { kernel } for scontext=test_u:test_r:test_perf_event_no_kernel_t:s0 tcontext=test_u:test_r:test_perf_event_no_kernel_t:s0 tclass=perf_event permissive=0"
             ]
         },
         {
-            "name": "PerfEventTest/OpenTypeHardware/OpenEventsNoKernelFails/14",
+            "name": "PerfEventTest/OpenTypeHardware.OpenEventsNoKernelFails/14",
             "audit_expectations": [
                 "avc:  denied  { kernel } for scontext=test_u:test_r:test_perf_event_no_kernel_t:s0 tcontext=test_u:test_r:test_perf_event_no_kernel_t:s0 tclass=perf_event permissive=0"
             ]
         },
         {
-            "name": "PerfEventTest/OpenTypeHardware/OpenEventsNoKernelFails/15",
+            "name": "PerfEventTest/OpenTypeHardware.OpenEventsNoKernelFails/15",
             "audit_expectations": [
                 "avc:  denied  { kernel } for scontext=test_u:test_r:test_perf_event_no_kernel_t:s0 tcontext=test_u:test_r:test_perf_event_no_kernel_t:s0 tclass=perf_event permissive=0"
             ]
         },
         {
-            "name": "PerfEventTest/OpenTypeHardware/OpenEventsNoKernelFails/2",
+            "name": "PerfEventTest/OpenTypeHardware.OpenEventsNoKernelFails/2",
             "audit_expectations": [
                 "avc:  denied  { kernel } for scontext=test_u:test_r:test_perf_event_no_kernel_t:s0 tcontext=test_u:test_r:test_perf_event_no_kernel_t:s0 tclass=perf_event permissive=0"
             ]
         },
         {
-            "name": "PerfEventTest/OpenTypeHardware/OpenEventsNoKernelFails/3",
+            "name": "PerfEventTest/OpenTypeHardware.OpenEventsNoKernelFails/3",
             "audit_expectations": [
                 "avc:  denied  { kernel } for scontext=test_u:test_r:test_perf_event_no_kernel_t:s0 tcontext=test_u:test_r:test_perf_event_no_kernel_t:s0 tclass=perf_event permissive=0"
             ]
         },
         {
-            "name": "PerfEventTest/OpenTypeHardware/OpenEventsNoKernelFails/4",
+            "name": "PerfEventTest/OpenTypeHardware.OpenEventsNoKernelFails/4",
             "audit_expectations": [
                 "avc:  denied  { kernel } for scontext=test_u:test_r:test_perf_event_no_kernel_t:s0 tcontext=test_u:test_r:test_perf_event_no_kernel_t:s0 tclass=perf_event permissive=0"
             ]
         },
         {
-            "name": "PerfEventTest/OpenTypeHardware/OpenEventsNoKernelFails/5",
+            "name": "PerfEventTest/OpenTypeHardware.OpenEventsNoKernelFails/5",
             "audit_expectations": [
                 "avc:  denied  { kernel } for scontext=test_u:test_r:test_perf_event_no_kernel_t:s0 tcontext=test_u:test_r:test_perf_event_no_kernel_t:s0 tclass=perf_event permissive=0"
             ]
         },
         {
-            "name": "PerfEventTest/OpenTypeHardware/OpenEventsNoKernelFails/6",
+            "name": "PerfEventTest/OpenTypeHardware.OpenEventsNoKernelFails/6",
             "audit_expectations": [
                 "avc:  denied  { kernel } for scontext=test_u:test_r:test_perf_event_no_kernel_t:s0 tcontext=test_u:test_r:test_perf_event_no_kernel_t:s0 tclass=perf_event permissive=0"
             ]
         },
         {
-            "name": "PerfEventTest/OpenTypeHardware/OpenEventsNoKernelFails/7",
+            "name": "PerfEventTest/OpenTypeHardware.OpenEventsNoKernelFails/7",
             "audit_expectations": [
                 "avc:  denied  { kernel } for scontext=test_u:test_r:test_perf_event_no_kernel_t:s0 tcontext=test_u:test_r:test_perf_event_no_kernel_t:s0 tclass=perf_event permissive=0"
             ]
         },
         {
-            "name": "PerfEventTest/OpenTypeHardware/OpenEventsNoKernelFails/8",
+            "name": "PerfEventTest/OpenTypeHardware.OpenEventsNoKernelFails/8",
             "audit_expectations": [
                 "avc:  denied  { kernel } for scontext=test_u:test_r:test_perf_event_no_kernel_t:s0 tcontext=test_u:test_r:test_perf_event_no_kernel_t:s0 tclass=perf_event permissive=0"
             ]
         },
         {
-            "name": "PerfEventTest/OpenTypeHardware/OpenEventsNoKernelFails/9",
+            "name": "PerfEventTest/OpenTypeHardware.OpenEventsNoKernelFails/9",
             "audit_expectations": [
                 "avc:  denied  { kernel } for scontext=test_u:test_r:test_perf_event_no_kernel_t:s0 tcontext=test_u:test_r:test_perf_event_no_kernel_t:s0 tclass=perf_event permissive=0"
             ]
         },
         {
-            "name": "PerfEventTest/OpenTypeHardware/OpenEventsNoKernelFailures/0",
+            "name": "PerfEventTest/OpenTypeHardware.OpenEventsNoKernelFailures/0",
             "audit_expectations": [
                 "avc:  denied  { kernel } for scontext=test_u:test_r:test_perf_event_no_kernel_t:s0 tcontext=test_u:test_r:test_perf_event_no_kernel_t:s0 tclass=perf_event permissive=0"
             ]
         },
         {
-            "name": "PerfEventTest/OpenTypeHardware/OpenEventsNoKernelFailures/1",
+            "name": "PerfEventTest/OpenTypeHardware.OpenEventsNoKernelFailures/1",
             "audit_expectations": [
                 "avc:  denied  { kernel } for scontext=test_u:test_r:test_perf_event_no_kernel_t:s0 tcontext=test_u:test_r:test_perf_event_no_kernel_t:s0 tclass=perf_event permissive=0"
             ]
         },
         {
-            "name": "PerfEventTest/OpenTypeHardware/OpenEventsNoKernelFailures/10",
+            "name": "PerfEventTest/OpenTypeHardware.OpenEventsNoKernelFailures/10",
             "audit_expectations": [
                 "avc:  denied  { kernel } for scontext=test_u:test_r:test_perf_event_no_kernel_t:s0 tcontext=test_u:test_r:test_perf_event_no_kernel_t:s0 tclass=perf_event permissive=0"
             ]
         },
         {
-            "name": "PerfEventTest/OpenTypeHardware/OpenEventsNoKernelFailures/11",
+            "name": "PerfEventTest/OpenTypeHardware.OpenEventsNoKernelFailures/11",
             "audit_expectations": [
                 "avc:  denied  { kernel } for scontext=test_u:test_r:test_perf_event_no_kernel_t:s0 tcontext=test_u:test_r:test_perf_event_no_kernel_t:s0 tclass=perf_event permissive=0"
             ]
         },
         {
-            "name": "PerfEventTest/OpenTypeHardware/OpenEventsNoKernelFailures/12",
+            "name": "PerfEventTest/OpenTypeHardware.OpenEventsNoKernelFailures/12",
             "audit_expectations": [
                 "avc:  denied  { kernel } for scontext=test_u:test_r:test_perf_event_no_kernel_t:s0 tcontext=test_u:test_r:test_perf_event_no_kernel_t:s0 tclass=perf_event permissive=0"
             ]
         },
         {
-            "name": "PerfEventTest/OpenTypeHardware/OpenEventsNoKernelFailures/13",
+            "name": "PerfEventTest/OpenTypeHardware.OpenEventsNoKernelFailures/13",
             "audit_expectations": [
                 "avc:  denied  { kernel } for scontext=test_u:test_r:test_perf_event_no_kernel_t:s0 tcontext=test_u:test_r:test_perf_event_no_kernel_t:s0 tclass=perf_event permissive=0"
             ]
         },
         {
-            "name": "PerfEventTest/OpenTypeHardware/OpenEventsNoKernelFailures/14",
+            "name": "PerfEventTest/OpenTypeHardware.OpenEventsNoKernelFailures/14",
             "audit_expectations": [
                 "avc:  denied  { kernel } for scontext=test_u:test_r:test_perf_event_no_kernel_t:s0 tcontext=test_u:test_r:test_perf_event_no_kernel_t:s0 tclass=perf_event permissive=0"
             ]
         },
         {
-            "name": "PerfEventTest/OpenTypeHardware/OpenEventsNoKernelFailures/15",
+            "name": "PerfEventTest/OpenTypeHardware.OpenEventsNoKernelFailures/15",
             "audit_expectations": [
                 "avc:  denied  { kernel } for scontext=test_u:test_r:test_perf_event_no_kernel_t:s0 tcontext=test_u:test_r:test_perf_event_no_kernel_t:s0 tclass=perf_event permissive=0"
             ]
         },
         {
-            "name": "PerfEventTest/OpenTypeHardware/OpenEventsNoKernelFailures/2",
+            "name": "PerfEventTest/OpenTypeHardware.OpenEventsNoKernelFailures/2",
             "audit_expectations": [
                 "avc:  denied  { kernel } for scontext=test_u:test_r:test_perf_event_no_kernel_t:s0 tcontext=test_u:test_r:test_perf_event_no_kernel_t:s0 tclass=perf_event permissive=0"
             ]
         },
         {
-            "name": "PerfEventTest/OpenTypeHardware/OpenEventsNoKernelFailures/3",
+            "name": "PerfEventTest/OpenTypeHardware.OpenEventsNoKernelFailures/3",
             "audit_expectations": [
                 "avc:  denied  { kernel } for scontext=test_u:test_r:test_perf_event_no_kernel_t:s0 tcontext=test_u:test_r:test_perf_event_no_kernel_t:s0 tclass=perf_event permissive=0"
             ]
         },
         {
-            "name": "PerfEventTest/OpenTypeHardware/OpenEventsNoKernelFailures/4",
+            "name": "PerfEventTest/OpenTypeHardware.OpenEventsNoKernelFailures/4",
             "audit_expectations": [
                 "avc:  denied  { kernel } for scontext=test_u:test_r:test_perf_event_no_kernel_t:s0 tcontext=test_u:test_r:test_perf_event_no_kernel_t:s0 tclass=perf_event permissive=0"
             ]
         },
         {
-            "name": "PerfEventTest/OpenTypeHardware/OpenEventsNoKernelFailures/5",
+            "name": "PerfEventTest/OpenTypeHardware.OpenEventsNoKernelFailures/5",
             "audit_expectations": [
                 "avc:  denied  { kernel } for scontext=test_u:test_r:test_perf_event_no_kernel_t:s0 tcontext=test_u:test_r:test_perf_event_no_kernel_t:s0 tclass=perf_event permissive=0"
             ]
         },
         {
-            "name": "PerfEventTest/OpenTypeHardware/OpenEventsNoKernelFailures/6",
+            "name": "PerfEventTest/OpenTypeHardware.OpenEventsNoKernelFailures/6",
             "audit_expectations": [
                 "avc:  denied  { kernel } for scontext=test_u:test_r:test_perf_event_no_kernel_t:s0 tcontext=test_u:test_r:test_perf_event_no_kernel_t:s0 tclass=perf_event permissive=0"
             ]
         },
         {
-            "name": "PerfEventTest/OpenTypeHardware/OpenEventsNoKernelFailures/7",
+            "name": "PerfEventTest/OpenTypeHardware.OpenEventsNoKernelFailures/7",
             "audit_expectations": [
                 "avc:  denied  { kernel } for scontext=test_u:test_r:test_perf_event_no_kernel_t:s0 tcontext=test_u:test_r:test_perf_event_no_kernel_t:s0 tclass=perf_event permissive=0"
             ]
         },
         {
-            "name": "PerfEventTest/OpenTypeHardware/OpenEventsNoKernelFailures/8",
+            "name": "PerfEventTest/OpenTypeHardware.OpenEventsNoKernelFailures/8",
             "audit_expectations": [
                 "avc:  denied  { kernel } for scontext=test_u:test_r:test_perf_event_no_kernel_t:s0 tcontext=test_u:test_r:test_perf_event_no_kernel_t:s0 tclass=perf_event permissive=0"
             ]
         },
         {
-            "name": "PerfEventTest/OpenTypeHardware/OpenEventsNoKernelFailures/9",
+            "name": "PerfEventTest/OpenTypeHardware.OpenEventsNoKernelFailures/9",
             "audit_expectations": [
                 "avc:  denied  { kernel } for scontext=test_u:test_r:test_perf_event_no_kernel_t:s0 tcontext=test_u:test_r:test_perf_event_no_kernel_t:s0 tclass=perf_event permissive=0"
             ]
         },
         {
-            "name": "PerfEventTest/OpenTypeSoftware/OpenEventsNoKernelFails/0",
+            "name": "PerfEventTest/OpenTypeSoftware.OpenEventsNoKernelFails/0",
             "audit_expectations": [
                 "avc:  denied  { kernel } for scontext=test_u:test_r:test_perf_event_no_kernel_t:s0 tcontext=test_u:test_r:test_perf_event_no_kernel_t:s0 tclass=perf_event permissive=0"
             ]
         },
         {
-            "name": "PerfEventTest/OpenTypeSoftware/OpenEventsNoKernelFails/1",
+            "name": "PerfEventTest/OpenTypeSoftware.OpenEventsNoKernelFails/1",
             "audit_expectations": [
                 "avc:  denied  { kernel } for scontext=test_u:test_r:test_perf_event_no_kernel_t:s0 tcontext=test_u:test_r:test_perf_event_no_kernel_t:s0 tclass=perf_event permissive=0"
             ]
         },
         {
-            "name": "PerfEventTest/OpenTypeSoftware/OpenEventsNoKernelFails/10",
+            "name": "PerfEventTest/OpenTypeSoftware.OpenEventsNoKernelFails/10",
             "audit_expectations": [
                 "avc:  denied  { kernel } for scontext=test_u:test_r:test_perf_event_no_kernel_t:s0 tcontext=test_u:test_r:test_perf_event_no_kernel_t:s0 tclass=perf_event permissive=0"
             ]
         },
         {
-            "name": "PerfEventTest/OpenTypeSoftware/OpenEventsNoKernelFails/11",
+            "name": "PerfEventTest/OpenTypeSoftware.OpenEventsNoKernelFails/11",
             "audit_expectations": [
                 "avc:  denied  { kernel } for scontext=test_u:test_r:test_perf_event_no_kernel_t:s0 tcontext=test_u:test_r:test_perf_event_no_kernel_t:s0 tclass=perf_event permissive=0"
             ]
         },
         {
-            "name": "PerfEventTest/OpenTypeSoftware/OpenEventsNoKernelFails/12",
+            "name": "PerfEventTest/OpenTypeSoftware.OpenEventsNoKernelFails/12",
             "audit_expectations": [
                 "avc:  denied  { kernel } for scontext=test_u:test_r:test_perf_event_no_kernel_t:s0 tcontext=test_u:test_r:test_perf_event_no_kernel_t:s0 tclass=perf_event permissive=0"
             ]
         },
         {
-            "name": "PerfEventTest/OpenTypeSoftware/OpenEventsNoKernelFails/13",
+            "name": "PerfEventTest/OpenTypeSoftware.OpenEventsNoKernelFails/13",
             "audit_expectations": [
                 "avc:  denied  { kernel } for scontext=test_u:test_r:test_perf_event_no_kernel_t:s0 tcontext=test_u:test_r:test_perf_event_no_kernel_t:s0 tclass=perf_event permissive=0"
             ]
         },
         {
-            "name": "PerfEventTest/OpenTypeSoftware/OpenEventsNoKernelFails/14",
+            "name": "PerfEventTest/OpenTypeSoftware.OpenEventsNoKernelFails/14",
             "audit_expectations": [
                 "avc:  denied  { kernel } for scontext=test_u:test_r:test_perf_event_no_kernel_t:s0 tcontext=test_u:test_r:test_perf_event_no_kernel_t:s0 tclass=perf_event permissive=0"
             ]
         },
         {
-            "name": "PerfEventTest/OpenTypeSoftware/OpenEventsNoKernelFails/15",
+            "name": "PerfEventTest/OpenTypeSoftware.OpenEventsNoKernelFails/15",
             "audit_expectations": [
                 "avc:  denied  { kernel } for scontext=test_u:test_r:test_perf_event_no_kernel_t:s0 tcontext=test_u:test_r:test_perf_event_no_kernel_t:s0 tclass=perf_event permissive=0"
             ]
         },
         {
-            "name": "PerfEventTest/OpenTypeSoftware/OpenEventsNoKernelFails/16",
+            "name": "PerfEventTest/OpenTypeSoftware.OpenEventsNoKernelFails/16",
             "audit_expectations": [
                 "avc:  denied  { kernel } for scontext=test_u:test_r:test_perf_event_no_kernel_t:s0 tcontext=test_u:test_r:test_perf_event_no_kernel_t:s0 tclass=perf_event permissive=0"
             ]
         },
         {
-            "name": "PerfEventTest/OpenTypeSoftware/OpenEventsNoKernelFails/17",
+            "name": "PerfEventTest/OpenTypeSoftware.OpenEventsNoKernelFails/17",
             "audit_expectations": [
                 "avc:  denied  { kernel } for scontext=test_u:test_r:test_perf_event_no_kernel_t:s0 tcontext=test_u:test_r:test_perf_event_no_kernel_t:s0 tclass=perf_event permissive=0"
             ]
         },
         {
-            "name": "PerfEventTest/OpenTypeSoftware/OpenEventsNoKernelFails/18",
+            "name": "PerfEventTest/OpenTypeSoftware.OpenEventsNoKernelFails/18",
             "audit_expectations": [
                 "avc:  denied  { kernel } for scontext=test_u:test_r:test_perf_event_no_kernel_t:s0 tcontext=test_u:test_r:test_perf_event_no_kernel_t:s0 tclass=perf_event permissive=0"
             ]
         },
         {
-            "name": "PerfEventTest/OpenTypeSoftware/OpenEventsNoKernelFails/19",
+            "name": "PerfEventTest/OpenTypeSoftware.OpenEventsNoKernelFails/19",
             "audit_expectations": [
                 "avc:  denied  { kernel } for scontext=test_u:test_r:test_perf_event_no_kernel_t:s0 tcontext=test_u:test_r:test_perf_event_no_kernel_t:s0 tclass=perf_event permissive=0"
             ]
         },
         {
-            "name": "PerfEventTest/OpenTypeSoftware/OpenEventsNoKernelFails/2",
+            "name": "PerfEventTest/OpenTypeSoftware.OpenEventsNoKernelFails/2",
             "audit_expectations": [
                 "avc:  denied  { kernel } for scontext=test_u:test_r:test_perf_event_no_kernel_t:s0 tcontext=test_u:test_r:test_perf_event_no_kernel_t:s0 tclass=perf_event permissive=0"
             ]
         },
         {
-            "name": "PerfEventTest/OpenTypeSoftware/OpenEventsNoKernelFails/20",
+            "name": "PerfEventTest/OpenTypeSoftware.OpenEventsNoKernelFails/20",
             "audit_expectations": [
                 "avc:  denied  { kernel } for scontext=test_u:test_r:test_perf_event_no_kernel_t:s0 tcontext=test_u:test_r:test_perf_event_no_kernel_t:s0 tclass=perf_event permissive=0"
             ]
         },
         {
-            "name": "PerfEventTest/OpenTypeSoftware/OpenEventsNoKernelFails/21",
+            "name": "PerfEventTest/OpenTypeSoftware.OpenEventsNoKernelFails/21",
             "audit_expectations": [
                 "avc:  denied  { kernel } for scontext=test_u:test_r:test_perf_event_no_kernel_t:s0 tcontext=test_u:test_r:test_perf_event_no_kernel_t:s0 tclass=perf_event permissive=0"
             ]
         },
         {
-            "name": "PerfEventTest/OpenTypeSoftware/OpenEventsNoKernelFails/3",
+            "name": "PerfEventTest/OpenTypeSoftware.OpenEventsNoKernelFails/3",
             "audit_expectations": [
                 "avc:  denied  { kernel } for scontext=test_u:test_r:test_perf_event_no_kernel_t:s0 tcontext=test_u:test_r:test_perf_event_no_kernel_t:s0 tclass=perf_event permissive=0"
             ]
         },
         {
-            "name": "PerfEventTest/OpenTypeSoftware/OpenEventsNoKernelFails/4",
+            "name": "PerfEventTest/OpenTypeSoftware.OpenEventsNoKernelFails/4",
             "audit_expectations": [
                 "avc:  denied  { kernel } for scontext=test_u:test_r:test_perf_event_no_kernel_t:s0 tcontext=test_u:test_r:test_perf_event_no_kernel_t:s0 tclass=perf_event permissive=0"
             ]
         },
         {
-            "name": "PerfEventTest/OpenTypeSoftware/OpenEventsNoKernelFails/5",
+            "name": "PerfEventTest/OpenTypeSoftware.OpenEventsNoKernelFails/5",
             "audit_expectations": [
                 "avc:  denied  { kernel } for scontext=test_u:test_r:test_perf_event_no_kernel_t:s0 tcontext=test_u:test_r:test_perf_event_no_kernel_t:s0 tclass=perf_event permissive=0"
             ]
         },
         {
-            "name": "PerfEventTest/OpenTypeSoftware/OpenEventsNoKernelFails/6",
+            "name": "PerfEventTest/OpenTypeSoftware.OpenEventsNoKernelFails/6",
             "audit_expectations": [
                 "avc:  denied  { kernel } for scontext=test_u:test_r:test_perf_event_no_kernel_t:s0 tcontext=test_u:test_r:test_perf_event_no_kernel_t:s0 tclass=perf_event permissive=0"
             ]
         },
         {
-            "name": "PerfEventTest/OpenTypeSoftware/OpenEventsNoKernelFails/7",
+            "name": "PerfEventTest/OpenTypeSoftware.OpenEventsNoKernelFails/7",
             "audit_expectations": [
                 "avc:  denied  { kernel } for scontext=test_u:test_r:test_perf_event_no_kernel_t:s0 tcontext=test_u:test_r:test_perf_event_no_kernel_t:s0 tclass=perf_event permissive=0"
             ]
         },
         {
-            "name": "PerfEventTest/OpenTypeSoftware/OpenEventsNoKernelFails/8",
+            "name": "PerfEventTest/OpenTypeSoftware.OpenEventsNoKernelFails/8",
             "audit_expectations": [
                 "avc:  denied  { kernel } for scontext=test_u:test_r:test_perf_event_no_kernel_t:s0 tcontext=test_u:test_r:test_perf_event_no_kernel_t:s0 tclass=perf_event permissive=0"
             ]
         },
         {
-            "name": "PerfEventTest/OpenTypeSoftware/OpenEventsNoKernelFails/9",
+            "name": "PerfEventTest/OpenTypeSoftware.OpenEventsNoKernelFails/9",
             "audit_expectations": [
                 "avc:  denied  { kernel } for scontext=test_u:test_r:test_perf_event_no_kernel_t:s0 tcontext=test_u:test_r:test_perf_event_no_kernel_t:s0 tclass=perf_event permissive=0"
             ]
         },
         {
-            "name": "PerfEventTest/OpenTypeSoftware/OpenEventsNoKernelFailures/0",
+            "name": "PerfEventTest/OpenTypeSoftware.OpenEventsNoKernelFailures/0",
             "audit_expectations": [
                 "avc:  denied  { kernel } for scontext=test_u:test_r:test_perf_event_no_kernel_t:s0 tcontext=test_u:test_r:test_perf_event_no_kernel_t:s0 tclass=perf_event permissive=0"
             ]
         },
         {
-            "name": "PerfEventTest/OpenTypeSoftware/OpenEventsNoKernelFailures/1",
+            "name": "PerfEventTest/OpenTypeSoftware.OpenEventsNoKernelFailures/1",
             "audit_expectations": [
                 "avc:  denied  { kernel } for scontext=test_u:test_r:test_perf_event_no_kernel_t:s0 tcontext=test_u:test_r:test_perf_event_no_kernel_t:s0 tclass=perf_event permissive=0"
             ]
         },
         {
-            "name": "PerfEventTest/OpenTypeSoftware/OpenEventsNoKernelFailures/10",
+            "name": "PerfEventTest/OpenTypeSoftware.OpenEventsNoKernelFailures/10",
             "audit_expectations": [
                 "avc:  denied  { kernel } for scontext=test_u:test_r:test_perf_event_no_kernel_t:s0 tcontext=test_u:test_r:test_perf_event_no_kernel_t:s0 tclass=perf_event permissive=0"
             ]
         },
         {
-            "name": "PerfEventTest/OpenTypeSoftware/OpenEventsNoKernelFailures/11",
+            "name": "PerfEventTest/OpenTypeSoftware.OpenEventsNoKernelFailures/11",
             "audit_expectations": [
                 "avc:  denied  { kernel } for scontext=test_u:test_r:test_perf_event_no_kernel_t:s0 tcontext=test_u:test_r:test_perf_event_no_kernel_t:s0 tclass=perf_event permissive=0"
             ]
         },
         {
-            "name": "PerfEventTest/OpenTypeSoftware/OpenEventsNoKernelFailures/12",
+            "name": "PerfEventTest/OpenTypeSoftware.OpenEventsNoKernelFailures/12",
             "audit_expectations": [
                 "avc:  denied  { kernel } for scontext=test_u:test_r:test_perf_event_no_kernel_t:s0 tcontext=test_u:test_r:test_perf_event_no_kernel_t:s0 tclass=perf_event permissive=0"
             ]
         },
         {
-            "name": "PerfEventTest/OpenTypeSoftware/OpenEventsNoKernelFailures/13",
+            "name": "PerfEventTest/OpenTypeSoftware.OpenEventsNoKernelFailures/13",
             "audit_expectations": [
                 "avc:  denied  { kernel } for scontext=test_u:test_r:test_perf_event_no_kernel_t:s0 tcontext=test_u:test_r:test_perf_event_no_kernel_t:s0 tclass=perf_event permissive=0"
             ]
         },
         {
-            "name": "PerfEventTest/OpenTypeSoftware/OpenEventsNoKernelFailures/14",
+            "name": "PerfEventTest/OpenTypeSoftware.OpenEventsNoKernelFailures/14",
             "audit_expectations": [
                 "avc:  denied  { kernel } for scontext=test_u:test_r:test_perf_event_no_kernel_t:s0 tcontext=test_u:test_r:test_perf_event_no_kernel_t:s0 tclass=perf_event permissive=0"
             ]
         },
         {
-            "name": "PerfEventTest/OpenTypeSoftware/OpenEventsNoKernelFailures/15",
+            "name": "PerfEventTest/OpenTypeSoftware.OpenEventsNoKernelFailures/15",
             "audit_expectations": [
                 "avc:  denied  { kernel } for scontext=test_u:test_r:test_perf_event_no_kernel_t:s0 tcontext=test_u:test_r:test_perf_event_no_kernel_t:s0 tclass=perf_event permissive=0"
             ]
         },
         {
-            "name": "PerfEventTest/OpenTypeSoftware/OpenEventsNoKernelFailures/16",
+            "name": "PerfEventTest/OpenTypeSoftware.OpenEventsNoKernelFailures/16",
             "audit_expectations": [
                 "avc:  denied  { kernel } for scontext=test_u:test_r:test_perf_event_no_kernel_t:s0 tcontext=test_u:test_r:test_perf_event_no_kernel_t:s0 tclass=perf_event permissive=0"
             ]
         },
         {
-            "name": "PerfEventTest/OpenTypeSoftware/OpenEventsNoKernelFailures/17",
+            "name": "PerfEventTest/OpenTypeSoftware.OpenEventsNoKernelFailures/17",
             "audit_expectations": [
                 "avc:  denied  { kernel } for scontext=test_u:test_r:test_perf_event_no_kernel_t:s0 tcontext=test_u:test_r:test_perf_event_no_kernel_t:s0 tclass=perf_event permissive=0"
             ]
         },
         {
-            "name": "PerfEventTest/OpenTypeSoftware/OpenEventsNoKernelFailures/18",
+            "name": "PerfEventTest/OpenTypeSoftware.OpenEventsNoKernelFailures/18",
             "audit_expectations": [
                 "avc:  denied  { kernel } for scontext=test_u:test_r:test_perf_event_no_kernel_t:s0 tcontext=test_u:test_r:test_perf_event_no_kernel_t:s0 tclass=perf_event permissive=0"
             ]
         },
         {
-            "name": "PerfEventTest/OpenTypeSoftware/OpenEventsNoKernelFailures/19",
+            "name": "PerfEventTest/OpenTypeSoftware.OpenEventsNoKernelFailures/19",
             "audit_expectations": [
                 "avc:  denied  { kernel } for scontext=test_u:test_r:test_perf_event_no_kernel_t:s0 tcontext=test_u:test_r:test_perf_event_no_kernel_t:s0 tclass=perf_event permissive=0"
             ]
         },
         {
-            "name": "PerfEventTest/OpenTypeSoftware/OpenEventsNoKernelFailures/2",
+            "name": "PerfEventTest/OpenTypeSoftware.OpenEventsNoKernelFailures/2",
             "audit_expectations": [
                 "avc:  denied  { kernel } for scontext=test_u:test_r:test_perf_event_no_kernel_t:s0 tcontext=test_u:test_r:test_perf_event_no_kernel_t:s0 tclass=perf_event permissive=0"
             ]
         },
         {
-            "name": "PerfEventTest/OpenTypeSoftware/OpenEventsNoKernelFailures/20",
+            "name": "PerfEventTest/OpenTypeSoftware.OpenEventsNoKernelFailures/20",
             "audit_expectations": [
                 "avc:  denied  { kernel } for scontext=test_u:test_r:test_perf_event_no_kernel_t:s0 tcontext=test_u:test_r:test_perf_event_no_kernel_t:s0 tclass=perf_event permissive=0"
             ]
         },
         {
-            "name": "PerfEventTest/OpenTypeSoftware/OpenEventsNoKernelFailures/21",
+            "name": "PerfEventTest/OpenTypeSoftware.OpenEventsNoKernelFailures/21",
             "audit_expectations": [
                 "avc:  denied  { kernel } for scontext=test_u:test_r:test_perf_event_no_kernel_t:s0 tcontext=test_u:test_r:test_perf_event_no_kernel_t:s0 tclass=perf_event permissive=0"
             ]
         },
         {
-            "name": "PerfEventTest/OpenTypeSoftware/OpenEventsNoKernelFailures/3",
+            "name": "PerfEventTest/OpenTypeSoftware.OpenEventsNoKernelFailures/3",
             "audit_expectations": [
                 "avc:  denied  { kernel } for scontext=test_u:test_r:test_perf_event_no_kernel_t:s0 tcontext=test_u:test_r:test_perf_event_no_kernel_t:s0 tclass=perf_event permissive=0"
             ]
         },
         {
-            "name": "PerfEventTest/OpenTypeSoftware/OpenEventsNoKernelFailures/4",
+            "name": "PerfEventTest/OpenTypeSoftware.OpenEventsNoKernelFailures/4",
             "audit_expectations": [
                 "avc:  denied  { kernel } for scontext=test_u:test_r:test_perf_event_no_kernel_t:s0 tcontext=test_u:test_r:test_perf_event_no_kernel_t:s0 tclass=perf_event permissive=0"
             ]
         },
         {
-            "name": "PerfEventTest/OpenTypeSoftware/OpenEventsNoKernelFailures/5",
+            "name": "PerfEventTest/OpenTypeSoftware.OpenEventsNoKernelFailures/5",
             "audit_expectations": [
                 "avc:  denied  { kernel } for scontext=test_u:test_r:test_perf_event_no_kernel_t:s0 tcontext=test_u:test_r:test_perf_event_no_kernel_t:s0 tclass=perf_event permissive=0"
             ]
         },
         {
-            "name": "PerfEventTest/OpenTypeSoftware/OpenEventsNoKernelFailures/6",
+            "name": "PerfEventTest/OpenTypeSoftware.OpenEventsNoKernelFailures/6",
             "audit_expectations": [
                 "avc:  denied  { kernel } for scontext=test_u:test_r:test_perf_event_no_kernel_t:s0 tcontext=test_u:test_r:test_perf_event_no_kernel_t:s0 tclass=perf_event permissive=0"
             ]
         },
         {
-            "name": "PerfEventTest/OpenTypeSoftware/OpenEventsNoKernelFailures/7",
+            "name": "PerfEventTest/OpenTypeSoftware.OpenEventsNoKernelFailures/7",
             "audit_expectations": [
                 "avc:  denied  { kernel } for scontext=test_u:test_r:test_perf_event_no_kernel_t:s0 tcontext=test_u:test_r:test_perf_event_no_kernel_t:s0 tclass=perf_event permissive=0"
             ]
         },
         {
-            "name": "PerfEventTest/OpenTypeSoftware/OpenEventsNoKernelFailures/8",
+            "name": "PerfEventTest/OpenTypeSoftware.OpenEventsNoKernelFailures/8",
             "audit_expectations": [
                 "avc:  denied  { kernel } for scontext=test_u:test_r:test_perf_event_no_kernel_t:s0 tcontext=test_u:test_r:test_perf_event_no_kernel_t:s0 tclass=perf_event permissive=0"
             ]
         },
         {
-            "name": "PerfEventTest/OpenTypeSoftware/OpenEventsNoKernelFailures/9",
+            "name": "PerfEventTest/OpenTypeSoftware.OpenEventsNoKernelFailures/9",
             "audit_expectations": [
                 "avc:  denied  { kernel } for scontext=test_u:test_r:test_perf_event_no_kernel_t:s0 tcontext=test_u:test_r:test_perf_event_no_kernel_t:s0 tclass=perf_event permissive=0"
             ]
         },
         {
-            "name": "PerfEventTest/PerfEventFailingCpuEvents/PerfEventOpenFailsOnMissingPermissions/0",
+            "name": "PerfEventTest/PerfEventFailingCpuEvents.PerfEventOpenFailsOnMissingPermissions/0",
             "audit_expectations": [
                 "avc:  denied  { open } for scontext=test_u:test_r:test_perf_event_no_open_t:s0 tcontext=test_u:test_r:test_perf_event_no_open_t:s0 tclass=perf_event permissive=0"
             ]
         },
         {
-            "name": "PerfEventTest/PerfEventFailingCpuEvents/PerfEventOpenFailsOnMissingPermissions/1",
+            "name": "PerfEventTest/PerfEventFailingCpuEvents.PerfEventOpenFailsOnMissingPermissions/1",
             "audit_expectations": [
                 "avc:  denied  { perfmon } for capability=38  scontext=test_u:test_r:test_perf_event_no_cpu_t:s0 tcontext=test_u:test_r:test_perf_event_no_cpu_t:s0 tclass=capability2 permissive=0",
                 "avc:  denied  { sys_admin } for capability=21  scontext=test_u:test_r:test_perf_event_no_cpu_t:s0 tcontext=test_u:test_r:test_perf_event_no_cpu_t:s0 tclass=capability permissive=0"
             ]
         },
         {
-            "name": "PerfEventTest/PerfEventFailingKernelEvents/PerfEventOpenFailsOnMissingPermissions/0",
+            "name": "PerfEventTest/PerfEventFailingKernelEvents.PerfEventOpenFailsOnMissingPermissions/0",
             "audit_expectations": [
                 "avc:  denied  { open } for scontext=test_u:test_r:test_perf_event_no_open_t:s0 tcontext=test_u:test_r:test_perf_event_no_open_t:s0 tclass=perf_event permissive=0"
             ]
         },
         {
-            "name": "PerfEventTest/PerfEventFailingKernelEvents/PerfEventOpenFailsOnMissingPermissions/1",
+            "name": "PerfEventTest/PerfEventFailingKernelEvents.PerfEventOpenFailsOnMissingPermissions/1",
             "audit_expectations": [
                 "avc:  denied  { perfmon } for capability=38  scontext=test_u:test_r:test_perf_event_no_kernel_t:s0 tcontext=test_u:test_r:test_perf_event_no_kernel_t:s0 tclass=capability2 permissive=0",
                 "avc:  denied  { sys_admin } for capability=21  scontext=test_u:test_r:test_perf_event_no_kernel_t:s0 tcontext=test_u:test_r:test_perf_event_no_kernel_t:s0 tclass=capability permissive=0"
             ]
         },
         {
-            "name": "PerfEventTest/PerfEventFailingKernelEvents/PerfEventOpenFailsOnMissingPermissions/2",
+            "name": "PerfEventTest/PerfEventFailingKernelEvents.PerfEventOpenFailsOnMissingPermissions/2",
             "audit_expectations": [
                 "avc:  denied  { perfmon } for capability=38  scontext=test_u:test_r:test_perf_event_no_tracepoint_t:s0 tcontext=test_u:test_r:test_perf_event_no_tracepoint_t:s0 tclass=capability2 permissive=0",
                 "avc:  denied  { sys_admin } for capability=21  scontext=test_u:test_r:test_perf_event_no_tracepoint_t:s0 tcontext=test_u:test_r:test_perf_event_no_tracepoint_t:s0 tclass=capability permissive=0"
             ]
         },
         {
-            "name": "PerfEventTest/PerfEventOpenAllTasksFailsOnUnauthorisedCurrentTask",
+            "name": "PerfEventTest.PerfEventOpenAllTasksFailsOnUnauthorisedCurrentTask",
             "audit_expectations": [
                 "avc:  denied  { perfmon } for capability=38  scontext=test_u:test_r:test_perf_not_admin_t:s0 tcontext=test_u:test_r:test_perf_not_admin_t:s0 tclass=capability2 permissive=0",
                 "avc:  denied  { sys_admin } for capability=21  scontext=test_u:test_r:test_perf_not_admin_t:s0 tcontext=test_u:test_r:test_perf_not_admin_t:s0 tclass=capability permissive=0"
             ]
         },
         {
-            "name": "PerfEventTest/PerfEventOpenCpuEventsOnCurrentTask",
+            "name": "PerfEventTest.PerfEventOpenCpuEventsOnCurrentTask",
             "audit_expectations": [
                 "avc:  denied  { perfmon } for capability=38  scontext=test_u:test_r:test_perf_event_all_permissions_t:s0 tcontext=test_u:test_r:test_perf_event_all_permissions_t:s0 tclass=capability2 permissive=0",
                 "avc:  denied  { perfmon } for capability=38  scontext=test_u:test_r:test_perf_event_all_permissions_t:s0 tcontext=test_u:test_r:test_perf_event_all_permissions_t:s0 tclass=capability2 permissive=0",
@@ -1408,27 +1408,27 @@
             ]
         },
         {
-            "name": "PerfEventTest/PerfEventOpenKernelEventsOnCurrentTask",
+            "name": "PerfEventTest.PerfEventOpenKernelEventsOnCurrentTask",
             "audit_expectations": [
                 "avc:  denied  { perfmon } for capability=38  scontext=test_u:test_r:test_perf_event_all_permissions_t:s0 tcontext=test_u:test_r:test_perf_event_all_permissions_t:s0 tclass=capability2 permissive=0",
                 "avc:  denied  { perfmon } for capability=38  scontext=test_u:test_r:test_perf_event_all_permissions_t:s0 tcontext=test_u:test_r:test_perf_event_all_permissions_t:s0 tclass=capability2 permissive=0"
             ]
         },
         {
-            "name": "PerfEventTest/ReadEventsFromSameProcessNoRead",
+            "name": "PerfEventTest.ReadEventsFromSameProcessNoRead",
             "audit_expectations": [
                 "avc:  denied  { read } for scontext=test_u:test_r:test_perf_event_no_read_t:s0 tcontext=test_u:test_r:test_perf_event_no_read_t:s0 tclass=perf_event permissive=0"
             ]
         },
         {
-            "name": "PerfEventTest/ReadEventsNoReadPermission",
+            "name": "PerfEventTest.ReadEventsNoReadPermission",
             "audit_expectations": [
                 "avc:  denied  { read } for scontext=test_u:test_r:test_perf_event_no_read_t:s0 tcontext=test_u:test_r:test_perf_event_no_read_t:s0 tclass=perf_event permissive=0",
                 "avc:  denied  { read } for scontext=test_u:test_r:test_perf_event_no_read_t:s0 tcontext=test_u:test_r:test_perf_event_no_read_t:s0 tclass=perf_event permissive=0"
             ]
         },
         {
-            "name": "PerfEventTest/WriteEventsNoWritePermission",
+            "name": "PerfEventTest.WriteEventsNoWritePermission",
             "audit_expectations": [
                 "avc:  denied  { write } for scontext=test_u:test_r:test_perf_event_no_write_t:s0 tcontext=test_u:test_r:test_perf_event_no_write_t:s0 tclass=perf_event permissive=0",
                 "avc:  denied  { write } for scontext=test_u:test_r:test_perf_event_no_write_t:s0 tcontext=test_u:test_r:test_perf_event_no_write_t:s0 tclass=perf_event permissive=0",
@@ -1436,26 +1436,26 @@
             ]
         },
         {
-            "name": "PipeTest/LabeledFromTask",
+            "name": "PipeTest.LabeledFromTask",
             "audit_expectations": [
                 "avc:  denied  { getattr } for name=\"\" dev=\"pipefs\" ino=276 scontext=test_u:test_r:pipe_test_t:s0 tcontext=test_u:test_r:pipe_test_t:s0 tclass=fifo_file permissive=1"
             ]
         },
         {
-            "name": "ProcAttrTest/ZombieProcPid",
+            "name": "ProcAttrTest.ZombieProcPid",
             "audit_expectations": [
                 "avc:  denied  { dyntransition } for scontext=system_u:unconfined_r:unconfined_t:s0 tcontext=unlabeled_u:unlabeled_r:unlabeled_t:s0 tclass=process permissive=1"
             ]
         },
         {
-            "name": "PtraceTest/PtraceAttachAllowed",
+            "name": "PtraceTest.PtraceAttachAllowed",
             "audit_expectations": [
                 "avc:  denied  { rlimitinh } for scontext=test_u:test_r:test_ptrace_parent_allow_t:s0 tcontext=test_u:test_r:test_ptrace_child_t:s0 tclass=process permissive=0",
                 "avc:  denied  { siginh } for scontext=test_u:test_r:test_ptrace_parent_allow_t:s0 tcontext=test_u:test_r:test_ptrace_child_t:s0 tclass=process permissive=0"
             ]
         },
         {
-            "name": "PtraceTest/PtraceAttachDenied",
+            "name": "PtraceTest.PtraceAttachDenied",
             "audit_expectations": [
                 "avc:  denied  { rlimitinh } for scontext=test_u:test_r:test_ptrace_parent_deny_t:s0 tcontext=test_u:test_r:test_ptrace_child_t:s0 tclass=process permissive=0",
                 "avc:  denied  { siginh } for scontext=test_u:test_r:test_ptrace_parent_deny_t:s0 tcontext=test_u:test_r:test_ptrace_child_t:s0 tclass=process permissive=0",
@@ -1463,27 +1463,27 @@
             ]
         },
         {
-            "name": "PtraceTest/PtraceAttachThenExecAllowed",
+            "name": "PtraceTest.PtraceAttachThenExecAllowed",
             "audit_expectations": [
                 "avc:  denied  { rlimitinh } for scontext=test_u:test_r:test_ptrace_parent_allow_t:s0 tcontext=test_u:test_r:test_ptrace_child_t:s0 tclass=process permissive=0",
                 "avc:  denied  { siginh } for scontext=test_u:test_r:test_ptrace_parent_allow_t:s0 tcontext=test_u:test_r:test_ptrace_child_t:s0 tclass=process permissive=0"
             ]
         },
         {
-            "name": "PtraceTest/PtraceAttachThenExecDenied",
+            "name": "PtraceTest.PtraceAttachThenExecDenied",
             "audit_expectations": [
                 "avc:  denied  { ptrace } for scontext=test_u:test_r:test_ptrace_parent_deny_t:s0 tcontext=test_u:test_r:test_ptrace_child_t:s0 tclass=process permissive=0"
             ]
         },
         {
-            "name": "PtraceTest/PtraceTraceMeAllowed",
+            "name": "PtraceTest.PtraceTraceMeAllowed",
             "audit_expectations": [
                 "avc:  denied  { rlimitinh } for scontext=test_u:test_r:test_ptrace_parent_allow_t:s0 tcontext=test_u:test_r:test_ptrace_child_t:s0 tclass=process permissive=0",
                 "avc:  denied  { siginh } for scontext=test_u:test_r:test_ptrace_parent_allow_t:s0 tcontext=test_u:test_r:test_ptrace_child_t:s0 tclass=process permissive=0"
             ]
         },
         {
-            "name": "PtraceTest/PtraceTraceMeDenied",
+            "name": "PtraceTest.PtraceTraceMeDenied",
             "audit_expectations": [
                 "avc:  denied  { rlimitinh } for scontext=test_u:test_r:test_ptrace_parent_deny_t:s0 tcontext=test_u:test_r:test_ptrace_child_t:s0 tclass=process permissive=0",
                 "avc:  denied  { siginh } for scontext=test_u:test_r:test_ptrace_parent_deny_t:s0 tcontext=test_u:test_r:test_ptrace_child_t:s0 tclass=process permissive=0",
@@ -1491,19 +1491,19 @@
             ]
         },
         {
-            "name": "SeLinuxFsNull/HasPolicyDevnullContext",
+            "name": "SeLinuxFsNull.HasPolicyDevnullContext",
             "audit_expectations": [
                 "avc:  denied  { getattr } for name=\"null\" dev=\"selinuxfs\" ino=23 scontext=system_u:unconfined_r:unconfined_t:s0 tcontext=system_u:object_r:devnull_t:s0 tclass=chr_file permissive=1"
             ]
         },
         {
-            "name": "SocketPeerSecTest/UnixDomainDatagram",
+            "name": "SocketPeerSecTest.UnixDomainDatagram",
             "audit_expectations": [
                 "avc:  denied  { getopt } for scontext=test_u:test_r:socket_test_t:s0 tcontext=test_u:test_r:unix_dgram_socket_test_t:s0 tclass=unix_dgram_socket permissive=1"
             ]
         },
         {
-            "name": "SocketPeerSecTest/UnixDomainStream",
+            "name": "SocketPeerSecTest.UnixDomainStream",
             "audit_expectations": [
                 "avc:  denied  { create } for scontext=test_u:test_r:socket_test_t:s0 tcontext=test_u:test_r:socket_test_peer_t:s0 tclass=unix_stream_socket permissive=1",
                 "avc:  denied  { getattr } for name=\"UNIX-STREAM\" dev=\"sockfs\" ino=342 scontext=test_u:test_r:socket_test_t:s0 tcontext=test_u:test_r:socket_test_peer_t:s0 tclass=unix_stream_socket permissive=1",
@@ -1522,7 +1522,7 @@
             ]
         },
         {
-            "name": "SocketTest/AcceptAllowed",
+            "name": "SocketTest.AcceptAllowed",
             "audit_expectations": [
                 "avc:  denied  { create } for scontext=test_u:test_r:socket_accept_only_test_t:s0 tcontext=test_u:test_r:socket_accept_only_test_t:s0 tclass=netlink_audit_socket permissive=1",
                 "avc:  denied  { write } for scontext=test_u:test_r:socket_accept_only_test_t:s0 tcontext=test_u:test_r:socket_accept_only_test_t:s0 tclass=netlink_audit_socket permissive=1",
@@ -1531,7 +1531,7 @@
             ]
         },
         {
-            "name": "SocketTest/AcceptDenied",
+            "name": "SocketTest.AcceptDenied",
             "audit_expectations": [
                 "avc:  denied  { accept } for path=\"/tmp/accept_test_no\" scontext=test_u:test_r:socket_accept_test_t:s0 tcontext=test_u:test_r:socket_accept_no_t:s0 tclass=unix_stream_socket permissive=0",
                 "avc:  denied  { create } for scontext=test_u:test_r:socket_accept_test_t:s0 tcontext=test_u:test_r:socket_accept_test_t:s0 tclass=netlink_audit_socket permissive=1",
@@ -1541,7 +1541,7 @@
             ]
         },
         {
-            "name": "SocketTest/GetSocknameAndPeername",
+            "name": "SocketTest.GetSocknameAndPeername",
             "audit_expectations": [
                 "avc:  denied  { getattr } for scontext=test_u:test_r:socket_getname_test_t:s0 tcontext=test_u:test_r:socket_getname_no_t:s0 tclass=unix_stream_socket permissive=0",
                 "avc:  denied  { getattr } for scontext=test_u:test_r:socket_getname_test_t:s0 tcontext=test_u:test_r:socket_getname_no_t:s0 tclass=unix_stream_socket permissive=0",
@@ -1552,7 +1552,7 @@
             ]
         },
         {
-            "name": "SocketTest/ListenDenied",
+            "name": "SocketTest.ListenDenied",
             "audit_expectations": [
                 "avc:  denied  { listen } for lport=60335 scontext=test_u:test_r:socket_listen_test_t:s0 tcontext=test_u:test_r:socket_listen_no_t:s0 tclass=tcp_socket permissive=0",
                 "avc:  denied  { create } for scontext=test_u:test_r:socket_listen_test_t:s0 tcontext=test_u:test_r:socket_listen_test_t:s0 tclass=netlink_audit_socket permissive=1",
@@ -1562,7 +1562,7 @@
             ]
         },
         {
-            "name": "SocketTest/ReadAllowed",
+            "name": "SocketTest.ReadAllowed",
             "audit_expectations": [
                 "avc:  denied  { create } for scontext=test_u:test_r:socket_recvmsg_test_t:s0 tcontext=test_u:test_r:socket_recvmsg_test_t:s0 tclass=netlink_audit_socket permissive=1",
                 "avc:  denied  { write } for scontext=test_u:test_r:socket_recvmsg_test_t:s0 tcontext=test_u:test_r:socket_recvmsg_test_t:s0 tclass=netlink_audit_socket permissive=1",
@@ -1571,7 +1571,7 @@
             ]
         },
         {
-            "name": "SocketTest/ReadDenied",
+            "name": "SocketTest.ReadDenied",
             "audit_expectations": [
                 "avc:  denied  { read } for path=\"socket:[320]\" dev=\"sockfs\" ino=320 scontext=test_u:test_r:socket_recvmsg_test_t:s0 tcontext=test_u:test_r:socket_recvmsg_no_t:s0 tclass=unix_stream_socket permissive=0",
                 "avc:  denied  { create } for scontext=test_u:test_r:socket_recvmsg_test_t:s0 tcontext=test_u:test_r:socket_recvmsg_test_t:s0 tclass=netlink_audit_socket permissive=1",
@@ -1581,7 +1581,7 @@
             ]
         },
         {
-            "name": "SocketTest/RecvmsgAllowed",
+            "name": "SocketTest.RecvmsgAllowed",
             "audit_expectations": [
                 "avc:  denied  { create } for scontext=test_u:test_r:socket_recvmsg_test_t:s0 tcontext=test_u:test_r:socket_recvmsg_test_t:s0 tclass=netlink_audit_socket permissive=1",
                 "avc:  denied  { write } for scontext=test_u:test_r:socket_recvmsg_test_t:s0 tcontext=test_u:test_r:socket_recvmsg_test_t:s0 tclass=netlink_audit_socket permissive=1",
@@ -1590,7 +1590,7 @@
             ]
         },
         {
-            "name": "SocketTest/RecvmsgDenied",
+            "name": "SocketTest.RecvmsgDenied",
             "audit_expectations": [
                 "avc:  denied  { read } for scontext=test_u:test_r:socket_recvmsg_test_t:s0 tcontext=test_u:test_r:socket_recvmsg_no_t:s0 tclass=unix_stream_socket permissive=0",
                 "avc:  denied  { create } for scontext=test_u:test_r:socket_recvmsg_test_t:s0 tcontext=test_u:test_r:socket_recvmsg_test_t:s0 tclass=netlink_audit_socket permissive=1",
@@ -1600,7 +1600,7 @@
             ]
         },
         {
-            "name": "SocketTest/SendmsgAllowed",
+            "name": "SocketTest.SendmsgAllowed",
             "audit_expectations": [
                 "avc:  denied  { create } for scontext=test_u:test_r:socket_sendmsg_test_t:s0 tcontext=test_u:test_r:socket_sendmsg_test_t:s0 tclass=netlink_audit_socket permissive=1",
                 "avc:  denied  { write } for scontext=test_u:test_r:socket_sendmsg_test_t:s0 tcontext=test_u:test_r:socket_sendmsg_test_t:s0 tclass=netlink_audit_socket permissive=1",
@@ -1608,7 +1608,7 @@
             ]
         },
         {
-            "name": "SocketTest/SendmsgDenied",
+            "name": "SocketTest.SendmsgDenied",
             "audit_expectations": [
                 "avc:  denied  { write } for scontext=test_u:test_r:socket_sendmsg_test_t:s0 tcontext=test_u:test_r:socket_sendmsg_no_t:s0 tclass=unix_stream_socket permissive=0",
                 "avc:  denied  { create } for scontext=test_u:test_r:socket_sendmsg_test_t:s0 tcontext=test_u:test_r:socket_sendmsg_test_t:s0 tclass=netlink_audit_socket permissive=1",
@@ -1617,7 +1617,7 @@
             ]
         },
         {
-            "name": "SocketTest/SockFileLabelIsCorrect",
+            "name": "SocketTest.SockFileLabelIsCorrect",
             "audit_expectations": [
                 "avc:  denied  { create } for scontext=test_u:test_r:socket_test_t:s0 tcontext=test_u:test_r:socket_test_t:s0 tclass=netlink_audit_socket permissive=1",
                 "avc:  denied  { write } for scontext=test_u:test_r:socket_test_t:s0 tcontext=test_u:test_r:socket_test_t:s0 tclass=netlink_audit_socket permissive=1",
@@ -1626,7 +1626,7 @@
             ]
         },
         {
-            "name": "SocketTest/WriteAllowed",
+            "name": "SocketTest.WriteAllowed",
             "audit_expectations": [
                 "avc:  denied  { create } for scontext=test_u:test_r:socket_sendmsg_test_t:s0 tcontext=test_u:test_r:socket_sendmsg_test_t:s0 tclass=netlink_audit_socket permissive=1",
                 "avc:  denied  { write } for scontext=test_u:test_r:socket_sendmsg_test_t:s0 tcontext=test_u:test_r:socket_sendmsg_test_t:s0 tclass=netlink_audit_socket permissive=1",
@@ -1634,7 +1634,7 @@
             ]
         },
         {
-            "name": "SocketTest/WriteDenied",
+            "name": "SocketTest.WriteDenied",
             "audit_expectations": [
                 "avc:  denied  { write } for path=\"socket:[299]\" dev=\"sockfs\" ino=299 scontext=test_u:test_r:socket_sendmsg_test_t:s0 tcontext=test_u:test_r:socket_sendmsg_no_t:s0 tclass=unix_stream_socket permissive=0",
                 "avc:  denied  { create } for scontext=test_u:test_r:socket_sendmsg_test_t:s0 tcontext=test_u:test_r:socket_sendmsg_test_t:s0 tclass=netlink_audit_socket permissive=1",
@@ -1643,7 +1643,7 @@
             ]
         },
         {
-            "name": "SocketTests/SocketTest/SocketTakesProcessLabel/0",
+            "name": "SocketTests/SocketTest.SocketTakesProcessLabel/0",
             "audit_expectations": [
                 "avc:  denied  { create } for scontext=test_u:test_r:socket_test_no_trans_t:s0 tcontext=test_u:test_r:socket_test_no_trans_t:s0 tclass=netlink_audit_socket permissive=1",
                 "avc:  denied  { write } for scontext=test_u:test_r:socket_test_no_trans_t:s0 tcontext=test_u:test_r:socket_test_no_trans_t:s0 tclass=netlink_audit_socket permissive=1",
@@ -1652,13 +1652,13 @@
             ]
         },
         {
-            "name": "SocketTests/SocketTest/SocketTakesProcessLabel/3",
+            "name": "SocketTests/SocketTest.SocketTakesProcessLabel/3",
             "audit_expectations": [
                 "avc:  denied  { net_raw } for capability=13  scontext=test_u:test_r:socket_test_no_trans_t:s0 tcontext=test_u:test_r:socket_test_no_trans_t:s0 tclass=capability permissive=1"
             ]
         },
         {
-            "name": "SocketTransitionTests/SocketTransitionTest/SocketLabelingAccountsForTransitions/5",
+            "name": "SocketTransitionTests/SocketTransitionTest.SocketLabelingAccountsForTransitions/5",
             "audit_expectations": [
                 "avc:  denied  { read } for name=\"ping_group_range\" dev=\"proc\" ino=412 scontext=test_u:test_r:socket_test_t:s0 tcontext=system_u:object_r:unconfined_t:s0 tclass=file permissive=1",
                 "avc:  denied  { getattr } for path=\"/proc/sys/net/ipv4/ping_group_range\" dev=\"proc\" ino=412 scontext=test_u:test_r:socket_test_t:s0 tcontext=system_u:object_r:unconfined_t:s0 tclass=file permissive=1",
@@ -1666,25 +1666,25 @@
             ]
         },
         {
-            "name": "SocketTransitionTests/SocketTransitionTest/SocketLabelingAccountsForTransitions/6",
+            "name": "SocketTransitionTests/SocketTransitionTest.SocketLabelingAccountsForTransitions/6",
             "audit_expectations": [
                 "avc:  denied  { net_raw } for capability=13  scontext=test_u:test_r:socket_test_t:s0 tcontext=test_u:test_r:socket_test_t:s0 tclass=capability permissive=1"
             ]
         },
         {
-            "name": "SyslogTest/DevKmsgReadDenied",
+            "name": "SyslogTest.DevKmsgReadDenied",
             "audit_expectations": [
                 "avc:  denied  { syslog_read } for scontext=test_u:test_r:syslog_test_no_syslog_perm_t:s0 tcontext=system_u:unconfined_r:unconfined_t:s0 tclass=system permissive=0"
             ]
         },
         {
-            "name": "SyslogTest/ProcKmsgDenied",
+            "name": "SyslogTest.ProcKmsgDenied",
             "audit_expectations": [
                 "avc:  denied  { syslog_mod } for scontext=test_u:test_r:syslog_test_no_syslog_perm_t:s0 tcontext=system_u:unconfined_r:unconfined_t:s0 tclass=system permissive=0"
             ]
         },
         {
-            "name": "SyslogTest/ProcKmsgReadDeniedIfDroppedPermission",
+            "name": "SyslogTest.ProcKmsgReadDeniedIfDroppedPermission",
             "audit_expectations": [
                 "avc:  denied  { syslog_mod } for scontext=test_u:test_r:syslog_test_no_syslog_perm_t:s0 tcontext=system_u:unconfined_r:unconfined_t:s0 tclass=system permissive=0",
                 "avc:  denied  { syslog_mod } for scontext=test_u:test_r:syslog_test_no_syslog_perm_t:s0 tcontext=system_u:unconfined_r:unconfined_t:s0 tclass=system permissive=0",
@@ -1692,237 +1692,237 @@
             ]
         },
         {
-            "name": "SyslogTest/SyslogActionClearDenied",
+            "name": "SyslogTest.SyslogActionClearDenied",
             "audit_expectations": [
                 "avc:  denied  { syslog_mod } for scontext=test_u:test_r:syslog_test_no_syslog_perm_t:s0 tcontext=system_u:unconfined_r:unconfined_t:s0 tclass=system permissive=0"
             ]
         },
         {
-            "name": "SyslogTest/SyslogActionCloseDenied",
+            "name": "SyslogTest.SyslogActionCloseDenied",
             "audit_expectations": [
                 "avc:  denied  { syslog_mod } for scontext=test_u:test_r:syslog_test_no_syslog_perm_t:s0 tcontext=system_u:unconfined_r:unconfined_t:s0 tclass=system permissive=0"
             ]
         },
         {
-            "name": "SyslogTest/SyslogActionConsoleLevelDenied",
+            "name": "SyslogTest.SyslogActionConsoleLevelDenied",
             "audit_expectations": [
                 "avc:  denied  { syslog_console } for scontext=test_u:test_r:syslog_test_no_syslog_perm_t:s0 tcontext=system_u:unconfined_r:unconfined_t:s0 tclass=system permissive=0"
             ]
         },
         {
-            "name": "SyslogTest/SyslogActionConsoleOffDenied",
+            "name": "SyslogTest.SyslogActionConsoleOffDenied",
             "audit_expectations": [
                 "avc:  denied  { syslog_console } for scontext=test_u:test_r:syslog_test_no_syslog_perm_t:s0 tcontext=system_u:unconfined_r:unconfined_t:s0 tclass=system permissive=0"
             ]
         },
         {
-            "name": "SyslogTest/SyslogActionConsoleOnDenied",
+            "name": "SyslogTest.SyslogActionConsoleOnDenied",
             "audit_expectations": [
                 "avc:  denied  { syslog_console } for scontext=test_u:test_r:syslog_test_no_syslog_perm_t:s0 tcontext=system_u:unconfined_r:unconfined_t:s0 tclass=system permissive=0"
             ]
         },
         {
-            "name": "SyslogTest/SyslogActionOpenDenied",
+            "name": "SyslogTest.SyslogActionOpenDenied",
             "audit_expectations": [
                 "avc:  denied  { syslog_mod } for scontext=test_u:test_r:syslog_test_no_syslog_perm_t:s0 tcontext=system_u:unconfined_r:unconfined_t:s0 tclass=system permissive=0"
             ]
         },
         {
-            "name": "SyslogTest/SyslogActionReadAllDenied",
+            "name": "SyslogTest.SyslogActionReadAllDenied",
             "audit_expectations": [
                 "avc:  denied  { syslog_read } for scontext=test_u:test_r:syslog_test_no_syslog_perm_t:s0 tcontext=system_u:unconfined_r:unconfined_t:s0 tclass=system permissive=0"
             ]
         },
         {
-            "name": "SyslogTest/SyslogActionReadClearDenied",
+            "name": "SyslogTest.SyslogActionReadClearDenied",
             "audit_expectations": [
                 "avc:  denied  { syslog_mod } for scontext=test_u:test_r:syslog_test_no_syslog_perm_t:s0 tcontext=system_u:unconfined_r:unconfined_t:s0 tclass=system permissive=0"
             ]
         },
         {
-            "name": "SyslogTest/SyslogActionReadDenied",
+            "name": "SyslogTest.SyslogActionReadDenied",
             "audit_expectations": [
                 "avc:  denied  { syslog_mod } for scontext=test_u:test_r:syslog_test_no_syslog_perm_t:s0 tcontext=system_u:unconfined_r:unconfined_t:s0 tclass=system permissive=0"
             ]
         },
         {
-            "name": "SyslogTest/SyslogActionSizeBufferDenied",
+            "name": "SyslogTest.SyslogActionSizeBufferDenied",
             "audit_expectations": [
                 "avc:  denied  { syslog_read } for scontext=test_u:test_r:syslog_test_no_syslog_perm_t:s0 tcontext=system_u:unconfined_r:unconfined_t:s0 tclass=system permissive=0"
             ]
         },
         {
-            "name": "SyslogTest/SyslogActionSizeUnreadDenied",
+            "name": "SyslogTest.SyslogActionSizeUnreadDenied",
             "audit_expectations": [
                 "avc:  denied  { syslog_mod } for scontext=test_u:test_r:syslog_test_no_syslog_perm_t:s0 tcontext=system_u:unconfined_r:unconfined_t:s0 tclass=system permissive=0"
             ]
         },
         {
-            "name": "TimerslackNsPermsTest/TimerslackNsTestWithParam/Read/0",
+            "name": "TimerslackNsPermsTest/TimerslackNsTestWithParam.Read/0",
             "audit_expectations": [
                 "avc:  denied  { sys_nice } for capability=23  scontext=test_u:test_r:timerslack_no_perms_t:s0 tcontext=test_u:test_r:timerslack_no_perms_t:s0 tclass=capability permissive=0"
             ]
         },
         {
-            "name": "TimerslackNsPermsTest/TimerslackNsTestWithParam/Read/2",
+            "name": "TimerslackNsPermsTest/TimerslackNsTestWithParam.Read/2",
             "audit_expectations": [
                 "avc:  denied  { getsched } for scontext=test_u:test_r:timerslack_setsched_nice_perms_t:s0 tcontext=test_u:test_r:timerslack_target_t:s0 tclass=process permissive=0"
             ]
         },
         {
-            "name": "TimerslackNsPermsTest/TimerslackNsTestWithParam/Read/3",
+            "name": "TimerslackNsPermsTest/TimerslackNsTestWithParam.Read/3",
             "audit_expectations": [
                 "avc:  denied  { sys_nice } for capability=23  scontext=test_u:test_r:timerslack_getsched_perm_t:s0 tcontext=test_u:test_r:timerslack_getsched_perm_t:s0 tclass=capability permissive=0"
             ]
         },
         {
-            "name": "TimerslackNsPermsTest/TimerslackNsTestWithParam/Read/4",
+            "name": "TimerslackNsPermsTest/TimerslackNsTestWithParam.Read/4",
             "audit_expectations": [
                 "avc:  denied  { sys_nice } for capability=23  scontext=test_u:test_r:timerslack_setsched_perm_t:s0 tcontext=test_u:test_r:timerslack_setsched_perm_t:s0 tclass=capability permissive=0"
             ]
         },
         {
-            "name": "TimerslackNsPermsTest/TimerslackNsTestWithParam/Read/5",
+            "name": "TimerslackNsPermsTest/TimerslackNsTestWithParam.Read/5",
             "audit_expectations": [
                 "avc:  denied  { getsched } for scontext=test_u:test_r:timerslack_nice_perm_t:s0 tcontext=test_u:test_r:timerslack_target_t:s0 tclass=process permissive=0"
             ]
         },
         {
-            "name": "TimerslackNsPermsTest/TimerslackNsTestWithParam/Write/0",
+            "name": "TimerslackNsPermsTest/TimerslackNsTestWithParam.Write/0",
             "audit_expectations": [
                 "avc:  denied  { sys_nice } for capability=23  scontext=test_u:test_r:timerslack_no_perms_t:s0 tcontext=test_u:test_r:timerslack_no_perms_t:s0 tclass=capability permissive=0"
             ]
         },
         {
-            "name": "TimerslackNsPermsTest/TimerslackNsTestWithParam/Write/1",
+            "name": "TimerslackNsPermsTest/TimerslackNsTestWithParam.Write/1",
             "audit_expectations": [
                 "avc:  denied  { setsched } for scontext=test_u:test_r:timerslack_getsched_nice_perms_t:s0 tcontext=test_u:test_r:timerslack_target_t:s0 tclass=process permissive=0"
             ]
         },
         {
-            "name": "TimerslackNsPermsTest/TimerslackNsTestWithParam/Write/3",
+            "name": "TimerslackNsPermsTest/TimerslackNsTestWithParam.Write/3",
             "audit_expectations": [
                 "avc:  denied  { sys_nice } for capability=23  scontext=test_u:test_r:timerslack_getsched_perm_t:s0 tcontext=test_u:test_r:timerslack_getsched_perm_t:s0 tclass=capability permissive=0"
             ]
         },
         {
-            "name": "TimerslackNsPermsTest/TimerslackNsTestWithParam/Write/4",
+            "name": "TimerslackNsPermsTest/TimerslackNsTestWithParam.Write/4",
             "audit_expectations": [
                 "avc:  denied  { sys_nice } for capability=23  scontext=test_u:test_r:timerslack_setsched_perm_t:s0 tcontext=test_u:test_r:timerslack_setsched_perm_t:s0 tclass=capability permissive=0"
             ]
         },
         {
-            "name": "TimerslackNsPermsTest/TimerslackNsTestWithParam/Write/5",
+            "name": "TimerslackNsPermsTest/TimerslackNsTestWithParam.Write/5",
             "audit_expectations": [
                 "avc:  denied  { setsched } for scontext=test_u:test_r:timerslack_nice_perm_t:s0 tcontext=test_u:test_r:timerslack_target_t:s0 tclass=process permissive=0"
             ]
         },
         {
-            "name": "TunTapTests/TunTapAttachTest/AttachQueue/2",
+            "name": "TunTapTests/TunTapAttachTest.AttachQueue/2",
             "audit_expectations": [
                 "avc:  denied  { attach_queue } for scontext=test_u:test_r:tun_test_no_attach_t:s0 tcontext=test_u:test_r:tun_test_no_attach_t:s0 tclass=tun_socket permissive=0"
             ]
         },
         {
-            "name": "TunTapTests/TunTapAttachTest/AttachQueue/3",
+            "name": "TunTapTests/TunTapAttachTest.AttachQueue/3",
             "audit_expectations": [
                 "avc:  denied  { attach_queue } for scontext=test_u:test_r:tun_test_no_attach_t:s0 tcontext=test_u:test_r:tun_test_no_attach_t:s0 tclass=tun_socket permissive=0"
             ]
         },
         {
-            "name": "TunTapTests/TunTapCreateTest/CheckCreateAccess/2",
+            "name": "TunTapTests/TunTapCreateTest.CheckCreateAccess/2",
             "audit_expectations": [
                 "avc:  denied  { create } for scontext=test_u:test_r:tun_test_no_create_t:s0 tcontext=test_u:test_r:tun_test_no_create_t:s0 tclass=tun_socket permissive=0"
             ]
         },
         {
-            "name": "TunTapTests/TunTapCreateTest/CheckCreateAccess/3",
+            "name": "TunTapTests/TunTapCreateTest.CheckCreateAccess/3",
             "audit_expectations": [
                 "avc:  denied  { create } for scontext=test_u:test_r:tun_test_no_create_t:s0 tcontext=test_u:test_r:tun_test_no_create_t:s0 tclass=tun_socket permissive=0"
             ]
         },
         {
-            "name": "TunTapTests/TunTapRelabelTest/Relabel/2",
+            "name": "TunTapTests/TunTapRelabelTest.Relabel/2",
             "audit_expectations": [
                 "avc:  denied  { relabelto } for scontext=test_u:test_r:tun_test_no_relabelto_t:s0 tcontext=test_u:test_r:tun_test_no_relabelto_t:s0 tclass=tun_socket permissive=0"
             ]
         },
         {
-            "name": "TunTapTests/TunTapRelabelTest/Relabel/3",
+            "name": "TunTapTests/TunTapRelabelTest.Relabel/3",
             "audit_expectations": [
                 "avc:  denied  { relabelto } for scontext=test_u:test_r:tun_test_no_relabelto_t:s0 tcontext=test_u:test_r:tun_test_no_relabelto_t:s0 tclass=tun_socket permissive=0"
             ]
         },
         {
-            "name": "TunTapTests/TunTapRelabelTest/Relabel/4",
+            "name": "TunTapTests/TunTapRelabelTest.Relabel/4",
             "audit_expectations": [
                 "avc:  denied  { relabelfrom } for scontext=test_u:test_r:tun_test_no_relabelfrom_t:s0 tcontext=test_u:test_r:tun_test_t:s0 tclass=tun_socket permissive=0"
             ]
         },
         {
-            "name": "TunTapTests/TunTapRelabelTest/Relabel/5",
+            "name": "TunTapTests/TunTapRelabelTest.Relabel/5",
             "audit_expectations": [
                 "avc:  denied  { relabelfrom } for scontext=test_u:test_r:tun_test_no_relabelfrom_t:s0 tcontext=test_u:test_r:tun_test_t:s0 tclass=tun_socket permissive=0"
             ]
         },
         {
-            "name": "TunTapTests/TunTapSockcreateTest/SockcreateIgnored/0",
+            "name": "TunTapTests/TunTapSockcreateTest.SockcreateIgnored/0",
             "audit_expectations": [
                 "avc:  denied  { create } for scontext=test_u:test_r:tun_test_sockcreate_t:s0 tcontext=test_u:test_r:tun_test_sockcreate_t:s0 tclass=tun_socket permissive=0"
             ]
         },
         {
-            "name": "TunTapTests/TunTapSockcreateTest/SockcreateIgnored/1",
+            "name": "TunTapTests/TunTapSockcreateTest.SockcreateIgnored/1",
             "audit_expectations": [
                 "avc:  denied  { create } for scontext=test_u:test_r:tun_test_sockcreate_t:s0 tcontext=test_u:test_r:tun_test_sockcreate_t:s0 tclass=tun_socket permissive=0"
             ]
         },
         {
-            "name": "TunTapTests/TunTapTransitionTest/TypeTransitionIgnored/0",
+            "name": "TunTapTests/TunTapTransitionTest.TypeTransitionIgnored/0",
             "audit_expectations": [
                 "avc:  denied  { create } for scontext=test_u:test_r:tun_test_trans_t:s0 tcontext=test_u:test_r:tun_test_trans_t:s0 tclass=tun_socket permissive=0"
             ]
         },
         {
-            "name": "TunTapTests/TunTapTransitionTest/TypeTransitionIgnored/1",
+            "name": "TunTapTests/TunTapTransitionTest.TypeTransitionIgnored/1",
             "audit_expectations": [
                 "avc:  denied  { create } for scontext=test_u:test_r:tun_test_trans_t:s0 tcontext=test_u:test_r:tun_test_trans_t:s0 tclass=tun_socket permissive=0"
             ]
         },
         {
-            "name": "UnlabeledFsTest/CreateFileInUnlabeledFs",
+            "name": "UnlabeledFsTest.CreateFileInUnlabeledFs",
             "audit_expectations": [
                 "avc:  denied  { associate } for name=\"test-file\" scontext=unconfined_u:object_r:unlabeled_unconfined_file_t:s0 tcontext=unlabeled_u:unlabeled_r:unlabeled_t:s0 tclass=filesystem permissive=1"
             ]
         },
         {
-            "name": "XattrTest/GetSecurityXattrRequiresOnlyGetAttr",
+            "name": "XattrTest.GetSecurityXattrRequiresOnlyGetAttr",
             "audit_expectations": [
                 "avc:  denied  { getattr } for name=\"proc_test_file_cy74oZ\" dev=\"tmpfs\" ino=4 scontext=test_u:test_r:test_xattr_capsysadmin_nosetgetattr_t:s0 tcontext=test_u:object_r:test_xattr_access_file_t:s0 tclass=file permissive=0"
             ]
         },
         {
-            "name": "XattrTest/GetTrustedXattrRequiresCapSysAdminAndGetAttr",
+            "name": "XattrTest.GetTrustedXattrRequiresCapSysAdminAndGetAttr",
             "audit_expectations": [
                 "avc:  denied  { getattr } for name=\"proc_test_file_TYWoDW\" dev=\"tmpfs\" ino=3 scontext=test_u:test_r:test_xattr_capsysadmin_nosetgetattr_t:s0 tcontext=test_u:object_r:test_xattr_access_file_t:s0 tclass=file permissive=0",
                 "avc:  denied  { sys_admin } for capability=21  scontext=test_u:test_r:test_xattr_nocapsysadmin_setgetattr_t:s0 tcontext=test_u:test_r:test_xattr_nocapsysadmin_setgetattr_t:s0 tclass=capability permissive=0"
             ]
         },
         {
-            "name": "XattrTest/GetUserRequiresFileReadAndGetAttr",
+            "name": "XattrTest.GetUserRequiresFileReadAndGetAttr",
             "audit_expectations": [
                 "avc:  denied  { read } for name=\"proc_test_file_vFTw6W\" dev=\"tmpfs\" ino=6 scontext=test_u:test_r:test_xattr_user_noread_t:s0 tcontext=test_u:object_r:test_xattr_access_file_t:s0 tclass=file permissive=0",
                 "avc:  denied  { getattr } for name=\"proc_test_file_vFTw6W\" dev=\"tmpfs\" ino=6 scontext=test_u:test_r:test_xattr_user_nogetattr_t:s0 tcontext=test_u:object_r:test_xattr_access_file_t:s0 tclass=file permissive=0"
             ]
         },
         {
-            "name": "XattrTest/ListOmitsInaccessiblePrefixes",
+            "name": "XattrTest.ListOmitsInaccessiblePrefixes",
             "audit_expectations": [
                 "avc:  denied  { getattr } for name=\"proc_test_file_86p5jW\" dev=\"tmpfs\" ino=7 scontext=test_u:test_r:test_xattr_user_nogetattr_t:s0 tcontext=test_u:object_r:test_xattr_access_file_t:s0 tclass=file permissive=0"
             ]
         },
         {
-            "name": "XattrTest/RemoveRequiresSameChecksAsSet",
+            "name": "XattrTest.RemoveRequiresSameChecksAsSet",
             "audit_expectations": [
                 "avc:  denied  { write } for name=\"proc_test_file_nDSJ7V\" dev=\"tmpfs\" ino=8 scontext=test_u:test_r:test_xattr_capsysadmin_t:s0 tcontext=test_u:object_r:test_xattr_access_file_t:s0 tclass=file permissive=0",
                 "avc:  denied  { sys_admin } for capability=21  scontext=test_u:test_r:test_xattr_user_t:s0 tcontext=test_u:test_r:test_xattr_user_t:s0 tclass=capability permissive=0",
@@ -1936,7 +1936,7 @@
             ]
         },
         {
-            "name": "XattrTest/SetSelinuxMissingPermissions",
+            "name": "XattrTest.SetSelinuxMissingPermissions",
             "audit_expectations": [
                 "avc:  denied  { relabelto } for name=\"proc_test_file_Ybf2vW\" dev=\"tmpfs\" ino=12 scontext=test_u:test_r:test_xattr_relabel_norelabelto_t:s0 tcontext=test_u:object_r:test_xattr_access_relabeled_file_t:s0 tclass=file permissive=0",
                 "avc:  denied  { relabelfrom } for name=\"proc_test_file_Ybf2vW\" dev=\"tmpfs\" ino=12 scontext=test_u:test_r:test_xattr_relabel_norelabelfrom_t:s0 tcontext=test_u:object_r:test_xattr_access_file_t:s0 tclass=file permissive=0",
@@ -1944,7 +1944,7 @@
             ]
         },
         {
-            "name": "XattrTest/SetTrustedAndSecurityXattrRequiresCapSysAdminAndSetAttr",
+            "name": "XattrTest.SetTrustedAndSecurityXattrRequiresCapSysAdminAndSetAttr",
             "audit_expectations": [
                 "avc:  denied  { setattr } for name=\"proc_test_file_9g2gYZ\" dev=\"tmpfs\" ino=2 scontext=test_u:test_r:test_xattr_capsysadmin_nosetgetattr_t:s0 tcontext=test_u:object_r:test_xattr_access_file_t:s0 tclass=file permissive=0",
                 "avc:  denied  { setattr } for name=\"proc_test_file_9g2gYZ\" dev=\"tmpfs\" ino=2 scontext=test_u:test_r:test_xattr_capsysadmin_nosetgetattr_t:s0 tcontext=test_u:object_r:test_xattr_access_file_t:s0 tclass=file permissive=0",
@@ -1953,7 +1953,7 @@
             ]
         },
         {
-            "name": "XattrTest/SetTrustedAndSystemXattrRequiresCapSysAdminAndSetAttr",
+            "name": "XattrTest.SetTrustedAndSystemXattrRequiresCapSysAdminAndSetAttr",
             "audit_expectations": [
                 "avc:  denied  { setattr } for name=\"proc_test_file_y2rBL4\" dev=\"tmpfs\" ino=2 scontext=test_u:test_r:test_xattr_capsysadmin_nosetgetattr_t:s0 tcontext=test_u:object_r:test_xattr_access_file_t:s0 tclass=file permissive=0",
                 "avc:  denied  { setattr } for name=\"proc_test_file_y2rBL4\" dev=\"tmpfs\" ino=2 scontext=test_u:test_r:test_xattr_capsysadmin_nosetgetattr_t:s0 tcontext=test_u:object_r:test_xattr_access_file_t:s0 tclass=file permissive=0",
@@ -1962,7 +1962,7 @@
             ]
         },
         {
-            "name": "XattrTest/SetUserRequiresFileWriteAndSetAttr",
+            "name": "XattrTest.SetUserRequiresFileWriteAndSetAttr",
             "audit_expectations": [
                 "avc:  denied  { write } for name=\"proc_test_file_5gECHX\" dev=\"tmpfs\" ino=5 scontext=test_u:test_r:test_xattr_user_nowrite_t:s0 tcontext=test_u:object_r:test_xattr_access_file_t:s0 tclass=file permissive=0",
                 "avc:  denied  { setattr } for name=\"proc_test_file_5gECHX\" dev=\"tmpfs\" ino=5 scontext=test_u:test_r:test_xattr_user_nosetattr_t:s0 tcontext=test_u:object_r:test_xattr_access_file_t:s0 tclass=file permissive=0"

@@ -329,7 +329,7 @@ void AuditChecker::OnTestSuiteEnd(const testing::TestSuite& test_suite) {
 }
 
 void AuditChecker::OnTestStart(const testing::TestInfo& test_info) {
-  std::string test_name(current_test_suite_name_ + "/" + test_info.name());
+  std::string test_name(current_test_suite_name_ + "." + test_info.name());
   if (ShouldOnlyDrainAudits(test_name)) {
     return;
   }
@@ -337,7 +337,7 @@ void AuditChecker::OnTestStart(const testing::TestInfo& test_info) {
 }
 
 void AuditChecker::OnTestEnd(const testing::TestInfo& test_info) {
-  std::string test_name(current_test_suite_name_ + "/" + test_info.name());
+  std::string test_name(current_test_suite_name_ + "." + test_info.name());
   // If the audit log checking should be skipped, drain the audit logs.
   // This can be used for tests that fail on Starnix or do not produce any
   // useful logs.
