@@ -452,6 +452,52 @@ fit::result<GuestError> Vmm::AddPublicServices() {
   return fit::ok();
 }
 
+void Vmm::StartSerialLogger(async_dispatcher_t* dispatcher) {
+  serial_waiter_.set_object(client_serial_socket_.get());
+  serial_waiter_.set_trigger(ZX_SOCKET_READABLE | ZX_SOCKET_PEER_CLOSED);
+  serial_waiter_.set_handler([this, buffer = std::string()](
+                                 async_dispatcher_t* dispatcher, async::Wait* wait,
+                                 zx_status_t status, const zx_packet_signal_t* signal) mutable {
+    if (status == ZX_SOCKET_PEER_CLOSED) {
+      return;
+    }
+
+    if (status != ZX_OK) {
+      FX_LOGS(ERROR) << "VMM serial socket encountered an error: " << status;
+      return;
+    }
+
+    while (true) {
+      char sub_buffer[128];
+      size_t successfully_read = 0;
+      status = client_serial_socket_.read(0, &sub_buffer, sizeof(sub_buffer), &successfully_read);
+
+      if (status == ZX_ERR_SHOULD_WAIT) {
+        wait->Begin(dispatcher);
+        return;
+      }
+
+      if (status != ZX_OK) {
+        FX_LOGS(ERROR) << "VMM serial read loop returned " << status;
+        return;
+      }
+
+      // Copy the read data into the buffer, and then flush the buffer up until the next newline
+      // character. This is done to avoid partial lines being logged.
+      if (successfully_read > 0) {
+        buffer.append(sub_buffer, successfully_read);
+        size_t newline_pos;
+        while ((newline_pos = buffer.find('\n')) != std::string::npos) {
+          FX_LOGS(INFO) << "(guest klog): " << buffer.substr(0, newline_pos);
+          buffer.erase(0, newline_pos + 1);
+        }
+      }
+    }
+  });
+
+  serial_waiter_.Begin(dispatcher);
+}
+
 void Vmm::GetSerial(GetSerialCallback callback) {
   FX_CHECK(client_serial_socket_.is_valid());
   callback(DuplicateSocket(client_serial_socket_));

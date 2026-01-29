@@ -69,6 +69,10 @@ void VmmController::Run(RunCallback callback) {
     return;
   }
 
+#ifdef GUEST_SERIAL_REDIRECT
+  vmm_->StartSerialLogger(dispatcher_);
+#endif
+
   run_callback_ = std::move(callback);
 }
 

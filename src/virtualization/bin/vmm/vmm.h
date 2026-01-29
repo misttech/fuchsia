@@ -6,7 +6,7 @@
 #define SRC_VIRTUALIZATION_BIN_VMM_VMM_H_
 
 #include <fuchsia/virtualization/cpp/fidl.h>
-#include <lib/async-loop/cpp/loop.h>
+#include <lib/async/cpp/wait.h>
 #include <lib/fidl/cpp/binding_set.h>
 #include <lib/fit/result.h>
 #include <lib/sys/cpp/component_context.h>
@@ -56,6 +56,10 @@ class Vmm : public fuchsia::virtualization::Guest {
   void AddBinding(fidl::InterfaceRequest<fuchsia::virtualization::Guest> request) {
     guest_bindings_.AddBinding(this, std::move(request));
   }
+
+  // Start a waiter to monitor the serial output and send it to the system log. This
+  // is only called when the `redirect_guest_serial_logs` build argument is set to true.
+  void StartSerialLogger(async_dispatcher_t* dispatcher);
 
   // |fuchsia::virtualization::Guest|
   void GetSerial(GetSerialCallback callback) override;
@@ -120,6 +124,8 @@ class Vmm : public fuchsia::virtualization::Guest {
   // will be available only when the virtio console device was enabled via the guest configuration.
   zx::socket client_serial_socket_;
   zx::socket client_console_socket_;
+
+  async::Wait serial_waiter_;
 
   std::shared_ptr<sys::OutgoingDirectory> outgoing_;
   fidl::BindingSet<fuchsia::virtualization::Guest> guest_bindings_;

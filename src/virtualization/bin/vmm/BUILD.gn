@@ -5,6 +5,7 @@
 import("//build/components.gni")
 import("//build/fuzz.gni")
 import("//build/testing/cc_test_executable.gni")
+import("//src/virtualization/bin/args.gni")
 
 group("vmm") {
   deps = [ ":vmm_package" ]
@@ -27,6 +28,17 @@ source_set("bits") {
 
 source_set("lib") {
   visibility = [ ":*" ]
+
+  configs += [ "//build/config:all_source" ]
+  if (!defined(public_configs)) {
+    public_configs = []
+  }
+  public_configs += [ "//src/virtualization/bin:args" ]
+
+  defines = []
+  if (redirect_guest_serial_logs) {
+    defines += [ "GUEST_SERIAL_REDIRECT" ]
+  }
 
   sources = [
     "controller/virtio_balloon.cc",
@@ -108,12 +120,6 @@ source_set("lib") {
       "arch/x64/vcpu.cc",
     ]
   }
-
-  configs += [ "//build/config:all_source" ]
-  if (!defined(public_configs)) {
-    public_configs = []
-  }
-  public_configs += [ "//src/virtualization/bin:args" ]
 
   deps = [
     "//sdk/fidl/fuchsia.component:fuchsia.component_hlcpp",
