@@ -14,7 +14,7 @@
             to: [ "#container" ],
         },
         {
-            protocol: "fuchsia.fshost.StarnixVolumeProvider",
+            dictionary: "starnix-volume",
             from: "#test-fxfs",
             to: [ "#container" ],
         },

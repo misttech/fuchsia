@@ -30,6 +30,7 @@
                 "fuchsia.test.fxfs.StarnixVolumeAdmin",
             ],
         },
+        { dictionary: "starnix-volume" },
     ],
     use: [
         {
@@ -37,8 +38,16 @@
             key: "dirent_cache_limit",
             type: "uint64",
             default: 2000,
+
             // Transitional is what's needed for component starts to not fail if not offered.
             availability: "transitional",
+        },
+    ],
+    offer: [
+        {
+            protocol: "fuchsia.fshost.StarnixVolumeProvider",
+            from: "self",
+            to: "self/starnix-volume",
         },
     ],
     expose: [
@@ -47,7 +56,7 @@
             from: "self",
         },
         {
-            protocol: "fuchsia.fshost.StarnixVolumeProvider",
+            dictionary: "starnix-volume",
             from: "self",
         },
         {

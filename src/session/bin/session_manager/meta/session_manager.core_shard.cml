@@ -327,10 +327,15 @@
         },
         {
             protocol: [
-                "fuchsia.fshost.StarnixVolumeProvider",
                 "fuchsia.power.system.ActivityGovernor",
                 "fuchsia.power.system.BootControl",
             ],
+            from: "parent",
+            to: "#session-manager",
+            availability: "optional",
+        },
+        {
+            dictionary: "starnix-volume",
             from: "parent",
             to: "#session-manager",
             availability: "optional",

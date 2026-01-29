@@ -379,6 +379,12 @@
             from: "parent",
             to: "#system-tests",
         },
+        {
+            dictionary: "starnix-volume",
+            from: "parent",
+            to: "#system-tests",
+            availability: "optional",
+        },
 
         // TODO(b/345827642): Remove once out-of-tree users
         // have been migrated to dictionaries.

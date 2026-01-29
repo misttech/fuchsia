@@ -36,9 +36,9 @@
             to: [ "#debian_container" ],
         },
         {
-            protocol: "fuchsia.fshost.StarnixVolumeProvider",
+            dictionary: "starnix-volume",
             from: "parent",
-            to: "#debian_container",
+            to: [ "#debian_container" ],
         },
     ],
     expose: [

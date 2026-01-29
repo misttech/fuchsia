@@ -45,6 +45,12 @@
             to: "#test_manager",
         },
         {
+            dictionary: "starnix-volume",
+            from: "parent",
+            to: "#test_manager",
+            availability: "optional",
+        },
+        {
             event_stream: [
                 "capability_requested",
                 "debug_started",

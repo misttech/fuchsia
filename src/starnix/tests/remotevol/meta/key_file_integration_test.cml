@@ -45,7 +45,7 @@
             to: [ "#realm_builder" ],
         },
         {
-            protocol: "fuchsia.fshost.StarnixVolumeProvider",
+            dictionary: "starnix-volume",
             from: "#test-fxfs",
             to: [ "#realm_builder" ],
         },

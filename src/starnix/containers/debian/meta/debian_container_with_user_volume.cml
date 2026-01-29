@@ -23,7 +23,7 @@
     use: [
         {
             protocol: "fuchsia.fshost.StarnixVolumeProvider",
-            from: "parent",
+            from: "parent/starnix-volume",
         },
     ],
     expose: [

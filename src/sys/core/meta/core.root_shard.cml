@@ -221,10 +221,15 @@
         {
             protocol: [
                 "fuchsia.fshost.Recovery",
-                "fuchsia.fshost.StarnixVolumeProvider",
                 "fuchsia.fxfs.FileBackedVolumeProvider",
                 "fuchsia.virtualconsole.SessionManager",
             ],
+            from: "#bootstrap",
+            to: "#core",
+            availability: "optional",
+        },
+        {
+            dictionary: "starnix-volume",
             from: "#bootstrap",
             to: "#core",
             availability: "optional",

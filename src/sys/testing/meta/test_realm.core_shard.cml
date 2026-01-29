@@ -24,7 +24,7 @@
             to: "#testing",
         },
         {
-            protocol: "fuchsia.fshost.StarnixVolumeProvider",
+            dictionary: "starnix-volume",
             from: "parent",
             to: "#testing",
             availability: "optional",

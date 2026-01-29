@@ -41,7 +41,7 @@
             scope: "#starnix-tests",
         },
         {
-            protocol: "fuchsia.fshost.StarnixVolumeProvider",
+            dictionary: "starnix-volume",
             from: "parent",
             to: "#starnix-tests",
             availability: "optional",

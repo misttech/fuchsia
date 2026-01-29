@@ -5,7 +5,7 @@
     include: [ "//src/starnix/tests/starnix_test_common.shard.cml" ],
     offer: [
         {
-            protocol: [ "fuchsia.fshost.StarnixVolumeProvider" ],
+            dictionary: "starnix-volume",
             from: "parent",
             to: [ "#container" ],
             availability: "optional",
