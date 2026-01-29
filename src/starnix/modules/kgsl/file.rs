@@ -4,7 +4,8 @@
 
 use crate::util::maur;
 use fdio::service_connect;
-use kgsl_libmagma::{Device, initialize_logging};
+use kgsl_libmagma::{Device, QueryOutput, initialize_logging};
+use kgsl_magma_params::{AdrenoKgslParams, MAGMA_QCOM_ADRENO_QUERY_KGSL_PARAMS};
 use kgsl_strings::{ioctl_kgsl, kgsl_prop};
 use magma::{MAGMA_QUERY_DEVICE_ID, MAGMA_QUERY_VENDOR_ID};
 use starnix_core::mm::MemoryAccessorExt;
@@ -17,11 +18,16 @@ use starnix_syscalls::{SUCCESS, SyscallArg, SyscallResult};
 use starnix_uapi::device_type::DeviceType;
 use starnix_uapi::errors::Errno;
 use starnix_uapi::open_flags::OpenFlags;
+use starnix_uapi::user_address::{UserAddress, UserRef};
 use starnix_uapi::{errno, error, uapi};
 use std::sync::Once;
 
 pub struct KgslFile {
+    // This member will be read in a future change. A linter attribute is used
+    // instead of an underscore prefix so that field init shorthand still works.
+    #[expect(dead_code)]
     device: Device,
+    adreno_kgsl_params: AdrenoKgslParams,
 }
 
 impl KgslFile {
@@ -42,9 +48,23 @@ impl KgslFile {
         let (client, server) = zx::Channel::create();
         service_connect(&path, server)?;
         let device = Device::from_channel(client).map_err(|_| zx::Status::INTERNAL)?;
-        let vendor_id =
-            device.query_value(MAGMA_QUERY_VENDOR_ID).map_err(|_| zx::Status::INTERNAL)?;
-        log_info!("kgsl: magma device at {} is vendor {:#04x}", path, vendor_id);
+        let QueryOutput::Value(vendor_id) =
+            device.query(MAGMA_QUERY_VENDOR_ID).map_err(|_| zx::Status::INTERNAL)?
+        else {
+            return Err(zx::Status::INTERNAL);
+        };
+        let QueryOutput::Value(device_id) =
+            device.query(MAGMA_QUERY_DEVICE_ID).map_err(|_| zx::Status::INTERNAL)?
+        else {
+            return Err(zx::Status::INTERNAL);
+        };
+
+        log_info!(
+            "kgsl: magma device at {} is vendor {:#04x} device {:#04x}",
+            path,
+            vendor_id,
+            device_id
+        );
         Ok(device)
     }
 
@@ -64,7 +84,15 @@ impl KgslFile {
             .filter_map(|entry| entry.path().join("device").into_os_string().into_string().ok())
             .filter_map(|path| Self::import_device(&path).ok());
         let device = devices.next().ok_or_else(|| errno!(ENXIO))?;
-        Ok(Box::new(Self { device }))
+        let QueryOutput::Buffer(adreno_kgsl_params_vmo) =
+            device.query(MAGMA_QCOM_ADRENO_QUERY_KGSL_PARAMS).map_err(|_| errno!(ENXIO))?
+        else {
+            return Err(errno!(ENXIO));
+        };
+        let adreno_kgsl_params = adreno_kgsl_params_vmo
+            .read_to_object::<AdrenoKgslParams>(0)
+            .map_err(|_| errno!(ENXIO))?;
+        Ok(Box::new(Self { device, adreno_kgsl_params }))
     }
 
     fn kgsl_device_getproperty(
@@ -74,17 +102,36 @@ impl KgslFile {
     ) -> Result<SyscallResult, Errno> {
         let params_ref = maur::kgsl_device_getproperty::new(current_task, arg);
         let params = current_task.read_multi_arch_object(params_ref)?;
+        let params_size: usize = params.sizebytes.try_into().map_err(|_| errno!(EINVAL))?;
 
         match params.type_ {
             uapi::KGSL_PROP_DEVICE_INFO => {
-                let device_id =
-                    self.device.query_value(MAGMA_QUERY_DEVICE_ID).map_err(|_| errno!(ENOTTY))?;
                 let devinfo = uapi::kgsl_devinfo {
-                    device_id: device_id.try_into().unwrap(),
+                    device_id: self.adreno_kgsl_params.device_id,
+                    chip_id: self.adreno_kgsl_params.chip_id,
+                    mmu_enabled: self.adreno_kgsl_params.mmu_enabled,
+                    gmem_gpubaseaddr: 0, // This field is unused by the driver.
+                    gpu_id: self.adreno_kgsl_params.gpu_id,
+                    gmem_sizebytes: self.adreno_kgsl_params.gmem_sizebytes,
                     ..Default::default()
                 };
                 let result_ref = maur::kgsl_devinfo::new(current_task, params.value);
                 current_task.write_multi_arch_object(result_ref, devinfo)?;
+                Ok(SUCCESS)
+            }
+            uapi::KGSL_PROP_DEVICE_BITNESS => {
+                let prop_value: u32 = self.adreno_kgsl_params.device_bitness;
+                let result_ref = UserRef::from(UserAddress::from(params.value));
+                current_task.write_object(result_ref, &prop_value)?;
+                Ok(SUCCESS)
+            }
+            uapi::KGSL_PROP_GPU_MODEL => {
+                if params_size < self.adreno_kgsl_params.gpu_model.len() {
+                    return error!(EINVAL);
+                }
+                let prop_value: [u8; 32] = self.adreno_kgsl_params.gpu_model;
+                let result_ref = UserRef::from(UserAddress::from(params.value));
+                current_task.write_object(result_ref, &prop_value)?;
                 Ok(SUCCESS)
             }
             _ => {

@@ -7,7 +7,7 @@ use zerocopy::{FromBytes, Immutable, IntoBytes};
 
 pub const MAGMA_QCOM_ADRENO_QUERY_KGSL_PARAMS: u64 = MAGMA_QUERY_VENDOR_PARAM_0 + 3000;
 
-#[derive(Debug, FromBytes, IntoBytes, Immutable, Default)]
+#[derive(Clone, Copy, Debug, FromBytes, IntoBytes, Immutable, Default)]
 #[repr(packed)]
 pub struct AdrenoKgslParams {
     pub device_id: u32,

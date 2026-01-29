@@ -11,6 +11,7 @@ use magma::{
 use starnix_logging::log_error;
 use std::panic::Location;
 use std::sync::Arc;
+use zx::HandleBased;
 
 fn magma_result(status: magma_status_t) -> Result<(), magma_status_t> {
     if status == MAGMA_STATUS_OK { Ok(()) } else { Err(status) }
@@ -41,9 +42,18 @@ pub fn initialize_logging(channel: zx::Channel) -> Result<(), ()> {
     if result == MAGMA_STATUS_OK { Ok(()) } else { Err(()) }
 }
 
+#[derive(Debug)]
+pub enum QueryOutput {
+    Value(u64),
+    Buffer(zx::Vmo),
+}
+
+#[derive(Debug)]
 pub struct Device {
     inner: Arc<DeviceInternal>,
 }
+
+#[derive(Debug)]
 struct DeviceInternal {
     magma_device: magma_device_t,
 }
@@ -65,7 +75,7 @@ impl Device {
         Ok(Device { inner: Arc::new(DeviceInternal { magma_device }) })
     }
 
-    pub fn query_value(&self, id: magma_query_t) -> Result<u64, magma_status_t> {
+    pub fn query(&self, id: magma_query_t) -> Result<QueryOutput, magma_status_t> {
         let mut result_out: u64 = 0;
         let mut result_buffer_out: magma_handle_t = 0;
         // Safety: magma_device_query borrows the device handle and maybe returns a
@@ -73,9 +83,14 @@ impl Device {
         let result = unsafe {
             magma_device_query(self.inner.magma_device, id, &mut result_buffer_out, &mut result_out)
         };
-        assert!(result_buffer_out == 0);
         magma_result(result).kgsl_log_error()?;
-        Ok(result_out)
+        if result_buffer_out != 0 {
+            // Safety: from_raw takes ownership of the buffer handle.
+            return Ok(QueryOutput::Buffer(zx::Vmo::from_handle(unsafe {
+                zx::NullableHandle::from_raw(result_buffer_out)
+            })));
+        }
+        Ok(QueryOutput::Value(result_out))
     }
 
     pub fn create_connection(&self) -> Result<Connection, magma_status_t> {
@@ -90,10 +105,12 @@ impl Device {
     }
 }
 
+#[derive(Debug)]
 pub struct Connection {
     inner: Arc<ConnectionInternal>,
 }
 
+#[derive(Debug)]
 struct ConnectionInternal {
     magma_connection: magma_connection_t,
 }
@@ -124,10 +141,12 @@ impl Connection {
     }
 }
 
+#[derive(Debug)]
 pub struct Context {
     _inner: Arc<ContextInternal>,
 }
 
+#[derive(Debug)]
 struct ContextInternal {
     connection: Arc<ConnectionInternal>,
     magma_context_id: u32,

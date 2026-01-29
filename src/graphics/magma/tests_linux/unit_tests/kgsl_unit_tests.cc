@@ -20,8 +20,6 @@ struct ErrStr {
   }
 };
 
-}  // namespace
-
 class KgslUnitTest : public ::testing::Test {
  protected:
   KgslUnitTest() = default;
@@ -46,10 +44,40 @@ class KgslUnitTest : public ::testing::Test {
   // NOLINTEND
 };
 
-TEST_F(KgslUnitTest, GetDeviceInfo) {
-  kgsl_devinfo devinfo{};
-  kgsl_device_getproperty args{.type = KGSL_PROP_DEVICE_INFO, .value = &devinfo};
+// Test querying for simple property type.
+TEST_F(KgslUnitTest, GetDeviceBitness) {
+  uint32_t device_bitness = 0;
+  kgsl_device_getproperty args{.type = KGSL_PROP_DEVICE_BITNESS,
+                               .value = &device_bitness,
+                               .sizebytes = sizeof(device_bitness)};
   int result = ioctl(fd_, IOCTL_KGSL_DEVICE_GETPROPERTY, &args);
   EXPECT_EQ(result, 0) << ErrStr();
-  EXPECT_NE(devinfo.device_id, 0u);
+  EXPECT_NE(device_bitness, 0u);
+  std::printf("Device Bitness: %u\n", device_bitness);
 }
+
+// Test querying for composite property type.
+TEST_F(KgslUnitTest, GetDeviceInfo) {
+  kgsl_devinfo devinfo{};
+  kgsl_device_getproperty args{
+      .type = KGSL_PROP_DEVICE_INFO, .value = &devinfo, .sizebytes = sizeof(devinfo)};
+  int result = ioctl(fd_, IOCTL_KGSL_DEVICE_GETPROPERTY, &args);
+  EXPECT_EQ(result, 0) << ErrStr();
+  EXPECT_NE(devinfo.chip_id, 0u);
+  std::printf("Chip Id: %u\n", devinfo.chip_id);
+}
+
+// Test querying for array property type.
+TEST_F(KgslUnitTest, GetGpuModel) {
+  constexpr size_t kGpuModelBufferSize = 64;
+  char gpu_model[kGpuModelBufferSize]{};
+  kgsl_device_getproperty args{
+      .type = KGSL_PROP_GPU_MODEL, .value = gpu_model, .sizebytes = sizeof(gpu_model)};
+  int result = ioctl(fd_, IOCTL_KGSL_DEVICE_GETPROPERTY, &args);
+  EXPECT_EQ(result, 0) << ErrStr();
+  EXPECT_NE(gpu_model[0], 0);
+  ASSERT_EQ(gpu_model[kGpuModelBufferSize - 1], 0);
+  std::printf("GPU Model: %s\n", gpu_model);
+}
+
+}  // namespace

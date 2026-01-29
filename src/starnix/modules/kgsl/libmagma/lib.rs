@@ -4,4 +4,4 @@
 
 mod kgsl_libmagma;
 
-pub use kgsl_libmagma::{Connection, Device, initialize_logging};
+pub use kgsl_libmagma::*;
