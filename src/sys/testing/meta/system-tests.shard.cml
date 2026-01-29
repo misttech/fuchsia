@@ -134,8 +134,10 @@
 
         // audio_core_hardware_tests records from the real microphone, so it needs system audio.
         // bt-a2dp-loopback-test needs system audio.
+        // audio_device_registry_enumeration_tests_* need system audio.
         {
             protocol: [
+                "fuchsia.audio.device.Registry",
                 "fuchsia.media.Audio",
                 "fuchsia.media.AudioDeviceEnumerator",
             ],

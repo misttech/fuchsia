@@ -13,7 +13,7 @@ use fuchsia_async::Task;
 use futures::StreamExt;
 use futures::channel::mpsc::{self, UnboundedReceiver, UnboundedSender};
 use futures::lock::Mutex;
-use log::error;
+use log::{error, warn};
 use std::collections::{BTreeMap, BTreeSet};
 use std::sync::Arc;
 use zx_status::Status;
@@ -48,11 +48,14 @@ impl Registry {
             let devices = devices.clone();
             let devices_initialized = devices_initialized.clone();
             let event_senders = event_senders.clone();
-            async {
+            async move {
+                // Pass a clone to watch_devices so we can signal the original on error.
                 if let Err(err) =
-                    watch_devices(proxy, devices, devices_initialized, event_senders).await
+                    watch_devices(proxy, devices, devices_initialized.clone(), event_senders).await
                 {
-                    error!(err:%; "Failed to watch Registry devices");
+                    warn!(err:%; "Failed to watch Registry devices");
+                    // Ensure we don't hang waiters if the watch task fails.
+                    devices_initialized.signal();
                 }
             }
         });

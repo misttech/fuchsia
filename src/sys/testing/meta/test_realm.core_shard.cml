@@ -88,6 +88,12 @@
             source_availability: "unknown",
         },
         {
+            protocol: "fuchsia.audio.device.Registry",
+            from: "#audio_device_registry",
+            to: "#testing",
+            source_availability: "unknown",
+        },
+        {
             protocol: "fuchsia.factory.WeaveFactoryStoreProvider",
             from: "#factory_store_providers",
             to: "#testing",
