@@ -40,6 +40,7 @@ class VersionTest(unittest.TestCase):
             generate_platform_artifacts.main()
 
             expected = {
+                "assembly_input_bundles": [],
                 "release_info": {
                     "name": "fake_arch",
                     "repository": "fake_repository",
@@ -82,6 +83,7 @@ class VersionTest(unittest.TestCase):
             generate_platform_artifacts.main()
 
             expected = {
+                "assembly_input_bundles": [],
                 "release_info": {
                     "name": "fake_arch",
                     "repository": "fake_repository",

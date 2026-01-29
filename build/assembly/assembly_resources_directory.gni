@@ -63,6 +63,7 @@ template("assembly_resources_directory") {
       ]
       assembly_input_bundles = [
         {
+          name = target_name
           path = rebase_path(files.dir, root_build_dir)
           label = get_label_info(":$target_name", "label_with_toolchain")
         },

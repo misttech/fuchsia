@@ -32,9 +32,11 @@ def main() -> int:
     os.mkdir(os.path.join(args.outdir, "tools"))
 
     artifacts = json.load(args.aib_list)
+    assembly_input_bundle_names = []
     deps = []
     for artifact in artifacts:
         path = artifact["path"]
+        assembly_input_bundle_names.append(artifact["name"])
         deps.append(os.path.join(path, "assembly_config.json"))
         src = os.path.realpath(path)
         dst = os.path.join(args.outdir, os.path.basename(path))
@@ -54,6 +56,7 @@ def main() -> int:
 
     version = args.version if args.version else "unversioned"
     config_data = {
+        "assembly_input_bundles": assembly_input_bundle_names,
         "release_info": {
             "name": args.name,
             "repository": args.repo,

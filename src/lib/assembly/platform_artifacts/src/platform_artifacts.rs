@@ -2,7 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use anyhow::Result;
+use anyhow::{Result, bail};
 use assembly_container::{AssemblyContainer, WalkPaths, assembly_container};
 use assembly_release_info::ReleaseInfo;
 use camino::{Utf8Path, Utf8PathBuf};
@@ -13,7 +13,7 @@ use serde::{Deserialize, Serialize};
 /// config.
 ///
 /// This is created from the script `//build/assembly/scripts/generate_platform_artifacts.py`.
-#[derive(Debug, Deserialize, Serialize, WalkPaths)]
+#[derive(Clone, Debug, Deserialize, Serialize, WalkPaths)]
 #[serde(deny_unknown_fields)]
 #[assembly_container(platform_artifacts.json)]
 pub struct PlatformArtifacts {
@@ -23,6 +23,19 @@ pub struct PlatformArtifacts {
 
     /// Release information for the platform artifacts.
     pub release_info: ReleaseInfo,
+
+    /// The Assembly Input Bundle names in this Platform Artifacts.
+    pub assembly_input_bundles: Vec<String>,
+}
+
+impl PlatformArtifacts {
+    pub fn empty_for_test() -> Self {
+        Self {
+            platform_input_bundle_dir: Utf8PathBuf::default(),
+            release_info: ReleaseInfo::default(),
+            assembly_input_bundles: Vec::new(),
+        }
+    }
 }
 
 impl PlatformArtifacts {
@@ -30,6 +43,14 @@ impl PlatformArtifacts {
         let dir = dir.as_ref();
         let mut artifacts = Self::from_dir(dir)?;
         artifacts.platform_input_bundle_dir = dir.into();
+
+        // Assert that all the `assembly_input_bundles` exist.
+        for aib_name in &artifacts.assembly_input_bundles {
+            let aib_path = artifacts.get_bundle(aib_name);
+            if !aib_path.exists() {
+                bail!("AIB is listed in platform_artifacts.json but is missing");
+            }
+        }
         Ok(artifacts)
     }
 
