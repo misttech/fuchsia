@@ -34,8 +34,8 @@ use starnix_task_command::TaskCommand;
 use starnix_types::ownership::{TempRef, WeakRef};
 use starnix_types::time::duration_to_scheduler_clock;
 use starnix_uapi::auth::{
-    CAP_SYS_NICE, CAP_SYS_RESOURCE, PTRACE_MODE_ATTACH_REALCREDS, PTRACE_MODE_READ_FSCREDS,
-    PtraceAccessMode,
+    CAP_SYS_NICE, CAP_SYS_RESOURCE, PTRACE_MODE_ATTACH_REALCREDS, PTRACE_MODE_NOAUDIT,
+    PTRACE_MODE_READ_FSCREDS, PtraceAccessMode,
 };
 use starnix_uapi::device_type::DeviceType;
 use starnix_uapi::errors::Errno;
@@ -1101,8 +1101,8 @@ impl DynamicFileSource for StatFile {
     ) -> Result<(), Errno> {
         let task = Task::from_weak(&self.task)?;
 
-        // All fields and their types as specified in the man page. Unimplemented fields are set to
-        // 0 here.
+        // All fields and their types as specified in the man page.
+        // Unimplemented fields are set to 0 here.
         let pid: pid_t; // 1
         let comm: TaskCommand;
         let state: char;
@@ -1128,16 +1128,16 @@ impl DynamicFileSource for StatFile {
         let mut vsize: usize = 0;
         let mut rss: usize = 0;
         let mut rsslim: u64 = 0; // 25
-        let startcode: u64 = 0;
-        let endcode: u64 = 0;
+        let mut startcode: u64 = 0;
+        let mut endcode: u64 = 0;
         let mut startstack: usize = 0;
-        let kstkesp: u64 = 0;
-        let kstkeip: u64 = 0; // 30
+        let mut kstkesp: u64 = 0;
+        let mut kstkeip: u64 = 0; // 30
         let signal: u64 = 0;
         let blocked: u64 = 0;
         let siginore: u64 = 0;
         let sigcatch: u64 = 0;
-        let wchan: u64 = 0; // 35
+        let mut wchan: u64 = 0; // 35
         let nswap: u64 = 0;
         let cnswap: u64 = 0;
         let exit_signal: i32 = 0;
@@ -1147,14 +1147,14 @@ impl DynamicFileSource for StatFile {
         let delayacct_blkio_ticks: u64 = 0;
         let guest_time: u64 = 0;
         let cguest_time: i64 = 0;
-        let start_data: u64 = 0; // 45
-        let end_data: u64 = 0;
-        let start_brk: u64 = 0;
+        let mut start_data: u64 = 0; // 45
+        let mut end_data: u64 = 0;
+        let mut start_brk: u64 = 0;
         let mut arg_start: usize = 0;
         let mut arg_end: usize = 0;
         let mut env_start: usize = 0; // 50
         let mut env_end: usize = 0;
-        let exit_code: i32 = 0;
+        let mut exit_code: i32 = 0;
 
         pid = task.get_tid();
         comm = task.command();
@@ -1210,6 +1210,29 @@ impl DynamicFileSource for StatFile {
                 env_start = mm_state.environ_start.ptr();
                 env_end = mm_state.environ_end.ptr();
             }
+        }
+
+        // The man page describes that the following fields have "... values displayed as 0" if the
+        // caller does not have ptrace read access to the target.
+        // In practice the `startcode` and `endcode` fields appear to be displayed as 1.
+        if !current_task
+            .check_ptrace_access_mode(locked, PTRACE_MODE_READ_FSCREDS | PTRACE_MODE_NOAUDIT, &task)
+            .is_ok()
+        {
+            startcode = 1;
+            endcode = 1;
+            startstack = 0;
+            kstkesp = 0;
+            kstkeip = 0;
+            wchan = 0;
+            start_data = 0;
+            end_data = 0;
+            start_brk = 0;
+            arg_start = 0;
+            arg_end = 0;
+            env_start = 0;
+            env_end = 0;
+            exit_code = 0;
         }
 
         writeln!(

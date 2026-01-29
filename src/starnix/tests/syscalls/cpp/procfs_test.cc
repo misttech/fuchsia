@@ -445,6 +445,96 @@ TEST_F(ProcTaskDirTest, KthreadStatIsNotEmpty) {
   ASSERT_THAT(contents.size(), testing::Gt(0));
 }
 
+// Returns a vector holding the elements of the supplied "/proc/pid/stat" contents, with a zeroeth
+// element prepended so that the elements align with the positions documented in the man page.
+std::vector<std::string> ProcPidStatElements(const std::string& contents) {
+  std::istringstream iss(contents);
+  std::vector<std::string> result(std::istream_iterator<std::string>{iss},
+                                  std::istream_iterator<std::string>{});
+  result.insert(result.begin(), std::string());
+  return result;
+}
+
+TEST_F(ProcTaskDirTest, ParentFieldsZeroedWithoutCapSysPtrace) {
+  if (!test_helper::HasCapabilityPermitted(CAP_SYS_PTRACE)) {
+    // Technically any capability is sufficient, so that the parent has greater capabilities than
+    // the child, so that the child will fail the ptrace read access check.
+    GTEST_SKIP() << "Needs the CAP_SYS_PTRACE capability.";
+  }
+  pid_t parent_pid = getpid();
+
+  test_helper::ForkHelper helper;
+  helper.RunInForkedProcess([&] {
+    // Ensure that we do not have the effective CAP_SYS_PTRACE capability.
+    test_helper::DropAllCapabilities();
+
+    std::string path = fxl::StringPrintf("/proc/%d/stat", parent_pid);
+    std::string contents;
+    ASSERT_TRUE(files::ReadFileToString(path, &contents));
+    auto fields = ProcPidStatElements(contents);
+
+    // The fields requiring a ptrace read access check will be zeroed when the check fails.
+    EXPECT_EQ(fields[26], "1") << "startcode(26)";
+    EXPECT_EQ(fields[27], "1") << "endcode(27)";
+    EXPECT_EQ(fields[28], "0") << "startstack(28)";
+    EXPECT_EQ(fields[29], "0") << "kstkesp(29)";
+    EXPECT_EQ(fields[30], "0") << "kstkeip(30)";
+
+    EXPECT_EQ(fields[35], "0") << "wchan(35)";
+
+    EXPECT_EQ(fields[45], "0") << "start_data(45)";
+    EXPECT_EQ(fields[46], "0") << "end_data(46)";
+    EXPECT_EQ(fields[47], "0") << "start_brk(47)";
+    EXPECT_EQ(fields[48], "0") << "arg_start(48)";
+    EXPECT_EQ(fields[49], "0") << "arg_end(49)";
+    EXPECT_EQ(fields[50], "0") << "env_start(50)";
+    EXPECT_EQ(fields[51], "0") << "env_end(51)";
+    EXPECT_EQ(fields[52], "0") << "exit_code(52)";
+  });
+  ASSERT_TRUE(helper.WaitForChildren());
+}
+TEST_F(ProcTaskDirTest, ParentFieldsValidWithCapSysPtrace) {
+  if (!test_helper::HasCapabilityPermitted(CAP_SYS_PTRACE)) {
+    GTEST_SKIP() << "Needs the CAP_SYS_PTRACE capability.";
+  }
+  pid_t parent_pid = getpid();
+
+  test_helper::ForkHelper helper;
+  helper.RunInForkedProcess([&] {
+    // We need to have the effective CAP_SYS_PTRACE capability.
+    test_helper::SetCapabilityEffective(CAP_SYS_PTRACE);
+
+    std::string path = fxl::StringPrintf("/proc/%d/stat", parent_pid);
+    std::string contents;
+    ASSERT_TRUE(files::ReadFileToString(path, &contents));
+    auto fields = ProcPidStatElements(contents);
+
+    // The fields requiring a ptrace read access check will be zeroed when the check fails.
+    EXPECT_NE(fields[26], "1") << "startcode(26)";
+    EXPECT_NE(fields[27], "1") << "endcode(27)";
+    EXPECT_NE(fields[28], "0") << "startstack(28)";
+
+    // kstkesp(29) and kstkeip(30) are typically zero.
+
+    if (!test_helper::IsStarnix()) {
+      // Starnix doesn't yet implement these fields.
+      EXPECT_NE(fields[35], "0") << "wchan(35)";
+
+      EXPECT_NE(fields[45], "0") << "start_data(45)";
+      EXPECT_NE(fields[46], "0") << "end_data(46)";
+      EXPECT_NE(fields[47], "0") << "start_brk(47)";
+    }
+
+    EXPECT_NE(fields[48], "0") << "arg_start(48)";
+    EXPECT_NE(fields[49], "0") << "arg_end(49)";
+    EXPECT_NE(fields[50], "0") << "env_start(50)";
+    EXPECT_NE(fields[51], "0") << "env_end(51)";
+
+    // exit_code(52) will be zero.
+  });
+  ASSERT_TRUE(helper.WaitForChildren());
+}
+
 TEST_F(ProcTaskDirTest, SelfStatmIsNotEmpty) {
   std::string contents;
   ASSERT_TRUE(files::ReadFileToString("/proc/self/statm", &contents));
