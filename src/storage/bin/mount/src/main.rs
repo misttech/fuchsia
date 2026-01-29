@@ -30,10 +30,6 @@ struct Options {
     /// verbose flag
     #[argh(option)]
     verbose: Option<bool>,
-
-    /// blob compression algorithm
-    #[argh(option)]
-    compression: Option<String>,
 }
 
 #[fuchsia::main]
@@ -60,7 +56,6 @@ async fn main() -> Result<(), Error> {
     let mut mount_options = fs_realm::MountOptions::default();
     mount_options.read_only = opt.read_only;
     mount_options.verbose = opt.verbose;
-    mount_options.write_compression_algorithm = opt.compression;
 
     let (client_end, server_end) = create_endpoints::<ControllerMarker>();
     connect_channel_to_protocol_at_path(server_end.into_channel(), &device_path)?;

@@ -257,19 +257,6 @@ impl DefineSubsystemConfiguration<(&StorageConfig, &StorageToolsConfig, &Recover
             }
             None => Config::new(ConfigValueType::String { max_size: 64 }, "".into()),
         };
-        let algorithm = match &storage_config.filesystems.blobfs_write_compression_algorithm {
-            Some(algorithm) => Config::new(
-                ConfigValueType::String { max_size: 20 },
-                serde_json::to_value(algorithm)?,
-            ),
-            None => Config::new_void(),
-        };
-        let policy = match &storage_config.filesystems.blobfs_cache_eviction_policy {
-            Some(policy) => {
-                Config::new(ConfigValueType::String { max_size: 20 }, serde_json::to_value(policy)?)
-            }
-            None => Config::new_void(),
-        };
         let watch_deprecated_v1_drivers =
             context.board_config.filesystems.watch_deprecated_v1_drivers;
 
@@ -315,8 +302,6 @@ impl DefineSubsystemConfiguration<(&StorageConfig, &StorageToolsConfig, &Recover
             ("fuchsia.fshost.DisableAutomount", disable_automount),
             ("fuchsia.fshost.StarnixVolumeName", starnix_volume_name),
             ("fuchsia.fshost.InlineCrypto", inline_crypto),
-            ("fuchsia.blobfs.WriteCompressionAlgorithm", algorithm),
-            ("fuchsia.blobfs.CacheEvictionPolicy", policy),
             ("fuchsia.fshost.ProvisionFxfs", Config::new_bool(provision_fxfs)),
             (
                 "fuchsia.fshost.WatchDeprecatedV1Drivers",

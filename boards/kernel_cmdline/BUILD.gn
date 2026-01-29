@@ -15,11 +15,6 @@ kernel_cmdline("serial-legacy") {
   deps = [ "//build/validate:non_production_tag" ]
 }
 
-kernel_cmdline("disable-blobfs-compression") {
-  args = [ "blobfs.write-compression-algorithm=UNCOMPRESSED" ]
-  deps = [ "//build/validate:non_production_tag" ]
-}
-
 # This collects settings not specific to any particular machine that are
 # recommended to minimize unintended effects on timing data.  Note that this
 # does not (as yet) include settings that may reduce overall performance, which

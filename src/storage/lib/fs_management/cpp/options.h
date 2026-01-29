@@ -7,13 +7,13 @@
 
 #include <fidl/fuchsia.fs.startup/cpp/wire.h>
 #include <fidl/fuchsia.fxfs/cpp/wire.h>
-#include <fidl/fuchsia.io/cpp/wire.h>
+#include <lib/fidl/cpp/wire/arena.h>
 #include <lib/zx/result.h>
-#include <zircon/types.h>
+#include <zircon/compiler.h>
 
 #include <cstdint>
+#include <functional>
 #include <optional>
-#include <vector>
 
 namespace fs_management {
 
@@ -26,19 +26,6 @@ struct MountOptions {
 
   // Ensures that requests to the mountpoint will be propagated to the underlying FS
   bool wait_until_ready = true;
-
-  // An optional compression algorithm specifier for the filesystem to use when storing files (if
-  // the filesystem supports it).
-  std::optional<std::string> write_compression_algorithm;
-
-  // An optional compression level for the filesystem to use when storing files (if the filesystem
-  // and the configured |write_compression_algorithm| supports it).
-  // Setting to < 0 indicates no value (the filesystem chooses a default if necessary).
-  int write_compression_level = -1;
-
-  // An optional cache eviction policy specifier for the filesystem to use for in-memory data (if
-  // the filesystem supports it).
-  std::optional<std::string> cache_eviction_policy;
 
   // If set, run fsck after every transaction.
   bool fsck_after_every_transaction = false;

@@ -99,11 +99,7 @@
             to: "#fshost",
         },
         {
-            config: [
-                "fuchsia.blobfs.CacheEvictionPolicy",
-                "fuchsia.blobfs.WriteCompressionAlgorithm",
-                "fuchsia.fshost.DisableAutomount",
-            ],
+            config: [ "fuchsia.fshost.DisableAutomount" ],
             from: "parent",
             to: "#fshost",
             availability: "optional",

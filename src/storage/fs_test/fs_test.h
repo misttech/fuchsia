@@ -111,8 +111,6 @@ struct TestFilesystemOptions {
 
   // The format blobfs should store blobs in.
   blobfs::BlobLayoutFormat blob_layout_format = blobfs::BlobLayoutFormat::kCompactMerkleTreeAtEnd;
-  // The compression algorithm blobfs should use for new files.
-  std::optional<blobfs::CompressionAlgorithm> blob_compression_algorithm = std::nullopt;
 
   // If using ram_nand, the number of writes after which writes should fail.
   uint32_t fail_after;

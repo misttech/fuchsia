@@ -764,7 +764,7 @@ impl Drop for ServingMultiVolumeFilesystem {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::{BlobCompression, BlobEvictionPolicy, Blobfs, F2fs, Fxfs, Minfs};
+    use crate::{Blobfs, F2fs, Fxfs, Minfs};
     use delivery_blob::{CompressionMode, Type1Blob};
     use fidl_fuchsia_fxfs::{BlobCreatorMarker, BlobReaderMarker};
     use ramdevice_client::RamdiskClient;
@@ -782,13 +782,7 @@ mod tests {
     async fn blobfs_custom_config() {
         let block_size = 512;
         let ramdisk = ramdisk(block_size).await;
-        let config = Blobfs {
-            verbose: true,
-            readonly: true,
-            write_compression_algorithm: BlobCompression::Uncompressed,
-            cache_eviction_policy_override: BlobEvictionPolicy::EvictImmediately,
-            ..Default::default()
-        };
+        let config = Blobfs { verbose: true, readonly: true, ..Default::default() };
         let mut blobfs = new_fs(&ramdisk, config).await;
 
         blobfs.format().await.expect("failed to format blobfs");

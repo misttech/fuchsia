@@ -23,18 +23,6 @@ void AssertStartOptionsEqual(const fuchsia_fs_startup::wire::StartOptions& a,
   if (a.has_verbose()) {
     ASSERT_EQ(a.verbose(), b.verbose());
   }
-  ASSERT_EQ(a.has_write_compression_algorithm(), b.has_write_compression_algorithm());
-  if (a.has_write_compression_algorithm()) {
-    ASSERT_EQ(a.write_compression_algorithm(), b.write_compression_algorithm());
-  }
-  ASSERT_EQ(a.has_write_compression_level(), b.has_write_compression_level());
-  if (a.has_write_compression_level()) {
-    ASSERT_EQ(a.write_compression_level(), b.write_compression_level());
-  }
-  ASSERT_EQ(a.has_cache_eviction_policy_override(), b.has_cache_eviction_policy_override());
-  if (a.has_cache_eviction_policy_override()) {
-    ASSERT_EQ(a.cache_eviction_policy_override(), b.cache_eviction_policy_override());
-  }
   ASSERT_EQ(a.has_startup_profiling_seconds(), b.has_startup_profiling_seconds());
   if (a.has_startup_profiling_seconds()) {
     ASSERT_EQ(a.startup_profiling_seconds(), b.startup_profiling_seconds());
@@ -86,9 +74,6 @@ TEST(MountOptionsTest, AllOptionsSet) {
   MountOptions options{
       .readonly = true,
       .verbose_mount = true,
-      .write_compression_algorithm = "UNCOMPRESSED",
-      .write_compression_level = 10,
-      .cache_eviction_policy = "NEVER_EVICT",
       .fsck_after_every_transaction = true,
       .startup_profiling_seconds = 5,
       .inline_crypto_enabled = true,
@@ -98,33 +83,9 @@ TEST(MountOptionsTest, AllOptionsSet) {
   auto builder = fuchsia_fs_startup::wire::StartOptions::Builder(arena);
   builder.read_only(true);
   builder.verbose(true);
-  builder.write_compression_algorithm(
-      fuchsia_fs_startup::wire::CompressionAlgorithm::kUncompressed);
-  builder.write_compression_level(10);
-  builder.cache_eviction_policy_override(
-      fuchsia_fs_startup::wire::EvictionPolicyOverride::kNeverEvict);
   builder.startup_profiling_seconds(5);
   builder.inline_crypto_enabled(true);
   builder.barriers_enabled(true);
-  fuchsia_fs_startup::wire::StartOptions expected_start_options = builder.Build();
-
-  auto start_options_or = options.as_start_options(arena);
-  ASSERT_TRUE(start_options_or.is_ok()) << start_options_or.status_string();
-  AssertStartOptionsEqual(*start_options_or, expected_start_options);
-}
-
-TEST(MountOptionsTest, ZstdChunkedEvictImmediately) {
-  MountOptions options{
-      .write_compression_algorithm = "ZSTD_CHUNKED",
-      .cache_eviction_policy = "EVICT_IMMEDIATELY",
-  };
-  fidl::Arena arena;
-  auto builder = fuchsia_fs_startup::wire::StartOptions::Builder(arena);
-  builder.read_only(false);
-  builder.verbose(false);
-  builder.write_compression_algorithm(fuchsia_fs_startup::wire::CompressionAlgorithm::kZstdChunked);
-  builder.cache_eviction_policy_override(
-      fuchsia_fs_startup::wire::EvictionPolicyOverride::kEvictImmediately);
   fuchsia_fs_startup::wire::StartOptions expected_start_options = builder.Build();
 
   auto start_options_or = options.as_start_options(arena);

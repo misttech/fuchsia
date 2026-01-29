@@ -11,7 +11,6 @@ using fuchsia.io;
 type MountOptions = resource table {
     1: read_only bool;
     2: verbose bool;
-    3: write_compression_algorithm string:32;
 };
 
 type FormatOptions = resource table {

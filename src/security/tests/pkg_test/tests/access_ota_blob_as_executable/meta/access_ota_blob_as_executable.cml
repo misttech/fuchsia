@@ -218,11 +218,7 @@
             availability: "optional",
         },
         {
-            config: [
-                "fuchsia.blobfs.CacheEvictionPolicy",
-                "fuchsia.blobfs.WriteCompressionAlgorithm",
-                "fuchsia.fshost.DisableAutomount",
-            ],
+            config: [ "fuchsia.fshost.DisableAutomount" ],
             from: "void",
             to: "#fshost",
             availability: "optional",

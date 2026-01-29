@@ -24,12 +24,6 @@ using diagnostics::reader::InspectData;
 
 fs_management::MountOptions TestFilesystem::DefaultMountOptions() const {
   fs_management::MountOptions options;
-  // Blobfs-specific options:
-  if (options_.blob_compression_algorithm) {
-    options.write_compression_algorithm =
-        blobfs::CompressionAlgorithmToString(*options_.blob_compression_algorithm);
-  }
-  // Other filesystem options:
   if (GetTraits().uses_crypt) {
     options.crypt_client = InitializeCryptService;
   }

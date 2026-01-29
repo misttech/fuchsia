@@ -1259,19 +1259,7 @@ impl FilesystemLauncher {
     }
 
     pub fn get_blobfs_config(&self) -> Blobfs {
-        Blobfs {
-            write_compression_algorithm: self
-                .config
-                .blobfs_write_compression_algorithm
-                .as_str()
-                .into(),
-            cache_eviction_policy_override: self
-                .config
-                .blobfs_cache_eviction_policy
-                .as_str()
-                .into(),
-            ..Default::default()
-        }
+        Blobfs::default()
     }
 
     pub async fn serve_blobfs(&self, device: &mut dyn Device) -> Result<Filesystem, Error> {

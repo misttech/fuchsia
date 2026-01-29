@@ -31,8 +31,6 @@ pub fn default_test_config() -> fshost_config::Config {
         starnix_volume_name: "".to_string(),
         inline_crypto: false,
         disable_automount: false,
-        blobfs_write_compression_algorithm: "".to_string(),
-        blobfs_cache_eviction_policy: "".to_string(),
         provision_fxfs: false,
         watch_deprecated_v1_drivers: false,
     }

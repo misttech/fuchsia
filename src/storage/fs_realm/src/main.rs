@@ -54,11 +54,6 @@ impl FsRealmState {
                 let blobfs = Blobfs {
                     verbose: options.verbose.unwrap_or(false),
                     readonly: options.read_only.unwrap_or(false),
-                    write_compression_algorithm: options
-                        .write_compression_algorithm
-                        .unwrap_or_default()
-                        .as_str()
-                        .into(),
                     ..Default::default()
                 };
                 Filesystem::new(device, blobfs)

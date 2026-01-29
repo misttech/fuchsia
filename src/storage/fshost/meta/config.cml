@@ -181,22 +181,6 @@
             type: "bool",
         },
         {
-            config: "fuchsia.blobfs.WriteCompressionAlgorithm",
-            key: "blobfs_write_compression_algorithm",
-            type: "string",
-            max_size: 20,
-            availability: "optional",
-            default: "zstd_chunked",
-        },
-        {
-            config: "fuchsia.blobfs.CacheEvictionPolicy",
-            key: "blobfs_cache_eviction_policy",
-            type: "string",
-            max_size: 20,
-            availability: "optional",
-            default: "never_evict",
-        },
-        {
             /// If true, provision the "super_and_userdata" partition with Fxfs.
             config: "fuchsia.fshost.ProvisionFxfs",
             key: "provision_fxfs",

@@ -15,10 +15,7 @@ pub mod format;
 pub mod partition;
 
 use crate::filesystem::BlockConnector;
-use fidl_fuchsia_fs_startup::{
-    CompressionAlgorithm, EvictionPolicyOverride, FormatOptions, StartOptions,
-};
-use std::convert::From;
+use fidl_fuchsia_fs_startup::{FormatOptions, StartOptions};
 use std::sync::Arc;
 
 // Re-export errors as public.
@@ -107,42 +104,6 @@ pub enum BlobLayout {
     Compact,
 }
 
-/// Compression used for blobs in blobfs
-#[derive(Clone, Default)]
-pub enum BlobCompression {
-    #[default]
-    ZSTDChunked,
-    Uncompressed,
-}
-
-impl From<&str> for BlobCompression {
-    fn from(value: &str) -> Self {
-        match value {
-            "zstd_chunked" => Self::ZSTDChunked,
-            "uncompressed" => Self::Uncompressed,
-            _ => Default::default(),
-        }
-    }
-}
-
-/// Eviction policy used for blobs in blobfs
-#[derive(Clone, Default)]
-pub enum BlobEvictionPolicy {
-    #[default]
-    NeverEvict,
-    EvictImmediately,
-}
-
-impl From<&str> for BlobEvictionPolicy {
-    fn from(value: &str) -> Self {
-        match value {
-            "never_evict" => Self::NeverEvict,
-            "evict_immediately" => Self::EvictImmediately,
-            _ => Default::default(),
-        }
-    }
-}
-
 /// Blobfs Filesystem Configuration
 /// If fields are None or false, they will not be set in arguments.
 #[derive(Clone, Default)]
@@ -153,9 +114,6 @@ pub struct Blobfs {
     pub num_inodes: u64,
     // Start Options
     pub readonly: bool,
-    pub write_compression_algorithm: BlobCompression,
-    pub write_compression_level: Option<i32>,
-    pub cache_eviction_policy_override: BlobEvictionPolicy,
     pub component_type: ComponentType,
 }
 
@@ -188,27 +146,11 @@ impl FSConfig for Blobfs {
                 ..Default::default()
             },
             start_options: {
-                let mut start_options = StartOptions {
+                StartOptions {
                     read_only: Some(self.readonly),
                     verbose: Some(self.verbose),
-                    write_compression_level: Some(self.write_compression_level.unwrap_or(-1)),
-                    write_compression_algorithm: Some(CompressionAlgorithm::ZstdChunked),
-                    cache_eviction_policy_override: Some(EvictionPolicyOverride::None),
                     ..Default::default()
-                };
-                start_options.write_compression_algorithm =
-                    Some(match &self.write_compression_algorithm {
-                        BlobCompression::ZSTDChunked => CompressionAlgorithm::ZstdChunked,
-                        BlobCompression::Uncompressed => CompressionAlgorithm::Uncompressed,
-                    });
-                start_options.cache_eviction_policy_override =
-                    Some(match &self.cache_eviction_policy_override {
-                        BlobEvictionPolicy::NeverEvict => EvictionPolicyOverride::NeverEvict,
-                        BlobEvictionPolicy::EvictImmediately => {
-                            EvictionPolicyOverride::EvictImmediately
-                        }
-                    });
-                start_options
+                }
             },
             component_type: self.component_type.clone(),
         }
