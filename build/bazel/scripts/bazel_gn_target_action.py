@@ -30,7 +30,6 @@ from bazel_action_file_copy_utils import (
 )
 from bazel_action_utils import (
     BazelGlobalArguments,
-    BazelRbeSettings,
     BazelTargetInfosMap,
     DirectoryOutput,
     FileOutput,
@@ -657,27 +656,6 @@ def main() -> int:
 
     cmd_args = ["//buildfiles_genquery:genquery"]
     cmd_args += args.bazel_targets
-
-    jobs = None
-    # When running jobs remotely, increase the number of allowed jobs to 10x
-    # when running jobs locally.  This is different from the reclient config
-    # because this controls the _running_ of jobs, not the checking of the
-    # cache for jobs.
-    rbe_settings = BazelRbeSettings.create_from_build_dir(args.build_dir)
-    if rbe_settings.enabled and rbe_settings.exec_strategy == "remote":
-        cpus = os.cpu_count()
-        if cpus:
-            jobs = 10 * cpus
-
-    if jobs is None:
-        # If an explicit job count was passed to `fx build`, tell Bazel to respect it.
-        # See https://fxbug.dev/351623259
-        job_count = os.environ.get("FUCHSIA_BAZEL_JOB_COUNT")
-        if job_count:
-            jobs = int(job_count)
-
-    if jobs:
-        cmd_args += [f"--jobs={jobs}"]
 
     # Save the command.profile.gz data for analysis.
     # Convert '//some/gn:label' into 'obj/some/gn/label.command.profile.gz'

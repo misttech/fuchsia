@@ -185,6 +185,10 @@ class BazelActionRunner(object):
         if self.global_args.upload_build_events:
             cmd_args += [f"--config={self.global_args.upload_build_events}"]
 
+        jobs = calculate_jobs_param(self.rbe_settings)
+        if jobs:
+            cmd_args += [jobs]
+
         if self.global_args.quiet:
             cmd_args += ["--config=quiet"]
         else:
@@ -373,6 +377,30 @@ def calculate_platform_config_args(
         # the command line.
         platform_config_args += [f"--config={rbe_settings.exec_strategy}"]
     return platform_config_args
+
+
+def calculate_jobs_param(
+    rbe_settings: bazel_action_utils.BazelRbeSettings,
+) -> str | None:
+    """Given the RBE settings and the environment vars, determine what --jobs param to use, if any."""
+    jobs = None
+    # When running jobs remotely, increase the number of allowed jobs to 10x
+    # when running jobs locally.  This is different from the reclient config
+    # because this controls the _running_ of jobs, not the checking of the
+    # cache for jobs.
+    if rbe_settings.enabled and rbe_settings.exec_strategy == "remote":
+        cpus = os.cpu_count()
+        if cpus:
+            jobs = 10 * cpus
+
+    if jobs is None:
+        # If an explicit job count was passed to `fx build`, tell Bazel to respect it.
+        # See https://fxbug.dev/351623259
+        job_count = os.environ.get("FUCHSIA_BAZEL_JOB_COUNT")
+        if job_count:
+            jobs = int(job_count)
+
+    return f"--jobs={jobs}" if jobs else None
 
 
 def bazel_debug_line_filter(manifest_paths: list[str], line: bytes) -> bool:
