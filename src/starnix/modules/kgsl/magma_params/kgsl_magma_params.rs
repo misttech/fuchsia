@@ -24,7 +24,7 @@ pub struct AdrenoKgslParams {
     pub min_access_length: u32,
     pub ubwc_mode: u32,
     pub secure_ctxt_support: u32,
-    pub secure_buf_alignment: u64,
+    pub secure_buf_alignment: u32,
     pub gpu_secure_va_size: u64,
     pub gpu_va64_size: u64,
     pub gpu_model: [u8; 32],

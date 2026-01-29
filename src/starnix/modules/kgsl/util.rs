@@ -89,16 +89,54 @@ pub fn canonicalize_ioctl_request(current_task: &CurrentTask, request: u32) -> u
 
 pub mod maur {
     //! Helper for MultiArchUserRef types.
-    use starnix_uapi::uapi;
-    use starnix_uapi::user_address::MultiArchUserRef;
+    use starnix_core::mm::MemoryAccessorExt;
+    use starnix_core::task::CurrentTask;
+    use starnix_syscalls::{SUCCESS, SyscallResult};
+    use starnix_uapi::errors::Errno;
+    use starnix_uapi::uapi::{self, uaddr};
+    use starnix_uapi::user_address::{MultiArchUserRef, UserAddress, UserRef};
+
+    pub trait TaskWritable {
+        fn write(self, task: &CurrentTask, addr: uaddr) -> Result<SyscallResult, Errno>;
+    }
+
+    impl TaskWritable for u32 {
+        fn write(self, task: &CurrentTask, addr: uaddr) -> Result<SyscallResult, Errno> {
+            let result_ref = UserRef::from(UserAddress::from(addr));
+            task.write_object(result_ref, &self).map(|_| SUCCESS)
+        }
+    }
+
+    impl TaskWritable for u64 {
+        fn write(self, task: &CurrentTask, addr: uaddr) -> Result<SyscallResult, Errno> {
+            let result_ref = UserRef::from(UserAddress::from(addr));
+            task.write_object(result_ref, &self).map(|_| SUCCESS)
+        }
+    }
+
     macro_rules! create_multi_arch_types {
         ($($name:ident),+ $(,)?) => {
             $(
-                #[allow(non_camel_case_types)]
+                // For each type foo, define a maur::foo type alias.
+                #[allow(dead_code, non_camel_case_types)]
                 pub type $name = MultiArchUserRef<uapi::$name, uapi::arch32::$name>;
+
+                // Implements a multi-arch write for each type.
+                impl TaskWritable for uapi::$name {
+                    fn write(self, task: &CurrentTask, addr: uaddr) -> Result<SyscallResult, Errno> {
+                        let result_ref = MultiArchUserRef::<uapi::$name, uapi::arch32::$name>::new(task, addr);
+                        task.write_multi_arch_object(result_ref, self).map(|_| SUCCESS)
+                    }
+                }
             )+
         };
     }
 
-    create_multi_arch_types!(kgsl_devinfo, kgsl_device_getproperty);
+    create_multi_arch_types!(
+        kgsl_devinfo,
+        kgsl_device_getproperty,
+        kgsl_ucode_version,
+        kgsl_qdss_stm_prop,
+        kgsl_qtimer_prop
+    );
 }

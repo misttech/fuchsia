@@ -2,7 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use crate::util::maur;
+use crate::util::maur::{self, TaskWritable};
 use fdio::service_connect;
 use kgsl_libmagma::{Device, QueryOutput, initialize_logging};
 use kgsl_magma_params::{AdrenoKgslParams, MAGMA_QCOM_ADRENO_QUERY_KGSL_PARAMS};
@@ -12,7 +12,7 @@ use starnix_core::mm::MemoryAccessorExt;
 use starnix_core::task::CurrentTask;
 use starnix_core::vfs::{FileObject, FileOps, FsNode};
 use starnix_core::{fileops_impl_dataless, fileops_impl_nonseekable, fileops_impl_noop_sync};
-use starnix_logging::{log_error, log_info, log_warn};
+use starnix_logging::{log_error, log_info, log_warn, track_stub};
 use starnix_sync::{Locked, Unlocked};
 use starnix_syscalls::{SUCCESS, SyscallArg, SyscallResult};
 use starnix_uapi::device_type::DeviceType;
@@ -21,6 +21,20 @@ use starnix_uapi::open_flags::OpenFlags;
 use starnix_uapi::user_address::{UserAddress, UserRef};
 use starnix_uapi::{errno, error, uapi};
 use std::sync::Once;
+
+#[cfg(feature = "starnix-kgsl-debug")]
+#[macro_export]
+macro_rules! kgsl_debug {
+    ($fmt:expr $(, $arg:expr)*) => {
+        log_info!("kgsl: {}:{}: {}", file!(), line!(), format_args!($fmt $(, $arg)*));
+    };
+}
+
+#[cfg(not(feature = "starnix-kgsl-debug"))]
+#[macro_export]
+macro_rules! kgsl_debug {
+    ($($arg:tt)*) => {};
+}
 
 pub struct KgslFile {
     // This member will be read in a future change. A linter attribute is used
@@ -103,10 +117,11 @@ impl KgslFile {
         let params_ref = maur::kgsl_device_getproperty::new(current_task, arg);
         let params = current_task.read_multi_arch_object(params_ref)?;
         let params_size: usize = params.sizebytes.try_into().map_err(|_| errno!(EINVAL))?;
+        // TODO(b/393160668): check params_size against all property types
 
         match params.type_ {
             uapi::KGSL_PROP_DEVICE_INFO => {
-                let devinfo = uapi::kgsl_devinfo {
+                let prop_value = uapi::kgsl_devinfo {
                     device_id: self.adreno_kgsl_params.device_id,
                     chip_id: self.adreno_kgsl_params.chip_id,
                     mmu_enabled: self.adreno_kgsl_params.mmu_enabled,
@@ -115,26 +130,122 @@ impl KgslFile {
                     gmem_sizebytes: self.adreno_kgsl_params.gmem_sizebytes,
                     ..Default::default()
                 };
-                let result_ref = maur::kgsl_devinfo::new(current_task, params.value);
-                current_task.write_multi_arch_object(result_ref, devinfo)?;
-                Ok(SUCCESS)
+                kgsl_debug!("KGSL_PROP_DEVICE_INFO: {:?}", prop_value);
+                prop_value.write(&current_task, params.value)
+            }
+            uapi::KGSL_PROP_UCHE_GMEM_VADDR => {
+                let prop_value = 0u32; // Unified cache unsupported.
+                kgsl_debug!("KGSL_PROP_UCHE_GMEM_VADDR: {:?}", prop_value);
+                prop_value.write(&current_task, params.value)
+            }
+            uapi::KGSL_PROP_UCODE_VERSION => {
+                let prop_value = uapi::kgsl_ucode_version {
+                    pfp: self.adreno_kgsl_params.ucode_version_pfp,
+                    pm4: self.adreno_kgsl_params.ucode_version_pm4,
+                    ..Default::default()
+                };
+                kgsl_debug!("KGSL_PROP_UCODE_VERSION: {:?}", prop_value);
+                prop_value.write(&current_task, params.value)
+            }
+            uapi::KGSL_PROP_HIGHEST_BANK_BIT => {
+                let prop_value = self.adreno_kgsl_params.highest_bank_bit;
+                kgsl_debug!("KGSL_PROP_HIGHEST_BANK_BIT: {:?}", prop_value);
+                prop_value.write(&current_task, params.value)
             }
             uapi::KGSL_PROP_DEVICE_BITNESS => {
-                let prop_value: u32 = self.adreno_kgsl_params.device_bitness;
-                let result_ref = UserRef::from(UserAddress::from(params.value));
-                current_task.write_object(result_ref, &prop_value)?;
-                Ok(SUCCESS)
+                let prop_value = self.adreno_kgsl_params.device_bitness;
+                kgsl_debug!("KGSL_PROP_DEVICE_BITNESS: {:?}", prop_value);
+                prop_value.write(&current_task, params.value)
+            }
+            uapi::KGSL_PROP_DEVICE_QDSS_STM => {
+                // This is intentionally zero-sized to indicate lack of support.
+                let prop_value =
+                    uapi::kgsl_qdss_stm_prop { gpuaddr: 0, size: 0, ..Default::default() };
+                kgsl_debug!("KGSL_PROP_DEVICE_QDSS_STM: {:?}", prop_value);
+                prop_value.write(&current_task, params.value)
+            }
+            uapi::KGSL_PROP_MIN_ACCESS_LENGTH => {
+                let prop_value = self.adreno_kgsl_params.min_access_length;
+                kgsl_debug!("KGSL_PROP_MIN_ACCESS_LENGTH: {:?}", prop_value);
+                prop_value.write(&current_task, params.value)
+            }
+            uapi::KGSL_PROP_UBWC_MODE => {
+                let prop_value = self.adreno_kgsl_params.ubwc_mode;
+                kgsl_debug!("KGSL_PROP_UBWC_MODE: {:?}", prop_value);
+                prop_value.write(&current_task, params.value)
+            }
+            uapi::KGSL_PROP_DEVICE_QTIMER => {
+                // This is intentionally zero-sized to indicate lack of support.
+                let prop_value =
+                    uapi::kgsl_qtimer_prop { gpuaddr: 0, size: 0, ..Default::default() };
+                kgsl_debug!("KGSL_PROP_DEVICE_QTIMER: {:?}", prop_value);
+                prop_value.write(&current_task, params.value)
+            }
+            uapi::KGSL_PROP_SECURE_BUFFER_ALIGNMENT => {
+                let prop_value = self.adreno_kgsl_params.secure_buf_alignment;
+                kgsl_debug!("KGSL_PROP_SECURE_BUFFER_ALIGNMENT: {:?}", prop_value);
+                prop_value.write(&current_task, params.value)
+            }
+            uapi::KGSL_PROP_SECURE_CTXT_SUPPORT => {
+                let prop_value = self.adreno_kgsl_params.secure_ctxt_support;
+                kgsl_debug!("KGSL_PROP_SECURE_CTXT_SUPPORT: {:?}", prop_value);
+                prop_value.write(&current_task, params.value)
+            }
+            uapi::KGSL_PROP_SPEED_BIN => {
+                let prop_value = 0u64; // Default speed bin.
+                kgsl_debug!("KGSL_PROP_SPEED_BIN: {:?}", prop_value);
+                prop_value.write(&current_task, params.value)
+            }
+            uapi::KGSL_PROP_GAMING_BIN => {
+                kgsl_debug!("KGSL_PROP_GAMING_BIN returning EINVAL");
+                error!(EINVAL, "gaming bin unsupported")
             }
             uapi::KGSL_PROP_GPU_MODEL => {
                 if params_size < self.adreno_kgsl_params.gpu_model.len() {
                     return error!(EINVAL);
                 }
-                let prop_value: [u8; 32] = self.adreno_kgsl_params.gpu_model;
+                let prop_value = self.adreno_kgsl_params.gpu_model;
+                kgsl_debug!("KGSL_PROP_GPU_MODEL: {:?}", prop_value);
                 let result_ref = UserRef::from(UserAddress::from(params.value));
                 current_task.write_object(result_ref, &prop_value)?;
                 Ok(SUCCESS)
             }
+            uapi::KGSL_PROP_VK_DEVICE_ID => {
+                let prop_value = self.adreno_kgsl_params.vk_device_id;
+                kgsl_debug!("KGSL_PROP_VK_DEVICE_ID: {:?}", prop_value);
+                prop_value.write(&current_task, params.value)
+            }
+            uapi::KGSL_PROP_IS_LPAC_ENABLED => {
+                let prop_value = 0u32; // Asynchronous compute unsupported.
+                kgsl_debug!("KGSL_PROP_IS_LPAC_ENABLED: {:?}", prop_value);
+                prop_value.write(&current_task, params.value)
+            }
+            uapi::KGSL_PROP_GPU_VA64_SIZE => {
+                let prop_value = self.adreno_kgsl_params.gpu_va64_size;
+                kgsl_debug!("KGSL_PROP_GPU_VA64_SIZE: {:?}", prop_value);
+                prop_value.write(&current_task, params.value)
+            }
+            uapi::KGSL_PROP_IS_RAYTRACING_ENABLED => {
+                let prop_value = 0u32; // Raytracing unsupported.
+                kgsl_debug!("KGSL_PROP_IS_RAYTRACING_ENABLED: {:?}", prop_value);
+                prop_value.write(&current_task, params.value)
+            }
+            uapi::KGSL_PROP_IS_FASTBLEND_ENABLED => {
+                let prop_value = 0u32; // Fast blend unsupported.
+                kgsl_debug!("KGSL_PROP_IS_FASTBLEND_ENABLED: {:?}", prop_value);
+                prop_value.write(&current_task, params.value)
+            }
+            uapi::KGSL_PROP_UCHE_TRAP_BASE => {
+                kgsl_debug!("KGSL_PROP_UCHE_TRAP_BASE returning EINVAL");
+                error!(EINVAL, "uche_trap_base unset")
+            }
+            uapi::KGSL_PROP_GPU_SECURE_VA_SIZE => {
+                let prop_value = self.adreno_kgsl_params.gpu_secure_va_size;
+                kgsl_debug!("KGSL_PROP_GPU_SECURE_VA_SIZE: {:?}", prop_value);
+                prop_value.write(&current_task, params.value)
+            }
             _ => {
+                track_stub!(TODO("https://fxbug.dev/393160668"), "kgsl property", params.type_);
                 log_error!("kgsl: unimplemented GetProperty type {}", kgsl_prop(params.type_));
                 error!(ENOTSUP)
             }
@@ -172,6 +283,7 @@ impl FileOps for KgslFile {
         match crate::util::canonicalize_ioctl_request(current_task, request) {
             uapi::IOCTL_KGSL_DEVICE_GETPROPERTY => self.kgsl_device_getproperty(current_task, arg),
             _ => {
+                track_stub!(TODO("https://fxbug.dev/393160668"), "kgsl ioctl", request);
                 log_error!("kgsl: unimplemented ioctl {}", ioctl_kgsl(request));
                 error!(ENOTSUP)
             }
