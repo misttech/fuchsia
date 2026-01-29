@@ -58,4 +58,7 @@ scenarios = [
   "vlnext_no_echoctl",
   "iutf8_backspace",
   "no_iutf8_backspace",
+  "veol_basic",
+  "veol2_basic",
+  "veol2_no_iexten",
 ]
