@@ -55,22 +55,17 @@ impl SchedulerManager {
     }
 
     fn role_name_inner(&self, task: &Task, scheduler_state: SchedulerState) -> Result<&str, Errno> {
-        Ok(if scheduler_state.is_realtime() {
-            let process_name = task
-                .thread_group()
-                .read()
-                .get_task(task.thread_group().leader)
-                .ok_or_else(|| errno!(EINVAL))?
-                .command();
-            let thread_name = task.command();
-            if let Some(name) = self.role_overrides.get_role_name(&process_name, &thread_name) {
-                name
-            } else {
-                scheduler_state.role_name()
-            }
-        } else {
-            scheduler_state.role_name()
-        })
+        let process_name = task
+            .thread_group()
+            .read()
+            .get_task(task.thread_group().leader)
+            .ok_or_else(|| errno!(EINVAL))?
+            .command();
+        let thread_name = task.command();
+        if let Some(name) = self.role_overrides.get_role_name(&process_name, &thread_name) {
+            return Ok(name);
+        }
+        Ok(scheduler_state.role_name())
     }
 
     /// Give the provided `task`'s Zircon thread a role.
@@ -753,5 +748,24 @@ mod tests {
         assert!(!idle_40.is_less_than_for_binder(idle_40));
         assert!(!idle_40.is_less_than_for_binder(idle_30));
         assert!(!idle_30.is_less_than_for_binder(idle_40));
+    }
+
+    #[fuchsia::test]
+    async fn role_overrides_non_realtime() {
+        crate::testing::spawn_kernel_and_run_sync(|_locked, current_task| {
+            let mut builder = RoleOverrides::new();
+            builder.add("my_task", "my_task", "overridden_role");
+            let overrides = builder.build().unwrap();
+            let manager = SchedulerManager { role_manager: None, role_overrides: overrides };
+
+            current_task.set_command_name(starnix_task_command::TaskCommand::new(b"my_task"));
+
+            let mut state = SchedulerState::default();
+            state.policy = SchedulingPolicy::Normal;
+
+            let role = manager.role_name_inner(current_task, state).expect("role_name");
+            assert_eq!(role, "overridden_role");
+        })
+        .await;
     }
 }

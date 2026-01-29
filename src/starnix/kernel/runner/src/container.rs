@@ -291,13 +291,13 @@ pub struct ContainerProgram {
     /// apply a single profile for all "realtime" tasks. Instead, this container configuration
     /// allows us to specify different constant bandwidth profiles for different workloads.
     #[serde(default)]
-    rt_role_overrides: Vec<RealtimeSchedulerMapping>,
+    task_role_overrides: Vec<TaskSchedulerMapping>,
 }
 
 /// Specifies a role override for a class of tasks whose process and thread names match provided
 /// patterns.
 #[derive(Default, Deserialize)]
-struct RealtimeSchedulerMapping {
+struct TaskSchedulerMapping {
     /// The role name to use for tasks matching the provided patterns.
     role: String,
     /// A regular expression that will be matched against the process' command.
@@ -306,7 +306,7 @@ struct RealtimeSchedulerMapping {
     thread: String,
 }
 
-impl std::fmt::Debug for RealtimeSchedulerMapping {
+impl std::fmt::Debug for TaskSchedulerMapping {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "process `{}` thread `{}` role `{}`", self.process, self.thread, self.role)
     }
@@ -642,12 +642,12 @@ async fn create_container(
 
     // Check whether we actually have access to a role manager by trying to set our own
     // thread's role.
-    let mut rt_mappings = RoleOverrides::new();
-    for m in &start_info.program.rt_role_overrides {
-        rt_mappings.add(m.process.clone(), m.thread.clone(), m.role.clone());
+    let mut task_mappings = RoleOverrides::new();
+    for m in &start_info.program.task_role_overrides {
+        task_mappings.add(m.process.clone(), m.thread.clone(), m.role.clone());
     }
-    let rt_mappings = rt_mappings.build().context("adding custom realtime task role")?;
-    let scheduler_manager = SchedulerManager::new(rt_mappings);
+    let task_mappings = task_mappings.build().context("adding custom task role")?;
+    let scheduler_manager = SchedulerManager::new(task_mappings);
 
     let crash_reporter = connect_to_protocol::<CrashReporterMarker>().unwrap();
 

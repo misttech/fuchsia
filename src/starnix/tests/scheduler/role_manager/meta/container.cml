@@ -11,7 +11,7 @@
             "/:remote_bundle:data/system:nosuid,nodev,relatime",
             "/tmp:tmpfs",
         ],
-        rt_role_overrides: [
+        task_role_overrides: [
             {
                 role: "first_custom_role",
                 process: "renamed_puppet",
