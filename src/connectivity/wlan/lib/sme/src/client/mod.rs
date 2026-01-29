@@ -75,11 +75,12 @@ pub type ScanTxnId = u64;
 pub struct ClientConfig {
     cfg: Config,
     pub wpa3_supported: bool,
+    pub owe_supported: bool,
 }
 
 impl ClientConfig {
-    pub fn from_config(cfg: Config, wpa3_supported: bool) -> Self {
-        Self { cfg, wpa3_supported }
+    pub fn from_config(cfg: Config, wpa3_supported: bool, owe_supported: bool) -> Self {
+        Self { cfg, wpa3_supported, owe_supported }
     }
 
     /// Converts a given BssDescription into a ScanResult.
@@ -139,6 +140,14 @@ impl ClientConfig {
         // Construct queries for security protocol support based on hardware, driver, and BSS
         // compatibility.
         let has_privacy = wlan_common::mac::CapabilityInfo(bss.capability_info).privacy();
+        let has_owe_support = || {
+            self.owe_supported
+                && has_privacy
+                && bss.rsne().is_some_and(|rsne| {
+                    rsne::from_bytes(rsne)
+                        .is_ok_and(|(_, a_rsne)| a_rsne.is_owe_rsn_compatible(security_support))
+                })
+        };
         let has_wep_support = || self.cfg.wep_supported;
         let has_wpa1_support = || self.cfg.wpa1_supported;
         let has_wpa2_support = || {
@@ -162,12 +171,12 @@ impl ClientConfig {
 
         // Determine security protocol compatibility. This `match` expression does not use guard
         // expressions to avoid implicit patterns like `_`, which may introduce bugs if
-        // `BssProtection` changes. This expression orders protocols from a loose notion of most
-        // secure to least secure, though the APIs that expose this data provide no such guarantee.
+        // `BssProtection` changes.
         match bss.protection() {
             BssProtection::Open => vec![SecurityDescriptor::OPEN],
             BssProtection::OpenOweTransition => vec![SecurityDescriptor::OPEN],
-            BssProtection::Owe => vec![SecurityDescriptor::OWE],
+            BssProtection::Owe if has_owe_support() => vec![SecurityDescriptor::OWE],
+            BssProtection::Owe => vec![],
             BssProtection::Wep if has_wep_support() => vec![SecurityDescriptor::WEP],
             BssProtection::Wep => vec![],
             BssProtection::Wpa1 if has_wpa1_support() => vec![SecurityDescriptor::WPA1],
@@ -1125,6 +1134,7 @@ mod tests {
         );
     }
 
+    #[test_case(FakeProtectionCfg::Owe)]
     #[test_case(FakeProtectionCfg::Wpa1)]
     #[test_case(FakeProtectionCfg::Wpa3)]
     #[test_case(FakeProtectionCfg::Wpa3Transition)]
@@ -1171,9 +1181,22 @@ mod tests {
     }
 
     #[test]
+    fn configured_client_bss_owe_compatible() {
+        // OWE support is configurable.
+        let cfg = ClientConfig::from_config(Config::default(), false, true);
+        let mut security_support = fake_security_support_empty();
+        security_support.mfp.as_mut().unwrap().supported = Some(true);
+        security_support.owe.as_mut().unwrap().supported = Some(true);
+        assert!(
+            !cfg.security_protocol_intersection(&fake_bss_description!(Owe), &security_support)
+                .is_empty()
+        );
+    }
+
+    #[test]
     fn configured_client_bss_wep_compatible() {
         // WEP support is configurable.
-        let cfg = ClientConfig::from_config(Config::default().with_wep(), false);
+        let cfg = ClientConfig::from_config(Config::default().with_wep(), false, false);
         assert!(
             !cfg.security_protocol_intersection(
                 &fake_bss_description!(Wep),
@@ -1186,7 +1209,7 @@ mod tests {
     #[test]
     fn configured_client_bss_wpa1_compatible() {
         // WPA1 support is configurable.
-        let cfg = ClientConfig::from_config(Config::default().with_wpa1(), false);
+        let cfg = ClientConfig::from_config(Config::default().with_wpa1(), false, false);
         assert!(
             !cfg.security_protocol_intersection(
                 &fake_bss_description!(Wpa1),
@@ -1199,7 +1222,7 @@ mod tests {
     #[test]
     fn configured_client_bss_wpa3_compatible() {
         // WPA3 support is configurable.
-        let cfg = ClientConfig::from_config(Config::default(), true);
+        let cfg = ClientConfig::from_config(Config::default(), true, false);
         let mut security_support = fake_security_support_empty();
         security_support.mfp.as_mut().unwrap().supported = Some(true);
         assert!(
@@ -1327,7 +1350,7 @@ mod tests {
             },
         );
 
-        let cfg = ClientConfig::from_config(Config::default().with_wep(), false);
+        let cfg = ClientConfig::from_config(Config::default().with_wep(), false, false);
         let bss_description = fake_bss_description!(Wep,
             ssid: Ssid::empty(),
             bssid: [0u8; 6],
@@ -1625,7 +1648,7 @@ mod tests {
         let inspector = finspect::Inspector::default();
         let sme_root_node = inspector.root().create_child("sme");
         let (mut sme, _mlme_sink, mut mlme_stream, _time_stream) = ClientSme::new(
-            ClientConfig::from_config(SmeConfig::default().with_wep(), false),
+            ClientConfig::from_config(SmeConfig::default().with_wep(), false, false),
             test_utils::fake_device_info(*CLIENT_ADDR),
             inspector,
             sme_root_node,

@@ -338,6 +338,9 @@ impl BssDescription {
         if suite_filter::WPA2_ENTERPRISE.is_satisfied(&rsne) {
             return Protection::Wpa2Enterprise;
         }
+        if suite_filter::OWE.is_satisfied(&rsne) {
+            return Protection::Owe;
+        }
         Protection::Unknown
     }
 
@@ -724,6 +727,7 @@ mod tests {
     #[test]
     fn test_known_protection() {
         assert_eq!(Protection::Open, fake_bss_description!(Open).protection());
+        assert_eq!(Protection::Owe, fake_bss_description!(Owe).protection());
         assert_eq!(Protection::Wep, fake_bss_description!(Wep).protection());
         assert_eq!(Protection::Wpa1, fake_bss_description!(Wpa1).protection());
         assert_eq!(Protection::Wpa1, fake_bss_description!(Wpa1Enhanced).protection());
@@ -1174,6 +1178,7 @@ mod tests {
             Protection::Open,
             Protection::from(fidl_sme::Protection::from(Protection::Open))
         );
+        assert_eq!(Protection::Owe, Protection::from(fidl_sme::Protection::from(Protection::Owe)));
         assert_eq!(Protection::Wep, Protection::from(fidl_sme::Protection::from(Protection::Wep)));
         assert_eq!(
             Protection::Wpa1,

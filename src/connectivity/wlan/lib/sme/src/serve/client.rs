@@ -47,7 +47,10 @@ pub fn serve(
                 sae.driver_handler_supported.unwrap_or(false)
                     || sae.sme_handler_supported.unwrap_or(false)
             });
-    let cfg = client_sme::ClientConfig::from_config(cfg, wpa3_supported);
+    let owe_supported =
+        security_support.mfp.as_ref().is_some_and(|mfp| mfp.supported.unwrap_or(false))
+            && security_support.owe.as_ref().is_some_and(|owe| owe.supported.unwrap_or(false));
+    let cfg = client_sme::ClientConfig::from_config(cfg, wpa3_supported, owe_supported);
     let (sme, mlme_sink, mlme_stream, time_stream) = Sme::new(
         cfg,
         device_info,
