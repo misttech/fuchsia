@@ -64,5 +64,16 @@
             }
         ],
         "compact_name": "fx/archivist_integration_test_cases_ctf29#meta/test_root.cm"
+    },
+    {
+        "name": "fuchsia-pkg://fuchsia.com/archivist_integration_test_cases_ctf30#meta/test_root.cm",
+        "cases": [
+            {
+                "name": "inspect::truncation::accessor_truncation_test",
+                "disabled": true,
+                "bug": "408055548"
+            }
+        ],
+        "compact_name": "fx/archivist_integration_test_cases_ctf30#meta/test_root.cm"
     }
 ]
