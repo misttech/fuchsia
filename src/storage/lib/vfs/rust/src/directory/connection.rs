@@ -186,37 +186,22 @@ impl<DirectoryType: Directory> BaseConnection<DirectoryType> {
                 .trace(trace::trace_future_args!("storage", "Directory::RemoveExtendedAttribute"))
                 .await?;
             }
-            #[cfg(fuchsia_api_level_at_least = "27")]
             fio::DirectoryRequest::GetFlags { responder } => {
                 trace::duration!("storage", "Directory::GetFlags");
                 responder.send(Ok(fio::Flags::from(&self.options)))?;
             }
-            #[cfg(fuchsia_api_level_at_least = "27")]
             fio::DirectoryRequest::SetFlags { flags: _, responder } => {
                 trace::duration!("storage", "Directory::SetFlags");
                 responder.send(Err(Status::NOT_SUPPORTED.into_raw()))?;
             }
-            #[cfg(fuchsia_api_level_at_least = "27")]
             fio::DirectoryRequest::DeprecatedGetFlags { responder } => {
                 trace::duration!("storage", "Directory::DeprecatedGetFlags");
                 responder.send(Status::OK.into_raw(), self.options.to_io1())?;
             }
-            #[cfg(fuchsia_api_level_at_least = "27")]
             fio::DirectoryRequest::DeprecatedSetFlags { flags: _, responder } => {
                 trace::duration!("storage", "Directory::DeprecatedSetFlags");
                 responder.send(Status::NOT_SUPPORTED.into_raw())?;
             }
-            #[cfg(not(fuchsia_api_level_at_least = "27"))]
-            fio::DirectoryRequest::GetFlags { responder } => {
-                trace::duration!("storage", "Directory::GetFlags");
-                responder.send(Status::OK.into_raw(), self.options.to_io1())?;
-            }
-            #[cfg(not(fuchsia_api_level_at_least = "27"))]
-            fio::DirectoryRequest::SetFlags { flags: _, responder } => {
-                trace::duration!("storage", "Directory::SetFlags");
-                responder.send(Status::NOT_SUPPORTED.into_raw())?;
-            }
-            #[cfg(fuchsia_api_level_at_least = "27")]
             fio::DirectoryRequest::DeprecatedOpen {
                 flags,
                 mode: _,
@@ -224,16 +209,6 @@ impl<DirectoryType: Directory> BaseConnection<DirectoryType> {
                 object,
                 control_handle: _,
             } => {
-                {
-                    trace::duration!("storage", "Directory::Open");
-                    self.handle_deprecated_open(flags, path, object);
-                }
-                // Since open typically spawns a task, yield to the executor now to give that task a
-                // chance to run before we try and process the next request for this directory.
-                yield_to_executor().await;
-            }
-            #[cfg(not(fuchsia_api_level_at_least = "27"))]
-            fio::DirectoryRequest::Open { flags, mode: _, path, object, control_handle: _ } => {
                 {
                     trace::duration!("storage", "Directory::Open");
                     self.handle_deprecated_open(flags, path, object);
@@ -309,34 +284,7 @@ impl<DirectoryType: Directory> BaseConnection<DirectoryType> {
             fio::DirectoryRequest::CreateSymlink { responder, .. } => {
                 responder.send(Err(Status::NOT_SUPPORTED.into_raw()))?;
             }
-            #[cfg(fuchsia_api_level_at_least = "27")]
             fio::DirectoryRequest::Open { path, mut flags, options, object, control_handle: _ } => {
-                {
-                    // Remove POSIX flags when the respective rights are not available.
-                    if !self.options.rights.contains(fio::INHERITED_WRITE_PERMISSIONS) {
-                        flags &= !fio::Flags::PERM_INHERIT_WRITE;
-                    }
-                    if !self.options.rights.contains(fio::Rights::EXECUTE) {
-                        flags &= !fio::Flags::PERM_INHERIT_EXECUTE;
-                    }
-
-                    ObjectRequest::new(flags, &options, object)
-                        .handle_async(async |req| self.handle_open(path, flags, req).await)
-                        .trace(trace::trace_future_args!("storage", "Directory::Open3"))
-                        .await;
-                }
-                // Since open typically spawns a task, yield to the executor now to give that task a
-                // chance to run before we try and process the next request for this directory.
-                yield_to_executor().await;
-            }
-            #[cfg(not(fuchsia_api_level_at_least = "27"))]
-            fio::DirectoryRequest::Open3 {
-                path,
-                mut flags,
-                options,
-                object,
-                control_handle: _,
-            } => {
                 {
                     // Remove POSIX flags when the respective rights are not available.
                     if !self.options.rights.contains(fio::INHERITED_WRITE_PERMISSIONS) {
