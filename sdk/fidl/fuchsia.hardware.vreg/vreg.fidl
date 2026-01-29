@@ -66,6 +66,7 @@ closed protocol Vreg {
         min_uv uint32;
 
         // Voltage increment at each step.
+        // Must be 0 iff `num_steps` is 0.
         step_size_uv uint32;
 
         // Max number of steps.
