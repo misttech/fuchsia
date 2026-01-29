@@ -51,9 +51,7 @@ class SavedNetworksTest(base_test.WifiBaseTest):
         if len(self.fuchsia_devices) < 1:
             raise EnvironmentError("No Fuchsia devices found.")
         for fd in self.fuchsia_devices:
-            fd.configure_wlan(
-                association_mechanism="policy", preserve_saved_networks=True
-            )
+            fd.configure_wlan(association_mechanism="policy")
 
     def setup_test(self) -> None:
         for fd in self.fuchsia_devices:

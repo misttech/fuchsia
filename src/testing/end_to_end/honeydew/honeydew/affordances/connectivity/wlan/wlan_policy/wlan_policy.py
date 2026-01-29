@@ -253,20 +253,3 @@ class WlanPolicy(affordance.Affordance):
         Raises:
             HoneydewWlanError: Failure to observe no connection within timeout.
         """
-
-    @abc.abstractmethod
-    def clear_policy_state(
-        self,
-        *,
-        timeout: float | None = DEFAULT_WLAN_POLICY_OPERATION_TIMEOUT,
-    ) -> PreservedState:
-        """Clears saved networks and connection state."""
-
-    @abc.abstractmethod
-    def restore_policy_state(
-        self,
-        preserved_state: PreservedState,
-        *,
-        timeout: float | None = DEFAULT_WLAN_POLICY_OPERATION_TIMEOUT,
-    ) -> None:
-        """Restores policy to a preserved state."""

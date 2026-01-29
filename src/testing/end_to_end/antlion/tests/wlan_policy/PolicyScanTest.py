@@ -38,9 +38,7 @@ class PolicyScanTest(base_test.WifiBaseTest):
         if len(self.fuchsia_devices) < 1:
             raise signals.TestFailure("No fuchsia devices found.")
         for fd in self.fuchsia_devices:
-            fd.configure_wlan(
-                association_mechanism="policy", preserve_saved_networks=True
-            )
+            fd.configure_wlan(association_mechanism="policy")
         if len(self.access_points) < 1:
             raise signals.TestFailure("No access points found.")
         # Prepare the AP

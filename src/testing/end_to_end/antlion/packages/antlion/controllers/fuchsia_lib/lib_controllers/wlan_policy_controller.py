@@ -18,7 +18,6 @@ from honeydew.affordances.connectivity.wlan.utils.types import (
     NetworkState,
     WlanClientState,
 )
-from honeydew.affordances.connectivity.wlan.wlan_policy import wlan_policy
 from honeydew.fuchsia_device.fuchsia_device import (
     FuchsiaDevice as HdFuchsiaDevice,
 )
@@ -50,9 +49,6 @@ class WlanPolicyController:
     def __init__(
         self, honeydew: HdFuchsiaDevice, ssh: FuchsiaSSHProvider
     ) -> None:
-        self.preserved_networks_and_client_state: (
-            wlan_policy.WlanPolicy.PreservedState | None
-        ) = None
         self.policy_configured = False
         self.honeydew = honeydew
         self.ssh = ssh
@@ -65,16 +61,15 @@ class WlanPolicyController:
 
     def configure_wlan(
         self,
-        preserve_saved_networks: bool,
         restart_client_connections: bool = True,
+        clear_networks: bool = True,
         retries: int = FUCHSIA_DEFAULT_WLAN_CONFIGURE_RETRIES,
     ) -> None:
         """Sets up wlan policy layer.
 
         Args:
-            preserve_saved_networks: whether to clear existing saved
-                networks and client state, to be restored at test close.
             restart_client_connections: whether to restart client connections.
+            clear_networks: whether to clear all saved networks.
             retries: number of times to re-attempt to configure WLAN policy.
         """
 
@@ -98,13 +93,12 @@ class WlanPolicyController:
         for attempt in range(retries):
             try:
                 self.honeydew.wlan_policy.create_client_controller()
-                if (
-                    preserve_saved_networks
-                    and not self.preserved_networks_and_client_state
-                ):
-                    self.preserved_networks_and_client_state = (
-                        self.honeydew.wlan_policy.clear_policy_state()
+                if clear_networks:
+                    self.log.info(
+                        "Removing any and all saved networks to run tests in a clean state."
                     )
+                    self.honeydew.wlan_policy.remove_all_networks()
+
                 # Optionally restart client connections to start tests in a good state. This should
                 # prevent issues like scans still being in progress when tests start.
                 if restart_client_connections:
@@ -112,7 +106,6 @@ class WlanPolicyController:
                         "Restarting client connections to run test in a clean state"
                     )
                     self.stop_client_connections_and_wait()
-
                 self.honeydew.wlan_policy.start_client_connections()
                 self.log.info(
                     "ACTS tests now have control of the WLAN policy layer."
@@ -173,17 +166,14 @@ class WlanPolicyController:
             )
 
     def clean_up(self) -> None:
-        if self.preserved_networks_and_client_state is None:
-            return
         # It is possible for policy to have been configured before, but
         # deconfigured before test end. In this case, in must be setup
-        # before restoring networks
+        # before removing networks. This will both set up the DUT and remove
+        # networks.
         if not self.policy_configured:
-            self.configure_wlan(False)
-
-        self.honeydew.wlan_policy.restore_policy_state(
-            self.preserved_networks_and_client_state
-        )
+            self.configure_wlan(
+                clear_networks=True, restart_client_connections=False
+            )
 
     def _find_network(
         self,

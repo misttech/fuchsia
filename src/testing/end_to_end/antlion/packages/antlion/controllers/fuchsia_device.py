@@ -232,12 +232,6 @@ class FuchsiaDevice:
             str, "association_mechanism", "policy"
         )
 
-        # Whether to clear and preserve existing saved networks and client
-        # connections state, to be restored at device teardown.
-        self.default_preserve_saved_networks = config.get(
-            bool, "preserve_saved_networks", True
-        )
-
         if not utils.is_valid_ipv4_address(
             self.ip
         ) and not utils.is_valid_ipv6_address(self.ip):
@@ -417,18 +411,16 @@ class FuchsiaDevice:
     def configure_wlan(
         self,
         association_mechanism: str | None = None,
-        preserve_saved_networks: bool | None = None,
+        clear_networks: bool = True,
     ) -> None:
         """
         Readies device for WLAN functionality. If applicable, connects to the
-        policy layer and clears/saves preexisting saved networks.
+        policy layer and clears preexisting saved networks.
 
         Args:
             association_mechanism: either 'policy' or 'drivers'. If None, uses
                 the default value from init (can be set by ACTS config)
-            preserve_saved_networks: whether to clear existing saved
-                networks, and preserve them for restoration later. If None, uses
-                the default value from init (can be set by ACTS config)
+            clear_networks: whether to clear all saved networks.
 
         Raises:
             FuchsiaDeviceError, if configuration fails
@@ -441,8 +433,6 @@ class FuchsiaDevice:
         # config.
         if association_mechanism is None:
             association_mechanism = self.default_association_mechanism
-        if preserve_saved_networks is None:
-            preserve_saved_networks = self.default_preserve_saved_networks
 
         if association_mechanism not in {None, "policy", "drivers"}:
             raise FuchsiaDeviceError(
@@ -466,13 +456,10 @@ class FuchsiaDevice:
                 "debugging specific issues. Normal test runs should use the "
                 "policy layer."
             )
-            if preserve_saved_networks:
-                self.log.warn(
-                    "Unable to preserve saved networks when using drivers "
-                    "association mechanism (requires policy layer control)."
-                )
         else:
-            self.wlan_policy_controller.configure_wlan(preserve_saved_networks)
+            self.wlan_policy_controller.configure_wlan(
+                clear_networks=clear_networks
+            )
 
         # Retrieve WLAN client and AP interfaces
         self.update_wlan_interfaces()
@@ -578,7 +565,7 @@ class FuchsiaDevice:
             self.association_mechanism = None
             self.configure_wlan(
                 association_mechanism=pre_reboot_association_mechanism,
-                preserve_saved_networks=False,
+                clear_networks=False,
             )
 
         self.log.info("Device has rebooted")
