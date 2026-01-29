@@ -5,6 +5,7 @@
 import("//build/components.gni")
 import("//build/rust/rustc_test.gni")
 import("//src/starnix/build/starnix_linux_rustc_binary.gni")
+import("//src/starnix/tests/remotevol/remotevol_tests.gni")
 
 group("tests") {
   testonly = true
@@ -67,16 +68,11 @@ fuchsia_test_component("remotevol_stat_locked_file_test") {
   test_type = "starnix"
 }
 
-fuchsia_component("kernel_with_container") {
-  testonly = true
-  manifest = "meta/kernel_with_container.cml"
-}
-
-fuchsia_test_package("starnix_remotevol_stat_locked_file_integration_test") {
+remotevol_tests_group("starnix_remotevol_stat_locked_file_integration_test") {
   test_components = [ ":remotevol_stat_locked_file_test" ]
+  kernel_base_manifest = "meta/kernel_with_container.base.cml"
   deps = [
     ":create_encrypted_file",
-    ":kernel_with_container",
     ":stat_encrypted_file",
   ]
   subpackages = [

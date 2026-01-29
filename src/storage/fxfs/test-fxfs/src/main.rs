@@ -247,7 +247,6 @@ async fn handle_starnix_volume_provider_requests(
             }
             StarnixVolumeProviderRequest::ConnectToInlineEncryption { server_end, responder } => {
                 log::info!("volume provider connect to inline encryption");
-                // TODO(https://fxbug.dev/477087647): Configurable use of inline encryption.
                 let block_server_clone = block_server.clone();
                 Task::spawn(async move {
                     block_server_clone

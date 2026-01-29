@@ -5,6 +5,7 @@
 import("//build/components.gni")
 import("//build/rust/rustc_library.gni")
 import("//build/rust/rustc_test.gni")
+import("remotevol_tests.gni")
 
 group("tests") {
   testonly = true
@@ -104,14 +105,9 @@ fuchsia_test_component("remotevol_key_file_test") {
   test_type = "starnix"
 }
 
-fuchsia_component("kernel_with_container") {
-  testonly = true
-  manifest = "meta/kernel_with_container.cml"
-}
-
-fuchsia_test_package("starnix_remotevol_shutdown_integration_test") {
+remotevol_tests_group("starnix_remotevol_shutdown_integration_test") {
   test_components = [ ":remotevol_shutdown_test" ]
-  deps = [ ":kernel_with_container" ]
+  kernel_base_manifest = "meta/kernel_with_container.base.cml"
   subpackages = [
     "//src/starnix/kernel:starnix_kernel_package",
     "//src/storage/fxfs/test-fxfs:test-fxfs-package",
@@ -119,9 +115,9 @@ fuchsia_test_package("starnix_remotevol_shutdown_integration_test") {
   ]
 }
 
-fuchsia_test_package("starnix_remotevol_key_file_integration_test") {
+remotevol_tests_group("starnix_remotevol_key_file_integration_test") {
   test_components = [ ":remotevol_key_file_test" ]
-  deps = [ ":kernel_with_container" ]
+  kernel_base_manifest = "meta/kernel_with_container.base.cml"
   subpackages = [
     "//src/starnix/kernel:starnix_kernel_package",
     "//src/storage/fxfs/test-fxfs:test-fxfs-package",
