@@ -22,6 +22,7 @@
 #include <usb/request-cpp.h>
 
 #include "src/devices/usb/drivers/usb-peripheral/usb-dci-interface-server.h"
+#include "src/devices/usb/drivers/usb-peripheral/usb-function.h"
 #include "src/devices/usb/drivers/usb-peripheral/usb_peripheral_config.h"
 
 /*
@@ -96,8 +97,7 @@ class UsbPeripheral : public fdf::DriverBase,
   static constexpr std::string_view kChildNodeName = "usb-peripheral";
 
   UsbPeripheral(fdf::DriverStartArgs start_args,
-                fdf::UnownedSynchronizedDispatcher driver_dispatcher)
-      : DriverBase(kDriverName, std::move(start_args), std::move(driver_dispatcher)) {}
+                fdf::UnownedSynchronizedDispatcher driver_dispatcher);
 
   // fdf::DriverBase implementation.
   zx::result<> Start() override;
@@ -266,6 +266,10 @@ class UsbPeripheral : public fdf::DriverBase,
   driver_devfs::Connector<fuchsia_hardware_usb_peripheral::Device> devfs_connector_{
       fit::bind_member<&UsbPeripheral::Connect>(this)};
 };
+
+inline UsbPeripheral::UsbPeripheral(fdf::DriverStartArgs start_args,
+                             fdf::UnownedSynchronizedDispatcher driver_dispatcher)
+    : DriverBase(kDriverName, std::move(start_args), std::move(driver_dispatcher)) {}
 
 }  // namespace usb_peripheral
 
