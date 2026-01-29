@@ -2,7 +2,9 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use crate::input_device::{Handled, InputDeviceDescriptor, InputDeviceEvent, InputEvent};
+use crate::input_device::{
+    Handled, InputDeviceDescriptor, InputDeviceEvent, InputEvent, InputEventType,
+};
 use crate::input_handler::{InputHandler, InputHandlerStatus};
 use crate::inspect_handler::{BufferNode, CircularBuffer};
 use crate::light_sensor::calibrator::{Calibrate, Calibrator};
@@ -608,6 +610,10 @@ where
 
     fn get_name(&self) -> &'static str {
         "LightSensorHandler"
+    }
+
+    fn interest(&self) -> Vec<InputEventType> {
+        vec![InputEventType::LightSensor]
     }
 }
 

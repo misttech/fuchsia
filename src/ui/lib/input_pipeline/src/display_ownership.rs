@@ -264,7 +264,10 @@ impl UnhandledInputHandler for DisplayOwnership {
             input_device::InputDeviceEvent::Keyboard(ref e) => {
                 self.key_state.borrow_mut().update(e.get_event_type(), e.get_key());
             }
-            _ => {}
+            _ => {
+                // TODO: b/478249522 - add cobalt logging
+                log::warn!("Unhandled input event: {:?}", unhandled_input_event.get_event_type());
+            }
         }
         let is_display_ownership_lost = self.is_display_ownership_lost();
         if is_display_ownership_lost {
@@ -294,6 +297,10 @@ impl UnhandledInputHandler for DisplayOwnership {
 
     fn get_name(&self) -> &'static str {
         "DisplayOwnership"
+    }
+
+    fn interest(&self) -> Vec<input_device::InputEventType> {
+        vec![input_device::InputEventType::Keyboard]
     }
 }
 

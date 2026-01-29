@@ -58,7 +58,11 @@ impl UnhandledInputHandler for KeymapHandler {
                 ))]
             }
             // Pass other events unchanged.
-            _ => vec![input_device::InputEvent::from(input_event)],
+            _ => {
+                // TODO: b/478249522 - add cobalt logging
+                log::warn!("Unhandled input event: {:?}", input_event.get_event_type());
+                vec![input_device::InputEvent::from(input_event)]
+            }
         }
     }
 
@@ -72,6 +76,10 @@ impl UnhandledInputHandler for KeymapHandler {
 
     fn get_name(&self) -> &'static str {
         "KeymapHandler"
+    }
+
+    fn interest(&self) -> Vec<input_device::InputEventType> {
+        vec![input_device::InputEventType::Keyboard]
     }
 }
 

@@ -1057,6 +1057,8 @@ impl InputHandler for GestureArena {
                 vec![input_event]
             }
             _ => {
+                // TODO: b/478249522 - add cobalt logging
+                log::warn!("Unhandled input event: {:?}", input_event.get_event_type());
                 vec![input_event]
             }
         }
@@ -1072,6 +1074,10 @@ impl InputHandler for GestureArena {
 
     fn get_name(&self) -> &'static str {
         "GestureArena"
+    }
+
+    fn interest(&self) -> Vec<input_device::InputEventType> {
+        vec![input_device::InputEventType::Touchpad, input_device::InputEventType::Keyboard]
     }
 }
 

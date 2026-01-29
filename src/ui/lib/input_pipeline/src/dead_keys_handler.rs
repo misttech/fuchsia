@@ -36,7 +36,8 @@
 //! See the documentation for [Handler] for some more detail.
 
 use crate::input_device::{
-    Handled, InputDeviceDescriptor, InputDeviceEvent, InputEvent, UnhandledInputEvent,
+    Handled, InputDeviceDescriptor, InputDeviceEvent, InputEvent, InputEventType,
+    UnhandledInputEvent,
 };
 use crate::input_handler::{InputHandlerStatus, UnhandledInputHandler};
 use crate::keyboard_binding::KeyboardEvent;
@@ -322,6 +323,10 @@ impl UnhandledInputHandler for DeadKeysHandler {
     fn get_name(&self) -> &'static str {
         "DeadKeysHandler"
     }
+
+    fn interest(&self) -> Vec<InputEventType> {
+        vec![InputEventType::Keyboard]
+    }
 }
 
 impl DeadKeysHandler {
@@ -374,7 +379,11 @@ impl DeadKeysHandler {
             }
 
             // Pass other events unchanged.
-            _ => vec![InputEvent::from(unhandled_input_event)],
+            _ => {
+                // TODO: b/478249522 - add cobalt logging
+                log::warn!("Unhandled input event: {:?}", unhandled_input_event.get_event_type());
+                vec![InputEvent::from(unhandled_input_event)]
+            }
         }
     }
 

@@ -566,9 +566,44 @@ impl InputPipeline {
                 handler.clone().set_handler_healthy();
             }
 
+            use input_device::InputEventType;
+            use std::collections::HashMap;
+
+            // Pre-compute handler lists for each event type.
+            let mut handlers_by_type: HashMap<
+                InputEventType,
+                Vec<Rc<dyn input_handler::InputHandler>>,
+            > = HashMap::new();
+
+            // TODO: b/478262850 - We can use supported_input_devices to populate this list.
+            let event_types = vec![
+                InputEventType::Keyboard,
+                InputEventType::LightSensor,
+                InputEventType::ConsumerControls,
+                InputEventType::Mouse,
+                InputEventType::TouchScreen,
+                InputEventType::Touchpad,
+                #[cfg(test)]
+                InputEventType::Fake,
+            ];
+
+            for event_type in event_types {
+                let handlers_for_type: Vec<Rc<dyn input_handler::InputHandler>> = handlers
+                    .iter()
+                    .filter(|h| h.interest().contains(&event_type))
+                    .cloned()
+                    .collect();
+                handlers_by_type.insert(event_type, handlers_for_type);
+            }
+
             while let Some(event) = receiver.next().await {
+                let event_type = InputEventType::from(&event.device_event);
+
+                // Get pre-computed handlers for this event type.
+                let handlers = handlers_by_type.get(&event_type).unwrap();
+
                 let mut events = vec![event];
-                for handler in &handlers {
+                for handler in handlers {
                     let mut next_events = vec![];
                     let handler_name = handler.get_name();
                     for e in events {
@@ -727,12 +762,13 @@ async fn add_device_bindings(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::input_device::InputDeviceBinding;
+    use crate::input_device::{InputDeviceBinding, InputEventType};
     use crate::utils::Position;
     use crate::{
         fake_input_device_binding, mouse_binding, mouse_model_database,
         observe_fake_events_input_handler,
     };
+    use async_trait::async_trait;
     use diagnostics_assertions::AnyProperty;
     use fidl::endpoints::{create_proxy_and_stream, create_request_stream};
     use fuchsia_async as fasync;
@@ -1218,5 +1254,87 @@ mod tests {
                 input_devices: {}
             }
         });
+    }
+
+    struct SpecificInterestFakeHandler {
+        interest_types: Vec<input_device::InputEventType>,
+        event_sender: std::cell::RefCell<futures::channel::mpsc::Sender<input_device::InputEvent>>,
+    }
+
+    impl SpecificInterestFakeHandler {
+        pub fn new(
+            interest_types: Vec<input_device::InputEventType>,
+            event_sender: futures::channel::mpsc::Sender<input_device::InputEvent>,
+        ) -> Rc<Self> {
+            Rc::new(SpecificInterestFakeHandler {
+                interest_types,
+                event_sender: std::cell::RefCell::new(event_sender),
+            })
+        }
+    }
+
+    #[async_trait(?Send)]
+    impl input_handler::InputHandler for SpecificInterestFakeHandler {
+        async fn handle_input_event(
+            self: Rc<Self>,
+            input_event: input_device::InputEvent,
+        ) -> Vec<input_device::InputEvent> {
+            match self.event_sender.borrow_mut().try_send(input_event.clone()) {
+                Err(e) => panic!("SpecificInterestFakeHandler failed to send event: {:?}", e),
+                Ok(_) => {}
+            }
+            vec![input_event]
+        }
+
+        fn set_handler_healthy(self: std::rc::Rc<Self>) {}
+        fn set_handler_unhealthy(self: std::rc::Rc<Self>, _msg: &str) {}
+        fn get_name(&self) -> &'static str {
+            "SpecificInterestFakeHandler"
+        }
+
+        fn interest(&self) -> Vec<input_device::InputEventType> {
+            self.interest_types.clone()
+        }
+    }
+
+    #[fasync::run_singlethreaded(test)]
+    async fn run_only_sends_events_to_interested_handlers() {
+        // Mouse Handler (Specific Interest: Mouse)
+        let (mouse_sender, mut mouse_receiver) = futures::channel::mpsc::channel(1);
+        let mouse_handler =
+            SpecificInterestFakeHandler::new(vec![InputEventType::Mouse], mouse_sender);
+
+        // Fake Handler (Specific Interest: Fake)
+        let (fake_sender, mut fake_receiver) = futures::channel::mpsc::channel(1);
+        let fake_handler =
+            SpecificInterestFakeHandler::new(vec![InputEventType::Fake], fake_sender);
+
+        let (pipeline_sender, pipeline_receiver, handlers, _, _, _) =
+            InputPipelineAssembly::new(metrics::MetricsLogger::default())
+                .add_handler(mouse_handler)
+                .add_handler(fake_handler)
+                .into_components();
+
+        // Run the pipeline logic
+        InputPipeline::run(pipeline_receiver, handlers);
+
+        // Create a Fake event
+        let fake_event = input_device::InputEvent {
+            device_event: input_device::InputDeviceEvent::Fake,
+            device_descriptor: input_device::InputDeviceDescriptor::Fake,
+            event_time: zx::MonotonicInstant::get(),
+            handled: input_device::Handled::No,
+            trace_id: None,
+        };
+
+        // Send the Fake event
+        pipeline_sender.unbounded_send(fake_event.clone()).expect("failed to send event");
+
+        // Verify Fake Handler received it
+        let received_by_fake = fake_receiver.next().await;
+        assert_eq!(received_by_fake, Some(fake_event));
+
+        // Verify Mouse Handler did NOT receive it
+        assert!(mouse_receiver.try_next().is_err());
     }
 }

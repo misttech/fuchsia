@@ -2,7 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use crate::input_device::{Handled, InputDeviceEvent, InputDeviceType, InputEvent};
+use crate::input_device::{Handled, InputDeviceEvent, InputDeviceType, InputEvent, InputEventType};
 use crate::input_handler::InputHandler;
 use async_trait::async_trait;
 use fuchsia_inspect::health::Reporter;
@@ -263,6 +263,19 @@ impl<F: FnMut() -> zx::MonotonicInstant + 'static> InputHandler for InspectHandl
 
     fn get_name(&self) -> &'static str {
         "InspectHandler"
+    }
+
+    fn interest(&self) -> Vec<InputEventType> {
+        vec![
+            InputEventType::Keyboard,
+            InputEventType::LightSensor,
+            InputEventType::ConsumerControls,
+            InputEventType::Mouse,
+            InputEventType::TouchScreen,
+            InputEventType::Touchpad,
+            #[cfg(test)]
+            InputEventType::Fake,
+        ]
     }
 }
 

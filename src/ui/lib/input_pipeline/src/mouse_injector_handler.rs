@@ -144,7 +144,10 @@ impl InputHandler for MouseInjectorHandler {
                 input_event.handled = input_device::Handled::Yes;
                 self.inspect_status.count_handled_event();
             }
-            _ => {}
+            _ => {
+                // TODO: b/478249522 - add cobalt logging
+                log::warn!("Unhandled input event: {:?}", input_event.get_event_type());
+            }
         }
         vec![input_event]
     }
@@ -159,6 +162,10 @@ impl InputHandler for MouseInjectorHandler {
 
     fn get_name(&self) -> &'static str {
         "MouseInjectorHandler"
+    }
+
+    fn interest(&self) -> Vec<input_device::InputEventType> {
+        vec![input_device::InputEventType::Mouse]
     }
 }
 

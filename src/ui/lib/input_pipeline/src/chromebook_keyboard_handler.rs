@@ -14,7 +14,8 @@
 //! implements some of those.
 
 use crate::input_device::{
-    Handled, InputDeviceDescriptor, InputDeviceEvent, InputEvent, UnhandledInputEvent,
+    Handled, InputDeviceDescriptor, InputDeviceEvent, InputEvent, InputEventType,
+    UnhandledInputEvent,
 };
 use crate::input_handler::{InputHandlerStatus, UnhandledInputHandler};
 use crate::keyboard_binding::{KeyboardDeviceDescriptor, KeyboardEvent};
@@ -133,7 +134,11 @@ impl UnhandledInputHandler for ChromebookKeyboardHandler {
                 )
             }
             // Pass other events unchanged.
-            _ => vec![InputEvent::from(input_event)],
+            _ => {
+                // TODO: b/478249522 - add cobalt logging
+                log::warn!("Unhandled input event: {:?}", input_event.get_event_type());
+                vec![InputEvent::from(input_event)]
+            }
         }
     }
 
@@ -147,6 +152,10 @@ impl UnhandledInputHandler for ChromebookKeyboardHandler {
 
     fn get_name(&self) -> &'static str {
         "ChromebookKeyboardHandler"
+    }
+
+    fn interest(&self) -> Vec<InputEventType> {
+        vec![InputEventType::Keyboard]
     }
 }
 

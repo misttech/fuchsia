@@ -180,6 +180,22 @@ pub struct UnhandledInputEvent {
     pub trace_id: Option<ftrace::Id>,
 }
 
+impl UnhandledInputEvent {
+    // Returns event type as string.
+    pub fn get_event_type(&self) -> &'static str {
+        match self.device_event {
+            InputDeviceEvent::Keyboard(_) => "keyboard_event",
+            InputDeviceEvent::LightSensor(_) => "light_sensor_event",
+            InputDeviceEvent::ConsumerControls(_) => "consumer_controls_event",
+            InputDeviceEvent::Mouse(_) => "mouse_event",
+            InputDeviceEvent::TouchScreen(_) => "touch_screen_event",
+            InputDeviceEvent::Touchpad(_) => "touchpad_event",
+            #[cfg(test)]
+            InputDeviceEvent::Fake => "fake_event",
+        }
+    }
+}
+
 /// An [`InputDeviceEvent`] represents an input event from an input device.
 ///
 /// [`InputDeviceEvent`]s contain more context than the raw [`InputReport`] they are parsed from.
@@ -198,6 +214,34 @@ pub enum InputDeviceEvent {
     Touchpad(touch_binding::TouchpadEvent),
     #[cfg(test)]
     Fake,
+}
+
+/// An [`InputEventType`] represents the type of an input event.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+pub enum InputEventType {
+    Keyboard,
+    LightSensor,
+    ConsumerControls,
+    Mouse,
+    TouchScreen,
+    Touchpad,
+    #[cfg(test)]
+    Fake,
+}
+
+impl From<&InputDeviceEvent> for InputEventType {
+    fn from(event: &InputDeviceEvent) -> Self {
+        match event {
+            InputDeviceEvent::Keyboard(_) => InputEventType::Keyboard,
+            InputDeviceEvent::LightSensor(_) => InputEventType::LightSensor,
+            InputDeviceEvent::ConsumerControls(_) => InputEventType::ConsumerControls,
+            InputDeviceEvent::Mouse(_) => InputEventType::Mouse,
+            InputDeviceEvent::TouchScreen(_) => InputEventType::TouchScreen,
+            InputDeviceEvent::Touchpad(_) => InputEventType::Touchpad,
+            #[cfg(test)]
+            InputDeviceEvent::Fake => InputEventType::Fake,
+        }
+    }
 }
 
 /// An [`InputDescriptor`] describes the ranges of values a particular input device can generate.

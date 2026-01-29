@@ -132,7 +132,11 @@ impl UnhandledInputHandler for PointerDisplayScaleHandler {
                 };
                 vec![input_event]
             }
-            _ => vec![input_device::InputEvent::from(unhandled_input_event)],
+            _ => {
+                // TODO: b/478249522 - add cobalt logging
+                log::warn!("Unhandled input event: {:?}", unhandled_input_event.get_event_type());
+                vec![input_device::InputEvent::from(unhandled_input_event)]
+            }
         }
     }
 
@@ -146,6 +150,10 @@ impl UnhandledInputHandler for PointerDisplayScaleHandler {
 
     fn get_name(&self) -> &'static str {
         "PointerDisplayScaleHandler"
+    }
+
+    fn interest(&self) -> Vec<input_device::InputEventType> {
+        vec![input_device::InputEventType::Mouse]
     }
 }
 

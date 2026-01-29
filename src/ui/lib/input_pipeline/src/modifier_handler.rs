@@ -2,7 +2,9 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use crate::input_device::{Handled, InputDeviceEvent, InputEvent, UnhandledInputEvent};
+use crate::input_device::{
+    Handled, InputDeviceEvent, InputEvent, InputEventType, UnhandledInputEvent,
+};
 use crate::input_handler::{InputHandlerStatus, UnhandledInputHandler};
 use async_trait::async_trait;
 use fidl_fuchsia_ui_input3::{KeyMeaning, Modifiers, NonPrintableKey};
@@ -71,7 +73,11 @@ impl UnhandledInputHandler for ModifierHandler {
                 }]
             }
             // Pass other events through.
-            _ => vec![InputEvent::from(unhandled_input_event)],
+            _ => {
+                // TODO: b/478249522 - add cobalt logging
+                log::warn!("Unhandled input event: {:?}", unhandled_input_event.get_event_type());
+                vec![InputEvent::from(unhandled_input_event)]
+            }
         }
     }
 
@@ -85,6 +91,10 @@ impl UnhandledInputHandler for ModifierHandler {
 
     fn get_name(&self) -> &'static str {
         "ModifierHandler"
+    }
+
+    fn interest(&self) -> Vec<InputEventType> {
+        vec![InputEventType::Keyboard]
     }
 }
 
@@ -172,7 +182,11 @@ impl UnhandledInputHandler for ModifierMeaningHandler {
                 }]
             }
             // Pass other events through.
-            _ => vec![InputEvent::from(unhandled_input_event)],
+            _ => {
+                // TODO: b/478249522 - add cobalt logging
+                log::warn!("Unhandled input event: {:?}", unhandled_input_event.get_event_type());
+                vec![InputEvent::from(unhandled_input_event)]
+            }
         }
     }
 
@@ -186,6 +200,10 @@ impl UnhandledInputHandler for ModifierMeaningHandler {
 
     fn get_name(&self) -> &'static str {
         "ModifierHandler"
+    }
+
+    fn interest(&self) -> Vec<InputEventType> {
+        vec![InputEventType::Keyboard]
     }
 }
 

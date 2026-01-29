@@ -54,4 +54,16 @@ impl input_handler::InputHandler for ObserveFakeEventsInputHandler {
     fn get_name(&self) -> &'static str {
         "ObserveFakeEventsInputHandler"
     }
+
+    fn interest(&self) -> Vec<input_device::InputEventType> {
+        vec![
+            input_device::InputEventType::Keyboard,
+            input_device::InputEventType::LightSensor,
+            input_device::InputEventType::ConsumerControls,
+            input_device::InputEventType::Mouse,
+            input_device::InputEventType::TouchScreen,
+            input_device::InputEventType::Touchpad,
+            input_device::InputEventType::Fake,
+        ]
+    }
 }

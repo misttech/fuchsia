@@ -60,6 +60,9 @@ pub trait InputHandler: AsRcAny {
 
     /// Returns the name of the input handler.
     fn get_name(&self) -> &'static str;
+
+    /// Returns the types of input events this handler is interested in.
+    fn interest(&self) -> Vec<input_device::InputEventType>;
 }
 
 /// An [`UnhandledInputHandler`] is like an [`InputHandler`], but only deals in unhandled events.
@@ -85,6 +88,9 @@ pub trait UnhandledInputHandler: AsRcAny {
     fn set_handler_unhealthy(self: std::rc::Rc<Self>, msg: &str);
 
     fn get_name(&self) -> &'static str;
+
+    /// Returns the types of input events this handler is interested in.
+    fn interest(&self) -> Vec<input_device::InputEventType>;
 }
 
 #[async_trait(?Send)]
@@ -123,6 +129,10 @@ where
 
     fn get_name(&self) -> &'static str {
         T::get_name(self)
+    }
+
+    fn interest(&self) -> Vec<input_device::InputEventType> {
+        T::interest(self)
     }
 }
 
@@ -196,7 +206,8 @@ impl InputHandlerStatus {
 mod tests {
     use super::{InputHandler, UnhandledInputHandler, async_trait};
     use crate::input_device::{
-        Handled, InputDeviceDescriptor, InputDeviceEvent, InputEvent, UnhandledInputEvent,
+        Handled, InputDeviceDescriptor, InputDeviceEvent, InputEvent, InputEventType,
+        UnhandledInputEvent,
     };
     use crate::input_handler::InputHandlerStatus;
 
@@ -232,6 +243,10 @@ mod tests {
 
         fn get_name(&self) -> &'static str {
             "FakeUnhandledInputHandler"
+        }
+
+        fn interest(&self) -> Vec<InputEventType> {
+            vec![InputEventType::Fake]
         }
     }
 
@@ -361,6 +376,10 @@ mod tests {
 
             fn get_name(&self) -> &'static str {
                 "NeuralInputHandler"
+            }
+
+            fn interest(&self) -> Vec<InputEventType> {
+                vec![InputEventType::Fake]
             }
         }
 

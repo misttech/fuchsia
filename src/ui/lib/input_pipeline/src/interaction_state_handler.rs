@@ -316,13 +316,10 @@ impl UnhandledInputHandler for InteractionStateHandler {
         fuchsia_trace::flow_step!("input", "event_in_input_pipeline", trace_id);
 
         match unhandled_input_event.device_event {
-            input_device::InputDeviceEvent::ConsumerControls(ref consumer_controls_event) => {
+            input_device::InputDeviceEvent::ConsumerControls(..) => {
                 if self.enable_button_baton_passing {
-                    if !consumer_controls_event.wake_lease.is_some() {
-                        log::debug!(
-                            "InteractionStateHandler received a button event without a wake lease, even though one was expected."
-                        );
-                    }
+                    // TODO: b/478249522 - add cobalt logging
+                    log::warn!("Button event with baton passing");
                 } else {
                     fuchsia_trace::duration!("input", "interaction_state_handler[processing]");
                     // Clamp the time to now so that clients cannot send events far off
@@ -339,13 +336,10 @@ impl UnhandledInputHandler for InteractionStateHandler {
                     self.transition_to_idle_after_new_time(event_time).await;
                 }
             }
-            input_device::InputDeviceEvent::Mouse(ref mouse_event) => {
+            input_device::InputDeviceEvent::Mouse(..) => {
                 if self.enable_mouse_baton_passing {
-                    if !mouse_event.wake_lease.lock().is_some() {
-                        log::debug!(
-                            "InteractionStateHandler received a mouse event without a wake lease, even though one was expected."
-                        );
-                    }
+                    // TODO: b/478249522 - add cobalt logging
+                    log::warn!("Mouse event with baton passing");
                 } else {
                     fuchsia_trace::duration!("input", "interaction_state_handler[processing]");
                     // Clamp the time to now so that clients cannot send events far off
@@ -362,13 +356,10 @@ impl UnhandledInputHandler for InteractionStateHandler {
                     self.transition_to_idle_after_new_time(event_time).await;
                 }
             }
-            input_device::InputDeviceEvent::TouchScreen(ref touch_event) => {
+            input_device::InputDeviceEvent::TouchScreen(..) => {
                 if self.enable_touch_baton_passing {
-                    if !touch_event.wake_lease.is_some() {
-                        log::debug!(
-                            "InteractionStateHandler received a touch event without a wake lease, even though one was expected."
-                        );
-                    }
+                    // TODO: b/478249522 - add cobalt logging
+                    log::warn!("Touch event with baton passing");
                 } else {
                     fuchsia_trace::duration!("input", "interaction_state_handler[processing]");
                     // Clamp the time to now so that clients cannot send events far off
@@ -385,7 +376,10 @@ impl UnhandledInputHandler for InteractionStateHandler {
                     self.transition_to_idle_after_new_time(event_time).await;
                 }
             }
-            _ => {}
+            _ => {
+                // TODO: b/478249522 - add cobalt logging
+                log::warn!("Unhandled input event: {:?}", unhandled_input_event.get_event_type());
+            }
         }
 
         vec![input_device::InputEvent::from(unhandled_input_event)]
@@ -401,6 +395,20 @@ impl UnhandledInputHandler for InteractionStateHandler {
 
     fn get_name(&self) -> &'static str {
         "InteractionStateHandler"
+    }
+
+    fn interest(&self) -> Vec<input_device::InputEventType> {
+        let mut interest = vec![];
+        if !self.enable_button_baton_passing {
+            interest.push(input_device::InputEventType::ConsumerControls);
+        }
+        if !self.enable_mouse_baton_passing {
+            interest.push(input_device::InputEventType::Mouse);
+        }
+        if !self.enable_touch_baton_passing {
+            interest.push(input_device::InputEventType::TouchScreen);
+        }
+        interest
     }
 }
 
