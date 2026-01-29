@@ -108,29 +108,11 @@ tmpdir="$(mktemp -d -t rbe_proto_refresh.XXXX)"
 # can assume the same root-relative paths.
 cd "$project_root"
 
+# The protobuf python wheel should be in prebuilt already.
 readonly any_protobuf_wheel_file=google/protobuf/descriptor_pb2.py
-# Fetch the protobuf-py3 wheel if it is not already in prebuilt.
 [[ -f "$PROTOBUF_WHEEL/$any_protobuf_wheel_file" ]] || {
-  echo "Installing protobuf-py3 (cipd) to $PROTOBUF_WHEEL."
-  # package is a zipped .whl file
-  # TODO(b/399960746): remove this workaround once jiri supports unzipping
-  # .whl files and the package lands in prebuilt.  See also b/400779719.
-  rm -rf "$PROTOBUF_WHEEL"
-  mkdir -p "$PROTOBUF_WHEEL"
-  # Download to $tmpdir outside of the $project_root site root.
-  rm -f "$tmpdir"/*.whl
-  cipd install "infra/python/wheels/protobuf-py3" "latest" -root "$tmpdir"
-  # The .whl file may actually be a symlink to a package cache dir,
-  # relative to $project_root, so need to resolve an absolute path first.
-  _real_wheel="$(readlink -f "$tmpdir"/*.whl)"
-  (
-    cd "$PROTOBUF_WHEEL"
-    unzip "$_real_wheel"
-    [[ -f "$any_protobuf_wheel_file" ]] || {
-      echo "Expecting a $any_protobuf_wheel_file to be unpacked, but is missing."
-      exit 1
-    }
-  ) || exit 1
+  echo "Expected a $any_protobuf_wheel_file from prebuilt, but is missing."
+  exit 1
 }
 
 # If reclient-srcdir is not provided, checkout in a tempdir
