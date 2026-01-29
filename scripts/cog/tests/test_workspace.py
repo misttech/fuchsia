@@ -403,7 +403,7 @@ class TestWorkspace(unittest.TestCase):
                 ),
                 repo_name="fuchsia",
                 workspace_name="test-workspace",
-                cartfs_workspace_dir=None,
+                cartfs_directory=None,
                 cartfs_instance=cartfs_instance,
             )
             with patch.object(
@@ -439,7 +439,7 @@ class TestWorkspace(unittest.TestCase):
                 ),
                 repo_name="fuchsia",
                 workspace_name="test-workspace",
-                cartfs_workspace_dir=None,
+                cartfs_directory=None,
                 cartfs_instance=cartfs_instance,
             )
             with patch.object(ws, "_find_previous_instance", return_value=None):
@@ -456,7 +456,7 @@ class TestWorkspace(unittest.TestCase):
                 ),
                 repo_name="fuchsia",
                 workspace_name="test-workspace",
-                cartfs_workspace_dir=None,
+                cartfs_directory=None,
                 cartfs_instance=cartfs_instance,
             )
             with patch.object(
@@ -492,7 +492,7 @@ class TestWorkspace(unittest.TestCase):
                 ),
                 repo_name="fuchsia",
                 workspace_name="test-workspace",
-                cartfs_workspace_dir=None,
+                cartfs_directory=None,
                 cartfs_instance=cartfs_instance,
             )
 
@@ -520,21 +520,21 @@ class TestWorkspace(unittest.TestCase):
                 workspace_dir=workspace_dir,
                 repo_name=repo_name,
                 workspace_name=workspace_name,
-                cartfs_workspace_dir=None,
+                cartfs_directory=None,
                 cartfs_instance=cartfs_instance,
             )
 
-            cartfs_workspace_dir = fs.mkdir(
-                "cartfs_workspace_dir", mock_fs.FSType.CARTFS
+            cartfs_directory = fs.mkdir(
+                "cartfs_directory", mock_fs.FSType.CARTFS
             )
-            ws.link_to_cartfs(cartfs_workspace_dir)
+            ws.link_to_cartfs(cartfs_directory)
 
             symlink_path = os.path.join(repo_dir, workspace.CARTFS_SYMLINK_NAME)
             self.assertTrue(os.path.islink(symlink_path))
 
             # Ensure that we write the name of the repository in cartfs
             metadata = workspace.CogMetadata.from_file(
-                cartfs_workspace_dir / workspace.COG_METADATA_FILE_NAME
+                cartfs_directory / workspace.COG_METADATA_FILE_NAME
             )
             self.assertIsNotNone(metadata)
 
@@ -564,7 +564,7 @@ class TestWorkspace(unittest.TestCase):
                 workspace_dir=fs.cog_dir / "testuser" / "test-workspace",
                 repo_name="fuchsia",
                 workspace_name="test-workspace",
-                cartfs_workspace_dir=None,
+                cartfs_directory=None,
                 cartfs_instance=cartfs_instance,
             )
 
@@ -581,7 +581,7 @@ class TestWorkspace(unittest.TestCase):
                 workspace_dir=fs.cog_dir / "testuser" / "test-workspace",
                 repo_name="fuchsia",
                 workspace_name="test-workspace",
-                cartfs_workspace_dir=None,
+                cartfs_directory=None,
                 cartfs_instance=cartfs_instance,
             )
 
@@ -605,7 +605,7 @@ class TestWorkspace(unittest.TestCase):
                 workspace_dir=fs.cog_dir / "testuser" / "test-workspace",
                 repo_name="fuchsia",
                 workspace_name="test-workspace",
-                cartfs_workspace_dir=None,
+                cartfs_directory=None,
                 cartfs_instance=cartfs_instance,
             )
 
@@ -622,7 +622,7 @@ class TestWorkspace(unittest.TestCase):
                 workspace_dir=fs.cog_dir / "testuser" / "test-workspace",
                 repo_name="fuchsia",
                 workspace_name="test-workspace",
-                cartfs_workspace_dir=None,
+                cartfs_directory=None,
                 cartfs_instance=cartfs_instance,
             )
 

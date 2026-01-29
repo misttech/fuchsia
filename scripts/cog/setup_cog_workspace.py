@@ -14,7 +14,6 @@ import sys
 
 import cartfs
 import logger
-import prebuilts
 import workspace
 
 
@@ -43,35 +42,35 @@ def prepare_workspace_instance(
     logger.log_info(f"Repository name: {workspace_instance.repo_name}")
 
     # No need to reinitialize our cartfs workspace.
-    if workspace_instance.cartfs_workspace_dir:
+    if workspace_instance.cartfs_directory:
         logger.log_info(
             f"Workspace is already linked to cartfs: {workspace_instance.cartfs_workspace_dir}"
         )
         return workspace_instance
 
     # Attempt to snapshot the cartfs workspace from a previous instance.
-    cartfs_workspace_dir = None
+    cartfs_directory = None
     if not disable_snapshot:
         logger.log_info(
             "Workspace is not linked to cartfs. Attempting to Snapshot from previous instance."
         )
         if not use_local_mock_cartfs:
-            cartfs_workspace_dir = (
+            cartfs_directory = (
                 workspace_instance.snapshot_from_previous_instance()
             )
-        if not cartfs_workspace_dir:
+        if not cartfs_directory:
             logger.log_info(
                 "Unable to snapshot from previous instance. Creating a new"
                 " cartfs workspace directory instead."
             )
 
     # Initialize an empty cartfs workspace directory.
-    if not cartfs_workspace_dir:
-        cartfs_workspace_dir = (
+    if not cartfs_directory:
+        cartfs_directory = (
             workspace_instance.create_empty_cartfs_workspace_directory()
         )
 
-    workspace_instance.link_to_cartfs(cartfs_workspace_dir)
+    workspace_instance.link_to_cartfs(cartfs_directory)
     return workspace_instance
 
 
@@ -87,6 +86,7 @@ def _parse_args() -> argparse.Namespace:
         help="Disable snapshotting and initialize this workspace from scratch.",
     )
     parser.add_argument(
+        "-l",
         "--local-mock-cartfs",
         dest="use_local_mock_cartfs",
         action="store_true",
@@ -122,19 +122,7 @@ def main() -> int | None:
         logger.log_warn("Could not create workspace instance.")
         return 1
 
-    # TODO: Move this logic into the workspace instance.
-    prebuilts_manager = prebuilts.Prebuilts(
-        workspace_instance.cartfs_workspace_dir,
-        workspace_instance.workspace_dir,
-        workspace_instance.workspace_name,
-        workspace_instance.repo_name,
-    )
-    if not prebuilts_manager.is_jiri_bootstrapped():
-        prebuilts_manager.bootstrap_jiri()
-
-    integration_hash = prebuilts_manager.create_integration_repository()
-    prebuilts_manager.fetch_prebuilts(integration_hash)
-    prebuilts_manager.create_symlinks()
+    workspace_instance.initialize_cartfs_directory()
 
 
 if __name__ == "__main__":
