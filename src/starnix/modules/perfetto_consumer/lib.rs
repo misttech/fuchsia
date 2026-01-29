@@ -6,7 +6,7 @@
 
 use anyhow::bail;
 use fuchsia_trace::{
-    BufferingMode, ProlongedContext, TraceState, category_enabled, trace_string_ref_t,
+    BufferingMode, ProlongedContext, TraceState, category_enabled, trace_state, trace_string_ref_t,
 };
 use fuchsia_trace_observer::TraceObserver;
 use fxt::blob::{BlobHeader, BlobType};
@@ -27,7 +27,9 @@ use starnix_core::task::dynamic_thread_spawner::SpawnRequestBuilder;
 use starnix_core::task::tracing::TracePerformanceEventManager;
 use starnix_core::task::{CurrentTask, Kernel, LockedAndTask};
 use starnix_core::vfs::FsString;
-use starnix_logging::{CATEGORY_ATRACE, NAME_PERFETTO_BLOB, log_debug, log_error};
+use starnix_logging::{
+    CATEGORY_ATRACE, NAME_PERFETTO_BLOB, log_debug, log_error, log_warn,
+};
 use starnix_perfetto_trace_decoder::{decode_read_buffers_response, decode_trace, encode_trace};
 use starnix_sync::{Locked, Unlocked};
 use starnix_uapi::errors::Errno;
@@ -85,6 +87,9 @@ impl CallbackState {
     ) -> Result<(), anyhow::Error> {
         let prev_state = self.prev_state;
         self.prev_state = new_state;
+        log_debug!(
+            "Perfetto consumer state change. new_state: {new_state:?}, prev_state: {prev_state:?}"
+        );
         match new_state {
             TraceState::Started => {
                 if prev_state != TraceState::Stopped {
@@ -95,7 +100,6 @@ impl CallbackState {
                     );
                     self.handle_stopped();
                 }
-                self.event_manager.start(current_task.kernel());
                 self.prolonged_context = ProlongedContext::acquire();
                 let connection = self.connection(locked, current_task)?;
                 // A fixed set of data sources that may be of interest. As demand for other sources
@@ -189,6 +193,8 @@ impl CallbackState {
                         attach_notification_only: None,
                     },
                 )?;
+                // Once tracing has started, notify the event manager so it can start tracking processes.
+                self.event_manager.start(current_task.kernel());
             }
             TraceState::Stopping | TraceState::Stopped => {
                 if prev_state == TraceState::Started {
@@ -507,7 +513,6 @@ pub fn start_perfetto_consumer_thread(kernel: &Kernel, socket_path: FsString) ->
     //    forward all the trace data. This servicing of trace data would hold the executor for
     //    several seconds. See `perfetto::Consumer::next_frame_blocking`.
     let closure = async move |locked_and_task: LockedAndTask<'_>| {
-        let current_task = locked_and_task.current_task();
         let observer = TraceObserver::new();
         let mut callback_state = CallbackState {
             prev_state: TraceState::Stopped,
@@ -517,16 +522,62 @@ pub fn start_perfetto_consumer_thread(kernel: &Kernel, socket_path: FsString) ->
             packet_data: Vec::new(),
             event_manager: TracePerformanceEventManager::new(),
         };
-        while let Ok(state) = observer.on_state_changed().await {
-            let locked = &mut locked_and_task.unlocked();
 
+        fn handle_state_change(
+            callback_state: &mut CallbackState,
+            locked_and_task: &LockedAndTask<'_>,
+            state: TraceState,
+        ) -> Result<(), anyhow::Error> {
+            let current_task = locked_and_task.current_task();
+            let locked = &mut locked_and_task.unlocked();
             // TODO: https://fxbug.dev/457381697 - Revise how this kernel-internal work is security-
             // checked.
             let creds = security::creds_start_internal_operation(current_task);
             current_task.override_creds(creds, || {
-                callback_state.on_state_change(locked, state, current_task).unwrap_or_else(|e| {
-                    log_error!("perfetto_consumer callback error: {:?}", e);
-                })
+                callback_state.on_state_change(locked, state, current_task)
+            })
+        }
+
+        // Check for tracing already started before we began observing.
+        // This happens when tracing is started on boot.
+        let mut state = trace_state();
+        if trace_state() == TraceState::Started {
+            const RETRY_DELAY: std::time::Duration = std::time::Duration::from_secs(5);
+            // When we do boot tracing, it is possible (even likely), that starnix has started but
+            // perfetto may not be ready to be connected to yet.
+            // In that case poll until it has started.
+            loop {
+                match handle_state_change(&mut callback_state, &locked_and_task, state) {
+                    Ok(_) => break, // Success, exit loop.
+                    Err(e) => {
+                        if let Some(errno) = e.downcast_ref::<Errno>() {
+                            if errno == &starnix_uapi::errors::ENOENT
+                                || errno == &starnix_uapi::errors::ECONNREFUSED
+                            {
+                                log_warn!(
+                                    "perfetto_consumer initial start tracing failed because perfetto socket connection not established: {e:?} retrying in 5 seconds..."
+                                );
+                                std::thread::sleep(RETRY_DELAY);
+                                callback_state.prev_state = TraceState::Stopped;
+                                callback_state.connection = None;
+                                callback_state.prolonged_context = None;
+                                state = trace_state();
+                                continue; // Retry
+                            }
+                        }
+                        // For any other error, log and exit loop.
+                        log_error!(
+                            "perfetto_consumer initial start tracing failed with error: {e:?}"
+                        );
+                        break;
+                    }
+                }
+            }
+        }
+
+        while let Ok(state) = observer.on_state_changed().await {
+            handle_state_change(&mut callback_state, &locked_and_task, state).unwrap_or_else(|e| {
+                log_error!("perfetto_consumer state change callback error: {:?}", e);
             })
         }
     };
