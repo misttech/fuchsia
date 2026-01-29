@@ -3,27 +3,38 @@
 // found in the LICENSE file.
 
 #include <lib/fit/defer.h>
+#include <signal.h>
 #include <sys/poll.h>
 #include <sys/syscall.h>
 #include <unistd.h>
 
 #include <thread>
 
+#include <gmock/gmock.h>
 #include <gtest/gtest.h>
 #include <linux/sched.h>
 
 #include "src/lib/files/file.h"
 #include "src/lib/fxl/strings/string_number_conversions.h"
+#include "src/starnix/tests/syscalls/cpp/syscall_matchers.h"
 #include "src/starnix/tests/syscalls/cpp/test_helper.h"
 
 namespace {
 
 // As of this writing, our sysroot's syscall.h lacks the SYS_clone3 definition.
 #ifndef SYS_clone3
-#if defined(__aarch64__) || defined(__x86_64__) || defined(__riscv)
+#if defined(__aarch64__) || defined(__x86_64__) || defined(__riscv) || defined(__arm__)
 #define SYS_clone3 435
 #else
 #error SYS_clone3 needs a definition for this architecture.
+#endif
+#endif
+
+#ifndef SYS_pidfd_send_signal
+#if defined(__aarch64__) || defined(__x86_64__) || defined(__riscv) || defined(__arm__)
+#define SYS_pidfd_send_signal 424
+#else
+#error SYS_pidfd_send_signal needs a definition for this architecture.
 #endif
 #endif
 
@@ -200,6 +211,65 @@ TEST(PidFdTest, PidFdOpenAfterZombification) {
     pid_t wait_result = waitpid(child_pid, &wait_status, 0);
     EXPECT_EQ(wait_result, child_pid);
   }
+}
+
+TEST(PidFdTest, PidFdSendSignal) {
+  fbl::unique_fd pid_fd(DoPidFdOpen(getpid()));
+  ASSERT_TRUE(pid_fd.is_valid());
+
+  sigset_t mask;
+  sigemptyset(&mask);
+  sigaddset(&mask, SIGTERM);
+  ASSERT_EQ(sigprocmask(SIG_BLOCK, &mask, nullptr), 0);
+
+  ASSERT_THAT(syscall(SYS_pidfd_send_signal, pid_fd.get(), SIGTERM, nullptr, 0), SyscallSucceeds());
+
+  siginfo_t info;
+  int sig = sigwaitinfo(&mask, &info);
+  ASSERT_EQ(sig, SIGTERM);
+  ASSERT_EQ(info.si_signo, SIGTERM);
+  ASSERT_EQ(info.si_code, SI_USER);
+
+  sigprocmask(SIG_UNBLOCK, &mask, nullptr);
+}
+
+TEST(PidFdTest, PidFdSendSiginfo) {
+  fbl::unique_fd pid_fd(DoPidFdOpen(getpid()));
+  ASSERT_TRUE(pid_fd.is_valid());
+
+  sigset_t mask;
+  sigemptyset(&mask);
+  sigaddset(&mask, SIGTERM);
+  ASSERT_EQ(sigprocmask(SIG_BLOCK, &mask, nullptr), 0);
+
+  siginfo_t info_send = {};
+  info_send.si_signo = SIGTERM;
+  info_send.si_code = SI_USER;
+  ASSERT_THAT(syscall(SYS_pidfd_send_signal, pid_fd.get(), SIGTERM, &info_send, 0),
+              SyscallSucceeds());
+
+  siginfo_t info_recv;
+  int sig = sigwaitinfo(&mask, &info_recv);
+  ASSERT_EQ(sig, SIGTERM);
+  ASSERT_EQ(info_recv.si_signo, SIGTERM);
+  ASSERT_EQ(info_recv.si_code, SI_USER);
+
+  sigprocmask(SIG_UNBLOCK, &mask, nullptr);
+}
+
+TEST(PidFdTest, PidFdSendSiginfoMismatchedSignoFails) {
+  fbl::unique_fd pid_fd(DoPidFdOpen(getpid()));
+  ASSERT_TRUE(pid_fd.is_valid());
+
+  siginfo_t info_send = {};
+  info_send.si_signo = SIGUSR1;  // signo is different from the signal number passed to the syscall
+  info_send.si_code = SI_USER;
+  ASSERT_THAT(syscall(SYS_pidfd_send_signal, pid_fd.get(), SIGTERM, &info_send, 0),
+              SyscallFailsWithErrno(EINVAL));
+
+  info_send.si_signo = 0;
+  ASSERT_THAT(syscall(SYS_pidfd_send_signal, pid_fd.get(), SIGTERM, &info_send, 0),
+              SyscallFailsWithErrno(EINVAL));
 }
 
 }  // namespace

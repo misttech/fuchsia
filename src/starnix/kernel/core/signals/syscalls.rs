@@ -7,7 +7,7 @@ use super::signalfd::SignalFd;
 use crate::mm::MemoryAccessorExt;
 use crate::security;
 use crate::signals::{
-    SI_HEADER_SIZE, SignalDetail, SignalInfo, SignalInfoHeader, SignalSource,
+    IntoSignalInfoOptions, SI_MAX_SIZE_AS_USIZE, SignalDetail, SignalInfo, UncheckedSignalInfo,
     restore_from_signal_handler, send_signal,
 };
 use crate::task::{
@@ -28,16 +28,12 @@ use starnix_uapi::open_flags::OpenFlags;
 use starnix_uapi::signals::{SigSet, Signal, UNBLOCKABLE_SIGNALS, UncheckedSignal};
 use starnix_uapi::user_address::{UserAddress, UserRef};
 use starnix_uapi::{
-    __WALL, __WCLONE, P_ALL, P_PGID, P_PID, P_PIDFD, SFD_CLOEXEC, SFD_NONBLOCK, SI_MAX_SIZE,
-    SI_TKILL, SIG_BLOCK, SIG_SETMASK, SIG_UNBLOCK, SS_AUTODISARM, SS_DISABLE, SS_ONSTACK,
-    WCONTINUED, WEXITED, WNOHANG, WNOWAIT, WSTOPPED, WUNTRACED, errno, error, pid_t, rusage,
-    sigaltstack,
+    __WALL, __WCLONE, P_ALL, P_PGID, P_PID, P_PIDFD, SFD_CLOEXEC, SFD_NONBLOCK, SI_TKILL,
+    SIG_BLOCK, SIG_SETMASK, SIG_UNBLOCK, SS_AUTODISARM, SS_DISABLE, SS_ONSTACK, WCONTINUED,
+    WEXITED, WNOHANG, WNOWAIT, WSTOPPED, WUNTRACED, errno, error, pid_t, rusage, sigaltstack,
 };
 use static_assertions::const_assert_eq;
 use zerocopy::{FromBytes, Immutable, IntoBytes};
-
-// Rust will let us do this cast in a const assignment but not in a const generic constraint.
-const SI_MAX_SIZE_AS_USIZE: usize = SI_MAX_SIZE as usize;
 
 pub type RUsagePtr = MultiArchUserRef<uapi::rusage, uapi::arch32::rusage>;
 type SigAction64Ptr = MultiArchUserRef<uapi::sigaction_t, uapi::arch32::sigaction64_t>;
@@ -475,13 +471,14 @@ where
     let signal = Signal::try_from(unchecked_signal)?;
     security::check_signal_access(current_task, &target, signal)?;
 
-    let siginfo = read_siginfo(current_task, signal, siginfo_ref)?;
-    if target.get_pid() != current_task.get_pid() && (siginfo.code >= 0 || siginfo.code == SI_TKILL)
+    let siginfo = UncheckedSignalInfo::read_from_siginfo(current_task, siginfo_ref)?;
+    if target.get_pid() != current_task.get_pid()
+        && (siginfo.code() >= 0 || siginfo.code() == SI_TKILL)
     {
         return error!(EINVAL);
     }
 
-    send_signal(locked, &target, siginfo)
+    send_signal(locked, &target, siginfo.into_signal_info(signal, IntoSignalInfoOptions::None)?)
 }
 
 /// The `kill` syscall can be used to send any signal to any process group or process.
@@ -657,43 +654,6 @@ pub fn sys_rt_sigreturn(
     Ok(current_task.thread_state.registers.return_register().into())
 }
 
-#[track_caller]
-
-/// Reads a `siginfo_t` structure from the given userspace address.
-///
-/// # Args
-/// * `current_task`: The task from which to read the memory.
-/// * `signal`: The signal that the `siginfo_t` structure is for.
-/// * `siginfo_ref`: The userspace address of the `siginfo_t` structure.
-///
-/// # Returns
-/// The `SignalInfo` structure read from userspace.
-pub fn read_siginfo(
-    current_task: &CurrentTask,
-    signal: Signal,
-    siginfo_ref: UserAddress,
-) -> Result<SignalInfo, Errno> {
-    let siginfo_mem = current_task.read_memory_to_array::<SI_MAX_SIZE_AS_USIZE>(siginfo_ref)?;
-    let header = SignalInfoHeader::read_from_bytes(&siginfo_mem[..SI_HEADER_SIZE]).unwrap();
-
-    if header.signo != 0 && header.signo != signal.number() {
-        return error!(EINVAL);
-    }
-
-    let mut bytes = [0u8; SI_MAX_SIZE as usize - SI_HEADER_SIZE];
-    bytes.copy_from_slice(&siginfo_mem[SI_HEADER_SIZE..SI_MAX_SIZE as usize]);
-    let details = SignalDetail::Raw { data: bytes };
-
-    Ok(SignalInfo {
-        signal,
-        errno: header.errno,
-        code: header.code,
-        detail: details,
-        force: false,
-        source: SignalSource::capture(),
-    })
-}
-
 /// The `rt_sigqueueinfo` syscall sends a signal with a payload to a process.
 ///
 /// # Args
@@ -712,7 +672,12 @@ pub fn sys_rt_sigqueueinfo(
 ) -> Result<(), Errno> {
     let weak_task = current_task.kernel().pids.read().get_task(tgid);
     let task = &Task::from_weak(&weak_task)?;
-    task.thread_group().send_signal_unchecked_with_info(current_task, unchecked_signal, siginfo_ref)
+    task.thread_group().send_signal_unchecked_with_info(
+        current_task,
+        unchecked_signal,
+        siginfo_ref,
+        IntoSignalInfoOptions::None,
+    )
 }
 
 /// The `rt_tgsigqueueinfo` syscall sends a signal with a payload to a specific thread.
@@ -773,7 +738,12 @@ pub fn sys_pidfd_send_signal(
     if siginfo_ref.is_null() {
         target.send_signal_unchecked(current_task, unchecked_signal)
     } else {
-        target.send_signal_unchecked_with_info(current_task, unchecked_signal, siginfo_ref)
+        target.send_signal_unchecked_with_info(
+            current_task,
+            unchecked_signal,
+            siginfo_ref,
+            IntoSignalInfoOptions::CheckSigno,
+        )
     }
 }
 
@@ -1143,8 +1113,8 @@ pub use arch32::*;
 mod tests {
     use super::*;
     use crate::mm::{MemoryAccessor, PAGE_SIZE};
-    use crate::signals::send_standard_signal;
     use crate::signals::testing::dequeue_signal_for_test;
+    use crate::signals::{SI_HEADER_SIZE, SignalInfoHeader, send_standard_signal};
     use crate::task::dynamic_thread_spawner::SpawnRequestBuilder;
     use crate::task::{EventHandler, ExitStatus, ProcessExitInfo};
     use crate::testing::*;
@@ -2410,7 +2380,7 @@ mod tests {
             const UID_DATA_OFFSET: usize = ARCH64_SI_HEADER_SIZE + 4;
             const VALUE_DATA_OFFSET: usize = ARCH64_SI_HEADER_SIZE + 8;
 
-            let mut data = vec![0u8; SI_MAX_SIZE as usize];
+            let mut data = vec![0u8; SI_MAX_SIZE_AS_USIZE];
             let header = SignalInfoHeader {
                 signo: SIGIO.number(),
                 code: SI_QUEUE,

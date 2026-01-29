@@ -800,6 +800,50 @@ TEST(SignalHandling, Sigsuspend) {
   ASSERT_EQ(0, sigprocmask(SIG_SETMASK, &old_sigset, nullptr));
 }
 
+TEST(SignalHandling, Sigqueueinfo) {
+  sigset_t mask;
+  sigemptyset(&mask);
+  sigaddset(&mask, SIGTERM);
+  ASSERT_EQ(sigprocmask(SIG_BLOCK, &mask, nullptr), 0);
+
+  siginfo_t info_send = {};
+  info_send.si_signo = SIGTERM;
+  info_send.si_code = SI_USER;
+  ASSERT_THAT(syscall(SYS_rt_sigqueueinfo, getpid(), SIGTERM, &info_send), SyscallSucceeds());
+  ASSERT_THAT(syscall(SYS_rt_tgsigqueueinfo, getpid(), gettid(), SIGTERM, &info_send),
+              SyscallSucceeds());
+
+  for (auto _ : {1, 2}) {
+    siginfo_t info_recv;
+    int sig = sigwaitinfo(&mask, &info_recv);
+    ASSERT_EQ(sig, SIGTERM);
+    ASSERT_EQ(info_recv.si_signo, SIGTERM);
+    ASSERT_EQ(info_recv.si_code, SI_USER);
+  }
+
+  sigprocmask(SIG_UNBLOCK, &mask, nullptr);
+}
+
+TEST(SignalHandling, SigqueueinfoMismatchedSignoIsOk) {
+  sigset_t mask;
+  sigemptyset(&mask);
+  sigaddset(&mask, SIGTERM);
+  ASSERT_EQ(sigprocmask(SIG_BLOCK, &mask, nullptr), 0);
+
+  siginfo_t info_send = {};
+  info_send.si_signo = SIGUSR1;  // signo is different from the signal number passed to the syscall
+  info_send.si_code = SI_USER;
+  ASSERT_THAT(syscall(SYS_rt_sigqueueinfo, getpid(), SIGTERM, &info_send), SyscallSucceeds());
+
+  siginfo_t info_recv;
+  int sig = sigwaitinfo(&mask, &info_recv);
+  ASSERT_EQ(sig, SIGTERM);
+  ASSERT_EQ(info_recv.si_signo, SIGTERM);
+  ASSERT_EQ(info_recv.si_code, SI_USER);
+
+  sigprocmask(SIG_UNBLOCK, &mask, nullptr);
+}
+
 TEST(SignalHandling, RealTimeSignals) {
   auto sig1 = SIGRTMIN;
   auto sig2 = SIGRTMIN + 1;

@@ -7,10 +7,7 @@ use crate::mm::{IOVecPtr, MemoryAccessor, MemoryAccessorExt};
 use crate::ptrace::StopState;
 use crate::security;
 use crate::signals::syscalls::WaitingOptions;
-use crate::signals::{
-    SI_HEADER_SIZE, SignalDetail, SignalInfo, SignalInfoHeader, SignalSource, send_signal_first,
-    send_standard_signal,
-};
+use crate::signals::{SignalInfo, UncheckedSignalInfo, send_signal_first, send_standard_signal};
 use crate::task::{
     CurrentTask, PidTable, ProcessSelector, Task, TaskMutableState, ThreadGroup, ThreadState,
     WaitQueue, ZombieProcess,
@@ -39,13 +36,12 @@ use starnix_uapi::{
     PTRACE_PEEKDATA, PTRACE_PEEKTEXT, PTRACE_PEEKUSR, PTRACE_POKEDATA, PTRACE_POKETEXT,
     PTRACE_POKEUSR, PTRACE_SETOPTIONS, PTRACE_SETREGSET, PTRACE_SETSIGINFO, PTRACE_SETSIGMASK,
     PTRACE_SYSCALL, PTRACE_SYSCALL_INFO_ENTRY, PTRACE_SYSCALL_INFO_EXIT, PTRACE_SYSCALL_INFO_NONE,
-    SI_MAX_SIZE, clone_args, errno, error, pid_t, ptrace_syscall_info, tid_t, uapi,
+    clone_args, errno, error, pid_t, ptrace_syscall_info, tid_t, uapi,
 };
 
 use std::collections::BTreeMap;
 use std::sync::atomic::Ordering;
 use std::sync::{Arc, Weak};
-use zerocopy::FromBytes;
 
 #[cfg(target_arch = "x86_64")]
 use starnix_uapi::{PTRACE_GETREGS, user};
@@ -999,27 +995,7 @@ where
             Ok(starnix_syscalls::SUCCESS)
         }
         PTRACE_SETSIGINFO => {
-            // Rust will let us do this cast in a const assignment but not in a
-            // const generic constraint.
-            const SI_MAX_SIZE_AS_USIZE: usize = SI_MAX_SIZE as usize;
-
-            let siginfo_mem = current_task.read_memory_to_array::<SI_MAX_SIZE_AS_USIZE>(data)?;
-            let header = SignalInfoHeader::read_from_bytes(&siginfo_mem[..SI_HEADER_SIZE]).unwrap();
-
-            let mut bytes = [0u8; SI_MAX_SIZE as usize - SI_HEADER_SIZE];
-            bytes.copy_from_slice(&siginfo_mem[SI_HEADER_SIZE..SI_MAX_SIZE as usize]);
-            let details = SignalDetail::Raw { data: bytes };
-            let unchecked_signal = UncheckedSignal::new(header.signo as u64);
-            let signal = Signal::try_from(unchecked_signal)?;
-
-            let siginfo = SignalInfo {
-                signal,
-                errno: header.errno,
-                code: header.code,
-                detail: details,
-                force: false,
-                source: SignalSource::capture(),
-            };
+            let siginfo = UncheckedSignalInfo::read_from_siginfo(current_task, data)?.try_into()?;
             if let Some(ptrace) = &mut state.ptrace {
                 ptrace.last_signal = Some(siginfo);
             }

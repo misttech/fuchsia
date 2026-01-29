@@ -2,8 +2,8 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use crate::mm::MemoryAccessor;
-use crate::task::{ThreadGroupReadGuard, WaitQueue, Waiter, WaiterRef};
+use crate::mm::{MemoryAccessor, MemoryAccessorExt};
+use crate::task::{CurrentTask, ThreadGroupReadGuard, WaitQueue, Waiter, WaiterRef};
 use crate::time::IntervalTimerHandle;
 use starnix_sync::{InterruptibleEvent, RwLock};
 use starnix_types::arch::ArchWidth;
@@ -21,6 +21,12 @@ use std::cmp::Ordering;
 use std::collections::VecDeque;
 use std::sync::Arc;
 use zerocopy::{FromBytes, Immutable, IntoBytes, KnownLayout};
+
+pub const SI_HEADER_SIZE: usize = std::mem::size_of::<SignalInfoHeader>();
+
+// Rust will let us do this cast in a const assignment but not in a const generic constraint.
+pub const SI_MAX_SIZE_AS_USIZE: usize = SI_MAX_SIZE as usize;
+pub const SI_DETAIL_SIZE: usize = SI_MAX_SIZE_AS_USIZE - SI_HEADER_SIZE;
 
 /// Internal signal that cannot be masked, blocked or ignored.
 #[derive(Debug)]
@@ -418,7 +424,84 @@ pub struct SignalInfoHeader {
     pub code: i32,
 }
 
-pub const SI_HEADER_SIZE: usize = std::mem::size_of::<SignalInfoHeader>();
+/// Represents a `siginfo_t` structure that has been read from userspace but not yet validated.
+pub struct UncheckedSignalInfo {
+    header: SignalInfoHeader,
+    data: [u8; SI_DETAIL_SIZE],
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum IntoSignalInfoOptions {
+    /// Do not check the signo field of the siginfo_t structure.
+    None,
+
+    /// Check that the signo field of the siginfo_t structure matches the given signal.
+    /// Returns EINVAL if they do not match.
+    CheckSigno,
+}
+
+impl UncheckedSignalInfo {
+    /// Reads a `siginfo_t` structure from the given userspace address.
+    ///
+    /// # Args
+    /// * `current_task`: The task from which to read the memory.
+    /// * `siginfo_ref`: The userspace address of the `siginfo_t` structure.
+    ///
+    /// # Returns
+    /// The `UncheckedSignalInfo` structure read from userspace.
+    pub fn read_from_siginfo(
+        current_task: &CurrentTask,
+        siginfo_ref: UserAddress,
+    ) -> Result<Self, Errno> {
+        let siginfo_mem = current_task.read_memory_to_array::<SI_MAX_SIZE_AS_USIZE>(siginfo_ref)?;
+        let header = SignalInfoHeader::read_from_bytes(&siginfo_mem[..SI_HEADER_SIZE]).unwrap();
+        let mut data = [0u8; SI_DETAIL_SIZE];
+        data.copy_from_slice(&siginfo_mem[SI_HEADER_SIZE..]);
+        Ok(Self { header, data })
+    }
+
+    pub fn signo(&self) -> u32 {
+        self.header.signo
+    }
+
+    pub fn code(&self) -> i32 {
+        self.header.code
+    }
+
+    /// Converts this unchecked signal info into a `SignalInfo` with the given signal.
+    ///
+    /// Some syscalls pass in a signal number as well as a siginfo_t structure. Depending on the
+    /// syscall, the signo field of the siginfo_t structure is either ignored, or checked for
+    /// consistency with the signal number passed in.
+    #[track_caller]
+    pub fn into_signal_info(
+        &self,
+        signal: Signal,
+        options: IntoSignalInfoOptions,
+    ) -> Result<SignalInfo, Errno> {
+        if matches!(options, IntoSignalInfoOptions::CheckSigno) && self.signo() != signal.number() {
+            return error!(EINVAL);
+        }
+        Ok(SignalInfo {
+            signal,
+            errno: self.header.errno,
+            code: self.header.code,
+            detail: SignalDetail::Raw { data: self.data },
+            force: false,
+            source: SignalSource::capture(),
+        })
+    }
+}
+
+impl TryFrom<UncheckedSignalInfo> for SignalInfo {
+    type Error = Errno;
+
+    #[track_caller]
+    fn try_from(siginfo: UncheckedSignalInfo) -> Result<Self, Self::Error> {
+        let signal = Signal::try_from(UncheckedSignal::from(siginfo.signo()))?;
+        siginfo.into_signal_info(signal, IntoSignalInfoOptions::None)
+    }
+}
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct SignalInfo {
@@ -603,7 +686,7 @@ pub enum SignalDetail {
         timer: IntervalTimerHandle,
     },
     Raw {
-        data: [u8; SI_MAX_SIZE as usize - SI_HEADER_SIZE],
+        data: [u8; SI_DETAIL_SIZE],
     },
 }
 

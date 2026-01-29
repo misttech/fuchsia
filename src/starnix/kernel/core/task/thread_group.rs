@@ -9,10 +9,10 @@ use crate::ptrace::{
     ZombiePtracees, ptrace_detach,
 };
 use crate::security;
-use crate::signals::syscalls::{WaitingOptions, read_siginfo};
+use crate::signals::syscalls::WaitingOptions;
 use crate::signals::{
-    DeliveryAction, QueuedSignals, SignalActions, SignalDetail, SignalInfo, action_for_signal,
-    send_standard_signal,
+    DeliveryAction, IntoSignalInfoOptions, QueuedSignals, SignalActions, SignalDetail, SignalInfo,
+    UncheckedSignalInfo, action_for_signal, send_standard_signal,
 };
 use crate::task::memory_attribution::MemoryAttributionLifecycleEvent;
 use crate::task::{
@@ -1620,6 +1620,7 @@ impl ThreadGroup {
     /// - `unchecked_signal`: The signal that is to be sent. Unchecked, since `0` is a sentinel value
     /// where rights are to be checked but no signal is actually sent.
     /// - `siginfo_ref`: The siginfo that will be enqueued.
+    /// - `options`: Options for how to convert the siginfo into a signal info.
     ///
     /// # Returns
     /// Returns Ok(()) if the signal was sent, or the permission checks passed with a 0 signal, otherwise
@@ -1630,16 +1631,17 @@ impl ThreadGroup {
         current_task: &CurrentTask,
         unchecked_signal: UncheckedSignal,
         siginfo_ref: UserAddress,
+        options: IntoSignalInfoOptions,
     ) -> Result<(), Errno> {
         if let Some(signal) = self.check_signal_access(current_task, unchecked_signal)? {
-            let signal_info = read_siginfo(current_task, signal, siginfo_ref)?;
+            let siginfo = UncheckedSignalInfo::read_from_siginfo(current_task, siginfo_ref)?;
             if self.leader != current_task.get_pid()
-                && (signal_info.code >= 0 || signal_info.code == SI_TKILL)
+                && (siginfo.code() >= 0 || siginfo.code() == SI_TKILL)
             {
                 return error!(EPERM);
             }
 
-            self.write().send_signal(signal_info);
+            self.write().send_signal(siginfo.into_signal_info(signal, options)?);
         }
 
         Ok(())
