@@ -5,7 +5,6 @@
 import("//build/components.gni")
 import("//build/cpp/sdk_shared_library.gni")
 import("//build/cpp/sdk_source_set.gni")
-import("//build/cpp/sdk_static_library.gni")
 import("//build/test.gni")
 
 if (is_fuchsia) {
@@ -13,13 +12,6 @@ if (is_fuchsia) {
 } else {
   # Don't ship the host logging library in the SDK.
   target_type = "source_set"
-
-  # TODO(https://fxbug.dev/42138060): Remove when Mac links OK against this.
-  if ((current_toolchain == "//build/toolchain:host_x64" && host_os == "mac") ||
-      (current_toolchain == "//build/toolchain:host_arm64" &&
-       host_os == "mac")) {
-    target_type = "static_library"
-  }
 }
 
 target(target_type, "cpp") {
