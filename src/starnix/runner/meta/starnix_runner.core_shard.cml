@@ -258,6 +258,11 @@
             to: [ "#starnix_runner" ],
         },
         {
+            service: "fuchsia.hardware.qualcomm.router.ClientService",
+            from: "parent",
+            to: "#starnix_runner",
+        },
+        {
             service: "fuchsia.power.battery.ChargerService",
             from: "parent",
             to: "#starnix_runner",

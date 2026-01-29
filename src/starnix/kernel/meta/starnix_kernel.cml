@@ -97,12 +97,11 @@
             from: "parent",
         },
         {
-            service: "fuchsia.hardware.qcom.hvdcpopti.Service",
-            from: "parent",
-            availability: "optional",
-        },
-        {
-            service: "fuchsia.hardware.power.suspend.SuspendService",
+            service: [
+                "fuchsia.hardware.power.suspend.SuspendService",
+                "fuchsia.hardware.qcom.hvdcpopti.Service",
+                "fuchsia.hardware.qualcomm.router.ClientService",
+            ],
             from: "parent",
             availability: "optional",
         },

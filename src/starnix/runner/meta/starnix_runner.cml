@@ -189,6 +189,7 @@
                 "fuchsia.hardware.power.suspend.SuspendService",
                 "fuchsia.hardware.qcom.hvdcpopti.Service",
                 "fuchsia.hardware.qualcomm.fastrpc.SecureService",
+                "fuchsia.hardware.qualcomm.router.ClientService",
                 "fuchsia.power.battery.ChargerService",
             ],
             from: "parent",

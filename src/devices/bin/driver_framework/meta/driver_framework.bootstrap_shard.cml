@@ -449,6 +449,7 @@
                 "fuchsia.hardware.light.LightService",
                 "fuchsia.hardware.nfc.Service",
                 "fuchsia.hardware.power.sensor.Service",
+                "fuchsia.hardware.qualcomm.router.ClientService",
                 "fuchsia.hardware.radar.Service",
                 "fuchsia.hardware.temperature.Service",
                 "fuchsia.hardware.thermal.Service",
