@@ -4,14 +4,18 @@
 
 import("//build/components.gni")
 import("//build/rust/rustc_library.gni")
-import("scenarios.gni")
 
 # Generate the `scenarios.rs` file which includes all the traces.
 action("generate_scenarios_rs") {
   script = "testing/trace_generator.py"
   outputs = [ "$target_gen_dir/testing/scenarios.rs" ]
 
-  inputs = [ "testing/trace_generator.py" ]
+  scenarios = read_file("testing/scenarios_list.json", "json")
+
+  inputs = [
+    "testing/trace_generator.py",
+    "testing/scenarios_list.json",
+  ]
   foreach(scenario, scenarios) {
     inputs += [ "testing/generated/${scenario}.json" ]
   }

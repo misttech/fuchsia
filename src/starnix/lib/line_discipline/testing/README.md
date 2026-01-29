@@ -23,5 +23,5 @@ This will generate trace files in `src/starnix/lib/line_discipline/testing/gener
 ## Adding New Tests
 
 1.  Add the a scenario to the `scenarios` directory.
-2.  Add the the name of the scenario to `scenarios.gni`.
+2.  Add the the name of the scenario to `scenarios_list.json`.
 3.  Run the generator to produce the JSON trace.

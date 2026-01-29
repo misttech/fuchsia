@@ -298,29 +298,6 @@ class ScenarioRunner:
             )
 
 
-def parse_scenarios_gni(gni_path: str) -> List[str]:
-    """Parses scenarios.gni to extract the list of scenario names."""
-    scenarios = []
-    with open(gni_path, "r") as f:
-        content = f.read()
-        # Simple parsing assumption: valid GN syntax for a string list
-        # We look for `scenarios = [` and then read lines until `]`
-        in_list = False
-        for line in content.splitlines():
-            line = line.strip()
-            if line.startswith("scenarios = ["):
-                in_list = True
-                continue
-            if in_list:
-                if line.startswith("]"):
-                    break
-                # potentially "name", or "name", # comment
-                if line.startswith('"'):
-                    name = line.split('"')[1]
-                    scenarios.append(name)
-    return scenarios
-
-
 def main():
     parser = argparse.ArgumentParser(
         description="Generate Starnix line discipline traces."
@@ -360,14 +337,16 @@ def main():
 
     # Default to manual mode if no action specified
     if not args.generate_trace and not args.generate_rs:
-        gni_path = os.path.join(script_dir, "..", "scenarios.gni")
+        scenarios_list_path = os.path.join(script_dir, "scenarios_list.json")
 
-        if not os.path.exists(gni_path):
+        if not os.path.exists(scenarios_list_path):
             raise FileNotFoundError(
-                f"Could not find scenarios.gni at {gni_path}"
+                f"Could not find scenarios_list.json at {scenarios_list_path}"
             )
 
-        scenarios = parse_scenarios_gni(gni_path)
+        with open(scenarios_list_path, "r") as f:
+            scenarios = json.load(f)
+
         logger.info(f"Found {len(scenarios)} scenarios.")
 
         output_dir = os.path.join(script_dir, "generated")
