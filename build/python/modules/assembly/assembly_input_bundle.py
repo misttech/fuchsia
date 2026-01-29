@@ -293,8 +293,6 @@ class AssemblyInputBundle:
     qemu_kernel: Optional[FilePath] = None
     boot_args: set[str] = field(default_factory=set)
     bootfs_files: set[FileEntry] = field(default_factory=set)
-    bootfs_packages: set[FilePath] = field(default_factory=set)
-
     packages: set[PackageDetails] = field(default_factory=set)
     config_data: ConfigDataEntries = field(default_factory=dict)
     blobs: set[FilePath] = field(default_factory=set)
@@ -430,7 +428,6 @@ class AIBCreator:
         # Bootfs info
         self.bootfs_files: set[FileEntry] = set()
         self.bootfs_files_package: Optional[FilePath] = None
-        self.bootfs_packages: set[FilePath] = set()
 
         # The config_data entries
         self.config_data: FileEntryList = []

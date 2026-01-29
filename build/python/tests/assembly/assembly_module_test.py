@@ -185,7 +185,6 @@ raw_assembly_input_bundle_json = """{
       "destination": "path/to/destination"
     }
   ],
-  "bootfs_packages": [],
   "packages": [
     {
       "package": "package0",

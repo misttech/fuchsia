@@ -264,7 +264,6 @@ impl ImageAssemblyConfigBuilder {
             kernel,
             qemu_kernel,
             boot_args,
-            bootfs_packages: _,
             bootfs_files: _,
             packages,
             config_data,
@@ -1627,7 +1626,6 @@ mod tests {
             qemu_kernel: Some("path/to/qemu/kernel".into()),
             boot_args: vec![],
             bootfs_files: vec![],
-            bootfs_packages: vec![],
             packages: vec![
                 PackageDetails {
                     package: write_empty_bundle_pkg("base_package0"),

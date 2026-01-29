@@ -26,10 +26,6 @@ pub struct AssemblyInputBundle {
     /// The list of additional boot args to add.
     pub boot_args: Vec<String>,
 
-    /// The packages that are in the bootfs package list, which are
-    /// added to the BOOTFS in the ZBI.
-    pub bootfs_packages: Vec<Utf8PathBuf>,
-
     /// The set of files to be placed in BOOTFS in the ZBI.
     pub bootfs_files: Vec<FileEntry<String>>,
 
@@ -147,7 +143,6 @@ impl AssemblyInputBundle {
             kernel,
             qemu_kernel,
             boot_args,
-            bootfs_packages,
             bootfs_files,
             packages,
             config_data,
@@ -163,7 +158,6 @@ impl AssemblyInputBundle {
 
         qemu_kernel.is_none()
             && boot_args.is_empty()
-            && bootfs_packages.is_empty()
             && bootfs_files.is_empty()
             && packages.is_empty()
             && config_data.is_empty()
