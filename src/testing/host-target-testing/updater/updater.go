@@ -269,7 +269,16 @@ func updateCheckNow(
 			err = c.Run(ctx, cmd, &stdout_target, os.Stderr)
 			stdout = stdout_target.String()
 			if err != nil {
-				logger.Warningf(ctx, "update monitoring via /bin/update failed: %v.", err)
+				// tefmocheck checks for the string "remote command exited without
+				// exit status or exit signal" and will mark the test as failed if
+				// it sees it. However it's normal for us to get that error since
+				// ssh might get disconnected before the update command completes.
+				var errExitMissing *ssh.ExitMissingError
+				if errors.As(err, &errExitMissing) {
+					logger.Warningf(ctx, "update monitoringvia /bin/update failed: ssh exited without status or signal")
+				} else {
+					logger.Warningf(ctx, "update monitoring via /bin/update failed: %v.", err)
+				}
 			}
 		}
 		logger.Debugf(ctx, "Output from check-now monitor: %s", stdout)
