@@ -84,7 +84,6 @@ var (
 	neverAffectedTestLabels = []string{
 		"//src/recovery/simulator:recovery_simulator_boot_test",
 		"//src/recovery/simulator:recovery_simulator_serial_test",
-		"//src/tests/installer:installer_test",
 	}
 )
 

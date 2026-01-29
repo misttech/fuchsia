@@ -17,10 +17,6 @@ group("host") {
     "//src/developer/ffx:host_tests($host_toolchain)",
     "//tools:host_tests($host_toolchain)",
   ]
-
-  if (is_linux) {
-    deps += [ "//src/tests/installer:tests($host_toolchain)" ]
-  }
 }
 
 # This group contains no e2e tests. Tests in this group:

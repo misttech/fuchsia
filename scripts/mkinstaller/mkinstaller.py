@@ -16,7 +16,6 @@ import subprocess
 import sys
 import tempfile
 import time
-import typing
 from typing import List
 
 try:
@@ -47,7 +46,7 @@ GPT_VBMETA_ABR_TYPE_GUID = "421a8bfc-85d9-4d85-acda-b64eec0133e9"
 GPT_DURABLE_BOOT_TYPE_GUID = "a409e16b-78aa-4acc-995c-302352621a41"
 
 
-def make_unique_name(name, type):
+def make_unique_name(name: str, type: str) -> str:
     return f"{name}_{type}"
 
 
@@ -55,7 +54,11 @@ class ManifestImage:
     """Represents an entry in the 'images.json' manifest that will be installed to disk."""
 
     def __init__(
-        self, name: str, guids: List[str], type: str, dest_name: str = None
+        self,
+        name: str,
+        guids: List[str],
+        type: str,
+        dest_name: str | None = None,
     ):
         """
         Args:
@@ -71,75 +74,9 @@ class ManifestImage:
         else:
             self.dest_name = name
 
-    def unique_name(self):
+    def unique_name(self) -> str:
         return make_unique_name(self.name, self.type)
 
-
-# This is the list of Fuchsia build images we write to the final image,
-# and the partition types they will have (passed to cgpt)
-IMAGES_RECOVERY_INSTALLER = [
-    # The recovery image for chromebook-x64.
-    ManifestImage("recovery-installer", ["kernel"], "zbi.signed", "zircon_r"),
-    # The recovery image and a bootloader for x64.
-    ManifestImage(
-        "recovery-installer", [GPT_ZIRCON_ABR_TYPE_GUID], "zbi", "zircon_r"
-    ),
-    ManifestImage(
-        "recovery-installer", [GPT_VBMETA_ABR_TYPE_GUID], "vbmeta", "vbmeta_r"
-    ),
-    ManifestImage("fuchsia.esp", ["efi"], "blk"),
-    # Installer uses `WORKSTATION_INSTALLER_GPT_GUID` to tell that it is a partition
-    # to copy over. They have to come last to prevent gigaboot++ from using them
-    # for boot(gigaboot++ finds the first match when looking up in GPT).
-    # Standard x64 partitions
-    # This is the EFI system partition that will be installed to the target.
-    ManifestImage("fuchsia.esp", [WORKSTATION_INSTALLER_GPT_GUID], "blk"),
-    ManifestImage(
-        "zircon-a", [WORKSTATION_INSTALLER_GPT_GUID], "zbi", "zircon_a"
-    ),
-    ManifestImage(
-        "zircon-a", [WORKSTATION_INSTALLER_GPT_GUID], "vbmeta", "vbmeta_a"
-    ),
-    ManifestImage(
-        "zircon-r", [WORKSTATION_INSTALLER_GPT_GUID], "zbi", "zircon_r"
-    ),
-    ManifestImage(
-        "zircon-r", [WORKSTATION_INSTALLER_GPT_GUID], "vbmeta", "vbmeta_r"
-    ),
-    # ChromeOS partitions
-    # The zircon-r.signed partition is used as both zedboot on the installation
-    # disk and also the installed zircon-r partition.
-    ManifestImage(
-        "zircon-r.signed",
-        [WORKSTATION_INSTALLER_GPT_GUID],
-        "zbi.signed",
-        "zircon_r",
-    ),
-    ManifestImage(
-        "zircon-a.signed",
-        [WORKSTATION_INSTALLER_GPT_GUID],
-        "zbi.signed",
-        "zircon_a",
-    ),
-    # Common partitions - installed everywhere.
-    # Only one of these should exist at a time.
-    ManifestImage("storage-sparse", [WORKSTATION_INSTALLER_GPT_GUID], "blk"),
-    ManifestImage(
-        "storage-sparse", [WORKSTATION_INSTALLER_GPT_GUID], "fxfs-blk"
-    ),
-]
-
-# This is the list of images for running recovery-eng, which offers userspace
-# fastboot.
-IMAGES_RECOVERY_FASTBOOT = [
-    # The recovery-eng image for chromebook-x64.
-    ManifestImage("recovery-eng", ["kernel"], "zbi.signed", "zircon_r"),
-    # The recovery-eng image and a bootloader for x64.
-    ManifestImage(
-        "recovery-eng", [GPT_VBMETA_ABR_TYPE_GUID], "zbi", "zircon_r"
-    ),
-    ManifestImage("fuchsia.esp", ["efi"], "blk"),
-]
 
 # This is the image for running GBL installer.
 IMAGES_GBL_FASTBOOT_INSTALLER = [
@@ -147,7 +84,7 @@ IMAGES_GBL_FASTBOOT_INSTALLER = [
 ]
 
 
-def ParseSize(size):
+def ParseSize(size: str) -> int:
     """Parse a size.
 
     Args:
@@ -176,7 +113,7 @@ def ParseSize(size):
     return size_bytes
 
 
-def PrettySize(size):
+def PrettySize(size: float) -> str:
     """Returns a size in bytes as a human-readable string."""
     units = "BKMGT"
 
@@ -206,7 +143,7 @@ class Partition:
     FAT32_MIN_SIZE = 63 * 1024 * 1024
 
     def __init__(
-        self, path, part_type, label, size: typing.Optional[int] = None
+        self, path: str, part_type: str, label: str, size: int | None = None
     ):
         self.path = path
         self.type = part_type
@@ -255,7 +192,7 @@ class Image:
     GPT_SECTORS = 2048
     CROS_RESERVED_SECTORS = 2048
 
-    def __init__(self, filename, is_usb, block_size):
+    def __init__(self, filename: str, is_usb: bool, block_size: int) -> None:
         self.filename = filename
         self.is_usb = is_usb
         self.file = open(filename, mode="wb")
@@ -263,15 +200,15 @@ class Image:
 
         # Allocate space for the primary and backup GPTs
         self.file_size = 2 * Image.GPT_SECTORS * Image.SECTOR_SIZE
-        self.partitions = []
+        self.partitions: list[Partition] = []
 
-        self.copy_image = None
+        self.copy_image: str | None = None
 
-    def _Cgpt(self, args):
+    def _Cgpt(self, args: list[str]) -> subprocess.CompletedProcess[bytes]:
         args = [CGPT_BIN] + args
         return subprocess.run(args, capture_output=True)
 
-    def _CgptAdd(self, part, offset):
+    def _CgptAdd(self, part: Partition, offset: int) -> bool:
         """Add a partition to the GPT represented by this |Image|.
 
         Args:
@@ -320,7 +257,7 @@ class Image:
             return False
         return True
 
-    def AddPartition(self, partition):
+    def AddPartition(self, partition: Partition) -> None:
         """Add a partition to the outputted disk image.
 
         This function does not write any data - call Finalise() to write the
@@ -332,7 +269,7 @@ class Image:
         self.partitions.append(partition)
         self.file_size += partition.size
 
-    def CopyImage(self, image):
+    def CopyImage(self, image: str) -> None:
         """Copies a complete image to the output file.
 
         Args:
@@ -342,7 +279,7 @@ class Image:
         self.file_size = os.stat(image).st_size
         self.Finalise()
 
-    def _CopyToFile(self, path, offset):
+    def _CopyToFile(self, path: str, offset: int) -> None:
         """Copies bytes to the output file.
 
         |self.file| must have already been resized large enough to hold
@@ -371,7 +308,7 @@ class Image:
             )
         )
 
-    def Finalise(self):
+    def Finalise(self) -> None:
         """Write all the partitions this image represents to disk/file."""
         # Make sure we didn't try to add partitions and a full image to copy.
         if self.partitions and self.copy_image:
@@ -415,7 +352,9 @@ class Image:
         self.file.close()
 
 
-def GetPartitions(build_dir, images_file, target_images):
+def GetPartitions(
+    build_dir: str, images_file: str | None, target_images: list[ManifestImage]
+) -> list[Partition]:
     """Get all partitions to be written to the output image.
 
     The list of partitions is currently determined by the IMAGES dict
@@ -431,7 +370,7 @@ def GetPartitions(build_dir, images_file, target_images):
     use_signed_images = False
 
     images = {}
-    if images_file == "":
+    if not images_file:
         images_file = os.path.join(build_dir, "images.json")
     try:
         with open(images_file) as f:
@@ -483,7 +422,7 @@ def GetPartitions(build_dir, images_file, target_images):
     return ret
 
 
-def GetUsbDisks():
+def GetUsbDisks() -> list[str]:
     """Get a list of all USB disks on the system.
 
     Returns:
@@ -496,7 +435,7 @@ def GetUsbDisks():
     return disks
 
 
-def IsUsbDisk(path):
+def IsUsbDisk(path: str) -> bool:
     """Is the given path a USB disk?
 
     Args:
@@ -508,14 +447,14 @@ def IsUsbDisk(path):
     return path in map(lambda a: a.split()[0], GetUsbDisks())
 
 
-def UnmountDisk(path):
+def UnmountDisk(path: str) -> None:
     """Unmount the given USB disk from the system."""
     system = platform.system()
     if system == "Darwin":
         subprocess.run(["diskutil", "quiet", "unmountDisk", path])
 
 
-def EjectDisk(path):
+def EjectDisk(path: str) -> None:
     """Eject the given USB disk from the system."""
     system = platform.system()
     if system == "Linux":
@@ -525,7 +464,7 @@ def EjectDisk(path):
     logging.info("Ejected USB disk")
 
 
-def Main(args):
+def Main(args: argparse.Namespace) -> int:
     if args.temp_remote_image_only:
         # We have to let the temporary directory persist past program exit
         # since the local host will need to copy it over; it's the caller's
@@ -575,8 +514,12 @@ def Main(args):
                     path, os.environ.get("USER")
                 )
             )
+            user = os.environ.get("USER")
+            if not user:
+                logging.critical("$USER is not set, unable to run 'chown'")
+                return 1
             subprocess.run(
-                ["sudo", "chown", os.environ.get("USER"), path],
+                ["sudo", "chown", user, path],
                 stdin=sys.stdin,
                 stdout=sys.stdout,
                 stderr=sys.stderr,
@@ -598,15 +541,10 @@ def Main(args):
         output.CopyImage(args.from_image)
     else:
         build_dir = args.build_dir
-        if build_dir == "":
+        if not build_dir:
             build_dir = paths.FUCHSIA_BUILD_DIR
 
-        if args.gbl:
-            target_images = IMAGES_GBL_FASTBOOT_INSTALLER
-        elif args.recovery_fastboot:
-            target_images = IMAGES_RECOVERY_FASTBOOT
-        else:
-            target_images = IMAGES_RECOVERY_INSTALLER
+        target_images = IMAGES_GBL_FASTBOOT_INSTALLER
         parts = GetPartitions(build_dir, args.images, target_images)
         if not parts:
             return 1
@@ -721,12 +659,6 @@ if __name__ == "__main__":
     )
     installer_type = parser.add_mutually_exclusive_group()
     installer_type.add_argument(
-        "--recovery-fastboot",
-        action=argparse.BooleanOptionalAction,
-        default=False,
-        help="Create a bootable recovery-eng image with userspace fastboot.",
-    )
-    installer_type.add_argument(
         "--gbl",
         action=argparse.BooleanOptionalAction,
         default=False,
@@ -766,7 +698,7 @@ if __name__ == "__main__":
         help=argparse.SUPPRESS,
     )
 
-    argv = parser.parse_args()
+    argv: argparse.Namespace = parser.parse_args()
 
     level = logging.WARNING
     if argv.verbose:
