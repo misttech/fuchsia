@@ -500,6 +500,12 @@ impl DriverTestRealmBuilder for RealmBuilder {
                 )),
             }))
             .await?;
+        realm
+            .add_capability(cm_rust::CapabilityDecl::Config(cm_rust::ConfigurationDecl {
+                name: "fuchsia.power.WaitForSuspendingToken".parse()?,
+                value: cm_rust::ConfigValue::Single(cm_rust::ConfigSingleValue::Bool(false)),
+            }))
+            .await?;
 
         let root_driver = match args.root_driver {
             Some(val) => val,
@@ -592,6 +598,15 @@ impl DriverTestRealmBuilder for RealmBuilder {
                     .capability(Capability::configuration("fuchsia.driver.testrealm.PlatformPid"))
                     .from(Ref::self_())
                     .to(&dtr_support),
+            )
+            .await?;
+
+        realm
+            .add_route(
+                Route::new()
+                    .capability(Capability::configuration("fuchsia.power.WaitForSuspendingToken"))
+                    .from(Ref::self_())
+                    .to(&driver_manager),
             )
             .await?;
 

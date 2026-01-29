@@ -345,6 +345,20 @@ class DriverTestRealm final : public fidl::Server<fuchsia_driver_test::Realm> {
         .targets = {component_testing::ChildRef{"driver_manager"}},
     });
 
+    configurations = std::vector<component_testing::ConfigCapability>();
+    configurations.push_back({
+        .name = "fuchsia.power.WaitForSuspendingToken",
+        .value = ConfigValue::Bool(false),
+    });
+    realm_builder_.AddConfiguration(std::move(configurations));
+    realm_builder_.AddRoute(
+        {.capabilities =
+             {
+                 component_testing::Config{.name = "fuchsia.power.WaitForSuspendingToken"},
+             },
+         .source = component_testing::SelfRef{},
+         .targets = {component_testing::ChildRef{.name = "driver_manager"}}});
+
     // Set platform bus config based on request.
     configurations = std::vector<component_testing::ConfigCapability>();
     component_testing::Ref source;

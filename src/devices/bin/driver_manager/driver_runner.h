@@ -13,6 +13,7 @@
 #include <fidl/fuchsia.driver.token/cpp/fidl.h>
 #include <fidl/fuchsia.ldsvc/cpp/wire.h>
 #include <fidl/fuchsia.power.broker/cpp/fidl.h>
+#include <fidl/fuchsia.power.system/cpp/fidl.h>
 #include <lib/async/cpp/wait.h>
 #include <lib/component/outgoing/cpp/outgoing_directory.h>
 #include <lib/fit/function.h>
@@ -46,12 +47,15 @@
 // Note, all of the logic here assumes we are operating on a single-threaded
 // dispatcher. It is not safe to use a multi-threaded dispatcher with this code.
 
+// TODO(https://fxbug.dev/479569256) Refactor DriverRunner to separate out power-related code
+// with the goal of making things more maintainable and readable.
 namespace driver_manager {
 class DriverRunner : public fidl::WireServer<fuchsia_driver_framework::CompositeNodeManager>,
                      public fidl::WireServer<fuchsia_driver_index::DriverNotifier>,
                      public fidl::WireServer<fuchsia_driver_crash::CrashIntrospect>,
                      public fidl::Server<fuchsia_driver_token::NodeBusTopology>,
                      public fidl::WireServer<fuchsia_power_broker::ElementRunner>,
+                     public fidl::WireServer<fuchsia_power_system::CpuElementManager>,
                      public BindManagerBridge,
                      public CompositeManagerBridge,
                      public std::enable_shared_from_this<DriverRunner>,
@@ -61,6 +65,10 @@ class DriverRunner : public fidl::WireServer<fuchsia_driver_framework::Composite
 
   using DynamicLinkerServiceFactory =
       fit::function<zx::result<fidl::ClientEnd<fuchsia_driver_loader::DriverHostLauncher>>()>;
+
+  using CallbackSet = std::vector<fit::callback<void()>>;
+
+  using PowerDependencyToken = fuchsia_power_broker::DependencyToken;
 
  public:
   // Args required to enable dynamic linking
@@ -78,7 +86,10 @@ class DriverRunner : public fidl::WireServer<fuchsia_driver_framework::Composite
                async_dispatcher_t* dispatcher, bool enable_test_shutdown_delays,
                OfferInjector offer_injector,
                fidl::ClientEnd<fuchsia_power_broker::Topology> topology_client,
-               std::optional<DynamicLinkerArgs> dynamic_linker_args = std::nullopt);
+               std::optional<DynamicLinkerArgs> dynamic_linker_args = std::nullopt,
+               std::optional<fidl::ClientEnd<fuchsia_power_system::CpuElementManager>>
+                   cpu_element_mgr = std::nullopt,
+               bool wait_for_storage_token = false);
 
   // fidl::WireServer<fuchsia_driver_framework::CompositeNodeManager> interface
   void AddSpec(AddSpecRequestView request, AddSpecCompleter::Sync& completer) override;
@@ -105,6 +116,13 @@ class DriverRunner : public fidl::WireServer<fuchsia_driver_framework::Composite
 
   void handle_unknown_method(
       fidl::UnknownMethodMetadata<fuchsia_power_broker::ElementRunner> metadata,
+      fidl::UnknownMethodCompleter::Sync& completer) override;
+
+  void GetCpuDependencyToken(GetCpuDependencyTokenCompleter::Sync& completer) override;
+  void AddExecutionStateDependency(AddExecutionStateDependencyRequestView request,
+                                   AddExecutionStateDependencyCompleter::Sync& completer) override;
+  void handle_unknown_method(
+      fidl::UnknownMethodMetadata<fuchsia_power_system::CpuElementManager> metadata,
       fidl::UnknownMethodCompleter::Sync& completer) override;
 
   // CompositeManagerBridge interface
@@ -208,7 +226,10 @@ class DriverRunner : public fidl::WireServer<fuchsia_driver_framework::Composite
   void AddLeaseControlChannel(fidl::ClientEnd<fuchsia_power_broker::LeaseControl> lease) override;
   std::optional<fuchsia_power_broker::DependencyToken> StorageElementToken() override;
 
-  void CreateStoragePowerElement();
+  void CreateStoragePowerElement(fuchsia_power_broker::DependencyToken driver_token,
+                                 fuchsia_power_broker::PowerLevel power_level,
+                                 fit::callback<void()> post_creation);
+  void PublishCpuElementManager(component::OutgoingDirectory& outgoing);
 
  private:
   // NodeManager interface.
@@ -259,6 +280,8 @@ class DriverRunner : public fidl::WireServer<fuchsia_driver_framework::Composite
                           Collection for_collection,
                           fit::callback<void(zx::result<bool>)> cb) override;
 
+  void RegisterStorageWithSag();
+
   void OnBootupComplete();
 
   uint64_t next_driver_host_id_ = 0;
@@ -270,6 +293,7 @@ class DriverRunner : public fidl::WireServer<fuchsia_driver_framework::Composite
   fidl::ServerBindingGroup<fuchsia_driver_token::NodeBusTopology> bus_topo_bindings_;
   fidl::ServerBindingGroup<fuchsia_driver_index::DriverNotifier> driver_notifier_bindings_;
   fidl::ServerBindingGroup<fuchsia_power_broker::ElementRunner> storage_element_runner_;
+  fidl::ServerBindingGroup<fuchsia_power_system::CpuElementManager> cpu_element_server_;
   async_dispatcher_t* const dispatcher_;
   std::shared_ptr<Node> root_node_;
 
@@ -306,17 +330,19 @@ class DriverRunner : public fidl::WireServer<fuchsia_driver_framework::Composite
   fidl::Client<fuchsia_power_broker::Topology> power_topology_;
 
   fidl::ClientEnd<fuchsia_power_broker::Lessor> storage_lessor_;
-  fidl::Client<fuchsia_power_broker::ElementControl> storage_control_;
   std::vector<fidl::ClientEnd<fuchsia_power_broker::LeaseControl>> leases_;
 
   MemoryAttributor memory_attributor_;
 
-  const uint8_t kCallbacksIndex = 0;
-  const uint8_t kStorageTokenIndex = 1;
   // Either a vector of callbacks to run when we get a storage token or the token once we
   // receive it.
-  std::variant<std::vector<fit::callback<void()>>, fuchsia_power_broker::DependencyToken>
-      storage_callbacks_or_token_ = std::vector<fit::callback<void()>>();
+  std::variant<CallbackSet, PowerDependencyToken> storage_callbacks_or_token_ =
+      std::vector<fit::callback<void()>>();
+  fidl::Client<fuchsia_power_broker::ElementControl> storage_control_;
+
+  std::optional<fidl::Client<fuchsia_power_system::CpuElementManager>> cpu_element_client_;
+  fuchsia_power_broker::DependencyToken cpu_token_;
+  bool wait_for_storage_token_from_driver_;
 };
 
 Collection ToCollection(const Node& node, fuchsia_driver_framework::DriverPackageType package_type);

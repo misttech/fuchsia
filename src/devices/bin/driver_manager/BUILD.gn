@@ -121,6 +121,7 @@ source_set("driver_runner") {
     "//sdk/fidl/fuchsia.kernel:fuchsia.kernel_cpp",
     "//sdk/fidl/fuchsia.memory.attribution:fuchsia.memory.attribution_cpp",
     "//sdk/fidl/fuchsia.power.broker:fuchsia.power.broker_cpp",
+    "//sdk/fidl/fuchsia.power.system:fuchsia.power.system_cpp",
     "//sdk/fidl/fuchsia.process.lifecycle:fuchsia.process.lifecycle_cpp",
     "//sdk/fidl/fuchsia.system.state:fuchsia.system.state_cpp",
     "//sdk/lib/async_patterns/cpp",

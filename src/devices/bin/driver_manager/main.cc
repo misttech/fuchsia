@@ -96,6 +96,7 @@ int main(int argc, char** argv) {
   }
 
   fidl::ClientEnd<fuchsia_power_broker::Topology> topology_client;
+  std::optional<fidl::ClientEnd<fuchsia_power_system::CpuElementManager>> cpu_element_mgr;
   if (config.power_suspend_enabled()) {
     zx::result<fidl::ClientEnd<fuchsia_power_broker::Topology>> topology_result =
         component::Connect<fuchsia_power_broker::Topology>();
@@ -103,6 +104,13 @@ int main(int argc, char** argv) {
       return topology_result.error_value();
     }
     topology_client = std::move(*topology_result);
+
+    zx::result<fidl::ClientEnd<fuchsia_power_system::CpuElementManager>> cpu_element_result =
+        component::Connect<fuchsia_power_system::CpuElementManager>();
+    if (cpu_element_result.is_error()) {
+      return cpu_element_result.error_value();
+    }
+    cpu_element_mgr.emplace(std::move(cpu_element_result.value()));
   }
 
   auto capability_store_result = component::Connect<fuchsia_component_sandbox::CapabilityStore>();
@@ -127,7 +135,6 @@ int main(int argc, char** argv) {
   // DriverHosts, which make synchronous calls to load their shared libraries.
   async::Loop loader_loop(&kAsyncLoopConfigNoAttachToCurrentThread);
   loader_loop.StartThread("loader-loop");
-
   auto loader_service =
       driver_manager::DriverHostLoaderService::Create(loader_loop.dispatcher(), std::move(lib_fd));
   std::shared_ptr<driver_manager::DriverRunner> driver_runner =
@@ -159,18 +166,24 @@ int main(int argc, char** argv) {
               .power_inject_offer = config.power_inject_offer(),
               .power_suspend_enabled = config.power_suspend_enabled(),
           }},
-          std::move(topology_client), std::nullopt);
-
+          std::move(topology_client), std::nullopt, std::move(cpu_element_mgr),
+          config.wait_for_suspending_token());
   // Setup devfs.
   std::shared_ptr<driver_manager::Devfs> devfs;
   driver_runner->root_node()->SetupDevfsForRootNode(devfs);
   driver_runner->PublishComponentRunner(outgoing);
+  driver_runner->PublishCpuElementManager(outgoing);
   driver_runner->StartDevfsDriver(devfs);
 
-  if (config.power_suspend_enabled()) {
-    // TODO(jmatt) Once we're serving fuchsia.power.system/CpuElementManager, have the driver runner
-    // initialize this once it gets the token.
-    driver_runner->CreateStoragePowerElement();
+  // If power management is enabled, but we're not supposed to wait for a storage token from a
+  // storage driver, initialize the storage power element immediately.
+  //
+  // TODO(https://fxbug.dev/479254641) Be lazier, only initialize storage once we hit drivers
+  // that need it.
+  if (config.power_suspend_enabled() && !config.wait_for_suspending_token()) {
+    driver_runner->CreateStoragePowerElement(fuchsia_power_broker::DependencyToken(zx::event()),
+                                             static_cast<fuchsia_power_broker::PowerLevel>(1),
+                                             []() {});
   }
 
   // Find and load v2 Drivers.

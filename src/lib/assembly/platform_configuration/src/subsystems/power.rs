@@ -116,6 +116,11 @@ impl DefineSubsystemConfiguration<PowerConfig> for PowerManagementSubsystem {
             }
 
             builder.platform_bundle("power_framework_sag");
+        } else {
+            builder.set_config_capability(
+                "fuchsia.power.WaitForSuspendingToken",
+                Config::new(ConfigValueType::Bool, false.into()),
+            )?;
         }
 
         if let Some(cpu_manager_config) = &context.board_config.configuration.cpu_manager {

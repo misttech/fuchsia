@@ -566,6 +566,10 @@ void Setup(RealmBuilder& realm_builder, async_dispatcher_t* dispatcher, Options 
         .value =
             ConfigValue(args.root_driver().value_or("fuchsia-boot:///dtr#meta/test-parent-sys.cm")),
     });
+    configs.push_back({
+        .name = "fuchsia.power.WaitForSuspendingToken",
+        .value = ConfigValue::Bool(false),
+    });
     realm.AddConfiguration(std::move(configs));
   }
 
@@ -655,6 +659,10 @@ void Setup(RealmBuilder& realm_builder, async_dispatcher_t* dispatcher, Options 
         .source = software_dev_source,
         .targets = {boot_drivers},
     });
+
+    realm.AddRoute(Route{.capabilities = {Config{.name = "fuchsia.power.WaitForSuspendingToken"}},
+                         .source = {SelfRef{}},
+                         .targets = {driver_manager}});
   }
 
   // Dynamic routes to the driver framework children.
