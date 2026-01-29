@@ -51,6 +51,7 @@ group("hermetic_tests") {
     ":echo-rust-client-test",
     ":echo-rust-next-client-test",
     ":echo-service-cpp-wire-test",
+    ":echo-service-rust-next-test",
     ":echo-service-rust-test",
   ]
 
@@ -212,5 +213,14 @@ fuchsia_test_package("echo-service-rust-test") {
     "//examples/fidl/echo-realm:echo_realm",
     "//examples/fidl/rust/services/client:echo-client",
     "//examples/fidl/rust/services/server:echo-server",
+  ]
+}
+
+fuchsia_test_package("echo-service-rust-next-test") {
+  test_components = [ ":fidl_examples_test" ]
+  deps = [
+    "//examples/fidl/echo-realm:echo_realm",
+    "//examples/fidl/rust_next/services/client:echo-client",
+    "//examples/fidl/rust_next/services/server:echo-server",
   ]
 }

@@ -4,9 +4,23 @@
 
 //! Implementations for new Rust bindings.
 
-use fidl_next::{ClientEnd, Discoverable, ServerEnd};
+use anyhow::Context;
+use fidl_next::protocol::ServiceConnector as ServiceConnectorTrait;
+use fidl_next::{ClientEnd, Discoverable, DiscoverableService, ServerEnd, Service};
 
 use super::{Error, SVC_DIR, connect_channel_to_protocol_at_path};
+
+/// A connector for a FIDL service instance that uses a Zircon channel.
+#[repr(transparent)]
+pub struct InstanceConnector(zx::Channel);
+
+impl ServiceConnectorTrait<zx::Channel> for InstanceConnector {
+    type Error = Error;
+
+    fn connect_to_member(&self, member: &str, server_end: zx::Channel) -> Result<(), Self::Error> {
+        fdio::service_connect_at(&self.0, member, server_end).context("failed to connect to member")
+    }
+}
 
 /// Connect to a FIDL protocol using the provided server end and namespace
 /// prefix.
@@ -31,4 +45,26 @@ pub fn connect_to_protocol_at<P: Discoverable>(
 /// namespace.
 pub fn connect_to_protocol<P: Discoverable>() -> Result<ClientEnd<P, zx::Channel>, Error> {
     connect_to_protocol_at(SVC_DIR)
+}
+
+/// Connect to a FIDL service instance in the `/svc` directory of the application's
+/// root namespace.
+pub fn connect_to_service_instance<S>(instance: &str) -> Result<S::Connector, Error>
+where
+    S: DiscoverableService + Service<InstanceConnector>,
+{
+    let service_path = format!("{}/{}/{}", SVC_DIR, S::SERVICE_NAME, instance);
+    let (client, server) = zx::Channel::create();
+    fuchsia_fs::directory::open_channel_in_namespace(
+        &service_path,
+        fidl_fuchsia_io::Flags::PROTOCOL_DIRECTORY
+            | fidl_fuchsia_io::Flags::PERM_CONNECT
+            | fidl_fuchsia_io::Flags::PERM_ENUMERATE,
+        server.into(),
+    )?;
+    let connector = InstanceConnector(client);
+    // SAFETY: The `Service` trait guarantees that `S::Connector` is a
+    // `#[repr(transparent)]` wrapper around the generic connector type.
+    let connector = std::mem::ManuallyDrop::new(connector);
+    Ok(unsafe { std::ptr::read(&*connector as *const InstanceConnector as *const S::Connector) })
 }
