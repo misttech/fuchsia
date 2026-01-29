@@ -870,6 +870,11 @@
         "instance_id": "0qXKGBfVL46r9dvOdXb3MG9qiTF9uyoqOldOM5_K1BoC"
     },
     {
+        "package": "infra/python/wheels/protobuf-py3",
+        "version": "version:6.33.0",
+        "instance_id": "cutiHuc7faTiBiWvoTtbsp9AHAaErwYjxnmf4Gm90OAC"
+    },
+    {
         "package": "infra/rbe/client/linux-amd64",
         "version": "re_client_version:0.185.0.db415f21-gomaip",
         "instance_id": "ADvz6sQzvQcUUOl6LmYz9_kwRoKMi-QopcOTjGPdF2QC"

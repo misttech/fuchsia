@@ -652,6 +652,16 @@
                 "paths": [
                     "build/secondary/third_party/gflags"
                 ]
+            },
+            {
+                "paths": [
+                    "prebuilt/third_party/protobuf-py3-wheel"
+                ],
+                "notes": [
+                    "The infra/python/wheel/protobuf-py3 CIPD package installs to a single ",
+                    "Python wheel file, a zip archive which is extracted by a Jiri hook into ",
+                    "prebuilt/third_party/protobuf-py3, which has all licensing information."
+                ]
             }
         ]
     }

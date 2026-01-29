@@ -24,5 +24,8 @@
     <hook name="generate-prebuilt-versions"
           project="fuchsia"
           action="tools/build/scripts/generate_prebuilt_versions.sh"/>
+    <hook name="install-protobuf-py3"
+          project="fuchsia"
+          action="tools/build/scripts/extract_protobuf_py3_wheel.sh"/>
   </hooks>
 </manifest>
