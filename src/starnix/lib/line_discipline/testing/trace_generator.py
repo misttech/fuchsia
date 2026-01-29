@@ -21,15 +21,14 @@ import termios
 import time
 from typing import Any, Dict, List, Optional, Union
 
-
-def load_scenarios(json_path: str) -> List[Dict[str, Any]]:
-    with open(json_path, "r") as f:
-        return json.load(f)
-
-
 # Configure logging
 logging.basicConfig(level=logging.INFO, format="%(message)s")
 logger = logging.getLogger(__name__)
+
+# Patch termios.IUTF8 if missing (e.g. in prebuilt python environments)
+if not hasattr(termios, "IUTF8"):
+    # Start bit for IUTF8 in Linux is 0o40000 (16384)
+    termios.IUTF8 = 0o40000
 
 # LFLAGS naming is a bit inconsistent (ICANON, ISIG, ECHO...).
 # Let's just list common ones we care about to avoid noise.
@@ -299,84 +298,183 @@ class ScenarioRunner:
             )
 
 
+def parse_scenarios_gni(gni_path: str) -> List[str]:
+    """Parses scenarios.gni to extract the list of scenario names."""
+    scenarios = []
+    with open(gni_path, "r") as f:
+        content = f.read()
+        # Simple parsing assumption: valid GN syntax for a string list
+        # We look for `scenarios = [` and then read lines until `]`
+        in_list = False
+        for line in content.splitlines():
+            line = line.strip()
+            if line.startswith("scenarios = ["):
+                in_list = True
+                continue
+            if in_list:
+                if line.startswith("]"):
+                    break
+                # potentially "name", or "name", # comment
+                if line.startswith('"'):
+                    name = line.split('"')[1]
+                    scenarios.append(name)
+    return scenarios
+
+
 def main():
     parser = argparse.ArgumentParser(
         description="Generate Starnix line discipline traces."
     )
+
+    group = parser.add_mutually_exclusive_group(required=False)
+    group.add_argument(
+        "--generate-trace",
+        action="store_true",
+        help="Generate a single trace file from a scenario input",
+    )
+    group.add_argument(
+        "--generate-rs",
+        action="store_true",
+        help="Generate scenarios.rs from a list of scenario names",
+    )
+
     parser.add_argument(
-        "--out-dir",
-        required=True,
-        help="Output directory for traces and generated files",
+        "--input", help="Input scenario JSON file (for --generate-trace)"
+    )
+    parser.add_argument(
+        "--output",
+        help="Output file path (trace JSON or scenarios.rs)",
+    )
+    parser.add_argument(
+        "--trace-dir",
+        help="Directory containing trace files (for --generate-rs)",
+    )
+    parser.add_argument(
+        "--names", nargs="+", help="List of scenario names (for --generate-rs)"
     )
 
     args = parser.parse_args()
 
-    if not os.path.exists(args.out_dir):
-        os.makedirs(args.out_dir)
-    if not os.path.exists(os.path.join(args.out_dir, "traces")):
-        os.makedirs(os.path.join(args.out_dir, "traces"))
+    # Locate the script directory
+    script_dir = os.path.dirname(os.path.abspath(__file__))
 
-    logger.info("Generating traces to %s...", args.out_dir)
+    # Default to manual mode if no action specified
+    if not args.generate_trace and not args.generate_rs:
+        gni_path = os.path.join(script_dir, "..", "scenarios.gni")
 
-    # Load scenarios
-    scenarios_path = os.path.join(os.path.dirname(__file__), "scenarios.json")
-    all_scenarios = load_scenarios(scenarios_path)
+        if not os.path.exists(gni_path):
+            raise FileNotFoundError(
+                f"Could not find scenarios.gni at {gni_path}"
+            )
 
-    # Generate all scenarios
-    for scenario in all_scenarios:
-        name = scenario["name"]
-        logger.info("Generating scenario: %s", name)
+        scenarios = parse_scenarios_gni(gni_path)
+        logger.info(f"Found {len(scenarios)} scenarios.")
+
+        output_dir = os.path.join(script_dir, "generated")
+        os.makedirs(output_dir, exist_ok=True)
+
+        # Cleanup stale files
+        expected_files = {f"{name}.json" for name in scenarios}
+        for filename in os.listdir(output_dir):
+            if filename not in expected_files:
+                file_path = os.path.join(output_dir, filename)
+                if os.path.isfile(file_path):
+                    logger.info(f"Removing stale trace: {filename}")
+                    os.remove(file_path)
+
+        scenarios_dir = os.path.join(script_dir, "scenarios")
+
+        for name in scenarios:
+            input_path = os.path.join(scenarios_dir, f"{name}.json")
+            output_path = os.path.join(output_dir, f"{name}.json")
+
+            if not os.path.exists(input_path):
+                logger.warning(f"Scenario input not found: {input_path}")
+                continue
+
+            logger.info(f"Generating {name}...")
+            with open(input_path, "r") as f:
+                scenario_data = json.load(f)
+
+            # Handle list vs dict
+            if isinstance(scenario_data, list):
+                scenario_data = scenario_data[0]
+
+            runner = ScenarioRunner(scenario_data)
+            result = runner.run()
+
+            with open(output_path, "w") as f:
+                json.dump(result, f, indent=4)
+                f.write("\n")
+
+        logger.info(f"Done. Traces written to {output_dir}")
+        return
+
+    if args.generate_trace:
+        if not args.input:
+            parser.error("--input is required for --generate-trace")
+        if not args.output:
+            parser.error("--output is required for --generate-trace")
+
+        with open(args.input, "r") as f:
+            scenario = json.load(f)
+
+        if isinstance(scenario, list):
+            if len(scenario) != 1:
+                raise ValueError("Expected single scenario in input file")
+            scenario = scenario[0]
+
         runner = ScenarioRunner(scenario)
-        scenario_result = runner.run()
-        out_path = os.path.join(args.out_dir, "traces", f"{name}.json")
-        with open(out_path, "w") as f:
-            json.dump(scenario_result, f, indent=4)
+        result = runner.run()
+
+        with open(args.output, "w") as f:
+            json.dump(result, f, indent=4)
             f.write("\n")
 
-    logger.info("Done generating traces.")
+    elif args.generate_rs:
+        if not args.names:
+            parser.error("--names is required for --generate-rs")
+        if not args.output:
+            parser.error("--output is required for --generate-rs")
 
-    # Generate traces.gni
-    gni_path = os.path.join(os.path.dirname(args.out_dir), "traces.gni")
-    logger.info("Generating %s...", gni_path)
-    with open(gni_path, "w") as f:
-        f.write("# Copyright 2026 The Fuchsia Authors. All rights reserved.\n")
-        f.write(
-            "# Use of this source code is governed by a BSD-style license that can be\n"
-        )
-        f.write("# found in the LICENSE file.\n\n")
-        f.write("# Generated by trace_generator.py. DO NOT EDIT.\n\n")
-        f.write("trace_files = [\n")
-        for scenario in all_scenarios:
-            name = scenario["name"]
-            f.write(f'  "testing/traces/{name}.json",\n')
-        f.write("]\n")
-
-    # Generate scenarios.rs
-    rs_path = os.path.join(os.path.dirname(args.out_dir), "scenarios.rs")
-    logger.info("Generating %s...", rs_path)
-    with open(rs_path, "w") as f:
-        f.write("// Copyright 2026 The Fuchsia Authors. All rights reserved.\n")
-        f.write(
-            "// Use of this source code is governed by a BSD-style license that can be\n"
-        )
-        f.write("// found in the LICENSE file.\n\n")
-        f.write("// Generated by trace_generator.py. DO NOT EDIT.\n\n")
-        f.write("#[cfg(test)]\n")
-        f.write("mod tests {\n")
-        f.write("    use test_case::test_case;\n\n")
-        for scenario in all_scenarios:
-            name = scenario["name"]
+        with open(args.output, "w") as f:
             f.write(
-                f'    #[test_case("{name}", include_str!("traces/{name}.json"); "{name}")]\n'
+                "// Copyright 2026 The Fuchsia Authors. All rights reserved.\n"
             )
-        f.write("    fn test_replay_trace(name: &str, json_data: &str) {\n")
-        f.write(
-            "        crate::testing::tests::test_replay_trace(name, json_data);\n"
-        )
-        f.write("    }\n")
-        f.write("}\n")
+            f.write(
+                "// Use of this source code is governed by a BSD-style license that can be\n"
+            )
+            f.write("// found in the LICENSE file.\n\n")
+            f.write("// Generated by trace_generator.py. DO NOT EDIT.\n\n")
+            f.write("#[cfg(test)]\n")
+            f.write("mod tests {\n")
+            f.write("    use test_case::test_case;\n\n")
 
-    logger.info("Done.")
+            # Sort names to ensure stable output
+            for name in sorted(args.names):
+                trace_content = ""
+                if args.trace_dir:
+                    trace_path = os.path.join(args.trace_dir, f"{name}.json")
+                    with open(trace_path, "r") as tf:
+                        trace_content = tf.read().strip()
+
+                if not trace_content:
+                    raise ValueError(
+                        f"Trace content for scenario '{name}' is empty or missing. "
+                        f"Did you forget to run trace_generator.py manually? "
+                        f"See src/starnix/lib/line_discipline/testing/README.md for instructions."
+                    )
+
+                f.write(
+                    f'    #[test_case("{name}", r####"{trace_content}"####; "{name}")]\n'
+                )
+
+            f.write("    fn test_replay_trace(name: &str, json_data: &str) {\n")
+            f.write(
+                "        line_discipline::testing::test_replay_trace(name, json_data);\n"
+            )
+            f.write("    }\n")
+            f.write("}\n")
 
 
 if __name__ == "__main__":

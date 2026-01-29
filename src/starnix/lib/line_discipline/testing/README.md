@@ -13,23 +13,15 @@ the behavior of the host's PTY implementation.
 To generate all trace files:
 
 ```bash
-python3 src/starnix/lib/line_discipline/testing/trace_generator.py --out-dir src/starnix/lib/line_discipline/testing/
+python3 src/starnix/lib/line_discipline/testing/trace_generator.py
 ```
 
-### Available Suites
+This will generate trace files in `src/starnix/lib/line_discipline/testing/generated/`.
 
-The generator includes several suites of scenarios:
-
-*   `canon_basic`: Basic canonical mode (simple echo, backspace, kill line).
-*   `ixon_basic`: Software flow control (XON/XOFF).
-*   `echo_variants`: ECHO variants like `ECHONL` and `NOFLSH` with signals.
-*   `echo_extended`: `ECHOCTL`, `ECHOPRT` (erasing), `ECHOE` details.
-*   `input_flags`: Input processing (`IGNCR`, `INLCR`, `ICRNL`).
-*   `output_flags`: Output processing (`OCRNL`, `ONOCR`, `ONLRET`, `XTABS`).
+> **Note:** You must run this script manually whenever you change or add a scenario.
 
 ## Adding New Tests
 
-1.  Modify `trace_generator.py` to add a new scenario dictionary.
-2.  Run the generator to produce the JSON trace.
-3.  Add the new JSON trace file to `BUILD.gn` inputs.
-4.  Add a new `#[test_case]` entry to `replayer.rs` for the new trace.
+1.  Add the a scenario to the `scenarios` directory.
+2.  Add the the name of the scenario to `scenarios.gni`.
+3.  Run the generator to produce the JSON trace.

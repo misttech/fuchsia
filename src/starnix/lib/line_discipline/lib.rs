@@ -1152,5 +1152,4 @@ mod tests {
     }
 }
 
-#[cfg(test)]
-mod testing;
+pub mod testing;
