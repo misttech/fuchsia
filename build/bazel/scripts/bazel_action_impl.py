@@ -6,11 +6,14 @@
 "Implement the running of a Bazel command from Ninja and copying the outputs back into the ninja outdir."
 
 import dataclasses
+import json
 import os
 import shlex
 import sys
 from functools import partial
 from pathlib import Path
+
+import thread_pool_helpers
 
 _SCRIPT_DIR = os.path.dirname(__file__)
 sys.path.insert(0, _SCRIPT_DIR)
@@ -18,7 +21,13 @@ sys.path.insert(0, _SCRIPT_DIR)
 import bazel_action_utils
 import build_utils
 import stdio_redirection
-from bazel_action_file_copy_utils import write_file_if_changed
+from bazel_action_file_copy_utils import (
+    FilePath,
+    check_if_need_to_copy_file,
+    copy_directory_if_changed,
+    hardlink_or_copy_writable,
+    write_file_if_changed,
+)
 
 # LINT.ThenChange(//build/bazel/bazel_action.gni:bazel_action_impl_imports)
 
@@ -27,6 +36,9 @@ from bazel_action_file_copy_utils import write_file_if_changed
 # IMPORTANT: Setting this to True will result in Ninja timeouts in CQ
 # due to the stdout/stderr logs being too large.
 _DEBUG = False
+
+# Set this to True to debug the bazel query cache.
+_DEBUG_BAZEL_QUERIES = _DEBUG
 
 
 def debug(msg: str) -> None:
@@ -41,12 +53,22 @@ def debug(msg: str) -> None:
 _BAZEL_DEBUG_SYMBOLS_MANIFEST_PATH_PREFIX = b"DEBUG_SYMBOLS_MANIFEST_PATH="
 # LINT.ThenChange(//build/bazel/debug_symbols/aspects.bzl:debug_symbols_manifest_prefix)
 
+# Directory where to find Starlark input files.
+_STARLARK_DIR = os.path.join(os.path.dirname(_SCRIPT_DIR), "starlark")
+
 
 class BazelActionError(Exception):
-    """A Bazel action error was encountered.
+    """A Bazel action error was encountered."""
 
-    No data is attached to the exception, everything is in stdout/stderr.
-    """
+
+@dataclasses.dataclass
+class BazelActionOutputs(object):
+    """The outputs to copy from Bazel to GN for a given Bazel action."""
+
+    files: list[bazel_action_utils.FileOutput]
+    directories: list[bazel_action_utils.DirectoryOutput]
+    packages: list[bazel_action_utils.PackageOutput]
+    final_symlinks: list[bazel_action_utils.FinalSymlinkOutput]
 
 
 @dataclasses.dataclass
@@ -79,10 +101,14 @@ class BazelActionResult(object):
         configured_args:  A list of args usable for bazel queries in the same configuration.
 
         debug_symbol_manifest_paths:  A list of paths to debug symbol manifests
+
+        output_files:  A list of the output paths that were actually copied to (updated)
+          by this action.
     """
 
     configured_args: list[str]
     debug_symbol_manifest_paths: list[str]
+    output_files: list[Path]
 
 
 class BazelActionRunner(object):
@@ -101,6 +127,7 @@ class BazelActionRunner(object):
         self,
         bazel_paths: build_utils.BazelPaths,
         global_args: bazel_action_utils.BazelGlobalArguments,
+        query_cache: build_utils.BazelQueryCache,
     ) -> None:
         self.paths = bazel_paths
         self.global_args = global_args
@@ -117,6 +144,7 @@ class BazelActionRunner(object):
                 bazel_paths.ninja_build_dir
             )
         )
+        self.query_cache = query_cache
 
     def run(
         self,
@@ -124,8 +152,9 @@ class BazelActionRunner(object):
         platform_config: str,
         platform_label: str,
         targets: list[str],
-        extra_args: list[str],
+        outputs: BazelActionOutputs,
         extra_outputs: BazelExtraOutputs,
+        time_profile: build_utils.TimeProfile,
     ) -> BazelActionResult:
         """Run a bazel command.
 
@@ -141,6 +170,10 @@ class BazelActionRunner(object):
         Raises:
             BazelActionError on any failure.
         """
+        time_profile.start(
+            "construct_cmd_args",
+            "Constructing the command-line arguments for Bazel",
+        )
 
         # Calculate the platform configuration needed for the build and subsequent queries.
         configured_args = calculate_platform_config_args(
@@ -149,10 +182,12 @@ class BazelActionRunner(object):
             self.rbe_settings,
         )
 
-        cmd_args = [
+        # Create the base command-line from the command to run (build, etc.), the platform
+        # configuration, and the set of targets to run the command against.
+        cmd_args: list[str] = [
             command,
             *configured_args,
-            *extra_args,
+            *targets,
         ]
 
         # If a build event json file is requested, tell Bazel to create one.
@@ -281,6 +316,9 @@ class BazelActionRunner(object):
                 # This makes mypy happy, as it can't detect the type correctly in the 'with' statement
                 assert isinstance(pty_stdout, stdio_redirection.PipeOutputSink)
 
+                time_profile.start(
+                    "run_bazel_command", "Run the Bazel command."
+                )
                 ret = self.launcher.run_bazel_command(
                     cmd_args,
                     stdout=pty_stdout.get_write_fd(),
@@ -332,10 +370,76 @@ class BazelActionRunner(object):
             )
             raise BazelActionError()
 
+        # If we're building, and have packages, query to get the paths to the package archives,
+        # as they need to be copied to the Ninja outdir along with any other files.
+        if command == "build" and outputs.packages:
+            time_profile.start(
+                "package_info",
+                "Run cquery to extract Fuchsia package archiveinformation",
+            )
+            package_archive_files = self.query_for_package_archives(
+                configured_args, outputs.packages
+            )
+            outputs.files.extend(package_archive_files)
+
+        # Now copy all the outputs.  This is a separate function to help break up the run()
+        # functionality for better clarity.
+        output_copier = _BazelOutputCopier(self.paths)
+        all_output_files = output_copier.copy(outputs, time_profile)
+
         return BazelActionResult(
             configured_args=configured_args,
             debug_symbol_manifest_paths=debug_symbol_manifest_paths,
+            output_files=all_output_files,
         )
+
+    def query_for_package_archives(
+        self,
+        configured_args: list[str],
+        packages: list[bazel_action_utils.PackageOutput],
+    ) -> list[bazel_action_utils.FileOutput]:
+        """Given a list of PackageOutputs, query to find all the archive files to copy.
+
+        This basically is converting PackageOutput entries into FileOutput entries.
+        """
+
+        # Query against all package output targets at once.  The query results
+        # embed the target labels so that they can be matched with the ninja
+        # output paths.
+        query_result = run_starlark_cquery(
+            self.query_cache,
+            self.launcher,
+            configured_args,
+            [entry.package_label for entry in packages],
+            "FuchsiaPackageInfo_archive.cquery",
+        )
+
+        # The results are lines of json, so split them and parse each.  They're
+        # each a dict of:
+        #   target:  "@@<the bazel target>""
+        #   archive_path: "<path to the archive file>""
+        results: dict[str, str] = {
+            p["target"].removeprefix("@@"): p["archive_path"]
+            for p in [json.loads(line) for line in query_result]
+        }
+
+        # Now match each package output label to its results and add to the file
+        # copies to perform.
+        package_archive_paths: list[bazel_action_utils.FileOutput] = []
+        for entry in packages:
+            bazel_archive_path = results.get(entry.package_label)
+
+            # This is just in case we don't get a result for a label, or they
+            # change format on us.
+            assert bazel_archive_path
+
+            package_archive_paths.append(
+                bazel_action_utils.FileOutput(
+                    bazel_path=str(self.paths.execroot / bazel_archive_path),
+                    ninja_path=entry.archive_path,
+                )
+            )
+        return package_archive_paths
 
 
 def calculate_platform_config_args(
@@ -542,3 +646,250 @@ Then ensure that the GN target depends on them transitively.
 
     print(_ERROR, file=sys.stderr)
     return 1
+
+
+def run_starlark_cquery(
+    query_cache: build_utils.BazelQueryCache,
+    bazel_launcher: build_utils.BazelLauncher,
+    configured_args: list[str],
+    query_targets: list[str],
+    starlark_filename: str,
+) -> list[str]:
+    """Run a Bazel cquery and process its output with a starlark file.
+
+    Args:
+        query_targets: A list of Bazel targets to run the query over.
+        starlark_filename: Name of starlark file from //build/bazel/starlark.
+    Returns:
+        A list of output lines.
+    Raises:
+        AssertionError in case of failure.
+    """
+    result = run_bazel_query(
+        query_cache,
+        bazel_launcher,
+        "cquery",
+        [
+            "--config=quiet",
+            "--output=starlark",
+            "--starlark:file",
+            get_input_starlark_file_path(starlark_filename),
+        ]
+        + configured_args
+        + ["set(%s)" % " ".join(query_targets)],
+    )
+    assert result is not None
+    return result
+
+
+def get_input_starlark_file_path(filename: FilePath) -> str:
+    """Return the path of a input starlark file for Bazel queries.
+
+    Args:
+       filename: File name, searched in //build/bazel/starlark/
+    Returns:
+       file path to the corresponding file.
+    """
+    result = os.path.join(_STARLARK_DIR, filename)
+    assert os.path.isfile(result), f"Missing starlark input file: {result}"
+    return result
+
+
+def run_bazel_query(
+    query_cache: build_utils.BazelQueryCache,
+    bazel_launcher: build_utils.BazelLauncher,
+    query_cmd: str,
+    query_args: list[str],
+) -> list[str] | None:
+    """Run a Bazel query, return output as list of lines.
+
+    Args:
+        query_cmd: Query command ("query", "cquery" or "aquery").
+        query_args: Query arguments.
+    Returns:
+        On success, a list of output lines. On failure return None.
+    """
+    return query_cache.get_query_output(
+        query_cmd,
+        query_args,
+        bazel_launcher,
+        log=lambda m: (
+            print(f"DEBUG: {m}", file=sys.stderr)
+            if _DEBUG_BAZEL_QUERIES
+            else None
+        ),
+    )
+
+
+class _BazelOutputCopier(object):
+    """This exists to consolidate together all of the Bazel output-copying logic."""
+
+    def __init__(self, paths: build_utils.BazelPaths):
+        self.paths = paths
+
+    def copy(
+        self,
+        outputs: BazelActionOutputs,
+        time_profile: build_utils.TimeProfile,
+    ) -> list[Path]:
+        """Copy all the given outputs.
+
+        Returns a list of all output destination files that were copied to, including tracked
+        files in DirectoryOutputs.
+        """
+
+        output_files = self._copy_files(outputs.files, time_profile)
+        tracked_files = self._copy_directories(
+            outputs.directories, time_profile
+        )
+        self._make_final_symlinks(outputs.final_symlinks, time_profile)
+
+        return output_files + tracked_files
+
+    def _copy_files(
+        self,
+        file_outputs: list[bazel_action_utils.FileOutput],
+        time_profile: build_utils.TimeProfile,
+    ) -> list[Path]:
+        """Perform all of the file-copying logic.
+
+        Returns a list of the destination file paths that were copied to.
+        """
+        time_profile.start(
+            "check_outputs_for_copying",
+            "Validate output files to copy are actually files.",
+        )
+
+        file_copies: list[tuple[Path, Path]] = []
+        unwanted_dirs = []
+
+        for file_output in file_outputs:
+            src_path = self.paths.workspace / file_output.bazel_path
+            if src_path.is_dir():
+                unwanted_dirs.append(src_path)
+                continue
+            dst_path = Path(file_output.ninja_path)
+            file_copies.append((src_path, dst_path))
+
+        if unwanted_dirs:
+            raise BazelActionError(
+                "\nDirectories are not allowed in --file-outputs Bazel paths, got directories:\n\n%s\n"
+                % "\n".join(str(d) for d in unwanted_dirs)
+            )
+
+        if file_copies:
+            time_profile.start(
+                "check_copy_files",
+                "Check to see if files need to be copied or not.",
+            )
+
+            files_to_copy = [
+                file_copy
+                for file_copy in thread_pool_helpers.filter_threaded(
+                    check_if_need_to_copy_file, file_copies
+                )
+                if file_copy
+            ]
+
+            if files_to_copy:
+                time_profile.start(
+                    "copy_files",
+                    "Copy Bazel output files to Ninja build directory",
+                )
+
+                thread_pool_helpers.starmap_threaded(
+                    hardlink_or_copy_writable,
+                    [
+                        (src, dst, self.paths.output_base)
+                        for src, dst in files_to_copy
+                    ],
+                )
+        return [dst for _, dst in file_copies]
+
+    def _copy_directories(
+        self,
+        directory_outputs: list[bazel_action_utils.DirectoryOutput],
+        time_profile: build_utils.TimeProfile,
+    ) -> list[Path]:
+        time_profile.start(
+            "check_output_directories",
+            "Validate that output directories are ready to be copied.",
+        )
+
+        dir_copies: list[tuple[Path, Path, list[FilePath]]] = []
+        missing_directories: list[Path] = []
+        unwanted_files: list[Path] = []
+        invalid_tracked_files: list[Path] = []
+
+        for dir_output in directory_outputs:
+            src_path = self.paths.workspace / dir_output.bazel_path
+            if not src_path.exists():
+                missing_directories.append(src_path)
+                continue
+            if not src_path.is_dir():
+                unwanted_files.append(src_path)
+                continue
+            for tracked_file in dir_output.tracked_files:
+                tracked_file = src_path / tracked_file
+                if not tracked_file.is_file():
+                    invalid_tracked_files.append(tracked_file)
+            dst_path = Path(dir_output.ninja_path)
+            dir_copies.append(
+                (
+                    src_path,
+                    dst_path,
+                    [Path(f) for f in dir_output.tracked_files],
+                )
+            )
+
+        if missing_directories:
+            raise BazelActionError(
+                "\nError: Directory provided to --directory-outputs is missing, got:\n\n%s\n"
+                % "\n".join(str(d) for d in missing_directories)
+            )
+
+        if unwanted_files:
+            raise BazelActionError(
+                "\nError: Non-directories are not allowed in --directory-outputs Bazel path, got:\n\n%s\n"
+                % "\n".join(str(f) for f in unwanted_files)
+            )
+
+        if invalid_tracked_files:
+            raise BazelActionError(
+                "\nError: Missing or non-directory tracked files from --directory-outputs Bazel path:\n\n%s\n"
+                % "\n".join(str(f) for f in invalid_tracked_files)
+            )
+
+        if dir_copies:
+            time_profile.start(
+                "copy_directories",
+                "Copy Bazel output directories to Ninja build directory",
+            )
+            for src_path, dst_path, tracked_files in dir_copies:
+                copy_directory_if_changed(src_path, dst_path, tracked_files)
+
+        # Return all of the full paths to the tracked files in the directories, as these are
+        # the "destination output files" of these directories.
+        all_tracked_files: list[Path] = []
+        for dst, _, tracked_files in dir_copies:
+            all_tracked_files.extend([dst / file for file in tracked_files])
+        return all_tracked_files
+
+    def _make_final_symlinks(
+        self,
+        final_symlink_outputs: list[bazel_action_utils.FinalSymlinkOutput],
+        time_profile: build_utils.TimeProfile,
+    ) -> None:
+        final_symlinks: list[tuple[Path, Path]] = []
+        for final_symlink_output in final_symlink_outputs:
+            src_path = self.paths.workspace / final_symlink_output.bazel_path
+            target_path = src_path.resolve()
+            link_path = Path(final_symlink_output.ninja_path)
+            final_symlinks.append((target_path, link_path))
+
+        if final_symlinks:
+            time_profile.start("symlink_outputs", "Symlink output files.")
+            # This doesn't need to use a thread pool because as of today there's only ever
+            # one file, in one action, that uses this codepath.
+            for target_path, link_path in final_symlinks:
+                build_utils.force_symlink(link_path, target_path)
