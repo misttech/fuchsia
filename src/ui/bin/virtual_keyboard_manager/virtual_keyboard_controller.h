@@ -9,7 +9,6 @@
 
 #include "fuchsia/ui/views/cpp/fidl.h"
 #include "src/lib/fxl/memory/weak_ptr.h"
-#include "src/ui/bin/virtual_keyboard_manager/virtual_keyboard_coordinator.h"
 
 namespace virtual_keyboard_manager {
 

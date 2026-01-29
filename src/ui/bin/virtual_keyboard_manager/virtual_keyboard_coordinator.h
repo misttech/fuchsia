@@ -82,10 +82,7 @@ class FidlBoundVirtualKeyboardCoordinator
                                 bool is_visible) override;
   void NotifyFocusChange(fuchsia::ui::views::ViewRef focused_view) override;
 
-  void SetControllerForTest(std::unique_ptr<VirtualKeyboardController> controller) {
-    controller_bindings_.CloseAll();
-    controller_bindings_.AddBinding(std::move(controller));
-  }
+  void SetControllerForTest(std::unique_ptr<VirtualKeyboardController> controller);
 
  private:
   struct KeyboardConfig {
@@ -152,6 +149,12 @@ class FidlBoundVirtualKeyboardCoordinator
   // destructors are called.
   fxl::WeakPtrFactory<FidlBoundVirtualKeyboardCoordinator> weak_ptr_factory_;
 };
+
+inline void FidlBoundVirtualKeyboardCoordinator::SetControllerForTest(
+    std::unique_ptr<VirtualKeyboardController> controller) {
+  controller_bindings_.CloseAll();
+  controller_bindings_.AddBinding(std::move(controller));
+}
 
 }  // namespace virtual_keyboard_manager
 
