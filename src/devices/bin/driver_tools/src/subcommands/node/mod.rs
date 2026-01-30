@@ -46,3 +46,16 @@ pub async fn node(
     };
     Ok(())
 }
+
+pub async fn node_machine(
+    cmd: &NodeCommand,
+    driver_development_proxy: &fdd::ManagerProxy,
+) -> Result<Option<serde_json::Value>> {
+    match &cmd.subcommand {
+        NodeSubcommand::List(subcmd) => {
+            let nodes = subcommands::list::get_nodes(subcmd, driver_development_proxy).await?;
+            Ok(Some(serde_json::to_value(&nodes)?))
+        }
+        _ => Ok(None),
+    }
+}

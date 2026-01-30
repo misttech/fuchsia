@@ -10,6 +10,8 @@ use anyhow::{Context, Result};
 use args::{DriverCommand, DriverSubCommand};
 use driver_connector::DriverConnector;
 use std::io;
+use subcommands::host::args::{HostCommand, HostSubcommand};
+use subcommands::node::args::{NodeCommand, NodeSubcommand};
 
 pub async fn driver(
     cmd: DriverCommand,
@@ -146,4 +148,36 @@ pub async fn driver(
         }
     };
     Ok(())
+}
+
+pub fn is_machine_supported(cmd: &DriverCommand) -> bool {
+    match &cmd.subcommand {
+        DriverSubCommand::Host(HostCommand { subcommand: HostSubcommand::List(_) })
+        | DriverSubCommand::Host(HostCommand { subcommand: HostSubcommand::Show(_) })
+        | DriverSubCommand::Node(NodeCommand { subcommand: NodeSubcommand::List(_) }) => true,
+        _ => false,
+    }
+}
+
+pub async fn driver_machine(
+    cmd: &DriverCommand,
+    driver_connector: impl DriverConnector,
+) -> Result<Option<serde_json::Value>> {
+    match &cmd.subcommand {
+        DriverSubCommand::Host(host_cmd) => {
+            let driver_development_proxy = driver_connector
+                .get_driver_development_proxy(cmd.select)
+                .await
+                .context("Failed to get driver development proxy")?;
+            subcommands::host::host_machine(host_cmd, &driver_development_proxy).await
+        }
+        DriverSubCommand::Node(node_cmd) => {
+            let driver_development_proxy = driver_connector
+                .get_driver_development_proxy(cmd.select)
+                .await
+                .context("Failed to get driver development proxy")?;
+            subcommands::node::node_machine(node_cmd, &driver_development_proxy).await
+        }
+        _ => Ok(None),
+    }
 }

@@ -30,3 +30,21 @@ pub async fn host(
     };
     Ok(())
 }
+
+pub async fn host_machine(
+    cmd: &HostCommand,
+    driver_development_proxy: &fdd::ManagerProxy,
+) -> Result<Option<serde_json::Value>> {
+    match &cmd.subcommand {
+        HostSubcommand::List(_) => {
+            let hosts = subcommands::list::get_driver_hosts(driver_development_proxy).await?;
+            Ok(Some(serde_json::to_value(&hosts)?))
+        }
+        HostSubcommand::Show(subcmd) => {
+            let details =
+                subcommands::show::get_driver_host_details(subcmd, driver_development_proxy)
+                    .await?;
+            Ok(Some(serde_json::to_value(&details)?))
+        }
+    }
+}
