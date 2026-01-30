@@ -28,13 +28,14 @@ class GpioDevice : public fidl::WireServer<fuchsia_hardware_pin::Pin>,
                    public fidl::WireServer<fuchsia_hardware_pin::Debug> {
  public:
   GpioDevice(fdf::WireSharedClient<fuchsia_hardware_pinimpl::PinImpl> pinimpl, uint32_t pin,
-             uint32_t controller_id, std::string_view name)
+             uint32_t controller_id, std::string_view name, fdf::Logger& logger)
       : fidl_dispatcher_(fdf::Dispatcher::GetCurrent()->async_dispatcher()),
         pin_(pin),
         controller_id_(controller_id),
         name_(name),
         pinimpl_(std::move(pinimpl)),
-        devfs_connector_(fit::bind_member<&GpioDevice::DevfsConnect>(this)) {}
+        devfs_connector_(fit::bind_member<&GpioDevice::DevfsConnect>(this)),
+        logger_(logger) {}
 
   zx::result<> AddServices(const std::shared_ptr<fdf::Namespace>& incoming,
                            const std::shared_ptr<fdf::OutgoingDirectory>& outgoing,
@@ -42,6 +43,8 @@ class GpioDevice : public fidl::WireServer<fuchsia_hardware_pin::Pin>,
 
   zx::result<> AddDevice(fidl::UnownedClientEnd<fuchsia_driver_framework::Node> root_node,
                          fdf::Logger& logger, gpio_config::Config config);
+
+  fdf::Logger& logger() { return logger_; }
 
  private:
   class GpioInstance : public fbl::RefCounted<GpioInstance>,
@@ -52,7 +55,7 @@ class GpioDevice : public fidl::WireServer<fuchsia_hardware_pin::Pin>,
     GpioInstance(async_dispatcher_t* dispatcher,
                  fidl::ServerEnd<fuchsia_hardware_gpio::Gpio> server_end,
                  fdf::WireSharedClient<fuchsia_hardware_pinimpl::PinImpl> pinimpl, uint32_t pin,
-                 const GpioDevice* parent)
+                 GpioDevice* parent)
         : binding_(dispatcher, std::move(server_end), this,
                    fit::bind_member<&GpioInstance::OnUnbound>(this)),
           pinimpl_(std::move(pinimpl)),
@@ -93,7 +96,7 @@ class GpioDevice : public fidl::WireServer<fuchsia_hardware_pin::Pin>,
     fidl::ServerBinding<fuchsia_hardware_gpio::Gpio> binding_;
     fdf::WireSharedClient<fuchsia_hardware_pinimpl::PinImpl> pinimpl_;
     const uint32_t pin_;
-    const GpioDevice* const parent_;
+    GpioDevice* const parent_;
     InterruptState interrupt_state_ = InterruptState::kNoInterrupt;
     bool release_instance_after_call_completes_ = false;
   };
@@ -137,6 +140,7 @@ class GpioDevice : public fidl::WireServer<fuchsia_hardware_pin::Pin>,
   fidl::ServerBindingGroup<fuchsia_hardware_pin::Debug> debug_bindings_;
   fidl::ClientEnd<fuchsia_driver_framework::NodeController> controller_;
   driver_devfs::Connector<fuchsia_hardware_pin::Debug> devfs_connector_;
+  fdf::Logger& logger_;
 };
 
 class GpioInitDevice {
@@ -149,7 +153,7 @@ class GpioInitDevice {
  private:
   static zx_status_t ConfigureGpios(
       std::span<fuchsia_hardware_pinimpl::InitStep> init_steps,
-      fdf::WireSharedClient<fuchsia_hardware_pinimpl::PinImpl>& pinimpl);
+      fdf::WireSharedClient<fuchsia_hardware_pinimpl::PinImpl>& pinimpl, fdf::Logger& logger);
 
   fidl::WireSyncClient<fuchsia_driver_framework::NodeController> controller_;
 };

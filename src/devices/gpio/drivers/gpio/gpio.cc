@@ -151,7 +151,8 @@ void GpioDevice::GpioInstance::ReleaseInterrupt(ReleaseInterruptCompleter::Sync&
 void GpioDevice::GpioInstance::handle_unknown_method(
     fidl::UnknownMethodMetadata<fuchsia_hardware_gpio::Gpio> metadata,
     fidl::UnknownMethodCompleter::Sync& completer) {
-  FDF_LOG(ERROR, "Unknown Gpio method ordinal 0x%016lx", metadata.method_ordinal);
+  FDF_LOGL(ERROR, parent_->logger(), "Unknown Gpio method ordinal 0x%016lx",
+           metadata.method_ordinal);
 }
 
 void GpioDevice::GpioInstance::OnUnbound(fidl::UnbindInfo info) {
@@ -212,7 +213,7 @@ void GpioDevice::Configure(fuchsia_hardware_pin::wire::PinConfigureRequest* requ
 void GpioDevice::handle_unknown_method(
     fidl::UnknownMethodMetadata<fuchsia_hardware_pin::Pin> metadata,
     fidl::UnknownMethodCompleter::Sync& completer) {
-  FDF_LOG(ERROR, "Unknown Pin method ordinal: 0x%016lx", metadata.method_ordinal);
+  FDF_LOGL(ERROR, logger(), "Unknown Pin method ordinal: 0x%016lx", metadata.method_ordinal);
 }
 
 void GpioDevice::GetProperties(GetPropertiesCompleter::Sync& completer) {
@@ -240,7 +241,7 @@ void GpioDevice::ConnectGpio(fuchsia_hardware_pin::wire::DebugConnectGpioRequest
 void GpioDevice::handle_unknown_method(
     fidl::UnknownMethodMetadata<fuchsia_hardware_pin::Debug> metadata,
     fidl::UnknownMethodCompleter::Sync& completer) {
-  FDF_LOG(ERROR, "Unknown Debug method ordinal: 0x%016lx", metadata.method_ordinal);
+  FDF_LOGL(ERROR, logger(), "Unknown Debug method ordinal: 0x%016lx", metadata.method_ordinal);
 }
 
 void GpioDevice::ConnectGpio(fidl::ServerEnd<fuchsia_hardware_gpio::Gpio> server) {
@@ -263,7 +264,7 @@ zx::result<> GpioDevice::AddServices(const std::shared_ptr<fdf::Namespace>& inco
   zx::result<> service_result =
       outgoing->AddService<fuchsia_hardware_gpio::Service>(std::move(gpio_handler), pin_name());
   if (service_result.is_error()) {
-    FDF_LOG(ERROR, "Failed to add Gpio service to the outgoing directory");
+    FDF_LOGL(ERROR, logger(), "Failed to add Gpio service to the outgoing directory");
     return service_result.take_error();
   }
 
@@ -279,7 +280,7 @@ zx::result<> GpioDevice::AddServices(const std::shared_ptr<fdf::Namespace>& inco
   service_result =
       outgoing->AddService<fuchsia_hardware_pin::Service>(std::move(pin_handler), pin_name());
   if (service_result.is_error()) {
-    FDF_LOG(ERROR, "Failed to add Pin service to the outgoing directory");
+    FDF_LOGL(ERROR, logger(), "Failed to add Pin service to the outgoing directory");
     return service_result.take_error();
   }
 
@@ -287,14 +288,14 @@ zx::result<> GpioDevice::AddServices(const std::shared_ptr<fdf::Namespace>& inco
     // Forward PowerTokenService to our parent if suspend is enabled.
     fuchsia_hardware_power::PowerTokenService::InstanceHandler handler({
         .token_provider =
-            [incoming =
-                 incoming](fidl::ServerEnd<fuchsia_hardware_power::PowerTokenProvider> server) {
+            [this, incoming = incoming](
+                fidl::ServerEnd<fuchsia_hardware_power::PowerTokenProvider> server) {
               zx::result<> result =
                   incoming->Connect<fuchsia_hardware_power::PowerTokenService::TokenProvider>(
                       std::move(server));
               if (result.is_error()) {
-                FDF_LOG(WARNING, "Failed to connect to power token service: %s",
-                        result.status_string());
+                FDF_LOGL(WARNING, logger(), "Failed to connect to power token service: %s",
+                         result.status_string());
               }
             },
     });
@@ -302,7 +303,7 @@ zx::result<> GpioDevice::AddServices(const std::shared_ptr<fdf::Namespace>& inco
     zx::result result = outgoing->AddService<fuchsia_hardware_power::PowerTokenService>(
         std::move(handler), pin_name());
     if (result.is_error()) {
-      FDF_LOG(ERROR, "Failed to add power token service: %s", result.status_string());
+      FDF_LOGL(ERROR, logger(), "Failed to add power token service: %s", result.status_string());
       return result.take_error();
     }
   }
@@ -337,7 +338,7 @@ zx::result<> GpioDevice::AddDevice(fidl::UnownedClientEnd<fuchsia_driver_framewo
   zx::result<fidl::ClientEnd<fuchsia_driver_framework::NodeController>> result =
       fdf::AddChild(root_node, logger, pin_name(), devfs, props, offers);
   if (result.is_error()) {
-    FDF_LOG(ERROR, "AddChild failed for pin %u", pin_);
+    FDF_LOGL(TRACE, logger, "AddChild failed for pin %u", pin_);
     return result.take_error();
   }
 
@@ -358,12 +359,12 @@ void GpioRootDevice::Start(fdf::StartCompleter completer) {
     zx::result result =
         fdf_metadata::GetMetadataIfExists<fuchsia_hardware_pinimpl::Metadata>(incoming());
     if (result.is_error()) {
-      FDF_LOG(ERROR, "Failed to get metadata: %s", result.status_string());
+      FDF_LOGL(ERROR, logger(), "Failed to get metadata: %s", result.status_string());
       completer(result.take_error());
       return;
     }
     if (!result.value().has_value()) {
-      FDF_LOG(INFO, "No gpio metadata provided");
+      FDF_LOGL(INFO, logger(), "No gpio metadata provided");
     }
     metadata = std::move(result.value());
   }
@@ -371,14 +372,14 @@ void GpioRootDevice::Start(fdf::StartCompleter completer) {
   if (metadata.has_value() && metadata->controller_id().has_value()) {
     controller_id = metadata->controller_id().value();
   } else {
-    FDF_LOG(INFO, "No controller ID provided. Assuming controller ID = 0");
+    FDF_LOGL(INFO, logger(), "No controller ID provided. Assuming controller ID = 0");
   }
 
   zx::result scheduler_role_name_result =
       fdf_metadata::GetMetadataIfExists<fuchsia_scheduler::RoleName>(incoming());
   if (scheduler_role_name_result.is_error()) {
-    FDF_LOG(ERROR, "Failed to get scheduler role name: %s",
-            scheduler_role_name_result.status_string());
+    FDF_LOGL(ERROR, logger(), "Failed to get scheduler role name: %s",
+             scheduler_role_name_result.status_string());
     completer(scheduler_role_name_result.take_error());
     return;
   }
@@ -387,7 +388,8 @@ void GpioRootDevice::Start(fdf::StartCompleter completer) {
     zx::result result = fdf::SynchronizedDispatcher::Create(
         {}, "GPIO", [](fdf_dispatcher_t*) {}, scheduler_role_name.role());
     if (result.is_error()) {
-      FDF_LOG(ERROR, "Failed to create SynchronizedDispatcher: %s", result.status_string());
+      FDF_LOGL(TRACE, logger(), "Failed to create SynchronizedDispatcher: %s",
+               result.status_string());
       completer(result.take_error());
       return;
     }
@@ -396,14 +398,15 @@ void GpioRootDevice::Start(fdf::StartCompleter completer) {
     // that dispatcher instead of the default dispatcher passed to this method.
     fidl_dispatcher_.emplace(*std::move(result));
 
-    FDF_LOG(DEBUG, "Using dispatcher with role \"%s\"", scheduler_role_name.role().c_str());
+    FDF_LOGL(DEBUG, logger(), "Using dispatcher with role \"%s\"",
+             scheduler_role_name.role().c_str());
   }
 
   {
     zx::result pinimpl_fidl_client =
         incoming()->Connect<fuchsia_hardware_pinimpl::Service::Device>();
     if (pinimpl_fidl_client.is_error()) {
-      FDF_LOG(ERROR, "Failed to get pinimpl protocol");
+      FDF_LOGL(TRACE, logger(), "Failed to get pinimpl protocol");
       completer(pinimpl_fidl_client.take_error());
       return;
     }
@@ -418,20 +421,20 @@ void GpioRootDevice::Start(fdf::StartCompleter completer) {
       init_device_ = GpioInitDevice::Create(metadata->init_steps().value(), node().borrow(),
                                             logger(), controller_id, pinimpl_);
     } else {
-      FDF_LOG(INFO, "No init steps provided");
+      FDF_LOGL(INFO, logger(), "No init steps provided");
     }
   }
 
   zx::result<fdf::OwnedChildNode> node = AddOwnedChild("gpio");
   if (node.is_error()) {
-    FDF_LOG(ERROR, "Failed to add GPIO root node: %s", node.status_string());
+    FDF_LOGL(TRACE, logger(), "Failed to add GPIO root node: %s", node.status_string());
     completer(node.take_error());
     return;
   }
   node_ = *std::move(node);
 
   if (!metadata.has_value() || !metadata->pins().has_value()) {
-    FDF_LOG(INFO, "No gpio pins provided");
+    FDF_LOGL(INFO, logger(), "No gpio pins provided");
     completer(zx::ok());
     return;
   }
@@ -439,12 +442,12 @@ void GpioRootDevice::Start(fdf::StartCompleter completer) {
   for (size_t i = 0; i < pins.size(); ++i) {
     const auto& pin = pins[i];
     if (!pin.name().has_value()) {
-      FDF_LOG(ERROR, "Pin %lu missing name", i);
+      FDF_LOGL(TRACE, logger(), "Pin %lu missing name", i);
       completer(zx::error(ZX_ERR_INTERNAL));
       return;
     }
     if (!pin.pin().has_value()) {
-      FDF_LOG(ERROR, "Pin %lu missing pin", i);
+      FDF_LOGL(TRACE, logger(), "Pin %lu missing pin", i);
       completer(zx::error(ZX_ERR_INTERNAL));
       return;
     }
@@ -459,7 +462,7 @@ void GpioRootDevice::Start(fdf::StartCompleter completer) {
   std::sort(pins.begin(), pins.end(), gpio_cmp_lt);
   auto result = std::adjacent_find(pins.begin(), pins.end(), gpio_cmp_eq);
   if (result != pins.end()) {
-    FDF_LOG(ERROR, "gpio pin '%d' was published more than once", result->pin().value());
+    FDF_LOGL(TRACE, logger(), "gpio pin '%d' was published more than once", result->pin().value());
     completer(zx::error(ZX_ERR_INVALID_ARGS));
     return;
   }
@@ -483,7 +486,7 @@ void GpioRootDevice::CreatePinDevices(const uint32_t controller_id,
   for (const auto& pin : pins) {
     fbl::AllocChecker ac;
     children_.emplace_back(new (&ac) GpioDevice(pinimpl_.Clone(), pin.pin().value(), controller_id,
-                                                pin.name().value()));
+                                                pin.name().value(), logger()));
     if (!ac.check()) {
       completer(zx::error(ZX_ERR_NO_MEMORY));
       return;
@@ -536,7 +539,7 @@ std::unique_ptr<GpioInitDevice> GpioInitDevice::Create(
     fidl::UnownedClientEnd<fuchsia_driver_framework::Node> node, fdf::Logger& logger,
     uint32_t controller_id, fdf::WireSharedClient<fuchsia_hardware_pinimpl::PinImpl>& pinimpl) {
   std::unique_ptr device = std::make_unique<GpioInitDevice>();
-  if (ConfigureGpios(init_steps, pinimpl) != ZX_OK) {
+  if (ConfigureGpios(init_steps, pinimpl, logger) != ZX_OK) {
     // Return without adding the init device if some GPIOs could not be configured. This will
     // prevent all drivers that depend on the initial state from binding, which should make it
     // more obvious that something has gone wrong.
@@ -551,7 +554,7 @@ std::unique_ptr<GpioInitDevice> GpioInitDevice::Create(
   zx::result<fidl::ClientEnd<fuchsia_driver_framework::NodeController>> result =
       fdf::AddChild(node, logger, "gpio-init", props, {});
   if (result.is_error()) {
-    FDF_LOG(ERROR, "Failed to add gpio-init node: %s", result.status_string());
+    FDF_LOGL(TRACE, logger, "Failed to add gpio-init node: %s", result.status_string());
     return {};
   }
 
@@ -561,7 +564,7 @@ std::unique_ptr<GpioInitDevice> GpioInitDevice::Create(
 
 zx_status_t GpioInitDevice::ConfigureGpios(
     std::span<fuchsia_hardware_pinimpl::InitStep> init_steps,
-    fdf::WireSharedClient<fuchsia_hardware_pinimpl::PinImpl>& pinimpl) {
+    fdf::WireSharedClient<fuchsia_hardware_pinimpl::PinImpl>& pinimpl, fdf::Logger& logger) {
   // Stop processing the list if any call returns an error so that GPIOs are not accidentally put
   // into an unexpected state.
   for (const auto& step : init_steps) {
@@ -572,7 +575,7 @@ zx_status_t GpioInitDevice::ConfigureGpios(
       continue;
     }
     if (step.Which() != fuchsia_hardware_pinimpl::InitStep::Tag::kCall) {
-      FDF_LOG(ERROR, "Invalid GPIO init metadata");
+      FDF_LOGL(TRACE, logger, "Invalid GPIO init metadata");
       return ZX_ERR_INVALID_ARGS;
     }
 
@@ -582,24 +585,25 @@ zx_status_t GpioInitDevice::ConfigureGpios(
       const auto& config = call.pin_config().value();
       auto result = pinimpl.sync().buffer(arena)->Configure(pin, fidl::ToWire(arena, config));
       if (!result.ok()) {
-        FDF_LOG(ERROR, "Call to Configure failed: %s", result.status_string());
+        FDF_LOGL(TRACE, logger, "Call to Configure failed: %s", result.status_string());
         return result.status();
       }
       if (result->is_error()) {
-        FDF_LOG(ERROR, "Configure failed for %u: %s", pin,
-                zx_status_get_string(result->error_value()));
+        FDF_LOGL(TRACE, logger, "Configure failed for %u: %s", pin,
+                 zx_status_get_string(result->error_value()));
         return result->error_value();
       }
 
       const auto& driver_strength_ua = config.drive_strength_ua();
       if (driver_strength_ua.has_value()) {
         if (!result->value()->new_config.has_drive_strength_ua()) {
-          FDF_LOG(WARNING, "Drive strength not returned for %u", pin);
+          FDF_LOGL(WARNING, logger, "Drive strength not returned for %u", pin);
           return ZX_ERR_BAD_STATE;
         }
         if (result->value()->new_config.drive_strength_ua() != driver_strength_ua.value()) {
-          FDF_LOG(WARNING, "Actual drive strength (%lu) doesn't match expected (%lu) for %u",
-                  result->value()->new_config.drive_strength_ua(), driver_strength_ua.value(), pin);
+          FDF_LOGL(
+              WARNING, logger, "Actual drive strength (%lu) doesn't match expected (%lu) for %u",
+              result->value()->new_config.drive_strength_ua(), driver_strength_ua.value(), pin);
           return ZX_ERR_BAD_STATE;
         }
       }
@@ -607,13 +611,13 @@ zx_status_t GpioInitDevice::ConfigureGpios(
       const auto& drive_type = config.drive_type();
       if (drive_type.has_value()) {
         if (!result->value()->new_config.has_drive_type()) {
-          FDF_LOG(WARNING, "Drive type not returned for %u", pin);
+          FDF_LOGL(WARNING, logger, "Drive type not returned for %u", pin);
           return ZX_ERR_BAD_STATE;
         }
         if (result->value()->new_config.drive_type() != drive_type.value()) {
-          FDF_LOG(WARNING, "Actual drive type (%u) doesn't match expected (%u) for %u",
-                  static_cast<uint32_t>(result->value()->new_config.drive_type()),
-                  static_cast<uint32_t>(drive_type.value()), pin);
+          FDF_LOGL(WARNING, logger, "Actual drive type (%u) doesn't match expected (%u) for %u",
+                   static_cast<uint32_t>(result->value()->new_config.drive_type()),
+                   static_cast<uint32_t>(drive_type.value()), pin);
           return ZX_ERR_BAD_STATE;
         }
       }
@@ -621,12 +625,12 @@ zx_status_t GpioInitDevice::ConfigureGpios(
       const auto& power_source = config.power_source();
       if (power_source.has_value()) {
         if (!result->value()->new_config.has_power_source()) {
-          FDF_LOG(WARNING, "Power source not returned for %u", pin);
+          FDF_LOGL(WARNING, logger, "Power source not returned for %u", pin);
           return ZX_ERR_BAD_STATE;
         }
         if (result->value()->new_config.power_source() != power_source.value()) {
-          FDF_LOG(WARNING, "Actual power source (%lu) doesn't match expected (%lu) for %u",
-                  result->value()->new_config.power_source(), power_source.value(), pin);
+          FDF_LOGL(WARNING, logger, "Actual power source (%lu) doesn't match expected (%lu) for %u",
+                   result->value()->new_config.power_source(), power_source.value(), pin);
           return ZX_ERR_BAD_STATE;
         }
       }
@@ -634,12 +638,12 @@ zx_status_t GpioInitDevice::ConfigureGpios(
       auto result = pinimpl.sync().buffer(arena)->SetBufferMode(
           pin, fidl::ToWire(arena, call.buffer_mode().value()));
       if (!result.ok()) {
-        FDF_LOG(ERROR, "Call to SetBufferMode failed: %s", result.status_string());
+        FDF_LOGL(TRACE, logger, "Call to SetBufferMode failed: %s", result.status_string());
         return result.status();
       }
       if (result->is_error()) {
-        FDF_LOG(ERROR, "SetBufferMode failed for %u: %s", pin,
-                zx_status_get_string(result->error_value()));
+        FDF_LOGL(TRACE, logger, "SetBufferMode failed for %u: %s", pin,
+                 zx_status_get_string(result->error_value()));
         return result->error_value();
       }
     }
