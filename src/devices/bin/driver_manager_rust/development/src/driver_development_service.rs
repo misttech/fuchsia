@@ -272,6 +272,29 @@ impl DriverDevelopmentService {
     }
 
     async fn get_driver_host_info(&self, iterator: ServerEnd<fdd::DriverHostInfoIteratorMarker>) {
+        let mut driver_host_to_drivers: HashMap<zx::Koid, HashSet<String>> = HashMap::new();
+        let mut unique_nodes = HashSet::new();
+        let mut remaining_nodes = VecDeque::new();
+        remaining_nodes.push_back(self.driver_runner.root_node());
+
+        while let Some(node) = remaining_nodes.pop_front() {
+            let node_ptr: *const _ = Rc::as_ptr(&node);
+            if !unique_nodes.insert(node_ptr) {
+                continue;
+            }
+
+            for child in node.children() {
+                remaining_nodes.push_back(child);
+            }
+
+            if node.is_bound()
+                && let Some(host) = node.driver_host()
+                && let Ok(koid) = host.get_process_koid().await
+            {
+                driver_host_to_drivers.entry(koid).or_default().insert(node.driver_url());
+            }
+        }
+
         let mut infos = vec![];
         for host in self.driver_runner.driver_hosts() {
             let process_info = match host.get_process_info_internal().await {
@@ -302,12 +325,18 @@ impl DriverDevelopmentService {
                 })
                 .collect();
 
+            let mut drivers = vec![];
+            if let Some(d) = driver_host_to_drivers.get(&process_info.process_koid) {
+                drivers = d.iter().cloned().collect();
+                drivers.sort();
+            }
+
             infos.push(fdd::DriverHostInfo {
                 process_koid: Some(process_info.process_koid.raw_koid()),
                 name: Some(host.name_for_colocation().to_string()),
                 threads: Some(threads),
                 dispatchers: Some(dispatchers),
-                drivers: Some(vec![]),
+                drivers: Some(drivers),
                 ..Default::default()
             });
         }

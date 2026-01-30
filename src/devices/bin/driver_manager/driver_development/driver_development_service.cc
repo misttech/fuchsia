@@ -7,7 +7,9 @@
 #include <fidl/fuchsia.driver.framework/cpp/fidl.h>
 #include <lib/component/incoming/cpp/protocol.h>
 
+#include <algorithm>
 #include <queue>
+#include <unordered_map>
 #include <unordered_set>
 
 #include "src/devices/bin/driver_manager/driver_development/info_iterator.h"
@@ -266,6 +268,33 @@ void DriverDevelopmentService::GetCompositeNodeSpecs(
 
 void DriverDevelopmentService::GetDriverHostInfo(GetDriverHostInfoRequestView request,
                                                  GetDriverHostInfoCompleter::Sync& completer) {
+  std::unordered_map<zx_koid_t, std::unordered_set<std::string>> driver_host_to_drivers;
+  std::unordered_set<const driver_manager::Node*> unique_nodes;
+  std::queue<const driver_manager::Node*> remaining_nodes;
+  if (driver_runner_.root_node()) {
+    remaining_nodes.push(driver_runner_.root_node().get());
+  }
+  while (!remaining_nodes.empty()) {
+    auto node = remaining_nodes.front();
+    remaining_nodes.pop();
+    if (!unique_nodes.insert(node).second) {
+      continue;
+    }
+    for (const auto& child : node->children()) {
+      remaining_nodes.push(child.get());
+    }
+
+    if (node->is_bound()) {
+      auto host = node->driver_host();
+      if (host) {
+        auto koid_result = host->GetProcessKoid();
+        if (koid_result.is_ok()) {
+          driver_host_to_drivers[koid_result.value()].insert(node->driver_url());
+        }
+      }
+    }
+  }
+
   std::deque<fdd::DriverHostInfo> info;
   for (const auto& driver_host : driver_runner_.driver_hosts()) {
     zx::result process_info = driver_host.GetProcessInfo();
@@ -289,10 +318,18 @@ void DriverDevelopmentService::GetDriverHostInfo(GetDriverHostInfoRequestView re
           .scheduler_role = dispatcher.scheduler_role(),
       }});
     }
+
+    std::vector<std::string> drivers;
+    if (auto it = driver_host_to_drivers.find(process_info->process_koid());
+        it != driver_host_to_drivers.end()) {
+      drivers.assign(it->second.begin(), it->second.end());
+      std::sort(drivers.begin(), drivers.end());
+    }
+
     info.emplace_back(fdd::DriverHostInfo{{
         .process_koid = process_info->process_koid(),
         .threads = std::move(threads),
-        .drivers = {},
+        .drivers = std::move(drivers),
         .dispatchers = std::move(dispatchers),
         .name = std::string(driver_host.name_for_colocation()),
     }});
