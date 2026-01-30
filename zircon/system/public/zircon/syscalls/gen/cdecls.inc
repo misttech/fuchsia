@@ -674,6 +674,11 @@ _ZX_SYSCALL_DECL(thread_start, zx_status_t, /* no attributes */, 5,
                  (_ZX_SYSCALL_ANNO(use_handle("Fuchsia")) zx_handle_t handle,
                   zx_vaddr_t thread_entry, zx_vaddr_t stack, uintptr_t arg1, uintptr_t arg2))
 
+_ZX_SYSCALL_DECL(thread_start_regs, zx_status_t, /* no attributes */, 7,
+                 (handle, pc, sp, arg1, arg2, tp, abi_reg),
+                 (_ZX_SYSCALL_ANNO(use_handle("Fuchsia")) zx_handle_t handle, uint64_t pc,
+                  uint64_t sp, uint64_t arg1, uint64_t arg2, uint64_t tp, uint64_t abi_reg))
+
 _ZX_SYSCALL_DECL(thread_write_state, zx_status_t, /* no attributes */, 4,
                  (handle, kind, buffer, buffer_size),
                  (_ZX_SYSCALL_ANNO(use_handle("Fuchsia")) zx_handle_t handle, uint32_t kind,

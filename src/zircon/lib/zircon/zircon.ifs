@@ -185,6 +185,7 @@ Symbols:
   - { Name: _zx_thread_read_state, Type: Func }
   - { Name: _zx_thread_set_rseq, Type: Func }
   - { Name: _zx_thread_start, Type: Func }
+  - { Name: _zx_thread_start_regs, Type: Func }
   - { Name: _zx_thread_write_state, Type: Func }
   - { Name: _zx_ticks_get, Type: Func }
   - { Name: _zx_ticks_get_boot, Type: Func }
@@ -404,6 +405,7 @@ Symbols:
   - { Name: zx_thread_read_state, Type: Func, Weak: true }
   - { Name: zx_thread_set_rseq, Type: Func, Weak: true }
   - { Name: zx_thread_start, Type: Func, Weak: true }
+  - { Name: zx_thread_start_regs, Type: Func, Weak: true }
   - { Name: zx_thread_write_state, Type: Func, Weak: true }
   - { Name: zx_ticks_get, Type: Func, Weak: true }
   - { Name: zx_ticks_get_boot, Type: Func, Weak: true }

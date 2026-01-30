@@ -2061,4 +2061,206 @@ TEST(Threads, YieldWithNonZeroOptionIsInvalidArgs) {
   ASSERT_STATUS(zx_thread_legacy_yield(std::numeric_limits<uint32_t>::max()), ZX_ERR_INVALID_ARGS);
 }
 
+// The StartRegs* tests use an assembly snippet that stores register values
+// onto its tiny stack, which is represented by this struct.
+struct alignas(16) StartRegsEntryStack {
+  char call_stack[256];  // Stack space for the zx_thread_exit() system call.
+  struct Regs {
+    uint64_t arg0 = 0;
+    uint64_t arg1 = 0;
+    uint64_t tp = 0;
+    uint64_t abi_reg = 0;
+  } regs;
+};
+static_assert(sizeof(StartRegsEntryStack::Regs) == 32);
+
+struct StartRegsFromState {
+  explicit StartRegsFromState(const zx_thread_state_general_regs_t& state)
+      :
+#ifdef __x86_64__
+        pc{state.rip},
+        sp{state.rsp},
+#else
+        pc{state.pc},
+        sp{state.sp},
+#endif
+        regs{
+#if defined(__aarch64__)
+            .arg0 = state.r[0],
+            .arg1 = state.r[1],
+            .tp = state.tpidr,
+            .abi_reg = state.r[18],
+#elif defined(__riscv)
+            .arg0 = state.a0,
+            .arg1 = state.a1,
+            .tp = state.tp,
+            .abi_reg = state.gp,
+#elif defined(__x86_64__)
+            .arg0 = state.rdi,
+            .arg1 = state.rsi,
+            .tp = state.fs_base,
+            .abi_reg = state.r15,
+#else
+#error unsupported platform
+#endif
+        } {
+  }
+
+  uint64_t pc, sp;
+  StartRegsEntryStack::Regs regs;
+};
+
+// Actually defined in asm below.  This code simply stores the four register
+// values passed through the kernel onto the stack in the layout above.  On
+// entry, the SP points past the end of the StartRegsEntryStack structure.
+extern "C" void StartRegsEntry() [[clang::cfi_unchecked_callee]];
+
+constexpr uint64_t kArg0Value = 0x1234567890abcdef;
+constexpr uint64_t kArg1Value = 0xabcdef1234567890;
+constexpr uint64_t kAbiRegValue = 0xfeedfacedeadbeef;
+
+__asm__(
+    R"""(
+    .pushsection .text.StartRegsEntry, "ax", %progbits
+    .type StartRegsEntry, %function
+    StartRegsEntry:
+      .cfi_startproc
+    )"""
+#if defined(__aarch64__)
+    R"""(
+      mrs x17, TPIDR_EL0
+      stp x0, x1, [sp, #-32]!
+      .cfi_adjust_cfa_offset 32
+      stp x17, x18, [sp, #16]
+      bl _zx_thread_exit@PLT
+      udf #0
+    )"""
+#elif defined(__riscv)
+    R"""(
+      add sp, sp, -32
+      .cfi_adjust_cfa_offset 32
+      sd a0, 0(sp)
+      sd a1, 8(sp)
+      sd tp, 16(sp)
+      sd gp, 24(sp)
+      tail _zx_thread_exit
+      unimp
+    )"""
+#elif defined(__x86_64__)
+    R"""(
+      push %r15
+      .cfi_adjust_cfa_offset 8
+      push %fs:0
+      .cfi_adjust_cfa_offset 8
+      push %rsi
+      .cfi_adjust_cfa_offset 8
+      push %rdi
+      .cfi_adjust_cfa_offset 8
+      call _zx_thread_exit@PLT
+      ud2
+    )"""
+#else
+#error unsupported platform
+#endif
+    R"""(
+      .cfi_endproc
+    .size StartRegsEntry, . - StartRegsEntry
+    .popsection
+    )""");
+
+TEST(Threads, StartRegs) {
+  zx::thread thread;
+  constexpr std::string_view kName = "Threads.StartRegs test";
+  ASSERT_OK(zx::thread::create(*zx::process::self(), kName.data(), kName.size(), 0, &thread));
+
+  const uint64_t pc = reinterpret_cast<uintptr_t>(&StartRegsEntry);
+
+  StartRegsEntryStack stack;
+  const uint64_t sp = reinterpret_cast<uintptr_t>(&stack + 1);
+
+  // On x86, `rdfsbase` isn't necessarily available, so rather than directly
+  // reading the `%fs.base` value, the test code just reads `%fs:0` where its
+  // own address is stored (as in the real ABI).
+  const uint64_t tp_value = reinterpret_cast<uintptr_t>(&tp_value);
+
+  // Start the thread with the chosen register values.
+  ASSERT_OK(
+      zx_thread_start_regs(thread.get(), pc, sp, kArg0Value, kArg1Value, tp_value, kAbiRegValue));
+
+  // Wait for it to exit after storing values in stack.regs.
+  zx_signals_t signals = 0;
+  ASSERT_OK(thread.wait_one(ZX_THREAD_TERMINATED, zx::time::infinite(), &signals));
+  ASSERT_TRUE(signals & ZX_THREAD_TERMINATED);
+
+  EXPECT_EQ(stack.regs.arg0, kArg0Value);
+  EXPECT_EQ(stack.regs.arg1, kArg1Value);
+  EXPECT_EQ(stack.regs.tp, tp_value);
+  EXPECT_EQ(stack.regs.abi_reg, kAbiRegValue);
+}
+
+TEST(Threads, StartRegsSuspended) {
+  zx::thread thread;
+  constexpr std::string_view kName = "Threads.StartRegsSuspended test";
+  ASSERT_OK(zx::thread::create(*zx::process::self(), kName.data(), kName.size(), 0, &thread));
+
+  // Suspend the thread before it's started.
+  zx::suspend_token token;
+  ASSERT_OK(thread.suspend(&token));
+
+  // This will actually execute, but only after the test is done and just so
+  // the thread can reach its zx_thread_exit() system call since there is no
+  // way to kill the thread directly.
+  const uint64_t pc = reinterpret_cast<uintptr_t>(&StartRegsEntry);
+
+  // This needs to be a usable stack where the assembly code can do its stores
+  // and then make the system call.  But it won't be inspected later.
+  StartRegsEntryStack stack;
+  const uint64_t sp = reinterpret_cast<uintptr_t>(&stack + 1);
+
+  // This needs to be a readable address for the x86-64 assembly code.
+  const uint64_t tp_value = reinterpret_cast<uintptr_t>(&tp_value);
+
+  // Start the thread with the chosen register values.
+  ASSERT_OK(
+      zx_thread_start_regs(thread.get(), pc, sp, kArg0Value, kArg1Value, tp_value, kAbiRegValue));
+
+  // Wait for the kernel thread to start and report itself suspended before
+  // actually going to user mode.
+  zx_signals_t signals = 0;
+  ASSERT_OK(
+      thread.wait_one(ZX_THREAD_TERMINATED | ZX_THREAD_SUSPENDED, zx::time::infinite(), &signals));
+  ASSERT_TRUE(signals & ZX_THREAD_SUSPENDED);
+
+  zx_thread_state_general_regs_t state;
+  ASSERT_OK(thread.read_state(ZX_THREAD_STATE_GENERAL_REGS, &state, sizeof(state)));
+
+  StartRegsFromState start{state};
+  EXPECT_EQ(start.pc, pc);
+  EXPECT_EQ(start.sp, sp);
+  EXPECT_EQ(start.regs.arg0, kArg0Value);
+  EXPECT_EQ(start.regs.arg1, kArg1Value);
+  EXPECT_EQ(start.regs.tp, tp_value);
+  EXPECT_EQ(start.regs.abi_reg, kAbiRegValue);
+
+  // Let the thread resume so it will exit.  Then wait for it to finish exiting
+  // so that its stack (which is in a local variable in this function) is no
+  // longer being touched before this function returns.
+  token.reset();
+  ASSERT_OK(thread.wait_one(ZX_THREAD_TERMINATED, zx::time::infinite(), &signals));
+  ASSERT_TRUE(signals & ZX_THREAD_TERMINATED);
+}
+
+#ifdef __x86_64__
+TEST(Threads, StartRegsNoncanonicalTp) {
+  zx::thread thread;
+  constexpr std::string_view kName = "Threads.StartRegsNoncanonicalTp";
+  ASSERT_OK(zx::thread::create(*zx::process::self(), kName.data(), kName.size(), 0, &thread));
+
+  const uint64_t non_canonical_fsbase = uint64_t{1} << (x86_linear_address_width() - 1);
+
+  ASSERT_EQ(zx_thread_start_regs(thread.get(), 0, 0, 0, 0, non_canonical_fsbase, 0),
+            ZX_ERR_INVALID_ARGS);
+}
+#endif
+
 }  // namespace

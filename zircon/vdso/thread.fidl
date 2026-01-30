@@ -151,20 +151,55 @@ closed protocol Thread {
     /// ```c
     /// #include <zircon/syscalls.h>
     ///
+    /// zx_status_t zx_thread_start_regs(zx_handle_t handle,
+    ///                                  uint64_t pc,
+    ///                                  uint64_t sp,
+    ///                                  uint64_t arg1,
+    ///                                  uint64_t arg2,
+    ///                                  uint64_t tp,
+    ///                                  uint64_t abi_reg);
     /// zx_status_t zx_thread_start(zx_handle_t handle,
-    ///                             zx_vaddr_t thread_entry,
-    ///                             zx_vaddr_t stack,
+    ///                             zx_vaddr_t pc,
+    ///                             zx_vaddr_t sp,
     ///                             uintptr_t arg1,
     ///                             uintptr_t arg2);
     /// ```
     ///
     /// ## Description
     ///
-    /// `zx_thread_start()` causes a thread to begin execution at the program counter
-    /// specified by *thread_entry* and with the stack pointer set to *stack*. The
-    /// arguments *arg1* and *arg2* are arranged to be in the architecture specific
-    /// registers used for the first two arguments of a function call before the thread
-    /// is started.  All other registers are zero upon start.
+    /// _**TODO(https://fxbug.dev/478347581):** The new signature with *tp* and
+    /// *abi_reg* arguments is the preferred ABI in Fucshia API level 31 and
+    /// later.  This will eventually be renamed to `zx_thread_start` when
+    /// API levels before 31 are no longer supported.  The older signature
+    /// behaves exactly the same, with zero used for the new arguments._
+    ///
+    /// `zx_thread_start()` causes a thread to begin execution.  Its initial
+    /// registers are set as follows:
+    ///
+    ///  * The program counter is set to the *pc* argument.
+    ///  * The stack pointer is set to the *sp* argument.
+    ///  * The first two argument registers in the machine's C calling
+    ///    convention are set to *arg1* and *arg2*, respectively.
+    ///  * The machine's thread pointer register is set to the *tp* argument.
+    ///  * The register used by the machine ABI for the shadow call stack
+    ///    pointer is set to *abi_reg*.  On x86 where there is no shadow call
+    ///    stack ABI, this value goes into the `r15` register.
+    ///  * All other general registers are zero.
+    ///  * All floating-point and/or vector registers are in the machine's
+    ///    initial state (usually mostly zero).
+    ///
+    /// Each register value given must be some value that it's possible for
+    /// normal code to get into that register somehow.  If not, the call fails
+    /// with `ZX_ERR_INVALID_ARGS`.  For example, the PC on some machines can
+    /// only be set to a "canonical" address: it doesn't have to be a _valid_
+    /// address--it can be something that will cause a fault when the thread
+    /// actually executes at that PC, just like a normal jump instruction would
+    /// set the PC and then fault; but it cannot be a "noncanonical" address,
+    /// where a jump instruction _itself_ would fault without changing the PC.
+    /// Similarly, the stack pointer might need to be a pointer with valid
+    /// machine-required alignment (even if not an _actually valid_ address);
+    /// or the thread pointer might need to be a canonical address.  For all
+    /// these registers on all machines, zero is always a valid argument value.
     ///
     /// When the last handle to a thread is closed, the thread is destroyed.
     ///
@@ -172,15 +207,14 @@ closed protocol Thread {
     /// `ZX_THREAD_TERMINATED` when the thread stops executing (due to
     /// [`zx_thread_exit()`] being called).
     ///
-    /// *thread_entry* shall point to a function that must call [`zx_thread_exit()`] or
+    /// *pc* shall point to a function that must call [`zx_thread_exit()`] or
     /// [`zx_futex_wake_handle_close_thread_exit()`] or
     /// [`zx_vmar_unmap_handle_close_thread_exit()`] before reaching the last instruction.
     /// Below is an example:
     ///
     /// ```c
-    /// void thread_entry(uintptr_t arg1, uintptr_t arg2) __attribute__((noreturn)) {
+    /// [[noreturn]] void thread_entry(uint64_t arg1, uint64_t arg2) {
     ///   // do work here.
-    ///
     ///   zx_thread_exit();
     /// }
     /// ```
@@ -208,8 +242,8 @@ closed protocol Thread {
     /// `ZX_ERR_BAD_STATE`  *thread* is not ready to run or the process *thread*
     /// is part of is no longer alive.
     ///
-    /// `ZX_ERR_INVALID_ARGS` *thread_entry* is not a userspace address, is not a
-    /// canonical address, or is not `0`.
+    /// `ZX_ERR_INVALID_ARGS`  One of the register values is impossible for the
+    /// machine to use.
     ///
     /// ## See also
     ///
@@ -232,12 +266,29 @@ closed protocol Thread {
     /// [`zx_thread_create()`]: thread_create.md
     /// [`zx_thread_exit()`]: thread_exit.md
     /// [`zx_vmar_unmap_handle_close_thread_exit()`]: vmar_unmap_handle_close_thread_exit.md
+
+    // TODO(https://fxbug.dev/478347581): The new signature now called
+    // StartRegs will be renamed back to Start after API levels <= 30 are
+    // retired, with StartRegs left as an alias until all later API levels that
+    // still had the old Start signature are retired.
+
+    @vdsocall
     strict Start(resource struct {
         handle Handle:THREAD;
         thread_entry Vaddr;
         stack Vaddr;
         arg1 uintptr64;
         arg2 uintptr64;
+    }) -> () error Status;
+
+    strict StartRegs(resource struct {
+        handle Handle:THREAD;
+        pc uint64;
+        sp uint64;
+        arg1 uint64;
+        arg2 uint64;
+        tp uint64;
+        abi_reg uint64;
     }) -> () error Status;
 
     /// ## Summary

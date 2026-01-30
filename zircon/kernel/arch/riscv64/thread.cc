@@ -103,6 +103,8 @@ iframe_t arch_prepare_uspace(const UserEntryState& state) {
       .regs{
           .pc = state.pc,
           .sp = state.sp,
+          .gp = state.abi_reg,
+          .tp = state.tp,
           .a0 = state.arg1,
           .a1 = state.arg2,
       },

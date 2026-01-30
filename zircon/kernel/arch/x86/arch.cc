@@ -125,9 +125,15 @@ void arch_late_init_percpu(void) {
 }
 
 iframe_t arch_prepare_uspace(const UserEntryState& state) {
+  // The %fs.base (thread pointer) isn't in the iframe.  It's directly in the
+  // CPU's register for the current thread.  It's always accessible via MSR,
+  // and accessible directly with wrfsbase only on newer CPUs.
+  write_msr(X86_MSR_IA32_FS_BASE, state.tp);
+
   return {
       .rdi = state.arg1,
       .rsi = state.arg2,
+      .r15 = state.abi_reg,
 
       .ip = state.pc,
       .cs = USER_CODE_64_SELECTOR,

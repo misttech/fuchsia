@@ -17,10 +17,12 @@ struct iframe_t;
 // Entry state for a thread.  This is the user-space, machine-independent
 // view that's translated to iframe_t by arch_prepare_uspace().
 struct UserEntryState {
-  uintptr_t pc = 0;
-  uintptr_t sp = 0;
-  uintptr_t arg1 = 0;
-  uintptr_t arg2 = 0;
+  uint64_t pc = 0;
+  uint64_t sp = 0;
+  uint64_t arg1 = 0;
+  uint64_t arg2 = 0;
+  uint64_t tp = 0;
+  uint64_t abi_reg = 0;
 };
 
 void PrintFrame(const iframe_t&, FILE* = stdout);

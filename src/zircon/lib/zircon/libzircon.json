@@ -182,6 +182,7 @@
     "zx_thread_read_state",
     "zx_thread_set_rseq",
     "zx_thread_start",
+    "zx_thread_start_regs",
     "zx_thread_write_state",
     "zx_ticks_get",
     "zx_ticks_get_boot",

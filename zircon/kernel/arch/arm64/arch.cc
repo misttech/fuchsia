@@ -440,6 +440,11 @@ iframe_t arch_prepare_uspace(const UserEntryState& state) {
 
   iframe.r[0] = state.arg1;
   iframe.r[1] = state.arg2;
+  iframe.r[18] = state.abi_reg;
+
+  // The thread pointer isn't in the iframe.  It's directly in the TPIDR_EL0
+  // system register for the current thread.
+  __arm_wsr64("tpidr_el0", state.tp);
 
   return iframe;
 }

@@ -119,8 +119,8 @@ zx_status_t sys_thread_create(zx_handle_t process_handle, user_in_ptr<const char
 }
 
 // zx_status_t zx_thread_start
-zx_status_t sys_thread_start(zx_handle_t handle, zx_vaddr_t thread_entry, zx_vaddr_t stack,
-                             uintptr_t arg1, uintptr_t arg2) {
+zx_status_t sys_thread_start_regs(zx_handle_t handle, zx_vaddr_t thread_entry, zx_vaddr_t stack,
+                                  uint64_t arg1, uint64_t arg2, uint64_t tp, uint64_t abi_reg) {
   LTRACEF("handle %x, entry %#" PRIxPTR ", sp %#" PRIxPTR ", arg1 %#" PRIxPTR ", arg2 %#" PRIxPTR
           "\n",
           handle, thread_entry, stack, arg1, arg2);
@@ -133,8 +133,23 @@ zx_status_t sys_thread_start(zx_handle_t handle, zx_vaddr_t thread_entry, zx_vad
     return status;
   }
 
-  return thread->Start(ThreadDispatcher::EntryState{thread_entry, stack, arg1, arg2},
-                       /* ensure_initial_thread= */ false);
+#if ARCH_X86
+  // A noncanonical address cannot be written into the MSR.
+  if (!x86_is_vaddr_canonical(tp)) {
+    return ZX_ERR_INVALID_ARGS;
+  }
+#endif
+
+  return thread->Start(
+      {
+          .pc = thread_entry,
+          .sp = stack,
+          .arg1 = arg1,
+          .arg2 = arg2,
+          .tp = tp,
+          .abi_reg = abi_reg,
+      },
+      /* ensure_initial_thread= */ false);
 }
 
 void sys_thread_exit() {
