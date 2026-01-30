@@ -282,6 +282,49 @@ TEST_F(QipcrtrClientTest, SendToDontWait) {
   EXPECT_EQ(errno, EAGAIN);
 }
 
+TEST_F(QipcrtrClientTest, SockOptTimeout) {
+  struct timeval tv = {.tv_sec = 1, .tv_usec = 0};
+  ASSERT_EQ(setsockopt(sock_, SOL_SOCKET, SO_RCVTIMEO, &tv, sizeof(tv)), 0)
+      << "setsockopt(SO_RCVTIMEO) failed, errno=" << errno;
+
+  struct timeval get_tv;
+  socklen_t len = sizeof(get_tv);
+  ASSERT_EQ(getsockopt(sock_, SOL_SOCKET, SO_RCVTIMEO, &get_tv, &len), 0)
+      << "getsockopt(SO_RCVTIMEO) failed, errno=" << errno;
+  EXPECT_EQ(len, sizeof(get_tv));
+  EXPECT_EQ(get_tv.tv_sec, 1);
+  EXPECT_EQ(get_tv.tv_usec, 0);
+
+  tv = {.tv_sec = 2, .tv_usec = 0};
+  ASSERT_EQ(setsockopt(sock_, SOL_SOCKET, SO_SNDTIMEO, &tv, sizeof(tv)), 0)
+      << "setsockopt(SO_SNDTIMEO) failed, errno=" << errno;
+
+  len = sizeof(get_tv);
+  ASSERT_EQ(getsockopt(sock_, SOL_SOCKET, SO_SNDTIMEO, &get_tv, &len), 0)
+      << "getsockopt(SO_SNDTIMEO) failed, errno=" << errno;
+  EXPECT_EQ(get_tv.tv_sec, 2);
+  EXPECT_EQ(get_tv.tv_usec, 0);
+}
+
+TEST_F(QipcrtrClientTest, SendTimeout) {
+  struct timeval tv = {.tv_sec = 0, .tv_usec = 10};  // 10ms
+  ASSERT_EQ(setsockopt(sock_, SOL_SOCKET, SO_SNDTIMEO, &tv, sizeof(tv)), 0)
+      << "setsockopt(SO_SNDTIMEO) failed, errno=" << errno;
+
+  SendControl(ControlCommand::kBlockWrite);
+
+  char data[10] = {0};
+  sockaddr_qrtr addr;
+  addr.sq_family = AF_QIPCRTR;
+  addr.sq_node = 2;
+  addr.sq_port = 20;
+
+  ssize_t ret =
+      sendto(sock_, data, sizeof(data), 0, reinterpret_cast<sockaddr*>(&addr), sizeof(addr));
+  ASSERT_EQ(ret, -1);
+  EXPECT_EQ(errno, EAGAIN);
+}
+
 }  // namespace
 
 int main(int argc, char** argv) {
