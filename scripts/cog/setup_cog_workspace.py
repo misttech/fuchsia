@@ -44,7 +44,7 @@ def prepare_workspace_instance(
     # No need to reinitialize our cartfs workspace.
     if workspace_instance.cartfs_directory:
         logger.log_info(
-            f"Workspace is already linked to cartfs: {workspace_instance.cartfs_workspace_dir}"
+            f"Workspace is already linked to cartfs: {workspace_instance.cartfs_directory}"
         )
         return workspace_instance
 
