@@ -10,6 +10,7 @@ use crate::rcu_intrusive_list::{
 };
 use crate::rcu_list::RcuList;
 use fuchsia_rcu::RcuReadScope;
+use std::borrow::Borrow;
 use std::hash::{Hash, Hasher};
 use std::sync::atomic::{AtomicUsize, Ordering};
 
@@ -122,21 +123,32 @@ where
     }
 
     /// Returns the hash of the key as a u64.
-    fn hash_key(key: &K) -> u64 {
+    fn hash_key<Q>(key: &Q) -> u64
+    where
+        Q: ?Sized + Hash,
+    {
         let mut hasher = std::collections::hash_map::DefaultHasher::new();
         key.hash(&mut hasher);
         hasher.finish()
     }
 
     /// Returns the bucket for the given key in the given table.
-    fn get_bucket<'a>(table: &'a [Bucket<K, V>], key: &K) -> &'a Bucket<K, V> {
+    fn get_bucket<'a, Q>(table: &'a [Bucket<K, V>], key: &Q) -> &'a Bucket<K, V>
+    where
+        K: Borrow<Q>,
+        Q: ?Sized + Hash,
+    {
         let hash = Self::hash_key(key);
         let index = hash as usize % table.len();
         &table[index]
     }
 
     /// Returns a reference to the bucket for the given key.
-    fn read_bucket<'a>(&self, scope: &'a RcuReadScope, key: &K) -> &'a Bucket<K, V> {
+    fn read_bucket<'a, Q>(&self, scope: &'a RcuReadScope, key: &Q) -> &'a Bucket<K, V>
+    where
+        K: Borrow<Q>,
+        Q: ?Sized + Hash,
+    {
         let table = self.table.as_slice(scope);
         Self::get_bucket(table, key)
     }
@@ -144,9 +156,13 @@ where
     /// Returns a reference to the value corresponding to the key.
     ///
     /// Another thread running concurrently might see a different value for the object.
-    pub fn get<'a>(&self, scope: &'a RcuReadScope, key: &K) -> Option<&'a V> {
+    pub fn get<'a, Q>(&self, scope: &'a RcuReadScope, key: &Q) -> Option<&'a V>
+    where
+        K: Borrow<Q>,
+        Q: ?Sized + Hash + Eq,
+    {
         let bucket = self.read_bucket(scope, key);
-        bucket.iter(scope).find(|entry| &entry.key == key).map(|entry| &entry.value)
+        bucket.iter(scope).find(|entry| entry.key.borrow() == key).map(|entry| &entry.value)
     }
 
     /// Returns the number of entries in the map.
@@ -213,12 +229,16 @@ where
     /// # Safety
     ///
     /// Requires external synchronization to exclude concurrent writers.
-    pub unsafe fn remove(&self, key: &K) -> Option<V> {
+    pub unsafe fn remove<Q>(&self, key: &Q) -> Option<V>
+    where
+        K: Borrow<Q>,
+        Q: ?Sized + Hash + Eq,
+    {
         let scope = RcuReadScope::new();
         let bucket = self.read_bucket(&scope, key);
         let mut cursor = bucket.cursor(&scope);
         while let Some(entry) = cursor.current() {
-            if &entry.key == key {
+            if entry.key.borrow() == key {
                 let old_value = entry.value.clone();
                 // SAFETY: We have exclusive access to the bucket because we have exclusive access
                 // to the table.

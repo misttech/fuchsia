@@ -5,6 +5,7 @@
 use fuchsia_rcu::RcuReadScope;
 use fuchsia_rcu_collections::rcu_raw_hash_map::{InsertionResult, RcuRawHashMap};
 use starnix_sync::Mutex;
+use std::borrow::Borrow;
 use std::hash::Hash;
 
 /// A concurrent hash map that uses RCU for read synchronization and a mutex for write synchronization.
@@ -39,7 +40,11 @@ where
     /// Returns a reference to the value associated with the given key, if it exists.
     ///
     /// The returned reference is bound to the lifetime of the `RcuReadScope`.
-    pub fn get<'a>(&self, scope: &'a RcuReadScope, key: &K) -> Option<&'a V> {
+    pub fn get<'a, Q>(&self, scope: &'a RcuReadScope, key: &Q) -> Option<&'a V>
+    where
+        K: Borrow<Q>,
+        Q: ?Sized + Hash + Eq,
+    {
         self.map.get(scope, key)
     }
 
@@ -54,7 +59,12 @@ where
     }
 
     /// Removes a key from the map, returning the value if the key was present.
-    pub fn remove(&self, key: &K) -> Option<V> {
+    /// Removes a key from the map, returning the value if the key was present.
+    pub fn remove<Q>(&self, key: &Q) -> Option<V>
+    where
+        K: Borrow<Q>,
+        Q: ?Sized + Hash + Eq,
+    {
         self.lock().remove(key)
     }
 
@@ -92,7 +102,11 @@ where
     V: Clone + Send + Sync + 'static,
 {
     /// Returns a copy (clone) of the value associated with the given key, if it exists.
-    pub fn get(&self, key: &K) -> Option<V> {
+    pub fn get<Q>(&self, key: &Q) -> Option<V>
+    where
+        K: Borrow<Q>,
+        Q: ?Sized + Hash + Eq,
+    {
         let scope = RcuReadScope::new();
         self.map.get(&scope, key).cloned()
     }
@@ -108,7 +122,12 @@ where
     }
 
     /// Removes a key from the map.
-    pub fn remove(&mut self, key: &K) -> Option<V> {
+    /// Removes a key from the map.
+    pub fn remove<Q>(&mut self, key: &Q) -> Option<V>
+    where
+        K: Borrow<Q>,
+        Q: ?Sized + Hash + Eq,
+    {
         // SAFETY: We have exclusive access to the map because we have exclusive access to the mutex.
         unsafe { self.map.remove(key) }
     }

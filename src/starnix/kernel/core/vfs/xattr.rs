@@ -20,10 +20,7 @@ impl XattrStorage for MemoryXattrStorage {
         _locked: &mut Locked<FileOpsCore>,
         name: &FsStr,
     ) -> Result<FsString, Errno> {
-        self.xattrs
-            .get(&RcuReadScope::new(), &name.to_owned())
-            .cloned()
-            .ok_or_else(|| errno!(ENODATA))
+        self.xattrs.get(&RcuReadScope::new(), name).cloned().ok_or_else(|| errno!(ENODATA))
     }
 
     fn set_xattr(
@@ -49,7 +46,7 @@ impl XattrStorage for MemoryXattrStorage {
 
     fn remove_xattr(&self, _locked: &mut Locked<FileOpsCore>, name: &FsStr) -> Result<(), Errno> {
         let mut xattrs = self.xattrs.lock();
-        if xattrs.remove(&name.to_owned()).is_none() {
+        if xattrs.remove(name).is_none() {
             return error!(ENODATA);
         }
         Ok(())
