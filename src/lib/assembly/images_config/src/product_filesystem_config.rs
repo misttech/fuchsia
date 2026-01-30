@@ -40,11 +40,13 @@ pub struct ProductFilesystemConfig {
 
     /// The compression algorithm that blobfs should use for writing blobs at runtime.
     /// If unset, an internally defined system default is used.
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub blobfs_write_compression_algorithm: Option<BlobfsWriteCompressionAlgorithm>,
 
     /// Controls blobfs' eviction strategy for pager-backed blobs with no open
     /// handles or VMO clones. If unset, an internally defined system default is
     /// used.
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub blobfs_cache_eviction_policy: Option<BlobfsCacheEvictionPolicy>,
 }
 
