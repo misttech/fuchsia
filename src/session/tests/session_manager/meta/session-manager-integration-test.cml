@@ -27,10 +27,7 @@
     ],
     use: [
         {
-            protocol: [
-                "fuchsia.component.Realm",
-                "fuchsia.component.sandbox.CapabilityStore",
-            ],
+            protocol: [ "fuchsia.component.Realm" ],
             from: "framework",
         },
         { protocol: "fuchsia.diagnostics.ArchiveAccessor" },

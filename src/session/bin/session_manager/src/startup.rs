@@ -3,14 +3,13 @@
 // found in the LICENSE file.
 
 use crate::cobalt;
-use anyhow::anyhow;
 use fidl::endpoints::{ServerEnd, create_proxy};
+use fuchsia_component::runtime::{Data, DataValue, Dictionary};
 use log::info;
 use thiserror::Error;
 use {
     fidl_fuchsia_component as fcomponent, fidl_fuchsia_component_decl as fdecl,
-    fidl_fuchsia_component_sandbox as fsandbox, fidl_fuchsia_io as fio,
-    fidl_fuchsia_session as fsession, fuchsia_async as fasync,
+    fidl_fuchsia_io as fio, fidl_fuchsia_session as fsession, fuchsia_async as fasync,
 };
 
 /// Errors returned by calls startup functions.
@@ -155,38 +154,18 @@ pub async fn stop_session(realm: &fcomponent::RealmProxy) -> Result<(), StartupE
 
 async fn create_config_dict(
     config_capabilities: Vec<fdecl::Configuration>,
-) -> Result<Option<fsandbox::DictionaryRef>, anyhow::Error> {
+) -> Result<Option<Dictionary>, anyhow::Error> {
     if config_capabilities.is_empty() {
         return Ok(None);
     }
-    let dict_store =
-        fuchsia_component::client::connect_to_protocol::<fsandbox::CapabilityStoreMarker>()?;
-    let dict_id = 1;
-    dict_store.dictionary_create(dict_id).await?.map_err(|e| anyhow!("{e:#?}"))?;
-    let mut config_id = 2;
+    let dictionary = Dictionary::new().await;
     for config in config_capabilities {
         let Some(value) = config.value else { continue };
         let Some(key) = config.name else { continue };
-
-        dict_store
-            .import(
-                config_id,
-                fsandbox::Capability::Data(fsandbox::Data::Bytes(fidl::persist(&value)?)),
-            )
-            .await?
-            .map_err(|e| anyhow!("{e:#?}"))?;
-
-        dict_store
-            .dictionary_insert(dict_id, &fsandbox::DictionaryItem { key, value: config_id })
-            .await?
-            .map_err(|e| anyhow!("{e:#?}"))?;
-        config_id += 1;
+        let data = Data::new(DataValue::Bytes(fidl::persist(&value)?)).await;
+        dictionary.insert(&key, data).await;
     }
-    let dict = dict_store.export(dict_id).await?.map_err(|e| anyhow!("{e:#?}"))?;
-    let fsandbox::Capability::Dictionary(dict) = dict else {
-        return Err(anyhow!("Bad bedrock capability type"));
-    };
-    Ok(Some(dict))
+    Ok(Some(dictionary))
 }
 
 /// Sets the currently active session.
@@ -225,16 +204,17 @@ async fn set_session(
         })?;
 
     let (controller, controller_server_end) = create_proxy::<fcomponent::ControllerMarker>();
+    let dictionary = create_config_dict(config_capabilities).await.map_err(|err| {
+        StartupError::BedrockError {
+            name: SESSION_NAME.to_string(),
+            collection: SESSION_CHILD_COLLECTION.to_string(),
+            url: session_url.to_string(),
+            err: format!("{err:#?}"),
+        }
+    })?;
     let create_child_args = fcomponent::CreateChildArgs {
         controller: Some(controller_server_end),
-        dictionary: create_config_dict(config_capabilities).await.map_err(|err| {
-            StartupError::BedrockError {
-                name: SESSION_NAME.to_string(),
-                collection: SESSION_CHILD_COLLECTION.to_string(),
-                url: session_url.to_string(),
-                err: format!("{err:#?}"),
-            }
-        })?,
+        additional_inputs: dictionary.map(|dictionary| dictionary.handle),
         ..Default::default()
     };
     realm_management::create_child_component(
