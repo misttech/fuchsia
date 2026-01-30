@@ -110,6 +110,20 @@ antlion_host_test("sar_setting_test") {
   ]
 }
 
+# This is a helper group so developers can easily add all tests to their build. It is not run by
+# infra. You should not directly add tests here, but rather to one of the other groups below so it
+# runs in infra.
+group("tests_host") {
+  testonly = true
+  public_deps = [
+    ":tests_for_fyi",
+    ":tests_for_general_cq",
+    ":tests_for_general_cq_dut_only",
+    ":tests_for_wlan_cq_dut_only",
+    ":tests_for_wlan_cq_shielded_dut_only",
+  ]
+}
+
 group("tests_for_fyi") {
   testonly = true
   public_deps = core_tests_for_fyi

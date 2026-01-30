@@ -91,6 +91,18 @@ group("tests") {
   ]
 }
 
+# This is a helper group, intended so that developers can easily add all tests to their build.
+# It is not load-bearing in infra, because our e2e host tests are split into more granular groups
+# in their respective BUILD.gn files.
+# Use this via `fx add-test //src/connectivity/wlan:tests_e2e`.
+group("tests_e2e") {
+  testonly = true
+  deps = [
+    "tests:tests_host($host_toolchain)",
+    "//src/testing/end_to_end/antlion/tests:e2e_tests($host_toolchain)",
+  ]
+}
+
 group("tools") {
   deps = [ "wlancfg/tool:donut" ]
 }

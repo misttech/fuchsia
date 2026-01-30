@@ -10,3 +10,15 @@ group("tests") {
     "helpers/testcontroller-driver:tests",
   ]
 }
+
+# This is a helper group, intended so that developers can easily add all tests to their build.
+# It is not load-bearing in infra, because our e2e host tests are split into more granular groups
+# in their respective BUILD.gn files.
+group("tests_host") {
+  testonly = true
+  deps = [
+    "core:tests_host",
+    "wlancfg:tests_host",
+    "wlanix:tests_host",
+  ]
+}
