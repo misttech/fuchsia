@@ -60,11 +60,6 @@ sdk_source_set("fidl_base") {
 
   public_deps = [ "//src/zircon/lib/zircon" ]
 
-  # TODO(https://fxbug.dev/42052612): GN check fails without this condition.
-  if (zircon_toolchain != false) {
-    public_deps += [ "//zircon/system/public" ]
-  }
-
   public_configs = [ ":fidl_base.headers" ]
 
   if (is_fuchsia) {

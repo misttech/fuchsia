@@ -180,10 +180,5 @@ sdk_source_set("wire") {
     ]
   }
 
-  # TODO(https://fxbug.dev/42052612): GN check fails without this condition.
-  if (zircon_toolchain != false) {
-    public_deps += [ "//zircon/system/public" ]
-  }
-
   public_configs = [ ":include" ]
 }
