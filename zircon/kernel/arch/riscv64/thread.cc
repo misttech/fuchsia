@@ -84,29 +84,34 @@ __NO_SAFESTACK void arch_thread_construct_first(Thread* t) {
   arch_set_current_thread(t);
 }
 
-void arch_setup_uspace_iframe(iframe_t* iframe, uintptr_t pc, uintptr_t sp, uintptr_t arg1,
-                              uintptr_t arg2) {
-  iframe->regs.pc = pc;
-  iframe->regs.sp = sp;
-  iframe->regs.a0 = arg1;
-  iframe->regs.a1 = arg2;
-
-  // Saved interrupt enable (so that interrupts are enabled when returning to user space).
-  // Current interrupt enable state set to disabled, which will matter when the
-  // arch_uspace_entry loads sstatus temporarily before switching to user space.
-  // Set user space bitness to 64bit.
-  // Set the fpu and vector registers to the initial state, with the implicit
-  // assumption that the context switch routine would have defaulted the
-  // FPU/vector state a the time this thread enters user space. All other bits
-  // set to zero, default options.
-  iframe->status =
-      RISCV64_CSR_SSTATUS_SPIE | RISCV64_CSR_SSTATUS_UXL_64BIT | RISCV64_CSR_SSTATUS_FS_INITIAL |
-      (gRiscvFeatures[arch::RiscvFeature::kVector] ? RISCV64_CSR_SSTATUS_VS_INITIAL : 0);
+iframe_t arch_prepare_uspace(const UserEntryState& state) {
+  return {
+      // Saved interrupt enable (so that interrupts are enabled when returning
+      // to user space).  Current interrupt enable state set to disabled, which
+      // will matter when the arch_uspace_entry loads sstatus temporarily
+      // before switching to user space.  Set user space bitness to 64bit.  Set
+      // the FPU and vector registers to the initial state, with the implicit
+      // assumption that the context switch routine would have defaulted the
+      // FPU/vector state a the time this thread enters user space.  All other
+      // bits set to zero, default options.
+      .status = RISCV64_CSR_SSTATUS_SPIE |        // Interrupts disabled.
+                RISCV64_CSR_SSTATUS_UXL_64BIT |   // 64-bit user mode.
+                RISCV64_CSR_SSTATUS_FS_INITIAL |  // Initial FPU state.
+                (gRiscvFeatures[arch::RiscvFeature::kVector]
+                     ? RISCV64_CSR_SSTATUS_VS_INITIAL  // Initial vector state.
+                     : 0),
+      .regs{
+          .pc = state.pc,
+          .sp = state.sp,
+          .a0 = state.arg1,
+          .a1 = state.arg2,
+      },
+  };
 }
 
 // Switch to user mode, set the user stack pointer to user_stack_top, save the
 // top of the kernel stack pointer.
-void arch_enter_uspace(iframe_t* iframe) {
+void arch_enter_uspace(const iframe_t* iframe) {
   Thread* ct = Thread::Current::Get();
 
   LTRACEF("pc %#" PRIx64 " sp %#" PRIx64 " a0 %#" PRIx64 " a1 %#" PRIx64 "\n", iframe->regs.pc,

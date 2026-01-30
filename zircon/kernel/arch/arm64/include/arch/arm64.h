@@ -64,10 +64,10 @@ extern "C" {
 #if __has_feature(shadow_call_stack)
 void arm64_context_switch(vaddr_t* old_sp, vaddr_t new_sp, vaddr_t new_tpidr, uintptr_t** old_scsp,
                           uintptr_t* new_scsp);
-void arm64_uspace_entry(iframe_t* iframe, vaddr_t kstack, vaddr_t scsp) __NO_RETURN;
+void arm64_uspace_entry(const iframe_t* iframe, vaddr_t kstack, vaddr_t scsp) __NO_RETURN;
 #else
 void arm64_context_switch(vaddr_t* old_sp, vaddr_t new_sp, vaddr_t new_tpidr);
-void arm64_uspace_entry(iframe_t* iframe, vaddr_t kstack) __NO_RETURN;
+void arm64_uspace_entry(const iframe_t* iframe, vaddr_t kstack) __NO_RETURN;
 #endif
 
 extern arch::AsmLabel arm64_el1_exception;

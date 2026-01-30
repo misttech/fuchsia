@@ -124,24 +124,23 @@ void arch_late_init_percpu(void) {
   x86_cpu_feature_late_init_percpu();
 }
 
-void arch_setup_uspace_iframe(iframe_t* iframe, uintptr_t pc, uintptr_t sp, uintptr_t arg1,
-                              uintptr_t arg2) {
-  /* default user space flags:
-   * IOPL 0
-   * Interrupts enabled
-   */
-  iframe->flags = (0 << X86_FLAGS_IOPL_SHIFT) | X86_FLAGS_IF;
+iframe_t arch_prepare_uspace(const UserEntryState& state) {
+  return {
+      .rdi = state.arg1,
+      .rsi = state.arg2,
 
-  iframe->cs = USER_CODE_64_SELECTOR;
-  iframe->ip = pc;
-  iframe->user_ss = USER_DATA_SELECTOR;
-  iframe->user_sp = sp;
+      .ip = state.pc,
+      .cs = USER_CODE_64_SELECTOR,
 
-  iframe->rdi = arg1;
-  iframe->rsi = arg2;
+      // Default user space flags: IOPL 0; interrupts enabled.
+      .flags = (0 << X86_FLAGS_IOPL_SHIFT) | X86_FLAGS_IF,
+
+      .user_sp = state.sp,
+      .user_ss = USER_DATA_SELECTOR,
+  };
 }
 
-void arch_enter_uspace(iframe_t* iframe) {
+void arch_enter_uspace(const iframe_t* iframe) {
   DEBUG_ASSERT(arch_ints_disabled());
 
   LTRACEF("entry %#" PRIxPTR " user stack %#" PRIxPTR "\n", iframe->ip, iframe->user_sp);

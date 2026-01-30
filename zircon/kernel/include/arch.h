@@ -14,6 +14,15 @@
 
 struct iframe_t;
 
+// Entry state for a thread.  This is the user-space, machine-independent
+// view that's translated to iframe_t by arch_prepare_uspace().
+struct UserEntryState {
+  uintptr_t pc = 0;
+  uintptr_t sp = 0;
+  uintptr_t arg1 = 0;
+  uintptr_t arg2 = 0;
+};
+
 void PrintFrame(const iframe_t&, FILE* = stdout);
 
 // Early platform initialization, before UART, MMU, kernel command line args, etc.
@@ -28,18 +37,17 @@ void arch_init();
 // Perform any per-CPU set up required.
 void arch_late_init_percpu();
 
-// Initialize |iframe| for running a userspace thread.
-// The rest of the current thread's state must already have been
-// appropriately initialized (as viewable from a debugger at the
-// ZX_EXCP_THREAD_STARTING exception).
-void arch_setup_uspace_iframe(iframe_t* iframe, uintptr_t entry_point, uintptr_t sp, uintptr_t arg1,
-                              uintptr_t arg2);
+// Return the iframe_t that should be passed to arch_enter_uspace() on the
+// current thread.  Initialize it and other user-visible hardware state first.
+// The rest of the current thread's state must already have been appropriately
+// initialized (as viewable from a debugger at the ZX_EXCP_THREAD_STARTING
+// exception).  This can be called with interrupts still enabled.  It's just
+// preparatory to calling arch_enter_uspace().
+iframe_t arch_prepare_uspace(const UserEntryState& state);
 
-// Enter userspace.
-// |iframe| is generally initialized with |arch_setup_uspace_iframe()|.
-//
+// Enter userspace, after initialization with arch_prepare_uspace().
 // Must be called with interrupts disabled.
-void arch_enter_uspace(iframe_t* iframe) __NO_RETURN;
+[[noreturn]] void arch_enter_uspace(const iframe_t* iframe);
 
 // On x86, user mode general registers are stored in one of two structures depending on how the
 // thread entered the kernel.  If via interrupt/exception, they are stored in an iframe_t.  If via

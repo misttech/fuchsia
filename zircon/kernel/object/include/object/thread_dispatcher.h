@@ -7,6 +7,7 @@
 #ifndef ZIRCON_KERNEL_OBJECT_INCLUDE_OBJECT_THREAD_DISPATCHER_H_
 #define ZIRCON_KERNEL_OBJECT_INCLUDE_OBJECT_THREAD_DISPATCHER_H_
 
+#include <arch.h>
 #include <platform.h>
 #include <sys/types.h>
 #include <zircon/compiler.h>
@@ -63,13 +64,7 @@ class ThreadDispatcher final : public SoloDispatcher<ThreadDispatcher, ZX_DEFAUL
     PAGER,
   };
 
-  // Entry state for a thread
-  struct EntryState {
-    uintptr_t pc = 0;
-    uintptr_t sp = 0;
-    uintptr_t arg1 = 0;
-    uintptr_t arg2 = 0;
-  };
+  using EntryState = UserEntryState;
 
   static zx_status_t Create(fbl::RefPtr<ProcessDispatcher> process, uint32_t flags,
                             ktl::string_view name, KernelHandle<ThreadDispatcher>* out_handle,

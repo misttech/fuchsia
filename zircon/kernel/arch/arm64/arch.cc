@@ -424,25 +424,29 @@ void ArchIdlePowerThread::EnterIdleState() {
   __asm__ volatile("wfi");
 }
 
-void arch_setup_uspace_iframe(iframe_t* iframe, uintptr_t entry_point, uintptr_t sp, uintptr_t arg1,
-                              uintptr_t arg2) {
-  // Set up a default spsr to get into 64bit user space:
-  //  - Zeroed NZCV.
-  //  - No SS, no IL, no D.
-  //  - All interrupts enabled.
-  //  - Mode 0: EL0t.
-  uint32_t spsr = 0;
+iframe_t arch_prepare_uspace(const UserEntryState& state) {
+  iframe_t iframe = {
+      .elr = state.pc,
 
-  iframe->r[0] = arg1;
-  iframe->r[1] = arg2;
-  iframe->usp = sp;
-  iframe->elr = entry_point;
-  iframe->spsr = spsr;
+      // Set up a default spsr to get into 64bit user space:
+      //  - Zeroed NZCV.
+      //  - No SS, no IL, no D.
+      //  - All interrupts enabled.
+      //  - Mode 0: EL0t.
+      .spsr = 0,
+
+      .usp = state.sp,
+  };
+
+  iframe.r[0] = state.arg1;
+  iframe.r[1] = state.arg2;
+
+  return iframe;
 }
 
 // Switch to user mode, set the user stack pointer to user_stack_top, put the svc stack pointer to
 // the top of the kernel stack.
-void arch_enter_uspace(iframe_t* iframe) {
+void arch_enter_uspace(const iframe_t* iframe) {
   DEBUG_ASSERT(arch_ints_disabled());
 
   Thread* ct = Thread::Current::Get();

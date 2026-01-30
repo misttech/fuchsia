@@ -210,9 +210,9 @@ extern "C" arch::AsmLabel riscv64_exception_entry;
 
 extern "C" void riscv64_context_switch(vaddr_t* old_sp, vaddr_t new_sp);
 #if __has_feature(shadow_call_stack)
-extern "C" void riscv64_uspace_entry(iframe_t* iframe, vaddr_t tp, vaddr_t shadow_call_base);
+extern "C" void riscv64_uspace_entry(const iframe_t* iframe, vaddr_t tp, vaddr_t shadow_call_base);
 #else
-extern "C" void riscv64_uspace_entry(iframe_t* iframe, vaddr_t tp);
+extern "C" void riscv64_uspace_entry(const iframe_t* iframe, vaddr_t tp);
 #endif
 extern "C" syscall_result riscv64_syscall_dispatcher(iframe_t* frame);
 
