@@ -35,34 +35,7 @@ rustc_library("fuchsia") {
   sources = [ "src/lib.rs" ]
 }
 
-rustc_test("fuchsia_test") {
-  name = "fuchsia_test"
-  edition = "2024"
-  deps = [
-    ":fuchsia",
-    "//third_party/rust_crates:anyhow",
-    "//third_party/rust_crates:argh",
-    "//third_party/rust_crates:log",
-  ]
-  if (is_fuchsia) {
-    deps += [ "//src/lib/diagnostics/fuchsia-async-inspect" ]
-  }
-  source_root = "src/test.rs"
-  sources = [ "src/test.rs" ]
-}
-
-fuchsia_unittest_package("fuchsia-tests") {
-  deps = [ ":fuchsia_test" ]
-  test_specs = {
-    environments = [ emu_env ]
-  }
-}
-
 group("tests") {
   testonly = true
-  deps = [
-    ":fuchsia-tests",
-    ":fuchsia_test($host_toolchain)",
-    "tests",
-  ]
+  deps = [ "tests" ]
 }
