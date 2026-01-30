@@ -96,6 +96,7 @@ struct NumericStateMetadata {
   Units units;
   std::optional<std::pair<T, T>> range;  // Inclusive range, [min, max]
   const char* trace_category_literal;
+  bool continuously_averaged = false;
 };
 
 // Records time series data of a numeric-valued state.
@@ -122,6 +123,8 @@ class NumericStateRecorder final {
     trace_id_ = other.trace_id_;
     trace_name_ref_ = other.trace_name_ref_;
     manager_ = other.manager_;
+    continuously_averaged_ = other.continuously_averaged_;
+    last_timestamp_ = other.last_timestamp_;
     moved_from_ = other.moved_from_;
     other.moved_from_ = true;
     return *this;
@@ -135,6 +138,8 @@ class NumericStateRecorder final {
         trace_id_(other.trace_id_),
         trace_name_ref_(other.trace_name_ref_),
         manager_(other.manager_),
+        continuously_averaged_(other.continuously_averaged_),
+        last_timestamp_(other.last_timestamp_),
         moved_from_(other.moved_from_) {
     other.moved_from_ = true;
   }
@@ -157,7 +162,8 @@ class NumericStateRecorder final {
                                            root_node_.CreateChild("history"), options.capacity))),
         trace_id_(TRACE_NONCE()),
         trace_name_ref_(trace_make_inline_string_ref(name_->c_str(), name_->length())),
-        manager_(&manager) {
+        manager_(&manager),
+        continuously_averaged_(metadata.continuously_averaged) {
     // In the eager case, record nominal reset info for symmetry with the lazy case.
     if (!options.lazy_record) {
       root_node_.RecordChild("reset_info", [](inspect::Node& node) {
@@ -170,6 +176,9 @@ class NumericStateRecorder final {
       metadata_node.RecordString("name", *name_);
       metadata_node.RecordString("type", "numeric");
       metadata_node.RecordString("units", metadata.units.ToString());
+      if (continuously_averaged_) {
+        metadata_node.RecordBool("continuously_averaged", true);
+      }
       if (metadata.range.has_value()) {
         metadata_node.RecordChild("range", [&](inspect::Node& range_node) {
           if constexpr (WidensToUint64<T>) {
@@ -200,6 +209,8 @@ class NumericStateRecorder final {
   trace_async_id_t trace_id_;
   trace_string_ref_t trace_name_ref_;
   StateRecorderManager* manager_;
+  bool continuously_averaged_;
+  std::optional<zx::time_boot> last_timestamp_;
   bool moved_from_ = false;
 };
 
@@ -274,11 +285,20 @@ void NumericStateRecorder<T>::Record(T value, std::optional<zx::time_boot> event
       static_assert(!IsRecordableNumericType<T>, "Unsupported type");
     }
 
-    trace_context_write_counter_event_record(
-        context, internal::boot_time_to_ticks(current_timestamp), &thread_ref, &category_ref,
-        &trace_name_ref_, trace_id_, &arg, 1);
+    // If we're dealing with a continuously-averaged value, we:
+    //  - Skip recording the first value, for which last_timestamp_ is undefined.
+    //  - Timestamp the value using last_timestamp_ instead of current_timestamp. If another value
+    //    is recorded after this one, then `value` will ultimately be graphed over the interval
+    //    [last_timestamp_, current_timestamp].
+    if (!continuously_averaged_ || last_timestamp_) {
+      auto timestamp = continuously_averaged_ ? *last_timestamp_ : current_timestamp;
+      trace_context_write_counter_event_record(context, internal::boot_time_to_ticks(timestamp),
+                                               &thread_ref, &category_ref, &trace_name_ref_,
+                                               trace_id_, &arg, 1);
+    }
     trace_release_context(context);
   }
+  last_timestamp_ = current_timestamp;
 }
 
 }  // namespace power_observability
