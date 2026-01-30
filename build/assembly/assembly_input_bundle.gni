@@ -19,13 +19,6 @@ import("//tools/cmc/build/restricted_features.gni")
 #
 # Parameters
 #
-#  bundle_name (optional; default: target_name)
-#    [string] A different name for the bundle, if not the name of the target.
-#
-#  bundle_dir (optional; default: target_out_dir)
-#    [path] A different directory to write the bundle into, if not to write it
-#    to '$target_out_dir/$bundle_name'.
-#
 #  base_packages [optional]
 #    [list, GN labels] A list of GN labels of fuchsia_package targets to
 #    include in the base package set.
@@ -35,7 +28,7 @@ import("//tools/cmc/build/restricted_features.gni")
 #    like:
 #      "no dependency provides the input <package_name>/package_manifest.json"
 #
-#   base_driver_packages (optional)
+#   base_driver_packages [optional]
 #     [list, GN scopes] A list of GN scopes that hold the driver packages to
 #     include in the base package set. Packages listed here should not be
 #     listed in the base_packages and will be included automatically in
@@ -244,15 +237,7 @@ import("//tools/cmc/build/restricted_features.gni")
 #  testonly, visibility
 template("assembly_input_bundle") {
   bundles_dir = target_out_dir
-  if (defined(invoker.bundles_dir)) {
-    bundles_dir = invoker.bundles_dir
-  }
-
   bundle_name = target_name
-  if (defined(invoker.bundle_name)) {
-    bundle_name = invoker.bundle_name
-  }
-
   assert(bundle_name != "resources",
          "The bundle name 'resources' is reserved for internal use")
 
