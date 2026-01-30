@@ -4,7 +4,7 @@
 
 pub mod args;
 mod common;
-mod subcommands;
+pub mod subcommands;
 
 use anyhow::{Context, Result};
 use args::{DriverCommand, DriverSubCommand};

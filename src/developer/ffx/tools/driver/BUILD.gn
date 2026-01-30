@@ -30,6 +30,7 @@ rustc_library("ffx_driver") {
     "//third_party/rust_crates:argh",
     "//third_party/rust_crates:async-trait",
     "//third_party/rust_crates:rustyline",
+    "//third_party/rust_crates:serde_json",
   ]
   sources = [
     "src/args.rs",

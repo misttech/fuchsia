@@ -3,7 +3,11 @@
 // found in the LICENSE file.
 use anyhow::{Context, Result};
 use component_debug::capability;
-use ffx_writer::SimpleWriter;
+use driver_connector::DriverConnector as DriverConnectorTrait;
+use driver_tools::args::DriverSubCommand;
+use driver_tools::subcommands::host::args::{HostCommand, HostSubcommand};
+use driver_tools::subcommands::host::subcommands::list::get_driver_hosts;
+use ffx_writer::{MachineWriter, ToolIO};
 use fho::{FfxMain, FfxTool};
 use fidl::endpoints::{DiscoverableProtocolMarker, ProtocolMarker};
 use target_holders::RemoteControlProxyHolder;
@@ -195,9 +199,30 @@ pub struct DriverTool {
 
 #[async_trait::async_trait(?Send)]
 impl FfxMain for DriverTool {
-    type Writer = SimpleWriter;
+    type Writer = MachineWriter<serde_json::Value>;
 
     async fn main(self, mut writer: Self::Writer) -> fho::Result<()> {
+        let is_machine = writer.is_machine();
+        let should_use_machine_for_list = if let args::DriverCommand {
+            subcommand: DriverSubCommand::Host(HostCommand { subcommand: HostSubcommand::List(_) }),
+            ..
+        } = &self.cmd
+        {
+            is_machine
+        } else {
+            false
+        };
+
+        if should_use_machine_for_list {
+            let select = self.cmd.select;
+            let connector = DriverConnector::new(self.remote_control);
+            let proxy = connector.get_driver_development_proxy(select).await?;
+            let hosts = get_driver_hosts(&proxy).await?;
+            let value = serde_json::to_value(&hosts).map_err(|e| anyhow::anyhow!(e))?;
+            writer.machine(&value).map_err(|e| anyhow::anyhow!(e))?;
+            return Ok(());
+        }
+
         driver_tools::driver(
             self.cmd.into(),
             DriverConnector::new(self.remote_control),

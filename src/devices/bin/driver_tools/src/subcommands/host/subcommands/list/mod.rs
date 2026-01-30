@@ -7,23 +7,29 @@ pub mod args;
 use anyhow::Result;
 use args::ListCommand;
 use fidl_fuchsia_driver_development as fdd;
+use serde::Serialize;
 use std::collections::{BTreeMap, BTreeSet};
 use std::io::Write;
 
-pub async fn list(
-    _cmd: ListCommand,
-    w: &mut dyn Write,
-    driver_development_proxy: fdd::ManagerProxy,
-) -> Result<()> {
+#[derive(Serialize)]
+pub struct DriverHost {
+    pub koid: u64,
+    pub name: Option<String>,
+    pub drivers: Vec<String>,
+}
+
+pub async fn get_driver_hosts(
+    driver_development_proxy: &fdd::ManagerProxy,
+) -> Result<Vec<DriverHost>> {
     let device_info = fuchsia_driver_dev::get_device_info(
-        &driver_development_proxy,
+        driver_development_proxy,
         &[],
         /* exact_match= */ false,
     )
     .await?;
 
     let driver_host_info =
-        fuchsia_driver_dev::get_driver_host_info(&driver_development_proxy).await?;
+        fuchsia_driver_dev::get_driver_host_info(driver_development_proxy).await?;
 
     let mut driver_host_drivers = BTreeMap::new();
 
@@ -46,19 +52,38 @@ pub async fn list(
         }
     }
 
+    let mut result = Vec::new();
     for (koid, drivers) in driver_host_drivers {
+        result.push(DriverHost {
+            koid,
+            name: driver_hosts_names.get(&koid).cloned(),
+            drivers: drivers.into_iter().collect(),
+        });
+    }
+
+    Ok(result)
+}
+
+pub async fn list(
+    _cmd: ListCommand,
+    w: &mut dyn Write,
+    driver_development_proxy: fdd::ManagerProxy,
+) -> Result<()> {
+    let hosts = get_driver_hosts(&driver_development_proxy).await?;
+
+    for host in hosts {
         if termion::is_tty(&std::io::stdout()) {
-            writeln!(w, "Driver Host: {}", koid)?;
-            if let Some(name) = driver_hosts_names.get(&koid) {
+            writeln!(w, "Driver Host: {}", host.koid)?;
+            if let Some(name) = &host.name {
                 writeln!(w, "Name: {}", name)?;
             }
-            for driver in drivers {
+            for driver in &host.drivers {
                 writeln!(w, "{:>4}{}", "", driver)?;
             }
             writeln!(w, "")?;
         } else {
-            for driver in drivers {
-                writeln!(w, "Driver Host: {:<6}{}", koid, driver)?;
+            for driver in &host.drivers {
+                writeln!(w, "Driver Host: {:<6}{}", host.koid, driver)?;
             }
         }
     }
