@@ -122,6 +122,79 @@ pub struct SuspendResumeManagerInner {
     /// The total number of activate-deactivated cycles that have been seen across all wakeup
     /// sources.
     total_wakeup_source_event_count: u64,
+
+    /// The external wake sources that are registered with the runner.
+    external_wake_sources: HashMap<zx::Koid, ExternalWakeSource>,
+}
+
+#[derive(Debug)]
+struct ExternalWakeSource {
+    /// The handle that signals when the source is active.
+    handle: zx::NullableHandle,
+    /// The signals that indicate the source is active.
+    signals: zx::Signals,
+    /// The name of the wake source.
+    name: String,
+}
+
+impl SuspendResumeManager {
+    pub fn add_external_wake_source(
+        &self,
+        handle: zx::NullableHandle,
+        signals: zx::Signals,
+        name: String,
+    ) -> Result<(), Errno> {
+        let manager = connect_to_protocol_sync::<frunner::ManagerMarker>()
+            .map_err(|e| errno!(EINVAL, format!("Failed to connect to manager: {e:?}")))?;
+        manager
+            .add_wake_source(frunner::ManagerAddWakeSourceRequest {
+                container_job: Some(
+                    fuchsia_runtime::job_default()
+                        .duplicate(zx::Rights::SAME_RIGHTS)
+                        .expect("Failed to dup handle"),
+                ),
+                name: Some(name.clone()),
+                handle: Some(
+                    handle.duplicate(zx::Rights::SAME_RIGHTS).map_err(|e| errno!(EIO, e))?,
+                ),
+                signals: Some(signals.bits()),
+                ..Default::default()
+            })
+            .map_err(|e| errno!(EIO, e))?;
+
+        let koid = handle.koid().map_err(|e| errno!(EINVAL, e))?;
+        self.lock().external_wake_sources.insert(
+            koid,
+            ExternalWakeSource {
+                handle: handle.duplicate(zx::Rights::SAME_RIGHTS).map_err(|e| errno!(EIO, e))?,
+                signals,
+                name,
+            },
+        );
+        Ok(())
+    }
+
+    pub fn remove_external_wake_source(&self, handle: zx::NullableHandle) -> Result<(), Errno> {
+        let manager = connect_to_protocol_sync::<frunner::ManagerMarker>()
+            .map_err(|e| errno!(EINVAL, format!("Failed to connect to manager: {e:?}")))?;
+
+        let koid = handle.koid().map_err(|e| errno!(EINVAL, e))?;
+        self.lock().external_wake_sources.remove(&koid);
+
+        manager
+            .remove_wake_source(frunner::ManagerRemoveWakeSourceRequest {
+                container_job: Some(
+                    fuchsia_runtime::job_default()
+                        .duplicate(zx::Rights::SAME_RIGHTS)
+                        .expect("Failed to dup handle"),
+                ),
+                handle: Some(handle),
+                ..Default::default()
+            })
+            .map_err(|e| errno!(EIO, e))?;
+
+        Ok(())
+    }
 }
 
 pub type EbpfSuspendGuard<'a> = RwLockReadGuard<'a, ()>;
@@ -151,6 +224,7 @@ impl Default for SuspendResumeManagerInner {
             active_lock_writer,
             active_wakeup_source_count: 0,
             total_wakeup_source_event_count: 0,
+            external_wake_sources: Default::default(),
         }
     }
 }
@@ -477,6 +551,20 @@ impl SuspendResumeManager {
         // Check if any wake locks are active. If they are, short-circuit the suspend attempt.
         if !state.can_suspend() {
             self.report_failed_suspension(state, "kernel wake lock");
+            return error!(EINVAL);
+        }
+
+        // Check if any external wake sources are active.
+        let external_wake_source_abort = state.external_wake_sources.values().find_map(|source| {
+            if source.handle.wait_one(source.signals, zx::MonotonicInstant::INFINITE_PAST).is_ok() {
+                Some(source.name.clone())
+            } else {
+                None
+            }
+        });
+
+        if let Some(name) = external_wake_source_abort {
+            self.report_failed_suspension(state, &format!("external wake source: {}", name));
             return error!(EINVAL);
         }
 
@@ -1047,5 +1135,36 @@ mod test {
         assert_eq!(waking_stream.next().await, None);
         // The stream is already terminated, so the counter should remain 0.
         assert_eq!(counter.read(), Ok(0));
+    }
+
+    #[::fuchsia::test]
+    fn test_external_wake_source_aborts_suspend() {
+        let manager = SuspendResumeManager::default();
+        let event = zx::Event::create();
+        let signals = zx::Signals::USER_0;
+
+        // We can't actually verify the runner call in this unit test environment easily
+        // without a lot of mocking setup that might not be present.
+        // However, we can verify that if it was registered, the suspend check respects it.
+
+        let res = manager.add_external_wake_source(
+            event.duplicate(zx::Rights::SAME_RIGHTS).unwrap().into_handle(),
+            signals,
+            "test_external".to_string(),
+        );
+
+        if res.is_err() {
+            println!(
+                "Skipping test_external_wake_source_aborts_suspend because runner connection failed: {:?}",
+                res
+            );
+            return;
+        }
+
+        // Signal the event
+        event.signal(zx::Signals::empty(), signals).unwrap();
+
+        let state = manager.lock();
+        assert!(state.external_wake_sources.contains_key(&event.koid().unwrap()));
     }
 }

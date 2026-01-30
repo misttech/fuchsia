@@ -98,7 +98,10 @@ async fn register_datachannel_devices(kernel: Arc<Kernel>) {
             name.as_bytes().into(),
             device_class,
             build_device_directory,
-            DataChannelDevice::new(data_channel_service_proxy),
+            DataChannelDevice::new(
+                data_channel_service_proxy,
+                current_task.kernel().suspend_resume_manager.clone(),
+            ),
         ) {
             log_warn!("Failed to register datachannel device: {:?}", e);
         }

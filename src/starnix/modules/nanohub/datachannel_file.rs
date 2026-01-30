@@ -3,7 +3,9 @@
 // found in the LICENSE file.
 
 use fidl::endpoints::create_sync_proxy;
+use fidl_fuchsia_hardware_google_nanohub as fnanohub;
 use starnix_core::device::DeviceOps;
+use starnix_core::power::SuspendResumeManagerHandle;
 use starnix_core::task::{
     CurrentTask, EventHandler, SignalHandler, SignalHandlerInner, WaitCanceler, Waiter,
 };
@@ -18,24 +20,19 @@ use starnix_uapi::open_flags::OpenFlags;
 use starnix_uapi::vfs::FdEvents;
 use std::sync::Arc;
 use zx::{HandleBased, Rights, WaitResult};
-use {fidl_fuchsia_hardware_google_nanohub as fnanohub, fidl_fuchsia_starnix_runner as frunner};
-
-use fuchsia_runtime;
 
 #[derive(Clone)]
 pub struct DataChannelDevice {
-    manager: Arc<frunner::ManagerSynchronousProxy>,
+    suspend_manager: SuspendResumeManagerHandle,
     service_proxy: Arc<fnanohub::StarnixDataChannelServiceProxy>,
 }
 
 impl DataChannelDevice {
-    pub fn new(service_proxy: fnanohub::StarnixDataChannelServiceProxy) -> Self {
-        let manager = Arc::new(
-            fuchsia_component::client::connect_to_protocol_sync::<frunner::ManagerMarker>()
-                .expect("failed to create runner proxy"),
-        );
-
-        DataChannelDevice { manager, service_proxy: Arc::new(service_proxy) }
+    pub fn new(
+        service_proxy: fnanohub::StarnixDataChannelServiceProxy,
+        suspend_manager: SuspendResumeManagerHandle,
+    ) -> Self {
+        DataChannelDevice { suspend_manager, service_proxy: Arc::new(service_proxy) }
     }
 }
 
@@ -53,12 +50,12 @@ impl DeviceOps for DataChannelDevice {
             .connect_to_waitable_sync()
             .map_err(|_| errno!(EIO, "Failed to get unbound data channel device"))?;
 
-        Ok(Box::new(DataChannelFile::new(Arc::new(unbound_proxy), self.manager.clone())?))
+        Ok(Box::new(DataChannelFile::new(Arc::new(unbound_proxy), self.suspend_manager.clone())?))
     }
 }
 
 pub struct DataChannelFile {
-    manager: Arc<frunner::ManagerSynchronousProxy>,
+    suspend_manager: SuspendResumeManagerHandle,
     waitable_client: Arc<fnanohub::WaitableDataChannelSynchronousProxy>,
     // Event used to determine when data is available to read or write.
     event: Arc<zx::Event>,
@@ -67,30 +64,24 @@ pub struct DataChannelFile {
 impl DataChannelFile {
     pub fn new(
         unbound_waitable_client: Arc<fnanohub::UnboundWaitableDataChannelSynchronousProxy>,
-        manager: Arc<frunner::ManagerSynchronousProxy>,
+        suspend_manager: SuspendResumeManagerHandle,
     ) -> Result<Self, Errno> {
         let event = zx::Event::create();
-        let event_dup = event.duplicate_handle(Rights::SAME_RIGHTS).map_err(|e| {
+        let event_dup = event.duplicate(Rights::SAME_RIGHTS).map_err(|e: zx::Status| {
             log_error!("Failed to duplicate event handle: {:?}", e);
             Errno::new(EIO)
         })?;
 
-        let wake_source_event = event.duplicate_handle(Rights::SAME_RIGHTS).map_err(|e| {
+        let wake_source_event = event.duplicate(Rights::SAME_RIGHTS).map_err(|e: zx::Status| {
             log_error!("Failed to duplicate event handle for wake source: {:?}", e);
             Errno::new(EIO)
         })?;
-        manager
-            .add_wake_source(frunner::ManagerAddWakeSourceRequest {
-                container_job: Some(
-                    fuchsia_runtime::job_default()
-                        .duplicate(Rights::SAME_RIGHTS)
-                        .expect("Failed to dup handle"),
-                ),
-                name: Some("nanohub-datachannel".to_string()),
-                handle: Some(wake_source_event.into_handle()),
-                signals: Some((zx::Signals::from_bits_truncate(fnanohub::SIGNAL_WAKELOCK)).bits()),
-                ..Default::default()
-            })
+        suspend_manager
+            .add_external_wake_source(
+                wake_source_event.into_handle(),
+                zx::Signals::from_bits_truncate(fnanohub::SIGNAL_WAKELOCK),
+                "nanohub-datachannel".to_string(),
+            )
             .map_err(|e| errno!(EIO, e))?;
 
         let (data_channel_proxy, server_end) =
@@ -108,7 +99,7 @@ impl DataChannelFile {
             .map_err(|e| errno!(EIO, e))?;
 
         Ok(DataChannelFile {
-            manager,
+            suspend_manager,
             waitable_client: Arc::new(data_channel_proxy),
             event: Arc::new(event),
         })
@@ -125,20 +116,9 @@ impl FileOps for DataChannelFile {
         _file: &FileObjectState,
         _current_task: &CurrentTask,
     ) {
-        let event =
-            self.event.duplicate_handle(Rights::SAME_RIGHTS).expect("Failed to duplicate event");
-        let _ = self
-            .manager
-            .remove_wake_source(frunner::ManagerRemoveWakeSourceRequest {
-                container_job: Some(
-                    fuchsia_runtime::job_default()
-                        .duplicate(Rights::SAME_RIGHTS)
-                        .expect("Failed to dup handle"),
-                ),
-                handle: Some(event.into_handle()),
-                ..Default::default()
-            })
-            .map_err(|_| {
+        let event = self.event.duplicate(Rights::SAME_RIGHTS).expect("Failed to duplicate event");
+        let _ =
+            self.suspend_manager.remove_external_wake_source(event.into_handle()).map_err(|_| {
                 log_error!("Failed to remove wake source");
             });
     }
