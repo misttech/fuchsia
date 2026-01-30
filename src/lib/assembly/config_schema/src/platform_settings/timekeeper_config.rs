@@ -78,7 +78,7 @@ impl Default for TimekeeperConfig {
             utc_max_allowed_delta_future_sec: 0,
             power_topology_integration_enabled: false,
             use_connectivity: false,
-            min_utc_reference_to_backstop_diff_minutes: 60,
+            min_utc_reference_to_backstop_diff_minutes: 20,
         }
     }
 }
