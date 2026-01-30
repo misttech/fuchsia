@@ -228,7 +228,7 @@ impl FileSystem {
         create_fn: C,
     ) -> Result<FsNodeHandle, Errno>
     where
-        V: FnOnce(&FsNodeHandle) -> bool,
+        V: Fn(&FsNodeHandle) -> bool,
         C: FnOnce() -> Result<FsNodeHandle, Errno>,
     {
         self.node_cache.get_and_validate_or_create_node(node_key, validate_fn, create_fn)
