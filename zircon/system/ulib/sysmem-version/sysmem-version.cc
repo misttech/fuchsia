@@ -2,21 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#include <zircon/availability.h>
-
-// This file is always in the GN sources list, but its contents should not be
-// used for API levels other than HEAD where images2 and sysmem2 are supported.
-
-#if FUCHSIA_API_LEVEL_LESS_THAN(19)
-// Enable a subset of functionality. See https://fxbug.dev/42085119.
-#define __ALLOW_IMAGES2_AND_SYSMEM2_TYPES_ONLY__
-#endif
-
 #include "lib/sysmem-version/sysmem-version.h"
-
-#if defined(__ALLOW_IMAGES2_AND_SYSMEM2_TYPES_ONLY__)
-#undef __ALLOW_IMAGES2_AND_SYSMEM2_TYPES_ONLY__
-#endif
 
 #include <fidl/fuchsia.images2/cpp/fidl.h>
 #include <fidl/fuchsia.sysmem/cpp/fidl.h>
@@ -24,6 +10,7 @@
 #include <inttypes.h>
 #include <lib/fidl/cpp/wire/traits.h>
 #include <zircon/assert.h>
+#include <zircon/availability.h>
 
 #include <map>
 #include <set>
@@ -41,11 +28,6 @@ using safemath::CheckMul;
 using safemath::CheckSub;
 
 namespace sysmem {
-
-#if FUCHSIA_API_LEVEL_LESS_THAN(19)
-// Normally, this is declared by the header before use below.
-fuchsia_images2::ColorSpace V2CopyFromV1ColorSpace(const fuchsia_sysmem::ColorSpace& v1);
-#endif
 
 namespace {
 

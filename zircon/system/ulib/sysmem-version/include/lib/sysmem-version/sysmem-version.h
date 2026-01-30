@@ -14,13 +14,6 @@
 
 #include <type_traits>
 
-// While most of the code in this file is only available at HEAD, a subset is
-// available for a specific use case when
-// __ALLOW_IMAGES2_AND_SYSMEM2_TYPES_ONLY__ is defined. See https://fxbug.dev/42085119.
-#if (FUCHSIA_API_LEVEL_LESS_THAN(19)) && !defined(__ALLOW_IMAGES2_AND_SYSMEM2_TYPES_ONLY__)
-#error Should only be included for API level >= 19 where fuchsia.images2 and fuchsia.sysmem2 are supported.
-#endif
-
 // In sysmem V1, there's a PixelFormat FIDL struct that includes both pixel_format and
 // pixel_format_modifier, used as a self-contained structure / sub-structure in various places in
 // FIDL and C++ code. While that's sensible from a data organization point of view and handy for
@@ -91,7 +84,7 @@ template <typename T>
 struct HasOperatorUInt32<
     T,
     std::enable_if_t<std::is_same_v<uint32_t, decltype((std::declval<T>().operator uint32_t()))>>>
-    : std::true_type{};
+    : std::true_type {};
 
 static_assert(!HasOperatorUInt32<fuchsia_sysmem::PixelFormatType>::value);
 static_assert(HasOperatorUInt32<fuchsia_images2::PixelFormat>::value);
@@ -103,7 +96,7 @@ template <typename T>
 struct HasOperatorUInt64<
     T,
     std::enable_if_t<std::is_same_v<uint64_t, decltype((std::declval<T>().operator uint64_t()))>>>
-    : std::true_type{};
+    : std::true_type {};
 
 static_assert(!HasOperatorUInt64<fuchsia_sysmem::PixelFormatType>::value);
 static_assert(!HasOperatorUInt64<fuchsia_images2::PixelFormat>::value);
@@ -117,12 +110,12 @@ struct IsFidlEnum : std::false_type {};
 template <typename T>
 struct IsFidlEnum<
     T, typename std::enable_if<fidl::IsFidlType<T>::value && std::is_enum<T>::value>::type>
-    : std::true_type{};
+    : std::true_type {};
 template <typename T>
 struct IsFidlEnum<T, typename std::enable_if<fidl::IsFidlType<T>::value &&
                                              (internal::HasOperatorUInt32<T>::value ||
                                               internal::HasOperatorUInt64<T>::value)>::type>
-    : std::true_type{};
+    : std::true_type {};
 
 enum TestEnum {
   kTestEnumZero,

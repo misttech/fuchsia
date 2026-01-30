@@ -5,13 +5,6 @@
 #ifndef LIB_IMAGE_FORMAT_IMAGE_FORMAT_H_
 #define LIB_IMAGE_FORMAT_IMAGE_FORMAT_H_
 
-#include <zircon/availability.h>
-
-// Most of the functions in this file are only available at HEAD because they
-// depend on fuchsia.images2 and fuchsia.sysmem2 which are currently
-// `added=HEAD`. See https://fxbug.dev/42085119.
-#if FUCHSIA_API_LEVEL_AT_LEAST(19)
-
 #include <fidl/fuchsia.images2/cpp/fidl.h>
 #include <fidl/fuchsia.sysmem/cpp/fidl.h>
 #include <fidl/fuchsia.sysmem2/cpp/fidl.h>
@@ -20,6 +13,7 @@
 #endif
 #include <lib/fpromise/result.h>
 #include <lib/sysmem-version/sysmem-version.h>
+#include <zircon/availability.h>
 
 // Forward-declared; defined in <lib/zbi-format/graphics.h>.
 using zbi_pixel_format_t = uint32_t;
@@ -132,30 +126,6 @@ bool ImageFormatPlaneRowBytes(const fuchsia_sysmem::wire::ImageFormat2& image_fo
 bool ImageFormatCompatibleWithProtectedMemory(const PixelFormatAndModifier& pixel_format);
 bool ImageFormatCompatibleWithProtectedMemory(
     const fuchsia_sysmem::wire::PixelFormat& pixel_format);
-
-#else  // FUCHSIA_API_LEVEL_AT_LEAST(19)
-
-// A small subset of the functions are exposed for use by zircon_platform_sysmem_connection.cc when
-// __ALLOW_IMAGES2_AND_SYSMEM2_TYPES_ONLY__ is defined. See https://fxbug.dev/42085119.
-#if defined(__ALLOW_IMAGES2_AND_SYSMEM2_TYPES_ONLY__)
-#include <fidl/fuchsia.sysmem/cpp/fidl.h>
-#include <lib/fpromise/result.h>
-
-// The following functions are  used by zircon_platform_sysmem_connection.cc and thus must be
-// exposed at all supported API levels.
-fpromise::result<fuchsia_sysmem::wire::ImageFormat2> ImageConstraintsToFormat(
-    const fuchsia_sysmem::wire::ImageFormatConstraints& constraints, uint32_t width,
-    uint32_t height);
-bool ImageFormatPlaneByteOffset(const fuchsia_sysmem::wire::ImageFormat2& image_format,
-                                uint32_t plane, uint64_t* offset_out);
-bool ImageFormatPlaneRowBytes(const fuchsia_sysmem::wire::ImageFormat2& image_format,
-                              uint32_t plane, uint32_t* row_bytes_out);
-
-#else
-#error Should only be included for API level HEAD where fuchsia.images2 and fuchsia.sysmem2 are supported.
-#endif  // defined(__ALLOW_IMAGES2_AND_SYSMEM2_TYPES_ONLY__)
-
-#endif  // FUCHSIA_API_LEVEL_AT_LEAST(19)
 
 #if FUCHSIA_API_LEVEL_AT_LEAST(30)
 // This intentionally does not define how planes are indexed or how they're counted, only whether a

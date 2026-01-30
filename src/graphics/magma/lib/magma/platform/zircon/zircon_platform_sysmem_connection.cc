@@ -5,6 +5,7 @@
 #include <fidl/fuchsia.images2/cpp/wire.h>
 #include <fidl/fuchsia.sysmem2/cpp/wire.h>
 #include <lib/fpromise/result.h>
+#include <lib/image-format/image_format.h>
 #include <lib/magma/magma_common_defs.h>
 #include <lib/magma/platform/platform_sysmem_connection.h>
 #include <lib/magma/platform/platform_thread.h>
@@ -16,20 +17,6 @@
 #include <limits>
 #include <unordered_set>
 #include <vector>
-
-// The GetPlanes() implementation relies on non-protocol types in fuchsia.images2 and
-// fuchsia.sysmem2. Allow use of these as an exception to general availability
-// of the full protocols. See https://fxbug.dev/42085119.
-#if FUCHSIA_API_LEVEL_LESS_THAN(19)
-// Enable a subset of functionality in image_format.h.
-#define __ALLOW_IMAGES2_AND_SYSMEM2_TYPES_ONLY__
-#endif
-
-#include <lib/image-format/image_format.h>
-
-#if defined(__ALLOW_IMAGES2_AND_SYSMEM2_TYPES_ONLY__)
-#undef __ALLOW_IMAGES2_AND_SYSMEM2_TYPES_ONLY__
-#endif
 
 using magma::Status;
 

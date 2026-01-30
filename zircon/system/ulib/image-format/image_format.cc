@@ -2,21 +2,10 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#include <zircon/availability.h>
-
-// This file is always in the GN sources list, but its contents should not be
-// used for API levels other than HEAD where images2 and sysmem2 are supported.
-
-#if FUCHSIA_API_LEVEL_LESS_THAN(19)
-// Enable a subset of functionality. See https://fxbug.dev/42085119.
-// It cannot be undefined because other Fuchsia headers may indirectly include image_format.h.
-#define __ALLOW_IMAGES2_AND_SYSMEM2_TYPES_ONLY__
-#endif
+#include "zircon/system/ulib/image-format/include/lib/image-format/image_format.h"
 
 #include <fidl/fuchsia.images2/cpp/fidl.h>
 #include <fidl/fuchsia.sysmem2/cpp/fidl.h>
-
-#include "lib/image-format/image_format.h"
 
 #if defined(FIDL_ALLOW_DEPRECATED_C_BINDINGS)
 #include <fuchsia/sysmem/c/fidl.h>
@@ -25,6 +14,7 @@
 #include <lib/sysmem-version/sysmem-version.h>
 #include <lib/zbi-format/graphics.h>
 #include <zircon/assert.h>
+#include <zircon/availability.h>
 
 #include <algorithm>
 #include <map>
@@ -37,12 +27,6 @@ using safemath::CheckAdd;
 using safemath::CheckDiv;
 using safemath::CheckMul;
 using safemath::CheckSub;
-
-#if FUCHSIA_API_LEVEL_LESS_THAN(19)
-// This is used by the ImageFormatSet implementations before it is defined.
-// Normally, it is declared by the header.
-uint32_t ImageFormatStrideBytesPerWidthPixel(const PixelFormatAndModifier& pixel_format);
-#endif
 
 namespace {
 
