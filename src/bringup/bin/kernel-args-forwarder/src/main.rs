@@ -2,28 +2,20 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use anyhow::{Result, anyhow};
+use anyhow::Result;
 use fuchsia_component::client;
+use fuchsia_component::runtime::{Data, DataValue, Dictionary, DictionaryRouterReceiver};
 use fuchsia_component::server::ServiceFs;
-use log::warn;
+use futures::{FutureExt, StreamExt};
 use {
     fidl_fuchsia_boot as fboot, fidl_fuchsia_component_decl as fdecl,
-    fidl_fuchsia_component_sandbox as fsandbox,
+    fidl_fuchsia_component_runtime as fruntime,
 };
-
-use futures::prelude::*;
 
 async fn initialize_dictionary(
     boot_args: fboot::ArgumentsProxy,
-    store: &fsandbox::CapabilityStoreProxy,
-    id_gen: &sandbox::CapabilityIdGenerator,
-) -> Result<u64> {
-    let dict_id = id_gen.next();
-    store
-        .dictionary_create(dict_id)
-        .await?
-        .map_err(|e| anyhow!("failed dictionary_create: {e:?}"))?;
-
+    capabilities_proxy: fruntime::CapabilitiesProxy,
+) -> Result<Dictionary> {
     // These keys must be secure. Changes should be reviewed with security.
     let bool_keys = vec![
         fboot::BoolPair { key: "astro.sysconfig.abr-wear-leveling".to_string(), defaultval: false },
@@ -53,79 +45,55 @@ async fn initialize_dictionary(
     let bool_values = boot_args.get_bools(&bool_keys).await?;
     let string_values = boot_args.get_strings(&string_keys).await?;
 
+    let dictionary = Dictionary::new_with_proxy(capabilities_proxy.clone()).await;
     for (key, value) in std::iter::zip(bool_keys, bool_values) {
-        let config_id = id_gen.next();
         let config = fdecl::ConfigValue::Single(fdecl::ConfigSingleValue::Bool(value));
-        let config = fsandbox::Capability::Data(fsandbox::Data::Bytes(fidl::persist(&config)?));
-        store.import(config_id, config).await?.map_err(|e| anyhow!("failed import: {e:?}"))?;
-        store
-            .dictionary_insert(
-                dict_id,
-                &fsandbox::DictionaryItem { key: format!("fuchsia.{}", key.key), value: config_id },
-            )
-            .await?
-            .map_err(|e| anyhow!("failed dictionary_insert: {e:?}"))?;
+        let config = Data::new_with_proxy(
+            capabilities_proxy.clone(),
+            DataValue::Bytes(fidl::persist(&config)?),
+        )
+        .await;
+        dictionary.insert(&format!("fuchsia.{}", key.key), config).await;
     }
 
     for (key, value) in std::iter::zip(string_keys, string_values) {
         let value = value.unwrap_or_else(|| "".to_string());
-        let config_id = id_gen.next();
         let config = fdecl::ConfigValue::Single(fdecl::ConfigSingleValue::String(value));
-        let config = fsandbox::Capability::Data(fsandbox::Data::Bytes(fidl::persist(&config)?));
-        store.import(config_id, config).await?.map_err(|e| anyhow!("failed import: {e:?}"))?;
-        store
-            .dictionary_insert(
-                dict_id,
-                &fsandbox::DictionaryItem { key: format!("fuchsia.{}", key), value: config_id },
-            )
-            .await?
-            .map_err(|e| anyhow!("failed dictionary_insert: {e:?}"))?;
+        let config = Data::new_with_proxy(
+            capabilities_proxy.clone(),
+            DataValue::Bytes(fidl::persist(&config)?),
+        )
+        .await;
+        dictionary.insert(&format!("fuchsia.{}", key), config).await;
     }
 
-    Ok(dict_id)
+    Ok(dictionary)
 }
 
 enum IncomingRequest {
-    Router(fsandbox::DictionaryRouterRequestStream),
+    Router(fruntime::DictionaryRouterRequestStream),
 }
 
 #[fuchsia::main(logging = true)]
 async fn main() -> Result<()> {
-    let store = client::connect_to_protocol::<fsandbox::CapabilityStoreMarker>()?;
-    let id_gen = sandbox::CapabilityIdGenerator::new();
-
     let boot_args = client::connect_to_protocol::<fboot::ArgumentsMarker>()?;
-    let dict_id = initialize_dictionary(boot_args, &store, &id_gen).await?;
+    let capabilities_proxy = client::connect_to_protocol::<fruntime::CapabilitiesMarker>()?;
+    let dictionary = initialize_dictionary(boot_args, capabilities_proxy).await?;
 
     let mut fs = ServiceFs::new_local();
     fs.dir("svc").add_fidl_service(IncomingRequest::Router);
     fs.take_and_serve_directory_handle()?;
     fs.for_each_concurrent(None, move |request: IncomingRequest| {
-        let store = store.clone();
-        let id_gen = id_gen.clone();
+        let dictionary = dictionary.clone();
         async move {
             match request {
-                IncomingRequest::Router(mut stream) => {
-                    while let Ok(Some(request)) = stream.try_next().await {
-                        match request {
-                            fsandbox::DictionaryRouterRequest::Route { payload: _, responder } => {
-                                let dup_dict_id = id_gen.next();
-                                store.duplicate(dict_id, dup_dict_id).await.unwrap().unwrap();
-                                let capability = store.export(dup_dict_id).await.unwrap().unwrap();
-                                let fsandbox::Capability::Dictionary(dict) = capability else {
-                                    panic!("capability was not a dictionary? {capability:?}");
-                                };
-                                let _ = responder.send(Ok(
-                                    fsandbox::DictionaryRouterRouteResponse::Dictionary(dict),
-                                ));
-                            }
-                            fsandbox::DictionaryRouterRequest::_UnknownMethod {
-                                ordinal, ..
-                            } => {
-                                warn!(ordinal:%; "Unknown DictionaryRouter request");
-                            }
-                        }
-                    }
+                IncomingRequest::Router(stream) => {
+                    let dictionary = dictionary.clone();
+                    DictionaryRouterReceiver::from(stream)
+                        .handle_with(move |_request, _instance_token| {
+                            futures::future::ready(Ok(Some(dictionary.clone()))).boxed()
+                        })
+                        .await;
                 }
             }
         }
@@ -143,15 +111,13 @@ mod tests {
 
     #[fuchsia::test]
     async fn initialize_dictionary_test() {
-        let (store_proxy, store_server) =
-            fidl::endpoints::create_proxy::<fsandbox::CapabilityStoreMarker>();
-        let (boot_args_proxy, boot_args_server) =
-            fidl::endpoints::create_proxy::<fboot::ArgumentsMarker>();
-        let id_gen = sandbox::CapabilityIdGenerator::new();
+        let (capabilities_proxy, mut capabilities_stream) =
+            fidl::endpoints::create_proxy_and_stream::<fruntime::CapabilitiesMarker>();
+        let (boot_args_proxy, mut boot_args_stream) =
+            fidl::endpoints::create_proxy_and_stream::<fboot::ArgumentsMarker>();
 
         // Spawn boot args server
         fuchsia_async::Task::local(async move {
-            let mut boot_args_stream = boot_args_server.into_stream();
             while let Some(Ok(request)) = boot_args_stream.next().await {
                 match request {
                     fboot::ArgumentsRequest::GetBools { keys, responder } => {
@@ -179,31 +145,29 @@ mod tests {
         let insert_count = Rc::new(Cell::new(0));
         let insert_count_clone = insert_count.clone();
 
-        // Spawn store server
+        // Spawn capabilities server
         fuchsia_async::Task::local(async move {
-            let mut store_stream = store_server.into_stream();
-            while let Some(Ok(request)) = store_stream.next().await {
+            while let Some(Ok(request)) = capabilities_stream.next().await {
                 match request {
-                    fsandbox::CapabilityStoreRequest::Import { responder, .. } => {
+                    fruntime::CapabilitiesRequest::DictionaryCreate { responder, .. } => {
                         responder.send(Ok(())).unwrap();
                     }
-                    fsandbox::CapabilityStoreRequest::DictionaryInsert { responder, .. } => {
+                    fruntime::CapabilitiesRequest::DataCreate { responder, .. } => {
+                        responder.send(Ok(())).unwrap();
+                    }
+                    fruntime::CapabilitiesRequest::DictionaryInsert { responder, .. } => {
                         insert_count_clone.update(|x| x + 1);
                         responder.send(Ok(())).unwrap();
                     }
-                    fsandbox::CapabilityStoreRequest::DictionaryCreate { responder, .. } => {
-                        responder.send(Ok(())).unwrap();
-                    }
                     _ => {
-                        panic!("unexpected message to capability store");
+                        panic!("unexpected message to capabilities");
                     }
                 }
             }
         })
         .detach();
 
-        let dict_id = initialize_dictionary(boot_args_proxy, &store_proxy, &id_gen).await.unwrap();
-        assert_eq!(dict_id, 0);
+        let _dictionary = initialize_dictionary(boot_args_proxy, capabilities_proxy).await.unwrap();
         assert_eq!(insert_count.get(), 21);
     }
 }
