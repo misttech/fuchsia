@@ -33,11 +33,10 @@ using Thread = ::__pthread;
 // are exiting but haven't been joined.  This lock is always held as briefly as
 // possible, only while manipulating the _list itself_.  Any thread exit, join,
 // or detach needs this lock, not only something costlier like thread creation.
-// These must be accessed from ThreadExitFinish(), which is in a basic_abi
-// hermetic_source_set(); so they need asm linkage names.
+// The lock must be accessed from ThreadExitFinish(), which is in a basic_abi
+// hermetic_source_set(); so it needs an asm linkage name.
 extern Mutex gAllThreadsLock LIBC_ASM_LINKAGE_DECLARE(gAllThreadsLock) __LOCAL;
-extern Thread* gAllThreads LIBC_ASM_LINKAGE_DECLARE(gAllThreads) __LOCAL
-    __TA_GUARDED(gAllThreadsLock);
+extern Thread* gAllThreads __LOCAL __TA_GUARDED(gAllThreadsLock);
 
 // This lock is used to exclude, and synchronize with, changes to the dynamic
 // linker data structures consulted by ThreadStorage::GetTlsLayout() and

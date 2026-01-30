@@ -5,15 +5,12 @@
 #ifndef LIB_C_THREADS_ZXR_THREAD_H_
 #define LIB_C_THREADS_ZXR_THREAD_H_
 
-#include <lib/zircon-internal/unique-backtrace.h>
 #include <stddef.h>
 #include <stdint.h>
 #include <zircon/compiler.h>
 #include <zircon/types.h>
 
 #ifdef __cplusplus
-#include <lib/zx/thread.h>
-
 #include <atomic>
 #include <optional>
 #endif
@@ -39,8 +36,6 @@ typedef struct zxr_thread {
     FREED,
   };
 
-  zx_futex_t* StateFutex() { return reinterpret_cast<zx_futex_t*>(&state); }
-
   // Claim the thread as JOINED or DETACHED.  Returns std::nullopt on success,
   // which only happens if the previous state was JOINABLE.  On failure, it
   // returns the actual previous state.
@@ -51,17 +46,6 @@ typedef struct zxr_thread {
       return old_state;
     }
     return std::nullopt;
-  }
-
-  // Extract the thread handle.  Synchronizes with readers by setting the state
-  // to FREED and checks the given expected state for consistency.
-  zx::thread TakeHandle(State expected_state) {
-    zx::thread taken{std::exchange(handle, ZX_HANDLE_INVALID)};
-    if (!state.compare_exchange_strong(expected_state, State::FREED, std::memory_order_acq_rel,
-                                       std::memory_order_acquire)) {
-      CRASH_WITH_UNIQUE_BACKTRACE();
-    }
-    return taken;
   }
 #endif
 
@@ -88,6 +72,16 @@ zx_status_t zxr_thread_join(zxr_thread_t* thread);
 // Indicates whether the thread has been detached.  The result is undefined
 // if the thread is exiting or has exited.
 bool zxr_thread_detached(zxr_thread_t* thread);
+
+// Exit from the thread.  Equivalent to zxr_thread_exit unless the
+// thread has been detached.  If it has been detached, then this does
+// zx_vmar_unmap(vmar, addr, len) first, but in a way that permits
+// unmapping the caller's own stack.  Iff it has been detached, then
+// (*if_detached)(if_detached_arg) is called before unmapping the stack.
+[[noreturn]] void zxr_thread_exit_unmap_if_detached(zxr_thread_t* thread,
+                                                    void (*if_detached)(void*),
+                                                    void* if_detached_arg, zx_handle_t vmar,
+                                                    uintptr_t addr, size_t len);
 
 __END_CDECLS
 

@@ -3,7 +3,6 @@
 // found in the LICENSE file.
 
 #include <lib/elfldltl/machine.h>
-#include <lib/zircon-internal/unique-backtrace.h>
 #include <zircon/sanitizer.h>
 
 #include <atomic>
@@ -26,7 +25,6 @@ namespace LIBC_NAMESPACE_DECL {
 namespace {
 
 using SanitizerExitHook = Weak<__sanitizer_thread_exit_hook>;
-using ThreadState = zxr_thread_t::State;
 
 constexpr uintptr_t kStackAlignment = elfldltl::AbiTraits<>::kStackAlignment<>;
 
@@ -56,57 +54,19 @@ constexpr uintptr_t kStackAlignment = elfldltl::AbiTraits<>::kStackAlignment<>;
   zx::unowned_vmar unmap_vmar = old_storage->vmar().borrow();
   old_storage.reset();
 
-  // Enter EXITING state, and see what sort of cleanup should happen based on
-  // the old state.  This deallocates the TCB region too for the detached case.
-  // If not detached, ThreadJoin will deallocate it.  This always makes the
-  // thread-list removal callback before deallocating the TCB.  Hence
+  // This deallocates the TCB region too for the detached case.  If not
+  // detached, thrd_join / pthread_join will deallocate it.  This always makes
+  // the thread-list removal callback before deallocating the TCB.  Hence
   // __sanitizer_memory_snapshot should not consider the thread to be "alive"
   // any more, safely before the memory might be unmapped.
-  const ThreadState old_state =
-      self.zxr_thread.state.exchange(ThreadState::EXITING, std::memory_order_release);
-  switch (old_state) {
-    case ThreadState::DETACHED: {
-      AllThreads().erase(self);
-      zx::thread handle = self.zxr_thread.TakeHandle(ThreadState::EXITING);
-      const auto base = reinterpret_cast<uintptr_t>(self.tcb_region.iov_base);
-      const size_t size = self.tcb_region.iov_len;
-      _zx_vmar_unmap_handle_close_thread_exit(unmap_vmar->get(), base, size, handle.release());
-      CRASH_WITH_UNIQUE_BACKTRACE();
-      break;
-    }
-
-    case ThreadState::JOINABLE:
-      // Nobody's watching right now, but they might start watching as we
-      // exit.  Just in case, behave as if we've been joined and wake the
-      // futex on our way out.
-      [[fallthrough]];
-
-    case ThreadState::JOINED:
-      // Somebody loves us!  Or at least intends to inherit when we die.  Wake
-      // the _zx_futex_wait in zxr_thread_join, and then die.  This has to be
-      // done with the special four-in-one vDSO call because as soon as the
-      // state transitions to DONE, the joiner is free to unmap our stack out
-      // from under us.  Note there is a benign race here still: if the address
-      // is unmapped and our futex_wake fails, it's OK; if the memory is reused
-      // for something else and our futex_wake tickles somebody completely
-      // unrelated, well, that's why any zx_futex_wait can always have spurious
-      // wakeups.
-      _zx_futex_wake_handle_close_thread_exit(
-          self.zxr_thread.StateFutex(), 1, static_cast<int>(ThreadState::DONE), ZX_HANDLE_INVALID);
-      CRASH_WITH_UNIQUE_BACKTRACE();
-      break;
-
-    case ThreadState::DONE:
-    case ThreadState::EXITING:
-    case ThreadState::FREED:
-      // Cannot be in DONE, EXITING, or FREED and reach here.
-      CRASH_WITH_UNIQUE_BACKTRACE();
-      break;
-  }
-
-  // Some bogus value different from any in the enum would be clobberation,
-  // whereas DONE, EXITING, or FREED would more likely be a bug in this code.
-  CRASH_WITH_UNIQUE_BACKTRACE();
+  zxr_thread_exit_unmap_if_detached(  //
+      &self.zxr_thread,
+      [](void* arg) {
+        Thread& self = *static_cast<Thread*>(arg);
+        AllThreads().erase(self);
+      },
+      &self, unmap_vmar->get(), reinterpret_cast<uintptr_t>(self.tcb_region.iov_base),
+      self.tcb_region.iov_len);
 }
 
 // Switch to a new machine stack and call FinalExit(), which cannot return.
