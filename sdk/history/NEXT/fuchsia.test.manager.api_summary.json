@@ -71,11 +71,11 @@
     },
     {
         "kind": "protocol/member",
-        "name": "fuchsia.test.manager/DebugDataIterator.GetNext",
+        "name": "fuchsia.test.manager/DebugDataIterator.GetNextCompressed",
         "strictness": "strict",
-        "ordinal": "715831307790560608",
+        "ordinal": "7450618219083268596",
         "direction": "two_way",
-        "response": "fuchsia.test.manager/DebugDataIteratorGetNextResponse"
+        "response": "fuchsia.test.manager/DebugDataIteratorGetNextCompressedResponse"
     },
     {
         "kind": "protocol",
@@ -85,13 +85,13 @@
     },
     {
         "kind": "struct/member",
-        "name": "fuchsia.test.manager/DebugDataIteratorGetNextResponse.data",
+        "name": "fuchsia.test.manager/DebugDataIteratorGetNextCompressedResponse.data",
         "ordinal": "1",
         "type": "vector<fuchsia.test.manager/DebugData>"
     },
     {
         "kind": "struct",
-        "name": "fuchsia.test.manager/DebugDataIteratorGetNextResponse",
+        "name": "fuchsia.test.manager/DebugDataIteratorGetNextCompressedResponse",
         "resourceness": "resource"
     },
     {
