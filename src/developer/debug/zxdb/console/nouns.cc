@@ -15,6 +15,7 @@
 #include "src/developer/debug/zxdb/client/process.h"
 #include "src/developer/debug/zxdb/client/session.h"
 #include "src/developer/debug/zxdb/client/setting_schema_definition.h"
+#include "src/developer/debug/zxdb/client/source_file_provider_impl.h"
 #include "src/developer/debug/zxdb/client/stack.h"
 #include "src/developer/debug/zxdb/client/system.h"
 #include "src/developer/debug/zxdb/client/target.h"
@@ -24,6 +25,7 @@
 #include "src/developer/debug/zxdb/console/command_utils.h"
 #include "src/developer/debug/zxdb/console/console.h"
 #include "src/developer/debug/zxdb/console/console_context.h"
+#include "src/developer/debug/zxdb/console/format_context.h"
 #include "src/developer/debug/zxdb/console/format_filter.h"
 #include "src/developer/debug/zxdb/console/format_frame.h"
 #include "src/developer/debug/zxdb/console/format_location.h"
@@ -181,6 +183,19 @@ bool HandleFrameNoun(ConsoleContext* console_context, const Command& cmd,
   console_context->SetActiveTarget(cmd.target());
 
   cmd_context->Output(FormatFrame(cmd.frame(), opts.frame, -1));
+
+  // don't want to print source code when I'm using other verbs
+  // e.g. frame 2 print <variable>
+  if (cmd.verb() == Verb::kNone) {
+    Err err = OutputSourceContext(
+        cmd.target()->GetProcess(),
+        std::make_unique<SourceFileProviderImpl>(cmd.target()->settings()),
+        cmd.frame()->GetLocation(), console_context->GetSourceAffinityForThread(cmd.thread()));
+    if (err.has_error()) {
+      cmd_context->ReportError(err);
+    }
+  }
+
   return true;
 }
 
