@@ -12,8 +12,6 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
-
-	"go.fuchsia.dev/tools/gndoc"
 )
 
 type stringsFlag []string
@@ -47,9 +45,9 @@ func main() {
 	}
 
 	ctx := context.Background()
-	argMap := gndoc.NewArgMap()
+	argMap := NewArgMap()
 
-	args, errs := gndoc.ParseGNArgs(ctx, inputFiles, keyArgs)
+	args, errs := ParseGNArgs(ctx, inputFiles, keyArgs)
 	argMap.AddArgs(args)
 	if err := <-errs; err != nil {
 		log.Fatalf("Error: %s\n", err)
