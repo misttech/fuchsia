@@ -122,7 +122,6 @@ where
     }
 
     /// Removes a key from the map.
-    /// Removes a key from the map.
     pub fn remove<Q>(&mut self, key: &Q) -> Option<V>
     where
         K: Borrow<Q>,
@@ -130,6 +129,15 @@ where
     {
         // SAFETY: We have exclusive access to the map because we have exclusive access to the mutex.
         unsafe { self.map.remove(key) }
+    }
+
+    /// Returns true if the map contains a value for the specified key.
+    pub fn contains_key<Q>(&self, key: &Q) -> bool
+    where
+        K: Borrow<Q>,
+        Q: ?Sized + Hash + Eq,
+    {
+        self.get(key).is_some()
     }
 
     /// Gets the given key's corresponding entry in the map for in-place manipulation.
@@ -152,6 +160,21 @@ where
     Occupied(OccupiedEntry<'b, 'a, K, V>),
     /// A vacant entry.
     Vacant(VacantEntry<'b, 'a, K, V>),
+}
+
+impl<'b, 'a, K, V> Entry<'b, 'a, K, V>
+where
+    K: Eq + Hash + Clone + Send + Sync + 'static,
+    V: Clone + Send + Sync + 'static,
+{
+    /// Ensures a value is in the entry by inserting the result of the default function if empty,
+    /// and returns an occupied entry.
+    pub fn or_insert_with<F: FnOnce() -> V>(self, default: F) -> OccupiedEntry<'b, 'a, K, V> {
+        match self {
+            Entry::Occupied(entry) => entry,
+            Entry::Vacant(entry) => entry.insert_entry(default()),
+        }
+    }
 }
 
 /// A view into an occupied entry in a `RcuHashMap`.
@@ -178,6 +201,11 @@ where
     pub fn insert(&mut self, value: V) -> V {
         self.guard.insert(self.key.clone(), value).unwrap()
     }
+
+    /// Removes the entry from the map, returning the value.
+    pub fn remove(self) -> V {
+        self.guard.remove(&self.key).unwrap()
+    }
 }
 
 /// A view into a vacant entry in a `RcuHashMap`.
@@ -190,7 +218,7 @@ where
     key: K,
 }
 
-impl<K, V> VacantEntry<'_, '_, K, V>
+impl<'b, 'a, K, V> VacantEntry<'b, 'a, K, V>
 where
     K: Eq + Hash + Clone + Send + Sync + 'static,
     V: Clone + Send + Sync + 'static,
@@ -198,6 +226,12 @@ where
     /// Sets the value of the entry with the VacantEntry's key.
     pub fn insert(self, value: V) {
         self.guard.insert(self.key, value);
+    }
+
+    /// Sets the value of the entry with the VacantEntry's key, and returns an occupied entry.
+    pub fn insert_entry(self, value: V) -> OccupiedEntry<'b, 'a, K, V> {
+        self.guard.insert(self.key.clone(), value);
+        OccupiedEntry { guard: self.guard, key: self.key }
     }
 }
 
@@ -316,5 +350,29 @@ mod tests {
         let mut keys: Vec<_> = map.keys(&scope).collect();
         keys.sort();
         assert_eq!(keys, vec![&1, &2, &3]);
+    }
+
+    #[test]
+    fn test_rcu_hash_map_or_insert_with() {
+        let map = RcuHashMap::default();
+        let mut guard = map.lock();
+
+        // test or_insert_with
+        guard.entry(1).or_insert_with(|| 10);
+        assert!(guard.contains_key(&1));
+        assert_eq!(guard.get(&1), Some(10));
+
+        // test or_insert_with existing
+        guard.entry(1).or_insert_with(|| 20);
+        assert_eq!(guard.get(&1), Some(10));
+
+        // test OccupiedEntry::remove
+        match guard.entry(1) {
+            Entry::Occupied(e) => {
+                assert_eq!(e.remove(), 10);
+            }
+            Entry::Vacant(_) => panic!("Should be occupied"),
+        }
+        assert!(!guard.contains_key(&1));
     }
 }

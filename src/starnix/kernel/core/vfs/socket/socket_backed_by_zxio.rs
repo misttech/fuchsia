@@ -804,9 +804,9 @@ mod tokens_store {
     use crate::task::Kernel;
     use derivative::Derivative;
     use fuchsia_async as fasync;
-    use starnix_sync::Mutex;
+    use starnix_rcu::RcuHashMap;
+    use starnix_rcu::rcu_hash_map::Entry;
     use starnix_uapi::uid_t;
-    use std::collections::{HashMap, hash_map};
     use std::sync::{Arc, OnceLock, Weak};
     use zx::HandleBased as _;
 
@@ -827,6 +827,7 @@ mod tokens_store {
     }
 
     // Collection of tokens associated with a UID.
+    #[derive(Debug)]
     struct TokenCollection {
         // Sharing domain token. Allocated lazily on first use.
         sharing_domain_token: OnceLock<zx::Event>,
@@ -863,7 +864,7 @@ mod tokens_store {
         }
     }
 
-    #[derive(Debug)]
+    #[derive(Debug, Clone, Copy)]
     enum UidEntryState {
         // The entry is unused and can be removed.
         Unused,
@@ -878,6 +879,8 @@ mod tokens_store {
 
     // Information stored for each UID in `SocketTokensStore`. Each entry is kept
     // only as long as there may be sockets associated with this UID.
+    #[derive(Derivative)]
+    #[derivative(Clone(bound = ""))]
     struct UidEntry<H: SocketTokenStoreHost> {
         tokens: Arc<TokenCollection>,
 
@@ -909,7 +912,7 @@ mod tokens_store {
     #[derive(Derivative)]
     #[derivative(Default(bound = ""))]
     pub struct SocketTokensStore<H: SocketTokenStoreHost = Kernel> {
-        map: Mutex<HashMap<uid_t, UidEntry<H>>>,
+        map: RcuHashMap<uid_t, UidEntry<H>>,
     }
 
     /// Delay between cleanup attempts.
@@ -921,14 +924,16 @@ mod tokens_store {
             host: &Arc<H>,
             uid: uid_t,
         ) -> Arc<dyn syncio::ZxioTokenResolver> {
-            let mut map = self.map.lock();
-            let entry = map.entry(uid).or_insert_with(|| UidEntry::new());
+            let mut guard = self.map.lock();
+            let mut entry = guard.entry(uid).or_insert_with(|| UidEntry::new());
 
-            match entry.weak_resolver.upgrade() {
+            match entry.get().weak_resolver.upgrade() {
                 Some(resolver) => resolver,
                 None => {
-                    let resolver = SocketTokenResolver::new(entry.tokens.clone(), host, uid);
-                    entry.weak_resolver = Arc::downgrade(&resolver);
+                    let resolver = SocketTokenResolver::new(entry.get().tokens, host, uid);
+                    let mut new_entry = entry.get();
+                    new_entry.weak_resolver = Arc::downgrade(&resolver);
+                    entry.insert(new_entry);
                     resolver
                 }
             }
@@ -936,8 +941,8 @@ mod tokens_store {
 
         fn on_resolver_dropped(&self, host: &Arc<H>, uid: uid_t) {
             {
-                let mut map = self.map.lock();
-                let hash_map::Entry::Occupied(mut entry) = map.entry(uid) else {
+                let mut guard = self.map.lock();
+                let Entry::Occupied(mut entry) = guard.entry(uid) else {
                     // The entry may be missing if another thread has created and removed another
                     // resolver for this UID.
                     return;
@@ -954,7 +959,9 @@ mod tokens_store {
                     UidEntryState::Linger => (),
                 }
 
-                entry.get_mut().cleanup_task_running = true;
+                let mut new_entry = entry.get();
+                new_entry.cleanup_task_running = true;
+                entry.insert(new_entry);
             }
 
             // Start cleanup task.
@@ -967,8 +974,8 @@ mod tokens_store {
                     let Some(host) = weak_host.upgrade() else {
                         return;
                     };
-                    let mut map = host.get_socket_tokens_store().map.lock();
-                    let hash_map::Entry::Occupied(mut entry) = map.entry(uid) else {
+                    let mut guard = host.get_socket_tokens_store().map.lock();
+                    let Entry::Occupied(mut entry) = guard.entry(uid) else {
                         return;
                     };
                     match entry.get().get_state() {
@@ -980,7 +987,9 @@ mod tokens_store {
                         UidEntryState::Used => {
                             // Quit cleanup task. It will be restarted later in
                             // `on_resolver_dropped()`.
-                            entry.get_mut().cleanup_task_running = false;
+                            let mut new_entry = entry.get();
+                            new_entry.cleanup_task_running = false;
+                            entry.insert(new_entry);
                             return;
                         }
                         UidEntryState::Linger => (),
