@@ -941,7 +941,7 @@ pub(super) mod tests {
     /// the indices of the provided values.
     fn xperms_bitmap_from_elements(elements: &[u8]) -> XpermsBitmap {
         let mut bitmap = [le::U32::ZERO; 8];
-        for element in elements.iter() {
+        for element in elements {
             let block_index = (*element as usize) / 32;
             let bit_index = ((*element as usize) % 32) as u32;
             let bitmask = le::U32::new(1).shl(bit_index);

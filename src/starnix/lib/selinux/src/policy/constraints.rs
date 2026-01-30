@@ -70,7 +70,7 @@ pub(super) fn evaluate_constraint(
         .map(|term| ConstraintNode::try_from_constraint_term(term, source, target))
         .collect::<Result<Vec<_>, _>>()?;
     let mut stack = Vec::new();
-    for node in nodes.iter() {
+    for node in nodes {
         match node {
             ConstraintNode::Leaf(expr) => stack.push(expr.evaluate()?),
             ConstraintNode::Branch(op) => match op {

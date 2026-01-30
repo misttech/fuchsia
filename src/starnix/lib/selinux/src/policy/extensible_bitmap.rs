@@ -148,7 +148,7 @@ impl Validate for Vec<ExtensibleBitmap> {
     type Error = <ExtensibleBitmap as Validate>::Error;
 
     fn validate(&self, context: &mut PolicyValidationContext) -> Result<(), Self::Error> {
-        for extensible_bitmap in self.iter() {
+        for extensible_bitmap in self {
             extensible_bitmap.validate(context)?;
         }
 
@@ -255,7 +255,7 @@ impl ValidateArray<Metadata, MapItem> for ExtensibleBitmap {
         // Note: If sorted order assumption is violated `ExtensibleBitmap::binary_search_items()` will
         // misbehave and `ExtensibleBitmap` will need to be refactored accordingly.
         let mut min_start: u32 = 0;
-        for map_item in items.iter() {
+        for map_item in items {
             let found_start_bit = map_item.start_bit.get();
             if found_start_bit % found_size != 0 {
                 return Err(ValidateError::MisalignedExtensibleBitmapItemStartBit {

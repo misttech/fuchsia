@@ -224,7 +224,7 @@ impl ParsedPolicy {
         target_class: &Class,
     ) -> AccessVector {
         let mut denied = AccessVector::NONE;
-        for constraint in target_class.constraints().iter() {
+        for constraint in target_class.constraints() {
             match constraint.constraint_expr().evaluate(source_context, target_context) {
                 Err(err) => {
                     unreachable!("validated constraint expression failed to evaluate: {:?}", err)
