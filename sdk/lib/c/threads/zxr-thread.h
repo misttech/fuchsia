@@ -12,7 +12,6 @@
 
 #ifdef __cplusplus
 #include <atomic>
-#include <optional>
 #endif
 
 __BEGIN_CDECLS
@@ -21,7 +20,7 @@ typedef struct zxr_thread {
 #ifdef __cplusplus
   // A zxr_thread_t starts its life JOINABLE.
   // - If someone calls zxr_thread_join on it, it transitions to JOINED.
-  // - If someone calls ThreadDetach on it, it transitions to DETACHED.
+  // - If someone calls zxr_thread_detach on it, it transitions to DETACHED.
   // - When it begins exiting, the EXITING state is entered.
   // - When it is no longer using its memory and handle resources, it transitions
   //   to DONE.  If the thread was DETACHED prior to EXITING, this transition MAY
@@ -35,18 +34,6 @@ typedef struct zxr_thread {
     DONE,
     FREED,
   };
-
-  // Claim the thread as JOINED or DETACHED.  Returns std::nullopt on success,
-  // which only happens if the previous state was JOINABLE.  On failure, it
-  // returns the actual previous state.
-  std::optional<State> JoinOrDetachState(State new_state) {
-    if (State old_state = State::JOINABLE; !state.compare_exchange_strong(
-            old_state, new_state, std::memory_order_acq_rel, std::memory_order_acquire))
-        [[unlikely]] {
-      return old_state;
-    }
-    return std::nullopt;
-  }
 #endif
 
   zx_handle_t handle;
@@ -68,6 +55,16 @@ static_assert(sizeof(zxr_thread_t) == 8, "layout snafu");
 // If a thread is joined, the caller of zxr_thread_join blocks until
 // the other thread is finished running.
 zx_status_t zxr_thread_join(zxr_thread_t* thread);
+
+// If a thread is detached, instead of waiting to be joined, it will
+// clean up after itself, and the return value of the thread's
+// entrypoint is ignored.  This returns ZX_ERR_BAD_STATE if the thread
+// had already finished running; it didn't know to clean up after itself
+// and it's gone now, so the caller must do any cleanup it would have
+// done after zxr_thread_join.  It is undefined behavior to detach
+// a thread that has already been joined or to detach an already detached
+// thread.
+zx_status_t zxr_thread_detach(zxr_thread_t* thread) __attribute__((warn_unused_result));
 
 // Indicates whether the thread has been detached.  The result is undefined
 // if the thread is exiting or has exited.

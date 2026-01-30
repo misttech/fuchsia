@@ -21,6 +21,14 @@ static State begin_exit(zxr_thread_t* thread) {
   return thread->state.exchange(State::EXITING, std::memory_order_release);
 }
 
+// Claim the thread as JOINED or DETACHED.  Returns true on success, which only
+// happens if the previous state was JOINABLE.  Always returns the previous state.
+static bool claim_thread(zxr_thread_t* thread, State new_state, State* old_state) {
+  *old_state = State::JOINABLE;
+  return thread->state.compare_exchange_strong(*old_state, new_state, std::memory_order_acq_rel,
+                                               std::memory_order_acquire);
+}
+
 // Extract the handle from the thread structure. Synchronizes with readers by
 // setting the state to FREED and checks the given expected state for consistency.
 static zx_handle_t take_handle(zxr_thread_t* thread, State expected_state) {
@@ -99,11 +107,12 @@ static void wait_for_done(zxr_thread_t* thread, State old_state) {
 }
 
 zx_status_t zxr_thread_join(zxr_thread_t* thread) {
+  State old_state;
   // Try to claim the join slot on this thread.
-  if (auto old_state = thread->JoinOrDetachState(State::JOINED); !old_state) {
+  if (claim_thread(thread, State::JOINED, &old_state)) {
     wait_for_done(thread, State::JOINED);
   } else {
-    switch (*old_state) {
+    switch (old_state) {
       case State::JOINED:
       case State::DETACHED:
         return ZX_ERR_INVALID_ARGS;
@@ -125,6 +134,45 @@ zx_status_t zxr_thread_join(zxr_thread_t* thread) {
   const zx_handle_t handle = take_handle(thread, State::DONE);
   if (handle == ZX_HANDLE_INVALID || zx_handle_close(handle) != ZX_OK) {
     CRASH_WITH_UNIQUE_BACKTRACE();
+  }
+
+  return ZX_OK;
+}
+
+zx_status_t zxr_thread_detach(zxr_thread_t* thread) {
+  State old_state;
+  // Try to claim the join slot on this thread on behalf of the thread.
+  if (!claim_thread(thread, State::DETACHED, &old_state)) {
+    switch (old_state) {
+      case State::DETACHED:
+      case State::JOINED:
+        return ZX_ERR_INVALID_ARGS;
+      case State::EXITING: {
+        // Since it is undefined behavior to call zxr_thread_detach on a
+        // thread that has already been detached or joined, we assume
+        // the state prior to EXITING was JOINABLE.  However, since the
+        // thread is already shutting down, it is too late to tell it to
+        // clean itself up.  Since the thread is still running, we cannot
+        // just return ZX_ERR_BAD_STATE, which would suggest we couldn't detach and
+        // the thread has already finished running.  Instead, we call join,
+        // which will return soon due to the thread being actively shutting down,
+        // and then return ZX_ERR_BAD_STATE to tell the caller that they
+        // must manually perform any post-join work.
+        const zx_status_t ret = zxr_thread_join(thread);
+        if (unlikely(ret != ZX_OK)) {
+          if (unlikely(ret != ZX_ERR_INVALID_ARGS)) {
+            CRASH_WITH_UNIQUE_BACKTRACE();
+          }
+          return ret;
+        }
+      }
+        // Fall-through to DONE case.
+        __FALLTHROUGH;
+      case State::DONE:
+        return ZX_ERR_BAD_STATE;
+      default:
+        CRASH_WITH_UNIQUE_BACKTRACE();
+    }
   }
 
   return ZX_OK;

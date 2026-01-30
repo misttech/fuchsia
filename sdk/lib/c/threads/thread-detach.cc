@@ -2,8 +2,6 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#include <lib/zircon-internal/unique-backtrace.h>
-
 #include <cassert>
 
 #include "thread-list.h"
@@ -12,49 +10,23 @@
 
 namespace LIBC_NAMESPACE_DECL {
 
-using ThreadState = zxr_thread_t::State;
-
 zx::result<> ThreadDetach(Thread& thread) {
-  // Try to claim the join slot on this thread on behalf of the thread.
-  auto old_state = thread.zxr_thread.JoinOrDetachState(ThreadState::DETACHED);
-  if (!old_state) {  // Was joinable, is now detached.
-    return zx::ok();
-  }
+  // This does the synchronization with the thread exit.
+  zx_status_t status = zxr_thread_detach(&thread.zxr_thread);
+  switch (status) {
+    case ZX_OK:
+      return zx::ok();
 
-  // Otherwise, the thread wasn't joinable for some reason.
-  switch (*old_state) {
-    case ThreadState::DETACHED:
-    case ThreadState::JOINED:
-      // The thread isn't joinable.  It was already joined or detached.
-      return zx::error{ZX_ERR_INVALID_ARGS};
-
-    case ThreadState::EXITING:
-      // Since it is undefined behavior to call ThreadDetach on a thread that
-      // has already been detached or joined, we assume the state prior to
-      // EXITING was JOINABLE.  However, since the thread is already shutting
-      // down, it is too late to tell it to clean itself up.  Since the
-      // thread is still running, we cannot just return ZX_ERR_BAD_STATE,
-      // which would suggest we couldn't detach and the thread has already
-      // finished running.  Instead, we call ThreadJoin, which will return
-      // soon due to the thread being actively shutting down, and then return
-      // ZX_ERR_BAD_STATE to tell the caller that they must manually perform
-      // any post-join work.
-      if (zx::result join = ThreadJoin(thread); join.is_error()) [[unlikely]] {
-        if (join.error_value() != ZX_ERR_INVALID_ARGS) [[unlikely]] {
-          CRASH_WITH_UNIQUE_BACKTRACE();
-        }
-        return join.take_error();
-      }
-
-      // Fall-through to DONE case.
-      [[fallthrough]];
-
-    case ThreadState::DONE:
+    case ZX_ERR_BAD_STATE:
       // It already died before it knew to deallocate itself.
       break;
 
+    case ZX_ERR_INVALID_ARGS:
+      // The thread isn't joinable.  It was already joined or detached.
+      return zx::error{ZX_ERR_INVALID_ARGS};
+
     default:
-      CRASH_WITH_UNIQUE_BACKTRACE();
+      return zx::error{ZX_ERR_NOT_FOUND};
   }
 
   // Now the Thread object can be removed from the list of all threads.
