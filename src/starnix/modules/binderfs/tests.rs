@@ -3948,9 +3948,12 @@ pub mod tests {
                             continue 'event_loop;
                         }
                     }
-                    for file in payload.add_requests.unwrap_or(vec![]) {
+                    for mut file in payload.add_requests.unwrap_or(vec![]) {
                         let fd = next_fd;
                         next_fd += 1;
+                        // NOTE: For tests, we fake a flag. As we add, then get. In production, the
+                        // flags for a get would come from the underlying handle.s
+                        file.flags = Some(FileFlags::RIGHT_READABLE);
                         fds.insert(fd, file);
                         response.add_responses.get_or_insert_with(Vec::new).push(fd);
                     }

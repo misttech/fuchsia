@@ -287,7 +287,9 @@ impl ResourceAccessor for RemoteResourceAccessor {
                 for (file, _) in chunk.into_iter() {
                     handles.push(fbinder::FileHandle {
                         file: file.to_handle(current_task)?,
-                        flags: Some(file.flags().into_fidl()),
+                        // NOTE: We do not pass flags when adding files to a Fuchsia process as:
+                        //   1. The flags are already set on the underlying fuchsia.io file.
+                        //   2. There is only one flag (append) that you can set after the fact.
                         ..fbinder::FileHandle::default()
                     });
                 }
