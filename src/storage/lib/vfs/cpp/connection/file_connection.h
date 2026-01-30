@@ -79,11 +79,9 @@ class FileConnection : public Connection, public fidl::WireServer<fuchsia_io::Fi
 #endif  // FUCHSIA_API_LEVEL_AT_LEAST(28)
   void GetFlags(GetFlagsCompleter::Sync& completer) final;
   void SetFlags(SetFlagsRequestView request, SetFlagsCompleter::Sync& completer) final;
-#if FUCHSIA_API_LEVEL_AT_LEAST(27)
   void DeprecatedGetFlags(DeprecatedGetFlagsCompleter::Sync& completer) final;
   void DeprecatedSetFlags(DeprecatedSetFlagsRequestView request,
                           DeprecatedSetFlagsCompleter::Sync& completer) final;
-#endif  // FUCHSIA_API_LEVEL_AT_LEAST(27)
   void QueryFilesystem(QueryFilesystemCompleter::Sync& completer) final;
   void GetAttributes(fuchsia_io::wire::NodeGetAttributesRequest* request,
                      GetAttributesCompleter::Sync& completer) final;

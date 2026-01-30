@@ -37,18 +37,12 @@ void RemoteDir::DeprecatedOpenRemote(fio::OpenFlags flags, fio::ModeType mode,
                                      fidl::ServerEnd<fio::Node> object) const {
   // We consume |object| when making the wire call to the remote end, so on failure there isn't
   // anywhere for us to propagate the error.
-#if FUCHSIA_API_LEVEL_AT_LEAST(27)
   [[maybe_unused]] auto status =
       fidl::WireCall(remote_client_)->DeprecatedOpen(flags, mode, path, std::move(object));
-#else
-  [[maybe_unused]] auto status =
-      fidl::WireCall(remote_client_)->Open(flags, mode, path, std::move(object));
-#endif  // FUCHSIA_API_LEVEL_AT_LEAST(27)
   FS_PRETTY_TRACE_DEBUG("RemoteDir::DeprecatedOpenRemote: path='", path, "', flags=", flags,
                         ", response=", status.FormatDescription());
 }
 
-#if FUCHSIA_API_LEVEL_AT_LEAST(27)
 void RemoteDir::OpenRemote(fuchsia_io::wire::DirectoryOpenRequest request) const {
   // We consume the |request| channel when making the wire call to the remote end, so on failure
   // there isn't anywhere for us to propagate the error.
@@ -58,16 +52,5 @@ void RemoteDir::OpenRemote(fuchsia_io::wire::DirectoryOpenRequest request) const
   FS_PRETTY_TRACE_DEBUG("RemoteDir::OpenRemote: path='", request.path, "', flags=", request.flags,
                         "', options=", request.options, ", response=", status.FormatDescription());
 }
-#else
-void RemoteDir::OpenRemote(fuchsia_io::wire::DirectoryOpen3Request request) const {
-  // We consume the |request| channel when making the wire call to the remote end, so on failure
-  // there isn't anywhere for us to propagate the error.
-  [[maybe_unused]] auto status =
-      fidl::WireCall(remote_client_)
-          ->Open3(request.path, request.flags, request.options, std::move(request.object));
-  FS_PRETTY_TRACE_DEBUG("RemoteDir::OpenRemote: path='", request.path, "', flags=", request.flags,
-                        "', options=", request.options, ", response=", status.FormatDescription());
-}
-#endif  // FUCHSIA_API_LEVEL_AT_LEAST(27)
 
 }  // namespace fs

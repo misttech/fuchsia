@@ -124,29 +124,19 @@ void NodeConnection::UpdateAttributes(fio::wire::MutableNodeAttributes* request,
   completer.ReplyError(ZX_ERR_BAD_HANDLE);
 }
 
-#if FUCHSIA_API_LEVEL_AT_LEAST(27)
 void NodeConnection::GetFlags(GetFlagsCompleter::Sync& completer) {
   completer.ReplySuccess(fio::Flags::kProtocolNode | RightsToFlags(rights()));
 }
 void NodeConnection::SetFlags(SetFlagsRequestView, SetFlagsCompleter::Sync& completer) {
   completer.ReplyError(ZX_ERR_NOT_SUPPORTED);
 }
-#endif  // FUCHSIA_API_LEVEL_AT_LEAST(27)
 
-#if FUCHSIA_API_LEVEL_AT_LEAST(27)
 void NodeConnection::DeprecatedGetFlags(DeprecatedGetFlagsCompleter::Sync& completer) {
-#else
-void NodeConnection::GetFlags(GetFlagsCompleter::Sync& completer) {
-#endif  // FUCHSIA_API_LEVEL_AT_LEAST(27)
   completer.Reply(ZX_OK, fio::OpenFlags::kNodeReference);
 }
 
-#if FUCHSIA_API_LEVEL_AT_LEAST(27)
 void NodeConnection::DeprecatedSetFlags(DeprecatedSetFlagsRequestView,
                                         DeprecatedSetFlagsCompleter::Sync& completer) {
-#else
-void NodeConnection::SetFlags(SetFlagsRequestView, SetFlagsCompleter::Sync& completer) {
-#endif  // FUCHSIA_API_LEVEL_AT_LEAST(27)
   completer.Reply(ZX_ERR_BAD_HANDLE);
 }
 
@@ -161,11 +151,7 @@ void NodeConnection::QueryFilesystem(QueryFilesystemCompleter::Sync& completer) 
 zx::result<> NodeConnection::WithRepresentation(
     fit::callback<zx::result<>(fio::wire::Representation)> handler,
     std::optional<fio::NodeAttributesQuery> query) const {
-#if FUCHSIA_API_LEVEL_AT_LEAST(27)
   using NodeRepresentation = fio::wire::NodeInfo;
-#else
-  using NodeRepresentation = fio::wire::ConnectorInfo;
-#endif  // FUCHSIA_API_LEVEL_AT_LEAST(27)
   fidl::WireTableFrame<NodeRepresentation> representation_frame;
   auto builder = NodeRepresentation::ExternalBuilder(
       fidl::ObjectView<fidl::WireTableFrame<NodeRepresentation>>::FromExternal(
@@ -180,13 +166,8 @@ zx::result<> NodeConnection::WithRepresentation(
     builder.attributes(fidl::ObjectView<fio::wire::NodeAttributes2>::FromExternal(*attributes));
   }
   auto representation = builder.Build();
-#if FUCHSIA_API_LEVEL_AT_LEAST(27)
   return handler(fuchsia_io::wire::Representation::WithNode(
       fidl::ObjectView<NodeRepresentation>::FromExternal(&representation)));
-#else
-  return handler(fuchsia_io::wire::Representation::WithConnector(
-      fidl::ObjectView<NodeRepresentation>::FromExternal(&representation)));
-#endif  // FUCHSIA_API_LEVEL_AT_LEAST(27)
 }
 
 zx_status_t NodeConnection::WithNodeInfoDeprecated(

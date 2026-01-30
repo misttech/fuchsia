@@ -74,13 +74,8 @@ constexpr zx::result<std::tuple<fio::Rights, fio::Rights>> ValidateRequestRights
   return zx::ok(std::tuple{requested_rights & parent_rights, optional_rights & parent_rights});
 }
 
-#if FUCHSIA_API_LEVEL_AT_LEAST(27)
 void ForwardRequestToRemote(fio::wire::DirectoryOpenRequest* request, Vfs::OpenResult open_result,
                             fio::Rights parent_rights) {
-#else
-void ForwardRequestToRemote(fio::wire::DirectoryOpen3Request* request, Vfs::OpenResult open_result,
-                            fio::Rights parent_rights) {
-#endif  // FUCHSIA_API_LEVEL_AT_LEAST(27)
   ZX_DEBUG_ASSERT(open_result.vnode()->IsRemote());
   // Update the request path to point only to the remaining segment.
   request->path = fidl::StringView::FromExternal(open_result.path());
@@ -197,40 +192,24 @@ void DirectoryConnection::UpdateAttributes(fio::wire::MutableNodeAttributes* req
   completer.Reply(Connection::NodeUpdateAttributes(update));
 }
 
-#if FUCHSIA_API_LEVEL_AT_LEAST(27)
 void DirectoryConnection::GetFlags(GetFlagsCompleter::Sync& completer) {
   completer.ReplySuccess(fio::Flags::kProtocolDirectory | RightsToFlags(rights()));
 }
 void DirectoryConnection::SetFlags(SetFlagsRequestView, SetFlagsCompleter::Sync& completer) {
   completer.ReplyError(ZX_ERR_NOT_SUPPORTED);
 }
-#endif  // FUCHSIA_API_LEVEL_AT_LEAST(27)
 
-#if FUCHSIA_API_LEVEL_AT_LEAST(27)
 void DirectoryConnection::DeprecatedGetFlags(DeprecatedGetFlagsCompleter::Sync& completer) {
-#else
-void DirectoryConnection::GetFlags(GetFlagsCompleter::Sync& completer) {
-#endif  // FUCHSIA_API_LEVEL_AT_LEAST(27)
   completer.Reply(ZX_OK, RightsToOpenFlags(rights()));
 }
 
-#if FUCHSIA_API_LEVEL_AT_LEAST(27)
 void DirectoryConnection::DeprecatedSetFlags(DeprecatedSetFlagsRequestView,
                                              DeprecatedSetFlagsCompleter::Sync& completer) {
-#else
-void DirectoryConnection::SetFlags(SetFlagsRequestView, SetFlagsCompleter::Sync& completer) {
-#endif  // FUCHSIA_API_LEVEL_AT_LEAST(27)
-
   completer.Reply(ZX_ERR_NOT_SUPPORTED);
 }
 
-#if FUCHSIA_API_LEVEL_AT_LEAST(27)
 void DirectoryConnection::DeprecatedOpen(DeprecatedOpenRequestView request,
                                          DeprecatedOpenCompleter::Sync& completer) {
-#else
-void DirectoryConnection::Open(OpenRequestView request, OpenCompleter::Sync& completer) {
-
-#endif  // FUCHSIA_API_LEVEL_AT_LEAST(27)
   // TODO(https://fxbug.dev/346585458): This operation should require the TRAVERSE right.
   zx_status_t status = [&]() -> zx_status_t {
     std::string_view path(request->path.data(), request->path.size());
@@ -306,11 +285,7 @@ void DirectoryConnection::Open(OpenRequestView request, OpenCompleter::Sync& com
   }
 }
 
-#if FUCHSIA_API_LEVEL_AT_LEAST(27)
 void DirectoryConnection::Open(OpenRequestView request, OpenCompleter::Sync& completer) {
-#else
-void DirectoryConnection::Open3(Open3RequestView request, Open3Completer::Sync& completer) {
-#endif  // FUCHSIA_API_LEVEL_AT_LEAST(27)
   FS_PRETTY_TRACE_DEBUG("[DirectoryConnection::Open] our rights: ", rights(), ", path: '",
                         request->path, "', flags: ", request->flags, "options: ", request->options);
   // Attempt to open/create the target vnode, and serve a connection to it.

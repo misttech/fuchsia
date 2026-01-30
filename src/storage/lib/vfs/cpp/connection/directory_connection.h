@@ -74,11 +74,9 @@ class DirectoryConnection final : public Connection,
 #endif  // FUCHSIA_API_LEVEL_AT_LEAST(28)
   void GetFlags(GetFlagsCompleter::Sync& completer) final;
   void SetFlags(SetFlagsRequestView, SetFlagsCompleter::Sync& completer) final;
-#if FUCHSIA_API_LEVEL_AT_LEAST(27)
   void DeprecatedGetFlags(DeprecatedGetFlagsCompleter::Sync& completer) final;
   void DeprecatedSetFlags(DeprecatedSetFlagsRequestView,
                           DeprecatedSetFlagsCompleter::Sync& completer) final;
-#endif  // FUCHSIA_API_LEVEL_AT_LEAST(27)
   void GetAttributes(fuchsia_io::wire::NodeGetAttributesRequest* request,
                      GetAttributesCompleter::Sync& completer) final;
   void UpdateAttributes(fuchsia_io::wire::MutableNodeAttributes* request,
@@ -104,15 +102,9 @@ class DirectoryConnection final : public Connection,
   // |fuchsia.io/Directory| operations.
   //
 
-#if FUCHSIA_API_LEVEL_AT_LEAST(27)
   void Open(OpenRequestView request, OpenCompleter::Sync& completer) final;
   void DeprecatedOpen(DeprecatedOpenRequestView request,
                       DeprecatedOpenCompleter::Sync& completer) final;
-#else
-  void Open(OpenRequestView request, OpenCompleter::Sync& completer) final;
-  void Open3(Open3RequestView request, Open3Completer::Sync& completer) final;
-#endif  // FUCHSIA_API_LEVEL_AT_LEAST(27)
-
   void Unlink(UnlinkRequestView request, UnlinkCompleter::Sync& completer) final;
   void ReadDirents(ReadDirentsRequestView request, ReadDirentsCompleter::Sync& completer) final;
   void Rewind(RewindCompleter::Sync& completer) final;

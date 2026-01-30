@@ -79,15 +79,9 @@ void Vnode::DeprecatedOpenRemote(fuchsia_io::OpenFlags, fuchsia_io::ModeType, fi
   ZX_PANIC("OpenRemote should only be called on remote nodes!");
 }
 
-#if FUCHSIA_API_LEVEL_AT_LEAST(27)
 void Vnode::OpenRemote(fuchsia_io::wire::DirectoryOpenRequest request) const {
   ZX_PANIC("OpenRemote should only be called on remote nodes!");
 }
-#else
-void Vnode::OpenRemote(fuchsia_io::wire::DirectoryOpen3Request request) const {
-  ZX_PANIC("OpenRemote should only be called on remote nodes!");
-}
-#endif  // FUCHSIA_API_LEVEL_AT_LEAST(27)
 
 std::shared_ptr<file_lock::FileLock> Vnode::GetVnodeFileLock() {
   std::lock_guard lock_access(gLockAccess);
