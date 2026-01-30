@@ -228,6 +228,19 @@ impl SocketOps for QipcrtrSocket {
         }
 
         let inner = self.connecting_lock()?;
+
+        if flags.contains(SocketMessageFlags::DONTWAIT) {
+            match inner.events.wait_one(
+                zx::Signals::from_bits_truncate(fqrtr::SIGNAL_READABLE)
+                    | zx::Signals::EVENTPAIR_PEER_CLOSED,
+                zx::MonotonicInstant::INFINITE_PAST,
+            ) {
+                zx::WaitResult::Ok(_) => {}
+                zx::WaitResult::TimedOut(_) | zx::WaitResult::Canceled(_) => return error!(EAGAIN),
+                zx::WaitResult::Err(status) => return Err(from_status_like_fdio!(status)),
+            }
+        }
+
         let (src_node, src_port, src_data) = inner
             .proxy
             .read(zx::MonotonicInstant::INFINITE)
@@ -260,6 +273,16 @@ impl SocketOps for QipcrtrSocket {
             Some(addr) => extract_qrtr_sockaddr(addr)?,
             None => inner.peer.ok_or_else(|| errno!(EDESTADDRREQ))?,
         };
+
+        match inner.events.wait_one(
+            zx::Signals::from_bits_truncate(fqrtr::SIGNAL_WRITABLE)
+                | zx::Signals::EVENTPAIR_PEER_CLOSED,
+            zx::MonotonicInstant::INFINITE_PAST,
+        ) {
+            zx::WaitResult::Ok(_) => {}
+            zx::WaitResult::TimedOut(_) | zx::WaitResult::Canceled(_) => return error!(EAGAIN),
+            zx::WaitResult::Err(status) => return Err(from_status_like_fdio!(status)),
+        }
 
         let data_written = data.read_all()?;
         let _ = inner

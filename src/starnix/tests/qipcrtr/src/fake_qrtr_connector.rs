@@ -56,32 +56,86 @@ fn qrtr_connector_get_connection(
 async fn run_qrtr_client_connection_server(
     mut stream: fqrtr::QrtrClientConnectionRequestStream,
 ) -> Result<(), Error> {
+    let mut server_local = None;
+
     while let Some(Ok(request)) = stream.next().await {
         match request {
             fqrtr::QrtrClientConnectionRequest::GetNodeId { responder } => {
-                let _ = responder.send(1);
+                responder.send(1).context("sending GetNodeId response")?;
             }
             fqrtr::QrtrClientConnectionRequest::GetPortId { responder } => {
-                let _ = responder.send(10);
+                responder.send(10).context("sending GetPortId response")?;
             }
             fqrtr::QrtrClientConnectionRequest::GetSignals { responder } => {
-                let (client, server) = fidl::EventPair::create();
-                let _ = server.signal_peer(
-                    zx::Signals::NONE,
-                    zx::Signals::from_bits_truncate(
-                        fqrtr::SIGNAL_READABLE | fqrtr::SIGNAL_WRITABLE,
-                    ),
-                );
+                let (client, server) = zx::EventPair::create();
+                server
+                    .signal_peer(
+                        zx::Signals::NONE,
+                        zx::Signals::from_bits_truncate(fqrtr::SIGNAL_WRITABLE),
+                    )
+                    .context("signaling peer")?;
+                server_local = Some(server);
                 let _ = responder.send(client);
             }
             fqrtr::QrtrClientConnectionRequest::Read { responder } => {
-                let _ = responder.send(Ok((2, 20, b"recv_data")));
+                responder.send(Ok((2, 20, b"recv_data"))).context("sending Read response")?;
             }
-            fqrtr::QrtrClientConnectionRequest::Write { responder, .. } => {
-                let _ = responder.send(Ok(()));
+            fqrtr::QrtrClientConnectionRequest::Write {
+                dst_node_id: _,
+                dst_port,
+                data,
+                responder,
+            } => {
+                // We are using "in-band" signaling to control the mock server. Writes to port
+                // 9999 will be interpreted as control commands.
+                if dst_port == 9999 {
+                    // Control message
+                    if let Some(server) = server_local.as_ref() {
+                        let cmd = std::str::from_utf8(&data).unwrap_or("");
+                        match cmd {
+                            "BLOCK_READ" => {
+                                server
+                                    .signal_peer(
+                                        zx::Signals::from_bits_truncate(fqrtr::SIGNAL_READABLE),
+                                        zx::Signals::NONE,
+                                    )
+                                    .context("clearing readable")?;
+                            }
+                            "UNBLOCK_READ" => {
+                                server
+                                    .signal_peer(
+                                        zx::Signals::NONE,
+                                        zx::Signals::from_bits_truncate(fqrtr::SIGNAL_READABLE),
+                                    )
+                                    .context("setting readable")?;
+                            }
+                            "BLOCK_WRITE" => {
+                                server
+                                    .signal_peer(
+                                        zx::Signals::from_bits_truncate(fqrtr::SIGNAL_WRITABLE),
+                                        zx::Signals::NONE,
+                                    )
+                                    .context("clearing writable")?;
+                            }
+                            "UNBLOCK_WRITE" => {
+                                server
+                                    .signal_peer(
+                                        zx::Signals::NONE,
+                                        zx::Signals::from_bits_truncate(fqrtr::SIGNAL_WRITABLE),
+                                    )
+                                    .context("setting writable")?;
+                            }
+                            _ => {
+                                eprintln!("Unknown control command: {}", cmd);
+                            }
+                        }
+                    }
+                }
+                responder.send(Ok(())).context("sending Write response")?;
             }
             fqrtr::QrtrClientConnectionRequest::CloseConnection { responder } => {
-                let _ = responder.send();
+                server_local.take();
+                responder.send().context("sending CloseConnection response")?;
                 return Ok(());
             }
             _ => {

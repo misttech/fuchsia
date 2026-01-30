@@ -18,6 +18,26 @@
 
 namespace {
 
+enum class ControlCommand {
+  kBlockRead,
+  kUnblockRead,
+  kBlockWrite,
+  kUnblockWrite,
+};
+
+std::string_view ControlCommandToString(ControlCommand cmd) {
+  switch (cmd) {
+    case ControlCommand::kBlockRead:
+      return "BLOCK_READ";
+    case ControlCommand::kUnblockRead:
+      return "UNBLOCK_READ";
+    case ControlCommand::kBlockWrite:
+      return "BLOCK_WRITE";
+    case ControlCommand::kUnblockWrite:
+      return "UNBLOCK_WRITE";
+  }
+}
+
 class QipcrtrClientTest : public ::testing::Test {
  protected:
   void SetUp() override {
@@ -29,6 +49,17 @@ class QipcrtrClientTest : public ::testing::Test {
     if (sock_ >= 0) {
       close(sock_);
     }
+  }
+
+  void SendControl(ControlCommand cmd) {
+    sockaddr_qrtr addr = {};
+    addr.sq_family = AF_QIPCRTR;
+    addr.sq_node = 1;
+    addr.sq_port = 9999;
+    std::string_view cmd_str = ControlCommandToString(cmd);
+    ASSERT_EQ(sendto(sock_, cmd_str.data(), cmd_str.size(), 0, reinterpret_cast<sockaddr*>(&addr),
+                     sizeof(addr)),
+              static_cast<ssize_t>(cmd_str.size()));
   }
 
   int sock_ = -1;
@@ -94,6 +125,7 @@ TEST_F(QipcrtrClientTest, RecvFrom) {
   addr.sq_family = AF_QIPCRTR;
   socklen_t addrlen = sizeof addr;
 
+  SendControl(ControlCommand::kUnblockRead);
   ssize_t ret = recvfrom(sock_, data, len, 0, reinterpret_cast<sockaddr*>(&addr), &addrlen);
   ASSERT_GE(ret, 0) << "recvfrom() failed, errno=" << errno;
 
@@ -164,6 +196,9 @@ TEST_F(QipcrtrClientTest, Poll) {
   pfd.fd = sock_;
   pfd.events = POLLIN | POLLOUT;
 
+  // Unblock read signal first
+  SendControl(ControlCommand::kUnblockRead);
+
   // The mock infrastructure should immediately signal readability and writability.
   int ret = poll(&pfd, 1, 0);
   ASSERT_GE(ret, 0) << "poll() failed, errno=" << errno;
@@ -184,6 +219,8 @@ TEST_F(QipcrtrClientTest, Select) {
   tv.tv_sec = 0;
   tv.tv_usec = 0;
 
+  SendControl(ControlCommand::kUnblockRead);
+
   int ret = select(sock_ + 1, &readfds, &writefds, nullptr, &tv);
   ASSERT_GE(ret, 0) << "select() failed, errno=" << errno;
   EXPECT_GE(ret, 1);
@@ -200,6 +237,49 @@ TEST_F(QipcrtrClientTest, InvalidSocketOptions) {
 
   ASSERT_EQ(getsockopt(sock_, SOL_SOCKET, SO_DEBUG, &optval, &optlen), -1);
   EXPECT_EQ(errno, ENOSYS);
+}
+
+TEST_F(QipcrtrClientTest, RecvFromDontWait) {
+  char data[10] = {0};
+  size_t len = sizeof data;
+  sockaddr_qrtr addr;
+  socklen_t addrlen = sizeof addr;
+
+  SendControl(ControlCommand::kUnblockRead);
+
+  ssize_t ret =
+      recvfrom(sock_, data, len, MSG_DONTWAIT, reinterpret_cast<sockaddr*>(&addr), &addrlen);
+  ASSERT_GE(ret, 0) << "recvfrom(MSG_DONTWAIT) failed, errno=" << errno;
+
+  SendControl(ControlCommand::kBlockRead);
+
+  // The second recvfrom should fail because the socket is not readable anymore.
+  ret = recvfrom(sock_, data, len, MSG_DONTWAIT, reinterpret_cast<sockaddr*>(&addr), &addrlen);
+  ASSERT_EQ(ret, -1) << "recvfrom(MSG_DONTWAIT) failed, errno=" << errno;
+  EXPECT_EQ(errno, EAGAIN);
+
+  EXPECT_EQ(addrlen, sizeof addr);
+  EXPECT_STREQ(data, "recv_data");
+}
+
+TEST_F(QipcrtrClientTest, SendToDontWait) {
+  char data[] = "send_data";
+  size_t len = sizeof data;
+  sockaddr_qrtr addr;
+  addr.sq_family = AF_QIPCRTR;
+  addr.sq_node = 2;
+  addr.sq_port = 20;
+  socklen_t addrlen = sizeof addr;
+
+  ASSERT_GE(sendto(sock_, data, len, MSG_DONTWAIT, reinterpret_cast<sockaddr*>(&addr), addrlen), 0)
+      << "sendto(MSG_DONTWAIT) failed, errno=" << errno;
+
+  SendControl(ControlCommand::kBlockWrite);
+
+  // The second sendto should fail because the socket is not writable anymore.
+  ASSERT_EQ(sendto(sock_, data, len, MSG_DONTWAIT, reinterpret_cast<sockaddr*>(&addr), addrlen), -1)
+      << "sendto(MSG_DONTWAIT) failed, errno=" << errno;
+  EXPECT_EQ(errno, EAGAIN);
 }
 
 }  // namespace
