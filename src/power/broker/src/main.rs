@@ -12,7 +12,7 @@ use fidl_fuchsia_power_broker::{
     TopologyRequestStream,
 };
 use fpb::ElementSchema;
-use fuchsia_async::Task;
+use fuchsia_async::{MonotonicInstant, Task, Timer};
 use fuchsia_component::server::ServiceFs;
 use fuchsia_inspect::component;
 use fuchsia_inspect::health::Reporter;
@@ -22,6 +22,7 @@ use inspect_format::constants::DEFAULT_VMO_SIZE_BYTES as DEFAULT_INSPECT_VMO;
 use std::cell::RefCell;
 use std::collections::HashMap;
 use std::rc::Rc;
+use zx::Duration;
 
 use crate::broker::{Broker, CurrentLevelSubscriber, LeaseID};
 use crate::topology::{ElementID, IndexedPowerLevel};
@@ -443,6 +444,15 @@ impl ElementRunnerHandler {
                         match required_level {
                             Some(Some(required_level)) => {
                                 log::debug!("{debug_info} calling set_level({required_level:?})");
+                                let debug_info_copy = debug_info.clone();
+                                let _warn_task = Task::local(async move {
+                                    for count in 1.. {
+                                        Timer::new(MonotonicInstant::after(Duration::from_seconds(10))).await;
+                                        let elapsed_s = count * 10;
+                                        log::warn!("{debug_info_copy}: set_level({required_level:?}) still pending after {elapsed_s}s...");
+                                    }
+                                });
+
                                 if let Err(err) = element_runner.set_level(required_level.level).await {
                                     log::warn!("{debug_info}: set_level error: {:?}", err);
                                 } else {
