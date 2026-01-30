@@ -16,7 +16,7 @@ type PlayerRegistration = table {
     /// The usage of the player's audio output. Either 'usage' or 'usage2'
     /// may be set, but not both. If neither is set, this is assumed to be MEDIA.
     // TODO(https://fxbug.dev/384934089): deprecate and remove |AudioRenderUsage|
-    @deprecated("Use usage2 and AudioRenderUsage2")
+    @available(deprecated=26, removed=NEXT, note="Use usage2 and AudioRenderUsage2")
     2: usage fuchsia.media.AudioRenderUsage;
 
     /// The usage of the player's audio output. Either 'usage' or 'usage2'
