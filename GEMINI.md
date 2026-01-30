@@ -149,6 +149,10 @@ When running `fx build` give your shell command tool longer wait intervals than
 the default. Consider waiting 1+ minutes at minimum each time you build
 depending on the number of targets you're building.
 
+ALWAYS prefix your GN labels with `//` on the command-line. If you pass an
+unprefixed path to `fx build` it will interpret it as a path relative to the
+out directory.
+
 ### Linting
 
 `fx clippy` runs the Rust linter and for Rust-only changes it can be very useful
