@@ -7091,7 +7091,8 @@ VmCowReclaimResult VmCowPages::ReclaimPageForCompression(vm_page_t* page, uint64
         };
         if (node_has_parent_content_markers() ||
             (!root_has_page_source() && !parent_has_content(offset))) {
-          *slot = VmPageOrMarker::Empty();
+          // An empty slot represents zero.
+          DEBUG_ASSERT(slot->IsEmpty());
           page_list_.ReturnEmptySlot(offset);
           vm_vmo_compression_zero_slot.Add(1);
         } else {
