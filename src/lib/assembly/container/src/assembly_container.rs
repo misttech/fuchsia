@@ -6,6 +6,7 @@ use std::collections::{BTreeMap, HashMap};
 
 use anyhow::{Context, Result, anyhow, bail};
 use assembly_package_copy::PackageCopier;
+use assembly_util::copy_dir;
 use camino::{Utf8Path, Utf8PathBuf};
 use depfile::Depfile;
 use pathdiff::diff_paths;
@@ -13,9 +14,6 @@ use schemars::JsonSchema;
 use serde::de::DeserializeOwned;
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeSet;
-use std::fs::create_dir_all;
-use std::path::Path;
-use walkdir::WalkDir;
 
 /// A container of assembly artifacts that has a top-level config json file.
 /// Use #[assembly_container(config.json)] to implement this trait.
@@ -377,26 +375,6 @@ impl AsRef<std::path::Path> for DirectoryPathBuf {
     fn as_ref(&self) -> &std::path::Path {
         self.0.as_std_path()
     }
-}
-
-fn copy_dir(from: &Path, to: &Path) -> Result<()> {
-    let walker = WalkDir::new(from);
-    for entry in walker.into_iter() {
-        let entry = entry?;
-        let to_path = to.join(entry.path().strip_prefix(from)?);
-        if entry.metadata()?.is_dir() {
-            if to_path.exists() {
-                continue;
-            } else {
-                create_dir_all(&to_path).with_context(|| format!("creating {to_path:?}"))?;
-            }
-        } else {
-            assembly_util::fast_copy(entry.path(), &to_path)
-                .with_context(|| format!("copying {:?} to {:?}", entry.path(), to_path))?;
-        }
-    }
-
-    Ok(())
 }
 
 #[cfg(test)]

@@ -17,6 +17,7 @@ rustc_library("util") {
     "//third_party/rust_crates:serde",
     "//third_party/rust_crates:serde_json",
     "//third_party/rust_crates:serde_json5",
+    "//third_party/rust_crates:walkdir",
     "//third_party/rust_crates:xattr",
   ]
   test_deps = [ "//third_party/rust_crates:tempfile" ]

@@ -10,7 +10,7 @@ mod insert_unique;
 mod named_map;
 mod paths;
 
-pub use fast_copy::fast_copy;
+pub use fast_copy::{copy_dir, fast_copy};
 pub use insert_unique::{
     BTreeMapDuplicateKeyError, DuplicateKeyError, InsertAllUniqueExt, InsertUniqueExt, MapEntry,
 };

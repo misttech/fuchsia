@@ -3,7 +3,7 @@
 # found in the LICENSE file.
 
 import("//build/bazel/bazel_inputs.gni")
-import("//build/python/python_action.gni")
+import("//build/compiled_action.gni")
 import("//build/zircon/tools.gni")
 
 # Creates a directory of platform artifacts that can be shipped to out-of-tree
@@ -58,7 +58,7 @@ template("platform_artifacts") {
     output_conversion = "json"
   }
 
-  python_action(labels.platform_artifacts) {
+  compiled_action(labels.platform_artifacts) {
     forward_variables_from(invoker,
                            [
                              "testonly",
@@ -68,30 +68,34 @@ template("platform_artifacts") {
     hermetic_deps = false
     hermetic_action_ignored_prefixes = [ "${files.platform_artifacts}" ]
 
-    binary_label = "//build/assembly/scripts:generate_platform_artifacts"
+    tool = "//build/assembly/tools/assembly_config"
     outputs = [ "${files.platform_artifacts}/platform_artifacts.json" ]
     deps = [ ":${labels.aib_list}" ]
     depfile = files.depfile
 
     args = [
+      "generate",
+      "platform-artifacts",
       "--name",
       artifacts_name,
       "--aib-list",
       rebase_path(files.aib_list, root_build_dir),
       "--repo",
       "fuchsia",
-      "--outdir",
+      "--output",
       rebase_path(files.platform_artifacts, root_build_dir),
       "--depfile",
       rebase_path(files.depfile, root_build_dir),
     ]
 
+    _version = "unversioned"
     if (invoker.version != "") {
-      args += [
-        "--version",
-        invoker.version,
-      ]
+      _version = invoker.version
     }
+    args += [
+      "--version",
+      _version,
+    ]
 
     fvm_tool_target = "//src/storage/bin/fvm($host_toolchain)"
     fvm_tool_path = get_label_info(fvm_tool_target, "root_out_dir") + "/fvm"
@@ -118,14 +122,12 @@ template("platform_artifacts") {
       zbi_tool_path,
       cmc_tool_path,
     ]
-    args += [
-      "--tools",
-      rebase_path(assembly_tool_path, root_build_dir),
-      rebase_path(blobfs_tool_path, root_build_dir),
-      rebase_path(fvm_tool_path, root_build_dir),
-      rebase_path(zbi_tool_path, root_build_dir),
-      rebase_path(cmc_tool_path, root_build_dir),
-    ]
+    foreach(tool, inputs) {
+      args += [
+        "--tools",
+        rebase_path(tool, root_build_dir),
+      ]
+    }
   }
 
   bazel_input_directory(labels.bazel_inputs) {

@@ -24,7 +24,6 @@ rustc_library("container") {
     "//third_party/rust_crates:serde",
     "//third_party/rust_crates:serde_json",
     "//third_party/rust_crates:serde_json5",
-    "//third_party/rust_crates:walkdir",
   ]
   test_deps = [
     "//src/sys/pkg/lib/fuchsia-hash",

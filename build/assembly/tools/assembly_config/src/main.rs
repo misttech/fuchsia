@@ -10,6 +10,7 @@ mod board_config;
 mod board_input_bundle;
 mod board_input_bundle_set;
 mod partitions_config;
+mod platform_artifacts;
 mod product_config;
 mod product_input_bundle;
 
@@ -70,6 +71,9 @@ enum GenerateSubcommand {
 
     /// generate a partitions config.
     Partitions(PartitionsArgs),
+
+    /// generate a platform artifacts directory.
+    PlatformArtifacts(PlatformArtifactsArgs),
 }
 
 /// An intermediate pass-through struct to manage the `extract` subcommand
@@ -432,6 +436,39 @@ struct PartitionsArgs {
     depfile: Option<Utf8PathBuf>,
 }
 
+/// Arguments to generate a platform artifacts directory.
+#[derive(FromArgs)]
+#[argh(subcommand, name = "platform-artifacts")]
+pub struct PlatformArtifactsArgs {
+    /// the name to give the platform artifacts.
+    #[argh(option)]
+    name: String,
+
+    /// the list of AIBs to include.
+    #[argh(option)]
+    aib_list: Utf8PathBuf,
+
+    /// the repository URL.
+    #[argh(option)]
+    repo: String,
+
+    /// the platform version.
+    #[argh(option)]
+    version: String,
+
+    /// paths to tool binaries to include.
+    #[argh(option)]
+    tools: Vec<Utf8PathBuf>,
+
+    /// the directory to write the platform artifacts to.
+    #[argh(option)]
+    output: Utf8PathBuf,
+
+    /// a depfile to write.
+    #[argh(option)]
+    depfile: Utf8PathBuf,
+}
+
 /// Arguments to extract a package from an assembly product config container.
 #[derive(FromArgs)]
 #[argh(subcommand, name = "product-package")]
@@ -470,6 +507,7 @@ fn main() -> Result<()> {
             GenerateSubcommand::Board(args) => board_config::new(&args),
             GenerateSubcommand::HybridBoard(args) => board_config::hybrid(&args),
             GenerateSubcommand::Partitions(args) => partitions_config::new(&args),
+            GenerateSubcommand::PlatformArtifacts(args) => platform_artifacts::new(&args),
         },
         Subcommand::Extract(args) => match args.subcommand {
             ExtractSubcommand::ProductPackage(args) => product_config::extract_package(&args),

@@ -7,6 +7,7 @@
 
 use anyhow::{Context, Result};
 use std::path::Path;
+use walkdir::WalkDir;
 use xattr;
 
 /// Copy a file from `src` to `dst`, using hardlinks if possible, and silently
@@ -18,6 +19,30 @@ pub fn fast_copy(src: impl AsRef<Path>, dst: impl AsRef<Path>) -> Result<()> {
 
     // Defer to a function that doesn't need to be monomorphized.
     fast_copy_impl(src, dst)
+}
+
+/// Copy a directory from `src` to `dst`, recursively.
+pub fn copy_dir(src: impl AsRef<Path>, dst: impl AsRef<Path>) -> Result<()> {
+    let src = src.as_ref();
+    let dst = dst.as_ref();
+    let walker = WalkDir::new(src);
+    for entry in walker.into_iter() {
+        let entry = entry?;
+        let to_path = dst.join(entry.path().strip_prefix(src)?);
+        if entry.metadata()?.is_dir() {
+            if to_path.exists() {
+                continue;
+            } else {
+                std::fs::create_dir_all(&to_path)
+                    .with_context(|| format!("creating {}", to_path.display()))?;
+            }
+        } else {
+            fast_copy(entry.path(), &to_path).with_context(|| {
+                format!("copying {} to {}", entry.path().display(), to_path.display())
+            })?;
+        }
+    }
+    Ok(())
 }
 
 /// An internal helper method that doesn't use generics
