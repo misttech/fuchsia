@@ -23,6 +23,7 @@
 #include <cstdlib>
 #include <functional>
 #include <optional>
+#include <ostream>
 
 #include <linux/userfaultfd.h>
 
@@ -710,7 +711,7 @@ TEST(UffdTest, CannotPopulateTwice) {
       EXPECT_EQ(errno, EAGAIN);
 
       // The number of bytes copied is reported
-      EXPECT_EQ(uffdio_copy_both.copy, static_cast<int64_t>(page_size));
+      ASSERT_EQ(uffdio_copy_both.copy, static_cast<int64_t>(page_size));
     };
     SAFE_SYSCALL(sigaction(SIGBUS, &act, nullptr));
 
@@ -787,20 +788,21 @@ TEST_F(UffdProcTest, RegisterThenMove) {
     uffd.api(UFFD_FEATURE_SIGBUS);
     uffd.register_range(start, len, UFFDIO_REGISTER_MODE_MISSING);
     auto smaps_init = FindMemoryMappingInSmaps(start);
+    ASSERT_TRUE(smaps_init->ContainsFlag("um"));
 
     void *remapped = mremap(source, len, len, MREMAP_MAYMOVE | MREMAP_DONTUNMAP, 0);
     ASSERT_NE(remapped, MAP_FAILED);
     ASSERT_NE(remapped, source);
 
     auto smaps_source = FindMemoryMappingInSmaps(start);
-    EXPECT_TRUE(smaps_source->ContainsFlag("um"));
+    ASSERT_TRUE(smaps_source->ContainsFlag("um"));
     auto smaps_remapped = FindMemoryMappingInSmaps(reinterpret_cast<intptr_t>(remapped));
-    EXPECT_FALSE(smaps_remapped->ContainsFlag("um"));
+    ASSERT_FALSE(smaps_remapped->ContainsFlag("um"));
 
     // No sigbus on remapped
-    EXPECT_EQ(reinterpret_cast<char *>(remapped)[5], '\0');
+    ASSERT_EQ(reinterpret_cast<char *>(remapped)[5], '\0');
     // SIGBUS on original
-    EXPECT_EQ(reinterpret_cast<char *>(start)[5], '\0');
+    ASSERT_EQ(reinterpret_cast<char *>(start)[5], '\0');
   });
   ASSERT_TRUE(helper.WaitForChildren());
 }

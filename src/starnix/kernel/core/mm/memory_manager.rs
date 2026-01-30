@@ -955,12 +955,15 @@ impl MemoryManagerState {
                     self.private_anonymous.move_pages(&range_to_move, dst_addr)?;
                 }
 
+                // Userfault registration is not preserved by remap
+                let new_flags =
+                    src_mapping.flags().difference(MappingFlags::UFFD | MappingFlags::UFFD_MISSING);
                 self.map_in_user_vmar(
                     SelectedAddress::FixedOverwrite(dst_addr),
                     &self.private_anonymous.backing,
                     dst_addr.ptr() as u64,
                     dst_length,
-                    src_mapping.flags(),
+                    new_flags,
                     false,
                 )?;
 
@@ -972,8 +975,8 @@ impl MemoryManagerState {
                         mm,
                         DesiredAddress::FixedOverwrite(growth_start_addr),
                         growth_length,
-                        src_mapping.flags().access_flags(),
-                        src_mapping.flags().options(),
+                        new_flags.access_flags(),
+                        new_flags.options(),
                         false,
                         src_mapping.name(),
                         released_mappings,
@@ -982,7 +985,7 @@ impl MemoryManagerState {
 
                 released_mappings.extend(self.mappings.insert(
                     dst_addr..dst_end,
-                    Mapping::new_private_anonymous(src_mapping.flags(), src_mapping.name()),
+                    Mapping::new_private_anonymous(new_flags, src_mapping.name()),
                 ));
 
                 if dst_addr != src_addr && src_length != 0 && !keep_source {
