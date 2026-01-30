@@ -55,6 +55,7 @@
                 "fuchsia.scenic.PointerAutoFocus",
                 "fuchsia.scenic.Renderer",
                 "fuchsia.session.AutoLaunch",
+                "fuchsia.session.EnableDebugShortcut",
                 "fuchsia.session.SessionUrl",
                 "fuchsia.session.window.Collection",
                 "fuchsia.session.window.InitialElementUrl",

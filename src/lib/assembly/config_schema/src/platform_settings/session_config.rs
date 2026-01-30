@@ -19,11 +19,19 @@ pub struct PlatformSessionConfig {
 
     #[serde(skip_serializing_if = "crate::common::is_default")]
     pub include_element_manager: bool,
+
+    // Whether to enable 5-button press to debug.
+    pub enable_debug_shortcut: bool,
 }
 
 impl Default for PlatformSessionConfig {
     fn default() -> Self {
-        Self { enabled: false, autolaunch: true, include_element_manager: false }
+        Self {
+            enabled: false,
+            autolaunch: true,
+            include_element_manager: false,
+            enable_debug_shortcut: false,
+        }
     }
 }
 

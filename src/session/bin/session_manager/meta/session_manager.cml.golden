@@ -61,13 +61,15 @@
             protocol: [ "fuchsia.metrics.MetricEventLoggerFactory" ],
             from: "parent",
         },
-
-        // System power level controls.
         {
             protocol: [
+                // System power level controls.
                 "fuchsia.power.broker.Topology",
                 "fuchsia.power.system.ActivityGovernor",
                 "fuchsia.power.system.BootControl",
+
+                // System UI listeners.
+                "fuchsia.ui.policy.DeviceListenerRegistry",
             ],
             from: "parent",
             availability: "optional",
@@ -84,6 +86,11 @@
             // on device startup.
             config: "fuchsia.session.AutoLaunch",
             key: "autolaunch",
+            type: "bool",
+        },
+        {
+            config: "fuchsia.session.EnableDebugShortcut",
+            key: "enable_debug_shortcut",
             type: "bool",
         },
         {

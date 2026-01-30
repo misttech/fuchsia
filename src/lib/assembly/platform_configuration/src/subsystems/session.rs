@@ -93,6 +93,10 @@ impl
             "fuchsia.session.AutoLaunch",
             Config::new(ConfigValueType::Bool, platform_config.autolaunch.into()),
         )?;
+        builder.set_config_capability(
+            "fuchsia.session.EnableDebugShortcut",
+            Config::new(ConfigValueType::Bool, platform_config.enable_debug_shortcut.into()),
+        )?;
 
         if platform_config.include_element_manager {
             ensure!(
