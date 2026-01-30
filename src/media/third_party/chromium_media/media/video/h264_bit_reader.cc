@@ -53,7 +53,10 @@ bool H264BitReader::UpdateCurrByte() {
   }
 
   // Load a new byte and advance pointers.
-  curr_byte_ = *data_++ & 0xff;
+  //
+  // The intent of "volatile" here is to tell the compiler to read once for the
+  // one syntactic read here, so we ensure we get one read before any parsing.
+  curr_byte_ = *(volatile uint8_t*)data_++ & 0xff;
   --bytes_left_;
   num_remaining_bits_in_curr_byte_ = 8;
 
