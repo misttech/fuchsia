@@ -90,6 +90,22 @@ pub fn init_logging_for_component_with_executor<'a, R>(
     }
 }
 
+#[doc(hidden)]
+pub fn init_default_logging_for_component_with_executor<'a, R>(
+    func: impl FnOnce() -> R + 'a,
+    logging: LoggingOptions<'a>,
+) -> impl FnOnce() -> R + 'a {
+    init_logging_for_component_with_executor(func, logging)
+}
+
+#[doc(hidden)]
+pub fn init_noop_logging_for_component_with_executor<'a, R>(
+    func: impl FnOnce() -> R + 'a,
+    _logging: LoggingOptions<'a>,
+) -> impl FnOnce() -> R + 'a {
+    func
+}
+
 /// Initialize logging
 #[doc(hidden)]
 pub fn init_logging_for_component_with_threads<'a, R>(
@@ -102,9 +118,24 @@ pub fn init_logging_for_component_with_threads<'a, R>(
     }
 }
 
+#[doc(hidden)]
+pub fn init_default_logging_for_component_with_threads<'a, R>(
+    func: impl FnOnce() -> R + 'a,
+    logging: LoggingOptions<'a>,
+) -> impl FnOnce() -> R + 'a {
+    init_logging_for_component_with_threads(func, logging)
+}
+
+#[doc(hidden)]
+pub fn init_noop_logging_for_component_with_threads<'a, R>(
+    func: impl FnOnce() -> R + 'a,
+    _logging: LoggingOptions<'a>,
+) -> impl FnOnce() -> R + 'a {
+    func
+}
+
 /// Initialize logging
 #[doc(hidden)]
-#[cfg(target_os = "fuchsia")]
 pub fn init_logging_for_test_with_executor<'a, R>(
     func: impl Fn(usize) -> R + 'a,
     logging: LoggingOptions<'a>,
@@ -115,9 +146,31 @@ pub fn init_logging_for_test_with_executor<'a, R>(
     }
 }
 
+#[doc(hidden)]
+pub fn init_default_logging_for_test_with_executor<'a, R>(
+    func: impl Fn(usize) -> R + 'a,
+    logging: LoggingOptions<'a>,
+) -> impl Fn(usize) -> R + 'a {
+    #[cfg(target_os = "fuchsia")]
+    {
+        init_logging_for_test_with_executor(func, logging)
+    }
+    #[cfg(not(target_os = "fuchsia"))]
+    {
+        init_noop_logging_for_test_with_executor(func, logging)
+    }
+}
+
+#[doc(hidden)]
+pub fn init_noop_logging_for_test_with_executor<'a, R>(
+    func: impl Fn(usize) -> R + 'a,
+    _logging: LoggingOptions<'a>,
+) -> impl Fn(usize) -> R + 'a {
+    func
+}
+
 /// Initialize logging
 #[doc(hidden)]
-#[cfg(target_os = "fuchsia")]
 pub fn init_logging_for_test_with_threads<'a, R>(
     func: impl Fn(usize) -> R + 'a,
     logging: LoggingOptions<'a>,
@@ -128,7 +181,32 @@ pub fn init_logging_for_test_with_threads<'a, R>(
     }
 }
 
-/// Initializes logging on a background thread.
+#[doc(hidden)]
+pub fn init_default_logging_for_test_with_threads<'a, R>(
+    func: impl Fn(usize) -> R + 'a,
+    logging: LoggingOptions<'a>,
+) -> impl Fn(usize) -> R + 'a {
+    #[cfg(target_os = "fuchsia")]
+    {
+        init_logging_for_test_with_threads(func, logging)
+    }
+    #[cfg(not(target_os = "fuchsia"))]
+    {
+        // On non-Fuchsia targets, we don't initialize logging by default for tests.
+        init_noop_logging_for_test_with_threads(func, logging)
+    }
+}
+
+#[doc(hidden)]
+pub fn init_noop_logging_for_test_with_threads<'a, R>(
+    func: impl Fn(usize) -> R + 'a,
+    _logging: LoggingOptions<'a>,
+) -> impl Fn(usize) -> R + 'a {
+    func
+}
+
+/// Initializes logging on a background thread, returning a guard which cancels interest listening
+/// when dropped.
 #[cfg(target_os = "fuchsia")]
 fn init_logging_with_threads(logging: LoggingOptions<'_>) {
     diagnostics_log::initialize_sync(logging.into());
@@ -137,26 +215,6 @@ fn init_logging_with_threads(logging: LoggingOptions<'_>) {
 #[cfg(not(target_os = "fuchsia"))]
 fn init_logging_with_threads(logging: LoggingOptions<'_>) {
     diagnostics_log::initialize(logging.into()).expect("initialize_logging");
-}
-
-/// Initialize logging
-#[doc(hidden)]
-#[cfg(not(target_os = "fuchsia"))]
-pub fn init_logging_for_test_with_executor<'a, R>(
-    func: impl Fn(usize) -> R + 'a,
-    _logging: LoggingOptions<'a>,
-) -> impl Fn(usize) -> R + 'a {
-    move |n| func(n)
-}
-
-/// Initialize logging
-#[doc(hidden)]
-#[cfg(not(target_os = "fuchsia"))]
-pub fn init_logging_for_test_with_threads<'a, R>(
-    func: impl Fn(usize) -> R + 'a,
-    _logging: LoggingOptions<'a>,
-) -> impl Fn(usize) -> R + 'a {
-    move |n| func(n)
 }
 
 #[cfg(target_os = "fuchsia")]

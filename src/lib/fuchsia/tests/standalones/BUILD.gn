@@ -259,6 +259,14 @@ standalone_test("instrumentation_multithreaded_default") {
   }
 }
 
+standalone_test("empty_test_with_explicit_unit") {
+  type = "test"
+}
+
+standalone_test("logging_false_with_exit_code") {
+  type = "binary"
+}
+
 group("tests") {
   testonly = true
   deps = [
@@ -292,6 +300,7 @@ group("tests") {
     ":empty_test",
     ":empty_test_with_add_test_attr",
     ":empty_test_with_empty_logging_tags",
+    ":empty_test_with_explicit_unit",
     ":empty_test_with_logging",
     ":empty_test_with_logging_tags",
     ":empty_test_with_minimum_severity",
@@ -306,6 +315,7 @@ group("tests") {
     ":instrumentation_default",
     ":instrumentation_disabled",
     ":instrumentation_multithreaded_default",
+    ":logging_false_with_exit_code",
     ":should_panic_tests_do_not_trigger_lsan_on_panic",
     ":sync_component_with_thread_role",
   ]

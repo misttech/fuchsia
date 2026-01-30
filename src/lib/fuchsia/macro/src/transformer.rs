@@ -10,7 +10,9 @@ use proc_macro2::TokenStream;
 use quote::{quote, quote_spanned};
 use syn::parse::{Parse, ParseStream, Parser};
 use syn::punctuated::Punctuated;
-use syn::{Attribute, Block, Error, Expr, ItemFn, LitBool, LitStr, Signature, Token, Visibility};
+use syn::{
+    Attribute, Block, Error, Expr, Ident, ItemFn, LitBool, LitStr, Signature, Token, Visibility,
+};
 
 #[derive(Clone, Copy)]
 enum FunctionType {
@@ -139,7 +141,7 @@ pub struct Transformer {
     vis: Visibility,
     sig: Signature,
     block: Box<Block>,
-    logging: bool,
+    logging: Option<bool>,
     logging_tags: Punctuated<LitStr, Token![,]>,
     logging_include_file_line: bool,
     panic_prefix: LitStr,
@@ -151,7 +153,7 @@ struct Args {
     threads: Option<Expr>,
     thread_role: Option<Expr>,
     allow_stalls: Option<bool>,
-    logging: bool,
+    logging: Option<bool>,
     logging_tags: Punctuated<LitStr, Token![,]>,
     logging_include_file_line: bool,
     interest: Interest,
@@ -241,7 +243,7 @@ impl Args {
             threads: None,
             thread_role: None,
             allow_stalls: None,
-            logging: true,
+            logging: None,
             logging_tags: Default::default(),
             logging_include_file_line: false,
             panic_prefix: None,
@@ -257,13 +259,23 @@ impl Args {
                 "threads" => args.threads = Some(get_arg::<Expr>(&meta.input)?),
                 "thread_role" => args.thread_role = Some(get_arg::<Expr>(&meta.input)?),
                 "allow_stalls" => args.allow_stalls = Some(get_bool_arg(&meta.input, true)?),
-                "logging" => args.logging = get_bool_arg(&meta.input, true)?,
-                "logging_tags" => args.logging_tags = get_logging_tags(&meta.input)?,
-                "always_log_file_line" => {
-                    args.logging_include_file_line = get_bool_arg(&meta.input, true)?
+                "logging" => args.logging = Some(get_bool_arg(&meta.input, true)?),
+                "logging_tags" => {
+                    args.logging = Some(true);
+                    args.logging_tags = get_logging_tags(&meta.input)?;
                 }
-                "logging_minimum_severity" => args.interest = get_interest_arg(&meta.input)?,
-                "logging_panic_prefix" => args.panic_prefix = Some(get_arg(&meta.input)?),
+                "always_log_file_line" => {
+                    args.logging = Some(true);
+                    args.logging_include_file_line = get_bool_arg(&meta.input, true)?;
+                }
+                "logging_minimum_severity" => {
+                    args.logging = Some(true);
+                    args.interest = get_interest_arg(&meta.input)?;
+                }
+                "logging_panic_prefix" => {
+                    args.logging = Some(true);
+                    args.panic_prefix = Some(get_arg(&meta.input)?);
+                }
                 "add_test_attr" => args.add_test_attr = get_bool_arg(&meta.input, true)?,
                 "instrumentation" => args.instrumentation = get_bool_arg(&meta.input, true)?,
                 _ => return Err(meta.error("unrecognized argument")),
@@ -399,38 +411,36 @@ impl Finish for Transformer {
         let func_to_run_ident =
             syn::Ident::new("__internal_func_to_run", proc_macro2::Span::mixed_site());
 
-        // Initialize logging
-        let init_logging = if !self.logging {
-            quote! { #func_to_run_ident }
-        } else if self.executor.is_test() {
-            logging_tags.insert(0, LitStr::new(&ident.to_string(), ident.span()));
-            let logging_options = quote! {
-                ::fuchsia::LoggingOptions {
-                    interest: #interest,
-                    always_log_file_line: #always_log_file_line,
-                    tags: &[#logging_tags],
-                    panic_prefix: #panic_prefix,
-                }
-            };
-            if self.executor.is_some() {
-                quote!(::fuchsia::init_logging_for_test_with_executor(#func_to_run_ident, #logging_options))
-            } else {
-                quote!(::fuchsia::init_logging_for_test_with_threads(#func_to_run_ident, #logging_options))
+        let mut logging_init_fn_ident = String::from("init_");
+        if let Some(logging) = self.logging {
+            if !logging {
+                logging_init_fn_ident.push_str("noop_");
             }
         } else {
-            let logging_options = quote! {
+            logging_init_fn_ident.push_str("default_");
+        }
+        if self.executor.is_test() {
+            logging_tags.insert(0, LitStr::new(&ident.to_string(), ident.span()));
+            logging_init_fn_ident.push_str("logging_for_test_");
+        } else {
+            logging_init_fn_ident.push_str("logging_for_component_");
+        }
+        if self.executor.is_some() {
+            logging_init_fn_ident.push_str("with_executor");
+        } else {
+            logging_init_fn_ident.push_str("with_threads");
+        }
+        let logging_init_fn = Ident::new(&logging_init_fn_ident, proc_macro2::Span::call_site());
+        let init_logging = quote! {
+            ::fuchsia::#logging_init_fn(
+                #func_to_run_ident,
                 ::fuchsia::LoggingOptions {
                     interest: #interest,
                     always_log_file_line: #always_log_file_line,
                     tags: &[#logging_tags],
                     panic_prefix: #panic_prefix,
                 }
-            };
-            if self.executor.is_some() {
-                quote!(::fuchsia::init_logging_for_component_with_executor(#func_to_run_ident, #logging_options))
-            } else {
-                quote!(::fuchsia::init_logging_for_component_with_threads(#func_to_run_ident, #logging_options))
-            }
+            )
         };
 
         if self.executor.is_test() && self.add_test_attr {
@@ -454,11 +464,18 @@ impl Finish for Transformer {
         };
 
         let tts = self.executor.build_token_stream(&func_to_run_ident);
-        let is_nonempty_ret_type = !matches!(ret_type, syn::ReturnType::Default);
+        let is_nonempty_ret_type = match &ret_type {
+            syn::ReturnType::Default => false,
+            syn::ReturnType::Type(_, ty) => match &**ty {
+                // Treat a `-> ()` return as not having any return type at all.
+                syn::Type::Tuple(tuple) => !tuple.elems.is_empty(),
+                _ => true,
+            },
+        };
 
         // Select executor
         let (run_executor, modified_ret_type) =
-            if !self.executor.is_test() && self.logging && is_nonempty_ret_type {
+            if is_nonempty_ret_type && self.logging != Some(false) {
                 (
                     quote! {
                         let result = #tts;

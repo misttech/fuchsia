@@ -4,8 +4,5 @@
 
 #[fuchsia::test(logging = true)]
 fn empty_test_with_logging() {
-    #[cfg(target_os = "fuchsia")]
     src_lib_fuchsia_testing::assert_logger_registered!();
-    #[cfg(not(target_os = "fuchsia"))]
-    src_lib_fuchsia_testing::assert_no_logger_registered!();
 }

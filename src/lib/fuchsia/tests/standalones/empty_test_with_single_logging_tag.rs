@@ -4,8 +4,5 @@
 
 #[fuchsia::test(logging_tags = ["foo"])]
 async fn empty_test_with_single_logging_tag() {
-    #[cfg(target_os = "fuchsia")]
     src_lib_fuchsia_testing::assert_logger_registered!();
-    #[cfg(not(target_os = "fuchsia"))]
-    src_lib_fuchsia_testing::assert_no_logger_registered!();
 }

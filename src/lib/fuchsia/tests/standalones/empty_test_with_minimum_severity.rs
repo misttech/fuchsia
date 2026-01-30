@@ -4,8 +4,5 @@
 
 #[fuchsia::test(logging_minimum_severity = "warn")]
 async fn empty_test_with_minimum_severity() {
-    #[cfg(target_os = "fuchsia")]
     src_lib_fuchsia_testing::assert_logger_registered!();
-    #[cfg(not(target_os = "fuchsia"))]
-    src_lib_fuchsia_testing::assert_no_logger_registered!();
 }

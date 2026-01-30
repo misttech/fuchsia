@@ -38,8 +38,9 @@ pub fn main(args: TokenStream, input: TokenStream) -> TokenStream {
 /// Arguments:
 ///  - `threads` - worker thread count for a multi-threaded executor. Must be >1 if provided.
 ///                Defaults to creating a single-threaded executor if omitted.
-///  - `logging`       - boolean toggle for whether to initialize logging (or not). Default true.
-///                      This currently does nothing on host. On Fuchsia fuchsia-syslog is used.
+///  - `logging`       - boolean toggle for whether to initialize logging (or not).
+///                      Default true on Fuchsia, false on host. Set to true if any of the
+///                      `logging_*` arguments are provided.
 ///  - `logging_tags` - optional list of string to be used as tags for logs. Default: None.
 ///  - `logging_minimum_severity` - optional minimum severity to be set for logs. Default: None,
 ///                                 the logging library will choose it (typically `info`).
