@@ -28,6 +28,10 @@ pub enum ParseError {
     MissingData { type_name: &'static str, type_size: usize, num_bytes: usize },
     #[error("required parsing routine not implemented")]
     NotImplemented,
+    #[error(
+        "policy is of {observed} bytes, but this implementation only supports policies of up to {limit} bytes"
+    )]
+    UnsupportedlyLarge { observed: usize, limit: usize },
 }
 
 /// Structured errors that may be encountered validating a binary policy.

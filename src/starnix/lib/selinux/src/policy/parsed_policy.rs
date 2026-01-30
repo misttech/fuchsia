@@ -39,6 +39,9 @@ use std::iter::Iterator;
 use std::num::NonZeroU32;
 use zerocopy::little_endian as le;
 
+// As of 2026-01-30, more than five times larger than any policy seen in production or tests.
+const MAXIMUM_POLICY_SIZE: usize = 1 << 24;
+
 /// A parsed binary policy.
 #[derive(Debug)]
 pub struct ParsedPolicy {
@@ -543,6 +546,12 @@ impl ParsedPolicy {
     pub(super) fn parse(data: PolicyData) -> Result<Self, anyhow::Error> {
         let cursor = PolicyCursor::new(data.clone());
         let policy_size = data.len();
+        if MAXIMUM_POLICY_SIZE <= policy_size {
+            return Err(anyhow::Error::from(ParseError::UnsupportedlyLarge {
+                observed: policy_size,
+                limit: MAXIMUM_POLICY_SIZE,
+            }));
+        }
         let (policy, tail) = parse_policy_internal(cursor, data)?;
         let excess_bytes = policy_size - tail.offset() as usize;
         if excess_bytes > 0 {
