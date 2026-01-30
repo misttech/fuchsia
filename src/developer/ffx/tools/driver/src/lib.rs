@@ -8,6 +8,8 @@ use driver_tools::args::DriverSubCommand;
 use driver_tools::subcommands::host::args::{HostCommand, HostSubcommand};
 use driver_tools::subcommands::host::subcommands::list::get_driver_hosts;
 use driver_tools::subcommands::host::subcommands::show::get_driver_host_details;
+use driver_tools::subcommands::node::args::{NodeCommand, NodeSubcommand};
+use driver_tools::subcommands::node::subcommands::list::get_nodes;
 use ffx_writer::{MachineWriter, ToolIO};
 use fho::{FfxMain, FfxTool};
 use fidl::endpoints::{DiscoverableProtocolMarker, ProtocolMarker};
@@ -224,6 +226,17 @@ impl FfxMain for DriverTool {
                     let proxy = connector.get_driver_development_proxy(select).await?;
                     let details = get_driver_host_details(show_cmd, &proxy).await?;
                     let value = serde_json::to_value(&details).map_err(|e| anyhow::anyhow!(e))?;
+                    writer.machine(&value).map_err(|e| anyhow::anyhow!(e))?;
+                    return Ok(());
+                }
+                DriverSubCommand::Node(NodeCommand {
+                    subcommand: NodeSubcommand::List(list_cmd),
+                }) => {
+                    let select = cmd.select;
+                    let connector = DriverConnector::new(remote_control);
+                    let proxy = connector.get_driver_development_proxy(select).await?;
+                    let nodes = get_nodes(list_cmd, &proxy).await?;
+                    let value = serde_json::to_value(&nodes).map_err(|e| anyhow::anyhow!(e))?;
                     writer.machine(&value).map_err(|e| anyhow::anyhow!(e))?;
                     return Ok(());
                 }

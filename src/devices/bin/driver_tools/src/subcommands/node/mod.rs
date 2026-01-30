@@ -5,7 +5,7 @@
 pub mod args;
 pub mod common;
 
-mod subcommands;
+pub mod subcommands;
 
 use anyhow::{Context, Result};
 use args::{NodeCommand, NodeSubcommand};

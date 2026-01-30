@@ -11,7 +11,7 @@ use std::collections::{BTreeMap, VecDeque};
 use std::str::FromStr;
 
 /// Filters that can be applied to nodes
-#[derive(Debug, PartialEq)]
+#[derive(Debug, PartialEq, Clone)]
 pub enum NodeFilter {
     /// Filters nodes that are bound to a driver or a composite parent,
     /// or their parent is the owner.

@@ -6,12 +6,37 @@ pub mod args;
 
 use crate::subcommands::node::common;
 
-use anyhow::{anyhow, Result};
+use anyhow::{Result, anyhow};
 use args::ListNodeCommand;
 use fidl_fuchsia_driver_development as fdd;
 use prettytable::format::consts::FORMAT_CLEAN;
-use prettytable::{cell, row, Table};
+use prettytable::{Table, cell, row};
+use serde::Serialize;
 use std::io::Write;
+
+#[derive(Serialize)]
+pub struct NodeDetails {
+    pub moniker: String,
+    pub state: String,
+    pub owner: String,
+}
+
+pub async fn get_nodes(
+    cmd: &ListNodeCommand,
+    driver_development_proxy: &fdd::ManagerProxy,
+) -> Result<Vec<NodeDetails>> {
+    let nodes = fuchsia_driver_dev::get_device_info(driver_development_proxy, &[], false).await?;
+    let nodes = common::filter_nodes(nodes, cmd.filter.clone())?;
+
+    let mut result = Vec::new();
+    for node in nodes {
+        let moniker = node.moniker.clone().unwrap_or_else(|| "Moniker not found.".to_string());
+        let (state, owner) =
+            common::get_state_and_owner(node.quarantined, &node.bound_driver_url, false);
+        result.push(NodeDetails { moniker, state, owner });
+    }
+    Ok(result)
+}
 
 pub async fn list_node(
     cmd: ListNodeCommand,
