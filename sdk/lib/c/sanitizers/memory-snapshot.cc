@@ -18,8 +18,7 @@
 #include "../dlfcn/dlfcn-abi.h"
 #include "../ld/writable-segments.h"
 #include "../threads/thread-list.h"
-#include "../threads/zxr-thread.h"
-#include "libc.h"
+#include "../threads/thread.h"
 #include "threads_impl.h"
 
 namespace LIBC_NAMESPACE_DECL {
@@ -496,11 +495,7 @@ class MemorySnapshot {
     callback(ptrs, sizeof(ptrs), callback_arg_);
 
     // Report each DTV element with its segment's precise address range.
-    const size_t gen = (size_t)tcb->head.dtv[0];
-    size_t modid = 0;
-    for (auto* mod = _dl_tls_layout().tls_head; mod && ++modid <= gen; mod = mod->next) {
-      callback(tcb->head.dtv[modid], mod->size, callback_arg_);
-    }
+    OnTlsSegments(*tcb, callback, callback_arg_);
   }
 
   // Report internal thread objects whose threads are either not fully setup or

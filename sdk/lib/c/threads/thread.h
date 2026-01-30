@@ -8,6 +8,7 @@
 #include <lib/zx/result.h>
 #include <pthread.h>
 #include <threads.h>
+#include <zircon/sanitizer.h>
 
 #include <cerrno>
 #include <concepts>
@@ -148,6 +149,10 @@ zx::result<intptr_t> ThreadJoin(Thread& thread);
 // success, the Thread reference is no longer safe to use in any way because
 // the thread can exit and free the storage itself at any time.
 zx::result<> ThreadDetach(Thread& thread);
+
+// Make the callback on the thread's TLS segments.
+void OnTlsSegments(Thread& thread, sanitizer_memory_snapshot_callback_t* callback,
+                   void* callback_arg);
 
 // Convert Zircon error to C11 <threads.h> return value.
 constexpr int C11ThreadError(zx_status_t status) {
