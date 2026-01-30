@@ -154,7 +154,8 @@ pub fn is_machine_supported(cmd: &DriverCommand) -> bool {
     match &cmd.subcommand {
         DriverSubCommand::Host(HostCommand { subcommand: HostSubcommand::List(_) })
         | DriverSubCommand::Host(HostCommand { subcommand: HostSubcommand::Show(_) })
-        | DriverSubCommand::Node(NodeCommand { subcommand: NodeSubcommand::List(_) }) => true,
+        | DriverSubCommand::Node(NodeCommand { subcommand: NodeSubcommand::List(_) })
+        | DriverSubCommand::Node(NodeCommand { subcommand: NodeSubcommand::Show(_) }) => true,
         _ => false,
     }
 }

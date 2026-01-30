@@ -11,8 +11,162 @@ use args::ShowNodeCommand;
 use itertools::Itertools;
 use prettytable::format::FormatBuilder;
 use prettytable::{Table, cell, row};
+use serde::Serialize;
 use std::io::Write;
 use {fidl_fuchsia_driver_development as fdd, fidl_fuchsia_driver_framework as fdf};
+
+#[derive(Serialize)]
+pub struct NodeDetails {
+    pub name: String,
+    pub moniker: String,
+    pub owner: String,
+    pub state: String,
+    pub host_koid: String,
+    pub parent_count: usize,
+    pub child_count: usize,
+    pub bus_topology: Vec<BusTopology>,
+    pub properties: Vec<NodeProperty>,
+    pub offers: Vec<NodeOffer>,
+}
+
+#[derive(Serialize)]
+pub struct BusTopology {
+    pub bus_type: String,
+    pub stability: String,
+    pub address: String,
+}
+
+#[derive(Serialize)]
+pub struct NodeProperty {
+    pub key: String,
+    pub value: String,
+}
+
+#[derive(Serialize)]
+pub struct NodeOffer {
+    pub service: String,
+    pub source: String,
+    pub instances: String,
+}
+
+pub async fn get_node_details(
+    cmd: &ShowNodeCommand,
+    driver_development_proxy: &fdd::ManagerProxy,
+) -> Result<NodeDetails> {
+    let nodes = fuchsia_driver_dev::get_device_info(driver_development_proxy, &[], false).await?;
+    let node = common::get_single_node_from_query(&cmd.query, nodes).await?;
+
+    // No style for machine output
+    let (state, owner) =
+        common::get_state_and_owner(node.quarantined, &node.bound_driver_url, false);
+
+    let moniker = node.moniker.clone().expect("Node does not have a moniker");
+    let (_, name) = moniker.rsplit_once('.').unwrap_or(("", &moniker));
+
+    let bus_topology = node
+        .bus_topology
+        .clone()
+        .unwrap_or_default()
+        .into_iter()
+        .map(|b| BusTopology {
+            bus_type: b.bus.map(|b| format!("{:?}", b)).unwrap_or_else(|| "No bus".to_string()),
+            stability: b
+                .address_stability
+                .map(|a| format!("{:?}", a))
+                .unwrap_or_else(|| "No stability".to_string()),
+            address: b
+                .address
+                .map(|a| match a {
+                    fdf::DeviceAddress::IntValue(i) => {
+                        format!("{}", i)
+                    }
+                    fdf::DeviceAddress::ArrayIntValue(items) => {
+                        format!("{}", items.iter().map(|u| u.to_string()).join(", "))
+                    }
+                    fdf::DeviceAddress::CharIntValue(c) => {
+                        format!("{}", c)
+                    }
+                    fdf::DeviceAddress::ArrayCharIntValue(items) => {
+                        format!("{}", items.join(", "))
+                    }
+                    fdf::DeviceAddress::StringValue(s) => {
+                        format!("{}", s)
+                    }
+                    _ => format!("unknown"),
+                })
+                .unwrap_or_else(|| "No Address".to_string()),
+        })
+        .collect();
+
+    let properties = node
+        .node_property_list
+        .clone()
+        .unwrap_or_else(|| vec![])
+        .into_iter()
+        .map(|p| {
+            let key = match p.key {
+                fdf::NodePropertyKey::IntValue(i) => format!("{}", i),
+                fdf::NodePropertyKey::StringValue(s) => format!("{}", s),
+            };
+            let value = match p.value {
+                fdf::NodePropertyValue::IntValue(i) => format!("{}", i),
+                fdf::NodePropertyValue::StringValue(s) => {
+                    format!("{}", s)
+                }
+                fdf::NodePropertyValue::BoolValue(b) => format!("{}", b),
+                fdf::NodePropertyValue::EnumValue(e) => format!("{}", e),
+                _ => format!("unknown"),
+            };
+            NodeProperty { key, value }
+        })
+        .collect();
+
+    let offers = node
+        .offer_list
+        .clone()
+        .unwrap_or_else(|| vec![])
+        .into_iter()
+        .map(|o| {
+            if let fidl_fuchsia_component_decl::Offer::Service(service) = o {
+                let service_str = service.target_name.unwrap_or_else(|| "<unknown>".to_string());
+
+                let source_name = if let Some(fidl_fuchsia_component_decl::Ref::Child(source)) =
+                    service.source.as_ref()
+                {
+                    source.name.clone()
+                } else {
+                    "Unknown source".to_string()
+                };
+
+                let filter = if let Some(filter) = &service.source_instance_filter {
+                    filter.join(", ")
+                } else {
+                    "All instances".to_string()
+                };
+                NodeOffer { service: service_str, source: source_name, instances: filter }
+            } else {
+                NodeOffer {
+                    service: "Non-service offer".to_string(),
+                    source: "".to_string(),
+                    instances: "".to_string(),
+                }
+            }
+        })
+        .collect();
+
+    Ok(NodeDetails {
+        name: name.to_string(),
+        moniker,
+        owner,
+        state,
+        host_koid: node.driver_host_koid.map(|k| format!("{}", k)).unwrap_or_default(),
+        parent_count: node.parent_ids.as_ref().map(|ids| ids.len()).unwrap_or(0),
+        child_count: node.child_ids.as_ref().map(|ids| ids.len()).unwrap_or(0),
+        bus_topology,
+        properties,
+        offers,
+    })
+}
 
 pub async fn show_node(
     cmd: ShowNodeCommand,

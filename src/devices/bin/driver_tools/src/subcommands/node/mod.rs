@@ -56,6 +56,11 @@ pub async fn node_machine(
             let nodes = subcommands::list::get_nodes(subcmd, driver_development_proxy).await?;
             Ok(Some(serde_json::to_value(&nodes)?))
         }
+        NodeSubcommand::Show(subcmd) => {
+            let details =
+                subcommands::show::get_node_details(subcmd, driver_development_proxy).await?;
+            Ok(Some(serde_json::to_value(&details)?))
+        }
         _ => Ok(None),
     }
 }
