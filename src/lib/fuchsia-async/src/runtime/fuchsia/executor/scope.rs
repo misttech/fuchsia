@@ -2473,8 +2473,8 @@ mod tests {
     fn test_dropped_cancel_cleans_up() {
         test_clean_up(|task| {
             let abort_fut = std::pin::pin!(task.abort());
-            let waker = futures::task::noop_waker();
-            assert!(abort_fut.poll(&mut Context::from_waker(&waker)).is_pending());
+            let waker = std::task::Waker::noop();
+            assert!(abort_fut.poll(&mut Context::from_waker(waker)).is_pending());
         });
     }
 

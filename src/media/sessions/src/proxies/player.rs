@@ -497,8 +497,8 @@ mod test {
     use fidl::prelude::*;
     use futures::future;
     use futures::stream::TryStreamExt;
-    use futures_test::task::noop_waker;
     use inspect::Inspector;
+    use std::task::Waker;
 
     static TEST_DOMAIN: &str = "test_domain";
 
@@ -544,7 +544,7 @@ mod test {
         let (_inspector, mut player, player_server) = test_player();
         let mut requests = player_server.into_stream();
 
-        let waker = noop_waker();
+        let waker = Waker::noop();
         let mut ctx = Context::from_waker(&waker);
 
         // Poll the stream so that it sends a watch request to the backing player.
@@ -593,7 +593,7 @@ mod test {
         let (_inspector, mut player, player_server) = test_player();
         let mut requests = player_server.into_stream();
 
-        let waker = noop_waker();
+        let waker = Waker::noop();
         let mut ctx = Context::from_waker(&waker);
 
         // Poll the stream so that it sends a watch request to the backing player.
@@ -628,7 +628,7 @@ mod test {
             test_player: {state: {}},
         });
 
-        let waker = noop_waker();
+        let waker = Waker::noop();
         let mut ctx = Context::from_waker(&waker);
 
         let delta = PlayerInfoDelta {

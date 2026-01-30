@@ -4,8 +4,8 @@
 
 use crate::Result;
 use fidl_fuchsia_media_sessions2::*;
-use futures::stream::{Fuse, Map, Stream, StreamExt};
 use futures::Future;
+use futures::stream::{Fuse, Map, Stream, StreamExt};
 use log::warn;
 use std::pin::Pin;
 use std::task::{Context, Poll};
@@ -148,8 +148,8 @@ mod test {
     use fuchsia_async as fasync;
     use futures::channel::mpsc;
     use futures::sink::SinkExt;
-    use futures::task::noop_waker;
-    use futures::{future, FutureExt};
+    use futures::{FutureExt, future};
+    use std::task::Waker;
 
     #[fuchsia::test]
     async fn clients_waits_for_new_status() -> Result<()> {
@@ -164,7 +164,7 @@ mod test {
         let observer = Observer::new(status_stream, responders);
         fasync::Task::spawn(observer.map(drop)).detach();
 
-        let waker = noop_waker();
+        let waker = Waker::noop();
         let mut ctx = Context::from_waker(&waker);
         let mut status_fut = session_control_proxy.watch_status();
         let poll_result = Pin::new(&mut status_fut).poll(&mut ctx);

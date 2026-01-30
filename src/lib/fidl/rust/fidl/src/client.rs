@@ -1070,10 +1070,10 @@ mod tests {
     use fuchsia_async::{Channel as AsyncChannel, DurationExt, TimeoutExt};
     use futures::channel::oneshot;
     use futures::stream::FuturesUnordered;
-    use futures::task::{ArcWake, noop_waker, waker};
     use futures::{StreamExt, TryFutureExt, join};
     use futures_test::task::new_count_waker;
     use std::future::pending;
+    use std::task::{Wake, Waker};
     use std::thread;
     use zx::MessageBufEtc;
 
@@ -2152,19 +2152,21 @@ mod tests {
         // an executor would be responsible for running the task.  We do it this way because if this
         // works, then it means the case where `into_channel` is used after a response is received
         // on a multi-threaded executor will always work (which isn't easy to test directly).
-        impl ArcWake for Sender {
-            fn wake_by_ref(arc_self: &Arc<Self>) {
+        impl Wake for Sender {
+            fn wake(self: Arc<Self>) {
+                self.wake_by_ref();
+            }
+            fn wake_by_ref(self: &Arc<Self>) {
                 assert!(
-                    arc_self
-                        .future
+                    self.future
                         .lock()
-                        .poll_unpin(&mut Context::from_waker(&noop_waker()))
+                        .poll_unpin(&mut Context::from_waker(Waker::noop()))
                         .is_ready()
                 );
             }
         }
 
-        let waker = waker(sender.clone());
+        let waker = Waker::from(sender.clone());
 
         assert!(sender.future.lock().poll_unpin(&mut Context::from_waker(&waker)).is_pending());
 

@@ -295,7 +295,7 @@ async fn socket_drop_read_fut() {
     let mut fut2 = b.fdomain_read(&mut buf2);
     let mut fut3 = b.fdomain_read(&mut buf3);
 
-    let mut null_cx = std::task::Context::from_waker(futures::task::noop_waker_ref());
+    let mut null_cx = std::task::Context::from_waker(&std::task::Waker::noop());
     assert!(fut1.poll_unpin(&mut null_cx).is_pending());
     assert!(fut2.poll_unpin(&mut null_cx).is_pending());
     assert!(fut3.poll_unpin(&mut null_cx).is_pending());

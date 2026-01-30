@@ -178,8 +178,8 @@ mod tests {
 
     use super::*;
 
-    use futures::task::noop_waker;
     use futures::{FutureExt, poll};
+    use std::task::Waker;
 
     use crate::dispatcher::tests::with_raw_dispatcher;
     use crate::dispatcher::{CurrentDispatcher, OnDispatcher};
@@ -269,7 +269,7 @@ mod tests {
         });
         let mut fut = fut_rx.recv().unwrap();
         loop {
-            let Poll::Ready(res) = fut.poll_unpin(&mut Context::from_waker(&noop_waker())) else {
+            let Poll::Ready(res) = fut.poll_unpin(&mut Context::from_waker(Waker::noop())) else {
                 sleep(Duration::from_millis(10));
                 continue;
             };

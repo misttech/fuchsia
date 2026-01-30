@@ -4,11 +4,10 @@
 
 use fuchsia_async as fasync;
 use futures::future::join;
-use futures::task::noop_waker;
 use futures::{Future, FutureExt, StreamExt};
 use mpmc::*;
 use std::pin::Pin;
-use std::task::{Context, Poll};
+use std::task::{Context, Poll, Waker};
 
 #[fasync::run_singlethreaded]
 #[test]
@@ -74,7 +73,7 @@ async fn backpressure() {
 
     let mut send_exceeding_buffer = s.send(1).boxed();
     let poll_result =
-        Pin::new(&mut send_exceeding_buffer).poll(&mut Context::from_waker(&noop_waker()));
+        Pin::new(&mut send_exceeding_buffer).poll(&mut Context::from_waker(Waker::noop()));
     assert_eq!(poll_result, Poll::Pending);
 }
 
@@ -91,13 +90,13 @@ async fn backpressure_across_senders() {
     // Ensure a different sender is pressured.
     let mut send1_exceeding_buffer = s2.send(1).boxed();
     let poll1_result =
-        Pin::new(&mut send1_exceeding_buffer).poll(&mut Context::from_waker(&noop_waker()));
+        Pin::new(&mut send1_exceeding_buffer).poll(&mut Context::from_waker(Waker::noop()));
     assert_eq!(poll1_result, Poll::Pending);
 
     // Ensure all senders are blocked.
     let mut send2_exceeding_buffer = s1.send(1).boxed();
     let poll2_result =
-        Pin::new(&mut send2_exceeding_buffer).poll(&mut Context::from_waker(&noop_waker()));
+        Pin::new(&mut send2_exceeding_buffer).poll(&mut Context::from_waker(Waker::noop()));
     assert_eq!(poll2_result, Poll::Pending);
 
     // Unblock

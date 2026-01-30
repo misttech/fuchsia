@@ -11,8 +11,9 @@ use crate::router::OpenedTransfer;
 use anyhow::{Error, bail, format_err};
 use futures::future::Either;
 use futures::prelude::*;
-use futures::task::{Context, Poll, noop_waker_ref};
+use futures::task::{Context, Poll};
 use std::sync::{Arc, Weak};
+use std::task::Waker;
 use zx_status;
 
 // Follow a transfer that was initated elsewhere to the destination.
@@ -174,7 +175,7 @@ async fn flush_outgoing_messages<Hdl: 'static + for<'a> ProxyableRW<'a>>(
             proxy.read_from_handle(&mut message),
             stream_reader.next(),
         )
-        .poll_unpin(&mut Context::from_waker(noop_waker_ref()))
+        .poll_unpin(&mut Context::from_waker(Waker::noop()))
         {
             Poll::Pending => return Ok(Some(stream_ref_sender)),
             Poll::Ready(Either::Left((x, _))) => {

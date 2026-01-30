@@ -216,7 +216,6 @@ mod test {
     use super::Socket as AsyncSocket;
     use futures::executor::block_on;
     use futures::prelude::*;
-    use futures::task::noop_waker_ref;
     use std::pin::Pin;
     use std::task::Context;
 
@@ -227,7 +226,7 @@ mod test {
             let (mut a, mut b) = (AsyncSocket::from_socket(a), AsyncSocket::from_socket(b));
             let mut buf = [0u8; 128];
 
-            let mut cx = Context::from_waker(noop_waker_ref());
+            let mut cx = Context::from_waker(std::task::Waker::noop());
 
             let mut rx = b.read(&mut buf);
             assert!(Pin::new(&mut rx).poll(&mut cx).is_pending());

@@ -590,7 +590,7 @@ mod test {
         // Poll the timer futures once so that they have the chance to
         // register themselves in our timer heap.
         {
-            let waker = futures::task::noop_waker();
+            let waker = std::task::Waker::noop();
             let mut context = futures::task::Context::from_waker(&waker);
             assert_eq!(
                 timer_registered_before_should_fire_1.poll_unpin(&mut context),

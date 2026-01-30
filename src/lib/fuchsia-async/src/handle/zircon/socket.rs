@@ -126,7 +126,7 @@ impl Socket {
                         Poll::Ready(Ok(bytes))
                     } else {
                         Poll::Ready(Err(zx::Status::IO_DATA_LOSS))
-                    }
+                    };
                 }
             }
         }
@@ -282,12 +282,12 @@ mod tests {
     use super::*;
     use crate::{MonotonicInstant, TestExecutor, TimeoutExt, Timer};
 
+    use futures::FutureExt;
     use futures::future::{self, join};
     use futures::io::{AsyncReadExt as _, AsyncWriteExt as _};
     use futures::stream::TryStreamExt;
-    use futures::task::noop_waker_ref;
-    use futures::FutureExt;
     use std::pin::pin;
+    use std::task::Waker;
     use zx::SocketWriteDisposition;
 
     #[test]
@@ -431,7 +431,7 @@ mod tests {
 
         // Call need_readable to reacquire the read signal. The socket now knows
         // that the signal is not actually set, so returns Pending.
-        assert!(async_s2.need_readable(&mut Context::from_waker(noop_waker_ref())).is_pending());
+        assert!(async_s2.need_readable(&mut Context::from_waker(Waker::noop())).is_pending());
         let mut rx_fut = poll_fn(|cx| async_s2.poll_readable(cx));
         assert!(executor.run_until_stalled(&mut rx_fut).is_pending());
 
@@ -461,7 +461,7 @@ mod tests {
 
         // Call need_writable to reacquire the write signal. The socket now
         // knows that the signal is not actually set, so returns Pending.
-        assert!(async_s2.need_writable(&mut Context::from_waker(noop_waker_ref())).is_pending());
+        assert!(async_s2.need_writable(&mut Context::from_waker(Waker::noop())).is_pending());
         let mut tx_fut = poll_fn(|cx| async_s2.poll_writable(cx));
         assert!(executor.run_until_stalled(&mut tx_fut).is_pending());
 

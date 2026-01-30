@@ -227,10 +227,9 @@ mod tests {
     use crate::TestExecutor;
     use futures::StreamExt;
     use futures::stream::FuturesUnordered;
-    use futures::task::noop_waker;
     use std::pin::pin;
     use std::sync::atomic::{AtomicU64, Ordering};
-    use std::task::Poll;
+    use std::task::{Poll, Waker};
 
     #[test]
     fn test_condition_can_waker_multiple_wakers() {
@@ -277,11 +276,11 @@ mod tests {
         let condition = Condition::new(());
 
         let entry1 = pin!(condition.waker_entry());
-        condition.lock().add_waker(entry1, noop_waker());
+        condition.lock().add_waker(entry1, Waker::noop().clone());
 
         {
             let entry2 = pin!(condition.waker_entry());
-            condition.lock().add_waker(entry2, noop_waker());
+            condition.lock().add_waker(entry2, Waker::noop().clone());
 
             assert_eq!(condition.waker_count(), 2);
         }
@@ -295,7 +294,7 @@ mod tests {
         assert_eq!(condition.waker_count(), 0);
 
         let entry3 = pin!(condition.waker_entry());
-        condition.lock().add_waker(entry3, noop_waker());
+        condition.lock().add_waker(entry3, Waker::noop().clone());
 
         assert_eq!(condition.waker_count(), 1);
     }
@@ -305,10 +304,10 @@ mod tests {
         let condition = Condition::new(());
 
         let mut entry1 = pin!(condition.waker_entry());
-        condition.lock().add_waker(entry1.as_mut(), noop_waker());
+        condition.lock().add_waker(entry1.as_mut(), Waker::noop().clone());
 
         let mut entry2 = pin!(condition.waker_entry());
-        condition.lock().add_waker(entry2.as_mut(), noop_waker());
+        condition.lock().add_waker(entry2.as_mut(), Waker::noop().clone());
 
         assert_eq!(condition.waker_count(), 2);
         {
@@ -317,8 +316,8 @@ mod tests {
         }
         assert_eq!(condition.waker_count(), 0);
 
-        condition.lock().add_waker(entry1, noop_waker());
-        condition.lock().add_waker(entry2, noop_waker());
+        condition.lock().add_waker(entry1, Waker::noop().clone());
+        condition.lock().add_waker(entry2, Waker::noop().clone());
 
         assert_eq!(condition.waker_count(), 2);
 

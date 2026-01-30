@@ -11,7 +11,6 @@ use crate::invoke_for_handle_types;
 use bitflags::bitflags;
 use fuchsia_sync::Mutex;
 use futures::ready;
-use futures::task::noop_waker_ref;
 #[cfg(debug_assertions)]
 use std::cell::Cell;
 use std::collections::{HashMap, VecDeque};
@@ -559,7 +558,7 @@ impl Channel {
         bytes: &mut Vec<u8>,
         handles: &mut Vec<Handle>,
     ) -> Result<(), zx_status::Status> {
-        match self.poll_read(&mut Context::from_waker(noop_waker_ref()), bytes, handles) {
+        match self.poll_read(&mut Context::from_waker(Waker::noop()), bytes, handles) {
             Poll::Ready(r) => r,
             Poll::Pending => Err(zx_status::Status::SHOULD_WAIT),
         }
@@ -611,7 +610,7 @@ impl Channel {
         buf: &mut [u8],
         handles: &mut [MaybeUninit<Handle>],
     ) -> Result<(Result<(), zx_status::Status>, usize, usize), (usize, usize)> {
-        match self.poll_read_raw(&mut Context::from_waker(noop_waker_ref()), buf, handles) {
+        match self.poll_read_raw(&mut Context::from_waker(Waker::noop()), buf, handles) {
             Poll::Ready(r) => r,
             Poll::Pending => Ok((Err(zx_status::Status::SHOULD_WAIT), 0, 0)),
         }
@@ -668,7 +667,7 @@ impl Channel {
         bytes: &mut Vec<u8>,
         handles: &mut Vec<HandleInfo>,
     ) -> Result<(), zx_status::Status> {
-        match self.poll_read_etc(&mut Context::from_waker(noop_waker_ref()), bytes, handles) {
+        match self.poll_read_etc(&mut Context::from_waker(Waker::noop()), bytes, handles) {
             Poll::Ready(r) => r,
             Poll::Pending => Err(zx_status::Status::SHOULD_WAIT),
         }
@@ -972,7 +971,7 @@ impl Socket {
     /// Read bytes from the socket.
     /// Return value (on success) is number of bytes actually read.
     pub fn read(&self, bytes: &mut [u8]) -> Result<usize, zx_status::Status> {
-        match self.poll_read(bytes, &mut Context::from_waker(noop_waker_ref())) {
+        match self.poll_read(bytes, &mut Context::from_waker(Waker::noop())) {
             Poll::Ready(r) => r,
             Poll::Pending => Err(zx_status::Status::SHOULD_WAIT),
         }
@@ -2731,7 +2730,8 @@ mod test {
 
     #[test]
     fn handles_always_writable() {
-        let mut ctx = futures_test::task::noop_context();
+        let waker = std::task::Waker::noop().clone();
+        let mut ctx = Context::from_waker(&waker);
         let (s1, s2) = Socket::create_stream();
         let mut on_sig = on_signals::OnSignalsRef::new(&s1, Signals::OBJECT_WRITABLE);
         assert_eq!(on_sig.poll_unpin(&mut ctx), Poll::Ready(Ok(Signals::OBJECT_WRITABLE)));

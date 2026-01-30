@@ -6,7 +6,7 @@ use anyhow::format_err;
 use fuchsia_audio_codec::{StreamProcessor, StreamProcessorOutputStream};
 use fuchsia_audio_device::stream_config::SoftStreamConfig;
 use fuchsia_audio_device::{AudioFrameSink, AudioFrameStream};
-use fuchsia_bluetooth::types::{peer_audio_stream_id, PeerId};
+use fuchsia_bluetooth::types::{PeerId, peer_audio_stream_id};
 use fuchsia_sync::Mutex;
 use futures::stream::BoxStream;
 use futures::task::Context;
@@ -85,7 +85,7 @@ impl AudioSession {
         if codec == CodecId::MSBC {
             let packet: &mut [u8] = request.data.as_mut().unwrap().as_mut_slice();
             packet[0] = 0x01; // H2 header has a constant part (0b1000_0000_0001_AABB) with AABB
-                              // cycling 0000, 0011, 1100, 1111
+            // cycling 0000, 0011, 1100, 1111
         }
         // The H2 Header marker cycle, with the constant part
         let mut h2_marker = [0x08u8, 0x38, 0xc8, 0xf8].iter().cycle();
@@ -212,7 +212,7 @@ impl AudioSession {
                 _ => {
                     return Error::UnsupportedParameters {
                         source: format_err!("Unknown CodecId: {codec:?}"),
-                    }
+                    };
                 }
             };
             if let Err(e) = decoder.write_all(packet).await {
@@ -276,7 +276,7 @@ impl InbandControl {
         self.session_task
             .as_mut()
             .and_then(|(running, task)| {
-                let mut cx = Context::from_waker(futures::task::noop_waker_ref());
+                let mut cx = Context::from_waker(&std::task::Waker::noop());
                 // We are the only thing that polls this task, so we are ok to poll it and throw away a
                 // wake.
                 task.poll_unpin(&mut cx).is_pending().then_some(running)
@@ -549,9 +549,7 @@ mod tests {
 
         // We might receive the first notification as early as ring-buffer position 0,
         // so we check for a notification before processing the first chunk of data.
-        if position_info
-            .poll_unpin(&mut Context::from_waker(futures::task::noop_waker_ref()))
-            .is_ready()
+        if position_info.poll_unpin(&mut Context::from_waker(&std::task::Waker::noop())).is_ready()
         {
             position_notifications += 1;
             position_info = ring_buffer.watch_clock_recovery_position_info();
@@ -563,7 +561,7 @@ mod tests {
             );
             // We are the only ones polling position_info, so we can ignore wakeups (noop waker).
             if position_info
-                .poll_unpin(&mut Context::from_waker(futures::task::noop_waker_ref()))
+                .poll_unpin(&mut Context::from_waker(&std::task::Waker::noop()))
                 .is_ready()
             {
                 position_notifications += 1;

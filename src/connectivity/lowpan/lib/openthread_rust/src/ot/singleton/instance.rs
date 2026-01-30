@@ -108,7 +108,7 @@ impl ot::Tasklets for Instance {
     }
 
     fn wake_waker(&self) {
-        self.borrow_backing().waker.replace(futures::task::noop_waker()).wake()
+        self.borrow_backing().waker.replace(std::task::Waker::noop().clone()).wake()
     }
 
     fn process(&self) {

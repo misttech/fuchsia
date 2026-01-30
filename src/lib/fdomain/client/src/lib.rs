@@ -610,7 +610,7 @@ pub(crate) static DEAD_CLIENT: LazyLock<Arc<Client>> = LazyLock::new(|| {
         socket_read_states: HashMap::new(),
         next_tx_id: 1,
         waiting_to_close: Vec::new(),
-        waiting_to_close_waker: futures::task::noop_waker(),
+        waiting_to_close_waker: std::task::Waker::noop().clone(),
     })))
 });
 
@@ -631,7 +631,7 @@ impl Client {
             channel_read_states: HashMap::new(),
             next_tx_id: 1,
             waiting_to_close: Vec::new(),
-            waiting_to_close_waker: futures::task::noop_waker(),
+            waiting_to_close_waker: std::task::Waker::noop().clone(),
         })));
 
         let client_weak = Arc::downgrade(&ret);

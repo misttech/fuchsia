@@ -11,12 +11,12 @@ use fuchsia_sync::Mutex;
 use std::pin::Pin;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, mpsc};
-use std::task::Poll;
+use std::task::{Poll, Wake, Waker};
 
 use zx::Status;
 
 use futures::future::{BoxFuture, FutureExt};
-use futures::task::{ArcWake, AtomicWaker, waker_ref};
+use futures::task::AtomicWaker;
 
 use crate::{AsyncDispatcher, OnDispatcher};
 
@@ -157,15 +157,18 @@ struct TaskWakerState<T, D> {
     dispatcher: D,
 }
 
-impl<T: Send + 'static, D: OnDispatcher + 'static> ArcWake for TaskWakerState<T, D> {
-    fn wake_by_ref(arc_self: &Arc<Self>) {
-        match arc_self.queue() {
+impl<T: Send + 'static, D: OnDispatcher + 'static> Wake for TaskWakerState<T, D> {
+    fn wake(self: Arc<Self>) {
+        self.wake_by_ref();
+    }
+    fn wake_by_ref(self: &Arc<Self>) {
+        match self.queue() {
             Err(e) if e == Status::BAD_STATE => {
                 // the dispatcher is shutting down so drop the future, if there
                 // is one, to cancel it.
-                let future_slot = arc_self.future.lock().take();
+                let future_slot = self.future.lock().take();
                 drop(future_slot);
-                arc_self.send_result(Err(e));
+                self.send_result(Err(e));
             }
             res => res.expect("Unexpected error waking dispatcher task"),
         }
@@ -210,7 +213,7 @@ impl<T: Send + 'static, D: OnDispatcher + 'static> TaskWakerState<T, D> {
                     let Some(mut future) = future_slot.take() else {
                         return;
                     };
-                    let waker = waker_ref(&arc_self);
+                    let waker = Waker::from(arc_self.clone());
                     let context = &mut Context::from_waker(&waker);
                     match future.as_mut().poll(context) {
                         Poll::Pending => *future_slot = Some(future),

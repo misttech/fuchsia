@@ -2,17 +2,17 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use anyhow::{format_err, Error};
+use anyhow::{Error, format_err};
 use fidl::prelude::*;
 use fidl_fuchsia_hardware_audio::*;
-use futures::future::MaybeDone;
 use futures::StreamExt;
+use futures::future::MaybeDone;
 use log::info;
 use std::sync::Arc;
 use {fidl_fuchsia_media as media, fuchsia_async as fasync};
 
-use crate::driver::{ensure_dai_format_is_supported, ensure_pcm_format_is_supported};
 use crate::DigitalAudioInterface;
+use crate::driver::{ensure_dai_format_is_supported, ensure_pcm_format_is_supported};
 
 pub struct DaiAudioDevice {
     /// Shared reference to the DigitalAudioInterface this device will run on.
@@ -209,8 +209,8 @@ async fn process_audio_requests(
 mod tests {
     use fidl_fuchsia_media::{AudioDeviceEnumeratorMarker, AudioDeviceEnumeratorRequest};
     use fixture::fixture;
-    use futures::task::Context;
     use futures::Future;
+    use futures::task::Context;
     use std::pin::Pin;
 
     use super::*;
@@ -407,22 +407,28 @@ mod tests {
         // We never expect to be woken, panic if we do.
         // let panic_waker = futures_test::task::panic_waker();
 
-        assert!(Pin::new(&mut gain_state_fut)
-            .poll(&mut Context::from_waker(futures::task::noop_waker_ref()))
-            .is_pending());
+        assert!(
+            Pin::new(&mut gain_state_fut)
+                .poll(&mut Context::from_waker(&std::task::Waker::noop()))
+                .is_pending()
+        );
 
         // Set gain state is ignored.  Shouldn't wake us up.
         let _ = stream_proxy
             .set_gain(&GainState { muted: Some(true), ..Default::default() })
             .expect("set gain");
-        assert!(Pin::new(&mut gain_state_fut)
-            .poll(&mut Context::from_waker(futures::task::noop_waker_ref()))
-            .is_pending());
+        assert!(
+            Pin::new(&mut gain_state_fut)
+                .poll(&mut Context::from_waker(&std::task::Waker::noop()))
+                .is_pending()
+        );
         // Can do other things and they can succeed while this is in hanging state.
         let _ = stream_proxy.get_properties().await.expect("properties");
-        assert!(Pin::new(&mut gain_state_fut)
-            .poll(&mut Context::from_waker(futures::task::noop_waker_ref()))
-            .is_pending());
+        assert!(
+            Pin::new(&mut gain_state_fut)
+                .poll(&mut Context::from_waker(&std::task::Waker::noop()))
+                .is_pending()
+        );
     }
 
     #[fixture(fix_audio_device)]
@@ -444,14 +450,18 @@ mod tests {
         // We never expect to be woken, panic if we do.
         // let panic_waker = futures_test::task::panic_waker();
 
-        assert!(Pin::new(&mut plug_state_fut)
-            .poll(&mut Context::from_waker(futures::task::noop_waker_ref()))
-            .is_pending());
+        assert!(
+            Pin::new(&mut plug_state_fut)
+                .poll(&mut Context::from_waker(&std::task::Waker::noop()))
+                .is_pending()
+        );
 
         // Can do other things and they can succeed while this is in hanging state.
         let _ = stream_proxy.get_properties().await.expect("properties");
-        assert!(Pin::new(&mut plug_state_fut)
-            .poll(&mut Context::from_waker(futures::task::noop_waker_ref()))
-            .is_pending());
+        assert!(
+            Pin::new(&mut plug_state_fut)
+                .poll(&mut Context::from_waker(&std::task::Waker::noop()))
+                .is_pending()
+        );
     }
 }

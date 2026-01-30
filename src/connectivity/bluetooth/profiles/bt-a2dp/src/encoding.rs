@@ -351,7 +351,7 @@ mod tests {
             /* pcm bytes per encoded packet */ 500,
         );
 
-        let mut noop_cx = Context::from_waker(futures::task::noop_waker_ref());
+        let mut noop_cx = Context::from_waker(&std::task::Waker::noop());
 
         // Polling for the next thing should run a whole cycle without an issue.
         input_stream.set_bytes_ready(2);

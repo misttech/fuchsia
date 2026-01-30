@@ -219,7 +219,6 @@ mod test {
     use super::super::{Channel, Handle, HandleDisposition, HandleOp, ObjectType, Rights, Status};
     use super::{Channel as AsyncChannel, MessageBuf, MessageBufEtc};
     use futures::executor::block_on;
-    use futures::task::noop_waker_ref;
     use std::future::Future;
     use std::pin::Pin;
     use std::task::Context;
@@ -231,7 +230,7 @@ mod test {
             let (a, b) = (AsyncChannel::from_channel(a), AsyncChannel::from_channel(b));
             let mut buf = MessageBuf::new();
 
-            let mut cx = Context::from_waker(noop_waker_ref());
+            let mut cx = Context::from_waker(std::task::Waker::noop());
 
             let mut rx = b.recv_msg(&mut buf);
             assert_eq!(Pin::new(&mut rx).poll(&mut cx), std::task::Poll::Pending);
@@ -254,7 +253,7 @@ mod test {
             let (a, b) = (AsyncChannel::from_channel(a), AsyncChannel::from_channel(b));
             let mut buf = MessageBufEtc::new();
 
-            let mut cx = Context::from_waker(noop_waker_ref());
+            let mut cx = Context::from_waker(std::task::Waker::noop());
 
             let mut rx = b.recv_etc_msg(&mut buf);
             assert_eq!(Pin::new(&mut rx).poll(&mut cx), std::task::Poll::Pending);

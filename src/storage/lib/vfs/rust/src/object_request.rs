@@ -359,8 +359,7 @@ pub(crate) fn run_synchronous_future_or_spawn(
     future: impl Future<Output = ()> + Send + 'static,
 ) {
     let mut task = scope.new_task(future);
-    let noop_waker = std::task::Waker::noop();
-    let mut cx = std::task::Context::from_waker(&noop_waker);
+    let mut cx = std::task::Context::from_waker(std::task::Waker::noop());
 
     match task.poll_unpin(&mut cx) {
         std::task::Poll::Pending => task.spawn(),

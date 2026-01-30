@@ -15,9 +15,8 @@ use fidl::Signals;
 use fidl_fuchsia_overnet_protocol::SignalUpdate;
 use futures::future::poll_fn;
 use futures::prelude::*;
-use futures::task::noop_waker_ref;
 use std::sync::{Arc, Weak};
-use std::task::{Context, Poll};
+use std::task::{Context, Poll, Waker};
 use zx_status;
 
 /// Holds a reference to a router.
@@ -212,7 +211,7 @@ impl<Hdl: Proxyable> ProxyableHandle<Hdl> {
     {
         let mut message = Default::default();
         loop {
-            let pr = self.read(&mut message).poll_unpin(&mut Context::from_waker(noop_waker_ref()));
+            let pr = self.read(&mut message).poll_unpin(&mut Context::from_waker(Waker::noop()));
             match pr {
                 Poll::Pending => return Ok(()),
                 Poll::Ready(Err(e)) => return Err(e.into()),

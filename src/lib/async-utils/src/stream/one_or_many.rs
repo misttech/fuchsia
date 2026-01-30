@@ -173,8 +173,9 @@ mod tests {
     use crate::event::Event;
     use assert_matches::assert_matches;
     use futures::future::Ready;
-    use futures::{pin_mut, StreamExt as _};
-    use futures_test::task::{new_count_waker, noop_waker};
+    use futures::{StreamExt as _, pin_mut};
+    use futures_test::task::new_count_waker;
+    use std::task::Waker;
 
     use super::*;
 
@@ -322,7 +323,7 @@ mod tests {
 
     #[test]
     fn one_or_many_collect_none() {
-        let waker = noop_waker();
+        let waker = Waker::noop();
         let mut context = Context::from_waker(&waker);
 
         let one_or_many: OneOrMany<Ready<()>> = std::iter::empty().collect();
@@ -334,7 +335,7 @@ mod tests {
 
     #[test]
     fn one_or_many_collect_one() {
-        let waker = noop_waker();
+        let waker = Waker::noop();
         let mut context = Context::from_waker(&waker);
 
         let one_or_many: OneOrMany<_> = std::iter::once(futures::future::ready(1)).collect();
@@ -347,7 +348,7 @@ mod tests {
 
     #[test]
     fn one_or_many_collect_multiple() {
-        let waker = noop_waker();
+        let waker = Waker::noop();
         let mut context = Context::from_waker(&waker);
 
         let one_or_many: OneOrMany<_> =

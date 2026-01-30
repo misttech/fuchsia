@@ -227,8 +227,7 @@ pub(crate) mod tests {
 
     #[test]
     fn test_request_tracker_max_requests() {
-        let noop_waker = futures::task::noop_waker();
-        let mut noop_context = futures::task::Context::from_waker(&noop_waker);
+        let mut noop_context = futures::task::Context::from_waker(std::task::Waker::noop());
 
         let request_tracker = RequestTracker::default();
 

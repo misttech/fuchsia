@@ -5,8 +5,8 @@
 use core::hash::Hash;
 use core::pin::Pin;
 use core::task::{Context, Poll};
-use futures::stream::{FusedStream, Stream, StreamExt};
 use futures::Future;
+use futures::stream::{FusedStream, Stream, StreamExt};
 use std::collections::HashMap;
 
 /// A collection of Stream indexed by key, allowing removal by Key. When polled, a StreamMap yields
@@ -241,7 +241,7 @@ mod test {
             execution.extend(std::iter::repeat_with(|| Event::Execute).take((expected_count * 3) as usize));
 
             let (waker, count) = futures_test::task::new_count_waker();
-            let send_waker = futures_test::task::noop_waker();
+            let send_waker = std::task::Waker::noop();
             let mut streams = StreamMap::empty();
             let mut next_wake = 0;
             let mut yielded = 0;

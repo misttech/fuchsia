@@ -418,7 +418,7 @@ mod tests {
         let mut exec = TestExecutor::new();
         let (tx, rx) = zx::Channel::create();
         let rx_rw_handle = RWHandle::new(rx);
-        let mut noop_ctx = Context::from_waker(futures::task::noop_waker_ref());
+        let mut noop_ctx = Context::from_waker(Waker::noop());
         // Clear optimistic readable state
         assert!(rx_rw_handle.need_readable(&mut noop_ctx).is_pending());
         // Starting state: the channel is not closed (because we haven't closed it yet)

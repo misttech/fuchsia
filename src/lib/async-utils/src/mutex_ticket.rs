@@ -73,20 +73,19 @@ impl<'a, T> MutexTicket<'a, T> {
 mod tests {
 
     use super::MutexTicket;
-    use anyhow::{format_err, Error};
+    use anyhow::{Error, format_err};
     use assert_matches::assert_matches;
     use fuchsia_async::Timer;
     use futures::channel::oneshot;
     use futures::future::{poll_fn, try_join};
     use futures::lock::Mutex;
-    use futures::task::noop_waker_ref;
-    use std::task::{Context, Poll};
+    use std::task::{Context, Poll, Waker};
     use std::time::Duration;
 
     #[fuchsia_async::run_singlethreaded(test)]
     async fn basics(run: usize) {
         let mutex = Mutex::new(run);
-        let mut ctx = Context::from_waker(noop_waker_ref());
+        let mut ctx = Context::from_waker(Waker::noop());
         let mut poll_mutex = MutexTicket::new(&mutex);
         assert_matches!(poll_mutex.poll(&mut ctx), Poll::Ready(_));
         assert_matches!(poll_mutex.poll(&mut ctx), Poll::Ready(_));
@@ -107,7 +106,7 @@ mod tests {
         try_join(
             async move {
                 assert_matches!(
-                    poll_mutex.poll(&mut Context::from_waker(noop_waker_ref())),
+                    poll_mutex.poll(&mut Context::from_waker(Waker::noop())),
                     Poll::Pending
                 );
                 tx_saw_first_pending.send(()).map_err(|_| format_err!("cancelled"))?;

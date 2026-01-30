@@ -419,7 +419,7 @@ impl BorderRouter for Instance {
     fn border_routing_dhcp6_pd_state_change_stream(
         &self,
     ) -> BorderRoutingDhcp6PdStateChangedStream {
-        let state = Arc::new(Mutex::new((None, futures::task::noop_waker())));
+        let state = Arc::new(Mutex::new((None, std::task::Waker::noop().clone())));
 
         let state_copy = state.clone();
 

@@ -12,8 +12,8 @@
 
 use core::pin::Pin;
 use core::task::{Context, Poll};
-use futures::stream::{FusedStream, Stream};
 use futures::Future;
+use futures::stream::{FusedStream, Stream};
 use pin_project::pin_project;
 
 mod future_map;
@@ -208,7 +208,7 @@ mod test {
     use fuchsia_async as fasync;
     use futures::channel::mpsc;
     use futures::future::ready;
-    use futures::stream::{empty, iter, once, Empty, StreamExt};
+    use futures::stream::{Empty, StreamExt, empty, iter, once};
     use proptest::prelude::*;
     use std::collections::HashSet;
     use std::fmt::Debug;
@@ -344,7 +344,7 @@ mod test {
             execution.extend(std::iter::repeat_with(|| Event::Execute).take((expected_count * 3) as usize));
 
             let (waker, count) = futures_test::task::new_count_waker();
-            let send_waker = futures_test::task::noop_waker();
+            let send_waker = std::task::Waker::noop();
             let mut streams = StreamMap::empty();
             let mut next_wake = 0;
             let mut yielded = 0;

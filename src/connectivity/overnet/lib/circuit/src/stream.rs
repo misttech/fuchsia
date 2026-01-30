@@ -411,10 +411,9 @@ pub fn stream() -> (Reader, Writer) {
 mod test {
     use futures::FutureExt;
     use futures::channel::oneshot;
-    use futures::task::noop_waker;
     use std::future::Future;
     use std::pin::pin;
-    use std::task::{Context, Poll};
+    use std::task::{Context, Poll, Waker};
 
     use super::*;
 
@@ -569,12 +568,12 @@ mod test {
             .read(1, |_| -> Result<((), usize)> { panic!("This read should never succeed!") });
         let mut fut = std::pin::pin!(fut);
 
-        assert!(fut.poll_unpin(&mut Context::from_waker(&noop_waker())).is_pending());
+        assert!(fut.poll_unpin(&mut Context::from_waker(Waker::noop())).is_pending());
 
         std::mem::drop(writer);
 
         assert!(matches!(
-            fut.poll_unpin(&mut Context::from_waker(&noop_waker())),
+            fut.poll_unpin(&mut Context::from_waker(Waker::noop())),
             Poll::Ready(Err(Error::ConnectionClosed(None)))
         ));
     }

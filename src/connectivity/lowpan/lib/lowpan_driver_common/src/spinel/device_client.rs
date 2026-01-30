@@ -255,7 +255,7 @@ where
                     return Poll::Ready(Some(Ok(data)));
                 }
                 Poll::Ready(Some(Ok(SpinelDeviceEvent::OnError { error, .. }))) => {
-                    return Poll::Ready(Some(Err(SpinelError(error)).map_err(Error::from)))
+                    return Poll::Ready(Some(Err(SpinelError(error)).map_err(Error::from)));
                 }
                 Poll::Ready(Some(Err(error))) => return Poll::Ready(Some(Err(Error::from(error)))),
                 Poll::Ready(None) => return Poll::Ready(None),
@@ -275,8 +275,7 @@ pub(crate) mod tests {
     #[test]
     fn test_spinel_device_client_step_by_step() {
         const MAX_FRAME_SIZE: u32 = 2000;
-        let noop_waker = futures::task::noop_waker();
-        let mut noop_context = futures::task::Context::from_waker(&noop_waker);
+        let mut noop_context = futures::task::Context::from_waker(std::task::Waker::noop());
         let (
             mut device_sink,
             mut device_stream,

@@ -926,7 +926,7 @@ mod tests {
     }
 
     fn ensure_pending(f: &mut (impl Send + Unpin + Future<Output = ()>)) {
-        let mut ctx = Context::from_waker(futures::task::noop_waker_ref());
+        let mut ctx = Context::from_waker(&std::task::Waker::noop());
         // Poll a bunch of times to convince ourselves the future is pending forever...
         for _ in 0..1000 {
             assert!(f.poll_unpin(&mut ctx).is_pending());

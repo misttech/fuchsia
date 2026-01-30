@@ -453,7 +453,7 @@ impl Peer {
             return false;
         }
         // This is the only thing that can poll the start task, so it is okay to ignore the wakeup.
-        let mut cx = Context::from_waker(futures::task::noop_waker_ref());
+        let mut cx = Context::from_waker(&std::task::Waker::noop());
         if let Poll::Pending = task_lock.as_mut().unwrap().poll_unpin(&mut cx) {
             return true;
         }

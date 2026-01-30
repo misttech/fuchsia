@@ -128,10 +128,9 @@ impl LocalExecutor {
         // SAFETY: We spawned the task earlier, so `R` (the return type) will be the correct type
         // here.
         unsafe {
-            self.ehandle.global_scope().poll_join_result(
-                MAIN_TASK_ID,
-                &mut Context::from_waker(&futures::task::noop_waker()),
-            )
+            self.ehandle
+                .global_scope()
+                .poll_join_result(MAIN_TASK_ID, &mut Context::from_waker(std::task::Waker::noop()))
         }
     }
 

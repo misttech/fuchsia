@@ -137,7 +137,7 @@ impl State for Instance {
     }
 
     fn state_changed_stream(&self) -> StateChangedStream {
-        let state = Arc::new(Mutex::new((ChangedFlags::empty(), futures::task::noop_waker())));
+        let state = Arc::new(Mutex::new((ChangedFlags::empty(), std::task::Waker::noop().clone())));
 
         let state_copy = state.clone();
 

@@ -662,7 +662,7 @@ impl FxVolume {
                         let mut no_tasks = pin!(this.scope.wait());
                         no_tasks
                             .poll_unpin(&mut std::task::Context::from_waker(
-                                &futures::task::noop_waker(),
+                                std::task::Waker::noop(),
                             ))
                             .is_ready()
                     },

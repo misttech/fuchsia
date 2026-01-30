@@ -65,10 +65,9 @@ use fuchsia_async::{
 };
 use futures::channel::mpsc::UnboundedSender;
 use futures::future::{self, poll_fn};
-use futures::task::noop_waker_ref;
 use std::cell::{Cell, RefCell};
 use std::io::Write;
-use std::task::{Context, Poll, ready};
+use std::task::{Context, Poll, Waker, ready};
 use virtio_device::chain::{ReadableChain, WritableChain};
 use virtio_device::mem::DriverMem;
 use virtio_device::queue::DriverNotify;
@@ -416,7 +415,7 @@ impl ReadWrite {
     async fn send_credit_update_when_credit_available(&self) -> Result<SocketState, Error> {
         // By default async sockets cache signals until a read or write failure, but the device
         // requires an accurate signal before sending the guest a credit update.
-        let _ = self.socket.need_writable(&mut Context::from_waker(noop_waker_ref()))?;
+        let _ = self.socket.need_writable(&mut Context::from_waker(Waker::noop()))?;
         match poll_fn(move |cx| self.socket.poll_writable(cx)).await {
             Ok(WritableState::Closed) => {
                 self.conn_flags.borrow_mut().set(VirtioVsockFlags::SHUTDOWN_SEND, true);

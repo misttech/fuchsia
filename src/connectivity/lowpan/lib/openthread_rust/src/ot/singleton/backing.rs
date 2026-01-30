@@ -35,7 +35,7 @@ pub(crate) struct InstanceBacking {
 impl InstanceBacking {
     pub(crate) fn new<T: Platform + 'static>(platform: T) -> Self {
         Self {
-            waker: Cell::new(futures::task::noop_waker()),
+            waker: Cell::new(std::task::Waker::noop().clone()),
             platform: RefCell::new(Box::new(platform) as std::boxed::Box<dyn Platform>),
             cli_output_fn: Cell::new(None),
             ip6_receive_fn: Cell::new(None),

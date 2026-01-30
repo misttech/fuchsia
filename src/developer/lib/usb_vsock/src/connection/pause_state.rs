@@ -68,7 +68,7 @@ mod test {
         let stream = futures::stream::iter(1..)
             .then(|x| pause_state_clone.while_unpaused(futures::future::ready(x)));
         let mut stream = pin!(stream);
-        let mut ctx = Context::from_waker(&Waker::noop());
+        let mut ctx = Context::from_waker(Waker::noop());
 
         assert_eq!(Poll::Ready(Some(1)), stream.as_mut().poll_next(&mut ctx));
         assert_eq!(Poll::Ready(Some(2)), stream.as_mut().poll_next(&mut ctx));

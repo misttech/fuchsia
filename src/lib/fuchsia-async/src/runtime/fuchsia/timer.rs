@@ -934,8 +934,8 @@ mod test {
         nanos: &[i64],
         timer_futures: &mut Vec<Pin<Box<Timer>>>,
     ) {
-        let waker = futures::task::noop_waker();
-        let mut cx = Context::from_waker(&waker);
+        let waker = std::task::Waker::noop();
+        let mut cx = Context::from_waker(waker);
         for &n in nanos {
             let mut timer = Box::pin(timers.new_timer(MonotonicInstant::from_nanos(n)));
             let _ = timer.poll_unpin(&mut cx);
