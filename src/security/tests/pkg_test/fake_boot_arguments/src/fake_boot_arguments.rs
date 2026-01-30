@@ -2,13 +2,13 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use anyhow::{Result, anyhow};
+use anyhow::Result;
 use fidl::endpoints::DiscoverableProtocolMarker;
-use fuchsia_component::client;
-use futures::stream::{StreamExt as _, TryStreamExt as _};
-use log::{info, warn};
+use fuchsia_component::runtime::{Data, DataValue, Dictionary, DictionaryRouterReceiver};
+use futures::{FutureExt as _, StreamExt as _};
+use log::info;
 use std::sync::Arc;
-use {fidl_fuchsia_component_decl as fdecl, fidl_fuchsia_component_sandbox as fsandbox};
+use {fidl_fuchsia_component_decl as fdecl, fidl_fuchsia_component_runtime as fruntime};
 
 static PKGFS_BOOT_ARG_VALUE_PREFIX: &'static str = "bin/pkgsvr+";
 
@@ -20,37 +20,20 @@ pub struct Args {
     system_image_path: String,
 }
 
-async fn initialize_dictionary(
-    store: &fsandbox::CapabilityStoreProxy,
-    id_gen: &sandbox::CapabilityIdGenerator,
-    value: &str,
-) -> Result<u64> {
-    let dict_id = id_gen.next();
-    store
-        .dictionary_create(dict_id)
-        .await?
-        .map_err(|e| anyhow!("failed dictionary_create: {e:?}"))?;
+async fn initialize_dictionary(value: &str) -> Result<Dictionary> {
+    let dictionary = Dictionary::new().await;
+    let config = fdecl::ConfigValue::Single(fdecl::ConfigSingleValue::String(value.to_string()));
+    let data = Data::new(DataValue::Bytes(fidl::persist(&config)?)).await;
 
     let key = "fuchsia.zircon.system.pkgfs.cmd";
+    dictionary.insert(key, data).await;
 
-    let config_id = id_gen.next();
-    let config = fdecl::ConfigValue::Single(fdecl::ConfigSingleValue::String(value.to_string()));
-    let config = fsandbox::Capability::Data(fsandbox::Data::Bytes(fidl::persist(&config)?));
-    store.import(config_id, config).await?.map_err(|e| anyhow!("failed import: {e:?}"))?;
-    store
-        .dictionary_insert(
-            dict_id,
-            &fsandbox::DictionaryItem { key: key.to_string(), value: config_id },
-        )
-        .await?
-        .map_err(|e| anyhow!("failed dictionary_insert: {e:?}"))?;
-
-    Ok(dict_id)
+    Ok(dictionary)
 }
 
 enum BootServices {
     Items(fidl_fuchsia_boot::ItemsRequestStream),
-    Router(fsandbox::DictionaryRouterRequestStream),
+    Router(fruntime::DictionaryRouterRequestStream),
 }
 
 #[fuchsia::main]
@@ -69,10 +52,7 @@ async fn main() {
     let system_image_merkle = fuchsia_merkle::root_from_slice(&system_image);
     let pkgfs_boot_arg_value = format!("{}{}", PKGFS_BOOT_ARG_VALUE_PREFIX, system_image_merkle);
 
-    let store = client::connect_to_protocol::<fsandbox::CapabilityStoreMarker>().unwrap();
-    let id_gen = sandbox::CapabilityIdGenerator::new();
-
-    let dict_id = initialize_dictionary(&store, &id_gen, &pkgfs_boot_arg_value).await.unwrap();
+    let dictionary = initialize_dictionary(&pkgfs_boot_arg_value).await.unwrap();
 
     let mut fs = fuchsia_component::server::ServiceFs::new();
     fs.dir("svc").add_fidl_service(BootServices::Items);
@@ -80,35 +60,20 @@ async fn main() {
     fs.take_and_serve_directory_handle().unwrap();
 
     fs.for_each_concurrent(None, move |stream| {
-        let store = store.clone();
-        let id_gen = id_gen.clone();
+        let dictionary = dictionary.clone();
         async move {
             match stream {
                 BootServices::Items(stream) => {
                     // The VMO provided here would be for the recovery case only, which isn't of interest for pkg_test.
                     run_boot_items(stream, None).await
                 }
-                BootServices::Router(mut stream) => {
-                    while let Ok(Some(request)) = stream.try_next().await {
-                        match request {
-                            fsandbox::DictionaryRouterRequest::Route { payload: _, responder } => {
-                                let dup_dict_id = id_gen.next();
-                                store.duplicate(dict_id, dup_dict_id).await.unwrap().unwrap();
-                                let capability = store.export(dup_dict_id).await.unwrap().unwrap();
-                                let fsandbox::Capability::Dictionary(dict) = capability else {
-                                    panic!("capability was not a dictionary? {capability:?}");
-                                };
-                                let _ = responder.send(Ok(
-                                    fsandbox::DictionaryRouterRouteResponse::Dictionary(dict),
-                                ));
-                            }
-                            fsandbox::DictionaryRouterRequest::_UnknownMethod {
-                                ordinal, ..
-                            } => {
-                                warn!(ordinal:%; "Unknown DictionaryRouter request");
-                            }
-                        }
-                    }
+                BootServices::Router(stream) => {
+                    let dictionary = dictionary.clone();
+                    DictionaryRouterReceiver::from(stream)
+                        .handle_with(move |_request, _instance_token| {
+                            futures::future::ready(Ok(Some(dictionary.clone()))).boxed()
+                        })
+                        .await;
                 }
             }
         }
