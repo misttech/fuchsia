@@ -7,6 +7,7 @@ use driver_connector::DriverConnector as DriverConnectorTrait;
 use driver_tools::args::DriverSubCommand;
 use driver_tools::subcommands::host::args::{HostCommand, HostSubcommand};
 use driver_tools::subcommands::host::subcommands::list::get_driver_hosts;
+use driver_tools::subcommands::host::subcommands::show::get_driver_host_details;
 use ffx_writer::{MachineWriter, ToolIO};
 use fho::{FfxMain, FfxTool};
 use fidl::endpoints::{DiscoverableProtocolMarker, ProtocolMarker};
@@ -202,33 +203,36 @@ impl FfxMain for DriverTool {
     type Writer = MachineWriter<serde_json::Value>;
 
     async fn main(self, mut writer: Self::Writer) -> fho::Result<()> {
-        let is_machine = writer.is_machine();
-        let should_use_machine_for_list = if let args::DriverCommand {
-            subcommand: DriverSubCommand::Host(HostCommand { subcommand: HostSubcommand::List(_) }),
-            ..
-        } = &self.cmd
-        {
-            is_machine
-        } else {
-            false
-        };
+        let DriverTool { remote_control, cmd } = self;
 
-        if should_use_machine_for_list {
-            let select = self.cmd.select;
-            let connector = DriverConnector::new(self.remote_control);
-            let proxy = connector.get_driver_development_proxy(select).await?;
-            let hosts = get_driver_hosts(&proxy).await?;
-            let value = serde_json::to_value(&hosts).map_err(|e| anyhow::anyhow!(e))?;
-            writer.machine(&value).map_err(|e| anyhow::anyhow!(e))?;
-            return Ok(());
+        if writer.is_machine() {
+            match &cmd.subcommand {
+                DriverSubCommand::Host(HostCommand { subcommand: HostSubcommand::List(_) }) => {
+                    let select = cmd.select;
+                    let connector = DriverConnector::new(remote_control);
+                    let proxy = connector.get_driver_development_proxy(select).await?;
+                    let hosts = get_driver_hosts(&proxy).await?;
+                    let value = serde_json::to_value(&hosts).map_err(|e| anyhow::anyhow!(e))?;
+                    writer.machine(&value).map_err(|e| anyhow::anyhow!(e))?;
+                    return Ok(());
+                }
+                DriverSubCommand::Host(HostCommand {
+                    subcommand: HostSubcommand::Show(show_cmd),
+                }) => {
+                    let select = cmd.select;
+                    let connector = DriverConnector::new(remote_control);
+                    let proxy = connector.get_driver_development_proxy(select).await?;
+                    let details = get_driver_host_details(show_cmd, &proxy).await?;
+                    let value = serde_json::to_value(&details).map_err(|e| anyhow::anyhow!(e))?;
+                    writer.machine(&value).map_err(|e| anyhow::anyhow!(e))?;
+                    return Ok(());
+                }
+                _ => {}
+            }
         }
 
-        driver_tools::driver(
-            self.cmd.into(),
-            DriverConnector::new(self.remote_control),
-            &mut writer,
-        )
-        .await
-        .map_err(Into::into)
+        driver_tools::driver(cmd.into(), DriverConnector::new(remote_control), &mut writer)
+            .await
+            .map_err(Into::into)
     }
 }
