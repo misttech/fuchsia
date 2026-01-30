@@ -263,7 +263,12 @@ void DriverHostComponent::Start(
                        dispatcher_);
   }
 
-  driver_host_->Start(args.Build(), std::move(driver))
+  std::string host_name;
+  if (!name_for_colocation_.empty()) {
+    host_name = std::format("driver-host-{}", name_for_colocation_.empty());
+  }
+
+  driver_host_->Start(args.Build(), std::move(driver), fidl::StringView::FromExternal(host_name))
       .ThenExactlyOnce([cb = std::move(cb), binary = std::move(binary)](auto& result) mutable {
         if (!result.ok()) {
           fdf_log::error("Failed to start driver '{}' in driver host: {}", binary, result.error());

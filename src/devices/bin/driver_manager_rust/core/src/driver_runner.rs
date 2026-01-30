@@ -292,7 +292,11 @@ impl DriverRunner {
         driver_host_name_for_colocation: String,
     ) -> Result<Rc<dyn DriverHost>, zx::Status> {
         let (exposed_dir_client, exposed_dir_server) = create_endpoints::<fio::DirectoryMarker>();
-        let name = format!("driver-host-{}", self.driver_hosts.borrow().len());
+        let name = if !driver_host_name_for_colocation.is_empty() {
+            format!("driver-host-{}", driver_host_name_for_colocation.trim_start_matches('#'))
+        } else {
+            format!("driver-host-{}", self.driver_hosts.borrow().len())
+        };
 
         self.create_driver_host_component(&name, exposed_dir_server, use_next_vdso)?;
 

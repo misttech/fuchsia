@@ -110,8 +110,10 @@ pub(crate) fn get_program_objvec<'a>(
     }
 }
 
-pub(crate) fn update_process_name(driver_url: &str, driver_count: usize) {
-    let name = if driver_count > 0 {
+pub(crate) fn update_process_name(host_name: &str, driver_url: &str, driver_count: usize) {
+    let name = if !host_name.is_empty() {
+        host_name.to_string()
+    } else if driver_count > 0 {
         let Ok(current_name) = fuchsia_runtime::process_self().get_name() else {
             return;
         };
@@ -121,7 +123,7 @@ pub(crate) fn update_process_name(driver_url: &str, driver_count: usize) {
             None => &current_name,
         };
 
-        format!("{driver_name} (+{driver_count} more)")
+        format!("{driver_name} (+{} more)", driver_count - 1)
     } else {
         basename(driver_url).to_string()
     };

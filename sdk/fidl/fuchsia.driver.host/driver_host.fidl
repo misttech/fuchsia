@@ -71,6 +71,7 @@ closed protocol DriverHost {
     strict Start(resource struct {
         start_args fuchsia.driver.framework.DriverStartArgs;
         driver server_end:Driver;
+        host_name string:100;
     }) -> () error zx.Status;
 
     /// Start a driver that's been loaded via an out of process dynamic linker.

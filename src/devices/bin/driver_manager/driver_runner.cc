@@ -946,7 +946,14 @@ DriverHost* DriverRunner::GetDriverHost(std::string_view driver_host_name_for_co
 zx::result<DriverHost*> DriverRunner::CreateDriverHost(
     bool use_next_vdso, std::string_view driver_host_name_for_colocation) {
   auto endpoints = fidl::Endpoints<fio::Directory>::Create();
-  std::string name = "driver-host-" + std::to_string(next_driver_host_id_++);
+  std::string name;
+  if (!driver_host_name_for_colocation.empty()) {
+    std::string_view suffix = driver_host_name_for_colocation;
+    suffix = suffix.starts_with("#") ? suffix.substr(1) : suffix;
+    name = std::format("driver-host-{}", suffix);
+  } else {
+    name = std::format("driver-host-{}", next_driver_host_id_++);
+  }
 
   std::shared_ptr<bool> connected = std::make_shared<bool>(false);
   auto create =

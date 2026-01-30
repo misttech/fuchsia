@@ -91,9 +91,14 @@ impl DriverHost {
                 let this = self.clone();
                 async move {
                     match request {
-                        fdh::DriverHostRequest::Start { start_args, driver, responder } => {
+                        fdh::DriverHostRequest::Start {
+                            start_args,
+                            driver,
+                            host_name,
+                            responder,
+                        } => {
                             responder
-                                .send(this.start_driver(start_args, driver).await)
+                                .send(this.start_driver(start_args, driver, &host_name).await)
                                 .or_else(ignore_peer_closed)?;
                         }
                         fdh::DriverHostRequest::StartLoadedDriver {
@@ -242,6 +247,7 @@ impl DriverHost {
         self: Rc<Self>,
         start_args: fidl_fdf::DriverStartArgs,
         request: ServerEnd<fdh::DriverMarker>,
+        host_name: &str,
     ) -> Result<(), i32> {
         let (driver, start_args) =
             Driver::load(&self.env, start_args).await.map_err(Status::into_raw)?;
@@ -282,7 +288,7 @@ impl DriverHost {
             .start(start_args, request, shutdown_signaler, &self.scope)
             .await
             .map_err(Status::into_raw)?;
-        update_process_name(driver.get_url(), self.drivers.borrow().len());
+        update_process_name(host_name, driver.get_url(), self.drivers.borrow().len());
         self.drivers.borrow_mut().insert(WeakDriver(Arc::downgrade(&driver)));
 
         Ok(())
@@ -324,7 +330,7 @@ impl DriverHost {
             .start(start_args, request, shutdown_signaler, &self.scope)
             .await
             .map_err(Status::into_raw)?;
-        update_process_name(driver.get_url(), self.drivers.borrow().len());
+        update_process_name("", driver.get_url(), self.drivers.borrow().len());
         self.drivers.borrow_mut().insert(WeakDriver(Arc::downgrade(&driver)));
         Ok(())
     }

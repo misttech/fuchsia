@@ -269,9 +269,14 @@ impl DriverHost for DriverHostComponent {
                 runtime_dir,
             );
         }
+        let host_name = if !self.name_for_colocation().is_empty() {
+            format!("driver-host-{}", self.name_for_colocation())
+        } else {
+            String::new()
+        };
 
         self.driver_host
-            .start(fidl_start_args, driver)
+            .start(fidl_start_args, driver, &host_name)
             .await
             .map_err(|e| {
                 error!("Failed to start driver in driver host: {}", e);
