@@ -57,6 +57,23 @@ where
     pub fn remove(&self, key: &K) -> Option<V> {
         self.lock().remove(key)
     }
+
+    /// Returns an iterator over the map's entries.
+    pub fn iter<'a>(&'a self, scope: &'a RcuReadScope) -> impl Iterator<Item = (&'a K, &'a V)> {
+        let mut cursor = self.map.cursor(scope);
+        std::iter::from_fn(move || {
+            let current = cursor.current();
+            if current.is_some() {
+                cursor.advance();
+            }
+            current
+        })
+    }
+
+    /// Returns an iterator over the map's keys.
+    pub fn keys<'a>(&'a self, scope: &'a RcuReadScope) -> impl Iterator<Item = &'a K> {
+        self.iter(scope).map(|(k, _)| k)
+    }
 }
 
 /// A guard that provides exclusive access to the `RcuHashMap`.
@@ -254,5 +271,31 @@ mod tests {
 
         drop(guard);
         rcu_synchronize();
+    }
+
+    #[test]
+    fn test_rcu_hash_map_iter() {
+        let map = RcuHashMap::default();
+        let scope = RcuReadScope::new();
+        map.insert(1, 10);
+        map.insert(2, 20);
+        map.insert(3, 30);
+
+        let mut items: Vec<_> = map.iter(&scope).collect();
+        items.sort_by_key(|(k, _)| **k);
+        assert_eq!(items, vec![(&1, &10), (&2, &20), (&3, &30)]);
+    }
+
+    #[test]
+    fn test_rcu_hash_map_keys() {
+        let map = RcuHashMap::default();
+        let scope = RcuReadScope::new();
+        map.insert(1, 10);
+        map.insert(2, 20);
+        map.insert(3, 30);
+
+        let mut keys: Vec<_> = map.keys(&scope).collect();
+        keys.sort();
+        assert_eq!(keys, vec![&1, &2, &3]);
     }
 }

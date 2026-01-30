@@ -3,31 +3,37 @@
 // found in the LICENSE file.
 
 use crate::vfs::{FsStr, FsString, XattrOp, XattrStorage};
-use starnix_sync::{FileOpsCore, Locked, MemoryXattrStorageLevel, OrderedMutex};
+use starnix_rcu::rcu_hash_map::Entry;
+use starnix_rcu::{RcuHashMap, RcuReadScope};
+use starnix_sync::{FileOpsCore, Locked};
 use starnix_uapi::errors::Errno;
 use starnix_uapi::{errno, error};
-use std::collections::HashMap;
-use std::collections::hash_map::Entry;
 
 #[derive(Default)]
 pub struct MemoryXattrStorage {
-    xattrs: OrderedMutex<HashMap<FsString, FsString>, MemoryXattrStorageLevel>,
+    xattrs: RcuHashMap<FsString, FsString>,
 }
 
 impl XattrStorage for MemoryXattrStorage {
-    fn get_xattr(&self, locked: &mut Locked<FileOpsCore>, name: &FsStr) -> Result<FsString, Errno> {
-        let xattrs = self.xattrs.lock(locked);
-        Ok(xattrs.get(name).ok_or_else(|| errno!(ENODATA))?.clone())
+    fn get_xattr(
+        &self,
+        _locked: &mut Locked<FileOpsCore>,
+        name: &FsStr,
+    ) -> Result<FsString, Errno> {
+        self.xattrs
+            .get(&RcuReadScope::new(), &name.to_owned())
+            .cloned()
+            .ok_or_else(|| errno!(ENODATA))
     }
 
     fn set_xattr(
         &self,
-        locked: &mut Locked<FileOpsCore>,
+        _locked: &mut Locked<FileOpsCore>,
         name: &FsStr,
         value: &FsStr,
         op: XattrOp,
     ) -> Result<(), Errno> {
-        let mut xattrs = self.xattrs.lock(locked);
+        let mut xattrs = self.xattrs.lock();
         match xattrs.entry(name.to_owned()) {
             Entry::Vacant(_) if op == XattrOp::Replace => return error!(ENODATA),
             Entry::Occupied(_) if op == XattrOp::Create => return error!(EEXIST),
@@ -35,24 +41,21 @@ impl XattrStorage for MemoryXattrStorage {
                 v.insert(value.to_owned());
             }
             Entry::Occupied(mut o) => {
-                let s = o.get_mut();
-                s.clear();
-                s.extend_from_slice(value);
+                o.insert(value.to_owned());
             }
         };
         Ok(())
     }
 
-    fn remove_xattr(&self, locked: &mut Locked<FileOpsCore>, name: &FsStr) -> Result<(), Errno> {
-        let mut xattrs = self.xattrs.lock(locked);
-        if xattrs.remove(name).is_none() {
+    fn remove_xattr(&self, _locked: &mut Locked<FileOpsCore>, name: &FsStr) -> Result<(), Errno> {
+        let mut xattrs = self.xattrs.lock();
+        if xattrs.remove(&name.to_owned()).is_none() {
             return error!(ENODATA);
         }
         Ok(())
     }
 
-    fn list_xattrs(&self, locked: &mut Locked<FileOpsCore>) -> Result<Vec<FsString>, Errno> {
-        let xattrs = self.xattrs.lock(locked);
-        Ok(xattrs.keys().cloned().collect())
+    fn list_xattrs(&self, _locked: &mut Locked<FileOpsCore>) -> Result<Vec<FsString>, Errno> {
+        Ok(self.xattrs.keys(&RcuReadScope::new()).cloned().collect())
     }
 }
