@@ -1175,6 +1175,7 @@
 
                 // TODO(https://fxbug.dev/339238239) Re-enable once flake is resolved.
                 "IntervalTimerTest.PeriodicGroupDirectedSignal",
+                "IntervalTimerTest.NegativeInterval",
 
                 // TODO(https://fxbug.dev/353534690) deflake
                 "AllInetTests/RawPacketTest.SendFrom*/*",
