@@ -74,6 +74,17 @@ typedef struct zxr_thread {
 } zxr_thread_t;
 static_assert(sizeof(zxr_thread_t) == 8, "layout snafu");
 
+// TODO(kulakowski) Document the possible zx_status_t values from these.
+
+// Once started, threads can be either joined or detached. It is undefined
+// behavior to join a thread multiple times or to join a detached thread.
+// Some of the resources allocated to a thread are not collected until
+// it returns and it is either joined or detached.
+
+// If a thread is joined, the caller of zxr_thread_join blocks until
+// the other thread is finished running.
+zx_status_t zxr_thread_join(zxr_thread_t* thread);
+
 // Indicates whether the thread has been detached.  The result is undefined
 // if the thread is exiting or has exited.
 bool zxr_thread_detached(zxr_thread_t* thread);
