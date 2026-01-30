@@ -7,10 +7,11 @@ use super::parser::{PolicyCursor, PolicyData, PolicyOffset};
 use super::{Counted, Parse, PolicyValidationContext, Validate};
 
 use hashbrown::hash_table::HashTable;
+use static_assertions::const_assert;
 use std::fmt::Debug;
 use std::hash::{DefaultHasher, Hash, Hasher};
 use std::marker::PhantomData;
-use zerocopy::FromBytes;
+use zerocopy::{FromBytes, Immutable, KnownLayout, Unaligned};
 
 /// A trait for types that have metadata.
 ///
@@ -247,6 +248,46 @@ struct HashedArrayViewEntryIter<'a, D: HasMetadata> {
     offset: Option<PolicyOffset>,
 }
 
+/// An unsigned integer in the range [0, 0x1000000) stored in three unaligned bytes.
+//
+// TODO: https://fxbug.dev/479180246 - it would be better to get this type from a library
+// somewhere. Probably not https://docs.rs/u24 (because of "The type has the same size,
+// alignment, and memory layout as a little-endian encoded u32" in that implementation's
+// specification). But maybe from somewhere else?
+#[derive(Clone, Copy, Debug, KnownLayout, FromBytes, Immutable, PartialEq, Unaligned)]
+#[repr(C, packed)]
+struct U24 {
+    low: u8,
+    middle: u8,
+    high: u8,
+}
+
+// U24's space-efficiency is its reason for existence.
+const_assert!(std::mem::size_of::<U24>() == 3);
+const_assert!(std::mem::align_of::<U24>() == 1);
+
+impl TryFrom<u32> for U24 {
+    type Error = ();
+
+    fn try_from(value: u32) -> Result<Self, Self::Error> {
+        if 0x1000000 <= value {
+            Err(())
+        } else {
+            Ok(Self {
+                low: (value & 0xff) as u8,
+                middle: ((value >> 8) & 0xff) as u8,
+                high: ((value >> 16) & 0xff) as u8,
+            })
+        }
+    }
+}
+
+impl From<U24> for u32 {
+    fn from(value: U24) -> u32 {
+        ((value.high as u32) << 16) + ((value.middle as u32) << 8) + (value.low as u32)
+    }
+}
+
 impl<'a, D: HasMetadata + Walk> Iterator for HashedArrayViewEntryIter<'a, D>
 where
     D::Metadata: Eq,
@@ -279,7 +320,7 @@ where
 #[derive(Debug, Clone)]
 pub(super) struct HashedArrayView<D: HasMetadata> {
     phantom: PhantomData<D>,
-    index: HashTable<PolicyOffset>,
+    index: HashTable<U24>,
     /// The offset in the policy data at which the elements indexed by this [`HashedArrayView`]
     /// end. Iteration of elements by this [`HashedArrayView`] must not look for an element at
     /// or beyond this offset.
@@ -308,10 +349,10 @@ where
     pub fn find(&self, key: D::Metadata, policy_data: &PolicyData) -> Option<D> {
         let key_hash = Self::metadata_hash(&key);
         let offset = self.index.find(key_hash, |&offset| {
-            let element = View::<D>::at(offset);
+            let element = View::<D>::at(u32::from(offset));
             key == element.read_metadata(policy_data)
         })?;
-        let element = View::<D>::at(*offset);
+        let element = View::<D>::at(u32::from(*offset));
         Some(element.parse(policy_data))
     }
 
@@ -324,14 +365,14 @@ where
     ) -> impl Iterator<Item = D> {
         let key_hash = Self::metadata_hash(&key);
         let offset = self.index.find(key_hash, |&offset| {
-            let element = View::<D>::at(offset);
+            let element = View::<D>::at(u32::from(offset));
             key == element.read_metadata(policy_data)
         });
         (HashedArrayViewEntryIter {
             policy_data: policy_data,
             limit: self.limit,
             metadata: key,
-            offset: offset.cloned(),
+            offset: offset.map(|offset| u32::from(*offset)),
         })
         .map(|element| element.parse(policy_data))
     }
@@ -341,12 +382,12 @@ where
         self.index
             .iter()
             .map(|offset| {
-                let element = View::<D>::at(*offset);
+                let element = View::<D>::at(u32::from(*offset));
                 HashedArrayViewEntryIter {
                     policy_data: policy_data,
                     limit: self.limit,
                     metadata: element.read_metadata(policy_data),
-                    offset: Some(*offset),
+                    offset: Some(u32::from(*offset)),
                 }
             })
             .flatten()
@@ -377,15 +418,15 @@ where
                 .entry(
                     Self::metadata_hash(&metadata),
                     |&offset| {
-                        let element = View::<D>::at(offset);
+                        let element = View::<D>::at(u32::from(offset));
                         metadata == element.read_metadata(cursor.data())
                     },
                     |&offset| {
-                        let element = View::<D>::at(offset);
+                        let element = View::<D>::at(u32::from(offset));
                         Self::metadata_hash(&element.read_metadata(cursor.data()))
                     },
                 )
-                .or_insert(view.start());
+                .or_insert(U24::try_from(view.start()).expect("Policy offsets ought fit in U24!"));
         }
 
         Ok((Self { phantom: PhantomData, index, limit }, cursor))
@@ -404,12 +445,12 @@ where
             .index
             .iter()
             .map(|offset| {
-                let element = View::<D>::at(*offset);
+                let element = View::<D>::at(u32::from(*offset));
                 HashedArrayViewEntryIter::<D> {
                     policy_data: &policy_data,
                     limit: self.limit,
                     metadata: element.read_metadata(&policy_data),
-                    offset: Some(*offset),
+                    offset: Some(u32::from(*offset)),
                 }
             })
             .flatten()
@@ -418,5 +459,26 @@ where
         }
 
         Ok(())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::U24;
+
+    #[test]
+    fn to_and_from_u24() {
+        for i in 0u32..0x10000 {
+            let u24_result = U24::try_from(i);
+            assert!(u24_result.is_ok());
+            let u24 = u24_result.unwrap();
+            assert_eq!(i >> 16, u24.high as u32);
+            assert_eq!((i >> 8) & 0xff, u24.middle as u32);
+            assert_eq!(i & 0xff, u24.low as u32);
+            let j = u32::from(u24);
+            assert_eq!(i, j);
+        }
+
+        assert!(U24::try_from(0x1000000).is_err());
     }
 }
