@@ -6,7 +6,7 @@ use crate::search_space::{BisectionStatus, SearchSpace};
 use crate::strategies::{Strategy, get_strategy};
 use crate::versioned_artifact_set::VersionedArtifactSet;
 use anyhow::{Result, ensure};
-use assembly_artifact_cache::{MOSClient, MOSIdentifier};
+use assembly_artifact_cache::{MOSClient, MOSIdentifier, Slot};
 use async_trait::async_trait;
 use camino::Utf8PathBuf;
 use ffx_product_bundle_bisect_args::BisectCommand;
@@ -32,6 +32,8 @@ pub struct BisectionPlan {
     pub status: BisectionStatus,
     /// The search strategy.
     pub strategy: Strategy,
+    /// The slot being bisected.
+    pub slot: Slot,
 }
 
 impl BisectionPlan {
@@ -47,11 +49,12 @@ impl BisectionPlan {
 
         // Retrieve release information for the initial PB (from_success).
         let starting_pb =
-            Self::get_pb_release_info(client, &cmd.name, &cmd.from_success, writer).await?;
+            Self::get_pb_release_info(client, &cmd.name, &cmd.from_success, cmd.slot, writer)
+                .await?;
 
         // Retrieve release information for the final PB (to_failure).
         let ending_pb =
-            Self::get_pb_release_info(client, &cmd.name, &cmd.to_failure, writer).await?;
+            Self::get_pb_release_info(client, &cmd.name, &cmd.to_failure, cmd.slot, writer).await?;
 
         // Retrieve an interpolated version list between each starting and ending artifact.
         let search_space =
@@ -70,6 +73,7 @@ impl BisectionPlan {
             results,
             status: BisectionStatus::Continue,
             strategy,
+            slot: cmd.slot,
         };
         Ok(plan)
     }
@@ -126,6 +130,7 @@ impl BisectionPlan {
         client: &mut T,
         name: &String,
         version: &String,
+        slot: Slot,
         writer: &mut SimpleWriter,
     ) -> Result<VersionedArtifactSet> {
         writer.line(&format!(
@@ -134,7 +139,7 @@ impl BisectionPlan {
             version.clone()
         ))?;
         let response = client.get_pb_release_info(name.clone(), version.clone()).await?;
-        let pb = VersionedArtifactSet::new_from_mos_ids(response)?;
+        let pb = VersionedArtifactSet::new_from_mos_ids(response, slot)?;
         Ok(pb)
     }
 
@@ -250,7 +255,7 @@ mod tests {
     use super::*;
     use crate::search_space::{ArtifactVersionSeries, BisectionStatus};
     use crate::strategies::Strategy;
-    use assembly_artifact_cache::{ArtifactType, MOSIdentifier};
+    use assembly_artifact_cache::{ArtifactType, MOSIdentifier, Slot};
     use tempfile::tempdir;
 
     fn create_mock_artifact_series(name: &str, versions: Vec<&str>) -> ArtifactVersionSeries {
@@ -262,6 +267,7 @@ mod tests {
                 version: v.to_string(),
                 repository: "fuchsia".to_string(),
                 cipd: None,
+                slot: Slot::A,
             })
             .collect();
         ArtifactVersionSeries::from_versions(mos_versions)
@@ -276,29 +282,35 @@ mod tests {
     }
 
     fn create_mock_versioned_artifact_set() -> VersionedArtifactSet {
-        VersionedArtifactSet::new_from_mos_ids(vec![
-            MOSIdentifier {
-                artifact_type: ArtifactType::Platform,
-                name: "platform".to_string(),
-                version: "1".to_string(),
-                repository: "fuchsia".to_string(),
-                cipd: None,
-            },
-            MOSIdentifier {
-                artifact_type: ArtifactType::Product,
-                name: "product".to_string(),
-                version: "a".to_string(),
-                repository: "fuchsia".to_string(),
-                cipd: None,
-            },
-            MOSIdentifier {
-                artifact_type: ArtifactType::Board,
-                name: "board".to_string(),
-                version: "x".to_string(),
-                repository: "fuchsia".to_string(),
-                cipd: None,
-            },
-        ])
+        VersionedArtifactSet::new_from_mos_ids(
+            vec![
+                MOSIdentifier {
+                    artifact_type: ArtifactType::Platform,
+                    name: "platform".to_string(),
+                    version: "1".to_string(),
+                    repository: "fuchsia".to_string(),
+                    cipd: None,
+                    slot: Slot::A,
+                },
+                MOSIdentifier {
+                    artifact_type: ArtifactType::Product,
+                    name: "product".to_string(),
+                    version: "a".to_string(),
+                    repository: "fuchsia".to_string(),
+                    cipd: None,
+                    slot: Slot::A,
+                },
+                MOSIdentifier {
+                    artifact_type: ArtifactType::Board,
+                    name: "board".to_string(),
+                    version: "x".to_string(),
+                    repository: "fuchsia".to_string(),
+                    cipd: None,
+                    slot: Slot::A,
+                },
+            ],
+            Slot::default(),
+        )
         .unwrap()
     }
 
@@ -315,6 +327,7 @@ mod tests {
             search_space: create_mock_search_space(),
             results: vec![],
             status: BisectionStatus::Continue,
+            slot: Slot::default(),
         };
 
         let result = StepResult {

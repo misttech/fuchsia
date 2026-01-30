@@ -20,9 +20,11 @@ pub enum Strategy {
 impl FromArgValue for Strategy {
     fn from_arg_value(value: &str) -> Result<Self, String> {
         match value {
-            "longest_dimension" => Ok(Self::LongestDimension),
-            "all_dimensions" => Ok(Self::AllDimensions),
-            _ => Err(format!("unknown strategy '{}'", value)),
+            "longest-dimension" => Ok(Strategy::LongestDimension),
+            "all-dimensions" => Ok(Strategy::AllDimensions),
+            _ => Err(format!(
+                "invalid strategy: {value}. Expected 'longest-dimension' or 'all-dimensions'"
+            )),
         }
     }
 }
@@ -59,4 +61,8 @@ pub struct BisectCommand {
     /// search strategy to use.
     #[argh(option, default = "Strategy::default()")]
     pub strategy: Strategy,
+
+    /// slot to bisect over (a or r).
+    #[argh(option, default = "Default::default()")]
+    pub slot: assembly_artifact_cache::Slot,
 }

@@ -43,6 +43,12 @@ pub fn parse_mos_artifact(s: impl AsRef<str>) -> Result<Option<Artifact>> {
         );
     }
 
+    // TODO(https://fxbug.dev/477979932): Official slot information is not yet provided by the MOS
+    // API. For now, we assume that artifacts with "recovery" in their name belong to the
+    // R slot, and all other artifacts belong to the A slot.
+    let slot =
+        if name.contains("recovery") { crate::artifact::Slot::R } else { crate::artifact::Slot::A };
+
     let mos_id = MOSIdentifier {
         name: name.to_string(),
         version: version.to_string(),
@@ -51,6 +57,7 @@ pub fn parse_mos_artifact(s: impl AsRef<str>) -> Result<Option<Artifact>> {
             anyhow::anyhow!("Failed to parse artifact type '{}'", artifact_type_str)
         })?,
         cipd: None,
+        slot,
     };
     Ok(Some(Artifact::MOS(mos_id)))
 }
@@ -107,6 +114,12 @@ fn parse_identifier_from_path(path: &str) -> Result<MOSIdentifier> {
         (type_and_name[0], type_and_name[1])
     };
 
+    // TODO(https://fxbug.dev/477979932): Official slot information is not yet provided by the MOS
+    // API. For now, we assume that artifacts with "recovery" in their name belong to the
+    // R slot, and all other artifacts belong to the A slot.
+    let slot =
+        if name.contains("recovery") { crate::artifact::Slot::R } else { crate::artifact::Slot::A };
+
     Ok(MOSIdentifier {
         repository: repository.to_string(),
         version: version.to_string(),
@@ -115,6 +128,7 @@ fn parse_identifier_from_path(path: &str) -> Result<MOSIdentifier> {
             anyhow!("Failed to parse artifact type '{}' in '{}'", artifact_type, path)
         })?,
         cipd: None,
+        slot,
     })
 }
 
@@ -310,7 +324,7 @@ impl MOSClient {
 #[cfg(test)]
 mod test {
     use super::*;
-    use crate::artifact::Artifact;
+    use crate::artifact::{Artifact, Slot};
     use pretty_assertions::assert_eq;
 
     #[test]
@@ -325,6 +339,7 @@ mod test {
                 name: "workstation".into(),
                 version: "1.2.3".into(),
                 cipd: None,
+                slot: Slot::A,
             })
         );
     }

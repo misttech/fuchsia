@@ -3,7 +3,7 @@
 // found in the LICENSE file.
 
 use anyhow::{Result, bail};
-use assembly_artifact_cache::{ArtifactType, MOSIdentifier};
+use assembly_artifact_cache::{ArtifactType, MOSIdentifier, Slot};
 use serde::{Deserialize, Serialize};
 
 /// The minimum set of MOS artifacts needed to assemble a product.
@@ -29,7 +29,7 @@ impl PartialEq for VersionedArtifactSet {
 
 impl VersionedArtifactSet {
     /// Create a VersionedArtifactSet instance from a list of MOS resource identifiers.
-    pub fn new_from_mos_ids(ids: Vec<MOSIdentifier>) -> Result<Self> {
+    pub fn new_from_mos_ids(ids: Vec<MOSIdentifier>, requested_slot: Slot) -> Result<Self> {
         // Define a private accumulator struct to build up a versioned artifact set
         // instance while iterating over the list of identifiers.
         #[derive(Default)]
@@ -42,8 +42,8 @@ impl VersionedArtifactSet {
 
         // Iterate through the vector exactly once.
         for id in ids {
-            // TODO(https://fxbug.dev/477979932): Temporary fix to handle duplicate artifacts returned from MOS.
-            if id.name.contains("recovery") {
+            // Check if the artifact belongs to the requested slot.
+            if id.slot != requested_slot {
                 continue;
             }
 
@@ -102,12 +102,15 @@ mod tests {
     use super::*;
 
     fn create_mock_identifier(artifact_type: ArtifactType, version: &str) -> MOSIdentifier {
+        let name = format!("{:?}", artifact_type).to_lowercase();
+        let slot = if name.contains("recovery") { Slot::R } else { Slot::A };
         MOSIdentifier {
-            name: format!("{:?}", artifact_type).to_lowercase(),
+            name,
             artifact_type,
             version: version.to_string(),
             repository: "fuchsia".to_string(),
             cipd: None,
+            slot,
         }
     }
 
@@ -119,7 +122,7 @@ mod tests {
             create_mock_identifier(ArtifactType::Product, "a"),
             create_mock_identifier(ArtifactType::Board, "x"),
         ];
-        let result = VersionedArtifactSet::new_from_mos_ids(ids);
+        let result = VersionedArtifactSet::new_from_mos_ids(ids, Slot::A);
         assert!(result.is_ok());
         let vas = result.unwrap();
         assert_eq!(vas.platform.version, "1");
@@ -135,7 +138,7 @@ mod tests {
             create_mock_identifier(ArtifactType::Platform, "1"),
             create_mock_identifier(ArtifactType::Product, "a"),
         ];
-        let result = VersionedArtifactSet::new_from_mos_ids(ids);
+        let result = VersionedArtifactSet::new_from_mos_ids(ids, Slot::A);
         assert!(result.is_ok());
     }
 
@@ -146,7 +149,7 @@ mod tests {
             create_mock_identifier(ArtifactType::Product, "a"),
             create_mock_identifier(ArtifactType::Board, "x"),
         ];
-        let result = VersionedArtifactSet::new_from_mos_ids(ids);
+        let result = VersionedArtifactSet::new_from_mos_ids(ids, Slot::A);
         assert!(result.is_err());
     }
 
@@ -157,7 +160,7 @@ mod tests {
             create_mock_identifier(ArtifactType::Platform, "1"),
             create_mock_identifier(ArtifactType::Board, "x"),
         ];
-        let result = VersionedArtifactSet::new_from_mos_ids(ids);
+        let result = VersionedArtifactSet::new_from_mos_ids(ids, Slot::A);
         assert!(result.is_err());
     }
 
@@ -168,7 +171,7 @@ mod tests {
             create_mock_identifier(ArtifactType::Platform, "1"),
             create_mock_identifier(ArtifactType::Product, "a"),
         ];
-        let result = VersionedArtifactSet::new_from_mos_ids(ids);
+        let result = VersionedArtifactSet::new_from_mos_ids(ids, Slot::A);
         assert!(result.is_err());
     }
 
@@ -181,7 +184,7 @@ mod tests {
             create_mock_identifier(ArtifactType::Product, "a"),
             create_mock_identifier(ArtifactType::Board, "x"),
         ];
-        let result = VersionedArtifactSet::new_from_mos_ids(ids);
+        let result = VersionedArtifactSet::new_from_mos_ids(ids, Slot::A);
         assert!(result.is_err());
     }
 
@@ -194,7 +197,7 @@ mod tests {
             create_mock_identifier(ArtifactType::Product, "b"),
             create_mock_identifier(ArtifactType::Board, "x"),
         ];
-        let result = VersionedArtifactSet::new_from_mos_ids(ids);
+        let result = VersionedArtifactSet::new_from_mos_ids(ids, Slot::A);
         assert!(result.is_err());
     }
 
@@ -207,7 +210,7 @@ mod tests {
             create_mock_identifier(ArtifactType::Board, "x"),
             create_mock_identifier(ArtifactType::Board, "y"),
         ];
-        let result = VersionedArtifactSet::new_from_mos_ids(ids);
+        let result = VersionedArtifactSet::new_from_mos_ids(ids, Slot::A);
         assert!(result.is_err());
     }
 
@@ -219,14 +222,14 @@ mod tests {
             create_mock_identifier(ArtifactType::Product, "a"),
             create_mock_identifier(ArtifactType::Board, "x"),
         ];
-        let vas1 = VersionedArtifactSet::new_from_mos_ids(ids1).unwrap();
+        let vas1 = VersionedArtifactSet::new_from_mos_ids(ids1, Slot::A).unwrap();
 
         let ids2 = vec![
             create_mock_identifier(ArtifactType::Platform, "1"),
             create_mock_identifier(ArtifactType::Product, "a"),
             create_mock_identifier(ArtifactType::Board, "x"),
         ];
-        let vas2 = VersionedArtifactSet::new_from_mos_ids(ids2).unwrap();
+        let vas2 = VersionedArtifactSet::new_from_mos_ids(ids2, Slot::A).unwrap();
 
         assert_eq!(vas1, vas2);
 
@@ -235,8 +238,81 @@ mod tests {
             create_mock_identifier(ArtifactType::Product, "a"),
             create_mock_identifier(ArtifactType::Board, "x"),
         ];
-        let vas3 = VersionedArtifactSet::new_from_mos_ids(ids3).unwrap();
+        let vas3 = VersionedArtifactSet::new_from_mos_ids(ids3, Slot::A).unwrap();
 
         assert_ne!(vas1, vas3);
+    }
+
+    /// Tests that VersionedArtifactSet correctly filters artifacts by slot.
+    #[test]
+    fn test_new_from_mos_ids_slot_a_filtering() {
+        let ids = vec![
+            create_mock_identifier(ArtifactType::Platform, "1"),
+            MOSIdentifier {
+                name: "platform_recovery".to_string(),
+                artifact_type: ArtifactType::Platform,
+                version: "1".to_string(),
+                repository: "fuchsia".to_string(),
+                cipd: None,
+                slot: Slot::R,
+            },
+            create_mock_identifier(ArtifactType::Product, "a"),
+            create_mock_identifier(ArtifactType::Board, "x"),
+        ];
+        let result = VersionedArtifactSet::new_from_mos_ids(ids, Slot::A);
+        assert!(result.is_ok());
+        let vas = result.unwrap();
+        assert_eq!(vas.platform.name, "platform");
+    }
+
+    /// Tests that VersionedArtifactSet correctly filters recovery artifacts by slot.
+    #[test]
+    fn test_new_from_mos_ids_slot_r_filtering() {
+        let ids = vec![
+            create_mock_identifier(ArtifactType::Platform, "1"),
+            MOSIdentifier {
+                name: "platform_recovery".to_string(),
+                artifact_type: ArtifactType::Platform,
+                version: "1".to_string(),
+                repository: "fuchsia".to_string(),
+                cipd: None,
+                slot: Slot::R,
+            },
+            MOSIdentifier {
+                name: "product_recovery".to_string(),
+                artifact_type: ArtifactType::Product,
+                version: "a".to_string(),
+                repository: "fuchsia".to_string(),
+                cipd: None,
+                slot: Slot::R,
+            },
+            MOSIdentifier {
+                name: "board_recovery".to_string(),
+                artifact_type: ArtifactType::Board,
+                version: "x".to_string(),
+                repository: "fuchsia".to_string(),
+                cipd: None,
+                slot: Slot::R,
+            },
+        ];
+        let result = VersionedArtifactSet::new_from_mos_ids(ids, Slot::R);
+        assert!(result.is_ok());
+        let vas = result.unwrap();
+        assert_eq!(vas.platform.name, "platform_recovery");
+        assert_eq!(vas.product.name, "product_recovery");
+        assert_eq!(vas.board.name, "board_recovery");
+    }
+
+    /// Tests that VersionedArtifactSet fails if requested slot artifacts are missing.
+    #[test]
+    fn test_new_from_mos_ids_slot_r_missing() {
+        let ids = vec![
+            create_mock_identifier(ArtifactType::Platform, "1"),
+            create_mock_identifier(ArtifactType::Product, "a"),
+            create_mock_identifier(ArtifactType::Board, "x"),
+        ];
+        let result = VersionedArtifactSet::new_from_mos_ids(ids, Slot::R);
+        assert!(result.is_err());
+        assert!(result.unwrap_err().to_string().contains("artifact was not found"));
     }
 }

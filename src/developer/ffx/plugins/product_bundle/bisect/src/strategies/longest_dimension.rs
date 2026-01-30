@@ -53,7 +53,7 @@ impl SearchStrategy for LongestDimensionStrategy {
 mod tests {
     use super::*;
     use crate::search_space::ArtifactVersionSeries;
-    use assembly_artifact_cache::{ArtifactType, MOSIdentifier};
+    use assembly_artifact_cache::{ArtifactType, MOSIdentifier, Slot};
 
     // ##################################################################
     // # Test Helpers
@@ -72,6 +72,7 @@ mod tests {
                 version: v.to_string(),
                 repository: "fuchsia".to_string(),
                 cipd: None,
+                slot: Slot::A,
             })
             .collect();
         if mos_versions.is_empty() {

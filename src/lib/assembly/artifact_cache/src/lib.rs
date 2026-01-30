@@ -13,6 +13,6 @@ mod cipd;
 mod gn_label;
 pub mod mos;
 
-pub use artifact::{Artifact, ArtifactType, MOSIdentifier};
+pub use artifact::{Artifact, ArtifactType, MOSIdentifier, Slot};
 pub use artifact_cache::{ArtifactCache, ArtifactError};
 pub use mos::MOSClient;

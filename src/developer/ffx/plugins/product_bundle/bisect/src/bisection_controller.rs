@@ -49,20 +49,40 @@ impl<'a> BisectionController<'a> {
             let file = File::open(&plan_file)
                 .with_context(|| format!("Failed to open bisection plan from {}", plan_file))?;
             let reader = std::io::BufReader::new(file);
-            let plan: BisectionPlan = serde_json::from_reader(reader).with_context(|| {
-                format!("Failed to deserialize bisection plan from {}", plan_file)
-            })?;
+            let plan_result: Result<BisectionPlan, _> = serde_json::from_reader(reader);
 
-            writer.line(format!("Found previous bisection:\n -> [{}]\n", &plan.status()))?;
-            if confirm_action(writer).context("Failed to get user confirmation")? {
-                writer.line(format!("\nContinuing existing plan: {}\n", plan_file))?;
-                return Ok(Self { plan, cache, writer, env_context });
-            } else {
-                writer.line(format!("\nDeleting existing plan: {}...", plan_file))?;
-                fs::remove_file(&plan_file).with_context(|| {
-                    format!("Failed to delete existing plan file at {}", plan_file)
-                })?;
-                writer.line(format!("Plan {} deleted.\n", plan_file))?;
+            match plan_result {
+                Ok(plan) => {
+                    writer
+                        .line(format!("Found previous bisection:\n -> [{}]\n", &plan.status()))?;
+                    if confirm_action(writer).context("Failed to get user confirmation")? {
+                        writer.line(format!("\nContinuing existing plan: {}\n", plan_file))?;
+                        return Ok(Self { plan, cache, writer, env_context });
+                    } else {
+                        writer.line(format!("\nDeleting existing plan: {}...", plan_file))?;
+                        fs::remove_file(&plan_file).with_context(|| {
+                            format!("Failed to delete existing plan file at {}", plan_file)
+                        })?;
+                        writer.line(format!("Plan {} deleted.\n", plan_file))?;
+                    }
+                }
+                Err(e) => {
+                    writer.line(format!(
+                        "Found a bisection plan at {}, but it failed to load (it may be from an older version of ffx):\n -> {}\n",
+                        plan_file, e
+                    ))?;
+                    writer
+                        .line("Would you like to delete this invalid plan and start a new one?")?;
+                    if confirm_action(writer).context("Failed to get user confirmation")? {
+                        writer.line(format!("\nDeleting invalid plan: {}...", plan_file))?;
+                        fs::remove_file(&plan_file).with_context(|| {
+                            format!("Failed to delete invalid plan file at {}", plan_file)
+                        })?;
+                        writer.line(format!("Plan {} deleted.\n", plan_file))?;
+                    } else {
+                        anyhow::bail!("Cannot continue with an invalid bisection plan.");
+                    }
+                }
             }
         }
 
@@ -259,7 +279,7 @@ mod tests {
     use super::*;
     use crate::bisection_plan::MOSClientTrait;
     use crate::search_space::{ArtifactVersionSeries, SearchSpace};
-    use assembly_artifact_cache::ArtifactType;
+    use assembly_artifact_cache::{ArtifactType, Slot};
     use async_trait::async_trait;
     use ffx_config::EnvironmentContext;
     use ffx_product_bundle_bisect_args as args;
@@ -305,6 +325,7 @@ mod tests {
             gen_dir: None,
             auth: pbms::AuthFlowChoice::Default,
             strategy: args::Strategy::LongestDimension,
+            slot: Slot::default(),
         }
     }
 
@@ -316,6 +337,7 @@ mod tests {
                 version: p_v.to_string(),
                 repository: "fuchsia".to_string(),
                 cipd: None,
+                slot: Slot::A,
             },
             MOSIdentifier {
                 artifact_type: ArtifactType::Product,
@@ -323,6 +345,7 @@ mod tests {
                 version: r_v.to_string(),
                 repository: "fuchsia".to_string(),
                 cipd: None,
+                slot: Slot::A,
             },
             MOSIdentifier {
                 artifact_type: ArtifactType::Board,
@@ -330,6 +353,7 @@ mod tests {
                 version: b_v.to_string(),
                 repository: "fuchsia".to_string(),
                 cipd: None,
+                slot: Slot::A,
             },
         ]
     }
@@ -421,6 +445,7 @@ mod tests {
             version: "1.2.3".to_string(),
             repository: "fuchsia".to_string(),
             cipd: None,
+            slot: Slot::A,
         };
         let bad = MOSIdentifier {
             artifact_type: ArtifactType::Platform,
@@ -428,6 +453,7 @@ mod tests {
             version: "1.2.4".to_string(),
             repository: "fuchsia".to_string(),
             cipd: None,
+            slot: Slot::A,
         };
 
         let mock_series = ArtifactVersionSeries::from_versions(vec![good.clone()]);
@@ -491,6 +517,7 @@ mod tests {
             version: "1.2.3".to_string(),
             repository: "fuchsia".to_string(),
             cipd: None,
+            slot: Slot::A,
         };
         let bad = MOSIdentifier {
             artifact_type: ArtifactType::Platform,
@@ -498,6 +525,7 @@ mod tests {
             version: "1.2.4".to_string(),
             repository: "fuchsia".to_string(),
             cipd: None,
+            slot: Slot::A,
         };
         controller.plan.status =
             BisectionStatus::CulpritFound(Box::new(good.clone()), Box::new(bad));

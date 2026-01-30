@@ -173,6 +173,7 @@ mod tests {
             repository: "mock-repo".to_string(),
             artifact_type,
             cipd: None,
+            slot: assembly_artifact_cache::Slot::A,
         }
     }
 

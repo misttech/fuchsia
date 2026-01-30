@@ -94,6 +94,18 @@
       "short": null,
       "description": "search strategy to use.",
       "hidden": false
+    },
+    {
+      "kind": {
+        "Option": {
+          "arg_name": "slot"
+        }
+      },
+      "optionality": "optional",
+      "long": "--slot",
+      "short": null,
+      "description": "slot to bisect over (a or r).",
+      "hidden": false
     }
   ],
   "notes": [],

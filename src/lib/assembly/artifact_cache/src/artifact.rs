@@ -72,6 +72,28 @@ impl std::fmt::Display for CIPDPackage {
     }
 }
 
+/// The slot that an artifact belongs to.
+#[derive(Serialize, Deserialize, Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum Slot {
+    /// The primary slot.
+    #[default]
+    A,
+    /// The recovery slot.
+    R,
+}
+
+impl FromStr for Slot {
+    type Err = String;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        match s {
+            "A" | "a" => Ok(Slot::A),
+            "R" | "r" => Ok(Slot::R),
+            _ => Err(format!("Unknown slot: '{}'. Expected 'A' or 'R'", s)),
+        }
+    }
+}
+
 /// A reference to an artifact known by MOS.
 #[derive(Serialize, Deserialize, Clone)]
 pub struct MOSIdentifier {
@@ -89,6 +111,10 @@ pub struct MOSIdentifier {
 
     /// location of this artifact in CIPD
     pub cipd: Option<CIPDPackage>,
+
+    /// The slot this artifact belongs to.
+    #[serde(default)]
+    pub slot: Slot,
 }
 
 impl Eq for MOSIdentifier {}
@@ -99,6 +125,7 @@ impl PartialEq for MOSIdentifier {
             && self.version == other.version
             && self.repository == other.repository
             && self.artifact_type == other.artifact_type
+            && self.slot == other.slot
     }
 }
 
@@ -113,7 +140,7 @@ impl fmt::Debug for MOSIdentifier {
         if let Some(cipd) = &self.cipd {
             debug_struct.field("cipd", cipd);
         }
-        debug_struct.finish()
+        debug_struct.field("slot", &self.slot).finish()
     }
 }
 
