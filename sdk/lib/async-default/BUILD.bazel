@@ -1,0 +1,23 @@
+# Copyright 2025 The Fuchsia Authors. All rights reserved.
+# Use of this source code is governed by a BSD-style license that can be
+# found in the LICENSE file.
+
+load("//build/bazel/bazel_idk:defs.bzl", "idk_cc_shared_library_zx")
+
+idk_cc_shared_library_zx(
+    name = "async-default",
+    srcs = ["default.c"],
+    hdrs = ["include/lib/async/default.h"],
+    api_area = "Kernel",
+    category = "partner",
+    idk_name = "async-default",
+    target_compatible_with = ["@platforms//os:fuchsia"],
+    visibility = ["//visibility:public"],
+    deps = [
+        # <lib/async/default.h> has #include <lib/async/dispatcher.h>.
+        "//sdk/lib/async",
+    ],
+)
+
+# TODO(https://fxbug.dev/446911800): Remove when the issue is resolved.
+exports_files(["async-default.api"])

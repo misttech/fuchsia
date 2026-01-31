@@ -116,7 +116,10 @@ import("//build/toolchain/toolchain_environment.gni")
 #   sdk_name
 #     Optional: Override the name of the library in the SDK. This can be used
 #     when `target_name` is already used by another SDK atom.
-#     Only allowed when `sdk == "source" and `sdk_publishable` is specified.
+#     Only allowed when `sdk_publishable` and `sdk == "source"` are specified.
+#     (For bazel2gn purposes, it is also allowed when `sdk_publishable` and
+#     (`sdk == "shared"` or `sdk == "static"`) are specified and its value is
+#     the same as `target_name`.)
 #     TODO(https://fxbug.dev/333125197): Remove this parameter.
 #     Type: string
 #     Default: `target_name`
@@ -260,8 +263,8 @@ template("zx_library") {
         assert(!defined(invoker.sdk_name))
       }
     } else if (shape == "static") {
-      assert(!defined(invoker.sdk_name))
       if (sdkable) {
+        assert(!defined(invoker.sdk_name) || invoker.sdk_name == target_name)
         target_type = "sdk_static_library"
         extra_target_args = {
           category = sdk_category
@@ -274,11 +277,12 @@ template("zx_library") {
                                  ])
         }
       } else {
+        assert(!defined(invoker.sdk_name))
         target_type = "static_library"
       }
     } else if (shape == "shared") {
-      assert(!defined(invoker.sdk_name))
       if (sdkable) {
+        assert(!defined(invoker.sdk_name) || invoker.sdk_name == target_name)
         assert(sdk_category == "partner")
         target_type = "sdk_shared_library"
         extra_target_args = {
@@ -292,6 +296,7 @@ template("zx_library") {
                                  ])
         }
       } else {
+        assert(!defined(invoker.sdk_name))
         target_type = "shared_library"
       }
     } else {

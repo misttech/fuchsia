@@ -13,11 +13,21 @@ idk_molecule(
         "//build/bazel/bazel_idk/tests:__subpackages__",
     ],
     deps = [
+        ":cc_prebuilt_libraries",
         ":cc_source_libraries",
         "//sdk/fidl",
     ] + [
         ":build_host_tools",
         ":non_build_host_tools",
+    ],
+)
+
+# C/C++ code that must be provided as prebuilt libraries for each supported API
+# level. Must export symbols with C linkage.
+idk_molecule(
+    name = "cc_prebuilt_libraries",
+    deps = [
+        "//sdk/lib/async-default:async-default_idk",
     ],
 )
 
