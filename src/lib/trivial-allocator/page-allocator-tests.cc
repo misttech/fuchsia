@@ -38,9 +38,15 @@ void PageAllocatorTest(Args&&... args) {
   volatile int* vptr = iptr;
   EXPECT_EQ(17, *vptr);
 
-  // Reset should unmap the page.
-  allocation.reset();
-  ASSERT_DEATH({ [[maybe_unused]] int i = *vptr; }, "");
+  // Reset should unmap the page.  The unmap must happen inside the death
+  // expression because gtest runs it in a subprocess that might otherwise have
+  // mapped something else at the same address if the parent does the unmap.
+  ASSERT_DEATH(
+      {
+        allocation.reset();
+        [[maybe_unused]] int i = *vptr;
+      },
+      "");
 
   allocation = allocator(size, 1);
   EXPECT_TRUE(allocation);
