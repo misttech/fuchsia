@@ -59,7 +59,6 @@ where
     }
 
     /// Removes a key from the map, returning the value if the key was present.
-    /// Removes a key from the map, returning the value if the key was present.
     pub fn remove<Q>(&self, key: &Q) -> Option<V>
     where
         K: Borrow<Q>,

@@ -559,9 +559,11 @@ mod tests {
     use super::*;
     use assert_matches::assert_matches;
     use fuchsia_async::TestExecutor;
+    use fuchsia_rcu::RcuReadScope;
     use futures::future::Future;
     use futures::pin_mut;
     use netlink_packet_generic::GenlHeader;
+    use starnix_rcu::RcuHashMap;
     use std::task::Poll;
 
     const TEST_FAMILY: &str = "test_family";
@@ -588,7 +590,7 @@ mod tests {
     struct TestFamily {
         messages_to_server: Mutex<Vec<Vec<u8>>>,
         multicast_message_sinks:
-            Mutex<HashMap<String, mpsc::UnboundedSender<NetlinkMessage<GenericMessage>>>>,
+            RcuHashMap<String, mpsc::UnboundedSender<NetlinkMessage<GenericMessage>>>,
     }
 
     #[async_trait]
@@ -607,7 +609,7 @@ mod tests {
             _assigned_family_id: u16,
             message_sink: mpsc::UnboundedSender<NetlinkMessage<GenericMessage>>,
         ) {
-            self.multicast_message_sinks.lock().insert(group, message_sink);
+            self.multicast_message_sinks.insert(group, message_sink);
         }
 
         async fn handle_message(
@@ -834,9 +836,10 @@ mod tests {
         let (_netlink, test_family, fut) = netlink_with_test_family();
         pin_mut!(fut);
         assert!(exec.run_until_stalled(&mut fut) == Poll::Pending);
-        assert_eq!(test_family.multicast_message_sinks.lock().len(), 2);
-        assert!(test_family.multicast_message_sinks.lock().contains_key(MCAST_GROUP_1));
-        assert!(test_family.multicast_message_sinks.lock().contains_key(MCAST_GROUP_2));
+        let scope = RcuReadScope::new();
+        assert_eq!(test_family.multicast_message_sinks.iter(&scope).count(), 2);
+        assert!(test_family.multicast_message_sinks.get(&scope, MCAST_GROUP_1).is_some());
+        assert!(test_family.multicast_message_sinks.get(&scope, MCAST_GROUP_2).is_some());
     }
 
     #[test]
@@ -876,8 +879,7 @@ mod tests {
 
         let message_sink = test_family
             .multicast_message_sinks
-            .lock()
-            .get(MCAST_GROUP_1)
+            .get(&RcuReadScope::new(), MCAST_GROUP_1)
             .expect("Failed to find multicast message sender")
             .clone();
         let netlink_message = NetlinkMessage::new(NetlinkHeader::default(), NetlinkPayload::Noop);
