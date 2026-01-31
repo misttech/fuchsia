@@ -269,6 +269,18 @@ _all_named_fuchsia_envs += [
   },
 ]
 
+kudzu_env = {
+  dimensions = {
+    device_type = device_types.maple
+  }
+}
+_all_named_fuchsia_envs += [
+  {
+    name = "kudzu"
+    env = kudzu_env
+  },
+]
+
 maple_env = {
   dimensions = {
     device_type = device_types.maple
