@@ -356,6 +356,12 @@ class __POINTER(KeyType_) WAVLTree {
   // @return true if there was no collision and the item was successfully
   // inserted.  false otherwise.
   //
+  // Note: When using the r-value reference form of |insert_or_find|, the
+  // pointer passed to the function is *only* consumed when there is no
+  // collision and the item is successfully inserted into the collection (in
+  // which case, the collection owns the passed pointer).  In the case that
+  // there is a collision, the user's pointer is not consumed and is left as is.
+  //
   bool insert_or_find(const PtrType& ptr, iterator* iter = nullptr) {
     return insert_or_find(PtrType(ptr), iter);
   }
