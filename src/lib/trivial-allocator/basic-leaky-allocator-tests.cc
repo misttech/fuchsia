@@ -122,4 +122,24 @@ TEST(TrivialAllocatorTests, BasicLeakyAllocator) {
   EXPECT_FALSE(ptr);
 }
 
+TEST(TrivialAllocatorTests, BasicLeakyAllocatorReserve) {
+  alignas(16) std::byte backing_data[128];
+  trivial_allocator::SingleHeapAllocator backing_allocator({backing_data});
+  trivial_allocator::BasicLeakyAllocator allocator(backing_allocator);
+
+  void* ptr = allocator.allocate(32);
+  ASSERT_TRUE(ptr);
+
+  EXPECT_FALSE(allocator.reserve(100));  // Only 128 - 32 = 96 left now.
+  ASSERT_EQ(allocator.unallocated().size_bytes(), 96u);
+
+  ASSERT_TRUE(allocator.reserve(96));
+  ptr = allocator.allocate(96);
+  EXPECT_TRUE(ptr);
+
+  // That used up all the space, so there shouldn't be any more to give.
+  ptr = allocator.allocate(1);
+  EXPECT_FALSE(ptr);
+}
+
 }  // namespace

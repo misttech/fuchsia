@@ -86,35 +86,54 @@ class BasicLeakyAllocator {
     return *this;
   }
 
+  // If this returns true, an immediate allocate() call for the same or smaller
+  // size and alignment cannot fail.
+  [[nodiscard]] constexpr bool reserve(  //
+      size_t size, size_t alignment = __STDCPP_DEFAULT_NEW_ALIGNMENT__) {
+    void* aligned_frontier = frontier_;
+    size_t aligned_space = space_;
+    if (std::align(alignment, size, aligned_frontier, aligned_space)) {
+      return true;
+    }
+
+    // The pending chunk can't do it.  Get a fresh one.
+    size_t chunk_size = size;
+    auto new_chunk = allocate_(chunk_size, alignment);
+    if (!new_chunk) {
+      return false;
+    }
+    void* new_frontier = new_chunk.get();
+    void* ptr = std::align(alignment, size, new_frontier, chunk_size);
+    if (!ptr) {
+      // Ok, it failed to meet the alignment requirement.  Instead, get an
+      // overly large chunk to ensure it by wasting space.
+      assert(std::numeric_limits<size_t>::max() - size >= alignment);
+      chunk_size = size + alignment - 1;
+      new_chunk = allocate_(chunk_size, alignment);
+      if (!new_chunk) {
+        return false;
+      }
+      new_frontier = new_chunk.get();
+      ptr = std::align(alignment, size, new_frontier, chunk_size);
+      assert(ptr);
+    }
+
+    frontier_ = new_frontier;
+    space_ = chunk_size;
+    static_cast<void>(new_chunk.release());
+
+    return true;
+  }
+
   [[nodiscard, gnu::malloc, gnu::alloc_size(2), gnu::alloc_align(3)]] constexpr void* allocate(
       size_t size, size_t alignment = __STDCPP_DEFAULT_NEW_ALIGNMENT__) {
     void* ptr = std::align(alignment, size, frontier_, space_);
     if (!ptr) {
-      // The pending chunk can't do it.  Get a fresh one.
-      size_t chunk_size = size;
-      auto new_chunk = allocate_(chunk_size, alignment);
-      if (!new_chunk) {
+      if (!reserve(size, alignment)) {
         return nullptr;
       }
-      void* new_frontier = new_chunk.get();
-      ptr = std::align(alignment, size, new_frontier, chunk_size);
-      if (!ptr) {
-        // Ok, it failed to meet the alignment requirement.  Instead, get an
-        // overly large chunk to ensure it by wasting space.
-        assert(std::numeric_limits<size_t>::max() - size >= alignment);
-        chunk_size = size + alignment - 1;
-        new_chunk = allocate_(chunk_size, alignment);
-        if (!new_chunk) {
-          return nullptr;
-        }
-        new_frontier = new_chunk.get();
-        ptr = std::align(alignment, size, new_frontier, chunk_size);
-        assert(ptr);
-      }
-
-      frontier_ = new_frontier;
-      space_ = chunk_size;
-      static_cast<void>(new_chunk.release());
+      ptr = std::align(alignment, size, frontier_, space_);
+      assert(ptr);
     }
 
     frontier_ = static_cast<void*>(static_cast<std::byte*>(ptr) + size);
