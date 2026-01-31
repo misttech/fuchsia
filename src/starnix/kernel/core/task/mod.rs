@@ -26,7 +26,7 @@ mod task;
 mod thread_group;
 pub mod tracing;
 mod uts_namespace;
-mod waiter;
+pub mod waiter;
 
 pub use abstract_socket_namespace::*;
 pub use cgroup::*;

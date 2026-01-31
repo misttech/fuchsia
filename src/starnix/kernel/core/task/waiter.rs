@@ -5,6 +5,7 @@
 use crate::signals::RunState;
 use crate::task::CurrentTask;
 use crate::vfs::{EpollEventHandler, FdNumber};
+use bitflags::bitflags;
 use slab::Slab;
 use starnix_lifecycle::{AtomicU64Counter, AtomicUsizeCounter};
 use starnix_sync::{
@@ -338,6 +339,20 @@ impl WaitCallback {
     }
 }
 
+bitflags! {
+    #[derive(Clone, Copy, Debug, PartialEq, Eq)]
+    pub struct WaiterOptions: u8 {
+        /// The wait cannot be interrupted by signals.
+        const IGNORE_SIGNALS = 1;
+
+        /// The wait is not taking place at a safe point.
+        ///
+        /// For example, the caller might be holding a lock, which could cause a deadlock if the
+        /// waiter triggers delayed releasers.
+        const UNSAFE_CALLSTACK = 2;
+    }
+}
+
 /// Implementation of Waiter. We put the Waiter data in an Arc so that WaitQueue can tell when the
 /// Waiter has been destroyed by keeping a Weak reference. But this is an implementation detail and
 /// a Waiter should have a single owner. So the Arc is hidden inside Waiter.
@@ -345,7 +360,7 @@ struct PortWaiter {
     port: PortEvent,
     callbacks: Mutex<HashMap<WaitKey, WaitCallback>>, // the key 0 is reserved for 'no handler'
     next_key: AtomicU64Counter,
-    ignore_signals: bool,
+    options: WaiterOptions,
 
     /// Collection of wait queues this Waiter is waiting on, so that when the Waiter is Dropped it
     /// can remove itself from the queues.
@@ -356,12 +371,12 @@ struct PortWaiter {
 
 impl PortWaiter {
     /// Internal constructor.
-    fn new(ignore_signals: bool) -> Arc<Self> {
+    fn new(options: WaiterOptions) -> Arc<Self> {
         Arc::new(PortWaiter {
             port: PortEvent::new(),
             callbacks: Default::default(),
             next_key: AtomicU64Counter::new(1),
-            ignore_signals,
+            options,
             wait_queues: Default::default(),
         })
     }
@@ -430,8 +445,12 @@ impl PortWaiter {
             }
         };
 
-        // Trigger delayed releaser before blocking.
-        current_task.trigger_delayed_releaser(locked);
+        // Trigger delayed releaser before blocking if we're at a safe point.
+        //
+        // For example, we cannot trigger delayed releaser if we are holding any locks.
+        if !self.options.contains(WaiterOptions::UNSAFE_CALLSTACK) {
+            current_task.trigger_delayed_releaser(locked);
+        }
 
         if is_waiting { current_task.run_in_state(run_state, callback) } else { callback() }
     }
@@ -527,7 +546,7 @@ impl PortWaiter {
     }
 
     fn interrupt(&self) {
-        if self.ignore_signals {
+        if self.options.contains(WaiterOptions::IGNORE_SIGNALS) {
             return;
         }
         self.port.notify(NotifyKind::Interrupt);
@@ -551,12 +570,12 @@ pub struct Waiter {
 impl Waiter {
     /// Create a new waiter.
     pub fn new() -> Self {
-        Self { inner: PortWaiter::new(false) }
+        Self { inner: PortWaiter::new(WaiterOptions::empty()) }
     }
 
-    /// Create a new waiter that doesn't wake up when a signal is received.
-    pub fn new_ignoring_signals() -> Self {
-        Self { inner: PortWaiter::new(true) }
+    /// Create a new waiter with the given options.
+    pub fn with_options(options: WaiterOptions) -> Self {
+        Self { inner: PortWaiter::new(options) }
     }
 
     /// Create a weak reference to this waiter.

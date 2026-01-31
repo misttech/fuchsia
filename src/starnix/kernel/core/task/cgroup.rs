@@ -8,6 +8,7 @@
 //! to a control group (for the duration of their lifetime).
 
 use crate::signals::{SignalInfo, send_freeze_signal};
+use crate::task::waiter::WaiterOptions;
 use crate::task::{Kernel, ThreadGroup, ThreadGroupKey, WaitQueue, Waiter};
 use crate::vfs::{FsStr, FsString, PathBuilder};
 use starnix_logging::{CATEGORY_STARNIX, log_warn, trace_duration, track_stub};
@@ -394,7 +395,7 @@ impl CgroupState {
     /// Creates a new Waiter that subscribes to the Cgroup's freezer WaitQueue. This `Waiter` can be
     /// sent as a part of a `KernelSignal::Freeze` to freeze a `Task`.
     fn create_freeze_waiter(&self) -> Waiter {
-        let waiter = Waiter::new_ignoring_signals();
+        let waiter = Waiter::with_options(WaiterOptions::IGNORE_SIGNALS);
         self.wait_queue.wait_async(&waiter);
         waiter
     }

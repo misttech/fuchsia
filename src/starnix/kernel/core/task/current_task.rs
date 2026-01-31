@@ -9,6 +9,7 @@ use crate::ptrace::{PtraceCoreState, PtraceEvent, PtraceEventData, PtraceOptions
 use crate::security;
 use crate::signals::{RunState, SignalInfo, send_signal_first, send_standard_signal};
 use crate::task::loader::{ResolvedElf, load_executable, resolve_executable};
+use crate::task::waiter::WaiterOptions;
 use crate::task::{
     ExitStatus, RobustListHeadPtr, SeccompFilter, SeccompFilterContainer, SeccompNotifierHandle,
     SeccompState, SeccompStateValue, Task, TaskFlags, Waiter,
@@ -1941,7 +1942,7 @@ impl CurrentTask {
             return;
         }
 
-        let waiter = Waiter::new_ignoring_signals();
+        let waiter = Waiter::with_options(WaiterOptions::IGNORE_SIGNALS);
         loop {
             // If we've exited, unstop the threads and return without notifying
             // waiters.

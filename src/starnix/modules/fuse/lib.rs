@@ -8,6 +8,7 @@ use linux_uapi::FUSE_DEV_IOC_PASSTHROUGH_OPEN_V2;
 use starnix_core::mm::{MemoryAccessorExt, PAGE_SIZE};
 use starnix_core::mutable_state::Guard;
 use starnix_core::security;
+use starnix_core::task::waiter::WaiterOptions;
 use starnix_core::task::{CurrentTask, EventHandler, Kernel, WaitCanceler, WaitQueue, Waiter};
 use starnix_core::vfs::buffers::{
     Buffer, InputBuffer, InputBufferExt as _, OutputBuffer, OutputBufferCallback,
@@ -1915,7 +1916,7 @@ impl<'a> FuseMutableStateGuard<'a> {
             self.queue_operation(current_task, node.nodeid, operation, None)?;
             return Ok(FuseResponse::None);
         }
-        let waiter = Waiter::new();
+        let waiter = Waiter::with_options(WaiterOptions::UNSAFE_CALLSTACK);
         let is_async = operation.is_async();
         let unique_id =
             self.queue_operation(current_task, node.nodeid, operation, Some(&waiter))?;
