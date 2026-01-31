@@ -6,9 +6,9 @@
 #     fx update-rustc-third-party
 ###############################################################################
 
-load("@rules_rust//rust:defs.bzl", "rust_library")
 load("@rules_license//rules:license.bzl", "license")
 load("@rules_license//rules:package_info.bzl", "package_info")
+load("@rules_rust//rust:defs.bzl", "rust_library")
 
 package(
     default_package_metadata = [
@@ -78,6 +78,6 @@ rust_library(
     }),
     version = "0.2.21",
     deps = [
-        "//third_party/rust_crates/vendor/zerocopy-0.8.33:zerocopy",
+        "//third_party/rust_crates/vendor/zerocopy-0.8.37:zerocopy",
     ],
 )
