@@ -11,7 +11,6 @@ zx_library("trivial-allocator") {
     "lib/trivial-allocator/basic-leaky-allocator.h",
     "lib/trivial-allocator/basic-owning-allocator.h",
     "lib/trivial-allocator/new.h",
-    "lib/trivial-allocator/internal.h",
     "lib/trivial-allocator/page-allocator.h",
     "lib/trivial-allocator/posix.h",
     "lib/trivial-allocator/sealed-page-allocator.h",
@@ -20,8 +19,6 @@ zx_library("trivial-allocator") {
   ]
 
   public_deps = [
-    "//sdk/lib/stdcompat",
-
     # <lib/trivial-allocator/new.h> has #include <fbl/alloc_checker.h>.
     "//zircon/system/ulib/fbl",
   ]

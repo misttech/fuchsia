@@ -5,15 +5,8 @@
 #ifndef SRC_LIB_TRIVIAL_ALLOCATOR_INCLUDE_LIB_TRIVIAL_ALLOCATOR_SINGLE_HEAP_ALLOCATOR_H_
 #define SRC_LIB_TRIVIAL_ALLOCATOR_INCLUDE_LIB_TRIVIAL_ALLOCATOR_SINGLE_HEAP_ALLOCATOR_H_
 
-#include <lib/stdcompat/functional.h>
-#include <lib/stdcompat/span.h>
-
-#include <array>
 #include <cstddef>
-#include <functional>
-#include <optional>
-#include <tuple>
-#include <utility>
+#include <span>
 
 namespace trivial_allocator {
 
@@ -24,7 +17,7 @@ namespace trivial_allocator {
 
 class SingleHeapAllocator {
  public:
-  using Bytes = cpp20::span<std::byte>;
+  using Bytes = std::span<std::byte>;
 
   // This is the non-owning "smart pointer" type returned below.
   // It's sufficient for BasicLeakyAllocator's API requirements.
@@ -67,7 +60,7 @@ class SingleHeapAllocator {
     other.heap_ = {};
   }
 
-  explicit constexpr SingleHeapAllocator(cpp20::span<std::byte> heap) : heap_(heap) {}
+  explicit constexpr SingleHeapAllocator(std::span<std::byte> heap) : heap_(heap) {}
 
   constexpr SingleHeapAllocator& operator=(SingleHeapAllocator&& other) noexcept {
     auto other_heap = other.heap_;
@@ -90,7 +83,7 @@ class SingleHeapAllocator {
   }
 
  private:
-  cpp20::span<std::byte> heap_;
+  std::span<std::byte> heap_;
 };
 
 }  // namespace trivial_allocator

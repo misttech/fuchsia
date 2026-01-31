@@ -2,8 +2,9 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#include <lib/stdcompat/span.h>
 #include <lib/trivial-allocator/single-heap-allocator.h>
+
+#include <span>
 
 #include <gtest/gtest.h>
 
@@ -12,7 +13,7 @@ namespace {
 TEST(TrivialAllocatorTests, SingleHeapAllocator) {
   alignas(uint64_t) std::byte aligned_buffer[128];
 
-  trivial_allocator::SingleHeapAllocator aligned_heap{cpp20::span(aligned_buffer)};
+  trivial_allocator::SingleHeapAllocator aligned_heap{std::span(aligned_buffer)};
 
   size_t size = sizeof(aligned_buffer) + 1;
   auto allocation = aligned_heap(size, 1);
@@ -28,7 +29,7 @@ TEST(TrivialAllocatorTests, SingleHeapAllocator) {
   auto second_allocation = aligned_heap(size, 1);
   EXPECT_FALSE(second_allocation);
 
-  trivial_allocator::SingleHeapAllocator misaligned_heap{cpp20::span{
+  trivial_allocator::SingleHeapAllocator misaligned_heap{std::span{
       &aligned_buffer[1],
       sizeof(aligned_buffer) - 1,
   }};

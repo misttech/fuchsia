@@ -5,16 +5,15 @@
 #ifndef SRC_LIB_TRIVIAL_ALLOCATOR_INCLUDE_LIB_TRIVIAL_ALLOCATOR_BASIC_LEAKY_ALLOCATOR_H_
 #define SRC_LIB_TRIVIAL_ALLOCATOR_INCLUDE_LIB_TRIVIAL_ALLOCATOR_BASIC_LEAKY_ALLOCATOR_H_
 
-#include <lib/stdcompat/span.h>
 #include <zircon/compiler.h>
 
 #include <cassert>
+#include <concepts>
 #include <cstddef>
 #include <cstdio>
 #include <memory>
+#include <span>
 #include <type_traits>
-
-#include "internal.h"
 
 namespace trivial_allocator {
 
@@ -66,9 +65,8 @@ class BasicLeakyAllocator {
 
   BasicLeakyAllocator(const BasicLeakyAllocator&) = delete;
 
-  constexpr BasicLeakyAllocator(
-      std::enable_if_t<std::is_move_constructible_v<AllocateFunction>, BasicLeakyAllocator&&>
-          other) noexcept
+  constexpr BasicLeakyAllocator(BasicLeakyAllocator&& other) noexcept
+    requires(std::move_constructible<AllocateFunction>)
       : allocate_(std::move(other.allocate_)) {
     std::swap(frontier_, other.frontier_);
     std::swap(space_, other.space_);
@@ -78,9 +76,9 @@ class BasicLeakyAllocator {
   template <typename... Args>
   explicit constexpr BasicLeakyAllocator(Args&&... args) : allocate_(std::forward<Args>(args)...) {}
 
-  constexpr BasicLeakyAllocator& operator=(
-      std::enable_if_t<std::is_move_constructible_v<AllocateFunction>, BasicLeakyAllocator&&>
-          other) {
+  constexpr BasicLeakyAllocator& operator=(BasicLeakyAllocator&& other) noexcept
+    requires(std::move_constructible<AllocateFunction>)
+  {
     allocate_ = std::move(other.allocate_);
     std::swap(frontier_, other.frontier_);
     std::swap(space_, other.space_);
@@ -90,7 +88,7 @@ class BasicLeakyAllocator {
 
   [[nodiscard, gnu::malloc, gnu::alloc_size(2), gnu::alloc_align(3)]] constexpr void* allocate(
       size_t size, size_t alignment = __STDCPP_DEFAULT_NEW_ALIGNMENT__) {
-    void* ptr = internal::Align(alignment, size, frontier_, space_);
+    void* ptr = std::align(alignment, size, frontier_, space_);
     if (!ptr) {
       // The pending chunk can't do it.  Get a fresh one.
       size_t chunk_size = size;
@@ -99,7 +97,7 @@ class BasicLeakyAllocator {
         return nullptr;
       }
       void* new_frontier = new_chunk.get();
-      ptr = internal::Align(alignment, size, new_frontier, chunk_size);
+      ptr = std::align(alignment, size, new_frontier, chunk_size);
       if (!ptr) {
         // Ok, it failed to meet the alignment requirement.  Instead, get an
         // overly large chunk to ensure it by wasting space.
@@ -110,7 +108,7 @@ class BasicLeakyAllocator {
           return nullptr;
         }
         new_frontier = new_chunk.get();
-        ptr = internal::Align(alignment, size, new_frontier, chunk_size);
+        ptr = std::align(alignment, size, new_frontier, chunk_size);
         assert(ptr);
       }
 
@@ -143,7 +141,7 @@ class BasicLeakyAllocator {
   AllocateFunction& allocate_function() { return allocate_; }
   const AllocateFunction& allocate_function() const { return allocate_; }
 
-  constexpr cpp20::span<const std::byte> unallocated() const {
+  constexpr std::span<const std::byte> unallocated() const {
     return {reinterpret_cast<const std::byte*>(frontier_), space_};
   }
 

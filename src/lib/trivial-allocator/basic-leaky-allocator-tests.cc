@@ -52,7 +52,7 @@ TEST(TrivialAllocatorTests, BasicLeakyAllocator) {
 
   // Since backing_data is aligned to 16, 1 element into it is definitely
   // misaligned.
-  cpp20::span misaligned_backing_data = cpp20::span(backing_data).subspan(1);
+  std::span misaligned_backing_data = std::span(backing_data).subspan(1);
   trivial_allocator::SingleHeapAllocator misaligned_backing_allocator(misaligned_backing_data);
   trivial_allocator::BasicLeakyAllocator misaligned_allocator(misaligned_backing_allocator);
 
@@ -77,19 +77,19 @@ TEST(TrivialAllocatorTests, BasicLeakyAllocator) {
 
   const std::array align_test_chunks = {
       // First, a well-aligned chunk only big enough for the first allocation.
-      cpp20::span(backing_data).subspan(0, 16),
+      std::span(backing_data).subspan(0, 16),
       // Second, a misaligned chunk big enough for the second allocation.
-      cpp20::span(backing_data).subspan(17, 31),
+      std::span(backing_data).subspan(17, 31),
       // Third, a misaligned chunk big enough for the third allocation but not
       // big enough to make it aligned.
-      cpp20::span(backing_data).subspan(49, 16),
+      std::span(backing_data).subspan(49, 16),
       // Finally, an aligned chunk that's just big enough for pessimistic
       // overalignment.
-      cpp20::span(backing_data).subspan(80, 31),
+      std::span(backing_data).subspan(80, 31),
   };
-  auto align_test_heap = [chunks = cpp20::span<const cpp20::span<std::byte>>(align_test_chunks)](
+  auto align_test_heap = [chunks = std::span<const std::span<std::byte>>(align_test_chunks)](
                              size_t& size, size_t alignment) mutable {
-    cpp20::span<std::byte> chunk;
+    std::span<std::byte> chunk;
     if (!chunks.empty()) {
       chunk = chunks.front();
       chunks = chunks.subspan(1);
