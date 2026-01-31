@@ -573,6 +573,21 @@ func TestExecute(t *testing.T) {
 				fuchsiaTestSpec("baz"),
 			},
 		},
+		{
+			// Tests marked as `isolated` should be given their own shards even
+			// if it ends up exceeding max_shards_per_env, since `isolated`
+			// indicates that the test may be incorrect (or cause incorrectness
+			// in later tests) if it shares a shard.
+			name: "isolated tests",
+			testSpecs: []build.TestSpec{
+				isolated(fuchsiaTestSpec("foo")),
+				isolated(fuchsiaTestSpec("bar")),
+				isolated(fuchsiaTestSpec("baz")),
+			},
+			params: &proto.Params{
+				MaxShardsPerEnv: 1,
+			},
+		},
 	}
 
 	for _, tc := range testCases {
@@ -795,6 +810,11 @@ func fuchsiaTestSpec(basename string, deviceTypes ...string) build.TestSpec {
 		Envs:       envs,
 		ExpectsSSH: true,
 	}
+}
+
+func isolated(spec build.TestSpec) build.TestSpec {
+	spec.Isolated = true
+	return spec
 }
 
 func bootTestSpec(basename string) build.TestSpec {

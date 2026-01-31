@@ -104,6 +104,7 @@ if (is_host) {
   # TODO(olivernewman): Consider running the test executable locally to generate
   # a depfile so it's not necessary to copy-paste these names.
   _golden_tests = [
+    # keep-sorted start
     "affected nonhermetic tests",
     "affected tests",
     "allowed_device_types",
@@ -112,21 +113,24 @@ if (is_host) {
     "deps_file",
     "disabled_device_types",
     "hermetic deps",
+    "isolated tests",
     "max shards per env",
     "mixed device types",
-    "multiply",
     "multiply affected test",
     "multiply affected tests with large number of runs",
     "multiply unaffected hermetic tests",
+    "multiply",
     "no tests",
-    "run all tests if no affected tests",
     "run all tests if empty affected tests",
     "run all tests if no affected and affected only",
+    "run all tests if no affected tests",
     "sharding by time",
     "skip unaffected tests",
     "target test count",
     "test list with tags",
     "various modifiers",
+
+    # keep-sorted end
   ]
 
   _golden_dir = "${target_gen_dir}/goldens"
