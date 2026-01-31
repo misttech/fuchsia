@@ -29,6 +29,7 @@ use starnix_uapi::user_address::ArchSpecific;
 use fidl::HandleBased;
 use linux_uapi::{FSCRYPT_MODE_AES_256_CTS, FSCRYPT_MODE_AES_256_XTS};
 use starnix_logging::{CATEGORY_STARNIX_MM, impossible_error, trace_duration, track_stub};
+use starnix_rcu::rcu_hash_map::RcuHashMap;
 use starnix_sync::{
     BeforeFsNodeAppend, FileOpsCore, LockBefore, LockEqualOrBefore, Locked, Mutex, Unlocked,
 };
@@ -54,7 +55,6 @@ use starnix_uapi::{
     SEEK_END, SEEK_HOLE, SEEK_SET, TCGETS, errno, error, fscrypt_add_key_arg, fscrypt_identifier,
     fsxattr, off_t, pid_t, uapi,
 };
-use std::collections::HashMap;
 use std::fmt;
 use std::ops::Deref;
 use std::sync::{Arc, Weak};
@@ -1424,7 +1424,7 @@ pub struct FileObjectState {
 
     /// A set of epoll file descriptor numbers that tracks which `EpollFileObject`s add this
     /// `FileObject` as the control file.
-    epoll_files: Mutex<HashMap<FileHandleKey, WeakFileHandle>>,
+    epoll_files: RcuHashMap<FileHandleKey, WeakFileHandle>,
 
     /// See fcntl F_SETLEASE and F_GETLEASE.
     lease: Mutex<FileLeaseType>,
