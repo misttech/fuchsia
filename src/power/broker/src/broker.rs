@@ -210,7 +210,7 @@ impl Broker {
         // For each lease, find the dependencies that are parents of the broken element.
         let mut affected_elements = HashSet::new();
         let mut affected_leases = HashSet::new();
-        let (assertive_dependencies_safe, opportunistic_dependencies_safe) =
+        let assertive_dependencies_safe =
             self.catalog.topology.all_direct_and_indirect_dependencies(&element_level);
         self.catalog.leases.iter()
             .for_each(|(lease_id, lease)| {
@@ -219,11 +219,10 @@ impl Broker {
                     element_id: lease.synthetic_element_id.clone(),
                     level: IndexedPowerLevel { level: LeasePowerLevel::Satisfied as u8, index: 1 },
                 };
-                let (assertive_dependencies_lease, opportunistic_dependencies_lease) =
+                let assertive_dependencies_lease =
                     self.catalog.topology.all_direct_and_indirect_dependencies(&lease_element_level);
                 if !assertive_dependencies_lease
                     .iter()
-                    .chain(opportunistic_dependencies_lease.iter())
                     .any(|d| {
                         d.requires.element_id == *element_id && d.requires.level.satisfies(prev_level)
                     }) {
@@ -234,20 +233,11 @@ impl Broker {
                 // the dependencies of the disorderly element. The element's dependencies
                 // are 'safe' as none of their dependencies are broken. The difference
                 // constitutes the dependencies of this lease that broke.
-                let assertive_dependencies_broken =
+                let broken_dependencies =
                     HashSet::<Dependency>::from_iter(assertive_dependencies_lease)
                         .difference(&HashSet::<Dependency>::from_iter(assertive_dependencies_safe.clone()))
                         .cloned()
                         .collect::<HashSet<Dependency>>();
-                let opportunistic_dependencies_broken =
-                    HashSet::<Dependency>::from_iter(opportunistic_dependencies_lease)
-                        .difference(&HashSet::<Dependency>::from_iter(opportunistic_dependencies_safe.clone()))
-                        .cloned()
-                        .collect::<HashSet<Dependency>>();
-                let broken_dependencies = assertive_dependencies_broken
-                    .into_iter()
-                    .chain(opportunistic_dependencies_broken.into_iter())
-                    .collect::<HashSet<_>>();
 
                 for dependency in broken_dependencies {
                     let mut claim_on_broken_element = false;
@@ -671,24 +661,24 @@ impl Broker {
         );
     }
 
-    /// Examines the direct assertive and opportunistic dependencies of an element level
+    /// Examines the direct dependencies of an element level
     /// and returns true if they are all satisfied (current level >= required).
     fn all_dependencies_satisfied(&self, element_level: &ElementLevel) -> bool {
-        let (assertive_dependencies, opportunistic_dependencies) =
-            self.catalog.topology.all_assertive_and_opportunistic_dependencies(&element_level);
-        assertive_dependencies.into_iter().chain(opportunistic_dependencies).all(|dep| {
-            if !self.current_level_satisfies(&dep.requires) {
-                log::debug!(
-                    "dependency {dep:?} of element_level {element_level:?} is not satisfied: \
+        self.catalog.topology.all_direct_and_indirect_dependencies(&element_level).into_iter().all(
+            |dep| {
+                if !self.current_level_satisfies(&dep.requires) {
+                    log::debug!(
+                        "dependency {dep:?} of element_level {element_level:?} is not satisfied: \
                     current level of {:?} = {:?}, {:?} required",
-                    &dep.requires.element_id,
-                    self.get_current_level(&dep.requires.element_id),
-                    &dep.requires.level
-                );
-                return false;
-            }
-            true
-        })
+                        &dep.requires.element_id,
+                        self.get_current_level(&dep.requires.element_id),
+                        &dep.requires.level
+                    );
+                    return false;
+                }
+                true
+            },
+        )
     }
 
     /// Examines a Vec of claims and returns any that no longer have any
@@ -1064,7 +1054,7 @@ impl Catalog {
     /// Calculates the required level for each element, according to the
     /// Minimum Power Level Policy.
     /// The required level is equal to the maximum of all **activated** assertive
-    /// or opportunistic claims on the element, the maximum level of all satisfied
+    /// claims on the element, the maximum level of all satisfied
     /// leases on the element, or the element's minimum level if there are
     /// no activated claims or satisfied leases.
     fn calculate_required_level(&self, element_id: &ElementID) -> IndexedPowerLevel {
@@ -1189,10 +1179,10 @@ impl Catalog {
             element_id: lease_element_id,
             level: IndexedPowerLevel { level: LeasePowerLevel::Satisfied as u8, index: 1 },
         };
-        let (assertive_dependencies, _opportunistic_dependencies) =
-            self.topology.all_assertive_and_opportunistic_dependencies(&lease_element_level);
         // Create all possible claims from the assertive and opportunistic dependencies.
-        let assertive_claims = assertive_dependencies
+        let assertive_claims = self
+            .topology
+            .all_direct_and_indirect_dependencies(&lease_element_level)
             .into_iter()
             .map(|dependency| self.add_claim(dependency, &lease.id))
             .collect::<Vec<Claim>>();
