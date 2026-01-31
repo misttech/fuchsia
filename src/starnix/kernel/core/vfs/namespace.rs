@@ -21,6 +21,7 @@ use crate::vfs::{
 use macro_rules_attribute::apply;
 use ref_cast::RefCast;
 use starnix_logging::log_warn;
+use starnix_rcu::RcuHashMap;
 use starnix_sync::{
     BeforeFsNodeAppend, FileOpsCore, LockBefore, LockEqualOrBefore, Locked, Mutex, RwLock, Unlocked,
 };
@@ -37,8 +38,7 @@ use starnix_uapi::unmount_flags::UnmountFlags;
 use starnix_uapi::vfs::{FdEvents, ResolveFlags};
 use starnix_uapi::{NAME_MAX, errno, error};
 use std::borrow::Borrow;
-use std::collections::hash_map::Entry;
-use std::collections::{HashMap, HashSet};
+use std::collections::HashSet;
 use std::fmt;
 use std::hash::{Hash, Hasher};
 use std::ops::{Deref, DerefMut};
@@ -1740,41 +1740,40 @@ impl Drop for FileMapping {
 
 /// Tracks all mounts, keyed by mount point.
 pub struct Mounts {
-    mounts: Mutex<HashMap<WeakKey<DirEntry>, Vec<ArcKey<Mount>>>>,
+    mounts: RcuHashMap<WeakKey<DirEntry>, Vec<ArcKey<Mount>>>,
 }
 
 impl Mounts {
     pub fn new() -> Self {
-        Mounts { mounts: Mutex::default() }
+        Mounts { mounts: RcuHashMap::default() }
     }
 
     /// Registers the mount in the global mounts map.
     fn register_mount(&self, dir_entry: &Arc<DirEntry>, mount: MountHandle) -> Submount {
         let mut mounts = self.mounts.lock();
-        mounts
-            .entry(WeakKey::from(dir_entry))
-            .or_insert_with(|| {
-                dir_entry.set_has_mounts(true);
-                Vec::new()
-            })
-            .push(ArcKey(mount.clone()));
+        let key = WeakKey::from(dir_entry);
+        let mut vec = mounts.get(&key).unwrap_or_else(|| {
+            dir_entry.set_has_mounts(true);
+            Vec::new()
+        });
+        vec.push(ArcKey(mount.clone()));
+        mounts.insert(key, vec);
         Submount { dir: ArcKey(dir_entry.clone()), mount }
     }
 
     /// Unregisters the mount.  This is called by `Submount::drop`.
     fn unregister_mount(&self, dir_entry: &Arc<DirEntry>, mount: &MountHandle) {
         let mut mounts = self.mounts.lock();
-        let Entry::Occupied(mut o) = mounts.entry(WeakKey::from(dir_entry)) else {
-            // This can happen if called from `unmount` below.
-            return;
-        };
-        // This is O(N), but directory entries with large numbers of mounts should be rare.
-        let index = o.get().iter().position(|e| e == ArcKey::ref_cast(mount)).unwrap();
-        if o.get().len() == 1 {
-            o.remove_entry();
-            dir_entry.set_has_mounts(false);
-        } else {
-            o.get_mut().swap_remove(index);
+        let key = WeakKey::from(dir_entry);
+        if let Some(mut vec) = mounts.get(&key) {
+            let index = vec.iter().position(|e| e == ArcKey::ref_cast(mount)).unwrap();
+            if vec.len() == 1 {
+                mounts.remove(&key);
+                dir_entry.set_has_mounts(false);
+            } else {
+                vec.swap_remove(index);
+                mounts.insert(key, vec);
+            }
         }
     }
 

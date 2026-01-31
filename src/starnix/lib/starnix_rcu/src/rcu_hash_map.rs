@@ -131,6 +131,15 @@ where
         unsafe { self.map.remove(key) }
     }
 
+    /// Removes all values from the map and returns them.
+    pub fn drain<'b>(&'b mut self) -> impl Iterator<Item = (K, V)> + 'b {
+        let scope = RcuReadScope::new();
+        // We collect the keys first because we cannot iterate and modify the map at the same time.
+        #[allow(clippy::needless_collect)]
+        let keys: Vec<_> = self.map.keys(&scope).map(Clone::clone).collect();
+        keys.into_iter().filter_map(move |k| self.remove(&k).map(|v| (k, v)))
+    }
+
     /// Returns true if the map contains a value for the specified key.
     pub fn contains_key<Q>(&self, key: &Q) -> bool
     where
@@ -374,5 +383,23 @@ mod tests {
             Entry::Vacant(_) => panic!("Should be occupied"),
         }
         assert!(!guard.contains_key(&1));
+    }
+
+    #[test]
+    fn test_rcu_hash_map_drain() {
+        let map = RcuHashMap::default();
+        let mut guard = map.lock();
+
+        guard.insert(1, 10);
+        guard.insert(2, 20);
+        guard.insert(3, 30);
+
+        let mut items: Vec<_> = guard.drain().collect();
+        items.sort_by_key(|(k, _)| *k);
+        assert_eq!(items, vec![(1, 10), (2, 20), (3, 30)]);
+
+        assert!(!guard.contains_key(&1));
+        assert!(!guard.contains_key(&2));
+        assert!(!guard.contains_key(&3));
     }
 }

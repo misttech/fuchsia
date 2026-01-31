@@ -303,6 +303,11 @@ where
     pub fn cursor<'a>(&'a self, scope: &'a RcuReadScope) -> RcuRawHashMapCursor<'a, K, V> {
         RcuRawHashMapCursor { inner: self.insertion_chain.cursor(scope), map: self }
     }
+
+    /// Returns an iterator over the keys in the map.
+    pub fn keys<'a>(&'a self, scope: &'a RcuReadScope) -> impl Iterator<Item = &'a K> {
+        self.insertion_chain.iter(scope).map(|entry| &entry.key)
+    }
 }
 
 /// A cursor for traversing and modifying an `RcuRawHashMap`.
