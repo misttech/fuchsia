@@ -41,6 +41,7 @@
 
 // Forward declarations.
 struct percpu;
+struct cpu_stats;
 
 // Ensure this define has a value when not defined globally by the build system.
 #ifndef SCHEDULER_TRACING_LEVEL
@@ -362,6 +363,11 @@ class Scheduler {
   //
   // Requires limits.size() <= num CPUs.
   static void GetProcessingLimits(ktl::span<zx_cpu_perf_limit_t> limits) TA_EXCL(queue_lock_);
+
+  // Returns the CPU stats for the given CPU number, forward projected to
+  // account for idle or normalized busy time elapsed since the last relevant
+  // state change.
+  static cpu_stats GetProjectedCpuStats(cpu_num_t cpu_num) TA_EXCL(queue_lock_);
 
   // Get the mask of valid CPUs that thread may run on. If a new mask
   // is set, the thread will be migrated to satisfy the new constraint.
@@ -689,6 +695,25 @@ class Scheduler {
   // queue_lock, ensuring that it will stay in its current state until after we
   // drop the lock.
   bool IsSchedulerActiveLocked() const TA_REQ(queue_lock_) { return PeekIsActive(this_cpu_); }
+
+  // Indicates whether the CPU stats being updated is for a busy or idle time
+  // segment.
+  enum class CpuStatsSegmentType : bool {
+    Busy,
+    Idle,
+  };
+
+  // Returns the segment type inferred from whether the give thread is an idle
+  // thread or not.
+  static CpuStatsSegmentType ToCpuStatsSegmentType(const Thread& thread) {
+    return thread.IsIdle() ? CpuStatsSegmentType::Idle : CpuStatsSegmentType::Busy;
+  }
+
+  // Updates a segment of the cpu stats idle or busy timelines.
+  //
+  // CRITICAL: See implementation comment for coherency rules!
+  void UpdateCpuStatsSegment(SchedTime now, CpuStatsSegmentType stats_segment_type,
+                             SchedProcessingRate segment_processing_rate) const TA_REQ(queue_lock_);
 
   using EndTraceCallback = fit::inline_function<void(), sizeof(void*)>;
 

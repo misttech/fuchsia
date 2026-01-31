@@ -1532,6 +1532,86 @@ void Scheduler::UpdateEstimatedEnergyConsumption(Thread* current_thread,
   }
 }
 
+// CRITICAL: Maintain Coherency of Idle and Busy States
+//
+// Accurate CPU statistics depend on the atomic coherency of the following:
+// 1. Time Samples: Current time and interval since last update.
+// 2. Idle State: CPU flags (SetIdle, PeekIsIdle, PeekIdleMask).
+// 3. Stats Members: cpu_stats (last_updated_instant, idle_time,
+//    normalized_busy_time).
+// 4. Rate: The current rate of the CPU (processing_rate).
+//
+// ATOMICITY REQUIREMENT:
+// All reads and writes of these variables must occur within a SINGLE
+// acquisition of the queue lock. This ensures that external queries (e.g.,
+// ZX_INFO_CPU_STATS) do not see inconsistent values or "negative progress"
+// during projection.
+//
+// STATE TRANSITIONS, WORK STEALING, AND PROCESSING RATE:
+// If the CPU transitions between idle and busy, or changes rate, stats must be
+// updated carefully:
+// 1. Initial Update: Always performed under the first lock acquisition to
+//    account for time elapsed since the last reschedule.
+// 2. Transition Update: If the CPU's idle state changes, upon re-acquiring the
+//    lock, stats MUST be updated again using FRESH time samples.
+// 3. Processing Rate Update: If the CPU's processing rate changes, upon
+//    re-acquiring the lock, stats MUST be updated again using FRESH time
+//    samples.
+//
+// Failure to re-sample time after re-acquiring the lock will result in
+// "negative progress," as other CPUs may have already projected these values
+// forward while the lock was released.
+//
+void Scheduler::UpdateCpuStatsSegment(SchedTime now, CpuStatsSegmentType stats_segment_type,
+                                      SchedProcessingRate segment_processing_rate) const {
+  percpu& percpu = percpu::Get(this_cpu());
+
+  const SchedDuration segment_runtime = now - percpu.stats.last_updated_instant;
+  DEBUG_ASSERT_MSG(segment_runtime >= 0,
+                   "now=%" PRId64 " last_updated_instant=%" PRId64 " segment_runtime=%" PRId64,
+                   now.raw_value(), percpu.stats.last_updated_instant, segment_runtime.raw_value());
+
+  ktl::atomic_ref{percpu.stats.last_updated_instant}.store(now.raw_value(),
+                                                           ktl::memory_order_relaxed);
+
+  if (stats_segment_type == CpuStatsSegmentType::Idle) {
+    ktl::atomic_ref{percpu.stats.idle_time}.fetch_add(segment_runtime.raw_value(),
+                                                      ktl::memory_order_relaxed);
+  } else {
+    ktl::atomic_ref{percpu.stats.normalized_busy_time}.fetch_add(
+        Round<int64_t>(segment_runtime * segment_processing_rate), ktl::memory_order_relaxed);
+  }
+}
+
+cpu_stats Scheduler::GetProjectedCpuStats(cpu_num_t cpu_num) {
+  DEBUG_ASSERT(cpu_num < percpu::processor_count());
+
+  const Scheduler* const scheduler = Get(cpu_num);
+  const percpu& percpu = percpu::Get(cpu_num);
+
+  Guard<MonitoredSpinLock, IrqSave> guard{&scheduler->queue_lock_, SOURCE_TAG};
+
+  // Some CPU stats values are synchronized by the queue lock, while others are
+  // updated via unsynchronized relaxed atomic writes. Use well-defined-copy
+  // semantics to avoid formal data races when copying the unsynchronized CPU
+  // stats members.
+  cpu_stats cpu_stats;
+  concurrent::WellDefinedCopyFrom<concurrent::SyncOpt::None, alignof(decltype(cpu_stats))>(
+      &cpu_stats, &percpu.stats, sizeof(cpu_stats));
+
+  const SchedDuration duration_since_last_update_ns =
+      CurrentTime() - cpu_stats.last_updated_instant;
+  DEBUG_ASSERT(duration_since_last_update_ns >= 0);
+
+  if (PeekIsIdle(cpu_num)) {
+    cpu_stats.idle_time += duration_since_last_update_ns;
+  } else {
+    cpu_stats.normalized_busy_time += duration_since_last_update_ns * scheduler->processing_rate();
+  }
+
+  return cpu_stats;
+}
+
 void Scheduler::RescheduleCommon(Thread* const current_thread, EndTraceCallback end_outer_trace) {
   ktrace::Scope trace = LOCAL_KTRACE_BEGIN_SCOPE(DETAILED, "reschedule_common");
 
@@ -1586,8 +1666,8 @@ void Scheduler::RescheduleCommon(Thread* const current_thread, EndTraceCallback 
   const SchedMonoTimeAndBootTicks mono_and_boot_now = CurrentMonoTimeAndBootTicks();
   const SchedTime now = mono_and_boot_now.mono_time;
 
-  // TODO(https://fxbug.dev/381899402): Find the root cause of small negative values in the actual
-  // runtime calculation.
+  // TODO(https://fxbug.dev/381899402): Find the root cause of small negative
+  // values in the actual runtime calculation.
   const SchedDuration actual_runtime_ns =
       ktl::max<SchedDuration>(now - current_state->last_started_running_, SchedDuration{0});
   current_state->last_started_running_ = now;
@@ -1597,16 +1677,20 @@ void Scheduler::RescheduleCommon(Thread* const current_thread, EndTraceCallback 
   current_state->runtime_ns_ += actual_runtime_ns;
   current_thread->UpdateRuntimeStats(current_thread->state());
 
-  // Because idle and busy time calculations depend on the coherency of
-  // cpu_stats::last_updated_instant with cpu_stats::idle_time and
-  // cpu_stats::normalized_busy_time, these must be updated in the same
-  // acquisition of the queue lock.
-  percpu::Get(current_cpu).stats.last_updated_instant = now.raw_value();
-  if (current_thread->IsIdle()) {
-    percpu::Get(current_cpu).stats.idle_time += actual_runtime_ns;
-  } else {
-    percpu::Get(current_cpu).stats.normalized_busy_time += actual_runtime_ns * processing_rate();
-  }
+  // CRITICAL: Maintain Coherency of Idle and Busy States
+  //
+  // Apply the following rule:
+  //
+  //   1. Initial Update: Always performed under the first lock acquisition to
+  //      account for time elapsed since the last reschedule.
+  //
+  // See UpdateCpuStatsSegment for the full set of coherency rules.
+  //
+  // It is not yet known whether the CPU is transitioning to/from idle or the
+  // processing rate is changing. Simply advance the CPU stats to reflect the
+  // elapsed idle time or normalized busy time at the last known processing rate
+  // since the last update.
+  UpdateCpuStatsSegment(now, ToCpuStatsSegmentType(*current_thread), processing_rate());
 
   // Update the energy consumption accumulators for the current task and
   // processor.
@@ -1663,6 +1747,14 @@ void Scheduler::RescheduleCommon(Thread* const current_thread, EndTraceCallback 
   }
 
   // Select the next thread to run.
+  //
+  // WARNING: This method temporarily drops the queue lock during work stealing,
+  // when there are no threads in the run queue and the current thread is no
+  // longer in the running state. Do not split updates to different values
+  // across this call that need to be coherently read from another CPU and
+  // synchronized using the queue lock. Doing so creates an incomplete critical
+  // section that can result in incoherent reads of the values updated in
+  // different acquisitions of the queue lock.
   DequeueResult next_thread_result =
       EvaluateNextThread(now, current_thread, current_is_migrating, queue_guard);
 
@@ -1721,6 +1813,12 @@ void Scheduler::RescheduleCommon(Thread* const current_thread, EndTraceCallback 
   // 4) Therefore, current and next cannot be members of the same graph, and can
   //    both be acquired unconditionally.
   //
+  // WARNING: This block temporarily drops the queue lock to acquire the next
+  // thread's lock. Do not split updates to different values across this call
+  // that need to be coherently read from another CPU and synchronized using the
+  // queue lock. Doing so creates an incomplete critical section that can result
+  // in incoherent reads of the values updated in different acquisitions of the
+  // queue lock.
   if (current_thread != next_thread_result.thread()) {
     // The ChainLockTransaction we were in when we entered RescheduleCommon has
     // already been finalized.  We need to restart it in order to obtain new
@@ -1863,6 +1961,13 @@ void Scheduler::RescheduleCommon(Thread* const current_thread, EndTraceCallback 
     }
 
     // Send a pending power level request before updating the processing rate.
+    //
+    // WARNING: This call temporarily drops the queue lock when calling the
+    // fast-path power level controller. Do not split updates to different
+    // values across this call that need to be coherently read from another CPU
+    // and synchronized using the queue lock. Doing so creates an incomplete
+    // critical section that can result in incoherent reads of the values
+    // updated in different acquisitions of the queue lock.
     power_level_control_.SendPendingPowerLevelRequest(queue_guard);
   }
 
@@ -1874,9 +1979,32 @@ void Scheduler::RescheduleCommon(Thread* const current_thread, EndTraceCallback 
   // time below when the current thread is deadline scheduled.
   //
   // TODO(eieio): Shed load when total utilization is above the processing rate.
+  const SchedProcessingRate previous_processing_rate = processing_rate();
   const bool processing_rate_updated = UpdateProcessingRate(mono_and_boot_now.boot_ticks);
 
+  // CRITICAL: Maintain Coherency of Idle and Busy States
+  //
+  // Apply the following rules:
+  //
+  //   2. Transition Update: If the CPU's idle state changes, upon re-acquiring
+  //      the lock, stats MUST be updated again using FRESH time samples.
+  //   3. Processing Rate Update: If the CPU's processing rate changes, upon
+  //      re-acquiring the lock, stats MUST be updated again using FRESH time
+  //      samples.
+  //
+  // See UpdateCpuStatsSegment for the full set of coherency rules.
+  //
+  // The queue lock has been released and re-acquired one or more times, each of
+  // which may have been interposed by another CPU sampling the critical values
+  // and forward projecting idle or normalized busy time. If there is transition
+  // to/from idle or the processing rate changed while non-idle, advance the CPU
+  // stats to cover the segment since the initial update.
   SetIdle(next_thread->IsIdle());
+  if (next_thread->IsIdle() != current_thread->IsIdle() ||
+      (!current_thread->IsIdle() && processing_rate_updated)) {
+    UpdateCpuStatsSegment(CurrentTime(), ToCpuStatsSegmentType(*current_thread),
+                          previous_processing_rate);
+  }
 
   {
     // Each path below must set the preemption time.

@@ -166,8 +166,11 @@ static zx_status_t cpustats(zx_handle_t info_resource, zx_duration_t delay) {
     zx_duration_t normalized_busy_time = stats[i].normalized_busy_time;
     zx_duration_t delta_normalized_busy_time =
         zx_duration_sub_duration(normalized_busy_time, last_normalized_busy_time[i]);
+
+    // Rounding in the accumulation of normalized busy time may result in
+    // slightly larger values than the sample interval.
     if (delta_normalized_busy_time > delay) {
-      delta_normalized_busy_time = 0;
+      delta_normalized_busy_time = delay;
     }
     unsigned long load = zx_duration_mul_int64(delta_normalized_busy_time, 10000) / delay;
 
@@ -244,8 +247,11 @@ static zx_status_t cpuload(zx_handle_t info_resource, zx_duration_t delay) {
 
     zx_duration_t delta_normalized_busy_time =
         zx_duration_sub_duration(normalized_busy_time, last_normalized_busy_time[i]);
+
+    // Rounding in the accumulation of normalized busy time may result in
+    // slightly larger values than the sample interval.
     if (delta_normalized_busy_time > delay) {
-      delta_normalized_busy_time = 0;
+      delta_normalized_busy_time = delay;
     }
     const double busypercent = (double)delta_normalized_busy_time / (double)delay;
 

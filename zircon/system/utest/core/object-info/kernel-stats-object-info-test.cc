@@ -2,16 +2,23 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+#include <lib/fit/defer.h>
 #include <lib/maybe-standalone-test/maybe-standalone.h>
 #include <lib/stdcompat/span.h>
 #include <lib/zx/bti.h>
 #include <lib/zx/job.h>
 #include <lib/zx/pager.h>
+#include <lib/zx/profile.h>
+#include <lib/zx/thread.h>
 #include <lib/zx/vmo.h>
 #include <zircon/syscalls.h>
 #include <zircon/syscalls/iommu.h>
 #include <zircon/syscalls/object.h>
+#include <zircon/threads.h>
 
+#include <atomic>
+#include <random>
+#include <thread>
 #include <vector>
 
 #include <zxtest/zxtest.h>
@@ -374,6 +381,105 @@ TEST_F(KernelStatsGetInfoTest, CpuStats) {
 
   for (uint32_t i = 0; i < num_cpus_; i++) {
     EXPECT_EQ(buf[i].cpu_number, i);
+  }
+}
+
+TEST_F(KernelStatsGetInfoTest, CpuStatsMonotonicValues) {
+  if (!system_resource_->is_valid()) {
+    printf("System resource not available, skipping\n");
+    return;
+  }
+
+  zx::result<zx::resource> info_resource_result =
+      maybe_standalone::GetSystemResourceWithBase(system_resource_, ZX_RSRC_SYSTEM_INFO_BASE);
+  ASSERT_OK(info_resource_result.status_value());
+
+  zx::result<zx::resource> profile_resource_result =
+      maybe_standalone::GetSystemResourceWithBase(system_resource_, ZX_RSRC_SYSTEM_PROFILE_BASE);
+  ASSERT_OK(profile_resource_result.status_value());
+
+  zx::profile cpu0_affinity_profile;
+  {
+    const uint64_t cpu0_mask = 1u << 0;
+    const zx_profile_info_t profile_info = {
+        .flags = ZX_PROFILE_INFO_FLAG_CPU_MASK,
+        .cpu_affinity_mask = {.mask = {cpu0_mask}},
+    };
+
+    ASSERT_OK(
+        zx::profile::create(*profile_resource_result, 0u, &profile_info, &cpu0_affinity_profile));
+  }
+
+  std::atomic_flag done_flag{false};
+
+  std::thread load_thread{[&] {
+    std::mt19937_64 generator{std::random_device{}()};
+    std::uniform_int_distribution<zx_duration_t> distribution{ZX_MSEC(1), ZX_MSEC(100)};
+
+    const auto next_uniform = [&] { return distribution(generator); };
+
+    const auto spin_duration = [&](zx_duration_mono_t duration) {
+      zx_time_t spin_until = zx_deadline_after(duration);
+      while (zx_clock_get_monotonic() < spin_until) {
+        // Keep the loop from being optimized out by telling the compiler that
+        // the assembly block updates the loop condition.
+        __asm__ volatile("" : "+g"(spin_until)::);
+      }
+    };
+
+    while (!done_flag.test(std::memory_order_relaxed)) {
+      spin_duration(next_uniform());
+      zx_nanosleep(zx_deadline_after(next_uniform()));
+    }
+  }};
+
+  // Ensure the load thread gets cleaned up if any assertions fail.
+  const auto cleanup = fit::defer([&] {
+    printf("Tearing down load thread... ");
+
+    done_flag.test_and_set(std::memory_order_relaxed);
+    load_thread.join();
+
+    printf("Done!\n");
+  });
+
+  // Pin the load thread to a single core to give it a greater impact on the
+  // idle/busy duty cycle.
+  {
+    zx::unowned_thread load_thread_handle{native_thread_get_zx_handle(load_thread.native_handle())};
+    ASSERT_OK(load_thread_handle->set_profile(cpu0_affinity_profile, 0u));
+  }
+
+  // Elements are initialized to zero. As such, the first comparison of
+  // last_cpu_stats elements to curr_cpu_stats elements should always succeed.
+  std::vector<zx_info_cpu_stats_t> last_cpu_stats(num_cpus_);
+  std::vector<zx_info_cpu_stats_t> curr_cpu_stats(num_cpus_);
+
+  const size_t max_iterations = 100'000;
+  for (size_t iteration = 0; iteration < max_iterations; iteration++) {
+    size_t actual, avail;
+
+    ASSERT_OK(
+        zx_object_get_info(info_resource_result->get(), ZX_INFO_CPU_STATS, curr_cpu_stats.data(),
+                           curr_cpu_stats.size() * sizeof(zx_info_cpu_stats_t), &actual, &avail));
+    EXPECT_EQ(actual, num_cpus_);
+    EXPECT_EQ(avail, num_cpus_);
+
+    for (uint32_t i = 0; i < num_cpus_; i++) {
+      auto print_failure_context =
+          fit::defer([&] { printf("Failed at iteration %zu on cpu %u\n", iteration, i); });
+
+      ASSERT_LE(last_cpu_stats[i].idle_time, curr_cpu_stats[i].idle_time);
+      ASSERT_LE(last_cpu_stats[i].normalized_busy_time, curr_cpu_stats[i].normalized_busy_time);
+      ASSERT_LE(last_cpu_stats[i].idle_energy_consumption_nj,
+                curr_cpu_stats[i].idle_energy_consumption_nj);
+      ASSERT_LE(last_cpu_stats[i].active_energy_consumption_nj,
+                curr_cpu_stats[i].active_energy_consumption_nj);
+
+      print_failure_context.cancel();
+    }
+
+    std::swap(last_cpu_stats, curr_cpu_stats);
   }
 }
 
