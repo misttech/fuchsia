@@ -116,6 +116,7 @@ class FFX(abc.ABC):
         include_target: bool = True,
         include_target_name: bool = False,
         machine: ffx_types.MachineFormat | None = None,
+        log_status_on_failure: bool = True,
     ) -> str:
         """Runs an FFX command.
 
@@ -135,6 +136,8 @@ class FFX(abc.ABC):
             include_target_name: If set to True, `ffx -t {target-name} {cmd}` will be run.
                 Otherwise, `ffx -t {target-ip} {cmd}` will be run.
             machine: If set, `ffx --machine {machine} {cmd}` will be run.
+            log_status_on_failure: Whether to run diagnostic triage ('ffx target status')
+                if the command fails or times out. Defaults to True.
 
         Returns:
             Output of FFX command when capture_output is set to True, otherwise
@@ -275,4 +278,16 @@ class FFX(abc.ABC):
 
         Returns:
             FFX command to be run as list of string.
+        """
+
+    @abc.abstractmethod
+    def get_ffx_target_status(self) -> str:
+        """Returns FFX target status.
+
+        Returns:
+            Output of FFX command when capture_output is set to True, otherwise
+            an empty string.
+
+        Raises:
+            FfxTargetStatusError: In case of HostCmdError.
         """

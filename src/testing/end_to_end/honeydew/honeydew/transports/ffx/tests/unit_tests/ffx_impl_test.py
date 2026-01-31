@@ -5,6 +5,7 @@
 
 import ipaddress
 import json
+import re
 import unittest
 from collections.abc import Callable
 from pathlib import Path
@@ -116,6 +117,22 @@ _FFX_TARGET_INFO: dict[str, Any] = {
 
 _FFX_TARGET_LIST_JSON: list[dict[str, Any]] = [_FFX_TARGET_INFO]
 
+_FFX_TARGET_STATUS_OUTPUT: str = (
+    r'\[✓\] Device resolved to node: "fuchsia-emulator".*'
+    r".*"
+    r"\[✓\] Connected"
+    r".*"
+    r"\[✓\] All checks passed\."
+)
+
+_FFX_TARGET_STATUS_FULL_OUTPUT: str = (
+    '[✓] Device resolved to node: "fuchsia-emulator" in product '
+    "state (addrs: [fe80::6bab:2908:a0c9:7e6d%brqemu])\n"
+    "[✓] Connected\n"
+    "[✓] Success\n"
+    "[✓] All checks passed.\n"
+)
+
 _FFX_TARGET_WAIT_MACHINE_RAW: str = ""
 
 _INPUT_ARGS: dict[str, Any] = {
@@ -143,6 +160,7 @@ _MOCK_ARGS: dict[str, Any] = {
     "ffx_target_list_output": _FFX_TARGET_LIST_OUTPUT,
     "ffx_target_list_json": _FFX_TARGET_LIST_JSON,
     "ffx_target_wait_machine": _FFX_TARGET_WAIT_MACHINE_RAW,
+    "ffx_target_status_output": _FFX_TARGET_STATUS_FULL_OUTPUT,
 }
 
 _EXPECTED_VALUES: dict[str, Any] = {
@@ -151,6 +169,7 @@ _EXPECTED_VALUES: dict[str, Any] = {
     "ffx_target_show_json": _FFX_TARGET_SHOW_JSON,
     "ffx_target_list_json": _FFX_TARGET_LIST_JSON,
     "ffx_target_wait_machine": _FFX_TARGET_WAIT_MACHINE_RAW,
+    "ffx_target_status_output": _FFX_TARGET_STATUS_OUTPUT,
 }
 
 
@@ -634,3 +653,100 @@ class FfxImplTests(unittest.TestCase):
         """Test case for ffx_impl.wait_for_rcs_disconnection()"""
         self.ffx_obj_with_ip.wait_for_rcs_disconnection()
         self.assertEqual(mock_ffx_run.call_count, 1)
+
+    @mock.patch.object(
+        host_shell,
+        "run",
+        return_value=_MOCK_ARGS["ffx_target_status_output"],
+        autospec=True,
+    )
+    def test_get_ffx_target_status_success(
+        self, mock_host_shell_run: mock.Mock
+    ) -> None:
+        """Test case for get_ffx_target_status() on success."""
+        result = self.ffx_obj_with_ip.get_ffx_target_status()
+        pattern = _EXPECTED_VALUES["ffx_target_status_output"]
+        match = re.search(pattern, result, re.DOTALL)
+        self.assertIsNotNone(
+            match, msg=f"Pattern failed to match in output: {result}"
+        )
+
+        # Verify host_shell.run was called with correct arguments
+        mock_host_shell_run.assert_called_with(
+            cmd=[
+                "ffx",
+                "-t",
+                "[fe80::4fce:3102:ef13:888c%qemu]:8022",
+                "--isolate-dir",
+                "/tmp/isolate",
+                "-o",
+                "/tmp/logs/ffx.log",
+                "--direct",
+                "-c",
+                "log.dir=/tmp/logs",
+                "-c",
+                "log.level=debug",
+                "-c",
+                "discovery.mdns.enabled=false",
+                "-c",
+                "ffx.subtool-search-paths=/subtools",
+                "-c",
+                "proxy.timeout_secs=30",
+                "-c",
+                "ssh.keepalive_timeout=60",
+                "target",
+                "status",
+            ],
+            capture_output=True,
+            log_output=False,
+            timeout=None,
+        )
+
+    @mock.patch.object(
+        host_shell,
+        "run",
+        autospec=True,
+    )
+    def test_get_ffx_target_status_raises_ffxtargetstatuserror(
+        self, mock_host_shell_run: mock.Mock
+    ) -> None:
+        """Test case for get_ffx_target_status() raising FfxTargetStatusError."""
+        mock_host_shell_run.side_effect = errors.HostCmdError(
+            "ffx target status failed output", 1
+        )
+
+        with self.assertRaises(ffx_errors.FfxTargetStatusError) as cm:
+            self.ffx_obj_with_ip.get_ffx_target_status()
+
+        self.assertIsInstance(cm.exception.__cause__, errors.HostCmdError)
+        self.assertIn("ffx target status failed output", str(cm.exception))
+
+        mock_host_shell_run.assert_called_once()
+
+    @mock.patch.object(ffx_impl.FfxImpl, "get_ffx_target_status")
+    @mock.patch("honeydew.utils.host_shell.run")
+    def test_run_with_log_status_disabled(
+        self, mock_host_shell: mock.Mock, mock_triage: mock.Mock
+    ) -> None:
+        """Verify get_ffx_target_status is NOT called when disabled."""
+        mock_host_shell.side_effect = errors.HostCmdError("Command failed")
+
+        with self.assertRaises(ffx_errors.FfxCommandError):
+            self.ffx_obj_wo_ip.run(
+                cmd=["test", "cmd"], log_status_on_failure=False
+            )
+
+        mock_triage.assert_not_called()
+
+    @mock.patch.object(ffx_impl.FfxImpl, "get_ffx_target_status")
+    @mock.patch("honeydew.utils.host_shell.run")
+    def test_run_with_log_status_enabled_default(
+        self, mock_host_shell: mock.Mock, mock_triage: mock.Mock
+    ) -> None:
+        """Verify get_ffx_target_status IS called by default on failure."""
+        mock_host_shell.side_effect = errors.HostCmdError("Command failed")
+
+        with self.assertRaises(ffx_errors.FfxCommandError):
+            self.ffx_obj_wo_ip.run(cmd=["test", "cmd"])
+
+        mock_triage.assert_called_once()

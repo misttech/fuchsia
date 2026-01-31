@@ -117,6 +117,11 @@ class FFXTransportTests(fuchsia_base_test.FuchsiaBaseTest):
         cmd: str = "ls"
         self.device.ffx.run_ssh_cmd(cmd)
 
+    def test_get_ffx_target_status(self) -> None:
+        """Test case for FFX.get_ffx_target_status()."""
+        output: str = self.device.ffx.get_ffx_target_status()
+        asserts.assert_is_instance(output, str)
+
 
 if __name__ == "__main__":
     test_runner.main()

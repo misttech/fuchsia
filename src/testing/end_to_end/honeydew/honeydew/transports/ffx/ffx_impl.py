@@ -41,6 +41,7 @@ _FFX_CMDS: dict[str, list[str]] = {
     "TARGET_SSH": ["target", "ssh"],
     "MONITOR_STATUS": ["--machine", "json", "monitor", "status"],
     "MONITOR_CONFIG_GET": ["config", "get", "monitor.pid_file"],
+    "TARGET_STATUS": ["target", "status"],
 }
 
 _LOGGER: logging.Logger = logging.getLogger(__name__)
@@ -315,6 +316,34 @@ class FfxImpl(ffx_interface.FFX):
             else ""
         )
 
+    def get_ffx_target_status(self) -> str:
+        """Returns FFX target status.
+
+        Returns:
+            Output of FFX command when capture_output is set to True, otherwise
+            an empty string.
+
+        Raises:
+            FfxTargetStatusError: In case of HostCmdError.
+        """
+        cmd: list[str] = _FFX_CMDS["TARGET_STATUS"]
+        ffx_cmd = self.generate_ffx_cmd(
+            cmd=cmd,
+            include_target=True,
+        )
+        try:
+            return (
+                host_shell.run(
+                    cmd=ffx_cmd,
+                    capture_output=True,
+                    log_output=False,
+                    timeout=None,
+                )
+                or ""
+            )
+        except errors.HostCmdError as err:
+            raise ffx_errors.FfxTargetStatusError(err) from err
+
     def run(
         self,
         cmd: list[str],
@@ -324,6 +353,7 @@ class FfxImpl(ffx_interface.FFX):
         include_target: bool = True,
         include_target_name: bool = False,
         machine: MachineFormat | None = None,
+        log_status_on_failure: bool = True,
     ) -> str:
         """Runs an FFX command.
 
@@ -343,6 +373,8 @@ class FfxImpl(ffx_interface.FFX):
             include_target_name: If set to True, `ffx -t {target-name} {cmd}` will be run.
                 Otherwise, `ffx -t {target-ip} {cmd}` will be run.
             machine: If set, `ffx --machine {machine} {cmd}` will be run.
+            log_status_on_failure: Whether to run diagnostic triage ('ffx target status')
+                if the command fails or times out. Defaults to True.
 
         Returns:
             Output of FFX command when capture_output is set to True, otherwise
@@ -369,14 +401,29 @@ class FfxImpl(ffx_interface.FFX):
                 )
                 or ""
             )
-        except errors.HostCmdError as err:
-            if _DEVICE_NOT_CONNECTED in str(err):
-                raise errors.DeviceNotConnectedError(
-                    f"{self._target_name} is not connected to host"
-                ) from err
-            raise ffx_errors.FfxCommandError(err) from err
-        except errors.HoneydewTimeoutError as err:
-            raise ffx_errors.FfxTimeoutError(err) from err
+        except (errors.HostCmdError, errors.HoneydewTimeoutError) as err:
+            if log_status_on_failure:
+                try:
+                    output: str = self.get_ffx_target_status()
+                    _LOGGER.info(
+                        "FFX Triage: State captured after command failure (ffx target status):\n%s",
+                        output,
+                    )
+                except Exception as e:
+                    _LOGGER.warning(
+                        "Failed to execute diagnostic 'ffx target status' on target %s: %s",
+                        self._target_name,
+                        e,
+                    )
+
+            if isinstance(err, errors.HostCmdError):
+                if _DEVICE_NOT_CONNECTED in str(err):
+                    raise errors.DeviceNotConnectedError(
+                        f"{self._target_name} is not connected to host"
+                    ) from err
+                raise ffx_errors.FfxCommandError(err) from err
+            else:
+                raise ffx_errors.FfxTimeoutError(err) from err
 
     def popen(  # type: ignore[no-untyped-def]
         self,

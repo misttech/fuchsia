@@ -20,3 +20,7 @@ class FfxCommandError(errors.TransportError):
 
 class FFXMonitorNotSupportedError(errors.HoneydewError):
     """If this method is called when monitor is not in use."""
+
+
+class FfxTargetStatusError(errors.HostCmdError):
+    """Exception to be raised for ffx target status command failures."""
