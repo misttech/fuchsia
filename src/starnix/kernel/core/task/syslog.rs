@@ -24,6 +24,7 @@ use std::collections::VecDeque;
 use std::io::{self, Write};
 use std::sync::atomic::Ordering;
 use std::sync::{Arc, OnceLock, mpsc};
+use zerocopy::{Immutable, IntoBytes, KnownLayout, TryFromBytes};
 
 const BUFFER_SIZE: i32 = 1_049_000;
 
@@ -453,7 +454,7 @@ impl Into<Vec<u8>> for ResultBuffer {
     }
 }
 
-#[derive(Debug, Eq, PartialEq)]
+#[derive(Debug, Eq, PartialEq, Copy, Clone, KnownLayout, TryFromBytes, Immutable, IntoBytes)]
 #[repr(u8)]
 pub enum KmsgLevel {
     Emergency = 0,
@@ -468,12 +469,7 @@ pub enum KmsgLevel {
 
 impl KmsgLevel {
     fn from_raw(value: u8) -> Option<KmsgLevel> {
-        if value < 8 {
-            // SAFETY: validated the range in previous line.
-            Some(unsafe { std::mem::transmute(value) })
-        } else {
-            None
-        }
+        zerocopy::try_transmute!(value).ok()
     }
 }
 

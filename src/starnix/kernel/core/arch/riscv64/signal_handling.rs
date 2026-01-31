@@ -99,7 +99,7 @@ impl SignalStackFrame {
                 vlenb: VLEN as u64 / 8,
                 datap: uapi::uaddr { addr: v_registers_addr as u64 },
             },
-            v_registers: unsafe { std::mem::transmute(state.v_registers) },
+            v_registers: zerocopy::transmute!(state.v_registers),
         };
 
         let mut sigstack = SignalStackFrame {
@@ -202,9 +202,7 @@ pub fn restore_registers(
         vtype: vcsrs.vtype,
         vcsr: vcsrs.vcsr,
     };
-    unsafe {
-        state.v_registers = std::mem::transmute(signal_stack_frame.v_state.v_registers);
-    };
+    state.v_registers = zerocopy::transmute!(signal_stack_frame.v_state.v_registers);
 
     Ok(())
 }

@@ -45,8 +45,7 @@ pub fn do_uname(
             clippy::undocumented_unsafe_blocks,
             reason = "Force documented unsafe blocks in Starnix"
         )]
-        let as_c_char = unsafe { std::mem::transmute::<&[u8], &[c_char]>(init) };
-        fixed[..len].copy_from_slice(as_c_char)
+        fixed[..len].copy_from_slice(zerocopy::transmute_ref!(init))
     }
 
     init_array(&mut result.sysname, b"Linux");
