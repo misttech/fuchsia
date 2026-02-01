@@ -265,7 +265,7 @@ void DriverHostComponent::Start(
 
   std::string host_name;
   if (!name_for_colocation_.empty()) {
-    host_name = std::format("driver-host-{}", name_for_colocation_.empty());
+    host_name = std::format("driver-host-{}", name_for_colocation_);
   }
 
   driver_host_->Start(args.Build(), std::move(driver), fidl::StringView::FromExternal(host_name))
