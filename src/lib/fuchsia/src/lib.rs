@@ -192,7 +192,11 @@ pub fn init_default_logging_for_test_with_threads<'a, R>(
     }
     #[cfg(not(target_os = "fuchsia"))]
     {
-        // On non-Fuchsia targets, we don't initialize logging by default for tests.
+        // On non-Fuchsia targets, we don't initialize logging by default for tests. Host tests
+        // don't have any process isolation between each other, so one test can say logging=true
+        // and another in the same binary can say logging=false, and who wins will be determined
+        // by execution order. In order to avoid confusion, we default to not enabling logging. If
+        // a user understands the implications, they can still opt back in to enabling it.
         init_noop_logging_for_test_with_threads(func, logging)
     }
 }
