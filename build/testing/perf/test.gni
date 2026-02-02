@@ -234,6 +234,13 @@ template("python_perf_test") {
 #     Type: boolean
 #     Default: true
 #
+#   snapshot_on (optional)
+#     When to capture a device snapshot.
+#     Options: "teardown_class", "teardown_class_on_fail", "teardown_test",
+#              "teardown_test_on_fail", "never"
+#     Type: string
+#     Default: "never"
+#
 template("fuchsia_component_perf_test") {
   assert(defined(invoker.component_name), "component_name is required")
   assert(defined(invoker.expected_metric_names_filepath),
@@ -278,6 +285,15 @@ template("fuchsia_component_perf_test") {
 
     if (defined(invoker.use_component_builtin_args)) {
       use_component_builtin_args = invoker.use_component_builtin_args
+    }
+
+    if (defined(invoker.snapshot_on)) {
+      snapshot_on = invoker.snapshot_on
+    } else {
+      # For hermetic component tests, we generally don't want snapshots on failure
+      # as they are expensive and usually distinct from the component's internal state.
+      # Users can opt-in if needed.
+      snapshot_on = "never"
     }
   }
 

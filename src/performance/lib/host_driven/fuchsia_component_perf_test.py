@@ -43,6 +43,9 @@ class FuchsiaComponentPerfTest(fuchsia_base_test.FuchsiaBaseTest):
             Default: False
         process_runs (int): Number of times to run the test component.
             Default: 1
+        snapshot_on (str): One of "teardown_class", "teardown_class_on_fail",
+            "teardown_test", "teardown_test_on_fail", "never".
+            Default: "never"
     """
 
     def test_fuchsia_component(self) -> None:
