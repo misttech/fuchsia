@@ -1037,7 +1037,7 @@ mod tests {
     use fidl_fuchsia_diagnostics::StreamMode;
     use fuchsia_async as fasync;
     use fuchsia_async::TimeoutExt;
-    use fuchsia_inspect::{Inspector, InspectorConfig};
+    use fuchsia_inspect::Inspector;
     use fuchsia_inspect_derive::WithInspect;
     use futures::FutureExt;
     use futures::channel::mpsc;
@@ -1406,7 +1406,7 @@ mod tests {
 
     #[fuchsia::test]
     async fn socket_increments_logstats() {
-        let inspector = Inspector::new(InspectorConfig::default());
+        let inspector = Inspector::default();
         let stats: Arc<LogStreamStats> =
             Arc::new(LogStreamStats::default().with_inspect(inspector.root(), "test").unwrap());
         let buffer = Arc::new(SharedBuffer::new(
