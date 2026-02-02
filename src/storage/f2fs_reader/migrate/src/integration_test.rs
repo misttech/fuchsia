@@ -136,7 +136,7 @@ async fn test_fxfs_migration_at_offset(offset: u64) {
     });
 
     let crypt_service =
-        Arc::new(CryptService::new(&[0; 32], &[1; 32], true, Some(insecure_inline_crypto_proxy)));
+        Arc::new(CryptService::new(&[0; 32], &[1; 32], Some(insecure_inline_crypto_proxy)));
 
     let (crypt_client_end, crypt_proxy) = fidl::endpoints::create_endpoints::<CryptMarker>();
 
@@ -295,7 +295,7 @@ async fn test_fxfs_read_lblk32_ino_file() {
     });
 
     let crypt_service =
-        Arc::new(CryptService::new(&[1; 32], &[2; 32], true, Some(insecure_inline_crypto_proxy)));
+        Arc::new(CryptService::new(&[1; 32], &[2; 32], Some(insecure_inline_crypto_proxy)));
     crypt_service.set_uuid(superblock.uuid);
     crypt_service.add_wrapping_key(&[0; 64], 0).expect("add wrapping key failed");
 
@@ -441,7 +441,7 @@ async fn test_fxfs_verify_encrypted_data() {
     });
 
     let crypt_service =
-        Arc::new(CryptService::new(&[1; 32], &[2; 32], true, Some(insecure_inline_crypto_proxy)));
+        Arc::new(CryptService::new(&[1; 32], &[2; 32], Some(insecure_inline_crypto_proxy)));
     crypt_service.set_uuid(uuid);
     crypt_service.add_wrapping_key(&[0; 64], 0).expect("add wrapping key failed");
 

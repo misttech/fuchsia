@@ -26,7 +26,6 @@ mod tests {
     use std::sync::{Arc, Weak};
     use storage_device::DeviceHolder;
     use storage_device::block_device::BlockDevice;
-    use test_case::test_case;
     use vfs::node::Node;
     use vmo_backed_block_server::{
         InitialContents, VmoBackedServer, VmoBackedServerOptions, VmoBackedServerTestingExt,
@@ -36,11 +35,6 @@ mod tests {
         [73, 142, 230, 48, 132, 165, 68, 97, 141, 247, 22, 242, 153, 171, 153, 38];
 
     const TEST_DEVICE_BLOCK_SIZE: u32 = 512;
-
-    enum KeyIdentifierDerivationAlgorithm {
-        Lblk32,
-        FuchsiaSpecific,
-    }
 
     struct TestFixture {
         block_server: Arc<VmoBackedServer>,
@@ -86,7 +80,6 @@ mod tests {
 
         async fn create_vol_with_starnix_crypt(
             &mut self,
-            key_identifier_derivation_algorithm: KeyIdentifierDerivationAlgorithm,
             name: &str,
         ) -> (Arc<ObjectStore>, Arc<starnix_crypt::CryptService>) {
             let block_server_clone = self.block_server.clone();
@@ -107,10 +100,6 @@ mod tests {
             let crypt_service = Arc::new(starnix_crypt::CryptService::new(
                 &raw_metadata_key,
                 &raw_data_key,
-                matches!(
-                    key_identifier_derivation_algorithm,
-                    KeyIdentifierDerivationAlgorithm::Lblk32
-                ),
                 Some(insecure_inline_crypto_proxy),
             ));
             crypt_service.set_uuid(TEST_UUID);
@@ -191,21 +180,13 @@ mod tests {
         }
     }
 
-    #[test_case(KeyIdentifierDerivationAlgorithm::Lblk32;
-        "derive key identifiers with lblk32 fscrypt mode")]
-    #[test_case(KeyIdentifierDerivationAlgorithm::FuchsiaSpecific;
-        "derive key identifiers with Fuchsia-specific algorithm")]
     #[fuchsia::test]
-    async fn test_write_and_read_inline_encrypted_files(
-        key_identifier_derivation_algorithm: KeyIdentifierDerivationAlgorithm,
-    ) {
+    async fn test_write_and_read_inline_encrypted_files() {
         let mut fixture = TestFixture::new_default().await;
 
         // Use Starnix CryptService which supports creating and storing keys in the format expected
         // for inline encryption.
-        let (starnix_vol, crypt_service) = fixture
-            .create_vol_with_starnix_crypt(key_identifier_derivation_algorithm, "starnix")
-            .await;
+        let (starnix_vol, crypt_service) = fixture.create_vol_with_starnix_crypt("starnix").await;
 
         let starnix_vol_root_dir =
             Directory::open(&starnix_vol, starnix_vol.root_directory_object_id())
@@ -304,9 +285,8 @@ mod tests {
     async fn test_multiple_volume_different_crypt_services() {
         let mut fixture = TestFixture::new_default().await;
 
-        let (starnix_vol, starnix_crypt_service) = fixture
-            .create_vol_with_starnix_crypt(KeyIdentifierDerivationAlgorithm::Lblk32, "starnix")
-            .await;
+        let (starnix_vol, starnix_crypt_service) =
+            fixture.create_vol_with_starnix_crypt("starnix").await;
         // Note that fxfs crypt service does not support creating key of type `FscryptInoLblk32File`
         let vol_with_fxfs_crypt = fixture.create_vol_with_fxfs_crypt("vol").await;
 
@@ -429,21 +409,13 @@ mod tests {
         fixture.close().await;
     }
 
-    #[test_case(KeyIdentifierDerivationAlgorithm::Lblk32;
-        "derive key identifiers with lblk32 fscrypt mode")]
-    #[test_case(KeyIdentifierDerivationAlgorithm::FuchsiaSpecific;
-        "derive key identifiers with Fuchsia-specific algorithm")]
     #[fuchsia::test]
-    async fn test_get_attribute_of_inline_encrypted_files(
-        key_identifier_derivation_algorithm: KeyIdentifierDerivationAlgorithm,
-    ) {
+    async fn test_get_attribute_of_inline_encrypted_files() {
         let mut fixture = TestFixture::new_default().await;
 
         // Use Starnix CryptService which supports creating and storing keys in the format expected
         // for inline encryption.
-        let (starnix_vol, crypt_service) = fixture
-            .create_vol_with_starnix_crypt(key_identifier_derivation_algorithm, "starnix")
-            .await;
+        let (starnix_vol, crypt_service) = fixture.create_vol_with_starnix_crypt("starnix").await;
 
         let starnix_vol_root_dir =
             Directory::open(&starnix_vol, starnix_vol.root_directory_object_id())
@@ -539,9 +511,7 @@ mod tests {
         // Create inline encrypted file and write to it when barriers are enabled.
         let mut fixture = TestFixture::new_default().await;
 
-        let (starnix_vol, crypt_service) = fixture
-            .create_vol_with_starnix_crypt(KeyIdentifierDerivationAlgorithm::Lblk32, "starnix")
-            .await;
+        let (starnix_vol, crypt_service) = fixture.create_vol_with_starnix_crypt("starnix").await;
 
         let starnix_vol_root_dir =
             Directory::open(&starnix_vol, starnix_vol.root_directory_object_id())

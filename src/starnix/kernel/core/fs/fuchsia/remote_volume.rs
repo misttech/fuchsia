@@ -104,12 +104,7 @@ impl FileSystemOps for RemoteVolume {
 // Key file
 // ========
 //
-// Version 1:
-//
-//   +------- 32 -------+------- 32 -------+
-//   |   metadata key   |     data key     |
-//   +------------------+------------------+
-//
+// Version 1: No longer supported.
 // Version 2:
 //
 //   +-2-+------- 32 -------+------- 32 -------+
@@ -117,22 +112,17 @@ impl FileSystemOps for RemoteVolume {
 //   +---+------------------+------------------+
 //
 // Version 2 includes a 16 bit version which indicates the version of the key file.  The key
-// identifiers used for version 2 key files will use the lblk32 algorithm for derivation which
-// differs from version 1, which uses a, deprecated, Fuchsia specific derivation.
+// identifiers used for version 2 key files will use the lblk32 algorithm.
 
 struct VolumeKeys {
     metadata: [u8; 32],
     data: [u8; 32],
-    use_lblk32_identifiers: bool,
 }
 
 impl VolumeKeys {
     // `KEYS_SIZE` is the size of the two keys (the metadata key, and the data key) stored in the
     // key file.
     const KEYS_SIZE: usize = 64;
-
-    // Version 1 does not include a version.
-    const V1_FILE_SIZE: usize = Self::KEYS_SIZE;
 
     // Includes 2 bytes for the version.
     const FILE_SIZE: usize = 2 + Self::KEYS_SIZE;
@@ -158,21 +148,12 @@ impl VolumeKeys {
         match syncio::directory_read_file(data, key_path, zx::MonotonicInstant::INFINITE) {
             Ok(bytes) => {
                 if bytes.len() == Self::FILE_SIZE {
-                    // Version 2
                     if u16::from_le_bytes(bytes[0..2].try_into().unwrap()) != Self::LATEST_VERSION {
                         return Ok(None);
                     }
                     Ok(Some(Self {
                         metadata: bytes[2..34].try_into().unwrap(),
                         data: bytes[34..66].try_into().unwrap(),
-                        use_lblk32_identifiers: true,
-                    }))
-                } else if bytes.len() == Self::V1_FILE_SIZE {
-                    // Version 1
-                    Ok(Some(Self {
-                        metadata: bytes[..32].try_into().unwrap(),
-                        data: bytes[32..].try_into().unwrap(),
-                        use_lblk32_identifiers: false,
                     }))
                 } else {
                     Ok(None)
@@ -251,7 +232,6 @@ impl VolumeKeys {
         Ok(Self {
             metadata: bytes[2..34].try_into().unwrap(),
             data: bytes[34..].try_into().unwrap(),
-            use_lblk32_identifiers: true,
         })
     }
 }
@@ -322,12 +302,8 @@ pub fn new_remote_vol(
         }
         None => None,
     };
-    let crypt_service = Arc::new(CryptService::new(
-        &keys.metadata,
-        &keys.data,
-        keys.use_lblk32_identifiers,
-        inline_encryption_provider,
-    ));
+    let crypt_service =
+        Arc::new(CryptService::new(&keys.metadata, &keys.data, inline_encryption_provider));
 
     let (exposed_dir_client_end, exposed_dir_server) =
         fidl::endpoints::create_endpoints::<fio::DirectoryMarker>();

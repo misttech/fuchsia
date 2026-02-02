@@ -24,7 +24,6 @@ use std::sync::OnceLock;
 // a wrapping key and wrapping key id from the raw key bytes passed in by a user on
 // FS_IOC_ADD_ENCRYPTION_KEY. HKDFs requires an input "info" string. We define constants for the
 // respective "info" strings here.
-const FXFS_FSCRYPT_KEY_IDENTIFIER_INFO: &str = "fscrypt0";
 const FXFS_FSCRYPT_WRAPPING_KEY_INFO: &str = "fscrypt1";
 const FSCRYPT_HKDF_NONCE_PREFIX: &[u8] = b"fscrypt\0";
 
@@ -48,32 +47,19 @@ struct CryptServiceInner {
 
 pub struct CryptService {
     inner: Mutex<CryptServiceInner>,
-    use_lblk32_identifiers: bool,
     inline_crypto_proxy: Option<DeviceSynchronousProxy>,
     uuid: OnceLock<[u8; 16]>,
 }
 
 impl CryptService {
-    /// Creates a new crypt service that supports Starnix user volumes. If `use_lblk32_identifiers`
-    /// is true, the key identifiers that are derived for `add_wrapping_key` will use the algorithm
-    /// that is used with the the lblk32 fscrypt mode. If false, a deprecated Fuchsia specific
-    /// algorithm is used. If `inline_crypto_proxy` is set, hardware wrapped keys will be used.
+    /// Creates a new crypt service that supports Starnix user volumes.
     pub fn new(
         raw_metadata_key: &[u8],
         raw_data_key: &[u8],
-        use_lblk32_identifiers: bool,
         inline_crypto_proxy: Option<DeviceSynchronousProxy>,
     ) -> Self {
-        let metadata_wrapping_key_id = if use_lblk32_identifiers {
-            derive_lblk32_wrapping_key_id(raw_metadata_key)
-        } else {
-            derive_fxfs_wrapping_key_id(raw_metadata_key)
-        };
-        let data_wrapping_key_id = if use_lblk32_identifiers {
-            derive_lblk32_wrapping_key_id(raw_data_key)
-        } else {
-            derive_fxfs_wrapping_key_id(raw_data_key)
-        };
+        let metadata_wrapping_key_id = derive_lblk32_wrapping_key_id(raw_metadata_key);
+        let data_wrapping_key_id = derive_lblk32_wrapping_key_id(raw_data_key);
 
         fn to_key_info(key: &[u8]) -> KeyInfo {
             KeyInfo { users: Vec::new(), key: key.into(), slot: None }
@@ -88,7 +74,6 @@ impl CryptService {
                 metadata_key: Some(metadata_wrapping_key_id),
                 data_key: Some(data_wrapping_key_id),
             }),
-            use_lblk32_identifiers,
             inline_crypto_proxy,
             uuid: OnceLock::new(),
         }
@@ -123,11 +108,7 @@ impl CryptService {
         } else {
             (Box::from(raw_key), None)
         };
-        let key_identifier = if self.use_lblk32_identifiers {
-            derive_lblk32_wrapping_key_id(&key)
-        } else {
-            derive_fxfs_wrapping_key_id(&key)
-        };
+        let key_identifier = derive_lblk32_wrapping_key_id(&key);
         let mut inner = self.inner.lock();
         match inner.keys.entry(key_identifier) {
             Entry::Occupied(mut e) => {
@@ -377,13 +358,6 @@ fn derive_file_key(slot: u8, key: &[u8]) -> Vec<u8> {
     unwrapped_key
 }
 
-fn derive_fxfs_wrapping_key_id(raw_key: &[u8]) -> [u8; FSCRYPT_KEY_IDENTIFIER_SIZE as usize] {
-    let hk = Hkdf::<sha2::Sha256>::new(None, raw_key);
-    let mut key_identifier: [u8; 16] = [0u8; FSCRYPT_KEY_IDENTIFIER_SIZE as usize];
-    hk.expand(FXFS_FSCRYPT_KEY_IDENTIFIER_INFO.as_bytes(), &mut key_identifier).unwrap();
-    key_identifier
-}
-
 fn get_fxfs_cipher(raw_key: &[u8]) -> Aes256GcmSiv {
     let hk = Hkdf::<sha2::Sha256>::new(None, raw_key);
     let mut wrapping_key = [0u8; AES256_KEY_SIZE];
@@ -424,7 +398,7 @@ mod tests {
 
     #[test]
     fn add_and_forget_wrapping_keys() {
-        let service = CryptService::new(&[0; 32], &[1; 32], true, None);
+        let service = CryptService::new(&[0; 32], &[1; 32], None);
 
         // Add the wrapping key for users 0 and 1
         let wrapping_key_id =
@@ -509,8 +483,7 @@ mod tests {
             })
         });
 
-        let service =
-            CryptService::new(&[0; 32], &[1; 32], true, Some(insecure_inilne_crypto_proxy));
+        let service = CryptService::new(&[0; 32], &[1; 32], Some(insecure_inilne_crypto_proxy));
         service.set_uuid(TEST_UUID);
         let wrapping_key_id = service.add_wrapping_key(&[0xdc; 32], 0).unwrap();
         assert_eq!(wrapping_key_id, EXPECTED_WRAPPING_KEY_ID);
@@ -522,37 +495,6 @@ mod tests {
 
         assert_eq!(cts_key, &EXPECTED_CTS_KEY);
         assert_eq!(ino_hash_key, &EXPECTED_INO_HASH_KEY);
-    }
-
-    #[fuchsia::test]
-    async fn test_derive_fxfs_wrapping_key_id_and_cipher() {
-        const EXPECTED_WRAPPED_KEY: [u8; 48] = [
-            179, 37, 100, 221, 49, 242, 51, 3, 45, 241, 253, 154, 56, 12, 240, 248, 220, 200, 212,
-            75, 251, 44, 74, 145, 236, 136, 227, 158, 105, 14, 120, 221, 44, 229, 3, 158, 144, 64,
-            202, 73, 179, 83, 224, 156, 115, 200, 126, 247,
-        ];
-
-        const EXPECTED_WRAPPING_KEY_ID: [u8; 16] =
-            [180, 235, 24, 243, 150, 41, 127, 230, 2, 34, 238, 154, 60, 255, 169, 233];
-
-        let data_key = vec![0xCDu8; 32];
-        let wrapping_key_id = derive_fxfs_wrapping_key_id(&data_key);
-        let cipher = get_fxfs_cipher(&data_key);
-
-        let nonce = zero_extended_nonce(0);
-
-        let key = vec![0xABu8; 32];
-
-        let wrapped = cipher
-            .encrypt(&nonce, &key[..])
-            .map_err(|e| {
-                log::error!("Failed to wrap key error: {:?}", e);
-                zx::Status::INTERNAL.into_raw()
-            })
-            .expect("failed to wrap key");
-
-        assert_eq!(wrapping_key_id, EXPECTED_WRAPPING_KEY_ID);
-        assert_eq!(wrapped, EXPECTED_WRAPPED_KEY);
     }
 
     #[fuchsia::test]
@@ -578,8 +520,7 @@ mod tests {
             })
         });
 
-        let service =
-            CryptService::new(&[0; 32], &[1; 32], true, Some(insecure_inilne_crypto_proxy));
+        let service = CryptService::new(&[0; 32], &[1; 32], Some(insecure_inilne_crypto_proxy));
         let wrapping_key_id = service.add_wrapping_key(&[0xcd; 32], 0).unwrap();
 
         let (wrapped_key, unwrapped_key) = service
@@ -687,8 +628,7 @@ mod tests {
             })
         });
 
-        let service =
-            CryptService::new(&[0; 32], &[1; 32], true, Some(insecure_inilne_crypto_proxy));
+        let service = CryptService::new(&[0; 32], &[1; 32], Some(insecure_inilne_crypto_proxy));
         service.set_uuid(TEST_UUID);
         let wrapping_key_id =
             service.add_wrapping_key(&[0xcd; 32], 0).expect("add wrapping key failed");
@@ -708,7 +648,7 @@ mod tests {
 
     #[test]
     fn wrap_unwrap_key() {
-        let service = CryptService::new(&[0; 32], &[0xcd; 32], true, None);
+        let service = CryptService::new(&[0; 32], &[0xcd; 32], None);
 
         let (wrapping_key_id, wrapped_key, unwrapped_key) =
             service.create_key(0, KeyPurpose::Data).expect("create_key failed");
@@ -740,7 +680,7 @@ mod tests {
 
     #[test]
     fn wrap_unwrap_key_with_arbitrary_wrapping_key() {
-        let service = CryptService::new(&[0; 32], &[1; 32], true, None);
+        let service = CryptService::new(&[0; 32], &[1; 32], None);
 
         let wrapping_key_id =
             service.add_wrapping_key(&[2; 32], 0).expect("add wrapping key failed");
@@ -789,7 +729,7 @@ mod tests {
 
     #[test]
     fn create_key_with_wrapping_key_that_does_not_exist() {
-        let service = CryptService::new(&[0; 32], &[1; 32], true, None);
+        let service = CryptService::new(&[0; 32], &[1; 32], None);
 
         let wrapping_key_id =
             service.add_wrapping_key(&[2; 32], 0).expect("add wrapping key failed");
@@ -824,7 +764,7 @@ mod tests {
 
     #[test]
     fn unwrap_key_wrong_key() {
-        let service = CryptService::new(&[0; 32], &[0xcd; 32], true, None);
+        let service = CryptService::new(&[0; 32], &[0xcd; 32], None);
         let (wrapping_key_id, mut wrapped_key, _) =
             service.create_key(0, KeyPurpose::Data).expect("create_key failed");
         for byte in &mut wrapped_key {
@@ -843,7 +783,7 @@ mod tests {
 
     #[test]
     fn unwrap_key_wrong_owner() {
-        let service = CryptService::new(&[0; 32], &[0xcd; 32], true, None);
+        let service = CryptService::new(&[0; 32], &[0xcd; 32], None);
 
         let (wrapping_key_id, wrapped_key, _) =
             service.create_key(0, KeyPurpose::Data).expect("create_key failed");
@@ -886,7 +826,7 @@ mod tests {
             })
         });
 
-        let service = CryptService::new(&[0; 32], &[1; 32], true, Some(client));
+        let service = CryptService::new(&[0; 32], &[1; 32], Some(client));
         service.add_wrapping_key(&raw_key_bytes, 0).expect("add_wrapping_key failed");
     }
 }
