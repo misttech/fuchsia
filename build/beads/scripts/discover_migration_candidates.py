@@ -33,6 +33,10 @@ _STANDARD_FIELDS = {
 # Default complexity scores for non-simple deps.
 _DEFAULT_DEP_COMPLEXITY = 1
 
+# Complexity score for deps not directly defined in the input GN files (they can be defined in other
+# GN files, or in gni files as subtargets).
+_UNKNOWN_DEP_COMPLEXITY = 5
+
 # Default complexity scores for non-standard fields.
 _DEFAULT_FIELD_COMPLEXITY = 1
 
@@ -83,9 +87,18 @@ def end_pos_for_target(content: str, start_pos: int) -> int:
 
 def deps_from_target_body(target_body: str) -> list[str]:
     """Extract deps from a GN target body."""
+
+    # TODO(jayzhuang): Handle deps that are assigned from other variables.
+    # For example:
+    #   crate_deps = [
+    #     "//path/to/foo:foo",
+    #     "//path/to/bar:bar",
+    #   ]
+    #   deps = crate_deps
+
     deps = []
     for deps_match in re.finditer(
-        r"^\s*(deps|public_deps|data)\s*(?:\+=|=)\s*\[(.*?)\]",
+        r"^\s*(deps|test_deps|public_deps|data)\s*(?:\+=|=)\s*\[(.*?)\]",
         target_body,
         re.MULTILINE | re.DOTALL,  # To handle multi-line deps.
     ):
@@ -152,8 +165,47 @@ def targets_from_gn_file(
 
 
 class ComplexityCalculator:
-    def __init__(self, root_dir: pathlib.Path):
+    def __init__(
+        self,
+        root_dir: pathlib.Path,
+        gn_files: list[pathlib.Path],
+        target_types: list[str],
+    ):
+        """Initialize the complexity calculator.
+
+        Args:
+            root_dir: The root directory of the codebase.
+            gn_files: List of GN files to parse.
+            target_types: List of target types to extract.
+        """
         self._root_dir = root_dir.resolve()
+        # Cache for computed complexities keyed on fully-qualified labels.
+        self._complexity_cache: dict[str, int] = {}
+        # Cache for target details keyed on fully-qualified labels.
+        self._target_cache: dict[str, dict] = {}
+        # Populate the target cache with all targets eagerly in the specified GN files for easier
+        # dependency label resolution during complexity calculation, which traverses the dependency
+        # graph recursively.
+        self._populate_target_cache(gn_files, target_types)
+
+    def _populate_target_cache(
+        self, gn_files: list[pathlib.Path], target_types: list[str]
+    ):
+        """Populate the target cache with all targets in the specified GN files.
+
+        Args:
+            gn_files: List of GN files to parse.
+            target_types: List of target types to extract.
+        """
+        for gn_file in gn_files:
+            targets = targets_from_gn_file(gn_file, target_types)
+            label_to_target = {
+                self._to_fully_qualified_label(
+                    gn_file.parent, target["name"]
+                ): target
+                for target in targets
+            }
+            self._target_cache.update(label_to_target)
 
     def _is_third_party_target(self, label: str) -> bool:
         """Check if a target is a third-party target.
@@ -171,12 +223,12 @@ class ComplexityCalculator:
         ) or label.startswith("//third_party/golibs")
 
     def _is_bazel_target(self, label: str) -> bool:
+        """Check if a target is already in a BUILD.bazel file in the same directory."""
         if not self._is_fully_qualified_label(label):
             raise ValueError(
                 f"Invalid label: {label}, only fully-qualified labels are supported"
             )
 
-        """Check if a target is already in a BUILD.bazel file in the same directory."""
         path_part, target_name = label.split(":")
         path_dir = self._root_dir / path_part.lstrip("/")
         bazel_file = path_dir / "BUILD.bazel"
@@ -195,6 +247,11 @@ class ComplexityCalculator:
     def _to_fully_qualified_label(
         self, dir_path: pathlib.Path, label: str
     ) -> str:
+        """Convert a label to a fully-qualified label.
+
+        If the label is already fully qualified, return it as is.
+        Otherwise, convert it to a fully-qualified label.
+        """
         if self._is_fully_qualified_label(label):
             return label
 
@@ -206,47 +263,63 @@ class ComplexityCalculator:
             target_path = dir_path / label
         return f"//{target_path}:{target_name}"
 
-    def complexity_for_dep(self, dep_label: str) -> int:
-        """Calculate complexity for a dependency."""
-        if not dep_label.startswith("//"):
+    def _parts_from_fully_qualified_label(
+        self, label: str
+    ) -> tuple[pathlib.Path, str]:
+        """Return the path and target name from a fully-qualified label."""
+        if not self._is_fully_qualified_label(label):
             raise ValueError(
-                f"Invalid dep label: {dep_label}, only fully-qualified labels are supported"
+                f"Invalid label: {label}, only fully-qualified labels are supported"
             )
+        path_part, target_name = label.lstrip("//").split(":")
+        return pathlib.Path(path_part), target_name
 
-        return (
-            0
-            if (
-                self._is_third_party_target(dep_label)
-                or self._is_bazel_target(dep_label)
-            )
-            else 1
-        )
-
-    def complexity_for_target(self, target: dict) -> int:
+    def complexity_for_label(self, label: str) -> int:
         """Calculate complexity for a target taking its dependencies and fields into account."""
-        filepath = target["path"]
-        target_name = target["name"]
+        if not self._is_fully_qualified_label(label):
+            raise ValueError(
+                f"Invalid label: {label}, only fully-qualified labels are supported."
+            )
 
-        dir_path = filepath.parent
-        # If target itself is in Bazel already (e.g. bazel2gn targets), complexity is 0.
-        if self._is_bazel_target(f"//{dir_path}:{target_name}"):
+        # If the target is already in Bazel (e.g. bazel2gn targets) or is a third-party target,
+        # its complexity is 0.
+        if self._is_bazel_target(label) or self._is_third_party_target(label):
             return 0
 
-        dep_score = 0
-        for dep in target["deps"]:
-            dep_score += self.complexity_for_dep(
-                self._to_fully_qualified_label(dir_path, dep)
-            )
+        if label in self._complexity_cache:
+            return self._complexity_cache[label]
 
-        non_standard_fields = [
-            f for f in target["fields"] if f not in _STANDARD_FIELDS
+        if label not in self._target_cache:
+            return _UNKNOWN_DEP_COMPLEXITY
+
+        target = self._target_cache[label]
+        dir_path, _ = self._parts_from_fully_qualified_label(label)
+        fully_qualified_deps = [
+            self._to_fully_qualified_label(dir_path, dep)
+            for dep in target["deps"]
         ]
-        field_score = sum(
-            _COMPLEX_FIELDS.get(f, _DEFAULT_FIELD_COMPLEXITY)
-            for f in non_standard_fields
+        complex_deps = [
+            dep
+            for dep in fully_qualified_deps
+            if (
+                not self._is_bazel_target(dep)
+                and not self._is_third_party_target(dep)
+            )
+        ]
+        # Each dependency adds (1 + their complexity) to the total complexity of this target.
+        dep_complexity = len(complex_deps) + sum(
+            self.complexity_for_label(dep) for dep in complex_deps
         )
 
-        return dep_score + field_score
+        field_complexity = sum(
+            _COMPLEX_FIELDS.get(f, _DEFAULT_FIELD_COMPLEXITY)
+            for f in target["fields"]
+            if f not in _STANDARD_FIELDS
+        )
+
+        complexity = dep_complexity + field_complexity
+        self._complexity_cache[label] = complexity
+        return complexity
 
     def complexity_for_file(
         self, gn_file: pathlib.Path, target_types: list[str]
@@ -261,7 +334,9 @@ class ComplexityCalculator:
         }
 
         for target in targets:
-            complexity = self.complexity_for_target(target)
+            complexity = self.complexity_for_label(
+                self._to_fully_qualified_label(gn_file.parent, target["name"])
+            )
 
             target_info = {
                 "name": target["name"],
@@ -269,7 +344,7 @@ class ComplexityCalculator:
                 "complexity": complexity,
                 "deps": target["deps"],
                 "fields": target["fields"],
-                # Add extra info for display if needed
+                # Add extra info for display if needed.
                 "non_standard_fields": [
                     f for f in target["fields"] if f not in _STANDARD_FIELDS
                 ],
@@ -280,21 +355,6 @@ class ComplexityCalculator:
             file_result["total_targets"] += 1
 
         return file_result
-
-
-def bazel_targets_in_dir(directory: pathlib.Path) -> set[str]:
-    """Get all Bazel target names from input directory."""
-    bazel_file = directory / "BUILD.bazel"
-    if not bazel_file.exists():
-        return set()
-
-    content = bazel_file.read_text()
-
-    target_names = {
-        match.group(1)
-        for match in re.finditer(r'name\s*=\s*"([^"]+)"', content)
-    }
-    return target_names
 
 
 def print_results(file_results: list[dict], top: int):
@@ -368,7 +428,10 @@ def main() -> int:
     gn_files = find_gn_files(args.directory, args.exclude_dirs)
     debug(f"Found {len(gn_files)} BUILD.gn files.")
 
-    calculator = ComplexityCalculator(args.fuchsia_dir)
+    calculator = ComplexityCalculator(
+        args.fuchsia_dir, gn_files, args.target_types
+    )
+
     file_results = []
     for gn_file in gn_files:
         file_result = calculator.complexity_for_file(gn_file, args.target_types)

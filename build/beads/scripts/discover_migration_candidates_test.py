@@ -12,7 +12,7 @@ import discover_migration_candidates
 class TestDiscoverMigrationCandidates(unittest.TestCase):
     def test_complexity_calculator_third_party(self):
         calc = discover_migration_candidates.ComplexityCalculator(
-            pathlib.Path("/root")
+            pathlib.Path("/root"), [], []
         )
 
         self.assertTrue(
@@ -26,7 +26,7 @@ class TestDiscoverMigrationCandidates(unittest.TestCase):
 
     def test_complexity_calculator_bazel(self):
         calc = discover_migration_candidates.ComplexityCalculator(
-            pathlib.Path("/root")
+            pathlib.Path("/root"), [], []
         )
 
         with mock.patch.object(
@@ -44,55 +44,55 @@ class TestDiscoverMigrationCandidates(unittest.TestCase):
             mock_exists.return_value = False
             self.assertFalse(calc._is_bazel_target("//root/a:t1"))
 
-    def test_complexity_for_dep(self):
+    def test_complexity_for_label(self):
         root = pathlib.Path("/root")
-        calc = discover_migration_candidates.ComplexityCalculator(root)
-
-        self.assertEqual(
-            calc.complexity_for_dep("//third_party/rust_crates:a"), 0
-        )
+        calc = discover_migration_candidates.ComplexityCalculator(root, [], [])
 
         with mock.patch.object(
             discover_migration_candidates.ComplexityCalculator,
             "_is_bazel_target",
         ) as mock_is_bazel:
             mock_is_bazel.return_value = True
-            self.assertEqual(calc.complexity_for_dep("//src/foo:bar"), 0)
+            self.assertEqual(calc.complexity_for_label("//src/foo:bar"), 0)
 
             mock_is_bazel.return_value = False
-            self.assertEqual(calc.complexity_for_dep("//src/foo:bar"), 1)
+            self.assertEqual(
+                calc.complexity_for_label("//third_party/rust_crates:a"), 0
+            )
+            self.assertEqual(
+                calc.complexity_for_label("//src/foo:bar"),
+                discover_migration_candidates._UNKNOWN_DEP_COMPLEXITY,
+            )
 
-    def test_complexity_for_target(self):
+    def test_complexity_for_label_calculation(self):
         root = pathlib.Path("/root")
-        calc = discover_migration_candidates.ComplexityCalculator(root)
+        calc = discover_migration_candidates.ComplexityCalculator(root, [], [])
 
         target = {
             "path": root / "BUILD.gn",
             "name": "t1",
-            "deps": ["//a", "//b"],
+            "deps": ["//a:a", "//b:b"],
             "fields": ["sources", "configs"],  # configs is complex (2)
         }
+        # Populate cache manually to avoid mocking filesystem access.
+        calc._target_cache["//root:t1"] = target
+        calc._target_cache["//a:a"] = {"name": "a", "deps": [], "fields": []}
+        calc._target_cache["//b:b"] = {"name": "b", "deps": [], "fields": []}
+
+        # 2 deps * (1 + 0) + 1 field (sources=0, configs=2) -> 2 + 2 = 4
+        with mock.patch.object(
+            discover_migration_candidates.ComplexityCalculator,
+            "_is_bazel_target",
+            return_value=False,
+        ):
+            self.assertEqual(calc.complexity_for_label("//root:t1"), 4)
 
         with mock.patch.object(
             discover_migration_candidates.ComplexityCalculator,
-            "complexity_for_dep",
-        ) as mock_dep_score:
-            mock_dep_score.return_value = 1
-
-            # 2 deps * 1 + 1 field (sources=0, configs=2) -> 2 + 2 = 4
-            with mock.patch.object(
-                discover_migration_candidates.ComplexityCalculator,
-                "_is_bazel_target",
-                return_value=False,
-            ):
-                self.assertEqual(calc.complexity_for_target(target), 4)
-
-            with mock.patch.object(
-                discover_migration_candidates.ComplexityCalculator,
-                "_is_bazel_target",
-                return_value=True,
-            ):
-                self.assertEqual(calc.complexity_for_target(target), 0)
+            "_is_bazel_target",
+            return_value=True,
+        ):
+            self.assertEqual(calc.complexity_for_label("//root:t1"), 0)
 
     def test_complexity_for_file(self):
         root = pathlib.Path("/root")
@@ -110,15 +110,15 @@ class TestDiscoverMigrationCandidates(unittest.TestCase):
         """
         path = root / "BUILD.gn"
 
-        calc = discover_migration_candidates.ComplexityCalculator(root)
+        calc = discover_migration_candidates.ComplexityCalculator(root, [], [])
 
         with mock.patch.object(
             pathlib.Path, "read_text", return_value=content
         ), mock.patch.object(
             discover_migration_candidates.ComplexityCalculator,
-            "complexity_for_target",
-        ) as mock_complexity_for_target:
-            mock_complexity_for_target.return_value = 1
+            "complexity_for_label",
+        ) as mock_complexity_for_label:
+            mock_complexity_for_label.return_value = 1
 
             result1 = calc.complexity_for_file(path, ["rustc_binary"])
             self.assertEqual(result1["total_complexity"], 2)
@@ -275,21 +275,21 @@ class TestDiscoverMigrationCandidates(unittest.TestCase):
                 ],
             )
 
-    def test_bazel_targets_in_dir(self):
-        content = 'cc_library(name = "lib")\ncc_binary(name = "bin")'
-        with mock.patch.object(
-            pathlib.Path, "exists", return_value=True
-        ), mock.patch.object(pathlib.Path, "read_text", return_value=content):
-            targets = discover_migration_candidates.bazel_targets_in_dir(
-                pathlib.Path(".")
-            )
-            self.assertEqual(targets, {"lib", "bin"})
+    def test_complexity_calculator_initialization(self):
+        root = pathlib.Path("/root")
+        gn_file = pathlib.Path("src/BUILD.gn")
+        content = 'executable("foo") { }'
 
-        with mock.patch.object(pathlib.Path, "exists", return_value=False):
-            targets = discover_migration_candidates.bazel_targets_in_dir(
-                pathlib.Path(".")
+        with mock.patch.object(pathlib.Path, "read_text", return_value=content):
+            calc = discover_migration_candidates.ComplexityCalculator(
+                root, [gn_file], ["executable"]
             )
-            self.assertEqual(targets, set())
+            expected_label = "//src/foo:foo"
+            self.assertIn(expected_label, calc._target_cache)
+            self.assertEqual(calc._target_cache[expected_label]["name"], "foo")
+            self.assertEqual(
+                calc._target_cache[expected_label]["type"], "executable"
+            )
 
 
 if __name__ == "__main__":
