@@ -55,12 +55,13 @@ Consider the following rubrics if they are applicable to this review, especially
 - docs/development/api/fidl.md: FIDL API readability rubric.
 - docs/development/api/go.md: Go rubric.
 - docs/development/api/rust.md: Rust rubric.
-- docs/contribute/contributing-to-zircon/README.md: Zircon contributor guide.
 
   Feature-Specific Rubrics:
 
 - docs/development/drivers/developer_guide/rubric.md: The rubric for developing
   drivers.
+- docs/contribute/contributing-to-zircon/README.md: Guidelines for patches to
+  Zircon.
 - docs/development/testing/testability_rubric.md: The testability rubric for
   ensuring code is testable.
 
