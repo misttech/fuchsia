@@ -13,14 +13,14 @@ This allows the dictionary to be passed to a `string_dict` attribute.
     """
     return {k: json.encode(v) for k, v in dict.items()}
 
-def select_for(condition, deps):
+def select_for(condition, condition_value, default_value = []):
     return select({
-        condition: deps,
-        "//conditions:default": [],
+        condition: condition_value,
+        "//conditions:default": default_value,
     })
 
-def select_for_fuchsia(fuchsia_value):
-    return select_for("@platforms//os:fuchsia", fuchsia_value)
+def select_for_fuchsia(fuchsia_value, non_fuchsia_value = []):
+    return select_for("@platforms//os:fuchsia", fuchsia_value, non_fuchsia_value)
 
 def _get_idk_label(label_str):
     # Ensure the label is relative to the `BUILD` file, not this `.bzl` file

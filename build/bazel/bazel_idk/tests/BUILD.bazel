@@ -32,10 +32,13 @@ create_idk_atom_for_test(
     type = "data",
 )
 
-# The headers used by some_library.cc are made available as follows:
-# * dependency.h: via `hdrs` in the deps ":test_source_set_dependency"
-#   * another_header.h: via `hdrs_for_internal_use` in the deps ":test_source_set_dependency"
+# The headers used by some_library.cc are made available as follows for Fuchsia builds:
+# * dependency.h: via `hdrs` in the `fuchsia_deps` ":test_source_set_dependency"
+#   * This file includes another_header.h, which is available via
+#     `hdrs_for_internal_use` in the deps ":test_source_set_dependency".
 # * test_header.h: via `hdrs`
+# dependency.h is also available via `hdrs` in the `deps`
+# ":test_source_set_dependency2". This is required for non-Fuchsia builds.
 idk_cc_source_library(
     name = "test-source-set",
     testonly = True,
@@ -64,10 +67,13 @@ idk_cc_source_library(
     ],
 )
 
-# The headers used by some_library.cc are made available as follows:
-# * dependency.h: via `hdrs` in the deps ":test_source_set_dependency"
-#   * another_header.h: via `hdrs_for_internal_use` in the deps ":test_source_set_dependency"
+# The headers used by some_library.cc are made available as follows for Fuchsia builds:
+# * dependency.h: via `hdrs` in the `fuchsia_deps` ":test_source_set_dependency"
+#   * This file includes another_header.h, which is available via
+#     `hdrs_for_internal_use` in the deps ":test_source_set_dependency".
 # * test_header.h: via `hdrs`
+# dependency.h is also available via `hdrs` in the `deps`
+# ":test_source_set_dependency2". This is required for non-Fuchsia builds.
 idk_cc_shared_library(
     name = "test-shared-library",
     testonly = True,
@@ -94,10 +100,13 @@ idk_cc_shared_library(
     ],
 )
 
-# The headers used by some_library.cc are made available as follows:
-# * dependency.h: via `hdrs` in the deps ":test_source_set_dependency"
-#   * another_header.h: via `hdrs_for_internal_use` in the deps ":test_source_set_dependency"
+# The headers used by some_library.cc are made available as follows for Fuchsia builds:
+# * dependency.h: via `hdrs` in the `fuchsia_deps` ":test_source_set_dependency"
+#   * This file includes another_header.h, which is available via
+#     `hdrs_for_internal_use` in the deps ":test_source_set_dependency".
 # * test_header.h: via `hdrs`
+# dependency.h is also available via `hdrs` in the `deps`
+# ":test_source_set_dependency2". This is required for non-Fuchsia builds.
 idk_cc_static_library(
     name = "test-static-library",
     testonly = True,
@@ -121,6 +130,37 @@ idk_cc_static_library(
         "//build/bazel/bazel_idk/tests",
         "//build/bazel/bazel_idk/tests:test_source_set_dependency2",
     ],
+)
+
+# Tests `fuchsia_*` and `non_fuchsia_*` attributes for header and source files.
+# Also tests that `*hdrs_for_internal_use` appears in the API file as appropriate.
+# buildifier: leave-alone - Preserve attribute ordering for illustrative purposes.
+idk_cc_source_library(
+    name = "platform_dependent_source_library",
+    testonly = True,
+
+    # Source files.
+    srcs = ["platform_dependent_library.cc"],
+    fuchsia_srcs = ["fuchsia_only_source.cc"],
+    non_fuchsia_srcs = ["non_fuchsia_source.cc"],
+
+    # Header files.
+    hdrs = [
+        "include/lib/test_lib/platform_dependent_header.h",
+        "include/lib/test_lib/test_header.h",
+    ],
+    fuchsia_hdrs = ["include/lib/test_lib/fuchsia_only_header.h"],
+
+    # Header files for internal use.
+    hdrs_for_internal_use = ["include/lib/test_lib/internal/internal_header_appears_in_api_file.h"],
+    fuchsia_hdrs_for_internal_use = ["include/lib/test_lib/internal/fuchsia_only_internal_header_appears_in_api_file.h"],
+    non_fuchsia_hdrs_for_internal_use = ["include/lib/test_lib/internal/non_fuchsia_internal_header_does_not_appear_in_api_file.h"],
+
+    # IDK-related attributes.
+    api_area = "Developer",
+    category = "partner",
+    idk_name = "platform_dependent_source_library",
+    stable = True,
 )
 
 idk_cc_source_library(
@@ -327,6 +367,7 @@ idk_molecule(
     name = "test_submolecule",
     testonly = True,
     deps = [
+        "platform_dependent_source_library_idk",
         ":test-shared-library_idk",
         ":test-source-set_idk",
         ":test-static-library_idk",
@@ -383,6 +424,13 @@ cc_binary(
 )
 
 cc_binary(
+    name = "test_executable_using_platform_dependent_source_library",
+    testonly = True,
+    srcs = ["test_executable.cc"],
+    deps = [":platform_dependent_source_library"],
+)
+
+cc_binary(
     name = "test_executable_using_cc_shared_library_zx",
     testonly = True,
     srcs = ["test_executable.cc"],
@@ -429,6 +477,7 @@ filegroup(
         ":test_executable_using_cc_shared_library",
         ":test_executable_using_cc_source_library",
         ":test_executable_using_cc_static_library",
+        ":test_executable_using_platform_dependent_source_library",
         ":test_executable_using_cc_shared_library_zx",
         ":test_executable_using_cc_source_library_zx",
         ":test_executable_using_cc_static_library_zx",
@@ -439,6 +488,7 @@ filegroup(
 
         # Depend directly on the underlying source libraries since they are not
         # dependencies of the atoms.
+        ":platform_dependent_source_library",
         ":test-source-set",
         ":test_source_set_dependency",
         ":test_source_set_zx",
@@ -488,6 +538,10 @@ genrule(
         ":test_shared_library_zx",
         ":test_static_library_zx",
 
+        # Verify that a target using `[non_]fuchsia_{hdrs|hdrs_for_internal_use|srcs}`
+        # can be built on the host toolchain.
+        ":test_executable_using_platform_dependent_source_library",
+
         # Other libraries.
         "//sdk/lib/stdcompat",
         "//sdk/lib/utf-utils",
@@ -504,6 +558,7 @@ exports_files([
     "different_file_name.api",
     "different_file_name_shared_library.api",
     "different_file_name_static_library.api",
+    "platform_dependent_source_library.api",
     "source_dependency_2.api",
     "source_subdependency.api",
     "tests_dependency.api",

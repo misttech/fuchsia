@@ -37,8 +37,13 @@ def _idk_cc_source_library_impl(
         stable,
         api_area,
         hdrs,
+        fuchsia_hdrs,
         hdrs_for_internal_use,
+        fuchsia_hdrs_for_internal_use,
+        non_fuchsia_hdrs_for_internal_use,
         srcs,
+        fuchsia_srcs,
+        non_fuchsia_srcs,
         deps,
         fuchsia_deps,
         implementation_deps,
@@ -74,10 +79,14 @@ def _idk_cc_source_library_impl(
     # IDK may not work this way, so include `hdrs_for_internal_use` as headers
     # in the IDK. This is also consistent with prebuilt libraries where the IDK
     # only includes headers.
-    all_source_files = hdrs + hdrs_for_internal_use + srcs
-    hdrs_for_idk = hdrs + hdrs_for_internal_use
-    hdrs_for_bazel_library = hdrs
-    srcs_for_bazel_library = srcs + hdrs_for_internal_use
+    hdrs_for_idk = hdrs + fuchsia_hdrs + hdrs_for_internal_use + fuchsia_hdrs_for_internal_use
+    hdrs_for_bazel_library = hdrs + select_for_fuchsia(fuchsia_hdrs)
+    srcs_for_bazel_library = (
+        srcs +
+        select_for_fuchsia(fuchsia_srcs, non_fuchsia_srcs) +
+        hdrs_for_internal_use +
+        select_for_fuchsia(fuchsia_hdrs_for_internal_use, non_fuchsia_hdrs_for_internal_use)
+    )
 
     if include_base == "//sdk":
         # Some libraries in //sdk/lib/<library_name>[/...] rely on that in-tree
@@ -122,6 +131,8 @@ def _idk_cc_source_library_impl(
     # Everything below this point is for Fuchsia only.
     #
 
+    all_idk_source_files = hdrs_for_idk + srcs + fuchsia_srcs
+
     idk_root_path = "pkg/" + idk_name
     include_dest = idk_root_path + "/include"
 
@@ -156,20 +167,22 @@ def _idk_cc_source_library_impl(
     atom_build_deps = [
         # All this target really does is provide a clearer error message than if
         # we relied on combining the lists in the `verify_no_pragma_once()` rule
-        # below.
+        # below. Only files in the IDK (platform-independent and
+        # Fuchsia-specific) are checked.
         create_verify_no_duplicate_files_target(
             name = name,
-            hdrs = hdrs,
-            hdrs_for_internal_use = hdrs_for_internal_use,
-            srcs = srcs,
+            hdrs = hdrs + fuchsia_hdrs,
+            hdrs_for_internal_use = hdrs_for_internal_use + fuchsia_hdrs_for_internal_use,
+            srcs = srcs + fuchsia_srcs,
             testonly = testonly,
         ),
 
         # For simplicity, check all source files, including non-header files in
-        # `srcs`.
+        # `*srcs`. Only files in the IDK (platform-independent and
+        # Fuchsia-specific) are checked.
         create_verify_pragma_once_target(
             name = name,
-            files = all_source_files,
+            files = all_idk_source_files,
             testonly = testonly,
         ),
     ]
@@ -230,7 +243,8 @@ graph depends on target `name`.
 
 The values of all deps args must be iterable. That means they cannot contain
 `select()` statements. Instead, use `fuchsia_deps` for public dependencies
-that only apply to Fuchsia.""",
+that only apply to Fuchsia. `hdrs`, `hdrs_for_internal_use`, and `srcs` have
+the same restriction and similar corresponding attributes.""",
     implementation = _idk_cc_source_library_impl,
     # TODO(https://fxbug.dev/446694542): Remove `native.` once the
     # `cc_library()` wrapper is a symbolic macro.
@@ -271,6 +285,16 @@ GN note: Unlike the GN template, this list does not include `hdrs_for_internal_u
             mandatory = True,
             configurable = False,
         ),
+        "fuchsia_hdrs": attr.label_list(
+            doc = """The list of C and C++ header files published by this library to be directly
+included by sources in dependent rules only when targeting Fuchsia. Does not include internal headers that are included from
+public headers but not meant to be included by dependents - see `fuchsia_hdrs_for_internal_use`.
+Atoms providing headers used by these headers must be included in the (public) `deps` or `fuchsia_deps`.
+GN equivalent: `public` inside an `if (is_fuchsia) {}` statement
+GN note: Unlike the GN template, this list does not include `fuchsia_hdrs_for_internal_use`.""",
+            allow_files = True,
+            configurable = False,
+        ),
         "hdrs_for_internal_use": attr.label_list(
             doc = """List of C and C++ headers included by headers in `hdrs` that are not
 meant to be included by a client of this library. They usually contain implementation details.
@@ -285,12 +309,62 @@ elsewhere, such headers are only listed here.""",
             default = [],
             configurable = False,
         ),
+        "fuchsia_hdrs_for_internal_use": attr.label_list(
+            doc = """List of C and C++ headers included by headers in `hdrs`
+or `fuchsia_hdrs` only when targeting Fuchsia that are not
+meant to be included by a client of this library. They usually contain implementation details.
+Their contents are not included in documentation but they are included in the `headers` metadata
+for the IDK library. They may be excluded from some but not all API compatibility checks.
+Like `fuchsia_hdrs`, the atoms providing headers used by these headers must be included in the
+(public) `deps` or `fuchsia_deps`.
+GN equivalent: `sdk_headers_for_internal_use` inside an `if (is_fuchsia) {}` statement
+GN note: Unlike the GN template where this argument specifices headers already included
+elsewhere, such headers are only listed here.""",
+            allow_files = True,
+            default = [],
+            configurable = False,
+        ),
+        "non_fuchsia_hdrs_for_internal_use": attr.label_list(
+            doc = """List of C and C++ headers included by headers in `hdrs`
+only when not targeting Fuchsia that are not
+meant to be included by a client of this library. They usually contain implementation details.
+These files are not included in the IDK.
+Like `hdrs`, the atoms providing headers used by these headers must be included in the
+(public) `deps`.
+GN equivalent: `sdk_headers_for_internal_use` inside an `if (!is_fuchsia) {}` statement
+GN note: Unlike the GN template where this argument specifices headers already included
+elsewhere, such headers are only listed here.""",
+            allow_files = True,
+            default = [],
+            configurable = False,
+        ),
         "srcs": attr.label_list(
             doc = """The list of C and C++ source and header files that are processed to create the
 library target, excluding those in `hdrs` and `hdrs_for_internal_use`.
-Header files in this list can only be included by other files in this list.
+Header files in this list can only be included by other files in `*srcs` attributes.
 GN equivalent: `sources`
 GN note: Unlike the GN template, public headers must actually be in `hdrs`.""",
+            allow_files = True,
+            default = [],
+            configurable = False,
+        ),
+        "fuchsia_srcs": attr.label_list(
+            doc = """The list of C and C++ source and header files that are processed to create the
+library target only when targeting Fuchsia, excluding those in `fuchsia_hdrs` and `fuchsia_hdrs_for_internal_use`.
+Header files in this list can only be included by other files in this list.
+GN equivalent: `sources` inside an `if (is_fuchsia) {}` statement
+GN note: Unlike the GN template, public headers must actually be in `fuchsia_hdrs`.""",
+            allow_files = True,
+            default = [],
+            configurable = False,
+        ),
+        "non_fuchsia_srcs": attr.label_list(
+            doc = """The list of C and C++ source and header files that are processed to create the
+library target only when not targeting Fuchsia, excluding those in `non_fuchsia_hdrs` and `non_fuchsia_hdrs_for_internal_use`.
+Header files in this list can only be included by other files in this list.
+These files are not included in the IDK.
+GN equivalent: `sources` inside an `if (!is_fuchsia) {}` statement
+GN note: Unlike the GN template, public headers must actually be in `non_fuchsia_hdrs`.""",
             allow_files = True,
             default = [],
             configurable = False,
@@ -307,7 +381,7 @@ GN equivalent: `public_deps`""",
             doc = """List of labels for other IDK elements this element publicly depends on at
 build time only when targeting Fuchsia.
 These labels must point to targets with corresponding `_create_idk_atom()` targets.
-GN equivalent: `public_deps +=` inside an `if (is_fuchsia) {}` statement.
+GN equivalent: `public_deps +=` inside an `if (is_fuchsia) {}` statement
 GN note: If `bazel2gn` is run on the target, `fuchsia_deps` must come after `deps.
 This may require adding `# buildifier: leave-alone` above the target definition to
 disable reordering by the formatter.""",
