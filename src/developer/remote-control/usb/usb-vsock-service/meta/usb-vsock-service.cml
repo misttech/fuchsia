@@ -12,8 +12,7 @@
         binary: "driver/usb-vsock-service.so",
         bind: "meta/bind/usb-vsock-service.bindbc",
         fallback: "false",
-        default_dispatcher_opts: [ "allow_sync_calls" ],
-        colocate: "false",
+        colocate: "true",
     },
     capabilities: [
         { service: "fuchsia.hardware.vsock.Service" },
