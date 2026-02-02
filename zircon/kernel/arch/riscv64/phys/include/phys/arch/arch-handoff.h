@@ -16,7 +16,6 @@
 
 #include <cstdint>
 #include <optional>
-#include <span>
 
 // The minimal memory region needed to encapsulate the C++ compiler thread ABI.
 struct ArchTempThreadAbi {
@@ -34,11 +33,6 @@ static_assert(sizeof(ArchTempThreadAbi) + ZX_TLS_UNSAFE_SP_OFFSET ==
 
 struct ArchPatchInfo {};
 
-struct RiscvPlicDriverConfig {
-  zbi_dcfg_riscv_plic_driver_t zbi{};
-  std::span<volatile std::byte> mmio;
-};
-
 // This holds (or points to) all riscv64-specific data that is handed off from
 // physboot to the kernel proper at boot time.
 struct ArchPhysHandoff {
@@ -49,7 +43,7 @@ struct ArchPhysHandoff {
   arch::RiscvFeatures cpu_features;
 
   // (ZBI_TYPE_KERNEL_DRIVER, ZBI_KERNEL_DRIVER_RISCV_PLIC) payload.
-  std::optional<RiscvPlicDriverConfig> plic_driver;
+  std::optional<zbi_dcfg_riscv_plic_driver_t> plic_driver;
 
   // (ZBI_TYPE_KERNEL_DRIVER, ZBI_KERNEL_DRIVER_RISCV_GENERIC_TIMER) payload.
   std::optional<zbi_dcfg_riscv_generic_timer_driver_t> generic_timer_driver;

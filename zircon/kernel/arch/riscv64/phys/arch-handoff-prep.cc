@@ -27,9 +27,8 @@ void HandoffPrep::ArchSummarizeMiscZbiItem(const zbi_header_t& header,
       switch (header.extra) {
         case ZBI_KERNEL_DRIVER_RISCV_PLIC:
           ZX_ASSERT(payload.size() >= sizeof(zbi_dcfg_riscv_plic_driver_t));
-          arch_handoff.plic_driver = RiscvPlicDriverConfig{
-              .zbi = *reinterpret_cast<const zbi_dcfg_riscv_plic_driver_t*>(payload.data()),
-          };
+          arch_handoff.plic_driver =
+              *reinterpret_cast<const zbi_dcfg_riscv_plic_driver_t*>(payload.data());
           SaveForMexec(header, payload);
           break;
         case ZBI_KERNEL_DRIVER_RISCV_GENERIC_TIMER:
@@ -44,16 +43,7 @@ void HandoffPrep::ArchSummarizeMiscZbiItem(const zbi_header_t& header,
   }
 }
 
-void HandoffPrep::ArchConstructKernelAddressSpace() {
-  ZX_DEBUG_ASSERT(handoff_);
-  ArchPhysHandoff& arch_handoff = handoff_->arch_handoff;
-
-  if (arch_handoff.plic_driver) {
-    const zbi_dcfg_riscv_plic_driver_t& config = arch_handoff.plic_driver->zbi;
-    arch_handoff.plic_driver->mmio =
-        PublishSingleMmioMappingVmar("PLIC"sv, config.mmio_phys, config.size_bytes).get();
-  }
-}
+void HandoffPrep::ArchConstructKernelAddressSpace() {}
 
 void HandoffPrep::ArchDoHandoff(ZirconAbi abi, const ArchPatchInfo& patch_info) {
   ZX_DEBUG_ASSERT(handoff_);

@@ -26,6 +26,7 @@
 #include <lk/init.h>
 #include <pdev/interrupt.h>
 #include <vm/vm.h>
+#include <vm/vm_aspace.h>
 
 // HACK: Temporary workaround for the SiFive HiFive Unleashed which has a
 // different calculation formulas than QEMU-virt:
@@ -264,18 +265,25 @@ const struct pdev_interrupt_ops plic_ops = {
 
 }  //  anonymous namespace
 
-void PLICInitEarly(const RiscvPlicDriverConfig& config) {}
+void PLICInitEarly(const zbi_dcfg_riscv_plic_driver_t& config) {}
 
-void PLICInitPostVm(const RiscvPlicDriverConfig& config) {
-  ASSERT(!config.mmio.empty());
-  ASSERT(config.zbi.num_irqs > 0);
-
+void PLICInitPostVm(const zbi_dcfg_riscv_plic_driver_t& config) {
   LTRACE_ENTRY;
 
-  plic_base = reinterpret_cast<uintptr_t>(config.mmio.data());
-  plic_max_int = config.zbi.num_irqs;
+  ASSERT(config.num_irqs > 0);
 
-  pdev_register_interrupts(&plic_ops);
+  plic_max_int = config.num_irqs;
+
+  // Map the mmio region.
+  zx_status_t status = VmAspace::kernel_aspace()->AllocPhysical(
+      "plic", config.size_bytes, reinterpret_cast<void**>(&plic_base), PAGE_SIZE_SHIFT,
+      config.mmio_phys, 0,
+      ARCH_MMU_FLAG_PERM_READ | ARCH_MMU_FLAG_PERM_WRITE | ARCH_MMU_FLAG_UNCACHED_DEVICE);
+  if (status != ZX_OK) {
+    panic("Could not allocate PLIC mmio region: %d\n", status);
+  }
+  dprintf(INFO, "PLIC: num_irqs %u\n", plic_max_int);
+  dprintf(INFO, "PLIC: mmio region [%#lx, %#lx)\n", plic_base, plic_base + config.size_bytes);
 
   // mask all irqs and set their priority to 1
   for (uint i = 1; i < plic_max_int; i++) {
@@ -286,7 +294,13 @@ void PLICInitPostVm(const RiscvPlicDriverConfig& config) {
   // set global priority threshold to 0
   writel(0, PLIC_THRESHOLD(plic_base, riscv64_boot_hart_id()));
 
+  pdev_register_interrupts(&plic_ops);
+
   LTRACE_EXIT;
 }
 
-void PLICInitLate() {}
+void PLICInitLate(const zbi_dcfg_riscv_plic_driver_t& config) {
+  // Register the MMIO region we have already mapped after the fact to allow the resource
+  // manager to initialize after the PostVM hook.
+  root_resource_filter_add_deny_region(config.mmio_phys, config.size_bytes, ZX_RSRC_KIND_MMIO);
+}
