@@ -102,6 +102,7 @@ import("//build/toolchain/toolchain_environment.gni")
 #     `is_kernel` is true. Mutually exclusive with `sdk_headers`.
 #     This must list all the public header files for the library.
 #     Unlike `sdk_headers`, paths are not relative to `include/`.
+#     This is primarily used by bazel2gn-generated targets.
 #
 #   sdk_headers
 #     Optional: It or `public` is required, except if the global
@@ -131,6 +132,12 @@ import("//build/toolchain/toolchain_environment.gni")
 #     must be included in the path.
 #     TODO(https://fxbug.dev/333125197): Remove this parameter.
 #
+#   api
+#     Path for the file representing the API of this library.
+#     This can be set when this template is used by a bazel2gn-generated target.
+#     It should only be set when the library is outside `//sdk/lib` and must
+#     match the default value for such libraries.
+#
 #   See source_set() for other parameters.
 #
 template("zx_library") {
@@ -138,6 +145,7 @@ template("zx_library") {
   # They must be used or explicitly forwarded when appropriate.
   # TODO(https://fxbug.dev/333125197): Remove when removing the parameters.
   unforwarded_params = [
+    "api",
     "public",
     "sdk",
     "sdk_area",
@@ -148,15 +156,15 @@ template("zx_library") {
     "stable",
   ]
 
-  assert(!defined(invoker.public) || !defined(invoker.sdk_headers),
-         "`public` and `sdk_headers` are mutually exclusive.")
+  assert(defined(invoker.public) != defined(invoker.sdk_headers),
+         "Exactly one of `public` and `sdk_headers` must be specified.")
 
   # Ensure SDK-specific parameters are only specified for libraries in the SDK.
   # The following "sdk" parameters are always allowed:
   # * `sdk` is required for the `zircon_toolchain=false` case.
   # * `sdk_headers` is often used instead of "public".
   assert(defined(invoker.sdk_publishable) ||
-         (!defined(invoker.sdk_area) &&
+         (!defined(invoker.api) && !defined(invoker.sdk_area) &&
           !defined(invoker.sdk_headers_for_internal_use) &&
           !defined(invoker.sdk_name) && !defined(invoker.stable)))
 
@@ -413,6 +421,11 @@ template("zx_library") {
           # acknowledgement, override the default `.api` file location with
           # one under `//sdk/lib`.
           api = "//sdk/lib/$target_name/$target_name.api"
+
+          # bazel2gn may generate "api". Ignore it after confirming it matches.
+          if (defined(invoker.api)) {
+            assert(api == invoker.api, api)
+          }
         }
       }
 

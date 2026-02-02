@@ -351,6 +351,7 @@ idk_molecule(
         "//sdk/lib/memory_barriers:memory_barriers_idk",
         "//sdk/lib/stdcompat:stdcompat_idk",
         "//sdk/lib/utf-utils:utf-utils_idk",
+        "//zircon/system/ulib/sync:sync-cpp_idk",
         "//zircon/vdso/zx:zx_idk",
     ],
 )
@@ -450,6 +451,7 @@ filegroup(
         "//sdk/lib/stdcompat",
         "//sdk/lib/utf-utils",
         "//src/zircon/lib/zircon",
+        "//zircon/system/ulib/sync:sync-cpp",
         "//zircon/system/ulib/zx",
 
         # Build some of the underlying libraries on the host toolchain.

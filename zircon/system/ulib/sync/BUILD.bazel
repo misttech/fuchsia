@@ -1,0 +1,53 @@
+# Copyright 2025 The Fuchsia Authors. All rights reserved.
+# Use of this source code is governed by a BSD-style license that can be
+# found in the LICENSE file.
+
+load(
+    "//build/bazel/bazel_idk:defs.bzl",
+    "idk_cc_source_library",
+    "idk_cc_static_library_zx",
+)
+
+idk_cc_static_library_zx(
+    name = "sync",
+    srcs = [
+        "completion.c",
+        "condition.cc",
+        "mutex.c",
+    ],
+    hdrs = [
+        "include/lib/sync/completion.h",
+        "include/lib/sync/condition.h",
+        "include/lib/sync/internal/condition-template.h",
+        "include/lib/sync/internal/mutex-internal.h",
+        "include/lib/sync/mutex.h",
+    ],
+    api_area = "Kernel",
+    api_file_path = "//sdk/lib/sync:sync.api",
+    category = "partner",
+    idk_name = "sync",
+    implementation_deps = [
+        "//src/zircon/lib/zircon:zircon.as-needed",
+    ],
+    visibility = ["//visibility:public"],
+)
+
+idk_cc_source_library(
+    name = "sync-cpp",
+    hdrs = [
+        "include/lib/sync/cpp/completion.h",
+        "include/lib/sync/cpp/mutex.h",
+    ],
+    api_area = "Kernel",
+    category = "partner",
+    idk_name = "sync_cpp",
+    stable = True,
+    visibility = ["//visibility:public"],
+    deps = [
+        ":sync",
+        "//zircon/system/ulib/zx",
+    ],
+)
+
+# TODO(https://fxbug.dev/446911800): Remove when the issue is resolved.
+exports_files(["sync_cpp.api"])
