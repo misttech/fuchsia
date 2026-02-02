@@ -26,6 +26,7 @@ use netlink::messaging::{
     AccessControl, MessageWithPermission, NetlinkMessageWithCreds, Permission,
 };
 use netlink::multicast_groups::ModernGroup;
+use netlink::protocol_family::NetlinkClient as _;
 use netlink_packet_core::{
     ErrorMessage, NLM_F_ACK, NetlinkDeserializable, NetlinkMessage, NetlinkPayload,
     NetlinkSerializable,

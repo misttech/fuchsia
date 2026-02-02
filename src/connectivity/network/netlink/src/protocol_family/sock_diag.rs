@@ -66,15 +66,15 @@ impl MessageWithPermission for SockDiagRequest {
 /// A connection to the `NETLINK_SOCK_DIAG` protocol family.
 pub struct NetlinkSockDiagClient(pub(crate) ExternalClient<NetlinkSockDiag>);
 
-impl NetlinkSockDiagClient {
-    /// Sets the PID assigned to the client.
-    pub fn set_pid(&self, pid: NonZeroU32) {
+impl NetlinkClient for NetlinkSockDiagClient {
+    type Request = SockDiagRequest;
+
+    fn set_pid(&self, pid: NonZeroU32) {
         let NetlinkSockDiagClient(client) = self;
         client.set_port_number(pid)
     }
 
-    /// Adds the given multicast group membership.
-    pub fn add_membership(
+    fn add_membership(
         &self,
         group: ModernGroup,
     ) -> Result<AsyncWorkCompletionWaiter, InvalidModernGroupError> {
@@ -82,32 +82,17 @@ impl NetlinkSockDiagClient {
         client.add_membership(group)
     }
 
-    /// Deletes the given multicast group membership.
-    pub fn del_membership(&self, group: ModernGroup) -> Result<(), InvalidModernGroupError> {
+    fn del_membership(&self, group: ModernGroup) -> Result<(), InvalidModernGroupError> {
         let NetlinkSockDiagClient(client) = self;
         client.del_membership(group)
-    }
-
-    /// Sets the legacy multicast group memberships.
-    pub fn set_legacy_memberships(
-        &self,
-        legacy_memberships: LegacyGroups,
-    ) -> Result<AsyncWorkCompletionWaiter, InvalidLegacyGroupsError> {
-        let NetlinkSockDiagClient(client) = self;
-        client.set_legacy_memberships(legacy_memberships)
-    }
-}
-
-impl NetlinkClient for NetlinkSockDiagClient {
-    fn set_pid(&self, pid: NonZeroU32) {
-        self.set_pid(pid)
     }
 
     fn set_legacy_memberships(
         &self,
         legacy_memberships: LegacyGroups,
     ) -> Result<AsyncWorkCompletionWaiter, InvalidLegacyGroupsError> {
-        self.set_legacy_memberships(legacy_memberships)
+        let NetlinkSockDiagClient(client) = self;
+        client.set_legacy_memberships(legacy_memberships)
     }
 }
 

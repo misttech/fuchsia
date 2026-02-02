@@ -13,6 +13,7 @@ use netlink_packet_utils::DecodeError;
 
 use std::fmt::Debug;
 use std::hash::Hash;
+use std::num::NonZeroU32;
 
 // TODO(https://github.com/rust-lang/rust/issues/91611): Replace this with
 // #![feature(async_fn_in_trait)] once it supports `Send` bounds. See
@@ -71,10 +72,26 @@ pub(crate) trait NetlinkFamilyRequestHandler<F: ProtocolFamily, S: Sender<F::Res
     );
 }
 
-/// A client of a Netlink protocol family that supports common bind operations.
-pub trait NetlinkClient {
+/// A client of a Netlink protocol family.
+pub trait NetlinkClient: Send + Sync {
+    /// The request message type associated with this client's protocol family.
+    type Request: Clone
+        + Debug
+        + NetlinkDeserializable<Error: Into<DecodeError>>
+        + MessageWithPermission
+        + Send;
+
     /// Sets the PID assigned to the client.
-    fn set_pid(&self, pid: std::num::NonZeroU32);
+    fn set_pid(&self, pid: NonZeroU32);
+
+    /// Adds the given multicast group membership.
+    fn add_membership(
+        &self,
+        group: ModernGroup,
+    ) -> Result<AsyncWorkCompletionWaiter, InvalidModernGroupError>;
+
+    /// Deletes the given multicast group membership.
+    fn del_membership(&self, group: ModernGroup) -> Result<(), InvalidModernGroupError>;
 
     /// Sets the legacy multicast group memberships.
     fn set_legacy_memberships(
@@ -89,7 +106,7 @@ pub mod route {
     use super::*;
 
     use std::fmt::Display;
-    use std::num::{NonZeroU32, NonZeroU64};
+    use std::num::NonZeroU64;
 
     use fidl_fuchsia_net_routes_ext as fnet_routes_ext;
 
@@ -1339,15 +1356,15 @@ pub mod route {
     /// A connection to the Route Netlink Protocol family.
     pub struct NetlinkRouteClient(pub(crate) ExternalClient<NetlinkRoute>);
 
-    impl NetlinkRouteClient {
-        /// Sets the PID assigned to the client.
-        pub fn set_pid(&self, pid: NonZeroU32) {
+    impl NetlinkClient for NetlinkRouteClient {
+        type Request = RouteNetlinkMessage;
+
+        fn set_pid(&self, pid: NonZeroU32) {
             let NetlinkRouteClient(client) = self;
             client.set_port_number(pid)
         }
 
-        /// Adds the given multicast group membership.
-        pub fn add_membership(
+        fn add_membership(
             &self,
             group: ModernGroup,
         ) -> Result<AsyncWorkCompletionWaiter, InvalidModernGroupError> {
@@ -1355,32 +1372,17 @@ pub mod route {
             client.add_membership(group)
         }
 
-        /// Deletes the given multicast group membership.
-        pub fn del_membership(&self, group: ModernGroup) -> Result<(), InvalidModernGroupError> {
+        fn del_membership(&self, group: ModernGroup) -> Result<(), InvalidModernGroupError> {
             let NetlinkRouteClient(client) = self;
             client.del_membership(group)
-        }
-
-        /// Sets the legacy multicast group memberships.
-        pub fn set_legacy_memberships(
-            &self,
-            legacy_memberships: LegacyGroups,
-        ) -> Result<AsyncWorkCompletionWaiter, InvalidLegacyGroupsError> {
-            let NetlinkRouteClient(client) = self;
-            client.set_legacy_memberships(legacy_memberships)
-        }
-    }
-
-    impl NetlinkClient for NetlinkRouteClient {
-        fn set_pid(&self, pid: NonZeroU32) {
-            self.set_pid(pid)
         }
 
         fn set_legacy_memberships(
             &self,
             legacy_memberships: LegacyGroups,
         ) -> Result<AsyncWorkCompletionWaiter, InvalidLegacyGroupsError> {
-            self.set_legacy_memberships(legacy_memberships)
+            let NetlinkRouteClient(client) = self;
+            client.set_legacy_memberships(legacy_memberships)
         }
     }
 }
