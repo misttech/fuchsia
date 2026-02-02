@@ -308,7 +308,7 @@ impl FsNodeOps for ProcSysNetIpv6Conf {
                 );
                 dir.entry(
                     "use_tempaddr",
-                    StubBytesFile::new_node(bug_ref!("https://fxbug.dev/423646346")),
+                    new_interface_config_file_node::<UseTempAddr>(interface),
                     FILE_MODE,
                 );
                 dir.entry(
@@ -1027,5 +1027,60 @@ impl<I: Ip> InterfaceConfig for RetransTimeMs<I> {
             zx::Duration::<zx::BootTimeline>::from_nanos(retrans_timer_ns).into_millis(),
         )
         .map_err(|_| errno!(EIO))?)
+    }
+}
+
+struct UseTempAddr;
+
+impl InterfaceConfig for UseTempAddr {
+    fn try_from_i32(value: i32) -> Result<fidl_fuchsia_net_interfaces_admin::Configuration, Errno> {
+        // use_tempaddr - INTEGER
+        // Preference for Privacy Extensions (RFC3041).
+        // <= 0 : disable Privacy Extensions
+        // == 1 : enable Privacy Extensions, but prefer public
+        //      addresses over temporary addresses.
+        // >  1 : enable Privacy Extensions and prefer temporary
+        //      addresses over public addresses.
+        //
+        // Netstack only supports disable (<=0) or enable (>1). 1 is not a
+        // sensible option. We will make it more strict by interpreting 1 as
+        // >1.
+        if value == 1 {
+            log_warn!(
+                "use_tempaddr=1 is not supported, treating it as enabled and we will prefer temporary addresses over public addresses"
+            );
+        }
+        let use_tempaddr = value >= 1;
+        Ok(fnet_interfaces_admin::Configuration {
+            ipv6: Some(fnet_interfaces_admin::Ipv6Configuration {
+                ndp: Some(fnet_interfaces_admin::NdpConfiguration {
+                    slaac: Some(fnet_interfaces_admin::SlaacConfiguration {
+                        temporary_address: Some(use_tempaddr),
+                        ..Default::default()
+                    }),
+                    ..Default::default()
+                }),
+                ..Default::default()
+            }),
+            ..Default::default()
+        })
+    }
+
+    fn try_into_i32(
+        config: fidl_fuchsia_net_interfaces_admin::Configuration,
+    ) -> Result<i32, Errno> {
+        config
+            .ipv6
+            .and_then(|ipv6| ipv6.ndp)
+            .and_then(|ndp| ndp.slaac)
+            .and_then(|slacc| slacc.temporary_address)
+            // We deviate from Linux here by not remembering the original
+            // value, this is acceptable for now and we should revisit if it
+            // causes issues.
+            .map(|use_tempaddr| if use_tempaddr { 2 } else { 0 })
+            .ok_or_else(|| {
+                log_error!("network interface config missing ipv6 ndp slacc temporary_address");
+                errno!(EIO)
+            })
     }
 }

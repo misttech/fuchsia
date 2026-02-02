@@ -111,7 +111,6 @@ fbl::unique_fd NewTunDevice(const char *name) {
 
   return fbl::unique_fd(tun);
 }
-}  // namespace
 
 class SysctlTest : public ::testing::Test {};
 
@@ -239,33 +238,38 @@ TEST_F(SysctlTest, DisableIpv6Default) {
   ASSERT_STREQ(disable_ipv6_str.c_str(), "1\n");
 }
 
-class SysctlTestReadBack : public SysctlTest, public ::testing::WithParamInterface<std::string> {};
+struct SysctlTestReadBackParam {
+  std::string path;
+  int32_t value;
+};
+
+class SysctlTestReadBack : public SysctlTest,
+                           public ::testing::WithParamInterface<SysctlTestReadBackParam> {};
 
 TEST_P(SysctlTestReadBack, ReadBack) {
   if (!test_helper::HasCapability(CAP_NET_ADMIN)) {
-    GTEST_SKIP() << "Need CAP_NET_ADMIN to run SysctlTest";
+    GTEST_SKIP() << "Need CAP_NET_ADMIN to run SysctlTestReadBack";
   }
-  const std::string &path = GetParam();
-  const char *toWrite = "10\n";
-  // Linux internally translates milliseconds to jiffies, if the value is too
-  // small, then precision will get lost when scaling up and down.
-  if (path.ends_with("_ms")) {
-    toWrite = "1000\n";
-  }
-  std::string toRead;
-  ASSERT_TRUE(files::WriteFile(path, toWrite)) << strerror(errno);
-  ASSERT_TRUE(files::ReadFileToString(path, &toRead)) << strerror(errno);
-  ASSERT_STREQ(toRead.c_str(), toWrite);
+  const auto &[path, value] = GetParam();
+  std::string to_write = std::format("{}\n", value);
+  ASSERT_TRUE(files::WriteFile(path, to_write)) << strerror(errno);
+  std::string to_read;
+  ASSERT_TRUE(files::ReadFileToString(path, &to_read)) << strerror(errno);
+  ASSERT_EQ(to_read, to_write);
 }
 
 INSTANTIATE_TEST_SUITE_P(
     SysctlTest, SysctlTestReadBack,
-    ::testing::Values("/proc/sys/net/ipv6/neigh/default/ucast_solicit",
-                      "/proc/sys/net/ipv4/neigh/default/ucast_solicit",
-                      "/proc/sys/net/ipv6/neigh/default/mcast_resolicit",
-                      "/proc/sys/net/ipv4/neigh/default/mcast_resolicit",
-                      "/proc/sys/net/ipv6/conf/default/dad_transmits",
-                      "/proc/sys/net/ipv6/neigh/default/base_reachable_time_ms",
-                      "/proc/sys/net/ipv4/neigh/default/base_reachable_time_ms",
-                      "/proc/sys/net/ipv6/neigh/default/retrans_time_ms",
-                      "/proc/sys/net/ipv4/neigh/default/retrans_time_ms"));
+    ::testing::Values(
+        SysctlTestReadBackParam{"/proc/sys/net/ipv6/neigh/default/ucast_solicit", 3},
+        SysctlTestReadBackParam{"/proc/sys/net/ipv4/neigh/default/ucast_solicit", 3},
+        SysctlTestReadBackParam{"/proc/sys/net/ipv6/neigh/default/mcast_resolicit", 3},
+        SysctlTestReadBackParam{"/proc/sys/net/ipv4/neigh/default/mcast_resolicit", 3},
+        SysctlTestReadBackParam{"/proc/sys/net/ipv6/conf/default/dad_transmits", 1},
+        SysctlTestReadBackParam{"/proc/sys/net/ipv6/neigh/default/base_reachable_time_ms", 2000},
+        SysctlTestReadBackParam{"/proc/sys/net/ipv4/neigh/default/base_reachable_time_ms", 2000},
+        SysctlTestReadBackParam{"/proc/sys/net/ipv6/neigh/default/retrans_time_ms", 2000},
+        SysctlTestReadBackParam{"/proc/sys/net/ipv4/neigh/default/retrans_time_ms", 2000},
+        SysctlTestReadBackParam{"/proc/sys/net/ipv6/conf/default/use_tempaddr", 0},
+        SysctlTestReadBackParam{"/proc/sys/net/ipv6/conf/default/use_tempaddr", 2}));
+}  // namespace
