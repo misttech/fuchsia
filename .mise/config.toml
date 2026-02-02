@@ -15,4 +15,6 @@ _.path = [
     "{{ config_root }}/.jiri_root/bin",
     # Provides clang, go, python, rustc, etc.
     "{{ exec(command=\"source $FUCHSIA_DIR/tools/devshell/lib/platform.sh && echo -n $PREBUILT_ALL_PATHS\") }}",
+    # Provides jq, trace_processor_shell, etc.
+    "{{ exec(command=\"source $FUCHSIA_DIR/tools/devshell/lib/platform.sh && echo -n $PREBUILT_TOOL_PATHS\") }}",
 ]
