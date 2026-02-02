@@ -444,6 +444,13 @@ with_display_envs = [
   vim3_env,
 ]
 
+# Devices that can run display capture.
+with_display_capture_envs = [
+  astro_env,
+  sherlock_env,
+  vim3_env,
+]
+
 chromebook_envs = [ atlas_env ]
 
 ### Select environment lists ###
