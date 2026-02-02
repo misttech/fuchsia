@@ -40,8 +40,8 @@ def _idk_cc_source_library_impl(
         hdrs_for_internal_use,
         srcs,
         deps,
-        implementation_deps,
         fuchsia_deps,
+        implementation_deps,
         include_base,
         api_file_path,
         testonly,
@@ -303,13 +303,6 @@ GN equivalent: `public_deps`""",
             default = [],
             configurable = False,
         ),
-        "implementation_deps": attr.label_list(
-            doc = """List of labels for other IDK elements this element depends on at build time.
-These labels must point to targets with corresponding `_create_idk_atom()` targets.
-GN equivalent: `deps`.""",
-            default = [],
-            configurable = False,
-        ),
         "fuchsia_deps": attr.label_list(
             doc = """List of labels for other IDK elements this element publicly depends on at
 build time only when targeting Fuchsia.
@@ -318,6 +311,13 @@ GN equivalent: `public_deps +=` inside an `if (is_fuchsia) {}` statement.
 GN note: If `bazel2gn` is run on the target, `fuchsia_deps` must come after `deps.
 This may require adding `# buildifier: leave-alone` above the target definition to
 disable reordering by the formatter.""",
+            default = [],
+            configurable = False,
+        ),
+        "implementation_deps": attr.label_list(
+            doc = """List of labels for other IDK elements this element depends on at build time.
+These labels must point to targets with corresponding `_create_idk_atom()` targets.
+GN equivalent: `deps`.""",
             default = [],
             configurable = False,
         ),

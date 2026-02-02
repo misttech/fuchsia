@@ -35,8 +35,8 @@ def _idk_cc_prebuilt_library_impl(
         hdrs_for_internal_use,
         srcs,
         deps,
-        implementation_deps,
         fuchsia_deps,
+        implementation_deps,
         runtime_deps,
         include_base,
         api_file_path,
@@ -426,11 +426,6 @@ GN equivalent: `public_deps`""",
             default = [],
             configurable = False,
         ),
-        "implementation_deps": attr.label_list(
-            doc = """List of labels this element depends on at build time.
-GN equivalent: `deps`.""",
-            default = [],
-        ),
         "fuchsia_deps": attr.label_list(
             doc = """List of labels for other IDK elements this element publicly depends on at
 build time only when targeting Fuchsia.
@@ -441,6 +436,11 @@ This may require adding `# buildifier: leave-alone` above the target definition 
 disable reordering by the formatter.""",
             default = [],
             configurable = False,
+        ),
+        "implementation_deps": attr.label_list(
+            doc = """List of labels this element depends on at build time.
+GN equivalent: `deps`.""",
+            default = [],
         ),
         "runtime_deps": attr.label_list(
             doc = """List of labels representing the library's runtime dependencies.
