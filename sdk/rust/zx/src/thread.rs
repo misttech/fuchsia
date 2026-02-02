@@ -58,7 +58,7 @@ impl Thread {
     ///
     /// Wraps the
     /// [zx_object_set_profile](https://fuchsia.dev/fuchsia-src/reference/syscalls/object_set_profile) syscall.
-    pub fn set_profile(&self, profile: Profile, options: u32) -> Result<(), Status> {
+    pub fn set_profile(&self, profile: &Profile, options: u32) -> Result<(), Status> {
         let thread_raw = self.raw_handle();
         let profile_raw = profile.raw_handle();
         let status = unsafe { sys::zx_object_set_profile(thread_raw, profile_raw, options) };
