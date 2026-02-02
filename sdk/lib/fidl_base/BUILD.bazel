@@ -1,0 +1,79 @@
+# Copyright 2025 The Fuchsia Authors. All rights reserved.
+# Use of this source code is governed by a BSD-style license that can be
+# found in the LICENSE file.
+
+# LINT.IfChange
+
+load("@rules_cc//cc:defs.bzl", "cc_library")
+load("//build/bazel/bazel_idk:defs.bzl", "idk_cc_source_library")
+
+# Header-only library for transaction header utilities.
+#
+# If an early bootstrapping library cannot be built with sanitizers, it may
+# depend on this library to initialize and validate transaction headers, as
+# opposed to `fidl_base` which might be built with sanitizers, or manually
+# initializing transaction headers which is brittle.
+cc_library(
+    name = "fidl_txn_header",
+    hdrs = ["include/lib/fidl/txn_header.h"],
+    includes = ["include"],
+    deps = ["//src/zircon/lib/zircon"],
+)
+
+# Base library used by both Fuchsia and host
+#
+# "fidl_base" is used in low-level contexts such as early system
+# boot, hence cannot depend on the C++ standard library, and must only introduce
+# minimal symbols into dependent targets. As such, these libraries need to be
+# static libraries rather than source sets, as we need the Unix librarian
+# algorithm to apply so that only object files corresponding to the used
+# functions will be linked to the final binary.
+#
+# These requirements only apply to binaries built in GN, but we keep the
+# Bazel build consistent.
+# Bazel's `cc_library()` always creates at least a `.a` file, and the default
+# `alwayslink = False` avoids dependent binaries linking unreferenced symbols.
+idk_cc_source_library(
+    name = "fidl_base",
+    srcs = [
+        "decoding_and_validating.cc",
+        "formatting.cc",
+        "handle_close_many.cc",
+        "internal.c",
+        "wire_format_metadata.cc",
+    ],
+    hdrs = [
+        "include/lib/fidl/coding.h",
+        "include/lib/fidl/cpp/features.h",
+        "include/lib/fidl/cpp/framework_err.h",
+        "include/lib/fidl/cpp/time.h",
+        "include/lib/fidl/cpp/transaction_header.h",
+        "include/lib/fidl/cpp/wire_format_metadata.h",
+        "include/lib/fidl/internal.h",
+        "include/lib/fidl/internal_callable_traits.h",
+        "include/lib/fidl/txn_header.h",
+        "include/lib/fidl/visitor.h",
+        "include/lib/fidl/walker.h",
+    ],
+    api_area = "FIDL",
+    build_as_static = True,
+    category = "partner",
+    idk_name = "fidl_base",
+    implementation_deps = [
+        "//sdk/lib/fit",
+        "//sdk/lib/utf-utils",
+    ],
+    stable = True,
+    visibility = ["//visibility:public"],
+    deps = ["//src/zircon/lib/zircon"],
+
+    # TODO(https://fxbug.dev/421888626): Implement the equivalent of this from the GN file.
+    # if (is_fuchsia) {
+    #   configs += [ "//build/config/fuchsia:no_cpp_standard_library" ]
+    # }
+)
+
+# TODO(https://fxbug.dev/446911800): Remove when the issue is resolved.
+exports_files(["fidl_base.api"])
+
+# LINT.ThenChange(BUILD.gn)

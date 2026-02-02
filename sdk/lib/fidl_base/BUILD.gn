@@ -2,6 +2,10 @@
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
+# This file has logic that cannot currently be replicated in BUILD.bazel.
+# That could potentially change.
+# LINT.IfChange
+
 import("//build/cpp/sdk_source_set.gni")
 
 # Header-only library for transaction header utilities.
@@ -70,3 +74,4 @@ sdk_source_set("fidl_base") {
 config("fidl_base.headers") {
   include_dirs = [ "include" ]
 }
+# LINT.ThenChange(BUILD.bazel)
