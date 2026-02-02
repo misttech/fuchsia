@@ -48,13 +48,26 @@ pub enum IeType {
         id: Id,
         extension: Option<u8>,
     },
-    Vendor {
+    // Known specific vendor IE with 4 bytes header (OUI + OUI type), such as Owe Transition IE.
+    Vendor4 {
+        vendor_ie_hdr: [u8; 4], // OUI (3B), OUI type (1B)
+    },
+    // Known specific vendor IE with 6 bytes header (OUI + OUI type + type + subtype), such as
+    // WMM Param and WMM Info IEs.
+    //
+    // Unknown vendor IEs are also placed here.
+    // TODO(https://fxbug.dev/42150940): Consider adding a separate variant for unknown vendor IEs
+    Vendor6 {
         // TODO(https://fxbug.dev/42150940): The Vendor Specific element defined by IEEE 802.11-2016 9.4.2.26
         // does not have a header length of 6. Instead, the OUI is noted to be either 3 or 5
         // bytes and the vendor determines the remainder of the contents.
-        vendor_ie_hdr: [u8; 6], // OUI, OUI type, version
+        vendor_ie_hdr: [u8; 6], // OUI (3B), OUI type (1B), type (1B), subtype (1B)
     },
 }
+
+const OWE_TRANSITION_HEADER: [u8; 4] = [0x50, 0x6f, 0x9a, 0x1c];
+const WMM_INFO_HEADER: [u8; 6] = [0x00, 0x50, 0xf2, 0x02, 0x00, 0x01];
+const WMM_PARAM_HEADER: [u8; 6] = [0x00, 0x50, 0xf2, 0x02, 0x01, 0x01];
 
 macro_rules! ie_type_basic_const {
     ($id:ident) => {
@@ -90,8 +103,9 @@ impl IeType {
     ie_type_basic_const!(CHANNEL_SWITCH_WRAPPER);
     ie_type_basic_const!(RSNXE);
 
-    pub const WMM_INFO: Self = Self::new_vendor([0x00, 0x50, 0xf2, 0x02, 0x00, 0x01]);
-    pub const WMM_PARAM: Self = Self::new_vendor([0x00, 0x50, 0xf2, 0x02, 0x01, 0x01]);
+    pub const OWE_TRANSITION: Self = Self::new_vendor4(OWE_TRANSITION_HEADER);
+    pub const WMM_INFO: Self = Self::new_vendor6(WMM_INFO_HEADER);
+    pub const WMM_PARAM: Self = Self::new_vendor6(WMM_PARAM_HEADER);
 
     pub const fn new_basic(id: Id) -> Self {
         Self::Ieee { id, extension: None }
@@ -101,14 +115,30 @@ impl IeType {
         Self::Ieee { id: Id::EXTENSION, extension: Some(ext_id) }
     }
 
-    pub const fn new_vendor(vendor_ie_hdr: [u8; 6]) -> Self {
-        Self::Vendor { vendor_ie_hdr }
+    pub fn new_vendor(vendor_ie_body: &[u8]) -> Option<Self> {
+        if vendor_ie_body.len() >= 4 && vendor_ie_body[0..4] == OWE_TRANSITION_HEADER {
+            Some(Self::OWE_TRANSITION)
+        } else if vendor_ie_body.len() >= 6 {
+            let mut header = [0u8; 6];
+            header.copy_from_slice(&vendor_ie_body[0..6]);
+            Some(Self::new_vendor6(header))
+        } else {
+            None
+        }
+    }
+
+    pub const fn new_vendor4(vendor_ie_hdr: [u8; 4]) -> Self {
+        Self::Vendor4 { vendor_ie_hdr }
+    }
+
+    pub const fn new_vendor6(vendor_ie_hdr: [u8; 6]) -> Self {
+        Self::Vendor6 { vendor_ie_hdr }
     }
 
     pub const fn basic_id(&self) -> Id {
         match self {
             Self::Ieee { id, .. } => *id,
-            Self::Vendor { .. } => Id::VENDOR_SPECIFIC,
+            Self::Vendor4 { .. } | Self::Vendor6 { .. } => Id::VENDOR_SPECIFIC,
         }
     }
 
@@ -123,7 +153,8 @@ impl IeType {
             Self::Ieee { extension, .. } => {
                 extension.as_ref().map(|ext_id| std::slice::from_ref(ext_id)).unwrap_or(&[])
             }
-            Self::Vendor { vendor_ie_hdr } => &vendor_ie_hdr[..],
+            Self::Vendor4 { vendor_ie_hdr } => &vendor_ie_hdr[..],
+            Self::Vendor6 { vendor_ie_hdr } => &vendor_ie_hdr[..],
         }
     }
 }
@@ -141,10 +172,19 @@ impl std::cmp::Ord for IeType {
                 Self::Ieee { extension: Some(ext_id), .. },
                 Self::Ieee { extension: Some(other_ext_id), .. },
             ) => ext_id.cmp(other_ext_id),
-            (Self::Vendor { vendor_ie_hdr }, Self::Vendor { vendor_ie_hdr: other_hdr }) => {
+            (Self::Vendor4 { vendor_ie_hdr }, Self::Vendor4 { vendor_ie_hdr: other_hdr }) => {
                 vendor_ie_hdr.cmp(other_hdr)
             }
-            _ => self.basic_id().0.cmp(&other.basic_id().0),
+            (Self::Vendor6 { vendor_ie_hdr }, Self::Vendor6 { vendor_ie_hdr: other_hdr }) => {
+                vendor_ie_hdr.cmp(other_hdr)
+            }
+            (Self::Ieee { .. }, _) | (_, Self::Ieee { .. }) => {
+                self.basic_id().0.cmp(&other.basic_id().0)
+            }
+            (Self::Vendor4 { .. }, Self::Vendor6 { .. })
+            | (Self::Vendor6 { .. }, Self::Vendor4 { .. }) => {
+                self.extra_bytes().cmp(other.extra_bytes())
+            }
         }
     }
 }
@@ -157,13 +197,16 @@ mod tests {
     fn test_ie_type() {
         let basic = IeType::new_basic(Id::SSID);
         let extended = IeType::new_extended(2);
-        let vendor = IeType::new_vendor([1, 2, 3, 4, 5, 6]);
+        let vendor4 = IeType::new_vendor4([1, 2, 3, 4]);
+        let vendor6 = IeType::new_vendor6([1, 2, 3, 4, 5, 6]);
 
         assert_eq!(basic, IeType::Ieee { id: Id::SSID, extension: None });
         assert_eq!(extended, IeType::Ieee { id: Id::EXTENSION, extension: Some(2) });
-        assert_eq!(vendor, IeType::Vendor { vendor_ie_hdr: [1, 2, 3, 4, 5, 6] });
+        assert_eq!(vendor4, IeType::Vendor4 { vendor_ie_hdr: [1, 2, 3, 4] });
+        assert_eq!(vendor6, IeType::Vendor6 { vendor_ie_hdr: [1, 2, 3, 4, 5, 6] });
         assert_eq!(basic.basic_id(), Id::SSID);
         assert_eq!(extended.basic_id(), Id::EXTENSION);
-        assert_eq!(vendor.basic_id(), Id::VENDOR_SPECIFIC);
+        assert_eq!(vendor4.basic_id(), Id::VENDOR_SPECIFIC);
+        assert_eq!(vendor6.basic_id(), Id::VENDOR_SPECIFIC);
     }
 }

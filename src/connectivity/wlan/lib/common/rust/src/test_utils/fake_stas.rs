@@ -795,7 +795,7 @@ mod tests {
             ssid: Ssid::try_from("fuchsia").unwrap(),
             rates: vec![11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24],
             ies_overrides: IesOverrides::new()
-                .remove(IeType::new_vendor([0x00, 0x0b, 0x86, 0x01, 0x04, 0x08]))
+                .remove(IeType::new_vendor6([0x00, 0x0b, 0x86, 0x01, 0x04, 0x08]))
                 .set(IeType::DSSS_PARAM_SET, [136].to_vec()),
         );
 

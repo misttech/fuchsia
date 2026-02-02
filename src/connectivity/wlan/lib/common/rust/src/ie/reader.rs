@@ -70,13 +70,7 @@ impl<B: SplitByteSlice> Iterator for IeSummaryIter<B> {
             let start_idx = self.0.bytes_read();
             let body = self.0.read_bytes(body_len).unwrap();
             let ie_type = match header.id {
-                Id::VENDOR_SPECIFIC => {
-                    if body.len() >= 6 {
-                        Some(IeType::new_vendor(body[0..6].try_into().unwrap()))
-                    } else {
-                        None
-                    }
-                }
+                Id::VENDOR_SPECIFIC => IeType::new_vendor(&body[..]),
                 Id::EXTENSION => {
                     if body.len() >= 1 {
                         Some(IeType::new_extended(body[0]))
@@ -89,7 +83,7 @@ impl<B: SplitByteSlice> Iterator for IeSummaryIter<B> {
             // If IE type is valid, return the IE block. Otherwise, skip to the next one.
             match ie_type {
                 Some(ie_type) => {
-                    return Some((ie_type, start_idx + ie_type.extra_len()..start_idx + body_len))
+                    return Some((ie_type, start_idx + ie_type.extra_len()..start_idx + body_len));
                 }
                 None => (),
             }
@@ -137,6 +131,7 @@ mod tests {
         let bytes = vec![
             0, 2, 10, 20, // IE with no extension ID
             1, 0, // Empty IE
+            0xdd, 0x05, 0x50, 0x6f, 0x9a, 0x1c, 0xaa, // Vendor IE with known header
             0xdd, 0x09, 0x00, 0x03, 0x7f, 0x01, 0x01, 0x00, 0x00, 0xff, 0x7f, // Vendor IE
             255, 2, 5, 1, // IE with extension ID
         ];
@@ -144,8 +139,9 @@ mod tests {
         let expected = &[
             (IeType::new_basic(Id::SSID), 2..4),
             (IeType::new_basic(Id::SUPPORTED_RATES), 6..6),
-            (IeType::new_vendor([0x00, 0x03, 0x7f, 0x01, 0x01, 0x00]), 14..17),
-            (IeType::new_extended(5), 20..21),
+            (IeType::new_vendor4([0x50, 0x6f, 0x9a, 0x1c]), 12..13),
+            (IeType::new_vendor6([0x00, 0x03, 0x7f, 0x01, 0x01, 0x00]), 21..24),
+            (IeType::new_extended(5), 27..28),
         ];
         assert_eq!(&elems[..], expected);
     }
@@ -165,7 +161,7 @@ mod tests {
         let expected = &[
             (IeType::new_basic(Id::SSID), 2..4),
             (IeType::new_basic(Id::SUPPORTED_RATES), 6..6),
-            (IeType::new_vendor([0x00, 0x03, 0x7f, 0x01, 0x01, 0x00]), 21..24),
+            (IeType::new_vendor6([0x00, 0x03, 0x7f, 0x01, 0x01, 0x00]), 21..24),
             (IeType::new_extended(5), 29..30),
         ];
         assert_eq!(&elems[..], expected);

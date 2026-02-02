@@ -483,6 +483,7 @@ mod tests {
     fn test_ie_updater_get() {
         let ies = vec![
             0, 2, 10, 20, // IE with no extension ID
+            0xdd, 0x05, 0x50, 0x6f, 0x9a, 0x1c, 0xaa, // Vendor IE with known header
             0xdd, 0x09, 0x00, 0x03, 0x7f, 0x01, 0x01, 0x00, 0x00, 0xff, 0x7f, // Vendor IE
             255, 2, 5, 1, // IE with extension ID
         ];
@@ -490,14 +491,19 @@ mod tests {
 
         assert_eq!(ies_updater.get(&IeType::SSID), Some(&[10, 20][..]));
         assert_eq!(
-            ies_updater.get(&IeType::new_vendor([0x00, 0x03, 0x7f, 0x01, 0x01, 0x00])),
+            ies_updater.get(&IeType::new_vendor4([0x50, 0x6f, 0x9a, 0x1c])),
+            Some(&[0xaa][..])
+        );
+        assert_eq!(
+            ies_updater.get(&IeType::new_vendor6([0x00, 0x03, 0x7f, 0x01, 0x01, 0x00])),
             Some(&[0x00, 0xff, 0x7f][..])
         );
         assert_eq!(ies_updater.get(&IeType::new_extended(5)), Some(&[1][..]));
 
         assert_eq!(ies_updater.get(&IeType::SUPPORTED_RATES), None);
+        assert_eq!(ies_updater.get(&IeType::new_vendor4([0x50, 0x6f, 0x9a, 0x1d])), None);
         assert_eq!(
-            ies_updater.get(&IeType::new_vendor([0x00, 0x03, 0x7f, 0x01, 0x01, 0x01])),
+            ies_updater.get(&IeType::new_vendor6([0x00, 0x03, 0x7f, 0x01, 0x01, 0x01])),
             None
         );
         assert_eq!(ies_updater.get(&IeType::new_extended(6)), None);
@@ -507,6 +513,7 @@ mod tests {
     fn test_ie_updater_set_replace() {
         let ies = vec![
             0, 2, 10, 20, // IE with no extension ID
+            0xdd, 0x05, 0x50, 0x6f, 0x9a, 0x1c, 0xaa, // Vendor IE with known header
             0xdd, 0x09, 0x00, 0x03, 0x7f, 0x01, 0x01, 0x00, 0x00, 0xff, 0x7f, // Vendor IE
             255, 2, 5, 1, // IE with extension ID
         ];
@@ -514,13 +521,20 @@ mod tests {
 
         ies_updater.set(IeType::SSID, &[30, 40, 50]).expect("set basic succeeds");
         ies_updater
-            .set(IeType::new_vendor([0x00, 0x03, 0x7f, 0x01, 0x01, 0x00]), &[1, 3, 3, 7])
+            .set(IeType::new_vendor4([0x50, 0x6f, 0x9a, 0x1c]), &[0xbb])
+            .expect("set vendor succeeds");
+        ies_updater
+            .set(IeType::new_vendor6([0x00, 0x03, 0x7f, 0x01, 0x01, 0x00]), &[1, 3, 3, 7])
             .expect("set vendor succeeds");
         ies_updater.set(IeType::new_extended(5), &[4, 2]).expect("set extended succeeds");
 
         assert_eq!(ies_updater.get(&IeType::SSID), Some(&[30, 40, 50][..]));
         assert_eq!(
-            ies_updater.get(&IeType::new_vendor([0x00, 0x03, 0x7f, 0x01, 0x01, 0x00])),
+            ies_updater.get(&IeType::new_vendor4([0x50, 0x6f, 0x9a, 0x1c])),
+            Some(&[0xbb][..])
+        );
+        assert_eq!(
+            ies_updater.get(&IeType::new_vendor6([0x00, 0x03, 0x7f, 0x01, 0x01, 0x00])),
             Some(&[1, 3, 3, 7][..])
         );
         assert_eq!(ies_updater.get(&IeType::new_extended(5)), Some(&[4, 2][..]));
@@ -530,6 +544,7 @@ mod tests {
             &[
                 0, 3, 30, 40, 50, // IE with no extension ID
                 0xdd, 0x0a, 0x00, 0x03, 0x7f, 0x01, 0x01, 0x00, 1, 3, 3, 7, // Vendor IE
+                0xdd, 0x05, 0x50, 0x6f, 0x9a, 0x1c, 0xbb, // Vendor IE with known header
                 255, 3, 5, 4, 2, // IE with extension ID
             ]
         );
@@ -546,13 +561,13 @@ mod tests {
 
         ies_updater.set(IeType::SUPPORTED_RATES, &[30, 40, 50]).expect("set basic succeeds");
         ies_updater
-            .set(IeType::new_vendor([0x00, 0x03, 0x7f, 0x01, 0x01, 0x01]), &[1, 3, 3, 7])
+            .set(IeType::new_vendor6([0x00, 0x03, 0x7f, 0x01, 0x01, 0x01]), &[1, 3, 3, 7])
             .expect("set vendor succeeds");
         ies_updater.set(IeType::new_extended(6), &[4, 2]).expect("set extended succeeds");
 
         assert_eq!(ies_updater.get(&IeType::SUPPORTED_RATES), Some(&[30, 40, 50][..]));
         assert_eq!(
-            ies_updater.get(&IeType::new_vendor([0x00, 0x03, 0x7f, 0x01, 0x01, 0x01])),
+            ies_updater.get(&IeType::new_vendor6([0x00, 0x03, 0x7f, 0x01, 0x01, 0x01])),
             Some(&[1, 3, 3, 7][..])
         );
         assert_eq!(ies_updater.get(&IeType::new_extended(6)), Some(&[4, 2][..]));
@@ -580,7 +595,7 @@ mod tests {
         let mut ies_updater = IesUpdater::new(ies);
         ies_updater.set(IeType::SSID, &[11; 256]).expect_err("set basic fails");
         ies_updater
-            .set(IeType::new_vendor([0x00, 0x03, 0x7f, 0x01, 0x01, 0x00]), &[11; 250])
+            .set(IeType::new_vendor6([0x00, 0x03, 0x7f, 0x01, 0x01, 0x00]), &[11; 250])
             .expect_err("set vendor fails");
         ies_updater.set(IeType::new_extended(5), &[11; 255]).expect_err("set extended fails");
 
@@ -612,6 +627,7 @@ mod tests {
     fn test_ie_updater_remove() {
         let ies = vec![
             0, 2, 10, 20, // IE with no extension ID
+            0xdd, 0x05, 0x50, 0x6f, 0x9a, 0x1c, 0xaa, // Vendor IE with known header
             0xdd, 0x09, 0x00, 0x03, 0x7f, 0x01, 0x01, 0x00, 0x00, 0xff, 0x7f, // Vendor IE
             255, 2, 5, 1, // IE with extension ID
         ];
@@ -623,20 +639,34 @@ mod tests {
             ies_updater.finalize(),
             &[
                 0xdd, 0x09, 0x00, 0x03, 0x7f, 0x01, 0x01, 0x00, 0x00, 0xff, 0x7f, // Vendor IE
+                0xdd, 0x05, 0x50, 0x6f, 0x9a, 0x1c, 0xaa, // Vendor IE with known header
                 255, 2, 5, 1, // IE with extension ID
             ]
         );
 
         let mut ies_updater = IesUpdater::new(ies.clone());
-        ies_updater.remove(&IeType::new_vendor([0x00, 0x03, 0x7f, 0x01, 0x01, 0x00]));
+        ies_updater.remove(&IeType::new_vendor4([0x50, 0x6f, 0x9a, 0x1c]));
+        assert_eq!(ies_updater.get(&IeType::new_vendor4([0x50, 0x6f, 0x9a, 0x1c])), None);
         assert_eq!(
-            ies_updater.get(&IeType::new_vendor([0x00, 0x03, 0x7f, 0x01, 0x01, 0x00])),
+            ies_updater.finalize(),
+            &[
+                0, 2, 10, 20, // IE with no extension ID
+                0xdd, 0x09, 0x00, 0x03, 0x7f, 0x01, 0x01, 0x00, 0x00, 0xff, 0x7f, // Vendor IE
+                255, 2, 5, 1, // IE with extension ID
+            ],
+        );
+
+        let mut ies_updater = IesUpdater::new(ies.clone());
+        ies_updater.remove(&IeType::new_vendor6([0x00, 0x03, 0x7f, 0x01, 0x01, 0x00]));
+        assert_eq!(
+            ies_updater.get(&IeType::new_vendor6([0x00, 0x03, 0x7f, 0x01, 0x01, 0x00])),
             None
         );
         assert_eq!(
             ies_updater.finalize(),
             &[
                 0, 2, 10, 20, // IE with no extension ID
+                0xdd, 0x05, 0x50, 0x6f, 0x9a, 0x1c, 0xaa, // Vendor IE with known header
                 255, 2, 5, 1, // IE with extension ID
             ],
         );
@@ -649,6 +679,7 @@ mod tests {
             &[
                 0, 2, 10, 20, // IE with no extension ID
                 0xdd, 0x09, 0x00, 0x03, 0x7f, 0x01, 0x01, 0x00, 0x00, 0xff, 0x7f, // Vendor IE
+                0xdd, 0x05, 0x50, 0x6f, 0x9a, 0x1c, 0xaa // Vendor IE with known header
             ],
         );
     }
