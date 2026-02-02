@@ -69,7 +69,7 @@ impl TrippointWatcherBuilder {
         self,
         futures_out: &FuturesUnordered<LocalBoxFuture<'_, ()>>,
     ) -> Result<Rc<TrippointWatcher>> {
-        let proxy = fclient::Service::open(ftrippoint::TripPointServiceMarker)
+        let proxy = fclient::Service::open(ftrippoint::ServiceMarker)
             .context("Failed to open service")?
             .watch_for_any()
             .await

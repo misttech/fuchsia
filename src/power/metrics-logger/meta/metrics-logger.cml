@@ -41,7 +41,7 @@
             // This service replaces the directory capability above.
             service: "fuchsia.hardware.thermal.Service",
         },
-        { service: "fuchsia.hardware.trippoint.TripPointService" },
+        { service: "fuchsia.hardware.trippoint.Service" },
         {
             // TODO(https://fxbug.dev/324273348): Remove this capability once the clients have
             // been migrated to services. The service capability has been added below.

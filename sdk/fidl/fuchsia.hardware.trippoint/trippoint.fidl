@@ -108,6 +108,6 @@ open protocol TripPoint {
     }) error zx.Status;
 };
 
-service TripPointService {
+service Service {
     trippoint client_end:TripPoint;
 };

@@ -242,11 +242,11 @@
             availability: "optional",
         },
         {
-            service: "fuchsia.hardware.trippoint.TripPointService",
+            service: "fuchsia.hardware.trippoint.Service",
             availability: "optional",
         },
         {
-            service: "fuchsia.hardware.trippoint.TripPointDebugService",
+            service: "fuchsia.hardware.trippoint.DebugService",
             availability: "optional",
         },
         {

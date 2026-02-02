@@ -145,7 +145,7 @@
         },
         {
             // This service replaces the directory capability above.
-            service: "fuchsia.hardware.trippoint.TripPointService",
+            service: "fuchsia.hardware.trippoint.Service",
             from: "parent",
             to: "#elements",
             availability: "same_as_target",

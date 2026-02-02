@@ -58,7 +58,7 @@
             to: "#metrics-logger",
         },
         {
-            service: "fuchsia.hardware.trippoint.TripPointService",
+            service: "fuchsia.hardware.trippoint.Service",
             from: "parent",
             to: "#metrics-logger",
         },

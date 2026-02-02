@@ -251,7 +251,7 @@ pub static CLASS_NAME_TO_SERVICE: phf::Map<&'static str, ServiceEntry> = phf_map
     },
     "trippoint" => ServiceEntry {
         state: State::DevfsAndService,
-        service_name: "fuchsia.hardware.trippoint.TripPointService",
+        service_name: "fuchsia.hardware.trippoint.Service",
         member_name: "trippoint",
     },
     "usb-device" => ServiceEntry {

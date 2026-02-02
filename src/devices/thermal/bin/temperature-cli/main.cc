@@ -30,12 +30,12 @@ constexpr char kUsageMessage[] = R"""(Usage: temperature-cli <device> <command>
     temperature-cli /dev/class/adc/000 read
     temperature-cli /dev/class/adc/000 resolution
     - or -
-    temperature-cli /svc/fuchsia.hardware.trippoint.TripPointService/<instance_name>/<ServiceMemberName> trippoint
-    temperature-cli /svc/fuchsia.hardware.trippoint.TripPointService/<instance_name>/<ServiceMemberName> trippoint 0:below,4.2 1:above,50.1 2:above,cleared
-    temperature-cli /svc/fuchsia.hardware.trippoint.TripPointService/<instance_name>/<ServiceMemberName> wait
-    temperature-cli /svc/fuchsia.hardware.trippoint.TripPointService/<instance_name>/<ServiceMemberName> name
+    temperature-cli /svc/fuchsia.hardware.trippoint.Service/<instance_name>/<ServiceMemberName> trippoint
+    temperature-cli /svc/fuchsia.hardware.trippoint.Service/<instance_name>/<ServiceMemberName> trippoint 0:below,4.2 1:above,50.1 2:above,cleared
+    temperature-cli /svc/fuchsia.hardware.trippoint.Service/<instance_name>/<ServiceMemberName> wait
+    temperature-cli /svc/fuchsia.hardware.trippoint.Service/<instance_name>/<ServiceMemberName> name
     - or -
-    temperature-cli /svc/fuchsia.hardware.trippoint.TripPointDebugService/<instance_name>/<ServiceMemberName> trip 1
+    temperature-cli /svc/fuchsia.hardware.trippoint.DebugService/<instance_name>/<ServiceMemberName> trip 1
 )""";
 
 namespace FidlTemperature = fuchsia_hardware_temperature;

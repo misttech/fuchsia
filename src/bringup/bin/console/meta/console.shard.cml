@@ -293,12 +293,12 @@
             to: "#console-launcher",
         },
         {
-            service: "fuchsia.hardware.trippoint.TripPointService",
+            service: "fuchsia.hardware.trippoint.Service",
             from: "#boot-drivers",
             to: "#console-launcher",
         },
         {
-            service: "fuchsia.hardware.trippoint.TripPointDebugService",
+            service: "fuchsia.hardware.trippoint.DebugService",
             from: "#boot-drivers",
             to: "#console-launcher",
         },

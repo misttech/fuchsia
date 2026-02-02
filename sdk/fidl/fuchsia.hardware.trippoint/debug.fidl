@@ -16,6 +16,6 @@ open protocol Debug {
     }) -> () error zx.Status;
 };
 
-service TripPointDebugService {
+service DebugService {
     debug client_end:Debug;
 };

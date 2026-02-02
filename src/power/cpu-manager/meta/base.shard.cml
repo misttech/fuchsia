@@ -29,7 +29,7 @@
             availability: "optional",
         },
         { service: "fuchsia.hardware.cpu.ctrl.Service" },
-        { service: "fuchsia.hardware.trippoint.TripPointService" },
+        { service: "fuchsia.hardware.trippoint.Service" },
         {
             config: "fuchsia.power.cpu.BoostEnabled",
             key: "cpu_boost_enabled",
