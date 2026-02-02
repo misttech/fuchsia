@@ -62,7 +62,7 @@ async fn driver_runner_test() -> Result<(), anyhow::Error> {
         EventMatcher::ok().r#type(events::Started::TYPE).moniker_regex(r".*/base-drivers:root$"),
         EventMatcher::ok()
             .r#type(events::Started::TYPE)
-            .moniker_regex(r".*/driver-hosts:driver-host-\d+$"),
+            .moniker_regex(r".*/driver-hosts:driver-host-root$"),
     ];
     check_events(events, &mut started_stream).await?;
     let reader = ArchiveReader::logs();

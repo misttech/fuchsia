@@ -820,6 +820,7 @@ zx::result<> DriverRunner::StartRootDriver(std::string_view url) {
                                        : fdf::DriverPackageType::kBase;
   bootup_tracker_->Start();
   WaitForBootup([this]() { this->OnBootupComplete(); });
+  root_node_->set_driver_host_name_for_colocation("root");
   return StartDriver(*root_node_, url, package);
 }
 

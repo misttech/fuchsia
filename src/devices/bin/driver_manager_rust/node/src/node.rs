@@ -424,6 +424,10 @@ impl Node {
         self.driver_package_type.set(package_type);
     }
 
+    pub fn set_driver_host_name_for_colocation(&self, name: &str) {
+        *self.driver_host_name_for_colocation.borrow_mut() = name.to_string();
+    }
+
     pub fn node_type(&self) -> std::cell::Ref<'_, NodeTypeVariant> {
         self.node_type.borrow()
     }

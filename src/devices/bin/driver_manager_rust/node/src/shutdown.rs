@@ -269,6 +269,10 @@ impl Node {
             *state = NodeState::Unbound;
         }
 
+        if self.host_restart_on_crash.get() {
+            self.driver_host.borrow_mut().take();
+        }
+
         let suffix = self.restart_driver_url_suffix.borrow_mut().take();
         if let Some(suffix) = suffix {
             let tracker = self.create_bind_result_tracker(false);

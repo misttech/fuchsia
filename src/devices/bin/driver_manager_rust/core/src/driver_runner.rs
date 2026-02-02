@@ -171,6 +171,7 @@ impl DriverRunner {
         };
 
         let (sender, receiver) = oneshot::channel();
+        self.root_node.set_driver_host_name_for_colocation("root");
         let self_clone = self.clone();
         self.scope.spawn_local(async move {
             if let Err(e) = self_clone.start_driver(&self_clone.root_node, &url, package_type).await

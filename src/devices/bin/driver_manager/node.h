@@ -450,6 +450,10 @@ class Node : public fidl::WireServer<fuchsia_driver_framework::NodeController>,
     can_multibind_composites_ = can_multibind_composites;
   }
 
+  void set_driver_host_name_for_colocation(std::string_view name) {
+    driver_host_name_for_colocation_ = name;
+  }
+
   std::optional<zx_koid_t> token_koid() const {
     auto* driver_component = std::get_if<DriverComponent>(&state_);
     return driver_component ? std::optional(driver_component->component_instance_koid)
