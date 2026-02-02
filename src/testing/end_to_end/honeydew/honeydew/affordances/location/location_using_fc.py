@@ -12,6 +12,7 @@ from honeydew import affordances_capable, errors
 from honeydew.affordances.location import location
 from honeydew.affordances.location.errors import HoneydewLocationError
 from honeydew.transports.ffx import ffx as ffx_transport
+from honeydew.transports.ffx import types as ffx_types
 from honeydew.transports.fuchsia_controller import (
     fuchsia_controller as fc_transport,
 )
@@ -71,12 +72,16 @@ class LocationUsingFc(location.Location):
             # TODO(http://b/359342196): This is a maintenance burden; find a
             # better way to detect FIDL component capabilities.
             if capability not in self.ffx.run(
-                ["component", "capability", capability]
+                ["component", "capability", capability],
+                # TODO(b/474143046) update to JSON when ffx supports it
+                machine=ffx_types.MachineFormat.RAW,
             ):
                 _LOGGER.warning(
                     "All available location component capabilities:\n%s",
                     self.ffx.run(
-                        ["component", "capability", "fuchsia.location"]
+                        ["component", "capability", "fuchsia.location"],
+                        # TODO(b/474143046) update to JSON when ffx supports it
+                        machine=ffx_types.MachineFormat.RAW,
                     ),
                 )
                 raise errors.NotSupportedError(

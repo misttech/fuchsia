@@ -20,6 +20,7 @@ from honeydew.affordances.connectivity.netstack.errors import (
 from honeydew.affordances.connectivity.netstack.types import InterfaceProperties
 from honeydew.affordances.connectivity.wlan.utils.types import MacAddress
 from honeydew.transports.ffx import ffx as ffx_transport
+from honeydew.transports.ffx import types as ffx_types
 from honeydew.transports.fuchsia_controller import (
     fuchsia_controller as fc_transport,
 )
@@ -81,11 +82,17 @@ class NetstackUsingFc(AsyncAdapter, netstack.Netstack):
             # TODO(http://b/359342196): This is a maintenance burden; find a
             # better way to detect FIDL component capabilities.
             if capability not in self.ffx.run(
-                ["component", "capability", capability]
+                ["component", "capability", capability],
+                # TODO(b/474143046) update to JSON when ffx supports it
+                machine=ffx_types.MachineFormat.RAW,
             ):
                 _LOGGER.warning(
                     "All available netstack component capabilities:\n%s",
-                    self.ffx.run(["component", "capability", "fuchsia.net"]),
+                    self.ffx.run(
+                        ["component", "capability", "fuchsia.net"],
+                        # TODO(b/474143046) update to JSON when ffx supports it
+                        machine=ffx_types.MachineFormat.RAW,
+                    ),
                 )
                 raise errors.NotSupportedError(
                     f'Component capability "{capability}" not exposed by device '

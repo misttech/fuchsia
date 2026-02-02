@@ -28,6 +28,7 @@ from honeydew.affordances.connectivity.wlan.utils.types import (
 )
 from honeydew.affordances.connectivity.wlan.wlan_core import wlan_core
 from honeydew.transports.ffx import ffx as ffx_transport
+from honeydew.transports.ffx import types as ffx_types
 from honeydew.transports.fuchsia_controller import (
     fuchsia_controller as fc_transport,
 )
@@ -110,11 +111,17 @@ class WlanCore(AsyncAdapter, wlan_core.WlanCore):
             # TODO(http://b/359342196): This is a maintenance burden; find a
             # better way to detect FIDL component capabilities.
             if capability not in self._ffx.run(
-                ["component", "capability", capability]
+                ["component", "capability", capability],
+                # TODO(b/474143046) update to JSON when ffx supports it
+                machine=ffx_types.MachineFormat.RAW,
             ):
                 _LOGGER.warning(
                     "All available WLAN component capabilities:\n%s",
-                    self._ffx.run(["component", "capability", "fuchsia.wlan"]),
+                    self._ffx.run(
+                        ["component", "capability", "fuchsia.wlan"],
+                        # TODO(b/474143046) update to JSON when ffx supports it
+                        machine=ffx_types.MachineFormat.RAW,
+                    ),
                 )
                 raise errors.NotSupportedError(
                     f'Component capability "{capability}" not exposed by device '
