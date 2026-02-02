@@ -19,7 +19,6 @@ load(
     "get_atom_visibility",
     "get_idk_deps",
     "json_encode_dict_values",
-    "select_for",
     "select_for_fuchsia",
 )
 
@@ -118,6 +117,11 @@ def _idk_cc_source_library_impl(
         **kwargs
     )
 
+    #
+    # Begin IDK atom creation.
+    # Everything below this point is for Fuchsia only.
+    #
+
     idk_root_path = "pkg/" + idk_name
     include_dest = idk_root_path + "/include"
 
@@ -144,9 +148,7 @@ def _idk_cc_source_library_impl(
         idk_metadata_sources.append(source_dest_path)
         idk_files_map |= {source_dest_path: source}
 
-    # Deps strings must be modified before being added to a `select()` statement.
-    idk_deps = (get_idk_deps(deps) + get_idk_deps(implementation_deps) +
-                select_for("@platforms//os:fuchsia", get_idk_deps(fuchsia_deps)))
+    idk_deps = get_idk_deps(deps + fuchsia_deps + implementation_deps)
 
     # Dependencies for generating the actual IDK atom (not the underlying library).
     # TODO(https://fxbug.dev/428229472): If we must support
@@ -286,7 +288,7 @@ elsewhere, such headers are only listed here.""",
         "srcs": attr.label_list(
             doc = """The list of C and C++ source and header files that are processed to create the
 library target, excluding those in `hdrs` and `hdrs_for_internal_use`.
-Header files in this list can only be included by this library.
+Header files in this list can only be included by other files in this list.
 GN equivalent: `sources`
 GN note: Unlike the GN template, public headers must actually be in `hdrs`.""",
             allow_files = True,
