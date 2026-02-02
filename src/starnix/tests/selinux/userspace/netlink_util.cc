@@ -4,13 +4,16 @@
 
 #include "src/starnix/tests/selinux/userspace/netlink_util.h"
 
+#include <netinet/in.h>
 #include <sys/socket.h>
 
 #include <fbl/unique_fd.h>
 #include <gtest/gtest.h>
 #include <linux/audit.h>
+#include <linux/inet_diag.h>
 #include <linux/netlink.h>
 #include <linux/rtnetlink.h>
+#include <linux/sock_diag.h>
 
 #include "src/starnix/tests/selinux/userspace/util.h"
 
@@ -28,6 +31,7 @@ int SendNetlinkMsg(const netlink_util::NetlinkSocketTestCase& test_case) {
   union {
     struct rtmsg rtmsg;
     struct audit_status audit_status;
+    struct inet_diag_req_v2 diag_req;
   } payload;
   memset(&payload, 0, sizeof(payload));
 
@@ -48,6 +52,12 @@ int SendNetlinkMsg(const netlink_util::NetlinkSocketTestCase& test_case) {
     audit_status->mask = AUDIT_STATUS_ENABLED | AUDIT_STATUS_PID;
     audit_status->enabled = 1;
     audit_status->pid = getpid();
+  } else if (test_case.protocol == NETLINK_SOCK_DIAG) {
+    payload_len = sizeof(struct inet_diag_req_v2);
+    nlh->nlmsg_len = NLMSG_LENGTH((__u32)payload_len);
+    struct inet_diag_req_v2* inet_req = (struct inet_diag_req_v2*)NLMSG_DATA(nlh);
+    inet_req->sdiag_family = AF_INET;
+    inet_req->sdiag_protocol = IPPROTO_UDP;
   } else {
     payload_len = sizeof(struct rtmsg);
     nlh->nlmsg_len = NLMSG_LENGTH((__u32)payload_len);

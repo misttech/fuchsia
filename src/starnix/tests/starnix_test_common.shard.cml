@@ -169,6 +169,8 @@
                 "fuchsia.net.routes.StateV6",
                 "fuchsia.net.settings.Control",
                 "fuchsia.net.settings.State",
+                "fuchsia.net.sockets.Control",
+                "fuchsia.net.sockets.Diagnostics",
                 "fuchsia.posix.socket.packet.Provider",
                 "fuchsia.posix.socket.Provider",
                 "fuchsia.posix.socket.raw.Provider",

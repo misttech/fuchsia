@@ -57,6 +57,12 @@ pub enum Permission {
 
     /// SET/NEW/DELETE messages in NETLINK_ROUTE.
     NetlinkRouteWrite,
+
+    /// Request and read diagnostic information.
+    NetlinkSockDiagRead,
+
+    /// Disconnect sockets with SOCK_DESTROY.
+    NetlinkSockDiagDestroy,
 }
 
 /// An object responsible to validating permissions for netlink clients.

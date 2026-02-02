@@ -347,10 +347,7 @@ TEST_P(NetlinkSocketTest, CheckNetlinkMsgPermission) {
   EXPECT_TRUE(RunSubprocessAs("test_u:test_r:socket_sendmsg_test_t:s0", [test_case]() {
     int result = netlink_util::SendNetlinkMsg(test_case);
 
-    if (test_helper::IsStarnix() && test_case.protocol == NETLINK_SOCK_DIAG) {
-      // Expect `ENOTSUP` for testcases currently unsupported in Starnix.
-      EXPECT_THAT(result, SyscallFailsWithErrno(ENOTSUP));
-    } else if (test_case.expected_result.is_ok()) {
+    if (test_case.expected_result.is_ok()) {
       EXPECT_THAT(result, SyscallSucceeds());
     } else {
       EXPECT_THAT(result, SyscallFailsWithErrno(test_case.expected_result.error_value()));

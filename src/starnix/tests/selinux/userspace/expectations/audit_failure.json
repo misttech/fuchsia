@@ -3,9 +3,9 @@
         // TODO(https://fxbug.dev/409256444) - Check `execmod`.
         "MProtectExecmod/MProtectExecmod.ExecMod/ExecmodNo_PrivateMapping_Modification_MprotectFailure",
 
-        // Expect `ENOTSUP` for testcases currently unsupported in Starnix, no audit will be logged.
+        // TODO(https://fxbug.dev/479845044): The audit expectations for this test
+        // contain an erroneous line.
         "NetlinkSocketTests/NetlinkSocketTest.CheckNetlinkMsgPermission/28",
-        "NetlinkSocketTests/NetlinkSocketTest.CheckNetlinkMsgPermission/29",
 
         // The permission is checked correctly, but Linux adds multiple logs for the same denial.
         "SyslogTest.ProcKmsgReadDeniedIfDroppedPermission",

@@ -58,8 +58,14 @@ pub(crate) enum NetlinkSockDiagNotifiedGroup {
 
 impl MessageWithPermission for SockDiagRequest {
     fn permission(&self) -> crate::messaging::Permission {
-        // TODO(323590076): Implement SOCK_DIAG requests.
-        todo!()
+        match self {
+            SockDiagRequest::InetRequest(_) | SockDiagRequest::UnixRequest(_) => {
+                crate::messaging::Permission::NetlinkSockDiagRead
+            }
+            SockDiagRequest::InetSockDestroy(_) => {
+                crate::messaging::Permission::NetlinkSockDiagDestroy
+            }
+        }
     }
 }
 
