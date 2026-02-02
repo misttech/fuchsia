@@ -5,7 +5,6 @@
 """Rule for declaring a Fuchsia product configuration."""
 
 # buildifier: disable=module-docstring
-load("@bazel_skylib//lib:paths.bzl", "paths")
 load("@bazel_skylib//rules:common_settings.bzl", "BuildSettingInfo")
 load("//fuchsia/constraints:target_compatibility.bzl", "COMPATIBILITY")
 load("//fuchsia/private:fuchsia_package.bzl", "get_driver_component_manifests")
@@ -340,7 +339,7 @@ def fuchsia_product_configuration(
         starnix_containers = [],
         # Deprecated
         # TODO(https://fxbug.dev/390189313): Remove once all clients stop using.
-        relative_paths = False,
+        relative_paths = False,  # @unused
         **kwargs):
     """A new implementation of fuchsia_product_configuration that takes raw a json config.
 
@@ -371,6 +370,7 @@ def fuchsia_product_configuration(
         cache_packages: Fuchsia packages to be included in cache.
         base_driver_packages: Base driver packages to include in product.
         ota_configuration: OTA configuration to use with the product.
+        starnix_containers: List of Starnix containers.
         **kwargs: Common bazel rule args passed through to the implementation rule.
     """
 
