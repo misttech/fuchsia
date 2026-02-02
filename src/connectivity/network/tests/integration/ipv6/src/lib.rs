@@ -25,12 +25,12 @@ use anyhow::Context as _;
 use futures::{
     Future, FutureExt as _, StreamExt as _, TryFutureExt as _, TryStreamExt as _, future,
 };
-use net_declare::net_ip_v6;
+use net_declare::{net_ip_v6, net_subnet_v6};
 use net_types::ethernet::Mac;
 use net_types::ip::{self as net_types_ip, Ip, Ipv6};
 use net_types::{
-    LinkLocalAddress as _, MulticastAddr, MulticastAddress as _, SpecifiedAddress as _,
-    Witness as _,
+    LinkLocalAddress as _, MulticastAddr, MulticastAddress as _, SpecifiedAddr,
+    SpecifiedAddress as _, Witness as _,
 };
 use netemul::InterfaceConfig;
 use netstack_testing_common::constants::{eth as eth_consts, ipv6 as ipv6_consts};
@@ -39,7 +39,7 @@ use netstack_testing_common::ndp::{
     fail_dad_with_na, fail_dad_with_ns, send_ra_with_router_lifetime, wait_for_router_solicitation,
 };
 use netstack_testing_common::realms::{
-    KnownServiceProvider, Netstack, NetstackVersion, TestSandboxExt as _, constants,
+    KnownServiceProvider, Netstack, Netstack3, NetstackVersion, TestSandboxExt as _, constants,
 };
 use netstack_testing_common::{
     ASYNC_EVENT_NEGATIVE_CHECK_TIMEOUT, ASYNC_EVENT_POSITIVE_CHECK_TIMEOUT, interfaces,
@@ -748,6 +748,25 @@ async fn dad_assigns_when_echoed<N: Netstack>(name: &str) {
     panic!("maximum trial number exceeded");
 }
 
+async fn check_route_table(
+    realm: &netemul::TestRealm<'_>,
+    want_routes: &[fnet_routes_ext::InstalledRoute<Ipv6>],
+) {
+    let ipv6_route_stream = {
+        let state_v6 =
+            realm.connect_to_protocol::<fnet_routes::StateV6Marker>().expect("connect to protocol");
+        fnet_routes_ext::event_stream_from_state::<Ipv6>(&state_v6)
+            .expect("failed to connect to watcher")
+    };
+    let ipv6_route_stream = pin!(ipv6_route_stream);
+    let mut routes = HashSet::new();
+    fnet_routes_ext::wait_for_routes(ipv6_route_stream, &mut routes, |accumulated_routes| {
+        want_routes.iter().all(|route| accumulated_routes.contains(route))
+    })
+    .await
+    .expect("error while waiting for routes to satisfy predicate");
+}
+
 /// Tests to make sure default router discovery, prefix discovery and more-specific
 /// route discovery works.
 #[netstack_test]
@@ -765,35 +784,6 @@ async fn on_and_off_link_route_discovery<N: Netstack>(
             64,
         )
     };
-
-    async fn check_route_table(
-        realm: &netemul::TestRealm<'_>,
-        want_routes: &[fnet_routes_ext::InstalledRoute<Ipv6>],
-    ) {
-        let ipv6_route_stream = {
-            let state_v6 = realm
-                .connect_to_protocol::<fnet_routes::StateV6Marker>()
-                .expect("connect to protocol");
-            fnet_routes_ext::event_stream_from_state::<Ipv6>(&state_v6)
-                .expect("failed to connect to watcher")
-        };
-        let ipv6_route_stream = pin!(ipv6_route_stream);
-        let mut routes = HashSet::new();
-        fnet_routes_ext::wait_for_routes(ipv6_route_stream, &mut routes, |accumulated_routes| {
-            want_routes.iter().all(|route| accumulated_routes.contains(route))
-        })
-        .on_timeout(
-            fuchsia_async::MonotonicInstant::after(ASYNC_EVENT_POSITIVE_CHECK_TIMEOUT),
-            || {
-                panic!(
-                    "timed out on waiting for a route table entry after {} seconds",
-                    ASYNC_EVENT_POSITIVE_CHECK_TIMEOUT.into_seconds()
-                )
-            },
-        )
-        .await
-        .expect("error while waiting for routes to satisfy predicate");
-    }
 
     let name = format!("{}_{}", test_name, sub_test_name);
     let name = name.as_str();
@@ -834,76 +824,291 @@ async fn on_and_off_link_route_discovery<N: Netstack>(
         .expect("failed to send router advertisement");
 
     let nicid = iface.id();
-    check_route_table(
-        &realm,
-        &[
-            // Test that a default route through the router is installed.
-            fnet_routes_ext::InstalledRoute {
-                route: fnet_routes_ext::Route {
-                    destination: net_types::ip::Subnet::new(
-                        net_types::ip::Ipv6::UNSPECIFIED_ADDRESS,
-                        0,
-                    )
-                    .unwrap(),
-                    action: fnet_routes_ext::RouteAction::Forward(fnet_routes_ext::RouteTarget {
-                        outbound_interface: nicid,
-                        next_hop: Some(net_types::SpecifiedAddr::new(ipv6_consts::LINK_LOCAL_ADDR))
-                            .unwrap(),
-                    }),
-                    properties: fnet_routes_ext::RouteProperties {
-                        specified_properties: fnet_routes_ext::SpecifiedRouteProperties {
-                            metric: fnet_routes::SpecifiedMetric::InheritedFromInterface(
-                                fnet_routes::Empty,
-                            ),
-                        },
+    let routes = &[
+        // Test that a default route through the router is installed.
+        fnet_routes_ext::InstalledRoute {
+            route: fnet_routes_ext::Route {
+                destination: net_types::ip::Subnet::new(
+                    net_types::ip::Ipv6::UNSPECIFIED_ADDRESS,
+                    0,
+                )
+                .unwrap(),
+                action: fnet_routes_ext::RouteAction::Forward(fnet_routes_ext::RouteTarget {
+                    outbound_interface: nicid,
+                    next_hop: Some(net_types::SpecifiedAddr::new(ipv6_consts::LINK_LOCAL_ADDR))
+                        .unwrap(),
+                }),
+                properties: fnet_routes_ext::RouteProperties {
+                    specified_properties: fnet_routes_ext::SpecifiedRouteProperties {
+                        metric: fnet_routes::SpecifiedMetric::InheritedFromInterface(
+                            fnet_routes::Empty,
+                        ),
                     },
                 },
-                effective_properties: fnet_routes_ext::EffectiveRouteProperties { metric: METRIC },
-                table_id: main_table_id,
             },
-            // Test that a route to `SUBNET_WITH_MORE_SPECIFIC_ROUTE` exists
-            // through the router.
-            fnet_routes_ext::InstalledRoute {
-                route: fnet_routes_ext::Route {
-                    destination: SUBNET_WITH_MORE_SPECIFIC_ROUTE,
-                    action: fnet_routes_ext::RouteAction::Forward(fnet_routes_ext::RouteTarget {
-                        outbound_interface: nicid,
-                        next_hop: Some(net_types::SpecifiedAddr::new(ipv6_consts::LINK_LOCAL_ADDR))
-                            .unwrap(),
-                    }),
-                    properties: fnet_routes_ext::RouteProperties {
-                        specified_properties: fnet_routes_ext::SpecifiedRouteProperties {
-                            metric: fnet_routes::SpecifiedMetric::InheritedFromInterface(
-                                fnet_routes::Empty,
-                            ),
-                        },
+            effective_properties: fnet_routes_ext::EffectiveRouteProperties { metric: METRIC },
+            table_id: main_table_id,
+        },
+        // Test that a route to `SUBNET_WITH_MORE_SPECIFIC_ROUTE` exists
+        // through the router.
+        fnet_routes_ext::InstalledRoute {
+            route: fnet_routes_ext::Route {
+                destination: SUBNET_WITH_MORE_SPECIFIC_ROUTE,
+                action: fnet_routes_ext::RouteAction::Forward(fnet_routes_ext::RouteTarget {
+                    outbound_interface: nicid,
+                    next_hop: Some(net_types::SpecifiedAddr::new(ipv6_consts::LINK_LOCAL_ADDR))
+                        .unwrap(),
+                }),
+                properties: fnet_routes_ext::RouteProperties {
+                    specified_properties: fnet_routes_ext::SpecifiedRouteProperties {
+                        metric: fnet_routes::SpecifiedMetric::InheritedFromInterface(
+                            fnet_routes::Empty,
+                        ),
                     },
                 },
-                effective_properties: fnet_routes_ext::EffectiveRouteProperties { metric: METRIC },
-                table_id: main_table_id,
             },
-            // Test that the prefix should be discovered after it is advertised.
-            fnet_routes_ext::InstalledRoute::<Ipv6> {
-                route: fnet_routes_ext::Route {
-                    destination: ipv6_consts::GLOBAL_PREFIX,
-                    action: fnet_routes_ext::RouteAction::Forward(fnet_routes_ext::RouteTarget {
-                        outbound_interface: nicid,
-                        next_hop: None,
-                    }),
-                    properties: fnet_routes_ext::RouteProperties {
-                        specified_properties: fnet_routes_ext::SpecifiedRouteProperties {
-                            metric: fnet_routes::SpecifiedMetric::InheritedFromInterface(
-                                fnet_routes::Empty,
-                            ),
-                        },
+            effective_properties: fnet_routes_ext::EffectiveRouteProperties { metric: METRIC },
+            table_id: main_table_id,
+        },
+        // Test that the prefix should be discovered after it is advertised.
+        fnet_routes_ext::InstalledRoute::<Ipv6> {
+            route: fnet_routes_ext::Route {
+                destination: ipv6_consts::GLOBAL_PREFIX,
+                action: fnet_routes_ext::RouteAction::Forward(fnet_routes_ext::RouteTarget {
+                    outbound_interface: nicid,
+                    next_hop: None,
+                }),
+                properties: fnet_routes_ext::RouteProperties {
+                    specified_properties: fnet_routes_ext::SpecifiedRouteProperties {
+                        metric: fnet_routes::SpecifiedMetric::InheritedFromInterface(
+                            fnet_routes::Empty,
+                        ),
                     },
                 },
-                effective_properties: fnet_routes_ext::EffectiveRouteProperties { metric: METRIC },
-                table_id: main_table_id,
             },
-        ][..],
-    )
+            effective_properties: fnet_routes_ext::EffectiveRouteProperties { metric: METRIC },
+            table_id: main_table_id,
+        },
+    ][..];
+
+    check_route_table(&realm, routes)
+        .on_timeout(
+            fuchsia_async::MonotonicInstant::after(ASYNC_EVENT_POSITIVE_CHECK_TIMEOUT),
+            || {
+                panic!(
+                    "timed out on waiting for a route table entry after {} seconds",
+                    ASYNC_EVENT_POSITIVE_CHECK_TIMEOUT.into_seconds()
+                )
+            },
+        )
+        .await;
+}
+
+#[netstack_test]
+async fn route_discovery_no_default_route(name: &str) {
+    pub const SUBNET_WITH_MORE_SPECIFIC_ROUTE: net_types_ip::Subnet<net_types_ip::Ipv6Addr> =
+        net_subnet_v6!("a001:f1f0:4060:1::/64");
+    pub const ROUTER_2: net_types::ip::Ipv6Addr = net_ip_v6!("fe80::2");
+    let sandbox = netemul::TestSandbox::new().expect("failed to create sandbox");
+    const METRIC: u32 = 200;
+    let (_network, realm, iface, fake_ep) =
+        setup_network::<Netstack3>(&sandbox, name, Some(METRIC))
+            .await
+            .expect("failed to setup network");
+
+    let main_route_table = realm
+        .connect_to_protocol::<fnet_routes_admin::RouteTableV6Marker>()
+        .expect("failed to connect to protocol");
+    let main_table_id = fnet_routes_ext::TableId::new(
+        main_route_table.get_table_id().await.expect("failed to get table id"),
+    );
+    // Prepopulate the route table with a default route via ROUTER_2.
+    // This route should remain once allow_default_route is disabled.
+    send_ra_with_router_lifetime(&fake_ep, 1234, &[], ROUTER_2)
+        .await
+        .expect("failed to send router advertisement");
+    let nicid = iface.id();
+    let default_route_via_router_2 = fnet_routes_ext::InstalledRoute::<Ipv6> {
+        route: fnet_routes_ext::Route {
+            destination: net_subnet_v6!("::/0"),
+            action: fnet_routes_ext::RouteAction::Forward(fnet_routes_ext::RouteTarget {
+                outbound_interface: nicid,
+                next_hop: Some(SpecifiedAddr::new(ROUTER_2).unwrap()),
+            }),
+            properties: fnet_routes_ext::RouteProperties {
+                specified_properties: fnet_routes_ext::SpecifiedRouteProperties {
+                    metric: fnet_routes::SpecifiedMetric::InheritedFromInterface(
+                        fnet_routes::Empty,
+                    ),
+                },
+            },
+        },
+        effective_properties: fnet_routes_ext::EffectiveRouteProperties { metric: METRIC },
+        table_id: main_table_id,
+    };
+    check_route_table(&realm, &[default_route_via_router_2.clone()][..])
+        .on_timeout(
+            fuchsia_async::MonotonicInstant::after(ASYNC_EVENT_POSITIVE_CHECK_TIMEOUT),
+            || {
+                panic!(
+                    "timed out on waiting for a route table entry after {} seconds",
+                    ASYNC_EVENT_POSITIVE_CHECK_TIMEOUT.into_seconds()
+                )
+            },
+        )
+        .await;
+
+    let _ = iface
+        .control()
+        .set_configuration(&fnet_interfaces_admin::Configuration {
+            ipv6: Some(fnet_interfaces_admin::Ipv6Configuration {
+                ndp: Some(fnet_interfaces_admin::NdpConfiguration {
+                    route_discovery: Some(fnet_interfaces_admin::RouteDiscoveryConfiguration {
+                        allow_default_route: Some(false),
+                        ..Default::default()
+                    }),
+                    ..Default::default()
+                }),
+                ..Default::default()
+            }),
+            ..Default::default()
+        })
+        .await
+        .expect("interface removal")
+        .expect("failed to set configuration");
+
+    let options = [
+        NdpOptionBuilder::PrefixInformation(PrefixInformation::new(
+            ipv6_consts::GLOBAL_PREFIX.prefix(),  /* prefix_length */
+            true,                                 /* on_link_flag */
+            false,                                /* autonomous_address_configuration_flag */
+            6234,                                 /* valid_lifetime */
+            0,                                    /* preferred_lifetime */
+            ipv6_consts::GLOBAL_PREFIX.network(), /* prefix */
+        )),
+        NdpOptionBuilder::RouteInformation(RouteInformation::new(
+            SUBNET_WITH_MORE_SPECIFIC_ROUTE,
+            1337, /* route_lifetime_seconds */
+            RoutePreference::default(),
+        )),
+    ];
+    send_ra_with_router_lifetime(&fake_ep, 1234, &options, ipv6_consts::LINK_LOCAL_ADDR)
+        .await
+        .expect("failed to send router advertisement");
+
+    let wanted_routes = [
+        default_route_via_router_2,
+        // Test that a route to `SUBNET_WITH_MORE_SPECIFIC_ROUTE` exists
+        // through the router.
+        fnet_routes_ext::InstalledRoute {
+            route: fnet_routes_ext::Route {
+                destination: SUBNET_WITH_MORE_SPECIFIC_ROUTE,
+                action: fnet_routes_ext::RouteAction::Forward(fnet_routes_ext::RouteTarget {
+                    outbound_interface: nicid,
+                    next_hop: Some(net_types::SpecifiedAddr::new(ipv6_consts::LINK_LOCAL_ADDR))
+                        .unwrap(),
+                }),
+                properties: fnet_routes_ext::RouteProperties {
+                    specified_properties: fnet_routes_ext::SpecifiedRouteProperties {
+                        metric: fnet_routes::SpecifiedMetric::InheritedFromInterface(
+                            fnet_routes::Empty,
+                        ),
+                    },
+                },
+            },
+            effective_properties: fnet_routes_ext::EffectiveRouteProperties { metric: METRIC },
+            table_id: main_table_id,
+        },
+        // Test that the prefix should be discovered after it is advertised.
+        fnet_routes_ext::InstalledRoute::<Ipv6> {
+            route: fnet_routes_ext::Route {
+                destination: ipv6_consts::GLOBAL_PREFIX,
+                action: fnet_routes_ext::RouteAction::Forward(fnet_routes_ext::RouteTarget {
+                    outbound_interface: nicid,
+                    next_hop: None,
+                }),
+                properties: fnet_routes_ext::RouteProperties {
+                    specified_properties: fnet_routes_ext::SpecifiedRouteProperties {
+                        metric: fnet_routes::SpecifiedMetric::InheritedFromInterface(
+                            fnet_routes::Empty,
+                        ),
+                    },
+                },
+            },
+            effective_properties: fnet_routes_ext::EffectiveRouteProperties { metric: METRIC },
+            table_id: main_table_id,
+        },
+    ];
+
+    let unwanted_routes = [
+        // The default route is not installed.
+        fnet_routes_ext::InstalledRoute {
+            route: fnet_routes_ext::Route {
+                destination: net_types::ip::Subnet::new(
+                    net_types::ip::Ipv6::UNSPECIFIED_ADDRESS,
+                    0,
+                )
+                .unwrap(),
+                action: fnet_routes_ext::RouteAction::Forward(fnet_routes_ext::RouteTarget {
+                    outbound_interface: nicid,
+                    next_hop: Some(net_types::SpecifiedAddr::new(ipv6_consts::LINK_LOCAL_ADDR))
+                        .unwrap(),
+                }),
+                properties: fnet_routes_ext::RouteProperties {
+                    specified_properties: fnet_routes_ext::SpecifiedRouteProperties {
+                        metric: fnet_routes::SpecifiedMetric::InheritedFromInterface(
+                            fnet_routes::Empty,
+                        ),
+                    },
+                },
+            },
+            effective_properties: fnet_routes_ext::EffectiveRouteProperties { metric: METRIC },
+            table_id: main_table_id,
+        },
+    ];
+
+    check_route_table(&realm, &wanted_routes[..])
+        .on_timeout(
+            fuchsia_async::MonotonicInstant::after(ASYNC_EVENT_POSITIVE_CHECK_TIMEOUT),
+            || {
+                panic!(
+                    "timed out on waiting for a route table entry after {} seconds",
+                    ASYNC_EVENT_POSITIVE_CHECK_TIMEOUT.into_seconds()
+                )
+            },
+        )
+        .await;
+
+    assert_eq!(
+        check_route_table(&realm, &unwanted_routes[..])
+            .map(Some)
+            .on_timeout(
+                fuchsia_async::MonotonicInstant::after(ASYNC_EVENT_NEGATIVE_CHECK_TIMEOUT),
+                || None
+            )
+            .await,
+        None
+    );
+
+    // Make sure learned routes can still be removed by a RA with a zero router lifetime.
+    send_ra_with_router_lifetime(&fake_ep, 0, &[], ROUTER_2)
+        .await
+        .expect("failed to send router advertisement");
+
+    // Verify that the default route is removed.
+    let ipv6_route_stream = {
+        let state_v6 =
+            realm.connect_to_protocol::<fnet_routes::StateV6Marker>().expect("connect to protocol");
+        fnet_routes_ext::event_stream_from_state::<Ipv6>(&state_v6)
+            .expect("failed to connect to watcher")
+    };
+    let ipv6_route_stream = pin!(ipv6_route_stream);
+    let mut routes = HashSet::new();
+    fnet_routes_ext::wait_for_routes(ipv6_route_stream, &mut routes, |accumulated_routes| {
+        accumulated_routes.iter().all(|route| route.route.destination != net_subnet_v6!("::/0"))
+    })
     .await
+    .expect("wait for the routes to be removed");
 }
 
 #[netstack_test]

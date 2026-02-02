@@ -663,6 +663,7 @@ impl<'a, Config: Borrow<Ipv6DeviceConfiguration>, BC: BindingsContext> SlaacCont
         let Ipv6DeviceConfiguration {
             max_router_solicitations: _,
             slaac_config,
+            route_discovery_config: _,
             ip_config:
                 IpDeviceConfiguration {
                     unicast_forwarding_enabled: _,
@@ -1428,6 +1429,7 @@ impl<
         let Ipv6DeviceConfiguration {
             max_router_solicitations: _,
             slaac_config: _,
+            route_discovery_config: _,
             ip_config: IpDeviceConfiguration { gmp_enabled, .. },
         } = Borrow::borrow(&*config);
 

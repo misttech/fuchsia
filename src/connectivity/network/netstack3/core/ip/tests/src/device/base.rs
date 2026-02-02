@@ -6,6 +6,7 @@ use alloc::vec;
 use alloc::vec::Vec;
 use core::num::{NonZeroU8, NonZeroU16};
 use core::time::Duration;
+use netstack3_core::ip::RouteDiscoveryConfigurationUpdate;
 
 use assert_matches::assert_matches;
 use either::Either;
@@ -1777,6 +1778,9 @@ fn update_ipv6_configuration_return() {
                         TemporarySlaacAddressConfiguration::enabled_with_rfc_defaults()
                     ),
                 },
+                route_discovery_config: RouteDiscoveryConfigurationUpdate {
+                    allow_default_route: Some(false),
+                },
                 ip_config: IpDeviceConfigurationUpdate {
                     ip_enabled: Some(true),
                     unicast_forwarding_enabled: Some(false),
@@ -1792,6 +1796,9 @@ fn update_ipv6_configuration_return() {
             slaac_config: SlaacConfigurationUpdate {
                 stable_address_configuration: Some(StableSlaacAddressConfiguration::Disabled),
                 temporary_address_configuration: Some(TemporarySlaacAddressConfiguration::Disabled),
+            },
+            route_discovery_config: RouteDiscoveryConfigurationUpdate {
+                allow_default_route: Some(true),
             },
             ip_config: IpDeviceConfigurationUpdate {
                 ip_enabled: Some(false),
@@ -1811,6 +1818,7 @@ fn update_ipv6_configuration_return() {
             Ipv6DeviceConfigurationUpdate {
                 max_router_solicitations: None,
                 slaac_config: SlaacConfigurationUpdate::default(),
+                route_discovery_config: RouteDiscoveryConfigurationUpdate::default(),
                 ip_config: IpDeviceConfigurationUpdate {
                     ip_enabled: Some(true),
                     unicast_forwarding_enabled: Some(true),
@@ -1824,6 +1832,7 @@ fn update_ipv6_configuration_return() {
         Ok(Ipv6DeviceConfigurationUpdate {
             max_router_solicitations: None,
             slaac_config: SlaacConfigurationUpdate::default(),
+            route_discovery_config: RouteDiscoveryConfigurationUpdate::default(),
             ip_config: IpDeviceConfigurationUpdate {
                 ip_enabled: Some(true),
                 unicast_forwarding_enabled: Some(false),
@@ -1843,6 +1852,7 @@ fn update_ipv6_configuration_return() {
             Ipv6DeviceConfigurationUpdate {
                 max_router_solicitations: None,
                 slaac_config: SlaacConfigurationUpdate::default(),
+                route_discovery_config: RouteDiscoveryConfigurationUpdate::default(),
                 ip_config: IpDeviceConfigurationUpdate {
                     ip_enabled: None,
                     unicast_forwarding_enabled: None,
@@ -1856,6 +1866,7 @@ fn update_ipv6_configuration_return() {
         Ok(Ipv6DeviceConfigurationUpdate {
             max_router_solicitations: None,
             slaac_config: SlaacConfigurationUpdate::default(),
+            route_discovery_config: RouteDiscoveryConfigurationUpdate::default(),
             ip_config: IpDeviceConfigurationUpdate {
                 ip_enabled: None,
                 unicast_forwarding_enabled: None,
@@ -1879,6 +1890,9 @@ fn update_ipv6_configuration_return() {
                         TemporarySlaacAddressConfiguration::Disabled
                     ),
                 },
+                route_discovery_config: RouteDiscoveryConfigurationUpdate {
+                    allow_default_route: Some(true),
+                },
                 ip_config: IpDeviceConfigurationUpdate {
                     ip_enabled: Some(false),
                     unicast_forwarding_enabled: Some(false),
@@ -1898,6 +1912,9 @@ fn update_ipv6_configuration_return() {
                 temporary_address_configuration: Some(
                     TemporarySlaacAddressConfiguration::enabled_with_rfc_defaults()
                 ),
+            },
+            route_discovery_config: RouteDiscoveryConfigurationUpdate {
+                allow_default_route: Some(false),
             },
             ip_config: IpDeviceConfigurationUpdate {
                 ip_enabled: Some(true),

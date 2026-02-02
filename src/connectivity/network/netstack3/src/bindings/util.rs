@@ -21,7 +21,8 @@ use net_types::{AddrAndZone, MulticastAddr, SpecifiedAddr, Witness, ZonedAddr};
 use netstack3_core::device::{DeviceId, WeakDeviceId};
 use netstack3_core::error::{ExistsError, NotFoundError};
 use netstack3_core::ip::{
-    IgmpConfigMode, Lifetime, MarkDomain, MldConfigMode, PreferredLifetime, SlaacConfiguration,
+    IgmpConfigMode, Lifetime, MarkDomain, MldConfigMode, PreferredLifetime,
+    RouteDiscoveryConfiguration, RouteDiscoveryConfigurationUpdate, SlaacConfiguration,
     SlaacConfigurationUpdate,
 };
 use netstack3_core::neighbor::{NudUserConfig, NudUserConfigUpdate};
@@ -1378,6 +1379,28 @@ impl IntoFidl<fnet_interfaces_admin::SlaacConfiguration> for SlaacConfiguration 
             self;
         fnet_interfaces_admin::SlaacConfiguration {
             temporary_address: Some(temporary_address_configuration.is_enabled()),
+            __source_breaking: fidl::marker::SourceBreaking,
+        }
+    }
+}
+
+impl IntoFidl<fnet_interfaces_admin::RouteDiscoveryConfiguration> for RouteDiscoveryConfiguration {
+    fn into_fidl(self) -> fnet_interfaces_admin::RouteDiscoveryConfiguration {
+        let RouteDiscoveryConfiguration { allow_default_route } = self;
+        fnet_interfaces_admin::RouteDiscoveryConfiguration {
+            allow_default_route: Some(allow_default_route),
+            __source_breaking: fidl::marker::SourceBreaking,
+        }
+    }
+}
+
+impl IntoFidl<fnet_interfaces_admin::RouteDiscoveryConfiguration>
+    for RouteDiscoveryConfigurationUpdate
+{
+    fn into_fidl(self) -> fnet_interfaces_admin::RouteDiscoveryConfiguration {
+        let RouteDiscoveryConfigurationUpdate { allow_default_route } = self;
+        fnet_interfaces_admin::RouteDiscoveryConfiguration {
+            allow_default_route,
             __source_breaking: fidl::marker::SourceBreaking,
         }
     }

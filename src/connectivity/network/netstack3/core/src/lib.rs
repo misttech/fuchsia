@@ -156,8 +156,9 @@ pub mod ip {
         IpDeviceConfigurationUpdate, IpDeviceEvent, IpDeviceIpExt, Ipv4AddrConfig,
         Ipv4DeviceConfiguration, Ipv4DeviceConfigurationUpdate, Ipv6AddrManualConfig,
         Ipv6DeviceConfiguration, Ipv6DeviceConfigurationUpdate, Lifetime,
-        PendingIpDeviceConfigurationUpdate, PreferredLifetime, SetIpAddressPropertiesError,
-        SlaacConfiguration, SlaacConfigurationUpdate, StableSlaacAddressConfiguration,
+        PendingIpDeviceConfigurationUpdate, PreferredLifetime, RouteDiscoveryConfiguration,
+        RouteDiscoveryConfigurationUpdate, SetIpAddressPropertiesError, SlaacConfiguration,
+        SlaacConfigurationUpdate, StableSlaacAddressConfiguration,
         TemporarySlaacAddressConfiguration, UpdateIpConfigurationError,
     };
     pub use netstack3_ip::gmp::{IgmpConfigMode, MldConfigMode};

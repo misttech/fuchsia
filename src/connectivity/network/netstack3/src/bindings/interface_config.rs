@@ -12,7 +12,8 @@ use netstack3_core::device::{
 use netstack3_core::ip::{
     IgmpConfigMode, IidGenerationConfiguration, IpDeviceConfiguration, IpDeviceConfigurationUpdate,
     Ipv4DeviceConfiguration, Ipv4DeviceConfigurationUpdate, Ipv6DeviceConfiguration,
-    Ipv6DeviceConfigurationUpdate, MldConfigMode, SlaacConfiguration, SlaacConfigurationUpdate,
+    Ipv6DeviceConfigurationUpdate, MldConfigMode, RouteDiscoveryConfiguration,
+    RouteDiscoveryConfigurationUpdate, SlaacConfiguration, SlaacConfigurationUpdate,
     StableSlaacAddressConfiguration, TemporarySlaacAddressConfiguration,
 };
 use netstack3_core::neighbor::{NudUserConfig, NudUserConfigUpdate};
@@ -95,6 +96,7 @@ impl<D> InterfaceConfig<D> {
                     TemporarySlaacAddressConfiguration::enabled_with_rfc_defaults(),
             },
             ip_config: ip_config(IpVersion::V6),
+            route_discovery_config: RouteDiscoveryConfiguration::default(),
         };
 
         Self {
@@ -158,6 +160,7 @@ impl<D> InterfaceConfig<D> {
             max_router_solicitations,
             slaac_config:
                 SlaacConfiguration { stable_address_configuration, temporary_address_configuration },
+            route_discovery_config: RouteDiscoveryConfiguration { allow_default_route },
             ip_config,
         } = &self.ipv6;
 
@@ -191,6 +194,9 @@ impl<D> InterfaceConfig<D> {
             ip_config,
             max_router_solicitations: Some(max_router_solicitations),
             slaac_config,
+            route_discovery_config: RouteDiscoveryConfigurationUpdate {
+                allow_default_route: Some(*allow_default_route),
+            },
             mld_mode: Some(self.mld),
         }
     }
@@ -305,6 +311,7 @@ impl InterfaceConfig<DeviceNeighborConfig> {
                     stable_address_configuration,
                     temporary_address_configuration,
                 },
+            route_discovery_config: RouteDiscoveryConfigurationUpdate { allow_default_route },
             ip_config,
             mld_mode,
         } = update;
@@ -324,9 +331,17 @@ impl InterfaceConfig<DeviceNeighborConfig> {
             ),
         };
 
+        let route_discovery_config_update = RouteDiscoveryConfigurationUpdate {
+            allow_default_route: update_and_take_prev(
+                &mut self.ipv6.route_discovery_config.allow_default_route,
+                allow_default_route,
+            ),
+        };
+
         Ipv6DeviceConfigurationUpdate {
             max_router_solicitations: max_rtr_solicitations_update,
             slaac_config: slaac_config_update,
+            route_discovery_config: route_discovery_config_update,
             ip_config: ip_config_update,
             mld_mode: mld_mode_update,
         }
@@ -490,6 +505,7 @@ impl FidlInterfaceConfig {
         let Ipv6DeviceConfiguration {
             max_router_solicitations: _,
             slaac_config,
+            route_discovery_config,
             ip_config:
                 IpDeviceConfiguration {
                     gmp_enabled: _,
@@ -507,6 +523,7 @@ impl FidlInterfaceConfig {
                 __source_breaking: fidl::marker::SourceBreaking,
             }),
             slaac: Some(slaac_config.into_fidl()),
+            route_discovery: Some(route_discovery_config.into_fidl()),
             __source_breaking: fidl::marker::SourceBreaking,
         });
 
@@ -577,6 +594,7 @@ impl FidlInterfaceConfig {
             let Ipv6DeviceConfigurationUpdate {
                 ip_config,
                 slaac_config,
+                route_discovery_config,
                 max_router_solicitations: _,
                 mld_mode,
             } = ipv6;
@@ -596,10 +614,12 @@ impl FidlInterfaceConfig {
             });
 
             let slaac = util::some_if_not_default(slaac_config.into_fidl());
+            let route_discovery = util::some_if_not_default(route_discovery_config.into_fidl());
             let ndp = util::some_if_not_default(fnet_interfaces_admin::NdpConfiguration {
                 nud: nud.map(IntoFidl::into_fidl),
                 dad,
                 slaac,
+                route_discovery,
                 __source_breaking: fidl::marker::SourceBreaking,
             });
 
@@ -703,8 +723,13 @@ impl FidlInterfaceConfig {
                     })
                     .transpose()?;
 
-                let fnet_interfaces_admin::NdpConfiguration { nud, dad, slaac, __source_breaking } =
-                    ndp.unwrap_or_default();
+                let fnet_interfaces_admin::NdpConfiguration {
+                    nud,
+                    dad,
+                    slaac,
+                    route_discovery,
+                    __source_breaking,
+                } = ndp.unwrap_or_default();
 
                 let fnet_interfaces_admin::DadConfiguration {
                     transmits: dad_transmits,
@@ -737,6 +762,10 @@ impl FidlInterfaceConfig {
                         slaac_config: SlaacConfigurationUpdate {
                             temporary_address_configuration,
                             stable_address_configuration: None,
+                        },
+                        route_discovery_config: RouteDiscoveryConfigurationUpdate {
+                            allow_default_route: route_discovery
+                                .and_then(|config| config.allow_default_route),
                         },
                         max_router_solicitations: None,
                         mld_mode,

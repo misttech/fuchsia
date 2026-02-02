@@ -60,7 +60,8 @@ pub mod device {
     pub use crate::internal::device::opaque_iid::{IidSecret, OpaqueIid, OpaqueIidNonce};
     pub use crate::internal::device::route_discovery::{
         Ipv6DiscoveredRoute, Ipv6DiscoveredRoutesContext, Ipv6RouteDiscoveryBindingsContext,
-        Ipv6RouteDiscoveryContext, Ipv6RouteDiscoveryState,
+        Ipv6RouteDiscoveryContext, Ipv6RouteDiscoveryState, RouteDiscoveryConfiguration,
+        RouteDiscoveryConfigurationUpdate,
     };
     pub use crate::internal::device::router_solicitation::{
         MAX_RTR_SOLICITATION_DELAY, RTR_SOLICITATION_INTERVAL, RsContext, RsHandler, RsState,

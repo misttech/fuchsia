@@ -1115,13 +1115,14 @@ impl<
         route: Ipv6DiscoveredRoute,
         lifetime: Option<NonZeroNdpLifetime>,
     ) {
-        self.with_ipv6_device_configuration(device_id, |_config, mut core_ctx| {
+        self.with_ipv6_device_configuration(device_id, |config, mut core_ctx| {
             RouteDiscoveryHandler::update_route(
                 &mut core_ctx,
                 bindings_ctx,
                 device_id,
                 route,
                 lifetime,
+                &config.route_discovery_config,
             )
         })
     }

@@ -27,7 +27,9 @@ use packet_formats::utils::NonZeroDuration;
 
 use crate::internal::counters::{IpCounters, IpCountersIpExt};
 use crate::internal::device::dad::{DadIpExt, DadState};
-use crate::internal::device::route_discovery::Ipv6RouteDiscoveryState;
+use crate::internal::device::route_discovery::{
+    Ipv6RouteDiscoveryState, RouteDiscoveryConfiguration,
+};
 use crate::internal::device::router_solicitation::RsState;
 use crate::internal::device::slaac::{SlaacConfiguration, SlaacState};
 use crate::internal::device::{
@@ -556,6 +558,9 @@ pub struct Ipv6DeviceConfiguration {
 
     /// The configuration for SLAAC.
     pub slaac_config: SlaacConfiguration,
+
+    /// The configuration for route discovery.
+    pub route_discovery_config: RouteDiscoveryConfiguration,
 
     /// The configuration common to all IP devices.
     pub ip_config: IpDeviceConfiguration,

@@ -148,6 +148,18 @@ type Configuration = table {
                 /// [RFC 4941]: https://datatracker.ietf.org/doc/html/rfc4941
                 1: temporary_address bool;
             };
+            /// Controls route discovery configuration.
+            4: route_discovery @generated_name("RouteDiscoveryConfiguration") table {
+                /// Whether the interface will add a default route for routes
+                /// learned via Router Advertisements as described in [RFC 4861].
+                ///
+                /// Note that setting this to false will not remove any existing
+                /// default routes learned via Router Advertisements. Those routes
+                /// will be removed when their lifetime expires.
+                ///
+                /// [RFC 4861]: https://datatracker.ietf.org/doc/html/rfc4861
+                1: allow_default_route bool;
+            };
         };
         /// Controls whether or not IPv6 is enabled on the interface.
         ///

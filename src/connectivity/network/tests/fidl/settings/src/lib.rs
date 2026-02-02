@@ -122,18 +122,32 @@ async fn interface_defaults(name: &str) {
         }),
         __source_breaking,
     };
-    let fnet_interfaces_admin::NdpConfiguration { nud, dad, slaac, __source_breaking } =
-        ndp.expect("missing ndp");
+    let fnet_interfaces_admin::NdpConfiguration {
+        nud,
+        dad,
+        slaac,
+        route_discovery,
+        __source_breaking,
+    } = ndp.expect("missing ndp");
     let fnet_interfaces_admin::SlaacConfiguration { temporary_address, __source_breaking } =
         slaac.expect("missing slaac");
     let slaac = fnet_interfaces_admin::SlaacConfiguration {
         temporary_address: Some(!temporary_address.expect("missing temp addresses")),
         __source_breaking,
     };
+    let fnet_interfaces_admin::RouteDiscoveryConfiguration {
+        allow_default_route,
+        __source_breaking,
+    } = route_discovery.expect("missing route discovery");
+    let route_discovery = fnet_interfaces_admin::RouteDiscoveryConfiguration {
+        allow_default_route: Some(!allow_default_route.expect("missing allow default route")),
+        __source_breaking,
+    };
     let ndp = fnet_interfaces_admin::NdpConfiguration {
         nud: Some(modify_nud(nud.expect("missing nud"))),
         dad: Some(modify_dad(dad.expect("missing dad"))),
         slaac: Some(slaac),
+        route_discovery: Some(route_discovery),
         __source_breaking: fidl::marker::SourceBreaking,
     };
     let ipv6 = fnet_interfaces_admin::Ipv6Configuration {

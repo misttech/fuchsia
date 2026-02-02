@@ -9,6 +9,7 @@ use core::num::{NonZeroU8, NonZeroU16};
 use net_types::ip::{GenericOverIp, Ip, Ipv4, Ipv6};
 use netstack3_base::{AnyDevice, DeviceIdContext, DeviceIdentifier};
 
+use crate::internal::device::route_discovery::RouteDiscoveryConfigurationUpdate;
 use crate::internal::device::slaac::SlaacConfigurationUpdate;
 use crate::internal::device::state::{
     IpDeviceConfiguration, IpDeviceFlags, Ipv4DeviceConfiguration,
@@ -242,6 +243,8 @@ pub struct Ipv6DeviceConfigurationUpdate {
     pub max_router_solicitations: Option<Option<NonZeroU8>>,
     /// A change in SLAAC configuration.
     pub slaac_config: SlaacConfigurationUpdate,
+    /// A change in route discovery configuration.
+    pub route_discovery_config: RouteDiscoveryConfigurationUpdate,
     /// A change in the IP device configuration.
     pub ip_config: IpDeviceConfigurationUpdate,
     /// A change in the MLD mode.
@@ -274,6 +277,7 @@ where
             Ipv6DeviceConfigurationUpdate {
                 max_router_solicitations,
                 slaac_config,
+                route_discovery_config,
                 ip_config,
                 mld_mode,
             },
@@ -283,6 +287,7 @@ where
             let (
                 max_router_solicitations_updates,
                 slaac_config_updates,
+                route_discovery_config_updates,
                 ip_enabled_updates,
                 gmp_enabled_updates,
                 unicast_forwarding_enabled_updates,
@@ -302,6 +307,7 @@ where
                         max_router_solicitations,
                     ),
                     config.slaac_config.update(slaac_config),
+                    config.route_discovery_config.update(route_discovery_config),
                     get_prev_next_and_update(&mut flags.ip_enabled, ip_enabled),
                     get_prev_next_and_update(&mut config.ip_config.gmp_enabled, gmp_enabled),
                     get_prev_next_and_update(
@@ -387,6 +393,7 @@ where
             Ipv6DeviceConfigurationUpdate {
                 max_router_solicitations,
                 slaac_config: slaac_config_updates,
+                route_discovery_config: route_discovery_config_updates,
                 ip_config,
                 mld_mode,
             }

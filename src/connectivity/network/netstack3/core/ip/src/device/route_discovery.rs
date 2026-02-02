@@ -8,6 +8,7 @@
 
 use core::hash::Hash;
 
+use derivative::Derivative;
 use net_types::LinkLocalUnicastAddr;
 use net_types::ip::{Ipv6Addr, Subnet};
 use netstack3_base::{
@@ -73,6 +74,37 @@ pub struct Ipv6DiscoveredRouteTimerId<D: WeakDeviceIdentifier> {
 impl<D: WeakDeviceIdentifier> Ipv6DiscoveredRouteTimerId<D> {
     pub(super) fn device_id(&self) -> &D {
         &self.device_id
+    }
+}
+
+/// The configuration for route discovery.
+#[derive(Copy, Clone, Debug, Eq, PartialEq, Derivative)]
+#[derivative(Default)]
+pub struct RouteDiscoveryConfiguration {
+    /// Allow default route to be added for this device.
+    #[derivative(Default(value = "true"))]
+    pub allow_default_route: bool,
+}
+
+/// The configuration update for route discovery.
+#[derive(Copy, Clone, Debug, Eq, PartialEq, Default)]
+#[allow(missing_docs)]
+pub struct RouteDiscoveryConfigurationUpdate {
+    pub allow_default_route: Option<bool>,
+}
+
+impl RouteDiscoveryConfiguration {
+    /// Updates the route discovery configuration.
+    ///
+    /// Returns the previous value of the updated fields.
+    pub fn update(
+        &mut self,
+        update: RouteDiscoveryConfigurationUpdate,
+    ) -> RouteDiscoveryConfigurationUpdate {
+        let RouteDiscoveryConfigurationUpdate { allow_default_route } = update;
+        let allow_default_route =
+            allow_default_route.map(|new| core::mem::replace(&mut self.allow_default_route, new));
+        RouteDiscoveryConfigurationUpdate { allow_default_route }
     }
 }
 
@@ -145,6 +177,7 @@ pub trait RouteDiscoveryHandler<BC>: DeviceIdContext<AnyDevice> {
         device_id: &Self::DeviceId,
         route: Ipv6DiscoveredRoute,
         lifetime: Option<NonZeroNdpLifetime>,
+        config: &RouteDiscoveryConfiguration,
     );
 
     /// Invalidates all discovered routes.
@@ -160,11 +193,15 @@ impl<BC: Ipv6RouteDiscoveryBindingsContext, CC: Ipv6RouteDiscoveryContext<BC>>
         device_id: &CC::DeviceId,
         route: Ipv6DiscoveredRoute,
         lifetime: Option<NonZeroNdpLifetime>,
+        config: &RouteDiscoveryConfiguration,
     ) {
         self.with_discovered_routes_mut(device_id, |state, core_ctx| {
             let Ipv6RouteDiscoveryState { routes, timers } = state;
             match lifetime {
                 Some(lifetime) => {
+                    if !config.allow_default_route && route.subnet.prefix() == 0 {
+                        return;
+                    }
                     let newly_added = routes.insert(route.clone());
                     if newly_added {
                         core_ctx.add_discovered_ipv6_route(bindings_ctx, device_id, route);
@@ -346,6 +383,7 @@ mod tests {
             &FakeDeviceId,
             ROUTE1,
             None,
+            &Default::default(),
         );
         bindings_ctx.timers.assert_no_timers_installed();
     }
@@ -362,6 +400,7 @@ mod tests {
             &FakeDeviceId,
             route,
             Some(duration),
+            &Default::default(),
         );
 
         let route_table = &core_ctx.state.route_table.route_table;
@@ -440,6 +479,7 @@ mod tests {
             &FakeDeviceId,
             ROUTE1,
             Some(NonZeroNdpLifetime::Finite(ONE_SECOND)),
+            &Default::default(),
         );
         assert_eq!(
             core_ctx.state.state.timers.get(&ROUTE1),
@@ -453,7 +493,14 @@ mod tests {
         bindings_ctx: &mut FakeBindingsCtxImpl,
         route: Ipv6DiscoveredRoute,
     ) {
-        RouteDiscoveryHandler::update_route(core_ctx, bindings_ctx, &FakeDeviceId, ROUTE1, None);
+        RouteDiscoveryHandler::update_route(
+            core_ctx,
+            bindings_ctx,
+            &FakeDeviceId,
+            ROUTE1,
+            None,
+            &Default::default(),
+        );
         assert_route_invalidated(core_ctx, bindings_ctx, route);
     }
 
@@ -496,6 +543,7 @@ mod tests {
             &FakeDeviceId,
             ROUTE1,
             Some(NonZeroNdpLifetime::Infinite),
+            &Default::default(),
         );
         bindings_ctx.timers.assert_no_timers_installed();
     }
@@ -517,6 +565,7 @@ mod tests {
             &FakeDeviceId,
             ROUTE1,
             Some(NonZeroNdpLifetime::Finite(TWO_SECONDS)),
+            &Default::default(),
         );
         assert_eq!(
             core_ctx.state.state.timers.get(&ROUTE1),
