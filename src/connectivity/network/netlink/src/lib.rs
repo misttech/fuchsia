@@ -48,7 +48,9 @@ use crate::client::{AsyncWorkItem, ClientIdGenerator, ClientTable, InternalClien
 use crate::logging::{log_debug, log_warn};
 use crate::messaging::{NetlinkContext, UnvalidatedNetlinkMessage as _, ValidationError};
 pub use crate::netlink_packet::errno::Errno;
-use crate::protocol_family::route::{NetlinkRoute, NetlinkRouteClient, NetlinkRouteRequestHandler};
+use crate::protocol_family::route::{
+    NetlinkRoute, NetlinkRouteClient, NetlinkRouteRequestHandler, RouteAsyncWork,
+};
 use crate::protocol_family::{NetlinkFamilyRequestHandler as _, ProtocolFamily};
 use crate::route_eventloop::RouteEventLoop;
 
@@ -76,7 +78,7 @@ pub struct Netlink<C: NetlinkContext> {
     /// Sender to attach new `NETLINK_ROUTE` clients to the Netlink worker.
     route_client_sender: UnboundedSender<ClientWithReceiver<C, NetlinkRoute>>,
     /// Sender to send other async work items to the Netlink worker.
-    route_async_work_sink: mpsc::UnboundedSender<AsyncWorkItem<NetlinkRouteNotifiedGroup>>,
+    route_async_work_sink: mpsc::UnboundedSender<AsyncWorkItem<NetlinkRoute>>,
 }
 
 impl<C: NetlinkContext> Netlink<C> {
@@ -111,11 +113,11 @@ impl<C: NetlinkContext> Netlink<C> {
     ) -> Result<(), SysctlError> {
         let (responder, receiver) = oneshot_sync::channel();
         self.route_async_work_sink
-            .unbounded_send(AsyncWorkItem::SetAcceptRaRtTable {
+            .unbounded_send(AsyncWorkItem::Inner(RouteAsyncWork::SetAcceptRaRtTable {
                 interface,
                 value: value.into(),
                 responder,
-            })
+            }))
             .map_err(|_| SysctlError::Disconnected)?;
         receiver.receive().map_err(|_| SysctlError::Disconnected)?
     }
@@ -127,7 +129,10 @@ impl<C: NetlinkContext> Netlink<C> {
     ) -> Result<i32, SysctlError> {
         let (responder, receiver) = oneshot_sync::channel();
         self.route_async_work_sink
-            .unbounded_send(AsyncWorkItem::GetAcceptRaRtTable { interface, responder })
+            .unbounded_send(AsyncWorkItem::Inner(RouteAsyncWork::GetAcceptRaRtTable {
+                interface,
+                responder,
+            }))
             .map_err(|_| SysctlError::Disconnected)?;
         Ok(receiver.receive().map_err(|_| SysctlError::Disconnected)??.into())
     }
@@ -191,7 +196,7 @@ pub struct NetlinkWorkerParams<H, C: NetlinkContext> {
     /// Receiver of newly created `NETLINK_ROUTE` clients.
     route_client_receiver: UnboundedReceiver<ClientWithReceiver<C, NetlinkRoute>>,
     route_async_work_receiver:
-        futures::channel::mpsc::UnboundedReceiver<AsyncWorkItem<NetlinkRouteNotifiedGroup>>,
+        futures::channel::mpsc::UnboundedReceiver<AsyncWorkItem<NetlinkRoute>>,
 }
 
 /// All of the protocols that the netlink worker connects to.

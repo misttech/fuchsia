@@ -27,7 +27,7 @@ use crate::messaging::Sender;
 use crate::multicast_groups::ModernGroup;
 use crate::netlink_packet::errno::Errno;
 use crate::protocol_family::ProtocolFamily;
-use crate::protocol_family::route::NetlinkRoute;
+use crate::protocol_family::route::{NetlinkRoute, RouteAsyncWork};
 use crate::{
     NetlinkRouteNotifiedGroup, SysctlError, SysctlInterfaceSelector, interfaces, route_tables,
     routes, rules,
@@ -100,7 +100,7 @@ pub(crate) struct RouteEventLoop<
     pub(crate) interfaces_handler: H,
     pub(crate) route_clients: ClientTable<NetlinkRoute, S>,
     pub(crate) async_work_receiver:
-        futures::channel::mpsc::UnboundedReceiver<AsyncWorkItem<NetlinkRouteNotifiedGroup>>,
+        futures::channel::mpsc::UnboundedReceiver<AsyncWorkItem<NetlinkRoute>>,
     pub(crate) request_stream: mpsc::Receiver<UnifiedRequest<S>>,
 }
 
@@ -253,7 +253,7 @@ pub(crate) struct EventLoopInputs<
     pub(crate) interfaces_handler: EventLoopComponent<H, E::InterfacesHandler>,
     pub(crate) route_clients: EventLoopComponent<ClientTable<NetlinkRoute, S>, E::RouteClients>,
     pub(crate) async_work_receiver:
-        futures::channel::mpsc::UnboundedReceiver<AsyncWorkItem<NetlinkRouteNotifiedGroup>>,
+        futures::channel::mpsc::UnboundedReceiver<AsyncWorkItem<NetlinkRoute>>,
 
     pub(crate) unified_request_stream: mpsc::Receiver<UnifiedRequest<S>>,
 }
@@ -458,8 +458,7 @@ pub(crate) struct EventLoopState<
 
     route_clients: EventLoopComponent<ClientTable<NetlinkRoute, S>, E::RouteClients>,
     interfaces_proxy: EventLoopComponent<fnet_root::InterfacesProxy, E::InterfacesProxy>,
-    async_work_receiver:
-        futures::channel::mpsc::UnboundedReceiver<AsyncWorkItem<NetlinkRouteNotifiedGroup>>,
+    async_work_receiver: futures::channel::mpsc::UnboundedReceiver<AsyncWorkItem<NetlinkRoute>>,
 
     v4_route_table_map: EventLoopComponent<route_tables::RouteTableMap<Ipv4>, E::RoutesV4Worker>,
     v6_route_table_map: EventLoopComponent<route_tables::RouteTableMap<Ipv6>, E::RoutesV6Worker>,
@@ -548,7 +547,7 @@ impl<
             }
             async_work = async_work_receiver.select_next_some() => {
                 match async_work {
-                    AsyncWorkItem::SetAcceptRaRtTable { interface, value, responder } => {
+                    AsyncWorkItem::Inner(RouteAsyncWork::SetAcceptRaRtTable { interface, value, responder }) => {
                         let interfaces = interfaces_worker.get_mut();
                         let route_table_maps =
                             v4_route_table_map.present_mut().zip(
@@ -592,7 +591,7 @@ impl<
                         let result = result.await;
                         responder.send(result)
                     }
-                    AsyncWorkItem::GetAcceptRaRtTable { interface, responder } => {
+                    AsyncWorkItem::Inner(RouteAsyncWork::GetAcceptRaRtTable { interface, responder }) => {
                         let interfaces = interfaces_worker.get_mut();
                         let result = (|| Ok(match interface {
                             SysctlInterfaceSelector::Default => {

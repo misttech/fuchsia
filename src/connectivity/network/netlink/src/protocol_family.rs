@@ -45,6 +45,10 @@ pub(crate) trait ProtocolFamily: MulticastCapableNetlinkFamily + Send + Sized {
 
     type NotifiedMulticastGroup: PartialEq + Eq + Hash + Clone + Copy + Debug + Send;
 
+    /// Family-specific async work to be passed through
+    /// [`crate::client::AsyncWorkItem`].
+    type AsyncWorkItem: Debug;
+
     /// Returns `true` if we may need to notify the worker event loop in
     /// response to a client joining or leaving the given `ModernGroup`.
     fn should_notify_on_group_membership_change(
@@ -120,12 +124,13 @@ pub mod route {
     use netlink_packet_route::{AddressFamily, RouteNetlinkMessage};
 
     use crate::client::AsyncWorkCompletionWaiter;
+    use crate::interfaces::AcceptRaRtTable;
     use crate::messaging::{MessageWithPermission, Permission};
     use crate::netlink_packet::errno::Errno;
     use crate::netlink_packet::{self};
     use crate::route_eventloop::UnifiedRequest;
     use crate::rules::{RuleRequest, RuleRequestArgs};
-    use crate::{interfaces, routes};
+    use crate::{SysctlError, SysctlInterfaceSelector, interfaces, routes};
 
     use netlink_packet_core::{NLM_F_ACK, NLM_F_DUMP, NLM_F_REPLACE, NetlinkHeader};
 
@@ -229,6 +234,7 @@ pub mod route {
         type Response = RouteNetlinkMessage;
         type RequestHandler<S: Sender<Self::Response>> = NetlinkRouteRequestHandler<S>;
         type NotifiedMulticastGroup = NetlinkRouteNotifiedGroup;
+        type AsyncWorkItem = RouteAsyncWork;
 
         const NAME: &'static str = "NETLINK_ROUTE";
         fn should_notify_on_group_membership_change(
@@ -237,6 +243,19 @@ pub mod route {
             (group == ModernGroup(rtnetlink_groups_RTNLGRP_ND_USEROPT))
                 .then_some(NetlinkRouteNotifiedGroup::Nduseropt)
         }
+    }
+
+    #[derive(Debug)]
+    pub(crate) enum RouteAsyncWork {
+        SetAcceptRaRtTable {
+            interface: SysctlInterfaceSelector,
+            value: AcceptRaRtTable,
+            responder: oneshot_sync::Sender<Result<(), SysctlError>>,
+        },
+        GetAcceptRaRtTable {
+            interface: SysctlInterfaceSelector,
+            responder: oneshot_sync::Sender<Result<AcceptRaRtTable, SysctlError>>,
+        },
     }
 
     #[derive(Clone)]
@@ -1368,6 +1387,8 @@ pub mod route {
 pub(crate) mod testutil {
     use super::*;
 
+    use std::convert::Infallible as Never;
+
     use crate::messaging::testutil::FakeCreds;
     use crate::messaging::{NetlinkMessageWithCreds, Permission};
     use netlink_packet_core::NetlinkHeader;
@@ -1461,6 +1482,7 @@ pub(crate) mod testutil {
         type Response = FakeNetlinkInnerMessage;
         type RequestHandler<S: Sender<Self::Response>> = FakeNetlinkRequestHandler;
         type NotifiedMulticastGroup = ();
+        type AsyncWorkItem = Never;
 
         const NAME: &'static str = "FAKE_PROTOCOL_FAMILY";
         fn should_notify_on_group_membership_change(

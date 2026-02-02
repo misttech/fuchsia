@@ -17,7 +17,6 @@ use assert_matches::assert_matches;
 use derivative::Derivative;
 use netlink_packet_core::NetlinkMessage;
 
-use crate::interfaces::AcceptRaRtTable;
 use crate::logging::{log_debug, log_warn};
 use crate::messaging::Sender;
 use crate::multicast_groups::{
@@ -25,7 +24,6 @@ use crate::multicast_groups::{
     MulticastGroupMemberships,
 };
 use crate::protocol_family::ProtocolFamily;
-use crate::{SysctlError, SysctlInterfaceSelector};
 
 /// A unique identifier for a client.
 #[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
@@ -59,11 +57,9 @@ impl<F: ProtocolFamily> Drop for InnerClient<F> {
             group_memberships_lock_guard
                 .async_work_sink
                 .unbounded_send(AsyncWorkItem::OnLeaveMulticastGroup(groups))
-                .unwrap_or_else(
-                    |_: futures::channel::mpsc::TrySendError<
-                        AsyncWorkItem<<F as ProtocolFamily>::NotifiedMulticastGroup>,
-                    >| log_warn!("async work receiver was dropped"),
-                );
+                .unwrap_or_else(|_: futures::channel::mpsc::TrySendError<AsyncWorkItem<F>>| {
+                    log_warn!("async work receiver was dropped")
+                });
         }
     }
 }
@@ -72,16 +68,11 @@ struct MulticastGroupState<F: ProtocolFamily> {
     /// The client's current multicast group memberships.
     memberships: MulticastGroupMemberships<F>,
     /// Channel for sending async work to the worker thread.
-    async_work_sink:
-        futures::channel::mpsc::UnboundedSender<AsyncWorkItem<F::NotifiedMulticastGroup>>,
+    async_work_sink: futures::channel::mpsc::UnboundedSender<AsyncWorkItem<F>>,
 }
 
 impl<F: ProtocolFamily> MulticastGroupState<F> {
-    fn new(
-        async_work_sink: futures::channel::mpsc::UnboundedSender<
-            AsyncWorkItem<F::NotifiedMulticastGroup>,
-        >,
-    ) -> Self {
+    fn new(async_work_sink: futures::channel::mpsc::UnboundedSender<AsyncWorkItem<F>>) -> Self {
         Self { memberships: MulticastGroupMemberships::new(), async_work_sink }
     }
 }
@@ -184,25 +175,18 @@ fn push_one_or_many<T: Hash + PartialEq + Eq + Copy>(
     }
 }
 
-#[derive(Debug)]
-pub(crate) enum AsyncWorkItem<T> {
-    OnJoinMulticastGroup(T, oneshot_sync::Sender<()>),
+#[derive(Derivative)]
+#[derivative(Debug(bound = ""))]
+pub(crate) enum AsyncWorkItem<F: ProtocolFamily> {
+    OnJoinMulticastGroup(F::NotifiedMulticastGroup, oneshot_sync::Sender<()>),
     // No synchronization is actually needed on this, it's just a cleanup signal.
-    OnLeaveMulticastGroup(OneOrMany<T>),
+    OnLeaveMulticastGroup(OneOrMany<F::NotifiedMulticastGroup>),
     OnSetMulticastGroups {
-        joined: Option<OneOrMany<T>>,
-        left: Option<OneOrMany<T>>,
+        joined: Option<OneOrMany<F::NotifiedMulticastGroup>>,
+        left: Option<OneOrMany<F::NotifiedMulticastGroup>>,
         complete: Option<oneshot_sync::Sender<()>>,
     },
-    SetAcceptRaRtTable {
-        interface: SysctlInterfaceSelector,
-        value: AcceptRaRtTable,
-        responder: oneshot_sync::Sender<Result<(), SysctlError>>,
-    },
-    GetAcceptRaRtTable {
-        interface: SysctlInterfaceSelector,
-        responder: oneshot_sync::Sender<Result<AcceptRaRtTable, SysctlError>>,
-    },
+    Inner(F::AsyncWorkItem),
 }
 
 /// Blocks until asynchronous work is completed.
@@ -360,9 +344,7 @@ impl<F: ProtocolFamily> ExternalClient<F> {
 pub(crate) fn new_client_pair<F: ProtocolFamily, S: Sender<F::Response>>(
     id: ClientId,
     sender: S,
-    async_work_sink: futures::channel::mpsc::UnboundedSender<
-        AsyncWorkItem<F::NotifiedMulticastGroup>,
-    >,
+    async_work_sink: futures::channel::mpsc::UnboundedSender<AsyncWorkItem<F>>,
 ) -> (ExternalClient<F>, InternalClient<F, S>) {
     let inner = Arc::new(InnerClient {
         id,
@@ -509,8 +491,8 @@ mod tests {
         }
     }
 
-    fn closed_async_work_sink<T: Copy + Clone + Debug + 'static>()
-    -> futures::channel::mpsc::UnboundedSender<AsyncWorkItem<T>> {
+    fn closed_async_work_sink<F: ProtocolFamily>()
+    -> futures::channel::mpsc::UnboundedSender<AsyncWorkItem<F>> {
         let (sender, _) = futures::channel::mpsc::unbounded();
         sender.close_channel();
         sender

@@ -1554,7 +1554,6 @@ pub(crate) mod testutil {
 
     use crate::client::AsyncWorkItem;
     use crate::messaging::testutil::FakeSender;
-    use crate::protocol_family::route::NetlinkRouteNotifiedGroup;
     use crate::route_eventloop::{EventLoopComponent, IncludedWorkers, Optional, Required};
 
     pub(crate) const LO_INTERFACE_ID: u64 = 1;
@@ -1671,7 +1670,7 @@ pub(crate) mod testutil {
             mpsc::Sender<crate::route_eventloop::UnifiedRequest<FakeSender<RouteNetlinkMessage>>>,
         pub interfaces_request_stream: fnet_root::InterfacesRequestStream,
         pub interfaces_handler_sink: FakeInterfacesHandlerSink,
-        pub _async_work_sink: mpsc::UnboundedSender<AsyncWorkItem<NetlinkRouteNotifiedGroup>>,
+        pub _async_work_sink: mpsc::UnboundedSender<AsyncWorkItem<NetlinkRoute>>,
     }
 
     pub(crate) fn setup_with_route_clients(

@@ -1353,7 +1353,6 @@ mod tests {
     use crate::client::AsyncWorkItem;
     use crate::interfaces::testutil::FakeInterfacesHandler;
     use crate::messaging::testutil::{FakeSender, SentMessage};
-    use crate::protocol_family::route::NetlinkRouteNotifiedGroup;
     use crate::route_eventloop::{EventLoopComponent, Optional, Required};
 
     const V4_SUB1: Subnet<Ipv4Addr> = net_subnet_v4!("192.0.2.0/32");
@@ -2176,7 +2175,7 @@ mod tests {
         pub interfaces_request_stream: fnet_root::InterfacesRequestStream,
         pub request_sink:
             mpsc::Sender<crate::route_eventloop::UnifiedRequest<FakeSender<RouteNetlinkMessage>>>,
-        pub async_work_sink: mpsc::UnboundedSender<AsyncWorkItem<NetlinkRouteNotifiedGroup>>,
+        pub async_work_sink: mpsc::UnboundedSender<AsyncWorkItem<NetlinkRoute>>,
     }
 
     fn setup_with_route_clients_yielding_admin_server_ends<
