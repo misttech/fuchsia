@@ -12,6 +12,7 @@ rustc_test("integration-bin") {
   name = "persistence_integration_test"
   deps = [
     "//sdk/fidl/fuchsia.component:fuchsia.component_rust",
+    "//sdk/fidl/fuchsia.component.sandbox:fuchsia.component.sandbox_rust",
     "//sdk/fidl/fuchsia.diagnostics:fuchsia.diagnostics_rust",
     "//sdk/fidl/fuchsia.inspect:fuchsia.inspect_rust",
     "//sdk/fidl/fuchsia.io:fuchsia.io_rust",
@@ -72,7 +73,10 @@ fuchsia_unittest_component("persistence-integration-test") {
 fuchsia_component_manifest("persistence-manifest-for-test") {
   component_name = "persistence"
   manifest = "meta/persistence-for-test.cml"
-  restricted_features = [ "dynamic_dictionaries" ]
+  restricted_features = [
+    "delivery_type",
+    "dynamic_dictionaries",
+  ]
 }
 
 fuchsia_component("persistence-component-for-test") {

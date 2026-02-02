@@ -89,7 +89,7 @@ impl<'de> Visitor<'de> for TimeNanos {
 // corresponding to the current and previous boot, respectively. When a boot
 // occurs, this function will move /cache/current to /cache/previous then copy
 // tags with persist_across_boot back into /cache/current.
-pub fn forget_old_data(config: &Config) -> Result<(), Error> {
+pub async fn forget_old_data(config: &Config) -> Result<(), Error> {
     info!(
         "Forgetting persisted inspect data from two boots ago, except for tags with persist_across_boot enabled"
     );
@@ -111,7 +111,7 @@ pub fn forget_old_data(config: &Config) -> Result<(), Error> {
         bail!("Failed to swap current data with previous: {e}");
     }
 
-    let mut data = previous_data()?.context("Data not found; filesystem inconsistency")?;
+    let mut data = previous_data().await?.context("Data not found; filesystem inconsistency")?;
 
     remove_tags_without_persist_across_boot(&mut data, config)
         .context("Failed to remove tags without persist_across_boot")?;
@@ -145,23 +145,23 @@ fn remove_tags_without_persist_across_boot(
     Ok(())
 }
 
-fn read_data(path: &str) -> Result<Option<PersistenceData>, Error> {
-    match File::open(path) {
-        Ok(file) => Ok(serde_json::from_reader(file)
+async fn read_data(path: &str) -> Result<Option<PersistenceData>, Error> {
+    match fuchsia_fs::file::read_in_namespace(path).await {
+        Ok(bytes) => Ok(serde_json::from_slice(&bytes)
             .with_context(|| format!("Failed to deserialize Persistence data from {path}"))?),
-        Err(e) if e.kind() == ErrorKind::NotFound => Ok(None),
+        Err(e) if e.is_not_found_error() => Ok(None),
         Err(e) => {
             bail!("Failed to read Persistence data from \"{path}\": {e:?}")
         }
     }
 }
 
-pub(crate) fn current_data() -> Result<Option<PersistenceData>, Error> {
-    read_data(CURRENT_DATA)
+pub(crate) async fn current_data() -> Result<Option<PersistenceData>, Error> {
+    read_data(CURRENT_DATA).await
 }
 
-pub(crate) fn previous_data() -> Result<Option<PersistenceData>, Error> {
-    read_data(PREVIOUS_DATA)
+pub(crate) async fn previous_data() -> Result<Option<PersistenceData>, Error> {
+    read_data(PREVIOUS_DATA).await
 }
 
 pub(crate) fn write_current_data(data: &PersistenceData) -> Result<(), Error> {

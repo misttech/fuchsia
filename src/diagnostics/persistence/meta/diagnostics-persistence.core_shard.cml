@@ -4,11 +4,6 @@
 {
     offer: [
         {
-            config: "fuchsia.diagnostics.PersistenceSkipUpdateCheck",
-            from: "parent",
-            to: "#diagnostics",
-        },
-        {
             dictionary: "diagnostics-accessors",
             from: "parent",
             to: "#diagnostics",
@@ -32,6 +27,17 @@
             as: "diagnostics-persistence-config-data",
             to: "#diagnostics",
             subdir: "diagnostics-persistence",
+        },
+        {
+            config: "fuchsia.diagnostics.persist.SkipUpdateCheck",
+            from: "parent",
+            to: "#diagnostics",
+        },
+        {
+            config: "fuchsia.diagnostics.persist.StopOnIdleTimeoutMillis",
+            from: "parent",
+            to: "#diagnostics",
+            availability: "same_as_target",
         },
     ],
     expose: [

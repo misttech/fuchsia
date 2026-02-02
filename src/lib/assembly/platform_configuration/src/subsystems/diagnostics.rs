@@ -8,8 +8,8 @@ use anyhow::{Context, anyhow};
 use assembly_component_id_index::{ComponentIdIndexBuilder, Index};
 use assembly_config_capabilities::{Config, ConfigNestedValueType, ConfigValueType};
 use assembly_config_schema::platform_settings::diagnostics_config::{
-    ArchivistConfig, ArchivistPipeline, DiagnosticsConfig, FireConfig, PipelineType, SamplerConfig,
-    Severity,
+    ArchivistConfig, ArchivistPipeline, DiagnosticsConfig, FireConfig, PersistenceConfig,
+    PipelineType, SamplerConfig, Severity,
 };
 use assembly_config_schema::platform_settings::storage_config::StorageConfig;
 use assembly_constants::{
@@ -298,13 +298,16 @@ impl<'a> DefineSubsystemConfiguration<DiagnosticsSubsystemConfig<'a>> for Diagno
             Config::new(ConfigValueType::Uint32, memory_monitor.normal_capture_delay_s.into()),
         )?;
 
+        // LINT.IfChange
+        let PersistenceConfig { skip_update_check, stop_on_idle_timeout_millis } = persistence;
+
         builder.set_config_capability(
-            "fuchsia.diagnostics.PersistenceSkipUpdateCheck",
+            "fuchsia.diagnostics.persist.SkipUpdateCheck",
             Config::new(
                 ConfigValueType::Bool,
                 match context.build_type {
                     BuildType::User => {
-                        if persistence.skip_update_check {
+                        if *skip_update_check {
                             return Err(anyhow!(
                                 "Persistence may not skip update check when build type is user"
                             ));
@@ -312,10 +315,18 @@ impl<'a> DefineSubsystemConfiguration<DiagnosticsSubsystemConfig<'a>> for Diagno
                             false.into()
                         }
                     }
-                    BuildType::UserDebug | BuildType::Eng => persistence.skip_update_check.into(),
+                    BuildType::UserDebug | BuildType::Eng => (*skip_update_check).into(),
                 },
             ),
         )?;
+        builder.set_config_capability(
+            "fuchsia.diagnostics.persist.StopOnIdleTimeoutMillis",
+            match stop_on_idle_timeout_millis {
+                Some(timeout) => Config::new(ConfigValueType::Int64, (*timeout).into()),
+                None => Config::new_void(),
+            },
+        )?;
+        // LINT.ThenChange(//src/diagnostics/persistence/meta/diagnostics-persistence.shard.cml)
 
         Ok(())
     }
@@ -573,9 +584,14 @@ mod tests {
             Value::Array(DENIED_SERIAL_LOG_TAGS.iter().cloned().map(Into::into).collect())
         );
         assert_eq!(
-            config.configuration_capabilities["fuchsia.diagnostics.PersistenceSkipUpdateCheck"]
+            config.configuration_capabilities["fuchsia.diagnostics.persist.SkipUpdateCheck"]
                 .value(),
             Value::Bool(false)
+        );
+        assert_eq!(
+            config.configuration_capabilities["fuchsia.diagnostics.persist.StopOnIdleTimeoutMillis"]
+                .value(),
+            Value::Null
         );
     }
 
@@ -624,7 +640,10 @@ mod tests {
             ..ConfigurationContext::default_for_tests()
         };
         let diagnostics = DiagnosticsConfig {
-            persistence: PersistenceConfig { skip_update_check: true },
+            persistence: PersistenceConfig {
+                skip_update_check: true,
+                stop_on_idle_timeout_millis: Some(5),
+            },
             ..Default::default()
         };
         let mut builder = ConfigurationBuilderImpl::default();
@@ -641,9 +660,14 @@ mod tests {
         let config = builder.build();
 
         assert_eq!(
-            config.configuration_capabilities["fuchsia.diagnostics.PersistenceSkipUpdateCheck"]
+            config.configuration_capabilities["fuchsia.diagnostics.persist.SkipUpdateCheck"]
                 .value(),
             Value::Bool(true),
+        );
+        assert_eq!(
+            config.configuration_capabilities["fuchsia.diagnostics.persist.StopOnIdleTimeoutMillis"]
+                .value(),
+            Value::Number(5.into())
         );
     }
 
@@ -657,7 +681,7 @@ mod tests {
             ..ConfigurationContext::default_for_tests()
         };
         let diagnostics = DiagnosticsConfig {
-            persistence: PersistenceConfig { skip_update_check: true },
+            persistence: PersistenceConfig { skip_update_check: true, ..Default::default() },
             ..Default::default()
         };
         let mut builder = ConfigurationBuilderImpl::default();

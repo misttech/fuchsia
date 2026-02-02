@@ -9,20 +9,28 @@ mod file_handler;
 mod inspect_server;
 mod scheduler;
 
-use anyhow::{Context, Error};
+use anyhow::{Context, Error, anyhow};
 use argh::FromArgs;
 use fidl::endpoints;
-use fuchsia_inspect::component;
+use fidl::endpoints::ControlHandle;
+use fuchsia_component::server::ServiceFs;
 use fuchsia_inspect::health::Reporter;
+use fuchsia_inspect::{Inspector, InspectorConfig, component};
 use fuchsia_runtime::{HandleInfo, HandleType};
-use futures::{StreamExt, TryStreamExt};
+use fuchsia_sync::Mutex;
+use futures::{FutureExt, StreamExt, TryStreamExt, select};
 use log::*;
-use persistence_build_config::Config as BuildConfig;
+use persistence_build_config::Config;
+use sandbox::CapabilityRef;
 use scheduler::Scheduler;
-use zx::BootInstant;
+use serde::{Deserialize, Serialize};
+use std::pin::pin;
+use std::sync::{Arc, LazyLock};
+use zx::{BootInstant, HandleBased};
 use {
-    fidl_fuchsia_process_lifecycle as flifecycle, fidl_fuchsia_update as fupdate,
-    fuchsia_async as fasync,
+    fidl_fuchsia_component_sandbox as fsandbox, fidl_fuchsia_diagnostics as fdiagnostics,
+    fidl_fuchsia_inspect as finspect, fidl_fuchsia_process_lifecycle as flifecycle,
+    fidl_fuchsia_update as fupdate, fuchsia_async as fasync,
 };
 
 /// The name of the subcommand and the logs-tag.
@@ -31,113 +39,447 @@ pub const PERSIST_NODE_NAME: &str = "persist";
 /// Added after persisted data is fully published
 pub const PUBLISHED_TIME_KEY: &str = "published";
 
+/// Key in escrowed dictionary to immutable state persisted across instances of
+/// this component across the same boot.
+const INSTANCE_STATE_KEY: &str = "InstanceState";
+/// Key in escrowed dictionary to frozen Inspect VMO.
+const FROZEN_INSPECT_VMO_KEY: &str = "FrozenInspectVMO";
+
+/// Parsed CML structured configuration.
+#[derive(Clone, Debug)]
+pub(crate) struct BuildConfig {
+    /// If true, don't wait for a successful update check before publishing
+    /// previous boot's persisted Inspect data.
+    skip_update_check: bool,
+    /// Duration to wait for FIDL requests before stalling the connection.
+    stall_interval: zx::MonotonicDuration,
+}
+
+/// Build config, as defined by the CML structured configuration.
+pub(crate) static BUILD_CONFIG: LazyLock<BuildConfig> = LazyLock::new(|| {
+    let config = Config::take_from_startup_handle();
+    component::inspector().root().record_child("config", |node| config.record_inspect(node));
+
+    let Config { skip_update_check, stop_on_idle_timeout_millis } = config;
+
+    if skip_update_check {
+        info!("Configured to skip update check");
+    }
+
+    let stall_interval = if stop_on_idle_timeout_millis >= 0 {
+        info!("Configured to idle after {stop_on_idle_timeout_millis}ms of inactivity");
+        zx::MonotonicDuration::from_millis(stop_on_idle_timeout_millis)
+    } else {
+        info!("Not configured to idle after inactivity");
+        zx::MonotonicDuration::INFINITE
+    };
+
+    BuildConfig { skip_update_check, stall_interval }
+});
+
 /// Command line args
 #[derive(FromArgs, Debug, PartialEq)]
 #[argh(subcommand, name = "persistence")]
 pub struct CommandLine {}
 
+#[derive(Debug, Clone, Serialize, Deserialize)]
+enum UpdateCheckStage {
+    /// Waiting for the first update check before publishing previous boot
+    /// inspect data.
+    Waiting,
+    /// First update check was skipped, previous boot inspect data has been published.
+    Skipped,
+    /// First update check has completed, previous boot inspect data has been
+    /// published.
+    Done,
+    /// Unable to subscribe to the first update check.
+    Error,
+}
+/// State to be persisted between instances of this component across
+/// the same boot.
+#[derive(Debug, Serialize, Deserialize)]
+struct PersistedState {
+    /// Persistence config loaded from disk.
+    config: persistence_config::Config,
+    /// Stage of the update check.
+    update_stage: Mutex<UpdateCheckStage>,
+}
+
+/// All component-specific state.
+#[derive(Clone)]
+struct ComponentState {
+    /// State persisted across instances of this component.
+    persisted: Arc<PersistedState>,
+    /// Listener for Sample
+    scheduler: Scheduler,
+    /// Controller to republish escrowed Inspect data, if available.
+    inspect_controller: Arc<Mutex<Option<inspect_runtime::PublishedInspectController>>>,
+}
+
+impl ComponentState {
+    /// Load state from a previous instance if possible, otherwise initialize
+    /// new state.
+    async fn load(
+        scope: fasync::ScopeHandle,
+        store: &sandbox::CapabilityStore,
+    ) -> Result<Self, Error> {
+        if let Some(dictionary) =
+            fuchsia_runtime::take_startup_handle(HandleInfo::new(HandleType::EscrowedDictionary, 0))
+        {
+            debug!("Loading component state from escrowed dictionary");
+            return ComponentState::from_escrow(scope.clone(), store, dictionary)
+                .await
+                .context("Failed to load component state from escrowed dictionary");
+        }
+
+        debug!("No escrowed dictionary available; generating one");
+        Self::new(scope.clone()).await.context("Failed to create component state")
+    }
+
+    async fn new(scope: fasync::ScopeHandle) -> Result<Self, Error> {
+        let inspect_controller = inspect_runtime::publish(
+            component::inspector(),
+            inspect_runtime::PublishOptions::default().custom_scope(scope.clone()),
+        )
+        .ok_or_else(|| anyhow!("failed to publish inspect"))?;
+
+        let config =
+            persistence_config::load_configuration_files().context("Error loading configs")?;
+        file_handler::forget_old_data(&config).await?;
+
+        let scheduler = Scheduler::new(&config);
+        scheduler
+            .subscribe(scope.clone(), &config)
+            .await
+            .context("Failed to subscribe to fuchsia.diagnostics.Sample")?;
+
+        let persisted = {
+            let update_stage = if BUILD_CONFIG.skip_update_check {
+                UpdateCheckStage::Skipped
+            } else {
+                UpdateCheckStage::Waiting
+            };
+            Arc::new(PersistedState { config, update_stage: Mutex::new(update_stage) })
+        };
+
+        if BUILD_CONFIG.skip_update_check {
+            publish_inspect_data().await;
+        } else {
+            // Listen for the first update check.
+            let notifier_client = {
+                let (notifier_client, notifier_request_stream) =
+                    fidl::endpoints::create_request_stream::<fupdate::NotifierMarker>();
+                let persisted = persisted.clone();
+                scope.spawn(async move {
+                    if let Err(e) = handle_update_done(notifier_request_stream, persisted).await {
+                        error!("Failed to handle NotifierRequest: {e}");
+                    }
+                });
+                notifier_client
+            };
+
+            match fuchsia_component::client::connect_to_protocol::<fupdate::ListenerMarker>() {
+                Ok(proxy) => {
+                    if let Err(e) = proxy.notify_on_first_update_check(
+                        fupdate::ListenerNotifyOnFirstUpdateCheckRequest {
+                            notifier: Some(notifier_client),
+                            ..Default::default()
+                        },
+                    ) {
+                        error!("Error subscribing to first update check; not publishing: {e:?}");
+                        *persisted.update_stage.lock() = UpdateCheckStage::Error;
+                    }
+                }
+                Err(e) => {
+                    // TODO(https://fxbug.dev/444526593): Consider bailing
+                    // if the update checker is not available.
+                    warn!(e:?; "Unable to connect to fuchsia.update.Listener; will publish immediately");
+                    *persisted.update_stage.lock() = UpdateCheckStage::Done;
+                }
+            }
+        }
+
+        Ok(Self {
+            persisted,
+            scheduler,
+            inspect_controller: Arc::new(Mutex::new(Some(inspect_controller))),
+        })
+    }
+
+    async fn from_escrow<'a>(
+        scope: fasync::ScopeHandle,
+        store: &'a sandbox::CapabilityStore,
+        dictionary: zx::NullableHandle,
+    ) -> Result<Self, Error> {
+        let dict = store
+            .import(fsandbox::DictionaryRef { token: dictionary.into() })
+            .await
+            .context("Error importing from component startup handle")?;
+
+        let inspect_controller = {
+            let escrow_token = dict
+                .get::<sandbox::Handle<'a>>(FROZEN_INSPECT_VMO_KEY)
+                .await
+                .context("Failed to get frozen Inspect VMO")?
+                .export::<zx::NullableHandle>()
+                .await
+                .context("Failed to export handle")?
+                .into_handle_based::<zx::EventPair>();
+
+            // Swap escrowed Inspect data with a new Tree server.
+            let token = finspect::EscrowToken { token: escrow_token };
+            let inspect_runtime::FetchEscrowResult { vmo, server } = inspect_runtime::fetch_escrow(
+                token,
+                inspect_runtime::FetchEscrowOptions::new().replace_with_tree(),
+            )
+            .await
+            .context("Failed to fetch escrowed Inspect data")?;
+
+            let opts = inspect_runtime::PublishOptions::default()
+                .custom_scope(scope.clone())
+                .on_tree_server(server.context("FetchEscrow did not return a TreeHandle")?);
+
+            // Check if Persistence has already published persisted data from last boot.
+            let escrowed_inspector = Inspector::new(InspectorConfig::default().vmo(vmo));
+            let escrowed_data = fuchsia_inspect::reader::read(&escrowed_inspector)
+                .await
+                .context("Failed to read escrowed Inspect data")?;
+
+            if let Some(_) = escrowed_data.get_property(PUBLISHED_TIME_KEY)
+                && let Some(_) = escrowed_data.get_child(PERSIST_NODE_NAME)
+            {
+                // Republish the read-only VMO. The VMO already contains
+                // persisted data from the last boot; no more work is necessary.
+                //
+                // Persistence needs to continue running to record data to
+                // persist for the next boot.
+                inspect_runtime::publish(&escrowed_inspector, opts)
+                    .context("Failed to publish escrowed (read-only) Inspect data")?
+            } else {
+                // Create a new, writable Inspect tree. The previous instance of
+                // Persistence did not receive the signal to persist data from
+                // the last boot, but this instance might.
+                inspect_runtime::publish(component::inspector(), opts)
+                    .context("Failed to publish Inspect data")?
+            }
+        };
+
+        let persisted_bytes = dict
+            .get::<sandbox::Data<'a>>(INSTANCE_STATE_KEY)
+            .await
+            .context("Error getting instance state")?
+            .export::<Vec<u8>>()
+            .await
+            .context("Error exporting as buffer")?;
+        let persisted: PersistedState = ciborium::from_reader(&persisted_bytes[..])
+            .context("Failed to deserialize InstanceState")?;
+
+        // Do not spawn FIDL request handlers when returning from escrow. The
+        // previous component instance escrowed its request streams, sending
+        // them to the Component Framework. When an incoming request is received
+        // on escrowed channels held by the Component Framework, it will be
+        // routed to this instance's incoming namespace (via IncomingRequest)
+        // then this instance will spawn new request handlers.
+
+        Ok(Self {
+            scheduler: Scheduler::new(&persisted.config),
+            persisted: Arc::new(persisted),
+            inspect_controller: Arc::new(Mutex::new(Some(inspect_controller))),
+        })
+    }
+
+    async fn as_escrowed_dict(
+        store: &sandbox::CapabilityStore,
+        persisted: impl AsRef<PersistedState>,
+        inspect_controller: Arc<Mutex<Option<inspect_runtime::PublishedInspectController>>>,
+    ) -> Result<fsandbox::DictionaryRef, Error> {
+        let dict = store.create_dictionary().await?;
+
+        // Save PersistedState
+        let mut persisted_bytes: Vec<u8> = Vec::new();
+        ciborium::into_writer(persisted.as_ref(), &mut persisted_bytes)
+            .context("Failed to serialize InstanceState")?;
+        let data = store.import(persisted_bytes).await?;
+        dict.insert(INSTANCE_STATE_KEY, data).await?;
+
+        // Save frozen Inspect VMO.
+        let inspect_controller = inspect_controller.lock().take();
+        if let Some(inspect_controller) = inspect_controller {
+            match inspect_controller.escrow_frozen(inspect_runtime::EscrowOptions::default()).await
+            {
+                Some(escrow_token) => {
+                    let handle = escrow_token.token.into_handle();
+                    let data = store.import(handle).await?;
+                    dict.insert(FROZEN_INSPECT_VMO_KEY, data).await?;
+                }
+                None => {
+                    error!("Failed to escrow frozen Inspect VMO");
+                }
+            }
+        }
+
+        dict.export().await.context("Failed to export escrowed dictionary")
+    }
+}
+
+/// Handle fuchsia.update/Notifier requests. Notifies of when an update check
+/// has been completed, signaling this component to publish persisted data to
+/// Inspect.
+async fn handle_update_done(
+    stream: fupdate::NotifierRequestStream,
+    persisted: Arc<PersistedState>,
+) -> Result<(), Error> {
+    let (stream, stalled) = detect_stall::until_stalled(stream, BUILD_CONFIG.stall_interval);
+    let mut stream = pin!(stream);
+    if let Ok(Some(request)) = stream.try_next().await {
+        debug!("Received fuchsia.update.NotifierRequest");
+        match request {
+            fupdate::NotifierRequest::Notify { control_handle } => {
+                debug!("Received notification that the update check has completed");
+                let stage = persisted.update_stage.lock().clone();
+                match stage {
+                    UpdateCheckStage::Skipped | UpdateCheckStage::Error => {
+                        unreachable!("Received impossible notification")
+                    }
+                    UpdateCheckStage::Waiting => {
+                        *persisted.update_stage.lock() = UpdateCheckStage::Done;
+                        info!("...Update check has completed; publishing previous boot data");
+                        publish_inspect_data().await;
+                        control_handle.shutdown();
+                        return Ok(());
+                    }
+                    UpdateCheckStage::Done => {
+                        debug!("Ignoring update check notification; already received one");
+                        control_handle.shutdown();
+                        return Ok(());
+                    }
+                }
+            }
+        }
+    }
+    if let Ok(Some(server_end)) = stalled.await {
+        // Send the server endpoint back to the framework.
+        debug!("Escrowing fuchsia.update.Notifier");
+        fuchsia_component::client::connect_channel_to_protocol_at_path(
+            server_end,
+            "/escrow/fuchsia.update.Notifier",
+        )
+        .context("Failed to connect to fuchsia.update.Notifier")?;
+    }
+    Ok(())
+}
+
+async fn publish_inspect_data() {
+    // TODO(https://fxbug.dev/444525059): Set health properly.
+    component::health().set_ok();
+    if let Err(e) = inspect_server::record_persist_node(PERSIST_NODE_NAME).await {
+        error!("Failed to serve persisted Inspect data from previous boot: {e}");
+    }
+    component::inspector().root().record_int(PUBLISHED_TIME_KEY, BootInstant::get().into_nanos());
+}
+
+enum IncomingRequest {
+    UpdateDone(fupdate::NotifierRequestStream),
+    SampleSink(fdiagnostics::SampleSinkRequestStream),
+}
+
 pub async fn main(_args: CommandLine) -> Result<(), Error> {
-    info!("Starting Diagnostics Persistence Service service");
+    info!("Starting Diagnostics Persistence service");
+    let scope = fasync::Scope::new();
+    let store = sandbox::CapabilityStore::connect()?;
+    let state = ComponentState::load(scope.to_handle(), &store)
+        .await
+        .context("Error getting escrowed state")?;
+    component::health().set_starting_up();
+
+    let mut fs = ServiceFs::new();
+    fs.dir("svc").add_fidl_service(IncomingRequest::UpdateDone);
+    fs.dir("svc").add_fidl_service(IncomingRequest::SampleSink);
+    fs.take_and_serve_directory_handle().expect("Failed to take service directory handle");
+
     let lifecycle =
         fuchsia_runtime::take_startup_handle(HandleInfo::new(HandleType::Lifecycle, 0)).unwrap();
     let lifecycle: zx::Channel = lifecycle.into();
     let lifecycle: endpoints::ServerEnd<flifecycle::LifecycleMarker> = lifecycle.into();
-    let (mut lifecycle_request_stream, _) = lifecycle.into_stream_and_control_handle();
-    let lifecycle_task = async move {
-        match lifecycle_request_stream.next().await {
-            Some(Ok(flifecycle::LifecycleRequest::Stop { .. })) => {
-                debug!("Received stop request");
-            }
-            Some(Err(e)) => {
-                error!("Received FIDL error from Lifecycle: {e:?}");
-                std::future::pending::<()>().await
-            }
-            None => {
-                debug!("Lifecycle request stream closed");
-                std::future::pending::<()>().await
+    let (mut lifecycle_request_stream, lifecycle_control_handle) =
+        lifecycle.into_stream_and_control_handle();
+    let mut lifecycle_task = pin!(
+        async move {
+            match lifecycle_request_stream.next().await {
+                Some(Ok(flifecycle::LifecycleRequest::Stop { .. })) => {
+                    debug!("Received stop request");
+                    // TODO(https://fxbug.dev/444529707): Teach `ServiceFs` and
+                    // others to skip the `until_stalled` timeout when this happens
+                    // so we can cleanly stop the component.
+                }
+                Some(Err(e)) => {
+                    error!("Received FIDL error from Lifecycle: {e:?}");
+                    std::future::pending::<()>().await
+                }
+                None => {
+                    debug!("Lifecycle request stream closed");
+                    std::future::pending::<()>().await
+                }
             }
         }
-    };
+        .fuse()
+    );
 
-    let mut health = component::health();
-    let config = persistence_config::load_configuration_files().context("Error loading configs")?;
-    let build_config = BuildConfig::take_from_startup_handle();
-    let inspector = component::inspector();
-    inspector.root().record_child("config", |config_node| build_config.record_inspect(config_node));
-    let _inspect_server_task =
-        inspect_runtime::publish(inspector, inspect_runtime::PublishOptions::default());
-
-    file_handler::forget_old_data(&config)?;
-
-    // Add a persistence fidl service for each service defined in the config files.
-    let scope = fasync::Scope::new();
-    Scheduler::spawn(scope.to_handle(), &config).await.context("Error creating scheduler")?;
-
-    // Before serving previous data, wait until the post-boot system update check has finished.
-    // Note: We're already accepting persist requests. If we receive a request, store
-    // some data, and then cache is cleared after data is persisted, that data will be lost. This
-    // is correct behavior - we don't want to remember anything from before the cache was cleared.
-    scope.spawn(async move {
-        if build_config.skip_update_check {
-            info!("Skipping the update check, publishing previous boot data");
-        } else if let Err(e) = wait_for_update().await {
-            warn!(e:?; "Will not publish previous boot data");
-            return;
-        }
-
-        inspector.root().record_child(PERSIST_NODE_NAME, |node| {
-            if let Err(e) = inspect_server::serve_persisted_data(node) {
-                error!("Failed to serve persisted data: {e}");
+    let mut outgoing_dir_task =
+        fs.until_stalled(BUILD_CONFIG.stall_interval).for_each_concurrent(None, move |item| {
+            let lifecycle_control_handle = lifecycle_control_handle.clone();
+            let state = state.clone();
+            let store = store.clone();
+            async move {
+                match item {
+                    fuchsia_component::server::Item::Request(req, _active_guard) => match req {
+                        IncomingRequest::UpdateDone(stream) => {
+                            if let Err(e) = handle_update_done(stream, state.persisted).await {
+                                error!("Failed to handle NotifierRequest: {e}");
+                            }
+                        },
+                        IncomingRequest::SampleSink(stream) => {
+                            if let Err(e) = state.scheduler.handle_sample_sink(stream).await {
+                                error!("Failed to handle SampleSinkRequest: {e}");
+                            }
+                        },
+                    },
+                    fuchsia_component::server::Item::Stalled(outgoing_directory) => {
+                        let escrowed_dictionary = match ComponentState::as_escrowed_dict(
+                            &store,
+                            state.persisted,
+                            state.inspect_controller
+                        ).await {
+                            Ok(dict) => Some(dict),
+                            Err(e) => {
+                                error!(
+                                    "Failed to serialize PersistedState into component dictionary: {e}"
+                                );
+                                None
+                            }
+                        };
+                        lifecycle_control_handle
+                            .send_on_escrow(flifecycle::LifecycleOnEscrowRequest {
+                                outgoing_dir: Some(outgoing_directory.into()),
+                                escrowed_dictionary,
+                                ..Default::default()
+                            })
+                            .unwrap();
+                    }
+                }
             }
-            health.set_ok();
-            info!("Diagnostics Persistence Service ready");
         });
-        inspector.root().record_int(PUBLISHED_TIME_KEY, BootInstant::get().into_nanos());
-    });
 
-    lifecycle_task.await;
-    info!("Stopping due to lifecycle request");
-    scope.cancel().await;
-
-    Ok(())
-}
-
-async fn wait_for_update() -> Result<(), Error> {
-    info!("Waiting for post-boot update check...");
-    let (notifier_client, mut notifier_request_stream) =
-        fidl::endpoints::create_request_stream::<fupdate::NotifierMarker>();
-    match fuchsia_component::client::connect_to_protocol::<fupdate::ListenerMarker>() {
-        Ok(proxy) => {
-            proxy.notify_on_first_update_check(
-                fupdate::ListenerNotifyOnFirstUpdateCheckRequest {
-                    notifier: Some(notifier_client),
-                    ..Default::default()
-                },
-            )?;
-        }
-        Err(e) => {
-            warn!(
-                e:?;
-                "Unable to connect to fuchsia.update.Listener; will publish immediately"
-            );
-
-            return Ok(());
-        }
+    select! {
+        _ = lifecycle_task => {
+            info!("Stopping due to lifecycle request");
+            scope.cancel().await;
+        },
+        _ = outgoing_dir_task => {
+            info!("Stopping due to idle activity");
+            scope.join().await;
+        },
     }
 
-    match notifier_request_stream.try_next().await {
-        Ok(Some(fupdate::NotifierRequest::Notify { control_handle: _ })) => {}
-        Ok(None) => {
-            return Err(anyhow::anyhow!("Did not receive update notification; not publishing"));
-        }
-        Err(e) => {
-            return Err(anyhow::anyhow!(
-                "Error waiting for update notification; not publishing: {e}"
-            ));
-        }
-    }
-
-    // Start serving previous boot data
-    info!("...Update check has completed; publishing previous boot data");
     Ok(())
 }

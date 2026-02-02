@@ -150,6 +150,12 @@ pub struct PersistenceConfig {
     /// user builds.
     #[serde(skip_serializing_if = "crate::common::is_default")]
     pub skip_update_check: bool,
+
+    /// Controls how long persistence will wait when it is idle before it
+    /// escrows its FIDL connections back to the component framework and exits.
+    /// By default, persistence runs indefinitely and does not escrow on idle.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub stop_on_idle_timeout_millis: Option<i64>,
 }
 
 /// Diagnostics configuration options for the sampler configuration area.

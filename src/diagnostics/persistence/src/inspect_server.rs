@@ -11,6 +11,7 @@ use fuchsia_inspect::hierarchy::{ExponentialHistogram, LinearHistogram, MissingV
 use fuchsia_inspect::reader::ArrayContent;
 use fuchsia_inspect::{
     ArrayProperty, ExponentialHistogramParams, HistogramProperty, LinearHistogramParams, Node,
+    component,
 };
 use itertools::Either;
 
@@ -485,17 +486,19 @@ where
     }
 }
 
-pub fn serve_persisted_data(persist_root: &fuchsia_inspect::Node) -> Result<(), anyhow::Error> {
-    if let Some(data) = file_handler::previous_data()? {
-        for (service, service_data) in data.0 {
-            persist_root.record_child(service.to_string(), |service_node| {
-                for (tag, tag_data) in service_data.0 {
-                    service_node.record_child(tag.to_string(), |tag_node| {
-                        store_data(tag_node, tag_data);
-                    })
-                }
-            });
-        }
+pub async fn record_persist_node(name: &str) -> Result<(), anyhow::Error> {
+    if let Some(data) = file_handler::previous_data().await? {
+        component::inspector().root().record_child(name, |persist_node| {
+            for (service, service_data) in data.0 {
+                persist_node.record_child(service.to_string(), |service_node| {
+                    for (tag, tag_data) in service_data.0 {
+                        service_node.record_child(tag.to_string(), |tag_node| {
+                            store_data(tag_node, tag_data);
+                        })
+                    }
+                });
+            }
+        });
     }
     Ok(())
 }

@@ -3,6 +3,7 @@
 // found in the LICENSE file.
 
 use crate::TestRealmOptions;
+use fidl_fuchsia_component_sandbox as fsandbox;
 use fidl_fuchsia_diagnostics::{ArchiveAccessorMarker, SampleMarker};
 use fidl_fuchsia_inspect::InspectSinkMarker;
 use fidl_fuchsia_logger::LogSinkMarker;
@@ -17,7 +18,13 @@ const SINGLE_COUNTER_URL: &str = "#meta/single_counter_test_component.cm";
 const PERSISTENCE_URL: &str = "#meta/persistence.cm";
 
 pub async fn create(options: &TestRealmOptions) -> RealmInstance {
-    let TestRealmOptions { name, config, filesystem, skip_update_check } = options;
+    let TestRealmOptions {
+        name,
+        config,
+        filesystem,
+        skip_update_check,
+        stop_on_idle_timeout_millis,
+    } = options;
 
     let builder = RealmBuilder::with_params(RealmBuilderParams::new().realm_name(name))
         .await
@@ -27,10 +34,66 @@ pub async fn create(options: &TestRealmOptions) -> RealmInstance {
         .add_child("single_counter", SINGLE_COUNTER_URL, ChildOptions::new())
         .await
         .expect("Failed to create single_counter");
+
     let persistence = builder
         .add_child("persistence", PERSISTENCE_URL, ChildOptions::new())
         .await
         .expect("Failed to create persistence");
+    builder
+        .add_route(
+            Route::new()
+                .capability(Capability::protocol::<fsandbox::CapabilityStoreMarker>())
+                .from(Ref::framework())
+                .to(&persistence),
+        )
+        .await
+        .expect("Failed to add fuchsia.component.sandbox routes");
+
+    // Build config for persistence.
+    builder
+        .add_capability(cm_rust::CapabilityDecl::Config(cm_rust::ConfigurationDecl {
+            name: "fuchsia.diagnostics.persist.SkipUpdateCheck".parse().unwrap(),
+            value: cm_rust::ConfigValue::Single(cm_rust::ConfigSingleValue::Bool(
+                *skip_update_check,
+            )),
+        }))
+        .await
+        .expect("add fuchsia.diagnostics.persist.SkipUpdateCheck");
+    builder
+        .add_route(
+            Route::new()
+                .capability(Capability::configuration(
+                    "fuchsia.diagnostics.persist.SkipUpdateCheck",
+                ))
+                .from(Ref::self_())
+                .to(&persistence),
+        )
+        .await
+        .expect("Failed to add config capability for skipping update check");
+
+    builder
+        .add_capability(
+            cm_rust::ConfigurationDecl {
+                name: "fuchsia.diagnostics.persist.StopOnIdleTimeoutMillis".parse().unwrap(),
+                value: (*stop_on_idle_timeout_millis).into(),
+            }
+            .into(),
+        )
+        .await
+        .unwrap();
+    builder
+        .add_route(
+            Route::new()
+                .capability(Capability::configuration(
+                    "fuchsia.diagnostics.persist.StopOnIdleTimeoutMillis",
+                ))
+                .from(Ref::self_())
+                .to(&persistence),
+        )
+        .await
+        .unwrap();
+
+    // Serve fake persistence config.
     let config_server = crate::mock_filesystems::create_config_data(&builder, config)
         .await
         .expect("Failed to create filesystem from config");
@@ -48,28 +111,7 @@ pub async fn create(options: &TestRealmOptions) -> RealmInstance {
         .await
         .expect("Failed to add route for /config/data directory");
 
-    builder
-        .add_capability(cm_rust::CapabilityDecl::Config(cm_rust::ConfigurationDecl {
-            name: "fuchsia.diagnostics.PersistenceSkipUpdateCheck".parse().unwrap(),
-            value: cm_rust::ConfigValue::Single(cm_rust::ConfigSingleValue::Bool(
-                *skip_update_check,
-            )),
-        }))
-        .await
-        .expect("add fuchsia.diagnostics.PersistenceSkipUpdateCheck");
-
-    builder
-        .add_route(
-            Route::new()
-                .capability(Capability::configuration(
-                    "fuchsia.diagnostics.PersistenceSkipUpdateCheck",
-                ))
-                .from(Ref::self_())
-                .to(&persistence),
-        )
-        .await
-        .expect("Failed to add config capability for skipping update check");
-
+    // Serve fake cache directory.
     let cache_server =
         filesystem.serve_cache(&builder).await.expect("Failed to create cache server");
     builder
@@ -86,6 +128,7 @@ pub async fn create(options: &TestRealmOptions) -> RealmInstance {
         .await
         .expect("Failed to add route for /cache directory");
 
+    // Serve mock service for fuchsia.update.Listener.
     let update_server = crate::mock_fidl::handle_update_check_services(&builder)
         .await
         .expect("Failed to create update server");
@@ -120,6 +163,7 @@ pub async fn create(options: &TestRealmOptions) -> RealmInstance {
         .await
         .expect("Failed to add route for fuchsia.samplertestcontroller.SamplerTestController");
 
+    // Use an embedded archivist to isolate tests from each other.
     let archivist = builder
         .add_child("archivist", ARCHIVIST_URL, ChildOptions::new().eager())
         .await

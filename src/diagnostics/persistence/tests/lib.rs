@@ -2,22 +2,24 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+use std::pin::{Pin, pin};
+
 use assert_matches::assert_matches;
-use component_events::events::*;
-use component_events::matcher::*;
+use component_events::descriptor::EventDescriptor;
+use component_events::events::{Event, EventStream, EventStreamError, Started, Stopped};
+use component_events::matcher::EventMatcher;
 use diagnostics_reader::{ArchiveReader, Inspect, RetryConfig, ToSelectorArguments};
 use fidl_fuchsia_component::BinderMarker;
 use fidl_fuchsia_samplertestcontroller::SamplerTestControllerProxy;
 use fidl_test_persistence_factory::ControllerProxy;
 use fuchsia_async as fasync;
 use fuchsia_component_test::RealmInstance;
-use futures::{FutureExt, select};
+use futures::stream::Fuse;
+use futures::{FutureExt, StreamExt, select};
 use log::warn;
 use pretty_assertions::StrComparison;
 
 use serde_json::Value;
-use std::fs::File;
-use std::io::ErrorKind;
 use zx::{MonotonicDuration, MonotonicInstant};
 
 mod mock_fidl;
@@ -89,7 +91,7 @@ async fn persist_simple() {
     realm.set_inspect(Some(19i64)).await;
     wait_for_inspect_source(&realm.instance).await;
     realm.start_persistence().await;
-    realm.wait_for_disk_write();
+    realm.wait_for_disk_write().await;
 
     // Persistence should publish the Inspect state.
     let realm = realm.restart().await;
@@ -110,7 +112,7 @@ async fn overwrite_with_some() {
     realm.set_inspect(Some(19i64)).await;
     wait_for_inspect_source(&realm.instance).await;
     realm.start_persistence().await;
-    realm.wait_for_disk_write();
+    realm.wait_for_disk_write().await;
 
     // Wait at least one sample period.
     zx::MonotonicDuration::from_seconds(2).sleep();
@@ -140,7 +142,7 @@ async fn overwrite_with_none() {
     realm.set_inspect(Some(19i64)).await;
     wait_for_inspect_source(&realm.instance).await;
     realm.start_persistence().await;
-    realm.wait_for_disk_write();
+    realm.wait_for_disk_write().await;
 
     // Wait at least one sample period.
     zx::MonotonicDuration::from_seconds(2).sleep();
@@ -169,7 +171,7 @@ async fn two_tags() {
     realm.increment_integer_counter(1).await;
     wait_for_inspect_source(&realm.instance).await;
     realm.start_persistence().await;
-    realm.wait_for_disk_write();
+    realm.wait_for_disk_write().await;
 
     // Wait at least one sample period. integer_1 should be updated to 11.
     zx::MonotonicDuration::from_seconds(2).sleep();
@@ -235,7 +237,7 @@ async fn waits_sample_period() {
     realm.set_inspect(Some(19i64)).await;
     wait_for_inspect_source(&realm.instance).await;
     realm.start_persistence().await;
-    realm.wait_for_disk_write();
+    realm.wait_for_disk_write().await;
 
     // Persistence should NOT fetch the new state immediately; it should still
     // be waiting for `min_seconds_between_fetch` to elapse.
@@ -261,14 +263,14 @@ async fn waits_to_publish_data() {
     realm.set_inspect(Some(19i64)).await;
     wait_for_inspect_source(&realm.instance).await;
     realm.start_persistence().await;
-    realm.wait_for_disk_write();
+    realm.wait_for_disk_write().await;
     zx::MonotonicDuration::from_seconds(2).sleep(); // Wait at least 1 sample period.
     realm.verify_diagnostics_persistence_publication(Published::Waiting).await;
 
     // Persistence should not publish without the update check.
     let realm = realm.restart().await;
     realm.start_persistence().await;
-    realm.wait_for_disk_write();
+    realm.wait_for_disk_write().await;
     zx::MonotonicDuration::from_seconds(2).sleep(); // Wait at least 1 sample period.
     realm.verify_diagnostics_persistence_publication(Published::Waiting).await;
 
@@ -297,7 +299,7 @@ async fn skip_update_check() {
     realm.set_inspect(Some(19i64)).await;
     wait_for_inspect_source(&realm.instance).await;
     realm.start_persistence().await;
-    realm.wait_for_disk_write();
+    realm.wait_for_disk_write().await;
 
     let realm = realm.restart().await;
     realm.start_persistence().await;
@@ -315,7 +317,7 @@ async fn too_big() {
     realm.set_inspect(Some(9i64)).await;
     wait_for_inspect_source(&realm.instance).await;
     realm.start_persistence().await;
-    realm.wait_for_disk_write();
+    realm.wait_for_disk_write().await;
     zx::MonotonicDuration::from_seconds(2).sleep(); // Wait at least 1 sample period.
 
     let realm = realm.restart().await;
@@ -337,7 +339,7 @@ async fn persist_across_boot() {
     realm.set_inspect(Some(8i64)).await;
     wait_for_inspect_source(&realm.instance).await;
     realm.start_persistence().await;
-    realm.wait_for_disk_write();
+    realm.wait_for_disk_write().await;
     realm.verify_diagnostics_persistence_publication(Published::Waiting).await;
     realm.set_update_completed().await;
     realm.verify_diagnostics_persistence_publication(Published::Empty).await;
@@ -363,37 +365,59 @@ async fn persist_across_boot() {
     realm.verify_diagnostics_persistence_publication(Published::Int(8)).await;
 }
 
-/// Verify Persistence starts and never stops.
+/// Verify Persistence starts and never stops when StopOnIdleTimeoutsMillis is
+/// negative.
 #[fuchsia::test]
 async fn never_idles() {
     let realm =
         TestRealm::new(TestRealmOptions::new(include_str!("test_data/config/single_tag.persist")))
             .await;
-    let mut event_stream = EventStream::open().await.unwrap();
+    let mut event_stream = EventStream::open().await.unwrap().fuse();
     realm.start_persistence().await;
-
-    // Listen for the start event.
-    let moniker = format!(".*{}.*persistence$", realm.instance.root.child_name());
-    EventMatcher::ok()
-        .moniker_regex(moniker.clone())
-        .wait::<Started>(&mut event_stream)
-        .await
-        .unwrap();
+    realm.wait_for_event::<Started>(&mut event_stream).await;
 
     // Allow Persistence to publish to Inspect.
-    realm.wait_for_disk_write();
+    realm.wait_for_disk_write().await;
     realm.verify_diagnostics_persistence_publication(Published::Waiting).await;
     realm.set_update_completed().await;
     realm.verify_diagnostics_persistence_publication(Published::Empty).await;
 
-    // Listen for the stop event. There shouldn't be one.
-    let mut stop_event = Box::pin(
-        EventMatcher::ok().moniker_regex(moniker.clone()).wait::<Stopped>(&mut event_stream).fuse(),
+    assert_matches!(
+        realm
+            .listen_for_event::<Stopped>(&mut event_stream, MonotonicDuration::from_seconds(5))
+            .await,
+        Ok(None),
+        "Unexpectedly received Stopped lifecycle event from the Persistence component"
     );
-    select! {
-        event = &mut stop_event => panic!("Unexpected stop event {event:?}"),
-        _ = fasync::Timer::new(MonotonicDuration::from_seconds(5)).fuse() => {},
-    };
+}
+
+/// Verify Persistence starts and always idles when StopOnIdleTimeoutMillis is
+/// zero.
+#[fuchsia::test]
+async fn always_idles() {
+    let mut event_stream = EventStream::open().await.unwrap().fuse();
+    let realm = TestRealm::new(
+        TestRealmOptions::new(include_str!("test_data/config/single_tag.persist")).with_idle(0),
+    )
+    .await;
+
+    wait_for_inspect_source(&realm.instance).await;
+    realm.start_persistence().await;
+    realm.wait_for_stopped_steady_state(&mut event_stream).await;
+
+    // Changing subscribed Inspect data will cause the component to start then
+    // stop again.
+    realm.set_inspect(Some(19i64)).await;
+    realm.wait_for_stopped_steady_state(&mut event_stream).await;
+
+    // Persistence should publish the Inspect state on the next boot.
+    let realm = realm.restart().await;
+    realm.start_persistence().await;
+    realm.set_update_completed().await;
+
+    // Wait for the absence of a start event; ensures the Inspect VMO is escrowed.
+    realm.wait_for_stopped_steady_state(&mut event_stream).await;
+    realm.verify_diagnostics_persistence_publication(Published::Int(19)).await;
 }
 
 /// The Inspect source may not publish Inspect (via take_and_serve_directory_handle()) until
@@ -430,6 +454,7 @@ pub(crate) struct TestRealmOptions {
     config: &'static str,
     filesystem: mock_filesystems::TestFs,
     skip_update_check: bool,
+    stop_on_idle_timeout_millis: i64,
 }
 
 impl TestRealmOptions {
@@ -440,10 +465,19 @@ impl TestRealmOptions {
             let id: u64 = rand::random();
             format!("auto-{id:x}")
         };
-        Self { name, config, filesystem: mock_filesystems::TestFs::new(), skip_update_check: false }
+        Self {
+            name,
+            config,
+            filesystem: mock_filesystems::TestFs::new(),
+            skip_update_check: false,
+            stop_on_idle_timeout_millis: -1,
+        }
     }
     fn skip_update_check(self) -> Self {
         Self { skip_update_check: true, ..self }
+    }
+    fn with_idle(self, timeout_millis: i64) -> Self {
+        Self { stop_on_idle_timeout_millis: timeout_millis, ..self }
     }
 }
 
@@ -485,7 +519,7 @@ impl TestRealm {
                     && let Some(status) = hierarchy
                         .get_property_by_path(&["fuchsia.inspect.Health", "status"])
                         .and_then(|p| p.string())
-                    && status == "OK"
+                    && status == "STARTING_UP"
                 {
                     break;
                 }
@@ -496,17 +530,19 @@ impl TestRealm {
     }
 
     // Wait for Persistence to finish writing current data to disk.
-    fn wait_for_disk_write(&self) {
+    async fn wait_for_disk_write(&self) {
         let current_data_path = format!("{}/current.json", self.options.filesystem.cache());
         loop {
-            match File::open(&current_data_path) {
+            match fuchsia_fs::file::read_in_namespace(&current_data_path).await {
                 Ok(_) => break,
-                Err(e)
-                    if e.kind() == ErrorKind::NotFound || e.kind() == ErrorKind::ResourceBusy =>
-                {
-                    MonotonicDuration::from_millis(100).sleep();
+                Err(e) if e.is_not_found_error() => {
+                    fuchsia_async::Timer::new(fuchsia_async::MonotonicDuration::from_millis(100))
+                        .await;
                 }
-                Err(e) => panic!("Unexpected error {e}"),
+                Err(e) => panic!(
+                    "Unexpectedly failed to read current data \"{}\": {e:?}",
+                    current_data_path
+                ),
             }
         }
     }
@@ -588,6 +624,77 @@ impl TestRealm {
                 ));
                 break;
             }
+        }
+    }
+
+    /// Listen for the Persistence component to emit the specified lifecycle
+    /// event within the specified duration. Returns None if timeout elapsed
+    /// without finding a matching event.
+    async fn listen_for_event<T: Event>(
+        &self,
+        event_stream: &mut Fuse<EventStream>,
+        duration: impl fasync::WakeupTime,
+    ) -> Result<Option<T>, anyhow::Error> {
+        let timeout = pin!(fasync::Timer::new(duration).fuse());
+        self.listen_for_event_with_timeout(event_stream, timeout).await
+    }
+
+    /// Listen for the Persistence component to emit the specified lifecycle
+    /// event. Returns None if timeout elapsed without finding a matching event.
+    async fn listen_for_event_with_timeout<T: Event>(
+        &self,
+        event_stream: &mut Fuse<EventStream>,
+        mut timeout: Pin<&mut futures::future::Fuse<fasync::Timer>>,
+    ) -> Result<Option<T>, anyhow::Error> {
+        let moniker = format!(".*{}.*persistence$", self.instance.root.child_name());
+        let matcher = EventMatcher::ok().moniker_regex(moniker).r#type(T::TYPE);
+        loop {
+            select! {
+                event = event_stream.next() => {
+                    let event = event.ok_or(EventStreamError::StreamClosed)?;
+                    let descriptor = EventDescriptor::try_from(&event)?;
+                    if let Ok(()) = matcher.matches(&descriptor) {
+                        return T::try_from(event).map(Some);
+                    }
+                }
+                () = timeout => {
+                    return Ok(None);
+                },
+            }
+        }
+    }
+
+    /// Wait indefinitely for the Persistence component to emit the specified
+    /// lifecycle event.
+    async fn wait_for_event<T: Event>(&self, event_stream: &mut Fuse<EventStream>) {
+        let moniker = format!(".*{}.*persistence$", self.instance.root.child_name());
+        let matcher = EventMatcher::ok().moniker_regex(moniker).r#type(T::TYPE);
+        loop {
+            let event = event_stream.next().await.unwrap();
+            let descriptor = EventDescriptor::try_from(&event).unwrap();
+            if let Ok(()) = matcher.matches(&descriptor) {
+                return;
+            }
+        }
+    }
+
+    /// Wait for the Persistent component in this realm to steady state in
+    /// Stopped by debouncing start events within a set duration.
+    async fn wait_for_stopped_steady_state(&self, event_stream: &mut Fuse<EventStream>) {
+        loop {
+            let timeout = pin!(fasync::Timer::new(MonotonicDuration::from_seconds(1)).fuse());
+
+            if self
+                .listen_for_event_with_timeout::<Started>(event_stream, timeout)
+                .await
+                .unwrap()
+                .is_none()
+            {
+                // No start event came within a second; unlikely to start again.
+                return;
+            }
+
+            self.wait_for_event::<Stopped>(event_stream).await;
         }
     }
 }
@@ -737,12 +844,13 @@ fn expected_diagnostics_persistence_inspect(
         content.len()
     };
 
-    let skip_update_check = options.skip_update_check;
+    let TestRealmOptions { skip_update_check, stop_on_idle_timeout_millis, .. } = options;
 
     let config = format!(
         r#"
             "config": {{
-                "skip_update_check": {skip_update_check}
+                "skip_update_check": {skip_update_check},
+                "stop_on_idle_timeout_millis": {stop_on_idle_timeout_millis}
             }}
         "#
     );
@@ -756,7 +864,6 @@ fn expected_diagnostics_persistence_inspect(
         Published::Empty => format!(
             r#"
                 {config},
-                "persist": {{}},
                 "published": 0
             "#
         ),
@@ -812,6 +919,14 @@ fn expected_diagnostics_persistence_inspect(
         ),
     };
 
+    let escrowed = if options.stop_on_idle_timeout_millis < 0 {
+        ""
+    } else {
+        r#"
+            "escrowed": true,
+        "#
+    };
+
     format!(
         r#"
         [
@@ -819,6 +934,7 @@ fn expected_diagnostics_persistence_inspect(
                 "data_source": "Inspect",
                 "metadata": {{
                     "component_url": "realm-builder/persistence",
+                    {escrowed}
                     "name": "root",
                     "timestamp": 0
                 }},

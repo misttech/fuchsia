@@ -10,11 +10,6 @@
     ],
     offer: [
         {
-            config: "fuchsia.diagnostics.PersistenceSkipUpdateCheck",
-            from: "parent",
-            to: "#persistence",
-        },
-        {
             protocol: "fuchsia.update.Listener",
             from: "parent",
             to: [ "#persistence" ],
@@ -39,6 +34,17 @@
             storage: "cache",
             from: "parent",
             to: "#persistence",
+        },
+        {
+            config: "fuchsia.diagnostics.persist.SkipUpdateCheck",
+            from: "parent",
+            to: "#persistence",
+        },
+        {
+            config: "fuchsia.diagnostics.persist.StopOnIdleTimeoutMillis",
+            from: "parent",
+            to: "#persistence",
+            availability: "same_as_target",
         },
     ],
     expose: [

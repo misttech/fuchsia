@@ -17,11 +17,14 @@ rustc_library("lib") {
 
   deps = [
     ":persistence-build-config",
+    "//sdk/fidl/fuchsia.component.sandbox:fuchsia.component.sandbox_rust",
     "//sdk/fidl/fuchsia.diagnostics:fuchsia.diagnostics_rust",
+    "//sdk/fidl/fuchsia.inspect:fuchsia.inspect_rust",
     "//sdk/fidl/fuchsia.process.lifecycle:fuchsia.process.lifecycle_rust",
     "//sdk/fidl/fuchsia.update:fuchsia.update_rust",
     "//sdk/rust/zx",
     "//src/diagnostics/lib/persistence:lib",
+    "//src/lib/detect-stall",
     "//src/lib/diagnostics/data/rust",
     "//src/lib/diagnostics/inspect/runtime/rust",
     "//src/lib/diagnostics/inspect/rust",
@@ -31,9 +34,13 @@ rustc_library("lib") {
     "//src/lib/fidl/rust/fidl",
     "//src/lib/fuchsia-async",
     "//src/lib/fuchsia-component",
+    "//src/lib/fuchsia-fs",
     "//src/lib/fuchsia-runtime",
+    "//src/lib/fuchsia-sync",
+    "//src/lib/sandbox",
     "//third_party/rust_crates:anyhow",
     "//third_party/rust_crates:argh",
+    "//third_party/rust_crates:ciborium",
     "//third_party/rust_crates:futures",
     "//third_party/rust_crates:hashbrown",
     "//third_party/rust_crates:itertools",
@@ -65,7 +72,10 @@ rustc_library("lib") {
 fuchsia_component_manifest("persistence-manifest") {
   component_name = "diagnostics-persistence"
   manifest = "meta/persistence-for-production.cml"
-  restricted_features = [ "dynamic_dictionaries" ]
+  restricted_features = [
+    "delivery_type",
+    "dynamic_dictionaries",
+  ]
 }
 
 fuchsia_structured_config_rust_lib("persistence-build-config") {

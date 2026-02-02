@@ -16,6 +16,16 @@
             "SCUDO_OPTIONS=release_to_os_interval_ms=0",
         ],
     },
+    capabilities: [
+        {
+            protocol: "fuchsia.diagnostics.SampleSink",
+            delivery: "on_readable",
+        },
+        {
+            protocol: "fuchsia.update.Notifier",
+            delivery: "on_readable",
+        },
+    ],
     use: [
         {
             protocol: [
@@ -34,11 +44,28 @@
             from: "framework",
         },
         {
-            config: "fuchsia.diagnostics.PersistenceSkipUpdateCheck",
+            protocol: "fuchsia.update.Notifier",
+            from: "self",
+            path: "/escrow/fuchsia.update.Notifier",
+        },
+        {
+            protocol: "fuchsia.diagnostics.SampleSink",
+            from: "self",
+            path: "/escrow/fuchsia.diagnostics.SampleSink",
+        },
+        {
+            config: "fuchsia.diagnostics.persist.SkipUpdateCheck",
             key: "skip_update_check",
             type: "bool",
             availability: "optional",
             default: false,
+        },
+        {
+            config: "fuchsia.diagnostics.persist.StopOnIdleTimeoutMillis",
+            key: "stop_on_idle_timeout_millis",
+            type: "int64",
+            availability: "optional",
+            default: -1,
         },
 
         // Persistence also uses /cache but needs it declared differently in production and test.

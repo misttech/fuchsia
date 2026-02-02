@@ -60,6 +60,7 @@ type SampleSinkResult = flexible resource union {
 
 /// `SampleSink` is served by the client, in order to be notified when samples
 /// are ready.
+@discoverable(server="platform")
 @available(added=HEAD)
 open protocol SampleSink {
     flexible OnSampleReadied(resource struct {
