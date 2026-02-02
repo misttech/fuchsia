@@ -724,6 +724,17 @@ pub trait HandleBased: AsHandleRef + From<NullableHandle> + Into<NullableHandle>
         Self::from(handle)
     }
 
+    /// Creates an instance of another handle-based type from this value's inner handle.
+    fn into_handle_based<H: HandleBased>(self) -> H {
+        H::from_handle(self.into_handle())
+    }
+
+    /// Creates an instance of this type from the inner handle of another
+    /// handle-based type.
+    fn from_handle_based<H: HandleBased>(h: H) -> Self {
+        Self::from_handle(h.into_handle())
+    }
+
     fn is_invalid_handle(&self) -> bool {
         self.as_handle_ref().is_invalid()
     }
