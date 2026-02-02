@@ -45,6 +45,7 @@ if (is_fuchsia) {
       "fuzzers:hermetic_tests",
       "hello_world:hermetic_tests",
       "power:hermetic_tests",
+      "rcu:hermetic_tests",
       "rust:hermetic_tests",
       "testing:hermetic_tests",
     ]
