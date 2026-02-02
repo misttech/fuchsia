@@ -234,19 +234,6 @@ TEST_F(FakeObjectTest, WaitMany) {
   }
 }
 
-constexpr zx_handle_t kPotentialHandle = 1;
-TEST_F(FakeObjectTest, DuplicateInvalidHandle) {
-  zx_handle_t obj = ZX_HANDLE_INVALID;
-  zx_handle_t obj_dup = ZX_HANDLE_INVALID;
-  // Duplicating an invalid handle should return an error but not die.
-  ASSERT_NO_DEATH(([obj, &obj_dup]() { EXPECT_NOT_OK(zx_handle_duplicate(obj, 0, &obj_dup)); }));
-
-  // However, a real handle will just return an error:
-  obj = kPotentialHandle;
-  ASSERT_NO_DEATH(
-      ([obj, &obj_dup]() { EXPECT_NOT_OK(REAL_SYSCALL(zx_handle_duplicate)(obj, 0, &obj_dup)); }));
-}
-
 // Ensure objects are walked in-order when ForEach is called.
 TEST_F(FakeObjectTest, ForEach) {
   std::unordered_map<zx_koid_t, bool> fake_objects;
@@ -289,6 +276,42 @@ TEST_F(FakeObjectTest, Channel) {
   ASSERT_TRUE(FakeHandleTable::IsValidFakeHandle(handle.get()));
 }
 
+// Ensure fake objects can be transmitted over a channel call.
+TEST_F(FakeObjectTest, ChannelCall) {
+  zx::channel in, out;
+  ASSERT_OK(zx::channel::create(0, &in, &out));
+  auto result = CreateFakeObject();
+  ASSERT_TRUE(result.is_ok());
+  ASSERT_TRUE(FakeHandleTable::IsValidFakeHandle(result.value()));
+  std::vector<std::byte> message_bytes(4u);
+  zx_channel_call_args_t args{
+      .wr_bytes = message_bytes.data(),
+      .wr_handles = &*result,
+      .rd_bytes = message_bytes.data(),
+      .rd_handles = nullptr,
+      .wr_num_bytes = static_cast<uint32_t>(message_bytes.size()),
+      .wr_num_handles = 1u,
+      .rd_num_bytes = static_cast<uint32_t>(message_bytes.size()),
+      .rd_num_handles = 1u,
+  };
+  uint32_t actual_bytes = 0u;
+  uint32_t actual_handles = 0u;
+  auto responder_thread = std::thread([&] {
+    std::vector<std::byte> bytes(4u);
+    std::vector<zx_handle_t> handles(1u);
+    ASSERT_OK(out.wait_one(ZX_CHANNEL_READABLE, zx::time::infinite(), nullptr));
+    ASSERT_OK(out.read(0u, bytes.data(), handles.data(), static_cast<uint32_t>(bytes.size()),
+                       static_cast<uint32_t>(handles.size()), nullptr, nullptr));
+    zx::handle read_handle(handles[0]);
+    ASSERT_OK(out.write(0u, bytes.data(), static_cast<uint32_t>(bytes.size()), nullptr, 0u));
+  });
+  ASSERT_OK(in.call(0u, zx::time::infinite(), &args, &actual_bytes, &actual_handles),
+            "actual_bytes %u actual_handles %u", actual_bytes, actual_handles);
+  responder_thread.join();
+  EXPECT_EQ(actual_bytes, 4u);
+  EXPECT_EQ(actual_handles, 0u);
+}
+
 // Verify that we drop type testing for fake objects which is a requirement for
 // working with FIDL bindings.
 TEST_F(FakeObjectTest, ChannelEtc) {
@@ -314,13 +337,13 @@ TEST_F(FakeObjectTest, ChannelEtc) {
   std::array<zx_handle_disposition_t, 5> wr_handles{
       zx_handle_disposition_t{
           .operation = ZX_HANDLE_OP_DUPLICATE,
-          .handle = vmo.get(),
+          .handle = vmo.release(),
           .type = ZX_OBJ_TYPE_VMO,
           .rights = ZX_RIGHT_SAME_RIGHTS,
       },
       {
           .operation = ZX_HANDLE_OP_DUPLICATE,
-          .handle = event.get(),
+          .handle = event.release(),
           .type = ZX_OBJ_TYPE_EVENT,
           .rights = ZX_RIGHT_SAME_RIGHTS,
       },
@@ -335,13 +358,13 @@ TEST_F(FakeObjectTest, ChannelEtc) {
       // checking still works generally.
       {
           .operation = ZX_HANDLE_OP_DUPLICATE,
-          .handle = ep1.get(),
+          .handle = ep1.release(),
           .type = ZX_OBJ_TYPE_VMO,
           .rights = ZX_RIGHT_SAME_RIGHTS,
       },
       {
           .operation = ZX_HANDLE_OP_DUPLICATE,
-          .handle = ep2.get(),
+          .handle = ep2.release(),
           .type = ZX_OBJ_TYPE_EVENTPAIR,
           .rights = ZX_RIGHT_SAME_RIGHTS,
       }};

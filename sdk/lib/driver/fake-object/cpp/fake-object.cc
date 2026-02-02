@@ -47,6 +47,9 @@ extern "C" {
 // to fake handles all being even values.
 __EXPORT
 zx_status_t zx_handle_close(zx_handle_t handle) {
+  if (handle == ZX_HANDLE_INVALID) {
+    return ZX_OK;
+  }
   if (!fake_object::FakeHandleTable::IsValidFakeHandle(handle)) {
     return REAL_SYSCALL(zx_handle_close)(handle);
   }
@@ -57,10 +60,16 @@ zx_status_t zx_handle_close(zx_handle_t handle) {
 // closed properly when grouped.
 __EXPORT
 zx_status_t zx_handle_close_many(const zx_handle_t* handles, size_t num_handles) {
+  // Like the real zx_handle_close_many, this attempts to close every handle provided and
+  // returns the first error encountered.
+  zx_status_t latched_status = ZX_OK;
   for (size_t i = 0; i < num_handles; i++) {
-    zx_handle_close(handles[i]);
+    zx_status_t status = zx_handle_close(handles[i]);
+    if (status != ZX_OK && latched_status == ZX_OK) {
+      latched_status = status;
+    }
   }
-  return ZX_OK;
+  return latched_status;
 }
 
 // Duplicates a fake handle, or if it is a real handle, calls the real
@@ -315,7 +324,7 @@ zx_status_t zx_channel_call_etc(zx_handle_t handle, uint32_t options, zx_time_t 
     return status;
   }
 
-  FixIncomingHandleTypes(args->rd_handles, args->rd_num_handles);
+  FixIncomingHandleTypes(args->rd_handles, *actual_handles);
   return status;
 }
 
