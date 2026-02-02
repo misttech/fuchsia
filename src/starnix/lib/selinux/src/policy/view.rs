@@ -253,10 +253,10 @@ struct HashedArrayViewEntryIter<'a, D: HasMetadata> {
 // TODO: https://fxbug.dev/479180246 - it would be better to get this type from a library
 // somewhere. Probably not https://docs.rs/u24 (because of "The type has the same size,
 // alignment, and memory layout as a little-endian encoded u32" in that implementation's
-// specification). But maybe from somewhere else?
+// specification). But maybe from somewhere else? Maybe BUintD8<3> in https://docs.rs/bnum?
 #[derive(Clone, Copy, Debug, KnownLayout, FromBytes, Immutable, PartialEq, Unaligned)]
 #[repr(C, packed)]
-struct U24 {
+pub(super) struct U24 {
     low: u8,
     middle: u8,
     high: u8,
