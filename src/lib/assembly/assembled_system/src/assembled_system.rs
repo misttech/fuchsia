@@ -211,6 +211,7 @@ impl AssembledSystem {
                 &zbi_path,
                 &image_assembly_config.qemu_kernel,
                 image_assembly_config.build_type,
+                base_package.as_ref(),
             )
             .context("Creating the VBMeta image")?;
 

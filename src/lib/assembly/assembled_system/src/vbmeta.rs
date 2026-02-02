@@ -4,6 +4,7 @@
 
 //! A helper for constructing the vbmeta image.
 
+use crate::base_package::BasePackage;
 use crate::extra_hash_descriptor::ExtraHashDescriptor;
 use crate::vfs::{FilesystemProvider, RealFilesystemProvider};
 use anyhow::{Context, Result, anyhow};
@@ -53,6 +54,9 @@ const PVM_PROP_VIRT_CAP_KEY: &str = "com.android.virt.cap";
 /// https://android.googlesource.com/platform/packages/modules/Virtualization/+/refs/heads/main/guest/pvmfw/#vbmeta-properties
 const PVM_PROP_VIRT_CAP_VALUE: &str = "trusty_security_vm";
 
+/// The property key used to store the base system merkle root in the VBMeta image.
+const BASE_MERKLE_PROPERTY_KEY: &str = "com.fuchsia.system.base_merkle";
+
 /// Represents a constructed VBMeta in one of the two supported forms.
 #[derive(Debug)]
 pub enum ConstructedVBMeta {
@@ -71,6 +75,7 @@ pub fn construct_vbmeta(
     zbi: impl AsRef<Path>,
     boot_shim: impl AsRef<Utf8Path>,
     build_type: BuildType,
+    base_package: Option<&BasePackage>,
 ) -> Result<ConstructedVBMeta> {
     // Generate the salt.
     let salt = Salt::random()?;
@@ -83,7 +88,7 @@ pub fn construct_vbmeta(
     let fs = RealFilesystemProvider {};
     let (mut descriptors, rollback_index) = match vbmeta_config.style {
         VBMetaStyle::Fuchsia => {
-            let descriptors = descriptors_for_fuchsia(zbi, salt.clone(), &fs)
+            let descriptors = descriptors_for_fuchsia(zbi, salt.clone(), base_package, &fs)
                 .context("constructing VBMeta descriptors")?;
             (descriptors, 0)
         }
@@ -155,6 +160,7 @@ pub fn construct_vbmeta(
 fn descriptors_for_fuchsia<FSP: FilesystemProvider>(
     zbi_path: impl AsRef<Path>,
     salt: Salt,
+    base_package: Option<&BasePackage>,
     fs: &FSP,
 ) -> Result<Vec<Descriptor>> {
     // Read the image into memory, so that it can be hashed.
@@ -165,7 +171,17 @@ fn descriptors_for_fuchsia<FSP: FilesystemProvider>(
     // Create the descriptor for the image.
     let descriptor =
         Descriptor::Hash(HashDescriptor::new(FUCHSIA_HASH_DESCRIPTOR_NAME, &zbi, salt));
-    Ok(vec![descriptor])
+
+    let mut descriptors = vec![descriptor];
+
+    if let Some(bp) = base_package {
+        descriptors.push(Descriptor::Property(PropertyDescriptor::new(
+            BASE_MERKLE_PROPERTY_KEY.to_string(),
+            hex::encode(bp.merkle.as_bytes()),
+        )));
+    }
+
+    Ok(descriptors)
 }
 
 /// The descriptors for a VBMeta assembled for an Android pVM.
@@ -235,12 +251,16 @@ fn sign<FSP: FilesystemProvider>(
 #[cfg(test)]
 mod tests {
     use super::{
-        ConstructedVBMeta, Descriptor, FUCHSIA_HASH_DESCRIPTOR_NAME, HashDescriptor, Key,
-        PVM_HASH_DESCRIPTOR_NAME_KERNEL, PVM_HASH_DESCRIPTOR_NAME_RAMDISK_DEBUG,
-        PVM_HASH_DESCRIPTOR_NAME_RAMDISK_NORMAL, PVM_PROP_VIRT_CAP_KEY, PVM_PROP_VIRT_CAP_VALUE,
-        Salt, construct_vbmeta, descriptors_for_fuchsia, descriptors_for_pvm, sign,
+        BASE_MERKLE_PROPERTY_KEY, ConstructedVBMeta, Descriptor, FUCHSIA_HASH_DESCRIPTOR_NAME,
+        HashDescriptor, Key, PVM_HASH_DESCRIPTOR_NAME_KERNEL,
+        PVM_HASH_DESCRIPTOR_NAME_RAMDISK_DEBUG, PVM_HASH_DESCRIPTOR_NAME_RAMDISK_NORMAL,
+        PVM_PROP_VIRT_CAP_KEY, PVM_PROP_VIRT_CAP_VALUE, Salt, construct_vbmeta,
+        descriptors_for_fuchsia, descriptors_for_pvm, sign,
     };
 
+    use fuchsia_hash::Hash;
+
+    use crate::base_package::BasePackage;
     use crate::vfs::mock::MockFilesystemProvider;
 
     use assembly_config_schema::BuildType;
@@ -271,9 +291,63 @@ mod tests {
         let zbi_path = dir.join("fuchsia.zbi");
         std::fs::write(&zbi_path, "fake zbi").unwrap();
 
-        let vbmeta =
-            construct_vbmeta(dir, &vbmeta_config, zbi_path, Utf8PathBuf::new(), BuildType::Eng)
-                .unwrap();
+        let vbmeta = construct_vbmeta(
+            dir,
+            &vbmeta_config,
+            zbi_path,
+            Utf8PathBuf::new(),
+            BuildType::Eng,
+            None,
+        )
+        .unwrap();
+
+        let ConstructedVBMeta::Standalone(vbmeta_path) = vbmeta else {
+            panic!("Expected standalone VBMeta image; got {vbmeta:#?}");
+        };
+        assert_eq!(
+            vbmeta_path,
+            path_relative_from_current_dir(dir.join("fuchsia.vbmeta")).unwrap()
+        );
+    }
+
+    #[test]
+    fn construct_fuchsia_style_with_base_merkle() {
+        let tmp = tempdir().unwrap();
+        let dir = Utf8Path::from_path(tmp.path()).unwrap();
+
+        let key_path = dir.join("key");
+        let metadata_path = dir.join("key_metadata");
+        std::fs::write(&key_path, test_keys::ATX_TEST_KEY).unwrap();
+        std::fs::write(&metadata_path, test_keys::TEST_RSA_4096_PEM).unwrap();
+
+        let vbmeta_config = VBMeta {
+            style: VBMetaStyle::Fuchsia,
+            name: "fuchsia".into(),
+            key: key_path,
+            key_metadata: Some(metadata_path),
+            additional_descriptors: vec![],
+        };
+
+        // Create a fake zbi.
+        let zbi_path = dir.join("fuchsia.zbi");
+        std::fs::write(&zbi_path, "fake zbi").unwrap();
+
+        // Create a fake base merkle.
+        let base_merkle = Hash::from([0xAA; 32]);
+        let base_package = BasePackage {
+            merkle: base_merkle,
+            manifest_path: Utf8PathBuf::from("path/to/manifest"),
+        };
+
+        let vbmeta = construct_vbmeta(
+            dir,
+            &vbmeta_config,
+            zbi_path,
+            Utf8PathBuf::new(),
+            BuildType::Eng,
+            Some(&base_package),
+        )
+        .unwrap();
 
         let ConstructedVBMeta::Standalone(vbmeta_path) = vbmeta else {
             panic!("Expected standalone VBMeta image; got {vbmeta:#?}");
@@ -315,9 +389,15 @@ mod tests {
                     additional_descriptors: vec![],
                 };
 
-                let vbmeta =
-                    construct_vbmeta(dir, &vbmeta_config, &zbi_path, &boot_shim_path, build_type)
-                        .unwrap();
+                let vbmeta = construct_vbmeta(
+                    dir,
+                    &vbmeta_config,
+                    &zbi_path,
+                    &boot_shim_path,
+                    build_type,
+                    None,
+                )
+                .unwrap();
 
                 let ConstructedVBMeta::QemuKernelWithFooter(new_boot_shim_path) = vbmeta else {
                     panic!("Expected standalone VBMeta image; got {vbmeta:#?}");
@@ -339,7 +419,7 @@ mod tests {
 
         let salt = Salt::try_from(&[0xAAu8; 32][..]).unwrap();
 
-        let descriptors = descriptors_for_fuchsia("zbi", salt.clone(), &vfs).unwrap();
+        let descriptors = descriptors_for_fuchsia("zbi", salt.clone(), None, &vfs).unwrap();
 
         // Validate that there's only the one descriptor.
         assert_eq!(descriptors.len(), 1);
@@ -360,6 +440,51 @@ mod tests {
             hex::decode("caeaacb8208cfd8d214de6baef8d535f6fce499524c60aa5dcd2fce7043a9700")
                 .unwrap();
         assert_eq!(Some(expected_digest.as_ref()), hash.digest());
+    }
+
+    #[test]
+    fn fuchsia_descriptors_with_base_merkle() {
+        let mut vfs = MockFilesystemProvider::new();
+        vfs.add("zbi", &[0x00u8; 128]);
+        vfs.add("salt", hex::encode([0xAAu8; 32]).as_bytes());
+
+        let salt = Salt::try_from(&[0xAAu8; 32][..]).unwrap();
+
+        let base_merkle = Hash::from([0xBB; 32]);
+        let base_package = BasePackage {
+            merkle: base_merkle,
+            manifest_path: Utf8PathBuf::from("path/to/manifest"),
+        };
+
+        let descriptors =
+            descriptors_for_fuchsia("zbi", salt.clone(), Some(&base_package), &vfs).unwrap();
+
+        // Validate that there are two descriptors.
+        assert_eq!(descriptors.len(), 2);
+
+        let Descriptor::Hash(hash) = &descriptors[0] else {
+            panic!("descriptor is not a hash descriptor!?: {:#?}", descriptors[0]);
+        };
+
+        // Validate that the salt was the one from the args.
+        assert_eq!(salt, hash.salt().unwrap());
+
+        // The partition name should be the conventional Fuchsia one.
+        assert_eq!(FUCHSIA_HASH_DESCRIPTOR_NAME, hash.image_name());
+
+        // Validate that the digest is the expected one, based on the image that
+        // was provided in the arguments.
+        let expected_digest =
+            hex::decode("caeaacb8208cfd8d214de6baef8d535f6fce499524c60aa5dcd2fce7043a9700")
+                .unwrap();
+        assert_eq!(Some(expected_digest.as_ref()), hash.digest());
+
+        let Descriptor::Property(prop) = &descriptors[1] else {
+            panic!("descriptor is not a property descriptor!?: {:#?}", descriptors[1]);
+        };
+
+        assert_eq!(prop.key, BASE_MERKLE_PROPERTY_KEY);
+        assert_eq!(prop.value, hex::encode(base_merkle.as_bytes()));
     }
 
     #[test]
