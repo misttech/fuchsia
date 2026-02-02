@@ -322,7 +322,7 @@ pub fn initialize_report_stream<InputDeviceProcessReportsFn>(
     InputDeviceProcessReportsFn: 'static
         + Send
         + FnMut(
-            InputReport,
+            Vec<InputReport>,
             Option<InputReport>,
             &InputDeviceDescriptor,
             &mut UnboundedSender<InputEvent>,
@@ -349,28 +349,27 @@ pub fn initialize_report_stream<InputDeviceProcessReportsFn>(
             match report_stream.next().await {
                 Some(Ok(Ok(input_reports))) => {
                     fuchsia_trace::duration!("input", "input-device-process-reports");
-                    let mut inspect_receiver: Option<UnboundedReceiver<InputEvent>>;
-                    for report in input_reports {
-                        (previous_report, inspect_receiver) = process_reports(
-                            report,
-                            previous_report,
-                            &device_descriptor,
-                            &mut event_sender,
-                            &inspect_status,
-                            &metrics_logger,
-                        );
-                        // If a report generates multiple events asynchronously, we send them over a mpsc channel
-                        // to inspect_receiver. We update the event count on inspect_status here since we cannot
-                        // pass a reference to inspect_status to an async task in process_reports().
-                        match inspect_receiver {
-                            Some(mut receiver) => {
-                                while let Some(event) = receiver.next().await {
-                                    inspect_status.count_generated_event(event);
-                                }
+                    let (prev_report, inspect_receiver) = process_reports(
+                        input_reports,
+                        previous_report,
+                        &device_descriptor,
+                        &mut event_sender,
+                        &inspect_status,
+                        &metrics_logger,
+                    );
+                    previous_report = prev_report;
+
+                    // If a report generates multiple events asynchronously, we send them over a mpsc channel
+                    // to inspect_receiver. We update the event count on inspect_status here since we cannot
+                    // pass a reference to inspect_status to an async task in process_reports().
+                    match inspect_receiver {
+                        Some(mut receiver) => {
+                            while let Some(event) = receiver.next().await {
+                                inspect_status.count_generated_event(event);
                             }
-                            None => (),
-                        };
-                    }
+                        }
+                        None => (),
+                    };
                 }
                 Some(Ok(Err(_service_error))) => break,
                 Some(Err(_fidl_error)) => break,

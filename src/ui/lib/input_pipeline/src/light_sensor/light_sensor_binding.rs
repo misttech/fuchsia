@@ -253,7 +253,7 @@ impl LightSensorBinding {
     /// The [`InputEvent`]s are sent to the device binding owner via [`input_event_sender`].
     ///
     /// # Parameters
-    /// `report`: The incoming [`InputReport`].
+    /// `reports`: The incoming [`InputReport`].
     /// `previous_report`: The previous [`InputReport`] seen for the same device.
     /// `device_descriptor`: The descriptor for the input device generating the input reports.
     /// `input_event_sender`: The sender for the device binding's input event stream.
@@ -265,6 +265,30 @@ impl LightSensorBinding {
     /// recorded by `inspect_status` in `input_device::initialize_report_stream()`. If device
     /// binding does not generate InputEvents asynchronously, this will be `None`.
     fn process_reports(
+        reports: Vec<InputReport>,
+        mut previous_report: Option<InputReport>,
+        device_descriptor: &input_device::InputDeviceDescriptor,
+        input_event_sender: &mut UnboundedSender<input_device::InputEvent>,
+        device_proxy: InputDeviceProxy,
+        inspect_status: &InputDeviceStatus,
+        metrics_logger: &metrics::MetricsLogger,
+    ) -> (Option<InputReport>, Option<UnboundedReceiver<InputEvent>>) {
+        fuchsia_trace::duration!("input", "light-sensor-binding-process-reports", "num_reports" => reports.len());
+        for report in reports {
+            previous_report = Self::process_report(
+                report,
+                previous_report,
+                device_descriptor,
+                input_event_sender,
+                device_proxy.clone(),
+                inspect_status,
+                metrics_logger,
+            );
+        }
+        (previous_report, None)
+    }
+
+    fn process_report(
         report: InputReport,
         previous_report: Option<InputReport>,
         device_descriptor: &input_device::InputDeviceDescriptor,
@@ -272,7 +296,11 @@ impl LightSensorBinding {
         device_proxy: InputDeviceProxy,
         inspect_status: &InputDeviceStatus,
         metrics_logger: &metrics::MetricsLogger,
-    ) -> (Option<InputReport>, Option<UnboundedReceiver<InputEvent>>) {
+    ) -> Option<InputReport> {
+        if let Some(trace_id) = report.trace_id {
+            fuchsia_trace::flow_end!("input", "input_report", trace_id.into());
+        }
+
         inspect_status.count_received_report(&report);
         let light_sensor_descriptor =
             if let input_device::InputDeviceDescriptor::LightSensor(light_sensor_descriptor) =
@@ -287,7 +315,7 @@ impl LightSensorBinding {
         let sensor = match &report.sensor {
             None => {
                 inspect_status.count_filtered_report();
-                return (previous_report, None);
+                return previous_report;
             }
             Some(sensor) => sensor,
         };
@@ -295,7 +323,7 @@ impl LightSensorBinding {
         let values = match &sensor.values {
             None => {
                 inspect_status.count_filtered_report();
-                return (None, None);
+                return None;
             }
             Some(values) => values,
         };
@@ -325,6 +353,6 @@ impl LightSensorBinding {
             inspect_status.count_generated_event(event);
         }
 
-        (Some(report), None)
+        Some(report)
     }
 }

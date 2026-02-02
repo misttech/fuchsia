@@ -807,7 +807,7 @@ macro_rules! assert_input_report_sequence_generates_events {
         // The type of device generating the events.
         device_type: $DeviceType:ty,
     ) => {
-        let mut previous_report: Option<fidl_fuchsia_input_report::InputReport> = None;
+        let previous_report: Option<fidl_fuchsia_input_report::InputReport> = None;
         let num_reports = $input_reports.len();
         let num_events = $expected_events.len();
         let (event_sender, mut event_receiver) = futures::channel::mpsc::unbounded();
@@ -822,32 +822,33 @@ macro_rules! assert_input_report_sequence_generates_events {
         let mut expected_last_generated_timestamp = 0u64;
 
         // Send all the reports prior to verifying the received events.
-        for report in $input_reports {
+        for report in &$input_reports {
             if let Some(report_time) = report.event_time {
                 expected_last_received_timestamp = report_time.try_into().unwrap();
             }
-            let inspect_receiver: Option<UnboundedReceiver<InputEvent>>;
-            (previous_report, inspect_receiver) = <$DeviceType>::process_reports(
-                report,
-                previous_report,
-                &$device_descriptor,
-                &mut event_sender.clone(),
-                &inspect_status,
-                &metrics::MetricsLogger::default(),
-            );
-
-            // If a report generates multiple events asynchronously, we send them over a mpsc channel
-            // to inspect_receiver. We update the event count on inspect_status here since we cannot
-            // pass a reference to inspect_status to an async task in process_reports().
-            match inspect_receiver {
-                Some(mut receiver) => {
-                    while let Some(event) = receiver.next().await {
-                        inspect_status.count_generated_event(event);
-                    }
-                },
-                None => (),
-            };
         }
+        let inspect_receiver: Option<UnboundedReceiver<InputEvent>>;
+        (_, inspect_receiver) = <$DeviceType>::process_reports(
+            $input_reports,
+            previous_report,
+            &$device_descriptor,
+            &mut event_sender.clone(),
+            &inspect_status,
+            &metrics::MetricsLogger::default(),
+        );
+
+        // If a report generates multiple events asynchronously, we send them over a mpsc channel
+        // to inspect_receiver. We update the event count on inspect_status here since we cannot
+        // pass a reference to inspect_status to an async task in process_reports().
+        match inspect_receiver {
+            Some(mut receiver) => {
+                while let Some(event) = receiver.next().await {
+                    inspect_status.count_generated_event(event);
+                }
+            },
+            None => (),
+        };
+
 
         for mut expected_event in $expected_events {
             let input_event = event_receiver.next().await;

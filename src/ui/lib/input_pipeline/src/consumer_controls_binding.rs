@@ -234,7 +234,7 @@ impl ConsumerControlsBinding {
     /// to the device binding owner via [`input_event_sender`].
     ///
     /// # Parameters
-    /// `report`: The incoming [`InputReport`].
+    /// `reports`: The incoming [`InputReport`].
     /// `previous_report`: The previous [`InputReport`] seen for the same device. This can be
     ///                    used to determine, for example, which keys are no longer present in
     ///                    a keyboard report to generate key released events. If `None`, no
@@ -251,14 +251,35 @@ impl ConsumerControlsBinding {
     /// recorded by `inspect_status` in `input_device::initialize_report_stream()`. If device
     /// binding does not generate InputEvents asynchronously, this will be `None`.
     fn process_reports(
+        reports: Vec<InputReport>,
+        mut previous_report: Option<InputReport>,
+        device_descriptor: &input_device::InputDeviceDescriptor,
+        input_event_sender: &mut UnboundedSender<input_device::InputEvent>,
+        inspect_status: &InputDeviceStatus,
+        metrics_logger: &metrics::MetricsLogger,
+    ) -> (Option<InputReport>, Option<UnboundedReceiver<InputEvent>>) {
+        fuchsia_trace::duration!("input", "consumer-controls-binding-process-report", "num_reports" => reports.len());
+        for report in reports {
+            previous_report = Self::process_report(
+                report,
+                previous_report,
+                device_descriptor,
+                input_event_sender,
+                inspect_status,
+                metrics_logger,
+            );
+        }
+        (previous_report, None)
+    }
+
+    fn process_report(
         mut report: InputReport,
         previous_report: Option<InputReport>,
         device_descriptor: &input_device::InputDeviceDescriptor,
         input_event_sender: &mut UnboundedSender<input_device::InputEvent>,
         inspect_status: &InputDeviceStatus,
         metrics_logger: &metrics::MetricsLogger,
-    ) -> (Option<InputReport>, Option<UnboundedReceiver<InputEvent>>) {
-        fuchsia_trace::duration!("input", "consumer-controls-binding-process-report");
+    ) -> Option<InputReport> {
         if let Some(trace_id) = report.trace_id {
             fuchsia_trace::flow_end!("input", "input_report", trace_id.into());
         }
@@ -273,7 +294,7 @@ impl ConsumerControlsBinding {
                 .unwrap_or_default(),
             None => {
                 inspect_status.count_filtered_report();
-                return (previous_report, None);
+                return previous_report;
             }
         };
 
@@ -291,7 +312,7 @@ impl ConsumerControlsBinding {
             trace_id,
         );
 
-        (Some(report), None)
+        Some(report)
     }
 }
 

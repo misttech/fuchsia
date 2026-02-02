@@ -405,7 +405,7 @@ impl KeyboardBinding {
     /// The [`InputEvent`]s are sent to the device binding owner via [`input_event_sender`].
     ///
     /// # Parameters
-    /// `report`: The incoming [`InputReport`].
+    /// `reports`: The incoming [`InputReport`].
     /// `previous_report`: The previous [`InputReport`] seen for the same device. This can be
     ///                    used to determine, for example, which keys are no longer present in
     ///                    a keyboard report to generate key released events. If `None`, no
@@ -420,14 +420,40 @@ impl KeyboardBinding {
     /// recorded by `inspect_status` in `input_device::initialize_report_stream()`. If device
     /// binding does not generate InputEvents asynchronously, this will be `None`.
     fn process_reports(
+        reports: Vec<InputReport>,
+        mut previous_report: Option<InputReport>,
+        device_descriptor: &input_device::InputDeviceDescriptor,
+        input_event_sender: &mut UnboundedSender<input_device::InputEvent>,
+        inspect_status: &InputDeviceStatus,
+        metrics_logger: &metrics::MetricsLogger,
+    ) -> (Option<InputReport>, Option<UnboundedReceiver<InputEvent>>) {
+        fuchsia_trace::duration!("input", "keyboard-binding-process-report", "num_reports" => reports.len());
+        let (inspect_sender, inspect_receiver) = futures::channel::mpsc::unbounded();
+
+        for report in reports {
+            previous_report = Self::process_report(
+                report,
+                previous_report,
+                device_descriptor,
+                input_event_sender,
+                inspect_status,
+                metrics_logger,
+                inspect_sender.clone(),
+            );
+        }
+
+        (previous_report, Some(inspect_receiver))
+    }
+
+    fn process_report(
         report: InputReport,
         previous_report: Option<InputReport>,
         device_descriptor: &input_device::InputDeviceDescriptor,
         input_event_sender: &mut UnboundedSender<input_device::InputEvent>,
         inspect_status: &InputDeviceStatus,
         metrics_logger: &metrics::MetricsLogger,
-    ) -> (Option<InputReport>, Option<UnboundedReceiver<InputEvent>>) {
-        fuchsia_trace::duration!("input", "keyboard-binding-process-report");
+        inspect_sender: UnboundedSender<InputEvent>,
+    ) -> Option<InputReport> {
         if let Some(trace_id) = report.trace_id {
             fuchsia_trace::flow_end!("input", "input_report", trace_id.into());
         }
@@ -440,7 +466,7 @@ impl KeyboardBinding {
         match &report.keyboard {
             None => {
                 inspect_status.count_filtered_report();
-                return (previous_report, None);
+                return previous_report;
             }
             _ => (),
         };
@@ -458,7 +484,7 @@ impl KeyboardBinding {
                     std::format!("Failed to parse keyboard keys: {:?}", report),
                 );
                 inspect_status.count_filtered_report();
-                return (previous_report, None);
+                return previous_report;
             }
         };
 
@@ -466,8 +492,6 @@ impl KeyboardBinding {
             .as_ref()
             .and_then(|unwrapped_report| KeyboardBinding::parse_pressed_keys(&unwrapped_report))
             .unwrap_or_default();
-
-        let (inspect_sender, inspect_receiver) = futures::channel::mpsc::unbounded();
 
         KeyboardBinding::send_key_events(
             &new_keys,
@@ -480,7 +504,7 @@ impl KeyboardBinding {
             tracing_id,
         );
 
-        (Some(report), Some(inspect_receiver))
+        Some(report)
     }
 
     /// Parses the currently pressed [`fidl_fuchsia_input3::Key`]s from an input report.

@@ -498,7 +498,7 @@ impl TouchBinding {
     /// The [`InputEvent`]s are sent to the device binding owner via [`input_event_sender`].
     ///
     /// # Parameters
-    /// - `report`: The incoming [`InputReport`].
+    /// - `reports`: The incoming [`InputReport`].
     /// - `previous_report`: The previous [`InputReport`] seen for the same device. This can be
     ///                    used to determine, for example, which keys are no longer present in
     ///                    a keyboard report to generate key released events. If `None`, no
@@ -513,13 +513,35 @@ impl TouchBinding {
     /// recorded by `inspect_status` in `input_device::initialize_report_stream()`. If device
     /// binding does not generate InputEvents asynchronously, this will be `None`.
     fn process_reports(
+        reports: Vec<InputReport>,
+        mut previous_report: Option<InputReport>,
+        device_descriptor: &input_device::InputDeviceDescriptor,
+        input_event_sender: &mut UnboundedSender<InputEvent>,
+        inspect_status: &InputDeviceStatus,
+        metrics_logger: &metrics::MetricsLogger,
+    ) -> (Option<InputReport>, Option<UnboundedReceiver<InputEvent>>) {
+        fuchsia_trace::duration!("input", "touch-binding-process-report", "num_reports" => reports.len());
+        for report in reports {
+            previous_report = Self::process_report(
+                report,
+                previous_report,
+                device_descriptor,
+                input_event_sender,
+                inspect_status,
+                metrics_logger,
+            );
+        }
+        (previous_report, None)
+    }
+
+    fn process_report(
         report: InputReport,
         previous_report: Option<InputReport>,
         device_descriptor: &input_device::InputDeviceDescriptor,
         input_event_sender: &mut UnboundedSender<InputEvent>,
         inspect_status: &InputDeviceStatus,
         metrics_logger: &metrics::MetricsLogger,
-    ) -> (Option<InputReport>, Option<UnboundedReceiver<InputEvent>>) {
+    ) -> Option<InputReport> {
         inspect_status.count_received_report(&report);
         match device_descriptor {
             input_device::InputDeviceDescriptor::TouchScreen(_) => process_touch_screen_reports(
@@ -537,7 +559,7 @@ impl TouchBinding {
                 inspect_status,
                 metrics_logger,
             ),
-            _ => (None, None),
+            _ => previous_report,
         }
     }
 
@@ -582,8 +604,7 @@ fn process_touch_screen_reports(
     input_event_sender: &mut UnboundedSender<InputEvent>,
     inspect_status: &InputDeviceStatus,
     metrics_logger: &metrics::MetricsLogger,
-) -> (Option<InputReport>, Option<UnboundedReceiver<InputEvent>>) {
-    fuchsia_trace::duration!("input", "touch-binding-process-report");
+) -> Option<InputReport> {
     fuchsia_trace::flow_end!("input", "input_report", report.trace_id.unwrap_or(0).into());
 
     // Input devices can have multiple types so ensure `report` is a TouchInputReport.
@@ -591,7 +612,7 @@ fn process_touch_screen_reports(
         Some(touch) => touch,
         None => {
             inspect_status.count_filtered_report();
-            return (previous_report, None);
+            return previous_report;
         }
     };
 
@@ -615,7 +636,7 @@ fn process_touch_screen_reports(
         && current_buttons.is_empty()
     {
         inspect_status.count_filtered_report();
-        return (Some(report), None);
+        return Some(report);
     }
 
     // A touch input report containing button state should persist prior contact state,
@@ -676,7 +697,7 @@ fn process_touch_screen_reports(
         report.wake_lease.take(),
     );
 
-    (Some(report), None)
+    Some(report)
 }
 
 fn process_touchpad_reports(
@@ -685,8 +706,7 @@ fn process_touchpad_reports(
     input_event_sender: &mut UnboundedSender<InputEvent>,
     inspect_status: &InputDeviceStatus,
     metrics_logger: &metrics::MetricsLogger,
-) -> (Option<InputReport>, Option<UnboundedReceiver<InputEvent>>) {
-    fuchsia_trace::duration!("input", "touch-binding-process-report");
+) -> Option<InputReport> {
     if let Some(trace_id) = report.trace_id {
         fuchsia_trace::flow_end!("input", "input_report", trace_id.into());
     }
@@ -696,7 +716,7 @@ fn process_touchpad_reports(
         Some(touch) => touch,
         None => {
             inspect_status.count_filtered_report();
-            return (None, None);
+            return None;
         }
     };
 
@@ -732,7 +752,7 @@ fn process_touchpad_reports(
         metrics_logger,
     );
 
-    (Some(report), None)
+    Some(report)
 }
 
 fn touch_contacts_and_buttons_from_touch_report(
@@ -900,7 +920,7 @@ mod tests {
         inspect_status.health_node.set_ok();
 
         let (returned_report, _) = TouchBinding::process_reports(
-            report,
+            vec![report],
             Some(previous_report),
             &descriptor,
             &mut event_sender,
@@ -1145,7 +1165,7 @@ mod tests {
         inspect_status.health_node.set_ok();
 
         let _ = TouchBinding::process_reports(
-            report,
+            vec![report],
             Some(previous_report),
             &descriptor,
             &mut event_sender,
