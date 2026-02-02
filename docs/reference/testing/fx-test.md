@@ -254,7 +254,7 @@ The following `COMMAND`s are implemented:
 in the log file.
 - `path` prints the path to the most recent log file.
 - `replay` will replay the previous run, using new display options.
-The speed of the replay can be controlled using the --replay-speed
+The speed of the replay can be controlled using the `--replay-speed`
 argument. Values > 1 speed up output, and values < 1 show the run
 in slow motion.
 - `stats` will print statistics about the previous run, including the longest
