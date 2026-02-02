@@ -11,6 +11,17 @@ use futures::StreamExt;
 const SPAM_COUNT: usize = 1001;
 
 #[fuchsia::test]
+/// Verify that Archivist correctly budgets and evicts log messages when its
+/// cache is full. Archivist is configured with a limited buffer size, and this
+/// test ensures that as new logs are ingested, older logs are dropped to stay
+/// within the budget. This prevents unbounded memory growth and ensures the
+/// system remains stable even under heavy log production.
+///
+/// The test sets up two log producers: a "victim" that logs a single message
+/// and a "spammer" that floods Archivist with enough logs to exceed the
+/// configured budget. It then verifies that the victim's initial log message is
+/// evicted from the cache, confirming the FIFO (First-In, First-Out) eviction
+/// strategy.
 async fn test_budget() {
     let realm_proxy = test_topology::create_realm(ftest::RealmOptions {
         puppets: Some(vec![
