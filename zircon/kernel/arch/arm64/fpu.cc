@@ -14,15 +14,6 @@
 
 #define LOCAL_TRACE 0
 
-/* FPEN bits in the cpacr register
- * 0 means all fpu instructions fault
- * 3 means no faulting at all EL levels
- * other values are not useful to us
- */
-#define FPU_ENABLE_MASK (3 << 20)
-
-static inline bool is_fpu_enabled(uint64_t cpacr) { return !!(BITS(cpacr, 21, 20) != 0); }
-
 static void arm64_fpu_load_regs(const Thread* t) {
   const struct fpstate* fpstate = &t->arch().fpstate;
 
@@ -97,91 +88,21 @@ static void arm64_fpu_save_regs(Thread* t) {
   LTRACEF("thread %s, fpcr %x, fpsr %x\n", t->name(), fpstate->fpcr, fpstate->fpsr);
 }
 
-static bool use_lazy_fpu_restore(const Thread* t) {
-  // The number 8 here was selected by measuring |fp_restore_count| running
-  // a particular workload.
-  return (t->arch().fp_restore_count < 8u);
-}
+void arm64_fpu_save_state(Thread* t) { arm64_fpu_save_regs(t); }
 
-void arm64_fpu_save_state(Thread* t) {
-  // If the FPU is not enabled, then there's nothing to save.
-  const uint64_t cpacr = __arm_rsr64("cpacr_el1");
-  if (!is_fpu_enabled(cpacr)) {
-    return;
-  }
-  arm64_fpu_save_regs(t);
-}
-
-void arm64_fpu_restore_state(Thread* t) {
-  const uint64_t cpacr = __arm_rsr64("cpacr_el1");
-  const bool enabled = is_fpu_enabled(cpacr);
-  const bool lazy_restore = use_lazy_fpu_restore(t);
-
-  if (lazy_restore) {
-    if (enabled) {
-      // FPU is enabled, but the thread wants lazy restore so disable it.
-      __arm_wsr64("cpacr_el1", cpacr & ~FPU_ENABLE_MASK);
-      __isb(ARM_MB_SY);
-    }
-    return;
-  }
-
-  // Eager restore.
-  if (!enabled) {
-    __arm_wsr64("cpacr_el1", cpacr | FPU_ENABLE_MASK);
-    __isb(ARM_MB_SY);
-  }
-  arm64_fpu_load_regs(t);
-}
+void arm64_fpu_restore_state(Thread* t) { arm64_fpu_load_regs(t); }
 
 void arm64_fpu_context_switch(Thread* oldthread, Thread* newthread) {
-  const uint64_t cpacr = __arm_rsr64("cpacr_el1");
-  if (is_fpu_enabled(cpacr)) {
-    LTRACEF("saving state on thread %s\n", oldthread->name());
+  // The kernel itself does not use the FPU outside of managing state for user space threads. Thus
+  // the only threads that can have relevant FPU state to save or restore are those that have
+  // user space threads. This code only saves the FPU state when switching away from a user space
+  // thread and only loads the FPU register state when switching to a user space thread.
+  // Note: When running a kernel-only thread, FPU state from the most recent
+  // user space thread may be resident in the hardware registers.
+  if (oldthread->user_thread()) {
     arm64_fpu_save_regs(oldthread);
   }
-
-  if (use_lazy_fpu_restore(newthread)) {
-    if (is_fpu_enabled(cpacr)) {
-      // Previous thread had the fpu enabled, but the next thread is going
-      // to use lazy restore via the exception, so disable the fpu.
-      __arm_wsr64("cpacr_el1", cpacr & ~FPU_ENABLE_MASK);
-      __isb(ARM_MB_SY);
-    }
-  } else {
-    // Restoring fpu state eagerly.
-    if (!is_fpu_enabled(cpacr)) {
-      // .. but previous thread has the fpu disabled. So enable it.
-      __arm_wsr64("cpacr_el1", cpacr | FPU_ENABLE_MASK);
-      __isb(ARM_MB_SY);
-    }
+  if (newthread->user_thread()) {
     arm64_fpu_load_regs(newthread);
   }
 }
-
-// Called because of a fpu instruction caused exception.
-void arm64_fpu_exception(iframe_t* iframe, uint exception_flags) {
-  LTRACEF("cpu %u, thread %s, flags 0x%x\n", arch_curr_cpu_num(), Thread::Current::Get()->name(),
-          exception_flags);
-
-  // Only valid to be called if exception came from lower level.
-  DEBUG_ASSERT(exception_flags & ARM64_EXCEPTION_FLAG_LOWER_EL);
-
-  uint64_t cpacr = __arm_rsr64("cpacr_el1");
-  DEBUG_ASSERT(!is_fpu_enabled(cpacr));
-
-  // Enable the fpu.
-  cpacr |= FPU_ENABLE_MASK;
-  __arm_wsr64("cpacr_el1", cpacr);
-  __isb(ARM_MB_SY);
-
-  // Load the fpu state for the current thread.
-  Thread* t = Thread::Current::Get();
-  if (likely(t)) {
-    DEBUG_ASSERT(use_lazy_fpu_restore(t));
-    t->arch().fp_restore_count++;
-    arm64_fpu_load_regs(t);
-  }
-}
-
-bool arm64_fpu_is_enabled() { return is_fpu_enabled(__arm_rsr64("cpacr_el1")); }

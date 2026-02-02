@@ -267,7 +267,7 @@ void arm64_fpu_handler(iframe_t* iframe, uint exception_flags, uint32_t esr) {
     exception_die(iframe, esr, __arm_rsr64("far_el1"),
                   "invalid fpu use in kernel: PC at %#" PRIx64 "\n", iframe->elr);
   }
-  arm64_fpu_exception(iframe, exception_flags);
+  exception_die(iframe, esr, __arm_rsr64("far_el1"), "unhandled fpu exception\n");
 }
 
 void arm64_instruction_abort_handler(iframe_t* iframe, uint exception_flags, uint32_t esr) {

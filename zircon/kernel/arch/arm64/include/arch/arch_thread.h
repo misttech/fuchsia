@@ -111,10 +111,6 @@ struct arch_thread {
 
   // Saved fpu state.
   struct fpstate fpstate;
-  // Counts how many times the usermode thread generated the exception that
-  // is used to restore |fpstate|. After some number of them it is more efficient to
-  // restore fpu state eagerly and not pay for the exception itself.
-  uint32_t fp_restore_count;
 
   // |track_debug_state| tells whether the kernel should keep track of the whole debug state for
   // this thread. Normally this is set explicitly by an user that wants to make use of HW

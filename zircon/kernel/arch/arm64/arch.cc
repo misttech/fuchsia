@@ -295,8 +295,10 @@ void arm64_cpu_early_init() {
   arch::ArmSctlrEl1::Write(sctlr);
   __isb(ARM_MB_SY);
 
-  // Hard disable the FPU, SVE, and any additional vector units.
-  __arm_wsr64("cpacr_el1", 0);
+  // Enable the FPU, disable SVE and any other additional vector units.
+  // FPEN bits 0b11 means do not trap in EL0 or EL1.
+  constexpr uint32_t kFpuEnable = (0b11 << 20);
+  __arm_wsr64("cpacr_el1", kFpuEnable);
   __isb(ARM_MB_SY);
 
   // Save all of the features of the cpu.

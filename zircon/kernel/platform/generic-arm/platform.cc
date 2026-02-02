@@ -159,11 +159,10 @@ zx_status_t platform_suspend_cpu(PlatformAllowDomainPowerDown allow_domain) {
 
   DEBUG_ASSERT(!Thread::Current::Get()->preemption_state().PreemptIsEnabled());
   DEBUG_ASSERT(arch_ints_disabled());
-  // Make sure this thread is a kernel-only thread and the FPU is disabled.
+  // Make sure this thread is a kernel-only thread.
   // Otherwise, we might need to save and restore some vector/floating-point
   // state if we are going to power down.
   DEBUG_ASSERT(Thread::Current::Get()->user_thread() == nullptr);
-  DEBUG_ASSERT(!arm64_fpu_is_enabled());
 
   if (!cpu_suspend_supported) {
     return ZX_ERR_NOT_SUPPORTED;
