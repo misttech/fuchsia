@@ -489,6 +489,20 @@ impl DeviceHandler {
         let port_class = fnet_interfaces_ext::PortClass::try_from(hw_port_class)
             .map_err(Error::InvalidPortClass)?;
 
+        // Ensure we're not going to get stopped. Holding a guard on a child
+        // scope ensures a guard on the parent.
+        //
+        // Unfortunately, the guard must be acquired before we know the device
+        // name. Create a temporary guard for now, and replace it later with
+        // a properly named guard.
+        let temp_guard = scope
+            .new_detached_child("add_port_temporary_guard")
+            .active_guard()
+            .ok_or(Error::ScopeFinished)?;
+
+        // Note: `binding_id_alloc` will panic if dropped. Care must be taken
+        // to cancel the device reservation should an error occur after this
+        // point.
         let (binding_id, binding_id_alloc, name) = match name {
             None => ctx.bindings_ctx().devices.generate_and_reserve_name_and_alloc_new_id(
                 match wire_format {
@@ -504,6 +518,18 @@ impl DeviceHandler {
             }
         };
 
+        // Now that we know the device name, try to acquire a permanent guard.
+        // This operation is fallible, so cancel the device ID reservation on
+        // failure.
+        let guard = match scope.new_detached_child(format!("{binding_id}({name})")).active_guard() {
+            Some(guard) => guard,
+            None => {
+                ctx.bindings_ctx().devices.cancel_device_reservation(binding_id_alloc);
+                return Err(Error::ScopeFinished);
+            }
+        };
+        std::mem::drop(temp_guard);
+
         let local_route_tables = match maybe_create_local_route_tables(
             &*ctx,
             &name,
@@ -517,13 +543,6 @@ impl DeviceHandler {
                 return Err(Error::CantCreateLocalRouteTables);
             }
         };
-
-        // Ensure we're not going to get stopped. Holding a guard on a child
-        // scope ensures a guard on the parent.
-        let guard = scope
-            .new_detached_child(format!("{binding_id}({name})"))
-            .active_guard()
-            .ok_or(Error::ScopeFinished)?;
 
         // Do the rest of the work in a closure so we don't accidentally add
         // errors after the binding ID is already allocated. This part of the

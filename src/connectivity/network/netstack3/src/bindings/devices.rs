@@ -174,6 +174,18 @@ where
         );
     }
 
+    /// Cancel a [`BindingIdAllocation`].
+    ///
+    /// Use to safely consume the [`BindingIdAllocation`] in the event adding
+    /// the device failed and the binding ID reservation should be freed.
+    pub(crate) fn cancel_device_reservation(&self, id: BindingIdAllocation) {
+        let id = id.into_inner();
+        let core_id = self.remove_device(id);
+        // NB: A device that has an allocation but hasn't been finalized
+        // shouldn't have a core ID.
+        debug_assert_eq!(core_id, None);
+    }
+
     /// Removes a device from the internal list.
     ///
     /// Removes a device from the internal [`Devices`] list and returns the

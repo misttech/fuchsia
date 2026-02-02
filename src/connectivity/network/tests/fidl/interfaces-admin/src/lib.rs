@@ -7,6 +7,7 @@
 mod blackhole;
 
 use assert_matches::assert_matches;
+use fidl::endpoints::Proxy;
 use fidl_fuchsia_hardware_network::{self as fhardware_network, FrameType};
 use fidl_fuchsia_net_ext::IntoExt;
 use fidl_fuchsia_net_resources::GrantForInterfaceAuthorization;
@@ -1998,6 +1999,57 @@ async fn device_control_closes_on_device_close<N: Netstack>(name: &str) {
     // watcher to ensure that's not the case.
     let _: fnet_interfaces_ext::EventWithInterest<_> =
         watcher.try_next().await.expect("watcher error").expect("watcher ended uexpectedly");
+}
+
+// A regression test for https://fxbug.dev/478844205.
+//
+// Ensure that creating an interface will not panic if the netdevice instance
+// exits.
+#[netstack_test]
+async fn interface_create_close_race(name: &str) {
+    let sandbox = netemul::TestSandbox::new().expect("create sandbox");
+    let realm = sandbox.create_netstack_realm::<Netstack3, _>(name).expect("create realm");
+
+    // Open an interfaces_state connection with the netstack. We'll use this
+    // to verify the netstack doesn't crash.
+    let interfaces_state = realm
+        .connect_to_protocol::<fidl_fuchsia_net_interfaces::StateMarker>()
+        .expect("connect to protocol");
+
+    let installer = realm
+        .connect_to_protocol::<fidl_fuchsia_net_interfaces_admin::InstallerMarker>()
+        .expect("connect to protocol");
+
+    // Run the test for several iterations to ensure we're exercising the race.
+    const N: u32 = 1000;
+    for _ in 0..N {
+        let endpoint = sandbox.create_endpoint(name).await.expect("create endpoint");
+        let (device, port_id) = endpoint.get_netdevice().await.expect("get netdevice");
+        let (device_control, device_control_server_end) = fidl::endpoints::create_proxy::<
+            fidl_fuchsia_net_interfaces_admin::DeviceControlMarker,
+        >();
+        installer.install_device(device, device_control_server_end).expect("install device");
+        let (_control, control_server_end) =
+            fidl_fuchsia_net_interfaces_ext::admin::Control::create_endpoints()
+                .expect("create proxy");
+
+        // Race the creation of the interface with the closing of the endpoint.
+        // Ignore the result of interface creation. It may fail if the netstack
+        // processes the endpoint closure first.
+        let _result = device_control.create_interface(
+            &port_id,
+            control_server_end,
+            fidl_fuchsia_net_interfaces_admin::Options::default(),
+        );
+        std::mem::drop(endpoint);
+
+        // Observe the control channel closing because the device was destroyed.
+        assert_matches::assert_matches!(device_control.take_event_stream().next().await, None);
+
+        // Verify that the Netstack did not crash by observing the interfaces state
+        // protocol is still alive.
+        assert!(!interfaces_state.is_closed());
+    }
 }
 
 // TODO(https://fxbug.dev/42061838) Remove this trait once the source of the
