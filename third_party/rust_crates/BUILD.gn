@@ -296,7 +296,7 @@ group("downcast-rs") {
 }
 
 group("dyn-clone") {
-  public_deps = [ ":dyn-clone-v1_0_19" ]
+  public_deps = [ ":dyn-clone-v1_0_20" ]
 }
 
 group("ecb") {
@@ -5941,18 +5941,18 @@ rustc_library("downcast-rs-v2_0_2") {
   applicable_licenses = [ ":downcast-rs-v2_0_2.license" ]
 }
 
-license("dyn-clone-v1_0_19.license") {
+license("dyn-clone-v1_0_20.license") {
   public_package_name = "dyn_clone"
   license_files = [
-    "//third_party/rust_crates/vendor/dyn-clone-1.0.19/LICENSE-APACHE",
-    "//third_party/rust_crates/vendor/dyn-clone-1.0.19/LICENSE-MIT",
+    "//third_party/rust_crates/vendor/dyn-clone-1.0.20/LICENSE-APACHE",
+    "//third_party/rust_crates/vendor/dyn-clone-1.0.20/LICENSE-MIT",
   ]
 }
 
-rustc_library("dyn-clone-v1_0_19") {
+rustc_library("dyn-clone-v1_0_20") {
   crate_name = "dyn_clone"
-  source_root = "//third_party/rust_crates/vendor/dyn-clone-1.0.19/src/lib.rs"
-  output_name = "dyn_clone-24a57329900761ca"
+  source_root = "//third_party/rust_crates/vendor/dyn-clone-1.0.20/src/lib.rs"
+  output_name = "dyn_clone-b37cb7dabfbaca07"
   edition = "2018"
   disable_clippy = true
   enforce_source_listing = false
@@ -5964,13 +5964,13 @@ rustc_library("dyn-clone-v1_0_19") {
 
   rustflags = [
     "--cap-lints=allow",
-    "-Cmetadata=24a57329900761ca",
-    "-Cextra-filename=-24a57329900761ca",
+    "-Cmetadata=b37cb7dabfbaca07",
+    "-Cextra-filename=-b37cb7dabfbaca07",
   ]
 
   visibility = [ ":*" ]
 
-  applicable_licenses = [ ":dyn-clone-v1_0_19.license" ]
+  applicable_licenses = [ ":dyn-clone-v1_0_20.license" ]
 }
 
 license("ecb-v0_1_2.license") {
@@ -16148,7 +16148,7 @@ rustc_library("schemars-v0_8_22") {
 
   deps = []
   deps += [ ":chrono-v0_4_42" ]
-  deps += [ ":dyn-clone-v1_0_19" ]
+  deps += [ ":dyn-clone-v1_0_20" ]
   deps += [ ":indexmap-v1_9_2" ]
   deps += [ ":schemars_derive-v0_8_22($host_toolchain)" ]
   deps += [ ":serde-v1_0_228" ]

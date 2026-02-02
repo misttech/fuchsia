@@ -1,6 +1,6 @@
 [package]
 name = "dyn-clone"
-version = "1.0.19"
+version = "1.0.20"
 authors = ["David Tolnay <dtolnay@gmail.com>"]
 categories = ["rust-patterns", "no-std"]
 description = "Clone trait that is dyn-compatible"
@@ -9,7 +9,7 @@ edition = "2018"
 keywords = ["dyn", "clone", "trait-object", "object-safe"]
 license = "MIT OR Apache-2.0"
 repository = "https://github.com/dtolnay/dyn-clone"
-rust-version = "1.45"
+rust-version = "1.60"
 
 [dev-dependencies]
 rustversion = "1.0"

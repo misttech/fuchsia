@@ -11,9 +11,9 @@
 
 [package]
 edition = "2018"
-rust-version = "1.45"
+rust-version = "1.60"
 name = "dyn-clone"
-version = "1.0.19"
+version = "1.0.20"
 authors = ["David Tolnay <dtolnay@gmail.com>"]
 build = false
 autolib = false
@@ -38,13 +38,13 @@ license = "MIT OR Apache-2.0"
 repository = "https://github.com/dtolnay/dyn-clone"
 
 [package.metadata.docs.rs]
+targets = ["x86_64-unknown-linux-gnu"]
 rustdoc-args = [
     "--generate-link-to-definition",
     "--extern-html-root-url=core=https://doc.rust-lang.org",
     "--extern-html-root-url=alloc=https://doc.rust-lang.org",
     "--extern-html-root-url=std=https://doc.rust-lang.org",
 ]
-targets = ["x86_64-unknown-linux-gnu"]
 
 [lib]
 name = "dyn_clone"

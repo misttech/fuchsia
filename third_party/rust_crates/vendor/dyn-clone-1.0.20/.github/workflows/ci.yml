@@ -24,7 +24,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        rust: [nightly, beta, stable, 1.56.0]
+        rust: [nightly, beta, stable, 1.70.0]
     timeout-minutes: 45
     steps:
       - uses: actions/checkout@v4
@@ -36,15 +36,28 @@ jobs:
         if: matrix.rust == 'nightly'
       - run: cargo test
 
-  msrv:
-    name: Rust 1.46.0
+  embedded:
+    name: No atomic
     needs: pre_ci
     if: needs.pre_ci.outputs.continue
     runs-on: ubuntu-latest
     timeout-minutes: 45
     steps:
       - uses: actions/checkout@v4
-      - uses: dtolnay/rust-toolchain@1.46.0
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: thumbv6m-none-eabi
+      - run: cargo check --target thumbv6m-none-eabi
+
+  msrv:
+    name: Rust 1.60.0
+    needs: pre_ci
+    if: needs.pre_ci.outputs.continue
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@1.60.0
       - run: cargo check
 
   doc:
@@ -70,6 +83,8 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@miri
+        with:
+          toolchain: nightly-2025-05-16  # https://github.com/rust-lang/miri/issues/4323
       - run: cargo miri setup
       - run: cargo miri test
         env:
