@@ -115,6 +115,7 @@ bitflags! {
         /// Whether the executor should dump the stack of this task when it exits.
         /// Currently used to implement ExitStatus::CoreDump.
         const DUMP_ON_EXIT = 0x8;
+        const KERNEL_SIGNALS_AVAILABLE = 0x10;
     }
 }
 
@@ -382,38 +383,6 @@ impl TaskMutableState {
         self.signals.saved_mask().is_some_and(|mask| mask.has_signal(signal))
     }
 
-    /// Enqueues an internal signal at the back of the task's kernel signal queue.
-    pub fn enqueue_kernel_signal(&mut self, signal: KernelSignal) {
-        self.kernel_signals.push_back(signal);
-    }
-
-    /// Enqueues a signal at the back of the task's signal queue.
-    pub fn enqueue_signal(&mut self, signal: SignalInfo) {
-        self.signals.enqueue(signal);
-    }
-
-    /// Enqueues the signal, allowing the signal to skip straight to the front of the task's queue.
-    ///
-    /// `enqueue_signal` is the more common API to use.
-    ///
-    /// Note that this will not guarantee that the signal is dequeued before any process-directed
-    /// signals.
-    pub fn enqueue_signal_front(&mut self, signal: SignalInfo) {
-        self.signals.enqueue(signal);
-    }
-
-    /// Sets the current signal mask of the task.
-    pub fn set_signal_mask(&mut self, mask: SigSet) {
-        self.signals.set_mask(mask);
-    }
-
-    /// Sets a temporary signal mask for the task.
-    ///
-    /// This mask should be removed by a matching call to `restore_signal_mask`.
-    pub fn set_temporary_signal_mask(&mut self, mask: SigSet) {
-        self.signals.set_temporary_mask(mask);
-    }
-
     /// Removes the currently active, temporary, signal mask and restores the
     /// previously active signal mask.
     pub fn restore_signal_mask(&mut self) {
@@ -525,6 +494,47 @@ impl TaskMutableState<Base = Task> {
         }
     }
 
+    /// Enqueues a signal at the back of the task's signal queue.
+    pub fn enqueue_signal(&mut self, signal: SignalInfo) {
+        self.signals.enqueue(signal);
+        self.set_flags(TaskFlags::SIGNALS_AVAILABLE, self.signals.is_any_pending());
+    }
+
+    /// Enqueues the signal, allowing the signal to skip straight to the front of the task's queue.
+    ///
+    /// `enqueue_signal` is the more common API to use.
+    ///
+    /// Note that this will not guarantee that the signal is dequeued before any process-directed
+    /// signals.
+    pub fn enqueue_signal_front(&mut self, signal: SignalInfo) {
+        self.signals.enqueue(signal);
+        self.set_flags(TaskFlags::SIGNALS_AVAILABLE, self.signals.is_any_pending());
+    }
+
+    /// Sets the current signal mask of the task.
+    pub fn set_signal_mask(&mut self, mask: SigSet) {
+        self.signals.set_mask(mask);
+        self.set_flags(TaskFlags::SIGNALS_AVAILABLE, self.signals.is_any_pending());
+    }
+
+    /// Sets a temporary signal mask for the task.
+    ///
+    /// This mask should be removed by a matching call to `restore_signal_mask`.
+    pub fn set_temporary_signal_mask(&mut self, mask: SigSet) {
+        self.signals.set_temporary_mask(mask);
+        self.set_flags(TaskFlags::SIGNALS_AVAILABLE, self.signals.is_any_pending());
+    }
+
+    /// Returns the number of pending signals for this task, without considering the signal mask.
+    pub fn pending_signal_count(&self) -> usize {
+        self.signals.num_queued() + self.base.thread_group().num_signals_queued()
+    }
+
+    /// Returns `true` if `signal` is pending for this task, without considering the signal mask.
+    pub fn has_signal_pending(&self, signal: Signal) -> bool {
+        self.signals.has_queued(signal) || self.base.thread_group().has_signal_queued(signal)
+    }
+
     // Prepare a SignalInfo to be sent to the tracer, if any.
     pub fn prepare_signal_info(
         &mut self,
@@ -609,21 +619,10 @@ impl TaskMutableState<Base = Task> {
         self.exit_status.get_or_insert(status);
     }
 
-    /// Returns the number of pending signals for this task, without considering the signal mask.
-    pub fn pending_signal_count(&self) -> usize {
-        self.signals.num_queued() + self.base.thread_group().pending_signals.lock().num_queued()
-    }
-
-    /// Returns `true` if `signal` is pending for this task, without considering the signal mask.
-    pub fn has_signal_pending(&self, signal: Signal) -> bool {
-        self.signals.has_queued(signal)
-            || self.base.thread_group().pending_signals.lock().has_queued(signal)
-    }
-
     /// The set of pending signals for the task, including the signals pending for the thread
     /// group.
     pub fn pending_signals(&self) -> SigSet {
-        self.signals.pending() | self.base.thread_group().pending_signals.lock().pending()
+        self.signals.pending() | self.base.thread_group().get_pending_signals()
     }
 
     /// The set of pending signals for the task specifically, not including the signals pending
@@ -635,7 +634,7 @@ impl TaskMutableState<Base = Task> {
     /// Returns true if any currently pending signal is allowed by `mask`.
     pub fn is_any_signal_allowed_by_mask(&self, mask: SigSet) -> bool {
         self.signals.is_any_allowed_by_mask(mask)
-            || self.base.thread_group().pending_signals.lock().is_any_allowed_by_mask(mask)
+            || self.base.thread_group().is_any_signal_allowed_by_mask(mask)
     }
 
     /// Returns whether or not a signal is pending for this task, taking the current
@@ -643,7 +642,7 @@ impl TaskMutableState<Base = Task> {
     pub fn is_any_signal_pending(&self) -> bool {
         let mask = self.signal_mask();
         self.signals.is_any_pending()
-            || self.base.thread_group().pending_signals.lock().is_any_allowed_by_mask(mask)
+            || self.base.thread_group().is_any_signal_allowed_by_mask(mask)
     }
 
     /// Returns the next pending signal that passes `predicate`.
@@ -651,12 +650,12 @@ impl TaskMutableState<Base = Task> {
     where
         F: Fn(&SignalInfo) -> bool,
     {
-        if let Some(signal) =
-            self.base.thread_group().pending_signals.lock().take_next_where(&predicate)
-        {
+        if let Some(signal) = self.base.thread_group().take_next_signal_where(&predicate) {
             Some(signal)
         } else {
-            self.signals.take_next_where(&predicate)
+            let s = self.signals.take_next_where(&predicate);
+            self.set_flags(TaskFlags::SIGNALS_AVAILABLE, self.signals.is_any_pending());
+            s
         }
     }
 
@@ -688,11 +687,21 @@ impl TaskMutableState<Base = Task> {
         self.take_next_signal_where(predicate)
     }
 
+    /// Enqueues an internal signal at the back of the task's kernel signal queue.
+    pub fn enqueue_kernel_signal(&mut self, signal: KernelSignal) {
+        self.kernel_signals.push_back(signal);
+        self.set_flags(TaskFlags::KERNEL_SIGNALS_AVAILABLE, true);
+    }
+
     /// Removes and returns a pending internal signal.
     ///
     /// Returns `None` if there are no signals pending.
     pub fn take_kernel_signal(&mut self) -> Option<KernelSignal> {
-        self.kernel_signals.pop_front()
+        let signal = self.kernel_signals.pop_front();
+        if self.kernel_signals.is_empty() {
+            self.set_flags(TaskFlags::KERNEL_SIGNALS_AVAILABLE, false);
+        }
+        signal
     }
 
     #[cfg(test)]
@@ -1472,6 +1481,14 @@ impl Task {
 
     pub fn get_signal_action(&self, signal: Signal) -> sigaction_t {
         self.thread_group().signal_actions.get(signal)
+    }
+
+    pub fn should_check_for_pending_signals(&self) -> bool {
+        self.flags().intersects(
+            TaskFlags::KERNEL_SIGNALS_AVAILABLE
+                | TaskFlags::SIGNALS_AVAILABLE
+                | TaskFlags::TEMPORARY_SIGNAL_MASK,
+        ) || self.thread_group.has_pending_signals.load(Ordering::Relaxed)
     }
 
     pub fn record_pid_koid_mapping(&self) {

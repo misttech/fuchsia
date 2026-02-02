@@ -17,7 +17,7 @@ use crate::signals::{
 use crate::task::memory_attribution::MemoryAttributionLifecycleEvent;
 use crate::task::{
     ControllingTerminal, CurrentTask, ExitStatus, Kernel, PidTable, ProcessGroup, Session, Task,
-    TaskFlags, TaskMutableState, TaskPersistentInfo, TypedWaitQueue,
+    TaskMutableState, TaskPersistentInfo, TypedWaitQueue,
 };
 use crate::time::{IntervalTimerHandle, TimerTable};
 use itertools::Itertools;
@@ -37,7 +37,7 @@ use starnix_uapi::errors::Errno;
 use starnix_uapi::personality::PersonalityFlags;
 use starnix_uapi::resource_limits::{Resource, ResourceLimits};
 use starnix_uapi::signals::{
-    SIGCHLD, SIGCONT, SIGHUP, SIGKILL, SIGTERM, SIGTTOU, Signal, UncheckedSignal,
+    SIGCHLD, SIGCONT, SIGHUP, SIGKILL, SIGTERM, SIGTTOU, SigSet, Signal, UncheckedSignal,
 };
 use starnix_uapi::user_address::UserAddress;
 use starnix_uapi::{
@@ -46,7 +46,7 @@ use starnix_uapi::{
 };
 use std::collections::BTreeMap;
 use std::fmt;
-use std::sync::atomic::Ordering;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Weak};
 use zx::{Koid, Status};
 
@@ -279,6 +279,10 @@ pub struct ThreadGroup {
 
     /// The signals that are currently pending for this thread group.
     pub pending_signals: Mutex<QueuedSignals>,
+
+    /// Whether or not there are any pending signals available for tasks in this thread group.
+    /// Used to avoid having to acquire the signal state lock in hot paths.
+    pub has_pending_signals: AtomicBool,
 
     /// The monotonic time at which the thread group started.
     pub start_time: zx::MonotonicInstant,
@@ -585,6 +589,7 @@ impl ThreadGroup {
                 ptracees: Default::default(),
                 stop_state: AtomicStopState::new(StopState::Awake),
                 pending_signals: Default::default(),
+                has_pending_signals: Default::default(),
                 start_time: zx::MonotonicInstant::get(),
                 mutable_state: RwLock::new(ThreadGroupMutableState {
                     parent: parent
@@ -1677,6 +1682,32 @@ impl ThreadGroup {
         Ok(Some(signal))
     }
 
+    pub fn has_signal_queued(&self, signal: Signal) -> bool {
+        self.pending_signals.lock().has_queued(signal)
+    }
+
+    pub fn num_signals_queued(&self) -> usize {
+        self.pending_signals.lock().num_queued()
+    }
+
+    pub fn get_pending_signals(&self) -> SigSet {
+        self.pending_signals.lock().pending()
+    }
+
+    pub fn is_any_signal_allowed_by_mask(&self, mask: SigSet) -> bool {
+        self.pending_signals.lock().is_any_allowed_by_mask(mask)
+    }
+
+    pub fn take_next_signal_where<F>(&self, predicate: F) -> Option<SignalInfo>
+    where
+        F: Fn(&SignalInfo) -> bool,
+    {
+        let mut signals = self.pending_signals.lock();
+        let r = signals.take_next_where(predicate);
+        self.has_pending_signals.store(!signals.is_empty(), Ordering::Relaxed);
+        r
+    }
+
     /// Drive this `ThreadGroup` to exit, allowing it time to handle SIGTERM before sending SIGKILL.
     ///
     /// Returns once `ThreadGroup::exit()` has completed.
@@ -2054,7 +2085,11 @@ impl ThreadGroupMutableState<Base = ThreadGroup> {
         let sigaction = self.base.signal_actions.get(signal_info.signal);
         let action = action_for_signal(&signal_info, sigaction);
 
-        self.base.pending_signals.lock().enqueue(signal_info.clone());
+        {
+            let mut pending_signals = self.base.pending_signals.lock();
+            pending_signals.enqueue(signal_info.clone());
+            self.base.has_pending_signals.store(true, Ordering::Relaxed);
+        }
         let tasks: Vec<WeakRef<Task>> = self.tasks.values().map(|t| t.weak_clone()).collect();
 
         // Set state to waking before interrupting any tasks.
@@ -2085,7 +2120,6 @@ impl ThreadGroupMutableState<Base = ThreadGroup> {
 
             if is_queued {
                 task_state.notify_signal_waiters(&signal_info.signal);
-                task_state.set_flags(TaskFlags::SIGNALS_AVAILABLE, true);
 
                 if !is_masked && action.must_interrupt(Some(sigaction)) && !has_interrupted_task {
                     // Only interrupt one task, and only interrupt if the signal was actually queued

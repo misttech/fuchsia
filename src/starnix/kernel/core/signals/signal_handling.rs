@@ -240,6 +240,10 @@ pub fn action_for_signal(siginfo: &SignalInfo, sigaction: sigaction_t) -> Delive
 /// Dequeues and handles a pending signal for `current_task`.
 pub fn dequeue_signal(locked: &mut Locked<Unlocked>, current_task: &mut CurrentTask) {
     let &mut CurrentTask { ref task, ref mut thread_state, .. } = current_task;
+    if !task.should_check_for_pending_signals() {
+        return;
+    }
+
     let mut task_state = task.write();
     // This code is occasionally executed as the task is stopping. Stopping /
     // stopped threads should not get signals.
