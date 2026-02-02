@@ -125,6 +125,32 @@ class TestWorkspace(unittest.TestCase):
                 self.assertEqual(ws.workspace_name, "test-workspace")
                 mock_cartfs_create.assert_called_once()
 
+    def test_create_with_repo_root(self) -> None:
+        """Test that a Workspace instance can be created successfully with a repo_root."""
+        with mock_fs.FileSystemTestHelper(
+            user="testuser",
+            workspace_name="test-workspace",
+            repo_name="fuchsia",
+        ) as fs:
+            # Mock the environment variables and current working directory.
+            with (
+                patch.object(
+                    cartfs.Cartfs, "create", return_value=MagicMock()
+                ) as mock_cartfs_create,
+            ):
+                ws = workspace.Workspace.create(
+                    repo_root=fs.full_path(
+                        "testuser/test-workspace/fuchsia", mock_fs.FSType.COG
+                    )
+                )
+                self.assertEqual(
+                    str(ws.workspace_dir),
+                    os.path.join(fs.cog_dir, "testuser/test-workspace"),
+                )
+                self.assertEqual(ws.repo_name, "fuchsia")
+                self.assertEqual(ws.workspace_name, "test-workspace")
+                mock_cartfs_create.assert_called_once()
+
     def test_create_not_in_cog_workspace(self) -> None:
         """Test that NotInCogWorkspaceError is raised when not in a Cog workspace."""
         with mock_fs.FileSystemTestHelper(

@@ -142,7 +142,11 @@ class Workspace:
         return None
 
     @classmethod
-    def create(cls, use_local_mock_cartfs: bool = False) -> "Workspace":
+    def create(
+        cls,
+        use_local_mock_cartfs: bool = False,
+        repo_root: Path | None = None,
+    ) -> "Workspace":
         """Creates a Workspace instance after verifying its state.
 
         Raises:
@@ -154,7 +158,7 @@ class Workspace:
         Returns:
             A new Workspace instance.
         """
-        current_dir = Path.cwd()
+        current_dir = Path(repo_root) if repo_root else Path.cwd()
 
         workspace_dir = cls._find_cog_workspace_directory(current_dir)
         if not workspace_dir:
@@ -584,6 +588,7 @@ class Workspace:
                     "api.get-repo-states",
                     "fuchsia",
                 ],
+                cwd=self.workspace_dir / self.repo_name,
                 check=True,
                 capture_output=True,
             )
