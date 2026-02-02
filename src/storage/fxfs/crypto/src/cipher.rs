@@ -151,7 +151,7 @@ pub fn key_to_cipher(
 #[derive(Clone, Debug)]
 pub enum CipherHolder {
     Cipher(Arc<dyn Cipher>),
-    Unavailable(KeyType),
+    Unavailable,
 }
 
 impl CipherHolder {
@@ -170,7 +170,7 @@ impl CipherSet {
     pub fn find_key(self: &Arc<Self>, id: u64) -> FindKeyResult {
         match self.0.get(&id) {
             Some(CipherHolder::Cipher(cipher)) => FindKeyResult::Key(Arc::clone(cipher)),
-            Some(CipherHolder::Unavailable(key_type)) => FindKeyResult::Unavailable(*key_type),
+            Some(CipherHolder::Unavailable) => FindKeyResult::Unavailable,
             None => FindKeyResult::NotFound,
         }
     }
@@ -194,7 +194,7 @@ pub enum FindKeyResult {
     /// No key registered with that key_id.
     NotFound,
     /// The key is known, but not available for use (cannot be unwrapped).
-    Unavailable(KeyType),
+    Unavailable,
     Key(Arc<dyn Cipher>),
 }
 
@@ -203,69 +203,6 @@ assert_cfg!(target_endian = "little");
 #[derive(IntoBytes, KnownLayout, FromBytes, Immutable)]
 #[repr(C)]
 struct Tweak(u128);
-
-pub fn xor_in_place(a: &mut [u8], b: &[u8]) {
-    for (b1, b2) in a.iter_mut().zip(b.iter()) {
-        *b1 ^= *b2;
-    }
-}
-
-// To be used with encrypt_with_backend.
-struct CbcEncryptProcessor<'a> {
-    tweak: Tweak,
-    data: &'a mut [u8],
-}
-
-impl<'a> CbcEncryptProcessor<'a> {
-    fn new(tweak: Tweak, data: &'a mut [u8]) -> Self {
-        Self { tweak, data }
-    }
-}
-
-impl BlockSizeUser for CbcEncryptProcessor<'_> {
-    type BlockSize = U16;
-}
-
-impl BlockClosure for CbcEncryptProcessor<'_> {
-    fn call<B: BlockBackend<BlockSize = Self::BlockSize>>(self, backend: &mut B) {
-        let Self { mut tweak, data } = self;
-        for block in data.chunks_exact_mut(16) {
-            xor_in_place(block, &tweak.0.to_le_bytes());
-            let chunk: &mut GenericArray<u8, _> = GenericArray::from_mut_slice(block);
-            backend.proc_block(InOut::from(chunk));
-            tweak.0 = u128::from_le_bytes(block.try_into().unwrap())
-        }
-    }
-}
-
-// To be used with decrypt_with_backend.
-struct CbcDecryptProcessor<'a> {
-    tweak: Tweak,
-    data: &'a mut [u8],
-}
-
-impl<'a> CbcDecryptProcessor<'a> {
-    fn new(tweak: Tweak, data: &'a mut [u8]) -> Self {
-        Self { tweak, data }
-    }
-}
-
-impl BlockSizeUser for CbcDecryptProcessor<'_> {
-    type BlockSize = U16;
-}
-
-impl BlockClosure for CbcDecryptProcessor<'_> {
-    fn call<B: BlockBackend<BlockSize = Self::BlockSize>>(self, backend: &mut B) {
-        let Self { mut tweak, data } = self;
-        for block in data.chunks_exact_mut(16) {
-            let ciphertext = block.to_vec();
-            let chunk = GenericArray::from_mut_slice(block);
-            backend.proc_block(InOut::from(chunk));
-            xor_in_place(block, &tweak.0.to_le_bytes());
-            tweak.0 = u128::from_le_bytes(ciphertext.try_into().unwrap());
-        }
-    }
-}
 
 // To be used with encrypt|decrypt_with_backend.
 struct XtsProcessor<'a> {

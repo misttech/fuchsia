@@ -865,7 +865,7 @@ impl<S: HandleOwner> StoreObjectHandle<S> {
                     .context("get_keys failed")?;
                 match cipher_set.find_key(VOLUME_DATA_KEY_ID) {
                     FindKeyResult::NotFound => {}
-                    FindKeyResult::Unavailable(_) => return Err(FxfsError::NoKey.into()),
+                    FindKeyResult::Unavailable => return Err(FxfsError::NoKey.into()),
                     FindKeyResult::Key(key) => return Ok(key),
                 }
                 (encryption_keys, (*cipher_set).clone())

@@ -56,9 +56,6 @@ struct CryptBaseInner {
 pub struct CryptBase {
     inner: Mutex<CryptBaseInner>,
     shutdown: AtomicBool,
-    // This affects the type of keys we create for fscrypt directories. If using Fxfs keys, create
-    // `EncryptionKey::Fxfs`, else create `EncryptionKeys::FscryptInoLblk32Dir`.
-    use_fxfs_keys_for_fscrypt_dirs: bool,
     /// Legacy fscrypt uses the filesystem UUID to salt encryption keys in some variants.
     /// We don't have direct access to the filesystem so we store the UUID here.
     filesystem_uuid: [u8; 16],
@@ -74,7 +71,6 @@ impl CryptBase {
             }),
             shutdown: AtomicBool::new(false),
             filesystem_uuid: [0; 16],
-            use_fxfs_keys_for_fscrypt_dirs: false,
         }
     }
 
@@ -127,14 +123,6 @@ impl CryptBase {
     pub fn set_filesystem_uuid(&mut self, uuid: &[u8; 16]) {
         self.filesystem_uuid = *uuid;
     }
-
-    pub fn use_fxfs_keys_for_fscrypt_dirs(&mut self) {
-        self.use_fxfs_keys_for_fscrypt_dirs = true;
-    }
-
-    pub fn using_fxfs_keys_for_fscrypt_dirs(&self) -> bool {
-        self.use_fxfs_keys_for_fscrypt_dirs
-    }
 }
 
 #[async_trait]
@@ -182,7 +170,7 @@ impl Crypt for CryptBase {
         }
 
         match object_type {
-            ObjectType::Directory if !self.use_fxfs_keys_for_fscrypt_dirs => {
+            ObjectType::Directory | ObjectType::Symlink => {
                 let mut nonce = [0; 16];
                 StdRng::from_os_rng().fill_bytes(&mut nonce);
                 let inner = self.inner.lock();

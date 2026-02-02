@@ -6,7 +6,6 @@ use aes::cipher::{KeyIvInit, StreamCipher as _, StreamCipherSeek};
 use anyhow::anyhow;
 use async_trait::async_trait;
 use chacha20::{self, ChaCha20};
-use cipher::ToKeyType;
 use fprint::TypeFingerprint;
 use futures::TryStreamExt as _;
 use futures::stream::FuturesUnordered;
@@ -352,17 +351,14 @@ pub trait Crypt: Send + Sync {
                 let key_id = *key_id;
                 let owner = owner;
                 async move {
-                    let unwrapped_key = match self.unwrap_key(&key, owner).await {
-                        Ok(unwrapped_key) => unwrapped_key,
+                    match self.unwrap_key(&key, owner).await {
+                        Ok(unwrapped_key) => cipher::key_to_cipher(key, &unwrapped_key)
+                            .map(|c| (key_id, cipher::CipherHolder::Cipher(c))),
                         Err(zx::Status::UNAVAILABLE) => {
-                            let key_type = key.to_key_type().ok_or(zx::Status::INTERNAL)?;
-                            return Ok((key_id, cipher::CipherHolder::Unavailable(key_type)));
+                            Ok((key_id, cipher::CipherHolder::Unavailable))
                         }
-                        Err(e) => return Err(e),
-                    };
-
-                    cipher::key_to_cipher(key, &unwrapped_key)
-                        .map(|c| (key_id, cipher::CipherHolder::Cipher(c)))
+                        Err(e) => Err(e),
+                    }
                 }
             })
             .collect();

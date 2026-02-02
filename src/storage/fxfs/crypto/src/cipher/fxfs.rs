@@ -1,15 +1,12 @@
 // Copyright 2025 The Fuchsia Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
-use super::{
-    CbcDecryptProcessor, CbcEncryptProcessor, Cipher, FSCRYPT_PADDING, SECTOR_SIZE, Tweak,
-    UnwrappedKey, XtsProcessor,
-};
+use super::{Cipher, SECTOR_SIZE, Tweak, UnwrappedKey, XtsProcessor};
 use aes::Aes256;
 use aes::cipher::generic_array::GenericArray;
 use aes::cipher::{BlockDecrypt, BlockEncrypt, KeyInit};
 use anyhow::Error;
-use std::hash::{Hash, Hasher};
+use log::warn;
 use zerocopy::IntoBytes;
 
 #[derive(Debug)]
@@ -64,46 +61,25 @@ impl Cipher for FxfsCipher {
         Ok(())
     }
 
-    fn encrypt_filename(&self, object_id: u64, buffer: &mut Vec<u8>) -> Result<(), Error> {
-        // Pad the buffer such that its length is a multiple of FSCRYPT_PADDING.
-        buffer.resize(buffer.len().next_multiple_of(FSCRYPT_PADDING), 0);
-        self.key.encrypt_with_backend(CbcEncryptProcessor::new(Tweak(object_id as u128), buffer));
-        Ok(())
+    fn encrypt_filename(&self, _object_id: u64, _buffer: &mut Vec<u8>) -> Result<(), Error> {
+        debug_assert!(false, "encrypt_filename called on fxfs cipher");
+        Err(zx_status::Status::NOT_SUPPORTED.into())
     }
 
-    fn decrypt_filename(&self, object_id: u64, buffer: &mut Vec<u8>) -> Result<(), Error> {
-        self.key.decrypt_with_backend(CbcDecryptProcessor::new(Tweak(object_id as u128), buffer));
-        // Remove the padding
-        if let Some(i) = buffer.iter().rposition(|x| *x != 0) {
-            let new_len = i + 1;
-            buffer.truncate(new_len);
-        }
-        Ok(())
+    fn decrypt_filename(&self, _object_id: u64, _buffer: &mut Vec<u8>) -> Result<(), Error> {
+        // NOTE: This isn't a debug assertion because it would trip on the golden image tests.
+        warn!("decrypt_filename called on fxfs cipher");
+        Err(zx_status::Status::NOT_SUPPORTED.into())
     }
 
-    fn hash_code(&self, _raw_filename: &[u8], filename: &str) -> Option<u32> {
-        if filename.is_empty() {
-            return Some(0);
-        }
-        let mut hasher = rustc_hash::FxHasher::default();
-        filename.hash(&mut hasher);
-        Some(hasher.finish() as u32)
+    fn hash_code(&self, _raw_filename: &[u8], _filename: &str) -> Option<u32> {
+        debug_assert!(false, "hash_code called on fxfs cipher");
+        None
     }
 
-    fn hash_code_casefold(&self, filename: &str) -> u32 {
-        if filename.is_empty() {
-            return 0;
-        }
-        let mut hasher = rustc_hash::FxHasher::default();
-        for ch in fxfs_unicode::casefold(filename.chars()) {
-            ch.hash(&mut hasher);
-        }
-        let hash = hasher.finish() as u32;
-        // TODO(https://fxbug.dev/427319626): This used to call 'encrypt()' but that doesn't
-        // work on blocks smaller than 16 bytes and there was no assert! to catch that until
-        // until this CL. Removing the ineffective call for now, but we need to encrypt or
-        // seed the hash here to avoid leaking data.
-        hash
+    fn hash_code_casefold(&self, _filename: &str) -> u32 {
+        debug_assert!(false, "hash_code_casefold called on fxfs cipher");
+        0
     }
 
     fn supports_inline_encryption(&self) -> bool {
@@ -112,64 +88,5 @@ impl Cipher for FxfsCipher {
 
     fn crypt_ctx(&self, _ino: u64, _file_offset: u64) -> Option<(u32, u8)> {
         None
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::{FxfsCipher, UnwrappedKey};
-    use crate::Cipher;
-    use std::sync::Arc;
-
-    /// Output produced via:
-    /// echo -n filename > in.txt ; truncate -s 16 in.txt
-    /// openssl aes-256-cbc -e -iv 02000000000000000000000000000000 -nosalt -K 1fcdf30b7d191bd95d3161fe08513b864aa15f27f910f1c66eec8cfa93e9893b -in in.txt -out out.txt -nopad
-    /// hexdump out.txt -e "16/1 \"%02x\" \"\n\"" -v
-    #[test]
-    fn test_encrypt_filename() {
-        let raw_key_hex = "1fcdf30b7d191bd95d3161fe08513b864aa15f27f910f1c66eec8cfa93e9893b";
-        let raw_key_bytes: [u8; 32] =
-            hex::decode(raw_key_hex).expect("decode failed").try_into().unwrap();
-        let unwrapped_key = UnwrappedKey::new(raw_key_bytes.to_vec());
-        let cipher: Arc<dyn Cipher> = Arc::new(FxfsCipher::new(&unwrapped_key));
-        let object_id = 2;
-        let mut text = "filename".to_string().as_bytes().to_vec();
-        cipher.encrypt_filename(object_id, &mut text).expect("encrypt filename failed");
-        assert_eq!(text, hex::decode("52d56369103a39b3ea1e09c85dd51546").expect("decode failed"));
-    }
-
-    /// Output produced via:
-    /// openssl aes-256-cbc -d -iv 02000000000000000000000000000000 -nosalt -K 1fcdf30b7d191bd95d3161fe08513b864aa15f27f910f1c66eec8cfa93e9893b -in out.txt -out in.txt
-    /// cat in.txt
-    #[test]
-    fn test_decrypt_filename() {
-        let raw_key_hex = "1fcdf30b7d191bd95d3161fe08513b864aa15f27f910f1c66eec8cfa93e9893b";
-        let raw_key_bytes: [u8; 32] =
-            hex::decode(raw_key_hex).expect("decode failed").try_into().unwrap();
-        let unwrapped_key = UnwrappedKey::new(raw_key_bytes.to_vec());
-        let cipher: Arc<dyn Cipher> = Arc::new(FxfsCipher::new(&unwrapped_key));
-        let object_id = 2;
-        let mut text = hex::decode("52d56369103a39b3ea1e09c85dd51546").expect("decode failed");
-        cipher.decrypt_filename(object_id, &mut text).expect("encrypt filename failed");
-        assert_eq!(text, "filename".to_string().as_bytes().to_vec());
-    }
-    #[test]
-    fn test_hash_code() {
-        // This test just ensures that we don't change hash_code() by mistake.
-        // We cannot change these hash functions without breaking lookup() on directories as
-        // the lookup code will only search within one hash_code prefix/bucket.
-        let unwrapped_key = UnwrappedKey::new(vec![0; 32]);
-        let cipher: Arc<dyn Cipher> = Arc::new(FxfsCipher::new(&unwrapped_key));
-        assert_eq!(cipher.hash_code("Straße".as_bytes(), "Straße"), Some(433651741));
-    }
-
-    #[test]
-    fn test_hash_code_casefold() {
-        // Note: This ensures hash_code stability but the current casefold hash lacks encryption
-        // so this is not actually dependent on the key until https://fxbug.dev/427319626 is
-        // resolved.
-        let unwrapped_key = UnwrappedKey::new(vec![0; 32]);
-        let cipher: Arc<dyn Cipher> = Arc::new(FxfsCipher::new(&unwrapped_key));
-        assert_eq!(cipher.hash_code_casefold("Straße"), 3602031996);
     }
 }

@@ -688,7 +688,6 @@ impl<'a> ScannedStore<'a> {
                     }
                     if let Some(crypt) = &self.crypt
                         && let Some(key) = &dir.fscrypt_key
-                        && !matches!(key, WrappedKey::Fxfs(_))
                     {
                         // Ignore unwrap errors.
                         if let Ok(unwrapped_key) = crypt.unwrap_key(key, parent_id).await {

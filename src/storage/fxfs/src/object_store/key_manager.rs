@@ -208,7 +208,7 @@ impl KeyManager {
                 if let Some(keys) = inner.keys.get(object_id) {
                     return match keys.find_key(VOLUME_DATA_KEY_ID) {
                         FindKeyResult::NotFound => Ok(None),
-                        FindKeyResult::Unavailable(_) => Err(FxfsError::NoKey.into()),
+                        FindKeyResult::Unavailable => Err(FxfsError::NoKey.into()),
                         FindKeyResult::Key(key) => Ok(Some(key)),
                     };
                 }
@@ -337,7 +337,7 @@ impl KeyManager {
                 .await?;
             return match keys.find_key(key_id) {
                 FindKeyResult::NotFound => Err(FxfsError::NotFound.into()),
-                FindKeyResult::Unavailable(_) => {
+                FindKeyResult::Unavailable => {
                     if force || encryption_keys.is_none() {
                         Err(FxfsError::NoKey.into())
                     } else {
@@ -376,7 +376,7 @@ impl KeyManager {
                 FindKeyResult::NotFound => {
                     Ok((VOLUME_DATA_KEY_ID, to_result(keys.find_key(VOLUME_DATA_KEY_ID))?))
                 }
-                FindKeyResult::Unavailable(_) => {
+                FindKeyResult::Unavailable => {
                     if force || encryption_keys.is_none() {
                         Err(FxfsError::NoKey.into())
                     } else {
@@ -412,9 +412,9 @@ impl KeyManager {
                 .await?;
             return match keys.find_key(FSCRYPT_KEY_ID) {
                 FindKeyResult::NotFound => Err(FxfsError::NotFound.into()),
-                FindKeyResult::Unavailable(key_type) => {
+                FindKeyResult::Unavailable => {
                     if force || encryption_keys.is_none() {
-                        Ok(CipherHolder::Unavailable(key_type))
+                        Ok(CipherHolder::Unavailable)
                     } else {
                         force = true;
                         continue;
@@ -481,7 +481,7 @@ impl KeyManager {
 fn to_result(find_key_result: FindKeyResult) -> Result<Arc<dyn Cipher>, FxfsError> {
     match find_key_result {
         FindKeyResult::NotFound => Err(FxfsError::NotFound),
-        FindKeyResult::Unavailable(_) => Err(FxfsError::NoKey),
+        FindKeyResult::Unavailable => Err(FxfsError::NoKey),
         FindKeyResult::Key(k) => Ok(k),
     }
 }

@@ -16,6 +16,7 @@ use fuchsia_fs::directory::{open_file, read_file};
 use fuchsia_hash::Hash;
 use fxfs::filesystem::FxFilesystem;
 use fxfs::fsck;
+use fxfs::log::*;
 use fxfs::object_store::volume::root_volume;
 use fxfs::serialized_types::{LATEST_VERSION, Version};
 use fxfs_crypto::Crypt;
@@ -36,8 +37,10 @@ const ADDED_FILE_PATH: &str = "some/test_file.txt";
 const FSCRYPT_FILE_PATH: &str = "fscrypt/Strasse.txt";
 const FXFS_GOLDEN_IMAGE_DATA_DIR: &str = "pkg/data/fxfs_golden_images";
 const FXFS_GOLDEN_IMAGE_MANIFEST: &str = "golden_image_manifest.json";
-// Version of first image with a verified file included in `create_image()`
-const FSCRYPT_VERSION_START: Version = Version { major: 47, minor: 0 };
+// We started supporting fscrypt in version 47, but we changed to use the lblk32 algorithm from
+// version 51, and we have since removed support for using fscrypt with Fxfs keys so we only verify
+// fscrypt from version 51 onwards.
+const FSCRYPT_VERSION_START: Version = Version { major: 51, minor: 0 };
 // Version of first image with blobs included.
 const BLOB_IN_GOLDEN_START: Version = Version { major: 52, minor: 0 };
 const SECOND_VOLUME_VERSION: Version = Version { major: 38, minor: 0 };
@@ -255,6 +258,7 @@ async fn test_golden_images() {
     golden_files.sort();
     for golden_file in golden_files {
         let path_buf = golden_dir.join(&golden_file);
+        info!("Validating {}", path_buf.display());
         check_image(path_buf.as_path())
             .await
             .with_context(|| format!("Validating {}", path_buf.display()))
