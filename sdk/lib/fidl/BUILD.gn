@@ -4,6 +4,9 @@
 
 import("//build/cpp/sdk_source_set.gni")
 
+# TODO(https://fxbug.dev/454977301): Use bazel2gn.
+# LINT.IfChange
+
 # "fidl" is used in low-level contexts such as early system
 # boot, hence cannot depend on the C++ standard library, and must only introduce
 # minimal symbols into dependent targets. As such, these libraries need to be
@@ -14,14 +17,13 @@ sdk_source_set("fidl") {
   category = "partner"
   sdk_name = "fidl"
   stable = true
+  sdk_area = "FIDL"
 
   build_as_static = true
 
   public = [ "include/lib/fidl/epitaph.h" ]
 
   sources = [ "epitaph.c" ]
-
-  deps = [ "//sdk/lib/fidl_base" ]
 
   public_deps = [
     "//sdk/lib/fidl_base",
@@ -34,3 +36,4 @@ sdk_source_set("fidl") {
 config("fidl.headers") {
   include_dirs = [ "include" ]
 }
+# LINT.ThenChange(BUILD.bazel)
