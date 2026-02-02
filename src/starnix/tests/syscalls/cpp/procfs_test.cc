@@ -515,11 +515,10 @@ TEST_F(ProcTaskDirTest, ParentFieldsValidWithCapSysPtrace) {
     EXPECT_NE(fields[28], "0") << "startstack(28)";
 
     // kstkesp(29) and kstkeip(30) are typically zero.
+    // wchan(35) is zero unless the task is sleeping.
 
     if (!test_helper::IsStarnix()) {
       // Starnix doesn't yet implement these fields.
-      EXPECT_NE(fields[35], "0") << "wchan(35)";
-
       EXPECT_NE(fields[45], "0") << "start_data(45)";
       EXPECT_NE(fields[46], "0") << "end_data(46)";
       EXPECT_NE(fields[47], "0") << "start_brk(47)";
