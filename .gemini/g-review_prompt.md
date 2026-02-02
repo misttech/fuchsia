@@ -55,7 +55,7 @@ Consider the following rubrics if they are applicable to this review, especially
 - docs/development/api/fidl.md: FIDL API readability rubric.
 - docs/development/api/go.md: Go rubric.
 - docs/development/api/rust.md: Rust rubric.
-- docs/development/api/zircon.md: Zircon system interface rubric.
+- docs/contribute/contributing-to-zircon/README.md: Zircon contributor guide.
 
   Feature-Specific Rubrics:
 
