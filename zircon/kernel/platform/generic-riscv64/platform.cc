@@ -518,7 +518,7 @@ static void riscv64_resource_dispatcher_init_hook(unsigned int rl) {
   }
 }
 
-LK_INIT_HOOK(riscv64_resource_init, riscv64_resource_dispatcher_init_hook, LK_INIT_LEVEL_HEAP)
+LK_INIT_HOOK(riscv64_resource_init, riscv64_resource_dispatcher_init_hook, LK_INIT_LEVEL_INTC)
 
 void topology_init() {
   // Setup the CPU distance map with the already initialized topology.

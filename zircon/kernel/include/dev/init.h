@@ -19,21 +19,26 @@ struct ArchPhysHandoff;
 // configurations described in the physboot hand-off, at two stages:
 // * "early" refers to immediately after early platform initialization, before
 //   the VM and heap are set up;
+// * "post vm" refers to immediately after the main virtual memory system is
+//   initialized, so drivers can use the VM to map physical memory.
 // * "late" refers to immediately after the main platform initialization, once
 //   the VM, the heap, threading, and general kernel facilities are available.
 //
 // Defined in //zircon/kernel/dev/init.cc.
 void DriverHandoffEarly(const PhysHandoff& handoff);
+void DriverHandoffPostVm(const PhysHandoff& handoff);
 void DriverHandoffLate(const PhysHandoff& handoff);
 
 // Uart initialization routines.
 void UartDriverHandoffEarly(const uart::all::Driver& serial);
+void UartDriverHandoffPostVm(const uart::all::Driver& serial);
 void UartDriverHandoffLate(const uart::all::Driver& serial);
 
 // Platform-specific subroutines of the above functions, respectively.
 //
 // Defined in //zircon/kernel/platform/*/dev-init.cc.
 void PlatformDriverHandoffEarly(const ArchPhysHandoff& arch_handoff);
+void PlatformDriverHandoffPostVm(const ArchPhysHandoff& arch_handoff);
 void PlatformDriverHandoffLate(const ArchPhysHandoff& arch_handoff);
 
 #endif  // ZIRCON_KERNEL_INCLUDE_DEV_INIT_H_

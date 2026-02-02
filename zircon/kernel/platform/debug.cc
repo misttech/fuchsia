@@ -234,6 +234,8 @@ void UartDriverHandoffEarly(const uart::all::Driver& serial) {
   }
 }
 
+void UartDriverHandoffPostVm(const uart::all::Driver& serial) {}
+
 void UartDriverHandoffLate(const uart::all::Driver& serial) {
   // This buffer is needed even when serial is disabled, to prevent uninitialized
   // access to it.

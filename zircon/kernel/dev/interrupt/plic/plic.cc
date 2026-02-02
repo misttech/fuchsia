@@ -264,7 +264,9 @@ const struct pdev_interrupt_ops plic_ops = {
 
 }  //  anonymous namespace
 
-void PLICInitEarly(const RiscvPlicDriverConfig& config) {
+void PLICInitEarly(const RiscvPlicDriverConfig& config) {}
+
+void PLICInitPostVm(const RiscvPlicDriverConfig& config) {
   ASSERT(!config.mmio.empty());
   ASSERT(config.zbi.num_irqs > 0);
 

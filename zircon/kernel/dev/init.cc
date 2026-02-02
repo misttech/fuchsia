@@ -15,6 +15,11 @@ void DriverHandoffEarly(const PhysHandoff& handoff) {
   PlatformDriverHandoffEarly(handoff.arch_handoff);
 }
 
+void DriverHandoffPostVm(const PhysHandoff& handoff) {
+  UartDriverHandoffPostVm(handoff.uart);
+  PlatformDriverHandoffPostVm(handoff.arch_handoff);
+}
+
 void DriverHandoffLate(const PhysHandoff& handoff) {
   UartDriverHandoffLate(handoff.uart);
   PlatformDriverHandoffLate(handoff.arch_handoff);

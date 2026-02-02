@@ -67,7 +67,7 @@ static constexpr uint64_t CNTKCTL_EL1_ENABLE_PHYSICAL_COUNTER = 1 << 0;
 static constexpr uint64_t CNTKCTL_EL1_ENABLE_VIRTUAL_COUNTER = 1 << 1;
 
 // Global saved config state
-int timer_irq;
+interrupt_vector_t timer_irq;
 uint32_t timer_cntfrq;  // Timer tick rate in Hz.
 
 enum timer_irq_assignment {
@@ -507,62 +507,11 @@ static void event_stream_enable_percpu() {
   dprintf(INFO, "arm generic timer cpu-%u: event stream enabled\n", arch_curr_cpu_num());
 }
 
-static void arm_generic_timer_init(uint32_t freq_override) {
-  if (freq_override == 0) {
-    // Read the firmware supplied cntfrq register. Note: it may not be correct
-    // in buggy firmware situations, so always provide a mechanism to override it.
-    timer_cntfrq = __arm_rsr(TIMER_REG_CNTFRQ);
-    LTRACEF("cntfrq: %#08x, %u\n", timer_cntfrq, timer_cntfrq);
-  } else {
-    timer_cntfrq = freq_override;
-  }
-
-  dprintf(INFO, "arm generic timer freq %u Hz\n", timer_cntfrq);
-
-  // No way to reasonably continue. Just hard stop.
-  ASSERT(timer_cntfrq != 0);
-
-  timer_set_ticks_to_time_ratio(arm_generic_timer_compute_conversion_factors<true>(timer_cntfrq));
-
-  // Set up the hardware timer irq handler for this vector. Use the permanent irq handler
-  // registraion scheme since it is enabled on all cpus and does not need any locking
-  // for reentrancy and deregistration purposes.
-  zx_status_t status = register_permanent_int_handler(timer_irq, &platform_tick);
-  DEBUG_ASSERT(status == ZX_OK);
-
-  // At this point in time, we expect that the `cntkctl_el1` timer register has
-  // the bit which permits EL0 access to the VCT to be set, and perhaps also the
-  // bit which allows access to the PCT if that happens to be the time reference
-  // we have decided to use.
-  //
-  // *None* of the other timer HW access bits should be set.  EL0 only gets to
-  // look at the counter, and nothing more.
-  //
-  // ASSERT this now.
-  [[maybe_unused]] const uint64_t expected =
-      CNTKCTL_EL1_ENABLE_VIRTUAL_COUNTER |
-      (ArmUsePhysTimerInVdso() ? CNTKCTL_EL1_ENABLE_PHYSICAL_COUNTER : 0);
-  ASSERT_MSG(const uint64_t current = __arm_rsr64(TIMER_REG_CNTKCTL);
-             current == expected,
-             "CNTKCTL_EL1 register does not match reference counter selection (%016lx != %016lx)",
-             current, expected);
-
-  // Determine and compute values for the event stream if requested
-  event_stream_init(timer_cntfrq);
-
-  // try to enable the event stream if requested
-  event_stream_enable_percpu();
-
-  // enable the IRQ on the boot cpu
-  LTRACEF("unmask irq %d on cpu %u\n", timer_irq, arch_curr_cpu_num());
-  unmask_interrupt(timer_irq);
-}
-
 static void arm_generic_timer_init_secondary_cpu(uint level) {
   // try to enable the event stream if requested
   event_stream_enable_percpu();
 
-  LTRACEF("unmask irq %d on cpu %u\n", timer_irq, arch_curr_cpu_num());
+  LTRACEF("unmask irq %u on cpu %u\n", timer_irq, arch_curr_cpu_num());
   unmask_interrupt(timer_irq);
 }
 
@@ -628,9 +577,57 @@ void ArmGenericTimerInit(const zbi_dcfg_arm_generic_timer_driver_t& config) {
   timer_set_initial_ticks(read_arm_counter.load(ktl::memory_order_relaxed)());
   arch::ThreadMemoryBarrier();
 
-  dprintf(INFO, "arm generic timer using %s timer, irq %d\n", timer_str, timer_irq);
+  if (config.freq_override == 0) {
+    // Read the firmware supplied cntfrq register. Note: it may not be correct
+    // in buggy firmware situations, so always provide a mechanism to override it.
+    timer_cntfrq = __arm_rsr(TIMER_REG_CNTFRQ);
+    LTRACEF("cntfrq: %#08x, %u\n", timer_cntfrq, timer_cntfrq);
+  } else {
+    timer_cntfrq = config.freq_override;
+  }
 
-  arm_generic_timer_init(config.freq_override);
+  dprintf(INFO, "arm generic timer using %s timer, irq %u, freq %u Hz\n", timer_str, timer_irq,
+          timer_cntfrq);
+
+  // No way to reasonably continue. Just hard stop.
+  ASSERT(timer_cntfrq != 0);
+
+  timer_set_ticks_to_time_ratio(arm_generic_timer_compute_conversion_factors<true>(timer_cntfrq));
+
+  // At this point in time, we expect that the `cntkctl_el1` timer register has
+  // the bit which permits EL0 access to the VCT to be set, and perhaps also the
+  // bit which allows access to the PCT if that happens to be the time reference
+  // we have decided to use.
+  //
+  // *None* of the other timer HW access bits should be set.  EL0 only gets to
+  // look at the counter, and nothing more.
+  //
+  // ASSERT this now.
+  [[maybe_unused]] const uint64_t expected =
+      CNTKCTL_EL1_ENABLE_VIRTUAL_COUNTER |
+      (ArmUsePhysTimerInVdso() ? CNTKCTL_EL1_ENABLE_PHYSICAL_COUNTER : 0);
+  ASSERT_MSG(const uint64_t current = __arm_rsr64(TIMER_REG_CNTKCTL);
+             current == expected,
+             "CNTKCTL_EL1 register does not match reference counter selection (%016lx != %016lx)",
+             current, expected);
+
+  // Determine and compute values for the event stream if requested
+  event_stream_init(timer_cntfrq);
+
+  // try to enable the event stream if requested
+  event_stream_enable_percpu();
+}
+
+void ArmGenericTimerInitPostVm(const zbi_dcfg_arm_generic_timer_driver_t& config) {
+  // Set up the hardware timer irq handler for this vector. Use the permanent irq handler
+  // registration scheme since it is enabled on all cpus and does not need any locking
+  // for reentrancy and deregistration purposes.
+  zx_status_t status = register_permanent_int_handler(timer_irq, &platform_tick);
+  DEBUG_ASSERT(status == ZX_OK);
+
+  // enable the IRQ on the boot cpu
+  LTRACEF("unmask irq %u on cpu %u\n", timer_irq, arch_curr_cpu_num());
+  unmask_interrupt(timer_irq);
 }
 
 bool ArmUsePhysTimerInVdso() { return timer_assignment != IRQ_VIRT; }

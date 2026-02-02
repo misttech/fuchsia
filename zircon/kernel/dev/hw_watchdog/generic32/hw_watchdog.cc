@@ -289,4 +289,6 @@ void Generic32BitWatchdogEarlyInit(const zbi_dcfg_generic32_watchdog_t& config) 
   g_watchdog.InitEarly(config);
 }
 
+void Generic32BitWatchdogInitPostVm(const zbi_dcfg_generic32_watchdog_t& config) {}
+
 void Generic32BitWatchdogLateInit() { g_watchdog.Init(); }

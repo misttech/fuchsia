@@ -483,8 +483,6 @@ const struct pdev_interrupt_ops gic_ops = {
 void ArmGicInitEarly(const zbi_dcfg_arm_gic_v2_driver_t& config) {
   ASSERT(config.mmio_phys);
 
-  arm_gicv2_gic_base = get_vaddr_from_paddr(config.mmio_phys);
-  ASSERT(arm_gicv2_gic_base);
   mmio_phys = config.mmio_phys;
   msi_frame_phys = config.msi_frame_phys;
   arm_gicv2_gicd_offset = config.gicd_offset;
@@ -493,6 +491,11 @@ void ArmGicInitEarly(const zbi_dcfg_arm_gic_v2_driver_t& config) {
   arm_gicv2_gicv_offset = config.gicv_offset;
   ipi_base = config.ipi_base;
   use_msi = config.use_msi;
+}
+
+void ArmGicInitPostVm(const zbi_dcfg_arm_gic_v2_driver_t& config) {
+  arm_gicv2_gic_base = get_vaddr_from_paddr(config.mmio_phys);
+  ASSERT(arm_gicv2_gic_base);
 
   if (arm_gic_init() != ZX_OK) {
     if (config.optional) {

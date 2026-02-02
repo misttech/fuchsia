@@ -8,5 +8,5 @@
 #include <phys/arch/arch-handoff.h>
 
 void PlatformDriverHandoffEarly(const ArchPhysHandoff& arch_handoff) {}
-
+void PlatformDriverHandoffPostVm(const ArchPhysHandoff& arch_handoff) {}
 void PlatformDriverHandoffLate(const ArchPhysHandoff& arch_handoff) {}

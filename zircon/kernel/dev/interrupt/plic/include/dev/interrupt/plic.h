@@ -11,6 +11,7 @@
 
 // Early and late initialization routines for the driver.
 void PLICInitEarly(const RiscvPlicDriverConfig& config);
+void PLICInitPostVm(const RiscvPlicDriverConfig& config);
 void PLICInitLate();
 
 #endif  // ZIRCON_KERNEL_DEV_INTERRUPT_PLIC_INCLUDE_DEV_INTERRUPT_PLIC_H_

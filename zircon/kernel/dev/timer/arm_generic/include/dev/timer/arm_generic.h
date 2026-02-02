@@ -15,6 +15,9 @@
 // Initializes the driver.
 void ArmGenericTimerInit(const zbi_dcfg_arm_generic_timer_driver_t& config);
 
+// Another shot at initialization post interrupt controller and VM.
+void ArmGenericTimerInitPostVm(const zbi_dcfg_arm_generic_timer_driver_t& config);
+
 // Indicates that we should be using the physical view of the system timer
 // instead of the virtual view.
 bool ArmUsePhysTimerInVdso();

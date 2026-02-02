@@ -31,6 +31,7 @@ namespace {
 // `ktl::visit(..., arch_handoff.gic_driver)` below. Related overloads defined
 // in <dev/interrupt/arm_gicv{2,3}_init.h>.
 void ArmGicInitEarly(const ktl::monostate& no_config) {}
+void ArmGicInitPostVm(const ktl::monostate& no_config) {}
 void ArmGicInitLate(const ktl::monostate& no_config) {}
 
 }  // namespace
@@ -68,6 +69,19 @@ void PlatformDriverHandoffEarly(const ArchPhysHandoff& arch_handoff) {
   // instead.
   if (BootOptions::Get()->experimental_allow_debug_uart_suspend) {
     moonflower_clocks_and_pmic_init_early();
+  }
+}
+
+void PlatformDriverHandoffPostVm(const ArchPhysHandoff& arch_handoff) {
+  // Initialize the GIC post VM so it can map its own mmio registers
+  ktl::visit([](const auto& config) { ArmGicInitPostVm(config); }, arch_handoff.gic_driver);
+
+  if (arch_handoff.generic_timer_driver) {
+    ArmGenericTimerInitPostVm(arch_handoff.generic_timer_driver.value());
+  }
+
+  if (arch_handoff.generic32_watchdog_driver) {
+    Generic32BitWatchdogInitPostVm(arch_handoff.generic32_watchdog_driver.value());
   }
 }
 

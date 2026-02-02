@@ -174,7 +174,12 @@ void lk_main(PhysHandoff* handoff) {
   // enable virtual memory
   dprintf(SPEW, "initializing vm\n");
   vm_init();
-  lk_primary_cpu_init_level(LK_INIT_LEVEL_VM, LK_INIT_LEVEL_TOPOLOGY - 1);
+  lk_primary_cpu_init_level(LK_INIT_LEVEL_VM, LK_INIT_LEVEL_INTC - 1);
+
+  // Give handoff drivers an opportunity to use the VM to map memory.
+  dprintf(SPEW, "initializing handoff drivers post-vm\n");
+  DriverHandoffPostVm(*gPhysHandoff);
+  lk_primary_cpu_init_level(LK_INIT_LEVEL_INTC, LK_INIT_LEVEL_TOPOLOGY - 1);
 
   // Initialize the lockup detector, after the platform timer has been
   // configured, but before the topology subsystem has brought up other CPUs.

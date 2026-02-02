@@ -556,7 +556,7 @@ static void arm_resource_dispatcher_init_hook(unsigned int rl) {
     printf("Resources: Failed to initialize system allocator: %d\n", status);
   }
 }
-LK_INIT_HOOK(arm_resource_init, arm_resource_dispatcher_init_hook, LK_INIT_LEVEL_HEAP)
+LK_INIT_HOOK(arm_resource_init, arm_resource_dispatcher_init_hook, LK_INIT_LEVEL_INTC)
 
 void topology_init() {
   // Check MPIDR_EL1.MT to determine how to interpret AFF0 (i.e. cpu_id). For

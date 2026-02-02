@@ -26,6 +26,12 @@ void PlatformDriverHandoffEarly(const ArchPhysHandoff& arch_handoff) {
   }
 }
 
+void PlatformDriverHandoffPostVm(const ArchPhysHandoff& arch_handoff) {
+  if (arch_handoff.plic_driver) {
+    PLICInitPostVm(arch_handoff.plic_driver.value());
+  }
+}
+
 void PlatformDriverHandoffLate(const ArchPhysHandoff& arch_handoff) {
   if (arch_handoff.plic_driver) {
     PLICInitLate();

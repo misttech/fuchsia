@@ -15,7 +15,7 @@
  * LK's init system
  */
 
-typedef void (*lk_init_hook)(uint level);
+using lk_init_hook = void (*)(uint level);
 
 enum lk_init_level {
   LK_INIT_LEVEL_EARLIEST = 1,
@@ -39,6 +39,9 @@ enum lk_init_level {
   LK_INIT_LEVEL_VM_PREHEAP = 0x50000,
   LK_INIT_LEVEL_HEAP = 0x60000,
   LK_INIT_LEVEL_VM = 0x70000,
+
+  // Interrupt controller is available.
+  LK_INIT_LEVEL_INTC = 0x78000,
 
   // Kernel and threading setup.
   LK_INIT_LEVEL_TOPOLOGY = 0x80000,
@@ -73,13 +76,13 @@ enum lk_init_flags {
   LK_INIT_FLAG_ALL_CPUS = LK_INIT_FLAG_PRIMARY_CPU | LK_INIT_FLAG_SECONDARY_CPUS,
 };
 
-void lk_init_level(enum lk_init_flags flags, uint start_level, uint stop_level);
+void lk_init_level(lk_init_flags required_flag, uint start_level, uint stop_level);
 
-static inline void lk_primary_cpu_init_level(uint start_level, uint stop_level) {
+inline void lk_primary_cpu_init_level(uint start_level, uint stop_level) {
   lk_init_level(LK_INIT_FLAG_PRIMARY_CPU, start_level, stop_level);
 }
 
-static inline void lk_init_level_all(enum lk_init_flags flags) {
+inline void lk_init_level_all(lk_init_flags flags) {
   lk_init_level(flags, LK_INIT_LEVEL_EARLIEST, LK_INIT_LEVEL_LAST);
 }
 
