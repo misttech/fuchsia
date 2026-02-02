@@ -2,9 +2,8 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use starnix_sync::Mutex;
-use std::collections::HashMap;
-use std::collections::hash_map::Entry;
+use starnix_rcu::RcuReadScope;
+use starnix_rcu::rcu_hash_map::{Entry, RcuHashMap};
 use std::sync::{Arc, Weak};
 
 use crate::task::CurrentTask;
@@ -21,8 +20,11 @@ use starnix_uapi::{errno, error};
 /// holds the bindings to abstract addresses.
 ///
 /// See "abstract" in https://man7.org/linux/man-pages/man7/unix.7.html
-pub struct AbstractSocketNamespace<K> {
-    table: Mutex<HashMap<K, Weak<Socket>>>,
+pub struct AbstractSocketNamespace<K>
+where
+    K: std::cmp::Eq + std::hash::Hash + Clone + Send + Sync + 'static,
+{
+    table: RcuHashMap<K, Weak<Socket>>,
     address_maker: Box<dyn Fn(K) -> SocketAddress + Send + Sync>,
 }
 
@@ -31,12 +33,12 @@ pub type AbstractVsockSocketNamespace = AbstractSocketNamespace<u32>;
 
 impl<K> AbstractSocketNamespace<K>
 where
-    K: std::cmp::Eq + std::hash::Hash + Clone,
+    K: std::cmp::Eq + std::hash::Hash + Clone + Send + Sync + 'static,
 {
     pub fn new(
         address_maker: Box<dyn Fn(K) -> SocketAddress + Send + Sync>,
     ) -> Arc<AbstractSocketNamespace<K>> {
-        Arc::new(AbstractSocketNamespace::<K> { table: Mutex::new(HashMap::new()), address_maker })
+        Arc::new(AbstractSocketNamespace::<K> { table: RcuHashMap::default(), address_maker })
     }
 
     pub fn bind<L>(
@@ -73,7 +75,10 @@ where
         K: std::borrow::Borrow<Q>,
         Q: std::hash::Hash + Eq,
     {
-        let table = self.table.lock();
-        table.get(address).and_then(|weak| weak.upgrade()).ok_or_else(|| errno!(ECONNREFUSED))
+        let scope = RcuReadScope::new();
+        self.table
+            .get(&scope, address)
+            .and_then(|weak| weak.upgrade())
+            .ok_or_else(|| errno!(ECONNREFUSED))
     }
 }
