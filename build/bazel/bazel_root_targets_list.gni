@@ -67,6 +67,16 @@ declare_args() {
                                         bazel_label = "//tools/pretty_serial"
                                         install_host_tool = true
                                       },
+                                      {
+                                        bazel_label = "//tools/mdlint"
+                                        copy_outputs = [
+                                          {
+                                            bazel = "{{BAZEL_TARGET_OUT_DIR}}/mdlint_/mdlint"
+                                            ninja = "mdlint"
+                                          },
+                                        ]
+                                        install_host_tool = true
+                                      },
                                     ]
 
   # A similar list to extend the list above for custom build configuration
