@@ -66,7 +66,7 @@ Consider the following rubrics if they are applicable to this review, especially
   ensuring code is testable.
 
 Make sure the commit message conforms to the commit message style guide:
-<https://fuchsia.dev/fuchsia-src/contribute/commit-message-style-guide>
+docs/contribute/commit-message-style-guide.md.
 
 If the code is acceptable for submission as is, begin your message with LGTM:
 [✓]. If the code is not acceptable for submission without addressing the issues
