@@ -288,6 +288,20 @@ pub async fn serve_container_controller(
                     log_error!("malformed SendSignal request");
                     let _result = responder.send(Err(fstarcontainer::SignalError::InvalidTarget));
                 }
+                fstarcontainer::ControllerRequest::SetSyscallLogFilter { payload, responder } => {
+                    if let Some(process_name) = payload.process_name {
+                        system_task.kernel().add_syscall_log_filter(&process_name);
+                        let _ = responder.send(Ok(()));
+                    } else {
+                        let _ = responder.send(Err(
+                            fstarcontainer::SetSyscallLogFilterError::MissingProcessName,
+                        ));
+                    }
+                }
+                fstarcontainer::ControllerRequest::ClearSyscallLogFilters { responder } => {
+                    system_task.kernel().clear_syscall_log_filters();
+                    let _ = responder.send();
+                }
                 fstarcontainer::ControllerRequest::_UnknownMethod { .. } => (),
             }
             Ok(())

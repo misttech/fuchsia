@@ -85,6 +85,18 @@ macro_rules! log_trace {
 }
 
 #[macro_export]
+macro_rules! log_syscall {
+    ($current_task:expr, $($arg:tt)*) => {
+        if $crate::trace_debug_logs_enabled() {
+            $crate::log!(
+                $current_task.task.thread_group.syscall_log_level(),
+                $($arg)*
+            );
+        }
+    }
+}
+
+#[macro_export]
 macro_rules! log_debug {
     ($($key:tt $(:$capture:tt)? $(= $value:expr)?),+; $($arg:tt)+) => {
         if $crate::trace_debug_logs_enabled() {
@@ -197,5 +209,22 @@ pub(crate) fn get_current_leader_command() -> flyweights::FlyByteStr {
     match CURRENT_TASK_INFO.try_with(|task_info| task_info.borrow().leader_command()) {
         Ok(value) => value.into(),
         Err(_) => flyweights::FlyByteStr::new(b"<unknown>"),
+    }
+}
+
+/// A filter for syscall logging.
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub struct SyscallLogFilter {
+    match_string: String,
+}
+
+impl SyscallLogFilter {
+    pub fn new(match_string: String) -> Self {
+        Self { match_string }
+    }
+
+    pub fn matches(&self, command: &TaskCommand) -> bool {
+        let matcher = self.match_string.as_bytes();
+        command.as_bytes().windows(matcher.len()).any(|w| w == matcher)
     }
 }

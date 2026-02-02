@@ -23,7 +23,7 @@ use crate::time::{IntervalTimerHandle, TimerTable};
 use itertools::Itertools;
 use macro_rules_attribute::apply;
 use starnix_lifecycle::{AtomicU64Counter, DropNotifier};
-use starnix_logging::{log_debug, log_error, log_warn, track_stub};
+use starnix_logging::{log_debug, log_error, log_info, log_warn, track_stub};
 use starnix_sync::{
     LockBefore, Locked, Mutex, OrderedMutex, ProcessGroupState, RwLock, ThreadGroupLimits, Unlocked,
 };
@@ -286,6 +286,9 @@ pub struct ThreadGroup {
 
     /// The monotonic time at which the thread group started.
     pub start_time: zx::MonotonicInstant,
+
+    /// Whether to log syscalls at INFO level for this thread group.
+    log_syscalls_as_info: AtomicBool,
 }
 
 impl fmt::Debug for ThreadGroup {
@@ -296,6 +299,35 @@ impl fmt::Debug for ThreadGroup {
             self.process.get_name().unwrap_or(zx::Name::new_lossy("<unknown>")),
             self.leader
         )
+    }
+}
+
+impl ThreadGroup {
+    pub fn sync_syscall_log_level(&self) {
+        let command = self.read().leader_command();
+        let filters = self.kernel.syscall_log_filters.lock();
+        let should_log = filters.iter().any(|f| f.matches(&command));
+        let prev_should_log = self.log_syscalls_as_info.swap(should_log, Ordering::Relaxed);
+        let change_str = match (should_log, prev_should_log) {
+            (true, false) => Some("Enabled"),
+            (false, true) => Some("Disabled"),
+            _ => None,
+        };
+        if let Some(change_str) = change_str {
+            log_info!(
+                "{change_str} info syscall logs for thread group {} (command: {command})",
+                self.leader
+            );
+        }
+    }
+
+    #[inline]
+    pub fn syscall_log_level(&self) -> starnix_logging::Level {
+        if self.log_syscalls_as_info.load(Ordering::Relaxed) {
+            starnix_logging::Level::Info
+        } else {
+            starnix_logging::Level::Trace
+        }
     }
 }
 
@@ -616,6 +648,7 @@ impl ThreadGroup {
                     exit_notifier: None,
                     notifier: None,
                 }),
+                log_syscalls_as_info: AtomicBool::new(false),
             };
 
             if let Some(mut parent) = parent {

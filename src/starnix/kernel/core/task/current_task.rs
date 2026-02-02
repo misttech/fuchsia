@@ -1131,6 +1131,7 @@ impl CurrentTask {
 
         self.ptrace_event(locked, PtraceOptions::TRACEEXEC, self.task.tid as u64);
         self.signal_vfork();
+        self.task.thread_group.sync_syscall_log_level();
 
         Ok(())
     }

@@ -12,7 +12,7 @@ use starnix_core::signals::{
 use starnix_core::task::{CurrentTask, ExceptionResult, ExitStatus, SeccompStateValue, TaskFlags};
 use starnix_logging::{
     CATEGORY_STARNIX, NAME_HANDLE_EXCEPTION, NAME_RESTRICTED_KICK, NAME_RUN_TASK,
-    firehose_trace_duration, firehose_trace_instant, log_error, log_trace, log_warn,
+    firehose_trace_duration, firehose_trace_instant, log_error, log_syscall, log_trace, log_warn,
     set_current_task_info,
 };
 use starnix_registers::RestrictedState;
@@ -316,7 +316,7 @@ pub fn execute_syscall(
         ptrace_syscall_enter(locked, current_task);
     }
 
-    log_trace!("{:?}", syscall);
+    log_syscall!(current_task, "{syscall:?}");
 
     let result: Result<SyscallResult, Errno> =
         if current_task.seccomp_filter_state.get() != SeccompStateValue::None {
@@ -335,12 +335,12 @@ pub fn execute_syscall(
 
     let return_value = match result {
         Ok(return_value) => {
-            log_trace!("-> {:#x}", return_value.value());
+            log_syscall!(current_task, "-> {:#x}", return_value.value());
             current_task.thread_state.registers.set_return_register(return_value.value());
             None
         }
         Err(errno) => {
-            log_trace!("!-> {}", errno);
+            log_syscall!(current_task, "!-> {errno}");
             if errno.is_restartable() {
                 current_task.thread_state.restart_code = Some(errno.code);
             }

@@ -8,5 +8,6 @@ group("tests") {
     "coredumps",
     "correct_pid",
     "suspend_inspect",
+    "syscall_logging",
   ]
 }

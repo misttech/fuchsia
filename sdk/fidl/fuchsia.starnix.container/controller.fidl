@@ -71,6 +71,24 @@ open protocol Controller {
         1: pid int32;
         2: signal uint64;
     }) -> () error SignalError;
+
+    /// Sets a filter to log syscalls at INFO level for processes matching `process_name`.
+    @available(added=HEAD)
+    flexible SetSyscallLogFilter(table {
+        /// The process name (or substring) to match.
+        1: process_name string:MAX;
+    }) -> () error SetSyscallLogFilterError;
+
+
+    /// Clears all syscall log filters.
+    @available(added=HEAD)
+    flexible ClearSyscallLogFilters() -> ();
+};
+
+@available(added=HEAD)
+type SetSyscallLogFilterError = flexible enum {
+    /// The process name was missing in the request.
+    MISSING_PROCESS_NAME = 1;
 };
 
 @available(added=HEAD)

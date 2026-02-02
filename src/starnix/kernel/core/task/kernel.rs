@@ -43,7 +43,7 @@ use netlink::interfaces::InterfacesHandler;
 use netlink::{NETLINK_LOG_TAG, Netlink};
 use once_cell::sync::OnceCell;
 use starnix_lifecycle::{AtomicU32Counter, AtomicU64Counter};
-use starnix_logging::{log_debug, log_error, log_info, log_warn};
+use starnix_logging::{SyscallLogFilter, log_debug, log_error, log_info, log_warn};
 use starnix_sync::{
     FileOpsCore, KernelSwapFiles, LockEqualOrBefore, Locked, Mutex, OrderedMutex, RwLock,
 };
@@ -331,6 +331,10 @@ pub struct Kernel {
 
     /// Hardware capabilities to push onto stack when loading an ELF binary.
     pub hwcaps: HwCaps,
+
+    /// Filters for syscall logging. Processes with names matching these filters will have syscalls
+    /// logged at INFO level.
+    pub syscall_log_filters: Mutex<Vec<SyscallLogFilter>>,
 }
 
 /// Hardware capabilities.
@@ -481,6 +485,7 @@ impl Kernel {
             time_adjustment_proxy,
             socket_tokens_store: Default::default(),
             hwcaps,
+            syscall_log_filters: Default::default(),
         });
 
         // Initialize the device registry before registering any devices.
@@ -777,6 +782,33 @@ impl Kernel {
         &self,
     ) -> Result<ClientEnd<P>, Errno> {
         self.connect_to_named_protocol_at_container_svc::<P>(P::PROTOCOL_NAME)
+    }
+
+    pub fn add_syscall_log_filter(&self, name: &str) {
+        let filter = SyscallLogFilter::new(name.to_string());
+        {
+            let mut filters = self.syscall_log_filters.lock();
+            if filters.contains(&filter) {
+                return;
+            }
+            filters.push(filter);
+        }
+        for headers in self.pids.read().get_thread_groups() {
+            headers.sync_syscall_log_level();
+        }
+    }
+
+    pub fn clear_syscall_log_filters(&self) {
+        {
+            let mut filters = self.syscall_log_filters.lock();
+            if filters.is_empty() {
+                return;
+            }
+            filters.clear();
+        }
+        for headers in self.pids.read().get_thread_groups() {
+            headers.sync_syscall_log_level();
+        }
     }
 
     fn get_thread_groups_inspect(&self) -> fuchsia_inspect::Inspector {

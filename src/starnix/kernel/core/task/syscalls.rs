@@ -1053,6 +1053,9 @@ pub fn sys_prctl(
             let addr = UserAddress::from(arg2);
             let name = TaskCommand::new(&current_task.read_memory_to_array::<16>(addr)?);
             current_task.set_command_name(name);
+            if current_task.tid == current_task.thread_group.leader {
+                current_task.thread_group.sync_syscall_log_level();
+            }
             Ok(0.into())
         }
         PR_GET_NAME => {
