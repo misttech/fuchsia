@@ -162,6 +162,9 @@ struct SessionManagerState {
     /// Power-related state.
     power: PowerState,
 
+    // Debug-related state.
+    debug: Arc<crate::debug::DebugManager>,
+
     /// Other mutable state.
     inner: Mutex<Inner>,
 }
@@ -229,12 +232,16 @@ impl SessionManagerState {
         }
         *session = Session::Started(StartedSession { url });
         self.inner.lock().diagnostics.record_session_start();
+
+        self.debug.clone().start_media_buttons_listener();
+
         Ok(())
     }
 
     /// Stops the session, if any.
     async fn stop(&self) -> Result<(), startup::StartupError> {
         self.power.ensure_power_lease().await;
+        self.debug.stop();
         let mut session = self.session.lock().await;
         if let Session::Started(_) = &*session {
             let (proxy, new_pending) = Session::new_pending();
@@ -288,6 +295,7 @@ impl SessionManager {
         inspector: &fuchsia_inspect::Inspector,
         default_session_url: Option<String>,
         suspend_enabled: bool,
+        enable_debug_shortcut: bool,
     ) -> Self {
         let session_started_at = BoundedListNode::new(
             inspector.root().create_child(DIAGNOSTICS_SESSION_STARTED_AT_NAME),
@@ -300,6 +308,7 @@ impl SessionManager {
             session: futures::lock::Mutex::new(new_pending),
             realm,
             power: PowerState::new(suspend_enabled),
+            debug: Arc::new(crate::debug::DebugState::new(enable_debug_shortcut)),
             inner: Mutex::new(Inner { exposed_dir: proxy, diagnostics }),
         };
         SessionManager { state: Arc::new(state) }
@@ -310,7 +319,7 @@ impl SessionManager {
         realm: fcomponent::RealmProxy,
         inspector: &fuchsia_inspect::Inspector,
     ) -> Self {
-        Self::new(realm, inspector, None, false)
+        Self::new(realm, inspector, None, false, false)
     }
 
     /// Starts the session with the default session component URL, if any.
@@ -838,8 +847,13 @@ mod tests {
         });
 
         let inspector = fuchsia_inspect::Inspector::default();
-        let session_manager =
-            SessionManager::new(realm, &inspector, Some(default_session_url.to_owned()), false);
+        let session_manager = SessionManager::new(
+            realm,
+            &inspector,
+            Some(default_session_url.to_owned()),
+            false,
+            false,
+        );
         let lifecycle = serve_lifecycle(session_manager);
 
         assert!(
@@ -1081,5 +1095,50 @@ mod tests {
         assert_eq!(path_receiver.next().await.unwrap(), svc_path);
 
         Ok(())
+    }
+
+    /// Verifies that `DebugState` is reset when a session is stopped.
+    #[fuchsia::test]
+    async fn test_stop_resets_debug_state() {
+        let session_url = "session";
+
+        let realm = spawn_stream_handler(move |realm_request| async move {
+            match realm_request {
+                fcomponent::RealmRequest::DestroyChild { child: _, responder } => {
+                    let _ = responder.send(Ok(()));
+                }
+                fcomponent::RealmRequest::CreateChild { collection: _, decl, args, responder } => {
+                    assert_eq!(decl.url.unwrap(), session_url);
+                    spawn_noop_controller_server(args.controller.unwrap());
+                    let _ = responder.send(Ok(()));
+                }
+                fcomponent::RealmRequest::OpenExposedDir { child: _, exposed_dir, responder } => {
+                    spawn_noop_directory_server(exposed_dir);
+                    let _ = responder.send(Ok(()));
+                }
+                _ => panic!("Realm handler received an unexpected request"),
+            }
+        });
+
+        let inspector = fuchsia_inspect::Inspector::default();
+        let session_manager = SessionManager::new(realm, &inspector, None, false, true);
+        let lifecycle = serve_lifecycle(session_manager.clone());
+
+        assert!(
+            lifecycle
+                .start(&fsession::LifecycleStartRequest {
+                    session_url: Some(session_url.to_string()),
+                    ..Default::default()
+                })
+                .await
+                .is_ok()
+        );
+
+        session_manager.state.debug.set_button_press_state_count(3);
+        assert_eq!(session_manager.state.debug.get_button_press_state_count(), 3);
+
+        assert!(lifecycle.stop().await.is_ok());
+
+        assert_eq!(session_manager.state.debug.get_button_press_state_count(), 0);
     }
 }

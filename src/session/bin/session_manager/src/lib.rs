@@ -12,6 +12,7 @@
 )]
 
 pub mod cobalt;
+pub mod debug;
 pub mod power;
 pub mod session_manager;
 pub mod startup;

@@ -39,6 +39,8 @@ rustc_library("lib") {
     "//sdk/fidl/fuchsia.power.system:fuchsia.power.system_rust",
     "//sdk/fidl/fuchsia.session:fuchsia.session_rust",
     "//sdk/fidl/fuchsia.session.power:fuchsia.session.power_rust",
+    "//sdk/fidl/fuchsia.ui.input:fuchsia.ui.input_rust",
+    "//sdk/fidl/fuchsia.ui.policy:fuchsia.ui.policy_rust",
     "//sdk/rust/zx",
     "//src/lib/diagnostics/inspect/contrib/rust",
     "//src/lib/diagnostics/inspect/rust",
@@ -69,6 +71,7 @@ rustc_library("lib") {
 
   sources = [
     "src/cobalt.rs",
+    "src/debug.rs",
     "src/lib.rs",
     "src/power.rs",
     "src/session_manager.rs",
