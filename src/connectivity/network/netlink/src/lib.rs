@@ -36,12 +36,13 @@ use futures::channel::mpsc::{self, UnboundedReceiver, UnboundedSender};
 use futures::channel::oneshot;
 use net_types::ip::{Ipv4, Ipv6};
 use netlink_packet_route::RouteNetlinkMessage;
+use netlink_packet_sock_diag::{SockDiagRequest, SockDiagResponse};
 use protocol_family::route::NetlinkRouteNotifiedGroup;
 use {
     fidl_fuchsia_net_interfaces as fnet_interfaces, fidl_fuchsia_net_ndp as fnet_ndp,
     fidl_fuchsia_net_root as fnet_root, fidl_fuchsia_net_routes as fnet_routes,
     fidl_fuchsia_net_routes_admin as fnet_routes_admin,
-    fidl_fuchsia_net_routes_ext as fnet_routes_ext,
+    fidl_fuchsia_net_routes_ext as fnet_routes_ext, fidl_fuchsia_net_sockets as fnet_sockets,
 };
 
 use crate::client::{AsyncWorkItem, ClientIdGenerator, ClientTable, InternalClient};
@@ -50,6 +51,9 @@ use crate::messaging::{NetlinkContext, UnvalidatedNetlinkMessage as _, Validatio
 pub use crate::netlink_packet::errno::Errno;
 use crate::protocol_family::route::{
     NetlinkRoute, NetlinkRouteClient, NetlinkRouteRequestHandler, RouteAsyncWork,
+};
+use crate::protocol_family::sock_diag::{
+    NetlinkSockDiag, NetlinkSockDiagClient, NetlinkSockDiagRequestHandler, SockDiagEventLoop,
 };
 use crate::protocol_family::{NetlinkFamilyRequestHandler as _, ProtocolFamily};
 use crate::route_eventloop::RouteEventLoop;
@@ -79,6 +83,10 @@ pub struct Netlink<C: NetlinkContext> {
     route_client_sender: UnboundedSender<ClientWithReceiver<C, NetlinkRoute>>,
     /// Sender to send other async work items to the Netlink worker.
     route_async_work_sink: mpsc::UnboundedSender<AsyncWorkItem<NetlinkRoute>>,
+    /// Sender to attach new `NETLINK_SOCK_DIAG` clients to the Netlink worker.
+    sock_diag_client_sender: UnboundedSender<ClientWithReceiver<C, NetlinkSockDiag>>,
+    /// Sender to send other async work items to the Netlink worker.
+    sock_diag_async_work_sink: mpsc::UnboundedSender<AsyncWorkItem<NetlinkSockDiag>>,
 }
 
 impl<C: NetlinkContext> Netlink<C> {
@@ -91,16 +99,22 @@ impl<C: NetlinkContext> Netlink<C> {
     ) -> (Self, NetlinkWorkerParams<H, C>) {
         let (route_client_sender, route_client_receiver) = mpsc::unbounded();
         let (route_async_work_sink, async_work_receiver) = mpsc::unbounded();
+        let (sock_diag_client_sender, sock_diag_client_receiver) = mpsc::unbounded();
+        let (sock_diag_async_work_sink, sock_diag_async_work_receiver) = mpsc::unbounded();
         (
             Netlink {
                 id_generator: ClientIdGenerator::default(),
                 route_client_sender,
+                sock_diag_client_sender,
                 route_async_work_sink,
+                sock_diag_async_work_sink,
             },
             NetlinkWorkerParams {
                 interfaces_handler,
                 route_client_receiver,
                 route_async_work_receiver: async_work_receiver,
+                sock_diag_client_receiver,
+                sock_diag_async_work_receiver,
             },
         )
     }
@@ -148,7 +162,13 @@ impl<C: NetlinkContext> Netlink<C> {
         sender: C::Sender<RouteNetlinkMessage>,
         receiver: C::Receiver<RouteNetlinkMessage>,
     ) -> Result<NetlinkRouteClient, NewClientError> {
-        let Netlink { id_generator, route_client_sender, route_async_work_sink } = self;
+        let Netlink {
+            id_generator,
+            route_client_sender,
+            route_async_work_sink,
+            sock_diag_client_sender: _,
+            sock_diag_async_work_sink: _,
+        } = self;
         let (external_client, internal_client) = client::new_client_pair::<NetlinkRoute, _>(
             id_generator.new_id(),
             sender,
@@ -162,6 +182,39 @@ impl<C: NetlinkContext> Netlink<C> {
                 NewClientError::Disconnected
             })?;
         Ok(NetlinkRouteClient(external_client))
+    }
+
+    /// Creates a new client of the `NETLINK_SOCK_DIAG` protocol family.
+    ///
+    /// `sender` is used by Netlink to send messages to the client.
+    /// `receiver` is used by Netlink to receive messages from the client.
+    ///
+    /// Closing the `receiver` will close this client, disconnecting `sender`.
+    pub fn new_sock_diag_client(
+        &self,
+        sender: C::Sender<SockDiagResponse>,
+        receiver: C::Receiver<SockDiagRequest>,
+    ) -> Result<NetlinkSockDiagClient, NewClientError> {
+        let Netlink {
+            id_generator,
+            route_client_sender: _,
+            route_async_work_sink: _,
+            sock_diag_client_sender,
+            sock_diag_async_work_sink,
+        } = self;
+        let (external_client, internal_client) = client::new_client_pair::<NetlinkSockDiag, _>(
+            id_generator.new_id(),
+            sender,
+            sock_diag_async_work_sink.clone(),
+        );
+        sock_diag_client_sender
+            .unbounded_send(ClientWithReceiver { client: internal_client, receiver })
+            .map_err(|e| {
+                // Sending on an `UnboundedSender` can never fail with `is_full()`.
+                debug_assert!(e.is_disconnected());
+                NewClientError::Disconnected
+            })?;
+        Ok(NetlinkSockDiagClient(external_client))
     }
 }
 
@@ -197,6 +250,12 @@ pub struct NetlinkWorkerParams<H, C: NetlinkContext> {
     route_client_receiver: UnboundedReceiver<ClientWithReceiver<C, NetlinkRoute>>,
     route_async_work_receiver:
         futures::channel::mpsc::UnboundedReceiver<AsyncWorkItem<NetlinkRoute>>,
+    /// Receiver of newly created `NETLINK_SOCK_DIAG` clients.
+    #[allow(dead_code)]
+    sock_diag_client_receiver: UnboundedReceiver<ClientWithReceiver<C, NetlinkSockDiag>>,
+    #[allow(dead_code)]
+    sock_diag_async_work_receiver:
+        futures::channel::mpsc::UnboundedReceiver<AsyncWorkItem<NetlinkSockDiag>>,
 }
 
 /// All of the protocols that the netlink worker connects to.
@@ -213,6 +272,8 @@ pub struct NetlinkWorkerDiscoverableProtocols {
     pub v4_rule_table: fnet_routes_admin::RuleTableV4Proxy,
     pub v6_rule_table: fnet_routes_admin::RuleTableV6Proxy,
     pub ndp_option_watcher_provider: fnet_ndp::RouterAdvertisementOptionWatcherProviderProxy,
+    pub socket_diagnostics: fnet_sockets::DiagnosticsProxy,
+    pub socket_control: fnet_sockets::ControlProxy,
 }
 
 impl NetlinkWorkerDiscoverableProtocols {
@@ -254,6 +315,11 @@ impl NetlinkWorkerDiscoverableProtocols {
         let ndp_option_watcher_provider =
             connect_to_protocol::<fnet_ndp::RouterAdvertisementOptionWatcherProviderMarker>()
                 .expect("connect to fuchsia.net.ndp.RouterAdvertisementOptionWatcherProvider");
+        let socket_diagnostics = connect_to_protocol::<fnet_sockets::DiagnosticsMarker>()
+            .expect("connect to fuchsia.net.sockets.Diagnostics");
+        let socket_control = connect_to_protocol::<fnet_sockets::ControlMarker>()
+            .expect("connect to fuchsia.net.sockets.Control");
+
         Self {
             root_interfaces,
             interfaces_state,
@@ -266,6 +332,8 @@ impl NetlinkWorkerDiscoverableProtocols {
             v4_rule_table,
             v6_rule_table,
             ndp_option_watcher_provider,
+            socket_diagnostics,
+            socket_control,
         }
     }
 }
@@ -310,7 +378,25 @@ pub async fn run_netlink_worker_with_protocols<
         interfaces_handler,
         route_client_receiver,
         route_async_work_receiver,
+        sock_diag_client_receiver,
+        sock_diag_async_work_receiver,
     } = params;
+
+    let NetlinkWorkerDiscoverableProtocols {
+        root_interfaces,
+        interfaces_state,
+        v4_routes_state,
+        v6_routes_state,
+        v4_main_route_table,
+        v6_main_route_table,
+        v4_route_table_provider,
+        v6_route_table_provider,
+        v4_rule_table,
+        v6_rule_table,
+        ndp_option_watcher_provider,
+        socket_diagnostics,
+        socket_control,
+    } = protocols;
 
     let route_clients = ClientTable::default();
     let (route_request_sink, route_request_stream) = mpsc::channel(1);
@@ -318,19 +404,6 @@ pub async fn run_netlink_worker_with_protocols<
     let route_event_loop = {
         let route_clients = route_clients.clone();
         async move {
-            let NetlinkWorkerDiscoverableProtocols {
-                root_interfaces,
-                interfaces_state,
-                v4_routes_state,
-                v6_routes_state,
-                v4_main_route_table,
-                v6_main_route_table,
-                v4_route_table_provider,
-                v6_route_table_provider,
-                v4_rule_table,
-                v6_rule_table,
-                ndp_option_watcher_provider,
-            } = protocols;
             let event_loop: RouteEventLoop<H, C::Sender<_>> = RouteEventLoop {
                 interfaces_proxy: root_interfaces,
                 interfaces_state_proxy: interfaces_state,
@@ -354,6 +427,7 @@ pub async fn run_netlink_worker_with_protocols<
     };
 
     let route_client_receiver_loop = {
+        let access_control = access_control.clone();
         async move {
             // Accept new NETLINK_ROUTE clients.
             connect_new_clients::<C, NetlinkRoute>(
@@ -367,7 +441,39 @@ pub async fn run_netlink_worker_with_protocols<
         }
     };
 
-    futures::future::join(route_event_loop, route_client_receiver_loop).await;
+    let sock_diag_clients = ClientTable::default();
+    let (sock_diag_request_sink, sock_diag_request_stream) = mpsc::channel(1);
+
+    let sock_diag_event_loop = async move {
+        SockDiagEventLoop {
+            socket_diagnostics,
+            socket_control,
+            request_stream: sock_diag_request_stream,
+            async_work_receiver: sock_diag_async_work_receiver,
+        }
+        .run()
+        .await;
+    };
+
+    let sock_diag_client_receiver_loop = async move {
+        // Accept new NETLINK_SOCK_DIAG clients.
+        connect_new_clients::<C, NetlinkSockDiag>(
+            sock_diag_clients,
+            sock_diag_client_receiver,
+            NetlinkSockDiagRequestHandler { sock_diag_request_sink },
+            access_control,
+        )
+        .await;
+        panic!("sock_diag_client_receiver stream unexpectedly finished");
+    };
+
+    futures::future::join4(
+        route_event_loop,
+        route_client_receiver_loop,
+        sock_diag_event_loop,
+        sock_diag_client_receiver_loop,
+    )
+    .await;
 }
 
 /// Receives clients from the given receiver, adding them to the given table.

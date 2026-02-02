@@ -4,6 +4,8 @@
 
 //! A module for managing protocol-specific aspects of Netlink.
 
+pub mod sock_diag;
+
 use netlink_packet_core::{
     NetlinkDeserializable, NetlinkMessage, NetlinkPayload, NetlinkSerializable,
 };

@@ -199,6 +199,9 @@ fn decode_error_to_errno(error: &DecodeError) -> Errno {
             if let Some(error) = error.downcast_ref::<RouteNetlinkMessageParseError>() {
                 return route_netlink_error_to_errno(error);
             }
+            if let Some(error) = error.downcast_ref::<netlink_packet_utils::DecodeError>() {
+                return decode_error_to_errno(error);
+            }
             Errno::EINVAL
         }
         DecodeError::FailedToParseNlMsgError(error)

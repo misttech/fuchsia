@@ -55,7 +55,8 @@ use {
     fidl_fuchsia_net_interfaces_ext as fnet_interfaces_ext,
     fidl_fuchsia_net_matchers_ext as fnet_matchers_ext, fidl_fuchsia_net_ndp as fnet_ndp,
     fidl_fuchsia_net_root as fnet_root, fidl_fuchsia_net_routes as fnet_routes,
-    fidl_fuchsia_net_routes_ext as fnet_routes_ext, fidl_fuchsia_posix_socket as fposix_socket,
+    fidl_fuchsia_net_routes_ext as fnet_routes_ext, fidl_fuchsia_net_sockets as fnet_sockets,
+    fidl_fuchsia_posix_socket as fposix_socket,
 };
 
 fn connect_to_netlink_protocols_in_realm(
@@ -100,6 +101,12 @@ fn connect_to_netlink_protocols_in_realm(
     let ndp_option_watcher_provider = realm
         .connect_to_protocol::<fnet_ndp::RouterAdvertisementOptionWatcherProviderMarker>()
         .expect("connect to fuchsia.net.ndp");
+    let socket_diagnostics = realm
+        .connect_to_protocol::<fnet_sockets::DiagnosticsMarker>()
+        .expect("connect to fuchsia.net.sockets");
+    let socket_control = realm
+        .connect_to_protocol::<fnet_sockets::ControlMarker>()
+        .expect("connect to fuchsia.net.sockets");
 
     netlink::NetlinkWorkerDiscoverableProtocols {
         root_interfaces,
@@ -113,6 +120,8 @@ fn connect_to_netlink_protocols_in_realm(
         v4_rule_table,
         v6_rule_table,
         ndp_option_watcher_provider,
+        socket_diagnostics,
+        socket_control,
     }
 }
 
