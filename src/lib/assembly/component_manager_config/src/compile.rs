@@ -132,6 +132,7 @@ struct Config {
     vmex_source: Option<VmexSource>,
     health_check: Option<HealthCheck>,
     inject_capabilities: Option<Vec<cm_config::InjectedCapabilities>>,
+    scudo_options: Option<String>,
 }
 
 #[derive(Deserialize, Debug)]
@@ -495,6 +496,7 @@ impl TryFrom<Config> for component_internal::Config {
                     .map(Into::into)
                     .collect(),
             ),
+            scudo_options: config.scudo_options,
             ..Default::default()
         })
     }
@@ -612,6 +614,7 @@ impl Config {
             vmex_source: merge_field!(self, another, vmex_source),
             health_check: merge_field!(self, another, health_check),
             inject_capabilities: deep_merge_field!(self, another, inject_capabilities),
+            scudo_options: merge_field!(self, another, scudo_options),
         })
     }
 
@@ -935,6 +938,7 @@ mod tests {
                     ],
                 },
             ],
+            scudo_options: "NAME=value",
         }"#;
         let config = compile_str(input).expect("failed to compile");
         assert_eq!(
@@ -1067,6 +1071,7 @@ mod tests {
                     )]),
                     ..Default::default()
                 }]),
+                scudo_options: Some("NAME=value".to_string()),
                 ..Default::default()
             }
         );

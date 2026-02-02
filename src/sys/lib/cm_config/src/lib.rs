@@ -108,6 +108,11 @@ pub struct RuntimeConfig {
 
     /// Capabilities to be injected into allowlisted components.
     pub inject_capabilities: Vec<InjectedCapabilities>,
+
+    /// Runtime configuration for Scudo heap allocation, using a 'KEY=VALUE,KEY=VALUE'
+    /// format. See Scudo flags documentation for details. It is shadowed by `SCUDO_OPTION`
+    //  environ variable from the component manifest.
+    pub scudo_options: Option<String>,
 }
 
 /// A single security policy allowlist entry.
@@ -611,6 +616,7 @@ impl Default for RuntimeConfig {
             vmex_source: Default::default(),
             health_check: Default::default(),
             inject_capabilities: Default::default(),
+            scudo_options: Default::default(),
         }
     }
 }
@@ -774,6 +780,7 @@ impl TryFrom<component_internal::Config> for RuntimeConfig {
             health_check,
             inject_capabilities: parse_optional_vec(config.inject_capabilities)
                 .context("Unable to parse injected capabilities")?,
+            scudo_options: config.scudo_options,
         })
     }
 }
@@ -1361,6 +1368,7 @@ mod tests {
                 vmex_source: VmexSource::Namespace,
                 health_check: HealthCheck{monikers: vec!()},
                 inject_capabilities: vec![],
+                scudo_options: None,
             }
         ),
     }

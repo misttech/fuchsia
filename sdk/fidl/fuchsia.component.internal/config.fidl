@@ -98,6 +98,11 @@ type Config = table {
 
     /// Capabilities to inject into components at runtime.
     23: inject_capabilities vector<InjectedCapabilities>:MAX;
+
+    /// Runtime configuration for Scudo heap allocation, using a 'KEY=VALUE,KEY=VALUE'
+    /// format. See Scudo flags documentation for details. It is shadowed by `SCUDO_OPTIONS`
+    //  environ variable from the component manifest.
+    24: scudo_options string:MAX;
 };
 
 /// Where to obtain the trace provider from.

@@ -41,7 +41,7 @@ use moniker::Moniker;
 use namespace::Namespace;
 use runner::StartInfo;
 use runner::component::StopInfo;
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::mem;
 use std::path::Path;
 use std::sync::Arc;
@@ -139,6 +139,10 @@ pub struct ElfRunner {
 
     /// Tasks that support the runner are launched in this scope
     scope: ExecutionScope,
+
+    /// Environment variables to be injected in the form KEY=VALUE.
+    /// Values are shadowed by identical keys found in the component manifest.
+    additional_environ: Vec<String>,
 }
 
 /// The job for a component.
@@ -345,12 +349,31 @@ impl ElfComponentLaunchInfo {
     }
 }
 
+/// Merges environment slices, prioritizing `right` over `left`.
+///
+/// Keys are determined by the first `=` delimiter, falling back to the
+/// full string if missing. Non-shadowed `left` entries are returned first.
+fn merge_environ(left: &[String], right: &[String]) -> Vec<String> {
+    fn get_key(kv: &str) -> &str {
+        kv.split('=').next().unwrap_or(kv)
+    }
+    let right_keys: HashSet<&str> = right.iter().map(|kv| get_key(kv.as_str())).collect();
+    let environ: Vec<String> = left
+        .iter()
+        .filter(|&kv| !right_keys.contains(get_key(kv.as_str())))
+        .chain(right.iter())
+        .cloned()
+        .collect();
+    environ
+}
+
 impl ElfRunner {
     pub fn new(
         job: zx::Job,
         launcher_connector: process_launcher::Connector,
         utc_clock: Option<Arc<UtcClock>>,
         crash_records: CrashRecords,
+        additional_environ: Vec<String>,
     ) -> ElfRunner {
         let scope = ExecutionScope::new();
         let components = ComponentSet::new(scope.clone());
@@ -363,6 +386,7 @@ impl ElfRunner {
             components,
             memory_reporter,
             scope,
+            additional_environ,
         }
     }
 
@@ -538,6 +562,11 @@ impl ElfRunner {
                 .map(|error| warn!(moniker:%, error:%; "Failed to wait break_on_start"));
         }
 
+        let environs = merge_environ(
+            &self.additional_environ,
+            program_config.environ.as_deref().unwrap_or_default(),
+        );
+
         // Connect to `fuchsia.process.Launcher`.
         let launcher = self
             .launcher_connector
@@ -554,7 +583,7 @@ impl ElfRunner {
                 job: Some(proc_job_dup),
                 handle_infos: Some(handle_infos),
                 name_infos: None,
-                environs: program_config.environ.clone(),
+                environs: (!environs.is_empty()).then_some(environs),
                 launcher: &launcher,
                 loader_proxy_chan: None,
                 executable_vmo: None,
@@ -859,6 +888,7 @@ mod tests {
     use runner::component::Controllable;
     use std::str::FromStr;
     use std::task::Poll;
+    use test_case::test_case;
     use zx::{AsHandleRef, Task};
     use {
         fidl_fuchsia_component as fcomp, fidl_fuchsia_component_runner as fcrunner,
@@ -913,6 +943,7 @@ mod tests {
             Box::new(process_launcher::BuiltInConnector {}),
             Some(new_utc_clock_for_tests()),
             CrashRecords::new(),
+            vec![],
         ))
     }
 
@@ -1706,6 +1737,7 @@ mod tests {
             Box::new(connector),
             Some(new_utc_clock_for_tests()),
             CrashRecords::new(),
+            vec![],
         );
         let policy_checker = ScopedPolicyChecker::new(
             Arc::new(SecurityPolicy::default()),
@@ -1927,10 +1959,45 @@ mod tests {
         }
     }
 
-    #[fuchsia::test]
-    async fn test_return_code_success() {
-        let start_info = exit_with_code_startinfo(0);
+    fn exit_with_code_startinfo_from_env(exit_code: Option<i64>) -> fcrunner::ComponentStartInfo {
+        let (_runtime_dir, runtime_dir_server) = create_proxy::<fio::DirectoryMarker>();
+        let ns = vec![pkg_dir_namespace_entry()];
+        let environ = match exit_code {
+            Some(code) => vec![format!("EXIT_CODE={}", code)],
+            None => vec![],
+        };
+        fcrunner::ComponentStartInfo {
+            resolved_url: Some(
+                "fuchsia-pkg://fuchsia.com/elf_runner_tests#meta/exit-with-code-from_env.cm"
+                    .to_string(),
+            ),
+            program: Some(fdata::Dictionary {
+                entries: Some(vec![
+                    fdata::DictionaryEntry {
+                        key: "environ".to_string(),
+                        value: Some(Box::new(fdata::DictionaryValue::StrVec(environ))),
+                    },
+                    fdata::DictionaryEntry {
+                        key: "binary".to_string(),
+                        value: Some(Box::new(fdata::DictionaryValue::Str(
+                            "bin/exit_with_code_from_env".to_string(),
+                        ))),
+                    },
+                ]),
+                ..Default::default()
+            }),
+            ns: Some(ns),
+            outgoing_dir: None,
+            runtime_dir: Some(runtime_dir_server),
+            component_instance: Some(zx::Event::create()),
+            ..Default::default()
+        }
+    }
 
+    #[test_case(exit_with_code_startinfo(0) ; "args")]
+    #[test_case(exit_with_code_startinfo_from_env(Some(0)) ; "env")]
+    #[fuchsia::test]
+    async fn test_return_code_success(start_info: fcrunner::ComponentStartInfo) {
         let runner = new_elf_runner_for_test();
         let runner = runner.get_scoped_runner(ScopedPolicyChecker::new(
             Arc::new(SecurityPolicy::default()),
@@ -1945,11 +2012,22 @@ mod tests {
         expect_channel_closed(&mut event_stream).await;
     }
 
+    #[test_case(exit_with_code_startinfo(123), vec![] ; "args")]
+    #[test_case(exit_with_code_startinfo_from_env(Some(123)), vec![] ; "component_env")]
+    #[test_case(exit_with_code_startinfo_from_env(Some(123)), vec!["EXIT_CODE=2"] ; "additional_env_shadowed")]
+    #[test_case(exit_with_code_startinfo_from_env(None), vec!["EXIT_CODE=123"] ; "additional_env")]
     #[fuchsia::test]
-    async fn test_return_code_failure() {
-        let start_info = exit_with_code_startinfo(123);
-
-        let runner = new_elf_runner_for_test();
+    async fn test_return_code_failure(
+        start_info: fcrunner::ComponentStartInfo,
+        additional_environ: Vec<&str>,
+    ) {
+        let runner = Arc::new(ElfRunner::new(
+            job_default().duplicate(zx::Rights::SAME_RIGHTS).unwrap(),
+            Box::new(process_launcher::BuiltInConnector {}),
+            Some(new_utc_clock_for_tests()),
+            CrashRecords::new(),
+            additional_environ.iter().map(|s| s.to_string()).collect(),
+        ));
         let runner = runner.get_scoped_runner(ScopedPolicyChecker::new(
             Arc::new(SecurityPolicy::default()),
             Moniker::root(),
@@ -1991,5 +2069,40 @@ mod tests {
             &Moniker::from_str("foo/debug").expect("valid moniker"),
             255
         ));
+    }
+
+    #[fuchsia::test]
+    fn test_merge_environ() {
+        assert_eq!(merge_environ(&vec![], &vec![]), Vec::<String>::new());
+
+        assert_eq!(
+            merge_environ(&vec!["A".to_string(), "B=".to_string(), "C=c".to_string()], &vec![]),
+            vec!["A".to_string(), "B=".to_string(), "C=c".to_string()]
+        );
+        assert_eq!(
+            merge_environ(
+                &vec!["A".to_string(), "B=".to_string(), "C=c".to_string()],
+                &vec!["A".to_string(), "B".to_string(), "C".to_string()]
+            ),
+            vec!["A".to_string(), "B".to_string(), "C".to_string()]
+        );
+        assert_eq!(
+            merge_environ(
+                &vec!["A".to_string(), "B=".to_string(), "C=c".to_string()],
+                &vec!["A=".to_string(), "B=".to_string(), "C=".to_string()]
+            ),
+            vec!["A=".to_string(), "B=".to_string(), "C=".to_string()]
+        );
+        assert_eq!(
+            merge_environ(
+                &vec!["A".to_string(), "B=".to_string(), "C=c".to_string()],
+                &vec!["A=aa".to_string(), "B=bb".to_string(), "C=cc".to_string()]
+            ),
+            vec!["A=aa".to_string(), "B=bb".to_string(), "C=cc".to_string()]
+        );
+        assert_eq!(
+            merge_environ(&vec![], &vec!["A".to_string(), "B=".to_string(), "C=c".to_string()]),
+            vec!["A".to_string(), "B=".to_string(), "C=c".to_string()]
+        );
     }
 }

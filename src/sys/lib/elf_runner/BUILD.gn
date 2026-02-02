@@ -143,6 +143,7 @@ fuchsia_test_package("elf_runner_tests") {
     "//src/sys/component_manager/testing/lifecycle",
     "//src/sys/component_manager/tests/crash_introspect:panic_on_start",
     "//src/sys/component_manager/tests/exit_code:exit_with_code",
+    "//src/sys/component_manager/tests/exit_code:exit_with_code_from_env",
   ]
 }
 

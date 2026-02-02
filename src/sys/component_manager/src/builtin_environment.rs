@@ -229,6 +229,7 @@ impl BuiltinEnvironmentBuilder {
             utc_clock: self.utc_clock.clone(),
             crash_records: self.crash_records.clone(),
             instance_registry: self.instance_registry.clone(),
+            scudo_options: runtime_config.scudo_options.clone(),
         };
         let program = BuiltinRunner::get_elf_program(Arc::new(elf_runner_resources));
         self.add_builtin_runner("builtin_elf_runner", program, add_to_env)

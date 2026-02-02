@@ -10,6 +10,11 @@ executable("exit_with_code") {
   deps = [ "//src/lib/fxl" ]
 }
 
+executable("exit_with_code_from_env") {
+  sources = [ "exit_with_code_from_env.cc" ]
+  deps = [ "//src/lib/fxl" ]
+}
+
 rustc_test("exit_code_integration_test_bin") {
   name = "exit_code_integration_test"
   edition = "2024"

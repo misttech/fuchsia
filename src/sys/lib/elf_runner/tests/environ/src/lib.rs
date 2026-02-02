@@ -10,5 +10,8 @@ async fn test_puppet_has_environ_set() {
     let proxy = client::connect_to_protocol::<fet::ContextMarker>()
         .expect("couldn't connect to context service");
     let environ = proxy.get_environ().await.expect("failed to make fidl call");
-    assert_eq!(environ, vec!["ENVIRONMENT=testing", "threadcount=8"]);
+    // Test the presence of environment variables from the cml manifest.
+    // Additional environment variables may come from the component manager config.
+    assert!(environ.contains(&"ENVIRONMENT=testing".to_string()));
+    assert!(environ.contains(&"threadcount=8".to_string()));
 }

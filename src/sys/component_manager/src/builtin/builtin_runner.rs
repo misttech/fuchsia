@@ -71,6 +71,10 @@ pub struct ElfRunnerResources {
     pub utc_clock: Option<Arc<UtcClock>>,
     pub crash_records: CrashRecords,
     pub instance_registry: Arc<InstanceRegistry>,
+    /// Runtime configuration for Scudo heap allocation, using a 'KEY=VALUE,KEY=VALUE'
+    /// format. See Scudo flags documentation for details. It is shadowed by `SCUDO_OPTIONS`
+    //  environ variable from the component manifest.
+    pub scudo_options: Option<String>,
 }
 
 #[derive(Debug, Error)]
@@ -483,6 +487,12 @@ impl ElfRunnerProgram {
             Box::new(connector),
             resources.utc_clock.clone(),
             resources.crash_records.clone(),
+            resources
+                .scudo_options
+                .as_ref()
+                .map(|v| format!("SCUDO_OPTIONS={v}"))
+                .into_iter()
+                .collect(),
         );
         let inner = Arc::new(Inner { resources, elf_runner: Arc::new(elf_runner) });
 
@@ -678,6 +688,7 @@ mod tests {
             utc_clock: None,
             crash_records,
             instance_registry,
+            scudo_options: Some("KEY=value".to_string()),
         })
     }
 
