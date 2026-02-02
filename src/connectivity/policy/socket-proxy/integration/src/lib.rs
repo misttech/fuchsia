@@ -430,7 +430,7 @@ async fn netcfg_mock(
                     stream
                         .map(|i| i.context("fidl error"))
                         .try_for_each(|req| async {
-                            default_network_updates.lock().await.push((&req).into());
+                            let request = (&req).into();
                             match req {
                                 NetworkRegistryRequest::SetDefault { responder, .. } => {
                                     responder.send(Ok(()))?;
@@ -445,6 +445,9 @@ async fn netcfg_mock(
                                     responder.send(Ok(()))?;
                                 }
                             }
+                            // Update this vector after sending the response so that the client of
+                            // this protocol avoids a PEER_CLOSED message.
+                            default_network_updates.lock().await.push(request);
                             Ok(())
                         })
                         .await?;
@@ -1121,12 +1124,13 @@ async fn wait_on_dns_server_list_response(
 
 #[fuchsia::test]
 async fn watch_dns_with_registry() -> Result<(), Error> {
+    let default_network_updates = Arc::new(Mutex::new(Vec::new()));
     let builder = RealmBuilder::new().await?;
     let netcfg = builder
         .add_local_child(
             "netcfg",
             {
-                let default_network_updates = Arc::new(Mutex::new(Vec::new()));
+                let default_network_updates = default_network_updates.clone();
                 move |handles: LocalComponentHandles| {
                     Box::pin(netcfg_mock(handles, default_network_updates.clone()))
                 }
@@ -1235,6 +1239,90 @@ async fn watch_dns_with_registry() -> Result<(), Error> {
         Ok(())
     );
     assert!(dns_watcher.watch_servers().now_or_never().is_none());
+
+    // We check for all of the updated default_network_updates to be sent
+    // so that the realm stays up until all requests have been forwarded
+    // to netcfg.
+    check_until(
+        zx::MonotonicDuration::from_seconds(1).after_now(),
+        || async { default_network_updates.lock().await.clone() },
+        vec![
+            NetworkRegistryRequest::Add {
+                network: fnp_socketproxy::Network {
+                    network_id: Some(1),
+                    info: Some(fnp_socketproxy::NetworkInfo::Starnix(
+                        fnp_socketproxy::StarnixNetworkInfo {
+                            mark: Some(1),
+                            handle: Some(0),
+                            ..Default::default()
+                        },
+                    )),
+                    dns_servers: Some(fnp_socketproxy::NetworkDnsServers {
+                        v4: Some(vec![fidl_ip_v4!("192.0.2.0")]),
+                        v6: Some(vec![]),
+                        ..Default::default()
+                    }),
+                    ..Default::default()
+                },
+            },
+            NetworkRegistryRequest::Add {
+                network: fnp_socketproxy::Network {
+                    network_id: Some(2),
+                    info: Some(fnp_socketproxy::NetworkInfo::Starnix(
+                        fnp_socketproxy::StarnixNetworkInfo {
+                            mark: Some(2),
+                            handle: Some(0),
+                            ..Default::default()
+                        },
+                    )),
+                    dns_servers: Some(fnp_socketproxy::NetworkDnsServers {
+                        v4: Some(vec![]),
+                        v6: Some(vec![fidl_ip_v6!["2001:db8::3"]]),
+                        ..Default::default()
+                    }),
+                    ..Default::default()
+                },
+            },
+            NetworkRegistryRequest::Update {
+                network: fnp_socketproxy::Network {
+                    network_id: Some(1),
+                    info: Some(fnp_socketproxy::NetworkInfo::Starnix(
+                        fnp_socketproxy::StarnixNetworkInfo {
+                            mark: Some(1),
+                            handle: Some(0),
+                            ..Default::default()
+                        },
+                    )),
+                    dns_servers: Some(fnp_socketproxy::NetworkDnsServers {
+                        v4: Some(vec![fidl_ip_v4!("192.0.2.1")]),
+                        v6: Some(vec![fidl_ip_v6!["2001:db8::4"]]),
+                        ..Default::default()
+                    }),
+                    ..Default::default()
+                },
+            },
+            NetworkRegistryRequest::Remove { network_id: 2 },
+            NetworkRegistryRequest::Update {
+                network: fnp_socketproxy::Network {
+                    network_id: Some(1),
+                    info: Some(fnp_socketproxy::NetworkInfo::Starnix(
+                        fnp_socketproxy::StarnixNetworkInfo {
+                            mark: Some(1),
+                            handle: Some(0),
+                            ..Default::default()
+                        },
+                    )),
+                    dns_servers: Some(fnp_socketproxy::NetworkDnsServers {
+                        v4: Some(vec![fidl_ip_v4!("192.0.2.1")]),
+                        v6: Some(vec![fidl_ip_v6!["2001:db8::4"]]),
+                        ..Default::default()
+                    }),
+                    ..Default::default()
+                },
+            },
+        ],
+    )
+    .await;
 
     Ok(())
 }

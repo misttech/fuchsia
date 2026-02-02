@@ -17,9 +17,12 @@ use fuchsia_inspect_derive::{Inspect, WithInspect as _};
 use futures::StreamExt as _;
 use futures::channel::mpsc;
 use futures::lock::Mutex;
-use log::error;
+use log::{error, info};
 use std::sync::Arc;
-use {fidl_fuchsia_net as fnet, fidl_fuchsia_net_policy_socketproxy as fnp_socketproxy};
+use {
+    fidl_fuchsia_net as fnet, fidl_fuchsia_net_policy_socketproxy as fnp_socketproxy,
+    fuchsia_async as fasync,
+};
 
 mod dns_watcher;
 pub mod registry;
@@ -74,13 +77,15 @@ struct SocketProxy {
 }
 
 impl SocketProxy {
-    fn new() -> Result<Self, anyhow::Error> {
+    fn new(
+        forwarder_tx: mpsc::Sender<crate::registry::NetworkRegistryRequest>,
+    ) -> Result<Self, anyhow::Error> {
         let mark = Arc::new(Mutex::new(SocketMarks::default()));
         // TODO(https://fxbug.dev/477682527): Remove this workaround and return the channel
         // size to 1.
         let (dns_tx, dns_rx) = mpsc::channel(10);
         Ok(Self {
-            registry: registry::Registry::new(mark.clone(), dns_tx)
+            registry: registry::Registry::new(mark.clone(), dns_tx, forwarder_tx)
                 .context("while creating registry")?,
             dns_watcher: dns_watcher::DnsServerWatcher::new(Arc::new(Mutex::new(dns_rx))),
             socket_provider: socket_provider::SocketProvider::new(mark),
@@ -104,7 +109,12 @@ pub async fn run() -> Result<(), anyhow::Error> {
     let _inspect_server_task =
         inspect_runtime::publish(inspector, inspect_runtime::PublishOptions::default());
 
-    let proxy = SocketProxy::new()?.with_inspect(inspector.root(), "root")?;
+    // Use a generous buffer size without making it unbounded. If the
+    // server (netcfg) is not processing messages quickly enough,
+    // this indicates more significant system issues.
+    let (forwarder_tx, forwarder_rx) = mpsc::channel(50);
+    let mut request_forwarder = registry::RequestForwarder::new(forwarder_rx)?;
+    let proxy = Arc::new(SocketProxy::new(forwarder_tx)?.with_inspect(inspector.root(), "root")?);
 
     let mut fs = ServiceFs::new_local();
     let _: &mut ServiceFsDir<'_, _> = fs
@@ -119,17 +129,41 @@ pub async fn run() -> Result<(), anyhow::Error> {
 
     fuchsia_inspect::component::health().set_ok();
 
-    fs.for_each_concurrent(100, |service| async {
-        match service {
-            IncomingService::StarnixNetworks(stream) => proxy.registry.run_starnix(stream).await,
-            IncomingService::FuchsiaNetworks(stream) => proxy.registry.run_fuchsia(stream).await,
-            IncomingService::DnsServerWatcher(stream) => proxy.dns_watcher.run(stream).await,
-            IncomingService::PosixSocket(stream) => proxy.socket_provider.run(stream).await,
-            IncomingService::PosixSocketRaw(stream) => proxy.socket_provider.run_raw(stream).await,
+    let service_fut = fs.for_each_concurrent(100, move |service| {
+        let proxy = Arc::clone(&proxy);
+        async move {
+            match service {
+                IncomingService::StarnixNetworks(stream) => {
+                    proxy.registry.run_starnix(stream).await
+                }
+                IncomingService::FuchsiaNetworks(stream) => {
+                    proxy.registry.run_fuchsia(stream).await
+                }
+                IncomingService::DnsServerWatcher(stream) => proxy.dns_watcher.run(stream).await,
+                IncomingService::PosixSocket(stream) => proxy.socket_provider.run(stream).await,
+                IncomingService::PosixSocketRaw(stream) => {
+                    proxy.socket_provider.run_raw(stream).await
+                }
+            }
+            .unwrap_or_else(|e| error!("{e:?}"))
         }
-        .unwrap_or_else(|e| error!("{e:?}"))
-    })
-    .await;
+    });
+
+    let scope = fasync::Scope::new();
+
+    let _ = scope.spawn_local(async move {
+        let res = request_forwarder.run().await;
+        info!("RequestForwarder future has terminated: {res:?}");
+    });
+
+    let _ = scope.spawn_local(async move {
+        service_fut.await;
+        error!("The main services future has terminated. It should never terminate");
+        // Abort the scope to signal that the main service loop has unexpectedly ended.
+        fasync::Scope::current().abort().await;
+    });
+
+    scope.join().await;
 
     Ok(())
 }

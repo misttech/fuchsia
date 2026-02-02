@@ -4,12 +4,12 @@
 
 //! Implements fuchsia.net.policy.socketproxy.NetworkRegistry.
 
-use anyhow::{Context, Error};
+use anyhow::{Context, Error, anyhow};
 use fidl::endpoints::{ControlHandle, RequestStream};
 use fidl_fuchsia_net_policy_socketproxy::{
     self as fnp_socketproxy, FuchsiaNetworkInfo, FuchsiaNetworksRequest, Network,
     NetworkDnsServers, NetworkInfo, NetworkRegistryAddError, NetworkRegistryRemoveError,
-    NetworkRegistrySetDefaultError, StarnixNetworksRequest,
+    NetworkRegistrySetDefaultError, NetworkRegistryUpdateError, StarnixNetworksRequest,
 };
 use fuchsia_component::client::connect_to_protocol;
 use fuchsia_inspect_derive::{IValue, Inspect, Unit};
@@ -32,6 +32,87 @@ const DEFAULT_DNS_PORT: u16 = 53;
 /// If there are networks registered, but no default has been set, this value
 /// will be used, otherwise the mark will be OptionalUint32::Unset(Empty).
 pub(crate) const DEFAULT_SOCKET_MARK: u32 = 0;
+
+pub(crate) struct RequestForwarder {
+    forwarder_rx: mpsc::Receiver<NetworkRegistryRequest>,
+    registry: fnp_socketproxy::NetworkRegistryProxy,
+}
+
+impl RequestForwarder {
+    pub(crate) fn new(
+        forwarder_rx: mpsc::Receiver<NetworkRegistryRequest>,
+    ) -> Result<Self, anyhow::Error> {
+        Ok(Self {
+            forwarder_rx,
+            registry: connect_to_protocol::<fnp_socketproxy::NetworkRegistryMarker>()
+                .context("error connecting to network registry")?,
+        })
+    }
+
+    pub(crate) async fn run(&mut self) -> Result<(), anyhow::Error> {
+        while let Some(request) = self.forwarder_rx.next().await {
+            match self.forward_request(request).await {
+                Err(e) => {
+                    info!(
+                        "FIDL error while forwarding request to delegated networks. \
+                            Protocol likely not available: {e:?}"
+                    );
+                    return Err(e);
+                }
+                Ok(Err(e)) => {
+                    error!(
+                        "Failed to forward request to delegated networks. Future updates \
+                                 will be ignored, and netcfg will not have complete state: {e:?}"
+                    );
+                    return Err(anyhow!("Delegated registry has inconsistent state: {e:?}"));
+                }
+                Ok(Ok(_)) => continue,
+            }
+        }
+        error!(
+            "RequestForwarder stream ended. No more requests will be \
+            forwarded to netcfg"
+        );
+        Ok(())
+    }
+
+    async fn forward_request(
+        &self,
+        request: NetworkRegistryRequest,
+    ) -> Result<Result<(), NetworkRegistryError>, anyhow::Error> {
+        info!("forwarding Starnix NetworkRegistry change to netcfg: {request:?}");
+        let res = match request {
+            NetworkRegistryRequest::SetDefault { network_id } => self
+                .registry
+                .set_default(&match network_id {
+                    Some(id) => fposix_socket::OptionalUint32::Value(id),
+                    None => fposix_socket::OptionalUint32::Unset(fposix_socket::Empty),
+                })
+                .await
+                .context("fidl error forwarding set_default")?
+                .map_err(|e| e.into()),
+            NetworkRegistryRequest::Add { network } => self
+                .registry
+                .add(&network)
+                .await
+                .context("fidl error forwarding add")?
+                .map_err(|e| e.into()),
+            NetworkRegistryRequest::Update { network } => self
+                .registry
+                .update(&network)
+                .await
+                .context("fidl error forwarding update")?
+                .map_err(|e| e.into()),
+            NetworkRegistryRequest::Remove { network_id } => self
+                .registry
+                .remove(network_id)
+                .await
+                .context("fidl error forwarding remove")?
+                .map_err(|e| e.into()),
+        };
+        Ok(res)
+    }
+}
 
 enum CommonErrors {
     MissingNetworkId,
@@ -103,6 +184,8 @@ pub enum NetworkRegistryError {
     Remove(NetworkRegistryRemoveError),
     #[error("Error during socketproxy SetDefault: {0:?}")]
     SetDefault(NetworkRegistrySetDefaultError),
+    #[error("Error during socketproxy Update: {0:?}")]
+    Update(NetworkRegistryUpdateError),
 }
 
 impl From<NetworkRegistryAddError> for NetworkRegistryError {
@@ -120,6 +203,12 @@ impl From<NetworkRegistryRemoveError> for NetworkRegistryError {
 impl From<NetworkRegistrySetDefaultError> for NetworkRegistryError {
     fn from(error: NetworkRegistrySetDefaultError) -> Self {
         NetworkRegistryError::SetDefault(error)
+    }
+}
+
+impl From<NetworkRegistryUpdateError> for NetworkRegistryError {
+    fn from(error: NetworkRegistryUpdateError) -> Self {
+        NetworkRegistryError::Update(error)
     }
 }
 
@@ -513,8 +602,7 @@ pub struct Registry {
     // by this component.
     marks: Arc<Mutex<crate::SocketMarks>>,
     dns_tx: mpsc::Sender<Vec<fnp_socketproxy::DnsServerList>>,
-    delegated_networks_proxy: Arc<Mutex<Option<fnp_socketproxy::NetworkRegistryProxy>>>,
-
+    forwarder_tx: mpsc::Sender<NetworkRegistryRequest>,
     starnix_occupant: Mutex<()>,
     fuchsia_occupant: Mutex<()>,
 }
@@ -559,15 +647,13 @@ impl Registry {
     pub(crate) fn new(
         marks: Arc<Mutex<crate::SocketMarks>>,
         dns_tx: mpsc::Sender<Vec<fnp_socketproxy::DnsServerList>>,
+        forwarder_tx: mpsc::Sender<NetworkRegistryRequest>,
     ) -> Result<Self, anyhow::Error> {
         Ok(Self {
             networks: Default::default(),
             marks,
             dns_tx,
-            delegated_networks_proxy: Arc::new(Mutex::new(
-                connect_to_protocol::<fnp_socketproxy::NetworkRegistryMarker>().ok(),
-            )),
-
+            forwarder_tx,
             starnix_occupant: Default::default(),
             fuchsia_occupant: Default::default(),
         })
@@ -575,42 +661,6 @@ impl Registry {
 }
 
 impl Registry {
-    async fn forward_request<Req: Into<NetworkRegistryRequest>>(
-        &self,
-        request: Req,
-    ) -> Result<(), anyhow::Error> {
-        let locked = self.delegated_networks_proxy.lock().await;
-        let Some(ref registry) = *locked else {
-            return Ok(());
-        };
-        let request = request.into();
-        info!("forwarding Starnix NetworkRegistry change to netcfg: {request:?}");
-        match request {
-            NetworkRegistryRequest::SetDefault { network_id } => {
-                let _: Result<(), fnp_socketproxy::NetworkRegistrySetDefaultError> = registry
-                    .set_default(&match network_id {
-                        Some(id) => fposix_socket::OptionalUint32::Value(id),
-                        None => fposix_socket::OptionalUint32::Unset(fposix_socket::Empty),
-                    })
-                    .await
-                    .context("fidl error forwarding set_default")?;
-            }
-            NetworkRegistryRequest::Add { network } => {
-                let _: Result<(), fnp_socketproxy::NetworkRegistryAddError> =
-                    registry.add(&network).await.context("fidl error forwarding add")?;
-            }
-            NetworkRegistryRequest::Update { network } => {
-                let _: Result<(), fnp_socketproxy::NetworkRegistryUpdateError> =
-                    registry.update(&network).await.context("fidl error forwarding update")?;
-            }
-            NetworkRegistryRequest::Remove { network_id } => {
-                let _: Result<(), fnp_socketproxy::NetworkRegistryRemoveError> =
-                    registry.remove(network_id).await.context("fidl error forwarding remove")?;
-            }
-        }
-        Ok(())
-    }
-
     pub(crate) async fn run_starnix(
         &self,
         stream: fnp_socketproxy::StarnixNetworksRequestStream,
@@ -630,12 +680,15 @@ impl Registry {
             .map(|result| result.context("failed request"))
             .try_for_each(|request| {
                 async {
+                    self.forwarder_tx.clone().feed((&request).into()).await.unwrap_or_else(
+                        |e| {
+                            if !e.is_disconnected() {
+                                // Log if the feed fails for reasons other than disconnection.
+                                error!("Unable to feed request forward: {e:?}")
+                            }
+                        },
+                    );
                     let mut network_registry = self.networks.starnix.lock().await;
-                    if let Err(e) = self.forward_request(&request).await {
-                        error!("Failed to forward request to delegated networks. Future updates \
-                                will be ignored, and netcfg will not have complete state. {e:?}");
-                        *self.delegated_networks_proxy.lock().await = None;
-                    }
                     let send: Box<dyn FnOnce() -> Result<(), _> + Send + Sync + 'static> =
                         handle_registry_request!(
                             StarnixNetworksRequest,
@@ -828,7 +881,7 @@ mod test {
         fuchsia_networks: Arc<Mutex<NetworkRegistry>>,
         marks: Arc<Mutex<crate::SocketMarks>>,
         dns_tx: mpsc::Sender<Vec<fnp_socketproxy::DnsServerList>>,
-        delegated_networks_proxy: Arc<Mutex<Option<fnp_socketproxy::NetworkRegistryProxy>>>,
+        forwarder_tx: mpsc::Sender<NetworkRegistryRequest>,
     ) -> Result<(), Error> {
         let mut fs = ServiceFs::new();
         let _ = fs
@@ -841,7 +894,7 @@ mod test {
             networks: NetworkRegistries { starnix: starnix_networks, fuchsia: fuchsia_networks },
             marks,
             dns_tx,
-            delegated_networks_proxy,
+            forwarder_tx,
             starnix_occupant: Default::default(),
             fuchsia_occupant: Default::default(),
         };
@@ -858,14 +911,19 @@ mod test {
         Ok(())
     }
 
-    async fn setup_test(
-        delegated_networks_client: Option<fnp_socketproxy::NetworkRegistryProxy>,
-    ) -> Result<(RealmInstance, Receiver<Vec<fnp_socketproxy::DnsServerList>>), Error> {
+    async fn setup_test() -> Result<
+        (
+            RealmInstance,
+            Receiver<Vec<fnp_socketproxy::DnsServerList>>,
+            Receiver<NetworkRegistryRequest>,
+        ),
+        Error,
+    > {
         let builder = RealmBuilder::new().await?;
         let starnix_networks = Arc::new(Mutex::new(Default::default()));
         let fuchsia_networks = Arc::new(Mutex::new(Default::default()));
         let (dns_tx, dns_rx) = mpsc::channel(1);
-        let delegated_networks_client = Arc::new(Mutex::new(delegated_networks_client));
+        let (forwarder_tx, forwarder_rx) = mpsc::channel(1);
         let marks = Arc::new(Mutex::new(crate::SocketMarks::default()));
         let registry = builder
             .add_local_child(
@@ -875,7 +933,6 @@ mod test {
                     let fuchsia_networks = fuchsia_networks.clone();
                     let marks = marks.clone();
                     let dns_tx = dns_tx.clone();
-                    let delegated_networks_client = delegated_networks_client.clone();
                     move |handles: LocalComponentHandles| {
                         Box::pin(run_registry(
                             handles,
@@ -883,7 +940,7 @@ mod test {
                             fuchsia_networks.clone(),
                             marks.clone(),
                             dns_tx.clone(),
-                            delegated_networks_client.clone(),
+                            forwarder_tx.clone(),
                         ))
                     }
                 },
@@ -911,7 +968,7 @@ mod test {
 
         let realm = builder.build().await?;
 
-        Ok((realm, dns_rx))
+        Ok((realm, dns_rx, forwarder_rx))
     }
 
     #[test_case(&[
@@ -976,7 +1033,7 @@ mod test {
     ]; "many updates")]
     #[fuchsia::test]
     async fn test_operations<N: ToNetwork + Clone>(operations: &[Op<N>]) -> Result<(), Error> {
-        let (realm, _) = setup_test(None).await?;
+        let (realm, _, _) = setup_test().await?;
         let starnix_networks = realm
             .root
             .connect_to_protocol_at_exposed_dir()
@@ -1037,7 +1094,7 @@ mod test {
         operations: &[Op<N>],
         dns_servers: Vec<fnp_socketproxy::DnsServerList>,
     ) -> Result<(), Error> {
-        let (realm, mut dns_rx) = setup_test(None).await?;
+        let (realm, mut dns_rx, _) = setup_test().await?;
         let starnix_networks = realm
             .root
             .connect_to_protocol_at_exposed_dir()
@@ -1107,7 +1164,7 @@ mod test {
         operations: &[(RegistryType, Op<N>)],
         dns_servers: Vec<fnp_socketproxy::DnsServerList>,
     ) -> Result<(), Error> {
-        let (realm, mut dns_rx) = setup_test(None).await?;
+        let (realm, mut dns_rx, _) = setup_test().await?;
         let starnix_networks = realm
             .root
             .connect_to_protocol_at_exposed_dir()
@@ -1169,9 +1226,7 @@ mod test {
     async fn test_forward_network_update<N: ToNetwork + Clone + std::fmt::Debug>(
         operations: &[Op<N>],
     ) -> Result<(), Error> {
-        let (delegated_networks_client, mut delegated_networks_server) =
-            fidl::endpoints::create_proxy_and_stream::<fnp_socketproxy::NetworkRegistryMarker>();
-        let (realm, _) = setup_test(Some(delegated_networks_client)).await?;
+        let (realm, _, mut forwarder_rx) = setup_test().await?;
         let starnix_networks = realm
             .root
             .connect_to_protocol_at_exposed_dir()
@@ -1186,27 +1241,11 @@ mod test {
                 Ok::<(), anyhow::Error>(())
             },
             async move {
-                let mut delegated_networks_updates = Vec::new();
-                while let Some(upd) = delegated_networks_server.next().await {
-                    let upd = upd.expect("fidl error");
-                    delegated_networks_updates.push(NetworkRegistryRequest::from(&upd));
-                    match upd {
-                        fnp_socketproxy::NetworkRegistryRequest::SetDefault {
-                            responder, ..
-                        } => responder.send(Ok(())),
-                        fnp_socketproxy::NetworkRegistryRequest::Add { responder, .. } => {
-                            responder.send(Ok(()))
-                        }
-                        fnp_socketproxy::NetworkRegistryRequest::Update { responder, .. } => {
-                            responder.send(Ok(()))
-                        }
-                        fnp_socketproxy::NetworkRegistryRequest::Remove { responder, .. } => {
-                            responder.send(Ok(()))
-                        }
-                    }
-                    .expect("couldn't respond");
+                let mut forwarded_requests = Vec::new();
+                while let Some(req) = forwarder_rx.next().await {
+                    forwarded_requests.push(req);
                 }
-                delegated_networks_updates
+                forwarded_requests
             },
         )
         .await;
