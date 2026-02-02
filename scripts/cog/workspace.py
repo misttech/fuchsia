@@ -20,6 +20,10 @@ class WorkspaceError(Exception):
     """Base exception for Cartfs errors."""
 
 
+class RepoSetupError(WorkspaceError):
+    """Raised when there is an error setting up the repository."""
+
+
 class NotInCogWorkspaceError(WorkspaceError):
     """Raised when the current directory is not within a Cog workspace."""
 
@@ -33,7 +37,10 @@ COG_METADATA_FILE_NAME: str = ".cog.json"
 LOCAL_JIRI_MANIFEST_CONTENT: str = """
 <manifest>
   <imports>
-    <localimport file="../integration/flower"/>
+    <localimport file="../integration/prebuilts"/>
+    <localimport file="../integration/cobalt"/>
+    <localimport file="manifests/prebuilts"/>
+    <localimport file="manifests/third_party/all"/>
   </imports>
 </manifest>
 """
@@ -389,18 +396,17 @@ class Workspace:
     def initialize_cartfs_directory(self) -> None:
         """Initializes the cartfs directory for this workspace."""
         if not self.cartfs_directory:
-            logger.log_warn("No cartfs directory found, skip initializing.")
-            return
+            raise RepoSetupError("No cartfs directory found.")
 
         self.cartfs_fuchsia_dir = self.cartfs_directory / "fuchsia"
-        if not self.is_jiri_bootstrapped():
-            self.bootstrap_jiri()
+        if not self._is_jiri_bootstrapped():
+            self._bootstrap_jiri()
 
-        integration_hash = self.create_integration_repository()
-        self.fetch_prebuilts(integration_hash)
-        self.create_symlinks()
+        integration_hash = self._create_integration_repository()
+        self._fetch_prebuilts(integration_hash)
+        self._create_symlinks()
 
-    def create_symlink(self, target: Path, link_name: Path) -> None:
+    def _create_symlink(self, target: Path, link_name: Path) -> None:
         """Creates a symlink from link_name to target.
 
         If a symlink already exists at link_name and points to target, this
@@ -421,6 +427,7 @@ class Workspace:
         if not link_name.parent.is_dir():
             link_name.parent.mkdir(parents=True, exist_ok=True)
 
+        logger.log_info(f"Creating symlink from {link_name} to {target}")
         link_name.symlink_to(target)
 
     def _run_bootstrap_jiri_script(self) -> None:
@@ -452,7 +459,7 @@ class Workspace:
         (self.cartfs_fuchsia_dir / ".jiri_root" / "bin").mkdir(
             exist_ok=True, parents=True
         )
-        self.create_symlink(
+        self._create_symlink(
             self.cartfs_mount_point / ".jiri_root" / "bin" / "jiri",
             self.cartfs_fuchsia_dir / ".jiri_root" / "bin" / "jiri",
         )
@@ -467,24 +474,21 @@ class Workspace:
             check=True,
         )
 
-    def is_jiri_bootstrapped(self) -> bool:
+    def _is_jiri_bootstrapped(self) -> bool:
         """Checks if jiri is bootstrapped."""
         return (
             self.cartfs_mount_point / ".jiri_root" / "bin" / "jiri"
         ).exists()
 
-    def bootstrap_jiri(self) -> None:
+    def _bootstrap_jiri(self) -> None:
         """Bootstraps jiri if it is not already bootstrapped."""
         logger.log_info("Bootstrapping jiri.")
         self._run_bootstrap_jiri_script()
 
-    def fetch_prebuilts(self, current_integration_hash: str) -> None:
+    def _fetch_prebuilts(self, current_integration_hash: str) -> None:
         """Fetches prebuilts for the given repo."""
         if not self.cartfs_directory:
-            logger.log_warn(
-                "No cartfs directory found, skip fetching prebuilts."
-            )
-            return
+            raise RepoSetupError("No cartfs directory found.")
 
         integration_hash_file = (
             self.cartfs_directory / ".integration_commit_hash"
@@ -496,9 +500,6 @@ class Workspace:
                     f"Integration repo not changed, skip fetching prebuilts."
                 )
                 return
-
-        self._write_jiri_manifest()
-        self._write_jiri_config()
 
         logger.log_info(f"Fetching prebuilts for {self.repo_name}.")
         cartfs_fuchsia_dir = self.cartfs_fuchsia_dir
@@ -515,23 +516,27 @@ class Workspace:
                 stdout=subprocess.DEVNULL,
             )
 
-        subprocess.run(
-            [".jiri_root/bin/jiri", "update"],
+        # Run jiri update and fetch-packages in parallel to speed up the
+        # process.
+        update_process = subprocess.Popen(
+            [".jiri_root/bin/jiri", "update", "--fetch-packages=false"],
             cwd=cartfs_fuchsia_dir,
-            check=True,
         )
+        fetch_process = subprocess.Popen(
+            [".jiri_root/bin/jiri", "fetch-packages"],
+            cwd=cartfs_fuchsia_dir,
+        )
+        update_process.wait()
+        fetch_process.wait()
 
         # Record integration repo commit hash in the fuchsia repo.
         integration_hash_file.write_text(current_integration_hash)
 
-    def create_integration_repository(self) -> str:
+    def _create_integration_repository(self) -> str:
         """Creates the integration repository."""
         logger.log_info("Setup the integration repository.")
         if not self.cartfs_directory:
-            logger.log_warn(
-                "No cartfs directory found, skip creating integration repository."
-            )
-            return ""
+            raise RepoSetupError("No cartfs directory found.")
 
         integration_directory = self.cartfs_directory / "integration"
 
@@ -540,20 +545,6 @@ class Workspace:
             if not (integration_directory / ".git").exists():
                 shutil.rmtree(integration_directory, ignore_errors=True)
             else:
-                # Force set remote to fuchsia.googlesource.com/integration
-                subprocess.run(
-                    [
-                        "git",
-                        "remote",
-                        "set-url",
-                        "origin",
-                        "https://fuchsia.googlesource.com/integration",
-                    ],
-                    cwd=integration_directory,
-                    check=True,
-                    stdout=subprocess.DEVNULL,
-                )
-
                 # Pull latest changes from the remote
                 subprocess.run(
                     [
@@ -600,12 +591,16 @@ class Workspace:
             .strip()
             .split("\n")
         )
+        fuchsia_repo_commit_hash = None
         for state in fuchsia_repo_states:
             if "base_commit_hash" in state:
                 fuchsia_repo_commit_hash = (
                     state.split(":")[1].strip().replace('"', "")
                 )
                 break
+        if not fuchsia_repo_commit_hash:
+            logger.log_error("Failed to get fuchsia repo commit hash.")
+            raise RepoSetupError("Failed to get fuchsia repo commit hash.")
 
         logger.log_info(f"fuchsia_repo_commit_hash: {fuchsia_repo_commit_hash}")
 
@@ -654,9 +649,87 @@ class Workspace:
                 stdout=subprocess.DEVNULL,
                 stderr=subprocess.DEVNULL,
             )
+
+        # clone fuchsia repository and reset it to the commit hash
+        logger.log_info("Setup the fuchsia repository.")
+        if not self.cartfs_fuchsia_dir.exists():
+            subprocess.run(
+                [
+                    "git",
+                    "clone",
+                    "https://fuchsia.googlesource.com/fuchsia",
+                    f"--revision={fuchsia_repo_commit_hash}",
+                    "--depth=100",
+                ],
+                cwd=self.cartfs_directory,
+                check=True,
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+            )
+            subprocess.run(
+                [
+                    "git",
+                    "fetch",
+                    "origin",
+                    "main:refs/remotes/origin/main",
+                    "--depth=100",
+                ],
+                cwd=self.cartfs_fuchsia_dir,
+                check=True,
+            )
+        else:
+            subprocess.run(
+                ["git", "reset", "--hard"],
+                cwd=self.cartfs_fuchsia_dir,
+                check=True,
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+            )
+            subprocess.run(
+                [
+                    "git",
+                    "fetch",
+                    "origin",
+                    "main",
+                    "--depth=100",
+                ],
+                cwd=self.cartfs_fuchsia_dir,
+                check=True,
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+            )
+            logger.log_info(
+                f"Resetting fuchsia repository to {fuchsia_repo_commit_hash}."
+            )
+            subprocess.run(
+                [
+                    "git",
+                    "reset",
+                    "--hard",
+                    fuchsia_repo_commit_hash,
+                ],
+                cwd=self.cartfs_fuchsia_dir,
+                check=True,
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+            )
+
+        # Couple of places in the build expect to find JIRI_HEAD for fuchsia
+        # repository. In a normal checkout by jiri, the JIRI_HEAD is created
+        # automatically.
+        # https://fuchsia.googlesource.com/jiri/+/refs/heads/main/project/project.go#689
+        # For our cartfs checkout, we need to create it manually.
+        shutil.copyfile(
+            self.cartfs_fuchsia_dir / ".git" / "HEAD",
+            self.cartfs_fuchsia_dir / ".git" / "JIRI_HEAD",
+        )
+
+        self._write_jiri_manifest()
+        self._write_jiri_config()
+
         return integration_repo_commit_hash
 
-    def create_symlinks(self) -> None:
+    def _create_symlinks(self) -> None:
         """Creates symlinks for the prebuilts."""
         # Link the paths in the repo to cartfs
         (self.cartfs_fuchsia_dir / ".fx" / "config").mkdir(
@@ -665,6 +738,7 @@ class Workspace:
         for path in [
             "prebuilt",
             "build/cipd.gni",
+            ".jiri_manifest",
             ".jiri_root/bin/ffx",
             ".jiri_root/bin/fuchsia-vendored-python",
             ".jiri_root/bin/hermetic-env",
@@ -676,28 +750,56 @@ class Workspace:
         ]:
             repo_path = self.workspace_dir / self.repo_name / path
             cartfs_path = self.cartfs_fuchsia_dir / path
-            logger.log_info(
-                f"Creating symlink from {repo_path} to {cartfs_path}"
-            )
-            self.create_symlink(
+            self._create_symlink(
                 cartfs_path,
                 repo_path,
             )
 
         # Symlink in the fx script.
-        self.create_symlink(
+        self._create_symlink(
             self.workspace_dir / self.repo_name / "scripts/cog/resources/fx",
             self.workspace_dir / self.repo_name / ".jiri_root/bin/fx",
         )
 
         # Symlink in CartFS specific GN arg overrides.
-        self.create_symlink(
+        self._create_symlink(
             self.cartfs_fuchsia_dir / "scripts/cog/resources/args.gn",
             self.cartfs_fuchsia_dir / "local/args.gn",
         )
 
+        if not self.cartfs_directory:
+            raise RepoSetupError("No cartfs directory found.")
+
+        # Symlink in CartFS specific integration directory.
+        self._create_symlink(
+            self.cartfs_directory / "integration",
+            self.cartfs_fuchsia_dir / "integration",
+        )
+
+        # Manually execute jiri hooks. The hooks are defined in
+        # https://fuchsia.googlesource.com/fuchsia/+/refs/heads/main/manifests/platform#14
+        # and are automatically executed by jiri during `jiri update`. Since we
+        # are not using `jiri update`, we need to execute them manually.
+        hooks = [
+            "scripts/devshell/lib/add_symlink_to_bin.sh",
+            "sdk/ctf/build/internal/create_ctf_releases_gni.sh",
+            "build/info/create_jiri_hook_files.sh",
+            "tools/build/scripts/generate_prebuilt_versions.sh",
+            "tools/build/scripts/extract_protobuf_py3_wheel.sh",
+        ]
+        for hook in hooks:
+            logger.log_info(f"Running hook: {hook}")
+            subprocess.run(
+                [
+                    hook,
+                ],
+                cwd=self.cartfs_fuchsia_dir,
+                check=True,
+                stdout=subprocess.DEVNULL,
+            )
+
         # Invoke git status in the fuchsia directory in the background. This
-        # will make the future fx format-code command faster.
+        # will make the future `fx format-code` command faster.
         subprocess.Popen(
             [
                 "git",
@@ -712,21 +814,16 @@ class Workspace:
     def _patch_file(self, filepath: str, content: str) -> None:
         """Patches the file in cartFS."""
         if not self.cartfs_directory:
-            logger.log_warn("No cartfs directory found, skip patching file.")
-            return
+            raise RepoSetupError("No cartfs directory found.")
 
         logger.log_info(f"Patching the {filepath} file.")
         full_filepath = self.cartfs_directory / filepath
-        if not full_filepath.exists():
-            logger.log_info(
-                f"File {full_filepath} does not exist. Creating it now."
-            )
-            full_filepath.parent.mkdir(parents=True, exist_ok=True)
-            try:
-                full_filepath.write_text(content)
-            except Exception as e:
-                logger.log_error(
-                    f"An error occurred while writing the file: {e}"
-                )
-        else:
+        if full_filepath.exists():
             logger.log_info(f"File {full_filepath} already exists.")
+            return
+
+        full_filepath.parent.mkdir(parents=True, exist_ok=True)
+        try:
+            full_filepath.write_text(content)
+        except Exception as e:
+            logger.log_error(f"An error occurred while writing the file: {e}")

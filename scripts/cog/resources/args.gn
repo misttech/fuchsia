@@ -8,3 +8,5 @@
 
 # Disable xattr usage for RBE since it's not supported in cog workspaces.
 disable_xattr_for_rbe = true
+
+rbe_mode = "cloudtop"
