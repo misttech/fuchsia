@@ -85,7 +85,7 @@ impl Namespace {
         // Collect the list of mountpoints that leads to this node's mount
         let mut mountpoints = vec![];
         let mut mount = node.mount;
-        while let Some(mountpoint) = mount.as_ref().and_then(|m| m.mountpoint()) {
+        while let Some(mountpoint) = mount.as_ref().and_then(|m| m.read().mountpoint()) {
             mountpoints.push(mountpoint.entry);
             mount = mountpoint.mount;
         }
@@ -310,18 +310,6 @@ impl Mount {
         NamespaceNode::new(Arc::clone(self), Arc::clone(&self.root))
     }
 
-    /// Returns true if there is a submount on top of `dir_entry`.
-    pub fn has_submount(&self, dir_entry: &DirEntryHandle) -> bool {
-        self.state.read().submounts.contains(ArcKey::ref_cast(dir_entry))
-    }
-
-    /// The NamespaceNode on which this Mount is mounted.
-    fn mountpoint(&self) -> Option<NamespaceNode> {
-        let state = self.state.read();
-        let (mount, entry) = state.mountpoint.as_ref()?;
-        Some(NamespaceNode::new(mount.upgrade()?, entry.clone()))
-    }
-
     /// Create the specified mount as a child. Also propagate it to the mount's peer group.
     fn create_submount(
         self: &MountHandle,
@@ -489,7 +477,7 @@ impl Mount {
                 return error!(EBUSY);
             }
         }
-        let mountpoint = self.mountpoint().ok_or_else(|| errno!(EINVAL))?;
+        let mountpoint = self.state.read().mountpoint().ok_or_else(|| errno!(EINVAL))?;
         let parent_mount = mountpoint.mount.as_ref().expect("a mountpoint must be part of a mount");
         parent_mount.remove_submount(mountpoint.mount_hash_key(), propagate)
     }
@@ -508,6 +496,17 @@ impl Mount {
 }
 
 impl MountState {
+    /// Returns true if there is a submount on top of `dir_entry`.
+    pub fn has_submount(&self, dir_entry: &DirEntryHandle) -> bool {
+        self.submounts.contains(ArcKey::ref_cast(dir_entry))
+    }
+
+    /// The NamespaceNode on which this Mount is mounted.
+    fn mountpoint(&self) -> Option<NamespaceNode> {
+        let (mount, entry) = self.mountpoint.as_ref()?;
+        Some(NamespaceNode::new(mount.upgrade()?, entry.clone()))
+    }
+
     /// Return this mount's current peer group.
     fn peer_group(&self) -> Option<&Arc<PeerGroup>> {
         let (group, _) = self.peer_group_.as_ref()?;
@@ -742,7 +741,7 @@ impl DynamicFileSource for ProcMountsFileSource {
         let root = task.fs().root();
         let ns = task.fs().namespace();
         for_each_mount(&ns.root_mount, &mut |mount| {
-            let mountpoint = mount.mountpoint().unwrap_or_else(|| mount.root());
+            let mountpoint = mount.read().mountpoint().unwrap_or_else(|| mount.root());
             if !mountpoint.is_descendant_of(&root) {
                 return Ok(());
             }
@@ -858,7 +857,7 @@ impl DynamicFileSource for ProcMountinfoFile {
         let root = task.fs().root();
         let ns = task.fs().namespace();
         for_each_mount(&ns.root_mount, &mut |mount| {
-            let mountpoint = mount.mountpoint().unwrap_or_else(|| mount.root());
+            let mountpoint = mount.read().mountpoint().unwrap_or_else(|| mount.root());
             if !mountpoint.is_descendant_of(&root) {
                 return Ok(());
             }
@@ -1465,7 +1464,7 @@ impl NamespaceNode {
     /// If this node is mounted in another node, this function returns the node
     /// at which this node is mounted. Otherwise, returns None.
     fn mountpoint(&self) -> Option<NamespaceNode> {
-        self.mount_if_root().ok()?.mountpoint()
+        self.mount_if_root().ok()?.read().mountpoint()
     }
 
     /// The path from the task's root to this node.
