@@ -64,11 +64,6 @@ uploading. Hence we have adapted it to stop when idle once configured as such.
 
 ## Known limitations
 
-- **Inspect**: if your component publishes diagnostics information via inspect,
-  those information will be discarded when your component stops.
-  [https://fxbug.dev/339076913](https://fxbug.dev/339076913) tracks preserving
-  inspect data even after a component has stopped.
-
 - **Hanging-gets**: if your component is the server or client of a hanging-get
   FIDL method, it will be challenging to preserve that connection because the
   FIDL bindings don't have a way to save and restore information about
@@ -297,6 +292,39 @@ framework via the `fuchsia.process.lifecycle/Lifecycle.OnEscrow` FIDL event:
 
   Refer to [`http-client`][http-client] for how all these are put together.
 
+### Inspect data
+
+When a component stops, its Inspect VMO is no longer served. However, it's
+possible to *escrow* a frozen, copy-on-write version of the Inspect data with
+the framework. This lets diagnostics tools still read the last state of
+the component's Inspect tree even after it has stopped.
+
+The `inspect_runtime::publish` function returns a
+[`PublishedInspectController`][inspect-controller-rustdoc]. Before your
+component stops, you can call the `escrow_frozen` method on this controller.
+This provides the framework with a frozen copy of your component's Inspect
+VMO.
+
+Here is an example of how to use it:
+
+```rust
+// When initializing your component...
+let inspector = finspect::Inspector::default();
+let inspect_controller =
+    inspect_runtime::publish(&inspector, inspect_runtime::PublishOptions::default());
+
+// ...
+
+// When your component is about to stop...
+if let Some(controller) = inspect_controller {
+    let frozen_inspect_token = controller
+        .escrow_frozen(inspect_runtime::EscrowOptions::default())
+        .await;
+    // The token can be stored in the escrowed dictionary if needed,
+    // though often just escrowing is sufficient.
+}
+```
+
 ### Stateful protocols, and other important state
 
 The `fuchsia.process.lifecycle/Lifecycle.OnEscrow` event takes another argument,
@@ -423,3 +451,4 @@ by improper stopping of components.
 [sandbox-fidl]: https://cs.opensource.google/fuchsia/fuchsia/+/main:sdk/fidl/fuchsia.component.sandbox/sandbox.fidl
 [http-client-test]: https://cs.opensource.google/fuchsia/fuchsia/+/565cbdce0f486511230a95fc8cc30106b25172fb:src/connectivity/policy/http-client/integration/src/lib.rs;l=565
 [dashboard]: http://go/fuchsia-escrow-metrics
+[inspect-controller-rustdoc]: https://fuchsia-docs.firebaseapp.com/rust/inspect_runtime/struct.PublishedInspectController.html
