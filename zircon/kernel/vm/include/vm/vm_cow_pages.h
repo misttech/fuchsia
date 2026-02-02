@@ -1838,7 +1838,6 @@ class VmCowPages::LookupCursor {
   LookupCursor(LookupCursor& other) = delete;
   LookupCursor(LookupCursor&& other) = default;
 
- private:
   LookupCursor(VmCowPages* target, VmCowRange range)
       : target_(target),
         offset_(range.offset),
@@ -1847,6 +1846,7 @@ class VmCowPages::LookupCursor {
                                               PageSourceType::UserPager),
         zero_fork_(!target_directly_backed_by_user_pager_ && target->can_decommit_zero_pages()) {}
 
+ private:
   // Note: Some of these methods are marked __ALWAYS_INLINE as doing so has a dramatic performance
   // improvement, and is worth the increase in code size. Due to gcc limitations to mark them
   // __ALWAYS_INLINE they need to be declared here in the header.

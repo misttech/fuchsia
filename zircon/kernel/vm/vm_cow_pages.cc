@@ -3713,7 +3713,9 @@ zx::result<VmCowPages::LookupCursor> VmCowPages::GetLookupCursorLocked(VmCowRang
     }
   }
 
-  return zx::ok(LookupCursor(this, range));
+  // Be careful to explicitly construct the LookupCursor in place to avoid redundant move
+  // constructor and deconstructors getting stamped out.
+  return zx::result<VmCowPages::LookupCursor>{ktl::in_place, zx::success{}, this, range};
 }
 
 zx_status_t VmCowPages::CommitRangeLocked(VmCowRange range, DeferredOps& deferred,
