@@ -8,7 +8,7 @@ use std::str::FromStr;
 use {flex_fuchsia_component_decl as fdecl, flex_fuchsia_sys2 as fsys};
 
 use crate::cli::show::config_table_print;
-use crate::config::{resolve_config_decls, UseConfigurationOrConfigField};
+use crate::config::{UseConfigurationOrConfigField, resolve_config_decls};
 use crate::query::get_single_instance_from_query;
 
 use super::reload_cmd;
@@ -29,7 +29,7 @@ pub async fn config_set_cmd<W: std::io::Write>(
         .map(|kv| parse_config_key_value(&kv, &decls))
         .collect::<Result<Vec<fdecl::ConfigOverride>>>()?;
     config_override
-        .set_structured_config(&instance.moniker.to_string(), &fields)
+        .set_structured_config(instance.moniker.as_ref(), &fields)
         .await?
         .map_err(|e| anyhow::anyhow!("{:?}", e))?;
     if reload {

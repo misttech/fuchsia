@@ -207,11 +207,11 @@ fn interpolate_template(
     match (moniker_position, separator_position, instance_id_position, &component_info.instance_id)
     {
         (Some(i), Some(s), _, _) if i < s => {
-            Ok(Some(template.replace(MONIKER_INTERPOLATION, &component_info.moniker.to_string())))
+            Ok(Some(template.replace(MONIKER_INTERPOLATION, component_info.moniker.as_ref())))
         }
         (Some(_), Some(_), _, _) => Ok(Some(template.replace(
             MONIKER_INTERPOLATION,
-            &selectors::sanitize_string_for_selectors(&component_info.moniker.to_string()),
+            &selectors::sanitize_string_for_selectors(component_info.moniker.as_ref()),
         ))),
         (_, _, Some(_), Some(id)) => {
             Ok(Some(template.replace(INSTANCE_ID_INTERPOLATION, &id.to_string())))
@@ -256,7 +256,7 @@ pub fn moniker_serialize<S>(moniker: &ExtendedMoniker, serializer: S) -> Result<
 where
     S: Serializer,
 {
-    serializer.serialize_str(&moniker.to_string())
+    serializer.serialize_str(moniker.as_ref())
 }
 
 pub fn instance_id_serialize<S>(

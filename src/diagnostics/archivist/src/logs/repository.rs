@@ -369,7 +369,7 @@ impl LogsRepositoryState {
     ) -> Arc<LogsArtifactsContainer> {
         let initial_interest = self.get_initial_interest(identity.as_ref());
         let stats = LogStreamStats::default()
-            .with_inspect(&self.inspect_node, identity.moniker.to_string())
+            .with_inspect(&self.inspect_node, identity.moniker.as_ref())
             .expect("failed to attach component log stats");
         stats.set_url(&identity.url);
         let stats = Arc::new(stats);

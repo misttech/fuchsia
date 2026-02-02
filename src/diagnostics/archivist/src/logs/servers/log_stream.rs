@@ -9,7 +9,6 @@ use fidl::endpoints::{ControlHandle, DiscoverableProtocolMarker};
 use fidl_fuchsia_diagnostics::StreamMode;
 use futures::{AsyncWriteExt, Stream, StreamExt};
 use log::warn;
-use std::borrow::Cow;
 use std::pin::pin;
 use std::sync::Arc;
 use {fidl_fuchsia_diagnostics as fdiagnostics, fuchsia_async as fasync};
@@ -80,14 +79,12 @@ impl LogStreamServer {
         opts: ExtendRecordOpts,
     ) {
         let mut logs = pin!(logs);
+        let mut buffer = Vec::new();
         while let Some(message) = logs.next().await {
-            let response = extend_fxt_record(
-                message.data(),
-                message.component_identity(),
-                message.dropped(),
-                &opts,
-            );
-            let result = socket.write_all(&response).await;
+            buffer.clear();
+            buffer.extend_from_slice(message.data());
+            extend_fxt_record(message.component_identity(), message.dropped(), &opts, &mut buffer);
+            let result = socket.write_all(&buffer).await;
             if result.is_err() {
                 // Assume an error means the peer closed for now.
                 break;
@@ -127,63 +124,42 @@ impl From<fdiagnostics::LogStreamOptions> for ExtendRecordOpts {
     }
 }
 
-/// Calculates the smallest multiple of 8 that is greater than or equal to `len`.
-fn pad_to_8(len: usize) -> usize {
-    (len + 7) & !7
+/// Returns zero padding for `len`.
+fn padding(len: usize) -> &'static [u8] {
+    &[0; 8][(len + 7) % 8 + 1..]
 }
 
-pub fn extend_fxt_record<'a>(
-    fxt_record: &'a [u8],
+pub fn extend_fxt_record(
     identity: &ComponentIdentity,
     rolled_out: u64,
     opts: &ExtendRecordOpts,
-) -> Cow<'a, [u8]> {
+    buffer: &mut Vec<u8>,
+) {
     if !opts.should_extend() {
-        return Cow::Borrowed(fxt_record);
+        return;
     }
 
-    let moniker_str = if opts.moniker { Some(identity.moniker.to_string()) } else { None };
-    let moniker = moniker_str.as_deref().unwrap_or("");
+    let moniker = if opts.moniker { identity.moniker.as_ref() } else { "" };
     let component_url = if opts.component_url { identity.url.as_ref() } else { "" };
     let rolled_out_value = if opts.rolled_out { rolled_out } else { 0 };
 
     let moniker_len = moniker.len() as u32;
     let component_url_len = component_url.len() as u32;
 
-    let moniker_padded_len = pad_to_8(moniker_len as usize);
-    let component_url_padded_len = pad_to_8(component_url_len as usize);
+    buffer.extend_from_slice(&moniker_len.to_le_bytes());
+    buffer.extend_from_slice(&component_url_len.to_le_bytes());
+    buffer.extend_from_slice(&rolled_out_value.to_le_bytes());
 
-    let mut extended_buffer =
-        Vec::with_capacity(fxt_record.len() + 16 + moniker_padded_len + component_url_padded_len);
-    extended_buffer.extend_from_slice(fxt_record);
+    buffer.extend_from_slice(moniker.as_bytes());
+    buffer.extend_from_slice(padding(moniker.len()));
 
-    extended_buffer.extend_from_slice(&moniker_len.to_le_bytes());
-    extended_buffer.extend_from_slice(&component_url_len.to_le_bytes());
-    extended_buffer.extend_from_slice(&rolled_out_value.to_le_bytes());
-
-    extended_buffer.extend_from_slice(moniker.as_bytes());
-
-    // These resize operations are needed because the bytes in component_url and
-    // moniker do not include padding, so we need to pad the end with zeroes.
-    extended_buffer.resize(extended_buffer.len() + moniker_padded_len - moniker_len as usize, 0);
-
-    extended_buffer.extend_from_slice(component_url.as_bytes());
-    extended_buffer
-        .resize(extended_buffer.len() + component_url_padded_len - component_url_len as usize, 0);
-
-    Cow::Owned(extended_buffer)
+    buffer.extend_from_slice(component_url.as_bytes());
+    buffer.extend_from_slice(padding(component_url.len()));
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use diagnostics_log_encoding::Argument;
-    use diagnostics_log_encoding::encode::{
-        Encoder, EncoderOpts, MutableBuffer, TestRecord, WriteEventParams,
-    };
-    use diagnostics_log_encoding::parse::parse_record;
-    use diagnostics_log_types::Severity;
-    use std::io::Cursor;
     use test_case::test_case;
 
     #[test_case(ExtendRecordOpts::default(), "", "", 0 ; "no_additional_metadata")]
@@ -218,43 +194,18 @@ mod tests {
         expected_url: &str,
         expected_rolled_out: u64,
     ) {
-        let mut encoder = Encoder::new(Cursor::new([0u8; 4096]), EncoderOpts::default());
-        encoder
-            .write_event(WriteEventParams::<_, &str, _> {
-                event: TestRecord {
-                    severity: Severity::Warn as u8,
-                    timestamp: zx::BootInstant::from_nanos(1234567890),
-                    file: Some("foo.rs"),
-                    line: Some(123),
-                    record_arguments: vec![Argument::tag("hello"), Argument::message("testing")],
-                },
-                tags: &[],
-                metatags: std::iter::empty(),
-                pid: zx::Koid::from_raw(1),
-                tid: zx::Koid::from_raw(2),
-                dropped: 10,
-            })
-            .expect("wrote event");
-
-        let length = encoder.inner().cursor();
-        let original_record_bytes = &encoder.inner().get_ref()[..length];
-        let (expected_record, _) = parse_record(original_record_bytes).unwrap();
-
-        let extended_record_bytes =
-            extend_fxt_record(original_record_bytes, &ComponentIdentity::unknown(), 42, &opts);
+        let mut buffer = Vec::new();
+        extend_fxt_record(&ComponentIdentity::unknown(), 42, &opts, &mut buffer);
 
         if !opts.should_extend() {
-            assert_eq!(extended_record_bytes, original_record_bytes);
+            assert!(buffer.is_empty());
             return;
         }
 
-        let (record, rest) = parse_record(&extended_record_bytes).unwrap();
-        assert_eq!(record, expected_record);
+        let moniker_len = u32::from_le_bytes(buffer[0..4].try_into().unwrap()) as usize;
+        let component_url_len = u32::from_le_bytes(buffer[4..8].try_into().unwrap()) as usize;
 
-        let moniker_len = u32::from_le_bytes(rest[0..4].try_into().unwrap()) as usize;
-        let component_url_len = u32::from_le_bytes(rest[4..8].try_into().unwrap()) as usize;
-
-        let rolled_out = u64::from_le_bytes(rest[8..16].try_into().unwrap());
+        let rolled_out = u64::from_le_bytes(buffer[8..16].try_into().unwrap());
         if opts.rolled_out {
             assert_eq!(rolled_out, expected_rolled_out);
         } else {
@@ -262,16 +213,16 @@ mod tests {
         }
 
         let mut offset = 16;
-        let moniker = std::str::from_utf8(&rest[offset..offset + moniker_len]).unwrap();
+        let moniker = std::str::from_utf8(&buffer[offset..offset + moniker_len]).unwrap();
         assert_eq!(moniker, expected_moniker);
         let moniker_padded_len = (moniker_len + 7) & !7;
         offset += moniker_padded_len;
 
-        let url = std::str::from_utf8(&rest[offset..offset + component_url_len]).unwrap();
+        let url = std::str::from_utf8(&buffer[offset..offset + component_url_len]).unwrap();
         assert_eq!(url, expected_url);
         let component_url_padded_len = (component_url_len + 7) & !7;
         offset += component_url_padded_len;
 
-        assert_eq!(offset, rest.len());
+        assert_eq!(offset, buffer.len());
     }
 }

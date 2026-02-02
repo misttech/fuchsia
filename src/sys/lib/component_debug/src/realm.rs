@@ -409,7 +409,7 @@ pub async fn resolve_declaration(
     url: &str,
 ) -> Result<ComponentDecl, GetDeclarationError> {
     let iterator = realm_query
-        .resolve_declaration(&parent.to_string(), child_location, url)
+        .resolve_declaration(parent.as_ref(), child_location, url)
         .await?
         .map_err(|e| match e {
             fsys::GetDeclarationError::InstanceNotFound => {

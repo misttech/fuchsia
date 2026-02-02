@@ -689,7 +689,7 @@ struct Containers {
     slab: Slab<ContainerInfo>,
 }
 
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
 struct ContainerId(u32);
 
 impl Containers {

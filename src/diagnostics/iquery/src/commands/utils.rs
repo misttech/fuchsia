@@ -110,7 +110,7 @@ pub async fn process_fuzzy_inputs<P: DiagnosticsProvider>(
             Ok(instance) => {
                 let selector_string = format!(
                     "{}:root",
-                    selectors::sanitize_moniker_for_selectors(instance.moniker.to_string()),
+                    selectors::sanitize_moniker_for_selectors(instance.moniker.as_ref()),
                 );
                 results.push(
                     selectors::parse_verbose(&selector_string)
@@ -138,7 +138,7 @@ pub async fn process_component_query_with_partial_selectors<P: DiagnosticsProvid
     if tree_selectors.peek().is_none() {
         let selector_string = format!(
             "{}:root",
-            selectors::sanitize_moniker_for_selectors(instance.moniker.to_string())
+            selectors::sanitize_moniker_for_selectors(instance.moniker.as_ref())
         );
         results
             .push(selectors::parse_verbose(&selector_string).map_err(Error::PartialSelectorHint)?);
@@ -146,7 +146,7 @@ pub async fn process_component_query_with_partial_selectors<P: DiagnosticsProvid
         for s in tree_selectors {
             let selector_string = format!(
                 "{}:{}",
-                selectors::sanitize_moniker_for_selectors(instance.moniker.to_string()),
+                selectors::sanitize_moniker_for_selectors(instance.moniker.as_ref()),
                 s
             );
             results.push(

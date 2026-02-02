@@ -186,7 +186,7 @@ pub async fn parse_provided_realm(
 
     let (exposed_dir, server_end) = fidl::endpoints::create_proxy();
     realm_query
-        .open_directory(&moniker.to_string(), fsys::OpenDirType::ExposedDir, server_end)
+        .open_directory(moniker.as_ref(), fsys::OpenDirType::ExposedDir, server_end)
         .await?
         .map_err(RealmError::ConnectExposedDir)?;
 

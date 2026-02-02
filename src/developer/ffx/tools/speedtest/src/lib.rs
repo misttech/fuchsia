@@ -187,7 +187,7 @@ async fn start_speedtest_component(
 
     rcs_fdomain::connect_with_timeout::<fspeedtest::SpeedtestMarker>(
         Duration::from_secs(10),
-        &moniker.to_string(),
+        moniker.as_ref(),
         &remote_control,
     )
     .await
@@ -221,7 +221,7 @@ async fn start_speedtest_component_overnet(
 
     rcs_overnet::connect_with_timeout::<fspeedtest_overnet::SpeedtestMarker>(
         Duration::from_secs(10),
-        &moniker.to_string(),
+        moniker.as_ref(),
         &remote_control,
     )
     .await

@@ -8,20 +8,19 @@ use crate::logs::shared_buffer::FxtMessage;
 use fidl_fuchsia_diagnostics::{
     DataType, Format, FormattedContent, MAXIMUM_ENTRIES_PER_BATCH, StreamMode,
 };
-use fuchsia_sync::Mutex;
 
-use futures::prelude::*;
-use log::{error, warn};
+use futures::{Stream, StreamExt};
+use log::warn;
+use pin_project::pin_project;
 use serde::Serialize;
-use std::io::{BufWriter, Result as IoResult, Write};
 use std::pin::Pin;
 use std::sync::Arc;
-use std::task::{Context, Poll};
+use std::task::{Context, Poll, ready};
 
 pub type FormattedStream =
     Pin<Box<dyn Stream<Item = Vec<Result<FormattedContent, AccessorError>>> + Send>>;
 
-#[pin_project::pin_project]
+#[pin_project]
 pub struct FormattedContentBatcher<C> {
     #[pin]
     items: C,
@@ -91,101 +90,11 @@ where
     }
 }
 
-#[derive(Clone)]
-struct VmoWriter {
-    inner: Arc<Mutex<InnerVmoWriter>>,
-}
-
-enum InnerVmoWriter {
-    Active { vmo: zx::Vmo, capacity: u64, tail: u64 },
-    Done,
-}
-
-impl VmoWriter {
-    // TODO(https://fxbug.dev/42125551): take the name of the VMO as well.
-    fn new(start_size: u64) -> Self {
-        let vmo = zx::Vmo::create_with_opts(zx::VmoOptions::RESIZABLE, start_size)
-            .expect("can always create resizable vmo's");
-        let capacity = vmo.get_size().expect("can always read vmo size");
-        Self { inner: Arc::new(Mutex::new(InnerVmoWriter::Active { vmo, capacity, tail: 0 })) }
-    }
-
-    fn tail(&self) -> u64 {
-        let guard = self.inner.lock();
-        match &*guard {
-            InnerVmoWriter::Done => 0,
-            InnerVmoWriter::Active { tail, .. } => *tail,
-        }
-    }
-
-    fn capacity(&self) -> u64 {
-        let guard = self.inner.lock();
-        match &*guard {
-            InnerVmoWriter::Done => 0,
-            InnerVmoWriter::Active { capacity, .. } => *capacity,
-        }
-    }
-
-    fn finalize(self) -> Option<(zx::Vmo, u64)> {
-        let mut inner = self.inner.lock();
-        let mut swapped = InnerVmoWriter::Done;
-        std::mem::swap(&mut *inner, &mut swapped);
-        match swapped {
-            InnerVmoWriter::Done => None,
-            InnerVmoWriter::Active { vmo, tail, .. } => Some((vmo, tail)),
-        }
-    }
-
-    fn reset(&mut self, new_tail: u64, new_capacity: u64) {
-        let mut inner = self.inner.lock();
-        match &mut *inner {
-            InnerVmoWriter::Done => {}
-            InnerVmoWriter::Active { vmo, capacity, tail } => {
-                vmo.set_size(new_capacity).expect("can always resize a plain vmo");
-                *capacity = new_capacity;
-                *tail = new_tail;
-            }
-        }
-    }
-}
-
-impl Write for VmoWriter {
-    fn write(&mut self, buf: &[u8]) -> IoResult<usize> {
-        match &mut *self.inner.lock() {
-            InnerVmoWriter::Done => Ok(0),
-            InnerVmoWriter::Active { vmo, tail, capacity } => {
-                let new_tail = *tail + buf.len() as u64;
-                if new_tail > *capacity {
-                    vmo.set_size(new_tail).expect("can always resize a plain vmo");
-                    *capacity = new_tail;
-                }
-                vmo.write(buf, *tail)?;
-                *tail = new_tail;
-                Ok(buf.len())
-            }
-        }
-    }
-
-    fn flush(&mut self) -> IoResult<()> {
-        Ok(())
-    }
-}
-
 /// Holds a VMO containing valid serialized data as well as the size of that data.
 pub struct SerializedVmo {
     pub vmo: zx::Vmo,
     pub size: u64,
     format: Format,
-}
-
-fn fxt_to_writer<W: std::io::Write>(mut writer: W, item: &FxtMessage) -> Result<(), AccessorError> {
-    let value = extend_fxt_record(
-        item.data(),
-        item.component_identity(),
-        item.dropped(),
-        &ExtendRecordOpts { component_url: true, moniker: true, rolled_out: true },
-    );
-    Ok(writer.write_all(&value)?)
 }
 
 impl SerializedVmo {
@@ -194,25 +103,25 @@ impl SerializedVmo {
         data_type: DataType,
         format: Format,
     ) -> Result<Self, AccessorError> {
-        let writer = VmoWriter::new(match data_type {
-            DataType::Inspect => inspect_format::constants::DEFAULT_VMO_SIZE_BYTES as u64,
+        let initial_buffer_capacity = match data_type {
+            DataType::Inspect => inspect_format::constants::DEFAULT_VMO_SIZE_BYTES,
             // Logs won't go through this codepath anyway, but in case we ever want to serialize a
             // single log instance it makes sense to start at the page size.
             DataType::Logs => 4096, // page size
-        });
-        let batch_writer = BufWriter::new(writer.clone());
+        };
+        let mut buffer = Vec::with_capacity(initial_buffer_capacity);
         match format {
             Format::Json => {
-                serde_json::to_writer(batch_writer, source).map_err(AccessorError::Serialization)?
+                serde_json::to_writer(&mut buffer, source).map_err(AccessorError::Serialization)?
             }
-            Format::Cbor => ciborium::into_writer(source, batch_writer)
+            Format::Cbor => ciborium::into_writer(source, &mut buffer)
                 .map_err(|err| AccessorError::CborSerialization(err.into()))?,
             Format::Text => unreachable!("We'll never get Text"),
             Format::Fxt => unreachable!("We'll never get FXT"),
         }
-        // Safe to unwrap we should always be able to take the vmo here.
-        let (vmo, tail) = writer.finalize().unwrap();
-        Ok(Self { vmo, size: tail, format })
+        let vmo = zx::Vmo::create(buffer.len() as u64).unwrap();
+        vmo.write(&buffer, 0).unwrap();
+        Ok(Self { vmo, size: buffer.len() as u64, format })
     }
 }
 
@@ -249,192 +158,218 @@ impl From<SerializedVmo> for FormattedContent {
     }
 }
 
-/// Wraps an iterator over serializable items and yields FormattedContents, packing items
-/// into an FXT array in each VMO up to the size limit provided.
-#[pin_project::pin_project]
-pub struct FXTPacketSerializer<I> {
-    #[pin]
-    items: I,
-    stats: Option<Arc<BatchIteratorConnectionStats>>,
-    max_packet_size: u64,
-    overflow: Option<FxtMessage>,
+trait PacketFormat {
+    const FORMAT: Format;
+    const HEADER: &[u8] = &[];
+    const FOOTER: &[u8] = &[];
+
+    /// Writes an item in the required format.  Returns `Poll::Ready(Some(<separator length>))` if
+    /// an item was written, and `Poll::Ready(None)` if there are no more items.  If `first` is true,
+    /// this is the first item in this batch.
+    fn write_item(
+        self: Pin<&mut Self>,
+        cx: &mut Context<'_>,
+        first: bool,
+        buffer: &mut Vec<u8>,
+    ) -> Poll<Option<usize>>;
 }
 
-impl<I> FXTPacketSerializer<I> {
-    pub fn new(stats: Arc<BatchIteratorConnectionStats>, max_packet_size: u64, items: I) -> Self {
-        Self { items, stats: Some(stats), max_packet_size, overflow: None }
+#[pin_project]
+pub struct PacketSerializer<T> {
+    stats: Option<Arc<BatchIteratorConnectionStats>>,
+    max_packet_size: u64,
+    #[pin]
+    format: T,
+    overflow: Vec<u8>,
+    finished: bool,
+}
+
+impl<T> PacketSerializer<T> {
+    fn with_format(
+        stats: Option<Arc<BatchIteratorConnectionStats>>,
+        max_packet_size: u64,
+        format: T,
+    ) -> Self {
+        Self { stats, max_packet_size, format, overflow: Vec::new(), finished: false }
     }
 }
 
-impl<I> Stream for FXTPacketSerializer<I>
-where
-    I: Stream<Item = FxtMessage> + Unpin,
-{
+impl<T: PacketFormat> Stream for PacketSerializer<T> {
     type Item = Result<SerializedVmo, AccessorError>;
 
-    /// Serialize log messages in an FXT array up to the maximum size provided. Returns Ok(None)
-    /// when there are no more messages to serialize.
     fn poll_next(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Option<Self::Item>> {
-        let mut this = self.project();
-        let mut writer = VmoWriter::new(*this.max_packet_size);
+        if self.finished {
+            return Poll::Ready(None);
+        }
 
-        if let Some(item) = this.overflow.take() {
-            let batch_writer = BufWriter::new(writer.clone());
-            fxt_to_writer(batch_writer, &item)?;
+        // Limit packet size to prevent unbounded memory use.
+        const MAX_PACKET_SIZE_LIMIT: u64 = 1 << 20; // 1 MiB
+        let max_packet_size = std::cmp::min(self.max_packet_size, MAX_PACKET_SIZE_LIMIT);
+        let mut this = self.project();
+
+        let mut buffer = Vec::with_capacity(256 * 1024);
+        buffer.extend_from_slice(T::HEADER);
+
+        let mut first = true;
+
+        if !this.overflow.is_empty() {
+            buffer.append(this.overflow);
+            first = false;
             if let Some(stats) = &this.stats {
                 stats.add_result();
             }
         }
 
-        let mut items_is_pending = false;
+        let mut vmo = None;
+        let mut vmo_len = 0;
+
         loop {
-            let item = match this.items.poll_next_unpin(cx) {
-                Poll::Ready(Some(item)) => item,
-                Poll::Ready(None) => break,
+            // Copy to the VMO if the room in the buffer drops below a threshold.
+            if buffer.capacity() - buffer.len() < 512 {
+                vmo.get_or_insert_with(|| zx::Vmo::create(max_packet_size).unwrap())
+                    .write(&buffer, vmo_len as u64)
+                    .unwrap();
+                vmo_len += buffer.len();
+                buffer.clear();
+            }
+
+            let last_len = buffer.len();
+
+            let separator_len = match this.format.as_mut().write_item(cx, first, &mut buffer) {
+                Poll::Ready(Some(separator_len)) => separator_len,
+                Poll::Ready(None) => {
+                    *this.finished = true;
+                    if first {
+                        return Poll::Ready(None);
+                    } else {
+                        break;
+                    }
+                }
                 Poll::Pending => {
-                    items_is_pending = true;
-                    break;
+                    if first {
+                        return Poll::Pending;
+                    } else {
+                        break;
+                    }
                 }
             };
 
-            let writer_tail = writer.tail();
-            let (last_tail, previous_size) = (writer_tail, writer.capacity());
-            let batch_writer = BufWriter::new(writer.clone());
-            fxt_to_writer(batch_writer, &item)?;
-            let writer_tail = writer.tail();
+            let item_len = buffer.len() - last_len - separator_len;
 
-            if writer_tail > *this.max_packet_size {
-                writer.reset(last_tail, previous_size);
-                *this.overflow = Some(item);
-                break;
-            }
+            if (item_len + T::HEADER.len() + T::FOOTER.len()) as u64 >= max_packet_size {
+                warn!("dropping oversize item (limit={max_packet_size} len={item_len})");
+                buffer.truncate(last_len);
+            } else {
+                if (vmo_len + buffer.len() + T::FOOTER.len()) as u64 > max_packet_size {
+                    // Last item put us over the maximum packet size, keep it for the next batch.
+                    // We should have at least one item because otherwise we should have gone
+                    // through the branch above.
+                    assert!(!first);
+                    this.overflow.extend_from_slice(&buffer[last_len + separator_len..]);
+                    buffer.truncate(last_len);
+                    break;
+                }
 
-            if let Some(stats) = &this.stats {
-                stats.add_result();
+                first = false;
+
+                if let Some(stats) = &this.stats {
+                    stats.add_result();
+                }
             }
         }
 
-        let writer_tail = writer.tail();
+        buffer.extend_from_slice(T::FOOTER);
 
-        if writer_tail > 2 {
-            // safe to unwrap, the vmo is guaranteed to be present.
-            let (vmo, size) = writer.finalize().unwrap();
-            Poll::Ready(Some(Ok(SerializedVmo { vmo, size, format: Format::Fxt })))
-        } else if items_is_pending {
-            Poll::Pending
+        let vmo = match vmo {
+            Some(vmo) => {
+                vmo.set_stream_size((vmo_len + buffer.len()) as u64).unwrap();
+                vmo
+            }
+            None => zx::Vmo::create(buffer.len() as u64).unwrap(),
+        };
+        vmo.write(&buffer, vmo_len as u64).unwrap();
+        vmo_len += buffer.len();
+        Poll::Ready(Some(Ok(SerializedVmo { vmo, size: vmo_len as u64, format: T::FORMAT })))
+    }
+}
+
+#[pin_project]
+pub struct FxtPacketFormat<I>(#[pin] I);
+
+impl<I: Stream<Item = FxtMessage>> PacketFormat for FxtPacketFormat<I> {
+    const FORMAT: Format = Format::Fxt;
+
+    fn write_item(
+        self: Pin<&mut Self>,
+        cx: &mut Context<'_>,
+        _first: bool,
+        buffer: &mut Vec<u8>,
+    ) -> Poll<Option<usize>> {
+        if let Some(item) = ready!(self.project().0.poll_next(cx)) {
+            buffer.extend_from_slice(item.data());
+            extend_fxt_record(
+                item.component_identity(),
+                item.dropped(),
+                &ExtendRecordOpts { component_url: true, moniker: true, rolled_out: true },
+                buffer,
+            );
+            Poll::Ready(Some(0))
         } else {
             Poll::Ready(None)
         }
     }
 }
 
-/// Wraps an iterator over serializable items and yields FormattedContents, packing items
-/// into a JSON array in each VMO up to the size limit provided.
-#[pin_project::pin_project]
-pub struct JsonPacketSerializer<I, S> {
-    #[pin]
-    items: I,
-    stats: Option<Arc<BatchIteratorConnectionStats>>,
-    max_packet_size: u64,
-    overflow: Option<S>,
+pub type FxtPacketSerializer<I> = PacketSerializer<FxtPacketFormat<I>>;
+
+impl<I> FxtPacketSerializer<I> {
+    pub fn new(stats: Arc<BatchIteratorConnectionStats>, max_packet_size: u64, items: I) -> Self {
+        Self::with_format(Some(stats), max_packet_size, FxtPacketFormat(items))
+    }
 }
 
-impl<I, S> JsonPacketSerializer<I, S> {
+#[pin_project]
+pub struct JsonPacketFormat<I>(#[pin] I);
+
+impl<I: Stream<Item = impl Serialize>> PacketFormat for JsonPacketFormat<I> {
+    const FORMAT: Format = Format::Json;
+    const HEADER: &[u8] = b"[";
+    const FOOTER: &[u8] = b"]";
+
+    fn write_item(
+        self: Pin<&mut Self>,
+        cx: &mut Context<'_>,
+        first: bool,
+        buffer: &mut Vec<u8>,
+    ) -> Poll<Option<usize>> {
+        const SEPARATOR: &[u8] = b",\n";
+
+        if let Some(item) = ready!(self.project().0.poll_next(cx)) {
+            let separator_len = if !first {
+                buffer.extend_from_slice(SEPARATOR);
+                SEPARATOR.len()
+            } else {
+                0
+            };
+            // We don't expect serialization to fail because we should always be able to write to
+            // `buffer` and `item` is a type we control which we know should always be serializable.
+            serde_json::to_writer(buffer, &item).expect("failed to serialize item");
+            Poll::Ready(Some(separator_len))
+        } else {
+            Poll::Ready(None)
+        }
+    }
+}
+
+pub type JsonPacketSerializer<I> = PacketSerializer<JsonPacketFormat<I>>;
+
+impl<I> JsonPacketSerializer<I> {
     pub fn new(stats: Arc<BatchIteratorConnectionStats>, max_packet_size: u64, items: I) -> Self {
-        Self { items, stats: Some(stats), max_packet_size, overflow: None }
+        Self::with_format(Some(stats), max_packet_size, JsonPacketFormat(items))
     }
 
     pub fn new_without_stats(max_packet_size: u64, items: I) -> Self {
-        Self { items, max_packet_size, overflow: None, stats: None }
-    }
-}
-
-impl<I, S> Stream for JsonPacketSerializer<I, S>
-where
-    I: Stream<Item = S> + Unpin,
-    S: Serialize,
-{
-    type Item = Result<SerializedVmo, AccessorError>;
-
-    /// Serialize log messages in a JSON array up to the maximum size provided. Returns Ok(None)
-    /// when there are no more messages to serialize.
-    fn poll_next(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Option<Self::Item>> {
-        let mut this = self.project();
-        let mut writer = VmoWriter::new(*this.max_packet_size);
-        writer.write_all(b"[")?;
-
-        if let Some(item) = this.overflow.take() {
-            let batch_writer = BufWriter::new(writer.clone());
-            serde_json::to_writer(batch_writer, &item)?;
-            if let Some(stats) = &this.stats {
-                stats.add_result();
-            }
-        }
-
-        let mut items_is_pending = false;
-        loop {
-            let item = match this.items.poll_next_unpin(cx) {
-                Poll::Ready(Some(item)) => item,
-                Poll::Ready(None) => break,
-                Poll::Pending => {
-                    items_is_pending = true;
-                    break;
-                }
-            };
-
-            let writer_tail = writer.tail();
-            let is_first = writer_tail == 1;
-            let (last_tail, previous_size) = (writer_tail, writer.capacity());
-            if !is_first {
-                writer.write_all(",\n".as_bytes())?;
-            }
-            let batch_writer = BufWriter::new(writer.clone());
-            serde_json::to_writer(batch_writer, &item)?;
-            let writer_tail = writer.tail();
-            let item_len = writer_tail - last_tail;
-
-            // +1 for the ending bracket
-            if item_len + 1 >= *this.max_packet_size {
-                warn!(
-                    "serializing oversize item into packet (limit={} actual={})",
-                    *this.max_packet_size,
-                    writer_tail - last_tail,
-                );
-            }
-
-            // existing batch + item + array end bracket
-            if writer_tail + 1 > *this.max_packet_size {
-                writer.reset(last_tail, previous_size);
-                *this.overflow = Some(item);
-                break;
-            }
-
-            if let Some(stats) = &this.stats {
-                stats.add_result();
-            }
-        }
-
-        writer.write_all(b"]")?;
-        let writer_tail = writer.tail();
-        if writer_tail > *this.max_packet_size {
-            error!(
-                actual = writer_tail,
-                max = *this.max_packet_size;
-                "returned a string longer than maximum specified",
-            )
-        }
-
-        // we only want to return an item if we wrote more than opening & closing brackets,
-        // and as a string the batch's length is measured in bytes
-        if writer_tail > 2 {
-            // safe to unwrap, the vmo is guaranteed to be present.
-            let (vmo, size) = writer.finalize().unwrap();
-            Poll::Ready(Some(Ok(SerializedVmo { vmo, size, format: Format::Json })))
-        } else if items_is_pending {
-            Poll::Pending
-        } else {
-            Poll::Ready(None)
-        }
+        Self::with_format(None, max_packet_size, JsonPacketFormat(items))
     }
 }
 
@@ -473,5 +408,109 @@ mod tests {
 
         let actual_split = make_packets(smallest_possible_joined_len - 1).await;
         assert_eq!(&actual_split[..], split);
+    }
+
+    #[fuchsia::test]
+    async fn overflow_separator_added() {
+        let inputs = &[&"A", &"B", &"C"];
+        // "[" + "A" + "]" = 4 bytes.
+        // "[" + "A" + ",\n" + "B" + "]" = 4 + 2 + 3 = 9 bytes.
+        // If max is 8, "B" will overflow.
+        // Second packet starts with "B" from overflow.
+        // "[" + "B" + ",\n" + "C" + "]" = 4 + 2 + 3 = 9 bytes.
+        // If max is 8, "C" will overflow.
+        // Third packet starts with "C" from overflow.
+
+        let make_packets = |max| async move {
+            let node = fuchsia_inspect::Node::default();
+            let accessor_stats = Arc::new(AccessorStats::new(node));
+            let test_stats = Arc::new(accessor_stats.new_logs_batch_iterator());
+            JsonPacketSerializer::new(test_stats, max, iter(inputs.iter()))
+                .collect::<Vec<_>>()
+                .await
+                .into_iter()
+                .map(|r| {
+                    let result = r.unwrap();
+                    let mut buf = vec![0; result.size as usize];
+                    result.vmo.read(&mut buf, 0).expect("reading vmo");
+                    std::str::from_utf8(&buf).unwrap().to_string()
+                })
+                .collect::<Vec<_>>()
+        };
+
+        let packets = make_packets(8).await;
+        assert_eq!(packets.len(), 3);
+        assert_eq!(packets[0], r#"["A"]"#);
+        assert_eq!(packets[1], r#"["B"]"#);
+        assert_eq!(packets[2], r#"["C"]"#);
+
+        let packets = make_packets(10).await;
+        assert_eq!(packets.len(), 2);
+        assert_eq!(packets[0], "[\"A\",\n\"B\"]");
+        assert_eq!(packets[1], r#"["C"]"#);
+    }
+
+    #[fuchsia::test]
+    async fn oversize_item_not_dropped_incorrectly() {
+        let inputs = &[&"A", &"BCDEF"];
+        // Packet 1: ["A"] (4 bytes)
+        // Item 2: "BCDEF" (7 bytes)
+        // "[" + "A" + ",\n" + "BCDEF" + "]" = 1 + 3 + 2 + 7 + 1 = 14 bytes.
+        // If max is 11:
+        // "A" fits (4 bytes).
+        // "BCDEF" overflows.
+        // NEXT packet:
+        // "[" + "BCDEF" + "]" = 9 bytes.
+        // 9 fits in 11.
+
+        let make_packets = |max| async move {
+            let node = fuchsia_inspect::Node::default();
+            let accessor_stats = Arc::new(AccessorStats::new(node));
+            let test_stats = Arc::new(accessor_stats.new_logs_batch_iterator());
+            JsonPacketSerializer::new(test_stats, max, iter(inputs.iter()))
+                .collect::<Vec<_>>()
+                .await
+                .into_iter()
+                .map(|r| {
+                    let result = r.unwrap();
+                    let mut buf = vec![0; result.size as usize];
+                    result.vmo.read(&mut buf, 0).expect("reading vmo");
+                    std::str::from_utf8(&buf).unwrap().to_string()
+                })
+                .collect::<Vec<_>>()
+        };
+
+        let packets = make_packets(11).await;
+        assert_eq!(packets.len(), 2);
+        assert_eq!(packets[0], r#"["A"]"#);
+        assert_eq!(packets[1], r#"["BCDEF"]"#);
+    }
+
+    #[fuchsia::test]
+    async fn item_too_big_for_packet_is_dropped() {
+        let inputs = &[&"ABCDE"]; // 7 bytes
+        // "[" + 7 + "]" = 9 bytes.
+        // If max is 8, it should be dropped.
+
+        let make_packets = |max| async move {
+            let node = fuchsia_inspect::Node::default();
+            let accessor_stats = Arc::new(AccessorStats::new(node));
+            let test_stats = Arc::new(accessor_stats.new_logs_batch_iterator());
+            JsonPacketSerializer::new(test_stats, max, iter(inputs.iter()))
+                .collect::<Vec<_>>()
+                .await
+                .into_iter()
+                .map(|r| {
+                    let result = r.unwrap();
+                    let mut buf = vec![0; result.size as usize];
+                    result.vmo.read(&mut buf, 0).expect("reading vmo");
+                    std::str::from_utf8(&buf).unwrap().to_string()
+                })
+                .collect::<Vec<_>>()
+        };
+
+        let packets = make_packets(8).await;
+        // Item should be dropped, so we get no packets.
+        assert_eq!(packets.len(), 0);
     }
 }

@@ -2,7 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use anyhow::{format_err, Result};
+use anyhow::{Result, format_err};
 use futures::prelude::*;
 use moniker::Moniker;
 use std::str::FromStr;
@@ -47,7 +47,7 @@ pub async fn explore_over_socket(
 ) -> Result<()> {
     launcher_proxy
         .explore_component_over_socket(
-            &moniker.to_string(),
+            moniker.as_ref(),
             pty_server,
             &tools_urls,
             command.as_deref(),

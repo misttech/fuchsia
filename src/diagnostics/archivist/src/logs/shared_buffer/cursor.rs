@@ -2,7 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use super::{Inner, InnerGuard, SharedBuffer};
+use super::{ContainerId, Inner, InnerGuard, SharedBuffer};
 use crate::identity::ComponentIdentity;
 use diagnostics_data::{LogError, LogsData};
 use diagnostics_log_encoding::parse::ParseError;
@@ -14,7 +14,7 @@ use futures::Stream;
 use futures::stream::FusedStream;
 use pin_project::pin_project;
 use ring_buffer::ring_buffer_record_len;
-use selectors::SelectorExt;
+use selectors::matches_selectors;
 use std::cmp::Ordering;
 use std::collections::BinaryHeap;
 use std::marker::PhantomData;
@@ -72,6 +72,34 @@ impl FilterCursor {
 
         let mut inner = this.buffer.inner.lock();
 
+        // Comparing monikers can be expensive, so memoize the results.
+        struct ContainerIds {
+            ids: [ContainerId; 8],
+            result: u8,
+            pos: usize,
+        }
+
+        impl ContainerIds {
+            /// Memoizes the result of `predicate` for a given `id`.
+            fn memoize(&mut self, id: ContainerId, predicate: impl FnOnce() -> bool) -> bool {
+                if let Some(pos) = self.ids.iter().position(|i| i == &id) {
+                    self.result & (1 << pos) != 0
+                } else {
+                    let result = predicate();
+                    self.ids[self.pos] = id;
+                    if result {
+                        self.result |= 1 << self.pos;
+                    } else {
+                        self.result &= !(1 << self.pos);
+                    }
+                    self.pos = (self.pos + 1) % self.ids.len();
+                    result
+                }
+            }
+        }
+
+        let mut container_ids = ContainerIds { ids: [ContainerId(0xffff); 8], result: 0, pos: 0 };
+
         // NOTE: If messages are dropped the dropped count won't account for filtering: it will
         // include messages that have been dropped that don't match the filter.  Fixing this is
         // difficult and not worth the effort.  Dropped messages should be rare and the common case
@@ -91,11 +119,9 @@ impl FilterCursor {
             if let Some(timestamp) = timestamp
                 && let Some(container) = inner.containers.get(component)
                 && (this.selectors.is_empty()
-                    || container
-                        .identity
-                        .moniker
-                        .match_against_component_selectors(this.selectors)
-                        .is_ok_and(|matched| !matched.is_empty()))
+                    || container_ids.memoize(component, || {
+                        matches_selectors(&container.identity.moniker, this.selectors)
+                    }))
             {
                 this.messages.push(MessageRef { index: *this.index, timestamp });
             }

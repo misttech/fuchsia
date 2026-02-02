@@ -448,7 +448,7 @@ impl State {
                 Status::Pending(pending) => match pending.pop_front() {
                     None => {
                         self.global_stats.record_component_duration(
-                            self.unpopulated.identity.moniker.to_string(),
+                            self.unpopulated.identity.moniker.as_ref(),
                             self.elapsed_time + (zx::MonotonicInstant::get() - start_time),
                         );
                         return None;

@@ -81,6 +81,15 @@ impl fmt::Display for ExtendedMoniker {
     }
 }
 
+impl AsRef<str> for ExtendedMoniker {
+    fn as_ref(&self) -> &str {
+        match self {
+            Self::ComponentInstance(m) => m.as_ref(),
+            Self::ComponentManager => EXTENDED_MONIKER_COMPONENT_MANAGER_STR,
+        }
+    }
+}
+
 impl From<Moniker> for ExtendedMoniker {
     fn from(m: Moniker) -> Self {
         Self::ComponentInstance(m)

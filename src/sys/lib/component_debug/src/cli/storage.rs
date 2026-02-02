@@ -3,7 +3,7 @@
 // found in the LICENSE file.
 
 use crate::storage::{copy, delete, delete_all, list, make_directory};
-use anyhow::{format_err, Result};
+use anyhow::{Result, format_err};
 use moniker::Moniker;
 
 use flex_client::ProxyHasDomain;
@@ -23,7 +23,7 @@ async fn get_storage_admin(
 
     realm_query
         .connect_to_storage_admin(
-            &storage_provider_moniker.to_string(),
+            storage_provider_moniker.as_ref(),
             &storage_capability_name,
             server_end,
         )

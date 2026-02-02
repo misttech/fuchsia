@@ -380,7 +380,7 @@ mod tests {
         ));
         let stats = Arc::new(
             LogStreamStats::default()
-                .with_inspect(inspect::component::inspector().root(), identity.moniker.to_string())
+                .with_inspect(inspect::component::inspector().root(), identity.moniker.as_ref())
                 .expect("failed to attach component log stats"),
         );
         let buffer = SharedBuffer::new(

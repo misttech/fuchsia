@@ -81,7 +81,7 @@ async fn handle_request(
             else {
                 return responder.send(Err(fcomponent::Error::InstanceNotFound));
             };
-            return responder.send(Ok(&moniker.to_string()));
+            return responder.send(Ok(moniker.as_ref()));
         }
         fcomponent::IntrospectorRequest::_UnknownMethod {
             ordinal,

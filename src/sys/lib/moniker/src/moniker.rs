@@ -9,6 +9,7 @@ use core::cmp::{self, Ordering, PartialEq};
 use flyweights::FlyStr;
 use std::fmt;
 use std::hash::Hash;
+use std::iter::{IntoIterator, Iterator};
 
 /// [Moniker] describes the identity of a component instance in terms of its path relative to the
 /// root of the component instance tree.
@@ -297,6 +298,21 @@ impl fmt::Debug for Moniker {
     }
 }
 
+impl AsRef<str> for Moniker {
+    fn as_ref(&self) -> &str {
+        &self.rep
+    }
+}
+
+impl<'a> IntoIterator for &'a Moniker {
+    type Item = &'a str;
+    type IntoIter = std::str::Split<'a, char>;
+
+    fn into_iter(self) -> Self::IntoIter {
+        self.rep.split('/')
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -374,22 +390,26 @@ mod tests {
     fn moniker_has_prefix() {
         assert!(Moniker::parse_str("a").unwrap().has_prefix(&Moniker::parse_str("a").unwrap()));
         assert!(Moniker::parse_str("a/b").unwrap().has_prefix(&Moniker::parse_str("a").unwrap()));
-        assert!(Moniker::parse_str("a/b:test")
-            .unwrap()
-            .has_prefix(&Moniker::parse_str("a").unwrap()));
-        assert!(Moniker::parse_str("a/b/c/d")
-            .unwrap()
-            .has_prefix(&Moniker::parse_str("a/b/c").unwrap()));
-        assert!(!Moniker::parse_str("a/b")
-            .unwrap()
-            .has_prefix(&Moniker::parse_str("a/b/c").unwrap()));
-        assert!(!Moniker::parse_str("a/c")
-            .unwrap()
-            .has_prefix(&Moniker::parse_str("a/b/c").unwrap()));
+        assert!(
+            Moniker::parse_str("a/b:test").unwrap().has_prefix(&Moniker::parse_str("a").unwrap())
+        );
+        assert!(
+            Moniker::parse_str("a/b/c/d")
+                .unwrap()
+                .has_prefix(&Moniker::parse_str("a/b/c").unwrap())
+        );
+        assert!(
+            !Moniker::parse_str("a/b").unwrap().has_prefix(&Moniker::parse_str("a/b/c").unwrap())
+        );
+        assert!(
+            !Moniker::parse_str("a/c").unwrap().has_prefix(&Moniker::parse_str("a/b/c").unwrap())
+        );
         assert!(!Moniker::root().has_prefix(&Moniker::parse_str("a").unwrap()));
-        assert!(!Moniker::parse_str("a/b:test")
-            .unwrap()
-            .has_prefix(&Moniker::parse_str("a/b").unwrap()));
+        assert!(
+            !Moniker::parse_str("a/b:test")
+                .unwrap()
+                .has_prefix(&Moniker::parse_str("a/b").unwrap())
+        );
     }
 
     #[test]
@@ -431,10 +451,12 @@ mod tests {
             Moniker::parse_str("a/b").unwrap().strip_prefix(&Moniker::parse_str("a").unwrap()),
             Ok(Moniker::parse_str("b").unwrap())
         );
-        assert!(Moniker::parse_str("a/b")
-            .unwrap()
-            .strip_prefix(&Moniker::parse_str("b").unwrap())
-            .is_err());
+        assert!(
+            Moniker::parse_str("a/b")
+                .unwrap()
+                .strip_prefix(&Moniker::parse_str("b").unwrap())
+                .is_err()
+        );
         assert!(Moniker::root().strip_prefix(&Moniker::parse_str("b").unwrap()).is_err());
     }
 }

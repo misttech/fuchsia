@@ -2,11 +2,11 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use anyhow::{format_err, Result};
+use anyhow::{Result, format_err};
 use flex_fuchsia_sys2 as fsys;
 use moniker::{ExtendedMoniker, Moniker};
 use prettytable::format::consts::FORMAT_CLEAN;
-use prettytable::{cell, row, Table};
+use prettytable::{Table, cell, row};
 use std::fmt;
 
 const SUCCESS_SUMMARY: &'static str = "Success";
@@ -88,11 +88,7 @@ impl TryFrom<fsys::RouteReport> for RouteReport {
             None => {
                 // Backward compatibility. `outcome` may be missing if the client (e.g., ffx)
                 // is built at a later version than the target.
-                if error_summary.is_some() {
-                    RouteOutcome::Failed
-                } else {
-                    RouteOutcome::Success
-                }
+                if error_summary.is_some() { RouteOutcome::Failed } else { RouteOutcome::Success }
             }
         };
         Ok(RouteReport {
@@ -163,7 +159,7 @@ pub async fn route(
     moniker: Moniker,
     targets: Vec<fsys::RouteTarget>,
 ) -> Result<Vec<RouteReport>> {
-    let reports = match route_validator.route(&moniker.to_string(), &targets).await? {
+    let reports = match route_validator.route(moniker.as_ref(), &targets).await? {
         Ok(reports) => reports,
         Err(e) => {
             return Err(format_err!(

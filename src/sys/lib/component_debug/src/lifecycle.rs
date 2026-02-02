@@ -94,7 +94,7 @@ pub async fn create_instance_in_collection(
 
     lifecycle_controller
         .create_instance(
-            &parent.to_string(),
+            parent.as_ref(),
             &collection_ref,
             &decl,
             child_args.unwrap_or(fcomponent::CreateChildArgs::default()),
@@ -126,7 +126,7 @@ pub async fn destroy_instance_in_collection(
         fdecl::ChildRef { name: child_name.to_string(), collection: Some(collection.to_string()) };
 
     lifecycle_controller
-        .destroy_instance(&parent.to_string(), &child)
+        .destroy_instance(parent.as_ref(), &child)
         .await
         .map_err(|e| ActionError::Fidl(e))?
         .map_err(|e| match e {
@@ -154,7 +154,7 @@ pub async fn start_instance(
 ) -> Result<StopFuture, StartError> {
     let (client, server) = lifecycle_controller.domain().create_proxy::<fcomponent::BinderMarker>();
     lifecycle_controller
-        .start_instance(&moniker.to_string(), server)
+        .start_instance(moniker.as_ref(), server)
         .await
         .map_err(|e| ActionError::Fidl(e))?
         .map_err(|e| match e {
@@ -187,7 +187,7 @@ pub async fn start_instance_with_args(
 ) -> Result<StopFuture, StartError> {
     let (client, server) = lifecycle_controller.domain().create_proxy::<fcomponent::BinderMarker>();
     lifecycle_controller
-        .start_instance_with_args(&moniker.to_string(), server, arguments)
+        .start_instance_with_args(moniker.as_ref(), server, arguments)
         .await
         .map_err(|e| ActionError::Fidl(e))?
         .map_err(|e| match e {
@@ -216,15 +216,15 @@ pub async fn stop_instance(
     moniker: &Moniker,
 ) -> Result<(), ActionError> {
     lifecycle_controller
-        .stop_instance(&moniker.to_string())
+        .stop_instance(moniker.as_ref())
         .await
         .map_err(|e| ActionError::Fidl(e))?
         .map_err(|e| match e {
-            fsys::StopError::Internal => ActionError::Internal,
-            fsys::StopError::BadMoniker => ActionError::BadMoniker,
-            fsys::StopError::InstanceNotFound => ActionError::InstanceNotFound,
-            _ => ActionError::UnknownError,
-        })?;
+        fsys::StopError::Internal => ActionError::Internal,
+        fsys::StopError::BadMoniker => ActionError::BadMoniker,
+        fsys::StopError::InstanceNotFound => ActionError::InstanceNotFound,
+        _ => ActionError::UnknownError,
+    })?;
     Ok(())
 }
 
@@ -235,7 +235,7 @@ pub async fn resolve_instance(
     moniker: &Moniker,
 ) -> Result<(), ResolveError> {
     lifecycle_controller
-        .resolve_instance(&moniker.to_string())
+        .resolve_instance(moniker.as_ref())
         .await
         .map_err(|e| ActionError::Fidl(e))?
         .map_err(|e| match e {
@@ -256,7 +256,7 @@ pub async fn unresolve_instance(
     moniker: &Moniker,
 ) -> Result<(), ActionError> {
     lifecycle_controller
-        .unresolve_instance(&moniker.to_string())
+        .unresolve_instance(moniker.as_ref())
         .await
         .map_err(|e| ActionError::Fidl(e))?
         .map_err(|e| match e {
@@ -272,8 +272,8 @@ pub async fn unresolve_instance(
 mod test {
     use super::*;
     use assert_matches::assert_matches;
-    use fidl::endpoints::create_proxy_and_stream;
     use fidl::HandleBased;
+    use fidl::endpoints::create_proxy_and_stream;
     use flex_fuchsia_process as fprocess;
     use futures::TryStreamExt;
 

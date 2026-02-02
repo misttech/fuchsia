@@ -6,7 +6,7 @@ use crate::constants::FORMATTED_CONTENT_CHUNK_SIZE_TARGET;
 use crate::diagnostics::{BatchIteratorConnectionStats, TRACE_CATEGORY};
 use crate::error::AccessorError;
 use crate::formatter::{
-    FXTPacketSerializer, FormattedStream, JsonPacketSerializer, SerializedVmo, new_batcher,
+    FormattedStream, FxtPacketSerializer, JsonPacketSerializer, SerializedVmo, new_batcher,
 };
 use crate::inspect::ReaderServer;
 use crate::inspect::repository::InspectRepository;
@@ -662,7 +662,7 @@ where
     where
         S: Stream<Item = FxtMessage> + Send + Unpin + 'static,
     {
-        let data = FXTPacketSerializer::new(
+        let data = FxtPacketSerializer::new(
             Arc::clone(&stats),
             performance_config
                 .aggregated_content_limit_bytes

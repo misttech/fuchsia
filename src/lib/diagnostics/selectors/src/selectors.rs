@@ -19,6 +19,7 @@ use moniker::{
 use std::borrow::{Borrow, Cow};
 use std::fs;
 use std::io::{BufRead, BufReader};
+use std::iter::once;
 use std::path::Path;
 use std::sync::Arc;
 
@@ -45,6 +46,8 @@ const SPACE_CHAR: char = ' ';
 const WILDCARD_SYMBOL_CHAR: char = '*';
 
 const RECURSIVE_WILDCARD_SYMBOL_STR: &str = "**";
+
+const ROOT_SEGMENT: &str = "<root>";
 
 /// Returns true iff a component selector uses the recursive glob.
 /// Assumes the selector has already been validated.
@@ -429,6 +432,34 @@ where
                 .transpose()
         })
         .collect::<Result<Vec<&ComponentSelector>, anyhow::Error>>()
+}
+
+/// Returns true if `moniker` matches one of `selectors`.
+///
+/// # Panics
+///
+/// This can panic if any selector in `selectors` is invalid; it assumes `selectors` is valid.
+pub fn matches_selectors(moniker: &ExtendedMoniker, selectors: &[ComponentSelector]) -> bool {
+    match moniker {
+        ExtendedMoniker::ComponentManager => selectors.iter().any(|s| {
+            match_moniker_against_component_selector(
+                once(EXTENDED_MONIKER_COMPONENT_MANAGER_STR),
+                s,
+            )
+            .unwrap()
+        }),
+        ExtendedMoniker::ComponentInstance(moniker) => {
+            if moniker.is_root() {
+                selectors.iter().any(|s| {
+                    match_moniker_against_component_selector(once(ROOT_SEGMENT), s).unwrap()
+                })
+            } else {
+                selectors.iter().any(|s| {
+                    match_moniker_against_component_selector(moniker.into_iter(), s).unwrap()
+                })
+            }
+        }
+    }
 }
 
 /// Settings for how to construct a displayable string from a
@@ -971,7 +1002,7 @@ impl Iterator for SegmentIterator<'_> {
             Self::Root(true) => None,
             Self::Root(done) => {
                 *done = true;
-                Some("<root>".to_string())
+                Some(ROOT_SEGMENT.to_string())
             }
         }
     }

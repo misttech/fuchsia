@@ -3,11 +3,11 @@
 // found in the LICENSE file.
 
 use crate::route::DictionaryEntry;
-use anyhow::{format_err, Result};
+use anyhow::{Result, format_err};
 use flex_fuchsia_sys2 as fsys;
 use moniker::Moniker;
 use prettytable::format::consts::FORMAT_CLEAN;
-use prettytable::{cell, row, Row, Table};
+use prettytable::{Row, Table, cell, row};
 
 const USE_TITLE: &'static str = "Used Capability";
 const EXPOSE_TITLE: &'static str = "Exposed Capability";
@@ -82,7 +82,7 @@ pub async fn validate_routes(
     route_validator: &fsys::RouteValidatorProxy,
     moniker: &Moniker,
 ) -> Result<Vec<RouteReport>> {
-    let reports = match route_validator.validate(&moniker.to_string()).await? {
+    let reports = match route_validator.validate(moniker.as_ref()).await? {
         Ok(reports) => reports,
         Err(e) => {
             return Err(format_err!(
