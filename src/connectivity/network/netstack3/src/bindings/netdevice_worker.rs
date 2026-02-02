@@ -530,6 +530,8 @@ impl DeviceHandler {
         };
         std::mem::drop(temp_guard);
 
+        // Try to create local route tables for the device. This operation is
+        // fallible, so cancel the device ID reservation on failure.
         let local_route_tables = match maybe_create_local_route_tables(
             &*ctx,
             &name,
@@ -540,6 +542,7 @@ impl DeviceHandler {
             Ok(tables) => tables,
             Err(err) => {
                 log::error!("failed to create local route tables for {name}: {err:?}");
+                ctx.bindings_ctx().devices.cancel_device_reservation(binding_id_alloc);
                 return Err(Error::CantCreateLocalRouteTables);
             }
         };
