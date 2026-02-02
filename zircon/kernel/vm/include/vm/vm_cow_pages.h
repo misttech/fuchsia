@@ -1278,14 +1278,13 @@ class VmCowPages final : public fbl::ContainableBaseClasses<
     uint64_t owner_offset = 0;
     uint64_t visible_end = 0;
   };
-  void FindPageContentLocked(uint64_t offset, uint64_t max_owner_length, PageLookup* out)
-      TA_REQ(lock());
+  PageLookup FindPageContentLocked(uint64_t offset, uint64_t max_owner_length) TA_REQ(lock());
 
   // Searches for the initial content, i.e. the content that would be used to initially populate the
   // page, of |this| at |offset|. Whether there is presently any content populated in |this| is
   // ignored, and if there is content then this will still return what would be used to re-populate
   // that slot.
-  void FindInitialPageContentLocked(uint64_t offset, PageLookup* out) TA_REQ(lock());
+  PageLookup FindInitialPageContentLocked(uint64_t offset) TA_REQ(lock());
 
   // Helper function that 'forks' a page into |offset| of the current node, which must be a visible
   // node. If this function successfully inserts the page, it returns ZX_OK and populates

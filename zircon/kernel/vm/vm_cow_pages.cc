@@ -2749,8 +2749,8 @@ void VmCowPages::ReleaseOwnedPagesRangeLocked(uint64_t offset, uint64_t len,
   page_remover.Flush();
 }
 
-void VmCowPages::FindPageContentLocked(uint64_t offset, uint64_t max_owner_length,
-                                       PageLookup* out) {
+VmCowPages::PageLookup VmCowPages::FindPageContentLocked(uint64_t offset,
+                                                         uint64_t max_owner_length) {
   const uint64_t this_offset = offset;
 
   // Search up the clone chain for any committed pages. cur_offset is the offset
@@ -2767,15 +2767,13 @@ void VmCowPages::FindPageContentLocked(uint64_t offset, uint64_t max_owner_lengt
     const bool cursor_correct_offset = p && cursor.offset() == offset;
     // If this slot has any actual content, then can immediately return it.
     if (cursor_correct_offset && !p->IsEmpty() && !p->IsParentContent()) {
-      *out = {cursor, ktl::move(cur), offset, max_owner_length + this_offset};
-      return;
+      return {cursor, ktl::move(cur), offset, max_owner_length + this_offset};
     }
     // If using parent content markers then unless there is a marker we can skip walking up, as we
     // know there is no content above us.
     if (cur.locked_or(this).node_has_parent_content_markers() &&
         (!cursor_correct_offset || !p->IsParentContent())) {
-      *out = {VMPLCursor(), ktl::move(cur), offset, max_owner_length + this_offset};
-      return;
+      return {VMPLCursor(), ktl::move(cur), offset, max_owner_length + this_offset};
     }
 
     // Need to walk up, see if we need to trim the owner length.
@@ -2827,20 +2825,20 @@ void VmCowPages::FindPageContentLocked(uint64_t offset, uint64_t max_owner_lengt
     offset += cur.locked_or(this).parent_offset_;
     cur = LockedPtr(parent);
   }
-  *out = {cur.locked_or(this).page_list_.LookupMutableCursor(offset), ktl::move(cur), offset,
+  return {cur.locked_or(this).page_list_.LookupMutableCursor(offset), ktl::move(cur), offset,
           max_owner_length + this_offset};
 }
 
-void VmCowPages::FindInitialPageContentLocked(uint64_t offset, PageLookup* out) {
+VmCowPages::PageLookup VmCowPages::FindInitialPageContentLocked(uint64_t offset) {
   if (parent_ && offset < parent_limit_) {
     LockedPtr parent = LockedPtr(parent_.get());
-    parent.locked().FindPageContentLocked(offset + parent_offset_, kPageSize, out);
-    if (!out->owner) {
-      out->owner = ktl::move(parent);
+    PageLookup out = parent.locked().FindPageContentLocked(offset + parent_offset_, kPageSize);
+    if (!out.owner) {
+      out.owner = ktl::move(parent);
     }
-  } else {
-    *out = {VMPLCursor(), LockedPtr(), offset, offset + kPageSize};
+    return out;
   }
+  return {VMPLCursor(), LockedPtr(), offset, offset + kPageSize};
 }
 
 void VmCowPages::UpdateDirtyStateLocked(vm_page_t* page, uint64_t offset, DirtyState dirty_state,
@@ -3179,7 +3177,7 @@ void VmCowPages::LookupCursor::EstablishCursor() {
   // Ensure still in the valid range.
   DEBUG_ASSERT(offset_ < end_offset_);
 
-  target_->FindPageContentLocked(offset_, end_offset_ - offset_, &owner_info_);
+  owner_info_ = target_->FindPageContentLocked(offset_, end_offset_ - offset_);
   owner_cursor_ = owner_info_.cursor.current_ref();
   is_valid_ = true;
 }
@@ -3956,8 +3954,7 @@ bool VmCowPages::PageWouldReadZeroLocked(uint64_t page_offset) {
   }
   // If we don't have a page or reference here we need to check our parent.
   if (!slot || !slot->IsPageOrRef()) {
-    PageLookup content;
-    FindInitialPageContentLocked(page_offset, &content);
+    PageLookup content = FindInitialPageContentLocked(page_offset);
     if (!content.cursor.current()) {
       // Parent doesn't have a page either, so would also read as zero, assuming no page source.
       return !is_root_source_user_pager_backed();
@@ -5452,8 +5449,8 @@ zx_status_t VmCowPages::LookupReadableLocked(VmCowRange range, LookupReadableFun
     // traversal above partway into an interval, we will be able to continue the traversal over the
     // rest of the interval after this call - since we're the root, we will be the owner and the
     // owner length won't be clipped.
-    PageLookup content;
-    FindPageContentLocked(current_page_offset, end_page_offset - current_page_offset, &content);
+    PageLookup content =
+        FindPageContentLocked(current_page_offset, end_page_offset - current_page_offset);
 
     // This should always get filled out.
     DEBUG_ASSERT(content.visible_end > current_page_offset);
@@ -5615,9 +5612,8 @@ zx_status_t VmCowPages::TakePages(VmCowRange range, uint64_t splice_offset, VmPa
       }
       // Check if we need to insert a marker to zero the current location.
       auto parent_has_content = [this](uint64_t offset) {
-        PageLookup content;
         AssertHeld(lock_ref());
-        FindInitialPageContentLocked(offset, &content);
+        PageLookup content = FindInitialPageContentLocked(offset);
         return !!content.cursor.current();
       };
       if (!node_has_parent_content_markers() &&
@@ -5803,8 +5799,7 @@ zx_status_t VmCowPages::SupplyPagesLocked(VmCowRange range, VmPageSpliceList* pa
       // If we freed a parent_content_marker, the share count on the initial content should be
       // decremented as we can no longer see it.
       DEBUG_ASSERT(node_has_parent_content_markers());
-      PageLookup lookup_info;
-      FindInitialPageContentLocked(offset, &lookup_info);
+      PageLookup lookup_info = FindInitialPageContentLocked(offset);
       DEBUG_ASSERT(lookup_info.cursor.current() && !lookup_info.cursor.current()->IsEmpty());
       DEBUG_ASSERT(lookup_info.owner);
       if (lookup_info.cursor.current()->IsPageOrRef()) {
@@ -5816,8 +5811,7 @@ zx_status_t VmCowPages::SupplyPagesLocked(VmCowRange range, VmPageSpliceList* pa
                is_parent_hidden_locked()) {
       // If we have supplied a page into an empty slot, check if there is a page in our ancestor
       // chain that we will no longer see. If we find one, decrement the share count.
-      PageLookup lookup_info;
-      FindInitialPageContentLocked(offset, &lookup_info);
+      PageLookup lookup_info = FindInitialPageContentLocked(offset);
       if (lookup_info.cursor.current() && lookup_info.cursor.current()->IsPageOrRef() &&
           lookup_info.owner->is_hidden()) {
         lookup_info.owner.locked().DecrementCowContentShareCount(
@@ -7087,8 +7081,7 @@ VmCowReclaimResult VmCowPages::ReclaimPageForCompression(vm_page_t* page, uint64
         // pages this simply needs to check if there's any visible content above us, and then if
         // there isn't if the root is immutable or not (i.e. if it has a page source).
         auto parent_has_content = [this](uint64_t offset) TA_REQ(lock()) {
-          PageLookup content;
-          FindInitialPageContentLocked(offset, &content);
+          PageLookup content = FindInitialPageContentLocked(offset);
           return !!content.cursor.current();
         };
         if (node_has_parent_content_markers() ||
