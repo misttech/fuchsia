@@ -186,7 +186,6 @@ impl<'a> PowerElementContextBuilder<'a> {
 /// A dependency for a lease. It is equivalent to an fbroker::LevelDependency with the dependent
 /// fields omitted.
 pub struct LeaseDependency {
-    pub dependency_type: fbroker::DependencyType,
     pub requires_token: fbroker::DependencyToken,
     pub requires_level_by_preference: Vec<fbroker::PowerLevel>,
 }
@@ -233,7 +232,6 @@ impl LeaseHelper {
         let level_dependencies = lease_dependencies
             .into_iter()
             .map(|d| fbroker::LevelDependency {
-                dependency_type: d.dependency_type,
                 dependent_level: BINARY_POWER_LEVELS[1],
                 requires_token: d.requires_token,
                 requires_level_by_preference: d.requires_level_by_preference,

@@ -21,7 +21,6 @@ const MAX_ELEMENT_NAME_LEN uint16 = fuchsia.power.broker.MAX_ELEMENT_NAME_LEN;
 const MAX_VALID_POWER_LEVELS uint16 = fuchsia.power.broker.MAX_VALID_POWER_LEVELS;
 
 alias PowerLevel = fuchsia.power.broker.PowerLevel;
-alias DependencyType = fuchsia.power.broker.DependencyType;
 
 // Limit the number of dependencies to the number of valid power levels.
 const MAX_DEPENDENCIES uint16 = MAX_VALID_POWER_LEVELS;
@@ -64,7 +63,6 @@ type SystemActivityControlError = strict enum : uint32 {
 
 /// Power Dependency information in Element. Used by a client to construct power topology.
 type LevelDependency = struct {
-    dependency_type DependencyType;
     dependent_level PowerLevel;
     requires_element ElementName;
     requires_level PowerLevel;

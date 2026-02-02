@@ -9,8 +9,8 @@ use crate::inspect::{
 use anyhow::{Context, Error, anyhow};
 use async_utils::hanging_get::server::{HangingGet, Publisher, Subscriber};
 use fidl_fuchsia_power_broker::{
-    self as fpb, DependencyType, LeaseStatus, Permissions, RegisterDependencyTokenError,
-    StatusError, StatusWatchPowerLevelResponder, UnregisterDependencyTokenError,
+    self as fpb, LeaseStatus, Permissions, RegisterDependencyTokenError, StatusError,
+    StatusWatchPowerLevelResponder, UnregisterDependencyTokenError,
 };
 use fuchsia_inspect::{InspectType as IType, Node as INode};
 use futures::channel::mpsc::{UnboundedReceiver, UnboundedSender, unbounded};
@@ -1028,7 +1028,7 @@ impl Catalog {
             topology: Topology::new(inspect_parent, INSPECT_GRAPH_EVENT_BUFFER_SIZE),
             leases: HashMap::new(),
             lease_status: SubscribeMap::new(Some(inspect_parent.create_child("leases"))),
-            assertive_claims: ClaimActivationTracker::new(DependencyType::Assertive),
+            assertive_claims: ClaimActivationTracker::new(),
             last_claim_id: ClaimID(0),
         }
     }
@@ -1260,10 +1260,10 @@ impl fmt::Display for ClaimActivationTracker {
 }
 
 impl ClaimActivationTracker {
-    fn new(dependency_type: DependencyType) -> Self {
+    fn new() -> Self {
         Self {
-            pending: ClaimLookup::new(dependency_type, ClaimStatus::Pending),
-            activated: ClaimLookup::new(dependency_type, ClaimStatus::Activated),
+            pending: ClaimLookup::new(ClaimStatus::Pending),
+            activated: ClaimLookup::new(ClaimStatus::Activated),
         }
     }
 
@@ -1298,17 +1298,10 @@ struct ClaimLookup {
 }
 
 impl ClaimLookup {
-    fn new(dependency_type: DependencyType, status: ClaimStatus) -> Self {
-        let label = match (dependency_type, status) {
-            (DependencyType::Assertive, ClaimStatus::Pending) => c"claims_assertive_pending",
-            (DependencyType::Opportunistic, ClaimStatus::Pending) => {
-                c"claims_Opportunistic_pending"
-            }
-            (DependencyType::Assertive, ClaimStatus::Activated) => c"claims_assertive_activated",
-            (DependencyType::Opportunistic, ClaimStatus::Activated) => {
-                c"claims_opportunistic_activated"
-            }
-            (DependencyType::__SourceBreaking { .. }, _) => c"claims_unknown",
+    fn new(status: ClaimStatus) -> Self {
+        let label = match status {
+            ClaimStatus::Pending => c"claims_pending",
+            ClaimStatus::Activated => c"claims_activated",
         };
         fuchsia_trace::counter!(
             c"power-broker", label, 0,
@@ -1727,7 +1720,7 @@ mod tests {
 
     #[fuchsia::test]
     fn test_claim_lookup_add_remove() {
-        let mut lookup = ClaimLookup::new(DependencyType::Assertive, ClaimStatus::Activated);
+        let mut lookup = ClaimLookup::new(ClaimStatus::Activated);
 
         let element_a = ElementID::new(1);
         let element_b = ElementID::new(2);
@@ -2020,7 +2013,6 @@ mod tests {
             OFF.level,
             BINARY_POWER_LEVELS.to_vec(),
             vec![fpb::LevelDependency {
-                dependency_type: DependencyType::Assertive,
                 dependent_level: ON.level,
                 requires_token: never_registered_token
                     .duplicate_handle(zx::Rights::SAME_RIGHTS)
@@ -2037,7 +2029,6 @@ mod tests {
                 OFF.level,
                 BINARY_POWER_LEVELS.to_vec(),
                 vec![fpb::LevelDependency {
-                    dependency_type: DependencyType::Assertive,
                     dependent_level: ON.level,
                     requires_token: token_mithril
                         .duplicate_handle(zx::Rights::SAME_RIGHTS)
@@ -2111,7 +2102,6 @@ mod tests {
                 OFF.level,
                 BINARY_POWER_LEVELS.to_vec(),
                 vec![fpb::LevelDependency {
-                    dependency_type: DependencyType::Assertive,
                     dependent_level: ON.level,
                     requires_token: token_mithril
                         .duplicate_handle(zx::Rights::SAME_RIGHTS)
@@ -2376,7 +2366,6 @@ mod tests {
                 BINARY_POWER_LEVELS.to_vec(),
                 vec![
                     fpb::LevelDependency {
-                        dependency_type: DependencyType::Assertive,
                         dependent_level: ON.level,
                         requires_token: parent1_token
                             .duplicate_handle(zx::Rights::SAME_RIGHTS)
@@ -2384,7 +2373,6 @@ mod tests {
                         requires_level_by_preference: vec![ON.level],
                     },
                     fpb::LevelDependency {
-                        dependency_type: DependencyType::Assertive,
                         dependent_level: ON.level,
                         requires_token: parent2_token
                             .duplicate_handle(zx::Rights::SAME_RIGHTS)
@@ -2691,7 +2679,6 @@ mod tests {
                 OFF.level,
                 BINARY_POWER_LEVELS.to_vec(),
                 vec![fpb::LevelDependency {
-                    dependency_type: DependencyType::Assertive,
                     dependent_level: ON.level,
                     requires_token: parent_token
                         .duplicate_handle(zx::Rights::SAME_RIGHTS)
@@ -2811,7 +2798,6 @@ mod tests {
                 vec![0, 30, 50],
                 vec![
                     fpb::LevelDependency {
-                        dependency_type: DependencyType::Assertive,
                         dependent_level: 50,
                         requires_token: grandparent_token
                             .duplicate_handle(zx::Rights::SAME_RIGHTS)
@@ -2819,7 +2805,6 @@ mod tests {
                         requires_level_by_preference: vec![200],
                     },
                     fpb::LevelDependency {
-                        dependency_type: DependencyType::Assertive,
                         dependent_level: 30,
                         requires_token: grandparent_token
                             .duplicate_handle(zx::Rights::SAME_RIGHTS)
@@ -2841,7 +2826,6 @@ mod tests {
                 0,
                 vec![0, 5],
                 vec![fpb::LevelDependency {
-                    dependency_type: DependencyType::Assertive,
                     dependent_level: 5,
                     requires_token: parent_token
                         .duplicate_handle(zx::Rights::SAME_RIGHTS)
@@ -2856,7 +2840,6 @@ mod tests {
                 0,
                 vec![0, 3],
                 vec![fpb::LevelDependency {
-                    dependency_type: DependencyType::Assertive,
                     dependent_level: 3,
                     requires_token: parent_token
                         .duplicate_handle(zx::Rights::SAME_RIGHTS)
@@ -3017,7 +3000,6 @@ mod tests {
                 OFF.level,
                 BINARY_POWER_LEVELS.to_vec(),
                 vec![fpb::LevelDependency {
-                    dependency_type: DependencyType::Assertive,
                     dependent_level: ON.level,
                     requires_token: grandparent_token
                         .duplicate_handle(zx::Rights::SAME_RIGHTS)
@@ -3038,7 +3020,6 @@ mod tests {
                 OFF.level,
                 BINARY_POWER_LEVELS.to_vec(),
                 vec![fpb::LevelDependency {
-                    dependency_type: DependencyType::Assertive,
                     dependent_level: ON.level,
                     requires_token: parent_token
                         .duplicate_handle(zx::Rights::SAME_RIGHTS)
@@ -3053,7 +3034,6 @@ mod tests {
                 OFF.level,
                 BINARY_POWER_LEVELS.to_vec(),
                 vec![fpb::LevelDependency {
-                    dependency_type: DependencyType::Assertive,
                     dependent_level: ON.level,
                     requires_token: parent_token
                         .duplicate_handle(zx::Rights::SAME_RIGHTS)
@@ -3186,7 +3166,6 @@ mod tests {
                 OFF.level,
                 BINARY_POWER_LEVELS.to_vec(),
                 vec![fpb::LevelDependency {
-                    dependency_type: DependencyType::Assertive,
                     dependent_level: ON.level,
                     requires_token: element_c_token
                         .duplicate_handle(zx::Rights::SAME_RIGHTS)
@@ -3210,7 +3189,6 @@ mod tests {
                 OFF.level,
                 BINARY_POWER_LEVELS.to_vec(),
                 vec![fpb::LevelDependency {
-                    dependency_type: DependencyType::Assertive,
                     dependent_level: ON.level,
                     requires_token: element_b_token
                         .duplicate_handle(zx::Rights::SAME_RIGHTS)
@@ -3225,7 +3203,6 @@ mod tests {
                 OFF.level,
                 BINARY_POWER_LEVELS.to_vec(),
                 vec![fpb::LevelDependency {
-                    dependency_type: DependencyType::Assertive,
                     dependent_level: ON.level,
                     requires_token: element_c_token
                         .duplicate_handle(zx::Rights::SAME_RIGHTS)
@@ -3250,7 +3227,6 @@ mod tests {
                 OFF.level,
                 BINARY_POWER_LEVELS.to_vec(),
                 vec![fpb::LevelDependency {
-                    dependency_type: DependencyType::Assertive,
                     dependent_level: ON.level,
                     requires_token: element_d_token
                         .duplicate_handle(zx::Rights::SAME_RIGHTS)
@@ -3394,7 +3370,6 @@ mod tests {
                 OFF.level,
                 BINARY_POWER_LEVELS.to_vec(),
                 vec![fpb::LevelDependency {
-                    dependency_type: DependencyType::Assertive,
                     dependent_level: ON.level,
                     requires_token: grandparent_token
                         .duplicate_handle(zx::Rights::SAME_RIGHTS)
@@ -3416,7 +3391,6 @@ mod tests {
                 OFF.level,
                 BINARY_POWER_LEVELS.to_vec(),
                 vec![fpb::LevelDependency {
-                    dependency_type: DependencyType::Assertive,
                     dependent_level: ON.level,
                     requires_token: grandparent_token
                         .duplicate_handle(zx::Rights::SAME_RIGHTS)
@@ -3438,7 +3412,6 @@ mod tests {
                 BINARY_POWER_LEVELS.to_vec(),
                 vec![
                     fpb::LevelDependency {
-                        dependency_type: DependencyType::Assertive,
                         dependent_level: ON.level,
                         requires_token: parent1_token
                             .duplicate_handle(zx::Rights::SAME_RIGHTS)
@@ -3446,7 +3419,6 @@ mod tests {
                         requires_level_by_preference: vec![ON.level],
                     },
                     fpb::LevelDependency {
-                        dependency_type: DependencyType::Assertive,
                         dependent_level: ON.level,
                         requires_token: parent2_token
                             .duplicate_handle(zx::Rights::SAME_RIGHTS)
@@ -3575,7 +3547,6 @@ mod tests {
                 v012_u8.clone(),
                 vec![
                     fpb::LevelDependency {
-                        dependency_type: DependencyType::Assertive,
                         dependent_level: 1,
                         requires_token: token_b_assertive
                             .duplicate_handle(zx::Rights::SAME_RIGHTS)
@@ -3584,7 +3555,6 @@ mod tests {
                         requires_level_by_preference: vec![1],
                     },
                     fpb::LevelDependency {
-                        dependency_type: DependencyType::Assertive,
                         dependent_level: 2,
                         requires_token: token_c_assertive
                             .duplicate_handle(zx::Rights::SAME_RIGHTS)
@@ -3696,7 +3666,6 @@ mod tests {
                 OFF.level,
                 BINARY_POWER_LEVELS.to_vec(),
                 vec![fpb::LevelDependency {
-                    dependency_type: DependencyType::Assertive,
                     dependent_level: ON.level,
                     requires_token: token_a
                         .duplicate_handle(zx::Rights::SAME_RIGHTS)
@@ -3712,7 +3681,6 @@ mod tests {
                 OFF.level,
                 BINARY_POWER_LEVELS.to_vec(),
                 vec![fpb::LevelDependency {
-                    dependency_type: DependencyType::Assertive,
                     dependent_level: ON.level,
                     requires_token: token_a
                         .duplicate_handle(zx::Rights::SAME_RIGHTS)
@@ -3851,7 +3819,6 @@ mod tests {
                 OFF.level,
                 BINARY_POWER_LEVELS.to_vec(),
                 vec![fpb::LevelDependency {
-                    dependency_type: DependencyType::Assertive,
                     dependent_level: ON.level,
                     requires_token: token_mithril
                         .duplicate_handle(zx::Rights::SAME_RIGHTS)
@@ -3997,7 +3964,6 @@ mod tests {
                 BINARY_POWER_LEVELS.to_vec(),
                 vec![
                     fpb::LevelDependency {
-                        dependency_type: DependencyType::Assertive,
                         dependent_level: ON.level,
                         requires_token: token_gp1
                             .duplicate_handle(zx::Rights::SAME_RIGHTS)
@@ -4006,7 +3972,6 @@ mod tests {
                         requires_level_by_preference: vec![ON.level],
                     },
                     fpb::LevelDependency {
-                        dependency_type: DependencyType::Assertive,
                         dependent_level: ON.level,
                         requires_token: token_gp2
                             .duplicate_handle(zx::Rights::SAME_RIGHTS)
@@ -4029,7 +3994,6 @@ mod tests {
                 OFF.level,
                 BINARY_POWER_LEVELS.to_vec(),
                 vec![fpb::LevelDependency {
-                    dependency_type: DependencyType::Assertive,
                     dependent_level: ON.level,
                     requires_token: token_x
                         .duplicate_handle(zx::Rights::SAME_RIGHTS)
@@ -4051,7 +4015,6 @@ mod tests {
                 OFF.level,
                 BINARY_POWER_LEVELS.to_vec(),
                 vec![fpb::LevelDependency {
-                    dependency_type: DependencyType::Assertive,
                     dependent_level: ON.level,
                     requires_token: token_x
                         .duplicate_handle(zx::Rights::SAME_RIGHTS)
@@ -4073,7 +4036,6 @@ mod tests {
                 OFF.level,
                 BINARY_POWER_LEVELS.to_vec(),
                 vec![fpb::LevelDependency {
-                    dependency_type: DependencyType::Assertive,
                     dependent_level: ON.level,
                     requires_token: token_p1
                         .duplicate_handle(zx::Rights::SAME_RIGHTS)
@@ -4089,7 +4051,6 @@ mod tests {
                 OFF.level,
                 BINARY_POWER_LEVELS.to_vec(),
                 vec![fpb::LevelDependency {
-                    dependency_type: DependencyType::Assertive,
                     dependent_level: ON.level,
                     requires_token: token_p1
                         .duplicate_handle(zx::Rights::SAME_RIGHTS)
@@ -4105,7 +4066,6 @@ mod tests {
                 OFF.level,
                 BINARY_POWER_LEVELS.to_vec(),
                 vec![fpb::LevelDependency {
-                    dependency_type: DependencyType::Assertive,
                     dependent_level: ON.level,
                     requires_token: token_p2
                         .duplicate_handle(zx::Rights::SAME_RIGHTS)
@@ -4121,7 +4081,6 @@ mod tests {
                 OFF.level,
                 BINARY_POWER_LEVELS.to_vec(),
                 vec![fpb::LevelDependency {
-                    dependency_type: DependencyType::Assertive,
                     dependent_level: ON.level,
                     requires_token: token_p2
                         .duplicate_handle(zx::Rights::SAME_RIGHTS)

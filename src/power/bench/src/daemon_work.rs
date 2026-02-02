@@ -39,8 +39,8 @@ fn work_func(
     Ok(())
 }
 
-pub(crate) fn prepare_work(
-) -> (Arc<fpt::TopologyControlSynchronousProxy>, Arc<fbroker::StatusSynchronousProxy>) {
+pub(crate) fn prepare_work()
+-> (Arc<fpt::TopologyControlSynchronousProxy>, Arc<fbroker::StatusSynchronousProxy>) {
     // Current Criterion library doesn't support async call yet.
     let topology_control = connect_to_protocol_sync::<fpt::TopologyControlMarker>().unwrap();
 
@@ -50,7 +50,6 @@ pub(crate) fn prepare_work(
             initial_current_level: 0,
             valid_levels: vec![0, 5],
             dependencies: vec![fpt::LevelDependency {
-                dependency_type: fpt::DependencyType::Assertive,
                 dependent_level: 5,
                 requires_element: "P".to_string(),
                 requires_level: 50,

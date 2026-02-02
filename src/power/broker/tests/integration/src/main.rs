@@ -6,8 +6,8 @@ use anyhow::{Error, Result};
 use assert_matches::assert_matches;
 use fidl::endpoints::{Proxy, create_endpoints, create_proxy};
 use fidl_fuchsia_power_broker::{
-    self as fpb, BinaryPowerLevel, DependencyType, ElementSchema, LeaseStatus, LevelDependency,
-    StatusMarker, TopologyMarker, TopologyProxy,
+    self as fpb, BinaryPowerLevel, ElementSchema, LeaseStatus, LevelDependency, StatusMarker,
+    TopologyMarker, TopologyProxy,
 };
 use fuchsia_async as fasync;
 use fuchsia_component_test::{Capability, ChildOptions, RealmBuilder, RealmInstance, Ref, Route};
@@ -166,7 +166,6 @@ mod tests {
                         initial_current_level: Some(BinaryPowerLevel::Off.into_primitive()),
                         valid_levels: Some(BINARY_POWER_LEVELS.to_vec()),
                         dependencies: Some(vec![LevelDependency {
-                            dependency_type: DependencyType::Assertive,
                             dependent_level: BinaryPowerLevel::On.into_primitive(),
                             requires_token: parent_token
                                 .duplicate_handle(zx::Rights::SAME_RIGHTS)
@@ -393,7 +392,6 @@ mod tests {
                         initial_current_level: Some(BinaryPowerLevel::Off.into_primitive()),
                         valid_levels: Some(BINARY_POWER_LEVELS.to_vec()),
                         dependencies: Some(vec![LevelDependency {
-                            dependency_type: DependencyType::Assertive,
                             dependent_level: BinaryPowerLevel::On.into_primitive(),
                             requires_token: element_a_token
                                 .duplicate_handle(zx::Rights::SAME_RIGHTS)
@@ -439,7 +437,6 @@ mod tests {
                         initial_current_level: Some(BinaryPowerLevel::Off.into_primitive()),
                         valid_levels: Some(BINARY_POWER_LEVELS.to_vec()),
                         dependencies: Some(vec![LevelDependency {
-                            dependency_type: DependencyType::Assertive,
                             dependent_level: BinaryPowerLevel::On.into_primitive(),
                             requires_token: element_b_token
                                 .duplicate_handle(zx::Rights::SAME_RIGHTS)
@@ -768,7 +765,6 @@ mod tests {
                         valid_levels: Some(vec![0, 30, 50]),
                         dependencies: Some(vec![
                             LevelDependency {
-                                dependency_type: DependencyType::Assertive,
                                 dependent_level: 50,
                                 requires_token: grandparent_token
                                     .duplicate_handle(zx::Rights::SAME_RIGHTS)
@@ -776,7 +772,6 @@ mod tests {
                                 requires_level_by_preference: vec![200],
                             },
                             LevelDependency {
-                                dependency_type: DependencyType::Assertive,
                                 dependent_level: 30,
                                 requires_token: grandparent_token
                                     .duplicate_handle(zx::Rights::SAME_RIGHTS)
@@ -819,7 +814,6 @@ mod tests {
                         initial_current_level: Some(0),
                         valid_levels: Some(vec![0, 5]),
                         dependencies: Some(vec![LevelDependency {
-                            dependency_type: DependencyType::Assertive,
                             dependent_level: 5,
                             requires_token: parent_token
                                 .duplicate_handle(zx::Rights::SAME_RIGHTS)
@@ -854,7 +848,6 @@ mod tests {
                         initial_current_level: Some(0),
                         valid_levels: Some(vec![0, 3]),
                         dependencies: Some(vec![LevelDependency {
-                            dependency_type: DependencyType::Assertive,
                             dependent_level: 3,
                             requires_token: parent_token
                                 .duplicate_handle(zx::Rights::SAME_RIGHTS)
@@ -1222,7 +1215,6 @@ mod tests {
                     initial_current_level: Some(BinaryPowerLevel::Off.into_primitive()),
                     valid_levels: Some(BINARY_POWER_LEVELS.to_vec()),
                     dependencies: Some(vec![LevelDependency {
-                        dependency_type: DependencyType::Assertive,
                         dependent_level: BinaryPowerLevel::On.into_primitive(),
                         requires_token: zx::Event::create(),
                         requires_level_by_preference: vec![BinaryPowerLevel::On.into_primitive()],
@@ -1243,7 +1235,6 @@ mod tests {
                     initial_current_level: Some(BinaryPowerLevel::Off.into_primitive()),
                     valid_levels: Some(BINARY_POWER_LEVELS.to_vec()),
                     dependencies: Some(vec![LevelDependency {
-                        dependency_type: DependencyType::Assertive,
                         dependent_level: BinaryPowerLevel::On.into_primitive(),
                         requires_token: earth_token
                             .duplicate_handle(zx::Rights::SAME_RIGHTS)
@@ -1266,7 +1257,6 @@ mod tests {
                     initial_current_level: Some(BinaryPowerLevel::Off.into_primitive()),
                     valid_levels: Some(BINARY_POWER_LEVELS.to_vec()),
                     dependencies: Some(vec![LevelDependency {
-                        dependency_type: DependencyType::Assertive,
                         dependent_level: BinaryPowerLevel::On.into_primitive(),
                         requires_token: earth_token
                             .duplicate_handle(zx::Rights::SAME_RIGHTS)

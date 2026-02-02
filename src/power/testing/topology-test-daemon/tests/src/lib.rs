@@ -5,9 +5,9 @@
 use anyhow::Result;
 use diagnostics_assertions::tree_assertion;
 use diagnostics_reader::ArchiveReader;
-use fidl::endpoints::{create_proxy, DiscoverableProtocolMarker};
+use fidl::endpoints::{DiscoverableProtocolMarker, create_proxy};
 use fuchsia_component_test::{
-    Capability, ChildOptions, RealmBuilder, RealmInstance, Ref, Route, DEFAULT_COLLECTION_NAME,
+    Capability, ChildOptions, DEFAULT_COLLECTION_NAME, RealmBuilder, RealmInstance, Ref, Route,
 };
 use log::*;
 use {fidl_fuchsia_power_broker as fbroker, fidl_fuchsia_power_topology_test as fpt};
@@ -159,7 +159,6 @@ async fn test_invalid_topology() -> Result<()> {
         initial_current_level: 0,
         valid_levels: vec![0, 1],
         dependencies: vec![fpt::LevelDependency {
-            dependency_type: fpt::DependencyType::Assertive,
             dependent_level: 1,
             requires_element: "element2".to_string(),
             requires_level: 1,
@@ -224,7 +223,6 @@ async fn test_topology_control() -> Result<()> {
             initial_current_level: 0,
             valid_levels: vec![0, 5],
             dependencies: vec![fpt::LevelDependency {
-                dependency_type: fpt::DependencyType::Assertive,
                 dependent_level: 5,
                 requires_element: "P".to_string(),
                 requires_level: 50,
@@ -235,7 +233,6 @@ async fn test_topology_control() -> Result<()> {
             initial_current_level: 0,
             valid_levels: vec![0, 3],
             dependencies: vec![fpt::LevelDependency {
-                dependency_type: fpt::DependencyType::Assertive,
                 dependent_level: 3,
                 requires_element: "P".to_string(),
                 requires_level: 30,
@@ -247,13 +244,11 @@ async fn test_topology_control() -> Result<()> {
             valid_levels: vec![0, 30, 50],
             dependencies: vec![
                 fpt::LevelDependency {
-                    dependency_type: fpt::DependencyType::Assertive,
                     dependent_level: 50,
                     requires_element: "GP".to_string(),
                     requires_level: 200,
                 },
                 fpt::LevelDependency {
-                    dependency_type: fpt::DependencyType::Assertive,
                     dependent_level: 30,
                     requires_element: "GP".to_string(),
                     requires_level: 90,
@@ -344,7 +339,6 @@ async fn test_topology_control_and_status() -> Result<()> {
             initial_current_level: 0,
             valid_levels: vec![0, 5],
             dependencies: vec![fpt::LevelDependency {
-                dependency_type: fpt::DependencyType::Assertive,
                 dependent_level: 5,
                 requires_element: "P".to_string(),
                 requires_level: 50,

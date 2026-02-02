@@ -31,7 +31,6 @@ using ::fidl::Endpoints;
 using ::fidl::ServerEnd;
 using ::fidl::SyncClient;
 using ::forensics::exceptions::handler::WakeLease;
-using ::fuchsia_power_broker::DependencyType;
 using ::fuchsia_power_broker::ElementControl;
 using ::fuchsia_power_broker::ElementInfoProvider;
 using ::fuchsia_power_broker::ElementInfoProviderGetStatusEndpointsResponse;
@@ -120,7 +119,6 @@ ElementSchema BuildAssertiveApplicationActivitySchema(
     ServerEnd<Lessor> lessor_server_end, ClientEnd<ElementRunner> element_runner_client_end,
     const std::string& element_name) {
   LevelDependency dependency(
-      /*dependency_type=*/DependencyType::kAssertive,
       /*dependent_level=*/kPowerLevelActive,
       /*requires_token=*/std::move(requires_token),
       /*requires_level_by_preference=*/

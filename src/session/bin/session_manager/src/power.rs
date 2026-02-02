@@ -78,7 +78,6 @@ impl PowerElement {
             )
             .initial_current_level(POWER_ON_LEVEL)
             .dependencies(vec![fbroker::LevelDependency {
-                dependency_type: fbroker::DependencyType::Assertive,
                 dependent_level: POWER_ON_LEVEL,
                 requires_token: application_activity_token,
                 requires_level_by_preference: vec![

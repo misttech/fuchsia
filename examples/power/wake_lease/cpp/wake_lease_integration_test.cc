@@ -28,7 +28,6 @@ namespace {
 using fdf_power::testing::FakeSuspendBlocker;
 using fdf_power::testing::FidlBoundServer;
 using fuchsia_power_broker::DependencyToken;
-using fuchsia_power_broker::DependencyType;
 using fuchsia_power_broker::ElementControl;
 using fuchsia_power_broker::ElementRunner;
 using fuchsia_power_broker::ElementSchema;
@@ -74,7 +73,6 @@ class ApplicationActivityElement {
   ElementSchema BuildAssertiveApplicationActivitySchema(const std::string& name,
                                                         zx::event requires_token) {
     LevelDependency dependency(
-        /*dependency_type=*/DependencyType::kAssertive,
         /*dependent_level=*/fidl::ToUnderlying(BinaryPowerLevel::kOn),
         /*requires_token=*/std::move(requires_token),
         /*requires_level_by_preference=*/

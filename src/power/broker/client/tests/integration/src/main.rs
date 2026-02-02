@@ -91,7 +91,6 @@ mod tests {
             create_test_element(&topology, "Provider").await?;
 
         let dependency = client_lib::LeaseDependency {
-            dependency_type: fpb::DependencyType::Assertive,
             requires_token: dependency_token,
             requires_level_by_preference: vec![ON],
         };
@@ -135,12 +134,10 @@ mod tests {
 
         let dependencies = vec![
             client_lib::LeaseDependency {
-                dependency_type: fpb::DependencyType::Assertive,
                 requires_token: dependency_token_1,
                 requires_level_by_preference: vec![ON],
             },
             client_lib::LeaseDependency {
-                dependency_type: fpb::DependencyType::Assertive,
                 requires_token: dependency_token_2,
                 requires_level_by_preference: vec![ON],
             },
@@ -210,7 +207,6 @@ mod tests {
         .detach();
 
         let dependency = client_lib::LeaseDependency {
-            dependency_type: fpb::DependencyType::Assertive,
             requires_token: dep_token,
             requires_level_by_preference: vec![ON],
         };
@@ -251,7 +247,6 @@ mod tests {
         // acquiring a lease will fail.
         loop {
             let dependency = client_lib::LeaseDependency {
-                dependency_type: fpb::DependencyType::Assertive,
                 requires_token: dependency_token.duplicate_handle(zx::Rights::SAME_RIGHTS).unwrap(),
                 requires_level_by_preference: vec![ON],
             };

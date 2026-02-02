@@ -319,7 +319,6 @@ impl TopologyTestDaemon {
                     .duplicate_handle(Rights::SAME_RIGHTS)
                     .expect("failed to duplicate token");
                 dependencies.push(fbroker::LevelDependency {
-                    dependency_type: dependency.dependency_type,
                     dependent_level: dependency.dependent_level,
                     requires_token: token,
                     requires_level_by_preference: vec![dependency.requires_level],

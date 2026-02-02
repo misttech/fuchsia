@@ -146,7 +146,6 @@ class LeaseDependency {
  public:
   std::vector<fuchsia_power_broker::PowerLevel> levels_by_preference;
   fuchsia_power_broker::DependencyToken token;
-  fuchsia_power_broker::DependencyType type;
 };
 
 /// Uses the provided namespace to add the power elements described in

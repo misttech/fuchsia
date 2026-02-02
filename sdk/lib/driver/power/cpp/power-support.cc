@@ -45,17 +45,10 @@ fit::result<Error, std::vector<fuchsia_power_broker::LevelDependency>> ConvertPo
     const PowerDependency& driver_config_deps) {
   std::vector<fuchsia_power_broker::LevelDependency> power_framework_deps;
 
-  // See if this is an assertive or opportunistic dependency
-  // If we don't know the type, default to assertive. This possibly results in
-  // unintentionally high power consumption, but is more likely to preserve
-  // programmatic correctness.
-  fuchsia_power_broker::DependencyType dep_type = fuchsia_power_broker::DependencyType::kAssertive;
-
   // Go through each of the level dependencies and translate them
   for (const auto& driver_framework_level_dep : driver_config_deps.level_deps) {
     fuchsia_power_broker::LevelDependency power_framework_dep;
 
-    power_framework_dep.dependency_type() = dep_type;
     power_framework_dep.dependent_level() = driver_framework_level_dep.child_level;
     power_framework_dep.requires_level_by_preference() =
         std::vector<uint8_t>(1, driver_framework_level_dep.parent_level);
@@ -174,11 +167,6 @@ fit::result<Error> GetTokensFromCpuElementManager(
       continue;
     }
 
-    for (const fuchsia_power_broker::LevelDependency& dep : deps) {
-      if (dep.dependency_type() != fuchsia_power_broker::DependencyType::kAssertive) {
-        return zx::error(Error::INVALID_ARGS);
-      }
-    }
     // Clone the token for each of the dependencies in the map that need it.
     zx::event token_copy;
     cpu_token.duplicate(ZX_RIGHT_SAME_RIGHTS, &token_copy);
@@ -549,8 +537,7 @@ fit::result<Error> AddElement(
         return fit::error(Error::INVALID_ARGS);
       }
       fuchsia_power_broker::LevelDependency c{
-          {.dependency_type = needs.dependency_type(),
-           .dependent_level = needs.dependent_level(),
+          {.dependent_level = needs.dependent_level(),
            .requires_token = std::move(dupe),
            .requires_level_by_preference = needs.requires_level_by_preference()}};
       level_deps[dep_index] = std::move(c);
@@ -643,9 +630,11 @@ CreateLeaseHelper(const fidl::ClientEnd<fuchsia_power_broker::Topology>& topolog
   std::vector<fuchsia_power_broker::LevelDependency> deps(dependencies.size());
   int count = 0;
   for (auto& dep : dependencies) {
-    deps[count] =
-        fuchsia_power_broker::LevelDependency(dep.type, fuchsia_power_broker::PowerLevel{1},
-                                              std::move(dep.token), dep.levels_by_preference);
+    deps[count] = fuchsia_power_broker::LevelDependency{{
+        .dependent_level = fuchsia_power_broker::PowerLevel{1},
+        .requires_token = std::move(dep.token),
+        .requires_level_by_preference = dep.levels_by_preference,
+    }};
     count++;
   }
 

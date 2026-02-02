@@ -56,7 +56,6 @@ async fn wake_lease_blocks_system_suspend_until_release() -> Result<()> {
         &topology,
         "boot-complete-lease",
         vec![pbclient::LeaseDependency {
-            dependency_type: fbroker::DependencyType::Assertive,
             requires_token: activity_token,
             requires_level_by_preference: vec![pbclient::BINARY_POWER_LEVELS[1]],
         }],

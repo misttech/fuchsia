@@ -388,7 +388,6 @@ void DriverRunner::CreateStoragePowerElement(fuchsia_power_broker::DependencyTok
     ZX_ASSERT_MSG(driver_token.is_valid(), "Storage token required, but is invalid");
     std::vector<fuchsia_power_broker::LevelDependency> dep_on_storage_driver;
     fuchsia_power_broker::LevelDependency dep;
-    dep.dependency_type() = fuchsia_power_broker::DependencyType::kAssertive;
     dep.dependent_level() = 1;
     dep.requires_level_by_preference() = std::vector<fuchsia_power_broker::wire::PowerLevel>{1};
     dep.requires_token() = std::move(driver_token);
@@ -1123,7 +1122,6 @@ void DriverRunner::CreatePowerElement(std::string_view name,
     reqs_by_pref.push_back(static_cast<fuchsia_power_broker::PowerLevel>(1));
 
     fuchsia_power_broker::LevelDependency level_dep;
-    level_dep.dependency_type() = fuchsia_power_broker::DependencyType::kAssertive,
     level_dep.dependent_level() = static_cast<fuchsia_power_broker::PowerLevel>(1),
     level_dep.requires_token() = std::move(clone),
     level_dep.requires_level_by_preference() = reqs_by_pref;
@@ -1143,7 +1141,6 @@ void DriverRunner::CreatePowerElement(std::string_view name,
 
     fuchsia_power_broker::LevelDependency level_dep;
 
-    level_dep.dependency_type() = fuchsia_power_broker::wire::DependencyType::kAssertive;
     level_dep.dependent_level() = static_cast<fuchsia_power_broker::wire::PowerLevel>(1);
     level_dep.requires_token() = std::move(*token);
     level_dep.requires_level_by_preference() = reqs_by_pref;

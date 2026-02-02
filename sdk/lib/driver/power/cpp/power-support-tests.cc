@@ -169,7 +169,6 @@ TEST_F(PowerLibTest, TestLeaseHelper) {
   deps.push_back(fdf_power::LeaseDependency{
       .levels_by_preference = {1},
       .token = std::move(description.assertive_token),
-      .type = fuchsia_power_broker::DependencyType::kAssertive,
   });
 
   // Now, let's create a direct lease on the element we created
@@ -206,7 +205,6 @@ TEST_F(PowerLibTest, TestCreateLeaseHelperWithClosedChannel) {
   deps.push_back(fdf_power::LeaseDependency{
       .levels_by_preference = {1},
       .token = std::move(not_registered),
-      .type = fuchsia_power_broker::DependencyType::kAssertive,
   });
 
   fit::result<std::tuple<fidl::Status, std::optional<fuchsia_power_broker::AddElementError>>,
@@ -249,7 +247,6 @@ TEST_F(PowerLibTest, TestCreateLeaseHelperWithInvalidToken) {
   deps.push_back(fdf_power::LeaseDependency{
       .levels_by_preference = {1},
       .token = std::move(not_registered),
-      .type = fuchsia_power_broker::DependencyType::kAssertive,
   });
 
   // Now, let's create a direct lease on the element we created
@@ -642,7 +639,6 @@ TEST_F(PowerLibTest, LevelDependencyWithSingleParent) {
 
   // Check that the translated dependencies match the ones we put in
   for (auto& dep : deps) {
-    ASSERT_EQ(dep.dependency_type(), fuchsia_power_broker::DependencyType::kAssertive);
     uint8_t parent_level =
         static_cast<uint8_t>(child_to_parent_levels.extract(dep.dependent_level()).mapped());
     ASSERT_EQ(dep.requires_level_by_preference().front(), parent_level);

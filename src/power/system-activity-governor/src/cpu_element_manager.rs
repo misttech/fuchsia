@@ -95,7 +95,6 @@ where
             &topology,
             "cpu_boot_control",
             vec![LeaseDependency {
-                dependency_type: fbroker::DependencyType::Assertive,
                 requires_token: cpu.assertive_dependency_token().expect("token not available"),
                 requires_level_by_preference: vec![fsystem::CpuLevel::Active.into_primitive()],
             }],
@@ -178,7 +177,6 @@ where
         mut extra_dependencies: Vec<fbroker::LevelDependency>,
     ) -> Vec<fbroker::LevelDependency> {
         extra_dependencies.push(fbroker::LevelDependency {
-            dependency_type: fbroker::DependencyType::Assertive,
             dependent_level: fsystem::ExecutionStateLevel::Suspending.into_primitive(),
             requires_token: self.cpu_assertive_dependency_token(),
             requires_level_by_preference: vec![fsystem::CpuLevel::Active.into_primitive()],
@@ -230,7 +228,6 @@ where
                                     self.cpu_manager.clone(),
                                     self.create_execution_state_level_dependencies(vec![
                                         fbroker::LevelDependency {
-                                            dependency_type: fbroker::DependencyType::Assertive,
                                             dependent_level:
                                                 fsystem::ExecutionStateLevel::Suspending
                                                     .into_primitive(),
