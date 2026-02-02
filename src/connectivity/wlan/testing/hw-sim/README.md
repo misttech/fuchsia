@@ -17,10 +17,10 @@ The most convenient way to run this test locally is to run it in a QEMU instance
 1. Start the emulator instance with
 
     ```sh
-    fx qemu
+    ffx emu start --headless
     ```
 
-    Note: If QEMU is not working, troubleshooting steps can be found [here](/docs/get-started/set_up_femu.md)
+    Note: Troubleshooting steps can be found [here](/docs/get-started/set_up_femu.md)
 
 1. In the QEMU command prompt, run the tests individually in the `test` directory. For example:
 

@@ -2,7 +2,7 @@
 
 This library implements IEEE 802.11 SME functionality for both FullMAC and SoftMAC devices.
 
-SME instances are created and hosted by a parent ['wlanstack'](../../wlanstack/) instance when WLAN interfaces start.
+SME instances are created and hosted by a wlanif or wlansoftmac driver when WLAN interfaces start.
 
 ## AP Implementation
 

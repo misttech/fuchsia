@@ -64,7 +64,7 @@ Responsiblities:
 
 ### Network Selection Manager
 
-Implemented in: [`client/network_selection.rs`](./src/client/network_selection.rs)
+Implemented in: [`client/connection_selection/network_selection.rs`](./src/client/connection_selection/network_selection.rs)
 
 Responsiblities:
 
