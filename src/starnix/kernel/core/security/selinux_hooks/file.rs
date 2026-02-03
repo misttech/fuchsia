@@ -33,7 +33,7 @@ pub(in crate::security) fn file_alloc_security(current_task: &CurrentTask) -> Fi
     FileObjectState { sid: current_task_state(current_task).lock().current_sid }
 }
 
-/// Checks whether the `current_task`` has the permissions specified by `mask` to the `file`.
+/// Checks whether the `current_task` has the specified `permission_flags` to the `file`.
 pub(in crate::security) fn file_permission(
     security_server: &SecurityServer,
     current_task: &CurrentTask,
@@ -55,15 +55,6 @@ pub(in crate::security) fn file_permission(
         current_task,
         current_sid,
         file,
-        NO_PERMISSIONS,
-        current_task.into(),
-    )?;
-
-    has_fs_node_permissions(
-        &security_server.as_permission_check(),
-        current_task,
-        current_sid,
-        &file.name.entry.node,
         &permissions_from_flags(permission_flags, file_class),
         current_task.into(),
     )
