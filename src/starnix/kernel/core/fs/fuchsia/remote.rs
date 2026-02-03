@@ -118,6 +118,9 @@ pub struct RemoteFs {
     use_remote_ids: bool,
 
     root_proxy: fio::DirectorySynchronousProxy,
+
+    // The rights used for the root node.
+    root_rights: fio::Flags,
 }
 
 impl RemoteFs {
@@ -237,7 +240,11 @@ impl FileSystemOps for RemoteFs {
 }
 
 impl RemoteFs {
-    pub fn new(root: zx::Channel, server_end: zx::Channel) -> Result<RemoteFs, Errno> {
+    pub(super) fn new(
+        root: zx::Channel,
+        server_end: zx::Channel,
+        root_rights: fio::Flags,
+    ) -> Result<RemoteFs, Errno> {
         // See if open3 works.  We assume that if open3 works on the root, it will work for all
         // descendent nodes in this filesystem.  At the time of writing, this is true for Fxfs.
         let root_proxy = fio::DirectorySynchronousProxy::new(root);
@@ -268,7 +275,7 @@ impl RemoteFs {
             && info
                 .map(|i| i.fs_type == fidl_fuchsia_fs::VfsType::Fxfs.into_primitive())
                 .unwrap_or(false);
-        Ok(RemoteFs { use_remote_ids, root_proxy })
+        Ok(RemoteFs { use_remote_ids, root_proxy, root_rights })
     }
 
     pub fn new_fs<L>(
@@ -282,7 +289,7 @@ impl RemoteFs {
         L: LockEqualOrBefore<FileOpsCore>,
     {
         let (client_end, server_end) = zx::Channel::create();
-        let remotefs = RemoteFs::new(root, server_end)?;
+        let remotefs = RemoteFs::new(root, server_end, rights)?;
         let mut attrs = zxio_node_attributes_t {
             has: zxio_node_attr_has_t { id: true, wrapping_key_id: true, ..Default::default() },
             ..Default::default()
@@ -290,7 +297,7 @@ impl RemoteFs {
         let (remote_node, node_id) =
             match Zxio::create_with_on_representation(client_end.into(), Some(&mut attrs)) {
                 Err(status) => return Err(from_status_like_fdio!(status)),
-                Ok(zxio) => (RemoteNode { zxio, rights }, attrs.id),
+                Ok(zxio) => (RemoteNode { zxio }, attrs.id),
             };
 
         if !rights.contains(fio::PERM_WRITABLE) {
@@ -332,15 +339,11 @@ pub struct RemoteNode {
     /// objects, including fuchsia.io.Directory and fuchsia.io.File objects.
     /// This structure lets us share code with FDIO and other Fuchsia clients.
     zxio: syncio::Zxio,
-
-    /// The fuchsia.io rights for the dir handle. Subdirs will be opened with
-    /// the same rights.
-    rights: fio::Flags,
 }
 
 impl RemoteNode {
-    pub fn new(zxio: syncio::Zxio, rights: fio::Flags) -> Self {
-        Self { zxio, rights }
+    pub fn new(zxio: syncio::Zxio) -> Self {
+        Self { zxio }
     }
 }
 
@@ -712,7 +715,7 @@ impl FsNodeOps for RemoteNode {
         node_id = attrs.id;
 
         let ops = if mode.is_reg() {
-            Box::new(RemoteNode { zxio, rights: self.rights }) as Box<dyn FsNodeOps>
+            Box::new(RemoteNode { zxio }) as Box<dyn FsNodeOps>
         } else {
             Box::new(RemoteSpecialNode { zxio }) as Box<dyn FsNodeOps>
         };
@@ -778,7 +781,7 @@ impl FsNodeOps for RemoteNode {
             .map_err(|status| from_status_like_fdio!(status, name))?;
         node_id = attrs.id;
 
-        let ops = RemoteNode { zxio, rights: self.rights };
+        let ops = RemoteNode { zxio };
         if !fs_ops.use_remote_ids {
             node_id = fs.allocate_ino();
         }
@@ -833,10 +836,10 @@ impl FsNodeOps for RemoteNode {
         }
         let zxio = self
             .zxio
-            .open(name, self.rights, options)
+            .open(name, fs_ops.root_rights, options)
             .map_err(|status| from_status_like_fdio!(status, name))?;
         let symlink_zxio = zxio.clone();
-        let mode = get_mode(&attrs, self.rights);
+        let mode = get_mode(&attrs, fs_ops.root_rights);
         let node_id = if fs_ops.use_remote_ids {
             if attrs.id == fio::INO_UNKNOWN {
                 return error!(ENOTSUP);
@@ -863,7 +866,7 @@ impl FsNodeOps for RemoteNode {
             let ops = if mode.is_lnk() {
                 Box::new(RemoteSymlink { zxio: Mutex::new(zxio) }) as Box<dyn FsNodeOps>
             } else if mode.is_reg() || mode.is_dir() {
-                Box::new(RemoteNode { zxio, rights: self.rights }) as Box<dyn FsNodeOps>
+                Box::new(RemoteNode { zxio }) as Box<dyn FsNodeOps>
             } else {
                 Box::new(RemoteSpecialNode { zxio }) as Box<dyn FsNodeOps>
             };
@@ -1061,7 +1064,8 @@ impl FsNodeOps for RemoteNode {
                 ".",
                 fio::Flags::PROTOCOL_FILE
                     | fio::Flags::FLAG_CREATE_AS_UNNAMED_TEMPORARY
-                    | self.rights,
+                    | fio::PERM_READABLE
+                    | fio::PERM_WRITABLE,
                 ZxioOpenOptions::new(
                     Some(&mut attrs),
                     Some(zxio_node_attributes_t {
@@ -1081,7 +1085,7 @@ impl FsNodeOps for RemoteNode {
             .map_err(|status| from_status_like_fdio!(status))?;
         node_id = attrs.id;
 
-        let ops = Box::new(RemoteNode { zxio, rights: self.rights }) as Box<dyn FsNodeOps>;
+        let ops = Box::new(RemoteNode { zxio }) as Box<dyn FsNodeOps>;
 
         if !fs_ops.use_remote_ids {
             node_id = fs.allocate_ino();

@@ -354,7 +354,7 @@ pub fn new_remote_vol(
     let rights = fio::PERM_READABLE | fio::PERM_WRITABLE;
 
     let (client_end, server_end) = zx::Channel::create();
-    let remotefs = RemoteFs::new(root.into_channel(), server_end)?;
+    let remotefs = RemoteFs::new(root.into_channel(), server_end, rights)?;
     let mut attrs = zxio_node_attributes_t {
         has: zxio_node_attr_has_t { id: true, ..Default::default() },
         ..Default::default()
@@ -362,7 +362,7 @@ pub fn new_remote_vol(
     let (remote_node, node_id) =
         match Zxio::create_with_on_representation(client_end.into(), Some(&mut attrs)) {
             Err(status) => return Err(from_status_like_fdio!(status)),
-            Ok(zxio) => (RemoteNode::new(zxio, rights), attrs.id),
+            Ok(zxio) => (RemoteNode::new(zxio), attrs.id),
         };
 
     let use_remote_ids = remotefs.use_remote_ids();
