@@ -50,8 +50,10 @@ struct test_result {
 };
 
 // Global variable that will be stored in a .data section (which is a BPF map).
-static volatile __u64 global_counter1 = 0;
-static volatile __u64 global_counter2 = 0;
+static volatile struct {
+  __u64 global_counter1;
+  __u64 global_counter2;
+} kGlobal = {};
 
 const int TEST_SOCK_OPT = 12345;
 // LINT.ThenChange(//src/starnix/tests/syscalls/rust/src/ebpf.rs)
@@ -95,8 +97,8 @@ int skb_test_prog(struct __sk_buff* skb) {
 
 int sock_create_prog(struct bpf_sock* sock) {
   // Increment the global counter.
-  __sync_fetch_and_add(&global_counter1, 1);
-  __sync_fetch_and_add(&global_counter2, 2);
+  __sync_fetch_and_add(&kGlobal.global_counter2, 2);
+  __sync_fetch_and_add(&kGlobal.global_counter1, 1);
 
   int zero = 0;
   int* counter = bpf_map_lookup_elem(&count, &zero);

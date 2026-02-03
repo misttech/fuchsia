@@ -523,10 +523,9 @@ mod tests {
 
         assert!(new_count - last_count >= 1);
         assert!(end_variable.global_counter1 - initial_variable.global_counter1 >= 1);
-        assert!(
-            end_variable.global_counter2 - initial_variable.global_counter2
-                >= 2 * (end_variable.global_counter1 - initial_variable.global_counter1)
-        );
+        assert!(end_variable.global_counter2 - initial_variable.global_counter2 >= 2);
+        assert!(initial_variable.global_counter2 >= 2 * initial_variable.global_counter1);
+        assert!(end_variable.global_counter2 >= 2 * end_variable.global_counter1);
     }
 
     // This test assumes that `close()` will destroy the corresponding object
