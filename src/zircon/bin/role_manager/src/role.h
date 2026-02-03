@@ -6,13 +6,14 @@
 #define SRC_ZIRCON_BIN_ROLE_MANAGER_SRC_ROLE_H_
 
 #include <fidl/fuchsia.scheduler/cpp/fidl.h>
+#include <lib/inspect/cpp/inspect.h>
 #include <lib/zx/resource.h>
 
 #include "config.h"
 
 class RoleManager : public fidl::WireServer<fuchsia_scheduler::RoleManager> {
  public:
-  static zx::result<std::unique_ptr<RoleManager>> Create();
+  static zx::result<std::unique_ptr<RoleManager>> Create(inspect::Node& parent);
   void SetRole(SetRoleRequestView request, SetRoleCompleter::Sync& completer) override;
   void handle_unknown_method(fidl::UnknownMethodMetadata<fuchsia_scheduler::RoleManager> metadata,
                              fidl::UnknownMethodCompleter::Sync& completer) override;
@@ -26,6 +27,9 @@ class RoleManager : public fidl::WireServer<fuchsia_scheduler::RoleManager> {
       : profile_resource_(std::move(profile_resource)), profiles_(std::move(profiles)) {}
   zx::resource profile_resource_;
   zircon_profile::ConfiguredProfiles profiles_;
+
+  void PublishInspect(inspect::Node& parent);
+  fpromise::promise<inspect::Inspector> Inspect();
 };
 
 #endif  // SRC_ZIRCON_BIN_ROLE_MANAGER_SRC_ROLE_H_

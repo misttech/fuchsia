@@ -789,4 +789,61 @@ bool Role::operator==(const Role& other) const {
   return true;
 }
 
+std::string ScopeToString(ProfileScope scope) {
+  switch (scope) {
+    case ProfileScope::Bringup:
+      return "bringup";
+    case ProfileScope::Board:
+      return "board";
+    case ProfileScope::Core:
+      return "core";
+    case ProfileScope::Product:
+      return "product";
+    case ProfileScope::Builtin:
+      return "builtin";
+    default:
+      return "none";
+  }
+}
+
+void Profile::PopulateInspect(inspect::Node& node) const {
+  node.RecordString("scope", ScopeToString(scope));
+
+  if (info.flags & ZX_PROFILE_INFO_FLAG_PRIORITY) {
+    node.RecordInt("priority", info.priority);
+  }
+
+  if (info.flags & ZX_PROFILE_INFO_FLAG_DEADLINE) {
+    node.RecordInt("capacity", info.deadline_params.capacity);
+    node.RecordInt("deadline", info.deadline_params.relative_deadline);
+    node.RecordInt("period", info.deadline_params.period);
+  }
+
+  if (info.flags & ZX_PROFILE_INFO_FLAG_CPU_MASK) {
+    std::ostringstream stream;
+    stream << "0x" << std::hex << info.cpu_affinity_mask.mask[0];
+    node.RecordString("affinity", stream.str());
+  }
+
+  if (!output_parameters.empty()) {
+    node.RecordChild("output_parameters", [&](inspect::Node& params_node) {
+      for (const auto& param : output_parameters) {
+        switch (param.value().Which()) {
+          case fuchsia_scheduler::ParameterValue::Tag::kIntValue:
+            params_node.RecordInt(param.key(), param.value().int_value().value());
+            break;
+          case fuchsia_scheduler::ParameterValue::Tag::kFloatValue:
+            params_node.RecordDouble(param.key(), param.value().float_value().value());
+            break;
+          case fuchsia_scheduler::ParameterValue::Tag::kStringValue:
+            params_node.RecordString(param.key(), param.value().string_value().value());
+            break;
+          default:
+            break;
+        }
+      }
+    });
+  }
+}
+
 }  // namespace zircon_profile

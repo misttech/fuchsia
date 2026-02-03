@@ -3,12 +3,14 @@
 // found in the LICENSE file.
 
 use anyhow::Result;
+use diagnostics_reader::ArchiveReader;
 use fidl::endpoints::create_endpoints;
 use fidl_fuchsia_scheduler::{
     Parameter, ParameterValue, RoleManagerMarker, RoleManagerSetRoleRequest,
     RoleManagerSetRoleResponse, RoleName, RoleTarget,
 };
 use fidl_test_rolemanager as ftest;
+use fuchsia_async::Timer;
 use fuchsia_component::client::connect_to_protocol;
 use realm_proxy_client::RealmProxyClient;
 use zx::HandleBased;
@@ -282,5 +284,74 @@ async fn test_bad_config_extension() -> Result<()> {
     };
     let response = role_manager.set_role(request).await?;
     assert_eq!(response, Err(zx::sys::ZX_ERR_NOT_FOUND));
+    Ok(())
+}
+
+#[fuchsia::test]
+async fn test_inspect_exposed() -> Result<()> {
+    let realm_options = ftest::RealmOptions::default();
+    let realm = create_realm(realm_options).await?;
+    let _role_manager = realm.connect_to_protocol::<RoleManagerMarker>().await?;
+
+    // Collect inspect in a loop to avoid racing with role_manager's start.
+    loop {
+        let data = ArchiveReader::inspect()
+            .add_selector("test_realm_factory/realm_builder\\:*/role_manager:root")
+            .snapshot()
+            .await?
+            .into_iter()
+            .filter(|d| d.payload.is_some())
+            .collect::<Vec<_>>();
+
+        if let Some(inspect_data) =
+            data.iter().find(|d| d.moniker.to_string().contains("role_manager"))
+        {
+            if let Some(payload) = &inspect_data.payload {
+                // Verify that the deep properties we expect are present.
+                let config_node = match payload.get_child("config") {
+                    Some(node) => node,
+                    None => {
+                        Timer::new(zx::MonotonicDuration::from_millis(500)).await;
+                        continue;
+                    }
+                };
+
+                let thread_roles = match config_node.get_child("thread_roles") {
+                    Some(node) => node,
+                    None => {
+                        Timer::new(zx::MonotonicDuration::from_millis(500)).await;
+                        continue;
+                    }
+                };
+
+                let affinity_node = match thread_roles.get_child("test.core.affinity") {
+                    Some(node) => node,
+                    None => {
+                        Timer::new(zx::MonotonicDuration::from_millis(500)).await;
+                        continue;
+                    }
+                };
+
+                let affinity_prop = match affinity_node.get_property("affinity") {
+                    Some(prop) => prop,
+                    None => {
+                        Timer::new(zx::MonotonicDuration::from_millis(500)).await;
+                        continue;
+                    }
+                };
+
+                // If we found the property, verify its value.
+                assert_eq!(affinity_prop.string().unwrap(), "0x3");
+
+                // Also verify memory_roles exists
+                if config_node.get_child("memory_roles").is_some() {
+                    break;
+                }
+            }
+        }
+
+        Timer::new(zx::MonotonicDuration::from_millis(500)).await;
+    }
+
     Ok(())
 }

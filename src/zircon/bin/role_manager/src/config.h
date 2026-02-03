@@ -7,6 +7,7 @@
 
 #include <fidl/fuchsia.scheduler/cpp/fidl.h>
 #include <lib/fit/result.h>
+#include <lib/inspect/cpp/inspect.h>
 #include <lib/zx/profile.h>
 #include <lib/zx/time.h>
 #include <zircon/syscalls.h>
@@ -16,6 +17,8 @@
 #include <string>
 #include <string_view>
 #include <unordered_map>
+#include <variant>
+#include <vector>
 
 #include <fbl/enum_bits.h>
 #include <fbl/macros.h>
@@ -42,7 +45,11 @@ struct Profile {
   zx_profile_info_t info{};
   zx::profile profile{};
   std::vector<fuchsia_scheduler::Parameter> output_parameters;
+
+  void PopulateInspect(inspect::Node& node) const;
 };
+
+std::string ScopeToString(ProfileScope scope);
 
 struct MediaRole {
   zx_duration_mono_t capacity;

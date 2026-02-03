@@ -10,6 +10,12 @@
         "set_role": "test.core.a"
       }
     },
+    "test.core.affinity": {
+      "capacity": "5ms",
+      "deadline": "10ms",
+      "period": "10ms",
+      "affinity": [0, 1]
+    },
     "test.core.product": {
       "capacity": "5ms",
       "deadline": "10ms",

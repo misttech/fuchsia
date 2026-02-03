@@ -12,5 +12,6 @@
     },
     use: [
         { protocol: "test.rolemanager.RealmFactory" },
+        { protocol: "fuchsia.diagnostics.ArchiveAccessor" },
     ],
 }

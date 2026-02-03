@@ -15,8 +15,10 @@ rustc_test("bin") {
   deps = [
     "//sdk/fidl/fuchsia.scheduler:fuchsia.scheduler_rust",
     "//sdk/rust/zx",
+    "//src/lib/diagnostics/reader/rust",
     "//src/lib/fidl/rust/fidl",
     "//src/lib/fuchsia",
+    "//src/lib/fuchsia-async",
     "//src/lib/fuchsia-component",
     "//src/lib/fuchsia-runtime",
     "//src/testing/realm_proxy/client",

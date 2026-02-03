@@ -61,6 +61,17 @@ async fn create_realm(_options: RealmOptions) -> Result<RealmInstance, Error> {
         )
         .await?;
 
+    // Route diagnostics capabilities to RoleManager.
+    builder
+        .add_route(
+            Route::new()
+                .capability(Capability::protocol_by_name("fuchsia.logger.LogSink"))
+                .capability(Capability::protocol_by_name("fuchsia.inspect.InspectSink"))
+                .from(Ref::parent())
+                .to(&component_ref),
+        )
+        .await?;
+
     // Route the profile resource to RoleManager.
     builder
         .add_route(

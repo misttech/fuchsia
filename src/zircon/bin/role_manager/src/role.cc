@@ -19,7 +19,7 @@ using zircon_profile::Role;
 
 constexpr char kConfigPath[] = "/config/profiles";
 
-zx::result<std::unique_ptr<RoleManager>> RoleManager::Create() {
+zx::result<std::unique_ptr<RoleManager>> RoleManager::Create(inspect::Node& parent) {
   auto profile_resource_result = GetSystemProfileResource();
   if (profile_resource_result.is_error()) {
     FX_LOGS(ERROR) << "failed to get profile resource: " << profile_resource_result.status_string();
@@ -69,8 +69,10 @@ zx::result<std::unique_ptr<RoleManager>> RoleManager::Create() {
     }
   }
 
-  return zx::ok(std::unique_ptr<RoleManager>(
-      new RoleManager{std::move(profile_resource), std::move(config_result.value())}));
+  auto manager = std::unique_ptr<RoleManager>(
+      new RoleManager{std::move(profile_resource), std::move(config_result.value())});
+  manager->PublishInspect(parent);
+  return zx::ok(std::move(manager));
 }
 
 void RoleManager::handle_unknown_method(
@@ -165,4 +167,27 @@ void RoleManager::SetRole(SetRoleRequestView request, SetRoleCompleter::Sync& co
   FX_LOG_KV(DEBUG, "Requested role not found", FX_KV("role", role->name()),
             FX_KV("tag", "RoleManager"));
   completer.ReplyError(ZX_ERR_NOT_FOUND);
+}
+
+void RoleManager::PublishInspect(inspect::Node& parent) {
+  parent.RecordLazyNode("config", [this] { return Inspect(); });
+}
+
+fpromise::promise<inspect::Inspector> RoleManager::Inspect() {
+  inspect::Inspector inspector;
+  inspector.GetRoot().RecordChild("thread_roles", [&](inspect::Node& node) {
+    for (auto& [role, profile] : profiles_.thread) {
+      node.RecordChild(role.name(),
+                       [&](inspect::Node& role_node) { profile.PopulateInspect(role_node); });
+    }
+  });
+
+  inspector.GetRoot().RecordChild("memory_roles", [&](inspect::Node& node) {
+    for (auto& [role, profile] : profiles_.memory) {
+      node.RecordChild(role.name(),
+                       [&](inspect::Node& role_node) { profile.PopulateInspect(role_node); });
+    }
+  });
+
+  return fpromise::make_ok_promise(inspector);
 }

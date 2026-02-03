@@ -4,6 +4,7 @@
 
 #include <lib/async-loop/cpp/loop.h>
 #include <lib/component/outgoing/cpp/outgoing_directory.h>
+#include <lib/inspect/component/cpp/component.h>
 #include <lib/syslog/cpp/log_settings.h>
 #include <lib/syslog/cpp/macros.h>
 
@@ -13,9 +14,14 @@
 int main(int argc, const char** argv) {
   async::Loop loop(&kAsyncLoopConfigNeverAttachToThread);
   async_dispatcher_t* dispatcher = loop.dispatcher();
+
+  component::OutgoingDirectory outgoing(dispatcher);
+  inspect::ComponentInspector inspector(dispatcher, inspect::PublishOptions{});
+  inspector.Health().Ok();
+
   fuchsia_logging::LogSettingsBuilder builder;
   builder.WithDispatcher(loop.dispatcher()).BuildAndInitialize();
-  zx::result create_result = RoleManager::Create();
+  zx::result create_result = RoleManager::Create(inspector.root());
   if (create_result.is_error()) {
     FX_LOGS(ERROR) << "Failed to create role manager service: " << create_result.status_string();
     return -1;
@@ -31,7 +37,6 @@ int main(int argc, const char** argv) {
   std::unique_ptr<ProfileProvider> profile_provider_service =
       std::move(profile_create_result.value());
 
-  component::OutgoingDirectory outgoing = component::OutgoingDirectory(dispatcher);
   zx::result result =
       outgoing.AddProtocol<fuchsia_scheduler::RoleManager>(std::move(role_manager_service));
   if (result.is_error()) {
