@@ -400,19 +400,23 @@ impl FunctionFsRootDir {
 
         let state_copy = Arc::clone(&self.state);
         // Spawn our future that will handle all of the ADB messages.
-        kernel.kthreads.spawn_future(async move || {
-            let adb_proxy = fadb::UsbAdbImpl_Proxy::new(fidl::AsyncChannel::from_channel(
-                adb_proxy.into_channel(),
-            ));
-            handle_adb(
-                adb_proxy,
-                message_counter,
-                read_command_receiver,
-                write_command_receiver,
-                state_copy,
-            )
-            .await
-        });
+        // Spawn our future that will handle all of the ADB messages.
+        kernel.kthreads.spawn_future(
+            move || async move {
+                let adb_proxy = fadb::UsbAdbImpl_Proxy::new(fidl::AsyncChannel::from_channel(
+                    adb_proxy.into_channel(),
+                ));
+                handle_adb(
+                    adb_proxy,
+                    message_counter,
+                    read_command_receiver,
+                    write_command_receiver,
+                    state_copy,
+                )
+                .await
+            },
+            "functionfs_adb_worker",
+        );
 
         state.has_input_output_endpoints = true;
         Ok(())

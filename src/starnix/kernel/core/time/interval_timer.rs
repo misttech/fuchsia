@@ -398,25 +398,28 @@ impl IntervalTimer {
         let kernel_ref = current_task.kernel().clone();
         let self_ref = self.clone();
         let thread_group = current_task.thread_group().weak_self.clone();
-        current_task.kernel().kthreads.spawn_future(async move || {
-            let _ = {
-                // 1. Lock the state to update `abort_handle` when the timer is still armed.
-                // 2. MutexGuard needs to be dropped before calling await on the future task.
-                // Unfortuately, std::mem::drop is not working correctly on this:
-                // (https://github.com/rust-lang/rust/issues/57478).
-                let mut guard = self_ref.state.lock();
-                if !guard.armed {
-                    return;
-                }
+        current_task.kernel().kthreads.spawn_future(
+            move || async move {
+                let _ = {
+                    // 1. Lock the state to update `abort_handle` when the timer is still armed.
+                    // 2. MutexGuard needs to be dropped before calling await on the future task.
+                    // Unfortunately, std::mem::drop is not working correctly on this:
+                    // (https://github.com/rust-lang/rust/issues/57478).
+                    let mut guard = self_ref.state.lock();
+                    if !guard.armed {
+                        return;
+                    }
 
-                let (abortable_future, abort_handle) = futures::future::abortable(
-                    self_ref.start_timer_loop(&kernel_ref, thread_group),
-                );
-                guard.abort_handle = Some(abort_handle);
-                abortable_future
-            }
-            .await;
-        });
+                    let (abortable_future, abort_handle) = futures::future::abortable(
+                        self_ref.start_timer_loop(&kernel_ref, thread_group),
+                    );
+                    guard.abort_handle = Some(abort_handle);
+                    abortable_future
+                }
+                .await;
+            },
+            "interval_timer_loop",
+        );
 
         Ok(())
     }

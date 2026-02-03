@@ -86,10 +86,16 @@ impl KernelThreads {
     /// they will starve the main async executor.
     ///
     /// Prefer this function to `spawn` for non-blocking work.
-    pub fn spawn_future(&self, future: impl AsyncFnOnce() -> () + Send + 'static) {
-        self.ehandle.spawn_detached(WrappedMainFuture::new(self.kernel.clone(), async move {
-            fasync::Task::local(future()).await
-        }));
+    pub fn spawn_future(
+        &self,
+        future: impl AsyncFnOnce() -> () + Send + 'static,
+        name: &'static str,
+    ) {
+        self.ehandle.spawn_detached(WrappedMainFuture::new(
+            self.kernel.clone(),
+            async move { fasync::Task::local(future()).await },
+            name,
+        ));
     }
 
     /// The dynamic thread spawner used to spawn threads.
@@ -221,12 +227,18 @@ impl SystemTask {
 // The order is important here. Rust will drop fields in declaration order and we want
 // the future to be dropped before the ScopeGuard runs.
 #[pin_project]
-pub(crate) struct WrappedFuture<F, C: Clone>(#[pin] F, fn(C), ScopeGuard<C, fn(C)>);
+pub(crate) struct WrappedFuture<F, C: Clone> {
+    #[pin]
+    fut: F,
+    cleaner: fn(C),
+    context: ScopeGuard<C, fn(C)>,
+    name: &'static str,
+}
 
 impl<F, C: Clone> WrappedFuture<F, C> {
-    pub(crate) fn new_with_cleaner(context: C, cleaner: fn(C), fut: F) -> Self {
+    pub(crate) fn new_with_cleaner(context: C, cleaner: fn(C), fut: F, name: &'static str) -> Self {
         // We need the ScopeGuard in case the future queues releasers when dropped.
-        Self(fut, cleaner, ScopeGuard::with_strategy(context, cleaner))
+        Self { fut, cleaner, context: ScopeGuard::with_strategy(context, cleaner), name }
     }
 }
 
@@ -235,9 +247,10 @@ impl<F: Future, C: Clone> Future for WrappedFuture<F, C> {
 
     fn poll(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
         let this = self.project();
-        let result = this.0.poll(cx);
+        starnix_logging::trace_duration!(starnix_logging::CATEGORY_STARNIX, &*this.name);
+        let result = this.fut.poll(cx);
 
-        this.1(this.2.clone());
+        (this.cleaner)(this.context.clone());
         result
     }
 }
@@ -245,16 +258,18 @@ impl<F: Future, C: Clone> Future for WrappedFuture<F, C> {
 type WrappedMainFuture<F> = WrappedFuture<F, Weak<Kernel>>;
 
 impl<F> WrappedMainFuture<F> {
-    fn new(kernel: Weak<Kernel>, fut: F) -> Self {
-        Self::new_with_cleaner(kernel, trigger_delayed_releaser, fut)
+    fn new(kernel: Weak<Kernel>, fut: F, name: &'static str) -> Self {
+        Self::new_with_cleaner(kernel, trigger_delayed_releaser, fut, name)
     }
 }
 
 fn trigger_delayed_releaser(kernel: Weak<Kernel>) {
     if let Some(kernel) = kernel.upgrade() {
-        kernel
-            .kthreads
-            .system_task()
-            .trigger_delayed_releaser(kernel.kthreads.unlocked_for_async().deref_mut());
+        if let Some(system_task) = kernel.kthreads.system_task.get() {
+            system_task
+                .system_task
+                .get()
+                .trigger_delayed_releaser(kernel.kthreads.unlocked_for_async().deref_mut());
+        }
     }
 }

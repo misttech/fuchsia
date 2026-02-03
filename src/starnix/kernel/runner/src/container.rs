@@ -791,7 +791,10 @@ async fn create_container(
     // Serve the runtime directory.
     log_info!("Starting runtime directory.");
     if let Some(runtime_dir) = start_info.runtime_dir.take() {
-        kernel.kthreads.spawn_future(async move || serve_runtime_dir(runtime_dir).await);
+        kernel.kthreads.spawn_future(
+            move || async move { serve_runtime_dir(runtime_dir).await },
+            "serve_runtime_dir",
+        );
     }
 
     // At this point the runtime environment has been prepared but nothing is actually running yet.

@@ -42,15 +42,21 @@ pub fn nanohub_device_init(locked: &mut Locked<Unlocked>, current_task: &Current
     );
 
     // Spawn future to bind and configure serial device
-    current_task.kernel().kthreads.spawn_future({
-        let kernel = current_task.kernel().clone();
-        async move || register_serial_device(kernel).await
-    });
+    current_task.kernel().kthreads.spawn_future(
+        {
+            let kernel = current_task.kernel().clone();
+            move || async move { register_serial_device(kernel).await }
+        },
+        "register_serial_device",
+    );
 
-    current_task.kernel().kthreads.spawn_future({
-        let kernel = current_task.kernel().clone();
-        async move || register_datachannel_devices(kernel).await
-    });
+    current_task.kernel().kthreads.spawn_future(
+        {
+            let kernel = current_task.kernel().clone();
+            move || async move { register_datachannel_devices(kernel).await }
+        },
+        "register_datachannel_devices",
+    );
 }
 
 async fn register_datachannel_devices(kernel: Arc<Kernel>) {

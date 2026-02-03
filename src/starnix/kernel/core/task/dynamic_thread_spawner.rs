@@ -14,7 +14,7 @@ use crate::task::{
 use fuchsia_sync::Mutex;
 use futures::TryFutureExt;
 use futures::channel::oneshot;
-use starnix_logging::{log_debug, log_error};
+use starnix_logging::{CATEGORY_STARNIX, log_debug, log_error, trace_duration};
 use starnix_sync::{Locked, Unlocked};
 use starnix_task_command::TaskCommand;
 use starnix_types::ownership::{WeakRef, release_after};
@@ -57,7 +57,7 @@ const DEFAULT_THREAD_ROLE: &str = "fuchsia.starnix.fair.16";
 /// Call [SpawnRequestBuilder::new()] to start building. Refer to the unit tests in this module for
 /// usage examples.
 pub struct SpawnRequestBuilder<C: ClosureKind> {
-    debug_name: String,
+    debug_name: &'static str,
     role: Option<&'static str>,
     closure_kind: C,
 }
@@ -66,7 +66,7 @@ pub struct SpawnRequestBuilder<C: ClosureKind> {
 impl SpawnRequestBuilder<ClosureNone> {
     /// Creates a new spawn request builder.
     pub fn new() -> Self {
-        Self { role: None, closure_kind: ClosureNone {}, debug_name: "kthreadd".into() }
+        Self { role: None, closure_kind: ClosureNone {}, debug_name: "kthreadd" }
     }
 }
 
@@ -79,7 +79,7 @@ impl<C: ClosureKind> SpawnRequestBuilder<C> {
 
     /// Set a task name to apply to the thread that will run your closure.
     pub fn with_debug_name(self, debug_name: &'static str) -> Self {
-        Self { debug_name: debug_name.into(), ..self }
+        Self { debug_name, ..self }
     }
 }
 
@@ -107,7 +107,7 @@ impl SpawnRequestBuilder<ClosureNone> {
         T: Send + 'static,
         F: AsyncFnOnce(LockedAndTask<'_>) -> T + Send + 'static,
     {
-        let sync_fn = async_to_sync(f);
+        let sync_fn = async_to_sync(f, self.debug_name);
         self.with_sync_closure(sync_fn)
     }
 }
@@ -117,7 +117,7 @@ pub struct SpawnRequest {
     /// The closure to run.
     closure: BoxedClosure,
     /// A name to give to the task.
-    debug_name: String,
+    debug_name: &'static str,
 }
 
 impl<T, F> SpawnRequestBuilder<F>
@@ -131,6 +131,7 @@ where
         let closure = closure_kind;
         let closure = maybe_apply_role(role, closure);
         let closure = Box::new(move |locked: &mut Locked<Unlocked>, current_task: &CurrentTask| {
+            trace_duration!(CATEGORY_STARNIX, debug_name);
             let _ = closure(locked, current_task);
         });
         SpawnRequest { closure, debug_name }
@@ -155,6 +156,7 @@ where
         };
         let closure = maybe_apply_role(role, closure);
         let closure = Box::new(move |locked: &mut Locked<Unlocked>, current_task: &CurrentTask| {
+            trace_duration!(CATEGORY_STARNIX, debug_name);
             let _ = sender.send(closure(locked, current_task));
         });
         (result_fn, SpawnRequest { closure, debug_name })
@@ -177,6 +179,7 @@ where
         let maybe_with_role = maybe_apply_role(role, closure);
         let repackaged =
             Box::new(move |locked: &mut Locked<Unlocked>, current_task: &CurrentTask| {
+                trace_duration!(CATEGORY_STARNIX, debug_name);
                 let result = maybe_with_role(locked, current_task);
                 let _ = sender_async.send(result);
             });
@@ -225,6 +228,7 @@ where
 /// Convert async closure to sync closure that can be submitted to the spawner.
 fn async_to_sync<T, F>(
     f: F,
+    name: &'static str,
 ) -> impl FnOnce(&mut Locked<Unlocked>, &CurrentTask) -> T + Send + 'static
 where
     T: Send + 'static,
@@ -235,7 +239,8 @@ where
         let locked_and_task = LockedAndTask::new(locked, current_task);
 
         let locked_and_task_clone = locked_and_task.clone();
-        let wrapped_future = WrappedSpawnedFuture::new(locked_and_task, f(locked_and_task_clone));
+        let wrapped_future =
+            WrappedSpawnedFuture::new(locked_and_task, f(locked_and_task_clone), name);
         exec.run_singlethreaded(wrapped_future)
     }
 }
@@ -334,7 +339,7 @@ impl DynamicThreadSpawner {
                     .send(RunningThread::new(
                         state,
                         system_task,
-                        spawn_request.debug_name,
+                        spawn_request.debug_name.to_string(),
                         function,
                     ))
                     .expect("receiver must not be dropped");
@@ -350,8 +355,8 @@ impl DynamicThreadSpawner {
 type WrappedSpawnedFuture<'a, F> = WrappedFuture<F, LockedAndTask<'a>>;
 
 impl<'a, F: 'a> WrappedSpawnedFuture<'a, F> {
-    fn new(locked_and_task: LockedAndTask<'a>, fut: F) -> Self {
-        Self::new_with_cleaner(locked_and_task, trigger_delayed_releaser, fut)
+    fn new(locked_and_task: LockedAndTask<'a>, fut: F, name: &'static str) -> Self {
+        Self::new_with_cleaner(locked_and_task, trigger_delayed_releaser, fut, name)
     }
 }
 
@@ -578,7 +583,7 @@ mod tests {
                 let mut exec = fuchsia_async::LocalExecutor::default();
                 let locked_and_task = LockedAndTask::new(locked, current_task);
                 let fut = async {};
-                let wrapped_future = WrappedSpawnedFuture::new(locked_and_task, fut);
+                let wrapped_future = WrappedSpawnedFuture::new(locked_and_task, fut, "test-async");
                 exec.run_singlethreaded(wrapped_future);
             };
             let req = SpawnRequestBuilder::new().with_sync_closure(closure).build();

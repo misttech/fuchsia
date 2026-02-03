@@ -154,18 +154,21 @@ impl CrashReporter {
         if let Some(reporter) = &self.proxy {
             let reporter = reporter.clone();
             // Do the actual report in the background since they can take a while to file.
-            current_task.kernel().kthreads.spawn_future(async move || {
-                match reporter.file_report(crash_report).await {
-                    Ok(Ok(_)) => (),
-                    Ok(Err(filing_error)) => {
-                        log_error!(filing_error:?; "Couldn't file crash report.");
-                    }
-                    Err(fidl_error) => log_warn!(
-                        fidl_error:?;
-                        "Couldn't file crash report due to error on underlying channel."
-                    ),
-                };
-            });
+            current_task.kernel().kthreads.spawn_future(
+                move || async move {
+                    match reporter.file_report(crash_report).await {
+                        Ok(Ok(_)) => (),
+                        Ok(Err(filing_error)) => {
+                            log_error!(filing_error:?; "Couldn't file crash report.");
+                        }
+                        Err(fidl_error) => log_warn!(
+                            fidl_error:?;
+                            "Couldn't file crash report due to error on underlying channel."
+                        ),
+                    };
+                },
+                "crash-filing",
+            );
         } else {
             log_info!(crash_report:?; "no crash reporter available for crash");
         }

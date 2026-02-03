@@ -639,14 +639,20 @@ impl<F: RemoteControllerConnector> RemoteBinderHandle<F> {
                             wake_lock.signal_peer(zx::Signals::empty(), WAKE_LOCK_ACQUIRED_SIGNAL);
                         let kernel_clone = kernel.clone();
                         let wake_lock_name = wake_lock_name.to_owned();
-                        kernel.kthreads.spawn_future(async move || {
-                            fasync::OnSignals::new(&wake_lock, zx::Signals::EVENTPAIR_PEER_CLOSED)
+                        kernel.kthreads.spawn_future(
+                            move || async move {
+                                fasync::OnSignals::new(
+                                    &wake_lock,
+                                    zx::Signals::EVENTPAIR_PEER_CLOSED,
+                                )
                                 .await
                                 .unwrap();
-                            kernel_clone
-                                .suspend_resume_manager
-                                .deactivate_wakeup_source(&WakeupSourceOrigin::HAL(wake_lock_name));
-                        });
+                                kernel_clone.suspend_resume_manager.deactivate_wakeup_source(
+                                    &WakeupSourceOrigin::HAL(wake_lock_name),
+                                );
+                            },
+                            "remote_binder_wake_handler",
+                        );
                     }
 
                     if let Some(baton) = payload.power_baton {

@@ -818,7 +818,7 @@ mod tokens_store {
             &self.socket_tokens_store
         }
         fn spawn_future(&self, future: impl AsyncFnOnce() -> () + Send + 'static) {
-            self.kthreads.spawn_future(future)
+            self.kthreads.spawn_future(future, "socket_accept")
         }
     }
 

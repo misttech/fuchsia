@@ -522,12 +522,15 @@ impl Kernel {
     pub fn shut_down(self: &Arc<Self>) {
         // Run shutdown code on a kthread in the main process so that it can be the last process
         // alive.
-        self.kthreads.spawn_future({
-            let kernel = self.clone();
-            async move || {
-                kernel.run_shutdown().await;
-            }
-        });
+        self.kthreads.spawn_future(
+            {
+                let kernel = self.clone();
+                move || async move {
+                    kernel.run_shutdown().await;
+                }
+            },
+            "run_shutdown",
+        );
     }
 
     /// Starts shutting down the Starnix kernel and any running container. Only one thread can drive
@@ -723,10 +726,14 @@ impl Kernel {
         self.generic_netlink.get_or_init(|| {
             let (generic_netlink, worker_params) = GenericNetlink::new();
             let enable_nl80211 = self.features.wifi;
-            self.kthreads.spawn_future(async move || {
-                crate::vfs::socket::run_generic_netlink_worker(worker_params, enable_nl80211).await;
-                log_error!("Generic Netlink future unexpectedly exited");
-            });
+            self.kthreads.spawn_future(
+                move || async move {
+                    crate::vfs::socket::run_generic_netlink_worker(worker_params, enable_nl80211)
+                        .await;
+                    log_error!("Generic Netlink future unexpectedly exited");
+                },
+                "generic_netlink_worker",
+            );
             generic_netlink
         })
     }
@@ -741,14 +748,17 @@ impl Kernel {
                 Netlink::new(InterfacesHandlerImpl(self.weak_self.clone()));
 
             let kernel = self.clone();
-            self.kthreads.spawn_future(async move || {
-                netlink::run_netlink_worker(
-                    worker_params,
-                    NetlinkAccessControl::new(kernel.kthreads.system_task()),
-                )
-                .await;
-                log_error!(tag = NETLINK_LOG_TAG; "Netlink async worker unexpectedly exited");
-            });
+            self.kthreads.spawn_future(
+                move || async move {
+                    netlink::run_netlink_worker(
+                        worker_params,
+                        NetlinkAccessControl::new(kernel.kthreads.system_task()),
+                    )
+                    .await;
+                    log_error!(tag = NETLINK_LOG_TAG; "Netlink async worker unexpectedly exited");
+                },
+                "network_netlink_worker",
+            );
             network_netlink
         })
     }

@@ -57,12 +57,15 @@ impl BytesFileOps for PowerWakeLockFile {
         if let Some(target_monotonic) = target_monotonic {
             let kernel_ref = current_task.kernel().clone();
             let clean_lock_string = clean_lock_str.to_string();
-            current_task.kernel().kthreads.spawn_future(async move || {
-                fuchsia_async::Timer::new(target_monotonic).await;
-                kernel_ref
-                    .suspend_resume_manager
-                    .timeout_wakeup_source(&WakeupSourceOrigin::WakeLock(clean_lock_string));
-            });
+            current_task.kernel().kthreads.spawn_future(
+                move || async move {
+                    fuchsia_async::Timer::new(target_monotonic).await;
+                    kernel_ref
+                        .suspend_resume_manager
+                        .timeout_wakeup_source(&WakeupSourceOrigin::WakeLock(clean_lock_string));
+                },
+                "wake-lock-timeout",
+            );
         }
 
         Ok(())

@@ -54,32 +54,37 @@ pub fn serve_file_at(
     let starnix_file =
         StarnixNodeConnection::new(&kernel, file.weak_handle.upgrade().unwrap(), credentials);
     let scope = execution_scope::ExecutionScope::new();
-    kernel.kthreads.spawn_future({
-        let scope = scope.clone();
-        async move || {
-            let fidl_flags: fio::OpenFlags = open_flags.into_fidl();
-            if starnix_file.is_dir() {
-                fidl_flags.to_object_request(server_end).handle(|object_request| {
-                    object_request.take().create_connection_sync::<MutableConnection<_>, _>(
-                        scope.clone(),
-                        starnix_file,
-                        fidl_flags,
-                    );
-                    Ok(())
-                });
-            } else {
-                fidl_flags.to_object_request(server_end).handle(|object_request| {
-                    object_request.take().create_connection_sync::<file::RawIoConnection<_>, _>(
-                        scope.clone(),
-                        starnix_file,
-                        fidl_flags,
-                    );
-                    Ok(())
-                });
+    kernel.kthreads.spawn_future(
+        {
+            let scope = scope.clone();
+            move || async move {
+                let fidl_flags: fio::OpenFlags = open_flags.into_fidl();
+                if starnix_file.is_dir() {
+                    fidl_flags.to_object_request(server_end).handle(|object_request| {
+                        object_request.take().create_connection_sync::<MutableConnection<_>, _>(
+                            scope.clone(),
+                            starnix_file,
+                            fidl_flags,
+                        );
+                        Ok(())
+                    });
+                } else {
+                    fidl_flags.to_object_request(server_end).handle(|object_request| {
+                        object_request
+                            .take()
+                            .create_connection_sync::<file::RawIoConnection<_>, _>(
+                                scope.clone(),
+                                starnix_file,
+                                fidl_flags,
+                            );
+                        Ok(())
+                    });
+                }
+                scope.wait().await;
             }
-            scope.wait().await;
-        }
-    });
+        },
+        "serve_file_at",
+    );
     Ok(scope)
 }
 
