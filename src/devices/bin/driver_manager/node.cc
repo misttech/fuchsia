@@ -1674,14 +1674,6 @@ void Node::StartDriver(
 
   bool found_driver_host = colocate;
 
-  if (!found_driver_host) {
-    // Attempt to get a cached driver host by name if available. Otherwise this will be started.
-    driver_host_ = (*node_manager_)->GetDriverHost(driver_host_name_for_colocation_);
-    if (driver_host_) {
-      found_driver_host = true;
-    }
-  }
-
   fidl::Arena arena;
 
   auto symbols = fidl::VectorView<fdf::wire::NodeSymbol>();
@@ -1879,6 +1871,22 @@ void Node::StartDriver(
                     return;
                   }
 
+                  if (!found_driver_host) {
+                    self->driver_host_ = (*self->node_manager_)
+                                             ->GetDriverHost(self->driver_host_name_for_colocation_);
+                    if (self->driver_host_) {
+                      found_driver_host = true;
+                      if (use_dynamic_linker != self->driver_host()->IsDynamicLinkingEnabled()) {
+                        fdf_log::error(
+                            "Failed to start driver '{}', driver is colocated and set "
+                            "use_dynamic_linker={} but its driver host is not configured for this",
+                            url, use_dynamic_linker ? "true" : "false");
+                        cb(zx::error(ZX_ERR_INVALID_ARGS));
+                        return;
+                      }
+                    }
+                  }
+
                   // Since we're not colocating we need to create a new driver host.
                   if (!found_driver_host) {
                     auto result = (*self->node_manager_)
@@ -2065,7 +2073,22 @@ void Node::CreateHostAndStartDriverWithDynamicLinker(
     fidl::ServerEnd<fuchsia_component_runner::ComponentController> component_controller,
     PowerElementStartArgs power_element_args, bool found_driver_host,
     fit::callback<void(zx::result<>)> cb) {
+  if (!found_driver_host) {
+    driver_host_ = (*node_manager_)->GetDriverHost(driver_host_name_for_colocation_);
+    if (driver_host_) {
+      found_driver_host = true;
+    }
+  }
+
   if (found_driver_host) {
+    if (!driver_host()->IsDynamicLinkingEnabled()) {
+      fdf_log::error(
+          "Failed to start driver '{}', driver is colocated and set use_dynamic_linker=true "
+          "but its driver host is not configured for this",
+          url);
+      cb(zx::error(ZX_ERR_INVALID_ARGS));
+      return;
+    }
     StartDriverWithDynamicLinker(std::move(load_args), std::move(start_args), url,
                                  std::move(component_controller), std::move(power_element_args),
                                  std::move(cb));

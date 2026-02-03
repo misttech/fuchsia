@@ -200,7 +200,31 @@ class FakeNodeManager : public TestNodeManagerBase {
 
   zx::result<driver_manager::DriverHost*> CreateDriverHost(
       bool use_next_vdso, std::string_view driver_host_name_for_colocation) override {
+    create_driver_host_calls_++;
+    hosts_[std::string(driver_host_name_for_colocation)] = &driver_host_;
     return zx::ok(&driver_host_);
+  }
+
+  driver_manager::DriverHost* GetDriverHost(std::string_view name) override {
+    if (hosts_.count(std::string(name))) {
+      return hosts_[std::string(name)];
+    }
+    return nullptr;
+  }
+
+  void CreatePowerElement(std::string_view name,
+                          fuchsia_power_broker::DependencyToken element_token,
+                          std::vector<fuchsia_power_broker::DependencyToken> deps,
+                          fidl::ServerEnd<fuchsia_power_broker::ElementControl> control,
+                          fidl::ClientEnd<fuchsia_power_broker::ElementRunner> runner,
+                          fidl::ServerEnd<fuchsia_power_broker::Lessor> lessor,
+                          driver_manager::Collection for_collection,
+                          fit::callback<void(zx::result<bool>)> cb) override {
+    if (defer_power_element_creation_) {
+      power_element_callbacks_.push_back(std::move(cb));
+      return;
+    }
+    cb(zx::ok(false));
   }
 
   void CloseDriverForNode(std::string node_name) { driver_host_.CloseDriver(node_name); }
@@ -223,6 +247,16 @@ class FakeNodeManager : public TestNodeManagerBase {
 
   driver_manager::DictionaryUtil& dictionary_util() override { return dictionary_util_; }
 
+  int create_driver_host_calls() const { return create_driver_host_calls_; }
+  void set_defer_power_element_creation(bool defer) { defer_power_element_creation_ = defer; }
+
+  void RunPendingPowerElementCallbacks() {
+    for (auto& cb : power_element_callbacks_) {
+      cb(zx::ok(false));
+    }
+    power_element_callbacks_.clear();
+  }
+
  private:
   async_dispatcher_t* dispatcher_;
   fidl::WireClient<fuchsia_component::Realm> realm_;
@@ -230,6 +264,11 @@ class FakeNodeManager : public TestNodeManagerBase {
   std::unordered_map<std::string, TestController> controllers_;
   FakeDriverHost driver_host_;
   FakeDictionaryUtil dictionary_util_;
+
+  int create_driver_host_calls_ = 0;
+  std::unordered_map<std::string, driver_manager::DriverHost*> hosts_;
+  bool defer_power_element_creation_ = false;
+  std::vector<fit::callback<void(zx::result<bool>)>> power_element_callbacks_;
 };
 
 void TestController::Destroy(DestroyCompleter::Sync& completer) {
@@ -351,6 +390,72 @@ class Dfv2NodeTest : public DriverManagerTestBase {
   std::unique_ptr<TestRealm> realm_;
   fidl::ServerBindingGroup<fuchsia_device::Controller> device_controller_bindings_;
 };
+
+TEST_F(Dfv2NodeTest, StartDriverRaceCondition) {
+  auto parent = CreateNode("parent");
+  StartTestDriver(parent);
+
+  fuchsia_driver_framework::NodeAddArgs args;
+  args.name() = "child1";
+  args.driver_host() = "shared-host";
+
+  zx::result node_controller_endpoints =
+      fidl::CreateEndpoints<fuchsia_driver_framework::NodeController>();
+  ASSERT_EQ(node_controller_endpoints.status_value(), ZX_OK);
+
+  zx::result node_endpoints = fidl::CreateEndpoints<fuchsia_driver_framework::Node>();
+  ASSERT_EQ(node_endpoints.status_value(), ZX_OK);
+
+  std::shared_ptr<driver_manager::Node> child1;
+  parent->AddChild(std::move(args), std::move(node_controller_endpoints->server),
+                   std::move(node_endpoints->server),
+                   [&child1](fit::result<fuchsia_driver_framework::wire::NodeError,
+                                         std::shared_ptr<driver_manager::Node>>
+                                 result) {
+                     ASSERT_TRUE(result.is_ok());
+                     child1 = std::move(result.value());
+                   });
+
+  fuchsia_driver_framework::NodeAddArgs args2;
+  args2.name() = "child2";
+  args2.driver_host() = "shared-host";
+
+  zx::result node_controller_endpoints2 =
+      fidl::CreateEndpoints<fuchsia_driver_framework::NodeController>();
+  ASSERT_EQ(node_controller_endpoints2.status_value(), ZX_OK);
+
+  zx::result node_endpoints2 = fidl::CreateEndpoints<fuchsia_driver_framework::Node>();
+  ASSERT_EQ(node_endpoints2.status_value(), ZX_OK);
+
+  std::shared_ptr<driver_manager::Node> child2;
+  parent->AddChild(std::move(args2), std::move(node_controller_endpoints2->server),
+                   std::move(node_endpoints2->server),
+                   [&child2](fit::result<fuchsia_driver_framework::wire::NodeError,
+                                         std::shared_ptr<driver_manager::Node>>
+                                 result) {
+                     ASSERT_TRUE(result.is_ok());
+                     child2 = std::move(result.value());
+                   });
+
+  ASSERT_TRUE(child1);
+  ASSERT_TRUE(child2);
+
+  node_manager->set_defer_power_element_creation(true);
+  int initial_calls = node_manager->create_driver_host_calls();
+
+  // Start both drivers.
+  StartTestDriver(child1);
+  StartTestDriver(child2);
+
+  // Both should be waiting on power element creation.
+  ASSERT_EQ(initial_calls, node_manager->create_driver_host_calls());
+
+  // Run the callbacks.
+  node_manager->RunPendingPowerElementCallbacks();
+
+  // Only one driver host should be created.
+  ASSERT_EQ(initial_calls + 1, node_manager->create_driver_host_calls());
+}
 
 TEST_F(Dfv2NodeTest, AddChildWithDuplicatePropertyKey) {
   auto node = CreateNode("test");
