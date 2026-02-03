@@ -17,36 +17,37 @@
 #include <zircon/types.h>
 
 #include <arch/arm64/hypervisor/gic/gicv3.h>
-#include <arch/arm64/periphmap.h>
 #include <arch/regs.h>
 #include <dev/interrupt.h>
 #include <dev/interrupt/arm_gic_common.h>
 #include <dev/interrupt/arm_gic_hw_interface.h>
 #include <dev/interrupt/arm_gicv3_init.h>
-#include <dev/interrupt/arm_gicv3_regs.h>
 #include <kernel/cpu.h>
 #include <kernel/stats.h>
 #include <kernel/thread.h>
 #include <lk/init.h>
 #include <pdev/interrupt.h>
 #include <vm/vm.h>
+#include <vm/vm_aspace.h>
 
 #include "arm_gicv3_pcie.h"
+#include "arm_gicv3_regs.h"
 
 #define LOCAL_TRACE 0
 
 #include <arch/arm64.h>
 #define IFRAME_PC(frame) ((frame)->elr)
 
-// Values read from the config.
-vaddr_t arm_gicv3_gic_base = 0;
-uint64_t arm_gicv3_gicd_offset = 0;
-uint64_t arm_gicv3_gicr_offset = 0;
+// Base and stride of the mapped apertures, exported to other files in this driver.
+vaddr_t arm_gicv3_gicd_base = 0;
+vaddr_t arm_gicv3_gicr_base = 0;
 uint64_t arm_gicv3_gicr_stride = 0;
 
 namespace {
 
-uint64_t mmio_phys = 0;
+uint64_t gicd_offset = 0;
+uint64_t gicr_offset = 0;
+uint64_t gic_mmio_phys = 0;
 uint32_t ipi_base = 0;
 uint32_t gic_max_int;
 
@@ -175,11 +176,53 @@ zx_status_t gic_init() {
 
   DEBUG_ASSERT(arch_ints_disabled());
 
+  auto map_region = [](uint64_t phys_base, uint64_t size, const char* name) -> zx::result<vaddr_t> {
+    void* ptr;
+    zx_status_t status = VmAspace::kernel_aspace()->AllocPhysical(
+        name, size, &ptr, PAGE_SIZE_SHIFT, phys_base, 0,
+        ARCH_MMU_FLAG_PERM_READ | ARCH_MMU_FLAG_PERM_WRITE | ARCH_MMU_FLAG_UNCACHED_DEVICE);
+    if (status == ZX_OK) {
+      return zx::ok(reinterpret_cast<vaddr_t>(ptr));
+    }
+    return zx::error{status};
+  };
+
+  // map in the distributor registers
+  auto result = map_region(gic_mmio_phys + gicd_offset, GICD_REG_SIZE, "gicd");
+  if (!result.is_ok()) {
+    printf("GICv3: failed to map distributor registers");
+    return result.error_value();
+  }
+  arm_gicv3_gicd_base = result.value();
+  dprintf(SPEW, "GICv3: distributor mmio region [%#lx, %#lx)\n", arm_gicv3_gicd_base,
+          arm_gicv3_gicd_base + GICD_REG_SIZE);
+
   uint pidr2 = arm_gicv3_read32(GICD_PIDR2);
   uint rev = BITS_SHIFT(pidr2, 7, 4);
   if (rev != GICV3 && rev != GICV4) {
     return ZX_ERR_NOT_FOUND;
   }
+
+  // Compute the stride of the redistributor registers.
+  // Override what was passed in from the bootloader, since this is the truth based on the GIC
+  // revision.
+  // TODO: remove the gicr_stride variable passed in from bootloaders
+  if (rev == GICV3) {
+    arm_gicv3_gicr_stride = 0x20000;
+  } else if (rev == GICV4) {
+    arm_gicv3_gicr_stride = 0x40000;
+  }
+
+  // map in the redistributor registers
+  size_t redistributer_size = arch_max_num_cpus() * arm_gicv3_gicr_stride;
+  result = map_region(gic_mmio_phys + gicr_offset, redistributer_size, "gicr");
+  if (!result.is_ok()) {
+    printf("GICv3: failed to map redistributor registers");
+    return result.error_value();
+  }
+  arm_gicv3_gicr_base = result.value();
+  dprintf(SPEW, "GICv3: redistributor mmio region [%#lx, %#lx)\n", arm_gicv3_gicr_base,
+          arm_gicv3_gicr_base + redistributer_size);
 
   uint32_t typer = arm_gicv3_read32(GICD_TYPER);
   gic_max_int = (BITS(typer, 4, 0) + 1) * 32;
@@ -224,7 +267,8 @@ zx_status_t gic_init() {
   return ZX_OK;
 }
 
-// Extract AFF3, AFF2, and AFF1 field out of a mpidr and format according to the ICC_SGI1R register.
+// Extract AFF3, AFF2, and AFF1 field out of a mpidr and format according to the ICC_SGI1R
+// register.
 constexpr uint64_t mpidr_aff_mask_to_sgir_mask(uint64_t mpidr) {
   uint64_t mask = ((mpidr & MPIDR_AFF3_MASK) >> MPIDR_AFF3_SHIFT) << 48;
   mask |= ((mpidr & MPIDR_AFF2_MASK) >> MPIDR_AFF2_SHIFT) << 32;
@@ -491,9 +535,9 @@ void gic_shutdown() {
 void gic_shutdown_cpu() {
   DEBUG_ASSERT(arch_ints_disabled());
 
-  // If we're running on a secondary CPU there's a good chance this CPU will be powered off shortly
-  // (PSCI_CPU_OFF).  Sending an interrupt to a CPU that's been powered off may result in an
-  // "erronerous state" (see Power State Coordination Interface (PSCI) System Software on ARM
+  // If we're running on a secondary CPU there's a good chance this CPU will be powered off
+  // shortly (PSCI_CPU_OFF).  Sending an interrupt to a CPU that's been powered off may result in
+  // an "erronerous state" (see Power State Coordination Interface (PSCI) System Software on ARM
   // specification, 5.5.2).  So before we shutdown the GIC, make sure we've migrated/disabled any
   // and all peripheral interrupts targeted at this CPU (PPIs and SPIs).
   //
@@ -596,17 +640,14 @@ const struct pdev_interrupt_ops gic_ops = {
 void ArmGicInitEarly(const zbi_dcfg_arm_gic_v3_driver_t& config) {
   ASSERT(config.mmio_phys);
 
-  mmio_phys = config.mmio_phys;
-  arm_gicv3_gicd_offset = config.gicd_offset;
-  arm_gicv3_gicr_offset = config.gicr_offset;
+  gic_mmio_phys = config.mmio_phys;
+  gicd_offset = config.gicd_offset;
+  gicr_offset = config.gicr_offset;
   arm_gicv3_gicr_stride = config.gicr_stride;
   ipi_base = config.ipi_base;
 }
 
 void ArmGicInitPostVm(const zbi_dcfg_arm_gic_v3_driver_t& config) {
-  arm_gicv3_gic_base = periph_paddr_to_vaddr(mmio_phys);
-  ASSERT(arm_gicv3_gic_base);
-
   if (gic_init() != ZX_OK) {
     if (config.optional) {
       // failed to detect gic v3 but it's marked optional. continue
@@ -619,8 +660,7 @@ void ArmGicInitPostVm(const zbi_dcfg_arm_gic_v3_driver_t& config) {
   dprintf(SPEW,
           "GICv3: IPI base %u, MMIO phys %#lx, GICD offset %#lx, "
           "GICR offset/stride %#lx/%#lx\n",
-          ipi_base, mmio_phys, arm_gicv3_gicd_offset, arm_gicv3_gicr_offset, arm_gicv3_gicr_stride);
-  dprintf(SPEW, "GICv3: kernel address %#lx\n", arm_gicv3_gic_base);
+          ipi_base, gic_mmio_phys, gicd_offset, gicr_offset, arm_gicv3_gicr_stride);
 
   pdev_register_interrupts(&gic_ops);
 
@@ -641,7 +681,7 @@ void ArmGicInitPostVm(const zbi_dcfg_arm_gic_v3_driver_t& config) {
 }
 
 void ArmGicInitLate(const zbi_dcfg_arm_gic_v3_driver_t& config) {
-  ASSERT(mmio_phys);
+  ASSERT(gic_mmio_phys);
 
   arm_gicv3_pcie_init();
 
@@ -652,11 +692,10 @@ void ArmGicInitLate(const zbi_dcfg_arm_gic_v3_driver_t& config) {
   // Unlike GICv2, only the distributor and re-distributor registers are memory
   // mapped. There is one block of distributor registers for the system, and
   // one block of redistributor registers for each CPU.
-  root_resource_filter_add_deny_region(mmio_phys + arm_gicv3_gicd_offset, GICD_REG_SIZE,
+  root_resource_filter_add_deny_region(gic_mmio_phys + gicd_offset, GICD_REG_SIZE,
                                        ZX_RSRC_KIND_MMIO);
   for (cpu_num_t i = 0; i < arch_max_num_cpus(); i++) {
-    root_resource_filter_add_deny_region(
-        mmio_phys + arm_gicv3_gicr_offset + (arm_gicv3_gicr_stride * i), GICR_REG_SIZE,
-        ZX_RSRC_KIND_MMIO);
+    root_resource_filter_add_deny_region(gic_mmio_phys + gicr_offset + (arm_gicv3_gicr_stride * i),
+                                         arm_gicv3_gicr_stride, ZX_RSRC_KIND_MMIO);
   }
 }

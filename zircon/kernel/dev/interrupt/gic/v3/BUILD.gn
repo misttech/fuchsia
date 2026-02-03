@@ -7,10 +7,7 @@
 import("//build/cpp/library_headers.gni")
 
 library_headers("headers") {
-  headers = [
-    "dev/interrupt/arm_gicv3_init.h",
-    "dev/interrupt/arm_gicv3_regs.h",
-  ]
+  headers = [ "dev/interrupt/arm_gicv3_init.h" ]
   public_deps = [ "//sdk/lib/zbi-format" ]
 }
 
@@ -30,6 +27,7 @@ source_set("v3") {
     "//zircon/kernel/lib/kpci",
     "//zircon/kernel/lib/ktrace",
     "//zircon/kernel/lib/root_resource_filter",
+    "//zircon/kernel/vm:headers",
     "//zircon/system/ulib/lazy_init",
   ]
 }
