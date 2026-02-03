@@ -826,6 +826,63 @@ class NinjaPathToGnLabelCommand(CommandBase):
 #####
 
 
+def resolve_gn_labels_to_ninja_paths(
+    labels: list[str],
+    build_dir: Path,
+    host_tag: str,
+    allow_unknown: bool = False,
+) -> (str, list[str]):
+    """Resolve a list of GN labels to their Ninja path if possible.
+
+    Args:
+        labels: A list of input GN labels.
+        build_dir: Path to the Ninja build directory.
+        host_tag: Host tag value (e.g. "linux-x64").
+        allow_unknown: Optional flag, set it to True to allow non-GN labels to
+            be passed as input, and returned as-is in the output.
+    Returns:
+        On success, return ("", ninja_path), where ninja_paths is a list of
+        corresponding Ninja target paths.
+
+        On failure, return (error_message, []) where error_message indicates
+        and error.
+    """
+    outputs = OutputsDatabase()
+    if not outputs.load(build_dir):
+        return "Could not load GN outputs database", []
+
+    from gn_labels import GnLabelQualifier
+
+    host_cpu = host_tag.split("-")[1]
+    target_cpu = _get_target_cpu(build_dir)
+    qualifier = GnLabelQualifier(host_cpu, target_cpu)
+
+    all_paths = []
+    for label in labels:
+        if label.startswith("//"):
+            qualified_label = qualifier.qualify_label(label)
+            paths = outputs.gn_label_to_paths(qualified_label)
+            if paths:
+                all_paths.extend(paths)
+                continue
+            return (
+                f"Unknown GN label (not in the configured graph): {label}",
+                [],
+            )
+        elif label.startswith("/"):
+            return (
+                f"Absolute path is not a valid GN label or Ninja path: {label}",
+                [],
+            )
+        elif allow_unknown:
+            # Assume this is a Ninja path.
+            all_paths.append(label)
+        else:
+            return (f"Not a proper GN label (must start with //): {label}", [])
+
+    return ("", all_paths)
+
+
 class GnLabelToNinjaPathsCommand(CommandBase):
     PARSER_KWARGS: dict[str, T.Any] = {
         "name": "gn_label_to_ninja_paths",
@@ -844,42 +901,11 @@ class GnLabelToNinjaPathsCommand(CommandBase):
 
     @staticmethod
     def run(args: argparse.Namespace) -> int:
-        outputs = OutputsDatabase()
-        if not outputs.load(args.build_dir):
-            return 1
-
-        from gn_labels import GnLabelQualifier
-
-        host_cpu = args.host_tag.split("-")[1]
-        target_cpu = _get_target_cpu(args.build_dir)
-        qualifier = GnLabelQualifier(host_cpu, target_cpu)
-
-        failure = False
-        all_paths = []
-        for label in args.labels:
-            if label.startswith("//"):
-                qualified_label = qualifier.qualify_label(label)
-                paths = outputs.gn_label_to_paths(qualified_label)
-                if paths:
-                    all_paths.extend(paths)
-                    continue
-                _error(
-                    f"Unknown GN label (not in the configured graph): {label}"
-                )
-                failure = True
-            elif label.startswith("/"):
-                _error(
-                    f"Absolute path is not a valid GN label or Ninja path: {label}"
-                )
-                failure = True
-            elif args.allow_unknown:
-                # Assume this is a Ninja path.
-                all_paths.append(label)
-            else:
-                _error(f"Not a proper GN label (must start with //): {label}")
-                failure = True
-
-        if failure:
+        error_message, all_paths = resolve_gn_labels_to_ninja_paths(
+            args.labels, args.build_dir, args.host_tag, args.allow_unknown
+        )
+        if error_message:
+            _error(error_message)
             return 1
 
         for path in sorted(all_paths):
@@ -997,21 +1023,61 @@ class ShouldFileChangesTriggerBuildCommand(CommandBase):
     @staticmethod
     def add_arguments(parser: argparse.ArgumentParser) -> None:
         parser.add_argument(
+            "file_path",
+            type=Path,
+            nargs="*",
+            default=[],
+            help="Path to changed source file, relative to the Fuchsia source directory.",
+        )
+        parser.add_argument(
             "--files-list",
             type=Path,
-            required=True,
             help="Path to an input text file that contains one source file path per line. All paths should be relative to the Fuchsia source directory",
+        )
+        parser.add_argument(
+            "--root-target",
+            nargs="*",
+            default=[],
+            help="By default, only considers changes that will affect the targets of the last build. "
+            + "Use this flag to specify a different set of target GN labels. Can be used multiple times.",
         )
 
     @staticmethod
     def run(args: argparse.Namespace) -> int:
-        changed_files = args.files_list.read_text().splitlines()
+        changed_files = args.file_path
+        if args.files_list:
+            changed_files += args.files_list.read_text().splitlines()
+
         import ninja_artifacts
+
+        root_targets = None
+        for target in args.root_target:
+            if target.startswith("//"):
+                # A GN target label - convert its first Ninja output path.
+                error_message, ninja_paths = resolve_gn_label_to_ninja_paths(
+                    [target], args.build_dir, args.host_tag
+                )
+                if error_message:
+                    _error(error_message)
+                    return 1
+                root_targets.append(ninja_paths[0])
+            elif target.startswith("@"):
+                # A Bazel target label - not supported at the moment.
+                _error(
+                    f"ERROR: --root-target does not support Bazel labels for now!: {target}"
+                )
+                return 1
+            else:
+                # Assume a Ninja target
+                root_target.append(target)
 
         ninja_path = get_ninja_path(args.fuchsia_dir, args.host_tag)
         ninja_runner = ninja_artifacts.NinjaRunner(ninja_path, args.build_dir)
         result, reason = ninja_artifacts.should_file_changes_trigger_build(
-            changed_files, args.fuchsia_dir, ninja_runner
+            changed_files,
+            args.fuchsia_dir,
+            ninja_runner,
+            root_targets=root_targets,
         )
         if result:
             print(f"YES: {reason}")

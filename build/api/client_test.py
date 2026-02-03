@@ -827,6 +827,14 @@ default $:default
     def _test_changed_files(
         self, changed_files: list[str], expected_out: str
     ) -> None:
+        # Check passing the changed file paths directly.
+        self.assert_output(
+            args=["should_file_changes_trigger_build"] + changed_files,
+            expected_out=expected_out,
+            msg=f"for changed files {changed_files}",
+        )
+
+        # Check using --files-list.
         self.write_files_list(changed_files)
         self.assert_output(
             args=[

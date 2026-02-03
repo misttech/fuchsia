@@ -353,6 +353,35 @@ class ShouldChangedFilesTriggerBuildTest(unittest.TestCase):
         self.assertEqual(reason, "Sources updated for 2 targets.")
         self.assertTrue(result)
 
+    def test_root_targets(self) -> None:
+        # If root_targets is not specific, verify that the fallback ":default" is used
+        # when invoking the Ninja tool.
+        mock_runner = MockNinjaRunner(
+            self.build_dir, ":default\t../../some/file.txt"
+        )
+        result, reason = ninja_artifacts.should_file_changes_trigger_build(
+            ["some/file.txt"], self.root, mock_runner
+        )
+        self.assertListEqual(
+            mock_runner.last_ninja_args(),
+            ["-t", "multi-inputs", "--depfile", ":default"],
+        )
+
+        mock_runner = MockNinjaRunner(
+            self.build_dir,
+            ":first\t../../some/file.txt\n:second\t../../src.foo.cc",
+        )
+        result, reason = ninja_artifacts.should_file_changes_trigger_build(
+            ["some/file.txt"],
+            self.root,
+            mock_runner,
+            root_targets=[":first", ":second"],
+        )
+        self.assertListEqual(
+            mock_runner.last_ninja_args(),
+            ["-t", "multi-inputs", "--depfile", ":first", ":second"],
+        )
+
 
 if __name__ == "__main__":
     unittest.main()

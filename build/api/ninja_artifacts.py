@@ -119,7 +119,7 @@ def get_last_build_targets(build_dir: Path) -> list[str]:
     if last_ninja_targets:
         return last_ninja_targets
 
-    # Fallback if the file doesn't exist of is empty.
+    # Fallback if the file doesn't exist or is empty.
     return [":default"]
 
 
@@ -256,7 +256,10 @@ def get_last_build_sources(ninja_runner: NinjaRunner) -> T.Sequence[str]:
 
 
 def should_file_changes_trigger_build(
-    changed_files: list[str], fuchsia_dir: Path, ninja_runner: NinjaRunner
+    changed_files: list[str],
+    fuchsia_dir: Path,
+    ninja_runner: NinjaRunner,
+    root_targets: None | list[str] = None,
 ) -> tuple[bool, str]:
     """Determine whether file changes should trigger a build.
 
@@ -265,6 +268,8 @@ def should_file_changes_trigger_build(
             of files that were changed since the last build.
         fuchsia_dir: Path to Fuchsia source directory.
         ninja_runner: A NinjaRunner instance.
+        root_targets: Optional list of Ninja root target paths. If not specified,
+            the set of root targets used by the last build will be used.
     Returns:
         A (should_build, reason) pair, where should_build is a boolean flag, and reason is
         a string which will be non-empty when should_build is True, explaining succinctly why
@@ -336,7 +341,11 @@ def should_file_changes_trigger_build(
     #      ../../some/other/bazel/BUILD.bazel
     #      ../../some/other/bazel/source2.h
     #
-    ninja_targets = get_last_build_targets(build_dir)
+    ninja_targets = (
+        root_targets
+        if root_targets is not None
+        else get_last_build_targets(build_dir)
+    )
 
     tool_output = ninja_runner.run_and_extract_output(
         [
