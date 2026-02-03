@@ -12,8 +12,8 @@ use crate::rsna::{
 use fidl_fuchsia_wlan_mlme::SaeFrame;
 use ieee80211::{MacAddr, MacAddrBytes, Ssid};
 use log::warn;
-use wlan_common::ie::rsn::akm::AKM_SAE;
-use wlan_fcg_crypto as sae;
+use wlan_common::ie::rsn::akm::{AKM_OWE, AKM_SAE};
+use wlan_fcg_crypto::{self as sae, owe};
 use zerocopy::SplitByteSlice;
 
 /// IEEE Std 802.11-2016, 12.4.4.1
@@ -27,6 +27,12 @@ pub enum AuthError {
     FailedConstruction(anyhow::Error),
     #[error("Non-SAE auth method received an SAE event")]
     UnexpectedSaeEvent,
+    #[error("Non-OWE auth method received an OWE event")]
+    UnexpectedOweEvent,
+    #[error("Failed to initiate OWE: {:?}", _0)]
+    FailedInitiateOwe(anyhow::Error),
+    #[error("Failed to handle OWE public key: {:?}", _0)]
+    FailedHandleOwePublicKey(anyhow::Error),
 }
 
 pub struct SaeData {
@@ -36,6 +42,11 @@ pub struct SaeData {
     // Our timer interface does not support cancellation, so we instead use a counter to skip
     // outdated timouts.
     retransmit_timeout_id: u64,
+}
+
+pub struct OweData {
+    pub pmk: Option<Vec<u8>>,
+    handshake: Box<dyn owe::ClientOweHandshake>,
 }
 
 #[derive(Debug, PartialEq, Clone)]
@@ -51,6 +62,7 @@ pub enum Config {
     DriverSae {
         password: Vec<u8>,
     },
+    Owe,
 }
 
 impl Config {
@@ -58,6 +70,7 @@ impl Config {
         match self {
             Config::ComputedPsk(_) => MethodName::Psk,
             Config::Sae { .. } | Config::DriverSae { .. } => MethodName::Sae,
+            Config::Owe => MethodName::Owe,
         }
     }
 }
@@ -67,12 +80,14 @@ pub enum Method {
     Sae(SaeData),
     /// SAE handled in the driver/firmware, so the PMK will just eventually arrive.
     DriverSae(Option<sae::Key>),
+    Owe(OweData),
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum MethodName {
     Psk,
     Sae,
+    Owe,
 }
 
 impl std::fmt::Debug for Method {
@@ -89,6 +104,14 @@ impl std::fmt::Debug for Method {
                 }
             ),
             Self::DriverSae(key) => write!(f, "Method::DriverSae({:?})", key),
+            Self::Owe(owe_data) => write!(
+                f,
+                "Method::Owe {{ pmk: {}, .. }}",
+                match owe_data.pmk {
+                    Some(_) => "Some(_)",
+                    None => "None",
+                }
+            ),
         }
     }
 }
@@ -118,6 +141,11 @@ impl Method {
                 }))
             }
             Config::DriverSae { .. } => Ok(Method::DriverSae(None)),
+            Config::Owe => {
+                let handshake = owe::new_client_owe_handshake(DEFAULT_GROUP_ID, AKM_OWE)
+                    .map_err(AuthError::FailedConstruction)?;
+                Ok(Method::Owe(OweData { pmk: None, handshake }))
+            }
         }
     }
 
@@ -204,6 +232,41 @@ impl Method {
             _ => Err(AuthError::UnexpectedSaeEvent),
         }
     }
+
+    pub fn initiate_owe(&mut self, assoc_update_sink: &mut UpdateSink) -> Result<(), AuthError> {
+        match self {
+            Method::Owe(owe_data) => {
+                let mut owe_update_sink = owe::OweUpdateSink::default();
+                owe_data
+                    .handshake
+                    .initiate_owe(&mut owe_update_sink)
+                    .map_err(AuthError::FailedInitiateOwe)?;
+                process_owe_updates(owe_data, assoc_update_sink, owe_update_sink);
+                Ok(())
+            }
+            _ => Err(AuthError::UnexpectedOweEvent),
+        }
+    }
+
+    pub fn on_owe_public_key_rx(
+        &mut self,
+        assoc_update_sink: &mut UpdateSink,
+        group: u16,
+        public_key: Vec<u8>,
+    ) -> Result<(), AuthError> {
+        match self {
+            Method::Owe(owe_data) => {
+                let mut owe_update_sink = owe::OweUpdateSink::default();
+                owe_data
+                    .handshake
+                    .handle_public_key(&mut owe_update_sink, group, public_key)
+                    .map_err(AuthError::FailedHandleOwePublicKey)?;
+                process_owe_updates(owe_data, assoc_update_sink, owe_update_sink);
+                Ok(())
+            }
+            _ => Err(AuthError::UnexpectedOweEvent),
+        }
+    }
 }
 
 fn process_sae_updates(
@@ -261,6 +324,24 @@ fn process_sae_updates(
                         sae_data.retransmit_timeout_id += 1;
                     }
                 };
+            }
+        }
+    }
+}
+
+fn process_owe_updates(
+    owe_data: &mut OweData,
+    assoc_update_sink: &mut UpdateSink,
+    owe_update_sink: owe::OweUpdateSink,
+) {
+    for owe_update in owe_update_sink {
+        match owe_update {
+            owe::OweUpdate::TxPublicKey { group_id, key } => {
+                assoc_update_sink.push(SecAssocUpdate::TxOwePublicKey { group_id, key });
+            }
+            owe::OweUpdate::Success { key } => {
+                owe_data.pmk.replace(key.clone());
+                assoc_update_sink.push(SecAssocUpdate::Key(Key::Pmk(key)));
             }
         }
     }
@@ -498,5 +579,31 @@ mod test {
         auth.on_sae_frame_rx(&mut sink, frame).expect_err("Driver SAE shouldn't handle frames");
         auth.on_sae_timeout(&mut sink, 0).expect_err("Driver SAE shouldn't handle SAE timeouts");
         assert!(sink.is_empty());
+    }
+
+    #[test]
+    fn owe_initiates_and_handles_public_key() {
+        let mut auth =
+            Method::from_config(Config::Owe).expect("Failed to construct OWE auth method");
+        let mut sink = UpdateSink::default();
+
+        auth.initiate_owe(&mut sink).expect("OWE handshake should initiate");
+        assert_eq!(sink.len(), 1);
+        let (group_id, key) = assert_matches!(sink.remove(0),
+            SecAssocUpdate::TxOwePublicKey { group_id, key } => (group_id, key)
+        );
+        assert_eq!(group_id, 19);
+        assert!(!key.is_empty());
+
+        const AP_PUBLIC_KEY: [u8; 32] = [
+            0xa9, 0x8c, 0x47, 0xc5, 0xbd, 0xcf, 0x1d, 0x5e, 0x2c, 0x3c, 0x95, 0x8e, 0x10, 0xf3,
+            0x71, 0x61, 0xc4, 0x61, 0x02, 0x13, 0x22, 0xb2, 0x95, 0xf6, 0xc7, 0x81, 0x1e, 0xf8,
+            0x14, 0xc6, 0x03, 0x17,
+        ];
+        auth.on_owe_public_key_rx(&mut sink, group_id, AP_PUBLIC_KEY.to_vec())
+            .expect("OWE handshake should handle public key");
+        assert_eq!(sink.len(), 1);
+        let pmk = assert_matches!(sink.remove(0), SecAssocUpdate::Key(Key::Pmk(pmk)) => pmk);
+        assert!(!pmk.is_empty());
     }
 }

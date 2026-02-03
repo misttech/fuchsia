@@ -53,7 +53,7 @@ pub enum ProtectionInfo {
     LegacyWpa(WpaIe),
 }
 
-fn extract_sae_key_helper(update_sink: &UpdateSink) -> Option<Vec<u8>> {
+fn extract_pmk_helper(update_sink: &UpdateSink) -> Option<Vec<u8>> {
     for update in &update_sink[..] {
         if let rsna::SecAssocUpdate::Key(key::exchange::Key::Pmk(pmk)) = update {
             return Some(pmk.clone());
@@ -150,7 +150,7 @@ impl Supplicant {
 
     #[allow(clippy::result_large_err, reason = "mass allow for https://fxbug.dev/381896734")]
     fn extract_sae_key(&mut self, update_sink: &mut UpdateSink) -> Result<(), Error> {
-        if let Some(pmk) = extract_sae_key_helper(&update_sink) {
+        if let Some(pmk) = extract_pmk_helper(&update_sink) {
             self.esssa.on_pmk_available(update_sink, pmk)?;
         }
         Ok(())
@@ -190,6 +190,27 @@ impl Supplicant {
         event_id: u64,
     ) -> Result<(), Error> {
         self.auth_method.on_sae_timeout(update_sink, event_id).map_err(Error::AuthError)
+    }
+
+    #[allow(clippy::result_large_err, reason = "using existing Error type")]
+    pub fn initiate_owe(&mut self, update_sink: &mut UpdateSink) -> Result<(), Error> {
+        self.auth_method.initiate_owe(update_sink).map_err(Error::AuthError)
+    }
+
+    #[allow(clippy::result_large_err, reason = "using existing Error type")]
+    pub fn on_owe_public_key_rx(
+        &mut self,
+        update_sink: &mut UpdateSink,
+        group: u16,
+        public_key: Vec<u8>,
+    ) -> Result<(), Error> {
+        self.auth_method
+            .on_owe_public_key_rx(update_sink, group, public_key)
+            .map_err(Error::AuthError)?;
+        if let Some(pmk) = extract_pmk_helper(&update_sink) {
+            self.esssa.on_pmk_available(update_sink, pmk)?;
+        }
+        Ok(())
     }
 }
 
@@ -334,7 +355,7 @@ impl Authenticator {
 
     #[allow(clippy::result_large_err, reason = "mass allow for https://fxbug.dev/381896734")]
     fn extract_sae_key(&mut self, update_sink: &mut UpdateSink) -> Result<(), Error> {
-        if let Some(pmk) = extract_sae_key_helper(&update_sink) {
+        if let Some(pmk) = extract_pmk_helper(&update_sink) {
             self.esssa.on_pmk_available(update_sink, pmk)?;
         }
         Ok(())
@@ -593,6 +614,7 @@ mod tests {
     use crate::key::exchange::Key;
     use crate::rsna::{SecAssocStatus, SecAssocUpdate, test_util};
     use assert_matches::assert_matches;
+    use test_case::test_case;
 
     #[test]
     fn supplicant_extract_sae_key() {
@@ -652,5 +674,59 @@ mod tests {
         authenticator.extract_sae_key(&mut dummy_update_sink).expect("Failed to extract key");
         // No PMK means no new update.
         assert_eq!(dummy_update_sink, vec![SecAssocUpdate::ScheduleSaeTimeout(123)]);
+    }
+
+    #[test]
+    fn supplicant_initiate_owe_and_handle_public_key() {
+        let mut supplicant = test_util::get_owe_supplicant();
+        let mut update_sink = vec![];
+        supplicant.initiate_owe(&mut update_sink).expect("Failed to initiate OWE");
+        assert_eq!(update_sink.len(), 1);
+        let (group_id, key) = assert_matches!(update_sink.remove(0), SecAssocUpdate::TxOwePublicKey { group_id, key } => (group_id, key));
+        assert_eq!(group_id, 19);
+        assert!(!key.is_empty());
+
+        const AP_PUBLIC_KEY: [u8; 32] = [
+            0xa9, 0x8c, 0x47, 0xc5, 0xbd, 0xcf, 0x1d, 0x5e, 0x2c, 0x3c, 0x95, 0x8e, 0x10, 0xf3,
+            0x71, 0x61, 0xc4, 0x61, 0x02, 0x13, 0x22, 0xb2, 0x95, 0xf6, 0xc7, 0x81, 0x1e, 0xf8,
+            0x14, 0xc6, 0x03, 0x17,
+        ];
+        supplicant
+            .on_owe_public_key_rx(&mut update_sink, group_id, AP_PUBLIC_KEY.to_vec())
+            .expect("Failed to handle OWE public key");
+        // After handling the AP's public key, the supplicant should derive the PMK and
+        // notify the ESSSA.
+        assert_eq!(update_sink.len(), 2);
+        let pmk = assert_matches!(update_sink.remove(0), SecAssocUpdate::Key(Key::Pmk(pmk)) => pmk);
+        assert!(!pmk.is_empty());
+        assert_eq!(update_sink.remove(0), SecAssocUpdate::Status(SecAssocStatus::PmkSaEstablished));
+    }
+
+    #[test_case(
+        vec![
+            0xa9, 0x8c, 0x47, 0xc5, 0xbd, 0xcf, 0x1d, 0x5e, 0x2c, 0x3c, 0x95, 0x8e, 0x10, 0xf3,
+            0x71, 0x61, 0xc4, 0x61, 0x02, 0x13, 0x22, 0xb2, 0x95, 0xf6, 0xc7, 0x81, 0x1e, 0xf8,
+            0x14, 0xc6, 0x03,
+        ];
+        "invalid key size"
+    )]
+    #[test_case(
+        vec![
+            0xa9, 0x8c, 0x47, 0xc5, 0xbd, 0xcf, 0x1d, 0x5e, 0x2c, 0x3c, 0x95, 0x8e, 0x10, 0xf3,
+            0x71, 0x61, 0xc4, 0x61, 0x02, 0x13, 0x22, 0xb2, 0x95, 0xf6, 0xc7, 0x81, 0x1e, 0xf8,
+            0x14, 0xc6, 0x03, 0x16,
+        ];
+        "not a valid point on curve"
+    )]
+    #[fuchsia::test(add_test_attr = false)]
+    fn supplicant_handle_public_key_wrong_key_size(public_key: Vec<u8>) {
+        let mut supplicant = test_util::get_owe_supplicant();
+        let mut update_sink = vec![];
+        supplicant.initiate_owe(&mut update_sink).expect("Failed to initiate OWE");
+        let (group_id, _key) = assert_matches!(update_sink.remove(0), SecAssocUpdate::TxOwePublicKey { group_id, key } => (group_id, key));
+
+        supplicant
+            .on_owe_public_key_rx(&mut update_sink, group_id, public_key)
+            .expect_err("Should fail due to invalid public key");
     }
 }

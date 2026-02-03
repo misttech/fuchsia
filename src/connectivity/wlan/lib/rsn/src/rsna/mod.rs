@@ -267,9 +267,10 @@ impl<B: SplitByteSlice> Dot11VerifiedKeyFrame<B> {
             }
             // Invalid value.
             _ => {
-                return Err(
-                    Error::UnsupportedKeyDescriptor(frame.key_frame_fields.descriptor_type).into()
-                );
+                return Err(Error::UnsupportedKeyDescriptor(
+                    frame.key_frame_fields.descriptor_type,
+                )
+                .into());
             }
         };
 
@@ -349,7 +350,7 @@ impl<B: SplitByteSlice> Dot11VerifiedKeyFrame<B> {
                     let tk_len =
                         protection.pairwise.tk_bytes().ok_or(Error::UnsupportedCipherSuite)?;
                     rsn_ensure!(
-                        frame.key_frame_fields.key_len.get() == tk_len.into(),
+                        frame.key_frame_fields.key_len.get() == u16::from(tk_len),
                         Error::InvalidKeyLength(
                             frame.key_frame_fields.key_len.get().into(),
                             tk_len.into()
@@ -532,6 +533,11 @@ pub enum SecAssocUpdate {
     TxSaeFrame(SaeFrame),
     SaeAuthStatus(AuthStatus),
     ScheduleSaeTimeout(u64),
+    // Values used to handle OWE exchanges.
+    TxOwePublicKey {
+        group_id: u16,
+        key: Vec<u8>,
+    },
 }
 
 pub type UpdateSink = Vec<SecAssocUpdate>;

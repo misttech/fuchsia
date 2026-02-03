@@ -8,7 +8,7 @@ use bitfield::bitfield;
 use nom::bytes::streaming::take;
 use nom::combinator::{eof, map};
 use nom::error::{Error, ErrorKind};
-use nom::number::streaming::{le_u16, le_u8};
+use nom::number::streaming::{le_u8, le_u16};
 use nom::sequence::terminated;
 use nom::{IResult, Parser};
 use wlan_common::append::{BufferTooSmall, TrackedAppend, VecCursor};
@@ -53,11 +53,7 @@ impl Header {
     }
 
     fn data_len(&self) -> usize {
-        if self.len < 4 {
-            0
-        } else {
-            (self.len as usize) - 4
-        }
+        if self.len < 4 { 0 } else { (self.len as usize) - 4 }
     }
 }
 
@@ -352,7 +348,7 @@ mod tests {
     #[test]
     fn test_no_padding() {
         let buf = write_and_extract_padding(8);
-        assert_eq!(buf, vec![]);
+        assert!(buf.is_empty());
     }
 
     #[test]
@@ -361,7 +357,7 @@ mod tests {
         assert_eq!(buf, vec![TYPE, 0, 0, 0, 0, 0, 0]);
 
         let buf = write_and_extract_padding(16);
-        assert_eq!(buf, vec![]);
+        assert!(buf.is_empty());
     }
 
     #[test]

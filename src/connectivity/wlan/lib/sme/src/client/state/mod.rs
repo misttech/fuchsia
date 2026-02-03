@@ -232,6 +232,10 @@ impl Idle {
                 auth::Config::ComputedPsk(_) => {
                     (fidl_mlme::AuthenticationTypes::OpenSystem, vec![], None)
                 }
+                auth::Config::Owe => {
+                    // TODO(https://fxbug.dev/312485949): Initiate OWE handshake and provide public key.
+                    (fidl_mlme::AuthenticationTypes::OpenSystem, vec![], None)
+                }
             },
             Protection::Wep(key) => {
                 let wep_key = build_wep_set_key_descriptor(cmd.bss.bssid, key);

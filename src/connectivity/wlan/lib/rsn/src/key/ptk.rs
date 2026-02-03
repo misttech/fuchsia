@@ -66,11 +66,10 @@ impl Ptk {
         data[12..44].copy_from_slice(&min(anonce, snonce)[..]);
         data[44..].copy_from_slice(&max(anonce, snonce)[..]);
 
-        // IEEE 802.11-2016, 12.7.1.2
+        // IEEE 802.11-2024, 9.4.2.23.3, Table 9-190 - See the key derivation type column.
         // Derive the PTK from the PMK, providing access to the KEK, KCK and TK.
         let ptk_bytes = match akm.suite_type {
-            // IEEE 802.11-2016 does not specify this PRF for SAE, but in practice it is used.
-            akm::SAE => hmac_utils::kdf_hash_length::<Sha256>(
+            akm::SAE | akm::OWE => hmac_utils::kdf_hash_length::<Sha256>(
                 pmk,
                 "Pairwise key expansion",
                 &data,

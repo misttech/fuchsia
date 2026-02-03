@@ -413,6 +413,7 @@ where
                 bail!("hardware simulator does not support driver SAE");
             }
             auth::Config::Sae { .. } => {}
+            auth::Config::Owe { .. } => {}
         }
         tap.control
             .authenticator

@@ -22,7 +22,8 @@ pub trait Algorithm {
     fn unwrap_key(&self, kek: &[u8], iv: &[u8; 16], data: &[u8]) -> Result<Vec<u8>, Error>;
 }
 
-/// IEEE Std 802.11-2016, 12.7.2 b.1)
+/// IEEE Std 802.11-2024, 12.7.2 b.1)
+/// IEEE Std 802.11-2024, 12.7.3 Table 12-11
 pub fn keywrap_algorithm(
     key_descriptor_version: u16,
     akm: &akm::Akm,
@@ -30,7 +31,7 @@ pub fn keywrap_algorithm(
     match key_descriptor_version {
         1 => Some(Box::new(Rc4)),
         2 => Some(Box::new(NistAes)),
-        0 if akm.suite_type == akm::SAE => Some(Box::new(NistAes)),
+        0 if akm.suite_type == akm::SAE || akm.suite_type == akm::OWE => Some(Box::new(NistAes)),
         _ => None,
     }
 }
