@@ -873,8 +873,11 @@ impl<S: AsyncRead + AsyncWrite + Send + 'static> UsbVsockHost<S> {
                 log::info!("Shut down USB link for {}", device.debug_name())
             }
 
-            if let (Some(this), Some(cid)) = (weak_this.upgrade(), cid) {
-                this.remove_device(cid);
+            if let Some(this) = weak_this.upgrade() {
+                if let Some(cid) = cid {
+                    this.remove_device(cid);
+                }
+                let _: bool = this.add_device(device);
             }
         });
 
