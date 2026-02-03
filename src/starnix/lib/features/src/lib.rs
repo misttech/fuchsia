@@ -44,6 +44,7 @@ pub enum Feature {
     HvdcpOpti,
     Wifi,
     AdditionalMounts,
+    WakeupTest,
 }
 
 /// Error returned when a feature is not recognized.
@@ -136,6 +137,7 @@ mod test {
             (Feature::HvdcpOpti, "hvdcp_opti"),
             (Feature::Wifi, "wifi"),
             (Feature::AdditionalMounts, "additional_mounts"),
+            (Feature::WakeupTest, "wakeup_test"),
         ] {
             let string = feature.to_string();
             assert_eq!(string.as_str(), expected_str);

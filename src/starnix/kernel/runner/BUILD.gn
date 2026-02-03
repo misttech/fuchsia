@@ -83,6 +83,7 @@ rustc_library("starnix_kernel_runner") {
     "//src/starnix/modules/rtc",
     "//src/starnix/modules/thermal",
     "//src/starnix/modules/touch_power_policy",
+    "//src/starnix/modules/wakeup_test",
     "//src/sys/lib/fuchsia-zbi",
     "//src/sys/lib/runner",
     "//third_party/rust_crates:anyhow",

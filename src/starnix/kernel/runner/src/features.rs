@@ -29,6 +29,7 @@ use starnix_modules_nmfs::nmfs_init;
 use starnix_modules_perfetto_consumer::start_perfetto_consumer_thread;
 use starnix_modules_thermal::{cooling_device_init, thermal_device_init};
 use starnix_modules_touch_power_policy::TouchPowerPolicyDevice;
+use starnix_modules_wakeup_test::register_wakeup_test_device;
 use starnix_sync::{Locked, Unlocked};
 use starnix_uapi::error;
 use starnix_uapi::errors::Errno;
@@ -122,6 +123,9 @@ pub struct Features {
     pub hvdcp_opti: bool,
 
     pub additional_mounts: Option<Vec<String>>,
+
+    // Support kernel level suspend/resume tests.
+    pub wakeup_test: bool,
 }
 
 #[derive(Default, Debug, PartialEq)]
@@ -184,6 +188,7 @@ impl Features {
                 android_bootreason,
                 hvdcp_opti,
                 additional_mounts,
+                wakeup_test,
             } => {
                 inspect_node.record_bool("selinux", selinux.enabled);
                 inspect_node.record_bool("ashmem", *ashmem);
@@ -273,6 +278,7 @@ impl Features {
                     inspect_node
                         .record_string("additional_mounts", format!("{:?}", additional_mounts));
                     inspect_node.record_uint("dirent_cache_size", *dirent_cache_size as u64);
+                    inspect_node.record_bool("wakeup_test", *wakeup_test);
                 });
             }
         });
@@ -424,6 +430,7 @@ pub fn parse_features(
             (Feature::AdditionalMounts, _) => {
                 features.additional_mounts = Some(additional_mounts.clone())
             }
+            (Feature::WakeupTest, _) => features.wakeup_test = true,
         };
     }
 
@@ -616,7 +623,9 @@ pub fn run_container_features(
     if features.fastrpc {
         fastrpc_device_init(locked, system_task);
     }
-
+    if features.wakeup_test {
+        register_wakeup_test_device(locked, system_task)?;
+    }
     Ok(())
 }
 
