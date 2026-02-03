@@ -94,10 +94,7 @@ class Blob final : public CacheNode, fbl::Recyclable<Blob> {
   // This is called outside the lock which means there can be a race for the inode to be assigned.
   // The inode number changes for newly created blobs from 0 to a nonzero number when we start to
   // write to it. For blobs just read from disk (most of them) the inode number won't change.
-  uint32_t Ino() const __TA_EXCLUDES(mutex_) {
-    std::lock_guard lock(mutex_);
-    return map_index_;
-  }
+  uint32_t Ino() const __TA_EXCLUDES(mutex_);
 
   // Size of the blob data (i.e. total number of bytes that can be read).
   uint64_t FileSize() const __TA_EXCLUDES(mutex_);

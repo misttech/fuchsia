@@ -299,6 +299,14 @@ void BlobCreator::NeedsOverwrite(fuchsia_fxfs::wire::BlobCreatorNeedsOverwriteRe
       return;
     }
     auto blob = fbl::RefPtr<Blob>::Downcast(std::move(found));
+    // Check Readable. Until it is marked readable there is no valid ino number yet, and no format
+    // layout has been committed to disk.
+    if (!blob->IsReadable()) {
+      // If it is in the process of being written, but it is not readable yet,
+      // then don't request overwrite.
+      completer.ReplySuccess(false);
+      return;
+    }
     auto ino_or = blobfs_.GetNode(blob->Ino());
     if (ino_or.is_error()) {
       completer.ReplyError(ino_or.error_value());

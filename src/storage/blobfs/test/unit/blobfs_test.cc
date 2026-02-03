@@ -305,6 +305,51 @@ TEST_F(BlobfsOverwriteStatusTest, ChangeOverwriteConfig) {
   ASSERT_TRUE(creator.NeedsOverwrite(blob.digest()).value());
 }
 
+TEST_F(BlobfsOverwriteStatusTest, AlwaysReturnsFalseForUnfinishedBlob) {
+  ASSERT_OK(CreateFormatMount(1024, kBlobfsBlockSize));
+
+  auto svc_dir = fbl::MakeRefCounted<fs::PseudoDir>();
+  svc_dir->AddEntry(fidl::DiscoverableProtocolName<fuchsia_fxfs::BlobCreator>,
+                    fbl::MakeRefCounted<BlobCreator>(*blobfs()));
+  svc_dir->AddEntry(
+      fidl::DiscoverableProtocolName<fuchsia_storage_blobfs::OverwriteConfiguration>,
+      fbl::MakeRefCounted<OverwriteConfigurationService>(loop().dispatcher(), *blobfs()));
+
+  auto svc_endpoints = fidl::CreateEndpoints<fuchsia_io::Directory>();
+  ASSERT_OK(vfs()->ServeDirectory(std::move(svc_dir), std::move(svc_endpoints->server)));
+  BlobCreatorWrapper creator = BlobCreatorWrapper::Connect(svc_endpoints->client.borrow());
+  auto client_end =
+      component::ConnectAt<fuchsia_storage_blobfs::OverwriteConfiguration>(svc_endpoints->client);
+  ASSERT_OK(client_end);
+  fidl::WireSyncClient client(std::move(*client_end));
+
+  ASSERT_EQ(blobfs()->BlobWriteFormat(), BlobLayoutFormat::kCompactMerkleTreeAtEnd);
+  TestDeliveryBlob blob = TestDeliveryBlob::CreateUncompressed(16000, 7);
+  auto writer = creator.Create(blob.digest());
+  ASSERT_OK(writer);
+  auto writer_vmo = writer->GetVmo(blob.data().size());
+  ASSERT_OK(writer_vmo);
+  ASSERT_OK(writer_vmo->write(blob.data().data(), 0, blob.data().size() - 1));
+  ASSERT_OK(writer->BytesReady(blob.data().size() - 1));
+
+  // Should be false regardless of overwrite config.
+  ASSERT_FALSE(creator.NeedsOverwrite(blob.digest()).value());
+
+  {
+    auto result = client->Set(fuchsia_storage_blobfs::wire::OverwriteFormat::kOverwriteToCompact);
+    ASSERT_OK(result.status());
+    ASSERT_TRUE(result->is_ok());
+  }
+  ASSERT_FALSE(creator.NeedsOverwrite(blob.digest()).value());
+
+  {
+    auto result = client->Set(fuchsia_storage_blobfs::wire::OverwriteFormat::kOverwriteToPadded);
+    ASSERT_OK(result.status());
+    ASSERT_TRUE(result->is_ok());
+  }
+  ASSERT_FALSE(creator.NeedsOverwrite(blob.digest()).value());
+}
+
 TEST_F(BlobfsTest, GetNodeWithAnInvalidNodeIndexIsAnError) {
   uint32_t invalid_node_index = kMaxNodeId - 1;
   auto node = blobfs()->GetNode(invalid_node_index);

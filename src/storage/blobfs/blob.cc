@@ -56,6 +56,13 @@ zx::result<> VerifyNullBlob(Blobfs& blobfs, const Digest& digest) {
   return zx::ok();
 }
 
+uint32_t Blob::Ino() const {
+  std::lock_guard lock(mutex_);
+  // This value isn't trustworthy if the blob has not yet been written out, or has been purged.
+  ZX_ASSERT(state_ == BlobState::kReadable);
+  return map_index_;
+}
+
 uint64_t Blob::FileSize() const {
   std::lock_guard lock(mutex_);
   if (state_ == BlobState::kReadable)
