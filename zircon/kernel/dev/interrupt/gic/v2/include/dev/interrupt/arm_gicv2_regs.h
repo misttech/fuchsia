@@ -10,6 +10,11 @@
 
 #include <lib/mmio-ptr/mmio-ptr.h>
 
+// Accessors for all of the GICv2 registers if configured.
+// The registers are mapped in one segment at arm_gicv2_gic_base with all of the
+// various subsections of the GIC at the offsets below.
+
+// exported from arm_gicv2.cc
 extern uint64_t arm_gicv2_gic_base;
 extern uint64_t arm_gicv2_gicd_offset;
 extern uint64_t arm_gicv2_gicc_offset;

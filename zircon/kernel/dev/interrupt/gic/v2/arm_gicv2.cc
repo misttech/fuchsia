@@ -22,7 +22,6 @@
 
 #include <arch/arm64.h>
 #include <arch/arm64/hypervisor/gic/gicv2.h>
-#include <arch/arm64/periphmap.h>
 #include <arch/ops.h>
 #include <arch/regs.h>
 #include <dev/interrupt.h>
@@ -38,6 +37,8 @@
 #include <ktl/iterator.h>
 #include <lk/init.h>
 #include <pdev/interrupt.h>
+#include <vm/vm.h>
+#include <vm/vm_aspace.h>
 
 #include "arm_gicv2m_pcie.h"
 
@@ -46,7 +47,6 @@
 #define LOCAL_TRACE 0
 
 #define IFRAME_PC(frame) ((frame)->elr)
-#define get_vaddr_from_paddr(paddr) reinterpret_cast<zx_vaddr_t>((periph_paddr_to_vaddr(paddr)))
 
 // Values read from the config.
 vaddr_t arm_gicv2_gic_base = 0;
@@ -480,6 +480,8 @@ const struct pdev_interrupt_ops gic_ops = {
 
 }  // anonymous namespace
 
+// Init hooks
+
 void ArmGicInitEarly(const zbi_dcfg_arm_gic_v2_driver_t& config) {
   ASSERT(config.mmio_phys);
 
@@ -494,7 +496,44 @@ void ArmGicInitEarly(const zbi_dcfg_arm_gic_v2_driver_t& config) {
 }
 
 void ArmGicInitPostVm(const zbi_dcfg_arm_gic_v2_driver_t& config) {
-  arm_gicv2_gic_base = get_vaddr_from_paddr(config.mmio_phys);
+  // Compute the total size of the mmio region by finding the farthest offset and adding its size,
+  // assuming all of the space between is part of the same mmio interface.
+  uint64_t max_offset = 0;
+  size_t mmio_size = 0;
+
+  struct {
+    uint64_t offset;
+    size_t len;
+  } gicv2_apertures[] = {{arm_gicv2_gicd_offset, GICD_REG_SIZE},
+                         {arm_gicv2_gicc_offset, GICC_REG_SIZE},
+                         {arm_gicv2_gich_offset, GICH_REG_SIZE},
+                         {arm_gicv2_gicv_offset, GICV_REG_SIZE}};
+  for (auto [offset, len] : gicv2_apertures) {
+    if (offset > max_offset) {
+      max_offset = offset;
+      mmio_size = offset + len;
+    }
+  }
+
+  auto map_region = [](uint64_t phys_base, uint64_t size, const char* name) -> zx::result<vaddr_t> {
+    void* ptr;
+    zx_status_t status = VmAspace::kernel_aspace()->AllocPhysical(
+        name, size, &ptr, PAGE_SIZE_SHIFT, phys_base, 0,
+        ARCH_MMU_FLAG_PERM_READ | ARCH_MMU_FLAG_PERM_WRITE | ARCH_MMU_FLAG_UNCACHED_DEVICE);
+    if (status == ZX_OK) {
+      return zx::ok(reinterpret_cast<vaddr_t>(ptr));
+    }
+    return zx::error{status};
+  };
+
+  // Map the mmio region.
+  auto map_result = map_region(mmio_phys, mmio_size, "gicv2");
+  if (map_result.is_error()) {
+    panic("Could not allocate GICv2 mmio region: %d\n", map_result.error_value());
+  }
+  arm_gicv2_gic_base = map_result.value();
+  dprintf(SPEW, "GICv2: mmio region [%#lx, %#lx)\n", arm_gicv2_gic_base,
+          arm_gicv2_gic_base + mmio_size);
   ASSERT(arm_gicv2_gic_base);
 
   if (arm_gic_init() != ZX_OK) {
@@ -518,8 +557,16 @@ void ArmGicInitPostVm(const zbi_dcfg_arm_gic_v2_driver_t& config) {
     static paddr_t GICV2M_REG_FRAMES[] = {0};
     static vaddr_t GICV2M_REG_FRAMES_VIRT[] = {0};
 
+    // map in the gicv2m aperture
+    map_result = map_region(msi_frame_phys, GICV2M_FRAME_REG_SIZE, "gicv2m");
+    if (map_result.is_error()) {
+      panic("Could not allocate GICv2m mmio region: %d\n", map_result.error_value());
+    }
+    dprintf(SPEW, "GICv2m: mmio region [%#lx, %#lx)\n", map_result.value(),
+            map_result.value() + GICV2M_FRAME_REG_SIZE);
+
     GICV2M_REG_FRAMES[0] = msi_frame_phys;
-    GICV2M_REG_FRAMES_VIRT[0] = get_vaddr_from_paddr((msi_frame_phys));
+    GICV2M_REG_FRAMES_VIRT[0] = map_result.value();
     ASSERT(GICV2M_REG_FRAMES_VIRT[0]);
     arm_gicv2m_init(GICV2M_REG_FRAMES, GICV2M_REG_FRAMES_VIRT, ktl::size(GICV2M_REG_FRAMES));
   }

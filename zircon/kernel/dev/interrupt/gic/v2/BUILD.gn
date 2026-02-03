@@ -37,6 +37,7 @@ source_set("v2") {
     "//zircon/kernel/lib/pow2_range_allocator",
     "//zircon/kernel/lib/root_resource_filter",
     "//zircon/kernel/lib/topology",
+    "//zircon/kernel/vm:headers",
     "//zircon/system/ulib/lazy_init",
   ]
 }
