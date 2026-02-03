@@ -26,6 +26,11 @@
 #include <zircon/status.h>
 #include <zircon/threads.h>
 
+#include "fidl/fuchsia.hardware.bluetooth/cpp/markers.h"
+#include "fidl/fuchsia.hardware.bluetooth/cpp/natural_types.h"
+#include "lib/async/dispatcher.h"
+#include "lib/fidl/cpp/channel.h"
+#include "lib/fidl/cpp/unified_messaging_declarations.h"
 #include "src/connectivity/bluetooth/hci/vendor/broadcom/packets.h"
 
 namespace bt_hci_broadcom {
@@ -63,6 +68,83 @@ void HciEventHandler::OnReceive(fhbt::wire::ReceivedPacket* packet) {
   on_receive_callback_(buffer);
 }
 
+class HciTransportPassthroughImpl : public fidl::Server<fhbt::HciTransport>,
+                                    public fidl::AsyncEventHandler<fhbt::HciTransport> {
+ public:
+  explicit HciTransportPassthroughImpl(fidl::ClientEnd<fhbt::HciTransport> upstream_client_end,
+                                       async_dispatcher_t* dispatcher)
+      : upstream_client_(std::move(upstream_client_end), dispatcher, this) {}
+
+  static fidl::ServerBindingRef<fhbt::HciTransport> BindServer(
+      async_dispatcher_t* dispatcher,
+      fidl::ServerEnd<fuchsia_hardware_bluetooth::HciTransport> server_end,
+      fidl::ClientEnd<fuchsia_hardware_bluetooth::HciTransport> upstream_client_end) {
+    std::unique_ptr impl =
+        std::make_unique<HciTransportPassthroughImpl>(std::move(upstream_client_end), dispatcher);
+    HciTransportPassthroughImpl* impl_ptr = impl.get();
+
+    fidl::ServerBindingRef binding_ref =
+        fidl::BindServer(dispatcher, std::move(server_end), std::move(impl),
+                         std::mem_fn(&HciTransportPassthroughImpl::OnUnbound));
+    impl_ptr->binding_ref_.emplace(binding_ref);
+    return binding_ref;
+  }
+
+  void Send(SendRequest& request, SendCompleter::Sync& completed) override {
+    upstream_client_->Send(request).Then(
+        [completer = completed.ToAsync()](auto result) mutable { completer.Reply(); });
+  }
+
+  void AckReceive(AckReceiveCompleter::Sync& completer) override {
+    auto result = upstream_client_->AckReceive();
+    if (result.is_error()) {
+      FDF_LOG(WARNING, "Failed to ack to upstream");
+    }
+  }
+
+  void OnReceive(fidl::Event<fhbt::HciTransport::OnReceive>& event) override {
+    if (!binding_ref_.has_value()) {
+      FDF_LOG(WARNING, "OnReceive with no server?!?");
+    }
+    fit::result result = fidl::SendEvent(*binding_ref_)->OnReceive(event);
+    if (result.is_error()) {
+      FDF_LOG(WARNING, "Failed to send OnReceive to client");
+    }
+  }
+
+  void ConfigureSco(ConfigureScoRequest& request, ConfigureScoCompleter::Sync& completer) override {
+    auto result = upstream_client_->ConfigureSco(std::move(request));
+    if (result.is_error()) {
+      FDF_LOG(WARNING, "ConfigureSco failed");
+    }
+  }
+
+  void handle_unknown_method(fidl::UnknownMethodMetadata<fhbt::HciTransport> metadata,
+                             fidl::UnknownMethodCompleter::Sync& completer) override {
+    fdf::error("Unknown method in HciTransport client, closing with ZX_ERR_NOT_SUPPORTED");
+    completer.Close(ZX_ERR_NOT_SUPPORTED);
+  }
+
+  void handle_unknown_event(fidl::UnknownEventMetadata<fhbt::HciTransport> metadata) override {
+    fdf::error("Unknown event in upstream HciTransport protocol, ignoring");
+  }
+
+  void OnUnbound(fidl::UnbindInfo info, fidl::ServerEnd<fhbt::HciTransport> server_end) {
+    if (info.is_user_initiated()) {
+      FDF_LOG(INFO, "Shutting down HciTransport");
+    } else if (info.is_peer_closed()) {
+      FDF_LOG(INFO, "HciTransport Client closed");
+    } else {
+      FDF_LOG(WARNING, "HciTransport Server error: %s", info.status_string());
+    }
+    // Upstream client end should be dropped when the server is deallocated.
+  }
+
+ private:
+  fidl::Client<fhbt::HciTransport> upstream_client_;
+  std::optional<fidl::ServerBindingRef<fuchsia_hardware_bluetooth::HciTransport>> binding_ref_;
+};
+
 BtHciBroadcom::BtHciBroadcom(fdf::DriverStartArgs start_args,
                              fdf::UnownedSynchronizedDispatcher driver_dispatcher)
     : DriverBase("bt-hci-broadcom", std::move(start_args), std::move(driver_dispatcher)),
@@ -71,6 +153,8 @@ BtHciBroadcom::BtHciBroadcom(fdf::DriverStartArgs start_args,
       devfs_connector_(fit::bind_member<&BtHciBroadcom::Connect>(this)) {}
 
 void BtHciBroadcom::Start(fdf::StartCompleter completer) {
+  // BT_HOST_WAKE and BT_DEV_WAKE, when they are available, are used to
+
   zx_status_t status = ConnectToHciTransportFidlProtocol();
   if (status != ZX_OK) {
     completer(zx::error(status));
@@ -162,20 +246,34 @@ void BtHciBroadcom::OpenHci(OpenHciCompleter::Sync& completer) {
   completer.ReplyError(ZX_ERR_NOT_SUPPORTED);
 }
 
+fidl::ClientEnd<fuchsia_hardware_bluetooth::HciTransport> BtHciBroadcom::AddHciTransportClient(
+    fidl::ClientEnd<fuchsia_hardware_bluetooth::HciTransport> upstream_client_end) {
+  auto [client_end, server_end] = fidl::Endpoints<fhbt::HciTransport>::Create();
+  auto binding_ref = HciTransportPassthroughImpl::BindServer(
+      executor_->dispatcher(), std::move(server_end), std::move(upstream_client_end));
+  active_clients_.push_back(binding_ref);
+  return std::move(client_end);
+}
+
 void BtHciBroadcom::OpenHciTransport(OpenHciTransportCompleter::Sync& completer) {
+  fidl::ClientEnd<fhbt::HciTransport> client_end;
   if (hci_transport_client_end_.is_valid()) {
-    completer.ReplySuccess(std::move(hci_transport_client_end_));
-    return;
+    client_end = std::move(hci_transport_client_end_);
+  } else {
+    // We need a new client end, because we already gave away the initialization one.
+    zx::result<fidl::ClientEnd<fhbt::HciTransport>> client_end_result =
+        incoming()->Connect<fhbt::HciService::HciTransport>();
+    if (client_end_result.is_error()) {
+      FDF_LOG(ERROR, "Connect to fhbt::HciTransport protocol failed: %s",
+              client_end_result.status_string());
+      completer.ReplyError(client_end_result.status_value());
+      return;
+    }
+    client_end = std::move(*client_end_result);
   }
-  // We need a new client end, because we already gave away the initialization one.
-  zx::result<fidl::ClientEnd<fhbt::HciTransport>> client_end =
-      incoming()->Connect<fhbt::HciService::HciTransport>();
-  if (client_end.is_error()) {
-    FDF_LOG(ERROR, "Connect to fhbt::HciTransport protocol failed: %s", client_end.status_string());
-    completer.ReplyError(client_end.status_value());
-    return;
-  }
-  completer.ReplySuccess(std::move(*client_end));
+  fidl::ClientEnd<fhbt::HciTransport> passthrough_client =
+      AddHciTransportClient(std::move(client_end));
+  completer.ReplySuccess(std::move(passthrough_client));
 }
 
 void BtHciBroadcom::OpenSnoop(OpenSnoopCompleter::Sync& completer) {
@@ -641,8 +739,7 @@ fpromise::promise<void, zx_status_t> BtHciBroadcom::Initialize() {
 }
 
 fpromise::promise<void, zx_status_t> BtHciBroadcom::OnInitializeComplete(zx_status_t status) {
-  // We're done with the HciTransport client end. Unbind the |ClientEnd| from the |Wireclient| and
-  // keep it until the host calls |OpenHci| to get it.
+  // We're done with the HciTransport client end. Allow the HciTransport clients we vend to use it.
   hci_transport_client_end_ = hci_transport_client_.TakeClientEnd();
 
   if (status != ZX_OK) {

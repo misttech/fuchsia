@@ -22,6 +22,9 @@
 
 #include <gtest/gtest.h>
 
+#include "fidl/fuchsia.hardware.bluetooth/cpp/markers.h"
+#include "lib/fidl/cpp/unified_messaging_declarations.h"
+#include "lib/fidl/cpp/wire/unknown_interaction_handler.h"
 #include "src/connectivity/bluetooth/hci/vendor/broadcom/packets.h"
 #include "src/storage/lib/vfs/cpp/pseudo_dir.h"
 #include "src/storage/lib/vfs/cpp/synchronous_vfs.h"
@@ -289,6 +292,15 @@ class BtHciBroadcomTest : public ::testing::Test {
     hci_transport_client_.Bind(std::move(hci_transport_end));
   }
 
+  void OpenHciTransportClient() {
+    auto result = vendor_client_->OpenHciTransport();
+    ASSERT_TRUE(result.ok());
+    ASSERT_FALSE(result->is_error());
+
+    auto response = *result.value();
+    hci_transport_client_.Bind(std::move(response->channel));
+  }
+
   fdf_testing::BackgroundDriverTest<FixtureConfig> driver_test_;
 
   fidl::WireSyncClient<fhbt::Vendor> vendor_client_;
@@ -484,6 +496,71 @@ TEST_F(BtHciBroadcomInitializedTest, EncodeSetAclPrioritySuccessWithParametersNo
       kBcmAclDirectionSource,  // direction
   };
   EXPECT_EQ(result_buffer, kExpectedBuffer);
+}
+
+TEST_F(BtHciBroadcomInitializedTest, HciTransportPassthrough) {
+  OpenHciTransportClient();
+
+  const std::vector<uint8_t> kExpectedBuffer = {
+      0x07,
+      0x05,  // OpCode
+      0x03,  // size
+      0x00,
+      0x00,  // Handle (ignored)
+      0x00,  // Clock (own clock)
+  };
+
+  const std::vector<uint8_t> kExpectedResponse = {
+      0x0E,                    // Cmd Complete
+      0x0B,                    // 12 bytes
+      0x05,                    // HCI Command Packets
+      0x05, 0x07,              // Opcode
+      0x00,                    // Success
+      0x00, 0x00,              // Handle (reserved)
+      0x12, 0x34, 0x56, 0x78,  // Clock value
+      0x00, 0x00,              // Accuracy
+  };
+
+  driver_test().RunInEnvironmentTypeContext(
+      [&](TestEnvironment& env) { env.transport_device_.SetCustomizedReply(kExpectedResponse); });
+
+  fidl::Arena arena;
+  auto result =
+      hci_transport_client_->Send(fhbt::wire::SentPacket::WithCommand(arena, kExpectedBuffer));
+
+  ASSERT_EQ(result.status(), ZX_OK);
+
+  driver_test().RunInEnvironmentTypeContext([&](TestEnvironment& env) {
+    auto packet = env.transport_device_.LastPacketByOpCode(0x0507);
+    ASSERT_TRUE(packet.has_value());
+    EXPECT_EQ(packet, kExpectedBuffer);
+  });
+
+  class EventHandler final : public fidl::WireSyncEventHandler<fhbt::HciTransport> {
+   public:
+    EventHandler() = default;
+
+    void SetExpected(const std::vector<uint8_t>& expected) { expected_ = expected; }
+
+    void OnReceive(fidl::WireEvent<fhbt::HciTransport::OnReceive>* event) override {
+      auto response = event->event();
+      // Should have relayed the response from the underlying transport.
+      std::vector<uint8_t> data(response.begin(), response.end());
+      EXPECT_EQ(data, expected_);
+    }
+
+    void handle_unknown_event(fidl::UnknownEventMetadata<fhbt::HciTransport> metadata) override {
+      ASSERT_TRUE(false);
+    }
+
+   private:
+    std::vector<uint8_t> expected_;
+  };
+
+  EventHandler event_handler;
+  event_handler.SetExpected(kExpectedResponse);
+  fidl::Status status = hci_transport_client_.HandleOneEvent(event_handler);
+  EXPECT_TRUE(status.ok());
 }
 
 }  // namespace

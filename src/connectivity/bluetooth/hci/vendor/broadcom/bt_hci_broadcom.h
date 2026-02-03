@@ -102,6 +102,10 @@ class BtHciBroadcom final
 
   fpromise::promise<void, zx_status_t> LoadFirmware();
 
+  // Adds a client which passes through the given client, managing power states.
+  fidl::ClientEnd<fuchsia_hardware_bluetooth::HciTransport> AddHciTransportClient(
+      fidl::ClientEnd<fuchsia_hardware_bluetooth::HciTransport> upstream_client_end);
+
   // Used by firmware loading
   zx_status_t SendCommandSync(const void* command, size_t length);
   zx::result<std::vector<uint8_t>> ReadEventSync();
@@ -120,7 +124,7 @@ class BtHciBroadcom final
 
   uint32_t serial_pid_;
   // true if underlying transport is UART
-  bool is_uart_;
+  bool is_uart_ = false;
 
   std::optional<fdf::StartCompleter> start_completer_;
 
@@ -130,6 +134,8 @@ class BtHciBroadcom final
   HciEventHandler hci_event_handler_;
   fidl::WireSyncClient<fuchsia_hardware_bluetooth::HciTransport> hci_transport_client_;
   fidl::ClientEnd<fuchsia_hardware_bluetooth::HciTransport> hci_transport_client_end_;
+
+  std::vector<fidl::ServerBindingRef<fuchsia_hardware_bluetooth::HciTransport>> active_clients_;
 
   fdf::WireSyncClient<fuchsia_hardware_serialimpl::Device> serial_client_;
 
