@@ -35,10 +35,12 @@ driver must be validated using this manual test.
 
 These instructions will work with a `workbench_eng.x64` build that includes the
 `//src/graphics/display:tools` GN target. The `//src/graphics/display:tests`
-target is also recommended, as it builds the automated unit tests.
+target is also recommended, as it builds the automated unit tests. Debug
+assertions, which are extensively used in display drivers, are only enabled in
+debug builds.
 
 ```posix-terminal
-fx set workbench_eng.x64 --with //src/graphics/display:tools \
+fx set workbench_eng.x64 --debug --with //src/graphics/display:tools \
     --with //src/graphics/display:tests
 ```
 
