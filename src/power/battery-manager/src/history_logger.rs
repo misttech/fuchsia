@@ -7,7 +7,6 @@ use fidl_fuchsia_power_battery::ChargeStatus;
 use fuchsia_async as fasync;
 use fuchsia_inspect::{self as inspect};
 use fuchsia_inspect_contrib::nodes::BoundedListNode;
-use fuchsia_sync::Mutex;
 use log::{error, warn};
 use state_recorder::{
     EnumStateRecorder, NumericStateRecorder, PersistenceOptions, RecordableNumericType,
@@ -26,8 +25,9 @@ static BATTERY_LEVEL_HEADER: &str = "# BATTERY LEVEL";
 static CHARGE_STATUS_HEADER: &str = "# CHARGE STATUS";
 static BATTERY_HISTORY_FILE_FOR_RENAME: &str = "/data/history_before_rename.txt";
 
-const MAX_POWER_CONSUMPTION_MEASUREMENTS: usize = 20;
+const MAX_BATTERY_LEVEL_MEASUREMENTS: usize = 200;
 const MAX_FAULT_MEASUREMENTS: usize = 20;
+const MAX_POWER_CONSUMPTION_MEASUREMENTS: usize = 20;
 const STALE_DATA_TIMER: zx::Duration<zx::MonotonicTimeline> = zx::Duration::from_minutes(10);
 
 #[derive(Copy, Clone, Debug, Display, EnumIter, Eq, PartialEq, Hash, FromRepr)]
@@ -244,15 +244,21 @@ pub struct RecorderConfig {
 }
 
 pub struct BatteryInfoRecorders {
-    present_voltage: Mutex<NumericStateRecorder<u32>>,
-    remaining_capacity: Mutex<NumericStateRecorder<u32>>,
-    present_current: Mutex<NumericStateRecorder<i32>>,
-    average_current: Mutex<NumericStateRecorder<i32>>,
+    raw_level_percent: RefCell<NumericStateRecorder<u8>>,
+    level_percent: RefCell<NumericStateRecorder<u8>>,
+    previous_raw_level: RefCell<Option<u8>>,
+    previous_level: RefCell<Option<u8>>,
+    present_voltage: RefCell<NumericStateRecorder<u32>>,
+    remaining_capacity: RefCell<NumericStateRecorder<u32>>,
+    present_current: RefCell<NumericStateRecorder<i32>>,
+    average_current: RefCell<NumericStateRecorder<i32>>,
     fault_detector: Rc<FaultDetector>,
 }
 
 impl BatteryInfoRecorders {
     pub fn new(config: RecorderConfig) -> Self {
+        let mut raw_level_percent_opts = PersistenceOptions::new("raw_level_percent".to_string());
+        let mut level_percent_opts = PersistenceOptions::new("level_percent".to_string());
         let mut present_voltage_opts = PersistenceOptions::new("present_voltage".to_string());
         let mut remaining_capacity_opts = PersistenceOptions::new("remaining_capacity".to_string());
         let mut present_current_opts = PersistenceOptions::new("charge_current".to_string());
@@ -262,6 +268,10 @@ impl BatteryInfoRecorders {
 
         // Apply overrides if they exist
         if let Some(PersistenceDirs { storage_dir, volatile_dir }) = &config.persistence_dirs {
+            raw_level_percent_opts =
+                raw_level_percent_opts.storage_dir(storage_dir).volatile_dir(volatile_dir);
+            level_percent_opts =
+                level_percent_opts.storage_dir(storage_dir).volatile_dir(volatile_dir);
             present_voltage_opts =
                 present_voltage_opts.storage_dir(storage_dir).volatile_dir(volatile_dir);
             remaining_capacity_opts =
@@ -272,6 +282,18 @@ impl BatteryInfoRecorders {
                 average_current_opts.storage_dir(storage_dir).volatile_dir(volatile_dir);
         }
 
+        let raw_level_percent_recorder = Self::create_recorder(
+            "raw_level_percent",
+            units!(Percent),
+            MAX_BATTERY_LEVEL_MEASUREMENTS,
+            raw_level_percent_opts,
+        );
+        let level_percent_recorder = Self::create_recorder(
+            "level_percent",
+            units!(Percent),
+            MAX_BATTERY_LEVEL_MEASUREMENTS,
+            level_percent_opts,
+        );
         let present_voltage_recorder = Self::create_recorder(
             "present_voltage",
             units!(Milli, Volts),
@@ -298,34 +320,61 @@ impl BatteryInfoRecorders {
         );
 
         Self {
-            present_voltage: Mutex::new(present_voltage_recorder),
-            remaining_capacity: Mutex::new(remaining_capacity_recorder),
-            present_current: Mutex::new(present_current_recorder),
-            average_current: Mutex::new(average_current_recorder),
+            raw_level_percent: RefCell::new(raw_level_percent_recorder),
+            level_percent: RefCell::new(level_percent_recorder),
+            previous_raw_level: RefCell::new(None),
+            previous_level: RefCell::new(None),
+            present_voltage: RefCell::new(present_voltage_recorder),
+            remaining_capacity: RefCell::new(remaining_capacity_recorder),
+            present_current: RefCell::new(present_current_recorder),
+            average_current: RefCell::new(average_current_recorder),
             fault_detector,
         }
     }
+
+    pub fn record_raw_level_on_change(&self, level: Option<f32>) {
+        if let Some(level_to_publish) = level {
+            let val = level_to_publish.round() as u8;
+            let mut previous_level = self.previous_raw_level.borrow_mut();
+            if Some(val) != *previous_level {
+                *previous_level = Some(val);
+                self.raw_level_percent.borrow_mut().record(val);
+            }
+        }
+    }
+
+    pub fn record_level_on_change(&self, level: Option<f32>) {
+        if let Some(level_to_publish) = level {
+            let val = level_to_publish.round() as u8;
+            let mut previous_level = self.previous_level.borrow_mut();
+            if Some(val) != *previous_level {
+                *previous_level = Some(val);
+                self.level_percent.borrow_mut().record(val);
+            }
+        }
+    }
+
     pub fn record_present_voltage(&self, voltage: Option<u32>) {
         if let Some(voltage) = voltage {
-            self.present_voltage.lock().record(voltage);
+            self.present_voltage.borrow_mut().record(voltage);
         }
     }
 
     pub fn record_remaining_capacity(&self, capacity: Option<u32>) {
         if let Some(capacity) = capacity {
-            self.remaining_capacity.lock().record(capacity);
+            self.remaining_capacity.borrow_mut().record(capacity);
         }
     }
 
     pub fn record_present_current(&self, current: Option<i32>) {
         if let Some(current) = current {
-            self.present_current.lock().record(current);
+            self.present_current.borrow_mut().record(current);
         }
     }
 
     pub fn record_average_current(&self, current: Option<i32>) {
         if let Some(current) = current {
-            self.average_current.lock().record(current);
+            self.average_current.borrow_mut().record(current);
         }
     }
 

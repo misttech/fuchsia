@@ -235,6 +235,7 @@ impl BatteryManager {
         let raw_level = info.level_percent;
         let new_charge_status = info.charge_status;
         let recovery_event = self.info_recorders.update(raw_level, new_charge_status);
+        self.info_recorders.record_raw_level_on_change(raw_level);
 
         let info = {
             let mut data_polisher = self.data_polisher.lock().await;
@@ -243,26 +244,26 @@ impl BatteryManager {
             }
             data_polisher.polish_info(info)
         };
-        let new_charge_status = info.charge_status;
-        let new_charge_source = info.charge_source;
-        let new_present_voltage = info.present_voltage_mv;
-        let new_present_current = info.present_charging_current_ua;
-        let new_average_current = info.average_charging_current_ua;
-        let new_remaining_capacity = info.remaining_capacity_uah;
 
-        self.determine_suspend_status(new_charge_source, sag).await;
-        self.publish_battery_level_on_change(info.level_percent).await;
+        self.determine_suspend_status(info.charge_source, sag).await;
 
         let mut new_battery_info = self.battery_info.write();
         *new_battery_info = info;
         let now = get_current_time();
         new_battery_info.timestamp = Some(now);
 
-        Self::publish_charge_status(self.history_logger.clone(), new_charge_status);
-        self.info_recorders.record_present_voltage(new_present_voltage);
-        self.info_recorders.record_remaining_capacity(new_remaining_capacity);
-        self.info_recorders.record_present_current(new_present_current);
-        self.info_recorders.record_average_current(new_average_current);
+        self.publish_to_inspect(&new_battery_info).await;
+    }
+
+    async fn publish_to_inspect(&self, info: &fpower::BatteryInfo) {
+        self.publish_battery_level_on_change(info.level_percent).await;
+        Self::publish_charge_status(self.history_logger.clone(), info.charge_status);
+
+        self.info_recorders.record_level_on_change(info.level_percent);
+        self.info_recorders.record_present_voltage(info.present_voltage_mv);
+        self.info_recorders.record_remaining_capacity(info.remaining_capacity_uah);
+        self.info_recorders.record_present_current(info.present_charging_current_ua);
+        self.info_recorders.record_average_current(info.average_charging_current_ua);
     }
 
     pub fn get_battery_info_copy(&self) -> fpower::BatteryInfo {
@@ -833,5 +834,43 @@ mod tests {
             let related_id = token_info.related_koid;
             assert_eq!(related_id, tx_id2);
         }
+    }
+
+    #[fuchsia::test]
+    async fn test_update_battery_info_records_polished_vs_raw() {
+        use diagnostics_assertions::assert_data_tree;
+
+        let (_dir, battery_manager) = create_manager();
+
+        // Raw level 3.0 should be polished to 0.0 (by InitialScaler)
+        let raw_level = 3.0;
+        let info = fpower::BatteryInfo {
+            level_percent: Some(raw_level),
+            charge_status: Some(fpower::ChargeStatus::Discharging),
+            ..Default::default()
+        };
+
+        battery_manager.update_battery_info(info.clone(), None).await;
+
+        // Verify recordings in Inspect
+        let global_inspector = inspect::component::inspector();
+        assert_data_tree!(global_inspector, root: {
+            power_observability_state_recorders: contains {
+                raw_level_percent: contains {
+                    history: contains {
+                        "0": contains {
+                            value: 3u64,
+                        }
+                    }
+                },
+                level_percent: contains {
+                    history: contains {
+                        "0": contains {
+                            value: 0u64,
+                        }
+                    }
+                },
+            }
+        });
     }
 }
