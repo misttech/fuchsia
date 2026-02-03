@@ -21,9 +21,6 @@
                 "IoctlTest.SIOCSIFADDR_WithMultipleAddressesOnInterface",
                 "IoctlTest.SIOCSIFNETMASK_WithMultipleAddressesOnInterface",
 
-                // TODO(https://fxbug.dev/436909751): Intermittently failing.
-                "IoUringTest.IoUringReadWrite",
-
                 // TODO(https://fxbug.dev/479282469)
                 "PerfEventOpenTest.SampleIdIsValid",
                 "PerfEventOpenTest.MmapFirstRecordPageIsValid",
