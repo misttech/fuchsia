@@ -1210,7 +1210,7 @@ group("unic-ucd-block") {
 }
 
 group("unicase") {
-  public_deps = [ ":unicase-v2_8_1" ]
+  public_deps = [ ":unicase-v2_9_0" ]
 }
 
 if (current_os == "fuchsia") {
@@ -13747,7 +13747,7 @@ rustc_library("pulldown-cmark-v0_9_3") {
   deps += [ ":bitflags-v1_3_2" ]
   deps += [ ":getopts-v0_2_24" ]
   deps += [ ":serde-v1_0_228" ]
-  deps += [ ":unicase-v2_8_1" ]
+  deps += [ ":unicase-v2_9_0" ]
 
   rustenv = []
 
@@ -20099,18 +20099,18 @@ rustc_library("unic-ucd-version-v0_9_0") {
   applicable_licenses = [ ":unic-ucd-version-v0_9_0.license" ]
 }
 
-license("unicase-v2_8_1.license") {
+license("unicase-v2_9_0.license") {
   public_package_name = "unicase"
   license_files = [
-    "//third_party/rust_crates/vendor/unicase-2.8.1/LICENSE-APACHE",
-    "//third_party/rust_crates/vendor/unicase-2.8.1/LICENSE-MIT",
+    "//third_party/rust_crates/vendor/unicase-2.9.0/LICENSE-APACHE",
+    "//third_party/rust_crates/vendor/unicase-2.9.0/LICENSE-MIT",
   ]
 }
 
-rustc_library("unicase-v2_8_1") {
+rustc_library("unicase-v2_9_0") {
   crate_name = "unicase"
-  source_root = "//third_party/rust_crates/vendor/unicase-2.8.1/src/lib.rs"
-  output_name = "unicase-e2759e64b1e2cf7b"
+  source_root = "//third_party/rust_crates/vendor/unicase-2.9.0/src/lib.rs"
+  output_name = "unicase-49a1a75a7ee56dcf"
   edition = "2018"
   disable_clippy = true
   enforce_source_listing = false
@@ -20122,13 +20122,13 @@ rustc_library("unicase-v2_8_1") {
 
   rustflags = [
     "--cap-lints=allow",
-    "-Cmetadata=e2759e64b1e2cf7b",
-    "-Cextra-filename=-e2759e64b1e2cf7b",
+    "-Cmetadata=49a1a75a7ee56dcf",
+    "-Cextra-filename=-49a1a75a7ee56dcf",
   ]
 
   visibility = [ ":*" ]
 
-  applicable_licenses = [ ":unicase-v2_8_1.license" ]
+  applicable_licenses = [ ":unicase-v2_9_0.license" ]
 }
 
 license("unicode-bidi-v0_3_18.license") {

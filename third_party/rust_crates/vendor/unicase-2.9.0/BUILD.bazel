@@ -22,7 +22,7 @@ package_info(
     name = "package_info",
     package_name = "unicase",
     package_url = "https://github.com/seanmonstar/unicase",
-    package_version = "2.8.1",
+    package_version = "2.9.0",
 )
 
 license(
@@ -72,5 +72,5 @@ rust_library(
         "@rules_rust//rust/platform:x86_64-unknown-linux-gnu": [],
         "//conditions:default": ["@platforms//:incompatible"],
     }),
-    version = "2.8.1",
+    version = "2.9.0",
 )
