@@ -20,4 +20,41 @@ If you've opened Fuchsia using `fuchsia.code-workspace`, the agent's terminal
 should also be able to run `fx`/`ffx`/etc commands without additional
 modifications.
 
+## Personal Settings
+
+Some users may have personal dotfiles or other settings they previously used
+`direnv` (or another tool) to manage. If you have settings, tools or env vars
+you need to set up but do not want to be public in `./.mise/config.toml`, go
+create a `${FUCHSIA_DIR}/mise.local.toml`. This is ignored by our `.gitignore`
+and will let you have project-specific settings that are not committed.
+
+For example: `${FUCHSIA_DIR}/mise.local.toml`
+
+
+```toml
+[env]
+SIMPLE_GIT_PROMPT = 1
+FOO = "totally-not-an-api-key"
+FILE_I_EDIT_ALL_THE_TIME = "{{ config_root }}/src/BUILD.gn"
+
+[tasks.work]
+description = "Work hard"
+run = "edit $FILE_I_EDIT_ALL_THE_TIME"
+```
+
+Would allow you to run `edit FILE_I_EDIT_ALL_THE_TIME` or even just `mise work`
+to edit the file you edit all the time without modifying anyone else's setup.
+
+## Security
+
+By default, once `mise` trusts a given configuration file, it is trusted
+forever, even if it is modified. From a security posture standpoint, this is
+a weak posture as `mise` can run arbitrary code in it's configuration file,
+which would allow an attacker to potentially compromise a system. `mise` has
+a ["paranoid" mode][paranoid], which stores the SHA of trusted configuration
+files and will not load them if they are changed.
+
+You can enable paranoid mode by running `mise settings paranoid=1`.
+
+[paranoid]: https://mise.jdx.dev/paranoid.html
 [fdev]: https://fuchsia.dev/fuchsia-src/get-started/get_fuchsia_source?hl=en#set-up-environment-variables
