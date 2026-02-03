@@ -4,9 +4,10 @@
 @available(added=27)
 library fuchsia.pkg.test;
 
-using fuchsia.component.sandbox;
 using fuchsia.io;
 using fuchsia.testing.harness;
+using fuchsia.component.sandbox;
+using zx;
 
 /// RealmOptions tells the RealmFactory protocol how to create the test realm.
 type RealmOptions = resource table {
@@ -16,9 +17,18 @@ type RealmOptions = resource table {
 @discoverable
 open protocol RealmFactory {
     /// Creates a new realm and returns a dictionary containing its exposed capabilities.
+    @available(deprecated=HEAD)
     flexible CreateRealm(resource struct {
         options RealmOptions;
     }) -> (resource struct {
         dictionary client_end:fuchsia.component.sandbox.Dictionary;
+    }) error fuchsia.testing.harness.OperationError;
+
+    /// Creates a new realm and returns a dictionary containing its exposed capabilities.
+    @available(added=HEAD)
+    flexible CreateRealm2(resource struct {
+        options RealmOptions;
+    }) -> (resource struct {
+        dictionary zx.Handle:EVENTPAIR;
     }) error fuchsia.testing.harness.OperationError;
 };

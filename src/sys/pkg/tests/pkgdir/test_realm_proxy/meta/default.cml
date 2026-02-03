@@ -16,6 +16,10 @@
     ],
     use: [
         {
+            protocol: "fuchsia.component.runtime.Capabilities",
+            from: "framework",
+        },
+        {
             protocol: [
                 "fuchsia.blobfs.internal.DecompressorCreator",
                 "fuchsia.process.Launcher",

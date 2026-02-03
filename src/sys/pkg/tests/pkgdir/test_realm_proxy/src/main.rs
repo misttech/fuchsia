@@ -8,6 +8,7 @@ use fidl::endpoints::{self, ServerEnd};
 use fidl_fuchsia_pkg_test::*;
 use fidl_fuchsia_testing_harness::{OperationError, RealmProxy_RequestStream};
 use fuchsia_component::client::connect_to_protocol;
+use fuchsia_component::runtime::Dictionary;
 use fuchsia_component::server::ServiceFs;
 use fuchsia_pkg_testing::{Package, PackageBuilder, SystemImageBuilder};
 use futures::{FutureExt, StreamExt, TryFutureExt, TryStreamExt};
@@ -118,6 +119,24 @@ async fn serve_factory(
                 dict_id += 1;
 
                 responder.send(Ok(my_dictionary))?;
+            }
+            RealmFactoryRequest::CreateRealm2 { options, responder } => {
+                let pkg_directory_server_end = match options.pkg_directory_server {
+                    Some(v) => ServerEnd::<fio::NodeMarker>::from(v.into_channel()),
+                    None => {
+                        responder.send(Err(OperationError::Failed)).ok();
+                        bail!("pkg directory required");
+                    }
+                };
+                if let Err(e) =
+                    directory.clone(ServerEnd::new(pkg_directory_server_end.into_channel()))
+                {
+                    error!("failed to clone: {:?}", e);
+                    responder.send(Err(OperationError::Failed)).ok();
+                    continue;
+                }
+
+                responder.send(Ok(Dictionary::new().await.handle))?;
             }
             RealmFactoryRequest::_UnknownMethod { .. } => unreachable!(),
         }

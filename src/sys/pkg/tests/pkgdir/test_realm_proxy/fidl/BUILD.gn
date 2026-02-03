@@ -15,5 +15,6 @@ fidl("fuchsia.pkg.test") {
     "//sdk/fidl/fuchsia.component.sandbox",
     "//sdk/fidl/fuchsia.io",
     "//sdk/fidl/fuchsia.testing.harness",
+    "//zircon/vdso/zx",
   ]
 }

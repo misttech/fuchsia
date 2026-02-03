@@ -23,8 +23,20 @@ async fn dirs_to_test() -> impl Iterator<Item = PackageSource> {
     let realm_factory =
         connect_to_protocol::<RealmFactoryMarker>().expect("connect to realm_factory");
     let (directory, server_end) = fidl::endpoints::create_proxy::<DirectoryMarker>();
+
+    #[cfg(fuchsia_api_level_less_than = "HEAD")]
     realm_factory
         .create_realm(RealmOptions { pkg_directory_server: Some(server_end), ..Default::default() })
+        .await
+        .expect("create_realm fidl failed")
+        .expect("create_realm failed");
+
+    #[cfg(fuchsia_api_level_at_least = "HEAD")]
+    realm_factory
+        .create_realm2(RealmOptions {
+            pkg_directory_server: Some(server_end),
+            ..Default::default()
+        })
         .await
         .expect("create_realm fidl failed")
         .expect("create_realm failed");
