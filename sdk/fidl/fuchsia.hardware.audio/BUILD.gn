@@ -30,6 +30,7 @@ fidl("fuchsia.hardware.audio") {
     "ring_buffer.fidl",
     "stream_config.fidl",
     "stream_config_connector.fidl",
+    "unique_id.fidl",
   ]
   public_deps = [
     "//sdk/fidl/fuchsia.hardware.audio.signalprocessing",
