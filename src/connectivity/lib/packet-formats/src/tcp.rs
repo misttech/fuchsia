@@ -1015,7 +1015,7 @@ pub mod options {
     const OPTION_KIND_MSS: u8 = 2;
     const OPTION_KIND_WINDOW_SCALE: u8 = 3;
     const OPTION_KIND_SACK_PERMITTED: u8 = 4;
-    const OPTION_KIND_SACK: u8 = 5;
+    pub(super) const OPTION_KIND_SACK: u8 = 5;
     pub(super) const OPTION_KIND_TIMESTAMP: u8 = 8;
 
     // The size of each TCP Option, including the "kind" and "length" fields.
@@ -1242,7 +1242,7 @@ pub mod options {
                     OPTION_KIND_SACK => {
                         // NB: Subtract 2 since we've already advanced beyond
                         // the kind and length fields
-                        let len = len - 2;
+                        let len = len.checked_sub(2).ok_or(ParseError::Format)?;
                         *sack_blocks = Some(
                             bytes
                                 .take_front(len)
@@ -1263,7 +1263,7 @@ pub mod options {
                     _ => {
                         // NB: Subtract 2 since we've already advanced beyond
                         // the kind and length fields
-                        let len = len - 2;
+                        let len = len.checked_sub(2).ok_or(ParseError::Format)?;
 
                         // Ignore unknown options, but move `bytes` ahead to
                         // allow subsequent options to be parsed.
@@ -2008,32 +2008,38 @@ mod tests {
         )
     }
 
-    #[derive(Debug)]
-    struct TcpSegmentBuilderWithUnknownOption<A: IpAddress>(TcpSegmentBuilder<A>);
+    const OPTION_KIND_UNKNOWN: u8 = 255;
 
-    impl<A: IpAddress> TcpSegmentBuilderWithUnknownOption<A> {
-        const UNKNOWN_KIND: u8 = 255;
-        const OPTION_LEN: u8 = 4;
-        const OPTION_BYTES: [u8; 4] = [Self::UNKNOWN_KIND, Self::OPTION_LEN, 0, 0];
+    // A TCP Option with an unknown kind.
+    const UNKNOWN_TCP_OPTION: [u8; 4] = [OPTION_KIND_UNKNOWN, 4, 0, 0];
+
+    #[derive(Debug)]
+    struct TcpSegmentBuilderWithCustomOption<A: IpAddress, O> {
+        prefix_builder: TcpSegmentBuilder<A>,
+        option: O,
     }
 
-    impl<A: IpAddress> PacketBuilder for TcpSegmentBuilderWithUnknownOption<A> {
+    impl<A: IpAddress, O: AsRef<[u8]>> PacketBuilder for TcpSegmentBuilderWithCustomOption<A, O> {
         fn constraints(&self) -> PacketConstraints {
-            let header_len = HDR_PREFIX_LEN + usize::from(Self::OPTION_LEN);
+            let opt_len = self.option.as_ref().len();
+            let header_len = HDR_PREFIX_LEN + usize::from(opt_len);
             PacketConstraints::new(header_len, 0, 0, usize::MAX)
         }
 
         fn serialize(&self, target: &mut SerializeTarget<'_>, body: FragmentedBytesMut<'_, '_>) {
-            let Self(prefix_builder) = self;
+            let Self { option, prefix_builder } = self;
             let mut header = &mut &mut target.header[..];
-            header.write_obj_back(&Self::OPTION_BYTES).unwrap();
+            header.write_obj_back(option.as_ref()).unwrap();
             prefix_builder.serialize(target, body);
         }
     }
 
     #[test]
     fn test_parse_unknown_option() {
-        let builder = TcpSegmentBuilderWithUnknownOption(new_builder(TEST_SRC_IPV4, TEST_DST_IPV4));
+        let builder = TcpSegmentBuilderWithCustomOption {
+            option: UNKNOWN_TCP_OPTION,
+            prefix_builder: new_builder(TEST_SRC_IPV4, TEST_DST_IPV4),
+        };
 
         // Serialize and Parse the segment. Parsing should ignore the unknown
         // option.
@@ -2051,5 +2057,33 @@ mod tests {
         assert_eq!(segment.options().sack_permitted(), false);
         assert_eq!(segment.options().sack_blocks(), None);
         assert_eq!(segment.options().timestamp(), None);
+    }
+
+    // A TCP SACK Option with a length that is too short.
+    const SACK_OPTION_TOO_SHORT: [u8; 4] = [options::OPTION_KIND_SACK, 1, 0, 0];
+    // An unknown TCP Option with a length that is too short.
+    const UNKNOWN_OPTION_TOO_SHORT: [u8; 4] = [OPTION_KIND_UNKNOWN, 1, 0, 0];
+
+    // A regression test for https://fxbug.dev/481057779.
+    //
+    // Ensure that parsing of variable length TCP Options sanitizes the user
+    // provided length.
+    #[test_case(SACK_OPTION_TOO_SHORT; "sack")]
+    #[test_case(UNKNOWN_OPTION_TOO_SHORT; "unknown")]
+    fn test_parse_option_too_short(opt_bytes: [u8; 4]) {
+        let builder = TcpSegmentBuilderWithCustomOption {
+            option: opt_bytes,
+            prefix_builder: new_builder(TEST_SRC_IPV4, TEST_DST_IPV4),
+        };
+
+        // Serialize and Parse the segment. Parsing should reject the segment.
+        let mut buf = builder
+            .wrap_body((&[0, 1, 2, 3, 4, 5, 7, 8, 9]).into_serializer())
+            .serialize_vec_outer()
+            .unwrap();
+        assert_matches!(
+            buf.parse_with::<_, TcpSegment<_>>(TcpParseArgs::new(TEST_SRC_IPV4, TEST_DST_IPV4)),
+            Err(ParseError::Format)
+        );
     }
 }
