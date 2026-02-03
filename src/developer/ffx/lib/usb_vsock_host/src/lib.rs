@@ -6,7 +6,7 @@ use bind_fuchsia_google_platform_usb::{
     BIND_USB_PROTOCOL_VSOCK_BRIDGE, BIND_USB_SUBCLASS_VSOCK_BRIDGE, BIND_USB_VID_GOOGLE,
 };
 use bind_fuchsia_usb::BIND_USB_CLASS_VENDOR_SPECIFIC;
-use fuchsia_async as fasync;
+use fuchsia_async::{self as fasync, DurationExt};
 use futures::channel::{mpsc, oneshot};
 use futures::future::{AbortHandle, Abortable, Either, select};
 use futures::{AsyncRead, AsyncReadExt, AsyncWrite, FutureExt, SinkExt, Stream, StreamExt};
@@ -25,6 +25,9 @@ use usb_vsock::{
 
 /// How long to wait for the USB protocol to synchronize.
 const MAGIC_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(5);
+
+/// How long to wait to re-add a USB device if it breaks.
+const FAIL_RETRY_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(5);
 
 /// How much data to send in a single USB bulk transfer frame.
 const MTU: usize = 1024;
@@ -858,6 +861,10 @@ impl<S: AsyncRead + AsyncWrite + Send + 'static> UsbVsockHost<S> {
 
         let weak_this = Arc::downgrade(self);
         self.scope.spawn(async move {
+            // This timer will expire N seconds after the instant it was
+            // created. If it's not used until N or more seconds after its
+            // creation, it will return immediately on await.
+            let retry_timer = fasync::Timer::new(FAIL_RETRY_TIMEOUT.after_now());
             let mut cid = None;
             if let Err(e) = run_usb_link(
                 weak_this.clone(),
@@ -877,6 +884,7 @@ impl<S: AsyncRead + AsyncWrite + Send + 'static> UsbVsockHost<S> {
                 if let Some(cid) = cid {
                     this.remove_device(cid);
                 }
+                retry_timer.await;
                 let _: bool = this.add_device(device);
             }
         });
