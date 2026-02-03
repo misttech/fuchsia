@@ -7,7 +7,7 @@
 ### runs source formatters on modified files
 
 ## Usage: fx format-code
-##           [--dry-run] [--verbose] [--all]
+##           [--dry-run] [--verbose] [--emit] [--all]
 ##           [--files=FILES,[FILES ...]]
 ##           [--target=GN_TARGET]
 ##           [--git] [--changed-lines] [-- PATTERN]
@@ -15,6 +15,7 @@
 ##   --dry-run Stops the program short of running the formatters
 ##   --all     Formats all code in the git repo under the current working
 ##             directory.
+##   --emit    Emits the files on stdout as opposed to writing them to disk.
 ##   --args    Formats the configured build's |args.gn|
 ##   --files   Allows the user to specify files.  Files are comma separated.
 ##             Does not support globs. To format all files in a directory, use
@@ -162,6 +163,7 @@ VERBOSE=
 CHANGED_LINES=
 PARALLEL=
 FILES_SPECIFIED=
+EMIT=
 
 fx-config-read
 
@@ -174,6 +176,7 @@ while [ $# -gt 0 ]; do
     --verbose) VERBOSE="1" ;;
     --dry-run) DRY_RUN="1" ;;
     --changed-lines) CHANGED_LINES="1" ;;
+    --emit) EMIT="--emit" ;;
     --all)
       GET_FILES=get_all_files
       ;;
@@ -340,6 +343,7 @@ fi
 # TODO(https://fxbug.dev/42162946): Move all formatters into SHAC to ensure parity between
 # the formatters enforced by the infrastructure and those enforced locally.
 print-and-execute "${PREBUILT_SHAC}" fmt \
+  ${EMIT} \
   --quiet \
   -C "${shac_workdir}" \
   --var fuchsia_build_dir="${FUCHSIA_BUILD_DIR#"$FUCHSIA_DIR/"}" \

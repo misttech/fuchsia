@@ -21,24 +21,6 @@ if(
 )
 '''
 
-# Unfortunately we cannot use `fx format-code` with `jj fix` as they have
-# incompatible contracts. The best we can do is make sure that `jj fix` does
-# not clobber any changes.
-
-# We cannot even directly call `shac` for the formatting, as `shac fmt` will
-# not emit the "formatted" file on STDOUT, which causes `jj` to assume the
-# file should have no contents and will just truncate it in place.
-
-# Since we have google3format explicitly disabled below if we run
-# `jj fix` or `jj fix --include-unchanged-files` with this disabled, then
-# we will get the error:
-# `Config error: At least one entry of `fix.tools` must be enabled.`
-# To avoid this, we'll make a 'null' fix tool that matches nothing.
-[fix.tools.null]
-enabled = true
-command = [ "echo" ]
-patterns = [ "null" ]
-
 # For users of jj-on-piper, this is enabled by default for *all* repos.
 # We want Fuchsia's formatters, not google3's.
 [fix.tools.google3format]
@@ -47,3 +29,13 @@ enabled = false
 # google3format is an invalid fix tool because it has no command/patterns
 command = ["/dev/null"]
 patterns = ["null"]
+
+[fix.tools.fx]
+enabled = true
+command = [
+  "fx",
+  "format-code",
+  "--emit",
+  "--files=$path"
+]
+patterns = ["glob:**/*.rs"]
