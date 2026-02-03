@@ -87,19 +87,5 @@ Client and server implementations can then be written in any supported language:
         </section>
       </devsite-selector>
     </section>
-    <!-- HLCPP -->
-    <section style="padding: 0px;">
-      <h3>HLCPP</h3>
-      <devsite-selector style="margin: 0px; padding: 0px;">
-        <section>
-          <h3 id="key_value_store-baseline-hlcpp-client">Client</h3>
-          <pre class="prettyprint lang-cc">{% includecode gerrit_repo="fuchsia/fuchsia" gerrit_path="examples/fidl/new/key_value_store/baseline/hlcpp/TODO.md" region_tag="todo" %}</pre>
-        </section>
-        <section>
-          <h3 id="key_value_store-baseline-hlcpp-server">Server</h3>
-          <pre class="prettyprint lang-cc">{% includecode gerrit_repo="fuchsia/fuchsia" gerrit_path="examples/fidl/new/key_value_store/baseline/hlcpp/TODO.md" region_tag="todo" %}</pre>
-        </section>
-      </devsite-selector>
-    </section>
   </devsite-selector>
 </div>

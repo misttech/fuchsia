@@ -87,19 +87,5 @@ Client and server implementations for all languages change as well:
         </section>
       </devsite-selector>
     </section>
-    <!-- HLCPP -->
-    <section style="padding: 0px;">
-      <h3>HLCPP</h3>
-      <devsite-selector style="margin: 0px; padding: 0px;">
-        <section>
-          <h3 id="key_value_store-add_read_item-hlcpp-client">Client</h3>
-          <pre class="prettyprint lang-cc">{% includecode gerrit_repo="fuchsia/fuchsia" gerrit_path="examples/fidl/new/key_value_store/add_read_item/hlcpp/TODO.md" region_tag="todo" %}</pre>
-        </section>
-        <section>
-          <h3 id="key_value_store-add_read_item-hlcpp-server">Server</h3>
-          <pre class="prettyprint lang-cc">{% includecode gerrit_repo="fuchsia/fuchsia" gerrit_path="examples/fidl/new/key_value_store/add_read_item/hlcpp/TODO.md" region_tag="todo" %}</pre>
-        </section>
-      </devsite-selector>
-    </section>
   </devsite-selector>
 </div>

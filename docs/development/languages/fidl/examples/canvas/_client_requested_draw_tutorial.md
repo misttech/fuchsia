@@ -110,19 +110,5 @@ Client and server implementations can then be written in any supported language:
         </section>
       </devsite-selector>
     </section>
-    <!-- HLCPP -->
-    <section style="padding: 0px;">
-      <h3 id="canvas-client_requested_draw-hlcpp">HLCPP</h3>
-      <devsite-selector style="margin: 0px; padding: 0px;">
-        <section>
-          <h3 id="canvas-client_requested_draw-hlcpp-client">Client</h3>
-          <pre class="prettyprint lang-cc">{% includecode gerrit_repo="fuchsia/fuchsia" gerrit_path="examples/fidl/new/canvas/client_requested_draw/hlcpp/client/main.cc" highlight="diff_1,diff_2,diff_3" %}</pre>
-        </section>
-        <section>
-          <h3 id="canvas-client_requested_draw-hlcpp-server">Server</h3>
-          <pre class="prettyprint lang-cc">{% includecode gerrit_repo="fuchsia/fuchsia" gerrit_path="examples/fidl/new/canvas/client_requested_draw/hlcpp/server/main.cc" highlight="diff_1,diff_2,diff_3,diff_4,diff_5" %}</pre>
-        </section>
-      </devsite-selector>
-    </section>
   </devsite-selector>
 </div>
