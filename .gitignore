@@ -88,6 +88,7 @@ tables_generator_tests_*.txt
 /integration/
 # For storing local scripts and data files in a source tree.
 /local/
+/mise.local.toml
 /out/
 /prebuilt/
 /test_data/
