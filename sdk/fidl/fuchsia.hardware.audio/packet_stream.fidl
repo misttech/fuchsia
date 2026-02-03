@@ -36,12 +36,6 @@ type PacketStreamProperties = table {
     /// Required.
     2: supported_buffer_types BufferType;
 
-    /// True if this is an input stream (e.g. capture). False if this is an output stream (e.g.
-    /// playback).
-    ///
-    /// Required.
-    // TODO(https://fxbug.dev/474262514): Revisit and do a thorough review of capture feature.
-    3: is_input bool;
 
     // TODO(https://fxbug.dev/470161557): Might have to add more properties to
     // convey buffer size contraints if any.

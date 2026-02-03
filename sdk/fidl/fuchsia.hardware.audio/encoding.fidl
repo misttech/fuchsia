@@ -39,17 +39,32 @@ type SupportedEncodings = table {
     /// 2-channel configuration.
     ///
     /// Required.
-    1: channel_sets vector<ChannelSet>:MAX_COUNT_ENCODED_CHANNEL_SETS;
+    1: decoded_channel_sets vector<ChannelSet>:MAX_COUNT_ENCODED_CHANNEL_SETS;
 
-    /// Vector of possible frame rates supported. Values must be listed in ascending order.
+    /// Vector of possible frame rates supported.
+    /// If present, must contain at least one value.
+    /// Values must be listed in ascending order.
     ///
-    /// Required.
-    2: frame_rates vector<uint32>:MAX_COUNT_ENCODED_SUPPORTED_RATES;
+    /// Optional.
+    2: decoded_frame_rates vector<uint32>:MAX_COUNT_ENCODED_SUPPORTED_RATES;
+
+    /// The minimum encoding bitrate of the stream in bits per second.
+    /// Cannot exceed 'max_encoding_bitrate', if both are present.
+    ///
+    /// Optional.
+    3: min_encoding_bitrate uint32;
+
+    /// The maximum encoding bitrate of the stream in bits per second.
+    /// Cannot be less than 'min_encoding_bitrate', if both are present.
+    ///
+    /// Optional.
+    4: max_encoding_bitrate uint32;
 
     /// The encoder types that support the configurations listed above.
+    /// Must contain at least one value. Values in this vector must be unique.
     ///
     /// Required.
-    3: encoding_types vector<EncodingType>:MAX_COUNT_ENCODED_TYPES;
+    5: encoding_types vector<EncodingType>:MAX_COUNT_ENCODED_TYPES;
 };
 
 /// Format specification for an encoded audio stream.

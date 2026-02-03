@@ -20,7 +20,7 @@ fidl("fuchsia.hardware.audio") {
     "dai_connector.fidl",
     "dai_format.fidl",
     "device_type.fidl",
-    "encoded_format.fidl",
+    "encoding.fidl",
     "format.fidl",
     "health.fidl",
     "overview.fidl",
