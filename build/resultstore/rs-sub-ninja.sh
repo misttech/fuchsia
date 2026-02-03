@@ -30,10 +30,6 @@ readonly rsninja="$SCRIPT_DIR/rsninja.sh"
 # Use re-client's credentials helper tool to exchange LOAS for OAuth2 tokens.
 readonly credshelper="${PREBUILT_RECLIENT_DIR}/credshelper"
 
-# TODO: scan ninja options for flags that produce extra output files,
-# such as traces.  Convert these into rsproxy invocation artifacts
-# as --post_build_uploads.
-
 rsproxy_options=()
 
 # rsproxy configuration:
@@ -73,6 +69,9 @@ rsproxy_options=()
 # Scan ninja arguments for important options.
 ninja_args=("$@")
 subbuild_dir=
+action_metrics=
+dirty_sources=
+chrome_trace=
 prev_opt=""
 for opt  # "$@"
 do
@@ -85,10 +84,39 @@ do
     continue
   fi
 
+  # Extract optarg from --opt=optarg
+  optarg=
+  case "$opt" in
+    -*=*) optarg="${opt#*=}" ;;  # remove-prefix, shortest-match
+  esac
+
   case "$opt" in
     -C) prev_opt=subbuild_dir ;;
+
+    --action_metrics_output=*) action_metrics="$optarg" ;;
+    --action_metrics_output) prev_opt=action_metrics ;;
+
+    --chrome_trace=*) chrome_trace="$optarg" ;;
+    --chrome_trace) prev_opt=chrome_trace ;;
+
+    --dirty_sources_list=*) dirty_sources="$optarg" ;;
+    --dirty_sources_list) prev_opt=dirty_sources ;;
   esac
   shift
+done
+
+# Upload additional invocation artifacts, such as ninja outputs.
+# Ninja output paths are relative to $subbuild_dir.
+readonly ninja_outputs=(
+  "$action_metrics"
+  "$chrome_trace"
+  "$dirty_sources"
+)
+for f in "${ninja_outputs[@]}"
+do
+  [[ -z "$f" ]] || {
+    rsproxy_options+=( --post_build_uploads="$subbuild_dir/$f" )
+  }
 done
 
 wrap_env=()
