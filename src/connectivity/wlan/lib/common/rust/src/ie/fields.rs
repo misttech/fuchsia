@@ -2,10 +2,10 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+use crate::UnalignedView;
 use crate::buffer_reader::BufferReader;
 use crate::mac::ReasonCode;
 use crate::organization::Oui;
-use crate::UnalignedView;
 use fidl_fuchsia_wlan_ieee80211 as fidl_ieee80211;
 use ieee80211::MacAddr;
 use static_assertions::const_assert_eq;
@@ -623,7 +623,7 @@ pub struct SecChanOffset(pub u8);
 impl SecChanOffset {
     pub_const!(SECONDARY_NONE, 0); // No secondary channel
     pub_const!(SECONDARY_ABOVE, 1); // Secondary channel is above the primary channel
-                                    // 2 reserved
+    // 2 reserved
     pub_const!(SECONDARY_BELOW, 3); // Secondary channel is below the primary channel
 }
 
@@ -1051,6 +1051,8 @@ pub enum VendorIe<B: SplitByteSlice> {
     // This does not contain the IE body's first six bytes
     // (OUI, OUI type, OUI subtype, and version) that identify IE as WMM Parameter
     WmmParam(B),
+    // This does not contain the bytes identifying the IE as OWE Transition element.
+    OweTransition(B),
     // IEEE Std 802.11-2016, 9.4.2.26
     Unknown { oui: Oui, body: B },
 }
@@ -1248,7 +1250,7 @@ impl VhtChannelBandwidth {
     pub_const!(CBW_80_160_80P80, 1);
     pub_const!(CBW_160, 2); // deprecated
     pub_const!(CBW_80P80, 3); // deprecated
-                              // 4-255 reserved
+    // 4-255 reserved
 }
 
 // IEEE Std 802.11-2020, 9.4.2.241

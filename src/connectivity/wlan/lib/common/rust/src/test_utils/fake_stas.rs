@@ -3,7 +3,7 @@
 // found in the LICENSE file.
 
 use crate::channel::{Cbw, Channel};
-use crate::ie::fake_ies::fake_wmm_param;
+use crate::ie::fake_ies::{fake_owe_transition_ie, fake_wmm_param};
 use crate::ie::{self, IeType, write_rsnxe, write_wmm_param};
 use crate::mac;
 use crate::test_utils::fake_frames::{
@@ -127,6 +127,9 @@ impl BssDescriptionCreator {
         if let Some(wpa1_vendor_ie) = derive_wpa1_vendor_ies(self.protection_cfg) {
             ies_updater.set_raw(&wpa1_vendor_ie[..]).context("set WPA1 vendor IE")?;
         }
+        if let Some(owe_transition_ie) = derive_owe_transition_ie(self.protection_cfg) {
+            ies_updater.set_raw(&owe_transition_ie[..]).context("set OWE Transition IE")?;
+        }
 
         if let Some(wmm_param) = self.wmm_param {
             let mut wmm_param_vendor_ie = vec![];
@@ -150,7 +153,9 @@ impl BssDescriptionCreator {
         // Some values of capability_info are not permitted to be set by
         // the macro since otherwise the BssDescription will be trivially invalid.
         let capability_info = match self.protection_cfg {
-            FakeProtectionCfg::Open => capability_info.with_privacy(false),
+            FakeProtectionCfg::Open | FakeProtectionCfg::OpenOweTransition => {
+                capability_info.with_privacy(false)
+            }
             _ => capability_info.with_privacy(true),
         };
         let capability_info = match self.bss_type {
@@ -433,6 +438,13 @@ fn derive_wpa1_vendor_ies(protection_cfg: FakeProtectionCfg) -> Option<Vec<u8>> 
     }
 }
 
+fn derive_owe_transition_ie(protection_cfg: FakeProtectionCfg) -> Option<Vec<u8>> {
+    match protection_cfg {
+        FakeProtectionCfg::OpenOweTransition => Some(fake_owe_transition_ie()),
+        _ => None,
+    }
+}
+
 #[macro_export]
 macro_rules! fake_fidl_bss_description__ {
     ($build_fake_bss_description_creator__:path, $fake_protection_cfg:expr $(, $bss_key:ident: $bss_value:expr)*) => {{
@@ -534,6 +546,7 @@ macro_rules! random_bss_description {
 mod tests {
     use super::*;
     use crate::bss::{BssDescription, Protection};
+    use crate::mac::CapabilityInfo;
     use crate::test_utils::fake_frames::{fake_wmm_param_body, fake_wmm_param_header};
 
     #[test]
@@ -868,5 +881,19 @@ mod tests {
         expected_ies.extend(fake_wmm_param_body());
 
         assert_eq!(bss.ies(), &expected_ies[..]);
+    }
+
+    #[test]
+    fn test_bss_open_owe_transition() {
+        let bss: BssDescription = fake_bss_description!(OpenOweTransition);
+        assert!(!CapabilityInfo(bss.capability_info).privacy());
+        let expected = fake_owe_transition_ie();
+        for i in 0..=(bss.ies().len() - expected.len()) {
+            if bss.ies()[i..i + expected.len()] == expected[..] {
+                // Found full OWE Transition IE
+                return;
+            }
+        }
+        panic!("Expected OWE Transition IE not found; ies: {:x?}", bss.ies());
     }
 }

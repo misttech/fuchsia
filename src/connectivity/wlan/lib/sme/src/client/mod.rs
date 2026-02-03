@@ -174,6 +174,9 @@ impl ClientConfig {
         // `BssProtection` changes.
         match bss.protection() {
             BssProtection::Open => vec![SecurityDescriptor::OPEN],
+            BssProtection::OpenOweTransition if has_owe_support() => {
+                vec![SecurityDescriptor::OWE, SecurityDescriptor::OPEN]
+            }
             BssProtection::OpenOweTransition => vec![SecurityDescriptor::OPEN],
             BssProtection::Owe if has_owe_support() => vec![SecurityDescriptor::OWE],
             BssProtection::Owe => vec![],
@@ -1117,6 +1120,7 @@ mod tests {
     }
 
     #[test_case(FakeProtectionCfg::Open)]
+    #[test_case(FakeProtectionCfg::OpenOweTransition)]
     #[test_case(FakeProtectionCfg::Wpa1Wpa2TkipOnly)]
     #[test_case(FakeProtectionCfg::Wpa2TkipOnly)]
     #[test_case(FakeProtectionCfg::Wpa2)]

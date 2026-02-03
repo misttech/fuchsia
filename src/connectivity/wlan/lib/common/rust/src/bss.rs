@@ -3,6 +3,7 @@
 // found in the LICENSE file.
 
 use crate::channel::Channel;
+use crate::ie::owe_transition::{OweTransition, parse_owe_transition};
 use crate::ie::rsn::suite_filter;
 use crate::ie::wsc::{ProbeRespWsc, parse_probe_resp_wsc};
 use crate::ie::{self, IeType};
@@ -144,6 +145,7 @@ pub struct BssDescription {
     vht_cap_range: Option<Range<usize>>,
     vht_op_range: Option<Range<usize>>,
     rsnxe_range: Option<Range<usize>>,
+    owe_transition_range: Option<Range<usize>>,
 }
 
 impl BssDescription {
@@ -253,13 +255,16 @@ impl BssDescription {
 
     /// Return bool on whether BSS is protected.
     pub fn is_protected(&self) -> bool {
-        self.protection() != Protection::Open
+        self.protection() != Protection::Open && self.protection() != Protection::OpenOweTransition
     }
 
     /// Return bool on whether BSS has security type that would require exchanging EAPOL frames.
     pub fn needs_eapol_exchange(&self) -> bool {
         match self.protection() {
-            Protection::Unknown | Protection::Open | Protection::Wep => false,
+            Protection::Unknown
+            | Protection::Open
+            | Protection::OpenOweTransition
+            | Protection::Wep => false,
             _ => true,
         }
     }
@@ -267,7 +272,11 @@ impl BssDescription {
     /// Categorize BSS on what protection it supports.
     pub fn protection(&self) -> Protection {
         if !CapabilityInfo(self.capability_info).privacy() {
-            return Protection::Open;
+            if self.owe_transition_range.is_some() {
+                return Protection::OpenOweTransition;
+            } else {
+                return Protection::Open;
+            }
         }
 
         let supports_wpa_1 = self
@@ -433,6 +442,13 @@ impl BssDescription {
         }
     }
 
+    pub fn owe_transition(&self) -> Option<OweTransition> {
+        self.owe_transition_range.clone().map(|range| {
+            // Safe to unwrap because we already verified OWE Transition is parseable in TryFrom
+            parse_owe_transition(&self.ies[range]).unwrap()
+        })
+    }
+
     pub fn supports_uapsd(&self) -> bool {
         let wmm_info = ie::Reader::new(&self.ies[..])
             .filter_map(|(id, ie)| match id {
@@ -481,7 +497,7 @@ impl BssDescription {
     }
 
     pub fn is_open(&self) -> bool {
-        matches!(self.protection(), Protection::Open)
+        matches!(self.protection(), Protection::Open | Protection::OpenOweTransition)
     }
 
     pub fn has_wep_configured(&self) -> bool {
@@ -557,6 +573,7 @@ impl TryFrom<fidl_common::BssDescription> for BssDescription {
         let mut vht_cap_range = None;
         let mut vht_op_range = None;
         let mut rsnxe_range = None;
+        let mut owe_transition_range = None;
 
         for (ie_type, range) in ie::IeSummaryIter::new(&bss.ies[..]) {
             let body = &bss.ies[range.clone()];
@@ -606,6 +623,11 @@ impl TryFrom<fidl_common::BssDescription> for BssDescription {
                 IeType::RSNXE => {
                     rsnxe_range = Some(range);
                 }
+                IeType::OWE_TRANSITION => {
+                    if let Ok(_) = parse_owe_transition(body) {
+                        owe_transition_range = Some(range);
+                    }
+                }
                 _ => (),
             }
         }
@@ -635,6 +657,7 @@ impl TryFrom<fidl_common::BssDescription> for BssDescription {
             vht_cap_range,
             vht_op_range,
             rsnxe_range,
+            owe_transition_range,
         })
     }
 }
@@ -689,7 +712,7 @@ mod tests {
     use crate::channel::Cbw;
     use crate::fake_bss_description;
     use crate::ie::IeType;
-    use crate::ie::fake_ies::fake_wmm_param;
+    use crate::ie::fake_ies::{fake_owe_transition, fake_wmm_param};
     use crate::test_utils::fake_frames::{
         fake_unknown_rsne, fake_wmm_param_body, fake_wpa1_ie_body, fake_wpa2_mfpc_rsne,
         fake_wpa2_mfpr_rsne, fake_wpa2_rsne, fake_wpa2_wpa3_mfpr_rsne, fake_wpa2_wpa3_no_mfp_rsne,
@@ -727,6 +750,10 @@ mod tests {
     #[test]
     fn test_known_protection() {
         assert_eq!(Protection::Open, fake_bss_description!(Open).protection());
+        assert_eq!(
+            Protection::OpenOweTransition,
+            fake_bss_description!(OpenOweTransition).protection()
+        );
         assert_eq!(Protection::Owe, fake_bss_description!(Owe).protection());
         assert_eq!(Protection::Wep, fake_bss_description!(Wep).protection());
         assert_eq!(Protection::Wpa1, fake_bss_description!(Wpa1).protection());
@@ -809,10 +836,12 @@ mod tests {
 
     #[test]
     fn test_needs_eapol_exchange() {
+        assert!(fake_bss_description!(Owe).needs_eapol_exchange());
         assert!(fake_bss_description!(Wpa1).needs_eapol_exchange());
         assert!(fake_bss_description!(Wpa2).needs_eapol_exchange());
 
         assert!(!fake_bss_description!(Open).needs_eapol_exchange());
+        assert!(!fake_bss_description!(OpenOweTransition).needs_eapol_exchange());
         assert!(!fake_bss_description!(Wep).needs_eapol_exchange());
     }
 
@@ -878,6 +907,13 @@ mod tests {
         let bss = fake_bss_description!(Wpa2, qos: true, wmm_param: Some(fake_wmm_param()));
         let wmm_param = bss.wmm_param().expect("failed to find wmm param");
         assert_eq!(fake_wmm_param_body(), wmm_param.as_bytes());
+    }
+
+    #[test]
+    fn test_owe_transition() {
+        let bss = fake_bss_description!(OpenOweTransition);
+        let owe_transition = bss.owe_transition().expect("failed to find owe transition ie");
+        assert_eq!(owe_transition, fake_owe_transition());
     }
 
     #[test]
@@ -1177,6 +1213,10 @@ mod tests {
         assert_eq!(
             Protection::Open,
             Protection::from(fidl_sme::Protection::from(Protection::Open))
+        );
+        assert_eq!(
+            Protection::OpenOweTransition,
+            Protection::from(fidl_sme::Protection::from(Protection::OpenOweTransition))
         );
         assert_eq!(Protection::Owe, Protection::from(fidl_sme::Protection::from(Protection::Owe)));
         assert_eq!(Protection::Wep, Protection::from(fidl_sme::Protection::from(Protection::Wep)));

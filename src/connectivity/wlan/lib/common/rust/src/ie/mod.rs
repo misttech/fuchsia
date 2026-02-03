@@ -4,6 +4,7 @@
 
 pub mod fake_ies;
 pub mod intersect;
+pub mod owe_transition;
 pub mod rsn;
 pub mod wpa;
 pub mod wsc;

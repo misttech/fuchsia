@@ -3,12 +3,14 @@
 // found in the LICENSE file.
 
 use crate::append::BufferTooSmall;
+use crate::ie::owe_transition::OweTransition;
 use crate::ie::rsn::rsne::Rsne;
 use crate::ie::rsn::{akm, cipher};
 use crate::ie::wpa::WpaIe;
 use crate::ie::wsc::{ProbeRespWsc, WpsState};
 use crate::ie::*;
 use crate::organization::Oui;
+use ieee80211::{Bssid, Ssid};
 
 pub fn fake_ht_cap_chanwidth(chanwidth: ChanWidthSet) -> HtCapabilities {
     let mut ht_cap = fake_ht_capabilities();
@@ -248,5 +250,25 @@ pub fn fake_wmm_param() -> WmmParam {
             ecw_min_max: EcwMinMax(0).with_ecw_min(2).with_ecw_max(3),
             txop_limit: 47,
         },
+    }
+}
+
+pub fn fake_owe_transition_ie() -> Vec<u8> {
+    vec![
+        0xdd, // Element ID
+        0x12, // Length
+        0x50, 0x6f, 0x9a, // OUI: WFA
+        0x1c, // OI Type: OWE Transition
+        0x13, 0x37, 0x42, 0x42, 0x13, 0x37, // BSSID
+        0x07, // SSID length
+        0x66, 0x6f, 0x6f, 0x2d, 0x6f, 0x77, 0x65, // SSID "foo-owe"
+    ]
+}
+
+pub fn fake_owe_transition() -> OweTransition {
+    OweTransition {
+        bssid: Bssid::from([0x13, 0x37, 0x42, 0x42, 0x13, 0x37]),
+        ssid: Ssid::try_from(b"foo-owe".to_vec()).unwrap(),
+        band_and_channel: None,
     }
 }

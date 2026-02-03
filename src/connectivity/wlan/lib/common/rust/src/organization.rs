@@ -27,6 +27,7 @@ pub struct Oui([u8; 3]);
 impl Oui {
     pub const DOT11: Self = Self([0x00, 0x0F, 0xAC]);
     pub const MSFT: Self = Self([0x00, 0x50, 0xF2]);
+    pub const WFA: Self = Self([0x50, 0x6F, 0x9A]);
 
     pub fn new(oui: [u8; 3]) -> Self {
         Self(oui)

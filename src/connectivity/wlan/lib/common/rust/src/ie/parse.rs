@@ -230,6 +230,16 @@ pub fn parse_vendor_ie<B: SplitByteSlice>(raw_body: B) -> FrameParseResult<Vendo
                 _ => VendorIe::Unknown { oui, body: reader.into_remaining() },
             }
         }
+        Oui::WFA => {
+            let ie_type = reader.peek_byte();
+            match ie_type {
+                Some(owe_transition::VENDOR_SPECIFIC_TYPE) => {
+                    let (_type, body) = reader.into_remaining().split_at(1).ok().unwrap();
+                    VendorIe::OweTransition(body)
+                }
+                _ => VendorIe::Unknown { oui, body: reader.into_remaining() },
+            }
+        }
         _ => VendorIe::Unknown { oui, body: reader.into_remaining() },
     };
     Ok(vendor_ie)
