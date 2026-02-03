@@ -10,6 +10,7 @@
 
 use assembly_partitions_config::Slot;
 use assembly_release_info::{BoardReleaseInfo, ProductReleaseInfo, ReleaseInfo};
+use assembly_util::sanitize_for_mos_apis;
 use serde::de::Error;
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 use serde_json::Value;
@@ -73,9 +74,9 @@ impl UniqueReleaseInfo {
         } else {
             format!("{}_{}", artifact_type, &name)
         };
-        let name_sanitized = sanitize(&name_to_sanitize);
-        let version_sanitized = sanitize(&version);
-        let repository_sanitized = sanitize(&repository);
+        let name_sanitized = sanitize_for_mos_apis(&name_to_sanitize);
+        let version_sanitized = sanitize_for_mos_apis(&version);
+        let repository_sanitized = sanitize_for_mos_apis(&repository);
 
         UniqueReleaseInfo {
             name,
@@ -87,21 +88,6 @@ impl UniqueReleaseInfo {
             repository_sanitized,
         }
     }
-}
-
-fn sanitize(input: &str) -> String {
-    input
-        .chars()
-        .map(|c| {
-            if c.is_ascii_lowercase() || c.is_ascii_digit() || c == '.' || c == '_' || c == '-' {
-                c
-            } else if c.is_ascii_uppercase() {
-                c.to_ascii_lowercase()
-            } else {
-                '_'
-            }
-        })
-        .collect()
 }
 
 impl PartialOrd for UniqueReleaseInfo {

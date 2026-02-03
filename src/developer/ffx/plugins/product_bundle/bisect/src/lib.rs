@@ -9,7 +9,7 @@
 use crate::bisection_controller::BisectionController;
 use anyhow::{Context, Result};
 use assembly_artifact_cache::{ArtifactCache, MOSClient};
-use assembly_util::shorten_path;
+use assembly_util::{sanitize_for_mos_apis, shorten_path};
 use async_trait::async_trait;
 use camino::Utf8PathBuf;
 use ffx_config::EnvironmentContext;
@@ -52,8 +52,9 @@ impl FfxMain for ProductBisectTool {
     /// Main entry point for the `ffx product bisect` tool.
     async fn main(self, mut writer: Self::Writer) -> fho::Result<()> {
         writer.line("")?;
+        let cmd = sanitize_cmd(self.cmd);
 
-        let mut controller = match setup(self.cmd.clone(), &mut writer, &self.env_context).await {
+        let mut controller = match setup(cmd, &mut writer, &self.env_context).await {
             Ok(controller) => controller,
             Err(e) => {
                 if let Some(GcsError::NeedNewRefreshToken) = e.downcast_ref::<GcsError>() {
@@ -70,6 +71,15 @@ impl FfxMain for ProductBisectTool {
         }
         Ok(())
     }
+}
+
+/// Sanitize the inputs so that they can be used as directory names and for MOS queries.
+fn sanitize_cmd(mut cmd: BisectCommand) -> BisectCommand {
+    // Sanitize the inputs so that they can be used as directory names and for MOS queries.
+    cmd.name = sanitize_for_mos_apis(&cmd.name);
+    cmd.from_success = sanitize_for_mos_apis(&cmd.from_success);
+    cmd.to_failure = sanitize_for_mos_apis(&cmd.to_failure);
+    cmd
 }
 
 async fn setup<'a>(

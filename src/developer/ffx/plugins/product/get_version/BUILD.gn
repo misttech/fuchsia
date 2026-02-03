@@ -30,6 +30,7 @@ ffx_plugin("ffx_product_get_version") {
     "//src/lib/assembly/partitions_config",
     "//src/lib/assembly/product_bundle",
     "//src/lib/assembly/release_info",
+    "//src/lib/assembly/util",
     "//third_party/rust_crates:anyhow",
     "//third_party/rust_crates:async-trait",
     "//third_party/rust_crates:camino",

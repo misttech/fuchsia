@@ -178,6 +178,25 @@ fn get_string_or_file_content(
     Ok(s)
 }
 
+/// Sanitize a string for use in assembly artifacts. Meaning:
+///   > All uppercase letters are converted to lowercase.
+///   > All instances of characters that are not lowercase alphanumeric,
+///     '.', '_', or '-' are converted to '_'.
+pub fn sanitize_for_mos_apis(input: &str) -> String {
+    input
+        .chars()
+        .map(|c| {
+            if c.is_ascii_lowercase() || c.is_ascii_digit() || c == '.' || c == '_' || c == '-' {
+                c
+            } else if c.is_ascii_uppercase() {
+                c.to_ascii_lowercase()
+            } else {
+                '_'
+            }
+        })
+        .collect()
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -415,5 +434,13 @@ mod tests {
     fn test_validate_string_invalid_char() {
         let s = "a?b".to_string();
         assert!(validate_release_info_string(s).is_err());
+    }
+
+    #[test]
+    fn test_sanitize_for_mos_apis() {
+        assert_eq!(sanitize_for_mos_apis("MAIN/1234"), "main_1234");
+        assert_eq!(sanitize_for_mos_apis("Product-Name"), "product-name");
+        assert_eq!(sanitize_for_mos_apis("1.2.3"), "1.2.3");
+        assert_eq!(sanitize_for_mos_apis("repo@path"), "repo_path");
     }
 }
