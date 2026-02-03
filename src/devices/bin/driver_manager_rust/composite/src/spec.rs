@@ -3,15 +3,65 @@
 // found in the LICENSE file.
 
 use crate::parent_set_collector::ParentSetCollector;
-use driver_manager_node::{Node, NodeManager};
+use driver_manager_node::{Node, NodeManager, NodeProperty, NodePropertyValue};
+use flyweights::FlyStr;
 use futures::channel::oneshot;
 use std::rc::{Rc, Weak};
 use {fidl_fuchsia_driver_development as fdd, fidl_fuchsia_driver_framework as fdf};
 
+#[derive(Copy, Clone)]
+pub enum Condition {
+    Unknown = 0,
+    Accept = 1,
+    Reject = 2,
+}
+
+impl std::convert::From<fdf::Condition> for Condition {
+    fn from(source: fdf::Condition) -> Self {
+        match source {
+            fdf::Condition::Unknown => Self::Unknown,
+            fdf::Condition::Accept => Self::Accept,
+            fdf::Condition::Reject => Self::Reject,
+        }
+    }
+}
+
+#[derive(Clone)]
+pub struct BindRule {
+    pub key: FlyStr,
+    pub condition: Condition,
+    pub values: Vec<NodePropertyValue>,
+}
+
+impl std::convert::From<fdf::BindRule2> for BindRule {
+    fn from(source: fdf::BindRule2) -> Self {
+        Self {
+            key: FlyStr::new(source.key),
+            condition: source.condition.into(),
+            values: source.values.into_iter().map(|v| v.into()).collect(),
+        }
+    }
+}
+
+#[derive(Clone)]
+pub struct ParentSpec {
+    pub bind_rules: Vec<BindRule>,
+    pub properties: Vec<NodeProperty>,
+}
+
+impl std::convert::From<fdf::ParentSpec2> for ParentSpec {
+    fn from(source: fdf::ParentSpec2) -> Self {
+        Self {
+            bind_rules: source.bind_rules.into_iter().map(|b| b.into()).collect(),
+            properties: source.properties.into_iter().map(|p| p.into()).collect(),
+        }
+    }
+}
+
 pub struct CompositeNodeSpec {
     #[allow(unused)]
     name: String,
-    parent_specs: Vec<fdf::ParentSpec2>,
+    parent_specs: Vec<ParentSpec>,
     parent_nodes: Vec<Option<Weak<Node>>>,
     parent_set_collector: Option<ParentSetCollector>,
     driver_url: String,
@@ -30,7 +80,7 @@ impl CompositeNodeSpec {
         let parent_nodes = vec![None; parent_specs.len()];
         Self {
             name,
-            parent_specs,
+            parent_specs: parent_specs.into_iter().map(|p| p.into()).collect(),
             parent_nodes,
             parent_set_collector: None,
             driver_url: String::new(),

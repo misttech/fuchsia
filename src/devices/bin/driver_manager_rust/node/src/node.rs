@@ -12,6 +12,7 @@ use driver_manager_driver_host::DriverHost;
 use driver_manager_shutdown::{NodeRemovalTracker, NodeShutdownCoordinator, RemovalSet};
 use driver_manager_types::{Collection, NodeOffer, OfferTransport, StartRequestReceiver};
 use fidl_fuchsia_component_sandbox::AggregateSource;
+use flyweights::FlyStr;
 use fuchsia_async::{self as fasync};
 use futures::channel::oneshot;
 use log::{debug, warn};
@@ -23,6 +24,79 @@ use {
     fidl_fuchsia_driver_framework as fdf,
 };
 
+#[derive(Clone)]
+pub enum NodePropertyValue {
+    IntValue(u32),
+    StringValue(FlyStr),
+    BoolValue(bool),
+    EnumValue(FlyStr),
+}
+
+impl std::convert::From<fdf::NodePropertyValue> for NodePropertyValue {
+    fn from(source: fdf::NodePropertyValue) -> Self {
+        match source {
+            fdf::NodePropertyValue::IntValue(i) => Self::IntValue(i),
+            fdf::NodePropertyValue::StringValue(s) => Self::StringValue(FlyStr::new(s)),
+            fdf::NodePropertyValue::BoolValue(b) => Self::BoolValue(b),
+            fdf::NodePropertyValue::EnumValue(e) => Self::EnumValue(FlyStr::new(e)),
+            _ => unimplemented!(),
+        }
+    }
+}
+
+impl std::convert::From<NodePropertyValue> for fdf::NodePropertyValue {
+    fn from(source: NodePropertyValue) -> fdf::NodePropertyValue {
+        match source {
+            NodePropertyValue::IntValue(i) => fdf::NodePropertyValue::IntValue(i),
+            NodePropertyValue::StringValue(s) => fdf::NodePropertyValue::StringValue(s.to_string()),
+            NodePropertyValue::BoolValue(b) => fdf::NodePropertyValue::BoolValue(b),
+            NodePropertyValue::EnumValue(e) => fdf::NodePropertyValue::EnumValue(e.to_string()),
+        }
+    }
+}
+
+#[derive(Clone)]
+pub struct NodeProperty {
+    pub key: FlyStr,
+    pub value: fdf::NodePropertyValue,
+}
+
+impl std::convert::From<fdf::NodeProperty2> for NodeProperty {
+    fn from(source: fdf::NodeProperty2) -> Self {
+        Self { key: FlyStr::new(source.key), value: source.value }
+    }
+}
+
+impl std::convert::From<NodeProperty> for fdf::NodeProperty2 {
+    fn from(source: NodeProperty) -> fdf::NodeProperty2 {
+        fdf::NodeProperty2 { key: source.key.to_string(), value: source.value }
+    }
+}
+
+#[derive(Clone)]
+pub struct NodePropertyEntry {
+    pub name: String,
+    pub properties: Vec<NodeProperty>,
+}
+
+impl std::convert::From<fdf::NodePropertyEntry2> for NodePropertyEntry {
+    fn from(source: fdf::NodePropertyEntry2) -> Self {
+        Self {
+            name: source.name,
+            properties: source.properties.into_iter().map(|p| p.into()).collect(),
+        }
+    }
+}
+
+impl std::convert::From<NodePropertyEntry> for fdf::NodePropertyEntry2 {
+    fn from(source: NodePropertyEntry) -> fdf::NodePropertyEntry2 {
+        fdf::NodePropertyEntry2 {
+            name: source.name,
+            properties: source.properties.into_iter().map(|p| p.into()).collect(),
+        }
+    }
+}
+
 pub struct Node {
     pub(crate) name: String,
     pub(crate) node_manager: Box<dyn NodeManager>,
@@ -30,7 +104,7 @@ pub struct Node {
     pub(crate) driver_package_type: Cell<fdf::DriverPackageType>,
     pub(crate) node_type: RefCell<NodeTypeVariant>,
     pub(crate) children: RefCell<Vec<Rc<Node>>>,
-    pub(crate) properties: RefCell<Vec<fdf::NodePropertyEntry2>>,
+    pub(crate) properties: RefCell<Vec<NodePropertyEntry>>,
     pub(crate) symbols: RefCell<Vec<fdf::NodeSymbol>>,
     pub(crate) offers: RefCell<Vec<NodeOffer>>,
     pub(crate) devfs_device: RefCell<DevfsDevice>,
@@ -261,7 +335,7 @@ impl Node {
         let properties = self.properties.borrow();
         for entry in properties.iter() {
             if entry.name == parent_name {
-                return Some(entry.properties.clone());
+                return Some(entry.properties.clone().into_iter().map(|p| p.into()).collect());
             }
         }
         None

@@ -267,7 +267,7 @@ impl Node {
             .iter()
             .map(|entry| fdf::NodePropertyEntry2 {
                 name: entry.name.clone(),
-                properties: entry.properties.clone(),
+                properties: entry.properties.clone().into_iter().map(|p| p.into()).collect(),
             })
             .collect()
     }

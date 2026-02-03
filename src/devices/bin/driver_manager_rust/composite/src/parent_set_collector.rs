@@ -2,8 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use driver_manager_node::{Node, NodeManager};
-use fidl_fuchsia_driver_framework as fdf;
+use driver_manager_node::{Node, NodeManager, NodeProperty, NodePropertyEntry};
 use log::info;
 use std::rc::{Rc, Weak};
 
@@ -11,7 +10,7 @@ pub(crate) struct ParentSetCollector {
     composite_name: String,
     parents: Vec<Weak<Node>>,
     parent_names: Vec<String>,
-    parent_properties: Vec<fdf::NodePropertyEntry2>,
+    parent_properties: Vec<NodePropertyEntry>,
     primary_index: u32,
     completed_composite_node: Option<Weak<Node>>,
     driver_host_name_for_colocation: String,
@@ -36,10 +35,7 @@ impl ParentSetCollector {
             },
             parent_names,
             parent_properties: vec![
-                fdf::NodePropertyEntry2 {
-                    name: "".to_string(),
-                    properties: vec![],
-                };
+                NodePropertyEntry { name: "".to_string(), properties: vec![] };
                 num_parents
             ],
             primary_index,
@@ -51,7 +47,7 @@ impl ParentSetCollector {
     pub(crate) fn add_node(
         &mut self,
         index: u32,
-        node_properties: Vec<fdf::NodeProperty2>,
+        node_properties: Vec<NodeProperty>,
         node: Weak<Node>,
     ) -> Result<(), zx::Status> {
         let index = index as usize;
@@ -62,7 +58,7 @@ impl ParentSetCollector {
             return Err(zx::Status::ALREADY_BOUND);
         }
         self.parents[index] = node.clone();
-        self.parent_properties[index] = fdf::NodePropertyEntry2 {
+        self.parent_properties[index] = NodePropertyEntry {
             name: self.parent_names[index].clone(),
             properties: node_properties,
         };

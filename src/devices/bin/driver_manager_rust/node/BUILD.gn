@@ -43,6 +43,7 @@ rustc_library("driver_manager_node") {
     "//src/lib/fidl/rust/fidl",
     "//src/lib/fuchsia-async",
     "//third_party/rust_crates:async-trait",
+    "//third_party/rust_crates:flyweights",
     "//third_party/rust_crates:futures",
     "//third_party/rust_crates:log",
     "//third_party/rust_crates:phf",

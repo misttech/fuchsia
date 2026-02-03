@@ -2,7 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use crate::node::Node;
+use crate::node::{Node, NodePropertyEntry};
 use crate::types::{NodeDictionary, NodeState};
 use driver_manager_types::{Collection, NodeOffer, OfferTransport, to_property2};
 use fidl::endpoints::ServerEnd;
@@ -336,6 +336,9 @@ impl Node {
     fn set_non_composite_properties(&self, properties: Vec<fdf::NodeProperty2>) {
         let mut props = self.properties.borrow_mut();
         props.clear();
-        props.push(fdf::NodePropertyEntry2 { name: "default".to_string(), properties });
+        props.push(NodePropertyEntry {
+            name: "default".to_string(),
+            properties: properties.into_iter().map(|p| p.into()).collect(),
+        });
     }
 }

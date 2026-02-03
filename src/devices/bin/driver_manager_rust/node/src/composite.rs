@@ -2,7 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use crate::node::Node;
+use crate::node::{Node, NodePropertyEntry};
 use crate::node_manager::NodeManager;
 use crate::shutdown::NodeBridge;
 use crate::types::{NodeDictionary, NodeState, NodeTypeVariant};
@@ -153,7 +153,7 @@ impl Node {
         node_name: &str,
         parents: Vec<Weak<Node>>,
         parents_names: Vec<String>,
-        parent_properties: &[fdf::NodePropertyEntry2],
+        parent_properties: &[NodePropertyEntry],
         node_manager: Box<dyn NodeManager>,
         driver_host_name_for_colocation: String,
         primary_index: u32,
@@ -230,13 +230,13 @@ impl Node {
         Ok(composite)
     }
 
-    pub fn set_composite_parent_properties(&self, parent_properties: &[fdf::NodePropertyEntry2]) {
+    pub fn set_composite_parent_properties(&self, parent_properties: &[NodePropertyEntry]) {
         let mut properties = self.properties.borrow_mut();
         properties.clear();
         *properties = parent_properties.to_vec();
         if let NodeTypeVariant::Composite { primary_index, .. } = &*self.node_type.borrow() {
             let default_properties = &parent_properties[*primary_index as usize].properties;
-            properties.push(fdf::NodePropertyEntry2 {
+            properties.push(NodePropertyEntry {
                 name: "default".to_string(),
                 properties: default_properties.to_vec(),
             });
