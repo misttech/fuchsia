@@ -8,6 +8,7 @@ use std::future::Future;
 use std::iter::FusedIterator;
 use std::ops::DerefMut;
 use std::pin::Pin;
+use std::sync::atomic;
 use std::task::{Context, Poll, Waker};
 
 use futures::task::AtomicWaker;
@@ -365,10 +366,94 @@ where
     }
 }
 
+/// We have shut down a packet filler and so cannot act on it further.
+#[derive(Debug, Copy, Clone)]
+pub struct ShutdownError;
+
+impl From<ShutdownError> for std::io::Error {
+    fn from(_: ShutdownError) -> Self {
+        std::io::Error::new(std::io::ErrorKind::BrokenPipe, "Transport shut down")
+    }
+}
+
+/// Errors returned from [`UsbPacketFiller::write_vsock_packet`].
+#[derive(Debug, Copy, Clone)]
+pub(crate) enum WritePacketError {
+    /// See [`PacketTooBigError`]
+    PacketTooBig(PacketTooBigError),
+    /// See [`ShutdownError`]
+    Shutdown(ShutdownError),
+}
+
+impl From<PacketTooBigError> for WritePacketError {
+    fn from(value: PacketTooBigError) -> Self {
+        WritePacketError::PacketTooBig(value)
+    }
+}
+
+impl From<ShutdownError> for WritePacketError {
+    fn from(value: ShutdownError) -> Self {
+        WritePacketError::Shutdown(value)
+    }
+}
+
+/// Extension for [`WritePacketError`] to allow asserting [`PacketTooBigError`]
+/// while extracting [`ShutdownError`].
+pub(crate) trait WritePacketErrorExt {
+    /// The type we return when we've extracted and handled any [`PacketTooBigError`]
+    type Residue;
+
+    /// Assert that this type is not a [`PacketTooBigError`] and map it to a new
+    /// type that cannot represent `PacketTooBigError`.
+    fn assert_right_size(self) -> Self::Residue;
+
+    /// Same as `assert_right_size` but allow a custom error message if we find
+    /// a [`PacketTooBigError`].
+    fn expect_right_size(self, err: &str) -> Self::Residue;
+}
+
+impl WritePacketErrorExt for WritePacketError {
+    type Residue = ShutdownError;
+
+    fn assert_right_size(self) -> ShutdownError {
+        self.expect_right_size("Unexpected PacketTooBigError in WritePacketError")
+    }
+
+    fn expect_right_size(self, err: &str) -> ShutdownError {
+        return match self {
+            WritePacketError::PacketTooBig(_) => panic!("{err}"),
+            WritePacketError::Shutdown(shutdown_error) => shutdown_error,
+        };
+    }
+}
+
+impl<T> WritePacketErrorExt for Result<T, WritePacketError> {
+    type Residue = Result<T, ShutdownError>;
+
+    fn assert_right_size(self) -> Result<T, ShutdownError> {
+        match self {
+            Ok(x) => Ok(Ok(x)),
+            Err(WritePacketError::Shutdown(s)) => Ok(Err(s)),
+            Err(WritePacketError::PacketTooBig(p)) => Err(p),
+        }
+        .unwrap()
+    }
+
+    fn expect_right_size(self, err: &str) -> Result<T, ShutdownError> {
+        match self {
+            Ok(x) => Ok(Ok(x)),
+            Err(WritePacketError::Shutdown(s)) => Ok(Err(s)),
+            Err(WritePacketError::PacketTooBig(p)) => Err(p),
+        }
+        .expect(err)
+    }
+}
+
 pub(crate) struct UsbPacketFiller<B> {
     current_out_packet: Mutex<Option<UsbPacketBuilder<B>>>,
     out_packet_wakers: Mutex<Vec<Waker>>,
     filled_packet_waker: AtomicWaker,
+    is_shutdown: atomic::AtomicBool,
 }
 
 impl<B> Default for UsbPacketFiller<B> {
@@ -376,7 +461,14 @@ impl<B> Default for UsbPacketFiller<B> {
         let current_out_packet = Mutex::default();
         let out_packet_wakers = Mutex::default();
         let filled_packet_waker = AtomicWaker::default();
-        Self { current_out_packet, out_packet_wakers, filled_packet_waker }
+        let is_shutdown = atomic::AtomicBool::new(false);
+        Self { current_out_packet, out_packet_wakers, filled_packet_waker, is_shutdown }
+    }
+}
+
+impl<B> UsbPacketFiller<B> {
+    fn is_shutdown(&self) -> bool {
+        self.is_shutdown.load(atomic::Ordering::Acquire)
     }
 }
 
@@ -385,30 +477,48 @@ impl<B: DerefMut<Target = [u8]> + Unpin> UsbPacketFiller<B> {
         WaitForFillable { filler: &self, min_packet_size }
     }
 
-    pub async fn write_vsock_packet(&self, packet: &Packet<'_>) -> Result<(), PacketTooBigError> {
-        let mut builder = self.wait_for_fillable(packet.size()).await;
+    pub fn shutdown(&self) {
+        let mut out_packets = self.current_out_packet.lock();
+        let mut out_packet_wakers = self.out_packet_wakers.lock();
+        self.is_shutdown.store(true, atomic::Ordering::Release);
+        *out_packets = None;
+        out_packet_wakers.drain(..).for_each(Waker::wake);
+        self.filled_packet_waker.wake();
+    }
+
+    pub async fn write_vsock_packet(&self, packet: &Packet<'_>) -> Result<(), WritePacketError> {
+        let mut builder = self.wait_for_fillable(packet.size()).await?;
         builder.as_mut().unwrap().write_vsock_packet(packet)?;
         self.filled_packet_waker.wake();
         Ok(())
     }
 
-    pub async fn write_vsock_data(&self, address: &Address, payload: &[u8]) -> usize {
+    pub async fn write_vsock_data(
+        &self,
+        address: &Address,
+        payload: &[u8],
+    ) -> Result<usize, ShutdownError> {
         let header = &mut Header::new(PacketType::Data);
         header.set_address(&address);
-        let mut builder = self.wait_for_fillable(Header::SIZE + 1).await;
+        let mut builder = self.wait_for_fillable(Header::SIZE + 1).await?;
         let builder = builder.as_mut().unwrap();
         let writing = min(payload.len(), builder.available() - Header::SIZE);
         header.payload_len.set(writing as u32);
         builder.write_vsock_packet(&Packet { header, payload: &payload[..writing] }).unwrap();
         self.filled_packet_waker.wake();
-        writing
+        Ok(writing)
     }
 
-    pub async fn write_vsock_data_all(&self, address: &Address, payload: &[u8]) {
+    pub async fn write_vsock_data_all(
+        &self,
+        address: &Address,
+        payload: &[u8],
+    ) -> Result<(), ShutdownError> {
         let mut written = 0;
         while written < payload.len() {
-            written += self.write_vsock_data(address, &payload[written..]).await;
+            written += self.write_vsock_data(address, &payload[written..]).await?;
         }
+        Ok(())
     }
 
     /// Provides a packet builder for the state machine to write packets to. Returns a future that
@@ -425,7 +535,7 @@ impl<B: DerefMut<Target = [u8]> + Unpin> UsbPacketFiller<B> {
 pub(crate) struct FillUsbPacket<'a, B>(&'a UsbPacketFiller<B>, Option<UsbPacketBuilder<B>>);
 
 impl<'a, B: Unpin> Future for FillUsbPacket<'a, B> {
-    type Output = UsbPacketBuilder<B>;
+    type Output = Result<UsbPacketBuilder<B>, ShutdownError>;
 
     fn poll(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
         // if we're holding a `PacketBuilder` we haven't been waited on yet. Otherwise we want
@@ -433,10 +543,13 @@ impl<'a, B: Unpin> Future for FillUsbPacket<'a, B> {
         if let Some(builder) = self.1.take() {
             // if the packet we were handed for some reason already has data in it, hand it back
             if builder.has_data() {
-                return Poll::Ready(builder);
+                return Poll::Ready(Ok(builder));
             }
 
             let mut current_out_packet = self.0.current_out_packet.lock();
+            if self.0.is_shutdown() {
+                return Poll::Ready(Err(ShutdownError));
+            }
             assert!(current_out_packet.is_none(), "Can't fill more than one packet at a time");
             current_out_packet.replace(builder);
 
@@ -451,16 +564,19 @@ impl<'a, B: Unpin> Future for FillUsbPacket<'a, B> {
             for waker in wakers.drain(..) {
                 waker.wake();
             }
-            Poll::Pending
+            if self.0.is_shutdown() { Poll::Ready(Err(ShutdownError)) } else { Poll::Pending }
         } else {
             let mut current_out_packet = self.0.current_out_packet.lock();
+            if self.0.is_shutdown() {
+                return Poll::Ready(Err(ShutdownError));
+            }
             let Some(builder) = current_out_packet.take() else {
                 panic!("Packet builder was somehow removed from connection prematurely");
             };
 
             if builder.has_data() {
                 self.0.filled_packet_waker.wake();
-                Poll::Ready(builder)
+                Poll::Ready(Ok(builder))
             } else {
                 // if there hasn't been any data placed in the packet, put the builder back and
                 // return Pending.
@@ -477,16 +593,19 @@ pub(crate) struct WaitForFillable<'a, B> {
 }
 
 impl<'a, B: DerefMut<Target = [u8]> + Unpin> Future for WaitForFillable<'a, B> {
-    type Output = MutexGuard<'a, Option<UsbPacketBuilder<B>>>;
+    type Output = Result<MutexGuard<'a, Option<UsbPacketBuilder<B>>>, ShutdownError>;
 
     fn poll(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
         let current_out_packet = self.filler.current_out_packet.lock();
+        if self.filler.is_shutdown() {
+            return Poll::Ready(Err(ShutdownError));
+        }
         let Some(builder) = &*current_out_packet else {
             self.filler.out_packet_wakers.lock().push(cx.waker().clone());
             return Poll::Pending;
         };
         if builder.available() >= self.min_packet_size {
-            Poll::Ready(current_out_packet)
+            Poll::Ready(Ok(current_out_packet))
         } else {
             self.filler.out_packet_wakers.lock().push(cx.waker().clone());
             Poll::Pending
@@ -548,7 +667,7 @@ mod tests {
         assert_pending(filler.wait_for_fillable(1)).await;
 
         println!("but we should have a new usb packet available");
-        let mut builder = filled_fut.await;
+        let mut builder = filled_fut.await.unwrap();
         let buffer = builder.take_usb_packet().unwrap();
 
         println!("the packet we get back out should be the same one we put in");
@@ -587,7 +706,7 @@ mod tests {
 
         let mut read_packet_num = 0;
         while read_packet_num < 1024 {
-            builder = filler.fill_usb_packet(builder).await;
+            builder = filler.fill_usb_packet(builder).await.unwrap();
             let buffer = builder.take_usb_packet().unwrap();
             let mut num_packets = 0;
             for packet in VsockPacketIterator::new(&buffer) {
@@ -625,7 +744,7 @@ mod tests {
             println!("now put some things in the packet");
             let header = &mut Header::new(PacketType::Data);
             header.payload_len.set(99);
-            let Poll::Ready(mut builder) = poll!(fillable_fut) else {
+            let Poll::Ready(Ok(mut builder)) = poll!(fillable_fut) else {
                 panic!("should have been ready to fill a packet")
             };
             builder
@@ -634,7 +753,7 @@ mod tests {
                 .write_vsock_packet(&Packet { header, payload: &[b'a'; 99] })
                 .unwrap();
             drop(builder);
-            let Poll::Ready(mut builder) = poll!(filler.wait_for_fillable(1)) else {
+            let Poll::Ready(Ok(mut builder)) = poll!(filler.wait_for_fillable(1)) else {
                 panic!("should have been ready to fill a packet(2)")
             };
             builder
@@ -648,7 +767,7 @@ mod tests {
             assert!(poll!(filler.wait_for_fillable(1024 - (99 * 2) + 1)).is_pending());
 
             println!("and now resolve the filled future and get our data back");
-            let mut filled = filled_fut.await;
+            let mut filled = filled_fut.await.unwrap();
             let packets =
                 Vec::from_iter(VsockPacketIterator::new(filled.take_usb_packet().unwrap()));
             assert_eq!(packets.len(), 2);

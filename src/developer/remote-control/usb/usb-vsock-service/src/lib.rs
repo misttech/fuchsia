@@ -325,8 +325,8 @@ async fn usb_socket_writer<const MTU: usize>(
     usb_writer: &mut (impl AsyncWrite + Unpin),
 ) -> Result<(), Error> {
     let mut builder = UsbPacketBuilder::new(vec![0; MTU]);
-    loop {
-        builder = connection.fill_usb_packet(builder).await;
+    while let Ok(got) = connection.fill_usb_packet(builder).await {
+        builder = got;
         let buf = builder.take_usb_packet().unwrap();
         assert_eq!(
             buf.len(),
@@ -334,6 +334,8 @@ async fn usb_socket_writer<const MTU: usize>(
             "datagram socket sent incomplete packet"
         );
     }
+
+    Ok(())
 }
 
 async fn usb_socket_reader<const MTU: usize>(
@@ -591,8 +593,8 @@ mod tests {
         let writer_connection = host_connection.clone();
         scope.spawn(async move {
             let mut buf = UsbPacketBuilder::new(vec![0; 4096]);
-            loop {
-                buf = writer_connection.fill_usb_packet(buf).await;
+            while let Ok(got) = writer_connection.fill_usb_packet(buf).await {
+                buf = got;
                 let buf = buf.take_usb_packet().unwrap();
                 for packet in VsockPacketIterator::new(buf) {
                     let packet = packet.unwrap();

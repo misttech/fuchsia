@@ -20,7 +20,8 @@ use futures::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt, FutureExt, Sin
 
 use crate::connection::overflow_writer::OverflowHandleFut;
 use crate::{
-    Address, Header, Packet, PacketType, ProtocolVersion, UsbPacketBuilder, UsbPacketFiller,
+    Address, Header, Packet, PacketType, ProtocolVersion, ShutdownError, UsbPacketBuilder,
+    UsbPacketFiller, WritePacketErrorExt,
 };
 
 mod overflow_writer;
@@ -151,10 +152,10 @@ impl<B: PacketBuffer, S: AsyncRead + AsyncWrite + Send + 'static> Connection<B, 
     async fn send_close_packet(address: &Address, usb_packet_filler: &Arc<UsbPacketFiller<B>>) {
         let header = &mut Header::new(PacketType::Finish);
         header.set_address(address);
-        usb_packet_filler
+        let _: Result<_, ShutdownError> = usb_packet_filler
             .write_vsock_packet(&Packet { header, payload: &[] })
             .await
-            .expect("Finish packet should never be too big");
+            .expect_right_size("Finish packet should never be too big");
     }
 
     async fn run_socket(
@@ -184,7 +185,10 @@ impl<B: PacketBuffer, S: AsyncRead + AsyncWrite + Send + 'static> Connection<B, 
                 }
             };
             log::trace!("writing {read} bytes to vsock packet");
-            usb_packet_filler.write_vsock_data_all(&address, &buf[..read]).await;
+            if usb_packet_filler.write_vsock_data_all(&address, &buf[..read]).await.is_err() {
+                log::trace!("transport shut down during read");
+                return;
+            }
             log::trace!("wrote {read} bytes to vsock packet");
         }
     }
@@ -208,10 +212,13 @@ impl<B: PacketBuffer, S: AsyncRead + AsyncWrite + Send + 'static> Connection<B, 
     pub async fn send_empty_echo(&self) {
         debug!("Sending empty echo packet");
         let header = &mut Header::new(PacketType::Echo);
-        self.packet_filler
+        let _: Result<_, ShutdownError> = self
+            .packet_filler
             .write_vsock_packet(&Packet { header, payload: &[] })
             .await
-            .expect("empty echo packet should never be too large to fit in a usb packet");
+            .expect_right_size(
+                "empty echo packet should never be too large to fit in a usb packet",
+            );
     }
 
     /// Starts a connection attempt to the other end of the USB connection, and provides a socket
@@ -240,7 +247,10 @@ impl<B: PacketBuffer, S: AsyncRead + AsyncWrite + Send + 'static> Connection<B, 
 
         let header = &mut Header::new(PacketType::Connect);
         header.set_address(&addr);
-        self.packet_filler.write_vsock_packet(&Packet { header, payload: &[] }).await.unwrap();
+        self.packet_filler
+            .write_vsock_packet(&Packet { header, payload: &[] })
+            .await
+            .assert_right_size()?;
         let Ok(conn_state) = connected_rx.await else {
             return Err(Error::other("Accept was never received for {addr:?}"));
         };
@@ -314,7 +324,10 @@ impl<B: PacketBuffer, S: AsyncRead + AsyncWrite + Send + 'static> Connection<B, 
         }
         let header = &mut Header::new(PacketType::Accept);
         header.set_address(&address);
-        self.packet_filler.write_vsock_packet(&Packet { header, payload: &[] }).await.unwrap();
+        self.packet_filler
+            .write_vsock_packet(&Packet { header, payload: &[] })
+            .await
+            .assert_right_size()?;
         Ok((
             ReadyConnect {
                 connections: Arc::clone(&self.connections),
@@ -349,7 +362,7 @@ impl<B: PacketBuffer, S: AsyncRead + AsyncWrite + Send + 'static> Connection<B, 
         self.packet_filler
             .write_vsock_packet(&Packet { header, payload: &[] })
             .await
-            .expect("accept packet should never be too large for packet buffer");
+            .expect_right_size("accept packet should never be too large for packet buffer")?;
         Ok(())
     }
 
@@ -407,9 +420,9 @@ impl<B: PacketBuffer, S: AsyncRead + AsyncWrite + Send + 'static> Connection<B, 
                             self.packet_filler
                                 .write_vsock_packet(&Packet { header, payload })
                                 .await
-                                .expect(
+                                .expect_right_size(
                                     "pause packet should never be too large to fit in a usb packet",
-                                );
+                                )?;
                         }
 
                         let weak_payload_socket = Arc::downgrade(&payload_socket);
@@ -432,10 +445,11 @@ impl<B: PacketBuffer, S: AsyncRead + AsyncWrite + Send + 'static> Connection<B, 
                                 let payload = &PausePacket::UnPause.bytes();
                                 header.set_address(&address);
                                 header.payload_len.set(payload.len() as u32);
+                                let _: Result<_, ShutdownError> =
                                 packet_filler
                                     .write_vsock_packet(&Packet { header, payload })
                                     .await
-                                    .expect("pause packet should never be too large to fit in a usb packet");
+                                    .expect_right_size("pause packet should never be too large to fit in a usb packet");
                             }
                         });
                     }
@@ -450,10 +464,14 @@ impl<B: PacketBuffer, S: AsyncRead + AsyncWrite + Send + 'static> Connection<B, 
         let header = &mut Header::new(PacketType::EchoReply);
         header.payload_len.set(payload.len() as u32);
         header.set_address(&address);
-        self.packet_filler
-            .write_vsock_packet(&Packet { header, payload })
-            .await
-            .map_err(|_| Error::other("Echo packet was too large to be sent back"))
+        self.packet_filler.write_vsock_packet(&Packet { header, payload }).await.map_err(
+            |e| match e {
+                crate::WritePacketError::PacketTooBig(_) => {
+                    Error::other("Echo packet was too large to be sent back")
+                }
+                crate::WritePacketError::Shutdown(shutdown_error) => shutdown_error.into(),
+            },
+        )
     }
 
     async fn handle_echo_reply_packet(
@@ -551,7 +569,7 @@ impl<B: PacketBuffer, S: AsyncRead + AsyncWrite + Send + 'static> Connection<B, 
         self.packet_filler
             .write_vsock_packet(&Packet { header, payload: &[] })
             .await
-            .expect("accept packet should never be too large for packet buffer");
+            .expect_right_size("accept packet should never be too large for packet buffer")?;
         Ok(())
     }
 
@@ -640,8 +658,20 @@ impl<B: PacketBuffer, S: AsyncRead + AsyncWrite + Send + 'static> Connection<B, 
     /// # Panics
     ///
     /// Panics if called while another [`Self::fill_usb_packet`] future is pending.
-    pub async fn fill_usb_packet(&self, builder: UsbPacketBuilder<B>) -> UsbPacketBuilder<B> {
+    pub async fn fill_usb_packet(
+        &self,
+        builder: UsbPacketBuilder<B>,
+    ) -> Result<UsbPacketBuilder<B>, ShutdownError> {
         self.packet_filler.fill_usb_packet(builder).await
+    }
+}
+
+impl<B: PacketBuffer, S> Connection<B, S> {
+    /// Inform this connection that whatever transport was providing and
+    /// receiving packets has hung up and no more data will be written or read.
+    pub fn shutdown(&self) {
+        self.packet_filler.shutdown();
+        self.connections.lock().clear();
     }
 }
 
@@ -670,7 +700,7 @@ async fn reset<B: PacketBuffer, S: AsyncRead + AsyncWrite + Send + 'static>(
     packet_filler
         .write_vsock_packet(&Packet { header, payload: &[] })
         .await
-        .expect("Reset packet should never be too big");
+        .expect_right_size("Reset packet should never be too big")?;
     Ok(())
 }
 
@@ -770,6 +800,7 @@ impl ConnectionRequest {
 #[cfg(test)]
 mod test {
     use std::sync::Arc;
+    use test_case::test_case;
 
     use crate::VsockPacketIterator;
 
@@ -786,7 +817,7 @@ mod test {
         let mut builder = UsbPacketBuilder::new(vec![0; 128]);
         loop {
             println!("waiting for usb packet");
-            builder = echo_connection.fill_usb_packet(builder).await;
+            builder = echo_connection.fill_usb_packet(builder).await.unwrap();
             let packets = VsockPacketIterator::new(builder.take_usb_packet().unwrap());
             println!("got usb packet, echoing it back to the other side");
             let mut packet_count = 0;
@@ -907,7 +938,7 @@ mod test {
     async fn copy_connection(from: &Connection<Vec<u8>, Socket>, to: &Connection<Vec<u8>, Socket>) {
         let mut builder = UsbPacketBuilder::new(vec![0; 1024]);
         loop {
-            builder = from.fill_usb_packet(builder).await;
+            builder = from.fill_usb_packet(builder).await.unwrap();
             let packets = VsockPacketIterator::new(builder.take_usb_packet().unwrap());
             for packet in packets {
                 println!("forwarding vsock packet");
@@ -1062,5 +1093,44 @@ mod test {
             },
         )
         .await;
+    }
+
+    #[test_case(false; "in packet handling")]
+    #[test_case(true; "in reply wait")]
+    #[fuchsia::test]
+    async fn conn_shutdown(fill_packets: bool) {
+        let (incoming_requests_tx, _incoming_requests) = mpsc::channel(5);
+
+        let connection = Arc::new(Connection::<Vec<u8>, fuchsia_async::Socket>::new(
+            ProtocolVersion::LATEST,
+            None,
+            incoming_requests_tx,
+        ));
+
+        let mut filler = if fill_packets {
+            Some(std::pin::pin!(connection.fill_usb_packet(UsbPacketBuilder::new(Vec::new()))))
+        } else {
+            None
+        };
+
+        let addr = Address { device_cid: 1, host_cid: 2, device_port: 3, host_port: 4 };
+        let mut fut = std::pin::pin!(connection.connect_late(addr));
+
+        for _ in 0..5 {
+            assert!(fut.as_mut().poll(&mut Context::from_waker(Waker::noop())).is_pending());
+            if let Some(filler) = filler.as_mut() {
+                assert!(filler.as_mut().poll(&mut Context::from_waker(Waker::noop())).is_pending())
+            }
+        }
+
+        connection.shutdown();
+        let Poll::Ready(res) = fut.poll(&mut Context::from_waker(Waker::noop())) else { panic!() };
+        assert!(res.is_err());
+        if let Some(filler) = filler {
+            let Poll::Ready(res) = filler.poll(&mut Context::from_waker(Waker::noop())) else {
+                panic!()
+            };
+            assert!(res.is_err());
+        }
     }
 }

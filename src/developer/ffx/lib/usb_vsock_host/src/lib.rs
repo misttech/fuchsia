@@ -299,16 +299,17 @@ async fn run_usb_link<S: AsyncRead + AsyncWrite + Send + 'static>(
 
         let tx_main = pin!(async {
             let mut builder = UsbPacketBuilder::new(vec![0u8; MTU]);
-            loop {
-                builder = tx_conn.fill_usb_packet(builder).await;
+            while let Ok(got) = tx_conn.fill_usb_packet(builder).await {
+                builder = got;
                 let err_fut = out_ep
                     .write_defer_wait(builder.take_usb_packet().unwrap())
                     .await
                     .map_err(LinkError::Send)?;
                 if tx_err_sender.unbounded_send(err_fut).is_err() {
-                    break Ok(());
+                    break;
                 }
             }
+            Ok(())
         });
 
         let mut tx_errs = pin!(tx_errs.filter_map(|x| async move { x.await.err() }));
@@ -417,6 +418,12 @@ impl<S: AsyncRead + AsyncWrite + Send + 'static> ConnectionState<S> {
             Arc::new(usb_vsock::Connection::new(protocol_version, None, incoming_requests_tx));
 
         (ConnectionState { connection: Arc::clone(&connection), serial }, incoming_requests)
+    }
+}
+
+impl<S> Drop for ConnectionState<S> {
+    fn drop(&mut self) {
+        self.connection.shutdown();
     }
 }
 
@@ -1049,8 +1056,8 @@ impl<S: AsyncRead + AsyncWrite + Send + 'static> TestConnection<S> {
                 Abortable::new(
                     async move {
                         let mut builder = UsbPacketBuilder::new(vec![0u8; MTU]);
-                        loop {
-                            builder = from.fill_usb_packet(builder).await;
+                        while let Ok(got) = from.fill_usb_packet(builder).await {
+                            builder = got;
                             let packets =
                                 VsockPacketIterator::new(builder.take_usb_packet().unwrap());
                             for packet in packets {
@@ -1106,9 +1113,12 @@ mod test {
 
         let (a, other_end) = fasync::emulated_handle::Socket::create_stream();
         let other_end = fasync::Socket::from_socket(other_end);
-        let connect_task = fasync::Task::spawn(async move {
-            host.connect(cid.try_into().unwrap(), 1234, other_end).await
-        });
+        let connect_task = {
+            let host = Arc::clone(&host);
+            fasync::Task::spawn(async move {
+                host.connect(cid.try_into().unwrap(), 1234, other_end).await
+            })
+        };
 
         let incoming = incoming_requests.next().await.unwrap();
 
@@ -1257,10 +1267,12 @@ mod test {
         ) = TestConnection::<fasync::Socket>::new();
         let (sock, _) = fasync::emulated_handle::Socket::create_stream();
         let sock = fasync::Socket::from_socket(sock);
-        let connect_task =
+        let connect_task = {
+            let host = Arc::clone(&host);
             fasync::Task::spawn(
                 async move { host.connect(cid.try_into().unwrap(), 1234, sock).await },
-            );
+            )
+        };
 
         let req = incoming_requests.next().await.unwrap();
         connection.reject(req).await.unwrap();
