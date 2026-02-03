@@ -65,6 +65,7 @@ ZirconRebootReason ExtractZirconRebootInfo(const std::string& path,
                                            std::optional<zx::duration>* runtime,
                                            std::optional<std::string>* crashed_process) {
   if (!files::IsFile(path)) {
+    *content = "ZIRCON REBOOT REASON (COLD)";
     return ZirconRebootReason::kCold;
   }
 

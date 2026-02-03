@@ -663,7 +663,7 @@ INSTANTIATE_TEST_SUITE_P(
             "NoZirconRebootLog",
             std::nullopt,
             {ShutdownReason::USER_REQUEST},
-            "GRACEFUL REBOOT REASONS: (USER REQUEST)\n\nFINAL REBOOT REASON (COLD)",
+            "ZIRCON REBOOT REASON (COLD)\nGRACEFUL REBOOT REASONS: (USER REQUEST)\n\nFINAL REBOOT REASON (COLD)",
         },
     })),
     [](const testing::TestParamInfo<RebootLogStrTestParam>& info) { return info.param.test_name; });
