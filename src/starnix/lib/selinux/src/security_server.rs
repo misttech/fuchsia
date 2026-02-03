@@ -647,14 +647,14 @@ impl Query for SecurityServerBackend {
 }
 
 impl AccessVectorComputer for SecurityServer {
-    fn access_vector_from_permissions<
+    fn kernel_permissions_to_access_vector<
         P: ClassPermission + Into<KernelPermission> + Clone + 'static,
     >(
         &self,
         permissions: &[P],
     ) -> Option<AccessVector> {
         match &self.backend.state.read().active_policy {
-            Some(policy) => policy.parsed.access_vector_from_permissions(permissions),
+            Some(policy) => policy.parsed.kernel_permissions_to_access_vector(permissions),
             None => Some(AccessVector::NONE),
         }
     }

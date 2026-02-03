@@ -968,9 +968,9 @@ pub(in crate::security) fn has_dontaudit_access(
 
     let FsNodeSidAndClass { sid, class } = fs_node_effective_sid_and_class(fs_node);
     let permission_check = security_server.as_permission_check();
-    if let Some(audit_access) = security_server
-        .access_vector_from_permissions(&[CommonFsNodePermission::AuditAccess.for_class(class)])
-    {
+    if let Some(audit_access) = security_server.kernel_permissions_to_access_vector(&[
+        CommonFsNodePermission::AuditAccess.for_class(class),
+    ]) {
         let current_sid = current_task_state(current_task).lock().current_sid;
         let decision = permission_check.compute_access_decision(current_sid, sid, class.into());
         audit_access & decision.auditdeny == AccessVector::NONE

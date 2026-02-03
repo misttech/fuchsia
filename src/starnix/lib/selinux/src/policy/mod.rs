@@ -31,7 +31,7 @@ use symbols::{find_class_by_name, find_common_symbol_by_name_bytes};
 
 use anyhow::Context as _;
 use std::fmt::{Debug, Display, LowerHex};
-use std::num::{NonZeroU32, NonZeroU64};
+use std::num::{NonZeroU8, NonZeroU32, NonZeroU64};
 use std::ops::Deref;
 use std::str::FromStr;
 use std::sync::Arc;
@@ -79,7 +79,7 @@ impl Into<u32> for ClassId {
 
 /// Identifies a permission within a class.
 #[derive(Copy, Clone, Debug, Eq, Hash, PartialEq)]
-pub struct ClassPermissionId(NonZeroU32);
+pub struct ClassPermissionId(NonZeroU8);
 
 impl Display for ClassPermissionId {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
@@ -498,7 +498,7 @@ impl Policy {
 }
 
 impl AccessVectorComputer for Policy {
-    fn access_vector_from_permissions<
+    fn kernel_permissions_to_access_vector<
         P: ClassPermission + Into<KernelPermission> + Clone + 'static,
     >(
         &self,
@@ -506,11 +506,12 @@ impl AccessVectorComputer for Policy {
     ) -> Option<AccessVector> {
         let mut access_vector = AccessVector::NONE;
         for permission in permissions {
-            if let Some(permission_info) = self.0.permission(&permission.clone().into()) {
-                // Compute bit flag associated with permission.
-                access_vector |= AccessVector::from_class_permission_id(permission_info.id());
+            if let Some(permission_access_vector) =
+                self.0.kernel_permission_to_access_vector(permission.clone())
+            {
+                access_vector |= permission_access_vector;
             } else {
-                // The permission is unknown so defer to the policy-define unknown handling behaviour.
+                // Defer to the policy-defined handle-unknown behaviour.
                 if self.0.parsed_policy().handle_unknown() != HandleUnknown::Allow {
                     return None;
                 }
@@ -540,7 +541,7 @@ pub trait AccessVectorComputer {
     /// entries not explicitly defined by the policy are handled. Allow-unknown will
     /// result in unknown `permissions` being ignored, while deny-unknown will cause
     /// `None` to be returned if one or more `permissions` are unknown.
-    fn access_vector_from_permissions<
+    fn kernel_permissions_to_access_vector<
         P: ClassPermission + Into<KernelPermission> + Clone + 'static,
     >(
         &self,

@@ -5,11 +5,9 @@
 use super::arrays::{ACCESS_VECTOR_RULE_TYPE_TYPE_TRANSITION, FsContext, FsUseType};
 use super::metadata::HandleUnknown;
 use super::security_context::{SecurityContext, SecurityLevel};
-use super::symbols::{
-    Class, ClassDefault, ClassDefaultRange, Classes, CommonSymbol, CommonSymbols, Permission,
-};
-use super::{ParsedPolicy, RoleId, TypeId};
-use crate::{ClassPermission as _, NullessByteStr, PolicyCap};
+use super::symbols::{Class, ClassDefault, ClassDefaultRange, Classes, CommonSymbols};
+use super::{AccessVector, ClassPermissionId, ParsedPolicy, RoleId, TypeId};
+use crate::{ClassPermission as _, KernelPermission, NullessByteStr, PolicyCap};
 
 use std::collections::HashMap;
 
@@ -34,9 +32,8 @@ pub(super) struct PolicyIndex {
     /// defined class - if an object class is not found in this map then it is not defined by the
     /// policy.
     classes: HashMap<crate::ObjectClass, usize>,
-    /// Map from well-known permissions to their class's associated [`super::symbols::Permissions`]
-    /// collection.
-    permissions: HashMap<crate::KernelPermission, PermissionIndex>,
+    /// Map from well-known permissions to their class-specific `AccessVector` bit index.
+    permissions: HashMap<crate::KernelPermission, ClassPermissionId>,
     /// The parsed binary policy.
     parsed_policy: ParsedPolicy,
     /// The "object_r" role used as a fallback for new file context transitions.
@@ -93,10 +90,10 @@ impl PolicyIndex {
             let object_class = known_permission.class();
             if let Some(class_index) = classes.get(&object_class.into()) {
                 let class = &policy_classes[*class_index];
-                if let Some(permission_index) =
-                    get_permission_index_by_name(common_symbols, class, known_permission.name())
+                if let Some(permission_id) =
+                    get_permission_id_by_name(common_symbols, class, known_permission.name())
                 {
-                    permissions.insert(known_permission, permission_index);
+                    permissions.insert(known_permission, permission_id);
                 } else if parsed_policy.handle_unknown() == HandleUnknown::Reject {
                     return Err(anyhow::anyhow!(
                         "missing permission {:?}:{:?}",
@@ -137,20 +134,13 @@ impl PolicyIndex {
     }
 
     /// Returns the policy entry for a well-known kernel object class permission.
-    pub fn permission<'a>(
-        &'a self,
-        permission: &crate::KernelPermission,
-    ) -> Option<&'a Permission> {
-        let target_class = self.class(permission.class().into())?;
-        self.permissions.get(permission).map(|p| match p {
-            PermissionIndex::Class { permission_index } => {
-                &target_class.permissions()[*permission_index]
-            }
-            PermissionIndex::Common { common_symbol_index, permission_index } => {
-                let common_symbol = &self.parsed_policy().common_symbols()[*common_symbol_index];
-                &common_symbol.permissions()[*permission_index]
-            }
-        })
+    pub fn kernel_permission_to_access_vector<P: Into<KernelPermission>>(
+        &self,
+        permission: P,
+    ) -> Option<AccessVector> {
+        let permission = permission.into();
+        let permission_index = self.permissions.get(&permission)?;
+        Some(AccessVector::from_class_permission_id(*permission_index))
     }
 
     /// Returns the security context that should be applied to a newly created SELinux
@@ -473,69 +463,27 @@ impl PolicyIndex {
     }
 }
 
-/// Permissions may be stored in their associated [`Class`], or on the class's associated
-/// [`CommonSymbol`]. This is a consequence of a limited form of inheritance supported for SELinux
-/// policy classes. Classes may inherit from zero or one `common`. For example:
-///
-/// ```config
-/// common file { ioctl read write create [...] }
-/// class file inherits file { execute_no_trans entrypoint }
-/// ```
-///
-/// In the above example, the "ioctl" permission for the "file" `class` is stored as a permission
-/// on the "file" `common`, whereas the permission "execute_no_trans" is stored as a permission on
-/// the "file" `class`.
-#[derive(Debug)]
-enum PermissionIndex {
-    /// Permission is located at `Class::permissions()[permission_index]`.
-    Class { permission_index: usize },
-    /// Permission is located at
-    /// `ParsedPolicy::common_symbols()[common_symbol_index].permissions()[permission_index]`.
-    Common { common_symbol_index: usize, permission_index: usize },
-}
-
 fn get_class_index_by_name<'a>(classes: &'a Classes, name: &str) -> Option<usize> {
     let name_bytes = name.as_bytes();
     classes.iter().position(|class| class.name_bytes() == name_bytes)
 }
 
-fn get_common_symbol_index_by_name_bytes<'a>(
-    common_symbols: &'a CommonSymbols,
-    name_bytes: &[u8],
-) -> Option<usize> {
-    common_symbols.iter().position(|common_symbol| common_symbol.name_bytes() == name_bytes)
-}
-
-fn get_permission_index_by_name<'a>(
-    common_symbols: &'a CommonSymbols,
-    class: &'a Class,
+/// Returns the bit index of the specified permission for the specified security `class`, looking
+/// up the permission in the class' common symbol, if any.
+fn get_permission_id_by_name(
+    common_symbols: &CommonSymbols,
+    class: &Class,
     name: &str,
-) -> Option<PermissionIndex> {
-    if let Some(permission_index) = get_class_permission_index_by_name(class, name) {
-        Some(PermissionIndex::Class { permission_index })
-    } else if let Some(common_symbol_index) =
-        get_common_symbol_index_by_name_bytes(common_symbols, class.common_name_bytes())
-    {
-        let common_symbol = &common_symbols[common_symbol_index];
-        if let Some(permission_index) = get_common_permission_index_by_name(common_symbol, name) {
-            Some(PermissionIndex::Common { common_symbol_index, permission_index })
-        } else {
-            None
-        }
-    } else {
-        None
+) -> Option<ClassPermissionId> {
+    let name = name.as_bytes();
+    if let Some(permission) = class.permissions().iter().find(|p| p.name_bytes() == name) {
+        return Some(permission.id());
     }
-}
-
-fn get_class_permission_index_by_name<'a>(class: &'a Class, name: &str) -> Option<usize> {
-    let name_bytes = name.as_bytes();
-    class.permissions().iter().position(|permission| permission.name_bytes() == name_bytes)
-}
-
-fn get_common_permission_index_by_name<'a>(
-    common_symbol: &'a CommonSymbol,
-    name: &str,
-) -> Option<usize> {
-    let name_bytes = name.as_bytes();
-    common_symbol.permissions().iter().position(|permission| permission.name_bytes() == name_bytes)
+    let common_name = class.common_name_bytes();
+    if !common_name.is_empty() {
+        let common_symbol = common_symbols.iter().find(|cs| cs.name_bytes() == common_name)?;
+        let permission = common_symbol.permissions().iter().find(|p| p.name_bytes() == name)?;
+        return Some(permission.id());
+    }
+    None
 }

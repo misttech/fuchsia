@@ -18,7 +18,7 @@ use super::{
 
 use anyhow::{Context as _, anyhow};
 use std::fmt::Debug;
-use std::num::NonZeroU32;
+use std::num::{NonZeroU8, NonZeroU32};
 use std::ops::Deref;
 use zerocopy::{FromBytes, Immutable, KnownLayout, Unaligned, little_endian as le};
 
@@ -356,7 +356,8 @@ impl Permission {
 
     /// Returns the ID of this permission in the scope of its associated class.
     pub fn id(&self) -> ClassPermissionId {
-        ClassPermissionId(NonZeroU32::new(self.metadata.id.get()).unwrap())
+        let id = self.metadata.id.get() as u8;
+        ClassPermissionId(NonZeroU8::new(id).unwrap())
     }
 }
 
@@ -393,6 +394,10 @@ impl Validate for PermissionMetadata {
 
     /// TODO: Should there be an upper bound on `length`?
     fn validate(&self, _context: &mut PolicyValidationContext) -> Result<(), Self::Error> {
+        // `id` must be a valid `AccessVector` bit-index in the range 1..=32.
+        if self.id < 1 || self.id > 32 {
+            return Err(anyhow!("Permission Id is not valid AV index"));
+        }
         Ok(())
     }
 }

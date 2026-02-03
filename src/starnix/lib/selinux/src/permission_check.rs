@@ -156,7 +156,7 @@ fn has_permission<P: ClassPermission + Into<KernelPermission> + Clone + 'static>
     let decision = query.compute_access_decision(source_sid, target_sid, target_class.into());
 
     let mut result = if let Some(permission_access_vector) =
-        access_vector_computer.access_vector_from_permissions(&[permission])
+        access_vector_computer.kernel_permissions_to_access_vector(&[permission])
     {
         let permit = permission_access_vector & decision.allow == permission_access_vector;
         let audit = if permit {
@@ -218,7 +218,7 @@ fn has_extended_permission<P: ClassPermission + Into<KernelPermission> + Clone +
     );
 
     let mut result = if let Some(permission_access_vector) =
-        access_vector_computer.access_vector_from_permissions(&[permission])
+        access_vector_computer.kernel_permissions_to_access_vector(&[permission])
     {
         let permit = (permission_access_vector & permission_decision.allow
             == permission_access_vector)
@@ -347,7 +347,7 @@ mod tests {
     }
 
     impl AccessVectorComputer for DenyAllPermissions {
-        fn access_vector_from_permissions<
+        fn kernel_permissions_to_access_vector<
             P: ClassPermission + Into<KernelPermission> + Clone + 'static,
         >(
             &self,
@@ -403,7 +403,7 @@ mod tests {
     }
 
     impl AccessVectorComputer for AllowAllPermissions {
-        fn access_vector_from_permissions<
+        fn kernel_permissions_to_access_vector<
             P: ClassPermission + Into<KernelPermission> + Clone + 'static,
         >(
             &self,
@@ -459,7 +459,7 @@ mod tests {
     }
 
     impl AccessVectorComputer for DenyPermissionsAllowXperms {
-        fn access_vector_from_permissions<
+        fn kernel_permissions_to_access_vector<
             P: ClassPermission + Into<KernelPermission> + Clone + 'static,
         >(
             &self,
@@ -515,7 +515,7 @@ mod tests {
     }
 
     impl AccessVectorComputer for AllowPermissionsDenyXperms {
-        fn access_vector_from_permissions<
+        fn kernel_permissions_to_access_vector<
             P: ClassPermission + Into<KernelPermission> + Clone + 'static,
         >(
             &self,
