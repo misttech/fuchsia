@@ -58,6 +58,13 @@ config("lto-workarounds") {
     ldflags = [ "-Wl,-mllvm,-relocation-model=pic" ]
   }
 
+  # TODO(https://fxbug.dev/481320391): Remove the TLSDESC workaround when the
+  # toolchain propagates the target information correctly in LTO builds.
+  if (toolchain_environment != "kernel.phys32" &&
+      toolchain_environment != "kernel.efi") {
+    ldflags += [ "-Wl,-mllvm,--enable-tlsdesc" ]
+  }
+
   # TODO(https://fxbug.dev/42086180): The workarounds below are required to
   # avoid code generation bugs during LTO. They can be removed once LTO
   # properly handles riscv target features
@@ -139,6 +146,10 @@ config("lto-rust") {
     "-Clto=fat",
     "-Zdylib-lto",
   ]
+
+  # TODO(https://fxbug.dev/481320391): Remove the TLSDESC workaround when the
+  # toolchain propagates the target information correctly in LTO builds.
+  rustflags += [ "-Clink-args=--mllvm=--enable-tlsdesc" ]
 
   configs = [
     ":lto-rust-linker-plugin",
