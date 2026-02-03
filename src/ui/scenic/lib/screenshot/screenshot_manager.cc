@@ -15,12 +15,13 @@
 namespace screenshot {
 
 ScreenshotManager::ScreenshotManager(
-    std::shared_ptr<allocation::Allocator> allocator, std::shared_ptr<flatland::Renderer> renderer,
-    GetRenderables get_renderables,
+    sys::ComponentContext* app_context, std::shared_ptr<allocation::Allocator> allocator,
+    std::shared_ptr<flatland::Renderer> renderer, GetRenderables get_renderables,
     std::vector<std::shared_ptr<allocation::BufferCollectionImporter>> buffer_collection_importers,
     fuchsia::math::SizeU display_size, int display_rotation)
-    : allocator_(std::move(allocator)),
-      renderer_(renderer),
+    : app_context_(app_context),
+      allocator_(std::move(allocator)),
+      renderer_(std::move(renderer)),
       get_renderables_(std::move(get_renderables)),
       buffer_collection_importers_(std::move(buffer_collection_importers)),
       display_size_(display_size),
@@ -33,19 +34,8 @@ void ScreenshotManager::CreateBinding(
   std::unique_ptr<ScreenCapture> screen_capture = std::make_unique<ScreenCapture>(
       buffer_collection_importers_, renderer_, [this]() { return get_renderables_(); });
 
-  // fuchsia_ui_compression_internal::ImageCompressor client_ptr;
-  zx::result client_end = component::Connect<fuchsia_ui_compression_internal::ImageCompressor>();
-  if (!client_end.is_ok()) {
-    FX_LOGS(ERROR) << "Error connecting to the |ImageCompressor| protocol: "
-                   << client_end.status_string();
-    return;
-  }
-
-  CompressorEventHandler event_handler;
-  fidl::Client client(std::move(*client_end), async_get_default_dispatcher(), &event_handler);
-
   auto impl = std::make_unique<screenshot::FlatlandScreenshot>(
-      std::move(screen_capture), allocator_, display_size_, display_rotation_, std::move(client),
+      app_context_, std::move(screen_capture), allocator_, display_size_, display_rotation_,
       [this](screenshot::FlatlandScreenshot* sc) {
         bindings_.CloseBindings(sc, ZX_ERR_SHOULD_WAIT);
       });

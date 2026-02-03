@@ -583,7 +583,7 @@ void App::InitializeGraphics(std::shared_ptr<display::Display> display) {
 
     // Capture flatland_manager since the primary display may not have been initialized yet.
     screenshot_manager_.emplace(
-        allocator_, flatland_renderer,
+        app_context_.get(), allocator_, flatland_renderer,
         [this]() {
           FX_DCHECK(flatland_manager_);
           FX_DCHECK(flatland_engine_);

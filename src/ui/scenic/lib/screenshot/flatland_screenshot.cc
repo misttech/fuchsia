@@ -6,6 +6,7 @@
 
 #include <fidl/fuchsia.ui.composition/cpp/hlcpp_conversion.h>
 #include <fuchsia/images2/cpp/fidl.h>
+#include <lib/component/incoming/cpp/protocol.h>
 #include <lib/fdio/directory.h>
 #include <lib/syslog/cpp/macros.h>
 #include <lib/ui/scenic/cpp/buffer_collection_import_export_tokens.h>
@@ -51,15 +52,14 @@ fuchsia::images2::PixelFormat CompositionToImages2Format(ScreenshotFormat format
 namespace screenshot {
 
 FlatlandScreenshot::FlatlandScreenshot(
-    std::unique_ptr<ScreenCapture> screen_capturer, std::shared_ptr<Allocator> allocator,
-    fuchsia::math::SizeU display_size, int display_rotation,
-    fidl::Client<fuchsia_ui_compression_internal::ImageCompressor> client,
+    sys::ComponentContext* app_context, std::unique_ptr<ScreenCapture> screen_capturer,
+    std::shared_ptr<Allocator> allocator, fuchsia::math::SizeU display_size, int display_rotation,
     fit::function<void(FlatlandScreenshot*)> destroy_instance_function)
-    : screen_capturer_(std::move(screen_capturer)),
+    : app_context_(app_context),
+      screen_capturer_(std::move(screen_capturer)),
       flatland_allocator_(allocator),
       display_size_(display_size),
       display_rotation_(display_rotation),
-      client_(std::move(client)),
       destroy_instance_function_(std::move(destroy_instance_function)),
       weak_factory_(this) {
   zx_status_t status = fdio_service_connect("/svc/fuchsia.sysmem2.Allocator",
@@ -71,7 +71,6 @@ FlatlandScreenshot::FlatlandScreenshot(
   FX_DCHECK(sysmem_allocator_);
   FX_DCHECK(display_size_.width);
   FX_DCHECK(display_size_.height);
-  FX_CHECK(client_.is_valid());
   FX_DCHECK(destroy_instance_function_);
 
   // Create event and wait for initialization purposes.
@@ -253,10 +252,11 @@ void FlatlandScreenshot::Take(fuchsia_ui_composition::ScreenshotTakeRequest para
         zx::vmo raw_vmo = weak_ptr->HandleFrameRender();
 
         if (format == ScreenshotFormat::kPng) {
+          MaybeConnectToImageCompressor();
           zx::vmo response_vmo;
           zx::vmo response_vmo_copy;
           const auto response_vmo_size =
-              display_size_.width * display_size_.height * kBytesPerPixel +
+              (display_size_.width * display_size_.height * kBytesPerPixel) +
               zx_system_get_page_size();
           FX_CHECK(zx::vmo::create(response_vmo_size, ZX_VMO_RESIZABLE, &response_vmo) == ZX_OK);
           FX_CHECK(response_vmo.duplicate(ZX_RIGHT_SAME_RIGHTS, &response_vmo_copy) == ZX_OK);
@@ -466,12 +466,13 @@ void FlatlandScreenshot::TakeFile(fuchsia_ui_composition::ScreenshotTakeFileRequ
         zx::vmo raw_vmo = weak_ptr->HandleFrameRender();
 
         if (format == ScreenshotFormat::kPng) {
+          MaybeConnectToImageCompressor();
           zx::vmo response_vmo;
           zx::vmo response_vmo_copy;
           // Make |resonpnse_vmo| large enough to hold any potential PNG encoding of |raw_vmo|.
           // Once compression is complete |resonpnse_vmo| gets resized back down.
           const auto response_vmo_size =
-              display_size_.width * display_size_.height * kBytesPerPixel +
+              (display_size_.width * display_size_.height * kBytesPerPixel) +
               zx_system_get_page_size();
           FX_CHECK(zx::vmo::create(response_vmo_size, ZX_VMO_RESIZABLE, &response_vmo) == ZX_OK);
           FX_CHECK(response_vmo.duplicate(ZX_RIGHT_SAME_RIGHTS, &response_vmo_copy) == ZX_OK);
@@ -522,6 +523,23 @@ void FlatlandScreenshot::FinishTakeFile(zx::vmo response_vmo) {
 
   // Release the buffer to allow for subsequent screenshots.
   screen_capturer_->ReleaseFrame(kBufferIndex, [](auto result) {});
+}
+
+void FlatlandScreenshot::MaybeConnectToImageCompressor() {
+  if (client_.is_valid()) {
+    return;
+  }
+
+  auto endpoints = fidl::Endpoints<fuchsia_ui_compression_internal::ImageCompressor>::Create();
+
+  // We are using natural bindings for the |ImageCompressor| protocol, but |app_context_|
+  // uses HLCPP. We bridge them by manually connecting to the service using the Natural
+  // protocol name.
+  app_context_->svc()->Connect(
+      fidl::DiscoverableProtocolName<fuchsia_ui_compression_internal::ImageCompressor>,
+      endpoints.server.TakeChannel());
+
+  client_.Bind(std::move(endpoints.client), async_get_default_dispatcher(), &event_handler_);
 }
 
 }  // namespace screenshot

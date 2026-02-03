@@ -79,12 +79,10 @@ class FlatlandScreenshotTest : public gtest::RealLoopFixture,
     importer_ = std::make_shared<ScreenCaptureBufferCollectionImporter>(
         utils::CreateSysmemAllocatorSyncPtr("ScreenshotTest"), renderer_);
 
-    auto compressor_channel = CreateImageCompressorEndpoints();
-    mock_compressor_.Bind(compressor_channel.server.TakeChannel(), async_get_default_dispatcher());
-
-    screenshot::CompressorEventHandler event_handler;
-    fidl::Client client(std::move(compressor_channel.client), async_get_default_dispatcher(),
-                        &event_handler);
+    context_provider_.service_directory_provider()
+        ->AddService<fuchsia::ui::compression::internal::ImageCompressor>(
+            [this](fidl::InterfaceRequest<fuchsia::ui::compression::internal::ImageCompressor>
+                       request) { mock_compressor_.Bind(request.TakeChannel()); });
 
     std::vector<std::shared_ptr<BufferCollectionImporter>> screenshot_importers;
     screenshot_importers.push_back(importer_);
@@ -111,8 +109,8 @@ class FlatlandScreenshotTest : public gtest::RealLoopFixture,
     fuchsia::math::SizeU display_size = {.width = kDisplayWidth, .height = kDisplayHeight};
 
     flatland_screenshotter_ = std::make_unique<screenshot::FlatlandScreenshot>(
-        std::move(screen_capturer_), flatland_allocator_, display_size, std::get<1>(GetParam()),
-        std::move(client), [](auto...) {});
+        context_provider_.context(), std::move(screen_capturer_), flatland_allocator_, display_size,
+        std::get<1>(GetParam()), [](auto...) {});
     RunLoopUntilIdle();
   }
 

@@ -9,6 +9,7 @@
 #include <fidl/fuchsia.ui.compression.internal/cpp/fidl.h>
 #include <fuchsia/images2/cpp/fidl.h>
 #include <fuchsia/io/cpp/fidl.h>
+#include <lib/sys/cpp/component_context.h>
 
 #include <optional>
 #include <string>
@@ -29,10 +30,10 @@ using screen_capture::ScreenCapture;
 
 class FlatlandScreenshot : public fidl::Server<fuchsia_ui_composition::Screenshot> {
  public:
-  FlatlandScreenshot(std::unique_ptr<ScreenCapture> screen_capturer,
+  FlatlandScreenshot(sys::ComponentContext* app_context,
+                     std::unique_ptr<ScreenCapture> screen_capturer,
                      std::shared_ptr<Allocator> allocator, fuchsia::math::SizeU display_size,
                      int display_rotation,
-                     fidl::Client<fuchsia_ui_compression_internal::ImageCompressor> client,
                      fit::function<void(FlatlandScreenshot*)> destroy_instance_function);
   ~FlatlandScreenshot() override = default;
 
@@ -49,12 +50,24 @@ class FlatlandScreenshot : public fidl::Server<fuchsia_ui_composition::Screensho
                 fit::function<void(fuchsia_ui_composition::ScreenshotTakeFileResponse)> callback);
 
  private:
+  class CompressorEventHandler
+      : public fidl::AsyncEventHandler<fuchsia_ui_compression_internal::ImageCompressor> {
+   public:
+    void on_fidl_error(fidl::UnbindInfo error) override { FX_LOGS(ERROR) << error; }
+
+    CompressorEventHandler() = default;
+  };
+
   friend class test::FlatlandScreenshotTest;
 
   void FinishTake(zx::vmo response_vmo);
   void FinishTakeFile(zx::vmo response_vmo);
   zx::vmo HandleFrameRender();
   void GetNextFrame();
+
+  void MaybeConnectToImageCompressor();
+
+  sys::ComponentContext* app_context_;
 
   std::unique_ptr<screen_capture::ScreenCapture> screen_capturer_;
   fuchsia::sysmem2::AllocatorPtr sysmem_allocator_;
@@ -76,6 +89,7 @@ class FlatlandScreenshot : public fidl::Server<fuchsia_ui_composition::Screensho
       buffer_collection_info_;
 
   fidl::Client<fuchsia_ui_compression_internal::ImageCompressor> client_;
+  CompressorEventHandler event_handler_;
 
   // Called when this instance should be destroyed.
   fit::function<void(FlatlandScreenshot*)> destroy_instance_function_;

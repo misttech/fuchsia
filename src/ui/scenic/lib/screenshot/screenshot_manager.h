@@ -6,6 +6,7 @@
 #define SRC_UI_SCENIC_LIB_SCREENSHOT_SCREENSHOT_MANAGER_H_
 
 #include <fidl/fuchsia.ui.composition/cpp/fidl.h>
+#include <lib/sys/cpp/component_context.h>
 
 #include <memory>
 
@@ -21,7 +22,8 @@ namespace screenshot {
 
 class ScreenshotManager {
  public:
-  ScreenshotManager(std::shared_ptr<allocation::Allocator> allocator_,
+  ScreenshotManager(sys::ComponentContext* app_context,
+                    std::shared_ptr<allocation::Allocator> allocator_,
                     std::shared_ptr<flatland::Renderer> renderer, GetRenderables get_renderables,
                     std::vector<std::shared_ptr<allocation::BufferCollectionImporter>>
                         buffer_collection_importers,
@@ -31,6 +33,8 @@ class ScreenshotManager {
   void CreateBinding(fidl::InterfaceRequest<fuchsia::ui::composition::Screenshot> request);
 
  private:
+  sys::ComponentContext* app_context_;
+
   // We need these for rendering the scene into the client supplied buffer.
   std::shared_ptr<allocation::Allocator> allocator_;
   std::shared_ptr<flatland::Renderer> renderer_;
@@ -43,14 +47,6 @@ class ScreenshotManager {
   int display_rotation_ = 0;
 
   fidl::ServerBindingGroup<fuchsia_ui_composition::Screenshot> bindings_;
-};
-
-class CompressorEventHandler
-    : public fidl::AsyncEventHandler<fuchsia_ui_compression_internal::ImageCompressor> {
- public:
-  void on_fidl_error(fidl::UnbindInfo error) override { FX_LOGS(ERROR) << error; }
-
-  CompressorEventHandler() = default;
 };
 
 }  // namespace screenshot
