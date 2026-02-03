@@ -5,16 +5,17 @@
 // Wrappers for BoringSSL primitive types needed for SAE. Mundane does not provide implementations
 // for these types. All calls into BoringSSL are unsafe.
 
-use anyhow::{Error, format_err};
+use anyhow::{Error, bail, format_err};
 use bssl_sys::{
     BIGNUM, BN_CTX, BN_CTX_free, BN_CTX_new, BN_add, BN_asc2bn, BN_bin2bn, BN_bn2bin, BN_bn2dec,
     BN_cmp, BN_copy, BN_equal_consttime, BN_free, BN_is_odd, BN_is_one, BN_is_zero, BN_mod_add,
     BN_mod_exp, BN_mod_inverse, BN_mod_mul, BN_mod_sqr, BN_mod_sqrt, BN_new, BN_nnmod, BN_num_bits,
-    BN_num_bytes, BN_one, BN_rand_range, BN_rshift1, BN_set_negative, BN_set_u64, BN_sub, BN_zero,
-    EC_GROUP, EC_GROUP_free, EC_GROUP_get_curve_GFp, EC_GROUP_get_order,
-    EC_GROUP_new_by_curve_name, EC_POINT, EC_POINT_add, EC_POINT_free,
-    EC_POINT_get_affine_coordinates_GFp, EC_POINT_invert, EC_POINT_is_at_infinity, EC_POINT_mul,
-    EC_POINT_new, EC_POINT_set_affine_coordinates_GFp, ERR_get_error, ERR_reason_error_string,
+    BN_num_bytes, BN_one, BN_rand_range, BN_rand_range_ex, BN_rshift1, BN_set_negative, BN_set_u64,
+    BN_sub, BN_zero, EC_GROUP, EC_GROUP_free, EC_GROUP_get_curve_GFp, EC_GROUP_get_order,
+    EC_GROUP_get0_generator, EC_GROUP_new_by_curve_name, EC_POINT, EC_POINT_add, EC_POINT_copy,
+    EC_POINT_free, EC_POINT_get_affine_coordinates_GFp, EC_POINT_invert, EC_POINT_is_at_infinity,
+    EC_POINT_mul, EC_POINT_new, EC_POINT_set_affine_coordinates_GFp,
+    EC_POINT_set_compressed_coordinates_GFp, ERR_get_error, ERR_reason_error_string,
     NID_X9_62_prime256v1, NID_secp384r1, NID_secp521r1, OPENSSL_free,
 };
 use num_derive::{FromPrimitive, ToPrimitive};
@@ -98,6 +99,13 @@ impl Bignum {
     pub fn rand(max: &Bignum) -> Result<Self, Error> {
         let result = Self::new()?;
         one_or_error(unsafe { BN_rand_range(result.0.as_ptr(), max.0.as_ptr()) })?;
+        Ok(result)
+    }
+
+    /// Returns a new Bignum with a cryptographically random value in the range [min, max).
+    pub fn rand_range_ex(min: u64, max: &Bignum) -> Result<Self, Error> {
+        let result = Self::new()?;
+        one_or_error(unsafe { BN_rand_range_ex(result.0.as_ptr(), min, max.0.as_ptr()) })?;
         Ok(result)
     }
 
@@ -324,6 +332,7 @@ impl fmt::Debug for Bignum {
 }
 
 /// Supported elliptic curve groups.
+#[repr(u16)]
 #[derive(Clone, Copy, Debug, FromPrimitive, ToPrimitive)]
 pub enum EcGroupId {
     P256 = 19,
@@ -332,12 +341,16 @@ pub enum EcGroupId {
 }
 
 impl EcGroupId {
-    fn nid(&self) -> i32 {
+    const fn nid(&self) -> i32 {
         match self {
             EcGroupId::P256 => NID_X9_62_prime256v1,
             EcGroupId::P384 => NID_secp384r1,
             EcGroupId::P521 => NID_secp521r1,
         }
+    }
+
+    pub const fn id(&self) -> u16 {
+        *self as u16
     }
 }
 
@@ -391,6 +404,17 @@ impl EcGroup {
         })?;
         Ok(order)
     }
+
+    pub fn get_generator(&self) -> Result<EcPoint, Error> {
+        unsafe {
+            let generator_ref = EC_GROUP_get0_generator(self.0.as_ptr());
+            let generator_copy = EC_POINT_new(self.0.as_ptr());
+            if EC_POINT_copy(generator_copy, generator_ref) == 0 {
+                bail!("Failed to get generator for EcGroup");
+            }
+            ptr_or_error(generator_copy).map(EcPoint)
+        }
+    }
 }
 
 /// A single point on an elliptic curve.
@@ -427,6 +451,24 @@ impl EcPoint {
         Ok(point)
     }
 
+    pub fn new_from_compressed_coords(
+        x: Bignum,
+        group: &EcGroup,
+        ctx: &BignumCtx,
+    ) -> Result<Self, Error> {
+        let point = Self::new(group)?;
+        one_or_error(unsafe {
+            EC_POINT_set_compressed_coordinates_GFp(
+                group.0.as_ptr(),
+                point.0.as_ptr(),
+                x.0.as_ptr(),
+                0,
+                ctx.0.as_ptr(),
+            )
+        })?;
+        Ok(point)
+    }
+
     /// Converts a point on a curve to its affine coordinates.
     pub fn to_affine_coords(
         &self,
@@ -445,6 +487,23 @@ impl EcPoint {
             )
         })?;
         Ok((x, y))
+    }
+
+    /// Converts a point on a curve to its affine x-coordinate.
+    /// This is slightly faster than `to_affine_coords` because it skips the computation for `y`
+    /// Useful for compact point representations.
+    pub fn to_affine_coords_x(&self, group: &EcGroup, ctx: &BignumCtx) -> Result<Bignum, Error> {
+        let x = Bignum::new()?;
+        one_or_error(unsafe {
+            EC_POINT_get_affine_coordinates_GFp(
+                group.0.as_ptr(),
+                self.0.as_ptr(),
+                x.0.as_ptr(),
+                std::ptr::null_mut(),
+                ctx.0.as_ptr(),
+            )
+        })?;
+        Ok(x)
     }
 
     /// Multiplies the given point on the curve by m. This is equivalent to adding this point
@@ -710,6 +769,15 @@ mod tests {
         let (x, y) = point.to_affine_coords(&group, &ctx).unwrap();
         assert_eq!(x, bn(GIX));
         assert_eq!(y, bn(GIY));
+    }
+
+    #[test]
+    fn ec_point_to_coords_x() {
+        let group = EcGroup::new(EcGroupId::P256).unwrap();
+        let ctx = BignumCtx::new().unwrap();
+        let point = EcPoint::new_from_affine_coords(bn(GIX), bn(GIY), &group, &ctx).unwrap();
+        let x = point.to_affine_coords_x(&group, &ctx).unwrap();
+        assert_eq!(x, bn(GIX));
     }
 
     #[test]

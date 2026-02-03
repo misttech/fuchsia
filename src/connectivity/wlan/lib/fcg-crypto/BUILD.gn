@@ -34,6 +34,7 @@ rustc_library("wlan-fcg-crypto") {
     "src/frame.rs",
     "src/hmac_utils.rs",
     "src/lib.rs",
+    "src/owe.rs",
     "src/state.rs",
   ]
 }

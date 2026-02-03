@@ -11,6 +11,7 @@ mod boringssl;
 mod ecc;
 mod frame;
 pub mod hmac_utils;
+pub mod owe;
 mod state;
 
 use anyhow::{Error, bail};
@@ -263,7 +264,7 @@ mod internal {
 
         /// IEEE 12.4.4.1
         /// These three operators are used to manipulate FCG elements for the purposes of the
-        /// Diffie-Hellman key exchange used by SAE.
+        /// Diffie-Hellman key exchange used by protocols like SAE and OWE.
         fn scalar_op(
             &self,
             scalar: &Bignum,
@@ -278,6 +279,9 @@ mod internal {
 
         /// Returns the prime order of the FCG.
         fn order(&self) -> Result<Bignum, Error>;
+        /// Return the generator point of the FCG.
+        fn generator(&self) -> Result<Self::Element, Error>;
+
         /// IEEE 802.11-2016 12.4.5.4
         /// Maps the given secret element to the shared secret value. Returns None if this is the
         /// identity element for this FCG, indicating that we have in invalid secret element.
@@ -285,9 +289,19 @@ mod internal {
         /// IEEE 802.11-2016 12.4.2: The FCG Element must convert into an octet string such
         /// that it may be included in the confirmation hash when completing SAE.
         fn element_to_octets(&self, element: &Self::Element) -> Result<Vec<u8>, Error>;
+        /// RFC 8110 4.3 + RFC 6090 4.2 and 6.2
+        /// For OWE, The compact representation may be used to send the public key. In that case,
+        /// the FCG Element is converted into an octet string containing only the x-coordinate.
+        fn element_to_octets_compact(&self, element: &Self::Element) -> Result<Vec<u8>, Error>;
         /// Convert octets into an element. Returns None if the given octet string does not
         /// contain a valid element for this group.
         fn element_from_octets(&self, octets: &[u8]) -> Result<Option<Self::Element>, Error>;
+        /// Convert octets that use the compact representation into an element. Returns None
+        /// if the given octet string does not contain a valid element for this group.
+        fn element_from_octets_compact(
+            &self,
+            octets: &[u8],
+        ) -> Result<Option<Self::Element>, Error>;
 
         /// Return the expected size of scalar and element values when serialized into a frame.
         fn scalar_size(&self) -> Result<usize, Error> {

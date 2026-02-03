@@ -339,6 +339,10 @@ impl FiniteCyclicGroup for Group {
         self.group.get_order(&self.bn_ctx)
     }
 
+    fn generator(&self) -> Result<EcPoint, Error> {
+        self.group.get_generator()
+    }
+
     fn map_to_secret_value(&self, element: &Self::Element) -> Result<Option<Vec<u8>>, Error> {
         // IEEE Std 802.11-2016 12.4.4.2.1 (end of section)
         if element.is_point_at_infinity(&self.group) {
@@ -360,6 +364,14 @@ impl FiniteCyclicGroup for Group {
         Ok(res)
     }
 
+    fn element_to_octets_compact(&self, element: &Self::Element) -> Result<Vec<u8>, Error> {
+        let group_params = self.group.get_params(&self.bn_ctx)?;
+        let length = group_params.p.len();
+        let x = element.to_affine_coords_x(&self.group, &self.bn_ctx)?;
+        let res = x.to_be_vec(length);
+        Ok(res)
+    }
+
     // IEEE Std 802.11-2016 12.4.7.2.5
     fn element_from_octets(&self, octets: &[u8]) -> Result<Option<Self::Element>, Error> {
         let group_params = self.group.get_params(&self.bn_ctx)?;
@@ -371,6 +383,17 @@ impl FiniteCyclicGroup for Group {
         let x = Bignum::new_from_slice(&octets[0..length])?;
         let y = Bignum::new_from_slice(&octets[length..])?;
         Ok(EcPoint::new_from_affine_coords(x, y, &self.group, &self.bn_ctx).ok())
+    }
+
+    fn element_from_octets_compact(&self, octets: &[u8]) -> Result<Option<Self::Element>, Error> {
+        let group_params = self.group.get_params(&self.bn_ctx)?;
+        let length = group_params.p.len();
+        if octets.len() != length {
+            warn!("element_from_octets_compact called with wrong number of octets");
+            return Ok(None);
+        }
+        let x = Bignum::new_from_slice(&octets)?;
+        Ok(EcPoint::new_from_compressed_coords(x, &self.group, &self.bn_ctx).ok())
     }
 }
 
