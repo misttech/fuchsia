@@ -80,7 +80,19 @@ zx_library("stdcompat") {
     "include/lib/stdcompat/internal/type_traits.h",
     "include/lib/stdcompat/internal/utility.h",
   ]
-  public += sdk_headers_for_internal_use
+  public += [
+    "include/lib/stdcompat/internal/algorithm.h",
+    "include/lib/stdcompat/internal/array.h",
+    "include/lib/stdcompat/internal/atomic.h",
+    "include/lib/stdcompat/internal/bit.h",
+    "include/lib/stdcompat/internal/erase.h",
+    "include/lib/stdcompat/internal/functional.h",
+    "include/lib/stdcompat/internal/inplace_vector.h",
+    "include/lib/stdcompat/internal/linkage.h",
+    "include/lib/stdcompat/internal/span.h",
+    "include/lib/stdcompat/internal/type_traits.h",
+    "include/lib/stdcompat/internal/utility.h",
+  ]
   sdk_name = "stdcompat"
   stable = true
   visibility = [ "*" ]

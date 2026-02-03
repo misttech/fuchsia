@@ -457,7 +457,9 @@ idk_cc_source_library(
 	sdk_headers_for_internal_use = [
 		"path/to/internal.h",
 	]
-	public += sdk_headers_for_internal_use
+	public += [
+		"path/to/internal.h",
+	]
 	public_configs = [
 		":foo_include",
 	]
@@ -504,7 +506,9 @@ idk_cc_source_library_zx(
 	sdk_headers_for_internal_use = [
 		"path/to/internal.h",
 	]
-	public += sdk_headers_for_internal_use
+	public += [
+		"path/to/internal.h",
+	]
 	public_configs = [
 		":foo_include",
 	]

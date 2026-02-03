@@ -401,11 +401,6 @@ func attrAssignmentToGN(expr *syntax.BinaryExpr, bazelRule string) ([]string, er
 	ret := []string{fmt.Sprintf("%s %s %s", attrName, op, rhs[0])}
 	ret = append(ret, rhs[1:]...)
 
-	if lhs.Name == "fuchsia_deps" {
-		ret = append([]string{"if (is_fuchsia) {"}, indent(ret, 1)...)
-		ret = append(ret, "}")
-	}
-
 	// Handle any additional work necessary for specific assignments.
 	if attrName == "sdk_headers_for_internal_use" {
 		// While the files in GN's `sdk_headers_for_internal_use` are included
@@ -413,7 +408,15 @@ func attrAssignmentToGN(expr *syntax.BinaryExpr, bazelRule string) ([]string, er
 		// `hdrs_for_internal_use`. To match the GN behavior, add all the files
 		// specified in `hdrs_for_internal_use` to `public` in the GN target.
 		// For more information, see `idk_cc_source_library()`.`
-		ret = append(ret, "public += sdk_headers_for_internal_use")
+		ret = append(ret, fmt.Sprintf("public += %s", rhs[0]))
+		ret = append(ret, rhs[1:]...)
+	}
+
+	// Wrap the entire assignment in a condition if appropriate.
+	// This should be the last thing before returning the result.
+	if lhs.Name == "fuchsia_deps" {
+		ret = append([]string{"if (is_fuchsia) {"}, indent(ret, 1)...)
+		ret = append(ret, "}")
 	}
 
 	return ret, nil
