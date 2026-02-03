@@ -146,7 +146,7 @@ itertools = "0.14"
 itoa = "1.0"
 json-spanned-value = "0.2.2"
 json5format = "0.2.6"
-libc = { version = "0.2.174", features = ["extra_traits"] }
+libc = { version = "0.2.180", features = ["extra_traits"] }
 libm = "0.2.15"
 linked-hash-map = "0.5.6"
 lock_api = { version = "0.4.14", features = ["serde"] }
@@ -671,7 +671,7 @@ rustflags = [
 [gn.package.indexmap."1.9.2"]
 rustflags = ["--cfg=has_std"]
 
-[gn.package.libc."0.2.174"]
+[gn.package.libc."0.2.180"]
 rustflags = [
   "--cfg=libc_priv_mod_use",
   "--cfg=libc_union",
@@ -688,7 +688,7 @@ rustflags = [
   "--cfg=libc_const_extern_fn",
  ]
 
-[gn.package.libc."0.2.174".platform."cfg(target_os = \"freebsd\")"]
+[gn.package.libc."0.2.180".platform."cfg(target_os = \"freebsd\")"]
 rustflags = ["--cfg=freebsd11"]
 
 [gn.package.libm."0.2.15"]
@@ -1138,7 +1138,7 @@ reviewed_features = [
 [gn.package.tokio."1.38.1".platform."cfg(not(target_os = \"fuchsia\"))"]
 deps = [
   ":bytes-v1_11_0",
-  ":libc-v0_2_174",
+  ":libc-v0_2_180",
   ":memchr-v2_7_6",
   ":mio-v0_8_11",
   ":num_cpus-v1_16_0",
