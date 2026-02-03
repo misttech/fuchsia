@@ -151,3 +151,13 @@ common --experimental_exclude_starlark_flags_from_exec_config
 
 # Do not propagate defines to the exec config.
 common --experimental_exclude_defines_from_exec_config
+
+# Name subdirectories of `bazel-out/` based on the associated platform.
+# For example, use `fuchsia_x64-opt` instead of `k8-opt`.
+# This also separates x64 `--config=fuchsia` output from `--config=host` because
+# they no longer both use `k8-opt`.
+#
+# Warning: This can cause conflicts in C++ compile actions when using
+# `@local_config_platform//:host` - see
+# https://github.com/bazelbuild/bazel/issues/26228.
+common --experimental_platform_in_output_dir=True
