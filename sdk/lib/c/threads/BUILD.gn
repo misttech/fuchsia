@@ -284,6 +284,7 @@ libc_source_set("thread-detach") {
   public_deps = [ ":thread" ]
 
   sources = [ "thread-detach.cc" ]
+  deps = [ "//zircon/system/ulib/zircon-internal" ]
   libc_deps = [
     ":thread-list",
     ":thread-storage",
