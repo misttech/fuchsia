@@ -40,7 +40,8 @@ use starnix_uapi::file_mode::FileMode;
 use starnix_uapi::mount_flags::MountFlags;
 use starnix_uapi::open_flags::OpenFlags;
 use starnix_uapi::{
-    __kernel_fsid_t, errno, error, from_status_like_fdio, fsverity_descriptor, ino_t, off_t, statfs,
+    __kernel_fsid_t, errno, error, from_status_like_fdio, fsverity_descriptor, ino_t, mode, off_t,
+    statfs,
 };
 use std::mem::MaybeUninit;
 use std::sync::Arc;
@@ -283,7 +284,7 @@ impl RemoteFs {
         let (client_end, server_end) = zx::Channel::create();
         let remotefs = RemoteFs::new(root, server_end)?;
         let mut attrs = zxio_node_attributes_t {
-            has: zxio_node_attr_has_t { id: true, ..Default::default() },
+            has: zxio_node_attr_has_t { id: true, wrapping_key_id: true, ..Default::default() },
             ..Default::default()
         };
         let (remote_node, node_id) =
@@ -303,12 +304,19 @@ impl RemoteFs {
             remotefs,
             options,
         )?;
+
+        let mut info = FsNodeInfo::new(mode!(IFDIR, 0o777), FsCred::root());
+        if attrs.has.wrapping_key_id {
+            info.wrapping_key_id = Some(attrs.wrapping_key_id);
+        }
+
         if use_remote_ids {
-            fs.create_root(node_id, remote_node);
+            fs.create_root_with_info(node_id, remote_node, info);
         } else {
             let root_ino = fs.allocate_ino();
-            fs.create_root(root_ino, remote_node);
+            fs.create_root_with_info(root_ino, remote_node, info);
         }
+
         Ok(fs)
     }
 
@@ -607,13 +615,16 @@ impl FsNodeOps for RemoteNode {
 
     fn create_file_ops(
         &self,
-        locked: &mut Locked<FileOpsCore>,
+        _locked: &mut Locked<FileOpsCore>,
         node: &FsNode,
         current_task: &CurrentTask,
         flags: OpenFlags,
     ) -> Result<Box<dyn FileOps>, Errno> {
         {
-            let node_info = node.fetch_and_refresh_info(locked, current_task)?;
+            // It is safe to read the cached node info here because the `wrapping_key_id` is
+            // fetched when the node is first opened, and updated when set. We don't expect this to
+            // change out from under Starnix.
+            let node_info = node.info();
             if node_info.mode.is_dir() {
                 if let Some(wrapping_key_id) = node_info.wrapping_key_id {
                     if flags.can_write() {
@@ -668,7 +679,7 @@ impl FsNodeOps for RemoteNode {
             return error!(EINVAL, name);
         }
         let mut attrs = zxio_node_attributes_t {
-            has: zxio_node_attr_has_t { id: true, ..Default::default() },
+            has: zxio_node_attr_has_t { id: true, wrapping_key_id: true, ..Default::default() },
             ..Default::default()
         };
         zxio = self
@@ -709,8 +720,13 @@ impl FsNodeOps for RemoteNode {
         if !fs_ops.use_remote_ids {
             node_id = fs.allocate_ino();
         }
-        let child =
-            fs.create_node(node_id, ops, FsNodeInfo { rdev: dev, ..FsNodeInfo::new(mode, owner) });
+
+        let mut node_info = FsNodeInfo { rdev: dev, ..FsNodeInfo::new(mode, owner) };
+        if attrs.has.wrapping_key_id {
+            node_info.wrapping_key_id = Some(attrs.wrapping_key_id);
+        }
+
+        let child = fs.create_node(node_id, ops, node_info);
         Ok(child)
     }
 
@@ -732,7 +748,7 @@ impl FsNodeOps for RemoteNode {
         let zxio;
         let mut node_id;
         let mut attrs = zxio_node_attributes_t {
-            has: zxio_node_attr_has_t { id: true, ..Default::default() },
+            has: zxio_node_attr_has_t { id: true, wrapping_key_id: true, ..Default::default() },
             ..Default::default()
         };
         zxio = self
@@ -766,7 +782,13 @@ impl FsNodeOps for RemoteNode {
         if !fs_ops.use_remote_ids {
             node_id = fs.allocate_ino();
         }
-        let child = fs.create_node(node_id, ops, FsNodeInfo::new(mode, owner));
+
+        let mut node_info = FsNodeInfo::new(mode, owner);
+        if attrs.has.wrapping_key_id {
+            node_info.wrapping_key_id = Some(attrs.wrapping_key_id);
+        }
+
+        let child = fs.create_node(node_id, ops, node_info);
         Ok(child)
     }
 
@@ -791,6 +813,7 @@ impl FsNodeOps for RemoteNode {
                 gid: true,
                 rdev: true,
                 id: true,
+                wrapping_key_id: true,
                 fsverity_enabled: true,
                 casefold: true,
                 modification_time: true,
@@ -844,6 +867,7 @@ impl FsNodeOps for RemoteNode {
             } else {
                 Box::new(RemoteSpecialNode { zxio }) as Box<dyn FsNodeOps>
             };
+            let wrapping_key_id = attrs.has.wrapping_key_id.then_some(attrs.wrapping_key_id);
             let child = FsNode::new_uncached(
                 node_id,
                 ops,
@@ -854,6 +878,7 @@ impl FsNodeOps for RemoteNode {
                     time_status_change,
                     time_modify,
                     time_access,
+                    wrapping_key_id,
                     ..FsNodeInfo::new(mode, owner)
                 },
             );
