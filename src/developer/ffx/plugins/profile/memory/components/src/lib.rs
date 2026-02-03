@@ -855,73 +855,116 @@ mod tests {
                 buckets: vec![
                     digest::Bucket {
                         name: "da_bucket".to_string(),
-                        size: 1024,
+                        populated_size: 2048,
+                        committed_size: 1024,
                         vmos: Some(vec![NamedVmo {
                             name: ZXName::from_string_lossy("root_vmo"),
-                            size: 1024,
+                            populated_size: 2048,
+                            committed_size: 1024,
                             principals: vec!["root".to_owned()]
                         }])
                     },
                     digest::Bucket {
                         name: "Undigested".to_string(),
-                        size: 6272,
+                        populated_size: 12544,
+                        committed_size: 6272,
                         vmos: Some(vec![
                             NamedVmo {
                                 name: ZXName::from_string_lossy("2_vmo"),
-                                size: 1024,
+                                populated_size: 2048,
+                                committed_size: 1024,
                                 principals: vec!["component 3".to_owned()],
                             },
                             NamedVmo {
                                 name: ZXName::from_string_lossy("2_vmo_parent"),
-                                size: 1024,
+                                populated_size: 2048,
+                                committed_size: 1024,
                                 principals: vec![],
                             },
                             NamedVmo {
                                 name: ZXName::from_string_lossy("component_vmo"),
-                                size: 128,
+                                populated_size: 256,
+                                committed_size: 128,
                                 principals: vec!["component 4".to_owned()],
                             },
                             NamedVmo {
                                 name: ZXName::from_string_lossy("component_vmo_mapped"),
-                                size: 1024,
+                                populated_size: 2048,
+                                committed_size: 1024,
                                 principals: vec!["component 4".to_owned()],
                             },
                             NamedVmo {
                                 name: ZXName::from_string_lossy("component_vmo_mapped2"),
-                                size: 1024,
+                                populated_size: 2048,
+                                committed_size: 1024,
                                 principals: vec!["component 4".to_owned()],
                             },
                             NamedVmo {
                                 name: ZXName::from_string_lossy("runner_vmo"),
-                                size: 1024,
+                                populated_size: 2048,
+                                committed_size: 1024,
                                 principals: vec!["runner".to_owned()],
                             },
                             NamedVmo {
                                 name: ZXName::from_string_lossy("shared_vmo"),
-                                size: 1024,
+                                populated_size: 2048,
+                                committed_size: 1024,
                                 principals: vec!["component 3".to_owned(), "root".to_owned()],
                             },
                         ])
                     },
-                    digest::Bucket { name: "Orphaned".to_string(), size: 0, vmos: None },
-                    digest::Bucket { name: "Kernel".to_string(), size: 39, vmos: None },
-                    digest::Bucket { name: "Free".to_string(), size: 2, vmos: None },
-                    digest::Bucket { name: "[Addl]PagerTotal".to_string(), size: 14, vmos: None },
-                    digest::Bucket { name: "[Addl]PagerNewest".to_string(), size: 15, vmos: None },
-                    digest::Bucket { name: "[Addl]PagerOldest".to_string(), size: 16, vmos: None },
+                    digest::Bucket {
+                        name: "Orphaned".to_string(),
+                        populated_size: 0,
+                        committed_size: 0,
+                        vmos: None
+                    },
+                    digest::Bucket {
+                        name: "Kernel".to_string(),
+                        populated_size: 39,
+                        committed_size: 39,
+                        vmos: None
+                    },
+                    digest::Bucket {
+                        name: "Free".to_string(),
+                        populated_size: 2,
+                        committed_size: 2,
+                        vmos: None
+                    },
+                    digest::Bucket {
+                        name: "[Addl]PagerTotal".to_string(),
+                        populated_size: 14,
+                        committed_size: 14,
+                        vmos: None
+                    },
+                    digest::Bucket {
+                        name: "[Addl]PagerNewest".to_string(),
+                        populated_size: 15,
+                        committed_size: 15,
+                        vmos: None
+                    },
+                    digest::Bucket {
+                        name: "[Addl]PagerOldest".to_string(),
+                        populated_size: 16,
+                        committed_size: 16,
+                        vmos: None
+                    },
                     digest::Bucket {
                         name: "[Addl]DiscardableLocked".to_string(),
-                        size: 18,
+                        populated_size: 18,
+                        committed_size: 18,
                         vmos: None,
                     },
                     digest::Bucket {
                         name: "[Addl]DiscardableUnlocked".to_string(),
-                        size: 19,
+                        populated_size: 19,
+                        committed_size: 19,
                         vmos: None,
                     },
                     digest::Bucket {
                         name: "[Addl]ZramCompressedBytes".to_string(),
-                        size: 16,
+                        populated_size: 16,
+                        committed_size: 16,
                         vmos: None,
                     }
                 ]

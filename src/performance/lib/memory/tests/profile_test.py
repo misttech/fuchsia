@@ -54,11 +54,13 @@ MM2_OUTPUT = """
                 "buckets": [
                     {
                         "name": "ZBI Buffer",
-                        "size": 0
+                        "committed_size": 0,
+                        "populated_size": 0
                     },
                     {
                         "name": "[Addl]Graphics",
-                        "size": 49152
+                        "populated_size": 49152,
+                        "committed_size": 49152
                     }
                 ]
             }
@@ -155,8 +157,16 @@ class ProfileTest(unittest.TestCase):
                     "undigested": 0,
                     "digest": {
                         "buckets": [
-                            {"name": "ZBI Buffer", "size": 0},
-                            {"name": "[Addl]Graphics", "size": 49152},
+                            {
+                                "name": "ZBI Buffer",
+                                "populated_size": 0,
+                                "committed_size": 0,
+                            },
+                            {
+                                "name": "[Addl]Graphics",
+                                "committed_size": 49152,
+                                "populated_size": 49152,
+                            },
                         ]
                     },
                 }

@@ -88,7 +88,7 @@ def process_component_profile(
                     metrics.TestCaseResult(
                         label=f"Memory/Bucket/{cleanup_bucket_name(bucket['name'])}/CommittedBytes",
                         unit=metrics.Unit.bytes,
-                        values=[bucket["size"]],
+                        values=[bucket["committed_size"]],
                         doc=f"Total committed bytes in the bucket: {bucket['name']}",
                     )
                 )

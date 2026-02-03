@@ -121,11 +121,18 @@ fn update_inspect_history(
         .get_or_init(|| BoundedListNode::new(inspect_root.create_child("measurements"), 100));
     bucket_list_node.get_mut().unwrap().add_entry(|n| {
         n.record_int("timestamp", timestamp.into_nanos());
-        let ia = n.create_uint_array("bucket_sizes", digest.buckets.len());
-        for (i, b) in digest.buckets.iter().enumerate() {
-            ia.set(i, b.size as u64);
+        {
+            let committed_sizes = n.create_uint_array("bucket_sizes", digest.buckets.len());
+            let populated_sizes =
+                n.create_uint_array("bucket_sizes_populated", digest.buckets.len());
+            for (i, b) in digest.buckets.iter().enumerate() {
+                committed_sizes.set(i, b.committed_size as u64);
+                populated_sizes.set(i, b.populated_size as u64);
+            }
+            n.record(committed_sizes);
+            n.record(populated_sizes);
         }
-        n.record(ia);
+
         n.record_child("stalls", |child| {
             child.record_uint(
                 "some_ms",
@@ -364,6 +371,21 @@ mod tests {
                             19u64,   // [Addl]DiscardableUnlocked
                             21u64,   // [Addl]ZramCompressedBytes
                         ],
+                        bucket_sizes_populated: vec![
+                            2048u64, // Undigested: matches the single unmatched VMO
+                            // Orphaned: vmo_bytes reported by the kernel but not covered by any
+                            // bucket => 6 - 1024 => 0 (saturating, cannot be negative)
+                            0u64,
+                            31u64,   // Kernel: 3 wired + 4 heap + 7 mmu + 8 IPC + 9 other = 31
+                            2u64,    // Free
+                            14u64,   // [Addl]PagerTotal
+                            15u64,   // [Addl]PagerNewest
+                            16u64,   // [Addl]PagerOldest
+                            18u64,   // [Addl]DiscardableLocked
+                            19u64,   // [Addl]DiscardableUnlocked
+                            21u64,   // [Addl]ZramCompressedBytes
+                        ],
+
                         stalls: {
                             some_ms: 10u64,
                             full_ms: 20u64,
@@ -374,6 +396,20 @@ mod tests {
                         timestamp: NonZeroIntProperty,
                         bucket_sizes: vec![
                             1024u64, // Undigested: matches the single unmatched VMO
+                            // Orphaned: vmo_bytes reported by the kernel but not covered by any
+                            // bucket => 6 - 1024 => 0 (saturating, cannot be negative)
+                            0u64,
+                            31u64,   // Kernel: 3 wired + 4 heap + 7 mmu + 8 IPC + 9 other = 31
+                            2u64,    // Free
+                            14u64,   // [Addl]PagerTotal
+                            15u64,   // [Addl]PagerNewest
+                            16u64,   // [Addl]PagerOldest
+                            18u64,   // [Addl]DiscardableLocked
+                            19u64,   // [Addl]DiscardableUnlocked
+                            21u64,   // [Addl]ZramCompressedBytes
+                        ],
+                        bucket_sizes_populated: vec![
+                            2048u64, // Undigested: matches the single unmatched VMO
                             // Orphaned: vmo_bytes reported by the kernel but not covered by any
                             // bucket => 6 - 1024 => 0 (saturating, cannot be negative)
                             0u64,

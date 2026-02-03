@@ -105,7 +105,7 @@ fn digest_events<'a>(
         Some(fmetrics::MetricEvent {
             metric_id: cobalt_registry::MEMORY_MIGRATED_METRIC_ID,
             event_codes: vec![*bucket_name_to_code.get(&bucket.name)?],
-            payload: fmetrics::MetricEventPayload::IntegerValue(bucket.size as i64),
+            payload: fmetrics::MetricEventPayload::IntegerValue(bucket.populated_size as i64),
         })
     })
 }
@@ -469,13 +469,13 @@ mod tests {
                             fmetrics::MetricEvent {
                                 metric_id: cobalt_registry::MEMORY_MIGRATED_METRIC_ID,
                                 event_codes: vec![1], // Corresponds to the "bucket1" bucket
-                                payload: fmetrics::MetricEventPayload::IntegerValue(1024)
+                                payload: fmetrics::MetricEventPayload::IntegerValue(2048)
                             },
                             // Default buckets
                             fmetrics::MetricEvent {
                                 metric_id: cobalt_registry::MEMORY_MIGRATED_METRIC_ID,
                                 event_codes: vec![cobalt_registry::MemoryMigratedMetricDimensionBucket::Undigested.as_event_code()],
-                                payload: fmetrics::MetricEventPayload::IntegerValue(1024)
+                                payload: fmetrics::MetricEventPayload::IntegerValue(2048)
                             },
                             fmetrics::MetricEvent {
                                 metric_id: cobalt_registry::MEMORY_MIGRATED_METRIC_ID,

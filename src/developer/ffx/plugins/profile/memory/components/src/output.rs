@@ -45,24 +45,44 @@ pub fn write_summary(
     Ok(())
 }
 
-fn write_digest(w: &mut dyn std::io::Write, digest: digest::Digest) -> std::io::Result<()> {
+fn write_digest(w: &mut dyn std::io::Write, mut digest: digest::Digest) -> std::io::Result<()> {
     if digest.buckets.len() > 0 {
         writeln!(w, "")?;
     }
-    let mut buckets: Vec<digest::Bucket> = digest.buckets.into_iter().collect();
-    buckets.sort_by_key(|bucket| Reverse(bucket.size));
+    digest.buckets.sort_by_key(|bucket| Reverse(bucket.populated_size));
 
-    for bucket in buckets.iter_mut() {
-        writeln!(w, "Bucket {}: {}", bucket.name, format_bytes(bucket.size as f64))?;
+    for bucket in digest.buckets.iter_mut() {
+        writeln!(
+            w,
+            "Bucket {}: {}",
+            bucket.name,
+            if bucket.populated_size == bucket.committed_size {
+                format!("{}", format_bytes(bucket.populated_size as f64))
+            } else {
+                format!(
+                    "{} (populated), {} (committed)",
+                    format_bytes(bucket.populated_size as f64),
+                    format_bytes(bucket.committed_size as f64)
+                )
+            }
+        )?;
         for vmos in bucket.vmos.iter_mut() {
-            vmos.sort_by_key(|vmo| Reverse(vmo.size));
+            vmos.sort_by_key(|vmo| Reverse(vmo.populated_size));
             for vmo in vmos {
                 writeln!(
                     w,
                     "    Vmo {}({}): {}",
                     vmo.name,
                     vmo.principals.join(", "),
-                    format_bytes(vmo.size as f64),
+                    if vmo.populated_size == vmo.committed_size {
+                        format_bytes(vmo.populated_size as f64)
+                    } else {
+                        format!(
+                            "{} (populated), {} (committed)",
+                            format_bytes(vmo.populated_size as f64),
+                            format_bytes(vmo.committed_size as f64)
+                        )
+                    },
                 )?;
             }
         }
