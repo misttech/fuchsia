@@ -135,7 +135,7 @@ use starnix_core::mm::{MemoryAccessorExt, ProtectionFlags};
 use starnix_core::task::CurrentTask;
 use starnix_core::vfs::buffers::{InputBuffer, OutputBuffer};
 use starnix_core::vfs::{
-    Anon, FdFlags, FdNumber, FileObject, FileOps, FsNode, MemoryRegularFile, fileops_impl_noop_sync,
+    FdFlags, FdNumber, FileObject, FileOps, FsNode, MemoryRegularFile, fileops_impl_noop_sync,
 };
 use starnix_lifecycle::AtomicU64Counter;
 use starnix_logging::{impossible_error, log_error, log_warn, track_stub};
@@ -856,15 +856,12 @@ impl FileOps for MagmaFile {
                 if status == MAGMA_STATUS_OK {
                     let sync_file_name: &[u8; 32] =
                         b"magma semaphore\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0";
-                    let sync_file = SyncFile::new(*sync_file_name, SyncFence { sync_points });
-
-                    let file = Anon::new_private_file(
+                    let file = SyncFile::new_file(
                         locked,
                         current_task,
-                        Box::new(sync_file),
-                        OpenFlags::RDWR,
-                        "sync_file",
-                    );
+                        *sync_file_name,
+                        SyncFence { sync_points },
+                    )?;
 
                     let fd = current_task.add_file(locked, file, FdFlags::empty())?;
                     sync_file_fd = fd.raw();

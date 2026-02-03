@@ -10,12 +10,13 @@ use crate::task::{
 };
 use crate::vfs::buffers::{InputBuffer, OutputBuffer};
 use crate::vfs::{
-    Anon, FdFlags, FdNumber, FileObject, FileOps, fileops_impl_nonseekable, fileops_impl_noop_sync,
+    Anon, FdFlags, FdNumber, FileHandle, FileObject, FileOps, fileops_impl_nonseekable,
+    fileops_impl_noop_sync,
 };
 
 use starnix_lifecycle::AtomicUsizeCounter;
 use starnix_logging::{CATEGORY_STARNIX, impossible_error, log_warn, trace_duration};
-use starnix_sync::{FileOpsCore, Locked, Unlocked};
+use starnix_sync::{FileOpsCore, LockEqualOrBefore, Locked, Unlocked};
 use starnix_syscalls::{SUCCESS, SyscallArg, SyscallResult};
 use starnix_uapi::errors::Errno;
 use starnix_uapi::open_flags::OpenFlags;
@@ -85,6 +86,27 @@ struct FenceState {
 
 impl SyncFile {
     const SIGNALS: zx::Signals = zx::Signals::COUNTER_SIGNALED;
+
+    /// Returns a `FileHandle` with the specified `name` and `fence`.
+    pub fn new_file<L>(
+        locked: &mut Locked<L>,
+        current_task: &CurrentTask,
+        name: [u8; 32],
+        fence: SyncFence,
+    ) -> Result<FileHandle, Errno>
+    where
+        L: LockEqualOrBefore<FileOpsCore>,
+    {
+        // The Linux `create_sync_file()` helper is described as using `anon_inode_getfile()` to
+        // wrap the file-ops into a file, which means using the singleton private anonymous inode.
+        Ok(Anon::new_private_file(
+            locked,
+            current_task,
+            Box::new(SyncFile::new(name, fence)),
+            OpenFlags::RDWR,
+            "sync_file",
+        ))
+    }
 
     pub fn new(name: [u8; 32], fence: SyncFence) -> SyncFile {
         SyncFile { name, fence }
@@ -211,14 +233,7 @@ impl FileOps for SyncFile {
                 }
 
                 let name = merge_data.name.map(|x| x as u8);
-                // TODO: https://fxbug.dev/407611229 - Verify whether "sync_file" should be private.
-                let file = Anon::new_private_file(
-                    locked,
-                    current_task,
-                    Box::new(SyncFile::new(name, fence)),
-                    OpenFlags::RDWR,
-                    "sync_file",
-                );
+                let file = SyncFile::new_file(locked, current_task, name, fence)?;
 
                 let fd = current_task.add_file(locked, file, FdFlags::empty())?;
                 merge_data.fence = fd.raw();
