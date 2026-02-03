@@ -26,6 +26,16 @@ impl std::convert::From<fdf::Condition> for Condition {
     }
 }
 
+impl std::convert::From<Condition> for fdf::Condition {
+    fn from(source: Condition) -> fdf::Condition {
+        match source {
+            Condition::Unknown => fdf::Condition::Unknown,
+            Condition::Accept => fdf::Condition::Accept,
+            Condition::Reject => fdf::Condition::Reject,
+        }
+    }
+}
+
 #[derive(Clone)]
 pub struct BindRule {
     pub key: FlyStr,
@@ -37,6 +47,16 @@ impl std::convert::From<fdf::BindRule2> for BindRule {
     fn from(source: fdf::BindRule2) -> Self {
         Self {
             key: FlyStr::new(source.key),
+            condition: source.condition.into(),
+            values: source.values.into_iter().map(|v| v.into()).collect(),
+        }
+    }
+}
+
+impl std::convert::From<BindRule> for fdf::BindRule2 {
+    fn from(source: BindRule) -> fdf::BindRule2 {
+        fdf::BindRule2 {
+            key: source.key.to_string(),
             condition: source.condition.into(),
             values: source.values.into_iter().map(|v| v.into()).collect(),
         }
@@ -58,6 +78,125 @@ impl std::convert::From<fdf::ParentSpec2> for ParentSpec {
     }
 }
 
+impl std::convert::From<ParentSpec> for fdf::ParentSpec2 {
+    fn from(source: ParentSpec) -> fdf::ParentSpec2 {
+        fdf::ParentSpec2 {
+            bind_rules: source.bind_rules.into_iter().map(|b| b.into()).collect(),
+            properties: source.properties.into_iter().map(|p| p.into()).collect(),
+        }
+    }
+}
+
+#[derive(Clone)]
+pub struct NodeSpec {
+    pub name: String,
+    pub parents: Vec<ParentSpec>,
+    pub driver_host: Option<String>,
+}
+
+impl std::convert::From<fdf::CompositeNodeSpec> for NodeSpec {
+    fn from(source: fdf::CompositeNodeSpec) -> Self {
+        Self {
+            name: source.name.unwrap(),
+            parents: source.parents2.unwrap().into_iter().map(|p| p.into()).collect(),
+            driver_host: source.driver_host,
+        }
+    }
+}
+
+#[derive(Clone)]
+pub struct DriverInfo {
+    pub url: String,
+    pub name: Option<String>,
+    pub colocate: bool,
+    pub package_type: fdf::DriverPackageType,
+    pub is_fallback: bool,
+    pub device_categories: Vec<fdf::DeviceCategory>,
+    pub bind_rules_bytecode: Vec<u8>,
+    pub driver_framework_version: u8,
+    pub is_disabled: bool,
+}
+
+impl std::convert::From<fdf::DriverInfo> for DriverInfo {
+    fn from(source: fdf::DriverInfo) -> Self {
+        Self {
+            url: source.url.unwrap(),
+            name: source.name,
+            colocate: source.colocate.unwrap(),
+            package_type: source.package_type.unwrap(),
+            is_fallback: source.is_fallback.unwrap(),
+            device_categories: source.device_categories.unwrap(),
+            bind_rules_bytecode: source.bind_rules_bytecode.unwrap_or_default(),
+            driver_framework_version: source.driver_framework_version.unwrap(),
+            is_disabled: source.is_disabled.unwrap(),
+        }
+    }
+}
+
+impl std::convert::From<DriverInfo> for fdf::DriverInfo {
+    fn from(source: DriverInfo) -> fdf::DriverInfo {
+        fdf::DriverInfo {
+            url: Some(source.url),
+            name: source.name,
+            colocate: Some(source.colocate),
+            package_type: Some(source.package_type),
+            is_fallback: Some(source.is_fallback),
+            device_categories: Some(source.device_categories),
+            bind_rules_bytecode: Some(source.bind_rules_bytecode),
+            driver_framework_version: Some(source.driver_framework_version),
+            is_disabled: Some(source.is_disabled),
+            ..Default::default()
+        }
+    }
+}
+
+#[derive(Clone)]
+pub struct CompositeDriverInfo {
+    pub composite_name: String,
+    pub driver_info: DriverInfo,
+}
+
+impl std::convert::From<fdf::CompositeDriverInfo> for CompositeDriverInfo {
+    fn from(source: fdf::CompositeDriverInfo) -> Self {
+        Self {
+            composite_name: source.composite_name.unwrap(),
+            driver_info: source.driver_info.unwrap().into(),
+        }
+    }
+}
+
+#[derive(Clone)]
+pub struct CompositeDriverMatch {
+    pub composite_driver: CompositeDriverInfo,
+    pub parent_names: Vec<String>,
+    pub primary_parent_index: u32,
+}
+
+impl std::convert::From<fdf::CompositeDriverMatch> for CompositeDriverMatch {
+    fn from(source: fdf::CompositeDriverMatch) -> Self {
+        Self {
+            composite_driver: source.composite_driver.unwrap().into(),
+            parent_names: source.parent_names.unwrap(),
+            primary_parent_index: source.primary_parent_index.unwrap_or(0),
+        }
+    }
+}
+
+#[derive(Clone)]
+pub struct CompositeInfo {
+    pub spec: NodeSpec,
+    pub matched_driver: CompositeDriverMatch,
+}
+
+impl std::convert::From<fdf::CompositeInfo> for CompositeInfo {
+    fn from(source: fdf::CompositeInfo) -> Self {
+        Self {
+            spec: source.spec.unwrap().into(),
+            matched_driver: source.matched_driver.unwrap().into(),
+        }
+    }
+}
+
 pub struct CompositeNodeSpec {
     #[allow(unused)]
     name: String,
@@ -66,7 +205,7 @@ pub struct CompositeNodeSpec {
     parent_set_collector: Option<ParentSetCollector>,
     driver_url: String,
     node_manager: Box<dyn NodeManager>,
-    composite_info: Option<fdf::CompositeInfo>,
+    composite_info: Option<CompositeInfo>,
     driver_host_name_for_colocation: String,
 }
 
@@ -96,18 +235,18 @@ impl CompositeNodeSpec {
         node_ptr: Weak<Node>,
     ) -> Result<Option<Weak<Node>>, zx::Status> {
         if self.composite_info.is_none() {
-            self.composite_info = composite_parent.composite;
+            self.composite_info = composite_parent.composite.map(|c| c.into());
         }
 
         let composite_info = self.composite_info.as_ref().unwrap();
-        let spec = composite_info.spec.as_ref().unwrap();
-        let matched_driver = composite_info.matched_driver.as_ref().unwrap();
-        let spec_name = spec.name.as_ref().unwrap();
-        let composite_driver = matched_driver.composite_driver.as_ref().unwrap();
-        let driver_info = composite_driver.driver_info.as_ref().unwrap();
-        let parent_names = matched_driver.parent_names.as_ref().unwrap();
-        let primary_index = matched_driver.primary_parent_index.unwrap_or(0);
-        let url = driver_info.url.as_ref().unwrap();
+        let spec = &composite_info.spec;
+        let matched_driver = &composite_info.matched_driver;
+        let spec_name = &spec.name;
+        let composite_driver = &matched_driver.composite_driver;
+        let driver_info = &composite_driver.driver_info;
+        let parent_names = &matched_driver.parent_names;
+        let primary_index = matched_driver.primary_parent_index;
+        let url = &driver_info.url;
 
         if self.parent_set_collector.is_none() {
             self.parent_set_collector = Some(ParentSetCollector::new(
@@ -162,24 +301,27 @@ impl CompositeNodeSpec {
         }
 
         if let Some(composite_info) = &self.composite_info {
-            let spec = composite_info.spec.as_ref().map(|s| fdf::CompositeNodeSpec {
-                name: s.name.clone(),
-                parents: s.parents.clone(),
+            let spec = Some(fdf::CompositeNodeSpec {
+                name: Some(composite_info.spec.name.clone()),
+                parents2: Some(
+                    composite_info.spec.parents.clone().into_iter().map(|p| p.into()).collect(),
+                ),
                 ..Default::default()
             });
-            let matched_driver =
-                composite_info.matched_driver.as_ref().map(|md| fdf::CompositeDriverMatch {
-                    composite_driver: md.composite_driver.as_ref().map(|cd| {
-                        fdf::CompositeDriverInfo {
-                            composite_name: cd.composite_name.clone(),
-                            driver_info: cd.driver_info.clone(),
-                            ..Default::default()
-                        }
-                    }),
-                    parent_names: md.parent_names.clone(),
-                    primary_parent_index: md.primary_parent_index,
-                    ..Default::default()
-                });
+
+            let md = &composite_info.matched_driver;
+            let matched_driver = Some(fdf::CompositeDriverMatch {
+                composite_driver: Some({
+                    fdf::CompositeDriverInfo {
+                        composite_name: Some(md.composite_driver.composite_name.clone()),
+                        driver_info: Some(md.composite_driver.driver_info.clone().into()),
+                        ..Default::default()
+                    }
+                }),
+                parent_names: Some(md.parent_names.clone()),
+                primary_parent_index: Some(md.primary_parent_index),
+                ..Default::default()
+            });
 
             info.composite = Some(fdd::CompositeInfo::Composite(fdf::CompositeInfo {
                 spec,
