@@ -392,6 +392,11 @@ pub fn deliver_signal(
                         exception:?=exception;
                         "Restricted mode exception caused core dump",
                     );
+                    if let SignalDetail::SigFault { addr } = siginfo.detail {
+                        if let Ok(mm) = task.mm() {
+                            mm.log_memory_map(task, UserAddress::from(addr));
+                        }
+                    }
                 }
                 return Some(ExitStatus::CoreDump(siginfo));
             }

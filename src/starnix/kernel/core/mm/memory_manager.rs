@@ -3551,6 +3551,67 @@ impl MemoryManager {
         result
     }
 
+    pub fn log_memory_map(&self, task: &Task, fault_address: UserAddress) {
+        let state = self.state.read();
+        log_warn!("Memory map for pid={}:", task.thread_group.leader);
+        let mut last_end = UserAddress::from_ptr(0);
+        for (range, map) in state.mappings.iter() {
+            if fault_address >= last_end && fault_address < range.start {
+                log_warn!("{:08x} <= FAULT", fault_address.ptr());
+            }
+
+            let perms = format!(
+                "{}{}{}{}",
+                if map.can_read() { 'r' } else { '-' },
+                if map.can_write() { 'w' } else { '-' },
+                if map.can_exec() { 'x' } else { '-' },
+                if map.flags().contains(MappingFlags::SHARED) { 's' } else { 'p' }
+            );
+
+            let backing = match state.get_mapping_backing(map) {
+                MappingBacking::Memory(backing) => backing.address_to_offset(range.start),
+                MappingBacking::PrivateAnonymous => 0,
+            };
+
+            let name_str = match &map.name() {
+                MappingName::File(file) => {
+                    String::from_utf8_lossy(&file.name.path(task)).into_owned()
+                }
+                MappingName::None | MappingName::AioContext(_) => {
+                    if map.flags().contains(MappingFlags::SHARED)
+                        && map.flags().contains(MappingFlags::ANONYMOUS)
+                    {
+                        "/dev/zero (deleted)".to_string()
+                    } else {
+                        "".to_string()
+                    }
+                }
+                MappingName::Stack => "[stack]".to_string(),
+                MappingName::Heap => "[heap]".to_string(),
+                MappingName::Vdso => "[vdso]".to_string(),
+                MappingName::Vvar => "[vvar]".to_string(),
+                _ => format!("{:?}", map.name()),
+            };
+
+            let fault_marker = if range.contains(&fault_address) { " <= FAULT" } else { "" };
+
+            log_warn!(
+                "{:08x}-{:08x} {} {:08x} {}{}",
+                range.start.ptr(),
+                range.end.ptr(),
+                perms,
+                backing,
+                name_str,
+                fault_marker
+            );
+            last_end = range.end;
+        }
+
+        if fault_address >= last_end {
+            log_warn!("{:08x} <= FAULT", fault_address.ptr());
+        }
+    }
+
     pub fn handle_page_fault(
         self: &Arc<Self>,
         locked: &mut Locked<Unlocked>,
