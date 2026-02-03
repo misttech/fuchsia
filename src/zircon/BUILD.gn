@@ -5,8 +5,7 @@
 group("tests") {
   testonly = true
   deps = [
-    "bin/hwstress:tests",
-    "bin/role_manager/tests",
+    "bin:tests",
     "tests",
     "//zircon/kernel:tests",
     "//zircon/system/ulib:tests",

@@ -52,3 +52,8 @@ fuchsia_package("package") {
   package_name = "role_manager"
   deps = [ ":role_manager" ]
 }
+
+group("tests") {
+  testonly = true
+  deps = [ "tests" ]
+}
