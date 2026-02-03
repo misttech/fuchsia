@@ -283,11 +283,16 @@ void PrettyTypeManager::AddDefaultCppPrettyTypes() {
          // Go up until we're no longer a left child.
          for (;;) {
            auto parent_ptr = cur_node_base_ptr->__parent_;
+
            if (parent_ptr->__left_ == cur_node_base_ptr)
              break;
 
            cur_node_base_ptr = static_cast<std::__2::__tree_node_base<void*>::pointer>(cur_node_base_ptr->__parent_);
          }
+
+         // When the loop terminates, cur_node_base_ptr->__parent_ will have the next node that we
+         // need to traverse to.
+         cur_node_base_ptr = static_cast<std::__2::__tree_node_base<void*>::pointer>(cur_node_base_ptr->__parent_);
          cur_node = *static_cast<__base::__node_pointer>(cur_node_base_ptr);
       }
     }

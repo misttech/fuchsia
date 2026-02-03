@@ -7,7 +7,12 @@ Created Breakpoint 1 @ pretty_types.cc:34
 🛑 on bp 1 main() • pretty_types.cc:34
 
 [zxdb] locals
-map = {{first = "a", second = 1}, {first = "b", second = 2}}
+map = {
+  {first = "a", second = 1}
+  {first = "d", second = 4}
+  {first = "e", second = 5}
+  {first = "f", second = 6}
+}
 p = (*)?? ➔ {Parent = {a = 0}, b = 1}
 # TODO(https://fxbug.dev/461736288): Fix pretty printing std::unordered_{map,set}.
 # set = {2, 1, 0}
@@ -19,7 +24,12 @@ up = (*)?? ➔ {Parent = {a = 0}, b = 1}
 Set process 1 integer-format = hex
 
 [zxdb] locals
-map = {{first = (0x61), second = 0x1}, {first = (0x62), second = 0x2}}
+map = {
+  {first = (0x61), second = 0x1}
+  {first = (0x64), second = 0x4}
+  {first = (0x65), second = 0x5}
+  {first = (0x66), second = 0x6}
+}
 p = (*)0x?? ➔ {Parent = {a = 0x0}, b = 0x1}
 # TODO(https://fxbug.dev/461736288): Fix pretty printing std::unordered_{map,set}.
 # set = {0x2, 0x1, 0x0}
