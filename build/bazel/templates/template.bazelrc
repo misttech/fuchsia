@@ -148,3 +148,6 @@ common --experimental_cc_static_library=True
 # TODO(https://fxbug.dev/478896548): When migraating to Bazel 9, this will need
 # to be changed to `--incompatible_exclude_starlark_flags_from_exec_config`.
 common --experimental_exclude_starlark_flags_from_exec_config
+
+# Do not propagate defines to the exec config.
+common --experimental_exclude_defines_from_exec_config
