@@ -141,3 +141,10 @@ common --@io_bazel_rules_go//go/config:debug=True
 # TODO(https://fxbug.dev/478896119): Remove when updating to Bazel 8.4 where
 # it is enabled by default.
 common --experimental_cc_static_library=True
+
+# Do not propagate Starlark flags to the exec config. This will be the default
+# behavior in Bazel 10 (https://github.com/bazelbuild/bazel/issues/26909).
+# Among other things, it avoids building host tools for each API level.
+# TODO(https://fxbug.dev/478896548): When migraating to Bazel 9, this will need
+# to be changed to `--incompatible_exclude_starlark_flags_from_exec_config`.
+common --experimental_exclude_starlark_flags_from_exec_config
