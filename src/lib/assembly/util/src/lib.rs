@@ -15,7 +15,7 @@ pub use insert_unique::{
     BTreeMapDuplicateKeyError, DuplicateKeyError, InsertAllUniqueExt, InsertUniqueExt, MapEntry,
 };
 pub use named_map::{Key as NamedMapKey, NamedMap};
-pub use paths::{PathTypeMarker, TypedPathBuf};
+pub use paths::{PathTypeMarker, TypedPathBuf, shorten_path};
 
 use anyhow::{Context as _, Result, bail};
 use camino::Utf8PathBuf;

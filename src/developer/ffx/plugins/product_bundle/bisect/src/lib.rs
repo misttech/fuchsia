@@ -9,6 +9,7 @@
 use crate::bisection_controller::BisectionController;
 use anyhow::{Context, Result};
 use assembly_artifact_cache::{ArtifactCache, MOSClient};
+use assembly_util::shorten_path;
 use async_trait::async_trait;
 use camino::Utf8PathBuf;
 use ffx_config::EnvironmentContext;
@@ -83,8 +84,9 @@ async fn setup<'a>(
     let bisect_home = fuchsia_home.join("bisect");
     let plan_home =
         bisect_home.join(&cmd.name).join(format!("{}_to_{}", cmd.from_success, cmd.to_failure));
-    fs::create_dir_all(&plan_home)
-        .with_context(|| format!("Failed to create plan directory at {}", plan_home))?;
+    fs::create_dir_all(&plan_home).with_context(|| {
+        format!("Failed to create plan directory at {}", shorten_path(&plan_home))
+    })?;
 
     // Create a MOS client. Reuse the setup logic from the GCS library.
     let gcs_client = GcsClient::initial().context("Failed to initialize GCS client")?;

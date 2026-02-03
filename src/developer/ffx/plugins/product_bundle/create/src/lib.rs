@@ -8,7 +8,7 @@ use anyhow::{Context, Result, anyhow};
 use assembly::Assembly;
 use assembly_artifact_cache::{ArtifactCache, ArtifactError};
 use assembly_tool::PlatformToolProvider;
-use assembly_util::fast_copy;
+use assembly_util::{fast_copy, shorten_path};
 use camino::Utf8PathBuf;
 use delivery_blob::DeliveryBlobType;
 use errors::FfxError;
@@ -355,7 +355,7 @@ async fn sanitized_product_bundle_create(
     println!(
         "\nOr archive the product bundle to share it with someone else:\
          \n\t(cd {} && zip -r ~/{}.zip *)",
-        shorten_path(&out.into()),
+        shorten_path(&out),
         name.clone(),
     );
 
@@ -370,73 +370,10 @@ fn read_version_from_file(version_file: Utf8PathBuf) -> Result<String> {
         .to_string())
 }
 
-/// Shorten a path if possible, by trying to make it relative to home or the
-/// current working directory.
-fn shorten_path(path: &Utf8PathBuf) -> String {
-    let mut path_str = path.to_string();
-
-    // Try to replace the home directory with ~.
-    if let Some(home) = std::env::home_dir() {
-        if let Ok(home) = Utf8PathBuf::from_path_buf(home) {
-            if let Ok(stripped) = path.strip_prefix(&home) {
-                let new_path = format!("~/{}", stripped);
-                if new_path.len() < path_str.len() {
-                    path_str = new_path;
-                }
-            }
-        }
-    }
-
-    // Try to make the path relative to the current working directory.
-    if let Ok(cwd) = std::env::current_dir() {
-        if let Some(rel) = pathdiff::diff_paths(path, cwd) {
-            let new_path = rel.to_string_lossy().to_string();
-            if new_path.len() < path_str.len() {
-                path_str = new_path;
-            }
-        }
-    }
-    path_str
-}
-
 #[cfg(test)]
 mod test {
     use super::*;
     use pbms::AuthFlowChoice;
-    use serial_test::serial;
-    use tempfile::tempdir;
-
-    // This test mucks with $HOME, therefore we run it serially to make sure it
-    // does not affect the other tests. This is necessary because some test
-    // environments set $HOME to /tmp.
-    #[test]
-    #[serial]
-    fn test_shorten_path() {
-        let tmp = tempdir().unwrap();
-        let tmp_path = Utf8PathBuf::from_path_buf(tmp.path().to_path_buf()).unwrap();
-
-        // Set $HOME to /tmp/home, while saving the previous $HOME.
-        let mock_home = tmp_path.join("home");
-        std::fs::create_dir(&mock_home).unwrap();
-        let original_home = std::env::var("HOME").unwrap();
-        unsafe { std::env::set_var("HOME", &mock_home) };
-
-        // A path in the home directory.
-        let path = mock_home.join("foo");
-        assert_eq!(shorten_path(&path), "~/foo");
-
-        // A path in the current directory.
-        let cwd = Utf8PathBuf::from_path_buf(std::env::current_dir().unwrap()).unwrap();
-        let path = cwd.join("foo");
-        assert_eq!(shorten_path(&path), "foo");
-
-        // A path outside both home and CWD.
-        let path = tmp_path.join("foo");
-        assert_eq!(shorten_path(&path), path.to_string());
-
-        // Restore $HOME.
-        unsafe { std::env::set_var("HOME", original_home) };
-    }
 
     #[test]
     fn test_recovery_board_config_requires_recovery_product_config() {

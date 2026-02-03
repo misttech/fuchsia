@@ -10,6 +10,36 @@ use std::hash::Hash;
 use std::marker::PhantomData;
 use std::path::{Path, PathBuf};
 
+/// Shorten a path if possible, by trying to make it relative to home or the
+/// current working directory.
+pub fn shorten_path(path: impl AsRef<Utf8Path>) -> String {
+    let path = path.as_ref();
+    let mut path_str = path.to_string();
+
+    // Try to replace the home directory with ~.
+    if let Some(home) = std::env::home_dir() {
+        if let Ok(home) = Utf8PathBuf::from_path_buf(home) {
+            if let Ok(stripped) = path.strip_prefix(&home) {
+                let new_path = format!("~/{}", stripped);
+                if new_path.len() < path_str.len() {
+                    path_str = new_path;
+                }
+            }
+        }
+    }
+
+    // Try to make the path relative to the current working directory.
+    if let Ok(cwd) = std::env::current_dir() {
+        if let Some(rel) = pathdiff::diff_paths(path, cwd) {
+            let new_path = rel.to_string_lossy().to_string();
+            if new_path.len() < path_str.len() {
+                path_str = new_path;
+            }
+        }
+    }
+    path_str
+}
+
 /// A base trait for TypePath's marker traits.
 pub trait PathTypeMarker {
     /// A reference to an object that implements Display, and gives the
@@ -219,7 +249,37 @@ impl<P: PathTypeMarker> Hash for TypedPathBuf<P> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use serial_test::serial;
     use std::str::FromStr;
+
+    #[test]
+    #[serial]
+    fn test_shorten_path() {
+        let tmp = tempfile::tempdir().unwrap();
+        let tmp_path = Utf8PathBuf::from_path_buf(tmp.path().to_path_buf()).unwrap();
+
+        // Set $HOME to /tmp/home, while saving the previous $HOME.
+        let mock_home = tmp_path.join("home");
+        std::fs::create_dir(&mock_home).unwrap();
+        let original_home = std::env::var("HOME").unwrap();
+        unsafe { std::env::set_var("HOME", &mock_home) };
+
+        // A path in the home directory.
+        let path = mock_home.join("foo");
+        assert_eq!(shorten_path(&path), "~/foo");
+
+        // A path in the current directory.
+        let cwd = Utf8PathBuf::from_path_buf(std::env::current_dir().unwrap()).unwrap();
+        let path = cwd.join("foo");
+        assert_eq!(shorten_path(&path), "foo");
+
+        // A path outside both home and CWD.
+        let path = tmp_path.join("foo");
+        assert_eq!(shorten_path(&path), path.to_string());
+
+        // Restore $HOME.
+        unsafe { std::env::set_var("HOME", original_home) };
+    }
 
     struct TestPathType {}
     impl_path_type_marker!(TestPathType);

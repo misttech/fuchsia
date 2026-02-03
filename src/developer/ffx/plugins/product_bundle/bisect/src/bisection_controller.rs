@@ -9,6 +9,7 @@ use anyhow::{Context, Result};
 use assembly_artifact_cache::{ArtifactCache, MOSIdentifier};
 use assembly_cli_args::{ProductArgs, ValidationMode};
 use assembly_config_schema::Architecture;
+use assembly_util::shorten_path;
 use camino::Utf8PathBuf;
 use ffx_config::EnvironmentContext;
 use ffx_product_bundle_bisect_args::BisectCommand;
@@ -56,29 +57,38 @@ impl<'a> BisectionController<'a> {
                     writer
                         .line(format!("Found previous bisection:\n -> [{}]\n", &plan.status()))?;
                     if confirm_action(writer).context("Failed to get user confirmation")? {
-                        writer.line(format!("\nContinuing existing plan: {}\n", plan_file))?;
+                        writer.line(format!(
+                            "\nContinuing existing plan: {}\n",
+                            shorten_path(&plan_file)
+                        ))?;
                         return Ok(Self { plan, cache, writer, env_context });
                     } else {
-                        writer.line(format!("\nDeleting existing plan: {}...", plan_file))?;
+                        writer.line(format!(
+                            "\nDeleting existing plan: {}...",
+                            shorten_path(&plan_file)
+                        ))?;
                         fs::remove_file(&plan_file).with_context(|| {
                             format!("Failed to delete existing plan file at {}", plan_file)
                         })?;
-                        writer.line(format!("Plan {} deleted.\n", plan_file))?;
+                        writer.line(format!("Plan {} deleted.\n", shorten_path(&plan_file)))?;
                     }
                 }
                 Err(e) => {
                     writer.line(format!(
                         "Found a bisection plan at {}, but it failed to load (it may be from an older version of ffx):\n -> {}\n",
-                        plan_file, e
+                        shorten_path(&plan_file), e
                     ))?;
                     writer
                         .line("Would you like to delete this invalid plan and start a new one?")?;
                     if confirm_action(writer).context("Failed to get user confirmation")? {
-                        writer.line(format!("\nDeleting invalid plan: {}...", plan_file))?;
+                        writer.line(format!(
+                            "\nDeleting invalid plan: {}...",
+                            shorten_path(&plan_file)
+                        ))?;
                         fs::remove_file(&plan_file).with_context(|| {
                             format!("Failed to delete invalid plan file at {}", plan_file)
                         })?;
-                        writer.line(format!("Plan {} deleted.\n", plan_file))?;
+                        writer.line(format!("Plan {} deleted.\n", shorten_path(&plan_file)))?;
                     } else {
                         anyhow::bail!("Cannot continue with an invalid bisection plan.");
                     }
@@ -140,7 +150,7 @@ impl<'a> BisectionController<'a> {
 
         // Instruct the user to flash the pb, and wait for tests results.
         // TODO: support automated tests
-        let test_passed = self.prompt_for_manual_test(product_bundle_path.as_str())?;
+        let test_passed = self.prompt_for_manual_test(&product_bundle_path)?;
 
         // Report results
         let result = crate::bisection_plan::StepResult {
@@ -155,12 +165,13 @@ impl<'a> BisectionController<'a> {
 
     /// Ask the user to run a test with the given fuchsia image,
     /// and return the results.
-    fn prompt_for_manual_test(&mut self, product_bundle_path: &str) -> Result<bool> {
+    fn prompt_for_manual_test(&mut self, product_bundle_path: &Utf8PathBuf) -> Result<bool> {
         self.print("")?;
-        self.print(&format!("The Fuchsia Image is located here: {}", product_bundle_path))?;
+        let shortened_pb_path = shorten_path(product_bundle_path);
+        self.print(&format!("The Fuchsia Image is located here: {}", shortened_pb_path))?;
         self.print("Flash it to a local device by running:\n")?;
 
-        self.print(&format!("  ffx target flash {}\n", product_bundle_path))?;
+        self.print(&format!("  ffx target flash {}\n", shortened_pb_path))?;
         self.print("Then run a test to determine whether or not the original issue remains.")?;
         self.print("-----")?;
 
@@ -239,7 +250,7 @@ impl<'a> BisectionController<'a> {
         let _ = self.print(&format!(
             "\nSaving current status: [{}] {} ...",
             self.plan.status(),
-            self.plan.save_file()
+            shorten_path(&self.plan.save_file())
         ));
 
         let json_string =

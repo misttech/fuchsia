@@ -42,6 +42,7 @@ ffx_plugin("ffx_product_bundle_bisect") {
     "//src/lib/assembly/config_schema",
     "//src/lib/assembly/container",
     "//src/lib/assembly/platform_artifacts",
+    "//src/lib/assembly/util",
     "//src/lib/gcs",
     "//src/lib/structured_ui",
     "//third_party/rust_crates:anyhow",

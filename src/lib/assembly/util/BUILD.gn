@@ -12,6 +12,7 @@ rustc_library("util") {
   deps = [
     "//third_party/rust_crates:anyhow",
     "//third_party/rust_crates:camino",
+    "//third_party/rust_crates:pathdiff",
     "//third_party/rust_crates:regex",
     "//third_party/rust_crates:schemars",
     "//third_party/rust_crates:serde",
@@ -20,7 +21,10 @@ rustc_library("util") {
     "//third_party/rust_crates:walkdir",
     "//third_party/rust_crates:xattr",
   ]
-  test_deps = [ "//third_party/rust_crates:tempfile" ]
+  test_deps = [
+    "//third_party/rust_crates:serial_test",
+    "//third_party/rust_crates:tempfile",
+  ]
   sources = [
     "src/fast_copy.rs",
     "src/insert_unique.rs",
