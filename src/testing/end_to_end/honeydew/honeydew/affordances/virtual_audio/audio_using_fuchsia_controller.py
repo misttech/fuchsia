@@ -112,7 +112,7 @@ class VirtualAudioUsingFuchsiaController(audio.VirtualAudio):
         """
 
         if not wav_file or not os.path.exists(wav_file):
-            raise ValueError("Input audio file cannot be found.")
+            raise ValueError(f"Input audio file cannot be found - {wav_file}.")
 
         audio_to_inject: bytes
         with open(wav_file, "rb") as f:
