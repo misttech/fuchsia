@@ -7,6 +7,7 @@ import enum
 import importlib
 import logging
 import os
+import pathlib
 from typing import Any, Dict
 
 from honeydew import errors
@@ -256,6 +257,19 @@ class FuchsiaBaseTest(base_test.BaseTestClass):
                         device.tracing.terminate_and_download(
                             directory=self.test_case_path
                         )
+
+    def _output_dir(self) -> pathlib.Path:
+        if hasattr(self, "test_case_path"):
+            return pathlib.Path(self.test_case_path)
+        elif hasattr(self, "log_path"):
+            return pathlib.Path(self.log_path)
+        else:
+            raise RuntimeError(
+                "Neither self.test_case_path nor self.log_path exist: Has setup_class or setup_test been called yet?"
+            )
+
+    def output_file_path(self, file_name: str) -> pathlib.Path:
+        return self._output_dir().joinpath(file_name)
 
     def _collect_snapshot(self, directory: str) -> None:
         """Collects snapshots for all the FuchsiaDevice objects and stores them

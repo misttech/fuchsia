@@ -17,12 +17,37 @@ class RebootReasonTest(fuchsia_base_test.FuchsiaBaseTest):
         self.dut: fuchsia_device.FuchsiaDevice = self.fuchsia_devices[0]
 
     def test_reboot_reason(self) -> None:
+        boot_id_before_reboot_file = self.output_file_path(
+            "boot_id_before_reboot.txt"
+        )
+        previous_boot_id_after_reboot_file = self.output_file_path(
+            "previous_boot_id_after_reboot.txt"
+        )
+
+        self.dut.ffx.run(
+            [
+                "component",
+                "copy",
+                "core/feedback::/data/boot_id.txt",
+                boot_id_before_reboot_file,
+            ]
+        )
+
         _LOGGER.info("[test_reboot_reason] Rebooting device...")
         # Under the hood, this makes a FIDL call over
         # fuchsia.hardware.power.statecontrol/Admin::Shutdown() with shutdown reason
         # DEVELOPER_REQUEST.
         self.dut.reboot()
         _LOGGER.info("[test_reboot_reason] Device has rebooted successfully")
+
+        self.dut.ffx.run(
+            [
+                "component",
+                "copy",
+                "core/feedback::/tmp/boot_id.txt",
+                previous_boot_id_after_reboot_file,
+            ]
+        )
 
         # We always expect "DEVELOPER_REQUEST", but now that we have set up the test, we are finding
         # instances of true bugs where something goes wrong during shutdown. To help with
@@ -38,6 +63,15 @@ class RebootReasonTest(fuchsia_base_test.FuchsiaBaseTest):
                 ),
             )
         elif self.dut.last_reboot_reason in ["COLD", "BRIEF_POWER_LOSS"]:
+            with open(boot_id_before_reboot_file, "r") as bid_file:
+                with open(previous_boot_id_after_reboot_file, "r") as pbid_file:
+                    boot_id_before_reboot = bid_file.read()
+                    previous_boot_id_after_reboot = pbid_file.read()
+                    asserts.assert_equal(
+                        boot_id_before_reboot,
+                        previous_boot_id_after_reboot,
+                        msg="There was at least one extra spurious reboot. See serial_log.txt and https://fxbug.dev/479305824",
+                    )
             asserts.assert_equal(
                 self.dut.last_reboot_reason,
                 "DEVELOPER_REQUEST",
