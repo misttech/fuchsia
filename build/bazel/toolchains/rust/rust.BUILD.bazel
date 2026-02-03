@@ -53,6 +53,7 @@ _DEFAULT_COMMON_RUST_FLAGS = [
 
     # GN: //build/config/rust:no_features,
     "-Zallow-features=",
+    "-Cdefault-linker-libraries",
 ]
 
 _DEFAULT_HOST_RUST_FLAGS = _DEFAULT_COMMON_RUST_FLAGS + [

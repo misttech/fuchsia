@@ -125,9 +125,9 @@ config("allow_missing_unsafe_on_extern") {
 config("deny_default") {
   # LINT.IfChange(rustc_deny_default)
   rustflags = [
-    "-Dderef-nullptr",
-    "-Dinvalid-value",
-    "-Dunused-must-use",
+    "-Dderef_nullptr",
+    "-Dinvalid_value",
+    "-Dunused_must_use",
   ]
   # LINT.ThenChange(//build/config/rust/lints/BUILD.bazel:rustc_deny_default)
 }

@@ -2,6 +2,8 @@
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
+import dataclasses
+import os
 import shlex
 import typing as T
 
@@ -23,8 +25,13 @@ def _split_by_separators(
     # Use shlex in non-posix mode to preserve quotes, ensuring we can distinguish
     # '&&' (quoted string) from && (operator).
     #
-    # punctuation_chars=True makes it split even without whitespace (e.g. a&&b).
-    lexer = shlex.shlex(cmd_str, posix=False, punctuation_chars=True)
+    # NOTE: In this case we can't have punctuation_chars=True, because it will
+    # split on parentheses, which are used in target labels. For example the
+    # following command would be split incorrectly:
+    #
+    #   --remote-flag=--label='//tools/create:create_bin.actual(//build/toolchain:host_x64)'
+    #
+    lexer = shlex.shlex(cmd_str, posix=False, punctuation_chars=False)
     lexer.whitespace_split = True
 
     chunks = []
@@ -81,7 +88,7 @@ class ShellCommand:
                 result.append(ShellCommand(chunk))
         return result
 
-    def unwrap(self) -> "ShellCommand":
+    def unwrap(self) -> T.Optional["ShellCommand"]:
         """Unwraps the command by stripping the first wrapper script.
 
         It looks for the first occurrence of `--` (surrounded by spaces)
@@ -92,10 +99,82 @@ class ShellCommand:
         try:
             idx = tokens.index("--")
         except ValueError:
-            raise ValueError(f"No '--' separator found in command: {self._str}")
+            return None
 
         inner_tokens = tokens[idx + 1 :]
         if not inner_tokens:
             return ShellCommand("")
 
         return ShellCommand(inner_tokens)
+
+    def parse(self) -> "ParsedShellCommand":
+        """Parses the command into env vars, tool, and args.
+
+        This uses a heuristic where the first token that doesn't contain '=' is
+        considered the tool. Everything before it is environment variables.
+
+        If the tool is a python interpreter, we heuristically look for the first
+        argument ending in .py and treat that as the tool.
+        """
+        tokens = shlex.split(self._str)
+
+        env_vars: dict[str, str] = {}
+        tool: T.Optional[str] = None
+        args: list[str] = []
+        for i, token in enumerate(tokens):
+            varname, sep, value = token.partition("=")
+            if sep == "=":
+                env_vars[varname] = value
+            else:
+                tool = tokens[i]
+                args = tokens[i + 1 :]
+                break
+
+        if not tool:
+            return ParsedShellCommand(env_vars, "", [])
+
+        # Heuristic: if tool is python, look for the actual script.
+        base = os.path.basename(tool)
+        if (
+            base == "python"
+            or base.startswith("python3")
+            or base.startswith("fuchsia-vendored-python")
+        ):
+            for i, arg in enumerate(args):
+                if arg.endswith(".py"):
+                    tool = arg
+                    args = args[i + 1 :]
+                    break
+
+        return ParsedShellCommand(env_vars, tool, args)
+
+
+def find_command_with_tool(
+    commands: list["ShellCommand"], tool: str
+) -> T.Optional["ShellCommand"]:
+    """
+    Find the first command in the list that uses the given tool.
+    Matches the basename of the tool.
+
+    Args:
+        commands: List of shell commands to search through.
+        tool: Name of the tool to look for.
+
+    Returns:
+        The first command that uses the given tool, or None if not found.
+    """
+    for command in commands:
+        while command:
+            if os.path.basename(command.parse().tool) == tool:
+                return command
+            command = command.unwrap()
+    return None
+
+
+@dataclasses.dataclass
+class ParsedShellCommand:
+    """Represents a parsed shell command."""
+
+    env_vars: dict[str, str]
+    tool: str
+    args: list[str]
