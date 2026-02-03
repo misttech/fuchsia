@@ -6,8 +6,8 @@ use anyhow::{Result, anyhow};
 use errors::ffx_bail;
 use fdomain_fuchsia_tracing::{BufferingMode, KnownCategory};
 use fdomain_fuchsia_tracing_controller::{
-    ProviderInfo, ProviderStats, ProvisionerProxy, RecordingError, SessionManagerProxy, StopResult,
-    TraceConfig, TraceOptions, Trigger,
+    CompressionType, ProviderInfo, ProviderStats, ProvisionerProxy, RecordingError,
+    SessionManagerProxy, StopResult, TraceConfig, TraceOptions, Trigger,
 };
 use ffx_config::EnvironmentContext;
 use ffx_target::get_target_specifier;
@@ -444,10 +444,14 @@ impl TraceTool {
         };
         let output = canonical_path(opts.output.clone().unwrap_or_else(|| "trace.fxt".to_owned()))?;
 
+        let compression =
+            if opts.nocompress { CompressionType::None } else { CompressionType::Zstd };
+
         let options = TraceOptions {
             duration_ns: opts.duration.map(|d| Duration::from_secs(d.into()).as_nanos() as i64),
             triggers,
             requested_categories: Some(opts.categories.clone()),
+            compression: Some(compression),
             ..Default::default()
         };
         writer.line(format!("Tracing categories: [{}]...", expanded_categories.join(","),))?;
@@ -1148,6 +1152,7 @@ mod tests {
             no_verify_trace: false,
             on_boot: false,
             retain_raw_fidl: false,
+            nocompress: false,
         };
 
         let tool = TraceTool {
@@ -1316,6 +1321,7 @@ mod tests {
             no_verify_trace: true,
             on_boot: false,
             retain_raw_fidl: false,
+            nocompress: false,
         };
 
         let tool = TraceTool {
@@ -1452,6 +1458,7 @@ Triggers:
             no_verify_trace: true,
             on_boot: false,
             retain_raw_fidl: false,
+            nocompress: false,
         };
         let tool = TraceTool {
             provisioner: Deferred::from_output(Err(fho::user_error!("not found"))),
@@ -1537,6 +1544,7 @@ Triggers:
             no_verify_trace: true,
             on_boot: false,
             retain_raw_fidl: false,
+            nocompress: false,
         };
 
         let tool = TraceTool {
@@ -1573,6 +1581,7 @@ Triggers:
             no_verify_trace: true,
             on_boot: false,
             retain_raw_fidl: false,
+            nocompress: false,
         };
 
         let tool = TraceTool {
@@ -1611,6 +1620,7 @@ Triggers:
             no_verify_trace: true,
             on_boot: false,
             retain_raw_fidl: false,
+            nocompress: false,
         };
 
         let tool = TraceTool {
@@ -1650,6 +1660,7 @@ Triggers:
             no_verify_trace: true,
             on_boot: false,
             retain_raw_fidl: false,
+            nocompress: false,
         };
 
         let tool = TraceTool {

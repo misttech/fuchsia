@@ -91,6 +91,19 @@ type TraceOptions = table {
     /// explicitly checking for events with these categories and warn the
     /// user if the no events were captured for any of these categories.
     3: requested_categories fuchsia.tracing.EnabledCategoryList;
+
+    /// The compression algorithm to use for the trace data.
+    @available(added=HEAD)
+    4: compression CompressionType;
+};
+
+/// The compression algorithm to use for the trace data.
+@available(added=HEAD)
+type CompressionType = flexible enum {
+    /// No compression.
+    NONE = 0;
+    /// Zstd compression.
+    ZSTD = 1;
 };
 
 /// Status of the trace session managed by SessionManager

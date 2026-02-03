@@ -278,6 +278,10 @@ pub struct Start {
     /// retain raw FIDL-related trace arguments after symbolization. Defaults to false.
     #[argh(switch)]
     pub retain_raw_fidl: bool,
+
+    /// disable zstd compression during transfer. Defaults to false.
+    #[argh(switch)]
+    pub nocompress: bool,
 }
 
 fn try_string_to_action(s: &str) -> Result<Action, String> {

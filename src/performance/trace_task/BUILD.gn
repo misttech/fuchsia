@@ -20,7 +20,10 @@ template("trace_task_crate") {
       "//third_party/rust_crates:futures",
       "//third_party/rust_crates:log",
       "//third_party/rust_crates:thiserror",
+      "//third_party/rust_crates:zstd",
     ]
+
+    public_deps = [ "//third_party/zstd" ]
 
     if (defined(invoker.deps)) {
       deps += invoker.deps

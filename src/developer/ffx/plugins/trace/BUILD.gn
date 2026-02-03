@@ -49,6 +49,8 @@ if (is_host) {
       "//third_party/rust_crates:serde",
       "//third_party/rust_crates:term_grid",
       "//third_party/rust_crates:termion",
+      "//third_party/rust_crates:zstd",
+      "//third_party/zstd",
     ]
 
     args_deps = [
@@ -76,6 +78,7 @@ if (is_host) {
       ":ffx_trace",
       "//src/developer/ffx/lib/fho:lib",
       "//src/lib/fuchsia-async",
+      "//third_party/zstd",
     ]
     sources = [ "src/main.rs" ]
 

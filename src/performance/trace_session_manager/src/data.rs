@@ -76,6 +76,7 @@ pub struct TraceOptionsData {
     pub duration_ns: Option<i64>,
     pub triggers: Option<Vec<TriggerData>>,
     pub requested_categories: Option<Vec<String>>,
+    pub compression: Option<String>,
 }
 
 impl From<TraceOptions> for TraceOptionsData {
@@ -86,6 +87,14 @@ impl From<TraceOptions> for TraceOptionsData {
                 .triggers
                 .map(|triggers| triggers.into_iter().map(|t| t.into()).collect()),
             requested_categories: options.requested_categories,
+            compression: options.compression.map(|c| match c {
+                fidl_fuchsia_tracing_controller::CompressionType::Zstd => "ZSTD".to_string(),
+                fidl_fuchsia_tracing_controller::CompressionType::None => "NONE".to_string(),
+                _ => {
+                    log::error!("Unknown compression type: {c:?} using NONE");
+                    "NONE".to_string()
+                }
+            }),
         }
     }
 }
@@ -98,6 +107,14 @@ impl From<TraceOptionsData> for TraceOptions {
                 .triggers
                 .map(|triggers| triggers.into_iter().map(|t| t.into()).collect()),
             requested_categories: data.requested_categories,
+            compression: data.compression.map(|s| match s.as_str() {
+                "ZSTD" => fidl_fuchsia_tracing_controller::CompressionType::Zstd,
+                "NONE" => fidl_fuchsia_tracing_controller::CompressionType::None,
+                _ => {
+                    log::error!("Unknown compression type: {s:?} using NONE");
+                    fidl_fuchsia_tracing_controller::CompressionType::None
+                }
+            }),
             // Don't use  ..Default::default() here so if fields are added, the compilation errors
             // will remind us to add the new fields to TraceOptionsData.
             __source_breaking: Default::default(),

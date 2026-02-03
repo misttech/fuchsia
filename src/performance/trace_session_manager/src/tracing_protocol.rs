@@ -3,7 +3,7 @@
 // found in the LICENSE file.
 use async_lock::RwLock;
 use fidl_fuchsia_tracing_controller::{
-    ProvisionerMarker, ProvisionerProxy, RecordingError, SessionManagerRequest,
+    CompressionType, ProvisionerMarker, ProvisionerProxy, RecordingError, SessionManagerRequest,
     SessionManagerRequestStream, TraceConfig, TraceOptions, TraceStatus,
 };
 use futures::TryStreamExt;
@@ -262,6 +262,7 @@ impl TracingProtocol {
                 .map(|tv| tv.iter().map(Into::into).collect())
                 .unwrap_or(vec![]),
             options.requested_categories.clone(),
+            options.compression.unwrap_or(CompressionType::None),
             provisioner,
         )
         .await

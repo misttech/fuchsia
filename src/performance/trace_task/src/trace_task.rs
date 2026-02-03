@@ -15,6 +15,7 @@ use std::pin::Pin;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, AtomicU64};
 use std::time::{Duration, Instant};
+use zstd::stream::raw::Operation;
 
 static SERIAL: AtomicU64 = AtomicU64::new(100);
 
@@ -42,6 +43,8 @@ pub struct TraceTask {
     task: Task<Option<trace::StopResult>>,
     /// The socket to read the trace data from when tracing is completed.
     read_socket: AsyncSocket,
+    /// The compression algorithm to use.
+    compression: trace::CompressionType,
 }
 
 // This is just implemented for convenience so the wrapper is await-able.
@@ -60,10 +63,12 @@ impl TraceTask {
         duration: Option<Duration>,
         triggers: Vec<Trigger>,
         requested_categories: Option<Vec<String>>,
+        compression: trace::CompressionType,
         provisioner: trace::ProvisionerProxy,
     ) -> Result<Self, TracingError> {
         // Start the tracing session immediately. Maybe we should consider separating the creating
         // of the session and the actual starting of it. This seems like a side-effect.
+        log::info!("TraceTask::new called with compression: {:?}", compression);
         let task_id = SERIAL.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
         let (client, server) = provisioner.domain().create_stream_socket();
         let (client_end, server_end) = provisioner.domain().create_proxy::<trace::SessionMarker>();
@@ -132,6 +137,7 @@ impl TraceTask {
             start_time: Instant::now(),
             shutdown_sender,
             read_socket: socket_to_async(client),
+            compression,
             task: Self::make_task(
                 task_id,
                 debug_tag,
@@ -259,9 +265,13 @@ impl TraceTask {
             log::debug!("{} Shutdown already in progress.", self.debug_tag);
         }
 
-        let res = futures::io::copy(&self.read_socket, &mut writer)
-            .await
-            .map_err(|e| TracingError::GeneralError(format!("{e:?}")));
+        let res = match self.compression {
+            trace::CompressionType::Zstd => compress_zstd(&self.read_socket, &mut writer).await,
+            _ => futures::io::copy(&self.read_socket, &mut writer)
+                .await
+                .map(|_| ())
+                .map_err(|e| TracingError::GeneralError(format!("{e:?}"))),
+        };
 
         if res.is_ok() { self.shutdown().await } else { Err(res.err().unwrap()) }
     }
@@ -275,10 +285,15 @@ impl TraceTask {
     where
         W: AsyncWrite + Unpin + Send + 'static,
     {
-        match futures::io::copy(&self.read_socket, &mut writer)
-            .await
-            .map_err(|e| TracingError::RecordingStop(e.to_string()))
-        {
+        let res = match self.compression {
+            trace::CompressionType::Zstd => compress_zstd(&self.read_socket, &mut writer).await,
+            _ => futures::io::copy(&self.read_socket, &mut writer)
+                .await
+                .map(|_| ())
+                .map_err(|e| TracingError::RecordingStop(e.to_string())),
+        };
+
+        match res {
             Ok(_) => match self.await {
                 Some(r) => Ok(r),
                 None => Err(TracingError::RecordingStop("could not await task".into())),
@@ -286,6 +301,59 @@ impl TraceTask {
             Err(e) => Err(e),
         }
     }
+}
+
+async fn compress_zstd<R, W>(mut reader: R, mut writer: W) -> Result<(), TracingError>
+where
+    R: AsyncRead + Unpin,
+    W: AsyncWrite + Unpin,
+{
+    let mut encoder = zstd::stream::raw::Encoder::new(0)
+        .map_err(|e| TracingError::GeneralError(format!("zstd init: {e:?}")))?;
+    // 128KB is the recommended size for Zstd (ZSTD_CStreamInSize/ZSTD_CStreamOutSize)
+    let mut input_buf = vec![0u8; 128 * 1024];
+    let mut output_buf = vec![0u8; 128 * 1024];
+
+    // Read the stream until EOF, compressing and writing out fully compressed buffers as we go.
+    while let n = reader
+        .read(&mut input_buf)
+        .await
+        .map_err(|e| TracingError::GeneralError(format!("read: {e:?}")))?
+        && n > 0
+    {
+        let mut read_offset = 0;
+        while read_offset < n {
+            let status = encoder
+                .run_on_buffers(&input_buf[read_offset..n], &mut output_buf)
+                .map_err(|e| TracingError::GeneralError(format!("zstd run: {e:?}")))?;
+            read_offset += status.bytes_read;
+            if status.bytes_written > 0 {
+                writer
+                    .write_all(&output_buf[..status.bytes_written])
+                    .await
+                    .map_err(|e| TracingError::GeneralError(format!("write: {e:?}")))?;
+            }
+        }
+    }
+
+    // Flush remaining of the last compressed buffer.
+    loop {
+        let mut out_wrapper = zstd::stream::raw::OutBuffer::around(&mut output_buf);
+        let remaining = encoder
+            .finish(&mut out_wrapper, true)
+            .map_err(|e| TracingError::GeneralError(format!("zstd finish: {e:?}")))?;
+        let bytes = out_wrapper.as_slice();
+        if !bytes.is_empty() {
+            writer
+                .write_all(bytes)
+                .await
+                .map_err(|e| TracingError::GeneralError(format!("write: {e:?}")))?;
+        }
+        if remaining == 0 {
+            break;
+        }
+    }
+    Ok(())
 }
 
 #[cfg(test)]
@@ -363,6 +431,7 @@ mod tests {
             None,
             vec![],
             None,
+            trace::CompressionType::None,
             provisioner,
         )
         .await
@@ -390,6 +459,7 @@ mod tests {
             None,
             vec![],
             None,
+            trace::CompressionType::None,
             provisioner,
         )
         .await
@@ -414,6 +484,7 @@ mod tests {
             None,
             vec![],
             None,
+            trace::CompressionType::None,
             provisioner,
         )
         .await
@@ -437,6 +508,7 @@ mod tests {
             Some(Duration::from_millis(100)),
             vec![],
             None,
+            trace::CompressionType::None,
             provisioner,
         )
         .await
@@ -473,6 +545,7 @@ mod tests {
                 action: Some(TriggerAction::Terminate),
             }],
             None,
+            trace::CompressionType::None,
             provisioner,
         )
         .await

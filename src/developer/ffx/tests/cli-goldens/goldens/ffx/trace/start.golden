@@ -132,6 +132,14 @@
       "short": null,
       "description": "retain raw FIDL-related trace arguments after symbolization. Defaults to false.",
       "hidden": false
+    },
+    {
+      "kind": "Switch",
+      "optionality": "optional",
+      "long": "--nocompress",
+      "short": null,
+      "description": "disable zstd compression during transfer. Defaults to false.",
+      "hidden": false
     }
   ],
   "notes": [

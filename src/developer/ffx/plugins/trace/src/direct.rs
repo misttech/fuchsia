@@ -8,11 +8,18 @@ use anyhow::Result;
 use async_fs::File;
 use errors::ffx_bail;
 use fdomain_client::fidl::Proxy;
-use fdomain_fuchsia_tracing_controller::{RecordingError, TraceConfig, TraceOptions};
+use fdomain_fuchsia_tracing_controller::{
+    CompressionType, RecordingError, TraceConfig, TraceOptions,
+};
 use ffx_config::EnvironmentContext;
 use fho::{bug, return_bug, return_user_error};
-use std::time::Duration;
+use futures::io::{self, AsyncReadExt};
+use std::io as std_io;
+use std::time::{Duration, Instant};
 use trace_task_fdomain::TraceTask;
+use zstd::stream::raw::Operation;
+
+const ZSTD_MAGIC_NUMBER: u32 = 0xFD2FB528;
 
 pub(crate) async fn trace(
     proxy: SessionManagerProxyType,
@@ -43,6 +50,7 @@ pub(crate) async fn trace(
                     })
                     .unwrap_or(vec![]),
                 options.requested_categories,
+                options.compression.unwrap_or(CompressionType::None),
                 provisioner_proxy,
             )
             .await?;
@@ -140,12 +148,38 @@ async fn download_trace(
 ) -> Result<u64, anyhow::Error> {
     let mut output =
         File::create(&output_file).await.map_err(|e| bug!("Could not create output file: {e}"))?;
-    use futures::io;
-    use std::time::Instant;
     log::info!("Starting local copy to {output_file}.");
     let start_time = Instant::now();
     let mut progress_reader = ProgressReader::new(read_socket);
-    let result = io::copy(&mut progress_reader, &mut output).await;
+
+    // Peek first 4 bytes to check for Zstd magic
+    let mut magic = [0u8; 4];
+    let mut peeked = 0;
+    while peeked < 4 {
+        let n = progress_reader
+            .read(&mut magic[peeked..])
+            .await
+            .map_err(|e| bug!("Read error: {e}"))?;
+        if n == 0 {
+            break;
+        }
+        peeked += n;
+    }
+
+    let result = if peeked == 4 && u32::from_le_bytes(magic) == ZSTD_MAGIC_NUMBER {
+        log::info!("Detected Zstd compression. Decompressing on the fly.");
+        // Add the prefix in front of the stream, and decompress.
+        decompress_zstd(io::Cursor::new(magic).chain(progress_reader), &mut output).await
+    } else {
+        // Not Zstd or too short, write what we read and copy the rest
+        if peeked > 0 {
+            use futures::AsyncWriteExt;
+            AsyncWriteExt::write_all(&mut output, &magic[..peeked])
+                .await
+                .map_err(|e| bug!("Write error: {e}"))?;
+        }
+        io::copy(&mut progress_reader, &mut output).await
+    };
 
     if let Ok(bytes) = &result {
         let duration = start_time.elapsed();
@@ -153,11 +187,130 @@ async fn download_trace(
 
         let rate =
             if duration.as_secs_f64() > 0. { kbytes as f64 / duration.as_secs_f64() } else { 0.0 };
-        progress_reader.status_update(
-            format!("Total size: {kbytes}kB, Duration: {duration:?}, Rate: {rate:.2} kB/s"),
-            true,
-        );
+        // progress_reader is moved in the Zstd case, so we can't reliably call status_update on it.
+        // Instead, just log the final status.
+        log::info!("Total size: {kbytes}kB, Duration: {duration:?}, Rate: {rate:.2} kB/s");
     }
     log::info!("Copy done");
     result.map_err(Into::into)
+}
+
+async fn decompress_zstd<R, W>(mut reader: R, mut writer: W) -> std_io::Result<u64>
+where
+    R: futures::AsyncRead + Unpin,
+    W: futures::AsyncWrite + Unpin,
+{
+    use futures::{AsyncReadExt, AsyncWriteExt};
+    let mut decoder = zstd::stream::raw::Decoder::new()
+        .map_err(|e| std_io::Error::new(std_io::ErrorKind::Other, format!("zstd init: {e:?}")))?;
+    // 128KB is the recommended size for Zstd (ZSTD_CStreamInSize/ZSTD_CStreamOutSize)
+    let mut input_buf = vec![0u8; 128 * 1024];
+    let mut output_buf = vec![0u8; 128 * 1024];
+    let mut total_written = 0;
+
+    // Loop reading from input, decompressing, and writing to output when
+    // a full buffer has been decoded.
+    while let n = reader.read(&mut input_buf).await?
+        && n > 0
+    {
+        let mut read_offset = 0;
+        while read_offset < n {
+            let status =
+                decoder.run_on_buffers(&input_buf[read_offset..n], &mut output_buf).map_err(
+                    |e| std_io::Error::new(std_io::ErrorKind::Other, format!("zstd run: {e:?}")),
+                )?;
+            read_offset += status.bytes_read;
+            if status.bytes_written > 0 {
+                writer.write_all(&output_buf[..status.bytes_written]).await?;
+                total_written += status.bytes_written as u64;
+            }
+            if status.bytes_read == 0 && status.bytes_written == 0 {
+                // Should not happen if n > 0, but good to check progress
+                if read_offset < n {
+                    return Err(std_io::Error::new(std_io::ErrorKind::Other, "Zstd stuck"));
+                }
+            }
+        }
+    }
+
+    // Flush remaining of the last decompressed buffer.
+    loop {
+        let mut out_wrapper = zstd::stream::raw::OutBuffer::around(&mut output_buf);
+        let remaining = decoder.finish(&mut out_wrapper, true).map_err(|e| {
+            std_io::Error::new(std_io::ErrorKind::Other, format!("zstd finish: {e:?}"))
+        })?;
+        let bytes = out_wrapper.as_slice();
+        if !bytes.is_empty() {
+            writer.write_all(bytes).await?;
+            total_written += bytes.len() as u64;
+        }
+        if remaining == 0 {
+            break;
+        }
+    }
+
+    Ok(total_written)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use futures::AsyncReadExt;
+    use futures::io::Cursor;
+
+    #[fuchsia::test]
+    async fn test_copy_zstd_with_prefix_decompresses_correctly() {
+        // 1. Generate some data
+        let original_data =
+            b"Hello world! This is a test string to be compressed and decompressed.";
+        let mut compressed_data = Vec::new();
+
+        // 2. Compress it
+        {
+            let mut encoder = zstd::stream::write::Encoder::new(&mut compressed_data, 0).unwrap();
+            use std::io::Write;
+            encoder.write_all(original_data).unwrap();
+            encoder.finish().unwrap();
+        }
+
+        let magic = &compressed_data[0..4];
+        let rest = &compressed_data[4..];
+
+        // 3. Verify magic
+        assert_eq!(magic, ZSTD_MAGIC_NUMBER.to_le_bytes());
+
+        // 5. Create the chained reader (mimicking download_trace)
+        let reader = Cursor::new(magic).chain(Cursor::new(rest));
+        let mut output = Vec::new();
+
+        // 6. Run copy_zstd_with_prefix
+        let bytes_written =
+            decompress_zstd(reader, &mut output).await.expect("decompression failed");
+
+        // 7. Verify
+        assert_eq!(bytes_written, original_data.len() as u64);
+        assert_eq!(output, original_data);
+    }
+
+    #[fuchsia::test]
+    async fn test_copy_zstd_with_prefix_large_data() {
+        // Compress larger data to ensure buffering works
+        let original_data = vec![0xAB; 100_000]; // 100KB
+        let mut compressed_data = Vec::new();
+        {
+            let mut encoder = zstd::stream::write::Encoder::new(&mut compressed_data, 0).unwrap();
+            use std::io::Write;
+            encoder.write_all(&original_data).unwrap();
+            encoder.finish().unwrap();
+        }
+
+        let magic = &compressed_data[0..4];
+        let rest = &compressed_data[4..];
+        let reader = Cursor::new(magic).chain(Cursor::new(rest));
+        let mut output = Vec::new();
+
+        let bytes_written = decompress_zstd(reader, &mut output).await.unwrap();
+        assert_eq!(bytes_written, original_data.len() as u64);
+        assert_eq!(output, original_data);
+    }
 }
