@@ -210,13 +210,6 @@ using UniquePtr = ktl::unique_ptr<T, Deleter<T, Allocator>>;
 // serialize on the main object cache lock, regardless of CPU.
 template <typename T, typename Allocator>
 class ObjectCache<T, Option::Single, Allocator> : private Allocator {
-  template <typename Return, typename... Args>
-  using EnableIfConstructible = ktl::enable_if_t<ktl::is_constructible_v<T, Args...>, Return>;
-
-  template <typename... Args>
-  using EnableIfAllocatorConstructible =
-      ktl::enable_if_t<ktl::is_constructible_v<Allocator, Args...>>;
-
   static constexpr int kTraceLevel = 0;
 
   static constexpr int kBasic = 1;
@@ -231,7 +224,8 @@ class ObjectCache<T, Option::Single, Allocator> : private Allocator {
  public:
   // Constructs an ObjectCache with the given slab reservation value. Reserve
   // slabs are not immediately allocated.
-  template <typename... Args, typename = EnableIfAllocatorConstructible<Args...>>
+  template <typename... Args>
+    requires requires(Args&... args) { Allocator(ktl::forward<Args>(args)...); }
   explicit ObjectCache(size_t reserve_slabs, Args&&... args)
       : Allocator(ktl::forward<Args>(args)...), reserve_slabs_{reserve_slabs} {
     ktrace::Scope trace = KTRACE_BEGIN_SCOPE_ENABLE(kTraceLevel >= kDetail, "kernel:sched",
@@ -297,7 +291,8 @@ class ObjectCache<T, Option::Single, Allocator> : private Allocator {
   // arguments. Returns a pointer to the constructed object as a unique pointer.
   // If the object is ref counted it is not yet adopted.
   template <typename... Args>
-  EnableIfConstructible<zx::result<PtrType>, Args...> Allocate(Args&&... args) TA_EXCL(lock_) {
+    requires requires(Args&&... args) { T(ktl::forward<Args>(args)...); }
+  zx::result<PtrType> Allocate(Args&&... args) TA_EXCL(lock_) {
     ktrace::Scope trace =
         KTRACE_BEGIN_SCOPE_ENABLE(kTraceLevel >= kBasic, "kernel:sched", "ObjectCache::Allocate");
     DEBUG_ASSERT(Thread::Current::memory_allocation_state().IsEnabled());
@@ -717,14 +712,11 @@ size_t GetProcessorCount();
 // serialize on per-CPU object cache locks.
 template <typename T, typename Allocator>
 class ObjectCache<T, Option::PerCpu, Allocator> {
-  template <typename Return, typename... Args>
-  using EnableIfConstructible = ktl::enable_if_t<ktl::is_constructible_v<T, Args...>, Return>;
-
-  template <typename Return, typename... Args>
-  using EnableIfAllocatorConstructible =
-      ktl::enable_if_t<ktl::is_constructible_v<Allocator, Args...>, Return>;
+  using CpuCache = ktl::optional<ObjectCache<T, Option::Single, Allocator>>;
 
  public:
+  using CacheSingle = ObjectCache<T, Option::Single, Allocator>;
+
   // ObjectCache is default constructible in the empty state.
   ObjectCache() = default;
 
@@ -740,8 +732,8 @@ class ObjectCache<T, Option::PerCpu, Allocator> {
   // allocator args. The reserve value applies to each per-CPU cache
   // independently. Reserve slabs are not immediately allocated.
   template <typename... Args>
-  static EnableIfAllocatorConstructible<zx::result<ObjectCache>, Args...> Create(
-      size_t reserve_slabs, Args&&... args) {
+    requires requires(Args&... args) { Allocator(ktl::forward<Args>(args)...); }
+  static zx::result<ObjectCache> Create(size_t reserve_slabs, Args&&... args) {
     const size_t processor_count = internal::GetProcessorCount();
     fbl::AllocChecker checker;
     ktl::unique_ptr<CpuCache[]> per_cpu_caches{new (&checker) CpuCache[processor_count]};
@@ -763,7 +755,10 @@ class ObjectCache<T, Option::PerCpu, Allocator> {
   // to the constructed object as a unique pointer. If the object is ref counted
   // it is not yet adopted.
   template <typename... Args>
-  EnableIfConstructible<zx::result<PtrType>, Args...> Allocate(Args&&... args) {
+    requires requires(CacheSingle& cache, Args&&... args) {
+      cache.Allocate(ktl::forward<Args>(args)...);
+    }
+  zx::result<PtrType> Allocate(Args&&... args) {
     DEBUG_ASSERT(cpu_caches_ != nullptr);
     DEBUG_ASSERT(Thread::Current::memory_allocation_state().IsEnabled());
 
@@ -782,8 +777,6 @@ class ObjectCache<T, Option::PerCpu, Allocator> {
   }
 
  private:
-  using CpuCache = ktl::optional<ObjectCache<T, Option::Single, Allocator>>;
-
   explicit ObjectCache(size_t processor_count, ktl::unique_ptr<CpuCache[]> per_cpu_caches)
       : processor_count_{processor_count}, cpu_caches_{ktl::move(per_cpu_caches)} {}
 
