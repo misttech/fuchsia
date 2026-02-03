@@ -1272,6 +1272,13 @@ pub struct RsnxeView<B: ByteSlice> {
 )]
 pub struct RsnxeOctet1(pub u8);
 
+/// IEEE Std 802.11-2024, 9.4.2.312
+#[derive(Debug)]
+pub struct DiffieHellmanParamView<B: ByteSlice> {
+    pub group: u16,
+    pub public_key: B,
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

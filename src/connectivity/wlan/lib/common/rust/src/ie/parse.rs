@@ -251,6 +251,17 @@ pub fn parse_rsnxe<B: SplitByteSlice>(raw_body: B) -> RsnxeView<B> {
     RsnxeView { rsnxe_octet_1, remaining: reader.into_remaining() }
 }
 
+pub fn parse_diffie_hellman_param<B: SplitByteSlice>(
+    raw_body: B,
+) -> FrameParseResult<DiffieHellmanParamView<B>> {
+    let mut reader = BufferReader::new(raw_body);
+    let group = reader
+        .read_value::<u16>()
+        .ok_or_else(|| FrameParseError(format!("Element body is too short to include DH group")))?;
+    let public_key = reader.into_remaining();
+    Ok(DiffieHellmanParamView { group, public_key })
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -756,6 +767,18 @@ mod tests {
             assert!(oct1.sae_hash_to_element());
         });
         assert_eq!(rsnxe.remaining, &[0x00, 0x00, 0x40]);
+    }
+
+    #[test]
+    fn diffie_hellman_param_ok() {
+        let raw_body: Vec<u8> = vec![
+            0xaa, 0x00, // group
+            0xde, 0xad, 0xbe, 0xef, // public key (truncated)
+        ];
+        let dh_param =
+            parse_diffie_hellman_param(&raw_body[..]).expect("failed to parse DH param ie");
+        assert_eq!(dh_param.group, 0xaa);
+        assert_eq!(dh_param.public_key, &raw_body[2..]);
     }
 
     #[test]

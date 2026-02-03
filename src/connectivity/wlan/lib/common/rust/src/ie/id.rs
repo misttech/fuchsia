@@ -10,7 +10,7 @@ use zerocopy::{FromBytes, Immutable, IntoBytes, KnownLayout, Unaligned};
 )]
 pub struct Id(pub u8);
 
-// IEEE Std 802.11-2016, 9.4.2.1, Table 9-77
+// IEEE Std 802.11-2024, 9.4.2.1, Table 9-130
 impl Id {
     pub const SSID: Self = Self(0);
     pub const SUPPORTED_RATES: Self = Self(1);
@@ -40,6 +40,17 @@ impl Id {
     pub const VENDOR_SPECIFIC: Self = Self(221);
     pub const RSNXE: Self = Self(244);
     pub const EXTENSION: Self = Self(255);
+}
+
+#[repr(C, packed)]
+#[derive(
+    Eq, PartialEq, Hash, IntoBytes, KnownLayout, FromBytes, Immutable, Unaligned, Copy, Clone, Debug,
+)]
+pub struct ExtendedId(pub u8);
+
+// IEEE Std 802.11-2024, 9.4.2.1, Table 9-130
+impl ExtendedId {
+    pub const DIFFIE_HELLMAN_PARAM: Self = Self(32);
 }
 
 #[derive(Eq, PartialEq, Hash, Copy, Clone, Debug)]
@@ -75,6 +86,12 @@ macro_rules! ie_type_basic_const {
     };
 }
 
+macro_rules! ie_type_extended_const {
+    ($id:ident) => {
+        pub const $id: Self = Self::new_extended(ExtendedId::$id.0);
+    };
+}
+
 impl IeType {
     ie_type_basic_const!(SSID);
     ie_type_basic_const!(SUPPORTED_RATES);
@@ -102,6 +119,8 @@ impl IeType {
     ie_type_basic_const!(TRANSMIT_POWER_ENVELOPE);
     ie_type_basic_const!(CHANNEL_SWITCH_WRAPPER);
     ie_type_basic_const!(RSNXE);
+
+    ie_type_extended_const!(DIFFIE_HELLMAN_PARAM);
 
     pub const OWE_TRANSITION: Self = Self::new_vendor4(OWE_TRANSITION_HEADER);
     pub const WMM_INFO: Self = Self::new_vendor6(WMM_INFO_HEADER);
