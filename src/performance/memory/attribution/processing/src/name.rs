@@ -39,17 +39,24 @@ pub enum Error {
 }
 
 impl ZXName {
-    pub fn as_bstr(&self) -> &BStr {
-        BStr::new(match self.0.iter().position(|&b| b == 0) {
+    pub fn as_bytes(&self) -> &[u8] {
+        match self.0.iter().position(|&b| b == 0) {
             Some(index) => &self.0[..index],
             None => &self.0[..],
-        })
+        }
     }
 
+    pub fn as_bstr(&self) -> &BStr {
+        BStr::new(self.as_bytes())
+    }
+
+    // Null-terminated string, followed by zero-padding.
     pub fn buffer(&self) -> &[u8; ZX_MAX_NAME_LEN] {
         &self.0
     }
 
+    /// Creates a new instance from a byte slice.
+    /// Returns an error if the input is too long or contains interior null bytes.
     pub const fn try_from_bytes(b: &[u8]) -> Result<Self, Error> {
         if b.len() >= ZX_MAX_NAME_LEN {
             return Err(Error::InvalidArgument);
@@ -273,14 +280,22 @@ mod tests {
 
     #[test]
     fn test_deserialize() {
-        assert!(format!("{:?}", serde_json::from_str::<ZXName>(r#""\\""#))
-            .contains("Character expected after '\\\\'"));
-        assert!(format!("{:?}", serde_json::from_str::<ZXName>(r#""\\x""#))
-            .contains("Hex characters expected after"));
-        assert!(format!("{:?}", serde_json::from_str::<ZXName>(r#""\\x1""#))
-            .contains("Hex characters expected after"));
-        assert!(format!("{:?}", serde_json::from_str::<ZXName>(r#""\\x1x""#))
-            .contains("Invalid hex pair after"));
+        assert!(
+            format!("{:?}", serde_json::from_str::<ZXName>(r#""\\""#))
+                .contains("Character expected after '\\\\'")
+        );
+        assert!(
+            format!("{:?}", serde_json::from_str::<ZXName>(r#""\\x""#))
+                .contains("Hex characters expected after")
+        );
+        assert!(
+            format!("{:?}", serde_json::from_str::<ZXName>(r#""\\x1""#))
+                .contains("Hex characters expected after")
+        );
+        assert!(
+            format!("{:?}", serde_json::from_str::<ZXName>(r#""\\x1x""#))
+                .contains("Invalid hex pair after")
+        );
     }
 
     #[test]

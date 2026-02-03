@@ -2,6 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+use crate::resource_annotator::ResourceAnnotator;
 use anyhow::Result;
 use attribution_processing::{
     AttributionData, InflatedPrincipal, InflatedResource, Principal, ProcessedAttributionData,
@@ -24,6 +25,7 @@ pub struct ComponentDetailedProfileResult {
 
 pub fn process_snapshot_detailed(
     snapshot: fplugin::Snapshot,
+    resource_annotator: &ResourceAnnotator,
 ) -> Result<ComponentDetailedProfileResult> {
     // Map from moniker token ID to Principal struct.
     let principals: Vec<Principal> =
@@ -65,7 +67,8 @@ pub fn process_snapshot_detailed(
         attributions,
     };
 
-    let processed_attribution_data = attribution_processing::attribute_vmos(attribution_data);
+    let processed_attribution_data: ProcessedAttributionData =
+        attribution_processing::attribute_vmos(attribution_data);
     let digest = digest::Digest::compute(
         &processed_attribution_data,
         snapshot
@@ -86,13 +89,14 @@ pub fn process_snapshot_detailed(
         false,
     )
     .expect("Digest computation should succeed");
-    let ProcessedAttributionData { principals, resources, resource_names } =
-        processed_attribution_data;
+
+    let processed_attribution_data = resource_annotator.annotate(processed_attribution_data);
+
     Ok(ComponentDetailedProfileResult {
         kernel: snapshot.kernel_statistics.unwrap_or_default().into(),
-        principals: principals.into_values().collect(),
-        resources: resources.into_values().collect(),
-        resource_names,
+        principals: processed_attribution_data.principals.into_values().collect(),
+        resources: processed_attribution_data.resources.into_values().collect(),
+        resource_names: processed_attribution_data.resource_names,
         digest,
         performance: snapshot.performance_metrics.unwrap_or_default(),
     })

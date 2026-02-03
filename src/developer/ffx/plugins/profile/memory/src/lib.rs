@@ -114,6 +114,7 @@ impl FfxMain for MemoryTool {
                         list_vmos: false,
                         detailed: false,
                         stats_only: None,
+                        assembly_manifest: None,
                     },
                     monitor_proxy: mm2,
                 };

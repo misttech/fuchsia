@@ -70,6 +70,18 @@
       "short": null,
       "description": "outputs system-wide statistics at regular intervals (in seconds)",
       "hidden": false
+    },
+    {
+      "kind": {
+        "Option": {
+          "arg_name": "assembly-manifest"
+        }
+      },
+      "optionality": "optional",
+      "long": "--assembly-manifest",
+      "short": null,
+      "description": "path to the assembly manifest. Adds blob manifest and file path to the detailed json output. Locate manifest in the build output with: cat \"assembly_manifests.json\" | jq -r '.[] | select(.image_name==\"fuchsia\").assembly_manifest_path'",
+      "hidden": false
     }
   ],
   "notes": [],

@@ -5,10 +5,12 @@
 mod detailed;
 mod json;
 mod output;
+mod resource_annotator;
 mod statistics;
 
 #[macro_use]
 extern crate prettytable;
+use crate::resource_annotator::ResourceAnnotator;
 use anyhow::{Result, anyhow};
 use async_trait::async_trait;
 use attribution_processing::summary::{ComponentSummaryProfileResult, MemorySummary};
@@ -140,6 +142,15 @@ impl MemoryComponentsTool {
         &self,
         mut writer: impl PluginOutput<ComponentProfileResult>,
     ) -> std::result::Result<(), fho::Error> {
+        let resource_annotator = match &self.cmd.assembly_manifest {
+            Some(path) => ResourceAnnotator::new_from(
+                assembled_system::AssembledSystem::from_relative_config_path(path).map_err(
+                    |err| ffx_error!("Failed to load assembly manifest: {err:?} :{err}"),
+                )?,
+            )?,
+            None => ResourceAnnotator::default(),
+        };
+
         let snapshot = match self.cmd.stdin_input {
             false => self.load_snapshot_from_device().await?,
             true => {
@@ -159,7 +170,7 @@ impl MemoryComponentsTool {
                     "--detailed requires machine output"
                 )));
             }
-            let output = process_snapshot_detailed(snapshot)?;
+            let output = process_snapshot_detailed(snapshot, &resource_annotator)?;
             writer.machine(ComponentProfileResult::Detailed(output))?;
             return Ok(());
         }

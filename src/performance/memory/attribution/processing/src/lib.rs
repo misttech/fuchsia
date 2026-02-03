@@ -260,15 +260,30 @@ impl Into<fplugin::Resource> for Resource {
 // Claim with a boolean tag, to help find leaves in the claim assignment graph.
 pub struct TaggedClaim(Claim, bool);
 
+#[derive(Clone, Debug, Serialize)]
+pub struct BlobAnnotation {
+    /// Path to the package's manifest.
+    pub manifest: String,
+    /// Path of blob in package.
+    pub path: String,
+}
+
+#[derive(Clone, Debug, Serialize)]
+pub enum ResourceAnnotation {
+    Blob(BlobAnnotation),
+}
+
+/// Resource annotated with additional information.
 #[derive(Debug, Serialize)]
 pub struct InflatedResource {
-    resource: Resource,
-    claims: HashSet<Claim>,
+    pub resource: Resource,
+    pub claims: HashSet<Claim>,
+    pub annotations: Vec<ResourceAnnotation>,
 }
 
 impl InflatedResource {
     fn new(resource: Resource) -> InflatedResource {
-        InflatedResource { resource, claims: Default::default() }
+        InflatedResource { resource, claims: Default::default(), annotations: Default::default() }
     }
 
     fn children(&self) -> Vec<u64> {

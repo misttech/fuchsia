@@ -5,6 +5,7 @@
 //! Argument-parsing specification for the `components` subcommand.
 
 use argh::{ArgsInfo, FromArgs};
+use camino::Utf8PathBuf;
 use ffx_core::ffx_command;
 
 /// Components.
@@ -44,4 +45,10 @@ pub struct ComponentsCommand {
         description = "outputs system-wide statistics at regular intervals (in seconds)"
     )]
     pub stats_only: Option<u64>,
+
+    #[argh(
+        option,
+        description = "path to the assembly manifest. Adds blob manifest and file path to the detailed json output. Locate manifest in the build output with: cat \"assembly_manifests.json\" | jq -r '.[] | select(.image_name==\"fuchsia\").assembly_manifest_path'"
+    )]
+    pub assembly_manifest: Option<Utf8PathBuf>,
 }
