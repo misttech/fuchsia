@@ -211,7 +211,7 @@ impl SecurityServer {
         let exceptions = ExceptionsConfig::new(&parsed, &exceptions)?;
 
         // Replace any existing policy and push update to `state.status_publisher`.
-        self.with_state_and_update_status(|state| {
+        self.with_mut_state_and_update_status(|state| {
             let sid_table = if let Some(previous_active_policy) = &state.active_policy {
                 SidTable::new_from_previous(parsed.clone(), &previous_active_policy.sid_table)
             } else {
@@ -247,7 +247,7 @@ impl SecurityServer {
 
     /// Set to enforcing mode if `enforce` is true, permissive mode otherwise.
     pub fn set_enforcing(&self, enforcing: bool) {
-        self.with_state_and_update_status(|state| state.enforcing = enforcing);
+        self.with_mut_state_and_update_status(|state| state.enforcing = enforcing);
     }
 
     pub fn is_enforcing(&self) -> bool {
@@ -285,7 +285,7 @@ impl SecurityServer {
     /// Commits all pending changes to conditional booleans.
     pub fn commit_pending_booleans(&self) {
         // TODO(b/324264149): Commit values into the stored policy itself.
-        self.with_state_and_update_status(|state| {
+        self.with_mut_state_and_update_status(|state| {
             state.booleans.commit_pending();
             state.policy_change_count += 1;
         });
@@ -424,23 +424,24 @@ impl SecurityServer {
         }
     }
 
-    /// If there is a genfscon statement for the given filesystem type, returns the
-    /// [`SecurityContext`] that should be used for a node in path `node_path`. When `node_path` is
-    /// the root path ("/") the label additionally corresponds to the `FileSystem` label.
+    /// Returns the [`SecurityId`] with which to label an [`FsNode`] in a filesystem of `fs_type`,
+    /// at the specified filesystem-relative `node_path`.  Callers are responsible for ensuring that
+    /// this API is never called prior to a policy first being loaded, or for a filesystem that is
+    /// not configured to be `genfscon`-labeled.
     pub fn genfscon_label_for_fs_and_path(
         &self,
         fs_type: NullessByteStr<'_>,
         node_path: NullessByteStr<'_>,
         class_id: Option<KernelClass>,
-    ) -> Option<SecurityId> {
-        let mut locked_state = self.backend.state.write();
-        let active_policy = locked_state.expect_active_policy_mut();
-        let security_context = active_policy.parsed.genfscon_label_for_fs_and_path(
-            fs_type,
-            node_path.into(),
-            class_id,
-        )?;
-        Some(active_policy.sid_table.security_context_to_sid(&security_context).unwrap())
+    ) -> Result<SecurityId, anyhow::Error> {
+        self.backend.compute_sid(|active_policy| {
+            active_policy
+                .parsed
+                .genfscon_label_for_fs_and_path(fs_type, node_path.into(), class_id)
+                .ok_or_else(|| {
+                    anyhow::anyhow!("Genfscon label requested for non-genfscon labeled filesystem")
+                })
+        })
     }
 
     /// Returns true if the `bounded_sid` is bounded by the `parent_sid`.
@@ -462,15 +463,16 @@ impl SecurityServer {
     ///
     /// This will panic on debug builds if it is invoked multiple times.
     pub fn set_status_publisher(&self, status_holder: Box<dyn SeLinuxStatusPublisher>) {
-        self.with_state_and_update_status(|state| {
+        self.with_mut_state_and_update_status(|state| {
             assert!(state.status_publisher.is_none());
             state.status_publisher = Some(status_holder);
         });
     }
 
-    /// Runs the supplied function with locked `self`, and then updates the SELinux status file
-    /// associated with `self.state.status_publisher`, if any.
-    fn with_state_and_update_status(&self, f: impl FnOnce(&mut SecurityServerState)) {
+    /// Locks the security server state for modification and calls the supplied function to update
+    /// it.  Once the update is complete, the configured `SeLinuxStatusPublisher` (if any) is called
+    /// to update the userspace-facing "status" file to reflect the new state.
+    fn with_mut_state_and_update_status(&self, f: impl FnOnce(&mut SecurityServerState)) {
         let mut locked_state = self.backend.state.write();
         f(locked_state.deref_mut());
         let new_value = SeLinuxStatus {

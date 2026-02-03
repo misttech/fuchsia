@@ -237,7 +237,14 @@ pub(in crate::security) fn fs_node_init_with_dentry(
                     sub_path.as_slice().into(),
                     Some(fs_node_class.into()),
                 )
-                .unwrap_or_else(|| InitialSid::Unlabeled.into())
+                .map_err(|_| {
+                    // This call fails if no policy has been loaded, or the `fs_type` is not set
+                    // for `genfscon` treatment in the policy, neither of which should be the case
+                    // here.  If `fs_type` was resolved to `genfscon` and then a policy loaded that
+                    // removed/changed rules for that `fs_type` then it is possible to reach here,
+                    // so error out rather than panicking the kernel.
+                    errno!(EINVAL)
+                })?
         }
     };
 
