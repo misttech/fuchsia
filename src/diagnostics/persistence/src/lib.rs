@@ -224,7 +224,7 @@ impl ComponentState {
                 .export::<zx::NullableHandle>()
                 .await
                 .context("Failed to export handle")?
-                .into_handle_based::<zx::EventPair>();
+                .into();
 
             // Swap escrowed Inspect data with a new Tree server.
             let token = finspect::EscrowToken { token: escrow_token };

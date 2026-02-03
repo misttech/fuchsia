@@ -100,7 +100,7 @@ async fn main() -> Result<(), Error> {
     }
     formatter.set_boot_timestamp(boot_ts);
     if let Err(e) = read_logs_from_socket(
-        fuchsia_async::Socket::from_socket(receiver),
+        flex_client::socket_to_async(receiver),
         &mut formatter,
         &Symbolizer::new(),
         true,

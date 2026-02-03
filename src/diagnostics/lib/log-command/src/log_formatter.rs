@@ -145,9 +145,10 @@ where
         complete => None,
     } {
         match value {
-            Either::Left(Some(log)) => {
-                symbolize_pending.push(handle_value(log, symbolizer));
-            }
+            Either::Left(Some(result)) => match result {
+                Ok(log) => symbolize_pending.push(handle_value(log, symbolizer)),
+                Err(e) => return Err(e),
+            },
             Either::Right(Some(Some(symbolized))) => match formatter.push_log(symbolized).await? {
                 LogProcessingResult::Exit => {
                     return Ok(LogProcessingResult::Exit);

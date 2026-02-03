@@ -26,6 +26,7 @@ rustc_binary("bin") {
     "//sdk/rust/zx",
     "//src/developer/lib/writer:lib",
     "//src/diagnostics/lib/log-command",
+    "//src/lib/fdomain/client:flex_fidl",
     "//src/lib/fuchsia-async",
     "//src/lib/fuchsia-component",
     "//src/lib/fuchsia-runtime",

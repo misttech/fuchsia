@@ -49,8 +49,8 @@ fn get_log_stream(syslog: ftest_manager::Syslog) -> Result<LogStream, fidl::Erro
             Ok(LogStream::new(BatchLogStream::from_client_end(client_end)?))
         }
         ftest_manager::Syslog::Stream(client_end) => Ok(LogStream::new(
-            LogsDataStream::new(fuchsia_async::Socket::from_socket(client_end))
-                .map(|result| Ok(result)),
+            LogsDataStream::new(flex_client::socket_to_async(client_end))
+                .map(|result| result.map_err(Error::from)),
         )),
         _ => {
             panic!("not supported")
@@ -62,8 +62,8 @@ fn get_log_stream(syslog: ftest_manager::Syslog) -> Result<LogStream, fidl::Erro
 fn get_log_stream(syslog: ftest_manager::Syslog) -> Result<LogStream, fidl::Error> {
     match syslog {
         ftest_manager::Syslog::Stream(client_end) => Ok(LogStream::new(
-            LogsDataStream::new(fuchsia_async::Socket::from_socket(client_end))
-                .map(|result| Ok(result)),
+            LogsDataStream::new(flex_client::socket_to_async(client_end))
+                .map(|result| result.map_err(Error::from)),
         )),
         ftest_manager::Syslog::Batch(_) => panic!("batch iterator not supported on host"),
         _ => {
@@ -221,8 +221,8 @@ mod tests {
             let (client_end, server_end) = fidl::Socket::create_stream();
             let (stream, iterator) = (
                 LogStream::new(
-                    LogsDataStream::new(fuchsia_async::Socket::from_socket(client_end))
-                        .map(|result| Ok(result)),
+                    LogsDataStream::new(flex_client::socket_to_async(client_end))
+                        .map(|result| result.map_err(Error::from)),
                 ),
                 ftest_manager::LogsIterator::Stream(server_end),
             );
@@ -276,7 +276,7 @@ mod tests {
                 _ => panic!("unexpected logs iterator server end"),
             };
             fasync::Task::spawn(spawn_archive_iterator_server(server_end, true)).detach();
-            assert_matches!(log_stream.next().await, None);
+            assert_matches!(log_stream.next().await, Some(Err(_)));
         }
 
         #[fasync::run_singlethreaded(test)]
