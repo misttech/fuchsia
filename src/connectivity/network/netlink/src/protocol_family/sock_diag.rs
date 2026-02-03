@@ -119,3 +119,27 @@ impl ProtocolFamily for NetlinkSockDiag {
         None
     }
 }
+
+#[cfg(test)]
+mod testutil {
+    use net_declare::{std_ip_v4, std_ip_v6};
+    use net_types::ip::{Ip, Ipv4, Ipv4Addr, Ipv6, Ipv6Addr};
+
+    pub(crate) trait TestIpExt: Ip {
+        const SRC_ADDR: Self::Addr;
+        const DST_ADDR: Self::Addr;
+        const LINUX_FAMILY: u8;
+    }
+
+    impl TestIpExt for Ipv4 {
+        const SRC_ADDR: Ipv4Addr = Ipv4Addr::new(std_ip_v4!("192.168.0.1").octets());
+        const DST_ADDR: Ipv4Addr = Ipv4Addr::new(std_ip_v4!("192.168.0.2").octets());
+        const LINUX_FAMILY: u8 = linux_uapi::AF_INET as u8;
+    }
+
+    impl TestIpExt for Ipv6 {
+        const SRC_ADDR: Ipv6Addr = Ipv6Addr::new(std_ip_v6!("2001:db8::1").segments());
+        const DST_ADDR: Ipv6Addr = Ipv6Addr::new(std_ip_v6!("2001:db8::2").segments());
+        const LINUX_FAMILY: u8 = linux_uapi::AF_INET6 as u8;
+    }
+}

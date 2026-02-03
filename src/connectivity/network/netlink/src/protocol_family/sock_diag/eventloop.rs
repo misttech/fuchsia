@@ -7,6 +7,7 @@ use super::NetlinkSockDiag;
 use std::convert::Infallible as Never;
 
 use derivative::Derivative;
+use futures::StreamExt as _;
 use futures::channel::{mpsc, oneshot};
 use {fidl_fuchsia_net_sockets as fnet_sockets, fidl_fuchsia_net_sockets_ext as fnet_sockets_ext};
 
@@ -31,6 +32,7 @@ pub(crate) enum RequestArgs {
 pub(crate) enum RequestError {
     NotFound,
     InvalidRequest,
+    Unsupported,
 }
 
 impl RequestError {
@@ -40,6 +42,7 @@ impl RequestError {
         match self {
             RequestError::NotFound => Errno::ENOENT,
             RequestError::InvalidRequest => Errno::EINVAL,
+            RequestError::Unsupported => Errno::ENOTSUP,
         }
     }
 }
@@ -70,8 +73,6 @@ pub(crate) struct SockDiagEventLoop<
     // TODO(https://fxbug.dev/323590076): Remove allowance once used.
     #[allow(dead_code)]
     pub(crate) socket_control: fnet_sockets::ControlProxy,
-    // TODO(https://fxbug.dev/323590076): Remove allowance once used.
-    #[allow(dead_code)]
     pub(crate) request_stream: mpsc::Receiver<Request<S>>,
     // TODO(https://fxbug.dev/470079735): Support multicast socket destruction
     // notifications.
@@ -89,6 +90,20 @@ impl<S: crate::messaging::Sender<<NetlinkSockDiag as ProtocolFamily>::Response>>
     }
 
     async fn run_one_step(&mut self) {
-        futures::pending!();
+        let Self {
+            socket_diagnostics: _,
+            socket_control: _,
+            request_stream,
+            async_work_receiver: _,
+        } = self;
+
+        let request = request_stream.next().await.expect("request stream cannot end");
+
+        // TODO(https://fxbug.dev/433948037): Support `Get` requests.
+        // TODO(https://fxbug.dev/433947762): Support `Destroy` requests.
+        request
+            .completer
+            .send(Err(RequestError::Unsupported))
+            .expect("receiving end of completer should not be dropped");
     }
 }

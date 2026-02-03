@@ -17,6 +17,7 @@ use std::ops::RangeInclusive;
 
 use fidl::marker::SourceBreaking;
 use fidl_fuchsia_net_ext::{FromExt, IntoExt};
+use net_types::ip::Ip;
 use thiserror::Error;
 use {
     fidl_fuchsia_net as fnet, fidl_fuchsia_net_interfaces as fnet_interfaces,
@@ -232,6 +233,23 @@ impl TryFrom<fnet_matchers::AddressRange> for AddressRange {
     }
 }
 
+impl AddressRange {
+    /// Create a new [`AddressRange`] for a single address.
+    pub fn new_single<I: Ip>(ip: I::Addr) -> Self {
+        I::map_ip_in(
+            ip,
+            |ip| {
+                let ip = ip.into_ext();
+                Self::V4(ip..=ip)
+            },
+            |ip| {
+                let ip = ip.into_ext();
+                Self::V6(ip..=ip)
+            },
+        )
+    }
+}
+
 /// Extension type for [`fnet_matchers::Address`].
 #[derive(Clone, PartialEq, Eq)]
 pub enum AddressMatcherType {
@@ -435,6 +453,11 @@ impl Port {
             return Err(PortError::InvalidPortRange);
         }
         Ok(Self { range: start..=end, invert })
+    }
+
+    /// Create a new [`Port`] for a single port.
+    pub fn new_single(port: u16, invert: bool) -> Self {
+        Self::new(port, port, invert).unwrap()
     }
 
     pub fn range(&self) -> &RangeInclusive<u16> {
