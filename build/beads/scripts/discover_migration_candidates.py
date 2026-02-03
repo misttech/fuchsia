@@ -9,6 +9,8 @@ import pathlib
 import re
 import sys
 
+import gn_runner
+
 # Debug flag to enable verbose output.
 _DEBUG = False
 
@@ -53,20 +55,59 @@ _COMPLEX_FIELDS = {
 # this target can be migrated.
 _DEP_FIELDS = ["deps", "public_deps", "test_deps", "data"]
 
+# Toolchain shorthands for convenience.
+_TOOLCHAIN_SHORTHANDS = {
+    "host": "//build/toolchain:host_x64",
+    "fuchsia_arm64": "//build/toolchain/fuchsia:arm64",
+    "fuchsia_x64": "//build/toolchain/fuchsia:x64",
+}
+
 
 def debug(msg: str):
     if _DEBUG:
         print(msg, file=sys.stderr)
 
 
-def find_gn_files(start_dir: pathlib.Path, exclude_dirs: list[str]):
-    """Find all BUILD.gn files in the specified directory and its subdirectories."""
+def find_gn_files(
+    start_dir: pathlib.Path,
+    exclude_dirs: list[str],
+    toolchain: str | None = None,
+) -> list[pathlib.Path]:
+    """Find all BUILD.gn files in the specified directory and its subdirectories.
+
+    Args:
+        start_dir: The directory to search for BUILD.gn files.
+        exclude_dirs: A list of directories to exclude from the search.
+        toolchain: If provided, only include files that have targets with this
+                   toolchain.
+
+    Returns:
+        A list of BUILD.gn files.
+    """
+    gn = gn_runner.GnRunner()
+
+    if toolchain:
+        toolchain = _TOOLCHAIN_SHORTHANDS.get(toolchain, toolchain)
+        gn_args = ["ls", f"//{start_dir}/*({toolchain})", "--as=buildfile"]
+    else:
+        gn_args = [
+            "ls",
+            f"//{start_dir}/*",
+            "--all-toolchains",
+            "--as=buildfile",
+        ]
+
+    output = gn.run_and_extract_output(gn_args)
+    all_buildfiles = [
+        pathlib.Path(line).relative_to(_FUCHSIA_DIR)
+        for line in output.splitlines()
+    ]
     return [
-        path
-        for path in start_dir.rglob("BUILD.gn")
-        if path.is_file()
-        and not any(
-            path.is_relative_to(excluded_dir) for excluded_dir in exclude_dirs
+        buildfile
+        for buildfile in all_buildfiles
+        if not any(
+            buildfile.is_relative_to(excluded_dir)
+            for excluded_dir in exclude_dirs
         )
     ]
 
@@ -471,7 +512,17 @@ def print_results(file_results: list[dict], top: int):
 
 def main() -> int:
     parser = argparse.ArgumentParser(
-        description="Analyze targets in a directory."
+        description="""
+        Discover migration candidates for GN targets.
+
+        This script analyzes GN BUILD files in a directory and identifies targets
+        that are good candidates for migration to Bazel. It uses a heuristic
+        to calculate the complexity of each target based on its dependencies and
+        fields, and then ranks them by complexity.
+
+        NOTE: This script only considers BUILD.gn files with targets included in
+        your current build configuration (e.g. your `fx set` line).
+        """
     )
     parser.add_argument(
         "--directory",
@@ -506,6 +557,16 @@ def main() -> int:
         help="Path to the Fuchsia directory",
     )
     parser.add_argument(
+        "--toolchain",
+        type=str,
+        default=None,
+        help=f"""If provided, focus the search on targets with this GN toolchain.
+        Use full toolchain label, or one of the shorthands: {', '.join(_TOOLCHAIN_SHORTHANDS.keys())}.
+
+        NOTE: This filters on a per-file basis. A file is included if any of its
+        targets are built with the specified toolchain.""",
+    )
+    parser.add_argument(
         "-v",
         "--verbose",
         action="store_true",
@@ -519,8 +580,7 @@ def main() -> int:
     debug(
         f"Searching for GN files in {args.directory}, excluding {args.exclude_dirs}"
     )
-    gn_files = find_gn_files(args.directory, args.exclude_dirs)
-    debug(f"Found {len(gn_files)} BUILD.gn files.")
+    gn_files = find_gn_files(args.directory, args.exclude_dirs, args.toolchain)
 
     calculator = ComplexityCalculator(
         args.fuchsia_dir, gn_files, args.target_types

@@ -7,7 +7,11 @@ import("//build/testing/python_build_time_tests.gni")
 if (is_host) {
   python_build_time_tests("discover_migration_candidates_test") {
     tests = [ "discover_migration_candidates_test.py" ]
-    inputs = [ "discover_migration_candidates.py" ]
+    inputs = [
+      "discover_migration_candidates.py",
+      "gn_runner.py",
+      "shell_utils.py",
+    ]
   }
 
   python_build_time_tests("shell_utils_test") {
@@ -22,6 +26,14 @@ if (is_host) {
       "shell_utils.py",
       "//build/api/ninja_artifacts.py",
       "//build/bazel/scripts/build_utils.py",
+    ]
+  }
+
+  python_build_time_tests("gn_runner_test") {
+    tests = [ "gn_runner_test.py" ]
+    inputs = [
+      "gn_runner.py",
+      "//build/bazel/scripts:build_utils.py",
     ]
   }
 }
