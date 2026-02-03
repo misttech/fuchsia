@@ -197,15 +197,15 @@ class TestDiscoverMigrationCandidates(unittest.TestCase):
 
     def test_deps_from_target_body(self):
         body = 'deps = [ "//a", "//b" ]'
-        deps = discover_migration_candidates.deps_from_target_body(body)
+        deps = discover_migration_candidates.deps_from_target_body(body, {})
         self.assertEqual(deps, ["//a", "//b"])
 
         body = 'deps += [ "//c" ]'
-        deps = discover_migration_candidates.deps_from_target_body(body)
+        deps = discover_migration_candidates.deps_from_target_body(body, {})
         self.assertEqual(deps, ["//c"])
 
         body = 'deps = [ "//a",\n "//b" ]'
-        deps = discover_migration_candidates.deps_from_target_body(body)
+        deps = discover_migration_candidates.deps_from_target_body(body, {})
         self.assertEqual(deps, ["//a", "//b"])
 
         body = """
@@ -214,11 +214,11 @@ class TestDiscoverMigrationCandidates(unittest.TestCase):
             inputs = ["//d"]
             deps += ["//e"]
         """
-        deps = discover_migration_candidates.deps_from_target_body(body)
+        deps = discover_migration_candidates.deps_from_target_body(body, {})
         self.assertEqual(deps, ["//a", "//b", "//c", "//e"])
 
         body = "no_deps = []"
-        deps = discover_migration_candidates.deps_from_target_body(body)
+        deps = discover_migration_candidates.deps_from_target_body(body, {})
         self.assertEqual(deps, [])
 
         body = """
@@ -227,9 +227,64 @@ class TestDiscoverMigrationCandidates(unittest.TestCase):
             data = ["//data"]
             public_deps += ["//public_b"]
         """
-        deps = discover_migration_candidates.deps_from_target_body(body)
+        deps = discover_migration_candidates.deps_from_target_body(body, {})
         self.assertEqual(
-            deps, ["//a", "//b", "//public_a", "//data", "//public_b"]
+            deps, ["//a", "//b", "//public_a", "//public_b", "//data"]
+        )
+
+        body = """
+            deps = ["//a", "//b"] + common_deps
+        """
+        context = {"common_deps": ["//c"]}
+        deps = discover_migration_candidates.deps_from_target_body(
+            body, context
+        )
+        self.assertEqual(sorted(deps), ["//a", "//b", "//c"])
+
+        body = """
+            deps = [
+                "//foo",
+                "//bar",
+            ] + crate_deps + ["//c"]
+        """
+        context = {"crate_deps": ["//a", "//b"]}
+        deps = discover_migration_candidates.deps_from_target_body(
+            body, context
+        )
+        self.assertEqual(
+            sorted(deps),
+            [
+                "//a",
+                "//b",
+                "//bar",
+                "//c",
+                "//foo",
+            ],
+        )
+
+    def test_shared_variables_from(self):
+        context = ""
+        shared_variables = discover_migration_candidates.shared_variables_from(
+            context
+        )
+        self.assertEqual(shared_variables, {})
+
+        context = """
+        common_deps = [":foo"]
+        common_srcs = ["a.cc", "b.cc"]
+        empty_list = []
+        common_deps += ["//bar"]
+        """
+        shared_variables = discover_migration_candidates.shared_variables_from(
+            context
+        )
+        self.assertEqual(
+            shared_variables,
+            {
+                "common_deps": [":foo", "//bar"],
+                "common_srcs": ["a.cc", "b.cc"],
+                "empty_list": [],
+            },
         )
 
     def test_fields_from_target_body(self):

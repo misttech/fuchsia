@@ -49,6 +49,10 @@ _COMPLEX_FIELDS = {
     "forward_variables_from": 2,
 }
 
+# Fields that are considered dependencies. Dependencies need to be migrated to Bazel first before
+# this target can be migrated.
+_DEP_FIELDS = ["deps", "public_deps", "test_deps", "data"]
+
 
 def debug(msg: str):
     if _DEBUG:
@@ -85,27 +89,26 @@ def end_pos_for_target(content: str, start_pos: int) -> int:
     return end_pos
 
 
-def deps_from_target_body(target_body: str) -> list[str]:
-    """Extract deps from a GN target body."""
+def deps_from_target_body(
+    target_body: str, context: dict[str, list[str]]
+) -> list[str]:
+    """Extract deps from a GN target body.
 
-    # TODO(jayzhuang): Handle deps that are assigned from other variables.
-    # For example:
-    #   crate_deps = [
-    #     "//path/to/foo:foo",
-    #     "//path/to/bar:bar",
-    #   ]
-    #   deps = crate_deps
+    Args:
+        target_body: The body of the GN target.
+        context: The context containing shared variables.
 
-    deps = []
-    for deps_match in re.finditer(
-        r"^\s*(deps|test_deps|public_deps|data)\s*(?:\+=|=)\s*\[(.*?)\]",
-        target_body,
-        re.MULTILINE | re.DOTALL,  # To handle multi-line deps.
-    ):
-        deps_content = deps_match.group(2)
-        dep_pattern = re.compile(r'"([^"]+)"')
-        deps.extend(dep_pattern.findall(deps_content))
-    return deps
+    Returns:
+        A list of dependencies.
+    """
+    assignments = list_assignments_from(target_body, context)
+
+    final_deps = []
+    for var in _DEP_FIELDS:
+        if var in assignments:
+            final_deps.extend(assignments[var])
+
+    return final_deps
 
 
 def fields_from_target_body(target_body: str) -> list[str]:
@@ -120,6 +123,77 @@ def fields_from_target_body(target_body: str) -> list[str]:
     return list(fields)
 
 
+def shared_variables_from(context: str) -> dict[str, list[str]]:
+    """Extract shared variables from a string."""
+    return list_assignments_from(context, {})
+
+
+def list_assignments_from(
+    content: str, context: dict[str, list[str]]
+) -> dict[str, list[str]]:
+    """Extract list assignments from a string.
+
+    This function implements a simple regex-based parser to extract variable
+    assignments from a string. It also resolves variable references using the
+    provided context. The assignments are expected to be of the form
+    "var = [list of strings]" or "var += [list of strings]".
+
+    NOTE: It is NOT a goal of this function and this script to handle all
+    valid BUILD.gn syntaxes. It prefers simplicity over completeness.
+
+    Args:
+        content: The string to parse.
+        context: A dictionary to resolve variable references.
+
+    Returns:
+        A dictionary of variable assignments, where the keys are variable names
+        and the values are lists of strings.
+    """
+
+    # Remove comments to avoid accidentally matching variable names in comments.
+    text = re.sub(r"#.*$", "", content, flags=re.MULTILINE)
+
+    assignments: dict[str, list[str]] = {}
+
+    # Regex to find assignments: var = ... or var += ...
+    # Captures the variable name and the operator.
+    # We allow the lookahead to match the start of the next assignment or
+    # end of string.
+    assign_pattern = re.compile(r"(?:^|[\s;}])(\w+)\s*(\+?=)")
+
+    matches = list(assign_pattern.finditer(text))
+
+    for i, match in enumerate(matches):
+        lhs = match.group(1)
+        op = match.group(2)
+
+        # The RHS is the text from the end of this match to the start of the
+        # next match (or end of text).
+        start_rhs = match.end()
+        end_rhs = matches[i + 1].start() if i + 1 < len(matches) else len(text)
+        rhs = text[start_rhs:end_rhs]
+
+        # Extract string literals from the RHS.
+        rhs_values = re.findall(r'"([^"]*)"', rhs)
+
+        # Remove string literals from RHS in order to find variable references.
+        rhs_no_strings = re.sub(r'"[^"]*"', "", rhs)
+
+        # Find variable references in the RHS.
+        refs = re.findall(r"\b(\w+)\b", rhs_no_strings)
+        for ref in refs:
+            # Skip variables not known to the context.
+            if ref in context:
+                rhs_values.extend(context[ref])
+
+        if op == "+=":
+            assignments.setdefault(lhs, []).extend(rhs_values)
+        else:
+            assignments[lhs] = rhs_values
+
+    return assignments
+
+
 def targets_from_gn_file(
     filepath: pathlib.Path, target_types: list[str]
 ) -> list[dict]:
@@ -128,21 +202,33 @@ def targets_from_gn_file(
     This function implements a simple regex-based parser for BUILD.gn files.
     It looks for `target_type(name) { ... }` patterns and extracts dependencies
     and fields from the target body.
+
+    It also accumulates context, which include variable assignments outside of
+    target bodies. Context can be used to resolve shared variable references in
+    target bodies.
     """
     content = filepath.read_text()
 
-    target_type_pattern = "|".join(target_types)
     # This regex looks for any of the input target_types followed by a name
     # and an opening brace.
     target_re = re.compile(
-        r'((?:{}))\s*\(\s*"([^"]+)"\s*\)\s*\{{'.format(target_type_pattern)
+        r'(\w+)\(*"([^"]+)"\)\s*\{',
     )
 
+    context = ""
     targets = []
+    pre_end = 0
     for match in target_re.finditer(content):
+        # Accumulate context, which include variable assignments outside of
+        # target bodies. Context can be used to resolve shared variable
+        # references in target bodies.
+        context += content[pre_end : match.start()]
+
         start_pos = match.end()
         try:
             end_pos = end_pos_for_target(content, start_pos)
+            # Record the end position of the target body for context accumulation.
+            pre_end = end_pos
         except ValueError as e:
             print(
                 f"WARNING: Error parsing {filepath} after position {start_pos}: {e}",
@@ -150,13 +236,21 @@ def targets_from_gn_file(
             )
             continue
 
+        target_type, target_name = match.group(1), match.group(2)
+        # Skip targets that are not in the target_types we care about.
+        # It's still necessary to do previous parsing to extract shared variables.
+        if target_type not in target_types:
+            continue
+
         target_body = content[start_pos : end_pos - 1]
         targets.append(
             {
-                "type": match.group(1),
-                "name": match.group(2),
+                "type": target_type,
+                "name": target_name,
                 "path": filepath,
-                "deps": deps_from_target_body(target_body),
+                "deps": deps_from_target_body(
+                    target_body, shared_variables_from(context)
+                ),
                 "fields": fields_from_target_body(target_body),
             }
         )
