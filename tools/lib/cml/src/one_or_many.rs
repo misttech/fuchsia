@@ -81,6 +81,31 @@ where
 
 impl<T> OneOrMany<T>
 where
+    T: Ord + Clone,
+{
+    /// Canonicalizes self by:
+    /// * Transforming to ::One() if is_many() but len() == 1
+    /// * Sorting items if is_many()
+    pub fn canonicalize_context(&mut self) {
+        let mut replace_with = None;
+        match self {
+            OneOrMany::One(_) => {}
+            OneOrMany::Many(many) => {
+                if many.len() == 1 {
+                    replace_with = Some(many.first().unwrap().clone());
+                } else {
+                    many.sort();
+                }
+            }
+        }
+        if let Some(t) = replace_with {
+            *self = OneOrMany::One(t);
+        }
+    }
+}
+
+impl<T> OneOrMany<T>
+where
     T: PartialEq,
 {
     /// Returns true if this `OneOrMany<T>` contains the given element.
@@ -245,6 +270,19 @@ pub(crate) fn always_one<T>(o: Option<OneOrMany<T>>) -> Option<T> {
     o.map(|o| match o {
         OneOrMany::One(o) => o,
         OneOrMany::Many(_) => panic!("many is impossible"),
+    })
+}
+
+pub(crate) fn always_one_context<T>(
+    o: Option<ContextSpanned<OneOrMany<T>>>,
+) -> Option<ContextSpanned<T>> {
+    o.map(|spanned| {
+        let single_val = match spanned.value {
+            OneOrMany::One(val) => val,
+            OneOrMany::Many(_) => panic!("many is impossible"),
+        };
+
+        ContextSpanned { value: single_val, origin: spanned.origin }
     })
 }
 

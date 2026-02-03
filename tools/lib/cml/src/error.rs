@@ -11,7 +11,7 @@ use std::str::Utf8Error;
 use std::{error, fmt, io};
 
 /// The location in the file where an error was detected.
-#[derive(PartialEq, Clone, Debug, Eq, Hash)]
+#[derive(PartialEq, Clone, Debug, Eq, Hash, PartialOrd, Ord, Default)]
 pub struct Location {
     /// One-based line number of the error.
     pub line: usize,
@@ -129,6 +129,15 @@ impl Error {
                 }
                 None => Error::Internal(format!("Test failure: {}", errstr)),
             },
+        }
+    }
+
+    pub fn with_origin(self, origin: Origin) -> Self {
+        match self {
+            Error::ValidateContext { err, .. } => {
+                Error::ValidateContext { err, origin: Some(origin) }
+            }
+            _ => Error::ValidateContext { err: self.to_string(), origin: Some(origin) },
         }
     }
 }

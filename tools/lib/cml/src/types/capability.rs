@@ -7,7 +7,7 @@ use crate::{
     ConfigType, Error, FilterClause, PathClause,
 };
 
-use crate::one_or_many::{OneOrMany, always_one, option_one_or_many_as_ref};
+use crate::one_or_many::{OneOrMany, always_one, always_one_context, option_one_or_many_as_ref};
 use crate::types::common::*;
 use crate::types::right::{Rights, RightsClause};
 pub use cm_types::{
@@ -369,6 +369,7 @@ pub struct ParsedCapability {
 
 #[derive(Debug, Clone)]
 pub struct ContextCapability {
+    pub origin: Origin,
     pub service: Option<ContextSpanned<OneOrMany<Name>>>,
     pub protocol: Option<ContextSpanned<OneOrMany<Name>>>,
     pub directory: Option<ContextSpanned<Name>>,
@@ -468,6 +469,44 @@ impl ContextCapabilityClause for ContextCapability {
         ]
         .contains(&self.capability_type(None).unwrap())
     }
+
+    fn set_service(&mut self, o: Option<ContextSpanned<OneOrMany<Name>>>) {
+        self.service = o;
+    }
+    fn set_protocol(&mut self, o: Option<ContextSpanned<OneOrMany<Name>>>) {
+        self.protocol = o;
+    }
+    fn set_directory(&mut self, o: Option<ContextSpanned<OneOrMany<Name>>>) {
+        self.directory = always_one_context(o);
+    }
+    fn set_storage(&mut self, o: Option<ContextSpanned<OneOrMany<Name>>>) {
+        self.storage = always_one_context(o);
+    }
+    fn set_runner(&mut self, o: Option<ContextSpanned<OneOrMany<Name>>>) {
+        self.runner = always_one_context(o);
+    }
+    fn set_resolver(&mut self, o: Option<ContextSpanned<OneOrMany<Name>>>) {
+        self.resolver = always_one_context(o);
+    }
+    fn set_event_stream(&mut self, o: Option<ContextSpanned<OneOrMany<Name>>>) {
+        self.event_stream = o;
+    }
+    fn set_dictionary(&mut self, o: Option<ContextSpanned<OneOrMany<Name>>>) {
+        self.dictionary = always_one_context(o);
+    }
+    fn set_config(&mut self, o: Option<ContextSpanned<OneOrMany<Name>>>) {
+        self.config = always_one_context(o);
+    }
+
+    /// Returns the origin of this capability.
+    fn origin(&self) -> &Origin {
+        &self.origin
+    }
+
+    /// Helper to get the file path from the origin.
+    fn file_path(&self) -> PathBuf {
+        (*self.origin.file).clone()
+    }
 }
 
 impl PartialEq for ContextCapability {
@@ -525,6 +564,7 @@ impl Hydrate for ParsedCapability {
 
     fn hydrate(self, file: &Arc<PathBuf>, buffer: &String) -> Result<Self::Output, Error> {
         Ok(ContextCapability {
+            origin: Origin::synthetic(file.clone().to_path_buf()),
             service: hydrate_opt_simple(self.service, file, buffer),
             protocol: hydrate_opt_simple(self.protocol, file, buffer),
             directory: hydrate_opt_simple(self.directory, file, buffer),

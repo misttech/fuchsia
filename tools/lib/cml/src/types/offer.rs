@@ -646,6 +646,7 @@ pub struct ParsedOffer {
 
 #[derive(Debug, Clone)]
 pub struct ContextOffer {
+    pub origin: Origin,
     pub service: Option<ContextSpanned<OneOrMany<Name>>>,
     pub protocol: Option<ContextSpanned<OneOrMany<Name>>>,
     pub directory: Option<ContextSpanned<OneOrMany<Name>>>,
@@ -724,6 +725,47 @@ impl ContextCapabilityClause for ContextOffer {
         ]
         .contains(&self.capability_type(None).unwrap())
     }
+
+    fn set_service(&mut self, o: Option<ContextSpanned<OneOrMany<Name>>>) {
+        self.service = o;
+    }
+
+    fn set_protocol(&mut self, o: Option<ContextSpanned<OneOrMany<Name>>>) {
+        self.protocol = o;
+    }
+
+    fn set_directory(&mut self, o: Option<ContextSpanned<OneOrMany<Name>>>) {
+        self.directory = o;
+    }
+
+    fn set_storage(&mut self, o: Option<ContextSpanned<OneOrMany<Name>>>) {
+        self.storage = o;
+    }
+
+    fn set_runner(&mut self, o: Option<ContextSpanned<OneOrMany<Name>>>) {
+        self.runner = o;
+    }
+    fn set_resolver(&mut self, o: Option<ContextSpanned<OneOrMany<Name>>>) {
+        self.resolver = o;
+    }
+    fn set_event_stream(&mut self, o: Option<ContextSpanned<OneOrMany<Name>>>) {
+        self.event_stream = o;
+    }
+    fn set_dictionary(&mut self, o: Option<ContextSpanned<OneOrMany<Name>>>) {
+        self.dictionary = o;
+    }
+    fn set_config(&mut self, o: Option<ContextSpanned<OneOrMany<Name>>>) {
+        self.config = o;
+    }
+
+    fn origin(&self) -> &Origin {
+        &self.origin
+    }
+
+    /// Helper to get the file path from the origin.
+    fn file_path(&self) -> PathBuf {
+        (*self.origin.file).clone()
+    }
 }
 
 impl PartialEq for ContextOffer {
@@ -774,8 +816,8 @@ impl Default for ContextOffer {
                 value: OneOrMany::One(OfferFromRef::Self_),
                 origin: synthetic_origin.clone(),
             },
-            to: ContextSpanned { value: OneOrMany::Many(vec![]), origin: synthetic_origin },
-
+            to: ContextSpanned { value: OneOrMany::Many(vec![]), origin: synthetic_origin.clone() },
+            origin: synthetic_origin,
             service: None,
             protocol: None,
             directory: None,
@@ -823,6 +865,7 @@ impl Hydrate for ParsedOffer {
 
     fn hydrate(self, file: &Arc<PathBuf>, buffer: &String) -> Result<Self::Output, Error> {
         Ok(ContextOffer {
+            origin: Origin::synthetic(file.clone().to_path_buf()),
             service: hydrate_opt_simple(self.service, file, buffer),
             protocol: hydrate_opt_simple(self.protocol, file, buffer),
             directory: hydrate_opt_simple(self.directory, file, buffer),

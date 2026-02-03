@@ -8,15 +8,21 @@ use std::sync::Arc;
 use crate::{Path, byte_index_to_location};
 use json_spanned_value::Spanned;
 
-use crate::OneOrMany;
 use crate::error::{Error, Location};
-use cm_types::BorrowedName;
+use crate::{CanonicalizeContext, OneOrMany};
+use cm_types::{BorrowedName, Name};
 use serde::{Serialize, Serializer};
 
-#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash, PartialOrd, Ord, Default)]
 pub struct Origin {
     pub file: Arc<PathBuf>,
     pub location: Location,
+}
+
+impl Origin {
+    pub fn synthetic(file: PathBuf) -> Self {
+        Self { file: Arc::new(file), location: Location::default() }
+    }
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -31,6 +37,26 @@ impl<T> ContextSpanned<T> {
         F: FnOnce(T) -> U,
     {
         ContextSpanned { value: f(self.value), origin: self.origin }
+    }
+
+    pub fn new_synthetic(value: T, file: PathBuf) -> Self {
+        Self { value, origin: Origin::synthetic(file) }
+    }
+
+    pub fn maybe_synthetic(val: Option<T>, file: PathBuf) -> Option<Self> {
+        val.map(|v| Self::new_synthetic(v, file))
+    }
+}
+
+impl<T: CanonicalizeContext> CanonicalizeContext for ContextSpanned<T> {
+    fn canonicalize_context(&mut self) {
+        self.value.canonicalize_context();
+    }
+}
+
+impl<T: ContextPathClause> ContextPathClause for ContextSpanned<T> {
+    fn path(&self) -> Option<&ContextSpanned<Path>> {
+        self.value.path()
     }
 }
 
@@ -164,6 +190,19 @@ pub trait ContextCapabilityClause {
     fn config(&self) -> Option<ContextSpanned<OneOrMany<&BorrowedName>>>;
     fn event_stream(&self) -> Option<ContextSpanned<OneOrMany<&BorrowedName>>>;
 
+    fn origin(&self) -> &Origin;
+    fn file_path(&self) -> PathBuf;
+
+    fn set_service(&mut self, o: Option<ContextSpanned<OneOrMany<Name>>>);
+    fn set_protocol(&mut self, o: Option<ContextSpanned<OneOrMany<Name>>>);
+    fn set_directory(&mut self, o: Option<ContextSpanned<OneOrMany<Name>>>);
+    fn set_storage(&mut self, o: Option<ContextSpanned<OneOrMany<Name>>>);
+    fn set_runner(&mut self, o: Option<ContextSpanned<OneOrMany<Name>>>);
+    fn set_resolver(&mut self, o: Option<ContextSpanned<OneOrMany<Name>>>);
+    fn set_event_stream(&mut self, o: Option<ContextSpanned<OneOrMany<Name>>>);
+    fn set_dictionary(&mut self, o: Option<ContextSpanned<OneOrMany<Name>>>);
+    fn set_config(&mut self, o: Option<ContextSpanned<OneOrMany<Name>>>);
+
     // /// Returns the name of the capability for display purposes.
     // /// If `service()` returns `Some`, the capability name must be "service", etc.
     // ///
@@ -248,11 +287,120 @@ pub trait ContextCapabilityClause {
             .collect()
     }
 
+    fn set_names(&mut self, names: Vec<Name>) {
+        let names_raw = match names.len() {
+            0 => None,
+            1 => Some(OneOrMany::One(names.first().unwrap().clone())),
+            _ => Some(OneOrMany::Many(names)),
+        };
+
+        let names = ContextSpanned::maybe_synthetic(names_raw, self.file_path());
+
+        let cap_type = self.capability_type(None).unwrap();
+        if cap_type == "protocol" {
+            self.set_protocol(names);
+        } else if cap_type == "service" {
+            self.set_service(names);
+        } else if cap_type == "directory" {
+            self.set_directory(names);
+        } else if cap_type == "storage" {
+            self.set_storage(names);
+        } else if cap_type == "runner" {
+            self.set_runner(names);
+        } else if cap_type == "resolver" {
+            self.set_resolver(names);
+        } else if cap_type == "event_stream" {
+            self.set_event_stream(names);
+        } else if cap_type == "dictionary" {
+            self.set_dictionary(names);
+        } else if cap_type == "config" {
+            self.set_config(names);
+        } else {
+            panic!("Unknown capability type {}", cap_type);
+        }
+    }
+
     /// Returns true if this capability type allows the ::Many variant of OneOrMany.
     fn are_many_names_allowed(&self) -> bool;
 
     fn decl_type(&self) -> &'static str;
     fn supported(&self) -> &[&'static str];
+}
+
+impl<T: ContextCapabilityClause> ContextCapabilityClause for ContextSpanned<T> {
+    fn service(&self) -> Option<ContextSpanned<OneOrMany<&BorrowedName>>> {
+        self.value.service()
+    }
+    fn protocol(&self) -> Option<ContextSpanned<OneOrMany<&BorrowedName>>> {
+        self.value.protocol()
+    }
+    fn directory(&self) -> Option<ContextSpanned<OneOrMany<&BorrowedName>>> {
+        self.value.directory()
+    }
+    fn storage(&self) -> Option<ContextSpanned<OneOrMany<&BorrowedName>>> {
+        self.value.storage()
+    }
+    fn runner(&self) -> Option<ContextSpanned<OneOrMany<&BorrowedName>>> {
+        self.value.runner()
+    }
+    fn resolver(&self) -> Option<ContextSpanned<OneOrMany<&BorrowedName>>> {
+        self.value.resolver()
+    }
+    fn dictionary(&self) -> Option<ContextSpanned<OneOrMany<&BorrowedName>>> {
+        self.value.dictionary()
+    }
+    fn config(&self) -> Option<ContextSpanned<OneOrMany<&BorrowedName>>> {
+        self.value.config()
+    }
+    fn event_stream(&self) -> Option<ContextSpanned<OneOrMany<&BorrowedName>>> {
+        self.value.event_stream()
+    }
+
+    fn origin(&self) -> &Origin {
+        &self.origin
+    }
+
+    fn file_path(&self) -> PathBuf {
+        self.origin.file.to_path_buf()
+    }
+
+    fn set_service(&mut self, o: Option<ContextSpanned<OneOrMany<Name>>>) {
+        self.value.set_service(o)
+    }
+    fn set_protocol(&mut self, o: Option<ContextSpanned<OneOrMany<Name>>>) {
+        self.value.set_protocol(o)
+    }
+    fn set_directory(&mut self, o: Option<ContextSpanned<OneOrMany<Name>>>) {
+        self.value.set_directory(o)
+    }
+    fn set_storage(&mut self, o: Option<ContextSpanned<OneOrMany<Name>>>) {
+        self.value.set_storage(o)
+    }
+    fn set_runner(&mut self, o: Option<ContextSpanned<OneOrMany<Name>>>) {
+        self.value.set_runner(o)
+    }
+    fn set_resolver(&mut self, o: Option<ContextSpanned<OneOrMany<Name>>>) {
+        self.value.set_resolver(o)
+    }
+    fn set_event_stream(&mut self, o: Option<ContextSpanned<OneOrMany<Name>>>) {
+        self.value.set_event_stream(o)
+    }
+    fn set_dictionary(&mut self, o: Option<ContextSpanned<OneOrMany<Name>>>) {
+        self.value.set_dictionary(o)
+    }
+    fn set_config(&mut self, o: Option<ContextSpanned<OneOrMany<Name>>>) {
+        self.value.set_config(o)
+    }
+
+    fn are_many_names_allowed(&self) -> bool {
+        self.value.are_many_names_allowed()
+    }
+    fn decl_type(&self) -> &'static str {
+        self.value.decl_type()
+    }
+    fn supported(&self) -> &[&'static str] {
+        self.value.supported()
+    }
 }
 
 #[macro_export]

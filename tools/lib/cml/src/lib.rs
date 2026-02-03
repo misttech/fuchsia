@@ -33,7 +33,7 @@ pub use crate::types::capability::{Capability, CapabilityFromRef, ContextCapabil
 pub use crate::types::capability_id::CapabilityId;
 pub use crate::types::child::Child;
 pub use crate::types::collection::Collection;
-use crate::types::common::{ContextCapabilityClause, ContextSpanned, Origin};
+use crate::types::common::{ContextCapabilityClause, ContextPathClause, ContextSpanned, Origin};
 pub use crate::types::document::{
     Document, DocumentContext, ParsedDocument, convert_parsed_to_document,
 };
@@ -198,6 +198,58 @@ where
             // that type.
             let a_type = a.capability_type().unwrap();
             let b_type = b.capability_type().unwrap();
+            a_type.cmp(b_type).then_with(|| {
+                let a_names = a.names();
+                let b_names = b.names();
+                let a_first_name = a_names.first().unwrap();
+                let b_first_name = b_names.first().unwrap();
+                a_first_name.cmp(b_first_name)
+            })
+        });
+    }
+}
+
+impl<T> CanonicalizeContext for Vec<T>
+where
+    T: CanonicalizeContext + ContextCapabilityClause + ContextPathClause + Clone + PartialEq,
+{
+    fn canonicalize_context(&mut self) {
+        // Collapse like-entries into one. Like entries are those that are equal in all fields
+        // but their capability names. Accomplish this by collecting all the names into a vector
+        // keyed by an instance of T with its names removed.
+        let mut to_merge: Vec<(T, Vec<Name>)> = vec![];
+        let mut to_keep: Vec<T> = vec![];
+        self.iter().for_each(|c| {
+            // Any entry with a `path` set cannot be merged with another.
+            if !c.are_many_names_allowed() || c.path().is_some() {
+                to_keep.push(c.clone());
+                return;
+            }
+            let mut names: Vec<Name> = c.names().into_iter().map(Into::into).collect();
+            let mut copy: T = c.clone();
+            copy.set_names(vec![Name::from_str("a").unwrap()]); // The name here is arbitrary.
+            let r = to_merge.iter().position(|(t, _)| t == &copy);
+            match r {
+                Some(i) => to_merge[i].1.append(&mut names),
+                None => to_merge.push((copy, names)),
+            };
+        });
+        let mut merged = to_merge
+            .into_iter()
+            .map(|(mut t, names)| {
+                t.set_names(names);
+                t
+            })
+            .collect::<Vec<_>>();
+        to_keep.append(&mut merged);
+        *self = to_keep;
+
+        self.iter_mut().for_each(|c| c.canonicalize_context());
+        self.sort_by(|a, b| {
+            // Sort by capability type, then by the name of the first entry for
+            // that type.
+            let a_type = a.capability_type(None).unwrap();
+            let b_type = b.capability_type(None).unwrap();
             a_type.cmp(b_type).then_with(|| {
                 let a_names = a.names();
                 let b_names = b.names();
@@ -809,6 +861,11 @@ pub trait CapabilityClause: Clone + PartialEq + std::fmt::Debug {
 
 trait Canonicalize {
     fn canonicalize(&mut self);
+}
+
+#[allow(dead_code)]
+trait CanonicalizeContext {
+    fn canonicalize_context(&mut self);
 }
 
 pub trait AsClause {

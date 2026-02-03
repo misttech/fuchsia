@@ -5,8 +5,8 @@
 use crate::one_or_many::{OneOrMany, option_one_or_many_as_ref};
 use crate::types::common::*;
 use crate::{
-    AnyRef, AsClause, CapabilityClause, Error, FromClause, FromClauseContext, OfferFromRef,
-    PathClause, merge_spanned_vec,
+    AnyRef, AsClause, AsClauseContext, CapabilityClause, ContextPathClause, Error, FromClause,
+    FromClauseContext, OfferFromRef, PathClause, merge_spanned_vec,
 };
 pub use cm_types::{
     Availability, BorrowedName, BoundedName, DeliveryType, DependencyType, HandleType, Name,
@@ -255,6 +255,15 @@ pub struct ContextRunnerRegistration {
     pub r#as: Option<ContextSpanned<Name>>,
 }
 
+impl FromClauseContext for ContextRunnerRegistration {
+    fn from_(&self) -> ContextSpanned<OneOrMany<AnyRef<'_>>> {
+        let origin = self.from.origin.clone();
+        let value = OneOrMany::One(AnyRef::from(&self.from.value));
+
+        ContextSpanned { value, origin }
+    }
+}
+
 impl FromClause for RunnerRegistration {
     fn from_(&self) -> OneOrMany<AnyRef<'_>> {
         OneOrMany::One(AnyRef::from(&self.from))
@@ -315,6 +324,15 @@ impl FromClause for ResolverRegistration {
     }
 }
 
+impl FromClauseContext for ContextResolverRegistration {
+    fn from_(&self) -> ContextSpanned<OneOrMany<AnyRef<'_>>> {
+        let origin = self.from.origin.clone();
+        let value = OneOrMany::One(AnyRef::from(&self.from.value));
+
+        ContextSpanned { value, origin }
+    }
+}
+
 #[derive(Deserialize, Debug, Clone, PartialEq, ReferenceDoc, Serialize)]
 #[serde(deny_unknown_fields)]
 #[reference_doc(fields_as = "list")]
@@ -346,17 +364,18 @@ impl Hydrate for ParsedDebugRegistration {
     type Output = ContextDebugRegistration;
 
     fn hydrate(self, file: &Arc<PathBuf>, buffer: &String) -> Result<Self::Output, Error> {
+        let origin = Origin::synthetic(file.clone().to_path_buf());
         let protocol = hydrate_opt_simple(self.protocol, file, buffer);
-
         let from = hydrate_simple(self.from, file, buffer);
         let r#as = hydrate_opt_simple(self.r#as, file, buffer);
 
-        Ok(ContextDebugRegistration { protocol, from, r#as })
+        Ok(ContextDebugRegistration { origin, protocol, from, r#as })
     }
 }
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct ContextDebugRegistration {
+    pub origin: Origin,
     pub protocol: Option<ContextSpanned<OneOrMany<Name>>>,
     pub from: ContextSpanned<OfferFromRef>,
     pub r#as: Option<ContextSpanned<Name>>,
@@ -368,6 +387,21 @@ impl FromClauseContext for ContextDebugRegistration {
         let value = OneOrMany::One(AnyRef::from(&self.from.value));
 
         ContextSpanned { value, origin }
+    }
+}
+
+impl AsClauseContext for ContextDebugRegistration {
+    fn r#as(&self) -> Option<ContextSpanned<&BorrowedName>> {
+        self.r#as.as_ref().map(|spanned_name| ContextSpanned {
+            value: spanned_name.value.as_ref(),
+            origin: spanned_name.origin.clone(),
+        })
+    }
+}
+
+impl ContextPathClause for ContextDebugRegistration {
+    fn path(&self) -> Option<&ContextSpanned<Path>> {
+        None
     }
 }
 
@@ -408,6 +442,26 @@ impl ContextCapabilityClause for ContextDebugRegistration {
     }
     fn are_many_names_allowed(&self) -> bool {
         ["protocol"].contains(&self.capability_type(None).unwrap())
+    }
+
+    fn set_service(&mut self, _o: Option<ContextSpanned<OneOrMany<Name>>>) {}
+    fn set_protocol(&mut self, o: Option<ContextSpanned<OneOrMany<Name>>>) {
+        self.protocol = o;
+    }
+    fn set_directory(&mut self, _o: Option<ContextSpanned<OneOrMany<Name>>>) {}
+    fn set_storage(&mut self, _o: Option<ContextSpanned<OneOrMany<Name>>>) {}
+    fn set_runner(&mut self, _o: Option<ContextSpanned<OneOrMany<Name>>>) {}
+    fn set_resolver(&mut self, _o: Option<ContextSpanned<OneOrMany<Name>>>) {}
+    fn set_event_stream(&mut self, _o: Option<ContextSpanned<OneOrMany<Name>>>) {}
+    fn set_dictionary(&mut self, _o: Option<ContextSpanned<OneOrMany<Name>>>) {}
+    fn set_config(&mut self, _o: Option<ContextSpanned<OneOrMany<Name>>>) {}
+
+    fn origin(&self) -> &Origin {
+        &self.origin
+    }
+
+    fn file_path(&self) -> PathBuf {
+        (*self.origin.file).clone()
     }
 }
 
