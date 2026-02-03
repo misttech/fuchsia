@@ -278,7 +278,7 @@ impl FsNodeOps for ProcSysNetIpv6Conf {
                 );
                 dir.entry(
                     "accept_ra_defrtr",
-                    StubBytesFile::new_node(bug_ref!("https://fxbug.dev/322907588")),
+                    new_interface_config_file_node::<AcceptRaDefrtr>(interface),
                     FILE_MODE,
                 );
                 dir.entry(
@@ -1080,6 +1080,43 @@ impl InterfaceConfig for UseTempAddr {
             .map(|use_tempaddr| if use_tempaddr { 2 } else { 0 })
             .ok_or_else(|| {
                 log_error!("network interface config missing ipv6 ndp slacc temporary_address");
+                errno!(EIO)
+            })
+    }
+}
+
+struct AcceptRaDefrtr;
+
+impl InterfaceConfig for AcceptRaDefrtr {
+    fn try_from_i32(value: i32) -> Result<fidl_fuchsia_net_interfaces_admin::Configuration, Errno> {
+        Ok(fnet_interfaces_admin::Configuration {
+            ipv6: Some(fnet_interfaces_admin::Ipv6Configuration {
+                ndp: Some(fnet_interfaces_admin::NdpConfiguration {
+                    route_discovery: Some(fnet_interfaces_admin::RouteDiscoveryConfiguration {
+                        allow_default_route: Some(value != 0),
+                        ..Default::default()
+                    }),
+                    ..Default::default()
+                }),
+                ..Default::default()
+            }),
+            ..Default::default()
+        })
+    }
+
+    fn try_into_i32(
+        config: fidl_fuchsia_net_interfaces_admin::Configuration,
+    ) -> Result<i32, Errno> {
+        config
+            .ipv6
+            .and_then(|ipv6| ipv6.ndp)
+            .and_then(|ndp| ndp.route_discovery)
+            .and_then(|route_discovery| route_discovery.allow_default_route)
+            .map(|allow_default_route| i32::from(allow_default_route))
+            .ok_or_else(|| {
+                log_error!(
+                    "network interface config missing ipv6 ndp route_discovery allow_default_route"
+                );
                 errno!(EIO)
             })
     }

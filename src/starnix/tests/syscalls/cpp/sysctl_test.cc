@@ -271,5 +271,7 @@ INSTANTIATE_TEST_SUITE_P(
         SysctlTestReadBackParam{"/proc/sys/net/ipv6/neigh/default/retrans_time_ms", 2000},
         SysctlTestReadBackParam{"/proc/sys/net/ipv4/neigh/default/retrans_time_ms", 2000},
         SysctlTestReadBackParam{"/proc/sys/net/ipv6/conf/default/use_tempaddr", 0},
-        SysctlTestReadBackParam{"/proc/sys/net/ipv6/conf/default/use_tempaddr", 2}));
+        SysctlTestReadBackParam{"/proc/sys/net/ipv6/conf/default/use_tempaddr", 2},
+        SysctlTestReadBackParam{"/proc/sys/net/ipv6/conf/default/accept_ra_defrtr", 0},
+        SysctlTestReadBackParam{"/proc/sys/net/ipv6/conf/default/accept_ra_defrtr", 1}));
 }  // namespace
