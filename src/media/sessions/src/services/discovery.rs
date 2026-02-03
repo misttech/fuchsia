@@ -10,16 +10,16 @@ use self::watcher::*;
 use crate::interrupter::*;
 use crate::proxies::observer::*;
 use crate::proxies::player::*;
-use crate::{Result, SessionId, CHANNEL_BUFFER_SIZE};
+use crate::{CHANNEL_BUFFER_SIZE, Result, SessionId};
 use async_utils::stream::StreamMap;
 use fidl::endpoints::{ClientEnd, ServerEnd};
 use fidl_fuchsia_media::UsageReporterProxy;
 use fidl_fuchsia_media_sessions2::*;
+use futures::StreamExt;
 use futures::channel::mpsc;
 use futures::future::BoxFuture;
 use futures::prelude::*;
 use futures::stream::Once;
-use futures::StreamExt;
 use log::{info, warn};
 use std::collections::{HashMap, HashSet};
 use std::ops::RangeFrom;
@@ -344,10 +344,12 @@ impl Discovery {
 mod test {
     use super::*;
     use crate::id::Id;
+    use crate::proxies::player::ValidPlayerInfoDelta;
     use crate::spawn_log_error;
     use assert_matches::assert_matches;
     use fidl::endpoints::{create_endpoints, create_proxy};
     use fidl_fuchsia_media::UsageReporterMarker;
+    use fidl_fuchsia_media_sessions2::InterruptionBehavior;
     use fuchsia_inspect::Inspector;
     use futures::channel::oneshot;
 
@@ -415,6 +417,41 @@ mod test {
         let mut watcher2 = watcher2_server.into_stream();
         assert_matches!(watcher2.try_next().await?.and_then(|r| r.into_session_updated()), Some(_));
 
+        Ok(())
+    }
+
+    #[fuchsia::test]
+    async fn interruption_is_gracefully_disabled_when_usage_reporter_is_unavailable() -> Result<()>
+    {
+        let (mut player_sink, player_stream) = mpsc::channel(100);
+        let (_discovery_request_sink, discovery_request_stream) = mpsc::channel(100);
+        let (_observer_request_sink, observer_request_stream) = mpsc::channel(100);
+        let (player_published_sink, _player_published_receiver) = oneshot::channel();
+
+        let (usage_reporter_proxy, server_end) = create_proxy::<UsageReporterMarker>();
+        drop(server_end);
+        let under_test = Discovery::new(player_stream, usage_reporter_proxy);
+        spawn_log_error(under_test.serve(discovery_request_stream, observer_request_stream));
+
+        let (player_client, _player_server) = create_endpoints::<PlayerMarker>();
+        let inspector = Inspector::default();
+        let mut player = Player::new(
+            Id::new()?,
+            player_client,
+            PlayerRegistration {
+                domain: Some(String::from("test_domain://")),
+                ..Default::default()
+            },
+            inspector.root().create_child("test_player"),
+            player_published_sink,
+        )?;
+        player.update(ValidPlayerInfoDelta {
+            interruption_behavior: Some(InterruptionBehavior::Pause),
+            ..Default::default()
+        });
+        player_sink.send(player).await?;
+
+        // The test passes by not panicking.
         Ok(())
     }
 }

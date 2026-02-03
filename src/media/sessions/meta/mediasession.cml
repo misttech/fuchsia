@@ -21,7 +21,10 @@
         },
     ],
     use: [
-        { protocol: "fuchsia.media.UsageReporter" },
+        {
+            protocol: "fuchsia.media.UsageReporter",
+            availability: "optional",
+        },
     ],
     expose: [
         {

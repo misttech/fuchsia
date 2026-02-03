@@ -21,11 +21,13 @@
             protocol: "fuchsia.media.UsageReporter",
             from: "#audio_core",
             to: "#mediasession",
+            source_availability: "unknown",
         },
         {
             protocol: "fuchsia.media.sessions2.Publisher",
             from: "#mediasession",
             to: "#mediasession-examples",
+            target_availability: "unknown",
         },
         {
             protocol: [

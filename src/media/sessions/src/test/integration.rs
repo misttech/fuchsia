@@ -2,7 +2,6 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use crate::{Result, SessionId};
 use anyhow::Context as _;
 use assert_matches::assert_matches;
 use diagnostics_reader::{ArchiveReader, ComponentSelector};
@@ -16,11 +15,15 @@ use fuchsia_component::server::*;
 use fuchsia_component_test::{
     Capability, ChildOptions, LocalComponentHandles, RealmBuilder, RealmInstance, Ref, Route,
 };
+use futures::FutureExt;
 use futures::channel::mpsc;
 use futures::sink::SinkExt;
 use futures::stream::{StreamExt, TryStreamExt};
 use std::collections::HashMap;
+use test_case::test_case;
 use {fuchsia_async as fasync, fuchsia_inspect as inspect};
+
+use crate::{Result, SessionId};
 
 const MEDIASESSION_URL: &str = "#meta/mediasession.cm";
 const MEDIASESSION_NAME: &str = "mediasession";
@@ -37,7 +40,7 @@ struct TestService {
 }
 
 impl TestService {
-    async fn new() -> Result<Self> {
+    async fn new(include_usage_reporter: bool) -> Result<Self> {
         let builder = RealmBuilder::new().await.unwrap();
         let mediasession = builder
             .add_child(MEDIASESSION_NAME, MEDIASESSION_URL, ChildOptions::new())
@@ -55,6 +58,18 @@ impl TestService {
             )
             .await
             .unwrap();
+
+        if include_usage_reporter {
+            builder
+                .add_route(
+                    Route::new()
+                        .capability(Capability::protocol::<UsageReporterMarker>())
+                        .from(&usage_reporter)
+                        .to(&mediasession),
+                )
+                .await?;
+        }
+
         builder
             .add_route(
                 Route::new()
@@ -100,14 +115,6 @@ impl TestService {
             )
             .await
             .unwrap();
-        builder
-            .add_route(
-                Route::new()
-                    .capability(Capability::protocol::<UsageReporterMarker>())
-                    .from(&usage_reporter)
-                    .to(&mediasession),
-            )
-            .await?;
 
         let realm = builder.build().await.unwrap();
 
@@ -346,9 +353,11 @@ fn delta_with_interruption(
     delta
 }
 
+#[test_case(true)]
+#[test_case(false)]
 #[fuchsia::test(logging_tags = ["mediasession_tests"])]
-async fn can_publish_players() -> Result<()> {
-    let service = TestService::new().await?;
+async fn can_publish_players(include_usage_reporter: bool) -> Result<()> {
+    let service = TestService::new(include_usage_reporter).await?;
 
     let mut player = TestPlayer::new(&service).await?;
     let mut watcher = service.new_watcher(Default::default())?;
@@ -362,9 +371,11 @@ async fn can_publish_players() -> Result<()> {
     Ok(())
 }
 
+#[test_case(true)]
+#[test_case(false)]
 #[fuchsia::test(logging_tags = ["mediasession_tests"])]
-async fn can_receive_deltas() -> Result<()> {
-    let service = TestService::new().await?;
+async fn can_receive_deltas(include_usage_reporter: bool) -> Result<()> {
+    let service = TestService::new(include_usage_reporter).await?;
 
     let mut player1 = TestPlayer::new(&service).await?;
     let mut player2 = TestPlayer::new(&service).await?;
@@ -412,9 +423,11 @@ async fn can_receive_deltas() -> Result<()> {
     Ok(())
 }
 
+#[test_case(true)]
+#[test_case(false)]
 #[fuchsia::test(logging_tags = ["mediasession_tests"])]
-async fn active_status() -> Result<()> {
-    let service = TestService::new().await?;
+async fn active_status(include_usage_reporter: bool) -> Result<()> {
+    let service = TestService::new(include_usage_reporter).await?;
 
     let mut player = TestPlayer::new(&service).await?;
     let mut watcher = service.new_watcher(Default::default())?;
@@ -470,9 +483,11 @@ async fn active_status() -> Result<()> {
     Ok(())
 }
 
+#[test_case(true)]
+#[test_case(false)]
 #[fuchsia::test(logging_tags = ["mediasession_tests"])]
-async fn player_controls_are_proxied() -> Result<()> {
-    let service = TestService::new().await?;
+async fn player_controls_are_proxied(include_usage_reporter: bool) -> Result<()> {
+    let service = TestService::new(include_usage_reporter).await?;
 
     let mut player = TestPlayer::new(&service).await?;
     let mut watcher = service.new_watcher(Default::default())?;
@@ -507,9 +522,11 @@ async fn player_controls_are_proxied() -> Result<()> {
         .await
 }
 
+#[test_case(true)]
+#[test_case(false)]
 #[fuchsia::test(logging_tags = ["mediasession_tests"])]
-async fn player_disconnection_propagates() -> Result<()> {
-    let service = TestService::new().await?;
+async fn player_disconnection_propagates(include_usage_reporter: bool) -> Result<()> {
+    let service = TestService::new(include_usage_reporter).await?;
 
     let mut player = TestPlayer::new(&service).await?;
     let mut watcher = service.new_watcher(Default::default())?;
@@ -530,9 +547,11 @@ async fn player_disconnection_propagates() -> Result<()> {
     Ok(())
 }
 
+#[test_case(true)]
+#[test_case(false)]
 #[fuchsia::test(logging_tags = ["mediasession_tests"])]
-async fn watch_filter_active() -> Result<()> {
-    let service = TestService::new().await?;
+async fn watch_filter_active(include_usage_reporter: bool) -> Result<()> {
+    let service = TestService::new(include_usage_reporter).await?;
 
     let mut player1 = TestPlayer::new(&service).await?;
     let mut player2 = TestPlayer::new(&service).await?;
@@ -557,9 +576,11 @@ async fn watch_filter_active() -> Result<()> {
     Ok(())
 }
 
+#[test_case(true)]
+#[test_case(false)]
 #[fuchsia::test(logging_tags = ["mediasession_tests"])]
-async fn disconnected_player_results_in_removal_event() -> Result<()> {
-    let service = TestService::new().await?;
+async fn disconnected_player_results_in_removal_event(include_usage_reporter: bool) -> Result<()> {
+    let service = TestService::new(include_usage_reporter).await?;
 
     let mut player1 = TestPlayer::new(&service).await?;
     let mut watcher = service.new_watcher(Default::default())?;
@@ -575,9 +596,11 @@ async fn disconnected_player_results_in_removal_event() -> Result<()> {
     Ok(())
 }
 
+#[test_case(true)]
+#[test_case(false)]
 #[fuchsia::test(logging_tags = ["mediasession_tests"])]
-async fn player_status() -> Result<()> {
-    let service = TestService::new().await?;
+async fn player_status(include_usage_reporter: bool) -> Result<()> {
+    let service = TestService::new(include_usage_reporter).await?;
 
     let mut player = TestPlayer::new(&service).await?;
 
@@ -615,9 +638,11 @@ async fn player_status() -> Result<()> {
     Ok(())
 }
 
+#[test_case(true)]
+#[test_case(false)]
 #[fuchsia::test(logging_tags = ["mediasession_tests"])]
-async fn player_capabilities() -> Result<()> {
-    let service = TestService::new().await?;
+async fn player_capabilities(include_usage_reporter: bool) -> Result<()> {
+    let service = TestService::new(include_usage_reporter).await?;
 
     let mut player = TestPlayer::new(&service).await?;
 
@@ -644,9 +669,11 @@ async fn player_capabilities() -> Result<()> {
     Ok(())
 }
 
+#[test_case(true)]
+#[test_case(false)]
 #[fuchsia::test(logging_tags = ["mediasession_tests"])]
-async fn media_images() -> Result<()> {
-    let service = TestService::new().await?;
+async fn media_images(include_usage_reporter: bool) -> Result<()> {
+    let service = TestService::new(include_usage_reporter).await?;
 
     let mut player = TestPlayer::new(&service).await?;
 
@@ -690,9 +717,11 @@ async fn media_images() -> Result<()> {
     Ok(())
 }
 
+#[test_case(true)]
+#[test_case(false)]
 #[fuchsia::test(logging_tags = ["mediasession_tests"])]
-async fn players_get_ids() -> Result<()> {
-    let service = TestService::new().await?;
+async fn players_get_ids(include_usage_reporter: bool) -> Result<()> {
+    let service = TestService::new(include_usage_reporter).await?;
 
     let player1 = TestPlayer::new(&service).await?;
     let player2 = TestPlayer::new(&service).await?;
@@ -702,9 +731,11 @@ async fn players_get_ids() -> Result<()> {
     Ok(())
 }
 
+#[test_case(true)]
+#[test_case(false)]
 #[fuchsia::test(logging_tags = ["mediasession_tests"])]
-async fn session_controllers_can_watch_session_status() -> Result<()> {
-    let service = TestService::new().await?;
+async fn session_controllers_can_watch_session_status(include_usage_reporter: bool) -> Result<()> {
+    let service = TestService::new(include_usage_reporter).await?;
     let mut watcher = service.new_watcher(Default::default())?;
 
     let mut player1 = TestPlayer::new(&service).await?;
@@ -733,9 +764,11 @@ async fn session_controllers_can_watch_session_status() -> Result<()> {
     Ok(())
 }
 
+#[test_case(true)]
+#[test_case(false)]
 #[fuchsia::test(logging_tags = ["mediasession_tests"])]
-async fn session_observers_can_watch_session_status() -> Result<()> {
-    let service = TestService::new().await?;
+async fn session_observers_can_watch_session_status(include_usage_reporter: bool) -> Result<()> {
+    let service = TestService::new(include_usage_reporter).await?;
     let mut watcher = service.new_observer_watcher(Default::default())?;
 
     let mut player1 = TestPlayer::new(&service).await?;
@@ -764,9 +797,11 @@ async fn session_observers_can_watch_session_status() -> Result<()> {
     Ok(())
 }
 
+#[test_case(true)]
+#[test_case(false)]
 #[fuchsia::test(logging_tags = ["mediasession_tests"])]
-async fn player_disconnection_disconects_observers() -> Result<()> {
-    let service = TestService::new().await?;
+async fn player_disconnection_disconects_observers(include_usage_reporter: bool) -> Result<()> {
+    let service = TestService::new(include_usage_reporter).await?;
     let mut watcher = service.new_observer_watcher(Default::default())?;
 
     let mut player = TestPlayer::new(&service).await?;
@@ -786,9 +821,11 @@ async fn player_disconnection_disconects_observers() -> Result<()> {
     Ok(())
 }
 
+#[test_case(true)]
+#[test_case(false)]
 #[fuchsia::test(logging_tags = ["mediasession_tests"])]
-async fn observers_caught_up_with_state_of_session() -> Result<()> {
-    let service = TestService::new().await?;
+async fn observers_caught_up_with_state_of_session(include_usage_reporter: bool) -> Result<()> {
+    let service = TestService::new(include_usage_reporter).await?;
     let mut watcher = service.new_observer_watcher(Default::default())?;
 
     let mut player = TestPlayer::new(&service).await?;
@@ -817,7 +854,7 @@ async fn observers_caught_up_with_state_of_session() -> Result<()> {
 
 #[fuchsia::test(logging_tags = ["mediasession_tests"])]
 async fn player_is_interrupted() -> Result<()> {
-    let mut service = TestService::new().await?;
+    let mut service = TestService::new(true).await?;
     let mut player = TestPlayer::new(&service).await?;
 
     player
@@ -846,7 +883,7 @@ async fn player_is_interrupted() -> Result<()> {
 
 #[fuchsia::test(logging_tags = ["mediasession_tests"])]
 async fn unenrolled_player_is_not_paused_when_interrupted() -> Result<()> {
-    let mut service = TestService::new().await?;
+    let mut service = TestService::new(true).await?;
     let mut player1 = TestPlayer::new(&service).await?;
     let mut player2 = TestPlayer::new(&service).await?;
 
@@ -876,7 +913,7 @@ async fn unenrolled_player_is_not_paused_when_interrupted() -> Result<()> {
 
 #[fuchsia::test(logging_tags = ["mediasession_tests"])]
 async fn player_paused_before_interruption_is_not_resumed_by_its_end() -> Result<()> {
-    let mut service = TestService::new().await?;
+    let mut service = TestService::new(true).await?;
     let mut player1 = TestPlayer::new(&service).await?;
     let mut player2 = TestPlayer::new(&service).await?;
 
@@ -912,9 +949,13 @@ async fn player_paused_before_interruption_is_not_resumed_by_its_end() -> Result
     Ok(())
 }
 
+#[test_case(true)]
+#[test_case(false)]
 #[fuchsia::test(logging_tags = ["mediasession_tests"])]
-async fn active_session_initializes_clients_without_player() -> Result<()> {
-    let service = TestService::new().await?;
+async fn active_session_initializes_clients_without_player(
+    include_usage_reporter: bool,
+) -> Result<()> {
+    let service = TestService::new(include_usage_reporter).await?;
     let active_session_discovery: ActiveSessionProxy = service
         .realm
         .root
@@ -930,9 +971,13 @@ async fn active_session_initializes_clients_without_player() -> Result<()> {
     Ok(())
 }
 
+#[test_case(true)]
+#[test_case(false)]
 #[fuchsia::test(logging_tags = ["mediasession_tests"])]
-async fn active_session_initializes_clients_with_idle_player() -> Result<()> {
-    let service = TestService::new().await?;
+async fn active_session_initializes_clients_with_idle_player(
+    include_usage_reporter: bool,
+) -> Result<()> {
+    let service = TestService::new(include_usage_reporter).await?;
     let mut player = TestPlayer::new(&service).await?;
     let mut watcher = service.new_watcher(Default::default())?;
     let active_session_discovery: ActiveSessionProxy = service
@@ -953,9 +998,13 @@ async fn active_session_initializes_clients_with_idle_player() -> Result<()> {
     Ok(())
 }
 
+#[test_case(true)]
+#[test_case(false)]
 #[fuchsia::test(logging_tags = ["mediasession_tests"])]
-async fn active_session_initializes_clients_with_active_player() -> Result<()> {
-    let service = TestService::new().await?;
+async fn active_session_initializes_clients_with_active_player(
+    include_usage_reporter: bool,
+) -> Result<()> {
+    let service = TestService::new(include_usage_reporter).await?;
     let mut player = TestPlayer::new(&service).await?;
     let mut watcher = service.new_watcher(Default::default())?;
     let active_session_discovery: ActiveSessionProxy = service
@@ -987,9 +1036,13 @@ async fn active_session_initializes_clients_with_active_player() -> Result<()> {
     Ok(())
 }
 
+#[test_case(true)]
+#[test_case(false)]
 #[fuchsia::test(logging_tags = ["mediasession_tests"])]
-async fn active_session_falls_back_when_session_removed() -> Result<()> {
-    let service = TestService::new().await?;
+async fn active_session_falls_back_when_session_removed(
+    include_usage_reporter: bool,
+) -> Result<()> {
+    let service = TestService::new(include_usage_reporter).await?;
     let mut watcher = service.new_watcher(Default::default())?;
     let active_session_discovery: ActiveSessionProxy = service
         .realm
@@ -1042,9 +1095,11 @@ async fn active_session_falls_back_when_session_removed() -> Result<()> {
     Ok(())
 }
 
+#[test_case(true)]
+#[test_case(false)]
 #[fuchsia::test(logging_tags = ["mediasession_tests"])]
-async fn inspect_tree_correct() -> Result<()> {
-    let mut service = TestService::new().await?;
+async fn inspect_tree_correct(include_usage_reporter: bool) -> Result<()> {
+    let mut service = TestService::new(include_usage_reporter).await?;
     let player1 = TestPlayer::new(&service).await?;
     let player2 = TestPlayer::new(&service).await?;
     let ids = vec![format!("{}", player1.id), format!("{}", player2.id)];
@@ -1056,6 +1111,20 @@ async fn inspect_tree_correct() -> Result<()> {
     assert_eq!(players.children.len(), 2);
     assert!(ids.contains(&players.children[0].name));
     assert!(ids.contains(&players.children[1].name));
+
+    Ok(())
+}
+
+#[fuchsia::test(logging_tags = ["mediasession_tests"])]
+async fn interruption_is_gracefully_disabled_when_usage_reporter_is_unavailable() -> Result<()> {
+    let mut service = TestService::new(false).await?;
+    let mut player = TestPlayer::new(&service).await?;
+    player
+        .emit_delta(delta_with_interruption(PlayerState::Playing, InterruptionBehavior::Pause))
+        .await?;
+
+    // No new usage watcher should have been registered.
+    assert!(service.new_usage_watchers.next().now_or_never().is_none());
 
     Ok(())
 }

@@ -83,9 +83,9 @@ impl DefineSubsystemConfiguration<PlatformMediaConfig> for MediaSubsystem {
                 *context.feature_set_level == FeatureSetLevel::Standard,
                 "Media sessions can only be enabled in the 'standard' feature set level."
             );
-            let Some(AudioConfig::FullStack(_)) = media_config.audio else {
-                bail!("media.enable_sessions requires {{ 'audio': 'full_stack' }}");
-            };
+            if media_config.audio.is_none() {
+                bail!("media.audio should be specified");
+            }
 
             builder.platform_bundle("media_sessions");
         }
